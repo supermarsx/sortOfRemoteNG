@@ -1,0 +1,1944 @@
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -936,6 +936,10 @@
+     "quic/quic_session_pool_async_dns_job.h",
+     "quic/quic_session_pool_direct_job.cc",
+     "quic/quic_session_pool_direct_job.h",
++    "quic/quic_session_pool_owned_proxy_job.cc",
++    "quic/quic_session_pool_owned_proxy_job.h",
++    "socket/sorng_capsule_datagram_client_socket.cc",
++    "socket/sorng_capsule_datagram_client_socket.h",
+     "quic/quic_session_pool_endpoint_connector.cc",
+     "quic/quic_session_pool_endpoint_connector.h",
+     "quic/quic_session_pool_job.cc",
+@@ -3097,6 +3101,7 @@
+     "quic/quic_proxy_client_socket_test_base.h",
+     "quic/quic_proxy_client_socket_unittest.cc",
+     "quic/quic_proxy_datagram_client_socket_unittest.cc",
++    "socket/sorng_capsule_datagram_client_socket_unittest.cc",
+     "quic/quic_session_attempt_manager_unittest.cc",
+     "quic/quic_session_key_unittest.cc",
+     "quic/quic_session_pool_async_dns_job_unittest.cc",
+@@ -4463,3 +4468,33 @@
+     ]
+   }
+ }
++
++# Focused owned-transport/admission regressions without building every net test.
++if (!is_cronet_build && !is_ios) {
++  test("sorng_owned_quic_unittests") {
++    sources = [
++      "test/run_all_unittests.cc",
++      "//services/network/sorng_datagram_configuration_unittest.cc",
++      "socket/sorng_capsule_datagram_client_socket_unittest.cc",
++      "quic/crypto/proof_verifier_chromium_test.cc",
++    ]
++    deps = [
++      ":net",
++      ":test_support",
++      ":quic_test_tools",
++      "//services/network:network_service",
++      "//services/network:test_support",
++      "//mojo/core/embedder",
++      "//base",
++      "//base:build_time",
++      "//base/test:test_support",
++      "//crypto:test_support",
++      "//net/http:transport_security_state_unittest_data",
++      "//net/http:transport_security_state_unittest_data_default",
++      "//testing/gtest",
++      "//testing/gmock",
++      "//url:buildflags",
++    ]
++    data = [ "data/ssl/certificates/" ]
++  }
++}
+diff --git a/net/http/http_network_session.cc b/net/http/http_network_session.cc
+--- a/net/http/http_network_session.cc
++++ b/net/http/http_network_session.cc
+@@ -382,6 +382,18 @@
+   return params_.enable_quic;
+ }
+ 
++bool HttpNetworkSession::ConfigureSorngDatagrams(
++    scoped_refptr<SorngDatagramProxy> proxy) {
++  if (!proxy || !ssl_client_context()->tls_admission_delegate() ||
++      ssl_client_context()->tls_admission_delegate() != proxy->admission() ||
++      !quic_session_pool_.ConfigureSorngDatagrams(std::move(proxy))) {
++    return false;
++  }
++  params_.enable_quic = true;
++  params_.enable_early_data = false;
++  return true;
++}
++
+ void HttpNetworkSession::DisableQuic() {
+   params_.enable_quic = false;
+ }
+diff --git a/net/http/http_network_session.h b/net/http/http_network_session.h
+--- a/net/http/http_network_session.h
++++ b/net/http/http_network_session.h
+@@ -287,6 +287,7 @@
+ 
+   // Evaluates if QUIC is enabled for new streams.
+   bool IsQuicEnabled() const;
++  bool ConfigureSorngDatagrams(scoped_refptr<SorngDatagramProxy> proxy);
+ 
+   // Disable QUIC for new streams.
+   void DisableQuic();
+diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
+--- a/net/http/http_stream_factory_job.cc
++++ b/net/http/http_stream_factory_job.cc
+@@ -861,7 +861,8 @@
+     // mechanisms would be worse than simply using H/1 or H/2 to reach the
+     // destination. The error for an invalid condition should not be user
+     // visible, because the non-alternative Job should be resumed.
+-    if (proxy_chain.AnyProxy(
++    if (!session_->quic_session_pool()->IsSorngProxyChain(proxy_chain) &&
++        proxy_chain.AnyProxy(
+             [](const ProxyServer& s) { return !s.is_quic(); })) {
+       return ERR_NO_SUPPORTED_PROXIES;
+     }
+diff --git a/net/quic/crypto/proof_verifier_chromium.cc b/net/quic/crypto/proof_verifier_chromium.cc
+--- a/net/quic/crypto/proof_verifier_chromium.cc
++++ b/net/quic/crypto/proof_verifier_chromium.cc
+@@ -4,6 +4,8 @@
+ 
+ 
+ #include "net/quic/crypto/proof_verifier_chromium.h"
++#include "base/task/bind_post_task.h"
++#include "base/memory/weak_ptr.h"
+ 
+ #include <string_view>
+ #include <utility>
+@@ -97,6 +99,7 @@
+     STATE_NONE,
+     STATE_VERIFY_CERT,
+     STATE_VERIFY_CERT_COMPLETE,
++    STATE_NATIVE_ADMISSION_COMPLETE,
+   };
+ 
+   // Convert |certs| to |cert_|(X509Certificate). Returns true if successful.
+@@ -168,6 +171,7 @@
+   base::TimeTicks start_time_;
+ 
+   NetLogWithSource net_log_;
++  base::WeakPtrFactory<Job> weak_factory_{this};
+ };
+ 
+ ProofVerifierChromium::Job::Job(
+@@ -344,6 +348,9 @@
+       case STATE_VERIFY_CERT_COMPLETE:
+         rv = DoVerifyCertComplete(rv);
+         break;
++      case STATE_NATIVE_ADMISSION_COMPLETE:
++        if (!proof_verifier_->admission_->IsActive()) rv = ERR_ABORTED;
++        break;
+       case STATE_NONE:
+       default:
+         rv = ERR_UNEXPECTED;
+@@ -426,7 +433,8 @@
+ 
+   if (result == OK &&
+       !verify_details_->cert_verify_result.is_issued_by_known_root &&
+-      !ShouldAllowUnknownRootForHost(hostname_)) {
++      !ShouldAllowUnknownRootForHost(hostname_) &&
++      !proof_verifier_->admission_) {
+     result = ERR_QUIC_CERT_ROOT_NOT_KNOWN;
+   }
+ 
+@@ -440,6 +448,21 @@
+     error_details_ = StringPrintf("Failed to verify certificate chain: %s",
+                                   error_string.c_str());
+     DLOG(WARNING) << error_details_;
++  }
++
++  if (proof_verifier_->admission_) {
++    if (!proof_verifier_->admission_->IsActive()) {
++      return ERR_ABORTED;
++    }
++    // Always post completion: native admission implementations may invoke the
++    // callback inline, before VerifyCert has installed its QUIC callback.
++    next_state_ = STATE_NATIVE_ADMISSION_COMPLETE;
++    proof_verifier_->admission_->Verify(
++        HostPortPair(hostname_, port_), cert_, cert_verify_result, result,
++        verify_details_->is_fatal_cert_error,
++        base::BindPostTaskToCurrentDefault(base::BindOnce(
++            &Job::OnIOComplete, weak_factory_.GetWeakPtr())));
++    return ERR_IO_PENDING;
+   }
+ 
+   // Exit DoLoop and return the result to the caller to VerifyProof.
+@@ -502,12 +525,14 @@
+     TransportSecurityState* transport_security_state,
+     SCTAuditingDelegate* sct_auditing_delegate,
+     std::set<std::string> hostnames_to_allow_unknown_roots,
+-    const NetworkAnonymizationKey& network_anonymization_key)
++    const NetworkAnonymizationKey& network_anonymization_key,
++    scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission)
+     : cert_verifier_(cert_verifier),
+       transport_security_state_(transport_security_state),
+       sct_auditing_delegate_(sct_auditing_delegate),
+       hostnames_to_allow_unknown_roots_(hostnames_to_allow_unknown_roots),
+-      network_anonymization_key_(network_anonymization_key) {
++      network_anonymization_key_(network_anonymization_key),
++      admission_(std::move(admission)) {
+   DCHECK(cert_verifier_);
+   DCHECK(transport_security_state_);
+ }
+diff --git a/net/quic/crypto/proof_verifier_chromium.h b/net/quic/crypto/proof_verifier_chromium.h
+--- a/net/quic/crypto/proof_verifier_chromium.h
++++ b/net/quic/crypto/proof_verifier_chromium.h
+@@ -19,6 +19,8 @@
+ #include "net/cert/x509_certificate.h"
+ #include "net/log/net_log_with_source.h"
+ #include "net/third_party/quiche/src/quiche/quic/core/crypto/proof_verifier.h"
++
++#include "net/socket/ssl_client_socket.h"
+ 
+ namespace net {
+ 
+@@ -73,7 +75,8 @@
+       TransportSecurityState* transport_security_state,
+       SCTAuditingDelegate* sct_auditing_delegate,
+       std::set<std::string> hostnames_to_allow_unknown_roots,
+-      const NetworkAnonymizationKey& network_anonymization_key);
++      const NetworkAnonymizationKey& network_anonymization_key,
++      scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission = nullptr);
+ 
+   ProofVerifierChromium(const ProofVerifierChromium&) = delete;
+   ProofVerifierChromium& operator=(const ProofVerifierChromium&) = delete;
+@@ -125,6 +128,7 @@
+   std::set<std::string> hostnames_to_allow_unknown_roots_;
+ 
+   const NetworkAnonymizationKey network_anonymization_key_;
++  const scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission_;
+ };
+ 
+ }  // namespace net
+diff --git a/net/quic/crypto/proof_verifier_chromium_test.cc b/net/quic/crypto/proof_verifier_chromium_test.cc
+--- a/net/quic/crypto/proof_verifier_chromium_test.cc
++++ b/net/quic/crypto/proof_verifier_chromium_test.cc
+@@ -513,6 +513,89 @@
+               CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
+ }
+ 
++namespace {
++class OwnedAdmission final : public SSLClientContext::TlsAdmissionDelegate {
++ public:
++  bool IsActive() const override { return active; }
++  void AddSocket(const void*, base::RepeatingClosure) override {}
++  void RemoveSocket(const void*) override {}
++  void Verify(const HostPortPair& destination, scoped_refptr<X509Certificate> peer,
++      const CertVerifyResult&, int native_error, bool fatal,
++      CompletionOnceCallback callback) override {
++    ++calls;
++    EXPECT_EQ(destination.host(), kTestHostname);
++    EXPECT_EQ(destination.port(), kTestPort);
++    EXPECT_TRUE(peer);
++    saw_native_error = native_error;
++    saw_fatal = fatal;
++    // Test delegate never permits a native failure, even if a caller asks it.
++    std::move(callback).Run(active && permit && native_error == OK ? OK :
++                           ERR_BLOCKED_BY_CLIENT);
++  }
++  int calls = 0;
++  int saw_native_error = OK;
++  bool saw_fatal = false;
++  bool active = true;
++  bool permit = false;
++ private:
++  ~OwnedAdmission() override = default;
++};
++class OwnedProofCallback final : public quic::ProofVerifierCallback {
++ public:
++  explicit OwnedProofCallback(std::optional<bool>* result) : result_(result) {}
++  void Run(bool ok, const std::string&,
++           std::unique_ptr<quic::ProofVerifyDetails>*) override { *result_ = ok; }
++ private:
++  raw_ptr<std::optional<bool>> result_;
++};
++}  // namespace
++
++TEST_F(ProofVerifierChromiumTest, OwnedAdmissionWaitsAndPreservesNativeFailures) {
++  auto admission = base::MakeRefCounted<OwnedAdmission>();
++  for (const int native_error : {OK, ERR_CERT_AUTHORITY_INVALID}) {
++    MockCertVerifier native_verifier;
++    auto result = dummy_result_;
++    result.is_issued_by_known_root = false;
++    if (native_error != OK) result.cert_status = CERT_STATUS_AUTHORITY_INVALID;
++    native_verifier.AddResultForCert(test_cert_.get(), result, native_error);
++    ProofVerifierChromium verifier(&native_verifier, &transport_security_state_,
++        nullptr, {}, NetworkAnonymizationKey(), admission);
++    for (const bool permit : {false, true}) {
++      admission->permit = permit;
++      std::optional<bool> completed;
++      auto status = verifier.VerifyCertChain(kTestHostname, kTestPort,
++          std::vector<std::string_view>(certs_.begin(), certs_.end()), "", "",
++          verify_context_.get(), &error_details_, &details_, &tls_alert_,
++          std::make_unique<OwnedProofCallback>(&completed));
++      EXPECT_EQ(quic::QUIC_PENDING, status);
++      EXPECT_FALSE(completed.has_value());
++      task_environment_.RunUntilIdle();
++      ASSERT_TRUE(completed.has_value());
++      EXPECT_EQ(native_error == OK && permit, *completed);
++      EXPECT_EQ(native_error, admission->saw_native_error);
++    }
++  }
++  EXPECT_EQ(4, admission->calls);
++}
++
++TEST_F(ProofVerifierChromiumTest, OwnedAdmissionRevocationRejectsPostedSuccess) {
++  auto admission = base::MakeRefCounted<OwnedAdmission>();
++  admission->permit = true;
++  MockCertVerifier native_verifier;
++  native_verifier.AddResultForCert(test_cert_.get(), dummy_result_, OK);
++  ProofVerifierChromium verifier(&native_verifier, &transport_security_state_,
++      nullptr, {}, NetworkAnonymizationKey(), admission);
++  std::optional<bool> completed;
++  EXPECT_EQ(quic::QUIC_PENDING, verifier.VerifyCertChain(kTestHostname, kTestPort,
++      std::vector<std::string_view>(certs_.begin(), certs_.end()), "", "",
++      verify_context_.get(), &error_details_, &details_, &tls_alert_,
++      std::make_unique<OwnedProofCallback>(&completed)));
++  admission->active = false;
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(completed.has_value());
++  EXPECT_FALSE(*completed);
++}
++
+ TEST_F(ProofVerifierChromiumTest, UnknownRootRejected) {
+   dummy_result_.is_issued_by_known_root = false;
+ 
+diff --git a/net/quic/quic_session_attempt.cc b/net/quic/quic_session_attempt.cc
+--- a/net/quic/quic_session_attempt.cc
++++ b/net/quic/quic_session_attempt.cc
+@@ -225,7 +225,8 @@
+   next_state_ = State::kCreateSessionComplete;
+ 
+   const bool require_confirmation =
+-      was_alternative_service_recently_broken_ || is_stale_;
++      was_alternative_service_recently_broken_ || is_stale_ ||
++      pool()->HasSorngDatagrams();
+   net_log().AddEntryWithBoolParams(
+       NetLogEventType::QUIC_SESSION_POOL_JOB_CONNECT, NetLogEventPhase::BEGIN,
+       "require_confirmation", require_confirmation);
+@@ -246,7 +247,8 @@
+         std::move(proxy_stream_), std::move(user_agent), net_log(), network_,
+         session_creation_initiator_, quic_connection_reuse_details_);
+   } else {
+-    if (base::FeatureList::IsEnabled(net::features::kAsyncQuicSession)) {
++    if (pool()->HasSorngDatagrams() ||
++        base::FeatureList::IsEnabled(net::features::kAsyncQuicSession)) {
+       return pool()->CreateSessionAsync(
+           base::BindOnce(&QuicSessionAttempt::HandleCreateSessionResult,
+                          weak_ptr_factory_.GetWeakPtr()),
+diff --git a/net/quic/quic_session_pool.cc b/net/quic/quic_session_pool.cc
+--- a/net/quic/quic_session_pool.cc
++++ b/net/quic/quic_session_pool.cc
+@@ -71,6 +71,7 @@
+ #include "net/quic/quic_session_key.h"
+ #include "net/quic/quic_session_pool_async_dns_job.h"
+ #include "net/quic/quic_session_pool_direct_job.h"
++#include "net/quic/quic_session_pool_owned_proxy_job.h"
+ #include "net/quic/quic_session_pool_job.h"
+ #include "net/quic/quic_session_pool_proxy_job.h"
+ #include "net/socket/client_socket_factory.h"
+@@ -105,6 +106,17 @@
+ namespace net {
+ 
+ namespace {
++
++// The capsule/native route has an explicit 1232-byte UDP payload ceiling.
++// Returning that limit also prevents QUIC MTU probes from exceeding the route.
++class SorngQuicPacketWriter final : public QuicChromiumPacketWriter {
++ public:
++  using QuicChromiumPacketWriter::QuicChromiumPacketWriter;
++  quic::QuicByteCount GetMaxPacketSize(
++      const quic::QuicSocketAddress&) const override {
++    return SorngDatagramProxy::kMaximumPayload;
++  }
++};
+ 
+ enum InitialRttEstimateSource {
+   INITIAL_RTT_DEFAULT,
+@@ -819,6 +831,10 @@
+     return active_session_it->second;
+   }
+ 
++  if (sorng_datagram_proxy_) {
++    return nullptr;  // Never coalesce authorities through an owned UDP route.
++  }
++
+   for (const auto& key_value : active_sessions_) {
+     QuicChromiumClientSession* session = key_value.second;
+     if (CanWaiveIpMatching(destination, session) &&
+@@ -925,6 +941,15 @@
+     }
+   }
+ 
++  if (sorng_datagram_proxy_ &&
++      (!sorng_datagram_proxy_->IsActive() ||
++       !IsSorngProxyChain(session_key.proxy_chain()) ||
++       destination.host() != session_key.server_id().host() ||
++       destination.port() != session_key.server_id().port() ||
++       session_key.require_dns_https_alpn())) {
++    return ERR_NO_SUPPORTED_PROXIES;
++  }
++
+   // Use active session for `session_key` if such exists, or pool to active
+   // session to `destination` if possible.
+   QuicChromiumClientSession* existing_session =
+@@ -969,7 +994,13 @@
+   QuicConnectionReuseDetails quic_connection_reuse_details =
+       DetermineQuicConnectionReuseDetails(session_key);
+ 
+-  if (session_key.proxy_chain().is_direct()) {
++  if (sorng_datagram_proxy_) {
++    job = std::make_unique<OwnedProxyJob>(
++        this, quic_version, std::move(key),
++        CreateCryptoConfigHandle(QuicCryptoClientConfigKey(session_key)),
++        priority, cert_verify_flags, session_creation_initiator,
++        quic_connection_reuse_details, net_log);
++  } else if (session_key.proxy_chain().is_direct()) {
+     if (session_key.session_usage() == SessionUsage::kProxy) {
+       proxy_connect_start_time = base::TimeTicks::Now();
+     }
+@@ -1080,6 +1111,9 @@
+ 
+ void QuicSessionPool::OnSessionClosed(QuicChromiumClientSession* session) {
+   DCHECK_EQ(0u, session->GetNumActiveStreams());
++  if (sorng_datagram_proxy_) {
++    sorng_datagram_proxy_->admission()->RemoveSocket(session);
++  }
+   OnSessionGoingAway(session);
+   auto it = all_sessions_.find(session);
+   CHECK(it != all_sessions_.end());
+@@ -1414,10 +1448,41 @@
+   return handles::kInvalidNetworkHandle;
+ }
+ 
++bool QuicSessionPool::ConfigureSorngDatagrams(
++    scoped_refptr<SorngDatagramProxy> proxy) {
++  if (!proxy || !proxy->IsActive() || sorng_datagram_proxy_ ||
++      !all_sessions_.empty() || !active_jobs_.empty() ||
++      !active_crypto_config_map_.empty()) {
++    return false;
++  }
++  sorng_datagram_proxy_ = std::move(proxy);
++  params_.migrate_sessions_early_v2 = false;
++  params_.migrate_sessions_on_network_change_v2 = false;
++  params_.migrate_idle_sessions = false;
++  params_.allow_port_migration = false;
++  params_.allow_server_migration = false;
++  params_.retry_on_alternate_network_before_handshake = false;
++  return true;
++}
++
++bool QuicSessionPool::IsSorngProxyChain(const ProxyChain& chain) const {
++  if (!sorng_datagram_proxy_ || !sorng_datagram_proxy_->IsActive() ||
++      chain.is_direct() || chain.length() != 1) {
++    return false;
++  }
++  const ProxyServer& proxy = chain.First();
++  return proxy.is_http() && proxy.host_port_pair() ==
++      HostPortPair::FromIPEndPoint(sorng_datagram_proxy_->endpoint());
++}
++
+ std::unique_ptr<DatagramClientSocket> QuicSessionPool::CreateSocket(
+     handles::NetworkHandle target_network,
+     NetLog* net_log,
+     const NetLogSource& source) {
++  if (sorng_datagram_proxy_) {
++    return std::make_unique<SorngCapsuleDatagramClientSocket>(
++        sorng_datagram_proxy_, HostPortPair(), client_socket_factory_);
++  }
+   auto socket = client_socket_factory_->CreateDatagramClientSocket(
+       DatagramSocket::DEFAULT_BIND, target_network, net_log, source);
+   if (params_.enable_socket_recv_optimization) {
+@@ -1701,6 +1766,7 @@
+     const std::set<std::string>& aliases,
+     bool use_dns_aliases,
+     bool log_negative_result) {
++  if (sorng_datagram_proxy_) return nullptr;
+   const quic::QuicServerId& server_id(key.server_id());
+ 
+   // There could be an existing session when HappyEyeballsV3 is enabled because
+@@ -2051,6 +2117,9 @@
+   *session = nullptr;
+   // TODO(crbug.com/40256842): This logic only knows how to try one IP
+   // endpoint.
++  if (sorng_datagram_proxy_) {
++    return ERR_NOT_IMPLEMENTED;
++  }
+   std::unique_ptr<DatagramClientSocket> socket(CreateSocket(
+       key.session_key().target_network(), net_log.net_log(), net_log.source()));
+ 
+@@ -2072,7 +2141,8 @@
+           std::move(peer_address), std::move(metadata),
+           dns_resolution_start_time, dns_resolution_end_time,
+           std::move(resolution_details),
+-          /*session_max_packet_length=*/0, net_log,
++          /*session_max_packet_length=*/sorng_datagram_proxy_
++          ? SorngDatagramProxy::kMaximumPayload : 0, net_log,
+           // TODO(crbug.com/518753285): Stop passing the network explicitly,
+           // instead rely on socket being already bound to the correct network.
+           *network, std::move(socket), session_creation_initiator,
+@@ -2104,8 +2174,24 @@
+     std::optional<ConnectionManagementConfig> connection_management_config) {
+   // TODO(crbug.com/40256842): This logic only knows how to try one IP
+   // endpoint.
+-  std::unique_ptr<DatagramClientSocket> socket(CreateSocket(
+-      key.session_key().target_network(), net_log.net_log(), net_log.source()));
++  std::unique_ptr<DatagramClientSocket> socket;
++  if (sorng_datagram_proxy_ &&
++      (!IsSorngProxyChain(key.session_key().proxy_chain()) ||
++       key.destination().host() != key.session_key().server_id().host() ||
++       key.destination().port() != key.session_key().server_id().port() ||
++       peer_address != sorng_datagram_proxy_->endpoint())) {
++    return ERR_NO_SUPPORTED_PROXIES;
++  }
++  if (sorng_datagram_proxy_) {
++    socket = std::make_unique<SorngCapsuleDatagramClientSocket>(
++        sorng_datagram_proxy_,
++        HostPortPair(key.session_key().server_id().host(),
++                     key.session_key().server_id().port()),
++        client_socket_factory_);
++  } else {
++    socket = CreateSocket(key.session_key().target_network(),
++                          net_log.net_log(), net_log.source());
++  }
+   DatagramClientSocket* socket_ptr = socket.get();
+   CompletionOnceCallback connect_and_configure_callback = base::BindOnce(
+       &QuicSessionPool::FinishCreateSession, weak_factory_.GetWeakPtr(),
+@@ -2146,6 +2232,7 @@
+     handles::NetworkHandle network,
+     MultiplexedSessionCreationInitiator session_creation_initiator,
+     QuicConnectionReuseDetails quic_connection_reuse_details) {
++  if (sorng_datagram_proxy_) return ERR_NO_SUPPORTED_PROXIES;
+   // Use the host and port from the proxy server along with the example URI
+   // template in https://datatracker.ietf.org/doc/html/rfc9298#section-2.
+   const ProxyChain& proxy_chain = key.session_key().proxy_chain();
+@@ -2302,18 +2389,22 @@
+   quic::QuicConnectionId connection_id =
+       quic::QuicUtils::CreateRandomConnectionId(random_generator_);
+   std::unique_ptr<QuicServerInfo> server_info;
+-  if (params_.max_server_configs_stored_in_properties > 0) {
++  if (!sorng_datagram_proxy_ &&
++      params_.max_server_configs_stored_in_properties > 0) {
+     server_info = std::make_unique<PropertiesBasedQuicServerInfo>(
+         server_id, key.session_key().privacy_mode(),
+         key.session_key().network_anonymization_key(), http_server_properties_);
+   }
+   std::unique_ptr<CryptoClientConfigHandle> crypto_config_handle =
+       CreateCryptoConfigHandle(QuicCryptoClientConfigKey(key.session_key()));
+-  InitializeCachedStateInCryptoConfig(*crypto_config_handle, server_id,
++  if (!sorng_datagram_proxy_) {
++    InitializeCachedStateInCryptoConfig(*crypto_config_handle, server_id,
+                                       server_info);
+-
+-  QuicChromiumPacketWriter* writer =
+-      new QuicChromiumPacketWriter(socket.get(), task_runner_.get());
++  }
++
++  QuicChromiumPacketWriter* writer = sorng_datagram_proxy_
++      ? new SorngQuicPacketWriter(socket.get(), task_runner_.get())
++      : new QuicChromiumPacketWriter(socket.get(), task_runner_.get());
+   quic::QuicConnection* connection = new quic::QuicConnection(
+       connection_id, quic::QuicSocketAddress(),
+       ToQuicSocketAddress(peer_address), helper_.get(), alarm_factory_.get(),
+@@ -2414,6 +2505,18 @@
+   QuicChromiumClientSession* session = new_session.get();
+ 
+   all_sessions_.insert(std::move(new_session));
++  if (sorng_datagram_proxy_) {
++    sorng_datagram_proxy_->admission()->AddSocket(
++        session, base::BindRepeating(
++            [](base::WeakPtr<QuicSessionPool> pool,
++               QuicChromiumClientSession* candidate) {
++              if (pool && pool->all_sessions_.contains(candidate)) {
++                candidate->CloseSessionOnError(
++                    ERR_ABORTED, quic::QUIC_CONNECTION_CANCELLED,
++                    quic::ConnectionCloseBehavior::SILENT_CLOSE);
++              }
++            }, weak_factory_.GetWeakPtr(), session));
++  }
+   writer->set_delegate(session);
+   session->AddConnectivityObserver(&connectivity_monitor_);
+ 
+@@ -2795,9 +2898,11 @@
+           std::make_unique<ProofVerifierChromium>(
+               cert_verifier_, transport_security_state_, sct_auditing_delegate_,
+               std::move(hostnames_to_allow_unknown_roots),
+-              key.network_anonymization_key),
+-          std::make_unique<quic::QuicClientSessionCache>(
+-              kDefaultQuicSessionCacheSize),
++              key.network_anonymization_key,
++              sorng_datagram_proxy_ ? sorng_datagram_proxy_->admission() : nullptr),
++          sorng_datagram_proxy_ ? nullptr :
++              std::make_unique<quic::QuicClientSessionCache>(
++                  kDefaultQuicSessionCacheSize),
+           kDefaultQuicSessionCacheSize, this);
+ 
+   quic::QuicCryptoClientConfig* crypto_config = crypto_config_owner->config();
+diff --git a/net/quic/quic_session_pool.h b/net/quic/quic_session_pool.h
+--- a/net/quic/quic_session_pool.h
++++ b/net/quic/quic_session_pool.h
+@@ -52,6 +52,7 @@
+ #include "net/quic/quic_connectivity_monitor.h"
+ #include "net/quic/quic_context.h"
+ #include "net/quic/quic_crypto_client_config_handle.h"
++#include "net/socket/sorng_capsule_datagram_client_socket.h"
+ #include "net/quic/quic_endpoint.h"
+ #include "net/quic/quic_proxy_datagram_client_socket.h"
+ #include "net/quic/quic_session_alias_key.h"
+@@ -489,6 +490,15 @@
+       NetLog* net_log,
+       const NetLogSource& source);
+ 
++  // A per-NetworkContext native capability, never populated from a page or
++  // proxy preference. Configuration is immutable and cannot enable direct UDP.
++  bool ConfigureSorngDatagrams(scoped_refptr<SorngDatagramProxy> proxy);
++  bool HasSorngDatagrams() const { return !!sorng_datagram_proxy_; }
++  bool IsSorngProxyChain(const ProxyChain& chain) const;
++  scoped_refptr<SorngDatagramProxy> sorng_datagram_proxy() const {
++    return sorng_datagram_proxy_;
++  }
++
+   // NetworkChangeNotifier::IPAddressObserver methods:
+ 
+   // Until the servers support roaming, close all connections when the local
+@@ -571,6 +581,7 @@
+   class Job;
+   class AsyncDnsJob;
+   class DirectJob;
++  class OwnedProxyJob;
+   class EndpointConnector;
+   class ProxyJob;
+   class QuicCryptoClientConfigOwner;
+@@ -869,6 +880,7 @@
+   const raw_ptr<ClientSocketFactory> client_socket_factory_;
+   const raw_ptr<HttpServerProperties> http_server_properties_;
+   const raw_ptr<NetworkQualityEstimator> network_quality_estimator_;
++  scoped_refptr<SorngDatagramProxy> sorng_datagram_proxy_;
+   const raw_ptr<CertVerifier> cert_verifier_;
+   const raw_ptr<TransportSecurityState> transport_security_state_;
+   const raw_ptr<ProxyDelegate> proxy_delegate_;
+diff --git a/net/quic/quic_session_pool_owned_proxy_job.cc b/net/quic/quic_session_pool_owned_proxy_job.cc
+new file mode 100644
+--- /dev/null
++++ b/net/quic/quic_session_pool_owned_proxy_job.cc
+@@ -0,0 +1,66 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#include "net/quic/quic_session_pool_owned_proxy_job.h"
++
++#include "base/functional/bind.h"
++#include "net/base/net_errors.h"
++#include "net/dns/public/host_resolver_results.h"
++namespace net {
++QuicSessionPool::OwnedProxyJob::OwnedProxyJob(
++    QuicSessionPool* pool,
++    quic::ParsedQuicVersion version,
++    QuicSessionAliasKey key,
++    std::unique_ptr<CryptoClientConfigHandle> crypto_config,
++    RequestPriority priority,
++    int cert_verify_flags,
++    MultiplexedSessionCreationInitiator initiator,
++    QuicConnectionReuseDetails reuse,
++    const NetLogWithSource& net_log)
++    : Job(pool,
++          std::move(key),
++          std::move(crypto_config),
++          priority,
++          initiator,
++          reuse,
++          net_log),
++      version_(version),
++      cert_verify_flags_(cert_verify_flags) {}
++QuicSessionPool::OwnedProxyJob::~OwnedProxyJob() = default;
++int QuicSessionPool::OwnedProxyJob::Run(CompletionOnceCallback callback) {
++  auto proxy = pool_->sorng_datagram_proxy();
++  if (!proxy || !proxy->IsActive() ||
++      !pool_->IsSorngProxyChain(key_.session_key().proxy_chain())) {
++    return ERR_NO_SUPPORTED_PROXIES;
++  }
++  attempt_ = std::make_unique<QuicSessionAttempt>(
++      this, proxy->endpoint(), ConnectionEndpointMetadata{}, version_,
++      cert_verify_flags_, base::TimeTicks(), base::TimeTicks(), std::nullopt,
++      false, false, std::set<std::string>(), nullptr,
++      session_creation_initiator_, quic_connection_reuse_details_,
++      std::nullopt);
++  int result = attempt_->Start(
++      base::BindOnce(&OwnedProxyJob::OnComplete, weak_factory_.GetWeakPtr()));
++  if (result == ERR_IO_PENDING) {
++    callback_ = std::move(callback);
++  }
++  return result;
++}
++void QuicSessionPool::OwnedProxyJob::SetRequestExpectations(
++    QuicSessionRequest* request) {
++  if (attempt_ && !attempt_->session_creation_finished()) {
++    request->ExpectQuicSessionCreation();
++  }
++}
++void QuicSessionPool::OwnedProxyJob::PopulateNetErrorDetails(
++    NetErrorDetails* details) const {
++  if (attempt_) {
++    attempt_->PopulateNetErrorDetails(details);
++  }
++}
++void QuicSessionPool::OwnedProxyJob::OnComplete(int result) {
++  if (callback_) {
++    std::move(callback_).Run(result);
++  }
++}
++}  // namespace net
+diff --git a/net/quic/quic_session_pool_owned_proxy_job.h b/net/quic/quic_session_pool_owned_proxy_job.h
+new file mode 100644
+--- /dev/null
++++ b/net/quic/quic_session_pool_owned_proxy_job.h
+@@ -0,0 +1,36 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#ifndef NET_QUIC_QUIC_SESSION_POOL_OWNED_PROXY_JOB_H_
++#define NET_QUIC_QUIC_SESSION_POOL_OWNED_PROXY_JOB_H_
++#include "net/quic/quic_session_pool_job.h"
++namespace net {
++// Deliberately has no HostResolver: only the native relay resolves the target.
++class QuicSessionPool::OwnedProxyJob final : public QuicSessionPool::Job {
++ public:
++  OwnedProxyJob(QuicSessionPool* pool,
++                quic::ParsedQuicVersion version,
++                QuicSessionAliasKey key,
++                std::unique_ptr<CryptoClientConfigHandle> crypto_config,
++                RequestPriority priority,
++                int cert_verify_flags,
++                MultiplexedSessionCreationInitiator initiator,
++                QuicConnectionReuseDetails reuse,
++                const NetLogWithSource& net_log);
++  ~OwnedProxyJob() override;
++  int Run(CompletionOnceCallback callback) override;
++  void PopulateNetErrorDetails(NetErrorDetails* details) const override;
++
++ protected:
++  void SetRequestExpectations(QuicSessionRequest* request) override;
++
++ private:
++  void OnComplete(int result);
++  const quic::ParsedQuicVersion version_;
++  const int cert_verify_flags_;
++  std::unique_ptr<QuicSessionAttempt> attempt_;
++  CompletionOnceCallback callback_;
++  base::WeakPtrFactory<OwnedProxyJob> weak_factory_{this};
++};
++}  // namespace net
++#endif
+diff --git a/net/socket/sorng_capsule_datagram_client_socket.cc b/net/socket/sorng_capsule_datagram_client_socket.cc
+new file mode 100644
+--- /dev/null
++++ b/net/socket/sorng_capsule_datagram_client_socket.cc
+@@ -0,0 +1,577 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#include "net/socket/sorng_capsule_datagram_client_socket.h"
++
++#include <algorithm>
++#include <optional>
++#include <utility>
++
++#include "base/base64.h"
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "net/base/address_list.h"
++#include "net/http/http_response_headers.h"
++#include "net/http/http_util.h"
++#include "net/socket/client_socket_factory.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "third_party/boringssl/src/include/openssl/mem.h"
++
++namespace net {
++namespace {
++constexpr size_t kMaximumHeaders = 16 * 1024;
++constexpr uint64_t kMaximumCapsule = 65543;
++constexpr size_t kMaximumQueue = 16;
++constexpr auto kAnnotation =
++    DefineNetworkTrafficAnnotation("sorng_owned_quic_capsules", R"(
++      semantics {
++        sender: "Owned embedded browser QUIC transport"
++        description: "Carries encrypted QUIC datagrams inside an authenticated local TCP relay."
++        trigger: "A user opens an HTTPS page through an owned private browser context."
++        data: "Ephemeral relay authentication and encrypted QUIC packets."
++        destination: LOCAL
++      }
++      policy {
++        cookies_allowed: NO
++        setting: "Only available for native-owned routes with explicit datagram capability."
++        policy_exception_justification: "Owned local transport; no direct UDP fallback."
++      })");
++
++std::optional<std::pair<uint64_t, size_t>> Varint(std::string_view input) {
++  if (input.empty()) {
++    return std::nullopt;
++  }
++  const size_t length = size_t{1} << (static_cast<uint8_t>(input[0]) >> 6);
++  if (input.size() < length) {
++    return std::nullopt;
++  }
++  uint64_t value = static_cast<uint8_t>(input[0]) & 63;
++  for (size_t i = 1; i < length; ++i) {
++    value = (value << 8) | static_cast<uint8_t>(input[i]);
++  }
++  return std::make_pair(value, length);
++}
++void AppendVarint(std::string& output, uint64_t value) {
++  const size_t length = value < 64 ? 1 : value < 16384 ? 2 : 4;
++  for (size_t i = length; i > 0; --i) {
++    output.push_back(static_cast<char>(value >> ((i - 1) * 8)));
++  }
++  output[output.size() - length] |= length == 1 ? 0 : length == 2 ? 0x40 : 0x80;
++}
++std::optional<std::string> TargetPath(const HostPortPair& destination) {
++  if (!destination.port() || destination.host().empty()) {
++    return std::nullopt;
++  }
++  std::string host = destination.host();
++  if (host.front() == '[' && host.back() == ']') {
++    host = host.substr(1, host.size() - 2);
++  }
++  IPAddress address;
++  if (address.AssignFromIPLiteral(host)) {
++    host = address.ToString();
++  } else {
++    if (host.size() > 253 || !std::ranges::all_of(host, [](char c) {
++          return base::IsAsciiAlpha(c) || base::IsAsciiDigit(c) || c == '.' ||
++                 c == '-' || c == '_';
++        })) {
++      return std::nullopt;
++    }
++    host = base::ToLowerASCII(host);
++  }
++  std::string component;
++  for (char c : host) {
++    component += c == ':' ? "%3A" : std::string(1, c);
++  }
++  return "/.well-known/masque/udp/" + component + "/" +
++         base::NumberToString(destination.port()) + "/";
++}
++}  // namespace
++
++scoped_refptr<SorngDatagramProxy> SorngDatagramProxy::Create(
++    uint16_t port,
++    std::string password,
++    scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission) {
++  if (!port || password.size() != 64 || !admission || !admission->IsActive() ||
++      !std::ranges::all_of(password,
++                           [](char c) { return base::IsHexDigit(c); })) {
++    return nullptr;
++  }
++  return base::WrapRefCounted(
++      new SorngDatagramProxy(port, std::move(password), std::move(admission)));
++}
++SorngDatagramProxy::SorngDatagramProxy(
++    uint16_t port,
++    std::string password,
++    scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission)
++    : endpoint_(IPAddress::IPv4Localhost(), port),
++      password_(std::move(password)),
++      admission_(std::move(admission)) {}
++SorngDatagramProxy::~SorngDatagramProxy() {
++  OPENSSL_cleanse(password_.data(), password_.size());
++}
++bool SorngDatagramProxy::IsActive() const {
++  return admission_->IsActive();
++}
++std::string SorngDatagramProxy::Authorization() const {
++  return "Basic " + base::Base64Encode("sorng-private-proxy:" + password_);
++}
++
++SorngCapsuleDatagramClientSocket::SorngCapsuleDatagramClientSocket(
++    scoped_refptr<SorngDatagramProxy> proxy,
++    HostPortPair destination,
++    ClientSocketFactory* factory)
++    : proxy_(std::move(proxy)),
++      destination_(std::move(destination)),
++      factory_(factory),
++      receive_(base::MakeRefCounted<IOBufferWithSize>(8192)) {
++  CHECK(proxy_);
++  CHECK(factory_);
++  proxy_->admission()->AddSocket(
++      this, base::BindRepeating(&SorngCapsuleDatagramClientSocket::OnRevoked,
++                                weak_factory_.GetWeakPtr()));
++}
++SorngCapsuleDatagramClientSocket::~SorngCapsuleDatagramClientSocket() {
++  Close();
++}
++bool SorngCapsuleDatagramClientSocket::Active() const {
++  return state_ != State::kClosed && proxy_->IsActive();
++}
++int SorngCapsuleDatagramClientSocket::Connect(const IPEndPoint&) {
++  return ERR_NOT_IMPLEMENTED;  // The authenticated upgrade is asynchronous.
++}
++int SorngCapsuleDatagramClientSocket::ConnectUsingNetwork(
++    handles::NetworkHandle,
++    const IPEndPoint&) {
++  return ERR_NOT_IMPLEMENTED;
++}
++int SorngCapsuleDatagramClientSocket::ConnectUsingDefaultNetwork(
++    const IPEndPoint&) {
++  return ERR_NOT_IMPLEMENTED;
++}
++int SorngCapsuleDatagramClientSocket::ConnectUsingNetworkAsync(
++    handles::NetworkHandle network,
++    const IPEndPoint& address,
++    CompletionOnceCallback callback) {
++  if (network != handles::kInvalidNetworkHandle) {
++    return ERR_NOT_IMPLEMENTED;
++  }
++  return ConnectAsync(address, std::move(callback));
++}
++int SorngCapsuleDatagramClientSocket::ConnectUsingDefaultNetworkAsync(
++    const IPEndPoint& address,
++    CompletionOnceCallback callback) {
++  return ConnectAsync(address, std::move(callback));
++}
++int SorngCapsuleDatagramClientSocket::ConnectAsync(
++    const IPEndPoint& address,
++    CompletionOnceCallback callback) {
++  if (!Active()) {
++    return ERR_ABORTED;
++  }
++  if (state_ != State::kNew || address != proxy_->endpoint() ||
++      !TargetPath(destination_)) {
++    return ERR_INVALID_ARGUMENT;
++  }
++  // No resolver, UDP socket, ambient proxy, or byte-level NetLog is involved.
++  stream_ = factory_->CreateTransportClientSocket(
++      AddressList(proxy_->endpoint()), handles::kInvalidNetworkHandle, nullptr,
++      nullptr, nullptr, NetLogSource());
++  if (!stream_) {
++    return ERR_FAILED;
++  }
++  connect_callback_ = std::move(callback);
++  state_ = State::kConnecting;
++  connect_timer_.Start(
++      FROM_HERE, base::Seconds(10),
++      base::BindOnce(&SorngCapsuleDatagramClientSocket::OnConnect,
++                     weak_factory_.GetWeakPtr(), ERR_TIMED_OUT));
++  int rv = stream_->Connect(
++      base::BindOnce(&SorngCapsuleDatagramClientSocket::OnConnect,
++                     weak_factory_.GetWeakPtr()));
++  if (rv != ERR_IO_PENDING) {
++    rv = ConnectLoop(rv);
++  }
++  if (rv != ERR_IO_PENDING) {
++    connect_callback_.Reset();
++    if (rv < 0) {
++      Fail(rv);
++    }
++  }
++  return rv;
++}
++int SorngCapsuleDatagramClientSocket::ConnectLoop(int rv) {
++  if (!Active()) {
++    return ERR_ABORTED;
++  }
++  if (rv < 0) {
++    return rv;
++  }
++  if (state_ == State::kConnecting) {
++    const std::string request =
++        "GET " + *TargetPath(destination_) +
++        " HTTP/1.1\r\nHost: " + proxy_->endpoint().ToString() +
++        "\r\nProxy-Authorization: " + proxy_->Authorization() +
++        "\r\nConnection: Upgrade\r\nUpgrade: connect-udp\r\nCapsule-Protocol: "
++        "?1\r\n\r\n";
++    auto buffer = base::MakeRefCounted<StringIOBuffer>(request);
++    send_ = base::MakeRefCounted<DrainableIOBuffer>(buffer, request.size());
++    state_ = State::kRequest;
++    rv = 0;
++  }
++  if (state_ == State::kRequest) {
++    rv = WriteLoop(rv);
++    if (rv != OK) {
++      return rv;
++    }
++    state_ = State::kResponse;
++    rv = 0;
++  }
++  return state_ == State::kResponse ? ReadLoop(rv) : OK;
++}
++void SorngCapsuleDatagramClientSocket::OnConnect(int rv) {
++  rv = ConnectLoop(rv);
++  if (rv == ERR_IO_PENDING) {
++    return;
++  }
++  auto callback = std::move(connect_callback_);
++  if (rv < 0) {
++    Fail(rv);
++  }
++  if (callback) {
++    std::move(callback).Run(rv);
++  }
++}
++int SorngCapsuleDatagramClientSocket::WriteLoop(int rv) {
++  if (!Active()) {
++    return ERR_ABORTED;
++  }
++  if (rv < 0) {
++    return rv;
++  }
++  if (rv > 0) {
++    send_->DidConsume(rv);
++  }
++  while (send_ && send_->BytesRemaining()) {
++    rv = stream_->Write(
++        send_.get(), send_->BytesRemaining(),
++        base::BindOnce(&SorngCapsuleDatagramClientSocket::OnWrite,
++                       weak_factory_.GetWeakPtr()),
++        kAnnotation);
++    if (rv == ERR_IO_PENDING || rv < 0) {
++      return rv;
++    }
++    if (!rv) {
++      return ERR_CONNECTION_CLOSED;
++    }
++    send_->DidConsume(rv);
++  }
++  send_.reset();
++  return OK;
++}
++void SorngCapsuleDatagramClientSocket::OnWrite(int rv) {
++  if (connect_callback_) {
++    OnConnect(rv);
++    return;
++  }
++  rv = WriteLoop(rv);
++  if (rv == ERR_IO_PENDING) {
++    return;
++  }
++  auto callback = std::move(write_callback_);
++  const int result = rv == OK ? write_length_ : rv;
++  if (rv < 0) {
++    Fail(rv);
++  }
++  if (callback) {
++    std::move(callback).Run(result);
++  }
++}
++int SorngCapsuleDatagramClientSocket::ParseResponse() {
++  const size_t end = input_.find("\r\n\r\n");
++  if (end == std::string::npos) {
++    return input_.size() >= kMaximumHeaders ? ERR_RESPONSE_HEADERS_TOO_BIG
++                                            : ERR_IO_PENDING;
++  }
++  if (end + 4 > kMaximumHeaders) {
++    return ERR_RESPONSE_HEADERS_TOO_BIG;
++  }
++  auto headers =
++      base::MakeRefCounted<HttpResponseHeaders>(HttpUtil::AssembleRawHeaders(
++          std::string_view(input_).substr(0, end + 4)));
++  if (headers->response_code() != 101 ||
++      headers->GetHttpVersion() != HttpVersion(1, 1) ||
++      !headers->HasHeaderValue("connection", "upgrade") ||
++      !base::EqualsCaseInsensitiveASCII(
++          headers->GetNormalizedHeader("upgrade").value_or(""),
++          "connect-udp") ||
++      headers->GetNormalizedHeader("capsule-protocol").value_or("") != "?1" ||
++      headers->HasHeader("content-length") ||
++      headers->HasHeader("transfer-encoding")) {
++    return ERR_INVALID_RESPONSE;
++  }
++  input_.erase(0, end + 4);
++  state_ = State::kOpen;
++  connect_timer_.Stop();
++  return ParseCapsules();
++}
++int SorngCapsuleDatagramClientSocket::ParseCapsules() {
++  while (!input_.empty()) {
++    const auto type = Varint(input_);
++    if (!type) {
++      return OK;
++    }
++    const auto length = Varint(std::string_view(input_).substr(type->second));
++    if (!length) {
++      return OK;
++    }
++    if (length->first > kMaximumCapsule) {
++      return ERR_MSG_TOO_BIG;
++    }
++    const size_t prefix = type->second + length->second;
++    if (input_.size() < prefix + length->first) {
++      return OK;
++    }
++    const auto value = std::string_view(input_).substr(prefix, length->first);
++    if (type->first == 0) {
++      const auto context = Varint(value);
++      if (!context) {
++        return ERR_INVALID_RESPONSE;
++      }
++      if (context->first == 0) {
++        const auto payload = value.substr(context->second);
++        if (payload.size() > SorngDatagramProxy::kMaximumPayload) {
++          return ERR_MSG_TOO_BIG;
++        }
++        if (datagrams_.size() < kMaximumQueue) {
++          datagrams_.emplace_back(payload);
++        }
++      }
++    }
++    input_.erase(0, prefix + length->first);
++  }
++  return OK;
++}
++int SorngCapsuleDatagramClientSocket::ReadLoop(int rv) {
++  for (;;) {
++    if (!Active()) {
++      return ERR_ABORTED;
++    }
++    if (rv < 0) {
++      return rv;
++    }
++    if (rv > 0) {
++      input_.append(receive_->data(), rv);
++    }
++    if (state_ == State::kResponse) {
++      const int parsed = ParseResponse();
++      if (parsed != ERR_IO_PENDING) {
++        return parsed;
++      }
++    } else {
++      const int parsed = ParseCapsules();
++      if (parsed < 0) {
++        return parsed;
++      }
++      if (!datagrams_.empty()) {
++        return OK;
++      }
++    }
++    rv = stream_->Read(receive_.get(), receive_->size(),
++                       base::BindOnce(&SorngCapsuleDatagramClientSocket::OnRead,
++                                      weak_factory_.GetWeakPtr()));
++    if (rv == ERR_IO_PENDING || rv < 0) {
++      return rv;
++    }
++    if (!rv) {
++      return ERR_CONNECTION_CLOSED;
++    }
++  }
++}
++void SorngCapsuleDatagramClientSocket::OnRead(int rv) {
++  if (connect_callback_) {
++    if (!rv) {
++      rv = ERR_CONNECTION_CLOSED;
++    }
++    OnConnect(rv);
++    return;
++  }
++  if (!rv) {
++    rv = ERR_CONNECTION_CLOSED;
++  }
++  rv = ReadLoop(rv);
++  if (rv == ERR_IO_PENDING) {
++    return;
++  }
++  if (rv == OK) {
++    rv = TakeDatagram(read_buffer_, read_length_);
++  }
++  read_buffer_ = nullptr;
++  auto callback = std::move(read_callback_);
++  if (rv < 0) {
++    Fail(rv);
++  }
++  if (callback) {
++    std::move(callback).Run(rv);
++  }
++}
++int SorngCapsuleDatagramClientSocket::TakeDatagram(IOBuffer* buffer, int size) {
++  if (datagrams_.empty()) {
++    return ERR_IO_PENDING;
++  }
++  auto packet = std::move(datagrams_.front());
++  datagrams_.pop_front();
++  if (packet.size() > static_cast<size_t>(size)) {
++    return ERR_MSG_TOO_BIG;
++  }
++  buffer->span().copy_prefix_from(base::as_byte_span(packet));
++  return static_cast<int>(packet.size());
++}
++int SorngCapsuleDatagramClientSocket::Read(IOBuffer* buffer,
++                                           int size,
++                                           CompletionOnceCallback callback) {
++  if (!Active()) {
++    return ERR_ABORTED;
++  }
++  if (state_ != State::kOpen) {
++    return error_;
++  }
++  if (!buffer || size <= 0 || read_callback_) {
++    return ERR_INVALID_ARGUMENT;
++  }
++  int rv = TakeDatagram(buffer, size);
++  if (rv != ERR_IO_PENDING) {
++    return rv;
++  }
++  read_buffer_ = buffer;
++  read_length_ = size;
++  read_callback_ = std::move(callback);
++  rv = ReadLoop(0);
++  if (rv == ERR_IO_PENDING) {
++    return rv;
++  }
++  read_callback_.Reset();
++  read_buffer_ = nullptr;
++  if (rv == OK) {
++    return TakeDatagram(buffer, size);
++  }
++  Fail(rv);
++  return rv;
++}
++base::expected<DatagramsMetadata, Error>
++SorngCapsuleDatagramClientSocket::ReadMultiple(
++    IOBuffer* buffer,
++    size_t size,
++    size_t maximum,
++    base::OnceCallback<void(base::expected<DatagramsMetadata, Error>)>
++        callback) {
++  return multiple_.ReadMultiple(buffer, size, maximum, std::move(callback));
++}
++int SorngCapsuleDatagramClientSocket::Write(
++    IOBuffer* buffer,
++    int size,
++    CompletionOnceCallback callback,
++    const NetworkTrafficAnnotationTag&) {
++  if (!Active()) {
++    return ERR_ABORTED;
++  }
++  if (state_ != State::kOpen) {
++    return ERR_SOCKET_NOT_CONNECTED;
++  }
++  if (size < 0 ||
++      size > static_cast<int>(SorngDatagramProxy::kMaximumPayload) || !buffer ||
++      send_) {
++    return ERR_MSG_TOO_BIG;
++  }
++  std::string capsule;
++  AppendVarint(capsule, 0);
++  AppendVarint(capsule, size + 1);
++  capsule.push_back(0);
++  capsule.append(buffer->data(), size);
++  auto bytes = base::MakeRefCounted<StringIOBuffer>(capsule);
++  send_ = base::MakeRefCounted<DrainableIOBuffer>(bytes, capsule.size());
++  write_length_ = size;
++  write_callback_ = std::move(callback);
++  const int rv = WriteLoop(0);
++  if (rv == ERR_IO_PENDING) {
++    return rv;
++  }
++  write_callback_.Reset();
++  if (rv < 0) {
++    Fail(rv);
++    return rv;
++  }
++  return size;
++}
++void SorngCapsuleDatagramClientSocket::OnRevoked() {
++  auto connecting = std::move(connect_callback_);
++  Fail(ERR_ABORTED);
++  if (connecting) {
++    std::move(connecting).Run(ERR_ABORTED);
++  }
++}
++void SorngCapsuleDatagramClientSocket::Close() {
++  state_ = State::kClosed;
++  connect_timer_.Stop();
++  weak_factory_.InvalidateWeakPtrs();
++  proxy_->admission()->RemoveSocket(this);
++  if (stream_) {
++    stream_->Disconnect();
++  }
++  connect_callback_.Reset();
++  read_callback_.Reset();
++  write_callback_.Reset();
++  read_buffer_ = nullptr;
++  send_.reset();
++  input_.clear();
++  datagrams_.clear();
++}
++void SorngCapsuleDatagramClientSocket::Fail(int error) {
++  Close();
++  error_ = error;
++}
++handles::NetworkHandle SorngCapsuleDatagramClientSocket::GetBoundNetwork()
++    const {
++  return handles::kInvalidNetworkHandle;
++}
++void SorngCapsuleDatagramClientSocket::ApplySocketTag(const SocketTag&) {}
++int SorngCapsuleDatagramClientSocket::SetMulticastInterface(uint32_t) {
++  return ERR_NOT_IMPLEMENTED;
++}
++void SorngCapsuleDatagramClientSocket::SetIOSNetworkServiceType(int) {}
++int SorngCapsuleDatagramClientSocket::GetPeerAddress(
++    IPEndPoint* address) const {
++  if (state_ != State::kOpen) {
++    return ERR_SOCKET_NOT_CONNECTED;
++  }
++  *address = proxy_->endpoint();
++  return OK;
++}
++int SorngCapsuleDatagramClientSocket::GetLocalAddress(
++    IPEndPoint* address) const {
++  return stream_ ? stream_->GetLocalAddress(address) : ERR_SOCKET_NOT_CONNECTED;
++}
++void SorngCapsuleDatagramClientSocket::UseNonBlockingIO() {}
++int SorngCapsuleDatagramClientSocket::SetDoNotFragment() {
++  return ERR_NOT_IMPLEMENTED;
++}
++int SorngCapsuleDatagramClientSocket::SetRecvTos() {
++  return OK;
++}
++int SorngCapsuleDatagramClientSocket::SetTos(DiffServCodePoint, EcnCodePoint) {
++  return OK;
++}
++void SorngCapsuleDatagramClientSocket::SetMsgConfirm(bool) {}
++const NetLogWithSource& SorngCapsuleDatagramClientSocket::NetLog() const {
++  return net_log_;
++}
++DscpAndEcn SorngCapsuleDatagramClientSocket::GetLastTos() const {
++  return {DSCP_DEFAULT, ECN_DEFAULT};
++}
++int SorngCapsuleDatagramClientSocket::SetReceiveBufferSize(int32_t) {
++  return OK;
++}
++int SorngCapsuleDatagramClientSocket::SetSendBufferSize(int32_t) {
++  return OK;
++}
++}  // namespace net
+diff --git a/net/socket/sorng_capsule_datagram_client_socket.h b/net/socket/sorng_capsule_datagram_client_socket.h
+new file mode 100644
+--- /dev/null
++++ b/net/socket/sorng_capsule_datagram_client_socket.h
+@@ -0,0 +1,138 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#ifndef NET_SOCKET_SORNG_CAPSULE_DATAGRAM_CLIENT_SOCKET_H_
++#define NET_SOCKET_SORNG_CAPSULE_DATAGRAM_CLIENT_SOCKET_H_
++
++#include <deque>
++#include <memory>
++#include <string>
++
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/io_buffer.h"
++#include "net/base/ip_endpoint.h"
++#include "net/base/net_errors.h"
++#include "net/log/net_log_with_source.h"
++#include "net/socket/datagram_client_socket.h"
++#include "net/socket/read_multiple_emulator.h"
++#include "net/socket/ssl_client_socket.h"
++#include "net/socket/stream_socket.h"
++
++namespace net {
++class ClientSocketFactory;
++
++// Network-sequence-only, immutable native authority. Never renderer supplied.
++class NET_EXPORT_PRIVATE SorngDatagramProxy
++    : public base::RefCounted<SorngDatagramProxy> {
++ public:
++  static constexpr size_t kMaximumPayload = 1232;
++  static scoped_refptr<SorngDatagramProxy> Create(
++      uint16_t port,
++      std::string password,
++      scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission);
++  bool IsActive() const;
++  const IPEndPoint& endpoint() const { return endpoint_; }
++  SSLClientContext::TlsAdmissionDelegate* admission() const {
++    return admission_.get();
++  }
++  std::string Authorization() const;
++
++ private:
++  friend class base::RefCounted<SorngDatagramProxy>;
++  SorngDatagramProxy(
++      uint16_t port,
++      std::string password,
++      scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission);
++  ~SorngDatagramProxy();
++  const IPEndPoint endpoint_;
++  std::string password_;
++  const scoped_refptr<SSLClientContext::TlsAdmissionDelegate> admission_;
++};
++
++// RFC 9298 HTTP/1.1 Upgrade + RFC 9297 capsules, over authenticated owned
++// loopback TCP only. It never creates a UDP socket or resolves a hostname.
++class NET_EXPORT_PRIVATE SorngCapsuleDatagramClientSocket final
++    : public DatagramClientSocket {
++ public:
++  SorngCapsuleDatagramClientSocket(scoped_refptr<SorngDatagramProxy> proxy,
++                                   HostPortPair destination,
++                                   ClientSocketFactory* factory);
++  ~SorngCapsuleDatagramClientSocket() override;
++  int Connect(const IPEndPoint& address) override;
++  int ConnectUsingNetwork(handles::NetworkHandle, const IPEndPoint&) override;
++  int ConnectUsingDefaultNetwork(const IPEndPoint&) override;
++  int ConnectAsync(const IPEndPoint&, CompletionOnceCallback) override;
++  int ConnectUsingNetworkAsync(handles::NetworkHandle,
++                               const IPEndPoint&,
++                               CompletionOnceCallback) override;
++  int ConnectUsingDefaultNetworkAsync(const IPEndPoint&,
++                                      CompletionOnceCallback) override;
++  handles::NetworkHandle GetBoundNetwork() const override;
++  void ApplySocketTag(const SocketTag&) override;
++  int SetMulticastInterface(uint32_t) override;
++  void SetIOSNetworkServiceType(int) override;
++  void Close() override;
++  int GetPeerAddress(IPEndPoint*) const override;
++  int GetLocalAddress(IPEndPoint*) const override;
++  void UseNonBlockingIO() override;
++  int SetDoNotFragment() override;
++  int SetRecvTos() override;
++  int SetTos(DiffServCodePoint, EcnCodePoint) override;
++  void SetMsgConfirm(bool) override;
++  const NetLogWithSource& NetLog() const override;
++  DscpAndEcn GetLastTos() const override;
++  int Read(IOBuffer*, int, CompletionOnceCallback) override;
++  base::expected<DatagramsMetadata, Error> ReadMultiple(
++      IOBuffer*,
++      size_t,
++      size_t,
++      base::OnceCallback<void(base::expected<DatagramsMetadata, Error>)>)
++      override;
++  int Write(IOBuffer*,
++            int,
++            CompletionOnceCallback,
++            const NetworkTrafficAnnotationTag&) override;
++  int SetReceiveBufferSize(int32_t) override;
++  int SetSendBufferSize(int32_t) override;
++
++ private:
++  enum class State { kNew, kConnecting, kRequest, kResponse, kOpen, kClosed };
++  bool Active() const;
++  int ConnectLoop(int);
++  void OnConnect(int);
++  int WriteLoop(int);
++  void OnWrite(int);
++  int ReadLoop(int);
++  void OnRead(int);
++  int ParseResponse();
++  int ParseCapsules();
++  int TakeDatagram(IOBuffer*, int);
++  void Fail(int);
++  void OnRevoked();
++  const scoped_refptr<SorngDatagramProxy> proxy_;
++  const HostPortPair destination_;
++  const raw_ptr<ClientSocketFactory> factory_;
++  std::unique_ptr<StreamSocket> stream_;
++  State state_ = State::kNew;
++  scoped_refptr<IOBufferWithSize> receive_;
++  scoped_refptr<DrainableIOBuffer> send_;
++  std::string input_;
++  std::deque<std::string> datagrams_;
++  CompletionOnceCallback connect_callback_;
++  CompletionOnceCallback read_callback_;
++  CompletionOnceCallback write_callback_;
++  raw_ptr<IOBuffer> read_buffer_ = nullptr;
++  int read_length_ = 0;
++  int write_length_ = 0;
++  int error_ = ERR_SOCKET_NOT_CONNECTED;
++  // Dummy log deliberately prevents secrets leaking through socket byte logs.
++  NetLogWithSource net_log_;
++  base::OneShotTimer connect_timer_;
++  ReadMultipleEmulator multiple_{this};
++  base::WeakPtrFactory<SorngCapsuleDatagramClientSocket> weak_factory_{this};
++};
++}  // namespace net
++#endif
+diff --git a/net/socket/sorng_capsule_datagram_client_socket_unittest.cc b/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
+@@ -0,0 +1,217 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#include "net/socket/sorng_capsule_datagram_client_socket.h"
++
++#include "base/base64.h"
++#include "base/test/task_environment.h"
++#include "net/base/test_completion_callback.h"
++#include "net/socket/socket_test_util.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "testing/gtest/include/gtest/gtest.h"
++namespace net {
++namespace {
++class Admission final : public SSLClientContext::TlsAdmissionDelegate {
++ public:
++  bool IsActive() const override { return active; }
++  void Verify(const HostPortPair&,
++              scoped_refptr<X509Certificate>,
++              const CertVerifyResult&,
++              int,
++              bool,
++              CompletionOnceCallback cb) override {
++    std::move(cb).Run(active ? OK : ERR_ABORTED);
++  }
++  void AddSocket(const void* key, base::RepeatingClosure cb) override {
++    callbacks.emplace(key, std::move(cb));
++  }
++  void RemoveSocket(const void* key) override { callbacks.erase(key); }
++  void Revoke() {
++    active = false;
++    auto copy = callbacks;
++    for (const auto& item : copy) {
++      item.second.Run();
++    }
++  }
++  bool active = true;
++  std::map<const void*, base::RepeatingClosure> callbacks;
++
++ private:
++  ~Admission() override = default;
++};
++constexpr char kResponse[] =
++    "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "
++    "connect-udp\r\nCapsule-Protocol: ?1\r\n\r\n";
++class SorngCapsuleSocketTest : public testing::Test {
++ protected:
++  std::string Request(std::string_view host = "example.test") {
++    return "GET /.well-known/masque/udp/" + std::string(host) +
++           "/443/ HTTP/1.1\r\nHost: 127.0.0.1:32123\r\nProxy-Authorization: "
++           "Basic " +
++           base::Base64Encode("sorng-private-proxy:" + std::string(64, 'a')) +
++           "\r\nConnection: Upgrade\r\nUpgrade: "
++           "connect-udp\r\nCapsule-Protocol: ?1\r\n\r\n";
++  }
++  std::unique_ptr<SorngCapsuleDatagramClientSocket> Socket(
++      HostPortPair target = HostPortPair("example.test", 443)) {
++    return std::make_unique<SorngCapsuleDatagramClientSocket>(
++        proxy_, std::move(target), &factory_);
++  }
++  base::test::TaskEnvironment task_environment_{
++      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
++  scoped_refptr<Admission> admission_ = base::MakeRefCounted<Admission>();
++  scoped_refptr<SorngDatagramProxy> proxy_ =
++      SorngDatagramProxy::Create(32123, std::string(64, 'a'), admission_);
++  MockClientSocketFactory factory_;
++};
++TEST_F(SorngCapsuleSocketTest, RejectsCredentialsAndWrongEndpointWithoutDial) {
++  EXPECT_FALSE(SorngDatagramProxy::Create(0, std::string(64, 'a'), admission_));
++  EXPECT_FALSE(
++      SorngDatagramProxy::Create(32123, std::string(64, 'x'), admission_));
++  TestCompletionCallback cb;
++  auto socket = Socket();
++  EXPECT_EQ(ERR_INVALID_ARGUMENT,
++            socket->ConnectAsync(IPEndPoint(IPAddress::IPv4Localhost(), 32124),
++                                 cb.callback()));
++  admission_->Revoke();
++  EXPECT_EQ(ERR_ABORTED,
++            socket->ConnectAsync(proxy_->endpoint(), cb.callback()));
++}
++TEST_F(SorngCapsuleSocketTest,
++       UpgradePreservesCoalescedCapsuleAndExactDatagram) {
++  const std::string request = Request();
++  std::string response = kResponse;
++  response.append(
++      "\x00\x04\x00"
++      "abc",
++      6);
++  const std::string outgoing(
++      "\x00\x04\x00"
++      "xyz",
++      6);
++  MockRead reads[] = {MockRead(ASYNC, response)};
++  MockWrite writes[] = {MockWrite(ASYNC, request), MockWrite(ASYNC, outgoing)};
++  StaticSocketDataProvider data(reads, writes);
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket();
++  TestCompletionCallback cb;
++  int result = socket->ConnectAsync(proxy_->endpoint(), cb.callback());
++  ASSERT_EQ(OK, cb.GetResult(result));
++  auto buffer = base::MakeRefCounted<IOBufferWithSize>(32);
++  ASSERT_EQ(3, socket->Read(buffer.get(), 32, cb.callback()));
++  EXPECT_EQ("abc", std::string(buffer->data(), 3));
++  auto payload = base::MakeRefCounted<StringIOBuffer>("xyz");
++  result = socket->Write(payload.get(), 3, cb.callback(),
++                         TRAFFIC_ANNOTATION_FOR_TESTS);
++  EXPECT_EQ(3, cb.GetResult(result));
++  EXPECT_TRUE(data.AllReadDataConsumed());
++  EXPECT_TRUE(data.AllWriteDataConsumed());
++}
++TEST_F(SorngCapsuleSocketTest,
++       FragmentedUpgradeDiscardsUnknownCapsulesAndContexts) {
++  const std::string request = Request();
++  const std::string header = kResponse;
++  std::string tail = header.substr(17);
++  tail.append(
++      "\x01\x02"
++      "zz",
++      4);
++  tail.append(
++      "\x00\x02\x01"
++      "z",
++      4);
++  tail.append(
++      "\x00\x04\x00"
++      "abc",
++      6);
++  const std::string first = header.substr(0, 17);
++  MockRead reads[] = {MockRead(ASYNC, first), MockRead(ASYNC, tail)};
++  MockWrite writes[] = {MockWrite(ASYNC, request)};
++  StaticSocketDataProvider data(reads, writes);
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket();
++  TestCompletionCallback cb;
++  ASSERT_EQ(OK, cb.GetResult(
++                    socket->ConnectAsync(proxy_->endpoint(), cb.callback())));
++  auto buffer = base::MakeRefCounted<IOBufferWithSize>(32);
++  ASSERT_EQ(3, socket->Read(buffer.get(), 32, cb.callback()));
++  EXPECT_EQ("abc", std::string(buffer->data(), 3));
++  EXPECT_TRUE(data.AllReadDataConsumed());
++}
++TEST_F(SorngCapsuleSocketTest, MalformedDatagramCapsuleFailsClosed) {
++  const std::string request = Request();
++  std::string response = kResponse;
++  response.append("\x00\x00", 2);  // DATAGRAM without any context ID.
++  MockRead reads[] = {MockRead(ASYNC, response)};
++  MockWrite writes[] = {MockWrite(ASYNC, request)};
++  StaticSocketDataProvider data(reads, writes);
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket();
++  TestCompletionCallback cb;
++  EXPECT_EQ(ERR_INVALID_RESPONSE, cb.GetResult(socket->ConnectAsync(
++                                      proxy_->endpoint(), cb.callback())));
++}
++
++TEST_F(SorngCapsuleSocketTest,
++       OversizeDatagramNeverWritesBeyondNativeRouteCap) {
++  const std::string request = Request();
++  MockRead reads[] = {MockRead(ASYNC, kResponse)};
++  MockWrite writes[] = {MockWrite(ASYNC, request)};
++  StaticSocketDataProvider data(reads, writes);
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket();
++  TestCompletionCallback cb;
++  ASSERT_EQ(OK, cb.GetResult(
++                    socket->ConnectAsync(proxy_->endpoint(), cb.callback())));
++  auto payload = base::MakeRefCounted<IOBufferWithSize>(1233);
++  EXPECT_EQ(ERR_MSG_TOO_BIG, socket->Write(payload.get(), 1233, cb.callback(),
++                                           TRAFFIC_ANNOTATION_FOR_TESTS));
++  EXPECT_TRUE(data.AllWriteDataConsumed());
++}
++
++TEST_F(SorngCapsuleSocketTest, NumericIpv6PathNeverResolvesOrigin) {
++  const std::string request = Request("%3A%3A1");
++  MockRead reads[] = {MockRead(ASYNC, kResponse)};
++  MockWrite writes[] = {MockWrite(ASYNC, request)};
++  StaticSocketDataProvider data(reads, writes);
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket(HostPortPair("::1", 443));
++  TestCompletionCallback cb;
++  EXPECT_EQ(OK, cb.GetResult(
++                    socket->ConnectAsync(proxy_->endpoint(), cb.callback())));
++  EXPECT_TRUE(data.AllWriteDataConsumed());
++}
++TEST_F(SorngCapsuleSocketTest,
++       RefusesNonUpgradeAndRevocationCancelsPendingConnect) {
++  const std::string request = Request();
++  MockRead reads[] = {MockRead(ASYNC, "HTTP/1.1 200 OK\r\n\r\n")};
++  MockWrite writes[] = {MockWrite(ASYNC, request)};
++  StaticSocketDataProvider data(reads, writes);
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket();
++  TestCompletionCallback cb;
++  EXPECT_EQ(ERR_INVALID_RESPONSE, cb.GetResult(socket->ConnectAsync(
++                                      proxy_->endpoint(), cb.callback())));
++  StaticSocketDataProvider pending;
++  pending.set_connect_data(MockConnect(ASYNC, ERR_IO_PENDING));
++  factory_.AddSocketDataProvider(&pending);
++  auto pending_socket = Socket();
++  TestCompletionCallback aborted;
++  ASSERT_EQ(ERR_IO_PENDING, pending_socket->ConnectAsync(proxy_->endpoint(),
++                                                         aborted.callback()));
++  admission_->Revoke();
++  EXPECT_EQ(ERR_ABORTED, aborted.WaitForResult());
++}
++TEST_F(SorngCapsuleSocketTest, NativeUpgradeDeadlineIsBounded) {
++  StaticSocketDataProvider data;
++  data.set_connect_data(MockConnect(ASYNC, ERR_IO_PENDING));
++  factory_.AddSocketDataProvider(&data);
++  auto socket = Socket();
++  TestCompletionCallback cb;
++  ASSERT_EQ(ERR_IO_PENDING,
++            socket->ConnectAsync(proxy_->endpoint(), cb.callback()));
++  task_environment_.FastForwardBy(base::Seconds(10));
++  EXPECT_EQ(ERR_TIMED_OUT, cb.WaitForResult());
++}
++}  // namespace
++}  // namespace net
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -689,8 +689,9 @@
+       public mojom::SorngTlsControl {
+  public:
+   SorngTlsAdmission(mojo::PendingRemote<mojom::SorngTlsClient> client,
+-                    uint64_t generation)
+-      : client_(std::move(client)), generation_(generation) {
++                    uint64_t generation,
++                    base::RepeatingCallback<bool(uint16_t, std::string)> configure)
++      : configure_(std::move(configure)), client_(std::move(client)), generation_(generation) {
+     client_.set_disconnect_handler(base::BindOnce(
+         &SorngTlsAdmission::FailClosed, weak_factory_.GetWeakPtr()));
+     client_->Ready(control_.BindNewPipeAndPassRemote());
+@@ -731,6 +732,15 @@
+     FailClosed();
+     std::move(callback).Run();
+   }
++  void ConfigureDatagrams(uint64_t generation, uint16_t proxy_port,
++      const std::string& password, ConfigureDatagramsCallback callback) override {
++    scoped_refptr<SorngTlsAdmission> keep_alive(this);
++    const bool ok = IsActive() && generation == generation_ && !configured_ &&
++                    configure_.Run(proxy_port, password);
++    configured_ = ok;
++    if (!ok) FailClosed();
++    std::move(callback).Run(ok);
++  }
+  private:
+   ~SorngTlsAdmission() override = default;
+   void OnDecision(uint64_t id, int native_error, uint32_t status, bool fatal,
+@@ -756,6 +766,8 @@
+     const auto sockets = sockets_;
+     for (const auto& [key, close] : sockets) close.Run();
+   }
++  const base::RepeatingCallback<bool(uint16_t, std::string)> configure_;
++  bool configured_ = false;
+   mojo::Remote<mojom::SorngTlsClient> client_;
+   mojo::Receiver<mojom::SorngTlsControl> control_{this};
+   const uint64_t generation_;
+@@ -920,7 +932,13 @@
+     CHECK(session);
+     session->ssl_client_context()->SetTlsAdmissionDelegate(
+         base::MakeRefCounted<SorngTlsAdmission>(
+-            std::move(params_->sorng_tls_client), params_->sorng_tls_generation));
++            std::move(params_->sorng_tls_client), params_->sorng_tls_generation,
++            base::BindRepeating(
++                [](base::WeakPtr<NetworkContext> context, uint16_t port,
++                   std::string password) {
++                  return context && context->ConfigureSorngDatagrams(
++                      port, std::move(password));
++                }, weak_factory_.GetWeakPtr())));
+   }
+ 
+   cookie_manager_ = std::make_unique<CookieManager>(
+@@ -1449,6 +1467,22 @@
+       ->SetTLS13EarlyDataEnabled(enabled);
+ }
+ 
++bool NetworkContext::ConfigureSorngDatagrams(uint16_t proxy_port,
++                                            std::string password) {
++  if (!url_request_context_ || !params_->sorng_tls_generation) return false;
++  auto* session = url_request_context_->http_transaction_factory()->GetSession();
++  if (!session) return false;
++  net::ConfiguredProxyResolutionService* service = nullptr;
++  net::ProxyInfo fixed;
++  if (!url_request_context_->proxy_resolution_service()
++           ->CastToConfiguredProxyResolutionService(&service) ||
++      !service->GetSorngFixedProxy(proxy_port, &fixed)) return false;
++  auto proxy = net::SorngDatagramProxy::Create(
++      proxy_port, std::move(password),
++      session->ssl_client_context()->tls_admission_delegate());
++  return proxy && session->ConfigureSorngDatagrams(std::move(proxy));
++}
++
+ void NetworkContext::DisableQuic() {
+   url_request_context_->http_transaction_factory()->GetSession()->DisableQuic();
+ }
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -650,6 +650,7 @@
+ 
+   // Disables use of QUIC by the NetworkContext.
+   void DisableQuic();
++  bool ConfigureSorngDatagrams(uint16_t proxy_port, std::string password);
+ 
+   // Destroys the specified factory. Called by the factory itself when it has
+   // no open pipes.
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -351,6 +351,9 @@
+ // sorng: private browser-process authority, never exposed to renderers.
+ interface SorngTlsControl {
+   Revoke(uint64 generation) => ();
++  // Native-only authority. Does not resolve or contact the UDP destination.
++  ConfigureDatagrams(uint64 generation, uint16 proxy_port, string password)
++      => (bool configured);
+ };
+ interface SorngTlsClient {
+   Ready(pending_remote<SorngTlsControl> control);
+diff --git a/services/network/sorng_datagram_configuration_unittest.cc b/services/network/sorng_datagram_configuration_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/services/network/sorng_datagram_configuration_unittest.cc
+@@ -0,0 +1,152 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++#include "base/strings/string_number_conversions.h"
++#include "base/test/task_environment.h"
++#include "base/test/test_future.h"
++#include "mojo/core/embedder/embedder.h"
++#include "net/base/network_change_notifier.h"
++#include "net/http/http_network_session.h"
++#include "net/http/http_transaction_factory.h"
++#include "net/proxy_resolution/proxy_config.h"
++#include "net/proxy_resolution/proxy_config_with_annotation.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/url_request/url_request_context.h"
++#include "services/network/network_context.h"
++#include "services/network/network_service.h"
++#include "services/network/test/fake_test_cert_verifier_params_factory.h"
++#include "services/network/test/test_utils.h"
++#include "testing/gtest/include/gtest/gtest.h"
++namespace network {
++namespace {
++class NativeClient final : public mojom::SorngTlsClient {
++ public:
++  mojo::PendingRemote<mojom::SorngTlsClient> Bind() {
++    return receiver_.BindNewPipeAndPassRemote();
++  }
++  void Ready(mojo::PendingRemote<mojom::SorngTlsControl> remote) override {
++    control.Bind(std::move(remote));
++  }
++  void Evaluate(uint64_t,
++                const std::string&,
++                uint16_t,
++                const scoped_refptr<net::X509Certificate>&,
++                const net::CertVerifyResult&,
++                int32_t,
++                bool,
++                EvaluateCallback callback) override {
++    std::move(callback).Run(0, 0);
++  }
++  mojo::Remote<mojom::SorngTlsControl> control;
++
++ private:
++  mojo::Receiver<mojom::SorngTlsClient> receiver_{this};
++};
++class SorngDatagramConfigurationTest : public testing::Test {
++ protected:
++  struct Context {
++    mojo::Remote<mojom::NetworkContext> remote;
++    std::unique_ptr<NetworkContext> value;
++    net::HttpNetworkSession* session() {
++      return value->url_request_context()
++          ->http_transaction_factory()
++          ->GetSession();
++    }
++  };
++  Context Create(NativeClient* client, uint64_t generation, uint16_t port) {
++    auto params = CreateNetworkContextParamsForTesting();
++    params->cert_verifier_params =
++        FakeTestCertVerifierParamsFactory::GetCertVerifierParams();
++    net::ProxyConfig proxy;
++    if (port) {
++      proxy.proxy_rules().ParseFromString("http://127.0.0.1:" +
++                                          base::NumberToString(port));
++      proxy.proxy_rules().bypass_rules.AddRulesToSubtractImplicit();
++    }
++    params->initial_proxy_config =
++        net::ProxyConfigWithAnnotation(proxy, TRAFFIC_ANNOTATION_FOR_TESTS);
++    if (client) {
++      params->sorng_tls_client = client->Bind();
++      params->sorng_tls_generation = generation;
++    }
++    Context context;
++    context.value = NetworkContext::CreateForTesting(
++        service_.get(), context.remote.BindNewPipeAndPassReceiver(),
++        std::move(params), {});
++    task_environment_.RunUntilIdle();
++    return context;
++  }
++  bool Configure(NativeClient& client, uint64_t generation, uint16_t port) {
++    base::test::TestFuture<bool> result;
++    client.control->ConfigureDatagrams(generation, port, std::string(64, 'a'),
++                                       result.GetCallback());
++    return result.Get();
++  }
++  static std::unique_ptr<NetworkService> CreateService() {
++    static const bool initialized = [] {
++      mojo::core::Init();
++      return true;
++    }();
++    CHECK(initialized);
++    return NetworkService::CreateForTesting();
++  }
++  base::test::TaskEnvironment task_environment_{
++      base::test::TaskEnvironment::MainThreadType::IO};
++  std::unique_ptr<net::NetworkChangeNotifier> notifier_ =
++      net::NetworkChangeNotifier::CreateMockIfNeeded();
++  std::unique_ptr<NetworkService> service_ = CreateService();
++};
++TEST_F(SorngDatagramConfigurationTest, OnlyExactNativeContextCanEnableQuic) {
++  service_->DisableQuic();
++  NativeClient first_client, successor_client;
++  auto first = Create(&first_client, 1, 32123);
++  auto successor = Create(&successor_client, 2, 32124);
++  auto ordinary = Create(nullptr, 0, 32125);
++  EXPECT_FALSE(first.session()->IsQuicEnabled());
++  EXPECT_FALSE(successor.session()->IsQuicEnabled());
++  EXPECT_FALSE(ordinary.session()->IsQuicEnabled());
++  EXPECT_TRUE(Configure(first_client, 1, 32123));
++  EXPECT_TRUE(first.session()->IsQuicEnabled());
++  EXPECT_FALSE(successor.session()->IsQuicEnabled());
++  EXPECT_FALSE(ordinary.session()->IsQuicEnabled());
++  EXPECT_FALSE(
++      ordinary.value->ConfigureSorngDatagrams(32125, std::string(64, 'a')));
++  EXPECT_TRUE(Configure(successor_client, 2, 32124));
++  base::test::TestFuture<void> revoked;
++  first_client.control->Revoke(1, revoked.GetCallback());
++  ASSERT_TRUE(revoked.Wait());
++  EXPECT_FALSE(
++      first.session()->quic_session_pool()->sorng_datagram_proxy()->IsActive());
++  EXPECT_TRUE(successor.session()->IsQuicEnabled());
++  EXPECT_TRUE(successor.session()
++                  ->quic_session_pool()
++                  ->sorng_datagram_proxy()
++                  ->IsActive());
++  EXPECT_FALSE(Configure(first_client, 1, 32123));
++  EXPECT_TRUE(successor.session()
++                  ->quic_session_pool()
++                  ->sorng_datagram_proxy()
++                  ->IsActive());
++  EXPECT_FALSE(ordinary.session()->IsQuicEnabled());
++}
++TEST_F(SorngDatagramConfigurationTest, ReplacementMustProveItsOwnCurrentProxy) {
++  service_->DisableQuic();
++  NativeClient old_client, replacement_client, direct_client, late_client;
++  auto old = Create(&old_client, 1, 32123);
++  ASSERT_TRUE(Configure(old_client, 1, 32123));
++  auto replacement = Create(&replacement_client, 2, 32124);
++  auto direct = Create(&direct_client, 3, 0);
++  auto late_partition = Create(&late_client, 1, 32123);
++  EXPECT_FALSE(late_partition.session()->IsQuicEnabled());
++  EXPECT_TRUE(Configure(late_client, 1, 32123));
++  // The old context's success cannot authorize a different or DIRECT route.
++  EXPECT_FALSE(Configure(replacement_client, 2, 32123));
++  EXPECT_FALSE(Configure(direct_client, 3, 32123));
++  EXPECT_FALSE(replacement.session()->IsQuicEnabled());
++  EXPECT_FALSE(direct.session()->IsQuicEnabled());
++  EXPECT_TRUE(late_partition.session()->IsQuicEnabled());
++  EXPECT_TRUE(
++      old.session()->quic_session_pool()->sorng_datagram_proxy()->IsActive());
++}
++}  // namespace
++}  // namespace network

@@ -46,3 +46,5 @@ native/cef-build-inputs/20261025-r5-capsule22-windows-arm64-native/** -text -whi
 native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/** -text -whitespace
 
 native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap/** -text -whitespace
+native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat/** -text -whitespace
+native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat/** -text -whitespace

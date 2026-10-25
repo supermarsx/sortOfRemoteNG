@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Source-only Mac R5 projection; retained Mac first12 LF patch bytes, existing GN/tools/runner and legacy capture compatibility; copied ten reviewed common R5 patches; newly derived LF ABI header. No Darwin build or acceptance proof.",
+  "target": "aarch64-apple-darwin",
+  "sourceLockIdentity": "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+  "sourceLockRawSha256": "6f872d22ae235fa8db8166618417aa39b8ab604177860b95499bc0d89a205185",
+  "macBaseNamespace": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat",
+  "macBaseSourceLockIdentity": "96cf240295fd3332882da4a60d306e4248b926b461e3bdbe2e78117c03bea5d0",
+  "windowsReferenceNamespace": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64",
+  "windowsReferenceSourceLockIdentity": "bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "rawCopiedPayloads": [
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0001-chromium-socket-admission.patch",
+      "path": "patches/0001-chromium-socket-admission.patch",
+      "bytes": 37160,
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0002-cef-native-bridge.patch",
+      "path": "patches/0002-cef-native-bridge.patch",
+      "bytes": 31384,
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0003-cef-native-widget-lifetime.patch",
+      "path": "patches/0003-cef-native-widget-lifetime.patch",
+      "bytes": 791,
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0004-chromium-soda-provisioning.patch",
+      "path": "patches/0004-chromium-soda-provisioning.patch",
+      "bytes": 4538,
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0005-chromium-proxy-route-probe.patch",
+      "path": "patches/0005-chromium-proxy-route-probe.patch",
+      "bytes": 3539,
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0006-cef-explicit-download-destination.patch",
+      "path": "patches/0006-cef-explicit-download-destination.patch",
+      "bytes": 1010,
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "path": "patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "bytes": 997,
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0008-chromium-same-authority-http2.patch",
+      "path": "patches/0008-chromium-same-authority-http2.patch",
+      "bytes": 4125,
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0009-cef-http2-bridge-capability.patch",
+      "path": "patches/0009-cef-http2-bridge-capability.patch",
+      "bytes": 1972,
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0010-chromium-proxy-application-ack.patch",
+      "path": "patches/0010-chromium-proxy-application-ack.patch",
+      "bytes": 14590,
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0011-cef-proxy-application-ack.patch",
+      "path": "patches/0011-cef-proxy-application-ack.patch",
+      "bytes": 10759,
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0012-cef-registration-retirement.patch",
+      "path": "patches/0012-cef-registration-retirement.patch",
+      "bytes": 20195,
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0013-chromium-owned-quic-datagrams.patch",
+      "path": "patches/0013-chromium-owned-quic-datagrams.patch",
+      "bytes": 75101,
+      "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0014-cef-owned-quic-datagrams.patch",
+      "path": "patches/0014-cef-owned-quic-datagrams.patch",
+      "bytes": 9374,
+      "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0015-chromium-owned-quic-job-selection.patch",
+      "path": "patches/0015-chromium-owned-quic-job-selection.patch",
+      "bytes": 8020,
+      "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "path": "patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "bytes": 8213,
+      "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "path": "patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "bytes": 22799,
+      "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "path": "patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "bytes": 21463,
+      "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "path": "patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "bytes": 605,
+      "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "path": "patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "bytes": 354,
+      "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "path": "patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "bytes": 379,
+      "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "path": "patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "bytes": 845,
+      "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/patches/0013-webrtc-macos-legacy-capture-deprecation-compat.patch",
+      "path": "patches/0023-webrtc-macos-legacy-capture-deprecation-compat.patch",
+      "bytes": 1461,
+      "sha256": "aefd044086fdf0ba24965eb716981a7428fa8fc8b6fd68a441934d11b9d63e91"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/gn/aarch64-apple-darwin.gn",
+      "path": "gn/aarch64-apple-darwin.gn",
+      "bytes": 343,
+      "sha256": "bf830e0c15789d4a873fc451661fd484865c54cdffb6b64cf8c2c2ad9fa4d94e"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/tools/aarch64-apple-darwin.json",
+      "path": "tools/aarch64-apple-darwin.json",
+      "bytes": 2337,
+      "sha256": "962d466d216143c227207a410b5240cde0da234559e22b5a533ccf1d274d94ab"
+    },
+    {
+      "source": "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/cef-ci-runner-aarch64-apple-darwin.json",
+      "path": "cef-ci-runner-aarch64-apple-darwin.json",
+      "bytes": 722,
+      "sha256": "d7667c93c6e5449e3765169a170bb72cca6916c86b5a83f687462ad057736af4"
+    }
+  ],
+  "headerProjection": {
+    "beforeSha256": "6ea8336407a9b4b56d25a9092b54346142214c31ea7432fa893f2eee27d33a10",
+    "patchSha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c",
+    "hunks": 4,
+    "afterBytes": 8886,
+    "afterSha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+    "equalsWindowsHeaderLfBody": true,
+    "windowsRawHeaderPinTransferred": false
+  },
+  "implicitTracerPolicyVerified": false,
+  "componentResourceClosureVerified": false,
+  "patchSeriesApplied": false,
+  "cefHookGenerated": false,
+  "buildCompatibilityVerified": false,
+  "engineBuilt": false,
+  "nativeTestsRun": false,
+  "nativeAcceptancePassed": false,
+  "published": false,
+  "oldNativeProofTransferred": false,
+  "knownBlockers": [
+    "Complete ordered custom/official CEF hook and nested WebRTC source applicability must be checked; no vendor hook/GN/compiler execution authorized",
+    "Darwin GN/test dependency and compile/link compatibility unverified; Windows results do not transfer",
+    "Current Mac GN has no explicit instance-tracer option; pinned resolved policy remains to be established before build",
+    "Metal component resource closure remains unverified; existing runtime tool fingerprint attestation remains required",
+    "Fresh source/producer identity requires actual target SDK and native Intel or ARM acceptance; no historical checkpoint migration"
+  ]
+}

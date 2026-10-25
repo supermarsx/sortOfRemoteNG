@@ -38,7 +38,7 @@ jobs:
     runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}
     timeout-minutes: 300
     concurrency:
-      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '96cf240295fd3332882da4a60d306e4248b926b461e3bdbe2e78117c03bea5d0' || inputs.target == 'aarch64-unknown-linux-gnu' && 'c5c9f343463480994de7b7ec8c6320a68f0f56f727d56629af5eb2599ad93e2e' || 'c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f' }}
+      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' || inputs.target == 'aarch64-unknown-linux-gnu' && 'c5c9f343463480994de7b7ec8c6320a68f0f56f727d56629af5eb2599ad93e2e' || '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef' }}
       cancel-in-progress: true
     permissions:
       contents: write

@@ -117,6 +117,10 @@ import {
   argumentsFor,
   main,
 } from "../../scripts/cef-engineering-checkpoint.mjs";
+import {
+  identitySha256,
+  validateSourceLock,
+} from "../../scripts/lib/browser-custom-runtime.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const producer = {
   repository: "owner/repo",
@@ -3899,7 +3903,7 @@ test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinc
   assert.equal(checkpointProfile().source, SOURCE_ID);
   assert.equal(
     checkpointProfile().inputs,
-    "native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat",
+    "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat",
   );
   for (const target of ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu"]) {
     const p = checkpointProfile(target);
@@ -4095,7 +4099,7 @@ test("refreshed Linux ARM namespace preserves fifteen raw payloads and all four 
   assert.equal(checkpointProfile().source, SOURCE_ID);
   assert.equal(
     checkpointProfile("aarch64-apple-darwin").source,
-    "96cf240295fd3332882da4a60d306e4248b926b461e3bdbe2e78117c03bea5d0",
+    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
   );
 });
 
@@ -4128,7 +4132,7 @@ test("Linux ARM source plan rejects altered GN, runner, and toolchain raw bytes 
   }
 });
 
-test("all three actual reviewed recipes validate; new MacARM preserves every original payload and runner byte", async () => {
+test("all three selected recipes validate; historical MacARM capture compatibility preserves every original payload and runner byte", async () => {
   for (const target of [
     TARGET,
     "aarch64-apple-darwin",
@@ -4152,7 +4156,7 @@ test("all three actual reviewed recipes validate; new MacARM preserves every ori
   );
   const next = path.join(
     ROOT,
-    checkpointProfile("aarch64-apple-darwin").inputs,
+    "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat",
   );
   const lock = JSON.parse(
     await readFile(path.join(old, "source-lock.json"), "utf8"),
@@ -4183,7 +4187,13 @@ test("all three actual reviewed recipes validate; new MacARM preserves every ori
   const patch = fresh.patches.at(-1).path;
   assert.deepEqual(
     await readFile(path.join(next, patch)),
-    await readFile(path.join(ROOT, checkpointProfile().inputs, patch)),
+    await readFile(
+      path.join(
+        ROOT,
+        "native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat",
+        patch,
+      ),
+    ),
   );
 });
 
@@ -7051,4 +7061,231 @@ test("graph snapshot rejects unsafe, duplicate, tampered and oversized pin proje
     path: "a".repeat(3990) + "/" + String(index).padStart(4, "0") + "/args.gn",
   }));
   assert.throws(() => graphPinSnapshot(value(huge)), /snapshot byte bound/);
+});
+
+const macR5Inputs = [
+  {
+    target: "x86_64-apple-darwin",
+    old: "20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat",
+    next: "20261025-r5-owned-http3-macintel-sdk26-2-capture-compat",
+    identity:
+      "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+  },
+  {
+    target: "aarch64-apple-darwin",
+    old: "20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat",
+    next: "20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
+    identity:
+      "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+  },
+];
+const macWindowsR5Reference =
+  "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64";
+
+test("Mac R5 projection preserves old LF and target inputs while binding common fixes and a new LF ABI header", async () => {
+  const windows = validateSourceLock(
+    JSON.parse(
+      await readFile(
+        path.join(ROOT, macWindowsR5Reference, "source-lock.json"),
+        "utf8",
+      ),
+    ),
+  );
+  for (const row of macR5Inputs) {
+    const old = path.join(ROOT, "native/cef-build-inputs", row.old),
+      next = path.join(ROOT, "native/cef-build-inputs", row.next);
+    const prior = validateSourceLock(
+        JSON.parse(await readFile(path.join(old, "source-lock.json"), "utf8")),
+      ),
+      lock = validateSourceLock(
+        JSON.parse(await readFile(path.join(next, "source-lock.json"), "utf8")),
+      );
+    assert.equal(identitySha256(lock), row.identity);
+    assert.equal(checkpointProfile(row.target).source, row.identity);
+    assert.equal(lock.bridge.patchId, "sorng-tls-v2-682c378-5");
+    assert.equal(lock.bridge.capabilities.length, 9);
+    assert(lock.bridge.capabilities.includes("owned-http3"));
+    assert.equal(prior.bridge.patchId, "sorng-tls-v2-682c378-4");
+    assert.equal(prior.patches.length, 13);
+    assert.deepEqual(lock.upstream, prior.upstream);
+    assert.deepEqual(lock.upstream, windows.upstream);
+    assert.deepEqual(lock.builds, prior.builds);
+    assert.deepEqual(lock.patches.slice(0, 12), prior.patches.slice(0, 12));
+    assert.deepEqual(lock.patches.slice(12, 22), windows.patches.slice(12));
+    assert.equal(lock.patches.length, 23);
+    for (const [index, patch] of lock.patches.entries()) {
+      const source =
+        index < 12
+          ? path.join(old, patch.path)
+          : index < 22
+            ? path.join(ROOT, macWindowsR5Reference, patch.path)
+            : path.join(old, prior.patches[12].path);
+      const raw = await readFile(path.join(next, patch.path));
+      assert.deepEqual(raw, await readFile(source));
+      assert.equal(sha(raw), patch.sha256);
+      assert(!raw.includes(13), "copied patch must retain existing LF bytes");
+    }
+    assert.equal(
+      lock.patches[22].path,
+      "patches/0023-webrtc-macos-legacy-capture-deprecation-compat.patch",
+    );
+    for (const file of [
+      lock.builds[0].gnArgs.path,
+      lock.builds[0].toolchainLock.path,
+      `cef-ci-runner-${row.target}.json`,
+    ])
+      assert.deepEqual(
+        await readFile(path.join(next, file)),
+        await readFile(path.join(old, file)),
+      );
+    const header = await readFile(path.join(next, lock.bridge.header.path));
+    assert.equal(header.length, 8886);
+    assert(!header.includes(13));
+    assert.equal(
+      sha(header),
+      "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+    );
+    assert.equal(lock.bridge.header.sha256, sha(header));
+    const windowsHeader = await readFile(
+      path.join(ROOT, macWindowsR5Reference, windows.bridge.header.path),
+    );
+    assert.notEqual(sha(header), sha(windowsHeader));
+    assert.equal(
+      header.toString(),
+      windowsHeader.toString().replaceAll("\r\n", "\n"),
+    );
+    const reviewed = await plan({
+      inputs: checkpointProfile(row.target).inputs,
+      target: row.target,
+      checkout: ROOT,
+      runnerMode: "hosted",
+    });
+    assert.equal(
+      releaseIdentity(reviewed.sourceLock, row.target).sourceLockSha256,
+      row.identity,
+    );
+    assert.throws(
+      () =>
+        validateIdentity({
+          ...identity,
+          target: row.target,
+          source: identitySha256(prior),
+        }),
+      /source/,
+    );
+    const review = JSON.parse(
+      await readFile(path.join(next, "review-receipt.json"), "utf8"),
+    );
+    assert.equal(review.engineBuilt, false);
+    assert.equal(review.nativeAcceptancePassed, false);
+    assert.equal(review.oldNativeProofTransferred, false);
+    assert.equal(review.implicitTracerPolicyVerified, false);
+    assert.equal(review.componentResourceClosureVerified, false);
+    const inventory = await readdir(next, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    assert.equal(inventory.filter((entry) => entry.isFile()).length, 29);
+  }
+});
+
+test("Mac R5 source plan refuses changed LF patches, CRLF header substitution and revision downgrade", async (t) => {
+  const root = await scratch(t),
+    row = macR5Inputs[0],
+    inputs = "inputs";
+  await cp(
+    path.join(ROOT, "native/cef-build-inputs", row.next),
+    path.join(root, inputs),
+    { recursive: true },
+  );
+  const lock = JSON.parse(
+    await readFile(path.join(root, inputs, "source-lock.json"), "utf8"),
+  );
+  for (const file of [
+    lock.patches[7].path,
+    lock.patches[12].path,
+    lock.bridge.header.path,
+  ]) {
+    const target = path.join(root, inputs, file),
+      before = await readFile(target);
+    await writeFile(target, before.toString().replaceAll("\n", "\r\n"));
+    await assert.rejects(
+      plan({
+        inputs,
+        target: row.target,
+        checkout: root,
+        runnerMode: "hosted",
+      }),
+      (error) => error.message === `Reviewed input mismatch: ${file}`,
+    );
+    await writeFile(target, before);
+  }
+  const downgrade = structuredClone(lock);
+  downgrade.bridge.capabilities = downgrade.bridge.capabilities.filter(
+    (capability) => capability !== "owned-http3",
+  );
+  assert.throws(() => validateSourceLock(downgrade), /capabilities/);
+  await assert.rejects(
+    plan({
+      inputs,
+      target: "aarch64-apple-darwin",
+      checkout: root,
+      runnerMode: "hosted",
+    }),
+    /target|build/i,
+  );
+});
+
+test("actual R5 header patch reconstructs the exact new Mac LF postimage in an owned private Git fixture", async (t) => {
+  const root = await scratch(t),
+    old = path.join(ROOT, "native/cef-build-inputs", macR5Inputs[0].old),
+    next = path.join(ROOT, "native/cef-build-inputs", macR5Inputs[0].next);
+  await mkdir(path.join(root, "include"));
+  await mkdir(path.join(root, "empty-hooks"));
+  const file = path.join(root, "include/cef_sorng_tls_bridge.h"),
+    original = await readFile(path.join(old, "include/cef_sorng_tls_bridge.h"));
+  await writeFile(file, original);
+  const env = {
+    PATH: process.env.PATH ?? process.env.Path,
+    SystemRoot: process.env.SystemRoot ?? "C:/Windows",
+    HOME: root,
+    USERPROFILE: root,
+    TEMP: root,
+    TMP: root,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+  const git = (args) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        `core.hooksPath=${path.join(root, "empty-hooks")}`,
+        "-c",
+        "core.fsmonitor=false",
+        ...args,
+      ],
+      { cwd: root, env, timeout: 5000, maxBuffer: 1048576, windowsHide: true },
+    );
+  git(["init", "--quiet"]);
+  const patch = path.join(
+      ROOT,
+      macWindowsR5Reference,
+      "patches/0014-cef-owned-quic-datagrams.patch",
+    ),
+    args = [
+      "apply",
+      "--include=include/cef_sorng_tls_bridge.h",
+      "--whitespace=error-all",
+    ];
+  git([...args, "--check", patch]);
+  git([...args, patch]);
+  assert.deepEqual(
+    await readFile(file),
+    await readFile(path.join(next, "include/cef_sorng_tls_bridge.h")),
+  );
+  git([...args, "--reverse", "--check", patch]);
+  git([...args, "--reverse", patch]);
+  assert.deepEqual(await readFile(file), original);
 });

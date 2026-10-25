@@ -2417,7 +2417,11 @@ test("actual engineering build gate binds all three closed profiles to their pin
       /exact reviewed inputs and source identity/,
     );
     const changedRevision = structuredClone(sourceLock);
-    changedRevision.bridge.patchId = "sorng-tls-v2-682c378-5";
+    changedRevision.bridge.patchId =
+      sourceLock.bridge.patchId === "sorng-tls-v2-682c378-5"
+        ? "sorng-tls-v2-682c378-4"
+        : "sorng-tls-v2-682c378-5";
+    assert.notEqual(identitySha256(changedRevision), sourceLockIdentity);
     assert.throws(
       () =>
         engineeringBuildProfile(

@@ -382,8 +382,8 @@ async function pipelineFixture(t) {
   });
   const inputs = path.join(root, "inputs");
   await mkdir(inputs);
-  const namespace =
-    "native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat/";
+  const selected = checkpointHost("x86_64-apple-darwin", "darwin", "x64"),
+    namespace = selected.inputs + "/";
   const lock = JSON.parse(await read(namespace + "source-lock.json"));
   const build = lock.builds.find((row) => row.target === "x86_64-apple-darwin");
   const tools = Buffer.from(await read(namespace + build.toolchainLock.path));
@@ -451,6 +451,7 @@ async function pipelineFixture(t) {
     },
     plan: async (options) => {
       calls.push("plan");
+      assert.equal(options.inputs, selected.inputs);
       assert.equal(options.runnerMode, "hosted");
       assert.equal(options.target, "x86_64-apple-darwin");
       return { inputsRoot: inputs, sourceLock: lock };

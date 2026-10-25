@@ -36,10 +36,10 @@ export const LIMITS = Object.freeze({
   hostMs: 300 * 60_000,
 });
 export const INPUTS =
-  "native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat";
+  "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat";
 export const TARGET = "x86_64-apple-darwin";
 export const SOURCE_ID =
-  "c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f";
+  "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef";
 // Cross compilation never changes the native acceptance host. Adding a profile
 // changes the producer code digest; checkpoints from older code cannot migrate.
 const PROFILES = Object.freeze({
@@ -58,9 +58,9 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-apple-darwin": Object.freeze({
     target: "aarch64-apple-darwin",
-    source: "96cf240295fd3332882da4a60d306e4248b926b461e3bdbe2e78117c03bea5d0",
+    source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
     inputs:
-      "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat",
+      "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
     platform: "darwin",
     architecture: "x64",
     runner: "macos-15-intel",
