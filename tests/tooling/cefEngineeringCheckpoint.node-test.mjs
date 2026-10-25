@@ -3932,8 +3932,12 @@ test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinc
 });
 
 const refreshedLinuxArmInputs =
-  "native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap";
+  "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap";
 const refreshedLinuxArmSource =
+  "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588";
+const historicalLinuxArmInputs =
+  "native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap";
+const historicalLinuxArmSource =
   "c5c9f343463480994de7b7ec8c6320a68f0f56f727d56629af5eb2599ad93e2e";
 const previousLinuxArmInputs =
   "native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross-sysroot";
@@ -3996,11 +4000,11 @@ test("Linux ARM observed image rejects the old exact guard and requires the new 
   assert.equal(checkpointProfile(target).source, refreshedLinuxArmSource);
 });
 
-test("refreshed Linux ARM namespace preserves fifteen raw payloads and all four actual native tool pins", async () => {
+test("historical Linux ARM image namespace retains fifteen raw payloads and four native pins while selected R5 stays exact", async () => {
   const target = "aarch64-unknown-linux-gnu",
     p = checkpointProfile(target);
   const old = path.join(ROOT, previousLinuxArmInputs),
-    fresh = path.join(ROOT, p.inputs);
+    fresh = path.join(ROOT, historicalLinuxArmInputs);
   const previous = JSON.parse(
     await readFile(path.join(old, "source-lock.json"), "utf8"),
   );
@@ -4101,6 +4105,123 @@ test("refreshed Linux ARM namespace preserves fifteen raw payloads and all four 
     checkpointProfile("aarch64-apple-darwin").source,
     "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
   );
+});
+
+test("selected Linux ARM R5 preserves reviewed configuration while requiring its new header and capability identity", async () => {
+  const target = "aarch64-unknown-linux-gnu",
+    profile = checkpointProfile(target),
+    next = path.join(ROOT, refreshedLinuxArmInputs),
+    old = path.join(ROOT, historicalLinuxArmInputs);
+  const lock = validateSourceLock(
+      JSON.parse(await readFile(path.join(next, "source-lock.json"), "utf8")),
+    ),
+    prior = validateSourceLock(
+      JSON.parse(await readFile(path.join(old, "source-lock.json"), "utf8")),
+    );
+  assert.equal(identitySha256(lock), refreshedLinuxArmSource);
+  assert.equal(identitySha256(prior), historicalLinuxArmSource);
+  assert.equal(lock.bridge.patchId, "sorng-tls-v2-682c378-5");
+  assert.equal(lock.bridge.capabilities.length, 9);
+  assert(lock.bridge.capabilities.includes("owned-http3"));
+  assert.equal(prior.bridge.patchId, "sorng-tls-v2-682c378-4");
+  assert.deepEqual(lock.upstream, prior.upstream);
+  assert.deepEqual(lock.builds, prior.builds);
+  assert.deepEqual(lock.patches.slice(0, 12), prior.patches.slice(0, 12));
+  assert.equal(lock.patches.length, 23);
+  for (const file of [
+    `gn/${target}.gn`,
+    `tools/${target}.json`,
+    `cef-ci-runner-${target}.json`,
+    "normalization-receipt.json",
+  ])
+    assert.deepEqual(
+      await readFile(path.join(next, file)),
+      await readFile(path.join(old, file)),
+    );
+  const windows = path.join(
+    ROOT,
+    "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64",
+  );
+  for (const patch of lock.patches.slice(12, 22)) {
+    const raw = await readFile(path.join(next, patch.path));
+    assert.deepEqual(raw, await readFile(path.join(windows, patch.path)));
+    assert.equal(sha(raw), patch.sha256);
+  }
+  assert.deepEqual(
+    await readFile(path.join(next, lock.patches[22].path)),
+    await readFile(path.join(old, prior.patches.at(-1).path)),
+  );
+  const header = await readFile(path.join(next, lock.bridge.header.path));
+  assert.equal(header.length, 8886);
+  assert.equal(
+    sha(header),
+    "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+  );
+  assert.equal(lock.bridge.header.sha256, sha(header));
+  assert(!header.includes(13));
+  const review = JSON.parse(
+    await readFile(path.join(next, "review-receipt.json"), "utf8"),
+  );
+  assert.equal(review.sourceLockIdentity, refreshedLinuxArmSource);
+  assert.equal(review.predecessorIdentity, historicalLinuxArmSource);
+  assert.equal(review.patchCount, 23);
+  // The copied normalization receipt is retained history, not a new R5 header proof.
+  assert.notEqual(
+    review.historicalNormalization.sourceLockIdentity,
+    refreshedLinuxArmSource,
+  );
+  assert.equal(
+    (await readdir(next, { recursive: true, withFileTypes: true })).filter(
+      (entry) => entry.isFile(),
+    ).length,
+    30,
+  );
+  assert.equal(profile.acceptanceRunner, "ubuntu-24.04-arm");
+  assert.equal(profile.acceptanceArchitecture, "arm64");
+  assert.throws(
+    () =>
+      validateIdentity({
+        ...identity,
+        target,
+        source: historicalLinuxArmSource,
+      }),
+    /source/,
+  );
+  const workflow = YAML.parse(
+    await readFile(path.join(ROOT, WORKFLOW), "utf8"),
+  );
+  assert(
+    workflow.jobs.checkpoint.concurrency.group.includes(
+      refreshedLinuxArmSource,
+    ),
+  );
+  assert(
+    !workflow.jobs.checkpoint.concurrency.group.includes(
+      historicalLinuxArmSource,
+    ),
+  );
+});
+
+test("Linux ARM R5 rejects header and HTTP3 patch mutation before source acquisition", async (t) => {
+  const root = await scratch(t),
+    inputs = "inputs",
+    target = "aarch64-unknown-linux-gnu";
+  await cp(path.join(ROOT, refreshedLinuxArmInputs), path.join(root, inputs), {
+    recursive: true,
+  });
+  const lock = JSON.parse(
+    await readFile(path.join(root, inputs, "source-lock.json"), "utf8"),
+  );
+  for (const file of [lock.bridge.header.path, lock.patches[12].path]) {
+    const destination = path.join(root, inputs, file),
+      original = await readFile(destination);
+    await writeFile(destination, Buffer.concat([original, Buffer.from("\n")]));
+    await assert.rejects(
+      plan({ inputs, target, checkout: root, runnerMode: "hosted" }),
+      (error) => error.message === `Reviewed input mismatch: ${file}`,
+    );
+    await writeFile(destination, original);
+  }
 });
 
 test("Linux ARM source plan rejects altered GN, runner, and toolchain raw bytes before acquisition", async (t) => {

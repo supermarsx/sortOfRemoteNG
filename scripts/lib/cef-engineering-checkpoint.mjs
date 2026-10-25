@@ -72,9 +72,9 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-unknown-linux-gnu": Object.freeze({
     target: "aarch64-unknown-linux-gnu",
-    source: "c5c9f343463480994de7b7ec8c6320a68f0f56f727d56629af5eb2599ad93e2e",
+    source: "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588",
     inputs:
-      "native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap",
+      "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap",
     platform: "linux",
     architecture: "x64",
     runner: "ubuntu-24.04",
