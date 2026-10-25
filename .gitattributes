@@ -41,3 +41,4 @@ native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default
 native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap/** -text -whitespace
 native/windows-arm-native-tools/** -text
 native/windows-arm-native-compile/** -text whitespace=cr-at-eol
+native/cef-build-inputs/20261025-r5-capsule22-windows-arm64-native/** -text -whitespace

@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-toolchain-lock",
+  "target": "aarch64-pc-windows-msvc",
+  "files": [
+    {
+      "path": "hostedtoolcache/windows/Python/3.13.17/arm64/python.exe",
+      "size": 104672,
+      "sha256": "46851212e3a4fc1846086dc9c7be10aeb156320b1f68dfbd86eafa56a4b0d8b4"
+    },
+    {
+      "path": "Program Files/Git/clangarm64/bin/git.exe",
+      "size": 3976392,
+      "sha256": "173ee56520e209c78fdc38e217ce8e51cb2b65e5474e70a28486f11dae2d4d0e"
+    },
+    {
+      "path": "Program Files/PowerShell/7/pwsh.exe",
+      "size": 278832,
+      "sha256": "532aceda5485f1c2728baa0549a498d594f7056022a89cd71eb97df68e33672c"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/cl.exe",
+      "size": 787808,
+      "sha256": "9f36f48c99f07158a62f3d013247095f318d3560b0c31555f3664f0de25ebbcb"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/link.exe",
+      "size": 4286800,
+      "sha256": "d760c224cb123adde2305665c8e929a0633224e9726a859b2233ab1cffdef747"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/c1.dll",
+      "size": 3822264,
+      "sha256": "124a5c7968b0691f9fe2343f15cd87cf0b78d1681a3557ee4da5a5054fd98638"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/c1xx.dll",
+      "size": 15615152,
+      "sha256": "be0280d8d622e44c2177827797778cbe879e394a233206fc8782069575dc4f4c"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/c2.dll",
+      "size": 12703408,
+      "sha256": "a638d908e5e5b03a43e75821d75a7b24f73943172f69448e2fb787305e5a534c"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/mspdb140.dll",
+      "size": 416000,
+      "sha256": "6a6c88bb674a183df1e94bd5d243e97c3ac7b1434a769f14f628b27f1e8d6a61"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/mspdbcore.dll",
+      "size": 2749704,
+      "sha256": "0d731d29c82d6f0df023eef199402b03399be3b86541889a5a96e7e01f1183a4"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/mspdbsrv.exe",
+      "size": 204024,
+      "sha256": "efd3a0867bb8e30101d3ccb4be22be5046e286e64151cab744905b9a5a392ea8"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/arm64/rc.exe",
+      "size": 38872,
+      "sha256": "a1401db99350bce6f1176bbd3e0f0512c5a5cc4a553bce1ee5b148e37d18e2fc"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/arm64/rcdll.dll",
+      "size": 254416,
+      "sha256": "ac1328c32a163682af95ffafd526b50ad44710f4eebf1194806ceedd1828a05b"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/arm64/mt.exe",
+      "size": 1806848,
+      "sha256": "58ae97e6b80f5c9f1ef7b9593e30730432c8976ff6be6c9da9f7debe702f08c5"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/include/vcruntime.h",
+      "size": 11444,
+      "sha256": "8a6e89fe85c66162d62c772d02367ae2e6530f1faaaa8d099427698a689bac7f"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/libcmt.lib",
+      "size": 18932596,
+      "sha256": "66c641d9053909ad68c241b7fa000926390af37fe180cf430429edbeea195651"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/lib/arm64/atls.lib",
+      "size": 2946396,
+      "sha256": "432551ac196e927308246b7be3ada5fb89cf46da510ee02a01ee593cd72cb941"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Include/10.0.28000.0/um/Windows.h",
+      "size": 7511,
+      "sha256": "b337d661d03a4abefb7b86a2742ce1ad5d19b57cd8b858bd13e7bbcc1dbeeaaa"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/arm64/kernel32.Lib",
+      "size": 652320,
+      "sha256": "bc40b3959db3ba93ee0f816d639e33835301f2662cbd63406e30f7f6c97fd8df"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/x64/kernel32.Lib",
+      "size": 311908,
+      "sha256": "8ba8dab9adec752047d4f136852e8136d01836bff39bbb56a20ac5f2d56415d8"
+    },
+    {
+      "path": "hostedtoolcache/windows/Python/3.13.17/arm64/python313.dll",
+      "size": 6362848,
+      "sha256": "b9452ab50e10771663d35b5461f495fd11c293f46f2807add150ac2676653e53"
+    },
+    {
+      "path": "Windows/System32/wintrust.dll",
+      "size": 969616,
+      "sha256": "8e72c9f37b8b6259f0df831538628039ff21dace3a3364fc54c65d0b398e1d60"
+    },
+    {
+      "path": "Windows/System32/crypt32.dll",
+      "size": 2776336,
+      "sha256": "55af42a1ba21196b04f595e19b1dba55c6ae040abaa43baaee94682e6ac978a3"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Debuggers/x64/dbghelp.dll",
+      "size": 2259328,
+      "sha256": "1cb683068ecb13ea434a56ac344d4fd7a8d04ccde9ba2bd38e99acd27f26cb10"
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Debuggers/arm64/dbghelp.dll",
+      "size": 1372656,
+      "sha256": "9a6b6984180321272e46224eb67e59d426144653ac24a33580c57868740ca80f"
+    },
+    {
+      "path": "cef-ci-runner-aarch64-pc-windows-msvc.json",
+      "size": 707,
+      "sha256": "927cf63ea9c2eb2721ca254d2799e6b17ca6a508cabbea5e53d510aa2555f70a"
+    }
+  ]
+}
