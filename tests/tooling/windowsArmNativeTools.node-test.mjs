@@ -733,3 +733,84 @@ test("production uploads only the safe sibling and retains failures without chan
     /retained=path\.join\(temp,'owned-windows-arm-native-tools-safe-'/,
   );
 });
+
+test("exact production run reaches the outer provenance function before any native or provision operation", async () => {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+    windowsHide: true,
+  }).trim();
+  const sources = mod.SOURCE_PATHS.map((name) => {
+    const raw = execFileSync("git", ["cat-file", "blob", `${head}:${name}`], {
+      cwd: root,
+      windowsHide: true,
+    });
+    return { path: name, raw, size: raw.length, sha256: digest(raw) };
+  });
+  const sentinel = new Error("controlled provenance boundary");
+  const stages = [],
+    writes = [],
+    directories = [];
+  let reached = 0;
+  const binding = { head };
+  const fakeFs = {
+    mkdir: async (name) => {
+      directories.push(name);
+    },
+    appendFile: async () => {},
+    writeFile: async (name, raw) => {
+      writes.push({ name, raw });
+    },
+  };
+  const injections = {
+    createPreflightReporter: () => async (stage, action) => {
+      stages.push(stage);
+      return action();
+    },
+    authority: () => binding,
+    fixed: (condition, message) => assert(condition, message),
+    sourceInputs: async (actual) => {
+      assert.equal(actual, head);
+      return sources;
+    },
+    profileFromBytes: mod.profileFromBytes,
+    pinnedTool: async (row) => ({
+      bytes: row.bytes,
+      sha256: row.sha256,
+      machine: row.machine,
+    }),
+    noLinks: async (name) => name,
+    path,
+    randomUUID: () => "00000000-0000-0000-0000-000000000000",
+    fs: fakeFs,
+    process: {
+      env: {
+        ImageVersion: "20261022.194.1",
+        RUNNER_TEMP: path.join(root, "virtual-only"),
+        GITHUB_OUTPUT: "virtual-output",
+      },
+    },
+    execute: () => {
+      throw new Error("no subprocess allowed");
+    },
+    provenance: async (actual) => {
+      reached++;
+      assert.equal(actual, head);
+      throw sentinel;
+    },
+  };
+  // The body is the actual extracted workflow function, with no body rewrites.
+  // All admission, filesystem and tool boundaries are fakes; clean HEAD blobs
+  // are only input bytes. The sentinel prevents later provisioning/native work.
+  const run = new Function(
+    ...Object.keys(injections),
+    `return (${mod.run.toString()});`,
+  )(...Object.values(injections));
+  await assert.rejects(run(), (error) => error === sentinel);
+  assert.equal(reached, 1);
+  assert.equal(writes.length, 11);
+  assert.equal(directories.length, 8);
+  assert(writes.every((row) => Buffer.isBuffer(row.raw)));
+  assert(stages.includes("register-output"));
+  assert(!stages.includes("provision-evidence"));
+});
