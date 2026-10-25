@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { finished } from "node:stream/promises";
 import YAML from "yaml";
 import ts from "typescript";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import {
   writeFileSync,
   fstatSync,
@@ -71,6 +71,7 @@ import {
   archiveCommand,
   graphDigest,
   graphInventory,
+  noLinks,
   GRAPH_LIMITS,
   assertGraphBudget,
   graphInventoryRecord,
@@ -2389,6 +2390,227 @@ async function smallGraph(t, count = 8) {
   return root;
 }
 
+async function exactGraphFunction({ old = false, overrides = {} } = {}) {
+  const source = old
+    ? execFileSync(
+        "git",
+        [
+          "show",
+          "8bdc3413f2d860673c8291b0dd08f3b3a95d020e:scripts/lib/cef-engineering-checkpoint.mjs",
+        ],
+        { encoding: "utf8" },
+      )
+    : await readFile(
+        new URL(
+          "../../scripts/lib/cef-engineering-checkpoint.mjs",
+          import.meta.url,
+        ),
+        "utf8",
+      );
+  const tree = ts.createSourceFile(
+    "graph.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const node = tree.statements.find(
+    (value) =>
+      ts.isFunctionDeclaration(value) && value.name?.text === "graphInventory",
+  );
+  assert(node, "actual production graphInventory declaration");
+  const body = node.getText(tree).replace(/^export\s+/, "");
+  const io = await import("node:fs/promises"),
+    crypto = await import("node:crypto");
+  const globals = {
+    assert,
+    GRAPH_LIMITS,
+    assertGraphBudget,
+    performance,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    noLinks,
+    readdir: io.readdir,
+    stat: io.stat,
+    open: io.open,
+    path,
+    createHash: crypto.createHash,
+    finished,
+    sha,
+    canonical,
+    ...overrides,
+  };
+  return new Function(
+    ...Object.keys(globals),
+    `${body};return graphInventory;`,
+  )(...Object.values(globals));
+}
+
+test("four metadata admissions preserve the exact old raw graph digest and beat serial controlled latency under the same deadline", async (t) => {
+  const root = await smallGraph(t, 40),
+    delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  await writeFile(path.join(root, "target-π.ninja"), "build unicode: phony\n");
+  const execute = async (old) => {
+    let metadata = true,
+      active = 0,
+      peak = 0,
+      calls = 0;
+    const graph = await exactGraphFunction({
+      old,
+      overrides: {
+        noLinks: async (file) => {
+          calls++;
+          if (!metadata) return noLinks(file);
+          active++;
+          peak = Math.max(peak, active);
+          try {
+            await delay(40);
+            return await noLinks(file);
+          } finally {
+            active--;
+          }
+        },
+      },
+    });
+    const events = [];
+    let result, failure;
+    try {
+      result = await graph(root, {
+        timeoutMs: 1200,
+        observe: (value) => {
+          events.push(value);
+          if (value.phase === "metadata") metadata = false;
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+    assert.equal(active, 0, "every scheduled metadata admission joined");
+    return { result, failure, peak, calls, events };
+  };
+  const old = await execute(true);
+  assert.equal(old.failure.code, "GRAPH_BOUND");
+  assert.equal(old.peak, 1);
+  const current = await execute(false);
+  assert.equal(current.failure, undefined);
+  assert.equal(current.peak, 4);
+  const original = await (await exactGraphFunction({ old: true }))(root);
+  assert.deepEqual(current.result, original);
+  const reversed = await exactGraphFunction({
+    overrides: {
+      readdir: async (...args) => (await readdir(...args)).reverse(),
+    },
+  });
+  assert.deepEqual(
+    await reversed(root),
+    original,
+    "complete canonical digest ignores traversal and admission completion order",
+  );
+  assert.equal(
+    current.calls,
+    original.files * 2,
+    "every metadata and hashing noLinks guard retained",
+  );
+  assert.equal(current.events.at(-1).completedHashedFiles, original.files);
+  assert.equal(current.events.at(-1).completedHashedBytes, original.bytes);
+  t.diagnostic(
+    "Controlled per-metadata latency only; not an actual Mac GN performance claim.",
+  );
+});
+
+test("metadata failure and cancellation preserve first error, join every admission and open no content stream", async (t) => {
+  const root = await smallGraph(t, 8);
+  for (const cancelled of [false, true]) {
+    const primary = new Error("owned metadata failure"),
+      abort = new AbortController();
+    let active = 0,
+      peak = 0,
+      completed = 0,
+      streams = 0;
+    const graph = await exactGraphFunction({
+      overrides: {
+        noLinks: async (file) => {
+          active++;
+          peak = Math.max(peak, active);
+          const first = peak === 1;
+          try {
+            await new Promise((resolve) =>
+              setTimeout(resolve, first ? 10 : 30),
+            );
+            if (first) {
+              if (cancelled) abort.abort();
+              else throw primary;
+            }
+            return await noLinks(file);
+          } finally {
+            active--;
+            completed++;
+          }
+        },
+        open: async () => {
+          streams++;
+          throw new Error("content must not open");
+        },
+      },
+    });
+    await assert.rejects(graph(root, { signal: abort.signal }), (error) =>
+      cancelled ? error.code === "GRAPH_BOUND" : error === primary,
+    );
+    assert.equal(active, 0);
+    assert.equal(streams, 0);
+    assert(peak <= 4);
+    const joined = completed;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(completed, joined);
+  }
+});
+
+test("actual deep many-file old and current inventory benchmark retains exact digest and bounded statistics", async (t) => {
+  const root = await scratch(t);
+  let leaf = root;
+  for (let i = 0; i < 10; i++) {
+    leaf = path.join(leaf, `level-${i}`);
+    await mkdir(leaf);
+  }
+  await writeFile(path.join(root, "args.gn"), "is_debug=false");
+  await writeFile(path.join(root, "build.ninja"), "subninja graph");
+  for (let start = 0; start < 2000; start += 64)
+    await Promise.all(
+      Array.from({ length: Math.min(64, 2000 - start) }, (_, index) =>
+        writeFile(
+          path.join(leaf, `target-${start + index}.ninja`),
+          `build target-${start + index}: phony\n`,
+        ),
+      ),
+    );
+  const oldFn = await exactGraphFunction({ old: true }),
+    newFn = await exactGraphFunction();
+  let began = performance.now();
+  const old = await oldFn(root);
+  const oldMs = performance.now() - began;
+  const events = [];
+  began = performance.now();
+  const current = await newFn(root, { observe: (value) => events.push(value) });
+  const newMs = performance.now() - began;
+  assert.deepEqual(current, old);
+  assert.equal(current.files, 2002);
+  assert(events.length <= 36);
+  for (const event of events)
+    assert.doesNotThrow(() => graphInventoryRecord(event));
+  t.diagnostic(
+    JSON.stringify({
+      actualDeepFiles: current.files,
+      bytes: current.bytes,
+      oldMs: Math.round(oldMs),
+      newMs: Math.round(newMs),
+      sameDigest: true,
+      qualification:
+        "owned real filesystem benchmark, not Mac GN or hosted timing proof",
+    }),
+  );
+});
+
 test("metadata precedes every hash, four readers are bounded, and full raw pins match legacy digest", async (t) => {
   const root = await smallGraph(t);
   const events = [];
@@ -2653,6 +2875,8 @@ test("graph diagnostic schema rejects raw fields and invalid counters but permit
     visited: 33,
     active: 0,
     elapsedMs: 1,
+    completedHashedFiles: 0,
+    completedHashedBytes: 0,
     categories: {
       args: { files: 0, bytes: 0 },
       build: { files: 0, bytes: 0 },
@@ -2669,6 +2893,9 @@ test("graph diagnostic schema rejects raw fields and invalid counters but permit
     { ...metadata, rawPath: "PRIVATE" },
     { ...metadata, bytes: "123" },
     { ...metadata, active: 5 },
+    { ...metadata, completedHashedFiles: 34 },
+    { ...metadata, completedHashedBytes: metadata.bytes + 1 },
+    { ...metadata, completedHashedBytes: -1 },
     { ...metadata, phase: "PRIVATE" },
     { ...metadata, categories: { ...metadata.categories, token: "PRIVATE" } },
   ])
