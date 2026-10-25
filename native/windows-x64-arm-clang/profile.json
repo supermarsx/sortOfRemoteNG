@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-windows-x64-arm-inventory-profile",
+  "mode": "inventory",
+  "runner": "windows-2025-vs2026",
+  "image": "20261007.264.1",
+  "manifestCommit": "4f94a804ccf6254bfc5c7fd90a213db4b21794cd",
+  "manifestBlob": "1160761b05c9ea544eb270f6e3cd07a0d58892cd",
+  "visualStudioVersion": "18.10.12224.181",
+  "visualStudioRoot": "C:/Program Files/Microsoft Visual Studio/18/Enterprise",
+  "toolset": "14.51.36231",
+  "sdk": "10.0.28000.0",
+  "sdkRoot": "C:/Program Files (x86)/Windows Kits/10",
+  "instancesRoot": "C:/ProgramData/Microsoft/VisualStudio/Packages/_Instances",
+  "components": [
+    "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+    "Microsoft.VisualStudio.Component.VC.ATL.ARM64",
+    "Microsoft.VisualStudio.Component.VC.MFC.ARM64"
+  ],
+  "limits": {
+    "seconds": 180,
+    "fileRows": 40,
+    "fileBytes": 268435456,
+    "aggregateBytes": 1073741824,
+    "outputBytes": 131072,
+    "msvcDirectories": 8,
+    "instances": 16
+  }
+}

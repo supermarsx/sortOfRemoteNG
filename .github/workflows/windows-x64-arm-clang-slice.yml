@@ -1,0 +1,113 @@
+name: Windows x64 installed ARM inventory only
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-x64-arm-inventory-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  inventory:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 8
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          architecture: x64
+          package-manager-cache: false
+      - name: Validate the closed inventory contract
+        shell: bash
+        run: node --test tests/tooling/windowsX64ArmClangSlice.node-test.mjs
+      - name: Observe fixed installed ARM inputs without executing tools
+        id: inventory
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import {createHash,randomUUID} from 'node:crypto';
+          import {execFile} from 'node:child_process';
+          import {promisify} from 'node:util';
+          const execute=promisify(execFile),sha=b=>createHash('sha256').update(b).digest('hex');
+          export const PROFILE_SHA='baf9b745aa3c8f05e1c7d336afdef5d4ec90fa08f2a280820f4b56083f8fdeda';
+          export const SOURCES=['.github/workflows/windows-x64-arm-clang-slice.yml','native/windows-x64-arm-clang/profile.json','native/windows-x64-arm-clang/observe.py','native/windows-x64-arm-clang/test_observe.py','tests/tooling/windowsX64ArmClangSlice.node-test.mjs'];
+          const need=(value,code)=>assert(value,code);
+          export function authority(env,platform=process.platform,arch=process.arch){
+            need(platform==='win32'&&arch==='x64','INV_PLATFORM');
+            need(env.GITHUB_ACTIONS==='true'&&env.RUNNER_ENVIRONMENT==='github-hosted'&&env.GITHUB_EVENT_NAME==='workflow_dispatch','INV_EVENT');
+            need(env.GITHUB_REPOSITORY==='supermarsx/sortOfRemoteNG'&&env.GITHUB_REPOSITORY_ID==='1010282954'&&env.GITHUB_REPOSITORY_VISIBILITY==='public','INV_REPOSITORY');
+            need(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(env.CEF_DEFAULT_BRANCH??'')&&!env.CEF_DEFAULT_BRANCH.includes('..'),'INV_BRANCH');
+            need(env.GITHUB_REF===`refs/heads/${env.CEF_DEFAULT_BRANCH}`&&/^[a-f0-9]{40}$/.test(env.GITHUB_SHA??'')&&env.GITHUB_WORKFLOW_SHA===env.GITHUB_SHA,'INV_HEAD');
+            need(env.GITHUB_WORKFLOW_REF===`${env.GITHUB_REPOSITORY}/.github/workflows/windows-x64-arm-clang-slice.yml@${env.GITHUB_REF}`,'INV_WORKFLOW');
+            need(/^[1-9][0-9]{0,19}$/.test(env.GITHUB_RUN_ID??'')&&/^[1-9][0-9]{0,3}$/.test(env.GITHUB_RUN_ATTEMPT??''),'INV_RUN');
+            return{repository:env.GITHUB_REPOSITORY,head:env.GITHUB_SHA,runId:env.GITHUB_RUN_ID,attempt:env.GITHUB_RUN_ATTEMPT,mode:'inventory'};
+          }
+          export function canonicalSource(rel,git,actual){
+            need(SOURCES.includes(rel),'INV_SOURCE');
+            if(git.equals(actual))return'exact';
+            need(rel===SOURCES[0]||rel===SOURCES[4],'INV_SOURCE_BYTES');
+            const text=new TextDecoder('utf-8',{fatal:true}).decode(git);
+            need(!text.includes('\r')&&Buffer.from(text).equals(git)&&Buffer.from(text.replaceAll('\n','\r\n')).equals(actual),'INV_SOURCE_BYTES');
+            return'git-crlf';
+          }
+          export function environment(env){
+            const result={};
+            for(const key of ['SystemRoot','WINDIR','TEMP','TMP','PROCESSOR_ARCHITECTURE','ImageOS','ImageVersion','RUNNER_ARCH']){
+              const value=env[key];need(typeof value==='string'&&value.length>0&&value.length<=512&&!/[\x00-\x1f]/.test(value),'INV_ENV');result[key]=value;
+            }
+            result.PYTHONDONTWRITEBYTECODE='1';return result;
+          }
+          export function resultRecord(raw){
+            need(raw.length>0&&raw.length<=131072,'INV_OUTPUT');const text=new TextDecoder('utf-8',{fatal:true}).decode(raw);need(Buffer.from(text).equals(raw),'INV_UTF8');
+            const value=JSON.parse(text);need(value.kind==='sorng-windows-x64-arm-inventory'&&value.mode==='inventory'&&typeof value.success==='boolean'&&value.compilerExecuted===false&&value.installerExecuted===false&&value.downloaded===false&&value.nativeAcceptance===false&&value.buildAdmission===false,'INV_RESULT');return value;
+          }
+          export function remainingBudget(end,now=Date.now(),monoEnd=Infinity,monoNow=performance.now()){const left=Math.min(end-now,monoEnd-monoNow);need(left>1000,'INV_DEADLINE');return left-1000;}
+          export async function held(file,cap){
+            need(path.isAbsolute(file),'INV_PATH');const actual=await fs.realpath(file);need(actual.toLowerCase()===file.toLowerCase(),'INV_ALIAS');
+            for(let p=file;;p=path.dirname(p)){const s=await fs.lstat(p);need(!s.isSymbolicLink()&&!s.isBlockDevice()&&!s.isCharacterDevice(),'INV_LINK');if(path.dirname(p)===p)break;}
+            const before=await fs.lstat(actual,{bigint:true});need(before.isFile()&&before.nlink===1n&&before.size<=BigInt(cap),'INV_FILE');
+            const signature=s=>[s.dev,s.ino,s.mode,s.size,s.mtimeNs,s.ctimeNs,s.nlink,s.birthtimeNs].join(':');
+            const common=s=>[s.dev,s.ino,s.size,s.mtimeNs,s.nlink,s.birthtimeNs].join(':');
+            const fd=await fs.open(actual,'r');try{const initial=await fd.stat({bigint:true});need(initial.isFile()&&initial.nlink===1n&&common(before)===common(initial),'INV_IDENTITY');const bytes=Buffer.alloc(Number(before.size));let used=0;while(used<bytes.length){const read=await fd.read(bytes,used,bytes.length-used,used);need(read.bytesRead>0,'INV_CHANGED');used+=read.bytesRead;}const extra=Buffer.alloc(1);need((await fd.read(extra,0,1,used)).bytesRead===0,'INV_CHANGED');const after=await fs.lstat(actual,{bigint:true}),final=await fd.stat({bigint:true});need(signature(before)===signature(after)&&signature(initial)===signature(final)&&common(after)===common(final),'INV_CHANGED');need((await fs.realpath(file)).toLowerCase()===actual.toLowerCase(),'INV_CHANGED');return bytes;}finally{await fd.close();}
+          }
+          async function run(){
+            const begin=Date.now(),monoBegin=performance.now(),end=begin+180000,monoEnd=monoBegin+180000,remaining=()=>remainingBudget(end,Date.now(),monoEnd,performance.now()),abort=new AbortController(),active=new Set();let expired=false,cleanupTimer;
+            const workTimer=setTimeout(()=>{expired=true;abort.abort();cleanupTimer=setTimeout(()=>process.exit(124),30000);},180000);
+            const ownedExecute=(program,args,options)=>{remaining();const pending=execute(program,args,{...options,signal:abort.signal});active.add(pending.child);pending.child.once('close',()=>active.delete(pending.child));return pending;};
+            const provenance=authority(process.env),cwd=await fs.realpath(process.cwd()),sourceRows=[];
+            const root=path.join(await fs.realpath(process.env.RUNNER_TEMP),`windows-x64-arm-inventory-${randomUUID()}`);await fs.mkdir(root);await fs.appendFile(process.env.GITHUB_OUTPUT,`artifact_path=${root}\n`);
+            let code=null,phase='source-preflight',childStderr=null;try{
+              for(const rel of SOURCES){const actual=await held(path.join(cwd,rel),262144),git=(await ownedExecute('git',['cat-file','blob',`${provenance.head}:${rel}`],{cwd,encoding:'buffer',windowsHide:true,timeout:Math.min(10000,remaining()),maxBuffer:262144})).stdout;sourceRows.push({path:rel,bytes:actual.length,sha256:sha(actual),gitBytes:git.length,gitSha256:sha(git),encoding:canonicalSource(rel,git,actual)});}
+              phase='profile-preflight';const profile=await held(path.join(cwd,SOURCES[1]),16384);need(sha(profile)===PROFILE_SHA,'INV_PROFILE');
+              phase='runtime-preflight';const python='C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe',pythonRaw=await held(python,268435456);const context={...provenance,begin:new Date(begin).toISOString(),deadline:new Date(end).toISOString(),monotonicWorkMilliseconds:180000,sources:sourceRows,python:{role:'published-toolcache-python312-x64',bytes:pythonRaw.length,sha256:sha(pythonRaw),physicalPresenceObserved:true,fullRuntimeClosureValidated:false}};await fs.writeFile(path.join(root,'context.json'),JSON.stringify(context,null,2),{flag:'wx'});
+              phase='inventory-child';let stdout;try{const child=await ownedExecute(python,['-I','-B',path.join(cwd,SOURCES[2]),'--inventory'],{cwd,env:environment(process.env),encoding:'buffer',windowsHide:true,timeout:remaining(),maxBuffer:131072});stdout=child.stdout;childStderr=child.stderr;code=0;}catch(error){code=Number.isInteger(error?.code)?error.code:null;stdout=error?.stdout;childStderr=error?.stderr;}
+              if(Buffer.isBuffer(childStderr)){need(childStderr.length<=16384,'INV_STDERR_BOUND');const text=new TextDecoder('utf-8',{fatal:true}).decode(childStderr);need(Buffer.from(text).equals(childStderr),'INV_STDERR_UTF8');await fs.writeFile(path.join(root,'child-stderr.json'),JSON.stringify({role:'inventory-python',bytes:childStderr.length,sha256:sha(childStderr),utf8:text}),{flag:'wx'});}
+              need(Buffer.isBuffer(stdout),'INV_CHILD');const result=resultRecord(stdout);await fs.writeFile(path.join(root,'inventory.json'),stdout,{flag:'wx'});
+              phase='source-postcheck';
+              for(const row of sourceRows){remaining();const raw=await held(path.join(cwd,row.path),262144);need(raw.length===row.bytes&&sha(raw)===row.sha256,'INV_SOURCE_CHANGED');}
+              phase='runtime-postcheck';remaining();need(sha(await held(python,268435456))===context.python.sha256,'INV_RUNTIME_CHANGED');remaining();
+              need(active.size===0&&!expired,'INV_CHILD_CLEANUP');await fs.writeFile(path.join(root,'terminal.json'),JSON.stringify({mode:'inventory',nativeExit:code,sourcePostVerified:true,pythonPostVerified:true,wholeDeadline:true,directChildrenClosed:true,success:code===0&&result.success===true,compilerExecuted:false,downloaded:false}),{flag:'wx',signal:abort.signal});remaining();need(code===0&&result.success===true,'INV_OBSERVATION_FAILED');
+            }catch{await fs.writeFile(path.join(root,'failure.json'),JSON.stringify({mode:'inventory',failure:'INV_OBSERVATION_DENIED',phase,nativeExit:code,childStderrAvailable:Buffer.isBuffer(childStderr),fixedRuntimePresence:phase==='runtime-preflight'?'missing-or-unavailable':'not-determined-by-failure',success:false,workDeadlineExpired:expired,directChildrenClosed:active.size===0,compilerExecuted:false,downloaded:false}),{flag:'wx'});process.exitCode=expired?124:1;}
+            finally{clearTimeout(workTimer);if(active.size===0)clearTimeout(cleanupTimer);else{process.exitCode=1;cleanupTimer??=setTimeout(()=>process.exit(124),30000);}}
+          }
+          // Closed entry; contract tests import definitions above this marker only.
+          await run();
+          NODE
+      - name: Retain inventory metadata only
+        if: always() && steps.inventory.outputs.artifact_path != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-x64-arm-inventory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.inventory.outputs.artifact_path }}/*.json
+          if-no-files-found: error
+          retention-days: 14
