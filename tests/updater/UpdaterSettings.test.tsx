@@ -1,6 +1,12 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import type {
   AvailableUpdate,
   UpdaterInstallMode,
@@ -458,6 +464,7 @@ describe("UpdaterSettings", () => {
       },
     ];
     let nextCheck = 1;
+    let finishCheck: (() => void) | null = null;
     mockInvoke.mockImplementation((cmd: string) => {
       switch (cmd) {
         case "updater_get_settings":
@@ -466,10 +473,13 @@ describe("UpdaterSettings", () => {
           return Promise.resolve(statuses[0]);
         case "updater_check": {
           const status = statuses[nextCheck++]!;
-          return Promise.resolve({
-            updateAvailable: true,
-            availableUpdate: status.availableUpdate,
-            status,
+          return new Promise((resolve) => {
+            finishCheck = () =>
+              resolve({
+                updateAvailable: true,
+                availableUpdate: status.availableUpdate,
+                status,
+              });
           });
         }
         default:
@@ -480,16 +490,37 @@ describe("UpdaterSettings", () => {
     render(<UpdaterSettingsSection />);
     await screen.findByTestId("updater-install-unsigned-btn");
 
+    const check = screen.getByTestId("updater-check-btn");
     for (const expectedStatus of statuses.slice(1)) {
       const confirmation = screen.getByTestId("updater-unsigned-confirmation");
+      await waitFor(() => {
+        expect(check).not.toBeDisabled();
+        expect(confirmation).not.toBeDisabled();
+        expect(confirmation).not.toBeChecked();
+      });
       fireEvent.click(confirmation);
       expect(confirmation).toBeChecked();
 
-      fireEvent.click(screen.getByTestId("updater-check-btn"));
-      await waitFor(() => expect(confirmation).not.toBeChecked());
-      expect(
-        screen.getByRole("link", { name: /Download manually/i }),
-      ).toHaveAttribute("href", expectedStatus.availableUpdate?.downloadUrl);
+      fireEvent.click(check);
+      await waitFor(() => {
+        expect(check).toBeDisabled();
+        expect(confirmation).toBeDisabled();
+        expect(finishCheck).not.toBeNull();
+      });
+      // Do not begin the next acknowledgement while this request still owns
+      // the disabled checkbox, even if the old unchecked reset is observed.
+      await act(async () => {
+        finishCheck!();
+        finishCheck = null;
+      });
+      await waitFor(() => {
+        expect(confirmation).not.toBeChecked();
+        expect(confirmation).not.toBeDisabled();
+        expect(check).not.toBeDisabled();
+        expect(
+          screen.getByRole("link", { name: /Download manually/i }),
+        ).toHaveAttribute("href", expectedStatus.availableUpdate?.downloadUrl);
+      });
     }
 
     expect(nextCheck).toBe(statuses.length);
