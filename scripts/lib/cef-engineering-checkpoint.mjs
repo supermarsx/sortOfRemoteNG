@@ -3219,7 +3219,12 @@ export function graphInventoryRecord(value) {
 }
 export async function graphInventory(
   root,
-  { observe = () => {}, signal, timeoutMs = GRAPH_LIMITS.milliseconds } = {},
+  {
+    observe = () => {},
+    observePins,
+    signal,
+    timeoutMs = GRAPH_LIMITS.milliseconds,
+  } = {},
 ) {
   assert(
     Number.isSafeInteger(timeoutMs) &&
@@ -3473,6 +3478,24 @@ export async function graphInventory(
     check();
     emit("complete");
     check();
+    if (observePins) {
+      try {
+        await observePins({
+          sha256: digest,
+          files: pins.length,
+          bytes: totalBytes,
+          pins: pins.map(({ path, name, bytes, sha256 }) => ({
+            path,
+            name,
+            bytes,
+            sha256,
+          })),
+        });
+      } catch {
+        // Optional diagnostics never replace graph admission or its first error.
+      }
+      check(); // The same absolute inventory deadline also covers this awaited work.
+    }
     return {
       files: pins.length,
       bytes: totalBytes,
@@ -3529,23 +3552,241 @@ export async function withVerifiedGraph(
   await verify("graph-after");
   return result;
 }
+const RESTORE_STAGES = new Set([
+  "proof-read",
+  "manifest-read",
+  "manifest-digest",
+  "proof-match",
+  "manifest-validation",
+  "disk-capacity",
+  "archive-restore",
+  "archive-result",
+  "restored-graph",
+  "adjacent-install",
+  "fresh-gn",
+  "fresh-graph",
+  "generated-bindings",
+  "identity-comparison",
+  "graph-snapshot",
+]);
+const RESTORE_FIELDS = [
+  "producer",
+  "source",
+  "target",
+  "image",
+  "tools",
+  "graph",
+  "siso",
+  "canonicalRoot",
+];
+const restoreObservers = new WeakSet();
+export function createRestoreObserver(sink = () => {}) {
+  if (restoreObservers.has(sink)) return sink;
+  let count = 0,
+    bytes = 0;
+  const observe = async (input) => {
+    try {
+      assert(RESTORE_STAGES.has(input?.stage), "Closed restore stage");
+      assert(
+        ["begin", "complete", "failed", "unavailable"].includes(input.event),
+        "Closed restore event",
+      );
+      const record = {
+        kind: "sorng-cef-checkpoint-restore-diagnostic",
+        stage: input.stage,
+        event: input.event,
+        errorCode: [
+          "ENOENT",
+          "EACCES",
+          "EPERM",
+          "EIO",
+          "ENOSPC",
+          "EEXIST",
+          "ETIMEDOUT",
+        ].includes(input.errorCode)
+          ? input.errorCode
+          : input.event === "failed"
+            ? "GUARD_FAILED"
+            : input.event === "unavailable"
+              ? "UNAVAILABLE"
+              : "NONE",
+      };
+      if (input.stage === "identity-comparison") {
+        record.available = input.comparison?.available === true;
+        if (!record.available) {
+          record.event = "unavailable";
+          record.errorCode = "INVALID_METADATA";
+        }
+        if (record.available) {
+          shape(input.comparison.matches, RESTORE_FIELDS);
+          assert(
+            RESTORE_FIELDS.every(
+              (field) => typeof input.comparison.matches[field] === "boolean",
+            ),
+            "Closed identity matches",
+          );
+          record.matches = Object.fromEntries(
+            RESTORE_FIELDS.map((field) => [
+              field,
+              input.comparison.matches[field],
+            ]),
+          );
+        }
+      }
+      const size = Buffer.byteLength(canonical(record) + "\n");
+      if (
+        count >= 32 ||
+        (count >= 31 && record.event !== "failed") ||
+        bytes + size > 64 * 1024
+      )
+        return;
+      count++;
+      bytes += size;
+      await sink(record);
+    } catch {
+      // Observer failures are never restore admission or the primary failure.
+    }
+  };
+  restoreObservers.add(observe);
+  return observe;
+}
+export async function restorePhase(observer, stage, operation) {
+  const observe = createRestoreObserver(observer);
+  await observe({ stage, event: "begin" });
+  try {
+    const value = await operation();
+    await observe({ stage, event: "complete" });
+    return value;
+  } catch (error) {
+    let errorCode;
+    try {
+      errorCode = error?.code;
+    } catch {}
+    await observe({ stage, event: "failed", errorCode });
+    throw error;
+  }
+}
+export function restoreIdentityComparison(fresh, priorManifest) {
+  try {
+    validateIdentity(fresh);
+    validateManifest(priorManifest);
+    return {
+      available: true,
+      matches: Object.fromEntries(
+        RESTORE_FIELDS.map((field) => [
+          field,
+          fresh[field] === priorManifest.identity[field],
+        ]),
+      ),
+    };
+  } catch {
+    return { available: false };
+  }
+}
+export function graphPinSnapshot(value) {
+  shape(value, ["sha256", "files", "bytes", "pins"]);
+  assert(
+    hex(value.sha256) &&
+      Number.isSafeInteger(value.files) &&
+      value.files > 0 &&
+      value.files <= GRAPH_LIMITS.files &&
+      Array.isArray(value.pins) &&
+      value.pins.length === value.files,
+    "Bounded graph pin count",
+  );
+  assert(
+    Number.isSafeInteger(value.bytes) &&
+      value.bytes >= 0 &&
+      value.bytes <= GRAPH_LIMITS.bytes,
+    "Bounded graph pin bytes",
+  );
+  let previous = "",
+    total = 0,
+    encodedBytes = 0;
+  const rows = [];
+  for (const row of value.pins) {
+    shape(row, ["path", "name", "bytes", "sha256"]);
+    assert(
+      typeof row.path === "string" &&
+        row.path.length > 0 &&
+        row.path.length <= 4096 &&
+        !/[\\:\x00-\x1f\x7f]/.test(row.path) &&
+        !row.path.startsWith("/") &&
+        row.path
+          .split("/")
+          .every((part) => part && part !== "." && part !== "..") &&
+        row.path > previous,
+      "Canonical relative graph pin",
+    );
+    assert(
+      row.name === path.posix.basename(row.path) &&
+        (row.name === "args.gn" || row.name.endsWith(".ninja")) &&
+        hex(row.sha256),
+      "Declared graph pin kind",
+    );
+    assert(
+      Number.isSafeInteger(row.bytes) &&
+        row.bytes >= 0 &&
+        row.bytes <= GRAPH_LIMITS.fileBytes,
+      "Bounded graph pin size",
+    );
+    previous = row.path;
+    total += row.bytes;
+    const copy = {
+      path: row.path,
+      name: row.name,
+      bytes: row.bytes,
+      sha256: row.sha256,
+    };
+    encodedBytes += Buffer.byteLength(canonical(copy)) + 1;
+    assert(
+      encodedBytes <= 16 * 1024 ** 2 - 1024,
+      "Graph pin snapshot byte bound",
+    );
+    rows.push(copy);
+  }
+  assert(
+    total === value.bytes && sha(canonical(rows)) === value.sha256,
+    "Complete graph snapshot digest",
+  );
+  const result = canonical({
+    kind: "sorng-cef-fresh-graph-pins",
+    complete: true,
+    files: value.files,
+    bytes: value.bytes,
+    sha256: value.sha256,
+    pins: rows,
+  });
+  assert(
+    Buffer.byteLength(result) <= 16 * 1024 ** 2,
+    "Graph pin snapshot byte bound",
+  );
+  return result;
+}
 export async function restoreVerifiedGraph({
   fresh,
   restored,
   expectedGraph,
   revalidateGn,
   verifyGenerated,
+  observe,
 }) {
   assert(
     typeof revalidateGn === "function" && typeof verifyGenerated === "function",
     "Genuine GN and SDK revalidation required",
   );
-  await verifyGraph(restored, expectedGraph);
-  await installRestoredDirectory(fresh, restored);
+  await restorePhase(observe, "restored-graph", () =>
+    verifyGraph(restored, expectedGraph),
+  );
+  await restorePhase(observe, "adjacent-install", () =>
+    installRestoredDirectory(fresh, restored),
+  );
   // Cached gen/ files never supersede the CURRENT source/tool evaluation.
-  await revalidateGn();
-  await verifyGraph(fresh, expectedGraph);
-  await verifyGenerated();
+  await restorePhase(observe, "fresh-gn", revalidateGn);
+  await restorePhase(observe, "fresh-graph", () =>
+    verifyGraph(fresh, expectedGraph),
+  );
+  await restorePhase(observe, "generated-bindings", verifyGenerated);
 }
 export async function installRestoredDirectory(fresh, verified) {
   await noLinks(fresh);
