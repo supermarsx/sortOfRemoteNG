@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-owned-import-review",
+  "origin": "owned-windows-capsule-lifetime-operation2",
+  "target": "x86_64-pc-windows-msvc",
+  "sourceLockIdentity": "bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629",
+  "bundleSourceLockRawSha256": "c13db4b008fa1d1981026f180ae86df58113bf19cc2ab0d3b0bb8c3cfbbf79cb",
+  "originalInputsSourceLockRawSha256": "c13db4b008fa1d1981026f180ae86df58113bf19cc2ab0d3b0bb8c3cfbbf79cb",
+  "descriptorSha256": "758a4d5fb7e3de8f84c3f22b4015113e3231843235bc2c921efd6b2265990254",
+  "handoffSha256": "f535e2718353dc1e18eb82e1d1e3b734e0183630bb831eb07f35c41f2b5c279d",
+  "reviewBinding": {
+    "canonicalReviewSha256": "64f8b19f2c65cfacb17b813e94ee4717ff2cac1aa26928680cfa0bd4a0f0022f",
+    "evidencePins": {
+      "build": {
+        "path": "build.json",
+        "size": 4998,
+        "sha256": "4dd1a6e1b4eacc1ef531abd8416c2396b03a3fd2d0150cb42b1c5970cac8af4d"
+      },
+      "native": {
+        "path": "native.json",
+        "size": 11692,
+        "sha256": "44eda43d7a1b26492bcb664803e88e22adf83452e47d6ae6a2ce3c0cc735e24f"
+      },
+      "nativeJobs": {
+        "path": "nativeJobs.json",
+        "size": 21050,
+        "sha256": "2a0b68bd2334406681274e7339c57c6e19bbaff76c297c353d3c7878f9db24d0"
+      },
+      "nativeFocusedOutput": {
+        "path": "nativeFocusedOutput.log",
+        "size": 12864,
+        "sha256": "1f92eac9282d72a9d3c76841c1777e3033daf178482a77d5d1ffa0b9ca9d931a"
+      },
+      "nativeBrpOutput": {
+        "path": "nativeBrpOutput.log",
+        "size": 1219,
+        "sha256": "d2d2cbc166124300340a752d15c3a49a02f9184a560838eeb89ea9ad8cd80b62"
+      },
+      "nativeSandboxOutput": {
+        "path": "nativeSandboxOutput.log",
+        "size": 1293,
+        "sha256": "fda3aab5adbb471b4c8a76943fd441509951bad9cef9e70e191d31f5bb5855ea"
+      },
+      "nativeFocusedList": {
+        "path": "nativeFocusedList.log",
+        "size": 1561,
+        "sha256": "9dc2abd06c3ca7ef756f9b16f257a9444ad5cf2ad594509bcd14375f2525a03b"
+      },
+      "nativeBrpList": {
+        "path": "nativeBrpList.log",
+        "size": 447921,
+        "sha256": "d7f65056a08601dc52cb21076411502a9171040e15a79470d538eb3f42e17319"
+      },
+      "nativeSandboxList": {
+        "path": "nativeSandboxList.log",
+        "size": 2416,
+        "sha256": "f9a74cf5dfc329e62c10ff897f9f4087656d196ad820f346269195b3b714018d"
+      },
+      "engine": {
+        "path": "engine.json",
+        "size": 8732,
+        "sha256": "a485b274f6dfd9d1918d8177587d86b736b3d59d0e83a4fd409a0125438b9edf"
+      },
+      "engineJob": {
+        "path": "engineJob.json",
+        "size": 938,
+        "sha256": "9e72312d393f5a27e436ad712829450afd673ec4ff818c8299826dafe91cc858"
+      },
+      "engineOutput": {
+        "path": "engineOutput.log",
+        "size": 4490452,
+        "sha256": "f47b90660b7a2e88a90db3797643df0f1850d266eb7ec8fdeef53ccc0c60350f"
+      },
+      "engineBeforeimage": {
+        "path": "engineBeforeimage.json",
+        "size": 2944,
+        "sha256": "1351c1c7f26fcf8cef19966856599bbd0983303e03568783870c69ad689aee31"
+      },
+      "engineSymbols": {
+        "path": "engineSymbols.json",
+        "size": 377,
+        "sha256": "1e26edb624f4c6c6df2300aa0e03b54f3ba1ac5f7e636f89cdfd315660b1fd0f"
+      },
+      "sourcePostchecks": {
+        "path": "sourcePostchecks.json",
+        "size": 9911,
+        "sha256": "14d389b762216b7dcf0b17c46fa513e8c8f85f88e18137a69c48413bbb09333f"
+      },
+      "package": {
+        "path": "package.json",
+        "size": 34686,
+        "sha256": "4f012017f4f1e719b27ef6fc301b9fbdb2c610c246f7f61165557ab8535d01fc"
+      },
+      "distribution": {
+        "path": "distribution.json",
+        "size": 1719,
+        "sha256": "c8271eeca1c5f9aae9f9b8e6fa319adb4242ca4bf20d6bf56ba613f0a83fee67"
+      },
+      "preparation": {
+        "path": "preparation.json",
+        "size": 472733,
+        "sha256": "e9e4c8e5fd65a25e1efea74ed0781363eed193857f835d55847f71a3bea54568"
+      },
+      "previousEngineAttempt": {
+        "path": "previousEngineAttempt.json",
+        "size": 24954,
+        "sha256": "179a30aafcf7d290cf9d4e4595be64313bfaaa7f1dae4b0f82113e1eb22b440b"
+      },
+      "engineAccounting": {
+        "path": "engineAccounting.log",
+        "size": 666954,
+        "sha256": "b2c6503688c8dde38d628c8a4f0ab4937d76a82faa0f12bc08807dadcf2fd3b8"
+      }
+    },
+    "verificationPython": {
+      "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a",
+      "size": 104952
+    }
+  },
+  "assets": [
+    {
+      "name": "source-lock.json",
+      "bytes": 5961,
+      "sha256": "c13db4b008fa1d1981026f180ae86df58113bf19cc2ab0d3b0bb8c3cfbbf79cb"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 206296,
+      "sha256": "222e77d6c4b0c78def4a8709abf4446908abb329b488b1e36fc60b00c2bea044"
+    },
+    {
+      "name": "receipt.json",
+      "bytes": 467,
+      "sha256": "44c95c70f28a3a5d53449ff6b0b04d42f378c8e0111645a5976c0d90ae10b14d"
+    },
+    {
+      "name": "sorng-cef-custom-bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629-x86_64-pc-windows-msvc.tar.bz2",
+      "bytes": 234386009,
+      "sha256": "c049b67618d21cb14d6895023feb7196717756e7c5d1b55ad04af811b6ef216e"
+    },
+    {
+      "name": "runtime.json",
+      "bytes": 1711,
+      "sha256": "758a4d5fb7e3de8f84c3f22b4015113e3231843235bc2c921efd6b2265990254"
+    }
+  ],
+  "engineSha256": "6b6f7a8f3e55dacdf1367205ab0d0da79b8d56a79dd4ca8906d4b65bd859c500",
+  "filesVerified": 953
+}
