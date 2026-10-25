@@ -851,3 +851,180 @@ test("truncated buffers and unsupported inputs fail with rebuild errors", () => 
   rejects(new Uint8Array(buffer), /Buffer/);
   rejects(buffer, /machine/, "x86_64-unknown-linux-gnu");
 });
+
+// Actual DLL6cdade38/PDB84671127: SDK module2835 (42) and windows raw-dylib
+// module2869 (48). The orphan SetWindowRgn slot is outside the SDK descriptor.
+const observedSdkUser32Imports = [
+  "AdjustWindowRectEx",
+  "ClientToScreen",
+  "CloseTouchInputHandle",
+  "DefWindowProcW",
+  "DestroyWindow",
+  "DispatchMessageW",
+  "EnableWindow",
+  "FillRect",
+  "GetAncestor",
+  "GetClassNameW",
+  "GetClientRect",
+  "GetClipboardSequenceNumber",
+  "GetCursorPos",
+  "GetForegroundWindow",
+  "GetGUIThreadInfo",
+  "GetMessageW",
+  "GetMonitorInfoW",
+  "GetSystemMetrics",
+  "GetTopWindow",
+  "GetTouchInputInfo",
+  "GetWindow",
+  "GetWindowLongPtrW",
+  "GetWindowLongW",
+  "GetWindowRect",
+  "GetWindowThreadProcessId",
+  "IsIconic",
+  "IsWindow",
+  "IsWindowEnabled",
+  "IsWindowVisible",
+  "MonitorFromRect",
+  "MonitorFromWindow",
+  "PostMessageW",
+  "RedrawWindow",
+  "RegisterTouchWindow",
+  "ScreenToClient",
+  "SetCursor",
+  "SetForegroundWindow",
+  "SetWindowPos",
+  "ShowWindow",
+  "SystemParametersInfoW",
+  "TrackMouseEvent",
+  "TranslateMessage",
+];
+const observedRawUser32Imports = [
+  "ChangeDisplaySettingsExW",
+  "ClipCursor",
+  "CloseClipboard",
+  "CreateWindowExW",
+  "DestroyIcon",
+  "EmptyClipboard",
+  "EnableMenuItem",
+  "EnumDisplayMonitors",
+  "GetActiveWindow",
+  "GetAsyncKeyState",
+  "GetClipCursor",
+  "GetDC",
+  "GetKeyState",
+  "GetKeyboardLayout",
+  "GetKeyboardState",
+  "GetMenu",
+  "GetRawInputData",
+  "GetSystemMenu",
+  "GetUpdateRect",
+  "GetWindowPlacement",
+  "InvalidateRgn",
+  "IsProcessDPIAware",
+  "LoadCursorW",
+  "MapVirtualKeyExW",
+  "MapVirtualKeyW",
+  "MonitorFromPoint",
+  "MsgWaitForMultipleObjectsEx",
+  "OpenClipboard",
+  "PeekMessageW",
+  "PostThreadMessageW",
+  "RegisterClassExW",
+  "RegisterRawInputDevices",
+  "RegisterWindowMessageA",
+  "ReleaseCapture",
+  "SendInput",
+  "SendMessageW",
+  "SetCapture",
+  "SetClipboardData",
+  "SetPropW",
+  "SetWindowDisplayAffinity",
+  "SetWindowLongPtrW",
+  "SetWindowLongW",
+  "SetWindowPlacement",
+  "SetWindowRgn",
+  "ShowCursor",
+  "SystemParametersInfoA",
+  "ToUnicodeEx",
+  "ValidateRect",
+];
+
+function user32CodeFixture(names) {
+  const f = fixture({
+    delayed: [
+      { dll: "WS2_32.dll", names: symbols },
+      { dll: "USER32.dll", names },
+    ],
+  });
+  const b = Buffer.alloc(0xa400);
+  f.buffer.copy(b);
+  b.writeUInt16LE(2, 0x86);
+  b.writeUInt32LE(0x9000, optional + 56);
+  b.writeUInt32LE(0x4000, section + 8);
+  b.writeUInt32LE(0x4000, section + 16);
+  b.write(".code", section + 40);
+  for (const [field, value] of [
+    [8, 0x4000],
+    [12, 0x5000],
+    [16, 0x4000],
+    [20, 0x4400],
+    [36, 0x60000020],
+  ])
+    b.writeUInt32LE(value, section + 40 + field);
+  const writeThunk = (rva, slot, tail) => {
+    const at = offset(rva);
+    b.set([0x48, 0x8d, 0x05], at);
+    b.writeInt32LE(slot - (rva + 7), at + 3);
+    b[at + 7] = 0xe9;
+    b.writeInt32LE(tail - (rva + 12), at + 8);
+    b.writeBigUInt64LE(0x180000000n + BigInt(rva), offset(slot));
+  };
+  b[offset(0x8000)] = 0xc3;
+  let next = 0x5020;
+  for (const [i, d] of f.delayed.entries()) {
+    const tail = 0x6000 + i * 0x100,
+      rva = tail + 32,
+      at = offset(rva);
+    b.set([0x48, 0x8b, 0xd0, 0x48, 0x8d, 0x0d], at);
+    b.writeInt32LE(d.at + 0xc00 - (rva + 10), at + 6);
+    b[at + 10] = 0xe8;
+    b.writeInt32LE(0x8000 - (rva + 15), at + 11);
+    for (let j = 0; j < d.nameRvas.length; j++, next += 16)
+      writeThunk(next, d.iatRva + j * 8, tail);
+  }
+  return { buffer: b, writeThunk };
+}
+
+test("rejects the actual detached User32 SetWindowRgn shape beside 42 SDK slots", () => {
+  assert.equal(observedSdkUser32Imports.length, 42);
+  assert.equal(observedSdkUser32Imports.includes("SetWindowRgn"), false);
+  const f = user32CodeFixture(observedSdkUser32Imports);
+  f.writeThunk(0x5800, 0x4f00, 0x6100);
+  const before = Buffer.from(f.buffer);
+  rejects(
+    f.buffer,
+    /orphan MSVC x64.*slot 0x4f00.*outside user32\.dll descriptor/,
+  );
+  assert.deepEqual(
+    f.buffer,
+    before,
+    "guard must never repair the detached slot",
+  );
+});
+
+test("accepts all 90 canonical User32 references while keeping every thunk delayed", () => {
+  const names = [
+    ...new Set([...observedSdkUser32Imports, ...observedRawUser32Imports]),
+  ];
+  assert.equal(names.length, 90);
+  const f = user32CodeFixture(names),
+    before = Buffer.from(f.buffer);
+  assert.deepEqual(validateBrowserClientImports(f.buffer, x64).thunkOwnership, {
+    format: "msvc-x64",
+    status: "recognized-patterns-checked",
+    recognizedThunks: 94,
+    unrecognizedCandidates: 0,
+    unrecognizedSlots: 0,
+  });
+  assert.deepEqual(f.buffer, before);
+});

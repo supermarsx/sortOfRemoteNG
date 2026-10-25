@@ -159,6 +159,102 @@ const ADVAPI32_IMPORTS: &[&str] = &[
     "RegGetValueW",
 ];
 
+// The native acceptance DLL selected 42 SDK USER32 imports and 48 lowercase
+// raw-dylib imports from windows. SetWindowRgn's thunk was outside the sole
+// advertised SDK IAT. Keep all 90 observed references in the early SDK closure.
+const USER32_IMPORTS: &[&str] = &[
+    "AdjustWindowRectEx",
+    "ChangeDisplaySettingsExW",
+    "ClientToScreen",
+    "ClipCursor",
+    "CloseClipboard",
+    "CloseTouchInputHandle",
+    "CreateWindowExW",
+    "DefWindowProcW",
+    "DestroyIcon",
+    "DestroyWindow",
+    "DispatchMessageW",
+    "EmptyClipboard",
+    "EnableMenuItem",
+    "EnableWindow",
+    "EnumDisplayMonitors",
+    "FillRect",
+    "GetActiveWindow",
+    "GetAncestor",
+    "GetAsyncKeyState",
+    "GetClassNameW",
+    "GetClientRect",
+    "GetClipCursor",
+    "GetClipboardSequenceNumber",
+    "GetCursorPos",
+    "GetDC",
+    "GetForegroundWindow",
+    "GetGUIThreadInfo",
+    "GetKeyState",
+    "GetKeyboardLayout",
+    "GetKeyboardState",
+    "GetMenu",
+    "GetMessageW",
+    "GetMonitorInfoW",
+    "GetRawInputData",
+    "GetSystemMenu",
+    "GetSystemMetrics",
+    "GetTopWindow",
+    "GetTouchInputInfo",
+    "GetUpdateRect",
+    "GetWindow",
+    "GetWindowLongPtrW",
+    "GetWindowLongW",
+    "GetWindowPlacement",
+    "GetWindowRect",
+    "GetWindowThreadProcessId",
+    "InvalidateRgn",
+    "IsIconic",
+    "IsProcessDPIAware",
+    "IsWindow",
+    "IsWindowEnabled",
+    "IsWindowVisible",
+    "LoadCursorW",
+    "MapVirtualKeyExW",
+    "MapVirtualKeyW",
+    "MonitorFromPoint",
+    "MonitorFromRect",
+    "MonitorFromWindow",
+    "MsgWaitForMultipleObjectsEx",
+    "OpenClipboard",
+    "PeekMessageW",
+    "PostMessageW",
+    "PostThreadMessageW",
+    "RedrawWindow",
+    "RegisterClassExW",
+    "RegisterRawInputDevices",
+    "RegisterTouchWindow",
+    "RegisterWindowMessageA",
+    "ReleaseCapture",
+    "ScreenToClient",
+    "SendInput",
+    "SendMessageW",
+    "SetCapture",
+    "SetClipboardData",
+    "SetCursor",
+    "SetForegroundWindow",
+    "SetPropW",
+    "SetWindowDisplayAffinity",
+    "SetWindowLongPtrW",
+    "SetWindowLongW",
+    "SetWindowPlacement",
+    "SetWindowPos",
+    "SetWindowRgn",
+    "ShowCursor",
+    "ShowWindow",
+    "SystemParametersInfoA",
+    "SystemParametersInfoW",
+    "ToUnicodeEx",
+    "TrackMouseEvent",
+    "TranslateMessage",
+    "ValidateRect",
+];
+
 fn canonical_import_directives(cef_enabled: bool, os: &str, env: &str) -> Vec<String> {
     if !cef_enabled || os != "windows" || env != "msvc" {
         return Vec::new();
@@ -168,6 +264,7 @@ fn canonical_import_directives(cef_enabled: bool, os: &str, env: &str) -> Vec<St
         ("ws2_32", WINSOCK_IMPORTS),
         ("shell32", SHELL32_IMPORTS),
         ("advapi32", ADVAPI32_IMPORTS),
+        ("user32", USER32_IMPORTS),
     ] {
         result.push(format!("cargo:rustc-link-lib=dylib={library}"));
         result.extend(
@@ -238,7 +335,11 @@ mod tests {
         assert_eq!(directives[0], "cargo:rustc-link-lib=dylib=ws2_32");
         assert_eq!(
             directives.len(),
-            WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + ADVAPI32_IMPORTS.len() + 3
+            WINSOCK_IMPORTS.len()
+                + SHELL32_IMPORTS.len()
+                + ADVAPI32_IMPORTS.len()
+                + USER32_IMPORTS.len()
+                + 4
         );
         assert_eq!(
             WINSOCK_IMPORTS.len(),
@@ -314,7 +415,10 @@ mod tests {
             "MapGenericMask",
             "RegGetValueW",
         ];
-        assert_eq!(directives.len(), first + 1 + observed.len());
+        assert_eq!(
+            directives.len(),
+            first + 1 + observed.len() + 1 + USER32_IMPORTS.len()
+        );
         for (index, symbol) in observed.iter().enumerate() {
             assert_eq!(
                 directives[first + index + 1],
@@ -324,6 +428,39 @@ mod tests {
         assert!(linker_arguments(true, "windows", "msvc")
             .unwrap()
             .contains(&"/DELAYLOAD:advapi32.dll".to_owned()));
+    }
+
+    #[test]
+    fn canonical_user32_closure_is_unique_early_complete_and_delayed() {
+        let directives = canonical_import_directives(true, "windows", "msvc");
+        let first = WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + ADVAPI32_IMPORTS.len() + 3;
+        assert_eq!(directives[first], "cargo:rustc-link-lib=dylib=user32");
+        assert_eq!(USER32_IMPORTS.len(), 90);
+        assert_eq!(USER32_IMPORTS.iter().collect::<BTreeSet<_>>().len(), 90);
+        assert_eq!(directives.len(), first + 1 + USER32_IMPORTS.len());
+        for (index, symbol) in USER32_IMPORTS.iter().enumerate() {
+            assert_eq!(
+                directives[first + 1 + index],
+                format!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}")
+            );
+        }
+        for symbol in [
+            "SetWindowRgn",
+            "SetWindowPos",
+            "OpenClipboard",
+            "GetWindowLongPtrW",
+            "SetWindowLongPtrW",
+            "RegisterClassExW",
+        ] {
+            assert!(USER32_IMPORTS.contains(&symbol));
+        }
+        assert_eq!(
+            directives.iter().collect::<BTreeSet<_>>().len(),
+            directives.len()
+        );
+        assert!(linker_arguments(true, "windows", "msvc")
+            .unwrap()
+            .contains(&"/DELAYLOAD:user32.dll".to_owned()));
     }
 
     #[test]
