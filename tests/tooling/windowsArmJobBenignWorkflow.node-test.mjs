@@ -53,7 +53,7 @@ const environment = () => ({
     "supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-job-benign.yml@refs/heads/main",
   GITHUB_RUN_ID: "1",
   GITHUB_RUN_ATTEMPT: "1",
-  SystemRoot: "C:\Windows",
+  SystemRoot: "C:" + String.fromCharCode(92) + "Windows",
 });
 
 test("workflow has only fixed read authority and native ARM command, no producer/tool download", () => {
@@ -782,4 +782,57 @@ test("redaction snapshots changing getters once and classifies primitive rejecti
   assert.equal(rows.at(-1).status, "fail");
   assert.equal(rows.at(-1).errorCode, "UNAVAILABLE");
   assert.equal(rows.at(-1).exitCode, null);
+});
+
+test("SystemRoot authority accepts a real Windows path and rejects drive-relative and aliases", () => {
+  const separator = String.fromCharCode(92);
+  const expected = "C:" + separator + "Windows";
+  assert.equal(expected.length, 10);
+  assert.equal(expected.charCodeAt(2), 92);
+  for (const SystemRoot of [
+    expected,
+    String.raw`C:\Windows`,
+    expected.toLowerCase(),
+  ])
+    assert.equal(
+      mod.authority({ ...environment(), SystemRoot }, "win32", "arm64")
+        .nativeTarget,
+      "aarch64-pc-windows-msvc",
+    );
+  for (const SystemRoot of [
+    "c:Windows",
+    "C:/Windows",
+    "D:" + separator + "Windows",
+    expected + separator,
+    " " + expected,
+    expected + " ",
+    separator +
+      separator +
+      "localhost" +
+      separator +
+      "C$" +
+      separator +
+      "Windows",
+    separator + separator + "?" + separator + expected,
+    "C:" + separator + "." + separator + "Windows",
+    "C:" + separator + "Other" + separator + ".." + separator + "Windows",
+    expected + String.fromCharCode(0),
+    expected + ":stream",
+    undefined,
+  ])
+    assert.throws(
+      () => mod.authority({ ...environment(), SystemRoot }, "win32", "arm64"),
+      /ARM_SYSTEM_ROOT/,
+    );
+  if (process.platform === "win32") {
+    assert.equal(process.env.SystemRoot.toLowerCase(), expected.toLowerCase());
+    assert.equal(
+      mod.authority(
+        { ...environment(), SystemRoot: process.env.SystemRoot },
+        "win32",
+        "arm64",
+      ).nativeTarget,
+      "aarch64-pc-windows-msvc",
+    );
+  }
 });

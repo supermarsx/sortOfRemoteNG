@@ -100,7 +100,7 @@ jobs:
             fixed(/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? '') && env.GITHUB_WORKFLOW_SHA === env.GITHUB_SHA, 'ARM_HEAD');
             fixed(env.GITHUB_WORKFLOW_REF === `${env.GITHUB_REPOSITORY}/.github/workflows/windows-arm-job-benign.yml@${env.GITHUB_REF}`, 'ARM_WORKFLOW');
             fixed(/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID ?? '') && /^[1-9][0-9]*$/.test(env.GITHUB_RUN_ATTEMPT ?? ''), 'ARM_RUN');
-            fixed(env.SystemRoot?.toLowerCase() === 'c:\windows', 'ARM_SYSTEM_ROOT');
+            fixed(env.SystemRoot?.toLowerCase() === 'c:\\windows', 'ARM_SYSTEM_ROOT');
             return { repository: env.GITHUB_REPOSITORY, repositoryId: env.GITHUB_REPOSITORY_ID, head: env.GITHUB_SHA, ref: env.GITHUB_REF, workflowRef: env.GITHUB_WORKFLOW_REF, workflowSha: env.GITHUB_WORKFLOW_SHA, runId: env.GITHUB_RUN_ID, attempt: env.GITHUB_RUN_ATTEMPT, image: env.ImageVersion ?? null, nativeTarget: 'aarch64-pc-windows-msvc' };
           }
 
