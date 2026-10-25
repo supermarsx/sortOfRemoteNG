@@ -63,10 +63,207 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Test physical-line LCOV checker
-        run: node --test ../tests/tooling/backendCoverageChecker.node-test.mjs
+        run: node --test ../tests/tooling/backendCoverageChecker.node-test.mjs ../tests/tooling/backendCoverageProfileDiagnostics.node-test.mjs
 
       - name: Generate lcov coverage report
-        run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov
+        id: coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostic_root=$(mktemp -d "$RUNNER_TEMP/backend-profile-diagnostics.XXXXXXXX")
+          mkdir "$diagnostic_root/evidence"
+          printf 'profile_diagnostics=%s/evidence\n' "$diagnostic_root" >> "$GITHUB_OUTPUT"
+          cat > "$diagnostic_root/capture.mjs" <<'PROFILE_CAPTURE'
+          import { writeFile } from 'node:fs/promises';
+          import { pipeline } from 'node:stream/promises';
+          export async function captureCoverage(input, output, file) {
+            let tail = Buffer.alloc(0);
+            try {
+              await pipeline(input, async function* (source) {
+                for await (const chunk of source) {
+                  tail = Buffer.concat([tail, chunk]).subarray(-1024 * 1024);
+                  yield chunk; // Ordinary Actions console output is never truncated.
+                }
+              }, output, { end: false });
+            } finally {
+              await writeFile(file, tail, { flag: 'wx', mode: 0o600 });
+            }
+          }
+          if (import.meta.url.startsWith('file:')) {
+            try {
+              await captureCoverage(process.stdin, process.stdout, process.argv[2]);
+            } catch {
+              console.error('COVERAGE_PROFILE_CAPTURE_UNAVAILABLE');
+              process.exitCode = 1;
+            }
+          }
+          PROFILE_CAPTURE
+          set +e
+          cargo llvm-cov --workspace --lcov --output-path coverage.lcov 2>&1 | node "$diagnostic_root/capture.mjs" "$diagnostic_root/evidence/coverage-tail.log"
+          result=("${PIPESTATUS[@]}")
+          set -e
+          cargo_status=${result[0]}
+          capture_status=${result[1]}
+          if [ "$cargo_status" -ne 0 ]; then
+            # The collector has no subprocesses; timeout bounds only this owned
+            # diagnostic Node process, never Cargo or another runner process.
+            set +e
+            /usr/bin/timeout --signal=KILL 60s node --input-type=module - "$diagnostic_root" "$cargo_status" <<'PROFILE_COLLECTOR'
+          import { constants } from 'node:fs';
+          import { lstat, realpath, open, writeFile } from 'node:fs/promises';
+          import path from 'node:path';
+          import { createHash } from 'node:crypto';
+          const PROFILE = /^src-tauri-[1-9][0-9]{0,9}-[0-9]{1,20}_[0-9]\.profraw$/;
+          const CODES = new Set(['PATH_DENIED', 'LINK_DENIED', 'FILE_BOUND', 'FILE_CHANGED', 'DEADLINE', 'LIST_DENIED', 'DIAGNOSTIC_BOUND', 'DIAGNOSTIC_UNAVAILABLE']);
+          const deny = (code) => { throw new Error(code); };
+          const codeOf = (error) => CODES.has(error?.message) ? error.message : 'IO_UNAVAILABLE';
+          const same = (a, b) => ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs', 'nlink'].every((key) => a[key] === b[key]);
+          export async function collectCoverageProfiles(root, target, cargoExit, { now = () => performance.now(), afterOpen = async () => {} } = {}) {
+            const began = now();
+            const check = () => { if (now() - began >= 60_000) deny('DEADLINE'); };
+            const safePath = async (file) => {
+              check();
+              const absolute = path.resolve(file);
+              for (let part = absolute; ; part = path.dirname(part)) {
+                const info = await lstat(part, { bigint: true });
+                check();
+                if (info.isSymbolicLink()) deny('LINK_DENIED');
+                if (part === path.dirname(part)) break;
+              }
+              if (await realpath(absolute) !== absolute) deny('PATH_DENIED');
+              check();
+              return absolute;
+            };
+            if (!Number.isInteger(cargoExit) || cargoExit < 1 || cargoExit > 255) deny('PATH_DENIED');
+            root = await safePath(root);
+            if (!/^backend-profile-diagnostics\.[A-Za-z0-9]+$/.test(path.basename(root))) deny('PATH_DENIED');
+            const owned = await lstat(root, { bigint: true });
+            if (!owned.isDirectory() || (process.getuid && owned.uid !== BigInt(process.getuid()))) deny('PATH_DENIED');
+            const evidence = await safePath(path.join(root, 'evidence'));
+            const evidenceIdentity = await lstat(evidence, { bigint: true });
+            if (!evidenceIdentity.isDirectory() || evidenceIdentity.uid !== owned.uid) deny('PATH_DENIED');
+            const outputReady = async () => {
+              await safePath(root);
+              await safePath(evidence);
+              for (const [directory, original] of [[root, owned], [evidence, evidenceIdentity]]) {
+                const current = await lstat(directory, { bigint: true });
+                if (!current.isDirectory() || !['dev', 'ino', 'uid', 'mode'].every((key) => current[key] === original[key])) deny('PATH_DENIED');
+              }
+              check();
+            };
+            const summary = { schemaVersion: 1, kind: 'failed-backend-profile-diagnostics', cargoExit, complete: false, list: null, profiles: [], failure: null };
+            // Reserve the fixed collection record as part of the total evidence
+            // budget, including the already captured tail and original list.
+            let retained = 1024 * 1024, profileBytes = 0;
+            const read = async (file, maximum, destination) => {
+              await safePath(file);
+              const before = await lstat(file, { bigint: true });
+              if (!before.isFile() || before.nlink !== 1n) deny('LINK_DENIED');
+              if (before.size < 0n || before.size > BigInt(maximum)) deny('FILE_BOUND');
+              if (destination && retained + Number(before.size) > 64 * 1024 ** 2) deny('FILE_BOUND');
+              const input = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+              let output;
+              try {
+                if (!same(before, await input.stat({ bigint: true }))) deny('FILE_CHANGED');
+                await afterOpen(file);
+                check();
+                if (destination) { await outputReady(); output = await open(destination, 'wx', 0o600); }
+                const hash = createHash('sha256'), chunks = [];
+                const buffer = Buffer.alloc(1024 * 1024);
+                let bytes = 0, header = Buffer.alloc(0);
+                for (;;) {
+                  check();
+                  const result = await input.read(buffer, 0, buffer.length, null);
+                  check();
+                  if (!result.bytesRead) break;
+                  bytes += result.bytesRead;
+                  if (BigInt(bytes) > before.size || bytes > maximum) deny('FILE_CHANGED');
+                  const chunk = buffer.subarray(0, result.bytesRead);
+                  hash.update(chunk);
+                  if (header.length < 64) header = Buffer.concat([header, chunk.subarray(0, 64 - header.length)]);
+                  if (output) await output.writeFile(chunk);
+                  else chunks.push(Buffer.from(chunk));
+                }
+                const named = await lstat(file, { bigint: true });
+                if (BigInt(bytes) !== before.size || !same(before, await input.stat({ bigint: true })) || !same(before, named)) deny('FILE_CHANGED');
+                await safePath(file);
+                if (destination) { retained += bytes; profileBytes += bytes; }
+                return { bytes, sha256: hash.digest('hex'), headerHex: header.toString('hex'), data: destination ? null : Buffer.concat(chunks) };
+              } finally {
+                await output?.close();
+                await input.close();
+              }
+            };
+            try {
+              target = await safePath(target);
+              const tail = await read(path.join(evidence, 'coverage-tail.log'), 1024 * 1024);
+              retained += tail.bytes;
+              const list = await read(path.join(target, 'src-tauri-profraw-list'), 1024 * 1024);
+              const listRows = new TextDecoder('utf-8', { fatal: true }).decode(list.data).trim().split(/\r?\n/);
+              if (listRows.length > 10_000 || listRows.some((row) => path.dirname(row) !== target || !PROFILE.test(path.basename(row))) || new Set(listRows).size !== listRows.length) deny('LIST_DENIED');
+              summary.list = { bytes: list.bytes, sha256: list.sha256, files: listRows.map((row) => path.basename(row)) };
+              // Keep the original list byte-for-byte after closed path validation.
+              await outputReady();
+              await writeFile(path.join(evidence, 'profraw-list.txt'), list.data, { flag: 'wx', mode: 0o600 });
+              retained += list.bytes;
+              const diagnosed = new Set();
+              const text = tail.data.toString('utf8').replace(/\x1b\[[0-9;]*m/g, '');
+              let count = 0;
+              for (const match of text.matchAll(/warning: ([^\r\n]{1,4096}\.profraw): invalid instrumentation profile data \(file header is corrupt\)/g)) {
+                if (++count > 256) deny('DIAGNOSTIC_BOUND');
+                const file = match[1];
+                if (path.dirname(file) !== target || !PROFILE.test(path.basename(file)) || !listRows.includes(file)) deny('PATH_DENIED');
+                diagnosed.add(file);
+                if (diagnosed.size > 16) deny('DIAGNOSTIC_BOUND');
+              }
+              if (!diagnosed.size) deny('DIAGNOSTIC_UNAVAILABLE');
+              for (const file of diagnosed) {
+                const name = path.basename(file);
+                const record = { file: name, retained: false };
+                summary.profiles.push(record);
+                try {
+                  const result = await read(file, 32 * 1024 ** 2, path.join(evidence, name));
+                  Object.assign(record, { retained: true, bytes: result.bytes, sha256: result.sha256, headerHex: result.headerHex });
+                } catch (error) {
+                  record.failure = codeOf(error);
+                  throw error;
+                }
+              }
+              check();
+              summary.complete = true;
+            } catch (error) {
+              summary.failure = codeOf(error);
+            }
+            summary.retainedProfileBytes = profileBytes;
+            summary.elapsedMilliseconds = Math.max(0, Math.round(now() - began));
+            await outputReady();
+            await writeFile(path.join(evidence, 'collection.json'), `${JSON.stringify(summary)}\n`, { flag: 'wx', mode: 0o600 });
+            return summary;
+          }
+          if (process.argv[1] === '-') {
+            try {
+              await collectCoverageProfiles(process.argv[2], path.resolve('target/llvm-cov-target'), Number(process.argv[3]));
+            } catch {
+              console.error('COVERAGE_PROFILE_DIAGNOSTICS_UNAVAILABLE');
+              process.exitCode = 1;
+            }
+          }
+          PROFILE_COLLECTOR
+            collector_status=$?
+            set -e
+            printf 'coverage diagnostic collector exit=%s; original cargo exit=%s\n' "$collector_status" "$cargo_status"
+            exit "$cargo_status"
+          fi
+          test "$capture_status" -eq 0
+
+      - name: Retain bounded failed-profile evidence
+        if: failure() && steps.coverage.outputs.profile_diagnostics != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: backend-coverage-profile-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.coverage.outputs.profile_diagnostics }}
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Upload lcov artifact
         if: always()
