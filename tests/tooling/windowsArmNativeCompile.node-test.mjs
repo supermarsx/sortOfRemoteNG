@@ -8,6 +8,8 @@ import {
   realpath,
   lstat,
   rm,
+  mkdir,
+  symlink,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -123,7 +125,10 @@ test("native child environment uses explicit owned identity without ambient cred
 });
 
 test("held reader supports empty declared logs but bounds and authenticates installed files", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "arm-compile-data-"));
+  const canonicalTemp = await realpath(tmpdir());
+  const directory = await mkdtemp(
+    path.join(canonicalTemp, "arm-compile-data-"),
+  );
   try {
     const file = path.join(directory, "owned.log");
     await writeFile(file, "");
@@ -259,4 +264,80 @@ test("closed source binding rejects tampering, mixed EOL, invalid UTF8 and nativ
     workflow,
     /writeFile\(path.join\(root,'source-inputs',String\(n\)\),data/,
   );
+});
+
+test("owned directory alias is rejected while its exact canonical fixture is readable", async () => {
+  const canonicalTemp = await realpath(tmpdir());
+  const directory = await mkdtemp(
+    path.join(canonicalTemp, "arm-compile-alias-"),
+  );
+  const original = await lstat(directory, { bigint: true });
+  const physical = path.join(directory, "physical"),
+    alias = path.join(directory, "alias");
+  const file = path.join(physical, "owned.log");
+  let physicalIdentity,
+    fileIdentity,
+    aliasCreated = false;
+  const same = (left, right) => {
+    assert.equal(left.dev, right.dev);
+    assert.equal(left.ino, right.ino);
+  };
+  try {
+    await mkdir(physical);
+    physicalIdentity = await lstat(physical, { bigint: true });
+    await writeFile(file, "owned-fixture", { flag: "wx" });
+    fileIdentity = await lstat(file, { bigint: true });
+    await symlink(
+      physical,
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    aliasCreated = true;
+    const aliasedFile = path.join(alias, "owned.log");
+    assert.notEqual(aliasedFile, await realpath(aliasedFile));
+    // This is the unchanged production reader: the lexical alias fails before payload read.
+    await assert.rejects(api.held(aliasedFile, 32), {
+      message: "COMPILE_ALIAS",
+    });
+    const canonicalFile = await realpath(aliasedFile);
+    assert.equal(canonicalFile, file);
+    assert.equal(
+      (await api.held(canonicalFile, 32)).toString(),
+      "owned-fixture",
+    );
+    await assert.rejects(api.held(aliasedFile, 32), {
+      message: "COMPILE_ALIAS",
+    });
+    await assert.rejects(api.held(canonicalFile, 3), {
+      message: "COMPILE_FILE_BOUND",
+    });
+  } finally {
+    const current = await lstat(directory, { bigint: true });
+    assert(current.isDirectory() && !current.isSymbolicLink());
+    same(current, original);
+    assert.equal(await realpath(directory), directory);
+    assert.equal(path.dirname(directory), canonicalTemp);
+    if (aliasCreated) {
+      assert((await lstat(alias)).isSymbolicLink());
+      assert.equal(await realpath(alias), physical);
+      await unlink(alias);
+    }
+    if (physicalIdentity) {
+      const currentPhysical = await lstat(physical, { bigint: true });
+      assert(
+        currentPhysical.isDirectory() && !currentPhysical.isSymbolicLink(),
+      );
+      same(currentPhysical, physicalIdentity);
+      assert.equal(await realpath(physical), physical);
+    }
+    if (fileIdentity) {
+      const currentFile = await lstat(file, { bigint: true });
+      assert(currentFile.isFile() && !currentFile.isSymbolicLink());
+      same(currentFile, fileIdentity);
+      assert.equal(currentFile.nlink, 1n);
+      await unlink(file);
+    }
+    if (physicalIdentity) await rmdir(physical);
+    await rmdir(directory);
+  }
 });
