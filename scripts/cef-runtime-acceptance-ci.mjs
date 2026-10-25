@@ -1043,6 +1043,7 @@ export function fixtureClientBuild(target, suite) {
       "--target",
       target,
       "-j2",
+      ...(suite === "http3" ? ["--features", "cef"] : []),
     ],
   };
 }

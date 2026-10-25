@@ -197,6 +197,54 @@ test("HTTP3 plans preserve native target, sandbox stage and verified patch-only 
   }
 });
 
+test("HTTP3 explicitly selects the opt-in CEF fixture on all six targets without changing TLS/H2 commands", async () => {
+  const manifest = await readFile(
+    new URL(
+      "../../src-tauri/crates/sorng-browser-host/tests/native_http3_acceptance/Cargo.toml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const lib = await readFile(
+    new URL(
+      "../../src-tauri/crates/sorng-browser-host/tests/native_http3_acceptance/src/lib.rs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const cef = await readFile(
+    new URL(
+      "../../src-tauri/crates/sorng-browser-host/tests/native_http3_acceptance/src/cef_fixture.rs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(manifest, /\[features\]\s+default = \[\]/);
+  assert.match(lib, /#\[cfg\(feature = "cef"\)\]\s+pub mod cef_fixture;/);
+  assert.match(cef, /#\[cfg\(windows\)\]\s+#\[no_mangle\]/);
+  assert.match(cef, /pub unsafe extern "C" fn RunWinMain\(/);
+  assert.equal(Object.keys(NATIVE_TARGETS).length, 6);
+  for (const [target, host] of Object.entries(NATIVE_TARGETS)) {
+    for (const suite of ["tls", "http2", "http3"]) {
+      const original = [
+        "scripts/native-build-env.mjs",
+        "cargo",
+        "build",
+        "--manifest-path",
+        `src-tauri/crates/sorng-browser-host/tests/native_${suite}_acceptance/Cargo.toml`,
+        host.platform === "win32" ? "--lib" : "--bins",
+        "--locked",
+        "--target",
+        target,
+        "-j2",
+      ];
+      const expected =
+        suite === "http3" ? [...original, "--features", "cef"] : original;
+      assert.deepEqual(fixtureClientBuild(target, suite).args, expected);
+    }
+  }
+});
+
 test("verified source lock reader rejects byte, identity, unknown and oversized binding before suite selection", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "native-suite-source-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -360,7 +408,14 @@ test("actual production suite loop keeps prior H2 outputs and creates seventeen 
       staged = [];
     const runCommand = async (_executable, args) => {
       if (args.includes("build")) {
-        built.push(args[args.indexOf("--manifest-path") + 1]);
+        const manifest = args[args.indexOf("--manifest-path") + 1];
+        if (manifest.includes("native_http3_acceptance"))
+          assert.deepEqual(
+            args.slice(args.indexOf("--features")),
+            ["--features", "cef"],
+            "actual production H3 build must enable its CEF-only bootstrap",
+          );
+        built.push(manifest);
         return;
       }
       assert.equal(args[0], "scripts/cef-browser-acceptance.mjs");
