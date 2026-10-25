@@ -52,7 +52,8 @@ export const LINUX_ISOLATED_INPUT_RAW =
   "57ef78a4db57c9f18da0f773c990b95e97ff3b457201b6e9a9911589e1695993";
 export const LINUX_ISOLATED_IDENTITY =
   "f4c94e74af5ee552cf4370c459973b2298a97c68337e494f24c05dde9a8e3004";
-// Derived by actual private Git old12 -> ordered23 from pinned public blobs.
+// Derived by actual private Git official CEF116 baseline -> old12 -> ordered23.
+// The full seven-repository replay matches the genuine cached499 inventory.
 export const LINUX_ISOLATED_TRANSITION = Object.freeze({
   before: [
     {
@@ -87,9 +88,9 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     {
       path: "base/test/BUILD.gn",
       kind: "file",
-      size: 28854,
+      size: 27681,
       sha256:
-        "f9b9b5c2e9805bb1901e6442e0e3453d844cbfd52e543662d65b2d012a541e35",
+        "ddafdef39dbcff4330459ab76cc71c1167091bb5da8d8ade01426f181c9f832e",
     },
     {
       path: "base/test/tracing/test_trace_processor.cc",
@@ -489,9 +490,9 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     {
       path: "services/network/network_context.cc",
       kind: "file",
-      size: 176612,
+      size: 176767,
       sha256:
-        "8a20ddbdb8b2434b5fe1de83e17541a5190172bb97a5a694f762d4a5438f8c2b",
+        "b84a5c15c3b7c91c796b9f4b1ffb2f9e1dce9c20f4fc41f4b1ed469cae92ed53",
     },
     {
       path: "services/network/network_context.h",
@@ -503,9 +504,9 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     {
       path: "services/network/public/mojom/network_context.mojom",
       kind: "file",
-      size: 93392,
+      size: 93503,
       sha256:
-        "cc7f6c6dfcb085832f95d673aeaadb9c540487533d6a77ac33c92bf3112a5ba5",
+        "924cfd6f22d96a11187e684d72ba0607f4b59cc39d023b5b83f67f20357c8ffd",
     },
     {
       path: "services/network/sorng_datagram_configuration_unittest.cc",
@@ -551,9 +552,9 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     {
       path: "base/test/BUILD.gn",
       kind: "file",
-      size: 28953,
+      size: 27780,
       sha256:
-        "c57dbfc40278fdc9af67558f6209b17b8531066b1672a2f3e3e6c6851b8bbc37",
+        "ef64d54196d1b101e0eca9dfd7dbda029c033663ff7b118892a0bfe306298ba0",
     },
     {
       path: "base/test/tracing/test_trace_processor.cc",
@@ -971,9 +972,9 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     {
       path: "services/network/network_context.cc",
       kind: "file",
-      size: 179056,
+      size: 179211,
       sha256:
-        "4399b126f358e0c13e8f47cb75d9634f76fed94821c54067a103d55b9aa7ffe1",
+        "c0e69a996e417c0af4d9f49547cb9ddbc60610ca27e05410f389c243ba44d568",
     },
     {
       path: "services/network/network_context.h",
@@ -985,9 +986,9 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     {
       path: "services/network/public/mojom/network_context.mojom",
       kind: "file",
-      size: 93573,
+      size: 93684,
       sha256:
-        "cae7e451c042e56d8b6832a1bf53e9dc98bb5b81f08c051b05c21f142c7f0ba8",
+        "c98c633f53b585cd18938afa348164b94d87b8716146664c7d326fdb764e2285",
     },
     {
       path: "services/network/sorng_datagram_configuration_unittest.cc",

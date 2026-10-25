@@ -3740,7 +3740,7 @@ test("isolated R5 transition rejects missing H3/lifetime, stale R4, absent-preim
 });
 
 test(
-  "isolated R5 expected69 maps are real Git old12/new23 public postimages, not mocked execution facts",
+  "isolated R5 pristine Git replay plus independent official116 goldens preserves all other66 rows",
   { timeout: 120000 },
   async (t) => {
     const lock = JSON.parse(
@@ -3868,8 +3868,26 @@ test(
       }
       if (i === 11) before = state();
     }
-    assert.deepEqual(before, LINUX_ISOLATED_TRANSITION.before);
-    assert.deepEqual(state(), LINUX_ISOLATED_TRANSITION.after);
+    const withOfficialBaseline = (rows, which) =>
+      rows.map((row) => {
+        const golden = OFFICIAL_MAP_GOLDENS.find(
+          (x) => x.which === which && x.path === row.path,
+        );
+        if (!golden) return row;
+        assert.deepEqual(row, golden.pristine);
+        return golden.official;
+      });
+    // This bounded test replays pristine public Git plus our patches. The six
+    // independent goldens come from the retained full116/499 replay, not this
+    // pristine fixture or the production expected map.
+    assert.deepEqual(
+      withOfficialBaseline(before, "before"),
+      LINUX_ISOLATED_TRANSITION.before,
+    );
+    assert.deepEqual(
+      withOfficialBaseline(state(), "after"),
+      LINUX_ISOLATED_TRANSITION.after,
+    );
     assert.equal(before.filter((x) => x.kind === "absent").length, 9);
     for (const row of [...lock.patches.slice(12)].reverse()) {
       const result = run(
@@ -3893,7 +3911,7 @@ test(
       "Old12 cache cannot masquerade as H3/lifetime source23",
     );
     t.diagnostic(
-      "Actual private Git old12/new23/reversed-old12 maps equal all69 reviewed rows; no vendor hooks or engine execution",
+      "Actual pristine Git old12/new23/reversed-old12 replay plus six independent official116 golden rows matches the reviewed maps; no vendor hooks or engine execution",
     );
   },
 );
@@ -4267,5 +4285,199 @@ test("isolated init authority allows only omitted/null/typed-empty fields and de
         name +
           " rejects malformed authority rather than coercing truthiness or length",
       );
+  }
+});
+
+// Independent goldens: full seven-repository official116/old12 replay matched
+// actual499 digest45911abc; independent target69 replay3b0dc7a8 agreed.
+// These values are observed fixture facts, never read from the production map.
+const OFFICIAL_MAP_GOLDENS = [
+  {
+    which: "before",
+    official: {
+      kind: "file",
+      path: "base/test/BUILD.gn",
+      sha256:
+        "ddafdef39dbcff4330459ab76cc71c1167091bb5da8d8ade01426f181c9f832e",
+      size: 27681,
+    },
+    path: "base/test/BUILD.gn",
+    pristine: {
+      kind: "file",
+      path: "base/test/BUILD.gn",
+      sha256:
+        "f9b9b5c2e9805bb1901e6442e0e3453d844cbfd52e543662d65b2d012a541e35",
+      size: 28854,
+    },
+  },
+  {
+    which: "before",
+    official: {
+      kind: "file",
+      path: "services/network/network_context.cc",
+      sha256:
+        "b84a5c15c3b7c91c796b9f4b1ffb2f9e1dce9c20f4fc41f4b1ed469cae92ed53",
+      size: 176767,
+    },
+    path: "services/network/network_context.cc",
+    pristine: {
+      kind: "file",
+      path: "services/network/network_context.cc",
+      sha256:
+        "8a20ddbdb8b2434b5fe1de83e17541a5190172bb97a5a694f762d4a5438f8c2b",
+      size: 176612,
+    },
+  },
+  {
+    which: "before",
+    official: {
+      kind: "file",
+      path: "services/network/public/mojom/network_context.mojom",
+      sha256:
+        "924cfd6f22d96a11187e684d72ba0607f4b59cc39d023b5b83f67f20357c8ffd",
+      size: 93503,
+    },
+    path: "services/network/public/mojom/network_context.mojom",
+    pristine: {
+      kind: "file",
+      path: "services/network/public/mojom/network_context.mojom",
+      sha256:
+        "cc7f6c6dfcb085832f95d673aeaadb9c540487533d6a77ac33c92bf3112a5ba5",
+      size: 93392,
+    },
+  },
+  {
+    which: "after",
+    official: {
+      kind: "file",
+      path: "base/test/BUILD.gn",
+      sha256:
+        "ef64d54196d1b101e0eca9dfd7dbda029c033663ff7b118892a0bfe306298ba0",
+      size: 27780,
+    },
+    path: "base/test/BUILD.gn",
+    pristine: {
+      kind: "file",
+      path: "base/test/BUILD.gn",
+      sha256:
+        "c57dbfc40278fdc9af67558f6209b17b8531066b1672a2f3e3e6c6851b8bbc37",
+      size: 28953,
+    },
+  },
+  {
+    which: "after",
+    official: {
+      kind: "file",
+      path: "services/network/network_context.cc",
+      sha256:
+        "c0e69a996e417c0af4d9f49547cb9ddbc60610ca27e05410f389c243ba44d568",
+      size: 179211,
+    },
+    path: "services/network/network_context.cc",
+    pristine: {
+      kind: "file",
+      path: "services/network/network_context.cc",
+      sha256:
+        "4399b126f358e0c13e8f47cb75d9634f76fed94821c54067a103d55b9aa7ffe1",
+      size: 179056,
+    },
+  },
+  {
+    which: "after",
+    official: {
+      kind: "file",
+      path: "services/network/public/mojom/network_context.mojom",
+      sha256:
+        "c98c633f53b585cd18938afa348164b94d87b8716146664c7d326fdb764e2285",
+      size: 93684,
+    },
+    path: "services/network/public/mojom/network_context.mojom",
+    pristine: {
+      kind: "file",
+      path: "services/network/public/mojom/network_context.mojom",
+      sha256:
+        "cae7e451c042e56d8b6832a1bf53e9dc98bb5b81f08c051b05c21f142c7f0ba8",
+      size: 93573,
+    },
+  },
+];
+
+function applyOfficialObservedRow(f, which, row) {
+  const size = row.size,
+    sha256 = row.sha256;
+  Object.assign(
+    f.records.apply.facts[which].find((x) => x.path === row.path),
+    { size, sha256 },
+  );
+  if (which === "before") {
+    for (const list of [
+      f.records.readiness.facts.sourceBefore,
+      f.records.readiness.facts.reconstruction.verifiedSourcePins,
+    ])
+      Object.assign(
+        list.find((x) => x.path === row.path),
+        { size, sha256 },
+      );
+    const location = row.path.startsWith("base/")
+      ? ["base", row.path.slice(5)]
+      : ["network", row.path.slice(17)];
+    Object.assign(
+      f.records.copyManifest.facts.entries.find(
+        (x) => x.tree === location[0] && x.path === location[1],
+      ),
+      { size, sha256 },
+    );
+  } else
+    Object.assign(
+      f.records.postchecks.facts.sourceAfter.find((x) => x.path === row.path),
+      { size, sha256 },
+    );
+}
+function officialObservedFixture() {
+  const f = linuxIsolatedFixture();
+  for (const row of OFFICIAL_MAP_GOLDENS)
+    applyOfficialObservedRow(f, row.which, row.official);
+  refreshIsolatedCopyFacts(f);
+  const w = f.records.workspace.facts,
+    c = f.records.copyManifest.facts;
+  w.capacityBeforeBytes =
+    c.bytes +
+    w.cefProjection.bytes +
+    w.cefProjection.gitMetadata.bytes +
+    108 * 1024 ** 3;
+  f.records.gn.facts.sourceAfterSha256 = identitySha256(
+    f.records.postchecks.facts.sourceAfter,
+  );
+  f.refresh();
+  return f;
+}
+test("official116 actual499 golden facts pass the real isolated verifier instead of a pristine-only map", () => {
+  const f = officialObservedFixture();
+  assert.equal(f.records.apply.facts.before.length, 69);
+  assert.equal(f.records.apply.facts.after.length, 69);
+  assert.doesNotThrow(() =>
+    verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+  );
+});
+test("official116 map denies each consistently repinned pristine-only before or after row", () => {
+  for (const row of OFFICIAL_MAP_GOLDENS) {
+    const f = officialObservedFixture();
+    applyOfficialObservedRow(f, row.which, row.pristine);
+    refreshIsolatedCopyFacts(f);
+    const w = f.records.workspace.facts,
+      c = f.records.copyManifest.facts;
+    w.capacityBeforeBytes =
+      c.bytes +
+      w.cefProjection.bytes +
+      w.cefProjection.gitMetadata.bytes +
+      108 * 1024 ** 3;
+    f.records.gn.facts.sourceAfterSha256 = identitySha256(
+      f.records.postchecks.facts.sourceAfter,
+    );
+    f.refresh();
+    assert.throws(
+      () => verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+      /Linux incremental evidence mismatch/,
+    );
   }
 });
