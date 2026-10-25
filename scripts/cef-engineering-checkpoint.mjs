@@ -39,6 +39,10 @@ import {
   validateIdentity,
   graphInventory,
   graphInventoryRecord,
+  graphPinSnapshot,
+  createRestoreObserver,
+  restorePhase,
+  restoreIdentityComparison,
   persistGeneratedLinkInventory,
   afterGnPhase,
   checkpointPhase,
@@ -354,8 +358,31 @@ async function checkpointMain(argv, env, observer) {
             await afterGnPhase("recipe-write", () =>
               writeFile(recipePath, canonical(linkRecipe), { flag: "wx" }),
             );
+            const restoreObserver = createRestoreObserver((record) =>
+              console.log(
+                `[cef-engineering-checkpoint] restore ${canonical(record)}`,
+              ),
+            );
             const graph = await afterGnPhase("graph-inventory", () =>
               graphInventory(out, {
+                async observePins(pins) {
+                  try {
+                    await writeFile(
+                      path.join(context.logs, "fresh-graph-pins.json"),
+                      graphPinSnapshot(pins),
+                      { flag: "wx" },
+                    );
+                    await restoreObserver({
+                      stage: "graph-snapshot",
+                      event: "complete",
+                    });
+                  } catch {
+                    await restoreObserver({
+                      stage: "graph-snapshot",
+                      event: "unavailable",
+                    });
+                  }
+                },
                 observe(record) {
                   if (record.phase !== "hashing")
                     console.log(
@@ -396,53 +423,97 @@ async function checkpointMain(argv, env, observer) {
             );
             context.checkpoint = { out, identity, digest, recipePath };
             await afterGnPhase("restore", async () => {
-              let prior;
-              try {
-                prior = await json(path.join(download, "download-proof.json"));
-              } catch (error) {
-                if (error.code !== "ENOENT") throw error;
-              }
+              const prior = await restorePhase(
+                restoreObserver,
+                "proof-read",
+                async () => {
+                  try {
+                    return await json(
+                      path.join(download, "download-proof.json"),
+                    );
+                  } catch (error) {
+                    if (error.code !== "ENOENT") throw error;
+                  }
+                },
+              );
               if (prior) {
-                const manifestBytes = await readFile(
-                  path.join(download, "manifest.json"),
+                const manifestBytes = await restorePhase(
+                  restoreObserver,
+                  "manifest-read",
+                  () => readFile(path.join(download, "manifest.json")),
                 );
-                fail(
-                  /^[a-f0-9]{64}$/.test(env.CEF_RESTORE_MANIFEST_SHA ?? "") &&
-                    sha(manifestBytes) === env.CEF_RESTORE_MANIFEST_SHA,
-                  "Manifest differs from trusted download-step output",
+                await restorePhase(restoreObserver, "manifest-digest", () =>
+                  fail(
+                    /^[a-f0-9]{64}$/.test(env.CEF_RESTORE_MANIFEST_SHA ?? "") &&
+                      sha(manifestBytes) === env.CEF_RESTORE_MANIFEST_SHA,
+                    "Manifest differs from trusted download-step output",
+                  ),
                 );
-                fail(
-                  canonical(JSON.parse(manifestBytes)) ===
-                    canonical(prior.manifest),
-                  "Restore proof differs from pinned manifest",
+                await restorePhase(restoreObserver, "proof-match", () =>
+                  fail(
+                    canonical(JSON.parse(manifestBytes)) ===
+                      canonical(prior.manifest),
+                    "Restore proof differs from pinned manifest",
+                  ),
                 );
-                validateManifest(prior.manifest, digest);
-                const free = await statfs(path.dirname(out));
-                fail(
-                  free.bavail * free.bsize >=
-                    prior.manifest.archive.rawBytes + 2 * 1024 ** 3,
-                  "Restore disk capacity",
+                await restorePhase(
+                  restoreObserver,
+                  "manifest-validation",
+                  async () => {
+                    try {
+                      return validateManifest(prior.manifest, digest);
+                    } finally {
+                      await restoreObserver({
+                        stage: "identity-comparison",
+                        event: "complete",
+                        comparison: restoreIdentityComparison(
+                          identity,
+                          prior.manifest,
+                        ),
+                      });
+                    }
+                  },
+                );
+                await restorePhase(
+                  restoreObserver,
+                  "disk-capacity",
+                  async () => {
+                    const free = await statfs(path.dirname(out));
+                    fail(
+                      free.bavail * free.bsize >=
+                        prior.manifest.archive.rawBytes + 2 * 1024 ** 3,
+                      "Restore disk capacity",
+                    );
+                  },
                 );
                 const restored = path.join(
                   path.dirname(out),
                   "checkpoint-restored",
                 );
-                const result = await archiveCommand(verified.python, HELPER, [
-                  "restore",
-                  "--input",
-                  download,
-                  "--output",
-                  restored,
-                  "--manifest",
-                  path.join(download, "manifest.json"),
-                  "--generated-links",
-                  recipePath,
-                ]);
-                fail(
-                  result.complete === true && result.linksExtracted === false,
-                  "Incomplete verified restore",
+                const result = await restorePhase(
+                  restoreObserver,
+                  "archive-restore",
+                  () =>
+                    archiveCommand(verified.python, HELPER, [
+                      "restore",
+                      "--input",
+                      download,
+                      "--output",
+                      restored,
+                      "--manifest",
+                      path.join(download, "manifest.json"),
+                      "--generated-links",
+                      recipePath,
+                    ]),
+                );
+                await restorePhase(restoreObserver, "archive-result", () =>
+                  fail(
+                    result.complete === true && result.linksExtracted === false,
+                    "Incomplete verified restore",
+                  ),
                 );
                 await restoreVerifiedGraph({
+                  observe: restoreObserver,
                   fresh: out,
                   restored,
                   expectedGraph: identity.graph,
