@@ -32,6 +32,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "windows-arm-native-tools.yml": 1,
   "windows-arm-native-compile.yml": 1,
   "windows-x64-arm-clang-slice.yml": 1,
+  "windows-x64-arm-toolchain.yml": 1,
   "ci.yml": 10,
   "coverage.yml": 1,
   "docs-pages.yml": 1,

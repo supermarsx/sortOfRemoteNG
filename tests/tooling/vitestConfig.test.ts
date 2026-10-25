@@ -174,12 +174,18 @@ describe("ordinary Vitest discovery", () => {
         run: "python -I -B native/windows-x64-arm-clang/test_observe.py",
       },
       {
+        name: "Hosted x64 ARM toolchain contracts (Windows)",
+        condition: "runner.os == 'Windows'",
+        run: "python -I -B native/windows-x64-arm-toolchain/test_toolchain.py",
+      },
+      {
         name: "Native ARM helper contracts (Unix)",
         condition: "runner.os != 'Windows'",
         run: [
           "python3 -I -B native/windows-arm-native-tools/test_observe.py",
           "python3 -I -B native/windows-arm-native-compile/test_compile.py",
           "python3 -I -B native/windows-x64-arm-clang/test_observe.py",
+          "python3 -I -B native/windows-x64-arm-toolchain/test_toolchain.py",
         ].join("\n"),
       },
     ];

@@ -532,7 +532,7 @@ jobs:
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
       - name: Runtime package layout and whole-matrix contract
-        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs tests/tooling/browserCustomRuntime.node-test.mjs tests/tooling/cefHttp2Admission.node-test.mjs tests/tooling/cefRuntimeCI.node-test.mjs tests/tooling/cefRuntimeAcceptanceCI.node-test.mjs tests/tooling/cefEngineeringCheckpoint.node-test.mjs tests/tooling/cefOwnedSdkHandoff.node-test.mjs tests/tooling/cefOwnedSdkImport.node-test.mjs tests/tooling/cefOwnedSdkPublish.node-test.mjs tests/tooling/cefSdkLayoutProbeWorkflow.node-test.mjs tests/tooling/cefHostedBootstrap.node-test.mjs tests/tooling/cefHostedProvision.node-test.mjs tests/tooling/cefSandboxObserver.node-test.mjs tests/tooling/cefMacSdkInventory.node-test.mjs tests/tooling/cefMacLegacyCapture.node-test.mjs tests/tooling/cefX11Colormap.node-test.mjs tests/tooling/cefWindowsArmR5Inputs.node-test.mjs tests/tooling/windowsArmNativeTools.node-test.mjs tests/tooling/windowsArmNativeCompile.node-test.mjs tests/tooling/windowsX64ArmClangSlice.node-test.mjs
+        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs tests/tooling/browserCustomRuntime.node-test.mjs tests/tooling/cefHttp2Admission.node-test.mjs tests/tooling/cefRuntimeCI.node-test.mjs tests/tooling/cefRuntimeAcceptanceCI.node-test.mjs tests/tooling/cefEngineeringCheckpoint.node-test.mjs tests/tooling/cefOwnedSdkHandoff.node-test.mjs tests/tooling/cefOwnedSdkImport.node-test.mjs tests/tooling/cefOwnedSdkPublish.node-test.mjs tests/tooling/cefSdkLayoutProbeWorkflow.node-test.mjs tests/tooling/cefHostedBootstrap.node-test.mjs tests/tooling/cefHostedProvision.node-test.mjs tests/tooling/cefSandboxObserver.node-test.mjs tests/tooling/cefMacSdkInventory.node-test.mjs tests/tooling/cefMacLegacyCapture.node-test.mjs tests/tooling/cefX11Colormap.node-test.mjs tests/tooling/cefWindowsArmR5Inputs.node-test.mjs tests/tooling/windowsArmNativeTools.node-test.mjs tests/tooling/windowsArmNativeCompile.node-test.mjs tests/tooling/windowsX64ArmClangSlice.node-test.mjs tests/tooling/windowsX64ArmToolchain.node-test.mjs
       - name: Native ARM tool observer contracts (Windows)
         if: runner.os == 'Windows'
         run: python -I -B native/windows-arm-native-tools/test_observe.py
@@ -542,12 +542,16 @@ jobs:
       - name: Hosted x64 ARM inventory contracts (Windows)
         if: runner.os == 'Windows'
         run: python -I -B native/windows-x64-arm-clang/test_observe.py
+      - name: Hosted x64 ARM toolchain contracts (Windows)
+        if: runner.os == 'Windows'
+        run: python -I -B native/windows-x64-arm-toolchain/test_toolchain.py
       - name: Native ARM helper contracts (Unix)
         if: runner.os != 'Windows'
         run: |
           python3 -I -B native/windows-arm-native-tools/test_observe.py
           python3 -I -B native/windows-arm-native-compile/test_compile.py
           python3 -I -B native/windows-x64-arm-clang/test_observe.py
+          python3 -I -B native/windows-x64-arm-toolchain/test_toolchain.py
       - name: Native browser std-only contracts (Node + rustc)
         run: node --test tests/tooling/nativeWarmStartup.node-test.mjs tests/tooling/nativeCredentialFocus.node-test.mjs tests/tooling/nativeNavigationFailure.node-test.mjs tests/tooling/nativeLoginDiagnostics.node-test.mjs tests/tooling/cefStartupFieldTrials.node-test.mjs tests/tooling/nativeOriginProbe.node-test.mjs tests/tooling/appStartupSteps.node-test.mjs tests/tooling/nativeEngineFailure.node-test.mjs tests/tooling/secureClipboardExit.node-test.mjs tests/tooling/webNetworkGuardLatch.node-test.mjs tests/tooling/tauriEventListenerCleanup.node-test.mjs tests/tooling/nativeBrowserStartupTask.node-test.mjs tests/tooling/nativeRendererReadiness.node-test.mjs
       - name: Verify Windows updater archive security backport
