@@ -1196,7 +1196,11 @@ export function compileMonitorDetails(value) {
   };
 }
 function compileMonitorGuard(ok, message, code, facts) {
-  if (!ok) throw compileMonitorRecord(new Error(message), code, facts);
+  try {
+    assert(ok, message);
+  } catch (error) {
+    throw compileMonitorRecord(error, code, facts);
+  }
 }
 
 export function processRows(text) {

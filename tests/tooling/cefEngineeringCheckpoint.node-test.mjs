@@ -6460,7 +6460,11 @@ async function compileSupervisorModel(options = {}) {
     sisoLoggerIdentity,
     compileMonitorDetails,
     compileMonitorGuard: (ok, message, code) => {
-      if (!ok) throw compileMonitorRecord(new Error(message), code);
+      try {
+        assert(ok, message);
+      } catch (error) {
+        throw compileMonitorRecord(error, code);
+      }
     },
     compileWithin: within,
     checkpointLog: (sink, line) => (state.diagnostic = line),
@@ -6719,7 +6723,11 @@ test("fixed ps timeout kills only its creation-owned helper and cannot retain st
     processRows,
     compileMonitorRecord,
     compileMonitorGuard: (ok, message, code) => {
-      if (!ok) throw compileMonitorRecord(new Error(message), code);
+      try {
+        assert(ok, message);
+      } catch (error) {
+        throw compileMonitorRecord(error, code);
+      }
     },
     setTimeout: (callback) => setTimeout(callback, 5),
     clearTimeout,
@@ -7646,4 +7654,73 @@ test("monitor rejected promise is distinguished from an unjoined live task witho
   assert.equal(facts.monitorFailure.snapshotChars, 4194305);
   assert(Buffer.byteLength(JSON.stringify(facts.monitorFailure)) <= 4096);
   assert(!/SECRET|pid|start/.test(JSON.stringify(facts.monitorFailure)));
+});
+
+test("actual monitor guard delegates the original assertion and tags the identical thrown object", async () => {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "checkpoint.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = ast.statements
+    .find(
+      (n) =>
+        ts.isFunctionDeclaration(n) && n.name?.text === "compileMonitorGuard",
+    )
+    .getText(ast);
+  const make = (originalAssert) =>
+    new Function(
+      "assert",
+      "compileMonitorRecord",
+      body + "\nreturn compileMonitorGuard;",
+    )(originalAssert, compileMonitorRecord);
+  let original;
+  try {
+    assert(false, "original classification");
+  } catch (error) {
+    original = error;
+  }
+  assert.equal(original.code, "ERR_ASSERTION");
+  const guard = make(assert);
+  assert.throws(
+    () => guard(false, "original classification", "PS_ROWS_SYNTAX"),
+    (error) => {
+      for (const key of [
+        "name",
+        "code",
+        "actual",
+        "expected",
+        "operator",
+        "message",
+      ])
+        assert.equal(error[key], original[key], key);
+      assert.equal(error.constructor, original.constructor);
+      assert.equal(compileMonitorDetails(error).code, "PS_ROWS_SYNTAX");
+      return true;
+    },
+  );
+  const exact = make(() => {
+    throw original;
+  });
+  assert.throws(
+    () => exact(false, "unchanged", "PS_ROWS_SYNTAX"),
+    (error) => error === original,
+  );
+  const nullGuard = make(() => {
+    throw null;
+  });
+  assert.throws(
+    () => nullGuard(false, "unchanged", "PS_ROWS_SYNTAX"),
+    (error) => error === null,
+  );
+  assert.equal(guard(true, "true guard", "PS_ROWS_SYNTAX"), undefined);
 });
