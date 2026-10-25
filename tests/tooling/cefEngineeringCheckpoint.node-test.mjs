@@ -7724,3 +7724,234 @@ test("actual monitor guard delegates the original assertion and tags the identic
   );
   assert.equal(guard(true, "true guard", "PS_ROWS_SYNTAX"), undefined);
 });
+
+// The diagnostic branch intentionally has a different workflow. Existing
+// engineering-workflow assertions above remain unchanged and are not waived.
+const supervisorProbe =
+  await import("./fixtures/cefCompileSupervisorProbe.mjs");
+
+test("synthetic macOS probe fixes authority, clocks, resources and a credential-free child environment", () => {
+  const good = {
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: "1010282954",
+    event: "workflow_dispatch",
+    visibility: "public",
+    ref: supervisorProbe.PROBE_BRANCH,
+    diagnostic: "synthetic-process-only",
+    head: "a".repeat(40),
+  };
+  assert.equal(supervisorProbe.probeAuthority(good), good.head);
+  for (const [key, value] of Object.entries({
+    repository: "foreign/repo",
+    repositoryId: "1",
+    event: "push",
+    visibility: "private",
+    ref: "refs/heads/main",
+    diagnostic: "complete-sdk",
+    head: "wrong",
+  }))
+    assert.throws(() =>
+      supervisorProbe.probeAuthority({ ...good, [key]: value }),
+    );
+  assert.throws(() =>
+    supervisorProbe.probeAuthority({ ...good, arbitrary: "selector" }),
+  );
+  assert.deepEqual(supervisorProbe.PROBE_LIMITS, {
+    workMs: 120000,
+    cleanupMs: 30000,
+    rootMs: 90000,
+    children: 4,
+    launches: 32,
+    childMs: 3000,
+    allocationBytes: 16 * 1024 ** 2,
+    oldSpaceMiB: 64,
+    fileBytes: 1024 ** 2,
+    artifactBytes: 3 * 1024 ** 2,
+  });
+  const env = supervisorProbe.probeEnvironment(
+    process.execPath,
+    path.resolve("owned-temp"),
+  );
+  assert.deepEqual(
+    Object.keys(env).sort(),
+    ["PATH", "LANG", "LC_ALL", "TZ", "TMPDIR"].sort(),
+  );
+  assert.equal(env.LC_ALL, "C");
+  assert.equal(env.TMPDIR, path.resolve("owned-temp"));
+  assert(
+    !Object.keys(env).some((key) =>
+      /GH|GITHUB|ACTIONS|PROXY|HOME|NODE_OPTIONS|LOADER/.test(key),
+    ),
+  );
+  const script = fileURLToPath(
+    new URL("./fixtures/cefCompileSupervisorProbe.mjs", import.meta.url),
+  );
+  assert.deepEqual(supervisorProbe.workerArguments(script, 0), [
+    "--max-old-space-size=64",
+    script,
+    "--worker",
+    "0",
+  ]);
+  assert.equal(supervisorProbe.probeMode([]), "driver");
+  assert.equal(supervisorProbe.probeMode(["--root"]), "root");
+  assert.equal(supervisorProbe.probeMode(["--worker", "31"]), "worker");
+  for (const args of [
+    ["--root", "extra"],
+    ["--worker", "32"],
+    ["--worker", "-1"],
+    ["--worker", "00"],
+    ["--worker", "0", "extra"],
+    ["--controller", "/foreign"],
+  ])
+    assert.throws(() => supervisorProbe.probeMode(args));
+  for (const ordinal of [-1, 32, 0.5, "0"])
+    assert.throws(() => supervisorProbe.workerArguments(script, ordinal));
+});
+
+test("synthetic root replaces only actually closed children and never exceeds four live or32 launches", async () => {
+  let clock = 0,
+    launched = 0,
+    peak = 0,
+    exitOnlySeen = false;
+  const live = new Map();
+  const result = await supervisorProbe.runSyntheticRoot({
+    temp: path.resolve("owned-temp"),
+    now: () => clock,
+    spawnChild(file, args, options) {
+      assert.equal(file, process.execPath);
+      assert.deepEqual(args.slice(0, 1), ["--max-old-space-size=64"]);
+      assert.equal(args.at(-2), "--worker");
+      assert.equal(args.at(-1), String(launched));
+      assert.equal(options.shell, false);
+      assert.equal(options.detached, false);
+      assert.equal(options.stdio, "ignore");
+      const child = new EventEmitter();
+      live.set(child, { at: clock, exited: false });
+      launched++;
+      peak = Math.max(peak, live.size);
+      assert(live.size <= 4 && launched <= 32);
+      return child;
+    },
+    async wait(ms) {
+      assert.equal(ms, 25);
+      clock += ms;
+      for (const [child, row] of [...live]) {
+        if (clock - row.at >= 100 && !row.exited) {
+          row.exited = true;
+          child.emit("exit", 0);
+          if (launched === 4) {
+            exitOnlySeen = true;
+            assert.equal(launched, 4);
+          }
+        }
+        if (clock - row.at >= 200) {
+          live.delete(child);
+          child.emit("close", 0);
+        }
+      }
+      if (clock === 125)
+        assert.equal(launched, 4, "exit without close must not release a slot");
+    },
+  });
+  assert(exitOnlySeen);
+  assert.equal(peak, 4);
+  assert.deepEqual(result, {
+    launched: 32,
+    closed: 32,
+    peakLive: 4,
+    allChildrenClosed: true,
+  });
+  assert.equal(live.size, 0);
+  assert(clock >= 90000);
+});
+
+test("synthetic root propagates a failed owned child instead of accepting its close", async () => {
+  const children = [];
+  let clock = 0;
+  await assert.rejects(
+    supervisorProbe.runSyntheticRoot({
+      temp: path.resolve("owned-temp"),
+      now: () => clock,
+      spawnChild() {
+        const child = new EventEmitter();
+        children.push(child);
+        return child;
+      },
+      async wait() {
+        clock += 25;
+        for (const child of children.splice(0)) {
+          child.emit("error", new Error("fixed synthetic failure"));
+          child.emit("close", 1);
+        }
+      },
+    }),
+  );
+});
+
+test("diagnostic-only macOS workflow binds canonical sources and uploads only six bounded known files", async () => {
+  const wf = YAML.parse(
+    await readFile(
+      new URL(
+        "../../.github/workflows/cef-engineering-checkpoint.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(wf.permissions, { contents: "read" });
+  assert.deepEqual(Object.keys(wf.jobs), ["supervisor-probe"]);
+  const job = wf.jobs["supervisor-probe"];
+  assert.equal(job["runs-on"], "macos-15-intel");
+  assert.equal(job["timeout-minutes"], 8);
+  assert.deepEqual(job.permissions, { contents: "read" });
+  assert.equal(job.concurrency["cancel-in-progress"], true);
+  for (const guard of [
+    "workflow_dispatch",
+    "supermarsx/sortOfRemoteNG",
+    "1010282954",
+    "public",
+    supervisorProbe.PROBE_BRANCH,
+    "synthetic-process-only",
+  ])
+    assert(job.if.includes(guard));
+  assert.deepEqual(wf.on.workflow_dispatch.inputs.diagnostic.options, [
+    "synthetic-process-only",
+  ]);
+  assert.equal(job.steps[0].with["persist-credentials"], false);
+  assert.equal(job.steps[1].with["node-version-file"], ".node-version");
+  const run = job.steps.find((step) => step.id === "probe");
+  assert.equal(
+    run.run,
+    "node tests/tooling/fixtures/cefCompileSupervisorProbe.mjs",
+  );
+  const script = await readFile(
+    new URL("./fixtures/cefCompileSupervisorProbe.mjs", import.meta.url),
+  );
+  const helper = execFileSync(
+    "git",
+    ["show", "HEAD:scripts/lib/cef-engineering-checkpoint.mjs"],
+    { cwd: ROOT, maxBuffer: 1024 ** 2 },
+  );
+  assert.equal(run.env.PROBE_EXPECTED_SCRIPT_SHA, sha(script));
+  assert.equal(run.env.PROBE_EXPECTED_HELPER_SHA, sha(helper));
+  const upload = job.steps.at(-1);
+  assert.equal(
+    upload.if,
+    "always() && steps.probe.outputs.artifact_ready == 'true'",
+  );
+  assert.deepEqual(
+    upload.with.path
+      .trim()
+      .split("\n")
+      .map((line) => line.split("/").at(-1)),
+    [...supervisorProbe.PROBE_FILES],
+  );
+  assert.equal(job.steps.length, 4);
+  assert(
+    !job.steps.some((step) =>
+      /npm ci|cargo |xcode|make_distrib|runtime-ci|checkout.*cef/i.test(
+        step.run ?? "",
+      ),
+    ),
+  );
+});

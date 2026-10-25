@@ -1,229 +1,56 @@
-name: CEF engineering checkpoint
-# Explicit experiment only. Not a runtime producer or application release.
+name: Synthetic macOS supervisor diagnostic
+# Diagnostic branch only. No CEF acquisition, SDK, checkpoint or release authority.
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: Reviewed build target (ARM builds use pinned x64 hosts; acceptance remains native ARM)
+      diagnostic:
+        description: Explicit synthetic process experiment only
         type: choice
-        options:
-          [x86_64-apple-darwin, aarch64-apple-darwin, aarch64-unknown-linux-gnu]
+        options: [synthetic-process-only]
+        default: synthetic-process-only
         required: true
-        default: x86_64-apple-darwin
-      mode:
-        description: Checkpoint only, or finish an SDK only after genuine complete compilation
-        type: choice
-        options: [checkpoint, complete-sdk]
-        required: true
-        default: checkpoint
-      slice_minutes:
-        description: Explicit compile slice; controller reserves packaging/transfer within the300-minute host bound
-        type: choice
-        options: ["15", "30", "60", "120", "180"]
-        required: true
-        default: "15"
-      restore_run:
-        description: Exact prior trusted checkpoint workflow run (0 starts the controlled first slice)
-        type: string
-        required: true
-        default: "0"
 permissions:
   contents: read
 defaults:
   run:
     shell: bash
 jobs:
-  checkpoint:
-    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'
-    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}
-    timeout-minutes: 300
+  supervisor-probe:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.visibility == 'public' && github.ref == 'refs/heads/codex/ci-macos-supervisor-probe-20261025' && inputs.diagnostic == 'synthetic-process-only'
+    runs-on: macos-15-intel
+    timeout-minutes: 8
     concurrency:
-      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' || inputs.target == 'aarch64-unknown-linux-gnu' && 'ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588' || '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef' }}
+      group: synthetic-macos-supervisor-${{ github.ref }}
       cancel-in-progress: true
     permissions:
-      contents: write
-      actions: read
-    env:
-      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
-      SORNG_CEF_TOOLS_ROOT: /
-      CEF_ENGINEERING_TARGET: ${{ inputs.target }}
+      contents: read
     steps:
-      - name: Start the bounded whole-job clock before acquisition
-        run: printf 'CEF_ENGINEERING_JOB_STARTED_MS=%s000\n' "$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: ".node-version"
+          node-version-file: .node-version
           package-manager-cache: false
-      - name: Validate the closed target and select its reviewed build host recipe
-        id: profile
-        run: |
-          node --input-type=module -e 'import {checkpointProfile} from "./scripts/lib/cef-engineering-checkpoint.mjs"; import {appendFileSync} from "node:fs"; const p=checkpointProfile(process.env.CEF_ENGINEERING_TARGET); appendFileSync(process.env.GITHUB_OUTPUT,`source=${p.source}\nprovision=${p.provisionTarget}\n`);'
-      - name: Prepare existing fixed reviewed native prerequisites
+      - name: Run one bounded synthetic supervisor experiment
+        id: probe
         env:
-          CEF_PROVISION_TARGET: ${{ steps.profile.outputs.provision }}
-        run: |
-          if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then
-            node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute --cleanup
-          else
-            node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
-          fi
-      - name: Create exclusive task-private contract dependency ownership records
-        run: |
-          mkdir -m 700 "$RUNNER_TEMP/cef-checkpoint-contract-dependencies"
-          cat > "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" <<'NODE'
-          import assert from 'node:assert/strict';
-          import {lstat,realpath,mkdir,readFile,writeFile,rm,statfs} from 'node:fs/promises';
-          import {spawn} from 'node:child_process';
-          import path from 'node:path';
-          import {fileURLToPath} from 'node:url';
-          export async function directory(file){
-            const s=await lstat(file,{bigint:true});
-            assert(s.isDirectory()&&!s.isSymbolicLink()&&s.uid===BigInt(process.getuid?.()??0),'DEPENDENCY_DIRECTORY');
-            assert.equal(await realpath(file),file,'DEPENDENCY_CANONICAL');
-            return {dev:String(s.dev),ino:String(s.ino),uid:String(s.uid)};
-          }
-          export async function context(env){
-            const checkout=await realpath(env.GITHUB_WORKSPACE),temp=await realpath(env.RUNNER_TEMP);
-            assert.notEqual(checkout,path.parse(checkout).root);assert.notEqual(temp,path.parse(temp).root);
-            const root=path.join(temp,'cef-checkpoint-contract-dependencies');
-            const cache=path.join(root,'cache'),modules=path.join(checkout,'node_modules');
-            const rootIdentity=await directory(root);
-            const mode=(await lstat(root)).mode&0o777;
-            assert(mode===0o700||process.platform==='win32','DEPENDENCY_PRIVATE_MODE');
-            return {checkout,temp,root,cache,modules,rootIdentity};
-          }
-          async function absent(file){await assert.rejects(lstat(file),{code:'ENOENT'});}
-          export async function prepare(env){
-            const c=await context(env);await absent(c.modules);await absent(c.cache);
-            await mkdir(c.cache,{mode:0o700});
-            const r={schemaVersion:1,checkout:c.checkout,temp:c.temp,root:c.root,rootIdentity:c.rootIdentity,checkoutIdentity:await directory(c.checkout),tempIdentity:await directory(c.temp),cacheIdentity:await directory(c.cache)};
-            await writeFile(path.join(c.root,'prepared.json'),JSON.stringify(r)+'\n',{flag:'wx',mode:0o600});
-          }
-          export async function attest(env,installed=false){
-            const c=await context(env),p=JSON.parse(await readFile(path.join(c.root,'prepared.json'),'utf8'));
-            assert.equal(p.schemaVersion,1);for(const key of ['checkout','temp','root'])assert.equal(c[key],p[key]);
-            assert.deepEqual(c.rootIdentity,p.rootIdentity);
-            assert.deepEqual(await directory(c.checkout),p.checkoutIdentity);assert.deepEqual(await directory(c.temp),p.tempIdentity);
-            assert.deepEqual(await directory(c.cache),p.cacheIdentity);
-            assert(((await lstat(c.cache)).mode&0o777)===0o700||process.platform==='win32','DEPENDENCY_CACHE_MODE');
-            if(installed){const i=JSON.parse(await readFile(path.join(c.root,'installed.json'),'utf8'));assert.deepEqual(await directory(c.modules),i.modulesIdentity);}
-            return c;
-          }
-          export async function capture(env){const c=await attest(env);await writeFile(path.join(c.root,'installed.json'),JSON.stringify({modulesIdentity:await directory(c.modules)})+'\n',{flag:'wx',mode:0o600});}
-          export async function clean(env){
-            const c=await attest(env,true);
-            // Node rm removes nested symlinks themselves; it never traverses their targets.
-            await directory(c.checkout);await directory(c.temp);
-            await attest(env,true);
-            await rm(c.modules,{recursive:true});
-            // Re-attest remaining root/cache after the first removal, before the second.
-            await attest(env);await rm(c.cache,{recursive:true});
-            await absent(c.modules);await absent(c.cache);
-          }
-          export async function superviseCleanup(start,{milliseconds=55000,reapMilliseconds=5000}={}){
-            assert(milliseconds>0&&milliseconds<=55000&&reapMilliseconds>0&&reapMilliseconds<=5000);
-            const hardDeadline=performance.now()+milliseconds+reapMilliseconds;
-            const child=start();let timer,reaper,originalError,timedOut=false,stopping=false,finished=false;
-            try{
-              await new Promise((resolve,reject)=>{
-                const finish=(error)=>{if(finished)return;finished=true;clearTimeout(timer);clearTimeout(reaper);error?reject(error):resolve();};
-                const stop=()=>{
-                  if(stopping||finished)return;stopping=true;clearTimeout(timer);
-                  try{child.kill('SIGKILL');}catch(error){originalError??=error;}
-                  if(finished)return;
-                  const remaining=Math.max(0,hardDeadline-performance.now());
-                  reaper=setTimeout(()=>finish(new Error('DEPENDENCY_CLEANUP_REAP_UNCONFIRMED',{cause:originalError})),Math.min(reapMilliseconds,remaining));
-                };
-                child.on('error',(error)=>{
-                  if(finished)return;originalError??=error;
-                  // No PID means spawn failed without an admitted cleanup process.
-                  if(!child.pid){finish(originalError);return;}stop();
-                });
-                child.once('close',(code,signal)=>{
-                  if(originalError){finish(originalError);return;}
-                  try{assert(!timedOut,'DEPENDENCY_CLEANUP_DEADLINE');assert.equal(code,0,'DEPENDENCY_CLEANUP_FAILED');assert.equal(signal,null);finish();}catch(error){finish(error);}
-                });
-                timer=setTimeout(()=>{timedOut=true;stop();},Math.max(0,hardDeadline-reapMilliseconds-performance.now()));
-              });
-            }finally{clearTimeout(timer);clearTimeout(reaper);}
-          }
-          export async function retire(env){
-            const c=await attest(env,true);const before=await statfs(c.checkout,{bigint:true});
-            // No API credentials, inherited Node flags, shell, privilege elevation, or child descendants.
-            await superviseCleanup(()=>spawn(process.execPath,[fileURLToPath(import.meta.url),'clean'],{stdio:['ignore','ignore','ignore'],env:{GITHUB_WORKSPACE:c.checkout,RUNNER_TEMP:c.temp},windowsHide:true}));
-            const after=await statfs(c.checkout,{bigint:true});
-            await writeFile(path.join(c.root,'retired.json'),JSON.stringify({schemaVersion:1,complete:true,freeBeforeBytes:String(before.bavail*before.bsize),freeAfterBytes:String(after.bavail*after.bsize),capacityAdmitted:false})+'\n',{flag:'wx',mode:0o600});
-          }
-          if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-            const actions={prepare,capture,clean,retire};
-            try{assert(Object.hasOwn(actions,process.argv[2]));await actions[process.argv[2]](process.env);}catch{console.error('DEPENDENCY_LIFECYCLE_FAILED');process.exitCode=1;}
-          }
-          NODE
-          node "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" prepare
-      - name: Install locked checkpoint contract dependencies
-        env:
-          npm_config_cache: ${{ runner.temp }}/cef-checkpoint-contract-dependencies/cache
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Attest only the dependency tree created by this locked install
-        run: node "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" capture
-      - name: Verify checkpoint contracts on the actual native host
-        timeout-minutes: 5
-        run: node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs
-      - name: Retire only task-owned dependencies after every contract passes
-        timeout-minutes: 2
-        run: node "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" retire
-      - name: Download exact independently sealed prior checkpoint
-        id: restore
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CEF_RESTORE_RUN: ${{ inputs.restore_run }}
-        run: node scripts/cef-engineering-checkpoint.mjs download --restore-run "$CEF_RESTORE_RUN"
-      - name: Fresh pinned source/GN, verified restore and explicitly bounded compilation
-        id: compile
-        # No GH_TOKEN, GITHUB_TOKEN or ACTIONS credential is passed to any child.
-        env:
-          CEF_RESTORE_MANIFEST_SHA: ${{ steps.restore.outputs.manifest_sha }}
-          CEF_ENGINEERING_MODE: ${{ inputs.mode }}
-          CEF_SLICE_MINUTES: ${{ inputs.slice_minutes }}
-        run: node scripts/cef-engineering-checkpoint.mjs compile --mode "$CEF_ENGINEERING_MODE" --slice-minutes "$CEF_SLICE_MINUTES"
-      - name: Upload verified chunks to a new draft engineering checkpoint
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/cef-engineering-checkpoint.mjs upload
-      - name: Seal immutable checkpoint metadata LAST
-        if: success() && steps.compile.outputs.sdk_complete == 'false'
+          PROBE_DIAGNOSTIC: ${{ inputs.diagnostic }}
+          PROBE_VISIBILITY: ${{ github.event.repository.visibility }}
+          PROBE_EXPECTED_SCRIPT_SHA: b08b8cca9a58b45078a2da069e193a4d83c704fbc6e9139d4b445aeb091d30d1
+          PROBE_EXPECTED_HELPER_SHA: 4a5ad24beba2391a93c2c64c939fcb269b39cd89ab78ad728db6dcc57aa2851a
+        run: node tests/tooling/fixtures/cefCompileSupervisorProbe.mjs
+      - name: Retain only bounded synthetic diagnostic files
+        if: always() && steps.probe.outputs.artifact_ready == 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: cef-engineering-seal-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/cef-engineering-seal/seal.json
-          retention-days: 90
-          compression-level: 0
+          name: synthetic-macos-supervisor-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
-      - name: Seal actual completed SDK transport LAST
-        if: success() && steps.compile.outputs.sdk_complete == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: cef-engineering-sdk-seal-${{ steps.profile.outputs.source }}-${{ inputs.target }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/cef-engineering-sdk-seal/seal.json
-          retention-days: 90
-          compression-level: 0
-          if-no-files-found: error
-      - name: Preserve compiler failure after sealing its diagnostic checkpoint
-        run: node scripts/cef-engineering-checkpoint.mjs outcome
-      - name: Retain small diagnostics, never the multi-gigabyte checkpoint
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: cef-engineering-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
           path: |
-            ${{ runner.temp }}/cef-checkpoint-contract-dependencies/*.json
-            ${{ runner.temp }}/cef-checkpoint-prerequisites
-            ${{ runner.temp }}/cef-hosted-prepare-*
-            ${{ runner.temp }}/cef-engineering-state.json
-            ${{ runner.temp }}/sorng-cef-engineering/${{ inputs.target }}/${{ steps.profile.outputs.source }}/logs
-          retention-days: 14
-          if-no-files-found: warn
+            ${{ steps.probe.outputs.artifact_root }}/probe-plan.json
+            ${{ steps.probe.outputs.artifact_root }}/probe-result.json
+            ${{ steps.probe.outputs.artifact_root }}/compile-supervision.log
+            ${{ steps.probe.outputs.artifact_root }}/checkpoint-compile.stdout.log
+            ${{ steps.probe.outputs.artifact_root }}/checkpoint-compile.stderr.log
+            ${{ steps.probe.outputs.artifact_root }}/checkpoint-compile.outcome.json
