@@ -4800,6 +4800,7 @@ name = "sorng-cef-tls-acceptance"
 version = "0.1.0"
 dependencies = [
  "cef",
+ "gdkx11-sys",
  "gtk",
  "raw-window-handle",
  "rcgen",
@@ -4810,6 +4811,7 @@ dependencies = [
  "tao",
  "tokio",
  "tokio-rustls",
+ "x11",
 ]
 
 [[package]]

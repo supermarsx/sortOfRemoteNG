@@ -56,6 +56,8 @@ tiberius = { path = "../../../../vendor/tiberius-rustls" }
 # No changes to native cryptography or host-key policy; see its PATCHES.md.
 libssh2-sys = { path = "../../../../vendor/libssh2-sys-wincng" }
 
-# Fixture-only GTK realization; Tao already locks the same GTK version.
+# Fixture-only GTK realization and X11 observations; Tao already locks these versions.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "=0.18.2"
+gdkx11-sys = "=0.18.2"
+x11 = { version = "=2.21.0", features = ["xlib"] }

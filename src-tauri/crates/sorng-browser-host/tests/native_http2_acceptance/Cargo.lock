@@ -4818,6 +4818,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "cef",
+ "gdkx11-sys",
  "gtk",
  "h2",
  "http",
@@ -4831,6 +4832,7 @@ dependencies = [
  "tao",
  "tokio",
  "tokio-rustls",
+ "x11",
 ]
 
 [[package]]
