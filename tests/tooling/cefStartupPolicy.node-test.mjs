@@ -285,17 +285,36 @@ test("pinned CEF startup policy preserves features and is idempotent (std-only r
     runtime,
     /#\[path = "cef_startup_features\.rs"\]\s*mod startup_features;/,
   );
-  const callback = runtime.slice(
-    runtime.indexOf("fn on_before_command_line_processing("),
-    runtime.indexOf("fn scheduler("),
-  );
-  assert.match(callback, /startup_features::disabled_features\(/);
-  assert.match(callback, /startup_features::enabled_features\(/);
-  assert.match(callback, /startup_features::DISABLE_DEFAULT_APPS/);
+  function productionBlock(marker) {
+    const start = runtime.indexOf(marker);
+    assert.ok(start >= 0, `Missing production boundary: ${marker}`);
+    const brace = runtime.indexOf("{", start);
+    assert.ok(brace >= 0, `Missing production body: ${marker}`);
+    let depth = 1;
+    for (let end = brace + 1; end < runtime.length; end++) {
+      if (runtime[end] === "{") depth++;
+      if (runtime[end] === "}" && --depth === 0)
+        return runtime.slice(start, end + 1);
+    }
+    assert.fail(`Unclosed production boundary: ${marker}`);
+  }
+  const commonPolicy = productionBlock("fn configure_common_process_switches(");
+  const callback = productionBlock("fn on_before_command_line_processing(");
+  const childCallback = productionBlock("fn on_before_child_process_launch(");
+  for (const entry of [callback, childCallback]) {
+    assert.match(entry, /configure_common_process_switches\(command_line\);/);
+  }
+  assert.match(commonPolicy, /startup_features::disabled_features\(/);
+  assert.match(commonPolicy, /startup_features::enabled_features\(/);
+  assert.match(commonPolicy, /startup_features::DISABLE_DEFAULT_APPS/);
   // These switches would hide the diagnostic or disable unrelated facilities.
   // The native acceptance lane must still prove the companion SODA engine gate.
-  const callbackStrings = new Set(
-    [...callback.matchAll(/"([^"\r\n]*)"/g)].map((match) => match[1]),
+  const policyStrings = new Set(
+    [
+      ...`${commonPolicy}\n${callback}\n${childCallback}`.matchAll(
+        /"([^"\r\n]*)"/g,
+      ),
+    ].map((match) => match[1]),
   );
   for (const forbidden of [
     "disable-component-update",
@@ -315,7 +334,7 @@ test("pinned CEF startup policy preserves features and is idempotent (std-only r
     "ignore-certificate-errors",
   ]) {
     assert.ok(
-      !callbackStrings.has(forbidden),
+      !policyStrings.has(forbidden),
       `startup policy must not append --${forbidden}`,
     );
   }
