@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import YAML from "yaml";
+import ts from "typescript";
 import { spawn, spawnSync } from "node:child_process";
 import {
   writeFileSync,
@@ -4771,4 +4772,395 @@ test("early real destination failure cancels and closes source promptly without 
     `writeFailureElapsedMs=${Math.round(performance.now() - begin)}; sourceCancelled=${cancelled}; destinationClosed=${output.closed}`,
   );
   assert.equal(body.locked, false);
+});
+
+async function dependencyLifecycleFixture(t) {
+  const scratch = await realpath(
+    await mkdtemp(path.join(tmpdir(), "cef-contract-retire-")),
+  );
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  const checkout = path.join(scratch, "checkout"),
+    temp = path.join(scratch, "temp");
+  await mkdir(checkout);
+  await mkdir(temp);
+  const root = path.join(temp, "cef-checkpoint-contract-dependencies");
+  await mkdir(root, { mode: 0o700 });
+  const workflow = YAML.parse(
+    await readFile(path.join(ROOT, WORKFLOW), "utf8"),
+  );
+  const steps = workflow.jobs.checkpoint.steps;
+  const body = steps.find(
+    (s) =>
+      s.name ===
+      "Create exclusive task-private contract dependency ownership records",
+  ).run;
+  const source = body.split("<<'NODE'\n")[1].split("\nNODE\n")[0] + "\n";
+  const file = path.join(root, "lifecycle.mjs");
+  await writeFile(file, source);
+  const module = await import(
+    (await import("node:url")).pathToFileURL(file).href
+  );
+  const env = { GITHUB_WORKSPACE: checkout, RUNNER_TEMP: temp };
+  return { scratch, checkout, temp, root, file, module, env, steps, source };
+}
+async function installDependencyFixture(f) {
+  await f.module.prepare(f.env);
+  await mkdir(path.join(f.checkout, "node_modules"));
+  await writeFile(path.join(f.checkout, "node_modules", "fixture"), "owned");
+  await f.module.capture(f.env);
+}
+test("contract retirement removes only installed own roots and never follows nested bin links", async (t) => {
+  const f = await dependencyLifecycleFixture(t);
+  await installDependencyFixture(f);
+  const outside = path.join(f.scratch, "outside");
+  await mkdir(outside);
+  await writeFile(path.join(outside, "sentinel"), "preserved");
+  await symlink(
+    outside,
+    path.join(f.checkout, "node_modules", ".bin"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await f.module.retire(f.env);
+  await assert.rejects(lstat(path.join(f.checkout, "node_modules")), {
+    code: "ENOENT",
+  });
+  await assert.rejects(lstat(path.join(f.root, "cache")), { code: "ENOENT" });
+  assert.equal(
+    await readFile(path.join(outside, "sentinel"), "utf8"),
+    "preserved",
+  );
+  const receipt = JSON.parse(
+    await readFile(path.join(f.root, "retired.json"), "utf8"),
+  );
+  assert.equal(receipt.complete, true);
+  assert.equal(receipt.capacityAdmitted, false);
+  assert.match(receipt.freeBeforeBytes, /^\d+$/);
+  assert.match(receipt.freeAfterBytes, /^\d+$/);
+});
+test("dependency ownership denies preexisting modules, replaced roots and foreign cache links", async (t) => {
+  const pre = await dependencyLifecycleFixture(t);
+  await mkdir(path.join(pre.checkout, "node_modules"));
+  await assert.rejects(pre.module.prepare(pre.env));
+  const f = await dependencyLifecycleFixture(t);
+  await installDependencyFixture(f);
+  const modules = path.join(f.checkout, "node_modules");
+  await rename(modules, path.join(f.checkout, "saved-modules"));
+  await mkdir(modules);
+  await assert.rejects(f.module.retire(f.env));
+  await writeFile(path.join(modules, "foreign"), "preserved");
+  assert.equal(
+    await readFile(path.join(modules, "foreign"), "utf8"),
+    "preserved",
+  );
+  const c = await dependencyLifecycleFixture(t);
+  await installDependencyFixture(c);
+  const outside = path.join(c.scratch, "foreign-cache");
+  await mkdir(outside);
+  await writeFile(path.join(outside, "sentinel"), "preserved");
+  await rename(path.join(c.root, "cache"), path.join(c.root, "saved-cache"));
+  await symlink(
+    outside,
+    path.join(c.root, "cache"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(c.module.clean(c.env));
+  assert.equal(
+    await readFile(path.join(outside, "sentinel"), "utf8"),
+    "preserved",
+  );
+  assert((await lstat(path.join(c.checkout, "node_modules"))).isDirectory());
+});
+test("cleanup timeout kills its exact child and waits for close before rejecting", async (t) => {
+  const f = await dependencyLifecycleFixture(t);
+  let child;
+  await assert.rejects(
+    f.module.superviseCleanup(
+      () => {
+        child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        return child;
+      },
+      { milliseconds: 30, reapMilliseconds: 5000 },
+    ),
+    /DEPENDENCY_CLEANUP_DEADLINE/,
+  );
+  assert(
+    child.exitCode !== null || child.signalCode !== null,
+    "owned child has terminal status",
+  );
+});
+test("workflow gates ownership retirement on full successful contracts and keeps original admission", async (t) => {
+  const f = await dependencyLifecycleFixture(t),
+    steps = f.steps;
+  const index = (name) => steps.findIndex((s) => s.name === name);
+  const install = index("Install locked checkpoint contract dependencies"),
+    capture = index(
+      "Attest only the dependency tree created by this locked install",
+    );
+  const contracts = index(
+      "Verify checkpoint contracts on the actual native host",
+    ),
+    retire = index(
+      "Retire only task-owned dependencies after every contract passes",
+    );
+  assert(
+    install < capture &&
+      capture < contracts &&
+      contracts < retire &&
+      retire < index("Download exact independently sealed prior checkpoint"),
+  );
+  assert.equal(
+    steps[install].run,
+    "npm ci --ignore-scripts --no-audit --no-fund",
+  );
+  assert.equal(
+    steps[install].env.npm_config_cache,
+    "${{ runner.temp }}/cef-checkpoint-contract-dependencies/cache",
+  );
+  assert.equal(
+    steps[contracts].run,
+    "node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs",
+  );
+  assert.equal(steps[contracts].timeout_minutes, undefined);
+  assert.equal(steps[contracts]["timeout-minutes"], 5);
+  assert.equal(steps[retire].if, undefined);
+  assert.equal(steps[retire]["continue-on-error"], undefined);
+  assert.equal(
+    YAML.parse(await readFile(path.join(ROOT, WORKFLOW), "utf8")).jobs
+      .checkpoint["timeout-minutes"],
+    300,
+  );
+  assert.doesNotMatch(
+    f.source,
+    /sudo|process\.env\.(?:GH_TOKEN|GITHUB_TOKEN)|process\.kill\(/,
+  );
+});
+function producerSpecifiers(text) {
+  const source = ts.createSourceFile(
+      "producer.mjs",
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    result = [];
+  function visit(node) {
+    let specifier;
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier
+    ) {
+      assert(ts.isStringLiteral(node.moduleSpecifier));
+      specifier = node.moduleSpecifier.text;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      assert.equal(node.arguments.length, 1);
+      assert(
+        ts.isStringLiteral(node.arguments[0]),
+        "Computed producer import forbidden",
+      );
+      specifier = node.arguments[0].text;
+    }
+    if (specifier) {
+      assert(
+        specifier.startsWith("node:") ||
+          specifier.startsWith("./") ||
+          specifier.startsWith("../"),
+        "Bare producer dependency forbidden",
+      );
+      if (!specifier.startsWith("node:")) result.push(specifier);
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ["require", "createRequire"].includes(node.expression.text)
+    )
+      assert.fail("Producer require forbidden");
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return result;
+}
+test("actual ten-module producer imports without dependencies and rejects bare or computed dependency drift", async (t) => {
+  assert.throws(
+    () => producerSpecifiers('import YAML from "yaml";'),
+    /Bare producer/,
+  );
+  assert.throws(
+    () => producerSpecifiers("await import(process.env.MODULE);"),
+    /Computed producer/,
+  );
+  const scratch = await realpath(
+    await mkdtemp(path.join(tmpdir(), "cef-producer-no-deps-")),
+  );
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  const pending = ["scripts/cef-engineering-checkpoint.mjs"],
+    seen = new Set();
+  while (pending.length) {
+    const relative = pending.pop();
+    if (seen.has(relative)) continue;
+    assert(relative.startsWith("scripts/") && !relative.includes(".."));
+    seen.add(relative);
+    const source = await readFile(path.join(ROOT, relative), "utf8");
+    assert.doesNotMatch(
+      source,
+      /\b(?:npm|npx)\b/,
+      "producer must not request dependency installation after retirement",
+    );
+    for (const specifier of producerSpecifiers(source))
+      pending.push(
+        path.posix.normalize(
+          path.posix.join(path.posix.dirname(relative), specifier),
+        ),
+      );
+    const target = path.join(scratch, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, source);
+  }
+  assert.equal(seen.size, 10);
+  await mkdir(path.join(scratch, "native"));
+  await cp(
+    path.join(ROOT, "native/cef-hosted-recipe.json"),
+    path.join(scratch, "native/cef-hosted-recipe.json"),
+  );
+  await assert.rejects(lstat(path.join(scratch, "node_modules")), {
+    code: "ENOENT",
+  });
+  const imported = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      'await import("./scripts/cef-engineering-checkpoint.mjs")',
+    ],
+    {
+      cwd: scratch,
+      env: {},
+      encoding: "utf8",
+      timeout: 15000,
+      windowsHide: true,
+    },
+  );
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(imported.stdout, "");
+});
+
+test("dependency retirement denies replaced checkout or temp parents even when child inodes survive", async (t) => {
+  for (const parent of ["checkout", "temp"]) {
+    const f = await dependencyLifecycleFixture(t);
+    await installDependencyFixture(f);
+    const modules = path.join(f.checkout, "node_modules"),
+      before = await lstat(modules, { bigint: true });
+    const old = f[parent],
+      saved = path.join(f.scratch, `saved-${parent}`);
+    await rename(old, saved);
+    await mkdir(old);
+    if (parent === "checkout")
+      await rename(path.join(saved, "node_modules"), modules);
+    else
+      await rename(
+        path.join(saved, "cef-checkpoint-contract-dependencies"),
+        f.root,
+      );
+    const after = await lstat(modules, { bigint: true });
+    assert.equal(after.ino, before.ino);
+    assert.equal(after.dev, before.dev);
+    await assert.rejects(f.module.retire(f.env));
+    assert.equal(
+      await readFile(path.join(modules, "fixture"), "utf8"),
+      "owned",
+    );
+    assert((await lstat(path.join(f.root, "cache"))).isDirectory());
+  }
+});
+test("post-spawn cleanup errors retain first error and join the exact child before rejection", async (t) => {
+  const f = await dependencyLifecycleFixture(t),
+    { EventEmitter } = await import("node:events");
+  const child = new EventEmitter();
+  child.pid = 123;
+  let kills = 0,
+    closed = false,
+    settled = false;
+  const original = new Error("original-owned-error"),
+    killError = new Error("failed-kill-observation");
+  child.kill = () => {
+    kills++;
+    child.emit("error", killError);
+    setTimeout(() => {
+      closed = true;
+      child.emit("close", null, "SIGKILL");
+    }, 40);
+    return false;
+  };
+  const result = f.module.superviseCleanup(
+    () => {
+      setImmediate(() => child.emit("error", original));
+      return child;
+    },
+    { milliseconds: 100, reapMilliseconds: 100 },
+  );
+  const observed = result.then(
+    () => {
+      settled = true;
+    },
+    (error) => {
+      settled = true;
+      throw error;
+    },
+  );
+  const assertion = assert.rejects(observed, (error) => error === original);
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(settled, false);
+  assert.equal(closed, false);
+  await assertion;
+  assert.equal(closed, true);
+  assert.equal(kills, 1);
+});
+test("cleanup spawn failure has no kill while unjoined post-spawn failure is explicitly bounded", async (t) => {
+  const f = await dependencyLifecycleFixture(t),
+    { EventEmitter } = await import("node:events");
+  const failed = new EventEmitter(),
+    spawnError = new Error("spawn-failed");
+  let kills = 0;
+  failed.kill = () => {
+    kills++;
+  };
+  await assert.rejects(
+    f.module.superviseCleanup(
+      () => {
+        setImmediate(() => failed.emit("error", spawnError));
+        return failed;
+      },
+      { milliseconds: 20, reapMilliseconds: 30 },
+    ),
+    (error) => error === spawnError,
+  );
+  assert.equal(kills, 0);
+  const live = new EventEmitter(),
+    original = new Error("live-error");
+  live.pid = 456;
+  live.kill = () => {
+    kills++;
+    return false;
+  };
+  const began = performance.now();
+  await assert.rejects(
+    f.module.superviseCleanup(
+      () => {
+        setImmediate(() => live.emit("error", original));
+        return live;
+      },
+      { milliseconds: 20, reapMilliseconds: 30 },
+    ),
+    (error) =>
+      error.message === "DEPENDENCY_CLEANUP_REAP_UNCONFIRMED" &&
+      error.cause === original,
+  );
+  assert.equal(kills, 1);
+  assert(performance.now() - began < 1000, "bounded failed-join observation");
 });

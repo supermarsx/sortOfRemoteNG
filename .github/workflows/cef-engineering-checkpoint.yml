@@ -71,11 +71,111 @@ jobs:
           else
             node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
           fi
+      - name: Create exclusive task-private contract dependency ownership records
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/cef-checkpoint-contract-dependencies"
+          cat > "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" <<'NODE'
+          import assert from 'node:assert/strict';
+          import {lstat,realpath,mkdir,readFile,writeFile,rm,statfs} from 'node:fs/promises';
+          import {spawn} from 'node:child_process';
+          import path from 'node:path';
+          import {fileURLToPath} from 'node:url';
+          export async function directory(file){
+            const s=await lstat(file,{bigint:true});
+            assert(s.isDirectory()&&!s.isSymbolicLink()&&s.uid===BigInt(process.getuid?.()??0),'DEPENDENCY_DIRECTORY');
+            assert.equal(await realpath(file),file,'DEPENDENCY_CANONICAL');
+            return {dev:String(s.dev),ino:String(s.ino),uid:String(s.uid)};
+          }
+          export async function context(env){
+            const checkout=await realpath(env.GITHUB_WORKSPACE),temp=await realpath(env.RUNNER_TEMP);
+            assert.notEqual(checkout,path.parse(checkout).root);assert.notEqual(temp,path.parse(temp).root);
+            const root=path.join(temp,'cef-checkpoint-contract-dependencies');
+            const cache=path.join(root,'cache'),modules=path.join(checkout,'node_modules');
+            const rootIdentity=await directory(root);
+            const mode=(await lstat(root)).mode&0o777;
+            assert(mode===0o700||process.platform==='win32','DEPENDENCY_PRIVATE_MODE');
+            return {checkout,temp,root,cache,modules,rootIdentity};
+          }
+          async function absent(file){await assert.rejects(lstat(file),{code:'ENOENT'});}
+          export async function prepare(env){
+            const c=await context(env);await absent(c.modules);await absent(c.cache);
+            await mkdir(c.cache,{mode:0o700});
+            const r={schemaVersion:1,checkout:c.checkout,temp:c.temp,root:c.root,rootIdentity:c.rootIdentity,checkoutIdentity:await directory(c.checkout),tempIdentity:await directory(c.temp),cacheIdentity:await directory(c.cache)};
+            await writeFile(path.join(c.root,'prepared.json'),JSON.stringify(r)+'\n',{flag:'wx',mode:0o600});
+          }
+          export async function attest(env,installed=false){
+            const c=await context(env),p=JSON.parse(await readFile(path.join(c.root,'prepared.json'),'utf8'));
+            assert.equal(p.schemaVersion,1);for(const key of ['checkout','temp','root'])assert.equal(c[key],p[key]);
+            assert.deepEqual(c.rootIdentity,p.rootIdentity);
+            assert.deepEqual(await directory(c.checkout),p.checkoutIdentity);assert.deepEqual(await directory(c.temp),p.tempIdentity);
+            assert.deepEqual(await directory(c.cache),p.cacheIdentity);
+            assert(((await lstat(c.cache)).mode&0o777)===0o700||process.platform==='win32','DEPENDENCY_CACHE_MODE');
+            if(installed){const i=JSON.parse(await readFile(path.join(c.root,'installed.json'),'utf8'));assert.deepEqual(await directory(c.modules),i.modulesIdentity);}
+            return c;
+          }
+          export async function capture(env){const c=await attest(env);await writeFile(path.join(c.root,'installed.json'),JSON.stringify({modulesIdentity:await directory(c.modules)})+'\n',{flag:'wx',mode:0o600});}
+          export async function clean(env){
+            const c=await attest(env,true);
+            // Node rm removes nested symlinks themselves; it never traverses their targets.
+            await directory(c.checkout);await directory(c.temp);
+            await attest(env,true);
+            await rm(c.modules,{recursive:true});
+            // Re-attest remaining root/cache after the first removal, before the second.
+            await attest(env);await rm(c.cache,{recursive:true});
+            await absent(c.modules);await absent(c.cache);
+          }
+          export async function superviseCleanup(start,{milliseconds=55000,reapMilliseconds=5000}={}){
+            assert(milliseconds>0&&milliseconds<=55000&&reapMilliseconds>0&&reapMilliseconds<=5000);
+            const hardDeadline=performance.now()+milliseconds+reapMilliseconds;
+            const child=start();let timer,reaper,originalError,timedOut=false,stopping=false,finished=false;
+            try{
+              await new Promise((resolve,reject)=>{
+                const finish=(error)=>{if(finished)return;finished=true;clearTimeout(timer);clearTimeout(reaper);error?reject(error):resolve();};
+                const stop=()=>{
+                  if(stopping||finished)return;stopping=true;clearTimeout(timer);
+                  try{child.kill('SIGKILL');}catch(error){originalError??=error;}
+                  if(finished)return;
+                  const remaining=Math.max(0,hardDeadline-performance.now());
+                  reaper=setTimeout(()=>finish(new Error('DEPENDENCY_CLEANUP_REAP_UNCONFIRMED',{cause:originalError})),Math.min(reapMilliseconds,remaining));
+                };
+                child.on('error',(error)=>{
+                  if(finished)return;originalError??=error;
+                  // No PID means spawn failed without an admitted cleanup process.
+                  if(!child.pid){finish(originalError);return;}stop();
+                });
+                child.once('close',(code,signal)=>{
+                  if(originalError){finish(originalError);return;}
+                  try{assert(!timedOut,'DEPENDENCY_CLEANUP_DEADLINE');assert.equal(code,0,'DEPENDENCY_CLEANUP_FAILED');assert.equal(signal,null);finish();}catch(error){finish(error);}
+                });
+                timer=setTimeout(()=>{timedOut=true;stop();},Math.max(0,hardDeadline-reapMilliseconds-performance.now()));
+              });
+            }finally{clearTimeout(timer);clearTimeout(reaper);}
+          }
+          export async function retire(env){
+            const c=await attest(env,true);const before=await statfs(c.checkout,{bigint:true});
+            // No API credentials, inherited Node flags, shell, privilege elevation, or child descendants.
+            await superviseCleanup(()=>spawn(process.execPath,[fileURLToPath(import.meta.url),'clean'],{stdio:['ignore','ignore','ignore'],env:{GITHUB_WORKSPACE:c.checkout,RUNNER_TEMP:c.temp},windowsHide:true}));
+            const after=await statfs(c.checkout,{bigint:true});
+            await writeFile(path.join(c.root,'retired.json'),JSON.stringify({schemaVersion:1,complete:true,freeBeforeBytes:String(before.bavail*before.bsize),freeAfterBytes:String(after.bavail*after.bsize),capacityAdmitted:false})+'\n',{flag:'wx',mode:0o600});
+          }
+          if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+            const actions={prepare,capture,clean,retire};
+            try{assert(Object.hasOwn(actions,process.argv[2]));await actions[process.argv[2]](process.env);}catch{console.error('DEPENDENCY_LIFECYCLE_FAILED');process.exitCode=1;}
+          }
+          NODE
+          node "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" prepare
       - name: Install locked checkpoint contract dependencies
+        env:
+          npm_config_cache: ${{ runner.temp }}/cef-checkpoint-contract-dependencies/cache
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Attest only the dependency tree created by this locked install
+        run: node "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" capture
       - name: Verify checkpoint contracts on the actual native host
         timeout-minutes: 5
         run: node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs
+      - name: Retire only task-owned dependencies after every contract passes
+        timeout-minutes: 2
+        run: node "$RUNNER_TEMP/cef-checkpoint-contract-dependencies/lifecycle.mjs" retire
       - name: Download exact independently sealed prior checkpoint
         id: restore
         env:
@@ -120,6 +220,7 @@ jobs:
         with:
           name: cef-engineering-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/cef-checkpoint-contract-dependencies/*.json
             ${{ runner.temp }}/cef-checkpoint-prerequisites
             ${{ runner.temp }}/cef-hosted-prepare-*
             ${{ runner.temp }}/cef-engineering-state.json
