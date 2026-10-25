@@ -340,8 +340,8 @@ test("hosted admission closes stages, preserves original failures and never seri
 // Execute the actual build body with only owned temporary I/O and synthetic
 // pre-acquisition dependencies. This is wiring evidence, not hosted admission.
 test("actual build retains the failing early boundary before any source acquisition", async (t) => {
-  const directory = await mkdtemp(
-    path.join(os.tmpdir(), "cef-admission-build-"),
+  const directory = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-admission-build-")),
   );
   t.after(() => rm(directory, { recursive: true, force: true }));
   const selected = "aarch64-unknown-linux-gnu";
