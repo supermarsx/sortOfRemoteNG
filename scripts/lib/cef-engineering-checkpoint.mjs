@@ -927,7 +927,11 @@ const CHECKPOINT_CODES = new Set([
 ]);
 export function checkpointLog(log, line) {
   try {
-    log(line);
+    const result = log(line);
+    // Observation is synchronous and non-gating; consume rejected thenables
+    // without awaiting or granting them authority over the operation.
+    if (result && typeof result.then === "function")
+      Promise.resolve(result).catch(() => {});
   } catch {
     /* Observation must not replace an operation result. */
   }
@@ -1335,6 +1339,31 @@ async function stopObserved(child, initial) {
 }
 // Only a result produced by this live process may authorize output mutation.
 // Decoded checkpoint manifests retain the existing six-key portable shape.
+// Pinned Siso efbbe7f uses golang/glog v1.2.5 filename identity rules.
+export function sisoLoggerIdentity(host, username) {
+  for (const value of [host, username])
+    assert(
+      typeof value === "string" &&
+        value.length > 0 &&
+        Buffer.byteLength(value) <= 1024 &&
+        !/[\x00-\x1f\x7f/\\]/.test(value) &&
+        !/[\uD800-\uDFFF]/u.test(value),
+      "Bounded Siso OS identity required",
+    );
+  const shortHost = host.split(".", 1)[0];
+  assert(shortHost.length > 0, "Bounded Siso OS identity required");
+  const user = Array.from(username, (character) =>
+    /^[A-Za-z0-9]$/.test(character) ? character : "_",
+  ).join("");
+  const prefix = `siso.${shortHost}.${user}.log.INFO.`;
+  return Object.freeze({
+    prefix,
+    hostBytes: Buffer.byteLength(host),
+    userBytes: Buffer.byteLength(username),
+    hostWasShortened: host !== shortHost,
+    userWasSanitized: username !== user,
+  });
+}
 const liveCompileSlices = new WeakMap();
 export async function compileSlice(
   executable,
@@ -1360,6 +1389,12 @@ export async function compileSlice(
     !outIdentity || outIdentity.isDirectory(),
     "Compile output directory required",
   );
+  const owner = userInfo();
+  assert(
+    Number.isSafeInteger(owner.uid) && owner.uid >= 0,
+    "Bounded Siso OS identity required",
+  );
+  const loggerIdentity = sisoLoggerIdentity(hostname(), owner.username);
   const beginWallMs = Date.now();
   const stdout = createWriteStream(
       path.join(logs, "checkpoint-compile.stdout.log"),
@@ -1491,6 +1526,8 @@ export async function compileSlice(
       observed,
     };
     liveCompileSlices.set(result, {
+      loggerIdentity,
+      uid: BigInt(owner.uid),
       beginWallMs,
       endWallMs: Date.now(),
       groupId: child.pid,
@@ -2307,6 +2344,11 @@ export async function observeThenRemoveSisoLog(
     "siso-log",
     () =>
       (dependencies.remove ?? removeQuiescentSisoLog)(out, compile, {
+        observeIdentity: (record) =>
+          checkpointLog(
+            log,
+            `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,
+          ),
         beforeUnlink: (record) =>
           writeFile(
             path.join(logs, "siso-log-alias-before.json"),
@@ -2321,7 +2363,7 @@ export async function observeThenRemoveSisoLog(
 export async function removeQuiescentSisoLog(
   out,
   compile,
-  { beforeUnlink = async () => {} } = {},
+  { beforeUnlink = async () => {}, observeIdentity = () => {} } = {},
 ) {
   validateCompile(compile);
   const proof = liveCompileSlices.get(compile);
@@ -2359,7 +2401,7 @@ export async function removeQuiescentSisoLog(
     s.isSymbolicLink() &&
       s.nlink === 1n &&
       s.uid === root.uid &&
-      s.uid === BigInt(userInfo().uid),
+      s.uid === proof.uid,
     "Owned Siso log alias required",
   );
   const raw = await readlink(file);
@@ -2373,7 +2415,16 @@ export async function removeQuiescentSisoLog(
     [temporary, canonicalTemporary].includes(path.dirname(raw)),
     "Siso log outside actual temporary directory",
   );
-  const prefix = `siso.${hostname()}.${userInfo().username}.log.INFO.`;
+  const { prefix, ...identityFacts } = proof.loggerIdentity;
+  checkpointLog(
+    observeIdentity,
+    Object.freeze({
+      contract: "siso-glog-1.2.5",
+      ...identityFacts,
+      expectedPrefixSha256: sha(prefix),
+      prefixMatched: path.basename(raw).startsWith(prefix),
+    }),
+  );
   assert(path.basename(raw).startsWith(prefix), "Foreign Siso log identity");
   const suffix = path.basename(raw).slice(prefix.length),
     match = /^(\d{8})-(\d{6})\.([1-9][0-9]*)$/.exec(suffix);

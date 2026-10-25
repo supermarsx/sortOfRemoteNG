@@ -50,6 +50,7 @@ import {
   SDK_PROBE_WORKFLOW,
   codeTreeDigest,
   canonical,
+  checkpointLog,
   sha,
   validateIdentity,
   validateManifest,
@@ -78,6 +79,7 @@ import {
   checkpointLinkRecipe,
   attestFrameworkLinks,
   removeQuiescentSisoLog,
+  sisoLoggerIdentity,
   observeThenRemoveSisoLog,
   selectedSdkPreflight,
   selectedSdkEnvironment,
@@ -475,7 +477,7 @@ test(
     const time = `${stamp.slice(0, 8)}-${stamp.slice(8)}`;
     const target = path.join(
       tmpdir(),
-      `siso.${hostname()}.${userInfo().username}.log.INFO.${time}.${compile.groupId}`,
+      `${sisoLoggerIdentity(hostname(), userInfo().username).prefix}${time}.${compile.groupId}`,
     );
     await writeFile(target, "target-must-survive", { flag: "wx" });
     t.after(() => unlink(target));
@@ -509,7 +511,7 @@ test(
       ),
       path.join(
         tmpdir(),
-        `siso.${hostname()}.${userInfo().username}.log.INFO.${time}.1`,
+        `${sisoLoggerIdentity(hostname(), userInfo().username).prefix}${time}.1`,
       ),
     ]) {
       await symlink(foreign, path.join(root, "siso.INFO"));
@@ -524,7 +526,7 @@ test(
     ]) {
       const foreign = path.join(
         tmpdir(),
-        `siso.${hostname()}.${userInfo().username}.log.INFO.${rejected}.${compile.groupId}`,
+        `${sisoLoggerIdentity(hostname(), userInfo().username).prefix}${rejected}.${compile.groupId}`,
       );
       await symlink(foreign, path.join(root, "siso.INFO"));
       await assert.rejects(
@@ -573,7 +575,7 @@ test(
     assert.ok(actual);
     const target = path.join(
         tmpdir(),
-        `siso.${hostname()}.${userInfo().username}.log.INFO.20261025-000000.${child.pid}`,
+        `${sisoLoggerIdentity(hostname(), userInfo().username).prefix}20261025-000000.${child.pid}`,
       ),
       file = path.join(root, "siso.INFO");
     await symlink(target, file);
@@ -5163,4 +5165,179 @@ test("cleanup spawn failure has no kill while unjoined post-spawn failure is exp
   );
   assert.equal(kills, 1);
   assert(performance.now() - began < 1000, "bounded failed-join observation");
+});
+
+test("pinned glog identity shortens first host dot and maps username Unicode code points exactly", () => {
+  assert.equal(
+    sisoLoggerIdentity("Host.domain.example", "User-name.é😀").prefix,
+    "siso.Host.User_name___.log.INFO.",
+  );
+  assert.equal(
+    sisoLoggerIdentity("Host", "User09").prefix,
+    "siso.Host.User09.log.INFO.",
+  );
+  assert.equal(
+    sisoLoggerIdentity("Host.domain", "User09").hostWasShortened,
+    true,
+  );
+  assert.equal(sisoLoggerIdentity("Host", "User09").userWasSanitized, false);
+  assert.notEqual(
+    sisoLoggerIdentity("Host.domain", "u-ser").prefix,
+    "siso.Host.domain.u-ser.log.INFO.",
+  );
+  for (const invalid of [
+    "",
+    ".domain",
+    "a/b",
+    "a\\b",
+    "a\n",
+    "a\0",
+    "x".repeat(1025),
+    "\ud800",
+  ])
+    assert.throws(
+      () => sisoLoggerIdentity(invalid, "user"),
+      /Siso OS identity/,
+    );
+  for (const invalid of ["", "a/b", "a\0", "\ud800"])
+    assert.throws(
+      () => sisoLoggerIdentity("host", invalid),
+      /Siso OS identity/,
+    );
+});
+
+test("exact Siso cleanup body uses proven logger identity and preserves all alias guards", async () => {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const declaration = ast.statements.find(
+    (node) =>
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === "removeQuiescentSisoLog",
+  );
+  const original = manifest().compile;
+  const now = Date.UTC(2026, 9, 25, 0, 0, 0);
+  const root = { dev: 1n, ino: 2n, uid: 10n, mode: 0o700n };
+  const link = {
+    dev: 1n,
+    ino: 3n,
+    uid: 10n,
+    mode: 0o777n,
+    nlink: 1n,
+    isSymbolicLink: () => true,
+  };
+  const prefix = "siso.Host.User_name___.log.INFO.";
+  let raw = "/tmp/" + prefix + "20261025-000000.123456",
+    quiet = true,
+    exists = true,
+    unlinked = 0;
+  const proof = {
+    canonicalOut: "/out",
+    groupId: original.groupId,
+    observed: original.observed,
+    beginWallMs: now,
+    endWallMs: now + 999,
+    outIdentity: root,
+    uid: 10n,
+    loggerIdentity: sisoLoggerIdentity("Host.domain", "User-name.é😀"),
+  };
+  const dependencies = {
+    assert,
+    validateCompile: (value) => assert.deepEqual(value, original),
+    liveCompileSlices: new WeakMap([[original, proof]]),
+    sameObservedCohort,
+    noLinks: async (value) => value,
+    observedQuiet: async () => quiet,
+    lstat: async (value) => (value === "/out" ? root : link),
+    path: path.posix,
+    optionalLinkStat: async () => (exists ? link : null),
+    readlink: async () => raw,
+    tmpdir: () => "/tmp",
+    realpath: async (value) => value,
+    checkpointLog: (sink, record) => {
+      try {
+        sink(record);
+      } catch {}
+    },
+    sha,
+    sameLinkIdentity: (a, b) => a === b,
+    unlink: async (value) => {
+      assert.equal(value, "/out/siso.INFO");
+      exists = false;
+      unlinked++;
+    },
+  };
+  const execute = new Function(
+    ...Object.keys(dependencies),
+    "return (" + declaration.getText(ast).replace(/^export /, "") + ")",
+  )(...Object.values(dependencies));
+  const messages = [];
+  for (const filename of [
+    "siso.Host.domain.User-name.é😀.log.INFO.20261025-000000.123456",
+    "siso.Other.User_name___.log.INFO.20261025-000000.123456",
+    prefix + "20261025-000000.1",
+    prefix + "20000101-000000.123456",
+  ]) {
+    raw = "/tmp/" + filename;
+    await assert.rejects(
+      execute("/out", original, {
+        observeIdentity: (row) => messages.push(row),
+      }),
+    );
+    assert.equal(unlinked, 0);
+    assert.equal(exists, true);
+  }
+  raw = "/tmp/" + prefix + "20261025-000000.123456";
+  await assert.rejects(
+    execute("/out", JSON.parse(JSON.stringify(original))),
+    /Genuine in-process/,
+  );
+  quiet = false;
+  await assert.rejects(execute("/out", original), /quiescent/);
+  quiet = true;
+  const result = await execute("/out", original, {
+    observeIdentity: () => {
+      throw Error("private token");
+    },
+  });
+  assert.equal(result.removed, true);
+  assert.equal(unlinked, 1);
+  assert.ok(messages.some((row) => row.prefixMatched === false));
+  assert.ok(
+    messages.every(
+      (row) =>
+        row.contract === "siso-glog-1.2.5" &&
+        !JSON.stringify(row).includes("Host"),
+    ),
+  );
+  assert.match(
+    source,
+    /liveCompileSlices.set\(result, \{\s*loggerIdentity,\s*uid: BigInt\(owner.uid\)/,
+  );
+});
+
+test("diagnostic logger rejection or pending promise cannot replace or hold an operation", async () => {
+  const reason = new Error("private token and URL");
+  checkpointLog(() => Promise.reject(reason), "fixed");
+  checkpointLog(() => new Promise(() => {}), "fixed");
+  checkpointLog(
+    () => ({
+      get then() {
+        throw reason;
+      },
+    }),
+    "fixed",
+  );
+  await new Promise((resolve) => setImmediate(resolve));
 });
