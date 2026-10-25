@@ -107,6 +107,36 @@ jobs:
               return result;
             };
           }
+          function observeMetalRealpath(resolve, persist, developerDir, now = () => performance.now()) {
+            let count = 0;
+            const bounded = (value) => {
+              if (typeof value !== 'string') return {value:null,bytes:0,truncated:false};
+              const bytes = Buffer.from(value);
+              let text = bytes.subarray(0, 2048).toString('utf8');
+              while (Buffer.byteLength(text) > 2048) text = text.slice(0, -1);
+              return {value:text,bytes:bytes.length,truncated:bytes.length>2048};
+            };
+            return async (input) => {
+              if (++count > 32) throw new Error('METAL_DIAGNOSTIC_REALPATH_BOUND');
+              const stage = input === developerDir ? 'selected-developer' :
+                typeof input === 'string' && path.posix.basename(input) === 'metal' ? 'metal' :
+                typeof input === 'string' && path.posix.basename(input) === 'metallib' ? 'metallib' : 'other-tool';
+              const began = now();
+              let result, originalError, failed = false;
+              try { result = await resolve(input); }
+              catch (error) { failed = true; originalError = error; }
+              const raw = bounded(input), canonical = bounded(result);
+              const codes = new Set(['ENOENT', 'EACCES', 'ELOOP', 'ENOTDIR', 'ENAMETOOLONG']);
+              const row = {schemaVersion:1,index:count,stage,result:failed?'failed':'success',
+                elapsedMs:Math.max(0,Math.floor(now()-began)),input:raw.value,inputBytes:raw.bytes,inputTruncated:raw.truncated,
+                canonical:canonical.value,canonicalBytes:canonical.bytes,canonicalTruncated:canonical.truncated,
+                failureCode:failed?(codes.has(originalError?.code)?originalError.code:'OTHER'):null};
+              try { await persist(row); }
+              catch { if (!failed) throw new Error('METAL_DIAGNOSTIC_PERSIST_FAILED'); }
+              if (failed) throw originalError;
+              return result;
+            };
+          }
           async function runMetalDiagnostic() {
             sdkProbeAuthority(process.env);
             if (process.env.METAL_TOOLS_ENABLED !== 'true' || process.platform !== 'darwin' || process.arch !== 'x64')
@@ -119,7 +149,7 @@ jobs:
             if (await realpath(output) !== output) throw new Error('METAL_DIAGNOSTIC_OUTPUT_DENIED');
             const log = await open(path.join(output, 'commands.jsonl'), 'wx', 0o600);
             const began = performance.now();
-            let phase = 'plan', originalError, failed = false;
+            let phase = 'plan', originalError, failed = false, realpathLog;
             let outcome = { schemaVersion: 1, diagnosticOnly: true, nativeAcceptance: false, chromiumAcquisition: false };
             const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
             try {
@@ -151,9 +181,11 @@ jobs:
                 await writeFile(path.join(output, `command-${name}.stderr`), stderr, {flag:'wx',mode:0o600});
                 await log.writeFile(JSON.stringify(row) + '\n');
               });
+              realpathLog = await open(path.join(output, 'realpaths.jsonl'), 'wx', 0o600);
+              const observedRealpath = observeMetalRealpath(realpath, (row) => realpathLog.writeFile(JSON.stringify(row)+'\n'), child.DEVELOPER_DIR);
               const observation = await prepareMacMetalToolchain({platform:process.platform,
                 selected:{DEVELOPER_DIR:child.DEVELOPER_DIR,SDKROOT:child.SDKROOT},env:process.env,allowDownload:true,
-                remainingMilliseconds:()=>600000-(performance.now()-began)}, {exec:observedExec});
+                remainingMilliseconds:()=>600000-(performance.now()-began)}, {exec:observedExec,realpath:observedRealpath});
               const fingerprint = macMetalFingerprint(observation);
               outcome = {...outcome, result:'success', downloaded:observation.downloaded,
                 componentResourceClosureVerified:false, nativeCompatibilityVerified:false,
@@ -164,7 +196,7 @@ jobs:
               'MAC_METAL_DOWNLOAD_POLICY', 'MAC_METAL_FILE_BOUND', 'MAC_METAL_FILE_CHANGED', 'MAC_METAL_OBSERVATION',
               'MAC_METAL_PROBE_FAILED', 'MAC_METAL_RESOLVED_PATH', 'MAC_METAL_SELECTED_ENV', 'MAC_METAL_UNAVAILABLE',
               'MAC_METAL_VERSION_BOUND', 'MAC_METAL_VERSION_MISSING', 'METAL_DIAGNOSTIC_TOOL_MAP_DENIED',
-              'METAL_DIAGNOSTIC_COMMAND_DENIED', 'METAL_DIAGNOSTIC_COMMAND_BOUND', 'METAL_DIAGNOSTIC_PERSIST_FAILED']);
+              'METAL_DIAGNOSTIC_COMMAND_DENIED', 'METAL_DIAGNOSTIC_COMMAND_BOUND', 'METAL_DIAGNOSTIC_REALPATH_BOUND', 'METAL_DIAGNOSTIC_PERSIST_FAILED']);
               const reason = reasons.has(error?.message) ? error.message : 'UNCLASSIFIED';
               outcome = {...outcome,result:'failed',phase,reason};
             } finally {
@@ -172,6 +204,7 @@ jobs:
               try { await writeFile(path.join(output,'outcome.json'),JSON.stringify(outcome)+'\n',{flag:'wx',mode:0o600}); }
               catch { persistFailed = true; }
               try { await log.close(); } catch { persistFailed = true; }
+              try { await realpathLog?.close(); } catch { persistFailed = true; }
               if (persistFailed && !failed) throw new Error('METAL_DIAGNOSTIC_PERSIST_FAILED');
             }
             if (failed) throw originalError;

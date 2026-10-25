@@ -117,6 +117,7 @@ import {
   readFile as readActual,
   rm,
   open,
+  symlink,
 } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -417,6 +418,7 @@ async function pipelineFixture(t) {
   };
   const calls = [];
   let closed = false;
+  const closedNames = [];
   const api = {
     ...Object.fromEntries(
       ["mkdir", "writeFile"].map((name) => [name, { mkdir, writeFile }[name]]),
@@ -430,7 +432,11 @@ async function pipelineFixture(t) {
     console: { error() {} },
     sdkProbeAuthority,
     checkpointHost,
-    realpath: async (value) => (value === "/" ? "/" : realpath(value)),
+    realpath: async (value) =>
+      value === "/" ||
+      value === "/Applications/Xcode_26.3.app/Contents/Developer"
+        ? value
+        : realpath(value),
     readFile: readActual,
     open: async (...args) => {
       const file = await open(...args);
@@ -438,6 +444,7 @@ async function pipelineFixture(t) {
         writeFile: (...values) => file.writeFile(...values),
         close: async () => {
           closed = true;
+          closedNames.push(path.basename(args[0]));
           await file.close();
         },
       };
@@ -465,7 +472,7 @@ async function pipelineFixture(t) {
     }),
     promisify: (fn) => fn,
     execFile: async () => ({ stdout: "", stderr: "" }),
-    prepareMacMetalToolchain: async (options) => {
+    prepareMacMetalToolchain: async (options, dependencies) => {
       calls.push("metal");
       assert.equal(options.allowDownload, true);
       assert.equal(
@@ -473,6 +480,10 @@ async function pipelineFixture(t) {
         "/Applications/Xcode_26.3.app/Contents/Developer",
       );
       assert.ok(options.remainingMilliseconds() <= 600000);
+      assert.equal(
+        await dependencies.realpath(options.selected.DEVELOPER_DIR),
+        options.selected.DEVELOPER_DIR,
+      );
       return { downloaded: false };
     },
     macMetalFingerprint: () => ({
@@ -486,7 +497,15 @@ async function pipelineFixture(t) {
       0,
       stripped.lastIndexOf("try { await runMetalDiagnostic(); }"),
     ) + "\nglobalThis.run=runMetalDiagnostic;";
-  return { root, env, calls, api, closed: () => closed, script };
+  return {
+    root,
+    env,
+    calls,
+    api,
+    closed: () => closed,
+    closedNames: () => closedNames,
+    script,
+  };
 }
 
 test("actual opt-in body verifies selected tool map and pins before invoking existing helper, without source acquisition", async (t) => {
@@ -496,6 +515,25 @@ test("actual opt-in body verifies selected tool map and pins before invoking exi
   await context.run();
   assert.deepEqual(f.calls, ["plan", "map", "pins", "metal"]);
   assert.equal(f.closed(), true);
+  assert.deepEqual(f.closedNames().sort(), [
+    "commands.jsonl",
+    "realpaths.jsonl",
+  ]);
+  const observedPaths = (
+    await readActual(
+      path.join(f.root, "cef-metal-tools-probe/realpaths.jsonl"),
+      "utf8",
+    )
+  )
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.equal(observedPaths.length, 1);
+  assert.equal(observedPaths[0].stage, "selected-developer");
+  assert.equal(
+    observedPaths[0].canonical,
+    "/Applications/Xcode_26.3.app/Contents/Developer",
+  );
   const outcome = JSON.parse(
     await readActual(path.join(f.root, "cef-metal-tools-probe/outcome.json")),
   );
@@ -559,4 +597,168 @@ test("actual opt-in body rejects changed source or map pins before helper execut
     assert.equal(f.calls.includes("pins"), false);
     assert.equal(f.closed(), true);
   }
+});
+
+function realpathObserver() {
+  const context = vm.createContext({ path, Buffer, performance });
+  new vm.Script(
+    functionsBody + "\nglobalThis.observe=observeMetalRealpath;",
+  ).runInContext(context);
+  return context.observe;
+}
+
+test("canonical-path observer preserves original values/errors and bounds private paths without error dumps", async () => {
+  const observe = realpathObserver(),
+    rows = [],
+    input = "/private/Apple/Metal.xctoolchain/usr/bin/metallib",
+    result = "/private/Apple/Metal.xctoolchain/usr/bin/other-target";
+  const resolve = observe(
+    async (value) => {
+      assert.equal(value, input);
+      return result;
+    },
+    async (row) => rows.push(row),
+    "/Applications/selected/Contents/Developer",
+  );
+  assert.equal(await resolve(input), result);
+  assert.equal(rows[0].input, input);
+  assert.equal(rows[0].canonical, result);
+  assert.equal(rows[0].stage, "metallib");
+  const long = "/" + "🙂".repeat(3000),
+    bounded = observe(
+      async () => long,
+      async (row) => rows.push(row),
+      "/selected",
+    );
+  assert.equal(await bounded(input), long);
+  assert.ok(Buffer.byteLength(rows[1].canonical) <= 2048);
+  assert.equal(rows[1].canonicalTruncated, true);
+  assert.equal(rows[1].canonicalBytes, Buffer.byteLength(long));
+  const error = Object.assign(
+    new Error("private token and environment payload"),
+    { code: "EACCES" },
+  );
+  await assert.rejects(
+    observe(
+      async () => {
+        throw error;
+      },
+      async (row) => rows.push(row),
+      "/selected",
+    )(input),
+    (e) => e === error,
+  );
+  assert.equal(rows.at(-1).failureCode, "EACCES");
+  assert.equal(rows.at(-1).canonical, null);
+  assert.doesNotMatch(
+    JSON.stringify(rows),
+    /private token|environment payload/,
+  );
+  await assert.rejects(
+    observe(
+      async () => {
+        throw error;
+      },
+      async () => {
+        throw Error("write failed");
+      },
+      "/selected",
+    )(input),
+    (e) => e === error,
+  );
+  let caught = false;
+  try {
+    await observe(
+      async () => {
+        throw null;
+      },
+      async () => {},
+      "/selected",
+    )(input);
+  } catch (e) {
+    caught = true;
+    assert.equal(e, null);
+  }
+  assert.equal(caught, true);
+});
+
+test("canonical-path observer stops at32 observations without later filesystem calls", async () => {
+  let calls = 0;
+  const observed = realpathObserver()(
+    async (value) => {
+      calls++;
+      return value;
+    },
+    async () => {},
+    "/selected",
+  );
+  for (let i = 0; i < 32; i++) await observed("/selected");
+  await assert.rejects(
+    observed("/selected"),
+    /METAL_DIAGNOSTIC_REALPATH_BOUND/,
+  );
+  assert.equal(calls, 32);
+});
+
+test("actual owned filesystem alias is observed without rewriting its canonical result", async (t) => {
+  const f = await pipelineFixture(t),
+    physical = path.join(f.root, "physical"),
+    alias = path.join(f.root, "alias");
+  await mkdir(physical);
+  await writeFile(
+    path.join(physical, "metallib"),
+    "not executable; metadata fixture only",
+  );
+  await symlink(physical, alias, "junction");
+  const input = path.join(alias, "metallib").replaceAll("\\", "/"),
+    expected = await realpath(input),
+    rows = [];
+  const result = await realpathObserver()(
+    realpath,
+    async (row) => rows.push(row),
+    "/selected",
+  )(input);
+  assert.equal(result, expected);
+  assert.equal(rows[0].input, input);
+  assert.equal(rows[0].canonical, expected);
+  assert.equal(rows[0].stage, "metallib");
+});
+
+test("simulated differing metallib canonical target remains denied by unchanged Metal helper", async () => {
+  const f = helperFixture("none"),
+    rows = [];
+  const resolve = async (value) =>
+    value.endsWith("/metallib")
+      ? value.replace(/metallib$/, "different-tool")
+      : value;
+  f.dependencies.realpath = realpathObserver()(
+    resolve,
+    async (row) => rows.push(row),
+    f.selected.DEVELOPER_DIR,
+  );
+  await assert.rejects(
+    prepareMacMetalToolchain(
+      {
+        selected: f.selected,
+        env: f.env,
+        platform: "darwin",
+        allowDownload: true,
+        remainingMilliseconds: () => 600000,
+      },
+      f.dependencies,
+    ),
+    /MAC_METAL_RESOLVED_PATH/,
+  );
+  const last = rows.at(-1);
+  assert.equal(last.stage, "metallib");
+  assert.ok(last.input.endsWith("/metallib"));
+  assert.ok(last.canonical.endsWith("/different-tool"));
+  assert.equal(
+    f.records.filter((x) => x.stage === "verify-metallib-signature").length,
+    0,
+  );
+  assert.equal(
+    f.records.some((x) => x.stage === "download-component"),
+    false,
+  );
 });
