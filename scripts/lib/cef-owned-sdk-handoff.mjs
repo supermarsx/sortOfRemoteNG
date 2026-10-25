@@ -44,6 +44,7 @@ const origins = {
 };
 export const LINUX_INCREMENTAL_ORIGIN = "owned-linux-incremental-engine";
 export const LINUX_ISOLATED_ORIGIN = "owned-linux-isolated-incremental-engine";
+export const LINUX_ISOLATED_OPERATION_ROOT = "/sorng-r5-generation-operation";
 export const isLinuxIncrementalOrigin = (origin) =>
   [LINUX_INCREMENTAL_ORIGIN, LINUX_ISOLATED_ORIGIN].includes(origin);
 export const LINUX_INCREMENTAL_IDENTITY =
@@ -2660,7 +2661,8 @@ function verifyLinuxIncrementalEvidence(
         "tools/make_distrib.py",
         "--output-dir",
       ]) &&
-      dist.argv[3] === `/work/linux-incremental-${operation}/distribution` &&
+      dist.argv[3] ===
+        `${isolated ? LINUX_ISOLATED_OPERATION_ROOT : `/work/linux-incremental-${operation}`}/distribution` &&
       same(dist.argv.slice(4), [
         "--ninja-build",
         "--x64-build",
@@ -3371,7 +3373,7 @@ function verifyLinuxIsolatedFacts({
       ["network", `${linuxCache}/services/network`],
       ["cef", `${linuxCache}/cef`],
       ["out", `${linuxCache}/out/Release_GN_x64`],
-      ["operation", `/work/linux-incremental-${operation}`],
+      ["operation", LINUX_ISOLATED_OPERATION_ROOT],
     ].map(([subpath, target]) => ({
       type: "volume",
       source: volume,

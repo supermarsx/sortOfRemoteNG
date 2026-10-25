@@ -20,6 +20,7 @@ import { syncBuiltinESMExports } from "node:module";
 import {
   LINUX_INCREMENTAL_ORIGIN,
   LINUX_ISOLATED_ORIGIN,
+  LINUX_ISOLATED_OPERATION_ROOT,
   LINUX_ISOLATED_IDENTITY,
   LINUX_ISOLATED_INPUT_RAW,
   LINUX_ISOLATED_TRANSITION,
@@ -2618,6 +2619,8 @@ function linuxIsolatedFixture() {
     onlyReviewedPatchesApplied: true,
   };
   r.preparation.facts.bridgeExports = 5;
+  r.distribution.facts.argv[3] =
+    LINUX_ISOLATED_OPERATION_ROOT + "/distribution";
   for (const row of Object.values(r))
     if (typeof row === "object")
       row.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
@@ -2773,7 +2776,7 @@ function linuxIsolatedFixture() {
       ["network", cache + "/services/network"],
       ["cef", cache + "/cef"],
       ["out", cache + "/out/Release_GN_x64"],
-      ["operation", `/work/linux-incremental-${op}`],
+      ["operation", LINUX_ISOLATED_OPERATION_ROOT],
     ].map(([subpath, target]) => ({
       type: "volume",
       source: volume,
@@ -4479,5 +4482,64 @@ test("official116 map denies each consistently repinned pristine-only before or 
       () => verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
       /Linux incremental evidence mismatch/,
     );
+  }
+});
+
+test("isolated R5 fixed operation root accepts only truthful fixed mounts and distribution while R4 stays historical", () => {
+  const fixed = LINUX_ISOLATED_OPERATION_ROOT;
+  assert.equal(fixed, "/sorng-r5-generation-operation");
+  const accept = (f) => verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  const good = linuxIsolatedFixture();
+  assert.equal(good.records.workspace.facts.mounts.at(-1).target, fixed);
+  assert.equal(
+    good.records.distribution.facts.argv[3],
+    fixed + "/distribution",
+  );
+  assert.equal(accept(good).origin, LINUX_ISOLATED_ORIGIN);
+  const legacy = linuxIncrementalFixture();
+  assert.equal(
+    legacy.records.distribution.facts.argv[3],
+    `/work/linux-incremental-${legacy.records.readiness.operation}/distribution`,
+  );
+  assert.equal(accept(legacy).origin, LINUX_INCREMENTAL_ORIGIN);
+  const wrap = (value) => {
+    const rawUtf8 = JSON.stringify(value);
+    return { rawUtf8, size: Buffer.byteLength(rawUtf8), sha256: hash(rawUtf8) };
+  };
+  const retarget = (f, target) => {
+    f.records.workspace.facts.mounts.at(-1).target = target;
+    const parsed = JSON.parse(f.records.container.facts.inspect.rawUtf8);
+    parsed.HostConfig.Mounts.find((m) => m.Target === fixed).Target = target;
+    parsed.Mounts.find((m) => m.Destination === fixed).Destination = target;
+    f.records.container.facts.inspect = wrap(parsed);
+    f.records.distribution.facts.argv[3] = target + "/distribution";
+  };
+  const mutations = [
+    (f) =>
+      retarget(f, `/work/linux-incremental-${f.records.readiness.operation}`),
+    (f) => retarget(f, fixed + "/"),
+    (f) => retarget(f, fixed + "/../foreign"),
+    (f) => retarget(f, "/sorng-r5-operation"),
+    (f) => {
+      const parsed = JSON.parse(f.records.container.facts.inspect.rawUtf8);
+      parsed.Mounts.find((m) => m.Destination === fixed).Destination =
+        "/foreign";
+      f.records.container.facts.inspect = wrap(parsed);
+    },
+    (f) => (f.records.workspace.facts.mounts.at(-1).source = "foreign-volume"),
+    (f) => (f.records.workspace.facts.mounts.at(-1).subpath = "out"),
+    (f) => (f.records.workspace.facts.mounts.at(-1).readonly = true),
+    (f) => f.records.workspace.facts.mounts.pop(),
+    (f) =>
+      (f.records.distribution.facts.argv[3] = `/work/linux-incremental-${f.records.readiness.operation}/distribution`),
+    (f) =>
+      (f.records.readiness.sourceLockIdentity = LINUX_INCREMENTAL_IDENTITY),
+    (f) => (f.records.readiness.controllerCommit = "f".repeat(40)),
+  ];
+  for (const mutate of mutations) {
+    const f = linuxIsolatedFixture();
+    mutate(f);
+    f.refresh();
+    assert.throws(() => accept(f));
   }
 });
