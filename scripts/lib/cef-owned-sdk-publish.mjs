@@ -5,10 +5,12 @@ import { execFileSync } from "node:child_process";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { HTTP3_BRIDGE_PATCH_ID } from "./browser-custom-runtime.mjs";
 import {
   createAcceptanceSeal,
   producerSelection,
   verifyAcceptanceBundle,
+  verifiedAcceptanceSourceLock,
 } from "../cef-runtime-acceptance-ci.mjs";
 import { publish } from "../cef-runtime-ci.mjs";
 import {
@@ -262,7 +264,7 @@ export async function verifyNativeAcceptanceMetadata(api, review) {
   return { repo, artifact };
 }
 
-export function verifyNativeAcceptanceSeal(seal, review, repo) {
+function validateNativeAcceptanceEnvelope(seal, review, repo) {
   validatePublicationReview(review);
   exact(seal, [
     "schemaVersion",
@@ -281,9 +283,10 @@ export function verifyNativeAcceptanceSeal(seal, review, repo) {
     "nativeAcceptance",
     "productionReady",
     "publicationAllowed",
+    ...(seal.schemaVersion === 2 ? ["capabilities", "bridgePatchId"] : []),
   ]);
   assert(
-    seal.schemaVersion === 1 &&
+    [1, 2].includes(seal.schemaVersion) &&
       seal.kind === "sorng-cef-native-acceptance-seal" &&
       seal.nativeAcceptance === true &&
       seal.productionReady === false &&
@@ -291,6 +294,19 @@ export function verifyNativeAcceptanceSeal(seal, review, repo) {
       seal.hostedBuild === false &&
       seal.ingestion === "operator-reviewed-local-bytes",
     "Only successful native owned-import acceptance may publish",
+  );
+  // Cheap rejection only. These declared fields cannot establish capability;
+  // full admission below still binds the independently verified SDK source lock.
+  assert(
+    Array.isArray(seal.reports) &&
+      seal.reports.length === (seal.schemaVersion === 2 ? 17 : 9) &&
+      Array.isArray(seal.builds) &&
+      seal.builds.length === (seal.schemaVersion === 2 ? 3 : 2) &&
+      (seal.schemaVersion !== 2 ||
+        (canonical(seal.capabilities) ===
+          canonical(["tls", "http2", "http3"]) &&
+          seal.bridgePatchId === HTTP3_BRIDGE_PATCH_ID)),
+    "Closed native seal declaration required",
   );
   exact(seal.execution, [
     "repository",
@@ -328,10 +344,18 @@ export function verifyNativeAcceptanceSeal(seal, review, repo) {
       canonical(seal.producer) === canonical(review.producer),
     "Native acceptance seal source/attempt/producer differs",
   );
+}
+
+export function verifyNativeAcceptanceSeal(seal, review, repo, sourceLock) {
+  validateNativeAcceptanceEnvelope(seal, review, repo);
+  const execution = seal.execution;
   const { sourceTree, codeSha256, codeDigestFormat, ...identity } = execution;
   const result = {
-    schemaVersion: 1,
+    schemaVersion: seal.schemaVersion,
     kind: "sorng-cef-native-acceptance-run",
+    ...(seal.schemaVersion === 2
+      ? { capabilities: seal.capabilities, bridgePatchId: seal.bridgePatchId }
+      : {}),
     target: seal.target,
     producer: { ...seal.producer, sourceLockIdentity: seal.sourceLockIdentity },
     ingestion: seal.ingestion,
@@ -353,6 +377,7 @@ export function verifyNativeAcceptanceSeal(seal, review, repo) {
     execution: identity,
     code: { sourceTree, codeSha256, codeDigestFormat },
     reportSha256: seal.report.sha256,
+    sourceLock,
   });
   assert(
     canonical(checked) === canonical(seal),
@@ -446,7 +471,7 @@ export async function verifyOwnedPublication(
     ) === review.acceptance.sealSha256,
     "Independent raw native seal digest differs",
   );
-  verifyNativeAcceptanceSeal(seal, review, repo);
+  validateNativeAcceptanceEnvelope(seal, review, repo);
   const bundle = path.join(destination, "bundle");
   const completion = await (dependencies.downloadImport ?? downloadOwnedImport)(
     ownedApi,
@@ -474,6 +499,8 @@ export async function verifyOwnedPublication(
       completion.reviewSha256 === review.producer.reviewSha256,
     "Final imported bundle/provenance differs",
   );
+  const sourceLock = await verifiedAcceptanceSourceLock(bundle, checked);
+  verifyNativeAcceptanceSeal(seal, review, repo, sourceLock);
   // Large downloads must not turn a superseded run/attempt or changed draft
   // into publication authority. Re-attest both chains after the last byte check.
   await verifyNativeAcceptanceMetadata(api, review);
