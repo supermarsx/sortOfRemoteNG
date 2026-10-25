@@ -1,0 +1,151 @@
+name: Native Windows ARM bounded C and C++ capability
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-arm-native-compile-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: windows-11-arm
+    timeout-minutes: 35
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          architecture: arm64
+          package-manager-cache: false
+      - name: Validate the closed workflow and compiler protocol
+        shell: bash
+        run: node --test tests/tooling/windowsArmNativeCompile.node-test.mjs
+      - name: Provision the unchanged fixed SDK28000 recipe
+        timeout-minutes: 12
+        shell: bash
+        run: node scripts/cef-hosted-provision.mjs --target aarch64-pc-windows-msvc --output "$RUNNER_TEMP/cef-hosted-provision" --execute
+      - name: Compile four fixed translation units and three static links
+        id: capability
+        timeout-minutes: 18
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {execFile} from 'node:child_process';
+          import {promisify} from 'node:util';
+          import {constants} from 'node:fs';
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import {createHash,randomUUID} from 'node:crypto';
+          const execute=promisify(execFile),digest=raw=>createHash('sha256').update(raw).digest('hex');
+          export const PROFILE_SHA='e627ccce5b05733a73be68f58d7d6522850ca6a13fad5913c4ac0c62771b05a7';
+          export const ROLES=['c','stl','atl','mfc','link-c','link-stl','link-atl'];
+          const need=(value,code)=>assert(value,code);
+          export function authority(env,platform=process.platform,arch=process.arch){
+            need(platform==='win32'&&arch==='arm64','COMPILE_NATIVE');
+            need(env.GITHUB_ACTIONS==='true'&&env.RUNNER_ENVIRONMENT==='github-hosted'&&env.GITHUB_EVENT_NAME==='workflow_dispatch','COMPILE_EVENT');
+            need(env.GITHUB_REPOSITORY==='supermarsx/sortOfRemoteNG'&&env.GITHUB_REPOSITORY_ID==='1010282954'&&env.GITHUB_REPOSITORY_VISIBILITY==='public','COMPILE_REPOSITORY');
+            need(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(env.CEF_DEFAULT_BRANCH??'')&&!env.CEF_DEFAULT_BRANCH.includes('..'),'COMPILE_BRANCH');
+            need(env.GITHUB_REF===`refs/heads/${env.CEF_DEFAULT_BRANCH}`&&/^[a-f0-9]{40}$/.test(env.GITHUB_SHA??'')&&env.GITHUB_WORKFLOW_SHA===env.GITHUB_SHA,'COMPILE_HEAD');
+            need(env.GITHUB_WORKFLOW_REF===`${env.GITHUB_REPOSITORY}/.github/workflows/windows-arm-native-compile.yml@${env.GITHUB_REF}`,'COMPILE_WORKFLOW');
+            need(/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID??'')&&/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ATTEMPT??''),'COMPILE_RUN');
+            return {repository:env.GITHUB_REPOSITORY,repositoryId:env.GITHUB_REPOSITORY_ID,visibility:'public',event:'workflow_dispatch',defaultBranch:env.CEF_DEFAULT_BRANCH,ref:env.GITHUB_REF,workflow:'.github/workflows/windows-arm-native-compile.yml',head:env.GITHUB_SHA,workflowSha:env.GITHUB_WORKFLOW_SHA,runId:env.GITHUB_RUN_ID,attempt:env.GITHUB_RUN_ATTEMPT};
+          }
+          export async function noLinks(file){
+            need(path.isAbsolute(file)&&(await fs.realpath(file)).toLowerCase()===path.resolve(file).toLowerCase(),'COMPILE_ALIAS');
+            for(let current=file;;current=path.dirname(current)){need(!(await fs.lstat(current)).isSymbolicLink(),'COMPILE_LINK');if(path.dirname(current)===current)break}
+          }
+          const identity=s=>[s.dev,s.ino,s.size,s.mtimeNs,s.ctimeNs,s.nlink].map(String).join(':');
+          export async function held(file,cap,allowEmpty=false,independent=false){
+            await noLinks(file);const named=await fs.lstat(file,{bigint:true});need(named.isFile()&&(allowEmpty||named.size>0n)&&named.size<=BigInt(cap)&&(!independent||named.nlink===1n),'COMPILE_FILE_BOUND');
+            const fd=await fs.open(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
+            try{const before=await fd.stat({bigint:true});need(identity(before)===identity(named),'COMPILE_FD_IDENTITY');const raw=Buffer.alloc(Number(before.size)+1);let total=0;
+              while(total<raw.length){const r=await fd.read(raw,total,raw.length-total,total);if(!r.bytesRead)break;total+=r.bytesRead}
+              need(total===Number(before.size)&&identity(await fd.stat({bigint:true}))===identity(before),'COMPILE_CHANGED');await noLinks(file);need(identity(await fs.lstat(file,{bigint:true}))===identity(named),'COMPILE_REPLACED');return raw.subarray(0,total);
+            }finally{await fd.close()}
+          }
+          const CRLF_SOURCE_PATHS=new Set([
+            '.github/workflows/windows-arm-native-tools.yml','.github/workflows/windows-arm-native-compile.yml',
+            'tests/tooling/windowsArmNativeTools.node-test.mjs','tests/tooling/nodeToolchain.node-test.mjs','tests/tooling/windowsArmNativeCompile.node-test.mjs',
+            'scripts/cef-hosted-provision.mjs','scripts/cef-hosted-bootstrap.mjs','native/cef-hosted-recipe.json',
+          ]);
+          export function sourceBinding(file,canonical,actual){
+            need(Buffer.isBuffer(canonical)&&Buffer.isBuffer(actual),'COMPILE_HEAD_BYTES');let encoding='exact';
+            if(!actual.equals(canonical)){
+              need(CRLF_SOURCE_PATHS.has(file),'COMPILE_HEAD_BYTES');
+              let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(canonical);new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(actual)}catch{need(false,'COMPILE_HEAD_UTF8')}
+              need(!text.includes('\r')&&Buffer.from(text,'utf8').equals(canonical)&&Buffer.from(text.replace(/\n/g,'\r\n'),'utf8').equals(actual),'COMPILE_HEAD_BYTES');encoding='git-crlf';
+            }
+            return {path:file,bytes:actual.length,sha256:digest(actual),gitBytes:canonical.length,gitSha256:digest(canonical),encoding};
+          }
+          export function peMachine(raw){need(raw.length>=64&&raw.toString('ascii',0,2)==='MZ','COMPILE_PE');const at=raw.readUInt32LE(60);need(at>=64&&at<=raw.length-26&&raw.readUInt32LE(at)===0x4550,'COMPILE_PE');return raw.readUInt16LE(at+4)}
+          export function environment(root){return {SystemRoot:'C:/Windows',WINDIR:'C:/Windows',SYSTEMDRIVE:'C:',PATH:'C:/Windows/System32',HOMEDRIVE:path.parse(root).root.slice(0,2),HOMEPATH:root.slice(2),LOGONSERVER:'',USERDOMAIN:'.',USERNAME:'owned-benign',TEMP:path.join(root,'tmp'),TMP:path.join(root,'tmp'),USERPROFILE:path.join(root,'home'),HOME:path.join(root,'home'),PROCESSOR_ARCHITECTURE:'ARM64',PYTHONDONTWRITEBYTECODE:'1'}}
+          export function artifactNames(profile){
+            const names=['context.json','compile-result.json','fresh-provision.json'];
+            for(let n=0;n<profile.sourcePaths.length;n++)names.push('source-inputs/'+n);
+            for(const n of ['c','stl','atl','mfc'])names.push(`sources/${n}.${n==='c'?'c':'cpp'}`,`objects/${n}.obj`);
+            for(const n of ['c','stl','atl'])names.push(`bin/${n}.exe`,`maps/${n}.map`);
+            for(const n of ROLES)names.push(`results/${n}.json`,`results/${n}.compiler.log`,...['receipt.json','parent-receipt.json','stdout.log','stderr.log'].map(f=>`jobs/${n}/${f}`));
+            return names;
+          }
+          async function run(){
+            const summary={kind:'native-arm-compile-bootstrap',success:false,setupCompatibility:null,outputExecuted:false,sdkBuilt:false,nativeAcceptance:false,publicationAllowed:false,files:[]};
+            let root,retained,profile,nativeExit=null;
+            try{
+              const provenance=authority(process.env);await noLinks(process.env.RUNNER_TEMP);
+              retained=path.join(process.env.RUNNER_TEMP,'windows-arm-compile-retained-'+randomUUID());await fs.mkdir(retained);
+              await fs.appendFile(process.env.GITHUB_OUTPUT,`artifact_root=${retained}\n`);
+              const raw=await held(path.resolve('native/windows-arm-native-compile/profile.json'),32768);need(digest(raw)===PROFILE_SHA,'COMPILE_PROFILE_PIN');profile=JSON.parse(raw);
+              need(profile.image===process.env.ImageVersion&&JSON.stringify(profile.roles)===JSON.stringify(ROLES),'COMPILE_IMAGE');
+              for(const row of profile.files){const data=await held(path.resolve(row.path),128*1024**2);need(data.length===row.size&&digest(data)===row.sha256,'COMPILE_TOOL_PIN');need((await fs.lstat(row.path,{bigint:true})).nlink===BigInt(row.nlink),'COMPILE_TOOL_LINK');if(row.machine!==null)need(peMachine(data)===row.machine,'COMPILE_TOOL_MACHINE')}
+              const git=profile.files.find(r=>r.role===profile.programs.git).path;
+              const options={windowsHide:true,encoding:'utf8',timeout:10000,maxBuffer:2*1024**2};
+              need((await execute(git,['rev-parse','HEAD'],options)).stdout.trim()===provenance.head,'COMPILE_CHECKOUT');
+              need((await execute(git,['status','--porcelain'],options)).stdout.trim()==='','COMPILE_DIRTY');
+              const provisionRaw=await held(path.join(process.env.RUNNER_TEMP,'cef-hosted-provision','provision.json'),1048576);const provision=JSON.parse(provisionRaw);need(provision.schemaVersion===1&&provision.target==='aarch64-pc-windows-msvc'&&provision.completed===true&&provision.engineBuildAttempted===false,'COMPILE_FRESH_PROVISION');
+              const artifacts=path.resolve('.artifacts');try{await fs.mkdir(artifacts)}catch(error){if(error?.code!=='EEXIST')throw error}await noLinks(artifacts);need((await fs.lstat(artifacts)).isDirectory(),'COMPILE_ARTIFACT_PARENT');
+              root=path.join(artifacts,'windows-arm-native-tools-'+randomUUID());await fs.mkdir(root,{recursive:false});
+              for(const name of ['tmp','home','jobs','sources','objects','bin','maps','results','source-inputs'])await fs.mkdir(path.join(root,name));
+              const rows=[];
+              for(const [n,file]of profile.sourcePaths.entries()){
+                const data=await held(path.resolve(file),2*1024**2);const blob=await execute(git,['cat-file','blob',`${provenance.head}:${file}`],{...options,encoding:'buffer'});const binding=sourceBinding(file,blob.stdout,data);
+                await fs.writeFile(path.join(root,'source-inputs',String(n)),data,{flag:'wx'});rows.push(binding);
+              }
+              await fs.writeFile(path.join(root,'fresh-provision.json'),provisionRaw,{flag:'wx'});
+              const context={kind:'sorng-windows-arm-native-compile-context',...provenance,image:profile.image,sources:rows,freshProvision:{bytes:provisionRaw.length,sha256:digest(provisionRaw)}};await fs.writeFile(path.join(root,'context.json'),JSON.stringify(context,null,2),{flag:'wx'});
+              await execute(profile.python.path,['-I','-B',path.resolve('native/windows-arm-native-compile/test_compile.py')],{cwd:root,env:environment(root),windowsHide:true,timeout:30000,maxBuffer:1048576});
+              try{const child=await execute(profile.python.path,['-I','-B',path.resolve('native/windows-arm-native-compile/compile.py'),'--run',root],{cwd:root,env:environment(root),windowsHide:true,timeout:900000,maxBuffer:1048576});nativeExit=0;need(child.stdout.length<=1048576,'COMPILE_CONTROLLER_OUTPUT')}catch(error){nativeExit=Number.isInteger(error?.code)?error.code:null}
+              summary.controllerExit=nativeExit;
+              const data=await held(path.join(root,'compile-result.json'),4*1024**2);summary.nativeResult=JSON.parse(data);summary.success=nativeExit===0&&summary.nativeResult.success===true;
+            }catch{summary.failure='NATIVE_ARM_COMPILE_DIAGNOSTIC_DENIED';summary.success=false}
+            if(retained){
+              try{
+                let total=0;
+                if(root&&profile)for(const relative of artifactNames(profile)){
+                  const file=path.join(root,relative);let data;try{data=await held(file,8*1024**2,true,true)}catch(error){if(error?.code==='ENOENT')continue;throw error}
+                  total+=data.length;need(total<=128*1024**2,'COMPILE_ARTIFACT_BOUND');const destination=path.join(retained,relative);await fs.mkdir(path.dirname(destination),{recursive:true});await fs.writeFile(destination,data,{flag:'wx'});summary.files.push({path:relative,bytes:data.length,sha256:digest(data)});
+                }
+              }catch{summary.collectionFailure='COMPILE_ARTIFACT_DENIED';summary.success=false}
+              let raw=Buffer.from(JSON.stringify(summary,null,2));if(raw.length>8*1024**2){delete summary.nativeResult;summary.success=false;summary.collectionFailure='COMPILE_SUMMARY_BOUND';raw=Buffer.from(JSON.stringify(summary));}
+              await fs.writeFile(path.join(retained,'bootstrap-result.json'),raw,{flag:'wx'});await fs.appendFile(process.env.GITHUB_OUTPUT,'artifact_ready=true\n');
+            }
+            need(summary.success,'NATIVE_ARM_COMPILER_CAPABILITY_FAILED');
+          }
+          // Closed workflow entry; tests import definitions above this marker only.
+          try{await run()}catch{console.error('NATIVE_ARM_COMPILER_CAPABILITY_FAILED');process.exitCode=1}
+          NODE
+      - name: Retain bounded compiler observations only
+        if: always() && steps.capability.outputs.artifact_root != '' && steps.capability.outputs.artifact_ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-arm-native-compile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.capability.outputs.artifact_root }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: error
