@@ -157,7 +157,71 @@ describe("ordinary Vitest discovery", () => {
       step.startsWith(stepName.trim().slice(2)),
     );
     expect(runtimeContracts).toBe(rustSetup + 1);
-    expect(nativeContracts).toBe(runtimeContracts + 1);
+    const expectedHelpers = [
+      {
+        name: "Native ARM tool observer contracts (Windows)",
+        condition: "runner.os == 'Windows'",
+        run: "python -I -B native/windows-arm-native-tools/test_observe.py",
+      },
+      {
+        name: "Native ARM compiler contracts (Windows)",
+        condition: "runner.os == 'Windows'",
+        run: "python -I -B native/windows-arm-native-compile/test_compile.py",
+      },
+      {
+        name: "Hosted x64 ARM inventory contracts (Windows)",
+        condition: "runner.os == 'Windows'",
+        run: "python -I -B native/windows-x64-arm-clang/test_observe.py",
+      },
+      {
+        name: "Native ARM helper contracts (Unix)",
+        condition: "runner.os != 'Windows'",
+        run: [
+          "python3 -I -B native/windows-arm-native-tools/test_observe.py",
+          "python3 -I -B native/windows-arm-native-compile/test_compile.py",
+          "python3 -I -B native/windows-x64-arm-clang/test_observe.py",
+        ].join("\n"),
+      },
+    ];
+    const helperSteps = steps.slice(runtimeContracts + 1, nativeContracts);
+    const assertHelperBlock = (block: string[]) => {
+      const parsed = block.map((step) => {
+        const [name, condition, run, ...commands] = step
+          .trim()
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        expect(name).toMatch(/^name: /);
+        expect(condition).toMatch(/^if: /);
+        expect(run).toMatch(/^run: /);
+        if (run !== "run: |") expect(commands).toEqual([]);
+        return {
+          name: name!.slice("name: ".length),
+          condition: condition!.slice("if: ".length),
+          run:
+            run === "run: |" ? commands.join("\n") : run!.slice("run: ".length),
+        };
+      });
+      expect(parsed).toEqual(expectedHelpers);
+    };
+    assertHelperBlock(helperSteps);
+    expect(nativeContracts).toBe(runtimeContracts + expectedHelpers.length + 1);
+    const reordered = [...helperSteps];
+    [reordered[0], reordered[1]] = [reordered[1]!, reordered[0]!];
+    expect(() => assertHelperBlock(reordered)).toThrow();
+    expect(() => assertHelperBlock(helperSteps.slice(1))).toThrow();
+    const wrongGuard = [...helperSteps];
+    wrongGuard[0] = wrongGuard[0]!.replace(
+      "if: runner.os == 'Windows'",
+      "if: runner.os != 'Windows'",
+    );
+    expect(() => assertHelperBlock(wrongGuard)).toThrow();
+    expect(() =>
+      assertHelperBlock([
+        ...helperSteps,
+        "name: unrelated\nrun: echo unrelated",
+      ]),
+    ).toThrow();
     expect(steps[runtimeContracts]).not.toMatch(/continue-on-error|if:/);
     for (const file of suites) {
       expect(readFileSync(file, "utf8")).toContain('from "node:test"');
