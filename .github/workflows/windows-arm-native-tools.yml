@@ -48,11 +48,12 @@ jobs:
             try { assert(condition, code); }
             catch (error) { if (observations) failureObservations.set(error, observations); throw error; }
           };
-          export const PREFLIGHT_STAGES = Object.freeze(['authority', 'source-head', 'source-clean', 'source-inputs', 'profile', 'python-identity', 'python-dll-identity', 'provision-evidence', 'runner-temp', 'create-root', 'register-output', 'artifact-collection']);
-          const PREFLIGHT_CODES = new Set(['ARM_NATIVE_NODE', 'ARM_EVENT', 'ARM_REPOSITORY', 'ARM_BRANCH', 'ARM_REF', 'ARM_HEAD', 'ARM_WORKFLOW', 'ARM_RUN', 'ARM_SYSTEM_ROOT', 'ARM_CHECKOUT_HEAD', 'ARM_GIT_BLOB_BOUND', 'ARM_PROFILE_PIN', 'ARM_PROFILE', 'ARM_SOURCE_NAMES', 'ARM_TOOL_SCOPE', 'ARM_ABSOLUTE_PATH', 'ARM_CANONICAL_PATH', 'ARM_PATH_LINK', 'ARM_FILE_BOUND', 'ARM_OPEN_IDENTITY', 'ARM_FILE_CHANGED', 'ARM_FILE_REPLACED', 'ARM_TOOL_PIN', 'ARM_PE_DOS', 'ARM_PE_NATIVE', 'ARM_ACTION_OUTPUT']);
+          export const PREFLIGHT_STAGES = Object.freeze(['authority', 'source-head', 'source-clean', 'source-inputs', 'profile', 'python-identity', 'python-dll-identity', 'provision-evidence', 'runner-temp', 'create-root', 'register-output', 'artifact-collection', 'artifact-retention']);
+          export const COLLECTION_CODES = Object.freeze(['ARM_COLLECT_DEPTH','ARM_COLLECT_DEADLINE','ARM_COLLECT_ENTRIES','ARM_COLLECT_MEMBER','ARM_COLLECT_TYPE','ARM_COLLECT_FILES','ARM_COLLECT_FILE_BYTES','ARM_COLLECT_TOTAL','ARM_COLLECT_SUMMARY']);
+          const PREFLIGHT_CODES = new Set([...COLLECTION_CODES,'ARM_NATIVE_NODE', 'ARM_EVENT', 'ARM_REPOSITORY', 'ARM_BRANCH', 'ARM_REF', 'ARM_HEAD', 'ARM_WORKFLOW', 'ARM_RUN', 'ARM_SYSTEM_ROOT', 'ARM_CHECKOUT_HEAD', 'ARM_GIT_BLOB_BOUND', 'ARM_PROFILE_PIN', 'ARM_PROFILE', 'ARM_SOURCE_NAMES', 'ARM_TOOL_SCOPE', 'ARM_ABSOLUTE_PATH', 'ARM_CANONICAL_PATH', 'ARM_PATH_LINK', 'ARM_FILE_BOUND', 'ARM_OPEN_IDENTITY', 'ARM_FILE_CHANGED', 'ARM_FILE_REPLACED', 'ARM_TOOL_PIN', 'ARM_PE_DOS', 'ARM_PE_NATIVE', 'ARM_ACTION_OUTPUT']);
           const SYSTEM_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR', 'EISDIR', 'ELOOP', 'ENOSPC', 'EEXIST', 'ERR_OUT_OF_RANGE', 'ERR_INVALID_ARG_TYPE']);
-          const OBSERVATION_NUMBERS = new Set(['fileBytes', 'maximumBytes', 'minimumBytes', 'expectedBytes', 'nlink', 'machine']);
-          const OBSERVATION_BOOLEANS = new Set(['isFile', 'pinMatched', 'byteCountMatched', 'identityMatched', 'canonicalMatched', 'peOffsetBounded', 'mzMatched', 'linkObserved']);
+          const OBSERVATION_NUMBERS = new Set(['fileBytes', 'maximumBytes', 'minimumBytes', 'expectedBytes', 'nlink', 'machine', 'entries', 'files', 'totalBytes', 'depth']);
+          const OBSERVATION_BOOLEANS = new Set(['isFile', 'pinMatched', 'byteCountMatched', 'identityMatched', 'canonicalMatched', 'peOffsetBounded', 'mzMatched', 'linkObserved', 'memberAllowed']);
           const safeNumber = (value) => { const number = Number(value); return Number.isSafeInteger(number) && number >= 0 ? number : null; };
 
           export function preflightFailure(error) {
@@ -231,13 +232,86 @@ jobs:
            if(!/^\.artifacts\/windows-arm-native-tools-[a-f0-9-]{36}$/.test(op))return false;
            return NAMES.some(name=>rel==='.cache/windows-arm-native-tools/'+name)||rel.startsWith(op+'/')&&/^(?:context\.json|observation\.json|bootstrap-(?:stdout|stderr)\.log|source-inputs\/[0-6]|result-(?:python|git|powershell|cl|link)\.json|jobs\/(?:python|git|powershell|cl|link)\/(?:receipt\.json|parent-receipt\.json|stdout\.log|stderr\.log))$/.test(rel.slice(op.length+1));
           }
+          const collectionView = (state) => ({entries:state.entries,files:state.files,totalBytes:state.totalBytes,depth:state.depth,fileBytes:state.fileBytes,nlink:state.nlink,isFile:state.isFile,memberAllowed:state.memberAllowed});
+          export async function collectArtifact(root,operation,{api=fs,now=()=>performance.now(),onFailure=()=>{},started=now()}={}){
+           const state={stage:'root',entries:0,files:0,totalBytes:0,depth:0,fileBytes:null,nlink:null,isFile:null,memberAllowed:null},buffers=[],files=[];
+           const deadline=started+10000,op=path.relative(root,operation).replaceAll('\\','/');
+           const check=(value,code)=>fixed(value,code,collectionView(state));
+           async function walk(dir,depth=0){
+            state.depth=depth;state.stage='directory-bound';check(depth<=8,'ARM_COLLECT_DEPTH');check(now()<deadline,'ARM_COLLECT_DEADLINE');
+            state.stage='directory-list';const names=await api.readdir(dir);
+            for(const name of names){
+             state.entries++;state.fileBytes=state.nlink=state.isFile=state.memberAllowed=null;state.stage='entry-bound';
+             check(state.entries<=128,'ARM_COLLECT_ENTRIES');check(now()<deadline,'ARM_COLLECT_DEADLINE');
+             const file=path.join(dir,name);state.stage='path-check';await noLinks(file,api);state.stage='entry-stat';const info=await api.lstat(file);
+             if(info.isDirectory())await walk(file,depth+1);
+             else{
+              const rel=path.relative(root,file).replaceAll('\\','/');state.fileBytes=safeNumber(info.size);state.nlink=safeNumber(info.nlink);state.isFile=info.isFile();state.memberAllowed=artifactAllowed(rel,op);
+              state.stage='file-admission';check(state.memberAllowed,'ARM_COLLECT_MEMBER');check(state.isFile,'ARM_COLLECT_TYPE');check(files.length<100,'ARM_COLLECT_FILES');check(info.size<=65536,'ARM_COLLECT_FILE_BYTES');
+              state.stage='file-read';const raw=await heldBytes(file,65536,api,true);state.totalBytes+=raw.length;check(state.totalBytes<=512*1024,'ARM_COLLECT_TOTAL');
+              files.push({path:rel,size:raw.length,sha256:digest(raw)});buffers.push({path:rel,raw});state.files=files.length;
+             }
+            }
+           }
+           try{
+            await walk(root);state.stage='complete';return{files,buffers,totalBytes:state.totalBytes,diagnostic:{status:'complete',stage:'complete',errorCode:null,observations:collectionView(state)}};
+           }catch(error){
+            const diagnostic={status:'failed',stage:state.stage,errorCode:preflightFailure(error).errorCode,observations:collectionView(state)};
+            try{onFailure(diagnostic);}catch{}
+            throw error;
+           }
+          }
+          const NATIVE_PHASES=new Set(['own-source-identity','backend-import','inventory-before','owned-role','inventory-after','complete']);
+          const NATIVE_FAILURES=new Set(['TOOLS_PATH','TOOLS_LINK','TOOLS_PROFILE_PIN','TOOLS_PROFILE','TOOLS_PROFILE_BOUND','TOOLS_ROLE','TOOLS_COMMAND','TOOLS_CONTEXT_BOUND','TOOLS_CONTEXT','TOOLS_CONTEXT_CHANGED','TOOLS_SOURCES','TOOLS_SOURCE_PIN','TOOLS_DEPLOYMENT_PIN','TOOLS_PROVENANCE','TOOLS_FILE_BOUND','TOOLS_OPEN_IDENTITY','TOOLS_FILE_PIN','TOOLS_PE_DOS','TOOLS_PE_BOUND','TOOLS_PE_MACHINE','TOOLS_FILE_CHANGED','TOOLS_TRUST_ABI','TOOLS_VERSION_BOUND','TOOLS_VERSION_READER_UNKNOWN','TOOLS_EXEC_NATIVE','TOOLS_NATIVE','TOOLS_DEADLINE','TOOLS_JOB_UNCONFIRMED','TOOLS_SIGNATURE_UNVERIFIED','TOOLS_BIRTHTIME_UNAVAILABLE','TOOLS_OBSERVATION_INCOMPLETE']);
+          const NATIVE_OUTCOMES=new Set(['launcher-failure','running','cancelled','deadline','log-failure','output-cap','success','compiler-failure','descendants-left']);
+          const NATIVE_ROLES=new Set(['python','git','powershell','cl','link']);
+          const uint=(n,max=0xffffffff)=>Number.isSafeInteger(n)&&n>=0&&n<=max;
+          const exitNumber=(n)=>Number.isSafeInteger(n)&&n>=-2147483648&&n<=0xffffffff;
+          export function projectNative(value){
+           try{
+            assert(value&&value.schemaVersion===1&&value.kind==='sorng-windows-arm-native-tools');assert(NATIVE_PHASES.has(value.phase));assert(value.failure===null||NATIVE_FAILURES.has(value.failure));
+            assert(value.activeRole===null||NATIVE_ROLES.has(value.activeRole)||value.activeRole==='observe.py'||typeof value.activeRole==='string'&&/^file-(?:[0-9]|[12][0-9]|3[01])$/.test(value.activeRole));
+            assert(typeof value.success==='boolean'&&(!Object.hasOwn(value,'ownSourceIdentityVerified')||typeof value.ownSourceIdentityVerified==='boolean'));
+            assert(Array.isArray(value.files)&&value.files.length<=32&&Array.isArray(value.roles)&&value.roles.length<=6);
+            const jobs=[];const seen=new Set();
+            for(const row of value.roles){
+             assert(row&&NATIVE_ROLES.has(row.role)&&!seen.has(row.role));seen.add(row.role);const source=row.job;assert(source&&NATIVE_OUTCOMES.has(source.outcome));const job={role:row.role,outcome:source.outcome};
+             for(const key of ['success','cleanupVerified','started','assignedBeforeResume','resumed','rootReaped','logReadersStopped','parentHandleClosed'])if(Object.hasOwn(source,key)){assert(typeof source[key]==='boolean');job[key]=source[key];}
+             for(const key of ['rootExit','finalRootExit','winerror'])if(Object.hasOwn(source,key)){assert(source[key]===null||exitNumber(source[key]));job[key]=source[key];}
+             if(Object.hasOwn(source,'activeAtEnd')){assert(source.activeAtEnd===null||uint(source.activeAtEnd,8));job.activeAtEnd=source.activeAtEnd;}
+             if(row.observation&&Object.hasOwn(row.observation,'versionExit')){assert(row.observation.versionExit===null||exitNumber(row.observation.versionExit));job.versionExit=row.observation.versionExit;}
+             jobs.push(job);
+            }
+            return{status:'available',phase:value.phase,failure:value.failure,activeRole:value.activeRole,success:value.success,ownSourceIdentityVerified:value.ownSourceIdentityVerified??null,fileCount:value.files.length,roleCount:value.roles.length,jobs};
+           }catch{return{status:'unavailable',reason:'SCHEMA_INVALID'};}
+          }
+          export async function readNativeProjection(operation,api=fs,now=()=>performance.now(),deadline=now()+10000){
+           let fileBytes=null;
+           try{
+            if(now()>=deadline)return{status:'unavailable',reason:'DEADLINE',fileBytes};
+            const file=path.join(operation,'observation.json');await noLinks(file,api);const info=await api.lstat(file,{bigint:true});fileBytes=safeNumber(info.size);
+            if(!info.isFile()||info.nlink!==1n||info.size<=0n||info.size>65536n)return{status:'unavailable',reason:'FILE_BOUND',fileBytes};
+            if(now()>=deadline)return{status:'unavailable',reason:'DEADLINE',fileBytes};
+            const raw=await heldBytes(file,65536,api);if(now()>=deadline)return{status:'unavailable',reason:'DEADLINE',fileBytes};return projectNative(JSON.parse(raw.toString('utf8')));
+           }catch(error){let code=null;try{code=error?.code;}catch{}return{status:'unavailable',reason:code==='ENOENT'?'ABSENT':error instanceof SyntaxError?'INVALID_JSON':'READ_DENIED',fileBytes};}
+          }
+          export async function retainArtifact(retained,summary,collected,api=fs){
+           const bytes=Buffer.from(JSON.stringify(summary,null,2)+'\n');fixed(bytes.length<=65536&&bytes.length+(collected?.totalBytes??0)<=512*1024,'ARM_COLLECT_SUMMARY');
+           await noLinks(retained,api);fixed((await api.readdir(retained)).length===0,'ARM_COLLECT_SUMMARY');
+           if(collected)for(const file of collected.buffers){
+            fixed(file.path.split('/').every(part=>part!==''&&part!=='.'&&part!=='..'&&!/[\\:\0]/.test(part)),'ARM_COLLECT_SUMMARY');const destination=path.join(retained,...file.path.split('/'));fixed(path.relative(retained,destination)===file.path.split('/').join(path.sep),'ARM_COLLECT_SUMMARY');
+            await api.mkdir(path.dirname(destination),{recursive:true});await noLinks(path.dirname(destination),api);await api.writeFile(destination,file.raw,{flag:'wx'});
+           }
+           await api.writeFile(path.join(retained,'bootstrap-result.json'),bytes,{flag:'wx'});
+           return{summaryBytes:bytes.length,retainedFiles:1+(collected?.files.length??0),retainedBytes:bytes.length+(collected?.totalBytes??0)};
+          }
           export async function run(){
            const report=createPreflightReporter();const binding=await report('authority',()=>authority(process.env));await report('profile',()=>fixed(process.env.ImageVersion==='20261022.194.1','ARM_PROFILE'));
            const sources=await sourceInputs(binding.head,execute,report), profile=profileFromBytes(sources[3].raw);
            const before={python:await report('python-identity',()=>pinnedTool(profile.python)),pythonDll:await report('python-dll-identity',()=>pinnedTool(profile.pythonDll))};
-           const temp=await report('runner-temp',()=>noLinks(process.env.RUNNER_TEMP)),root=path.join(temp,'owned-windows-arm-native-tools-'+randomUUID());
-           await report('create-root',async()=>{await fs.mkdir(root);await noLinks(root);});
-           await report('register-output',async()=>{fixed(typeof process.env.GITHUB_OUTPUT==='string'&&!/[\r\n\0]/.test(root),'ARM_ACTION_OUTPUT');await fs.appendFile(process.env.GITHUB_OUTPUT,'artifact_root='+root+'\n');});
+           const temp=await report('runner-temp',()=>noLinks(process.env.RUNNER_TEMP)),root=path.join(temp,'owned-windows-arm-native-tools-'+randomUUID()),retained=path.join(temp,'owned-windows-arm-native-tools-safe-'+randomUUID());
+           await report('create-root',async()=>{await fs.mkdir(root);await noLinks(root);await fs.mkdir(retained);await noLinks(retained);});
+           await report('register-output',async()=>{fixed(typeof process.env.GITHUB_OUTPUT==='string'&&!/[\r\n\0]/.test(root),'ARM_ACTION_OUTPUT');await fs.appendFile(process.env.GITHUB_OUTPUT,'artifact_root='+retained+'\n');});
            const deployment=path.join(root,'.cache','windows-arm-native-tools');await fs.mkdir(deployment,{recursive:true});
            const operation=path.join(root,'.artifacts','windows-arm-native-tools-'+randomUUID());await fs.mkdir(operation,{recursive:true});
            for(const name of ['tmp','home','jobs','source-inputs'])await fs.mkdir(path.join(operation,name));
@@ -251,12 +325,23 @@ jobs:
            const stdout=await fs.open(path.join(operation,'bootstrap-stdout.log'),'wx'),stderr=await fs.open(path.join(operation,'bootstrap-stderr.log'),'wx');let supervision;
            try{const child=spawn(profile.python.path,['-I','-B',path.join(deployment,'observe.py'),'--observe',operation],{cwd:operation,env:childEnvironment(operation),stdio:['ignore',stdout.fd,stderr.fd],windowsHide:true});supervision=await supervise(child,150000,30000);}finally{await stdout.close();await stderr.close();}
            const after={python:await pinnedTool(profile.python),pythonDll:await pinnedTool(profile.pythonDll)};
-           const files=[];let total=0,entries=0;const artifactDeadline=performance.now()+10000;
-           async function walk(dir,depth=0){fixed(depth<=8&&performance.now()<artifactDeadline,'ARM_FILE_BOUND');for(const name of await fs.readdir(dir)){fixed(++entries<=128&&performance.now()<artifactDeadline,'ARM_FILE_BOUND');const file=path.join(dir,name);await noLinks(file);const info=await fs.lstat(file);if(info.isDirectory())await walk(file,depth+1);else{const rel=path.relative(root,file).replaceAll('\\','/');const op=path.relative(root,operation).replaceAll('\\','/');const allowed=artifactAllowed(rel,op);fixed(allowed&&info.isFile()&&files.length<100&&info.size<=65536,'ARM_FILE_BOUND');const raw=await heldBytes(file,65536,fs,true);total+=raw.length;fixed(total<=512*1024,'ARM_FILE_BOUND');files.push({path:path.relative(root,file).replaceAll('\\','/'),size:raw.length,sha256:digest(raw)});}}}
-           await report('artifact-collection',()=>walk(root));
-           const summary={schemaVersion:1,kind:'sorng-windows-arm-native-tools-bootstrap',binding,context,supervision,toolBefore:before,toolAfter:after,files,setupCompatibility:null,compilerTranslationUnitAttempted:false,cefStarted:false,nativeAcceptance:false,hostedBuild:false,producerProvenanceIntegrationRequired:true};
-           const summaryBytes=Buffer.from(JSON.stringify(summary,null,2)+'\n');fixed(summaryBytes.length<=65536&&total+summaryBytes.length<=512*1024,'ARM_FILE_BOUND');await fs.writeFile(path.join(root,'bootstrap-result.json'),summaryBytes,{flag:'wx'});await fs.appendFile(process.env.GITHUB_OUTPUT,'artifact_ready=true\n');
-           fixed(supervision.joined&&supervision.code===0&&!supervision.failure&&JSON.stringify(before)===JSON.stringify(after),'ARM_BENIGN_DIAGNOSTIC_FAILED');
+           const collectionStarted=performance.now();
+           const nativeProjection=await readNativeProjection(operation,fs,()=>performance.now(),collectionStarted+10000);
+           let collected=null,collectionError=null,collectionDiagnostic=null;
+           try{collected=await report('artifact-collection',()=>collectArtifact(root,operation,{started:collectionStarted,onFailure:(record)=>{collectionDiagnostic=record;}}));collectionDiagnostic=collected.diagnostic;}catch(error){collectionError=error;}
+           const nativePassed=supervision.joined&&supervision.code===0&&!supervision.failure&&JSON.stringify(before)===JSON.stringify(after);
+           const provenance={contextSha256:digest(Buffer.from(JSON.stringify(context)+'\n')),sources:context.sources,producerCodeDigest:context.producer.codeDigest,ancestry:context.ancestry,provisionSourcePins:context.provisionSourcePins,freshProvision:context.freshProvision};
+           const summary={schemaVersion:1,kind:'sorng-windows-arm-native-tools-bootstrap',binding,provenance,supervision,toolBefore:before,toolAfter:after,collection:collectionDiagnostic,nativeProjection,files:collected?.files??[],success:Boolean(nativePassed&&!collectionError),setupCompatibility:null,compilerTranslationUnitAttempted:false,cefStarted:false,nativeAcceptance:false,hostedBuild:false,producerProvenanceIntegrationRequired:true};
+           const summaryBudgetBytes=Buffer.byteLength(JSON.stringify(summary,null,2)+'\n');
+           if(collected&&summaryBudgetBytes+collected.totalBytes>512*1024){
+            const observations={files:collected.files.length,totalBytes:collected.totalBytes,fileBytes:summaryBudgetBytes};
+            try{await report('artifact-retention',()=>fixed(false,'ARM_COLLECT_SUMMARY',observations));}catch(error){collectionError??=error;}
+            summary.collection={status:'failed',stage:'summary-bound',errorCode:'ARM_COLLECT_SUMMARY',observations};summary.files=[];summary.success=false;collected=null;
+           }
+           await report('artifact-retention',()=>retainArtifact(retained,summary,collected));
+           await fs.appendFile(process.env.GITHUB_OUTPUT,'artifact_ready=true\n');
+           fixed(nativePassed,'ARM_BENIGN_DIAGNOSTIC_FAILED');
+           if(collectionError)throw collectionError;
           }
           // Closed entry; tests import definitions only.
           try { await run(); } catch { process.exitCode=1;console.error('ARM_NATIVE_TOOLS_DIAGNOSTIC_FAILED'); }
