@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import YAML from "yaml";
+import ts from "typescript";
 import {
   acceptancePlan,
   acceptanceCodeIdentity,
@@ -25,6 +26,8 @@ import {
   HTTP2_CHECKS,
   NATIVE_TARGETS,
   nativeChildEnvironment,
+  nativeAcceptanceRequirements,
+  verifiedAcceptanceSourceLock,
   producerSelection,
   runAcceptanceCommand,
   verifyAcceptanceBundle,
@@ -49,6 +52,406 @@ import {
 import { releaseIdentity } from "../../scripts/cef-runtime-ci.mjs";
 
 const repository = "supermarsx/sortOfRemoteNG";
+
+test("revision-five native seal requires all seventeen actual case rows and three builds", async () => {
+  const lock = JSON.parse(
+    await readFile(
+      new URL(
+        "../../native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/source-lock.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const { identitySha256 } =
+    await import("../../scripts/lib/browser-custom-runtime.mjs");
+  const { HTTP3_CHECKS } =
+    await import("../../scripts/cef-browser-acceptance.mjs");
+  const { result, options } = sealFixture({
+    ...selected,
+    target: "x86_64-pc-windows-msvc",
+  });
+  result.schemaVersion = 2;
+  result.capabilities = ["tls", "http2", "http3"];
+  result.bridgePatchId = lock.bridge.patchId;
+  result.sourceLockIdentity = result.producer.sourceLockIdentity =
+    identitySha256(lock);
+  result.reports.push(
+    ...HTTP3_CHECKS.map((check) => ({
+      suite: "http3",
+      check,
+      accepted: true,
+      reportSha256: "a".repeat(64),
+    })),
+  );
+  result.builds.push({
+    suite: "http3",
+    clientSha256: "a".repeat(64),
+    cargoLockSha256: "b".repeat(64),
+  });
+  const seal = createAcceptanceSeal(result, { ...options, sourceLock: lock });
+  assert.equal(seal.schemaVersion, 2);
+  assert.equal(seal.reports.length, 17);
+  assert.equal(seal.builds.length, 3);
+  assert.deepEqual(seal.capabilities, ["tls", "http2", "http3"]);
+  for (const change of [
+    (value) => value.reports.pop(),
+    (value) => value.reports.push(structuredClone(value.reports.at(-1))),
+    (value) => (value.reports[9].accepted = false),
+    (value) => (value.reports[9].check = "permission-churn"),
+    (value) => (value.reports[9].suite = "http2"),
+    (value) => value.builds.pop(),
+    (value) => (value.builds[2].suite = "http2"),
+    (value) => value.capabilities.pop(),
+    (value) => (value.bridgePatchId = "sorng-tls-v2-682c378-4"),
+    (value) => (value.extra = true),
+    (value) => (value.sourceLockIdentity = "f".repeat(64)),
+  ]) {
+    const changed = structuredClone(result);
+    change(changed);
+    assert.throws(() =>
+      createAcceptanceSeal(changed, { ...options, sourceLock: lock }),
+    );
+  }
+  assert.throws(
+    () => createAcceptanceSeal(result, options),
+    /verified producer/,
+  );
+  const downgrade = structuredClone(result);
+  downgrade.schemaVersion = 1;
+  delete downgrade.capabilities;
+  delete downgrade.bridgePatchId;
+  downgrade.reports = downgrade.reports.slice(0, 9);
+  downgrade.builds.pop();
+  assert.throws(
+    () => createAcceptanceSeal(downgrade, { ...options, sourceLock: lock }),
+    /verified producer/,
+  );
+  for (const change of [
+    (value) => (value.bridge.patchId += "-unknown"),
+    (value) => value.bridge.capabilities.pop(),
+  ]) {
+    const changed = structuredClone(lock);
+    change(changed);
+    assert.throws(() => nativeAcceptanceRequirements(changed, result.target));
+  }
+  assert.throws(
+    () => nativeAcceptanceRequirements(lock, "aarch64-pc-windows-msvc"),
+    /target/,
+  );
+});
+
+test("HTTP3 plans preserve native target, sandbox stage and verified patch-only closed checks", async () => {
+  const { HTTP3_CHECKS } =
+    await import("../../scripts/cef-browser-acceptance.mjs");
+  for (const target of Object.keys(NATIVE_TARGETS)) {
+    const build = fixtureClientBuild(target, "http3");
+    assert(
+      build.args.includes(
+        `src-tauri/crates/sorng-browser-host/tests/native_http3_acceptance/Cargo.toml`,
+      ),
+    );
+    assert(build.args.includes(target));
+    assert(build.args.includes("--locked"));
+    assert(build.args.includes("-j2"));
+    assert.equal(
+      build.client,
+      target.includes("windows")
+        ? "sorng_cef_http3_acceptance.dll"
+        : "sorng-cef-http3-acceptance",
+    );
+    for (const check of HTTP3_CHECKS) {
+      const args = fixtureRunArguments("http3", "owned", "fresh", check, {
+        bridge: { patchId: "sorng-tls-v2-682c378-5" },
+      });
+      assert(args.includes("run-http3"));
+      assert(args.includes(check));
+      assert.equal(args.includes("--http2-patch-id"), false);
+    }
+  }
+  for (const check of ["force-quic", "wss", undefined])
+    assert.throws(() =>
+      fixtureRunArguments("http3", "owned", "fresh", check, {
+        bridge: { patchId: "sorng-tls-v2-682c378-5" },
+      }),
+    );
+  assert.throws(
+    () =>
+      fixtureRunArguments("http3", "owned", "fresh", "deny", {
+        bridge: { patchId: "sorng-tls-v2-682c378-4" },
+      }),
+    /revision-five/,
+  );
+  const workflow = YAML.parse(
+    await readFile(
+      new URL(
+        "../../.github/workflows/cef-runtime-acceptance.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  for (const job of [workflow.jobs.native, workflow.jobs["native-draft"]]) {
+    assert.equal(job["timeout-minutes"], 240);
+    assert(job.steps.at(-1).with.path.includes("/http3-*/**"));
+  }
+});
+
+test("verified source lock reader rejects byte, identity, unknown and oversized binding before suite selection", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "native-suite-source-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const raw = await readFile(
+    new URL(
+      "../../native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/source-lock.json",
+      import.meta.url,
+    ),
+  );
+  const { identitySha256 } =
+    await import("../../scripts/lib/browser-custom-runtime.mjs");
+  const lock = JSON.parse(raw);
+  await writeFile(path.join(root, "source-lock.json"), raw);
+  const checked = {
+    descriptor: {
+      target: "x86_64-pc-windows-msvc",
+      sourceLock: {
+        path: "source-lock.json",
+        size: raw.length,
+        sha256: createHash("sha256").update(raw).digest("hex"),
+      },
+    },
+    identity: { sourceLockSha256: identitySha256(lock) },
+  };
+  assert.deepEqual(await verifiedAcceptanceSourceLock(root, checked), lock);
+  for (const change of [
+    (x) => (x.descriptor.sourceLock.path = "../other"),
+    (x) => (x.descriptor.sourceLock.size = 1024 ** 2 + 1),
+    (x) => (x.descriptor.sourceLock.sha256 = "a".repeat(64)),
+    (x) => (x.identity.sourceLockSha256 = "a".repeat(64)),
+  ]) {
+    const changed = structuredClone(checked);
+    change(changed);
+    await assert.rejects(verifiedAcceptanceSourceLock(root, changed));
+  }
+  await writeFile(
+    path.join(root, "source-lock.json"),
+    Buffer.concat([raw, Buffer.from(" ")]),
+  );
+  await assert.rejects(
+    verifiedAcceptanceSourceLock(root, checked),
+    /bytes changed/,
+  );
+});
+
+test("revision-five seal rehashes every retained H3 case and writes LAST only after all seventeen agree", async (t) => {
+  const lock = JSON.parse(
+    await readFile(
+      new URL(
+        "../../native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/source-lock.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const { identitySha256 } =
+    await import("../../scripts/lib/browser-custom-runtime.mjs");
+  const { HTTP3_CHECKS } =
+    await import("../../scripts/cef-browser-acceptance.mjs");
+  const { result, options } = sealFixture({
+    ...selected,
+    target: "x86_64-pc-windows-msvc",
+  });
+  const root = await mkdtemp(path.join(os.tmpdir(), "native-seal-seventeen-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  result.schemaVersion = 2;
+  result.capabilities = ["tls", "http2", "http3"];
+  result.bridgePatchId = lock.bridge.patchId;
+  result.sourceLockIdentity = result.producer.sourceLockIdentity =
+    identitySha256(lock);
+  result.reports.push(
+    ...HTTP3_CHECKS.map((check) => ({
+      suite: "http3",
+      check,
+      accepted: true,
+      reportSha256: "a".repeat(64),
+    })),
+  );
+  result.builds.push({
+    suite: "http3",
+    clientSha256: "a".repeat(64),
+    cargoLockSha256: "b".repeat(64),
+  });
+  for (const row of result.reports) {
+    const label = row.suite === "tls" ? "tls" : `${row.suite}-${row.check}`;
+    const raw = Buffer.from(JSON.stringify({ fixture: label }));
+    await mkdir(path.join(root, label));
+    await writeFile(path.join(root, label, "acceptance.json"), raw);
+    row.reportSha256 = createHash("sha256").update(raw).digest("hex");
+  }
+  await writeFile(
+    path.join(root, "native-acceptance.json"),
+    JSON.stringify(result),
+  );
+  const args = {
+    destination: root,
+    result,
+    execution: options.execution,
+    code: options.code,
+    sourceLock: lock,
+  };
+  for (const check of HTTP3_CHECKS) {
+    const file = path.join(root, `http3-${check}`, "acceptance.json");
+    const before = await readFile(file);
+    await writeFile(file, "tampered");
+    await assert.rejects(writeAcceptanceSeal(args), /case report differs/);
+    await assert.rejects(readFile(path.join(root, "seal.json")), {
+      code: "ENOENT",
+    });
+    await writeFile(file, before);
+  }
+  const seal = await writeAcceptanceSeal(args);
+  assert.equal(seal.reports.length, 17);
+  await assert.rejects(writeAcceptanceSeal(args), { code: "EEXIST" });
+});
+
+test("actual production suite loop keeps prior H2 outputs and creates seventeen distinct native case directories", async (t) => {
+  const { HTTP3_CHECKS } =
+    await import("../../scripts/cef-browser-acceptance.mjs");
+  const lock = JSON.parse(
+    await readFile(
+      new URL(
+        "../../native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/source-lock.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const extract = (source) => {
+    const ast = ts.createSourceFile(
+      "acceptance.mjs",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+    const fn = ast.statements.find(
+      (node) =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === "executeAcceptance",
+    );
+    const loop = fn.body.statements.find(
+      (node) =>
+        ts.isForOfStatement(node) &&
+        node.expression.getText(ast) === "requirements.suites",
+    );
+    assert(loop, "actual outer native fixture loop");
+    return loop.getText(ast);
+  };
+  const currentSource = await readFile(
+    new URL("../../scripts/cef-runtime-acceptance-ci.mjs", import.meta.url),
+    "utf8",
+  );
+  const root = await mkdtemp(path.join(os.tmpdir(), "native-actual-loop-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const execute = async (body, destination) => {
+    await mkdir(destination);
+    const reports = [],
+      builds = [],
+      built = [],
+      staged = [];
+    const runCommand = async (_executable, args) => {
+      if (args.includes("build")) {
+        built.push(args[args.indexOf("--manifest-path") + 1]);
+        return;
+      }
+      assert.equal(args[0], "scripts/cef-browser-acceptance.mjs");
+      const output = args[args.indexOf("--output") + 1];
+      await mkdir(output); // A real exclusive filesystem operation detects the old H2/H3 collision.
+      const suite = args[1].slice(4);
+      await writeFile(
+        path.join(output, "acceptance.json"),
+        JSON.stringify({
+          ok: true,
+          nativeTlsFixtureAccepted: suite === "tls",
+          nativeHttp2FixtureAccepted: suite === "http2",
+          nativeHttp3FixtureAccepted: suite === "http3",
+        }),
+      );
+    };
+    const bindings = {
+      requirements: nativeAcceptanceRequirements(
+        lock,
+        "x86_64-pc-windows-msvc",
+      ),
+      fixtureClientBuild,
+      target: "x86_64-pc-windows-msvc",
+      runCommand,
+      childEnv: {},
+      destination,
+      hashFile: async () => "a".repeat(64),
+      path,
+      ROOT: path.resolve("."),
+      helper: undefined,
+      builds,
+      reports,
+      process: { platform: "win32", execPath: process.execPath },
+      writeFile,
+      stageAcceptance: async (input) => {
+        staged.push(input.suite);
+        return { executable: path.join(input.output, "fixture.exe") };
+      },
+      customPlan: "fixed-plan.json",
+      prepareLinuxSandbox: async (input) =>
+        assert(["tls", "http2", "http3"].includes(input.suite)),
+      temp: root,
+      prepared: { customRuntime: { sdkFiles: [] } },
+      binRoot: path.join(root, "synthetic-bin"),
+      readFile,
+      fixtureRunArguments,
+      sourceLock: lock,
+      HTTP2_CHECKS,
+      HTTP3_CHECKS,
+    };
+    const AsyncFunction = Object.getPrototypeOf(
+      async function () {},
+    ).constructor;
+    await new AsyncFunction(...Object.keys(bindings), body)(
+      ...Object.values(bindings),
+    );
+    return { reports, builds, built, staged };
+  };
+  const oldBody = extract(currentSource).replace(
+    "`${suite}-${check}`",
+    "`http2-${check}`",
+  );
+  await assert.rejects(execute(oldBody, path.join(root, "old")), {
+    code: "EEXIST",
+  });
+  const result = await execute(
+    extract(currentSource),
+    path.join(root, "current"),
+  );
+  assert.equal(result.reports.length, 17);
+  assert.equal(result.builds.length, 3);
+  assert.deepEqual(result.staged, ["tls", "http2", "http3"]);
+  assert.equal(result.built.length, 3);
+  assert.equal(
+    result.reports.every((row) => row.accepted),
+    true,
+  );
+  for (const label of nativeAcceptanceRequirements(
+    lock,
+    "x86_64-pc-windows-msvc",
+  ).reports)
+    assert.equal(
+      JSON.parse(
+        await readFile(
+          path.join(root, "current", label, "acceptance.json"),
+          "utf8",
+        ),
+      ).ok,
+      true,
+    );
+});
 const selected = {
   target: "aarch64-apple-darwin",
   runId: 123,

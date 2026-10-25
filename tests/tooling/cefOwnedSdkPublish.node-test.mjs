@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { identitySha256 } from "../../scripts/lib/browser-custom-runtime.mjs";
 import {
   mkdtemp,
   mkdir,
@@ -44,7 +46,21 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const copy = (value) => structuredClone(value);
 const workflow = ".github/workflows/cef-runtime-acceptance.yml";
 
-function fixture() {
+const legacyLockRaw = readFileSync(
+  new URL(
+    "../../native/cef-build-inputs/20261023-registration-retirement-lf/source-lock.json",
+    import.meta.url,
+  ),
+);
+const legacyLock = JSON.parse(legacyLockRaw);
+const modernLockRaw = readFileSync(
+  new URL(
+    "../../native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/source-lock.json",
+    import.meta.url,
+  ),
+);
+const modernLock = JSON.parse(modernLockRaw);
+function fixture(lock = legacyLock) {
   // Synthetic transport/serialization data. Never a native acceptance claim.
   const producer = {
     target: "x86_64-pc-windows-msvc",
@@ -91,13 +107,13 @@ function fixture() {
     schemaVersion: 1,
     kind: "sorng-cef-native-acceptance-run",
     target: producer.target,
-    producer: { ...producer, sourceLockIdentity: "9".repeat(64) },
+    producer: { ...producer, sourceLockIdentity: identitySha256(lock) },
     ingestion: "operator-reviewed-local-bytes",
     hostedBuild: false,
     acceptanceSourceSha: execution.sourceSha,
     acceptanceWorkflowRunId: execution.runId,
     nativeHost: { platform: "win32", architecture: "x64" },
-    sourceLockIdentity: "9".repeat(64),
+    sourceLockIdentity: identitySha256(lock),
     descriptorSha256: producer.descriptorSha256,
     reports: [
       { suite: "tls", accepted: true, reportSha256: hash("tls") },
@@ -119,11 +135,39 @@ function fixture() {
     productionReady: false,
     publicationAllowed: false,
   };
+  if (lock.bridge.patchId === "sorng-tls-v2-682c378-5") {
+    result.schemaVersion = 2;
+    result.bridgePatchId = lock.bridge.patchId;
+    result.capabilities = ["tls", "http2", "http3"];
+    result.reports.push(
+      ...[
+        "multiplex",
+        "deny",
+        "delay",
+        "revoke",
+        "isolation",
+        "cross-authority",
+        "h2-fallback",
+        "h1-fallback",
+      ].map((check) => ({
+        suite: "http3",
+        check,
+        accepted: true,
+        reportSha256: hash(`http3-${check}`),
+      })),
+    );
+    result.builds.push({
+      suite: "http3",
+      clientSha256: hash("http3"),
+      cargoLockSha256: hash("lock-http3"),
+    });
+  }
   const reportSha = hash(JSON.stringify(result));
   const seal = createAcceptanceSeal(result, {
     execution,
     code,
     reportSha256: reportSha,
+    sourceLock: lock,
   });
   const review = {
     schemaVersion: 1,
@@ -485,9 +529,9 @@ test("native seal cannot substitute another producer/attempt/source, drop securi
   }
 });
 
-async function flow(t) {
+async function flow(t, lock = legacyLock) {
   const root = await temp(t, "cef-publication-flow-");
-  const f = fixture(),
+  const f = fixture(lock),
     events = [];
   const completion = {
     hostedBuild: false,
@@ -527,12 +571,24 @@ async function flow(t) {
     downloadImport: async (_api, input) => {
       events.push("download-import");
       assert.deepEqual(input.selection, f.producer);
+      await mkdir(input.destination);
+      await writeFile(
+        path.join(input.destination, "source-lock.json"),
+        lock === modernLock ? modernLockRaw : legacyLockRaw,
+      );
       return copy(completion);
     },
     verifyBundle: async () => {
       events.push("rehash-five-assets");
       return {
-        descriptor: { target: f.review.target },
+        descriptor: {
+          target: f.review.target,
+          sourceLock: {
+            path: "source-lock.json",
+            size: (lock === modernLock ? modernLockRaw : legacyLockRaw).length,
+            sha256: hash(lock === modernLock ? modernLockRaw : legacyLockRaw),
+          },
+        },
         descriptorSha256: f.review.descriptorSha256,
         identity: {
           sourceLockSha256: f.review.sourceLockIdentity,
@@ -574,6 +630,95 @@ test("protected execution freshly reauthenticates both chains and rehashes bytes
   assert.equal(result.productionReady, false);
   assert.equal(result.nativeAcceptance.headSha, f.review.acceptance.headSha);
   assert.notEqual(f.options.commit, f.review.acceptance.headSha);
+});
+
+test("revision-five publication binds all seventeen native reports to the actual verified source and denies historical downgrade", async (t) => {
+  const f = fixture(modernLock);
+  assert.equal(
+    verifyNativeAcceptanceSeal(f.seal, f.review, f.repo, modernLock),
+    f.seal,
+  );
+  assert.throws(
+    () => verifyNativeAcceptanceSeal(f.seal, f.review, f.repo),
+    /verified producer/,
+  );
+  assert.throws(
+    () => verifyNativeAcceptanceSeal(f.seal, f.review, f.repo, legacyLock),
+    /verified producer/,
+  );
+  const downgrade = structuredClone(f.seal);
+  downgrade.schemaVersion = 1;
+  delete downgrade.capabilities;
+  delete downgrade.bridgePatchId;
+  downgrade.reports = downgrade.reports.slice(0, 9);
+  downgrade.builds.pop();
+  assert.throws(
+    () => verifyNativeAcceptanceSeal(downgrade, f.review, f.repo, modernLock),
+    /verified producer/,
+  );
+  const wrongCapability = structuredClone(f.seal);
+  wrongCapability.capabilities = ["tls", "http2"];
+  assert.throws(
+    () =>
+      verifyNativeAcceptanceSeal(wrongCapability, f.review, f.repo, modernLock),
+    /Closed native seal declaration/,
+  );
+  const valid = await flow(t, modernLock);
+  await publishOwnedSdk(valid.options, {}, valid.dependencies);
+  assert(valid.events.includes("publish"));
+  for (const tamper of ["downgrade", "lock-bytes", "partial-h3"]) {
+    const flowCase = await flow(t, modernLock);
+    if (tamper === "lock-bytes") {
+      const original = flowCase.dependencies.downloadImport;
+      flowCase.dependencies.downloadImport = async (...args) => {
+        const result = await original(...args);
+        await writeFile(
+          path.join(args[1].destination, "source-lock.json"),
+          legacyLockRaw,
+        );
+        return result;
+      };
+    } else {
+      flowCase.dependencies.extract = async () => {
+        const seal = structuredClone(flowCase.seal);
+        if (tamper === "downgrade") {
+          seal.schemaVersion = 1;
+          delete seal.capabilities;
+          delete seal.bridgePatchId;
+          seal.reports = seal.reports.slice(0, 9);
+          seal.builds.pop();
+        } else seal.reports.pop();
+        return seal;
+      };
+    }
+    await assert.rejects(
+      publishOwnedSdk(flowCase.options, {}, flowCase.dependencies),
+    );
+    assert.equal(flowCase.events.includes("publish"), false);
+  }
+});
+
+test("malformed native seal envelopes reject before large owned bundle downloads", async (t) => {
+  for (const lock of [legacyLock, modernLock]) {
+    for (const change of [
+      (seal) => (seal.extra = true),
+      (seal) => seal.producer.runId++,
+      (seal) => seal.execution.runAttempt++,
+      (seal) => (seal.reports = null),
+      (seal) => seal.builds.pop(),
+      (seal) => (seal.schemaVersion = 3),
+    ]) {
+      const f = await flow(t, lock);
+      f.dependencies.extract = async () => {
+        const seal = structuredClone(f.seal);
+        change(seal);
+        return seal;
+      };
+      await assert.rejects(verifyOwnedPublication(f.options, f.dependencies));
+      assert.equal(f.events.includes("download-import"), false);
+      assert.equal(f.events.includes("publish"), false);
+    }
+  }
 });
 
 test("no release writes after native/import TOCTOU, invalid raw seal, changed asset bytes or controller failure", async (t) => {

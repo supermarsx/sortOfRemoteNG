@@ -12,8 +12,9 @@ import {
   validateSourceLock,
   BRIDGE_PATCH_ID,
   HTTP3_BRIDGE_PATCH_ID,
+  identitySha256,
 } from "./lib/browser-custom-runtime.mjs";
-import { stageAcceptance } from "./cef-browser-acceptance.mjs";
+import { stageAcceptance, HTTP3_CHECKS } from "./cef-browser-acceptance.mjs";
 import {
   releaseRelativePath,
   RELEASE_LIMITS,
@@ -86,6 +87,58 @@ export const HTTP2_CHECKS = Object.freeze([
   "h1-fallback",
   "permission-churn",
 ]);
+export function nativeAcceptanceRequirements(sourceLock, target) {
+  validateSourceLock(sourceLock);
+  if (!sourceLock.builds.some((build) => build.target === target))
+    fail("Native acceptance target differs from verified source lock");
+  const patch = sourceLock.bridge.patchId;
+  if (![BRIDGE_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(patch))
+    fail(
+      "Native acceptance requires a closed revision-four or revision-five source contract",
+    );
+  const http3 = patch === HTTP3_BRIDGE_PATCH_ID;
+  return {
+    schemaVersion: http3 ? 2 : 1,
+    bridgePatchId: patch,
+    capabilities: http3 ? ["tls", "http2", "http3"] : ["tls", "http2"],
+    suites: http3 ? ["tls", "http2", "http3"] : ["tls", "http2"],
+    reports: [
+      "tls",
+      ...HTTP2_CHECKS.map((check) => `http2-${check}`),
+      ...(http3 ? HTTP3_CHECKS.map((check) => `http3-${check}`) : []),
+    ],
+  };
+}
+export async function verifiedAcceptanceSourceLock(bundle, checked) {
+  const pin = checked.descriptor.sourceLock;
+  if (
+    !pin ||
+    pin.path !== "source-lock.json" ||
+    !Number.isSafeInteger(pin.size) ||
+    pin.size <= 0 ||
+    pin.size > 1024 ** 2
+  )
+    fail("Verified source lock pin required");
+  const file = path.join(bundle, pin.path);
+  const info = await lstat(file);
+  if (!info.isFile() || info.isSymbolicLink() || info.size !== pin.size)
+    fail("Verified source lock bytes changed");
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of createReadStream(file, { highWaterMark: 65536 })) {
+    size += chunk.length;
+    if (size > pin.size) fail("Verified source lock bytes changed");
+    chunks.push(chunk);
+  }
+  const bytes = Buffer.concat(chunks, size);
+  if (bytes.length !== pin.size || sha(bytes) !== pin.sha256)
+    fail("Verified source lock bytes changed");
+  const lock = JSON.parse(bytes);
+  nativeAcceptanceRequirements(lock, checked.descriptor.target);
+  if (identitySha256(lock) !== checked.identity.sourceLockSha256)
+    fail("Verified source lock identity differs");
+  return lock;
+}
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 function fail(message) {
   throw new Error(message);
@@ -182,7 +235,7 @@ export function acceptanceCodeIdentity(sourceSha, root = ROOT) {
 
 export function createAcceptanceSeal(
   result,
-  { execution, code, reportSha256 },
+  { execution, code, reportSha256, sourceLock },
 ) {
   // These are evidence checks, not a replacement for executing native gates.
   // The future publisher must independently authenticate the workflow/artifact.
@@ -223,6 +276,28 @@ export function createAcceptanceSeal(
   if (code.codeDigestFormat !== "git-ls-tree-r-z-sha256-v1")
     fail("Unknown native acceptance code digest");
   const owned = result.producer?.producer === "owned-import";
+  const modern = result.schemaVersion === 2;
+  const requirements = sourceLock
+    ? nativeAcceptanceRequirements(sourceLock, result.target)
+    : null;
+  if (modern || requirements) {
+    if (
+      !requirements ||
+      identitySha256(sourceLock) !== result.sourceLockIdentity ||
+      result.schemaVersion !== requirements.schemaVersion
+    )
+      fail(
+        "Native acceptance schema differs from verified producer source contract",
+      );
+    if (
+      modern &&
+      (result.bridgePatchId !== requirements.bridgePatchId ||
+        canonical(result.capabilities) !== canonical(requirements.capabilities))
+    )
+      fail(
+        "Native acceptance capabilities differ from verified producer source contract",
+      );
+  }
   exact(result, [
     "schemaVersion",
     "kind",
@@ -240,10 +315,11 @@ export function createAcceptanceSeal(
     "publicProviderAcceptance",
     "productionReady",
     "publicationAllowed",
+    ...(modern ? ["capabilities", "bridgePatchId"] : []),
     ...(owned ? ["ingestion", "hostedBuild"] : []),
   ]);
   if (
-    result.schemaVersion !== 1 ||
+    ![1, 2].includes(result.schemaVersion) ||
     result.kind !== "sorng-cef-native-acceptance-run" ||
     result.ok !== true ||
     result.nativeExecutionPerformed !== true ||
@@ -273,19 +349,22 @@ export function createAcceptanceSeal(
     result.nativeHost.architecture !== native.arch
   )
     fail("Native acceptance host architecture differs");
-  const expected = ["tls", ...HTTP2_CHECKS.map((check) => `http2-${check}`)];
+  const expected = requirements?.reports ?? [
+    "tls",
+    ...HTTP2_CHECKS.map((check) => `http2-${check}`),
+  ];
   if (
     !Array.isArray(result.reports) ||
     result.reports.length !== expected.length
   )
-    fail("All nine native acceptance reports required");
+    fail("All required native acceptance reports required");
   const seen = new Set();
   for (const report of result.reports) {
     exact(report, [
       "suite",
       "accepted",
       "reportSha256",
-      ...(report.suite === "http2" ? ["check"] : []),
+      ...(report.suite !== "tls" ? ["check"] : []),
     ]);
     const label =
       report.suite === "tls" ? "tls" : `${report.suite}-${report.check}`;
@@ -294,12 +373,16 @@ export function createAcceptanceSeal(
       !expected.includes(label) ||
       seen.has(label)
     )
-      fail("Unique successful TLS and H2 reports required");
+      fail("Unique successful required native reports required");
     seen.add(label);
     digest(report.reportSha256);
   }
-  if (!Array.isArray(result.builds) || result.builds.length !== 2)
-    fail("Both native fixture builds required");
+  const requiredSuites = requirements?.suites ?? ["tls", "http2"];
+  if (
+    !Array.isArray(result.builds) ||
+    result.builds.length !== requiredSuites.length
+  )
+    fail("All required native fixture builds required");
   const suites = new Set();
   for (const build of result.builds) {
     exact(build, [
@@ -308,15 +391,21 @@ export function createAcceptanceSeal(
       "cargoLockSha256",
       ...(native.platform !== "win32" ? ["helperSha256"] : []),
     ]);
-    if (!["tls", "http2"].includes(build.suite) || suites.has(build.suite))
+    if (!requiredSuites.includes(build.suite) || suites.has(build.suite))
       fail("Unique native fixture builds required");
     suites.add(build.suite);
     for (const key of Object.keys(build).filter((key) => key !== "suite"))
       digest(build[key]);
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: result.schemaVersion,
     kind: "sorng-cef-native-acceptance-seal",
+    ...(modern
+      ? {
+          capabilities: [...requirements.capabilities],
+          bridgePatchId: requirements.bridgePatchId,
+        }
+      : {}),
     execution: { ...execution, ...code },
     target: result.target,
     producer,
@@ -338,6 +427,7 @@ export async function writeAcceptanceSeal({
   result,
   execution,
   code,
+  sourceLock,
 }) {
   const report = await readFile(
     path.join(destination, "native-acceptance.json"),
@@ -348,9 +438,10 @@ export async function writeAcceptanceSeal({
     execution,
     code,
     reportSha256: sha(report),
+    sourceLock,
   });
   for (const row of seal.reports) {
-    const label = row.suite === "tls" ? "tls" : `http2-${row.check}`;
+    const label = row.suite === "tls" ? "tls" : `${row.suite}-${row.check}`;
     if (
       (await hashFile(path.join(destination, label, "acceptance.json"))) !==
       row.reportSha256
@@ -727,7 +818,7 @@ def digest(fd,maximum):
 try:
     require(len(sys.argv)==11)
     mode,temp,output,suite,expected_size,expected_sha,expected_uid,expected_dev,expected_ino,machine=sys.argv[1:]
-    require(mode in ('--configure','--validate-only') and suite in ('tls','http2'))
+    require(mode in ('--configure','--validate-only') and suite in ('tls','http2','http3'))
     require(re.fullmatch('[0-9a-f]{64}',expected_sha) is not None)
     require(all(re.fullmatch('[0-9]{1,30}',v) is not None for v in (expected_size,expected_uid,expected_dev,expected_ino,machine)))
     size,uid,dev,ino,machine=map(int,(expected_size,expected_uid,expected_dev,expected_ino,machine))
@@ -793,7 +884,7 @@ export function linuxSandboxCommand({
     !path.isAbsolute(temp) ||
     path.dirname(destination) !== temp ||
     stage !== path.join(destination, `stage-${suite}`) ||
-    !["tls", "http2"].includes(suite)
+    !["tls", "http2", "http3"].includes(suite)
   )
     throw new Error("Fresh owned Linux sandbox stage required");
   const machine =
@@ -839,7 +930,7 @@ export async function prepareLinuxSandbox({
   run = runAcceptanceCommand,
 }) {
   if (platform !== "linux") return;
-  if (!["tls", "http2"].includes(suite))
+  if (!["tls", "http2", "http3"].includes(suite))
     throw new Error("Unknown Linux sandbox stage");
   const temp = await realpath(runnerTemp);
   if (
@@ -933,7 +1024,7 @@ export async function prepareLinuxSandbox({
 export function fixtureClientBuild(target, suite) {
   if (
     !Object.hasOwn(NATIVE_TARGETS, target) ||
-    !["tls", "http2"].includes(suite)
+    !["tls", "http2", "http3"].includes(suite)
   )
     fail("Unknown native fixture build");
   const windows = NATIVE_TARGETS[target].platform === "win32";
@@ -963,8 +1054,12 @@ export function fixtureRunArguments(
   sourceLock,
 ) {
   if (
-    !["tls", "http2"].includes(suite) ||
-    (suite === "http2" ? !HTTP2_CHECKS.includes(check) : check !== undefined)
+    !["tls", "http2", "http3"].includes(suite) ||
+    (suite === "http2"
+      ? !HTTP2_CHECKS.includes(check)
+      : suite === "http3"
+        ? !HTTP3_CHECKS.includes(check)
+        : check !== undefined)
   )
     fail("Unknown native fixture run");
   const patchId = sourceLock?.bridge?.patchId;
@@ -973,9 +1068,11 @@ export function fixtureRunArguments(
     ![BRIDGE_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(patchId)
   )
     fail("HTTP2 requires a reviewed revision-four or revision-five source pin");
+  if (suite === "http3" && patchId !== HTTP3_BRIDGE_PATCH_ID)
+    fail("HTTP3 requires the reviewed revision-five source pin");
   return [
     "scripts/cef-browser-acceptance.mjs",
-    suite === "tls" ? "run-tls" : "run-http2",
+    suite === "tls" ? "run-tls" : suite === "http2" ? "run-http2" : "run-http3",
     "--executable",
     executable,
     "--output",
@@ -1356,9 +1453,10 @@ export async function executeAcceptance(
     expectedLock: entry.sourceLockIdentity,
   });
   const descriptor = checked.descriptor;
-  const sourceLock = JSON.parse(
-    await readFile(path.join(bundle, descriptor.sourceLock.path), "utf8"),
-  );
+  const sourceLock = await verifiedAcceptanceSourceLock(bundle, checked);
+  const requirements = nativeAcceptanceRequirements(sourceLock, target);
+  if (identitySha256(sourceLock) !== checked.identity.sourceLockSha256)
+    fail("Verified producer source changed before native execution");
   const manifest = JSON.parse(
     await readFile(path.join(bundle, descriptor.manifest.path), "utf8"),
   );
@@ -1457,7 +1555,7 @@ export async function executeAcceptance(
   }
   const reports = [],
     builds = [];
-  for (const suite of ["tls", "http2"]) {
+  for (const suite of requirements.suites) {
     const build = fixtureClientBuild(target, suite);
     const { stem } = build;
     await runCommand(process.execPath, build.args, {
@@ -1505,8 +1603,12 @@ export async function executeAcceptance(
       sdkFiles: prepared.customRuntime.sdkFiles,
       run: runCommand,
     });
-    for (const check of suite === "tls" ? [undefined] : HTTP2_CHECKS) {
-      const label = suite === "tls" ? "tls" : `http2-${check}`;
+    for (const check of suite === "tls"
+      ? [undefined]
+      : suite === "http2"
+        ? HTTP2_CHECKS
+        : HTTP3_CHECKS) {
+      const label = suite === "tls" ? "tls" : `${suite}-${check}`;
       const reportOutput = path.join(destination, label);
       let commandSucceeded = true;
       try {
@@ -1539,7 +1641,9 @@ export async function executeAcceptance(
         report.ok === true &&
         (suite === "tls"
           ? report.nativeTlsFixtureAccepted === true
-          : report.nativeHttp2FixtureAccepted === true);
+          : suite === "http2"
+            ? report.nativeHttp2FixtureAccepted === true
+            : report.nativeHttp3FixtureAccepted === true);
       reports.push({
         suite,
         ...(check ? { check } : {}),
@@ -1555,8 +1659,14 @@ export async function executeAcceptance(
     }
   }
   const result = {
-    schemaVersion: 1,
+    schemaVersion: requirements.schemaVersion,
     kind: "sorng-cef-native-acceptance-run",
+    ...(requirements.schemaVersion === 2
+      ? {
+          capabilities: [...requirements.capabilities],
+          bridgePatchId: requirements.bridgePatchId,
+        }
+      : {}),
     target,
     producer: entry,
     ...(entry.producer === "owned-import"
@@ -1569,7 +1679,9 @@ export async function executeAcceptance(
     descriptorSha256: entry.descriptorSha256,
     reports,
     builds,
-    ok: reports.length === 9 && reports.every((report) => report.accepted),
+    ok:
+      reports.length === requirements.reports.length &&
+      reports.every((report) => report.accepted),
     nativeExecutionPerformed: true,
     publicProviderAcceptance: false,
     productionReady: false,
@@ -1589,7 +1701,13 @@ export async function executeAcceptance(
       canonical(acceptanceCodeIdentity(execution.sourceSha)) !== canonical(code)
     )
       fail("Native acceptance code changed during execution");
-    await writeAcceptanceSeal({ destination, result, execution, code });
+    await writeAcceptanceSeal({
+      destination,
+      result,
+      execution,
+      code,
+      sourceLock,
+    });
   }
   return result;
 }
