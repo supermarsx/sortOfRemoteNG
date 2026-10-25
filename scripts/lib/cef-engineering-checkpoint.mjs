@@ -3166,12 +3166,22 @@ export function graphInventoryRecord(value) {
     "active",
     "elapsedMs",
     "categories",
+    "completedHashedFiles",
+    "completedHashedBytes",
   ]);
   assert(
     ["metadata", "hashing", "complete", "stopped"].includes(value.phase),
     "Invalid graph diagnostic phase",
   );
-  for (const key of ["files", "bytes", "visited", "active", "elapsedMs"])
+  for (const key of [
+    "files",
+    "bytes",
+    "visited",
+    "active",
+    "elapsedMs",
+    "completedHashedFiles",
+    "completedHashedBytes",
+  ])
     assert(
       Number.isSafeInteger(value[key]) && value[key] >= 0,
       "Invalid graph diagnostic counter",
@@ -3181,6 +3191,8 @@ export function graphInventoryRecord(value) {
       value.bytes <= (GRAPH_LIMITS.files + 1) * GRAPH_LIMITS.fileBytes &&
       value.visited <= GRAPH_LIMITS.visited + 1 &&
       value.active <= GRAPH_LIMITS.readers &&
+      value.completedHashedFiles <= value.files &&
+      value.completedHashedBytes <= value.bytes &&
       value.elapsedMs <= GRAPH_LIMITS.milliseconds,
     "Graph diagnostic bound",
   );
@@ -3220,7 +3232,12 @@ export async function graphInventory(
   let visited = 0,
     totalBytes = 0,
     active = 0,
-    peak = 0;
+    peak = 0,
+    metadataScheduled = 0,
+    completedHashedFiles = 0,
+    completedHashedBytes = 0,
+    emitted = 0,
+    nextProgress = began + 10000;
   const candidates = [],
     pins = [],
     pending = [root];
@@ -3269,11 +3286,18 @@ export async function graphInventory(
     }
   };
   const emit = (phase) => {
+    // Reserve both terminal records for a synchronous complete observer that
+    // itself expires the deadline. Never emit unbounded per-file telemetry.
+    if (emitted >= (phase === "complete" || phase === "stopped" ? 36 : 34))
+      return;
+    emitted++;
     observe(
       Object.freeze({
         phase,
         ...counts(),
         active,
+        completedHashedFiles,
+        completedHashedBytes,
         elapsedMs: Math.min(
           GRAPH_LIMITS.milliseconds,
           Math.floor(performance.now() - began),
@@ -3296,7 +3320,51 @@ export async function graphInventory(
     a.mtimeMs === b.mtimeMs &&
     a.ino === b.ino &&
     a.dev === b.dev;
-  const workers = [];
+  const workers = [],
+    metadataWorkers = new Set();
+  async function admitMetadata(file, name) {
+    try {
+      check(false);
+      await noLinks(file);
+      check(false);
+      const metadata = await stat(file);
+      check(false);
+      assert(
+        metadata.isFile() &&
+          metadata.size > 0 &&
+          metadata.size <= GRAPH_LIMITS.fileBytes,
+        "Checkpoint asset size",
+      );
+      candidates.push({ file, path: path.relative(root, file), metadata });
+      totalBytes += metadata.size;
+      const category =
+        name === "args.gn"
+          ? "args"
+          : name === "build.ninja"
+            ? "build"
+            : name === "toolchain.ninja"
+              ? "toolchain"
+              : "target";
+      categories[category].files++;
+      categories[category].bytes += metadata.size;
+      check(false);
+    } catch (error) {
+      stop(error);
+      throw error;
+    }
+  }
+  async function scheduleMetadata(file, name) {
+    check(false);
+    if (++metadataScheduled > GRAPH_LIMITS.files) throw bound();
+    while (metadataWorkers.size >= GRAPH_LIMITS.readers) {
+      await Promise.race(metadataWorkers);
+      check(false);
+    }
+    const work = admitMetadata(file, name);
+    metadataWorkers.add(work);
+    const remove = () => metadataWorkers.delete(work);
+    void work.then(remove, remove);
+  }
   try {
     while (pending.length) {
       check(false);
@@ -3309,36 +3377,15 @@ export async function graphInventory(
         const file = path.join(directory, item.name);
         if (item.isDirectory()) pending.push(file);
         else if (item.name.endsWith(".ninja") || item.name === "args.gn") {
-          await noLinks(file);
-          check(false);
-          const metadata = await stat(file);
-          check(false);
-          assert(
-            metadata.isFile() &&
-              metadata.size > 0 &&
-              metadata.size <= GRAPH_LIMITS.fileBytes,
-            "Checkpoint asset size",
-          );
-          candidates.push({ file, path: path.relative(root, file), metadata });
-          totalBytes += metadata.size;
-          const category =
-            item.name === "args.gn"
-              ? "args"
-              : item.name === "build.ninja"
-                ? "build"
-                : item.name === "toolchain.ninja"
-                  ? "toolchain"
-                  : "target";
-          categories[category].files++;
-          categories[category].bytes += metadata.size;
-          // Finish a bounded metadata inventory even when aggregate bytes are
-          // over budget. No content stream is opened before the final check.
-          check(false);
+          await scheduleMetadata(file, item.name);
         }
       }
     }
+    await Promise.all(metadataWorkers);
+    check(false);
     emit("metadata");
     check();
+    nextProgress = performance.now() + 10000;
     assert(
       candidates.some((p) => p.path === "build.ninja") &&
         candidates.some((p) => p.path === "args.gn"),
@@ -3387,6 +3434,12 @@ export async function graphInventory(
             bytes: before.size,
             sha256: hash.digest("hex"),
           });
+          completedHashedFiles++;
+          completedHashedBytes += before.size;
+          if (performance.now() >= nextProgress) {
+            nextProgress = performance.now() + 10000;
+            emit("hashing");
+          }
         } catch (error) {
           stop(error);
           throw error;
@@ -3428,7 +3481,7 @@ export async function graphInventory(
     };
   } catch (error) {
     stop(error);
-    await Promise.allSettled(workers);
+    await Promise.allSettled([...metadataWorkers, ...workers]);
     try {
       emit("stopped");
     } catch {
