@@ -9,7 +9,7 @@ import struct
 import tempfile
 import unittest
 import types
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 def without_owned_observer(raw):
  start=b'# BEGIN owned Job metadata observer (no lifecycle authority).\r\n';end=b'# END owned Job metadata observer.\r\n\r\n'
@@ -90,7 +90,11 @@ class Tests(unittest.TestCase):
    stdout=io.BytesIO(b'fixed compiler diagnostic\n')
    def poll(self):return 23
    def wait(self,timeout):return 23
-  observed=[];code,raw,errors=m.collect(['fixed-not-executed'],Path.cwd(),{},launch=lambda *args,**kwargs:Child(),on_started=observed.append)
+  observed=[];launch=Mock(return_value=Child())
+  with patch.object(m.subprocess,'CREATE_NO_WINDOW',0x08000000,create=True),patch.object(m.subprocess,'Popen',side_effect=AssertionError('real-child-spawn'))as real_spawn:
+   code,raw,errors=m.collect(['fixed-not-executed'],Path.cwd(),{},launch=launch,on_started=observed.append)
+   real_spawn.assert_not_called()
+  launch.assert_called_once_with(['fixed-not-executed'],cwd=Path.cwd(),env={},stdin=m.subprocess.DEVNULL,stdout=m.subprocess.PIPE,stderr=m.subprocess.STDOUT,creationflags=0x08000000)
   self.assertEqual(code,23);self.assertEqual(raw,b'fixed compiler diagnostic\n');self.assertEqual(errors,[]);self.assertEqual(observed,[123])
  def test_real_collector_bounds_output_and_preserves_owned_kill_failure(self):
   class Child:
@@ -99,7 +103,11 @@ class Tests(unittest.TestCase):
    def poll(self):return None
    def kill(self):raise OSError('owned-mock-only')
    def wait(self,timeout):raise TimeoutError()
-  code,raw,errors=m.collect(['fixed-not-executed'],Path.cwd(),{},launch=lambda *args,**kwargs:Child())
+  launch=Mock(return_value=Child())
+  with patch.object(m.subprocess,'CREATE_NO_WINDOW',0x08000000,create=True),patch.object(m.subprocess,'Popen',side_effect=AssertionError('real-child-spawn'))as real_spawn:
+   code,raw,errors=m.collect(['fixed-not-executed'],Path.cwd(),{},launch=launch)
+   real_spawn.assert_not_called()
+  launch.assert_called_once_with(['fixed-not-executed'],cwd=Path.cwd(),env={},stdin=m.subprocess.DEVNULL,stdout=m.subprocess.PIPE,stderr=m.subprocess.STDOUT,creationflags=0x08000000)
   self.assertIsNone(code);self.assertLessEqual(len(raw),1048576);self.assertIn('COMPILE_OUTPUT_CAP',errors);self.assertIn('COMPILE_OWN_CHILD_KILL_FAILED',errors);self.assertIn('COMPILE_OWN_CHILD_UNKNOWN',errors)
  def test_bigobj_native_machine_and_truncation(self):
   raw=bytearray(96);raw[:4]=b'\0\0\xff\xff';struct.pack_into('<HH',raw,4,2,0xaa64);struct.pack_into('<I',raw,44,1);raw[56:61]=b'.text'
