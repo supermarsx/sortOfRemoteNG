@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-x64-arm-toolchain-diagnostic",
+  "runner": "windows-2025-vs2026",
+  "image": "20261021.278.1",
+  "host": "x86_64-pc-windows-msvc",
+  "target": "aarch64-pc-windows-msvc",
+  "sdkVersion": "10.0.28000.0",
+  "vsRoot": "C:/Program Files/Microsoft Visual Studio/18/Enterprise",
+  "toolset": "14.51.36231",
+  "vsVersion": "18.11.12315.225",
+  "python": {
+    "path": "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+    "bytes": 104952,
+    "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+  },
+  "sourcePaths": [
+    ".github/workflows/windows-x64-arm-toolchain.yml",
+    "native/windows-x64-arm-toolchain/profile.json",
+    "native/windows-x64-arm-toolchain/acquire.py",
+    "native/windows-x64-arm-toolchain/observe.py",
+    "native/windows-x64-arm-toolchain/environment.py",
+    "native/windows-x64-arm-toolchain/slice.py",
+    "native/windows-x64-arm-toolchain/job.py",
+    "native/windows-x64-arm-toolchain/test_toolchain.py",
+    "tests/tooling/windowsX64ArmToolchain.node-test.mjs"
+  ],
+  "sourceChromium": "a654841425914cbb703a2931e07b70a83aedbafd",
+  "sourceCef": "682c378d70d5780061e96644dca16ddd8fd157a9",
+  "sourceId": null,
+  "buildAdmission": false,
+  "claims": {
+    "sdkBuilt": false,
+    "cefStarted": false,
+    "outputExecuted": false,
+    "nativeAcceptance": false,
+    "publicationAllowed": false,
+    "rustTargetStdProven": false,
+    "gnGraphProven": false,
+    "setupCompatibility": null
+  },
+  "sdk": {
+    "version": "10.0.28000.2270",
+    "packages": [
+      {
+        "id": "microsoft.windows.sdk.cpp",
+        "version": "10.0.28000.2270",
+        "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp/10.0.28000.2270/microsoft.windows.sdk.cpp.10.0.28000.2270.nupkg",
+        "bytes": 160882592,
+        "sha512": "dQjr0W5oTPTsOCS8YCYQivFJG3Ypc+gRcnAfrTa6jIwK3nDFSLwNy0m9TUqWuzUMdQZQdD5RXHCJ9fcUxaYi8A==",
+        "catalog": {
+          "bytes": 2373687,
+          "sha256": "1acc710d8fc610ffb071fdc9f78fa114bffcab738cef994226844c95198fbe77",
+          "url": "https://api.nuget.org/v3/catalog0/data/2026.06.26.19.29.24/microsoft.windows.sdk.cpp.10.0.28000.2270.json"
+        },
+        "members": 5972,
+        "expandedBytes": 686987176,
+        "sha256": "0a4887a64d1b17128f9ffd80032f20debabf943f34eea927aac00cc46cb32879"
+      },
+      {
+        "id": "microsoft.windows.sdk.cpp.arm64",
+        "version": "10.0.28000.2270",
+        "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp.arm64/10.0.28000.2270/microsoft.windows.sdk.cpp.arm64.10.0.28000.2270.nupkg",
+        "bytes": 106092751,
+        "sha512": "eaPdMdexXpxtuovh3O9+6sRPwMNhYlHeYWREA6Fsy7BzdSb+1vdaqZfy2at4uYbOiiYN6a1OejfZHSullKoSQA==",
+        "catalog": {
+          "bytes": 162730,
+          "sha256": "ea7ace6e9b7676be09a43e5ed53d48529f70737aebec4b7700a0f4474edc1d15",
+          "url": "https://api.nuget.org/v3/catalog0/data/2026.06.26.19.39.11/microsoft.windows.sdk.cpp.arm64.10.0.28000.2270.json"
+        },
+        "members": 478,
+        "expandedBytes": 414551604,
+        "sha256": "543c2b31dfa77e00cc63860a587178c5c90837f64c05b05f73cb18b1c33f549a"
+      },
+      {
+        "id": "microsoft.windows.sdk.cpp.x64",
+        "version": "10.0.28000.2270",
+        "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp.x64/10.0.28000.2270/microsoft.windows.sdk.cpp.x64.10.0.28000.2270.nupkg",
+        "bytes": 52978506,
+        "sha512": "WhB8d1r7+9OX8tXCKkwXubz4539F0cqxWPyYXILgqQnjAxCmZVaAaxE/9Ka44ELsziRi5BaSbx4KLxyZmOe0zA==",
+        "catalog": {
+          "bytes": 164349,
+          "sha256": "85d045375a1319acd9725af234bc66e06a28ee8c969a77e8731ea9cbdc1f3098",
+          "url": "https://api.nuget.org/v3/catalog0/data/2026.06.26.19.31.53/microsoft.windows.sdk.cpp.x64.10.0.28000.2270.json"
+        },
+        "members": 492,
+        "expandedBytes": 201858532,
+        "sha256": "72076d00b16c3882bf9eab0c80e350f33d8bc65e5f29e2f0e9b66a3f2569ccb1"
+      },
+      {
+        "id": "microsoft.windows.sdk.cpp.x86",
+        "version": "10.0.28000.2270",
+        "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp.x86/10.0.28000.2270/microsoft.windows.sdk.cpp.x86.10.0.28000.2270.nupkg",
+        "bytes": 50607747,
+        "sha512": "QBQdjfL+NxQI4K6smE+VenNjUo7uCv8077oKVCCrNTFrWGJwa6NHdjUu5wu7JcecPJVjs2KNefYgdrnK66cTwQ==",
+        "catalog": {
+          "bytes": 164163,
+          "sha256": "fa2ad367de9a6ae03b7effdd6c2f211db913c1ad37f591945fe05cc684ef7ab2",
+          "url": "https://api.nuget.org/v3/catalog0/data/2026.06.26.19.31.53/microsoft.windows.sdk.cpp.x86.10.0.28000.2270.json"
+        },
+        "members": 492,
+        "expandedBytes": 193960889,
+        "sha256": "5bf7b8811cd8e7640b5475ddbbf0a873f90077622c73bc6f6c2f1d368d5d55e3"
+      }
+    ],
+    "limits": {
+      "wholeSeconds": 1200,
+      "cleanupSeconds": 30,
+      "insideWorkReserveSeconds": 3,
+      "fileCompressedBytes": 201326592,
+      "aggregateCompressedBytes": 402653184,
+      "memberBytes": 134217728,
+      "expandedBytes": 1610612736,
+      "files": 7500,
+      "minimumFreeBytes": 6442450944
+    }
+  },
+  "llvm": {
+    "object": "Win/clang-llvmorg-24-init-3796-g20e97c4b-27.tar.xz",
+    "generation": "1789127470157875",
+    "bytes": 51487396,
+    "sha256": "4c4a15912845f39189784360a03ae62c65dba29b884ef60ec9c6b4d43754dca0",
+    "clangSha256": "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7",
+    "lldSha256": "170b2dfc2bc9f0f95f828fbcc6a833e040bcb909b5ac9cb6b318e4ce05f41e3b"
+  },
+  "deferredRust": {
+    "object": "Win/rust-toolchain-0913b18e489ac1011b580e31fa5559654be12bfc-2-llvmorg-24-init-3796-g20e97c4b.tar.xz",
+    "generation": "1786821099612317",
+    "bytes": 414479372,
+    "sha256": "14bc9cea5e00cb191f58204ef44d68a6794f856a76f885c50298a12d052035bc",
+    "acquiredInThisSlice": false
+  },
+  "conditionalRuntime": {
+    "object": "Win/clang-win-runtime-library-llvmorg-24-init-3796-g20e97c4b-27.tar.xz",
+    "sha256": "51c15d0bc56eaf36b2c7b1eb6c2e9b70442201c6040abf438fb1c310e01882fe",
+    "condition": "checkout_win and host_os != win",
+    "selected": false
+  },
+  "upstreamSources": [
+    {
+      "path": "build/toolchain/win/setup_toolchain.py",
+      "bytes": 15133,
+      "sha256": "d44e8a20670fb92b794809e66cd874aafb48521731ec32e13684ef689fca18f1",
+      "url": "https://chromium.googlesource.com/chromium/src/+/a654841425914cbb703a2931e07b70a83aedbafd/build/toolchain/win/setup_toolchain.py?format=TEXT"
+    },
+    {
+      "path": "build/action_helpers.py",
+      "bytes": 5338,
+      "sha256": "4b167218299aa332bacc1c09262ddc498f092f63280781fe0c2b846b89f54f7b",
+      "url": "https://chromium.googlesource.com/chromium/src/+/a654841425914cbb703a2931e07b70a83aedbafd/build/action_helpers.py?format=TEXT"
+    },
+    {
+      "path": "build/gn_helpers.py",
+      "bytes": 21572,
+      "sha256": "b785e6144c92a0677f68a78455c485ae42b2f70fa5013778ba714e414993019b",
+      "url": "https://chromium.googlesource.com/chromium/src/+/a654841425914cbb703a2931e07b70a83aedbafd/build/gn_helpers.py?format=TEXT"
+    }
+  ],
+  "installedMsvc14": [
+    {
+      "bytes": 924048,
+      "independentFile": true,
+      "machine": 34404,
+      "present": true,
+      "role": "host-cl.exe",
+      "sha256": "e58a4e79fcc9be4bf72414279287c8012e84f305813cbf5e6850d0f2bc605579",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 3701128,
+      "independentFile": true,
+      "machine": 34404,
+      "present": true,
+      "role": "host-link.exe",
+      "sha256": "4ae486e94ab81a897b5f746f376b2418d4e6b582e258b7155f11079746e69de0",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 23376,
+      "independentFile": true,
+      "machine": 34404,
+      "present": true,
+      "role": "host-lib.exe",
+      "sha256": "6c7aeedd572b83971c8c6dad11778c67ec7dce424413ed2f5ddc79e0369b39fa",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 18932596,
+      "independentFile": true,
+      "present": true,
+      "role": "crt-libcmt.lib",
+      "sha256": "66c641d9053909ad68c241b7fa000926390af37fe180cf430429edbeea195651",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 50016602,
+      "independentFile": true,
+      "present": true,
+      "role": "crt-libcpmt.lib",
+      "sha256": "5d3a4f4ce3d5a3a5518aef858ea8e3917fcad3cd1f1be711cae8795959c2008c",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 5417000,
+      "independentFile": true,
+      "present": true,
+      "role": "crt-libvcruntime.lib",
+      "sha256": "a96ec51978ad4a0d3631be3899dac61b750179c527d6960bdb9d63e9206eaaaa",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 320364,
+      "independentFile": true,
+      "present": true,
+      "role": "crt-oldnames.lib",
+      "sha256": "48e4fd98c3c5d75318d34e4289dd172d01ca9227a998a25efbdbd44fe006049f",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 2946396,
+      "independentFile": true,
+      "present": true,
+      "role": "atl-atls.lib",
+      "sha256": "432551ac196e927308246b7be3ada5fb89cf46da510ee02a01ee593cd72cb941",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 220563786,
+      "independentFile": true,
+      "present": true,
+      "role": "atl-uafxcw.lib",
+      "sha256": "88d61b1bbc11a8f7bc2a2bc91eebd209f361d04440ff831ea19b58970a3aac75",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 11444,
+      "independentFile": true,
+      "present": true,
+      "role": "header-vcruntime.h",
+      "sha256": "8a6e89fe85c66162d62c772d02367ae2e6530f1faaaa8d099427698a689bac7f",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 169028,
+      "independentFile": true,
+      "present": true,
+      "role": "header-vector",
+      "sha256": "b254d6fc250164a9f4e71ea66e2c1e9401cb2bf8b0056550fd92135518450b51",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 16455,
+      "independentFile": true,
+      "present": true,
+      "role": "header-string",
+      "sha256": "dafa5ec4d069f7e85001d6a03fdcac5bde1d18eb7412240aa5cc7e10c7cddf05",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 214580,
+      "independentFile": true,
+      "present": true,
+      "role": "header-atlbase.h",
+      "sha256": "7db394e836dd3e467a7c1d0d6c0664c41db98126b0b211216392c310cc51e071",
+      "stableHeldIdentity": true
+    },
+    {
+      "bytes": 257643,
+      "independentFile": true,
+      "present": true,
+      "role": "header-afxwin.h",
+      "sha256": "0a6bae4b7d4a65f7b588c0d2bec5e8362960a51a81fb068ddc794c734d0e0188",
+      "stableHeldIdentity": true
+    }
+  ],
+  "msvcEvidence": {
+    "runId": 40221291489,
+    "status": "failure",
+    "setupProvenanceValidated": false,
+    "note": "byte observations only; no nativeARM839f transfer"
+  },
+  "limits": {
+    "acquisitionSeconds": 2700,
+    "sdkSeconds": 1170,
+    "compileSeconds": 900,
+    "cleanupSeconds": 30,
+    "finalReserveSeconds": 120,
+    "roleSeconds": 90,
+    "insideWorkReserveSeconds": 3,
+    "tarMemberBytes": 1073741824,
+    "tarExpandedBytes": 6442450944,
+    "tarFiles": 25000,
+    "freeBytes": 17179869184,
+    "headerFiles": 4096,
+    "headerBytes": 268435456,
+    "roleOutputBytes": 4194304,
+    "totalOutputBytes": 33554432,
+    "summaryBytes": 131072
+  },
+  "jobFoundationSha256": "e24c0f7d598b0297d59d09258b87ba57911ac3075470b9a37c53018572083770",
+  "missingClosures": [
+    "GN/Siso immutable CIPD instances",
+    "Rust target std source-build",
+    "DIA/debugger/host-and-target CRT packaging",
+    "complete source GN graph"
+  ],
+  "setupComponents": [
+    "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+    "Microsoft.VisualStudio.Component.VC.ATL.ARM64",
+    "Microsoft.VisualStudio.Component.VC.MFC.ARM64"
+  ]
+}
