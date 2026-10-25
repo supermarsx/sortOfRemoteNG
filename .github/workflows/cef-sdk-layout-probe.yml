@@ -1,7 +1,14 @@
 name: CEF selected SDK layout probe
-# Read-only diagnostics, with no Chromium acquisition or runtime authority.
+# Default read-only diagnostics. Explicit Metal opt-in permits only the existing
+# fixed missing-component download; never Chromium acquisition or runtime authority.
 on:
   workflow_dispatch:
+    inputs:
+      metal_tools:
+        description: "Observe selected Apple Metal commands; permits the existing fixed missing-component download"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -18,7 +25,7 @@ jobs:
   probe:
     if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'
     runs-on: macos-15-intel
-    timeout-minutes: 10
+    timeout-minutes: ${{ inputs.metal_tools && 15 || 10 }}
     env:
       CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
@@ -35,6 +42,142 @@ jobs:
         run: node scripts/cef-hosted-provision.mjs --target x86_64-apple-darwin --output "$RUNNER_TEMP/cef-sdk-probe-prerequisites" --execute
       - name: Probe selected native SDK links without acquiring sources
         run: node scripts/cef-engineering-checkpoint.mjs probe-sdk 2>&1 | tee "$RUNNER_TEMP/cef-sdk-layout-probe.log"
+      - name: Diagnose selected Apple Metal tools
+        if: inputs.metal_tools == true
+        env:
+          METAL_TOOLS_ENABLED: ${{ inputs.metal_tools }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFile } from 'node:child_process';
+          import { promisify } from 'node:util';
+          import { mkdir, open, readFile, realpath, writeFile } from 'node:fs/promises';
+          import { createHash } from 'node:crypto';
+          import path from 'node:path';
+          import { plan, validateRunnerMap, buildEnvironment } from './scripts/cef-runtime-ci.mjs';
+          import { checkpointHost, sdkProbeAuthority } from './scripts/lib/cef-engineering-checkpoint.mjs';
+          import { verifyToolchainFiles, identitySha256 } from './scripts/lib/browser-custom-runtime.mjs';
+          import { prepareMacMetalToolchain, macMetalFingerprint } from './scripts/cef-hosted-provision.mjs';
+
+          // No argv, environment, Error.message or stack is written. Original tool output
+          // is retained privately as bounded returned bytes/text, never echoed to the job console.
+          function metalCommandStage(executable, args) {
+            const same = (value) => JSON.stringify(value) === JSON.stringify(args);
+            if (executable === '/usr/bin/xcrun') {
+              if (same(['--sdk', 'macosx', '--find', 'metal'])) return 'find-metal';
+              if (same(['--sdk', 'macosx', '--find', 'metallib'])) return 'find-metallib';
+              if (same(['--sdk', 'macosx', 'metal', '--version'])) return 'metal-version';
+            }
+            if (executable === '/usr/bin/xcodebuild' && same(['-downloadComponent', 'MetalToolchain'])) return 'download-component';
+            if (executable === '/usr/bin/codesign' && args.length === 5 &&
+                JSON.stringify(args.slice(0, 4)) === JSON.stringify(['--verify', '--strict', '--all-architectures', '-R=anchor apple'])) {
+              const file = args[4];
+              if (typeof file === 'string' && path.posix.isAbsolute(file) && Buffer.byteLength(file) <= 2048 && !/[\x00-\x1f\x7f]/.test(file)) {
+                if (path.posix.basename(file) === 'metal') return 'verify-metal-signature';
+                if (path.posix.basename(file) === 'metallib') return 'verify-metallib-signature';
+              }
+            }
+            throw new Error('METAL_DIAGNOSTIC_COMMAND_DENIED');
+          }
+          function observeMetalExec(execute, persist, now = () => performance.now()) {
+            let count = 0;
+            return async (executable, args, options) => {
+              const stage = metalCommandStage(executable, args);
+              if (++count > 32 || !Number.isSafeInteger(options.timeout) || options.timeout < 1 || options.timeout > 600000)
+                throw new Error('METAL_DIAGNOSTIC_COMMAND_BOUND');
+              const begin = now();
+              let result, originalError, failed = false;
+              try { result = await execute(executable, args, options); }
+              catch (error) { failed = true; originalError = error; }
+              const value = failed ? originalError : result;
+              const captured = (data) => {
+                const bytes = Buffer.isBuffer(data) ? data : Buffer.from(typeof data === 'string' ? data : '');
+                return { bytes: bytes.subarray(0, 65536), observed: bytes.length, truncated: bytes.length > 65536 };
+              };
+              const stdout = captured(value?.stdout), stderr = captured(value?.stderr);
+              const signals = new Set(['SIGTERM', 'SIGKILL', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGINT']);
+              const record = { schemaVersion: 1, index: count, stage, timeoutMs: options.timeout,
+                elapsedMs: Math.max(0, Math.floor(now() - begin)), result: failed ? 'failed' : 'success',
+                exit: failed ? (Number.isSafeInteger(value?.code) && value.code >= 0 && value.code <= 2147483647 ? value.code : null) : 0,
+                signal: signals.has(value?.signal) ? value.signal : null,
+                stdoutBytes: stdout.bytes.length, stdoutObservedBytes: stdout.observed, stdoutTruncated: stdout.truncated,
+                stderrBytes: stderr.bytes.length, stderrObservedBytes: stderr.observed, stderrTruncated: stderr.truncated };
+              try { await persist(record, stdout.bytes, stderr.bytes); }
+              catch { if (!failed) throw new Error('METAL_DIAGNOSTIC_PERSIST_FAILED'); }
+              if (failed) throw originalError;
+              return result;
+            };
+          }
+          async function runMetalDiagnostic() {
+            sdkProbeAuthority(process.env);
+            if (process.env.METAL_TOOLS_ENABLED !== 'true' || process.platform !== 'darwin' || process.arch !== 'x64')
+              throw new Error('METAL_DIAGNOSTIC_OPT_IN_HOST_REQUIRED');
+            const target = 'x86_64-apple-darwin';
+            const profile = checkpointHost(target, process.platform, process.arch);
+            const temporary = await realpath(process.env.RUNNER_TEMP);
+            const output = path.join(temporary, 'cef-metal-tools-probe');
+            await mkdir(output, { mode: 0o700 });
+            if (await realpath(output) !== output) throw new Error('METAL_DIAGNOSTIC_OUTPUT_DENIED');
+            const log = await open(path.join(output, 'commands.jsonl'), 'wx', 0o600);
+            const began = performance.now();
+            let phase = 'plan', originalError, failed = false;
+            let outcome = { schemaVersion: 1, diagnosticOnly: true, nativeAcceptance: false, chromiumAcquisition: false };
+            const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+            try {
+              const planned = await plan({ inputs: profile.inputs, target, checkout: process.cwd(), runnerMode: 'hosted' });
+              const { sourceLock, inputsRoot } = planned;
+              if (identitySha256(sourceLock) !== profile.source) throw new Error('METAL_DIAGNOSTIC_TOOL_MAP_DENIED');
+              phase = 'selected-tool-map';
+              const build = sourceLock.builds.find((row) => row.target === target);
+              const toolBytes = await readFile(path.join(inputsRoot, build.toolchainLock.path));
+              if (digest(toolBytes) !== build.toolchainLock.sha256) throw new Error('METAL_DIAGNOSTIC_TOOL_MAP_DENIED');
+              const tools = JSON.parse(toolBytes);
+              const mapPin = tools.files.find((row) => row.path === 'cef-ci-runner-x86_64-apple-darwin.json');
+              const mapBytes = await readFile(path.join(inputsRoot, mapPin.path));
+              if (mapBytes.length !== mapPin.size || digest(mapBytes) !== mapPin.sha256) throw new Error('METAL_DIAGNOSTIC_TOOL_MAP_DENIED');
+              const runner = validateRunnerMap(JSON.parse(mapBytes), target);
+              const toolsRoot = await realpath(process.env.SORNG_CEF_TOOLS_ROOT);
+              if (toolsRoot !== '/') throw new Error('METAL_DIAGNOSTIC_TOOL_MAP_DENIED');
+              const python = path.join(toolsRoot, runner.python);
+              phase = 'selected-tool-pins';
+              const checkedTools = await verifyToolchainFiles({sourceLock,target,inputsRoot,toolsRoot,python,runnerMapFromInputs:true});
+              if (checkedTools.filesVerified !== tools.files.length) throw new Error('METAL_DIAGNOSTIC_TOOL_MAP_DENIED');
+              outcome = {...outcome,selection:{target,sourceLockIdentity:identitySha256(sourceLock),runnerMapSha256:mapPin.sha256,
+                toolchainLockSha256:build.toolchainLock.sha256,filesVerified:checkedTools.filesVerified}};
+              const child = buildEnvironment(runner, {toolsRoot,source:output,depot:output,python}, process.env);
+              phase = 'metal-helper';
+              const observedExec = observeMetalExec(promisify(execFile), async (row, stdout, stderr) => {
+                const name = String(row.index).padStart(3, '0');
+                await writeFile(path.join(output, `command-${name}.stdout`), stdout, {flag:'wx',mode:0o600});
+                await writeFile(path.join(output, `command-${name}.stderr`), stderr, {flag:'wx',mode:0o600});
+                await log.writeFile(JSON.stringify(row) + '\n');
+              });
+              const observation = await prepareMacMetalToolchain({platform:process.platform,
+                selected:{DEVELOPER_DIR:child.DEVELOPER_DIR,SDKROOT:child.SDKROOT},env:process.env,allowDownload:true,
+                remainingMilliseconds:()=>600000-(performance.now()-began)}, {exec:observedExec});
+              const fingerprint = macMetalFingerprint(observation);
+              outcome = {...outcome, result:'success', downloaded:observation.downloaded,
+                componentResourceClosureVerified:false, nativeCompatibilityVerified:false,
+                fingerprint:{provenance:fingerprint.provenance,tools:fingerprint.tools}};
+            } catch (error) {
+              failed = true; originalError = error;
+              const reasons = new Set(['MAC_METAL_COMMAND_FAILED', 'MAC_METAL_COMPONENT_DRIFT', 'MAC_METAL_DEADLINE',
+              'MAC_METAL_DOWNLOAD_POLICY', 'MAC_METAL_FILE_BOUND', 'MAC_METAL_FILE_CHANGED', 'MAC_METAL_OBSERVATION',
+              'MAC_METAL_PROBE_FAILED', 'MAC_METAL_RESOLVED_PATH', 'MAC_METAL_SELECTED_ENV', 'MAC_METAL_UNAVAILABLE',
+              'MAC_METAL_VERSION_BOUND', 'MAC_METAL_VERSION_MISSING', 'METAL_DIAGNOSTIC_TOOL_MAP_DENIED',
+              'METAL_DIAGNOSTIC_COMMAND_DENIED', 'METAL_DIAGNOSTIC_COMMAND_BOUND', 'METAL_DIAGNOSTIC_PERSIST_FAILED']);
+              const reason = reasons.has(error?.message) ? error.message : 'UNCLASSIFIED';
+              outcome = {...outcome,result:'failed',phase,reason};
+            } finally {
+              let persistFailed = false;
+              try { await writeFile(path.join(output,'outcome.json'),JSON.stringify(outcome)+'\n',{flag:'wx',mode:0o600}); }
+              catch { persistFailed = true; }
+              try { await log.close(); } catch { persistFailed = true; }
+              if (persistFailed && !failed) throw new Error('METAL_DIAGNOSTIC_PERSIST_FAILED');
+            }
+            if (failed) throw originalError;
+          }
+          try { await runMetalDiagnostic(); } catch { console.error('METAL_DIAGNOSTIC_FAILED'); process.exitCode = 1; }
+          NODE
       - name: Retain bounded diagnostic output
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -43,5 +186,6 @@ jobs:
           path: |
             ${{ runner.temp }}/cef-sdk-layout-probe.log
             ${{ runner.temp }}/cef-sdk-probe-prerequisites
+            ${{ runner.temp }}/cef-metal-tools-probe
           retention-days: 14
           if-no-files-found: warn
