@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-native-windows-arm-closed-benign-job-profile",
+  "target": "aarch64-pc-windows-msvc",
+  "runner": "windows-11-arm",
+  "python": {
+    "path": "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python.exe",
+    "bytes": 104672,
+    "sha256": "46851212e3a4fc1846086dc9c7be10aeb156320b1f68dfbd86eafa56a4b0d8b4",
+    "machine": 43620
+  },
+  "pythonDll": {
+    "path": "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python313.dll",
+    "bytes": 6362848,
+    "sha256": "b9452ab50e10771663d35b5461f495fd11c293f46f2807add150ac2676653e53",
+    "machine": 43620
+  },
+  "sourceNames": [
+    "windows-checkpoint-job.py",
+    "windows-checkpoint-job-benign.py",
+    "windows-checkpoint-job-tests.py",
+    "windows-checkpoint-job-interface.json"
+  ],
+  "cases": [
+    "normal",
+    "nonzero23",
+    "timeout-child",
+    "orphan",
+    "output-cap",
+    "pre-cancel",
+    "suspended-cancel",
+    "assignment-fault",
+    "policy-fault",
+    "parent-controller-death"
+  ],
+  "policy": {
+    "cpuRate": 2500,
+    "cpuFlags": 5,
+    "jobMemoryBytes": 536870912,
+    "activeProcessLimit": 8,
+    "inheritedHandles": 3,
+    "cleanupSeconds": 30,
+    "descendantGraceSeconds": 2
+  },
+  "clock": {
+    "wholeSeconds": 300,
+    "parentSeconds": 270,
+    "outerMaximumSeconds": 240,
+    "suiteAdmissionSeconds": 235
+  },
+  "abi": {
+    "types": {
+      "pointer": 8,
+      "SIZE": 8,
+      "HANDLE": 8,
+      "BOOL": 4,
+      "DWORD": 4,
+      "WORD": 2,
+      "WCHAR": 2,
+      "FILETIME": 8
+    },
+    "structures": {
+      "BasicLimits": 64,
+      "IoCounters": 48,
+      "ExtendedLimits": 144,
+      "CpuRate": 8,
+      "Accounting": 48,
+      "Startup": 104,
+      "StartupEx": 112,
+      "ProcessInfo": 24
+    },
+    "offsets": {
+      "Startup.stdin": 80,
+      "Startup.stdout": 88,
+      "Startup.stderr": 96,
+      "StartupEx.attributes": 104,
+      "ProcessInfo.pid": 16,
+      "ProcessInfo.tid": 20
+    }
+  },
+  "ancestry": {
+    "localSourcePins": {
+      "windows-checkpoint-job.py": "fbe22354ba41081ed8ed4770e9c658051f9d99bcff8a7237c13aa68022a0c3be",
+      "windows-checkpoint-job-benign.py": "c352dfa656312edcd26c9ffc64c493130c21758a84c85e2957c19d81666eba49",
+      "windows-checkpoint-job-tests.py": "c4a76b8e57d754408bcc5898ea814f14fbb74f3b05d93be8b57e57c1b7bf6ceb",
+      "windows-checkpoint-job-interface.json": "02c98757a50e902e932db9d481e6828df1161023289a82abdf59303223a6e28c"
+    },
+    "localActualManifestSha256": "1f23ae539c73b2dd85b2233dbd11e9b67c83f6bda93e4513311b4cf53e8fdad9",
+    "localActualReceiptSha256": "e005e5f264066f7f74360d91e57f448dc352a0d2e5a91909f5b75312ef0b4bb4",
+    "armCore": {
+      "runId": "40163826369",
+      "attempt": "1",
+      "head": "53fce7a09347132429424b61321f17fcf789b77c",
+      "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+      "image": "20261022.194.1"
+    }
+  },
+  "claims": {
+    "productionInterface": false,
+    "compiler": false,
+    "windowsArmKernelTested": false,
+    "signatureVerified": false,
+    "dynamicImportsComplete": false,
+    "setupCompatibility": null
+  }
+}

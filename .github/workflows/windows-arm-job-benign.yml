@@ -1,0 +1,285 @@
+name: Native Windows ARM benign Job diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-arm-job-benign-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  benign:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Execute the closed native ARM benign Job suite once
+        id: benign
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { execFile, spawn } from 'node:child_process';
+          import { promisify } from 'node:util';
+          import { constants } from 'node:fs';
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import { createHash, randomUUID } from 'node:crypto';
+
+          export const NAMES = Object.freeze(['windows-checkpoint-job.py', 'windows-checkpoint-job-benign.py', 'windows-checkpoint-job-tests.py', 'windows-checkpoint-job-interface.json']);
+          export const PROFILE_SHA = 'b57d74719436db5f8b62cc8853882b4219e7b975ead6ab39c93333d240f72940';
+          const execute = promisify(execFile);
+          const digest = (raw) => createHash('sha256').update(raw).digest('hex');
+          const fixed = (condition, code) => assert(condition, code);
+
+          export function authority(env, platform = process.platform, arch = process.arch) {
+            fixed(platform === 'win32' && arch === 'arm64', 'ARM_NATIVE_NODE');
+            fixed(env.GITHUB_ACTIONS === 'true' && env.RUNNER_ENVIRONMENT === 'github-hosted' && env.GITHUB_EVENT_NAME === 'workflow_dispatch', 'ARM_EVENT');
+            fixed(env.GITHUB_REPOSITORY === 'supermarsx/sortOfRemoteNG' && env.GITHUB_REPOSITORY_ID === '1010282954' && env.GITHUB_REPOSITORY_VISIBILITY === 'public', 'ARM_REPOSITORY');
+            fixed(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(env.CEF_DEFAULT_BRANCH ?? '') && !env.CEF_DEFAULT_BRANCH.includes('..'), 'ARM_BRANCH');
+            fixed(env.GITHUB_REF === `refs/heads/${env.CEF_DEFAULT_BRANCH}`, 'ARM_REF');
+            fixed(/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? '') && env.GITHUB_WORKFLOW_SHA === env.GITHUB_SHA, 'ARM_HEAD');
+            fixed(env.GITHUB_WORKFLOW_REF === `${env.GITHUB_REPOSITORY}/.github/workflows/windows-arm-job-benign.yml@${env.GITHUB_REF}`, 'ARM_WORKFLOW');
+            fixed(/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID ?? '') && /^[1-9][0-9]*$/.test(env.GITHUB_RUN_ATTEMPT ?? ''), 'ARM_RUN');
+            fixed(env.SystemRoot?.toLowerCase() === 'c:\windows', 'ARM_SYSTEM_ROOT');
+            return { repository: env.GITHUB_REPOSITORY, repositoryId: env.GITHUB_REPOSITORY_ID, head: env.GITHUB_SHA, ref: env.GITHUB_REF, workflowRef: env.GITHUB_WORKFLOW_REF, workflowSha: env.GITHUB_WORKFLOW_SHA, runId: env.GITHUB_RUN_ID, attempt: env.GITHUB_RUN_ATTEMPT, image: env.ImageVersion ?? null, nativeTarget: 'aarch64-pc-windows-msvc' };
+          }
+
+          export function profileFromBytes(raw) {
+            fixed(Buffer.isBuffer(raw) && raw.length > 0 && raw.length <= 16384 && digest(raw) === PROFILE_SHA, 'ARM_PROFILE_PIN');
+            const profile = JSON.parse(raw.toString('utf8'));
+            fixed(profile.schemaVersion === 1 && profile.target === 'aarch64-pc-windows-msvc' && profile.runner === 'windows-11-arm', 'ARM_PROFILE');
+            fixed(JSON.stringify(profile.sourceNames) === JSON.stringify(NAMES), 'ARM_SOURCE_NAMES');
+            return profile;
+          }
+
+          export function peArm64(raw) {
+            fixed(Buffer.isBuffer(raw) && raw.length >= 64 && raw.toString('ascii', 0, 2) === 'MZ', 'ARM_PE_DOS');
+            const offset = raw.readUInt32LE(60);
+            fixed(offset >= 64 && offset <= raw.length - 26 && raw.readUInt32LE(offset) === 0x4550 && raw.readUInt16LE(offset + 4) === 0xaa64 && raw.readUInt16LE(offset + 24) === 0x20b, 'ARM_PE_NATIVE');
+          }
+
+          export async function noLinks(input, api = fs) {
+            fixed(typeof input === 'string' && path.isAbsolute(input) && !input.includes('\0'), 'ARM_ABSOLUTE_PATH');
+            const resolved = path.resolve(input);
+            fixed((await api.realpath(resolved)).toLowerCase() === resolved.toLowerCase(), 'ARM_CANONICAL_PATH');
+            for (let current = resolved;; current = path.dirname(current)) {
+              const info = await api.lstat(current, { bigint: true });
+              fixed(!info.isSymbolicLink(), 'ARM_PATH_LINK');
+              if (path.dirname(current) === current) break;
+            }
+            return resolved;
+          }
+
+          const identity = (value) => [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs, value.nlink].map(String).join(':');
+          export async function heldBytes(file, maximum, api = fs, allowEmpty = false) {
+            await noLinks(file, api);
+            const original = await api.lstat(file, { bigint: true });
+            fixed(original.isFile() && original.nlink === 1n && (allowEmpty || original.size > 0n) && original.size <= BigInt(maximum), 'ARM_FILE_BOUND');
+            const handle = await api.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+            try {
+              const before = await handle.stat({ bigint: true });
+              fixed(identity(before) === identity(original), 'ARM_OPEN_IDENTITY');
+              const raw = Buffer.alloc(Number(before.size) + 1);
+              let count = 0;
+              while (count < raw.length) {
+                const { bytesRead } = await handle.read(raw, count, raw.length - count, count);
+                if (!bytesRead) break;
+                count += bytesRead;
+              }
+              fixed(count === Number(before.size) && identity(await handle.stat({ bigint: true })) === identity(before), 'ARM_FILE_CHANGED');
+              await noLinks(file, api);
+              fixed(identity(await api.lstat(file, { bigint: true })) === identity(before), 'ARM_FILE_REPLACED');
+              return raw.subarray(0, count);
+            } finally { await handle.close(); }
+          }
+
+          export async function pinnedTool(row, api = fs) {
+            fixed(row.path.startsWith('C:/hostedtoolcache/windows/Python/3.13.17/arm64/') && row.machine === 43620, 'ARM_TOOL_SCOPE');
+            const raw = await heldBytes(path.resolve(row.path), 8 * 1024 ** 2, api);
+            fixed(raw.length === row.bytes && digest(raw) === row.sha256, 'ARM_TOOL_PIN');
+            peArm64(raw);
+            return { bytes: raw.length, sha256: digest(raw), machine: 43620 };
+          }
+
+          export async function gitSources(head, git = execute, checkout = process.cwd()) {
+            const options = { cwd: checkout, encoding: 'buffer', maxBuffer: 1024 * 1024, timeout: 10000, windowsHide: true };
+            const actual = (await git('git', ['rev-parse', 'HEAD'], options)).stdout.toString().trim();
+            fixed(actual === head, 'ARM_CHECKOUT_HEAD');
+            await git('git', ['diff-index', '--quiet', 'HEAD', '--'], options);
+            const rows = {};
+            for (const name of NAMES) {
+              const source = `native/windows-job-benign/${name}`;
+              const { stdout } = await git('git', ['cat-file', 'blob', `${head}:${source}`], options);
+              fixed(Buffer.isBuffer(stdout) && stdout.length > 0 && stdout.length <= 1024 * 1024, 'ARM_GIT_BLOB_BOUND');
+              rows[name] = stdout;
+            }
+            profileFromBytes(rows[NAMES[3]]);
+            return rows;
+          }
+
+          export function childEnvironment(root) {
+            fixed(path.isAbsolute(root), 'ARM_CHILD_HOME');
+            // libuv adds missing required Windows variables from its own environment.
+            // Supply every required name explicitly, including otherwise unused identities.
+            return { SystemRoot: 'C:/Windows', WINDIR: 'C:/Windows', SYSTEMDRIVE: 'C:', PATH: 'C:/Windows/System32', HOMEDRIVE: path.parse(root).root.slice(0, 2), HOMEPATH: root.slice(2), LOGONSERVER: '', USERDOMAIN: '.', USERNAME: 'owned-benign', TEMP: path.join(root, 'tmp'), TMP: path.join(root, 'tmp'), USERPROFILE: path.join(root, 'home'), HOME: path.join(root, 'home'), PYTHONDONTWRITEBYTECODE: '1' };
+          }
+
+          // ChildProcess retains the Windows process handle in libuv; no PID/name lookup.
+          // An error after spawn must still join close. One cleanup timer, never reset.
+          export function supervise(child, maximum = 330000, cleanup = 30000, now = () => performance.now()) {
+            return new Promise((resolve) => {
+              const began = now();
+              let original = null, deadline = null, spawned = false, closed = false, killed = false;
+              let timer, cleanupTimer;
+              const finish = (code, signal, joined) => {
+                if (closed) return;
+                closed = true;
+                clearTimeout(timer); clearTimeout(cleanupTimer);
+                resolve({ code, signal, joined, spawned, killed, failure: original, elapsedMs: Math.max(0, Math.floor(now() - began)) });
+              };
+              const stop = (reason) => {
+                original ??= reason;
+                if (!spawned && !child.pid) { finish(null, null, true); return; }
+                if (deadline !== null) return;
+                deadline = now() + cleanup;
+                try { killed = child.kill('SIGKILL'); } catch { original ??= 'owned-stop-failed'; }
+                if (closed) return;
+                cleanupTimer = setTimeout(() => finish(null, null, false), Math.max(0, deadline - now()));
+              };
+              child.once('spawn', () => { spawned = true; });
+              child.on('error', () => stop('owned-child-error'));
+              child.once('close', (code, signal) => finish(code, signal, true));
+              timer = setTimeout(() => stop('host-deadline'), maximum);
+            });
+          }
+
+          export async function collectOwned(root, operationRoot, sourceNames, api = fs) {
+            const roots = [operationRoot], files = [], links = [];
+            const suite = JSON.parse((await heldBytes(path.join(operationRoot, 'actual-suite.json'), 4 * 1024 ** 2, api)).toString('utf8'));
+            fixed(suite.cases.length === 10, 'ARM_CASE_COUNT');
+            for (const row of suite.cases) {
+              const candidate = row.root;
+              fixed(path.dirname(candidate).toLowerCase() === path.join(root, '.artifacts').toLowerCase() && /^windows-checkpoint-benign-[a-f0-9-]{36}$/.test(path.basename(candidate)), 'ARM_ARTIFACT_SCOPE');
+              roots.push(candidate);
+            }
+            let bytes = 0, visits = 0;
+            const walk = async (directory) => {
+              await noLinks(directory, api);
+              for (const name of await api.readdir(directory)) {
+                fixed(++visits <= 1000, 'ARM_ARTIFACT_COUNT');
+                const file = path.join(directory, name), info = await api.lstat(file, { bigint: true });
+                fixed(!info.isSymbolicLink(), 'ARM_ARTIFACT_LINK');
+                if (info.isDirectory()) await walk(file);
+                else {
+                  const raw = await heldBytes(file, 4 * 1024 ** 2, api, true);
+                  bytes += raw.length; fixed(bytes <= 16 * 1024 ** 2, 'ARM_ARTIFACT_BYTES');
+                  files.push({ path: path.relative(root, file).split(path.sep).join('/'), bytes: raw.length, sha256: digest(raw) });
+                }
+              }
+            };
+            for (const directory of roots) await walk(directory);
+            return { files, bytes, links, sourceNames };
+          }
+
+          export function requireSuccess(operation, guard, suite, profile, supervision) {
+            fixed(supervision.joined && !supervision.failure && supervision.code === 0, 'ARM_SUPERVISION_FAILED');
+            fixed(operation.success === true && operation.childReaped === true && operation.childExit === 0 && operation.elapsedMs <= 300000, 'ARM_OPERATION_FAILED');
+            fixed(guard.success === true && guard.job.assignmentMode === 'creation-attribute' && guard.job.assignedAtCreationVerified === true && guard.job.jobHandleInheritable === false && guard.job.jobHandleInStdioAllowlist === false, 'ARM_OUTER_ASSIGNMENT');
+            fixed(suite.success === true && JSON.stringify(suite.cases.map((r) => r.name)) === JSON.stringify(profile.cases), 'ARM_CASE_SET');
+            for (const row of [{ job: guard.job }, ...suite.cases]) {
+              const job = row.job;
+              fixed(job.cleanupVerified === true && job.activeAtEnd === 0 && job.logReadersStopped === true && job.parentHandleClosed === true && (!job.started || job.rootReaped === true), 'ARM_CLEANUP');
+              if (job.policyReadback) fixed(job.policyReadback.flags === 8712 && job.policyReadback.cpuRate === 2500 && job.policyReadback.cpuFlags === 5 && job.policyReadback.activeProcessLimit === 8 && job.policyReadback.jobMemoryBytes === '536870912' && job.policyReadback.inheritedHandles === 3 && job.policyReadback.affinityChanged === false, 'ARM_POLICY');
+              if (row.name) fixed(row.expectation.expectedObservationVerified === true, 'ARM_EXPECTATION');
+            }
+            fixed(suite.survivors.length === 13 && suite.survivors.every((r) => ['gone', 'pid-reused-original-gone', 'exited'].includes(r.status)), 'ARM_SURVIVOR');
+            const parent = suite.cases.at(-1).parentDeath;
+            fixed(parent.ownerExit === 0, 'ARM_OWNER_EXIT');
+            for (const role of ['owner', 'child', 'grandchild']) fixed(parent[role].liveBeforeControllerExit === true && BigInt(parent[role].exitFiletime) >= BigInt(parent.controllerExitFiletime), 'ARM_PARENT_ORDER');
+          }
+
+          export async function run() {
+            const binding = authority(process.env);
+            const sources = await gitSources(binding.head), profile = profileFromBytes(sources[NAMES[3]]);
+            const toolBefore = { python: await pinnedTool(profile.python), pythonDll: await pinnedTool(profile.pythonDll) };
+            const temp = await noLinks(process.env.RUNNER_TEMP);
+            const root = path.join(temp, 'owned-windows-arm-job-' + randomUUID());
+            await fs.mkdir(root, { mode: 0o700 }); await noLinks(root);
+            fixed(typeof process.env.GITHUB_OUTPUT === 'string', 'ARM_ACTION_OUTPUT');
+            await fs.appendFile(process.env.GITHUB_OUTPUT, 'artifact-root=' + root + '\n');
+            const deployment = path.join(root, '.cache/windows-checkpoint-prototype');
+            await fs.mkdir(deployment, { recursive: true });
+            await fs.mkdir(path.join(root, '.artifacts'));
+            await fs.mkdir(path.join(root, 'home')); await fs.mkdir(path.join(root, 'tmp'));
+            await fs.mkdir(path.join(root, '.orchestration/logs'), { recursive: true });
+            const pins = {};
+            for (const name of NAMES) {
+              await fs.writeFile(path.join(deployment, name), sources[name], { flag: 'wx' });
+              pins[name] = { bytes: sources[name].length, sha256: digest(sources[name]) };
+            }
+            const rows = NAMES.map((name) => ({ path: '.cache/windows-checkpoint-prototype/' + name, ...pins[name] }));
+            const publish = (file, value) => fs.writeFile(file, JSON.stringify(value, null, 2) + '\n', { flag: 'wx' });
+            await publish(path.join(root, '.orchestration/logs/windows-checkpoint-job-prototype-final-hashes-20261025.json'), { files: rows });
+            await publish(path.join(root, 'authority.json'), { ...binding, sourcePins: pins, toolBefore, sourceOnlyAncestry: profile.ancestry, hostedBuild: false, nativeAcceptance: false });
+            const summary = { schemaVersion: 1, kind: 'sorng-native-arm-benign-job-run', success: false, binding, toolBefore, sourcePins: pins, runtimeKernelProof: false, compilerOrCefStarted: false, setupCompatibility: null };
+            let stdout, stderr;
+            try {
+              stdout = await fs.open(path.join(root, 'bootstrap-stdout.log'), 'wx');
+              stderr = await fs.open(path.join(root, 'bootstrap-stderr.log'), 'wx');
+              const child = spawn(profile.python.path, ['-I', '-B', path.join(deployment, NAMES[1]), '--suite', '--execute'], { cwd: root, env: childEnvironment(root), stdio: ['ignore', stdout.fd, stderr.fd], windowsHide: true });
+              summary.supervision = await supervise(child);
+              fixed(summary.supervision.joined, 'ARM_CHILD_NOT_JOINED');
+              await stdout.close(); stdout = null; await stderr.close(); stderr = null;
+              const artifacts = await fs.readdir(path.join(root, '.artifacts'));
+              // Ten case roots plus the one operation root; locate only the exact fixed operation receipt.
+              fixed(artifacts.length <= 11, 'ARM_ROOT_COUNT');
+              let operationRoot;
+              for (const name of artifacts) {
+                fixed(/^windows-checkpoint-benign-[a-f0-9-]{36}$/.test(name), 'ARM_ROOT_NAME');
+                const candidate = path.join(root, '.artifacts', name);
+                await noLinks(candidate);
+                try { await fs.lstat(path.join(candidate, 'operation.json')); fixed(!operationRoot, 'ARM_MULTIPLE_OPERATIONS'); operationRoot = candidate; }
+                catch (error) { if (error.code !== 'ENOENT') throw error; }
+              }
+              fixed(operationRoot, 'ARM_MISSING_OPERATION');
+              const read = async (name) => JSON.parse((await heldBytes(path.join(operationRoot, name), 4 * 1024 ** 2)).toString('utf8'));
+              const operation = await read('operation.json'), guard = await read('guard-result.json'), suite = await read('actual-suite.json'), abi = await read('abi.json');
+              summary.operationRoot = path.relative(root, operationRoot).split(path.sep).join('/');
+              summary.abi = abi; fixed(JSON.stringify(abi) === JSON.stringify(profile.abi), 'ARM_ABI_RECORD');
+              summary.toolAfter = { python: await pinnedTool(profile.python), pythonDll: await pinnedTool(profile.pythonDll) };
+              fixed(JSON.stringify(summary.toolAfter) === JSON.stringify(toolBefore), 'ARM_TOOL_POSTCHECK');
+              for (const name of NAMES) fixed(digest(await heldBytes(path.join(deployment, name), 1024 * 1024)) === pins[name].sha256, 'ARM_SOURCE_POSTCHECK');
+              summary.rawManifest = await collectOwned(root, operationRoot, NAMES);
+              await publish(path.join(root, 'raw-manifest.json'), summary.rawManifest);
+              requireSuccess(operation, guard, suite, profile, summary.supervision);
+              summary.runtimeKernelProof = true; summary.success = true;
+            } catch { summary.failure = 'ARM_BENIGN_DIAGNOSTIC_FAILED'; }
+            finally {
+              if (stdout) await stdout.close(); if (stderr) await stderr.close();
+              await publish(path.join(root, 'bootstrap-result.json'), summary);
+            }
+            fixed(summary.success, 'ARM_BENIGN_DIAGNOSTIC_FAILED');
+          }
+
+          // Closed production entry; tests load definitions only.
+          try { await run(); } catch { process.exitCode = 1; console.error('ARM_BENIGN_DIAGNOSTIC_FAILED'); }
+          NODE
+      - name: Retain original bounded Job and cleanup diagnostics
+        if: always() && steps.benign.outputs.artifact-root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: windows-arm-job-benign-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.benign.outputs.artifact-root }}
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: error
