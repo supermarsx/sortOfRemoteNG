@@ -100,6 +100,13 @@ test("authority independently handles real backslash and denies aliases and fore
 });
 
 test("profile binds actual historical bytes without repinning or treating mixed roles as execution approval", async () => {
+  assert.deepEqual(
+    await fs.readFile(
+      path.join(root, "native/windows-arm-native-tools/profile.json"),
+    ),
+    raw,
+    "the hash-pinned profile must retain its canonical bytes after checkout",
+  );
   assert.equal(digest(raw), mod.PROFILE_SHA);
   assert.equal(profile.files.length, 25);
   assert.equal(
