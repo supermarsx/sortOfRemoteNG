@@ -161,7 +161,7 @@ jobs:
           CEF_ENTRY: ${{ toJSON(matrix) }}
           CEF_BUNDLE: ${{ runner.temp }}/cef-native-bundle
         run: node scripts/cef-runtime-acceptance-ci.mjs download-owned
-      - name: Build native clients and execute real TLS and H2 security gates sequentially
+      - name: Build native clients and execute source-required TLS, H2 and H3 gates sequentially
         env:
           GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
           CEF_ENTRY: ${{ toJSON(matrix) }}
@@ -191,6 +191,7 @@ jobs:
             ${{ runner.temp }}/cef-native-acceptance/*.log
             ${{ runner.temp }}/cef-native-acceptance/tls/**
             ${{ runner.temp }}/cef-native-acceptance/http2-*/**
+            ${{ runner.temp }}/cef-native-acceptance/http3-*/**
           retention-days: 30
           if-no-files-found: warn
 
@@ -260,7 +261,7 @@ jobs:
           CEF_ENTRY: ${{ toJSON(matrix) }}
           CEF_BUNDLE: ${{ runner.temp }}/cef-native-bundle
         run: node scripts/cef-runtime-acceptance-ci.mjs download-owned
-      - name: Build native clients and execute real TLS and H2 security gates sequentially
+      - name: Build native clients and execute source-required TLS, H2 and H3 gates sequentially
         env:
           GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
           CEF_ENTRY: ${{ toJSON(matrix) }}
@@ -290,5 +291,6 @@ jobs:
             ${{ runner.temp }}/cef-native-acceptance/*.log
             ${{ runner.temp }}/cef-native-acceptance/tls/**
             ${{ runner.temp }}/cef-native-acceptance/http2-*/**
+            ${{ runner.temp }}/cef-native-acceptance/http3-*/**
           retention-days: 30
           if-no-files-found: warn
