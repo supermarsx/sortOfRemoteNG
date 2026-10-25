@@ -133,11 +133,34 @@ test("authority rejects foreign/private/non-main/old-head/nonmanual/input-bearin
     assert.throws(() => api.authority({ ...env, [key]: value }, event));
   for (const update of [
     { inputs: { arbitrary: "denied" } },
-    { inputs: null },
+    { inputs: [] },
+    { inputs: "" },
+    { inputs: 0 },
     { repository: { ...event.repository, private: true } },
     { repository: { ...event.repository, default_branch: "other" } },
   ])
     assert.throws(() => api.authority(env, { ...event, ...update }));
+  const missing = { ...event };
+  delete missing.inputs;
+  assert.throws(() => api.authority(env, missing));
+});
+
+test("official null and empty-object no-input dispatches both pass the actual inline run", async () => {
+  for (const inputs of [null, {}]) {
+    const f = fixture();
+    const result = await api.run(env, { ...event, inputs }, f.deps);
+    assert.equal(result.success, true);
+    assert.equal(result.postStarted, true);
+    assert.equal(f.calls.filter((x) => x.options.method === "POST").length, 1);
+  }
+  const missing = { ...event };
+  delete missing.inputs;
+  const f = fixture();
+  assert.equal(
+    (await api.run(env, missing, f.deps)).firstError,
+    "AUTHORITY_DENIED",
+  );
+  assert.equal(f.calls.length, 0);
 });
 
 test("exact POST body is only an unpublished technical prerelease against fixed e7", () => {

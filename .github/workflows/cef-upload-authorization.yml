@@ -41,7 +41,8 @@ jobs:
               /^[1-9][0-9]{0,15}$/.test(e.GITHUB_RUN_ID)&&/^[1-9][0-9]{0,5}$/.test(e.GITHUB_RUN_ATTEMPT)&&
               event?.repository?.id===Number(REPOSITORY_ID)&&event.repository.full_name===REPOSITORY&&
               event.repository.private===false&&event.repository.visibility==='public'&&event.repository.default_branch==='main'&&
-              event.inputs!==null&&typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&Object.keys(event.inputs).length===0,
+              Object.hasOwn(event,'inputs')&&(event.inputs===null||(typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&
+                Object.getPrototypeOf(event.inputs)===Object.prototype&&Object.keys(event.inputs).length===0)),
               'AUTHORITY_DENIED');
             return 'cef-upload-permission-probe-'+e.GITHUB_RUN_ID+'-'+e.GITHUB_RUN_ATTEMPT;
           }
