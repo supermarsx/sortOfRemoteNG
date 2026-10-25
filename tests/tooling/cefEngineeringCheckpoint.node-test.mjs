@@ -65,6 +65,8 @@ import {
   downloadHost,
   groupQuiet,
   processRows,
+  compileMonitorRecord,
+  compileMonitorDetails,
   observedLineage,
   sameObservedCohort,
   compileSlice,
@@ -6456,6 +6458,10 @@ async function compileSupervisorModel(options = {}) {
     userInfo: () => ({ uid: 10, username: "Model" }),
     hostname: () => "model.host",
     sisoLoggerIdentity,
+    compileMonitorDetails,
+    compileMonitorGuard: (ok, message, code) => {
+      if (!ok) throw compileMonitorRecord(new Error(message), code);
+    },
     compileWithin: within,
     checkpointLog: (sink, line) => (state.diagnostic = line),
     console: { error: () => {} },
@@ -6711,6 +6717,10 @@ test("fixed ps timeout kills only its creation-owned helper and cannot retain st
       return ps;
     },
     processRows,
+    compileMonitorRecord,
+    compileMonitorGuard: (ok, message, code) => {
+      if (!ok) throw compileMonitorRecord(new Error(message), code);
+    },
     setTimeout: (callback) => setTimeout(callback, 5),
     clearTimeout,
   };
@@ -7409,4 +7419,231 @@ test("actual R5 header patch reconstructs the exact new Mac LF postimage in an o
   git([...args, "--reverse", "--check", patch]);
   git([...args, "--reverse", patch]);
   assert.deepEqual(await readFile(file), original);
+});
+
+test("monitor process rows and lineage retain closed guard reasons without raw identities", () => {
+  const failures = [
+    [() => processRows("SECRET_PROCESS_ROW"), "PS_ROWS_SYNTAX"],
+    [() => processRows("1 0 secret-start"), "PS_ROWS_IDENTITY"],
+    [
+      () =>
+        processRows(
+          "1 0 Sun Oct 25 00:00:00 2026\n1 0 Sun Oct 25 00:00:00 2026",
+        ),
+      "PS_ROWS_IDENTITY",
+    ],
+    [
+      () =>
+        processRows(
+          Array.from(
+            { length: 32769 },
+            (_, i) => `${i + 1} 0 Sun Oct 25 00:00:00 2026`,
+          ).join("\n"),
+        ),
+      "PS_ROWS_COUNT",
+    ],
+    [() => observedLineage([], []), "OWN_SEED_BOUND"],
+    [
+      () =>
+        observedLineage(
+          [{ pid: 1, parent: 0, start: "different" }],
+          [{ pid: 1, start: "secret-old" }],
+        ),
+      "OWN_ROOT_REPLACED",
+    ],
+    [
+      () =>
+        observedLineage(
+          [
+            { pid: 1, parent: 0, start: "same" },
+            ...Array.from({ length: 4096 }, (_, i) => ({
+              pid: i + 2,
+              parent: 1,
+              start: "same",
+            })),
+          ],
+          [{ pid: 1, start: "same" }],
+        ),
+      "OWN_ACTIVE_BOUND",
+    ],
+  ];
+  for (const [run, code] of failures) {
+    assert.throws(run, (error) => {
+      const diagnostic = compileMonitorDetails(error);
+      assert.equal(diagnostic.code, code);
+      const raw = JSON.stringify(diagnostic);
+      assert(Buffer.byteLength(raw) <= 4096);
+      assert(!/SECRET|secret|different|same/.test(raw));
+      return true;
+    });
+  }
+  const marker = new Error("SECRET_UNCLASSIFIED_MESSAGE");
+  assert.deepEqual(compileMonitorDetails(marker), { code: "UNKNOWN" });
+  assert.equal(
+    compileMonitorRecord(marker, "not-allowlisted", {
+      snapshotChars: Infinity,
+      arbitrary: "SECRET",
+    }),
+    marker,
+  );
+  assert.deepEqual(compileMonitorDetails(marker), { code: "UNKNOWN" });
+  assert.equal(compileMonitorRecord(null, "PS_SPAWN"), null);
+});
+
+test("actual processSnapshot branches preserve original errors and closed numeric failure observations", async () => {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "checkpoint.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = (name) =>
+    ast.statements
+      .find((n) => ts.isFunctionDeclaration(n) && n.name?.text === name)
+      .getText(ast)
+      .replace(/^export /, "");
+  for (const mode of [
+    "success",
+    "spawn",
+    "reader",
+    "bound",
+    "exit",
+    "syntax",
+    "identity",
+    "deadline",
+    "abort",
+  ]) {
+    const ps = new EventEmitter();
+    ps.stdout = new PassThrough();
+    const marker = new Error("SECRET_PARSER_OR_PROVIDER_PATH");
+    const controller = new AbortController();
+    let kills = 0,
+      unrefs = 0;
+    ps.kill = () => {
+      kills++;
+      return true;
+    };
+    ps.unref = () => {
+      unrefs++;
+    };
+    const fakeSpawn = (file, args, options) => {
+      assert.equal(file, "/bin/ps");
+      assert.deepEqual(args, ["-axo", "pid=,ppid=,lstart="]);
+      assert.deepEqual(options.env, {
+        PATH: "/usr/bin:/bin",
+        LC_ALL: "C",
+        TZ: "UTC",
+      });
+      setImmediate(() => {
+        if (mode === "deadline") return;
+        if (mode === "abort") return controller.abort();
+        if (mode === "spawn") return ps.emit("error", marker);
+        if (mode === "reader") return ps.stdout.emit("error", marker);
+        if (mode === "bound")
+          return ps.stdout.write(Buffer.alloc(4 * 1024 ** 2 + 1, 65));
+        ps.stdout.write(
+          mode === "syntax"
+            ? "SECRET_RAW_ROW"
+            : mode === "identity"
+              ? "1 0 secret-start"
+              : "1 0 Sun Oct 25 00:00:00 2026",
+        );
+        ps.stdout.end();
+        ps.emit("close", mode === "exit" ? 7 : 0);
+      });
+      return ps;
+    };
+    const snapshot = new Function(
+      "assert",
+      "spawn",
+      "processRows",
+      "compileMonitorRecord",
+      "performance",
+      "setTimeout",
+      "clearTimeout",
+      body("compileMonitorGuard") +
+        "\nreturn (" +
+        body("processSnapshot") +
+        ")",
+    )(
+      assert,
+      fakeSpawn,
+      processRows,
+      compileMonitorRecord,
+      performance,
+      setTimeout,
+      clearTimeout,
+    );
+    const run = snapshot({
+      deadline: performance.now() + 100,
+      signal: controller.signal,
+    });
+    if (mode === "success") {
+      const rows = await run;
+      const facts = compileMonitorDetails(rows);
+      assert.equal(facts.code, "NONE");
+      assert.equal(facts.snapshotRows, 1);
+      assert.equal(facts.snapshotExitCode, 0);
+    } else {
+      const codes = {
+        spawn: "PS_SPAWN",
+        reader: "PS_STDOUT_READ",
+        bound: "PS_STDOUT_BOUND",
+        exit: "PS_EXIT_NONZERO",
+        syntax: "PS_ROWS_SYNTAX",
+        identity: "PS_ROWS_IDENTITY",
+        deadline: "PS_DEADLINE",
+        abort: "PS_ABORT",
+      };
+      await assert.rejects(run, (error) => {
+        if (["spawn", "reader"].includes(mode)) assert.equal(error, marker);
+        const facts = compileMonitorDetails(error);
+        assert.equal(facts.code, codes[mode]);
+        assert(Number.isSafeInteger(facts.snapshotElapsedMs));
+        assert(Number.isSafeInteger(facts.snapshotChars));
+        if (mode === "exit") assert.equal(facts.snapshotExitCode, 7);
+        assert(!JSON.stringify(facts).includes("SECRET"));
+        return true;
+      });
+    }
+    assert.equal(
+      kills,
+      ["reader", "bound", "deadline", "abort"].includes(mode) ? 1 : 0,
+    );
+    assert.equal(unrefs, kills);
+    ps.stdout.destroy();
+  }
+});
+
+test("monitor rejected promise is distinguished from an unjoined live task without changing primary denial", async () => {
+  const marker = compileMonitorRecord(
+    new Error("SECRET_MONITOR_ERROR"),
+    "PS_STDOUT_BOUND",
+    { snapshotChars: 4194305 },
+  );
+  const state = await compileSupervisorModel({
+    monitorError: true,
+    error: marker,
+  });
+  assert.equal(state.error, marker);
+  assert.equal(state.proofs, 0);
+  const facts = JSON.parse(state.diagnostic.split("compile-supervision=")[1]);
+  assert.equal(facts.failure, "UNCONFIRMED");
+  assert.equal(facts.failureStage, "monitor");
+  assert.equal(facts.monitorJoined, false);
+  assert.equal(facts.monitorSettled, true);
+  assert.equal(facts.monitorResult, "rejected");
+  assert.equal(facts.monitorFailure.code, "PS_STDOUT_BOUND");
+  assert.equal(facts.monitorFailure.snapshotOrdinal, 2);
+  assert.equal(facts.monitorFailure.snapshotChars, 4194305);
+  assert(Buffer.byteLength(JSON.stringify(facts.monitorFailure)) <= 4096);
+  assert(!/SECRET|pid|start/.test(JSON.stringify(facts.monitorFailure)));
 });
