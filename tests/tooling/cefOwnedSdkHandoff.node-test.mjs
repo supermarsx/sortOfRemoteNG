@@ -3396,6 +3396,7 @@ function linuxIsolatedFixture() {
     f.input.evidence = evidence();
   };
   addQuicheMetadataFixture(f);
+  addOutAliasesFixture(f);
   const complete = { ...f, refresh };
   refreshIsolatedCopyFacts(complete);
   return complete;
@@ -3961,14 +3962,32 @@ function refreshIsolatedCopyFacts(f) {
   c.files = c.entries.length;
   c.bytes = c.entries.reduce((n, r) => n + r.size, 0);
   c.inventorySha256 = identitySha256(c.entries);
+  c.aliasesSha256 = identitySha256(c.aliases);
+  c.excludedLogAliasesSha256 = identitySha256(c.excludedLogAliases);
+  c.completeTreeInventorySha256 = identitySha256({
+    files: c.entries,
+    directories: c.directories,
+    aliases: c.aliases,
+    excludedLogAliases: c.excludedLogAliases,
+  });
   for (const tree of LINUX_ISOLATED_COPY_TREES) {
     const files = c.entries.filter((x) => x.tree === tree),
-      directories = c.directories.filter((x) => x.tree === tree);
+      directories = c.directories.filter((x) => x.tree === tree),
+      aliases = c.aliases.filter((x) => x.tree === tree),
+      excludedLogAliases = c.excludedLogAliases.filter((x) => x.tree === tree);
     Object.assign(c.trees[tree], {
       files: files.length,
       bytes: files.reduce((n, r) => n + r.size, 0),
       directories: directories.length,
       inventorySha256: identitySha256({ files, directories }),
+      aliases: aliases.length,
+      excludedLogAliases: excludedLogAliases.length,
+      completeTreeInventorySha256: identitySha256({
+        files,
+        directories,
+        aliases,
+        excludedLogAliases,
+      }),
     });
   }
   Object.assign(w, {
@@ -4619,6 +4638,342 @@ function addQuicheMetadataFixture(f) {
     .filter((x) => x.tree === "net" && x.path.startsWith(prefix + "/"))
     .reduce((n, x) => n + x.size, 0);
 }
+
+const outAliasBase = "fb5c91b2895aa445d23aebf7f9e2189c-le64.cache-";
+const outLogLiteral =
+  "/work/tmp/siso.93e291ffbfc6.builder.log.INFO.20261024-064817.29784";
+
+function aliasMetadata(literal, dev, ino) {
+  return {
+    type: "symlink",
+    mode: 0o777,
+    nlink: 1,
+    uid: 10001,
+    gid: 10001,
+    size: Buffer.byteLength(literal),
+    dev,
+    ino,
+    mtimeNs: "1700000000000000000",
+    ctimeNs: "1700000000000000000",
+    literal,
+  };
+}
+
+function addOutAliasesFixture(f) {
+  // Public actual literals, synthetic identities and referent body. This fixture
+  // does not assert that the real cached referent has been opened or verified.
+  const c = f.records.copyManifest.facts,
+    bytes = Buffer.from("owned cache fixture\n"),
+    literal = outAliasBase + "12";
+  c.entries.push({
+    tree: "out",
+    path: "fontconfig_caches/" + literal,
+    size: bytes.length,
+    sha256: hash(bytes),
+    mode: 0o644,
+    mtimeNs: "1700000000000000000",
+    sourceDev: "1",
+    sourceIno: "85000",
+    targetDev: "2",
+    targetIno: "86000",
+    sourceNlink: 1,
+    targetNlink: 1,
+  });
+  c.directories.push({
+    tree: "out",
+    path: "fontconfig_caches",
+    mode: 0o755,
+    uid: 10001,
+    gid: 10001,
+  });
+  c.aliases = ["10", "11", "9"].map((n, i) => {
+    const sourceBefore = aliasMetadata(literal, "1", String(87000 + i));
+    return {
+      tree: "out",
+      path: "fontconfig_caches/" + outAliasBase + n,
+      literal,
+      sourceBefore,
+      sourceAfter: structuredClone(sourceBefore),
+      destination: aliasMetadata(literal, "2", String(88000 + i)),
+      targetPath: "fontconfig_caches/" + literal,
+      targetSize: bytes.length,
+      targetSha256: hash(bytes),
+    };
+  });
+  const sourceBefore = aliasMetadata(outLogLiteral, "1", "89000");
+  c.excludedLogAliases = [
+    {
+      tree: "out",
+      path: "siso.INFO",
+      literal: outLogLiteral,
+      sourceBefore,
+      sourceAfter: structuredClone(sourceBefore),
+      destinationAbsent: true,
+      reason: "temporary-siso-log-not-copied",
+    },
+  ];
+  c.outProjection =
+    "independent-regular-files-and-literal-aliases-with-declared-log-exclusion";
+  f.records.workspace.facts.capacityBeforeBytes += bytes.length;
+}
+
+test("isolated OUT actual alias literals require the new typed schema instead of the exact historical key-shape model", () => {
+  const f = linuxIsolatedFixture();
+  // Self-contained exact copyManifest key list and shape() body from helper
+  // raw SHA aabf6f774068453fb570bae41cfcdcc1c75a957b5d3cce9845c4420bc2e6d096.
+  // This models only historical closed-schema rejection, not its entire
+  // verifier. No historical Git object/fetch/full-history checkout is required.
+  const oldKeys = [
+    "limits",
+    "trees",
+    "entries",
+    "directories",
+    "bytes",
+    "files",
+    "inventorySha256",
+    "complete",
+    "unknownLinks",
+    "independentFiles",
+  ];
+  function oldShape(value, keys) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      Object.keys(value).length !== keys.length ||
+      keys.some((key) => !Object.hasOwn(value, key))
+    )
+      throw Error("Closed reviewed handoff fields required");
+  }
+  assert.throws(
+    () => oldShape(f.records.copyManifest.facts, oldKeys),
+    /Closed reviewed handoff fields required/,
+  );
+  assert.doesNotThrow(() =>
+    oldShape(
+      Object.fromEntries(
+        oldKeys.map((key) => [key, f.records.copyManifest.facts[key]]),
+      ),
+      oldKeys,
+    ),
+  );
+  assert.doesNotThrow(() =>
+    verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+  );
+  const legacy = linuxIsolatedFixture(),
+    c = legacy.records.copyManifest.facts;
+  for (const key of [
+    "aliases",
+    "aliasesSha256",
+    "excludedLogAliases",
+    "excludedLogAliasesSha256",
+    "completeTreeInventorySha256",
+    "outProjection",
+  ])
+    delete c[key];
+  legacy.refresh();
+  assert.throws(() =>
+    verifyOwnedHandoffEvidence(legacy.input, legacy.records, legacy.lock),
+  );
+});
+
+test("isolated OUT alias proof denies retargets, target substitutions, identity races and undisclosed exclusions", () => {
+  const mutations = [
+    (c) => c.aliases.pop(),
+    (c) => c.aliases.push(structuredClone(c.aliases[0])),
+    (c) => c.aliases.reverse(),
+    (c) => (c.aliases[0].tree = "net"),
+    (c) => (c.aliases[0].path += "x"),
+    (c) => (c.aliases[0].literal = "../outside"),
+    (c) => (c.aliases[0].targetPath = "outside"),
+    (c) => (c.aliases[0].targetSha256 = "0".repeat(64)),
+    (c) => c.aliases[0].targetSize++,
+    (c) =>
+      (c.entries = c.entries.filter((r) => r.path !== c.aliases[0].targetPath)),
+    (c) =>
+      (c.directories = c.directories.filter(
+        (r) => r.path !== "fontconfig_caches",
+      )),
+    (c) => c.aliases[0].sourceAfter.ino++,
+    (c) => (c.aliases[0].sourceAfter.literal = "other"),
+    (c) => (c.aliases[0].destination.type = "file"),
+    (c) => (c.aliases[0].destination.mode = 0o755),
+    (c) => (c.aliases[0].destination.uid = 0),
+    (c) => (c.aliases[0].destination.nlink = 2),
+    (c) => c.aliases[0].destination.size++,
+    (c) => (c.aliases[0].destination.literal = "other"),
+    (c) =>
+      (c.aliases[0].destination = structuredClone(c.aliases[0].sourceBefore)),
+    (c) =>
+      (c.aliases[1].destination = structuredClone(c.aliases[0].destination)),
+    (c) =>
+      (c.aliases[0].sourceBefore.type = c.aliases[0].sourceAfter.type = "file"),
+    (c) =>
+      (c.aliases[0].sourceBefore.mode = c.aliases[0].sourceAfter.mode = 0o755),
+    (c) => (c.aliases[0].sourceBefore.uid = c.aliases[0].sourceAfter.uid = 0),
+    (c) =>
+      (c.aliases[0].sourceBefore.nlink = c.aliases[0].sourceAfter.nlink = 2),
+    (c) => (c.aliases[0].destination.ino = c.entries[0].targetIno),
+    (c) =>
+      (c.entries.find((r) => r.path === c.aliases[0].targetPath).targetNlink =
+        2),
+    (c) =>
+      c.entries.push({ ...c.entries[0], tree: "out", path: c.aliases[0].path }),
+    (c) => (c.excludedLogAliases = []),
+    (c) => c.excludedLogAliases.push(structuredClone(c.excludedLogAliases[0])),
+    (c) => (c.excludedLogAliases[0].tree = "base"),
+    (c) => (c.excludedLogAliases[0].path = "siso.ERROR"),
+    (c) => (c.excludedLogAliases[0].literal = "new-compile-log"),
+    (c) => c.excludedLogAliases[0].sourceAfter.ino++,
+    (c) => (c.excludedLogAliases[0].destinationAbsent = false),
+    (c) => (c.excludedLogAliases[0].reason = "all-logs-skipped"),
+    (c) => (c.outProjection = "identical-whole-tree"),
+  ];
+  for (const [i, mutate] of mutations.entries()) {
+    const f = linuxIsolatedFixture();
+    mutate(f.records.copyManifest.facts);
+    refreshIsolatedCopyFacts(f);
+    assert.throws(
+      () => verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+      undefined,
+      `repinned alias mutation ${i} must fail`,
+    );
+  }
+  for (const key of [
+    "aliasesSha256",
+    "excludedLogAliasesSha256",
+    "completeTreeInventorySha256",
+  ]) {
+    const f = linuxIsolatedFixture();
+    f.records.copyManifest.facts[key] = "0".repeat(64);
+    f.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+});
+
+test(
+  "isolated OUT owned POSIX fixture preserves regular bytes and literal symlink types without following excluded targets",
+  {
+    timeout: 30000,
+    skip:
+      process.platform !== "linux"
+        ? "Linux-only R5 O_PATH/readlinkat fixture; portable schema checks still run"
+        : false,
+  },
+  async () => {
+    const script = String.raw`
+import os, stat, tempfile, pathlib, hashlib, json, shutil
+base='fb5c91b2895aa445d23aebf7f9e2189c-le64.cache-'
+literal=base+'12'
+log='/work/tmp/siso.93e291ffbfc6.builder.log.INFO.20261024-064817.29784'
+def meta(p):
+    s=p.lstat()
+    assert stat.S_ISLNK(s.st_mode) and s.st_nlink==1
+    fd=os.open(p,os.O_PATH|os.O_NOFOLLOW)
+    try:
+        held=os.fstat(fd)
+        assert (s.st_dev,s.st_ino,s.st_mode,s.st_size)==(held.st_dev,held.st_ino,held.st_mode,held.st_size)
+        raw=os.readlink('',dir_fd=fd)
+    finally:os.close(fd)
+    after=p.lstat()
+    assert (s.st_dev,s.st_ino,s.st_mtime_ns,s.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_mtime_ns,after.st_ctime_ns)
+    return dict(type='symlink',mode=stat.S_IMODE(s.st_mode),nlink=s.st_nlink,uid=s.st_uid,gid=s.st_gid,size=s.st_size,dev=str(s.st_dev),ino=str(s.st_ino),mtimeNs=str(s.st_mtime_ns),ctimeNs=str(s.st_ctime_ns),literal=raw)
+with tempfile.TemporaryDirectory(prefix='sorng-out-alias-owned-') as tmp:
+    root=pathlib.Path(tmp);src=root/'source';dst=root/'destination'
+    for p in (src,dst): (p/'fontconfig_caches').mkdir(parents=True)
+    data=b'owned physical fontconfig fixture\n';target=src/'fontconfig_caches'/literal
+    target.write_bytes(data);target.chmod(0o644)
+    for n in ('10','11','9'):os.symlink(literal,src/'fontconfig_caches'/(base+n))
+    os.symlink(log,src/'siso.INFO')
+    before={n:meta(src/'fontconfig_caches'/(base+n)) for n in ('10','11','9')}
+    log_before=meta(src/'siso.INFO');s=target.lstat()
+    assert stat.S_ISREG(s.st_mode) and s.st_nlink==1
+    assert sorted(p.name for p in (src/'fontconfig_caches').iterdir())==sorted([base+n for n in ('9','10','11','12')])
+    # Only the independent ordinary regular target is opened. Alias targets
+    # are never traversed, and the absolute excluded log target is untouched.
+    fd=os.open(target,os.O_RDONLY|os.O_NOFOLLOW)
+    out=dst/'fontconfig_caches'/literal
+    w=os.open(out,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    try:
+        raw=os.read(fd,1024);assert raw==data and os.read(fd,1)==b''
+        os.write(w,raw);os.fchmod(w,0o644)
+    finally:os.close(fd);os.close(w)
+    t=out.lstat();assert stat.S_ISREG(t.st_mode) and t.st_nlink==1
+    assert (s.st_dev,s.st_ino)!=(t.st_dev,t.st_ino)
+    assert target.read_bytes()==data and out.read_bytes()==data
+    rows=[]
+    for n in ('10','11','9'):
+        p=dst/'fontconfig_caches'/(base+n);os.symlink(literal,p)
+        after=meta(src/'fontconfig_caches'/(base+n));assert after==before[n]
+        d=meta(p);assert d['literal']==literal and (d['dev'],d['ino'])!=(after['dev'],after['ino'])
+        try:os.symlink(literal,p)
+        except FileExistsError:pass
+        else:raise AssertionError('destination overwrite')
+        rows.append(dict(tree='out',path='fontconfig_caches/'+base+n,literal=literal,sourceBefore=before[n],sourceAfter=after,destination=d,targetPath='fontconfig_caches/'+literal,targetSize=len(data),targetSha256=hashlib.sha256(data).hexdigest()))
+    assert not os.path.lexists(dst/'siso.INFO') and meta(src/'siso.INFO')==log_before
+    assert len(list((dst/'fontconfig_caches').iterdir()))==4
+    regular=dict(tree='out',path='fontconfig_caches/'+literal,size=len(data),sha256=hashlib.sha256(data).hexdigest(),mode=stat.S_IMODE(t.st_mode),mtimeNs=str(t.st_mtime_ns),sourceDev=str(s.st_dev),sourceIno=str(s.st_ino),targetDev=str(t.st_dev),targetIno=str(t.st_ino),sourceNlink=s.st_nlink,targetNlink=t.st_nlink)
+    print(json.dumps(dict(aliases=rows,regular=regular,log=dict(tree='out',path='siso.INFO',literal=log,sourceBefore=log_before,sourceAfter=meta(src/'siso.INFO'),destinationAbsent=True,reason='temporary-siso-log-not-copied'),physicalUid=os.getuid(),physicalGid=os.getgid(),targetBodiesOpenedThroughAlias=0,excludedTargetOperations=0,destinationPreexistenceDenied=True)))
+`;
+    const command = "python3",
+      args = ["-I", "-B", "-c", script],
+      { stdout } = await exec(command, args, {
+        timeout: 20000,
+        maxBuffer: 65536,
+        windowsHide: true,
+      }),
+      observed = JSON.parse(stdout),
+      f = linuxIsolatedFixture(),
+      c = f.records.copyManifest.facts;
+    assert.equal(observed.targetBodiesOpenedThroughAlias, 0);
+    assert.equal(observed.excludedTargetOperations, 0);
+    assert.equal(observed.destinationPreexistenceDenied, true);
+    assert(
+      observed.aliases.every(
+        (x) =>
+          x.sourceBefore.uid === observed.physicalUid &&
+          x.destination.uid === observed.physicalUid,
+      ),
+    );
+    // Physical POSIX types/literals/inodes/modes/hash are real; the verifier's
+    // UID10001 role is explicitly simulated. No chown or privileged action runs.
+    const role = (x) => ({ ...x, uid: 10001, gid: 10001 });
+    c.aliases = observed.aliases.map((x) => ({
+      ...x,
+      sourceBefore: role(x.sourceBefore),
+      sourceAfter: role(x.sourceAfter),
+      destination: role(x.destination),
+    }));
+    c.excludedLogAliases = [
+      {
+        ...observed.log,
+        sourceBefore: role(observed.log.sourceBefore),
+        sourceAfter: role(observed.log.sourceAfter),
+      },
+    ];
+    const previousTarget = c.entries.find(
+      (x) => x.path === observed.regular.path,
+    );
+    f.records.workspace.facts.capacityBeforeBytes +=
+      observed.regular.size - previousTarget.size;
+    c.entries = c.entries.filter((x) => x.path !== observed.regular.path);
+    c.entries.push(observed.regular);
+    // The surrounding init/other OUT rows remain synthetic; align their
+    // declared filesystem with the actual physical referent observation.
+    f.records.workspace.facts.init.result.directories.find(
+      (x) => x.name === "out",
+    ).dev = observed.regular.targetDev;
+    for (const row of c.entries.filter((x) => x.tree === "out"))
+      row.targetDev = observed.regular.targetDev;
+    refreshIsolatedCopyFacts(f);
+    assert.doesNotThrow(() =>
+      verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+    );
+    c.aliases[0].sourceAfter.ino = "999999999999";
+    refreshIsolatedCopyFacts(f);
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  },
+);
 
 test("isolated R5 copies exact pinned Quiche metadata with unchanged generic git denial", () => {
   const f = linuxIsolatedFixture();

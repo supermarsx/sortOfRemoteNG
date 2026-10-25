@@ -1882,6 +1882,12 @@ export const LINUX_ISOLATED_FACT_KEYS = Object.freeze({
     "complete",
     "unknownLinks",
     "independentFiles",
+    "aliases",
+    "aliasesSha256",
+    "excludedLogAliases",
+    "excludedLogAliasesSha256",
+    "completeTreeInventorySha256",
+    "outProjection",
   ],
   generation: ["packet", "metadata", "logs", "elapsedMs"],
   gn: [
@@ -3236,6 +3242,140 @@ function verifyLinuxIsolatedFacts({
     );
     dirPaths.add(row.tree + "/" + row.path);
   }
+  // OUT is a declared working-copy projection: regular files are copied
+  // independently, three literal fontconfig aliases are recreated, and only
+  // the exact historical temporary log alias is excluded. No target is read
+  // through a symlink and no later Siso log is authorized by this copy record.
+  const fontconfig = "fontconfig_caches/",
+    cacheBase = "fb5c91b2895aa445d23aebf7f9e2189c-le64.cache-",
+    literal = cacheBase + "12",
+    aliasPaths = ["10", "11", "9"].map((n) => fontconfig + cacheBase + n),
+    logLiteral =
+      "/work/tmp/siso.93e291ffbfc6.builder.log.INFO.20261024-064817.29784";
+  require(
+    copy.outProjection ===
+      "independent-regular-files-and-literal-aliases-with-declared-log-exclusion" &&
+      Array.isArray(copy.aliases) &&
+      copy.aliases.length === 3 &&
+      same(
+        copy.aliases.map((x) => x.path),
+        aliasPaths,
+      ) &&
+      Array.isArray(copy.excludedLogAliases) &&
+      copy.excludedLogAliases.length === 1 &&
+      copy.aliasesSha256 === identitySha256(copy.aliases) &&
+      copy.excludedLogAliasesSha256 ===
+        identitySha256(copy.excludedLogAliases) &&
+      copy.completeTreeInventorySha256 ===
+        identitySha256({
+          files: copy.entries,
+          directories: copy.directories,
+          aliases: copy.aliases,
+          excludedLogAliases: copy.excludedLogAliases,
+        }),
+  );
+  const linkMetadata = (row, expectedLiteral) => {
+    shape(row, [
+      "type",
+      "mode",
+      "nlink",
+      "uid",
+      "gid",
+      "size",
+      "dev",
+      "ino",
+      "mtimeNs",
+      "ctimeNs",
+      "literal",
+    ]);
+    require(
+      row.type === "symlink" &&
+        row.mode === 0o777 &&
+        row.nlink === 1 &&
+        row.uid === 10001 &&
+        row.gid === 10001 &&
+        row.size === Buffer.byteLength(expectedLiteral) &&
+        row.literal === expectedLiteral &&
+        id(row.dev) &&
+        id(row.ino) &&
+        /^-?[0-9]{1,24}$/.test(row.mtimeNs) &&
+        /^-?[0-9]{1,24}$/.test(row.ctimeNs),
+    );
+    return row.dev + ":" + row.ino;
+  };
+  const linkPaths = new Set(),
+    sourceLinkIds = new Set(),
+    targetLinkIds = new Set();
+  for (const row of copy.aliases) {
+    shape(row, [
+      "tree",
+      "path",
+      "literal",
+      "sourceBefore",
+      "sourceAfter",
+      "destination",
+      "targetPath",
+      "targetSize",
+      "targetSha256",
+    ]);
+    require(
+      row.tree === "out" &&
+        row.literal === literal &&
+        !paths.has("out/" + row.path) &&
+        !dirPaths.has("out/" + row.path) &&
+        dirPaths.has("out/fontconfig_caches") &&
+        row.targetPath === fontconfig + literal &&
+        same(row.sourceBefore, row.sourceAfter),
+    );
+    const sourceId = linkMetadata(row.sourceBefore, literal),
+      targetId = linkMetadata(row.destination, literal),
+      referent = copy.entries.find(
+        (x) => x.tree === "out" && x.path === row.targetPath,
+      );
+    require(
+      referent &&
+        row.sourceBefore.dev === referent.sourceDev &&
+        row.destination.dev === referent.targetDev &&
+        row.targetSize === referent.size &&
+        row.targetSha256 === referent.sha256 &&
+        !sourceIds.has(sourceId) &&
+        !targetIds.has(sourceId) &&
+        !sourceIds.has(targetId) &&
+        !targetIds.has(targetId) &&
+        sourceId !== targetId &&
+        !sourceLinkIds.has(sourceId) &&
+        !targetLinkIds.has(targetId),
+    );
+    sourceLinkIds.add(sourceId);
+    targetLinkIds.add(targetId);
+    linkPaths.add("out/" + row.path);
+  }
+  require([...sourceLinkIds].every((x) => !targetLinkIds.has(x)));
+  const log = copy.excludedLogAliases[0];
+  shape(log, [
+    "tree",
+    "path",
+    "literal",
+    "sourceBefore",
+    "sourceAfter",
+    "destinationAbsent",
+    "reason",
+  ]);
+  const logId = linkMetadata(log.sourceBefore, logLiteral);
+  require(
+    log.tree === "out" &&
+      log.path === "siso.INFO" &&
+      log.literal === logLiteral &&
+      same(log.sourceBefore, log.sourceAfter) &&
+      log.destinationAbsent === true &&
+      log.reason === "temporary-siso-log-not-copied" &&
+      !paths.has("out/siso.INFO") &&
+      !dirPaths.has("out/siso.INFO") &&
+      !sourceIds.has(logId) &&
+      !targetIds.has(logId) &&
+      !sourceLinkIds.has(logId) &&
+      !targetLinkIds.has(logId),
+  );
   const quicheHead = copy.entries.find(
     (row) => row.tree === "net" && row.path === quicheMetadata + "/HEAD",
   );
@@ -3295,7 +3435,11 @@ function verifyLinuxIsolatedFacts({
   for (const tree of LINUX_ISOLATED_COPY_TREES) {
     const summary = copy.trees[tree],
       files = copy.entries.filter((x) => x.tree === tree),
-      directories = copy.directories.filter((x) => x.tree === tree);
+      directories = copy.directories.filter((x) => x.tree === tree),
+      aliases = copy.aliases.filter((x) => x.tree === tree),
+      excludedLogAliases = copy.excludedLogAliases.filter(
+        (x) => x.tree === tree,
+      );
     shape(summary, [
       "sourceRoot",
       "targetRoot",
@@ -3303,6 +3447,9 @@ function verifyLinuxIsolatedFacts({
       "bytes",
       "directories",
       "inventorySha256",
+      "aliases",
+      "excludedLogAliases",
+      "completeTreeInventorySha256",
     ]);
     require(
       summary.sourceRoot ===
@@ -3314,7 +3461,11 @@ function verifyLinuxIsolatedFacts({
         summary.files === files.length &&
         summary.bytes === files.reduce((n, r) => n + r.size, 0) &&
         summary.directories === directories.length &&
-        summary.inventorySha256 === identitySha256({ files, directories }),
+        summary.inventorySha256 === identitySha256({ files, directories }) &&
+        summary.aliases === aliases.length &&
+        summary.excludedLogAliases === excludedLogAliases.length &&
+        summary.completeTreeInventorySha256 ===
+          identitySha256({ files, directories, aliases, excludedLogAliases }),
     );
   }
   const copiedRoot = (path) =>
