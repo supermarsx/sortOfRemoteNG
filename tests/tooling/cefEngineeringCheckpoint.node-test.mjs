@@ -72,6 +72,7 @@ import {
   checkpointLinkRecipe,
   attestFrameworkLinks,
   removeQuiescentSisoLog,
+  observeThenRemoveSisoLog,
   selectedSdkPreflight,
   selectedSdkEnvironment,
   sdkLayoutRecord,
@@ -4084,9 +4085,8 @@ test("production CLI wires each post-slice boundary and pack failure observer wi
   );
   const positions = [
     /async \(\) => \{/,
-    /await removeQuiescentSisoLog\(out, compile,/,
+    /await observeThenRemoveSisoLog\(\s*out,\s*context\.logs,\s*compile,/,
     /await attestFrameworkLinks\(out\)/,
-    /await persistGeneratedLinkInventory\(\s*out,\s*context\.logs,?\s*\)/,
     /checkpointPhase\("pack"/,
   ].map((pattern) => {
     const found = pattern.exec(guarded);
@@ -4096,6 +4096,21 @@ test("production CLI wires each post-slice boundary and pack failure observer wi
   for (let i = 1; i < positions.length; i++)
     assert.ok(positions[i - 1] < positions[i]);
   assert.doesNotMatch(guarded, /JSON\.parse|\.\.\.compile/);
+  const helper = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const observer = helper.slice(
+    helper.indexOf("export async function observeThenRemoveSisoLog"),
+    helper.indexOf("export async function removeQuiescentSisoLog"),
+  );
+  assert.ok(
+    observer.indexOf("await observe(out, logs)") <
+      observer.indexOf("dependencies.remove ?? removeQuiescentSisoLog"),
+  );
 });
 
 test("post-slice link diagnostic preserves real rejected outside, loop and junction evidence without following", async (t) => {
@@ -4575,6 +4590,56 @@ test("Linux dependency role diagnostics are fixed and never emit paths, messages
   }
 });
 
+test("pre-rejection Siso observation survives the original guard error and reports only closed reasons", async () => {
+  const order = [];
+  const messages = [];
+  const original = new Error("Siso log PID not observed");
+  await assert.rejects(
+    observeThenRemoveSisoLog(
+      "out",
+      "logs",
+      {},
+      { log: (line) => messages.push(line) },
+      {
+        observe: async () => {
+          order.push("observe");
+          return { persisted: true, complete: true };
+        },
+        remove: async () => {
+          order.push("guard");
+          throw original;
+        },
+      },
+    ),
+    (error) => error === original,
+  );
+  assert.deepEqual(order, ["observe", "guard"]);
+  assert.ok(messages.every((line) => !line.includes("must-not-log")));
+  assert.ok(messages.some((line) => line.includes("SISO_PID_UNOBSERVED")));
+  const privateError = new Error("private absolute path/token");
+  await assert.rejects(
+    observeThenRemoveSisoLog(
+      "out",
+      "logs",
+      {},
+      {
+        log: () => {
+          throw privateError;
+        },
+      },
+      {
+        observe: async () => {
+          throw privateError;
+        },
+        remove: async () => {
+          throw original;
+        },
+      },
+    ),
+    (error) => error === original,
+  );
+});
+
 test("Mac supplemental compiler identity participates in fresh checkpoint identity before restore", async () => {
   const source = await readFile(
     new URL("../../scripts/cef-engineering-checkpoint.mjs", import.meta.url),
@@ -4587,6 +4652,10 @@ test("Mac supplemental compiler identity participates in fresh checkpoint identi
   assert.ok(
     source.indexOf("macMetalFingerprint(context.metal)") <
       source.indexOf('afterGnPhase("restore"'),
+  );
+  assert.match(
+    source,
+    /await observeThenRemoveSisoLog\(\s*out,\s*context\.logs,\s*compile,/,
   );
   const currentIdentity = { ...identity, tools: "a".repeat(64) };
   const altered = { ...currentIdentity, tools: "b".repeat(64) };

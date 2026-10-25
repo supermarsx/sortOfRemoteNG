@@ -903,6 +903,7 @@ export function validateManifest(value, expectedIdentity) {
 }
 const CHECKPOINT_PHASES = new Set([
   "compile-result",
+  "siso-log",
   "capacity",
   "graph-before",
   "pack",
@@ -930,6 +931,23 @@ export function checkpointLog(log, line) {
     /* Observation must not replace an operation result. */
   }
 }
+const SISO_GUARD_CODES = new Map([
+  ["Genuine in-process compile result required", "SISO_COMPILE_PROOF"],
+  ["Compiler wall clock moved backwards", "SISO_WALL_CLOCK"],
+  ["Compile output path differs", "SISO_OUTPUT_PATH"],
+  ["Siso writers must be quiescent", "SISO_WRITERS_ACTIVE"],
+  ["Compile output identity changed", "SISO_OUTPUT_IDENTITY"],
+  ["Owned Siso log alias required", "SISO_ALIAS_OWNERSHIP"],
+  ["Bounded Siso log alias required", "SISO_ALIAS_BOUND"],
+  ["Siso log outside actual temporary directory", "SISO_ALIAS_TEMP"],
+  ["Foreign Siso log identity", "SISO_ALIAS_FILENAME"],
+  ["Siso log PID not observed", "SISO_PID_UNOBSERVED"],
+  ["Invalid Siso UTC timestamp", "SISO_TIMESTAMP_INVALID"],
+  ["Siso timestamp outside actual compile window", "SISO_TIMESTAMP_WINDOW"],
+  ["Siso writers returned", "SISO_WRITERS_RETURNED"],
+  ["Siso log alias changed", "SISO_ALIAS_CHANGED"],
+  ["Siso alias still present", "SISO_ALIAS_STILL_PRESENT"],
+]);
 export async function checkpointPhase(phase, operation, log = console.log) {
   assert(CHECKPOINT_PHASES.has(phase), "Closed checkpoint phase required");
   checkpointLog(
@@ -944,15 +962,17 @@ export async function checkpointPhase(phase, operation, log = console.log) {
     );
     return result;
   } catch (error) {
-    const code = CHECKPOINT_CODES.has(error?.code)
-      ? error.code
-      : error?.message === "Checkpoint graph differs from verified fresh GN"
-        ? "GRAPH_MISMATCH"
-        : error?.message === "Checkpoint archive rejected"
-          ? "ARCHIVE_REJECTED"
-          : error?.message === "Archive deadline; partial is not admitted"
-            ? "ARCHIVE_DEADLINE"
-            : "CHECK_FAILED";
+    const code = SISO_GUARD_CODES.has(error?.message)
+      ? SISO_GUARD_CODES.get(error.message)
+      : CHECKPOINT_CODES.has(error?.code)
+        ? error.code
+        : error?.message === "Checkpoint graph differs from verified fresh GN"
+          ? "GRAPH_MISMATCH"
+          : error?.message === "Checkpoint archive rejected"
+            ? "ARCHIVE_REJECTED"
+            : error?.message === "Archive deadline; partial is not admitted"
+              ? "ARCHIVE_DEADLINE"
+              : "CHECK_FAILED";
     checkpointLog(
       log,
       `[cef-engineering-checkpoint] checkpoint stage=${phase} event=failed code=${code}`,
@@ -2256,6 +2276,45 @@ export async function attestFrameworkLinks(out) {
   }
   assert((await inventory()) === before, "Framework regular inventory changed");
   return { framework: "factory", targets };
+}
+
+// Observation has no admission authority and cannot replace the original
+// cleanup failure. It must precede every current Siso removal guard.
+export async function observeThenRemoveSisoLog(
+  out,
+  logs,
+  compile,
+  { log = console.log } = {},
+  dependencies = {},
+) {
+  const observe = dependencies.observe ?? persistGeneratedLinkInventory;
+  let diagnostic = { persisted: false, complete: false };
+  try {
+    const observed = await observe(out, logs);
+    diagnostic = {
+      persisted: observed?.persisted === true,
+      complete: observed?.complete === true,
+    };
+  } catch {
+    // Best-effort fixed observation only; preserve the actual cleanup result.
+  }
+  checkpointLog(
+    log,
+    `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(diagnostic)}`,
+  );
+  return checkpointPhase(
+    "siso-log",
+    () =>
+      (dependencies.remove ?? removeQuiescentSisoLog)(out, compile, {
+        beforeUnlink: (record) =>
+          writeFile(
+            path.join(logs, "siso-log-alias-before.json"),
+            canonical(record),
+            { flag: "wx" },
+          ),
+      }),
+    log,
+  );
 }
 
 export async function removeQuiescentSisoLog(

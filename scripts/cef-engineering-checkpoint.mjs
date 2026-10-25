@@ -47,7 +47,7 @@ import {
   normalizeSdkLinks,
   checkpointLinkRecipe,
   attestFrameworkLinks,
-  removeQuiescentSisoLog,
+  observeThenRemoveSisoLog,
   selectedSdkPreflight,
   logSdkLayout,
   withVerifiedGraph,
@@ -508,14 +508,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               identity.graph,
               async () => {
                 // The exact live compile result is retained; never decode/copy it.
-                const logAlias = await removeQuiescentSisoLog(out, compile, {
-                  beforeUnlink: (record) =>
-                    writeFile(
-                      path.join(context.logs, "siso-log-alias-before.json"),
-                      canonical(record),
-                      { flag: "wx" },
-                    ),
-                });
+                const logAlias = await observeThenRemoveSisoLog(
+                  out,
+                  context.logs,
+                  compile,
+                  {
+                    log: console.log,
+                  },
+                );
                 await writeFile(
                   path.join(context.logs, "siso-log-alias.json"),
                   canonical(logAlias),
@@ -523,14 +523,6 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                 );
                 if (profile.platform === "darwin")
                   await attestFrameworkLinks(out);
-                const linkDiagnostic = await persistGeneratedLinkInventory(
-                  out,
-                  context.logs,
-                );
-                checkpointLog(
-                  console.log,
-                  `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(linkDiagnostic)}`,
-                );
                 return checkpointPhase("pack", () =>
                   archiveCommand(
                     verified.python,
