@@ -62,6 +62,11 @@ import {
 import { importArguments } from "../../scripts/cef-owned-sdk-import.mjs";
 import {
   LINUX_INCREMENTAL_ORIGIN,
+  LINUX_ISOLATED_ORIGIN,
+  LINUX_ISOLATED_IDENTITY,
+  LINUX_ISOLATED_INPUT_RAW,
+  LINUX_ISOLATED_EVIDENCE,
+  LINUX_ISOLATED_LIMITS,
   LINUX_INCREMENTAL_IDENTITY,
   LINUX_INCREMENTAL_TOOLCHAIN_SHA,
   LINUX_PREDECESSOR_IDENTITY,
@@ -1757,4 +1762,98 @@ test("portable Linux incremental origin preserves exact new source, twelve roles
       validateLocalHandoff({ ...f.review, handoffSha256: hash(bytes) }, bytes),
     );
   }
+});
+
+test("portable isolated Linux preserves copied-workspace lineage and all seventeen separately reviewed raw records", () => {
+  const f = linuxIncrementalImportFixture();
+  f.review.origin = LINUX_ISOLATED_ORIGIN;
+  f.review.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+  f.review.originalInputsSourceLockRawSha256 = LINUX_ISOLATED_INPUT_RAW;
+  f.handoff.originalInputsSourceLockRawSha256 = LINUX_ISOLATED_INPUT_RAW;
+  f.handoff.provenance.originalInputsSourceLockRawSha256 =
+    LINUX_ISOLATED_INPUT_RAW;
+  f.handoff.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+  f.handoff.provenance.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+  for (const assets of [f.review.assets, f.handoff.assets])
+    assets.forEach((row) => {
+      row.name = row.name.replaceAll(
+        LINUX_INCREMENTAL_IDENTITY,
+        LINUX_ISOLATED_IDENTITY,
+      );
+    });
+  f.review.reviewBinding.evidencePins = Object.fromEntries(
+    LINUX_ISOLATED_EVIDENCE.map((role) => [
+      role,
+      {
+        path: role + ".json",
+        size: 100,
+        sha256: hash("SYNTHETIC ISOLATED " + role),
+      },
+    ]),
+  );
+  const p = f.handoff.provenance;
+  p.origin = LINUX_ISOLATED_ORIGIN;
+  p.reviewedEvidenceDigests = Object.fromEntries(
+    Object.entries(f.review.reviewBinding.evidencePins).map(([role, value]) => [
+      role,
+      value.sha256,
+    ]),
+  );
+  Object.assign(p, {
+    originalCacheReadonly: true,
+    workspaceCopied: true,
+    workspaceVolume: `sorng-cef-linux-isolated-${p.operation}-work`,
+    workspaceManifestSha256: p.reviewedEvidenceDigests.copyManifest,
+    generationRecordSha256: p.reviewedEvidenceDigests.generation,
+    gnRecordSha256: p.reviewedEvidenceDigests.gn,
+    compiledObjectSha256: "4".repeat(64),
+    isolatedBuild: true,
+  });
+  f.handoff.reviewBinding = clone(f.review.reviewBinding);
+  const encode = () => {
+    const bytes = Buffer.from(JSON.stringify(f.handoff));
+    f.review.handoffSha256 = hash(bytes);
+    return bytes;
+  };
+  assert.doesNotThrow(() => validateOwnedReview(f.review));
+  const value = validateLocalHandoff(f.review, encode());
+  assert.equal(value.provenance.workspaceCopied, true);
+  assert.equal(value.hostedBuild, false);
+  assert.equal(value.nativeAcceptance, "not-tested");
+  assert.equal(value.uploadAllowed, false);
+  for (const mutate of [
+    (p) => (p.originalCacheReadonly = false),
+    (p) => (p.workspaceCopied = false),
+    (p) => (p.workspaceVolume = "foreign"),
+    (p) => (p.workspaceManifestSha256 = "0".repeat(64)),
+    (p) => (p.generationRecordSha256 = p.gnRecordSha256),
+    (p) => (p.isolatedBuild = false),
+    (p) => (p.pristineSourceBuild = true),
+    (p) => (p.privatePath = "/home/user"),
+  ]) {
+    const before = clone(f.handoff.provenance);
+    mutate(f.handoff.provenance);
+    assert.throws(() => validateLocalHandoff(f.review, encode()));
+    f.handoff.provenance = before;
+  }
+  const tooLarge = clone(f.review);
+  tooLarge.reviewBinding.evidencePins.copyManifest.size =
+    LINUX_ISOLATED_LIMITS.copyManifestBytes + 1;
+  assert.throws(() => validateOwnedReview(tooLarge));
+  const legacy = clone(f.review);
+  legacy.origin = LINUX_INCREMENTAL_ORIGIN;
+  assert.throws(() => validateOwnedReview(legacy));
+  for (const identity of [
+    LINUX_INCREMENTAL_IDENTITY,
+    "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588",
+    WINDOWS_CAPSULE_IDENTITY,
+  ]) {
+    const wrong = clone(f.review);
+    wrong.sourceLockIdentity = identity;
+    assert.throws(() => validateOwnedReview(wrong));
+  }
+  const wrongRaw = clone(f.review);
+  wrongRaw.originalInputsSourceLockRawSha256 =
+    "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23";
+  assert.throws(() => validateOwnedReview(wrongRaw));
 });

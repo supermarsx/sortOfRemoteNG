@@ -25,7 +25,14 @@ import {
 import { inspectNativeBinary } from "../browser-runtime-package.mjs";
 import {
   LINUX_INCREMENTAL_ORIGIN,
+  LINUX_ISOLATED_ORIGIN,
+  LINUX_ISOLATED_EVIDENCE,
+  LINUX_ISOLATED_LIMITS,
+  isLinuxIncrementalOrigin,
+  validateLinuxIsolatedProvenance,
   LINUX_INCREMENTAL_IDENTITY,
+  LINUX_ISOLATED_IDENTITY,
+  LINUX_ISOLATED_INPUT_RAW,
   LINUX_INCREMENTAL_EVIDENCE,
   validateLinuxIncrementalProvenance,
   WINDOWS_INCREMENTAL_EVIDENCE,
@@ -64,6 +71,7 @@ const origins = {
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
+  "owned-linux-isolated-incremental-engine": "x86_64-unknown-linux-gnu",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
@@ -157,35 +165,44 @@ export function validateOwnedReview(review) {
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
   const names =
-    review.origin === LINUX_INCREMENTAL_ORIGIN
-      ? LINUX_INCREMENTAL_EVIDENCE
-      : isWindowsCapsuleOrigin(review.origin)
-        ? ownedCapsuleEvidence(review.origin)
-        : review.origin === "owned-windows-incremental-engine"
-          ? WINDOWS_INCREMENTAL_EVIDENCE
-          : review.origin === "existing-windows-package"
-            ? ["build"]
-            : [
-                "prepared",
-                "started",
-                "container",
-                "finished",
-                "producer",
-                "freshCheck",
-              ];
+    review.origin === LINUX_ISOLATED_ORIGIN
+      ? LINUX_ISOLATED_EVIDENCE
+      : review.origin === LINUX_INCREMENTAL_ORIGIN
+        ? LINUX_INCREMENTAL_EVIDENCE
+        : isWindowsCapsuleOrigin(review.origin)
+          ? ownedCapsuleEvidence(review.origin)
+          : review.origin === "owned-windows-incremental-engine"
+            ? WINDOWS_INCREMENTAL_EVIDENCE
+            : review.origin === "existing-windows-package"
+              ? ["build"]
+              : [
+                  "prepared",
+                  "started",
+                  "container",
+                  "finished",
+                  "producer",
+                  "freshCheck",
+                ];
   exact(review.reviewBinding.evidencePins, names);
   for (const [role, pin] of Object.entries(review.reviewBinding.evidencePins))
     rawPin(pin, ownedEvidenceLimit(review.origin, role));
-  if (review.origin === LINUX_INCREMENTAL_ORIGIN)
+  if (isLinuxIncrementalOrigin(review.origin))
     assert(
-      review.sourceLockIdentity === LINUX_INCREMENTAL_IDENTITY &&
+      review.sourceLockIdentity ===
+        (review.origin === LINUX_ISOLATED_ORIGIN
+          ? LINUX_ISOLATED_IDENTITY
+          : LINUX_INCREMENTAL_IDENTITY) &&
         review.originalInputsSourceLockRawSha256 ===
-          "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23" &&
+          (review.origin === LINUX_ISOLATED_ORIGIN
+            ? LINUX_ISOLATED_INPUT_RAW
+            : "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23") &&
         Object.values(review.reviewBinding.evidencePins).reduce(
           (n, p) => n + p.size,
           0,
         ) <=
-          80 * 1024 ** 2,
+          (review.origin === LINUX_ISOLATED_ORIGIN
+            ? LINUX_ISOLATED_LIMITS.totalEvidenceBytes
+            : 80 * 1024 ** 2),
       "Closed Linux incremental identity and evidence bound required",
     );
   if (isWindowsCapsuleOrigin(review.origin))
@@ -318,7 +335,9 @@ export function validateLocalHandoff(review, bytes) {
       value.provenance?.origin === review.origin,
     "Local handoff is not build/publication authority",
   );
-  if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
+  if (review.origin === LINUX_ISOLATED_ORIGIN) {
+    validateLinuxIsolatedProvenance(value.provenance, review);
+  } else if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
     validateLinuxIncrementalProvenance(value.provenance, review);
   } else if (review.origin === "existing-windows-package") {
     exact(value.provenance, [

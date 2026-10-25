@@ -159,3 +159,95 @@ Synthetic test fixtures exercise validation and archive transport only; they
 are not evidence of a successful incremental SDK. A genuine new build,
 independently reviewed handoff, native Linux acceptance and existing publication
 protections are still required.
+
+## Isolated Linux incremental workspace
+
+`owned-linux-isolated-incremental-engine` is a separate Linux x64-only origin
+for the exact `49f23608…` predecessor to `f4c94e74…` R5 source transition.
+The new source has all23 ordered patches, bridge revision5/ABI2/nine
+capabilities including `owned-http3`, and the derived POSIX LF bridge header
+`1352d790…` (8,886 bytes). Historical `9d0bc572…` R4 records cannot substitute. It keeps
+the original cache/SDK volume read-only and records a newly created operation
+volume with independent CEF and OUT files. It does not widen the existing
+`owned-linux-incremental-engine` or fresh-acquisition origins. In particular,
+the source-locked patch23 beforeimage is `0ccac4e8…` (18,399 bytes), and its
+real Git-derived postimage is `b9fd179f…` (18,719 bytes); a stale derived pin
+from an older controller cannot substitute for that postimage.
+
+The seventeen exact roles are the original twelve incremental roles plus
+`workspace`, `copyManifest`, `generation`, `gn` and `gnOutput`. JSON roles have
+the closed `sorng-owned-linux-isolated-ROLE` envelope. `compileOutput` and
+`gnOutput` contain original UTF-8 output, separately pinned. The full copy
+manifest is bounded to 128 MiB; generation records to 48 MiB; compiler output
+to 64 MiB; GN output to 16 MiB; other individual records to 1 MiB and all
+evidence to 272 MiB. Streamed, bounded, hashed bytes are the bytes parsed.
+Overbounds deny; they are not truncated or silently widened.
+
+The workspace record binds actual original-RO and new-volume mount identities,
+new-volume initialization, private HOME, copy count/bytes, capacity and the
+one operation clock. Initialization can create/chown only the six new empty
+subdirectories `base`, `net`, `network`, `cef`, `out` and `operation`, with its exact fixed code and sole new-volume mount;
+it has no original-volume or host-user-data mount. Copies must be independent
+regular files, not hardlinks or a write-through overlay. Every copied file's
+hash, size, mode, mtime and distinct source/destination identity is recorded;
+the complete copied tree is re-attested before the manifest is emitted.
+`copyManifest` distinguishes four fixed direct-copy trees: complete Chromium
+`base`, `net`, `services/network` and the selected OUT. Each has its own
+source/target roots, full file/directory inventory and digest. All nine new-file
+parents are inside these new copies. Unchanged Git/dependency/source paths
+outside the fixed roots remain read-only; unknown GN writes must fail.
+
+CEF is separately projected from canonical inputs and the reviewed old12
+reconstruction, with its own refs/config/index and a read-only original object
+alternates reference. It is explicitly **not a byte-identical cache copy**.
+The workspace binds old12/new23 CEF inventories, complete projected directory
+membership, separately owned Git metadata and actual seven-query equivalence.
+Original Git indexes/refs/config remain read-only. No arbitrary writable bind
+or tmpfs can open another source path.
+
+The aggregate ceilings are 256 GiB, 500,000 files, 100,000 directories and 8 GiB per copied
+file, shared across all direct copies, projected CEF and private Git metadata.
+Git metadata additionally has a 256-file/16 MiB bound. Projected CEF limits and
+seven retained metadata envelopes are not widened.
+Unknown link/type, changed identity, shared inode, excess tree or missing disk
+headroom denies. At least 100 GiB must remain after copying; existing configured
+compiler/security settings cannot be relaxed to fit.
+
+Current private-generation facts must independently reproduce the old12
+baseline, apply the exact eleven-patch suffix13–23, then reproduce source23
+outputs and all three header actions. The closed transition records all 69
+touched paths: 60 existing and 9 absent preimages, then 69 present postimages.
+These maps are derived by real private Git application from pinned public
+blobs and are checked against all raw patch pins, readiness and postchecks.
+The old one-file X11 transition cannot qualify an H3/lifetime build. These generation records are not borrowed from an earlier temporary diagnostic. All seven
+metadata files and six command logs are pinned; the new-stage names are
+`new23-hook` and `new23-output.json`. Output membership is derived from actual
+bound input inventories and the complete source23 CEF overlay. Earlier
+source13 generation counts, output digests and successful exits are not new23
+execution evidence. Only the two source-defined
+API JSON date comments and their exactly inherited API-header comment lines
+may have declared equivalence: original raw bytes remain retained, the actual
+hook-local date window is bound, and literal substitutions must reproduce the
+entire actual raw file. API/platform/sandbox hashes, other bytes, other headers,
+source inputs, GN args and security macros remain strict. A schema fixture is
+not genuine execution evidence.
+
+Actual GN output/graph and a uniquely identified source-to-object edge bind
+the changed `window_x11.cc`, with GN additionally binding the complete source
+postimage inventory; the copied object must change, local compile work
+must finish naturally with exit zero, and the final linked engine must have a
+new identity. Fresh distribution, strict archive roundtrip, complete SDK/ELF
+and five-export checks remain mandatory (including configure_datagrams). No old SDK or native result transfers.
+
+The finite work budget is 7,800 seconds plus one shared 30-second cleanup bound:
+admission/copy 1,800; generation 600; GN 900; compile/link 3,600; fresh packaging 900. Capacity, actual OUT types and admitted GN pin/stamp bindings can deny
+before any compiler. They are observed prerequisites, not assertions that the
+machine will fit or that warm objects guarantee a fast build. No automatic
+retry, deadline reset, stock runtime or sandbox bypass is authorized.
+
+Portable provenance adds only qualified copy/isolation facts and raw digests,
+including the copy manifest, generation/GN records and new object identity.
+It omits private paths and raw machine records. `hostedBuild:false`,
+`nativeAcceptance:not-tested`, `productionReady:false` and publication/upload
+denials remain unchanged. Genuine operator review, the existing all-nine native
+acceptance chain and all-six release/catalog protections are still required.

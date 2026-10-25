@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import {
   mkdtemp,
@@ -19,6 +19,17 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import {
   LINUX_INCREMENTAL_ORIGIN,
+  LINUX_ISOLATED_ORIGIN,
+  LINUX_ISOLATED_IDENTITY,
+  LINUX_ISOLATED_INPUT_RAW,
+  LINUX_ISOLATED_TRANSITION,
+  LINUX_ISOLATED_EVIDENCE,
+  LINUX_ISOLATED_LIMITS,
+  LINUX_ISOLATED_COPY_TREES,
+  LINUX_ISOLATED_INIT_ROOTS,
+  LINUX_ISOLATED_FACT_KEYS,
+  validateLinuxIsolatedProvenance,
+  linuxIsolatedInitCode,
   LINUX_INCREMENTAL_IDENTITY,
   LINUX_INCREMENTAL_EVIDENCE,
   LINUX_INCREMENTAL_TOOL_PINS,
@@ -381,12 +392,13 @@ function pe(symbols = [], library = false) {
   });
   return bytes;
 }
-function elfFixture() {
+function elfFixture(http3 = false) {
   const names = [
       BRIDGE_V2.symbol,
       BRIDGE_V2.factorySymbol,
       "cef_sorng_tls_apply_proxy_v2",
       "cef_sorng_tls_registry_stats_v2",
+      ...(http3 ? ["cef_sorng_tls_configure_datagrams_v2"] : []),
     ],
     bytes = Buffer.alloc(2048);
   bytes.writeUInt32LE(0x464c457f);
@@ -434,20 +446,21 @@ async function fixture(t, incremental = false) {
   const inputs = path.join(work, "inputs"),
     sourceInputs = path.join(
       root,
-      incremental === "linux-incremental"
-        ? "native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default-colormap"
-        : ["capsule", "operation2"].includes(incremental)
-          ? "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64"
-          : incremental
-            ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
-            : "native/cef-build-inputs/20261023-registration-retirement-lf",
+      incremental === "linux-isolated"
+        ? "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap"
+        : ["linux-incremental", "linux-isolated"].includes(incremental)
+          ? "native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default-colormap"
+          : ["capsule", "operation2"].includes(incremental)
+            ? "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64"
+            : incremental
+              ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
+              : "native/cef-build-inputs/20261023-registration-retirement-lf",
     );
   const lockBytes = await readFile(path.join(sourceInputs, "source-lock.json")),
     lock = JSON.parse(lockBytes),
-    target =
-      incremental === "linux-incremental"
-        ? "x86_64-unknown-linux-gnu"
-        : "x86_64-pc-windows-msvc",
+    target = ["linux-incremental", "linux-isolated"].includes(incremental)
+      ? "x86_64-unknown-linux-gnu"
+      : "x86_64-pc-windows-msvc",
     build = lock.builds.find((row) => row.target === target);
   await put(inputs, "source-lock.json", lockBytes);
   for (const item of [
@@ -466,21 +479,20 @@ async function fixture(t, incremental = false) {
     sdk = path.join(work, archiveRoot),
     bundle = path.join(work, "bundle"),
     evidence = path.join(work, "evidence");
-  const library =
-    incremental === "linux-incremental"
-      ? elfFixture()
-      : pe(
-          [
-            BRIDGE_V2.symbol,
-            BRIDGE_V2.factorySymbol,
-            "cef_sorng_tls_apply_proxy_v2",
-            "cef_sorng_tls_registry_stats_v2",
-            ...(incremental ? ["cef_sorng_tls_configure_datagrams_v2"] : []),
-          ],
-          true,
-        );
+  const library = ["linux-incremental", "linux-isolated"].includes(incremental)
+    ? elfFixture(incremental === "linux-isolated")
+    : pe(
+        [
+          BRIDGE_V2.symbol,
+          BRIDGE_V2.factorySymbol,
+          "cef_sorng_tls_apply_proxy_v2",
+          "cef_sorng_tls_registry_stats_v2",
+          ...(incremental ? ["cef_sorng_tls_configure_datagrams_v2"] : []),
+        ],
+        true,
+      );
   for (const [name, bytes] of Object.entries({
-    ...(incremental === "linux-incremental"
+    ...(["linux-incremental", "linux-isolated"].includes(incremental)
       ? { "Release/libcef.so": library, "Release/chrome-sandbox": elfFixture() }
       : {
           "Release/libcef.dll": library,
@@ -491,7 +503,7 @@ async function fixture(t, incremental = false) {
     "Resources/icudtl.dat": "fixture ICU",
     "Resources/locales/en-US.pak": "fixture locale",
     "include/cef_version.h":
-      `#define CEF_VERSION "${CEF_PIN.version}"\n#define CEF_COMMIT_HASH "${lock.upstream.cef.commit}"\n#define CEF_SANDBOX_COMPAT_HASH "${incremental === "linux-incremental" ? "" : CEF_PIN.sandboxCompat}"\n` +
+      `#define CEF_VERSION "${CEF_PIN.version}"\n#define CEF_COMMIT_HASH "${lock.upstream.cef.commit}"\n#define CEF_SANDBOX_COMPAT_HASH "${["linux-incremental", "linux-isolated"].includes(incremental) ? "" : CEF_PIN.sandboxCompat}"\n` +
       CEF_PIN.chromium
         .split(".")
         .map(
@@ -499,7 +511,7 @@ async function fixture(t, incremental = false) {
             `#define CHROME_VERSION_${["MAJOR", "MINOR", "BUILD", "PATCH"][index]} ${part}\n`,
         )
         .join(""),
-    "include/cef_api_versions.h": `#define CEF_API_VERSION_15400 15400\n#define CEF_API_VERSION_LAST CEF_API_VERSION_15400\n#if defined(${incremental === "linux-incremental" ? "OS_LINUX" : "OS_WIN"})\n#define CEF_API_HASH_15400 "${hash("fixture api").slice(0, 40)}"\n#endif\n`,
+    "include/cef_api_versions.h": `#define CEF_API_VERSION_15400 15400\n#define CEF_API_VERSION_LAST CEF_API_VERSION_15400\n#if defined(${["linux-incremental", "linux-isolated"].includes(incremental) ? "OS_LINUX" : "OS_WIN"})\n#define CEF_API_HASH_15400 "${hash("fixture api").slice(0, 40)}"\n#endif\n`,
     "cmake/fixture.cmake": "fixture cmake",
     "libcef_dll/fixture.cc": "fixture source",
     "CMakeLists.txt": "fixture CMake",
@@ -565,7 +577,10 @@ async function fixture(t, incremental = false) {
     },
     evidence: { build: pin("build.json", buildBytes) },
   };
-  if (incremental && !["capsule", "linux-incremental"].includes(incremental)) {
+  if (
+    incremental &&
+    !["capsule", "linux-incremental", "linux-isolated"].includes(incremental)
+  ) {
     const checkedManifest = JSON.parse(
       await readFile(path.join(bundle, "manifest.json"), "utf8"),
     );
@@ -603,8 +618,11 @@ async function fixture(t, incremental = false) {
       descriptorSha256: hash(descriptorBytes),
     };
   }
-  if (incremental === "linux-incremental") {
-    const f = linuxIncrementalFixture(),
+  if (["linux-incremental", "linux-isolated"].includes(incremental)) {
+    const f =
+        incremental === "linux-isolated"
+          ? linuxIsolatedFixture()
+          : linuxIncrementalFixture(),
       pack = f.records.package.facts,
       manifest = JSON.parse(await readFile(path.join(bundle, "manifest.json"))),
       engine = {
@@ -614,8 +632,8 @@ async function fixture(t, incremental = false) {
       },
       sandbox = {
         path: "chrome-sandbox",
-        size: library.length,
-        sha256: hash(library),
+        size: (await lstat(path.join(sdk, "chrome-sandbox"))).size,
+        sha256: hash(await readFile(path.join(sdk, "chrome-sandbox"))),
       };
     f.input.descriptorSha256 = hash(descriptorBytes);
     Object.assign(pack, {
@@ -637,19 +655,24 @@ async function fixture(t, incremental = false) {
       ),
     });
     Object.assign(f.records.postchecks.facts, { engine, sandbox });
+    if (incremental === "linux-isolated")
+      f.records.postchecks.facts.linkAfter = engine;
     for (const role of ["distribution", "preparation"])
       f.records[role].facts.filesVerified = pack.sdkFiles;
     f.records.preparation.facts.inventorySha256 = pack.assets.find(
       (x) => x.name === "manifest.json",
     ).sha256;
     f.input.python = value.python;
+    if (f.refresh) f.refresh();
     f.input.evidence = Object.fromEntries(
       await Promise.all(
         Object.entries(f.records).map(async ([role, row]) => {
           const bytes = Buffer.from(
               typeof row === "string" ? row : JSON.stringify(row),
             ),
-            name = role + (role === "compileOutput" ? ".log" : ".json");
+            name =
+              role +
+              (["compileOutput", "gnOutput"].includes(role) ? ".log" : ".json");
           await put(evidence, name, bytes);
           return [role, pin(name, bytes)];
         }),
@@ -2548,6 +2571,933 @@ function linuxIncrementalFixture() {
   return { input, records, lock, f };
 }
 
+// Synthetic records exercise the closed schema and raw relationships. They do
+// not represent an observed workspace, compilation, SDK, or native acceptance.
+function linuxIsolatedFixture() {
+  const f = linuxIncrementalFixture(),
+    r = f.records,
+    op = r.readiness.operation,
+    ctl = r.readiness.controllerCommit,
+    img = r.readiness.facts.image,
+    volume = `sorng-cef-linux-isolated-${op}-work`,
+    cache = "/work/build/cef-ci-qTkJO9/source/src",
+    sha = "2".repeat(64),
+    wrap = (x) => {
+      const rawUtf8 = JSON.stringify(x);
+      return {
+        rawUtf8,
+        size: Buffer.byteLength(rawUtf8),
+        sha256: hash(rawUtf8),
+      };
+    },
+    fp = (path, sha256 = sha, size = 1) => ({ path, sha256, size });
+  for (const [role, row] of Object.entries(r))
+    if (role !== "compileOutput")
+      row.kind = `sorng-owned-linux-isolated-${role}`;
+  const present = (rows) =>
+    rows
+      .filter((x) => x.kind === "file")
+      .map(({ kind, ...row }) => structuredClone(row));
+  r.readiness.facts.sourceBefore = present(LINUX_ISOLATED_TRANSITION.before);
+  r.readiness.facts.reconstruction.verifiedSourcePins = present(
+    LINUX_ISOLATED_TRANSITION.before,
+  );
+  r.postchecks.facts.sourceAfter = present(LINUX_ISOLATED_TRANSITION.after);
+  f.lock = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        root,
+        "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/source-lock.json",
+      ),
+    ),
+  );
+  r.apply.facts = {
+    patches: structuredClone(f.lock.patches.slice(12)),
+    before: structuredClone(LINUX_ISOLATED_TRANSITION.before),
+    after: structuredClone(LINUX_ISOLATED_TRANSITION.after),
+    onlyReviewedPatchesApplied: true,
+  };
+  r.preparation.facts.bridgeExports = 5;
+  for (const row of Object.values(r))
+    if (typeof row === "object")
+      row.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+  r.package.facts.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+  r.package.facts.originalInputsSourceLockRawSha256 = LINUX_ISOLATED_INPUT_RAW;
+  r.package.facts.assets.forEach((row) => {
+    row.name = row.name.replaceAll(
+      LINUX_INCREMENTAL_IDENTITY,
+      LINUX_ISOLATED_IDENTITY,
+    );
+  });
+  f.input.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+  r.readiness.facts.args.size = 646;
+  r.postchecks.facts.args.size = 646;
+  const envelope = (role, facts) => ({
+    schemaVersion: 1,
+    kind: `sorng-owned-linux-isolated-${role}`,
+    operation: op,
+    controllerCommit: ctl,
+    sourceLockIdentity: LINUX_ISOLATED_IDENTITY,
+    target: f.input.target,
+    facts,
+  });
+  const copyEntry = (path, sha256 = sha, size = 1, index = 1) => ({
+    tree: "out",
+    path,
+    size,
+    sha256,
+    mode: 420,
+    mtimeNs: "1000",
+    sourceDev: "1",
+    sourceIno: String(index),
+    targetDev: "2",
+    targetIno: String(index + 100),
+    sourceNlink: 1,
+    targetNlink: 1,
+  });
+  const object = "obj/cef/libcef_static/window_x11.o";
+  const entries = [
+    copyEntry("libcef.so", "1".repeat(64), 1, 1),
+    copyEntry("chrome_sandbox", sha, 1, 2),
+    copyEntry("build.ninja", sha, 1, 3),
+    copyEntry("args.gn", r.readiness.facts.args.sha256, 646, 4),
+    copyEntry(object, "3".repeat(64), 1, 5),
+  ].sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+  const selected = (path) =>
+    path.startsWith("base/")
+      ? ["base", path.slice(5)]
+      : path.startsWith("net/")
+        ? ["net", path.slice(4)]
+        : path.startsWith("services/network/")
+          ? ["network", path.slice(17)]
+          : null;
+  for (const [i, row] of LINUX_ISOLATED_TRANSITION.before.entries()) {
+    const loc = selected(row.path);
+    if (row.kind === "file" && loc)
+      entries.push({
+        ...copyEntry(loc[1], row.sha256, row.size, i + 100),
+        tree: loc[0],
+      });
+  }
+  entries.sort((a, b) =>
+    Buffer.compare(
+      Buffer.from(a.tree + "/" + a.path),
+      Buffer.from(b.tree + "/" + b.path),
+    ),
+  );
+  const directoryMap = new Map();
+  for (const row of entries) {
+    const parts = row.path.split("/");
+    parts.pop();
+    while (parts.length) {
+      const name = parts.join("/");
+      directoryMap.set(row.tree + "/" + name, {
+        tree: row.tree,
+        path: name,
+        mode: 493,
+        uid: 10001,
+        gid: 10001,
+      });
+      parts.pop();
+    }
+  }
+  const directories = [...directoryMap.values()].sort((a, b) =>
+    Buffer.compare(
+      Buffer.from(a.tree + "/" + a.path),
+      Buffer.from(b.tree + "/" + b.path),
+    ),
+  );
+  const sourceRoots = {
+    base: "base",
+    net: "net",
+    network: "services/network",
+    out: "out/Release_GN_x64",
+  };
+  const trees = Object.fromEntries(
+    LINUX_ISOLATED_COPY_TREES.map((tree) => {
+      const files = entries.filter((x) => x.tree === tree),
+        dirs = directories.filter((x) => x.tree === tree);
+      return [
+        tree,
+        {
+          sourceRoot:
+            cache.replace("/work/", "/opt/original-cache/") +
+            "/" +
+            sourceRoots[tree],
+          targetRoot: cache + "/" + sourceRoots[tree],
+          files: files.length,
+          bytes: files.reduce((n, x) => n + x.size, 0),
+          directories: dirs.length,
+          inventorySha256: identitySha256({ files, directories: dirs }),
+        },
+      ];
+    }),
+  );
+  const manifest = {
+    trees,
+    limits: {
+      files: 500000,
+      directories: 100000,
+      bytes: 256 * 1024 ** 3,
+      fileBytes: 8 * 1024 ** 3,
+      pathBytes: 1024,
+    },
+    entries,
+    directories,
+    bytes: entries.reduce((n, x) => n + x.size, 0),
+    files: entries.length,
+    inventorySha256: identitySha256(entries),
+    complete: true,
+    unknownLinks: 0,
+    independentFiles: true,
+  };
+  r.copyManifest = envelope("copyManifest", manifest);
+  const mounts = [
+    {
+      type: "volume",
+      source: r.readiness.facts.volume,
+      target: "/work",
+      readonly: true,
+      subpath: "",
+    },
+    {
+      type: "volume",
+      source: r.readiness.facts.volume,
+      target: "/opt/original-cache",
+      readonly: true,
+      subpath: "",
+    },
+    ...[
+      ["base", cache + "/base"],
+      ["net", cache + "/net"],
+      ["network", cache + "/services/network"],
+      ["cef", cache + "/cef"],
+      ["out", cache + "/out/Release_GN_x64"],
+      ["operation", `/work/linux-incremental-${op}`],
+    ].map(([subpath, target]) => ({
+      type: "volume",
+      source: volume,
+      target,
+      readonly: false,
+      subpath,
+    })),
+  ];
+  const initInspect = {
+    Id: "4".repeat(64),
+    Name: `/sorng-cef-linux-isolated-init-${op}`,
+    Image: img,
+    Config: {
+      User: "0:0",
+      Labels: { "com.sortofremoteng.isolated.operation": op },
+      Entrypoint: ["/usr/bin/python3"],
+      Cmd: ["-I", "-B", "-c", linuxIsolatedInitCode(op)],
+    },
+    HostConfig: {
+      NetworkMode: "none",
+      ReadonlyRootfs: true,
+      CapDrop: ["ALL"],
+      CapAdd: ["CHOWN"],
+      SecurityOpt: ["no-new-privileges:true"],
+      PidsLimit: 16,
+      NanoCpus: 1e9,
+      Memory: 64 * 1024 ** 2,
+      MemorySwap: 64 * 1024 ** 2,
+      Privileged: false,
+    },
+    State: { Running: false, ExitCode: 0 },
+    Mounts: [{ Type: "volume", Name: volume, Destination: "/owned", RW: true }],
+  };
+  const init = {
+    id: initInspect.Id,
+    name: initInspect.Name,
+    inspect: wrap(initInspect),
+    result: {
+      operation: op,
+      volume,
+      directories: LINUX_ISOLATED_INIT_ROOTS.map((name, i) => ({
+        name,
+        dev: "2",
+        ino: String(i + 1000),
+        uid: 10001,
+        gid: 10001,
+        mode: 448,
+      })),
+    },
+    exit: 0,
+    quiescent: true,
+  };
+  r.workspace = envelope("workspace", {
+    originalVolume: r.readiness.facts.volume,
+    workspaceVolume: volume,
+    originalReadonly: true,
+    independentCopies: true,
+    createdFresh: true,
+    init,
+    mounts,
+    copyManifestSha256: "",
+    copyFiles: manifest.files,
+    copyBytes: manifest.bytes,
+    copyDirectories: directories.length,
+    startWallMs: 100,
+    startMonotonicMs: 100,
+    workDeadlineWallMs: 7800100,
+    workBudgetMs: 7800000,
+    cleanupBudgetMs: 30000,
+    copyBudgetMs: 1800000,
+    generationBudgetMs: 600000,
+    gnBudgetMs: 900000,
+    capacityBeforeBytes: manifest.bytes + 108 * 1024 ** 3,
+    capacityAfterBytes: 108 * 1024 ** 3,
+    diskMinimumBytes: 100 * 1024 ** 3,
+    beginWallMs: 100,
+    endWallMs: 200,
+    elapsedMs: 100,
+  });
+  const inspected = {
+    Id: r.container.facts.id,
+    Name: `/sorng-cef-linux-isolated-${op}`,
+    Image: img,
+    Config: {
+      User: "10001:10001",
+      Labels: { "com.sortofremoteng.isolated.operation": op },
+      Entrypoint: ["/usr/bin/python3"],
+      Cmd: [
+        "-I",
+        "-B",
+        "/opt/incremental/guest.py",
+        "--execute-isolated-incremental",
+      ],
+    },
+    HostConfig: {
+      NetworkMode: "none",
+      ReadonlyRootfs: true,
+      Memory: 24 * 1024 ** 3,
+      MemorySwap: 24 * 1024 ** 3,
+      NanoCpus: 8e9,
+      PidsLimit: 512,
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges:true"],
+      Privileged: false,
+      Mounts: mounts.map((m) => ({
+        Type: "volume",
+        Source: m.source,
+        Target: m.target,
+        ReadOnly: m.readonly,
+        VolumeOptions: {
+          NoCopy: true,
+          ...(m.subpath ? { Subpath: m.subpath } : {}),
+        },
+      })),
+    },
+    Mounts: mounts.map((m) => ({
+      Type: "volume",
+      Name: m.source,
+      Destination: m.target,
+      RW: !m.readonly,
+    })),
+  };
+  for (const destination of [
+    "/opt/context",
+    "/opt/incremental",
+    "/opt/producer/checkout",
+  ]) {
+    inspected.Mounts.push({
+      Type: "bind",
+      Source: "/owned-fixture",
+      Destination: destination,
+      RW: false,
+    });
+    inspected.HostConfig.Mounts.push({
+      Type: "bind",
+      Source: "/owned-fixture",
+      Target: destination,
+      ReadOnly: true,
+    });
+  }
+  r.container.facts.name = inspected.Name;
+  r.container.facts.inspect = wrap(inspected);
+  const apiCached = Buffer.from(
+      "ewogICJoYXNoZXMiOiB7CiAgICAiOTk5OTk4IjogewogICAgICAiY29tbWVudCI6ICJOZXh0IHZlcnNpb24gbGFzdCB1cGRhdGVkIE9jdG9iZXIgMjQsIDIwMjYuIiwKICAgICAgImxpbnV4IjogIjVjODM0NGFlN2Q3ZjY0MjFiYzgwMTQwMWUzNWQ0ZGJmNmQzOGUxMDEiLAogICAgICAibWFjIjogImU1Y2QyODA0N2ZjMWY4YmJiOTcyZTU0NjkyZmM2NjUwNDBjN2YwMzQiLAogICAgICAic2FuZGJveF9jb21wYXQiOiAiMjY1ZmNhOTI5M2U2YjZlZiIsCiAgICAgICJ3aW5kb3dzIjogIjcyNmRjNzM3NjNkYjIyZWRiMjg5ZTQxYWYyNDIxYTIzMjYxN2Y3ZjQiCiAgICB9LAogICAgIjk5OTk5OSI6IHsKICAgICAgImNvbW1lbnQiOiAiRXhwZXJpbWVudGFsIHZlcnNpb24gbGFzdCB1cGRhdGVkIE9jdG9iZXIgMjQsIDIwMjYuIiwKICAgICAgImxpbnV4IjogIjQ4ODU0ODUwOTk4MTAzMTQzM2FmMjJhZjA1YzliNTllNmYwNzg4YTkiLAogICAgICAibWFjIjogImEwNzUxZTA1ZDYyZWIwYjU1MDAwYmI5M2VkNDQ5YzM5NTgyODY4NGUiLAogICAgICAic2FuZGJveF9jb21wYXQiOiAiMjY1ZmNhOTI5M2U2YjZlZiIsCiAgICAgICJ3aW5kb3dzIjogImYxNGQyMGE1YjVmMmM4OWU3ZmU5M2RlMjhiNjAyNzhiMzgzMDBmODQiCiAgICB9CiAgfQp9",
+      "base64",
+    ),
+    headerCached = Buffer.from(
+      "Ly8gQ29weXJpZ2h0IChjKSAyMDI2IE1hcnNoYWxsIEEuIEdyZWVuYmxhdHQuIEFsbCByaWdodHMgcmVzZXJ2ZWQuCi8vCi8vIFJlZGlzdHJpYnV0aW9uIGFuZCB1c2UgaW4gc291cmNlIGFuZCBiaW5hcnkgZm9ybXMsIHdpdGggb3Igd2l0aG91dAovLyBtb2RpZmljYXRpb24sIGFyZSBwZXJtaXR0ZWQgcHJvdmlkZWQgdGhhdCB0aGUgZm9sbG93aW5nIGNvbmRpdGlvbnMgYXJlCi8vIG1ldDoKLy8KLy8gICAgKiBSZWRpc3RyaWJ1dGlvbnMgb2Ygc291cmNlIGNvZGUgbXVzdCByZXRhaW4gdGhlIGFib3ZlIGNvcHlyaWdodAovLyBub3RpY2UsIHRoaXMgbGlzdCBvZiBjb25kaXRpb25zIGFuZCB0aGUgZm9sbG93aW5nIGRpc2NsYWltZXIuCi8vICAgICogUmVkaXN0cmlidXRpb25zIGluIGJpbmFyeSBmb3JtIG11c3QgcmVwcm9kdWNlIHRoZSBhYm92ZQovLyBjb3B5cmlnaHQgbm90aWNlLCB0aGlzIGxpc3Qgb2YgY29uZGl0aW9ucyBhbmQgdGhlIGZvbGxvd2luZyBkaXNjbGFpbWVyCi8vIGluIHRoZSBkb2N1bWVudGF0aW9uIGFuZC9vciBvdGhlciBtYXRlcmlhbHMgcHJvdmlkZWQgd2l0aCB0aGUKLy8gZGlzdHJpYnV0aW9uLgovLyAgICAqIE5laXRoZXIgdGhlIG5hbWUgb2YgR29vZ2xlIEluYy4gbm9yIHRoZSBuYW1lIENocm9taXVtIEVtYmVkZGVkCi8vIEZyYW1ld29yayBub3IgdGhlIG5hbWVzIG9mIGl0cyBjb250cmlidXRvcnMgbWF5IGJlIHVzZWQgdG8gZW5kb3JzZQovLyBvciBwcm9tb3RlIHByb2R1Y3RzIGRlcml2ZWQgZnJvbSB0aGlzIHNvZnR3YXJlIHdpdGhvdXQgc3BlY2lmaWMgcHJpb3IKLy8gd3JpdHRlbiBwZXJtaXNzaW9uLgovLwovLyBUSElTIFNPRlRXQVJFIElTIFBST1ZJREVEIEJZIFRIRSBDT1BZUklHSFQgSE9MREVSUyBBTkQgQ09OVFJJQlVUT1JTCi8vICJBUyBJUyIgQU5EIEFOWSBFWFBSRVNTIE9SIElNUExJRUQgV0FSUkFOVElFUywgSU5DTFVESU5HLCBCVVQgTk9UCi8vIExJTUlURUQgVE8sIFRIRSBJTVBMSUVEIFdBUlJBTlRJRVMgT0YgTUVSQ0hBTlRBQklMSVRZIEFORCBGSVRORVNTIEZPUgovLyBBIFBBUlRJQ1VMQVIgUFVSUE9TRSBBUkUgRElTQ0xBSU1FRC4gSU4gTk8gRVZFTlQgU0hBTEwgVEhFIENPUFlSSUdIVAovLyBPV05FUiBPUiBDT05UUklCVVRPUlMgQkUgTElBQkxFIEZPUiBBTlkgRElSRUNULCBJTkRJUkVDVCwgSU5DSURFTlRBTCwKLy8gU1BFQ0lBTCwgRVhFTVBMQVJZLCBPUiBDT05TRVFVRU5USUFMIERBTUFHRVMgKElOQ0xVRElORywgQlVUIE5PVAovLyBMSU1JVEVEIFRPLCBQUk9DVVJFTUVOVCBPRiBTVUJTVElUVVRFIEdPT0RTIE9SIFNFUlZJQ0VTOyBMT1NTIE9GIFVTRSwKLy8gREFUQSwgT1IgUFJPRklUUzsgT1IgQlVTSU5FU1MgSU5URVJSVVBUSU9OKSBIT1dFVkVSIENBVVNFRCBBTkQgT04gQU5ZCi8vIFRIRU9SWSBPRiBMSUFCSUxJVFksIFdIRVRIRVIgSU4gQ09OVFJBQ1QsIFNUUklDVCBMSUFCSUxJVFksIE9SIFRPUlQKLy8gKElOQ0xVRElORyBORUdMSUdFTkNFIE9SIE9USEVSV0lTRSkgQVJJU0lORyBJTiBBTlkgV0FZIE9VVCBPRiBUSEUgVVNFCi8vIE9GIFRISVMgU09GVFdBUkUsIEVWRU4gSUYgQURWSVNFRCBPRiBUSEUgUE9TU0lCSUxJVFkgT0YgU1VDSCBEQU1BR0UuCi8vCi8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQovLwovLyBUaGlzIGZpbGUgd2FzIGdlbmVyYXRlZCBieSB0aGUgbWFrZV9hcGlfdmVyc2lvbnNfaGVhZGVyLnB5IHRvb2wuIFZlcnNpb25zCi8vIGFyZSBtYW5hZ2VkIHVzaW5nIHRoZSB2ZXJzaW9uX21hbmFnZXIucHkgdG9vbC4gRm9yIHVzYWdlIGRldGFpbHMgc2VlCi8vIGh0dHBzOi8vY2hyb21pdW1lbWJlZGRlZC5naXRodWIuaW8vY2VmL2FwaV92ZXJzaW9uaW5nCi8vCgojaWZuZGVmIENFRl9JTkNMVURFX0NFRl9BUElfVkVSU0lPTlNfSF8KI2RlZmluZSBDRUZfSU5DTFVERV9DRUZfQVBJX1ZFUlNJT05TX0hfCgojaW5jbHVkZSAiaW5jbHVkZS9iYXNlL2NlZl9idWlsZC5oIgoKLy8gQWRkZWQgRmVicnVhcnkgMjEsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzMzAwIDEzMzAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDAgIjQ1ZDM5YzM2NjliYTc1NDY3ZTNlNjA5ZjYyNmMzMTUwNmMwZWFlMjIiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzMwMCAiODBjMGI1OWJhOWRkNzgzYWE3MWZhZTBhYTVmN2RhZDY0NjIwZThjOSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDAgIjI1MDhmM2YwYjBlNWRmYTE5MTAzNmZhNmMwNGY4ZGNmYTE4Yzk0YjkiCiNlbmRpZgoKLy8gQWRkZWQgRmVicnVhcnkgMjEsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzMzAxIDEzMzAxCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDEgIjcxMDk3MDIwMzhkNTE1MTJkMzVkZDJlZDc3MjMxZjkxMDBlMzgyMTQiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzMwMSAiZmRhNDBhNWRmNDQ2MjhjYWM1MGE1ODlmZjk3OWMwNzQ2MDExNTkxZSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDEgImFhMDczZGQxYzU4NjgxMjUwM2NhMjkzYzcxODM1ODQ2MGQ4YzJkZDYiCiNlbmRpZgoKLy8gQWRkZWQgRmVicnVhcnkgMjEsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzMzAyIDEzMzAyCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDIgIjE4Nzk5OTYxZjQ0NjFhOWNiYWUyYWVkODlhYzA0YjczYWI3YzM3ZjMiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzMwMiAiNGFhMjQ0NzBiYTNhNGJkOWMwNmJjMGU0YTIwMWI4OTYzOTRhODZiNSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDIgImQ1NTk3ZWJmYTMwMDgxOTUzNDI1ZTg5NzIwOWE4Mzg3Yjk1ODQyMDUiCiNlbmRpZgoKLy8gQWRkZWQgRmVicnVhcnkgMjEsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzMzAzIDEzMzAzCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDMgIjIwMDE2ZmQ2YTliODdlZjRjNTM5Y2QxZjQyYmYxY2EwOWI2OTAzY2EiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzMwMyAiZjJjZGNlMmI5YTRiNjM1YzI4YjViOTJjNDJjMzU2MjVhOTM3MzgwYyIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDMgImYzYTY5NmVlMzBjZTFlMDA0OTBhNThkZjAxNzM5M2MxMjZjODk3MDkiCiNlbmRpZgoKLy8gQWRkZWQgRmVicnVhcnkgMjEsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzMzA0IDEzMzA0CiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDQgIjE5YzAxNGFmMDA4MmFhOTAxMzk4ZTAwNjM4MWI2OTgwZTRmODA2ZTkiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzMwNCAiOTg5NjRjMzdiODkxN2Q4M2RhNGIxNzNlMjI5MDU1MDNkMzhhZDA4ZiIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTMzMDQgImYxYWJhYmI0ZmY1MWVjYmY3N2M0ODFjZWUzNzIxZWYwZWNhOWM4Y2EiCiNlbmRpZgoKLy8gQWRkZWQgRmVicnVhcnkgMjEsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzNDAwIDEzNDAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM0MDAgIjZhYjc0YjkwZTg4YjczOTdhYWI5OTExYmFhYzU0ODRmMTI0NjZlZWYiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzQwMCAiYmE1YWI3MWRiNGY5NDQ3ZjE5ZWI3YjE5NDMwMjQ5ODFjODgwNjRkZCIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM0MDAgImVhMjEwNmI1YmMwMTJjMjVkNzM1NTIxZTBjN2ZiNzE5ZDQzM2VhNGEiCiNlbmRpZgoKLy8gQWRkZWQgTWFyY2ggMTAsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzNDAxIDEzNDAxCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM0MDEgIjc1MTI1NTIwNGYwMDZiOGI4ODNhOGJhZjU1MmEyZGE3OTJmOGFhNDQiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzQwMSAiYjU0NzMyYjUyOGJjMjY2OTQ4MWVjMGNmMTdjN2I5N2IwMzM3MjBiOSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM0MDEgImIxNGJlZTJjMGZkMjUwZGE2N2ZhZWE0MjFmNjIwYjU4ZTVkZWE5YTIiCiNlbmRpZgoKLy8gQWRkZWQgTWFyY2ggMTIsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzNTAwIDEzNTAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM1MDAgIjNlNzhiNmZlNWZkMzFkNjkwNDk0OTk0NTA4NDlhZGExN2E3MjBhNTMiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzUwMCAiOTg2MjE3NzYzMWU4MDU5YTQ5N2Q2MDg2MDU4MTY4ZGQ0NzQ3N2FiNyIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM1MDAgIjViN2MyMjg0ZWQyNTQyY2Y2MjEyOTgxZDYyY2E5MTIyZmIyYTRlODgiCiNlbmRpZgoKLy8gQWRkZWQgQXByaWwgMDcsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzNjAwIDEzNjAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM2MDAgImE4ODMyNTE5YjRlYjA1ODU2N2Q2OGI2NWJlMWUxYzllODBhYWU1NjYiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzYwMCAiMjJjNzdkMWYyMzA1ZGU4YTYxNDdmMTRlNTJmMDc0YjRhNGU1MjIyYyIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM2MDAgImViMzUzYmE3YjhiOWJjYmVmODkwMjE3OTcxY2Q4ZWM0MWVmZWFhNzUiCiNlbmRpZgoKLy8gQWRkZWQgQXByaWwgMjIsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzNjAxIDEzNjAxCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM2MDEgIjExNmE0MTUzMDQ3ZWUxZWU2N2YxN2ZjOTM4ZjA4NGVlNzJiMjRlNTQiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzYwMSAiZmY4ODVmZTkyMWY5ZWFlMWE1Y2U2YTcxYjMwYjBjMzdiMzA2YmY1NiIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM2MDEgIjQwYjIyNGYyOTVhMjA2OTQyNDFjNWRiNDk3MjFiYzkwYTM3OTZmMzAiCiNlbmRpZgoKLy8gQWRkZWQgTWF5IDA3LCAyMDI1LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl8xMzcwMCAxMzcwMAojaWYgZGVmaW5lZChPU19XSU4pCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzEzNzAwICI2NWM3MTU3ZGQzZThlYmE5YmNjMzhkYjJiZDdmMjY1MDhjNzE3ZjNlIgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM3MDAgIjllODQwMDljOTJjMjVhYTgwOTM1NzI3YjVlNDUyNmIyMzQzOWE1NzUiCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzEzNzAwICJlNWFjMTJiMWJkODhiOWVjZTZjZWFhNTc4NDhhYWJhNjFhYjg1MjQyIgojZW5kaWYKCi8vIEFkZGVkIEp1bmUgMDIsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzEzODAwIDEzODAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM4MDAgIjFjZGUzZWMyN2Y5Mzc0N2JhNDJjMGYyYWEwMDQ2N2E1YTE2YWRmZDQiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzgwMCAiMDkxMTBjMWYzYmJlMGU4YThjMjZkZGY2ZGYzMzg4ZDczYTY1OTNkMSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTM4MDAgIjcyYzgzYTE0NTU3MDZjMGY5NjQ1MDVhNmVkY2JmMDBjNGEwMDU3NWQiCiNlbmRpZgoKLy8gQWRkZWQgSnVseSAwOSwgMjAyNS4KI2RlZmluZSBDRUZfQVBJX1ZFUlNJT05fMTM5MDAgMTM5MDAKI2lmIGRlZmluZWQoT1NfV0lOKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzkwMCAiNzA3NTA4YWI3MjA3MjExNmNlMDUwMGUzZDJiZGQ5ZjM0YjJkNWNkOCIKI2VsaWYgZGVmaW5lZChPU19NQUMpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzEzOTAwICI5YjNlZjMxNmQ5YTNmNTU0ODk5YzM2MTM5Y2ZjY2IxNzc2N2NhMjU0IgojZWxpZiBkZWZpbmVkKE9TX0xJTlVYKQojZGVmaW5lIENFRl9BUElfSEFTSF8xMzkwMCAiZmQwYjdmOGFiNTg2OTIyNDk3MjM0MDQ1NDY5MGE0MmU5MTkzOTQ4OCIKI2VuZGlmCgovLyBBZGRlZCBBdWd1c3QgMjUsIDIwMjUuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE0MDAwIDE0MDAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQwMDAgImE3NzgxMDUxMGZiZjBmZjVlZTk3NjhjZjU3Mjk0MWE5MzExYzMxNmMiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDAwMCAiYTI4MGUzNjgzMTBlOGVhNzVhMjFkYzdiYThmMTkyNjU3YjdjODQ1NSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQwMDAgImE5ZjU2MzBmNWE0ZmQ4ZjQzZTAwM2FmZjZmOGEyY2JhN2JjZmYxOGYiCiNlbmRpZgoKLy8gQWRkZWQgT2N0b2JlciAwNiwgMjAyNS4KI2RlZmluZSBDRUZfQVBJX1ZFUlNJT05fMTQxMDAgMTQxMDAKI2lmIGRlZmluZWQoT1NfV0lOKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDEwMCAiMjk0OGJlYzY4NWE0NjlhODI5ZDk5ZWIxZTZiMDhlZGUwZmY5YjE5NyIKI2VsaWYgZGVmaW5lZChPU19NQUMpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0MTAwICI5NTM3YmViOGQyODE3NWRjYTc3NTEwYzAzZjViZWE1NTYxN2E5ZjIyIgojZWxpZiBkZWZpbmVkKE9TX0xJTlVYKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDEwMCAiZjBmMjMxZWZhYjk0ZWI4MTgxMTQ0OTA4MDRiMTNmY2U2MWFiN2Y0ZSIKI2VuZGlmCgovLyBBZGRlZCBPY3RvYmVyIDE1LCAyMDI1LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl8xNDIwMCAxNDIwMAojaWYgZGVmaW5lZChPU19XSU4pCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0MjAwICIxY2UxZDA5NDVmYjkwNGNhNDhjMTZlMmMyYmRiYmYyNWJmYjdiMTJlIgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQyMDAgIjRlZjFjMTlhMDlhOGNhMmU1MjNmZWE0Zjc5MjE1YTY5MzRkZTEwNzEiCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0MjAwICIxODc2MWNkNDcyNTM5Mjg4M2UwZDc3YTFkYjUzYjA4YTRjYWU3YWM2IgojZW5kaWYKCi8vIEFkZGVkIE5vdmVtYmVyIDEwLCAyMDI1LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl8xNDMwMCAxNDMwMAojaWYgZGVmaW5lZChPU19XSU4pCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0MzAwICIxMjJiYWU2YWU5YTk5NjFmYjJmYzI3YmQxMGFlZGUxNTk4NThmODcwIgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQzMDAgIjVkNjExZjczOTZhYWYyZGVkZDBjMWU4MGM2ODAzNjBkOTk4Zjk3MWYiCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0MzAwICJhZDQ1OWNiNzU4ZTQ3ODNjNzc5NzcxZWQzNjE4NWU4YzlmZDQxMTMyIgojZW5kaWYKCi8vIEFkZGVkIERlY2VtYmVyIDE2LCAyMDI1LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl8xNDQwMCAxNDQwMAojaWYgZGVmaW5lZChPU19XSU4pCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0NDAwICI0MzBkMWM0ZTRjOTU4YjUzYThlMzgzZGIzYTVhMzgwMzdjYTlmNTFlIgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ0MDAgImZlMGRiZjRhMmNlM2I1YWNiMGFjYzA2YWFjNGQ3YWMzMDEwYzI0NzciCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0NDAwICJjNjRiM2YwZTVkZGYxMWYyZTdkMjk2YzQwNjdjZDg4N2FhNTA4NzhjIgojZW5kaWYKCi8vIEFkZGVkIEphbnVhcnkgMjAsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE0NTAwIDE0NTAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ1MDAgImZkMzExYWQ5YzAyZDIwNjNkMjBlNmZhMzYwMWQ2NjIyOTA4OWI2OWYiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDUwMCAiYjI1MTFiMDdlMTgyNjUzYmE1NThiZjE4NzNjYzQ1NzM4YmE1OThkYSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ1MDAgImY1N2U3MjJjYjcwYjViYTI1NjdhYWFhYmZkYTM1YWIyNGQxYmRmMTAiCiNlbmRpZgoKLy8gQWRkZWQgRmVicnVhcnkgMTcsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE0NjAwIDE0NjAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ2MDAgIjk5Njc2YThkNTg5NTFmZmIwYTI0ZjZjYmFlNmFhMDFmMzI0OWIyOWUiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDYwMCAiOGJhOTJkNGY2MzMwNmNlYTQ2YjU5OTJjZTY1YmYyY2QyYzc3NDBmZiIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ2MDAgIjdjZWM3NDI5NzJkNjczNWFhOGE5NTVmYzJlMDk4YTFmNjY2OWMzZDUiCiNlbmRpZgoKLy8gQWRkZWQgTWFyY2ggMjQsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE0NzAwIDE0NzAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ3MDAgIjFjZjMzZGJmMzU1ZWZmZmNkOTkzYWI0ZDJlYTM5MWU2NjMxZjk1ZjIiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDcwMCAiNGI1MTMwY2UyYWJlNDg5NzBhM2VkZjliM2QyZTU0MWMwMDdmNjkzOCIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ3MDAgImNhMDNlZTdhYTRkOWE3NjZkNDMzMDJjMDM2ODk2ODRkZTBiNzg5NjYiCiNlbmRpZgoKLy8gQWRkZWQgQXByaWwgMjIsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE0ODAwIDE0ODAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ4MDAgImE5ZmRkYjFmODZmMWZjNDI3YTZlZWUxOWEzNzBkYmVkYjE0NDY4Y2IiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNDgwMCAiYzRhMjViMGU3ZjBiZWI1MWI5ZjVkYjlmYjc1OTA0ZDExZGQ4NTZhMSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ4MDAgImFhMmRlNTRjMTQzZTlmZmZmZDE4MzE3N2YxNGMzMjU4MjBiNTkxNmEiCiNlbmRpZgoKLy8gQWRkZWQgTWF5IDIyLCAyMDI2LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl8xNDkwMCAxNDkwMAojaWYgZGVmaW5lZChPU19XSU4pCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0OTAwICJkZTUxMTRjMzRlNGMwYzNkNzI1MzEzYzM4ZjRlZDViMThjYmZkZWI0IgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTQ5MDAgIjIyZmQ4NDU1NTRlYjVlM2Y1NTE2OTY1MjEzZWZjYTk1MWEzZjgyNTYiCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE0OTAwICI3NzhmNjRlNThmZjAyNDg0MGUyOWZiNDliYjdiOWMzODE5ZjEyMTkxIgojZW5kaWYKCi8vIEFkZGVkIEp1bmUgMDQsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE1MDAwIDE1MDAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTUwMDAgIjcxMTQ2YjQzNTBhMDFkMzgwNWU3ZWE5OTBlYjAzNGU2ZWY0ZDUzZGIiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNTAwMCAiZTg1Yzg2OGFhOGE5NDdlMWU3Yzk5MDRjMDc0NWM2MGFlNDkwZmEwNSIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTUwMDAgIjIxMDc2NzcyNWE2ZmViMmU0YmVjZDM5NTZiNjQ4Y2FiNmEwMDY3MTIiCiNlbmRpZgoKLy8gQWRkZWQgSnVseSAxMCwgMjAyNi4KI2RlZmluZSBDRUZfQVBJX1ZFUlNJT05fMTUxMDAgMTUxMDAKI2lmIGRlZmluZWQoT1NfV0lOKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNTEwMCAiOWJmZDY0YmQwYjkyNDgxZDFjYzk3OGQ1NzE4MGJlZTJjNmJkNDYwNiIKI2VsaWYgZGVmaW5lZChPU19NQUMpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE1MTAwICJkZTFiMGZiMzdmMThmOWZmN2VlMWQ3YjFlMzIzMjQ3YzU1OWEzYmY4IgojZWxpZiBkZWZpbmVkKE9TX0xJTlVYKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNTEwMCAiYzE0MjFjYjMyZDM1ZmMzODM3Zjk5OTZlZGUwOGUyMjRkZTlkYjRlYiIKI2VuZGlmCgovLyBBZGRlZCBKdWx5IDE1LCAyMDI2LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl8xNTEwMSAxNTEwMQojaWYgZGVmaW5lZChPU19XSU4pCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE1MTAxICI1OTMzZTE4ZTFkMjg3OWUyMzIwNWM3MGM2MzdiZjgxN2MzZjMyNDU0IgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTUxMDEgIjJlMTM1OTVhMDk3MTI2MjY3OWJjZGMwMWM1ZDEzOTFiMTJiNWNmMGQiCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE1MTAxICI1YTMyMDQxY2YyZDdjNTBjNWZhYWQ4OTNjYWRkYTZjMGNiN2FlY2ZjIgojZW5kaWYKCi8vIEFkZGVkIEF1Z3VzdCAxNSwgMjAyNi4KI2RlZmluZSBDRUZfQVBJX1ZFUlNJT05fMTUyMDAgMTUyMDAKI2lmIGRlZmluZWQoT1NfV0lOKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNTIwMCAiMWRkZTNiYjU3MWE1ZWU1YWVkZDY0NmVkNDY5NGQ0YmM4ZDlhMmQ5NiIKI2VsaWYgZGVmaW5lZChPU19NQUMpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzE1MjAwICIxZTQ5ODE0OTlmZjBiYWNlOGRhMDMwYTIxYTE2YTY2MTNmNDY3MDNjIgojZWxpZiBkZWZpbmVkKE9TX0xJTlVYKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNTIwMCAiOWRkNzU5NjdjMzY5NGI4NzU1ZGMxNzMwYTAwOTdhNjNhMmViZmU0NCIKI2VuZGlmCgovLyBBZGRlZCBTZXB0ZW1iZXIgMDQsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzE1NDAwIDE1NDAwCiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTU0MDAgIjcyNmRjNzM3NjNkYjIyZWRiMjg5ZTQxYWYyNDIxYTIzMjYxN2Y3ZjQiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF8xNTQwMCAiZTVjZDI4MDQ3ZmMxZjhiYmI5NzJlNTQ2OTJmYzY2NTA0MGM3ZjAzNCIKI2VsaWYgZGVmaW5lZChPU19MSU5VWCkKI2RlZmluZSBDRUZfQVBJX0hBU0hfMTU0MDAgIjVjODM0NGFlN2Q3ZjY0MjFiYzgwMTQwMWUzNWQ0ZGJmNmQzOGUxMDEiCiNlbmRpZgoKLy8gTmV4dCB2ZXJzaW9uIGxhc3QgdXBkYXRlZCBPY3RvYmVyIDI0LCAyMDI2LgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl85OTk5OTggOTk5OTk4CiNpZiBkZWZpbmVkKE9TX1dJTikKI2RlZmluZSBDRUZfQVBJX0hBU0hfOTk5OTk4ICI3MjZkYzczNzYzZGIyMmVkYjI4OWU0MWFmMjQyMWEyMzI2MTdmN2Y0IgojZWxpZiBkZWZpbmVkKE9TX01BQykKI2RlZmluZSBDRUZfQVBJX0hBU0hfOTk5OTk4ICJlNWNkMjgwNDdmYzFmOGJiYjk3MmU1NDY5MmZjNjY1MDQwYzdmMDM0IgojZWxpZiBkZWZpbmVkKE9TX0xJTlVYKQojZGVmaW5lIENFRl9BUElfSEFTSF85OTk5OTggIjVjODM0NGFlN2Q3ZjY0MjFiYzgwMTQwMWUzNWQ0ZGJmNmQzOGUxMDEiCiNlbmRpZgoKLy8gRXhwZXJpbWVudGFsIHZlcnNpb24gbGFzdCB1cGRhdGVkIE9jdG9iZXIgMjQsIDIwMjYuCiNkZWZpbmUgQ0VGX0FQSV9WRVJTSU9OXzk5OTk5OSA5OTk5OTkKI2lmIGRlZmluZWQoT1NfV0lOKQojZGVmaW5lIENFRl9BUElfSEFTSF85OTk5OTkgImYxNGQyMGE1YjVmMmM4OWU3ZmU5M2RlMjhiNjAyNzhiMzgzMDBmODQiCiNlbGlmIGRlZmluZWQoT1NfTUFDKQojZGVmaW5lIENFRl9BUElfSEFTSF85OTk5OTkgImEwNzUxZTA1ZDYyZWIwYjU1MDAwYmI5M2VkNDQ5YzM5NTgyODY4NGUiCiNlbGlmIGRlZmluZWQoT1NfTElOVVgpCiNkZWZpbmUgQ0VGX0FQSV9IQVNIXzk5OTk5OSAiNDg4NTQ4NTA5OTgxMDMxNDMzYWYyMmFmMDVjOWI1OWU2ZjA3ODhhOSIKI2VuZGlmCgovLyBPbGRlc3Qgc3VwcG9ydGVkIENFRiB2ZXJzaW9uLgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl9NSU4gQ0VGX0FQSV9WRVJTSU9OXzEzMzAwCgovLyBOZXdlc3Qgc3VwcG9ydGVkIENFRiB2ZXJzaW9uLgojZGVmaW5lIENFRl9BUElfVkVSU0lPTl9MQVNUIENFRl9BUElfVkVSU0lPTl8xNTQwMAoKI2VuZGlmICAvLyBDRUZfSU5DTFVERV9DRUZfQVBJX1ZFUlNJT05TX0hfCg==",
+      "base64",
+    ),
+    apiPrivate = Buffer.from(
+      apiCached.toString().replaceAll("October 24, 2026", "October 25, 2026"),
+    ),
+    headerPrivate = Buffer.from(
+      headerCached
+        .toString()
+        .replaceAll("October 24, 2026", "October 25, 2026"),
+    );
+  const body = (b) => ({
+    base64: b.toString("base64"),
+    size: b.length,
+    sha256: hash(b),
+  });
+  assert.equal(
+    hash(apiCached),
+    "7ae7df88408c1920de87cb076a5abb9d6abaca311b06ecdf49c55c7262b86897",
+  );
+  assert.equal(
+    hash(headerCached),
+    "eff5e6316c47038e5fbe0ae85a5aab5acb3e574ab92be4f35b76b83a981fae93",
+  );
+  const projection = r.readiness.facts.sourceBefore
+    .filter((x) => x.path.startsWith("cef/"))
+    .map((x) => ({
+      path: x.path.slice(4),
+      size: x.size,
+      sha256: x.sha256,
+      mode: 420,
+    }));
+  for (let i = projection.length; i < 1897; i++)
+    projection.push({
+      path: `canonical/${String(i).padStart(4, "0")}.h`,
+      size: 1,
+      sha256: sha,
+      mode: 420,
+    });
+  projection.sort((a, b) =>
+    Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)),
+  );
+  const overlap = projection
+      .filter((x) => x.path !== "libcef/browser/native/window_x11.cc")
+      .slice(0, 31)
+      .map((x) => ({ ...x, path: "cef/" + x.path })),
+    cacheRows = [
+      ...overlap,
+      {
+        path: "cef/cef_api_untracked.json",
+        size: apiCached.length,
+        sha256: hash(apiCached),
+        mode: 420,
+      },
+    ];
+  for (let i = 0; i < 955; i++)
+    cacheRows.push({
+      path: `cef/generated/${String(i).padStart(4, "0")}.h`,
+      size: 1,
+      sha256: sha,
+      mode: 420,
+    });
+  cacheRows.push(
+    {
+      path: "out/gen/cef/include/cef_version.h",
+      size: 2385,
+      sha256:
+        "9c909033e029283aae0605c17b39742e11cd17fc1c8b927924bad8b6cd6c3413",
+      mode: 420,
+    },
+    {
+      path: "out/gen/cef/include/cef_api_versions.h",
+      size: headerCached.length,
+      sha256: hash(headerCached),
+      mode: 420,
+    },
+    {
+      path: "out/gen/cef/libcef_dll/cef_api_versions.inc",
+      size: 1366,
+      sha256:
+        "3270282c2fe64e6d1f013817e970b8c1c17c41595af5266ecfa1436c2540956b",
+      mode: 420,
+    },
+  );
+  const base = new Map(projection.map((x) => [x.path, x]));
+  for (const x of cacheRows)
+    if (x.path.startsWith("cef/"))
+      base.set(x.path.slice(4), { ...x, path: x.path.slice(4) });
+  const oldFiles = [...base.values()]
+    .map((x) =>
+      x.path === "cef_api_untracked.json"
+        ? { ...x, size: apiPrivate.length, sha256: hash(apiPrivate) }
+        : x,
+    )
+    .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+  const afterCef = new Map(
+    LINUX_ISOLATED_TRANSITION.after
+      .filter((x) => x.path.startsWith("cef/"))
+      .map((x) => [x.path.slice(4), x]),
+  );
+  const newFiles = oldFiles.map((x) =>
+    afterCef.has(x.path)
+      ? {
+          ...x,
+          size: afterCef.get(x.path).size,
+          sha256: afterCef.get(x.path).sha256,
+        }
+      : x,
+  );
+  assert.equal(oldFiles.length, 2853);
+  const window = {
+      beginLocal: "2026-10-25T12:00:00.000000",
+      endLocal: "2026-10-25T12:00:01.000000",
+    },
+    comments = ["Next version", "Experimental version"].map((label, i) => ({
+      pointer: `/hashes/${["999998", "999999"][i]}/comment`,
+      cached: `${label} last updated October 24, 2026.`,
+      private: `${label} last updated October 25, 2026.`,
+    })),
+    dateProof = {
+      policy: "cef-untracked-api-comment-dates-v1",
+      literalSubstitutionExact: true,
+      otherJsonFieldsEqual: true,
+      cached: { size: apiCached.length, sha256: hash(apiCached) },
+      private: { size: apiPrivate.length, sha256: hash(apiPrivate) },
+      hookLocalWindow: window,
+      comments,
+    };
+  const actions = [
+      {
+        path: "cef_version.h",
+        size: 2385,
+        sha256: cacheRows.at(-3).sha256,
+        mode: 420,
+        equal: true,
+      },
+      {
+        path: "cef_api_versions.h",
+        size: headerPrivate.length,
+        sha256: hash(headerPrivate),
+        mode: 420,
+        equal: false,
+      },
+      {
+        path: "cef_api_versions.inc",
+        size: 1366,
+        sha256: cacheRows.at(-1).sha256,
+        mode: 420,
+        equal: true,
+      },
+    ],
+    actionPacket = structuredClone(actions);
+  Object.assign(actionPacket[1], {
+    comparisonPassed: true,
+    rawByteEqual: false,
+    dateCommentEquivalence: {
+      literalSubstitutionExact: true,
+      jsonDateProofSha256: identitySha256(dateProof),
+      new23ApiBodySha256: hash(apiPrivate),
+    },
+  });
+  const admission = {
+      canonicalCef: {
+        files: 1897,
+        inventorySha256:
+          "57a70a22d2953d44c57ca84eb8e17fdf8d9a1f2ba57a31a004686eb4d710947f",
+        allCanonicalBytesMatched: true,
+      },
+    },
+    postInputs = {
+      admission,
+      toolFiles: r.readiness.facts.toolFiles,
+      runtimeFiles: [],
+    };
+
+  const queries = [
+    ["rev-parse", "HEAD"],
+    ["rev-list", "--count", "HEAD"],
+    ["rev-parse", "--abbrev-ref", "HEAD"],
+    ["log", "-n", "1", "--pretty=%d", "HEAD"],
+    ["cherry", "origin/master", "HEAD"],
+    ["ls-files", "--stage", "-z"],
+    [
+      "grep",
+      "--no-color",
+      "-n",
+      "-E",
+      "(CEF_NEXT|CEF_NEXT)|=next",
+      "--",
+      ":!include/cef_api_hash.h",
+      "*.h",
+      "*.cc",
+    ],
+  ].map((argv, i) => {
+    const stdout =
+      i === 0
+        ? "682c378d70d5780061e96644dca16ddd8fd157a9\n"
+        : "synthetic Git query";
+    return {
+      argv,
+      exit: 0,
+      stdoutBytes: Buffer.byteLength(stdout),
+      stdoutSha256: hash(stdout),
+      stderrBytes: 0,
+      stderrSha256: hash(""),
+      equal: true,
+    };
+  });
+  const metadata = {
+    "projection.json": wrap(projection),
+    "cached-generated.json": wrap(cacheRows),
+    "git-queries.json": wrap(queries),
+    "old12-output.json": wrap({
+      files: oldFiles,
+      apiUntrackedBodies: {
+        cached: body(apiCached),
+        private: body(apiPrivate),
+      },
+      hookLocalWindow: window,
+    }),
+    "new23-output.json": wrap({
+      files: newFiles,
+      apiUntrackedBodies: {
+        cached: body(apiCached),
+        private: body(apiPrivate),
+      },
+      hookLocalWindow: window,
+    }),
+    "actions.json": wrap({
+      files: actions,
+      apiVersionHeaderBodies: {
+        cached: body(headerCached),
+        private: body(headerPrivate),
+      },
+    }),
+    "post-inputs.json": wrap(postInputs),
+  };
+  const stageNames = [
+      "formatter-selection",
+      "resource-selection",
+      "old12-hook",
+      "new23-hook",
+      "version-header",
+      "api-headers",
+    ],
+    logs = Object.fromEntries(
+      stageNames.map((name) => [name + ".log", wrap("synthetic " + name)]),
+    );
+  for (const value of Object.values(logs)) {
+    value.rawUtf8 = JSON.parse(value.rawUtf8);
+    value.size = Buffer.byteLength(value.rawUtf8);
+    value.sha256 = hash(value.rawUtf8);
+  }
+  const generated = (files) => ({
+    files: files.length,
+    bytes: files.reduce((n, x) => n + x.size, 0),
+    inventorySha256: identitySha256(files),
+    comparisonPassed: true,
+    rawByteEqual: false,
+    dateCommentEquivalence: dateProof,
+  });
+  const packet = {
+    kind: "sorng-linux-isolated-generation-reproduction",
+    operation: op,
+    controllerCommit: ctl,
+    sourceLockIdentity: LINUX_ISOLATED_IDENTITY,
+    workspaceVolume: volume,
+    status: "reproduced",
+    phase: "complete",
+    failure: null,
+    postchecks: true,
+    cacheReadOnly: true,
+    sourceAccepted: false,
+    readinessPassed: false,
+    buildExecuted: false,
+    privatePatchApplied: true,
+    baseline: {
+      expectedFiles: 499,
+      expectedContentBytes: 18867290,
+      expectedInventorySha256:
+        "45911abc56f8c7f9680f80be8302d8a864d334a371f818d86e9930214c9d042f",
+      patchBaselineVerified: true,
+      orderEquivalent: true,
+      comparisons: Array.from({ length: 7 }, () => ({ setsEqual: true })),
+    },
+    projection: {
+      files: 1897,
+      bytes: projection.reduce((n, x) => n + x.size, 0),
+      inventorySha256: identitySha256(projection),
+    },
+    admission,
+    runtimeFiles: [],
+    oldGenerated: generated(oldFiles),
+    newGenerated: generated(newFiles),
+    actions: actionPacket,
+    postInputDigest: identitySha256(postInputs),
+    stages: stageNames.map((name) => ({
+      stage: name,
+      exit: 0,
+      elapsedMs: 1,
+      output: {
+        path: name + ".log",
+        sha256: logs[name + ".log"].sha256,
+        size: logs[name + ".log"].size,
+      },
+    })),
+    evidence: Object.entries(metadata).map(([name, x]) => ({
+      name,
+      size: x.size,
+      sha256: x.sha256,
+    })),
+    retentionFailure: null,
+    unconfirmedLog: null,
+  };
+
+  const gitConfig =
+    "[core]\nrepositoryformatversion=0\nfilemode=true\nbare=false\nautocrlf=false\nhooksPath=/dev/null\nfsmonitor=false\n";
+  const originalGit =
+    cache.replace("/work/", "/opt/original-cache/") + "/cef/.git";
+  const metaEntries = Object.entries({
+    HEAD: "ref: refs/heads/main\n",
+    config: gitConfig,
+    index: "synthetic Git index",
+    "objects/info/alternates": originalGit + "/objects\n",
+  })
+    .map(([path, body], i) => ({
+      path,
+      size: Buffer.byteLength(body),
+      sha256: hash(body),
+      mode: 420,
+      dev: "2",
+      ino: String(i + 6000),
+      nlink: 1,
+      uid: 10001,
+      gid: 10001,
+    }))
+    .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+  const cefDirs = new Set([
+    ".git",
+    ".git/objects",
+    ".git/objects/info",
+    ".git/refs",
+    ".git/refs/heads",
+    ".git/refs/remotes",
+  ]);
+  for (const name of [
+    ...oldFiles.map((x) => x.path),
+    ...newFiles.map((x) => x.path),
+    ...metaEntries.map((x) => ".git/" + x.path),
+  ]) {
+    const parts = name.split("/");
+    parts.pop();
+    while (parts.length) {
+      cefDirs.add(parts.join("/"));
+      parts.pop();
+    }
+  }
+  r.workspace.facts.cefProjection = {
+    method: "canonical-inputs-plus-reviewed-old12",
+    root: cache + "/cef",
+    sourceVolume: r.readiness.facts.volume,
+    byteIdenticalCopy: false,
+    old12InventorySha256: identitySha256(oldFiles),
+    new23InventorySha256: identitySha256(newFiles),
+    files: Math.max(oldFiles.length, newFiles.length),
+    bytes: Math.max(
+      ...[oldFiles, newFiles].map((rows) =>
+        rows.reduce((n, x) => n + x.size, 0),
+      ),
+    ),
+    directories: [...cefDirs].sort(),
+    gitMetadata: {
+      method: "private-refs-index-readonly-object-alternates",
+      root: cache + "/cef/.git",
+      originalRoot: originalGit,
+      identity: { dev: "2", ino: "5000", uid: 10001, gid: 10001, mode: 448 },
+      originalIdentity: {
+        dev: "1",
+        ino: "5000",
+        uid: 10001,
+        gid: 10001,
+        mode: 493,
+      },
+      entries: metaEntries,
+      bytes: metaEntries.reduce((n, x) => n + x.size, 0),
+      inventorySha256: identitySha256(metaEntries),
+    },
+  };
+  r.workspace.facts.capacityBeforeBytes +=
+    r.workspace.facts.cefProjection.bytes +
+    r.workspace.facts.cefProjection.gitMetadata.bytes;
+  r.generation = envelope("generation", {
+    packet: wrap(packet),
+    metadata,
+    logs,
+    elapsedMs: 100,
+  });
+  const gnOutput = "Done. synthetic GN graph\n";
+  r.gnOutput = gnOutput;
+  r.gn = envelope("gn", {
+    argv: [
+      cache + "/buildtools/linux64/gn",
+      "gen",
+      cache + "/out/Release_GN_x64",
+    ],
+    cwd: cache,
+    beginWallMs: 300,
+    endWallMs: 400,
+    elapsedMs: 100,
+    exit: 0,
+    outputSha256: hash(gnOutput),
+    outputBytes: Buffer.byteLength(gnOutput),
+    argsBefore: r.readiness.facts.args,
+    argsAfter: r.readiness.facts.args,
+    securityHeaderBefore: r.readiness.facts.securityHeader,
+    securityHeaderAfter: r.readiness.facts.securityHeader,
+    securityMacrosBefore: r.readiness.facts.securityMacros,
+    securityMacrosAfter: r.readiness.facts.securityMacros,
+    graphBefore: r.readiness.facts.graph,
+    graphAfter: fp("out/Release_GN_x64/build.ninja"),
+    objectEdge: {
+      ninjaFile: fp("obj/cef/libcef_static.ninja"),
+      edgeSha256: sha,
+      rule: "cxx",
+      source: "cef/libcef/browser/native/window_x11.cc",
+      output: object,
+      before: fp(object, "3".repeat(64)),
+    },
+    linkEdge: {
+      ninjaFile: fp("build.ninja"),
+      edgeSha256: sha,
+      rule: "solink",
+      source: "cef",
+      output: "libcef.so",
+      before: r.readiness.facts.cacheOutputs.engine,
+    },
+    sourceAfterSha256: identitySha256(r.postchecks.facts.sourceAfter),
+    generationSha256: "",
+  });
+  Object.assign(r.postchecks.facts, {
+    objectAfter: fp(object, "4".repeat(64), 2),
+    linkAfter: r.postchecks.facts.engine,
+    workspaceSha256: "",
+    generationSha256: "",
+    gnSha256: "",
+  });
+  f.input.origin = LINUX_ISOLATED_ORIGIN;
+  const refresh = () => {
+    const evidence = () =>
+      Object.fromEntries(
+        LINUX_ISOLATED_EVIDENCE.map((role) => [
+          role,
+          pin(
+            role +
+              (["compileOutput", "gnOutput"].includes(role) ? ".log" : ".json"),
+            Buffer.from(
+              ["compileOutput", "gnOutput"].includes(role)
+                ? r[role]
+                : JSON.stringify(r[role]),
+            ),
+          ),
+        ]),
+      );
+    r.workspace.facts.copyManifestSha256 = evidence().copyManifest.sha256;
+    r.gn.facts.generationSha256 = evidence().generation.sha256;
+    r.postchecks.facts.compileSha256 = evidence().compile.sha256;
+    r.postchecks.facts.workspaceSha256 = evidence().workspace.sha256;
+    r.postchecks.facts.generationSha256 = evidence().generation.sha256;
+    r.postchecks.facts.gnSha256 = evidence().gn.sha256;
+    f.input.evidence = evidence();
+  };
+  refresh();
+  return { ...f, refresh };
+}
+
+test("isolated Linux origin binds independent copied objects, generation raw bytes, GN, real new object/link and fresh package", () => {
+  const f = linuxIsolatedFixture(),
+    p = verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  assert.equal(p.origin, LINUX_ISOLATED_ORIGIN);
+  assert.equal(p.originalCacheReadonly, true);
+  assert.equal(p.workspaceCopied, true);
+  assert.equal(p.isolatedBuild, true);
+  assert.equal(p.pristineSourceBuild, false);
+  assert.equal(p.originalBuildReplayed, false);
+  assert.equal("nativeAcceptance" in p, false);
+  assert.equal(p.workspaceManifestSha256, f.input.evidence.copyManifest.sha256);
+  const review = {
+    origin: LINUX_ISOLATED_ORIGIN,
+    sourceLockIdentity: LINUX_ISOLATED_IDENTITY,
+    target: f.input.target,
+    engineSha256: p.engineSha256,
+    originalInputsSourceLockRawSha256: p.originalInputsSourceLockRawSha256,
+    reviewBinding: { evidencePins: f.input.evidence },
+  };
+  validateLinuxIsolatedProvenance(p, review);
+  assert.equal(Object.keys(LINUX_ISOLATED_FACT_KEYS).length, 15);
+});
+
+test("isolated Linux refuses shared/corrupt copy, old-volume writes, unsafe init, unknown mounts, incomplete generation/GN and stale object/link", () => {
+  const changes = [
+    (f) => (f.records.workspace.facts.originalReadonly = false),
+    (f) =>
+      (f.records.workspace.facts.workspaceVolume =
+        f.records.workspace.facts.originalVolume),
+    (f) =>
+      (f.records.copyManifest.facts.entries[0].targetIno =
+        f.records.copyManifest.facts.entries[0].sourceIno),
+    (f) => (f.records.copyManifest.facts.entries[0].sha256 = "0".repeat(64)),
+    (f) => (f.records.copyManifest.facts.complete = false),
+    (f) => (f.records.copyManifest.facts.unknownLinks = 1),
+    (f) => (f.records.workspace.facts.capacityAfterBytes = 100 * 1024 ** 3 - 1),
+    (f) => f.records.workspace.facts.workBudgetMs++,
+    (f) => (f.records.workspace.facts.mounts[0].readonly = false),
+    (f) => (f.records.workspace.facts.init.result.directories[0].uid = 0),
+    (f) => (f.records.generation.facts.elapsedMs = 600001),
+    (f) => f.records.gn.facts.argv.push("--args=unsafe"),
+    (f) => (f.records.gn.facts.exit = 1),
+    (f) =>
+      (f.records.gn.facts.sourceAfterSha256 =
+        "d624ed223238b3b999e85a994be5a3c1340dd87ce64e3d60094e7c87e4dbd19d"),
+    (f) =>
+      (f.records.postchecks.facts.objectAfter.sha256 =
+        f.records.gn.facts.objectEdge.before.sha256),
+    (f) =>
+      (f.records.postchecks.facts.linkAfter.sha256 =
+        f.records.gn.facts.linkEdge.before.sha256),
+    (f) => (f.records.finished.facts.processesLeft = 1),
+    (f) => (f.records.preparation.facts.archiveRoundtrip = false),
+  ];
+  for (const change of changes) {
+    const f = linuxIsolatedFixture();
+    change(f);
+    f.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+});
+
+test("isolated Linux raw generation changes cannot be disguised by recomputing outer reviewed pins", () => {
+  for (const mutate of [
+    (p) => (p.status = "blocked"),
+    (p) => (p.sourceAccepted = true),
+    (p) =>
+      (p.newGenerated.dateCommentEquivalence.private.sha256 = "0".repeat(64)),
+    (p) => (p.actions[1].equal = true),
+    (p) => (p.baseline.orderEquivalent = false),
+    (p) => (p.privatePatchApplied = false),
+  ]) {
+    const f = linuxIsolatedFixture(),
+      raw = JSON.parse(f.records.generation.facts.packet.rawUtf8);
+    mutate(raw);
+    const text = JSON.stringify(raw);
+    f.records.generation.facts.packet = {
+      rawUtf8: text,
+      size: Buffer.byteLength(text),
+      sha256: hash(text),
+    };
+    f.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+  const old = linuxIncrementalFixture();
+  assert.throws(() =>
+    verifyOwnedHandoffEvidence(
+      { ...old.input, origin: LINUX_ISOLATED_ORIGIN },
+      old.records,
+      old.lock,
+    ),
+  );
+  const current = linuxIsolatedFixture();
+  assert.throws(() =>
+    verifyOwnedHandoffEvidence(
+      { ...current.input, origin: LINUX_INCREMENTAL_ORIGIN },
+      current.records,
+      current.lock,
+    ),
+  );
+});
+
 test("Linux incremental binds separate predecessor and genuine new-operation schema without fresh-acquisition claims", () => {
   const f = linuxIncrementalFixture(),
     p = verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
@@ -2708,5 +3658,614 @@ test("Linux incremental distribution requires no-archive and no-docs before main
     g.records.distribution.facts.argv =
       g.records.distribution.facts.argv.filter((flag) => flag !== missing);
     assert.throws(() => verifyOwnedHandoffEvidence(g.input, g.records, g.lock));
+  }
+});
+
+test("isolated R5 transition rejects missing H3/lifetime, stale R4, absent-preimage lies and incomplete source proofs", () => {
+  const fixture = linuxIsolatedFixture();
+  assert.equal(fixture.lock.bridge.capabilities.length, 9);
+  assert.equal(fixture.records.preparation.facts.bridgeExports, 5);
+  assert.equal(fixture.records.apply.facts.before.length, 69);
+  assert.equal(
+    fixture.records.apply.facts.before.filter((x) => x.kind === "absent")
+      .length,
+    9,
+  );
+  const changes = [
+    (f) => {
+      f.input.sourceLockIdentity = LINUX_INCREMENTAL_IDENTITY;
+    },
+    (f) => {
+      f.lock.bridge.capabilities.pop();
+    },
+    (f) => {
+      f.records.apply.facts.patches.splice(0, 1);
+    },
+    (f) => {
+      f.records.apply.facts.patches.reverse();
+    },
+    (f) => {
+      f.records.apply.facts.before.find((x) => x.kind === "absent").kind =
+        "file";
+    },
+    (f) => {
+      f.records.apply.facts.before.find((x) => x.kind === "file").sha256 =
+        digest;
+    },
+    (f) => {
+      f.records.apply.facts.after.find((x) =>
+        x.path.includes("sorng_capsule_datagram_client_socket.cc"),
+      ).sha256 = digest;
+    },
+    (f) => {
+      f.records.postchecks.facts.sourceAfter.find((x) =>
+        x.path.includes("instance_tracer.cc"),
+      ).sha256 = digest;
+    },
+    (f) => {
+      f.records.postchecks.facts.sourceAfter.pop();
+    },
+    (f) => {
+      f.records.postchecks.facts.sourceAfter.push({
+        path: "unknown.cc",
+        size: 1,
+        sha256: digest,
+      });
+    },
+    (f) => {
+      f.records.preparation.facts.bridgeExports = 4;
+    },
+    (f) => {
+      f.records.gn.facts.sourceAfterSha256 =
+        "b9fd179fcef5c1e5755be9c9956ab7cc792ff07393ae8760e2601a1e5d9d7a82";
+    },
+    (f) => {
+      f.records.apply.facts.onlyReviewedPatchesApplied = false;
+    },
+    (f) => {
+      f.records.generation.sourceLockIdentity = LINUX_INCREMENTAL_IDENTITY;
+    },
+  ];
+  for (const change of changes) {
+    const f = linuxIsolatedFixture();
+    change(f);
+    f.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+  for (const role of LINUX_ISOLATED_EVIDENCE) {
+    const f = linuxIsolatedFixture();
+    delete f.records[role];
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+});
+
+test(
+  "isolated R5 expected69 maps are real Git old12/new23 public postimages, not mocked execution facts",
+  { timeout: 120000 },
+  async (t) => {
+    const lock = JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/source-lock.json",
+        ),
+      ),
+    );
+    const publicRoots = {
+      chromium: "F:/cef-builds/sorng-20261007/src",
+      cef: "F:/cef-builds/sorng-20261007/src/cef",
+    };
+    const run = (args, cwd) =>
+      spawnSync("git", ["-c", "core.autocrlf=false", ...args], {
+        cwd,
+        windowsHide: true,
+        timeout: 20000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    for (const repo of Object.keys(publicRoots))
+      if (
+        run(
+          [
+            "-C",
+            publicRoots[repo],
+            "cat-file",
+            "-e",
+            lock.upstream[repo].commit + "^{commit}",
+          ],
+          root,
+        ).status !== 0
+      )
+        return t.skip(
+          "Pinned public Git objects unavailable; this is not replaced by mocked proof",
+        );
+    const parent = await realpath(path.join(root, ".artifacts")),
+      work = await mkdtemp(path.join(parent, "r5-transition-test-")),
+      identity = await lstat(work, { bigint: true });
+    t.after(async () => {
+      const current = await lstat(work, { bigint: true });
+      assert.equal(current.dev, identity.dev);
+      assert.equal(current.ino, identity.ino);
+      assert(!current.isSymbolicLink());
+      assert.equal(await realpath(work), work);
+      await rm(work, { recursive: true });
+    });
+    const dirs = {};
+    for (const repo of Object.keys(publicRoots)) {
+      dirs[repo] = path.join(work, repo);
+      await mkdir(dirs[repo]);
+      assert.equal(run(["init", "-q"], dirs[repo]).status, 0);
+    }
+    const names = new Set();
+    for (const row of lock.patches) {
+      const text = await readFile(
+        path.join(
+          root,
+          "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap",
+          row.path,
+        ),
+        "utf8",
+      );
+      for (const m of text.matchAll(/^diff --git a\/(.+) b\/(.+)$/gm))
+        names.add((row.repository === "cef" ? "cef/" : "") + m[2]);
+    }
+    assert.deepEqual(
+      [...names].sort(),
+      LINUX_ISOLATED_TRANSITION.before.map((x) => x.path),
+    );
+    for (const name of names) {
+      const repo = name.startsWith("cef/") ? "cef" : "chromium",
+        member = repo === "cef" ? name.slice(4) : name;
+      const result = run(
+        [
+          "-C",
+          publicRoots[repo],
+          "cat-file",
+          "blob",
+          lock.upstream[repo].commit + ":" + member,
+        ],
+        root,
+      );
+      if (result.status !== 0) {
+        assert.equal(result.status, 128);
+        continue;
+      }
+      const file = path.join(dirs[repo], member);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, result.stdout);
+    }
+    const state = () =>
+      [...names].sort().map((name) => {
+        const repo = name.startsWith("cef/") ? "cef" : "chromium",
+          file = path.join(dirs[repo], repo === "cef" ? name.slice(4) : name);
+        if (!fs.existsSync(file)) return { path: name, kind: "absent" };
+        const body = fs.readFileSync(file);
+        return {
+          path: name,
+          kind: "file",
+          size: body.length,
+          sha256: hash(body),
+        };
+      });
+    let before;
+    for (let i = 0; i < 23; i++) {
+      const row = lock.patches[i],
+        patch = path.join(
+          root,
+          "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap",
+          row.path,
+        );
+      for (const args of [
+        ["apply", "--check", patch],
+        ["apply", patch],
+        ["apply", "--reverse", "--check", patch],
+      ]) {
+        const result = run(args, dirs[row.repository]);
+        assert.equal(
+          result.status,
+          0,
+          row.path + ": " + result.stderr.toString(),
+        );
+      }
+      if (i === 11) before = state();
+    }
+    assert.deepEqual(before, LINUX_ISOLATED_TRANSITION.before);
+    assert.deepEqual(state(), LINUX_ISOLATED_TRANSITION.after);
+    assert.equal(before.filter((x) => x.kind === "absent").length, 9);
+    for (const row of [...lock.patches.slice(12)].reverse()) {
+      const result = run(
+        [
+          "apply",
+          "--reverse",
+          path.join(
+            root,
+            "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap",
+            row.path,
+          ),
+        ],
+        dirs[row.repository],
+      );
+      assert.equal(result.status, 0, result.stderr.toString());
+    }
+    assert.deepEqual(state(), before);
+    assert.notDeepEqual(
+      before,
+      LINUX_ISOLATED_TRANSITION.after,
+      "Old12 cache cannot masquerade as H3/lifetime source23",
+    );
+    t.diagnostic(
+      "Actual private Git old12/new23/reversed-old12 maps equal all69 reviewed rows; no vendor hooks or engine execution",
+    );
+  },
+);
+
+test("isolated R5 synthetic ELF archive requires all five bridge exports through maintained gates", async (t) => {
+  const f = await fixture(t, "linux-isolated"),
+    result = await checkOwnedSdkHandoff({ ...f, execute: true });
+  assert.equal(result.sourceLockIdentity, LINUX_ISOLATED_IDENTITY);
+  assert.equal(result.provenance.workspaceCopied, true);
+  assert.equal(result.hostedBuild, false);
+  assert.equal(result.nativeAcceptance, "not-tested");
+  assert.equal(result.uploadAllowed, false);
+  // Removing the fifth structural symbol must fail the real maintained export parser.
+  const { inspectCustomRuntimeExports } =
+    await import("../../scripts/lib/browser-custom-runtime.mjs");
+  const file = path.join(f.work ?? path.dirname(f.inputs), "four-only.so");
+  await writeFile(file, elfFixture(false));
+  await assert.rejects(
+    inspectCustomRuntimeExports(
+      file,
+      "x86_64-unknown-linux-gnu",
+      "sorng-tls-v2-682c378-5",
+    ),
+  );
+});
+
+function refreshIsolatedCopyFacts(f) {
+  const c = f.records.copyManifest.facts,
+    w = f.records.workspace.facts;
+  c.entries.sort((a, b) =>
+    Buffer.compare(
+      Buffer.from(a.tree + "/" + a.path),
+      Buffer.from(b.tree + "/" + b.path),
+    ),
+  );
+  c.directories.sort((a, b) =>
+    Buffer.compare(
+      Buffer.from(a.tree + "/" + a.path),
+      Buffer.from(b.tree + "/" + b.path),
+    ),
+  );
+  c.files = c.entries.length;
+  c.bytes = c.entries.reduce((n, r) => n + r.size, 0);
+  c.inventorySha256 = identitySha256(c.entries);
+  for (const tree of LINUX_ISOLATED_COPY_TREES) {
+    const files = c.entries.filter((x) => x.tree === tree),
+      directories = c.directories.filter((x) => x.tree === tree);
+    Object.assign(c.trees[tree], {
+      files: files.length,
+      bytes: files.reduce((n, r) => n + r.size, 0),
+      directories: directories.length,
+      inventorySha256: identitySha256({ files, directories }),
+    });
+  }
+  Object.assign(w, {
+    copyFiles: c.files,
+    copyBytes: c.bytes,
+    copyDirectories: c.directories.length,
+  });
+  f.refresh();
+}
+
+test("isolated R5 topology requires six owned roots, complete copy trees and separate projected CEF metadata", () => {
+  const f = linuxIsolatedFixture(),
+    w = f.records.workspace.facts,
+    c = f.records.copyManifest.facts;
+  assert.deepEqual(
+    w.init.result.directories.map((x) => x.name),
+    ["base", "net", "network", "cef", "out", "operation"],
+  );
+  assert.deepEqual(
+    w.mounts.filter((x) => !x.readonly).map((x) => x.subpath),
+    ["base", "net", "network", "cef", "out", "operation"],
+  );
+  assert.deepEqual(Object.keys(c.trees), ["base", "net", "network", "out"]);
+  assert.equal(w.cefProjection.byteIdenticalCopy, false);
+  assert.equal(w.cefProjection.gitMetadata.entries.length, 4);
+  assert(
+    !c.entries.some((x) => x.tree === "cef"),
+    "Projected CEF is never represented as a byte-identical cache copy",
+  );
+  assert.doesNotThrow(() =>
+    verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+  );
+  const mutations = [
+    (f) => {
+      f.records.workspace.facts.mounts.splice(0, 1);
+    },
+    (f) => {
+      f.records.workspace.facts.mounts.find(
+        (x) => x.subpath === "base",
+      ).target += "/nested";
+    },
+    (f) => {
+      f.records.workspace.facts.mounts.find((x) => x.subpath === "net").source =
+        f.records.readiness.facts.volume;
+    },
+    (f) => {
+      f.records.workspace.facts.mounts.find(
+        (x) => x.subpath === "network",
+      ).readonly = true;
+    },
+    (f) => {
+      f.records.workspace.facts.mounts.push({
+        ...f.records.workspace.facts.mounts.find((x) => x.subpath === "net"),
+        subpath: "chrome",
+      });
+    },
+    (f) => {
+      f.records.workspace.facts.init.result.directories =
+        f.records.workspace.facts.init.result.directories.filter(
+          (x) => x.name !== "base",
+        );
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find(
+        (x) => x.tree === "base",
+      ).sha256 = digest;
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.push({
+        ...f.records.copyManifest.facts.entries[0],
+      });
+    },
+    (f) => {
+      const x = f.records.copyManifest.facts.entries[0];
+      x.targetDev = x.sourceDev;
+      x.targetIno = x.sourceIno;
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries[0].targetNlink = 2;
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries[0].tree = "cef";
+    },
+    (f) => {
+      f.records.copyManifest.facts.trees.network.sourceRoot =
+        "/work/build/cef-ci-qTkJO9/source/src/services/network";
+    },
+    (f) => {
+      f.records.copyManifest.facts.directories =
+        f.records.copyManifest.facts.directories.filter(
+          (x) =>
+            !(
+              x.tree === "base" &&
+              x.path ===
+                "allocator/partition_allocator/src/partition_alloc/pointers"
+            ),
+        );
+    },
+    (f) => {
+      const x = f.records.copyManifest.facts.entries[0];
+      f.records.copyManifest.facts.entries.push({
+        ...x,
+        tree: "net",
+        path: "socket/sorng_capsule_datagram_client_socket.cc",
+        sourceIno: "90001",
+        targetIno: "90002",
+      });
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries[0].targetDev = "99";
+    },
+    (f) => {
+      f.records.workspace.facts.cefProjection.byteIdenticalCopy = true;
+    },
+    (f) => {
+      f.records.workspace.facts.cefProjection.old12InventorySha256 = digest;
+    },
+    (f) => {
+      f.records.workspace.facts.cefProjection.new23InventorySha256 = digest;
+    },
+    (f) => {
+      f.records.workspace.facts.cefProjection.directories.push("unobserved");
+    },
+    (f) => {
+      const m = f.records.workspace.facts.cefProjection.gitMetadata;
+      m.identity = { ...m.originalIdentity, mode: 448 };
+    },
+    (f) => {
+      f.records.workspace.facts.cefProjection.gitMetadata.entries[0].nlink = 2;
+    },
+    (f) => {
+      const m = f.records.workspace.facts.cefProjection.gitMetadata;
+      m.entries.find((x) => x.path === "config").sha256 = digest;
+      m.inventorySha256 = identitySha256(m.entries);
+    },
+    (f) => {
+      const m = f.records.workspace.facts.cefProjection.gitMetadata;
+      m.entries.find((x) => x.path === "objects/info/alternates").sha256 =
+        digest;
+      m.inventorySha256 = identitySha256(m.entries);
+    },
+    (f) => {
+      const m = f.records.workspace.facts.cefProjection.gitMetadata;
+      m.entries[0].path = "hooks/post-checkout";
+      m.inventorySha256 = identitySha256(m.entries);
+    },
+  ];
+  for (const mutate of mutations) {
+    const f = linuxIsolatedFixture();
+    mutate(f);
+    refreshIsolatedCopyFacts(f);
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+});
+
+test("isolated R5 aggregate census includes projected CEF and its metadata instead of resetting each tree budget", () => {
+  const f = linuxIsolatedFixture(),
+    c = f.records.copyManifest.facts,
+    w = f.records.workspace.facts,
+    cef = w.cefProjection;
+  const originalBytes = c.bytes,
+    projectedBytes = cef.bytes + cef.gitMetadata.bytes,
+    unit = 8 * 1024 ** 3;
+  for (let i = 0; i < 32; i++)
+    c.entries.push({
+      tree: "out",
+      path: "large-" + i + ".bin",
+      size:
+        i === 31 ? unit - originalBytes - Math.floor(projectedBytes / 2) : unit,
+      sha256: digest,
+      mode: 420,
+      mtimeNs: "1000",
+      sourceDev: "1",
+      sourceIno: String(i + 90000),
+      targetDev: "2",
+      targetIno: String(i + 90000),
+      sourceNlink: 1,
+      targetNlink: 1,
+    });
+  refreshIsolatedCopyFacts(f);
+  w.capacityBeforeBytes = c.bytes + projectedBytes + 108 * 1024 ** 3;
+  f.refresh();
+  assert(c.bytes <= 256 * 1024 ** 3);
+  assert(c.bytes + projectedBytes > 256 * 1024 ** 3);
+  assert(c.entries.every((x) => x.size <= unit));
+  assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+});
+
+test("isolated R5 inspected mounts and private Git queries cannot borrow original writable metadata", () => {
+  for (const kind of [
+    "extra-mount",
+    "wrong-subpath",
+    "query-head",
+    "query-equivalence",
+  ]) {
+    const f = linuxIsolatedFixture(),
+      wrap = (x) => {
+        const rawUtf8 = JSON.stringify(x);
+        return {
+          rawUtf8,
+          size: Buffer.byteLength(rawUtf8),
+          sha256: hash(rawUtf8),
+        };
+      };
+    if (
+      kind.includes("mount") ||
+      kind === "wrong-subpath" ||
+      kind === "foreign-tmpfs"
+    ) {
+      const parsed = JSON.parse(f.records.container.facts.inspect.rawUtf8);
+      if (kind === "extra-mount") {
+        parsed.Mounts.push({
+          Type: "volume",
+          Name: f.records.readiness.facts.volume,
+          Destination: "/foreign",
+          RW: true,
+        });
+        parsed.HostConfig.Mounts.push({
+          Type: "volume",
+          Source: f.records.readiness.facts.volume,
+          Target: "/foreign",
+          ReadOnly: false,
+        });
+      } else
+        parsed.HostConfig.Mounts.find((x) =>
+          x.Target.endsWith("/services/network"),
+        ).VolumeOptions.Subpath = "net";
+      f.records.container.facts.inspect = wrap(parsed);
+    } else {
+      const g = f.records.generation.facts,
+        queries = JSON.parse(g.metadata["git-queries.json"].rawUtf8);
+      if (kind === "query-head") queries[0].stdoutSha256 = digest;
+      else queries[0].equal = false;
+      g.metadata["git-queries.json"] = wrap(queries);
+      const packet = JSON.parse(g.packet.rawUtf8),
+        row = packet.evidence.find((x) => x.name === "git-queries.json");
+      Object.assign(row, {
+        size: g.metadata["git-queries.json"].size,
+        sha256: g.metadata["git-queries.json"].sha256,
+      });
+      g.packet = wrap(packet);
+    }
+    f.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+});
+
+test("isolated init authority allows only omitted/null/typed-empty fields and denies all five excess capabilities", () => {
+  const f = linuxIsolatedFixture(),
+    original = JSON.parse(f.records.workspace.facts.init.inspect.rawUtf8);
+  const fields = [
+    "Devices",
+    "DeviceRequests",
+    "PidMode",
+    "VolumesFrom",
+    "Binds",
+  ];
+  const check = (mutate) => {
+    const inspect = structuredClone(original);
+    mutate(inspect.HostConfig);
+    const rawUtf8 = JSON.stringify(inspect);
+    f.records.workspace.facts.init.inspect = {
+      rawUtf8,
+      size: Buffer.byteLength(rawUtf8),
+      sha256: hash(rawUtf8),
+    };
+    f.refresh();
+    return () => verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  };
+  assert.doesNotThrow(
+    check((h) => {
+      for (const name of fields) delete h[name];
+    }),
+  );
+  assert.doesNotThrow(
+    check((h) => {
+      for (const name of fields) h[name] = null;
+    }),
+  );
+  assert.doesNotThrow(
+    check((h) => {
+      for (const name of fields) h[name] = name === "PidMode" ? "" : [];
+    }),
+  );
+  const excess = {
+    Devices: [
+      {
+        PathOnHost: "/dev/null",
+        PathInContainer: "/dev/synthetic",
+        CgroupPermissions: "rwm",
+      },
+    ],
+    DeviceRequests: [
+      { Driver: "synthetic", Count: -1, Capabilities: [["gpu"]] },
+    ],
+    PidMode: "host",
+    VolumesFrom: ["synthetic-foreign:rw"],
+    Binds: ["/synthetic-host:/synthetic-container:rw"],
+  };
+  for (const name of fields)
+    assert.throws(
+      check((h) => {
+        h[name] = excess[name];
+      }),
+      /Closed isolated Linux workspace evidence mismatch/,
+      name + " must deny even when Mounts is unchanged",
+    );
+  for (const name of fields) {
+    const malformed =
+      name === "PidMode"
+        ? [[], {}, 0, false, { length: 0 }]
+        : [{}, "", 0, false, { length: 0 }, "nonempty"];
+    for (const value of malformed)
+      assert.throws(
+        check((h) => {
+          h[name] = value;
+        }),
+        /Closed isolated Linux workspace evidence mismatch/,
+        name +
+          " rejects malformed authority rather than coercing truthiness or length",
+      );
   }
 });
