@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-windows-arm-native-tools",
+  "target": "aarch64-pc-windows-msvc",
+  "runner": "windows-11-arm",
+  "image": "20261022.194.1",
+  "historicalObservation": {
+    "runId": 40163826369,
+    "sha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+    "qualification": "Historical observations become explicit reviewed pins for this diagnostic only; no Setup or full dependency claim."
+  },
+  "limits": {
+    "files": 32,
+    "bytes": 268435456,
+    "wholeSeconds": 180,
+    "cleanupSeconds": 30,
+    "roleSeconds": 20,
+    "roles": 6,
+    "roleOutputBytes": 65536,
+    "totalOutputBytes": 524288
+  },
+  "files": [
+    {
+      "role": "file-0",
+      "path": "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python.exe",
+      "size": 104672,
+      "sha256": "46851212e3a4fc1846086dc9c7be10aeb156320b1f68dfbd86eafa56a4b0d8b4",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 0
+      },
+      "executionAdmission": "native-version-role"
+    },
+    {
+      "role": "file-1",
+      "path": "C:/Program Files/Git/clangarm64/bin/git.exe",
+      "size": 3976392,
+      "sha256": "173ee56520e209c78fdc38e217ce8e51cb2b65e5474e70a28486f11dae2d4d0e",
+      "nlink": 4,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 1
+      },
+      "executionAdmission": "native-version-role"
+    },
+    {
+      "role": "file-2",
+      "path": "C:/Program Files/PowerShell/7/pwsh.exe",
+      "size": 278832,
+      "sha256": "532aceda5485f1c2728baa0549a498d594f7056022a89cd71eb97df68e33672c",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 2
+      },
+      "executionAdmission": "native-version-role"
+    },
+    {
+      "role": "file-3",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/cl.exe",
+      "size": 787808,
+      "sha256": "9f36f48c99f07158a62f3d013247095f318d3560b0c31555f3664f0de25ebbcb",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 3
+      },
+      "executionAdmission": "native-version-role"
+    },
+    {
+      "role": "file-4",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/link.exe",
+      "size": 4286800,
+      "sha256": "d760c224cb123adde2305665c8e929a0633224e9726a859b2233ab1cffdef747",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 4
+      },
+      "executionAdmission": "native-version-role"
+    },
+    {
+      "role": "file-5",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/c1.dll",
+      "size": 3822264,
+      "sha256": "124a5c7968b0691f9fe2343f15cd87cf0b78d1681a3557ee4da5a5054fd98638",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 5
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-6",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/c1xx.dll",
+      "size": 15615152,
+      "sha256": "be0280d8d622e44c2177827797778cbe879e394a233206fc8782069575dc4f4c",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 6
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-7",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/c2.dll",
+      "size": 12703408,
+      "sha256": "a638d908e5e5b03a43e75821d75a7b24f73943172f69448e2fb787305e5a534c",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 7
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-8",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/mspdb140.dll",
+      "size": 416000,
+      "sha256": "6a6c88bb674a183df1e94bd5d243e97c3ac7b1434a769f14f628b27f1e8d6a61",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 8
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-9",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/mspdbcore.dll",
+      "size": 2749704,
+      "sha256": "0d731d29c82d6f0df023eef199402b03399be3b86541889a5a96e7e01f1183a4",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 9
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-10",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/mspdbsrv.exe",
+      "size": 204024,
+      "sha256": "efd3a0867bb8e30101d3ccb4be22be5046e286e64151cab744905b9a5a392ea8",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 10
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-11",
+      "path": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/arm64/rc.exe",
+      "size": 38872,
+      "sha256": "a1401db99350bce6f1176bbd3e0f0512c5a5cc4a553bce1ee5b148e37d18e2fc",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 11
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-12",
+      "path": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/arm64/rcdll.dll",
+      "size": 254416,
+      "sha256": "ac1328c32a163682af95ffafd526b50ad44710f4eebf1194806ceedd1828a05b",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 12
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-13",
+      "path": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.28000.0/arm64/mt.exe",
+      "size": 1806848,
+      "sha256": "58ae97e6b80f5c9f1ef7b9593e30730432c8976ff6be6c9da9f7debe702f08c5",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 13
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-14",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/include/vcruntime.h",
+      "size": 11444,
+      "sha256": "8a6e89fe85c66162d62c772d02367ae2e6530f1faaaa8d099427698a689bac7f",
+      "nlink": 1,
+      "machine": null,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 14
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-15",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/libcmt.lib",
+      "size": 18932596,
+      "sha256": "66c641d9053909ad68c241b7fa000926390af37fe180cf430429edbeea195651",
+      "nlink": 1,
+      "machine": null,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 15
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-16",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/lib/arm64/atls.lib",
+      "size": 2946396,
+      "sha256": "432551ac196e927308246b7be3ada5fb89cf46da510ee02a01ee593cd72cb941",
+      "nlink": 1,
+      "machine": null,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 16
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-17",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Include/10.0.28000.0/um/Windows.h",
+      "size": 7511,
+      "sha256": "b337d661d03a4abefb7b86a2742ce1ad5d19b57cd8b858bd13e7bbcc1dbeeaaa",
+      "nlink": 1,
+      "machine": null,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 17
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-18",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/arm64/kernel32.Lib",
+      "size": 652320,
+      "sha256": "bc40b3959db3ba93ee0f816d639e33835301f2662cbd63406e30f7f6c97fd8df",
+      "nlink": 1,
+      "machine": null,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 18
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-19",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/x64/kernel32.Lib",
+      "size": 311908,
+      "sha256": "8ba8dab9adec752047d4f136852e8136d01836bff39bbb56a20ac5f2d56415d8",
+      "nlink": 1,
+      "machine": null,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 19
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-20",
+      "path": "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python313.dll",
+      "size": 6362848,
+      "sha256": "b9452ab50e10771663d35b5461f495fd11c293f46f2807add150ac2676653e53",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 20
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-21",
+      "path": "C:/Windows/System32/wintrust.dll",
+      "size": 969616,
+      "sha256": "8e72c9f37b8b6259f0df831538628039ff21dace3a3364fc54c65d0b398e1d60",
+      "nlink": 2,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 21
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-22",
+      "path": "C:/Windows/System32/crypt32.dll",
+      "size": 2776336,
+      "sha256": "55af42a1ba21196b04f595e19b1dba55c6ae040abaa43baaee94682e6ac978a3",
+      "nlink": 2,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 22
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-23",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/x64/dbghelp.dll",
+      "size": 2259328,
+      "sha256": "1cb683068ecb13ea434a56ac344d4fd7a8d04ccde9ba2bd38e99acd27f26cb10",
+      "nlink": 1,
+      "machine": 34404,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 23
+      },
+      "executionAdmission": "observation-only-never-executed"
+    },
+    {
+      "role": "file-24",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/arm64/dbghelp.dll",
+      "size": 1372656,
+      "sha256": "9a6b6984180321272e46224eb67e59d426144653ac24a33580c57868740ca80f",
+      "nlink": 1,
+      "machine": 43620,
+      "pinSource": {
+        "rawSha256": "c241d4d090486c9b6fe0c8ed1fe1a16fc930dee3c1295d90901dc2b4b78a8bbf",
+        "rowIndex": 24
+      },
+      "executionAdmission": "observation-only-never-executed"
+    }
+  ],
+  "programs": {
+    "python": "file-0",
+    "git": "file-1",
+    "powershell": "file-2",
+    "cl": "file-3",
+    "link": "file-4"
+  },
+  "ancestry": {
+    "runId": 40169419655,
+    "head": "370296d0c40bf16c928b05b41393c9498f84fd34",
+    "artifactSha256": "5cdf4e6c3f2d3a17832c09520bb1832389625a1ca9412c37c17a7ed93f64cd67",
+    "driverSha256": "cacabcd818023f392c79ad38346b4e423866bf315a2abcd53442e31bd03a0eab"
+  },
+  "closure": {
+    "setupCompatibility": null,
+    "loadedModulesVerified": false,
+    "mixedArm64EcNotAutomaticallyIncompatible": true,
+    "producerProvenanceIntegrationRequired": true,
+    "libraryCoffArchitectureVerified": false
+  },
+  "sourceNames": ["job.py", "observe.py", "test_observe.py", "profile.json"],
+  "python": {
+    "path": "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python.exe",
+    "bytes": 104672,
+    "sha256": "46851212e3a4fc1846086dc9c7be10aeb156320b1f68dfbd86eafa56a4b0d8b4",
+    "machine": 43620
+  },
+  "pythonDll": {
+    "path": "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python313.dll",
+    "bytes": 6362848,
+    "sha256": "b9452ab50e10771663d35b5461f495fd11c293f46f2807add150ac2676653e53",
+    "machine": 43620
+  },
+  "pinInterpretation": "Each size/sha256/nlink/machine is a reviewed EXPECTED value from the exact named historical row; this operation records new observed results separately. No dynamic repinning.",
+  "signatureContract": {
+    "headers": [
+      {
+        "name": "wintrust.h",
+        "sdk": "10.0.28000.0",
+        "sha256": "340a90182fc0fddaac188a2921bb49dd3a5486d968831764dbde81bb0beedbeb",
+        "size": 73549,
+        "basis": "Reviewed local pinned primary header; not a claim this run inspected the native runner header."
+      },
+      {
+        "name": "Softpub.h",
+        "sdk": "10.0.28000.0",
+        "sha256": "332b0c3ac0f8cbfc899176079cab4674462105d6b99e9b6eaeb6c82ed28f76e0",
+        "size": 14956,
+        "basis": "Reviewed local pinned primary header; not a claim this run inspected the native runner header."
+      }
+    ],
+    "primaryDocs": [
+      "https://learn.microsoft.com/en-us/windows/win32/api/wintrust/nf-wintrust-winverifytrust",
+      "https://learn.microsoft.com/en-us/windows/win32/api/wintrust/ns-wintrust-wintrust_data"
+    ],
+    "signerIdentityObserved": false,
+    "cacheOnlyRequest": true,
+    "cacheTrustSuccessAssumed": false
+  }
+}
