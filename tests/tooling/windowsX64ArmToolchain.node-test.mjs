@@ -195,14 +195,58 @@ test("actual returned read is bounded if a file grows after initial stat", async
 });
 
 test("artifact globs retain diagnostics without SDK/LLVM archives or generated images", () => {
-  const output = workflow.split("path: |\n")[1];
-  assert(output.includes("jobs/*/*.json"));
-  assert(output.includes("results/*.json"));
-  assert(output.includes("logs/*.log"));
-  assert(
-    !output.includes("archives") &&
-      !output.includes("bin/*") &&
-      !output.includes("llvm/**") &&
-      !output.includes("environment-private"),
-  );
+  const expected = [
+    "toolchain-preflight-denied.json",
+    ".artifacts/windows-x64-arm-toolchain-*/summary.json",
+    ".artifacts/windows-x64-arm-toolchain-*/context.json",
+    ".artifacts/windows-x64-arm-toolchain-*/slice-result.json",
+    ".artifacts/windows-x64-arm-toolchain-*/acquisition.json",
+    ".artifacts/windows-x64-arm-toolchain-*/acquisition-parent.json",
+    ".artifacts/windows-x64-arm-toolchain-*/*-job.json",
+    ".artifacts/windows-x64-arm-toolchain-*/operation-failure.json",
+    ".artifacts/windows-x64-arm-toolchain-*/installed-observations.json",
+    ".artifacts/windows-x64-arm-toolchain-*/jobs/*/*.json",
+    ".artifacts/windows-x64-arm-toolchain-*/results/*.json",
+    ".artifacts/windows-x64-arm-toolchain-*/logs/*.log",
+    ".artifacts/windows-x64-arm-toolchain-*/supervisor-*.log",
+  ];
+  const validate = (source) => {
+    const block = source.split(
+      "- name: Retain bounded toolchain receipts without SDK or LLVM payloads\n",
+    )[1];
+    assert(block);
+    assert.match(block, /\n          include-hidden-files: true\n/);
+    const pathBlock = block.match(
+      /          path: \|\n((?:            [^\n]+\n)+)/,
+    );
+    assert(pathBlock);
+    assert.deepEqual(
+      pathBlock[1]
+        .trim()
+        .split("\n")
+        .map((line) => line.trim()),
+      expected,
+    );
+  };
+  validate(workflow);
+  for (const changed of [
+    workflow.replace("          include-hidden-files: true\n", ""),
+    workflow.replace(
+      "include-hidden-files: true",
+      "include-hidden-files: false",
+    ),
+    ...[
+      "archives/**",
+      "llvm/**",
+      "bin/*",
+      "environment-private.json",
+      "**",
+    ].map((path) =>
+      workflow.replace(
+        "          path: |\n",
+        `          path: |\n            .artifacts/windows-x64-arm-toolchain-*/${path}\n`,
+      ),
+    ),
+  ])
+    assert.throws(() => validate(changed));
 });

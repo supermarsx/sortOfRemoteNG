@@ -132,3 +132,4 @@ jobs:
             .artifacts/windows-x64-arm-toolchain-*/supervisor-*.log
           retention-days: 30
           if-no-files-found: warn
+          include-hidden-files: true
