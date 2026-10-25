@@ -231,7 +231,7 @@ def run(root):
   for row in p['files']:
    with helper.held_file(row):pass
   for name,(text,extension)in SOURCES.items():
-   with (root/'sources'/(name+'.'+extension)).open('x',encoding='ascii')as f:f.write(text)
+   with (root/'sources'/(name+'.'+extension)).open('xb')as f:f.write(text.encode('ascii'))
   s=importlib.util.spec_from_file_location('native_compile_owned_job',Path(__file__).with_name('job.py'));job=importlib.util.module_from_spec(s);s.loader.exec_module(job)
   for role in ROLES:
    result['phase']='owned-compile-command';result['activeRole']=role

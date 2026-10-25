@@ -96,4 +96,57 @@ class Tests(unittest.TestCase):
   self.assertEqual(m.coff(raw)['machine'],0xaa64)
   with self.assertRaises(ValueError):m.coff(raw[:48])
 
+ def test_only_tu_writer_changes_from_actual_pinned_beforeimage(self):
+  current=Path(__file__).with_name('compile.py').read_bytes()
+  fixed=b"with (root/'sources'/(name+'.'+extension)).open('xb')as f:f.write(text.encode('ascii'))"
+  original=b"with (root/'sources'/(name+'.'+extension)).open('x',encoding='ascii')as f:f.write(text)"
+  self.assertEqual(current.count(fixed),1)
+  self.assertEqual(m.sha(current.replace(fixed,original)),'4ec17bd96f1a59fdf2d8c872e9b602cd5d5fc13e35b8ef5bb0c55e770bb1dba7')
+ def actual_tu_guard(self,root,role):
+  tree=ast.parse(Path(__file__).with_name('compile.py').read_bytes())
+  worker=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='worker')
+  calls=[n for n in ast.walk(worker)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='need'and len(n.args)==2 and isinstance(n.args[1],ast.Constant)and n.args[1].value=='COMPILE_TU_CHANGED']
+  self.assertEqual(len(calls),1);source,extension=m.SOURCES[role]
+  return eval(compile(ast.Expression(calls[0]),'<actual-unchanged-TU-guard>','eval'),{'need':m.need,'bounded':m.bounded,'root':root,'role':role,'source':source,'extension':extension})
+ @unittest.skipUnless(os.name=='nt','actual Windows default text-newline behavior')
+ def test_actual_old_windows_text_writer_denied_by_unchanged_production_guard(self):
+  parent=Path(tempfile.gettempdir()).resolve()
+  with tempfile.TemporaryDirectory(dir=parent)as folder:
+   root=Path(folder).resolve();before=root.lstat();(root/'sources').mkdir()
+   try:
+    for role,(text,extension)in m.SOURCES.items():
+     file=root/'sources'/(role+'.'+extension)
+     # Exact original production writer statement: execute real Windows text IO.
+     with file.open('x',encoding='ascii')as f:f.write(text)
+     self.assertEqual(file.read_bytes(),text.encode('ascii').replace(b'\n',b'\r\n'))
+     with self.assertRaisesRegex(ValueError,'^COMPILE_TU_CHANGED$'):self.actual_tu_guard(root,role)
+   finally:
+    self.assertEqual(m.no_links(root),root);self.assertEqual(root.parent,parent);self.assertEqual((root.lstat().st_dev,root.lstat().st_ino),(before.st_dev,before.st_ino))
+ def run_writer_only(self,root):
+  # Real run() writes all fixed TUs; deny the Job loader before any Win32 import.
+  with patch.object(m,'profile',return_value={'files':[]}),patch.object(m,'verified_sources',return_value={}),patch.object(m,'observer',return_value=object()),patch.object(m.platform,'machine',return_value='ARM64'),patch.object(m.sys,'platform','win32'),patch.dict(m.sys.modules,{m.__name__:m}),patch.object(m.importlib.util,'spec_from_file_location',side_effect=RuntimeError('TEST_STOP_BEFORE_JOB'))as loader:
+   result=m.run(root)
+  return result,loader.call_count
+ def test_actual_binary_writer_passes_unchanged_guard_for_all_four_tus(self):
+  parent=Path(tempfile.gettempdir()).resolve()
+  with tempfile.TemporaryDirectory(dir=parent)as folder:
+   root=Path(folder).resolve();before=root.lstat();(root/'sources').mkdir()
+   try:
+    result,loads=self.run_writer_only(root);self.assertEqual(result,1);self.assertEqual(loads,1)
+    for role,(text,extension)in m.SOURCES.items():
+     self.assertEqual((root/'sources'/(role+'.'+extension)).read_bytes(),text.encode('ascii'))
+     self.actual_tu_guard(root,role)
+    report=json.loads((root/'compile-result.json').read_bytes());self.assertFalse(report['success']);self.assertFalse(report['basicCompilerCapabilityProven']);self.assertFalse(report['compilerTranslationUnitAttempted'])
+   finally:
+    self.assertEqual(m.no_links(root),root);self.assertEqual(root.parent,parent);self.assertEqual((root.lstat().st_dev,root.lstat().st_ino),(before.st_dev,before.st_ino))
+ def test_actual_binary_writer_refuses_existing_destination_without_job_or_overwrite(self):
+  parent=Path(tempfile.gettempdir()).resolve()
+  with tempfile.TemporaryDirectory(dir=parent)as folder:
+   root=Path(folder).resolve();before=root.lstat();(root/'sources').mkdir();file=root/'sources/c.c';file.write_bytes(b'existing-owned-fixture')
+   try:
+    result,loads=self.run_writer_only(root);self.assertEqual(result,1);self.assertEqual(loads,0);self.assertEqual(file.read_bytes(),b'existing-owned-fixture')
+    with self.assertRaisesRegex(ValueError,'^COMPILE_TU_CHANGED$'):self.actual_tu_guard(root,'c')
+   finally:
+    self.assertEqual(m.no_links(root),root);self.assertEqual(root.parent,parent);self.assertEqual((root.lstat().st_dev,root.lstat().st_ino),(before.st_dev,before.st_ino))
+
 if __name__=='__main__':unittest.main()
