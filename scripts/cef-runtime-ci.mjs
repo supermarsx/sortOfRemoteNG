@@ -10,6 +10,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   realpath,
@@ -511,6 +512,106 @@ export function assertHostedCapacity(
     fail("Hosted engine workspace or bounded CPU/RAM capacity is insufficient");
 }
 
+const ADMISSION_STAGES = new Set([
+  "identity",
+  "capacity",
+  "runner-map",
+  "tool-pins",
+  "runner-path",
+  "workspace",
+  "isolation",
+  "workdir",
+]);
+
+// Retain an exclusive file handle in the already-owned preparation logs. No
+// exception text or caller-supplied record is serialized. These observations do
+// not grant admission or change the original checks, inputs or deadlines.
+export async function hostedAdmissionRecorder(logs) {
+  const file = await open(
+    path.join(logs, "hosted-admission.jsonl"),
+    "wx",
+    0o600,
+  );
+  let rows = 0,
+    bytes = 0,
+    active = null,
+    closed = false;
+  const seen = new Set();
+  const record = async (value) => {
+    const line = `${JSON.stringify(value)}\n`;
+    if (closed || rows >= 20 || bytes + Buffer.byteLength(line) > 16 * 1024)
+      fail("Hosted admission observation bound");
+    rows++;
+    bytes += Buffer.byteLength(line);
+    await file.writeFile(line);
+  };
+  const finite = (value) =>
+    Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER
+      ? value
+      : null;
+  return {
+    async run(stage, operation) {
+      if (!ADMISSION_STAGES.has(stage) || seen.has(stage) || active || closed)
+        fail("Invalid hosted admission observation stage");
+      seen.add(stage);
+      active = stage;
+      try {
+        await record({ stage, status: "start" });
+        const result = await operation();
+        await record({ stage, status: "pass" });
+        return result;
+      } catch (error) {
+        // A diagnostic write must not replace the original policy/OS failure.
+        try {
+          await record({ stage, status: "fail" });
+        } catch {
+          // The original operation remains failed; no later action is admitted.
+        }
+        throw error;
+      } finally {
+        active = null;
+      }
+    },
+    async capacity(measured, runner) {
+      if (active !== "capacity")
+        fail("Capacity observation requires its stage");
+      await record({
+        stage: "capacity",
+        status: "observed",
+        availableGiB: finite(measured.availableGiB),
+        totalMemoryGiB: finite(measured.memoryGiB),
+        availableParallelism: Number.isSafeInteger(measured.cpus)
+          ? finite(measured.cpus)
+          : null,
+        minimumFreeDiskGiB: HOSTED_RECIPE.minimumFreeDiskGiB,
+        minimumMemoryGiB: HOSTED_RECIPE.minimumMemoryGiB,
+        requiredParallelism: runner.buildJobs,
+        admitted: null,
+      });
+      try {
+        assertHostedCapacity(measured, runner);
+      } catch (error) {
+        try {
+          await record({
+            stage: "capacity",
+            status: "admission",
+            admitted: false,
+          });
+        } catch {
+          // Preserve the original capacity rejection.
+        }
+        throw error;
+      }
+      await record({ stage: "capacity", status: "admission", admitted: true });
+    },
+    async close() {
+      if (closed) return;
+      closed = true;
+      await file.close();
+    },
+  };
+}
+
 export function buildEnvironment(
   map,
   { toolsRoot, source, depot, python },
@@ -969,91 +1070,139 @@ export async function build(
     await json(await pinned(inputsRoot, buildPin.toolchainLock)),
     target,
   );
-  let buildHost = null;
-  if (runnerMode === "hosted") {
-    const mapPin = toolchain.files.find(
-      (entry) => entry.path === mapName(target),
-    );
-    const reviewedMap = await pinned(inputsRoot, mapPin);
-    const map = await json(reviewedMap);
-    const preparationLogs = await mkdtemp(
-      path.join(env.RUNNER_TEMP, "cef-hosted-prepare-"),
-    );
-    await output("logs", preparationLogs);
-    await writeFile(
-      path.join(preparationLogs, "hosted-identity.json"),
-      stableJson({
-        target,
-        observed: {
-          platform: process.platform,
-          architecture: process.arch,
-          imageOS: String(env.ImageOS ?? "").slice(0, 128),
-          imageVersion: String(env.ImageVersion ?? "").slice(0, 128),
-        },
-        reviewed: map.hosted,
-        sourceLockIdentity: identity.sourceLockSha256,
-        admissionGranted: false,
-      }),
-      { flag: "wx" },
-    );
-    buildHost = assertHostedBuildIdentity(map, target, env);
-    const disk = await statfs(env.RUNNER_TEMP);
-    assertHostedCapacity(
-      {
-        availableGiB: (disk.bavail * disk.bsize) / 1024 ** 3,
-        memoryGiB: os.totalmem() / 1024 ** 3,
-        cpus: os.availableParallelism(),
-      },
-      map,
-    );
-  }
-  const runner = validateRunnerMap(
-    await json(
-      await pinned(
-        runnerMode === "hosted" ? inputsRoot : toolsRoot,
-        toolchain.files.find((item) => item.path === mapName(target)),
-      ),
-    ),
-    target,
-  );
-  if (runnerMode === "dedicated" && runner.schemaVersion !== 1)
-    fail(
-      "Hosted image maps cannot silently select the dedicated producer path",
-    );
-  const python = path.join(toolsRoot, runner.python);
-  await verifyToolchainFiles({
-    sourceLock,
-    target,
-    inputsRoot,
-    toolsRoot,
+  let buildHost = null,
+    admission = null,
+    runner,
     python,
-    runnerMapFromInputs: runnerMode === "hosted",
-  });
-  const gitExecutable = runner.git
-    ? await verifyWindowsGitProgram({ runner, target, toolchain, toolsRoot })
-    : undefined;
-  if (runnerMode === "hosted" && expectedPlatform === "win32" && !gitExecutable)
-    fail(
-      "Hosted Windows acquisition requires a reviewed explicit native Git file pin",
+    gitExecutable,
+    work,
+    logs,
+    bundle,
+    earlyFailed = false;
+  const early = (stage, operation) =>
+    admission ? admission.run(stage, operation) : operation();
+  try {
+    if (runnerMode === "hosted") {
+      const mapPin = toolchain.files.find(
+        (entry) => entry.path === mapName(target),
+      );
+      const reviewedMap = await pinned(inputsRoot, mapPin);
+      const map = await json(reviewedMap);
+      const preparationLogs = await mkdtemp(
+        path.join(env.RUNNER_TEMP, "cef-hosted-prepare-"),
+      );
+      await output("logs", preparationLogs);
+      await writeFile(
+        path.join(preparationLogs, "hosted-identity.json"),
+        stableJson({
+          target,
+          observed: {
+            platform: process.platform,
+            architecture: process.arch,
+            imageOS: String(env.ImageOS ?? "").slice(0, 128),
+            imageVersion: String(env.ImageVersion ?? "").slice(0, 128),
+          },
+          reviewed: map.hosted,
+          sourceLockIdentity: identity.sourceLockSha256,
+          admissionGranted: false,
+        }),
+        { flag: "wx" },
+      );
+      admission = await hostedAdmissionRecorder(preparationLogs);
+      buildHost = await early("identity", () =>
+        assertHostedBuildIdentity(map, target, env),
+      );
+      await early("capacity", async () => {
+        const disk = await statfs(env.RUNNER_TEMP);
+        await admission.capacity(
+          {
+            availableGiB: (disk.bavail * disk.bsize) / 1024 ** 3,
+            memoryGiB: os.totalmem() / 1024 ** 3,
+            cpus: os.availableParallelism(),
+          },
+          map,
+        );
+      });
+    }
+    runner = await early("runner-map", async () => {
+      const value = validateRunnerMap(
+        await json(
+          await pinned(
+            runnerMode === "hosted" ? inputsRoot : toolsRoot,
+            toolchain.files.find((item) => item.path === mapName(target)),
+          ),
+        ),
+        target,
+      );
+      if (runnerMode === "dedicated" && value.schemaVersion !== 1)
+        fail(
+          "Hosted image maps cannot silently select the dedicated producer path",
+        );
+      return value;
+    });
+    python = path.join(toolsRoot, runner.python);
+    await early("tool-pins", async () => {
+      await verifyToolchainFiles({
+        sourceLock,
+        target,
+        inputsRoot,
+        toolsRoot,
+        python,
+        runnerMapFromInputs: runnerMode === "hosted",
+      });
+      gitExecutable = runner.git
+        ? await verifyWindowsGitProgram({
+            runner,
+            target,
+            toolchain,
+            toolsRoot,
+          })
+        : undefined;
+      if (
+        runnerMode === "hosted" &&
+        expectedPlatform === "win32" &&
+        !gitExecutable
+      )
+        fail(
+          "Hosted Windows acquisition requires a reviewed explicit native Git file pin",
+        );
+    });
+    await early("runner-path", async () => {
+      for (const entry of runner.path)
+        if (!inside(toolsRoot, await realpath(path.join(toolsRoot, entry))))
+          fail("Runner PATH escapes tools root");
+    });
+    work = await early("workspace", () =>
+      engineering
+        ? realpath(engineering.workspace)
+        : sourceWorkspace(env.RUNNER_TEMP, checkout),
     );
-  for (const entry of runner.path)
-    if (!inside(toolsRoot, await realpath(path.join(toolsRoot, entry))))
-      fail("Runner PATH escapes tools root");
-  const work = engineering
-    ? await realpath(engineering.workspace)
-    : await sourceWorkspace(env.RUNNER_TEMP, checkout);
-  if (engineering) {
-    const temp = await realpath(env.RUNNER_TEMP);
-    if (!inside(temp, work) || inside(checkout, work))
-      fail("Checkpoint workspace isolation");
-    await verifySourceBuildIsolation(work);
-  }
-  const logs = path.join(work, "logs"),
+    await early("isolation", async () => {
+      if (engineering) {
+        const temp = await realpath(env.RUNNER_TEMP);
+        if (!inside(temp, work) || inside(checkout, work))
+          fail("Checkpoint workspace isolation");
+        await verifySourceBuildIsolation(work);
+      }
+    });
+    logs = path.join(work, "logs");
     bundle = path.join(work, "bundle");
-  await mkdir(logs);
-  await mkdir(bundle);
-  await output("logs", logs);
-  await output("bundle", bundle);
+    await early("workdir", async () => {
+      await mkdir(logs);
+      await mkdir(bundle);
+      await output("logs", logs);
+      await output("bundle", bundle);
+    });
+  } catch (error) {
+    earlyFailed = true;
+    throw error;
+  } finally {
+    try {
+      await admission?.close();
+    } catch (error) {
+      if (!earlyFailed) throw error;
+    }
+  }
   const source = path.join(work, "source");
   const chromium = path.join(source, "src"),
     cef = path.join(chromium, "cef"),

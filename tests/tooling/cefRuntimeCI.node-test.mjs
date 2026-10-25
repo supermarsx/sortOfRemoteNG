@@ -36,6 +36,7 @@ import {
   run as runBuildCommand,
   assertHostedBuildIdentity,
   assertHostedCapacity,
+  hostedAdmissionRecorder,
   hostedBuildHost,
   descriptorFor,
   flattenSdk,
@@ -183,6 +184,320 @@ test("macOS ARM cross-compilation binds the actual reviewed same-OS host image",
         ),
       /capacity/,
     );
+});
+
+test("hosted admission retains actual capacity rejection and unchanged exact thresholds", async (t) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "cef-admission-capacity-"),
+  );
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const cases = [
+    { availableGiB: 99.99, memoryGiB: 8, cpus: 4 },
+    { availableGiB: 100, memoryGiB: 8, cpus: 4 },
+    { availableGiB: Number.NaN, memoryGiB: 8, cpus: 4 },
+    { availableGiB: 100, memoryGiB: Number.POSITIVE_INFINITY, cpus: 4 },
+    { availableGiB: 100, memoryGiB: 8, cpus: 3.5 },
+  ];
+  for (const [index, measured] of cases.entries()) {
+    const logs = path.join(directory, String(index));
+    await mkdir(logs);
+    const recorder = await hostedAdmissionRecorder(logs);
+    const expected = index === 1;
+    try {
+      const operation = recorder.run("capacity", () =>
+        recorder.capacity(measured, { buildJobs: 4 }),
+      );
+      if (expected) await operation;
+      else await assert.rejects(operation, /capacity is insufficient/);
+    } finally {
+      await recorder.close();
+    }
+    const rows = (
+      await readFile(path.join(logs, "hosted-admission.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(rows.length, 4);
+    const observation = rows[1];
+    assert.equal(observation.status, "observed");
+    assert.equal(
+      observation.availableGiB,
+      Number.isFinite(measured.availableGiB) ? measured.availableGiB : null,
+    );
+    assert.equal(
+      observation.totalMemoryGiB,
+      Number.isFinite(measured.memoryGiB) ? measured.memoryGiB : null,
+    );
+    assert.equal(
+      observation.availableParallelism,
+      Number.isSafeInteger(measured.cpus) ? measured.cpus : null,
+    );
+    assert.equal(observation.minimumFreeDiskGiB, 100);
+    assert.equal(observation.minimumMemoryGiB, 8);
+    assert.equal(observation.requiredParallelism, 4);
+    assert.equal(observation.admitted, null);
+    assert.deepEqual(rows[2], {
+      admitted: expected,
+      stage: "capacity",
+      status: "admission",
+    });
+    assert.deepEqual(rows[3], {
+      stage: "capacity",
+      status: expected ? "pass" : "fail",
+    });
+  }
+});
+
+test("hosted admission closes stages, preserves original failures and never serializes secrets", async (t) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "cef-admission-stage-"),
+  );
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stages = [
+    "identity",
+    "capacity",
+    "runner-map",
+    "tool-pins",
+    "runner-path",
+    "workspace",
+    "isolation",
+    "workdir",
+  ];
+  for (const [index, boundary] of stages.entries()) {
+    const logs = path.join(directory, String(index));
+    await mkdir(logs);
+    const recorder = await hostedAdmissionRecorder(logs);
+    const secret = new Error(
+      "credential=/private/owner/profile?token=never-retain",
+    );
+    let visited = 0;
+    try {
+      await assert.rejects(
+        async () => {
+          for (const stage of stages) {
+            await recorder.run(stage, () => {
+              visited++;
+              if (stage === boundary) throw secret;
+              return "an operation result is not diagnostic data";
+            });
+          }
+        },
+        (error) => error === secret,
+      );
+      assert.equal(visited, index + 1);
+      await assert.rejects(
+        recorder.run("arbitrary-secret-stage", () => assert.fail()),
+        /Invalid hosted admission/,
+      );
+      await assert.rejects(
+        recorder.run(boundary, () => assert.fail()),
+        /Invalid hosted admission/,
+      );
+    } finally {
+      await recorder.close();
+      await recorder.close();
+    }
+    const raw = await readFile(
+      path.join(logs, "hosted-admission.jsonl"),
+      "utf8",
+    );
+    assert.ok(Buffer.byteLength(raw) < 16 * 1024);
+    assert.doesNotMatch(
+      raw,
+      /credential|private|profile|token|operation result|arbitrary/,
+    );
+    const rows = raw
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(rows.length, 2 * (index + 1));
+    assert.deepEqual(rows.at(-1), { stage: boundary, status: "fail" });
+    assert.ok(
+      rows.every((row) => Object.keys(row).sort().join(",") === "stage,status"),
+    );
+    await assert.rejects(hostedAdmissionRecorder(logs), /EEXIST/);
+  }
+  const nullLogs = path.join(directory, "null");
+  await mkdir(nullLogs);
+  const recorder = await hostedAdmissionRecorder(nullLogs);
+  try {
+    let caught = false;
+    try {
+      await recorder.run("identity", () => {
+        throw null;
+      });
+    } catch (error) {
+      caught = true;
+      assert.equal(error, null);
+    }
+    assert.ok(caught);
+  } finally {
+    await recorder.close();
+  }
+});
+
+// Execute the actual build body with only owned temporary I/O and synthetic
+// pre-acquisition dependencies. This is wiring evidence, not hosted admission.
+test("actual build retains the failing early boundary before any source acquisition", async (t) => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "cef-admission-build-"),
+  );
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const selected = "aarch64-unknown-linux-gnu";
+  const profile = checkpointProfile(selected);
+  const production = await readFile(
+    path.join(root, "scripts/cef-runtime-ci.mjs"),
+    "utf8",
+  );
+  const insideSource = production.match(
+    /const inside = \(root, file\) => \{[\s\S]*?\n\};/,
+  );
+  assert.ok(
+    insideSource,
+    "Actual production path containment helper is required",
+  );
+  const actualInside = new Script(`${insideSource[0]}\ninside`).runInNewContext(
+    { path },
+  );
+  const map = JSON.parse(
+    await readFile(
+      path.join(root, profile.inputs, `cef-ci-runner-${selected}.json`),
+      "utf8",
+    ),
+  );
+  map.path = ["usr/bin"];
+  const stages = [
+    "identity",
+    "capacity",
+    "runner-map",
+    "tool-pins",
+    "runner-path",
+    "workspace",
+    "isolation",
+    "workdir",
+  ];
+  for (const [index, boundary] of stages.entries()) {
+    const temporary = path.join(directory, String(index));
+    const ownedTools = path.join(temporary, "tools");
+    const workspace = path.join(temporary, "workspace");
+    await mkdir(path.join(ownedTools, "usr/bin"), { recursive: true });
+    await mkdir(workspace);
+    const original = new Error("secret=/private/profile?credential=never-log");
+    let preparation,
+      acquisitions = 0;
+    const dependency = (stage, operation) => {
+      if (boundary === stage) throw original;
+      return operation();
+    };
+    const sourceLock = {
+      builds: [{ target: selected, toolchainLock: { path: "tools.json" } }],
+    };
+    const toolchain = { files: [{ path: "runner.json" }] };
+    const synthetic = {
+      ROOT: root,
+      process: { platform: "linux", arch: "x64" },
+      createHostedBuildBudget,
+      checkpointHost: (target, platform, architecture) => {
+        assert.equal(target, selected);
+        assert.equal(platform, "linux");
+        assert.equal(architecture, "x64");
+      },
+      repositoryName: () => {},
+      plan: async () => ({ sourceLock, inputsRoot: ownedTools }),
+      releaseIdentity: () => ({ sourceLockSha256: profile.source }),
+      engineeringBuildProfile: (options) =>
+        engineeringBuildProfile(options, "linux", "x64"),
+      fail: (message) => {
+        throw new Error(message);
+      },
+      realpath: (file) => {
+        if (file === workspace)
+          return dependency("workspace", () => realpath(file));
+        if (file === path.join(ownedTools, "usr/bin"))
+          return dependency("runner-path", () => realpath(file));
+        return realpath(file);
+      },
+      toolchainShape: (value) => value,
+      json: async (file) => (file === "tools.json" ? toolchain : map),
+      pinned: async (_base, value) => value.path,
+      mapName: () => "runner.json",
+      mkdtemp: async (prefix) => {
+        preparation = await mkdtemp(prefix);
+        return preparation;
+      },
+      output: async () => {},
+      writeFile,
+      stableJson,
+      path,
+      hostedAdmissionRecorder,
+      assertHostedBuildIdentity: (...args) =>
+        dependency("identity", () =>
+          assertHostedBuildIdentity(...args, "linux", "x64"),
+        ),
+      statfs: async () => ({
+        bavail: (boundary === "capacity" ? 99 : 100) * 1024 ** 3,
+        bsize: 1,
+      }),
+      os: { totalmem: () => 8 * 1024 ** 3, availableParallelism: () => 4 },
+      validateRunnerMap: (...args) =>
+        dependency("runner-map", () => validateRunnerMap(...args)),
+      verifyToolchainFiles: async () => dependency("tool-pins", () => {}),
+      inside: actualInside,
+      verifySourceBuildIsolation: async () => dependency("isolation", () => {}),
+      mkdir: (...args) => dependency("workdir", () => mkdir(...args)),
+      buildEnvironment: () => {
+        acquisitions++;
+        throw new Error("unexpected acquisition");
+      },
+    };
+    const actualBuild = new Script(`(${build.toString()})`).runInNewContext(
+      synthetic,
+    );
+    await assert.rejects(
+      actualBuild(
+        {
+          execute: true,
+          repository,
+          inputs: profile.inputs,
+          target: selected,
+          runnerMode: "hosted",
+          engineering: { workspace, completeSdk: true },
+        },
+        {
+          SORNG_CEF_TOOLS_ROOT: ownedTools,
+          RUNNER_TEMP: temporary,
+          GITHUB_ACTIONS: "true",
+          RUNNER_ENVIRONMENT: "github-hosted",
+          GITHUB_REPOSITORY_VISIBILITY: "public",
+          ImageOS: map.hosted.imageOS,
+          ImageVersion: map.hosted.imageVersion,
+        },
+      ),
+      (error) =>
+        boundary === "capacity"
+          ? /capacity is insufficient/.test(error.message)
+          : error === original,
+    );
+    assert.equal(acquisitions, 0);
+    const raw = await readFile(
+      path.join(preparation, "hosted-admission.jsonl"),
+      "utf8",
+    );
+    const rows = raw
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(rows.at(-1), { stage: boundary, status: "fail" });
+    assert.deepEqual(
+      rows.filter((row) => row.status === "start").map((row) => row.stage),
+      stages.slice(0, index + 1),
+    );
+    assert.doesNotMatch(
+      raw,
+      /secret|private|profile|credential|unexpected acquisition/,
+    );
+  }
 });
 
 test("Linux ARM cross-build requires an explicit reviewed x64 map and retains native ARM acceptance", () => {
