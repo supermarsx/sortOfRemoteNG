@@ -36,6 +36,114 @@ def bounded(path,cap):
   fd_before=os.fstat(f.fileno());helper.verify_open_identity(info,fd_before);raw=f.read(cap+1)
   helper.verify_snapshots(info,fd_before,path.lstat(),os.fstat(f.fileno()))
  need(len(raw)<=cap,'COMPILE_FILE_BOUND');return raw
+# BEGIN owned Job metadata observer (no lifecycle authority).
+class OwnedMemberApi:
+ """Bindings are created only after the maintained native Job module is loaded."""
+ def __init__(self,job):
+  self.j=job
+  self.get_pid=job.declare('GetProcessId',job.W.DWORD,[job.HANDLE])
+  self.get_image=job.declare('QueryFullProcessImageNameW',job.W.BOOL,[job.HANDLE,job.W.DWORD,job.W.LPWSTR,job.C.POINTER(job.W.DWORD)])
+ def identity(self,handle):
+  j=self.j;pid=int(self.get_pid(handle));fields=[j.W.FILETIME()for _ in range(4)]
+  need(pid>0 and j.process_times(handle,*[j.C.byref(x)for x in fields]),'OBSERVER_IDENTITY_UNAVAILABLE')
+  return pid,(fields[0].dwHighDateTime<<32)|fields[0].dwLowDateTime
+ def member(self,handle,job):
+  value=self.j.W.BOOL();need(self.j.is_in_job(handle,job,self.j.C.byref(value)),'OBSERVER_MEMBERSHIP_UNAVAILABLE');return bool(value.value)
+ def snapshot(self,job):
+  j=self.j
+  class ProcessList(j.C.Structure):
+   _fields_=[('assigned',j.W.DWORD),('count',j.W.DWORD),('ids',j.SIZE*8)]
+  value=ProcessList();need(j.query_job(job,3,j.C.byref(value),j.C.sizeof(value),None),'OBSERVER_LIST_UNAVAILABLE')
+  need(value.count<=8,'OBSERVER_LIST_BOUND');return int(value.assigned),int(value.count),list(value.ids[:value.count])
+ def open(self,pid):return self.j.open_process(0x100000|0x1000,False,pid)
+ def image(self,handle):
+  j=self.j;buffer=j.C.create_unicode_buffer(32768);size=j.W.DWORD(32768)
+  need(self.get_image(handle,0,buffer,j.C.byref(size))and 0<size.value<32768,'OBSERVER_IMAGE_UNAVAILABLE')
+  return buffer[:size.value]
+ def close(self,handle):return bool(self.j.close(handle))
+
+class OwnedMemberObservation:
+ """One creation-bound metadata snapshot; no process controls, grace or retries."""
+ ERRORS=frozenset(('OBSERVER_NOT_BOUND','OBSERVER_BIND_REPEATED','OBSERVER_SNAPSHOT_REPEATED','OBSERVER_IDENTITY_UNAVAILABLE','OBSERVER_IDENTITY_MISMATCH','OBSERVER_MEMBERSHIP_UNAVAILABLE','OBSERVER_MEMBERSHIP_MISMATCH','OBSERVER_LIST_UNAVAILABLE','OBSERVER_LIST_BOUND','OBSERVER_OPEN_UNAVAILABLE','OBSERVER_IMAGE_UNAVAILABLE','OBSERVER_BUDGET','OBSERVER_CLOCK','OBSERVER_CLOSE_FAILED','OBSERVER_API_UNAVAILABLE'))
+ IMAGE_NAMES={'python.exe':'python-name','pythonw.exe':'python-name','cl.exe':'msvc-driver-name','c1.exe':'msvc-c-front-end-name','c1xx.exe':'msvc-cpp-front-end-name','c2.exe':'msvc-back-end-name','link.exe':'msvc-linker-name','cvtres.exe':'msvc-resource-name','mspdbsrv.exe':'msvc-pdb-service-name','vctip.exe':'msvc-vctip-name'}
+ def __init__(self,api,clock=time.monotonic):
+  self.api=api;self.clock=clock;self.job=None;self.root=None;self.birth=None;self.calls=0;self.end=None
+  self.data={'kind':'owned-job-member-metadata','bound':False,'rootPid':None,'rootCreation':None,'snapshotAttempted':False,'complete':False,'members':[],'error':None,'handlesClosed':True,'imageAuthentication':False,'elapsedMs':None,'withinExistingCleanupDeadline':False}
+ @staticmethod
+ def _integer(value,maximum):return isinstance(value,int)and not isinstance(value,bool)and 0<value<=maximum
+ def _identity(self,value):
+  need(isinstance(value,tuple)and len(value)==2 and self._integer(value[0],0xffffffff)and self._integer(value[1],0xffffffffffffffff),'OBSERVER_IDENTITY_UNAVAILABLE');return value
+ @classmethod
+ def _code(cls,error):
+  value=error.args[0]if isinstance(error,ValueError)and len(error.args)==1 else None
+  return value if isinstance(value,str)and value in cls.ERRORS else'OBSERVER_API_UNAVAILABLE'
+ def _fail(self,code):
+  if self.data['error']is None:self.data['error']=code
+  self.data['complete']=False
+ def _now(self):
+  value=self.clock();need(isinstance(value,(int,float))and not isinstance(value,bool)and 0<=value<1e20,'OBSERVER_CLOCK');return value
+ def _budget(self):need(self._now()<self.end,'OBSERVER_BUDGET')
+ def _invoke(self,method,*args):self._budget();return method(*args)
+ def __call__(self,job,root,pid,creation):
+  self.calls+=1
+  try:
+   need(self.calls==1,'OBSERVER_BIND_REPEATED')
+   need(job and root and self._integer(pid,0xffffffff)and isinstance(creation,str)and 1<=len(creation)<=20 and creation.isascii()and creation.isdecimal(),'OBSERVER_IDENTITY_UNAVAILABLE')
+   birth=int(creation);need(self._integer(birth,0xffffffffffffffff),'OBSERVER_IDENTITY_UNAVAILABLE')
+   need(self._identity(self.api.identity(root))==(pid,birth),'OBSERVER_IDENTITY_MISMATCH')
+   need(self.api.member(root,job)is True,'OBSERVER_MEMBERSHIP_MISMATCH')
+   need(self._identity(self.api.identity(root))==(pid,birth),'OBSERVER_IDENTITY_MISMATCH')
+   self.job,self.root,self.birth=job,root,birth;self.data.update(bound=True,rootPid=pid,rootCreation=creation)
+  except Exception as error:self.data['bound']=False;self.job=self.root=None;self._fail(self._code(error))
+ def _row(self,pid):
+  row={'snapshotIndex':len(self.data['members']),'pid':None,'creation':None,'memberBefore':None,'memberAfter':None,'identityVerified':False,'imageClass':'unknown','imageNameOnly':True,'handleOpened':False,'handleClosed':None,'error':None};handle=None
+  try:
+   handle=self._invoke(self.api.open,pid);need(handle,'OBSERVER_OPEN_UNAVAILABLE');row['handleOpened']=True
+   row['memberBefore']=self._invoke(self.api.member,handle,self.job)is True;need(row['memberBefore'],'OBSERVER_MEMBERSHIP_MISMATCH')
+   first=self._identity(self._invoke(self.api.identity,handle));need(first[0]==pid and first[1]>=self.birth and(pid!=self.data['rootPid']or first[1]==self.birth),'OBSERVER_IDENTITY_MISMATCH')
+   classification='unknown'
+   try:
+    image=self._invoke(self.api.image,handle);need(isinstance(image,str)and 0<len(image)<32768 and '\0'not in image,'OBSERVER_IMAGE_UNAVAILABLE')
+    classification=self.IMAGE_NAMES.get(ntpath.basename(image).lower(),'unclassified')
+   except BaseException as error:row['error']=self._code(error);self._fail(row['error'])
+   final=self._identity(self._invoke(self.api.identity,handle));need(final==first,'OBSERVER_IDENTITY_MISMATCH')
+   row['memberAfter']=self._invoke(self.api.member,handle,self.job)is True;need(row['memberAfter'],'OBSERVER_MEMBERSHIP_MISMATCH');self._budget()
+   row.update(pid=pid,creation=str(first[1]),identityVerified=True,imageClass=classification)
+  except BaseException as error:row['error']=self._code(error);self._fail(row['error'])
+  finally:
+   if handle:
+    try:row['handleClosed']=self.api.close(handle)is True
+    except BaseException:row['handleClosed']=False
+    if not row['handleClosed']:self.data['handlesClosed']=False;self._fail('OBSERVER_CLOSE_FAILED');row['error']=row['error']or'OBSERVER_CLOSE_FAILED'
+  self.data['members'].append(row)
+ def before_cleanup(self,deadline):
+  started=None
+  try:
+   need(not self.data['snapshotAttempted'],'OBSERVER_SNAPSHOT_REPEATED');self.data['snapshotAttempted']=True
+   need(self.data['bound']and self.job and self.root,'OBSERVER_NOT_BOUND')
+   started=self._now();need(isinstance(deadline,(int,float))and not isinstance(deadline,bool)and 0<deadline<1e20 and deadline-started>.05,'OBSERVER_BUDGET')
+   self.end=min(deadline,started+1);self.data['withinExistingCleanupDeadline']=self.end<=deadline
+   need(self._identity(self._invoke(self.api.identity,self.root))==(self.data['rootPid'],self.birth),'OBSERVER_IDENTITY_MISMATCH')
+   value=self._invoke(self.api.snapshot,self.job);self._budget()
+   need(isinstance(value,tuple)and len(value)==3,'OBSERVER_LIST_BOUND');assigned,count,pids=value
+   need(type(assigned)is int and type(count)is int and 0<=assigned<=8 and count==assigned and isinstance(pids,list)and len(pids)==count and all(self._integer(p,0xffffffff)for p in pids)and len(set(pids))==len(pids),'OBSERVER_LIST_BOUND')
+   self.data['reportedCount']=count
+   for pid in pids:self._budget();self._row(pid)
+   self._budget();self.data['complete']=self.data['error']is None and all(r['identityVerified']and r['handleClosed']for r in self.data['members'])
+  except BaseException as error:self._fail(self._code(error))
+  finally:
+   self.job=self.root=None
+   if started is not None:
+    try:self.data['elapsedMs']=max(0,int((self._now()-started)*1000))
+    except BaseException:self._fail('OBSERVER_CLOCK')
+  if not self.data['handlesClosed']:raise ValueError('OBSERVER_CLOSE_FAILED')
+ def report(self):
+  raw=json.dumps(self.data,ensure_ascii=True,indent=2).encode('ascii')
+  # Reserve eight indentation columns plus fixed envelope text for the caller.
+  if len(raw)+8*raw.count(b'\n')+128>8192:return {'kind':'owned-job-member-metadata','bound':self.data['bound'],'complete':False,'members':[],'handlesClosed':self.data['handlesClosed'],'error':'OBSERVER_REPORT_BOUND','imageAuthentication':False}
+  return json.loads(raw)
+# END owned Job metadata observer.
+
 def profile():
  raw=bounded(Path(__file__).with_name('profile.json'),32768);need(sha(raw)==PROFILE_SHA,'COMPILE_PROFILE_PIN');return json.loads(raw)
 def repo():return Path(__file__).resolve().parents[2]
@@ -238,7 +346,9 @@ def run(root):
    verified_sources(root);remaining=end-time.monotonic()-120;need(remaining>3,'COMPILE_DEADLINE')
    parent=job.ParentCancel(threading.Event());proof=None
    try:
-    proof=job.run_job(worker_argv(role,root,p),root,root/'jobs'/role,min(87,remaining-3),cancel=parent,cap=1048576)
+    member_observer=OwnedMemberObservation(OwnedMemberApi(job))
+    proof=job.run_job(worker_argv(role,root,p),root,root/'jobs'/role,min(87,remaining-3),cancel=parent,cap=1048576,_test_observe=member_observer)
+    proof['ownedMemberObservation']=member_observer.report()
     proof['parentCreationFiletime']=parent.parent_creation;proof['parentExitObserved']=parent.exit_observed
    finally:
     try:parent.close();closed=True

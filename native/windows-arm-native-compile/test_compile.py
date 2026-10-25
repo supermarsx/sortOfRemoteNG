@@ -8,7 +8,17 @@ import os
 import struct
 import tempfile
 import unittest
+import types
 from unittest.mock import patch
+
+def without_owned_observer(raw):
+ start=b'# BEGIN owned Job metadata observer (no lifecycle authority).\r\n';end=b'# END owned Job metadata observer.\r\n\r\n'
+ assert raw.count(start)==raw.count(end)==1
+ a=raw.index(start);b=raw.index(end)+len(end);raw=raw[:a]+raw[b:]
+ original=b"   try:\r\n    proof=job.run_job(worker_argv(role,root,p),root,root/'jobs'/role,min(87,remaining-3),cancel=parent,cap=1048576)\r\n"
+ observed=b"   try:\r\n    member_observer=OwnedMemberObservation(OwnedMemberApi(job))\r\n    proof=job.run_job(worker_argv(role,root,p),root,root/'jobs'/role,min(87,remaining-3),cancel=parent,cap=1048576,_test_observe=member_observer)\r\n    proof['ownedMemberObservation']=member_observer.report()\r\n"
+ assert raw.count(observed)==1
+ return raw.replace(observed,original)
 
 s=importlib.util.spec_from_file_location('arm_compile_source',Path(__file__).with_name('compile.py'));m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 
@@ -97,7 +107,7 @@ class Tests(unittest.TestCase):
   with self.assertRaises(ValueError):m.coff(raw[:48])
 
  def test_only_tu_writer_changes_from_actual_pinned_beforeimage(self):
-  current=Path(__file__).with_name('compile.py').read_bytes()
+  current=without_owned_observer(Path(__file__).with_name('compile.py').read_bytes())
   fixed=b"with (root/'sources'/(name+'.'+extension)).open('xb')as f:f.write(text.encode('ascii'))"
   original=b"with (root/'sources'/(name+'.'+extension)).open('x',encoding='ascii')as f:f.write(text)"
   self.assertEqual(current.count(fixed),1)
@@ -148,5 +158,107 @@ class Tests(unittest.TestCase):
     with self.assertRaisesRegex(ValueError,'^COMPILE_TU_CHANGED$'):self.actual_tu_guard(root,'c')
    finally:
     self.assertEqual(m.no_links(root),root);self.assertEqual(root.parent,parent);self.assertEqual((root.lstat().st_dev,root.lstat().st_ino),(before.st_dev,before.st_ino))
+
+
+class FakeOwnedApi:
+ def __init__(self):self.events=[];self.ids=[20];self.opens=[];self.closed=[];self.birth=101;self.member_changed=False;self.creation_changed=False;self.child_identity_calls=0;self.child_member_calls=0;self.image_value='C:/private-not-retained/vctip.exe';self.image_failure=None;self.close_ok=True;self.open_ok=True;self.snapshot_value=None;self.on_open=None
+ def identity(self,handle):
+  self.events.append('identity:'+str(handle))
+  if handle=='root':return(10,100)
+  self.child_identity_calls+=1;pid=int(handle.split('-')[1]);return(pid,self.birth+(1 if self.creation_changed and self.child_identity_calls>1 else 0))
+ def member(self,handle,job):
+  self.events.append('member:'+str(handle));assert job=='job'
+  if handle=='root':return True
+  self.child_member_calls+=1;return not(self.member_changed and self.child_member_calls>1)
+ def snapshot(self,job):self.events.append('snapshot');assert job=='job';return self.snapshot_value if self.snapshot_value is not None else(len(self.ids),len(self.ids),list(self.ids))
+ def open(self,pid):
+  self.events.append('open');self.opens.append(pid)
+  if self.on_open:self.on_open()
+  return'child-'+str(pid)if self.open_ok else None
+ def image(self,handle):
+  self.events.append('image')
+  if self.image_failure:raise self.image_failure
+  return self.image_value
+ def close(self,handle):self.events.append('close');self.closed.append(handle);return self.close_ok
+
+class OwnedObservationTests(unittest.TestCase):
+ def observer(self,api=None,clock=lambda:0):
+  api=api or FakeOwnedApi();value=m.OwnedMemberObservation(api,clock);value('job','root',10,'100');return api,value
+ def test_full_original_protocol_and_backend_unchanged(self):
+  raw=without_owned_observer(Path(__file__).with_name('compile.py').read_bytes());self.assertEqual(m.sha(raw),'9c0b95b20aacf43f5eeb19932f6bdfe86f75bd2a6a669daf8837212465a686c3')
+  self.assertEqual(m.sha(Path(__file__).with_name('job.py').read_bytes()),'e24c0f7d598b0297d59d09258b87ba57911ac3075470b9a37c53018572083770')
+  tree=ast.parse(Path(__file__).with_name('job.py').read_bytes());run=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='run_job')
+  calls=[n for n in ast.walk(run)if isinstance(n,ast.Call)]
+  bind=next(n for n in calls if isinstance(n.func,ast.Name)and n.func.id=='_test_observe')
+  resume=next(n for n in calls if isinstance(n.func,ast.Name)and n.func.id=='resume')
+  before=next(n for n in calls if isinstance(n.func,ast.Attribute)and n.func.attr=='before_cleanup')
+  children=next(n for n in calls if isinstance(n.func,ast.Name)and n.func.id=='observed_process_handles')
+  terminate=next(n for n in calls if isinstance(n.func,ast.Name)and n.func.id=='terminate_job')
+  quiet=next(n for n in ast.walk(run)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='quiet_deadline'for t in n.targets))
+  self.assertLess(bind.lineno,resume.lineno);self.assertLess(quiet.lineno,before.lineno);self.assertLess(before.lineno,children.lineno);self.assertLess(before.lineno,terminate.lineno)
+ def test_creation_bound_owned_member_and_closed_image_classification(self):
+  api,value=self.observer();value.before_cleanup(30);data=value.report();self.assertTrue(data['complete']);self.assertTrue(data['withinExistingCleanupDeadline']);self.assertTrue(data['handlesClosed']);self.assertEqual(data['reportedCount'],1)
+  row=data['members'][0];self.assertEqual((row['pid'],row['creation']),(20,'101'));self.assertTrue(row['identityVerified']);self.assertTrue(row['memberBefore']);self.assertTrue(row['memberAfter']);self.assertEqual(row['imageClass'],'msvc-vctip-name');self.assertFalse(data['imageAuthentication']);self.assertEqual(api.closed,['child-20']);self.assertNotIn('private-not-retained',json.dumps(data))
+ def test_unbound_or_root_identity_mismatch_never_opens_member(self):
+  for bind in [False,True]:
+   api=FakeOwnedApi();value=m.OwnedMemberObservation(api,lambda:0)
+   if bind:value('job','root',11,'100')
+   value.before_cleanup(30);self.assertFalse(value.report()['bound']);self.assertFalse(value.report()['complete']);self.assertEqual(api.opens,[]);self.assertNotIn('snapshot',api.events)
+ def test_partial_duplicate_overcount_lists_never_open_process(self):
+  for snapshot in [(2,1,[20]),(9,9,list(range(20,29))),(2,2,[20,20]),(1,1,[True])]:
+   api,value=self.observer();api.snapshot_value=snapshot;value.before_cleanup(30);self.assertEqual(value.report()['error'],'OBSERVER_LIST_BOUND');self.assertEqual(api.opens,[])
+ def test_creation_or_membership_change_remains_unknown_and_closes_handle(self):
+  for mode in ['old-birth','birth-change','membership-before','membership-after']:
+   api,value=self.observer()
+   if mode=='old-birth':api.birth=99
+   if mode=='birth-change':api.creation_changed=True
+   if mode=='membership-before':api.child_member_calls=1;api.member_changed=True
+   if mode=='membership-after':api.member_changed=True
+   value.before_cleanup(30);row=value.report()['members'][0];self.assertFalse(row['identityVerified']);self.assertIsNone(row['pid']);self.assertIsNone(row['creation']);self.assertEqual(row['imageClass'],'unknown');self.assertEqual(api.closed,['child-20'])
+   if mode in ['old-birth','membership-before']:self.assertNotIn('image',api.events)
+ def test_nonmember_snapshot_pid_never_queries_foreign_identity_or_image(self):
+  api,value=self.observer();api.child_member_calls=1;api.member_changed=True;value.before_cleanup(30)
+  self.assertEqual(api.child_identity_calls,0);self.assertNotIn('image',api.events);self.assertEqual(api.closed,['child-20']);row=value.report()['members'][0];self.assertFalse(row['identityVerified']);self.assertIsNone(row['pid']);self.assertIsNone(row['creation']);self.assertEqual(row['imageClass'],'unknown');self.assertEqual(row['error'],'OBSERVER_MEMBERSHIP_MISMATCH')
+ def test_open_unavailable_and_unknown_or_failed_image_never_leak_path(self):
+  api,value=self.observer();api.open_ok=False;value.before_cleanup(30);self.assertEqual(api.closed,[]);self.assertEqual(value.report()['members'][0]['error'],'OBSERVER_OPEN_UNAVAILABLE')
+  for image,error in [('C:/private-unique/unlisted-owned.exe',None),('X'*32768,None),(None,OSError('PRIVATE-EXCEPTION-MUST-NOT-LEAK'))]:
+   api,value=self.observer();api.image_value=image;api.image_failure=error;value.before_cleanup(30);data=value.report();row=data['members'][0];self.assertTrue(row['identityVerified']);self.assertEqual(row['pid'],20);self.assertIn(row['imageClass'],['unclassified','unknown']);self.assertNotIn('private-unique',json.dumps(data));self.assertNotIn('PRIVATE-EXCEPTION',json.dumps(data));self.assertEqual(api.closed,['child-20'])
+ def test_same_cleanup_budget_exhaustion_closes_open_handle_without_retry(self):
+  api,value=self.observer();value.before_cleanup(.01);self.assertEqual(api.opens,[]);self.assertNotIn('snapshot',api.events);self.assertEqual(value.report()['error'],'OBSERVER_BUDGET')
+  clock=[0];api,value=self.observer(clock=lambda:clock[0]);api.on_open=lambda:clock.__setitem__(0,2);value.before_cleanup(30);self.assertEqual(api.opens,[20]);self.assertEqual(api.closed,['child-20']);self.assertNotIn('image',api.events);self.assertEqual(value.report()['error'],'OBSERVER_BUDGET')
+ def test_maximum_eight_rows_and_one_snapshot_only(self):
+  api,value=self.observer();api.ids=list(range(20,28));value.before_cleanup(30);self.assertEqual(len(value.report()['members']),8);self.assertLessEqual(len(json.dumps({'roles':[{'job':{'ownedMemberObservation':value.report()}}]},indent=2).encode()),8192);self.assertTrue(value.report()['complete']);opened=list(api.opens);value.before_cleanup(30);self.assertEqual(api.opens,opened);self.assertFalse(value.report()['complete']);self.assertEqual(value.report()['error'],'OBSERVER_SNAPSHOT_REPEATED')
+ def test_metadata_bound_fails_closed_without_private_payload(self):
+  api,value=self.observer();value.before_cleanup(30);value.data['unexpected-private-payload']='PRIVATE'*2000;report=value.report();self.assertEqual(report['error'],'OBSERVER_REPORT_BOUND');self.assertFalse(report['complete']);self.assertNotIn('PRIVATE',json.dumps(report));self.assertLess(len(json.dumps(report)),8192)
+ def test_repeated_bind_and_empty_snapshot_never_expand_authority(self):
+  api,value=self.observer();value('foreign','other',999,'1');value.before_cleanup(30);self.assertEqual(api.opens,[]);self.assertFalse(value.report()['bound']);self.assertEqual(value.report()['error'],'OBSERVER_BIND_REPEATED')
+  api,value=self.observer();api.ids=[];value.before_cleanup(30);self.assertTrue(value.report()['complete']);self.assertEqual(value.report()['members'],[]);self.assertEqual(api.opens,[])
+ def test_invalid_root_creation_and_deadline_are_closed_unknown(self):
+  for creation in ['0','-1','1'*21,'not-private',True]:
+   api=FakeOwnedApi();value=m.OwnedMemberObservation(api,lambda:0);value('job','root',10,creation);value.before_cleanup(30);self.assertFalse(value.report()['bound']);self.assertEqual(api.opens,[])
+  for deadline in [float('nan'),float('inf'),True,-1]:
+   api,value=self.observer();value.before_cleanup(deadline);self.assertEqual(api.opens,[]);self.assertEqual(value.report()['error'],'OBSERVER_BUDGET')
+ def test_close_failure_is_separate_and_no_raw_error_escapes(self):
+  api,value=self.observer();api.close_ok=False
+  with self.assertRaisesRegex(ValueError,'^OBSERVER_CLOSE_FAILED$'):value.before_cleanup(30)
+  self.assertFalse(value.report()['handlesClosed']);self.assertFalse(value.report()['complete']);self.assertEqual(api.closed,['child-20'])
+ def test_real_caller_parent_receipt_preserves_original_descendants_verdict_and_bytes(self):
+  api=FakeOwnedApi();events=[];held={};observation_class=m.OwnedMemberObservation
+  class Parent:
+   parent_creation='50';exit_observed=False
+   def __init__(self,event):pass
+   def close(self):events.append('parent-close')
+  tree=ast.parse(Path(__file__).with_name('job.py').read_bytes());function=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='write_parent_receipt');scope={'Path':Path,'json':json};exec(compile(ast.Module(body=[function],type_ignores=[]),'<actual-parent-receipt-writer>','exec'),scope)
+  def run_job(argv,root,output,seconds,**kwargs):
+   observer=kwargs['_test_observe'];observer('job','root',10,'100');events.append('bound-before-resume');proof={'success':False,'outcome':'descendants-left','rootExit':0,'cleanupVerified':True,'activeAtEnd':0,'rootReaped':True,'logReadersStopped':True};held['proof']=proof;events.append('original-verdict');observer.before_cleanup(30);events.append('original-cleanup');output.mkdir(parents=True);raw=(json.dumps(proof)+'\n').encode();(output/'receipt.json').write_bytes(raw);held['original']=raw;return proof
+  fake=types.SimpleNamespace(ParentCancel=Parent,run_job=run_job,write_parent_receipt=scope['write_parent_receipt']);spec=types.SimpleNamespace(loader=types.SimpleNamespace(exec_module=lambda module:None))
+  parent=Path(tempfile.gettempdir()).resolve()
+  with tempfile.TemporaryDirectory(dir=parent)as folder:
+   root=Path(folder).resolve();before=root.lstat();(root/'sources').mkdir()
+   try:
+    with patch.object(m,'profile',return_value={'files':[],'python':{'path':'not-executed-owned-python'}}),patch.object(m,'BOUND_CONTEXT_DIGEST','a'*64),patch.object(m,'verified_sources',return_value={}),patch.object(m,'observer',return_value=object()),patch.object(m.platform,'machine',return_value='ARM64'),patch.object(m.sys,'platform','win32'),patch.dict(m.sys.modules,{m.__name__:m}),patch.object(m.importlib.util,'spec_from_file_location',return_value=spec),patch.object(m.importlib.util,'module_from_spec',return_value=fake),patch.object(m,'OwnedMemberApi',return_value=api),patch.object(m,'OwnedMemberObservation',side_effect=lambda adapter:observation_class(adapter,lambda:0)):
+     self.assertEqual(m.run(root),1)
+    original=(root/'jobs/c/receipt.json').read_bytes();self.assertEqual(original,held['original']);receipt=json.loads((root/'jobs/c/parent-receipt.json').read_bytes());self.assertEqual(receipt['originalJobOutcome'],'descendants-left');self.assertEqual(receipt['originalJobRootExit'],0);self.assertFalse(receipt['success']);self.assertEqual(receipt['originalJobReceipt']['sha256'],m.sha(original));self.assertTrue(receipt['ownedMemberObservation']['complete']);self.assertEqual(events,['bound-before-resume','original-verdict','original-cleanup','parent-close']);report=json.loads((root/'compile-result.json').read_bytes());self.assertFalse(report['success']);self.assertEqual(len(report['roles']),1)
+   finally:self.assertEqual(m.no_links(root),root);self.assertEqual(root.parent,parent);self.assertEqual((root.lstat().st_dev,root.lstat().st_ino),(before.st_dev,before.st_ino))
 
 if __name__=='__main__':unittest.main()
