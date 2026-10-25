@@ -3416,9 +3416,20 @@ test("the native measurement client sends no input, takes no focus and uses only
     server,
     /if crate::measure::serves\(route\) \{\s*return crate::measure::serve\(/,
   );
-  assert.match(
-    measure,
-    /"\/measure-login" \| "\/measure-capacity" \| "\/measure-report" \| "\/measure-hold" \| "\/measure-socket"/,
+  const measurementRoutes =
+    /pub\(crate\) fn serves\(route: &str\) -> bool \{\s*matches!\(\s*route,\s*([\s\S]*?)\s*\)\s*\|\| menu::serves\(route\)\s*\}/.exec(
+      measure,
+    );
+  assert.ok(measurementRoutes);
+  assert.deepEqual(
+    measurementRoutes[1].split(/\s*\|\s*/).map((route) => JSON.parse(route)),
+    [
+      "/measure-login",
+      "/measure-capacity",
+      "/measure-report",
+      "/measure-hold",
+      "/measure-socket",
+    ],
   );
   // The report marks its mode only when a measurement document exists.
   assert.match(
@@ -3752,7 +3763,9 @@ test("menu evidence plan mirrors the native client's plan and covers every K10 t
   const never = /pub\(crate\) const NEVER_SELECTED: &\[&str\] = &\[([^\]]+)\];/
     .exec(rust)[1]
     .split(",")
-    .map((label) => label.trim().replaceAll('"', ""));
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .map((label) => label.replaceAll('"', ""));
   assert.deepEqual(never, MENU_NEVER_SELECTED);
   assert.deepEqual(MENU_NEVER_SELECTED, [
     "Print",
