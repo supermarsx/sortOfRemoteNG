@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import YAML from "yaml";
 import { spawn, spawnSync } from "node:child_process";
-import { writeFileSync, fstatSync, renameSync } from "node:fs";
-import { PassThrough } from "node:stream";
+import {
+  writeFileSync,
+  fstatSync,
+  renameSync,
+  createWriteStream,
+} from "node:fs";
+import { PassThrough, Readable } from "node:stream";
 import {
   mkdir,
   mkdtemp,
@@ -4668,4 +4673,102 @@ test("Mac supplemental compiler identity participates in fresh checkpoint identi
     () => validateManifest(drifted, prior.identitySha256),
     /identity mismatch/,
   );
+});
+
+test("actual checkpoint download pipeline handles repeated disk backpressure without listener growth", async (t) => {
+  const root = await scratch(t);
+  const chunk = Buffer.alloc(65536, 42);
+  const expected = Buffer.concat(Array.from({ length: 32 }, () => chunk));
+  const warnings = [];
+  const warning = (value) => warnings.push(value);
+  process.on("warning", warning);
+  t.after(() => process.removeListener("warning", warning));
+  let destination;
+  let drains = 0;
+  const counts = [];
+  let sourceClosed = false;
+  const source = Readable.from(
+    (async function* () {
+      try {
+        for (let i = 0; i < 32; i++) yield chunk;
+      } finally {
+        sourceClosed = true;
+      }
+    })(),
+  );
+  await downloadAsset(
+    "owner/repo",
+    "private-token",
+    "/releases/assets/44",
+    path.join(root, "asset"),
+    { bytes: expected.length, sha256: sha(expected) },
+    {
+      request: async () => ({ ok: true, status: 200, body: source }),
+      createOutput(file, options) {
+        destination = createWriteStream(file, { ...options, highWaterMark: 1 });
+        destination.on("drain", () => {
+          drains++;
+          counts.push(destination.listenerCount("error"));
+        });
+        return destination;
+      },
+    },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(drains > 10, `observed ${drains} drains`);
+  assert.equal(
+    new Set(counts).size,
+    1,
+    "error listener count must stay constant across drains",
+  );
+  assert.ok(Math.max(...counts) <= 5);
+  assert.ok(
+    warnings.every((value) => value.name !== "MaxListenersExceededWarning"),
+  );
+  assert.ok(sourceClosed && source.destroyed && destination.closed);
+  t.diagnostic(
+    `drains=${drains}; errorListenerMin=${Math.min(...counts)}; errorListenerMax=${Math.max(...counts)}; maxListenerWarnings=${warnings.filter((value) => value.name === "MaxListenersExceededWarning").length}; sourceClosed=${sourceClosed}; destinationClosed=${destination.closed}`,
+  );
+  assert.deepEqual(await readFile(path.join(root, "asset")), expected);
+});
+
+test("early real destination failure cancels and closes source promptly without token or signed URL leak", async (t) => {
+  const root = await scratch(t);
+  let cancelled = false;
+  let output;
+  const body = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(Buffer.alloc(65536));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const begin = performance.now();
+  await assert.rejects(
+    downloadAsset(
+      "owner/repo",
+      "private-token",
+      "/releases/assets/44",
+      root,
+      { bytes: 1024 ** 3, sha256: "a".repeat(64) },
+      {
+        deadline: Date.now() + 2000,
+        request: async () => ({ ok: true, status: 200, body }),
+        createOutput(file, options) {
+          output = createWriteStream(file, options);
+          return output;
+        },
+      },
+    ),
+    (error) =>
+      !error.message.includes("private-token") &&
+      !error.message.includes("signature="),
+  );
+  assert.ok(performance.now() - begin < 1800);
+  assert.ok(cancelled && output.closed);
+  t.diagnostic(
+    `writeFailureElapsedMs=${Math.round(performance.now() - begin)}; sourceCancelled=${cancelled}; destinationClosed=${output.closed}`,
+  );
+  assert.equal(body.locked, false);
 });

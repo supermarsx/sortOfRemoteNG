@@ -20,7 +20,8 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { finished } from "node:stream/promises";
+import { finished, pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 import path from "node:path";
 import { hostname, tmpdir, userInfo } from "node:os";
 
@@ -3032,6 +3033,7 @@ export async function downloadAsset(
     request = fetch,
     maximum = LIMITS.chunk,
     deadline = Date.now() + 20 * 60_000,
+    createOutput = createWriteStream,
   } = {},
 ) {
   assert(
@@ -3093,30 +3095,35 @@ export async function downloadAsset(
   assert(response.ok, "Asset download failed");
   const hash = createHash("sha256");
   let bytes = 0;
-  const stream = createWriteStream(output, { flags: "wx" });
+  const signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()));
+  const input = Readable.from(response.body);
+  const stream = createOutput(output, { flags: "wx" });
+  // pipeline owns destination errors from the first tick and cancels/joins the
+  // input on any writer/hash/deadline failure; no per-drain listener pair leaks.
   try {
-    for await (const part of response.body) {
-      assert(Date.now() < deadline, "Asset deadline");
-      bytes += part.length;
-      assert(
-        bytes <= expected.bytes && bytes <= maximum,
-        "Downloaded asset bound",
-      );
-      hash.update(part);
-      if (!stream.write(part))
-        await new Promise((resolve, reject) => {
-          stream.once("drain", resolve);
-          stream.once("error", reject);
-        });
-    }
-    stream.end();
-    await finished(stream);
+    await pipeline(
+      input,
+      async function* checked(source) {
+        for await (const part of source) {
+          assert(Date.now() < deadline, "Asset deadline");
+          bytes += part.length;
+          assert(
+            bytes <= expected.bytes && bytes <= maximum,
+            "Downloaded asset bound",
+          );
+          hash.update(part);
+          yield part;
+        }
+      },
+      stream,
+      { signal },
+    );
     assert(
       bytes === expected.bytes && hash.digest("hex") === expected.sha256,
       "Downloaded asset digest mismatch",
     );
   } catch (error) {
-    stream.destroy();
+    if (signal.aborted) throw new Error("Asset deadline");
     throw error;
   }
 }
