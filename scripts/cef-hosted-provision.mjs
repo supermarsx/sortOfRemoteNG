@@ -327,12 +327,22 @@ async function prepareMacMetalToolchainImpl(
       )
         fail("MAC_METAL_RESOLVED_PATH");
       const physical = await canonical(file);
-      const external = physical.endsWith(`/Metal.xctoolchain/usr/bin/${role}`);
+      // Observed Apple metallib alias resolves to air-lld in the SAME component.
+      // This is role-specific; xcrun must still select the metallib entry point.
+      const binary =
+        role === "metallib" &&
+        path.posix.basename(file) === "metallib" &&
+        path.posix.basename(physical) === "air-lld"
+          ? "air-lld"
+          : role;
+      const external = physical.endsWith(
+        `/Metal.xctoolchain/usr/bin/${binary}`,
+      );
       const bundled =
         physical ===
-        `${canonicalDeveloper}/Toolchains/XcodeDefault.xctoolchain/usr/bin/${role}`;
+        `${canonicalDeveloper}/Toolchains/XcodeDefault.xctoolchain/usr/bin/${binary}`;
       if (!external && !bundled) fail("MAC_METAL_RESOLVED_PATH");
-      const root = physical.slice(0, -role.length);
+      const root = path.posix.dirname(physical);
       if (componentRoot && componentRoot !== root)
         fail("MAC_METAL_COMPONENT_DRIFT");
       componentRoot = root;

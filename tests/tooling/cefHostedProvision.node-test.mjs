@@ -885,3 +885,103 @@ test("stable Metal fingerprint excludes mount spelling but changes for tool byte
   unsigned.tools[0].appleAnchorVerified = false;
   assert.throws(() => macMetalFingerprint(unsigned), /MAC_METAL_OBSERVATION/);
 });
+
+function metallibAliasFixture({ bundled = false } = {}) {
+  const f = metalFixture();
+  const bin = bundled
+    ? `${f.selected.DEVELOPER_DIR}/Toolchains/XcodeDefault.xctoolchain/usr/bin`
+    : "/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/058e-observed/Metal.xctoolchain/usr/bin";
+  const original = f.dependencies.exec;
+  f.dependencies.exec = async (executable, args, options) => {
+    const result = await original(executable, args, options);
+    return executable === "/usr/bin/xcrun" && args.includes("--find")
+      ? { stdout: `${bin}/${args.at(-1)}` }
+      : result;
+  };
+  f.dependencies.realpath = async (value) =>
+    value === `${bin}/metallib` ? `${bin}/air-lld` : value;
+  return { ...f, bin };
+}
+test("observed metallib to air-lld alias retains physical Apple signature and paired version in same component", async () => {
+  for (const bundled of [false, true]) {
+    const f = metallibAliasFixture({ bundled });
+    const result = await prepareMacMetalToolchain(
+      { ...f, platform: "darwin" },
+      f.dependencies,
+    );
+    assert.equal(result.tools[1].physicalPath, `${f.bin}/air-lld`);
+    assert.equal(result.tools[1].role, "metallib");
+    assert.equal(result.tools[1].version, null);
+    assert.equal(
+      result.tools[1].pairedCompilerVersion,
+      result.tools[0].version,
+    );
+    assert.equal(result.tools[1].appleAnchorVerified, true);
+    assert(
+      f.calls.some(
+        (c) =>
+          c.executable === "/usr/bin/codesign" &&
+          c.args.at(-1) === `${f.bin}/air-lld`,
+      ),
+    );
+    assert(f.calls.every((c) => c.executable !== "/usr/bin/xcodebuild"));
+    assert.equal(result.componentResourceClosureVerified, false);
+  }
+});
+test("metallib alias denies unknown target cross-component invalid signature and retarget without download", async () => {
+  for (const fault of [
+    "unknown",
+    "cross-root",
+    "signature",
+    "retarget",
+    "metal-role",
+    "direct-air-lld",
+  ]) {
+    const f = metallibAliasFixture();
+    const originalRealpath = f.dependencies.realpath,
+      originalExec = f.dependencies.exec;
+    let resolves = 0;
+    f.dependencies.realpath = async (value) => {
+      if (fault === "metal-role" && value === `${f.bin}/metal`)
+        return `${f.bin}/air-lld`;
+      if (value === `${f.bin}/metallib`) {
+        resolves++;
+        if (fault === "unknown") return `${f.bin}/other-lld`;
+        if (fault === "cross-root")
+          return "/private/foreign/Metal.xctoolchain/usr/bin/air-lld";
+        if (fault === "retarget" && resolves > 1) return `${f.bin}/changed-lld`;
+      }
+      return originalRealpath(value);
+    };
+    f.dependencies.exec = async (executable, args, options) => {
+      if (
+        fault === "signature" &&
+        executable === "/usr/bin/codesign" &&
+        args.at(-1) === `${f.bin}/air-lld`
+      )
+        throw Error("private-signature-failure");
+      const result = await originalExec(executable, args, options);
+      return fault === "direct-air-lld" &&
+        args.includes("--find") &&
+        args.at(-1) === "metallib"
+        ? { stdout: `${f.bin}/air-lld` }
+        : result;
+    };
+    const expected = {
+      unknown: "MAC_METAL_RESOLVED_PATH",
+      "cross-root": "MAC_METAL_COMPONENT_DRIFT",
+      signature: "MAC_METAL_COMMAND_FAILED",
+      retarget: "MAC_METAL_FILE_CHANGED",
+      "metal-role": "MAC_METAL_RESOLVED_PATH",
+      "direct-air-lld": "MAC_METAL_RESOLVED_PATH",
+    }[fault];
+    await assert.rejects(
+      prepareMacMetalToolchain(
+        { ...f, platform: "darwin", allowDownload: true },
+        f.dependencies,
+      ),
+      (e) => e.message === expected,
+    );
+    assert(f.calls.every((c) => c.executable !== "/usr/bin/xcodebuild"));
+  }
+});

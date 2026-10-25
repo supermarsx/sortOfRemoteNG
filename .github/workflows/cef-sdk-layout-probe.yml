@@ -73,7 +73,7 @@ jobs:
               const file = args[4];
               if (typeof file === 'string' && path.posix.isAbsolute(file) && Buffer.byteLength(file) <= 2048 && !/[\x00-\x1f\x7f]/.test(file)) {
                 if (path.posix.basename(file) === 'metal') return 'verify-metal-signature';
-                if (path.posix.basename(file) === 'metallib') return 'verify-metallib-signature';
+                if (['metallib', 'air-lld'].includes(path.posix.basename(file))) return 'verify-metallib-signature';
               }
             }
             throw new Error('METAL_DIAGNOSTIC_COMMAND_DENIED');

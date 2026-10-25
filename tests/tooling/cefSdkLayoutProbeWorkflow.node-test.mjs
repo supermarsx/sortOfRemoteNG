@@ -762,3 +762,58 @@ test("simulated differing metallib canonical target remains denied by unchanged 
     false,
   );
 });
+
+test("diagnostic wrapper records physical air-lld signature as metallib and keeps helper failures", async () => {
+  for (const failure of [false, true]) {
+    const f = helperFixture("available");
+    f.dependencies.realpath = async (value) =>
+      value.endsWith("/metallib")
+        ? value.replace(/metallib$/, "air-lld")
+        : value;
+    const exec = f.dependencies.exec;
+    f.dependencies.exec = async (exe, args, options) => {
+      if (
+        failure &&
+        exe === "/usr/bin/codesign" &&
+        args.at(-1).endsWith("/air-lld")
+      ) {
+        // Use the actual observer to preserve the failing physical command's record.
+        return observer()(
+          async () => {
+            throw Object.assign(Error("private"), {
+              code: 1,
+              stderr: "original physical signature failure",
+            });
+          },
+          async (row) => f.records.push(row),
+        )(exe, args, options);
+      }
+      return exec(exe, args, options);
+    };
+    const run = () =>
+      prepareMacMetalToolchain(
+        {
+          selected: f.selected,
+          env: f.env,
+          platform: "darwin",
+          allowDownload: true,
+        },
+        f.dependencies,
+      );
+    if (failure) await assert.rejects(run(), /MAC_METAL_COMMAND_FAILED/);
+    else {
+      const result = await run();
+      assert(result.tools[1].physicalPath.endsWith("/air-lld"));
+      assert.equal(result.tools[1].version, null);
+    }
+    const records = f.records.filter(
+      (r) => r.stage === "verify-metallib-signature",
+    );
+    assert.equal(records.length, 1);
+    assert.equal(records[0].result, failure ? "failed" : "success");
+    assert.equal(
+      f.records.filter((r) => r.stage === "download-component").length,
+      0,
+    );
+  }
+});
