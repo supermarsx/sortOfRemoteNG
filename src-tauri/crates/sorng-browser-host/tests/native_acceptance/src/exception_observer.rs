@@ -200,10 +200,11 @@ mod tests {
             unsafe { observe(ptr::null_mut()) },
             EXCEPTION_CONTINUE_SEARCH
         );
-        let mut record =
-            windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_RECORD::default();
-        record.ExceptionCode = 0xc0000005u32 as i32;
-        record.ExceptionAddress = observe as *const () as *mut c_void;
+        let mut record = windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_RECORD {
+            ExceptionCode: 0xc0000005u32 as i32,
+            ExceptionAddress: observe as *const () as *mut c_void,
+            ..Default::default()
+        };
         let mut pointers = EXCEPTION_POINTERS {
             ExceptionRecord: &mut record,
             ContextRecord: ptr::null_mut(),

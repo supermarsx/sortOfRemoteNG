@@ -79,51 +79,6 @@ impl Observations {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::Observations;
-    #[test]
-    fn native_trace_is_bounded_and_counts_drops() {
-        let mut state = Observations::default();
-        for _ in 0..300 {
-            state.record("fixture-test", serde_json::json!({"ok":true}));
-        }
-        assert_eq!(state.trace.len(), 256);
-        assert_eq!(state.trace_dropped, 44);
-        assert!(state
-            .trace
-            .iter()
-            .all(|entry| entry["phase"] == "fixture-test" && entry["elapsedMs"].is_u64()));
-    }
-    #[test]
-    fn trace_checkpoint_is_readable_before_drop_and_never_overwrites() {
-        let output = std::env::temp_dir().join(format!(
-            "sorng-cef-trace-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir(&output).unwrap();
-        let mut state = Observations::with_journal(&output).unwrap();
-        for _ in 0..300 {
-            state.record("native-navigation", serde_json::json!({"allowed":true}));
-        }
-        let path = output.join("native-trace.jsonl");
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(text.lines().count(), 256);
-        assert!(text.lines().all(
-            |line| serde_json::from_str::<serde_json::Value>(line).unwrap()["detail"]["allowed"]
-                == true
-        ));
-        assert!(!state.trace_write_failed);
-        assert!(Observations::with_journal(&output).is_err());
-        drop(state);
-        std::fs::remove_file(path).unwrap();
-        std::fs::remove_dir(output).unwrap();
-    }
-}
 pub struct Fixture {
     pub pin: String,
     pub address: SocketAddr,
@@ -264,7 +219,9 @@ impl Fixture {
                         Ok(Ok(crate::measure::Served::Legacy)) => "completed",
                         Ok(Ok(crate::measure::Served::Measure)) => return,
                         // Held outside the five-second request deadline, by design.
-                        Ok(Ok(crate::measure::Served::Held(held))) => return held.wait(&final_state).await,
+                        Ok(Ok(crate::measure::Served::Held(held))) => {
+                            return (*held).wait(&final_state).await
+                        }
                         Ok(Err(_)) => "io-or-tls-failure",
                         Err(_) => "deadline",
                     };
@@ -322,5 +279,51 @@ impl Fixture {
         }
         std::fs::write(output.join(file), serde_json::to_vec_pretty(&report)?)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Observations;
+    #[test]
+    fn native_trace_is_bounded_and_counts_drops() {
+        let mut state = Observations::default();
+        for _ in 0..300 {
+            state.record("fixture-test", serde_json::json!({"ok":true}));
+        }
+        assert_eq!(state.trace.len(), 256);
+        assert_eq!(state.trace_dropped, 44);
+        assert!(state
+            .trace
+            .iter()
+            .all(|entry| entry["phase"] == "fixture-test" && entry["elapsedMs"].is_u64()));
+    }
+    #[test]
+    fn trace_checkpoint_is_readable_before_drop_and_never_overwrites() {
+        let output = std::env::temp_dir().join(format!(
+            "sorng-cef-trace-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&output).unwrap();
+        let mut state = Observations::with_journal(&output).unwrap();
+        for _ in 0..300 {
+            state.record("native-navigation", serde_json::json!({"allowed":true}));
+        }
+        let path = output.join("native-trace.jsonl");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 256);
+        assert!(text.lines().all(
+            |line| serde_json::from_str::<serde_json::Value>(line).unwrap()["detail"]["allowed"]
+                == true
+        ));
+        assert!(!state.trace_write_failed);
+        assert!(Observations::with_journal(&output).is_err());
+        drop(state);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(output).unwrap();
     }
 }

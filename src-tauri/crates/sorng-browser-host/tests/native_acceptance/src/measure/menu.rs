@@ -43,7 +43,15 @@ const MODE: &str = "menu";
 /// Print opens an OS dialog and both inspector rows open a top-level window in
 /// front of whatever the desktop is doing; Copy and Cut write the OS clipboard,
 /// and both pastes read it into the page.
-pub(crate) const NEVER_SELECTED: &[&str] = &["Print", "Inspect", "Developer tools", "Copy", "Cut", "Paste", "Paste as plain text"];
+pub(crate) const NEVER_SELECTED: &[&str] = &[
+    "Print",
+    "Inspect",
+    "Developer tools",
+    "Copy",
+    "Cut",
+    "Paste",
+    "Paste as plain text",
+];
 /// How long the page gets to report what it saw of one right-click.
 const PAGE_WAIT: Duration = Duration::from_millis(2500);
 /// After the engine asked for a menu: time for the probe and the command.
@@ -190,7 +198,13 @@ pub(crate) static PLANS: [Plan; 2] = [
             menu("rows-editable", "editable"),
             menu("rows-password-empty", "password-empty"),
             menu("rows-password-filled", "password-filled"),
-            step("select-word", Op::Left { target: "prose", clicks: 2 }),
+            step(
+                "select-word",
+                Op::Left {
+                    target: "prose",
+                    clicks: 2,
+                },
+            ),
             menu("rows-selection", "prose"),
             // The page's own handling, between two ordinary right-clicks.
             menu("own-before", "plain"),
@@ -211,9 +225,21 @@ pub(crate) static PLANS: [Plan; 2] = [
             menu("xframe-own", "xframe-own"),
             menu("xframe-link", "xframe-link"),
             menu("xframe-after", "xframe-plain"),
-            step("focus-key-plain", Op::Left { target: "key-plain", clicks: 1 }),
+            step(
+                "focus-key-plain",
+                Op::Left {
+                    target: "key-plain",
+                    clicks: 1,
+                },
+            ),
             step("key-plain", Op::MenuKey),
-            step("focus-key-own", Op::Left { target: "own-key", clicks: 1 }),
+            step(
+                "focus-key-own",
+                Op::Left {
+                    target: "own-key",
+                    clicks: 1,
+                },
+            ),
             step("key-own", Op::MenuKey),
             // Commands, each selected through the probe.
             pick("copy-link", "link", "Copy link address"),
@@ -235,7 +261,11 @@ pub(crate) static PLANS: [Plan; 2] = [
             pick("open-image", "image", "Open image in new tab"),
             pick("open-video", "video", "Open video in new tab"),
             pick("open-audio", "audio", "Open audio in new tab"),
-            pick("open-link-frame-origin", "link-frame", "Open link in new tab"),
+            pick(
+                "open-link-frame-origin",
+                "link-frame",
+                "Open link in new tab",
+            ),
             step("close-tabs", Op::CloseTabs),
             pick("select-all", "text", "Select all"),
             menu("rows-text-selected", "text"),
@@ -263,13 +293,26 @@ pub(crate) static PLANS: [Plan; 2] = [
             menu("hidden", "link"),
             step("show", Op::Show { shown: true }),
             menu("shown", "link"),
-            step("focus-manual", Op::Left { target: "manual-target", clicks: 1 }),
+            step(
+                "focus-manual",
+                Op::Left {
+                    target: "manual-target",
+                    clicks: 1,
+                },
+            ),
             step("manual-capture", Op::ManualCapture),
             menu("manual-active", "link"),
             step("manual-cancel", Op::ManualCancel),
             menu("manual-ended", "link"),
             // History and loading rows on a second document that keeps loading.
-            step("load-second", Op::Load { doc: "b", hold: true, global: false }),
+            step(
+                "load-second",
+                Op::Load {
+                    doc: "b",
+                    hold: true,
+                    global: false,
+                },
+            ),
             menu("rows-loading", "plain"),
             pick("stop", "plain", "Stop loading"),
             menu("rows-stopped", "plain"),
@@ -295,24 +338,63 @@ pub(crate) static PLANS: [Plan; 2] = [
             step("idle-first", Op::Idle),
             menu("rows-first-idle", "plain"),
             pick("back-first-page", "plain", "Back"),
-            step("load-again", Op::Load { doc: "a", hold: false, global: false }),
+            step(
+                "load-again",
+                Op::Load {
+                    doc: "a",
+                    hold: false,
+                    global: false,
+                },
+            ),
             // Popups are blocked for this view: each of the four rows that
             // would open a tab is asked for, and none may run.
             pick("open-link-popups-blocked", "link", "Open link in new tab"),
-            pick("open-image-popups-blocked", "image", "Open image in new tab"),
-            pick("open-video-popups-blocked", "video", "Open video in new tab"),
-            pick("open-audio-popups-blocked", "audio", "Open audio in new tab"),
+            pick(
+                "open-image-popups-blocked",
+                "image",
+                "Open image in new tab",
+            ),
+            pick(
+                "open-video-popups-blocked",
+                "video",
+                "Open video in new tab",
+            ),
+            pick(
+                "open-audio-popups-blocked",
+                "audio",
+                "Open audio in new tab",
+            ),
             // A document that prevents every contextmenu event at `document`.
-            step("load-global", Op::Load { doc: "g", hold: false, global: true }),
+            step(
+                "load-global",
+                Op::Load {
+                    doc: "g",
+                    hold: false,
+                    global: true,
+                },
+            ),
             menu("global-plain", "plain"),
             menu("global-link", "link"),
             menu("global-image", "image"),
             menu("global-video", "video"),
             menu("global-text", "text"),
             menu("global-frame-plain", "frame-plain"),
-            step("focus-key-global", Op::Left { target: "key-plain", clicks: 1 }),
+            step(
+                "focus-key-global",
+                Op::Left {
+                    target: "key-plain",
+                    clicks: 1,
+                },
+            ),
             step("key-global", Op::MenuKey),
-            step("load-plain", Op::Load { doc: "a", hold: false, global: false }),
+            step(
+                "load-plain",
+                Op::Load {
+                    doc: "a",
+                    hold: false,
+                    global: false,
+                },
+            ),
             menu("plain-after", "plain"),
         ],
     },
@@ -370,12 +452,20 @@ pub(crate) struct Server {
 
 impl Server {
     fn accept_report(&mut self, body: &[u8]) {
-        let report = serde_json::from_slice::<serde_json::Value>(body).ok().filter(|report| {
-            report["slot"].as_str().is_some_and(label_safe)
-                && report["kind"].as_str().is_some_and(|kind| REPORT_KINDS.contains(&kind))
-                && report["doc"].as_str().is_some_and(|doc| matches!(doc, "a" | "b" | "g"))
-                && report["frame"].as_str().is_some_and(|frame| matches!(frame, "" | "same" | "cross"))
-        });
+        let report = serde_json::from_slice::<serde_json::Value>(body)
+            .ok()
+            .filter(|report| {
+                report["slot"].as_str().is_some_and(label_safe)
+                    && report["kind"]
+                        .as_str()
+                        .is_some_and(|kind| REPORT_KINDS.contains(&kind))
+                    && report["doc"]
+                        .as_str()
+                        .is_some_and(|doc| matches!(doc, "a" | "b" | "g"))
+                    && report["frame"]
+                        .as_str()
+                        .is_some_and(|frame| matches!(frame, "" | "same" | "cross"))
+            });
         match report {
             Some(body) if self.reports.len() < 768 => self.reports.push(Seen {
                 received: Instant::now(),
@@ -482,7 +572,12 @@ pub(crate) async fn serve(
     let query = path.split_once('?').map_or("", |(_, query)| query);
     {
         let mut state = state.lock().unwrap();
-        *state.measure.menu.served.entry(resource(route, query)).or_default() += 1;
+        *state
+            .measure
+            .menu
+            .served
+            .entry(resource(route, query))
+            .or_default() += 1;
     }
     let (status, kind, content): (&str, &str, Vec<u8>) = match route {
         "/menu-page" => (
@@ -505,7 +600,7 @@ pub(crate) async fn serve(
         "/menu-tone.wav" => ("200 OK", "audio/wav", tone()),
         "/menu-missing.webm" => ("404 Not Found", "text/plain", Vec::new()),
         // Never answered: the document that asked stays loading.
-        "/menu-hold" => return Ok(Served::Held(Held { tls })),
+        "/menu-hold" => return Ok(Served::Held(Box::new(Held { tls }))),
         _ => {
             state.lock().unwrap().measure.menu.accept_report(body);
             ("200 OK", "application/json", b"{}".to_vec())
@@ -605,7 +700,10 @@ struct Layout {
 }
 
 fn pair(value: &serde_json::Value) -> [f64; 2] {
-    [value[0].as_f64().unwrap_or(0.0), value[1].as_f64().unwrap_or(0.0)]
+    [
+        value[0].as_f64().unwrap_or(0.0),
+        value[1].as_f64().unwrap_or(0.0),
+    ]
 }
 
 impl Layout {
@@ -631,6 +729,8 @@ impl Layout {
         }
     }
 }
+
+type TargetPoints = ((f64, f64), (f64, f64));
 
 #[derive(Debug, PartialEq)]
 enum Located {
@@ -673,7 +773,10 @@ fn locate(layouts: &BTreeMap<&'static str, Layout>, target: &str) -> Located {
         point = (point.0 + frame[0], point.1 + frame[1]);
     }
     let inside = |value: f64, limit: f64| value >= 1.0 && value <= limit - 1.0;
-    if rect[2] < 4.0 || rect[3] < 4.0 || !inside(point.0, page.inner[0]) || !inside(point.1, page.inner[1])
+    if rect[2] < 4.0
+        || rect[3] < 4.0
+        || !inside(point.0, page.inner[0])
+        || !inside(point.1, page.inner[1])
     {
         return Located::Unusable("target outside the viewport");
     }
@@ -801,7 +904,9 @@ enum Effect {
 
 fn effect(row: &str) -> Effect {
     match row {
-        "Open link in new tab" | "Open image in new tab" | "Open video in new tab"
+        "Open link in new tab"
+        | "Open image in new tab"
+        | "Open video in new tab"
         | "Open audio in new tab" => Effect::Tab,
         "Back" | "Forward" | "Reload" => Effect::Document,
         "Stop loading" => Effect::Stopped,
@@ -970,7 +1075,8 @@ impl Driver {
                 return Err("the identified browser is not the scenario's child window".into());
             }
             self.record.insert("engineBrowserId".into(), id.into());
-            self.record.insert("childWindowMatched".into(), matched.into());
+            self.record
+                .insert("childWindowMatched".into(), matched.into());
             self.engine = Some(engine);
         }
         if self.slot.stage != Stage::Armed {
@@ -1056,7 +1162,11 @@ impl Driver {
             let probe = self.probe.try_borrow().ok()?;
             probe.answers[active.before.menus.min(probe.answers.len())..]
                 .iter()
-                .find(|answer| answer.selected().is_some_and(|row| effect(row) == Effect::Document))
+                .find(|answer| {
+                    answer
+                        .selected()
+                        .is_some_and(|row| effect(row) == Effect::Document)
+                })
                 .map(|answer| answer.at)
         });
         if let Some(at) = replaced.filter(|at| self.fresh_after.is_none_or(|known| known < *at)) {
@@ -1080,7 +1190,9 @@ impl Driver {
                 _ => "",
             };
             let loaded = matches!(report.body["reason"].as_str(), Some("ready" | "restored"));
-            let stale = self.fresh_after.is_some_and(|after| report.received <= after);
+            let stale = self
+                .fresh_after
+                .is_some_and(|after| report.received <= after);
             // Until the new page has reported itself, only a document that
             // has just loaded is believed.
             if stale || (!self.layouts.contains_key("") && !loaded) {
@@ -1107,10 +1219,11 @@ impl Driver {
     }
 
     fn take(&mut self, kinds: &[&str]) -> Option<serde_json::Value> {
-        let index = self
-            .inbox
-            .iter()
-            .position(|report| report["kind"].as_str().is_some_and(|kind| kinds.contains(&kind)))?;
+        let index = self.inbox.iter().position(|report| {
+            report["kind"]
+                .as_str()
+                .is_some_and(|kind| kinds.contains(&kind))
+        })?;
         Some(self.inbox.remove(index))
     }
 
@@ -1174,7 +1287,10 @@ impl Driver {
     }
 
     fn point(&self, css: (f64, f64)) -> (i32, i32) {
-        ((css.0 * self.scale).round() as i32, (css.1 * self.scale).round() as i32)
+        (
+            (css.0 * self.scale).round() as i32,
+            (css.1 * self.scale).round() as i32,
+        )
     }
 
     /// One turn of the loop. `Ok(true)` once every step has run.
@@ -1210,7 +1326,10 @@ impl Driver {
         // Steps start when the page has reported its layout. A page that
         // never does is the result; its steps are then recorded as not run.
         if !self.layouts.contains_key("") && !self.revoked && self.steps.is_empty() {
-            if self.navigated_at.is_some_and(|at| at.elapsed() < Duration::from_secs(20)) {
+            if self
+                .navigated_at
+                .is_some_and(|at| at.elapsed() < Duration::from_secs(20))
+            {
                 return Ok(false);
             }
             self.record.insert("pageReady".into(), false.into());
@@ -1261,7 +1380,10 @@ impl Driver {
         }
         let point = CALIBRATION[(self.calibrations - 1) % CALIBRATION.len()];
         if active.stage == 0 {
-            let sent = self.engine.as_ref().is_some_and(|engine| hover(engine, point));
+            let sent = self
+                .engine
+                .as_ref()
+                .is_some_and(|engine| hover(engine, point));
             active.set("sent", serde_json::json!([point.0, point.1]));
             active.set("delivered", sent);
             active.next(1);
@@ -1288,7 +1410,7 @@ impl Driver {
     }
 
     /// The target's centre, waiting once for a layout report that is missing.
-    fn find(&mut self, active: &mut Active, target: &'static str) -> Option<Option<((f64, f64), (f64, f64))>> {
+    fn find(&mut self, active: &mut Active, target: &'static str) -> Option<Option<TargetPoints>> {
         match locate(&self.layouts, target) {
             Located::At(point, local) => Some(Some((point, local))),
             Located::Missing(frame) if !self.waited_for.contains(&frame) => {
@@ -1311,7 +1433,9 @@ impl Driver {
     }
 
     fn watch(&mut self, active: &mut Active) {
-        if active.requested_at.is_none() && self.requests.load(Ordering::Relaxed) > active.before.requests {
+        if active.requested_at.is_none()
+            && self.requests.load(Ordering::Relaxed) > active.before.requests
+        {
             active.requested_at = Some(Instant::now());
             if let Some(sent) = active.sent_at {
                 active.set("requestWithinMs", sent.elapsed().as_millis() as u64);
@@ -1419,7 +1543,8 @@ impl Driver {
                     false
                 }
                 Effect::Document => {
-                    self.layouts.contains_key("") || active.mark.elapsed() >= Duration::from_secs(10)
+                    self.layouts.contains_key("")
+                        || active.mark.elapsed() >= Duration::from_secs(10)
                 }
                 Effect::Stopped => {
                     self.slot.log.lock().unwrap().last_loading == Some(false)
@@ -1444,7 +1569,10 @@ impl Driver {
             };
             let at = self.point(css);
             active.set("sent", serde_json::json!([at.0, at.1]));
-            active.set("delivered", press(&engine, at, MouseButtonType::LEFT, clicks));
+            active.set(
+                "delivered",
+                press(&engine, at, MouseButtonType::LEFT, clicks),
+            );
             active.next(1);
             return false;
         }
@@ -1462,12 +1590,20 @@ impl Driver {
         let Some(engine) = self.engine.clone() else {
             return true;
         };
-        let offset = |driver: &Self| driver.layouts.get("").map_or(0.0, |layout| layout.scroll[1]);
+        let offset = |driver: &Self| {
+            driver
+                .layouts
+                .get("")
+                .map_or(0.0, |layout| layout.scroll[1])
+        };
         let at = self.point(WHEEL);
         match active.stage {
             0 => {
                 active.set("scrollBefore", offset(self));
-                active.set("delivered", wheel(&engine, at, if down { -3000 } else { 3000 }));
+                active.set(
+                    "delivered",
+                    wheel(&engine, at, if down { -3000 } else { 3000 }),
+                );
                 active.set("by", "wheel");
                 active.next(1);
                 false
@@ -1504,13 +1640,20 @@ impl Driver {
     }
 
     fn zoom(&mut self, active: &mut Active, percent: u16) -> Result<bool> {
-        let inner = |driver: &Self| driver.layouts.get("").map_or([0.0; 2], |layout| layout.inner);
+        let inner = |driver: &Self| {
+            driver
+                .layouts
+                .get("")
+                .map_or([0.0; 2], |layout| layout.inner)
+        };
         if active.stage == 0 {
             let Some(browser) = &self.slot.browser else {
                 return Ok(true);
             };
             active.set("innerBefore", serde_json::json!(inner(self)));
-            let accepted = browser.zoom(&self.slot.identity, f64::from(percent)).is_ok();
+            let accepted = browser
+                .zoom(&self.slot.identity, f64::from(percent))
+                .is_ok();
             active.set("accepted", accepted);
             active.next(1);
             return Ok(!accepted);
@@ -1598,7 +1741,14 @@ impl Driver {
             0 | 2 => {
                 self.manual.lock().unwrap().clear();
                 let accepted = self.manual(ManualInputAction::Capture {});
-                active.set(if active.stage == 0 { "accepted" } else { "acceptedAgain" }, accepted);
+                active.set(
+                    if active.stage == 0 {
+                        "accepted"
+                    } else {
+                        "acceptedAgain"
+                    },
+                    accepted,
+                );
                 active.next(active.stage + 1);
                 Ok(!accepted)
             }
@@ -1640,7 +1790,9 @@ impl Driver {
                 return Ok(true);
             };
             self.manual.lock().unwrap().clear();
-            let accepted = self.manual(ManualInputAction::Cancel { capture_id: capture });
+            let accepted = self.manual(ManualInputAction::Cancel {
+                capture_id: capture,
+            });
             active.set("accepted", accepted);
             active.next(1);
             return Ok(!accepted);
@@ -1651,12 +1803,21 @@ impl Driver {
         }
         active.set(
             "statuses",
-            results.into_iter().map(|(status, _)| status).collect::<Vec<_>>(),
+            results
+                .into_iter()
+                .map(|(status, _)| status)
+                .collect::<Vec<_>>(),
         );
         Ok(true)
     }
 
-    fn load(&mut self, active: &mut Active, doc: &'static str, hold: bool, global: bool) -> Result<bool> {
+    fn load(
+        &mut self,
+        active: &mut Active,
+        doc: &'static str,
+        hold: bool,
+        global: bool,
+    ) -> Result<bool> {
         if active.stage == 0 {
             let Some(browser) = &self.slot.browser else {
                 return Ok(true);
@@ -1685,7 +1846,13 @@ impl Driver {
         if active.stage == 0 {
             let views: Vec<String> = browser
                 .popup_inventory(&self.slot.identity)
-                .map(|inventory| inventory.views.into_iter().map(|view| view.view_id).collect())
+                .map(|inventory| {
+                    inventory
+                        .views
+                        .into_iter()
+                        .map(|view| view.view_id)
+                        .collect()
+                })
                 .unwrap_or_default();
             let closed = views
                 .iter()
@@ -1696,7 +1863,8 @@ impl Driver {
             active.next(1);
             return false;
         }
-        self.tabs().is_none_or(|tabs| tabs.is_empty()) || active.mark.elapsed() >= Duration::from_secs(5)
+        self.tabs().is_none_or(|tabs| tabs.is_empty())
+            || active.mark.elapsed() >= Duration::from_secs(5)
     }
 
     fn idle(&mut self, active: &mut Active) -> bool {
@@ -1755,10 +1923,16 @@ impl Driver {
                     })
                     .collect(),
             );
-            record.insert("menus".into(), probe.menus[menus..].iter().map(rows).collect());
+            record.insert(
+                "menus".into(),
+                probe.menus[menus..].iter().map(rows).collect(),
+            );
             record.insert(
                 "answers".into(),
-                probe.answers[menus..].iter().map(Answer::document).collect(),
+                probe.answers[menus..]
+                    .iter()
+                    .map(Answer::document)
+                    .collect(),
             );
             record.insert(
                 "copied".into(),
@@ -1778,7 +1952,7 @@ impl Driver {
                 (more > 0).then(|| (name.clone(), more.into()))
             })
             .collect();
-        let others: Vec<serde_json::Value> = self.inbox.drain(..).collect();
+        let others: Vec<serde_json::Value> = std::mem::take(&mut self.inbox);
         record.insert(
             "requests".into(),
             serde_json::json!({"before":before.requests,"after":after.requests}),
@@ -1812,7 +1986,11 @@ impl Driver {
 
     fn document(&mut self) -> serde_json::Value {
         let mut record = std::mem::take(&mut self.record);
-        let run: Vec<&str> = self.steps.iter().filter_map(|step| step["id"].as_str()).collect();
+        let run: Vec<&str> = self
+            .steps
+            .iter()
+            .filter_map(|step| step["id"].as_str())
+            .collect();
         let not_run: Vec<&str> = self
             .plan
             .steps
@@ -1827,9 +2005,16 @@ impl Driver {
     }
 }
 
-fn publish(fixture: &fixture::Fixture, scenarios: &[serde_json::Value], partial: Option<serde_json::Value>) {
+fn publish(
+    fixture: &fixture::Fixture,
+    scenarios: &[serde_json::Value],
+    partial: Option<serde_json::Value>,
+) {
     let mut state = fixture.observations.lock().unwrap();
-    let (reports, rejected) = (state.measure.menu.reports.len(), state.measure.menu.rejected_reports);
+    let (reports, rejected) = (
+        state.measure.menu.reports.len(),
+        state.measure.menu.rejected_reports,
+    );
     let served = state.measure.menu.served.clone();
     state.measure.menu.document = Some(serde_json::json!({
         "schema":1,"plan":plan_document(),"neverSelected":NEVER_SELECTED,
@@ -2219,8 +2404,8 @@ mod os {
                 class(window).into()
             }
         };
-        let under_fixture = !info.focus.is_null()
-            && Some(unsafe { GetAncestor(info.focus, GA_ROOT) }) == fixture;
+        let under_fixture =
+            !info.focus.is_null() && Some(unsafe { GetAncestor(info.focus, GA_ROOT) }) == fixture;
         serde_json::json!({
             "active":named(info.active),
             "activeShown":!info.active.is_null() && unsafe { IsWindowVisible(info.active) } != 0,
@@ -2353,8 +2538,15 @@ mod tests {
         for label in LABELS {
             let answer = answer(&rows, Some(label));
             assert!(answer.offered);
-            assert_eq!(answer.handed.is_none(), NEVER_SELECTED.contains(&label), "{label}");
-            assert_eq!(answer.document()["withheld"], NEVER_SELECTED.contains(&label));
+            assert_eq!(
+                answer.handed.is_none(),
+                NEVER_SELECTED.contains(&label),
+                "{label}"
+            );
+            assert_eq!(
+                answer.document()["withheld"],
+                NEVER_SELECTED.contains(&label)
+            );
         }
         // A disabled row is handed back for the probe itself to refuse, and
         // is never counted as selected.
@@ -2371,7 +2563,10 @@ mod tests {
 
     fn layout(rects: &[(&str, [f64; 4])]) -> Layout {
         Layout {
-            rects: rects.iter().map(|(id, rect)| ((*id).to_owned(), *rect)).collect(),
+            rects: rects
+                .iter()
+                .map(|(id, rect)| ((*id).to_owned(), *rect))
+                .collect(),
             inner: [783.0, 600.0],
             scroll: [0.0, 0.0],
             received: Some(Instant::now()),
@@ -2392,8 +2587,14 @@ mod tests {
                 ("gone", [10.0, 60.0, 0.0, 0.0]),
             ]),
         );
-        assert_eq!(locate(&layouts, "plain"), Located::At((70.0, 32.0), (70.0, 32.0)));
-        assert_eq!(locate(&layouts, "frame-same"), Located::At((200.0, 380.0), (200.0, 380.0)));
+        assert_eq!(
+            locate(&layouts, "plain"),
+            Located::At((70.0, 32.0), (70.0, 32.0))
+        );
+        assert_eq!(
+            locate(&layouts, "frame-same"),
+            Located::At((200.0, 380.0), (200.0, 380.0))
+        );
         assert_eq!(locate(&layouts, "frame-link"), Located::Missing("same"));
         assert_eq!(locate(&layouts, "xframe-link"), Located::Missing("cross"));
         for target in ["link-low", "gone"] {
@@ -2408,7 +2609,10 @@ mod tests {
             Located::Unusable("target not in the reported layout")
         );
         layouts.insert("same", layout(&[("frame-link", [98.0, 10.0, 85.0, 44.0])]));
-        layouts.insert("cross", layout(&[("xframe-link", [98.0, 10.0, 85.0, 44.0])]));
+        layouts.insert(
+            "cross",
+            layout(&[("xframe-link", [98.0, 10.0, 85.0, 44.0])]),
+        );
         // Frame-local centre plus the frame's place in the page.
         assert_eq!(
             locate(&layouts, "frame-link"),
@@ -2454,7 +2658,11 @@ mod tests {
         for (route, query, name) in [
             ("/menu-page", "slot=menu-main&doc=b&hold=1", "page-b"),
             ("/menu-page", "doc=%3Cscript%3E", "page-x"),
-            ("/menu-frame", "slot=menu-main&doc=a&frame=cross", "frame-cross"),
+            (
+                "/menu-frame",
+                "slot=menu-main&doc=a&frame=cross",
+                "frame-cross",
+            ),
             ("/menu-target", "item=7&q=a%20b", "target-7"),
             ("/menu-target", "item=77", "target-x"),
             ("/menu-image.png", "i=2", "image-2"),
@@ -2474,8 +2682,14 @@ mod tests {
         let wav = tone();
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(&wav[8..16], b"WAVEfmt ");
-        assert_eq!(u32::from_le_bytes(wav[4..8].try_into().unwrap()) as usize, wav.len() - 8);
-        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()) as usize, wav.len() - 44);
+        assert_eq!(
+            u32::from_le_bytes(wav[4..8].try_into().unwrap()) as usize,
+            wav.len() - 8
+        );
+        assert_eq!(
+            u32::from_le_bytes(wav[40..44].try_into().unwrap()) as usize,
+            wav.len() - 44
+        );
         assert_eq!(&decoded(IMAGE_PNG)[..8], b"\x89PNG\r\n\x1a\n");
         // EBML magic of a WebM container.
         let clip = decoded(CLIP_WEBM);
@@ -2498,7 +2712,10 @@ mod tests {
                     None => (page, target),
                     Some(_) => (frame, target.split_once('-').unwrap().1),
                 };
-                assert!(source.contains(&format!("id=\"{id}\"")), "{target} ({document})");
+                assert!(
+                    source.contains(&format!("id=\"{id}\"")),
+                    "{target} ({document})"
+                );
             }
         }
     }

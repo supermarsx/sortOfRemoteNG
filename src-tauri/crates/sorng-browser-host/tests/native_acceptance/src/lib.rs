@@ -36,6 +36,12 @@ mod exception_observer;
 mod fixture;
 mod measure;
 
+/// Enters the fixture through the pinned sandbox bootstrap.
+///
+/// # Safety
+/// `instance`, `sandbox`, and `version` must be the original valid bootstrap
+/// values and remain valid during this call. Enter before initializing services,
+/// threads, or profiles, and return directly to the bootstrap after CEF shutdown.
 #[cfg(windows)]
 #[no_mangle]
 pub unsafe extern "C" fn RunWinMain(

@@ -148,14 +148,22 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
         shell: Shell::AsLaunched,
         page: Page::Login,
         long_window: false,
-        slots: &[login("baseline-visible", Presentation::Visible, Flip::HideLate)],
+        slots: &[login(
+            "baseline-visible",
+            Presentation::Visible,
+            Flip::HideLate,
+        )],
     },
     ScenarioPlan {
         id: "a-hidden-after-attach",
         shell: Shell::AsLaunched,
         page: Page::Login,
         long_window: false,
-        slots: &[login("a-hidden-after-attach", Presentation::HiddenAfterAttach, Flip::ShowLate)],
+        slots: &[login(
+            "a-hidden-after-attach",
+            Presentation::HiddenAfterAttach,
+            Flip::ShowLate,
+        )],
     },
     ScenarioPlan {
         id: "b-born-hidden-1x1",
@@ -207,7 +215,11 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
         shell: Shell::AsLaunched,
         page: Page::Login,
         long_window: false,
-        slots: &[login("c-visible-input-blocked", Presentation::VisibleInputBlocked, Flip::None)],
+        slots: &[login(
+            "c-visible-input-blocked",
+            Presentation::VisibleInputBlocked,
+            Flip::None,
+        )],
     },
     ScenarioPlan {
         id: "d-concurrent",
@@ -216,7 +228,11 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
         long_window: false,
         slots: &[
             login("d-visible", Presentation::Visible, Flip::None),
-            login("d-hidden-after-attach", Presentation::HiddenAfterAttach, Flip::None),
+            login(
+                "d-hidden-after-attach",
+                Presentation::HiddenAfterAttach,
+                Flip::None,
+            ),
             login("d-born-hidden", Presentation::BornHidden, Flip::None),
         ],
     },
@@ -271,7 +287,11 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
         shell: Shell::Minimized,
         page: Page::Login,
         long_window: false,
-        slots: &[login("e-minimized-hidden", Presentation::BornHidden, Flip::None)],
+        slots: &[login(
+            "e-minimized-hidden",
+            Presentation::BornHidden,
+            Flip::None,
+        )],
     },
 ];
 
@@ -329,7 +349,9 @@ impl Flip {
 fn label_safe(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 48
-        && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 /// `Ok(false)` for an ordinary acceptance run. An unknown value is an error:
@@ -479,13 +501,17 @@ pub(crate) struct Held {
 pub(crate) enum Served {
     Legacy,
     Measure,
-    Held(Held),
+    Held(Box<Held>),
 }
 
 pub(crate) fn serves(route: &str) -> bool {
     matches!(
         route,
-        "/measure-login" | "/measure-capacity" | "/measure-report" | "/measure-hold" | "/measure-socket"
+        "/measure-login"
+            | "/measure-capacity"
+            | "/measure-report"
+            | "/measure-hold"
+            | "/measure-socket"
     ) || menu::serves(route)
 }
 
@@ -509,7 +535,7 @@ pub(crate) async fn serve(
         }
         "/measure-hold" => {
             state.lock().unwrap().measure.holds_accepted += 1;
-            return Ok(Served::Held(Held { tls }));
+            return Ok(Served::Held(Box::new(Held { tls })));
         }
         _ => {
             let Some(accept) = websocket_accept(header) else {
@@ -530,7 +556,7 @@ pub(crate) async fn serve(
             .await?;
             tls.flush().await?;
             state.lock().unwrap().measure.sockets_accepted += 1;
-            return Ok(Served::Held(Held { tls }));
+            return Ok(Served::Held(Box::new(Held { tls })));
         }
     };
     tls.write_all(
@@ -582,7 +608,11 @@ fn websocket_accept(header: &str) -> Option<String> {
         name.eq_ignore_ascii_case("sec-websocket-key")
             .then(|| value.trim())
     })?;
-    if key.len() != 24 || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b)) {
+    if key.len() != 24
+        || !key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
+    {
         return None;
     }
     let digest = sha1(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes());
@@ -592,21 +622,28 @@ fn websocket_accept(header: &str) -> Option<String> {
 // RFC 6455 fixes SHA-1 for the handshake reply; it protects nothing here. A
 // local copy keeps the fixture free of another dependency.
 fn sha1(input: &[u8]) -> [u8; 20] {
-    let mut state: [u32; 5] = [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0];
+    let mut state: [u32; 5] = [
+        0x6745_2301,
+        0xEFCD_AB89,
+        0x98BA_DCFE,
+        0x1032_5476,
+        0xC3D2_E1F0,
+    ];
     let mut message = input.to_vec();
     message.push(0x80);
     while message.len() % 64 != 56 {
         message.push(0);
     }
     message.extend_from_slice(&((input.len() as u64) * 8).to_be_bytes());
-    for block in message.chunks_exact(64) {
+    for block in message.as_chunks::<64>().0 {
         let mut words = [0u32; 80];
-        for (index, bytes) in block.chunks_exact(4).enumerate() {
+        for (index, bytes) in block.as_chunks::<4>().0.iter().enumerate() {
             words[index] = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
         for index in 16..80 {
-            words[index] = (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
-                .rotate_left(1);
+            words[index] =
+                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
+                    .rotate_left(1);
         }
         let [mut a, mut b, mut c, mut d, mut e] = state;
         for (index, word) in words.iter().enumerate() {
@@ -633,7 +670,7 @@ fn sha1(input: &[u8]) -> [u8; 20] {
         }
     }
     let mut digest = [0u8; 20];
-    for (bytes, value) in digest.chunks_exact_mut(4).zip(state) {
+    for (bytes, value) in digest.as_chunks_mut::<4>().0.iter_mut().zip(state) {
         bytes.copy_from_slice(&value.to_be_bytes());
     }
     digest
@@ -777,11 +814,10 @@ impl NativeDocumentHooks for Hooks {
         match status {
             NativeNavigationStatus::BeforeBrowse { allowed: true, .. } => log.browse_allowed += 1,
             NativeNavigationStatus::BeforeBrowse { allowed: false, .. } => log.browse_denied += 1,
-            NativeNavigationStatus::LoadError { code, main_frame: true }
-                if log.load_errors.len() < 8 =>
-            {
-                log.load_errors.push(code)
-            }
+            NativeNavigationStatus::LoadError {
+                code,
+                main_frame: true,
+            } if log.load_errors.len() < 8 => log.load_errors.push(code),
             _ => {}
         }
     }
@@ -935,9 +971,10 @@ impl Slot {
             },
             None => ProxyLimits::default(),
         };
-        let session = Arc::new(Mutex::new(run.async_runtime.block_on(
-            OriginBrowserSession::start(policy, dialer, limits),
-        )?));
+        let session = Arc::new(Mutex::new(
+            run.async_runtime
+                .block_on(OriginBrowserSession::start(policy, dialer, limits))?,
+        ));
         let defaults = [
             "navigation",
             "frame",
@@ -969,7 +1006,10 @@ impl Slot {
             ("height", serde_json::json!(plan.height)),
             ("plannedFlip", serde_json::json!(plan.flip.label())),
             ("relayMaxClients", serde_json::json!(limits.max_clients)),
-            ("relayCapExplicit", serde_json::json!(plan.relay_clients.is_some())),
+            (
+                "relayCapExplicit",
+                serde_json::json!(plan.relay_clients.is_some()),
+            ),
             ("navigated", serde_json::json!(false)),
         ] {
             record.insert(key.into(), value);
@@ -1081,7 +1121,10 @@ impl Slot {
             return Err("navigation without a browser".into());
         };
         // A refused navigation is this slot's result, not a reason to stop.
-        let refusal = browser.navigate(&self.identity, url).err().map(|e| e.to_string());
+        let refusal = browser
+            .navigate(&self.identity, url)
+            .err()
+            .map(|e| e.to_string());
         let blocked = self.plan.presentation == Presentation::VisibleInputBlocked;
         match self.plan.presentation {
             Presentation::Visible => browser.show(&self.identity)?,
@@ -1154,8 +1197,10 @@ impl Slot {
         let login_ms = self.received.get("login").cloned();
         self.record
             .insert("reports".into(), std::mem::take(&mut self.reports).into());
-        self.record
-            .insert("reportReceivedMs".into(), std::mem::take(&mut self.received).into());
+        self.record.insert(
+            "reportReceivedMs".into(),
+            std::mem::take(&mut self.received).into(),
+        );
         self.record.insert(
             "navigationToLoginReportMs".into(),
             login_ms.unwrap_or(serde_json::Value::Null),
@@ -1165,7 +1210,10 @@ impl Slot {
         // The browser goes first and takes its context with it.
         drop(self.browser.take());
         drop(self.context.take());
-        (std::mem::take(&mut self.record).into(), self.session.clone())
+        (
+            std::mem::take(&mut self.record).into(),
+            self.session.clone(),
+        )
     }
 }
 
@@ -1215,10 +1263,7 @@ pub(crate) fn run(mut run: Run<'_, '_>, failures: &mut Vec<String>) -> Result<()
     // and keep it from ever taking the keyboard from the desktop.
     shell::present_inert(&run.parent);
     for plan in SCENARIOS {
-        if selected
-            .as_ref()
-            .is_some_and(|ids| !ids.contains(&plan.id))
-        {
+        if selected.as_ref().is_some_and(|ids| !ids.contains(&plan.id)) {
             continue;
         }
         run.fixture.observations.lock().unwrap().record(
@@ -1499,7 +1544,12 @@ mod shell {
     }
     #[link(name = "dwmapi")]
     extern "system" {
-        fn DwmGetWindowAttribute(window: Hwnd, attribute: u32, value: *mut c_void, size: u32) -> i32;
+        fn DwmGetWindowAttribute(
+            window: Hwnd,
+            attribute: u32,
+            value: *mut c_void,
+            size: u32,
+        ) -> i32;
     }
 
     const GW_HWNDNEXT: u32 = 2;
@@ -1785,7 +1835,11 @@ mod shell {
         })
     }
 
-    pub(super) fn restore(shell: Shell, parent: &Window, decoy: Option<&Window>) -> Vec<&'static str> {
+    pub(super) fn restore(
+        shell: Shell,
+        parent: &Window,
+        decoy: Option<&Window>,
+    ) -> Vec<&'static str> {
         let mut actions = Vec::new();
         if matches!(shell, Shell::Inactive | Shell::Covered) {
             if let Some(decoy) = decoy.and_then(hwnd) {
@@ -1863,8 +1917,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            websocket_accept("GET /measure-socket HTTP/1.1\r\nsec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==\r\n")
-                .as_deref(),
+            websocket_accept(
+                "GET /measure-socket HTTP/1.1\r\nsec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            )
+            .as_deref(),
             Some("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
         );
         for header in [
@@ -1924,7 +1980,11 @@ mod tests {
         // No other scenario touches its relay's cap, and a cap the fixture
         // sets is one the relay accepts.
         for plan in SCENARIOS.iter().filter(|plan| plan.page != Page::Capacity) {
-            assert!(plan.slots.iter().all(|slot| slot.relay_clients.is_none()), "{}", plan.id);
+            assert!(
+                plan.slots.iter().all(|slot| slot.relay_clients.is_none()),
+                "{}",
+                plan.id
+            );
         }
         assert!((1..=256).contains(&CAPACITY_SMALL_CAP));
     }
@@ -1939,7 +1999,9 @@ mod tests {
         }
         assert!(only(None).unwrap().is_none());
         assert_eq!(
-            only(Some("e-covered,baseline-visible,e-covered")).unwrap().unwrap(),
+            only(Some("e-covered,baseline-visible,e-covered"))
+                .unwrap()
+                .unwrap(),
             ["e-covered", "baseline-visible"]
         );
         for value in ["unknown", "baseline-visible,", " baseline-visible"] {
@@ -2002,7 +2064,12 @@ mod tests {
         ] {
             let mut seen = None;
             modular.with_form_credentials(
-                &request(policy.identity(), ORIGIN, NativeLoginAdapter::ModularForm, stage),
+                &request(
+                    policy.identity(),
+                    ORIGIN,
+                    NativeLoginAdapter::ModularForm,
+                    stage,
+                ),
                 &mut |credentials, options| {
                     seen = Some((
                         credentials.username.to_owned(),
@@ -2018,7 +2085,11 @@ mod tests {
         // Another attempt, another origin and a provider stage get nothing.
         for (identity, origin, stage) in [
             (other.identity(), ORIGIN, NativeLoginStage::Form),
-            (policy.identity(), "https://frame.test", NativeLoginStage::Form),
+            (
+                policy.identity(),
+                "https://frame.test",
+                NativeLoginStage::Form,
+            ),
             (policy.identity(), ORIGIN, NativeLoginStage::Password),
         ] {
             modular.with_form_credentials(
@@ -2029,7 +2100,12 @@ mod tests {
         let generic = hooks(Adapter::Generic);
         let mut delivered = 0;
         generic.with_form_credentials(
-            &request(policy.identity(), ORIGIN, NativeLoginAdapter::Generic, NativeLoginStage::Form),
+            &request(
+                policy.identity(),
+                ORIGIN,
+                NativeLoginAdapter::Generic,
+                NativeLoginStage::Form,
+            ),
             &mut |credentials, options| {
                 delivered += 1;
                 assert_eq!(credentials.username, USERNAME);
@@ -2038,12 +2114,19 @@ mod tests {
         );
         assert_eq!(delivered, 1);
         hooks(Adapter::Manual).with_form_credentials(
-            &request(policy.identity(), ORIGIN, NativeLoginAdapter::Manual, NativeLoginStage::Form),
+            &request(
+                policy.identity(),
+                ORIGIN,
+                NativeLoginAdapter::Manual,
+                NativeLoginStage::Form,
+            ),
             &mut |_, _| panic!("manual slots never grant"),
         );
         assert_eq!(modular.log.lock().unwrap().credential_calls["form"], 1);
         for setup in [FORM_SETUP, FORM_OPTIONS] {
-            assert!(serde_json::from_str::<serde_json::Value>(setup).unwrap().is_object());
+            assert!(serde_json::from_str::<serde_json::Value>(setup)
+                .unwrap()
+                .is_object());
         }
     }
 }
