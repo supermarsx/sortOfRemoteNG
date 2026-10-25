@@ -33,7 +33,7 @@ use tao::{
     platform::run_return::EventLoopExtRunReturn,
     window::WindowBuilder,
 };
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 #[cfg(any(target_os = "linux", test))]
 #[path = "../../native_acceptance/linux_parent_fixture.rs"]
 mod linux_parent_fixture;
@@ -425,9 +425,146 @@ fn certificates() -> Result<(Vec<u8>, Vec<u8>, tokio_rustls::TlsAcceptor)> {
     config.send_tls13_tickets = 0;
     Ok((root, der, tokio_rustls::TlsAcceptor::from(Arc::new(config))))
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreHostReadiness {
+    Pending,
+    Ready,
+    Denied(&'static str),
+}
+
+// The same strict counter predicate is used before browser creation and in the
+// final native verdict. Pending is never acceptance or permission to navigate.
+fn pre_host_readiness(
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+    actual_ack: bool,
+) -> PreHostReadiness {
+    use PreHostReadiness::{Denied, Pending, Ready};
+    if !actual_ack {
+        return Denied("proxy-ack-missing");
+    }
+    let mut deltas = [0; 4];
+    for (index, field) in ["acceptedConnections", "authenticationChallenges", "requestRejections", "capacityRefusals"].iter().enumerate() {
+        let Some((current, baseline)) = after[*field].as_u64().zip(before[*field].as_u64()) else {
+            return Denied("counter-missing");
+        };
+        let Some(delta) = current.checked_sub(baseline) else {
+            return Denied("counter-underflow");
+        };
+        deltas[index] = delta;
+    }
+    let Some((authenticated, baseline_authenticated)) = after["authenticatedRequests"]
+        .as_u64().zip(before["authenticatedRequests"].as_u64()) else {
+        return Denied("counter-missing");
+    };
+    if authenticated != 0 || baseline_authenticated != 0 {
+        return Denied("authenticated-request");
+    }
+    for (field, reason) in [("upstreamDials", "upstream-dial"), ("upstreamFailures", "upstream-failure")] {
+        match after[field].as_u64() {
+            Some(0) => (),
+            Some(_) => return Denied(reason),
+            None => return Denied("counter-missing"),
+        }
+    }
+    if deltas[2] != 0 {
+        return Denied("request-rejection");
+    }
+    if deltas[3] != 0 {
+        return Denied("capacity-refusal");
+    }
+    match deltas[0].cmp(&deltas[1]) {
+        std::cmp::Ordering::Equal => Ready,
+        // These are independently loaded counters, not one atomic snapshot. A
+        // concurrent accept/challenge can occur between their loads in either
+        // direction. Neither mismatch permits host creation.
+        std::cmp::Ordering::Greater | std::cmp::Ordering::Less => Pending,
+    }
+}
+
+#[derive(Default)]
+struct PreHostObservation {
+    first_ms: Option<u64>,
+    last_ms: Option<u64>,
+    samples: u32,
+    last: Option<PreHostReadiness>,
+}
+impl PreHostObservation {
+    fn record(&mut self, value: PreHostReadiness, elapsed: Duration) {
+        let ms = elapsed.as_millis().min(u64::MAX as u128) as u64;
+        self.first_ms.get_or_insert(ms);
+        self.last_ms = Some(ms);
+        self.samples = self.samples.saturating_add(1);
+        self.last = Some(value);
+    }
+    fn report(&self, before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
+        let (state, reason) = match self.last {
+            None => ("not-sampled", "not-sampled"),
+            Some(PreHostReadiness::Ready) => ("ready", "strict-predicate-satisfied"),
+            Some(PreHostReadiness::Pending) => ("pending", "unauthenticated-counter-snapshot-incomplete"),
+            Some(PreHostReadiness::Denied(reason)) => ("denied", reason),
+        };
+        serde_json::json!({"state":state,"reason":reason,"firstObservedMs":self.first_ms,
+            "lastObservedMs":self.last_ms,"samples":self.samples,"before":before,"after":after})
+    }
+}
+
+const HEALTH_REQUEST: &[u8] = b"CONNECT proxy-first.fixture.test:443 HTTP/1.1\r\nHost: proxy-first.fixture.test:443\r\nProxy-Connection: close\r\n\r\n";
+const HEALTH_RESPONSE: &[u8] = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"private-forward-proxy\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+async fn proxy_health_before_cef(
+    session: &Arc<Mutex<OriginBrowserSession>>,
+    dials: &AtomicUsize,
+    deadline: Instant,
+) -> Result<serde_json::Value> {
+    let endpoint = session.lock().unwrap().proxy_endpoint();
+    if !endpoint.ip().is_loopback() || endpoint.port() == 0 {
+        return Err("proxy health requires owned loopback endpoint".into());
+    }
+    let before = serde_json::json!(session.lock().unwrap().proxy_diagnostics());
+    let remaining = deadline.checked_duration_since(Instant::now()).ok_or("proxy health deadline")?;
+    tokio::time::timeout(remaining, async {
+        // SocketAddr is the already-owned loopback endpoint: no target DNS/dial,
+        // credential access, grant or CEF initialization is involved.
+        let mut stream = tokio::net::TcpStream::connect(endpoint).await?;
+        stream.write_all(HEALTH_REQUEST).await?;
+        stream.shutdown().await?;
+        let mut response = Vec::with_capacity(HEALTH_RESPONSE.len());
+        let mut buffer = [0; 128];
+        loop {
+            let count = stream.read(&mut buffer).await?;
+            if count == 0 { break; }
+            if response.len() + count > HEALTH_RESPONSE.len() {
+                return Err("proxy health response bound".into());
+            }
+            response.extend_from_slice(&buffer[..count]);
+        }
+        drop(stream);
+        if response != HEALTH_RESPONSE { return Err("proxy health response mismatch".into()); }
+        let mut after = serde_json::json!(session.lock().unwrap().proxy_diagnostics());
+        after["upstreamDials"] = serde_json::json!(dials.load(Ordering::Relaxed));
+        let delta = |field: &str| after[field].as_u64().zip(before[field].as_u64())
+            .and_then(|(current, baseline)| current.checked_sub(baseline));
+        if delta("acceptedConnections") != Some(1)
+            || delta("authenticationChallenges") != Some(1)
+            || delta("requestRejections") != Some(0)
+            || delta("capacityRefusals") != Some(0)
+            || before["authenticatedRequests"] != 0
+            || after["authenticatedRequests"] != 0
+            || after["upstreamDials"] != 0
+            || before["upstreamFailures"] != 0
+            || after["upstreamFailures"] != 0 {
+            return Err("proxy health counter proof failed".into());
+        }
+        Ok(serde_json::json!({"ok":true,"unauthenticated407":true,"peerEof":true,
+            "before":before,"after":after}))
+    }).await.map_err(|_| "proxy health deadline")?
+}
+
 struct Slot {
     proxy_application_verified: bool,
     proxy_before_host: serde_json::Value,
+    pre_host_observation: PreHostObservation,
     identity: BrowserIdentity,
     session: Arc<Mutex<OriginBrowserSession>>,
     context: Option<PrivateRequestContext>,
@@ -577,6 +714,7 @@ fn create_slot(
     Ok(Slot {
         proxy_application_verified: false,
         proxy_before_host: serde_json::Value::Null,
+        pre_host_observation: PreHostObservation::default(),
         identity,
         session,
         context: None,
@@ -635,18 +773,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         )?);
     }
     let mut raw_before = Vec::new();
+    let mut health_before = Vec::new();
+    let health_deadline = clock + Duration::from_secs(2);
     for slot in &slots {
-        let endpoint = slot.session.lock().unwrap().proxy_endpoint();
-        raw_before.push(
-            asynchronous
-                .block_on(async {
-                    let mut stream = tokio::net::TcpStream::connect(endpoint).await?;
-                    stream.shutdown().await
-                })
-                .is_ok(),
-        );
+        let proof = asynchronous.block_on(proxy_health_before_cef(
+            &slot.session, &slot.dials, health_deadline))?;
+        raw_before.push(proof["ok"] == true);
+        health_before.push(proof);
     }
-    asynchronous.block_on(async { tokio::time::sleep(Duration::from_millis(20)).await });
     let baseline = serde_json::json!(slots
         .iter()
         .map(|s| s.session.lock().unwrap().proxy_diagnostics())
@@ -756,7 +890,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                     c.complete(if exact {NativeTlsDecision::AdmitNative}else{NativeTlsDecision::Deny});
                 }
             }
-            for slot in &mut slots {
+            for (slot_index, slot) in slots.iter_mut().enumerate() {
                 if slot.context.is_none()
                     && slot.host.is_none()
                     && runtime.network_policy_configured()?
@@ -782,6 +916,16 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                         slot.proxy_before_host["upstreamDials"] = serde_json::json!(slot.dials.load(Ordering::Relaxed));
                         if !legacy && !http2_revision && !slot.proxy_application_verified {
                             return Err("proxy application proof missing before host creation".into());
+                        }
+                        if !legacy && !http2_revision {
+                            let readiness = pre_host_readiness(&baseline[slot_index], &slot.proxy_before_host,
+                                slot.proxy_application_verified);
+                            slot.pre_host_observation.record(readiness, clock.elapsed());
+                            match readiness {
+                                PreHostReadiness::Pending => continue,
+                                PreHostReadiness::Ready => (),
+                                PreHostReadiness::Denied(reason) => return Err(reason.into()),
+                            }
                         }
                         if !c.tls_hooks_installed() {return Err("TLS installation unacknowledged".into());}
                         phase="host-create";slot.host = Some(unsafe {
@@ -894,7 +1038,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     }
     let closed =
         all_created_hosts_closed(slots.iter().map(|s| s.host.as_ref().map(|h| h.lifecycle())));
-    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"nativeDiagnostics":s.sink.2.lock().unwrap_or_else(std::sync::PoisonError::into_inner).report(),"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
+    let rows:Vec<_>=slots.iter().enumerate().map(|(index,s)|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"preHostReadiness":s.pre_host_observation.report(&baseline[index],&s.proxy_before_host),"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"nativeDiagnostics":s.sink.2.lock().unwrap_or_else(std::sync::PoisonError::into_inner).report(),"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
     let endpoints: Vec<_> = slots
         .iter()
         .map(|s| s.session.lock().unwrap().proxy_endpoint().to_string())
@@ -902,6 +1046,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     pump_intervals.sort_by(f64::total_cmp);
     let pump_summary = serde_json::json!({"samples":pump_intervals.len(),"medianMs":pump_intervals.get(pump_intervals.len()/2),"p95Ms":pump_intervals.get(pump_intervals.len()*95/100),"maxMs":pump_intervals.last()});
     let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"ok":false,"clean":clean,"closed":closed,"rawTcpBefore":raw_before,"rawTcpAfterFailure":raw_after_failure,"ownedLoopbackEndpoints":endpoints,"baselineBeforeCef":baseline,"first":before,"initializeStartedMs":initialize_started_ms,"initializeFinishedMs":initialize_finished_ms,"matrixCases":CASES.len(),"productionTlsFactory":true,"fixtureTcpNoDelay":fixture_nodelay,"parentVisible":visible,"childShowRequested":visible,"advertisedAlpn":["h2","http/1.1"],"pumpIntervals":pump_summary,"slots":rows,"failures":failures,"productionReady":false});
+    report["preCefHealthProofs"] = serde_json::json!(health_before);
     report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
     if let Some(drain) = &error_drain {
         report["errorDrain"] = drain.report();
@@ -983,23 +1128,8 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let proxy_ack_clean = legacy
         || http2_revision
         || slots.iter().enumerate().all(|(index, slot)| {
-            // Chromium may start background jobs before a browser exists. They
-            // must stop at unauthenticated 407s, never reach the route dialer.
-            let delta = |field: &str| {
-                slot.proxy_before_host[field]
-                    .as_u64()
-                    .zip(baseline[index][field].as_u64())
-                    .and_then(|(current, before)| current.checked_sub(before))
-            };
-            slot.proxy_application_verified
-                && delta("acceptedConnections").is_some()
-                && delta("acceptedConnections") == delta("authenticationChallenges")
-                && slot.proxy_before_host["authenticatedRequests"]
-                    == baseline[index]["authenticatedRequests"]
-                && slot.proxy_before_host["upstreamDials"] == 0
-                && slot.proxy_before_host["upstreamFailures"] == 0
-                && delta("requestRejections") == Some(0)
-                && delta("capacityRefusals") == Some(0)
+            pre_host_readiness(&baseline[index], &slot.proxy_before_host,
+                slot.proxy_application_verified) == PreHostReadiness::Ready
         });
     report["proxyProofRequired"] = (!legacy && !http2_revision).into();
     report["proxyAckNoApplicationNetwork"] = proxy_ack_clean.into();
@@ -1139,6 +1269,151 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         Ok(())
     } else {
         Err("proxy readiness fixture failed".into())
+    }
+}
+
+#[cfg(test)]
+mod pre_host_readiness_tests {
+    use super::*;
+
+    fn baseline() -> serde_json::Value {
+        serde_json::json!({"acceptedConnections":1,"authenticationChallenges":0,
+            "authenticatedRequests":0,"requestRejections":1,"capacityRefusals":0,
+            "upstreamFailures":0})
+    }
+    fn sample(accepted: u64, challenged: u64) -> serde_json::Value {
+        let mut value = baseline();
+        value["acceptedConnections"] = accepted.into();
+        value["authenticationChallenges"] = challenged.into();
+        value["upstreamDials"] = 0.into();
+        value
+    }
+
+    #[test]
+    fn actual_failed_counter_shape_is_pending_until_strict_challenge_equality() {
+        let before = baseline();
+        assert_eq!(pre_host_readiness(&before, &sample(2, 0), true), PreHostReadiness::Pending);
+        assert_eq!(pre_host_readiness(&before, &sample(2, 1), true), PreHostReadiness::Ready);
+        assert_ne!(pre_host_readiness(&before, &sample(2, 0), true), PreHostReadiness::Ready);
+
+        // Reproduce the actual snapshot load order with a legal concurrent
+        // writer between loads. Even SeqCst has this interleaving, so Relaxed
+        // independent loads cannot rule it out. No sleep or timing assumption.
+        let accepted = AtomicUsize::new(1);
+        let challenges = AtomicUsize::new(0);
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                barrier.wait();
+                accepted.fetch_add(1, Ordering::SeqCst);
+                challenges.fetch_add(1, Ordering::SeqCst);
+                barrier.wait();
+            });
+            let loaded_accepted = accepted.load(Ordering::SeqCst);
+            barrier.wait();
+            barrier.wait();
+            let loaded_challenges = challenges.load(Ordering::SeqCst);
+            assert_eq!((loaded_accepted, loaded_challenges), (1, 1));
+            let torn = sample(loaded_accepted as u64, loaded_challenges as u64);
+            assert_eq!(pre_host_readiness(&before, &torn, true), PreHostReadiness::Pending);
+            assert_eq!(pre_host_readiness(&before, &sample(2, 1), true), PreHostReadiness::Ready);
+        });
+    }
+
+    #[test]
+    fn ready_preserves_original_strict_predicate_for_valid_zero_network_baselines() {
+        let before = baseline();
+        for accepted in 1..5 {
+            for challenges in 0..5 {
+                let after = sample(accepted, challenges);
+                let old = after["acceptedConnections"].as_u64().unwrap()
+                    - before["acceptedConnections"].as_u64().unwrap()
+                    == after["authenticationChallenges"].as_u64().unwrap()
+                        - before["authenticationChallenges"].as_u64().unwrap();
+                assert_eq!(pre_host_readiness(&before, &after, true) == PreHostReadiness::Ready, old);
+            }
+        }
+    }
+
+    #[test]
+    fn missing_ack_counters_wrong_types_and_underflow_fail_closed() {
+        let before = baseline();
+        let after = sample(2, 1);
+        assert_eq!(pre_host_readiness(&before, &after, false), PreHostReadiness::Denied("proxy-ack-missing"));
+        for field in ["acceptedConnections", "authenticationChallenges", "requestRejections",
+                      "capacityRefusals", "authenticatedRequests", "upstreamDials", "upstreamFailures"] {
+            for bad in [serde_json::Value::Null, serde_json::json!(true), serde_json::json!(-1)] {
+                let mut changed = after.clone();
+                changed[field] = bad;
+                assert!(matches!(pre_host_readiness(&before, &changed, true), PreHostReadiness::Denied(_)));
+            }
+        }
+        assert_eq!(pre_host_readiness(&before, &sample(0, 0), true), PreHostReadiness::Denied("counter-underflow"));
+        assert_eq!(pre_host_readiness(&before, &sample(2, 2), true), PreHostReadiness::Pending);
+    }
+
+    #[test]
+    fn application_network_rejection_and_capacity_never_become_pending_or_ready() {
+        let before = baseline();
+        for (field, bad, reason) in [("authenticatedRequests",1,"authenticated-request"),
+            ("upstreamDials",1,"upstream-dial"),("upstreamFailures",1,"upstream-failure"),
+            ("requestRejections",2,"request-rejection"),("capacityRefusals",1,"capacity-refusal")] {
+            let mut changed = sample(2, 0);
+            changed[field] = bad.into();
+            assert_eq!(pre_host_readiness(&before, &changed, true), PreHostReadiness::Denied(reason));
+        }
+        let mut poisoned_baseline = before.clone();
+        poisoned_baseline["authenticatedRequests"] = 1.into();
+        let mut changed = sample(2, 1);
+        changed["authenticatedRequests"] = 1.into();
+        assert_eq!(pre_host_readiness(&poisoned_baseline, &changed, true), PreHostReadiness::Denied("authenticated-request"));
+    }
+
+    #[test]
+    fn observation_keeps_fixed_bounded_causal_fields_without_resetting_first_time() {
+        let before = baseline();
+        let mut observation = PreHostObservation::default();
+        observation.record(PreHostReadiness::Pending, Duration::from_millis(10));
+        observation.record(PreHostReadiness::Ready, Duration::from_millis(12));
+        let report = observation.report(&before, &sample(2, 1));
+        assert_eq!(report["state"], "ready");
+        assert_eq!(report["firstObservedMs"], 10);
+        assert_eq!(report["lastObservedMs"], 12);
+        assert_eq!(report["samples"], 2);
+        assert_eq!(report["before"], before);
+        assert!(serde_json::to_vec(&report).unwrap().len() < 2048);
+    }
+
+    #[test]
+    fn real_owned_health_requires_407_eof_and_never_reaches_route_dialer() -> Result {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let dials = Arc::new(AtomicUsize::new(0));
+        let seen = dials.clone();
+        let dialer: Arc<dyn RouteDialer> = Arc::new(move |_target: Authority| -> DialFuture {
+            let seen = seen.clone();
+            Box::pin(async move {
+                seen.fetch_add(1, Ordering::Relaxed);
+                Err(std::io::Error::other("health must never dial"))
+            })
+        });
+        let policy = OriginBrowserPolicy::new_with_allowed_origins(
+            "owned-health-unit", "owned-health-connection", "owned-health-session",
+            ORIGIN, &[OTHER_ORIGIN])?;
+        let session = Arc::new(Mutex::new(runtime.block_on(OriginBrowserSession::start(
+            policy, dialer, ProxyLimits::default()))?));
+        let expired = runtime.block_on(proxy_health_before_cef(&session, &dials,
+            Instant::now() - Duration::from_secs(1)));
+        assert!(expired.is_err());
+        assert_eq!(session.lock().unwrap().proxy_diagnostics().accepted_connections, 0);
+        let proof = runtime.block_on(proxy_health_before_cef(&session, &dials,
+            Instant::now() + Duration::from_secs(2)))?;
+        assert_eq!(proof["ok"], true);
+        assert_eq!(proof["peerEof"], true);
+        assert_eq!(proof["after"]["authenticationChallenges"], 1);
+        assert_eq!(proof["after"]["requestRejections"], 0);
+        assert_eq!(dials.load(Ordering::Relaxed), 0);
+        runtime.block_on(session.lock().unwrap().stop())?;
+        Ok(())
     }
 }
 

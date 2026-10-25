@@ -284,6 +284,14 @@ pub(super) fn execute(
                             unit.slot.proxy_application_verified = true;
                             unit.slot.proxy_before_host = serde_json::json!(unit.slot.session.lock().unwrap().proxy_diagnostics());
                             unit.slot.proxy_before_host["upstreamDials"] = serde_json::json!(unit.slot.dials.load(Ordering::Relaxed));
+                            let readiness = pre_host_readiness(&unit.before_context,
+                                &unit.slot.proxy_before_host, unit.slot.proxy_application_verified);
+                            unit.slot.pre_host_observation.record(readiness, clock.elapsed());
+                            match readiness {
+                                PreHostReadiness::Pending => continue,
+                                PreHostReadiness::Ready => (),
+                                PreHostReadiness::Denied(reason) => return Err(reason.into()),
+                            }
                             unit.slot.host = Some(unsafe { CefBrowserHost::create_owned_engineering_probe(
                                 parent.clone(), unit.slot.context.take().unwrap(), unit.slot.session.clone(),
                                 unit.slot.identity.clone(), ViewportBounds::new(0., 0., 640., 480.)?, parent.scale_factor(),
@@ -388,21 +396,8 @@ pub(super) fn execute(
         .map(|u| u.slot.proxy_application_verified)
         .collect::<Vec<_>>();
     let proxy_ack_clean = units.iter().all(|unit| {
-        let after = &unit.slot.proxy_before_host;
-        let delta = |field: &str| {
-            after[field]
-                .as_u64()
-                .zip(unit.before_context[field].as_u64())
-                .and_then(|(a, b)| a.checked_sub(b))
-        };
-        unit.slot.proxy_application_verified
-            && delta("acceptedConnections").is_some()
-            && delta("acceptedConnections") == delta("authenticationChallenges")
-            && after["authenticatedRequests"] == unit.before_context["authenticatedRequests"]
-            && after["upstreamDials"] == 0
-            && after["upstreamFailures"] == 0
-            && delta("requestRejections") == Some(0)
-            && delta("capacityRefusals") == Some(0)
+        pre_host_readiness(&unit.before_context, &unit.slot.proxy_before_host,
+            unit.slot.proxy_application_verified) == PreHostReadiness::Ready
     });
     let boundary_port = units[0]
         .slot
@@ -416,6 +411,9 @@ pub(super) fn execute(
         "distinctEndpoints":distinct_endpoints,"distinctCredentials":distinct_credentials,"actualProxyProofs":proofs,
         "beforeAdmissionBytesZero":before_admission_zero,"closed":all_closed,"failures":failures,"productionReady":false});
     report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
+    report["preHostReadiness"] = serde_json::json!(units.iter().map(|unit|
+        unit.slot.pre_host_observation.report(&unit.before_context, &unit.slot.proxy_before_host)
+    ).collect::<Vec<_>>());
     std::fs::write(
         output.join("native-report.json"),
         serde_json::to_vec_pretty(&report)?,
