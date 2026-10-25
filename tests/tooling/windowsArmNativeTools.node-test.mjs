@@ -438,6 +438,82 @@ test("unknown member is not opened, named or copied; failed collection retains o
   });
 });
 
+test("declared scratch directories stay opaque and never enter collected evidence", async () => {
+  await collectorFixture(async ({ fixture, operation }) => {
+    const scratch = [path.join(operation, "home"), path.join(operation, "tmp")];
+    for (const directory of scratch) {
+      await fs.mkdir(directory);
+      await fs.writeFile(
+        path.join(directory, "private-cache-token.bin"),
+        Buffer.alloc(70000),
+      );
+    }
+    await fs.writeFile(path.join(operation, "context.json"), "{}");
+    const touched = [];
+    const api = {
+      ...fs,
+      readdir: async (file, ...args) => {
+        touched.push(file);
+        assert(
+          !scratch.includes(file),
+          "scratch contents must not be enumerated",
+        );
+        return fs.readdir(file, ...args);
+      },
+      open: async (file, ...args) => {
+        assert(
+          !scratch.some((directory) => file.startsWith(directory + path.sep)),
+        );
+        return fs.open(file, ...args);
+      },
+    };
+    const result = await mod.collectArtifact(fixture, operation, { api });
+    assert.equal(result.diagnostic.status, "complete");
+    assert.equal(result.files.length, 1);
+    assert.equal(result.totalBytes, 2);
+    assert(!JSON.stringify(result.files).includes("private-cache"));
+    assert(touched.includes(operation));
+  });
+});
+
+test("scratch exclusions require exact directories and do not admit lookalikes or linked roots", async () => {
+  for (const name of ["home", "tmp"]) {
+    await collectorFixture(async ({ fixture, operation }) => {
+      const scratch = path.join(operation, name);
+      await fs.writeFile(scratch, "not a directory");
+      await assert.rejects(
+        mod.collectArtifact(fixture, operation),
+        /ARM_COLLECT_TYPE/,
+      );
+      await fs.unlink(scratch);
+      await fs.mkdir(scratch);
+      const api = {
+        ...fs,
+        lstat: async (file, ...args) => {
+          const info = await fs.lstat(file, ...args);
+          if (file === scratch) info.isSymbolicLink = () => true;
+          return info;
+        },
+      };
+      await assert.rejects(
+        mod.collectArtifact(fixture, operation, { api }),
+        /ARM_PATH_LINK/,
+      );
+    });
+  }
+  await collectorFixture(async ({ fixture, operation }) => {
+    await fs.mkdir(path.join(operation, "home-copy"));
+    await fs.writeFile(
+      path.join(operation, "home-copy", "private.bin"),
+      "private",
+    );
+    await assert.rejects(
+      mod.collectArtifact(fixture, operation),
+      /ARM_COLLECT_MEMBER/,
+    );
+  });
+});
+
 test("declared files keep their bytes and hashes only after complete collection", async () => {
   await collectorFixture(async ({ fixture, operation, retained }) => {
     await fs.writeFile(path.join(operation, "context.json"), "{}");

@@ -241,9 +241,15 @@ jobs:
             state.depth=depth;state.stage='directory-bound';check(depth<=8,'ARM_COLLECT_DEPTH');check(now()<deadline,'ARM_COLLECT_DEADLINE');
             state.stage='directory-list';const names=await api.readdir(dir);
             for(const name of names){
-             state.entries++;state.fileBytes=state.nlink=state.isFile=state.memberAllowed=null;state.stage='entry-bound';
+             state.depth=depth;state.entries++;state.fileBytes=state.nlink=state.isFile=state.memberAllowed=null;state.stage='entry-bound';
              check(state.entries<=128,'ARM_COLLECT_ENTRIES');check(now()<deadline,'ARM_COLLECT_DEADLINE');
              const file=path.join(dir,name);state.stage='path-check';await noLinks(file,api);state.stage='entry-stat';const info=await api.lstat(file);
+             // Fixed tool HOME/TEMP are opaque scratch, never diagnostic evidence. Check the
+             // roots without listing, opening or copying any descendants; other members deny.
+             const relative=path.relative(root,file).replaceAll('\\','/');
+             if(/^\.artifacts\/windows-arm-native-tools-[a-f0-9-]{36}$/.test(op)&&(relative===op+'/home'||relative===op+'/tmp')){
+              state.stage='scratch-directory';check(info.isDirectory(),'ARM_COLLECT_TYPE');continue;
+             }
              if(info.isDirectory())await walk(file,depth+1);
              else{
               const rel=path.relative(root,file).replaceAll('\\','/');state.fileBytes=safeNumber(info.size);state.nlink=safeNumber(info.nlink);state.isFile=info.isFile();state.memberAllowed=artifactAllowed(rel,op);
