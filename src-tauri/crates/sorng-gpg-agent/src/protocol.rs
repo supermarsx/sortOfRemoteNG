@@ -1387,7 +1387,7 @@ pub(crate) async fn run_gpg_command_with_input_classified(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+    use std::io::{Read as _, Write as _};
 
     const FAKE_HELPER_ARGS: &[&str] = &[
         "--ignored",
@@ -1450,6 +1450,14 @@ mod tests {
             }
             Ok("secret-error") => {
                 let secret = std::env::var("SORNG_GPG_FAKE_SECRET").unwrap();
+                // Reach the intended failing-exit path only after the parent's
+                // bounded stdin writer has completed and closed its pipe.
+                let mut input = Zeroizing::new(Vec::new());
+                std::io::stdin().take(4097).read_to_end(&mut input).unwrap();
+                assert!(
+                    input.as_slice() == secret.as_bytes(),
+                    "fake helper stdin mismatch"
+                );
                 std::io::stdout().flush().unwrap();
                 std::io::stderr().write_all(secret.as_bytes()).unwrap();
                 std::io::stderr().flush().unwrap();
@@ -1548,6 +1556,11 @@ mod tests {
             Ok(output) => output,
             Err(error) => panic!("fake helper failed unexpectedly: {error}"),
         };
+        assert_eq!(output.status.code(), Some(23));
+        assert!(output
+            .stderr
+            .windows(secret.len())
+            .any(|bytes| bytes == secret.as_bytes()));
         let error = match classify_helper_output(output).into_success_bytes() {
             Ok(_) => panic!("non-zero fake helper unexpectedly succeeded"),
             Err(error) => error,
