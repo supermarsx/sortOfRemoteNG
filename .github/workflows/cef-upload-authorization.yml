@@ -1,0 +1,153 @@
+name: CEF old-producer upload authorization diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: cef-upload-authorization-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  authorization:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/main' && github.event.repository.default_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          architecture: x64
+          package-manager-cache: false
+      - name: Verify the closed diagnostic contract without credentials
+        run: node --test tests/tooling/cefUploadAuthorization.node-test.mjs
+      - name: One unpublished technical draft against the referenced old producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          // BEGIN AUTHORIZATION LIBRARY
+          const OLD='e7f9810ddc0b680abd4b302108acfd3a8c6b6ccf';
+          const REPOSITORY='supermarsx/sortOfRemoteNG', REPOSITORY_ID='1010282954';
+          const PRODUCER_TAG='cef-producer-'+OLD;
+          const CAP=16384, WORK_MS=180000;
+          function need(value,code){if(!value)throw Object.assign(new Error(code),{closedCode:code});}
+          function authority(e,event){
+            need(e.GITHUB_EVENT_NAME==='workflow_dispatch'&&e.GITHUB_REPOSITORY===REPOSITORY&&
+              e.GITHUB_REPOSITORY_ID===REPOSITORY_ID&&e.GITHUB_REF==='refs/heads/main'&&
+              /^[a-f0-9]{40}$/.test(e.GITHUB_SHA)&&e.GITHUB_SHA!==OLD&&
+              /^[1-9][0-9]{0,15}$/.test(e.GITHUB_RUN_ID)&&/^[1-9][0-9]{0,5}$/.test(e.GITHUB_RUN_ATTEMPT)&&
+              event?.repository?.id===Number(REPOSITORY_ID)&&event.repository.full_name===REPOSITORY&&
+              event.repository.private===false&&event.repository.visibility==='public'&&event.repository.default_branch==='main'&&
+              event.inputs!==null&&typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&Object.keys(event.inputs).length===0,
+              'AUTHORITY_DENIED');
+            return 'cef-upload-permission-probe-'+e.GITHUB_RUN_ID+'-'+e.GITHUB_RUN_ATTEMPT;
+          }
+          function releaseBody(tag){
+            need(/^cef-upload-permission-probe-[1-9][0-9]{0,15}-[1-9][0-9]{0,5}$/.test(tag),'TAG_DENIED');
+            return {tag_name:tag,target_commitish:OLD,name:tag,draft:true,prerelease:true,make_latest:'false',
+              generate_release_notes:false,body:'Unpublished technical upload-permission diagnostic only. No runtime, SDK, acceptance or application release. Original failed attempts remain failed.'};
+          }
+          function routeAllowed(route,method,id){
+            return method==='GET'&&['','git/ref/heads/main','git/ref/tags/'+PRODUCER_TAG].includes(route)||
+              method==='POST'&&route==='releases'||method==='GET'&&Number.isSafeInteger(id)&&id>0&&route==='releases/'+id;
+          }
+          function numericHeader(headers,key){
+            const value=headers.get(key);
+            if(value===null)return null;
+            return /^(0|[1-9][0-9]{0,15})$/.test(value)&&Number.isSafeInteger(Number(value))?Number(value):null;
+          }
+          function responseFacts(response,value){
+            const request=response.headers.get('x-github-request-id');
+            const rate={limit:numericHeader(response.headers,'x-ratelimit-limit'),remaining:numericHeader(response.headers,'x-ratelimit-remaining'),
+              used:numericHeader(response.headers,'x-ratelimit-used'),reset:numericHeader(response.headers,'x-ratelimit-reset')};
+            const message=typeof value?.message==='string'?value.message.toLowerCase():'';
+            return {status:response.status,reason:response.ok?null:
+              (response.status===429||rate.remaining===0||message.includes('rate limit')?'rate':
+                message.includes('resource not accessible by integration')?'integration':'other'),
+              requestId:typeof request==='string'&&/^[A-Fa-f0-9:]{1,96}$/.test(request)?request:null,rate};
+          }
+          async function boundedJson(response,remaining){
+            need(response.body&&typeof response.body.getReader==='function','RESPONSE_BODY_DENIED');
+            const reader=response.body.getReader(),chunks=[];let total=0;
+            try{
+              while(true){need(remaining()>0,'DEADLINE');const row=await reader.read();if(row.done)break;
+                total+=row.value.byteLength;need(total<=CAP,'RESPONSE_CAP');chunks.push(row.value);}
+              const bytes=new Uint8Array(total);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length;}
+              return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+            }finally{try{await reader.cancel();}catch{/* Cancellation cannot replace the first guard. */}reader.releaseLock();}
+          }
+          function checkProducerTag(value){
+            need(value?.ref==='refs/tags/'+PRODUCER_TAG&&value.object?.type==='commit'&&value.object.sha===OLD,'PRODUCER_TAG_DENIED');
+          }
+          function observedRelease(value,tag){
+            need(Number.isSafeInteger(value?.id)&&value.id>0&&value.tag_name===tag&&value.target_commitish===OLD&&
+              value.draft===true&&value.prerelease===true&&value.published_at===null&&Array.isArray(value.assets)&&value.assets.length===0,
+              'RELEASE_READBACK_DENIED');
+            return {id:value.id,tag:value.tag_name,target:value.target_commitish,draft:true,prerelease:true,published:false,assets:0};
+          }
+          async function run(e,event,deps){
+            const begin=deps.wall(),mono=deps.mono();
+            const remaining=()=>Math.min(WORK_MS-(deps.wall()-begin),WORK_MS-(deps.mono()-mono));
+            const report={kind:'cef-upload-authorization-diagnostic',success:false,oldProducer:OLD,postStarted:false,
+              runtimeReady:false,nativeAcceptance:false,applicationPublication:false,firstError:null,responses:[],release:null};
+            let releaseId=null;
+            async function api(route,method='GET',body){
+              need(routeAllowed(route,method,releaseId),'ROUTE_DENIED');
+              need((method==='POST')===(body!==undefined),'BODY_DENIED');
+              need(typeof e.GH_TOKEN==='string'&&e.GH_TOKEN.length>0&&e.GH_TOKEN.length<=4096,'TOKEN_UNAVAILABLE');
+              need(remaining()>0,'DEADLINE');
+              const response=await deps.fetch('https://api.github.com/repos/'+REPOSITORY+(route?'/'+route:''),{
+                method,redirect:'error',headers:{Authorization:'Bearer '+e.GH_TOKEN,Accept:'application/vnd.github+json',
+                  'X-GitHub-Api-Version':'2022-11-28',...(body?{'Content-Type':'application/json'}:{})},
+                ...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(Math.max(1,Math.floor(Math.min(20000,remaining()))))});
+              need(Number.isInteger(response.status)&&response.status>=100&&response.status<=599,'RESPONSE_STATUS_DENIED');
+              let value;
+              try{value=await boundedJson(response,remaining);}catch(error){
+                report.responses.push({phase:route==='releases'?'draft-create':method==='GET'&&route.startsWith('releases/')?'draft-readback':route===''?'repository':route.endsWith('/main')?'main':'producer-tag',...responseFacts(response,null)});
+                throw error;
+              }
+              report.responses.push({phase:route==='releases'?'draft-create':method==='GET'&&route.startsWith('releases/')?'draft-readback':route===''?'repository':route.endsWith('/main')?'main':'producer-tag',...responseFacts(response,value)});
+              need(response.ok,'HTTP_DENIED');return value;
+            }
+            try{
+              const tag=authority(e,event);report.probeTag=tag;report.main=e.GITHUB_SHA;
+              const repo=await api('');need(repo.id===Number(REPOSITORY_ID)&&repo.full_name===REPOSITORY&&repo.private===false&&repo.visibility==='public'&&repo.default_branch==='main','REPOSITORY_DENIED');
+              const main=await api('git/ref/heads/main');need(main.ref==='refs/heads/main'&&main.object?.type==='commit'&&main.object.sha===e.GITHUB_SHA&&main.object.sha!==OLD,'MAIN_DENIED');
+              checkProducerTag(await api('git/ref/tags/'+PRODUCER_TAG));
+              need(remaining()>0,'DEADLINE');report.postStarted=true;
+              const created=observedRelease(await api('releases','POST',releaseBody(tag)),tag);releaseId=created.id;report.release=created;
+              const readback=observedRelease(await api('releases/'+releaseId),tag);need(readback.id===releaseId,'RELEASE_READBACK_DENIED');
+              checkProducerTag(await api('git/ref/tags/'+PRODUCER_TAG));
+              need(remaining()>0,'DEADLINE');report.success=true;
+            }catch(error){
+              const closed=new Set(['AUTHORITY_DENIED','TAG_DENIED','ROUTE_DENIED','BODY_DENIED','TOKEN_UNAVAILABLE','DEADLINE',
+                'RESPONSE_STATUS_DENIED','RESPONSE_BODY_DENIED','RESPONSE_CAP','PRODUCER_TAG_DENIED','RELEASE_READBACK_DENIED',
+                'HTTP_DENIED','REPOSITORY_DENIED','MAIN_DENIED']);
+              report.firstError=closed.has(error?.closedCode)?error.closedCode:'UNAVAILABLE';
+            }
+            report.elapsedWallMs=Math.max(0,deps.wall()-begin);report.elapsedMonoMs=Math.max(0,deps.mono()-mono);
+            if(remaining()<=0){report.success=false;report.firstError??='DEADLINE';}
+            return report;
+          }
+          // END AUTHORIZATION LIBRARY
+          let report;
+          try{
+            const raw=await fs.readFile(process.env.GITHUB_EVENT_PATH);need(raw.length<=CAP,'AUTHORITY_DENIED');
+            const event=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));
+            report=await run(process.env,event,{fetch,wall:Date.now,mono:()=>performance.now()});
+          }catch{report={kind:'cef-upload-authorization-diagnostic',success:false,postStarted:false,firstError:'AUTHORITY_DENIED'};}
+          try{await fs.mkdir('cef-upload-authorization-result');await fs.writeFile('cef-upload-authorization-result/result.json',JSON.stringify(report,null,2)+'\n',{flag:'wx'});}
+          catch{report.success=false;report.reportingFailure='RESULT_WRITE_DENIED';}
+          console.log(JSON.stringify(report));if(!report.success)process.exitCode=1;
+          NODE
+      - name: Retain only the closed authorization result
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cef-upload-authorization-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cef-upload-authorization-result/result.json
+          if-no-files-found: warn
+          retention-days: 14
