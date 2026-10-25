@@ -35,11 +35,53 @@ const exec = promisify(execFile),
   commit = /^[a-f\d]{40}$/;
 const origins = {
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
+  "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
 };
+export const LINUX_INCREMENTAL_ORIGIN = "owned-linux-incremental-engine";
+export const LINUX_INCREMENTAL_IDENTITY =
+  "9d0bc5722d719eff8a20d39ef06fb6f222b239ea44d78dd42e7c40a2f42def2e";
+export const LINUX_PREDECESSOR_IDENTITY =
+  "49f23608a686da56a32a2c825b51fa2577bcbba6353d5f9587a0c68dec9df68e";
+export const LINUX_INCREMENTAL_TOOLCHAIN_SHA =
+  "345e0c5fb0034b3194ab3fd2b60e499eabf6d3e320ad4ae7a5d4534e6a8835dd";
+export const LINUX_INCREMENTAL_EVIDENCE = Object.freeze([
+  "predecessor",
+  "readiness",
+  "apply",
+  "started",
+  "container",
+  "compile",
+  "compileOutput",
+  "finished",
+  "postchecks",
+  "package",
+  "distribution",
+  "preparation",
+]);
+export const LINUX_INCREMENTAL_PROVENANCE = Object.freeze([
+  "origin",
+  "operation",
+  "controllerCommit",
+  "sourceLockIdentity",
+  "predecessorSourceLockIdentity",
+  "predecessorHandoffSha256",
+  "baselineEngineSha256",
+  "engineSha256",
+  "image",
+  "originalInputsSourceLockRawSha256",
+  "toolchainLockSha256",
+  "actualToolFilesVerified",
+  "separatelyObservedTools",
+  "incrementalBuild",
+  "pristineSourceBuild",
+  "originalBuildReplayed",
+  "reviewedEvidenceDigests",
+  "nestedOriginalRecordDigests",
+]);
 export const WINDOWS_CAPSULE_ORIGIN = "owned-windows-capsule-lifetime-engine";
 export const WINDOWS_CAPSULE_IDENTITY =
   "bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629";
@@ -320,6 +362,8 @@ const capsuleTextRoles = new Set([
   "nativeSandboxList",
 ]);
 export function ownedEvidenceLimit(origin, role) {
+  if (origin === LINUX_INCREMENTAL_ORIGIN)
+    return role === "compileOutput" ? 64 * 1024 ** 2 : 1024 ** 2;
   if (origin === WINDOWS_OPERATION2_ORIGIN)
     return role === "engineOutput"
       ? 64 * 1024 ** 2
@@ -360,20 +404,22 @@ export const WINDOWS_INCREMENTAL_PROVENANCE = Object.freeze([
   "pristineSourceBuild",
 ]);
 const evidenceNames = (origin) =>
-  isWindowsCapsuleOrigin(origin)
-    ? ownedCapsuleEvidence(origin)
-    : origin === "owned-windows-incremental-engine"
-      ? WINDOWS_INCREMENTAL_EVIDENCE
-      : origin === "owned-linux-engine"
-        ? [
-            "prepared",
-            "started",
-            "container",
-            "finished",
-            "producer",
-            "freshCheck",
-          ]
-        : ["build"];
+  origin === LINUX_INCREMENTAL_ORIGIN
+    ? LINUX_INCREMENTAL_EVIDENCE
+    : isWindowsCapsuleOrigin(origin)
+      ? ownedCapsuleEvidence(origin)
+      : origin === "owned-windows-incremental-engine"
+        ? WINDOWS_INCREMENTAL_EVIDENCE
+        : origin === "owned-linux-engine"
+          ? [
+              "prepared",
+              "started",
+              "container",
+              "finished",
+              "producer",
+              "freshCheck",
+            ]
+          : ["build"];
 const fail = (message) => {
   throw Error(message);
 };
@@ -430,6 +476,13 @@ export function ownedSdkHandoffPlan(review) {
   )
     fail("Explicit reviewed Python executable pin required");
   shape(review.evidence, evidenceNames(review.origin));
+  if (
+    review.origin === LINUX_INCREMENTAL_ORIGIN &&
+    (review.sourceLockIdentity !== LINUX_INCREMENTAL_IDENTITY ||
+      Object.values(review.evidence).reduce((n, p) => n + p.size, 0) >
+        80 * 1024 ** 2)
+  )
+    fail("Closed Linux incremental identity and evidence bound required");
   for (const [role, value] of Object.entries(review.evidence))
     pin(value, ownedEvidenceLimit(review.origin, role));
   if (
@@ -476,6 +529,8 @@ export function ownedHandoffReviewBinding(review) {
 export function verifyOwnedHandoffEvidence(review, records, sourceLock) {
   ownedSdkHandoffPlan(review);
   shape(records, evidenceNames(review.origin));
+  if (review.origin === LINUX_INCREMENTAL_ORIGIN)
+    return verifyLinuxIncrementalEvidence(review, records, sourceLock);
   if (isWindowsCapsuleOrigin(review.origin))
     return verifyWindowsCapsuleEvidence(review, records, sourceLock);
   if (review.origin === "owned-windows-incremental-engine")
@@ -642,6 +697,841 @@ export function verifyOwnedHandoffEvidence(review, records, sourceLock) {
       ?.toolchainLock.sha256,
     actualToolFilesVerified: p.tools.filesVerified,
     completedEngineRecordsPinned: true,
+  };
+}
+
+// The controller emits these exact private records. A matching schema is not
+// independent execution attestation: the operator must review the genuine bytes.
+export const LINUX_INCREMENTAL_FACT_KEYS = Object.freeze({
+  predecessor: ["sourceLock", "review", "handoff", "manifest", "records"],
+  readiness: [
+    "image",
+    "volume",
+    "cacheRoot",
+    "sourceBefore",
+    "toolFiles",
+    "extraTools",
+    "args",
+    "graph",
+    "securityMacros",
+    "securityHeader",
+    "kernel",
+    "upstream",
+    "reconstruction",
+    "exclusiveCache",
+    "cacheOutputs",
+  ],
+  apply: ["patch", "before", "after", "onlyReviewedPatchApplied"],
+  started: [
+    "startWallMs",
+    "startMonotonicMs",
+    "compileDeadlineWallMs",
+    "compileBudgetMs",
+    "cleanupBudgetMs",
+    "packagingBudgetMs",
+    "controllerPins",
+    "replayAllowed",
+  ],
+  container: ["id", "name", "image", "volume", "kernel"],
+  compile: [
+    "argv",
+    "cwd",
+    "beginWallMs",
+    "endWallMs",
+    "beginMonotonicMs",
+    "endMonotonicMs",
+    "elapsedMs",
+    "exit",
+    "outputSha256",
+    "outputBytes",
+    "localSteps",
+    "finished",
+  ],
+  finished: [
+    "containerId",
+    "reason",
+    "exit",
+    "quiescent",
+    "processesLeft",
+    "readersStopped",
+    "logFailure",
+    "cleanupElapsedMs",
+  ],
+  postchecks: [
+    "sourceAfter",
+    "toolFiles",
+    "extraTools",
+    "args",
+    "securityMacros",
+    "securityHeader",
+    "upstream",
+    "compileSha256",
+    "engine",
+    "sandbox",
+  ],
+  package: [
+    "descriptorSha256",
+    "originalInputsSourceLockRawSha256",
+    "sourceLockIdentity",
+    "engine",
+    "sandbox",
+    "sdkFiles",
+    "assets",
+    "beginWallMs",
+    "endWallMs",
+    "elapsedMs",
+  ],
+  distribution: [
+    "argv",
+    "cwd",
+    "exit",
+    "elapsedMs",
+    "inventorySha256",
+    "filesVerified",
+    "quiescent",
+    "outputsFresh",
+  ],
+  preparation: [
+    "method",
+    "exit",
+    "elapsedMs",
+    "inventorySha256",
+    "filesVerified",
+    "quiescent",
+    "outputsFresh",
+    "archiveRoundtrip",
+    "elfMachine",
+    "bridgeExports",
+  ],
+});
+export const LINUX_INCREMENTAL_TOOL_PINS = Object.freeze([
+  {
+    path: "usr/bin/python3.12",
+    size: 8020928,
+    sha256: "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+  },
+  {
+    path: "usr/bin/x86_64-linux-gnu-ld.bfd",
+    size: 1359128,
+    sha256: "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+  },
+  {
+    path: "usr/bin/pkgconf",
+    size: 45168,
+    sha256: "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b",
+  },
+  {
+    path: "usr/include/stdio.h",
+    size: 34649,
+    sha256: "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62",
+  },
+  {
+    path: "usr/bin/git",
+    size: 4066232,
+    sha256: "eb54b535467e0975c1284d4c4d08eea779aeb248a5d34b02e2ee171382e22201",
+  },
+  {
+    path: "usr/bin/gperf",
+    size: 100680,
+    sha256: "32bb03d8f3d79434c0ac001ad8c530c405c6aef763d4aeb4033c7e21131bc6ca",
+  },
+  {
+    path: "usr/local/bin/node",
+    size: 125989464,
+    sha256: "bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12",
+  },
+  {
+    path: "usr/local/bin/siso",
+    size: 63728201,
+    sha256: "c74fe8203cfef3222592aea4292809d13ec645d39e9763b416c542d304837c4f",
+  },
+]);
+export const LINUX_INCREMENTAL_SOURCE_PATHS = Object.freeze([
+  "base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc",
+  "cef/BUILD.gn",
+  "cef/cef_paths2.gypi",
+  "cef/include/cef_sorng_tls_bridge.h",
+  "cef/libcef/browser/browser_context.cc",
+  "cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc",
+  "cef/libcef/browser/download_manager_delegate_impl.cc",
+  "cef/libcef/browser/native/native_widget_delegate.cc",
+  "cef/libcef/browser/native/window_x11.cc",
+  "cef/libcef/browser/net_service/sorng_tls_bridge.cc",
+  "cef/libcef/browser/net_service/sorng_tls_bridge.h",
+  "cef/libcef/browser/net_service/sorng_tls_registration_policy.h",
+  "cef/libcef/browser/request_context_impl.cc",
+  "cef/libcef/browser/request_context_impl.h",
+  "cef/libcef_dll/sorng_tls_bridge_exports.cc",
+  "chrome/browser/accessibility/soda_installer_impl.cc",
+  "chrome/browser/net/profile_network_context_service.cc",
+  "chrome/browser/net/profile_network_context_service.h",
+  "chrome/browser/net/proxy_config_monitor.cc",
+  "chrome/browser/net/proxy_config_monitor.h",
+  "components/soda/soda_features.cc",
+  "components/soda/soda_features.h",
+  "components/soda/soda_installer.cc",
+  "components/soda/soda_util.cc",
+  "net/BUILD.gn",
+  "net/cert/cert_verify_proc.h",
+  "net/cert/cert_verify_proc_builtin.cc",
+  "net/dns/host_resolver_manager.cc",
+  "net/dns/host_resolver_manager_unittest.cc",
+  "net/proxy_resolution/configured_proxy_resolution_service.cc",
+  "net/proxy_resolution/configured_proxy_resolution_service.h",
+  "net/socket/sorng_tls_policy.h",
+  "net/socket/ssl_client_socket.cc",
+  "net/socket/ssl_client_socket.h",
+  "net/socket/ssl_client_socket_impl.cc",
+  "net/socket/ssl_client_socket_impl.h",
+  "net/socket/ssl_client_socket_unittest.cc",
+  "net/spdy/spdy_session_pool.cc",
+  "services/cert_verifier/cert_verifier_creation.cc",
+  "services/cert_verifier/cert_verifier_service.cc",
+  "services/cert_verifier/cert_verifier_service_factory.cc",
+  "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom",
+  "services/network/network_context.cc",
+  "services/network/network_context.h",
+  "services/network/public/mojom/network_context.mojom",
+]);
+const linuxImage =
+    "sha256:5c3e8c42ac5a58ca0ec31df6dfc45d57af3c663ed53b8e4d7171e18f31480930",
+  linuxVolume =
+    "sorng-cef-preflight-20261023-6f4466b3-0e90-4275-b19a-57470e8f8af5-work",
+  linuxCache = "/work/build/cef-ci-qTkJO9/source/src",
+  linuxPatch =
+    "09359b5fe26fc71ca90fdf2add850cc2cd9129d34b76da2b1dd1a95e1ab5fc39",
+  linuxBefore =
+    "0ccac4e8f1f8371e42bec473e2b60016f4f68370c3e072d7e44f42c50da3303a",
+  linuxAfter =
+    "d624ed223238b3b999e85a994be5a3c1340dd87ce64e3d60094e7c87e4dbd19d",
+  linuxInputRaw =
+    "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23",
+  linuxArgs =
+    "80533e918b63db1e7696d910c8292d7cfbbd042506f53fed03f2100327061286",
+  linuxSourcePath = "cef/libcef/browser/native/window_x11.cc";
+
+export function validateLinuxIncrementalProvenance(p, review) {
+  shape(p, LINUX_INCREMENTAL_PROVENANCE);
+  const require = (ok) => {
+    if (!ok) fail("Portable Linux incremental provenance mismatch");
+  };
+  require(
+    p.origin === LINUX_INCREMENTAL_ORIGIN &&
+      review.origin === p.origin &&
+      review.sourceLockIdentity === LINUX_INCREMENTAL_IDENTITY &&
+      review.target === "x86_64-unknown-linux-gnu" &&
+      p.sourceLockIdentity === review.sourceLockIdentity &&
+      p.predecessorSourceLockIdentity === LINUX_PREDECESSOR_IDENTITY &&
+      /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(p.operation) &&
+      commit.test(p.controllerCommit) &&
+      p.engineSha256 === review.engineSha256 &&
+      hex.test(p.baselineEngineSha256) &&
+      p.engineSha256 !== p.baselineEngineSha256 &&
+      p.image === linuxImage &&
+      p.originalInputsSourceLockRawSha256 === linuxInputRaw &&
+      p.originalInputsSourceLockRawSha256 ===
+        review.originalInputsSourceLockRawSha256 &&
+      p.toolchainLockSha256 === LINUX_INCREMENTAL_TOOLCHAIN_SHA &&
+      p.actualToolFilesVerified === 8 &&
+      p.incrementalBuild === true &&
+      p.pristineSourceBuild === false &&
+      p.originalBuildReplayed === false,
+  );
+  shape(p.reviewedEvidenceDigests, LINUX_INCREMENTAL_EVIDENCE);
+  for (const role of LINUX_INCREMENTAL_EVIDENCE)
+    require(
+      p.reviewedEvidenceDigests[role] ===
+        review.reviewBinding.evidencePins[role].sha256,
+    );
+  shape(p.separatelyObservedTools, [
+    "clang",
+    "ldLld",
+    "gn",
+    "siso",
+    "autoninja",
+    "clangStamp",
+    "sisoSpecification",
+  ]);
+  for (const pin of Object.values(p.separatelyObservedTools)) {
+    shape(pin, ["sha256", "size"]);
+    require(
+      hex.test(pin.sha256) &&
+        Number.isSafeInteger(pin.size) &&
+        pin.size > 0 &&
+        pin.size <= 1024 ** 3,
+    );
+  }
+  const n = p.nestedOriginalRecordDigests;
+  shape(n, [
+    "predecessorSourceLock",
+    "predecessorReview",
+    "predecessorHandoff",
+    "predecessorManifest",
+    "predecessorRecords",
+  ]);
+  for (const role of [
+    "predecessorSourceLock",
+    "predecessorReview",
+    "predecessorHandoff",
+    "predecessorManifest",
+  ])
+    require(hex.test(n[role]));
+  require(p.predecessorHandoffSha256 === n.predecessorHandoff);
+  shape(n.predecessorRecords, [
+    "prepared",
+    "started",
+    "container",
+    "finished",
+    "producer",
+    "freshCheck",
+  ]);
+  for (const sha of Object.values(n.predecessorRecords)) require(hex.test(sha));
+  return p;
+}
+
+function verifyLinuxIncrementalEvidence(review, records, inputLock) {
+  const require = (ok) => {
+      if (!ok) fail("Original Linux incremental evidence mismatch");
+    },
+    same = (a, b) => identitySha256(a) === identitySha256(b),
+    positive = (x) => Number.isSafeInteger(x) && x > 0,
+    digest = (x) => typeof x === "string" && hex.test(x),
+    uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/,
+    facts = {};
+  let operation, controllerCommit;
+  for (const role of LINUX_INCREMENTAL_EVIDENCE.filter(
+    (x) => x !== "compileOutput",
+  )) {
+    const row = records[role];
+    shape(row, [
+      "schemaVersion",
+      "kind",
+      "operation",
+      "controllerCommit",
+      "sourceLockIdentity",
+      "target",
+      "facts",
+    ]);
+    require(
+      row.schemaVersion === 1 &&
+        row.kind === `sorng-owned-linux-incremental-${role}` &&
+        uuid.test(row.operation) &&
+        commit.test(row.controllerCommit) &&
+        row.sourceLockIdentity === LINUX_INCREMENTAL_IDENTITY &&
+        row.target === review.target,
+    );
+    operation ??= row.operation;
+    controllerCommit ??= row.controllerCommit;
+    require(
+      row.operation === operation && row.controllerCommit === controllerCommit,
+    );
+    shape(row.facts, LINUX_INCREMENTAL_FACT_KEYS[role]);
+    facts[role] = row.facts;
+  }
+  const raw = (row) => {
+    shape(row, ["rawUtf8", "sha256", "size"]);
+    const b = Buffer.from(row.rawUtf8 ?? "", "utf8");
+    require(
+      typeof row.rawUtf8 === "string" &&
+        positive(row.size) &&
+        row.size <= 1024 ** 2 &&
+        b.length === row.size &&
+        b.toString("utf8") === row.rawUtf8 &&
+        hash(b) === row.sha256,
+    );
+    try {
+      return JSON.parse(row.rawUtf8);
+    } catch {
+      fail("Original Linux incremental JSON invalid");
+    }
+  };
+  const previous = facts.predecessor,
+    oldLock = validateSourceLock(raw(previous.sourceLock)),
+    oldReview = raw(previous.review),
+    oldHandoff = raw(previous.handoff),
+    oldManifest = raw(previous.manifest),
+    oldRecords = {};
+  const oldNames = [
+    "prepared",
+    "started",
+    "container",
+    "finished",
+    "producer",
+    "freshCheck",
+  ];
+  shape(previous.records, oldNames);
+  for (const name of oldNames) {
+    oldRecords[name] = raw(previous.records[name]);
+    const pin = oldReview.evidence?.[name];
+    require(
+      pin?.sha256 === previous.records[name].sha256 &&
+        pin.size === previous.records[name].size,
+    );
+  }
+  require(
+    oldReview.origin === "owned-linux-engine" &&
+      oldReview.target === review.target &&
+      oldReview.sourceLockIdentity === LINUX_PREDECESSOR_IDENTITY &&
+      identitySha256(oldLock) === LINUX_PREDECESSOR_IDENTITY &&
+      oldHandoff.origin === undefined &&
+      oldHandoff.kind === "sorng-cef-owned-sdk-handoff" &&
+      oldHandoff.sourceLockIdentity === LINUX_PREDECESSOR_IDENTITY &&
+      oldHandoff.hostedBuild === false &&
+      oldHandoff.nativeAcceptance === "not-tested" &&
+      oldHandoff.productionReady === false &&
+      oldHandoff.publicationAllowed === false &&
+      oldHandoff.uploadAllowed === false &&
+      oldHandoff.descriptorSha256 === oldReview.descriptorSha256 &&
+      digest(oldHandoff.engineSha256) &&
+      same(oldHandoff.reviewBinding, ownedHandoffReviewBinding(oldReview)) &&
+      oldRecords.freshCheck.result.plan.sourceLockSha256 ===
+        previous.sourceLock.sha256 &&
+      operation !== oldRecords.started.operation,
+  );
+  require(
+    oldHandoff.schemaVersion === 1 &&
+      oldHandoff.target === review.target &&
+      oldHandoff.originalInputsSourceLockRawSha256 ===
+        previous.sourceLock.sha256 &&
+      Array.isArray(oldHandoff.assets) &&
+      oldHandoff.assets.length === 5 &&
+      new Set(oldHandoff.assets.map((x) => x.name)).size === 5,
+  );
+  for (const asset of oldHandoff.assets) {
+    shape(asset, ["name", "size", "sha256"]);
+    require(positive(asset.size) && digest(asset.sha256));
+    releaseRelativePath(asset.name);
+  }
+  require(
+    oldHandoff.assets.some(
+      (x) =>
+        x.name === "runtime.json" && x.sha256 === oldReview.descriptorSha256,
+    ) &&
+      oldHandoff.assets.some(
+        (x) =>
+          x.name === "manifest.json" &&
+          x.sha256 === previous.manifest.sha256 &&
+          x.size === previous.manifest.size,
+      ) &&
+      oldManifest.kind === "sorng-cef-custom-runtime" &&
+      oldManifest.schemaVersion === 1 &&
+      oldManifest.sourceLockSha256 === LINUX_PREDECESSOR_IDENTITY &&
+      oldManifest.artifacts?.length === 1 &&
+      oldManifest.artifacts[0].target === review.target &&
+      Array.isArray(oldManifest.artifacts[0].sdkFiles) &&
+      oldManifest.artifacts[0].sdkFiles.length === oldHandoff.filesVerified &&
+      oldHandoff.filesVerified <= RELEASE_LIMITS.members,
+  );
+  verifyOwnedHandoffEvidence(oldReview, oldRecords, oldLock);
+  const lock = validateSourceLock(inputLock),
+    build = lock.builds.find((x) => x.target === review.target),
+    oldBuild = oldLock.builds.find((x) => x.target === review.target);
+  require(
+    identitySha256(lock) === LINUX_INCREMENTAL_IDENTITY &&
+      build &&
+      oldBuild &&
+      lock.patches.length === oldLock.patches.length + 1 &&
+      lock.patches.at(-1).sha256 === linuxPatch,
+  );
+  const projected = structuredClone(lock);
+  projected.patches.pop();
+  require(same(projected, oldLock));
+  const r = facts.readiness,
+    a = facts.apply,
+    start = facts.started,
+    c = facts.container,
+    compiled = facts.compile,
+    end = facts.finished,
+    post = facts.postchecks,
+    pack = facts.package;
+  const file = (row) => {
+    shape(row, ["path", "sha256", "size"]);
+    pin(row, 1024 ** 3);
+    return row;
+  };
+  const files = (rows, max = 512) => {
+    require(
+      Array.isArray(rows) &&
+        rows.length > 0 &&
+        rows.length <= max &&
+        new Set(rows.map((x) => x.path)).size === rows.length,
+    );
+    rows.forEach(file);
+  };
+  shape(r.cacheOutputs, ["engine", "sandbox"]);
+  for (const [role, name] of [
+    ["engine", "libcef.so"],
+    ["sandbox", "chrome-sandbox"],
+  ]) {
+    const old = oldManifest.artifacts[0].sdkFiles.filter(
+      (x) => x.path === name,
+    );
+    require(
+      old.length === 1 &&
+        old[0].type === "file" &&
+        old[0].sha256 === r.cacheOutputs[role].sha256 &&
+        old[0].size === r.cacheOutputs[role].size &&
+        r.cacheOutputs[role].path === name,
+    );
+    file(r.cacheOutputs[role]);
+  }
+  require(r.cacheOutputs.engine.sha256 === oldHandoff.engineSha256);
+  files(r.sourceBefore);
+  require(
+    same(
+      r.sourceBefore.map((x) => x.path),
+      LINUX_INCREMENTAL_SOURCE_PATHS,
+    ),
+  );
+  files(post.sourceAfter);
+  files(r.toolFiles, 8);
+  require(
+    r.toolFiles.length === 8 &&
+      same(r.toolFiles, LINUX_INCREMENTAL_TOOL_PINS) &&
+      same(r.toolFiles, post.toolFiles),
+  );
+  shape(r.extraTools, [
+    "clang",
+    "ldLld",
+    "gn",
+    "siso",
+    "autoninja",
+    "clangStamp",
+    "sisoSpecification",
+  ]);
+  Object.values(r.extraTools).forEach(file);
+  require(same(r.extraTools, post.extraTools));
+  file(r.args);
+  file(r.graph);
+  require(
+    r.args.path === "out/Release_GN_x64/args.gn" &&
+      r.graph.path === "out/Release_GN_x64/build.ninja",
+  );
+  require(r.args.sha256 === linuxArgs && same(r.args, post.args));
+  const macros = (rows) => {
+    require(
+      Array.isArray(rows) &&
+        rows.length > 0 &&
+        rows.length <= 512 &&
+        new Set(rows.map((x) => x.name)).size === rows.length,
+    );
+    for (const row of rows) {
+      shape(row, ["name", "value"]);
+      require(
+        /^[A-Z][A-Z0-9_]{0,127}$/.test(row.name) && [0, 1].includes(row.value),
+      );
+    }
+    require(
+      rows.some(
+        (x) =>
+          x.name === "ENABLE_BACKUP_REF_PTR_INSTANCE_TRACER" && x.value === 0,
+      ),
+    );
+  };
+  macros(r.securityMacros);
+  file(r.securityHeader);
+  require(
+    same(r.securityHeader, post.securityHeader) &&
+      same(r.securityMacros, post.securityMacros),
+  );
+  require(same(r.upstream, lock.upstream) && same(r.upstream, post.upstream));
+  shape(r.reconstruction, ["method", "oldPatchPins", "verifiedSourcePins"]);
+  require(
+    r.reconstruction.method === "git-pristine-plus-reviewed-old12" &&
+      same(r.reconstruction.oldPatchPins, oldLock.patches) &&
+      same(r.reconstruction.verifiedSourcePins, r.sourceBefore),
+  );
+  require(
+    r.sourceBefore.some(
+      (x) => x.path === linuxSourcePath && x.sha256 === linuxBefore,
+    ),
+  );
+  const expectedAfter = r.sourceBefore.map((row) =>
+    row.path === linuxSourcePath ? { ...row, ...a.after } : row,
+  );
+  file(a.patch);
+  file(a.before);
+  file(a.after);
+  require(
+    a.patch.sha256 === linuxPatch &&
+      a.patch.size === 1073 &&
+      a.patch.path === lock.patches.at(-1).path &&
+      a.before.path === linuxSourcePath &&
+      a.before.sha256 === linuxBefore &&
+      a.after.path === linuxSourcePath &&
+      a.after.sha256 === linuxAfter &&
+      a.onlyReviewedPatchApplied === true &&
+      same(
+        a.before,
+        r.sourceBefore.find((x) => x.path === linuxSourcePath),
+      ) &&
+      same(expectedAfter, post.sourceAfter),
+  );
+  const kernel = (k) => {
+    shape(k, [
+      "uid",
+      "gid",
+      "readonlyRoot",
+      "networkMode",
+      "memory",
+      "memorySwap",
+      "nanoCpus",
+      "pids",
+      "capDrop",
+      "noNewPrivileges",
+      "mountsVerified",
+      "homeVerified",
+      "home",
+      "diskFreeBytes",
+      "diskMinimumBytes",
+    ]);
+    require(
+      Number.isSafeInteger(k.diskFreeBytes) &&
+        k.diskMinimumBytes === 100 * 1024 ** 3 &&
+        k.diskFreeBytes >= k.diskMinimumBytes,
+    );
+    shape(k.home, [
+      "uid",
+      "gid",
+      "mode",
+      "mountAndAliasVerified",
+      "privateCacheWriteVerified",
+    ]);
+    require(
+      k.home.uid === 10001 &&
+        k.home.gid === 10001 &&
+        k.home.mode === 0o700 &&
+        k.home.mountAndAliasVerified === true &&
+        k.home.privateCacheWriteVerified === true,
+    );
+    require(
+      k.uid === 10001 &&
+        k.gid === 10001 &&
+        k.readonlyRoot === true &&
+        k.networkMode === "none" &&
+        k.memory === 24 * 1024 ** 3 &&
+        k.memorySwap === k.memory &&
+        k.nanoCpus === 8e9 &&
+        k.pids === 512 &&
+        same(k.capDrop, ["ALL"]) &&
+        k.noNewPrivileges === true &&
+        k.mountsVerified === true &&
+        k.homeVerified === true,
+    );
+  };
+  kernel(r.kernel);
+  kernel(c.kernel);
+  require(
+    r.exclusiveCache === true &&
+      r.image === linuxImage &&
+      r.volume === linuxVolume &&
+      r.cacheRoot === linuxCache &&
+      c.image === linuxImage &&
+      c.volume === linuxVolume &&
+      digest(c.id) &&
+      c.name === `/sorng-cef-linux-incremental-${operation}` &&
+      same(r.kernel, c.kernel),
+  );
+  shape(start.controllerPins, ["controller", "guest"]);
+  Object.values(start.controllerPins).forEach(file);
+  require(
+    positive(start.startWallMs) &&
+      positive(start.startMonotonicMs) &&
+      start.replayAllowed === false &&
+      start.compileBudgetMs === 3600000 &&
+      start.cleanupBudgetMs === 30000 &&
+      start.packagingBudgetMs === 900000 &&
+      start.compileDeadlineWallMs === start.startWallMs + start.compileBudgetMs,
+  );
+  const expectedArgv = [
+    "/work/tools/usr/bin/python3.12",
+    `${linuxCache}/../depot_tools/autoninja.py`,
+    "-j",
+    "8",
+    "-C",
+    "out/Release_GN_x64",
+    "cef",
+    "chrome_sandbox",
+  ];
+  // Fixed normalized depot path; caller cannot select an arbitrary script.
+  expectedArgv[1] = "/work/build/cef-ci-qTkJO9/source/depot_tools/autoninja.py";
+  require(
+    same(compiled.argv, expectedArgv) &&
+      compiled.cwd === linuxCache &&
+      positive(compiled.beginWallMs) &&
+      positive(compiled.endWallMs) &&
+      compiled.beginWallMs >= start.startWallMs &&
+      compiled.endWallMs <= start.compileDeadlineWallMs &&
+      compiled.endWallMs >= compiled.beginWallMs &&
+      positive(compiled.beginMonotonicMs) &&
+      positive(compiled.endMonotonicMs) &&
+      compiled.beginMonotonicMs >= start.startMonotonicMs &&
+      compiled.endMonotonicMs - start.startMonotonicMs <=
+        start.compileBudgetMs &&
+      compiled.endMonotonicMs - compiled.beginMonotonicMs ===
+        compiled.elapsedMs &&
+      positive(compiled.elapsedMs) &&
+      compiled.elapsedMs <= start.compileBudgetMs &&
+      compiled.exit === 0 &&
+      compiled.finished === true &&
+      positive(compiled.localSteps),
+  );
+  const local = /^noexec:0 local:(\d+) remote:0 cache:0 skip:\d+\r?$/m.exec(
+    records.compileOutput,
+  );
+  require(
+    /^build finished\r?$/m.test(records.compileOutput) &&
+      local &&
+      Number(local[1]) === compiled.localSteps,
+  );
+  require(
+    typeof records.compileOutput === "string" &&
+      Buffer.byteLength(records.compileOutput) === compiled.outputBytes &&
+      compiled.outputBytes === review.evidence.compileOutput.size &&
+      hash(Buffer.from(records.compileOutput)) === compiled.outputSha256 &&
+      compiled.outputSha256 === review.evidence.compileOutput.sha256 &&
+      !/^(?:FAILED:|ninja: build stopped|FATAL)/m.test(records.compileOutput),
+  );
+  require(
+    end.containerId === c.id &&
+      end.reason === "completed" &&
+      end.exit === 0 &&
+      end.quiescent === true &&
+      end.processesLeft === 0 &&
+      end.readersStopped === true &&
+      end.logFailure === false &&
+      Number.isSafeInteger(end.cleanupElapsedMs) &&
+      end.cleanupElapsedMs >= 0 &&
+      end.cleanupElapsedMs <= start.cleanupBudgetMs &&
+      post.compileSha256 === review.evidence.compile.sha256,
+  );
+  file(post.engine);
+  file(post.sandbox);
+  file(pack.engine);
+  file(pack.sandbox);
+  require(
+    post.engine.path === "libcef.so" &&
+      post.sandbox.path === "chrome-sandbox" &&
+      same(pack.engine, post.engine) &&
+      same(pack.sandbox, post.sandbox) &&
+      post.engine.sha256 !== oldHandoff.engineSha256,
+  );
+  require(
+    pack.descriptorSha256 === review.descriptorSha256 &&
+      pack.originalInputsSourceLockRawSha256 === linuxInputRaw &&
+      pack.sourceLockIdentity === LINUX_INCREMENTAL_IDENTITY &&
+      positive(pack.beginWallMs) &&
+      positive(pack.endWallMs) &&
+      pack.beginWallMs >= compiled.endWallMs &&
+      pack.endWallMs - compiled.endWallMs <= start.packagingBudgetMs &&
+      pack.endWallMs - pack.beginWallMs === pack.elapsedMs &&
+      positive(pack.elapsedMs) &&
+      positive(pack.sdkFiles) &&
+      pack.sdkFiles <= RELEASE_LIMITS.members,
+  );
+  require(
+    Array.isArray(pack.assets) &&
+      pack.assets.length === 5 &&
+      new Set(pack.assets.map((x) => x.name)).size === 5,
+  );
+  const assetNames = [
+    "runtime.json",
+    "source-lock.json",
+    "manifest.json",
+    "receipt.json",
+    `sorng-cef-custom-${LINUX_INCREMENTAL_IDENTITY}-${review.target}.tar.bz2`,
+  ];
+  for (const row of pack.assets) {
+    shape(row, ["name", "size", "sha256"]);
+    require(
+      assetNames.includes(row.name) &&
+        positive(row.size) &&
+        row.size <= RELEASE_LIMITS.archive &&
+        digest(row.sha256),
+    );
+  }
+  require(
+    pack.assets.find((x) => x.name === "runtime.json").sha256 ===
+      review.descriptorSha256,
+  );
+  for (const role of ["distribution", "preparation"]) {
+    const row = facts[role];
+    require(
+      row.exit === 0 &&
+        positive(row.elapsedMs) &&
+        digest(row.inventorySha256) &&
+        row.filesVerified === pack.sdkFiles &&
+        row.quiescent === true &&
+        row.outputsFresh === true,
+    );
+  }
+  require(
+    facts.distribution.elapsedMs + facts.preparation.elapsedMs <=
+      pack.elapsedMs,
+  );
+  const dist = facts.distribution;
+  require(
+    dist.cwd === `${linuxCache}/cef` &&
+      Array.isArray(dist.argv) &&
+      dist.argv.length === 10 &&
+      same(dist.argv.slice(0, 3), [
+        "/work/tools/usr/bin/python3.12",
+        "tools/make_distrib.py",
+        "--output-dir",
+      ]) &&
+      dist.argv[3] === `/work/linux-incremental-${operation}/distribution` &&
+      same(dist.argv.slice(4), [
+        "--ninja-build",
+        "--x64-build",
+        "--minimal",
+        "--allow-partial",
+        "--no-archive",
+        "--no-docs",
+      ]),
+  );
+  const prep = facts.preparation;
+  require(
+    prep.method === "prepareCustomRuntime+verifyPreparedCustomRuntime" &&
+      prep.archiveRoundtrip === true &&
+      prep.elfMachine === "ELF64-x86-64" &&
+      prep.bridgeExports === 4 &&
+      prep.inventorySha256 ===
+        pack.assets.find((x) => x.name === "manifest.json").sha256,
+  );
+  return {
+    origin: review.origin,
+    operation,
+    controllerCommit,
+    sourceLockIdentity: LINUX_INCREMENTAL_IDENTITY,
+    predecessorSourceLockIdentity: LINUX_PREDECESSOR_IDENTITY,
+    predecessorHandoffSha256: previous.handoff.sha256,
+    baselineEngineSha256: oldHandoff.engineSha256,
+    engineSha256: post.engine.sha256,
+    image: linuxImage,
+    originalInputsSourceLockRawSha256: linuxInputRaw,
+    toolchainLockSha256: build.toolchainLock.sha256,
+    actualToolFilesVerified: 8,
+    separatelyObservedTools: Object.fromEntries(
+      Object.entries(r.extraTools).map(([key, p]) => [
+        key,
+        { sha256: p.sha256, size: p.size },
+      ]),
+    ),
+    incrementalBuild: true,
+    pristineSourceBuild: false,
+    originalBuildReplayed: false,
+    reviewedEvidenceDigests: Object.fromEntries(
+      Object.entries(review.evidence).map(([key, p]) => [key, p.sha256]),
+    ),
+    nestedOriginalRecordDigests: {
+      predecessorSourceLock: previous.sourceLock.sha256,
+      predecessorReview: previous.review.sha256,
+      predecessorHandoff: previous.handoff.sha256,
+      predecessorManifest: previous.manifest.sha256,
+      predecessorRecords: Object.fromEntries(
+        oldNames.map((key) => [key, previous.records[key].sha256]),
+      ),
+    },
   };
 }
 
@@ -1943,14 +2833,19 @@ export async function checkOwnedSdkHandoff({
       evidenceRoot,
       value,
       ownedEvidenceLimit(review.origin, name),
-      review.origin === WINDOWS_OPERATION2_ORIGIN,
+      review.origin === WINDOWS_OPERATION2_ORIGIN ||
+        review.origin === LINUX_INCREMENTAL_ORIGIN,
     );
     if (
-      review.origin === WINDOWS_OPERATION2_ORIGIN &&
+      [WINDOWS_OPERATION2_ORIGIN, LINUX_INCREMENTAL_ORIGIN].includes(
+        review.origin,
+      ) &&
       !Buffer.from(bytes.toString("utf8")).equals(bytes)
     )
       fail("Bounded UTF8 original metadata required");
     if (
+      (review.origin === LINUX_INCREMENTAL_ORIGIN &&
+        name === "compileOutput") ||
       (review.origin === "owned-windows-incremental-engine" &&
         ["nativeOutput", "engineOutput"].includes(name)) ||
       (isWindowsCapsuleOrigin(review.origin) &&
@@ -1960,7 +2855,9 @@ export async function checkOwnedSdkHandoff({
     ) {
       if (
         bytes.length >
-          (review.origin === WINDOWS_OPERATION2_ORIGIN
+          ([WINDOWS_OPERATION2_ORIGIN, LINUX_INCREMENTAL_ORIGIN].includes(
+            review.origin,
+          )
             ? ownedEvidenceLimit(review.origin, name)
             : isWindowsCapsuleOrigin(review.origin) && name === "engineOutput"
               ? 64 * 1024 ** 2
@@ -1969,7 +2866,15 @@ export async function checkOwnedSdkHandoff({
       )
         fail("Bounded UTF8 original build output required");
       records[name] = bytes.toString("utf8");
-    } else records[name] = JSON.parse(bytes);
+    } else {
+      try {
+        records[name] = JSON.parse(bytes);
+      } catch (error) {
+        if (review.origin === LINUX_INCREMENTAL_ORIGIN)
+          fail("Original Linux incremental JSON invalid");
+        throw error;
+      }
+    }
   }
   const verifiedInputs = await sourceInputs(
     inputsRoot,
@@ -1987,6 +2892,12 @@ export async function checkOwnedSdkHandoff({
     records.freshCheck.result.plan.sourceLockSha256 !== verifiedInputs.rawSha256
   )
     fail("Fresh check does not bind original raw input lock");
+  if (
+    review.origin === LINUX_INCREMENTAL_ORIGIN &&
+    records.package.facts.originalInputsSourceLockRawSha256 !==
+      verifiedInputs.rawSha256
+  )
+    fail("Incremental Linux raw input lock differs");
   const descriptorFile = path.join(bundleRoot, "runtime.json");
   await regular(descriptorFile, RELEASE_LIMITS.descriptor);
   if (hash(await readFile(descriptorFile)) !== review.descriptorSha256)
@@ -2036,6 +2947,23 @@ export async function checkOwnedSdkHandoff({
         )
       )
         fail("Original Windows package asset differs");
+  }
+  if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
+    const packaged = records.package.facts;
+    if (
+      packaged.descriptorSha256 !== review.descriptorSha256 ||
+      packaged.assets.length !== checked.assets.length ||
+      checked.assets.some(
+        (row) =>
+          !packaged.assets.some(
+            (p) =>
+              p.name === row.name &&
+              p.sha256 === row.sha256 &&
+              p.size === row.size,
+          ),
+      )
+    )
+      fail("Incremental Linux five package assets differ");
   }
   const python = await realpath(review.python.path),
     pythonInfo = await regular(python, 64 * 1024 ** 2);
@@ -2111,6 +3039,19 @@ export async function checkOwnedSdkHandoff({
     sourceLock.bridge.patchId,
   );
   const engineSha256 = hash(await readFile(library));
+  if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
+    const packaged = records.package.facts;
+    if (packaged.sdkFiles !== preflight.filesVerified)
+      fail("Incremental Linux SDK inventory differs");
+    for (const [name, pin] of [
+      ["libcef.so", packaged.engine],
+      ["chrome-sandbox", packaged.sandbox],
+    ]) {
+      const bytes = await readFile(path.join(sdk, name));
+      if (bytes.length !== pin.size || hash(bytes) !== pin.sha256)
+        fail("Incremental Linux packaged output differs");
+    }
+  }
   if (provenance.engineSha256 && provenance.engineSha256 !== engineSha256)
     fail("Transport engine differs from original Windows build evidence");
   if (

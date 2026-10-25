@@ -18,6 +18,12 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import {
+  LINUX_INCREMENTAL_ORIGIN,
+  LINUX_INCREMENTAL_IDENTITY,
+  LINUX_INCREMENTAL_EVIDENCE,
+  LINUX_INCREMENTAL_TOOL_PINS,
+  LINUX_INCREMENTAL_SOURCE_PATHS,
+  LINUX_INCREMENTAL_FACT_KEYS,
   ownedSdkHandoffPlan,
   verifyOwnedHandoffEvidence,
   checkOwnedSdkHandoff,
@@ -375,6 +381,40 @@ function pe(symbols = [], library = false) {
   });
   return bytes;
 }
+function elfFixture() {
+  const names = [
+      BRIDGE_V2.symbol,
+      BRIDGE_V2.factorySymbol,
+      "cef_sorng_tls_apply_proxy_v2",
+      "cef_sorng_tls_registry_stats_v2",
+    ],
+    bytes = Buffer.alloc(2048);
+  bytes.writeUInt32LE(0x464c457f);
+  bytes[4] = 2;
+  bytes[5] = 1;
+  bytes.writeUInt16LE(3, 16);
+  bytes.writeUInt16LE(62, 18);
+  bytes.writeBigUInt64LE(64n, 40);
+  bytes.writeUInt16LE(64, 58);
+  bytes.writeUInt16LE(3, 60);
+  bytes.writeUInt32LE(11, 64 + 64 + 4);
+  bytes.writeBigUInt64LE(256n, 64 + 64 + 24);
+  bytes.writeBigUInt64LE(BigInt(24 * names.length), 64 + 64 + 32);
+  bytes.writeUInt32LE(2, 64 + 64 + 40);
+  bytes.writeBigUInt64LE(24n, 64 + 64 + 56);
+  bytes.writeBigUInt64LE(512n, 64 + 128 + 24);
+  bytes.writeBigUInt64LE(1024n, 64 + 128 + 32);
+  names.forEach((name, i) => {
+    const symbol = 256 + 24 * i,
+      offset = 128 * i;
+    bytes.writeUInt32LE(offset, symbol);
+    bytes[symbol + 4] = 0x12;
+    bytes.writeUInt16LE(1, symbol + 6);
+    bytes.writeBigUInt64LE(1800n + BigInt(i), symbol + 8);
+    bytes.write(name, 512 + offset);
+  });
+  return bytes;
+}
 async function put(base, name, bytes) {
   const file = path.join(base, name);
   await mkdir(path.dirname(file), { recursive: true });
@@ -394,15 +434,20 @@ async function fixture(t, incremental = false) {
   const inputs = path.join(work, "inputs"),
     sourceInputs = path.join(
       root,
-      ["capsule", "operation2"].includes(incremental)
-        ? "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64"
-        : incremental
-          ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
-          : "native/cef-build-inputs/20261023-registration-retirement-lf",
+      incremental === "linux-incremental"
+        ? "native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default-colormap"
+        : ["capsule", "operation2"].includes(incremental)
+          ? "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64"
+          : incremental
+            ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
+            : "native/cef-build-inputs/20261023-registration-retirement-lf",
     );
   const lockBytes = await readFile(path.join(sourceInputs, "source-lock.json")),
     lock = JSON.parse(lockBytes),
-    target = "x86_64-pc-windows-msvc",
+    target =
+      incremental === "linux-incremental"
+        ? "x86_64-unknown-linux-gnu"
+        : "x86_64-pc-windows-msvc",
     build = lock.builds.find((row) => row.target === target);
   await put(inputs, "source-lock.json", lockBytes);
   for (const item of [
@@ -421,25 +466,32 @@ async function fixture(t, incremental = false) {
     sdk = path.join(work, archiveRoot),
     bundle = path.join(work, "bundle"),
     evidence = path.join(work, "evidence");
-  const library = pe(
-    [
-      BRIDGE_V2.symbol,
-      BRIDGE_V2.factorySymbol,
-      "cef_sorng_tls_apply_proxy_v2",
-      "cef_sorng_tls_registry_stats_v2",
-      ...(incremental ? ["cef_sorng_tls_configure_datagrams_v2"] : []),
-    ],
-    true,
-  );
+  const library =
+    incremental === "linux-incremental"
+      ? elfFixture()
+      : pe(
+          [
+            BRIDGE_V2.symbol,
+            BRIDGE_V2.factorySymbol,
+            "cef_sorng_tls_apply_proxy_v2",
+            "cef_sorng_tls_registry_stats_v2",
+            ...(incremental ? ["cef_sorng_tls_configure_datagrams_v2"] : []),
+          ],
+          true,
+        );
   for (const [name, bytes] of Object.entries({
-    "Release/libcef.dll": library,
-    "Release/bootstrap.exe": pe(),
-    ...(incremental ? { "Release/bootstrapc.exe": pe() } : {}),
-    "Release/libcef.lib": "fixture import lib",
+    ...(incremental === "linux-incremental"
+      ? { "Release/libcef.so": library, "Release/chrome-sandbox": elfFixture() }
+      : {
+          "Release/libcef.dll": library,
+          "Release/bootstrap.exe": pe(),
+          ...(incremental ? { "Release/bootstrapc.exe": pe() } : {}),
+          "Release/libcef.lib": "fixture import lib",
+        }),
     "Resources/icudtl.dat": "fixture ICU",
     "Resources/locales/en-US.pak": "fixture locale",
     "include/cef_version.h":
-      `#define CEF_VERSION "${CEF_PIN.version}"\n#define CEF_COMMIT_HASH "${lock.upstream.cef.commit}"\n#define CEF_SANDBOX_COMPAT_HASH "${CEF_PIN.sandboxCompat}"\n` +
+      `#define CEF_VERSION "${CEF_PIN.version}"\n#define CEF_COMMIT_HASH "${lock.upstream.cef.commit}"\n#define CEF_SANDBOX_COMPAT_HASH "${incremental === "linux-incremental" ? "" : CEF_PIN.sandboxCompat}"\n` +
       CEF_PIN.chromium
         .split(".")
         .map(
@@ -447,7 +499,7 @@ async function fixture(t, incremental = false) {
             `#define CHROME_VERSION_${["MAJOR", "MINOR", "BUILD", "PATCH"][index]} ${part}\n`,
         )
         .join(""),
-    "include/cef_api_versions.h": `#define CEF_API_VERSION_15400 15400\n#define CEF_API_VERSION_LAST CEF_API_VERSION_15400\n#if defined(OS_WIN)\n#define CEF_API_HASH_15400 "${hash("fixture api").slice(0, 40)}"\n#endif\n`,
+    "include/cef_api_versions.h": `#define CEF_API_VERSION_15400 15400\n#define CEF_API_VERSION_LAST CEF_API_VERSION_15400\n#if defined(${incremental === "linux-incremental" ? "OS_LINUX" : "OS_WIN"})\n#define CEF_API_HASH_15400 "${hash("fixture api").slice(0, 40)}"\n#endif\n`,
     "cmake/fixture.cmake": "fixture cmake",
     "libcef_dll/fixture.cc": "fixture source",
     "CMakeLists.txt": "fixture CMake",
@@ -513,7 +565,7 @@ async function fixture(t, incremental = false) {
     },
     evidence: { build: pin("build.json", buildBytes) },
   };
-  if (incremental && incremental !== "capsule") {
+  if (incremental && !["capsule", "linux-incremental"].includes(incremental)) {
     const checkedManifest = JSON.parse(
       await readFile(path.join(bundle, "manifest.json"), "utf8"),
     );
@@ -550,6 +602,60 @@ async function fixture(t, incremental = false) {
       python: value.python,
       descriptorSha256: hash(descriptorBytes),
     };
+  }
+  if (incremental === "linux-incremental") {
+    const f = linuxIncrementalFixture(),
+      pack = f.records.package.facts,
+      manifest = JSON.parse(await readFile(path.join(bundle, "manifest.json"))),
+      engine = {
+        path: "libcef.so",
+        size: library.length,
+        sha256: hash(library),
+      },
+      sandbox = {
+        path: "chrome-sandbox",
+        size: library.length,
+        sha256: hash(library),
+      };
+    f.input.descriptorSha256 = hash(descriptorBytes);
+    Object.assign(pack, {
+      descriptorSha256: f.input.descriptorSha256,
+      engine,
+      sandbox,
+      sdkFiles: manifest.artifacts[0].sdkFiles.length,
+      assets: await Promise.all(
+        [
+          "runtime.json",
+          "manifest.json",
+          "receipt.json",
+          "source-lock.json",
+          identity.archive,
+        ].map(async (name) => {
+          const bytes = await readFile(path.join(bundle, name));
+          return { name, size: bytes.length, sha256: hash(bytes) };
+        }),
+      ),
+    });
+    Object.assign(f.records.postchecks.facts, { engine, sandbox });
+    for (const role of ["distribution", "preparation"])
+      f.records[role].facts.filesVerified = pack.sdkFiles;
+    f.records.preparation.facts.inventorySha256 = pack.assets.find(
+      (x) => x.name === "manifest.json",
+    ).sha256;
+    f.input.python = value.python;
+    f.input.evidence = Object.fromEntries(
+      await Promise.all(
+        Object.entries(f.records).map(async ([role, row]) => {
+          const bytes = Buffer.from(
+              typeof row === "string" ? row : JSON.stringify(row),
+            ),
+            name = role + (role === "compileOutput" ? ".log" : ".json");
+          await put(evidence, name, bytes);
+          return [role, pin(name, bytes)];
+        }),
+      ),
+    );
+    value = f.input;
   }
   if (["capsule", "operation2"].includes(incremental)) {
     const f = await capsuleFixture(incremental === "operation2"),
@@ -2079,4 +2185,528 @@ test("all operation2 nontext metadata rejects actual repinned invalid UTF8 befor
       !error.message.includes("PRIVATE_SENTINEL"),
   );
   await assert.rejects(lstat(f.output), { code: "ENOENT" });
+});
+
+// Entire fixture is synthetic schema evidence; no incremental engine was run.
+function linuxIncrementalFixture() {
+  const lock = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          root,
+          "native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default-colormap/source-lock.json",
+        ),
+      ),
+    ),
+    wrap = (x) => {
+      const rawUtf8 = JSON.stringify(x);
+      return {
+        rawUtf8,
+        size: Buffer.byteLength(rawUtf8),
+        sha256: hash(rawUtf8),
+      };
+    },
+    old = linuxRecords(),
+    oldInput = review("owned-linux-engine");
+  oldInput.evidence = Object.fromEntries(
+    Object.entries(old).map(([name, row]) => [
+      name,
+      pin(name + ".json", Buffer.from(JSON.stringify(row))),
+    ]),
+  );
+  const oldHandoff = {
+    kind: "sorng-cef-owned-sdk-handoff",
+    sourceLockIdentity: identitySha256(linuxLock),
+    hostedBuild: false,
+    nativeAcceptance: "not-tested",
+    productionReady: false,
+    publicationAllowed: false,
+    uploadAllowed: false,
+    descriptorSha256: oldInput.descriptorSha256,
+    engineSha256: "1".repeat(64),
+    reviewBinding: ownedHandoffReviewBinding(oldInput),
+  };
+  const oldManifest = {
+    schemaVersion: 1,
+    kind: "sorng-cef-custom-runtime",
+    sourceLockSha256: identitySha256(linuxLock),
+    artifacts: [
+      {
+        target: "x86_64-unknown-linux-gnu",
+        sdkFiles: [
+          {
+            path: "libcef.so",
+            type: "file",
+            size: 1,
+            sha256: oldHandoff.engineSha256,
+          },
+          {
+            path: "chrome-sandbox",
+            type: "file",
+            size: 1,
+            sha256: "2".repeat(64),
+          },
+        ],
+      },
+    ],
+  };
+  Object.assign(oldHandoff, {
+    schemaVersion: 1,
+    target: "x86_64-unknown-linux-gnu",
+    originalInputsSourceLockRawSha256: hash(linuxLockBytes),
+    filesVerified: 2,
+    assets: [
+      "runtime.json",
+      "source-lock.json",
+      "manifest.json",
+      "receipt.json",
+      "old.tar.bz2",
+    ].map((name) => ({
+      name,
+      size: name === "manifest.json" ? wrap(oldManifest).size : 1,
+      sha256:
+        name === "manifest.json"
+          ? wrap(oldManifest).sha256
+          : name === "runtime.json"
+            ? oldInput.descriptorSha256
+            : "2".repeat(64),
+    })),
+  });
+  const op = "a0000000-0000-4000-8000-000000000000",
+    ctl = "a".repeat(40),
+    sha = "2".repeat(64),
+    fakePin = (name, sh = sha, size = 1) => ({ path: name, sha256: sh, size }),
+    sourcePath = "cef/libcef/browser/native/window_x11.cc",
+    before = fakePin(
+      sourcePath,
+      "0ccac4e8f1f8371e42bec473e2b60016f4f68370c3e072d7e44f42c50da3303a",
+    ),
+    after = fakePin(
+      sourcePath,
+      "d624ed223238b3b999e85a994be5a3c1340dd87ce64e3d60094e7c87e4dbd19d",
+    ),
+    kernel = {
+      uid: 10001,
+      gid: 10001,
+      readonlyRoot: true,
+      networkMode: "none",
+      memory: 24 * 1024 ** 3,
+      memorySwap: 24 * 1024 ** 3,
+      nanoCpus: 8e9,
+      pids: 512,
+      capDrop: ["ALL"],
+      noNewPrivileges: true,
+      mountsVerified: true,
+      diskFreeBytes: 200 * 1024 ** 3,
+      diskMinimumBytes: 100 * 1024 ** 3,
+      homeVerified: true,
+      home: {
+        uid: 10001,
+        gid: 10001,
+        mode: 0o700,
+        mountAndAliasVerified: true,
+        privateCacheWriteVerified: true,
+      },
+    },
+    cache = "/work/build/cef-ci-qTkJO9/source/src",
+    img =
+      "sha256:5c3e8c42ac5a58ca0ec31df6dfc45d57af3c663ed53b8e4d7171e18f31480930",
+    volume =
+      "sorng-cef-preflight-20261023-6f4466b3-0e90-4275-b19a-57470e8f8af5-work",
+    tools = structuredClone(LINUX_INCREMENTAL_TOOL_PINS),
+    extra = Object.fromEntries(
+      [
+        "clang",
+        "ldLld",
+        "gn",
+        "siso",
+        "autoninja",
+        "clangStamp",
+        "sisoSpecification",
+      ].map((x) => [x, fakePin(x)]),
+    ),
+    args = fakePin(
+      "out/Release_GN_x64/args.gn",
+      "80533e918b63db1e7696d910c8292d7cfbbd042506f53fed03f2100327061286",
+    ),
+    macros = [
+      { name: "ENABLE_BACKUP_REF_PTR_INSTANCE_TRACER", value: 0 },
+      { name: "ENABLE_DANGLING_RAW_PTR_CHECKS", value: 1 },
+    ],
+    output = "build finished\nnoexec:0 local:1 remote:0 cache:0 skip:1\n",
+    engine = fakePin("libcef.so", "3".repeat(64)),
+    sandbox = fakePin("chrome-sandbox"),
+    assets = [
+      "runtime.json",
+      "source-lock.json",
+      "manifest.json",
+      "receipt.json",
+      `sorng-cef-custom-${LINUX_INCREMENTAL_IDENTITY}-x86_64-unknown-linux-gnu.tar.bz2`,
+    ].map((name) => ({ name, size: 1, sha256: sha }));
+  const f = {
+    predecessor: {
+      sourceLock: {
+        rawUtf8: linuxLockBytes.toString(),
+        size: linuxLockBytes.length,
+        sha256: hash(linuxLockBytes),
+      },
+      review: wrap(oldInput),
+      handoff: wrap(oldHandoff),
+      manifest: wrap(oldManifest),
+      records: Object.fromEntries(
+        Object.entries(old).map(([key, row]) => [key, wrap(row)]),
+      ),
+    },
+    readiness: {
+      exclusiveCache: true,
+      cacheOutputs: {
+        engine: fakePin("libcef.so", oldHandoff.engineSha256),
+        sandbox: fakePin("chrome-sandbox"),
+      },
+      image: img,
+      volume,
+      cacheRoot: cache,
+      sourceBefore: LINUX_INCREMENTAL_SOURCE_PATHS.map((name) =>
+        name === sourcePath ? before : fakePin(name),
+      ),
+      toolFiles: tools,
+      extraTools: extra,
+      args,
+      graph: fakePin("out/Release_GN_x64/build.ninja"),
+      securityMacros: macros,
+      securityHeader: fakePin("out/Release_GN_x64/gen/buildflags.h"),
+      kernel,
+      upstream: lock.upstream,
+      reconstruction: {
+        method: "git-pristine-plus-reviewed-old12",
+        oldPatchPins: linuxLock.patches,
+        verifiedSourcePins: LINUX_INCREMENTAL_SOURCE_PATHS.map((name) =>
+          name === sourcePath ? before : fakePin(name),
+        ),
+      },
+    },
+    apply: {
+      patch: fakePin(
+        lock.patches.at(-1).path,
+        lock.patches.at(-1).sha256,
+        1073,
+      ),
+      before,
+      after,
+      onlyReviewedPatchApplied: true,
+    },
+    started: {
+      startWallMs: 1000,
+      startMonotonicMs: 1000,
+      compileDeadlineWallMs: 3601000,
+      compileBudgetMs: 3600000,
+      cleanupBudgetMs: 30000,
+      packagingBudgetMs: 900000,
+      controllerPins: {
+        controller: fakePin("controller.mjs"),
+        guest: fakePin("guest.py"),
+      },
+      replayAllowed: false,
+    },
+    container: {
+      id: sha,
+      name: `/sorng-cef-linux-incremental-${op}`,
+      image: img,
+      volume,
+      kernel,
+    },
+    compile: {
+      argv: [
+        "/work/tools/usr/bin/python3.12",
+        "/work/build/cef-ci-qTkJO9/source/depot_tools/autoninja.py",
+        "-j",
+        "8",
+        "-C",
+        "out/Release_GN_x64",
+        "cef",
+        "chrome_sandbox",
+      ],
+      cwd: cache,
+      beginWallMs: 1100,
+      endWallMs: 1200,
+      beginMonotonicMs: 1100,
+      endMonotonicMs: 1200,
+      elapsedMs: 100,
+      exit: 0,
+      outputSha256: hash(output),
+      outputBytes: Buffer.byteLength(output),
+      localSteps: 1,
+      finished: true,
+    },
+    finished: {
+      containerId: sha,
+      reason: "completed",
+      exit: 0,
+      quiescent: true,
+      processesLeft: 0,
+      readersStopped: true,
+      logFailure: false,
+      cleanupElapsedMs: 1,
+    },
+    postchecks: {
+      sourceAfter: LINUX_INCREMENTAL_SOURCE_PATHS.map((name) =>
+        name === sourcePath ? after : fakePin(name),
+      ),
+      toolFiles: tools,
+      extraTools: extra,
+      args,
+      securityMacros: macros,
+      securityHeader: fakePin("out/Release_GN_x64/gen/buildflags.h"),
+      upstream: lock.upstream,
+      compileSha256: "",
+      engine,
+      sandbox,
+    },
+    package: {
+      descriptorSha256: sha,
+      originalInputsSourceLockRawSha256:
+        "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23",
+      sourceLockIdentity: LINUX_INCREMENTAL_IDENTITY,
+      engine,
+      sandbox,
+      sdkFiles: 10,
+      assets,
+      beginWallMs: 1300,
+      endWallMs: 1600,
+      elapsedMs: 300,
+    },
+    distribution: {
+      argv: [
+        "/work/tools/usr/bin/python3.12",
+        "tools/make_distrib.py",
+        "--output-dir",
+        `/work/linux-incremental-${op}/distribution`,
+        "--ninja-build",
+        "--x64-build",
+        "--minimal",
+        "--allow-partial",
+        "--no-archive",
+        "--no-docs",
+      ],
+      cwd: cache + "/cef",
+      exit: 0,
+      elapsedMs: 100,
+      inventorySha256: sha,
+      filesVerified: 10,
+      quiescent: true,
+      outputsFresh: true,
+    },
+    preparation: {
+      method: "prepareCustomRuntime+verifyPreparedCustomRuntime",
+      exit: 0,
+      elapsedMs: 100,
+      inventorySha256: sha,
+      filesVerified: 10,
+      quiescent: true,
+      outputsFresh: true,
+      archiveRoundtrip: true,
+      elfMachine: "ELF64-x86-64",
+      bridgeExports: 4,
+    },
+  };
+  const records = Object.fromEntries(
+    Object.entries(f).map(([role, facts]) => [
+      role,
+      {
+        schemaVersion: 1,
+        kind: `sorng-owned-linux-incremental-${role}`,
+        operation: op,
+        controllerCommit: ctl,
+        sourceLockIdentity: LINUX_INCREMENTAL_IDENTITY,
+        target: "x86_64-unknown-linux-gnu",
+        facts,
+      },
+    ]),
+  );
+  records.compileOutput = output;
+  const evidence = () =>
+    Object.fromEntries(
+      LINUX_INCREMENTAL_EVIDENCE.map((name) => [
+        name,
+        pin(
+          name + (name === "compileOutput" ? ".log" : ".json"),
+          Buffer.from(
+            name === "compileOutput"
+              ? records[name]
+              : JSON.stringify(records[name]),
+          ),
+        ),
+      ]),
+    );
+  records.postchecks.facts.compileSha256 = evidence().compile.sha256;
+  const input = {
+    ...review("owned-linux-engine"),
+    origin: LINUX_INCREMENTAL_ORIGIN,
+    sourceLockIdentity: LINUX_INCREMENTAL_IDENTITY,
+    descriptorSha256: sha,
+    evidence: evidence(),
+  };
+  return { input, records, lock, f };
+}
+
+test("Linux incremental binds separate predecessor and genuine new-operation schema without fresh-acquisition claims", () => {
+  const f = linuxIncrementalFixture(),
+    p = verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  assert.equal(p.sourceLockIdentity, LINUX_INCREMENTAL_IDENTITY);
+  assert.equal(p.actualToolFilesVerified, 8);
+  assert.equal(p.incrementalBuild, true);
+  assert.equal(p.pristineSourceBuild, false);
+  assert.equal(p.originalBuildReplayed, false);
+  assert.equal("freshCheck" in p, false);
+  assert.equal("nativeClassTestsPassed" in p, false);
+  assert.deepEqual(
+    Object.keys(f.records).sort(),
+    [...LINUX_INCREMENTAL_EVIDENCE].sort(),
+  );
+  assert.deepEqual(
+    Object.keys(f.f).sort(),
+    Object.keys(LINUX_INCREMENTAL_FACT_KEYS).sort(),
+  );
+  assert.equal(JSON.stringify(p).includes("/work/"), false);
+});
+
+test("Linux incremental rejects stale history, changed source/tools/flags, deadline, output and packaging contradictions", () => {
+  const mutations = [
+    (f) => (f.input.sourceLockIdentity = identitySha256(linuxLock)),
+    (f) => (f.records.predecessor.facts.freshCheck = {}),
+    (f) => (f.records.readiness.facts.args.sha256 = digest),
+    (f) => (f.records.readiness.facts.cacheOutputs.engine.sha256 = digest),
+    (f) => (f.records.readiness.facts.exclusiveCache = false),
+    (f) => f.records.readiness.facts.sourceBefore.pop(),
+    (f) => (f.records.readiness.facts.kernel.diskFreeBytes = 1),
+    (f) => (f.records.readiness.facts.kernel.home.mode = 0o777),
+    (f) => (f.records.readiness.facts.toolFiles[0].sha256 = digest),
+    (f) => (f.records.apply.facts.after.sha256 = digest),
+    (f) => (f.records.apply.facts.onlyReviewedPatchApplied = false),
+    (f) => f.records.started.facts.compileBudgetMs++,
+    (f) => (f.records.container.facts.kernel.networkMode = "bridge"),
+    (f) => (f.records.container.facts.id = "bad"),
+    (f) => f.records.compile.facts.argv.push("--no-sandbox"),
+    (f) => (f.records.compile.facts.exit = 124),
+    (f) => (f.records.compile.facts.endMonotonicMs = 99999999),
+    (f) => (f.records.compileOutput += "secret-private-raw-error"),
+    (f) => (f.records.finished.facts.quiescent = false),
+    (f) => (f.records.finished.facts.processesLeft = 1),
+    (f) => (f.records.finished.facts.logFailure = true),
+    (f) => (f.records.postchecks.facts.sourceAfter[0].sha256 = digest),
+    (f) => (f.records.postchecks.facts.securityMacros[0].value = 1),
+    (f) => (f.records.package.facts.originalInputsSourceLockRawSha256 = digest),
+    (f) => (f.records.package.facts.engine.sha256 = "1".repeat(64)),
+    (f) => f.records.package.facts.assets.pop(),
+    (f) => (f.records.distribution.facts.outputsFresh = false),
+    (f) => (f.records.preparation.facts.archiveRoundtrip = false),
+    (f) => (f.records.preparation.facts.bridgeExports = 3),
+    (f) => (f.records.postchecks.operation = operation),
+  ];
+  for (const change of mutations) {
+    const f = linuxIncrementalFixture();
+    change(f);
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
+  }
+});
+
+test("Linux incremental roles and byte bounds cannot widen legacy origins or expose malformed raw JSON", () => {
+  for (const change of [
+    (f) => (f.input.origin = "owned-linux-engine"),
+    (f) => delete f.input.evidence.postchecks,
+    (f) => (f.input.evidence.compileOutput.size = 64 * 1024 ** 2 + 1),
+    (f) => (f.input.evidence.readiness.size = 1024 ** 2 + 1),
+    (f) =>
+      (f.records.predecessor.facts.review.rawUtf8 =
+        "private-secret-invalid-json"),
+  ]) {
+    const f = linuxIncrementalFixture();
+    change(f);
+    assert.throws(
+      () => verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+      (e) => !e.message.includes("private-secret"),
+    );
+  }
+});
+
+test("Linux incremental real synthetic archive passes all maintained five-asset/extractor/inventory/ELF/export gates", async (t) => {
+  const f = await fixture(t, "linux-incremental"),
+    result = await checkOwnedSdkHandoff({ ...f, execute: true });
+  assert.equal(result.sourceLockIdentity, LINUX_INCREMENTAL_IDENTITY);
+  assert.equal(result.provenance.incrementalBuild, true);
+  assert.equal(result.hostedBuild, false);
+  assert.equal(result.nativeAcceptance, "not-tested");
+  assert.equal(result.productionReady, false);
+  const packageFile = path.join(f.evidence, "package.json"),
+    bytes = await readFile(packageFile),
+    row = JSON.parse(bytes);
+  row.facts.sandbox.sha256 = "4".repeat(64);
+  const changed = Buffer.from(JSON.stringify(row));
+  await writeFile(packageFile, changed);
+  const review = structuredClone(f.review);
+  review.evidence.package = pin("package.json", changed);
+  await assert.rejects(checkOwnedSdkHandoff({ ...f, review, execute: true }));
+});
+
+test("Linux incremental metadata is bounded once at EOF and rejects invalid UTF8 before output", async (t) => {
+  const f = await fixture(t, "linux-incremental"),
+    file = path.join(f.evidence, "readiness.json"),
+    original = fs.createReadStream;
+  let changed = false;
+  try {
+    fs.createReadStream = (name, ...args) => {
+      const stream = original(name, ...args);
+      if (name === file)
+        stream.once("end", () => {
+          fs.writeFileSync(file, Buffer.alloc(2 * 1024 ** 2, 0x20));
+          changed = true;
+        });
+      return stream;
+    };
+    syncBuiltinESMExports();
+    const value = await checkOwnedSdkHandoff({ ...f, execute: true });
+    assert.equal(changed, true);
+    assert.equal(value.provenance.incrementalBuild, true);
+  } finally {
+    fs.createReadStream = original;
+    syncBuiltinESMExports();
+  }
+  const g = await fixture(t, "linux-incremental"),
+    invalid = Buffer.from([0xff, 0x7b, 0x7d]);
+  await writeFile(path.join(g.evidence, "readiness.json"), invalid);
+  g.review.evidence.readiness = pin("readiness.json", invalid);
+  await assert.rejects(checkOwnedSdkHandoff({ ...g, execute: true }), {
+    message: "Bounded UTF8 original metadata required",
+  });
+  await assert.rejects(lstat(g.output), { code: "ENOENT" });
+});
+
+test("Linux incremental rejects a re-pinned wrong packaged engine after actual archive verification", async (t) => {
+  const f = await fixture(t, "linux-incremental");
+  for (const role of ["postchecks", "package"]) {
+    const file = path.join(f.evidence, role + ".json"),
+      row = JSON.parse(await readFile(file));
+    row.facts.engine.sha256 = "5".repeat(64);
+    const bytes = Buffer.from(JSON.stringify(row));
+    await writeFile(file, bytes);
+    f.review.evidence[role] = pin(role + ".json", bytes);
+  }
+  await assert.rejects(checkOwnedSdkHandoff({ ...f, execute: true }), {
+    message: "Incremental Linux packaged output differs",
+  });
+});
+
+test("Linux incremental distribution requires no-archive and no-docs before maintained packing", () => {
+  const f = linuxIncrementalFixture();
+  for (const flag of ["--no-archive", "--no-docs"])
+    if (!f.records.distribution.facts.argv.includes(flag))
+      f.records.distribution.facts.argv.push(flag);
+  assert.doesNotThrow(() =>
+    verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+  );
+  for (const missing of ["--no-archive", "--no-docs"]) {
+    const g = structuredClone(f);
+    g.records.distribution.facts.argv =
+      g.records.distribution.facts.argv.filter((flag) => flag !== missing);
+    assert.throws(() => verifyOwnedHandoffEvidence(g.input, g.records, g.lock));
+  }
 });

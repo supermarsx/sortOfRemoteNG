@@ -24,6 +24,10 @@ import {
 } from "./browser-custom-runtime.mjs";
 import { inspectNativeBinary } from "../browser-runtime-package.mjs";
 import {
+  LINUX_INCREMENTAL_ORIGIN,
+  LINUX_INCREMENTAL_IDENTITY,
+  LINUX_INCREMENTAL_EVIDENCE,
+  validateLinuxIncrementalProvenance,
   WINDOWS_INCREMENTAL_EVIDENCE,
   WINDOWS_INCREMENTAL_PROVENANCE,
   WINDOWS_OPERATION2_ORIGIN,
@@ -59,6 +63,7 @@ const execute = promisify(execFile);
 const origins = {
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
+  "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
@@ -151,23 +156,38 @@ export function validateOwnedReview(review) {
     "verificationPython",
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
-  const names = isWindowsCapsuleOrigin(review.origin)
-    ? ownedCapsuleEvidence(review.origin)
-    : review.origin === "owned-windows-incremental-engine"
-      ? WINDOWS_INCREMENTAL_EVIDENCE
-      : review.origin === "existing-windows-package"
-        ? ["build"]
-        : [
-            "prepared",
-            "started",
-            "container",
-            "finished",
-            "producer",
-            "freshCheck",
-          ];
+  const names =
+    review.origin === LINUX_INCREMENTAL_ORIGIN
+      ? LINUX_INCREMENTAL_EVIDENCE
+      : isWindowsCapsuleOrigin(review.origin)
+        ? ownedCapsuleEvidence(review.origin)
+        : review.origin === "owned-windows-incremental-engine"
+          ? WINDOWS_INCREMENTAL_EVIDENCE
+          : review.origin === "existing-windows-package"
+            ? ["build"]
+            : [
+                "prepared",
+                "started",
+                "container",
+                "finished",
+                "producer",
+                "freshCheck",
+              ];
   exact(review.reviewBinding.evidencePins, names);
   for (const [role, pin] of Object.entries(review.reviewBinding.evidencePins))
     rawPin(pin, ownedEvidenceLimit(review.origin, role));
+  if (review.origin === LINUX_INCREMENTAL_ORIGIN)
+    assert(
+      review.sourceLockIdentity === LINUX_INCREMENTAL_IDENTITY &&
+        review.originalInputsSourceLockRawSha256 ===
+          "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23" &&
+        Object.values(review.reviewBinding.evidencePins).reduce(
+          (n, p) => n + p.size,
+          0,
+        ) <=
+          80 * 1024 ** 2,
+      "Closed Linux incremental identity and evidence bound required",
+    );
   if (isWindowsCapsuleOrigin(review.origin))
     assert(
       review.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY &&
@@ -298,7 +318,9 @@ export function validateLocalHandoff(review, bytes) {
       value.provenance?.origin === review.origin,
     "Local handoff is not build/publication authority",
   );
-  if (review.origin === "existing-windows-package") {
+  if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
+    validateLinuxIncrementalProvenance(value.provenance, review);
+  } else if (review.origin === "existing-windows-package") {
     exact(value.provenance, [
       "origin",
       "engineSha256",

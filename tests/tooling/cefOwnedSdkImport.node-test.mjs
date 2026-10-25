@@ -61,6 +61,11 @@ import {
 } from "../../scripts/lib/cef-owned-sdk-import.mjs";
 import { importArguments } from "../../scripts/cef-owned-sdk-import.mjs";
 import {
+  LINUX_INCREMENTAL_ORIGIN,
+  LINUX_INCREMENTAL_IDENTITY,
+  LINUX_INCREMENTAL_TOOLCHAIN_SHA,
+  LINUX_PREDECESSOR_IDENTITY,
+  LINUX_INCREMENTAL_EVIDENCE,
   WINDOWS_CAPSULE_ORIGIN,
   WINDOWS_OPERATION2_ORIGIN,
   WINDOWS_OPERATION2_EVIDENCE,
@@ -1598,5 +1603,158 @@ test("operation2 import denies replaced source, clock, policy, digest and accoun
     const f = capsuleImportFixture(true);
     edit(f);
     assert.throws(() => validateLocalHandoff(f.review, f.encode()));
+  }
+});
+
+// Synthetic portable records; this does not claim an actual Linux rebuild.
+function linuxIncrementalImportFixture() {
+  const f = fixture(),
+    sha = "2".repeat(64),
+    source = LINUX_INCREMENTAL_IDENTITY;
+  f.review.origin = LINUX_INCREMENTAL_ORIGIN;
+  f.review.target = "x86_64-unknown-linux-gnu";
+  f.review.sourceLockIdentity = source;
+  f.review.originalInputsSourceLockRawSha256 =
+    "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23";
+  f.review.bundleSourceLockRawSha256 = sha;
+  f.handoff.bundleSourceLockRawSha256 = sha;
+  f.review.assets = [
+    "runtime.json",
+    "source-lock.json",
+    "manifest.json",
+    "receipt.json",
+    `sorng-cef-custom-${source}-${f.review.target}.tar.bz2`,
+  ].map((name) => ({
+    name,
+    bytes: 1,
+    sha256: name === "runtime.json" ? f.review.descriptorSha256 : sha,
+  }));
+  f.review.reviewBinding.evidencePins = Object.fromEntries(
+    LINUX_INCREMENTAL_EVIDENCE.map((name) => [
+      name,
+      { path: `${name}.json`, size: 100, sha256: hash(`SYNTHETIC ${name}`) },
+    ]),
+  );
+  const digests = Object.fromEntries(
+    LINUX_INCREMENTAL_EVIDENCE.map((name) => [
+      name,
+      f.review.reviewBinding.evidencePins[name].sha256,
+    ]),
+  );
+  Object.assign(f.handoff, {
+    origin: undefined,
+    target: f.review.target,
+    sourceLockIdentity: source,
+    originalInputsSourceLockRawSha256:
+      f.review.originalInputsSourceLockRawSha256,
+    assets: f.review.assets.map(({ name, bytes, sha256 }) => ({
+      name,
+      size: bytes,
+      sha256,
+    })),
+  });
+  delete f.handoff.origin;
+  f.handoff.provenance = {
+    origin: LINUX_INCREMENTAL_ORIGIN,
+    operation: "a0000000-0000-4000-8000-000000000000",
+    controllerCommit: "a".repeat(40),
+    sourceLockIdentity: source,
+    predecessorSourceLockIdentity: LINUX_PREDECESSOR_IDENTITY,
+    predecessorHandoffSha256: sha,
+    baselineEngineSha256: "9".repeat(64),
+    engineSha256: f.review.engineSha256,
+    image:
+      "sha256:5c3e8c42ac5a58ca0ec31df6dfc45d57af3c663ed53b8e4d7171e18f31480930",
+    originalInputsSourceLockRawSha256:
+      f.review.originalInputsSourceLockRawSha256,
+    toolchainLockSha256: LINUX_INCREMENTAL_TOOLCHAIN_SHA,
+    actualToolFilesVerified: 8,
+    separatelyObservedTools: Object.fromEntries(
+      [
+        "clang",
+        "ldLld",
+        "gn",
+        "siso",
+        "autoninja",
+        "clangStamp",
+        "sisoSpecification",
+      ].map((name) => [name, { sha256: sha, size: 1 }]),
+    ),
+    incrementalBuild: true,
+    pristineSourceBuild: false,
+    originalBuildReplayed: false,
+    reviewedEvidenceDigests: digests,
+    nestedOriginalRecordDigests: {
+      predecessorSourceLock: sha,
+      predecessorReview: sha,
+      predecessorHandoff: sha,
+      predecessorManifest: sha,
+      predecessorRecords: Object.fromEntries(
+        [
+          "prepared",
+          "started",
+          "container",
+          "finished",
+          "producer",
+          "freshCheck",
+        ].map((name) => [name, sha]),
+      ),
+    },
+  };
+  f.handoff.reviewBinding = clone(f.review.reviewBinding);
+  f.handoffBytes = Buffer.from(JSON.stringify(f.handoff));
+  f.review.handoffSha256 = hash(f.handoffBytes);
+  return f;
+}
+
+test("portable Linux incremental origin preserves exact new source, twelve roles and qualified historical provenance", () => {
+  const f = linuxIncrementalImportFixture();
+  assert.doesNotThrow(() => validateOwnedReview(f.review));
+  const h = validateLocalHandoff(f.review, f.handoffBytes);
+  assert.equal(h.provenance.incrementalBuild, true);
+  assert.equal(h.provenance.pristineSourceBuild, false);
+  assert.equal("nativeClassTestsPassed" in h.provenance, false);
+  for (const change of [
+    (r) => (r.sourceLockIdentity = LINUX_PREDECESSOR_IDENTITY),
+    (r) => (r.originalInputsSourceLockRawSha256 = "4".repeat(64)),
+    (r) => (r.target = "aarch64-unknown-linux-gnu"),
+    (r) => delete r.reviewBinding.evidencePins.postchecks,
+    (r) =>
+      (r.reviewBinding.evidencePins.compileOutput.size = 64 * 1024 ** 2 + 1),
+    (r) => (r.reviewBinding.evidencePins.apply.size = 1024 ** 2 + 1),
+    (r) =>
+      (r.reviewBinding.evidencePins.freshCheck = {
+        path: "fresh.json",
+        size: 1,
+        sha256: "2".repeat(64),
+      }),
+  ]) {
+    const r = clone(f.review);
+    change(r);
+    assert.throws(() => validateOwnedReview(r));
+  }
+  for (const change of [
+    (h) => (h.provenance.origin = "owned-linux-engine"),
+    (h) => (h.provenance.pristineSourceBuild = true),
+    (h) => (h.provenance.originalBuildReplayed = true),
+    (h) => (h.provenance.actualToolFilesVerified = 10),
+    (h) => (h.provenance.nativeClassTestsPassed = 12),
+    (h) => (h.provenance.privatePath = "/private-secret/credential"),
+    (h) => (h.provenance.reviewedEvidenceDigests.apply = "4".repeat(64)),
+    (h) =>
+      (h.provenance.nestedOriginalRecordDigests.predecessorHandoff = "4".repeat(
+        64,
+      )),
+    (h) => (h.provenance.originalInputsSourceLockRawSha256 = "4".repeat(64)),
+    (h) => (h.provenance.separatelyObservedTools.clang.size = 0),
+    (h) => (h.hostedBuild = true),
+    (h) => (h.nativeAcceptance = "accepted"),
+  ]) {
+    const h = clone(f.handoff);
+    change(h);
+    const bytes = Buffer.from(JSON.stringify(h));
+    assert.throws(() =>
+      validateLocalHandoff({ ...f.review, handoffSha256: hash(bytes) }, bytes),
+    );
   }
 });

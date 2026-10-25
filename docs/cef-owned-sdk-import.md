@@ -102,3 +102,60 @@ Accounting retains decimal strings for64-bit counters, at most2048 rows/2MiB, in
 An actual handoff is unavailable until genuine successful operation2 output, matched DLL/PDB and a separately authorized fresh SDK distribution/preparation are reviewed. Import retains existing same-repo/default-manual review, seal/asset/source authority, fresh verifier, credential-safe redirects and mandatory native architecture/security acceptance. Local ingestion never proves hosted compilation or grants publication.
 
 The review/evidence boundary is explicit: coherent JSON, matching hashes and a self-declared controller digest are **not independent execution attestation**. Before any committed review, import or API action, the operator must independently review actual source and the genuine prior attempt manifest782c4521a099a7f3a79beecda15f9ca42c5cfe2aa743e134d139613779806def / receipt0c5fc37f54887576b45d474374137e6b935b282224dc9e0e84fffd04fc6309ea, the new Job and raw accounting. The reviewed controller hard-pins the actual original attempt; the portable evidence validator checks the original-envelope digest chain. Re-pinned synthetic fixtures exercise validation only and do not establish genuine execution. No import authority follows from schema success alone.
+
+### Distinct owned Linux incremental engine evidence
+
+`owned-linux-incremental-engine` is a separate Linux x64 provenance origin,
+closed to the original `49f23608a686da56a32a2c825b51fa2577bcbba6353d5f9587a0c68dec9df68e`
+predecessor and the reviewed default-colormap candidate
+`9d0bc5722d719eff8a20d39ef06fb6f222b239ea44d78dd42e7c40a2f42def2e`.
+It does not change the original `owned-linux-engine` fresh-acquisition contract,
+Windows origins, runtime defaults, or the six-platform/native acceptance gates.
+
+The twelve exact review roles are `predecessor`, `readiness`, `apply`, `started`,
+`container`, `compile`, `compileOutput`, `finished`, `postchecks`, `package`,
+`distribution`, and `preparation`. Nontext records use the closed version-one
+`schemaVersion/kind/operation/controllerCommit/sourceLockIdentity/target/facts`
+envelope. Complete compiler output is bounded to 64 MiB, each other role to
+1 MiB, and all evidence to 80 MiB. Bounded hashed bytes are the bytes parsed;
+invalid UTF-8, excess output and stream growth fail rather than being truncated.
+
+The predecessor retains the exact original local review, six original producer
+records, input source lock and handoff bytes with their separate raw digests.
+Those records establish historical bindings only. A new incremental controller
+must not mint `freshCheck`, a fresh-acquisition `producer`, or an `executed`
+record from the old operation. A new operation binds its own controller, actual
+parent container inspection, image, private HOME/kernel/resource observations,
+source reconstruction, original eight file pins and separately observed
+Clang/GN/Siso/dependency specifications. The latter observations are not
+retrospectively members of the original eight-file set. The Siso specification
+is an actual pinned specification; an unobserved CIPD stamp must not be invented.
+
+Only patch23's exact source before/after change is admitted. Upstream heads,
+all inherited patch/source pins, GN args and every captured security macro/header
+must remain unchanged, including the compiled-out instance tracer. The fixed
+8-job build has a 60-minute admission deadline and at most 30 seconds of cleanup.
+Nonzero compile, deadline, incomplete logs, remaining processes or readers deny
+handoff. Fresh distribution and preparation are separately bounded to 15 minutes;
+old SDK outputs cannot be overlaid or relabelled. The new engine and sandbox
+pins, full file count and all five package assets must agree with the maintained
+bundle verifier, strict archive roundtrip, complete SDK inventory, ELF x64 and
+four bridge-export checks. The original input source-lock raw digest and the
+canonical bundle source-lock raw digest retain separate names.
+
+Portable provenance exposes fixed facts and digests, not private paths, raw
+records or inherited native-test results. `reviewedEvidenceDigests` describes
+the twelve reviewed records; `nestedOriginalRecordDigests` separately identifies
+the retained predecessor originals. `incrementalBuild:true`,
+`pristineSourceBuild:false` and `originalBuildReplayed:false` describe the actual
+provenance class. `hostedBuild:false`, `nativeAcceptance:not-tested` and
+`productionReady:false` remain mandatory. The selected X11 child visual and a
+successful physical native run are not established by this schema.
+
+Matching JSON and hashes are not independent proof that a compiler ran. Before
+a committed import review or any API action, the operator must independently
+review the genuine predecessor and new controller/operation/output records.
+Synthetic test fixtures exercise validation and archive transport only; they
+are not evidence of a successful incremental SDK. A genuine new build,
+independently reviewed handoff, native Linux acceptance and existing publication
+protections are still required.
