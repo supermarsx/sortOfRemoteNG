@@ -30,12 +30,12 @@ test("production automation fences follow main-document navigation, not child lo
     "utf8",
   );
   assert.match(source, /include!\("cef_load\.rs"\)/);
-  const load = block(await readFile(new URL("cef_load.rs", base), "utf8"), "wrap_load_handler! {");
-  // The richer load-error diagnostics are a separate, pending concern. HEAD
-  // faults/revokes on main-load errors; run this regression on either contract.
-  const diagnosticLoads = load.includes(
-    "crate::native_navigation::classify_load_error",
+  const load = block(
+    await readFile(new URL("cef_load.rs", base), "utf8"),
+    "wrap_load_handler! {",
   );
+  assert.match(load, /crate::native_navigation::classify_load_error/);
+  const requests = await readFile(new URL("cef_requests.rs", base), "utf8");
   const parent = await realpath(os.tmpdir());
   const root = await mkdtemp(path.join(parent, "sorng-automation-loading-"));
   t.after(async () => {
@@ -65,22 +65,16 @@ test("production automation fences follow main-document navigation, not child lo
       )
       .replace(
         "/* PRODUCTION_NAVIGATION */",
-        diagnosticLoads
-          ? `#[path = ${JSON.stringify(fileURLToPath(new URL("native_navigation.rs", base)))}]\nmod native_navigation;`
-          : "",
+        `#[path = ${JSON.stringify(fileURLToPath(new URL("native_navigation.rs", base)))}]\nmod native_navigation;`,
+      )
+      .replace(
+        "/* PRODUCTION_NAVIGATION_ALLOWED */",
+        block(requests, "pub(crate) fn navigation_allowed("),
       ),
   );
   execFileSync(
     "rustc",
-    [
-      "--edition=2021",
-      "--test",
-      "-Dwarnings",
-      ...(!diagnosticLoads ? ["--cfg", "head_load_fault"] : []),
-      harness,
-      "-o",
-      binary,
-    ],
+    ["--edition=2021", "--test", "-Dwarnings", harness, "-o", binary],
     {
       cwd: root,
       encoding: "utf8",

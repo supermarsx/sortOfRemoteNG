@@ -163,11 +163,19 @@ test("actual cookie enum conversion and its signed/unsigned regressions run with
     "\n",
   );
   const conversion = source.match(/fn cookie_enum_values\([\s\S]*?\n\}/)?.[0];
-  const start = source.indexOf(
-    "    #[test]\n    fn cookie_enum_values_preserve_",
-  );
-  const end = source.indexOf("    fn cookie()", start);
-  assert.ok(conversion && start >= 0 && end > start);
+  const regressions = [
+    "cookie_enum_values_preserve_signed_and_unsigned_platform_abis",
+    "cookie_enum_values_reject_unknown_sentinels_and_overflow",
+  ].map((name) => {
+    const regression = source.match(
+      new RegExp(
+        `    #\\[test\\]\\n    fn ${name}\\(\\) \\{[\\s\\S]*?\\n    \\}`,
+      ),
+    )?.[0];
+    assert.ok(regression, `Missing actual cookie regression: ${name}`);
+    return regression;
+  });
+  assert.ok(conversion, "Missing actual cookie conversion");
   const root = await mkdtemp(path.join(os.tmpdir(), "cef-cookie-enums-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const harness = path.join(root, "enums.rs");
@@ -175,7 +183,7 @@ test("actual cookie enum conversion and its signed/unsigned regressions run with
     root,
     process.platform === "win32" ? "enums.exe" : "enums",
   );
-  await writeFile(harness, `${conversion}\n${source.slice(start, end)}`);
+  await writeFile(harness, `${conversion}\n${regressions.join("\n")}`);
   execFileSync(
     "rustc",
     ["--edition=2021", "--test", "-Dwarnings", harness, "-o", binary],
