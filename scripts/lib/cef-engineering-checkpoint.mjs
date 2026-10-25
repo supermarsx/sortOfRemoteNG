@@ -1547,6 +1547,164 @@ export async function compileSlice(
     await Promise.all([finished(stdout), finished(stderr)]);
   }
 }
+const uploadObservers = new WeakSet();
+const UPLOAD_STAGES = new Set([
+  "upload",
+  "state-read",
+  "state-validation",
+  "bundle-validation",
+  "credential",
+  "api-admission",
+  "repository",
+  "workflow",
+  "run",
+  "source-commit",
+  "source-tree",
+  "producer-validation",
+  "code-validation",
+  "quiescence",
+  "asset-verification",
+  "manifest-generation",
+  "draft-create",
+  "chunk-upload",
+  "inventory-upload",
+  "manifest-upload",
+  "sdk-upload",
+  "response-validation",
+  "seal-write",
+]);
+const UPLOAD_CODES = new Map([
+  ["Scoped GitHub credential required", "CREDENTIAL"],
+  ["Closed same-repository checkpoint endpoint required", "ENDPOINT"],
+  ["Restore API is GET-only", "METHOD"],
+  ["Checkpoint transport deadline", "DEADLINE"],
+  ["Bounded upload content length required", "CONTENT_BOUND"],
+  ["Foreign API route denied", "ENDPOINT"],
+  ["Checkpoint GitHub operation failed", "HTTP"],
+  ["Foreign checkpoint repository", "REPOSITORY"],
+  ["Untrusted producer run", "PRODUCER"],
+  ["Producer commit tree", "COMMIT"],
+  ["Producer code differs from sealed checkpoint", "CODE_DIGEST"],
+  ["Current producer mismatch", "PRODUCER"],
+  ["Current SDK producer mismatch", "PRODUCER"],
+  ["Compiler group no longer quiescent", "QUIESCENCE"],
+  ["SDK compiler no longer quiescent", "QUIESCENCE"],
+  ["Changed upload asset", "ASSET_CHANGED"],
+  ["SDK upload bytes changed", "ASSET_CHANGED"],
+  ["Manifest bound", "MANIFEST_BOUND"],
+  ["Unexpected checkpoint draft", "DRAFT"],
+  ["Unexpected SDK transport draft", "DRAFT"],
+  ["Uploaded checkpoint asset mismatch", "ASSET_RESPONSE"],
+  ["SDK uploaded asset mismatch", "ASSET_RESPONSE"],
+  ["Foreign SDK state", "STATE"],
+  ["Foreign checkpoint state", "STATE"],
+  ["Unknown engineering state", "STATE"],
+  ["Seal size bound", "SEAL_BOUND"],
+  ["SDK seal size bound", "SEAL_BOUND"],
+]);
+const UPLOAD_ERROR_CODES = new Set([
+  ...UPLOAD_CODES.values(),
+  "NONE",
+  "UNAVAILABLE",
+  "JSON",
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "EIO",
+  "ENOSPC",
+]);
+export function createUploadObserver(sink = () => {}) {
+  if (uploadObservers.has(sink)) return sink;
+  let count = 0,
+    bytes = 0;
+  const observe = (input) => {
+    // Build a new closed value; never forward provider objects or exception text.
+    try {
+      const record = Object.freeze({
+        kind: "sorng-cef-checkpoint-upload-diagnostic",
+        stage: UPLOAD_STAGES.has(input?.stage) ? input.stage : "upload",
+        event: ["begin", "complete", "failed", "response"].includes(
+          input?.event,
+        )
+          ? input.event
+          : "failed",
+        errorCode: UPLOAD_ERROR_CODES.has(input?.errorCode)
+          ? input.errorCode
+          : "UNAVAILABLE",
+        httpStatus:
+          Number.isInteger(input?.httpStatus) &&
+          input.httpStatus >= 100 &&
+          input.httpStatus <= 599
+            ? input.httpStatus
+            : null,
+      });
+      const size = Buffer.byteLength(canonical(record) + "\n");
+      const terminal =
+        record.event === "failed" ||
+        (record.stage === "upload" && record.event === "complete");
+      // Reserve the final slot for a late primary failure or final outcome.
+      if (
+        count >= 128 ||
+        (count >= 127 && !terminal) ||
+        bytes + size > 64 * 1024
+      )
+        return;
+      count++;
+      bytes += size;
+      checkpointLog(sink, record);
+    } catch {
+      /* Diagnostics cannot affect the primary operation. */
+    }
+  };
+  uploadObservers.add(observe);
+  return observe;
+}
+export async function uploadPhase(
+  observer,
+  stage,
+  operation,
+  responseFacts = null,
+) {
+  const observe = createUploadObserver(observer);
+  observe({ stage, event: "begin", errorCode: "NONE" });
+  try {
+    const value = await operation();
+    observe({ stage, event: "complete", errorCode: "NONE" });
+    return value;
+  } catch (error) {
+    let code = "UNAVAILABLE";
+    try {
+      code =
+        UPLOAD_CODES.get(error?.message) ??
+        (error instanceof SyntaxError
+          ? "JSON"
+          : UPLOAD_ERROR_CODES.has(error?.code)
+            ? error.code
+            : "UNAVAILABLE");
+    } catch {}
+    let httpStatus = null;
+    try {
+      httpStatus = responseFacts?.httpStatus;
+    } catch {}
+    observe({ stage, event: "failed", errorCode: code, httpStatus });
+    throw error;
+  }
+}
+function uploadApiStage(route, upload) {
+  if (route === "") return "repository";
+  if (route === "releases") return "draft-create";
+  if (/^actions\/workflows\//.test(route)) return "workflow";
+  if (/^actions\/runs\//.test(route)) return "run";
+  if (/^git\/commits\//.test(route)) return "source-commit";
+  if (/^git\/trees\//.test(route)) return "source-tree";
+  if (upload) {
+    if (/\?name=checkpoint-[0-9]{5}\.bin$/.test(route)) return "chunk-upload";
+    if (/\?name=inventory\.json$/.test(route)) return "inventory-upload";
+    if (/\?name=manifest\.json$/.test(route)) return "manifest-upload";
+    return "sdk-upload";
+  }
+  return "api-admission";
+}
 export function apiClient(
   repository,
   token,
@@ -1556,85 +1714,119 @@ export function apiClient(
     milliseconds = 20 * 60_000,
     sdk = false,
     target = TARGET,
+    observer,
   } = {},
 ) {
+  const observe = createUploadObserver(observer);
   const deadline = Date.now() + milliseconds;
-  assert(
-    /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) &&
-      typeof token === "string" &&
-      token.length > 0,
-    "Scoped GitHub credential required",
-  );
+  observe({ stage: "credential", event: "begin", errorCode: "NONE" });
+  try {
+    assert(
+      /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) &&
+        typeof token === "string" &&
+        token.length > 0,
+      "Scoped GitHub credential required",
+    );
+  } catch (error) {
+    observe({ stage: "credential", event: "failed", errorCode: "CREDENTIAL" });
+    throw error;
+  }
+  observe({ stage: "credential", event: "complete", errorCode: "NONE" });
   return async (
     route,
     { method = "GET", body, raw = false, upload = false, bodyBytes } = {},
   ) => {
-    assert(
-      !readOnly || (method === "GET" && !upload && !body),
-      "Restore API is GET-only",
-    );
-    assert(Date.now() < deadline, "Checkpoint transport deadline");
-    const readRoute =
-      /^(?:|actions\/workflows\/cef-engineering-checkpoint\.yml|actions\/runs\/[1-9][0-9]*(?:\/artifacts\?per_page=100)?|releases\/[1-9][0-9]*(?:\/assets\?per_page=100)?|git\/commits\/[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}\?recursive=1)$/;
-    const uploadRoute =
-      /^releases\/[1-9][0-9]*\/assets\?name=(?:checkpoint-[0-9]{5}\.bin|inventory\.json|manifest\.json)$/;
-    assert(
-      (method === "GET" && !upload && readRoute.test(route)) ||
-        (!readOnly &&
-          method === "POST" &&
-          ((route === "releases" && !upload) ||
-            (upload &&
-              (sdk
-                ? /^releases\/[1-9][0-9]*\/assets\?name=/.test(route) &&
-                  sdkNames(target).some((name) =>
-                    route.endsWith(`?name=${encodeURIComponent(name)}`),
-                  )
-                : uploadRoute.test(route))))),
-      "Closed same-repository checkpoint endpoint required",
-    );
-    if (upload)
-      assert(
-        positive(bodyBytes) &&
-          bodyBytes <= (sdk ? SDK_ASSET_MAX : LIMITS.chunk),
-        "Bounded upload content length required",
-      );
-    const prefix = upload
-      ? "https://uploads.github.com/"
-      : "https://api.github.com/";
-    const repositoryUrl = `${prefix}repos/${repository}`;
-    const url = route ? `${repositoryUrl}/${route}` : repositoryUrl;
-    assert(
-      url === repositoryUrl || url.startsWith(`${repositoryUrl}/`),
-      "Foreign API route denied",
-    );
-    const response = await request(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        ...(body
-          ? {
-              "Content-Type": upload
-                ? "application/octet-stream"
-                : "application/json",
-              ...(upload ? { "Content-Length": String(bodyBytes) } : {}),
-            }
-          : {}),
-      },
-      body: upload ? body : body ? JSON.stringify(body) : undefined,
-      ...(upload ? { duplex: "half" } : {}),
-      signal: AbortSignal.timeout(
-        Math.min(upload ? 600000 : 30000, deadline - Date.now()),
-      ),
-      redirect: "error",
-    });
-    assert(response.ok, "Checkpoint GitHub operation failed");
-    return raw
-      ? response
-      : JSON.parse(
-          (await boundedResponse(response, 16 * 1024 ** 2)).toString("utf8"),
+    const responseFacts = { httpStatus: null };
+    return uploadPhase(
+      observe,
+      uploadApiStage(route, upload),
+      async () => {
+        assert(
+          !readOnly || (method === "GET" && !upload && !body),
+          "Restore API is GET-only",
         );
+        assert(Date.now() < deadline, "Checkpoint transport deadline");
+        const readRoute =
+          /^(?:|actions\/workflows\/cef-engineering-checkpoint\.yml|actions\/runs\/[1-9][0-9]*(?:\/artifacts\?per_page=100)?|releases\/[1-9][0-9]*(?:\/assets\?per_page=100)?|git\/commits\/[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}\?recursive=1)$/;
+        const uploadRoute =
+          /^releases\/[1-9][0-9]*\/assets\?name=(?:checkpoint-[0-9]{5}\.bin|inventory\.json|manifest\.json)$/;
+        assert(
+          (method === "GET" && !upload && readRoute.test(route)) ||
+            (!readOnly &&
+              method === "POST" &&
+              ((route === "releases" && !upload) ||
+                (upload &&
+                  (sdk
+                    ? /^releases\/[1-9][0-9]*\/assets\?name=/.test(route) &&
+                      sdkNames(target).some((name) =>
+                        route.endsWith(`?name=${encodeURIComponent(name)}`),
+                      )
+                    : uploadRoute.test(route))))),
+          "Closed same-repository checkpoint endpoint required",
+        );
+        if (upload)
+          assert(
+            positive(bodyBytes) &&
+              bodyBytes <= (sdk ? SDK_ASSET_MAX : LIMITS.chunk),
+            "Bounded upload content length required",
+          );
+        const prefix = upload
+          ? "https://uploads.github.com/"
+          : "https://api.github.com/";
+        const repositoryUrl = `${prefix}repos/${repository}`;
+        const url = route ? `${repositoryUrl}/${route}` : repositoryUrl;
+        assert(
+          url === repositoryUrl || url.startsWith(`${repositoryUrl}/`),
+          "Foreign API route denied",
+        );
+        const response = await request(url, {
+          method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            ...(body
+              ? {
+                  "Content-Type": upload
+                    ? "application/octet-stream"
+                    : "application/json",
+                  ...(upload ? { "Content-Length": String(bodyBytes) } : {}),
+                }
+              : {}),
+          },
+          body: upload ? body : body ? JSON.stringify(body) : undefined,
+          ...(upload ? { duplex: "half" } : {}),
+          signal: AbortSignal.timeout(
+            Math.min(upload ? 600000 : 30000, deadline - Date.now()),
+          ),
+          redirect: "error",
+        });
+        try {
+          responseFacts.httpStatus = response.status;
+          observe({
+            stage: uploadApiStage(route, upload),
+            event: "response",
+            errorCode:
+              Number.isInteger(responseFacts.httpStatus) &&
+              (responseFacts.httpStatus < 200 || responseFacts.httpStatus > 299)
+                ? "HTTP"
+                : "NONE",
+            httpStatus: responseFacts.httpStatus,
+          });
+        } catch {
+          /* Reading diagnostic metadata cannot replace the response guard. */
+        }
+        assert(response.ok, "Checkpoint GitHub operation failed");
+        return raw
+          ? response
+          : JSON.parse(
+              (await boundedResponse(response, 16 * 1024 ** 2)).toString(
+                "utf8",
+              ),
+            );
+      },
+      responseFacts,
+    );
   };
 }
 export async function verifyProducer(api, producer) {
@@ -1662,89 +1854,119 @@ export async function verifyProducer(api, producer) {
   );
   return run;
 }
-export async function uploadCheckpoint(api, { bundle, manifest, producer }) {
-  validateManifest(manifest);
-  assert(
-    canonical(manifest.producer) === canonical(producer),
-    "Current producer mismatch",
-  );
-  await verifyProducer(api, producer);
-  await verifyProducerCode(api, producer, manifest.identity.producer);
-  assert(
-    await observedQuiet(manifest.compile.observed, manifest.compile.groupId),
-    "Compiler group no longer quiescent",
-  );
-  const pins = [...manifest.archive.chunks, manifest.archive.inventory];
-  for (const p of pins)
-    assert(
-      canonical(
-        await filePin(
-          path.join(bundle, p.name),
-          p.name === "inventory.json" ? LIMITS.metadata : LIMITS.chunk,
-        ),
-      ) === canonical(p),
-      "Changed upload asset",
+export async function uploadCheckpoint(
+  api,
+  { bundle, manifest, producer, observer },
+) {
+  const observe = createUploadObserver(observer);
+  return uploadPhase(observe, "upload", async () => {
+    await uploadPhase(observe, "state-validation", async () => {
+      validateManifest(manifest);
+      assert(
+        canonical(manifest.producer) === canonical(producer),
+        "Current producer mismatch",
+      );
+    });
+    await uploadPhase(observe, "producer-validation", () =>
+      verifyProducer(api, producer),
     );
-  const manifestBytes = Buffer.from(`${canonical(manifest)}\n`);
-  assert(manifestBytes.length < LIMITS.seal, "Manifest bound");
-  const manifestPin = {
-    name: "manifest.json",
-    bytes: manifestBytes.length,
-    sha256: sha(manifestBytes),
-  };
-  await writeFile(path.join(bundle, "manifest.json"), manifestBytes, {
-    flag: "wx",
-  });
-  const tag = `cef-checkpoint-${manifest.identity.target}-${manifest.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
-  const release = await api("releases", {
-    method: "POST",
-    body: {
-      tag_name: tag,
-      target_commitish: producer.head,
-      name: tag,
-      draft: true,
-      prerelease: true,
-      make_latest: "false",
-      body: "Engineering checkpoint only. Not a runtime, SDK, acceptance or application release.",
-    },
-  });
-  assert(
-    positive(release.id) &&
-      release.draft === true &&
-      release.prerelease === true &&
-      release.tag_name === tag,
-    "Unexpected checkpoint draft",
-  );
-  const assets = [];
-  for (const p of [...pins, manifestPin]) {
-    const uploaded = await api(
-      `releases/${release.id}/assets?name=${encodeURIComponent(p.name)}`,
-      {
-        method: "POST",
-        upload: true,
-        bodyBytes: p.bytes,
-        body: createReadStream(path.join(bundle, p.name)),
+    await uploadPhase(observe, "code-validation", () =>
+      verifyProducerCode(api, producer, manifest.identity.producer),
+    );
+    await uploadPhase(observe, "quiescence", async () => {
+      assert(
+        await observedQuiet(
+          manifest.compile.observed,
+          manifest.compile.groupId,
+        ),
+        "Compiler group no longer quiescent",
+      );
+    });
+    const pins = [...manifest.archive.chunks, manifest.archive.inventory];
+    for (const p of pins)
+      await uploadPhase(observe, "asset-verification", async () =>
+        assert(
+          canonical(
+            await filePin(
+              path.join(bundle, p.name),
+              p.name === "inventory.json" ? LIMITS.metadata : LIMITS.chunk,
+            ),
+          ) === canonical(p),
+          "Changed upload asset",
+        ),
+      );
+    const manifestPin = await uploadPhase(
+      observe,
+      "manifest-generation",
+      async () => {
+        const manifestBytes = Buffer.from(`${canonical(manifest)}\n`);
+        assert(manifestBytes.length < LIMITS.seal, "Manifest bound");
+        const manifestPin = {
+          name: "manifest.json",
+          bytes: manifestBytes.length,
+          sha256: sha(manifestBytes),
+        };
+        await writeFile(path.join(bundle, "manifest.json"), manifestBytes, {
+          flag: "wx",
+        });
+        return manifestPin;
       },
     );
-    assert(
-      uploaded.name === p.name &&
-        uploaded.size === p.bytes &&
-        uploaded.state === "uploaded" &&
-        uploaded.digest === `sha256:${p.sha256}` &&
-        positive(uploaded.id),
-      "Uploaded checkpoint asset mismatch",
+    const tag = `cef-checkpoint-${manifest.identity.target}-${manifest.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+    const release = await api("releases", {
+      method: "POST",
+      body: {
+        tag_name: tag,
+        target_commitish: producer.head,
+        name: tag,
+        draft: true,
+        prerelease: true,
+        make_latest: "false",
+        body: "Engineering checkpoint only. Not a runtime, SDK, acceptance or application release.",
+      },
+    });
+    await uploadPhase(observe, "response-validation", async () =>
+      assert(
+        positive(release.id) &&
+          release.draft === true &&
+          release.prerelease === true &&
+          release.tag_name === tag,
+        "Unexpected checkpoint draft",
+      ),
     );
-    assets.push({ id: uploaded.id, ...p });
-  }
-  return {
-    schemaVersion: 1,
-    kind: "sorng-cef-engineering-seal",
-    producer,
-    identitySha256: manifest.identitySha256,
-    release: { id: release.id, tag },
-    manifest: manifestPin,
-    assets,
-  };
+    const assets = [];
+    for (const p of [...pins, manifestPin]) {
+      const uploaded = await api(
+        `releases/${release.id}/assets?name=${encodeURIComponent(p.name)}`,
+        {
+          method: "POST",
+          upload: true,
+          bodyBytes: p.bytes,
+          body: createReadStream(path.join(bundle, p.name)),
+        },
+      );
+      await uploadPhase(observe, "response-validation", async () =>
+        assert(
+          uploaded.name === p.name &&
+            uploaded.size === p.bytes &&
+            uploaded.state === "uploaded" &&
+            uploaded.digest === `sha256:${p.sha256}` &&
+            positive(uploaded.id),
+          "Uploaded checkpoint asset mismatch",
+        ),
+      );
+      assets.push({ id: uploaded.id, ...p });
+    }
+    return {
+      schemaVersion: 1,
+      kind: "sorng-cef-engineering-seal",
+      producer,
+      identitySha256: manifest.identitySha256,
+      release: { id: release.id, tag },
+      manifest: manifestPin,
+      assets,
+    };
+  });
 }
 export function validateSeal(seal, expected, target = TARGET) {
   checkpointProfile(target);
@@ -3542,86 +3764,106 @@ export function validateSdkSeal(seal, producer) {
   );
   return seal;
 }
-export async function uploadSdkBundle(api, { bundle, completion, producer }) {
-  validateSdkCompletion(completion);
-  assert(
-    canonical(completion.producer) === canonical(producer),
-    "Current SDK producer mismatch",
-  );
-  await verifyProducer(api, producer);
-  await verifyProducerCode(api, producer, completion.identity.producer);
-  assert(
-    await observedQuiet(
-      completion.compile.observed,
-      completion.compile.groupId,
-    ),
-    "SDK compiler no longer quiescent",
-  );
-  for (const pin of completion.bundleAssets)
-    assert(
-      canonical(
-        await filePin(
-          path.join(bundle, pin.name),
-          pin.name === sdkArchive(completion.target)
-            ? SDK_ASSET_MAX
-            : 16 * 1024 ** 2,
+export async function uploadSdkBundle(
+  api,
+  { bundle, completion, producer, observer },
+) {
+  const observe = createUploadObserver(observer);
+  return uploadPhase(observe, "upload", async () => {
+    await uploadPhase(observe, "state-validation", async () => {
+      validateSdkCompletion(completion);
+      assert(
+        canonical(completion.producer) === canonical(producer),
+        "Current SDK producer mismatch",
+      );
+    });
+    await uploadPhase(observe, "producer-validation", () =>
+      verifyProducer(api, producer),
+    );
+    await uploadPhase(observe, "code-validation", () =>
+      verifyProducerCode(api, producer, completion.identity.producer),
+    );
+    await uploadPhase(observe, "quiescence", async () => {
+      assert(
+        await observedQuiet(
+          completion.compile.observed,
+          completion.compile.groupId,
         ),
-      ) === canonical(pin),
-      "SDK upload bytes changed",
-    );
-  const tag = `cef-sdk-checkpoint-${completion.target}-${completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
-  const release = await api("releases", {
-    method: "POST",
-    body: {
-      tag_name: tag,
-      target_commitish: producer.head,
-      name: tag,
-      draft: true,
-      prerelease: true,
-      make_latest: "false",
-      body: "Completed SDK transport only; native acceptance and runtime publication remain separate.",
-    },
-  });
-  assert(
-    positive(release.id) &&
-      release.draft === true &&
-      release.prerelease === true &&
-      release.tag_name === tag,
-    "Unexpected SDK transport draft",
-  );
-  const assets = [];
-  for (const pin of completion.bundleAssets) {
-    const uploaded = await api(
-      `releases/${release.id}/assets?name=${encodeURIComponent(pin.name)}`,
-      {
-        method: "POST",
-        upload: true,
-        bodyBytes: pin.bytes,
-        body: createReadStream(path.join(bundle, pin.name)),
+        "SDK compiler no longer quiescent",
+      );
+    });
+    for (const pin of completion.bundleAssets)
+      await uploadPhase(observe, "asset-verification", async () =>
+        assert(
+          canonical(
+            await filePin(
+              path.join(bundle, pin.name),
+              pin.name === sdkArchive(completion.target)
+                ? SDK_ASSET_MAX
+                : 16 * 1024 ** 2,
+            ),
+          ) === canonical(pin),
+          "SDK upload bytes changed",
+        ),
+      );
+    const tag = `cef-sdk-checkpoint-${completion.target}-${completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+    const release = await api("releases", {
+      method: "POST",
+      body: {
+        tag_name: tag,
+        target_commitish: producer.head,
+        name: tag,
+        draft: true,
+        prerelease: true,
+        make_latest: "false",
+        body: "Completed SDK transport only; native acceptance and runtime publication remain separate.",
       },
+    });
+    await uploadPhase(observe, "response-validation", async () =>
+      assert(
+        positive(release.id) &&
+          release.draft === true &&
+          release.prerelease === true &&
+          release.tag_name === tag,
+        "Unexpected SDK transport draft",
+      ),
     );
-    assert(
-      uploaded.name === pin.name &&
-        uploaded.size === pin.bytes &&
-        uploaded.digest === `sha256:${pin.sha256}` &&
-        uploaded.state === "uploaded" &&
-        positive(uploaded.id),
-      "SDK uploaded asset mismatch",
-    );
-    assets.push({ id: uploaded.id, ...pin });
-  }
-  return validateSdkSeal(
-    {
-      schemaVersion: 1,
-      kind: "sorng-cef-engineering-sdk-seal",
+    const assets = [];
+    for (const pin of completion.bundleAssets) {
+      const uploaded = await api(
+        `releases/${release.id}/assets?name=${encodeURIComponent(pin.name)}`,
+        {
+          method: "POST",
+          upload: true,
+          bodyBytes: pin.bytes,
+          body: createReadStream(path.join(bundle, pin.name)),
+        },
+      );
+      await uploadPhase(observe, "response-validation", async () =>
+        assert(
+          uploaded.name === pin.name &&
+            uploaded.size === pin.bytes &&
+            uploaded.digest === `sha256:${pin.sha256}` &&
+            uploaded.state === "uploaded" &&
+            positive(uploaded.id),
+          "SDK uploaded asset mismatch",
+        ),
+      );
+      assets.push({ id: uploaded.id, ...pin });
+    }
+    return validateSdkSeal(
+      {
+        schemaVersion: 1,
+        kind: "sorng-cef-engineering-sdk-seal",
+        producer,
+        release: { id: release.id, tag },
+        completion,
+        completionSha256: completionSha(completion),
+        assets,
+      },
       producer,
-      release: { id: release.id, tag },
-      completion,
-      completionSha256: completionSha(completion),
-      assets,
-    },
-    producer,
-  );
+    );
+  });
 }
 export async function downloadSdkBundle(
   api,

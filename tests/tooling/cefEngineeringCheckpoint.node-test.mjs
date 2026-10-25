@@ -56,6 +56,9 @@ import {
   validateManifest,
   validateSeal,
   apiClient,
+  createUploadObserver,
+  uploadPhase,
+  uploadCheckpoint,
   downloadAsset,
   downloadHost,
   groupQuiet,
@@ -5340,4 +5343,360 @@ test("diagnostic logger rejection or pending promise cannot replace or hold an o
     "fixed",
   );
   await new Promise((resolve) => setImmediate(resolve));
+});
+
+test("upload diagnostic observer is closed, bounded and does not forward hostile fields", async () => {
+  const records = [],
+    observe = createUploadObserver((record) => records.push(record));
+  for (let i = 0; i < 200; i++)
+    observe({
+      stage: "https://signed.invalid/secret",
+      event: "raw body",
+      errorCode: "Bearer SECRET",
+      httpStatus: 999,
+      token: "SECRET",
+    });
+  assert.equal(records.length, 128);
+  assert.ok(Buffer.byteLength(JSON.stringify(records)) < 64 * 1024);
+  assert.ok(
+    records.every(
+      (row) =>
+        JSON.stringify(Object.keys(row)) ===
+        JSON.stringify(["kind", "stage", "event", "errorCode", "httpStatus"]),
+    ),
+  );
+  assert.ok(
+    records.every(
+      (row) =>
+        row.stage === "upload" &&
+        row.event === "failed" &&
+        row.errorCode === "UNAVAILABLE" &&
+        row.httpStatus === null,
+    ),
+  );
+  assert.doesNotMatch(JSON.stringify(records), /SECRET|signed|raw body/);
+  assert.equal(createUploadObserver(observe), observe);
+  for (const sink of [
+    () => {
+      throw Error("secret");
+    },
+    () => Promise.reject(Error("secret")),
+    () => new Promise(() => {}),
+  ]) {
+    const original = Error("https://signed.invalid/secret");
+    await assert.rejects(
+      uploadPhase(createUploadObserver(sink), "state-read", () => {
+        throw original;
+      }),
+      (error) => error === original,
+    );
+    const value = { same: true };
+    assert.equal(
+      await uploadPhase(createUploadObserver(sink), "seal-write", () => value),
+      value,
+    );
+  }
+});
+
+test("upload API retains closed stages and HTTP status without provider bodies or credentials", async () => {
+  for (const status of [401, 403, 422, 500]) {
+    const records = [],
+      calls = [],
+      observer = createUploadObserver((row) => records.push(row));
+    const api = apiClient(
+      "owner/repo",
+      "SECRET",
+      async (url, options) => {
+        calls.push({ url, options });
+        return new Response("signed URL and SECRET", { status });
+      },
+      { observer },
+    );
+    await assert.rejects(
+      api("releases", { method: "POST", body: {} }),
+      /Checkpoint GitHub operation failed/,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.redirect, "error");
+    assert.ok(
+      records.some(
+        (row) =>
+          row.stage === "draft-create" &&
+          row.event === "response" &&
+          row.httpStatus === status &&
+          row.errorCode === "HTTP",
+      ),
+    );
+    assert.ok(
+      records.some(
+        (row) =>
+          row.event === "failed" &&
+          row.errorCode === "HTTP" &&
+          row.httpStatus === status,
+      ),
+    );
+    assert.doesNotMatch(
+      JSON.stringify(records),
+      /SECRET|signed|https:|owner|repo/,
+    );
+  }
+});
+
+test("upload API distinguishes success decode failure and transport error while preserving original errors", async () => {
+  const records = [],
+    observer = createUploadObserver((row) => records.push(row));
+  const api = apiClient(
+    "owner/repo",
+    "SECRET",
+    async () => new Response('{"ok":true}', { status: 201 }),
+    { observer },
+  );
+  assert.deepEqual(await api("releases", { method: "POST", body: {} }), {
+    ok: true,
+  });
+  assert.ok(
+    records.some((row) => row.event === "response" && row.httpStatus === 201),
+  );
+  const malformed = apiClient(
+    "owner/repo",
+    "SECRET",
+    async () => new Response("SECRET signed", { status: 200 }),
+    { observer },
+  );
+  await assert.rejects(malformed(""), SyntaxError);
+  assert.ok(records.some((row) => row.errorCode === "JSON"));
+  const original = Error("token=SECRET https://signed.invalid");
+  const failed = apiClient(
+    "owner/repo",
+    "SECRET",
+    async () => {
+      throw original;
+    },
+    { observer },
+  );
+  await assert.rejects(
+    failed("git/commits/" + "a".repeat(40)),
+    (error) => error === original,
+  );
+  assert.ok(
+    records.some(
+      (row) =>
+        row.stage === "source-commit" &&
+        row.event === "failed" &&
+        row.errorCode === "UNAVAILABLE",
+    ),
+  );
+  assert.doesNotMatch(JSON.stringify(records), /SECRET|signed|https:|token/);
+});
+
+test("upload credential and endpoint refusals are observed before any request with unchanged guard", async () => {
+  const records = [],
+    observer = createUploadObserver((row) => records.push(row));
+  let requests = 0;
+  const request = async () => {
+    requests++;
+    throw Error("must not request");
+  };
+  assert.throws(
+    () => apiClient("owner/repo", "", request, { observer }),
+    /Scoped GitHub credential required/,
+  );
+  assert.ok(
+    records.some(
+      (row) => row.stage === "credential" && row.errorCode === "CREDENTIAL",
+    ),
+  );
+  const api = apiClient("owner/repo", "SECRET", request, { observer });
+  await assert.rejects(
+    api("https://foreign.invalid/SECRET"),
+    /Closed same-repository/,
+  );
+  await assert.rejects(
+    api("releases/1/assets?name=other", {
+      method: "POST",
+      upload: true,
+      bodyBytes: 10,
+    }),
+    /Closed same-repository/,
+  );
+  assert.equal(requests, 0);
+  assert.ok(records.some((row) => row.errorCode === "ENDPOINT"));
+  assert.doesNotMatch(JSON.stringify(records), /SECRET|foreign/);
+});
+
+test("each closed upload preflight records begin and original failure with fixed guard codes", async () => {
+  for (const [stage, message, code] of [
+    ["producer-validation", "Current producer mismatch", "PRODUCER"],
+    [
+      "code-validation",
+      "Producer code differs from sealed checkpoint",
+      "CODE_DIGEST",
+    ],
+    ["quiescence", "Compiler group no longer quiescent", "QUIESCENCE"],
+    ["asset-verification", "Changed upload asset", "ASSET_CHANGED"],
+    ["manifest-generation", "Manifest bound", "MANIFEST_BOUND"],
+    [
+      "response-validation",
+      "Uploaded checkpoint asset mismatch",
+      "ASSET_RESPONSE",
+    ],
+    ["seal-write", "Seal size bound", "SEAL_BOUND"],
+  ]) {
+    const records = [],
+      original = Error(message);
+    await assert.rejects(
+      uploadPhase(
+        createUploadObserver((row) => records.push(row)),
+        stage,
+        () => {
+          throw original;
+        },
+      ),
+      (error) => error === original,
+    );
+    assert.deepEqual(
+      records.map((row) => [row.stage, row.event, row.errorCode]),
+      [
+        [stage, "begin", "NONE"],
+        [stage, "failed", code],
+      ],
+    );
+  }
+  const records = [];
+  let called = false;
+  await assert.rejects(
+    uploadCheckpoint(
+      () => {
+        called = true;
+      },
+      {
+        bundle: "unused",
+        manifest: {},
+        producer,
+        observer: createUploadObserver((row) => records.push(row)),
+      },
+    ),
+  );
+  assert.equal(called, false);
+  assert.deepEqual(
+    records.map((row) => [row.stage, row.event]),
+    [
+      ["upload", "begin"],
+      ["state-validation", "begin"],
+      ["state-validation", "failed"],
+      ["upload", "failed"],
+    ],
+  );
+});
+
+test("CLI upload logs a bounded closed failure before state reads without exposing private environment", async () => {
+  const lines = [],
+    original = console.error;
+  console.error = (line) => lines.push(line);
+  try {
+    await assert.rejects(
+      main(["upload"], {
+        CEF_ENGINEERING_TARGET: "SECRET=https://signed.invalid",
+      }),
+    );
+  } finally {
+    console.error = original;
+  }
+  assert.equal(lines.length, 2);
+  const records = lines.map((line) => JSON.parse(line));
+  assert.deepEqual(
+    records.map((row) => row.event),
+    ["begin", "failed"],
+  );
+  assert.doesNotMatch(JSON.stringify(records), /SECRET|signed|https:/);
+});
+
+test("upload diagnostics reserve a bounded final slot for a failure after a record flood", () => {
+  const records = [],
+    observe = createUploadObserver((row) => records.push(row));
+  for (let i = 0; i < 500; i++)
+    observe({ stage: "chunk-upload", event: "complete", errorCode: "NONE" });
+  assert.equal(records.length, 127);
+  observe({ stage: "seal-write", event: "failed", errorCode: "ENOSPC" });
+  assert.equal(records.length, 128);
+  assert.equal(records.at(-1).stage, "seal-write");
+  assert.equal(records.at(-1).errorCode, "ENOSPC");
+});
+
+test("observability preserves every existing API uploader and CLI policy assertion", async () => {
+  // AST signatures frozen from reviewed pre-observer concern05eb; requires no Git history in shallow CI.
+  const expected = {
+    apiClient:
+      "34e962b7da0e36b9afb729a450945ccbfe4f9981fb9a5a328b8ac5380f40b434",
+    uploadCheckpoint:
+      "f9040f0177001c7e11445f28df50649cbbdd208c1214f97e716c6d8241c0e6d3",
+    uploadSdkBundle:
+      "74b41d0214b40611d0fe4936458a07d3feadce5e56571f7daed056d46d87140f",
+    main: "877950163b8bf9fd175e59d687814ab10d3057945f912659caa0f9db97e8ea91",
+  };
+  const signature = (source, name) => {
+    const ast = ts.createSourceFile(
+      "source.mjs",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+    const fn = ast.statements.find(
+      (n) => ts.isFunctionDeclaration(n) && n.name?.text === name,
+    );
+    const rows = [];
+    const serialize = (node) => {
+      const kids = node
+        .getChildren(ast)
+        .filter((n) => n.kind !== ts.SyntaxKind.CommaToken);
+      return kids.length
+        ? [node.kind, ...kids.map(serialize)]
+        : [node.kind, node.getText(ast)];
+    };
+    const visit = (n) => {
+      if (
+        ts.isCallExpression(n) &&
+        ["assert", "fail"].includes(n.expression.getText(ast))
+      )
+        rows.push(n.arguments.map(serialize));
+      ts.forEachChild(n, visit);
+    };
+    visit(fn);
+    return sha(JSON.stringify(rows));
+  };
+  const helper = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const cli = await readFile(
+    new URL("../../scripts/cef-engineering-checkpoint.mjs", import.meta.url),
+    "utf8",
+  );
+  for (const name of ["apiClient", "uploadCheckpoint", "uploadSdkBundle"])
+    assert.equal(signature(helper, name), expected[name]);
+  assert.equal(signature(cli, "checkpointMain"), expected.main);
+});
+
+test("response diagnostic getters cannot replace the original API result or add guard reads", async () => {
+  const records = [];
+  let reads = 0;
+  const result = {
+    get status() {
+      throw Error("private status");
+    },
+    get ok() {
+      reads++;
+      return true;
+    },
+  };
+  const api = apiClient("owner/repo", "SECRET", async () => result, {
+    observer: createUploadObserver((row) => records.push(row)),
+  });
+  assert.equal(await api("", { raw: true }), result);
+  assert.equal(reads, 1);
+  assert.doesNotMatch(JSON.stringify(records), /private|SECRET/);
 });

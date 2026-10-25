@@ -43,6 +43,8 @@ import {
   afterGnPhase,
   checkpointPhase,
   checkpointLog,
+  createUploadObserver,
+  uploadPhase,
   checkpointCapacityRecord,
   normalizeSdkLinks,
   checkpointLinkRecipe,
@@ -200,6 +202,15 @@ async function codeDigest() {
   return codeTreeDigest(entries);
 }
 export async function main(argv = process.argv.slice(2), env = process.env) {
+  if (argv[0] !== "upload") return checkpointMain(argv, env);
+  const observer = createUploadObserver((record) =>
+    console.error(canonical(record)),
+  );
+  return uploadPhase(observer, "upload", () =>
+    checkpointMain(argv, env, observer),
+  );
+}
+async function checkpointMain(argv, env, observer) {
   const profile = checkpointProfile(env.CEF_ENGINEERING_TARGET),
     { inputs: INPUTS, target: TARGET, source: SOURCE_ID } = profile;
   const options = argumentsFor(argv),
@@ -614,41 +625,53 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       await appendFile(env.GITHUB_OUTPUT, "sdk_complete=false\n");
     return result;
   }
-  const saved = await json(state);
+  const saved = await uploadPhase(observer, "state-read", () => json(state));
   if (saved.kind === "sdk") {
-    validateSdkCompletion(saved.completion);
-    fail(
-      saved.completion.target === TARGET &&
-        saved.bundle ===
-          path.join(
-            temp,
-            "sorng-cef-engineering",
-            TARGET,
-            SOURCE_ID,
-            "bundle",
-          ) &&
-        canonical(saved.completion.producer) === canonical(producer),
-      "Foreign SDK state",
-    );
+    await uploadPhase(observer, "state-validation", async () => {
+      validateSdkCompletion(saved.completion);
+      fail(
+        saved.completion.target === TARGET &&
+          saved.bundle ===
+            path.join(
+              temp,
+              "sorng-cef-engineering",
+              TARGET,
+              SOURCE_ID,
+              "bundle",
+            ) &&
+          canonical(saved.completion.producer) === canonical(producer),
+        "Foreign SDK state",
+      );
+    });
     if (options.mode === "outcome")
       return {
         sdkComplete: true,
         nativeAcceptance: false,
         runtimeReady: false,
       };
-    await verifyBundle(saved.bundle, producer.repository);
+    await uploadPhase(observer, "bundle-validation", () =>
+      verifyBundle(saved.bundle, producer.repository),
+    );
     const seal = await uploadSdkBundle(
       apiClient(producer.repository, env.GH_TOKEN, fetch, {
         sdk: true,
         target: TARGET,
+        observer,
       }),
-      { bundle: saved.bundle, completion: saved.completion, producer },
+      {
+        bundle: saved.bundle,
+        completion: saved.completion,
+        producer,
+        observer,
+      },
     );
-    const sealRoot = path.join(temp, "cef-engineering-sdk-seal");
-    await mkdir(sealRoot);
-    const data = canonical(seal) + "\n";
-    fail(Buffer.byteLength(data) < LIMITS.seal, "SDK seal size bound");
-    await writeFile(path.join(sealRoot, "seal.json"), data, { flag: "wx" });
+    await uploadPhase(observer, "seal-write", async () => {
+      const sealRoot = path.join(temp, "cef-engineering-sdk-seal");
+      await mkdir(sealRoot);
+      const data = canonical(seal) + "\n";
+      fail(Buffer.byteLength(data) < LIMITS.seal, "SDK seal size bound");
+      await writeFile(path.join(sealRoot, "seal.json"), data, { flag: "wx" });
+    });
     return {
       sdkDraftUploaded: true,
       sealPending: true,
@@ -656,14 +679,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       runtimeReady: false,
     };
   }
-  fail(saved.kind === "checkpoint", "Unknown engineering state");
-  validateManifest(saved.manifest);
-  fail(
-    saved.manifest.identity.target === TARGET &&
-      saved.bundle === bundle &&
-      canonical(saved.manifest.producer) === canonical(producer),
-    "Foreign checkpoint state",
-  );
+  await uploadPhase(observer, "state-validation", async () => {
+    fail(saved.kind === "checkpoint", "Unknown engineering state");
+    validateManifest(saved.manifest);
+    fail(
+      saved.manifest.identity.target === TARGET &&
+        saved.bundle === bundle &&
+        canonical(saved.manifest.producer) === canonical(producer),
+      "Foreign checkpoint state",
+    );
+  });
   if (options.mode === "outcome") {
     fail(
       saved.manifest.compile.outcome !== "compiler-failed",
@@ -677,14 +702,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     };
   }
   const seal = await uploadCheckpoint(
-    apiClient(producer.repository, env.GH_TOKEN),
-    { bundle, manifest: saved.manifest, producer },
+    apiClient(producer.repository, env.GH_TOKEN, fetch, { observer }),
+    { bundle, manifest: saved.manifest, producer, observer },
   );
-  const sealRoot = path.join(temp, "cef-engineering-seal");
-  await mkdir(sealRoot);
-  const data = `${canonical(seal)}\n`;
-  fail(Buffer.byteLength(data) < LIMITS.seal, "Seal size bound");
-  await writeFile(path.join(sealRoot, "seal.json"), data, { flag: "wx" });
+  await uploadPhase(observer, "seal-write", async () => {
+    const sealRoot = path.join(temp, "cef-engineering-seal");
+    await mkdir(sealRoot);
+    const data = `${canonical(seal)}\n`;
+    fail(Buffer.byteLength(data) < LIMITS.seal, "Seal size bound");
+    await writeFile(path.join(sealRoot, "seal.json"), data, { flag: "wx" });
+  });
   // It is usable only AFTER the workflow uploads this independent small artifact.
   return {
     draftUploaded: true,
