@@ -179,7 +179,7 @@ jobs:
           set -euo pipefail
           npm run format
           npm run lint
-          npm run typecheck
+          NODE_OPTIONS="--max-old-space-size=8192" npm run typecheck
           npm run dev:launcher:test
           npm run test:coverage
 

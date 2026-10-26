@@ -1169,3 +1169,74 @@ test("workflow and package scripts enforce atomic generation and the CI parity g
     /candidate-sha256=.*>>.*(?:RUNNER_TEMP|GITHUB_WORKSPACE|\/tmp)/,
   );
 });
+
+test("updater grants only typecheck a finite8GiB heap without leaking it to later commands", async () => {
+  const workflow = await readFile(
+    new URL("../../.github/workflows/npm-update.yml", import.meta.url),
+    "utf8",
+  );
+  const quality = workflow.slice(
+    workflow.indexOf("      - name: Run frontend quality gates"),
+    workflow.indexOf("      - name: Build production frontend"),
+  );
+  const commands = quality
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => /(?:npm run|NODE_OPTIONS)/.test(s));
+  const assignment =
+    'NODE_OPTIONS="--max-old-space-size=8192" npm run typecheck';
+  assert.deepEqual(commands, [
+    "npm run format",
+    "npm run lint",
+    assignment,
+    "npm run dev:launcher:test",
+    "npm run test:coverage",
+  ]);
+  assert.doesNotMatch(
+    quality,
+    /\benv:/,
+    "no step-wide worker heap inheritance",
+  );
+  assert.equal(
+    (workflow.match(/NODE_OPTIONS/g) ?? []).length,
+    2,
+    "only typecheck command and existing production build setting",
+  );
+  assert.match(workflow, /NODE_OPTIONS: "--max-old-space-size=4096"/);
+  const match = commands[2].match(
+    /^NODE_OPTIONS="(--max-old-space-size=8192)" npm run typecheck$/,
+  );
+  assert.ok(match);
+  const originalOptions = process.env.NODE_OPTIONS;
+  const heap = (env, flags = []) => {
+    const child = spawnSync(
+      process.execPath,
+      [
+        ...flags,
+        "--input-type=module",
+        "-e",
+        'import v8 from "node:v8"; process.stdout.write(String(v8.getHeapStatistics().heap_size_limit));',
+      ],
+      { env, encoding: "utf8", timeout: 10000, maxBuffer: 1024 },
+    );
+    assert.equal(child.status, 0, child.stderr);
+    const bytes = Number(child.stdout);
+    assert.ok(Number.isSafeInteger(bytes) && bytes > 0);
+    return bytes;
+  };
+  const before = heap(process.env);
+  const typecheckHeap = heap({ ...process.env, NODE_OPTIONS: match[1] });
+  const explicitFlagHeap = heap(process.env, ["--max-old-space-size=8192"]);
+  assert.equal(
+    typecheckHeap,
+    explicitFlagHeap,
+    "extracted environment setting equals actual explicit Node flag",
+  );
+  // V8's total includes its young generation in addition to the oldspace cap.
+  assert.ok(
+    typecheckHeap >= 8192 * 1024 ** 2 && typecheckHeap <= 8704 * 1024 ** 2,
+  );
+  const followingCommandHeap = heap(process.env);
+  assert.equal(followingCommandHeap, before);
+  assert.equal(process.env.NODE_OPTIONS, originalOptions);
+});
