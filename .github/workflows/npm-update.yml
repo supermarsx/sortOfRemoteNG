@@ -192,7 +192,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm run build
+          NODE_OPTIONS="--max-old-space-size=8192" npm run build
           npm run build:cold:check
 
       - name: Enforce the exact weekly file boundary

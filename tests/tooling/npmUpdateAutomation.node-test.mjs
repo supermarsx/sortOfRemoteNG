@@ -1170,7 +1170,7 @@ test("workflow and package scripts enforce atomic generation and the CI parity g
   );
 });
 
-test("updater grants only typecheck a finite8GiB heap without leaking it to later commands", async () => {
+test("updater scopes finite8GiB heaps to typecheck and build without leaking into later commands", async () => {
   const workflow = await readFile(
     new URL("../../.github/workflows/npm-update.yml", import.meta.url),
     "utf8",
@@ -1199,14 +1199,32 @@ test("updater grants only typecheck a finite8GiB heap without leaking it to late
   );
   assert.equal(
     (workflow.match(/NODE_OPTIONS/g) ?? []).length,
-    2,
-    "only typecheck command and existing production build setting",
+    3,
+    "only typecheck/build commands and existing production build step default",
   );
   assert.match(workflow, /NODE_OPTIONS: "--max-old-space-size=4096"/);
   const match = commands[2].match(
     /^NODE_OPTIONS="(--max-old-space-size=8192)" npm run typecheck$/,
   );
   assert.ok(match);
+  const build = workflow.slice(
+    workflow.indexOf("      - name: Build production frontend"),
+    workflow.indexOf("      - name: Enforce the exact weekly file boundary"),
+  );
+  const buildCommands = build
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => /npm run/.test(s));
+  assert.deepEqual(buildCommands, [
+    'NODE_OPTIONS="--max-old-space-size=8192" npm run build',
+    "npm run build:cold:check",
+  ]);
+  const buildDefault = build.match(/NODE_OPTIONS: "([^"]+)"/);
+  assert.equal(buildDefault?.[1], "--max-old-space-size=4096");
+  const buildAssignment = buildCommands[0].match(
+    /^NODE_OPTIONS="([^"]+)" npm run build$/,
+  );
+  assert.equal(buildAssignment?.[1], "--max-old-space-size=8192");
   const originalOptions = process.env.NODE_OPTIONS;
   const heap = (env, flags = []) => {
     const child = spawnSync(
@@ -1238,5 +1256,22 @@ test("updater grants only typecheck a finite8GiB heap without leaking it to late
   );
   const followingCommandHeap = heap(process.env);
   assert.equal(followingCommandHeap, before);
+  const buildEnvironment = { ...process.env, NODE_OPTIONS: buildDefault[1] };
+  const buildBefore = heap(buildEnvironment);
+  const actualBuild = heap({
+    ...buildEnvironment,
+    NODE_OPTIONS: buildAssignment[1],
+  });
+  assert.equal(
+    actualBuild,
+    explicitFlagHeap,
+    "command setting reaches actual V8 limit",
+  );
+  assert.equal(
+    heap(buildEnvironment),
+    buildBefore,
+    "cold check retains original step heap",
+  );
+  assert.equal(buildEnvironment.NODE_OPTIONS, "--max-old-space-size=4096");
   assert.equal(process.env.NODE_OPTIONS, originalOptions);
 });
