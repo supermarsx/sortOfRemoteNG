@@ -201,7 +201,10 @@ test("carrier retains only closed metadata and original one-Job truth, no vendor
   );
 });
 test("real Git checkout-only fixed environment changes old CRLF to exact canonical LF", async () => {
-  const temp = await mkdtemp(path.join(os.tmpdir(), "runtime-closure-lf-"));
+  const canonicalTempParent = await realpath(os.tmpdir());
+  const temp = await mkdtemp(
+    path.join(canonicalTempParent, "runtime-closure-lf-"),
+  );
   const source = path.join(temp, "source"),
     old = path.join(temp, "old"),
     fresh = path.join(temp, "fresh");
