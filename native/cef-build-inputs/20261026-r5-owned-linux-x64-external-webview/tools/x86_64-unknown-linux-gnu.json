@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-toolchain-lock",
+  "target": "x86_64-unknown-linux-gnu",
+  "files": [
+    {
+      "path": "usr/bin/python3.12",
+      "size": 8020928,
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    {
+      "path": "usr/bin/x86_64-linux-gnu-ld.bfd",
+      "size": 1359128,
+      "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b"
+    },
+    {
+      "path": "usr/bin/pkgconf",
+      "size": 45168,
+      "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b"
+    },
+    {
+      "path": "usr/include/stdio.h",
+      "size": 34649,
+      "sha256": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62"
+    },
+    {
+      "path": "usr/bin/git",
+      "size": 4066232,
+      "sha256": "eb54b535467e0975c1284d4c4d08eea779aeb248a5d34b02e2ee171382e22201"
+    },
+    {
+      "path": "usr/bin/gperf",
+      "size": 100680,
+      "sha256": "32bb03d8f3d79434c0ac001ad8c530c405c6aef763d4aeb4033c7e21131bc6ca"
+    },
+    {
+      "path": "usr/local/bin/node",
+      "size": 125989464,
+      "sha256": "bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12"
+    },
+    {
+      "path": "usr/local/bin/siso",
+      "size": 63728201,
+      "sha256": "c74fe8203cfef3222592aea4292809d13ec645d39e9763b416c542d304837c4f"
+    },
+    {
+      "path": "cef-ci-runner-x86_64-unknown-linux-gnu.json",
+      "size": 240,
+      "sha256": "631c9eb212c434ee2f72acab28d1b7c08f56d27100f21f30dc359e136490ee0c"
+    },
+    {
+      "path": "owned-image.json",
+      "size": 1869,
+      "sha256": "c3401f0c55aeb53520933755b946e7e23e671c19c403ab75b632f936885883cb"
+    }
+  ]
+}

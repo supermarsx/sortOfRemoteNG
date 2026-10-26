@@ -37,6 +37,7 @@ const origins = {
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-isolated-incremental-engine": "x86_64-unknown-linux-gnu",
+  "owned-linux-external-webview-engine": "x86_64-unknown-linux-gnu",
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
@@ -44,9 +45,17 @@ const origins = {
 };
 export const LINUX_INCREMENTAL_ORIGIN = "owned-linux-incremental-engine";
 export const LINUX_ISOLATED_ORIGIN = "owned-linux-isolated-incremental-engine";
+export const LINUX_EXTERNAL_WEBVIEW_ORIGIN =
+  "owned-linux-external-webview-engine";
+export const isLinuxIsolatedOrigin = (origin) =>
+  [LINUX_ISOLATED_ORIGIN, LINUX_EXTERNAL_WEBVIEW_ORIGIN].includes(origin);
 export const LINUX_ISOLATED_OPERATION_ROOT = "/sorng-r5-generation-operation";
 export const isLinuxIncrementalOrigin = (origin) =>
-  [LINUX_INCREMENTAL_ORIGIN, LINUX_ISOLATED_ORIGIN].includes(origin);
+  [
+    LINUX_INCREMENTAL_ORIGIN,
+    LINUX_ISOLATED_ORIGIN,
+    LINUX_EXTERNAL_WEBVIEW_ORIGIN,
+  ].includes(origin);
 export const LINUX_INCREMENTAL_IDENTITY =
   "9d0bc5722d719eff8a20d39ef06fb6f222b239ea44d78dd42e7c40a2f42def2e";
 export const LINUX_ISOLATED_INPUT_RAW =
@@ -1000,6 +1009,50 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     },
   ],
 });
+// New source24 lineage. Historical source23 constants and maps remain immutable.
+export const LINUX_EXTERNAL_WEBVIEW_IDENTITY =
+  "06af4be123f88bd4b9d132a282e1af7c4f8728d9611b30e074dd05182bbf3540";
+export const LINUX_EXTERNAL_WEBVIEW_INPUT_RAW =
+  "7afb734c6c8a68ea19f815ce83933bc1d257b122e324becd4dd8e092d53ee5cb";
+export const LINUX_EXTERNAL_WEBVIEW_PATCH =
+  "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce";
+export const LINUX_EXTERNAL_WEBVIEW_TRANSITION = Object.freeze({
+  before: LINUX_ISOLATED_TRANSITION.before,
+  after: Object.freeze(
+    LINUX_ISOLATED_TRANSITION.after.map((row) =>
+      Object.freeze(
+        row.path === "cef/libcef/browser/native/native_widget_delegate.cc"
+          ? {
+              ...row,
+              size: 4611,
+              sha256:
+                "e5db16db4df70cc697595cd991e74479989f5e2870760762db79da9373a602b4",
+            }
+          : { ...row },
+      ),
+    ),
+  ),
+});
+function linuxIsolatedPolicy(origin) {
+  if (origin === LINUX_EXTERNAL_WEBVIEW_ORIGIN)
+    return {
+      identity: LINUX_EXTERNAL_WEBVIEW_IDENTITY,
+      raw: LINUX_EXTERNAL_WEBVIEW_INPUT_RAW,
+      transition: LINUX_EXTERNAL_WEBVIEW_TRANSITION,
+      patchCount: 24,
+      patch: LINUX_EXTERNAL_WEBVIEW_PATCH,
+    };
+  if (origin === LINUX_ISOLATED_ORIGIN)
+    return {
+      identity: LINUX_ISOLATED_IDENTITY,
+      raw: LINUX_ISOLATED_INPUT_RAW,
+      transition: LINUX_ISOLATED_TRANSITION,
+      patchCount: 23,
+      patch: linuxPatch,
+    };
+  fail("Closed isolated Linux source policy required");
+}
+
 for (const rows of Object.values(LINUX_ISOLATED_TRANSITION)) {
   rows.forEach(Object.freeze);
   Object.freeze(rows);
@@ -1375,7 +1428,7 @@ const capsuleTextRoles = new Set([
   "nativeSandboxList",
 ]);
 export function ownedEvidenceLimit(origin, role) {
-  if (origin === LINUX_ISOLATED_ORIGIN)
+  if (isLinuxIsolatedOrigin(origin))
     return role === "copyManifest"
       ? LINUX_ISOLATED_LIMITS.copyManifestBytes
       : role === "generation"
@@ -1427,7 +1480,7 @@ export const WINDOWS_INCREMENTAL_PROVENANCE = Object.freeze([
   "pristineSourceBuild",
 ]);
 const evidenceNames = (origin) =>
-  origin === LINUX_ISOLATED_ORIGIN
+  isLinuxIsolatedOrigin(origin)
     ? LINUX_ISOLATED_EVIDENCE
     : origin === LINUX_INCREMENTAL_ORIGIN
       ? LINUX_INCREMENTAL_EVIDENCE
@@ -1504,11 +1557,11 @@ export function ownedSdkHandoffPlan(review) {
   if (
     isLinuxIncrementalOrigin(review.origin) &&
     (review.sourceLockIdentity !==
-      (review.origin === LINUX_ISOLATED_ORIGIN
-        ? LINUX_ISOLATED_IDENTITY
+      (isLinuxIsolatedOrigin(review.origin)
+        ? linuxIsolatedPolicy(review.origin).identity
         : LINUX_INCREMENTAL_IDENTITY) ||
       Object.values(review.evidence).reduce((n, p) => n + p.size, 0) >
-        (review.origin === LINUX_ISOLATED_ORIGIN
+        (isLinuxIsolatedOrigin(review.origin)
           ? LINUX_ISOLATED_LIMITS.totalEvidenceBytes
           : 80 * 1024 ** 2))
   )
@@ -1564,7 +1617,7 @@ export function verifyOwnedHandoffEvidence(review, records, sourceLock) {
       review,
       records,
       sourceLock,
-      review.origin === LINUX_ISOLATED_ORIGIN,
+      isLinuxIsolatedOrigin(review.origin),
     );
   if (isWindowsCapsuleOrigin(review.origin))
     return verifyWindowsCapsuleEvidence(review, records, sourceLock);
@@ -2040,11 +2093,12 @@ function validateLinuxProvenance(p, review, isolated) {
     if (!ok) fail("Portable Linux incremental provenance mismatch");
   };
   require(
-    p.origin ===
-      (isolated ? LINUX_ISOLATED_ORIGIN : LINUX_INCREMENTAL_ORIGIN) &&
+    p.origin === (isolated ? review.origin : LINUX_INCREMENTAL_ORIGIN) &&
       review.origin === p.origin &&
       review.sourceLockIdentity ===
-        (isolated ? LINUX_ISOLATED_IDENTITY : LINUX_INCREMENTAL_IDENTITY) &&
+        (isolated
+          ? linuxIsolatedPolicy(review.origin).identity
+          : LINUX_INCREMENTAL_IDENTITY) &&
       review.target === "x86_64-unknown-linux-gnu" &&
       p.sourceLockIdentity === review.sourceLockIdentity &&
       p.predecessorSourceLockIdentity === LINUX_PREDECESSOR_IDENTITY &&
@@ -2055,7 +2109,7 @@ function validateLinuxProvenance(p, review, isolated) {
       p.engineSha256 !== p.baselineEngineSha256 &&
       p.image === linuxImage &&
       p.originalInputsSourceLockRawSha256 ===
-        (isolated ? LINUX_ISOLATED_INPUT_RAW : linuxInputRaw) &&
+        (isolated ? linuxIsolatedPolicy(review.origin).raw : linuxInputRaw) &&
       p.originalInputsSourceLockRawSha256 ===
         review.originalInputsSourceLockRawSha256 &&
       p.toolchainLockSha256 === LINUX_INCREMENTAL_TOOLCHAIN_SHA &&
@@ -2138,7 +2192,7 @@ function verifyLinuxIncrementalEvidence(
   isolated = false,
 ) {
   const expectedIdentity = isolated
-    ? LINUX_ISOLATED_IDENTITY
+    ? linuxIsolatedPolicy(review.origin).identity
     : LINUX_INCREMENTAL_IDENTITY;
   const require = (ok) => {
       if (!ok) fail("Original Linux incremental evidence mismatch");
@@ -2285,8 +2339,12 @@ function verifyLinuxIncrementalEvidence(
     identitySha256(lock) === expectedIdentity &&
       build &&
       oldBuild &&
-      lock.patches.length === oldLock.patches.length + (isolated ? 11 : 1) &&
-      lock.patches.at(-1).sha256 === linuxPatch,
+      lock.patches.length ===
+        (isolated
+          ? linuxIsolatedPolicy(review.origin).patchCount
+          : oldLock.patches.length + 1) &&
+      lock.patches.at(-1).sha256 ===
+        (isolated ? linuxIsolatedPolicy(review.origin).patch : linuxPatch),
   );
   const projected = structuredClone(lock);
   if (isolated) {
@@ -2345,8 +2403,8 @@ function verifyLinuxIncrementalEvidence(
     same(
       r.sourceBefore.map((x) => x.path),
       isolated
-        ? LINUX_ISOLATED_TRANSITION.before
-            .filter((x) => x.kind === "file")
+        ? linuxIsolatedPolicy(review.origin)
+            .transition.before.filter((x) => x.kind === "file")
             .map((x) => x.path)
         : LINUX_INCREMENTAL_SOURCE_PATHS,
     ),
@@ -2417,8 +2475,8 @@ function verifyLinuxIncrementalEvidence(
   if (isolated) {
     require(
       same(a.patches, lock.patches.slice(12)) &&
-        same(a.before, LINUX_ISOLATED_TRANSITION.before) &&
-        same(a.after, LINUX_ISOLATED_TRANSITION.after) &&
+        same(a.before, linuxIsolatedPolicy(review.origin).transition.before) &&
+        same(a.after, linuxIsolatedPolicy(review.origin).transition.after) &&
         a.onlyReviewedPatchesApplied === true,
     );
     const present = (rows) =>
@@ -2623,7 +2681,7 @@ function verifyLinuxIncrementalEvidence(
   require(
     pack.descriptorSha256 === review.descriptorSha256 &&
       pack.originalInputsSourceLockRawSha256 ===
-        (isolated ? LINUX_ISOLATED_INPUT_RAW : linuxInputRaw) &&
+        (isolated ? linuxIsolatedPolicy(review.origin).raw : linuxInputRaw) &&
       pack.sourceLockIdentity === expectedIdentity &&
       positive(pack.beginWallMs) &&
       positive(pack.endWallMs) &&
@@ -2725,7 +2783,7 @@ function verifyLinuxIncrementalEvidence(
     engineSha256: post.engine.sha256,
     image: linuxImage,
     originalInputsSourceLockRawSha256: isolated
-      ? LINUX_ISOLATED_INPUT_RAW
+      ? linuxIsolatedPolicy(review.origin).raw
       : linuxInputRaw,
     toolchainLockSha256: build.toolchainLock.sha256,
     actualToolFilesVerified: 8,
@@ -2761,7 +2819,13 @@ export function linuxIsolatedInitCode(operation) {
   return `import os,json,stat\noperation=${JSON.stringify(operation)}\nvolume=${JSON.stringify(volume)}\nassert os.getuid()==0 and os.path.realpath('/owned')=='/owned'\nfd=os.open('/owned',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)\ntry:\n assert os.listdir(fd)==[]\n rows=[]\n for name in ('base','net','network','cef','out','operation'):\n  os.mkdir(name,0o700,dir_fd=fd)\n  os.chown(name,10001,10001,dir_fd=fd,follow_symlinks=False)\n  info=os.stat(name,dir_fd=fd,follow_symlinks=False)\n  assert stat.S_ISDIR(info.st_mode) and info.st_uid==info.st_gid==10001 and stat.S_IMODE(info.st_mode)==448\n  rows.append(dict(name=name,dev=str(info.st_dev),ino=str(info.st_ino),uid=info.st_uid,gid=info.st_gid,mode=stat.S_IMODE(info.st_mode)))\n print(json.dumps(dict(operation=operation,volume=volume,directories=rows),sort_keys=True))\nfinally:os.close(fd)\n`;
 }
 
-function verifyIsolatedGenerationPayload(packet, metadata, raw, readiness) {
+function verifyIsolatedGenerationPayload(
+  packet,
+  metadata,
+  raw,
+  readiness,
+  transition,
+) {
   const require = (x) => {
       if (!x) fail("Isolated generation raw comparison mismatch");
     },
@@ -2982,7 +3046,7 @@ function verifyIsolatedGenerationPayload(packet, metadata, raw, readiness) {
     );
     const expected = new Map(base);
     if (index)
-      for (const row of LINUX_ISOLATED_TRANSITION.after.filter((x) =>
+      for (const row of transition.after.filter((x) =>
         x.path.startsWith("cef/"),
       )) {
         const memberPath = row.path.slice(4),
@@ -3495,8 +3559,10 @@ function verifyLinuxIsolatedFacts({
           : null;
   let changed = 0,
     absent = 0;
-  for (const [i, before] of LINUX_ISOLATED_TRANSITION.before.entries()) {
-    const after = LINUX_ISOLATED_TRANSITION.after[i],
+  for (const [i, before] of linuxIsolatedPolicy(
+    review.origin,
+  ).transition.before.entries()) {
+    const after = linuxIsolatedPolicy(review.origin).transition.after[i],
       selected = copiedRoot(before.path);
     if (!same(before, after)) {
       changed++;
@@ -3521,7 +3587,10 @@ function verifyLinuxIsolatedFacts({
       }
     }
   }
-  require(changed === 32 && absent === 9);
+  require(
+    changed === (review.origin === LINUX_EXTERNAL_WEBVIEW_ORIGIN ? 33 : 32) &&
+      absent === 9,
+  );
   require(
     w.workBudgetMs === 7800000 &&
       w.cleanupBudgetMs === 30000 &&
@@ -3726,7 +3795,8 @@ function verifyLinuxIsolatedFacts({
     packet.kind === "sorng-linux-isolated-generation-reproduction" &&
       packet.operation === operation &&
       packet.controllerCommit === controllerCommit &&
-      packet.sourceLockIdentity === LINUX_ISOLATED_IDENTITY &&
+      packet.sourceLockIdentity ===
+        linuxIsolatedPolicy(review.origin).identity &&
       packet.status === "reproduced" &&
       packet.phase === "complete" &&
       packet.failure === null &&
@@ -3823,7 +3893,13 @@ function verifyLinuxIsolatedFacts({
       packet.actions[2].path === "cef_api_versions.inc" &&
       packet.actions[2].equal === true,
   );
-  verifyIsolatedGenerationPayload(packet, g.metadata, raw, facts.readiness);
+  verifyIsolatedGenerationPayload(
+    packet,
+    g.metadata,
+    raw,
+    facts.readiness,
+    linuxIsolatedPolicy(review.origin).transition,
+  );
   // CEF is reconstructed into its own tree, not mislabeled as a byte copy.
   const cef = w.cefProjection;
   shape(cef, [
@@ -5397,9 +5473,9 @@ async function sourceInputs(inputs, identity, target, origin) {
   if (
     identitySha256(lock) !== identity ||
     lock.bridge.abiVersion !== 2 ||
-    (origin === LINUX_ISOLATED_ORIGIN
+    (isLinuxIsolatedOrigin(origin)
       ? target !== "x86_64-unknown-linux-gnu" ||
-        identity !== LINUX_ISOLATED_IDENTITY ||
+        identity !== linuxIsolatedPolicy(origin).identity ||
         lock.bridge.patchId !== HTTP3_BRIDGE_PATCH_ID ||
         lock.bridge.capabilities.length !== 9
       : [
@@ -5462,13 +5538,14 @@ export async function checkOwnedSdkHandoff({
         WINDOWS_OPERATION2_ORIGIN,
         LINUX_INCREMENTAL_ORIGIN,
         LINUX_ISOLATED_ORIGIN,
+        LINUX_EXTERNAL_WEBVIEW_ORIGIN,
       ].includes(review.origin) &&
       !Buffer.from(bytes.toString("utf8")).equals(bytes)
     )
       fail("Bounded UTF8 original metadata required");
     if (
       (isLinuxIncrementalOrigin(review.origin) && name === "compileOutput") ||
-      (review.origin === LINUX_ISOLATED_ORIGIN && name === "gnOutput") ||
+      (isLinuxIsolatedOrigin(review.origin) && name === "gnOutput") ||
       (review.origin === "owned-windows-incremental-engine" &&
         ["nativeOutput", "engineOutput"].includes(name)) ||
       (isWindowsCapsuleOrigin(review.origin) &&
@@ -5482,6 +5559,7 @@ export async function checkOwnedSdkHandoff({
             WINDOWS_OPERATION2_ORIGIN,
             LINUX_INCREMENTAL_ORIGIN,
             LINUX_ISOLATED_ORIGIN,
+            LINUX_EXTERNAL_WEBVIEW_ORIGIN,
           ].includes(review.origin)
             ? ownedEvidenceLimit(review.origin, name)
             : isWindowsCapsuleOrigin(review.origin) && name === "engineOutput"
