@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-arm-runtime-closure-passive",
+  "runner": "windows-2025-vs2026",
+  "image": "20261021.278.1",
+  "host": "x86_64-pc-windows-msvc",
+  "target": "aarch64-pc-windows-msvc",
+  "buildAdmission": false,
+  "python": {
+    "path": "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+    "bytes": 104952,
+    "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+  },
+  "sourcePaths": [
+    ".github/workflows/windows-x64-arm-toolchain.yml",
+    "native/windows-arm-runtime-closure/profile.json",
+    "native/windows-arm-runtime-closure/observe.py",
+    "native/windows-arm-runtime-closure/job.py",
+    "native/windows-arm-runtime-closure/test_observe.py",
+    "tests/tooling/windowsArmRuntimeClosure.node-test.mjs"
+  ],
+  "vsRoot": "C:/Program Files/Microsoft Visual Studio/18/Enterprise",
+  "sdkRoot": "C:/Program Files (x86)/Windows Kits/10",
+  "redistRoot": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC",
+  "roles": [
+    {
+      "role": "crt-x64-msvcp140.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/x64/Microsoft.VC145.CRT/msvcp140.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-x64-msvcp140_atomic_wait.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/x64/Microsoft.VC145.CRT/msvcp140_atomic_wait.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-x64-vccorlib140.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/x64/Microsoft.VC145.CRT/vccorlib140.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-x64-vcruntime140.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/x64/Microsoft.VC145.CRT/vcruntime140.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-x64-vcruntime140_1.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/x64/Microsoft.VC145.CRT/vcruntime140_1.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "dia-x64",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/DIA SDK/bin/amd64/msdia140.dll",
+      "requiredByPinnedReleaseCopy": "conditional exists in routine; SDK28000 dbghelp dependency makes absence a closure gap",
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only"
+    },
+    {
+      "role": "debugger-x64-dbghelp.dll",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/x64/dbghelp.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; versionless SDK Debuggers path does not prove SDK28000"
+    },
+    {
+      "role": "debugger-x64-dbgcore.dll",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/x64/dbgcore.dll",
+      "requiredByPinnedReleaseCopy": false,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; versionless SDK Debuggers path does not prove SDK28000"
+    },
+    {
+      "role": "debugger-x64-symsrv.dll",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/x64/symsrv.dll",
+      "requiredByPinnedReleaseCopy": false,
+      "expectedArchitecture": "x64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; versionless SDK Debuggers path does not prove SDK28000"
+    },
+    {
+      "role": "crt-arm64-msvcp140.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/arm64/Microsoft.VC145.CRT/msvcp140.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-arm64-msvcp140_atomic_wait.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/arm64/Microsoft.VC145.CRT/msvcp140_atomic_wait.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-arm64-vccorlib140.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/arm64/Microsoft.VC145.CRT/vccorlib140.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "crt-arm64-vcruntime140.dll",
+      "pathTemplate": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Redist/MSVC/{observedVersion}/arm64/Microsoft.VC145.CRT/vcruntime140.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; no execution or copying"
+    },
+    {
+      "role": "dia-arm64",
+      "path": "C:/Program Files/Microsoft Visual Studio/18/Enterprise/DIA SDK/bin/arm64/msdia140.dll",
+      "requiredByPinnedReleaseCopy": "conditional exists in routine; SDK28000 dbghelp dependency makes absence a closure gap",
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only"
+    },
+    {
+      "role": "debugger-arm64-dbghelp.dll",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/arm64/dbghelp.dll",
+      "requiredByPinnedReleaseCopy": true,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; versionless SDK Debuggers path does not prove SDK28000"
+    },
+    {
+      "role": "debugger-arm64-dbgcore.dll",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/arm64/dbgcore.dll",
+      "requiredByPinnedReleaseCopy": false,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; versionless SDK Debuggers path does not prove SDK28000"
+    },
+    {
+      "role": "debugger-arm64-symsrv.dll",
+      "path": "C:/Program Files (x86)/Windows Kits/10/Debuggers/arm64/symsrv.dll",
+      "requiredByPinnedReleaseCopy": false,
+      "expectedArchitecture": "arm64",
+      "expectedBytes": null,
+      "expectedSha256": null,
+      "admission": "observe-only; versionless SDK Debuggers path does not prove SDK28000"
+    }
+  ],
+  "limits": {
+    "wallSeconds": 120,
+    "monotonicSeconds": 120,
+    "cleanupSeconds": 30,
+    "perFileBytes": 33554432,
+    "totalFileBytes": 134217728,
+    "fileCount": 64,
+    "reportBytes": 262144,
+    "chunkBytes": 65536,
+    "reparseOrSymlinkAllowed": false,
+    "hardlinks": "record nlink and deny content if !=1; never waive",
+    "importsPerFile": 256,
+    "importNameBytes": 128,
+    "resourceVersionBytes": 1048576
+  },
+  "noVendorExecution": true
+}
