@@ -390,7 +390,7 @@ async fn tactical_popup_rejects_wrong_profile_capability_metadata_and_unselected
     for path in [
         format!("/control?{MARKER}=2"),
         format!("/control?{MARKER}=1&{MARKER}=1"),
-        format!("/control?%5f%5fsorng_popup_parent_v1=1"),
+        "/control?%5f%5fsorng_popup_parent_v1=1".to_string(),
         format!("/control?{MARKER}=%31"),
         format!("/control?{MARKER}=01"),
         format!("/control?{MARKER}=0"),

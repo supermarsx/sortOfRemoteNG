@@ -434,7 +434,7 @@ fn partial_reply(stage: Stage) -> &'static [u8] {
         Stage::Method => &[5],
         Stage::Auth => &[1],
         Stage::Connect => &[5, 0],
-        Stage::Address => &[b'x'],
+        Stage::Address => b"x",
     }
 }
 
