@@ -574,6 +574,55 @@ class FullInputTests(unittest.TestCase):
         self.assertEqual(result['headers'],4);self.assertEqual(len(result['files']),2)
         self.assertFalse(result['executed']);self.assertFalse(result['targetStdProven'])
 
+    def test_rust_observed_plus_and_long_effective_paths_reach_owned_directory_and_file_writes(self):
+        # First authentic failure from the retained14bc archive, not a length failure.
+        observed='lib/rustlib/src/rust/library/vendor/wasip2-1.0.4+wasi-0.2.12'
+        self.assertEqual(len(observed),60)
+        observed_at='lib/rustlib/src/rust/library/vendor/wit-bindgen-0.57.1/wasi-cli@0.2.0.wasm'
+        self.assertEqual(len(observed_at),74)
+        long=observed+'/'+'segment/'*12+'member.rs'
+        self.assertTrue(160 < len(long) <= 240)
+        with self.assertRaisesRegex(acquire.Denied,'ACQ_MEMBER_PATH'):acquire.member_name(observed)
+        for name in (observed,observed_at,long):self.assertEqual(material.rust_member_name(name),name)
+        root=self.temp()
+        file,spec=self.tar(root,[(observed,b'',tarfile.DIRTYPE),
+            ('PaxHeader',self.pax(path=long,mtime='12.34'),tarfile.XHDTYPE),
+            (long[:100],b'actual owned write',tarfile.REGTYPE),
+            (observed_at,b'passive wasm bytes, never executed',tarfile.REGTYPE)])
+        result=material.rust_archive(file,root/'out',spec,clock())
+        self.assertEqual((root/'out'/long).read_bytes(),b'actual owned write')
+        self.assertEqual([r['path']for r in result['files']],[observed,long,observed_at])
+        self.assertEqual((root/'out'/observed_at).read_bytes(),b'passive wasm bytes, never executed')
+        self.assertEqual(result['files'][1]['sha256'],hashlib.sha256(b'actual owned write').hexdigest())
+        self.assertEqual(result['files'][1]['rawHeaderName'],long[:100])
+
+    def test_rust_path_adapter_retains_windows_restrictions_and_240_bound_without_normalizing(self):
+        for name in ('CON','x/NUL.rs','aux+ok/COM1.txt','aux@ok/COM1.txt','x/LPT9','x.','x ',
+                     '/abs','C:/drive','//server/share','../x','x/../y','x/./y',
+                     'x//y','x\\y','x\\..\\y','x:stream','x\0y','caf\u00e9','x?y','x'*241):
+            with self.subTest(name=name),self.assertRaises(acquire.Denied):material.rust_member_name(name)
+        self.assertEqual(material.rust_member_name('a'*240),'a'*240)
+        for names in [('pkg+one','pkg+one'),('Pkg+one','pkg+one'),('pkg+one','pkg+one/member')]:
+            root=self.temp();file,spec=self.tar(root,[(n,b'body',tarfile.REGTYPE)for n in names])
+            with self.subTest(names=names),self.assertRaises(acquire.Denied):material.rust_archive(file,root/'out',spec,clock())
+        root=self.temp();file,spec=self.tar(root,[('pkg+one',b'body',tarfile.REGTYPE)])
+        for key,value in [('member',1),('expanded',1),('headers',0)]:
+            limits=dict(material.CAPS);limits[key]=value
+            with self.subTest(cap=key),self.assertRaises(acquire.Denied):material.rust_archive(file,root/('out-'+key),spec,clock(),limits)
+
+    def test_rust_adapter_does_not_admit_plus_or_long_names_to_sdk_cipd_or_runtime(self):
+        root=self.temp();output=root/'out';output.mkdir()
+        for name in ('pkg+one','pkg@one','a'*161):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(acquire.Denied,'ACQ_MEMBER_PATH'):acquire.member_name(name)
+                with self.assertRaisesRegex(acquire.Denied,'ACQ_MEMBER_PATH'):material.owned_destination(output,name,True,clock())
+                with self.assertRaisesRegex(acquire.Denied,'ACQ_MEMBER_PATH'):material.write_member(output,name,io.BytesIO(b'x'),1,clock())
+        for name in ('pkg+one','pkg@one'):
+            archive=self.archive(self.temp(),[(name,b'not executed')])
+            with self.assertRaisesRegex(acquire.Denied,'ACQ_MEMBER_PATH'):acquire.cipd_zip_inventory(archive,PROFILE,clock())
+            fixture,output,p=self.runtime_fixture();p['runtime17']['rows'][0]['destination']='runtime/x64/'+name+'.dll'
+            with self.assertRaisesRegex(acquire.Denied,'ACQ_MEMBER_PATH'):material.runtime_projection(output,p,clock())
+
     def test_full_extraction_denies_true_duplicates_case_topology_links_and_unsafe_names(self):
         cases=[ [('x',b'a',tarfile.REGTYPE),('x',b'b',tarfile.REGTYPE)],
                 [('X',b'a',tarfile.REGTYPE),('x',b'b',tarfile.REGTYPE)],

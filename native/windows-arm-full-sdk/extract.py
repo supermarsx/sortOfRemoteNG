@@ -40,8 +40,21 @@ def unchanged_archive(path, spec, clock, maximum):
     held(path,clock,spec['bytes'],spec['sha256'],maximum=maximum)
 
 
-def owned_destination(root, name, directory, clock):
-    clock.remaining();root=plain(root);name=data.member_name(name)
+def rust_member_name(name):
+    """Rust package paths only; retain the SDK Windows component restrictions."""
+    need(type(name) is str and 0 < len(name) <= 240 and name.isascii(), 'FULL_RUST_MEMBER_PATH')
+    need(re.fullmatch(r'[A-Za-z0-9_ ./+@\-]+', name) is not None, 'FULL_RUST_MEMBER_PATH')
+    parts = name.split('/')
+    need(all(p and p not in ('.', '..') and not p.endswith(('.', ' ')) for p in parts), 'FULL_RUST_MEMBER_PATH')
+    for part in parts:
+        stem = part.split('.')[0].casefold()
+        need(stem not in {'con', 'prn', 'aux', 'nul'} and
+             not re.fullmatch(r'(?:com|lpt)[1-9]', stem), 'FULL_RUST_MEMBER_PATH')
+    return name
+
+
+def owned_destination(root, name, directory, clock, *, rust=False):
+    clock.remaining();root=plain(root);name=rust_member_name(name) if rust else data.member_name(name)
     parts=name.split('/');current=root
     for part in parts if directory else parts[:-1]:
         current=current/part
@@ -53,8 +66,8 @@ def owned_destination(root, name, directory, clock):
     return target
 
 
-def write_member(root,name,reader,size,clock,expected_sha=None):
-    target=owned_destination(root,name,False,clock);parent=target.parent
+def write_member(root,name,reader,size,clock,expected_sha=None, *, rust=False):
+    target=owned_destination(root,name,False,clock,rust=rust);parent=target.parent
     before=directory_identity(signature(parent.stat()));primary=None;stream=target.open('xb')
     digest=hashlib.sha256();count=0
     try:
@@ -114,7 +127,7 @@ def rust_archive(archive,output,spec,clock,limits=None):
             else:
                 need(kind in (0,ord('0'),ord('5')),'IDX_LOCAL_PAX_TYPE')
                 name=effective_name(raw,header,pending_path);safe_member(name)
-                name=data.member_name(name.rstrip('/'));key=name.casefold()
+                name=rust_member_name(name.rstrip('/'));key=name.casefold()
                 need(key not in seen,'IDX_TAR_DUPLICATE');seen.add(key)
                 parts=name.split('/')
                 for i in range(1,len(parts)+1):
@@ -123,9 +136,9 @@ def rust_archive(archive,output,spec,clock,limits=None):
                 directory=kind==ord('5')
                 need(key not in topology or topology[key] and directory,'IDX_TAR_TOPOLOGY');topology[key]=directory
                 if directory:
-                    need(size==0,'IDX_TAR_TYPE');owned_destination(output,name,True,clock)
+                    need(size==0,'IDX_TAR_TYPE');owned_destination(output,name,True,clock,rust=True)
                     row={'path':name,'directory':True,'bytes':0}
-                else:row=write_member(output,name,reader,size,clock)
+                else:row=write_member(output,name,reader,size,clock,rust=True)
                 row.update(rawHeaderName=raw,headerOffset=offset,paxPayloadSha256=metadata_sha if pending else None)
                 report_bytes+=len(json.dumps(row).encode())+2;need(report_bytes<=16*1024**2,'FULL_INVENTORY_BOUND');rows.append(row)
                 pending=False;pending_path=None
