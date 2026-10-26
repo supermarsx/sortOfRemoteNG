@@ -64,9 +64,9 @@ class BootstrapTests(unittest.TestCase):
         return target
 
     def test_profile_only_bootstrap_and_fixed_source_eight(self):
-        self.assertEqual(PROFILE["modes"], ["input-closure"])
+        self.assertEqual(PROFILE["modes"], ["input-closure", "command-inventory", "source-gn"])
         self.assertFalse(PROFILE["buildAdmission"])
-        self.assertEqual(len(PROFILE["sourcePaths"]), 10)
+        self.assertEqual(len(PROFILE["sourcePaths"]), 11)
         self.assertEqual(PROFILE["programs"], list(producer.ROLES))
         self.assertEqual(PROFILE["rust"]["bytes"], 414479372)
         self.assertEqual(PROFILE["rust"]["maximumBytes"], 512 * 1024**2)
@@ -86,15 +86,32 @@ class BootstrapTests(unittest.TestCase):
         self.assertNotEqual(ast.dump(old_environment), ast.dump(new_environment))
         literals[0].value = r"windows-x64-arm-toolchain-[a-f0-9-]{36}"
         self.assertEqual(ast.dump(old_environment), ast.dump(new_environment))
+        readback = next(n for n in new.body if isinstance(n, ast.FunctionDef) and n.name == 'readback_policy')
+        self.assertEqual(readback.args.args.pop().arg, 'policy')
+        run = next(n for n in new.body if isinstance(n, ast.FunctionDef) and n.name == 'run_job')
+        additions = [n for n in run.body if ast.unparse(n) in (
+            'from producer import worker_policy, verified_sources',
+            'policy = worker_policy(role, verified_sources(Path(cwd))[0])')]
+        self.assertEqual(len(additions), 2)
+        for node in additions:run.body.remove(node)
+        calls=[n for n in ast.walk(run)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='readback_policy']
+        self.assertEqual(len(calls),1);self.assertEqual(ast.unparse(calls[0].args.pop()),'policy')
+        class PolicyDefaults(ast.NodeTransformer):
+            counts={'processes':0,'memoryBytes':0,'cpuRate':0}
+            def visit_Subscript(self,node):
+                if isinstance(node.value,ast.Name)and node.value.id=='policy':
+                    key=node.slice.value;self.counts[key]+=1
+                    return ast.parse({'processes':'8','memoryBytes':'512 * 1024 ** 2','cpuRate':'2500'}[key],mode='eval').body
+                return self.generic_visit(node)
+        normal=PolicyDefaults();new=normal.visit(new)
+        self.assertEqual(normal.counts,{'processes':2,'memoryBytes':2,'cpuRate':1})
         def body(tree):
             return [ast.dump(node, include_attributes=False) for node in tree.body
                     if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in ("approved_tool_command","load_profile"))
                     and not (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PROFILE_SHA" for t in node.targets))]
         self.assertEqual(body(old), body(new))
-        text = (HERE / "job.py").read_text()
-        self.assertIn("limits.job_memory = 512 * 1024 ** 2", text)
-        self.assertIn("cpu.rate!=2500", text)
-        self.assertIn("limits.basic.active_limit!=8", text)
+        self.assertEqual(producer.worker_policy('operation',{'mode':'input-closure'}),
+                         {'processes':8,'memoryBytes':512*1024**2,'cpuRate':2500})
 
     def test_actual_environment_rejects_old_namespace_and_admits_only_owned_bootstrap_root(self):
         repo = self.temp();artifacts = repo / ".artifacts";artifacts.mkdir()
@@ -132,7 +149,7 @@ class BootstrapTests(unittest.TestCase):
         functions = job_admission_functions(directory / "job.py")
         self.assertEqual(functions["load_profile"](), PROFILE)
         seen = []
-        with patch.object(producer, "CONTEXT_SHA", "a" * 64), patch.object(producer, "verified_sources", side_effect=lambda value: seen.append(value)), patch("os.getcwd", return_value=str(root)):
+        with patch.object(producer, "CONTEXT_SHA", "a" * 64), patch.object(producer, "verified_sources", side_effect=lambda value: (seen.append(value) or ({'mode':'input-closure'},PROFILE,clock()))), patch("os.getcwd", return_value=str(root)):
             for role in (*producer.ROLES, "operation"):
                 argv = producer.worker_argv(role, root, PROFILE)
                 self.assertEqual(functions["approved_tool_command"](argv, str(root)), role)
@@ -266,7 +283,7 @@ class BootstrapTests(unittest.TestCase):
     def test_source_identity_closed8_canonical_and_actual_are_distinct(self):
         paths = PROFILE["sourcePaths"]
         rows = [{"path": p, "bytes": 2, "sha256": "a" * 64, "canonicalBytes": 1,
-                 "canonicalSha256": "b" * 64, "encoding": "git-crlf" if i in (0, 9) else "exact"}
+                 "canonicalSha256": "b" * 64, "encoding": "git-crlf" if i in (0, len(paths)-1) else "exact"}
                 for i, p in enumerate(paths)]
         first = checkpoint.closed_sources(rows, paths)
         rows[0]["sha256"] = "c" * 64
@@ -685,7 +702,7 @@ class FullInputTests(unittest.TestCase):
         self.assertEqual(rpc_calls,['ResolveVersion'])
 
     def test_closed_phase_and_data_envelope_never_become_compiled_checkpoint(self):
-        self.assertEqual([k for k,v in PROFILE['phaseAdmission'].items()if v],['input-closure'])
+        self.assertEqual([k for k,v in PROFILE['phaseAdmission'].items()if v],['input-closure','command-inventory'])
         for fn in (checkpoint.compiled_checkpoint,checkpoint.compiled_restore):
             with self.assertRaisesRegex(ValueError,'FULL_ENGINE_'):fn({'kind':'sorng-windows-arm-full-sdk-bootstrap-data'})
         for key in ['source-gn','engine-pilot','sdk-package','compiled-restore']:
@@ -746,7 +763,7 @@ class FullInputTests(unittest.TestCase):
                 return {'success':role!=failed,'cleanupVerified':True,'rootExit':0 if role!=failed else 1,'activeAtEnd':0,'rootReaped':True,'logReadersStopped':True}
             module=SimpleNamespace(ParentCancel=Parent,run_job=run)
             with patch.dict(sys.modules,{'job':module}),patch.object(producer,'CONTEXT_SHA','a'*64),patch.object(producer,'verified_sources'),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=100*1024**3)):
-                exit_code=producer.operation(root,{},PROFILE,acquire.Clock(time.time()+600,time.monotonic()+600))
+                exit_code=producer.operation(root,{'mode':'input-closure'},PROFILE,acquire.Clock(time.time()+600,time.monotonic()+600))
             report=json.loads((root/'bootstrap-result.json').read_bytes())
             expected=list(producer.ROLES)if failed is None else list(producer.ROLES[:6])
             self.assertEqual([r[0]for r in calls],expected)
@@ -774,6 +791,17 @@ class RuntimeProgressTests(unittest.TestCase):
     def test_held_default_none_is_pinned_original_body_and_actual_chunk_counts_are_measured(self):
         tree=ast.parse((HERE/'extract.py').read_bytes())
         body=copy.deepcopy(next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='held'))
+        self.assertEqual(body.args.args.pop().arg,'bounded_reads');self.assertIs(body.args.defaults.pop().value,False)
+        bounded=next(n for n in ast.walk(body)if isinstance(n,ast.While))
+        check=next(n for n in bounded.body if isinstance(n,ast.If)and ast.unparse(n.test)=='bounded_reads and count == before.st_size')
+        bounded.body.remove(check)
+        read=next(n for n in bounded.body if isinstance(n,ast.Assign)and ast.unparse(n.targets[0])=='chunk')
+        self.assertEqual(ast.unparse(read.value.args[0]),'min(CHUNK, before.st_size - count) if bounded_reads else CHUNK')
+        read.value.args[0]=ast.Name(id='CHUNK',ctx=ast.Load())
+        self.assertEqual(body.args.args.pop().arg,'expected_nlink');self.assertEqual(body.args.defaults.pop().value,1)
+        guard=next(n for n in ast.walk(body)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='need'and len(n.args)>1 and isinstance(n.args[1],ast.Constant)and n.args[1].value=='ACQ_FILE')
+        self.assertEqual(ast.dump(guard.args[0],include_attributes=False),ast.dump(ast.parse('type(expected_nlink) is int and 1 <= expected_nlink <= 8 and stat.S_ISREG(before.st_mode) and before.st_nlink == expected_nlink',mode='eval').body,include_attributes=False))
+        guard.args[0]=ast.parse('stat.S_ISREG(before.st_mode) and before.st_nlink == 1',mode='eval').body
         self.assertEqual(body.args.args.pop().arg,'progress');body.args.defaults.pop()
         loop=next(n for n in ast.walk(body)if isinstance(n,ast.While))
         added=[n for n in loop.body if isinstance(n,ast.If)and ast.unparse(n.test)=='progress is not None']
@@ -924,7 +952,7 @@ class RuntimeBudgetTests(unittest.TestCase):
         self.assertEqual(PROFILE['limits']['installedFiles'],50000)
         self.assertEqual(PROFILE['limits']['installedBytes'],8*1024**3)
         self.assertEqual(PROFILE['limits']['installedFileBytes'],512*1024**2)
-        self.assertEqual(producer.PROFILE_SHA,'8a472f84e39ffda2334c535bb5422881d73e10011570fe079f1b6dd2a8d8764f')
+        self.assertEqual(producer.PROFILE_SHA,hashlib.sha256((HERE/'profile.json').read_bytes()).hexdigest())
         tree=ast.parse((HERE/'job.py').read_bytes())
         pin=next(n.value.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(x,ast.Name)and x.id=='PROFILE_SHA'for x in n.targets))
         self.assertEqual(pin,producer.PROFILE_SHA)
@@ -953,7 +981,7 @@ class RuntimeBudgetTests(unittest.TestCase):
         with patch.dict(sys.modules,{'job':fake}),patch.object(producer,'verified_sources',side_effect=verified),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=PROFILE['limits']['freeBytes']+1)):
             import subprocess
             with patch.object(subprocess,'Popen',side_effect=AssertionError('no real child'))as spawn:
-                code=producer.operation(root,{},PROFILE,Budget())
+                code=producer.operation(root,{'mode':'input-closure'},PROFILE,Budget())
                 spawn.assert_not_called()
         return code,calls,state,json.loads((root/'bootstrap-result.json').read_bytes())
 
@@ -984,6 +1012,224 @@ class RuntimeBudgetTests(unittest.TestCase):
         self.assertEqual(code,1);self.assertEqual(calls[-1][:2],('runtime-closure',720))
         self.assertEqual(row['firstFailure'],'BOOT_JOB_FAILED')
         self.assertTrue(state['closed']);self.assertFalse(row['parentHandleClosed']);self.assertFalse(row['sourcePostVerified'])
+
+
+class SourceGnTests(unittest.TestCase):
+    temp=BootstrapTests.temp
+
+    def source_result(self,p):
+        return {'kind':'windows-arm-source-gn','success':True,'stage':'graph-inventory','firstFailure':None,
+            'target':p['target'],'sourceId':p['sourceGn']['sourceId'],
+            'graph':{'files':2,'bytes':512,'visited':3,'sha256':'a'*64},
+            'generatedArguments':{'targetCpu':'arm64','hostCpu':'x64','criticalArgumentsVerified':True,
+                'instanceTracer':False,'remoteExecution':False,'generatedSecurityHeadersVerified':False,'compilerAdmission':False},
+            'compilerExecuted':None,'engineCompilationRequested':False,'engineCheckpointImplemented':False,
+            'sdkBuilt':False,'nativeAcceptance':False,'sourceCloseFailure':False,'outerJobCleanupNotInferred':True,
+            'gitPolicy':{'kind':'owned-source-git-isolation-v1','ownedConfigFiles':[
+                {'sha256':'b'*64,'bytes':320},{'sha256':hashlib.sha256(b'').hexdigest(),'bytes':0}],
+                'verificationFailed':False,'callerGitConfigAccepted':False,'installedConfigurationWritten':False}}
+
+    def synthetic_host_pins(self):
+        p=copy.deepcopy(PROFILE)
+        p['sourceGn']['hostTools']={role:{'path':'C:/owned/'+role+'.exe','bytes':12,
+            'sha256':'a'*64,'nlink':1}for role in ('node','git')}
+        return p
+
+    def test_input_and_passive_jobs_remain_original_while_only_source_parent_and_driver_are_large(self):
+        data_policy={'processes':8,'memoryBytes':512*1024**2,'cpuRate':2500}
+        source_policy={'processes':64,'memoryBytes':8*1024**3,'cpuRate':2500}
+        for mode in PROFILE['modes']:
+            for role in (*producer.ROLES,'operation','source-gn','command-inventory'):
+                allowed=role in ('operation','command-inventory')if mode=='command-inventory'else role!='command-inventory'and(role!='source-gn'or mode=='source-gn')
+                if not allowed:
+                    with self.assertRaisesRegex(acquire.Denied,'FULL_ROLE_MODE'):producer.worker_policy(role,{'mode':mode})
+                    continue
+                expected=source_policy if mode=='source-gn'and role in ('operation','source-gn')else data_policy
+                self.assertEqual(producer.worker_policy(role,{'mode':mode}),expected)
+        for mode in ('compile','restore','sdk',None):
+            with self.assertRaisesRegex(acquire.Denied,'FULL_MODE'):producer.worker_policy('operation',{'mode':mode})
+
+    def test_missing_reviewed_host_pins_or_execution_policy_denies_before_capacity_and_any_data_child(self):
+        from types import SimpleNamespace
+        for p,expected in ((PROFILE,'FULL_HOST_TOOL_PIN_MISSING'),(self.synthetic_host_pins(),'FULL_EXECUTION_POLICY_UNAVAILABLE')):
+            root=self.temp()
+            with patch.dict(sys.modules,{'job':SimpleNamespace()}),patch.object(producer,'source_capacity',side_effect=AssertionError('no native query')),patch.object(producer,'verified_sources'):
+                self.assertEqual(producer.operation(root,{'mode':'source-gn'},p,clock()),1)
+            report=json.loads((root/'bootstrap-result.json').read_bytes())
+            self.assertEqual(report['firstFailure'],expected);self.assertEqual(report['jobs'],[])
+            self.assertIsNone(report['outputExecuted']);self.assertFalse(report['sdkBuilt'])
+
+    def test_actual_source_operation_joins_seven_data_jobs_before_one_driver_under_same_clock_and_reserve(self):
+        from types import SimpleNamespace
+        p=self.synthetic_host_pins();p['sourceGn']['executionPolicy']={key:True for key in p['sourceGn']['executionPolicy']};p['phaseAdmission']['source-gn']=True
+        for failed in (False,True):
+            root=self.temp();state={'remaining':7000,'closed':False};calls=[];measurements=[]
+            class Budget:
+                def remaining(self):return state['remaining']
+            budget=Budget()
+            class Parent:
+                def __init__(self,_event):pass
+                def close(self):
+                    state['closed']=True
+                    if failed:raise OSError('secondary cleanup')
+            def run(argv,cwd,output,seconds,**kwargs):
+                role=Path(output).name;calls.append((role,seconds,state['remaining']));state['remaining']-=10
+                if role=='source-gn':acquire.save(root/'source-gn-result.json',self.source_result(p))
+                return {'success':not(failed and role=='source-gn'),'cleanupVerified':True,
+                    'rootExit':1 if failed and role=='source-gn'else 0,'activeAtEnd':0}
+            def capacity(_root,_profile,current,**kwargs):measurements.append(current);return {'synthetic':True}
+            with patch.dict(sys.modules,{'job':SimpleNamespace(ParentCancel=Parent,run_job=run)}),patch.object(producer,'verified_sources'),patch.object(producer,'CONTEXT_SHA','c'*64),patch.object(producer,'source_capacity',side_effect=capacity),patch.object(material,'held',return_value=({},None)),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=200*1024**3)):
+                code=producer.operation(root,{'mode':'source-gn'},p,budget)
+            self.assertEqual([row[0]for row in calls],[*producer.ROLES,'source-gn']);self.assertTrue(state['closed'])
+            self.assertTrue(all(value is budget for value in measurements));self.assertEqual(len(measurements),2)
+            self.assertEqual(calls[-1][1],calls[-1][2]-123);self.assertLess(calls[-1][1],7200)
+            report=json.loads((root/'bootstrap-result.json').read_bytes());self.assertFalse(report['sdkBuilt'])
+            if failed:self.assertEqual(code,1);self.assertEqual(report['firstFailure'],'FULL_SOURCE_JOB_FAILED');self.assertFalse(report['parentHandleClosed'])
+            else:self.assertEqual(code,0);self.assertTrue(report['sourceGnVerified']);self.assertTrue(report['outputExecuted'])
+
+    def test_source_result_rejects_fake_counts_legacy_identity_compile_claims_and_numeric_booleans(self):
+        good=self.source_result(PROFILE);self.assertIs(producer.validate_source_gn_result(good,PROFILE),good)
+        for key,value in [('sourceId',PROFILE['sourceId']),('success',1),('sdkBuilt',True),
+                          ('compilerExecuted',False),('engineCompilationRequested',True),('stage','cef-gn')]:
+            bad=copy.deepcopy(good);bad[key]=value
+            with self.assertRaises(acquire.Denied):producer.validate_source_gn_result(bad,PROFILE)
+        for key,value in [('files',0),('files',True),('bytes',8*1024**3+1),('visited',1),('sha256','x'*64)]:
+            bad=copy.deepcopy(good);bad['graph'][key]=value
+            with self.assertRaises(acquire.Denied):producer.validate_source_gn_result(bad,PROFILE)
+        bad=copy.deepcopy(good);bad['generatedArguments']['criticalArgumentsVerified']=1
+        with self.assertRaises(acquire.Denied):producer.validate_source_gn_result(bad,PROFILE)
+        bad=copy.deepcopy(good);bad['gitPolicy']['verificationFailed']=True
+        with self.assertRaises(acquire.Denied):producer.validate_source_gn_result(bad,PROFILE)
+
+    def test_reviewed_host_role_bytes_linkcount_and_exact_fields_are_required_not_self_derived(self):
+        p=self.synthetic_host_pins();self.assertEqual(producer.source_host_tools(p),p['sourceGn']['hostTools'])
+        for key,value in [('path','C:/owned/../git.exe'),('path','//foreign/git.exe'),('bytes',True),('sha256','A'*64),('nlink',0),('nlink',9)]:
+            bad=copy.deepcopy(p);bad['sourceGn']['hostTools']['git'][key]=value
+            with self.assertRaises(acquire.Denied):producer.source_host_tools(bad)
+        bad=copy.deepcopy(p);bad['sourceGn']['hostTools']['node']['observedAsExpected']=True
+        with self.assertRaises(acquire.Denied):producer.source_host_tools(bad)
+        self.assertEqual(PROFILE['sourceGn']['hostTools'],{'node':None,'git':None})
+
+    def test_actual_capacity_body_observes_available_not_total_memory_and_denies_before_admission(self):
+        from types import SimpleNamespace
+        gib=1024**3
+        for available,free,cpus,valid in ((10*gib,100*gib,4,True),(9*gib,100*gib,4,False),
+                                       (10*gib,100*gib-1,4,False),(10*gib,100*gib,3,False)):
+            root=self.temp()
+            args={'memory':lambda:(32*gib,available),'disk':lambda _root:SimpleNamespace(free=free),'cpus':lambda:cpus}
+            if valid:
+                result=producer.source_capacity(root,PROFILE,clock(),**args)
+                self.assertEqual(result['availablePhysicalBytes'],10*gib);self.assertFalse(result['compilerCapacityProven'])
+            else:
+                with self.assertRaisesRegex(acquire.Denied,'FULL_CAPACITY_SHORTFALL'):producer.source_capacity(root,PROFILE,clock(),**args)
+                self.assertTrue((root/'source-capacity-result.json').is_file())
+
+    def test_capacity_invalid_measurements_and_original_clock_never_admit(self):
+        from types import SimpleNamespace
+        for value in (float('nan'),True,0,-1):
+            root=self.temp()
+            with self.assertRaisesRegex(acquire.Denied,'FULL_CAPACITY_FIELDS'):
+                producer.source_capacity(root,PROFILE,clock(),memory=lambda:(32*1024**3,value),disk=lambda _:SimpleNamespace(free=100*1024**3),cpus=lambda:4)
+        with self.assertRaisesRegex(acquire.Denied,'ACQ_DEADLINE'):
+            producer.source_capacity(self.temp(),PROFILE,acquire.Clock(0,0),memory=lambda:self.fail('no native query after deadline'))
+
+    def test_source_driver_argv_is_closed_to_one_node_file_context_and_mode(self):
+        p=self.synthetic_host_pins();root=self.temp()
+        with patch.object(producer,'CONTEXT_SHA','a'*64),patch('os.getcwd',return_value=str(root)):
+            argv=producer.worker_argv('source-gn',root,p)
+            self.assertEqual(argv,[p['sourceGn']['hostTools']['node']['path'],'--disable-proto=throw','--no-addons',
+                str(HERE/'source-driver.mjs'),'--source-gn',str(root),'a'*64,'--execute'])
+            self.assertEqual(producer.closed_worker_command(argv,str(root),p),'source-gn')
+            for changed in (argv+['--arbitrary'],[argv[0],'-e','arbitrary',*argv[3:]],argv[:6]+['b'*64]+argv[7:]):
+                with self.assertRaises(acquire.Denied):producer.closed_worker_command(changed,str(root),p)
+
+    def test_command_inventory_is_closed_to_exact_candidates_no_path_search_and_no_expected_pin_creation(self):
+        from types import SimpleNamespace
+        root=self.temp();binary=root/'owned-synthetic.exe';binary.write_bytes(pe())
+        configuration=root/'owned-config';configuration.write_text('[credential]\n helper = synthetic\n')
+        missing=root/'missing'
+        candidates=PROFILE['commandInventory']['candidates'];seen=[]
+        def mapped(value):
+            seen.append(str(value));return configuration if str(value).endswith('/etc/gitconfig')else missing if '/mingw64/'in str(value)else binary
+        with patch.object(producer,'Path',side_effect=mapped):
+            result=producer.command_inventory(root,{'mode':'command-inventory','image':'SYNTHETIC','head':'a'*40,
+                'repositoryId':'1010282954','sourceDigest':'b'*64},PROFILE,clock(),memory=lambda:(32*1024**3,12*1024**3),
+                disk=lambda _:SimpleNamespace(free=110*1024**3),cpus=lambda:4)
+        self.assertEqual(seen,[c['path']for c in candidates]);self.assertEqual(len(result['rows']),len(candidates))
+        self.assertTrue(any(row['status']=='missing'for row in result['rows']))
+        self.assertTrue(any(row.get('machine')==0x8664 for row in result['rows']))
+        self.assertTrue(result['rows'][-1]['configurationFacts']['hasCredentialSection'])
+        self.assertTrue(all(row['expectedIdentity']is None and not row['executionAdmitted']for row in result['rows']))
+        self.assertFalse(result['executed']);self.assertFalse(result['expectedPinsCreated'])
+        self.assertTrue((root/'command-inventory-observation.json').is_file())
+
+    def test_command_inventory_extra_or_changed_candidate_denies_without_any_file_read(self):
+        from types import SimpleNamespace
+        p=copy.deepcopy(PROFILE);p['commandInventory']['candidates'][0]['path']='C:/arbitrary/node.exe'
+        with patch.object(producer,'Path',side_effect=AssertionError('no candidate read')):
+            with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_CANDIDATES'):
+                producer.command_inventory(self.temp(),{'mode':'command-inventory'},p,clock(),memory=lambda:(1,1),
+                    disk=lambda _:SimpleNamespace(free=1),cpus=lambda:1)
+
+    def test_command_inventory_aggregate_stops_before_next_reader_and_keeps_primary(self):
+        from types import SimpleNamespace
+        root=self.temp();file=root/'owned';file.write_bytes(b'owned');calls=[]
+        class Candidate:
+            def lstat(self):return SimpleNamespace(st_size=256*1024**2,st_nlink=1)
+        def held(path,clk,**kw):
+            calls.append(kw['maximum']);kw['progress'](256*1024**2)
+            return {'bytes':256*1024**2,'sha256':'a'*64},b'synthetic'
+        sentinel=acquire.Denied('FULL_INVENTORY_BYTES');original_need=acquire.need
+        def need(ok,code):
+            if not ok and code=='FULL_INVENTORY_BYTES':raise sentinel
+            return original_need(ok,code)
+        args=(root,{'mode':'command-inventory'},PROFILE,clock())
+        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',return_value=Candidate()),patch.object(acquire,'plain',return_value=file),patch.object(material,'held',side_effect=held),patch.object(material,'pe_metadata',side_effect=acquire.Denied('SYNTHETIC_PE')),patch.object(acquire,'need',side_effect=need):
+            with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_BYTES')as raised:
+                producer.command_inventory(*args)
+            self.assertIs(raised.exception,sentinel)
+        self.assertEqual(calls,[256*1024**2]*2)
+        result=json.loads((root/'command-inventory-observation.json').read_bytes())
+        self.assertEqual(result['observedBytes'],512*1024**2)
+        self.assertIs(result['complete'],False);self.assertIs(result['success'],False)
+        self.assertEqual(len(result['rows']),2) # Both denied PE rows still consume their physical reads.
+        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',return_value=Candidate()),patch.object(acquire,'plain',return_value=file),patch.object(material,'held',side_effect=held),patch.object(material,'pe_metadata',side_effect=acquire.Denied('SYNTHETIC_PE')),patch.object(acquire,'save',side_effect=OSError('private sink')):
+            with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_BYTES'):
+                producer.command_inventory(*args)
+
+    def test_command_inventory_physical_small_boundary_never_opens_third_candidate(self):
+        # Execute the production body with only its fixed 512MiB constant scaled
+        # to two tiny real PE fixtures; no alternative implementation or large I/O.
+        source=ast.parse((HERE/'producer.py').read_bytes())
+        body=copy.deepcopy(next(n for n in source.body if isinstance(n,ast.FunctionDef)and n.name=='command_inventory'))
+        raw=pe();cap=2*len(raw)
+        class Cap(ast.NodeTransformer):
+            def visit_BinOp(self,node):
+                if ast.unparse(node)=='512 * 1024 ** 2':return ast.copy_location(ast.Constant(cap),node)
+                return self.generic_visit(node)
+        body=Cap().visit(body);scope=dict(producer.__dict__)
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[body],type_ignores=[])),'actual-inventory-small-cap','exec'),scope)
+        root=self.temp();file=root/'owned';file.write_bytes(raw);opens=[];original=Path.open
+        def opened(path,*args,**kw):
+            if path==file and args and args[0]=='rb':opens.append(path)
+            return original(path,*args,**kw)
+        with patch.object(producer,'Path',return_value=file),patch.object(Path,'open',opened),patch.object(producer,'source_capacity',return_value={}):
+            # Extracted function retains the production globals snapshot.
+            scope['Path']=lambda _:file;scope['source_capacity']=lambda *a,**k:{}
+            with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_BYTES'):
+                scope['command_inventory'](root,{'mode':'command-inventory'},PROFILE,clock())
+        self.assertEqual(len(opens),2)
+        observation=json.loads((root/'command-inventory-observation.json').read_bytes())
+        self.assertEqual(observation['observedBytes'],cap)
+        self.assertFalse(observation['complete'])
+
+    def test_scoped_observed_multilink_reader_does_not_relax_original_default(self):
+        root=self.temp();file=root/'file';file.write_bytes(b'owned passive file');os.link(file,root/'link')
+        with self.assertRaisesRegex(acquire.Denied,'ACQ_FILE'):material.held(file,clock())
+        observed,_=material.held(file,clock(),expected_nlink=2)
+        self.assertEqual(observed['sha256'],hashlib.sha256(file.read_bytes()).hexdigest())
+        for value in (True,0,1,3,9):
+            with self.assertRaisesRegex(acquire.Denied,'ACQ_FILE'):material.held(file,clock(),expected_nlink=value)
 
 
 class InventoryClockTests(unittest.TestCase):
@@ -1023,6 +1269,14 @@ class InventoryClockTests(unittest.TestCase):
             worker=producer.data_worker
             if old:
                 function=copy.deepcopy(next(n for n in ast.parse((HERE/'producer.py').read_bytes()).body if isinstance(n,ast.FunctionDef)and n.name=='data_worker'))
+                first=next(n for n in function.body if isinstance(n,ast.Try)).body[0]
+                self.assertEqual(ast.unparse(first.test),"role == 'command-inventory'")
+                self.assertEqual(len(first.body),1)
+                self.assertEqual(ast.unparse(first.body[0]),'command_inventory(root, c, p, clock)')
+                attempt=next(n for n in function.body if isinstance(n,ast.Try));attempt.body[0]=first.orelse[0]
+                flag=next(n for n in attempt.finalbody if isinstance(n,ast.If)and ast.unparse(n.test)=='COMMAND_INVENTORY_REPORTING_FAILURE')
+                self.assertEqual(ast.unparse(flag.body[0]),"result['inventoryObservationReportingFailure'] = True")
+                attempt.finalbody.remove(flag)
                 assignments=[n for n in ast.walk(function)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='inventory_clock'for t in n.targets)]
                 self.assertEqual(len(assignments),1)
                 runtime=next(n for n in ast.walk(function)if isinstance(n,ast.If)and ast.unparse(n.test)=="role == 'runtime-closure'")

@@ -139,11 +139,11 @@ class CancelledBeforeRun(Exception):
     pass
 
 
-def readback_policy(job):
+def readback_policy(job, policy):
     limits=ExtendedLimits();cpu=CpuRate()
     checked(query_job(job,9,C.byref(limits),C.sizeof(limits),None),'readback-job-limits')
     checked(query_job(job,15,C.byref(cpu),C.sizeof(cpu),None),'readback-cpu-policy')
-    if limits.basic.flags!=(0x2000|0x200|0x8)or limits.basic.active_limit!=8 or limits.job_memory!=512*1024**2 or cpu.flags!=5 or cpu.rate!=2500:raise OSError('prototype-policy-mismatch')
+    if limits.basic.flags!=(0x2000|0x200|0x8)or limits.basic.active_limit!=policy['processes'] or limits.job_memory!=policy['memoryBytes'] or cpu.flags!=5 or cpu.rate!=policy['cpuRate']:raise OSError('prototype-policy-mismatch')
     return {'flags':limits.basic.flags,'activeProcessLimit':limits.basic.active_limit,'jobMemoryBytes':str(limits.job_memory),'cpuFlags':cpu.flags,'cpuRate':cpu.rate,'inheritedHandles':3,'affinityChanged':False}
 
 def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64 * 1024 * 1024, _test_cleanup_seconds=None, _test_observe=None):
@@ -151,6 +151,8 @@ def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64
     if not argv or not Path(argv[0]).is_absolute() or not (0 < seconds <= 21600) or not (0 < cap <= 64 * 1024 * 1024):
         raise ValueError("invalid-controlled-command")
     role = approved_tool_command(argv,cwd)
+    from producer import worker_policy, verified_sources
+    policy = worker_policy(role, verified_sources(Path(cwd))[0])
     if Path(output)!=Path(cwd)/'jobs'/role:raise ValueError('tool-output-scope')
     output = Path(output)
     output.mkdir(parents=False, exist_ok=False)
@@ -191,12 +193,12 @@ def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64
         result["jobCreated"]=True
         limits = ExtendedLimits()
         limits.basic.flags = 0x2000 | 0x200 | 0x8  # kill-on-close, job memory, active-process limit
-        limits.basic.active_limit = 8
-        limits.job_memory = 512 * 1024 ** 2
+        limits.basic.active_limit = policy['processes']
+        limits.job_memory = policy['memoryBytes']
         checked(set_job(job, 9, C.byref(limits), C.sizeof(limits)), "job-limits")
         cpu = CpuRate(1 | 4, 2500 if _test_fault != "policy" else 10001)
         checked(set_job(job, 15, C.byref(cpu), C.sizeof(cpu)), "cpu-policy")
-        result['policyReadback']=readback_policy(job)
+        result['policyReadback']=readback_policy(job,policy)
         files.append(open(os.devnull, "rb", buffering=0))
         for name in ("stdout.log", "stderr.log"):
             read_fd, write_fd = os.pipe()
@@ -343,7 +345,7 @@ def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64
 
 
 # Explicit derivative: original ABI/kernel/lifecycle code above; closed tools admission below.
-PROFILE_SHA = "8a472f84e39ffda2334c535bb5422881d73e10011570fe079f1b6dd2a8d8764f"
+PROFILE_SHA = "5142ffe3fc4a3c84b84788318dc0591887d4603d1c4aca38716752dc8de87285"
 def load_profile():
     p=Path(__file__).with_name('profile.json')
     for item in (p,*p.parents):
@@ -354,9 +356,10 @@ def load_profile():
     return json.loads(raw)
 
 def approved_tool_command(argv,cwd):
-    from producer import closed_worker_command, verified_sources
+    from producer import closed_worker_command, verified_sources, role_in_mode
     role=closed_worker_command(argv,cwd,load_profile())
-    verified_sources(Path(cwd))
+    c,_,_ = verified_sources(Path(cwd))
+    role_in_mode(role,c)
     environment()
     return role
 

@@ -7,11 +7,21 @@ import { createHash } from "node:crypto";
 import vm from "node:vm";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
+import { EventEmitter } from "node:events";
 import {
   identitySha256,
   validateSourceLock,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
 import { validateRunnerMap } from "../../scripts/cef-runtime-ci.mjs";
+import { cefHookArguments } from "../../scripts/cef-runtime-ci.mjs";
+import {
+  reviewedHostTools,
+  sourceCommands,
+  sourcePaths,
+  sourceBudget,
+  sourceEnvironment,
+  validateGeneratedArguments,
+} from "../../native/windows-arm-full-sdk/source-driver.mjs";
 
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -25,6 +35,427 @@ const workflow = rawWorkflow.replaceAll("\r\n", "\n");
 const profileRaw = await fs.readFile(path.join(root, prefix, "profile.json"));
 const profile = JSON.parse(profileRaw);
 const sha = (b) => createHash("sha256").update(b).digest("hex");
+
+function syntheticSourcePins() {
+  const p = structuredClone(profile);
+  p.sourceGn.hostTools = Object.fromEntries(
+    ["node", "git"].map((role) => [
+      role,
+      {
+        path: `C:/owned/${role}.exe`,
+        bytes: 123,
+        sha256: "a".repeat(64),
+        nlink: 1,
+      },
+    ]),
+  );
+  return p;
+}
+
+test("source GN remains denied until reviewed host byte and execution closure while historical input stays distinct", async () => {
+  assert.throws(() => reviewedHostTools(profile), /FULL_HOST_TOOL_PIN_MISSING/);
+  assert.deepEqual(profile.sourceGn.executionPolicy, {
+    hostLoaderClosureApproved: false,
+    gitConfigurationApproved: true,
+    sourceHookCommandClosureApproved: false,
+  });
+  assert.equal(
+    profile.sourceGn.sourceId,
+    "b04bd747863065cb2cd5a52088ac36d24427b1e505b269c234d4ee5f444077be",
+  );
+  assert.notEqual(profile.sourceId, profile.sourceGn.sourceId);
+  assert.equal(profile.sourceData.length, 29);
+  assert.equal(profile.sourceGn.sourceData.length, 30);
+  for (const row of [
+    ...profile.sourceGn.sourceData,
+    ...profile.sourceGn.helpers,
+  ]) {
+    const bytes = await fs.readFile(path.join(root, row.path));
+    assert.equal(bytes.length, row.bytes);
+    assert.equal(sha(bytes), row.sha256);
+  }
+  const lock = JSON.parse(
+    await read(profile.sourceGn.namespace + "source-lock.json"),
+  );
+  validateSourceLock(lock);
+  assert.equal(identitySha256(lock), profile.sourceGn.sourceId);
+  const gn = await read(
+    profile.sourceGn.namespace + lock.builds[0].gnArgs.path,
+  );
+  assert(gn.includes('v8_symbol_level=0\nhost_cpu="x64"'));
+  assert(!gn.includes("0host_cpu"));
+});
+
+test("actual source driver command plan has only fixed sync, hooks, three setup verifications and GN", () => {
+  const p = syntheticSourcePins(),
+    operation = path.join(
+      root,
+      ".artifacts",
+      "windows-arm-full-sdk-" + "a".repeat(36),
+    );
+  const files = sourcePaths(operation, p),
+    hooks = cefHookArguments(files.cef, files.depot);
+  const commands = sourceCommands(operation, p, hooks, "b".repeat(64));
+  assert.deepEqual(
+    commands.map((row) => row.role),
+    [
+      "sync",
+      "dependency-hooks",
+      "setup-x86",
+      "setup-x64",
+      "setup-arm64",
+      "verify-setup",
+      "cef-gn",
+    ],
+  );
+  assert(Object.isFrozen(commands));
+  assert(
+    commands.every((row) => Object.isFrozen(row) && Object.isFrozen(row.args)),
+  );
+  assert(commands.every((row) => row.executable === profile.python.path));
+  assert.deepEqual(commands.at(-1).args, hooks);
+  assert(
+    !commands.some((row) =>
+      /autoninja|make_distrib|--compile|--restore/.test(row.args.join(" ")),
+    ),
+  );
+  for (const changed of [
+    ["-c", "arbitrary"],
+    [...hooks, "--extra"],
+  ])
+    assert.throws(
+      () => sourceCommands(operation, p, changed, "b".repeat(64)),
+      /FULL_HOOK_COMMAND/,
+    );
+  assert.throws(
+    () => sourceCommands(operation, p, hooks, "not-a-context"),
+    /FULL_CONTEXT_PIN/,
+  );
+});
+
+test("actual source driver budget is bounded by the original wall interval and its own monotonic admission", () => {
+  let wall = 1000,
+    mono = 20;
+  const budget = sourceBudget(
+    { wallWorkEnd: 3 },
+    profile,
+    () => wall,
+    () => mono,
+  );
+  assert.equal(budget.remaining(), 2000);
+  wall = 0;
+  mono += 1999;
+  assert.equal(budget.remaining(), 1);
+  mono++;
+  assert.throws(() => budget.remaining(), /FULL_DRIVER_DEADLINE/);
+  assert.throws(
+    () =>
+      sourceBudget(
+        { wallWorkEnd: 0 },
+        profile,
+        () => 1,
+        () => 1,
+      ),
+    /FULL_DRIVER_CLOCK/,
+  );
+  assert.equal(profile.sourceGn.limits.wholeSeconds, 7200);
+  assert.equal(profile.sourceGn.limits.cleanupSeconds, 30);
+  assert.equal(profile.sourceGn.limits.finalReserveSeconds, 120);
+  assert.equal(profile.limits.wholeSeconds, 3600);
+  assert.equal(profile.sourceGn.limits.memoryBytes, 8 * 1024 ** 3);
+  assert.equal(profile.sourceGn.limits.processes, 64);
+});
+
+test("source child environment is constructed without inherited credentials, proxy, remote execution or PATH fallback", () => {
+  const p = syntheticSourcePins(),
+    operation = path.join(
+      root,
+      ".artifacts",
+      "windows-arm-full-sdk-" + "a".repeat(36),
+    );
+  const recipe = {
+    requiredHost: "win32",
+    target: "aarch64-pc-windows-msvc",
+    commands: [{ args: ["cef/tools/gclient_hook.py"] }, {}, {}],
+    environment: { DEPOT_TOOLS_UPDATE: "0", DEPOT_TOOLS_WIN_TOOLCHAIN: "0" },
+  };
+  const env = sourceEnvironment(operation, p, recipe);
+  assert.equal(env.PYTHONDONTWRITEBYTECODE, "1");
+  assert.equal(env.CEF_ENABLE_ARM64, "1");
+  assert.equal(env.CEF_VCVARS, "none");
+  for (const key of [
+    "GITHUB_TOKEN",
+    "HTTPS_PROXY",
+    "RBE_instance",
+    "SSH_AUTH_SOCK",
+    "NODE_OPTIONS",
+  ])
+    assert.equal(env[key], undefined);
+  assert(env.PATH.includes(path.dirname(p.sourceGn.hostTools.git.path)));
+  assert(!env.PATH.includes(process.env.PATH));
+  assert.equal(env.SDK_VERSION, "10.0.28000.0");
+  assert.equal(env.SDK_ROOT, path.join(operation, "Windows Kits/10"));
+});
+
+test("generated GN critical arguments bind ARM target, x64 host, local tools, sandbox and tracer without compiler admission", () => {
+  const lines = [
+    'target_cpu="arm64"',
+    'host_cpu="x64"',
+    "is_clang=true",
+    "use_lld=true",
+    "use_remoteexec=false",
+    "use_siso=true",
+    "is_component_build=false",
+    "is_debug=false",
+    "enable_backup_ref_ptr_instance_tracer=false",
+  ];
+  const raw = Buffer.from(lines.join("\n"));
+  const result = validateGeneratedArguments(raw);
+  assert.equal(result.criticalArgumentsVerified, true);
+  assert.equal(result.compilerAdmission, false);
+  assert.equal(result.generatedSecurityHeadersVerified, false);
+  for (const bad of [
+    lines.slice(1).join("\n"),
+    lines.join("\n") + '\nhost_cpu="x64"',
+    lines.join("\n") + "\nenable_sandbox=false",
+    lines.join("\n") + "\nenable_sandbox=!false",
+    lines.join("\n").replace("use_remoteexec=false", "use_remoteexec=true"),
+    lines.join("\n").replace("instance_tracer=false", "instance_tracer=true"),
+    lines.join("\n").replace('target_cpu="arm64"', 'target_cpu="x64"'),
+  ])
+    assert.throws(
+      () => validateGeneratedArguments(Buffer.from(bad)),
+      /FULL_GN_/,
+    );
+  assert.throws(
+    () => validateGeneratedArguments(Buffer.from([255])),
+    /encoded data|encoding/i,
+  );
+  assert.throws(
+    () => validateGeneratedArguments(Buffer.alloc(0)),
+    /FULL_GN_ARGS_BOUND/,
+  );
+});
+
+async function actualCommandModel(overrides = {}) {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("async function executeCommand("),
+    end = text.indexOf("export async function main(", begin);
+  assert(begin >= 0 && end > begin);
+  const closed = [],
+    opened = [],
+    child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  let spawnCount = 0;
+  const scope = {
+    path,
+    Buffer,
+    sourceCloseFailure: false,
+    need: (ok, code) => assert(ok, code),
+    clearTimeout: () => {},
+    setTimeout: () => ({}),
+    openSync: (file) => {
+      opened.push(file);
+      return opened.length + 6;
+    },
+    closeSync: (fd) => closed.push(fd),
+    writeSync: (_fd, chunk) => chunk.length,
+    spawn: () => {
+      spawnCount++;
+      queueMicrotask(() => child.emit("close", 0, null));
+      return child;
+    },
+    ...overrides,
+  };
+  const context = vm.createContext(scope),
+    actual = vm.runInContext("(" + text.slice(begin, end) + ")", context);
+  const command = {
+    role: "owned",
+    executable: "never-executed",
+    args: [],
+    cwd: "owned",
+  };
+  let failed = false,
+    error;
+  try {
+    await actual(
+      command,
+      [command],
+      {},
+      { logs: "owned" },
+      { remaining: () => 500000 },
+      { bytes: 0, cap: 1024 },
+      false,
+    );
+  } catch (value) {
+    failed = true;
+    error = value;
+  }
+  return { scope, closed, opened, spawnCount, failed, error };
+}
+
+test("actual command body closes partial startup resources and preserves exact primary through close faults", async () => {
+  for (const sentinel of [new Error("owned open failure"), null, false]) {
+    let calls = 0;
+    const closed = [];
+    const result = await actualCommandModel({
+      openSync: () => {
+        if (++calls === 2) throw sentinel;
+        return 7;
+      },
+      closeSync: (fd) => {
+        closed.push(fd);
+        throw new Error("owned close failure");
+      },
+    });
+    assert.equal(result.failed, true);
+    assert.equal(result.error, sentinel);
+    assert.deepEqual(closed, [7]);
+    assert.equal(result.spawnCount, 0);
+    assert.equal(result.scope.sourceCloseFailure, true);
+  }
+});
+
+test("actual command body denies close-only errors after closing both logs and keeps ordinary success", async () => {
+  const closeError = new Error("owned close-only failure"),
+    closed = [];
+  const denied = await actualCommandModel({
+    closeSync: (fd) => {
+      closed.push(fd);
+      if (fd === 7) throw closeError;
+    },
+  });
+  assert.equal(denied.error, closeError);
+  assert.equal(denied.failed, true);
+  assert.deepEqual(closed, [7, 8]);
+  assert.equal(denied.scope.sourceCloseFailure, true);
+  const good = await actualCommandModel();
+  assert.equal(good.failed, false);
+  assert.deepEqual(good.closed, [7, 8]);
+  assert.equal(good.spawnCount, 1);
+});
+
+test("actual stage supervisor clamps the declared phase to original remaining work and clears its timer", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("async function sourceStage("),
+    end = text.indexOf("async function executeCommand(", begin);
+  assert(begin >= 0 && end > begin);
+  let now = 0,
+    delay,
+    callback,
+    cleared = 0;
+  const records = [];
+  const exit = new Error("owned exit sentinel");
+  const actual = vm.runInNewContext("(" + text.slice(begin, end) + ")", {
+    need: (ok, code) => {
+      if (!ok) throw new Error(code);
+    },
+    path,
+    performance: { now: () => now },
+    setTimeout: (fn, ms) => {
+      callback = fn;
+      delay = ms;
+      return 1;
+    },
+    clearTimeout: () => {
+      cleared++;
+    },
+    writeFileSync: (_file, raw) => records.push(JSON.parse(raw)),
+    process: {
+      exit: (code) => {
+        assert.equal(code, 124);
+        throw exit;
+      },
+    },
+  });
+  assert.equal(
+    await actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-acquisition",
+      4500,
+      async () => "ok",
+    ),
+    "ok",
+  );
+  assert.equal(delay, 380000);
+  assert.equal(cleared, 1);
+  await assert.rejects(
+    actual(
+      "owned",
+      { remaining: () => 120000 },
+      "source-acquisition",
+      4500,
+      async () => assert.fail("No reserve"),
+    ),
+    /FULL_SOURCE_RESERVE/,
+  );
+  await assert.rejects(
+    actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-acquisition",
+      4500,
+      async () => {
+        now += 380000;
+      },
+    ),
+    /FULL_SOURCE_STAGE_DEADLINE/,
+  );
+  let caught;
+  try {
+    await actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-hooks-gn",
+      1800,
+      async () => {
+        callback();
+      },
+    );
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(caught, exit);
+  assert.equal(records.at(-1).firstFailure, "FULL_SOURCE_STAGE_DEADLINE");
+  assert.equal(records.at(-1).cleanupNotInferred, true);
+});
+
+test("actual stage supervisor preserves thrown null and performs no compiler or unowned process signaling", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("async function sourceStage("),
+    end = text.indexOf("async function executeCommand(", begin);
+  let closed = 0,
+    failed = false,
+    value;
+  const actual = vm.runInNewContext("(" + text.slice(begin, end) + ")", {
+    need: (ok, code) => assert(ok, code),
+    path,
+    performance: { now: () => 0 },
+    setTimeout: () => 1,
+    clearTimeout: () => closed++,
+    writeFileSync: () => assert.fail("No deadline"),
+    process: { exit: () => assert.fail("No exit") },
+  });
+  try {
+    await actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-hooks-gn",
+      1800,
+      async () => {
+        throw null;
+      },
+    );
+  } catch (error) {
+    failed = true;
+    value = error;
+  }
+  assert.equal(failed, true);
+  assert.equal(value, null);
+  assert.equal(closed, 1);
+});
 
 const PURE_GATE = String.raw`      - name: Validate pure full SDK input contracts before any data Job
         shell: pwsh
@@ -81,7 +512,7 @@ test("hosted pure Python gate uses only fixed profile interpreter before the fir
     assert.throws(() => pureGateContract(wrong));
 });
 
-test("full input closure owns exactly ten files and no selected Unix producer input", () => {
+test("source modes own exactly eleven files with historical input scope and no selected Unix producer edits", () => {
   assert.deepEqual(profile.sourcePaths, [
     workflowPath,
     ...[
@@ -93,12 +524,17 @@ test("full input closure owns exactly ten files and no selected Unix producer in
       "checkpoint.py",
       "job.py",
       "test_producer.py",
+      "source-driver.mjs",
     ].map((n) => prefix + n),
     "tests/tooling/windowsArmFullSdk.node-test.mjs",
   ]);
-  assert.equal(new Set(profile.sourcePaths).size, 10);
+  assert.equal(new Set(profile.sourcePaths).size, 11);
   assert(profile.sourcePaths.every((p) => !p.startsWith("scripts/")));
-  assert.deepEqual(profile.modes, ["input-closure"]);
+  assert.deepEqual(profile.modes, [
+    "input-closure",
+    "command-inventory",
+    "source-gn",
+  ]);
   assert.equal(profile.buildAdmission, false);
   for (const value of Object.values(profile.claims)) assert.equal(value, false);
 });
@@ -160,6 +596,7 @@ test("full phase map keeps all executable and compiled checkpoint authority unav
     "compiled-checkpoint": false,
     "compiled-restore": false,
     "sdk-package": false,
+    "command-inventory": true,
   });
   assert.equal(profile.programs.length, 7);
   assert.equal(profile.runtime17.rows.length, 17);
@@ -188,7 +625,7 @@ test("full phase map keeps all executable and compiled checkpoint authority unav
 test("workflow is manual public fixed branch with truthful default Main, read permission and cancels older diagnostic", () => {
   assert.match(
     workflow,
-    /on:\n  workflow_dispatch:\npermissions:\n  contents: read\n/,
+    /on:\n  workflow_dispatch:\n    inputs:\n      mode:\n        type: choice\n/,
   );
   assert.match(workflow, /cancel-in-progress: true/);
   for (const required of [
@@ -196,7 +633,7 @@ test("workflow is manual public fixed branch with truthful default Main, read pe
     "github.event.repository.visibility == 'public'",
     "github.repository_id == '1010282954'",
     "github.event.repository.default_branch == 'main'",
-    "github.ref == 'refs/heads/codex/windows-arm-full-sdk-source-20261026'",
+    "github.ref == 'refs/heads/codex/windows-arm-source-gn-20261026'",
   ])
     assert(workflow.includes(required));
   assert.match(workflow, /runs-on: windows-2025-vs2026/);
@@ -240,7 +677,7 @@ test("actual Node carrier authority denies Main, foreign branches and forged def
     workflow.slice(begin, end) + "\ncarrierAuthority;",
     { assert, Object },
   );
-  const ref = "refs/heads/codex/windows-arm-full-sdk-source-20261026";
+  const ref = "refs/heads/codex/windows-arm-source-gn-20261026";
   const env = {
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
@@ -262,10 +699,13 @@ test("actual Node carrier authority denies Main, foreign branches and forged def
       visibility: "public",
       default_branch: "main",
     },
-    inputs: null,
+    inputs: { mode: "command-inventory" },
   };
-  authority(env, event);
-  authority(env, { ...event, inputs: {} });
+  assert.equal(authority(env, event), "command-inventory");
+  assert.equal(
+    authority(env, { ...event, inputs: { mode: "source-gn" } }),
+    "source-gn",
+  );
   for (const [key, value] of [
     ["GITHUB_REF", "refs/heads/main"],
     ["GITHUB_REF", ref + "-other"],
@@ -289,6 +729,8 @@ test("actual Node carrier authority denies Main, foreign branches and forged def
       /BOOT_CARRIER_AUTHORITY/,
     );
   for (const change of [
+    { inputs: null },
+    { inputs: {} },
     { inputs: { mode: "compile" } },
     { inputs: [] },
     { repository: { ...event.repository, private: true } },

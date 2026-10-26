@@ -13,7 +13,7 @@ def identity(value):
 
 
 def closed_sources(rows, paths):
-    if not isinstance(rows, list) or len(rows) != 10 or [r.get("path") for r in rows] != paths:
+    if not isinstance(rows, list) or len(rows) != 11 or [r.get("path") for r in rows] != paths:
         raise ValueError("BOOT_SOURCE_SET")
     for row in rows:
         if (set(row) != {"path", "bytes", "sha256", "canonicalBytes", "canonicalSha256", "encoding"} or

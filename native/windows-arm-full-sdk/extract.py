@@ -221,11 +221,12 @@ def shared(s):
             getattr(s, "st_birthtime_ns", None))
 
 def held(path, clock, expected_size=None, sha256=None, sha512=None, retain=False,
-         maximum=3 * 1024**2, progress=None):
+         maximum=3 * 1024**2, progress=None, expected_nlink=1, bounded_reads=False):
     global FILE_CLOSE_FAILURE
     path = plain(path)
     before = path.lstat()
-    need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, "ACQ_FILE")
+    need(type(expected_nlink) is int and 1 <= expected_nlink <= 8 and
+         stat.S_ISREG(before.st_mode) and before.st_nlink == expected_nlink, "ACQ_FILE")
     need(os.name != "nt" or getattr(before, "st_birthtime_ns", None) is not None,
          "ACQ_BIRTH")
     need(before.st_size <= maximum, "ACQ_SIZE")
@@ -239,7 +240,9 @@ def held(path, clock, expected_size=None, sha256=None, sha512=None, retain=False
         need(shared(before) == shared(fd_before), "ACQ_IDENTITY")
         while True:
             clock.remaining()
-            chunk = stream.read(CHUNK)
+            if bounded_reads and count == before.st_size:
+                break
+            chunk = stream.read(min(CHUNK, before.st_size-count) if bounded_reads else CHUNK)
             if not chunk:
                 break
             count += len(chunk)
