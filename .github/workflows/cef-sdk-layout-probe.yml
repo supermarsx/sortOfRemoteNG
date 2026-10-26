@@ -402,6 +402,9 @@ jobs:
                 exited = false,
                 callbackDone = false,
                 finalizing = false,
+                settled = false,
+                pendingPersistences = 0,
+                timeoutPersistence = null,
                 failed = false,
                 first,
                 stdout = "",
@@ -438,7 +441,7 @@ jobs:
                     };
               };
               const fail = (error) => {
-                if (!failed) {
+                if (!settled && !failed) {
                   failed = true;
                   first = error;
                 }
@@ -452,10 +455,9 @@ jobs:
                   }
               };
               const finish = async () => {
-                if (!closed || !callbackDone || finalizing) return;
+                if (settled || !closed || !callbackDone || finalizing) return;
                 finalizing = true;
                 clearTimeout(workTimer);
-                clearTimeout(cleanupTimer);
                 let summary;
                 if (!failed)
                   try {
@@ -466,6 +468,9 @@ jobs:
                   }
                 const out = capture("stdout", stdout),
                   err = capture("stderr", stderr);
+                if (timeoutPersistence) await timeoutPersistence;
+                if (settled) return;
+                pendingPersistences++;
                 try {
                   cleanup();
                   await persist(
@@ -486,7 +491,12 @@ jobs:
                   cleanup();
                 } catch (error) {
                   fail(error);
+                } finally {
+                  pendingPersistences--;
                 }
+                if (settled) return;
+                settled = true;
+                clearTimeout(cleanupTimer);
                 if (failed) reject(first);
                 else resolve(summary);
               };
@@ -530,10 +540,11 @@ jobs:
                   kill();
                   const out = capture("stdout", stdout),
                     err = capture("stderr", stderr);
-                  void Promise.resolve()
-                    .then(() => {
+                  pendingPersistences++;
+                  timeoutPersistence = (async () => {
+                    try {
                       cleanup();
-                      return persist(
+                      await persist(
                         {
                           mode,
                           snapshot: "work-timeout",
@@ -548,16 +559,41 @@ jobs:
                         out.bytes,
                         err.bytes,
                       );
-                    })
-                    .catch(fail);
+                    } catch (error) {
+                      fail(error);
+                    } finally {
+                      pendingPersistences--;
+                    }
+                  })();
                 },
                 Math.max(1, Math.floor(end - now())),
               );
               cleanupTimer = setTimeout(
                 () => {
+                  if (settled) return;
                   clearTimeout(workTimer);
                   finalizing = true;
-                  fail(new Error("CENSUS_CHILD_UNCONFIRMED"));
+                  fail(
+                    new Error(
+                      pendingPersistences > 0
+                        ? "CENSUS_PERSISTENCE_UNCONFIRMED"
+                        : "CENSUS_CHILD_UNCONFIRMED",
+                    ),
+                  );
+                  settled = true;
+                  try {
+                    console.error(
+                      JSON.stringify({
+                        stage: "CENSUS_WORKER_UNCONFIRMED",
+                        mode,
+                        childClosed: closed,
+                        callbackDone,
+                        persistencePending: pendingPersistences > 0,
+                        persistenceJoined: pendingPersistences === 0,
+                        cleanupConfirmed: false,
+                      }),
+                    );
+                  } catch {}
                   kill();
                   child.stdout?.destroy();
                   child.stderr?.destroy();
@@ -632,7 +668,28 @@ jobs:
                 "CENSUS_CAPABILITY_IDENTITY",
               );
               check();
-              const body = await fd.readFile();
+              const buffer = Buffer.alloc(pin.bytes + 1);
+              let count = 0;
+              while (count < buffer.length) {
+                check();
+                const { bytesRead } = await fd.read(
+                  buffer,
+                  count,
+                  buffer.length - count,
+                  count,
+                );
+                check();
+                assert(
+                  Number.isSafeInteger(bytesRead) &&
+                    bytesRead >= 0 &&
+                    bytesRead <= buffer.length - count,
+                  "CENSUS_CAPABILITY_BOUND",
+                );
+                if (!bytesRead) break;
+                count += bytesRead;
+                assert(count <= pin.bytes, "CENSUS_CAPABILITY_BOUND");
+              }
+              const body = buffer.subarray(0, count);
               check();
               assert(
                 body.length === pin.bytes &&

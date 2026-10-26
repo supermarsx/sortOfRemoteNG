@@ -1260,6 +1260,14 @@ function capabilityFixture() {
   };
   return value;
 }
+function capabilityRead(getBody) {
+  return async (buffer, offset, length, position) => {
+    const body = getBody();
+    const chunk = body.subarray(position, position + length);
+    chunk.copy(buffer, offset);
+    return { bytesRead: chunk.length };
+  };
+}
 function capabilityIo(value = capabilityFixture()) {
   const body = Buffer.from(JSON.stringify(value)),
     pin = { name: "capability.json", bytes: body.length, sha256: hash(body) };
@@ -1288,6 +1296,7 @@ function capabilityIo(value = capabilityFixture()) {
     open: async () => ({
       stat: async () => file,
       readFile: async () => body,
+      read: capabilityRead(() => body),
       close: async () => {
         closed++;
       },
@@ -1377,6 +1386,7 @@ test("capability reader rejects unknown path/link/overbound/retarget and preserv
   bad.io.open = async () => ({
     stat: async () => bad.file,
     readFile: async () => bad.body,
+    read: capabilityRead(() => bad.body),
     close: async () => {
       throw new Error("secondary");
     },
@@ -1400,6 +1410,7 @@ test("capability reader rejects unknown path/link/overbound/retarget and preserv
     stat: async () =>
       ++stats === 1 ? replaced.file : { ...replaced.file, ino: 99n },
     readFile: async () => replaced.body,
+    read: capabilityRead(() => replaced.body),
     close: async () => {},
   });
   await assert.rejects(
@@ -1534,6 +1545,7 @@ async function censusPipelineFixture() {
       return {
         stat: async () => stat(file),
         readFile: async () => files.get(file),
+        read: capabilityRead(() => files.get(file)),
         close: async () => calls.push("cap-close"),
       };
     },
@@ -1748,4 +1760,106 @@ test("timed worker retains bounded partial bytes before cleanup and never report
   child.emit("close", 0);
   await Promise.resolve();
   assert.equal(records.length, 1);
+});
+
+test("actual worker keeps original cleanup deadline through hanging persistence and preserves first null/error", async () => {
+  for (const primary of [undefined, null, new Error("original")]) {
+    const diagnostics = [],
+      api = censusApi({
+        console: { error: (value) => diagnostics.push(JSON.parse(value)) },
+      }),
+      plan = fakeWorkerPlan();
+    let child, release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    const started = performance.now();
+    const operation = api.censusWorker(
+      plan,
+      "mac-external-observe",
+      censusRoot + "/context.json",
+      () => 10,
+      () => 45,
+      () => held,
+      (_file, _args, _options, callback) => {
+        child = fakeChild();
+        queueMicrotask(() => {
+          if (primary !== undefined) child.emit("error", primary);
+          callback(null, '{"complete":true}', "");
+          child.emit("exit", 0);
+          child.emit("close", 0);
+        });
+        return child;
+      },
+    );
+    const outcome = await Promise.race([
+      operation.then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      ),
+      new Promise((resolve) =>
+        setTimeout(() => resolve({ outerGuard: true }), 200),
+      ),
+    ]);
+    assert.notEqual(
+      outcome.outerGuard,
+      true,
+      "actual cleanup timer must bound pending persistence",
+    );
+    assert.equal(outcome.ok, false);
+    if (primary === undefined)
+      assert.match(outcome.error.message, /PERSISTENCE_UNCONFIRMED/);
+    else assert.equal(outcome.error, primary);
+    assert.ok(performance.now() - started < 180);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].childClosed, true);
+    assert.equal(diagnostics[0].persistencePending, true);
+    assert.equal(diagnostics[0].persistenceJoined, false);
+    assert.equal(diagnostics[0].cleanupConfirmed, false);
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(outcome.ok, false);
+  }
+});
+test("actual capability FD reads remain within pinned bytes plus one when content grows after open", async () => {
+  const api = censusApi(),
+    fixture = capabilityIo(),
+    growth = Buffer.concat([fixture.body, Buffer.alloc(100000, 120)]),
+    requests = [];
+  let closed = 0,
+    readFileCalled = false;
+  fixture.io.open = async () => ({
+    stat: async () => fixture.file,
+    readFile: async () => {
+      readFileCalled = true;
+      return growth;
+    },
+    read: async (buffer, offset, length, position) => {
+      requests.push({ allocated: buffer.length, length, position });
+      const part = growth.subarray(position, position + length);
+      part.copy(buffer, offset);
+      return { bytesRead: part.length };
+    },
+    close: async () => {
+      closed++;
+    },
+  });
+  await assert.rejects(
+    api.readCapability(
+      censusRoot + "/capability.json",
+      fixture.pin,
+      () => {},
+      fixture.parent,
+      fixture.io,
+      501,
+    ),
+    /CENSUS_CAPABILITY_BOUND/,
+  );
+  assert.equal(readFileCalled, false);
+  assert.equal(closed, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].allocated, fixture.pin.bytes + 1);
+  assert.equal(requests[0].length, fixture.pin.bytes + 1);
+  assert.ok(requests[0].allocated <= 65537);
 });
