@@ -503,10 +503,10 @@ describe("lasting SSH script trust through the real dialog and store", () => {
       h.contextRevision += 1;
       view.rerender(<Tree />);
       await waitFor(() => expect(pending).toHaveLength(1));
-      const publishedContext = h.contexts.at(-1);
+      const publishedContext = h.contexts[h.contexts.length - 1];
       view.rerender(<Tree />);
       view.rerender(<Tree />);
-      expect(h.contexts.at(-1)).toBe(publishedContext);
+      expect(h.contexts[h.contexts.length - 1]).toBe(publishedContext);
       expect(pending).toHaveLength(1);
       await act(async () => {
         pending.splice(0).forEach((resolve) => resolve());
