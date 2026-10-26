@@ -13,6 +13,8 @@ import {
   readdir,
   readlink,
   realpath,
+  open,
+  opendir,
   rm,
   stat,
   symlink,
@@ -1247,9 +1249,235 @@ export function validateGitExecutable(file) {
   return file;
 }
 
-async function git(root, args, isolated = {}, gitExecutable) {
+const sourceGitPolicies = new WeakMap();
+const sourceGitSignature = (s) =>
+  [
+    s.dev,
+    s.ino,
+    s.size,
+    s.mtimeNs,
+    s.ctimeNs,
+    s.birthtimeNs,
+    s.mode,
+    s.nlink,
+  ].join(":");
+const sourceGitShared = (s) =>
+  [s.dev, s.ino, s.size, s.mtimeNs, s.birthtimeNs, s.nlink].join(":");
+const sourceGitDirectory = (s) =>
+  (process.platform === "win32"
+    ? [s.dev, s.ino, s.mtimeNs, s.ctimeNs, s.birthtimeNs, s.mode, s.nlink]
+    : [
+        s.dev,
+        s.ino,
+        s.size,
+        s.mtimeNs,
+        s.ctimeNs,
+        s.birthtimeNs,
+        s.mode,
+        s.nlink,
+      ]
+  ).join(":");
+async function sourceGitPhysical(file) {
+  if (
+    !path.isAbsolute(file) ||
+    file.startsWith("\\\\") ||
+    file.startsWith("//") ||
+    file
+      .replaceAll("\\", "/")
+      .split("/")
+      .some((part) => part === "." || part === "..") ||
+    /[\x00-\x1f\x7f"]/.test(file) ||
+    path.relative(file, await realpath(file)) !== ""
+  )
+    fail("SOURCE_GIT_POLICY_ALIAS");
+  for (let at = file; ; at = path.dirname(at)) {
+    if ((await lstat(at)).isSymbolicLink()) fail("SOURCE_GIT_POLICY_LINK");
+    if (path.dirname(at) === at) break;
+  }
+}
+async function sourceGitFile(file, expected) {
+  await sourceGitPhysical(file);
+  const before = await lstat(file, { bigint: true });
+  if (
+    !before.isFile() ||
+    before.nlink !== 1n ||
+    before.size !== BigInt(expected.length) ||
+    expected.length > 4096
+  )
+    fail("SOURCE_GIT_POLICY_FILE");
+  const fd = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  let failed = false;
+  try {
+    const fdBefore = await fd.stat({ bigint: true });
+    if (sourceGitShared(before) !== sourceGitShared(fdBefore))
+      fail("SOURCE_GIT_POLICY_IDENTITY");
+    const buffer = Buffer.alloc(expected.length + 1);
+    let total = 0;
+    while (true) {
+      const { bytesRead } = await fd.read(
+        buffer,
+        total,
+        buffer.length - total,
+        null,
+      );
+      if (!bytesRead) break;
+      total += bytesRead;
+      if (total > expected.length) fail("SOURCE_GIT_POLICY_CHANGED");
+    }
+    if (
+      !buffer.subarray(0, total).equals(expected) ||
+      sourceGitSignature(await fd.stat({ bigint: true })) !==
+        sourceGitSignature(fdBefore) ||
+      sourceGitSignature(await lstat(file, { bigint: true })) !==
+        sourceGitSignature(before)
+    )
+      fail("SOURCE_GIT_POLICY_CHANGED");
+    return {
+      pathIdentity: sourceGitSignature(before),
+      fdIdentity: sourceGitSignature(fdBefore),
+      sha256: createHash("sha256").update(expected).digest("hex"),
+    };
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await fd.close();
+    } catch (error) {
+      if (!failed) throw error;
+    }
+  }
+}
+
+/** Explicit capability: an exclusively created policy directory, never caller
+ * GIT_CONFIG values. Existing callers remain unchanged when no policy is given.
+ */
+export async function prepareSourceGitIsolation(directory) {
+  if (
+    !path.isAbsolute(directory) ||
+    path.basename(directory) !== "cef-source-git-policy"
+  )
+    fail("SOURCE_GIT_POLICY_ROOT");
+  await sourceGitPhysical(path.dirname(directory));
+  await mkdir(directory, { mode: 0o700 });
+  for (const name of ["home", "xdg", "hooks"])
+    await mkdir(path.join(directory, name), { mode: 0o700 });
+  await sourceGitPhysical(directory);
+  const global = Buffer.from(
+    `[core]\n\thooksPath = "${path.join(directory, "hooks").replaceAll("\\", "/")}"\n\tfsmonitor = false\n\tuntrackedCache = false\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n[protocol "https"]\n\tallow = always\n`,
+  );
+  const files = [
+    { path: path.join(directory, "global.gitconfig"), bytes: global },
+    { path: path.join(directory, "system.gitconfig"), bytes: Buffer.alloc(0) },
+  ];
+  for (const file of files) {
+    await writeFile(file.path, file.bytes, { flag: "wx", mode: 0o600 });
+    file.identity = await sourceGitFile(file.path, file.bytes);
+  }
+  const directories = [];
+  for (const name of ["", "home", "xdg", "hooks"]) {
+    const file = path.join(directory, name);
+    directories.push({
+      path: file,
+      identity: sourceGitDirectory(await lstat(file, { bigint: true })),
+    });
+  }
+  const token = Object.freeze({ kind: "owned-source-git-isolation-v1" });
+  sourceGitPolicies.set(token, {
+    directory,
+    files,
+    directories,
+    verificationFailed: false,
+  });
+  await sourceGitEnvironment(token, {});
+  return token;
+}
+
+export async function sourceGitEnvironment(token, inherited) {
+  const policy = sourceGitPolicies.get(token);
+  if (!policy) fail("SOURCE_GIT_POLICY_CAPABILITY");
+  try {
+    for (const file of policy.files) {
+      if (
+        JSON.stringify(await sourceGitFile(file.path, file.bytes)) !==
+        JSON.stringify(file.identity)
+      )
+        fail("SOURCE_GIT_POLICY_CHANGED");
+    }
+    for (const item of policy.directories) {
+      await sourceGitPhysical(item.path);
+      const current = await lstat(item.path, { bigint: true });
+      if (
+        !current.isDirectory() ||
+        sourceGitDirectory(current) !== item.identity
+      )
+        fail("SOURCE_GIT_POLICY_DIRECTORY");
+    }
+    const hooks = await opendir(path.join(policy.directory, "hooks"));
+    let failed = false;
+    try {
+      if (await hooks.read()) fail("SOURCE_GIT_POLICY_HOOKS");
+    } catch (error) {
+      failed = true;
+      throw error;
+    } finally {
+      try {
+        await hooks.close();
+      } catch (error) {
+        if (!failed) throw error;
+      }
+    }
+    const env = {};
+    for (const [key, value] of Object.entries(inherited)) {
+      if (
+        /^(?:GIT_|GCM_|SSH_ASKPASS$|HOME$|USERPROFILE$|XDG_CONFIG_HOME$)/i.test(
+          key,
+        )
+      )
+        continue;
+      if (typeof value !== "string") fail("SOURCE_GIT_ENVIRONMENT_VALUE");
+      env[key] = value;
+    }
+    return {
+      ...env,
+      HOME: path.join(policy.directory, "home"),
+      USERPROFILE: path.join(policy.directory, "home"),
+      XDG_CONFIG_HOME: path.join(policy.directory, "xdg"),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_SYSTEM: policy.files[1].path,
+      GIT_CONFIG_GLOBAL: policy.files[0].path,
+      GIT_ATTR_NOSYSTEM: "1",
+      GIT_TERMINAL_PROMPT: "0",
+      GCM_INTERACTIVE: "never",
+      GIT_TEMPLATE_DIR: path.join(policy.directory, "hooks"),
+      GIT_ALLOW_PROTOCOL: "https",
+      GIT_PROTOCOL_FROM_USER: "0",
+      GIT_OPTIONAL_LOCKS: "0",
+    };
+  } catch (error) {
+    policy.verificationFailed = true;
+    throw error;
+  }
+}
+
+export function sourceGitIsolationEvidence(token) {
+  const policy = sourceGitPolicies.get(token);
+  if (!policy) fail("SOURCE_GIT_POLICY_CAPABILITY");
+  return {
+    kind: token.kind,
+    ownedConfigFiles: policy.files.map((file) => ({
+      sha256: file.identity.sha256,
+      bytes: file.bytes.length,
+    })),
+    verificationFailed: policy.verificationFailed,
+    callerGitConfigAccepted: false,
+    installedConfigurationWritten: false,
+  };
+}
+
+async function git(root, args, isolated = {}, gitExecutable, gitIsolation) {
   // No shell expansion, prompts, optional index refresh, or inherited index overrides.
-  const env = {
+  let env = {
     ...process.env,
     GIT_TERMINAL_PROMPT: "0",
     GIT_OPTIONAL_LOCKS: "0",
@@ -1261,18 +1489,35 @@ async function git(root, args, isolated = {}, gitExecutable) {
       )
     )
       delete env[key];
+  if (gitIsolation !== undefined)
+    env = await sourceGitEnvironment(gitIsolation, env);
   Object.assign(env, isolated);
-  const { stdout } = await exec(
-    gitExecutable === undefined ? "git" : validateGitExecutable(gitExecutable),
-    ["-C", root, ...args],
-    {
-      env,
-      windowsHide: true,
-      timeout: 120_000,
-      maxBuffer: 8 * 1024 * 1024,
-    },
-  );
-  return stdout.trim();
+  let failed = false;
+  try {
+    const { stdout } = await exec(
+      gitExecutable === undefined
+        ? "git"
+        : validateGitExecutable(gitExecutable),
+      ["-C", root, ...args],
+      {
+        env,
+        windowsHide: true,
+        timeout: 120_000,
+        maxBuffer: 8 * 1024 * 1024,
+      },
+    );
+    return stdout.trim();
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    if (gitIsolation !== undefined)
+      try {
+        await sourceGitEnvironment(gitIsolation, env);
+      } catch (error) {
+        if (!failed) throw error;
+      }
+  }
 }
 
 /** Reject unowned or retargeted paths before recursive temporary cleanup. */
@@ -1303,7 +1548,12 @@ export async function verifySourcePatchTemporaryDirectory({
 /** Simulate ordered patches without writing the checkout, its index or objects.
  * The production caller first verifies all source identities and input pins.
  */
-export async function verifySourcePatchSeries({ cwd, patches, gitExecutable }) {
+export async function verifySourcePatchSeries({
+  cwd,
+  patches,
+  gitExecutable,
+  gitIsolation,
+}) {
   const root = await realpath(cwd);
   const objects = await realpath(
     path.resolve(
@@ -1313,6 +1563,7 @@ export async function verifySourcePatchSeries({ cwd, patches, gitExecutable }) {
         ["rev-parse", "--git-path", "objects"],
         {},
         gitExecutable,
+        gitIsolation,
       ),
     ),
   );
@@ -1332,13 +1583,20 @@ export async function verifySourcePatchSeries({ cwd, patches, gitExecutable }) {
       GIT_OBJECT_DIRECTORY: temporaryObjects,
       GIT_ALTERNATE_OBJECT_DIRECTORIES: objects,
     };
-    await git(root, ["read-tree", "HEAD"], isolated, gitExecutable);
+    await git(
+      root,
+      ["read-tree", "HEAD"],
+      isolated,
+      gitExecutable,
+      gitIsolation,
+    );
     for (const patch of patches)
       await git(
         root,
         ["apply", "--cached", "--whitespace=error-all", "--", patch],
         isolated,
         gitExecutable,
+        gitIsolation,
       );
   } finally {
     // Revalidate immediately before recursive deletion. A retargeted path is
@@ -1358,6 +1616,7 @@ export async function verifySourcePatchSeries({ cwd, patches, gitExecutable }) {
  */
 export async function preflightSourceCheckout({
   gitExecutable,
+  gitIsolation,
   sourceLock,
   inputsRoot,
   checkouts,
@@ -1368,13 +1627,24 @@ export async function preflightSourceCheckout({
     const root = await realpath(checkouts[name]);
     if (
       (await realpath(
-        await git(root, ["rev-parse", "--show-toplevel"], {}, gitExecutable),
+        await git(
+          root,
+          ["rev-parse", "--show-toplevel"],
+          {},
+          gitExecutable,
+          gitIsolation,
+        ),
       )) !== root
     )
       fail(`${name}: checkout root required`);
     if (
-      (await git(root, ["rev-parse", "HEAD"], {}, gitExecutable)) !==
-      sourceLock.upstream[name].commit
+      (await git(
+        root,
+        ["rev-parse", "HEAD"],
+        {},
+        gitExecutable,
+        gitIsolation,
+      )) !== sourceLock.upstream[name].commit
     )
       fail(`${name}: source revision mismatch`);
     const args = [
@@ -1385,7 +1655,7 @@ export async function preflightSourceCheckout({
       ".",
     ];
     if (name === "chromium") args.push(":(exclude)cef");
-    if (await git(root, args, {}, gitExecutable))
+    if (await git(root, args, {}, gitExecutable, gitIsolation))
       fail(
         `${name}: clean checkout required; existing changes are never reset`,
       );
@@ -1420,7 +1690,7 @@ export async function preflightSourceCheckout({
   }
   // Verify every input pin before beginning any isolated patch simulation.
   for (const group of patchGroups)
-    await verifySourcePatchSeries({ ...group, gitExecutable });
+    await verifySourcePatchSeries({ ...group, gitExecutable, gitIsolation });
   return {
     sourceLockSha256: identitySha256(sourceLock),
     patchGroups,
@@ -1446,6 +1716,7 @@ export async function applySourcePatches(options) {
           ["apply", "--whitespace=error-all", "--", patch],
           {},
           options.gitExecutable,
+          options.gitIsolation,
         );
         appliedPatches += 1;
       }

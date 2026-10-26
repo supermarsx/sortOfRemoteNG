@@ -20,6 +20,7 @@ import {
   validateCustomRuntimeManifest,
   validateSourceLock,
   validateGitExecutable,
+  sourceGitEnvironment,
   verifySourceBuildIsolation,
   verifySourceCheckoutVersion,
   verifyToolchainFiles,
@@ -239,12 +240,18 @@ export function gclientConfiguration(plan) {
 /** Fetch only into a NEW workspace. No hook, package installer or global config
  * runs here. Failure preserves partial checkouts/logs; never deletes or resets.
  */
-export async function acquireSources(root, target, gitExecutable) {
+export async function acquireSources(
+  root,
+  target,
+  gitExecutable,
+  gitIsolation,
+) {
   const git =
     gitExecutable === undefined ? "git" : validateGitExecutable(gitExecutable);
   const plan = acquisitionSourcePlan(root, target);
   // Validate serialization before creating a workspace or starting acquisition.
   const config = gclientConfiguration(plan);
+  if (gitIsolation !== undefined) await sourceGitEnvironment(gitIsolation, {});
   await mkdir(plan.root); // Existing roots fail before spawning any process.
   const logs = path.join(plan.root, "acquisition-logs");
   await mkdir(logs);
@@ -253,7 +260,7 @@ export async function acquireSources(root, target, gitExecutable) {
     JSON.stringify(plan, null, 2),
     { flag: "wx" },
   );
-  const env = { ...process.env, ...plan.environment, GIT_TERMINAL_PROMPT: "0" };
+  let env = { ...process.env, ...plan.environment, GIT_TERMINAL_PROMPT: "0" };
   for (const key of Object.keys(env))
     if (
       /^GIT_(?:DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG.*)$/i.test(
@@ -261,6 +268,25 @@ export async function acquireSources(root, target, gitExecutable) {
       )
     )
       delete env[key];
+  if (gitIsolation !== undefined)
+    env = await sourceGitEnvironment(gitIsolation, env);
+  const invoke = async (action) => {
+    if (gitIsolation === undefined) return action();
+    await sourceGitEnvironment(gitIsolation, env);
+    let failed = false;
+    try {
+      return await action();
+    } catch (error) {
+      failed = true;
+      throw error;
+    } finally {
+      try {
+        await sourceGitEnvironment(gitIsolation, env);
+      } catch (error) {
+        if (!failed) throw error;
+      }
+    }
+  };
   process.stderr.write(
     `[cef-patched-runtime] acquisition pid=${process.pid} root=${plan.root}\n`,
   );
@@ -304,17 +330,21 @@ export async function acquireSources(root, target, gitExecutable) {
         ["checkout", "--detach", repository.commit],
       ];
       for (const [index, args] of commands.entries()) {
-        await executeStep(
-          { cwd: repository.destination, executable: git, args },
-          env,
-          logs,
-          `${repository.name}-${index}`,
+        await invoke(() =>
+          executeStep(
+            { cwd: repository.destination, executable: git, args },
+            env,
+            logs,
+            `${repository.name}-${index}`,
+          ),
         );
       }
-      const { stdout } = await exec(
-        git,
-        ["-C", repository.destination, "rev-parse", "HEAD"],
-        { env, windowsHide: true, timeout: 30_000 },
+      const { stdout } = await invoke(() =>
+        exec(git, ["-C", repository.destination, "rev-parse", "HEAD"], {
+          env,
+          windowsHide: true,
+          timeout: 30_000,
+        }),
       );
       if (stdout.trim() !== repository.commit)
         throw new Error(
@@ -323,10 +353,12 @@ export async function acquireSources(root, target, gitExecutable) {
       for (const [ref, expected] of Object.entries(
         repository.versionReferences,
       )) {
-        const { stdout: refCommit } = await exec(
-          git,
-          ["-C", repository.destination, "rev-parse", ref],
-          { env, windowsHide: true, timeout: 30_000 },
+        const { stdout: refCommit } = await invoke(() =>
+          exec(git, ["-C", repository.destination, "rev-parse", ref], {
+            env,
+            windowsHide: true,
+            timeout: 30_000,
+          }),
         );
         if (refCommit.trim() !== expected)
           throw new Error(
