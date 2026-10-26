@@ -338,10 +338,13 @@ def inventory(p, clock, report=None):
              "matchingNumericNames": [], "numericNameCount": 0, "numericNameCountExact": False,
              "validatedVersionCount": 0, "versionLimit": 4, "versionCountWithinLimit": None,
              "directoryIdentityAvailable": False, "directoryIdentityEqual": None,
-             "directoryIdentityFailure": None, "failedPredicate": None}
+             "directoryIdentityFailure": None, "directoryBefore": None, "directoryAfter": None,
+             "directoryChangedFields": None, "failedPredicate": None}
     report["redistEnumeration"] = facts
     if redist is not None:
         before = signature(redist.stat());entries = [];primary = None
+        signature_fields = ("dev", "ino", "size", "mtimeNs", "ctimeNs", "mode", "nlink", "birthtimeNs")
+        facts["directoryBefore"] = dict(zip(signature_fields, before))
         try:
             with os.scandir(redist) as scan:
                 for entry in scan:
@@ -377,7 +380,10 @@ def inventory(p, clock, report=None):
             facts["matchingNumericNames"].sort()
             try:
                 clock.remaining()
-                facts["directoryIdentityEqual"] = signature(redist.stat()) == before
+                after = signature(redist.stat())
+                facts["directoryAfter"] = dict(zip(signature_fields, after))
+                facts["directoryChangedFields"] = [name for name, left, right in zip(signature_fields, before, after) if left != right]
+                facts["directoryIdentityEqual"] = after == before
                 facts["directoryIdentityAvailable"] = True
             except BaseException:
                 facts["directoryIdentityFailure"] = "INV_VERSION_IDENTITY_UNAVAILABLE"

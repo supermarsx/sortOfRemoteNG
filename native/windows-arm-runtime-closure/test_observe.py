@@ -156,6 +156,8 @@ class PassiveTests(unittest.TestCase):
             self.assertTrue(facts["entryCountExact"] and facts["numericNameCountExact"])
             self.assertEqual(result["redistVersions"],["14.50.1","14.51.36231"])
             self.assertFalse(result["closureSatisfied"])
+            self.assertEqual(facts["directoryBefore"],facts["directoryAfter"])
+            self.assertEqual(facts["directoryChangedFields"],[])
             for value in names[2:]:self.assertNotIn(json.dumps(value),json.dumps(result))
 
     def test_version_post_stat_mutation_is_distinct_and_original_bound_survives_second_fault(self):
@@ -170,6 +172,11 @@ class PassiveTests(unittest.TestCase):
                 with self.assertRaisesRegex(o.Denied,"INV_VERSION_DIRECTORY_CHANGED"):o.inventory(p,clock(),report=report)
             self.assertEqual(report["redistEnumeration"]["failedPredicate"],"directory-identity")
             self.assertFalse(report["redistEnumeration"]["directoryIdentityEqual"])
+            facts=report["redistEnumeration"]
+            self.assertIn("mtimeNs",facts["directoryChangedFields"])
+            self.assertEqual(facts["directoryAfter"]["mtimeNs"]-facts["directoryBefore"]["mtimeNs"],1000000000)
+            self.assertEqual(set(facts["directoryBefore"]),{"dev","ino","size","mtimeNs","ctimeNs","mode","nlink","birthtimeNs"})
+            self.assertEqual(facts["directoryChangedFields"],[k for k in facts["directoryBefore"] if facts["directoryBefore"][k]!=facts["directoryAfter"][k]])
         with tempfile.TemporaryDirectory() as folder:
             p=self.fixture(Path(folder).resolve());redist=Path(p["redistRoot"])
             for i in range(17):(redist/str(i)).mkdir()
@@ -184,6 +191,9 @@ class PassiveTests(unittest.TestCase):
                 with self.assertRaises(o.Denied) as found:o.inventory(p,clock(),report=report)
             self.assertIs(found.exception,primary)
             self.assertEqual(report["redistEnumeration"]["directoryIdentityFailure"],"INV_VERSION_IDENTITY_UNAVAILABLE")
+            self.assertIsNotNone(report["redistEnumeration"]["directoryBefore"])
+            self.assertIsNone(report["redistEnumeration"]["directoryAfter"])
+            self.assertIsNone(report["redistEnumeration"]["directoryChangedFields"])
 
     def test_real_hardlink_denies_and_partial_row_preserved(self):
         with tempfile.TemporaryDirectory() as folder:
