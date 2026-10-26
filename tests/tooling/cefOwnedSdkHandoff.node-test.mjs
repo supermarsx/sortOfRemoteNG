@@ -3425,6 +3425,56 @@ test("isolated Linux origin binds independent copied objects, generation raw byt
   assert.equal(Object.keys(LINUX_ISOLATED_FACT_KEYS).length, 15);
 });
 
+test("isolated R5 preserves finite raw cleanup milliseconds within the original budget", () => {
+  // Only this duration comes from actual operation 00bcc's finished record.
+  // All other fixture facts are synthetic, not engine execution evidence.
+  const observed = 832.4805999998935;
+  assert.equal(Number.isSafeInteger(observed), false);
+  const verify = (value, isolated = true, mutate = () => {}) => {
+    const f = isolated ? linuxIsolatedFixture() : linuxIncrementalFixture();
+    f.records.finished.facts.cleanupElapsedMs = value;
+    mutate(f.records.finished.facts);
+    if (isolated) f.refresh();
+    else {
+      const role = "finished";
+      f.input.evidence[role] = pin(
+        role + ".json",
+        Buffer.from(JSON.stringify(f.records[role])),
+      );
+    }
+    return verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  };
+  for (const value of [0, 0.125, observed, 30000])
+    assert.equal(verify(value).isolatedBuild, true);
+  for (const value of [
+    NaN,
+    Infinity,
+    -Infinity,
+    "832.4805999998935",
+    true,
+    false,
+    null,
+    undefined,
+    -0.001,
+    30000.001,
+    Number.MAX_SAFE_INTEGER,
+  ])
+    assert.throws(() => verify(value));
+  for (const mutate of [
+    (end) => delete end.cleanupElapsedMs,
+    (end) => (end.containerId = "f".repeat(64)),
+    (end) => (end.reason = "timeout"),
+    (end) => (end.exit = 1),
+    (end) => (end.quiescent = false),
+    (end) => (end.processesLeft = 1),
+    (end) => (end.readersStopped = false),
+    (end) => (end.logFailure = true),
+  ])
+    assert.throws(() => verify(observed, true, mutate));
+  assert.throws(() => verify(observed, false));
+  assert.equal(verify(1, false).origin, LINUX_INCREMENTAL_ORIGIN);
+});
+
 test("isolated R5 accepts pinned Siso handler counts with positive local work and one strict summary", () => {
   // Portable excerpt of the retained 4625 compile log. Other fixture facts are
   // synthetic: this test is source-contract proof, never execution evidence.

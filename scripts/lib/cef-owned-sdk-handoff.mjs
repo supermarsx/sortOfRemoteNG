@@ -2602,7 +2602,9 @@ function verifyLinuxIncrementalEvidence(
       end.processesLeft === 0 &&
       end.readersStopped === true &&
       end.logFailure === false &&
-      Number.isSafeInteger(end.cleanupElapsedMs) &&
+      (isolated
+        ? Number.isFinite(end.cleanupElapsedMs)
+        : Number.isSafeInteger(end.cleanupElapsedMs)) &&
       end.cleanupElapsedMs >= 0 &&
       end.cleanupElapsedMs <= start.cleanupBudgetMs &&
       post.compileSha256 === review.evidence.compile.sha256,
