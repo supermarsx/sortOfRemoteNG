@@ -799,6 +799,7 @@ function keyboardFixture(t, text = "pA55@word", onEscape) {
     );
   return {
     keyboard,
+    emit,
     escape,
     observed,
     win,
@@ -988,6 +989,115 @@ test("a keyup the engine never delivers delays the field once instead of failing
   assert.equal(await f.settled(), "pending");
   f.fire(250);
   assert.equal(await f.settled(), "typed");
+  assert.deepEqual(f.keys(), [KEY(0)]);
+});
+
+for (const receiptOrder of ["before-units", "between-units", "after-units"]) {
+  test(`split surrogate DOM inputs consume one host key/probe2 (${receiptOrder})`, async (t) => {
+    const f = keyboardFixture(t, "🙂");
+    assert.equal(f.probe(0), true);
+    if (receiptOrder === "before-units") assert.equal(f.probe(2), true);
+    assert.equal(f.key(f.text[0], "Unidentified"), true);
+    assert.equal(await f.settled(), "pending");
+    assert.deepEqual(
+      f.keys(),
+      [KEY(0)],
+      "low unit is already part of the same native key",
+    );
+    if (receiptOrder === "between-units") assert.equal(f.probe(2), true);
+    assert.equal(f.key(f.text[1], "Unidentified"), true);
+    if (receiptOrder === "after-units") assert.equal(f.probe(2), true);
+    assert.equal(await f.settled(), "typed");
+    assert.equal(f.input.value, f.text);
+    assert.deepEqual(f.keys(), [KEY(0)]);
+    assert.equal(f.signals.includes(CANCEL), false);
+    assert.ok(f.timers.filter((timer) => !timer.cleared).length === 0);
+  });
+}
+
+test("a surrogate key denies a one-unit receipt before either DOM input", async (t) => {
+  const f = keyboardFixture(t, "🙂");
+  f.probe(0);
+  assert.equal(f.probe(1), false);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.deepEqual(f.keys(), [KEY(0)]);
+});
+
+test("split surrogate between BMP characters preserves absolute receipt indices", async (t) => {
+  const f = keyboardFixture(t, "a🙂中");
+  f.probe(0);
+  f.key("a");
+  f.probe(1);
+  assert.deepEqual(f.keys(), [KEY(0), KEY(1)]);
+  assert.equal(f.probe(3), true);
+  f.key(f.text[1], "Unidentified");
+  assert.equal(await f.settled(), "pending");
+  f.key(f.text[2], "Unidentified");
+  assert.deepEqual(f.keys(), [KEY(0), KEY(1), KEY(3)]);
+  f.key("中", "Unidentified");
+  f.probe(4);
+  assert.equal(await f.settled(), "typed");
+  assert.equal(f.input.value, f.text);
+});
+
+for (const [name, drive] of [
+  ["wrong trailing character", (f) => f.key("x")],
+  ["wrong probe1 receipt", (f) => f.probe(1)],
+  ["skipped probe3 receipt", (f) => f.probe(3)],
+  ["blur", (f) => f.doc.getElementById("password").focus()],
+  [
+    "foreign field input",
+    (f) =>
+      f.emit("beforeinput", {
+        target: f.doc.getElementById("password"),
+        isTrusted: true,
+        inputType: "insertText",
+        data: f.text[1],
+        preventDefault() {},
+      }),
+  ],
+  [
+    "untrusted input",
+    (f) =>
+      f.emit("beforeinput", {
+        target: f.input,
+        isTrusted: false,
+        inputType: "insertText",
+        data: f.text[1],
+        preventDefault() {},
+      }),
+  ],
+  ["Escape", (f) => f.escape()],
+  [
+    "page expiry",
+    (f) => {
+      const expiry = f.timers.find(
+        (timer) => !timer.cleared && timer.ms > 10000,
+      );
+      assert.ok(expiry);
+      f.fire(expiry.ms);
+    },
+  ],
+]) {
+  test(`split surrogate keeps ${name} denial`, async (t) => {
+    const f = keyboardFixture(t, "🙂", () => {});
+    f.probe(0);
+    f.key(f.text[0], "Unidentified");
+    drive(f);
+    assert.equal(await f.settled(), "native-typing-cancelled");
+    assert.deepEqual(f.keys(), [KEY(0)]);
+    assert.ok(f.signals.includes(CANCEL));
+  });
+}
+
+test("a missing low surrogate retains the original1500ms receipt deadline", async (t) => {
+  const f = keyboardFixture(t, "🙂");
+  f.probe(0);
+  f.key(f.text[0], "Unidentified");
+  assert.equal(f.probe(2), true);
+  assert.equal(await f.settled(), "pending");
+  f.fire(1500);
+  assert.equal(await f.settled(), "native-typing-cancelled");
   assert.deepEqual(f.keys(), [KEY(0)]);
 });
 

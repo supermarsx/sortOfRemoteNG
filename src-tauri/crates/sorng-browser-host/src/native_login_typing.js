@@ -109,6 +109,24 @@ function createLoginKeyboard(signal, onEscape) {
           row.element.selectionEnd === row.position))
     );
   }
+  function expectedLowSurrogate(row) {
+    return (
+      row.position > 0 &&
+      row.text.charCodeAt(row.position - 1) >= 0xd800 &&
+      row.text.charCodeAt(row.position - 1) <= 0xdbff &&
+      row.text.charCodeAt(row.position) >= 0xdc00 &&
+      row.text.charCodeAt(row.position) <= 0xdfff
+    );
+  }
+  function surrogateReceiptEnd(row) {
+    if (expectedLowSurrogate(row)) return row.position + 1;
+    return row.text.charCodeAt(row.position) >= 0xd800 &&
+      row.text.charCodeAt(row.position) <= 0xdbff &&
+      row.text.charCodeAt(row.position + 1) >= 0xdc00 &&
+      row.text.charCodeAt(row.position + 1) <= 0xdfff
+      ? row.position + 2
+      : null;
+  }
   // A key is entered once two facts hold, in either order: the host's receipt
   // that it sent the key (`probe N+1`) and the trusted DOM input event. The
   // later of the two calls this. No timer is on that path, so a hidden page's
@@ -208,9 +226,12 @@ function createLoginKeyboard(signal, onEscape) {
       }
       acceptedEvents.add(event);
       row.position = length;
-      row.armed = false;
+      // One native key may carry a UTF-16 pair as two DOM input events. Its
+      // low unit is already sent: keep only that exact continuation armed,
+      // without requesting another key or accepting the host receipt early.
+      row.armed = event.data?.length === 1 && expectedLowSurrogate(row);
       // The host's receipt for this key may have overtaken its DOM event.
-      if (row.receipt === row.position) advance(row);
+      if (!row.armed && row.receipt === row.position) advance(row);
     },
     true,
   );
@@ -334,7 +355,9 @@ function createLoginKeyboard(signal, onEscape) {
         !Number.isInteger(index) ||
         index <= row.receipt ||
         (row.armed
-          ? index <= row.position || index > row.position + 2
+          ? surrogateReceiptEnd(row) !== null
+            ? index !== surrogateReceiptEnd(row)
+            : index <= row.position || index > row.position + 2
           : index !== row.position)
       ) {
         finish(false);
