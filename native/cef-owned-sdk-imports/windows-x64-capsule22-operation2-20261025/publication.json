@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-owned-publication-review",
+  "target": "x86_64-pc-windows-msvc",
+  "sourceLockIdentity": "bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629",
+  "descriptorSha256": "758a4d5fb7e3de8f84c3f22b4015113e3231843235bc2c921efd6b2265990254",
+  "producer": {
+    "target": "x86_64-pc-windows-msvc",
+    "runId": 40181911453,
+    "headSha": "8bdc3413f2d860673c8291b0dd08f3b3a95d020e",
+    "artifactId": 12593653889,
+    "artifactSha256": "758a03607629059f7d8d73b598b9cd77bdaae4c5a007aff33a00405c82f996bf",
+    "descriptorSha256": "758a4d5fb7e3de8f84c3f22b4015113e3231843235bc2c921efd6b2265990254",
+    "producer": "owned-import",
+    "runAttempt": 1,
+    "completionSha256": "c5914cb466b727291e860f8c149353ada06f4ca018658bbe449f81f263596fbc",
+    "reviewedImport": "native/cef-owned-sdk-imports/windows-x64-capsule22-operation2-20261025/review.json",
+    "reviewSha256": "be9ab3bc8d60e16590059d077fa71320bd6ea09f96146b659eacdbe21f18ab3c"
+  },
+  "acceptance": {
+    "runId": 40244013870,
+    "runAttempt": 1,
+    "headSha": "9a0f0f6b6640753ebd70425121fb30c9480e8884",
+    "sourceTree": "882f203db9fffa47cdc3b8599a5da05f74ac25fe",
+    "codeSha256": "5c88aa306d2683e4ead17dbc162d36c194018b6781746fa1bea41e3e978dcee6",
+    "artifactId": 12619755928,
+    "artifactSha256": "937fc3b283b8ea90d160555c012d969e13107eea4c29d60b1e9b220f58a6f779",
+    "sealSha256": "41ff631a70761bd7269e7570c43edc4fc68ddf184328d139cff8505014231158",
+    "nativeReportSha256": "07bd8ea64cafc3147d558f9160a6765500904845f56152604b2020fa7f676a94"
+  }
+}
