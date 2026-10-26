@@ -10,7 +10,7 @@ const workflow = YAML.parse(
 );
 const job = workflow.jobs.probe;
 
-test("SDK layout diagnostics require an explicit public default-branch run", () => {
+test("SDK layout defaults remain public/default-branch and census requires its exact opt-in branch", () => {
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.metal_tools, {
     description:
       "Observe selected Apple Metal commands; permits the existing fixed missing-component download",
@@ -22,11 +22,14 @@ test("SDK layout diagnostics require an explicit public default-branch run", () 
   assert.equal(Object.keys(workflow.jobs).join(), "probe");
   assert.equal(
     job.if,
-    "github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'",
+    "github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && ((inputs.external_census == true && github.repository == 'supermarsx/sortOfRemoteNG' && github.ref == 'refs/heads/codex/ci-mac-external-census-20261026') || (inputs.external_census != true && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))",
   );
   assert.equal(job.permissions, undefined);
   assert.equal(job["runs-on"], "macos-15-intel");
-  assert.equal(job["timeout-minutes"], "${{ inputs.metal_tools && 15 || 10 }}");
+  assert.equal(
+    job["timeout-minutes"],
+    "${{ (inputs.metal_tools || inputs.external_census) && 15 || 10 }}",
+  );
   assert.deepEqual(workflow.concurrency, {
     group: "cef-sdk-layout-probe-${{ github.ref }}",
     "cancel-in-progress": true,
@@ -37,7 +40,11 @@ test("SDK layout diagnostics require an explicit public default-branch run", () 
 test("SDK layout diagnostics run only fixed provisioning and the non-build probe", () => {
   const commands = job.steps
     .filter(
-      (step) => step.run && step.name !== "Diagnose selected Apple Metal tools",
+      (step) =>
+        step.run &&
+        step.name !== "Diagnose selected Apple Metal tools" &&
+        step.name !==
+          "Observe closed Mac external inputs and owned capabilities",
     )
     .map((step) => step.run);
   assert.deepEqual(commands, [
@@ -50,12 +57,18 @@ test("SDK layout diagnostics run only fixed provisioning and the non-build probe
     SORNG_CEF_TOOLS_ROOT: "/",
   });
   for (const step of job.steps)
-    if (step.name !== "Diagnose selected Apple Metal tools")
+    if (
+      step.name !== "Diagnose selected Apple Metal tools" &&
+      step.name !== "Observe closed Mac external inputs and owned capabilities"
+    )
       assert.equal(step.env, undefined);
   const metal = job.steps.find(
     (step) => step.name === "Diagnose selected Apple Metal tools",
   );
-  assert.equal(metal.if, "inputs.metal_tools == true");
+  assert.equal(
+    metal.if,
+    "inputs.metal_tools == true && inputs.external_census != true",
+  );
   assert.deepEqual(metal.env, {
     METAL_TOOLS_ENABLED: "${{ inputs.metal_tools }}",
   });
@@ -85,7 +98,7 @@ test("SDK diagnostic retention preserves failure output without a runtime seal",
   assert.equal(retention.if, "always()");
   assert.deepEqual(retention.with, {
     name: "cef-sdk-layout-probe-${{ github.run_id }}-${{ github.run_attempt }}",
-    path: "${{ runner.temp }}/cef-sdk-layout-probe.log\n${{ runner.temp }}/cef-sdk-probe-prerequisites\n${{ runner.temp }}/cef-metal-tools-probe\n",
+    path: "${{ runner.temp }}/cef-sdk-layout-probe.log\n${{ runner.temp }}/cef-sdk-probe-prerequisites\n${{ runner.temp }}/cef-metal-tools-probe\n${{ steps.external_census.outputs.census_root }}\n",
     "retention-days": 14,
     "if-no-files-found": "warn",
   });
@@ -125,7 +138,10 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
 import { identitySha256 } from "../../scripts/lib/browser-custom-runtime.mjs";
-import { prepareMacMetalToolchain } from "../../scripts/cef-hosted-provision.mjs";
+import {
+  prepareMacMetalToolchain,
+  macMetalFingerprint,
+} from "../../scripts/cef-hosted-provision.mjs";
 import {
   sdkProbeAuthority,
   checkpointHost,
@@ -817,4 +833,919 @@ test("diagnostic wrapper records physical air-lld signature as metallib and keep
       0,
     );
   }
+});
+
+import { EventEmitter } from "node:events";
+import { constants as censusFsConstants } from "node:fs";
+import { execFile as censusActualExecFile } from "node:child_process";
+import { macExternalObservationPlan as sharedExternalPlan } from "../../scripts/lib/cef-mac-source-metadata.mjs";
+const censusStep = job.steps.find((step) => step.id === "external_census");
+const censusBody = censusStep.run.match(/<<'NODE'\n([\s\S]*?)\nNODE/)[1];
+const censusFunctions = censusBody.slice(
+  censusBody.indexOf("const CENSUS_BRANCH"),
+  censusBody.indexOf("async function runExternalCensus"),
+);
+const censusProgram = censusBody.slice(
+  censusBody.indexOf("const CENSUS_BRANCH"),
+  censusBody.lastIndexOf("\ntry {"),
+);
+const censusRoot =
+  "/Users/runner/work/_temp/cef-mac-inputs-11111111-1111-4111-8111-111111111111";
+function censusEnv() {
+  return {
+    EXTERNAL_CENSUS_ENABLED: "true",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
+    GITHUB_REF: "refs/heads/codex/ci-mac-external-census-20261026",
+    GITHUB_WORKFLOW_REF:
+      "supermarsx/sortOfRemoteNG/.github/workflows/cef-sdk-layout-probe.yml@refs/heads/codex/ci-mac-external-census-20261026",
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_RUN_ID: "1",
+    GITHUB_RUN_ATTEMPT: "1",
+    RUNNER_TEMP: "/Users/runner/work/_temp",
+    GITHUB_OUTPUT: "/owned/github-output",
+  };
+}
+function censusApi(extra = {}) {
+  const context = vm.createContext({
+    assert,
+    path,
+    Buffer,
+    performance,
+    Date,
+    setTimeout,
+    clearTimeout,
+    constants: censusFsConstants,
+    createHash,
+    process: { platform: "darwin", arch: "x64", getuid: () => 501 },
+    ...extra,
+  });
+  new vm.Script(
+    censusFunctions +
+      "\nglobalThis.api={censusAuthority,censusClock,fixedAppleCommand,censusWorker,readCapability};",
+  ).runInContext(context);
+  return { context, ...context.api };
+}
+function fakeWorkerPlan() {
+  return {
+    python: "/selected/python",
+    context: { outputRoot: censusRoot },
+    argv: (mode, file) => [
+      "-I",
+      "-B",
+      "scripts/lib/cef-checkpoint-archive.py",
+      mode,
+      "--input",
+      file,
+      "--output",
+      censusRoot +
+        (mode === "mac-external-observe"
+          ? "/external.json"
+          : "/capability.json"),
+      "--seconds",
+      "1",
+    ],
+  };
+}
+function fakeChild() {
+  const child = new EventEmitter();
+  return Object.assign(child, {
+    pid: 1234,
+    stdout: { destroy() {} },
+    stderr: { destroy() {} },
+    kill() {
+      child.kills = (child.kills ?? 0) + 1;
+      return true;
+    },
+    unref() {
+      child.unreferenced = true;
+    },
+  });
+}
+
+test("census dispatch matrix preserves defaults and requires exact private opt-in branch", () => {
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.external_census, {
+    description:
+      "Observe closed ARM-target Mac external inputs and owned timestamp capabilities; permits reviewed fixed Metal preparation",
+    type: "boolean",
+    required: false,
+    default: false,
+  });
+  const allow = (
+    external,
+    ref,
+    repository = "supermarsx/sortOfRemoteNG",
+    visibility = "public",
+  ) =>
+    vm.runInNewContext(job.if, {
+      inputs: { external_census: external },
+      github: {
+        event_name: "workflow_dispatch",
+        repository,
+        ref,
+        event: { repository: { visibility, default_branch: "main" } },
+      },
+      format: (s, v) => s.replace("{0}", v),
+    });
+  assert.equal(allow(false, "refs/heads/main"), true);
+  assert.equal(
+    allow(false, "refs/heads/codex/ci-mac-external-census-20261026"),
+    false,
+  );
+  assert.equal(allow(true, "refs/heads/main"), false);
+  assert.equal(
+    allow(true, "refs/heads/codex/ci-mac-external-census-20261026"),
+    true,
+  );
+  assert.equal(
+    allow(
+      true,
+      "refs/heads/codex/ci-mac-external-census-20261026",
+      "fork/repo",
+    ),
+    false,
+  );
+  assert.equal(
+    allow(
+      true,
+      "refs/heads/codex/ci-mac-external-census-20261026",
+      "supermarsx/sortOfRemoteNG",
+      "private",
+    ),
+    false,
+  );
+  for (const step of job.steps.filter((s) =>
+    [
+      "Prepare existing fixed reviewed native prerequisites",
+      "Probe selected native SDK links without acquiring sources",
+    ].includes(s.name),
+  ))
+    assert.equal(step.if, "inputs.external_census != true");
+  assert.equal(censusStep.if, "inputs.external_census == true");
+  assert.equal(
+    metalStep.if,
+    "inputs.metal_tools == true && inputs.external_census != true",
+  );
+  assert.match(censusBody, /await prepareMacMetalToolchain/);
+  assert.equal(
+    (censusBody.match(/await prepareMacMetalToolchain/g) ?? []).length,
+    1,
+  );
+});
+test("actual census authority denies before IO and numeric adapter keeps original floor-down clocks", () => {
+  const api = censusApi();
+  api.censusAuthority(censusEnv(), "darwin", "x64");
+  for (const [key, value] of [
+    ["EXTERNAL_CENSUS_ENABLED", "false"],
+    ["GITHUB_REF", "refs/heads/main"],
+    ["GITHUB_WORKFLOW_REF", "other"],
+    ["GITHUB_REPOSITORY", "fork/repo"],
+    ["GH_TOKEN", "secret"],
+    ["RUNNER_TEMP", "/other"],
+  ])
+    assert.throws(
+      () =>
+        api.censusAuthority({ ...censusEnv(), [key]: value }, "darwin", "x64"),
+      /CENSUS_AUTHORITY/,
+    );
+  let mono = 0,
+    wall = 1000;
+  const clock = api.censusClock(
+    () => mono,
+    () => wall,
+  );
+  mono = 0.8;
+  assert.equal(clock.remaining(), 599999);
+  assert.ok(Number.isSafeInteger(clock.remaining()));
+  mono = 600000;
+  assert.throws(() => clock.remaining(), /DEADLINE/);
+  assert.equal(clock.cleanup(), 30000);
+  mono = 630000;
+  assert.throws(() => clock.cleanup(), /CLEANUP_UNCONFIRMED/);
+  const before = censusApi({
+    realpath: () => {
+      throw new Error("IO must not start");
+    },
+    process: { env: {}, platform: "darwin", arch: "x64" },
+  }).context;
+  new vm.Script(
+    censusProgram.slice(
+      censusProgram.indexOf("async function runExternalCensus"),
+    ) + "\nglobalThis.run=runExternalCensus;",
+  ).runInContext(before);
+  return assert.rejects(before.run(), /CENSUS_AUTHORITY/);
+});
+test("census Apple command surface accepts only existing exact prerequisite vectors", () => {
+  const { fixedAppleCommand: check } = censusApi();
+  check("/usr/bin/xcrun", ["-sdk", "macosx", "--show-sdk-path"]);
+  check("/usr/bin/xcodebuild", ["-downloadComponent", "MetalToolchain"]);
+  check("/usr/bin/codesign", [
+    "--verify",
+    "--strict",
+    "--all-architectures",
+    "-R=anchor apple",
+    "/owned/air-lld",
+  ]);
+  for (const [f, a] of [
+    ["sh", ["-c", "x"]],
+    ["/usr/bin/xcodebuild", ["-downloadAllPlatforms"]],
+    ["/usr/bin/xcrun", ["clang", "--version"]],
+  ])
+    assert.throws(() => check(f, a), /CENSUS_APPLE_COMMAND/);
+});
+test("actual closed worker waits for callback AND close, preserves null/error and bounds retained output", async () => {
+  const api = censusApi(),
+    plan = fakeWorkerPlan(),
+    rows = [];
+  let child, callback;
+  const execute = (file, args, options, cb) => {
+    assert.equal(file, plan.python);
+    assert.equal(options.killSignal, "SIGKILL");
+    assert.equal(options.timeout, 1000);
+    assert.equal(options.maxBuffer, 1048576);
+    callback = cb;
+    child = fakeChild();
+    return child;
+  };
+  const pending = api.censusWorker(
+    plan,
+    "mac-external-observe",
+    censusRoot + "/context.json",
+    () => 1000,
+    () => 2000,
+    async (row, out, err) => rows.push({ row, out, err }),
+    execute,
+  );
+  let settled = false;
+  pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  callback(null, JSON.stringify({ complete: true }), "x".repeat(70000));
+  await Promise.resolve();
+  assert.equal(settled, false);
+  child.emit("exit", 0);
+  child.emit("close", 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(await pending)), {
+    complete: true,
+  });
+  assert.equal(rows[0].err.length, 65536);
+  assert.equal(rows[0].row.stderrTruncated, true);
+  assert.equal(rows[0].row.closed, true);
+  const marker = new Error("original");
+  for (const value of [null, marker, false]) {
+    let c;
+    const p = api.censusWorker(
+      plan,
+      "mac-external-observe",
+      censusRoot + "/context.json",
+      () => 1000,
+      () => 2000,
+      async () => {
+        throw new Error("secondary");
+      },
+      (_f, _a, _o, cb) => {
+        c = fakeChild();
+        queueMicrotask(() => {
+          c.emit("error", value);
+          cb(marker, "", "");
+          c.emit("exit", 7);
+          c.emit("close", 7);
+        });
+        return c;
+      },
+    );
+    await assert.rejects(p, (e) => e === value);
+  }
+});
+test("closed worker denies wrong mode/argv before spawn and records unconfirmed callback without extending cleanup", async () => {
+  const api = censusApi(),
+    plan = fakeWorkerPlan();
+  let calls = 0;
+  const execute = () => {
+    calls++;
+    return fakeChild();
+  };
+  assert.throws(
+    () =>
+      api.censusWorker(
+        plan,
+        "other",
+        censusRoot + "/context.json",
+        () => 1,
+        () => 2,
+        () => {},
+        execute,
+      ),
+    /MODE/,
+  );
+  assert.throws(
+    () =>
+      api.censusWorker(
+        { ...plan, argv: () => ["bad"] },
+        "mac-external-observe",
+        censusRoot + "/context.json",
+        () => 1,
+        () => 2,
+        () => {},
+        execute,
+      ),
+    /ARGV/,
+  );
+  assert.equal(calls, 0);
+  let child;
+  const began = performance.now();
+  await assert.rejects(
+    api.censusWorker(
+      plan,
+      "mac-external-observe",
+      censusRoot + "/context.json",
+      () => 5,
+      () => 25,
+      () => {},
+      () => {
+        child = fakeChild();
+        return child;
+      },
+    ),
+    /DEADLINE/,
+  );
+  assert.ok(performance.now() - began < 1000);
+  assert.equal(child.unreferenced, true);
+  assert.ok(child.kills >= 1);
+});
+test("actual closed adapter kills and joins a real benign timed child before rejecting", async () => {
+  const api = censusApi(),
+    plan = fakeWorkerPlan(),
+    rows = [];
+  let actual;
+  await assert.rejects(
+    api.censusWorker(
+      plan,
+      "mac-external-observe",
+      censusRoot + "/context.json",
+      () => 100,
+      () => 2000,
+      async (row) => rows.push(row),
+      (_file, _args, options, callback) => {
+        actual = censusActualExecFile(
+          process.execPath,
+          ["-e", "setInterval(()=>{},1000)"],
+          options,
+          callback,
+        );
+        return actual;
+      },
+    ),
+  );
+  const terminal = rows.filter((row) => row.snapshot === "terminal");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0].closed, true);
+  assert.equal(terminal[0].exitSeen, true);
+  assert.notEqual(actual.signalCode, null);
+});
+function capabilityFixture() {
+  const stat = () =>
+    Object.fromEntries(
+      [
+        "dev",
+        "ino",
+        "mode",
+        "nlink",
+        "size",
+        "uid",
+        "gid",
+        "atime_ns",
+        "mtime_ns",
+        "ctime_ns",
+      ]
+        .map((k) => [k, "1"])
+        .concat([
+          ["birthtimeNsAvailable", false],
+          ["birthtimeNs", null],
+        ]),
+    );
+  const value = {
+    schemaVersion: 1,
+    kind: "sorng-macarm-owned-capability-observation",
+    target: "aarch64-apple-darwin",
+    complete: true,
+    cleanupConfirmed: true,
+    objectsRemoved: true,
+    handlesClosed: true,
+    error: null,
+    sourceWriteAdmitted: false,
+    installedInputsWritten: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+    rows: ["file", "directory", "root", "symlink"].flatMap((role) =>
+      ["no-op", "past", "future"].map((case_) => ({
+        role,
+        case: case_,
+        requestedMtimeNs: "1",
+        before: stat(),
+        after: stat(),
+        heldBefore: role === "symlink" ? null : stat(),
+        heldAfter: role === "symlink" ? null : stat(),
+        exactMtimeReadback: false,
+      })),
+    ),
+  };
+  return value;
+}
+function capabilityIo(value = capabilityFixture()) {
+  const body = Buffer.from(JSON.stringify(value)),
+    pin = { name: "capability.json", bytes: body.length, sha256: hash(body) };
+  const parent = {
+    dev: 1n,
+    ino: 2n,
+    mode: 0o40700n,
+    uid: 501n,
+    gid: 20n,
+    birthtimeNs: 0n,
+    isDirectory: () => true,
+  };
+  const file = {
+    ...parent,
+    ino: 3n,
+    mode: 0o100600n,
+    nlink: 1n,
+    size: BigInt(body.length),
+    mtimeNs: 1n,
+    ctimeNs: 1n,
+    isFile: () => true,
+  };
+  let closed = 0;
+  const io = {
+    lstat: async (p) => (p === censusRoot ? parent : file),
+    open: async () => ({
+      stat: async () => file,
+      readFile: async () => body,
+      close: async () => {
+        closed++;
+      },
+    }),
+  };
+  return { body, pin, parent, file, io, closed: () => closed };
+}
+test("actual capability reader verifies held bytes/parent/closed schema without inventing timestamp policy", async () => {
+  const api = censusApi(),
+    f = capabilityIo();
+  const result = await api.readCapability(
+    censusRoot + "/capability.json",
+    f.pin,
+    () => {},
+    f.parent,
+    f.io,
+    501,
+  );
+  assert.equal(result.rows.length, 12);
+  assert.equal(result.rows[0].exactMtimeReadback, false);
+  assert.equal(f.closed(), 1);
+  for (const mutate of [
+    (v) => (v.sourceWriteAdmitted = true),
+    (v) => (v.extra = true),
+    (v) => (v.rows[0].role = "other"),
+    (v) => (v.rows[0].before = null),
+    (v) => (v.rows[0].after.birthtimeNs = "invented"),
+    (v) => (v.rows[1] = { ...v.rows[0] }),
+  ]) {
+    const value = capabilityFixture();
+    mutate(value);
+    const bad = capabilityIo(value);
+    await assert.rejects(
+      api.readCapability(
+        censusRoot + "/capability.json",
+        bad.pin,
+        () => {},
+        bad.parent,
+        bad.io,
+        501,
+      ),
+      /CENSUS_CAPABILITY/,
+    );
+    assert.equal(bad.closed(), 1);
+  }
+});
+test("capability reader rejects unknown path/link/overbound/retarget and preserves null through close failure", async () => {
+  const api = censusApi(),
+    f = capabilityIo();
+  await assert.rejects(
+    api.readCapability(
+      "/other/capability.json",
+      f.pin,
+      () => {},
+      f.parent,
+      f.io,
+      501,
+    ),
+    /PATH/,
+  );
+  await assert.rejects(
+    api.readCapability(
+      censusRoot + "/capability.json",
+      { ...f.pin, bytes: 65537 },
+      () => {},
+      f.parent,
+      f.io,
+      501,
+    ),
+    /PIN/,
+  );
+  const link = capabilityIo();
+  link.file.isFile = () => false;
+  await assert.rejects(
+    api.readCapability(
+      censusRoot + "/capability.json",
+      link.pin,
+      () => {},
+      link.parent,
+      link.io,
+      501,
+    ),
+    /FILE/,
+  );
+  const bad = capabilityIo();
+  let checks = 0;
+  bad.io.open = async () => ({
+    stat: async () => bad.file,
+    readFile: async () => bad.body,
+    close: async () => {
+      throw new Error("secondary");
+    },
+  });
+  await assert.rejects(
+    api.readCapability(
+      censusRoot + "/capability.json",
+      bad.pin,
+      () => {
+        if (++checks === 2) throw null;
+      },
+      bad.parent,
+      bad.io,
+      501,
+    ),
+    (e) => e === null,
+  );
+  const replaced = capabilityIo();
+  let stats = 0;
+  replaced.io.open = async () => ({
+    stat: async () =>
+      ++stats === 1 ? replaced.file : { ...replaced.file, ino: 99n },
+    readFile: async () => replaced.body,
+    close: async () => {},
+  });
+  await assert.rejects(
+    api.readCapability(
+      censusRoot + "/capability.json",
+      replaced.pin,
+      () => {},
+      replaced.parent,
+      replaced.io,
+      501,
+    ),
+    /IDENTITY/,
+  );
+});
+async function censusPipelineFixture() {
+  const target = "aarch64-apple-darwin",
+    profile = checkpointHost(target, "darwin", "x64"),
+    base = profile.inputs + "/";
+  const lock = JSON.parse(await read(base + "source-lock.json")),
+    build = lock.builds.find((row) => row.target === target),
+    toolBytes = Buffer.from(await read(base + build.toolchainLock.path)),
+    toolchain = JSON.parse(toolBytes),
+    mapBytes = Buffer.from(
+      await read(base + "cef-ci-runner-aarch64-apple-darwin.json"),
+    );
+  const developer = "/Applications/Xcode_26.3.app/Contents/Developer",
+    metalRoot =
+      "/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/" +
+      "a".repeat(40) +
+      "/Metal.xctoolchain";
+  const metal = {
+    kind: "selected-mac-metal-observation",
+    provenance: "newly-observed-apple-component-not-prepinned",
+    developerDir: developer,
+    componentResourceClosureVerified: false,
+    downloaded: true,
+    tools: [
+      {
+        role: "metal",
+        location: "external-metal-toolchain",
+        appleAnchorVerified: true,
+        bytes: 10,
+        sha256: "b".repeat(64),
+        version: "1.0",
+        versionSource: "tool-output",
+        pairedCompilerVersion: null,
+        physicalPath: metalRoot + "/usr/bin/metal",
+      },
+      {
+        role: "metallib",
+        location: "external-metal-toolchain",
+        appleAnchorVerified: true,
+        bytes: 20,
+        sha256: "c".repeat(64),
+        version: null,
+        versionSource: "not-observed",
+        pairedCompilerVersion: "1.0",
+        physicalPath: metalRoot + "/usr/bin/air-lld",
+      },
+    ],
+  };
+  const files = new Map(),
+    calls = [],
+    transport = [],
+    rootStat = {
+      dev: 1n,
+      ino: 2n,
+      uid: 501n,
+      gid: 20n,
+      mode: 0o40700n,
+      birthtimeNs: 0n,
+      isDirectory: () => true,
+    };
+  const stat = (file) =>
+    file === censusRoot
+      ? rootStat
+      : {
+          ...rootStat,
+          ino: 3n,
+          mode: 0o100600n,
+          nlink: 1n,
+          size: BigInt(files.get(file)?.length ?? 0),
+          mtimeNs: 1n,
+          ctimeNs: 1n,
+          isFile: () => true,
+        };
+  const api = {
+    path: path.posix,
+    process: {
+      env: censusEnv(),
+      platform: "darwin",
+      arch: "x64",
+      getuid: () => 501,
+      cwd: () => "/checkout",
+    },
+    randomUUID: () =>
+      path.posix.basename(censusRoot).slice("cef-mac-inputs-".length),
+    checkpointHost,
+    canonical: JSON.stringify,
+    identitySha256,
+    macMetalFingerprint,
+    macExternalObservationPlan: sharedExternalPlan,
+    realpath: async (value) =>
+      value.endsWith("/SDKs/MacOSX.sdk")
+        ? value.replace("MacOSX.sdk", "MacOSX26.2.sdk")
+        : value,
+    mkdir: async (value, options) => {
+      assert.equal(value, censusRoot);
+      assert.equal(options.mode, 0o700);
+      calls.push("mkdir");
+    },
+    lstat: async (file) => stat(file),
+    appendFile: async (file, line) => {
+      assert.equal(file, "/owned/github-output");
+      assert.equal(line, "census_root=" + censusRoot + "\n");
+    },
+    writeFile: async (file, body, options) => {
+      assert.equal(options.flag, "wx");
+      assert.ok(file.startsWith(censusRoot + "/"));
+      assert.equal(files.has(file), false);
+      files.set(file, Buffer.from(body));
+    },
+    readFile: async (file) => {
+      if (file === "/selected-inputs/" + build.toolchainLock.path)
+        return toolBytes;
+      if (file === "/selected-inputs/cef-ci-runner-aarch64-apple-darwin.json")
+        return mapBytes;
+      throw new Error("unexpected input read");
+    },
+    open: async (file) => {
+      assert.equal(file, censusRoot + "/capability.json");
+      return {
+        stat: async () => stat(file),
+        readFile: async () => files.get(file),
+        close: async () => calls.push("cap-close"),
+      };
+    },
+    plan: async (options) => {
+      assert.equal(options.target, target);
+      assert.equal(options.inputs, profile.inputs);
+      assert.equal(options.runnerMode, "hosted");
+      calls.push("plan");
+      return { sourceLock: lock, inputsRoot: "/selected-inputs" };
+    },
+    validateRunnerMap: (value) => {
+      calls.push("map");
+      return value;
+    },
+    assertHostedBuildIdentity: () => calls.push("host"),
+    verifyToolchainFiles: async (options) => {
+      assert.equal(options.python, "/" + JSON.parse(mapBytes).python);
+      assert.equal(options.runnerMapFromInputs, true);
+      calls.push("pins");
+      return { filesVerified: toolchain.files.length };
+    },
+    selectedSdkPreflight: async (options) => {
+      calls.push("sdk");
+      await options.run(
+        "/usr/bin/xcrun",
+        ["-sdk", "macosx", "--show-sdk-path"],
+        { timeout: 5000 },
+      );
+    },
+    prepareMacMetalToolchain: async (options, dependencies) => {
+      calls.push("metal");
+      assert.equal(options.allowDownload, true);
+      assert.ok(Number.isSafeInteger(options.remainingMilliseconds()));
+      await dependencies.exec(
+        "/usr/bin/xcodebuild",
+        ["-downloadComponent", "MetalToolchain"],
+        { timeout: 600000 },
+      );
+      return metal;
+    },
+    execFile: () => {
+      throw new Error("unexpected direct exec");
+    },
+    promisify: () => async (_file, _args, options) => {
+      transport.push(options);
+      assert.ok(Number.isSafeInteger(options.timeout));
+      assert.equal(options.killSignal, "SIGKILL");
+      return { stdout: "fixed owned tool output", stderr: "" };
+    },
+    readMacExternalObservation: async (_plan, summary, check) => {
+      calls.push("reader");
+      check();
+      assert.equal(summary.complete, true);
+      return { proof: true };
+    },
+    macExternalToolsBinding: (_base, proof) => {
+      assert.equal(proof.proof, true);
+      return { macExternalInputs: { roles: [], sourceWriteAdmitted: false } };
+    },
+    macExternalObservationEvidence: () => ({
+      snapshot: { name: "external.json", bytes: 1, sha256: "d".repeat(64) },
+      physicalRoots: { sdk: developer },
+      sourceWriteAdmitted: false,
+    }),
+  };
+  const context = censusApi(api).context;
+  new vm.Script(
+    censusProgram.slice(
+      censusProgram.indexOf("async function runExternalCensus"),
+    ) + "\nglobalThis.run=runExternalCensus;",
+  ).runInContext(context);
+  context.censusWorker = async (
+    selected,
+    mode,
+    contextFile,
+    remaining,
+    cleanup,
+    persist,
+  ) => {
+    assert.equal(selected.context.outputRoot, censusRoot);
+    assert.equal(contextFile, censusRoot + "/context.json");
+    assert.ok(Number.isSafeInteger(remaining()));
+    assert.ok(cleanup() > 0);
+    calls.push(mode);
+    await persist(
+      {
+        mode,
+        snapshot: "terminal",
+        closed: true,
+        exitSeen: true,
+        failed: false,
+        stdoutObserved: 0,
+        stdoutTruncated: false,
+        stderrObserved: 0,
+        stderrTruncated: false,
+      },
+      Buffer.alloc(0),
+      Buffer.alloc(0),
+    );
+    if (mode === "mac-owned-capability-observe") {
+      const body = Buffer.from(JSON.stringify(capabilityFixture()));
+      files.set(censusRoot + "/capability.json", body);
+      return {
+        complete: true,
+        kind: "sorng-macarm-owned-capability-observation",
+        rows: 12,
+        observation: {
+          name: "capability.json",
+          bytes: body.length,
+          sha256: hash(body),
+        },
+      };
+    }
+    return { complete: true, kind: "sorng-macarm-external-input-observation" };
+  };
+  return {
+    context,
+    calls,
+    files,
+    transport,
+    readOutcome: () => JSON.parse(files.get(censusRoot + "/outcome.json")),
+  };
+}
+test("actual census pipeline verifies cross profile/tools, prepares once, then observes capability before readonly census", async () => {
+  const f = await censusPipelineFixture();
+  const result = await f.context.run();
+  assert.equal(result.complete, true);
+  assert.equal(result.target, "aarch64-apple-darwin");
+  assert.equal(result.hostArchitecture, "x64");
+  assert.equal(result.sourceWriteAdmitted, false);
+  assert.equal(result.sourceWritten, false);
+  assert.equal(result.installedInputsWrittenByCapability, false);
+  assert.equal(result.externalCensusWritesInstalledInputs, false);
+  assert.equal(result.metalPreparationDownloaded, true);
+  assert.equal(result.capabilityFixtureWritten, true);
+  assert.equal(result.capability.exactMtimeReadback, false);
+  assert.deepEqual(f.calls, [
+    "mkdir",
+    "plan",
+    "map",
+    "host",
+    "pins",
+    "sdk",
+    "metal",
+    "mac-owned-capability-observe",
+    "cap-close",
+    "mac-external-observe",
+    "reader",
+  ]);
+  assert.equal(f.calls.filter((x) => x === "metal").length, 1);
+  assert.equal(f.transport.length, 2);
+  assert.ok(f.files.has(censusRoot + "/context.json"));
+  assert.equal(f.readOutcome().nativeAcceptance, false);
+  assert.equal(f.readOutcome().checkpointReady, false);
+});
+test("actual census pipeline preserves first null and stops at tool/Metal/capability failures without fabricated write proof", async () => {
+  for (const phase of ["pins", "metal", "capability"]) {
+    const f = await censusPipelineFixture();
+    if (phase === "pins")
+      f.context.verifyToolchainFiles = async () => {
+        throw null;
+      };
+    if (phase === "metal")
+      f.context.prepareMacMetalToolchain = async () => {
+        throw null;
+      };
+    if (phase === "capability")
+      f.context.censusWorker = async () => {
+        throw null;
+      };
+    await assert.rejects(f.context.run(), (e) => e === null);
+    const outcome = f.readOutcome();
+    assert.equal(outcome.complete, false);
+    assert.equal(outcome.sourceWriteAdmitted, false);
+    assert.equal(
+      outcome.capabilityFixtureWritten,
+      phase === "capability" ? null : false,
+    );
+    assert.equal(f.calls.includes("mac-external-observe"), false);
+  }
+});
+test("timed worker retains bounded partial bytes before cleanup and never reports late close as success", async () => {
+  const api = censusApi(),
+    plan = fakeWorkerPlan(),
+    records = [];
+  let child, callback;
+  const pending = api.censusWorker(
+    plan,
+    "mac-external-observe",
+    censusRoot + "/context.json",
+    () => 10,
+    () => 35,
+    async (row, out, err) => records.push({ row, out, err }),
+    (_f, _a, _o, cb) => {
+      callback = cb;
+      child = fakeChild();
+      child.stdout = Object.assign(new EventEmitter(), { destroy() {} });
+      child.stderr = Object.assign(new EventEmitter(), { destroy() {} });
+      return child;
+    },
+  );
+  child.stdout.emit("data", Buffer.alloc(70000, 120));
+  await assert.rejects(pending, /DEADLINE/);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].row.snapshot, "work-timeout");
+  assert.equal(records[0].row.closed, false);
+  assert.equal(records[0].out.length, 65536);
+  assert.equal(records[0].row.stdoutObserved, 70000);
+  assert.equal(records[0].row.stdoutTruncated, true);
+  callback(null, '{"complete":true}', "");
+  child.emit("exit", 0);
+  child.emit("close", 0);
+  await Promise.resolve();
+  assert.equal(records.length, 1);
 });
