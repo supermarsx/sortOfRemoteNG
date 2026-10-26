@@ -13,6 +13,17 @@ use tokio::{
     sync::oneshot,
 };
 
+fn login_page(name: &str) -> std::io::Result<String> {
+    const MARKER: &str = "/* FIXTURE_PASSWORD_JSON */";
+    let page = include_str!("page.html");
+    if page.matches(MARKER).count() != 1 {
+        return Err(std::io::Error::other("fixture password marker"));
+    }
+    let expected =
+        serde_json::to_string(crate::fixture_password(name)).map_err(std::io::Error::other)?;
+    Ok(page.replacen(MARKER, &expected, 1))
+}
+
 pub struct Certificates {
     pub root: Vec<u8>,
     pub decoy: Vec<u8>,
@@ -211,7 +222,7 @@ async fn serve(
                 state.proof=Some(proof);("{}".to_owned(),String::new())
             }else if path=="/manual" || path=="/v3/signin/identifier"{
                 state.initial_cookie_empty=Some(!header.lines().any(|l|l.split_once(':').is_some_and(|(k,v)|k.eq_ignore_ascii_case("cookie")&&!v.trim().is_empty())));
-                (include_str!("page.html").to_owned(),"Set-Cookie: tls_fixture=one; Secure; HttpOnly; SameSite=Strict; Path=/\r\n".to_owned())
+                (login_page(state.name)?,"Set-Cookie: tls_fixture=one; Secure; HttpOnly; SameSite=Strict; Path=/\r\n".to_owned())
             }else if let Some(document)=state.static_document.as_ref().filter(|_| path==crate::static_document::PATH){
                 document.lock().unwrap().page_requests+=1;
                 (crate::static_document::PAGE.to_owned(),String::new())

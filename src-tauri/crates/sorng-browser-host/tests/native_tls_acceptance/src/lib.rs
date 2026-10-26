@@ -545,6 +545,13 @@ impl BrowserEventSink for Hooks {
         }
     }
 }
+fn fixture_password(name: &str) -> &'static str {
+    match name {
+        "staged" => "synthetic-Ł-😀-only",
+        _ => "synthetic-local-only",
+    }
+}
+
 impl NativeDocumentHooks for Hooks {
     fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
     fn login_adapter(&self) -> NativeLoginAdapter {
@@ -571,13 +578,14 @@ impl NativeDocumentHooks for Hooks {
             return;
         }
         s.grants.push(format!("{:?}", request.stage));
+        let password = fixture_password(s.name);
         drop(s);
         deliver(NativeLoginCredentials {
             identity: &self.identity,
             origin: ORIGIN,
             valid_until: Instant::now() + Duration::from_secs(2),
             username: "synthetic@example.test",
-            password: "synthetic-local-only",
+            password,
             auto_submit: true,
         });
     }
@@ -1585,7 +1593,7 @@ mod login_diagnostic_tests {
             assert!(state.try_lock().is_ok());
             assert!(diagnostics.buffer.try_lock().is_ok());
             assert_eq!(credentials.username, "synthetic@example.test");
-            assert_eq!(credentials.password, "synthetic-local-only");
+            assert_eq!(credentials.password, "synthetic-Ł-😀-only");
             assert!(credentials.valid_until > Instant::now());
             assert!(credentials.valid_until <= Instant::now() + Duration::from_secs(2));
             assert!(credentials.auto_submit);
