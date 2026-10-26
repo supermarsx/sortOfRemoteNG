@@ -12,6 +12,7 @@ import tarfile
 import time
 import unicodedata
 import zipfile
+from contextlib import contextmanager
 
 MAX_BYTES = 32 * 1024**3
 CHUNK_BYTES = 1024**3
@@ -152,7 +153,7 @@ def inventory(root, budget, generated_links=None, source_policy=None):
     rows, pending, aliases, raw = [], [Path('.')], set(), 0
     while pending:
         directory = pending.pop()
-        with os.scandir(root / directory) as iterator:
+        with source_directory(root, directory, source_policy, budget) as iterator:
             for item in iterator:
                 budget.check()
                 name = relative((directory / item.name).as_posix())
@@ -160,17 +161,22 @@ def inventory(root, budget, generated_links=None, source_policy=None):
                 require(alias not in aliases, 'member-alias')
                 aliases.add(alias)
                 p = root / name
-                if source_policy is not None and source_admin(root, name, source_policy, budget):
+                external = source_policy is not None and source_policy.get('external') is True
+                if source_policy is not None and not external and source_admin(root, name, source_policy, budget):
                     continue
-                s = os.stat(p, follow_symlinks=False)
+                s = item.stat(follow_symlinks=False) if source_policy is not None and source_policy.get('mac') else os.stat(p, follow_symlinks=False)
                 if source_policy is not None:
-                    require(s.st_uid == os.geteuid(), 'source-owner')
+                    require(s.st_uid in (0, os.geteuid()) if external else s.st_uid == os.geteuid(), 'source-owner')
                 if stat.S_ISLNK(s.st_mode):
                     if source_policy is not None:
                         target = os.readlink(p)
                         require(isinstance(target,str) and 0 < len(target.encode()) <= 4096 and not any(ord(c)<32 for c in target), 'source-link')
-                        source_link_target(root, p, target, budget)
-                        rows.append({'path':name,'kind':'symlink','stamp':stamp(s),'target':target,'ctimeNs':s.st_ctime_ns})
+                        if not external:
+                            source_link_target(root, p, target, budget)
+                        row = {'path':name,'kind':'symlink','stamp':stamp(s),'target':target,'ctimeNs':s.st_ctime_ns}
+                        source_mac_row(row, s, source_policy)
+                        source_aggregate(source_policy, name, 0, target)
+                        rows.append(row)
                         require(len(rows) <= SOURCE_MAX_ENTRIES, 'source-entry-bound')
                         continue
                     require(name in generated_links, 'unreviewed-generated-link')
@@ -185,7 +191,12 @@ def inventory(root, budget, generated_links=None, source_policy=None):
                     if source_policy is not None:
                         require(0 <= s.st_size <= SOURCE_MAX_FILE, 'source-file-size')
                     raw += s.st_size
-                rows.append({'path': name, 'kind': kind, 'stamp': stamp(s), **({'ctimeNs':s.st_ctime_ns} if source_policy is not None else {})})
+                row = {'path': name, 'kind': kind, 'stamp': stamp(s), **({'ctimeNs':s.st_ctime_ns} if source_policy is not None else {})}
+                source_mac_row(row, s, source_policy)
+                source_aggregate(source_policy, name, s.st_size if kind == 'file' else 0)
+                if source_policy is not None and source_policy.get('mac') and kind == 'directory':
+                    source_policy['_directories'][name] = source_local(s, source_policy)
+                rows.append(row)
                 require(len(rows) <= (SOURCE_MAX_ENTRIES if source_policy is not None else MAX_ENTRIES) and raw <= MAX_RAW, 'input-bound')
     expected_links = set(generated_links)
     if len(generated_links) == 7 and not any(r['path'] == FRAMEWORK for r in rows):
@@ -480,6 +491,79 @@ SOURCE_CLOSE_FAILURE = False
 SOURCE_JOIN_FAILURE = False
 SOURCE_MAX_ENTRIES = 1000000
 SOURCE_MAX_FILE = 8 * 1024**3
+MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-complete-owned-inputs-v1-unadmitted'
+MAC_SOURCE_WRITE_ADMITTED = False
+MAC_EXTERNAL_ROLE = None
+MAC_EXTERNAL_PHASE = None
+MAC_REPORT_FAILURE = False
+
+
+def source_birth(info):
+    value = getattr(info, 'st_birthtime_ns', None)
+    require(type(value) is int and 0 <= value < 2**63, 'source-mac-birth-unavailable')
+    return value
+
+
+def source_local(info, policy=None):
+    base = (stamp(info), info.st_ctime_ns)
+    return base + (source_birth(info), info.st_uid, info.st_gid) if policy is not None and policy.get('mac') else base
+
+
+def source_mac_row(row, info, policy):
+    if policy is not None and policy.get('mac'):
+        row.update(birthNs=source_birth(info), uid=info.st_uid, gid=info.st_gid)
+        require(info.st_nlink > 0, 'source-mac-nlink')
+
+
+def source_aggregate(policy, name, size, target=''):
+    if policy is None or not policy.get('external'):
+        return
+    shared = policy['aggregate']
+    shared['entries'] += 1;shared['bytes'] += size
+    shared['metadata'] += len(name.encode()) + len(target.encode()) + 384
+    require(shared['entries'] <= SOURCE_MAX_ENTRIES and shared['bytes'] <= MAX_RAW and
+            shared['metadata'] <= MAX_METADATA - 65536, 'source-external-aggregate')
+
+
+def source_cleanup_all(closers, primary):
+    global SOURCE_CLOSE_FAILURE
+    first = None
+    for close in closers:
+        try:
+            close()
+        except BaseException as error:
+            SOURCE_CLOSE_FAILURE = True
+            if first is None:
+                first = error
+    if primary is None and first is not None:
+        raise first
+
+
+@contextmanager
+def source_directory(root, directory, policy, budget):
+    if policy is None or not policy.get('mac'):
+        with os.scandir(root / directory) as entries:
+            yield entries
+        return
+    budget.check();p = safe(root / directory);before = p.stat()
+    require(stat.S_ISDIR(before.st_mode), 'source-mac-directory')
+    if directory != Path('.'):
+        require(source_local(before, policy) == policy['_directories'].get(directory.as_posix()),
+                'source-mac-directory-changed')
+    fd = os.open(p, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    entries = None;primary = None
+    try:
+        require(source_local(os.fstat(fd), policy) == source_local(before, policy), 'source-mac-directory-changed')
+        entries = os.scandir(fd)
+        yield entries
+        budget.check();safe(p)
+        require(source_local(p.stat(), policy) == source_local(before, policy) == source_local(os.fstat(fd), policy),
+                'source-mac-directory-changed')
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        source_cleanup_all(([entries.close] if entries is not None else []) + [lambda: os.close(fd)], primary)
 
 
 
@@ -551,25 +635,46 @@ def source_repositories(root, budget):
 
 
 def source_link_target(root, path, target, budget):
-    candidate = Path(os.path.abspath(path.parent / target))
-    require(candidate == root or root in candidate.parents, 'source-external-link')
-    pending = list(candidate.relative_to(root).parts);current = root;links = 0
+    # Resolve in kernel traversal order. Lexical normalization may erase a
+    # symlink, missing directory or excluded ancestor before it is checked.
+    def parts(raw):
+        require(isinstance(raw, str) and 0 < len(raw.encode()) <= 4096 and
+                not any(ord(c) < 32 for c in raw), 'source-link')
+        values = [part for part in raw.split('/') if part]
+        if raw.endswith('/'):
+            values.append('.')
+        return values
+    def absolute(raw):
+        values = parts(raw);prefix = list(root.parts)[1:]
+        require(values[:len(prefix)] == prefix, 'source-external-link')
+        return values[len(prefix):]
+    pending = absolute(target) if target.startswith('/') else list(path.parent.relative_to(root).parts) + parts(target)
+    resolved = [];kind = 'directory';links = 0
     while pending:
-        budget.check();current = current / pending.pop(0)
-        name = current.relative_to(root)
+        budget.check();part = pending.pop(0)
+        require(kind == 'directory', 'source-link-kind')
+        if part == '.':
+            continue
+        if part == '..':
+            require(resolved, 'source-external-link')
+            resolved.pop();kind = 'directory'
+            continue
+        name = Path(*resolved, part)
         require('.git' not in name.parts and name.as_posix() not in ('src/out', 'acquisition-logs'), 'source-excluded-link')
-        info = current.lstat()
+        current = root / name;info = current.lstat()
         if stat.S_ISLNK(info.st_mode):
             links += 1;require(links <= 64, 'source-link-cycle')
             raw = os.readlink(current)
-            require(0 < len(raw.encode()) <= 4096 and not any(ord(c)<32 for c in raw), 'source-link')
-            candidate = Path(os.path.abspath(current.parent / raw))
-            require(candidate == root or root in candidate.parents, 'source-external-link')
-            pending = list(candidate.relative_to(root).parts) + pending;current = root
+            if raw.startswith('/'):
+                pending = absolute(raw) + pending;resolved = []
+            else:
+                pending = parts(raw) + pending
+            kind = 'directory'
         else:
-            require(stat.S_ISDIR(info.st_mode) if pending else stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode),
-                    'source-link-kind')
-    return current
+            require(stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode), 'source-link-kind')
+            resolved.append(part);kind = 'directory' if stat.S_ISDIR(info.st_mode) else 'file'
+    return root.joinpath(*resolved)
+
 
 def source_admin(root, name, policy, budget):
     if name == 'acquisition-logs':
@@ -596,14 +701,18 @@ def source_admin(root, name, policy, budget):
     return True
 
 
-def source_hash(root, row, budget):
+def source_hash(root, row, budget, policy=None):
     p = safe(root / row['path']);before = p.stat()
-    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and
+    require(stat.S_ISREG(before.st_mode) and (before.st_nlink > 0 if policy is not None and policy.get('external') else before.st_nlink == 1) and
             before.st_size <= SOURCE_MAX_FILE and stamp(before) == row['stamp'] and before.st_ctime_ns == row['ctimeNs'], 'source-file-identity')
+    if policy is not None and policy.get('mac'):
+        require(source_birth(before) == row['birthNs'] and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
     stream = p.open('rb');primary = None;reader = HashedReader(stream, budget);count = 0
     try:
         require(opened_identity_matches(row['stamp'], os.fstat(stream.fileno())) and
                 os.fstat(stream.fileno()).st_ctime_ns == before.st_ctime_ns, 'source-file-identity')
+        if policy is not None and policy.get('mac'):
+            require(source_local(os.fstat(stream.fileno()), policy) == source_local(before, policy), 'source-mac-file-identity')
         while True:
             chunk = reader.read(65536)
             if not chunk:
@@ -613,6 +722,9 @@ def source_hash(root, row, budget):
         require(count == before.st_size and stamp(os.fstat(stream.fileno())) == row['stamp'] and
                 stamp(p.stat()) == row['stamp'] and p.stat().st_ctime_ns == before.st_ctime_ns and
                 os.fstat(stream.fileno()).st_ctime_ns == before.st_ctime_ns, 'source-file-changed')
+        if policy is not None and policy.get('mac'):
+            require(source_local(p.stat(), policy) == source_local(before, policy) == source_local(os.fstat(stream.fileno()), policy),
+                    'source-mac-file-changed')
     except BaseException as error:
         primary = error
         raise
@@ -621,21 +733,29 @@ def source_hash(root, row, budget):
     return reader.digest.hexdigest()
 
 
-def source_portable(row, digest=None):
+def source_portable(row, digest=None, policy=None):
     result = {'path': row['path'], 'kind': row['kind'], 'mode': row['stamp'][4],
               'mtimeNs': str(row['stamp'][1])}
     if row['kind'] == 'file':
         result.update(size=row['stamp'][0], sha256=digest)
     elif row['kind'] == 'symlink':
         result.update(target=row['target'], sha256=hashlib.sha256(row['target'].encode()).hexdigest())
+    if policy is not None and policy.get('mac'):
+        result['nlink'] = row['stamp'][5]
+        if policy.get('external'):
+            result.update(uid=row['uid'], gid=row['gid'])
     return result
 
 
-def source_snapshot(root, budget, guards=None):
+def source_snapshot(root, budget, guards=None, context=None):
     global SOURCE_JOIN_FAILURE
     from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-    require(root.stat().st_uid == os.geteuid(), 'source-owner')
-    policy = source_repositories(root, budget)
+    external = context is not None and context.get('external') is True
+    require(root.stat().st_uid in (0, os.geteuid()) if external else root.stat().st_uid == os.geteuid(), 'source-owner')
+    policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
+    if policy.get('mac'):
+        policy['_directories'] = {}
+        local_before = source_local(root.stat(), policy)
     root_before = stamp(root.stat())
     rows, total = inventory(root, budget, source_policy=policy)
     hashes = {};first = None
@@ -645,7 +765,8 @@ def source_snapshot(root, budget, guards=None):
     def submit():
         row = next(files, None)
         if row is not None:
-            pending[pool.submit(source_hash, root, row, budget)] = row['path']
+            future = pool.submit(source_hash, root, row, budget, policy) if policy.get('mac') else pool.submit(source_hash, root, row, budget)
+            pending[future] = row['path']
     try:
         for _ in range(4):
             submit()
@@ -674,36 +795,60 @@ def source_snapshot(root, budget, guards=None):
     if first is not None:
         raise first
     budget.check()
-    require(hashes.get('.gclient_entries') == policy['registrySha256'], 'source-repositories-changed')
-    require({'src','src/cef','depot_tools'} <= set(policy['gitHeads']), 'source-required-repositories')
+    if not external:
+        require(hashes.get('.gclient_entries') == policy['registrySha256'], 'source-repositories-changed')
+        require({'src','src/cef','depot_tools'} <= set(policy['gitHeads']), 'source-required-repositories')
+    aggregate = dict(policy['aggregate']) if external else None
+    if external:
+        # A second namespace read verifies stability, not a second authority budget.
+        policy['aggregate'] = {'entries':0,'bytes':0,'metadata':0}
     after, after_total = inventory(root, budget, source_policy=policy)
     require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
+    if policy.get('mac'):
+        require(source_local(root.stat(), policy) == local_before, 'source-mac-root-changed')
     if guards is not None:
         guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
         guards[''] = (root_before,root.stat().st_ctime_ns)
-    return {'entries': [source_portable(row, hashes.get(row['path'])) for row in rows],
-            'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy['gitHeads'].items())),
-            'bytes': total}
+    value = {'entries': [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows],
+             'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
+             'bytes': total}
+    if external:
+        value['root'] = {'mode':root_before[4], 'mtimeNs':str(root_before[1]), 'uid':root.stat().st_uid,
+                         'gid':root.stat().st_gid, 'nlink':root_before[5]}
+        value['localRoot'] = {'dev':str(root_before[2]), 'ino':str(root_before[3]),
+                              'ctimeNs':str(local_before[1]), 'birthtimeNs':str(local_before[2])}
+        # The caller's shared object was consumed only by the initial inventory.
+        require(aggregate['entries'] >= len(rows), 'source-external-aggregate')
+    return value
 
 
-def source_metadata_identity(identity):
+def source_metadata_identity(identity, platform_policy=None):
     fields = {'target','source','producer','canonicalRoot','image','tools','graph','siso'}
     require(isinstance(identity, dict) and set(identity) == fields and
-            identity['target'] == 'aarch64-unknown-linux-gnu', 'source-identity')
+            identity['target'] == ('aarch64-apple-darwin' if platform_policy == 'mac-arm' else 'aarch64-unknown-linux-gnu'), 'source-identity')
     require(all(isinstance(identity[k], str) and re.fullmatch(r'[a-f0-9]{64}', identity[k])
                 for k in ('source','producer','tools','graph','siso')), 'source-identity')
     require(isinstance(identity['image'], str) and re.fullmatch(r'[0-9]{8}\.[0-9]+\.[0-9]+', identity['image']), 'source-image')
     require(isinstance(identity['canonicalRoot'], str), 'source-root')
+    if platform_policy == 'mac-arm':
+        require(identity['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + identity['source'],
+                'source-root')
     return safe(Path(identity['canonicalRoot']))
 
 
-def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None):
+def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, platform_policy=None):
     import sys
     global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE
     SOURCE_CLOSE_FAILURE = SOURCE_JOIN_FAILURE = False
     require(mode in ('source-record','source-verify','source-apply'), 'source-mode')
-    require(sys.platform == 'linux', 'source-linux-only')
-    budget = Budget(seconds) if budget is None else budget;work = source_metadata_identity(identity)
+    require(platform_policy in (None, 'mac-arm'), 'source-platform-policy')
+    require(sys.platform == ('darwin' if platform_policy == 'mac-arm' else 'linux'),
+            'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
+    budget = Budget(seconds) if budget is None else budget
+    if platform_policy == 'mac-arm':
+        # No JSON, external context or fixture output can authorize timestamp writes.
+        require(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed')
+    work = source_metadata_identity(identity, platform_policy)
     budget.check()
     root = safe(root);sidecar = Path(sidecar)
     require(root == work / 'source' and sidecar == root / 'src/out/Release_GN_arm64' / SOURCE_METADATA_NAME,
@@ -789,28 +934,268 @@ def source_read_sidecar(path, budget):
     return source_json(source_read_bytes(path, budget, MAX_METADATA))
 
 
+def mac_external_context(file, output, mode, budget):
+    import sys
+    require(sys.platform == 'darwin', 'source-mac-only')
+    prefix = '/Users/runner/work/_temp/'
+    text = str(file)
+    require(re.fullmatch(re.escape(prefix) + r'cef-mac-inputs-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/context\.json', text),
+            'source-mac-context-path')
+    context = source_json(source_read_bytes(file, budget, 16384))
+    require(type(context) is dict and set(context) == {'schemaVersion','kind','target','roots','runnerTemp','outputRoot','requiredPins','limits','originalMetalFingerprint','historicalMetalResourceClosureVerified'},
+            'source-mac-context')
+    require(type(context['schemaVersion']) is int and context['schemaVersion'] == 1 and
+            context['kind'] == 'sorng-macarm-external-input-context' and context['target'] == 'aarch64-apple-darwin' and
+            context['runnerTemp'] == prefix[:-1] and context['outputRoot'] == str(file.parent) and
+            context['historicalMetalResourceClosureVerified'] is False, 'source-mac-context')
+    expected_limits = {'entries':1000000,'fileBytes':8*1024**3,'bytes':256*1024**3,'metadataBytes':128*1024**2,'readers':4,'seconds':600,'capabilitySeconds':5}
+    require(context['limits'] == expected_limits and all(type(v) is int for v in context['limits'].values()), 'source-mac-limits')
+    roots = context['roots'];developer = '/Applications/Xcode_26.3.app/Contents/Developer'
+    require(type(roots) is dict and set(roots) == {'sdk','toolchain','metal','python'} and
+            roots['sdk'] == developer + '/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk' and
+            roots['toolchain'] == developer + '/Toolchains/XcodeDefault.xctoolchain' and
+            roots['python'] == '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework' and
+            (roots['metal'] == roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain', roots['metal']) is not None),
+            'source-mac-roots')
+    names = {('sdk','usr/include/'+n+'.modulemap') for n in ('DarwinFoundation1','DarwinFoundation2','DarwinFoundation3','libunwind')}
+    names |= {('sdk','SDKSettings.json'),('sdk','usr/lib/libSystem.B.tbd'),('toolchain','usr/bin/clang'),('python','Versions/3.14/bin/python3.14'),('metal','usr/bin/metal'),('metal','usr/bin/air-lld')}
+    pins = context['requiredPins'];require(type(pins) is list and len(pins) == 10, 'source-mac-pins')
+    actual = set()
+    for pin in pins:
+        require(type(pin) is dict and set(pin) == {'role','path','size','sha256'} and
+                (pin['role'],pin['path']) in names and type(pin['size']) is int and 0 < pin['size'] <= SOURCE_MAX_FILE and
+                type(pin['sha256']) is str and re.fullmatch('[a-f0-9]{64}',pin['sha256']), 'source-mac-pins')
+        actual.add((pin['role'],pin['path']))
+    require(actual == names, 'source-mac-pins')
+    folder = safe(file.parent);info = folder.stat()
+    require(info.st_uid == os.geteuid() and stat.S_ISDIR(info.st_mode), 'source-mac-output-owner')
+    leaf = 'external.json' if mode == 'mac-external-observe' else 'capability.json'
+    require(output == folder / leaf and not os.path.lexists(output), 'source-mac-output')
+    return context
+
+
+def mac_external_links(roots, snapshots, budget):
+    by_role = {role:{row['path']:row for row in value['entries']} for role,value in snapshots.items()}
+    root_parts = {role:tuple(p.split('/')[1:]) for role,p in roots.items()}
+    def parts(raw):
+        require(isinstance(raw, str) and 0 < len(raw.encode()) <= 4096 and
+                not any(ord(c) < 32 for c in raw), 'source-link')
+        values = [part for part in raw.split('/') if part]
+        if raw.endswith('/'):
+            values.append('.')
+        return values
+    def locate(role, absolute, ancestors=False):
+        candidates = [(r,p) for r,p in root_parts.items() if absolute[:len(p)] == p]
+        if candidates:
+            length = max(len(p) for _,p in candidates)
+            candidates = [(r,p) for r,p in candidates if len(p) == length]
+            r,p = next(((r,p) for r,p in candidates if r == role), candidates[0])
+            name = '/'.join(absolute[len(p):])
+            if not name:
+                return r, {'kind':'directory'}
+            row = by_role[r].get(name)
+            require(row is not None, 'source-external-input-unattested')
+            return r, row
+        # These exact canonical ancestors were no-link checked with every root.
+        # No files outside the four inventoried domains become input authority.
+        require(ancestors and any(p[:len(absolute)] == absolute for p in root_parts.values()),
+                'source-external-input-unattested')
+        return role, {'kind':'directory'}
+    def resolve(role, name):
+        pending = parts(name);resolved = list(root_parts[role]);kind = 'directory';links = 0
+        while pending:
+            budget.check();part = pending.pop(0)
+            require(kind == 'directory', 'source-external-link-kind')
+            if part == '.':
+                continue
+            if part == '..':
+                require(resolved, 'source-external-input-unattested')
+                resolved.pop();role,row = locate(role,tuple(resolved),ancestors=True);kind = row['kind']
+                continue
+            candidate = tuple(resolved + [part]);role,row = locate(role,candidate,ancestors=True)
+            if row['kind'] == 'symlink':
+                links += 1;require(links <= 64, 'source-external-link-cycle')
+                raw = row['target']
+                if raw.startswith('/'):
+                    resolved = []
+                pending = parts(raw) + pending;kind = 'directory'
+            else:
+                require(row['kind'] in ('file','directory'), 'source-external-link-kind')
+                resolved.append(part);kind = row['kind']
+        locate(role,tuple(resolved))
+        return kind
+    for role,value in snapshots.items():
+        for row in value['entries']:
+            if row['kind'] == 'symlink':resolve(role,row['path'])
+
+
+def mac_external_observe(context, output, budget):
+    global MAC_EXTERNAL_ROLE, MAC_EXTERNAL_PHASE, MAC_REPORT_FAILURE
+    aggregate = {'entries':0,'bytes':0,'metadata':0};snapshots = {}
+    roots = context['roots']
+    for role in ('sdk','toolchain','metal','python'):
+        MAC_EXTERNAL_ROLE=role;MAC_EXTERNAL_PHASE='snapshot';budget.check()
+        root = safe(Path(roots[role]));require(root.is_dir(), 'source-mac-root-kind')
+        snapshots[role] = source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':aggregate})
+    MAC_EXTERNAL_PHASE='links';mac_external_links(roots,snapshots,budget)
+    for pin in context['requiredPins']:
+        MAC_EXTERNAL_ROLE=pin['role'];MAC_EXTERNAL_PHASE='pins';budget.check()
+        row = next((r for r in snapshots[pin['role']]['entries'] if r['path']==pin['path']),None)
+        require(row is not None and row['kind']=='file' and row['size']==pin['size'] and row['sha256']==pin['sha256'], 'source-mac-required-pin')
+    MAC_EXTERNAL_PHASE='readback'
+    # Re-read every declared root with the SAME bounded transaction and clock.
+    readback_aggregate={'entries':0,'bytes':0,'metadata':0}
+    for role in ('sdk','toolchain','metal','python'):
+        MAC_EXTERNAL_ROLE=role;budget.check()
+        after=source_snapshot(safe(Path(roots[role])),budget,context={'mac':True,'external':True,'aggregate':readback_aggregate})
+        require(after==snapshots[role], 'source-external-changed')
+    value={'schemaVersion':1,'kind':'sorng-macarm-external-input-observation','target':context['target'],
+           'policy':'sorng-macarm-readonly-external-inputs-v1','complete':True,'externalSnapshotComplete':True,
+           'roles':[{'role':role,'physicalRoot':roots[role],'snapshot':snapshots[role]} for role in ('sdk','toolchain','metal','python')],
+           'entries':aggregate['entries'],'bytes':aggregate['bytes'],'runnerUid':os.geteuid(),
+           'historicalMetalResourceClosureVerified':False,'sourceWriteAdmitted':False,'nativeAcceptance':False,'runtimeReady':False}
+    budget.check();MAC_EXTERNAL_PHASE='report'
+    try:
+        written=metadata(output.parent,output.name,value,source=True)
+        require(source_read_sidecar(output,budget)==value,'source-external-report-readback')
+    except BaseException:
+        MAC_REPORT_FAILURE=True
+        raise
+    MAC_EXTERNAL_ROLE=None;MAC_EXTERNAL_PHASE='complete'
+    return {'complete':True,'kind':value['kind'],'entries':value['entries'],'bytes':value['bytes'],'snapshot':written,
+            'sourceWriteAdmitted':False,'nativeAcceptance':False,'runtimeReady':False}
+
+
+def mac_capability_stat(info):
+    fields={name:str(getattr(info,'st_'+name)) for name in ('dev','ino','mode','nlink','size','uid','gid','atime_ns','mtime_ns','ctime_ns')}
+    birth=getattr(info,'st_birthtime_ns',None)
+    fields['birthtimeNsAvailable']=type(birth) is int
+    fields['birthtimeNs']=str(birth) if type(birth) is int else None
+    return fields
+
+
+def mac_capability_identity(info):
+    return (info.st_dev,info.st_ino,info.st_mode,info.st_nlink,info.st_size,info.st_uid,info.st_gid)
+
+
+def mac_owned_capability_observe(context, output, budget):
+    # Exactly four fresh owned objects. Never inventory or change installed data.
+    global MAC_REPORT_FAILURE, SOURCE_CLOSE_FAILURE
+    SOURCE_CLOSE_FAILURE=False
+    budget.check()
+    require(budget.end-time.monotonic() <= 5, 'source-mac-capability-deadline')
+    root=Path(context['outputRoot'])/'capability-owned';require(not os.path.lexists(root),'source-mac-capability-exists')
+    file=root/'file';directory=root/'directory';link=root/'link'
+    paths={'file':file,'directory':directory,'root':root,'symlink':link}
+    handles={};identities={};owned={};rows=[];primary=None;cleanup=False
+    def owner(info):
+        # Directory size/nlink and file size can change during our own setup.
+        return (info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid)
+    def remember(role, info):
+        require(info.st_uid==os.geteuid() and
+                (stat.S_ISREG(info.st_mode) and info.st_nlink==1 if role=='file' else
+                 stat.S_ISLNK(info.st_mode) if role=='symlink' else stat.S_ISDIR(info.st_mode)),
+                'source-mac-capability-identity')
+        owned[role]=owner(info)
+    try:
+        root.mkdir(mode=0o700);remember('root',root.lstat())
+        fd=os.open(file,os.O_CREAT|os.O_EXCL|os.O_RDWR|os.O_NOFOLLOW,0o600);handles['file']=fd
+        remember('file',os.fstat(fd));require(owner(file.lstat())==owned['file'],'source-mac-capability-identity')
+        require(os.write(fd,b'owned-capability-fixture\n')==len(b'owned-capability-fixture\n'),'short-write')
+        directory.mkdir(mode=0o700);remember('directory',directory.lstat())
+        os.symlink('file',link);remember('symlink',link.lstat());require(os.readlink(link)=='file','source-mac-capability-link')
+        handles['directory']=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        handles['root']=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        for role,p in paths.items():
+            info=p.lstat();require(owner(info)==owned[role],'source-mac-capability-identity')
+            identities[role]=mac_capability_identity(info)
+        for role in ('file','directory','root','symlink'):
+            p=paths[role]
+            for case in ('no-op','past','future'):
+                budget.check();before=p.lstat();require(mac_capability_identity(before)==identities[role],'source-mac-capability-identity')
+                target=before.st_mtime_ns if case=='no-op' else 1790036443000000000 if case=='past' else time.time_ns()+2000000000
+                held_before=os.fstat(handles[role]) if role in handles else None
+                if held_before is not None:require(stamp(held_before)==stamp(before),'source-mac-capability-identity')
+                if role=='symlink':
+                    require(os.readlink(p)=='file','source-mac-capability-link')
+                    os.utime(p,ns=(before.st_atime_ns,target),follow_symlinks=False)
+                else:os.utime(handles[role],ns=(before.st_atime_ns,target))
+                after=p.lstat();held_after=os.fstat(handles[role]) if role in handles else None
+                require(mac_capability_identity(after)==identities[role] and
+                        (held_after is None or stamp(held_after)==stamp(after)),'source-mac-capability-identity')
+                if role=='symlink':require(os.readlink(p)=='file','source-mac-capability-link')
+                rows.append({'role':role,'case':case,'requestedMtimeNs':str(target),'before':mac_capability_stat(before),
+                             'after':mac_capability_stat(after),'heldBefore':mac_capability_stat(held_before) if held_before is not None else None,
+                             'heldAfter':mac_capability_stat(held_after) if held_after is not None else None,
+                             'exactMtimeReadback':after.st_mtime_ns==target})
+        budget.check()
+    except BaseException as error:
+        primary=error
+    finally:
+        try:source_cleanup_all([lambda fd=fd:os.close(fd) for fd in handles.values()],primary)
+        except BaseException as error:
+            if primary is None:primary=error
+        cleanup_errors=[]
+        for role in ('symlink','file','directory','root'):
+            p=paths[role]
+            try:
+                if os.path.lexists(p):
+                    require('root' in owned and owner(root.lstat())==owned['root'],'source-mac-capability-cleanup')
+                    info=p.lstat();require(role in owned and owner(info)==owned[role] and
+                        (info.st_nlink==1 if role=='file' else True),'source-mac-capability-cleanup')
+                    if role=='symlink':require(os.readlink(p)=='file','source-mac-capability-cleanup')
+                    os.rmdir(p) if role in ('directory','root') else os.unlink(p)
+                    if role=='root':cleanup=True
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if primary is None and cleanup_errors:primary=cleanup_errors[0]
+    value={'schemaVersion':1,'kind':'sorng-macarm-owned-capability-observation','target':context['target'],
+           'complete':primary is None and cleanup and not SOURCE_CLOSE_FAILURE,'rows':rows,
+           'cleanupConfirmed':cleanup and not SOURCE_CLOSE_FAILURE,'objectsRemoved':cleanup,
+           'handlesClosed':not SOURCE_CLOSE_FAILURE,'sourceWriteAdmitted':False,
+           'error':str(primary) if type(primary) is CheckpointError else 'source-mac-capability-io' if primary is not None else None,
+           'installedInputsWritten':False,'nativeAcceptance':False,'runtimeReady':False}
+    require(len(json.dumps(value).encode())<=65536,'source-mac-capability-output-bound')
+    reporting=None;written=None
+    try:
+        written=metadata(output.parent,output.name,value,source=True)
+        require(source_read_sidecar(output,budget)==value,'source-mac-capability-report-readback')
+    except BaseException as error:
+        MAC_REPORT_FAILURE=True;reporting=error
+    if primary is not None:raise primary
+    if reporting is not None:raise reporting
+    return {'complete':True,'kind':value['kind'],'rows':len(rows),'observation':written,'sourceWriteAdmitted':False,'nativeAcceptance':False,'runtimeReady':False}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['pack', 'restore', 'seal', 'source-record', 'source-verify', 'source-apply'])
+    parser.add_argument('mode', choices=['pack', 'restore', 'seal', 'source-record', 'source-verify', 'source-apply', 'mac-external-observe', 'mac-owned-capability-observe'])
     parser.add_argument('--input', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--manifest')
     parser.add_argument('--seconds', type=int, default=600)
     parser.add_argument('--generated-links')
+    parser.add_argument('--platform-policy', choices=['mac-arm'])
     args = parser.parse_args()
+    require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
     links = {}
     if args.generated_links:
         data = Path(args.generated_links).read_bytes()
         require(len(data) <= 16384, 'link-recipe-bound')
         links = json.loads(data)
         link_recipe(links)
-    if args.mode.startswith('source-'):
+    if args.mode in ('mac-external-observe','mac-owned-capability-observe'):
+        require(args.manifest is None and not links and args.platform_policy is None,'source-mac-context')
+        require(args.mode!='mac-owned-capability-observe' or 0 < args.seconds <= 5,'source-mac-capability-deadline')
+        budget=Budget(args.seconds);context=mac_external_context(Path(args.input),Path(args.output),args.mode,budget)
+        result=(mac_external_observe if args.mode=='mac-external-observe' else mac_owned_capability_observe)(context,Path(args.output),budget)
+    elif args.mode.startswith('source-'):
         require(args.manifest is not None and not links, 'source-context-required')
         context_file = safe(Path(args.manifest))
         require(context_file.stat().st_size <= 16384, 'source-context-bound')
         source_budget = Budget(args.seconds)
         identity = source_json(source_read_bytes(context_file, source_budget, 16384))
-        result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget)
+        result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)
     elif args.mode == 'seal':
         require(Path(args.input).stat().st_size < 1024**2, 'seal-zip-bound')
         with zipfile.ZipFile(args.input) as zipped:
@@ -834,5 +1219,5 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {})}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {})}))
         raise SystemExit(1)

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
 import { EventEmitter } from "node:events";
+import { gunzipSync } from "node:zlib";
 import { finished } from "node:stream/promises";
 import YAML from "yaml";
 import ts from "typescript";
@@ -5700,7 +5701,7 @@ function producerSpecifiers(text) {
   visit(source);
   return result;
 }
-test("actual ten-module producer imports without dependencies and rejects bare or computed dependency drift", async (t) => {
+test("actual eleven-module producer imports without dependencies and rejects bare or computed dependency drift", async (t) => {
   assert.throws(
     () => producerSpecifiers('import YAML from "yaml";'),
     /Bare producer/,
@@ -5736,7 +5737,8 @@ test("actual ten-module producer imports without dependencies and rejects bare o
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, source);
   }
-  assert.equal(seen.size, 10);
+  assert.equal(seen.size, 11);
+  assert(seen.has("scripts/lib/cef-mac-source-metadata.mjs"));
   await mkdir(path.join(scratch, "native"));
   await cp(
     path.join(ROOT, "native/cef-hosted-recipe.json"),
@@ -6355,7 +6357,8 @@ test("observability preserves every existing API uploader and CLI policy asserti
       (n) => ts.isFunctionDeclaration(n) && n.name?.text === name,
     );
     const rows = [],
-      sourceMetadataGuards = [];
+      sourceMetadataGuards = [],
+      macSourceGuards = [];
     const serialize = (node) => {
       const kids = node
         .getChildren(ast)
@@ -6381,12 +6384,28 @@ test("observability preserves every existing API uploader and CLI policy asserti
             message,
             n.arguments[0].getText(ast).replace(/\s+/g, ""),
           ]);
+        } else if (
+          name === "checkpointMain" &&
+          [
+            "Mac external owned output alias",
+            "Mac external original host deadline",
+            "Mac metadata original host deadline",
+            "Mac external fingerprint unchanged before source metadata",
+          ].includes(message)
+        ) {
+          macSourceGuards.push([
+            message,
+            n.arguments[0]
+              .getText(ast)
+              .replace(/\s+/g, "")
+              .replace(/,\)/g, ")"),
+          ]);
         } else rows.push(n.arguments.map(serialize));
       }
       ts.forEachChild(n, visit);
     };
     visit(fn);
-    if (name === "checkpointMain")
+    if (name === "checkpointMain") {
       assert.deepEqual(sourceMetadataGuards, [
         [
           "Fixed source bytecode policy",
@@ -6394,6 +6413,17 @@ test("observability preserves every existing API uploader and CLI policy asserti
         ],
         ["Source metadata original host deadline", "timeout>0"],
       ]);
+      assert.deepEqual(macSourceGuards, [
+        ["Mac external owned output alias", "(awaitrealpath(output))===output"],
+        ["Mac external original host deadline", "timeout>=1000"],
+        ["Mac external original host deadline", "hostRemaining(env)>0"],
+        ["Mac metadata original host deadline", "hostRemaining(env)>0"],
+        [
+          "Mac external fingerprint unchanged before source metadata",
+          "canonical(macExternalToolsBinding({},fresh))===canonical(macExternalToolsBinding({},context.macExternalInputs))",
+        ],
+      ]);
+    }
     return sha(JSON.stringify(rows));
   };
   const helper = await readFile(
@@ -7782,11 +7812,17 @@ test("actual monitor guard delegates the original assertion and tags the identic
   assert.equal(guard(true, "true guard", "PS_ROWS_SYNTAX"), undefined);
 });
 
-const SOURCE_METADATA_PROOF = String.raw`import importlib.util, pathlib, tempfile, os, json, copy, unittest, time
+// Exact reviewed 9e6 Linux helper; bounded data fixture works in shallow CI without fetching history.
+const LINUX_SOURCE_BASELINE_SHA256 =
+  "398aa93fc914e305e9856466db00164de7b91eaa0904438f32364ea5ca3d8659";
+const LINUX_SOURCE_BASELINE_GZIP =
+  "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";
+const SOURCE_METADATA_PROOF = String.raw`import types, pathlib, tempfile, os, json, copy, unittest, time
 from contextlib import contextmanager
 from unittest.mock import patch
 import sys
-spec=importlib.util.spec_from_file_location('owned_source_helper',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+m=types.ModuleType('owned_source_helper');m.__file__=sys.argv[1]
+exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
 @contextmanager
 def fixture(record=True):
  with tempfile.TemporaryDirectory(prefix='sorng-source-metadata-') as folder:
@@ -8161,7 +8197,11 @@ test("source metadata production CLI verifies closure before either SDK continua
     cli,
     /if\s*\(sourceMetadata\s*&&\s*!resumedSource\)\s*await sourceMetadata\("source-record"\)/,
   );
-  assert.match(cli, /sourceMetadata: TARGET === "aarch64-unknown-linux-gnu"/);
+  assert.match(
+    cli,
+    /sourceMetadata:\s*TARGET === "aarch64-unknown-linux-gnu"\s*\?\s*true/,
+  );
+  assert.match(cli, /TARGET === "aarch64-apple-darwin"\s*\?\s*"mac-arm"/);
 });
 
 test("source metadata helper failures retain only fixed labels and separate cleanup flags", () => {
@@ -8327,3 +8367,974 @@ print('actual pinned predicate old date drift / fixed epoch stable')`,
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
+
+test("Mac source policy cannot be admitted by an external context, result or environment", async () => {
+  const mac = await import("../../scripts/lib/cef-mac-source-metadata.mjs");
+  const source = checkpointProfile("aarch64-apple-darwin").source;
+  const selected = {
+    ...identity,
+    target: "aarch64-apple-darwin",
+    source,
+    canonicalRoot:
+      "/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/" +
+      source,
+  };
+  for (const mode of ["source-record", "source-apply", "source-verify"])
+    assert.throws(
+      () =>
+        sourceMetadataPlan(
+          selected,
+          selected.canonicalRoot + "/source/src/out/Release_GN_arm64",
+          mode,
+        ),
+      /MAC_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+    );
+  assert.throws(
+    () =>
+      mac.macSourceMetadataPlan(
+        { ...selected, canonicalRoot: "/arbitrary" },
+        "/arbitrary/source/src/out/Release_GN_arm64",
+        "source-record",
+      ),
+    /MAC_SOURCE_ROOT/,
+  );
+  assert.throws(
+    () =>
+      mac.macExternalToolsBinding(
+        {},
+        { complete: true, sourceWriteAdmitted: true },
+      ),
+    /MAC_EXTERNAL_ATTESTATION/,
+  );
+  assert.equal(mac.MAC_SOURCE_POLICY.darwinWriteAdmitted, false);
+  const worker = await readFile(
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    "utf8",
+  );
+  assert.match(worker, /MAC_SOURCE_WRITE_ADMITTED = False/);
+  assert.match(
+    worker,
+    /require\(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed'\)/,
+  );
+});
+
+test("copied Mac authoritative GN hook preserves exact ordering and original first rejection", async () => {
+  const { authoritativeGn } =
+    await import("../../scripts/lib/cef-mac-source-metadata.mjs");
+  for (const stop of [
+    null,
+    "apply",
+    "first-verify",
+    "gn",
+    "second-verify",
+    "collect",
+  ]) {
+    const events = [],
+      marker = Error("fixed owned operation failure"),
+      transition = { fixedFive: true };
+    let verifies = 0;
+    const step = (name) => {
+      events.push(name);
+      if (stop === name) throw marker;
+    };
+    const context = { revalidateGn: async () => step("gn") };
+    const operation = authoritativeGn(context, {
+      apply: async () => {
+        step("apply");
+        return transition;
+      },
+      verify: async (actual, value) => {
+        assert.equal(actual, context);
+        assert.equal(value, transition);
+        step(++verifies === 1 ? "first-verify" : "second-verify");
+      },
+      collect: async () => {
+        step("collect");
+        return "captured";
+      },
+    });
+    if (stop === null) assert.equal(await operation, "captured");
+    else await assert.rejects(operation, (error) => error === marker);
+    const expected = [
+      "apply",
+      "first-verify",
+      "gn",
+      "second-verify",
+      "collect",
+    ];
+    assert.deepEqual(
+      events,
+      stop === null ? expected : expected.slice(0, expected.indexOf(stop) + 1),
+    );
+  }
+});
+
+test("Mac helper failures retain only closed roles, phases and independent reporting failure", () => {
+  const good = {
+    complete: false,
+    error: "source-external-changed",
+    externalRole: "metal",
+    externalPhase: "readback",
+    macReportingFailure: true,
+  };
+  assert.deepEqual(archiveFailureRecord(JSON.stringify(good), 1), {
+    error: good.error,
+    externalRole: "metal",
+    externalPhase: "readback",
+    macReportingFailure: true,
+    exitCode: 1,
+  });
+  for (const field of ["externalRole", "externalPhase"]) {
+    const bad = { ...good, [field]: "PRIVATE_PATH_OR_CONTENT" };
+    assert.deepEqual(archiveFailureRecord(JSON.stringify(bad), 1), {
+      error: "unknown",
+      exitCode: 1,
+    });
+  }
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({ complete: false, error: "source-content-changed" }),
+      1,
+    ),
+    {
+      error: "source-content-changed",
+      exitCode: 1,
+    },
+  );
+});
+
+async function macExternalFixture() {
+  const mac = await import("../../scripts/lib/cef-mac-source-metadata.mjs");
+  const namespace = path.join(
+    ROOT,
+    "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
+  );
+  const map = JSON.parse(
+    await readFile(
+      path.join(namespace, "cef-ci-runner-aarch64-apple-darwin.json"),
+    ),
+  );
+  const toolchain = JSON.parse(
+    await readFile(path.join(namespace, "tools/aarch64-apple-darwin.json")),
+  );
+  const developer = "/Applications/Xcode_26.3.app/Contents/Developer";
+  const metalRoot =
+    "/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/" +
+    "a".repeat(40) +
+    "/Metal.xctoolchain";
+  const metal = {
+    kind: "selected-mac-metal-observation",
+    provenance: "newly-observed-apple-component-not-prepinned",
+    developerDir: developer,
+    componentResourceClosureVerified: false,
+    tools: [
+      {
+        role: "metal",
+        location: "external-metal-toolchain",
+        appleAnchorVerified: true,
+        bytes: 10,
+        sha256: "b".repeat(64),
+        version: "1.0",
+        versionSource: "tool-output",
+        pairedCompilerVersion: null,
+        physicalPath: metalRoot + "/usr/bin/metal",
+      },
+      {
+        role: "metallib",
+        location: "external-metal-toolchain",
+        appleAnchorVerified: true,
+        bytes: 20,
+        sha256: "c".repeat(64),
+        version: null,
+        versionSource: "not-observed",
+        pairedCompilerVersion: "1.0",
+        physicalPath: metalRoot + "/usr/bin/air-lld",
+      },
+    ],
+  };
+  const options = {
+    map,
+    toolchain,
+    metal,
+    selected: {
+      DEVELOPER_DIR: developer,
+      SDKROOT:
+        developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+    },
+    sdkTargets: [
+      developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      developer + "/Platforms/MacOSX.platform",
+      developer + "/Toolchains/XcodeDefault.xctoolchain",
+    ],
+    runnerTemp: "/Users/runner/work/_temp",
+    output:
+      "/Users/runner/work/_temp/cef-mac-inputs-11111111-1111-4111-8111-111111111111",
+    remainingMilliseconds: () => 500999.9,
+  };
+  return { mac, options, plan: mac.macExternalObservationPlan(options) };
+}
+
+test("Mac external plan closes exact roots, fixed pinned Python and original floor-down clock", async () => {
+  const { mac, options, plan } = await macExternalFixture();
+  assert.equal(plan.context.requiredPins.length, 10);
+  assert.equal(plan.context.historicalMetalResourceClosureVerified, false);
+  assert.equal(
+    plan.context.roots.metal,
+    options.metal.tools[0].physicalPath.slice(0, -14),
+  );
+  const argv = plan.argv(
+    "mac-external-observe",
+    options.output + "/context.json",
+  );
+  assert.deepEqual(argv.slice(0, 4), [
+    "-I",
+    "-B",
+    "scripts/lib/cef-checkpoint-archive.py",
+    "mac-external-observe",
+  ]);
+  assert.equal(argv.at(-1), "500");
+  assert.equal(
+    plan
+      .argv("mac-owned-capability-observe", options.output + "/context.json")
+      .at(-1),
+    "5",
+  );
+  assert.throws(() =>
+    plan.argv("source-apply", options.output + "/context.json"),
+  );
+  assert.throws(() =>
+    plan.argv("mac-external-observe", options.output + "/../context.json"),
+  );
+  for (const mutate of [
+    (value) => (value.map.target = "x86_64-apple-darwin"),
+    (value) => (value.map.python = "usr/bin/python3"),
+    (value) => (value.sdkTargets[0] = value.sdkTargets[0] + "/.."),
+    (value) => (value.metal.tools[0].physicalPath = "/arbitrary/usr/bin/metal"),
+    (value) => (value.metal.componentResourceClosureVerified = true),
+    (value) => (value.toolchain.files[0].sha256 = "unknown"),
+    (value) => (value.runnerTemp = "/tmp"),
+  ]) {
+    const bad = structuredClone({
+      ...options,
+      remainingMilliseconds: undefined,
+    });
+    bad.remainingMilliseconds = () => 600000;
+    mutate(bad);
+    assert.throws(() => mac.macExternalObservationPlan(bad));
+  }
+  const nearlyExpired = mac.macExternalObservationPlan({
+    ...options,
+    remainingMilliseconds: () => 999.9,
+  });
+  assert.throws(
+    () =>
+      nearlyExpired.argv(
+        "mac-external-observe",
+        options.output + "/context.json",
+      ),
+    /MAC_EXTERNAL_DEADLINE/,
+  );
+  assert.throws(() => {
+    plan.context.roots.sdk = "/arbitrary";
+  }, TypeError);
+});
+
+// Actual V1 branch from frozen721511, SHA 6a3f06c24a6aaefa05dba25688ac28361f900fd87832db60278a869a8cd90aa6. Data-only historical regression, never admission.
+const MAC_V1_LEXICAL_TARGET =
+  '{\n          assert(\n            typeof item.target === "string" &&\n              Buffer.byteLength(item.target) > 0 &&\n              Buffer.byteLength(item.target) <= 4096 &&\n              !/[\\x00-\\x1f\\x7f]/.test(item.target) &&\n              createHash("sha256").update(item.target).digest("hex") ===\n                item.sha256,\n            "MAC_EXTERNAL_ENTRY",\n          );\n          const target = path.posix.normalize(\n            item.target.startsWith("/")\n              ? item.target\n              : path.posix.join(\n                  plan.context.roots[role],\n                  path.posix.dirname(item.path),\n                  item.target,\n                ),\n          );\n          const candidates = Object.entries(plan.context.roots).filter(\n            ([, root]) => target === root || target.startsWith(root + "/"),\n          );\n          assert(candidates.length > 0, "MAC_EXTERNAL_ENTRY_TARGET");\n          const selected =\n            candidates.find(([name]) => name === role) ??\n            candidates.sort((a, b) => b[1].length - a[1].length)[0];\n          // This is the declared external-role address, never a GN graph rewrite.\n          // The raw literal and its hash remain in the held operational report.\n          portable.target = {\n            role: selected[0],\n            path: target.slice(selected[1].length).replace(/^\\//, ""),\n          };\n          if (!item.target.startsWith("/"))\n            portable.relativeLiteral = item.target;\n        }';
+test("Mac external resolver processes symlinks before parents and preserves missing, file and trailing-slash semantics", async () => {
+  const { resolveMacExternalTarget: resolve } =
+    await import("../../scripts/lib/cef-mac-source-metadata.mjs");
+  const roots = {
+    sdk: "/sdk",
+    toolchain: "/tools",
+    metal: "/metal",
+    python: "/python",
+  };
+  const rows = {
+    sdk: [
+      { path: "file", kind: "file" },
+      { path: "alias", kind: "symlink", target: "/tools/subdir" },
+    ],
+    toolchain: [{ path: "subdir", kind: "directory" }],
+    metal: [],
+    python: [],
+  };
+  assert.equal(
+    sha(MAC_V1_LEXICAL_TARGET),
+    "6a3f06c24a6aaefa05dba25688ac28361f900fd87832db60278a869a8cd90aa6",
+  );
+  const old = new Function(
+    "path",
+    "assert",
+    "plan",
+    "role",
+    "item",
+    "portable",
+    "createHash",
+    MAC_V1_LEXICAL_TARGET + ";return portable;",
+  );
+  assert.deepEqual(
+    old(
+      path,
+      assert,
+      { context: { roots } },
+      "sdk",
+      {
+        path: "jump",
+        target: "alias/../file",
+        sha256: hashObject("sha256").update("alias/../file").digest("hex"),
+      },
+      {},
+      hashObject,
+    ).target,
+    { role: "sdk", path: "file" },
+  );
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "alias/../file"),
+    /MAC_EXTERNAL_ENTRY_TARGET/,
+  );
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "missing/../file"),
+    /MAC_EXTERNAL_ENTRY_TARGET/,
+  );
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "file/../file"),
+    /MAC_EXTERNAL_ENTRY_KIND/,
+  );
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "file/"),
+    /MAC_EXTERNAL_ENTRY_KIND/,
+  );
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "//sdk/file"),
+    /MAC_EXTERNAL_ENTRY_TARGET/,
+  );
+  rows.toolchain.push({ path: "file", kind: "file" });
+  assert.deepEqual(
+    resolve(roots, rows, "sdk", "jump", "alias/../file").resolved,
+    { role: "toolchain", path: "file", kind: "file" },
+  );
+  assert.deepEqual(
+    resolve(roots, rows, "sdk", "jump", "../tools/file").resolved,
+    { role: "toolchain", path: "file", kind: "file" },
+  );
+  assert.deepEqual(
+    resolve(roots, rows, "sdk", "jump", "/tools/subdir/../file").resolved,
+    { role: "toolchain", path: "file", kind: "file" },
+  );
+  assert.deepEqual(
+    resolve(roots, rows, "sdk", "jump", "alias/../subdir/").resolved,
+    { role: "toolchain", path: "subdir", kind: "directory" },
+  );
+  assert.deepEqual(resolve(roots, rows, "sdk", "jump", "./file").resolved, {
+    role: "sdk",
+    path: "file",
+    kind: "file",
+  });
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "../unattested/../tools/file"),
+    /MAC_EXTERNAL_ENTRY_TARGET/,
+  );
+  rows.sdk.push({ path: "loop", kind: "symlink", target: "loop" });
+  assert.throws(
+    () => resolve(roots, rows, "sdk", "jump", "loop"),
+    /MAC_EXTERNAL_ENTRY_CYCLE/,
+  );
+  const marker = Error("fixed original clock");
+  assert.throws(
+    () =>
+      resolve(roots, rows, "sdk", "jump", "file", () => {
+        throw marker;
+      }),
+    (error) => error === marker,
+  );
+});
+
+test("Mac external report actual reader preserves null/read/hash errors across close faults and denies close-only failure", async () => {
+  const { mac, plan, options } = await macExternalFixture();
+  const value = {
+    schemaVersion: 1,
+    kind: "sorng-macarm-external-input-observation",
+    target: "aarch64-apple-darwin",
+    policy: "sorng-macarm-readonly-external-inputs-v1",
+    complete: true,
+    externalSnapshotComplete: true,
+    roles: Object.entries(plan.context.roots).map(([role, physicalRoot]) => ({
+      role,
+      physicalRoot,
+      snapshot: {
+        rootMtimeNs: "1",
+        gitHeads: {},
+        root: { mode: 0o755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
+        localRoot: { dev: "1", ino: "2", ctimeNs: "3", birthtimeNs: "4" },
+        bytes: plan.context.requiredPins
+          .filter((pin) => pin.role === role)
+          .reduce((sum, pin) => sum + pin.size, 0),
+        entries: plan.context.requiredPins
+          .filter((pin) => pin.role === role)
+          .map((pin) => ({
+            path: pin.path,
+            kind: "file",
+            mode: 0o644,
+            mtimeNs: "1",
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            size: pin.size,
+            sha256: pin.sha256,
+          })),
+      },
+    })),
+    entries: 10,
+    bytes: plan.context.requiredPins.reduce((sum, pin) => sum + pin.size, 0),
+    runnerUid: 501,
+    historicalMetalResourceClosureVerified: false,
+    sourceWriteAdmitted: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+  };
+  const raw = Buffer.from(JSON.stringify(value));
+  const result = {
+    complete: true,
+    kind: value.kind,
+    entries: value.entries,
+    bytes: value.bytes,
+    snapshot: {
+      name: "external.json",
+      bytes: raw.length,
+      sha256: hashObject("sha256").update(raw).digest("hex"),
+    },
+    sourceWriteAdmitted: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+  };
+  const identity = {
+    dev: 1n,
+    ino: 2n,
+    mode: 0o100600n,
+    nlink: 1n,
+    size: BigInt(raw.length),
+    mtimeNs: 1n,
+    ctimeNs: 2n,
+    birthtimeNs: 3n,
+    isFile: () => true,
+  };
+  for (const scenario of [
+    "success",
+    "read",
+    "null",
+    "hash",
+    "identity",
+    "close",
+  ]) {
+    let closes = 0;
+    const marker = Error("fixed injected read failure"),
+      close = Error("fixed injected close failure");
+    const fd = {
+      stat: async () =>
+        scenario === "identity" ? { ...identity, ino: 3n } : identity,
+      readFile: async () => {
+        if (scenario === "read") throw marker;
+        if (scenario === "null") throw null;
+        return raw;
+      },
+      close: async () => {
+        closes++;
+        if (scenario !== "success") throw close;
+      },
+    };
+    const io = {
+      lstat: async (file) =>
+        file.endsWith("/external.json")
+          ? identity
+          : {
+              ...identity,
+              isDirectory: () => true,
+              isSymbolicLink: () => false,
+            },
+      realpath: async (file) => file,
+      open: async () => fd,
+    };
+    const selected =
+      scenario === "hash"
+        ? {
+            ...result,
+            snapshot: { ...result.snapshot, sha256: "d".repeat(64) },
+          }
+        : result;
+    if (scenario === "success") {
+      const proof = await mac.readMacExternalObservation(
+        plan,
+        selected,
+        () => {},
+        io,
+      );
+      assert.equal(
+        mac.macExternalToolsBinding({ static: "fixed" }, proof)
+          .macExternalInputs.historicalMetalResourceClosureVerified,
+        false,
+      );
+      assert.throws(
+        () => mac.macExternalToolsBinding({}, { ...proof }),
+        /MAC_EXTERNAL_ATTESTATION/,
+      );
+      const freshPlan = mac.macExternalObservationPlan({
+        ...options,
+        metal: {
+          ...options.metal,
+          tools: options.metal.tools.map((tool) => ({
+            ...tool,
+            physicalPath: tool.physicalPath.replace(
+              "a".repeat(40),
+              "e".repeat(40),
+            ),
+          })),
+        },
+      });
+      const freshValue = structuredClone(value);
+      for (const row of freshValue.roles) {
+        row.physicalRoot = freshPlan.context.roots[row.role];
+        row.snapshot.localRoot = {
+          dev: "10",
+          ino: "20",
+          ctimeNs: "30",
+          birthtimeNs: "40",
+        };
+      }
+      const admitSynthetic = async (report) => {
+        const body = Buffer.from(JSON.stringify(report));
+        const summary = {
+          ...result,
+          snapshot: {
+            name: "external.json",
+            bytes: body.length,
+            sha256: hashObject("sha256").update(body).digest("hex"),
+          },
+        };
+        const stat = { ...identity, size: BigInt(body.length) };
+        return mac.readMacExternalObservation(freshPlan, summary, () => {}, {
+          lstat: async (file) =>
+            file.endsWith("/external.json")
+              ? stat
+              : {
+                  ...stat,
+                  isDirectory: () => true,
+                  isSymbolicLink: () => false,
+                },
+          realpath: async (file) => file,
+          open: async () => ({
+            stat: async () => stat,
+            readFile: async () => body,
+            close: async () => {},
+          }),
+        });
+      };
+      const freshProof = await admitSynthetic(freshValue);
+      assert.deepEqual(
+        mac.macExternalToolsBinding({}, proof),
+        mac.macExternalToolsBinding({}, freshProof),
+      );
+      assert.notEqual(
+        mac.macExternalObservationEvidence(proof).snapshot.sha256,
+        mac.macExternalObservationEvidence(freshProof).snapshot.sha256,
+      );
+      freshValue.roles[0].snapshot.rootMtimeNs = "2";
+      freshValue.roles[0].snapshot.root.mtimeNs = "2";
+      const drifted = await admitSynthetic(freshValue);
+      assert.notDeepEqual(
+        mac.macExternalToolsBinding({}, proof),
+        mac.macExternalToolsBinding({}, drifted),
+      );
+    } else
+      await assert.rejects(
+        mac.readMacExternalObservation(plan, selected, () => {}, io),
+        (error) => {
+          if (scenario === "null") return error === null;
+          if (scenario === "read") return error === marker;
+          if (scenario === "close") return error === close;
+          return (
+            /MAC_EXTERNAL_REPORT_(?:HASH|IDENTITY)|MAC_EXTERNAL_REPORT/.test(
+              error.message,
+            ) && error !== close
+          );
+        },
+      );
+    assert.equal(closes, 1);
+  }
+});
+
+const MAC_WORKER_PROOF = String.raw`import pathlib,sys,types,unittest,copy
+from unittest.mock import patch
+m=types.ModuleType('mac_worker');m.__file__=sys.argv[1]
+exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
+class Proof(unittest.TestCase):
+ def test_cleanup_attempts_every_closer_and_preserves_original(self):
+  calls=[];first=RuntimeError('fixed primary');secondary=OSError('fixed close')
+  def close():calls.append('close');raise secondary
+  m.source_cleanup_all([close,lambda:calls.append('second')],first)
+  self.assertEqual(calls,['close','second']);self.assertTrue(m.SOURCE_CLOSE_FAILURE)
+  with self.assertRaises(OSError)as raised:m.source_cleanup_all([close],None)
+  self.assertIs(raised.exception,secondary)
+ def test_birth_requires_observed_integer_ns(self):
+  for value in [None,1.5,True,-1,2**63]:
+   with self.subTest(value=value),self.assertRaises(m.CheckpointError):m.source_birth(types.SimpleNamespace(st_birthtime_ns=value))
+  self.assertEqual(m.source_birth(types.SimpleNamespace(st_birthtime_ns=123)),123)
+ def test_aggregate_limits_apply_before_hash_work(self):
+  for field,value in [('entries',m.SOURCE_MAX_ENTRIES),('bytes',m.MAX_RAW),('metadata',m.MAX_METADATA)]:
+   state={'entries':0,'bytes':0,'metadata':0};state[field]=value
+   with self.subTest(field=field),self.assertRaisesRegex(m.CheckpointError,'source-external-aggregate'):
+    m.source_aggregate({'external':True,'aggregate':state},'file',1)
+ def test_links_use_only_literal_known_inventory_without_target_io(self):
+  roots={'sdk':'/sdk','toolchain':'/tools','metal':'/metal','python':'/python'}
+  snapshots={role:{'entries':[]}for role in roots}
+  snapshots['sdk']['entries']=[{'path':'alias','kind':'symlink','target':'/private/not-admitted'}]
+  with patch.object(pathlib.Path,'stat',side_effect=AssertionError('no target stat')),patch.object(pathlib.Path,'open',side_effect=AssertionError('no target read')):
+   with self.assertRaisesRegex(m.CheckpointError,'source-external-input-unattested'):m.mac_external_links(roots,snapshots,m.Budget(5))
+  snapshots['sdk']['entries']=[{'path':'alias','kind':'symlink','target':'/tools/file'}]
+  snapshots['toolchain']['entries']=[{'path':'file','kind':'file'}]
+  m.mac_external_links(roots,snapshots,m.Budget(5))
+  snapshots['toolchain']['entries']=[{'path':'file','kind':'symlink','target':'/sdk/alias'}]
+  with self.assertRaisesRegex(m.CheckpointError,'source-external-link-cycle'):m.mac_external_links(roots,snapshots,m.Budget(5))
+ def test_source_darwin_gate_precedes_all_path_access_and_writes(self):
+  with patch.object(sys,'platform','darwin'),patch.object(pathlib.Path,'lstat',side_effect=AssertionError('no source metadata access')),patch.object(m.os,'utime',side_effect=AssertionError('no writes')):
+   for mode in ['source-record','source-apply','source-verify']:
+    with self.subTest(mode=mode),self.assertRaisesRegex(m.CheckpointError,'source-mac-darwin-capability-unreviewed'):
+     m.source_metadata(mode,pathlib.Path('/not-read'),pathlib.Path('/not-written'),{},5,platform_policy='mac-arm')
+ def snapshots(self):
+   roots={'sdk':'/sdk','toolchain':'/tools','metal':'/metal','python':'/python'}
+   return roots,{r:{'entries':[]} for r in roots}
+ def test_mac_intermediate_symlink_dotdot_old_red_new_deny_and_real_target_green(self):
+   roots,s=self.snapshots();s['sdk']['entries']=[{'path':'file','kind':'file'},{'path':'alias','kind':'symlink','target':'/tools/subdir'},{'path':'jump','kind':'symlink','target':'alias/../file'}];s['toolchain']['entries']=[{'path':'subdir','kind':'directory'}]
+   with self.assertRaisesRegex(m.CheckpointError,'source-external-input-unattested'):m.mac_external_links(roots,s,m.Budget(5))
+   s['toolchain']['entries'].append({'path':'file','kind':'file'});m.mac_external_links(roots,s,m.Budget(5))
+ def test_mac_missing_nondirectory_trailing_and_unknown_ancestor_deny(self):
+   for target in ['missing/../file','file/../file','file/','../unknown/../sdk/file']:
+    roots,s=self.snapshots();s['sdk']['entries']=[{'path':'file','kind':'file'},{'path':'jump','kind':'symlink','target':target}]
+    with self.subTest(target=target),self.assertRaises((m.CheckpointError,FileNotFoundError)):m.mac_external_links(roots,s,m.Budget(5))
+ def test_mac_relative_crossrole_and_directory_dotdot_positive(self):
+   roots,s=self.snapshots();s['sdk']['entries']=[{'path':'dir','kind':'directory'},{'path':'file','kind':'file'},{'path':'local','kind':'symlink','target':'dir/../file'},{'path':'other','kind':'symlink','target':'../tools/file'}];s['toolchain']['entries']=[{'path':'file','kind':'file'}];m.mac_external_links(roots,s,m.Budget(5))
+ def test_mac_cycles_bounds_deadline_and_no_target_io(self):
+   roots,s=self.snapshots();s['sdk']['entries']=[{'path':'link','kind':'symlink','target':'link'}]
+   with self.assertRaisesRegex(m.CheckpointError,'cycle'):m.mac_external_links(roots,s,m.Budget(5))
+   s['sdk']['entries'][0]['target']='x'*4097
+   with self.assertRaisesRegex(m.CheckpointError,'source-link'):m.mac_external_links(roots,s,m.Budget(5))
+   s['sdk']['entries']=[{'path':'file','kind':'file'},{'path':'link','kind':'symlink','target':'file'}]
+   budget=m.Budget(5);budget.end=0
+   with self.assertRaisesRegex(m.CheckpointError,'deadline'):m.mac_external_links(roots,s,budget)
+   with patch.object(pathlib.Path,'stat',side_effect=AssertionError('no target stat')),patch.object(pathlib.Path,'open',side_effect=AssertionError('no target read')):m.mac_external_links(roots,s,m.Budget(5))
+unittest.main(argv=['mac-worker-pure'],verbosity=1)
+`;
+test("Mac worker pure cleanup, birth, aggregate and literal-link boundaries", () => {
+  const result = python(MAC_WORKER_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 9 tests/);
+});
+
+test("actual Linux CLI source transaction retains exact reviewed worker argv and original timeout", async () => {
+  const source = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "checkpoint.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  let arrow;
+  const visit = (node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.left.getText(ast) === "sourceMetadata" &&
+      ts.isArrowFunction(node.right)
+    )
+      arrow = node.right.getText(ast);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert(arrow);
+  const selected = {
+    ...identity,
+    target: "aarch64-unknown-linux-gnu",
+    source: checkpointProfile("aarch64-unknown-linux-gnu").source,
+    canonicalRoot: "/owned",
+  };
+  const calls = [];
+  const fn = new Function(
+    "sourceMetadataPlan",
+    "identity",
+    "out",
+    "LIMITS",
+    "hostRemaining",
+    "env",
+    "fail",
+    "sourceMetadataResult",
+    "archiveCommand",
+    "verified",
+    "HELPER",
+    "identityFile",
+    "checkpointLog",
+    "canonical",
+    "console",
+    "TARGET",
+    "context",
+    `return (${arrow});`,
+  )(
+    sourceMetadataPlan,
+    selected,
+    "/owned/source/src/out/Release_GN_arm64",
+    LIMITS,
+    () => 600000,
+    {},
+    assert,
+    sourceMetadataResult,
+    async (python, helper, args, options) => {
+      calls.push({ python, helper, args, timeout: options.timeout });
+      return {
+        complete: true,
+        mode: args[0],
+        entries: 1,
+        bytes: 0,
+        ...(args[0] === "source-record"
+          ? {
+              sidecar: {
+                name: ".siso_sorng_source_metadata.json",
+                bytes: 1,
+                sha256: "a".repeat(64),
+              },
+            }
+          : {}),
+      };
+    },
+    { python: "/fixed/python" },
+    "/fixed/helper",
+    "/fixed/identity.json",
+    () => {},
+    JSON.stringify,
+    { log() {} },
+    "aarch64-unknown-linux-gnu",
+    {},
+  );
+  for (const mode of ["source-record", "source-apply", "source-verify"]) {
+    assert.equal((await fn(mode)).mode, mode);
+    assert.deepEqual(calls.at(-1), {
+      python: "/fixed/python",
+      helper: "/fixed/helper",
+      timeout: 600000,
+      args: [
+        mode,
+        "--input",
+        "/owned/source",
+        "--output",
+        "/owned/source/src/out/Release_GN_arm64/.siso_sorng_source_metadata.json",
+        "--manifest",
+        "/fixed/identity.json",
+        "--seconds",
+        "600",
+      ],
+    });
+  }
+});
+
+const MAC_ORDERED_POSIX_PROOF = String.raw`import pathlib,sys,types,unittest,tempfile,os,json,time
+from unittest.mock import patch
+m=types.ModuleType('actual_v2');m.__file__=sys.argv[1];exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
+class Proof(unittest.TestCase):
+ def snapshots(self):
+  roots={'sdk':'/sdk','toolchain':'/tools','metal':'/metal','python':'/python'}
+  return roots,{r:{'entries':[]} for r in roots}
+ def test_mac_intermediate_symlink_dotdot_old_red_new_deny_and_real_target_green(self):
+  roots,s=self.snapshots();s['sdk']['entries']=[{'path':'file','kind':'file'},{'path':'alias','kind':'symlink','target':'/tools/subdir'},{'path':'jump','kind':'symlink','target':'alias/../file'}];s['toolchain']['entries']=[{'path':'subdir','kind':'directory'}]
+  with self.assertRaisesRegex(m.CheckpointError,'source-external-input-unattested'):m.mac_external_links(roots,s,m.Budget(5))
+  s['toolchain']['entries'].append({'path':'file','kind':'file'});m.mac_external_links(roots,s,m.Budget(5))
+ def test_mac_missing_nondirectory_trailing_and_unknown_ancestor_deny(self):
+  for target in ['missing/../file','file/../file','file/','../unknown/../sdk/file']:
+   roots,s=self.snapshots();s['sdk']['entries']=[{'path':'file','kind':'file'},{'path':'jump','kind':'symlink','target':target}]
+   with self.subTest(target=target),self.assertRaises((m.CheckpointError,FileNotFoundError)):m.mac_external_links(roots,s,m.Budget(5))
+ def test_mac_relative_crossrole_and_directory_dotdot_positive(self):
+  roots,s=self.snapshots();s['sdk']['entries']=[{'path':'dir','kind':'directory'},{'path':'file','kind':'file'},{'path':'local','kind':'symlink','target':'dir/../file'},{'path':'other','kind':'symlink','target':'../tools/file'}];s['toolchain']['entries']=[{'path':'file','kind':'file'}];m.mac_external_links(roots,s,m.Budget(5))
+ def test_mac_cycles_bounds_deadline_and_no_target_io(self):
+  roots,s=self.snapshots();s['sdk']['entries']=[{'path':'link','kind':'symlink','target':'link'}]
+  with self.assertRaisesRegex(m.CheckpointError,'cycle'):m.mac_external_links(roots,s,m.Budget(5))
+  s['sdk']['entries'][0]['target']='x'*4097
+  with self.assertRaisesRegex(m.CheckpointError,'source-link'):m.mac_external_links(roots,s,m.Budget(5))
+  s['sdk']['entries']=[{'path':'file','kind':'file'},{'path':'link','kind':'symlink','target':'file'}]
+  budget=m.Budget(5);budget.end=0
+  with self.assertRaisesRegex(m.CheckpointError,'deadline'):m.mac_external_links(roots,s,budget)
+  with patch.object(pathlib.Path,'stat',side_effect=AssertionError('no target stat')),patch.object(pathlib.Path,'open',side_effect=AssertionError('no target read')):m.mac_external_links(roots,s,m.Budget(5))
+ def test_linux_actual_excluded_output_bypass_old_red_new_deny(self):
+  with tempfile.TemporaryDirectory(prefix='ordered-linux-') as folder:
+   root=pathlib.Path(folder)/'source';some=root/'src/some';some.mkdir(parents=True);(root/'src/foo').mkdir();(some/'out').mkdir();(root/'src/out').mkdir();(some/'out/file').write_bytes(b'decoy');(root/'src/out/file').write_bytes(b'excluded');os.symlink('../foo',some/'alias');os.symlink('alias/../out/file',some/'jump')
+   self.assertEqual((some/'jump').resolve(strict=True),root/'src/out/file')
+   self.assertEqual(m.source_link_target(root,some/'alias','../foo',m.Budget(5)),root/'src/foo')
+   with self.assertRaisesRegex(m.CheckpointError,'source-excluded-link'):m.source_link_target(root,some/'jump',os.readlink(some/'jump'),m.Budget(5))
+ def test_linux_missing_nondirectory_trailing_external_and_cycle(self):
+  with tempfile.TemporaryDirectory(prefix='ordered-linux-negative-') as folder:
+   root=pathlib.Path(folder);(root/'file').write_bytes(b'owned');(root/'dir').mkdir();os.symlink('cycle',root/'cycle')
+   self.assertEqual(m.source_link_target(root,root/'link','dir/../file',m.Budget(5)),root/'file')
+   for target in ['missing/../file','file/../file','file/','../outside','cycle']:
+    with self.subTest(target=target),self.assertRaises((m.CheckpointError,FileNotFoundError)):m.source_link_target(root,root/'link',target,m.Budget(5))
+ def capability_fault(self,setup,expected):
+  with tempfile.TemporaryDirectory(prefix='capability-fault-') as folder:
+   output=pathlib.Path(folder);report={};marker=OSError('controlled primary');owned=output/'capability-owned'
+   def emit(root,name,value,source=False):report.update(value);return {'name':name}
+   with patch.object(m,'metadata',side_effect=emit),patch.object(m,'source_read_sidecar',side_effect=lambda *_:report),setup(marker):
+    with self.assertRaises(OSError) as raised:m.mac_owned_capability_observe({'outputRoot':str(output),'target':'aarch64-apple-darwin'},output/'capability.json',m.Budget(5))
+   self.assertIs(raised.exception,marker);self.assertEqual(owned.exists(),expected);self.assertFalse(report['complete']);self.assertEqual(report['objectsRemoved'],not expected);self.assertTrue(report['handlesClosed'])
+ def test_capability_write_failure_removes_immediately_owned_file(self):
+  self.capability_fault(lambda marker:patch.object(m.os,'write',side_effect=marker),False)
+ def test_capability_symlink_creation_failure_cleans_file_and_directory(self):
+  self.capability_fault(lambda marker:patch.object(m.os,'symlink',side_effect=marker),False)
+ def test_capability_directory_open_failure_cleans_all_created_objects(self):
+  original=m.os.open
+  def setup(marker):
+   def open_(path,flags,*args,**kwargs):
+    if pathlib.Path(path).name=='directory':raise marker
+    return original(path,flags,*args,**kwargs)
+   return patch.object(m.os,'open',side_effect=open_)
+  self.capability_fault(setup,False)
+ def test_capability_cleanup_attempts_all_eligible_and_preserves_first(self):
+  with tempfile.TemporaryDirectory(prefix='capability-cleanup-') as folder:
+   output=pathlib.Path(folder);report={};first=OSError('primary');second=OSError('cleanup');real_unlink=m.os.unlink
+   def unlink(path,*args,**kwargs):
+    if pathlib.Path(path).name=='link':raise second
+    return real_unlink(path,*args,**kwargs)
+   def emit(root,name,value,source=False):report.update(value);return {'name':name}
+   with patch.object(m,'metadata',side_effect=emit),patch.object(m,'source_read_sidecar',side_effect=lambda *_:report),patch.object(m.os,'utime',side_effect=first),patch.object(m.os,'unlink',side_effect=unlink):
+    with self.assertRaises(OSError) as raised:m.mac_owned_capability_observe({'outputRoot':str(output),'target':'aarch64-apple-darwin'},output/'capability.json',m.Budget(5))
+   self.assertIs(raised.exception,first);owned=output/'capability-owned';self.assertTrue((owned/'link').is_symlink());self.assertFalse((owned/'file').exists());self.assertFalse((owned/'directory').exists());self.assertFalse(report['cleanupConfirmed']);self.assertTrue(report['handlesClosed']);(owned/'link').unlink();owned.rmdir()
+ def test_capability_normal_twelve_observations_and_cleanup(self):
+  with tempfile.TemporaryDirectory(prefix='capability-positive-') as folder:
+   output=pathlib.Path(folder);result=m.mac_owned_capability_observe({'outputRoot':str(output),'target':'aarch64-apple-darwin'},output/'capability.json',m.Budget(5));report=json.loads((output/'capability.json').read_bytes());self.assertEqual(result['rows'],12);self.assertTrue(report['cleanupConfirmed']);self.assertFalse((output/'capability-owned').exists());self.assertFalse(report['sourceWriteAdmitted'])
+ def test_capability_foreign_replacement_is_not_deleted(self):
+  with tempfile.TemporaryDirectory(prefix='capability-foreign-') as folder:
+   output=pathlib.Path(folder);report={};primary=OSError('controlled primary');owned=output/'capability-owned'
+   def replace(*args,**kwargs):
+    (owned/'file').unlink();(owned/'file').write_bytes(b'owned-test-replacement');raise primary
+   def emit(root,name,value,source=False):report.update(value);return {'name':name}
+   with patch.object(m,'metadata',side_effect=emit),patch.object(m,'source_read_sidecar',side_effect=lambda *_:report),patch.object(m.os,'utime',side_effect=replace):
+    with self.assertRaises(OSError) as raised:m.mac_owned_capability_observe({'outputRoot':str(output),'target':'aarch64-apple-darwin'},output/'capability.json',m.Budget(5))
+   self.assertIs(raised.exception,primary);self.assertEqual((owned/'file').read_bytes(),b'owned-test-replacement');self.assertFalse((owned/'link').exists());self.assertFalse((owned/'directory').exists());self.assertFalse(report['cleanupConfirmed']);self.assertTrue(report['handlesClosed']);(owned/'file').unlink();owned.rmdir()
+unittest.main(argv=['ordered-links-and-capability'],verbosity=2)
+`;
+test(
+  "ordered Linux and Mac resolver/capability regressions use real owned POSIX fixtures",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "POSIX symlink/FD fixture; no Darwin capability claim"
+        : false,
+  },
+  () => {
+    const result = python(MAC_ORDERED_POSIX_PROOF, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /Ran 12 tests/);
+  },
+);
+
+const MAC_WORKER_IO_PROOF = String.raw`import sys,pathlib,types,tempfile,os,json
+from unittest.mock import patch
+m=types.ModuleType('owned_mac_fixture');m.__file__=sys.argv[1]
+exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
+with tempfile.TemporaryDirectory(prefix='mac-external-io-fixture-') as name:
+ root=pathlib.Path(name)/'inputs';root.mkdir();(root/'directory').mkdir()
+ (root/'file').write_bytes(b'fixed-owned-input');os.link(root/'file',root/'hardlink');os.symlink('file',root/'alias')
+ with patch.object(m,'source_birth',return_value=1):
+  snapshot=m.source_snapshot(root,m.Budget(5),context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+  rows={row['path']:row for row in snapshot['entries']}
+  assert rows['file']['sha256']==rows['hardlink']['sha256'] and rows['file']['nlink']==2
+  assert rows['alias']['target']=='file' and len(rows)==4
+  with patch.object(m,'SOURCE_MAX_ENTRIES',1):
+   try:m.source_snapshot(root,m.Budget(5),context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+   except m.CheckpointError as error:assert str(error)=='source-external-aggregate'
+   else:raise AssertionError('aggregate bypass')
+ output=pathlib.Path(name)/'operation';output.mkdir()
+ result=m.mac_owned_capability_observe({'outputRoot':str(output),'target':'aarch64-apple-darwin'},output/'capability.json',m.Budget(5))
+ report=json.loads((output/'capability.json').read_bytes())
+ assert result['rows']==12 and report['cleanupConfirmed'] and report['handlesClosed'] and report['objectsRemoved']
+ assert not (output/'capability-owned').exists() and report['sourceWriteAdmitted'] is False and report['installedInputsWritten'] is False
+ assert all(row['exactMtimeReadback'] for row in report['rows'])
+print('Linux owned external/capability IO fixture PASS; no Darwin capability claim')
+`;
+test(
+  "Mac shared reader and owned capability cleanup use real bounded Linux fixture IO without a Darwin claim",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "POSIX FD/directory/symlink fixture; Darwin remains unobserved"
+        : false,
+  },
+  () => {
+    const result = python(MAC_WORKER_IO_PROOF, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /no Darwin capability claim/);
+  },
+);
+
+test(
+  "Linux source transaction and sidecar bytes match the reviewed 9e6 implementation exactly",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual Linux filesystem equivalence; portable Mac policy checks run on every OS"
+        : false,
+  },
+  async (t) => {
+    const folder = await scratch(t),
+      baseline = path.join(folder, "reviewed-linux.py");
+    const reviewed = gunzipSync(
+      Buffer.from(LINUX_SOURCE_BASELINE_GZIP, "base64"),
+      { maxOutputLength: 256 * 1024 },
+    );
+    assert.equal(sha(reviewed), LINUX_SOURCE_BASELINE_SHA256);
+    await writeFile(baseline, reviewed, { flag: "wx" });
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const code =
+      setup +
+      String.raw`
+import types
+old=types.ModuleType('reviewed_linux');old.__file__=sys.argv[2]
+exec(compile(pathlib.Path(sys.argv[2]).read_bytes(),sys.argv[2],'exec'),old.__dict__)
+with fixture(record=False) as (root,sidecar,identity):
+ before=old.source_metadata('source-record',root,sidecar,identity,60);raw=sidecar.read_bytes();sidecar.unlink()
+ after=m.source_metadata('source-record',root,sidecar,identity,60)
+ assert before==after and raw==sidecar.read_bytes(), 'exact-record-sidecar'
+ assert old.source_metadata('source-verify',root,sidecar,identity,60)==m.source_metadata('source-verify',root,sidecar,identity,60),'exact-verify'
+ file=root/'src/input.cc';s=file.stat();shift=s.st_mtime_ns+1000000000
+ os.utime(file,ns=(s.st_atime_ns,shift));first=old.source_metadata('source-apply',root,sidecar,identity,60);old_time=file.stat().st_mtime_ns
+ os.utime(file,ns=(s.st_atime_ns,shift));second=m.source_metadata('source-apply',root,sidecar,identity,60)
+ assert first==second and file.stat().st_mtime_ns==old_time and raw==sidecar.read_bytes(),'exact-apply-sidecar'
+ assert set(json.loads(raw))=={'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'}
+ assert all('birthNs' not in row and 'uid' not in row and 'nlink' not in row for row in json.loads(raw)['snapshot']['entries'])
+ some=root/'src/some';some.mkdir();(root/'src/foo').mkdir();(some/'out').mkdir()
+ (some/'out/file').write_bytes(b'owned lexical decoy');(root/'src/out/file').write_bytes(b'owned excluded fixture')
+ os.symlink('../foo',some/'alias');os.symlink('alias/../out/file',some/'jump')
+ assert (some/'jump').resolve(strict=True)==root/'src/out/file'
+ assert old.source_link_target(root,some/'jump','alias/../out/file',old.Budget(5))==some/'out/file','actual-old-unsafe-accept'
+ try:m.source_link_target(root,some/'jump','alias/../out/file',m.Budget(5))
+ except m.CheckpointError as error:assert str(error)=='source-excluded-link','new-strict-denial'
+ else:raise AssertionError('new resolver accepted actual excluded traversal')
+print('reviewed-Linux exact record/apply/verify sidecar/schema PASS')
+`;
+    const result = python(code, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      baseline,
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(
+      result.stdout,
+      /exact record\/apply\/verify sidecar\/schema PASS/,
+    );
+  },
+);

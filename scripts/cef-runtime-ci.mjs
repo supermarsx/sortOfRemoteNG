@@ -21,6 +21,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { finished } from "node:stream/promises";
+import { assertMacSourceWriteAdmission } from "./lib/cef-mac-source-metadata.mjs";
 import { TARGETS } from "./browser-runtime-package.mjs";
 import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
@@ -622,10 +623,12 @@ export function buildEnvironment(
   sourceMetadata = false,
 ) {
   if (
-    typeof sourceMetadata !== "boolean" ||
-    (sourceMetadata && map.target !== "aarch64-unknown-linux-gnu")
+    (typeof sourceMetadata !== "boolean" && sourceMetadata !== "mac-arm") ||
+    (sourceMetadata === true && map.target !== "aarch64-unknown-linux-gnu") ||
+    (sourceMetadata === "mac-arm" && map.target !== "aarch64-apple-darwin")
   )
     fail("Closed Linux ARM source metadata environment");
+  if (sourceMetadata === "mac-arm") assertMacSourceWriteAdmission();
   const env = { ...inherited };
   // Credentials belong to the read/publish client, never upstream build hooks.
   for (const key of Object.keys(env))
@@ -1226,7 +1229,9 @@ export async function build(
     runner,
     { toolsRoot, source, depot, python },
     env,
-    engineering?.sourceMetadata === true,
+    engineering?.sourceMetadata === "mac-arm"
+      ? "mac-arm"
+      : engineering?.sourceMetadata === true,
   );
   // Non-secret job ownership marker permits the Actions runner's final cleanup
   // if stopping the exact owned child tree itself fails.
@@ -1285,6 +1290,15 @@ export async function build(
       }),
       { flag: "wx" },
     );
+  const macExternalInputs = engineering?.beforeAcquire
+    ? await engineering.beforeAcquire({
+        metal,
+        env: childEnv,
+        logs,
+        runner,
+        work,
+      })
+    : undefined;
   const patched = path.join(checkout, "scripts/cef-patched-runtime.mjs");
   const facts = JSON.parse(
     await call(
@@ -1399,6 +1413,19 @@ export async function build(
   Object.assign(childEnv, recipe.environment);
   const engineeringContext = {
     metal,
+    ...(macExternalInputs === undefined ? {} : { macExternalInputs }),
+    ...(engineering?.beforeAcquire
+      ? {
+          reobserveMacExternalInputs: () =>
+            engineering.beforeAcquire({
+              metal,
+              env: childEnv,
+              logs,
+              runner,
+              work,
+            }),
+        }
+      : {}),
     revalidateGn: () =>
       call(
         python,

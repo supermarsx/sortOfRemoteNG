@@ -24,6 +24,7 @@ import { finished, pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { hostname, tmpdir, userInfo } from "node:os";
+import { macSourceMetadataPlan } from "./cef-mac-source-metadata.mjs";
 
 export const LIMITS = Object.freeze({
   compressed: 32 * 1024 ** 3,
@@ -1062,6 +1063,39 @@ const ARCHIVE_FAILURES = new Set([
   "source-diagnostic-root",
   "source-entry-bound",
   "source-tree-changed",
+  "source-platform-policy",
+  "source-external-aggregate",
+  "source-external-changed",
+  "source-external-input-unattested",
+  "source-external-link-cycle",
+  "source-external-link-kind",
+  "source-external-report-readback",
+  "source-mac-birth-unavailable",
+  "source-mac-capability-cleanup",
+  "source-mac-capability-deadline",
+  "source-mac-capability-exists",
+  "source-mac-capability-identity",
+  "source-mac-capability-io",
+  "source-mac-capability-link",
+  "source-mac-capability-output-bound",
+  "source-mac-capability-report-readback",
+  "source-mac-context-path",
+  "source-mac-context",
+  "source-mac-darwin-capability-unreviewed",
+  "source-mac-directory-changed",
+  "source-mac-directory",
+  "source-mac-file-changed",
+  "source-mac-file-identity",
+  "source-mac-limits",
+  "source-mac-nlink",
+  "source-mac-only",
+  "source-mac-output-owner",
+  "source-mac-output",
+  "source-mac-pins",
+  "source-mac-required-pin",
+  "source-mac-root-changed",
+  "source-mac-root-kind",
+  "source-mac-roots",
   "link-recipe-bound",
   "link-recipe",
 ]);
@@ -1071,7 +1105,8 @@ export function archiveFailureRecord(
   { overflow = false, deadline = false } = {},
 ) {
   let sourceCloseFailure = false,
-    sourceJoinFailure = false;
+    sourceJoinFailure = false,
+    externalFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1091,20 +1126,55 @@ export function archiveFailureRecord(
               "error",
               "sourceCloseFailure",
               "sourceJoinFailure",
+              "externalRole",
+              "externalPhase",
+              "macReportingFailure",
             ].includes(key),
           ) &&
             (value.sourceCloseFailure === true ||
-              value.sourceJoinFailure === true) &&
+              value.sourceJoinFailure === true ||
+              value.macReportingFailure === true ||
+              ["sdk", "toolchain", "metal", "python"].includes(
+                value.externalRole,
+              )) &&
             (!Object.hasOwn(value, "sourceCloseFailure") ||
               value.sourceCloseFailure === true) &&
             (!Object.hasOwn(value, "sourceJoinFailure") ||
-              value.sourceJoinFailure === true))) &&
+              value.sourceJoinFailure === true) &&
+            (!Object.hasOwn(value, "macReportingFailure") ||
+              value.macReportingFailure === true) &&
+            (!Object.hasOwn(value, "externalRole") ||
+              ["sdk", "toolchain", "metal", "python"].includes(
+                value.externalRole,
+              )) &&
+            Object.hasOwn(value, "externalRole") ===
+              Object.hasOwn(value, "externalPhase") &&
+            (!Object.hasOwn(value, "externalPhase") ||
+              [
+                "snapshot",
+                "links",
+                "pins",
+                "readback",
+                "report",
+                "complete",
+              ].includes(value.externalPhase)))) &&
         value.complete === false &&
         ARCHIVE_FAILURES.has(value.error)
       ) {
         error = value.error;
         sourceCloseFailure = value.sourceCloseFailure === true;
         sourceJoinFailure = value.sourceJoinFailure === true;
+        externalFacts = {
+          ...(value.externalRole
+            ? {
+                externalRole: value.externalRole,
+                externalPhase: value.externalPhase,
+              }
+            : {}),
+          ...(value.macReportingFailure === true
+            ? { macReportingFailure: true }
+            : {}),
+        };
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -1114,6 +1184,7 @@ export function archiveFailureRecord(
     error,
     ...(sourceCloseFailure ? { sourceCloseFailure: true } : {}),
     ...(sourceJoinFailure ? { sourceJoinFailure: true } : {}),
+    ...externalFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode
@@ -3983,6 +4054,8 @@ export const SOURCE_METADATA_DATE_EPOCH = "1790626028";
 // A new Linux ARM producer seeds this sidecar; old checkpoints never gain it retroactively.
 export function sourceMetadataPlan(identity, out, mode) {
   validateIdentity(identity);
+  if (identity.target === "aarch64-apple-darwin")
+    return macSourceMetadataPlan(identity, out, mode);
   assert(
     identity.target === "aarch64-unknown-linux-gnu",
     "Linux ARM source metadata only",
