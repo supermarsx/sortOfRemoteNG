@@ -1,14 +1,14 @@
-name: Windows x64 ARM Clang toolchain diagnostic
+name: Windows ARM cross SDK isolated bootstrap data only
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: windows-x64-arm-toolchain-${{ github.repository }}-${{ github.ref }}
+  group: windows-arm-cross-sdk-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   toolchain:
-    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/ci-windows-arm-cross-sdk-carrier-20261026'
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
     env:
@@ -16,6 +16,10 @@ jobs:
       GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -23,10 +27,10 @@ jobs:
           node-version-file: ".node-version"
           architecture: x64
           package-manager-cache: false
-      - name: Validate the fixed toolchain source contract
+      - name: Validate the bootstrap-only source contract
         shell: bash
-        run: node --test tests/tooling/windowsX64ArmToolchain.node-test.mjs
-      - name: Owned SDK and Clang acquisition plus nonexecuting ARM64 slice
+        run: node --test tests/tooling/windowsArmCrossSdk.node-test.mjs
+      - name: Owned bootstrap data acquisition without executing acquired tools
         timeout-minutes: 62
         shell: bash
         run: |
@@ -40,6 +44,20 @@ jobs:
           const execute=promisify(execFile), hash=b=>createHash('sha256').update(b).digest('hex');
           const begin=Date.now(), beginMono=performance.now(), workMs=3600000;
           const remaining=()=>Math.min(begin+workMs-Date.now(), workMs-(performance.now()-beginMono));
+          // BEGIN FIXED CARRIER AUTHORITY
+          function carrierAuthority(e,event){
+            const ref='refs/heads/codex/ci-windows-arm-cross-sdk-carrier-20261026';
+            assert(e.GITHUB_EVENT_NAME==='workflow_dispatch'&&e.GITHUB_REPOSITORY==='supermarsx/sortOfRemoteNG'&&
+              e.GITHUB_REPOSITORY_ID==='1010282954'&&e.GITHUB_REPOSITORY_VISIBILITY==='public'&&
+              e.CEF_DEFAULT_BRANCH==='main'&&e.GITHUB_REF===ref&&/^[a-f0-9]{40}$/.test(e.GITHUB_SHA)&&
+              e.GITHUB_WORKFLOW_SHA===e.GITHUB_SHA&&
+              e.GITHUB_WORKFLOW_REF==='supermarsx/sortOfRemoteNG/.github/workflows/windows-x64-arm-toolchain.yml@'+ref&&
+              event?.repository?.id===1010282954&&event.repository.full_name==='supermarsx/sortOfRemoteNG'&&
+              event.repository.private===false&&event.repository.visibility==='public'&&event.repository.default_branch==='main'&&
+              Object.hasOwn(event,'inputs')&&(event.inputs===null||typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&
+                Object.getPrototypeOf(event.inputs)===Object.prototype&&Object.keys(event.inputs).length===0),'BOOT_CARRIER_AUTHORITY');
+          }
+          // END FIXED CARRIER AUTHORITY
           let child, root, originalFailure, outcome=null, phase='authority';
           async function physical(p){
             assert(path.isAbsolute(p)&&!p.replaceAll('\\','/').split('/').some(x=>x==='.'||x==='..'));
@@ -59,23 +77,21 @@ jobs:
             }finally{await f.close();}
           }
           try{
-            assert.equal(process.env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(process.env.GITHUB_REPOSITORY,'supermarsx/sortOfRemoteNG');
-            assert.equal(process.env.GITHUB_REPOSITORY_ID,'1010282954');assert.equal(process.env.GITHUB_REPOSITORY_VISIBILITY,'public');
-            assert.equal(process.env.GITHUB_REF,'refs/heads/'+process.env.CEF_DEFAULT_BRANCH);assert.equal(process.env.GITHUB_WORKFLOW_SHA,process.env.GITHUB_SHA);
-            const repo=await physical(process.cwd()),dir=path.join(repo,'native/windows-x64-arm-toolchain');
+            const event=JSON.parse(await held(process.env.GITHUB_EVENT_PATH,131072));carrierAuthority(process.env,event);
+            const repo=await physical(process.cwd()),dir=path.join(repo,'native/windows-arm-cross-sdk');
             phase='profile';const rawProfile=await held(path.join(dir,'profile.json')),p=JSON.parse(rawProfile);
-            assert.equal(p.kind,'sorng-x64-arm-toolchain-diagnostic');assert.equal(p.buildAdmission,false);assert.equal(process.env.ImageVersion,p.image);
+            assert.equal(p.kind,'sorng-windows-arm-cross-sdk-bootstrap-only');assert.equal(p.buildAdmission,false);assert.equal(process.env.ImageVersion,p.image);
             phase='python';const py=await held(p.python.path,262144);assert.equal(py.length,p.python.bytes);assert.equal(hash(py),p.python.sha256);
             const parent=path.join(repo,'.artifacts');await fs.mkdir(parent,{recursive:true});await physical(parent);
-            root=path.join(parent,'windows-x64-arm-toolchain-'+randomUUID());await fs.mkdir(root);
-            for(const name of ['tmp','home','jobs','logs','results','objects','sources','bin','maps','source-inputs'])await fs.mkdir(path.join(root,name));
+            root=path.join(parent,'windows-arm-cross-sdk-'+randomUUID());await fs.mkdir(root);
+            for(const name of ['tmp','home','source-inputs'])await fs.mkdir(path.join(root,name));
             phase='source-snapshot';const sources=[];
             for(const [i,file]of p.sourcePaths.entries()){
               assert(!file.split('/').some(x=>x==='.'||x==='..'));
               const canonical=(await execute('git',['cat-file','blob',process.env.GITHUB_SHA+':'+file],{encoding:'buffer',windowsHide:true,timeout:10000,maxBuffer:2097152})).stdout;
               const live=await held(path.join(repo,file));let encoding='exact';
               if(!live.equals(canonical)){
-                assert(file==='.github/workflows/windows-x64-arm-toolchain.yml'||file==='tests/tooling/windowsX64ArmToolchain.node-test.mjs');
+                assert(file==='.github/workflows/windows-x64-arm-toolchain.yml'||file==='tests/tooling/windowsArmCrossSdk.node-test.mjs');
                 const text=new TextDecoder('utf-8',{fatal:true}).decode(canonical);assert(!text.includes('\r'));assert(live.equals(Buffer.from(text.replaceAll('\n','\r\n'))));encoding='git-crlf';
               }
               await fs.writeFile(path.join(root,'source-inputs',String(i)),live,{flag:'wx'});
@@ -85,10 +101,11 @@ jobs:
             const env={SystemRoot:'C:/Windows',WINDIR:'C:/Windows',Path:path.dirname(p.python.path)+';C:/Windows/System32',TEMP:path.join(root,'tmp'),TMP:path.join(root,'tmp'),USERPROFILE:path.join(root,'home'),PYTHONDONTWRITEBYTECODE:'1'};
             const monoRaw=(await execute(p.python.path,['-I','-B','-c','import time;print(time.monotonic())'],{env,windowsHide:true,timeout:10000,maxBuffer:1024})).stdout.trim();
             assert(/^\d+(\.\d+)?$/.test(monoRaw)&&remaining()>0);const mono=Number(monoRaw);assert(Number.isFinite(mono)&&mono>0&&mono<1e12);
-            const context={kind:'sorng-x64-arm-toolchain-context',repository:process.env.GITHUB_REPOSITORY,repositoryId:process.env.GITHUB_REPOSITORY_ID,visibility:process.env.GITHUB_REPOSITORY_VISIBILITY,event:process.env.GITHUB_EVENT_NAME,ref:process.env.GITHUB_REF,defaultBranch:process.env.CEF_DEFAULT_BRANCH,head:process.env.GITHUB_SHA,workflowSha:process.env.GITHUB_WORKFLOW_SHA,workflow:'.github/workflows/windows-x64-arm-toolchain.yml',runId:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,image:process.env.ImageVersion,beginUtc:new Date(begin).toISOString(),wallWorkEnd:(Date.now()+remaining())/1000,monotonicWorkEnd:mono+remaining()/1000,sources};
+            const sourceDigest=hash(Buffer.from(JSON.stringify(sources.map(row=>Object.fromEntries(Object.entries(row).sort(([a],[b])=>a<b?-1:a>b?1:0))))));
+            const context={kind:'windows-arm-cross-sdk-bootstrap-context',mode:'bootstrap-inputs',sourceDigest,repository:process.env.GITHUB_REPOSITORY,repositoryId:process.env.GITHUB_REPOSITORY_ID,visibility:process.env.GITHUB_REPOSITORY_VISIBILITY,event:process.env.GITHUB_EVENT_NAME,inputs:event.inputs,ref:process.env.GITHUB_REF,defaultBranch:process.env.CEF_DEFAULT_BRANCH,head:process.env.GITHUB_SHA,workflowSha:process.env.GITHUB_WORKFLOW_SHA,workflow:'.github/workflows/windows-x64-arm-toolchain.yml',runId:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,image:process.env.ImageVersion,beginUtc:new Date(begin).toISOString(),wallWorkEnd:(Date.now()+remaining())/1000,monotonicWorkEnd:mono+remaining()/1000,sources};
             const contextRaw=Buffer.from(JSON.stringify(context,null,2)+'\n');await fs.writeFile(path.join(root,'context.json'),contextRaw,{flag:'wx'});
             assert(remaining()>3000);
-            const args=['-I','-B',path.join(dir,'slice.py'),'--supervise',root,hash(contextRaw),'--execute'];
+            const args=['-I','-B',path.join(dir,'producer.py'),'--supervise',root,hash(contextRaw),'--execute'];
             const buffers=[],errors=[];let count=0,stopFailure=false;
             const stop=()=>{try{child?.kill();}catch{stopFailure=true;}};
             phase='owned-operation';child=spawn(p.python.path,args,{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
@@ -99,37 +116,37 @@ jobs:
             await fs.writeFile(path.join(root,'supervisor-stdout.log'),Buffer.concat(buffers),{flag:'wx'});
             await fs.writeFile(path.join(root,'supervisor-stderr.log'),Buffer.concat(errors),{flag:'wx'});
             assert(!stopFailure&&remaining()>0&&outcome.code===0&&!originalFailure);
-            const actual=JSON.parse(await held(path.join(root,'slice-result.json'),131072));
-            assert(actual.success===true&&actual.stages.length===13&&actual.outputExecuted===false);
-            for(const item of actual.stages)assert(item.job.success===true&&item.job.rootExit===0&&item.job.cleanupVerified===true&&item.job.activeAtEnd===0&&item.job.rootReaped===true&&item.job.logReadersStopped===true);
+            const actual=JSON.parse(await held(path.join(root,'bootstrap-result.json'),131072));
+            assert(actual.success===true&&actual.jobs.length===5&&actual.outputExecuted===false);
+            for(const item of actual.jobs)assert(item.originalJob.success===true&&item.originalJob.rootExit===0&&item.originalJob.cleanupVerified===true&&item.originalJob.activeAtEnd===0&&item.originalJob.rootReaped===true&&item.originalJob.logReadersStopped===true);
           }catch(error){originalFailure??=error?.code==='ENOENT'?'TOOLCHAIN_PARENT_MISSING':'TOOLCHAIN_PARENT_DENIED';}
           finally{
             const observedImage=/^\d{8}\.\d{1,8}\.\d{1,8}$/.test(process.env.ImageVersion??'')?process.env.ImageVersion:null;
-            const summary={kind:'windows-x64-arm-toolchain-diagnostic',success:!originalFailure,failure:originalFailure??null,phase,observedImage,supervisorOutcome:outcome,observedAtUtc:new Date().toISOString(),remainingWorkMs:Math.max(0,remaining()),compilerOutcomeNotInferredFromSupervisor:true,outputExecuted:false,cefStarted:false,sdkBuilt:false,nativeAcceptance:false,publicationAllowed:false};
+            const summary={kind:'windows-arm-cross-sdk-diagnostic',success:!originalFailure,failure:originalFailure??null,phase,observedImage,supervisorOutcome:outcome,observedAtUtc:new Date().toISOString(),remainingWorkMs:Math.max(0,remaining()),compilerOutcomeNotInferredFromSupervisor:true,outputExecuted:false,cefStarted:false,sdkBuilt:false,nativeAcceptance:false,publicationAllowed:false};
             const target=root??path.join(process.cwd(),'toolchain-preflight-denied.json');
             if(root)await fs.writeFile(path.join(root,'summary.json'),JSON.stringify(summary,null,2)+'\n',{flag:'wx'});else await fs.writeFile(target,JSON.stringify(summary,null,2)+'\n',{flag:'wx'});
             console.log(JSON.stringify(summary));if(originalFailure)process.exitCode=1;
           }
           NODE
-      - name: Retain bounded toolchain receipts without SDK or LLVM payloads
+      - name: Retain bootstrap receipts only, never payload archives or executables
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: windows-x64-arm-toolchain-${{ github.run_id }}-${{ github.run_attempt }}
+          name: windows-arm-cross-sdk-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             toolchain-preflight-denied.json
-            .artifacts/windows-x64-arm-toolchain-*/summary.json
-            .artifacts/windows-x64-arm-toolchain-*/context.json
-            .artifacts/windows-x64-arm-toolchain-*/slice-result.json
-            .artifacts/windows-x64-arm-toolchain-*/acquisition.json
-            .artifacts/windows-x64-arm-toolchain-*/acquisition-parent.json
-            .artifacts/windows-x64-arm-toolchain-*/*-job.json
-            .artifacts/windows-x64-arm-toolchain-*/operation-failure.json
-            .artifacts/windows-x64-arm-toolchain-*/installed-observations.json
-            .artifacts/windows-x64-arm-toolchain-*/jobs/*/*.json
-            .artifacts/windows-x64-arm-toolchain-*/results/*.json
-            .artifacts/windows-x64-arm-toolchain-*/logs/*.log
-            .artifacts/windows-x64-arm-toolchain-*/supervisor-*.log
+            .artifacts/windows-arm-cross-sdk-*/summary.json
+            .artifacts/windows-arm-cross-sdk-*/context.json
+            .artifacts/windows-arm-cross-sdk-*/bootstrap-result.json
+            .artifacts/windows-arm-cross-sdk-*/supervisor-result.json
+            .artifacts/windows-arm-cross-sdk-*/sdk-acquisition.json
+            .artifacts/windows-arm-cross-sdk-*/acquisition.json
+            .artifacts/windows-arm-cross-sdk-*/rust-archive.json
+            .artifacts/windows-arm-cross-sdk-*/gn-archive.json
+            .artifacts/windows-arm-cross-sdk-*/siso-archive.json
+            .artifacts/windows-arm-cross-sdk-*/*-result.json
+            .artifacts/windows-arm-cross-sdk-*/jobs/*/*.json
+            .artifacts/windows-arm-cross-sdk-*/supervisor-*.log
           retention-days: 30
           if-no-files-found: warn
           include-hidden-files: true
