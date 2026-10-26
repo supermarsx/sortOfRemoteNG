@@ -450,6 +450,46 @@ def tar_name(value):
     return value
 
 
+class MtimeTarInfo(tarfile.TarInfo):
+    """Only the fixed LLVM archive's bounded, local numeric-mtime envelope.
+
+    Read the next raw header directly: no PAX overrides, globals, chained
+    metadata, GNU long names, or sparse records can alter its identity/range.
+    The timestamp is validated, not restored to extracted files.
+    """
+    def _proc_pax(self, stream):
+        need(self.type == tarfile.XHDTYPE and self.name == "././@PaxHeader" and
+             not self.linkname and not (self.mode & (stat.S_ISUID | stat.S_ISGID)) and
+             0 < self.size <= 64 and not stream.pax_headers, "ACQ_TAR_PAX")
+        payload = stream.fileobj.read(512)
+        need(len(payload) == 512 and not any(payload[self.size:]), "ACQ_TAR_PAX")
+        record = payload[:self.size]
+        match = re.fullmatch(rb"([1-9][0-9]?) mtime=([0-9]{1,12}(?:\.[0-9]{1,9})?)\n", record)
+        need(match is not None and int(match[1]) == self.size, "ACQ_TAR_PAX")
+        header_offset = self.offset + 1024
+        need(stream.fileobj.tell() == header_offset, "ACQ_TAR_OFFSET")
+        header = stream.fileobj.read(512)
+        need(len(header) == 512, "ACQ_TAR_OFFSET")
+        following = self.frombuf(header, stream.encoding, stream.errors)
+        need(following.type in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.CONTTYPE, tarfile.DIRTYPE) and
+             not following.linkname and
+             not following.pax_headers, "ACQ_TAR_TYPE")
+        following.offset = header_offset
+        following._proc_builtin(stream)
+        need(following.offset_data == header_offset + 512, "ACQ_TAR_OFFSET")
+        following.offset = self.offset
+        following.pax_headers = {"mtime": match[2].decode("ascii")}
+        following.mtime_envelope_bytes = 1024
+        return following
+
+
+def tar_metadata_valid(item):
+    envelope = getattr(item, "mtime_envelope_bytes", 0)
+    return ((envelope == 0 and not item.pax_headers) or
+            (envelope == 1024 and set(item.pax_headers) == {"mtime"})) and \
+        item.offset_data == item.offset + 512 + envelope
+
+
 def extract_tar(archive, output, limits, clock):
     """Strict streaming regular-file/directory projection. Unknown formats deny."""
     plain(output, exists=False)
@@ -459,15 +499,14 @@ def extract_tar(archive, output, limits, clock):
     with Path(archive).open("rb") as source:
         f0 = os.fstat(source.fileno())
         need(shared(before) == shared(f0), "ACQ_IDENTITY")
-        with tarfile.open(fileobj=source, mode="r|xz") as stream:
+        with tarfile.open(fileobj=source, mode="r|xz", tarinfo=MtimeTarInfo) as stream:
             for item in stream:
                 clock.remaining()
                 entries += 1
                 need(entries <= limits["tarFiles"], "ACQ_TAR_COUNT")
                 name = tar_name(item.name)
-                need(name.casefold() not in seen and not item.pax_headers and
+                need(name.casefold() not in seen and tar_metadata_valid(item) and
                      (item.isfile() or item.isdir()) and not item.linkname and
-                     item.offset_data == item.offset + 512 and
                      not (item.mode & (stat.S_ISUID | stat.S_ISGID)), "ACQ_TAR_TYPE")
                 parts = name.split("/")
                 for length in range(1, len(parts) + 1):

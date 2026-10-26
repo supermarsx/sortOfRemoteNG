@@ -125,6 +125,95 @@ class AcquisitionTests(unittest.TestCase):
                 a.tar_name(name)
         self.assertEqual(a.tar_name("bin/clang-cl.exe"), "bin/clang-cl.exe")
 
+    def pax_bytes(self, record=b"28 mtime=1789099472.3649945\n", *, kind=tarfile.XHDTYPE,
+                  name="bin/tool", link="", file_kind=tarfile.REGTYPE, mode=0o644):
+        extension = tarfile.TarInfo("././@PaxHeader")
+        extension.type, extension.size = kind, len(record)
+        item = tarfile.TarInfo(name)
+        item.type, item.linkname, item.mode = file_kind, link, mode
+        item.size = 3 if file_kind == tarfile.REGTYPE else 0
+        return (extension.tobuf(format=tarfile.USTAR_FORMAT) + record +
+                bytes((-len(record)) % 512) + item.tobuf(format=tarfile.USTAR_FORMAT) +
+                (b"abc" + bytes(509) if item.size else b"") + bytes(1024))
+
+    def read_pax(self, raw):
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r|", tarinfo=a.MtimeTarInfo) as stream:
+            return list(stream)
+
+    def test_numeric_mtime_local_envelope_exact_offsets_and_roundtrip(self):
+        raw = self.pax_bytes()
+        old = list(tarfile.open(fileobj=io.BytesIO(raw), mode="r|"))[0]
+        self.assertTrue(old.pax_headers)
+        self.assertNotEqual(old.offset_data, old.offset + 512)  # Original strict guard is RED.
+        item = self.read_pax(raw)[0]
+        self.assertEqual((item.offset, item.offset_data, item.mtime_envelope_bytes), (0, 1536, 1024))
+        self.assertTrue(a.tar_metadata_valid(item))
+        self.assertEqual(item.mtime, 0)  # Validated metadata is never applied/restored.
+        with temporary() as temp:
+            archive = Path(temp) / "pax.tar.xz"
+            import lzma
+            archive.write_bytes(lzma.compress(raw))
+            rows = a.extract_tar(archive, Path(temp) / "out", P["limits"], clock())
+            self.assertEqual(rows, [{"path": "bin/tool", "bytes": 3,
+                                     "sha256": hashlib.sha256(b"abc").hexdigest()}])
+
+    def test_pax_only_single_bounded_numeric_mtime_record(self):
+        for record in (b"20 path=other/file\n", b"16 size=999999\n", b"21 linkpath=foreign\n",
+                       b"12 mtime=NaN\n", b"13 mtime=+1\n", b"13 mtime=-1\n",
+                       b"12 mtime=1e9\n", b"13 mtime=1.\n", b"11 mtime=\n",
+                       b"99 mtime=1\n", b"11 mtime=1\n11 mtime=2\n", b"x" * 65,
+                       b"31 mtime=1789099472.1234567890\n", b"28 mtime=1789099472.3649945\x00"):
+            with self.subTest(record=record):
+                with self.assertRaisesRegex(a.Denied, "ACQ_TAR_PAX"):
+                    self.read_pax(self.pax_bytes(record))
+
+    def test_pax_global_chained_sparse_and_link_headers_deny(self):
+        for kind in (tarfile.XGLTYPE,):
+            with self.assertRaisesRegex(a.Denied, "ACQ_TAR_PAX"):
+                self.read_pax(self.pax_bytes(kind=kind))
+        for kind in (tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_SPARSE,
+                     tarfile.SYMTYPE, tarfile.LNKTYPE):
+            with self.subTest(kind=kind):
+                with self.assertRaisesRegex(a.Denied, "ACQ_TAR_TYPE"):
+                    self.read_pax(self.pax_bytes(file_kind=kind))
+
+    def test_pax_padding_truncation_checksum_and_offset_tampering_deny(self):
+        raw = self.pax_bytes()
+        bad_padding = bytearray(raw);bad_padding[540] = 1
+        bad_checksum = bytearray(raw);bad_checksum[1024] ^= 1
+        for data in (bytes(bad_padding), raw[:600], raw[:1200], bytes(bad_checksum)):
+            with self.subTest(length=len(data)):
+                with self.assertRaises((a.Denied, tarfile.HeaderError, tarfile.ReadError)):
+                    self.read_pax(data)
+        item = self.read_pax(raw)[0]
+        for field, value in (("offset", 512), ("offset_data", 2048), ("mtime_envelope_bytes", 512)):
+            changed = copy.copy(item);setattr(changed, field, value)
+            self.assertFalse(a.tar_metadata_valid(changed))
+
+    def test_pax_keeps_existing_path_type_mode_case_and_size_guards(self):
+        import lzma
+        for args, limits in (({"name": "../escape"}, {}), ({"mode": 0o4644}, {}),
+                             ({"link": "foreign"}, {}), ({}, {"tarMemberBytes": 2}),
+                             ({}, {"tarExpandedBytes": 2}), ({}, {"tarFiles": 0})):
+            with self.subTest(args=args, limits=limits), temporary() as temp:
+                archive = Path(temp) / "pax.tar.xz";archive.write_bytes(lzma.compress(self.pax_bytes(**args)))
+                with self.assertRaises(a.Denied):
+                    a.extract_tar(archive, Path(temp) / "out", {**P["limits"], **limits}, clock())
+
+    def test_pax_duplicate_case_alias_and_extended_header_alias_denied(self):
+        import lzma
+        for second in ("bin/tool", "Bin/other"):
+            with self.subTest(second=second), temporary() as temp:
+                raw = self.pax_bytes()[:-1024] + self.pax_bytes(name=second)
+                archive = Path(temp) / "pax.tar.xz";archive.write_bytes(lzma.compress(raw))
+                with self.assertRaisesRegex(a.Denied, "ACQ_TAR_(TYPE|CASE)"):
+                    a.extract_tar(archive, Path(temp) / "out", P["limits"], clock())
+        raw = self.pax_bytes()
+        extension = tarfile.TarInfo("other-metadata")
+        extension.type, extension.size = tarfile.XHDTYPE, 28
+        with self.assertRaisesRegex(a.Denied, "ACQ_TAR_PAX"):
+            self.read_pax(extension.tobuf(format=tarfile.USTAR_FORMAT) + raw[512:])
+
     def tar(self, base, members):
         p = Path(base) / "sample.tar.xz"
         with tarfile.open(p, "w:xz", format=tarfile.USTAR_FORMAT) as f:
