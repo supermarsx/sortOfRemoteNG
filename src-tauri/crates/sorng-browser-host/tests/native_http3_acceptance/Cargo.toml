@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-cef = ["dep:sorng-browser-host", "dep:sorng-protocols", "dep:cef", "dep:tao", "dep:raw-window-handle", "dep:tokio-rustls", "dep:serde_json", "dep:h2"]
+cef = ["dep:sorng-browser-host", "dep:sorng-protocols", "dep:cef", "dep:tao", "dep:raw-window-handle", "dep:tokio-rustls", "dep:serde_json", "dep:h2", "dep:gtk", "dep:gdkx11-sys", "dep:x11"]
 
 [[bin]]
 name = "sorng-cef-http3-acceptance"
@@ -48,3 +48,9 @@ tiberius = { path = "../../../../vendor/tiberius-rustls" }
 libssh2-sys = { path = "../../../../vendor/libssh2-sys-wincng" }
 # Reuse the existing workspace's additive SSH3 protocol-token patch.
 h3 = { path = "../../../../vendor/h3-ssh3" }
+
+# Fixture-only hidden GTK realization; these versions already belong to Tao's locked graph.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "=0.18.2", optional = true }
+gdkx11-sys = { version = "=0.18.2", optional = true }
+x11 = { version = "=2.21.0", features = ["xlib"], optional = true }

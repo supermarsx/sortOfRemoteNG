@@ -46,6 +46,10 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt},
     task::{JoinHandle, JoinSet},
 };
+#[cfg(target_os = "linux")]
+#[path = "../../native_acceptance/linux_parent_fixture.rs"]
+mod linux_parent_fixture;
+
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 #[cfg(windows)]
 #[no_mangle]
@@ -693,6 +697,10 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .with_visible(false)
             .build(&events)?,
     );
+    #[cfg(target_os = "linux")]
+    let linux_parent_readiness = Some(linux_parent_fixture::prepare(parent.as_ref())?);
+    #[cfg(not(target_os = "linux"))]
+    let linux_parent_readiness: Option<serde_json::Value> = None;
     let mut settings = cef_runtime::native_settings(&paths.helper, &paths.resources)?;
     settings.root_cache_path = CefString::from(output.join("profile").to_str().ok_or("profile")?);
     settings.log_file = CefString::from(output.join("cef.log").to_str().ok_or("log")?);
@@ -1136,6 +1144,7 @@ let extra = serde_json::json!({"revokeInitialH3Ready":slot.revoke_times.ready.is
 row.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
 row }).collect();
     let mut report = serde_json::json!({"probeKind":"native-owned-http3","runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"check":check,"ok":false,"clean":clean,"closed":closed,"productionTlsFactory":true,"globalQuicOverride":false,"serverEarlyDataDisabled":true,"serverSessionTicketsDisabled":true,"slots":rows,"failures":failures,"productionReady":false,"shutdownComplete":false});
+    report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
     if check == "revoke" {
         report["revokeClockAnchor"] = serde_json::json!({"nativeBeginUnixMs":clock_unix_ms,"samplingSpanMicros":clock_anchor_span_us,"limitation":"Wall/monotonic sample pair; ordering is native monotonic, not exact cross-clock simultaneity"});
     }

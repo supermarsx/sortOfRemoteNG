@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
+import { parse } from "smol-toml";
 // No installed clock/dependency or global timer mutation is needed. A queued
 // callback is fired in deadline/insertion order, with real Promise jobs drained.
 function createClock() {
@@ -384,4 +385,106 @@ test("even a fetch promise ignoring AbortSignal cannot hold the bounded warmup o
   assert.equal(h.assets().length, 0);
   assert.equal(h.document.title, "request-rejected-0");
   assert.equal(h.clock.countTimers(), 0);
+});
+
+function assertLinuxParentPreparation(body) {
+  assert.match(
+    body,
+    /#\[cfg\(target_os = "linux"\)\]\s*#\[path = "\.\.\/\.\.\/native_acceptance\/linux_parent_fixture\.rs"\]\s*mod linux_parent_fixture;/,
+  );
+  const execute = body.slice(body.indexOf("fn execute("));
+  const parent = execute.indexOf('with_title("Isolated owned HTTP3 fixture")');
+  const prepare = execute.indexOf(
+    "linux_parent_fixture::prepare(parent.as_ref())?",
+  );
+  const initialize = execute.indexOf("CefRuntime::initialize(");
+  const host = execute.indexOf(
+    "CefBrowserHost::create_owned_engineering_probe(",
+  );
+  assert.ok(
+    parent >= 0 &&
+      prepare > parent &&
+      initialize > prepare &&
+      host > initialize,
+    "actual hidden parent must be prepared before CEF initialization and host creation",
+  );
+  assert.match(
+    execute,
+    /#\[cfg\(target_os = "linux"\)\]\s*let linux_parent_readiness = Some\(linux_parent_fixture::prepare\(parent.as_ref\(\)\)\?\);/,
+  );
+  assert.match(
+    execute,
+    /report\["linuxParentReadiness"\] = serde_json::json!\(linux_parent_readiness\);/,
+  );
+}
+
+test("actual H3 fixture prepares its retained Linux parent before native host creation", () => {
+  assertLinuxParentPreparation(rust);
+  for (const mutant of [
+    rust.replace(
+      "linux_parent_fixture::prepare(parent.as_ref())?",
+      "serde_json::Value::Null",
+    ),
+    rust.replace(
+      'report["linuxParentReadiness"]',
+      'report["lostParentReadiness"]',
+    ),
+    rust
+      .replace(
+        "let linux_parent_readiness = Some(linux_parent_fixture::prepare(parent.as_ref())?);",
+        "let linux_parent_readiness_was_moved = ();",
+      )
+      .replace(
+        "    let bridge = unsafe",
+        '    #[cfg(target_os = "linux")]\n    let linux_parent_readiness = Some(linux_parent_fixture::prepare(parent.as_ref())?);\n    let bridge = unsafe',
+      ),
+  ])
+    assert.throws(() => assertLinuxParentPreparation(mutant));
+  const shared = readFileSync(
+    "src-tauri/crates/sorng-browser-host/tests/native_acceptance/linux_parent_fixture.rs",
+    "utf8",
+  );
+  for (const required of [
+    "before_realize(",
+    "after_realize(",
+    "gtk::is_initialized_main_thread()",
+    "window.realize()",
+    "trustedXlibWindow",
+    "trustedXlibDisplay",
+  ])
+    assert.ok(shared.includes(required), required);
+  // This is source prerequisite coverage, not an execution of GTK/Xlib/CEF.
+});
+
+test("Linux parent dependencies stay optional and use the existing locked versions", () => {
+  const root =
+    "src-tauri/crates/sorng-browser-host/tests/native_http3_acceptance/";
+  const manifest = parse(readFileSync(root + "Cargo.toml", "utf8"));
+  const lock = parse(readFileSync(root + "Cargo.lock", "utf8"));
+  for (const [name, version] of [
+    ["gtk", "0.18.2"],
+    ["gdkx11-sys", "0.18.2"],
+    ["x11", "2.21.0"],
+  ]) {
+    const dependency =
+      manifest.target['cfg(target_os = "linux")'].dependencies[name];
+    assert.equal(dependency.version, "=" + version);
+    assert.equal(dependency.optional, true);
+    assert.ok(manifest.features.cef.includes("dep:" + name));
+    assert.deepEqual(manifest.features.default, []);
+    assert.equal(
+      lock.package.filter((p) => p.name === name && p.version === version)
+        .length,
+      1,
+    );
+    assert.ok(
+      lock.package
+        .find((p) => p.name === "sorng-cef-http3-acceptance")
+        .dependencies.includes(name),
+    );
+  }
+  assert.deepEqual(
+    manifest.target['cfg(target_os = "linux")'].dependencies.x11.features,
+    ["xlib"],
+  );
 });

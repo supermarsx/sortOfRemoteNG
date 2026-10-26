@@ -4844,6 +4844,8 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "cef",
+ "gdkx11-sys",
+ "gtk",
  "h2",
  "h3",
  "h3-quinn",
@@ -4858,6 +4860,7 @@ dependencies = [
  "tao",
  "tokio",
  "tokio-rustls",
+ "x11",
 ]
 
 [[package]]
