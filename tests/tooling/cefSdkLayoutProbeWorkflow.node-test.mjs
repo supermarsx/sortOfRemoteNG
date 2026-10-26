@@ -19,7 +19,7 @@ test("SDK layout diagnostics require an explicit public default-branch run", () 
     default: false,
   });
   assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.equal(Object.keys(workflow.jobs).join(), "probe");
+  assert.equal(Object.keys(workflow.jobs).join(), "probe,proof");
   assert.equal(
     job.if,
     "github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'",
@@ -32,6 +32,35 @@ test("SDK layout diagnostics require an explicit public default-branch run", () 
     "cancel-in-progress": true,
   });
   assert.deepEqual(workflow.defaults.run, { shell: "bash" });
+});
+
+test("isolated Linux H2 proof is appended without changing the default Mac workflow bytes", async () => {
+  const raw = (
+    await read(".github/workflows/cef-sdk-layout-probe.yml")
+  ).replaceAll("\r\n", "\n");
+  const boundary = raw.indexOf("\n  proof:\n");
+  assert(boundary > 0);
+  const original = raw.slice(0, boundary);
+  assert.equal(Buffer.byteLength(original), 15020);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "dd2cba06b3625a24fdc9bcafc4a8c89a73c6b9675927d626a00fbeb80dddbaf3",
+  );
+  const proof = workflow.jobs.proof;
+  assert.equal(
+    proof.if,
+    "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/ci-linux-h2-final-close-proof-20261026' && github.event.repository.visibility == 'public' && github.event.repository.default_branch == 'main' && inputs.metal_tools == false",
+  );
+  assert.deepEqual(proof.permissions, { contents: "write", actions: "read" });
+  assert.equal(proof["runs-on"], "ubuntu-24.04");
+  assert.equal(proof["timeout-minutes"], 240);
+  assert.equal(proof.steps.filter((step) => step.env?.GH_TOKEN).length, 1);
+  assert.equal(
+    proof.steps.find((step) => step.env?.GH_TOKEN).run,
+    "node native/linux-h2-final-close-proof/observe.mjs download",
+  );
+  assert.equal(proof.steps.at(-1).with["include-hidden-files"], true);
+  assert(!proof.steps.at(-1).with.path.includes("seal.json"));
 });
 
 test("SDK layout diagnostics run only fixed provisioning and the non-build probe", () => {
