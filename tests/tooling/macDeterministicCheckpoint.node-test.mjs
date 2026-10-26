@@ -9,6 +9,7 @@ import {
   authority,
   emptyInputs,
   remaining,
+  supervisorMilliseconds,
   closeScope,
   held,
   physical,
@@ -37,7 +38,11 @@ import {
   verifyMetadata,
   authoritativeGn,
 } from "../../native/mac-deterministic-checkpoint/metadata.mjs";
-import { canonical } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  canonical,
+  compileSlice,
+  LIMITS,
+} from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import { run } from "../../scripts/cef-runtime-ci.mjs";
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -845,8 +850,8 @@ test("branch workflow/artifacts/source boundary preserve Main producer and no ru
   assert(!workflow.includes("/bundle/"));
   assert(!workflow.includes("contents: write"));
   assert(!workflow.includes("**"));
-  assert(source.includes("c.workerMilliseconds = remaining(c) - 123000"));
-  assert(source.includes("milliseconds = remaining(c) - 123000"));
+  assert(source.includes("c.workerMilliseconds = supervisorMilliseconds(c)"));
+  assert(source.includes("milliseconds = supervisorMilliseconds(c)"));
   assert(source.includes("const decision") === false);
   assert(!source.includes("restoreDownload("));
   assert(!source.includes("publish("));
@@ -888,6 +893,59 @@ test("actual closed reason projection retains bounded metadata guard codes and r
   ]) {
     assert.equal(reason(new Error(message)), "MAC_GN_DENIED");
   }
+});
+
+test("actual unchanged compileSlice admission rejects fractional old budget and accepts downward-only integer adapter", async () => {
+  // Execute ONLY the actual function's pre-spawn numeric admission prefix.
+  // No supervisor lifecycle, kernel/process invocation or hosted proof is claimed.
+  const original = compileSlice.toString(),
+    boundary = original.indexOf("for (const key of Object.keys(env))");
+  assert(boundary > 0);
+  const helper = await fs.readFile(
+    path.join(root, "scripts/lib/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const positive = /^const positive = (.+);$/m.exec(helper);
+  assert(positive);
+  const admitted = new Function(
+    "assert",
+    "positive",
+    "process",
+    "LIMITS",
+    "return (" + original.slice(0, boundary) + "return true;})",
+  )(
+    assert,
+    new Function("return (" + positive[1] + ")")(),
+    { platform: "darwin" },
+    LIMITS,
+  );
+  const clock = { wallEnd: 1000000, monoEnd: 1000000.75 },
+    wall = 1000,
+    mono = 1001;
+  const old = remaining(clock, wall, mono) - 123000;
+  assert.equal(old, 875999.75);
+  await assert.rejects(
+    admitted("unused", [], { env: {}, milliseconds: old }),
+    /Bounded Unix engineering slice only/,
+  );
+  const corrected = supervisorMilliseconds(clock, wall, mono);
+  assert.equal(corrected, 875999);
+  assert(
+    Number.isSafeInteger(corrected) && corrected <= old && old - corrected < 1,
+  );
+  assert.equal(
+    await admitted("unused", [], { env: {}, milliseconds: corrected }),
+    true,
+  );
+  assert.throws(
+    () =>
+      supervisorMilliseconds({ wallEnd: 123000.5, monoEnd: 123000.5 }, 0, 0),
+    /MAC_GN_ADMISSION/,
+  );
+  assert.equal(
+    reason(Error("Bounded Unix engineering slice only")),
+    "MAC_GN_SLICE_ADMISSION",
+  );
 });
 
 test("own complete source rows and policy produce a distinct identity, never legacy producer transfer", () => {

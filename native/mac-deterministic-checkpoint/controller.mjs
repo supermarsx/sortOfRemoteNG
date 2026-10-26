@@ -117,6 +117,8 @@ const closedCodes = new Set([
 ]);
 
 export function reason(error) {
+  if (error?.message === "Bounded Unix engineering slice only")
+    return "MAC_GN_SLICE_ADMISSION";
   if (
     typeof error?.message === "string" &&
     /^(?:MAC_GN|MAC_METAL|MAC_META)_[A-Z_]{1,48}$/.test(error.message)
@@ -154,6 +156,15 @@ export function remaining(c, wall = Date.now(), mono = performance.now()) {
   );
   const value = Math.min(c.wallEnd - wall, c.monoEnd - mono);
   assert(value > 0, "MAC_GN_DEADLINE");
+  return value;
+}
+export function supervisorMilliseconds(
+  c,
+  wall = Date.now(),
+  mono = performance.now(),
+) {
+  const value = Math.floor(remaining(c, wall, mono) - 123000);
+  assert(value > 0, "MAC_GN_ADMISSION");
   return value;
 }
 export function carriedBudget(
@@ -960,7 +971,7 @@ export async function parent(env = process.env) {
     await fs.mkdir(path.join(output, "home"));
     await fs.mkdir(path.join(output, "tmp"));
     await fs.mkdir(path.join(output, "supervisor"));
-    c.workerMilliseconds = remaining(c) - 123000;
+    c.workerMilliseconds = supervisorMilliseconds(c);
     assert(c.workerMilliseconds > 0, "MAC_GN_ADMISSION");
     await save(path.join(output, "context.json"), c, LIMIT.context, state);
     const raw = await fs.readFile(path.join(output, "context.json"));
@@ -971,8 +982,10 @@ export async function parent(env = process.env) {
     };
     if (env.RUNNER_TRACKING_ID)
       clean.RUNNER_TRACKING_ID = env.RUNNER_TRACKING_ID;
-    const milliseconds = remaining(c) - 123000;
+    const milliseconds = supervisorMilliseconds(c);
     assert(milliseconds > 0, "MAC_GN_ADMISSION");
+    state.phase = "supervisor-invocation";
+    state.requestedSupervisorMilliseconds = milliseconds;
     state.supervisorInvoked = true;
     originalSupervisor = await compileSlice(
       process.execPath,
