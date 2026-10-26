@@ -1,0 +1,19 @@
+--- a/libcef/browser/native/browser_platform_delegate_native_linux.cc
++++ b/libcef/browser/native/browser_platform_delegate_native_linux.cc
+@@ -253,14 +253,13 @@
+   int keysym = ui::XKeysymForWindowsKeyCode(
+       key_code, !!(key_event.modifiers & EVENTFLAG_SHIFT_DOWN));
+   char16_t character = ui::GetUnicodeCharacterFromXKeySym(keysym);
+-#else
+-  char16_t character = key_event.character;
+ #endif
+ 
+   base::TimeTicks time_stamp = GetEventTimeStamp();
+ 
+   if (key_event.type == KEYEVENT_CHAR) {
+-    return ui::KeyEvent::FromCharacter(character, key_code, dom_code, flags,
++    // CHAR carries UTF-16 text; the Windows key code identifies a key, not text.
++    return ui::KeyEvent::FromCharacter(key_event.character, key_code, dom_code, flags,
+                                        time_stamp);
+   }
+ 
