@@ -1102,7 +1102,7 @@ const ARCHIVE_FAILURES = new Set([
 export function archiveFailureRecord(
   stdout,
   exitCode,
-  { overflow = false, deadline = false } = {},
+  { overflow = false, deadline = false, cleanupUnknown = false } = {},
 ) {
   let sourceCloseFailure = false,
     sourceJoinFailure = false,
@@ -1182,6 +1182,7 @@ export function archiveFailureRecord(
   }
   return {
     error,
+    ...(cleanupUnknown ? { archiveCleanupUnknown: true } : {}),
     ...(sourceCloseFailure ? { sourceCloseFailure: true } : {}),
     ...(sourceJoinFailure ? { sourceJoinFailure: true } : {}),
     ...externalFacts,
@@ -1206,59 +1207,191 @@ export async function archiveCommand(
     "Verified archive tool required",
   );
   return new Promise((resolve, reject) => {
-    const child = spawn(python, ["-I", "-B", helper, ...args], {
-      shell: false,
-      windowsHide: true,
-      detached: process.platform !== "win32",
-      env: { PATH: path.dirname(python) },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "",
-      overflow = false,
-      diagnosticEmitted = false;
-    const diagnostic = (code, options = {}) => {
-      if (diagnosticEmitted || !observeFailure) return;
-      diagnosticEmitted = true;
+    const end = performance.now() + timeout;
+    // Cleanup is reserved INSIDE the caller's original bound, never added to it.
+    const reserve = Math.min(5000, Math.max(1, Math.floor(timeout / 4)));
+    const captured = Buffer.alloc(LIMITS.seal);
+    let child,
+      bytes = 0,
+      first,
+      failed = false,
+      settled = false,
+      stopping = false;
+    let rootExited = false,
+      childClosed = false,
+      stdoutClosed = false,
+      stderrClosed = false;
+    let cleanupFault = false,
+      code = null,
+      cause = {},
+      workTimer,
+      endTimer,
+      cleanupTimer;
+    const stdout = () => captured.subarray(0, bytes).toString("utf8");
+    const pipesClosed = () => stdoutClosed && stderrClosed;
+    const report = (cleanupUnknown) => {
+      if (!observeFailure) return;
       try {
-        observeFailure(archiveFailureRecord(stdout, code, options));
+        Promise.resolve(
+          observeFailure(
+            archiveFailureRecord(stdout(), code, { ...cause, cleanupUnknown }),
+          ),
+        ).catch(() => {});
       } catch {
-        /* Diagnostics cannot hide an existing failure or escape an event callback. */
+        /* A diagnostic never replaces the original failure. */
       }
     };
-    child.stdout.on("data", (data) => {
-      stdout += data;
-      if (stdout.length > LIMITS.seal) {
-        overflow = true;
-        diagnostic(null, { overflow: true });
-        void stopGroup(child);
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(workTimer);
+      clearTimeout(endTimer);
+      clearTimeout(cleanupTimer);
+      const rootReaped = childClosed && (rootExited || !child?.pid);
+      const cleanupUnknown = cleanupFault || !rootReaped || !pipesClosed();
+      if (failed) {
+        if (cleanupUnknown) {
+          // No PID/group guesses: release only our own handles after denial.
+          try {
+            child?.unref();
+          } catch {}
+          for (const stream of [child?.stdout, child?.stderr])
+            try {
+              stream?.unref?.();
+            } catch {}
+        }
+        report(cleanupUnknown);
+        reject(first);
+        return;
       }
-    });
-    child.stderr.resume();
-    const timer = setTimeout(() => {
-      diagnostic(null, { deadline: true });
-      void stopGroup(child).then(
-        () => reject(new Error("Archive deadline; partial is not admitted")),
-        reject,
-      );
-    }, timeout);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      diagnostic(null);
-      reject(error);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0 || overflow) {
-        diagnostic(code, { overflow });
-        return reject(new Error("Checkpoint archive rejected"));
-      }
+      const deadlineFailure = () => {
+        first = new Error("Archive deadline; partial is not admitted");
+        failed = true;
+        cause = { deadline: true };
+        report(cleanupUnknown);
+        reject(first);
+      };
+      if (performance.now() > end) return deadlineFailure();
       try {
-        resolve(JSON.parse(stdout));
+        assert(!cleanupUnknown, "Archive ownership unconfirmed");
+        const text = stdout();
+        assert(
+          Buffer.from(text).equals(captured.subarray(0, bytes)),
+          "Malformed archive UTF8",
+        );
+        const value = JSON.parse(text);
+        if (performance.now() > end) return deadlineFailure();
+        resolve(value);
       } catch {
-        diagnostic(code);
-        reject(new Error("Malformed archive result"));
+        first = new Error("Malformed archive result");
+        failed = true;
+        report(cleanupUnknown);
+        reject(first);
       }
-    });
+    };
+    const joined = () => {
+      if (childClosed && (rootExited || !child?.pid) && pipesClosed()) finish();
+    };
+    const stop = () => {
+      if (stopping || settled) return;
+      stopping = true;
+      const remaining = Math.max(0, Math.min(reserve, end - performance.now()));
+      cleanupTimer = setTimeout(finish, remaining);
+      // This reviewed Python worker is a leaf. ChildProcess owns the exact
+      // creation handle; never signal a process group or a subsequently reused PID.
+      if (child?.pid && !rootExited) {
+        try {
+          if (!child.kill("SIGKILL")) cleanupFault = true;
+        } catch {
+          cleanupFault = true;
+        }
+      }
+      for (const stream of [child?.stdout, child?.stderr]) {
+        try {
+          stream?.destroy();
+        } catch {
+          cleanupFault = true;
+        }
+      }
+      joined();
+    };
+    const fail = (error, options = {}) => {
+      if (settled) return;
+      if (!failed) {
+        failed = true;
+        first = error;
+        cause = options;
+        clearTimeout(workTimer);
+      }
+      stop();
+    };
+    workTimer = setTimeout(
+      () =>
+        fail(new Error("Archive deadline; partial is not admitted"), {
+          deadline: true,
+        }),
+      Math.max(0, timeout - reserve),
+    );
+    endTimer = setTimeout(() => {
+      fail(new Error("Archive deadline; partial is not admitted"), {
+        deadline: true,
+      });
+      finish();
+    }, timeout);
+    try {
+      child = spawn(python, ["-I", "-B", helper, ...args], {
+        shell: false,
+        windowsHide: true,
+        detached: process.platform !== "win32",
+        env: { PATH: path.dirname(python) },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child.on("error", (error) => fail(error));
+      child.once("exit", (exitCode) => {
+        rootExited = true;
+        code = exitCode;
+        joined();
+      });
+      child.once("close", (exitCode) => {
+        childClosed = true;
+        code = exitCode;
+        if (!failed && exitCode !== 0)
+          fail(new Error("Checkpoint archive rejected"));
+        joined();
+      });
+      child.stdout.once("close", () => {
+        stdoutClosed = true;
+        joined();
+      });
+      child.stderr.once("close", () => {
+        stderrClosed = true;
+        joined();
+      });
+      child.stdout.on("error", (error) => fail(error));
+      child.stderr.on("error", (error) => fail(error));
+      child.stdout.on("data", (data) => {
+        if (failed || settled) return;
+        try {
+          const raw = Buffer.isBuffer(data) ? data : Buffer.from(data);
+          const count = Math.min(raw.length, LIMITS.seal - bytes);
+          raw.copy(captured, bytes, 0, count);
+          bytes += count;
+          if (count !== raw.length)
+            fail(new Error("Checkpoint archive rejected"), { overflow: true });
+        } catch (error) {
+          fail(error);
+        }
+      });
+      child.stderr.resume();
+    } catch (error) {
+      fail(error);
+      if (!child) {
+        childClosed = true;
+        stdoutClosed = true;
+        stderrClosed = true;
+        finish();
+      }
+    }
   });
 }
 export async function groupQuiet(
