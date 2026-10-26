@@ -585,6 +585,114 @@ const R5_ARM_NAMESPACE =
   "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap";
 const OLD_ARM_NAMESPACE =
   "native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap";
+const ARM25_NAMESPACE =
+  "native/cef-build-inputs/20261026-r5-linuxarm-cross-sysroot-external-webview-char";
+
+test("Linux ARM source25 preserves all23 patches and configuration while appending only common WebView and Linux CHAR fixes", async () => {
+  const old = await json(R5_ARM_NAMESPACE + "/source-lock.json");
+  const next = await json(ARM25_NAMESPACE + "/source-lock.json");
+  const common = await json(
+    "native/cef-build-inputs/20261026-r5-owned-linux-x64-external-webview/source-lock.json",
+  );
+  const review = await json(ARM25_NAMESPACE + "/review-receipt.json");
+  const expected = structuredClone(old);
+  expected.patches.push(...common.patches.slice(23));
+  assert.deepEqual(next, expected);
+  assert.equal(next.patches.length, 25);
+  assert.equal(
+    identitySha256(next),
+    "5987a2543510975afb13ec6bd158e2c3fc5f06ab9e0b96e1f5f1f6d0f55669d2",
+  );
+  assert.notEqual(identitySha256(next), identitySha256(old));
+  assert.notEqual(identitySha256(next), identitySha256(common));
+  assert.equal(review.sourceLockIdentity, identitySha256(next));
+  assert.equal(
+    review.sourceLockRawSha256,
+    hash(await bytes(ARM25_NAMESPACE + "/source-lock.json")),
+  );
+  assert.equal(review.predecessorIdentity, identitySha256(old));
+  const preserved = [
+    ...old.patches.map((row) => row.path),
+    old.bridge.header.path,
+    old.builds[0].gnArgs.path,
+    old.builds[0].toolchainLock.path,
+    "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+    "normalization-receipt.json",
+  ];
+  assert.equal(preserved.length, 28);
+  for (const name of preserved)
+    assert.deepEqual(
+      await bytes(ARM25_NAMESPACE + "/" + name),
+      await bytes(R5_ARM_NAMESPACE + "/" + name),
+    );
+  for (const row of next.patches.slice(23)) {
+    assert.equal(row.repository, "cef");
+    assert.deepEqual(
+      await bytes(ARM25_NAMESPACE + "/" + row.path),
+      await bytes(
+        "native/cef-build-inputs/20261026-r5-owned-linux-x64-external-webview/" +
+          row.path,
+      ),
+    );
+  }
+  const header = await bytes(ARM25_NAMESPACE + "/" + next.bridge.header.path);
+  assert.equal(header.length, 8886);
+  assert.equal(hash(header), R5_HEADER_SHA);
+  assert.equal(review.header.bytes, 8886);
+  assert.equal(review.header.sha256, R5_HEADER_SHA);
+  const names = (
+    await readdir(path.join(ROOT, ARM25_NAMESPACE), {
+      recursive: true,
+      withFileTypes: true,
+    })
+  ).filter((row) => row.isFile());
+  assert.equal(names.length, 32);
+  assert.equal(review.pins.length, 31);
+  for (const row of review.pins) {
+    const raw = await bytes(ARM25_NAMESPACE + "/" + row.path);
+    assert.equal(raw.length, row.size);
+    assert.equal(hash(raw), row.sha256);
+  }
+  assert.deepEqual(
+    review.pins.map((row) => row.path).sort(),
+    [
+      ...preserved,
+      ...next.patches.slice(23).map((row) => row.path),
+      "source-lock.json",
+    ].sort(),
+  );
+  for (const key of [
+    "engineCompiled",
+    "engineBuilt",
+    "nativeAcceptancePerformed",
+    "nativeAcceptancePassed",
+    "sdkProduced",
+    "publicationAllowed",
+  ])
+    assert.equal(review[key], false);
+  assert.notEqual(
+    review.historicalNormalization.sourceLockIdentity,
+    identitySha256(next),
+  );
+  assert(
+    (await bytes(".gitattributes"))
+      .toString()
+      .includes(ARM25_NAMESPACE + "/** -text -whitespace"),
+  );
+  assert(
+    (await bytes(".prettierignore"))
+      .toString()
+      .split(/\r?\n/)
+      .includes(ARM25_NAMESPACE + "/"),
+  );
+  const planned = await plan({
+    inputs: ARM25_NAMESPACE,
+    target: "aarch64-unknown-linux-gnu",
+    checkout: ROOT,
+    runnerMode: "hosted",
+  });
+  assert.deepEqual(planned.sourceLock, next);
+});
 
 test("R5 ARM source23 preserves cross-host configuration and historical normalization without transferring runtime proof", async () => {
   const old = await json(OLD_ARM_NAMESPACE + "/source-lock.json"),

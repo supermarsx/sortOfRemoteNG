@@ -1863,6 +1863,7 @@ function assertPortableIsolated(external = false) {
   for (const identity of [
     LINUX_INCREMENTAL_IDENTITY,
     "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588",
+    "5987a2543510975afb13ec6bd158e2c3fc5f06ab9e0b96e1f5f1f6d0f55669d2",
     WINDOWS_CAPSULE_IDENTITY,
   ]) {
     const wrong = clone(f.review);

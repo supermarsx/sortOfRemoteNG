@@ -3940,8 +3940,12 @@ test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinc
 });
 
 const refreshedLinuxArmInputs =
-  "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap";
+  "native/cef-build-inputs/20261026-r5-linuxarm-cross-sysroot-external-webview-char";
 const refreshedLinuxArmSource =
+  "5987a2543510975afb13ec6bd158e2c3fc5f06ab9e0b96e1f5f1f6d0f55669d2";
+const source23LinuxArmInputs =
+  "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap";
+const source23LinuxArmSource =
   "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588";
 const historicalLinuxArmInputs =
   "native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap";
@@ -4135,7 +4139,25 @@ test("selected Linux ARM R5 preserves reviewed configuration while requiring its
   assert.deepEqual(lock.upstream, prior.upstream);
   assert.deepEqual(lock.builds, prior.builds);
   assert.deepEqual(lock.patches.slice(0, 12), prior.patches.slice(0, 12));
-  assert.equal(lock.patches.length, 23);
+  assert.equal(lock.patches.length, 25);
+  const source23 = JSON.parse(
+    await readFile(
+      path.join(ROOT, source23LinuxArmInputs, "source-lock.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(identitySha256(source23), source23LinuxArmSource);
+  assert.deepEqual(lock.patches.slice(0, 23), source23.patches);
+  const common25 = JSON.parse(
+    await readFile(
+      path.join(
+        ROOT,
+        "native/cef-build-inputs/20261026-r5-owned-linux-x64-external-webview/source-lock.json",
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(lock.patches.slice(23), common25.patches.slice(23));
   for (const file of [
     `gn/${target}.gn`,
     `tools/${target}.json`,
@@ -4171,8 +4193,8 @@ test("selected Linux ARM R5 preserves reviewed configuration while requiring its
     await readFile(path.join(next, "review-receipt.json"), "utf8"),
   );
   assert.equal(review.sourceLockIdentity, refreshedLinuxArmSource);
-  assert.equal(review.predecessorIdentity, historicalLinuxArmSource);
-  assert.equal(review.patchCount, 23);
+  assert.equal(review.predecessorIdentity, source23LinuxArmSource);
+  assert.equal(review.patchCount, 25);
   // The copied normalization receipt is retained history, not a new R5 header proof.
   assert.notEqual(
     review.historicalNormalization.sourceLockIdentity,
@@ -4182,7 +4204,7 @@ test("selected Linux ARM R5 preserves reviewed configuration while requiring its
     (await readdir(next, { recursive: true, withFileTypes: true })).filter(
       (entry) => entry.isFile(),
     ).length,
-    30,
+    32,
   );
   assert.equal(profile.acceptanceRunner, "ubuntu-24.04-arm");
   assert.equal(profile.acceptanceArchitecture, "arm64");
@@ -4193,6 +4215,11 @@ test("selected Linux ARM R5 preserves reviewed configuration while requiring its
         target,
         source: historicalLinuxArmSource,
       }),
+    /source/,
+  );
+  assert.throws(
+    () =>
+      validateIdentity({ ...identity, target, source: source23LinuxArmSource }),
     /source/,
   );
   const workflow = YAML.parse(

@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "kind": "linux-arm-r5-external-webview-and-char-source25-projection-review",
+  "target": "aarch64-unknown-linux-gnu",
+  "sourceLockIdentity": "5987a2543510975afb13ec6bd158e2c3fc5f06ab9e0b96e1f5f1f6d0f55669d2",
+  "sourceLockRawSha256": "79258c5073f36a4a18495115c2a4c8f90f2cdaef0f4ad6008649d17066ac8b35",
+  "predecessorIdentity": "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588",
+  "predecessorNamespace": "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap",
+  "commonFixesNamespace": "native/cef-build-inputs/20261026-r5-owned-linux-x64-external-webview",
+  "commonFixesSourceIdentity": "8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279",
+  "patchCount": 25,
+  "unchangedPredecessorPatches": 23,
+  "preservedArmConfigurations": [
+    "gn/aarch64-unknown-linux-gnu.gn",
+    "tools/aarch64-unknown-linux-gnu.json",
+    "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+    "normalization-receipt.json"
+  ],
+  "historicalNormalization": {
+    "path": "normalization-receipt.json",
+    "sha256": "64d7ea0f661ad7c276683f8322de52a8e5bc5c8228b9e780883e4309755847a9",
+    "sourceLockIdentity": "e4c64bf94a403a8ec02f826a29969471eb583c49c461eacb29e38ac4de052078",
+    "role": "historical-LF-normalization-only-not-new-source-or-header-proof"
+  },
+  "header": {
+    "bytes": 8886,
+    "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+    "role": "byte-exact-Linux-source23-header-no-new-header-generation"
+  },
+  "sourceApplicability": {
+    "performed": true,
+    "method": "actual-private-seven-repository-Git-official116-dualorder-owned25-apply-reverse",
+    "resultSha256": "dc4561f4b63bfdbec77fde242a2358ad57cf4f92db626f4c1adeea35bc3cc725",
+    "officialPatchCount": 116,
+    "ownedPatchCount": 25,
+    "transitionFiles": 70,
+    "exactTransitionMatched": true,
+    "reversedToPristine": true,
+    "linuxHeader8886PinVerified": true,
+    "existing28RawBytesPreserved": true,
+    "generatedSecurityOrGnExecuted": false,
+    "qualification": "Source applicability/security inputs preserved only; no vendor worktree/GN/compiler/SDK/native proof"
+  },
+  "engineCompiled": false,
+  "engineBuilt": false,
+  "nativeAcceptancePerformed": false,
+  "nativeAcceptancePassed": false,
+  "sdkProduced": false,
+  "publicationAllowed": false,
+  "pins": [
+    {
+      "path": "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+      "size": 412,
+      "sha256": "7b9495db7e7687842b95db7fa718725c59fcbce2002cf48b3c267dcbf0fe4297"
+    },
+    {
+      "path": "gn/aarch64-unknown-linux-gnu.gn",
+      "size": 333,
+      "sha256": "0fcbeab5302c8409736a340e1424642b80185be8245245298a8eea19fe8e0817"
+    },
+    {
+      "path": "include/cef_sorng_tls_bridge.h",
+      "size": 8886,
+      "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e"
+    },
+    {
+      "path": "normalization-receipt.json",
+      "size": 1846,
+      "sha256": "64d7ea0f661ad7c276683f8322de52a8e5bc5c8228b9e780883e4309755847a9"
+    },
+    {
+      "path": "patches/0001-chromium-socket-admission.patch",
+      "size": 37160,
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876"
+    },
+    {
+      "path": "patches/0002-cef-native-bridge.patch",
+      "size": 31384,
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653"
+    },
+    {
+      "path": "patches/0003-cef-native-widget-lifetime.patch",
+      "size": 791,
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540"
+    },
+    {
+      "path": "patches/0004-chromium-soda-provisioning.patch",
+      "size": 4538,
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482"
+    },
+    {
+      "path": "patches/0005-chromium-proxy-route-probe.patch",
+      "size": 3539,
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810"
+    },
+    {
+      "path": "patches/0006-cef-explicit-download-destination.patch",
+      "size": 1010,
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813"
+    },
+    {
+      "path": "patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "size": 997,
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78"
+    },
+    {
+      "path": "patches/0008-chromium-same-authority-http2.patch",
+      "size": 4125,
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103"
+    },
+    {
+      "path": "patches/0009-cef-http2-bridge-capability.patch",
+      "size": 1972,
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8"
+    },
+    {
+      "path": "patches/0010-chromium-proxy-application-ack.patch",
+      "size": 14590,
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55"
+    },
+    {
+      "path": "patches/0011-cef-proxy-application-ack.patch",
+      "size": 10759,
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0"
+    },
+    {
+      "path": "patches/0012-cef-registration-retirement.patch",
+      "size": 20195,
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699"
+    },
+    {
+      "path": "patches/0013-chromium-owned-quic-datagrams.patch",
+      "size": 75101,
+      "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7"
+    },
+    {
+      "path": "patches/0014-cef-owned-quic-datagrams.patch",
+      "size": 9374,
+      "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c"
+    },
+    {
+      "path": "patches/0015-chromium-owned-quic-job-selection.patch",
+      "size": 8020,
+      "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7"
+    },
+    {
+      "path": "patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "size": 8213,
+      "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7"
+    },
+    {
+      "path": "patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "size": 22799,
+      "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858"
+    },
+    {
+      "path": "patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "size": 21463,
+      "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383"
+    },
+    {
+      "path": "patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "size": 605,
+      "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c"
+    },
+    {
+      "path": "patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "size": 354,
+      "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708"
+    },
+    {
+      "path": "patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "size": 379,
+      "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6"
+    },
+    {
+      "path": "patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "size": 845,
+      "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e"
+    },
+    {
+      "path": "patches/0023-cef-x11-default-visual-colormap.patch",
+      "size": 1073,
+      "sha256": "09359b5fe26fc71ca90fdf2add850cc2cd9129d34b76da2b1dd1a95e1ab5fc39"
+    },
+    {
+      "path": "patches/0024-cef-external-webview-lifetime.patch",
+      "size": 680,
+      "sha256": "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce"
+    },
+    {
+      "path": "patches/0025-cef-native-linux-char-utf16.patch",
+      "size": 810,
+      "sha256": "0394d4786efb8c7e305d209c11860029ebdd9b8f585b64a36706c48ac1450fce"
+    },
+    {
+      "path": "source-lock.json",
+      "size": 6537,
+      "sha256": "79258c5073f36a4a18495115c2a4c8f90f2cdaef0f4ad6008649d17066ac8b35"
+    },
+    {
+      "path": "tools/aarch64-unknown-linux-gnu.json",
+      "size": 925,
+      "sha256": "25878b8ef247351c8bab6b4704220c84081249a381054f658e1413caf0bc4511"
+    }
+  ]
+}
