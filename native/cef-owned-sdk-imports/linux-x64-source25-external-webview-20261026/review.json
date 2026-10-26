@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-owned-import-review",
+  "origin": "owned-linux-external-webview-engine",
+  "target": "x86_64-unknown-linux-gnu",
+  "sourceLockIdentity": "8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279",
+  "bundleSourceLockRawSha256": "d158677523e1db2bf730c9f18a219a93b823c7c09e349b87ae3fb2a3ae0de441",
+  "originalInputsSourceLockRawSha256": "1d032fe78e8fca1776b7b9f21c8c98602f7e955d0e705fe3707eb5c33cd77678",
+  "descriptorSha256": "5f8c8dd960303b1046d4669b89f4a10c47dd01e70f639a4d6d52ca2c601a7db3",
+  "handoffSha256": "413d0525dd344390c85504d22e72292292f57853450e2ff8636894529a4b6929",
+  "reviewBinding": {
+    "canonicalReviewSha256": "5ed6a327c9cdf7bd999e762ee42bd5aa8a7087b09a7fa88195a1d3ebc83c2135",
+    "evidencePins": {
+      "predecessor": {
+        "path": "predecessor.json",
+        "sha256": "8bc51c11e9f2852de72a6558b57938a1da7f5aa12373852444a25e40eab520d2",
+        "size": 297088
+      },
+      "readiness": {
+        "path": "readiness.json",
+        "sha256": "1bc4fc18f35dea0efbb1e9af3819296fbe8390735c6b86b55106cba4b2705955",
+        "size": 26108
+      },
+      "apply": {
+        "path": "apply.json",
+        "sha256": "2ca29a7f1ca522ac983cc203c958a396f66eee1475701561a8aa29735d3c9922",
+        "size": 23821
+      },
+      "started": {
+        "path": "started.json",
+        "sha256": "92e14043893945f407a67487159dc224d3e01fced7d41a2ba0671d6e82242dc2",
+        "size": 771
+      },
+      "container": {
+        "path": "container.json",
+        "sha256": "fb63000d7f4308cc75b6e7d5597509da17ece8748bd3daf2599ecf9c9b53783e",
+        "size": 15660
+      },
+      "compile": {
+        "path": "compile.json",
+        "sha256": "83124a2fb6dfcee290c4292417737e320bbaca584512c3184aa033297b68a97d",
+        "size": 792
+      },
+      "compileOutput": {
+        "path": "compileOutput.log",
+        "sha256": "0c36ee17b87f5a57f0d1ca4019174be6f4915df546830430fa168e3d2cfec644",
+        "size": 466922
+      },
+      "finished": {
+        "path": "finished.json",
+        "sha256": "a2c14a35aa1d47ec0e1b7d50ce1d42e875dcbf46fbd29103c4831ee4dc281438",
+        "size": 616
+      },
+      "postchecks": {
+        "path": "postchecks.json",
+        "sha256": "b798302f202e7d1621f6b61b34331452594758a5bec18c00505afd9c692b079d",
+        "size": 16776
+      },
+      "package": {
+        "path": "package.json",
+        "sha256": "834d95133fe4d464d93f11f412238bb25318fe4b4f98c1bc9d6cf59326620421",
+        "size": 1983
+      },
+      "distribution": {
+        "path": "distribution.json",
+        "sha256": "40b1e704744261112ebd72356291b72c625a565743033cd34a70b9c2b98d23bc",
+        "size": 903
+      },
+      "preparation": {
+        "path": "preparation.json",
+        "sha256": "9fc08c8293a5159d4fa3514241e2d6c76fa4d1633184f40f0192e55adbd6b9a6",
+        "size": 706
+      },
+      "workspace": {
+        "path": "workspace.json",
+        "sha256": "e385761e32ba540ba026877f14b0c23f4d13c9941d7da5ba31aef2be3c3c31e5",
+        "size": 18711
+      },
+      "copyManifest": {
+        "path": "copyManifest.json",
+        "sha256": "d0f8465360ce65304d93f5e7205fb6455f5e992d647e319c39b0cb5cb93cffd8",
+        "size": 58869854
+      },
+      "generation": {
+        "path": "generation.json",
+        "sha256": "5a33d043a8fda6b478d06b732e83057f9411b771b683e9dca1b45b57f3619f07",
+        "size": 1952880
+      },
+      "gn": {
+        "path": "gn.json",
+        "sha256": "e642076d136692d9bcad17a1719d94c6df72af0253bd964188441eaec96a8671",
+        "size": 8370
+      },
+      "gnOutput": {
+        "path": "gnOutput.log",
+        "sha256": "29c0dc45baf25de8caf5be76b2cb89ab55d90874d204082a1a6c24e3868651cc",
+        "size": 52
+      }
+    },
+    "verificationPython": {
+      "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a",
+      "size": 104952
+    }
+  },
+  "assets": [
+    {
+      "name": "source-lock.json",
+      "bytes": 6534,
+      "sha256": "d158677523e1db2bf730c9f18a219a93b823c7c09e349b87ae3fb2a3ae0de441"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 203381,
+      "sha256": "0291ead14718d1735c90c2deca7311c635b888f2fea68ded12431999202dd5e7"
+    },
+    {
+      "name": "receipt.json",
+      "bytes": 469,
+      "sha256": "a1a9ebfb2cc75ae3494fd4952c3fb65a05fb9974d27e7db728ceacacc11ac34e"
+    },
+    {
+      "name": "sorng-cef-custom-8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279-x86_64-unknown-linux-gnu.tar.bz2",
+      "bytes": 250575999,
+      "sha256": "21402ae497a824d19de82784e4c501f92bdaa2a7e8125c911e052d920c366947"
+    },
+    {
+      "name": "runtime.json",
+      "bytes": 1789,
+      "sha256": "5f8c8dd960303b1046d4669b89f4a10c47dd01e70f639a4d6d52ca2c601a7db3"
+    }
+  ],
+  "engineSha256": "25f79ef2a82fd7b1f58422c7589c654b96b976facc023983a3f654b4c1d2b15d",
+  "filesVerified": 939
+}

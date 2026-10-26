@@ -52,3 +52,4 @@ native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap/** -
 native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat/** -text -whitespace
 native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat/** -text -whitespace
 native/cef-owned-sdk-imports/linux-x64-isolated-r5-colormap-20261026/** -text -whitespace
+native/cef-owned-sdk-imports/linux-x64-source25-external-webview-20261026/** -text -whitespace
