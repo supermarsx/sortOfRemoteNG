@@ -103,19 +103,35 @@ def verify_setup(text, root, profile, cpu):
     def absolute(value):
         need(type(value) is str, "ENV_SETUP_TYPE")
         return ntpath.normpath(value if ntpath.isabs(value) else ntpath.join(str(root), value)).replace("\\", "/").casefold()
-    need(absolute(values["vc_bin_dir"]) == (vc + "/bin/Hostx64/" + cpu + "/cl.exe").replace("\\", "/").casefold(), "ENV_SETUP_CPU")
-    # Upstream MSVC_DIR's full match ends in /include despite its variable name.
-    need(absolute(values["msvc_dir"]) == (vc + "/include").replace("\\", "/").casefold(), "ENV_SETUP_MSVC")
-    need(absolute(values["windows_kits_dir"]) == str(Path(root) / "Windows Kits/10/Include" / profile["sdkVersion"]).replace("\\", "/").casefold(), "ENV_SETUP_SDK")
+    # FindFileInEnvList checks cl.exe exists, then returns its containing directory.
+    need(absolute(values["vc_bin_dir"]) == (vc + "/bin/Hostx64/" + cpu).replace("\\", "/").casefold(), "ENV_SETUP_CPU")
     def flags(key, prefix, paths):
         actual = values[key]
         need(type(actual) is list and len(actual) == len(paths) and
              all(type(x) is str and x.startswith(prefix) for x in actual), "ENV_SETUP_TYPE")
         need([absolute(x[len(prefix):]) for x in actual] == [absolute(x) for x in paths], "ENV_SETUP_PATHS")
+        # Match pinned setup_toolchain.py's q/ListToArgString, not just its list.
+        quoted = [x if re.fullmatch(r"[a-zA-Z0-9._/\\:-]*", x) else '"' + x + '"' for x in actual]
+        scalar = values[key.removesuffix("_list")]
+        need(type(scalar) is str and scalar == " ".join(quoted), "ENV_SETUP_FLAGS")
     flags("libpath_flags_list", "-libpath:", expected["LIB"].split(";"))
     flags("libpath_lldlink_flags_list", "-libpath:", expected["LIB"].split(";"))
     flags("include_flags_I_list", "/I", expected["INCLUDE"].split(";"))
     flags("include_flags_imsvc_list", "-imsvc", expected["INCLUDE"].split(";"))
+    # Upstream computes these optional summaries from raw, already-relativized
+    # INCLUDE spellings. Cross-drive backslashes or a root-relative SDK path can
+    # leave them empty. Derive exactly; never accept an arbitrary empty summary.
+    msvc_dir, windows_kits_dir = "", ""
+    for item in values["include_flags_I_list"]:
+        include = item[2:]
+        msvc_match = re.match(r"^.*/VC/Tools/MSVC/[^/]+/include$", include)
+        if msvc_match is not None:
+            msvc_dir = msvc_match.group(0)
+        sdk_match = re.match(r"^(.*/Windows Kits/\d+/Include/[^/]+)/.*", include)
+        if sdk_match is not None:
+            windows_kits_dir = sdk_match.group(1)
+    need(type(values["msvc_dir"]) is str and values["msvc_dir"] == msvc_dir, "ENV_SETUP_MSVC")
+    need(type(values["windows_kits_dir"]) is str and values["windows_kits_dir"] == windows_kits_dir, "ENV_SETUP_SDK")
     path_parts = values["paths"]
     need(type(path_parts) is str, "ENV_SETUP_TYPE")
     wanted_paths = [str(Path(root) / "host-runtime"), str(Path(profile["python"]["path"]).parent)] + expected["Path"].split(";")

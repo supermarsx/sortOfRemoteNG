@@ -31,6 +31,24 @@ def temporary():
 def clock():
     return a.Clock(1000, 1000, wall=lambda: 1, mono=lambda: 1)
 
+# Exact retained run40251113476/setup-x86 bytes; no setup program executes here.
+# All paths belong to its public fixed CI toolchain or private owned operation.
+ACTUAL_SETUP_X86 = (
+    'vc_bin_dir = "C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\bin\\\\Hostx64\\\\x86"\r\n'
+    'include_flags_I = "\\"/IC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\include\\" \\"/IC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\include\\" \\"/IWindows Kits/10/Include/10.0.28000.0/ucrt\\" \\"/IWindows Kits/10/Include/10.0.28000.0/shared\\" \\"/IWindows Kits/10/Include/10.0.28000.0/um\\" \\"/IWindows Kits/10/Include/10.0.28000.0/winrt\\" \\"/IWindows Kits/10/Include/10.0.28000.0/cppwinrt\\""\r\n'
+    'include_flags_I_list = ["/IC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\include", "/IC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\include", "/IWindows Kits/10/Include/10.0.28000.0/ucrt", "/IWindows Kits/10/Include/10.0.28000.0/shared", "/IWindows Kits/10/Include/10.0.28000.0/um", "/IWindows Kits/10/Include/10.0.28000.0/winrt", "/IWindows Kits/10/Include/10.0.28000.0/cppwinrt"]\r\n'
+    'include_flags_imsvc = "\\"-imsvcC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\include\\" \\"-imsvcC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\include\\" \\"-imsvcWindows Kits/10/Include/10.0.28000.0/ucrt\\" \\"-imsvcWindows Kits/10/Include/10.0.28000.0/shared\\" \\"-imsvcWindows Kits/10/Include/10.0.28000.0/um\\" \\"-imsvcWindows Kits/10/Include/10.0.28000.0/winrt\\" \\"-imsvcWindows Kits/10/Include/10.0.28000.0/cppwinrt\\""\r\n'
+    'include_flags_imsvc_list = ["-imsvcC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\include", "-imsvcC:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\include", "-imsvcWindows Kits/10/Include/10.0.28000.0/ucrt", "-imsvcWindows Kits/10/Include/10.0.28000.0/shared", "-imsvcWindows Kits/10/Include/10.0.28000.0/um", "-imsvcWindows Kits/10/Include/10.0.28000.0/winrt", "-imsvcWindows Kits/10/Include/10.0.28000.0/cppwinrt"]\r\n'
+    'paths = "D:\\\\a\\\\sortOfRemoteNG\\\\sortOfRemoteNG\\\\.artifacts\\\\windows-x64-arm-toolchain-8f15eb5d-ab88-4753-87ac-0076e7a2a490\\\\host-runtime;C:\\\\hostedtoolcache\\\\windows\\\\Python\\\\3.12.10\\\\x64;C:\\\\hostedtoolcache\\\\windows\\\\Python\\\\3.12.10\\\\x64;D:\\\\a\\\\sortOfRemoteNG\\\\sortOfRemoteNG\\\\.artifacts\\\\windows-x64-arm-toolchain-8f15eb5d-ab88-4753-87ac-0076e7a2a490\\\\llvm\\\\bin;C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\bin\\\\Hostx64\\\\x86;D:\\\\a\\\\sortOfRemoteNG\\\\sortOfRemoteNG\\\\.artifacts\\\\windows-x64-arm-toolchain-8f15eb5d-ab88-4753-87ac-0076e7a2a490\\\\Windows Kits\\\\10\\\\bin\\\\10.0.28000.0\\\\x64;D:\\\\a\\\\sortOfRemoteNG\\\\sortOfRemoteNG\\\\.artifacts\\\\windows-x64-arm-toolchain-8f15eb5d-ab88-4753-87ac-0076e7a2a490\\\\host-runtime;C:\\\\Windows\\\\System32;C:\\\\Windows"\r\n'
+    'libpath_flags = "\\"-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\lib\\\\x86\\" \\"-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\lib\\\\x86\\" \\"-libpath:Windows Kits/10/Lib/10.0.28000.0/ucrt/x86\\" \\"-libpath:Windows Kits/10/Lib/10.0.28000.0/um/x86\\""\r\n'
+    'libpath_flags_list = ["-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\lib\\\\x86", "-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\lib\\\\x86", "-libpath:Windows Kits/10/Lib/10.0.28000.0/ucrt/x86", "-libpath:Windows Kits/10/Lib/10.0.28000.0/um/x86"]\r\n'
+    'libpath_lldlink_flags = "\\"-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\lib\\\\x86\\" \\"-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\lib\\\\x86\\" \\"-libpath:Windows Kits/10/Lib/10.0.28000.0/ucrt/x86\\" \\"-libpath:Windows Kits/10/Lib/10.0.28000.0/um/x86\\""\r\n'
+    'libpath_lldlink_flags_list = ["-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\lib\\\\x86", "-libpath:C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Enterprise\\\\VC\\\\Tools\\\\MSVC\\\\14.51.36231\\\\atlmfc\\\\lib\\\\x86", "-libpath:Windows Kits/10/Lib/10.0.28000.0/ucrt/x86", "-libpath:Windows Kits/10/Lib/10.0.28000.0/um/x86"]\r\n'
+    'msvc_dir = ""\r\n'
+    'windows_kits_dir = ""\r\n'
+)
+ACTUAL_SETUP_ROOT = "D:/a/sortOfRemoteNG/sortOfRemoteNG/.artifacts/windows-x64-arm-toolchain-8f15eb5d-ab88-4753-87ac-0076e7a2a490"
+
 
 class Response(io.BytesIO):
     def __init__(self, raw, url):
@@ -329,16 +347,18 @@ class EnvironmentTests(unittest.TestCase):
         root = Path("D:/owned")
         value = e.rows(root, P, cpu)
         vc = P["vsRoot"] + "/VC/Tools/MSVC/" + P["toolset"]
-        fields = {"vc_bin_dir": vc + "/bin/Hostx64/" + cpu + "/cl.exe", "msvc_dir": vc + "/include",
+        # Synthetic other-CPU variants follow the pinned producer's directory
+        # semantics. The independently retained x86 output is tested separately.
+        fields = {"vc_bin_dir": vc + "/bin/Hostx64/" + cpu, "msvc_dir": vc + "/include",
                   "windows_kits_dir": "D:/owned/Windows Kits/10/Include/10.0.28000.0",
                   "paths": str(root / "host-runtime") + ";" + str(Path(P["python"]["path"]).parent) + ";" + value["Path"]}
         for key, prefix, source in (("include_flags_I", "/I", "INCLUDE"), ("include_flags_imsvc", "-imsvc", "INCLUDE"),
                                     ("libpath_flags", "-libpath:", "LIB"), ("libpath_lldlink_flags", "-libpath:", "LIB")):
             fields[key + "_list"] = [prefix + x.replace("\\", "/") for x in value[source].split(";")]
-            fields[key] = " ".join(fields[key + "_list"])
+            fields[key] = " ".join('"' + x + '"' if " " in x else x for x in fields[key + "_list"])
         return fields
 
-    def test_actual_setup_scope_parser_cpu_and_path_positive_negative(self):
+    def test_synthetic_all_cpu_setup_contract_positive_negative(self):
         for cpu in e.CPUS:
             fields = self.setup_text(cpu)
             text = "\n".join(key + " = " + json.dumps(value) for key, value in fields.items())
@@ -346,6 +366,95 @@ class EnvironmentTests(unittest.TestCase):
             fields["libpath_flags_list"][0] = "-libpath:C:/unowned/arm64"
             with self.assertRaises(a.Denied):
                 e.verify_setup("\n".join(key + " = " + json.dumps(value) for key, value in fields.items()), Path("D:/owned"), P, cpu)
+
+    def actual_fields(self):
+        return {key: json.loads(value) for key, value in
+                (line.split(" = ", 1) for line in ACTUAL_SETUP_X86.splitlines())}
+
+    def render_setup(self, fields):
+        return "\n".join(key + " = " + json.dumps(value) for key, value in fields.items())
+
+    def test_retained_x86_exact_raw_output_passes_without_vendor_execution(self):
+        raw = ACTUAL_SETUP_X86.encode("utf-8")
+        self.assertEqual(len(raw), 4392)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         "a9fd974d168a3b0cb78e731028317184f6edefa6d8e9dd42f51e017bde817462")
+        fields = self.actual_fields()
+        self.assertEqual(fields["msvc_dir"], "")
+        self.assertEqual(fields["windows_kits_dir"], "")
+        result = e.verify_setup(ACTUAL_SETUP_X86, Path(ACTUAL_SETUP_ROOT), P, "x86")
+        self.assertTrue(result["setupSucceeded"])
+        self.assertFalse(result["registeredSdkClaim"])
+
+    def test_exact_cpu_directory_denies_executable_wrong_cpu_host_and_toolset(self):
+        fields = self.actual_fields();directory = fields["vc_bin_dir"]
+        for wrong in (directory + "\\cl.exe", directory.replace("\\x86", "\\arm64"),
+                      directory.replace("Hostx64", "Hostarm64"),
+                      directory.replace(P["toolset"], "14.50.00000"), "C:/foreign/bin/x86", None, []):
+            with self.subTest(wrong=wrong):
+                changed = {**fields, "vc_bin_dir": wrong}
+                with self.assertRaisesRegex(a.Denied, "ENV_SETUP_(CPU|TYPE)"):
+                    e.verify_setup(self.render_setup(changed), Path(ACTUAL_SETUP_ROOT), P, "x86")
+
+    def test_summary_empty_only_when_exact_validated_include_spelling_computes_empty(self):
+        fields = self.actual_fields()
+        for key, code in (("msvc_dir", "MSVC"), ("windows_kits_dir", "SDK")):
+            for value in ("C:/foreign/include", None, [], False):
+                with self.subTest(key=key, value=value):
+                    with self.assertRaisesRegex(a.Denied, "ENV_SETUP_" + code):
+                        e.verify_setup(self.render_setup({**fields, key: value}), Path(ACTUAL_SETUP_ROOT), P, "x86")
+        # Forward-slash synthetic includes legitimately compute nonempty summaries.
+        for cpu in e.CPUS:
+            fields = self.setup_text(cpu)
+            self.assertTrue(e.verify_setup(self.render_setup(fields), Path("D:/owned"), P, cpu)["setupSucceeded"])
+            for key, code in (("msvc_dir", "MSVC"), ("windows_kits_dir", "SDK")):
+                with self.subTest(cpu=cpu, key=key):
+                    with self.assertRaisesRegex(a.Denied, "ENV_SETUP_" + code):
+                        e.verify_setup(self.render_setup({**fields, key: ""}), Path("D:/owned"), P, cpu)
+
+    def test_each_scalar_flags_string_is_bound_to_exact_validated_list_and_quotes(self):
+        fields = self.actual_fields()
+        for key in ("include_flags_I", "include_flags_imsvc", "libpath_flags", "libpath_lldlink_flags"):
+            for wrong in (fields[key].replace('"', ""), fields[key] + " /foreign", None, [], True):
+                with self.subTest(key=key, wrong=wrong):
+                    with self.assertRaisesRegex(a.Denied, "ENV_SETUP_FLAGS"):
+                        e.verify_setup(self.render_setup({**fields, key: wrong}), Path(ACTUAL_SETUP_ROOT), P, "x86")
+
+    def test_all_include_lib_lists_keep_complete_roots_and_order(self):
+        fields = self.actual_fields()
+        for key in ("include_flags_I_list", "include_flags_imsvc_list", "libpath_flags_list", "libpath_lldlink_flags_list"):
+            original = fields[key]
+            for wrong in (original[:-1], list(reversed(original)), original + [original[0]],
+                          [original[0] + "/foreign"] + original[1:], "not-list", [False] + original[1:]):
+                with self.subTest(key=key, wrong=wrong):
+                    with self.assertRaisesRegex(a.Denied, "ENV_SETUP_(PATHS|TYPE)"):
+                        e.verify_setup(self.render_setup({**fields, key: wrong}), Path(ACTUAL_SETUP_ROOT), P, "x86")
+
+    def test_path_order_extra_missing_and_foreign_entries_deny(self):
+        fields = self.actual_fields();paths = fields["paths"].split(";")
+        for wrong in (";".join(paths[1:]), ";".join(reversed(paths)),
+                      fields["paths"] + ";C:/foreign", None, []):
+            with self.subTest(wrong=wrong):
+                with self.assertRaisesRegex(a.Denied, "ENV_SETUP_(PATHS|TYPE)"):
+                    e.verify_setup(self.render_setup({**fields, "paths": wrong}), Path(ACTUAL_SETUP_ROOT), P, "x86")
+
+    def test_exact_schema_duplicate_missing_extra_and_bad_json_denied(self):
+        fields = self.actual_fields();text = self.render_setup(fields)
+        for key in fields:
+            changed = {k: v for k, v in fields.items() if k != key}
+            with self.subTest(missing=key):
+                with self.assertRaisesRegex(a.Denied, "ENV_SETUP_FIELDS"):
+                    e.verify_setup(self.render_setup(changed), Path(ACTUAL_SETUP_ROOT), P, "x86")
+        for wrong in (text + '\nvc_bin_dir = "duplicate"', self.render_setup({**fields, "unknown": "value"}),
+                      text + "\ninvalid", text.replace('vc_bin_dir = "', 'vc_bin_dir = [', 1)):
+            with self.subTest(wrong=wrong):
+                with self.assertRaises((a.Denied, ValueError)):
+                    e.verify_setup(wrong, Path(ACTUAL_SETUP_ROOT), P, "x86")
+
+    def test_existing_setup_text_and_line_caps_still_deny(self):
+        for wrong in ("x" * (4 * 1024**2 + 1), "x" * 65537):
+            with self.assertRaisesRegex(a.Denied, "ENV_SETUP_BOUND"):
+                e.verify_setup(wrong, Path(ACTUAL_SETUP_ROOT), P, "x86")
 
 
 class SliceTests(unittest.TestCase):
