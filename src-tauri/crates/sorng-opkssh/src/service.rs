@@ -907,30 +907,111 @@ mod tests {
         }
     }
 
-    fn unique_temp_config_path() -> String {
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
-        std::env::temp_dir()
-            .join(format!("sorng-opkssh-service-{stamp}"))
-            .join("config.yml")
-            .to_string_lossy()
-            .to_string()
+    struct TempConfigFixture {
+        root: PathBuf,
+    }
+
+    impl TempConfigFixture {
+        fn new() -> Self {
+            Self::claim(
+                std::env::temp_dir().join(format!("sorng-opkssh-service-{}", uuid::Uuid::new_v4())),
+            )
+            .expect("claim new config fixture")
+        }
+
+        fn claim(root: PathBuf) -> std::io::Result<Self> {
+            std::fs::create_dir(&root)?;
+            let fixture = Self { root };
+            assert!(!PathBuf::from(fixture.config_path()).exists());
+            Ok(fixture)
+        }
+
+        fn config_path(&self) -> String {
+            self.root.join("config.yml").to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for TempConfigFixture {
+        fn drop(&mut self) {
+            // Only a successful exclusive claim can construct this guard.
+            // Do not mask a test's original panic if cleanup also fails.
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn config_fixtures_are_distinct_even_when_legacy_clock_names_collide() {
+        // Deterministic model of the old defect, not a claim about the
+        // unrecorded timestamps in the historical macOS failure.
+        let legacy_parent = TempConfigFixture::new();
+        let legacy_path = |stamp| {
+            legacy_parent
+                .root
+                .join(format!("sorng-opkssh-service-{stamp}"))
+                .join("config.yml")
+        };
+        let writer_path = legacy_path(123_u128);
+        let rejected_request_path = legacy_path(123_u128);
+        assert_eq!(writer_path, rejected_request_path);
+        std::fs::create_dir(writer_path.parent().unwrap()).unwrap();
+        std::fs::write(&writer_path, b"synthetic other-test config").unwrap();
+        // The rejected request performs no write, yet its old final
+        // absence assertion fails when the other fixture shares its name.
+        assert!(rejected_request_path.exists());
+
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    TempConfigFixture::new()
+                })
+            })
+            .collect();
+        barrier.wait();
+        let mut fixtures = handles.into_iter().map(|handle| handle.join().unwrap());
+        let first = fixtures.next().unwrap();
+        let second = fixtures.next().unwrap();
+        assert_ne!(first.root, second.root);
+        assert!(!PathBuf::from(first.config_path()).exists());
+        assert!(!PathBuf::from(second.config_path()).exists());
+        std::fs::write(first.config_path(), b"owned fixture").unwrap();
+        assert!(!PathBuf::from(second.config_path()).exists());
+    }
+
+    #[test]
+    fn config_fixture_refuses_existing_root_without_adopting_its_contents() {
+        let owner = TempConfigFixture::new();
+        let sentinel = owner.root.join("sentinel");
+        std::fs::write(&sentinel, b"keep").unwrap();
+        let error = TempConfigFixture::claim(owner.root.clone())
+            .err()
+            .expect("existing root must be refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        assert!(owner.root.is_dir());
+    }
+
+    #[test]
+    fn config_fixture_cleanup_removes_only_its_owned_root_on_scope_exit() {
+        let other = TempConfigFixture::new();
+        let sentinel = other.root.join("sentinel");
+        std::fs::write(&sentinel, b"keep").unwrap();
+        let removed = {
+            let fixture = TempConfigFixture::new();
+            std::fs::write(fixture.config_path(), b"owned fixture").unwrap();
+            fixture.root.clone()
+        };
+        assert!(!removed.exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
     }
 
     #[tokio::test]
     async fn update_client_config_redacts_cached_transport_and_preserves_secret_on_disk() {
-        let path = unique_temp_config_path();
+        let fixture = TempConfigFixture::new();
+        let path = fixture.config_path();
         let mut service = OpksshService::new();
-
-        let temp_dir = PathBuf::from(&path)
-            .parent()
-            .expect("config parent")
-            .to_path_buf();
-        tokio::fs::create_dir_all(&temp_dir)
-            .await
-            .expect("create temp dir");
         tokio::fs::write(
             &path,
             "default: custom\nproviders:\n  - alias: custom\n    issuer: https://issuer.example\n    client_id: client-id\n    client_secret: super-secret\n    scopes: openid\n",
@@ -988,12 +1069,12 @@ mod tests {
             Some("super-secret")
         );
         assert_eq!(disk_after.providers[0].client_id, "updated-client");
-        let _ = tokio::fs::remove_dir_all(temp_dir).await;
     }
 
     #[tokio::test]
     async fn update_client_config_rejects_new_plaintext_secret_write() {
-        let path = unique_temp_config_path();
+        let fixture = TempConfigFixture::new();
+        let path = fixture.config_path();
         let mut service = OpksshService::new();
 
         let config = OpksshClientConfig {
