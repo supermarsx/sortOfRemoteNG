@@ -26,6 +26,10 @@ import { inspectNativeBinary } from "../browser-runtime-package.mjs";
 import {
   LINUX_INCREMENTAL_ORIGIN,
   LINUX_ISOLATED_ORIGIN,
+  LINUX_EXTERNAL_WEBVIEW_ORIGIN,
+  LINUX_EXTERNAL_WEBVIEW_IDENTITY,
+  LINUX_EXTERNAL_WEBVIEW_INPUT_RAW,
+  isLinuxIsolatedOrigin,
   LINUX_ISOLATED_EVIDENCE,
   LINUX_ISOLATED_LIMITS,
   isLinuxIncrementalOrigin,
@@ -72,6 +76,7 @@ const origins = {
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-isolated-incremental-engine": "x86_64-unknown-linux-gnu",
+  "owned-linux-external-webview-engine": "x86_64-unknown-linux-gnu",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
@@ -164,43 +169,46 @@ export function validateOwnedReview(review) {
     "verificationPython",
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
-  const names =
-    review.origin === LINUX_ISOLATED_ORIGIN
-      ? LINUX_ISOLATED_EVIDENCE
-      : review.origin === LINUX_INCREMENTAL_ORIGIN
-        ? LINUX_INCREMENTAL_EVIDENCE
-        : isWindowsCapsuleOrigin(review.origin)
-          ? ownedCapsuleEvidence(review.origin)
-          : review.origin === "owned-windows-incremental-engine"
-            ? WINDOWS_INCREMENTAL_EVIDENCE
-            : review.origin === "existing-windows-package"
-              ? ["build"]
-              : [
-                  "prepared",
-                  "started",
-                  "container",
-                  "finished",
-                  "producer",
-                  "freshCheck",
-                ];
+  const names = isLinuxIsolatedOrigin(review.origin)
+    ? LINUX_ISOLATED_EVIDENCE
+    : review.origin === LINUX_INCREMENTAL_ORIGIN
+      ? LINUX_INCREMENTAL_EVIDENCE
+      : isWindowsCapsuleOrigin(review.origin)
+        ? ownedCapsuleEvidence(review.origin)
+        : review.origin === "owned-windows-incremental-engine"
+          ? WINDOWS_INCREMENTAL_EVIDENCE
+          : review.origin === "existing-windows-package"
+            ? ["build"]
+            : [
+                "prepared",
+                "started",
+                "container",
+                "finished",
+                "producer",
+                "freshCheck",
+              ];
   exact(review.reviewBinding.evidencePins, names);
   for (const [role, pin] of Object.entries(review.reviewBinding.evidencePins))
     rawPin(pin, ownedEvidenceLimit(review.origin, role));
   if (isLinuxIncrementalOrigin(review.origin))
     assert(
       review.sourceLockIdentity ===
-        (review.origin === LINUX_ISOLATED_ORIGIN
-          ? LINUX_ISOLATED_IDENTITY
+        (isLinuxIsolatedOrigin(review.origin)
+          ? review.origin === LINUX_EXTERNAL_WEBVIEW_ORIGIN
+            ? LINUX_EXTERNAL_WEBVIEW_IDENTITY
+            : LINUX_ISOLATED_IDENTITY
           : LINUX_INCREMENTAL_IDENTITY) &&
         review.originalInputsSourceLockRawSha256 ===
-          (review.origin === LINUX_ISOLATED_ORIGIN
-            ? LINUX_ISOLATED_INPUT_RAW
+          (isLinuxIsolatedOrigin(review.origin)
+            ? review.origin === LINUX_EXTERNAL_WEBVIEW_ORIGIN
+              ? LINUX_EXTERNAL_WEBVIEW_INPUT_RAW
+              : LINUX_ISOLATED_INPUT_RAW
             : "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23") &&
         Object.values(review.reviewBinding.evidencePins).reduce(
           (n, p) => n + p.size,
           0,
         ) <=
-          (review.origin === LINUX_ISOLATED_ORIGIN
+          (isLinuxIsolatedOrigin(review.origin)
             ? LINUX_ISOLATED_LIMITS.totalEvidenceBytes
             : 80 * 1024 ** 2),
       "Closed Linux incremental identity and evidence bound required",
@@ -335,7 +343,7 @@ export function validateLocalHandoff(review, bytes) {
       value.provenance?.origin === review.origin,
     "Local handoff is not build/publication authority",
   );
-  if (review.origin === LINUX_ISOLATED_ORIGIN) {
+  if (isLinuxIsolatedOrigin(review.origin)) {
     validateLinuxIsolatedProvenance(value.provenance, review);
   } else if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
     validateLinuxIncrementalProvenance(value.provenance, review);
