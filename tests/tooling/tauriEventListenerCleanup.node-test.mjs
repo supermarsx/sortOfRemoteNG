@@ -13,7 +13,66 @@ const framework = new URL(
   import.meta.url,
 );
 
-test("the pinned framework contains only the documented event cleanup change", async () => {
+const cohortComment =
+  "# Keep this private API cohort aligned with the vendored tauri 2.11.5 sources.\n";
+const cohortEdges = {
+  "Cargo.toml": [
+    [
+      '[dependencies.tauri-macros]\nversion = "=2.6.3"',
+      '[dependencies.tauri-macros]\nversion = "2.6.3"',
+    ],
+    [
+      '[dependencies.tauri-runtime]\nversion = "=2.11.3"',
+      '[dependencies.tauri-runtime]\nversion = "2.11.3"',
+    ],
+    [
+      '[dependencies.tauri-runtime-wry]\nversion = "=2.11.4"',
+      '[dependencies.tauri-runtime-wry]\nversion = "2.11.4"',
+    ],
+    [
+      '[dependencies.tauri-utils]\nversion = "=2.9.3"',
+      '[dependencies.tauri-utils]\nversion = "2.9.3"',
+    ],
+    [
+      '[build-dependencies.tauri-utils]\nversion = "=2.9.3"',
+      '[build-dependencies.tauri-utils]\nversion = "2.9.3"',
+    ],
+  ],
+  "Cargo.toml.orig": [
+    [
+      'tauri-runtime = { version = "=2.11.3"',
+      'tauri-runtime = { version = "2.11.3"',
+    ],
+    [
+      'tauri-macros = { version = "=2.6.3"',
+      'tauri-macros = { version = "2.6.3"',
+    ],
+    ['tauri-utils = { version = "=2.9.3"', 'tauri-utils = { version = "2.9.3"'],
+    [
+      'tauri-runtime-wry = { version = "=2.11.4"',
+      'tauri-runtime-wry = { version = "2.11.4"',
+    ],
+    [
+      'tauri-utils = { path = "../tauri-utils/", version = "=2.9.3"',
+      'tauri-utils = { path = "../tauri-utils/", version = "2.9.3"',
+    ],
+  ],
+};
+function undoPrivateCohort(name, bytes) {
+  let source = bytes.toString("utf8");
+  for (const [from, to] of [[cohortComment, ""], ...cohortEdges[name]]) {
+    assert.equal(
+      source.split(from).length - 1,
+      1,
+      `${name}: unique reviewed edit`,
+    );
+    source = source.replace(from, to);
+  }
+  return Buffer.from(source);
+}
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+test("the pinned framework contains only documented event cleanup and private-cohort edits", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("SOURCE-MANIFEST.json", framework), "utf8"),
   );
@@ -32,7 +91,42 @@ test("the pinned framework contains only the documented event cleanup change", a
     );
     if (entry.sha256 !== entry.upstreamSha256) changed.push(name);
   }
-  assert.deepEqual(changed, ["src/event/mod.rs"]);
+  assert.deepEqual(changed, [
+    "Cargo.toml",
+    "Cargo.toml.orig",
+    "src/event/mod.rs",
+  ]);
+  for (const name of Object.keys(cohortEdges)) {
+    const bytes = await readFile(new URL(name, framework));
+    const originalHash = manifest.files[name].upstreamSha256;
+    assert.equal(
+      sha256(undoPrivateCohort(name, bytes)),
+      originalHash,
+      `${name}: undoing only the six reviewed edits must restore every upstream byte`,
+    );
+    // An unknown change remains after the exact undo and cannot inherit approval.
+    assert.notEqual(
+      sha256(
+        undoPrivateCohort(
+          name,
+          Buffer.concat([bytes, Buffer.from("# unknown\n")]),
+        ),
+      ),
+      originalHash,
+    );
+    assert.throws(() =>
+      undoPrivateCohort(
+        name,
+        Buffer.concat([bytes, Buffer.from(cohortComment)]),
+      ),
+    );
+    assert.throws(() =>
+      undoPrivateCohort(
+        name,
+        Buffer.from(bytes.toString("utf8").replace("=2.11.3", "=2.12.2")),
+      ),
+    );
+  }
   const cargo = await readFile(
     new URL("../../src-tauri/Cargo.toml", import.meta.url),
     "utf8",

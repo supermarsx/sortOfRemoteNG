@@ -12,11 +12,11 @@
     },
     "Cargo.toml": {
       "upstreamSha256": "899b9a26104a4088eb7439c4c9c1ac80b279006a69b07bbbd3a0c607f897f11e",
-      "sha256": "899b9a26104a4088eb7439c4c9c1ac80b279006a69b07bbbd3a0c607f897f11e"
+      "sha256": "6d3a4ee4da907b1c7b1e1b0f65cc045dfdb65b3059d5569c27f5ddd2bc745328"
     },
     "Cargo.toml.orig": {
       "upstreamSha256": "4462ab255c9c9f8f1c8edaf737cba916e89227f321df3623e2c53a487a22e0d0",
-      "sha256": "4462ab255c9c9f8f1c8edaf737cba916e89227f321df3623e2c53a487a22e0d0"
+      "sha256": "e573fb75c48ad0aae15eb1bde05166f56224c1fbb0848666317559b3f530d13a"
     },
     "LICENSE_APACHE-2.0": {
       "upstreamSha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
