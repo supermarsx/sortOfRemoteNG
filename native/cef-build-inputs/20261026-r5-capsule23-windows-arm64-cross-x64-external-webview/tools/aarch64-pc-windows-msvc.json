@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-toolchain-lock",
+  "target": "aarch64-pc-windows-msvc",
+  "files": [
+    {
+      "path": "hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+      "size": 104952,
+      "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+    },
+    {
+      "path": "runtime/x64/msvcp140.dll",
+      "size": 643512,
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+    },
+    {
+      "path": "runtime/x64/msvcp140_atomic_wait.dll",
+      "size": 57792,
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+    },
+    {
+      "path": "runtime/x64/vccorlib140.dll",
+      "size": 350648,
+      "sha256": "09f93d5ff96ae09767f3e1af3cdd43a5a58f2598654fc63089429bb6f9f4737f"
+    },
+    {
+      "path": "runtime/x64/vcruntime140.dll",
+      "size": 178616,
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "runtime/x64/vcruntime140_1.dll",
+      "size": 50112,
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "runtime/x64/msdia140.dll",
+      "size": 2700600,
+      "sha256": "55e1ce73e8ffd54c88a75c0fdcb11a56df4ba0f80949cf585741855e9e4181aa"
+    },
+    {
+      "path": "runtime/x64/dbghelp.dll",
+      "size": 2308520,
+      "sha256": "3ce12537291b46af6914ea6865f176d9528cd7707c752fca8be96ad2a7562220"
+    },
+    {
+      "path": "runtime/x64/dbgcore.dll",
+      "size": 252328,
+      "sha256": "d63e8421d6847ac0d87a9bd151740610dd8a580c8ad67152d038f4c504d4b292"
+    },
+    {
+      "path": "runtime/x64/symsrv.dll",
+      "size": 424360,
+      "sha256": "356267d9f9f9ccae55b6996258b17a49b23108cc516dc31bfff2b60c4b1fc449"
+    },
+    {
+      "path": "runtime/arm64/msvcp140.dll",
+      "size": 1588064,
+      "sha256": "167ceac85c2d726c4cd9e39b8881fafdc6de1520c0e67c4f6b271235f9d2a6c5"
+    },
+    {
+      "path": "runtime/arm64/msvcp140_atomic_wait.dll",
+      "size": 89952,
+      "sha256": "8e3b63333bbe2deecfd31c5c86608b5bdb7b23dbae13e3d356d2d7f78d7b67d5"
+    },
+    {
+      "path": "runtime/arm64/vccorlib140.dll",
+      "size": 888160,
+      "sha256": "9f53756d25f5c7aae320452667a64e4b0fdeb666876af557b19116b845a89f05"
+    },
+    {
+      "path": "runtime/arm64/vcruntime140.dll",
+      "size": 246112,
+      "sha256": "3c56f4167e2b3d8e6338497731e6aae8cd7ec46bd6789f9423a8d9cf9a630310"
+    },
+    {
+      "path": "runtime/arm64/msdia140.dll",
+      "size": 6082736,
+      "sha256": "1e78f7a03a71a2e6a676a6424730ad8ea56f74845be672c998bb55d26dab3df5"
+    },
+    {
+      "path": "runtime/arm64/dbghelp.dll",
+      "size": 4356520,
+      "sha256": "347d548335d7b607cdfa5f4b12a9b73a91dab10109ebdd2f51538d22a3a1b489"
+    },
+    {
+      "path": "runtime/arm64/dbgcore.dll",
+      "size": 434616,
+      "sha256": "ee9e01096b3edf4a38913c8f0eb6b49d78a4cfa6b3e2d41a313a74112d127e03"
+    },
+    {
+      "path": "runtime/arm64/symsrv.dll",
+      "size": 703912,
+      "sha256": "2f9964281c3b07c8cb1f4fb72c82700908ce3f1583716aa62015c53810705a22"
+    },
+    {
+      "path": "gn/gn.exe",
+      "size": 2601472,
+      "sha256": "e398eefd1241ad44e98aececa6a260abac0fdcb80f41c23176944ad3f0e76486"
+    },
+    {
+      "path": "siso/siso.exe",
+      "size": 64629760,
+      "sha256": "0fbb9c305e026d417943cf3742efce3aa34755dc97fe71cd55a21d2c90bf2f90"
+    },
+    {
+      "path": "llvm/bin/clang-cl.exe",
+      "size": 103794176,
+      "sha256": "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7"
+    },
+    {
+      "path": "llvm/bin/lld-link.exe",
+      "size": 74617856,
+      "sha256": "170b2dfc2bc9f0f95f828fbcc6a833e040bcb909b5ac9cb6b318e4ce05f41e3b"
+    },
+    {
+      "path": "cef-ci-runner-aarch64-pc-windows-msvc.json",
+      "size": 833,
+      "sha256": "086bc0b92b42e3f9dcacd6c93597c573abca2320cd51b5d1a7796bc70aa20cce"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/arm64/cl.exe",
+      "size": 924048,
+      "sha256": "e58a4e79fcc9be4bf72414279287c8012e84f305813cbf5e6850d0f2bc605579"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/arm64/link.exe",
+      "size": 3701128,
+      "sha256": "4ae486e94ab81a897b5f746f376b2418d4e6b582e258b7155f11079746e69de0"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/arm64/lib.exe",
+      "size": 23376,
+      "sha256": "6c7aeedd572b83971c8c6dad11778c67ec7dce424413ed2f5ddc79e0369b39fa"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/libcmt.lib",
+      "size": 18932596,
+      "sha256": "66c641d9053909ad68c241b7fa000926390af37fe180cf430429edbeea195651"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/libcpmt.lib",
+      "size": 50016602,
+      "sha256": "5d3a4f4ce3d5a3a5518aef858ea8e3917fcad3cd1f1be711cae8795959c2008c"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/libvcruntime.lib",
+      "size": 5417000,
+      "sha256": "a96ec51978ad4a0d3631be3899dac61b750179c527d6960bdb9d63e9206eaaaa"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/oldnames.lib",
+      "size": 320364,
+      "sha256": "48e4fd98c3c5d75318d34e4289dd172d01ca9227a998a25efbdbd44fe006049f"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/lib/arm64/atls.lib",
+      "size": 2946396,
+      "sha256": "432551ac196e927308246b7be3ada5fb89cf46da510ee02a01ee593cd72cb941"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/lib/arm64/uafxcw.lib",
+      "size": 220563786,
+      "sha256": "88d61b1bbc11a8f7bc2a2bc91eebd209f361d04440ff831ea19b58970a3aac75"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/include/vcruntime.h",
+      "size": 11444,
+      "sha256": "8a6e89fe85c66162d62c772d02367ae2e6530f1faaaa8d099427698a689bac7f"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/include/vector",
+      "size": 169028,
+      "sha256": "b254d6fc250164a9f4e71ea66e2c1e9401cb2bf8b0056550fd92135518450b51"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/include/string",
+      "size": 16455,
+      "sha256": "dafa5ec4d069f7e85001d6a03fdcac5bde1d18eb7412240aa5cc7e10c7cddf05"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/include/atlbase.h",
+      "size": 214580,
+      "sha256": "7db394e836dd3e467a7c1d0d6c0664c41db98126b0b211216392c310cc51e071"
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/include/afxwin.h",
+      "size": 257643,
+      "sha256": "0a6bae4b7d4a65f7b588c0d2bec5e8362960a51a81fb068ddc794c734d0e0188"
+    }
+  ]
+}

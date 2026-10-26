@@ -1,0 +1,29 @@
+{
+  "buildJobs": 4,
+  "environment": {
+    "GYP_MSVS_OVERRIDE_PATH": "@TOOLS@/custom-vs",
+    "GYP_MSVS_VERSION": "2026",
+    "WINDOWSSDKDIR": "@TOOLS@/Windows Kits/10",
+    "VS_CRT_ROOT": "@TOOLS@/runtime/x64",
+    "SDK_ROOT": "@TOOLS@/Windows Kits/10",
+    "SDK_VERSION": "10.0.28000.0",
+    "WIN_CUSTOM_TOOLCHAIN": "1",
+    "CEF_VCVARS": "none",
+    "CEF_ENABLE_ARM64": "1",
+    "DEPOT_TOOLS_WIN_TOOLCHAIN": "0"
+  },
+  "hosted": {
+    "acceptanceRunner": "windows-11-arm",
+    "architecture": "x64",
+    "imageOS": "win25-vs2026",
+    "imageVersion": "20261021.278.1",
+    "platform": "win32",
+    "runner": "windows-2025-vs2026"
+  },
+  "kind": "sorng-cef-ci-runner",
+  "path": [],
+  "python": "hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+  "schemaVersion": 2,
+  "syncJobs": 2,
+  "target": "aarch64-pc-windows-msvc"
+}
