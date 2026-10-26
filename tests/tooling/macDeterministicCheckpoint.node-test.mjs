@@ -1194,6 +1194,7 @@ test("expired metadata work and failed timestamp readback deny using the actual 
         };
       },
     };
+    await fs.utimes(file, POLICY.epoch - 1, POLICY.epoch - 1);
     const state = {};
     await assert.rejects(
       stampFile(file, pin, () => {}, state, physical, io),
