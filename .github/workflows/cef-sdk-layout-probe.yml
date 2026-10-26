@@ -1,4 +1,4 @@
-name: Isolated Mac ARM GN causal diagnostic
+name: Isolated Mac deterministic source metadata diagnostic
 # Branch-only carrier of an already default-registered workflow. Never merge as
 # a replacement for the default SDK-layout probe without a separate review.
 on:
@@ -6,11 +6,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: mac-gn-causal-diagnostic-${{ github.repository }}-${{ github.ref }}
+  group: mac-deterministic-checkpoint-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   diagnostic:
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.visibility == 'public' && github.ref == 'refs/heads/codex/ci-mac-gn-causal-diagnostic-20261026' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.visibility == 'public' && github.ref == 'refs/heads/codex/ci-mac-deterministic-checkpoint-20261026' && github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: macos-15-intel
     timeout-minutes: 70
     env:
@@ -30,31 +30,32 @@ jobs:
           node-version-file: ".node-version"
           package-manager-cache: false
       - name: Pure fixed diagnostic source contract
-        run: node --test tests/tooling/macGnGraphDiagnostic.node-test.mjs
-      - name: One bounded fresh GN observation, no compiler or restore
+        run: node --test tests/tooling/macDeterministicCheckpoint.node-test.mjs
+      - name: Provisional GN then fixed metadata and authoritative GN, no compiler or restore
         timeout-minutes: 60
-        run: node native/mac-gn-graph-diagnostic/observe.mjs --execute
+        run: node native/mac-deterministic-checkpoint/controller.mjs --execute
       - name: Retain bounded diagnostic evidence only
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: mac-gn-causal-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mac-deterministic-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/mac-gn-causal-evidence/context.json
-            ${{ runner.temp }}/mac-gn-causal-evidence/source-witness.json
-            ${{ runner.temp }}/mac-gn-causal-evidence/parent-result.json
-            ${{ runner.temp }}/mac-gn-causal-evidence/worker-result.json
-            ${{ runner.temp }}/mac-gn-causal-evidence/gn-evidence.json
-            ${{ runner.temp }}/mac-gn-causal-evidence/fresh-graph-pins.json
-            ${{ runner.temp }}/mac-gn-causal-evidence/ninja-0.bin
-            ${{ runner.temp }}/mac-gn-causal-evidence/ninja-1.bin
-            ${{ runner.temp }}/mac-gn-causal-evidence/ninja-2.bin
-            ${{ runner.temp }}/mac-gn-causal-evidence/ninja-3.bin
-            ${{ runner.temp }}/mac-gn-causal-evidence/ninja-4.bin
-            ${{ runner.temp }}/mac-gn-causal-evidence/ninja-5.bin
-            ${{ runner.temp }}/mac-gn-causal-evidence/provision/*.log
-            ${{ runner.temp }}/mac-gn-causal-evidence/supervisor/*.log
-            ${{ runner.temp }}/mac-gn-causal-evidence/supervisor/*.json
+            ${{ runner.temp }}/mac-deterministic-evidence/context.json
+            ${{ runner.temp }}/mac-deterministic-evidence/source-witness.json
+            ${{ runner.temp }}/mac-deterministic-evidence/parent-result.json
+            ${{ runner.temp }}/mac-deterministic-evidence/worker-result.json
+            ${{ runner.temp }}/mac-deterministic-evidence/helper-metadata-transition.json
+            ${{ runner.temp }}/mac-deterministic-evidence/gn-evidence.json
+            ${{ runner.temp }}/mac-deterministic-evidence/fresh-graph-pins.json
+            ${{ runner.temp }}/mac-deterministic-evidence/ninja-0.bin
+            ${{ runner.temp }}/mac-deterministic-evidence/ninja-1.bin
+            ${{ runner.temp }}/mac-deterministic-evidence/ninja-2.bin
+            ${{ runner.temp }}/mac-deterministic-evidence/ninja-3.bin
+            ${{ runner.temp }}/mac-deterministic-evidence/ninja-4.bin
+            ${{ runner.temp }}/mac-deterministic-evidence/ninja-5.bin
+            ${{ runner.temp }}/mac-deterministic-evidence/provision/*.log
+            ${{ runner.temp }}/mac-deterministic-evidence/supervisor/*.log
+            ${{ runner.temp }}/mac-deterministic-evidence/supervisor/*.json
             ${{ runner.temp }}/sorng-cef-engineering/aarch64-apple-darwin/65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54/logs/*.log
             ${{ runner.temp }}/sorng-cef-engineering/aarch64-apple-darwin/65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54/logs/*.json
           retention-days: 14
