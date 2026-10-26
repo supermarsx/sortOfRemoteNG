@@ -84,7 +84,7 @@ function Tx({
   values?: Record<string, string | number>;
 }) {
   const { t } = useTranslation();
-  return <>{t(i18nKey, fallback, values)}</>;
+  return <>{t(i18nKey, fallback, values ?? {})}</>;
 }
 
 const UPDATE_STATUS_COPY: Record<string, { key: string; fallback: string }> = {
