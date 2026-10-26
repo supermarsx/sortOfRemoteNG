@@ -302,7 +302,7 @@
     "installedFiles": 50000,
     "installedBytes": 8589934592,
     "installedFileBytes": 536870912,
-    "installedSeconds": 120,
+    "installedSeconds": 600,
     "extractSeconds": 600
   },
   "jobFoundationSha256": "92a16bb6c4308552bccf0cacf107261a910d218e0bf595a5d3afac31d5d14d80",

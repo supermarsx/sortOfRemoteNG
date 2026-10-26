@@ -807,7 +807,7 @@ class RuntimeProgressTests(unittest.TestCase):
         for i in range(50000):progress('metadata',visited=i)
         self.assertEqual(progress.count,1)
         now[0]+=1;progress('hash',hashBytes=10);self.assertEqual(progress.count,1)
-        now[0]+=1;progress('hash',hashBytes=20);self.assertEqual(progress.count,2)
+        now[0]+=5;progress('hash',hashBytes=20);self.assertEqual(progress.count,2)
         for i in range(300):progress('sort',force=True)
         files=sorted(root.glob('runtime-progress-*-result.json'));self.assertEqual(len(files),128)
         self.assertLessEqual(sum(p.stat().st_size for p in files),128*1024)
@@ -891,6 +891,99 @@ class RuntimeProgressTests(unittest.TestCase):
         self.assertFalse(row['success']);self.assertNotIn('SECRET',json.dumps(row))
         interim=json.loads(next(root.glob('runtime-progress-*-result.json')).read_bytes())
         self.assertFalse(interim['sourcePostVerified']);self.assertFalse(interim['success'])
+
+
+class RuntimeBudgetTests(unittest.TestCase):
+    temp=BootstrapTests.temp
+
+    def test_six_second_cadence_retains_last600_second_progress_and_all_fixed_boundaries(self):
+        root=self.temp();now=[0.0];progress=producer.RuntimeProgress(root,clock(),mono=lambda:now[0])
+        progress('inventory-enter',force=True)
+        for ordinal in range(8):
+            progress('root-enter',force=True,root=ordinal)
+            for second in range(1,76):
+                now[0]=ordinal*75+second
+                progress('hash',visited=ordinal*100+second,hashBytes=second)
+            progress('root-complete',force=True,root=ordinal)
+        for phase in ('sort','inventory-complete','installed14-validated','inventory-save',
+                      'inventory-retained','projection-enter','projection-retained','worker-finish'):
+            progress(phase,force=True)
+        rows=[json.loads(p.read_bytes())for p in sorted(root.glob('runtime-progress-*-result.json'))]
+        self.assertLessEqual(len(rows),125);self.assertLess(len(rows),128)
+        self.assertEqual(rows[-1]['phase'],'worker-finish');self.assertEqual(rows[-1]['elapsedMs'],600000)
+        self.assertGreaterEqual(max(r['elapsedMs']for r in rows if r['phase']=='hash'),590000)
+        self.assertEqual(sum(r['phase']=='root-enter'for r in rows),8)
+        self.assertEqual(sum(r['phase']=='root-complete'for r in rows),8)
+        self.assertTrue(all(not r['complete']and not r['success']and not r['sourcePostVerified']for r in rows))
+
+    def test_new_profile_is_strictly_bound_in_producer_and_job_with_original_other_caps(self):
+        self.assertEqual(PROFILE['limits']['installedSeconds'],600)
+        self.assertEqual(PROFILE['limits']['wholeSeconds'],3600)
+        self.assertEqual(PROFILE['limits']['finalReserveSeconds'],120)
+        self.assertEqual(PROFILE['limits']['cleanupSeconds'],30)
+        self.assertEqual(PROFILE['limits']['installedFiles'],50000)
+        self.assertEqual(PROFILE['limits']['installedBytes'],8*1024**3)
+        self.assertEqual(PROFILE['limits']['installedFileBytes'],512*1024**2)
+        self.assertEqual(producer.PROFILE_SHA,'8a472f84e39ffda2334c535bb5422881d73e10011570fe079f1b6dd2a8d8764f')
+        tree=ast.parse((HERE/'job.py').read_bytes())
+        pin=next(n.value.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(x,ast.Name)and x.id=='PROFILE_SHA'for x in n.targets))
+        self.assertEqual(pin,producer.PROFILE_SHA)
+        self.assertNotEqual(pin,'52a005e688abc7ea8133f448bbf4ba602ff3056efd97208f3ee674699862716a')
+
+    def model_operation(self, remaining, fail_runtime=False):
+        from types import SimpleNamespace
+        root=self.temp();calls=[];state={'remaining':remaining,'closed':False,'verified':0}
+        class Budget:
+            def remaining(self):return state['remaining']
+        class Parent:
+            def __init__(self,event):pass
+            def close(self):
+                state['closed']=True
+                if fail_runtime:raise OSError('PRIVATE_CLOSE')
+        def run(argv,cwd,output,seconds,**kwargs):
+            role=Path(output).name;calls.append((role,seconds,state['remaining']))
+            if role=='runtime-closure':
+                state['remaining']-=seconds
+                if fail_runtime:return {'success':False,'cleanupVerified':True,'rootExit':124,'activeAtEnd':0}
+            return {'success':True,'cleanupVerified':True,'rootExit':0,'activeAtEnd':0}
+        def verified(root):
+            state['verified']+=1
+            if fail_runtime and state['verified']==8:raise acquire.Denied('BOOT_POSTCHECK')
+        fake=SimpleNamespace(ParentCancel=Parent,run_job=run)
+        with patch.dict(sys.modules,{'job':fake}),patch.object(producer,'verified_sources',side_effect=verified),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=PROFILE['limits']['freeBytes']+1)):
+            import subprocess
+            with patch.object(subprocess,'Popen',side_effect=AssertionError('no real child'))as spawn:
+                code=producer.operation(root,{},PROFILE,Budget())
+                spawn.assert_not_called()
+        return code,calls,state,json.loads((root/'bootstrap-result.json').read_bytes())
+
+    def test_actual_operation_runtime720_clamps_to_same_remaining_work_and_preserves_reserve(self):
+        for remaining,expected in ((900,720),(700,577)):
+            code,calls,state,row=self.model_operation(remaining)
+            self.assertEqual(code,0);self.assertEqual(calls[-1][:2],('runtime-closure',expected))
+            self.assertEqual(state['remaining'],remaining-expected)
+            self.assertTrue(all(seconds<=before-PROFILE['limits']['finalReserveSeconds']-3 for role,seconds,before in calls))
+            self.assertGreaterEqual(state['remaining'],123);self.assertTrue(state['closed'])
+            self.assertTrue(row['sourcePostVerified']);self.assertFalse(row['sdkBuilt'])
+        code,calls,state,row=self.model_operation(100)
+        self.assertEqual(code,1);self.assertEqual(calls,[]);self.assertEqual(state['remaining'],100)
+        self.assertEqual(row['firstFailure'],'BOOT_ADMISSION');self.assertTrue(state['closed'])
+
+    def test_actual_inventory600_is_bounded_by_existing_clock_not_an_added_deadline(self):
+        from types import SimpleNamespace
+        function=next(n for n in ast.parse((HERE/'environment.py').read_bytes()).body if isinstance(n,ast.FunctionDef)and n.name=='inventory_installed_roots')
+        assignment=next(n for n in function.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='end'for t in n.targets))
+        for remaining,expected in ((900,600),(300,300)):
+            scope={'clock':SimpleNamespace(remaining=lambda:remaining),'limits':PROFILE['limits'],'time':SimpleNamespace(monotonic=lambda:1000)}
+            exec(compile(ast.Module(body=[assignment],type_ignores=[]),'actual-inventory-budget','exec'),scope)
+            self.assertEqual(scope['end'],1000+expected)
+        self.assertEqual(720-PROFILE['limits']['installedSeconds'],120)
+
+    def test_runtime_failure_remains_primary_through_original_cleanup_and_postcheck(self):
+        code,calls,state,row=self.model_operation(900,True)
+        self.assertEqual(code,1);self.assertEqual(calls[-1][:2],('runtime-closure',720))
+        self.assertEqual(row['firstFailure'],'BOOT_JOB_FAILED')
+        self.assertTrue(state['closed']);self.assertFalse(row['parentHandleClosed']);self.assertFalse(row['sourcePostVerified'])
 
 
 if __name__ == "__main__":

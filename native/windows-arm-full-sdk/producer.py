@@ -16,7 +16,7 @@ import checkpoint
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-PROFILE_SHA = "52a005e688abc7ea8133f448bbf4ba602ff3056efd97208f3ee674699862716a"
+PROFILE_SHA = "8a472f84e39ffda2334c535bb5422881d73e10011570fe079f1b6dd2a8d8764f"
 CONTEXT_SHA = None
 ROLES = ("sdk-data", "llvm-data", "rust-archive", "gn-archive", "siso-archive", "materialize", "runtime-closure")
 CARRIER_REF = "refs/heads/codex/windows-arm-full-sdk-source-20261026"
@@ -135,9 +135,9 @@ class RuntimeProgress:
         self.state.update(values)
         now=self.mono();elapsed=now-self.begin
         data.need(math.isfinite(elapsed)and 0<=elapsed<=3600,'FULL_PROGRESS_CLOCK')
-        # At most one periodic snapshot per two seconds. Only the fixed root and
+        # At most one periodic snapshot per six seconds. Only the fixed root and
         # phase boundaries bypass that throttle; there are no per-file writes.
-        if self.count>=128 or (not force and self.last is not None and now-self.last<2):return
+        if self.count>=128 or (not force and self.last is not None and now-self.last<6):return
         self.clock.remaining()
         row={'kind':'windows-arm-runtime-progress','success':False,'complete':False,
              'sourcePostVerified':False,'role':'runtime-closure','phase':phase,
@@ -240,7 +240,7 @@ def operation(root, c, p, clock):
             verified_sources(root)
             allotted = {"sdk-data": 1170, "llvm-data": 300, "rust-archive": 1200,
                         "gn-archive": 180, "siso-archive": 180,
-                        "materialize":600,"runtime-closure":120}[role]
+                        "materialize":600,"runtime-closure":720}[role]
             seconds = min(allotted, clock.remaining() - p["limits"]["finalReserveSeconds"] - 3)
             data.need(seconds > 0, "BOOT_ADMISSION")
             observed = job.run_job(worker_argv(role, root, p), str(root), root / "jobs" / role,
