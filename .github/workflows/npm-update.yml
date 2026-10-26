@@ -129,6 +129,10 @@ jobs:
           trap cleanup_candidate EXIT
           repository_before="$(sha256sum package.json package-lock.json bun.lock)"
           cp -- package.json package-lock.json bun.lock "${candidate_root}/"
+          node --input-type=module - "${candidate_root}" <<'NODE'
+          import { copyReviewedLocalDependencies } from "./scripts/ci/update-npm-compatible.mjs";
+          copyReviewedLocalDependencies(process.cwd(), process.argv[2]);
+          NODE
           temporary_before="$(cd "${candidate_root}" && sha256sum package.json package-lock.json bun.lock)"
 
           (

@@ -928,6 +928,109 @@ test("workflow pins actions, implements dual auth, and reuses one draft PR", asy
   assert.doesNotMatch(workflow, /^          labels:/m);
 });
 
+test("workflow Bun sandbox stages the reviewed local override through its actual helper body", async () => {
+  const workflow = await readFile(
+    new URL("../../.github/workflows/npm-update.yml", import.meta.url),
+    "utf8",
+  );
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sorng-bun-stage-test-"));
+  try {
+    const manifest = {
+      devDependencies: { braces: "file:vendor/braces-depth-guard" },
+      overrides: { braces: "$braces" },
+    };
+    writeJson(path.join(root, "package.json"), manifest);
+    writeJson(path.join(root, "package-lock.json"), { fixture: "npm" });
+    writeJson(path.join(root, "bun.lock"), { fixture: "bun" });
+    const vendor = path.join(root, "vendor/braces-depth-guard");
+    writeJson(path.join(vendor, "package.json"), {
+      name: "@sortofremoteng/braces-depth-guard",
+      version: "3.0.3-patch.0",
+      license: "MIT",
+    });
+    fs.writeFileSync(path.join(vendor, "guard.js"), "reviewed fixture bytes\n");
+    writeJson(path.join(root, "vendor/unreviewed/package.json"), {
+      name: "must-not-copy",
+    });
+    for (const name of [
+      "update-npm-compatible.mjs",
+      "check-js-lock-parity.mjs",
+    ]) {
+      const destination = path.join(root, "scripts/ci", name);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.copyFileSync(
+        path.join(REPOSITORY_ROOT, "scripts/ci", name),
+        destination,
+      );
+    }
+    const sandbox = path.join(root, "sandbox");
+    fs.mkdirSync(sandbox);
+    const manifests = ["package.json", "package-lock.json", "bun.lock"];
+    for (const name of manifests)
+      fs.copyFileSync(path.join(root, name), path.join(sandbox, name));
+    const before = manifests.map((name) =>
+      hash(fs.readFileSync(path.join(root, name))),
+    );
+    const stagedGuard = path.join(
+      sandbox,
+      "vendor/braces-depth-guard/guard.js",
+    );
+    // The old three-manifest stage physically omits the file: dependency input.
+    assert.throws(() => fs.readFileSync(stagedGuard), { code: "ENOENT" });
+    const match = workflow.match(
+      /node --input-type=module - "\$\{candidate_root\}" <<'NODE'\r?\n([\s\S]*?)\r?\n {10}NODE/,
+    );
+    assert.ok(match, "Bun sandbox must stage its reviewed local dependency");
+    const body = match[1].replace(/^ {10}/gm, "");
+    const run = (destination) =>
+      spawnSync(process.execPath, ["--input-type=module", "-", destination], {
+        cwd: root,
+        input: body,
+        encoding: "utf8",
+        timeout: 10000,
+        maxBuffer: 1024 * 1024,
+        env: {
+          ...(process.env.SystemRoot
+            ? { SystemRoot: process.env.SystemRoot }
+            : {}),
+        },
+      });
+    const result = run(sandbox);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(
+      fs.readFileSync(stagedGuard, "utf8"),
+      "reviewed fixture bytes\n",
+    );
+    assert.equal(fs.existsSync(path.join(sandbox, "vendor/unreviewed")), false);
+    assert.deepEqual(
+      manifests.map((name) => hash(fs.readFileSync(path.join(root, name)))),
+      before,
+    );
+    assert.deepEqual(
+      manifests.map((name) => hash(fs.readFileSync(path.join(sandbox, name)))),
+      before,
+    );
+    assert.equal(
+      fs.readFileSync(path.join(vendor, "guard.js"), "utf8"),
+      "reviewed fixture bytes\n",
+    );
+    manifest.devDependencies.braces = "file:../outside";
+    writeJson(path.join(root, "package.json"), manifest);
+    const refused = path.join(root, "refused");
+    fs.mkdirSync(refused);
+    const negative = run(refused);
+    assert.notEqual(negative.status, 0);
+    assert.match(negative.stderr, /reviewed local security dependency changed/);
+    assert.equal(fs.existsSync(path.join(refused, "vendor")), false);
+    assert.ok(
+      workflow.indexOf(match[0]) <
+        workflow.indexOf("bun install --frozen-lockfile"),
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("workflow and package scripts enforce atomic generation and the CI parity gate", async () => {
   const [workflow, updater, packageJson, ciWorkflow] = await Promise.all([
     readFile(
