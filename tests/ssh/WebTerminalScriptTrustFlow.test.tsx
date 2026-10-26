@@ -74,6 +74,8 @@ const h = vi.hoisted(() => {
     remove: vi.fn(),
   });
   return {
+    contextRevision: 0,
+    contexts: [] as unknown[],
     terminal,
     toast,
     invoke: vi.fn(),
@@ -145,17 +147,31 @@ vi.mock("react-i18next", () => ({
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({ toast: h.toast }),
 }));
-vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({
-    state: { connections: [h.connection], sessions: [] },
-    databaseAvailability: {
-      status: "ready",
-      databaseId: "flow-database",
-      generation: 1,
+vi.mock("../../src/contexts/useConnections", () => {
+  let key = "";
+  let context: unknown;
+  return {
+    useConnections: () => {
+      const nextKey = JSON.stringify([h.connection, h.contextRevision]);
+      if (!h.contexts.length || key !== nextKey) {
+        key = nextKey;
+        // Match the real provider's memoized value and immutable saved-row
+        // publication. Endpoint edits in the tests still publish a new row.
+        context = {
+          state: { connections: [{ ...h.connection }], sessions: [] },
+          databaseAvailability: {
+            status: "ready",
+            databaseId: "flow-database",
+            generation: 1 + h.contextRevision,
+          },
+          dispatch: h.dispatch,
+        };
+      }
+      h.contexts.push(context);
+      return context;
     },
-    dispatch: h.dispatch,
-  }),
-}));
+  };
+});
 vi.mock("../../src/contexts/SettingsContext", async (original) => {
   const actual =
     await original<typeof import("../../src/contexts/SettingsContext")>();
@@ -383,6 +399,8 @@ const waitForPickerToClose = () =>
 
 beforeEach(() => {
   resetPromptQueueForTests();
+  h.contextRevision = 0;
+  h.contexts = [];
   h.connection.port = 22;
   h.connection.username = "deploy";
   h.vaultUsername = "vault-account";
@@ -460,6 +478,51 @@ const grant = async (choice: string) => {
   await waitForPickerToClose();
 };
 describe("lasting SSH script trust through the real dialog and store", () => {
+  it("keeps provider identity during local renders while endpoint hashing is pending", async () => {
+    const view = await mount();
+    await pickScript("Uptime");
+    await grant("connection");
+    const digest = webcrypto.subtle.digest.bind(webcrypto.subtle);
+    const pending: (() => void)[] = [];
+    const spy = vi
+      .spyOn(webcrypto.subtle, "digest")
+      .mockImplementation(async (algorithm, data) => {
+        const bytes = new Uint8Array(data as ArrayBuffer);
+        if (
+          new TextDecoder()
+            .decode(bytes)
+            .includes("sorng.run-trust.endpoint.v1")
+        ) {
+          await new Promise<void>((resolve) => pending.push(resolve));
+        }
+        return digest(algorithm, data);
+      });
+    try {
+      // A real availability publication restarts binding; terminal-local renders
+      // must not manufacture additional provider publications while it is pending.
+      h.contextRevision += 1;
+      view.rerender(<Tree />);
+      await waitFor(() => expect(pending).toHaveLength(1));
+      const publishedContext = h.contexts.at(-1);
+      view.rerender(<Tree />);
+      view.rerender(<Tree />);
+      expect(h.contexts.at(-1)).toBe(publishedContext);
+      expect(pending).toHaveLength(1);
+      await act(async () => {
+        pending.splice(0).forEach((resolve) => resolve());
+        await Promise.resolve();
+      });
+      spy.mockRestore();
+      await openPicker();
+      expect(
+        await screen.findByTestId("trusted-script-mark"),
+      ).toHaveAccessibleName(/this connection/);
+      expect(sent()).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+      await act(async () => pending.splice(0).forEach((resolve) => resolve()));
+    }
+  });
   it("asks again without connection trust when the same vault reference has an unverifiable account", async () => {
     h.connection.credentialSource = {
       kind: "vault",
