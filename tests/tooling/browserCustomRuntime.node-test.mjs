@@ -1129,6 +1129,37 @@ for (const target of TARGETS)
     assert.ok(!JSON.stringify(plan).includes("--no-sandbox"));
   });
 
+test("actual GN recipe rejects concatenated numeric, boolean and string assignments before any build", async (t) => {
+  const data = await diskFixture(t);
+  const checkouts = sourceAcquisitionPlan(
+    path.join(data.root, "source"),
+  ).checkouts;
+  const build = data.lock.builds[0];
+  for (const extra of [
+    'v8_symbol_level=0host_cpu="x64"',
+    "first_extra=trueother_extra=false",
+    'first_extra="value"other_extra=0',
+  ]) {
+    const malformed = gnArgs(data.target) + "\n" + extra;
+    await writeFile(path.join(data.inputsRoot, build.gnArgs.path), malformed);
+    build.gnArgs.sha256 = hash(malformed);
+    await assert.rejects(
+      customRuntimeBuildRecipe({ ...data, checkouts }),
+      /GN arguments must be unique literal assignments/,
+    );
+  }
+  for (const separator of ["\n", " ", "\t", "\r\n"]) {
+    const valid =
+      gnArgs(data.target) + `\nfirst_extra=0${separator}other_extra="value"`;
+    await writeFile(path.join(data.inputsRoot, build.gnArgs.path), valid);
+    build.gnArgs.sha256 = hash(valid);
+    const recipe = await customRuntimeBuildRecipe({ ...data, checkouts });
+    assert(recipe.environment.GN_DEFINES.includes("'first_extra=0'"));
+    assert(recipe.environment.GN_DEFINES.includes("'other_extra=\"value\"'"));
+    assert.equal(recipe.executed, false);
+  }
+});
+
 test("GN content/hash and toolchain inventory are mandatory before any build", async (t) => {
   const data = await diskFixture(t);
   const checkouts = sourceAcquisitionPlan(
