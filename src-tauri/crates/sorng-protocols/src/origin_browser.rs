@@ -1111,7 +1111,7 @@ mod tests {
             for scheme in ["http", "https"] {
                 let origin = format!("{scheme}://{host}:{}", session.proxy_endpoint().port());
                 assert!(!retained_grant(&origin), "{origin}");
-                assert!(tracker.restore_network_origins(&[origin.clone()]).is_err());
+                assert!(tracker.restore_network_origins(std::slice::from_ref(&origin)).is_err());
                 tracker.observe_network_origin(&origin);
                 assert_eq!(
                     tracker.retained_network_origins().unwrap(),
@@ -2050,26 +2050,37 @@ mod tests {
         let mut current = session().await;
         let id = current.policy().identity().clone();
         let observer = current.failure_state();
-        current.revoke_for(&id, BrowserSessionFailure::CertificateBridge).unwrap();
+        current
+            .revoke_for(&id, BrowserSessionFailure::CertificateBridge)
+            .unwrap();
         let session = Mutex::new(current);
-        let guard = session.lock().unwrap();
-        assert!(session.try_lock().is_err());
-        let other_reader = observer.clone();
-        assert_eq!(std::thread::spawn(move || other_reader.get()).join().unwrap(),
-            Some(BrowserSessionFailure::CertificateBridge));
-        assert_eq!(guard.status(), BrowserSessionStatus::Revoked);
-        assert!(guard.with_proxy_credentials(|_, _| ()).is_none());
-        drop(guard);
+        {
+            let guard = session.lock().unwrap();
+            assert!(session.try_lock().is_err());
+            let other_reader = observer.clone();
+            assert_eq!(
+                std::thread::spawn(move || other_reader.get())
+                    .join()
+                    .unwrap(),
+                Some(BrowserSessionFailure::CertificateBridge)
+            );
+            assert_eq!(guard.status(), BrowserSessionStatus::Revoked);
+            assert!(guard.with_proxy_credentials(|_, _| ()).is_none());
+        }
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _guard = session.lock().unwrap();
             panic!("synthetic poisoned session");
         }));
         assert!(session.is_poisoned());
-        assert_eq!(observer.get(), Some(BrowserSessionFailure::CertificateBridge));
-        let mut current = session.into_inner().unwrap_or_else(|error| error.into_inner());
+        assert_eq!(
+            observer.get(),
+            Some(BrowserSessionFailure::CertificateBridge)
+        );
+        let mut current = session
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner());
         stop(&mut current).await;
     }
-
     #[tokio::test]
     async fn session_failure_late_specific_cause_fills_generic_revoke_without_reviving_session() {
         let mut current = session().await;

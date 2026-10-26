@@ -141,7 +141,7 @@ async fn connect_request(session: &OriginBrowserSession, authority: &str) -> Tcp
             );
             Zeroizing::new(format!(
                 "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Authorization: Basic {}\r\n\r\n",
-                &*encoded
+                *encoded
             ))
         })
         .expect("live session has native proxy credentials");

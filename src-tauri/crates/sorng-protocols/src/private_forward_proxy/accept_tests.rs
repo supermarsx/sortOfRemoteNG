@@ -88,28 +88,26 @@ struct FaultListener {
 }
 
 impl AcceptListener for FaultListener {
-    fn accept(&mut self) -> impl Future<Output = io::Result<(TcpStream, SocketAddr)>> + Send + '_ {
-        async move {
-            loop {
-                // Only accept is substituted; admission, authentication, grants,
-                // dial and relaying stay real. Both waits are cancellation-safe.
-                let fault = self.script.accept_faults.lock().unwrap().pop_front();
-                if let Some(error) = fault {
-                    let _ = self.failed.send(Instant::now());
-                    return Err(error);
-                }
-                // Never a wait: consecutive accepts return every handed-over
-                // connection within one turn of the relay's accept loop.
-                let handed_over = self.script.handed_over.lock().unwrap().pop_front();
-                if let Some(client) = handed_over {
-                    let peer = client.peer_addr()?;
-                    return Ok((client, peer));
-                }
-                tokio::select! {
-                    biased;
-                    _ = self.script.wake.notified() => {},
-                    result = self.listener.as_ref().unwrap().accept() => return result,
-                }
+    async fn accept(&mut self) -> io::Result<(TcpStream, SocketAddr)> {
+        loop {
+            // Only accept is substituted; admission, authentication, grants,
+            // dial and relaying stay real. Both waits are cancellation-safe.
+            let fault = self.script.accept_faults.lock().unwrap().pop_front();
+            if let Some(error) = fault {
+                let _ = self.failed.send(Instant::now());
+                return Err(error);
+            }
+            // Never a wait: consecutive accepts return every handed-over
+            // connection within one turn of the relay's accept loop.
+            let handed_over = self.script.handed_over.lock().unwrap().pop_front();
+            if let Some(client) = handed_over {
+                let peer = client.peer_addr()?;
+                return Ok((client, peer));
+            }
+            tokio::select! {
+                biased;
+                _ = self.script.wake.notified() => {},
+                result = self.listener.as_ref().unwrap().accept() => return result,
             }
         }
     }

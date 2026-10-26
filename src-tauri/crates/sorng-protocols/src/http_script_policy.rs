@@ -52,6 +52,38 @@ pub(super) fn override_csp(value: &str) -> String {
         .join(", ")
 }
 
+pub(super) fn rewrite_meta(html: &str, policy: &HttpProxyPolicy) -> String {
+    if !policy.allows_all_scripts() && !policy.allows_all_requests() {
+        return html.into();
+    }
+    cloudflare_challenge::rewrite_meta_csp_with(html, &|value, quote| {
+        let decoded = cloudflare_challenge::decode_entities(value);
+        let overridden = if policy.allows_all_scripts() {
+            override_csp(&decoded)
+        } else {
+            decoded
+        };
+        let overridden = if policy.allows_all_requests() {
+            super::public_requests::override_resource_csp(&overridden)
+        } else {
+            overridden
+        };
+        let rewritten = overridden
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        // The traversal replaces only the attribute value, keeping its original
+        // quotes. Unquoted attributes must become quoted before adding spaces.
+        Some(if quote.is_none() {
+            format!("\"{rewritten}\"")
+        } else {
+            rewritten
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,36 +166,4 @@ mod tests {
         assert!(rewritten.contains("content=\"default-src https://static.example/path; worker-src https://static.example/path; script-src"), "{rewritten}");
         assert!(rewritten.ends_with("&#39;unsafe-eval&#39;\">"));
     }
-}
-
-pub(super) fn rewrite_meta(html: &str, policy: &HttpProxyPolicy) -> String {
-    if !policy.allows_all_scripts() && !policy.allows_all_requests() {
-        return html.into();
-    }
-    cloudflare_challenge::rewrite_meta_csp_with(html, &|value, quote| {
-        let decoded = cloudflare_challenge::decode_entities(value);
-        let overridden = if policy.allows_all_scripts() {
-            override_csp(&decoded)
-        } else {
-            decoded
-        };
-        let overridden = if policy.allows_all_requests() {
-            super::public_requests::override_resource_csp(&overridden)
-        } else {
-            overridden
-        };
-        let rewritten = overridden
-            .replace('&', "&amp;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#39;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;");
-        // The traversal replaces only the attribute value, keeping its original
-        // quotes. Unquoted attributes must become quoted before adding spaces.
-        Some(if quote.is_none() {
-            format!("\"{rewritten}\"")
-        } else {
-            rewritten
-        })
-    })
 }

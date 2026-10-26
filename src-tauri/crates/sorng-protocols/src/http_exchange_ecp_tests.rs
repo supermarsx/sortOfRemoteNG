@@ -231,10 +231,12 @@ fn exchange_ecp_requires_https_and_form_content_type_without_affecting_other_req
     }
 }
 
+type SeenRequests = Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
+
 struct Fixture {
     base: String,
     state: Arc<AxumProxyState>,
-    seen: Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>,
+    seen: SeenRequests,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl Drop for Fixture {
@@ -1127,7 +1129,7 @@ async fn exchange_ecp_credentials_omit_suppresses_native_request_and_response_co
     let seen = fixture.seen.lock().unwrap();
     assert_eq!(seen.len(), 7);
     for index in [0, 1, 2, 5] {
-        assert!(header(&seen[index].0, "cookie").map_or(true, |value| value.trim().is_empty()));
+        assert!(header(&seen[index].0, "cookie").is_none_or(|value| value.trim().is_empty()));
     }
     for index in [3, 4] {
         assert_eq!(header(&seen[index].0, "cookie"), Some("login=fixture"));

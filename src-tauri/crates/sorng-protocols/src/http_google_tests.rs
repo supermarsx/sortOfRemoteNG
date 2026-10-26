@@ -689,7 +689,7 @@ fn accounts_rpc_unknown_or_truncated_framing_is_never_partially_projected() {
         format!("-1\n{valid}"),
         format!("{}\n{valid}\n3\n[", valid.len()),
         format!("{}\n{valid}\ngarbage", valid.len()),
-        format!(")]}}'\n{{\"not\":\"an RPC array\"}}"),
+        ")]}'\n{\"not\":\"an RPC array\"}".to_string(),
         format!("{valid} trailing non-JSON"),
     ] {
         assert!(session.rewrite_accounts_rpc(&source).is_none());
