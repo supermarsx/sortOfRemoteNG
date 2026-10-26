@@ -1,5 +1,10 @@
 {
   "schemaVersion": 1,
   "kind": "sorng-cef-runtime-releases",
-  "targets": {}
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "descriptorUrl": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/cef-patched-bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629-x86_64-pc-windows-msvc/runtime.json",
+      "descriptorSha256": "758a4d5fb7e3de8f84c3f22b4015113e3231843235bc2c921efd6b2265990254"
+    }
+  }
 }
