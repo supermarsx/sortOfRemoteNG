@@ -108,9 +108,64 @@ def retain(root, name, result):
         result["success"] = False
 
 
+class RuntimeProgress:
+    """Closed, incomplete snapshots in the existing *-result.json retention scope."""
+    PHASES = frozenset(('inventory-enter','root-enter','metadata','hash-enter','hash',
+                       'hash-complete','directory-post','root-complete','sort',
+                       'inventory-complete','installed14-validated','inventory-save',
+                       'inventory-retained','projection-enter','projection-retained','worker-finish'))
+    BOUNDARIES = PHASES - frozenset(('metadata','hash-enter','hash','hash-complete','directory-post'))
+    BOUNDS = {'root':(-1,7),'visited':(0,50000),'completedFiles':(0,50000),
+              'announcedBytes':(0,8*1024**3),'completedBytes':(0,8*1024**3),
+              'activeBytes':(0,512*1024**2),'hashBytes':(0,512*1024**2),
+              'completedDirectories':(0,50000)}
+
+    def __init__(self, root, clock, mono=time.monotonic):
+        self.root=data.plain(root);self.clock=clock;self.mono=mono;self.begin=mono()
+        self.last=None;self.count=0;self.bytes=0;self.closeFailure=False
+        self.state={key:(-1 if key=='root'else 0)for key in self.BOUNDS}
+
+    def __call__(self, phase, *, force=False, **values):
+        data.need(type(phase)is str and phase in self.PHASES and type(force)is bool and
+                  (not force or phase in self.BOUNDARIES),'FULL_PROGRESS_FIELDS')
+        data.need(not set(values)-set(self.BOUNDS),'FULL_PROGRESS_FIELDS')
+        for key,value in values.items():
+            low,high=self.BOUNDS[key]
+            data.need(type(value)is int and low<=value<=high,'FULL_PROGRESS_FIELDS')
+        self.state.update(values)
+        now=self.mono();elapsed=now-self.begin
+        data.need(math.isfinite(elapsed)and 0<=elapsed<=3600,'FULL_PROGRESS_CLOCK')
+        # At most one periodic snapshot per two seconds. Only the fixed root and
+        # phase boundaries bypass that throttle; there are no per-file writes.
+        if self.count>=128 or (not force and self.last is not None and now-self.last<2):return
+        self.clock.remaining()
+        row={'kind':'windows-arm-runtime-progress','success':False,'complete':False,
+             'sourcePostVerified':False,'role':'runtime-closure','phase':phase,
+             'elapsedMs':int(elapsed*1000),'sequence':self.count,**self.state}
+        raw=(json.dumps(row,sort_keys=True,separators=(',',':'))+'\n').encode('ascii')
+        data.need(len(raw)<=1024 and self.bytes+len(raw)<=128*1024,'FULL_PROGRESS_BOUND')
+        target=self.root/('runtime-progress-%03d-result.json'%self.count)
+        data.plain(target,exists=False)
+        self.count+=1;self.bytes+=len(raw)
+        stream=target.open('xb');primary=None
+        try:
+            data.need(stream.write(raw)==len(raw),'FULL_PROGRESS_WRITE')
+            stream.flush()
+        except BaseException as error:
+            primary=error
+            raise
+        finally:
+            try:stream.close()
+            except BaseException:
+                self.closeFailure=True
+                if primary is None:raise
+        self.last=now
+
+
 def data_worker(role, root, c, p, clock):
     sys.addaudithook(no_execution)
     result = {"role": role, "success": False, "firstFailure": None, "executed": False}
+    progress=None
     try:
         if role == "sdk-data":
             data.acquire_sdk(root, p, clock)
@@ -132,10 +187,16 @@ def data_worker(role, root, c, p, clock):
             data.save(root/'rust-extracted.json',observed)
         elif role == 'runtime-closure':
             import extract, environment
-            observed=environment.installed_inventory(p,clock)
+            progress=RuntimeProgress(root,clock)
+            progress('inventory-enter',force=True)
+            observed=environment.installed_inventory(p,clock,progress)
+            progress('inventory-save',force=True)
             data.save(root/'installed-source-inventory.json',observed)
+            progress('inventory-retained',force=True)
+            progress('projection-enter',force=True,root=-1,activeBytes=0,hashBytes=0)
             observed=extract.runtime_projection(root,p,clock)
             data.save(root/'runtime-projection.json',observed)
+            progress('projection-retained',force=True)
         else:
             raise data.Denied('FULL_PHASE_UNAVAILABLE')
         result["success"] = True
@@ -152,6 +213,12 @@ def data_worker(role, root, c, p, clock):
             result["sourcePostVerified"] = False
             result["firstFailure"] = result["firstFailure"] or "BOOT_POSTCHECK"
             result["success"] = False
+        if progress is not None:
+            try:progress('worker-finish',force=True)
+            except BaseException as error:
+                result['progressReportingFailure']=True;result['success']=False
+                result['firstFailure']=result['firstFailure'] or failure(error)
+            if progress.closeFailure:result['progressCloseFailure']=True
         retain(root, role + "-result.json", result)
     return 0 if result["success"] else 1
 

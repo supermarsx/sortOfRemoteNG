@@ -768,5 +768,130 @@ class FullInputTests(unittest.TestCase):
         self.assertIsNone(scope['CopyDlls']('owned/output','Release','arm64'));self.assertEqual(called,[])
 
 
+class RuntimeProgressTests(unittest.TestCase):
+    temp=BootstrapTests.temp
+
+    def test_held_default_none_is_pinned_original_body_and_actual_chunk_counts_are_measured(self):
+        tree=ast.parse((HERE/'extract.py').read_bytes())
+        body=copy.deepcopy(next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='held'))
+        self.assertEqual(body.args.args.pop().arg,'progress');body.args.defaults.pop()
+        loop=next(n for n in ast.walk(body)if isinstance(n,ast.While))
+        added=[n for n in loop.body if isinstance(n,ast.If)and ast.unparse(n.test)=='progress is not None']
+        self.assertEqual(len(added),1);loop.body.remove(added[0])
+        self.assertEqual(hashlib.sha256(ast.dump(body,include_attributes=False).encode()).hexdigest(),
+                         '605cc3ceea34e697ccb1c2b5f2573d1e28f88e319e0c8f9ffd09e8161d96cf9f')
+        file=self.temp()/'file';raw=b'x'*(material.CHUNK*2+17);file.write_bytes(raw)
+        default,_=material.held(file,clock(),maximum=len(raw));counts=[]
+        observed,_=material.held(file,clock(),maximum=len(raw),progress=counts.append)
+        self.assertEqual(default,observed)
+        self.assertEqual(counts,[material.CHUNK,material.CHUNK*2,len(raw)])
+
+    def test_held_observer_mutation_still_denies_and_callback_failure_survives_close_failure(self):
+        file=self.temp()/'file';file.write_bytes(b'x'*70000)
+        def mutation(count):
+            info=file.stat();os.utime(file,ns=(info.st_atime_ns,info.st_mtime_ns+1000000000))
+        with self.assertRaisesRegex(acquire.Denied,'ACQ_CHANGED'):material.held(file,clock(),progress=mutation)
+        sentinel=RuntimeError('PRIVATE_CALLBACK_MESSAGE');closing=RuntimeError('PRIVATE_CLOSE_MESSAGE')
+        stream=file.open('rb')
+        class CloseFault:
+            def __getattr__(self,name):return getattr(stream,name)
+            def close(self):stream.close();raise closing
+        def callback(count):raise sentinel
+        with patch.object(Path,'open',return_value=CloseFault()),patch.object(material,'FILE_CLOSE_FAILURE',False):
+            with self.assertRaises(RuntimeError)as caught:material.held(file,clock(),progress=callback)
+            self.assertIs(caught.exception,sentinel);self.assertTrue(material.FILE_CLOSE_FAILURE)
+
+    def test_progress_monotonic_throttle_finite_bounds_privacy_and_incomplete_admission(self):
+        root=self.temp();now=[10.0];progress=producer.RuntimeProgress(root,clock(),mono=lambda:now[0])
+        progress('inventory-enter',force=True)
+        for i in range(50000):progress('metadata',visited=i)
+        self.assertEqual(progress.count,1)
+        now[0]+=1;progress('hash',hashBytes=10);self.assertEqual(progress.count,1)
+        now[0]+=1;progress('hash',hashBytes=20);self.assertEqual(progress.count,2)
+        for i in range(300):progress('sort',force=True)
+        files=sorted(root.glob('runtime-progress-*-result.json'));self.assertEqual(len(files),128)
+        self.assertLessEqual(sum(p.stat().st_size for p in files),128*1024)
+        for bad in ({'path':'SECRET_PATH'},{'visited':True},{'visited':50001},{'hashBytes':512*1024**2+1}):
+            with self.assertRaisesRegex(acquire.Denied,'FULL_PROGRESS_FIELDS'):progress('metadata',**bad)
+        source=ast.parse((HERE/'producer.py').read_bytes())
+        operation=next(n for n in source.body if isinstance(n,ast.FunctionDef)and n.name=='operation')
+        predicate=next(n for n in ast.walk(operation)if isinstance(n,ast.Call)and isinstance(n.func,ast.Attribute)and n.func.attr=='need'and len(n.args)>1 and isinstance(n.args[1],ast.Constant)and n.args[1].value=='BOOT_JOB_FAILED')
+        for file in files:
+            row=json.loads(file.read_bytes());self.assertFalse(row['success']);self.assertFalse(row['complete']);self.assertFalse(row['sourcePostVerified'])
+            with self.assertRaisesRegex(acquire.Denied,'BOOT_JOB_FAILED'):
+                exec(compile(ast.fix_missing_locations(ast.Module(body=[ast.Expr(value=predicate)],type_ignores=[])),'actual-operation-admission','exec'),{'data':acquire,'observed':row})
+            self.assertNotIn('SECRET',file.read_text());self.assertLessEqual(file.stat().st_size,1024)
+
+    def test_progress_sink_preserves_original_write_error_and_denies_close_only_failure(self):
+        first=OSError('PRIVATE_WRITE');second=OSError('PRIVATE_CLOSE')
+        class Fault:
+            def __init__(self,write_failure):self.write_failure=write_failure
+            def write(self,raw):
+                if self.write_failure:raise first
+                return len(raw)
+            def flush(self):pass
+            def close(self):raise second
+        for fail,expected in ((True,first),(False,second)):
+            progress=producer.RuntimeProgress(self.temp(),clock())
+            with patch.object(Path,'open',return_value=Fault(fail)):
+                with self.assertRaises(OSError)as caught:progress('inventory-enter',force=True)
+            self.assertIs(caught.exception,expected);self.assertTrue(progress.closeFailure)
+
+    def test_progress_interrupted_next_snapshot_keeps_prior_complete_snapshot(self):
+        root=self.temp();progress=producer.RuntimeProgress(root,clock());progress('inventory-enter',force=True)
+        prior=root/'runtime-progress-000-result.json';raw=prior.read_bytes();original_open=Path.open
+        sentinel=OSError('PRIVATE_INTERRUPTION')
+        class Partial:
+            def __init__(self,stream):self.stream=stream
+            def write(self,body):self.stream.write(body[:17]);raise sentinel
+            def flush(self):self.stream.flush()
+            def close(self):self.stream.close()
+        def opened(path,*args,**kwargs):return Partial(original_open(path,*args,**kwargs))
+        with patch.object(Path,'open',new=opened):
+            with self.assertRaises(OSError)as caught:progress('sort',force=True)
+        self.assertIs(caught.exception,sentinel);self.assertEqual(prior.read_bytes(),raw)
+        self.assertFalse(json.loads(raw)['success'])
+        with self.assertRaises(json.JSONDecodeError):json.loads((root/'runtime-progress-001-result.json').read_bytes())
+
+    def test_progress_rejects_unknown_phase_and_nonfinite_or_backwards_numeric_clock(self):
+        for phase in ('PRIVATE_PATH',{'unknown':'PRIVATE_PATH'}):
+            progress=producer.RuntimeProgress(self.temp(),clock())
+            with self.assertRaisesRegex(acquire.Denied,'FULL_PROGRESS_FIELDS'):progress(phase)
+            self.assertEqual(progress.count,0)
+        for value in (float('nan'),float('inf'),-1.0,3601.0):
+            now=[0.0];progress=producer.RuntimeProgress(self.temp(),clock(),mono=lambda:now[0]);now[0]=value
+            with self.assertRaisesRegex(acquire.Denied,'FULL_PROGRESS_CLOCK'):progress('inventory-enter',force=True)
+            self.assertEqual(progress.count,0)
+
+    def test_actual_installed_inventory_progress_matches_default_content_and_phase_order(self):
+        root=self.temp();(root/'include').mkdir();(root/'include/empty').mkdir()
+        (root/'include/one.h').write_bytes(b'x'*70000);(root/'include/two.h').write_bytes(b'y')
+        baseline=environment.inventory_installed_roots(root,('include',),PROFILE['limits'],clock())
+        events=[]
+        def observed(phase,**fields):events.append((phase,fields))
+        result=environment.inventory_installed_roots(root,('include',),PROFILE['limits'],clock(),observed)
+        self.assertEqual(result,baseline);self.assertEqual(events[0][0],'root-enter')
+        self.assertEqual(events[-1][0],'inventory-complete');phases=[p for p,v in events]
+        self.assertLess(phases.index('hash-enter'),phases.index('hash'))
+        self.assertLess(phases.index('root-complete'),phases.index('sort'))
+        final=events[-1][1];self.assertEqual(final['completedFiles'],2);self.assertEqual(final['completedBytes'],70001)
+        self.assertEqual(final['completedDirectories'],2)
+        self.assertTrue(any(p=='hash'and v['hashBytes']==65536 for p,v in events))
+
+    def test_actual_worker_keeps_primary_when_final_progress_sink_fails(self):
+        root=self.temp();primary=acquire.Denied('FULL_INSTALLED_PIN')
+        class LateFault(producer.RuntimeProgress):
+            def __call__(self,phase,**values):
+                if phase=='worker-finish':raise OSError('SECRET_VENDOR_PATH')
+                return super().__call__(phase,**values)
+        with patch.object(sys,'addaudithook'),patch.object(producer,'verified_sources'),patch.object(producer,'RuntimeProgress',LateFault),patch.object(environment,'installed_inventory',side_effect=primary):
+            self.assertEqual(producer.data_worker('runtime-closure',root,{},PROFILE,clock()),1)
+        row=json.loads((root/'runtime-closure-result.json').read_bytes())
+        self.assertEqual(row['firstFailure'],'FULL_INSTALLED_PIN');self.assertTrue(row['progressReportingFailure'])
+        self.assertFalse(row['success']);self.assertNotIn('SECRET',json.dumps(row))
+        interim=json.loads(next(root.glob('runtime-progress-*-result.json')).read_bytes())
+        self.assertFalse(interim['sourcePostVerified']);self.assertFalse(interim['success'])
+
+
 if __name__ == "__main__":
     unittest.main()

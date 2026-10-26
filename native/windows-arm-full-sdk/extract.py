@@ -221,7 +221,7 @@ def shared(s):
             getattr(s, "st_birthtime_ns", None))
 
 def held(path, clock, expected_size=None, sha256=None, sha512=None, retain=False,
-         maximum=3 * 1024**2):
+         maximum=3 * 1024**2, progress=None):
     global FILE_CLOSE_FAILURE
     path = plain(path)
     before = path.lstat()
@@ -246,6 +246,8 @@ def held(path, clock, expected_size=None, sha256=None, sha512=None, retain=False
             need(count <= maximum, "ACQ_SIZE")
             h256.update(chunk)
             h512.update(chunk)
+            if progress is not None:
+                progress(count)
             if retain:
                 data.append(chunk)
         fd_after = os.fstat(stream.fileno())

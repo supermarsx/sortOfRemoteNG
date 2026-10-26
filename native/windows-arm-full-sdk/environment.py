@@ -16,15 +16,16 @@ INSTALLED14 = {
 }
 
 
-def installed_inventory(profile, clock):
+def installed_inventory(profile, clock, progress=None):
     """Observe complete fixed toolset roots before any executable admission."""
     toolset=Path(profile['vsRoot'])/'VC/Tools/MSVC'/profile['toolset']
     need(profile['toolset']=='14.51.36231' and
          str(toolset).replace('\\','/')=='C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231','FULL_INSTALLED_ROOT')
     toolset=plain(toolset)
     roots=('include','atlmfc/include','lib/x64','lib/arm64','atlmfc/lib/x64','atlmfc/lib/arm64','bin/Hostx64/x64','bin/Hostx64/arm64')
-    result=inventory_installed_roots(toolset,roots,profile['limits'],clock)
+    result=inventory_installed_roots(toolset,roots,profile['limits'],clock,progress)
     validate_installed_inventory(profile,result)
+    if progress is not None:progress('installed14-validated',force=True)
     return result
 
 
@@ -37,17 +38,23 @@ def validate_installed_inventory(profile,result):
     return True
 
 
-def inventory_installed_roots(toolset,roots,limits,clock):
+def inventory_installed_roots(toolset,roots,limits,clock,progress=None):
     import hashlib
     import os
     import stat
     import time
     toolset=plain(toolset);root_before=material.signature(toolset.stat())
     end=min(clock.remaining(),limits['installedSeconds'])+time.monotonic()
-    rows=[];total=0;aliases=set();visited=0
+    rows=[];total=0;aliases=set();visited=0;directories=0;completed_bytes=0
+    def observe(phase,force=False,**values):
+        if progress is not None:
+            progress(phase,force=force,visited=visited,completedFiles=len(rows),
+                     announcedBytes=total,completedBytes=completed_bytes,
+                     completedDirectories=directories,**values)
     def check():
         clock.remaining();need(time.monotonic()<end,'FULL_INSTALLED_DEADLINE')
-    for role in roots:
+    for ordinal,role in enumerate(roots):
+        observe('root-enter',force=True,root=ordinal,activeBytes=0,hashBytes=0)
         pending=[(plain(toolset/role),role)]
         while pending:
             check();directory,name=pending.pop();before=material.signature(directory.stat())
@@ -56,6 +63,7 @@ def inventory_installed_roots(toolset,roots,limits,clock):
                 for entry in iterator:
                     visited+=1;need(visited<=limits['installedFiles'],'FULL_INSTALLED_BOUND')
                     check();relative=name+'/'+entry.name;material.data.member_name(relative)
+                    observe('metadata',root=ordinal)
                     need(relative.casefold()not in aliases,'FULL_INSTALLED_ALIAS');aliases.add(relative.casefold())
                     path=plain(directory/entry.name);info=path.lstat()
                     if stat.S_ISDIR(info.st_mode):pending.append((path,relative))
@@ -63,13 +71,23 @@ def inventory_installed_roots(toolset,roots,limits,clock):
                         need(stat.S_ISREG(info.st_mode)and info.st_nlink==1,'FULL_INSTALLED_FILE')
                         total+=info.st_size
                         need(len(rows)<limits['installedFiles'] and total<=limits['installedBytes'],'FULL_INSTALLED_BOUND')
-                        pin,_=material.held(path,clock,maximum=limits['installedFileBytes'])
+                        observe('hash-enter',root=ordinal,activeBytes=info.st_size if info.st_size<=limits['installedFileBytes'] else 0,hashBytes=0)
+                        def hashed(count):observe('hash',root=ordinal,hashBytes=count)
+                        pin,_=material.held(path,clock,maximum=limits['installedFileBytes'],
+                                            progress=hashed if progress is not None else None)
                         rows.append({'path':relative,'bytes':pin['bytes'],'sha256':pin['sha256']})
+                        completed_bytes+=pin['bytes']
+                        observe('hash-complete',root=ordinal,activeBytes=0,hashBytes=0)
             need(material.directory_identity(material.signature(directory.stat()))==material.directory_identity(before),'FULL_INSTALLED_CHANGED')
+            directories+=1
+            observe('directory-post',root=ordinal)
+        observe('root-complete',force=True,root=ordinal)
     need(material.directory_identity(material.signature(toolset.stat()))==material.directory_identity(root_before),'FULL_INSTALLED_CHANGED')
+    observe('sort',force=True,root=-1,activeBytes=0,hashBytes=0)
     rows.sort(key=lambda r:r['path'])
     raw=json.dumps(rows,sort_keys=True,separators=(',',':')).encode()
     need(len(raw)<=16*1024**2,'FULL_INSTALLED_REPORT_BOUND')
+    observe('inventory-complete',force=True)
     return {'kind':'windows-arm-full-installed-source-inventory','roots':list(roots),'files':rows,
             'bytes':total,'visited':visited,'sha256':hashlib.sha256(raw).hexdigest(),'executed':False,'previous14AreCompleteClosure':False}
 
