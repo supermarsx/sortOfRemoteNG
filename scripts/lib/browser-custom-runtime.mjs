@@ -1797,7 +1797,7 @@ export async function customRuntimeBuildRecipe({
   const definitions = gnDefines.replace(/#[^\r\n]*/g, "");
   let cursor = 0;
   const assignment =
-    /\s*([a-z][a-z0-9_]*)\s*=\s*(true|false|[0-9]+|"[a-zA-Z0-9_.-]+")\s*/gy;
+    /\s*([a-z][a-z0-9_]*)\s*=\s*(true|false|[0-9]+|"[a-zA-Z0-9_.-]+")(?=\s|$)\s*/gy;
   while (cursor < definitions.length) {
     assignment.lastIndex = cursor;
     const match = assignment.exec(definitions);
