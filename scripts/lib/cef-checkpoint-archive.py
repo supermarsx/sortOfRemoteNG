@@ -146,7 +146,7 @@ class Budget:
         require(time.monotonic() < self.end, 'archive-deadline')
 
 
-def inventory(root, budget, generated_links=None):
+def inventory(root, budget, generated_links=None, source_policy=None):
     generated_links = link_recipe(generated_links or {})
     seen_links = set()
     rows, pending, aliases, raw = [], [Path('.')], set(), 0
@@ -160,8 +160,19 @@ def inventory(root, budget, generated_links=None):
                 require(alias not in aliases, 'member-alias')
                 aliases.add(alias)
                 p = root / name
+                if source_policy is not None and source_admin(root, name, source_policy, budget):
+                    continue
                 s = os.stat(p, follow_symlinks=False)
+                if source_policy is not None:
+                    require(s.st_uid == os.geteuid(), 'source-owner')
                 if stat.S_ISLNK(s.st_mode):
+                    if source_policy is not None:
+                        target = os.readlink(p)
+                        require(isinstance(target,str) and 0 < len(target.encode()) <= 4096 and not any(ord(c)<32 for c in target), 'source-link')
+                        source_link_target(root, p, target, budget)
+                        rows.append({'path':name,'kind':'symlink','stamp':stamp(s),'target':target,'ctimeNs':s.st_ctime_ns})
+                        require(len(rows) <= SOURCE_MAX_ENTRIES, 'source-entry-bound')
+                        continue
                     require(name in generated_links, 'unreviewed-generated-link')
                     seen_links.add(name)
                     continue
@@ -171,13 +182,17 @@ def inventory(root, budget, generated_links=None):
                 if kind == 'directory':
                     pending.append(directory / item.name)
                 else:
+                    if source_policy is not None:
+                        require(0 <= s.st_size <= SOURCE_MAX_FILE, 'source-file-size')
                     raw += s.st_size
-                rows.append({'path': name, 'kind': kind, 'stamp': stamp(s)})
-                require(len(rows) <= MAX_ENTRIES and raw <= MAX_RAW, 'input-bound')
+                rows.append({'path': name, 'kind': kind, 'stamp': stamp(s), **({'ctimeNs':s.st_ctime_ns} if source_policy is not None else {})})
+                require(len(rows) <= (SOURCE_MAX_ENTRIES if source_policy is not None else MAX_ENTRIES) and raw <= MAX_RAW, 'input-bound')
     expected_links = set(generated_links)
     if len(generated_links) == 7 and not any(r['path'] == FRAMEWORK for r in rows):
         expected_links -= set(FRAMEWORK_ROLES)
     require(seen_links == expected_links, 'missing-generated-link')
+    if source_policy is not None:
+        require(sum(len(r['path'].encode()) + len(r.get('target','').encode()) + 320 for r in rows) <= MAX_METADATA, 'source-sidecar-bound')
     generated_state(root, generated_links, rows, budget)
     return sorted(rows, key=lambda r: r['path']), raw
 
@@ -226,11 +241,22 @@ class HashedReader:
         return data
 
 
-def metadata(root, name, value):
+def metadata(root, name, value, source=False):
     data = (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode()
     require(len(data) <= MAX_METADATA, 'metadata-bound')
-    with (root / name).open('xb') as output:
-        output.write(data)
+    if source:
+        output = (root / name).open('xb');primary = None
+        try:
+            require(output.write(data)==len(data), 'short-write')
+            output.flush()
+        except BaseException as error:
+            primary=error
+            raise
+        finally:
+            source_close(output.close, primary)
+    else:
+        with (root / name).open('xb') as output:
+            output.write(data)
     return {'name': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
 
 
@@ -446,9 +472,326 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
     return {'complete': True, 'entries': len(seen), 'linksExtracted': False}
 
 
+# Fixed Linux ARM source metadata; never a general extraction or timestamp API.
+SOURCE_METADATA_NAME = '.siso_sorng_source_metadata.json'
+SOURCE_METADATA_POLICY = 'sorng-linuxarm-complete-owned-inputs-v1'
+SOURCE_METADATA_DATE_EPOCH = '1790626028'
+SOURCE_CLOSE_FAILURE = False
+SOURCE_JOIN_FAILURE = False
+SOURCE_MAX_ENTRIES = 1000000
+SOURCE_MAX_FILE = 8 * 1024**3
+
+
+
+def source_close(close, primary):
+    global SOURCE_CLOSE_FAILURE
+    try:
+        close()
+    except BaseException:
+        SOURCE_CLOSE_FAILURE = True
+        if primary is None:
+            raise
+
+
+def source_read_bytes(path, budget, maximum):
+    path = safe(path);before = path.stat()
+    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= maximum,
+            'source-metadata-read-bound')
+    stream = path.open('rb');primary = None;parts = [];count = 0
+    try:
+        fd_before = os.fstat(stream.fileno())
+        require(stamp(fd_before)==stamp(before) and fd_before.st_ctime_ns==before.st_ctime_ns,
+                'source-metadata-read-changed')
+        while True:
+            budget.check();chunk=stream.read(65536)
+            if not chunk:
+                break
+            count+=len(chunk);require(count<=before.st_size, 'source-metadata-read-bound');parts.append(chunk)
+        after=path.stat();held=os.fstat(stream.fileno())
+        require(count==before.st_size and stamp(after)==stamp(before)==stamp(held) and
+                after.st_ctime_ns==before.st_ctime_ns==held.st_ctime_ns, 'source-metadata-read-changed')
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        source_close(stream.close, primary)
+    return b''.join(parts)
+
+
+def source_json(raw):
+    def unique(pairs):
+        result = {}
+        for key,value in pairs:
+            require(key not in result, 'source-json-duplicate')
+            result[key] = value
+        return result
+    return json.loads(raw, object_pairs_hook=unique)
+
+def source_repositories(root, budget):
+    import ast
+    names = {'src', 'src/cef', 'depot_tools'}
+    entry_file = safe(root / '.gclient_entries')
+    require(entry_file.is_file() and entry_file.stat().st_size <= 4 * 1024**2, 'source-repositories-bound')
+    registry_raw = source_read_bytes(entry_file, budget, 4 * 1024**2)
+    body = ast.parse(registry_raw)
+    require(len(body.body) == 1 and isinstance(body.body[0], ast.Assign) and
+            len(body.body[0].targets) == 1 and isinstance(body.body[0].targets[0], ast.Name) and
+            body.body[0].targets[0].id == 'entries', 'source-repositories-shape')
+    require(isinstance(body.body[0].value, ast.Dict), 'source-repositories-shape')
+    entries = ast.literal_eval(body.body[0].value)
+    require(len(entries) == len(body.body[0].value.keys), 'source-repositories-shape')
+    require(isinstance(entries, dict) and len(entries) <= 10000, 'source-repositories-bound')
+    for name, value in entries.items():
+        budget.check();relative(name)
+        require(name == 'src' or name.startswith('src/'), 'source-repository-root')
+        require(value is None or isinstance(value, str) and len(value) <= 8192, 'source-repository-value')
+        names.add(name)
+    return {'repositories': names, 'gitHeads': {}, 'registrySha256':hashlib.sha256(registry_raw).hexdigest()}
+
+
+
+def source_link_target(root, path, target, budget):
+    candidate = Path(os.path.abspath(path.parent / target))
+    require(candidate == root or root in candidate.parents, 'source-external-link')
+    pending = list(candidate.relative_to(root).parts);current = root;links = 0
+    while pending:
+        budget.check();current = current / pending.pop(0)
+        name = current.relative_to(root)
+        require('.git' not in name.parts and name.as_posix() not in ('src/out', 'acquisition-logs'), 'source-excluded-link')
+        info = current.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            links += 1;require(links <= 64, 'source-link-cycle')
+            raw = os.readlink(current)
+            require(0 < len(raw.encode()) <= 4096 and not any(ord(c)<32 for c in raw), 'source-link')
+            candidate = Path(os.path.abspath(current.parent / raw))
+            require(candidate == root or root in candidate.parents, 'source-external-link')
+            pending = list(candidate.relative_to(root).parts) + pending;current = root
+        else:
+            require(stat.S_ISDIR(info.st_mode) if pending else stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode),
+                    'source-link-kind')
+    return current
+
+def source_admin(root, name, policy, budget):
+    if name == 'acquisition-logs':
+        info = (root / name).lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and
+                not getattr(info, 'st_file_attributes', 0) & 0x400, 'source-diagnostic-root')
+        return True
+    if name == 'src/out':
+        require((root / name).is_dir() and not (root / name).is_symlink(), 'source-output-root')
+        return True
+    if Path(name).name != '.git':
+        return False
+    repository = Path(name).parent.as_posix()
+    require(repository in policy['repositories'], 'source-unknown-git-root')
+    admin = safe(root / name)
+    require(admin.is_dir(), 'source-git-admin-kind')
+    head = safe(admin / 'HEAD')
+    require(head.is_file() and head.stat().st_size == 41, 'source-detached-head')
+    raw = source_read_bytes(head, budget, 41);budget.check()
+    require(re.fullmatch(rb'[a-f0-9]{40}\n', raw) is not None, 'source-detached-head')
+    value = raw.decode('ascii').strip()
+    old = policy['gitHeads'].setdefault(repository, value)
+    require(old == value, 'source-repository-changed')
+    return True
+
+
+def source_hash(root, row, budget):
+    p = safe(root / row['path']);before = p.stat()
+    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and
+            before.st_size <= SOURCE_MAX_FILE and stamp(before) == row['stamp'] and before.st_ctime_ns == row['ctimeNs'], 'source-file-identity')
+    stream = p.open('rb');primary = None;reader = HashedReader(stream, budget);count = 0
+    try:
+        require(opened_identity_matches(row['stamp'], os.fstat(stream.fileno())) and
+                os.fstat(stream.fileno()).st_ctime_ns == before.st_ctime_ns, 'source-file-identity')
+        while True:
+            chunk = reader.read(65536)
+            if not chunk:
+                break
+            count += len(chunk)
+            require(count <= before.st_size, 'source-file-changed')
+        require(count == before.st_size and stamp(os.fstat(stream.fileno())) == row['stamp'] and
+                stamp(p.stat()) == row['stamp'] and p.stat().st_ctime_ns == before.st_ctime_ns and
+                os.fstat(stream.fileno()).st_ctime_ns == before.st_ctime_ns, 'source-file-changed')
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        source_close(stream.close, primary)
+    return reader.digest.hexdigest()
+
+
+def source_portable(row, digest=None):
+    result = {'path': row['path'], 'kind': row['kind'], 'mode': row['stamp'][4],
+              'mtimeNs': str(row['stamp'][1])}
+    if row['kind'] == 'file':
+        result.update(size=row['stamp'][0], sha256=digest)
+    elif row['kind'] == 'symlink':
+        result.update(target=row['target'], sha256=hashlib.sha256(row['target'].encode()).hexdigest())
+    return result
+
+
+def source_snapshot(root, budget, guards=None):
+    global SOURCE_JOIN_FAILURE
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+    require(root.stat().st_uid == os.geteuid(), 'source-owner')
+    policy = source_repositories(root, budget)
+    root_before = stamp(root.stat())
+    rows, total = inventory(root, budget, source_policy=policy)
+    hashes = {};first = None
+    pool = ThreadPoolExecutor(max_workers=4)
+    files = iter(row for row in rows if row['kind'] == 'file')
+    pending = {}
+    def submit():
+        row = next(files, None)
+        if row is not None:
+            pending[pool.submit(source_hash, root, row, budget)] = row['path']
+    try:
+        for _ in range(4):
+            submit()
+        while pending and first is None:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                name = pending.pop(future)
+                try:
+                    hashes[name] = future.result()
+                except BaseException as error:
+                    if first is None:
+                        first = error
+            if first is None:
+                for _ in done:
+                    submit()
+        if first is not None:
+            for future in pending:
+                future.cancel()
+    finally:
+        try:
+            pool.shutdown(wait=True, cancel_futures=True)
+        except BaseException:
+            SOURCE_JOIN_FAILURE = True
+            if first is None:
+                raise
+    if first is not None:
+        raise first
+    budget.check()
+    require(hashes.get('.gclient_entries') == policy['registrySha256'], 'source-repositories-changed')
+    require({'src','src/cef','depot_tools'} <= set(policy['gitHeads']), 'source-required-repositories')
+    after, after_total = inventory(root, budget, source_policy=policy)
+    require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
+    if guards is not None:
+        guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
+        guards[''] = (root_before,root.stat().st_ctime_ns)
+    return {'entries': [source_portable(row, hashes.get(row['path'])) for row in rows],
+            'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy['gitHeads'].items())),
+            'bytes': total}
+
+
+def source_metadata_identity(identity):
+    fields = {'target','source','producer','canonicalRoot','image','tools','graph','siso'}
+    require(isinstance(identity, dict) and set(identity) == fields and
+            identity['target'] == 'aarch64-unknown-linux-gnu', 'source-identity')
+    require(all(isinstance(identity[k], str) and re.fullmatch(r'[a-f0-9]{64}', identity[k])
+                for k in ('source','producer','tools','graph','siso')), 'source-identity')
+    require(isinstance(identity['image'], str) and re.fullmatch(r'[0-9]{8}\.[0-9]+\.[0-9]+', identity['image']), 'source-image')
+    require(isinstance(identity['canonicalRoot'], str), 'source-root')
+    return safe(Path(identity['canonicalRoot']))
+
+
+def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None):
+    import sys
+    global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE
+    SOURCE_CLOSE_FAILURE = SOURCE_JOIN_FAILURE = False
+    require(mode in ('source-record','source-verify','source-apply'), 'source-mode')
+    require(sys.platform == 'linux', 'source-linux-only')
+    budget = Budget(seconds) if budget is None else budget;work = source_metadata_identity(identity)
+    budget.check()
+    root = safe(root);sidecar = Path(sidecar)
+    require(root == work / 'source' and sidecar == root / 'src/out/Release_GN_arm64' / SOURCE_METADATA_NAME,
+            'source-fixed-paths')
+    require(root.is_dir() and safe(sidecar.parent).is_dir(), 'source-fixed-paths')
+    guards = {}
+    if mode == 'source-record':
+        current = source_snapshot(root, budget, guards)
+        value = {'schemaVersion': 1, 'kind': 'sorng-linuxarm-source-metadata',
+                 'policy': SOURCE_METADATA_POLICY, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
+        written = metadata(sidecar.parent, sidecar.name, value, source=True)
+        require(source_read_sidecar(sidecar, budget) == value, 'source-sidecar-readback')
+        return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
+                'bytes': current['bytes'], 'sidecar': written}
+    stored = source_read_sidecar(sidecar, budget)
+    require(isinstance(stored, dict) and set(stored) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
+            type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == 'sorng-linuxarm-source-metadata' and
+            stored['policy'] == SOURCE_METADATA_POLICY and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
+            'source-sidecar-binding')
+    expected = stored['snapshot']
+    require(isinstance(expected, dict) and set(expected) == {'entries','rootMtimeNs','gitHeads','bytes'} and
+            isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
+            'source-sidecar-shape')
+    current = source_snapshot(root, budget, guards)
+    require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
+            'source-repository-or-total-changed')
+    # Compare the entire freshly hashed namespace before the first metadata write.
+    without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
+    require(json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) ==
+            json.dumps(without_time(current['entries']),sort_keys=True,separators=(',',':')), 'source-content-changed')
+    for row in expected['entries']:
+        require(isinstance(row['mtimeNs'], str) and re.fullmatch(r'0|[1-9][0-9]{0,18}', row['mtimeNs']) and
+                int(row['mtimeNs']) < 2**63, 'source-mtime')
+    require(isinstance(expected['rootMtimeNs'], str) and re.fullmatch(r'0|[1-9][0-9]{0,18}', expected['rootMtimeNs']) and
+            int(expected['rootMtimeNs']) < 2**63, 'source-mtime')
+    if mode == 'source-apply':
+        for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
+            budget.check();path = root / relative(row['path']);before = path.lstat()
+            require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
+            require((stamp(before),before.st_ctime_ns) == guards[row['path']], 'source-write-identity')
+            if row['kind'] == 'symlink':
+                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == row['target'], 'source-link-changed')
+                os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False)
+                after = path.lstat()
+                require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
+                        os.readlink(path)==row['target'] and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+            else:
+                safe(path)
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                primary = None
+                try:
+                    info = os.fstat(fd)
+                    require(stamp(info) == stamp(before), 'source-write-identity')
+                    os.utime(fd, ns=(info.st_atime_ns,int(row['mtimeNs'])))
+                    after = path.lstat();held = os.fstat(fd)
+                    require((before.st_dev,before.st_ino,before.st_mode,before.st_size)==
+                            (after.st_dev,after.st_ino,after.st_mode,after.st_size) and
+                            stamp(after)==stamp(held) and held.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                except BaseException as error:
+                    primary = error
+                    raise
+                finally:
+                    source_close(lambda: os.close(fd), primary)
+        budget.check();safe(root);info = root.stat()
+        require((stamp(info),info.st_ctime_ns)==guards[''], 'source-root-changed')
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        primary = None
+        try:
+            require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')
+            os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs'])))
+            require(root.stat().st_mtime_ns==int(expected['rootMtimeNs']) and
+                    stamp(root.stat())==stamp(os.fstat(fd)), 'source-root-readback')
+        except BaseException as error:
+            primary=error
+            raise
+        finally:
+            source_close(lambda: os.close(fd), primary)
+    require(source_snapshot(root, budget) == expected, 'source-metadata-postcheck')
+    return {'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']}
+
+
+def source_read_sidecar(path, budget):
+    return source_json(source_read_bytes(path, budget, MAX_METADATA))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['pack', 'restore', 'seal'])
+    parser.add_argument('mode', choices=['pack', 'restore', 'seal', 'source-record', 'source-verify', 'source-apply'])
     parser.add_argument('--input', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--manifest')
@@ -461,7 +804,14 @@ def main():
         require(len(data) <= 16384, 'link-recipe-bound')
         links = json.loads(data)
         link_recipe(links)
-    if args.mode == 'seal':
+    if args.mode.startswith('source-'):
+        require(args.manifest is not None and not links, 'source-context-required')
+        context_file = safe(Path(args.manifest))
+        require(context_file.stat().st_size <= 16384, 'source-context-bound')
+        source_budget = Budget(args.seconds)
+        identity = source_json(source_read_bytes(context_file, source_budget, 16384))
+        result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget)
+    elif args.mode == 'seal':
         require(Path(args.input).stat().st_size < 1024**2, 'seal-zip-bound')
         with zipfile.ZipFile(args.input) as zipped:
             require(zipped.namelist() == ['seal.json'], 'seal-zip-members')
@@ -484,5 +834,5 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error'}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {})}))
         raise SystemExit(1)

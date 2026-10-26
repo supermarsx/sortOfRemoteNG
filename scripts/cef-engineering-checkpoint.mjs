@@ -58,6 +58,9 @@ import {
   logSdkLayout,
   withVerifiedGraph,
   restoreVerifiedGraph,
+  sourceMetadataPlan,
+  sourceMetadataResult,
+  SOURCE_METADATA_DATE_EPOCH,
   validateManifest,
   archiveCommand,
   compileSlice,
@@ -304,6 +307,7 @@ async function checkpointMain(argv, env, observer) {
         checkout: ROOT,
         runnerMode: "hosted",
         engineering: {
+          sourceMetadata: TARGET === "aarch64-unknown-linux-gnu",
           completeSdk: execution.mode === "complete-sdk",
           packagingMilliseconds: () =>
             Math.floor(Math.min(40 * 60_000, hostRemaining(env) - 20 * 60_000)),
@@ -422,6 +426,62 @@ async function checkpointMain(argv, env, observer) {
               validateIdentity(identity),
             );
             context.checkpoint = { out, identity, digest, recipePath };
+            let resumedSource = false;
+            let sourceMetadata;
+            if (TARGET === "aarch64-unknown-linux-gnu") {
+              fail(
+                context.env.PYTHONDONTWRITEBYTECODE === "1" &&
+                  context.env.PYTHONPYCACHEPREFIX === undefined &&
+                  context.env.SOURCE_DATE_EPOCH === SOURCE_METADATA_DATE_EPOCH,
+                "Fixed source bytecode policy",
+              );
+              const identityFile = path.join(
+                context.logs,
+                "source-metadata-identity.json",
+              );
+              await writeFile(identityFile, canonical(identity), {
+                flag: "wx",
+              });
+              sourceMetadata = async (mode) => {
+                const selected = sourceMetadataPlan(identity, out, mode);
+                const timeout = Math.floor(
+                  Math.min(LIMITS.archiveMs, hostRemaining(env)),
+                );
+                fail(timeout > 0, "Source metadata original host deadline");
+                const result = sourceMetadataResult(
+                  await archiveCommand(
+                    verified.python,
+                    HELPER,
+                    [
+                      selected.mode,
+                      "--input",
+                      selected.source,
+                      "--output",
+                      selected.sidecar,
+                      "--manifest",
+                      identityFile,
+                      "--seconds",
+                      String(Math.max(1, Math.floor(timeout / 1000))),
+                    ],
+                    {
+                      timeout,
+                      observeFailure: (record) =>
+                        checkpointLog(
+                          console.log,
+                          `[cef-engineering-checkpoint] source-metadata-failure=${canonical({ mode, ...record })}`,
+                        ),
+                    },
+                  ),
+                  mode,
+                );
+                checkpointLog(
+                  console.log,
+                  `[cef-engineering-checkpoint] source-metadata=${canonical(result)}`,
+                );
+                return result;
+              };
+              context.checkpoint.sourceMetadata = sourceMetadata;
+            }
             await afterGnPhase("restore", async () => {
               const prior = await restorePhase(
                 restoreObserver,
@@ -517,6 +577,14 @@ async function checkpointMain(argv, env, observer) {
                   fresh: out,
                   restored,
                   expectedGraph: identity.graph,
+                  ...(sourceMetadata
+                    ? {
+                        beforeAuthoritativeGn: () =>
+                          sourceMetadata("source-apply"),
+                        afterAuthoritativeGn: () =>
+                          sourceMetadata("source-apply"),
+                      }
+                    : {}),
                   revalidateGn: context.revalidateGn,
                   verifyGenerated: async () => {
                     if (profile.platform === "linux") {
@@ -547,8 +615,11 @@ async function checkpointMain(argv, env, observer) {
                     await attestFrameworkLinks(out);
                   },
                 });
+                resumedSource = true;
               }
             });
+            if (sourceMetadata && !resumedSource)
+              await sourceMetadata("source-record");
           },
           async compile(context) {
             checkpointCompileArguments(TARGET, context.args);
@@ -564,6 +635,8 @@ async function checkpointMain(argv, env, observer) {
                 ),
               }),
             );
+            if (context.checkpoint.sourceMetadata)
+              await context.checkpoint.sourceMetadata("source-verify");
             const { out, identity, digest, recipePath } = context.checkpoint;
             if (
               execution.mode === "complete-sdk" &&

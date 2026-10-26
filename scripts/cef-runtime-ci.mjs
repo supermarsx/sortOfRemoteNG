@@ -24,7 +24,10 @@ import { finished } from "node:stream/promises";
 import { TARGETS } from "./browser-runtime-package.mjs";
 import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
-import { checkpointHost } from "./lib/cef-engineering-checkpoint.mjs";
+import {
+  checkpointHost,
+  SOURCE_METADATA_DATE_EPOCH,
+} from "./lib/cef-engineering-checkpoint.mjs";
 import {
   prepareMacMetalToolchain,
   macMetalFingerprint,
@@ -616,7 +619,13 @@ export function buildEnvironment(
   map,
   { toolsRoot, source, depot, python },
   inherited = process.env,
+  sourceMetadata = false,
 ) {
+  if (
+    typeof sourceMetadata !== "boolean" ||
+    (sourceMetadata && map.target !== "aarch64-unknown-linux-gnu")
+  )
+    fail("Closed Linux ARM source metadata environment");
   const env = { ...inherited };
   // Credentials belong to the read/publish client, never upstream build hooks.
   for (const key of Object.keys(env))
@@ -635,6 +644,12 @@ export function buildEnvironment(
       /^@(TOOLS|SOURCE|DEPOT)@\/(.+)$/,
       (_, name, suffix) => path.join(locations[name], suffix),
     );
+  if (sourceMetadata) {
+    // Fixed before acquisition/hooks; pinned autoninja also sets this for actions.
+    delete env.PYTHONPYCACHEPREFIX;
+    env.PYTHONDONTWRITEBYTECODE = "1";
+    env.SOURCE_DATE_EPOCH = SOURCE_METADATA_DATE_EPOCH;
+  }
   env.PATH = [
     depot,
     path.dirname(python),
@@ -1211,6 +1226,7 @@ export async function build(
     runner,
     { toolsRoot, source, depot, python },
     env,
+    engineering?.sourceMetadata === true,
   );
   // Non-secret job ownership marker permits the Actions runner's final cleanup
   // if stopping the exact owned child tree itself fails.

@@ -1015,6 +1015,53 @@ const ARCHIVE_FAILURES = new Set([
   "overlap",
   "source-changed",
   "archive-io-error",
+  "source-link-kind",
+  "source-link-cycle",
+  "source-file-size",
+  "source-repositories-changed",
+  "source-json-duplicate",
+  "source-required-repositories",
+  "source-owner",
+  "source-linux-only",
+  "source-mode",
+  "source-identity",
+  "source-image",
+  "source-root",
+  "source-fixed-paths",
+  "source-repositories-bound",
+  "source-repositories-shape",
+  "source-repository-root",
+  "source-repository-value",
+  "source-unknown-git-root",
+  "source-git-admin-kind",
+  "source-detached-head",
+  "source-repository-changed",
+  "source-output-root",
+  "source-file-identity",
+  "source-file-changed",
+  "source-sidecar-bound",
+  "source-sidecar-readback",
+  "source-sidecar-binding",
+  "source-sidecar-shape",
+  "source-repository-or-total-changed",
+  "source-content-changed",
+  "source-mtime",
+  "source-link-changed",
+  "source-mtime-readback",
+  "source-write-identity",
+  "source-root-changed",
+  "source-root-readback",
+  "source-metadata-postcheck",
+  "source-metadata-read-bound",
+  "source-metadata-read-changed",
+  "source-context-required",
+  "source-context-bound",
+  "source-link",
+  "source-external-link",
+  "source-excluded-link",
+  "source-diagnostic-root",
+  "source-entry-bound",
+  "source-tree-changed",
   "link-recipe-bound",
   "link-recipe",
 ]);
@@ -1023,6 +1070,8 @@ export function archiveFailureRecord(
   exitCode,
   { overflow = false, deadline = false } = {},
 ) {
+  let sourceCloseFailure = false,
+    sourceJoinFailure = false;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1035,17 +1084,36 @@ export function archiveFailureRecord(
       const value = JSON.parse(stdout);
       if (
         value &&
-        Object.keys(value).sort().join() === "complete,error" &&
+        (Object.keys(value).sort().join() === "complete,error" ||
+          (Object.keys(value).every((key) =>
+            [
+              "complete",
+              "error",
+              "sourceCloseFailure",
+              "sourceJoinFailure",
+            ].includes(key),
+          ) &&
+            (value.sourceCloseFailure === true ||
+              value.sourceJoinFailure === true) &&
+            (!Object.hasOwn(value, "sourceCloseFailure") ||
+              value.sourceCloseFailure === true) &&
+            (!Object.hasOwn(value, "sourceJoinFailure") ||
+              value.sourceJoinFailure === true))) &&
         value.complete === false &&
         ARCHIVE_FAILURES.has(value.error)
-      )
+      ) {
         error = value.error;
+        sourceCloseFailure = value.sourceCloseFailure === true;
+        sourceJoinFailure = value.sourceJoinFailure === true;
+      }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
     }
   }
   return {
     error,
+    ...(sourceCloseFailure ? { sourceCloseFailure: true } : {}),
+    ...(sourceJoinFailure ? { sourceJoinFailure: true } : {}),
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode
@@ -3910,6 +3978,71 @@ export function graphPinSnapshot(value) {
   );
   return result;
 }
+// Committer epoch from pinned CEF682c; reproducibility input, never the operation clock.
+export const SOURCE_METADATA_DATE_EPOCH = "1790626028";
+// A new Linux ARM producer seeds this sidecar; old checkpoints never gain it retroactively.
+export function sourceMetadataPlan(identity, out, mode) {
+  validateIdentity(identity);
+  assert(
+    identity.target === "aarch64-unknown-linux-gnu",
+    "Linux ARM source metadata only",
+  );
+  assert(
+    ["source-record", "source-apply", "source-verify"].includes(mode),
+    "Closed source metadata mode",
+  );
+  assert(
+    identity.canonicalRoot.startsWith("/") &&
+      !identity.canonicalRoot.includes("\\") &&
+      path.posix.normalize(identity.canonicalRoot) === identity.canonicalRoot,
+    "Canonical Linux source root",
+  );
+  const source = path.posix.join(identity.canonicalRoot, "source");
+  assert(
+    out === path.posix.join(source, "src", "out", "Release_GN_arm64"),
+    "Fixed source metadata output",
+  );
+  return {
+    mode,
+    source,
+    sidecar: path.posix.join(out, ".siso_sorng_source_metadata.json"),
+  };
+}
+export function sourceMetadataResult(value, mode) {
+  assert(
+    ["source-record", "source-apply", "source-verify"].includes(mode),
+    "Closed source metadata mode",
+  );
+  shape(
+    value,
+    mode === "source-record"
+      ? ["complete", "mode", "entries", "bytes", "sidecar"]
+      : ["complete", "mode", "entries", "bytes"],
+  );
+  assert(
+    value.complete === true &&
+      value.mode === mode &&
+      Number.isSafeInteger(value.entries) &&
+      value.entries >= 1 &&
+      value.entries <= 1000000 &&
+      Number.isSafeInteger(value.bytes) &&
+      value.bytes >= 0 &&
+      value.bytes <= 256 * 1024 ** 3,
+    "Complete bounded source metadata required",
+  );
+  if (mode === "source-record") {
+    shape(value.sidecar, ["name", "bytes", "sha256"]);
+    assert(
+      value.sidecar.name === ".siso_sorng_source_metadata.json" &&
+        positive(value.sidecar.bytes) &&
+        value.sidecar.bytes <= 128 * 1024 ** 2 &&
+        hex(value.sidecar.sha256),
+      "Fixed source sidecar pin",
+    );
+  }
+  return value;
+}
+
 export async function restoreVerifiedGraph({
   fresh,
   restored,
@@ -3917,6 +4050,8 @@ export async function restoreVerifiedGraph({
   revalidateGn,
   verifyGenerated,
   observe,
+  beforeAuthoritativeGn,
+  afterAuthoritativeGn,
 }) {
   assert(
     typeof revalidateGn === "function" && typeof verifyGenerated === "function",
@@ -3928,12 +4063,27 @@ export async function restoreVerifiedGraph({
   await restorePhase(observe, "adjacent-install", () =>
     installRestoredDirectory(fresh, restored),
   );
+  // Optional new-producer source metadata is applied only after verified install.
+  if (beforeAuthoritativeGn !== undefined) {
+    assert(
+      typeof beforeAuthoritativeGn === "function",
+      "Source metadata callback",
+    );
+    await beforeAuthoritativeGn();
+  }
   // Cached gen/ files never supersede the CURRENT source/tool evaluation.
   await restorePhase(observe, "fresh-gn", revalidateGn);
   await restorePhase(observe, "fresh-graph", () =>
     verifyGraph(fresh, expectedGraph),
   );
   await restorePhase(observe, "generated-bindings", verifyGenerated);
+  if (afterAuthoritativeGn !== undefined) {
+    assert(
+      typeof afterAuthoritativeGn === "function",
+      "Source metadata callback",
+    );
+    await afterAuthoritativeGn();
+  }
 }
 export async function installRestoredDirectory(fresh, verified) {
   await noLinks(fresh);

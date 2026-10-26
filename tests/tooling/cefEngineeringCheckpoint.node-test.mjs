@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 import { finished } from "node:stream/promises";
@@ -71,6 +72,7 @@ import {
   sameObservedCohort,
   compileSlice,
   archiveCommand,
+  archiveFailureRecord,
   graphDigest,
   graphInventory,
   noLinks,
@@ -98,6 +100,9 @@ import {
   sdkLayoutRecord,
   withVerifiedGraph,
   restoreVerifiedGraph,
+  sourceMetadataPlan,
+  sourceMetadataResult,
+  SOURCE_METADATA_DATE_EPOCH,
   restoreDownload,
   workspace,
   checkpointProfile,
@@ -114,6 +119,7 @@ import {
   releaseIdentity,
   assertHostedBuildIdentity,
   assertHostedCapacity,
+  buildEnvironment,
 } from "../../scripts/cef-runtime-ci.mjs";
 import {
   argumentsFor,
@@ -6321,7 +6327,8 @@ test("observability preserves every existing API uploader and CLI policy asserti
     const fn = ast.statements.find(
       (n) => ts.isFunctionDeclaration(n) && n.name?.text === name,
     );
-    const rows = [];
+    const rows = [],
+      sourceMetadataGuards = [];
     const serialize = (node) => {
       const kids = node
         .getChildren(ast)
@@ -6334,11 +6341,32 @@ test("observability preserves every existing API uploader and CLI policy asserti
       if (
         ts.isCallExpression(n) &&
         ["assert", "fail"].includes(n.expression.getText(ast))
-      )
-        rows.push(n.arguments.map(serialize));
+      ) {
+        const message = n.arguments[1]?.text;
+        if (
+          name === "checkpointMain" &&
+          [
+            "Fixed source bytecode policy",
+            "Source metadata original host deadline",
+          ].includes(message)
+        ) {
+          sourceMetadataGuards.push([
+            message,
+            n.arguments[0].getText(ast).replace(/\s+/g, ""),
+          ]);
+        } else rows.push(n.arguments.map(serialize));
+      }
       ts.forEachChild(n, visit);
     };
     visit(fn);
+    if (name === "checkpointMain")
+      assert.deepEqual(sourceMetadataGuards, [
+        [
+          "Fixed source bytecode policy",
+          'context.env.PYTHONDONTWRITEBYTECODE==="1"&&context.env.PYTHONPYCACHEPREFIX===undefined&&context.env.SOURCE_DATE_EPOCH===SOURCE_METADATA_DATE_EPOCH',
+        ],
+        ["Source metadata original host deadline", "timeout>0"],
+      ]);
     return sha(JSON.stringify(rows));
   };
   const helper = await readFile(
@@ -6980,6 +7008,8 @@ async function actualRestoreBlock(overrides = {}) {
     HELPER: "not-executed",
     recipePath: "/owned/recipe",
     context: { revalidateGn: async () => {} },
+    sourceMetadata: undefined,
+    resumedSource: false,
     archiveCommand: async () => {
       calls.push("archive");
       return { complete: true, linksExtracted: false };
@@ -7723,4 +7753,550 @@ test("actual monitor guard delegates the original assertion and tags the identic
     (error) => error === null,
   );
   assert.equal(guard(true, "true guard", "PS_ROWS_SYNTAX"), undefined);
+});
+
+const SOURCE_METADATA_PROOF = String.raw`import importlib.util, pathlib, tempfile, os, json, copy, unittest, time
+from contextlib import contextmanager
+from unittest.mock import patch
+import sys
+spec=importlib.util.spec_from_file_location('owned_source_helper',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+@contextmanager
+def fixture(record=True):
+ with tempfile.TemporaryDirectory(prefix='sorng-source-metadata-') as folder:
+  work=pathlib.Path(folder).resolve();root=work/'source';out=root/'src/out/Release_GN_arm64';out.mkdir(parents=True);(root/'src/cef/include').mkdir(parents=True);(root/'depot_tools').mkdir();(root/'.gclient_entries').write_text("entries = {'src': 'https://public.example/src'}\n")
+  for name in ['src','src/cef','depot_tools']:
+   admin=root/name/'.git';admin.mkdir();(admin/'HEAD').write_text('a'*40+'\n')
+  for name in ['src/input.cc','src/cef/include/generated.h','src/.ignored-but-input','depot_tools/helper.py','src/__pycache__/already_owned.pyc','src/third_party/cpython3/linux-amd64/bin/python3']:
+   p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(('owned '+name+'\n').encode())
+  os.symlink('linux-amd64',root/'src/third_party/cpython3/host')
+  identity={k:'a'*64 for k in ['source','producer','tools','graph','siso']};identity.update(target='aarch64-unknown-linux-gnu',canonicalRoot=str(work),image='20261023.334.3');sidecar=out/m.SOURCE_METADATA_NAME
+  if record:m.source_metadata('source-record',root,sidecar,identity,60)
+  yield root,sidecar,identity
+class SourceMetadataProof(unittest.TestCase):
+ def test_diagnostic_only_acquisition_logs_excluded_but_other_logs_are_inputs(self):
+  with fixture(record=False)as(root,sidecar,identity):
+   logs=root/'acquisition-logs';logs.mkdir();(logs/'result.json').write_bytes(b'first PID and time')
+   (root/'src/compiler.log').write_bytes(b'input with a log suffix')
+   m.source_metadata('source-record',root,sidecar,identity,60)
+   (logs/'result.json').write_bytes(b'different PID and time')
+   self.assertTrue(m.source_metadata('source-verify',root,sidecar,identity,60)['complete'])
+   (root/'src/compiler.log').write_bytes(b'changed input')
+   with self.assertRaisesRegex(m.CheckpointError,'source-content-changed|source-repository-or-total-changed'):m.source_metadata('source-apply',root,sidecar,identity,60)
+  for kind in ['link','file']:
+   with self.subTest(kind=kind),fixture(record=False)as(root,sidecar,identity):
+    if kind=='link':os.symlink('src',root/'acquisition-logs')
+    else:(root/'acquisition-logs').write_bytes(b'not directory')
+    with self.assertRaisesRegex(m.CheckpointError,'source-diagnostic-root'):m.source_metadata('source-record',root,sidecar,identity,60)
+ def test_links_into_excluded_regions_deny_before_target_metadata(self):
+  for target in ['.git/config','out/generated.h','../acquisition-logs/result.json']:
+   with self.subTest(target=target),fixture(record=False)as(root,sidecar,identity):
+    (root/'src/.git/config').write_bytes(b'first input')
+    (root/'src/out/generated.h').write_bytes(b'generated output')
+    logs=root/'acquisition-logs';logs.mkdir();(logs/'result.json').write_bytes(b'owned diagnostic')
+    os.symlink(target,root/'src/config-link')
+    original=pathlib.Path.lstat
+    blocked={root/'src/.git',root/'src/out',logs}
+    def no_excluded_target(path,*args,**kwargs):
+     if path in blocked:raise AssertionError('link must deny before excluded target metadata')
+     return original(path,*args,**kwargs)
+    with patch.object(pathlib.Path,'lstat',autospec=True,side_effect=no_excluded_target):
+     with self.assertRaisesRegex(m.CheckpointError,'source-excluded-link'):m.source_link_target(root,root/'src/config-link',target,m.Budget(60))
+    with self.assertRaisesRegex(m.CheckpointError,'source-excluded-link'):m.source_metadata('source-record',root,sidecar,identity,60)
+ def test_record_apply_same_hash_and_all_ignored_generated_tool_inputs(self):
+  with fixture() as (root,sidecar,identity):
+   old=json.loads(sidecar.read_bytes());self.assertEqual(old['sourceDateEpoch'],'1790626028');paths={r['path']for r in old['snapshot']['entries']}
+   for name in ['src/input.cc','src/cef/include/generated.h','src/.ignored-but-input','depot_tools/helper.py','src/__pycache__/already_owned.pyc','src/third_party/cpython3/host']:self.assertIn(name,paths)
+   self.assertFalse(any('/.git' in n or n.startswith('src/out')for n in paths))
+   for name in ['src/input.cc','src/cef/include/generated.h','src/.ignored-but-input','depot_tools/helper.py','src/__pycache__/already_owned.pyc']:
+    p=root/name;s=p.stat();os.utime(p,ns=(s.st_atime_ns,s.st_mtime_ns+1000000000))
+   with self.assertRaisesRegex(m.CheckpointError,'source-metadata-postcheck'):m.source_metadata('source-verify',root,sidecar,identity,60)
+   self.assertTrue(m.source_metadata('source-apply',root,sidecar,identity,60)['complete'])
+   self.assertTrue(m.source_metadata('source-verify',root,sidecar,identity,60)['complete'])
+   self.assertEqual(m.source_snapshot(root,m.Budget(60)),old['snapshot'])
+ def test_no_timestamp_write_before_all_content_hashes_pass(self):
+  for change in ['bytes','extra','missing','mode','generated-header','pycache']:
+   with self.subTest(change=change),fixture() as (root,sidecar,identity):
+    p=root/'src/input.cc'
+    if change=='bytes':p.write_bytes(b'changed')
+    elif change=='extra':(root/'src/untracked-input').write_bytes(b'new')
+    elif change=='missing':p.unlink()
+    elif change=='mode':p.chmod(p.stat().st_mode^0o100)
+    elif change=='generated-header':(root/'src/cef/include/generated.h').write_bytes(b'changed')
+    elif change=='pycache':(root/'src/__pycache__/new.pyc').write_bytes(b'new')
+    with patch.object(m.os,'utime',side_effect=AssertionError('no timestamp write before complete match')) as writes:
+     with self.assertRaisesRegex(m.CheckpointError,'source-content-changed|source-repository-or-total-changed'):m.source_metadata('source-apply',root,sidecar,identity,60)
+     writes.assert_not_called()
+ def test_every_identity_and_policy_mismatch_denies(self):
+  for key in ['source','producer','tools','graph','siso','target','canonicalRoot','image','policy','sourceDateEpoch','extra']:
+   with self.subTest(key=key),fixture() as (root,sidecar,identity):
+    value=json.loads(sidecar.read_bytes())
+    if key in ('policy','sourceDateEpoch'):value[key]='unknown'
+    elif key=='extra':value['extra']=True
+    else:value['identity'][key]='wrong'
+    sidecar.write_text(json.dumps(value))
+    with patch.object(m.os,'utime',side_effect=AssertionError('no writes')) as writes:
+     with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-binding'):m.source_metadata('source-apply',root,sidecar,identity,60)
+     writes.assert_not_called()
+ def test_missing_old_sidecar_rejects_before_source_scan(self):
+  with fixture(record=False) as (root,sidecar,identity),patch.object(m,'source_snapshot',side_effect=AssertionError('old checkpoint must not scan')) as scan:
+   with self.assertRaises(FileNotFoundError):m.source_metadata('source-apply',root,sidecar,identity,60)
+   scan.assert_not_called()
+ def test_repo_head_unknown_admin_and_external_link_deny(self):
+  for change in ['head','unknown-git','external-link','hardlink','alias']:
+   with self.subTest(change=change),fixture() as (root,sidecar,identity):
+    if change=='head':(root/'src/.git/HEAD').write_text('b'*40+'\n')
+    elif change=='unknown-git':
+     p=root/'src/unregistered/.git';p.mkdir(parents=True);(p/'HEAD').write_text('a'*40+'\n')
+    elif change=='external-link':os.symlink('/etc/passwd',root/'src/external')
+    elif change=='hardlink':os.link(root/'src/input.cc',root/'src/aliased.cc')
+    else:(root/'src/INPUT.cc').write_bytes(b'case alias')
+    with patch.object(m.os,'utime',side_effect=AssertionError('no writes')) as writes:
+     with self.assertRaises(m.CheckpointError):m.source_metadata('source-apply',root,sidecar,identity,60)
+     writes.assert_not_called()
+ def test_bound_and_original_deadline_denials(self):
+  for key,value in [('SOURCE_MAX_ENTRIES',1),('SOURCE_MAX_FILE',1),('MAX_RAW',1),('MAX_METADATA',128)]:
+   with self.subTest(bound=key),fixture(record=False) as (root,sidecar,identity),patch.object(m,key,value):
+    with self.assertRaises(m.CheckpointError):m.source_metadata('source-record',root,sidecar,identity,60)
+    self.assertFalse(sidecar.exists())
+  with fixture(record=False) as (root,sidecar,identity):
+   budget=m.Budget(1);budget.end=time.monotonic()-1
+   with self.assertRaisesRegex(m.CheckpointError,'archive-deadline'):m.source_metadata('source-record',root,sidecar,identity,60,budget=budget)
+ def test_invalid_mtime_and_symlink_literal_cannot_bypass_namespace(self):
+  for change in ['mtime','link']:
+   with self.subTest(change=change),fixture() as (root,sidecar,identity):
+    value=json.loads(sidecar.read_bytes());row=next(r for r in value['snapshot']['entries']if r['kind']==('symlink'if change=='link'else'file'))
+    if change=='mtime':row['mtimeNs']='-1'
+    else:row['target']='../../../../etc/passwd'
+    sidecar.write_text(json.dumps(value))
+    with patch.object(m.os,'utime',side_effect=AssertionError('no writes')):
+     with self.assertRaises(m.CheckpointError):m.source_metadata('source-apply',root,sidecar,identity,60)
+ def test_source_read_primary_identity_and_close_only_error_objects(self):
+  with fixture(record=False) as (root,sidecar,identity):
+   p=root/'src/input.cc';original=pathlib.Path.open;primary=m.CheckpointError('source-file-changed');secondary=OSError('owned close fault')
+   class Reader:
+    def __init__(self,s,fail):self.s=s;self.fail=fail
+    def fileno(self):return self.s.fileno()
+    def read(self,n):
+     if self.fail:raise primary
+     return self.s.read(n)
+    def close(self):self.s.close();raise secondary
+   for fail in [True,False]:
+    m.SOURCE_CLOSE_FAILURE=False
+    def opened(path,*args,**kwargs):
+     s=original(path,*args,**kwargs);return Reader(s,fail)if path==p and args==('rb',)else s
+    with patch.object(pathlib.Path,'open',autospec=True,side_effect=opened):
+     with self.assertRaises(BaseException)as caught:m.source_read_bytes(p,m.Budget(60),1024)
+     self.assertIs(caught.exception,primary if fail else secondary)
+    self.assertTrue(m.SOURCE_CLOSE_FAILURE)
+ def test_internal_link_chain_and_external_target_never_followed(self):
+  with fixture(record=False)as(root,sidecar,identity):
+   os.symlink('host',root/'src/third_party/cpython3/host_alias')
+   self.assertTrue(m.source_metadata('source-record',root,sidecar,identity,60)['complete'])
+  with fixture(record=False)as(root,sidecar,identity):
+   os.symlink('/etc/passwd',root/'src/external')
+   original=pathlib.Path.lstat
+   def no_external(path,*args,**kwargs):
+    if str(path)=='/etc/passwd':raise AssertionError('external target metadata must not be read')
+    return original(path,*args,**kwargs)
+   with patch.object(pathlib.Path,'lstat',autospec=True,side_effect=no_external):
+    with self.assertRaisesRegex(m.CheckpointError,'source-external-link'):m.source_metadata('source-record',root,sidecar,identity,60)
+ def test_duplicate_keys_and_numeric_type_substitution_deny(self):
+  with self.assertRaisesRegex(m.CheckpointError,'source-json-duplicate'):m.source_json(b'{"a":1,"a":2}')
+  for key in ['schema','mode','size']:
+   with self.subTest(key=key),fixture()as(root,sidecar,identity):
+    value=json.loads(sidecar.read_bytes())
+    if key=='schema':value['schemaVersion']=True
+    else:
+     row=next(r for r in value['snapshot']['entries']if r['kind']=='file');row[key]=float(row[key])
+    sidecar.write_text(json.dumps(value))
+    with patch.object(m.os,'utime',side_effect=AssertionError('no writes')):
+     with self.assertRaises(m.CheckpointError):m.source_metadata('source-apply',root,sidecar,identity,60)
+ def test_worker_first_failure_survives_join_failure_and_all_workers_join(self):
+  import concurrent.futures
+  with fixture(record=False)as(root,sidecar,identity):
+   original=concurrent.futures.ThreadPoolExecutor.shutdown;primary=m.CheckpointError('source-file-changed');secondary=OSError('owned shutdown fault');joined=[]
+   def shutdown(pool,*args,**kwargs):original(pool,*args,**kwargs);joined.append(True);raise secondary
+   m.SOURCE_JOIN_FAILURE=False
+   with patch.object(m,'source_hash',side_effect=primary),patch.object(concurrent.futures.ThreadPoolExecutor,'shutdown',shutdown):
+    with self.assertRaises(m.CheckpointError)as caught:m.source_snapshot(root,m.Budget(60))
+    self.assertIs(caught.exception,primary)
+   self.assertEqual(joined,[True]);self.assertTrue(m.SOURCE_JOIN_FAILURE)
+ def test_namespace_race_after_hash_denies_before_metadata_writes(self):
+  import threading
+  with fixture()as(root,sidecar,identity):
+   original=m.source_hash;changed=[];lock=threading.Lock()
+   def hash_then_change(*args,**kwargs):
+    value=original(*args,**kwargs)
+    with lock:
+     if not changed:(root/'src/late-input').write_bytes(b'late');changed.append(True)
+    return value
+   with patch.object(m,'source_hash',side_effect=hash_then_change),patch.object(m.os,'utime',side_effect=AssertionError('no writes'))as writes:
+    with self.assertRaisesRegex(m.CheckpointError,'source-tree-changed'):m.source_metadata('source-apply',root,sidecar,identity,60)
+    writes.assert_not_called()
+ def test_no_file_bytes_or_metadata_writes_outside_owned_root(self):
+  with fixture(record=False)as(root,sidecar,identity):
+   bad=dict(identity,canonicalRoot=str(root.parent.parent))
+   with self.assertRaisesRegex(m.CheckpointError,'source-fixed-paths'):m.source_metadata('source-record',root,sidecar,bad,60)
+   with self.assertRaisesRegex(m.CheckpointError,'source-fixed-paths'):m.source_metadata('source-record',root,sidecar.with_name('arbitrary.json'),identity,60)
+unittest.main(argv=['owned-source-proof'],verbosity=1)
+`;
+
+test("source metadata closed Linux plan, exact bounded results and fixed cache environment", () => {
+  const target = "aarch64-unknown-linux-gnu";
+  const selected = {
+    ...identity,
+    target,
+    source: checkpointProfile(target).source,
+    canonicalRoot: "/owned",
+  };
+  const out = "/owned/source/src/out/Release_GN_arm64";
+  assert.deepEqual(sourceMetadataPlan(selected, out, "source-record"), {
+    mode: "source-record",
+    source: "/owned/source",
+    sidecar: out + "/.siso_sorng_source_metadata.json",
+  });
+  for (const mode of ["source-record", "source-apply", "source-verify"]) {
+    const good = {
+      complete: true,
+      mode,
+      entries: 1,
+      bytes: 0,
+      ...(mode === "source-record"
+        ? { sidecar: asset(".siso_sorng_source_metadata.json", 1) }
+        : {}),
+    };
+    assert.equal(sourceMetadataResult(good, mode), good);
+    for (const bad of [
+      { ...good, complete: false },
+      { ...good, entries: 1000001 },
+      { ...good, bytes: 256 * 1024 ** 3 + 1 },
+      { ...good, extra: true },
+      { ...good, entries: -1 },
+    ])
+      assert.throws(() => sourceMetadataResult(bad, mode));
+  }
+  assert.throws(() =>
+    sourceMetadataPlan(selected, out + "/../other", "source-apply"),
+  );
+  assert.throws(() => sourceMetadataPlan(selected, out, "unknown"));
+  assert.throws(() =>
+    sourceMetadataResult(
+      { complete: true, mode: "unknown", entries: 1, bytes: 0 },
+      "unknown",
+    ),
+  );
+  assert.throws(() =>
+    sourceMetadataPlan(
+      { ...selected, canonicalRoot: "/owned/../other" },
+      out,
+      "source-record",
+    ),
+  );
+  const map = {
+    target,
+    path: [],
+    environment: {
+      PYTHONPYCACHEPREFIX: "/untrusted/cache",
+      PYTHONDONTWRITEBYTECODE: "0",
+      SOURCE_DATE_EPOCH: "untrusted",
+    },
+  };
+  const locations = {
+    toolsRoot: "/tools",
+    source: "/owned/source",
+    depot: "/owned/source/depot_tools",
+    python: "/tools/python3",
+  };
+  const old = buildEnvironment(map, locations, { PATH: "/bin" });
+  assert.equal(old.PYTHONPYCACHEPREFIX, "/untrusted/cache");
+  assert.equal(old.PYTHONDONTWRITEBYTECODE, "0");
+  assert.equal(old.SOURCE_DATE_EPOCH, "untrusted");
+  const current = buildEnvironment(map, locations, { PATH: "/bin" }, true);
+  assert.equal(current.PYTHONPYCACHEPREFIX, undefined);
+  assert.equal(current.PYTHONDONTWRITEBYTECODE, "1");
+  assert.equal(current.SOURCE_DATE_EPOCH, SOURCE_METADATA_DATE_EPOCH);
+  assert.throws(() =>
+    buildEnvironment(
+      { ...map, target: "x86_64-apple-darwin" },
+      locations,
+      {},
+      true,
+    ),
+  );
+  assert.throws(() => buildEnvironment(map, locations, {}, "true"));
+});
+
+test(
+  "source metadata actual Linux production functions validate all bytes before timestamp writes",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux-only metadata writes; portable contracts run on every OS"
+        : false,
+  },
+  () => {
+    const result = python(SOURCE_METADATA_PROOF, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /Ran 13 tests/);
+  },
+);
+
+test("source metadata actual restored graph callback order stops before GN or compiler on failure", async () => {
+  const source = await readFile(
+    path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const tree = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const declaration = tree.statements
+    .find(
+      (n) =>
+        ts.isFunctionDeclaration(n) && n.name?.text === "restoreVerifiedGraph",
+    )
+    .getText(tree)
+    .replace(/^export /, "");
+  const ordered = [
+    "restored-graph",
+    "adjacent-install",
+    "source-before-gn",
+    "fresh-gn",
+    "fresh-graph",
+    "generated-bindings",
+    "source-after-gn",
+  ];
+  for (const failAt of [
+    null,
+    "source-before-gn",
+    "fresh-gn",
+    "source-after-gn",
+  ]) {
+    const calls = [],
+      original = Error("owned source metadata failure");
+    const call = (name) => {
+      calls.push(name);
+      if (name === failAt) throw original;
+    };
+    const restore = new Function(
+      "assert",
+      "restorePhase",
+      "verifyGraph",
+      "installRestoredDirectory",
+      "return (" + declaration + ")",
+    )(
+      assert,
+      restorePhase,
+      async (root) =>
+        call(root === "restored" ? "restored-graph" : "fresh-graph"),
+      async () => call("adjacent-install"),
+    );
+    const operation = restore({
+      fresh: "fresh",
+      restored: "restored",
+      expectedGraph: "verified",
+      revalidateGn: async () => call("fresh-gn"),
+      verifyGenerated: async () => call("generated-bindings"),
+      beforeAuthoritativeGn: async () => call("source-before-gn"),
+      afterAuthoritativeGn: async () => call("source-after-gn"),
+    });
+    if (failAt) {
+      await assert.rejects(operation, (error) => error === original);
+      assert.deepEqual(calls, ordered.slice(0, ordered.indexOf(failAt) + 1));
+    } else {
+      await operation;
+      assert.deepEqual(calls, ordered);
+    }
+  }
+});
+
+test("source metadata production CLI verifies closure before either SDK continuation or checkpoint pack", async () => {
+  const cli = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const compile = cli.slice(
+    cli.indexOf("async compile(context)"),
+    cli.indexOf("async compile(context)") + 7000,
+  );
+  const verify = compile.indexOf(
+    'context.checkpoint.sourceMetadata("source-verify")',
+  );
+  assert(verify > compile.indexOf("compileSlice("));
+  assert(verify < compile.indexOf('kind: "continue-sdk"'));
+  assert(verify < compile.indexOf('checkpointPhase("pack"'));
+  assert.match(
+    cli,
+    /if\s*\(sourceMetadata\s*&&\s*!resumedSource\)\s*await sourceMetadata\("source-record"\)/,
+  );
+  assert.match(cli, /sourceMetadata: TARGET === "aarch64-unknown-linux-gnu"/);
+});
+
+test("source metadata helper failures retain only fixed labels and separate cleanup flags", () => {
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: "source-content-changed",
+        sourceCloseFailure: true,
+        sourceJoinFailure: true,
+      }),
+      1,
+    ),
+    {
+      error: "source-content-changed",
+      exitCode: 1,
+      sourceCloseFailure: true,
+      sourceJoinFailure: true,
+    },
+  );
+  for (const value of [
+    { complete: false, error: "private/path", sourceCloseFailure: true },
+    {
+      complete: false,
+      error: "source-content-changed",
+      sourceCloseFailure: "private",
+    },
+    { complete: false, error: "source-content-changed", private: "private" },
+  ])
+    assert.equal(
+      archiveFailureRecord(JSON.stringify(value), 1).error,
+      "unknown",
+    );
+});
+
+const CEF_EPOCH_COMMIT = String.raw`tree 6c3ac976c98edc5f49b2a9f1de95dc93bbc32e9a
+parent 3e7bc502d6c5abb63dd1da8142c900f6f91c5966
+author Marshall Greenblatt <magreenblatt@gmail.com> 1790625937 -0400
+committer Marshall Greenblatt <magreenblatt@gmail.com> 1790626028 -0400
+
+ceftests: Speculative fix for flaky MediaAccessTest
+`;
+const CEF_EPOCH_HASH_PREDICATE = String.raw`def compute_api_hashes(api_version: str,
+                       hasher: CefApiHasher,
+                       next_allowed: bool,
+                       src_dir: str) -> Dict[str, str]:
+  """ Computes API hashes for the specified |api_version|. """
+  if not next_allowed:
+    # Next usage is banned with explicit API versions.
+    assert api_version not in UNTRACKED_VERSIONS, api_version
+    added_defines = [
+        # Using CEF_API_VERSION_NEXT is an error.
+        'CEF_API_VERSION_NEXT="Please_specify_an_exact_CEF_version"',
+    ]
+  else:
+    added_defines = []
+
+  hashes = hasher.calculate(api_version, added_defines)
+  if hashes:
+    # Add sandbox compatibility hash.
+    sandbox_files = [os.path.join(src_dir, f) for f in SANDBOX_COMPAT_FILES]
+    hashes['sandbox_compat'] = calculate_sandbox_compat_hash(sandbox_files)
+
+    if not os.environ.get("SOURCE_DATE_EPOCH"):
+      if api_version in UNTRACKED_VERSIONS:
+        label = version_label(api_version)
+        label = label[0:1].upper() + label[1:]
+        hashes['comment'] = f'{label} last updated {get_date()}.'
+      else:
+        hashes['comment'] = f'Added {get_date()}.'
+  return hashes`;
+
+test("source metadata reproducibility epoch is pinned CEF commit input and reaches actual child env", async () => {
+  const body = Buffer.from(CEF_EPOCH_COMMIT);
+  assert.equal(
+    hashObject("sha1")
+      .update(Buffer.from(`commit ${body.length}\0`))
+      .update(body)
+      .digest("hex"),
+    "682c378d70d5780061e96644dca16ddd8fd157a9",
+  );
+  const epoch = /^committer .* ([0-9]+) [+-][0-9]{4}$/m.exec(
+    CEF_EPOCH_COMMIT,
+  )[1];
+  assert.equal(SOURCE_METADATA_DATE_EPOCH, epoch);
+  const target = "aarch64-unknown-linux-gnu";
+  const map = {
+    target,
+    path: [],
+    environment: { SOURCE_DATE_EPOCH: "bad-late-user-value" },
+  };
+  const env = buildEnvironment(
+    map,
+    {
+      toolsRoot: "/tools",
+      source: "/owned/source",
+      depot: "/owned/source/depot_tools",
+      python: "/tools/python3",
+    },
+    { PATH: process.env.PATH },
+    true,
+  );
+  const child = spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    [
+      "-B",
+      "-c",
+      'import os,json;print(json.dumps({k:os.environ.get(k)for k in ("SOURCE_DATE_EPOCH","PYTHONDONTWRITEBYTECODE","PYTHONPYCACHEPREFIX")}))',
+    ],
+    {
+      env: { ...env, PATH: process.env.PATH },
+      encoding: "utf8",
+      timeout: 15000,
+      windowsHide: true,
+    },
+  );
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout), {
+    SOURCE_DATE_EPOCH: epoch,
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONPYCACHEPREFIX: null,
+  });
+  const runtime = await readFile(
+    path.join(ROOT, "scripts/cef-runtime-ci.mjs"),
+    "utf8",
+  );
+  const build = runtime.slice(runtime.indexOf("export async function build("));
+  assert(
+    build.indexOf("const childEnv = buildEnvironment(") <
+      build.indexOf('"acquire"'),
+  );
+  const helper = await readFile(
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    "utf8",
+  );
+  assert(helper.includes("SOURCE_METADATA_DATE_EPOCH = '" + epoch + "'"));
+});
+
+test("source metadata pinned CEF predicate suppresses only date comments across date changes", () => {
+  assert.equal(
+    sha(CEF_EPOCH_HASH_PREDICATE),
+    "5a6ecbd37ca666b97388d18f427c00a44c68f059d07893e9b64e35c0d332bef8",
+  );
+  const result = python(
+    String.raw`import ast,os,sys
+from typing import Dict
+from unittest.mock import patch
+source=sys.argv[1];epoch=sys.argv[2];date=["October 26, 2026"];calls=[]
+class Hasher:
+ def calculate(self,*args):return {'linux':'L','mac':'M','windows':'W'}
+def get_date():calls.append(date[0]);return date[0]
+ns={'Dict':Dict,'CefApiHasher':object,'UNTRACKED_VERSIONS':('999998','999999'),'SANDBOX_COMPAT_FILES':('public.h',),'calculate_sandbox_compat_hash':lambda paths:'S','version_label':lambda version:'Next version'if version=='999998'else'Experimental version','get_date':get_date,'os':os}
+exec(compile(ast.parse(source),'<pinned-CEF-predicate>','exec'),ns)
+f=ns['compute_api_hashes']
+with patch.dict(os.environ,{},clear=True):
+ first=f('999998',Hasher(),True,'/owned');date[0]='October 27, 2026';second=f('999998',Hasher(),True,'/owned')
+ assert first['comment']!=second['comment'] and len(calls)==2
+with patch.dict(os.environ,{'SOURCE_DATE_EPOCH':epoch},clear=True):
+ calls.clear();first=f('999998',Hasher(),True,'/owned');date[0]='October 28, 2026';second=f('999998',Hasher(),True,'/owned')
+ assert first==second=={'linux':'L','mac':'M','windows':'W','sandbox_compat':'S'} and calls==[]
+print('actual pinned predicate old date drift / fixed epoch stable')`,
+    [CEF_EPOCH_HASH_PREDICATE, SOURCE_METADATA_DATE_EPOCH],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });
