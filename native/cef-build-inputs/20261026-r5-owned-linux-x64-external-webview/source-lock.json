@@ -154,6 +154,11 @@
       "path": "patches/0024-cef-external-webview-lifetime.patch",
       "repository": "cef",
       "sha256": "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce"
+    },
+    {
+      "path": "patches/0025-cef-native-linux-char-utf16.patch",
+      "repository": "cef",
+      "sha256": "0394d4786efb8c7e305d209c11860029ebdd9b8f585b64a36706c48ac1450fce"
     }
   ],
   "schemaVersion": 1,

@@ -5201,7 +5201,7 @@ test("isolated R5 copies exact pinned Quiche metadata with unchanged generic git
   }
 });
 
-test("external-only WebView source24 is a new closed origin; old source23 stays valid", () => {
+test("external-only WebView and CHAR source25 is a new closed origin; old source23 stays valid", () => {
   for (const external of [false, true]) {
     const f = linuxIsolatedFixture(external);
     const p = verifyOwnedHandoffEvidence(f.input, f.records, f.lock);

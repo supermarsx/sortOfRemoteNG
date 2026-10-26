@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "kind": "linux-r5-external-webview-source24-review",
+  "kind": "linux-r5-external-webview-and-char-source25-review",
   "target": "x86_64-unknown-linux-gnu",
   "origin": "owned-linux-external-webview-engine",
-  "sourceLockIdentity": "06af4be123f88bd4b9d132a282e1af7c4f8728d9611b30e074dd05182bbf3540",
-  "sourceLockRawSha256": "7afb734c6c8a68ea19f815ce83933bc1d257b122e324becd4dd8e092d53ee5cb",
+  "sourceLockIdentity": "8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279",
+  "sourceLockRawSha256": "1d032fe78e8fca1776b7b9f21c8c98602f7e955d0e705fe3707eb5c33cd77678",
   "predecessorNamespace": "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap",
   "predecessorSourceIdentity": "f4c94e74af5ee552cf4370c459973b2298a97c68337e494f24c05dde9a8e3004",
-  "patchCount": 24,
+  "patchCount": 25,
   "unchangedPredecessorPatches": 23,
   "derivation": {
     "method": "exact-held-actual-postimage-one-init-hunk",
@@ -160,9 +160,14 @@
       "sha256": "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce"
     },
     {
+      "path": "patches/0025-cef-native-linux-char-utf16.patch",
+      "size": 810,
+      "sha256": "0394d4786efb8c7e305d209c11860029ebdd9b8f585b64a36706c48ac1450fce"
+    },
+    {
       "path": "source-lock.json",
-      "size": 6347,
-      "sha256": "7afb734c6c8a68ea19f815ce83933bc1d257b122e324becd4dd8e092d53ee5cb"
+      "size": 6534,
+      "sha256": "1d032fe78e8fca1776b7b9f21c8c98602f7e955d0e705fe3707eb5c33cd77678"
     },
     {
       "path": "tools/x86_64-unknown-linux-gnu.json",
@@ -173,5 +178,25 @@
   "engineBuilt": false,
   "nativeAcceptancePassed": false,
   "sdkProduced": false,
-  "publicationAllowed": false
+  "publicationAllowed": false,
+  "source24Draft": {
+    "commit": "35de57384c0efabebe5872ccf57b1f8d2c894bbf",
+    "sourceLockIdentity": "06af4be123f88bd4b9d132a282e1af7c4f8728d9611b30e074dd05182bbf3540",
+    "reviewSha256": "ecda7ed529727c9095dea1e0810dd2b596b1be8c8d5c20620187130181702b2d",
+    "engineBuilt": false
+  },
+  "keyboardDerivation": {
+    "method": "exact-held-actual-postimage-char-only",
+    "path": "libcef/browser/native/browser_platform_delegate_native_linux.cc",
+    "beforeSha256": "197bad07e7792853bb7be5bfbbe501887393354247ba9fb81ad35e26b5879f32",
+    "beforeSize": 9583,
+    "afterSha256": "a9754db21a9331b51e1319e317e1e42ac101576604549f0a08faebcbb9685a8e",
+    "afterSize": 9625,
+    "patchSha256": "0394d4786efb8c7e305d209c11860029ebdd9b8f585b64a36706c48ac1450fce",
+    "applicationContract": "character-equals-unmodified-character; no-control-transform",
+    "independentUnmodifiedCharacterFixed": false,
+    "rawUpFlagsFocusRouteChanged": false,
+    "proposedCrLfPatchSha256": "8df1dff81d0f70d08c81aa087c6da7ee5830104e0a007afa494fa1417a65e253",
+    "patchCanonicalEncoding": "exact CRLF-to-LF only; strict Git apply, no ignore-whitespace"
+  }
 }

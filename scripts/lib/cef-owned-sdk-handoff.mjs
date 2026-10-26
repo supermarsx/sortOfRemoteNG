@@ -1009,28 +1009,50 @@ export const LINUX_ISOLATED_TRANSITION = Object.freeze({
     },
   ],
 });
-// New source24 lineage. Historical source23 constants and maps remain immutable.
+// New source25 lineage; source24 draft remains in Git history. Historical source23 constants and maps remain immutable.
 export const LINUX_EXTERNAL_WEBVIEW_IDENTITY =
-  "06af4be123f88bd4b9d132a282e1af7c4f8728d9611b30e074dd05182bbf3540";
+  "8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279";
 export const LINUX_EXTERNAL_WEBVIEW_INPUT_RAW =
-  "7afb734c6c8a68ea19f815ce83933bc1d257b122e324becd4dd8e092d53ee5cb";
+  "1d032fe78e8fca1776b7b9f21c8c98602f7e955d0e705fe3707eb5c33cd77678";
 export const LINUX_EXTERNAL_WEBVIEW_PATCH =
-  "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce";
+  "0394d4786efb8c7e305d209c11860029ebdd9b8f585b64a36706c48ac1450fce";
 export const LINUX_EXTERNAL_WEBVIEW_TRANSITION = Object.freeze({
-  before: LINUX_ISOLATED_TRANSITION.before,
+  before: Object.freeze(
+    [
+      ...LINUX_ISOLATED_TRANSITION.before,
+      Object.freeze({
+        path: "cef/libcef/browser/native/browser_platform_delegate_native_linux.cc",
+        kind: "file",
+        size: 9583,
+        sha256:
+          "197bad07e7792853bb7be5bfbbe501887393354247ba9fb81ad35e26b5879f32",
+      }),
+    ].sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path))),
+  ),
   after: Object.freeze(
-    LINUX_ISOLATED_TRANSITION.after.map((row) =>
-      Object.freeze(
-        row.path === "cef/libcef/browser/native/native_widget_delegate.cc"
-          ? {
-              ...row,
-              size: 4611,
-              sha256:
-                "e5db16db4df70cc697595cd991e74479989f5e2870760762db79da9373a602b4",
-            }
-          : { ...row },
+    [
+      ...LINUX_ISOLATED_TRANSITION.after,
+      {
+        path: "cef/libcef/browser/native/browser_platform_delegate_native_linux.cc",
+        kind: "file",
+        size: 9625,
+        sha256:
+          "a9754db21a9331b51e1319e317e1e42ac101576604549f0a08faebcbb9685a8e",
+      },
+    ]
+      .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))
+      .map((row) =>
+        Object.freeze(
+          row.path === "cef/libcef/browser/native/native_widget_delegate.cc"
+            ? {
+                ...row,
+                size: 4611,
+                sha256:
+                  "e5db16db4df70cc697595cd991e74479989f5e2870760762db79da9373a602b4",
+              }
+            : { ...row },
+        ),
       ),
-    ),
   ),
 });
 function linuxIsolatedPolicy(origin) {
@@ -1039,7 +1061,7 @@ function linuxIsolatedPolicy(origin) {
       identity: LINUX_EXTERNAL_WEBVIEW_IDENTITY,
       raw: LINUX_EXTERNAL_WEBVIEW_INPUT_RAW,
       transition: LINUX_EXTERNAL_WEBVIEW_TRANSITION,
-      patchCount: 24,
+      patchCount: 25,
       patch: LINUX_EXTERNAL_WEBVIEW_PATCH,
     };
   if (origin === LINUX_ISOLATED_ORIGIN)
@@ -3588,7 +3610,7 @@ function verifyLinuxIsolatedFacts({
     }
   }
   require(
-    changed === (review.origin === LINUX_EXTERNAL_WEBVIEW_ORIGIN ? 33 : 32) &&
+    changed === (review.origin === LINUX_EXTERNAL_WEBVIEW_ORIGIN ? 34 : 32) &&
       absent === 9,
   );
   require(
