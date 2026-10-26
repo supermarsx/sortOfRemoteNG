@@ -41,6 +41,52 @@ import { canonical } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import { run } from "../../scripts/cef-runtime-ci.mjs";
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
+async function observedMetadataFixture(invoke, state, emit = console.error) {
+  try {
+    return await invoke();
+  } catch (error) {
+    const fields = [
+      "dev",
+      "ino",
+      "nlink",
+      "size",
+      "mode",
+      "birthtimeNs",
+      "atimeNs",
+      "mtimeNs",
+      "ctimeNs",
+    ];
+    const numeric = (value) =>
+      typeof value === "string" && /^-?[0-9]{1,30}$/.test(value) ? value : null;
+    const current = state.metadataCurrent;
+    const values = fields.map((field) => ({
+      field,
+      before: numeric(current?.before?.[field]),
+      after: numeric(current?.after?.[field]),
+    }));
+    const diagnostic = {
+      kind: "owned-synthetic-metadata-fixture-failure",
+      originalReason: reason(error),
+      originalCode: error?.code === "ERR_ASSERTION" ? "ERR_ASSERTION" : null,
+      timestampWriteAttempted: current?.timestampWriteAttempted === true,
+      values,
+      changedFields: values
+        .filter(
+          (row) =>
+            row.before !== null &&
+            row.after !== null &&
+            row.before !== row.after,
+        )
+        .map((row) => row.field),
+    };
+    try {
+      emit(JSON.stringify(diagnostic));
+    } catch {
+      /* Reporting must preserve the original fixture failure. */
+    }
+    throw error;
+  }
+}
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
@@ -916,7 +962,11 @@ test("actual owned timestamp fixtures converge without any content or graph rewr
       await fs.writeFile(file, bytes, { flag: "wx" });
       await fs.utimes(file, epoch, epoch);
       const prior = await fs.stat(file, { bigint: true });
-      const row = await stampFile(file, pin, () => {}, {}, physical);
+      const state = {};
+      const row = await observedMetadataFixture(
+        () => stampFile(file, pin, () => {}, state, physical),
+        state,
+      );
       assert.equal(row.before.mtimeNs, String(prior.mtimeNs));
       assert.equal(row.after.mtimeNs, "1790036443000000000");
       assert.equal(sha(await fs.readFile(file)), pin[2]);
@@ -925,6 +975,65 @@ test("actual owned timestamp fixtures converge without any content or graph rewr
     }
     assert.equal(values[0], values[1]);
   }));
+
+test("fixture failure emits only fixed numeric fields and preserves exact original error/code/cause", async () => {
+  const cause = Error("private cause"),
+    primary = new assert.AssertionError({ message: "MAC_META_IDENTITY" });
+  primary.cause = cause;
+  const state = {
+    metadataCurrent: {
+      timestampWriteAttempted: true,
+      before: {
+        ino: "42",
+        birthtimeNs: "1792975299000000000",
+        mtimeNs: "1792975299000000000",
+        dev: "private-path",
+        extra: "private token",
+      },
+      after: {
+        ino: "42",
+        birthtimeNs: "1790036443000000000",
+        mtimeNs: "1790036443000000000",
+        dev: "9".repeat(31),
+        extra: "private token",
+      },
+    },
+  };
+  const lines = [];
+  await assert.rejects(
+    observedMetadataFixture(
+      async () => {
+        throw primary;
+      },
+      state,
+      (line) => lines.push(line),
+    ),
+    (error) =>
+      error === primary &&
+      error.cause === cause &&
+      error.code === "ERR_ASSERTION",
+  );
+  assert.equal(lines.length, 1);
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.values.length, 9);
+  assert.deepEqual(record.changedFields, ["birthtimeNs", "mtimeNs"]);
+  assert.equal(record.originalReason, "MAC_META_IDENTITY");
+  assert.equal(record.values[0].before, null);
+  assert.equal(record.values[0].after, null);
+  assert(lines[0].length < 4096 && !lines[0].includes("private"));
+  await assert.rejects(
+    observedMetadataFixture(
+      async () => {
+        throw primary;
+      },
+      state,
+      () => {
+        throw Error("report failure");
+      },
+    ),
+    (error) => error === primary,
+  );
+});
 
 test("bad hash and hardlink metadata fixtures deny before timestamp writes", async () =>
   fixture(async (folder) => {
