@@ -19,6 +19,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import vm from "node:vm";
 import {
   BRIDGE_V2,
   BRIDGE_PATCH_ID,
@@ -53,12 +54,17 @@ import {
   verifySourceBuildIsolation,
   verifySourceCheckoutVersion,
   sdkLinkTargetMatches,
+  prepareSourceGitIsolation,
+  sourceGitEnvironment,
+  sourceGitIsolationEvidence,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
 import {
   acquireSources,
   parseArguments,
   main,
   inspectWindowsEnginePrerequisites,
+  acquisitionSourcePlan,
+  gclientConfiguration,
 } from "../../scripts/cef-patched-runtime.mjs";
 import {
   parseArguments as parseAppArguments,
@@ -67,6 +73,349 @@ import {
   loadCustomRuntimeInputs,
 } from "../../scripts/browser-app-build.mjs";
 import { prepareWindowsInstallerBundles } from "../../scripts/lib/browser-installer-bundles.mjs";
+
+async function sourceGitFixture(t) {
+  const root = await mkdtemp(
+    path.join(await realpath(os.tmpdir()), "cef-source-git-isolation-"),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const policyRoot = path.join(root, "cef-source-git-policy");
+  const policy = await prepareSourceGitIsolation(policyRoot);
+  const empty = path.join(root, "empty.gitconfig");
+  await writeFile(empty, "");
+  const safe = {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_SYSTEM: empty,
+    GIT_CONFIG_GLOBAL: empty,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "0",
+  };
+  const cwd = path.join(root, "repo");
+  await mkdir(cwd);
+  const git = (args, env = safe, input) =>
+    execFileSync("git", ["-C", cwd, ...args], {
+      env,
+      input,
+      encoding: "utf8",
+      timeout: 10000,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  git(["init", "--template="]);
+  git(["config", "user.name", "Owned source fixture"]);
+  git(["config", "user.email", "source-fixture@example.invalid"]);
+  git(["config", "core.autocrlf", "false"]);
+  await writeFile(path.join(cwd, "file"), "first\n");
+  git(["add", "file"]);
+  git(["commit", "-qm", "owned base"]);
+  git(["remote", "add", "origin", "https://example.invalid/owned.git"]);
+  return { root, policyRoot, policy, cwd, git, safe };
+}
+
+test("owned Git isolation blocks actual ambient URL rewriting, credentials and hooks without network", async (t) => {
+  const fixture = await sourceGitFixture(t);
+  const { root, policy, git, safe, cwd } = fixture;
+  const hooks = path.join(root, "malicious-hooks");
+  await mkdir(hooks);
+  const hookMarker = path.join(root, "hook-ran"),
+    credentialMarker = path.join(root, "credential-ran");
+  const quote = (value) => value.replaceAll("\\", "/").replaceAll("'", "'\\''");
+  await writeFile(
+    path.join(hooks, "pre-commit"),
+    `#!/bin/sh\nprintf observed > '${quote(hookMarker)}'\nexit 1\n`,
+  );
+  await chmod(path.join(hooks, "pre-commit"), 0o755);
+  const malicious = path.join(root, "malicious.gitconfig");
+  await writeFile(
+    malicious,
+    `[url "https://rewritten.invalid/"]\n insteadOf = https://example.invalid/\n[core]\n hooksPath = "${quote(hooks)}"\n[credential]\n helper = "!printf observed > '${quote(credentialMarker)}'; exit 1"\n`,
+  );
+  const ambient = {
+    ...safe,
+    GIT_CONFIG_NOSYSTEM: "0",
+    GIT_CONFIG_SYSTEM: malicious,
+    GIT_CONFIG_GLOBAL: malicious,
+  };
+  assert.equal(
+    git(["remote", "get-url", "origin"], ambient).trim(),
+    "https://rewritten.invalid/owned.git",
+  );
+  assert.throws(() =>
+    git(
+      ["credential", "fill"],
+      ambient,
+      "protocol=https\nhost=example.invalid\n\n",
+    ),
+  );
+  assert.equal(await readFile(credentialMarker, "utf8"), "observed");
+  await rm(credentialMarker);
+  await writeFile(path.join(cwd, "file"), "second\n");
+  git(["add", "file"]);
+  assert.throws(() => git(["commit", "-qm", "ambient hook"], ambient));
+  assert.equal(await readFile(hookMarker, "utf8"), "observed");
+  await rm(hookMarker);
+  const isolated = await sourceGitEnvironment(policy, {
+    ...ambient,
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+    GIT_CONFIG_VALUE_0: hooks,
+    Git_Config_Parameters: "arbitrary",
+    HOME: root,
+    USERPROFILE: root,
+    GIT_ASKPASS: "untrusted",
+    GCM_TRACE: "secret",
+  });
+  assert.equal(
+    git(["remote", "get-url", "origin"], isolated).trim(),
+    "https://example.invalid/owned.git",
+  );
+  assert.equal(isolated.GIT_CONFIG_NOSYSTEM, "1");
+  assert.equal(isolated.GIT_CONFIG_COUNT, undefined);
+  assert.equal(isolated.Git_Config_Parameters, undefined);
+  assert.equal(isolated.GIT_ASKPASS, undefined);
+  assert.equal(isolated.GCM_TRACE, undefined);
+  assert.throws(() =>
+    git(
+      ["credential", "fill"],
+      isolated,
+      "protocol=https\nhost=example.invalid\n\n",
+    ),
+  );
+  assert.equal(existsSync(credentialMarker), false);
+  git(["commit", "-qm", "isolated no hook"], isolated);
+  assert.equal(existsSync(hookMarker), false);
+  assert.equal(sourceGitIsolationEvidence(policy).verificationFailed, false);
+});
+
+test("Git policy capability and physical owned config identities reject forgery, replacement and extra hooks", async (t) => {
+  const first = await sourceGitFixture(t);
+  await assert.rejects(
+    sourceGitEnvironment({ ...first.policy }, {}),
+    /CAPABILITY/,
+  );
+  await assert.rejects(
+    acquireSources(path.join(first.root, "not-created"), undefined, undefined, {
+      ...first.policy,
+    }),
+    /CAPABILITY/,
+  );
+  assert.equal(existsSync(path.join(first.root, "not-created")), false);
+  const before = await readFile(
+    path.join(first.policyRoot, "global.gitconfig"),
+  );
+  await rename(
+    path.join(first.policyRoot, "global.gitconfig"),
+    path.join(first.root, "old-global"),
+  );
+  await writeFile(path.join(first.policyRoot, "global.gitconfig"), before);
+  await assert.rejects(
+    sourceGitEnvironment(first.policy, {}),
+    /POLICY_CHANGED|POLICY_DIRECTORY/,
+  );
+  assert.equal(
+    sourceGitIsolationEvidence(first.policy).verificationFailed,
+    true,
+  );
+  const second = await sourceGitFixture(t);
+  await writeFile(
+    path.join(second.policyRoot, "hooks", "pre-commit"),
+    "untrusted",
+  );
+  await assert.rejects(
+    sourceGitEnvironment(second.policy, {}),
+    /POLICY_DIRECTORY|POLICY_HOOKS/,
+  );
+  await assert.rejects(
+    prepareSourceGitIsolation(path.join(second.root, "wrong-policy-name")),
+    /POLICY_ROOT/,
+  );
+  await assert.rejects(prepareSourceGitIsolation(second.policyRoot), /EEXIST/);
+});
+
+test("actual acquisition body reasserts the owned policy after Git-config sanitization and stops before fetch", async (t) => {
+  const fixture = await sourceGitFixture(t);
+  const moduleText = await readFile(
+    new URL("../../scripts/cef-patched-runtime.mjs", import.meta.url),
+    "utf8",
+  );
+  const begin = moduleText.indexOf("export async function acquireSources("),
+    end = moduleText.indexOf("export async function main(", begin);
+  assert(begin >= 0 && end > begin);
+  const body = moduleText.slice(begin, end).replace(/^export /, "");
+  const seen = [];
+  const actual = vm.runInNewContext(`(${body})`, {
+    validateGitExecutable,
+    acquisitionSourcePlan,
+    gclientConfiguration,
+    sourceGitEnvironment,
+    mkdir,
+    writeFile,
+    path,
+    process: {
+      pid: 123,
+      env: {
+        ...fixture.safe,
+        GIT_CONFIG_NOSYSTEM: "0",
+        GIT_CONFIG_GLOBAL: "not-trusted",
+        HOME: "not-trusted",
+      },
+      stderr: { write() {} },
+    },
+    executeStep: async (step, env) => {
+      seen.push({ args: step.args, env: { ...env } });
+      if (step.args.includes("fetch"))
+        throw new Error("OWNED_STOP_BEFORE_NETWORK");
+      execFileSync(step.executable, step.args, {
+        cwd: step.cwd,
+        env,
+        windowsHide: true,
+        timeout: 10000,
+        stdio: "pipe",
+      });
+    },
+    exec: async () => {
+      throw new Error("Unexpected revision query after stopped fetch");
+    },
+  });
+  const destination = path.join(fixture.root, "new-source");
+  await assert.rejects(
+    actual(destination, undefined, "git", fixture.policy),
+    /absolute explicit Git/,
+  );
+  const git =
+    process.platform === "win32"
+      ? "C:/Program Files/Git/cmd/git.exe"
+      : "/usr/bin/git";
+  await assert.rejects(
+    actual(destination, undefined, git, fixture.policy),
+    /Source acquisition incomplete/,
+  );
+  assert(seen.length >= 3);
+  for (const row of seen) {
+    assert.equal(row.env.GIT_CONFIG_NOSYSTEM, "1");
+    assert.equal(
+      row.env.GIT_CONFIG_GLOBAL,
+      path.join(fixture.policyRoot, "global.gitconfig"),
+    );
+    assert.equal(row.env.HOME, path.join(fixture.policyRoot, "home"));
+  }
+  assert(seen.some((row) => row.args.includes("fetch")));
+  assert.equal(
+    sourceGitIsolationEvidence(fixture.policy).verificationFailed,
+    false,
+  );
+});
+
+test("actual Git helper preserves exact first errors including null across policy postcheck failure", async () => {
+  const text = await readFile(
+    new URL("../../scripts/lib/browser-custom-runtime.mjs", import.meta.url),
+    "utf8",
+  );
+  const begin = text.indexOf("async function git("),
+    end = text.indexOf("/** Reject unowned", begin);
+  assert(begin >= 0 && end > begin);
+  const body = text.slice(begin, end);
+  for (const sentinel of [new Error("owned Git error"), null, false]) {
+    let checks = 0,
+      returned;
+    const actual = vm.runInNewContext(`(${body})`, {
+      process: { env: {} },
+      validateGitExecutable: (value) => value,
+      sourceGitEnvironment: async (_token, env) => {
+        if (++checks === 2) throw new Error("SOURCE_GIT_POLICY_CHANGED");
+        return env;
+      },
+      exec: async () => {
+        throw sentinel;
+      },
+    });
+    try {
+      await actual("owned", ["status"], {}, "/owned/git", {});
+      assert.fail("Expected exact first error");
+    } catch (error) {
+      returned = error;
+    }
+    assert.equal(returned, sentinel);
+    assert.equal(checks, 2);
+  }
+});
+
+test("actual Git environment body emits fixed Windows and POSIX policy literals without caller Git overrides", async () => {
+  const text = await readFile(
+    new URL("../../scripts/lib/browser-custom-runtime.mjs", import.meta.url),
+    "utf8",
+  );
+  const begin = text.indexOf("export async function sourceGitEnvironment("),
+    end = text.indexOf("export function sourceGitIsolationEvidence(", begin);
+  assert(begin >= 0 && end > begin);
+  const body = text.slice(begin, end).replace(/^export /, "");
+  for (const [paths, directory] of [
+    [path.win32, "C:\\owned\\cef-source-git-policy"],
+    [path.posix, "/owned/cef-source-git-policy"],
+  ]) {
+    const token = {},
+      policy = {
+        directory,
+        files: [
+          {
+            path: paths.join(directory, "global.gitconfig"),
+            bytes: Buffer.alloc(0),
+            identity: {},
+          },
+          {
+            path: paths.join(directory, "system.gitconfig"),
+            bytes: Buffer.alloc(0),
+            identity: {},
+          },
+        ],
+        directories: [],
+        verificationFailed: false,
+      };
+    const capabilities = new WeakMap([[token, policy]]);
+    let closed = 0;
+    const actual = vm.runInNewContext(`(${body})`, {
+      path: paths,
+      sourceGitPolicies: capabilities,
+      sourceGitFile: async () => ({}),
+      sourceGitPhysical: async () => {},
+      lstat: async () => assert.fail("No synthetic directory row"),
+      sourceGitDirectory: () => assert.fail("No synthetic directory row"),
+      opendir: async () => ({
+        read: async () => null,
+        close: async () => {
+          closed++;
+        },
+      }),
+      fail: (message) => {
+        throw new Error(message);
+      },
+    });
+    const env = await actual(token, {
+      GIT_CONFIG_NOSYSTEM: "0",
+      git_config_global: "/untrusted",
+      HOME: "/untrusted",
+      USERPROFILE: "C:/untrusted",
+      EXTRA: "kept",
+    });
+    assert.equal(env.GIT_CONFIG_NOSYSTEM, "1");
+    assert.equal(
+      env.GIT_CONFIG_SYSTEM,
+      paths.join(directory, "system.gitconfig"),
+    );
+    assert.equal(
+      env.GIT_CONFIG_GLOBAL,
+      paths.join(directory, "global.gitconfig"),
+    );
+    assert.equal(env.HOME, paths.join(directory, "home"));
+    assert.equal(env.USERPROFILE, paths.join(directory, "home"));
+    assert.equal(env.git_config_global, undefined);
+    assert.equal(env.EXTRA, "kept");
+    assert.equal(env.GIT_ALLOW_PROTOCOL, "https");
+    assert.equal(closed, 1);
+  }
+});
 
 test("Windows prerequisite doctor uses the verified native ARM shell and the same desktop selector as hosted observation", async () => {
   const calls = [];
