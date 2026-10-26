@@ -3425,6 +3425,88 @@ test("isolated Linux origin binds independent copied objects, generation raw byt
   assert.equal(Object.keys(LINUX_ISOLATED_FACT_KEYS).length, 15);
 });
 
+test("isolated R5 accepts pinned Siso handler counts with positive local work and one strict summary", () => {
+  // Portable excerpt of the retained 4625 compile log. Other fixture facts are
+  // synthetic: this test is source-contract proof, never execution evidence.
+  // Owner's separate retained-log replay uses the full 467179-byte raw body.
+  const observed =
+    "build finished\nnoexec:36 local:2457 remote:0 cache:0 skip:84607\n";
+  const summary = "noexec:36 local:2457 remote:0 cache:0 skip:84607";
+  const oldPredicate = /^noexec:0 local:(\d+) remote:0 cache:0 skip:\d+\r?$/m;
+  assert.equal(oldPredicate.exec(observed), null);
+  const candidate = (body, localSteps = 2457, isolated = true) => {
+    const f = isolated ? linuxIsolatedFixture() : linuxIncrementalFixture();
+    f.records.compileOutput = body;
+    Object.assign(f.records.compile.facts, {
+      outputBytes: Buffer.byteLength(body),
+      outputSha256: createHash("sha256").update(body).digest("hex"),
+      localSteps,
+    });
+    if (isolated) f.refresh();
+    else {
+      const evidence = () =>
+        Object.fromEntries(
+          LINUX_INCREMENTAL_EVIDENCE.map((name) => [
+            name,
+            pin(
+              name + (name === "compileOutput" ? ".log" : ".json"),
+              Buffer.from(
+                name === "compileOutput"
+                  ? f.records[name]
+                  : JSON.stringify(f.records[name]),
+              ),
+            ),
+          ]),
+        );
+      f.records.postchecks.facts.compileSha256 = evidence().compile.sha256;
+      f.input.evidence = evidence();
+    }
+    return verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  };
+  assert.equal(candidate(observed).isolatedBuild, true);
+  assert.equal(
+    candidate(observed.replaceAll("\n", "\r\n")).isolatedBuild,
+    true,
+  );
+  assert.equal(
+    candidate(observed.replace("noexec:36", "noexec:0")).isolatedBuild,
+    true,
+  );
+  const malformed = [
+    summary.replace("local:2457", "local:0"),
+    summary.replace("remote:0", "remote:1"),
+    summary.replace("cache:0", "cache:1"),
+    summary.replace("noexec:36", "noexec:-1"),
+    summary.replace("noexec:36", "noexec:1.5"),
+    summary.replace("noexec:36", "noexec:036"),
+    summary.replace("noexec:36", "noexec:" + "9".repeat(50)),
+    summary.replace("local:2457", "local:invalid"),
+    summary + " unknown:1",
+    summary + " ",
+  ];
+  for (const bad of malformed)
+    assert.throws(() => candidate(observed.replace(summary, bad)), /Linux/);
+  for (const extra of [
+    summary,
+    "noexec:0 local:1 remote:1 cache:0 skip:0",
+    "noexec:unknown",
+  ])
+    assert.throws(() => candidate(observed + extra + "\n"), /Linux/);
+  for (const marker of [
+    "FAILED: object",
+    "ninja: build stopped: failed",
+    "FATAL failure",
+  ])
+    assert.throws(() => candidate(observed + marker + "\n"), /Linux/);
+  assert.throws(() => candidate(observed, 1), /Linux/);
+  assert.throws(
+    () => candidate(observed.replace("build finished\n", "")),
+    /Linux/,
+  );
+  // This is the existing non-isolated R4 branch, not a widened origin.
+  assert.throws(() => candidate(observed, 2457, false), /Linux/);
+});
+
 test("isolated Linux refuses shared/corrupt copy, old-volume writes, unsafe init, unknown mounts, incomplete generation/GN and stale object/link", () => {
   const changes = [
     (f) => (f.records.workspace.facts.originalReadonly = false),
