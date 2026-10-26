@@ -15,6 +15,7 @@ mod tunnel_tests;
 #[path = "http_quickconnect_user_agent_tests.rs"]
 mod user_agent_tests;
 use super::*;
+use futures_util::FutureExt;
 const REGIONAL: &str = "https://dec.quickconnect.to/Serv.php";
 const PROBE: &str = "https://test-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true";
 fn smartdns() -> serde_json::Value {
@@ -431,31 +432,185 @@ async fn probe_cors_identity_json_redirect_and_size_failures_never_become_succes
     }
 }
 
+fn direct_probe_request(proxy: &FixtureProxy) -> axum::extract::Request {
+    let request = routed(proxy, PROBE, false).build().unwrap();
+    let mut builder = axum::http::Request::builder()
+        .method(request.method().clone())
+        .uri(&request.url()[url::Position::BeforePath..]);
+    *builder.headers_mut().unwrap() = request.headers().clone();
+    builder.body(axum::body::Body::empty()).unwrap()
+}
+
+async fn until_seen(server: &Peer, expected: usize) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.seen.lock().unwrap().len() < expected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(server.seen.lock().unwrap().len(), expected);
+}
+
+async fn finish_revocation_case(
+    server: Peer,
+    mut clients: tokio::task::JoinSet<reqwest::Response>,
+    primary: std::thread::Result<()>,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    clients.abort_all();
+    let clients_joined = tokio::time::timeout_at(deadline, async {
+        while clients.join_next().await.is_some() {}
+    })
+    .await
+    .is_ok();
+    let server_joined = server.finish_before(deadline).await;
+    if let Err(error) = primary {
+        if !clients_joined || !server_joined {
+            use std::io::Write;
+            let _ = writeln!(
+                std::io::stderr(),
+                "QuickConnect fixture cleanup unconfirmed"
+            );
+        }
+        std::panic::resume_unwind(error);
+    }
+    assert!(
+        clients_joined && server_joined,
+        "owned client/server tasks must join"
+    );
+}
+
+fn held_probe_reply(request: &str) -> (u16, Vec<u8>, String, Duration) {
+    if request.starts_with("GET ") {
+        (
+            200,
+            pong(),
+            "Access-Control-Allow-Origin: *\r\n".into(),
+            Duration::ZERO,
+        )
+    } else {
+        (
+            200,
+            smartdns().to_string().into_bytes(),
+            String::new(),
+            Duration::ZERO,
+        )
+    }
+}
+
 #[tokio::test]
 async fn document_replacement_and_session_close_cancel_inflight_and_queued_probes() {
     for close_session in [false, true] {
-        let server = scripted_peer(
-            Arc::new(|request| {
-                if request.starts_with("GET ") {
-                    (
-                        200,
-                        pong(),
-                        "Access-Control-Allow-Origin: *\r\n".into(),
-                        Duration::from_secs(1),
-                    )
-                } else {
-                    (
-                        200,
-                        smartdns().to_string().into_bytes(),
-                        String::new(),
-                        Duration::ZERO,
-                    )
-                }
-            }),
-            false,
-            false,
-        )
+        let server = gated_scripted_peer(Arc::new(held_probe_reply)).await;
+        let mut clients = tokio::task::JoinSet::new();
+        let primary = std::panic::AssertUnwindSafe(async {
+            let proxy = fixture(
+                Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
+                ORIGINAL,
+                policy(),
+            )
+            .await;
+            learn(&proxy).await;
+            until_seen(&server, 2).await;
+            // Exercise the actual four-slot direct lane, not the two-slot
+            // control lane. Replies cannot complete before explicit cleanup.
+            for _ in 0..4 {
+                let request = routed(&proxy, PROBE, false).build().unwrap();
+                clients.spawn(async move { client().execute(request).await.unwrap() });
+            }
+            until_seen(&server, 10).await;
+            assert_eq!(clients.len(), 4);
+            assert!(!clients.is_empty());
+
+            let mut queued = Vec::new();
+            for _ in 0..4 {
+                let mut request = Box::pin(control::handle(
+                    proxy.state.clone(),
+                    direct_probe_request(&proxy),
+                ));
+                // Known empty request bodies and the selected current document
+                // are ready. Poll through admission into the saturated lane.
+                assert!(futures_util::poll!(request.as_mut()).is_pending());
+                queued.push(request);
+            }
+            // The actual public refusal proves all eight admitted slots are
+            // occupied; no private semaphore getter or product hook is added.
+            let mut ninth = Box::pin(control::handle(
+                proxy.state.clone(),
+                direct_probe_request(&proxy),
+            ));
+            let std::task::Poll::Ready(refused) = futures_util::poll!(ninth.as_mut()) else {
+                panic!("ninth probe must refuse without waiting or upstream I/O");
+            };
+            assert_eq!(refused.status(), 429);
+            assert_eq!(
+                refused
+                    .extensions()
+                    .get::<control::Diagnostic>()
+                    .unwrap()
+                    .code(),
+                "quickconnect_request_limit"
+            );
+            assert_eq!(server.seen.lock().unwrap().len(), 10);
+            if close_session {
+                proxy.state.network.revoke();
+            } else {
+                proxy.state.network.document_issued(2, false);
+                proxy.state.network.activate_document(2).unwrap();
+            }
+            for request in queued {
+                let response = tokio::time::timeout(Duration::from_secs(2), request)
+                    .await
+                    .unwrap();
+                let observation = response
+                    .extensions()
+                    .get::<control::ExchangeObservation>()
+                    .unwrap();
+                assert_eq!(observation.stage.as_str(), "queue");
+                assert_eq!(observation.outcome.as_str(), "cancelled");
+                assert!(observation.active_ms.is_none());
+                assert!(observation.upstream_status.is_none());
+                assert_eq!(
+                    response
+                        .extensions()
+                        .get::<control::Diagnostic>()
+                        .unwrap()
+                        .code(),
+                    "quickconnect_stale_document"
+                );
+                assert!(response.status().is_client_error() || response.status().is_server_error());
+                let body = axum::body::to_bytes(response.into_body(), 16 * 1024)
+                    .await
+                    .unwrap();
+                assert!(!String::from_utf8_lossy(&body).contains("ezid"));
+            }
+            while let Some(result) =
+                tokio::time::timeout(Duration::from_secs(2), clients.join_next())
+                    .await
+                    .unwrap()
+            {
+                let response = result.unwrap();
+                assert!(response.status().is_client_error() || response.status().is_server_error());
+                assert!(!response.text().await.unwrap().contains("ezid"));
+            }
+            assert_eq!(
+                server.seen.lock().unwrap().len(),
+                10,
+                "no queued probe may reach upstream after revocation"
+            );
+        })
+        .catch_unwind()
         .await;
+        finish_revocation_case(server, clients, primary).await;
+    }
+}
+
+#[tokio::test]
+async fn two_held_direct_probes_do_not_queue_a_third() {
+    let server = gated_scripted_peer(Arc::new(held_probe_reply)).await;
+    let mut clients = tokio::task::JoinSet::new();
+    let primary = std::panic::AssertUnwindSafe(async {
         let proxy = fixture(
             Some(ReviewedQuickConnectControl::fixture(server.client.clone())),
             ORIGINAL,
@@ -463,45 +618,31 @@ async fn document_replacement_and_session_close_cancel_inflight_and_queued_probe
         )
         .await;
         learn(&proxy).await;
-        let mut pending = Vec::new();
+        until_seen(&server, 2).await;
         for _ in 0..2 {
             let request = routed(&proxy, PROBE, false).build().unwrap();
-            pending.push(tokio::spawn(async move {
-                client().execute(request).await.unwrap()
-            }));
+            clients.spawn(async move { client().execute(request).await.unwrap() });
         }
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while server.seen.lock().unwrap().len() < 6 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
+        until_seen(&server, 6).await;
         let request = routed(&proxy, PROBE, false).build().unwrap();
-        pending.push(tokio::spawn(async move {
-            client().execute(request).await.unwrap()
-        }));
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        if close_session {
-            proxy.state.network.revoke();
-        } else {
-            proxy.state.network.document_issued(2, false);
-            proxy.state.network.activate_document(2).unwrap();
-        }
-        for request in pending {
-            let response = tokio::time::timeout(Duration::from_secs(2), request)
-                .await
-                .unwrap()
-                .unwrap();
+        clients.spawn(async move { client().execute(request).await.unwrap() });
+        until_seen(&server, 8).await;
+        // This all happened BEFORE revocation with the first two replies held:
+        // the historical literal-six assertion did not prove a queued request.
+        proxy.state.network.revoke();
+        while let Some(result) = tokio::time::timeout(Duration::from_secs(2), clients.join_next())
+            .await
+            .unwrap()
+        {
+            let response = result.unwrap();
             assert!(response.status().is_client_error() || response.status().is_server_error());
             assert!(!response.text().await.unwrap().contains("ezid"));
         }
-        assert_eq!(
-            server.seen.lock().unwrap().len(),
-            6,
-            "queued probe must not start after revocation"
-        );
-    }
+        assert_eq!(server.seen.lock().unwrap().len(), 8);
+    })
+    .catch_unwind()
+    .await;
+    finish_revocation_case(server, clients, primary).await;
 }
 
 #[tokio::test]
@@ -718,4 +859,35 @@ async fn regional_requests_share_two_exchange_limit_and_document_revocation_canc
             .iter()
             .all(|entry| entry.error.as_deref() == Some("HTTP 502 [quickconnect_stale_document]")));
     }
+}
+
+#[tokio::test]
+async fn server_join_error_preserves_the_original_case_panic() {
+    struct OriginalCasePanic;
+    let task: tokio::task::JoinHandle<()> = tokio::spawn(async {
+        panic!("controlled owned server failure");
+    });
+    let (shutdown, _stop) = tokio::sync::oneshot::channel();
+    let server = Peer {
+        proxy: String::new(),
+        client: reqwest::Client::builder().no_proxy().build().unwrap(),
+        seen: Arc::new(std::sync::Mutex::new(Vec::new())),
+        tls_failures: Arc::new(AtomicU64::new(0)),
+        task,
+        gate: Some(ReplyGate::default()),
+        shutdown: Some(shutdown),
+    };
+    let primary: std::thread::Result<()> = Err(Box::new(OriginalCasePanic));
+    let caught = std::panic::AssertUnwindSafe(finish_revocation_case(
+        server,
+        tokio::task::JoinSet::new(),
+        primary,
+    ))
+    .catch_unwind()
+    .await
+    .unwrap_err();
+    assert!(
+        caught.downcast_ref::<OriginalCasePanic>().is_some(),
+        "a consumed server JoinError must not replace the original case panic"
+    );
 }
