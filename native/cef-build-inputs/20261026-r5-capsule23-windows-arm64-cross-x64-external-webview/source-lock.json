@@ -159,7 +159,7 @@
       "target": "aarch64-pc-windows-msvc",
       "gnArgs": {
         "path": "gn/aarch64-pc-windows-msvc.gn",
-        "sha256": "5384c87c6585fdb5e337bd5f94811b7c3413f93993d8f281fc73918530e9a2b8"
+        "sha256": "4b6b5ad54a4e9e788d87bc704236a6282575669b426666f033b4f8a31d50efc5"
       },
       "toolchainLock": {
         "path": "tools/aarch64-pc-windows-msvc.json",

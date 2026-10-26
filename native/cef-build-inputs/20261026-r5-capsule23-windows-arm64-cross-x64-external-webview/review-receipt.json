@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "sorng-cef-build-input-review",
   "scope": "Source-only x64-host Windows ARM64 capsule23 projection: inherited capsule22 plus common external-only WebView lifetime H1; no GN/compiler/loader admission.",
-  "sourceLockIdentity": "5cb2bfb14e7bf318123f4a657fcc5dcc408b39559d7f7377c3ef2e2a8f46c5f8",
-  "sourceLockRawSha256": "fda77b381c6f73f78494f9ab38c2f67fa78bbc97ab0653fdcd60e13c4ddc88ed",
+  "sourceLockIdentity": "b04bd747863065cb2cd5a52088ac36d24427b1e505b269c234d4ee5f444077be",
+  "sourceLockRawSha256": "5eddec6010e29173058557a23fac9dcd8484565b7998feb520e48b046f5a13b0",
   "baseSourceLockIdentity": "951ed7dfce3afa6649f84a08b342a90cc1d3deb12fa7eb485afad30ad4ebd928",
   "baseSourceLockRawSha256": "3a5bea17904857d0fea7647c1d0d09c7b05d29e817be54f96b466d0a694a9cff",
   "bridgeAbiVersion": 2,
@@ -24,11 +24,6 @@
       "path": "cef-ci-runner-aarch64-pc-windows-msvc.json",
       "bytes": 833,
       "sha256": "086bc0b92b42e3f9dcacd6c93597c573abca2320cd51b5d1a7796bc70aa20cce"
-    },
-    {
-      "path": "gn/aarch64-pc-windows-msvc.gn",
-      "bytes": 604,
-      "sha256": "5384c87c6585fdb5e337bd5f94811b7c3413f93993d8f281fc73918530e9a2b8"
     },
     {
       "path": "patches/0001-chromium-socket-admission.patch",
@@ -144,7 +139,7 @@
   "gnProjection": {
     "onlyDelta": "ARM target retained; explicit x64 host, is_clang/use_lld true",
     "baseRawSha256": "30ade2dd1b099b8e884fa53b91f537a3e5ffcc566da7d033ce0a83e22a6e0867",
-    "rawSha256": "5384c87c6585fdb5e337bd5f94811b7c3413f93993d8f281fc73918530e9a2b8",
+    "rawSha256": "4b6b5ad54a4e9e788d87bc704236a6282575669b426666f033b4f8a31d50efc5",
     "instanceTracer": false,
     "isClangWindowsDefault": true,
     "securityFlagsWeakened": false
@@ -239,5 +234,14 @@
     "sourceOracleSha256": "f8d1a690cca2936c6c313eeeb15364674715cf66df6794fb7d64fff59ba27652",
     "rawPreviousNamespaceApplyDenied": true,
     "historical29Unchanged": true
+  },
+  "gnSeparatorCorrection": {
+    "previousSourceLockIdentity": "5cb2bfb14e7bf318123f4a657fcc5dcc408b39559d7f7377c3ef2e2a8f46c5f8",
+    "beforeRawSha256": "5384c87c6585fdb5e337bd5f94811b7c3413f93993d8f281fc73918530e9a2b8",
+    "afterRawSha256": "4b6b5ad54a4e9e788d87bc704236a6282575669b426666f033b4f8a31d50efc5",
+    "addedBytes": 1,
+    "onlyChange": "Required LF between v8_symbol_level=0 and host_cpu=\"x64\"; no argument value changed",
+    "actualGnExecuted": false,
+    "malformedAcceptedByHistoricalLiteralParser": true
   }
 }

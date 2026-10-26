@@ -18,6 +18,7 @@ symbol_level=1
 target_cpu="arm64"
 use_remoteexec=false
 use_siso=true
-v8_symbol_level=0host_cpu="x64"
+v8_symbol_level=0
+host_cpu="x64"
 is_clang=true
 use_lld=true
