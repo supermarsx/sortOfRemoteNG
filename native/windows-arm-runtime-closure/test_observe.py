@@ -119,11 +119,71 @@ class PassiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             p = self.fixture(Path(folder).resolve())
             for i in range(17):(Path(p["redistRoot"]) / str(i)).mkdir()
-            with self.assertRaisesRegex(o.Denied, "INV_VERSION_BOUND"):o.inventory(p, clock())
+            with self.assertRaisesRegex(o.Denied, "INV_VERSION_ENTRY_BOUND"):o.inventory(p, clock())
         with tempfile.TemporaryDirectory() as folder:
             p = self.fixture(Path(folder).resolve())
             for i in range(5):(Path(p["redistRoot"]) / ("14.51." + str(i))).mkdir()
-            with self.assertRaisesRegex(o.Denied, "INV_VERSION_BOUND"):o.inventory(p, clock())
+            with self.assertRaisesRegex(o.Denied, "INV_VERSION_COUNT_BOUND"):o.inventory(p, clock())
+
+    def test_version_facts_distinguish_entry_count_and_version_count_before_denial(self):
+        for names, code, predicate in ((["entry" + str(i) for i in range(17)], "INV_VERSION_ENTRY_BOUND", "entry-count"),
+                                        (["14.51." + str(i) for i in range(5)], "INV_VERSION_COUNT_BOUND", "version-count")):
+            with tempfile.TemporaryDirectory() as folder:
+                p = self.fixture(Path(folder).resolve())
+                for name in names:(Path(p["redistRoot"]) / name).mkdir()
+                report = {}
+                with patch.object(o, "held", side_effect=AssertionError("no DLL read")) as held:
+                    with self.assertRaisesRegex(o.Denied, code):o.inventory(p, clock(), report=report)
+                held.assert_not_called();facts = report["redistEnumeration"]
+                self.assertEqual(facts["failedPredicate"], predicate)
+                self.assertTrue(facts["directoryIdentityAvailable"] and facts["directoryIdentityEqual"])
+                self.assertLessEqual(len(facts["matchingNumericNames"]),16)
+                self.assertEqual(facts["entriesSeen"],17 if predicate=="entry-count" else 5)
+                self.assertEqual(facts["entryCountExact"],predicate!="entry-count")
+                if predicate=="version-count":
+                    self.assertEqual(facts["matchingNumericNames"],sorted(names));self.assertEqual(facts["validatedVersionCount"],5)
+                    self.assertFalse(facts["versionCountWithinLimit"])
+                self.assertEqual(report["totalReadBytes"],0)
+
+    def test_version_facts_never_retain_unknown_entry_names_or_choose_a_version(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=self.fixture(Path(folder).resolve());redist=Path(p["redistRoot"])
+            names=["14.51.36231","14.50.1","PRIVATE-do-not-emit","14.51.2-unknown","14.51"]
+            for name in names:(redist/name).mkdir()
+            result=o.inventory(p,clock());facts=result["redistEnumeration"]
+            self.assertEqual(facts["matchingNumericNames"],["14.50.1","14.51.36231"])
+            self.assertEqual(facts["numericNameCount"],2);self.assertEqual(facts["entriesSeen"],5)
+            self.assertTrue(facts["entryCountExact"] and facts["numericNameCountExact"])
+            self.assertEqual(result["redistVersions"],["14.50.1","14.51.36231"])
+            self.assertFalse(result["closureSatisfied"])
+            for value in names[2:]:self.assertNotIn(json.dumps(value),json.dumps(result))
+
+    def test_version_post_stat_mutation_is_distinct_and_original_bound_survives_second_fault(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p = self.fixture(Path(folder).resolve());redist=Path(p["redistRoot"]);original=o.os.scandir
+            class Changed:
+                def __enter__(self):self.scan=original(redist);return self.scan
+                def __exit__(self,*args):
+                    self.scan.close();before=redist.stat();os.utime(redist,ns=(before.st_atime_ns,before.st_mtime_ns+1000000000))
+            report={}
+            with patch.object(o.os,"scandir",side_effect=lambda _path:Changed()),patch.object(o,"held",side_effect=AssertionError("no DLL read")):
+                with self.assertRaisesRegex(o.Denied,"INV_VERSION_DIRECTORY_CHANGED"):o.inventory(p,clock(),report=report)
+            self.assertEqual(report["redistEnumeration"]["failedPredicate"],"directory-identity")
+            self.assertFalse(report["redistEnumeration"]["directoryIdentityEqual"])
+        with tempfile.TemporaryDirectory() as folder:
+            p=self.fixture(Path(folder).resolve());redist=Path(p["redistRoot"])
+            for i in range(17):(redist/str(i)).mkdir()
+            original_stat=Path.stat;original_need=o.need;armed=[False];report={};primary=o.Denied("INV_VERSION_ENTRY_BOUND")
+            def need_fault(ok,code):
+                if not ok and code=="INV_VERSION_ENTRY_BOUND":armed[0]=True;raise primary
+                return original_need(ok,code)
+            def stat_fault(path,*args,**kwargs):
+                if path==redist and armed[0]:raise OSError("owned post-stat fault")
+                return original_stat(path,*args,**kwargs)
+            with patch.object(o,"need",side_effect=need_fault),patch.object(Path,"stat",autospec=True,side_effect=stat_fault):
+                with self.assertRaises(o.Denied) as found:o.inventory(p,clock(),report=report)
+            self.assertIs(found.exception,primary)
+            self.assertEqual(report["redistEnumeration"]["directoryIdentityFailure"],"INV_VERSION_IDENTITY_UNAVAILABLE")
 
     def test_real_hardlink_denies_and_partial_row_preserved(self):
         with tempfile.TemporaryDirectory() as folder:

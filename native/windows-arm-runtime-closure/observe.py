@@ -333,18 +333,60 @@ def inventory(p, clock, report=None):
         return path
     vs, sdk, redist = root(p["vsRoot"]), root(p["sdkRoot"]), root(p["redistRoot"])
     versions = []
+    facts = {"available": redist is not None, "entriesSeen": 0, "entryLimit": 16,
+             "entryCountExact": False, "entryCountWithinLimit": None,
+             "matchingNumericNames": [], "numericNameCount": 0, "numericNameCountExact": False,
+             "validatedVersionCount": 0, "versionLimit": 4, "versionCountWithinLimit": None,
+             "directoryIdentityAvailable": False, "directoryIdentityEqual": None,
+             "directoryIdentityFailure": None, "failedPredicate": None}
+    report["redistEnumeration"] = facts
     if redist is not None:
-        before = signature(redist.stat());entries = []
-        with os.scandir(redist) as scan:
-            for entry in scan:
-                clock.remaining();need(len(entries) < 16, "INV_VERSION_BOUND")
-                entries.append(redist / entry.name)
-        for entry in entries:
-            clock.remaining()
-            if re.fullmatch(r"14\.[0-9]{1,3}\.[0-9]{1,6}(?:\.[0-9]{1,6})?", entry.name):
-                need(fixed_path(entry) is not None and entry.is_dir(), "INV_VERSION_DIRECTORY")
-                versions.append(entry.name)
-        need(len(versions) <= 4 and signature(redist.stat()) == before, "INV_VERSION_BOUND")
+        before = signature(redist.stat());entries = [];primary = None
+        try:
+            with os.scandir(redist) as scan:
+                for entry in scan:
+                    clock.remaining();facts["entriesSeen"] += 1
+                    facts["entryCountWithinLimit"] = facts["entriesSeen"] <= 16
+                    if not facts["entryCountWithinLimit"]:
+                        facts["failedPredicate"] = "entry-count"
+                    need(facts["entryCountWithinLimit"], "INV_VERSION_ENTRY_BOUND")
+                    entries.append(redist / entry.name)
+                    if re.fullmatch(r"14\.[0-9]{1,3}\.[0-9]{1,6}(?:\.[0-9]{1,6})?", entry.name):
+                        facts["matchingNumericNames"].append(entry.name)
+                        facts["numericNameCount"] += 1
+            facts["entryCountExact"] = True
+            facts["entryCountWithinLimit"] = True
+            facts["numericNameCountExact"] = True
+            facts["matchingNumericNames"].sort()
+            for entry in entries:
+                clock.remaining()
+                if re.fullmatch(r"14\.[0-9]{1,3}\.[0-9]{1,6}(?:\.[0-9]{1,6})?", entry.name):
+                    facts["failedPredicate"] = "numeric-directory"
+                    need(fixed_path(entry) is not None and entry.is_dir(), "INV_VERSION_DIRECTORY")
+                    facts["failedPredicate"] = None
+                    versions.append(entry.name)
+                    facts["validatedVersionCount"] = len(versions)
+            facts["versionCountWithinLimit"] = len(versions) <= 4
+            if not facts["versionCountWithinLimit"]:
+                facts["failedPredicate"] = "version-count"
+            need(facts["versionCountWithinLimit"], "INV_VERSION_COUNT_BOUND")
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            facts["matchingNumericNames"].sort()
+            try:
+                clock.remaining()
+                facts["directoryIdentityEqual"] = signature(redist.stat()) == before
+                facts["directoryIdentityAvailable"] = True
+            except BaseException:
+                facts["directoryIdentityFailure"] = "INV_VERSION_IDENTITY_UNAVAILABLE"
+                if primary is None:
+                    facts["failedPredicate"] = "directory-identity-unavailable"
+                    raise
+        if not facts["directoryIdentityEqual"]:
+            facts["failedPredicate"] = "directory-identity"
+        need(facts["directoryIdentityEqual"], "INV_VERSION_DIRECTORY_CHANGED")
     versions.sort()
     requests = []
     for role in p["roles"]:
@@ -389,7 +431,7 @@ def inventory(p, clock, report=None):
         if entry["status"] == "observed":
             path = fixed_path(entry["role"])
             need(path is not None and signature(path.stat()) == tuple(entry["identity"]), "INV_ROOT_CHANGED")
-    return {"roots": roots, "redistVersions": versions, "rows": rows, "totalReadBytes": total,
+    return {"roots": roots, "redistVersions": versions, "redistEnumeration": facts, "rows": rows, "totalReadBytes": total,
             "observationComplete": True, "closureSatisfied": False, "closureRequiresIndependentReview": True,
             "sdkDebuggerVersionProven": False, "vendorExecuted": False, "filesCopied": False}
 
