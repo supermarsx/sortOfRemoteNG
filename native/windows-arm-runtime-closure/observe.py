@@ -66,6 +66,13 @@ def signature(s):
             s.st_mode, s.st_nlink, getattr(s, "st_birthtime_ns", None))
 
 
+def directory_identity(value, platform=None):
+    # Windows directory file-size values are informational, not content identity.
+    # Retain the original full signature in observations and all file guards.
+    need(len(value) == 8 and stat.S_ISDIR(value[5]), "INV_DIRECTORY_KIND")
+    return value[:2] + value[3:] if (os.name if platform is None else platform) == "nt" else value
+
+
 def shared(s):
     return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_nlink,
             getattr(s, "st_birthtime_ns", None))
@@ -383,7 +390,7 @@ def inventory(p, clock, report=None):
                 after = signature(redist.stat())
                 facts["directoryAfter"] = dict(zip(signature_fields, after))
                 facts["directoryChangedFields"] = [name for name, left, right in zip(signature_fields, before, after) if left != right]
-                facts["directoryIdentityEqual"] = after == before
+                facts["directoryIdentityEqual"] = directory_identity(after) == directory_identity(before)
                 facts["directoryIdentityAvailable"] = True
             except BaseException:
                 facts["directoryIdentityFailure"] = "INV_VERSION_IDENTITY_UNAVAILABLE"
@@ -436,7 +443,7 @@ def inventory(p, clock, report=None):
     for entry in roots:
         if entry["status"] == "observed":
             path = fixed_path(entry["role"])
-            need(path is not None and signature(path.stat()) == tuple(entry["identity"]), "INV_ROOT_CHANGED")
+            need(path is not None and directory_identity(signature(path.stat())) == directory_identity(tuple(entry["identity"])), "INV_ROOT_CHANGED")
     return {"roots": roots, "redistVersions": versions, "redistEnumeration": facts, "rows": rows, "totalReadBytes": total,
             "observationComplete": True, "closureSatisfied": False, "closureRequiresIndependentReview": True,
             "sdkDebuggerVersionProven": False, "vendorExecuted": False, "filesCopied": False}

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import stat
 import tempfile
 import time
 from types import SimpleNamespace
@@ -124,6 +125,50 @@ class PassiveTests(unittest.TestCase):
             p = self.fixture(Path(folder).resolve())
             for i in range(5):(Path(p["redistRoot"]) / ("14.51." + str(i))).mkdir()
             with self.assertRaisesRegex(o.Denied, "INV_VERSION_COUNT_BOUND"):o.inventory(p, clock())
+
+    def test_directory_identity_windows_size_only_posix_and_other_fields_strict(self):
+        before=(7363010505313276667,562949953615986,0,1792604054106225900,1792602780713423200,16895,1,1792602780713423200)
+        after=(*before[:2],4096,*before[3:])
+        self.assertEqual(o.directory_identity(before,"nt"),o.directory_identity(after,"nt"))
+        self.assertNotEqual(o.directory_identity(before,"posix"),o.directory_identity(after,"posix"))
+        for index in (0,1,3,4,5,6,7):
+            changed=list(before);changed[index]+=1
+            with self.subTest(field=index):
+                self.assertNotEqual(o.directory_identity(before,"nt"),o.directory_identity(tuple(changed),"nt"))
+        regular=list(before);regular[5]=0o100644
+        with self.assertRaisesRegex(o.Denied,"INV_DIRECTORY_KIND"):o.directory_identity(tuple(regular),"nt")
+        # The existing full file signature and shared identity both retain size.
+        fields=("st_dev","st_ino","st_size","st_mtime_ns","st_ctime_ns","st_mode","st_nlink","st_birthtime_ns")
+        a=SimpleNamespace(**dict(zip(fields,regular)));regular[2]=4096;b=SimpleNamespace(**dict(zip(fields,regular)))
+        self.assertNotEqual(o.signature(a),o.signature(b));self.assertNotEqual(o.shared(a),o.shared(b))
+
+    def test_actual_inventory_windows_directory_size_transition_keeps_all_facts_and_root_postcheck(self):
+        real_stat=Path.stat;real_scan=o.os.scandir;real_identity=o.directory_identity
+        for fixed in (False,True):
+            with tempfile.TemporaryDirectory() as folder:
+                p=self.fixture(Path(folder).resolve());redist=Path(p["redistRoot"])
+                (redist/"14.51.36231").mkdir();changed=[False];report={}
+                def stat_size(path,*args,**kwargs):
+                    info=real_stat(path,*args,**kwargs)
+                    if stat.S_ISDIR(info.st_mode):
+                        fields={name:getattr(info,name) for name in dir(info) if name.startswith("st_")}
+                        fields["st_size"]=4096 if changed[0] else 0
+                        return SimpleNamespace(**fields)
+                    return info
+                class Scan:
+                    def __enter__(self):self.stream=real_scan(redist);return self.stream
+                    def __exit__(self,*args):self.stream.close();changed[0]=True
+                identity=(lambda value:real_identity(value,"nt")) if fixed else (lambda value:value)
+                with patch.object(Path,"stat",autospec=True,side_effect=stat_size),patch.object(o.os,"scandir",side_effect=lambda path:Scan()),patch.object(o,"directory_identity",side_effect=identity),patch.object(o,"held",side_effect=AssertionError("no DLL read")) as held:
+                    if not fixed:
+                        with self.assertRaisesRegex(o.Denied,"INV_VERSION_DIRECTORY_CHANGED"):o.inventory(p,clock(),report=report)
+                    else:
+                        result=o.inventory(p,clock(),report=report)
+                        self.assertTrue(result["observationComplete"]);self.assertFalse(result["closureSatisfied"])
+                    held.assert_not_called()
+                facts=report["redistEnumeration"]
+                self.assertEqual(facts["directoryBefore"]["size"],0);self.assertEqual(facts["directoryAfter"]["size"],4096)
+                self.assertEqual(facts["directoryChangedFields"],["size"]);self.assertEqual(facts["directoryIdentityEqual"],fixed)
 
     def test_version_facts_distinguish_entry_count_and_version_count_before_denial(self):
         for names, code, predicate in ((["entry" + str(i) for i in range(17)], "INV_VERSION_ENTRY_BOUND", "entry-count"),
@@ -244,6 +289,27 @@ class PassiveTests(unittest.TestCase):
                 return Reader(stream) if path==target and args==("rb",) else stream
             with patch.object(Path,"open",autospec=True,side_effect=opened):
                 with self.assertRaisesRegex(o.Denied,"ACQ_CHANGED"):o.held(target,clock(),retain=True)
+
+    def test_regular_file_size_growth_during_actual_held_read_still_denies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target=Path(folder).resolve()/"owned.dll";target.write_bytes(pe());original=Path.open
+            class Reader:
+                def __init__(self,stream):self.stream=stream;self.changed=False
+                def close(self):return self.stream.close()
+                def fileno(self):return self.stream.fileno()
+                def read(self,count):
+                    data=self.stream.read(count)
+                    if not self.changed:
+                        self.changed=True;before=target.stat()
+                        with original(target,"ab") as out:out.write(b"size growth")
+                        os.utime(target,ns=(before.st_atime_ns,before.st_mtime_ns))
+                    return data
+            def opened(path,*args,**kwargs):
+                stream=original(path,*args,**kwargs)
+                return Reader(stream) if path==target and args==("rb",) else stream
+            with patch.object(Path,"open",autospec=True,side_effect=opened):
+                with self.assertRaisesRegex(o.Denied,"ACQ_CHANGED"):o.held(target,clock(),retain=True)
+            self.assertEqual(target.stat().st_size,len(pe())+len(b"size growth"))
 
     def test_alias_and_lexical_parent_do_not_normalize(self):
         with tempfile.TemporaryDirectory() as folder:
