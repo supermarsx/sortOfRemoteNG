@@ -1035,6 +1035,101 @@ test("fixture failure emits only fixed numeric fields and preserves exact origin
   );
 });
 
+test("actual stamp body accepts only measured Darwin birth clamp at the deliberate write boundary", async () =>
+  fixture(async (folder) => {
+    const bytes = Buffer.from("public synthetic helper\n"),
+      pin = ["synthetic.py", bytes.length, sha(bytes)];
+    const epoch = BigInt(POLICY.epoch) * 1000000000n;
+    async function runCase(name, platform, options = {}) {
+      const file = path.join(folder, name);
+      await fs.writeFile(file, bytes, { flag: "wx" });
+      const originalBirth = options.older
+        ? epoch - 1000000000n
+        : 1792975299000000000n;
+      let stamped = false,
+        afterReads = 0;
+      const view = (actual) => {
+        const birthtimeNs = !stamped
+          ? originalBirth
+          : options.wrongBirth
+            ? epoch - 1n
+            : options.older
+              ? originalBirth
+              : epoch;
+        const result = Object.assign(
+          Object.create(Object.getPrototypeOf(actual)),
+          actual,
+          { birthtimeNs },
+        );
+        if (stamped && options.wrongInode) result.ino += 1n;
+        if (stamped && options.wrongSize) result.size += 1n;
+        if (stamped && options.wrongMode) result.mode += 1n;
+        if (stamped && options.postReadBirth && afterReads === 0)
+          result.birthtimeNs -= 1n;
+        return result;
+      };
+      const io = {
+        ...fs,
+        lstat: async (target, ...args) => {
+          const actual = await fs.lstat(target, ...args);
+          return target === file ? view(actual) : actual;
+        },
+        open: async (...args) => {
+          const fd = await fs.open(...args);
+          return {
+            stat: async (...a) => {
+              const result = view(await fd.stat(...a));
+              if (!stamped && options.prewriteBirth) result.birthtimeNs += 1n;
+              return result;
+            },
+            read: async (...a) => {
+              const result = await fd.read(...a);
+              if (stamped) afterReads++;
+              return result;
+            },
+            utimes: async (...a) => {
+              await fd.utimes(...a);
+              stamped = true;
+              if (options.wrongContent)
+                await fs.writeFile(file, Buffer.alloc(bytes.length, 120));
+            },
+            close: () => fd.close(),
+          };
+        },
+      };
+      return stampFile(file, pin, () => {}, {}, physical, io, platform);
+    }
+    const measured = await runCase("measured", "darwin");
+    assert.equal(measured.before.birthtimeNs, "1792975299000000000");
+    assert.equal(measured.after.birthtimeNs, "1790036443000000000");
+    assert.equal(
+      measured.birthTransitionPolicy,
+      "min-original-birth-selected-mtime",
+    );
+    assert.equal(
+      (await runCase("older", "darwin", { older: true })).after.birthtimeNs,
+      String(epoch - 1000000000n),
+    );
+    for (const [name, options, guard] of [
+      ["wrong-birth", { wrongBirth: true }, /MAC_META_IDENTITY/],
+      ["wrong-inode", { wrongInode: true }, /MAC_META_IDENTITY/],
+      ["wrong-size", { wrongSize: true }, /MAC_META_IDENTITY/],
+      ["wrong-mode", { wrongMode: true }, /MAC_META_IDENTITY/],
+      ["prewrite-birth", { prewriteBirth: true }, /MAC_META_IDENTITY/],
+      ["wrong-content", { wrongContent: true }, /MAC_META_HASH/],
+      ["post-read-birth", { postReadBirth: true }, /MAC_META_CHANGED/],
+    ])
+      await assert.rejects(runCase(name, "darwin", options), guard);
+    await assert.rejects(
+      runCase("windows-clamp-denied", "win32"),
+      /MAC_META_IDENTITY/,
+    );
+    await assert.rejects(
+      runCase("linux-clamp-denied", "linux"),
+      /MAC_META_IDENTITY/,
+    );
+  }));
+
 test("bad hash and hardlink metadata fixtures deny before timestamp writes", async () =>
   fixture(async (folder) => {
     const file = path.join(folder, "owned"),

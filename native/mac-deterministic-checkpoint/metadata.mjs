@@ -85,6 +85,7 @@ export async function stampFile(
   state,
   physical,
   io = fs,
+  platform = process.platform,
 ) {
   check();
   await physical(file, io);
@@ -116,6 +117,10 @@ export async function stampFile(
       before: facts(before),
       timestampWriteAttempted: true,
       after: null,
+      birthTransitionPolicy:
+        platform === "darwin"
+          ? "min-original-birth-selected-mtime"
+          : "unchanged",
     };
     // Only this held owned file's mtime is selected. Atime is carried from the
     // observed path view; no source content or generated graph is rewritten.
@@ -127,9 +132,19 @@ export async function stampFile(
       pathAfter = await io.lstat(file, { bigint: true });
     state.metadataCurrent.after = facts(pathAfter);
     const epochNs = BigInt(POLICY.epoch) * 1000000000n;
+    // This is the sole deliberate metadata-write boundary. Darwin's observed
+    // backdating clamp is exact; global stable/full/cross identity stays strict.
+    const expectedBirth = (original) =>
+      platform === "darwin" && original > epochNs ? epochNs : original;
     assert(
-      stable(initial) === stable(after) &&
-        stable(before) === stable(pathAfter) &&
+      stable({
+        ...initial,
+        birthtimeNs: expectedBirth(initial.birthtimeNs),
+      }) === stable(after) &&
+        stable({
+          ...before,
+          birthtimeNs: expectedBirth(before.birthtimeNs),
+        }) === stable(pathAfter) &&
         cross(after) === cross(pathAfter),
       "MAC_META_IDENTITY",
     );
@@ -150,6 +165,7 @@ export async function stampFile(
       before: facts(before),
       after: facts(pathAfter),
       heldAfter: facts(after),
+      birthTransitionPolicy: state.metadataCurrent.birthTransitionPolicy,
     };
   } catch (error) {
     primary = error;
