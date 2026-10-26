@@ -20,6 +20,10 @@ import { syncBuiltinESMExports } from "node:module";
 import {
   LINUX_INCREMENTAL_ORIGIN,
   LINUX_ISOLATED_ORIGIN,
+  LINUX_EXTERNAL_WEBVIEW_ORIGIN,
+  LINUX_EXTERNAL_WEBVIEW_IDENTITY,
+  LINUX_EXTERNAL_WEBVIEW_INPUT_RAW,
+  LINUX_EXTERNAL_WEBVIEW_TRANSITION,
   LINUX_ISOLATED_OPERATION_ROOT,
   LINUX_ISOLATED_IDENTITY,
   LINUX_ISOLATED_INPUT_RAW,
@@ -2574,7 +2578,25 @@ function linuxIncrementalFixture() {
 
 // Synthetic records exercise the closed schema and raw relationships. They do
 // not represent an observed workspace, compilation, SDK, or native acceptance.
-function linuxIsolatedFixture() {
+const originalIsolatedPolicy = {
+  origin: LINUX_ISOLATED_ORIGIN,
+  identity: LINUX_ISOLATED_IDENTITY,
+  raw: LINUX_ISOLATED_INPUT_RAW,
+  transition: LINUX_ISOLATED_TRANSITION,
+};
+function linuxIsolatedFixture(external = false) {
+  const LINUX_ISOLATED_ORIGIN = external
+      ? LINUX_EXTERNAL_WEBVIEW_ORIGIN
+      : originalIsolatedPolicy.origin,
+    LINUX_ISOLATED_IDENTITY = external
+      ? LINUX_EXTERNAL_WEBVIEW_IDENTITY
+      : originalIsolatedPolicy.identity,
+    LINUX_ISOLATED_INPUT_RAW = external
+      ? LINUX_EXTERNAL_WEBVIEW_INPUT_RAW
+      : originalIsolatedPolicy.raw,
+    LINUX_ISOLATED_TRANSITION = external
+      ? LINUX_EXTERNAL_WEBVIEW_TRANSITION
+      : originalIsolatedPolicy.transition;
   const f = linuxIncrementalFixture(),
     r = f.records,
     op = r.readiness.operation,
@@ -2608,7 +2630,9 @@ function linuxIsolatedFixture() {
     fs.readFileSync(
       path.join(
         root,
-        "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/source-lock.json",
+        external
+          ? "native/cef-build-inputs/20261026-r5-owned-linux-x64-external-webview/source-lock.json"
+          : "native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/source-lock.json",
       ),
     ),
   );
@@ -5174,5 +5198,72 @@ test("isolated R5 copies exact pinned Quiche metadata with unchanged generic git
       () => verifyOwnedHandoffEvidence(bad.input, bad.records, bad.lock),
       /isolated Linux|Linux incremental/,
     );
+  }
+});
+
+test("external-only WebView source24 is a new closed origin; old source23 stays valid", () => {
+  for (const external of [false, true]) {
+    const f = linuxIsolatedFixture(external);
+    const p = verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+    assert.equal(
+      p.origin,
+      external ? LINUX_EXTERNAL_WEBVIEW_ORIGIN : LINUX_ISOLATED_ORIGIN,
+    );
+    assert.equal(
+      p.sourceLockIdentity,
+      external ? LINUX_EXTERNAL_WEBVIEW_IDENTITY : LINUX_ISOLATED_IDENTITY,
+    );
+    assert.equal(p.isolatedBuild, true);
+    assert.equal("nativeAcceptance" in p, false);
+    validateLinuxIsolatedProvenance(p, {
+      origin: p.origin,
+      sourceLockIdentity: p.sourceLockIdentity,
+      target: f.input.target,
+      engineSha256: p.engineSha256,
+      originalInputsSourceLockRawSha256: p.originalInputsSourceLockRawSha256,
+      reviewBinding: { evidencePins: f.input.evidence },
+    });
+  }
+});
+test("external-only WebView cannot inherit old origin, maps, source or omitted patch", () => {
+  const cases = [
+    (f) => {
+      f.input.origin = LINUX_ISOLATED_ORIGIN;
+    },
+    (f) => {
+      f.input.origin = "owned-linux-external-webview-engine-unknown";
+    },
+    (f) => {
+      f.input.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
+    },
+    (f) => {
+      f.records.apply.facts.after = structuredClone(
+        LINUX_ISOLATED_TRANSITION.after,
+      );
+    },
+    (f) => {
+      f.records.postchecks.facts.sourceAfter = LINUX_ISOLATED_TRANSITION.after
+        .filter((x) => x.kind === "file")
+        .map(({ kind, ...r }) => r);
+    },
+    (f) => {
+      f.records.apply.facts.patches.pop();
+    },
+    (f) => {
+      f.lock.patches.pop();
+    },
+    (f) => {
+      f.lock.patches[2].sha256 = "0".repeat(64);
+    },
+    (f) => {
+      f.records.package.facts.originalInputsSourceLockRawSha256 =
+        LINUX_ISOLATED_INPUT_RAW;
+    },
+  ];
+  for (const mutate of cases) {
+    const f = linuxIsolatedFixture(true);
+    mutate(f);
+    f.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, f.lock));
   }
 });
