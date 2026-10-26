@@ -2563,9 +2563,24 @@ function verifyLinuxIncrementalEvidence(
       compiled.finished === true &&
       positive(compiled.localSteps),
   );
-  const local = /^noexec:0 local:(\d+) remote:0 cache:0 skip:\d+\r?$/m.exec(
-    records.compileOutput,
-  );
+  // Pinned Siso distinguishes handler-completed actions from local commands.
+  // Keep historical origins unchanged; only the isolated R5 contract admits
+  // a nonnegative handler count, with one closed summary and real local work.
+  const local = isolated
+    ? (() => {
+        const summaries =
+          typeof records.compileOutput === "string"
+            ? (records.compileOutput.match(/^noexec:[^\n]*$/gm) ?? [])
+            : [];
+        return summaries.length === 1
+          ? /^noexec:(?:0|[1-9][0-9]{0,9}) local:((?:0|[1-9][0-9]{0,9})) remote:0 cache:0 skip:(?:0|[1-9][0-9]{0,9})\r?$/.exec(
+              summaries[0],
+            )
+          : null;
+      })()
+    : /^noexec:0 local:(\d+) remote:0 cache:0 skip:\d+\r?$/m.exec(
+        records.compileOutput,
+      );
   require(
     /^build finished\r?$/m.test(records.compileOutput) &&
       local &&
