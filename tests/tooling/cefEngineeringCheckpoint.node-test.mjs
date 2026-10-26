@@ -8039,7 +8039,7 @@ test(
       path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
     ]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stderr, /Ran 13 tests/);
+    assert.match(result.stderr, /Ran 15 tests/);
   },
 );
 
