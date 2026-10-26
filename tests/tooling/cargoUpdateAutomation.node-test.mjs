@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { parse as parseToml } from "smol-toml";
+import semver from "semver";
 
 import {
   CARGO_UPDATE_ARTIFACT,
@@ -44,6 +46,73 @@ function createRepository() {
   runGit(repo, ["commit", "--quiet", "-m", "fixture"]);
   return repo;
 }
+
+test("vendored Tauri keeps its private runtime, macro and utility cohort compatible", async () => {
+  // Known compiled tauri 2.11.5 cohort and actual incompatible weekly selections.
+  // This checks declared requirements; it does not replay the Linux compilation.
+  const cohort = [
+    ["dependencies", "tauri-runtime", "2.11.3", "2.12.2"],
+    ["dependencies", "tauri-runtime-wry", "2.11.4", "2.12.3"],
+    ["dependencies", "tauri-macros", "2.6.3", "2.7.4"],
+    ["dependencies", "tauri-utils", "2.9.3", "2.10.2"],
+    ["build-dependencies", "tauri-utils", "2.9.3", "2.10.2"],
+  ];
+  const inspect = (manifest) => {
+    assert.equal(manifest.package.version, "2.11.5");
+    for (const [section, name, version] of cohort)
+      assert.equal(
+        manifest[section][name].version,
+        `=${version}`,
+        `${section}.${name} must retain the patched facade's exact private cohort`,
+      );
+  };
+  for (const file of ["Cargo.toml", "Cargo.toml.orig"]) {
+    const manifest = parseToml(
+      await readFile(
+        new URL(
+          `../../src-tauri/patches/tauri-event-cleanup/${file}`,
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    inspect(manifest);
+    assert.equal(manifest.dependencies["tauri-runtime-wry"].optional, true);
+    assert.equal(
+      manifest.dependencies["tauri-runtime-wry"]["default-features"],
+      false,
+    );
+    assert.deepEqual(manifest.dependencies["tauri-utils"].features, [
+      "resources",
+    ]);
+    assert.deepEqual(manifest["build-dependencies"]["tauri-utils"].features, [
+      "build-2",
+    ]);
+    // Unrelated dependencies retain their existing broad policy.
+    assert.equal(
+      manifest.dependencies.anyhow.version ?? manifest.dependencies.anyhow,
+      "1",
+    );
+    for (const [section, name, version, observedNew] of cohort) {
+      // Cargo's bare version is a caret requirement, unlike npm's bare version.
+      assert.equal(semver.satisfies(observedNew, `^${version}`), true);
+      assert.equal(
+        semver.satisfies(observedNew, manifest[section][name].version),
+        false,
+      );
+      for (const changed of [
+        version,
+        `^${version}`,
+        `~${version}`,
+        `=${observedNew}`,
+      ]) {
+        const moved = structuredClone(manifest);
+        moved[section][name].version = changed;
+        assert.throws(() => inspect(moved), /exact private cohort/);
+      }
+    }
+  }
+});
 
 const DELIVERY_SEAL = "a".repeat(64);
 const DELIVERY_HEAD = "b".repeat(40);

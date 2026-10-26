@@ -56,12 +56,13 @@ uuid = { version = "1", features = ["v4"], optional = true }
 url = "2"
 anyhow = "1"
 thiserror = "2"
-tauri-runtime = { version = "2.11.3", path = "../tauri-runtime" }
-tauri-macros = { version = "2.6.3", path = "../tauri-macros" }
-tauri-utils = { version = "2.9.3", features = [
+# Keep this private API cohort aligned with the vendored tauri 2.11.5 sources.
+tauri-runtime = { version = "=2.11.3", path = "../tauri-runtime" }
+tauri-macros = { version = "=2.6.3", path = "../tauri-macros" }
+tauri-utils = { version = "=2.9.3", features = [
   "resources",
 ], path = "../tauri-utils" }
-tauri-runtime-wry = { version = "2.11.4", path = "../tauri-runtime-wry", default-features = false, optional = true }
+tauri-runtime-wry = { version = "=2.11.4", path = "../tauri-runtime-wry", default-features = false, optional = true }
 getrandom = "0.3"
 serde_repr = "0.1"
 http = "1"
@@ -170,7 +171,7 @@ objc2-ui-kit = { version = "0.3.0", default-features = false, features = [
 glob = "0.3"
 heck = "0.5"
 tauri-build = { path = "../tauri-build/", default-features = false, version = "2.6.3" }
-tauri-utils = { path = "../tauri-utils/", version = "2.9.3", features = [
+tauri-utils = { path = "../tauri-utils/", version = "=2.9.3", features = [
   "build-2",
 ] }
 

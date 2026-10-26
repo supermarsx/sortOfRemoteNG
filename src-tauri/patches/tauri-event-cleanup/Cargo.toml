@@ -219,19 +219,20 @@ features = [
 optional = true
 default-features = false
 
+# Keep this private API cohort aligned with the vendored tauri 2.11.5 sources.
 [dependencies.tauri-macros]
-version = "2.6.3"
+version = "=2.6.3"
 
 [dependencies.tauri-runtime]
-version = "2.11.3"
+version = "=2.11.3"
 
 [dependencies.tauri-runtime-wry]
-version = "2.11.4"
+version = "=2.11.4"
 optional = true
 default-features = false
 
 [dependencies.tauri-utils]
-version = "2.9.3"
+version = "=2.9.3"
 features = ["resources"]
 
 [dependencies.thiserror]
@@ -296,7 +297,7 @@ version = "2.6.3"
 default-features = false
 
 [build-dependencies.tauri-utils]
-version = "2.9.3"
+version = "=2.9.3"
 features = ["build-2"]
 
 [target.'cfg(all(target_vendor = "apple", not(target_os = "macos")))'.dependencies.libc]
