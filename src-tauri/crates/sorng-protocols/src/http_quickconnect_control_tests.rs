@@ -37,18 +37,71 @@ async fn head<R: AsyncRead + Unpin>(socket: &mut R) -> Option<String> {
     }
     String::from_utf8(bytes).ok()
 }
+#[derive(Clone, Default)]
+struct ReplyGate {
+    released: Arc<std::sync::atomic::AtomicBool>,
+    changed: Arc<tokio::sync::Notify>,
+}
+impl ReplyGate {
+    fn release(&self) {
+        self.released.store(true, Ordering::SeqCst);
+        self.changed.notify_waiters();
+    }
+    async fn wait(&self) {
+        loop {
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.released.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
 struct Peer {
     proxy: String,
     client: reqwest::Client,
     seen: Arc<std::sync::Mutex<Vec<String>>>,
     tls_failures: Arc<AtomicU64>,
     task: tokio::task::JoinHandle<()>,
+    gate: Option<ReplyGate>,
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
 }
 impl Drop for Peer {
     fn drop(&mut self) {
-        self.task.abort();
+        if let Some(gate) = &self.gate {
+            gate.release();
+            if let Some(shutdown) = self.shutdown.take() {
+                let _ = shutdown.send(());
+            }
+        } else {
+            self.task.abort();
+        }
     }
 }
+impl Peer {
+    async fn finish_before(mut self, deadline: tokio::time::Instant) -> bool {
+        if let Some(gate) = &self.gate {
+            gate.release();
+        }
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        match tokio::time::timeout_at(deadline, &mut self.task).await {
+            Ok(Ok(())) => true,
+            // JoinError consumed a completed handle. Never poll it again.
+            Ok(Err(_)) => false,
+            Err(_) => {
+                self.task.abort();
+                let _ = tokio::time::timeout_at(deadline, &mut self.task).await;
+                false
+            }
+        }
+    }
+}
+
 async fn peer(status: u16, body: Vec<u8>, extra: &str, hold: bool, https_proxy: bool) -> Peer {
     let extra = extra.to_string();
     scripted_peer(
@@ -61,6 +114,17 @@ async fn peer(status: u16, body: Vec<u8>, extra: &str, hold: bool, https_proxy: 
 
 type FixtureReply = dyn Fn(&str) -> (u16, Vec<u8>, String, Duration) + Send + Sync;
 async fn scripted_peer(reply: Arc<FixtureReply>, hold: bool, https_proxy: bool) -> Peer {
+    scripted_peer_with_gate(reply, hold, https_proxy, None).await
+}
+async fn gated_scripted_peer(reply: Arc<FixtureReply>) -> Peer {
+    scripted_peer_with_gate(reply, false, false, Some(ReplyGate::default())).await
+}
+async fn scripted_peer_with_gate(
+    reply: Arc<FixtureReply>,
+    hold: bool,
+    https_proxy: bool,
+    gate: Option<ReplyGate>,
+) -> Peer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!(
         "{}://127.0.0.1:{}",
@@ -72,39 +136,6 @@ async fn scripted_peer(reply: Arc<FixtureReply>, hold: bool, https_proxy: bool) 
     let tls_failures = Arc::new(AtomicU64::new(0));
     let failures = tls_failures.clone();
     let acceptor = tls_fixture::test_acceptor();
-    let task = tokio::spawn(async move {
-        let mut children = tokio::task::JoinSet::new();
-        loop {
-            tokio::select! {
-                incoming = listener.accept() => {
-                    let (mut socket, _) = incoming.unwrap();
-                    let (acceptor, requests, failures, reply) = (acceptor.clone(), requests.clone(), failures.clone(), reply.clone());
-                    children.spawn(async move {
-                        if https_proxy {
-                            if acceptor.accept(socket).await.is_err() { failures.fetch_add(1, Ordering::SeqCst); }
-                            return;
-                        }
-                        let Some(connect) = head(&mut socket).await else { return; };
-                        requests.lock().unwrap().push(connect);
-                        socket.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
-                        let Ok(mut tls) = acceptor.accept(socket).await else { failures.fetch_add(1, Ordering::SeqCst); return; };
-                        let Some(mut request) = head(&mut tls).await else { return; };
-                        let length = request.lines().find_map(|line| line.split_once(':').filter(|(name, _)| name.eq_ignore_ascii_case("content-length")).and_then(|(_, value)| value.trim().parse::<usize>().ok())).unwrap_or(0);
-                        if length > 8192 { return; }
-                        let mut data = vec![0; length];
-                        if tls.read_exact(&mut data).await.is_err() { return; }
-                        request.push_str(&String::from_utf8_lossy(&data));
-                        let (status, body, extra, delay) = reply(&request);
-                        let response = format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nSet-Cookie: upstream-secret=blocked\r\nX-Private-Upstream: blocked\r\n{extra}Connection: close\r\n\r\n", body.len());
-                        requests.lock().unwrap().push(request);
-                        if hold { let _ = tls.read_u8().await; }
-                        else { tokio::time::sleep(delay).await; let _ = tls.write_all(response.as_bytes()).await; let _ = tls.write_all(&body).await; let _ = tls.shutdown().await; }
-                    });
-                },
-                _ = children.join_next(), if !children.is_empty() => {},
-            }
-        }
-    });
     let cert = base64::engine::general_purpose::STANDARD
         .decode(tls_fixture::TEST_CERT)
         .unwrap();
@@ -122,12 +153,57 @@ async fn scripted_peer(reply: Arc<FixtureReply>, hold: bool, https_proxy: bool) 
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
+    let (shutdown, mut stop) = tokio::sync::oneshot::channel();
+    let server_gate = gate.clone();
+    let task = tokio::spawn(async move {
+        let mut children = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                _ = &mut stop => break,
+                incoming = listener.accept() => {
+                    let (mut socket, _) = incoming.unwrap();
+                    let (acceptor, requests, failures, reply) = (acceptor.clone(), requests.clone(), failures.clone(), reply.clone());
+                    let gate = server_gate.clone();
+                    children.spawn(async move {
+                        if https_proxy {
+                            if acceptor.accept(socket).await.is_err() { failures.fetch_add(1, Ordering::SeqCst); }
+                            return;
+                        }
+                        let Some(connect) = head(&mut socket).await else { return; };
+                        requests.lock().unwrap().push(connect);
+                        socket.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+                        let Ok(mut tls) = acceptor.accept(socket).await else { failures.fetch_add(1, Ordering::SeqCst); return; };
+                        let Some(mut request) = head(&mut tls).await else { return; };
+                        let length = request.lines().find_map(|line| line.split_once(':').filter(|(name, _)| name.eq_ignore_ascii_case("content-length")).and_then(|(_, value)| value.trim().parse::<usize>().ok())).unwrap_or(0);
+                        if length > 8192 { return; }
+                        let mut data = vec![0; length];
+                        if tls.read_exact(&mut data).await.is_err() { return; }
+                        request.push_str(&String::from_utf8_lossy(&data));
+                        let (status, body, extra, delay) = reply(&request);
+                        let response = format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nSet-Cookie: upstream-secret=blocked\r\nX-Private-Upstream: blocked\r\n{extra}Connection: close\r\n\r\n", body.len());
+                        let gated = request.starts_with("GET ");
+                        requests.lock().unwrap().push(request);
+                        if gated {
+                            if let Some(gate) = gate { gate.wait().await; }
+                        }
+                        if hold { let _ = tls.read_u8().await; }
+                        else { tokio::time::sleep(delay).await; let _ = tls.write_all(response.as_bytes()).await; let _ = tls.write_all(&body).await; let _ = tls.shutdown().await; }
+                    });
+                },
+                _ = children.join_next(), if !children.is_empty() => {},
+            }
+        }
+        children.abort_all();
+        while children.join_next().await.is_some() {}
+    });
     Peer {
         proxy,
         client,
         seen,
         tls_failures,
         task,
+        gate,
+        shutdown: Some(shutdown),
     }
 }
 async fn fixture(
