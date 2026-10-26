@@ -373,20 +373,50 @@ pub(super) fn execute(
     for unit in &mut units {
         close(unit)?;
     }
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let close_started = Instant::now();
+    let deadline = close_started + Duration::from_secs(8);
+    let mut close_host_turns = 0usize;
+    let mut close_pump_failed = false;
     while !units.iter().all(closed) && Instant::now() < deadline {
-        let work = if failures.is_empty() {
-            checked_pump(&runtime, &mut checks)
-        } else {
-            runtime.cleanup_only_work().map_err(Into::into)
-        };
-        if let Err(error) = work {
-            failures.push(format!("close: {error}"));
-        }
-        cef_tls_bridge::pump_tls()?;
+        // Drive Tao close callbacks without admitting normal work after a failure.
+        events.run_return(|event, _, flow| {
+            *flow = ControlFlow::Poll;
+            if Instant::now() >= deadline {
+                *flow = ControlFlow::Exit;
+                return;
+            }
+            if matches!(event, Event::MainEventsCleared) {
+                close_host_turns += 1;
+                if let Err(error) = permission_churn_fixture::final_close_turn(
+                    failures.is_empty(),
+                    || checked_pump(&runtime, &mut checks),
+                    || runtime.cleanup_only_work().map_err(Into::into),
+                    || cef_tls_bridge::pump_tls().map_err(Into::into),
+                ) {
+                    if !close_pump_failed {
+                        failures.push(format!("close: {error}"));
+                    }
+                    close_pump_failed = true;
+                }
+                *flow = ControlFlow::Exit;
+            }
+        });
         std::thread::sleep(Duration::from_millis(1));
     }
     let all_closed = units.iter().all(closed);
+    if !all_closed {
+        failures.push("final-close-timeout".into());
+    }
+    let final_close = serde_json::json!({
+        "reason":if all_closed {"all-closed"} else {"final-close-timeout"},
+        "deadlineMs":8000,"elapsedMs":close_started.elapsed().as_millis(),
+        "hostPumpTurns":close_host_turns,"pumpFailed":close_pump_failed,
+        "units":units.iter().enumerate().map(|(index, unit)| serde_json::json!({
+            "index":index,"closeRequested":unit.closing,"hostPresent":unit.slot.host.is_some(),
+            "lifecycle":unit.slot.host.as_ref().map(|host| format!("{:?}",host.lifecycle())),
+            "closed":closed(unit)
+        })).collect::<Vec<_>>()
+    });
     let distinct_endpoints = all_endpoints
         .iter()
         .enumerate()
@@ -458,6 +488,7 @@ pub(super) fn execute(
         "distinctEndpoints":distinct_endpoints,"distinctCredentials":distinct_credentials,"actualProxyProofs":proofs,
         "beforeAdmissionBytesZero":before_admission_zero,"closed":all_closed,"failures":failures,"productionReady":false});
     report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
+    report["finalClose"] = final_close;
     std::fs::write(
         output.join("native-report.json"),
         serde_json::to_vec_pretty(&report)?,
