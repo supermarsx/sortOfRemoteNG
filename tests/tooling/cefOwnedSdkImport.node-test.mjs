@@ -63,6 +63,9 @@ import { importArguments } from "../../scripts/cef-owned-sdk-import.mjs";
 import {
   LINUX_INCREMENTAL_ORIGIN,
   LINUX_ISOLATED_ORIGIN,
+  LINUX_EXTERNAL_WEBVIEW_ORIGIN,
+  LINUX_EXTERNAL_WEBVIEW_IDENTITY,
+  LINUX_EXTERNAL_WEBVIEW_INPUT_RAW,
   LINUX_ISOLATED_IDENTITY,
   LINUX_ISOLATED_INPUT_RAW,
   LINUX_ISOLATED_EVIDENCE,
@@ -1764,7 +1767,21 @@ test("portable Linux incremental origin preserves exact new source, twelve roles
   }
 });
 
-test("portable isolated Linux preserves copied-workspace lineage and all seventeen separately reviewed raw records", () => {
+const originalIsolatedImport = {
+  origin: LINUX_ISOLATED_ORIGIN,
+  identity: LINUX_ISOLATED_IDENTITY,
+  raw: LINUX_ISOLATED_INPUT_RAW,
+};
+function assertPortableIsolated(external = false) {
+  const LINUX_ISOLATED_ORIGIN = external
+      ? LINUX_EXTERNAL_WEBVIEW_ORIGIN
+      : originalIsolatedImport.origin,
+    LINUX_ISOLATED_IDENTITY = external
+      ? LINUX_EXTERNAL_WEBVIEW_IDENTITY
+      : originalIsolatedImport.identity,
+    LINUX_ISOLATED_INPUT_RAW = external
+      ? LINUX_EXTERNAL_WEBVIEW_INPUT_RAW
+      : originalIsolatedImport.raw;
   const f = linuxIncrementalImportFixture();
   f.review.origin = LINUX_ISOLATED_ORIGIN;
   f.review.sourceLockIdentity = LINUX_ISOLATED_IDENTITY;
@@ -1856,4 +1873,48 @@ test("portable isolated Linux preserves copied-workspace lineage and all sevente
   wrongRaw.originalInputsSourceLockRawSha256 =
     "3f92807b495eaac55ad415fecbc423fc8763cc0024cb41be89efc5feabcbef23";
   assert.throws(() => validateOwnedReview(wrongRaw));
-});
+  if (external) {
+    // The unbuilt source24 draft and old source23 are never relabelled source25.
+    for (const [identity, raw] of [
+      [originalIsolatedImport.identity, originalIsolatedImport.raw],
+      [
+        "06af4be123f88bd4b9d132a282e1af7c4f8728d9611b30e074dd05182bbf3540",
+        "7afb734c6c8a68ea19f815ce83933bc1d257b122e324becd4dd8e092d53ee5cb",
+      ],
+      [LINUX_EXTERNAL_WEBVIEW_IDENTITY, originalIsolatedImport.raw],
+      [originalIsolatedImport.identity, LINUX_EXTERNAL_WEBVIEW_INPUT_RAW],
+    ]) {
+      const wrong = clone(f.review);
+      wrong.sourceLockIdentity = identity;
+      wrong.originalInputsSourceLockRawSha256 = raw;
+      assert.throws(() => validateOwnedReview(wrong));
+    }
+    for (const origin of [
+      originalIsolatedImport.origin,
+      "owned-linux-external-webview-engine-unknown",
+    ]) {
+      const wrong = clone(f.review);
+      wrong.origin = origin;
+      assert.throws(() => validateOwnedReview(wrong));
+    }
+    for (const mutate of [
+      (r) => delete r.reviewBinding.evidencePins.gn,
+      (r) =>
+        (r.reviewBinding.evidencePins.extra = {
+          path: "extra.json",
+          size: 1,
+          sha256: "0".repeat(64),
+        }),
+      (r) => (r.reviewBinding.evidencePins.gnOutput.size = 64 * 1024 ** 2 + 1),
+    ]) {
+      const wrong = clone(f.review);
+      mutate(wrong);
+      assert.throws(() => validateOwnedReview(wrong));
+    }
+  }
+}
+
+test("portable isolated Linux preserves copied-workspace lineage and all seventeen separately reviewed raw records", () =>
+  assertPortableIsolated(false));
+test("portable source25 admits only its new closed origin/source/raw with unchanged evidence and provenance gates", () =>
+  assertPortableIsolated(true));
