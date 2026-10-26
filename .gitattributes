@@ -46,6 +46,7 @@ native/windows-x64-arm-toolchain/** -text whitespace=cr-at-eol
 native/cef-build-inputs/20261025-r5-capsule22-windows-arm64-native/** -text -whitespace
 
 native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/** -text -whitespace
+native/cef-build-inputs/20261026-r5-owned-linux-x64-external-webview/** -text -whitespace
 
 native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap/** -text -whitespace
 native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat/** -text -whitespace
