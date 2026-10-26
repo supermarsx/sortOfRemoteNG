@@ -838,7 +838,10 @@ test("diagnostic wrapper records physical air-lld signature as metallib and keep
 import { EventEmitter } from "node:events";
 import { constants as censusFsConstants } from "node:fs";
 import { execFile as censusActualExecFile } from "node:child_process";
-import { macExternalObservationPlan as sharedExternalPlan } from "../../scripts/lib/cef-mac-source-metadata.mjs";
+import {
+  macExternalObservationPlan as sharedExternalPlan,
+  macSdkRelation as sharedSdkRelation,
+} from "../../scripts/lib/cef-mac-source-metadata.mjs";
 const censusStep = job.steps.find((step) => step.id === "external_census");
 const censusBody = censusStep.run.match(/<<'NODE'\n([\s\S]*?)\nNODE/)[1];
 const censusFunctions = censusBody.slice(
@@ -1513,10 +1516,25 @@ async function censusPipelineFixture() {
     identitySha256,
     macMetalFingerprint,
     macExternalObservationPlan: sharedExternalPlan,
-    realpath: async (value) =>
-      value.endsWith("/SDKs/MacOSX.sdk")
-        ? value.replace("MacOSX.sdk", "MacOSX26.2.sdk")
-        : value,
+    macSdkRelation: async (options) =>
+      sharedSdkRelation(options, {
+        lstat: async (name) => ({
+          dev: 1n,
+          ino: 1n,
+          nlink: 1n,
+          size: 1n,
+          mode: 1n,
+          birthtimeNs: 1n,
+          mtimeNs: 1n,
+          ctimeNs: 1n,
+          isSymbolicLink: () => name.endsWith("MacOSX26.2.sdk"),
+          isDirectory: () => name.endsWith("/MacOSX.sdk"),
+        }),
+        readlink: async () => "MacOSX.sdk",
+        realpath: async () =>
+          developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+      }),
+    realpath: async (value) => value,
     mkdir: async (value, options) => {
       assert.equal(value, censusRoot);
       assert.equal(options.mode, 0o700);

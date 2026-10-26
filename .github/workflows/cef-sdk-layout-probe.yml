@@ -260,6 +260,7 @@ jobs:
           } from "./scripts/cef-hosted-provision.mjs";
           import {
             macExternalObservationPlan,
+            macSdkRelation,
             readMacExternalObservation,
             macExternalToolsBinding,
             macExternalObservationEvidence,
@@ -1071,6 +1072,7 @@ jobs:
                 observe: () => {},
               });
               clock.remaining();
+              const sdkRelation = await macSdkRelation({ selected, sdkTargets, check: () => clock.remaining() });
               phase = "metal-preparation";
               const metal = await prepareMacMetalToolchain(
                 {
@@ -1085,6 +1087,7 @@ jobs:
               clock.remaining();
               outcome.metalPreparationDownloaded = metal.downloaded;
               await put("preparation.json", {
+                sdkRelation,
                 metalFingerprint: macMetalFingerprint(metal),
                 downloaded: metal.downloaded,
                 componentResourceClosureVerified: false,
@@ -1095,6 +1098,7 @@ jobs:
                 toolchain,
                 selected,
                 sdkTargets,
+                sdkRelation,
                 metal,
                 runnerTemp: env.RUNNER_TEMP,
                 output,
