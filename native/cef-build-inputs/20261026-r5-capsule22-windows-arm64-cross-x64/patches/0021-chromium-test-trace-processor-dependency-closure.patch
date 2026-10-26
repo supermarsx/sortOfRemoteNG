@@ -1,0 +1,13 @@
+diff --git a/base/test/BUILD.gn b/base/test/BUILD.gn
+--- a/base/test/BUILD.gn
++++ b/base/test/BUILD.gn
+@@ -707,6 +707,9 @@
+     "tracing/test_trace_processor_impl.h",
+   ]
+   deps = [
++    ":amalgamated_perfetto_sql_stdlib",
++    ":gen_cc_chrome_track_event_descriptor",
++    "//base",
+     "//third_party/abseil-cpp:absl",
+     "//third_party/perfetto:libtrace_processor",
+   ]
