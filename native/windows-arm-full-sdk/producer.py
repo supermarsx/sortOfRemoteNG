@@ -189,7 +189,11 @@ def data_worker(role, root, c, p, clock):
             import extract, environment
             progress=RuntimeProgress(root,clock)
             progress('inventory-enter',force=True)
-            observed=environment.installed_inventory(p,clock,progress)
+            inventory_clock=data.Clock(
+                min(clock.wall_end,time.time()+p['limits']['installedSeconds']),
+                min(clock.mono_end,time.monotonic()+p['limits']['installedSeconds']))
+            observed=environment.installed_inventory(p,inventory_clock,progress)
+            inventory_clock.remaining()
             progress('inventory-save',force=True)
             data.save(root/'installed-source-inventory.json',observed)
             progress('inventory-retained',force=True)

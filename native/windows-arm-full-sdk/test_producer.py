@@ -986,5 +986,91 @@ class RuntimeBudgetTests(unittest.TestCase):
         self.assertTrue(state['closed']);self.assertFalse(row['parentHandleClosed']);self.assertFalse(row['sourcePostVerified'])
 
 
+class InventoryClockTests(unittest.TestCase):
+    temp=BootstrapTests.temp
+
+    def fixture(self, old=False, advance=None, seconds=(3600,3600), post_failure=False):
+        root=self.temp();file=root/'owned-input';raw=b'x'*(material.CHUNK*2+17);file.write_bytes(raw)
+        state={'wall':1000.0,'mono':2000.0,'reads':0,'projectionClocks':[],'progressClocks':[],'inventoryClocks':[]}
+        real_clock=acquire.Clock;whole=real_clock(1000+seconds[0],2000+seconds[1],wall=lambda:state['wall'],mono=lambda:state['mono'])
+        original_open=Path.open;progress_type=producer.RuntimeProgress
+        class ObservedProgress(progress_type):
+            def __init__(self,root,clock):state['progressClocks'].append(clock);super().__init__(root,clock)
+        class AdvancingReader:
+            def __init__(self,stream):self.stream=stream
+            def __getattr__(self,name):return getattr(self.stream,name)
+            def read(self,size):
+                chunk=self.stream.read(size);state['reads']+=1
+                if state['reads']==1:
+                    if advance in ('wall','both'):state['wall']+=601
+                    if advance in ('mono','both'):state['mono']+=601
+                return chunk
+        def opened(path,*args,**kwargs):
+            stream=original_open(path,*args,**kwargs)
+            return AdvancingReader(stream)if path==file and args and args[0]=='rb'else stream
+        def constructed(wall_end,mono_end):return real_clock(wall_end,mono_end,wall=lambda:state['wall'],mono=lambda:state['mono'])
+        def inventory(profile,clock,progress):
+            # Replace the vendor tree walk with a REAL held physical two-chunk
+            # file. Clock creation/forwarding and the read loop are production.
+            state['inventoryClocks'].append(clock)
+            pin,_=material.held(file,clock,maximum=len(raw))
+            if advance=='after-inventory':state['wall']+=601;state['mono']+=601
+            return {'fixtureOwnedInput':pin,'vendorInventoryClaim':False}
+        def projection(root,profile,clock):state['projectionClocks'].append(clock);return {'fixture':True,'executed':False}
+        def post(root):
+            if post_failure:raise acquire.Denied('BOOT_POSTCHECK')
+        with patch.object(sys,'addaudithook'),patch.object(producer,'verified_sources',side_effect=post),patch.object(producer,'RuntimeProgress',ObservedProgress),patch.object(acquire,'Clock',side_effect=constructed),patch.object(producer.time,'time',side_effect=lambda:state['wall']),patch.object(producer.time,'monotonic',side_effect=lambda:state['mono']),patch.object(environment,'installed_inventory',side_effect=inventory),patch.object(material,'runtime_projection',side_effect=projection),patch.object(Path,'open',new=opened):
+            worker=producer.data_worker
+            if old:
+                function=copy.deepcopy(next(n for n in ast.parse((HERE/'producer.py').read_bytes()).body if isinstance(n,ast.FunctionDef)and n.name=='data_worker'))
+                assignments=[n for n in ast.walk(function)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='inventory_clock'for t in n.targets)]
+                self.assertEqual(len(assignments),1)
+                runtime=next(n for n in ast.walk(function)if isinstance(n,ast.If)and ast.unparse(n.test)=="role == 'runtime-closure'")
+                runtime.body.remove(assignments[0])
+                completion=next(n for n in runtime.body if isinstance(n,ast.Expr)and isinstance(n.value,ast.Call)and isinstance(n.value.func,ast.Attribute)and isinstance(n.value.func.value,ast.Name)and n.value.func.value.id=='inventory_clock')
+                runtime.body.remove(completion)
+                call=next(n for n in ast.walk(function)if isinstance(n,ast.Call)and isinstance(n.func,ast.Attribute)and n.func.attr=='installed_inventory')
+                call.args[1]=ast.Name(id='clock',ctx=ast.Load())
+                self.assertEqual(hashlib.sha256(ast.dump(function,include_attributes=False).encode()).hexdigest(),'144c4d772d2b075c35e6a8b50eca879c0a26ffdec393647ee0366c60cb635439')
+                scope=dict(producer.__dict__)
+                exec(compile(ast.fix_missing_locations(ast.Module(body=[function],type_ignores=[])),'actual-pinned59e-worker','exec'),scope)
+                worker=scope['data_worker']
+            code=worker('runtime-closure',root,{},PROFILE,whole)
+        return code,state,whole,json.loads((root/'runtime-closure-result.json').read_bytes())
+
+    def test_actual_old_worker_reads_more_after600_but_new_local_clock_denies_next_chunk(self):
+        for domain in ('wall','mono','both'):
+            with self.subTest(domain=domain):
+                old,state,whole,row=self.fixture(old=True,advance=domain)
+                self.assertEqual(old,0);self.assertEqual(state['reads'],4)
+                self.assertIs(state['inventoryClocks'][0],whole)
+                new,state,whole,row=self.fixture(advance=domain)
+                self.assertEqual(new,1);self.assertEqual(state['reads'],1)
+                self.assertGreater(whole.remaining(),0)
+                self.assertEqual(row['firstFailure'],'ACQ_DEADLINE');self.assertTrue(row['sourcePostVerified'])
+                self.assertEqual(state['projectionClocks'],[]);self.assertIs(state['progressClocks'][0],whole)
+
+    def test_inventory_wall_and_monotonic_min_keep_short_remaining_and_projection_original_clock(self):
+        for seconds,expected in (((300,900),(1300,2600)),((900,300),(1600,2300)),((3600,3600),(1600,2600))):
+            code,state,whole,row=self.fixture(seconds=seconds)
+            self.assertEqual(code,0);local=state['inventoryClocks'][0]
+            self.assertIsNot(local,whole);self.assertEqual((local.wall_end,local.mono_end),expected)
+            self.assertEqual(state['projectionClocks'],[whole]);self.assertEqual(state['progressClocks'],[whole])
+            self.assertTrue(row['success'])
+
+    def test_inventory_deadline_remains_primary_with_failing_source_postcheck(self):
+        code,state,whole,row=self.fixture(advance='both',post_failure=True)
+        self.assertEqual(code,1);self.assertEqual(state['reads'],1)
+        self.assertEqual(row['firstFailure'],'ACQ_DEADLINE');self.assertFalse(row['sourcePostVerified'])
+        self.assertFalse(row['success']);self.assertGreater(whole.remaining(),0)
+
+    def test_inventory_must_finish_inside_local_clock_before_saving_or_projection(self):
+        old,state,whole,row=self.fixture(old=True,advance='after-inventory')
+        self.assertEqual(old,0)
+        new,state,whole,row=self.fixture(advance='after-inventory')
+        self.assertEqual(new,1);self.assertEqual(row['firstFailure'],'ACQ_DEADLINE')
+        self.assertEqual(state['projectionClocks'],[]);self.assertGreater(whole.remaining(),0)
+
+
 if __name__ == "__main__":
     unittest.main()
