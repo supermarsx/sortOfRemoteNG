@@ -885,7 +885,7 @@ function censusApi(extra = {}) {
   });
   new vm.Script(
     censusFunctions +
-      "\nglobalThis.api={censusAuthority,censusClock,fixedAppleCommand,censusWorker,readCapability};",
+      "\nglobalThis.api={censusAuthority,censusClock,censusAppleTimeout,fixedAppleCommand,censusWorker,readCapability};",
   ).runInContext(context);
   return { context, ...context.api };
 }
@@ -1862,4 +1862,46 @@ test("actual capability FD reads remain within pinned bytes plus one when conten
   assert.equal(requests[0].allocated, fixture.pin.bytes + 1);
   assert.equal(requests[0].length, fixture.pin.bytes + 1);
   assert.ok(requests[0].allocated <= 65537);
+});
+
+test("census first exact SDK query has a bounded 30s candidate cap within the original clock", () => {
+  const { censusAppleTimeout: timeout } = censusApi();
+  const file = "/usr/bin/xcrun",
+    args = ["-sdk", "macosx", "--show-sdk-path"];
+  assert.equal(
+    timeout(file, args, { timeout: 5000 }, () => 600000, 1),
+    30000,
+  );
+  assert.equal(
+    timeout(file, args, { timeout: 5000 }, () => 7000.9, 1),
+    7000,
+  );
+  assert.equal(
+    timeout(file, args, { timeout: 5000 }, () => 600000, 2),
+    5000,
+  );
+  assert.equal(
+    timeout(
+      file,
+      ["-sdk", "macosx", "--show-sdk-platform-path"],
+      { timeout: 5000 },
+      () => 600000,
+      1,
+    ),
+    5000,
+  );
+  assert.equal(
+    timeout(
+      "/usr/bin/xcode-select",
+      ["-print-path"],
+      { timeout: 5000 },
+      () => 600000,
+      1,
+    ),
+    5000,
+  );
+  assert.throws(
+    () => timeout(file, args, { timeout: 5000 }, () => 0, 1),
+    /CENSUS_APPLE_DEADLINE/,
+  );
 });

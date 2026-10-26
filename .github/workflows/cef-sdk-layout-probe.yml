@@ -310,6 +310,14 @@ jobs:
             };
             return { remaining, cleanup };
           }
+          function censusAppleTimeout(file, args, options, remaining, commandIndex) {
+            const firstSdkPath = commandIndex === 1 &&
+              file === "/usr/bin/xcrun" &&
+              JSON.stringify(args) === JSON.stringify(["-sdk", "macosx", "--show-sdk-path"]);
+            const timeout = Math.floor(Math.min(firstSdkPath ? 30000 : options.timeout, remaining()));
+            assert(Number.isSafeInteger(timeout) && timeout > 0, "CENSUS_APPLE_DEADLINE");
+            return timeout;
+          }
           function fixedAppleCommand(file, args) {
             const vector = JSON.stringify(args);
             const allowed =
@@ -961,7 +969,7 @@ jobs:
               const executeApple = async (file, args, options) => {
                 fixedAppleCommand(file, args);
                 assert(++appleCount <= 32, "CENSUS_APPLE_BOUND");
-                const timeout = Math.floor(Math.min(options.timeout, clock.remaining()));
+                const timeout = censusAppleTimeout(file, args, options, () => clock.remaining(), appleCount);
                 assert(
                   Number.isSafeInteger(timeout) && timeout > 0,
                   "CENSUS_APPLE_DEADLINE",
