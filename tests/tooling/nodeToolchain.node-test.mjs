@@ -28,7 +28,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "cef-upload-authorization.yml": 1,
   "cef-patched-runtime.yml": 6, // Includes the reviewed hosted-plan target-selection job.
   "cef-runtime-acceptance.yml": 3,
-  "cef-sdk-layout-probe.yml": 1,
+  "cef-sdk-layout-probe.yml": 2,
   "windows-arm-job-benign.yml": 1,
   "windows-arm-native-tools.yml": 1,
   "windows-arm-native-compile.yml": 1,
