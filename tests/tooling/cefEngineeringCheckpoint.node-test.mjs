@@ -109,6 +109,7 @@ import {
   sourceMetadataPlan,
   sourceMetadataResult,
   SOURCE_METADATA_DATE_EPOCH,
+  SOURCE_METADATA_MAX_BYTES,
   restoreDownload,
   workspace,
   checkpointProfile,
@@ -8477,6 +8478,74 @@ test(
   },
 );
 
+const SOURCE_SIDECAR_SIZING_PROOF =
+  "import pathlib,sys,types,tempfile,json,hashlib,stat,unittest\nfrom unittest.mock import patch\nm=types.ModuleType('source_sizing_candidate');m.__file__=sys.argv[1]\nexec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)\nclass SizedBytes(bytes):\n def __new__(cls,size):value=super().__new__(cls,b'{}');value.virtual_size=size;return value\n def __len__(self):return self.virtual_size\nclass Serialized(str):\n def __new__(cls,size):value=super().__new__(cls,'{}');value.virtual_size=size;return value\n def __add__(self,other):return self\n def encode(self,*a,**k):return SizedBytes(self.virtual_size)\nclass SizingProof(unittest.TestCase):\n def value(self,work):\n  identity={k:'a'*64 for k in ['source','producer','tools','graph','siso']};identity.update(canonicalRoot=str(work),target='aarch64-unknown-linux-gnu',image='20261023.334.3')\n  return {'schemaVersion':1,'kind':'sorng-linuxarm-source-metadata','policy':m.SOURCE_METADATA_POLICY,'sourceDateEpoch':m.SOURCE_METADATA_DATE_EPOCH,'identity':identity,'snapshot':{}}\n def test_dedicated_limit_and_known_precharge_with_no_large_allocation(self):\n  self.assertEqual(m.MAX_METADATA,128*1024**2);self.assertEqual(m.SOURCE_METADATA_MAX_BYTES,512*1024**2)\n  self.assertEqual(m.source_metadata_limit(),m.MAX_METADATA);self.assertEqual(m.source_metadata_limit(True),m.SOURCE_METADATA_MAX_BYTES)\n  for size in (202657645,m.SOURCE_METADATA_MAX_BYTES):self.assertIsNone(m.source_metadata_precharge(size,True))\n  for size,owned in ((202657645,False),(m.MAX_METADATA+1,False),(m.SOURCE_METADATA_MAX_BYTES+1,True),(-1,True),(True,True),(1.5,True)):\n   with self.subTest(size=size,owned=owned),self.assertRaisesRegex(m.CheckpointError,'source-sidecar-bound'):m.source_metadata_precharge(size,owned)\n  self.assertIsNone(m.source_metadata_precharge(m.MAX_METADATA,False))\n  for flag in (1,None,{},'true'):\n   with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m.source_metadata_limit(flag)\n def test_actual_reader_virtual_stat_rejects_before_open(self):\n  for owned,size,allowed in [(False,m.MAX_METADATA,True),(False,m.MAX_METADATA+1,False),(True,m.MAX_METADATA+1,True),(True,m.SOURCE_METADATA_MAX_BYTES,True),(True,m.SOURCE_METADATA_MAX_BYTES+1,False)]:\n   opened=[];primary=RuntimeError('owned open boundary')\n   class Input:\n    def __fspath__(self):return '/owned/'+m.SOURCE_METADATA_NAME\n    def stat(self):return types.SimpleNamespace(st_mode=stat.S_IFREG|0o600,st_nlink=1,st_size=size)\n    def open(self,*args):opened.append(True);raise primary\n   item=Input()\n   with self.subTest(owned=owned,size=size),patch.object(m,'safe',return_value=item):\n    try:m.source_read_sidecar(item,m.Budget(5),owned_sidecar=owned)\n    except BaseException as error:\n     if allowed:self.assertIs(error,primary);self.assertEqual(opened,[True])\n     else:self.assertIs(type(error),m.CheckpointError);self.assertEqual(str(error),'source-metadata-read-bound');self.assertEqual(opened,[])\n    else:self.fail('virtual reader unexpectedly returned')\n def test_owned_reader_leaf_and_external_default(self):\n  with patch.object(m,'source_read_bytes',return_value=b'{}')as read:\n   self.assertEqual(m.source_read_sidecar(pathlib.Path('/external/report.json'),m.Budget(5)),{})\n   self.assertEqual(read.call_args.args[2],m.MAX_METADATA)\n   with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m.source_read_sidecar(pathlib.Path('/external/report.json'),m.Budget(5),owned_sidecar=True)\n   self.assertEqual(read.call_count,1)\n def test_actual_writer_virtual_length_rejects_before_open(self):\n  for owned,size,allowed in [(False,m.MAX_METADATA,True),(False,m.MAX_METADATA+1,False),(True,m.MAX_METADATA+1,True),(True,m.SOURCE_METADATA_MAX_BYTES,True),(True,m.SOURCE_METADATA_MAX_BYTES+1,False)]:\n   opened=[];primary=RuntimeError('owned writer open boundary');work=pathlib.Path('/owned/work');value=self.value(work)\n   class Root:\n    def __fspath__(self):return str(work/'source/src/out/Release_GN_arm64')\n    def __truediv__(self,name):return self\n    def open(self,*args):opened.append(True);raise primary\n   with self.subTest(owned=owned,size=size),patch.object(m.json,'dumps',return_value=Serialized(size)):\n    try:m.metadata(Root(),m.SOURCE_METADATA_NAME,value,source=True,owned_sidecar=owned)\n    except BaseException as error:\n     if allowed:self.assertIs(error,primary);self.assertEqual(opened,[True])\n     else:self.assertIs(type(error),m.CheckpointError);self.assertEqual(str(error),'metadata-bound');self.assertEqual(opened,[])\n    else:self.fail('virtual writer unexpectedly returned')\n def test_wrong_role_cannot_expand_external_or_generic_writer(self):\n  work=pathlib.Path('/owned/work');root=work/'source/src/out/Release_GN_arm64';good=self.value(work)\n  for name,source,value in [('report.json',True,good),(m.SOURCE_METADATA_NAME,False,good),(m.SOURCE_METADATA_NAME,True,{**good,'kind':'sorng-mac-external-inputs'}),(m.SOURCE_METADATA_NAME,True,{**good,'schemaVersion':True})]:\n   with self.subTest(name=name,source=source),patch.object(m.json,'dumps')as dump:\n    with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m.metadata(root,name,value,source=source,owned_sidecar=True)\n    dump.assert_not_called()\n def test_tiny_actual_owned_writer_and_external_default_remain_exact(self):\n  with tempfile.TemporaryDirectory(prefix='owned-sidecar-writer-')as folder:\n   work=pathlib.Path(folder).resolve();root=work/'source/src/out/Release_GN_arm64';root.mkdir(parents=True);value=self.value(work)\n   pin=m.metadata(root,m.SOURCE_METADATA_NAME,value,source=True,owned_sidecar=True);raw=(root/m.SOURCE_METADATA_NAME).read_bytes()\n   expected=(json.dumps(value,sort_keys=True,separators=(',',':'))+'\\n').encode()\n   self.assertEqual(raw,expected);self.assertEqual(pin,{'name':m.SOURCE_METADATA_NAME,'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()})\n   with self.assertRaises(FileExistsError):m.metadata(root,m.SOURCE_METADATA_NAME,value,source=True,owned_sidecar=True)\n   with patch.object(m,'MAX_METADATA',1):\n    with self.assertRaisesRegex(m.CheckpointError,'metadata-bound'):m.metadata(root,'external-report.json',{},source=True)\n   self.assertFalse((root/'external-report.json').exists())\n def test_owned_writer_short_flush_and_close_errors_preserve_original(self):\n  work=pathlib.Path('/owned/work');value=self.value(work)\n  for outcome in ('short','flush','close'):\n   closed=[];primary=RuntimeError('private primary');secondary=RuntimeError('private secondary')\n   class Stream:\n    def write(self,data):return len(data)-1 if outcome=='short' else len(data)\n    def flush(self):\n     if outcome=='flush':raise primary\n    def close(self):closed.append(True);raise primary if outcome=='close' else secondary\n   class Root:\n    def __fspath__(self):return str(work/'source/src/out/Release_GN_arm64')\n    def __truediv__(self,name):return self\n    def open(self,*args):return Stream()\n   m.SOURCE_CLOSE_FAILURE=False\n   with self.subTest(outcome=outcome):\n    try:m.metadata(Root(),m.SOURCE_METADATA_NAME,value,source=True,owned_sidecar=True)\n    except BaseException as error:\n     if outcome=='short':self.assertIs(type(error),m.CheckpointError);self.assertEqual(str(error),'short-write')\n     else:self.assertIs(error,primary)\n    else:self.fail('owned writer error was lost')\n    self.assertEqual(closed,[True]);self.assertTrue(m.SOURCE_CLOSE_FAILURE)\nunittest.main(argv=['source-sidecar-sizing-proof'])\n";
+test("dedicated source-sidecar bounds use actual reader writer and counters without giant allocation", () => {
+  const result = python(SOURCE_SIDECAR_SIZING_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 7 tests/);
+});
+test("source descriptor512MiB is separate from ordinary128MiB checkpoint metadata", () => {
+  assert.equal(SOURCE_METADATA_MAX_BYTES, 512 * 1024 ** 2);
+  assert.equal(LIMITS.metadata, 128 * 1024 ** 2);
+  const value = {
+    complete: true,
+    mode: "source-record",
+    entries: 1,
+    bytes: 0,
+    sidecar: asset(
+      ".siso_sorng_source_metadata.json",
+      SOURCE_METADATA_MAX_BYTES,
+    ),
+  };
+  assert.equal(sourceMetadataResult(value, "source-record"), value);
+  for (const bytes of [
+    SOURCE_METADATA_MAX_BYTES + 1,
+    0,
+    1.5,
+    Number.MAX_SAFE_INTEGER,
+  ])
+    assert.throws(() =>
+      sourceMetadataResult(
+        { ...value, sidecar: { ...value.sidecar, bytes } },
+        "source-record",
+      ),
+    );
+  const ordinary = manifest();
+  ordinary.archive.inventory.bytes = LIMITS.metadata;
+  assert.doesNotThrow(() => validateManifest(ordinary));
+  ordinary.archive.inventory.bytes = LIMITS.metadata + 1;
+  assert.throws(() => validateManifest(ordinary));
+});
+test(
+  "Linux tiny owned-source sidecar survives unchanged checkpoint transport and same-root source verification",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual Linux checkpoint/source transaction; portable bounds run everywhere"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        "\nimport hashlib\n" +
+        "\nwith fixture()as(root,sidecar,identity):\n original=sidecar.read_bytes();bundle=root.parent/'tiny-checkpoint';out=sidecar.parent;old_out=root.parent/'owned-old-out'\n archive=m.pack(out,bundle,seconds=10,chunk_size=4096)\n inventory=json.loads((bundle/archive['inventory']['name']).read_bytes())\n row=next(r for r in inventory['files']if r['path']==m.SOURCE_METADATA_NAME)\n assert row['sha256']==hashlib.sha256(original).hexdigest()\n assert archive['inventory']['bytes']<=m.MAX_METADATA\n out.rename(old_out)\n m.restore(bundle,out,archive,seconds=10)\n assert sidecar.read_bytes()==original\n assert m.source_metadata('source-verify',root,sidecar,identity,10)['complete']\n p=root/'src/input.cc';s=p.stat();os.utime(p,ns=(s.st_atime_ns,s.st_mtime_ns+1000000000))\n assert m.source_metadata('source-apply',root,sidecar,identity,10)['complete']\n assert sidecar.read_bytes()==original\nprint('tiny owned-source sidecar ordinary checkpoint pack/restore/hash and apply/verify PASS')\n",
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(
+      result.stdout,
+      /ordinary checkpoint pack\/restore\/hash and apply\/verify PASS/,
+    );
+  },
+);
+
 const LINUX_SOURCE_BASELINE_SHA256 =
   "398aa93fc914e305e9856466db00164de7b91eaa0904438f32364ea5ca3d8659";
 const LINUX_SOURCE_BASELINE_GZIP =
@@ -8581,7 +8650,7 @@ class SourceMetadataProof(unittest.TestCase):
      with self.assertRaises(m.CheckpointError):m.source_metadata('source-apply',root,sidecar,identity,60)
      writes.assert_not_called()
  def test_bound_and_original_deadline_denials(self):
-  for key,value in [('SOURCE_MAX_ENTRIES',1),('SOURCE_MAX_FILE',1),('MAX_RAW',1),('MAX_METADATA',128)]:
+  for key,value in [('SOURCE_MAX_ENTRIES',1),('SOURCE_MAX_FILE',1),('MAX_RAW',1),('SOURCE_METADATA_MAX_BYTES',128)]:
    with self.subTest(bound=key),fixture(record=False) as (root,sidecar,identity),patch.object(m,key,value):
     with self.assertRaises(m.CheckpointError):m.source_metadata('source-record',root,sidecar,identity,60)
     self.assertFalse(sidecar.exists())

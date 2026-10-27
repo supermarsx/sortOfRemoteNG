@@ -1045,6 +1045,7 @@ const ARCHIVE_FAILURES = new Set([
   "source-file-identity",
   "source-file-changed",
   "source-sidecar-bound",
+  "source-sidecar-role",
   "source-sidecar-readback",
   "source-sidecar-binding",
   "source-sidecar-shape",
@@ -4298,6 +4299,8 @@ export function graphPinSnapshot(value) {
 }
 // Committer epoch from pinned CEF682c; reproducibility input, never the operation clock.
 export const SOURCE_METADATA_DATE_EPOCH = "1790626028";
+// Only the complete owned-source sidecar; ordinary/external metadata stays128MiB.
+export const SOURCE_METADATA_MAX_BYTES = 512 * 1024 ** 2;
 // A new Linux ARM producer seeds this sidecar; old checkpoints never gain it retroactively.
 export function sourceMetadataPlan(identity, out, mode) {
   validateIdentity(identity);
@@ -4355,7 +4358,7 @@ export function sourceMetadataResult(value, mode) {
     assert(
       value.sidecar.name === ".siso_sorng_source_metadata.json" &&
         positive(value.sidecar.bytes) &&
-        value.sidecar.bytes <= 128 * 1024 ** 2 &&
+        value.sidecar.bytes <= SOURCE_METADATA_MAX_BYTES &&
         hex(value.sidecar.sha256),
       "Fixed source sidecar pin",
     );

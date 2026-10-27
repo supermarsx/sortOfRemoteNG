@@ -19,6 +19,7 @@ CHUNK_BYTES = 1024**3
 MAX_RAW = 256 * 1024**3
 MAX_ENTRIES = 300000
 MAX_METADATA = 128 * 1024**2
+SOURCE_METADATA_MAX_BYTES = 512 * 1024**2
 FRAMEWORK = 'Chromium Embedded Framework.framework'
 FRAMEWORK_ROLES = {
     FRAMEWORK + '/Versions/Current': {'role': 'version', 'kind': 'directory', 'target': FRAMEWORK + '/Versions/A', 'raw': 'A'},
@@ -276,7 +277,8 @@ def inventory(root, budget, generated_links=None, source_policy=None):
         expected_links -= set(FRAMEWORK_ROLES)
     require(seen_links == expected_links, 'missing-generated-link')
     if source_policy is not None:
-        require(sum(len(r['path'].encode()) + len(r.get('target','').encode()) + 320 for r in rows) <= MAX_METADATA, 'source-sidecar-bound')
+        source_metadata_precharge(sum(len(r['path'].encode()) + len(r.get('target','').encode()) + 320 for r in rows),
+                                  owned_source=source_policy.get('external') is not True)
     generated_state(root, generated_links, rows, budget)
     return sorted(rows, key=lambda r: r['path']), raw
 
@@ -325,9 +327,27 @@ class HashedReader:
         return data
 
 
-def metadata(root, name, value, source=False):
+def source_metadata_limit(owned_sidecar=False):
+    require(type(owned_sidecar) is bool, 'source-sidecar-role')
+    return SOURCE_METADATA_MAX_BYTES if owned_sidecar else MAX_METADATA
+
+
+def source_metadata_precharge(size, owned_source=False):
+    require(type(size) is int and 0 <= size <= source_metadata_limit(owned_source), 'source-sidecar-bound')
+
+
+def metadata(root, name, value, source=False, owned_sidecar=False):
+    maximum = source_metadata_limit(owned_sidecar)
+    if owned_sidecar:
+        require(source is True and name == SOURCE_METADATA_NAME and type(value) is dict and
+                set(value) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
+                type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and
+                value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
+                value['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and type(value['identity']) is dict and
+                isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
+                Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64', 'source-sidecar-role')
     data = (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode()
-    require(len(data) <= MAX_METADATA, 'metadata-bound')
+    require(len(data) <= maximum, 'metadata-bound')
     if source:
         output = (root / name).open('xb');primary = None
         try:
@@ -977,11 +997,11 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
         current = source_snapshot(root, budget, guards)
         value = {'schemaVersion': 1, 'kind': 'sorng-linuxarm-source-metadata',
                  'policy': SOURCE_METADATA_POLICY, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
-        written = metadata(sidecar.parent, sidecar.name, value, source=True)
-        require(source_read_sidecar(sidecar, budget) == value, 'source-sidecar-readback')
+        written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
+        require(source_read_sidecar(sidecar, budget, owned_sidecar=True) == value, 'source-sidecar-readback')
         return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
                 'bytes': current['bytes'], 'sidecar': written}
-    stored = source_read_sidecar(sidecar, budget)
+    stored = source_read_sidecar(sidecar, budget, owned_sidecar=True)
     require(isinstance(stored, dict) and set(stored) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
             type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == 'sorng-linuxarm-source-metadata' and
             stored['policy'] == SOURCE_METADATA_POLICY and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
@@ -1048,8 +1068,10 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
     return {'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']}
 
 
-def source_read_sidecar(path, budget):
-    return source_json(source_read_bytes(path, budget, MAX_METADATA))
+def source_read_sidecar(path, budget, owned_sidecar=False):
+    maximum = source_metadata_limit(owned_sidecar)
+    require(not owned_sidecar or Path(path).name == SOURCE_METADATA_NAME, 'source-sidecar-role')
+    return source_json(source_read_bytes(path, budget, maximum))
 
 
 def mac_external_context(file, output, mode, budget):
