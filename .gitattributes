@@ -55,3 +55,5 @@ native/cef-owned-sdk-imports/linux-x64-isolated-r5-colormap-20261026/** -text -w
 native/cef-owned-sdk-imports/linux-x64-source25-external-webview-20261026/** -text -whitespace
 
 native/cef-build-inputs/20261026-r5-linuxarm-cross-sysroot-external-webview-char/** -text -whitespace
+packaging/linux/cef-sandbox-deb.postinst.sh text eol=lf
+packaging/linux/cef-sandbox-rpm.postinst.sh text eol=lf
