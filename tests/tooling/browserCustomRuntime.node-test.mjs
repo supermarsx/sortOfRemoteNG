@@ -114,6 +114,257 @@ async function sourceGitFixture(t) {
   return { root, policyRoot, policy, cwd, git, safe };
 }
 
+test("owned Git longpaths option is closed, Windows-only and denies before filesystem mutation", async (t) => {
+  const root = await mkdtemp(
+    path.join(await realpath(os.tmpdir()), "cef-git-options-"),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = path.join(root, "cef-source-git-policy");
+  const accessor = {};
+  Object.defineProperty(accessor, "windowsLongPaths", {
+    get() {
+      assert.fail("option getter must not execute");
+    },
+    enumerable: true,
+  });
+  const hidden = { windowsLongPaths: true };
+  Object.defineProperty(hidden, "extra", { value: true });
+  for (const option of [
+    null,
+    false,
+    true,
+    {},
+    [],
+    { windowsLongPaths: false },
+    { windowsLongPaths: 1 },
+    { windowsLongPaths: "true" },
+    { windowsLongPaths: true, extra: true },
+    accessor,
+    hidden,
+    Object.assign(Object.create(null), { windowsLongPaths: true }),
+  ]) {
+    await assert.rejects(
+      prepareSourceGitIsolation(directory, option),
+      /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+    );
+    assert.equal(existsSync(directory), false);
+  }
+  const text = await readFile(
+    new URL("../../scripts/lib/browser-custom-runtime.mjs", import.meta.url),
+    "utf8",
+  );
+  const start = text.indexOf(
+      "export async function prepareSourceGitIsolation(",
+    ),
+    end = text.indexOf("export async function sourceGitEnvironment(", start);
+  const actual = vm.runInNewContext(
+    `(${text.slice(start, end).replace(/^export /, "")})`,
+    {
+      process: { platform: "linux" },
+      Object,
+      Reflect,
+      fail(message) {
+        throw Error(message);
+      },
+    },
+  );
+  await assert.rejects(
+    actual(directory, { windowsLongPaths: true }),
+    /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+  );
+  assert.equal(existsSync(directory), false);
+});
+
+test("omitted owned Git longpaths option preserves the original literal config and evidence", async (t) => {
+  const { policyRoot, policy } = await sourceGitFixture(t);
+  const expected = Buffer.from(
+    `[core]\n\thooksPath = "${path.join(policyRoot, "hooks").replaceAll("\\", "/")}"\n\tfsmonitor = false\n\tuntrackedCache = false\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n[protocol "https"]\n\tallow = always\n`,
+  );
+  assert.deepEqual(
+    await readFile(path.join(policyRoot, "global.gitconfig")),
+    expected,
+  );
+  assert.deepEqual(sourceGitIsolationEvidence(policy).ownedConfigFiles, [
+    {
+      sha256: createHash("sha256").update(expected).digest("hex"),
+      bytes: expected.length,
+    },
+    { sha256: createHash("sha256").update("").digest("hex"), bytes: 0 },
+  ]);
+  await sourceGitEnvironment(policy, {});
+});
+
+test(
+  "Windows owned Git longpaths checkout is default RED and explicit GREEN with hostile ambient policy ignored",
+  {
+    skip:
+      process.platform !== "win32"
+        ? "Requires genuine Git for Windows native path behavior"
+        : false,
+    timeout: 30000,
+  },
+  async (t) => {
+    const temp = await realpath(os.tmpdir()),
+      root = await mkdtemp(path.join(temp, "cef-longpaths-"));
+    t.after(async () => {
+      assert.equal(await realpath(root), root);
+      assert(!path.relative(temp, root).startsWith(".."));
+      await rm(root, { recursive: true, force: true });
+    });
+    const cwd = path.join(root, "repo");
+    await mkdir(cwd);
+    const empty = path.join(root, "empty.gitconfig");
+    await writeFile(empty, "");
+    const executable = "C:/Program Files/Git/cmd/git.exe";
+    const safe = {
+      SystemRoot: process.env.SystemRoot,
+      PATH: path.dirname(executable),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_SYSTEM: empty,
+      GIT_CONFIG_GLOBAL: empty,
+      GIT_CONFIG_COUNT: "0",
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_ATTR_NOSYSTEM: "1",
+      GIT_OPTIONAL_LOCKS: "0",
+      LC_ALL: "C",
+    };
+    const git = (args, env = safe, input) =>
+      execFileSync(executable, ["-C", cwd, ...args], {
+        env,
+        input,
+        encoding: "utf8",
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    git(["init", "--template="]);
+    git(["config", "user.name", "Owned longpath fixture"]);
+    git(["config", "user.email", "owned@example.invalid"]);
+    git(["config", "core.autocrlf", "false"]);
+    git(["remote", "add", "origin", "https://example.invalid/owned.git"]);
+    const components = Array.from(
+      { length: 9 },
+      (_, index) => `segment-${index}-` + "a".repeat(24),
+    );
+    const relative = components.join("/") + "/proof.txt",
+      leaf = path.join(cwd, ...components, "proof.txt"),
+      content = "fixed owned longpath data\n";
+    assert(relative.length > 260 && leaf.length > 260);
+    await mkdir(path.dirname(leaf), { recursive: true });
+    await writeFile(leaf, content);
+    git(["-c", "core.longpaths=true", "add", "--", relative]);
+    git(["-c", "core.longpaths=true", "commit", "-qm", "owned longpath seed"]);
+    const removeTree = async () => {
+      const tree = path.join(cwd, components[0]);
+      if (existsSync(tree)) {
+        assert.equal(await realpath(tree), tree);
+        assert.equal(path.dirname(tree), cwd);
+        await rm(tree, { recursive: true, force: true });
+      }
+    };
+    await removeTree();
+    for (const name of ["default", "explicit"])
+      await mkdir(path.join(root, name));
+    const defaultPolicy = await prepareSourceGitIsolation(
+      path.join(root, "default", "cef-source-git-policy"),
+    );
+    const explicitPolicy = await prepareSourceGitIsolation(
+      path.join(root, "explicit", "cef-source-git-policy"),
+      { windowsLongPaths: true },
+    );
+    const defaultEnv = await sourceGitEnvironment(defaultPolicy, safe);
+    let defaultExit;
+    try {
+      git(["checkout-index", "--all", "--force"], defaultEnv);
+      assert.fail("default checkout unexpectedly admitted long path");
+    } catch (error) {
+      assert(Number.isInteger(error.status) && error.status !== 0);
+      assert.match(error.stderr, /Filename too long|cannot create directory/i);
+      defaultExit = error.status;
+    }
+    await sourceGitEnvironment(defaultPolicy, safe);
+    await removeTree();
+    const hostile = path.join(root, "hostile.gitconfig"),
+      marker = path.join(root, "unexpected-marker"),
+      quote = (value) => value.replaceAll("\\", "/").replaceAll("'", "'\\''"),
+      hooks = path.join(root, "hostile-hooks");
+    await mkdir(hooks);
+    await writeFile(
+      path.join(hooks, "pre-commit"),
+      `#!/bin/sh\nprintf observed > '${quote(marker)}'\nexit 1\n`,
+    );
+    await chmod(path.join(hooks, "pre-commit"), 0o755);
+    await writeFile(
+      hostile,
+      `[core]\n longpaths = false\n hooksPath = "${quote(hooks)}"\n[url "https://rewritten.invalid/"]\n insteadOf = https://example.invalid/\n[credential]\n helper = "!printf observed > '${quote(marker)}'; exit 1"\n`,
+    );
+    const isolated = await sourceGitEnvironment(explicitPolicy, {
+      ...safe,
+      GIT_CONFIG_NOSYSTEM: "0",
+      GIT_CONFIG_GLOBAL: hostile,
+      GIT_CONFIG_SYSTEM: hostile,
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.longpaths",
+      GIT_CONFIG_VALUE_0: "false",
+      HOME: root,
+      USERPROFILE: root,
+    });
+    assert.equal(isolated.GIT_CONFIG_COUNT, undefined);
+    assert.equal(
+      git(["config", "--bool", "core.longpaths"], isolated).trim(),
+      "true",
+    );
+    git(["checkout-index", "--all", "--force"], isolated);
+    assert.equal(await readFile(leaf, "utf8"), content);
+    assert.equal(
+      git(["remote", "get-url", "origin"], isolated).trim(),
+      "https://example.invalid/owned.git",
+    );
+    assert.throws(() =>
+      git(
+        ["credential", "fill"],
+        isolated,
+        "protocol=https\nhost=example.invalid\n\n",
+      ),
+    );
+    assert.equal(existsSync(marker), false);
+    await writeFile(path.join(cwd, "short.txt"), "owned\n");
+    git(["add", "short.txt"], isolated);
+    git(["commit", "-qm", "owned isolated hook proof"], isolated);
+    assert.equal(existsSync(marker), false);
+    await sourceGitEnvironment(defaultPolicy, safe);
+    await sourceGitEnvironment(explicitPolicy, safe);
+    assert.equal(
+      sourceGitIsolationEvidence(defaultPolicy).verificationFailed,
+      false,
+    );
+    assert.equal(
+      sourceGitIsolationEvidence(explicitPolicy).verificationFailed,
+      false,
+    );
+    console.log(
+      JSON.stringify({
+        kind: "owned-windows-longpath-fixture",
+        relativeCharacters: relative.length,
+        fullCharacters: leaf.length,
+        defaultExit,
+        explicitExit: 0,
+        contentSha256: createHash("sha256")
+          .update(await readFile(leaf))
+          .digest("hex"),
+        defaultConfig:
+          sourceGitIsolationEvidence(defaultPolicy).ownedConfigFiles,
+        explicitConfig:
+          sourceGitIsolationEvidence(explicitPolicy).ownedConfigFiles,
+        hostileAmbientIgnored: true,
+        policyPostchecks: true,
+        noNetwork: true,
+      }),
+    );
+  },
+);
+
 test("owned Git isolation blocks actual ambient URL rewriting, credentials and hooks without network", async (t) => {
   const fixture = await sourceGitFixture(t);
   const { root, policy, git, safe, cwd } = fixture;

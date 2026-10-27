@@ -1352,7 +1352,18 @@ async function sourceGitFile(file, expected) {
 /** Explicit capability: an exclusively created policy directory, never caller
  * GIT_CONFIG values. Existing callers remain unchanged when no policy is given.
  */
-export async function prepareSourceGitIsolation(directory) {
+export async function prepareSourceGitIsolation(directory, options) {
+  const windowsLongPaths = options !== undefined;
+  if (
+    windowsLongPaths &&
+    (process.platform !== "win32" ||
+      !options ||
+      Object.getPrototypeOf(options) !== Object.prototype ||
+      Reflect.ownKeys(options).length !== 1 ||
+      Object.getOwnPropertyDescriptor(options, "windowsLongPaths")?.value !==
+        true)
+  )
+    fail("SOURCE_GIT_WINDOWS_LONGPATHS_OPTION");
   if (
     !path.isAbsolute(directory) ||
     path.basename(directory) !== "cef-source-git-policy"
@@ -1364,7 +1375,7 @@ export async function prepareSourceGitIsolation(directory) {
     await mkdir(path.join(directory, name), { mode: 0o700 });
   await sourceGitPhysical(directory);
   const global = Buffer.from(
-    `[core]\n\thooksPath = "${path.join(directory, "hooks").replaceAll("\\", "/")}"\n\tfsmonitor = false\n\tuntrackedCache = false\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n[protocol "https"]\n\tallow = always\n`,
+    `[core]\n${windowsLongPaths ? "\tlongpaths = true\n" : ""}\thooksPath = "${path.join(directory, "hooks").replaceAll("\\", "/")}"\n\tfsmonitor = false\n\tuntrackedCache = false\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n[protocol "https"]\n\tallow = always\n`,
   );
   const files = [
     { path: path.join(directory, "global.gitconfig"), bytes: global },
