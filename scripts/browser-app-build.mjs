@@ -58,6 +58,10 @@ import {
 } from "./lib/browser-local-runtime.mjs";
 import { ensurePublishedRuntime } from "./lib/browser-runtime-bootstrap.mjs";
 import { ensureBrowserSandboxAccess } from "./lib/browser-sandbox-access.mjs";
+import {
+  prepareLinuxPackageSandbox,
+  applyLinuxPackageSandbox,
+} from "./lib/linux-package-sandbox.mjs";
 import { validateBrowserClientImports } from "./lib/browser-client-imports.mjs";
 import {
   digestFile,
@@ -767,7 +771,12 @@ async function filesBelow(root, prefix = "") {
   return result;
 }
 
-export function bundleConfiguration(config, plan, payloadFiles) {
+export function bundleConfiguration(
+  config,
+  plan,
+  payloadFiles,
+  linuxSandboxPolicy,
+) {
   const result = structuredClone(config);
   delete result.build.runner;
   const resources = (result.bundle.resources ??= {});
@@ -806,6 +815,8 @@ export function bundleConfiguration(config, plan, payloadFiles) {
       resources[path.join(plan.payload, file)] = file;
     }
   }
+  if (plan.platform === "linux")
+    applyLinuxPackageSandbox(result, plan, linuxSandboxPolicy);
   return result;
 }
 
@@ -1356,7 +1367,18 @@ export async function main(
       `Pre-bundle CEF gate failed: ${inspection.errors.join("; ")}`,
     );
   const payloadFiles = await filesBelow(plan.payload);
-  const bundleConfig = bundleConfiguration(config, plan, payloadFiles);
+  const linuxSandboxPolicy =
+    plan.platform === "linux"
+      ? await prepareLinuxPackageSandbox(plan, {
+          runtimeRoot: report.staging.runtime,
+        })
+      : undefined;
+  const bundleConfig = bundleConfiguration(
+    config,
+    plan,
+    payloadFiles,
+    linuxSandboxPolicy,
+  );
   const bundleFile = path.join(plan.root, "bundle-config.json");
   await save(bundleFile, bundleConfig);
   const output = path.join(

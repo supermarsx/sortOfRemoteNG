@@ -39,6 +39,7 @@ import {
   packageManifest,
 } from "../../scripts/browser-runtime-package.mjs";
 import { identitySha256 } from "../../scripts/lib/browser-custom-runtime.mjs";
+import { prepareLinuxPackageSandbox } from "../../scripts/lib/linux-package-sandbox.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -1125,7 +1126,7 @@ test("config merges retain consent/security settings, resources and selected dev
   assert.equal(Object.keys(base.bundle.resources).length, 1);
 });
 
-test("Windows/Linux bundler retains app resources and complete private CEF payload", () => {
+test("Windows/Linux bundler retains app resources and complete private CEF payload", async (t) => {
   for (const target of ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]) {
     const manifest = packageManifest(target, "com.sortofremote.ng");
     const plan = {
@@ -1134,7 +1135,34 @@ test("Windows/Linux bundler retains app resources and complete private CEF paylo
       appName: manifest.appName,
       payload: path.resolve("payload"),
     };
+    let linuxPolicy;
+    if (plan.platform === "linux") {
+      const root = await mkdtemp(
+        path.join(await realpath(os.tmpdir()), "sorng-linux-bundle-policy-"),
+      );
+      t.after(() => rm(root, { recursive: true, force: true }));
+      plan.root = root;
+      plan.productName = "sortOfRemoteNG";
+      plan.payload = path.join(root, "payload");
+      await mkdir(plan.payload);
+      const runtime = path.join(root, "runtime");
+      await mkdir(runtime);
+      const raw = Buffer.alloc(64);
+      Buffer.from([127, 69, 76, 70, 2, 1]).copy(raw);
+      raw.writeUInt16LE(3, 16);
+      raw.writeUInt16LE(62, 18);
+      for (const base of [runtime, plan.payload])
+        await writeFile(path.join(base, "chrome-sandbox"), raw);
+      assert.throws(
+        () => bundleConfiguration({ build: {}, bundle: {} }, plan, []),
+        /LPKG_POLICY_REQUIRED/,
+      );
+      linuxPolicy = await prepareLinuxPackageSandbox(plan, {
+        runtimeRoot: runtime,
+      });
+    }
     const base = {
+      ...(plan.platform === "linux" ? { productName: plan.productName } : {}),
       build: {
         runner: "owned",
         beforeBundleCommand: "check-existing-resources",
@@ -1148,7 +1176,17 @@ test("Windows/Linux bundler retains app resources and complete private CEF paylo
       "locales/en-US.pak",
       "cef-LICENSE.txt",
     ];
-    const config = bundleConfiguration(base, plan, files);
+    const config = bundleConfiguration(base, plan, files, linuxPolicy);
+    if (plan.platform === "linux") {
+      assert(
+        config.bundle.linux.deb.postInstallScript.endsWith("deb.postinst.sh"),
+      );
+      assert(
+        config.bundle.linux.rpm.postInstallScript.endsWith("rpm.postinst.sh"),
+      );
+      assert.deepEqual(config.bundle.linux.deb.depends, ["python3"]);
+      assert.deepEqual(config.bundle.linux.rpm.depends, ["python3"]);
+    } else assert.equal(config.bundle.linux, undefined);
     assert.equal(config.build.runner, undefined);
     assert.equal(config.build.beforeBundleCommand, "check-existing-resources");
     assert.equal(config.bundle.resources["app-locales/"], "locales/");
