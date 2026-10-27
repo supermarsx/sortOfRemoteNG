@@ -701,6 +701,8 @@ function metalFixture(patch = {}) {
       return {};
     }
     assert.equal(executable, "/usr/bin/xcrun");
+    assert.equal(args[0], "--no-cache");
+    assert.equal(args.filter((value) => value === "--no-cache").length, 1);
     if (args.includes("--find"))
       return { stdout: patch.path ?? rolePath(args.at(-1)) };
     assert.ok(
@@ -984,4 +986,36 @@ test("metallib alias denies unknown target cross-component invalid signature and
     );
     assert(f.calls.every((c) => c.executable !== "/usr/bin/xcodebuild"));
   }
+});
+
+test("selected Metal lookup and revalidation use exactly one documented no-cache flag without changing other command authority", async () => {
+  const f = metalFixture();
+  const result = await prepareMacMetalToolchain(
+    { ...f, platform: "darwin", remainingMilliseconds: () => 12345 },
+    f.dependencies,
+  );
+  const query = f.calls.filter((call) => call.executable === "/usr/bin/xcrun");
+  assert.deepEqual(
+    query.map((call) => call.args),
+    [
+      ["--no-cache", "--sdk", "macosx", "--find", "metal"],
+      ["--no-cache", "--sdk", "macosx", "metal", "--version"],
+      ["--no-cache", "--sdk", "macosx", "--find", "metal"],
+      ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
+      ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
+    ],
+  );
+  for (const call of f.calls) {
+    assert.equal(call.options.timeout, 12345);
+    assert.equal(call.options.maxBuffer, 65536);
+    assert.equal(call.options.killSignal, "SIGKILL");
+    assert.equal(call.options.env.HOME, f.env.HOME);
+    assert.equal(call.options.env.TMPDIR, f.env.TMPDIR);
+    assert.equal(call.options.env.xcrun_nocache, undefined);
+    if (call.executable !== "/usr/bin/xcrun")
+      assert(!call.args.includes("--no-cache"));
+  }
+  assert.equal(result.componentResourceClosureVerified, false);
+  assert.equal(result.nativeCompatibilityVerified, false);
+  assert.equal(macMetalFingerprint(result).tools.length, 2);
 });

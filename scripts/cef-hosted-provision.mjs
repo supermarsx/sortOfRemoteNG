@@ -314,6 +314,7 @@ async function prepareMacMetalToolchainImpl(
     let componentRoot;
     for (const role of ["metal", "metallib"]) {
       const resolved = await invoke("/usr/bin/xcrun", [
+        "--no-cache",
         "--sdk",
         "macosx",
         "--find",
@@ -358,6 +359,7 @@ async function prepareMacMetalToolchainImpl(
         role === "metal"
           ? metalVersion(
               await invoke("/usr/bin/xcrun", [
+                "--no-cache",
                 "--sdk",
                 "macosx",
                 "metal",
@@ -372,6 +374,7 @@ async function prepareMacMetalToolchainImpl(
           String(
             (
               await invoke("/usr/bin/xcrun", [
+                "--no-cache",
                 "--sdk",
                 "macosx",
                 "--find",
