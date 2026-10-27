@@ -1102,10 +1102,20 @@
       "outputBytes": 67108864
     },
     "hostTools": {
-      "node": null,
-      "git": null
+      "node": {
+        "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+        "bytes": 92825416,
+        "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+        "nlink": 1
+      },
+      "git": {
+        "path": "C:/Program Files/Git/cmd/git.exe",
+        "bytes": 45400,
+        "sha256": "54bda91c773c6bba2b970424423cfcb80552d92dc6967d766f98931fe1251a54",
+        "nlink": 2
+      }
     },
-    "hostToolAdmission": "MISSING_REVIEWED_SAME_IMAGE_OR_OFFICIAL_BYTE_PINS",
+    "hostToolAdmission": "ROOT_REVIEWED_SAME_IMAGE_20261021_278_1_STATIC_BYTE_SET",
     "helpers": [
       {
         "path": "native/cef-hosted-recipe.json",
@@ -1338,7 +1348,141 @@
       "source-caches/xdg",
       "source-caches/cipd",
       "source-caches/vpython"
-    ]
+    ],
+    "hostClosure": {
+      "image": "20261021.278.1",
+      "rows": [
+        {
+          "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+          "bytes": 92825416,
+          "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+          "nlink": 1,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/cmd/git.exe",
+          "bytes": 45400,
+          "sha256": "54bda91c773c6bba2b970424423cfcb80552d92dc6967d766f98931fe1251a54",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/git.exe",
+          "bytes": 4413272,
+          "sha256": "b824434dfe3b5f9cf648af6c9cc8cb1f6a982cc6e13b6c6ebbe6533c7e51cc2e",
+          "nlink": 4,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/libexec/git-core/git-remote-https.exe",
+          "bytes": 2614632,
+          "sha256": "cff545e0d31b555cc1c5235785626dbb804eeae212f8f0f829b32fb30b7dec90",
+          "nlink": 1,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libcurl-4.dll",
+          "bytes": 1011884,
+          "sha256": "372306ee48ffe79b2edc6d8b07d9d60dee0f016c73faaca0dffe4e926f6f1220",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libcrypto-3-x64.dll",
+          "bytes": 5399196,
+          "sha256": "f8839fd7d5b5e7b1763c88705538c5762a2f97df17f37092e37de3c663f30b1e",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libssl-3-x64.dll",
+          "bytes": 966300,
+          "sha256": "6af55a4d522e2cc29ff0833cad4f6f7560f8ba2d107b97990d9415c590a4224a",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libintl-8.dll",
+          "bytes": 298164,
+          "sha256": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libiconv-2.dll",
+          "bytes": 1141951,
+          "sha256": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libpcre2-8-0.dll",
+          "bytes": 706022,
+          "sha256": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/zlib1.dll",
+          "bytes": 127291,
+          "sha256": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libbrotlidec.dll",
+          "bytes": 62619,
+          "sha256": "e270b6e576594ee8ee6e33ccc54e34a54304616dd6225652e11e49d6f17ef896",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libidn2-0.dll",
+          "bytes": 246525,
+          "sha256": "a054a6bb69aaf4666157f968740412e9697085cbc1e48a78f8dd9622169c5aaf",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libpsl-5.dll",
+          "bytes": 105846,
+          "sha256": "a531e72de3c64d43fb83cbfb6fa63e5ee982a970292ec51314e29d0acabf1dd5",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libssh2-1.dll",
+          "bytes": 270863,
+          "sha256": "a0e7eea75814708ce5c9b2a83998b14ac1268b70cccc2c22686f4ab585a3aac1",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libzstd.dll",
+          "bytes": 1217412,
+          "sha256": "48368ab0ca622d0ec12f41ce85d91f22866bf5da92c77a69a06483564c93816c",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libbrotlicommon.dll",
+          "bytes": 144565,
+          "sha256": "c62c08223e450dfc2fff33c752cc228505ffd9d755201958ba800d5d30481a2c",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libunistring-5.dll",
+          "bytes": 2256134,
+          "sha256": "ee39258fa1086269674a8179d3cfaf7c4e380ada14441b5dd9ed53d82d15c4e3",
+          "nlink": 2,
+          "machine": 34404
+        }
+      ],
+      "peBytes": 113853492,
+      "edgeCount": 242,
+      "edgeSha256": "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a"
+    }
   },
   "commandInventory": {
     "mode": "command-inventory",

@@ -1051,7 +1051,8 @@ class SourceGnTests(unittest.TestCase):
 
     def test_missing_reviewed_host_pins_or_execution_policy_denies_before_capacity_and_any_data_child(self):
         from types import SimpleNamespace
-        for p,expected in ((PROFILE,'FULL_HOST_TOOL_PIN_MISSING'),(self.synthetic_host_pins(),'FULL_EXECUTION_POLICY_UNAVAILABLE')):
+        missing=copy.deepcopy(PROFILE);missing['sourceGn']['hostTools']['node']=None
+        for p,expected in ((missing,'FULL_HOST_TOOL_PIN_MISSING'),(PROFILE,'FULL_EXECUTION_POLICY_UNAVAILABLE')):
             root=self.temp()
             with patch.dict(sys.modules,{'job':SimpleNamespace()}),patch.object(producer,'source_capacity',side_effect=AssertionError('no native query')),patch.object(producer,'verified_sources'):
                 self.assertEqual(producer.operation(root,{'mode':'source-gn'},p,clock()),1)
@@ -1078,8 +1079,10 @@ class SourceGnTests(unittest.TestCase):
                 return {'success':not(failed and role=='source-gn'),'cleanupVerified':True,
                     'rootExit':1 if failed and role=='source-gn'else 0,'activeAtEnd':0}
             def capacity(_root,_profile,current,**kwargs):measurements.append(current);return {'synthetic':True}
-            with patch.dict(sys.modules,{'job':SimpleNamespace(ParentCancel=Parent,run_job=run)}),patch.object(producer,'verified_sources'),patch.object(producer,'CONTEXT_SHA','c'*64),patch.object(producer,'source_capacity',side_effect=capacity),patch.object(material,'held',return_value=({},None)),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=200*1024**3)):
+            with patch.dict(sys.modules,{'job':SimpleNamespace(ParentCancel=Parent,run_job=run)}),patch.object(producer,'verified_sources'),patch.object(producer,'CONTEXT_SHA','c'*64),patch.object(producer,'source_capacity',side_effect=capacity),patch.object(producer,'verify_source_host_closure',return_value={'synthetic':True})as verified,patch.object(material,'held',return_value=({},None)),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=200*1024**3)):
                 code=producer.operation(root,{'mode':'source-gn'},p,budget)
+                self.assertEqual(verified.call_count,2)
+                self.assertTrue(all(call.args[1]is budget for call in verified.call_args_list))
             self.assertEqual([row[0]for row in calls],[*producer.ROLES,'source-gn']);self.assertTrue(state['closed'])
             self.assertTrue(all(value is budget for value in measurements));self.assertEqual(len(measurements),2)
             self.assertEqual(calls[-1][1],calls[-1][2]-123);self.assertLess(calls[-1][1],7200)
@@ -1108,7 +1111,8 @@ class SourceGnTests(unittest.TestCase):
             with self.assertRaises(acquire.Denied):producer.source_host_tools(bad)
         bad=copy.deepcopy(p);bad['sourceGn']['hostTools']['node']['observedAsExpected']=True
         with self.assertRaises(acquire.Denied):producer.source_host_tools(bad)
-        self.assertEqual(PROFILE['sourceGn']['hostTools'],{'node':None,'git':None})
+        self.assertEqual(producer.source_host_tools(PROFILE),PROFILE['sourceGn']['hostTools'])
+        self.assertFalse(PROFILE['phaseAdmission']['source-gn'])
 
     def test_actual_capacity_body_observes_available_not_total_memory_and_denies_before_admission(self):
         from types import SimpleNamespace
@@ -1459,6 +1463,137 @@ class InventoryClockTests(unittest.TestCase):
         new,state,whole,row=self.fixture(advance='after-inventory')
         self.assertEqual(new,1);self.assertEqual(row['firstFailure'],'ACQ_DEADLINE')
         self.assertEqual(state['projectionClocks'],[]);self.assertGreater(whole.remaining(),0)
+
+
+class ReviewedHostClosureTests(unittest.TestCase):
+    temp=BootstrapTests.temp
+
+    def fixture(self):
+        # Genuine small held PE bodies at owned paths. Mapping installed names
+        # to fixtures is test-only; the production verifier never rewrites them.
+        root=self.temp();p=copy.deepcopy(PROFILE);rows=p['sourceGn']['hostClosure']['rows'];files={}
+        for i,row in enumerate(rows):
+            name=Path(rows[11]['path']).name if i==0 else Path(rows[i+1]['path']).name if 11<=i<17 else 'kernel32.dll'
+            raw=bytearray(pe(version=False));raw[0x380:0x3c0]=bytes(0x40)
+            raw[0x380:0x380+len(name)+1]=name.encode()+b'\0'
+            file=root/('owned-'+str(i));file.write_bytes(raw);files[row['path']]=file
+            row.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest(),nlink=1)
+        for role in ('node','git'):
+            pin=p['sourceGn']['hostTools'][role];row=next(row for row in rows if row['path']==pin['path'])
+            pin.update(bytes=row['bytes'],sha256=row['sha256'],nlink=1)
+        value=p['sourceGn']['hostClosure'];value['peBytes']=sum(row['bytes']for row in rows)
+        state={'rows':[],'edges':[]}
+        producer.command_import_graph([row for row in producer.COMMAND_CANDIDATES if row['kind']=='pe'],clock(),
+            lambda candidate:material.pe_metadata(files[candidate['path']].read_bytes()),state)
+        value['edgeCount']=len(state['edges']);value['edgeSha256']=producer.source_edges_digest(state['edges'])
+        calls=[]
+        def read(path,current,**kwargs):
+            calls.append(path)
+            return material.held(files[path],current,**kwargs)
+        return p,files,calls,read
+
+    def test_root_adopted_table_is_finite_and_does_not_activate_execution(self):
+        rows=producer.source_host_closure_rows(PROFILE,PROFILE['image'])
+        self.assertEqual(len(rows),18)
+        self.assertEqual(sum(row['bytes']for row in rows.values()),113853492)
+        self.assertEqual(PROFILE['sourceGn']['hostClosure']['edgeCount'],242)
+        self.assertEqual(PROFILE['sourceGn']['hostClosure']['edgeSha256'],'78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a')
+        self.assertNotIn('C:/Program Files/Git/etc/gitconfig'.lower(),rows)
+        self.assertLessEqual(len((HERE/'profile.json').read_bytes()),65536)
+        self.assertFalse(PROFILE['phaseAdmission']['source-gn'])
+        self.assertFalse(PROFILE['sourceGn']['executionPolicy']['hostLoaderClosureApproved'])
+        self.assertFalse(PROFILE['sourceGn']['executionPolicy']['sourceHookCommandClosureApproved'])
+
+    def test_actual_shared_reader_and_pe_graph_verify_eighteen_physical_files(self):
+        p,files,calls,read=self.fixture()
+        result=producer.verify_source_host_closure(p,clock(),p['image'],reader=read)
+        self.assertEqual(len(calls),18);self.assertEqual(len(set(calls)),18)
+        self.assertEqual(result['bytes'],sum(file.stat().st_size for file in files.values()))
+        self.assertEqual(result['edgeSha256'],p['sourceGn']['hostClosure']['edgeSha256'])
+        self.assertFalse(result['candidateExecuted']);self.assertFalse(result['systemNameBytesProven'])
+
+    def test_hash_nlink_machine_and_missing_identity_stop_before_next_physical_reader(self):
+        for fault in ('hash','nlink','machine','missing'):
+            p,files,calls,read=self.fixture();first=p['sourceGn']['hostClosure']['rows'][0];file=files[first['path']]
+            if fault=='hash':raw=bytearray(file.read_bytes());raw[-1]^=1;file.write_bytes(raw)
+            if fault=='nlink':first['nlink']=2;p['sourceGn']['hostTools']['node']['nlink']=2
+            if fault=='machine':
+                raw=bytearray(file.read_bytes());struct.pack_into('<H',raw,0x84,0xaa64);file.write_bytes(raw)
+                first['sha256']=hashlib.sha256(raw).hexdigest();p['sourceGn']['hostTools']['node']['sha256']=first['sha256']
+            if fault=='missing':file.unlink()
+            with self.assertRaises((acquire.Denied,FileNotFoundError)):
+                producer.verify_source_host_closure(p,clock(),p['image'],reader=read)
+            self.assertEqual(len(calls),1,fault)
+
+    def test_image_schema_and_aggregate_fail_before_any_reader(self):
+        p,files,calls,read=self.fixture()
+        with self.assertRaisesRegex(acquire.Denied,'FULL_HOST_IMAGE'):
+            producer.verify_source_host_closure(p,clock(),'wrong',reader=read)
+        for fault in ('extra','duplicate','path','aggregate','config'):
+            changed=copy.deepcopy(p);rows=changed['sourceGn']['hostClosure']['rows']
+            if fault=='extra':rows.append(copy.deepcopy(rows[-1]))
+            if fault=='duplicate':rows[-1]=copy.deepcopy(rows[0])
+            if fault=='path':rows[-1]['path']='C:/foreign/unknown.dll'
+            if fault=='config':rows[-1]['path']='C:/Program Files/Git/etc/gitconfig'
+            if fault=='aggregate':
+                for row in rows:row['bytes']=256*1024**2
+                for role in ('node','git'):changed['sourceGn']['hostTools'][role]['bytes']=256*1024**2
+                changed['sourceGn']['hostClosure']['peBytes']=18*256*1024**2
+            with self.assertRaises(acquire.Denied):producer.verify_source_host_closure(changed,clock(),p['image'],reader=read)
+        self.assertEqual(calls,[])
+
+    def test_unexpected_graph_node_is_denied_before_open_and_bad_edge_digest_never_completes(self):
+        p,files,calls,read=self.fixture();first=p['sourceGn']['hostClosure']['rows'][0];file=files[first['path']]
+        raw=bytearray(file.read_bytes());name=b'not-approved.dll\0';raw[0x380:0x3c0]=bytes(0x40);raw[0x380:0x380+len(name)]=name;file.write_bytes(raw)
+        first['sha256']=hashlib.sha256(raw).hexdigest();p['sourceGn']['hostTools']['node']['sha256']=first['sha256']
+        with self.assertRaisesRegex(acquire.Denied,'FULL_HOST_CLOSURE_UNEXPECTED'):
+            producer.verify_source_host_closure(p,clock(),p['image'],reader=read)
+        self.assertEqual(len(calls),11);self.assertFalse(any('not-approved' in value for value in calls))
+        p,files,calls,read=self.fixture();p['sourceGn']['hostClosure']['edgeSha256']='0'*64
+        with self.assertRaisesRegex(acquire.Denied,'FULL_HOST_CLOSURE_GRAPH'):
+            producer.verify_source_host_closure(p,clock(),p['image'],reader=read)
+        self.assertEqual(len(calls),18)
+
+    def test_actual_parent_image_failure_denies_before_capacity_or_data_jobs(self):
+        from types import SimpleNamespace
+        p=copy.deepcopy(PROFILE);p['sourceGn']['executionPolicy']={key:True for key in p['sourceGn']['executionPolicy']};p['phaseAdmission']['source-gn']=True
+        root=self.temp()
+        with patch.dict(sys.modules,{'job':SimpleNamespace()}),patch.object(producer,'source_capacity',side_effect=AssertionError('no capacity query')):
+            self.assertEqual(producer.operation(root,{'mode':'source-gn','image':'wrong'},p,clock()),1)
+        report=json.loads((root/'bootstrap-result.json').read_bytes())
+        self.assertEqual(report['firstFailure'],'FULL_HOST_IMAGE');self.assertEqual(report['jobs'],[])
+
+    def test_edge_digest_uses_sorted_rows_and_all_sorted_dictionary_keys_without_newline(self):
+        edges=[{'from':'C:/z','kind':'import','name':'B.dll','classification':'rooted-candidate','target':'C:/root/B.dll'},
+               {'from':'C:/A','kind':'delay','name':'a.dll','classification':'system-name-only'}]
+        canonical=b'[{"classification":"system-name-only","from":"C:/A","kind":"delay","name":"a.dll"},{"classification":"rooted-candidate","from":"C:/z","kind":"import","name":"B.dll","target":"C:/root/B.dll"}]'
+        self.assertEqual(producer.source_edges_digest(edges),hashlib.sha256(canonical).hexdigest())
+
+    def test_real_second_verification_failure_stops_before_node_and_preserves_primary_through_parent_cleanup(self):
+        from types import SimpleNamespace
+        p,files,calls,read=self.fixture();p['sourceGn']['executionPolicy']={key:True for key in p['sourceGn']['executionPolicy']};p['phaseAdmission']['source-gn']=True
+        root=self.temp();jobs=[];checks=[];closed=[]
+        actual=producer.verify_source_host_closure
+        def verify(profile,current,image):
+            checks.append(current)
+            if len(checks)==2:
+                file=files[p['sourceGn']['hostClosure']['rows'][0]['path']]
+                raw=bytearray(file.read_bytes());raw[-1]^=1;file.write_bytes(raw)
+            return actual(profile,current,image,reader=read)
+        class Parent:
+            def __init__(self,_event):pass
+            def close(self):closed.append(True);raise OSError('secondary cleanup')
+        def run(argv,cwd,output,seconds,**kwargs):
+            jobs.append(Path(output).name)
+            return {'success':True,'cleanupVerified':True,'rootExit':0,'activeAtEnd':0}
+        current=acquire.Clock(time.time()+1000,time.monotonic()+1000)
+        with patch.dict(sys.modules,{'job':SimpleNamespace(ParentCancel=Parent,run_job=run)}),patch.object(producer,'verified_sources'),patch.object(producer,'CONTEXT_SHA','c'*64),patch.object(producer,'verify_source_host_closure',side_effect=verify),patch.object(producer,'source_capacity',return_value={}),patch.object(producer.shutil,'disk_usage',return_value=SimpleNamespace(free=200*1024**3)):
+            self.assertEqual(producer.operation(root,{'mode':'source-gn','image':p['image']},p,current),1)
+        self.assertEqual(jobs,list(producer.ROLES));self.assertEqual(len(checks),2)
+        self.assertTrue(all(value is current for value in checks));self.assertEqual(len(calls),19)
+        self.assertEqual(closed,[True])
+        report=json.loads((root/'bootstrap-result.json').read_bytes())
+        self.assertEqual(report['firstFailure'],'ACQ_HASH');self.assertFalse(report['parentHandleClosed'])
 
 
 if __name__ == "__main__":

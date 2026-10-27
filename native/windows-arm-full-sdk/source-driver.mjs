@@ -91,6 +91,102 @@ export function reviewedHostTools(p) {
   return structuredClone(p.sourceGn.hostTools);
 }
 
+export function reviewedHostClosure(p, image) {
+  const value = p.sourceGn.hostClosure,
+    tools = reviewedHostTools(p);
+  keys(value, ["image", "rows", "peBytes", "edgeCount", "edgeSha256"]);
+  need(
+    image === value.image && image === p.image && image === "20261021.278.1",
+    "FULL_HOST_IMAGE",
+  );
+  need(
+    Array.isArray(value.rows) && value.rows.length === 18,
+    "FULL_HOST_CLOSURE_ROWS",
+  );
+  const names = new Map();
+  let total = 0;
+  for (const pin of value.rows) {
+    keys(pin, ["path", "bytes", "sha256", "nlink", "machine"]);
+    need(
+      typeof pin.path === "string" &&
+        (Object.values(tools).some((tool) => tool.path === pin.path) ||
+          pin.path === "C:/Program Files/Git/ucrt64/bin/git.exe" ||
+          pin.path ===
+            "C:/Program Files/Git/ucrt64/libexec/git-core/git-remote-https.exe" ||
+          /^C:\/Program Files\/Git\/ucrt64\/bin\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}\.dll$/i.test(
+            pin.path,
+          )) &&
+        !pin.path.includes("..") &&
+        !/^(?:CON|PRN|AUX|NUL|CLOCK\$|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(
+          path.basename(pin.path),
+        ) &&
+        !names.has(pin.path.toLowerCase()),
+      "FULL_HOST_CLOSURE_PATH",
+    );
+    need(
+      Number.isSafeInteger(pin.bytes) &&
+        pin.bytes > 0 &&
+        pin.bytes <= 256 * 1024 ** 2 &&
+        typeof pin.sha256 === "string" &&
+        /^[a-f0-9]{64}$/.test(pin.sha256) &&
+        Number.isInteger(pin.nlink) &&
+        pin.nlink >= 1 &&
+        pin.nlink <= 8 &&
+        pin.machine === 0x8664,
+      "FULL_HOST_CLOSURE_PIN",
+    );
+    names.set(pin.path.toLowerCase(), pin);
+    total += pin.bytes;
+  }
+  for (const pin of Object.values(tools))
+    need(
+      names.has(pin.path.toLowerCase()) &&
+        Object.entries(pin).every(
+          ([key, value]) => names.get(pin.path.toLowerCase())[key] === value,
+        ),
+      "FULL_HOST_CLOSURE_TOOL",
+    );
+  const seeds = p.commandInventory.candidates.filter(
+    (row) => row.kind === "pe",
+  );
+  need(
+    seeds.length === 11 &&
+      seeds.every((row) => names.has(row.path.toLowerCase())),
+    "FULL_HOST_CLOSURE_SEEDS",
+  );
+  need(
+    Number.isSafeInteger(value.peBytes) &&
+      total === value.peBytes &&
+      total <= 512 * 1024 ** 2 &&
+      Number.isInteger(value.edgeCount) &&
+      value.edgeCount > 0 &&
+      value.edgeCount <= 256 &&
+      typeof value.edgeSha256 === "string" &&
+      /^[a-f0-9]{64}$/.test(value.edgeSha256),
+    "FULL_HOST_CLOSURE_BOUND",
+  );
+  return structuredClone(value);
+}
+
+export async function verifyHostClosure(p, budget, image, reader = held) {
+  const value = reviewedHostClosure(p, image);
+  let bytes = 0;
+  for (const pin of value.rows) {
+    budget.remaining();
+    need(pin.bytes <= 512 * 1024 ** 2 - bytes, "FULL_HOST_CLOSURE_BYTES");
+    const raw = await reader(pin.path, pin.bytes, budget, pin);
+    need(
+      Buffer.isBuffer(raw) &&
+        raw.length === pin.bytes &&
+        sha(raw) === pin.sha256,
+      "FULL_HOST_CLOSURE_PIN",
+    );
+    bytes += raw.length;
+    budget.remaining();
+  }
+  return { files: value.rows.length, bytes, edgeSha256: value.edgeSha256 };
+}
+
 const signature = (s) =>
   [
     s.dev,
@@ -931,8 +1027,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   for (const row of [...p.sourceGn.helpers, ...p.sourceGn.sourceData])
     await held(path.join(REPO, row.path), 2 * 1024 ** 2, budget, row);
-  for (const pin of Object.values(tools))
-    await held(pin.path, 256 * 1024 ** 2, budget, pin);
+  await verifyHostClosure(p, budget, c.image);
   need(
     (await fs.realpath(process.execPath)).toLowerCase() ===
       (await fs.realpath(tools.node.path)).toLowerCase(),
@@ -1037,6 +1132,7 @@ export async function main(argv = process.argv.slice(2)) {
     graph = null,
     generatedArguments = null;
   const checked = async (action) => {
+    await verifyHostClosure(p, budget, c.image);
     await held(adapter.file, 4096, budget, adapter.pin);
     for (const primary of HOOK_PRIMARY)
       await held(
@@ -1054,6 +1150,7 @@ export async function main(argv = process.argv.slice(2)) {
       throw error;
     } finally {
       try {
+        await verifyHostClosure(p, budget, c.image);
         await held(adapter.file, 4096, budget, adapter.pin);
         for (const primary of HOOK_PRIMARY)
           await held(
@@ -1077,6 +1174,7 @@ export async function main(argv = process.argv.slice(2)) {
         tools.git.path,
         gitPolicy,
       );
+      await verifyHostClosure(p, budget, c.image);
       budget.remaining();
       await runtime.prepareWindowsGitLauncher({
         depot: files.depot,

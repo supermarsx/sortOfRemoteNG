@@ -16,7 +16,7 @@ import checkpoint
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-PROFILE_SHA = "cf0c4940fd570bc7a87f782e76c60bad5af465f530a5d49c3de900e2eeb5db73"
+PROFILE_SHA = "d491ee3a9ca5e51fc8a1f27d6c5adab3deee4dca0d6be7b510c43b76970d7956"
 CONTEXT_SHA = None
 COMMAND_INVENTORY_REPORTING_FAILURE = False
 ROLES = ("sdk-data", "llvm-data", "rust-archive", "gn-archive", "siso-archive", "materialize", "runtime-closure")
@@ -114,6 +114,81 @@ def source_execution_policy(p):
               'gitConfigurationApproved','sourceHookCommandClosureApproved'} and
               all(value is True for value in policy.values()), 'FULL_EXECUTION_POLICY_UNAVAILABLE')
     data.need(p['phaseAdmission'].get('source-gn') is True, 'FULL_SOURCE_ADMISSION_UNAVAILABLE')
+
+
+def source_host_closure_rows(p, image):
+    value = p['sourceGn']['hostClosure']; tools = source_host_tools(p)
+    data.need(type(value) is dict and set(value) == {'image','rows','peBytes','edgeCount','edgeSha256'} and
+              image == value['image'] == p['image'] == '20261021.278.1', 'FULL_HOST_IMAGE')
+    rows = value['rows']
+    data.need(type(rows) is list and len(rows) == 18, 'FULL_HOST_CLOSURE_ROWS')
+    found = {}; total = 0
+    for row in rows:
+        data.need(type(row) is dict and set(row) == {'path','bytes','sha256','nlink','machine'}, 'FULL_HOST_CLOSURE_FIELDS')
+        name = row['path']
+        data.need(type(name) is str and (name in (tools['node']['path'],tools['git']['path']) or
+                  name in ('C:/Program Files/Git/ucrt64/bin/git.exe',
+                           'C:/Program Files/Git/ucrt64/libexec/git-core/git-remote-https.exe') or
+                  (name.startswith(COMMAND_DLL_ROOT) and '/' not in name[len(COMMAND_DLL_ROOT):] and
+                   command_dll_name(name[len(COMMAND_DLL_ROOT):]))) and name.lower() not in found,
+                  'FULL_HOST_CLOSURE_PATH')
+        data.need(type(row['bytes']) is int and 0 < row['bytes'] <= 256*1024**2 and
+                  type(row['nlink']) is int and 1 <= row['nlink'] <= 8 and
+                  type(row['machine']) is int and row['machine'] == 0x8664 and
+                  type(row['sha256']) is str and re.fullmatch('[a-f0-9]{64}',row['sha256']), 'FULL_HOST_CLOSURE_PIN')
+        found[name.lower()] = row; total += row['bytes']
+    for pin in tools.values():
+        data.need(found.get(pin['path'].lower()) is not None and
+                  all(found[pin['path'].lower()][key] == pin[key] for key in pin), 'FULL_HOST_CLOSURE_TOOL')
+    seeds = [row for row in COMMAND_CANDIDATES if row['kind'] == 'pe']
+    data.need(all(row['path'].lower() in found for row in seeds), 'FULL_HOST_CLOSURE_SEEDS')
+    data.need(type(value['peBytes']) is int and total == value['peBytes'] <= 512*1024**2 and
+              type(value['edgeCount']) is int and 0 < value['edgeCount'] <= 256 and
+              type(value['edgeSha256']) is str and re.fullmatch('[a-f0-9]{64}',value['edgeSha256']),
+              'FULL_HOST_CLOSURE_BOUND')
+    return found
+
+
+def source_edges_digest(edges):
+    ordered = sorted(edges,key=lambda row:(row['from'].lower(),row['kind'],row['name'].lower(),row['classification']))
+    return hashlib.sha256(json.dumps(ordered,sort_keys=True,separators=(',',':')).encode('utf-8')).hexdigest()
+
+
+def verify_source_host_closure(p, clock, image, *, reader=None):
+    import extract
+    expected = source_host_closure_rows(p,image)
+    reader = extract.held if reader is None else reader
+    state = {'rows':[],'edges':[]}; seen = {}; identities = set(); total = charged = admitted = 0
+    def consumed(count):
+        nonlocal total, charged
+        data.need(type(count) is int and charged <= count <= admitted, 'FULL_HOST_CLOSURE_BYTES')
+        total += count-charged; charged=count
+        data.need(total <= 512*1024**2, 'FULL_HOST_CLOSURE_BYTES')
+    def read(candidate):
+        nonlocal charged, admitted
+        clock.remaining(); key=candidate['path'].lower()
+        data.need(key in expected and expected[key]['path'] == candidate['path'] and key not in seen,
+                  'FULL_HOST_CLOSURE_UNEXPECTED')
+        pin=expected[key]; charged=0; admitted=pin['bytes']
+        data.need(admitted <= 512*1024**2-total,'FULL_HOST_CLOSURE_BYTES')
+        observed,raw=reader(candidate['path'],clock,expected_size=pin['bytes'],sha256=pin['sha256'],
+                            retain=True,maximum=min(256*1024**2,512*1024**2-total),
+                            expected_nlink=pin['nlink'],progress=consumed,bounded_reads=True)
+        data.need(observed['bytes'] == charged == pin['bytes'] and observed['sha256'] == pin['sha256'],
+                  'FULL_HOST_CLOSURE_BYTES')
+        identity=tuple(observed['identity'][:2]);data.need(identity not in identities,'FULL_HOST_CLOSURE_ALIAS')
+        identities.add(identity);seen[key]=True
+        pe=extract.pe_metadata(raw)
+        data.need(pe['machine'] == pin['machine'] and pe['machineKind'] == 'x64','FULL_HOST_CLOSURE_MACHINE')
+        clock.remaining()
+        return {'imports':pe['imports'],'delayImports':pe['delayImports']}
+    command_import_graph([row for row in COMMAND_CANDIDATES if row['kind']=='pe'],clock,read,state)
+    edge_sha=source_edges_digest(state['edges']);value=p['sourceGn']['hostClosure']
+    data.need(set(seen) == set(expected) and total == value['peBytes'] and
+              len(state['edges']) == value['edgeCount'] and edge_sha == value['edgeSha256'], 'FULL_HOST_CLOSURE_GRAPH')
+    return {'kind':'windows-arm-reviewed-host-byte-set','image':image,'files':len(seen),'bytes':total,
+            'edges':len(state['edges']),'edgeSha256':edge_sha,'expectedByteSetVerified':True,
+            'systemNameBytesProven':False,'candidateExecuted':False}
 
 
 def source_capacity(root, p, clock, *, memory=None, disk=shutil.disk_usage, cpus=os.cpu_count,
@@ -543,11 +618,8 @@ def operation(root, c, p, clock):
         if source_mode(c):
             source_host_tools(p)
             source_execution_policy(p)
+            result['hostClosureBeforeAcquisition'] = verify_source_host_closure(p,clock,c.get('image'))
             result['sourceCapacity'] = source_capacity(root, p, clock)
-            for pin in source_host_tools(p).values():
-                import extract
-                extract.held(pin['path'],clock,pin['bytes'],pin['sha256'],maximum=256*1024**2,
-                             expected_nlink=pin['nlink'])
         if c['mode'] != 'command-inventory':
             data.need(shutil.disk_usage(root).free >= p["limits"]["freeBytes"], "BOOT_CAPACITY")
         result["capacity"] = {"freeBytes": shutil.disk_usage(root).free,
@@ -569,6 +641,7 @@ def operation(root, c, p, clock):
                       "BOOT_JOB_FAILED")
         if source_mode(c):
             verified_sources(root)
+            result['hostClosureBeforeSource'] = verify_source_host_closure(p,clock,c.get('image'))
             result['capacityBeforeSource'] = source_capacity(root,p,clock,leaf='source-capacity-pre-source-result.json')
             seconds = clock.remaining() - p['sourceGn']['limits']['finalReserveSeconds'] - 3
             data.need(seconds > 0, 'FULL_SOURCE_ADMISSION')

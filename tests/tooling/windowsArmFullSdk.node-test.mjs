@@ -28,6 +28,8 @@ import {
   boundGnArguments,
   dependencyHookArguments,
   retainHookOrigins,
+  reviewedHostClosure,
+  verifyHostClosure,
 } from "../../native/windows-arm-full-sdk/source-driver.mjs";
 
 const root = path.resolve(
@@ -548,8 +550,20 @@ def main(args):
   }
 });
 
-test("source GN remains denied until reviewed host byte and execution closure while historical input stays distinct", async () => {
-  assert.throws(() => reviewedHostTools(profile), /FULL_HOST_TOOL_PIN_MISSING/);
+test("reviewed same-image host bytes do not activate source GN or confer runtime loader proof", async () => {
+  assert.deepEqual(reviewedHostTools(profile), profile.sourceGn.hostTools);
+  const missing = structuredClone(profile);
+  missing.sourceGn.hostTools.node = null;
+  assert.throws(() => reviewedHostTools(missing), /FULL_HOST_TOOL_PIN_MISSING/);
+  const closure = reviewedHostClosure(profile, profile.image);
+  assert.equal(closure.rows.length, 18);
+  assert.equal(closure.peBytes, 113853492);
+  assert.equal(closure.edgeCount, 242);
+  assert.equal(
+    closure.edgeSha256,
+    "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a",
+  );
+  assert.equal(profile.phaseAdmission["source-gn"], false);
   assert.deepEqual(profile.sourceGn.executionPolicy, {
     hostLoaderClosureApproved: false,
     gitConfigurationApproved: true,
@@ -580,6 +594,111 @@ test("source GN remains denied until reviewed host byte and execution closure wh
   );
   assert(gn.includes('v8_symbol_level=0\nhost_cpu="x64"'));
   assert(!gn.includes("0host_cpu"));
+});
+
+test("actual fixed host handoff reader stops on first hash, deadline, image or aggregate failure without opening a later file", async () => {
+  const p = structuredClone(profile),
+    body = Buffer.from("SYNTHETIC HELD FIXTURE BYTES");
+  for (const row of p.sourceGn.hostClosure.rows)
+    Object.assign(row, { bytes: body.length, sha256: sha(body), nlink: 1 });
+  p.sourceGn.hostClosure.peBytes = 18 * body.length;
+  for (const [role, path] of [
+    ["node", profile.sourceGn.hostTools.node.path],
+    ["git", profile.sourceGn.hostTools.git.path],
+  ]) {
+    const row = p.sourceGn.hostClosure.rows.find((row) => row.path === path);
+    p.sourceGn.hostTools[role] = {
+      path: row.path,
+      bytes: row.bytes,
+      sha256: row.sha256,
+      nlink: row.nlink,
+    };
+  }
+  const opened = [],
+    budget = { remaining: () => 1000 };
+  const reader = async (file, cap, current, pin) => {
+    opened.push(file);
+    assert.equal(cap, body.length);
+    assert.equal(current, budget);
+    assert.equal(pin.sha256, sha(body));
+    return body;
+  };
+  assert.equal(
+    (await verifyHostClosure(p, budget, p.image, reader)).bytes,
+    18 * body.length,
+  );
+  assert.deepEqual(
+    opened,
+    p.sourceGn.hostClosure.rows.map((row) => row.path),
+  );
+  opened.length = 0;
+  await assert.rejects(
+    verifyHostClosure(p, budget, p.image, async (file) => {
+      opened.push(file);
+      return Buffer.from("bad");
+    }),
+    /FULL_HOST_CLOSURE_PIN/,
+  );
+  assert.equal(opened.length, 1);
+  opened.length = 0;
+  await assert.rejects(
+    verifyHostClosure(p, budget, "WRONG_IMAGE", reader),
+    /FULL_HOST_IMAGE/,
+  );
+  assert.equal(opened.length, 0);
+  const sentinel = new Error("fixture deadline");
+  await assert.rejects(
+    verifyHostClosure(
+      p,
+      {
+        remaining: () => {
+          throw sentinel;
+        },
+      },
+      p.image,
+      reader,
+    ),
+    (error) => error === sentinel,
+  );
+  assert.equal(opened.length, 0);
+  for (const mutate of [
+    (value) =>
+      (value.sourceGn.hostClosure.rows[0].path = "C:/foreign/node.exe"),
+    (value) =>
+      (value.sourceGn.hostClosure.rows.at(-1).path =
+        "C:/Program Files/Git/ucrt64/bin/CON.dll"),
+    (value) =>
+      value.sourceGn.hostClosure.rows.push(value.sourceGn.hostClosure.rows[0]),
+    (value) =>
+      (value.sourceGn.hostClosure.rows[1].path =
+        value.sourceGn.hostClosure.rows[0].path),
+    (value) => (value.sourceGn.hostClosure.rows[0].machine = 0xaa64),
+    (value) => (value.sourceGn.hostClosure.rows[0].nlink = 9),
+    (value) => (value.sourceGn.hostClosure.rows[0].observedAsExpected = true),
+    (value) => (value.sourceGn.hostClosure.peBytes = 512 * 1024 ** 2 + 1),
+  ]) {
+    const changed = structuredClone(p);
+    mutate(changed);
+    await assert.rejects(
+      verifyHostClosure(changed, budget, p.image, reader),
+      /FULL_/,
+    );
+    assert.equal(opened.length, 0);
+  }
+});
+
+test("closed source driver checkpoint helper calls remain graph-only on the inherited helper basis", async () => {
+  const body = await read(prefix + "source-driver.mjs");
+  assert.deepEqual(
+    [
+      ...new Set(
+        [
+          ...body.matchAll(/(?<![A-Za-z0-9_-])checkpoint\.([A-Za-z0-9_]+)/g),
+        ].map((match) => match[1]),
+      ),
+    ].sort(),
+    ["graphInventory", "graphPinSnapshot"],
+  );
 });
 
 test("actual source driver command plan has only fixed sync, hooks, three setup verifications and GN", () => {
