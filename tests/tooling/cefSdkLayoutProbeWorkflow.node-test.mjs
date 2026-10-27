@@ -163,7 +163,7 @@ function observer() {
   ).runInContext(context);
   return context.observeMetalExec;
 }
-const findMetal = ["--sdk", "macosx", "--find", "metal"];
+const findMetal = ["--no-cache", "--sdk", "macosx", "--find", "metal"];
 
 test("Metal command observation preserves actual result/error identity and bounds private raw output without argv/env/error dumps", async () => {
   const observe = observer(),
@@ -1967,4 +1967,119 @@ test("census first exact SDK query has a bounded 30s candidate cap within the or
     () => timeout(file, args, { timeout: 5000 }, () => 0, 1),
     /CENSUS_APPLE_DEADLINE/,
   );
+});
+
+test("both carrier Metal guards admit only documented prefixed vectors and deny every former bare Metal vector", async () => {
+  const check = censusApi().fixedAppleCommand,
+    observe = observer(),
+    vectors = [
+      ["--no-cache", "--sdk", "macosx", "--find", "metal"],
+      ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
+      ["--no-cache", "--sdk", "macosx", "metal", "--version"],
+    ];
+  let executions = 0;
+  const stages = [];
+  const execute = observe(
+    async () => {
+      executions++;
+      return { stdout: "", stderr: "" };
+    },
+    async (row) => stages.push(row.stage),
+  );
+  for (const vector of vectors) {
+    check("/usr/bin/xcrun", vector);
+    await execute("/usr/bin/xcrun", vector, { timeout: 30000 });
+  }
+  assert.deepEqual(stages, ["find-metal", "find-metallib", "metal-version"]);
+  assert.equal(executions, 3);
+  for (const vector of vectors)
+    for (const denied of [
+      vector.slice(1),
+      ["--no-cache", ...vector],
+      [...vector, "--no-cache"],
+      ["--no-cache", ...vector.slice(1, 3), "--find", "clang"],
+    ]) {
+      assert.throws(
+        () => check("/usr/bin/xcrun", denied),
+        /CENSUS_APPLE_COMMAND/,
+      );
+      await assert.rejects(
+        execute("/usr/bin/xcrun", denied, { timeout: 30000 }),
+        /METAL_DIAGNOSTIC_COMMAND_DENIED/,
+      );
+    }
+  assert.equal(executions, 3);
+  for (const vector of [
+    ["-sdk", "macosx", "--show-sdk-path"],
+    ["-sdk", "macosx", "--show-sdk-platform-path"],
+  ]) {
+    check("/usr/bin/xcrun", vector);
+    assert.throws(
+      () => check("/usr/bin/xcrun", ["--no-cache", ...vector]),
+      /CENSUS_APPLE_COMMAND/,
+    );
+    await assert.rejects(
+      execute("/usr/bin/xcrun", vector, { timeout: 30000 }),
+      /METAL_DIAGNOSTIC_COMMAND_DENIED/,
+    );
+  }
+});
+
+test("actual selected helper five Metal lookups pass both carrier bodies without argument rewriting or fingerprint schema change", async () => {
+  const check = censusApi().fixedAppleCommand,
+    observe = observer(),
+    calls = [],
+    stages = [];
+  const selected = {
+    DEVELOPER_DIR: "/Applications/Xcode_26.3.app/Contents/Developer",
+    SDKROOT:
+      "/Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+  };
+  const execute = observe(
+    async (file, args, options) => {
+      check(file, args);
+      calls.push({ file, args, timeout: options.timeout });
+      if (file === "/usr/bin/codesign") return {};
+      return args.includes("--find")
+        ? {
+            stdout:
+              "/private/component/Metal.xctoolchain/usr/bin/" + args.at(-1),
+          }
+        : { stdout: "Apple metal version 32023.104\n" };
+    },
+    async (row) => stages.push(row.stage),
+  );
+  const result = await prepareMacMetalToolchain(
+    {
+      platform: "darwin",
+      selected,
+      env: { HOME: "/owned/home", TMPDIR: "/owned/tmp" },
+      remainingMilliseconds: () => 12345,
+    },
+    {
+      exec: execute,
+      now: () => 0,
+      realpath: async (p) => p,
+      measure: async (p) => ({
+        physicalPath: p,
+        bytes: 4096,
+        sha256: "a".repeat(64),
+      }),
+    },
+  );
+  assert.deepEqual(stages, [
+    "find-metal",
+    "verify-metal-signature",
+    "metal-version",
+    "find-metal",
+    "find-metallib",
+    "verify-metallib-signature",
+    "find-metallib",
+  ]);
+  assert.equal(calls.filter((c) => c.file === "/usr/bin/xcrun").length, 5);
+  assert(calls.every((c) => c.timeout === 12345));
+  assert.equal(result.downloaded, false);
+  assert.equal(macMetalFingerprint(result).tools.length, 2);
+  assert.equal(result.componentResourceClosureVerified, false);
+  assert.equal(result.nativeCompatibilityVerified, false);
 });
