@@ -113,7 +113,7 @@ from contextlib import nullcontext
 file=pathlib.Path(sys.argv[1]);m=types.ModuleType('actual_io');m.__file__=str(file)
 exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
 with tempfile.TemporaryDirectory() as folder:
- root=pathlib.Path(folder);(root/'src').mkdir();p=root/'src/a';p.write_bytes(b'owned')
+ root=pathlib.Path(folder).resolve();(root/'src').mkdir();p=root/'src/a';p.write_bytes(b'owned')
  info=p.stat();row={'path':'src/a','kind':'file','stamp':m.stamp(info),'ctimeNs':info.st_ctime_ns}
  with m.source_io_scope('source-record'):
   m.SOURCE_IO_CONTEXT.set(('source-record',root))
