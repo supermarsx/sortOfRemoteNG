@@ -534,7 +534,7 @@ function capacityFixture({
   gains = {},
 } = {}) {
   const present = new Set(RECIPE.linuxCleanupPaths);
-  let bytes = freeGiB * 1024 ** 3;
+  let bytes = Math.round(freeGiB * 1024 ** 3);
   let now = 0;
   const calls = [],
     receipts = [];
@@ -545,7 +545,12 @@ function capacityFixture({
     lstat: async (p) => {
       if (!present.has(p))
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
-      return { isDirectory: () => true, isSymbolicLink: () => false };
+      return {
+        dev: 1n,
+        ino: BigInt(RECIPE.linuxCleanupPaths.indexOf(p) + 100),
+        isDirectory: () => true,
+        isSymbolicLink: () => false,
+      };
     },
     writeFile: async (_, body) => receipts.push(JSON.parse(body)),
     command: async (exe, args, _, timeout) => {
@@ -557,9 +562,9 @@ function capacityFixture({
         const value = sizes[RECIPE.linuxCleanupPaths.indexOf(candidate)];
         if (value === null)
           throw Object.assign(new Error("bounded inventory"), { code: 124 });
-        return `${value * 1024 ** 3}\t${candidate}`;
+        return `${Math.round(value * 1024 ** 3)}\t${candidate}`;
       }
-      bytes += (gains[candidate] ?? 0) * 1024 ** 3;
+      bytes += Math.round((gains[candidate] ?? 0) * 1024 ** 3);
       present.delete(candidate);
       return "";
     },
@@ -573,7 +578,7 @@ function capacityFixture({
       now += ms;
     },
     addFree: (giB) => {
-      bytes += giB * 1024 ** 3;
+      bytes += Math.round(giB * 1024 ** 3);
     },
   };
 }
@@ -733,4 +738,294 @@ test("inventory and removals share the original480-second budget and outer termi
     cleanupLinuxCapacity(capacityOptions, killed.io),
     /outer timeout/,
   );
+});
+
+test("actual95.95GiB initial-pass outcome continues only the same partial Android directory", async () => {
+  const f = capacityFixture({
+    freeGiB: 84.79,
+    sizes: [null, null, null, 1.33],
+  });
+  f.present.delete("/opt/ghc");
+  const command = f.io.command;
+  let android = 0;
+  f.io.command = async (...args) => {
+    const candidate = args[1].at(-1);
+    if (!args[1].includes("rm")) return command(...args);
+    f.calls.push({ operation: "rm", candidate, timeout: args[3] });
+    if (candidate.endsWith("CodeQL")) {
+      f.addFree(1.33);
+      f.present.delete(candidate);
+      return "";
+    }
+    if (candidate.endsWith("dotnet")) {
+      f.addFree(5.74);
+      f.present.delete(candidate);
+      return "";
+    }
+    if (++android === 1) {
+      f.advance(110000);
+      f.addFree(4.09);
+      throw Object.assign(new Error("known GNU timeout"), { code: 124 });
+    }
+    assert.equal(f.receipts.at(-2).freeDiskAfterGiB, 95.95);
+    f.addFree(6);
+    f.present.delete(candidate);
+    return "";
+  };
+  assert.deepEqual(await cleanupLinuxCapacity(capacityOptions, f.io), [
+    "/opt/hostedtoolcache/CodeQL",
+    "/usr/share/dotnet",
+    "/usr/local/lib/android",
+  ]);
+  const attempts = f.receipts.at(-1).attempts;
+  assert.deepEqual(
+    attempts.map((a) => [a.path, a.ordinal, a.status]),
+    [
+      ["/opt/hostedtoolcache/CodeQL", 1, "removed"],
+      ["/usr/local/lib/android", 1, "partial-deadline"],
+      ["/usr/share/dotnet", 1, "removed"],
+      ["/usr/local/lib/android", 2, "removed"],
+    ],
+  );
+  assert.equal(attempts[1].deadlineCode, 124);
+  assert.equal(f.receipts.at(-1).freeDiskAfterGiB, 101.95);
+  assert.equal(f.receipts.at(-1).sufficient, true);
+});
+
+test("partial cleanup remains insufficient after at most three attempts per original path", async () => {
+  const f = capacityFixture();
+  const command = f.io.command;
+  f.io.command = async (...args) => {
+    if (!args[1].includes("rm")) return command(...args);
+    f.calls.push({ operation: "rm", candidate: args[1].at(-1) });
+    throw Object.assign(new Error("known GNU timeout"), { code: 137 });
+  };
+  await assert.rejects(cleanupLinuxCapacity(capacityOptions, f.io), /100 GiB/);
+  const attempts = f.receipts.at(-1).attempts;
+  assert.equal(attempts.length, 12);
+  for (const candidate of RECIPE.linuxCleanupPaths) {
+    const own = attempts.filter((a) => a.path === candidate);
+    assert.deepEqual(
+      own.map((a) => a.ordinal),
+      [1, 2, 3],
+    );
+    assert(
+      own.every(
+        (a) => a.status === "partial-deadline" && a.deadlineCode === 137,
+      ),
+    );
+  }
+  assert.deepEqual(
+    attempts.slice(0, 4).map((a) => a.path),
+    [
+      "/opt/hostedtoolcache/CodeQL",
+      "/usr/share/dotnet",
+      "/opt/ghc",
+      "/usr/local/lib/android",
+    ],
+  );
+  assert.deepEqual(f.receipts.at(-1).completed, []);
+});
+
+test("continuation uses the original phase remainder without a clock reset", async () => {
+  const f = capacityFixture();
+  const command = f.io.command;
+  f.io.command = async (...args) => {
+    if (!args[1].includes("rm")) return command(...args);
+    f.calls.push({
+      operation: "rm",
+      candidate: args[1].at(-1),
+      timeout: args[3],
+    });
+    f.advance(args[3]);
+    throw Object.assign(new Error("known GNU timeout"), { code: 124 });
+  };
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, f.io),
+    /phase budget/,
+  );
+  const calls = f.calls.filter((c) => c.operation === "rm");
+  assert.deepEqual(
+    calls.map((c) => c.timeout),
+    [120000, 120000, 120000, 119600],
+  );
+  assert.equal(f.receipts.at(-1).elapsedMs, 480000);
+  assert(
+    calls.every((c) => Number.isInteger(c.timeout) && c.timeout <= 120000),
+  );
+});
+
+test("continuation rejects replacement, alias and missing identity before another rm", async () => {
+  for (const mutation of [
+    "device",
+    "inode",
+    "symlink",
+    "canonical",
+    "identity",
+  ]) {
+    const f = capacityFixture();
+    f.present.clear();
+    f.present.add("/usr/local/lib/android");
+    const lstat = f.io.lstat;
+    let removals = 0;
+    f.io.lstat = async (...args) => {
+      const s = await lstat(...args);
+      if (!removals) return s;
+      if (mutation === "device") return { ...s, dev: 2n };
+      if (mutation === "inode") return { ...s, ino: 900n };
+      if (mutation === "symlink") return { ...s, isSymbolicLink: () => true };
+      if (mutation === "identity") return { ...s, ino: undefined };
+      return s;
+    };
+    f.io.realpath = async (p) =>
+      removals && mutation === "canonical" ? "/tmp/replacement" : p;
+    f.io.command = async (_, args) => {
+      if (args.includes("du")) return "1\tunused";
+      removals++;
+      throw Object.assign(new Error("known GNU timeout"), { code: 124 });
+    };
+    await assert.rejects(
+      cleanupLinuxCapacity(capacityOptions, f.io),
+      /identity|ordinary allowlisted/,
+    );
+    assert.equal(removals, 1);
+  }
+});
+
+test("disappeared partial and successful still-present candidates are never repeated", async () => {
+  for (const mode of ["disappeared", "still-present"]) {
+    const f = capacityFixture();
+    f.present.clear();
+    f.present.add("/usr/local/lib/android");
+    let removals = 0;
+    f.io.command = async (_, args) => {
+      if (args.includes("du")) return "1\tunused";
+      removals++;
+      if (mode === "disappeared") {
+        f.present.delete(args.at(-1));
+        throw Object.assign(new Error("known GNU timeout"), { code: 124 });
+      }
+      return "";
+    };
+    await assert.rejects(
+      cleanupLinuxCapacity(capacityOptions, f.io),
+      /100 GiB/,
+    );
+    assert.equal(removals, 1);
+    assert.equal(
+      f.receipts.at(-1).attempts[0].status,
+      mode === "disappeared" ? "partial-deadline" : "still-present",
+    );
+    assert.deepEqual(f.receipts.at(-1).completed, []);
+  }
+});
+
+test("unknown or failed cleanup is never continued and secondary receipt failure preserves primary", async () => {
+  for (const properties of [
+    { code: 124, killed: true },
+    { code: 137, signal: "SIGKILL" },
+    { code: 1 },
+  ]) {
+    const f = capacityFixture();
+    let removals = 0;
+    const primary = Object.assign(
+      new Error("original cleanup failure"),
+      properties,
+    );
+    const write = f.io.writeFile;
+    f.io.writeFile = async (...args) => {
+      if (removals) throw new Error("secondary receipt failure");
+      return write(...args);
+    };
+    f.io.command = async (_, args) => {
+      if (args.includes("du")) return "1\tunused";
+      removals++;
+      throw primary;
+    };
+    await assert.rejects(
+      cleanupLinuxCapacity(capacityOptions, f.io),
+      (error) => error === primary,
+    );
+    assert.equal(removals, 1);
+  }
+});
+
+test("timeout-shaped postcheck failure cannot impersonate a partial rm outcome", async () => {
+  const f = capacityFixture();
+  let removals = 0;
+  const lstat = f.io.lstat;
+  const primary = Object.assign(new Error("postcheck failed"), { code: 124 });
+  f.io.lstat = async (...args) => {
+    if (removals) throw primary;
+    return lstat(...args);
+  };
+  f.io.command = async (_, args) => {
+    if (args.includes("du")) return "1\tunused";
+    removals++;
+    return "";
+  };
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, f.io),
+    (error) => error === primary,
+  );
+  assert.equal(removals, 1);
+  assert.equal(f.receipts.at(-1).attempts[0].status, "failed");
+});
+
+test("progress failure plus rm deadline preserves rm error and forbids continuation", async (t) => {
+  let tick;
+  const token = {};
+  t.mock.method(globalThis, "setInterval", (callback) => {
+    tick = callback;
+    return token;
+  });
+  t.mock.method(globalThis, "clearInterval", (value) => {
+    assert.equal(value, token);
+  });
+  for (const kind of ["stat", "write"]) {
+    const f = capacityFixture();
+    f.present.clear();
+    f.present.add("/usr/local/lib/android");
+    const statfs = f.io.statfs,
+      write = f.io.writeFile;
+    let inFlight = false,
+      faultObserved = false,
+      removals = 0;
+    const progressError = new Error("progress observation failed");
+    const originalRmError = Object.assign(new Error("known GNU timeout"), {
+      code: 124,
+    });
+    f.io.statfs = async (...args) => {
+      if (inFlight && kind === "stat" && !faultObserved) {
+        faultObserved = true;
+        throw progressError;
+      }
+      return statfs(...args);
+    };
+    f.io.writeFile = async (...args) => {
+      if (inFlight && kind === "write" && !faultObserved) {
+        faultObserved = true;
+        throw progressError;
+      }
+      return write(...args);
+    };
+    f.io.command = async (_, args) => {
+      if (args.includes("du")) return "1\tunused";
+      if (++removals > 1) throw new Error("unexpected continuation");
+      inFlight = true;
+      tick();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(faultObserved, true);
+      inFlight = false;
+      throw originalRmError;
+    };
+    await assert.rejects(
+      cleanupLinuxCapacity(capacityOptions, f.io),
+      (error) => error === originalRmError,
+    );
+    assert.equal(removals, 1);
+    assert.equal(f.receipts.at(-1).attempts[0].status, "partial-deadline");
+    assert.equal(f.receipts.at(-1).attempts[0].progressFailure, true);
+    assert.equal(f.receipts.at(-1).sufficient, false);
+  }
 });

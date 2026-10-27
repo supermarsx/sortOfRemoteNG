@@ -478,8 +478,8 @@ export async function cleanupLinuxCapacity(
   };
   await save();
   if (receipt.sufficient) return receipt.completed;
-  const validate = async (candidate) => {
-    const info = await io.lstat(candidate).catch((error) => {
+  const validate = async (candidate, expected) => {
+    const info = await io.lstat(candidate, { bigint: true }).catch((error) => {
       if (error.code === "ENOENT") return null;
       throw error;
     });
@@ -490,7 +490,15 @@ export async function cleanupLinuxCapacity(
       symlink: info.isSymbolicLink(),
     });
     if (!info.isDirectory()) fail("Cleanup candidate is not a directory");
-    return true;
+    for (const value of [info.dev, info.ino])
+      if (!(
+        (typeof value === "bigint" && value >= 0n) ||
+        (Number.isSafeInteger(value) && value >= 0)
+      ))
+        fail("Cleanup directory identity is unavailable");
+    if (expected && (info.dev !== expected.dev || info.ino !== expected.ino))
+      fail("Cleanup directory identity changed before continuation");
+    return info;
   };
   const timed = async (candidate, operation, budget) => {
     const outer = Math.floor(Math.min(budget, deadline - io.now()));
@@ -534,7 +542,11 @@ export async function cleanupLinuxCapacity(
       // timeout/signal cannot prove the privileged subtree stopped: abort.
       if (error.killed || error.signal) {
         row.status = "outer-timeout";
-        await save();
+        try {
+          await save();
+        } catch {
+          // A receipt failure cannot replace the original unknown-cohort error.
+        }
         throw error;
       }
       row.status = [124, 137].includes(error.code) ? "deadline" : "unavailable";
@@ -548,14 +560,29 @@ export async function cleanupLinuxCapacity(
       (a.bytes === null) - (b.bytes === null) ||
       (a.bytes ?? 0) - (b.bytes ?? 0),
   );
-  for (const candidate of candidates) {
+  const pending = [...candidates];
+  const initialIdentities = new Map(),
+    attemptsPerPath = new Map();
+  // Appending only a known partial result preserves the complete initial pass.
+  // Every continuation shares the original deadline and permits <=3 attempts.
+  for (let index = 0; index < pending.length; index++) {
+    const candidate = pending[index];
     const available = await free();
     receipt.freeDiskAfterGiB = gib(available);
     receipt.sufficient = available >= required;
     if (receipt.sufficient) break;
-    if (!(await validate(candidate.path))) continue;
+    const identity = await validate(
+      candidate.path,
+      initialIdentities.get(candidate.path),
+    );
+    if (!identity) continue;
+    if (!initialIdentities.has(candidate.path))
+      initialIdentities.set(candidate.path, identity);
+    const ordinal = (attemptsPerPath.get(candidate.path) ?? 0) + 1;
+    attemptsPerPath.set(candidate.path, ordinal);
     const attempt = {
       path: candidate.path,
+      ordinal,
       status: "pending",
       freeBeforeGiB: gib(available),
       freeAfterGiB: gib(available),
@@ -566,7 +593,9 @@ export async function cleanupLinuxCapacity(
     await save();
     const started = io.now();
     let progress = Promise.resolve();
-    let progressError;
+    let progressError,
+      progressFailed = false,
+      commandPartialDeadline = false;
     const timer = setInterval(() => {
       progress = progress
         .then(async () => {
@@ -575,17 +604,22 @@ export async function cleanupLinuxCapacity(
           await save();
         })
         .catch((error) => {
-          progressError = error;
+          if (!progressFailed) progressError = error;
+          progressFailed = true;
         });
     }, 10_000);
     try {
       try {
         await timed(candidate.path, "rm", 120_000);
+      } catch (error) {
+        commandPartialDeadline =
+          [124, 137].includes(error?.code) && !error?.killed && !error?.signal;
+        throw error;
       } finally {
         clearInterval(timer);
         await progress;
       }
-      if (progressError) throw progressError;
+      if (progressFailed) throw progressError;
       // A successful rm is still not a completed directory if it reappeared.
       if (await validate(candidate.path)) attempt.status = "still-present";
       else {
@@ -593,14 +627,20 @@ export async function cleanupLinuxCapacity(
         receipt.completed.push(candidate.path);
       }
     } catch (error) {
-      attempt.status =
-        [124, 137].includes(error.code) && !error.killed && !error.signal
-          ? "partial-deadline"
-          : "failed";
+      attempt.status = commandPartialDeadline ? "partial-deadline" : "failed";
+      if (progressFailed) attempt.progressFailure = true;
+      if (attempt.status === "partial-deadline")
+        attempt.deadlineCode = error.code;
       attempt.elapsedMs = Math.max(0, io.now() - started);
-      attempt.freeAfterGiB = receipt.freeDiskAfterGiB = gib(await free());
-      await save();
-      if (attempt.status === "failed") throw error;
+      try {
+        attempt.freeAfterGiB = receipt.freeDiskAfterGiB = gib(await free());
+        await save();
+      } catch {
+        // Do not continue if observation/retention failed, or mask the first
+        // command failure with that secondary failure.
+        throw error;
+      }
+      if (attempt.status === "failed" || progressFailed) throw error;
     }
     attempt.elapsedMs = Math.max(0, io.now() - started);
     const after = await free();
@@ -609,6 +649,8 @@ export async function cleanupLinuxCapacity(
     receipt.pending = null;
     await save();
     if (receipt.sufficient) break;
+    if (attempt.status === "partial-deadline" && ordinal < 3)
+      pending.push(candidate);
   }
   receipt.pending = null;
   const finalAvailable = await free();
