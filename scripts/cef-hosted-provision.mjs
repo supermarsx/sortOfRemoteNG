@@ -436,10 +436,11 @@ $s=Get-AuthenticodeSignature -LiteralPath $Installer
 @{status=$s.Status.ToString();thumbprint=$s.SignerCertificate.Thumbprint;subject=$s.SignerCertificate.Subject;productVersion=(Get-Item -LiteralPath $Installer).VersionInfo.ProductVersion}|ConvertTo-Json -Compress
 `;
 
-// Observe child-process phases without printing their arguments or modifying the
-// reviewed installer. Its own stdout/stderr and exit status remain authoritative.
+// Observe phases and apply a finite transport policy only to the pinned
+// noninteractive apt install vector. Reviewed installer bytes and outer lease
+// remain unchanged; its stdout/stderr and exit status remain authoritative.
 export const LINUX_INSTALLER_OBSERVER = String.raw`
-import json, os, runpy, stat, subprocess, sys, threading, time
+import hashlib, json, os, runpy, stat, subprocess, sys, threading, time
 _popen = subprocess.Popen
 _records = 0
 _record_lock = threading.Lock()
@@ -474,7 +475,8 @@ def process_progress(pid):
             words = line.split()
             state = dict(R='running', S='sleeping', D='disk-wait', T='stopped', Z='zombie').get(words[1] if len(words) > 1 else '', 'unknown')
     io = {}
-    for line in (read_fixed(root + '/io', 4096) or '').splitlines():
+    io_text = read_fixed(root + '/io', 4096)
+    for line in (io_text or '').splitlines():
         key, _, value = line.partition(':')
         if key in ('rchar', 'wchar', 'read_bytes', 'write_bytes', 'syscr', 'syscw'):
             io[key] = number(value.strip())
@@ -483,7 +485,7 @@ def process_progress(pid):
         child = number(value)
         if child is not None and child > 0:
             children.append(child)
-    return dict(pid=pid, role=role, state=state, io=io), children
+    return dict(pid=pid, role=role, state=state, io=io, ioAvailable=io_text is not None), children
 
 def dpkg_progress():
     # No package names or log text leave this observer; only fixed actions and
@@ -539,6 +541,16 @@ def emit(stage, state, pid, code=None, **extra):
         if stage is not None and _records < 256:
             _records += 1
             print('SORNG_PREREQUISITE_PHASE ' + json.dumps(dict(phase=stage, state=state, pid=pid, exitCode=code, **extra), separators=(',', ':')), file=sys.stderr, flush=True)
+def install_transport(args):
+    prefix = ['sudo', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-qq', '--allow-downgrades', '--assume-yes']
+    if type(args) is not list or len(args) <= len(prefix) or args[:len(prefix)] != prefix or not all(type(value) is str for value in args):
+        return args, {}
+    options = ['-o', 'Acquire::http::Timeout=30', '-o', 'Acquire::https::Timeout=30', '-o', 'Acquire::Retries=0']
+    packages = args[len(prefix):]
+    policy = dict(selectedHttpTimeoutSeconds=30, selectedHttpsTimeoutSeconds=30, selectedRetries=0,
+                  packageCount=len(packages), packageSha256=hashlib.sha256(json.dumps(packages, ensure_ascii=True, separators=(',', ':')).encode('ascii')).hexdigest())
+    return args[:3] + options + args[3:], policy
+
 class ObservedPopen(_popen):
     def __init__(self, args, *rest, **kwargs):
         self._observed_phase = phase(args)
@@ -546,8 +558,9 @@ class ObservedPopen(_popen):
         self._observed_stop = threading.Event()
         self._observed_guard = threading.Lock()
         self._observed_start = time.monotonic()
-        super().__init__(args, *rest, **kwargs)
-        emit(self._observed_phase, 'started', self.pid)
+        command, policy = install_transport(args)
+        super().__init__(command, *rest, **kwargs)
+        emit(self._observed_phase, 'started', self.pid, **policy)
         if self._observed_phase == 'apt-install':
             threading.Thread(target=self._heartbeat, name='sorng-apt-progress', daemon=True).start()
     def _heartbeat(self):

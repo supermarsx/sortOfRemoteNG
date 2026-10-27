@@ -20,6 +20,151 @@ import {
   verifyInstallerSignature,
 } from "../../scripts/cef-hosted-provision.mjs";
 
+// Exact a654 upstream install_packages body; all command effects are synthetic.
+const PINNED_INSTALL_PACKAGES = {
+  sha256: "640dcbcaf76f631d6a00ce00cc71b529d370c3417d9ba2cc12a9c1fd0f3d6614",
+  body: 'def install_packages(options):\n    try:\n        packages = find_missing_packages(options)\n        if packages:\n            cmd = ["apt-get", "install"]\n            if options.no_prompt:\n                cmd = [\n                    "DEBIAN_FRONTEND=noninteractive",\n                    *cmd,\n                    "-qq",\n                    "--allow-downgrades",\n                    "--assume-yes",\n                ]\n            subprocess.check_call(["sudo", *cmd, *packages])\n            logger.info("")\n        else:\n            logger.info("No missing packages, and the packages are up to date.")\n\n    except subprocess.CalledProcessError as e:\n        # An apt-get exit status of 100 indicates that a real error has occurred.\n        logger.error("`apt-get --just-print install ...` failed")\n        if e.stdout is not None:\n            logger.error("It produced the following output:\\n")\n            logger.error(e.stdout.decode("utf-8"))\n        logger.error("You will have to install the above packages yourself.\\n")\n        sys.exit(100)',
+};
+
+test("actual installer body clones only the pinned no-prompt APT vector with finite transport policy", async () => {
+  assert.equal(
+    createHash("sha256").update(PINNED_INSTALL_PACKAGES.body).digest("hex"),
+    PINNED_INSTALL_PACKAGES.sha256,
+  );
+  const script = String.raw`
+import hashlib,json,runpy,subprocess,sys,threading,types
+calls=[]
+waits=[]
+constructor_error=RuntimeError('private-constructor-error')
+wait_error=RuntimeError('private-wait-error')
+fail_constructor=False
+fail_wait=False
+class Base:
+    def __init__(self,args,*rest,**kwargs):
+        calls.append((args,rest,kwargs));self.pid=4242
+        if fail_constructor:raise constructor_error
+    def wait(self,*args,**kwargs):
+        waits.append((args,kwargs))
+        if fail_wait:raise wait_error
+        return 23
+subprocess.Popen=Base
+prefix=['sudo','DEBIAN_FRONTEND=noninteractive','apt-get','install','-qq','--allow-downgrades','--assume-yes']
+packages=['libprivate+fixture-dev','zstd','libfixture:amd64']
+options=['-o','Acquire::http::Timeout=30','-o','Acquire::https::Timeout=30','-o','Acquire::Retries=0']
+original=prefix+packages
+original_copy=original[:]
+env={'PRIVATE_FIXTURE':'never-emit-value'}
+stdout=object();stderr=object();stdin=object()
+def run_fixture(file,run_name):
+    global fail_constructor,fail_wait,read_fixed
+    assert file=='owned-inert-installer.py' and run_name=='__main__'
+    assert sys.argv==['owned-inert-installer.py','--no-prompt']
+    pinned=[]
+    primary=dict(find_missing_packages=lambda options:packages,subprocess=types.SimpleNamespace(check_call=lambda args:pinned.append(args),CalledProcessError=subprocess.CalledProcessError),logger=types.SimpleNamespace(info=lambda *args:None,error=lambda *args:None),sys=sys)
+    exec(compile(PRIMARY,'actual-a654-install-packages','exec'),primary)
+    primary['install_packages'](types.SimpleNamespace(no_prompt=True))
+    primary['install_packages'](types.SimpleNamespace(no_prompt=False))
+    assert pinned==[original,['sudo','apt-get','install',*packages]]
+    observed=subprocess.Popen
+    assert isinstance(observed,type) and observed.__mro__[1]is Base
+    child=observed(original,11,env=env,stdin=stdin,stdout=stdout,stderr=stderr,cwd='owned-fixed',close_fds=True)
+    command,rest,kwargs=calls[-1]
+    assert command==original[:3]+options+original[3:] and command is not original
+    assert original==original_copy and rest==(11,)
+    assert kwargs==dict(env=env,stdin=stdin,stdout=stdout,stderr=stderr,cwd='owned-fixed',close_fds=True)
+    assert kwargs['env']is env and kwargs['stdout']is stdout and kwargs['stderr']is stderr
+    assert child.wait(5,timeout=9)==23 and waits[-1]==((5,),{'timeout':9})
+    negatives=[tuple(original), 'sudo apt-get install private',
+      ['/usr/bin/sudo']+original[1:], original[:2]+['/usr/bin/apt-get']+original[3:],
+      ['sudo','-n']+original[2:], ['sudo','OTHER=1']+original[2:],
+      original[:4]+['--just-print']+original[4:], original[:4]+original[5:],
+      original[:4]+['--assume-yes','--allow-downgrades','-qq']+packages,
+      ['sudo','DEBIAN_FRONTEND=noninteractive','apt-get','update'],
+      ['apt-get','install',*packages], prefix]
+    for args in negatives:
+        before=list(args)if isinstance(args,(list,tuple))else args
+        instance=observed(args,env=env,stdout=stdout,stderr=stderr)
+        assert calls[-1][0]is args and calls[-1][2]['env']is env
+        assert (list(args)if isinstance(args,(list,tuple))else args)==before
+        assert instance.wait(timeout=7)==23 and waits[-1]==((),{'timeout':7})
+    fail_constructor=True
+    try:observed(original)
+    except BaseException as error:assert error is constructor_error
+    else:raise AssertionError('constructor failure lost')
+    fail_constructor=False;fail_wait=True
+    pending=observed(['not-apt','private-value'])
+    try:pending.wait(timeout=3)
+    except BaseException as error:assert error is wait_error
+    else:raise AssertionError('wait failure lost')
+    fail_wait=False
+    for thread in threading.enumerate():
+        if thread.name=='sorng-apt-progress':thread.join(1);assert not thread.is_alive()
+    fixed=read_fixed
+    def fake(file,limit):
+        if file.endswith('/comm'):return 'apt-get\n'
+        if file.endswith('/status'):return 'State: S (sleeping)\n'
+        if file.endswith('/io'):return None
+        return ''
+    read_fixed=fake
+    row,children=process_progress(4242)
+    assert row['io']=={} and row['ioAvailable']is False
+    read_fixed=lambda file,limit:'rchar: 0\n'if file.endswith('/io')else fake(file,limit)
+    row,children=process_progress(4242)
+    assert row['io']=={'rchar':0} and row['ioAvailable']is True
+    read_fixed=fixed
+    assert _records<256
+    for _ in range(300):emit(None,'ignored',0)
+    assert _records<256
+    print('bounded-transport-fixture-complete')
+runpy.run_path=run_fixture
+sys.argv=['observer','owned-inert-installer.py','--no-prompt']
+`;
+  const { stdout, stderr } = await promisify(execFile)(
+    process.platform === "win32" ? "python.exe" : "python3",
+    [
+      "-I",
+      "-B",
+      "-c",
+      script +
+        "\nPRIMARY=" +
+        JSON.stringify(PINNED_INSTALL_PACKAGES.body) +
+        "\nexec(compile(" +
+        JSON.stringify(LINUX_INSTALLER_OBSERVER) +
+        ", 'actual-installer-observer', 'exec'))",
+    ],
+    { timeout: 10000, maxBuffer: 1024 ** 2 },
+  );
+  assert.equal(stdout.trim(), "bounded-transport-fixture-complete");
+  assert.doesNotMatch(
+    stderr,
+    /libprivate|zstd|libfixture|never-emit|private-value|private-constructor|private-wait/,
+  );
+  const records = stderr
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => JSON.parse(line.slice("SORNG_PREREQUISITE_PHASE ".length)));
+  const selected = records.filter(
+    (row) => row.selectedHttpTimeoutSeconds !== undefined,
+  );
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].selectedHttpTimeoutSeconds, 30);
+  assert.equal(selected[0].selectedHttpsTimeoutSeconds, 30);
+  assert.equal(selected[0].selectedRetries, 0);
+  assert.equal(selected[0].packageCount, 3);
+  assert.equal(
+    selected[0].packageSha256,
+    createHash("sha256")
+      .update(
+        JSON.stringify(["libprivate+fixture-dev", "zstd", "libfixture:amd64"]),
+      )
+      .digest("hex"),
+  );
+  assert.equal(records[0].state, "started");
+  assert.equal(records[1].state, "finished");
+  assert.equal(records[1].exitCode, 23);
+  assert(records.length < 256);
+});
+
 test("Linux phase observer executes original script and preserves failure without disclosing child arguments", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "cef-linux-phases-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -156,6 +301,7 @@ except subprocess.CalledProcessError as error:
     for (const process of heartbeat.processes) {
       assert.deepEqual(Object.keys(process).sort(), [
         "io",
+        "ioAvailable",
         "pid",
         "role",
         "state",
@@ -184,6 +330,8 @@ except subprocess.CalledProcessError as error:
           "unknown",
         ].includes(process.state),
       );
+      assert.equal(typeof process.ioAvailable, "boolean");
+      if (!process.ioAvailable) assert.deepEqual(process.io, {});
       for (const [key, value] of Object.entries(process.io)) {
         assert.ok(
           [
@@ -506,6 +654,20 @@ test("Linux adds the reviewed PipeWire and X11/XCB development packages after th
   );
   assert.equal(calls[0].exe, "python3");
   assert.ok(calls[0].args.includes(LINUX_INSTALLER_OBSERVER));
+  assert.equal(calls[0].timeout, 20 * 60_000);
+  assert.deepEqual(calls[0].args.slice(0, 4), [
+    "-I",
+    "-u",
+    "-c",
+    LINUX_INSTALLER_OBSERVER,
+  ]);
+  assert.deepEqual(calls[0].args.slice(5), [
+    "--no-prompt",
+    "--no-syms",
+    "--no-chromeos-fonts",
+    "--no-arm",
+    "--no-backwards-compatible",
+  ]);
   assert.deepEqual(calls[1], {
     exe: "sudo",
     args: [
