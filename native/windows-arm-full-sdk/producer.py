@@ -16,7 +16,7 @@ import checkpoint
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-PROFILE_SHA = "d491ee3a9ca5e51fc8a1f27d6c5adab3deee4dca0d6be7b510c43b76970d7956"
+PROFILE_SHA = "e5cb5cd3285faf2f9590a5d867918f3a710423e97c2478ac2e0be8c2e8e4ab0f"
 CONTEXT_SHA = None
 COMMAND_INVENTORY_REPORTING_FAILURE = False
 ROLES = ("sdk-data", "llvm-data", "rust-archive", "gn-archive", "siso-archive", "materialize", "runtime-closure")

@@ -929,7 +929,7 @@
   },
   "phaseAdmission": {
     "input-closure": true,
-    "source-gn": false,
+    "source-gn": true,
     "engine-pilot": false,
     "compiled-checkpoint": false,
     "compiled-restore": false,
@@ -1331,9 +1331,9 @@
     "restoreAllowed": false,
     "sdkAllowed": false,
     "executionPolicy": {
-      "hostLoaderClosureApproved": false,
+      "hostLoaderClosureApproved": true,
       "gitConfigurationApproved": true,
-      "sourceHookCommandClosureApproved": false
+      "sourceHookCommandClosureApproved": true
     },
     "helpersSourceCommit": "b6475e21aadb664d67ee1c6960de523324473d1d",
     "systemCommands": [

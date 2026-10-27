@@ -399,7 +399,7 @@ def main(args):
   }
 });
 
-test("bootstrap source templates keep original setup bytes except its client callee and leave actual mode disabled", async (t) => {
+test("bootstrap source templates keep original setup bytes except its client callee and deny an explicitly disabled source policy", async (t) => {
   const python = await benignPython(t);
   if (!python) return;
   const root = await fs.mkdtemp(
@@ -423,12 +423,15 @@ test("bootstrap source templates keep original setup bytes except its client cal
       () => deriveBootstrapSetup(Buffer.concat([source, source])),
       /FULL_BOOTSTRAP_SETUP_SOURCE/,
     );
-    const program = await prepareBootstrap(root, profile, "b".repeat(64), {
+    assert.equal(profile.phaseAdmission["source-gn"], true);
+    const disabled = structuredClone(profile);
+    disabled.phaseAdmission["source-gn"] = false;
+    const program = await prepareBootstrap(root, disabled, "b".repeat(64), {
       remaining: () => 10000,
     });
     assert.equal(
       program.pin.sha256,
-      sha(bootstrapProgram(root, profile, "b".repeat(64))),
+      sha(bootstrapProgram(root, disabled, "b".repeat(64))),
     );
     assert.throws(
       () =>
@@ -447,7 +450,7 @@ test("bootstrap source templates keep original setup bytes except its client cal
       (error) => error.stderr.includes("FULL_BOOTSTRAP_DISABLED"),
     );
     await assert.rejects(
-      prepareBootstrap(root, profile, "b".repeat(64), {
+      prepareBootstrap(root, disabled, "b".repeat(64), {
         remaining: () => 10000,
       }),
       /EEXIST/,
@@ -1192,7 +1195,7 @@ def main(args):
   }
 });
 
-test("reviewed same-image host bytes do not activate source GN or confer runtime loader proof", async () => {
+test("reviewed same-image host bytes bind closed source GN without claiming runtime loader proof", async () => {
   assert.deepEqual(reviewedHostTools(profile), profile.sourceGn.hostTools);
   const missing = structuredClone(profile);
   missing.sourceGn.hostTools.node = null;
@@ -1205,11 +1208,11 @@ test("reviewed same-image host bytes do not activate source GN or confer runtime
     closure.edgeSha256,
     "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a",
   );
-  assert.equal(profile.phaseAdmission["source-gn"], false);
+  assert.equal(profile.phaseAdmission["source-gn"], true);
   assert.deepEqual(profile.sourceGn.executionPolicy, {
-    hostLoaderClosureApproved: false,
+    hostLoaderClosureApproved: true,
     gitConfigurationApproved: true,
-    sourceHookCommandClosureApproved: false,
+    sourceHookCommandClosureApproved: true,
   });
   assert.equal(
     profile.sourceGn.sourceId,
@@ -1857,10 +1860,10 @@ test("distinct cross-host namespace preserves all24 raw payloads and truthful so
   assert.equal(review.publicationAllowed, false);
 });
 
-test("full phase map keeps all executable and compiled checkpoint authority unavailable", () => {
+test("full phase map admits source GN while engine and compiled checkpoint authority remain unavailable", () => {
   assert.deepEqual(profile.phaseAdmission, {
     "input-closure": true,
-    "source-gn": false,
+    "source-gn": true,
     "engine-pilot": false,
     "compiled-checkpoint": false,
     "compiled-restore": false,

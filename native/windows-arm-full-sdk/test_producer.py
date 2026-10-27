@@ -702,10 +702,10 @@ class FullInputTests(unittest.TestCase):
         self.assertEqual(rpc_calls,['ResolveVersion'])
 
     def test_closed_phase_and_data_envelope_never_become_compiled_checkpoint(self):
-        self.assertEqual([k for k,v in PROFILE['phaseAdmission'].items()if v],['input-closure','command-inventory'])
+        self.assertEqual([k for k,v in PROFILE['phaseAdmission'].items()if v],['input-closure','source-gn','command-inventory'])
         for fn in (checkpoint.compiled_checkpoint,checkpoint.compiled_restore):
             with self.assertRaisesRegex(ValueError,'FULL_ENGINE_'):fn({'kind':'sorng-windows-arm-full-sdk-bootstrap-data'})
-        for key in ['source-gn','engine-pilot','sdk-package','compiled-restore']:
+        for key in ['engine-pilot','compiled-checkpoint','sdk-package','compiled-restore']:
             self.assertFalse(PROFILE['phaseAdmission'][key])
         self.assertFalse(PROFILE['claims']['sourceMetadataWindowsProven'])
 
@@ -1052,7 +1052,14 @@ class SourceGnTests(unittest.TestCase):
     def test_missing_reviewed_host_pins_or_execution_policy_denies_before_capacity_and_any_data_child(self):
         from types import SimpleNamespace
         missing=copy.deepcopy(PROFILE);missing['sourceGn']['hostTools']['node']=None
-        for p,expected in ((missing,'FULL_HOST_TOOL_PIN_MISSING'),(PROFILE,'FULL_EXECUTION_POLICY_UNAVAILABLE')):
+        denied=[(missing,'FULL_HOST_TOOL_PIN_MISSING')]
+        self.assertIsNone(producer.source_execution_policy(PROFILE))
+        for key in PROFILE['sourceGn']['executionPolicy']:
+            disabled=copy.deepcopy(PROFILE);disabled['sourceGn']['executionPolicy'][key]=False
+            denied.append((disabled,'FULL_EXECUTION_POLICY_UNAVAILABLE'))
+        disabled=copy.deepcopy(PROFILE);disabled['phaseAdmission']['source-gn']=False
+        denied.append((disabled,'FULL_SOURCE_ADMISSION_UNAVAILABLE'))
+        for p,expected in denied:
             root=self.temp()
             with patch.dict(sys.modules,{'job':SimpleNamespace()}),patch.object(producer,'source_capacity',side_effect=AssertionError('no native query')),patch.object(producer,'verified_sources'):
                 self.assertEqual(producer.operation(root,{'mode':'source-gn'},p,clock()),1)
@@ -1112,7 +1119,7 @@ class SourceGnTests(unittest.TestCase):
         bad=copy.deepcopy(p);bad['sourceGn']['hostTools']['node']['observedAsExpected']=True
         with self.assertRaises(acquire.Denied):producer.source_host_tools(bad)
         self.assertEqual(producer.source_host_tools(PROFILE),PROFILE['sourceGn']['hostTools'])
-        self.assertFalse(PROFILE['phaseAdmission']['source-gn'])
+        self.assertTrue(PROFILE['phaseAdmission']['source-gn'])
 
     def test_actual_capacity_body_observes_available_not_total_memory_and_denies_before_admission(self):
         from types import SimpleNamespace
@@ -1492,7 +1499,7 @@ class ReviewedHostClosureTests(unittest.TestCase):
             return material.held(files[path],current,**kwargs)
         return p,files,calls,read
 
-    def test_root_adopted_table_is_finite_and_does_not_activate_execution(self):
+    def test_root_adopted_table_is_finite_and_only_closed_source_gn_is_activated(self):
         rows=producer.source_host_closure_rows(PROFILE,PROFILE['image'])
         self.assertEqual(len(rows),18)
         self.assertEqual(sum(row['bytes']for row in rows.values()),113853492)
@@ -1500,9 +1507,9 @@ class ReviewedHostClosureTests(unittest.TestCase):
         self.assertEqual(PROFILE['sourceGn']['hostClosure']['edgeSha256'],'78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a')
         self.assertNotIn('C:/Program Files/Git/etc/gitconfig'.lower(),rows)
         self.assertLessEqual(len((HERE/'profile.json').read_bytes()),65536)
-        self.assertFalse(PROFILE['phaseAdmission']['source-gn'])
-        self.assertFalse(PROFILE['sourceGn']['executionPolicy']['hostLoaderClosureApproved'])
-        self.assertFalse(PROFILE['sourceGn']['executionPolicy']['sourceHookCommandClosureApproved'])
+        self.assertTrue(PROFILE['phaseAdmission']['source-gn'])
+        self.assertTrue(PROFILE['sourceGn']['executionPolicy']['hostLoaderClosureApproved'])
+        self.assertTrue(PROFILE['sourceGn']['executionPolicy']['sourceHookCommandClosureApproved'])
 
     def test_actual_shared_reader_and_pe_graph_verify_eighteen_physical_files(self):
         p,files,calls,read=self.fixture()
