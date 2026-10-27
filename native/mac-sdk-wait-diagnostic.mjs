@@ -34,6 +34,38 @@ const code = (e) =>
   ].includes(e?.code)
     ? e.code
     : "QUERY_FAILED";
+export function primaryReason(error) {
+  if (error === null) return "SDK_WAIT_NULL_PRIMARY";
+  try {
+    if (error?.message === "Runner map target/schema mismatch")
+      return "SDK_WAIT_RUNNER_MAP_TARGET_SCHEMA";
+    const known = new Set([
+      "SDK_WAIT_AUTHORITY",
+      "SDK_WAIT_EVENT",
+      "SDK_WAIT_INPUTS",
+      "SDK_WAIT_SOURCE",
+      "SDK_WAIT_IMAGE",
+      "SDK_WAIT_SELECTED",
+      "SDK_WAIT_ROOT",
+      "SDK_WAIT_STAGE_ADMISSION",
+      "SDK_WAIT_WORKER_FAILED",
+      "SDK_WAIT_PENDING_IO_UNCONFIRMED",
+      "SDK_WAIT_CLEANUP_UNCONFIRMED",
+      "SDK_WAIT_HARD_DEADLINE_UNCONFIRMED",
+      "SDK_WAIT_CONTEXT",
+      "SDK_WAIT_FILE",
+      "SDK_WAIT_PATH",
+      "SDK_WAIT_LINK",
+      "SDK_WAIT_DEADLINE",
+      "SDK_WAIT_REPORT_BOUND",
+    ]);
+    return known.has(error?.message)
+      ? error.message
+      : "SDK_WAIT_UNKNOWN_PRIMARY";
+  } catch {
+    return "SDK_WAIT_UNKNOWN_PRIMARY";
+  }
+}
 export function authority(
   e,
   event,
@@ -539,6 +571,7 @@ export async function main(e = process.env) {
           budget.remaining,
         ),
       ),
+      profile.target,
     );
     assert(
       map.hosted.imageOS === e.ImageOS &&
@@ -712,6 +745,7 @@ export async function main(e = process.env) {
             terminalCompletionRequired: true,
             failure: hasFailure ? "SDK_WAIT_FAILED" : null,
             primaryWasNull: hasFailure && first === null,
+            primaryReason: hasFailure ? primaryReason(first) : null,
             phase,
             actorsQuiet,
             pendingIoCount: pendingIO.size,
@@ -740,6 +774,7 @@ export async function main(e = process.env) {
       phase,
       complete: !hasFailure,
       rootCreated: !!root,
+      primaryReason: hasFailure ? primaryReason(first) : null,
       sourceWriteAdmitted: false,
       samplerAttempted: false,
     }),

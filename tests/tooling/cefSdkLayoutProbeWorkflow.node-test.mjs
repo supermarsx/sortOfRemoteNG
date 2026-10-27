@@ -829,6 +829,7 @@ import {
   cleanupOwned,
   main as waitMain,
   hardWatchdog as waitHardWatchdog,
+  primaryReason as waitPrimaryReason,
 } from "../../native/mac-sdk-wait-diagnostic.mjs";
 const waitRoot =
   "/Users/runner/work/_temp/cef-mac-sdk-wait-11111111-1111-4111-8111-111111111111";
@@ -1170,6 +1171,7 @@ function waitParentFixture() {
     console: { log: () => {}, error: () => {} },
     pendingIO: new Set(),
     hardWatchdog: waitHardWatchdog,
+    primaryReason: waitPrimaryReason,
     checkpointHost: () => ({ inputs, target: "aarch64-apple-darwin" }),
     plan: async () => ({
       inputsRoot: "/selected-inputs",
@@ -1517,3 +1519,78 @@ test(
     assert.equal(result.killed, false);
   },
 );
+
+import { fileURLToPath } from "node:url";
+import {
+  plan as waitMaintainedPlan,
+  validateRunnerMap as waitMaintainedRunnerMap,
+} from "../../scripts/cef-runtime-ci.mjs";
+test("SDK wait actual maintained input-admission chain uses the checked-in namespace/map and required target", async () => {
+  const f = waitParentFixture(),
+    checkout = fileURLToPath(new URL("../../", import.meta.url));
+  const profile = checkpointHost("aarch64-apple-darwin", "darwin", "x64");
+  const admitted = await waitMaintainedPlan({
+    inputs: profile.inputs,
+    target: profile.target,
+    checkout,
+    runnerMode: "hosted",
+  });
+  assert.equal(
+    identitySha256(admitted.sourceLock),
+    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+  );
+  const raw = await readFile(
+    path.join(admitted.inputsRoot, "cef-ci-runner-aarch64-apple-darwin.json"),
+  );
+  assert.equal(
+    hash(raw),
+    "d7667c93c6e5449e3765169a170bb72cca6916c86b5a83f687462ad057736af4",
+  );
+  const parsed = JSON.parse(raw);
+  assert.throws(
+    () => waitMaintainedRunnerMap(parsed),
+    /Runner map target\/schema mismatch/,
+  );
+  assert.equal(
+    waitMaintainedRunnerMap(parsed, profile.target).target,
+    profile.target,
+  );
+  // Actual parent uses ALL maintained input APIs and real checked-in pinned bytes.
+  // Later installed-tool, filesystem and process boundaries stay controlled: no Darwin claim.
+  f.scope.checkpointHost = checkpointHost;
+  f.scope.plan = waitMaintainedPlan;
+  f.scope.identitySha256 = identitySha256;
+  f.scope.validateRunnerMap = waitMaintainedRunnerMap;
+  f.scope.process = { ...f.scope.process, cwd: () => checkout };
+  const held = f.scope.held;
+  f.scope.held = async (file, ...rest) =>
+    file.includes("cef-ci-runner-") ? raw : held(file, ...rest);
+  const result = await f.build()(f.e);
+  assert.deepEqual(f.launches, ["A", "B"]);
+  assert.equal(result.variants.length, 2);
+});
+test("SDK wait terminal reasons are closed before root creation and absent-root upload is skipped", () => {
+  assert.equal(
+    waitPrimaryReason(new Error("Runner map target/schema mismatch")),
+    "SDK_WAIT_RUNNER_MAP_TARGET_SCHEMA",
+  );
+  assert.equal(waitPrimaryReason(null), "SDK_WAIT_NULL_PRIMARY");
+  assert.equal(
+    waitPrimaryReason(new Error("secret/path/token")),
+    "SDK_WAIT_UNKNOWN_PRIMARY",
+  );
+  assert.equal(
+    waitPrimaryReason({
+      get message() {
+        throw new Error("private getter");
+      },
+    }),
+    "SDK_WAIT_UNKNOWN_PRIMARY",
+  );
+  assert.equal(
+    workflow.jobs.sdk_wait.steps.find(
+      (s) => s.name === "Retain bounded SDK wait diagnostics",
+    ).if,
+    "always() && steps.sdk_wait.outputs.diagnostic_root != ''",
+  );
+});

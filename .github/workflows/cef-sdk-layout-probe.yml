@@ -249,7 +249,7 @@ jobs:
         id: sdk_wait
         run: node native/mac-sdk-wait-diagnostic.mjs --execute
       - name: Retain bounded SDK wait diagnostics
-        if: always()
+        if: always() && steps.sdk_wait.outputs.diagnostic_root != ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: cef-sdk-wait-${{ github.run_id }}-${{ github.run_attempt }}
