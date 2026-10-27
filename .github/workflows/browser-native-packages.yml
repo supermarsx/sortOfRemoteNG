@@ -63,7 +63,7 @@ jobs:
         with:
           toolchain: "1.98.1"
           targets: ${{ matrix.target }}
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6, official ref checked 2026-10-06
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0, official ref checked 2027.1.0-10-07.1.0
         with:
           python-version: "3.13"
       - name: Linux native build and X11 prerequisites
