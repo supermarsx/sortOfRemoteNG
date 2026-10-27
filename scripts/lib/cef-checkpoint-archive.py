@@ -611,6 +611,49 @@ def source_json(raw):
         return result
     return json.loads(raw, object_pairs_hook=unique)
 
+def source_registry_repository(name, value):
+    # c101 gclient._SaveEntries serializes dependency labels, not just paths.
+    # GCS uses path:object and CIPD path:package. Those labels authorize no
+    # filesystem path or Git-admin exclusion; the whole registry is hashed.
+    from urllib.parse import urlsplit
+    require(isinstance(name, str) and 0 < len(name.encode()) <= 1024, 'source-registry-name')
+    require(value is None or isinstance(value, str) and len(value) <= 8192, 'source-repository-value')
+    if ':' not in name:
+        relative(name)
+        require(name == 'src' or name.startswith('src/'), 'source-repository-root')
+        return name
+    require(name.count(':') == 1 and isinstance(value, str), 'source-registry-kind')
+    directory, suffix = name.split(':')
+    relative(directory)
+    require(directory == 'src' or directory.startswith('src/'), 'source-repository-root')
+    require(suffix and not suffix.startswith('/') and '\\' not in suffix and
+            not any(ord(c) < 32 or ord(c) == 127 for c in suffix) and
+            all(part not in ('', '.', '..') for part in suffix.split('/')), 'source-registry-label')
+    try:
+        parsed = urlsplit(value)
+        no_credentials = parsed.username is None and parsed.password is None and parsed.port is None
+    except ValueError:
+        raise CheckpointError('source-registry-value') from None
+    require(no_credentials and not parsed.query and not parsed.fragment, 'source-registry-value')
+    if value.startswith('gs://'):
+        require(re.fullmatch(r'[a-z0-9][a-z0-9_.-]{1,220}[a-z0-9]', parsed.netloc) is not None and
+                '..' not in parsed.netloc and re.fullmatch(r'[A-Za-z0-9_./+@=,-]+', suffix) is not None and
+                value == 'gs://' + parsed.netloc + '/' + suffix, 'source-registry-value')
+    elif value.startswith('https://chrome-infra-packages.appspot.com/'):
+        # The constructor preserves literal package placeholders. Do not guess
+        # PinToActualRevision's expanded package or accept another service/URI.
+        package = re.sub(r'\$\{(?:platform|os|arch)\}', 'literal', suffix)
+        require(re.fullmatch(r'[A-Za-z0-9_./+@=-]+', package) is not None, 'source-registry-label')
+        prefix = 'https://chrome-infra-packages.appspot.com/' + suffix + '@'
+        require(parsed.netloc == 'chrome-infra-packages.appspot.com' and value.startswith(prefix), 'source-registry-value')
+        version = value[len(prefix):]
+        require(re.fullmatch(r'[A-Za-z0-9_./:+@=-]+', version) is not None and
+                all(part not in ('', '.', '..') for part in version.split('/')), 'source-registry-value')
+    else:
+        raise CheckpointError('source-registry-kind')
+    return None
+
+
 def source_repositories(root, budget):
     import ast
     names = {'src', 'src/cef', 'depot_tools'}
@@ -626,10 +669,10 @@ def source_repositories(root, budget):
     require(len(entries) == len(body.body[0].value.keys), 'source-repositories-shape')
     require(isinstance(entries, dict) and len(entries) <= 10000, 'source-repositories-bound')
     for name, value in entries.items():
-        budget.check();relative(name)
-        require(name == 'src' or name.startswith('src/'), 'source-repository-root')
-        require(value is None or isinstance(value, str) and len(value) <= 8192, 'source-repository-value')
-        names.add(name)
+        budget.check()
+        repository = source_registry_repository(name, value)
+        if repository is not None:
+            names.add(repository)
     return {'repositories': names, 'gitHeads': {}, 'registrySha256':hashlib.sha256(registry_raw).hexdigest()}
 
 
