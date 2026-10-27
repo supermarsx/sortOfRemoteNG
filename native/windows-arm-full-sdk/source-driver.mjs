@@ -1096,6 +1096,196 @@ export async function retainHookOrigins(file, projection, budget, limits) {
   }
 }
 
+// Diagnostics only: fixed policy metadata, no enumeration, file reads or admission.
+const GIT_DIAGNOSTIC_FIELDS = Object.freeze([
+  "dev",
+  "ino",
+  "size",
+  "mtimeNs",
+  "ctimeNs",
+  "birthtimeNs",
+  "mode",
+  "nlink",
+]);
+const GIT_DIAGNOSTIC_CODES = new Set([
+  "SOURCE_GIT_POLICY_ALIAS",
+  "SOURCE_GIT_POLICY_LINK",
+  "SOURCE_GIT_POLICY_FILE",
+  "SOURCE_GIT_POLICY_IDENTITY",
+  "SOURCE_GIT_POLICY_CHANGED",
+  "SOURCE_GIT_POLICY_DIRECTORY",
+  "SOURCE_GIT_POLICY_HOOKS",
+  "SOURCE_GIT_POLICY_CAPABILITY",
+  "SOURCE_GIT_ENVIRONMENT_VALUE",
+]);
+export async function gitPolicyMetadata(root, budget) {
+  const rows = [];
+  for (const [role, name] of [
+    ["root", ""],
+    ["home", "home"],
+    ["xdg", "xdg"],
+    ["hooks", "hooks"],
+    ["global", "global.gitconfig"],
+    ["system", "system.gitconfig"],
+  ]) {
+    try {
+      budget.remaining();
+      const stat = await fs.lstat(path.join(root, name), { bigint: true });
+      rows.push({
+        role,
+        type: stat.isSymbolicLink()
+          ? "link"
+          : stat.isDirectory()
+            ? "directory"
+            : stat.isFile()
+              ? "file"
+              : "other",
+        fields: GIT_DIAGNOSTIC_FIELDS.map((key) =>
+          typeof stat[key] === "bigint" ? stat[key].toString() : null,
+        ),
+      });
+    } catch {
+      rows.push({ role, type: "unavailable", fields: null });
+    }
+  }
+  return rows;
+}
+export function gitPolicyDiagnostic(error, before, after) {
+  let code = "UNCLASSIFIED";
+  try {
+    const message = error?.message;
+    if (GIT_DIAGNOSTIC_CODES.has(message)) code = message;
+  } catch {
+    /* No raw exception data. */
+  }
+  return {
+    kind: "windows-arm-source-git-policy-diagnostic",
+    success: false,
+    code,
+    fields: GIT_DIAGNOSTIC_FIELDS,
+    rows: after.map((row, index) => {
+      const prior = before?.[index] ?? { type: "unavailable", fields: null };
+      return {
+        role: row.role,
+        beforeType: prior.type,
+        afterType: row.type,
+        before: prior.fields,
+        after: row.fields,
+        changed:
+          prior.fields && row.fields
+            ? GIT_DIAGNOSTIC_FIELDS.filter(
+                (key, field) =>
+                  !(
+                    process.platform === "win32" &&
+                    row.type === "directory" &&
+                    prior.type === "directory" &&
+                    key === "size"
+                  ) && prior.fields[field] !== row.fields[field],
+              )
+            : null,
+        typeChanged: prior.type !== row.type,
+      };
+    }),
+  };
+}
+export async function appendGitPolicyDiagnostic(file, report, budget, limits) {
+  const bytes = Buffer.from(
+    "SOURCE_GIT_DIAGNOSTIC:" + JSON.stringify(report) + "\n",
+  );
+  need(bytes.length <= 8192, "FULL_GIT_DIAGNOSTIC_BOUND");
+  budget.remaining();
+  need(
+    Number.isSafeInteger(limits.bytes) &&
+      limits.bytes >= 0 &&
+      limits.cap === 64 * 1024 ** 2 &&
+      limits.bytes + bytes.length <= limits.cap,
+    "FULL_SOURCE_OUTPUT_BOUND",
+  );
+  // Charge before any I/O, including failed retention. No refund or new ledger.
+  limits.bytes += bytes.length;
+  await physical(file);
+  const before = await fs.lstat(file, { bigint: true });
+  need(
+    before.isFile() &&
+      before.nlink === 1n &&
+      before.size >= 0n &&
+      before.size <= BigInt(limits.cap),
+    "FULL_GIT_DIAGNOSTIC_FILE",
+  );
+  budget.remaining();
+  const fd = await fs.open(
+    file,
+    constants.O_WRONLY | constants.O_APPEND | (constants.O_NOFOLLOW ?? 0),
+  );
+  let failed = false;
+  try {
+    const descriptor = await fd.stat({ bigint: true });
+    need(
+      descriptor.isFile() && shared(descriptor) === shared(before),
+      "FULL_GIT_DIAGNOSTIC_IDENTITY",
+    );
+    budget.remaining();
+    need(
+      (await fd.write(bytes)).bytesWritten === bytes.length,
+      "FULL_GIT_DIAGNOSTIC_WRITE",
+    );
+    const after = await fd.stat({ bigint: true });
+    const pathAfter = await fs.lstat(file, { bigint: true });
+    need(
+      pathAfter.isFile() &&
+        !pathAfter.isSymbolicLink() &&
+        after.dev === descriptor.dev &&
+        after.ino === descriptor.ino &&
+        after.birthtimeNs === descriptor.birthtimeNs &&
+        after.nlink === 1n &&
+        after.mode === descriptor.mode &&
+        after.size === before.size + BigInt(bytes.length) &&
+        shared(after) === shared(pathAfter),
+      "FULL_GIT_DIAGNOSTIC_CHANGED",
+    );
+    await physical(file);
+    budget.remaining();
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await fd.close();
+    } catch (error) {
+      sourceCloseFailure = true;
+      if (!failed) throw error;
+    }
+  }
+}
+export function gitPolicyVerifier(root, file, budget, limits, verify) {
+  let baseline = null,
+    reported = false;
+  return async () => {
+    try {
+      const result = await verify();
+      // Only a successful authoritative verification can refresh the baseline.
+      baseline = await gitPolicyMetadata(root, budget);
+      return result;
+    } catch (error) {
+      if (!reported) {
+        reported = true; // First fault only, even if capture/append/close fails.
+        try {
+          const current = await gitPolicyMetadata(root, budget);
+          await appendGitPolicyDiagnostic(
+            file,
+            gitPolicyDiagnostic(error, baseline, current),
+            budget,
+            limits,
+          );
+        } catch {
+          sourceReportingFailure = true;
+        }
+      }
+      throw error; // Includes null/0/undefined; retention never replaces this value.
+    }
+  };
+}
+
 // Run the real pinned selector. Its returned path and bytes must match the one
 // already admitted by the driver; its other candidates and PATH never execute.
 export function boundGnArguments(hooks, expected, pin) {
@@ -1731,6 +1921,13 @@ export async function main(argv = process.argv.slice(2)) {
     success = false,
     graph = null,
     generatedArguments = null;
+  const verifyGitPolicy = gitPolicyVerifier(
+    path.join(root, "cef-source-git-policy"),
+    path.join(files.logs, "sync.stderr.log"),
+    budget,
+    limits,
+    () => custom.sourceGitEnvironment(gitPolicy, env),
+  );
   const checked = async (action) => {
     await verifyHostClosure(p, budget, c.image);
     await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);
@@ -1744,7 +1941,7 @@ export async function main(argv = process.argv.slice(2)) {
         budget,
         primary,
       );
-    await custom.sourceGitEnvironment(gitPolicy, env);
+    await verifyGitPolicy();
     let rejected = false;
     try {
       return await action();
@@ -1763,7 +1960,7 @@ export async function main(argv = process.argv.slice(2)) {
             budget,
             primary,
           );
-        await custom.sourceGitEnvironment(gitPolicy, env);
+        await verifyGitPolicy();
       } catch (error) {
         console.error("FULL_BOOTSTRAP_OR_SOURCE_POSTCHECK_FAILURE");
         if (!rejected) throw error;

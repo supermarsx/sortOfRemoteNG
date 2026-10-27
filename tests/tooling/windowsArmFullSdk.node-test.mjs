@@ -12,6 +12,8 @@ import { constants as fsConstants } from "node:fs";
 import {
   identitySha256,
   validateSourceLock,
+  prepareSourceGitIsolation,
+  sourceGitEnvironment,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
 import { validateRunnerMap } from "../../scripts/cef-runtime-ci.mjs";
 import { cefHookArguments } from "../../scripts/cef-runtime-ci.mjs";
@@ -37,6 +39,10 @@ import {
   bootstrapShim,
   deriveBootstrapSetup,
   bindBootstrapVector,
+  gitPolicyMetadata,
+  gitPolicyDiagnostic,
+  appendGitPolicyDiagnostic,
+  gitPolicyVerifier,
 } from "../../native/windows-arm-full-sdk/source-driver.mjs";
 
 const root = path.resolve(
@@ -2381,4 +2387,421 @@ test("fixed acquisitions preserve official SDK28000 and separate Rust/CIPD caps"
     ),
   );
   assert(!producer.includes("subprocess.Popen("));
+});
+
+test("GitPolicy actual verifier records fixed roles after success and preserves only its first actual failure", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-diagnostic-"),
+  );
+  try {
+    const policyRoot = path.join(directory, "cef-source-git-policy"),
+      file = path.join(directory, "sync.stderr.log"),
+      budget = { remaining: () => 10000 },
+      limits = { bytes: 0, cap: 64 * 1024 ** 2 };
+    await fs.writeFile(file, "existing child stderr\n");
+    const policy = await prepareSourceGitIsolation(policyRoot);
+    const verify = gitPolicyVerifier(policyRoot, file, budget, limits, () =>
+      sourceGitEnvironment(policy, {}),
+    );
+    await verify();
+    await fs.writeFile(path.join(policyRoot, "home", "owned-causal-data"), "x");
+    let first;
+    await assert.rejects(verify(), (error) => {
+      first = error;
+      return error.message === "SOURCE_GIT_POLICY_DIRECTORY";
+    });
+    const raw = await fs.readFile(file, "utf8"),
+      lines = raw
+        .split("\n")
+        .filter((line) => line.startsWith("SOURCE_GIT_DIAGNOSTIC:"));
+    assert.equal(lines.length, 1);
+    const report = JSON.parse(lines[0].slice("SOURCE_GIT_DIAGNOSTIC:".length));
+    assert.equal(report.success, false);
+    assert.equal(report.code, first.message);
+    assert.deepEqual(
+      report.rows.map((row) => row.role),
+      ["root", "home", "xdg", "hooks", "global", "system"],
+    );
+    assert.ok(
+      report.rows
+        .find((row) => row.role === "home")
+        .changed.includes("mtimeNs"),
+    );
+    assert.equal(raw.includes(directory), false);
+    assert.equal(raw.includes("owned-causal-data"), false);
+    assert.ok(Buffer.byteLength(lines[0] + "\n") <= 8192);
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    assert.equal(await fs.readFile(file, "utf8"), raw);
+    assert.equal(limits.bytes, Buffer.byteLength(lines[0] + "\n"));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("GitPolicy diagnostic lstat facts retain directory/file replacement, birth and link deltas without following aliases", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-facts-"),
+  );
+  const original = fs.lstat;
+  try {
+    const policyRoot = path.join(directory, "cef-source-git-policy");
+    await prepareSourceGitIsolation(policyRoot);
+    const budget = { remaining: () => 10000 },
+      before = await gitPolicyMetadata(policyRoot, budget);
+    let calls = 0;
+    fs.lstat = async (file, options) => {
+      calls++;
+      const stat = await original(file, options);
+      if (path.basename(file) === "global.gitconfig")
+        return new Proxy(stat, {
+          get(target, key) {
+            if (key === "ino" || key === "birthtimeNs" || key === "nlink")
+              return target[key] + 1n;
+            if (key === "isSymbolicLink") return () => true;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      return stat;
+    };
+    const after = await gitPolicyMetadata(policyRoot, budget);
+    assert.equal(calls, 6); // Direct fixed roles only; no realpath/open/readdir.
+    const report = gitPolicyDiagnostic(
+        new Error("private arbitrary error/path"),
+        before,
+        after,
+      ),
+      global = report.rows.find((row) => row.role === "global");
+    assert.equal(report.code, "UNCLASSIFIED");
+    let messageReads = 0;
+    const changingMessage = {
+      get message() {
+        return ++messageReads === 1
+          ? "SOURCE_GIT_POLICY_CHANGED"
+          : "private second getter";
+      },
+    };
+    assert.equal(
+      gitPolicyDiagnostic(changingMessage, before, after).code,
+      "SOURCE_GIT_POLICY_CHANGED",
+    );
+    assert.equal(messageReads, 1);
+    assert.equal(global.afterType, "link");
+    assert.equal(global.typeChanged, true);
+    assert.deepEqual(global.changed, ["ino", "birthtimeNs", "nlink"]);
+    assert.equal(JSON.stringify(report).includes("private"), false);
+    fs.lstat = async () => {
+      throw new Error("private path unavailable");
+    };
+    const absent = gitPolicyDiagnostic(
+      null,
+      before,
+      await gitPolicyMetadata(policyRoot, budget),
+    );
+    assert.ok(
+      absent.rows.every(
+        (row) =>
+          row.afterType === "unavailable" &&
+          row.after === null &&
+          row.changed === null,
+      ),
+    );
+  } finally {
+    fs.lstat = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual diagnostic append rejects alias, replacement, birth/nlink mismatches and charges before any I/O", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-append-"),
+  );
+  const open = fs.open,
+    lstat = fs.lstat,
+    realpath = fs.realpath;
+  try {
+    const file = path.join(directory, "sync.stderr.log"),
+      budget = { remaining: () => 10000 },
+      cap = 64 * 1024 ** 2;
+    await fs.writeFile(file, "original\n");
+    const report = gitPolicyDiagnostic(null, null, []);
+    await appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap });
+    const originalBytes = await fs.readFile(file);
+    let opens = 0;
+    fs.open = async (...args) => {
+      opens++;
+      return open(...args);
+    };
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: cap, cap }),
+      /FULL_SOURCE_OUTPUT_BOUND/,
+    );
+    await assert.rejects(
+      appendGitPolicyDiagnostic(
+        file,
+        report,
+        {
+          remaining() {
+            throw new Error("deadline");
+          },
+        },
+        { bytes: 0, cap },
+      ),
+      /deadline/,
+    );
+    assert.equal(opens, 0);
+    fs.realpath = async () => path.join(directory, "alternate");
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      /FULL_DRIVER_ALIAS/,
+    );
+    fs.realpath = realpath;
+    for (const field of ["ino", "birthtimeNs", "nlink"]) {
+      let writes = 0,
+        closes = 0;
+      fs.open = async (name, flags) => {
+        assert.equal(Boolean(flags & fsConstants.O_CREAT), false);
+        assert.ok(flags & fsConstants.O_APPEND);
+        const fd = await open(name, flags);
+        return {
+          async stat(options) {
+            const stat = await fd.stat(options);
+            return { ...stat, [field]: stat[field] + 1n, isFile: () => true };
+          },
+          async write(...args) {
+            writes++;
+            return fd.write(...args);
+          },
+          async close() {
+            closes++;
+            await fd.close();
+          },
+        };
+      };
+      await assert.rejects(
+        appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+        /FULL_GIT_DIAGNOSTIC_IDENTITY/,
+      );
+      assert.equal(writes, 0);
+      assert.equal(closes, 1);
+    }
+    fs.open = async (name, flags) => {
+      const fd = await open(name, flags);
+      return {
+        stat: (...args) => fd.stat(...args),
+        write: (...args) => fd.write(...args),
+        async close() {
+          await fd.close();
+          throw closeOnly;
+        },
+      };
+    };
+    const closeOnly = new Error("closed secondary sentinel");
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      (error) => error === closeOnly,
+    );
+    fs.open = async (name, flags) => {
+      const fd = await open(name, flags);
+      return {
+        stat: (...args) => fd.stat(...args),
+        async write() {
+          throw null;
+        },
+        async close() {
+          await fd.close();
+          throw closeOnly;
+        },
+      };
+    };
+    let appendCaught = false;
+    try {
+      await appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap });
+    } catch (error) {
+      appendCaught = true;
+      assert.equal(error, null);
+    }
+    assert.equal(appendCaught, true);
+    fs.open = open;
+    const hardlink = path.join(directory, "held-alias");
+    await fs.link(file, hardlink);
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      /FULL_GIT_DIAGNOSTIC_FILE/,
+    );
+    await fs.unlink(hardlink);
+    let reads = 0;
+    fs.lstat = async (name, options) => {
+      const stat = await lstat(name, options);
+      if (name === file && options?.bigint && ++reads === 2)
+        return new Proxy(stat, {
+          get(target, key) {
+            if (key === "ino") return target.ino + 1n;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      return stat;
+    };
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      /FULL_GIT_DIAGNOSTIC_CHANGED/,
+    );
+    fs.lstat = lstat;
+    assert.ok((await fs.readFile(file)).length > originalBytes.length); // A post-write fault is reported as failure, never refunded.
+    await assert.rejects(
+      appendGitPolicyDiagnostic(
+        path.join(directory, "missing"),
+        report,
+        budget,
+        { bytes: 0, cap },
+      ),
+    );
+    assert.equal(
+      await fs.stat(path.join(directory, "missing")).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
+  } finally {
+    fs.open = open;
+    fs.lstat = lstat;
+    fs.realpath = realpath;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("GitPolicy first errors including falsy values survive append/close/deadline faults and postcheck-only errors remain primary", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-first-"),
+  );
+  const open = fs.open;
+  try {
+    const policyRoot = path.join(directory, "cef-source-git-policy"),
+      file = path.join(directory, "sync.stderr.log"),
+      cap = 64 * 1024 ** 2;
+    await prepareSourceGitIsolation(policyRoot);
+    await fs.writeFile(file, "");
+    for (const primary of [
+      null,
+      0,
+      undefined,
+      new Error("SOURCE_GIT_POLICY_CHANGED"),
+    ]) {
+      for (const mode of ["write", "close", "ledger", "deadline"]) {
+        let fail = false,
+          closes = 0,
+          writes = 0;
+        const budget = {
+          remaining() {
+            if (fail && mode === "deadline")
+              throw new Error("secondary deadline");
+            return 10000;
+          },
+        };
+        fs.open = async (name, flags) => {
+          const fd = await open(name, flags);
+          return {
+            stat: (...args) => fd.stat(...args),
+            async write(...args) {
+              writes++;
+              if (mode === "write") throw new Error("secondary append");
+              return fd.write(...args);
+            },
+            async close() {
+              closes++;
+              await fd.close();
+              if (mode === "close") throw new Error("secondary close");
+            },
+          };
+        };
+        const limits = { bytes: 0, cap },
+          verify = gitPolicyVerifier(
+            policyRoot,
+            file,
+            budget,
+            limits,
+            async () => {
+              if (fail) throw primary;
+              return 7;
+            },
+          );
+        assert.equal(await verify(), 7);
+        fail = true;
+        if (mode === "ledger") limits.bytes = cap;
+        let caught = false;
+        try {
+          await verify();
+        } catch (error) {
+          caught = true;
+          assert.equal(error, primary);
+        }
+        assert.equal(caught, true);
+        const count = writes;
+        try {
+          await verify();
+        } catch (error) {
+          assert.equal(error, primary);
+        }
+        assert.equal(writes, count);
+        assert.equal(closes, mode === "write" || mode === "close" ? 1 : 0);
+      }
+    }
+    fs.open = open;
+    const body = await read(prefix + "source-driver.mjs"),
+      start = body.indexOf("  const checked = async (action) => {"),
+      end = body.indexOf("\n  try {\n    await sourceStage", start);
+    const checked = vm.runInNewContext(
+      `(async()=>{${body.slice(start, end)};return checked})()`,
+      {
+        verifyHostClosure: async () => {},
+        p: {},
+        budget: {},
+        c: { image: "fixture" },
+        held: async () => {},
+        bootstrap: { file: "fixture", pin: {}, witnessPin: null },
+        verifyBootstrap: async () => {},
+        root: "fixture",
+        argv: [],
+        adapter: { file: "fixture", pin: {} },
+        HOOK_PRIMARY: [],
+        files: {},
+        path,
+        verifyGitPolicy: async () => {
+          if (++verification === 2) throw postFailure;
+        },
+        console: { error() {} },
+      },
+    );
+    let verification = 0,
+      postFailure = null;
+    const actual = await checked;
+    let caught = false;
+    try {
+      await actual(async () => 7);
+    } catch (error) {
+      caught = true;
+      assert.equal(error, postFailure);
+    }
+    assert.equal(caught, true);
+    verification = 0;
+    postFailure = new Error("secondary");
+    for (const primary of [null, 0, undefined]) {
+      verification = 0;
+      caught = false;
+      try {
+        await actual(async () => {
+          throw primary;
+        });
+      } catch (error) {
+        caught = true;
+        assert.equal(error, primary);
+      }
+      assert.equal(caught, true);
+    }
+  } finally {
+    fs.open = open;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
