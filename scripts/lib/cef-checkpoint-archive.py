@@ -108,6 +108,52 @@ def source_io_failure_fields(error, mode):
     except Exception:
         return {'sourceIoFailureInvalid':True}
 
+def source_bound_value(value, mode):
+    require(type(value) is dict and set(value) ==
+            {'mode','stage','entries','rawBytes','maximumEntries','maximumRawBytes'} and
+            value['mode'] == mode and mode in SOURCE_IO_MODES and value['stage'] == 'inventory-append' and
+            type(value['entries']) is int and 1 <= value['entries'] <= SOURCE_MAX_ENTRIES + 1 and
+            type(value['rawBytes']) is int and 0 <= value['rawBytes'] <= MAX_RAW + SOURCE_MAX_FILE and
+            type(value['maximumEntries']) is int and value['maximumEntries'] == SOURCE_MAX_ENTRIES and
+            type(value['maximumRawBytes']) is int and value['maximumRawBytes'] == MAX_RAW and
+            (value['entries'] > SOURCE_MAX_ENTRIES or value['rawBytes'] > MAX_RAW) and
+            len(json.dumps(value).encode()) <= 512, 'diagnostic')
+    return {key:value[key] for key in ('mode','stage','entries','rawBytes','maximumEntries','maximumRawBytes')}
+
+
+def source_bound_record(error, entries, raw, policy):
+    # Only the failing append's already-computed counters; no last-path/global state.
+    try:
+        context = SOURCE_IO_CONTEXT.get()
+        if (type(error) is not CheckpointError or str(error) != 'input-bound' or
+                type(policy) is not dict or policy.get('external') is True or
+                type(context) is not tuple or len(context) != 2 or context[0] not in SOURCE_IO_MODES or context[1] is None):
+            return
+        if 'sourceBoundFailure' in error.__dict__ or error.__dict__.get('sourceBoundFailureInvalid') is True:
+            return
+        error.sourceBoundFailure = source_bound_value({'mode':context[0], 'stage':'inventory-append',
+            'entries':entries, 'rawBytes':raw, 'maximumEntries':SOURCE_MAX_ENTRIES, 'maximumRawBytes':MAX_RAW}, context[0])
+    except Exception:
+        try:
+            error.sourceBoundFailureInvalid = True
+        except Exception:
+            pass
+
+
+def source_bound_failure_fields(error, mode):
+    if mode not in SOURCE_IO_MODES or type(error) is not CheckpointError or str(error) != 'input-bound':
+        return {}
+    try:
+        if error.__dict__.get('sourceBoundFailureInvalid') is True:
+            return {'sourceBoundFailureInvalid':True}
+        value = error.__dict__.get('sourceBoundFailure')
+        if value is None:
+            return {}
+        return {'sourceBoundFailure':source_bound_value(value, mode)}
+    except Exception:
+        return {'sourceBoundFailureInvalid':True}
+
+
 MAX_BYTES = 32 * 1024**3
 CHUNK_BYTES = 1024**3
 MAX_RAW = 256 * 1024**3
@@ -660,7 +706,11 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
                 if source_policy is not None and source_policy.get('mac') and kind == 'directory':
                     source_policy['_directories'][name] = source_local(s, source_policy)
                 rows.append(row)
-                require(len(rows) <= (SOURCE_MAX_ENTRIES if source_policy is not None else MAX_ENTRIES) and raw <= MAX_RAW, 'input-bound')
+                try:
+                    require(len(rows) <= (SOURCE_MAX_ENTRIES if source_policy is not None else MAX_ENTRIES) and raw <= MAX_RAW, 'input-bound')
+                except CheckpointError as error:
+                    source_bound_record(error, len(rows), raw, source_policy)
+                    raise
     expected_links = set(generated_links)
     if len(generated_links) == 7 and not any(r['path'] == FRAMEWORK for r in rows):
         expected_links -= set(FRAMEWORK_ROLES)
@@ -1958,6 +2008,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
 
         raise SystemExit(1)

@@ -1495,6 +1495,40 @@ function externalLinkDiagnostic(value) {
   );
 }
 
+function sourceBoundFailure(value, mode) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join() !==
+      "entries,maximumEntries,maximumRawBytes,mode,rawBytes,stage" ||
+    value.mode !== mode ||
+    value.stage !== "inventory-append" ||
+    !Number.isSafeInteger(value.entries) ||
+    value.entries < 1 ||
+    value.entries > 1_000_001 ||
+    !Number.isSafeInteger(value.rawBytes) ||
+    value.rawBytes < 0 ||
+    value.rawBytes > 264 * 1024 ** 3 ||
+    value.maximumEntries !== 1_000_000 ||
+    value.maximumRawBytes !== 256 * 1024 ** 3 ||
+    !(
+      value.entries > value.maximumEntries ||
+      value.rawBytes > value.maximumRawBytes
+    ) ||
+    Buffer.byteLength(JSON.stringify(value)) > 512
+  )
+    return null;
+  return {
+    mode: value.mode,
+    stage: value.stage,
+    entries: value.entries,
+    rawBytes: value.rawBytes,
+    maximumEntries: value.maximumEntries,
+    maximumRawBytes: value.maximumRawBytes,
+  };
+}
+
 export function archiveFailureRecord(
   stdout,
   exitCode,
@@ -1509,7 +1543,8 @@ export function archiveFailureRecord(
     sourceJoinFailure = false,
     externalFacts,
     sourceFacts,
-    sourceIoFacts;
+    sourceIoFacts,
+    sourceBoundFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1576,6 +1611,35 @@ export function archiveFailureRecord(
           }
           externalLinksWithoutRole = !Object.hasOwn(value, "externalRole");
         }
+      }
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "input-bound" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        let bound,
+          invalid = false;
+        if (Object.hasOwn(value, "sourceBoundFailure")) {
+          try {
+            bound = sourceBoundFailure(value.sourceBoundFailure, sourceMode);
+            invalid = bound === null;
+          } catch {
+            invalid = true;
+          }
+          delete value.sourceBoundFailure;
+        }
+        if (Object.hasOwn(value, "sourceBoundFailureInvalid")) {
+          invalid = true;
+          delete value.sourceBoundFailureInvalid;
+        }
+        sourceBoundFacts = {
+          ...(bound && !invalid ? { sourceBoundFailure: bound } : {}),
+          ...(invalid ? { sourceBoundFailureInvalid: true } : {}),
+        };
       }
       if (
         ["source-record", "source-apply", "source-verify"].includes(
@@ -1696,6 +1760,7 @@ export function archiveFailureRecord(
         };
       } else {
         sourceIoFacts = undefined;
+        sourceBoundFacts = undefined;
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -1709,6 +1774,7 @@ export function archiveFailureRecord(
     ...externalFacts,
     ...sourceFacts,
     ...sourceIoFacts,
+    ...sourceBoundFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode

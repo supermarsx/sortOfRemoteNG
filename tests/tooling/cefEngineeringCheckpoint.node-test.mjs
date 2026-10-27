@@ -11904,3 +11904,305 @@ test("malformed optional Mac projections never replace valid base error, exit, c
     assert.doesNotMatch(JSON.stringify(output), /PRIVATE_|😀/);
   }
 });
+
+const SOURCE_BOUND_PROOF = String.raw`import ast,pathlib,types,sys,json,copy
+from unittest.mock import patch
+file=pathlib.Path(sys.argv[1]);m=types.ModuleType('source_bound');m.__file__=str(file)
+exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
+tree=ast.parse(file.read_bytes());inv=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='inventory')
+label=lambda n:isinstance(n,ast.Expr)and isinstance(n.value,ast.Call)and isinstance(n.value.func,ast.Name)and n.value.func.id=='require'and len(n.value.args)==2 and isinstance(n.value.args[1],ast.Constant)and n.value.args[1].value=='input-bound'
+block=next(n for n in ast.walk(inv)if isinstance(n,ast.Try)and len(n.body)==1 and label(n.body[0]))
+original=ast.parse("require(len(rows) <= (SOURCE_MAX_ENTRIES if source_policy is not None else MAX_ENTRIES) and raw <= MAX_RAW, 'input-bound')").body[0]
+assert ast.dump(block.body[0],include_attributes=False)==ast.dump(original,include_attributes=False)
+def compile_body(body,name):
+ fn=ast.FunctionDef(name=name,args=ast.arguments(posonlyargs=[],args=[ast.arg(arg=n)for n in ('rows','raw','source_policy')],kwonlyargs=[],kw_defaults=[],defaults=[]),body=[copy.deepcopy(body)],decorator_list=[])
+ exec(compile(ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[])),'actual-inventory-bound','exec'),m.__dict__)
+ return m.__dict__[name]
+old=compile_body(original,'old_guard');new=compile_body(block,'new_guard')
+class Rows:
+ def __init__(self,n):self.n=n
+ def __len__(self):return self.n
+maximum=m.SOURCE_MAX_ENTRIES;rawmax=m.MAX_RAW
+for count,raw,denied in ((maximum,rawmax,False),(maximum+1,0,True),(1,rawmax+1,True),(maximum+1,rawmax+1,True)):
+ for fn in (old,new):
+  first=m.CheckpointError('input-bound');cause=RuntimeError('PRIVATE_CAUSE');first.__cause__=cause
+  require=m.require
+  def guard(condition,message):
+   if not condition:raise first
+  with patch.object(m,'require',side_effect=guard):
+   with m.source_io_scope('source-record'):
+    m.SOURCE_IO_CONTEXT.set(('source-record',pathlib.Path('/owned')))
+    try:fn(Rows(count),raw,{})
+    except m.CheckpointError as error:
+     assert denied and error is first and error.__cause__ is cause
+     fields=m.source_bound_failure_fields(error,'source-record')
+     if fn is old:assert fields=={}
+     else:assert fields['sourceBoundFailure']==dict(mode='source-record',stage='inventory-append',entries=count,rawBytes=raw,maximumEntries=maximum,maximumRawBytes=rawmax)
+    else:assert not denied
+with m.source_io_scope('source-record'):
+ m.SOURCE_IO_CONTEXT.set(('source-record',pathlib.Path('/owned')))
+ with patch.object(m,'source_bound_record',side_effect=AssertionError('normal capture')),patch.object(m.json,'dumps',side_effect=AssertionError('normal JSON')):new(Rows(maximum),rawmax,{})
+for context,policy in ((None,{}),(('pack',pathlib.Path('/owned')),{}),(('source-record',None),{}),(('source-record',pathlib.Path('/owned')),None),(('source-record',pathlib.Path('/owned')),{'external':True})):
+ token=m.SOURCE_IO_CONTEXT.set(context)
+ try:
+  try:new(Rows(maximum+1),0,policy)
+  except m.CheckpointError as error:assert m.source_bound_failure_fields(error,'source-record')=={}
+  else:raise AssertionError('old guard weakened')
+ finally:m.SOURCE_IO_CONTEXT.reset(token)
+with m.source_io_scope('source-record'):
+ m.SOURCE_IO_CONTEXT.set(('source-record',pathlib.Path('/owned')))
+ first=m.CheckpointError('input-bound')
+ with patch.object(m.json,'dumps',side_effect=RuntimeError('PRIVATE_REPORT_FAILURE')):m.source_bound_record(first,maximum+1,0,{})
+ assert m.source_bound_failure_fields(first,'source-record')=={'sourceBoundFailureInvalid':True}
+ first=m.CheckpointError('input-bound');m.source_bound_record(first,maximum+1,0,{})
+ original=copy.deepcopy(first.sourceBoundFailure)
+ m.source_bound_record(first,1,rawmax+1,{})
+ assert first.sourceBoundFailure==original
+ m.SOURCE_CLOSE_FAILURE=False
+ def close_fault():raise OSError('PRIVATE_CLOSE')
+ m.source_close(close_fault,first)
+ assert m.SOURCE_CLOSE_FAILURE and m.source_bound_failure_fields(first,'source-record')['sourceBoundFailure']==original
+ assert m.source_bound_failure_fields(first,'pack')=={}
+ assert m.source_bound_failure_fields(first,'source-apply')=={'sourceBoundFailureInvalid':True}
+ for mutation in ({'entries':True},{'rawBytes':1.5},{'maximumEntries':maximum+1},{'rawBytes':-1},{'extra':'PRIVATE'},{'stage':'PRIVATE'},{'entries':1,'rawBytes':0}):
+  first.sourceBoundFailure={**original,**mutation}
+  assert m.source_bound_failure_fields(first,'source-record')=={'sourceBoundFailureInvalid':True}
+assert m.SOURCE_IO_CONTEXT.get()is None
+print('actual original guard AST/outcomes unchanged; virtual entries/raw boundary diagnostics, success zero capture/JSON, modes/firstcause/close/invalid PASS')
+`;
+
+test("source bound actual predicate keeps old outcomes and exception-bound counters without allocation or success work", () => {
+  const result = python(SOURCE_BOUND_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+const SOURCE_BOUND_PHYSICAL = String.raw`
+for mode in ('source-record','source-verify','source-apply'):
+ with fixture() as(root,sidecar,identity):
+  before=sidecar.read_bytes();cap=len(json.loads(before)['snapshot']['entries'])
+  (root/'src/new-owned-input.cc').write_bytes(b'added synthetic input')
+  # Explicitly synthetic SMALL test cap. Production remains1M/256GiB.
+  with patch.object(m,'SOURCE_MAX_ENTRIES',cap):
+   try:m.source_metadata(mode,root,sidecar,identity,60)
+   except m.CheckpointError as error:
+    assert str(error)=='input-bound'
+    facts=m.source_bound_failure_fields(error,mode)['sourceBoundFailure']
+    assert facts['entries']==cap+1 and facts['maximumEntries']==cap and facts['maximumRawBytes']==m.MAX_RAW
+    assert facts['rawBytes']>=0 and facts['mode']==mode and facts['stage']=='inventory-append'
+   else:raise AssertionError('tiny real inventory admitted')
+  assert sidecar.read_bytes()==before and m.SOURCE_IO_CONTEXT.get()is None
+print('actual POSIX source record/verify/apply tiny inventory reaches original bound with numeric evidence and byte-unchanged prior sidecar PASS; synthetic cap only')
+`;
+
+test(
+  "source bound actual tiny POSIX inventory records the failing counters before writes",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual owned POSIX source fixture"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(setup + SOURCE_BOUND_PHYSICAL, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  },
+);
+
+const sourceBoundFacts = (mode = "source-record") => ({
+  mode,
+  stage: "inventory-append",
+  entries: 1_000_001,
+  rawBytes: 0,
+  maximumEntries: 1_000_000,
+  maximumRawBytes: 256 * 1024 ** 3,
+});
+
+test("source bound projection closes actual caller primary exact maxima and malformed optional facts", () => {
+  const facts = sourceBoundFacts(),
+    base = {
+      complete: false,
+      error: "input-bound",
+      sourceCloseFailure: true,
+      sourceJoinFailure: true,
+    };
+  const primary = {
+    error: "input-bound",
+    sourceCloseFailure: true,
+    sourceJoinFailure: true,
+    exitCode: 1,
+  };
+  const record = (
+    detail,
+    sourceMode = "source-record",
+    error = "input-bound",
+  ) =>
+    archiveFailureRecord(
+      JSON.stringify({ ...base, error, sourceBoundFailure: detail }),
+      1,
+      { sourceMode },
+    );
+  assert.deepEqual(record(facts), { ...primary, sourceBoundFailure: facts });
+  assert.deepEqual(
+    record({ ...facts, entries: 1, rawBytes: 256 * 1024 ** 3 + 1 }),
+    {
+      ...primary,
+      sourceBoundFailure: {
+        ...facts,
+        entries: 1,
+        rawBytes: 256 * 1024 ** 3 + 1,
+      },
+    },
+  );
+  for (const detail of [
+    null,
+    [],
+    {},
+    { ...facts, mode: "source-verify" },
+    { ...facts, extra: "PRIVATE" },
+    { ...facts, entries: true },
+    { ...facts, entries: 1.5 },
+    { ...facts, entries: 1_000_002 },
+    { ...facts, entries: 1, rawBytes: 0 },
+    { ...facts, rawBytes: -1 },
+    { ...facts, rawBytes: 264 * 1024 ** 3 + 1 },
+    { ...facts, maximumEntries: "1000000" },
+    { ...facts, maximumRawBytes: 128 * 1024 ** 3 },
+    { ...facts, stage: "PRIVATE" },
+    { ...facts, private: "x".repeat(1024) },
+  ])
+    assert.deepEqual(record(detail), {
+      ...primary,
+      sourceBoundFailureInvalid: true,
+    });
+  for (const sourceMode of [
+    null,
+    "pack",
+    "restore",
+    "seal",
+    "mac-external-observe",
+    "mac-owned-capability-observe",
+    "unknown",
+  ])
+    assert.deepEqual(record(facts, sourceMode), {
+      error: "unknown",
+      exitCode: 1,
+    });
+  for (const error of ["member-path", "archive-io-error", "source-changed"])
+    assert.deepEqual(record(facts, "source-record", error), {
+      error: "unknown",
+      exitCode: 1,
+    });
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({
+        ...base,
+        sourceBoundFailure: facts,
+        sourceBoundFailureInvalid: false,
+      }),
+      1,
+      { sourceMode: "source-record", cleanupUnknown: true },
+    ),
+    {
+      ...primary,
+      archiveCleanupUnknown: true,
+      sourceBoundFailureInvalid: true,
+    },
+  );
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({ ...base, untrusted: true, sourceBoundFailure: facts }),
+      1,
+      { sourceMode: "source-record" },
+    ),
+    { error: "unknown", exitCode: 1 },
+  );
+  const parse = JSON.parse;
+  try {
+    JSON.parse = () => ({
+      ...base,
+      sourceBoundFailure: new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw Error("PRIVATE_VALIDATOR");
+          },
+        },
+      ),
+    });
+    assert.deepEqual(
+      archiveFailureRecord("{}", 1, { sourceMode: "source-record" }),
+      { ...primary, sourceBoundFailureInvalid: true },
+    );
+  } finally {
+    JSON.parse = parse;
+  }
+});
+
+test(
+  "source bound actual archiveCommand keeps primary cleanup and refuses unrelated caller masquerades",
+  { timeout: 15000 },
+  async (t) => {
+    const folder = await scratch(t),
+      executable = python("import sys;print(sys.executable)").stdout.trim(),
+      script = path.join(folder, "bound-fixture.py");
+    const payload = {
+      complete: false,
+      error: "input-bound",
+      sourceCloseFailure: true,
+      sourceJoinFailure: true,
+      sourceBoundFailure: sourceBoundFacts(),
+    };
+    // Fixed fixture data is decoded by Python, never treated as source instructions.
+    await writeFile(
+      script,
+      "import json,sys\nprint(json.dumps(json.loads(" +
+        JSON.stringify(JSON.stringify(payload)) +
+        ")))\nsys.exit(1)\n",
+      { flag: "wx" },
+    );
+    for (const mode of [
+      "source-record",
+      "source-verify",
+      "source-apply",
+      "pack",
+      "restore",
+      "mac-external-observe",
+      "mac-owned-capability-observe",
+    ]) {
+      const rows = [];
+      await assert.rejects(
+        archiveCommand(executable, script, [mode], {
+          timeout: 2000,
+          observeFailure: (row) => rows.push(row),
+        }),
+        /Checkpoint archive rejected/,
+      );
+      assert.equal(rows.length, 1);
+      if (mode === "source-record")
+        assert.deepEqual(rows[0], {
+          error: "input-bound",
+          sourceCloseFailure: true,
+          sourceJoinFailure: true,
+          sourceBoundFailure: payload.sourceBoundFailure,
+          exitCode: 1,
+        });
+      else if (mode.startsWith("source-"))
+        assert.deepEqual(rows[0], {
+          error: "input-bound",
+          sourceCloseFailure: true,
+          sourceJoinFailure: true,
+          sourceBoundFailureInvalid: true,
+          exitCode: 1,
+        });
+      else assert.deepEqual(rows[0], { error: "unknown", exitCode: 1 });
+    }
+  },
+);
