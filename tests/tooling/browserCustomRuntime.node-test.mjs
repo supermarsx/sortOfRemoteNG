@@ -73,6 +73,7 @@ import {
   loadCustomRuntimeInputs,
 } from "../../scripts/browser-app-build.mjs";
 import { prepareWindowsInstallerBundles } from "../../scripts/lib/browser-installer-bundles.mjs";
+import { prepareLinuxPackageSandbox } from "../../scripts/lib/linux-package-sandbox.mjs";
 
 async function sourceGitFixture(t) {
   const root = await mkdtemp(
@@ -1700,6 +1701,8 @@ async function stagingFixture(
     symbols,
     true,
   );
+  if (layout.platform === "linux")
+    sdkFiles[data.pkg.artifact.runtime.sandbox] = nativeFixture(target);
   if (layout.platform === "macos") {
     // Windows test hosts can represent the framework's resolved layout without
     // needing symlink privileges. Link preservation has a separate Unix test.
@@ -1833,6 +1836,7 @@ for (const target of TARGETS)
       target,
       platform: data.layout.platform,
       appName: "fixture.app",
+      productName: "fixture.app",
       payload: path.join(data.root, "payload"),
     };
     const report = await stageApplicationPackage(plan, {
@@ -1866,10 +1870,21 @@ for (const target of TARGETS)
       await readFile(path.join(plan.payload, license), "utf8"),
       "fixture license",
     );
+    const linuxSandboxPolicy =
+      plan.platform === "linux"
+        ? await prepareLinuxPackageSandbox(plan, {
+            runtimeRoot: report.staging.runtime,
+          })
+        : undefined;
     const config = bundleConfiguration(
-      { build: {}, bundle: { resources: { "user-locales": "locales/" } } },
+      {
+        productName: plan.productName,
+        build: {},
+        bundle: { resources: { "user-locales": "locales/" } },
+      },
       plan,
       [...data.layout.applicationFiles, license],
+      linuxSandboxPolicy,
     );
     assert.equal(config.bundle.resources["user-locales"], "locales/");
     if (data.layout.platform === "macos") {
