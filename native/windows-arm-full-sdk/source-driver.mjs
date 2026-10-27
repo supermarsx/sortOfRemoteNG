@@ -612,13 +612,14 @@ def inherited_environment(approved,candidate):
 def bind(expected,guard_sha):
  value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2
  if getattr(subprocess2,'_sorng_cipd_bound',False):return
- original=subprocess2.Popen;approved=dict(os.environ)
- def admitted(argv,*args,**kwargs):
-  if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):
-   values=list(argv[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
-   return original([current['client']['path'],*values],*args,**kwargs)
-  return original(argv,*args,**kwargs)
- subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True
+ popen=subprocess2.Popen;data.need(isinstance(popen,type),'FULL_BOOTSTRAP_POPEN_CLASS')
+ original_init=popen.__init__;approved=dict(os.environ)
+ def admitted(self,args,**kwargs):
+  if isinstance(args,(list,tuple))and args and args[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):
+   values=list(args[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
+   return original_init(self,[current['client']['path'],*values],**kwargs)
+  return original_init(self,args,**kwargs)
+ popen.__init__=admitted;subprocess2._sorng_cipd_bound=True
 def main(argv):
  data.need(P['enabled']is True and os.name=='nt','FULL_BOOTSTRAP_DISABLED')
  if len(argv)>=3 and argv[:2]==['--prepare-sync','--guard-sha']:

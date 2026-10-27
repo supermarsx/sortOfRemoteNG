@@ -399,6 +399,32 @@ def main(args):
   }
 });
 
+const PINNED_POPEN = {
+  classBody: {
+    source:
+      'class Popen(subprocess.Popen):\n    popen_lock = threading.Lock()\n    def __init__(self, args, **kwargs):\n        env = get_english_env(kwargs.get("env"))\n        if env:\n            kwargs["env"] = env\n        if kwargs.get("env") is not None:\n            # Subprocess expects environment variables to be strings in Python\n            # 3.\n            def ensure_str(value):\n                if isinstance(value, bytes):\n                    return value.decode()\n                return value\n\n            kwargs["env"] = {\n                ensure_str(k): ensure_str(v) for k, v in kwargs["env"].items()\n            }\n        if kwargs.get("shell") is None:\n            # *Sigh*:  Windows needs shell=True, or else it won\'t search %PATH%\n            # for the executable, but shell=True makes subprocess on Linux fail\n            # when it\'s called with a list because it only tries to execute the\n            # first item in the list.\n            kwargs["shell"] = bool(sys.platform == "win32")\n\n        if isinstance(args, (str, bytes)):\n            tmp_str = args\n        elif isinstance(args, (list, tuple)):\n            tmp_str = " ".join(args)\n        else:\n            raise CalledProcessError(None, args, kwargs.get("cwd"), None, None)\n        if kwargs.get("cwd", None):\n            tmp_str += ";  cwd=%s" % kwargs["cwd"]\n        logging.debug(tmp_str)\n\n        try:\n            with self.popen_lock:\n                super(Popen, self).__init__(args, **kwargs)\n        except OSError as e:\n            if e.errno == errno.EAGAIN and sys.platform == "cygwin":\n                # Convert fork() emulation failure into a CygwinRebaseError().\n                raise CygwinRebaseError(\n                    e.errno,\n                    args,\n                    kwargs.get("cwd"),\n                    None,\n                    "Visit "\n                    "http://code.google.com/p/chromium/wiki/"\n                    "CygwinDllRemappingFailure "\n                    "to learn how to fix this error; you need to rebase your "\n                    "cygwin dlls",\n                )\n            # Popen() can throw OSError when cwd or args[0] doesn\'t exist.\n            raise OSError(\n                "Execution failed with error: %s.\\n"\n                "Check that %s or %s exist and have execution permission."\n                % (str(e), kwargs.get("cwd"), args[0])\n            )\n',
+    sha256: "cbf64f84ebd0f44cf1f48de4f9b6fcabeb443de1459c7abc268fed943998b0c6",
+  },
+  init: {
+    source:
+      '    def __init__(self, args, **kwargs):\n        env = get_english_env(kwargs.get("env"))\n        if env:\n            kwargs["env"] = env\n        if kwargs.get("env") is not None:\n            # Subprocess expects environment variables to be strings in Python\n            # 3.\n            def ensure_str(value):\n                if isinstance(value, bytes):\n                    return value.decode()\n                return value\n\n            kwargs["env"] = {\n                ensure_str(k): ensure_str(v) for k, v in kwargs["env"].items()\n            }\n        if kwargs.get("shell") is None:\n            # *Sigh*:  Windows needs shell=True, or else it won\'t search %PATH%\n            # for the executable, but shell=True makes subprocess on Linux fail\n            # when it\'s called with a list because it only tries to execute the\n            # first item in the list.\n            kwargs["shell"] = bool(sys.platform == "win32")\n\n        if isinstance(args, (str, bytes)):\n            tmp_str = args\n        elif isinstance(args, (list, tuple)):\n            tmp_str = " ".join(args)\n        else:\n            raise CalledProcessError(None, args, kwargs.get("cwd"), None, None)\n        if kwargs.get("cwd", None):\n            tmp_str += ";  cwd=%s" % kwargs["cwd"]\n        logging.debug(tmp_str)\n\n        try:\n            with self.popen_lock:\n                super(Popen, self).__init__(args, **kwargs)\n        except OSError as e:\n            if e.errno == errno.EAGAIN and sys.platform == "cygwin":\n                # Convert fork() emulation failure into a CygwinRebaseError().\n                raise CygwinRebaseError(\n                    e.errno,\n                    args,\n                    kwargs.get("cwd"),\n                    None,\n                    "Visit "\n                    "http://code.google.com/p/chromium/wiki/"\n                    "CygwinDllRemappingFailure "\n                    "to learn how to fix this error; you need to rebase your "\n                    "cygwin dlls",\n                )\n            # Popen() can throw OSError when cwd or args[0] doesn\'t exist.\n            raise OSError(\n                "Execution failed with error: %s.\\n"\n                "Check that %s or %s exist and have execution permission."\n                % (str(e), kwargs.get("cwd"), args[0])\n            )\n',
+    bytes: 2311,
+    sha256: "a8710349d17841bf7de94eed115d94f12ba90f8439661842126cacaf28de4335",
+    startLine: 116,
+    endLine: 170,
+  },
+  english: {
+    source:
+      'def get_english_env(env):\n    """Forces LANG and/or LANGUAGE to be English.\n\n    Forces encoding to utf-8 for subprocesses.\n\n    Returns None if it is unnecessary.\n    """\n    if sys.platform == "win32":\n        return None\n    env = env or os.environ\n\n    # Test if it is necessary at all.\n    is_english = lambda name: env.get(name, "en").startswith("en")  # noqa: E731\n\n    if is_english("LANG") and is_english("LANGUAGE"):\n        return None\n\n    # Requires modifications.\n    env = env.copy()\n\n    def fix_lang(name):\n        if not is_english(name):\n            env[name] = "en_US.UTF-8"\n\n    fix_lang("LANG")\n    fix_lang("LANGUAGE")\n    return env\n',
+    sha256: "281ec45f2f3e1ad217d8672f4703425be07a86e530c077d0304901bf352752a0",
+  },
+  oldBind: {
+    source:
+      "def bind(expected,guard_sha):\n value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2\n if getattr(subprocess2,'_sorng_cipd_bound',False):return\n original=subprocess2.Popen;approved=dict(os.environ)\n def admitted(argv,*args,**kwargs):\n  if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):\n   values=list(argv[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False\n   return original([current['client']['path'],*values],*args,**kwargs)\n  return original(argv,*args,**kwargs)\n subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True",
+    sha256: "d7552d6f3708aed62ec50f0954698e2284efe779ada0c412a9d040f9dc549f99",
+  },
+};
+
 const PINNED_GCLIENT_ENV = {
   envConstruction: {
     source:
@@ -597,12 +623,18 @@ for args in (['selfupdate'],['ensure','-service-url','https://example.invalid'],
  try:b.execute('cipd',args,witness_sha,guard_sha,lambda *args:(_ for _ in ()).throw(AssertionError('must not execute')))
  except b.data.Denied:pass
  else:raise AssertionError('CIPD override admitted')
-child=object();popen_calls=[];popen_error=[None]
-def popen(command,*args,**kwargs):
- popen_calls.append((command,kwargs))
- if popen_error[0]is not None:raise popen_error[0]
- return child
-sys.modules['subprocess2']=types.SimpleNamespace(Popen=popen,STDOUT=-2)
+popen_calls=[];popen_error=[None]
+class BasePopen:
+ def __init__(self,args,**kwargs):
+  popen_calls.append((args,kwargs));self.original_args=args
+  if popen_error[0]is not None:raise popen_error[0]
+
+def make_backend():
+ module=types.ModuleType('subprocess2');module.__dict__.update(dict(subprocess=types.SimpleNamespace(Popen=BasePopen),threading=__import__('threading'),logging=types.SimpleNamespace(debug=lambda _message:None),sys=types.SimpleNamespace(platform='win32'),os=os,errno=__import__('errno'),CalledProcessError=RuntimeError,CygwinRebaseError=RuntimeError))
+ exec(compile(${JSON.stringify(PINNED_POPEN.english.source)},'pinned-c101-get-english-env','exec'),module.__dict__)
+ exec(compile(${JSON.stringify(PINNED_POPEN.classBody.source)},'pinned-c101-Popen-init','exec'),module.__dict__);module.STDOUT=-2
+ return module
+sys.modules['subprocess2']=make_backend()
 primary_env=${JSON.stringify(PINNED_GCLIENT_ENV.envConstruction.source)}
 primary_main=${JSON.stringify(PINNED_GCLIENT_ENV.mainMetadata.source)}
 primary_sync=${JSON.stringify(PINNED_GCLIENT_ENV.syncMetadata.source)}
@@ -619,9 +651,19 @@ try:primary_dispatch(['cipd','expand-package-name','infra/test'])
 except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_ENV_OVERRIDE'
 else:raise AssertionError('old rejection did not reproduce')
 assert not popen_calls
-b.bind=new_bind;sys.modules['subprocess2']=types.SimpleNamespace(Popen=popen,STDOUT=-2)
-b.bind(witness_sha,guard_sha);backend=sys.modules['subprocess2']
-assert backend.Popen(['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],shell=True)is child
+b.bind=new_bind;sys.modules['subprocess2']=make_backend()
+# Exact former function-replacement body breaks genuine upstream super(Popen,self).
+method_bind=b.bind;exec(compile(${JSON.stringify(PINNED_POPEN.oldBind.source)},'original-6b8-function-bind','exec'),b.__dict__)
+b.bind(witness_sha,guard_sha)
+try:sys.modules['subprocess2'].Popen(['git','--version'])
+except TypeError as error:assert 'super() argument 1 must be a type, not function'in str(error)
+else:raise AssertionError('actual old class failure absent')
+assert not popen_calls
+b.bind=method_bind;sys.modules['subprocess2']=make_backend();backend=sys.modules['subprocess2'];aliases={}
+exec('from subprocess2 import Popen as captured_before_installation',aliases);alias=aliases['captured_before_installation']
+b.bind(witness_sha,guard_sha)
+assert backend.Popen is alias and isinstance(alias,type)
+assert isinstance(backend.Popen(['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],shell=True),alias)
 assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
 before_dispatches=len(popen_calls)
 mutated=dict(value);mutated['vpython']=dict(value['vpython']);changed=payload+b'coherently changed'
@@ -645,7 +687,7 @@ for target in (b.WITNESS,b.SCRIPT,b.DEPOT/'.cipd_client.exe',b.DEPOT/'.cipd_bin/
 assert len(dispatch_denials)==6
 
 for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,witness_sha))
-ordinary=['git','--version'];assert backend.Popen(ordinary,shell=True)is child and popen_calls[-1][0]is ordinary and popen_calls[-1][1]['shell']is True
+ordinary=['git','--version'];ordinary_result=alias(args=ordinary,shell=True);assert isinstance(ordinary_result,alias)and ordinary_result.original_args is ordinary and popen_calls[-1][0]is ordinary and popen_calls[-1][1]['shell']is True
 try:backend.Popen(['cipd','expand-package-name','infra/test'],env={})
 except b.data.Denied:pass
 else:raise AssertionError('env override admitted')
@@ -657,11 +699,11 @@ ensure=b.ROOT/'tmp/owned.ensure';ensure.write_text('infra/test instance')
 resolved=b.ROOT/'tmp/owned.resolved';resolved.write_text('{}')
 commands=[['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],['cipd','ensure','-log-level','info','-root',b.P['workspace'],'-ensure-file',str(ensure)],['cipd','ensure-file-resolve','-log-level','error','-ensure-file',str(ensure),'-json-output',str(resolved)]]
 for command in commands:
- assert primary_dispatch(command)is child
+ assert isinstance(primary_dispatch(command),alias)
  assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
  assert popen_calls[-1][1]['env']==dict(os.environ,COLUMNS='80',LINES='24')
- assert primary_dispatch(command,dict(env=os.environ.copy()))is child
-assert backend.Popen(commands[0])is child
+ assert isinstance(primary_dispatch(command,dict(env=os.environ.copy())),alias)
+assert isinstance(backend.Popen(commands[0]),alias)
 approved_current=dict(os.environ)
 for key in ('PATH','PYTHONPATH','PYTHONHOME','CIPD_BACKEND','CIPD_SERVICE_URL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','CIPD_CACHE_DIR','VPYTHON_VIRTUALENV_ROOT','GIT_ASKPASS','USERPROFILE','UNKNOWN_ENV'):
  changed=dict(approved_current);changed[key]='unapproved';before=len(popen_calls)
@@ -739,7 +781,7 @@ try:
  else:raise AssertionError('reserve reset')
  assert observed==[5]
 finally:b.subprocess.run=original_run
-print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecuted=False,validProvisionerCalls=2,firstErrorPreserved=True,originalReservePreserved=True,immutableDispatchDenials=dispatch_denials,environmentDenials=environment_denials,actualPinnedEnvironmentOldRedNewGreen=True,witnessSha256=witness_sha,fixtureSourcePins=b.P['sources'],fixtureClientSha=digest)))
+print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecuted=False,validProvisionerCalls=2,firstErrorPreserved=True,originalReservePreserved=True,immutableDispatchDenials=dispatch_denials,environmentDenials=environment_denials,actualPinnedEnvironmentOldRedNewGreen=True,actualPinnedClassOldRedNewGreen=True,classAndAliasIdentityPreserved=True,witnessSha256=witness_sha,fixtureSourcePins=b.P['sources'],fixtureClientSha=digest)))
 `;
     const harnessFile = path.join(directory, "harness.py");
     await fs.writeFile(harnessFile, harness);
@@ -755,6 +797,10 @@ print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecu
     assert.equal(result.immutableDispatchDenials.length, 6);
     assert.equal(result.environmentDenials.length, 13);
     assert.equal(result.actualPinnedEnvironmentOldRedNewGreen, true);
+    assert(
+      result.actualPinnedClassOldRedNewGreen &&
+        result.classAndAliasIdentityPreserved,
+    );
     assert.equal(result.vendorExecutableExecuted, false);
     const witness = JSON.parse(await fs.readFile(program.witness, "utf8"));
     for (const [role, name] of [
