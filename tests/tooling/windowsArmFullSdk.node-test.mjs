@@ -3046,3 +3046,105 @@ test("HOME candidates discard in-flight facts when an ancestor changes and retai
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+test("source GN actual owned-policy caller fixes Windows longpaths without accepting caller policy", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    marker = "  const gitPolicy = await custom.prepareSourceGitIsolation(",
+    start = text.indexOf(marker),
+    end = text.indexOf("  const adapter =", start);
+  assert(start > 0 && end > start);
+  assert.equal(text.split("custom.prepareSourceGitIsolation(").length - 1, 1);
+  const call = text.slice(start, end),
+    AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-longpath-adoption-"),
+  );
+  try {
+    let calls = 0;
+    const custom = {
+      async prepareSourceGitIsolation(policyRoot, options) {
+        calls++;
+        assert.equal(policyRoot, path.join(directory, "cef-source-git-policy"));
+        assert.deepEqual(options, { windowsLongPaths: true });
+        assert.equal(Object.getPrototypeOf(options), Object.prototype);
+        return prepareSourceGitIsolation(policyRoot, options);
+      },
+    };
+    const invoke = new AsyncFunction(
+      "root",
+      "custom",
+      "path",
+      call + "return gitPolicy;",
+    );
+    if (process.platform === "win32") {
+      const token = await invoke(directory, custom, path);
+      const env = await sourceGitEnvironment(token, {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "core.longpaths",
+        GIT_CONFIG_VALUE_0: "false",
+      });
+      const config = await fs.readFile(env.GIT_CONFIG_GLOBAL, "utf8");
+      assert(config.includes("\tlongpaths = true\n"));
+      assert.equal(env.GIT_CONFIG_COUNT, undefined);
+    } else {
+      await assert.rejects(
+        invoke(directory, custom, path),
+        /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+      );
+      await assert.rejects(
+        fs.lstat(path.join(directory, "cef-source-git-policy")),
+        { code: "ENOENT" },
+      );
+    }
+    assert.equal(calls, 1);
+    for (const replacement of [
+      "",
+      "    { windowsLongPaths: false },\n",
+      "    { windowsLongPaths: true, extra: true },\n",
+    ]) {
+      const mutated = call.replace(
+        "    { windowsLongPaths: true },\n",
+        replacement,
+      );
+      assert.notEqual(mutated, call);
+      await assert.rejects(
+        new AsyncFunction(
+          "root",
+          "custom",
+          "path",
+          mutated + "return gitPolicy;",
+        )(directory, custom, path),
+        assert.AssertionError,
+      );
+    }
+    assert.equal(calls, 4);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("longpaths adoption changes only its reviewed helper row in the strict profile", async () => {
+  const helper = profile.sourceGn.helpers.find(
+    (row) => row.path === "scripts/lib/browser-custom-runtime.mjs",
+  );
+  assert.deepEqual(helper, {
+    path: "scripts/lib/browser-custom-runtime.mjs",
+    bytes: 68713,
+    sha256: "c55c1e013564cdc0f106decbb96dd22ae9a2e690749ecb709c2714246b79a13d",
+  });
+  const original = profileRaw
+    .toString("utf8")
+    .replace(
+      helper.sha256,
+      "dd788379941028ef9a5b2c9318605d26ea9abe2663253b5b59d57504c4aa60af",
+    )
+    .replace('"bytes": 68713', '"bytes": 68266');
+  assert.equal(
+    sha(Buffer.from(original)),
+    "e5cb5cd3285faf2f9590a5d867918f3a710423e97c2478ac2e0be8c2e8e4ab0f",
+  );
+  assert.equal(
+    sha(profileRaw),
+    "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  );
+});

@@ -1154,8 +1154,8 @@
       },
       {
         "path": "scripts/lib/browser-custom-runtime.mjs",
-        "bytes": 68266,
-        "sha256": "dd788379941028ef9a5b2c9318605d26ea9abe2663253b5b59d57504c4aa60af"
+        "bytes": 68713,
+        "sha256": "c55c1e013564cdc0f106decbb96dd22ae9a2e690749ecb709c2714246b79a13d"
       },
       {
         "path": "scripts/lib/browser-runtime-release.mjs",

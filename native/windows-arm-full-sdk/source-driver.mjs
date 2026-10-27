@@ -1990,6 +1990,7 @@ export async function main(argv = process.argv.slice(2)) {
   });
   const gitPolicy = await custom.prepareSourceGitIsolation(
     path.join(root, "cef-source-git-policy"),
+    { windowsLongPaths: true },
   );
   const adapter = await preparePython3Adapter(
     files.commands,
