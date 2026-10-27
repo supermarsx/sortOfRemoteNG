@@ -13,6 +13,100 @@ import time
 import unicodedata
 import zipfile
 from contextlib import contextmanager
+from contextvars import ContextVar, copy_context
+
+SOURCE_IO_MODES = ('source-record', 'source-verify', 'source-apply')
+SOURCE_IO_STAGES = ('unlocated', 'context-read', 'registry-read', 'registry-parse', 'repository-head',
+                    'root-stat', 'directory-open', 'directory-next', 'member-stat', 'link-read',
+                    'link-target-stat', 'file-open', 'file-read', 'file-fd-stat', 'file-path-stat',
+                    'file-close', 'reader-submit', 'reader-join', 'sidecar-encode', 'sidecar-open',
+                    'sidecar-write', 'sidecar-flush', 'sidecar-close', 'sidecar-readback',
+                    'apply-stat', 'apply-utime', 'post-inventory')
+SOURCE_IO_KINDS = ((FileNotFoundError,'FileNotFound'), (NotADirectoryError,'NotADirectory'),
+                   (PermissionError,'Permission'), (IsADirectoryError,'IsADirectory'),
+                   (FileExistsError,'FileExists'), (OSError,'OS'), (UnicodeDecodeError,'UnicodeDecode'),
+                   (UnicodeEncodeError,'UnicodeEncode'), (json.JSONDecodeError,'JSONDecode'),
+                   (SyntaxError,'Syntax'), (ValueError,'Value'), (TypeError,'Type'),
+                   (MemoryError,'Memory'), (RuntimeError,'Runtime'), (KeyError,'Key'), (OverflowError,'Overflow'))
+SOURCE_IO_CONTEXT = ContextVar('owned_source_io', default=None)
+CLI_SOURCE_MODE = None
+
+
+@contextmanager
+def source_io_scope(mode):
+    token = SOURCE_IO_CONTEXT.set((mode, None))
+    try:
+        yield
+    finally:
+        SOURCE_IO_CONTEXT.reset(token)
+
+
+def source_io_record(error, stage, candidate=None):
+    context = SOURCE_IO_CONTEXT.get()
+    if context is None or context[0] not in SOURCE_IO_MODES or isinstance(error, CheckpointError):
+        return
+    try:
+        if 'sourceIoFailure' in error.__dict__ or error.__dict__.get('sourceIoFailureInvalid') is True:
+            return
+        value = {'mode':context[0], 'stage':stage,
+                 'kind':next((label for kind,label in SOURCE_IO_KINDS if isinstance(error,kind)), 'Other'),
+                 'errno':error.errno if isinstance(error,OSError) and type(error.errno) is int and 0 <= error.errno <= 4095 else None}
+        if candidate is not None and context[1] is not None:
+            # Lexical projection from an already owned operation, never exception.filename.
+            try:
+                name = Path(candidate).relative_to(context[1]).as_posix()
+            except ValueError:
+                name = '.'
+            if name != '.' and all(part not in ('', '.', '..') for part in name.split('/')):
+                raw = name.encode()
+                if 0 < len(raw) <= 4*1024**2:
+                    value['candidate'] = {'bytes':len(raw), 'sha256':hashlib.sha256(raw).hexdigest(),
+                                          **({'name':name} if source_path_name(name) else {})}
+        require(stage in SOURCE_IO_STAGES and len(json.dumps(value).encode()) <= 2048, 'diagnostic')
+        error.sourceIoFailure = value
+    except Exception:
+        try:
+            error.sourceIoFailureInvalid = True
+        except Exception:
+            pass
+
+
+def source_io_call(stage, candidate, operation):
+    try:
+        return operation()
+    except Exception as error:
+        source_io_record(error, stage, candidate)
+        raise
+
+
+def source_io_failure_fields(error, mode):
+    if mode not in SOURCE_IO_MODES or isinstance(error, CheckpointError):
+        return {}
+    try:
+        if error.__dict__.get('sourceIoFailureInvalid') is True:
+            return {'sourceIoFailureInvalid':True}
+        value = error.__dict__.get('sourceIoFailure')
+        if value is None:
+            # No last-path inference for exceptions outside an instrumented boundary.
+            with source_io_scope(mode):
+                source_io_record(error, 'unlocated')
+            value = error.__dict__.get('sourceIoFailure')
+        require(type(value) is dict and set(value) in ({'mode','stage','kind','errno'},
+                {'mode','stage','kind','errno','candidate'}) and value['mode'] == mode and
+                value['stage'] in SOURCE_IO_STAGES and value['kind'] in
+                tuple(label for _,label in SOURCE_IO_KINDS) + ('Other',) and
+                (value['errno'] is None or type(value['errno']) is int and 0 <= value['errno'] <= 4095), 'diagnostic')
+        if 'candidate' in value:
+            item = value['candidate']
+            require(type(item) is dict and set(item) in ({'bytes','sha256'},{'bytes','sha256','name'}) and
+                    type(item['bytes']) is int and 0 < item['bytes'] <= 4*1024**2 and
+                    isinstance(item['sha256'],str) and re.fullmatch(r'[a-f0-9]{64}',item['sha256']) is not None, 'diagnostic')
+            require('name' not in item or source_path_name(item['name']) and len(item['name'].encode()) == item['bytes'] and
+                    hashlib.sha256(item['name'].encode()).hexdigest() == item['sha256'], 'diagnostic')
+        require(len(json.dumps(value).encode()) <= 2048, 'diagnostic')
+        return {'sourceIoFailure':value}
+    except Exception:
+        return {'sourceIoFailureInvalid':True}
 
 MAX_BYTES = 32 * 1024**3
 CHUNK_BYTES = 1024**3
@@ -238,12 +332,12 @@ def inventory(root, budget, generated_links=None, source_policy=None):
                 external = source_policy is not None and source_policy.get('external') is True
                 if source_policy is not None and not external and source_admin(root, name, source_policy, budget):
                     continue
-                s = item.stat(follow_symlinks=False) if source_policy is not None and source_policy.get('mac') else os.stat(p, follow_symlinks=False)
+                s = source_io_call('member-stat', p, lambda: item.stat(follow_symlinks=False) if source_policy is not None and source_policy.get('mac') else os.stat(p, follow_symlinks=False))
                 if source_policy is not None:
                     require(s.st_uid in (0, os.geteuid()) if external else s.st_uid == os.geteuid(), 'source-owner')
                 if stat.S_ISLNK(s.st_mode):
                     if source_policy is not None:
-                        target = os.readlink(p)
+                        target = source_io_call('link-read', p, lambda: os.readlink(p))
                         require(isinstance(target,str) and 0 < len(target.encode()) <= 4096 and not any(ord(c)<32 for c in target), 'source-link')
                         if not external:
                             source_link_target(root, p, target, budget)
@@ -346,18 +440,18 @@ def metadata(root, name, value, source=False, owned_sidecar=False):
                 value['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and type(value['identity']) is dict and
                 isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
                 Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64', 'source-sidecar-role')
-    data = (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode()
+    data = source_io_call('sidecar-encode', root / name, lambda: (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode())
     require(len(data) <= maximum, 'metadata-bound')
     if source:
-        output = (root / name).open('xb');primary = None
+        output = source_io_call('sidecar-open', root / name, lambda: (root / name).open('xb'));primary = None
         try:
-            require(output.write(data)==len(data), 'short-write')
-            output.flush()
+            require(source_io_call('sidecar-write', root / name, lambda: output.write(data))==len(data), 'short-write')
+            source_io_call('sidecar-flush', root / name, output.flush)
         except BaseException as error:
             primary=error
             raise
         finally:
-            source_close(output.close, primary)
+            source_close(lambda: source_io_call('sidecar-close', root / name, output.close), primary)
     else:
         with (root / name).open('xb') as output:
             output.write(data)
@@ -636,8 +730,29 @@ def source_cleanup_all(closers, primary):
 @contextmanager
 def source_directory(root, directory, policy, budget):
     if policy is None or not policy.get('mac'):
-        with os.scandir(root / directory) as entries:
-            yield entries
+        if SOURCE_IO_CONTEXT.get() is None:
+            with os.scandir(root / directory) as entries:
+                yield entries
+            return
+        entries = source_io_call('directory-open', root / directory, lambda: os.scandir(root / directory))
+        primary = None
+        def observed():
+            while True:
+                try:
+                    item = next(entries)
+                except StopIteration:
+                    return
+                except Exception as error:
+                    source_io_record(error, 'directory-next', root / directory)
+                    raise
+                yield item
+        try:
+            yield observed()
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            source_close(lambda: source_io_call('file-close', root / directory, entries.close), primary)
         return
     budget.check();p = safe(root / directory);before = p.stat()
     require(stat.S_ISDIR(before.st_mode), 'source-mac-directory')
@@ -672,27 +787,27 @@ def source_close(close, primary):
 
 
 def source_read_bytes(path, budget, maximum):
-    path = safe(path);before = path.stat()
+    path = source_io_call('file-path-stat', path, lambda: safe(path));before = source_io_call('file-path-stat', path, path.stat)
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= maximum,
             'source-metadata-read-bound')
-    stream = path.open('rb');primary = None;parts = [];count = 0
+    stream = source_io_call('file-open', path, lambda: path.open('rb'));primary = None;parts = [];count = 0
     try:
-        fd_before = os.fstat(stream.fileno())
+        fd_before = source_io_call('file-fd-stat', path, lambda: os.fstat(stream.fileno()))
         require(stamp(fd_before)==stamp(before) and fd_before.st_ctime_ns==before.st_ctime_ns,
                 'source-metadata-read-changed')
         while True:
-            budget.check();chunk=stream.read(65536)
+            budget.check();chunk=source_io_call('file-read', path, lambda: stream.read(65536))
             if not chunk:
                 break
             count+=len(chunk);require(count<=before.st_size, 'source-metadata-read-bound');parts.append(chunk)
-        after=path.stat();held=os.fstat(stream.fileno())
+        after=source_io_call('file-path-stat', path, path.stat);held=source_io_call('file-fd-stat', path, lambda: os.fstat(stream.fileno()))
         require(count==before.st_size and stamp(after)==stamp(before)==stamp(held) and
                 after.st_ctime_ns==before.st_ctime_ns==held.st_ctime_ns, 'source-metadata-read-changed')
     except BaseException as error:
         primary=error
         raise
     finally:
-        source_close(stream.close, primary)
+        source_close(lambda: source_io_call('file-close', path, stream.close), primary)
     return b''.join(parts)
 
 
@@ -751,15 +866,15 @@ def source_registry_repository(name, value):
 def source_repositories(root, budget):
     import ast
     names = {'src', 'src/cef', 'depot_tools'}
-    entry_file = safe(root / '.gclient_entries')
-    require(entry_file.is_file() and entry_file.stat().st_size <= 4 * 1024**2, 'source-repositories-bound')
-    registry_raw = source_read_bytes(entry_file, budget, 4 * 1024**2)
-    body = ast.parse(registry_raw)
+    entry_file = source_io_call('registry-read', root / '.gclient_entries', lambda: safe(root / '.gclient_entries'))
+    require(source_io_call('registry-read', entry_file, entry_file.is_file) and source_io_call('registry-read', entry_file, entry_file.stat).st_size <= 4 * 1024**2, 'source-repositories-bound')
+    registry_raw = source_io_call('registry-read', entry_file, lambda: source_read_bytes(entry_file, budget, 4 * 1024**2))
+    body = source_io_call('registry-parse', entry_file, lambda: ast.parse(registry_raw))
     require(len(body.body) == 1 and isinstance(body.body[0], ast.Assign) and
             len(body.body[0].targets) == 1 and isinstance(body.body[0].targets[0], ast.Name) and
             body.body[0].targets[0].id == 'entries', 'source-repositories-shape')
     require(isinstance(body.body[0].value, ast.Dict), 'source-repositories-shape')
-    entries = ast.literal_eval(body.body[0].value)
+    entries = source_io_call('registry-parse', entry_file, lambda: ast.literal_eval(body.body[0].value))
     require(len(entries) == len(body.body[0].value.keys), 'source-repositories-shape')
     require(isinstance(entries, dict) and len(entries) <= 10000, 'source-repositories-bound')
     for name, value in entries.items():
@@ -798,10 +913,10 @@ def source_link_target(root, path, target, budget):
             continue
         name = Path(*resolved, part)
         require('.git' not in name.parts and name.as_posix() not in ('src/out', 'acquisition-logs'), 'source-excluded-link')
-        current = root / name;info = current.lstat()
+        current = root / name;info = source_io_call('link-target-stat', current, current.lstat)
         if stat.S_ISLNK(info.st_mode):
             links += 1;require(links <= 64, 'source-link-cycle')
-            raw = os.readlink(current)
+            raw = source_io_call('link-read', current, lambda: os.readlink(current))
             if raw.startswith('/'):
                 pending = absolute(raw) + pending;resolved = []
             else:
@@ -815,7 +930,7 @@ def source_link_target(root, path, target, budget):
 
 def source_admin(root, name, policy, budget):
     if name == 'acquisition-logs':
-        info = (root / name).lstat()
+        info = source_io_call('member-stat', root / name, (root / name).lstat)
         require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and
                 not getattr(info, 'st_file_attributes', 0) & 0x400, 'source-diagnostic-root')
         return True
@@ -826,11 +941,11 @@ def source_admin(root, name, policy, budget):
         return False
     repository = Path(name).parent.as_posix()
     require(repository in policy['repositories'], 'source-unknown-git-root')
-    admin = safe(root / name)
+    admin = source_io_call('repository-head', root / name, lambda: safe(root / name))
     require(admin.is_dir(), 'source-git-admin-kind')
-    head = safe(admin / 'HEAD')
-    require(head.is_file() and head.stat().st_size == 41, 'source-detached-head')
-    raw = source_read_bytes(head, budget, 41);budget.check()
+    head = source_io_call('repository-head', admin / 'HEAD', lambda: safe(admin / 'HEAD'))
+    require(source_io_call('repository-head', head, head.is_file) and source_io_call('repository-head', head, head.stat).st_size == 41, 'source-detached-head')
+    raw = source_io_call('repository-head', head, lambda: source_read_bytes(head, budget, 41));budget.check()
     require(re.fullmatch(rb'[a-f0-9]{40}\n', raw) is not None, 'source-detached-head')
     value = raw.decode('ascii').strip()
     old = policy['gitHeads'].setdefault(repository, value)
@@ -839,26 +954,26 @@ def source_admin(root, name, policy, budget):
 
 
 def source_hash(root, row, budget, policy=None):
-    p = safe(root / row['path']);before = p.stat()
+    p = source_io_call('file-path-stat', root / row['path'], lambda: safe(root / row['path']));before = source_io_call('file-path-stat', p, p.stat)
     require(stat.S_ISREG(before.st_mode) and (before.st_nlink > 0 if policy is not None and policy.get('external') else before.st_nlink == 1) and
             before.st_size <= SOURCE_MAX_FILE and stamp(before) == row['stamp'] and before.st_ctime_ns == row['ctimeNs'], 'source-file-identity')
     if policy is not None and policy.get('mac'):
         require(source_birth(before) == row['birthNs'] and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
-    stream = p.open('rb');primary = None;reader = HashedReader(stream, budget);count = 0
+    stream = source_io_call('file-open', p, lambda: p.open('rb'));primary = None;reader = HashedReader(stream, budget);count = 0
     try:
-        require(opened_identity_matches(row['stamp'], os.fstat(stream.fileno())) and
-                os.fstat(stream.fileno()).st_ctime_ns == before.st_ctime_ns, 'source-file-identity')
+        require(opened_identity_matches(row['stamp'], source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) and
+                source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno())).st_ctime_ns == before.st_ctime_ns, 'source-file-identity')
         if policy is not None and policy.get('mac'):
             require(source_local(os.fstat(stream.fileno()), policy) == source_local(before, policy), 'source-mac-file-identity')
         while True:
-            chunk = reader.read(65536)
+            chunk = source_io_call('file-read', p, lambda: reader.read(65536))
             if not chunk:
                 break
             count += len(chunk)
             require(count <= before.st_size, 'source-file-changed')
-        require(count == before.st_size and stamp(os.fstat(stream.fileno())) == row['stamp'] and
-                stamp(p.stat()) == row['stamp'] and p.stat().st_ctime_ns == before.st_ctime_ns and
-                os.fstat(stream.fileno()).st_ctime_ns == before.st_ctime_ns, 'source-file-changed')
+        require(count == before.st_size and stamp(source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) == row['stamp'] and
+                stamp(source_io_call('file-path-stat', p, p.stat)) == row['stamp'] and source_io_call('file-path-stat', p, p.stat).st_ctime_ns == before.st_ctime_ns and
+                source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno())).st_ctime_ns == before.st_ctime_ns, 'source-file-changed')
         if policy is not None and policy.get('mac'):
             require(source_local(p.stat(), policy) == source_local(before, policy) == source_local(os.fstat(stream.fileno()), policy),
                     'source-mac-file-changed')
@@ -866,7 +981,7 @@ def source_hash(root, row, budget, policy=None):
         primary = error
         raise
     finally:
-        source_close(stream.close, primary)
+        source_close(lambda: source_io_call('file-close', p, stream.close), primary)
     return reader.digest.hexdigest()
 
 
@@ -888,7 +1003,8 @@ def source_snapshot(root, budget, guards=None, context=None):
     global SOURCE_JOIN_FAILURE
     from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
     external = context is not None and context.get('external') is True
-    require(root.stat().st_uid in (0, os.geteuid()) if external else root.stat().st_uid == os.geteuid(), 'source-owner')
+    owner = source_io_call('root-stat', root, root.stat).st_uid
+    require(owner in (0, os.geteuid()) if external else owner == os.geteuid(), 'source-owner')
     policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
     if policy.get('mac'):
         policy['_directories'] = {}
@@ -902,7 +1018,10 @@ def source_snapshot(root, budget, guards=None, context=None):
     def submit():
         row = next(files, None)
         if row is not None:
-            future = pool.submit(source_hash, root, row, budget, policy) if policy.get('mac') else pool.submit(source_hash, root, row, budget)
+            # ContextVar state is not inherited by executor threads. Each task
+            # receives its own copy; exception annotations stay on that exception.
+            task = lambda: pool.submit(copy_context().run, source_hash, root, row, budget, policy) if policy.get('mac') else pool.submit(copy_context().run, source_hash, root, row, budget)
+            future = source_io_call('reader-submit', root / row['path'], task)
             pending[future] = row['path']
     try:
         for _ in range(4):
@@ -924,7 +1043,7 @@ def source_snapshot(root, budget, guards=None, context=None):
                 future.cancel()
     finally:
         try:
-            pool.shutdown(wait=True, cancel_futures=True)
+            source_io_call('reader-join', None, lambda: pool.shutdown(wait=True, cancel_futures=True))
         except BaseException:
             SOURCE_JOIN_FAILURE = True
             if first is None:
@@ -939,7 +1058,7 @@ def source_snapshot(root, budget, guards=None, context=None):
     if external:
         # A second namespace read verifies stability, not a second authority budget.
         policy['aggregate'] = {'entries':0,'bytes':0,'metadata':0}
-    after, after_total = inventory(root, budget, source_policy=policy)
+    after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy))
     require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
     if policy.get('mac'):
         require(source_local(root.stat(), policy) == local_before, 'source-mac-root-changed')
@@ -974,6 +1093,12 @@ def source_metadata_identity(identity, platform_policy=None):
 
 
 def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, platform_policy=None):
+    with source_io_scope(mode):
+        return source_io_call('unlocated', None, lambda: source_metadata_owned(mode, root, sidecar, identity,
+                              seconds, budget=budget, platform_policy=platform_policy))
+
+
+def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=None, platform_policy=None):
     import sys
     global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE, SOURCE_PATH_MODE
     SOURCE_CLOSE_FAILURE = SOURCE_JOIN_FAILURE = False
@@ -992,13 +1117,14 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
     require(root == work / 'source' and sidecar == root / 'src/out/Release_GN_arm64' / SOURCE_METADATA_NAME,
             'source-fixed-paths')
     require(root.is_dir() and safe(sidecar.parent).is_dir(), 'source-fixed-paths')
+    SOURCE_IO_CONTEXT.set((mode, root))
     guards = {}
     if mode == 'source-record':
         current = source_snapshot(root, budget, guards)
         value = {'schemaVersion': 1, 'kind': 'sorng-linuxarm-source-metadata',
                  'policy': SOURCE_METADATA_POLICY, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
         written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
-        require(source_read_sidecar(sidecar, budget, owned_sidecar=True) == value, 'source-sidecar-readback')
+        require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
         return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
                 'bytes': current['bytes'], 'sidecar': written}
     stored = source_read_sidecar(sidecar, budget, owned_sidecar=True)
@@ -1024,12 +1150,12 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
             int(expected['rootMtimeNs']) < 2**63, 'source-mtime')
     if mode == 'source-apply':
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
-            budget.check();path = root / relative(row['path']);before = path.lstat()
+            budget.check();path = root / relative(row['path']);before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
             require((stamp(before),before.st_ctime_ns) == guards[row['path']], 'source-write-identity')
             if row['kind'] == 'symlink':
                 require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == row['target'], 'source-link-changed')
-                os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False)
+                source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))
                 after = path.lstat()
                 require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
                         os.readlink(path)==row['target'] and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
@@ -1040,7 +1166,7 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
                 try:
                     info = os.fstat(fd)
                     require(stamp(info) == stamp(before), 'source-write-identity')
-                    os.utime(fd, ns=(info.st_atime_ns,int(row['mtimeNs'])))
+                    source_io_call('apply-utime', path, lambda: os.utime(fd, ns=(info.st_atime_ns,int(row['mtimeNs']))))
                     after = path.lstat();held = os.fstat(fd)
                     require((before.st_dev,before.st_ino,before.st_mode,before.st_size)==
                             (after.st_dev,after.st_ino,after.st_mode,after.st_size) and
@@ -1056,7 +1182,7 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
         primary = None
         try:
             require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')
-            os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs'])))
+            source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))
             require(root.stat().st_mtime_ns==int(expected['rootMtimeNs']) and
                     stamp(root.stat())==stamp(os.fstat(fd)), 'source-root-readback')
         except BaseException as error:
@@ -1308,6 +1434,8 @@ def mac_owned_capability_observe(context, output, budget):
 
 
 def main():
+    global CLI_SOURCE_MODE
+    CLI_SOURCE_MODE = None
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['pack', 'restore', 'seal', 'source-record', 'source-verify', 'source-apply', 'mac-external-observe', 'mac-owned-capability-observe'])
     parser.add_argument('--input', required=True)
@@ -1317,6 +1445,7 @@ def main():
     parser.add_argument('--generated-links')
     parser.add_argument('--platform-policy', choices=['mac-arm'])
     args = parser.parse_args()
+    CLI_SOURCE_MODE = args.mode if args.mode in SOURCE_IO_MODES else None
     require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
     links = {}
     if args.generated_links:
@@ -1331,10 +1460,11 @@ def main():
         result=(mac_external_observe if args.mode=='mac-external-observe' else mac_owned_capability_observe)(context,Path(args.output),budget)
     elif args.mode.startswith('source-'):
         require(args.manifest is not None and not links, 'source-context-required')
-        context_file = safe(Path(args.manifest))
-        require(context_file.stat().st_size <= 16384, 'source-context-bound')
-        source_budget = Budget(args.seconds)
-        identity = source_json(source_read_bytes(context_file, source_budget, 16384))
+        with source_io_scope(args.mode):
+            context_file = source_io_call('context-read', None, lambda: safe(Path(args.manifest)))
+            require(source_io_call('context-read', None, context_file.stat).st_size <= 16384, 'source-context-bound')
+            source_budget = Budget(args.seconds)
+            identity = source_io_call('context-read', None, lambda: source_json(source_read_bytes(context_file, source_budget, 16384)))
         result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)
     elif args.mode == 'seal':
         require(Path(args.input).stat().st_size < 1024**2, 'seal-zip-bound')
@@ -1359,5 +1489,5 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE)}))
         raise SystemExit(1)

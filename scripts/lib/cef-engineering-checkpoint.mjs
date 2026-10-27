@@ -1171,6 +1171,97 @@ function sourcePathFailure(value) {
   };
 }
 
+function sourceIoFailure(value, mode) {
+  const stages = [
+    "unlocated",
+    "context-read",
+    "registry-read",
+    "registry-parse",
+    "repository-head",
+    "root-stat",
+    "directory-open",
+    "directory-next",
+    "member-stat",
+    "link-read",
+    "link-target-stat",
+    "file-open",
+    "file-read",
+    "file-fd-stat",
+    "file-path-stat",
+    "file-close",
+    "reader-submit",
+    "reader-join",
+    "sidecar-encode",
+    "sidecar-open",
+    "sidecar-write",
+    "sidecar-flush",
+    "sidecar-close",
+    "sidecar-readback",
+    "apply-stat",
+    "apply-utime",
+    "post-inventory",
+  ];
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !["errno,kind,mode,stage", "candidate,errno,kind,mode,stage"].includes(
+      Object.keys(value).sort().join(),
+    ) ||
+    value.mode !== mode ||
+    !stages.includes(value.stage) ||
+    ![
+      "FileNotFound",
+      "NotADirectory",
+      "Permission",
+      "IsADirectory",
+      "FileExists",
+      "OS",
+      "UnicodeDecode",
+      "UnicodeEncode",
+      "JSONDecode",
+      "Syntax",
+      "Value",
+      "Type",
+      "Memory",
+      "Runtime",
+      "Key",
+      "Overflow",
+      "Other",
+    ].includes(value.kind) ||
+    !(
+      value.errno === null ||
+      (Number.isSafeInteger(value.errno) &&
+        value.errno >= 0 &&
+        value.errno <= 4095)
+    ) ||
+    Buffer.byteLength(JSON.stringify(value)) > 2048
+  )
+    return null;
+  if (Object.hasOwn(value, "candidate")) {
+    const candidate = value.candidate;
+    // Reuse precisely the existing public-source candidate grammar/hash checks.
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate) ||
+      !["bytes,sha256", "bytes,name,sha256"].includes(
+        Object.keys(candidate).sort().join(),
+      ) ||
+      !Number.isSafeInteger(candidate.bytes) ||
+      candidate.bytes <= 0 ||
+      !sourcePathFailure({
+        mode,
+        phase: "filesystem-member",
+        predicate: "unclassified",
+        ...candidate,
+      })
+    )
+      return null;
+  }
+  return value;
+}
+
 export function archiveFailureRecord(
   stdout,
   exitCode,
@@ -1184,7 +1275,8 @@ export function archiveFailureRecord(
   let sourceCloseFailure = false,
     sourceJoinFailure = false,
     externalFacts,
-    sourceFacts;
+    sourceFacts,
+    sourceIoFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1198,6 +1290,31 @@ export function archiveFailureRecord(
       let value = decoded,
         optional,
         optionalInvalid = false;
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "archive-io-error" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        let io,
+          invalid = false;
+        if (Object.hasOwn(value, "sourceIoFailure")) {
+          io = sourceIoFailure(value.sourceIoFailure, sourceMode);
+          invalid = io === null;
+          delete value.sourceIoFailure;
+        }
+        if (Object.hasOwn(value, "sourceIoFailureInvalid")) {
+          invalid = true;
+          delete value.sourceIoFailureInvalid;
+        }
+        sourceIoFacts = {
+          ...(io && !invalid ? { sourceIoFailure: io } : {}),
+          ...(invalid ? { sourceIoFailureInvalid: true } : {}),
+        };
+      }
       if (
         ["source-record", "source-apply", "source-verify"].includes(
           sourceMode,
@@ -1285,6 +1402,8 @@ export function archiveFailureRecord(
             : {}),
           ...(optionalInvalid ? { sourcePathFailureInvalid: true } : {}),
         };
+      } else {
+        sourceIoFacts = undefined;
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -1297,6 +1416,7 @@ export function archiveFailureRecord(
     ...(sourceJoinFailure ? { sourceJoinFailure: true } : {}),
     ...externalFacts,
     ...sourceFacts,
+    ...sourceIoFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode

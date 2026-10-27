@@ -1,4 +1,319 @@
 import assert from "node:assert/strict";
+// SOURCE I/O diagnostics are optional, never authority for a path or caller.
+test("source IO normal directory EOF performs no diagnostic work and unexpected StopIteration remains visible", () => {
+  const result = python(
+    String.raw`
+import pathlib,types,sys,tempfile
+from unittest.mock import patch
+file=pathlib.Path(sys.argv[1]);m=types.ModuleType('eof_proof');m.__file__=str(file)
+exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
+with tempfile.TemporaryDirectory() as folder:
+ root=pathlib.Path(folder);(root/'src').mkdir();(root/'src/input.cc').write_bytes(b'owned')
+ with m.source_io_scope('source-record'):
+  m.SOURCE_IO_CONTEXT.set(('source-record',root))
+  with patch.object(m,'source_io_record',wraps=m.source_io_record) as record:
+   with m.source_directory(root,pathlib.Path('src'),None,m.Budget(2)) as entries:
+    assert [entry.name for entry in entries]==['input.cc']
+   record.assert_not_called()
+  expected=OSError(5,'PRIVATE');closed=[]
+  class Entries:
+   def __next__(self):raise expected
+   def close(self):closed.append(True)
+  with patch.object(m.os,'scandir',return_value=Entries()):
+   try:
+    with m.source_directory(root,pathlib.Path('src'),None,m.Budget(2)) as entries:list(entries)
+   except OSError as error:assert error is expected
+   else:raise AssertionError('iteration error swallowed')
+  assert closed==[True] and m.source_io_failure_fields(expected,'source-record')['sourceIoFailure']['stage']=='directory-next'
+  unexpected=StopIteration('PRIVATE')
+  def fail():raise unexpected
+  try:m.source_io_call('file-read',root/'src/input.cc',fail)
+  except StopIteration as error:assert error is unexpected
+  else:raise AssertionError('unexpected non-EOF StopIteration swallowed')
+  assert m.source_io_failure_fields(unexpected,'source-record')['sourceIoFailure']['stage']=='file-read'
+ assert m.SOURCE_IO_CONTEXT.get() is None
+print('actual directory EOF zero diagnostic calls; identical iteration OSError and non-EOF StopIteration preserved PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("source IO actual Python exceptions keep scoped reader context, primary and privacy", () => {
+  const result = python(
+    String.raw`
+import pathlib,types,sys,json,tempfile,os,concurrent.futures,threading
+from unittest.mock import patch
+file=pathlib.Path(sys.argv[1]);m=types.ModuleType('io_proof');m.__file__=str(file)
+exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
+with tempfile.TemporaryDirectory() as folder:
+ root=pathlib.Path(folder);(root/'src').mkdir();(root/'src/a').write_bytes(b'a');(root/'src/b').write_bytes(b'b')
+ with m.source_io_scope('source-record'):
+  m.SOURCE_IO_CONTEXT.set(('source-record',root))
+  cause=RuntimeError('SECRET_CAUSE');first=PermissionError(13,'SECRET_MESSAGE','SECRET_FILENAME');first.__cause__=cause
+  def fail():raise first
+  try:m.source_io_call('file-read',root/'src/a',fail)
+  except Exception as error:assert error is first and error.__cause__ is cause
+  facts=m.source_io_failure_fields(first,'source-record')['sourceIoFailure']
+  assert facts['kind']=='Permission' and facts['errno']==13 and facts['candidate']['name']=='src/a'
+  def close():raise OSError(5,'SECRET_CLOSE')
+  m.source_close(lambda:m.source_io_call('file-close',root/'src/a',close),first)
+  assert m.SOURCE_CLOSE_FAILURE and m.source_io_failure_fields(first,'source-record')['sourceIoFailure']==facts
+  barrier=threading.Barrier(2)
+  def worker(name):
+   def read():barrier.wait(timeout=2);raise FileNotFoundError(2,'SECRET',str(root/name))
+   try:m.source_io_call('file-read',root/name,read)
+   except Exception as error:return error
+  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+   futures=[pool.submit(m.copy_context().run,worker,name) for name in ('src/a','src/b')]
+   errors=[f.result(timeout=3) for f in futures]
+  assert [m.source_io_failure_fields(e,'source-record')['sourceIoFailure']['candidate']['name'] for e in errors]==['src/a','src/b']
+  try:m.source_link_target(root,root/'src/link','missing/../a',m.Budget(2))
+  except FileNotFoundError as error:
+   detail=m.source_io_failure_fields(error,'source-record')['sourceIoFailure']
+   assert detail['stage']=='link-target-stat' and detail['candidate']['name']=='src/missing'
+  else:raise AssertionError('missing traversal accepted')
+  for stage,call in [('directory-open',lambda:list(m.source_directory(root,pathlib.Path('absent'),None,m.Budget(2)).__enter__()))]:
+   try:call()
+   except FileNotFoundError as error:assert m.source_io_failure_fields(error,'source-record')['sourceIoFailure']['stage']==stage
+  for code in (True,-1,4096,'13'):
+   error=OSError();error.errno=code;m.source_io_record(error,'file-read',root/'src/a')
+   assert m.source_io_failure_fields(error,'source-record')['sourceIoFailure']['errno'] is None
+  error=RuntimeError('SECRET');m.source_io_record(error,'file-read',root.parent/'SECRET_PRIVATE')
+  assert 'candidate' not in m.source_io_failure_fields(error,'source-record')['sourceIoFailure']
+  error=RuntimeError('SECRET');m.source_io_record(error,'file-read',root/'src/unicode-\u2603')
+  assert 'name' not in m.source_io_failure_fields(error,'source-record')['sourceIoFailure']['candidate']
+  with patch.object(m.hashlib,'sha256',side_effect=RuntimeError('SECRET_FORMAT')):
+   error=RuntimeError('SECRET');m.source_io_record(error,'file-read',root/'src/a')
+  assert m.source_io_failure_fields(error,'source-record')=={'sourceIoFailureInvalid':True}
+  error=ValueError('SECRET_PARSE')
+  assert m.source_io_failure_fields(error,'source-record')['sourceIoFailure']=={'mode':'source-record','stage':'unlocated','kind':'Value','errno':None}
+  try:m.metadata(root/'src',m.SOURCE_METADATA_NAME,{'invalid':object()},source=True)
+  except TypeError as error:
+   assert m.source_io_failure_fields(error,'source-record')['sourceIoFailure']['stage']=='sidecar-encode'
+  else:raise AssertionError('serialization failed to deny')
+ assert m.SOURCE_IO_CONTEXT.get() is None
+ error=OSError(2,'SECRET');m.source_io_record(error,'file-read',root/'src/a')
+ assert not hasattr(error,'sourceIoFailure')
+ assert m.source_io_failure_fields(first,'pack')=={} and m.source_io_failure_fields(first,'source-verify')=={'sourceIoFailureInvalid':True}
+ assert 'SECRET' not in json.dumps(facts)
+print('actual Python scoped exceptions, concurrent readers, link target, first close and privacy PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("source IO actual hash/snapshot and directory cleanup preserve the first exception", () => {
+  const result = python(
+    String.raw`
+import pathlib,types,sys,tempfile,os,threading,concurrent.futures
+from unittest.mock import patch
+from contextlib import nullcontext
+file=pathlib.Path(sys.argv[1]);m=types.ModuleType('actual_io');m.__file__=str(file)
+exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
+with tempfile.TemporaryDirectory() as folder:
+ root=pathlib.Path(folder);(root/'src').mkdir();p=root/'src/a';p.write_bytes(b'owned')
+ info=p.stat();row={'path':'src/a','kind':'file','stamp':m.stamp(info),'ctimeNs':info.st_ctime_ns}
+ with m.source_io_scope('source-record'):
+  m.SOURCE_IO_CONTEXT.set(('source-record',root))
+  first=OSError(5,'SECRET_FIRST');cause=ValueError('SECRET_CAUSE');first.__cause__=cause
+  actual_open=pathlib.Path.open;closed=[]
+  class Stream:
+   def __init__(self,real):self.real=real
+   def fileno(self):return self.real.fileno()
+   def read(self,n):raise first
+   def close(self):self.real.close();closed.append(True);raise RuntimeError('SECRET_CLOSE')
+  # This is a first-error control-flow fixture, not Windows source admission.
+  # Windows path/FD ctime availability differs: supply an identity-satisfied
+  # witness there so the intended read fault is reached deterministically.
+  fd_identity=patch.object(m.os,'fstat',return_value=info) if os.name=='nt' else nullcontext()
+  with patch.object(pathlib.Path,'open',lambda path,*a,**kw:Stream(actual_open(path,*a,**kw))),fd_identity:
+   try:m.source_hash(root,row,m.Budget(2))
+   except OSError as error:assert error is first and error.__cause__ is cause
+   else:raise AssertionError('read fault ignored')
+  assert closed==[True] and m.SOURCE_CLOSE_FAILURE
+  assert m.source_io_failure_fields(first,'source-record')['sourceIoFailure']['stage']=='file-read'
+  directory_error=PermissionError(13,'SECRET_DIRECTORY');ended=[]
+  class Entries:
+   def __iter__(self):return self
+   def __next__(self):raise directory_error
+   def close(self):ended.append(True);raise OSError(5,'SECRET_CLOSE')
+  with patch.object(m.os,'scandir',return_value=Entries()):
+   try:
+    with m.source_directory(root,pathlib.Path('src'),None,m.Budget(2)) as entries:list(entries)
+   except PermissionError as error:assert error is directory_error
+   else:raise AssertionError('directory fault ignored')
+  assert ended==[True] and m.source_io_failure_fields(directory_error,'source-record')['sourceIoFailure']['stage']=='directory-next'
+  # Exercise the ACTUAL source_snapshot executor submission and shutdown paths.
+  # Only unrelated namespace requirements are fixed fixture values; no vendor IO.
+  barrier=threading.Barrier(2);seen=[];original_shutdown=concurrent.futures.ThreadPoolExecutor.shutdown
+  failures={name:OSError(5,'SECRET_READER') for name in ('src/a','src/b')}
+  rows=[{**row,'path':name} for name in failures]
+  def failing_hash(root,row,budget,*unused):
+   def read():barrier.wait(timeout=2);raise failures[row['path']]
+   return m.source_io_call('file-read',root/row['path'],read)
+  def shutdown(pool,*a,**kw):
+   original_shutdown(pool,*a,**kw);seen.append(True);raise RuntimeError('SECRET_JOIN')
+  # On Windows this pure control-flow fixture substitutes only POSIX uid access.
+  with patch.object(m.os,'geteuid',return_value=info.st_uid,create=True),patch.object(m,'source_repositories',return_value={}),patch.object(m,'inventory',return_value=(rows,10)),patch.object(m,'source_hash',side_effect=failing_hash),patch.object(concurrent.futures.ThreadPoolExecutor,'shutdown',shutdown):
+   try:m.source_snapshot(root,m.Budget(3))
+   except OSError as error:assert any(error is value for value in failures.values())
+   else:raise AssertionError('reader error ignored')
+  assert seen==[True] and m.SOURCE_JOIN_FAILURE
+  assert [m.source_io_failure_fields(error,'source-record')['sourceIoFailure']['candidate']['name'] for error in failures.values()]==['src/a','src/b']
+ assert m.SOURCE_IO_CONTEXT.get() is None
+ # A later ordinary/external-style call cannot inherit the prior source context.
+ error=OSError(5,'SECRET_LATER');m.source_io_record(error,'file-read',p);assert not hasattr(error,'sourceIoFailure')
+print('actual hash/read-close, directory-next-close, snapshot concurrent first-error/join PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("source IO optional schema is closed and actual caller/primary scoped", () => {
+  const facts = {
+    mode: "source-record",
+    stage: "file-read",
+    kind: "Permission",
+    errno: 13,
+    candidate: {
+      name: "src/a",
+      bytes: 5,
+      sha256: hashObject("sha256").update("src/a").digest("hex"),
+    },
+  };
+  const base = {
+    complete: false,
+    error: "archive-io-error",
+    sourceCloseFailure: true,
+    sourceJoinFailure: true,
+  };
+  const primary = {
+    error: base.error,
+    sourceCloseFailure: true,
+    sourceJoinFailure: true,
+    exitCode: 1,
+  };
+  const record = (value, sourceMode = "source-record", error = base.error) =>
+    archiveFailureRecord(
+      JSON.stringify({ ...base, error, sourceIoFailure: value }),
+      1,
+      { sourceMode },
+    );
+  assert.deepEqual(record(facts), { ...primary, sourceIoFailure: facts });
+  for (const value of [
+    null,
+    [],
+    {},
+    { ...facts, extra: true },
+    { ...facts, stage: "SECRET" },
+    { ...facts, kind: "SECRET" },
+    { ...facts, errno: true },
+    { ...facts, errno: 4096 },
+    { ...facts, mode: "source-verify" },
+    { ...facts, candidate: { ...facts.candidate, bytes: 0 } },
+    { ...facts, candidate: { ...facts.candidate, name: "src/../SECRET" } },
+    { ...facts, candidate: { ...facts.candidate, sha256: "0".repeat(64) } },
+  ]) {
+    assert.deepEqual(record(value), {
+      ...primary,
+      sourceIoFailureInvalid: true,
+    });
+  }
+  for (const sourceMode of [
+    null,
+    "pack",
+    "restore",
+    "seal",
+    "mac-external-observe",
+    "unknown",
+  ])
+    assert.deepEqual(record(facts, sourceMode), {
+      error: "unknown",
+      exitCode: 1,
+    });
+  assert.deepEqual(record(facts, "source-record", "member-path"), {
+    error: "unknown",
+    exitCode: 1,
+  });
+});
+
+test(
+  "source IO actual Linux CLI retains precise missing-target stage without private paths",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual owned POSIX symlink CLI fixture"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const code =
+      setup +
+      String.raw`
+import subprocess
+with fixture(record=False) as (root,sidecar,identity):
+ os.symlink('missing/../input.cc',root/'src/broken-link')
+ context=root.parent/'identity.json';context.write_text(json.dumps(identity))
+ result=subprocess.run([sys.executable,'-I','-B',sys.argv[1],'source-record','--input',str(root),'--output',str(sidecar),'--manifest',str(context),'--seconds','5'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10,env={'PATH':str(pathlib.Path(sys.executable).parent)})
+ assert result.returncode==1 and not sidecar.exists() and not result.stderr
+ value=json.loads(result.stdout);assert value['complete']is False and value['error']=='archive-io-error'
+ facts=value['sourceIoFailure'];assert facts['mode']=='source-record' and facts['stage']=='link-target-stat' and facts['kind']=='FileNotFound' and facts['errno']==2
+ assert facts['candidate']['name']=='src/missing' and str(root).encode() not in result.stdout
+ assert m.SOURCE_IO_CONTEXT.get() is None
+ print('actual Linux CLI source-record missing-target exception exact bounded transport PASS')
+`;
+    const result = python(code, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  },
+);
+
+test(
+  "source IO actual archiveCommand refuses ordinary masquerades and retains first cleanup flags",
+  { timeout: 15000 },
+  async (t) => {
+    const folder = await scratch(t),
+      executable = python("import sys;print(sys.executable)").stdout.trim();
+    const script = path.join(folder, "source-io-fixture.py");
+    await writeFile(
+      script,
+      "import json,sys\nprint(json.dumps({'complete':False,'error':'archive-io-error','sourceCloseFailure':True,'sourceJoinFailure':True,'sourceIoFailure':{'mode':'source-record','stage':'file-read','kind':'OS','errno':5}}))\nsys.exit(1)\n",
+      { flag: "wx" },
+    );
+    for (const mode of [
+      "source-record",
+      "source-verify",
+      "pack",
+      "restore",
+      "mac-external-observe",
+    ]) {
+      const records = [];
+      await assert.rejects(
+        archiveCommand(executable, script, [mode], {
+          timeout: 2000,
+          observeFailure: (r) => records.push(r),
+        }),
+        /Checkpoint archive rejected/,
+      );
+      assert.equal(records.length, 1);
+      assert.equal(
+        records[0].error,
+        mode.startsWith("source-") ? "archive-io-error" : "unknown",
+      );
+      if (mode === "source-record")
+        assert.equal(records[0].sourceIoFailure.stage, "file-read");
+      if (mode === "source-verify")
+        assert.equal(records[0].sourceIoFailureInvalid, true);
+    }
+  },
+);
 import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
 import { EventEmitter } from "node:events";
