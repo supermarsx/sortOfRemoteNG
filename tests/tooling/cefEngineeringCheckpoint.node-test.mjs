@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
 import { EventEmitter } from "node:events";
+// Exact pre-fix archiveCommand declaration from reviewed6c853; data-only baseline.
+const ARCHIVE_COMMAND_BEFORE =
+  'export async function archiveCommand(\n  python,\n  helper,\n  args,\n  { timeout = LIMITS.archiveMs, observeFailure } = {},\n) {\n  assert(\n    path.isAbsolute(python) &&\n      path.isAbsolute(helper) &&\n      positive(timeout) &&\n      timeout <= LIMITS.archiveMs,\n    "Verified archive tool required",\n  );\n  return new Promise((resolve, reject) => {\n    const child = spawn(python, ["-I", "-B", helper, ...args], {\n      shell: false,\n      windowsHide: true,\n      detached: process.platform !== "win32",\n      env: { PATH: path.dirname(python) },\n      stdio: ["ignore", "pipe", "pipe"],\n    });\n    let stdout = "",\n      overflow = false,\n      diagnosticEmitted = false;\n    const diagnostic = (code, options = {}) => {\n      if (diagnosticEmitted || !observeFailure) return;\n      diagnosticEmitted = true;\n      try {\n        observeFailure(archiveFailureRecord(stdout, code, options));\n      } catch {\n        /* Diagnostics cannot hide an existing failure or escape an event callback. */\n      }\n    };\n    child.stdout.on("data", (data) => {\n      stdout += data;\n      if (stdout.length > LIMITS.seal) {\n        overflow = true;\n        diagnostic(null, { overflow: true });\n        void stopGroup(child);\n      }\n    });\n    child.stderr.resume();\n    const timer = setTimeout(() => {\n      diagnostic(null, { deadline: true });\n      void stopGroup(child).then(\n        () => reject(new Error("Archive deadline; partial is not admitted")),\n        reject,\n      );\n    }, timeout);\n    child.once("error", (error) => {\n      clearTimeout(timer);\n      diagnostic(null);\n      reject(error);\n    });\n    child.once("close", (code) => {\n      clearTimeout(timer);\n      if (code !== 0 || overflow) {\n        diagnostic(code, { overflow });\n        return reject(new Error("Checkpoint archive rejected"));\n      }\n      try {\n        resolve(JSON.parse(stdout));\n      } catch {\n        diagnostic(code);\n        reject(new Error("Malformed archive result"));\n      }\n    });\n  });\n}';
+const ARCHIVE_COMMAND_BEFORE_SHA256 =
+  "95779212317428382040cf705a8e5535b277396935c0057ec9c7d8589de51cc7";
 import { gunzipSync } from "node:zlib";
 import { finished } from "node:stream/promises";
 import YAML from "yaml";
@@ -4726,6 +4731,286 @@ test("post-slice capacity/error observations use only closed labels and finite c
   );
 });
 
+function archiveDeclaration(source) {
+  const ast = ts.createSourceFile(
+    "archive.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const node = ast.statements.find(
+    (n) => ts.isFunctionDeclaration(n) && n.name?.text === "archiveCommand",
+  );
+  assert(node);
+  return node.getText(ast).replace(/^export\s+/, "");
+}
+function archiveFactory(declaration, spawnChild, clock = {}) {
+  return new Function(
+    "assert",
+    "positive",
+    "path",
+    "spawn",
+    "LIMITS",
+    "archiveFailureRecord",
+    "setTimeout",
+    "clearTimeout",
+    "performance",
+    declaration.replace(/^export\s+/, "") + ";return archiveCommand;",
+  )(
+    assert,
+    (value) => Number.isSafeInteger(value) && value > 0,
+    path,
+    spawnChild,
+    LIMITS,
+    archiveFailureRecord,
+    clock.setTimeout ?? setTimeout,
+    clock.clearTimeout ?? clearTimeout,
+    clock.performance ?? performance,
+  );
+}
+test("archiveCommand actual baseline overflow and timeout callbacks reproduce missing stopGroup without starting a process", async () => {
+  assert.equal(sha(ARCHIVE_COMMAND_BEFORE), ARCHIVE_COMMAND_BEFORE_SHA256);
+  for (const mode of ["overflow", "timeout"]) {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    let stops = 0,
+      callback;
+    const diagnostics = [];
+    child.kill = () => {
+      stops++;
+      return true;
+    };
+    const old = archiveFactory(ARCHIVE_COMMAND_BEFORE, () => child, {
+      setTimeout: (fn) => {
+        callback = fn;
+        return 1;
+      },
+      clearTimeout: () => {},
+    });
+    const pending = old("/fixed/python", "/fixed/helper", [], {
+      timeout: 100,
+      observeFailure: (row) => diagnostics.push(row),
+    }).catch((error) => error);
+    assert.throws(
+      () =>
+        mode === "overflow"
+          ? child.stdout.emit("data", Buffer.alloc(LIMITS.seal + 1, 97))
+          : callback(),
+      (error) =>
+        error instanceof ReferenceError && error.message.includes("stopGroup"),
+    );
+    child.emit("close", 1);
+    assert((await pending) instanceof Error);
+    assert.equal(stops, 0);
+    assert.equal(diagnostics.length, 1);
+    child.stdout.destroy();
+    child.stderr.destroy();
+  }
+});
+test("archiveCommand real owned leaf helpers succeed or are reaped on original timeout and byte overflow", async (t) => {
+  const folder = await scratch(t),
+    helper = path.join(folder, "owned-leaf.py");
+  await writeFile(
+    helper,
+    "import sys,time,json,os\nmode=sys.argv[1]\nif mode=='success':\n print(json.dumps({'ok':True,'pid':os.getpid()}),flush=True)\nelse:\n if mode=='overflow':sys.stdout.buffer.write(b'x'*(1048576+65536));sys.stdout.buffer.flush()\n time.sleep(30)\n",
+  );
+  const pythonExe = python("import sys;print(sys.executable)").stdout.trim();
+  const declaration = archiveDeclaration(
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    ),
+  );
+  for (const mode of ["success", "timeout", "overflow"]) {
+    let child,
+      exited = false,
+      closed = false;
+    const diagnostics = [];
+    const run = archiveFactory(declaration, (...args) => {
+      child = spawn(...args);
+      child.once("exit", () => {
+        exited = true;
+      });
+      child.once("close", () => {
+        closed = true;
+      });
+      return child;
+    });
+    const start = performance.now();
+    try {
+      const result = run(pythonExe, helper, [mode], {
+        timeout: 2000,
+        observeFailure: (row) => diagnostics.push(row),
+      });
+      if (mode === "success") {
+        assert.equal((await result).ok, true);
+        assert.deepEqual(diagnostics, []);
+      } else {
+        await assert.rejects(
+          result,
+          mode === "timeout"
+            ? /Archive deadline/
+            : /Checkpoint archive rejected/,
+        );
+        assert.equal(diagnostics.length, 1);
+        assert.equal(
+          diagnostics[0].error,
+          mode === "timeout" ? "archive-deadline" : "archive-output-bound",
+        );
+        assert(!diagnostics[0].archiveCleanupUnknown);
+      }
+      assert(exited && closed && child.stdout.closed && child.stderr.closed);
+      assert(
+        performance.now() - start < 2500,
+        "Owned leaf work and joins remain finite",
+      );
+    } finally {
+      if (child && !exited) {
+        const joined = new Promise((resolve) => child.once("close", resolve));
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+        let cleanupTimer;
+        try {
+          await Promise.race([
+            joined,
+            new Promise((_, reject) => {
+              cleanupTimer = setTimeout(
+                () => reject(Error("Owned fixture cleanup unconfirmed")),
+                500,
+              );
+            }),
+          ]);
+        } finally {
+          clearTimeout(cleanupTimer);
+        }
+      }
+    }
+  }
+});
+test("archiveCommand preserves original failures and once-only diagnostics through kill and pipe-close faults", async () => {
+  const declaration = archiveDeclaration(
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    ),
+  );
+  for (const observer of ["normal", "throws", "rejects", "pending"]) {
+    const child = new EventEmitter();
+    child.pid = 123456;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    const original = Error("fixed original read failure"),
+      secondary = Error("fixed cleanup failure");
+    let kills = 0,
+      unrefs = 0;
+    const rows = [];
+    child.kill = () => {
+      kills++;
+      throw secondary;
+    };
+    child.unref = () => {
+      unrefs++;
+    };
+    const close = child.stdout.destroy.bind(child.stdout);
+    child.stdout.destroy = () => {
+      throw secondary;
+    };
+    const run = archiveFactory(declaration, () => child);
+    const pending = run("/fixed/python", "/fixed/helper", [], {
+      timeout: 200,
+      observeFailure: (row) => {
+        rows.push(row);
+        if (observer === "throws") throw secondary;
+        if (observer === "rejects") return Promise.reject(secondary);
+        if (observer === "pending") return new Promise(() => {});
+      },
+    });
+    child.stdout.emit("error", original);
+    await assert.rejects(pending, (error) => error === original);
+    assert.equal(kills, 1);
+    assert.equal(unrefs, 1);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].archiveCleanupUnknown, true);
+    close();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+});
+test("archiveCommand actual byte boundary, falsy first errors and decode deadline remain fail-closed", async () => {
+  const declaration = archiveDeclaration(
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    ),
+  );
+  const fixture = (clock = {}) => {
+    const child = new EventEmitter();
+    child.pid = 123456;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stderr.resume = () => {};
+    for (const stream of [child.stdout, child.stderr])
+      stream.destroy = () => stream.emit("close");
+    child.kill = () => {
+      child.emit("exit", 1);
+      child.emit("close", 1);
+      return true;
+    };
+    const rows = [],
+      run = archiveFactory(declaration, () => child, clock);
+    const finish = () => {
+      child.stdout.emit("close");
+      child.stderr.emit("close");
+      child.emit("exit", 0);
+      child.emit("close", 0);
+    };
+    return { child, rows, run, finish };
+  };
+  const exact = fixture();
+  const success = exact.run("/fixed/python", "/fixed/helper", [], {
+    timeout: 1000,
+  });
+  exact.child.stdout.emit(
+    "data",
+    Buffer.from("{}" + " ".repeat(LIMITS.seal - 2)),
+  );
+  exact.finish();
+  assert.deepEqual(await success, {});
+  for (const original of [null, false, undefined]) {
+    const f = fixture(),
+      pending = f.run("/fixed/python", "/fixed/helper", [], {
+        timeout: 1000,
+        observeFailure: (row) => f.rows.push(row),
+      });
+    f.child.stdout.emit("error", original);
+    let rejected = false,
+      actual;
+    try {
+      await pending;
+    } catch (error) {
+      rejected = true;
+      actual = error;
+    }
+    assert(rejected);
+    assert.equal(actual, original);
+    assert.equal(f.rows.length, 1);
+    assert(!f.rows[0].archiveCleanupUnknown);
+  }
+  let reads = 0;
+  const late = fixture({
+    performance: { now: () => (++reads >= 3 ? 1001 : 0) },
+  });
+  const pending = late.run("/fixed/python", "/fixed/helper", [], {
+    timeout: 1000,
+    observeFailure: (row) => late.rows.push(row),
+  });
+  late.child.stdout.emit("data", Buffer.from("{}"));
+  late.finish();
+  await assert.rejects(pending, /Archive deadline/);
+  assert.equal(late.rows[0].error, "archive-deadline");
+});
 test("actual archive child retains a whitelisted failure reason without exposing helper stderr or unknown fields", async (t) => {
   const root = await scratch(t),
     helper = path.join(root, "failing-helper.py");

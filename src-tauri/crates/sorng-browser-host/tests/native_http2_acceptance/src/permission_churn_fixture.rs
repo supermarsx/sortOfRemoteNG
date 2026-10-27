@@ -142,6 +142,118 @@ fn closed(unit: &Live) -> bool {
         .is_none_or(|h| h.lifecycle() == Lifecycle::Closed)
 }
 
+// TLS cleanup must still be attempted after a work error; retain the first error.
+pub(super) fn final_close_turn(
+    healthy: bool,
+    checked: impl FnOnce() -> Result,
+    cleanup: impl FnOnce() -> Result,
+    tls: impl FnOnce() -> Result,
+) -> Result {
+    let work = if healthy { checked() } else { cleanup() };
+    let tls = tls();
+    work.and(tls)
+}
+
+#[cfg(test)]
+mod final_close_tests {
+    use super::final_close_turn;
+    use std::cell::RefCell;
+
+    #[test]
+    fn final_close_healthy_work_precedes_tls() {
+        let calls = RefCell::new(Vec::new());
+        final_close_turn(
+            true,
+            || {
+                calls.borrow_mut().push("checked");
+                Ok(())
+            },
+            || panic!("cleanup-only work selected while healthy"),
+            || {
+                calls.borrow_mut().push("tls");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*calls.borrow(), ["checked", "tls"]);
+    }
+
+    #[test]
+    fn final_close_failed_mode_never_runs_normal_work() {
+        let calls = RefCell::new(Vec::new());
+        final_close_turn(
+            false,
+            || panic!("normal work selected after failure"),
+            || {
+                calls.borrow_mut().push("cleanup");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("tls");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*calls.borrow(), ["cleanup", "tls"]);
+    }
+
+    #[test]
+    fn final_close_tls_failure_denies_and_first_work_error_is_preserved() {
+        let error: Box<dyn std::error::Error> = "original-work-failure".into();
+        let original = &*error as *const dyn std::error::Error as *const ();
+        let tls_called = RefCell::new(false);
+        let actual = final_close_turn(
+            true,
+            || Err(error),
+            || panic!("unexpected cleanup"),
+            || {
+                *tls_called.borrow_mut() = true;
+                Err("secondary-tls-failure".into())
+            },
+        )
+        .unwrap_err();
+        assert!(*tls_called.borrow());
+        assert_eq!(
+            &*actual as *const dyn std::error::Error as *const (),
+            original
+        );
+        assert_eq!(
+            final_close_turn(
+                true,
+                || Ok(()),
+                || Ok(()),
+                || Err("tls-only-failure".into())
+            )
+            .unwrap_err()
+            .to_string(),
+            "tls-only-failure"
+        );
+    }
+
+    #[test]
+    fn both_close_loops_drive_host_events_with_original_deadline() {
+        for source in [
+            include_str!("permission_churn_fixture.rs"),
+            include_str!("proxy_retry_fixture.rs"),
+        ] {
+            let start = source
+                .rfind("    let close_started = Instant::now();")
+                .unwrap();
+            let close_loop =
+                &source[start..source[start..].find("    let all_closed =").unwrap() + start];
+            assert!(close_loop.contains("close_started + Duration::from_secs(8)"));
+            assert!(close_loop.contains("events.run_return(|event, _, flow|"));
+            assert!(close_loop.contains("Instant::now() >= deadline"));
+            assert!(close_loop.contains("Event::MainEventsCleared"));
+            assert!(close_loop.contains("failures.is_empty(),"));
+            assert!(close_loop.contains("runtime.cleanup_only_work()"));
+            assert!(!close_loop.contains("registry_retirement_fixture::pump"));
+            assert!(source.contains("report[\"finalClose\"] = final_close;"));
+            assert!(source.contains("failures.push(\"final-close-timeout\".into())"));
+        }
+    }
+}
+
 fn release(unit: &mut Live, asynchronous: &tokio::runtime::Runtime) -> Result {
     drop(unit.slot.host.take());
     drop(unit.slot.context.take());
@@ -362,20 +474,51 @@ pub(super) fn execute(
     for unit in &mut units {
         close(unit)?;
     }
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let close_started = Instant::now();
+    let deadline = close_started + Duration::from_secs(8);
+    let mut close_host_turns = 0usize;
+    let mut close_pump_failed = false;
     while !units.iter().all(closed) && Instant::now() < deadline {
-        let work = if failures.is_empty() {
-            checked_pump(&runtime, &mut checks)
-        } else {
-            runtime.cleanup_only_work().map_err(Into::into)
-        };
-        if let Err(error) = work {
-            failures.push(format!("close: {error}"));
-        }
-        cef_tls_bridge::pump_tls()?;
+        // Close callbacks also depend on Tao's host queue, as does registry retirement.
+        // Keep cleanup-only work after failure and the original absolute close deadline.
+        events.run_return(|event, _, flow| {
+            *flow = ControlFlow::Poll;
+            if Instant::now() >= deadline {
+                *flow = ControlFlow::Exit;
+                return;
+            }
+            if matches!(event, Event::MainEventsCleared) {
+                close_host_turns += 1;
+                if let Err(error) = final_close_turn(
+                    failures.is_empty(),
+                    || checked_pump(&runtime, &mut checks),
+                    || runtime.cleanup_only_work().map_err(Into::into),
+                    || cef_tls_bridge::pump_tls().map_err(Into::into),
+                ) {
+                    if !close_pump_failed {
+                        failures.push(format!("close: {error}"));
+                    }
+                    close_pump_failed = true;
+                }
+                *flow = ControlFlow::Exit;
+            }
+        });
         std::thread::sleep(Duration::from_millis(1));
     }
     let all_closed = units.iter().all(closed);
+    if !all_closed {
+        failures.push("final-close-timeout".into());
+    }
+    let final_close = serde_json::json!({
+        "reason":if all_closed {"all-closed"} else {"final-close-timeout"},
+        "deadlineMs":8000,"elapsedMs":close_started.elapsed().as_millis(),
+        "hostPumpTurns":close_host_turns,"pumpFailed":close_pump_failed,
+        "units":units.iter().enumerate().map(|(index, unit)| serde_json::json!({
+            "index":index,"closeRequested":unit.closing,"hostPresent":unit.slot.host.is_some(),
+            "lifecycle":unit.slot.host.as_ref().map(|host| format!("{:?}",host.lifecycle())),
+            "closed":closed(unit)
+        })).collect::<Vec<_>>()
+    });
     let distinct_endpoints = all_endpoints
         .iter()
         .enumerate()
@@ -411,6 +554,7 @@ pub(super) fn execute(
         "distinctEndpoints":distinct_endpoints,"distinctCredentials":distinct_credentials,"actualProxyProofs":proofs,
         "beforeAdmissionBytesZero":before_admission_zero,"closed":all_closed,"failures":failures,"productionReady":false});
     report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
+    report["finalClose"] = final_close;
     report["preHostReadiness"] = serde_json::json!(units.iter().map(|unit|
         unit.slot.pre_host_observation.report(&unit.before_context, &unit.slot.proxy_before_host)
     ).collect::<Vec<_>>());
