@@ -9078,7 +9078,13 @@ test("Mac external report actual reader preserves null/read/hash errors across c
         rootMtimeNs: "1",
         gitHeads: {},
         root: { mode: 0o755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
-        localRoot: { dev: "1", ino: "2", ctimeNs: "3", birthtimeNs: "4" },
+        localRoot: {
+          dev: "1",
+          ino: "2",
+          ctimeNs: "3",
+          birthtimeNsAvailable: true,
+          birthtimeNs: "4",
+        },
         bytes: plan.context.requiredPins
           .filter((pin) => pin.role === role)
           .reduce((sum, pin) => sum + pin.size, 0),
@@ -9210,6 +9216,7 @@ test("Mac external report actual reader preserves null/read/hash errors across c
           dev: "10",
           ino: "20",
           ctimeNs: "30",
+          birthtimeNsAvailable: true,
           birthtimeNs: "40",
         };
       }
@@ -9250,6 +9257,45 @@ test("Mac external report actual reader preserves null/read/hash errors across c
         mac.macExternalObservationEvidence(proof).snapshot.sha256,
         mac.macExternalObservationEvidence(freshProof).snapshot.sha256,
       );
+      const unavailable = structuredClone(freshValue);
+      for (const row of unavailable.roles) {
+        row.snapshot.localRoot.birthtimeNsAvailable = false;
+        row.snapshot.localRoot.birthtimeNs = null;
+      }
+      const unavailableProof = await admitSynthetic(unavailable);
+      assert.deepEqual(
+        mac.macExternalToolsBinding({}, freshProof),
+        mac.macExternalToolsBinding({}, unavailableProof),
+      );
+      // These are freshly hash-bound reports: rejection must be schema/pair
+      // validation, not a stale report hash or the opaque attestation guard.
+      for (const [available, birth] of [
+        [false, "40"],
+        [true, null],
+        ["false", null],
+        [0, null],
+        [true, 40],
+        [true, "-1"],
+        [true, "1.5"],
+        [true, "01"],
+        [true, "9223372036854775808"],
+        [true, "NaN"],
+      ]) {
+        const invalid = structuredClone(unavailable);
+        Object.assign(invalid.roles[0].snapshot.localRoot, {
+          birthtimeNsAvailable: available,
+          birthtimeNs: birth,
+        });
+        await assert.rejects(admitSynthetic(invalid), /MAC_EXTERNAL_ROLE/);
+      }
+      for (const key of ["birthtimeNsAvailable", "birthtimeNs"]) {
+        const missing = structuredClone(unavailable);
+        delete missing.roles[0].snapshot.localRoot[key];
+        await assert.rejects(admitSynthetic(missing), /MAC_EXTERNAL_ROLE/);
+      }
+      const extra = structuredClone(unavailable);
+      extra.roles[0].snapshot.localRoot.floatBirthtime = 1.25;
+      await assert.rejects(admitSynthetic(extra), /MAC_EXTERNAL_ROLE/);
       freshValue.roles[0].snapshot.rootMtimeNs = "2";
       freshValue.roles[0].snapshot.root.mtimeNs = "2";
       const drifted = await admitSynthetic(freshValue);
@@ -9747,4 +9793,78 @@ print('actual roots prefix: physical GREEN; four alias/foreign mutations DENY; a
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /physical GREEN/);
+});
+
+const MAC_BIRTH_AVAILABILITY_PROOF = String.raw`import sys,pathlib,types,stat,unittest,tempfile,os,hashlib
+from unittest.mock import patch
+m=types.ModuleType('birth_fixture');m.__file__=sys.argv[1]
+exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
+# Exact pre-correction function (b7b9676f): a data-only causal baseline.
+old_source="def source_birth(info):\n    value = getattr(info, 'st_birthtime_ns', None)\n    require(type(value) is int and 0 <= value < 2**63, 'source-mac-birth-unavailable')\n    return value\n"
+old={'require':m.require};exec(compile(old_source,'reviewed-b7-source-birth','exec'),old)
+external={'mac':True,'external':True}
+class BirthAvailability(unittest.TestCase):
+ def info(self,**extra):
+  return types.SimpleNamespace(st_size=3,st_mtime_ns=11,st_dev=1,st_ino=2,st_mode=stat.S_IFREG|0o644,st_nlink=1,st_ctime_ns=12,st_uid=0,st_gid=0,**extra)
+ def test_actual_old_red_external_unavailable_green_strict_default_stays_red(self):
+  info=self.info(st_birthtime=1.25)
+  with self.assertRaisesRegex(m.CheckpointError,'source-mac-birth-unavailable'):old['source_birth'](info)
+  self.assertIsNone(m.source_birth(info,external))
+  for policy in [None,{}, {'mac':True}, {'mac':True,'external':False}, {'mac':False,'external':True}, {'mac':True,'external':1}]:
+   with self.subTest(policy=policy),self.assertRaisesRegex(m.CheckpointError,'source-mac-birth-unavailable'):m.source_birth(info,policy)
+  self.assertFalse(m.MAC_SOURCE_WRITE_ADMITTED)
+ def test_available_exact_and_all_malformed_attributes_deny(self):
+  for value in [0,1770000000123456789,2**63-1]:
+   self.assertEqual(m.source_birth(self.info(st_birthtime_ns=value),external),value)
+  for value in [None,False,True,-1,2**63,1.25,'12',float('nan'),float('inf')]:
+   with self.subTest(value=repr(value)),self.assertRaisesRegex(m.CheckpointError,'source-mac-birth-unavailable'):m.source_birth(self.info(st_birthtime_ns=value),external)
+ def test_actual_local_and_row_identity_preserve_availability_and_all_other_fields(self):
+  missing=self.info();available=self.info(st_birthtime_ns=17)
+  self.assertNotEqual(m.source_local(missing,external),m.source_local(available,external))
+  self.assertNotEqual(m.source_local(available,external),m.source_local(self.info(st_birthtime_ns=18),external))
+  base=m.source_local(missing,external)
+  for key in ['st_dev','st_ino','st_nlink','st_mode','st_size','st_mtime_ns','st_ctime_ns','st_uid','st_gid']:
+   changed=self.info();setattr(changed,key,getattr(changed,key)+1);self.assertNotEqual(base,m.source_local(changed,external),key)
+  row={};m.source_mac_row(row,missing,external);self.assertIsNone(row['birthNs'])
+  row={};m.source_mac_row(row,available,external);self.assertEqual(row['birthNs'],17)
+ @unittest.skipUnless(sys.platform=='linux','owned POSIX snapshot fixture; not a Darwin kernel claim')
+ def test_actual_physical_snapshot_hash_and_root_null_pair(self):
+  with tempfile.TemporaryDirectory(prefix='birth-snapshot-') as folder:
+   root=pathlib.Path(folder);(root/'dir').mkdir();(root/'file').write_bytes(b'owned birth availability');os.symlink('file',root/'alias')
+   original=(root/'file').stat();snapshot=m.source_snapshot(root,m.Budget(5),context={**external,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+   self.assertEqual(snapshot['localRoot']['birthtimeNsAvailable'],False);self.assertIsNone(snapshot['localRoot']['birthtimeNs'])
+   rows={row['path']:row for row in snapshot['entries']};self.assertEqual(len(rows),3);self.assertEqual(rows['file']['sha256'],hashlib.sha256(b'owned birth availability').hexdigest());self.assertEqual(rows['alias']['target'],'file');self.assertEqual(m.stamp(original),m.stamp((root/'file').stat()))
+   with patch.object(m,'source_birth',return_value=17):
+    present=m.source_snapshot(root,m.Budget(5),context={**external,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+   self.assertEqual(present['localRoot']['birthtimeNsAvailable'],True);self.assertEqual(present['localRoot']['birthtimeNs'],'17');self.assertEqual(snapshot['entries'],present['entries'])
+   s=(root/'file').stat();row={'path':'file','stamp':m.stamp(s),'ctimeNs':s.st_ctime_ns,'uid':s.st_uid,'gid':s.st_gid,'birthNs':17}
+   with self.assertRaisesRegex(m.CheckpointError,'source-mac-file-identity'):m.source_hash(root,row,m.Budget(5),external)
+   row['birthNs']=None
+   with patch.object(m,'source_birth',return_value=17),self.assertRaisesRegex(m.CheckpointError,'source-mac-file-identity'):m.source_hash(root,row,m.Budget(5),external)
+   for transition in [2,4]:
+    calls=0;observed={}
+    def file_drift(info,policy=None):
+     nonlocal calls
+     calls+=1
+     # A captured stat result is immutable: repeated checks of the SAME
+     # pre-read object must retain its original value, unlike new observations.
+     key=id(info)
+     if key not in observed:observed[key]=(info,None if calls<transition else 17)
+     return observed[key][1]
+    with patch.object(m,'source_birth',side_effect=file_drift),self.assertRaisesRegex(m.CheckpointError,'source-mac-file-(identity|changed)'):m.source_hash(root,row,m.Budget(5),external)
+   calls=0
+   def drift(info,policy=None):
+    nonlocal calls
+    calls+=1
+    return None if calls==1 else 17
+   with patch.object(m,'source_birth',side_effect=drift),self.assertRaises(m.CheckpointError):m.source_snapshot(root,m.Budget(5),context={**external,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+unittest.main(argv=['birth-availability'],verbosity=2)
+`;
+
+test("Mac external birth availability uses actual guards with strict nonexternal semantics", () => {
+  const result = python(MAC_BIRTH_AVAILABILITY_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 4 tests/);
 });

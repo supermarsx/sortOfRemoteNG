@@ -880,7 +880,7 @@ export async function readMacExternalObservation(
       );
       exactKeys(
         row.snapshot.localRoot,
-        ["dev", "ino", "ctimeNs", "birthtimeNs"],
+        ["dev", "ino", "ctimeNs", "birthtimeNsAvailable", "birthtimeNs"],
         "MAC_EXTERNAL_ROLE",
       );
       assert(
@@ -903,10 +903,20 @@ export async function readMacExternalObservation(
           [0, value.runnerUid].includes(row.snapshot.root.uid) &&
           row.snapshot.root.gid >= 0 &&
           row.snapshot.root.nlink > 0 &&
-          Object.values(row.snapshot.localRoot).every(
-            (field) =>
-              typeof field === "string" && /^(0|[1-9][0-9]{0,19})$/.test(field),
-          ),
+          ["dev", "ino", "ctimeNs"].every((key) => {
+            const field = row.snapshot.localRoot[key];
+            return (
+              typeof field === "string" && /^(0|[1-9][0-9]{0,19})$/.test(field)
+            );
+          }) &&
+          (row.snapshot.localRoot.birthtimeNsAvailable === false
+            ? row.snapshot.localRoot.birthtimeNs === null
+            : row.snapshot.localRoot.birthtimeNsAvailable === true &&
+              typeof row.snapshot.localRoot.birthtimeNs === "string" &&
+              /^(0|[1-9][0-9]{0,18})$/.test(
+                row.snapshot.localRoot.birthtimeNs,
+              ) &&
+              BigInt(row.snapshot.localRoot.birthtimeNs) < 2n ** 63n),
         "MAC_EXTERNAL_ROLE",
       );
       const portableEntries = [];
