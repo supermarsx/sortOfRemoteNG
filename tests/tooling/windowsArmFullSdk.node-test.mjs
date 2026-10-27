@@ -8,6 +8,7 @@ import vm from "node:vm";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
+import { constants as fsConstants } from "node:fs";
 import {
   identitySha256,
   validateSourceLock,
@@ -30,6 +31,12 @@ import {
   retainHookOrigins,
   reviewedHostClosure,
   verifyHostClosure,
+  bootstrapProgram,
+  prepareBootstrap,
+  verifyBootstrap,
+  bootstrapShim,
+  deriveBootstrapSetup,
+  bindBootstrapVector,
 } from "../../native/windows-arm-full-sdk/source-driver.mjs";
 
 const root = path.resolve(
@@ -51,6 +58,13 @@ const PINNED_HOOK_RUN = {
   sha256: "7260c4e825dcd1a3a457625f25b04e7e20aa0b25c2685ce42766a4a5a38493c5",
   source:
     'def run(self):\n        """Executes the hook\'s command (provided the condition is met)."""\n        if self._condition and not gclient_eval.EvaluateCondition(\n            self._condition, self._variables\n        ):\n            return\n\n        cmd = list(self._action)\n\n        if cmd[0] == "vpython3" and _detect_host_os() == "win":\n            cmd[0] += ".bat"\n\n        exit_code = 2\n        try:\n            start_time = time.time()\n            gclient_utils.CheckCallAndFilter(\n                cmd,\n                cwd=self.effective_cwd,\n                print_stdout=True,\n                show_header=True,\n                always_show_header=self._verbose,\n            )\n            exit_code = 0\n        except (gclient_utils.Error, subprocess2.CalledProcessError) as e:\n            # Use a discrete exit status code of 2 to indicate that a hook\n            # action failed.  Users of this script may wish to treat hook action\n            # failures differently from VC failures.\n            print("Error: %s" % str(e), file=sys.stderr)\n            sys.exit(exit_code)\n        finally:\n            elapsed_time = time.time() - start_time\n            metrics.collector.add_repeated(\n                "hooks",\n                {\n                    "action": gclient_utils.CommandToStr(cmd),\n                    "name": self._name,\n                    "cwd": os.path.relpath(\n                        os.path.normpath(self.effective_cwd), self._cwd_base\n                    ),\n                    "condition": self._condition,\n                    "execution_time": elapsed_time,\n                    "exit_code": exit_code,\n                },\n            )\n            if elapsed_time > 10:\n                print(\n                    "Hook \'%s\' took %.2f secs"\n                    % (gclient_utils.CommandToStr(cmd), elapsed_time)\n                )',
+};
+
+const PINNED_CIPD_SETUP = {
+  gitBlob: "8afa682631ea9200d178bb982e4acd59b4e3d6e0",
+  sha256: "3607a1f703b59f213f7fff874cb8d6065b5af17144c66458a0a35e18137069fa",
+  source:
+    '@echo off\n:: Copyright 2017 The Chromium Authors\n:: Use of this source code is governed by a BSD-style license that can be\n:: found in the LICENSE file.\n\nsetlocal\n\nset "ROOT=%~dp0\\.cipd_bin"\nset "ENSURE=%~dp0\\cipd_manifest.txt"\nset "CACHED_ENSURE=%ROOT%\\.cipd_manifest.txt"\nset "CACHED_VERSIONS=%ROOT%\\.cipd_manifest.versions"\nset "CACHED_CLIENT=%ROOT%\\.cipd_client_version"\n\n:: CIPD ensure is slow (hundreds of milliseconds). We cache the result by\n:: storing copies of the input files and comparing them on subsequent runs.\n:: We use `fc` (content-based) instead of `mtime` comparison to avoid\n:: false-positive cache misses on CI bots where git checkouts reset mtimes.\nif not exist "%CACHED_ENSURE%" goto :RUN_CIPD\nfc /b "%ENSURE%" "%CACHED_ENSURE%" >nul 2>&1\nif errorlevel 1 goto :RUN_CIPD\nfc /b "%~dp0\\cipd_manifest.versions" "%CACHED_VERSIONS%" >nul 2>&1\nif errorlevel 1 goto :RUN_CIPD\nfc /b "%~dp0\\cipd_client_version" "%CACHED_CLIENT%" >nul 2>&1\nif errorlevel 1 goto :RUN_CIPD\n\ngoto :SKIP_CIPD\n\n:RUN_CIPD\ndel /f /q "%CACHED_ENSURE%" >nul 2>&1\ncall "%~dp0\\cipd.bat" ensure -log-level warning -ensure-file "%ENSURE%" -root "%ROOT%"\nif errorlevel 1 exit /b %ERRORLEVEL%\n\ncopy /y "%ENSURE%" "%CACHED_ENSURE%" >nul 2>&1\ncopy /y "%~dp0\\cipd_manifest.versions" "%CACHED_VERSIONS%" >nul 2>&1\ncopy /y "%~dp0\\cipd_client_version" "%CACHED_CLIENT%" >nul 2>&1\n\n:SKIP_CIPD\nendlocal\nexit /b 0\n',
 };
 
 function syntheticSourcePins() {
@@ -162,6 +176,10 @@ test("exclusive actual Python3 adapter preserves Windows owned argv and rejects 
     const depot = path.join(directory, "depot");
     await fs.mkdir(depot);
     await fs.writeFile(
+      path.join(path.dirname(adapter.file), "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
+    await fs.writeFile(
       path.join(depot, "gclient.py"),
       `import subprocess,types
 gclient_utils=types.SimpleNamespace(CheckCallAndFilter=lambda command,*args,**kwargs:subprocess.run(command,shell=True,check=True))
@@ -207,6 +225,10 @@ test("actual gclient hook wrapper binds absolute adapter and preserves original 
     const adapter = path.join(directory, "python3.bat"),
       raw = Buffer.from("BENIGN ADAPTER DATA");
     await fs.writeFile(adapter, raw);
+    await fs.writeFile(
+      path.join(directory, "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
     const fixture = `import os,types
 def dispatched(command,*args,**kwargs):
  assert command==[os.path.join(os.path.dirname(__file__),'python3.bat'),'src/test.py','two words']
@@ -262,6 +284,10 @@ test("genuine pinned Hook.run controls false, true, thread, nested and first-err
     const adapter = path.join(directory, "python3.bat"),
       raw = Buffer.from("INERT HASH-BOUND ADAPTER DATA");
     await fs.writeFile(adapter, raw);
+    await fs.writeFile(
+      path.join(directory, "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
     const fixture = `import sys,os,time,types,threading,textwrap,hashlib,json
 pinned=${JSON.stringify(PINNED_HOOK_RUN.source)}
 assert hashlib.sha256(pinned.encode()).hexdigest()==${JSON.stringify(PINNED_HOOK_RUN.sha256)}
@@ -373,6 +399,470 @@ def main(args):
   }
 });
 
+test("bootstrap source templates keep original setup bytes except its client callee and leave actual mode disabled", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const root = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-bootstrap-disabled-"),
+  );
+  try {
+    await fs.mkdir(path.join(root, "source-commands"));
+    const source = Buffer.from(PINNED_CIPD_SETUP.source);
+    assert.equal(sha(source), PINNED_CIPD_SETUP.sha256);
+    const derived = deriveBootstrapSetup(source);
+    assert.deepEqual(
+      derived,
+      Buffer.from(
+        PINNED_CIPD_SETUP.source.replace(
+          'call "%~dp0\\cipd.bat" ensure',
+          '"%~dp0\\.cipd_client.exe" ensure',
+        ),
+      ),
+    );
+    assert.throws(
+      () => deriveBootstrapSetup(Buffer.concat([source, source])),
+      /FULL_BOOTSTRAP_SETUP_SOURCE/,
+    );
+    const program = await prepareBootstrap(root, profile, "b".repeat(64), {
+      remaining: () => 10000,
+    });
+    assert.equal(
+      program.pin.sha256,
+      sha(bootstrapProgram(root, profile, "b".repeat(64))),
+    );
+    assert.throws(
+      () =>
+        execFileSync(
+          python,
+          [
+            "-I",
+            "-B",
+            program.file,
+            "--prepare-sync",
+            "--guard-sha",
+            program.pin.sha256,
+          ],
+          { encoding: "utf8", timeout: 10000, stdio: "pipe" },
+        ),
+      (error) => error.stderr.includes("FULL_BOOTSTRAP_DISABLED"),
+    );
+    await assert.rejects(
+      prepareBootstrap(root, profile, "b".repeat(64), {
+        remaining: () => 10000,
+      }),
+      /EEXIST/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("actual bootstrap body denies stale state and drift, checks setup, binds CIPD and preserves first failure without executing vendor files", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-bootstrap-body-"),
+  );
+  try {
+    const p = structuredClone(profile);
+    p.phaseAdmission["source-gn"] = true;
+    for (const key of Object.keys(p.sourceGn.executionPolicy))
+      p.sourceGn.executionPolicy[key] = true;
+    const sample = JSON.parse(
+      execFileSync(
+        python,
+        [
+          "-I",
+          "-B",
+          "-c",
+          "import json,time;print(json.dumps(dict(wall=time.time()+600,mono=time.monotonic()+600)))",
+        ],
+        { encoding: "utf8", timeout: 10000 },
+      ),
+    );
+    const context = {
+        mode: "source-gn",
+        image: p.image,
+        repositoryId: "1010282954",
+        visibility: "public",
+        event: "workflow_dispatch",
+        ref: "refs/heads/codex/windows-arm-source-gn-20261026",
+        wallWorkEnd: sample.wall,
+        monotonicWorkEnd: sample.mono,
+      },
+      contextRaw = Buffer.from(JSON.stringify(context));
+    await fs.writeFile(path.join(directory, "context.json"), contextRaw);
+    const files = sourcePaths(directory, p);
+    await fs.mkdir(files.commands);
+    await fs.mkdir(files.depot, { recursive: true });
+    await fs.mkdir(path.join(directory, "tmp"));
+    await fs.mkdir(path.join(directory, "source-caches"));
+    for (const name of ["local", "roaming", "xdg", "cipd", "vpython"])
+      await fs.mkdir(path.join(directory, "source-caches", name));
+    await fs.writeFile(path.join(directory, "source-caches/cipd.cfg"), "");
+    const program = await prepareBootstrap(directory, p, sha(contextRaw), {
+      remaining: () => 10000,
+    });
+    const harness = `import sys,os,json,hashlib,importlib.util,contextlib,io,types,shutil
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('owned_bootstrap',${JSON.stringify(program.file)});b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
+sys.path.insert(0,b.P['native']);from test_producer import pe
+payload=pe(version=False);digest=hashlib.sha256(payload).hexdigest();b.P['clientSha']=digest
+for key,name in (('CIPD_CACHE_DIR','cipd'),('VPYTHON_VIRTUALENV_ROOT','vpython'),('LOCALAPPDATA','local'),('APPDATA','roaming'),('XDG_CACHE_HOME','xdg')):os.environ[key]=str(b.ROOT/'source-caches'/name)
+os.environ['CIPD_CONFIG_FILE']=str(b.ROOT/'source-caches/cipd.cfg')
+for key in ('CIPD_BACKEND','CIPD_SERVICE_URL','CIPD_PLATFORM','VPYTHON_BYPASS','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY'):os.environ.pop(key,None)
+for row in b.P['sources']:
+ raw=(${JSON.stringify(PINNED_CIPD_SETUP.source)}.encode() if row['path']=='cipd_bin_setup.bat'else ('OWNED SYNTHETIC '+row['path']).encode())
+ (b.DEPOT/row['path']).write_bytes(raw);row.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+guard_sha=${JSON.stringify(program.pin.sha256)}
+calls=[];scenario='valid'
+def runner(command,clock):
+ calls.append(command);assert clock.wall_end==${sample.wall} and clock.mono_end==${sample.mono}
+ if len(calls)==1:
+  assert command[0]==r'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+  if scenario=='bootstrap-nonzero':return 7
+  (b.DEPOT/'.cipd_client.exe').write_bytes(payload if scenario!='client-hash'else b'wrong')
+ else:
+  assert len(calls)==2 and command==[r'C:\\Windows\\System32\\cmd.exe','/d','/c',str(b.SETUP)]
+  assert b.SETUP.read_bytes()==b.derived_setup(${JSON.stringify(PINNED_CIPD_SETUP.source)}.encode())
+  if scenario=='setup-nonzero':return 9
+  (b.DEPOT/'.cipd_bin').mkdir()
+  (b.DEPOT/'.cipd_bin/vpython3.exe').write_bytes(pe(0xaa64,version=False)if scenario=='machine'else payload)
+  for target,source in (('.cipd_manifest.txt','cipd_manifest.txt'),('.cipd_manifest.versions','cipd_manifest.versions'),('.cipd_client_version','cipd_client_version')):
+   (b.DEPOT/'.cipd_bin'/target).write_bytes((b.DEPOT/source).read_bytes())
+  if scenario=='marker':(b.DEPOT/'.cipd_bin/.cipd_manifest.txt').write_bytes(b'forged')
+  if scenario=='hardlink':os.link(b.DEPOT/'.cipd_bin/vpython3.exe',b.DEPOT/'.cipd_bin/alias')
+  if scenario=='override-after':(b.DEPOT/'.cipd_client_platform').write_text('windows-arm64')
+  if scenario=='client-drift':(b.DEPOT/'.cipd_client.exe').write_bytes(payload+b'changed')
+ return 0
+def reset():
+ global calls
+ calls=[]
+ for path in (b.DEPOT/'.cipd_client_platform',b.DEPOT/'.cipd_client.exe',b.DEPOT/'.versions',b.DEPOT/'.cipd_bin',b.SETUP,b.WITNESS,b.COMMANDS/'cipd.bat',b.COMMANDS/'vpython3.bat',b.ROOT/'source-caches/cipd/stale'):
+  if path.is_symlink()or path.is_file():path.unlink()
+  elif path.exists():shutil.rmtree(path)
+results=[]
+for scenario in ('preexisting-client','preexisting-versions','preexisting-bin','override','cache','bootstrap-nonzero','client-hash','setup-nonzero','machine','marker','hardlink','override-after','client-drift'):
+ reset()
+ if scenario=='preexisting-client':(b.DEPOT/'.cipd_client.exe').write_bytes(payload)
+ if scenario=='preexisting-versions':(b.DEPOT/'.versions').mkdir()
+ if scenario=='preexisting-bin':(b.DEPOT/'.cipd_bin').mkdir()
+ if scenario=='override':(b.DEPOT/'.cipd_client_platform').write_text('windows-arm64')
+ if scenario=='cache':(b.ROOT/'source-caches/cipd/stale').write_bytes(b'never followed')
+ try:b.provision(guard_sha,runner)
+ except b.data.Denied as error:code=str(error)
+ else:raise AssertionError('bad bootstrap accepted '+scenario)
+ assert not b.WITNESS.exists()
+ if scenario.startswith('preexisting')or scenario in ('override','cache'):assert not calls
+ if scenario in ('bootstrap-nonzero','client-hash'):assert len(calls)==1
+ results.append(dict(case=scenario,denied=code,provisionerCalls=len(calls)))
+reset();scenario='valid';value=b.provision(guard_sha,runner);assert len(calls)==2
+original=b.WITNESS.read_bytes();witness_sha=hashlib.sha256(original).hexdigest()
+assert value['packageInstance']==b.P['instance'] and value['setupExit']==0 and value['fresh']is True
+assert b.verify(witness_sha,guard_sha)[0]==value
+executions=[]
+b.execute('vpython',['--version'],witness_sha,guard_sha,lambda command,clock:executions.append(command)or 0)
+assert executions==[[value['vpython']['path'],'--version']]
+for args in (['selfupdate'],['ensure','-service-url','https://example.invalid'],['ensure','--service-url=https://example.invalid']):
+ try:b.execute('cipd',args,witness_sha,guard_sha,lambda *args:(_ for _ in ()).throw(AssertionError('must not execute')))
+ except b.data.Denied:pass
+ else:raise AssertionError('CIPD override admitted')
+child=object();popen_calls=[]
+def popen(command,*args,**kwargs):popen_calls.append((command,kwargs));return child
+sys.modules['subprocess2']=types.SimpleNamespace(Popen=popen)
+b.bind(witness_sha,guard_sha);backend=sys.modules['subprocess2']
+assert backend.Popen(['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],shell=True)is child
+assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
+before_dispatches=len(popen_calls)
+mutated=dict(value);mutated['vpython']=dict(value['vpython']);changed=payload+b'coherently changed'
+(b.DEPOT/'.cipd_bin/vpython3.exe').write_bytes(changed);mutated['vpython'].update(bytes=len(changed),sha256=hashlib.sha256(changed).hexdigest())
+changed_witness=(json.dumps(mutated,sort_keys=True,separators=(',',':'))+'\\n').encode();changed_sha=hashlib.sha256(changed_witness).hexdigest();b.WITNESS.write_bytes(changed_witness)
+for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,changed_sha))
+try:backend.Popen(['cipd','expand-package-name','infra/test'])
+except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_WITNESS_PIN'
+else:raise AssertionError('dispatch re-adopted coherent witness/payload/shims')
+assert len(popen_calls)==before_dispatches
+b.WITNESS.write_bytes(original);(b.DEPOT/'.cipd_bin/vpython3.exe').write_bytes(payload)
+for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,witness_sha))
+dispatch_denials=[]
+for target in (b.WITNESS,b.SCRIPT,b.DEPOT/'.cipd_client.exe',b.DEPOT/'.cipd_bin/vpython3.exe',b.COMMANDS/'cipd.bat',b.COMMANDS/'vpython3.bat'):
+ prior=target.read_bytes();target.write_bytes(prior+b'changed after attestation');before=len(popen_calls)
+ try:backend.Popen(['cipd','expand-package-name','infra/test'])
+ except b.data.Denied as error:dispatch_denials.append(str(error))
+ else:raise AssertionError('mutated attested dispatch admitted')
+ finally:target.write_bytes(prior)
+ assert len(popen_calls)==before
+assert len(dispatch_denials)==6
+
+for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,witness_sha))
+ordinary=['git','--version'];assert backend.Popen(ordinary,shell=True)is child and popen_calls[-1][0]is ordinary and popen_calls[-1][1]['shell']is True
+try:backend.Popen(['cipd','expand-package-name','infra/test'],env={})
+except b.data.Denied:pass
+else:raise AssertionError('env override admitted')
+for key,bad in (('fresh',False),('packageInstance','wrong'),('setupExit',False)):
+ changed=dict(value);changed[key]=bad;raw=json.dumps(changed).encode();b.WITNESS.write_bytes(raw)
+ try:b.verify(hashlib.sha256(raw).hexdigest(),guard_sha)
+ except b.data.Denied:pass
+ else:raise AssertionError('forged witness admitted')
+ b.WITNESS.write_bytes(original)
+b.WITNESS.write_bytes(original+b' ')
+try:b.verify(witness_sha,guard_sha)
+except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_WITNESS_PIN'
+else:raise AssertionError('witness digest drift admitted')
+b.WITNESS.write_bytes(original)
+primary=RuntimeError('OWNED_PRIMARY');secondary=io.StringIO()
+def failed(command,clock):(b.DEPOT/'.cipd_client.exe').write_bytes(b'changed');raise primary
+with contextlib.redirect_stderr(secondary):
+ try:b.execute('vpython',['--version'],witness_sha,guard_sha,failed)
+ except RuntimeError as error:assert error is primary
+ else:raise AssertionError('first error lost')
+assert 'FULL_BOOTSTRAP_POST_FAILURE'in secondary.getvalue()
+(b.DEPOT/'.cipd_client.exe').write_bytes(payload)
+observed=[];original_run=b.subprocess.run
+b.subprocess.run=lambda command,**kwargs:observed.append(kwargs['timeout'])or types.SimpleNamespace(returncode=0)
+try:
+ assert b.run_checked(['owned-benign'],types.SimpleNamespace(remaining=lambda:125))==0 and observed==[5]
+ try:b.run_checked(['owned-benign'],types.SimpleNamespace(remaining=lambda:119))
+ except b.data.Denied:pass
+ else:raise AssertionError('reserve reset')
+ assert observed==[5]
+finally:b.subprocess.run=original_run
+print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecuted=False,validProvisionerCalls=2,firstErrorPreserved=True,originalReservePreserved=True,immutableDispatchDenials=dispatch_denials,witnessSha256=witness_sha,fixtureSourcePins=b.P['sources'],fixtureClientSha=digest)))
+`;
+    const harnessFile = path.join(directory, "harness.py");
+    await fs.writeFile(harnessFile, harness);
+    const result = JSON.parse(
+      execFileSync(python, ["-I", "-B", harnessFile], {
+        encoding: "utf8",
+        timeout: 20000,
+        stdio: "pipe",
+      }),
+    );
+    assert.equal(result.cases.length, 13);
+    assert(result.firstErrorPreserved && result.originalReservePreserved);
+    assert.equal(result.immutableDispatchDenials.length, 6);
+    assert.equal(result.vendorExecutableExecuted, false);
+    const witness = JSON.parse(await fs.readFile(program.witness, "utf8"));
+    for (const [role, name] of [
+      ["cipd", "cipd.bat"],
+      ["vpython", "vpython3.bat"],
+    ])
+      assert.deepEqual(
+        await fs.readFile(path.join(files.commands, name)),
+        bootstrapShim(
+          p.python.path,
+          program.file,
+          program.pin.sha256,
+          result.witnessSha256,
+          role,
+        ),
+      );
+    await assert.rejects(
+      verifyBootstrap(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_BOOTSTRAP_NOT_ATTESTED/,
+    );
+    program.witnessPin = {
+      bytes: (await fs.readFile(program.witness)).length,
+      sha256: result.witnessSha256,
+      nlink: 1,
+    };
+    await assert.rejects(
+      verifyBootstrap(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_BOOTSTRAP_PIN/,
+    );
+    program.witnessPin = null;
+    assert.equal(
+      witness.packageInstance,
+      "5_RRshFOtDVoKVpdtehepLtVyYsUdifAy9IHenpJmHoC",
+    );
+    const command = sourceCommands(
+      directory,
+      p,
+      cefHookArguments(files.cef, files.depot),
+      sha(contextRaw),
+    )[2];
+    const binding = {
+      pin: { sha256: program.pin.sha256 },
+      witnessPin: { sha256: result.witnessSha256 },
+    };
+    const bound = bindBootstrapVector(command, binding);
+    assert.deepEqual(bound.slice(-2), [
+      result.witnessSha256,
+      program.pin.sha256,
+    ]);
+    assert(command.args.includes("__SORNG_BOOTSTRAP_WITNESS__"));
+    assert.throws(
+      () =>
+        bindBootstrapVector(command, { pin: program.pin, witnessPin: null }),
+      /FULL_BOOTSTRAP_VECTOR_PIN/,
+    );
+    // Execute the actual Node verifier/held/observer declarations with only
+    // package authority constants replaced by explicitly synthetic fixture pins.
+    // The ordinary production verifier above rejects these fixture expectations.
+    const body = await read(prefix + "source-driver.mjs"),
+      keysBody = body.slice(
+        body.indexOf("const keys ="),
+        body.indexOf("\n\nexport function sourceBudget"),
+      ),
+      readerBody = body.slice(
+        body.indexOf("const signature ="),
+        body.indexOf("export function sourcePaths"),
+      ),
+      verifyBody = body
+        .slice(
+          body.indexOf("export async function verifyBootstrap"),
+          body.indexOf("export function bootstrapObserver"),
+        )
+        .replace("export ", ""),
+      observerBody = body
+        .slice(
+          body.indexOf("export function bootstrapObserver"),
+          body.indexOf("export function bindBootstrapVector"),
+        )
+        .replace("export ", "");
+    const scope = vm.createContext({
+      fs,
+      constants: fsConstants,
+      Buffer,
+      path,
+      TextDecoder,
+      sha,
+      sourceCloseFailure: false,
+      need: (ok, code) => {
+        if (!ok) throw new Error(code);
+      },
+      sourcePaths,
+      bootstrapShim,
+      deriveBootstrapSetup,
+      BOOTSTRAP_SOURCES: result.fixtureSourcePins,
+      CIPD_CLIENT_SHA: result.fixtureClientSha,
+      VPYTHON_INSTANCE: "5_RRshFOtDVoKVpdtehepLtVyYsUdifAy9IHenpJmHoC",
+    });
+    const actual = vm.runInContext(
+      `${keysBody}\n${readerBody}\n${verifyBody}\n${observerBody}\n({verifyBootstrap,bootstrapObserver,held})`,
+      scope,
+    );
+    const marker = Buffer.from(
+        "FULL_BOOTSTRAP_WITNESS:" + JSON.stringify(witness) + "\r\n",
+      ),
+      observer = actual.bootstrapObserver(program, sha(contextRaw));
+    observer.push(Buffer.concat([Buffer.alloc(70000, 120), Buffer.from("\n")]));
+    for (let index = 0; index < marker.length; index += 3)
+      observer.push(marker.subarray(index, index + 3));
+    observer.finish();
+    assert.equal(program.witnessPin.sha256, result.witnessSha256);
+    assert.equal(
+      (
+        await actual.verifyBootstrap(
+          directory,
+          p,
+          program,
+          { remaining: () => 10000 },
+          sha(contextRaw),
+        )
+      ).packageInstance,
+      witness.packageInstance,
+    );
+    assert.throws(
+      () => observer.push(marker),
+      /FULL_BOOTSTRAP_ATTESTATION_DUPLICATE/,
+    );
+    assert.throws(
+      () =>
+        actual
+          .bootstrapObserver(
+            { pin: program.pin, witnessPin: null },
+            sha(contextRaw),
+          )
+          .finish(),
+      /FULL_BOOTSTRAP_ATTESTATION_MISSING/,
+    );
+    const wrong = Buffer.from(
+      "FULL_BOOTSTRAP_WITNESS:" +
+        JSON.stringify({ ...witness, contextSha: "a".repeat(64) }) +
+        "\n",
+    );
+    assert.throws(
+      () =>
+        actual
+          .bootstrapObserver(
+            { pin: program.pin, witnessPin: null },
+            sha(contextRaw),
+          )
+          .push(wrong),
+      /FULL_BOOTSTRAP_ATTESTATION/,
+    );
+    assert.throws(
+      () =>
+        actual
+          .bootstrapObserver(
+            { pin: program.pin, witnessPin: null },
+            sha(contextRaw),
+          )
+          .push(
+            Buffer.from("FULL_BOOTSTRAP_WITNESS:" + "x".repeat(65537) + "\n"),
+          ),
+      /FULL_BOOTSTRAP_ATTESTATION_BOUND/,
+    );
+    const witnessRaw = await fs.readFile(program.witness);
+    await fs.appendFile(program.witness, " ");
+    await assert.rejects(
+      actual.verifyBootstrap(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_DRIVER_PIN/,
+    );
+    await fs.writeFile(program.witness, witnessRaw);
+    const cap =
+        program.pin.bytes +
+        witnessRaw.length +
+        witness.client.bytes +
+        witness.vpython.bytes -
+        1,
+      opened = [];
+    const scaled = vm.runInContext(
+      verifyBody.replace(/512\s*\*\s*1024\s*\*\*\s*2/g, String(cap)) +
+        "\nverifyBootstrap",
+      scope,
+    );
+    scope.held = async (...args) => {
+      opened.push(args[0]);
+      return actual.held(...args);
+    };
+    await assert.rejects(
+      scaled(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_BOOTSTRAP_BYTES/,
+    );
+    assert(opened.includes(witness.client.path));
+    assert(!opened.includes(witness.vpython.path));
+    t.diagnostic(JSON.stringify(result));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("actual pinned-gclient API projection retains nested conditions and origins with bounded failure", async (t) => {
   const python = await benignPython(t);
   if (!python) return;
@@ -402,6 +892,10 @@ class Flattener:
   self.deps_files=[('https://example.invalid/repo@'+'a'*40,'DEPS',(('src','https://example.invalid/repo@'+'a'*40),))]
 `;
     await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    await fs.writeFile(
+      path.join(directory, "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
     const args = hookProjectionArguments(directory);
     const raw = execFileSync(python, args, {
       cwd: directory,
@@ -878,7 +1372,10 @@ test("actual source driver command plan has only fixed sync, hooks, three setup 
   );
   assert(commands.every((row) => row.executable === profile.python.path));
   assert(commands[0].args.includes("--noprehooks"));
-  assert.deepEqual(commands[1].args, hookProjectionArguments(files.depot));
+  assert.deepEqual(
+    commands[1].args,
+    hookProjectionArguments(files.depot, files.commands),
+  );
   assert(
     commands.findIndex((row) => row.role === "hook-projection") <
       commands.findIndex((row) => row.role === "dependency-hooks"),

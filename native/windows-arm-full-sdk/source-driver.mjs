@@ -28,6 +28,56 @@ const HOOK_PRIMARY = Object.freeze([
     sha256: "52f824935d4cbf07a675438e5ac3eabc7aee360d4d9756b2d17c13db28121677",
   }),
 ]);
+const BOOTSTRAP_SOURCES = [
+  {
+    path: "utils.py",
+    bytes: 3305,
+    sha256: "208b3a5f4eba28834f0eed242dc146ace7ec915fc155285cf1ecb750172e73f9",
+  },
+  {
+    path: "vpython3.bat",
+    bytes: 231,
+    sha256: "e0104fdf826d1b2dddca10266553563319d4fc7179f839e5a60f732d99a4a2d7",
+  },
+  {
+    path: "cipd.bat",
+    bytes: 2914,
+    sha256: "4b172599ba46f9d04b85c3c57dc6f86a54f2af44e5502a9f5861c79a0fc8248a",
+  },
+  {
+    path: ".cipd_impl.ps1",
+    bytes: 4723,
+    sha256: "2101c2ab44ec93d71a6b38ebd5b62626844a979fedffaeb8ce7a9a5004812030",
+  },
+  {
+    path: "cipd_client_version",
+    bytes: 54,
+    sha256: "c6179de8cdbd4c28d59ddcf8ab280b658cb0de26dddfce4a3ced31b94bf44c24",
+  },
+  {
+    path: "cipd_client_version.digests",
+    bytes: 3597,
+    sha256: "3ba4bdeb37e5ee3868bdc3b6b458020118d4cc8a666bb3048c7b835a3ec77a9c",
+  },
+  {
+    path: "cipd_manifest.txt",
+    bytes: 3688,
+    sha256: "825c2550ae559a0c045427158d008315446c5909f0ee446bae008dc9a07d09b3",
+  },
+  {
+    path: "cipd_manifest.versions",
+    bytes: 28650,
+    sha256: "e4a72dd969b2dc4ed43b23fe03886b9972c0e63cde76ea189d34263602d1c34a",
+  },
+  {
+    path: "cipd_bin_setup.bat",
+    bytes: 1387,
+    sha256: "3607a1f703b59f213f7fff874cb8d6065b5af17144c66458a0a35e18137069fa",
+  },
+];
+const CIPD_CLIENT_SHA =
+  "8f59e10885f14d06e222502cbfb65eb59199027dd9724aef6d271badf4a47b1f";
+const VPYTHON_INSTANCE = "5_RRshFOtDVoKVpdtehepLtVyYsUdifAy9IHenpJmHoC";
 let sourceCloseFailure = false;
 let sourceReportingFailure = false;
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
@@ -221,7 +271,7 @@ async function physical(file) {
   }
   return resolved;
 }
-async function held(file, cap, budget, pin) {
+async function held(file, cap, budget, pin, boundedReads = false) {
   budget.remaining();
   await physical(file);
   const before = await fs.lstat(file, { bigint: true });
@@ -242,10 +292,14 @@ async function held(file, cap, budget, pin) {
     let total = 0;
     while (true) {
       budget.remaining();
+      if (boundedReads && total === Number(before.size)) break;
       const { bytesRead } = await fd.read(
         buffer,
         0,
-        Math.min(buffer.length, cap + 1 - total),
+        Math.min(
+          buffer.length,
+          boundedReads ? Number(before.size) - total : cap + 1 - total,
+        ),
         null,
       );
       if (!bytesRead) break;
@@ -332,11 +386,483 @@ export async function preparePython3Adapter(directory, python, budget) {
   return Object.freeze({ file, pin });
 }
 
-export function hookProjectionArguments(depot) {
+export function bootstrapShim(python, script, guardSha, witnessSha, role) {
+  python3Adapter(python);
+  need(
+    ["cipd", "vpython"].includes(role) &&
+      /^[a-f0-9]{64}$/.test(guardSha) &&
+      /^[a-f0-9]{64}$/.test(witnessSha) &&
+      path.isAbsolute(script) &&
+      !/["%&|<>!^\r\n]/.test(script),
+    "FULL_BOOTSTRAP_SHIM",
+  );
+  return Buffer.from(
+    `@echo off\r\n"${python}" -I -B "${script}" --execute ${role} ${guardSha} ${witnessSha} %*\r\nexit /b %errorlevel%\r\n`,
+    "ascii",
+  );
+}
+
+export function deriveBootstrapSetup(raw) {
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(raw),
+    old = 'call "%~dp0\\cipd.bat" ensure';
+  need(text.split(old).length === 2, "FULL_BOOTSTRAP_SETUP_SOURCE");
+  return Buffer.from(text.replace(old, '"%~dp0\\.cipd_client.exe" ensure'));
+}
+
+export function bootstrapProgram(root, p, contextSha) {
+  const files = sourcePaths(root, p);
+  need(/^[a-f0-9]{64}$/.test(contextSha), "FULL_CONTEXT_PIN");
+  const policy = {
+    root: root.replaceAll("\\", "/"),
+    depot: files.depot.replaceAll("\\", "/"),
+    commands: files.commands.replaceAll("\\", "/"),
+    native: HERE.replaceAll("\\", "/"),
+    workspace: files.workspace.replaceAll("\\", "/"),
+    python: p.python.path,
+    contextSha,
+    enabled:
+      p.phaseAdmission["source-gn"] === true &&
+      Object.values(p.sourceGn.executionPolicy).every(
+        (value) => value === true,
+      ),
+    image: p.image,
+    sources: BOOTSTRAP_SOURCES,
+    clientSha: CIPD_CLIENT_SHA,
+    instance: VPYTHON_INSTANCE,
+    syncArgs: [
+      "sync",
+      "--jobs",
+      "2",
+      "--nohooks",
+      "--noprehooks",
+      "--no-history",
+      "--revision",
+      `src@${p.sourceChromium}`,
+    ],
+  };
+  return Buffer.from(
+    String.raw`import sys,os,json,time,stat,hashlib,subprocess
+from pathlib import Path
+P=json.loads(${JSON.stringify(JSON.stringify(policy))})
+sys.path.insert(0,P['native'])
+import acquire as data
+import extract
+ROOT=Path(P['root']);DEPOT=Path(P['depot']);COMMANDS=Path(P['commands'])
+SCRIPT=COMMANDS/'source_bootstrap.py';WITNESS=COMMANDS/'bootstrap-witness.json'
+SETUP=DEPOT/'sorng-cipd-setup.bat'
+CAP=512*1024**2
+def context():
+ short=data.Clock(time.time()+5,time.monotonic()+5)
+ _,raw=extract.held(ROOT/'context.json',short,sha256=P['contextSha'],retain=True,maximum=131072,bounded_reads=True)
+ value=json.loads(raw)
+ data.need(P['enabled'] is True and value['mode']=='source-gn' and value['image']==P['image']=='20261021.278.1' and value['repositoryId']=='1010282954' and value['visibility']=='public' and value['event']=='workflow_dispatch' and value['ref']=='refs/heads/codex/windows-arm-source-gn-20261026','FULL_BOOTSTRAP_AUTHORITY')
+ clock=data.Clock(value['wallWorkEnd'],value['monotonicWorkEnd'])
+ for key,relative in (('CIPD_CACHE_DIR','cipd'),('VPYTHON_VIRTUALENV_ROOT','vpython'),('LOCALAPPDATA','local'),('APPDATA','roaming'),('XDG_CACHE_HOME','xdg')):
+  data.need(Path(os.environ.get(key,''))==ROOT/'source-caches'/relative,'FULL_BOOTSTRAP_ENV');data.plain(ROOT/'source-caches'/relative)
+ data.need(Path(os.environ.get('CIPD_CONFIG_FILE',''))==ROOT/'source-caches/cipd.cfg' and not any(os.environ.get(key)for key in ('CIPD_BACKEND','CIPD_SERVICE_URL','CIPD_PLATFORM','VPYTHON_BYPASS','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY')),'FULL_BOOTSTRAP_ENV')
+ extract.held(ROOT/'source-caches/cipd.cfg',clock,expected_size=0,sha256=hashlib.sha256(b'').hexdigest(),maximum=0,bounded_reads=True)
+ return clock
+def write_new(path,raw,clock):
+ clock.remaining();data.plain(path,exists=False);stream=path.open('xb');failed=False
+ try:data.need(stream.write(raw)==len(raw),'FULL_BOOTSTRAP_WRITE')
+ except BaseException:failed=True;raise
+ finally:
+  try:stream.close()
+  except BaseException:
+   if not failed:raise
+   print('FULL_BOOTSTRAP_CLOSE_FAILURE',file=sys.stderr)
+ clock.remaining()
+def read_pin(path,clock,ledger,pin=None,maximum=256*1024**2):
+ path=data.plain(path);size=path.lstat().st_size
+ data.need(0<=size<=min(maximum,CAP-ledger[0]),'FULL_BOOTSTRAP_BYTES')
+ if pin is not None:data.need(size==pin['bytes'] and pin['nlink']==1,'FULL_BOOTSTRAP_PIN')
+ charged=0
+ def consumed(count):
+  nonlocal charged
+  data.need(type(count)is int and charged<=count<=size,'FULL_BOOTSTRAP_BYTES')
+  ledger[0]+=count-charged;charged=count;data.need(ledger[0]<=CAP,'FULL_BOOTSTRAP_BYTES')
+ observed,raw=extract.held(path,clock,expected_size=size,sha256=None if pin is None else pin['sha256'],retain=True,maximum=min(maximum,CAP-ledger[0]),expected_nlink=1,progress=consumed,bounded_reads=True)
+ data.need(observed['bytes']==charged==size,'FULL_BOOTSTRAP_BYTES')
+ return dict(path=path.as_posix(),bytes=size,sha256=observed['sha256'],nlink=1),raw
+def sources(clock,ledger):
+ result={}
+ for pin in P['sources']:result[pin['path']]=read_pin(DEPOT/pin['path'],clock,ledger,dict(pin,nlink=1),2*1024**2)[1]
+ return result
+def absent(path):
+ try:path.lstat()
+ except FileNotFoundError:return
+ raise data.Denied('FULL_BOOTSTRAP_PREEXISTING')
+def directory_signature(value):
+ signature=data.signature(value)
+ return signature[:2]+signature[3:] if os.name=='nt' else signature
+def empty_directory(path,clock):
+ path=data.plain(path);before=path.lstat();data.need(stat.S_ISDIR(before.st_mode),'FULL_BOOTSTRAP_DIRECTORY')
+ iterator=os.scandir(path);failed=False
+ try:data.need(next(iterator,None)is None,'FULL_BOOTSTRAP_CACHE_NOT_EMPTY')
+ except BaseException:failed=True;raise
+ finally:
+  try:iterator.close()
+  except BaseException:
+   if not failed:raise
+   print('FULL_BOOTSTRAP_CLOSE_FAILURE',file=sys.stderr)
+ data.need(directory_signature(before)==directory_signature(path.lstat()),'FULL_BOOTSTRAP_DIRECTORY_CHANGED');clock.remaining()
+def override_absent():absent(DEPOT/'.cipd_client_platform')
+def shim(role,guard_sha,witness_sha):
+ return ('@echo off\r\n"'+P['python']+'" -I -B "'+str(SCRIPT)+'" --execute '+role+' '+guard_sha+' '+witness_sha+' %*\r\nexit /b %errorlevel%\r\n').encode('ascii')
+def run_checked(command,clock):
+ seconds=clock.remaining()-120;data.need(seconds>0,'FULL_SOURCE_RESERVE')
+ return subprocess.run(command,check=False,shell=False,timeout=seconds).returncode
+def derived_setup(raw):
+ old=b'call "%~dp0\\cipd.bat" ensure';new=b'"%~dp0\\.cipd_client.exe" ensure'
+ data.need(raw.count(old)==1,'FULL_BOOTSTRAP_SETUP_SOURCE')
+ return raw.replace(old,new)
+def provision(guard_sha,runner=run_checked):
+ clock=context();ledger=[0];raw_sources=sources(clock,ledger)
+ read_pin(SCRIPT,clock,ledger,dict(bytes=SCRIPT.stat().st_size,sha256=guard_sha,nlink=1),2*1024**2)
+ for path in (DEPOT/'.cipd_client_platform',DEPOT/'.cipd_client.exe',DEPOT/'.versions',DEPOT/'.cipd_bin',SETUP,WITNESS,COMMANDS/'cipd.bat',COMMANDS/'vpython3.bat'):absent(path)
+ for name in ('local','roaming','xdg','cipd','vpython'):empty_directory(ROOT/'source-caches'/name,clock)
+ code=runner(['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',str(DEPOT/'.cipd_impl.ps1'),'-CipdBinary',str(DEPOT/'.cipd_client.exe'),'-Platform','windows-amd64','-BackendURL','https://chrome-infra-packages.appspot.com','-VersionFile',str(DEPOT/'cipd_client_version')],clock)
+ data.need(type(code)is int and code==0,'FULL_BOOTSTRAP_CLIENT_EXIT')
+ client,_=read_pin(DEPOT/'.cipd_client.exe',clock,ledger)
+ data.need(client['sha256']==P['clientSha'],'FULL_BOOTSTRAP_CLIENT_HASH')
+ write_new(SETUP,derived_setup(raw_sources['cipd_bin_setup.bat']),clock)
+ code=runner(['C:\\Windows\\System32\\cmd.exe','/d','/c',str(SETUP)],clock)
+ data.need(type(code)is int and code==0,'FULL_BOOTSTRAP_SETUP_EXIT')
+ ledger=[0];sources(clock,ledger);override_absent()
+ read_pin(SETUP,clock,ledger,dict(bytes=len(derived_setup(raw_sources['cipd_bin_setup.bat'])),sha256=hashlib.sha256(derived_setup(raw_sources['cipd_bin_setup.bat'])).hexdigest(),nlink=1))
+ client,_=read_pin(DEPOT/'.cipd_client.exe',clock,ledger,client)
+ vpython,body=read_pin(DEPOT/'.cipd_bin/vpython3.exe',clock,ledger)
+ data.need(extract.pe_metadata(body)['machine']==0x8664,'FULL_BOOTSTRAP_VPYTHON_MACHINE')
+ for target,source in (('.cipd_manifest.txt','cipd_manifest.txt'),('.cipd_manifest.versions','cipd_manifest.versions'),('.cipd_client_version','cipd_client_version')):
+  pin=next(pin for pin in P['sources']if pin['path']==source)
+  read_pin(DEPOT/'.cipd_bin'/target,clock,ledger,dict(pin,nlink=1))
+ value=dict(kind='windows-arm-fresh-pinned-bootstrap',contextSha=P['contextSha'],guardSha=guard_sha,setupExit=0,fresh=True,packageInstance=P['instance'],client=client,vpython=vpython,vpythonMachine=0x8664)
+ raw=(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode();write_new(WITNESS,raw,clock);witness_sha=hashlib.sha256(raw).hexdigest()
+ for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):write_new(COMMANDS/name,shim(role,guard_sha,witness_sha),clock)
+ verify(witness_sha,guard_sha)
+ return value
+def verify(expected,guard_sha):
+ data.need(all(type(value)is str and len(value)==64 and all(c in '0123456789abcdef'for c in value)for value in (expected,guard_sha)),'FULL_BOOTSTRAP_EXPECTED_PIN')
+ clock=context();ledger=[0];witness_pin,raw=read_pin(WITNESS,clock,ledger,maximum=65536)
+ data.need(witness_pin['sha256']==expected,'FULL_BOOTSTRAP_WITNESS_PIN')
+ value=json.loads(raw)
+ data.need(type(value)is dict and set(value)=={'kind','contextSha','guardSha','setupExit','fresh','packageInstance','client','vpython','vpythonMachine'} and value['kind']=='windows-arm-fresh-pinned-bootstrap' and value['contextSha']==P['contextSha'] and type(value['setupExit'])is int and value['setupExit']==0 and value['fresh']is True and value['packageInstance']==P['instance'] and type(value['vpythonMachine'])is int and value['vpythonMachine']==0x8664,'FULL_BOOTSTRAP_WITNESS')
+ data.need(value['guardSha']==guard_sha,'FULL_BOOTSTRAP_GUARD_PIN')
+ read_pin(SCRIPT,clock,ledger,dict(bytes=SCRIPT.stat().st_size,sha256=guard_sha,nlink=1),2*1024**2)
+ raw_sources=sources(clock,ledger);override_absent()
+ for role,path in (('client',DEPOT/'.cipd_client.exe'),('vpython',DEPOT/'.cipd_bin/vpython3.exe')):
+  pin=value[role]
+  data.need(type(pin)is dict and set(pin)=={'path','bytes','sha256','nlink'} and pin['path']==path.as_posix() and type(pin['bytes'])is int and 0<pin['bytes']<=256*1024**2 and type(pin['nlink'])is int and pin['nlink']==1 and type(pin['sha256'])is str and len(pin['sha256'])==64 and all(c in '0123456789abcdef'for c in pin['sha256']),'FULL_BOOTSTRAP_PIN')
+  data.need(role!='client' or pin['sha256']==P['clientSha'],'FULL_BOOTSTRAP_CLIENT_HASH')
+  read_pin(path,clock,ledger,pin)
+ setup=derived_setup(raw_sources['cipd_bin_setup.bat']);read_pin(SETUP,clock,ledger,dict(bytes=len(setup),sha256=hashlib.sha256(setup).hexdigest(),nlink=1))
+ for target,source in (('.cipd_manifest.txt','cipd_manifest.txt'),('.cipd_manifest.versions','cipd_manifest.versions'),('.cipd_client_version','cipd_client_version')):
+  pin=next(pin for pin in P['sources']if pin['path']==source);read_pin(DEPOT/'.cipd_bin'/target,clock,ledger,dict(pin,nlink=1))
+ for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):
+  body=shim(role,value['guardSha'],witness_pin['sha256']);read_pin(COMMANDS/name,clock,ledger,dict(bytes=len(body),sha256=hashlib.sha256(body).hexdigest(),nlink=1),4096)
+ return value,clock
+def arguments(role,args):
+ data.need(type(args)is list and 0<len(args)<=64 and all(type(value)is str and len(value)<=4096 and not any(c in value for c in '\x00\r\n%&|<>!^')for value in args),'FULL_BOOTSTRAP_ARGV')
+ if role=='cipd':
+  if args[0]=='expand-package-name':
+   data.need(len(args)==2 and args[1] and not args[1].startswith(('-','/')) and '..'not in args[1] and all(c in 'abcdefghijklmnopqrstuvwxyz0123456789_/{}.-'+chr(36)for c in args[1]),'FULL_BOOTSTRAP_CIPD_ARGV');return
+  data.need(len(args)==7 and args[0]in ('ensure','ensure-file-resolve') and args[1]=='-log-level' and args[2]in ('info','error'),'FULL_BOOTSTRAP_CIPD_ARGV')
+  if args[0]=='ensure':
+   data.need(args[3]=='-root' and data.plain(args[4])==Path(P['workspace']) and args[5]=='-ensure-file','FULL_BOOTSTRAP_CIPD_ARGV')
+   paths=[args[6]]
+  else:
+   data.need(args[3]=='-ensure-file' and args[5]=='-json-output','FULL_BOOTSTRAP_CIPD_ARGV');paths=[args[4],args[6]]
+  for value in paths:
+   path=data.plain(value);info=path.lstat();data.need(path.parent==ROOT/'tmp' and stat.S_ISREG(info.st_mode) and info.st_nlink==1,'FULL_BOOTSTRAP_TEMP_PATH')
+def execute(role,args,expected,guard_sha,runner=run_checked):
+ data.need(role in ('cipd','vpython'),'FULL_BOOTSTRAP_ROLE');arguments(role,args)
+ value,clock=verify(expected,guard_sha);failed=False
+ try:
+  code=runner([value['client'if role=='cipd'else 'vpython']['path'],*args],clock)
+  data.need(type(code)is int and code==0,'FULL_BOOTSTRAP_CHILD_EXIT')
+ except BaseException:failed=True;raise
+ finally:
+  try:verify(expected,guard_sha)
+  except BaseException:
+   if not failed:raise
+   print('FULL_BOOTSTRAP_POST_FAILURE',file=sys.stderr)
+def bind(expected,guard_sha):
+ value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2
+ if getattr(subprocess2,'_sorng_cipd_bound',False):return
+ original=subprocess2.Popen
+ def admitted(argv,*args,**kwargs):
+  if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):
+   values=list(argv[1:]);arguments('cipd',values);data.need(kwargs.get('env')is None,'FULL_BOOTSTRAP_ENV_OVERRIDE');current,_=verify(expected,guard_sha);kwargs['shell']=False
+   return original([current['client']['path'],*values],*args,**kwargs)
+  return original(argv,*args,**kwargs)
+ subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True
+def main(argv):
+ data.need(P['enabled']is True and os.name=='nt','FULL_BOOTSTRAP_DISABLED')
+ if len(argv)>=3 and argv[:2]==['--prepare-sync','--guard-sha']:
+  guard_sha=argv[2];data.need(argv[3:]==P['syncArgs'][1:],'FULL_BOOTSTRAP_SYNC_ARGV')
+  value=provision(guard_sha);print('FULL_BOOTSTRAP_WITNESS:'+json.dumps(value,sort_keys=True,separators=(',',':')),flush=True)
+  expected=hashlib.sha256((json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()).hexdigest()
+  bind(expected,guard_sha);sys.path.insert(0,str(DEPOT));import gclient
+  return gclient.main(P['syncArgs'])
+ data.need(len(argv)>=5 and argv[0]=='--execute','FULL_BOOTSTRAP_ARGV')
+ execute(argv[1],argv[4:],argv[3],argv[2]);return 0
+if __name__=='__main__':sys.exit(main(sys.argv[1:]))
+`,
+    "utf8",
+  );
+}
+
+export async function prepareBootstrap(root, p, contextSha, budget) {
+  const files = sourcePaths(root, p),
+    file = path.join(files.commands, "source_bootstrap.py"),
+    raw = bootstrapProgram(root, p, contextSha);
+  await fs.writeFile(file, raw, { flag: "wx" });
+  const pin = { path: file, bytes: raw.length, sha256: sha(raw), nlink: 1 };
+  await held(file, 2 * 1024 ** 2, budget, pin);
+  return {
+    file,
+    pin,
+    witness: path.join(files.commands, "bootstrap-witness.json"),
+    witnessPin: null,
+  };
+}
+
+export async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {
+  const files = sourcePaths(root, p);
+  need(bootstrap.witnessPin !== null, "FULL_BOOTSTRAP_NOT_ATTESTED");
+  await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);
+  const raw = await held(
+    bootstrap.witness,
+    65536,
+    budget,
+    bootstrap.witnessPin,
+  );
+  const value = JSON.parse(raw);
+  keys(value, [
+    "kind",
+    "contextSha",
+    "guardSha",
+    "setupExit",
+    "fresh",
+    "packageInstance",
+    "client",
+    "vpython",
+    "vpythonMachine",
+  ]);
+  need(
+    value.kind === "windows-arm-fresh-pinned-bootstrap" &&
+      value.contextSha === contextSha &&
+      value.guardSha === bootstrap.pin.sha256 &&
+      value.setupExit === 0 &&
+      value.fresh === true &&
+      value.packageInstance === VPYTHON_INSTANCE &&
+      value.vpythonMachine === 0x8664,
+    "FULL_BOOTSTRAP_WITNESS",
+  );
+  const witnessPin = { bytes: raw.length, sha256: sha(raw), nlink: 1 };
+  let bytes = bootstrap.pin.bytes + raw.length,
+    setupSource;
+  for (const [role, relative] of [
+    ["client", ".cipd_client.exe"],
+    ["vpython", ".cipd_bin/vpython3.exe"],
+  ]) {
+    const pin = value[role];
+    keys(pin, ["path", "bytes", "sha256", "nlink"]);
+    need(
+      pin.path === path.join(files.depot, relative).replaceAll("\\", "/") &&
+        Number.isSafeInteger(pin.bytes) &&
+        pin.bytes > 0 &&
+        pin.bytes <= 256 * 1024 ** 2 &&
+        pin.nlink === 1 &&
+        /^[a-f0-9]{64}$/.test(pin.sha256) &&
+        (role !== "client" || pin.sha256 === CIPD_CLIENT_SHA),
+      "FULL_BOOTSTRAP_PIN",
+    );
+    need(pin.bytes <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");
+    await held(pin.path, pin.bytes, budget, pin, true);
+    bytes += pin.bytes;
+  }
+  for (const pin of BOOTSTRAP_SOURCES) {
+    need(pin.bytes <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");
+    const body = await held(
+      path.join(files.depot, pin.path),
+      pin.bytes,
+      budget,
+      pin,
+      true,
+    );
+    bytes += pin.bytes;
+    if (pin.path === "cipd_bin_setup.bat") setupSource = body;
+  }
+  for (const [target, source] of [
+    [".cipd_manifest.txt", "cipd_manifest.txt"],
+    [".cipd_manifest.versions", "cipd_manifest.versions"],
+    [".cipd_client_version", "cipd_client_version"],
+  ]) {
+    const pin = BOOTSTRAP_SOURCES.find((pin) => pin.path === source);
+    need(pin.bytes <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");
+    await held(
+      path.join(files.depot, ".cipd_bin", target),
+      pin.bytes,
+      budget,
+      pin,
+      true,
+    );
+    bytes += pin.bytes;
+  }
+  const setup = deriveBootstrapSetup(setupSource);
+  need(setup.length <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");
+  await held(
+    path.join(files.depot, "sorng-cipd-setup.bat"),
+    setup.length,
+    budget,
+    { bytes: setup.length, sha256: sha(setup), nlink: 1 },
+    true,
+  );
+  bytes += setup.length;
+  for (const [role, name] of [
+    ["cipd", "cipd.bat"],
+    ["vpython", "vpython3.bat"],
+  ]) {
+    const body = bootstrapShim(
+      p.python.path,
+      bootstrap.file,
+      bootstrap.pin.sha256,
+      witnessPin.sha256,
+      role,
+    );
+    need(body.length <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");
+    await held(
+      path.join(files.commands, name),
+      body.length,
+      budget,
+      { bytes: body.length, sha256: sha(body), nlink: 1 },
+      true,
+    );
+    bytes += body.length;
+  }
+  await fs.lstat(path.join(files.depot, ".cipd_client_platform")).then(
+    () => need(false, "FULL_BOOTSTRAP_OVERRIDE"),
+    (error) => {
+      if (error.code !== "ENOENT") throw error;
+    },
+  );
+  need(
+    bootstrap.witnessPin !== null &&
+      bootstrap.witnessPin.sha256 === witnessPin.sha256,
+    "FULL_BOOTSTRAP_NOT_ATTESTED",
+  );
+  return value;
+}
+
+export function bootstrapObserver(bootstrap, contextSha) {
+  need(bootstrap.witnessPin === null, "FULL_BOOTSTRAP_ALREADY_ATTESTED");
+  const prefix = Buffer.from("FULL_BOOTSTRAP_WITNESS:"),
+    cap = 65536 + prefix.length;
+  let tail = Buffer.alloc(0),
+    dropping = false,
+    found = false;
+  return {
+    push(chunk) {
+      let start = 0;
+      while (start < chunk.length) {
+        const end = chunk.indexOf(10, start),
+          stop = end === -1 ? chunk.length : end,
+          piece = chunk.subarray(start, stop);
+        if (!dropping) {
+          if (tail.length + piece.length > cap) {
+            const first = Buffer.concat([
+              tail,
+              piece.subarray(0, prefix.length),
+            ]).subarray(0, prefix.length);
+            need(!first.equals(prefix), "FULL_BOOTSTRAP_ATTESTATION_BOUND");
+            dropping = true;
+            tail = Buffer.alloc(0);
+          } else tail = Buffer.concat([tail, piece]);
+        }
+        if (end !== -1) {
+          if (!dropping && tail.subarray(0, prefix.length).equals(prefix)) {
+            need(!found, "FULL_BOOTSTRAP_ATTESTATION_DUPLICATE");
+            const line = tail.at(-1) === 13 ? tail.subarray(0, -1) : tail;
+            const raw = Buffer.concat([
+              line.subarray(prefix.length),
+              Buffer.from("\n"),
+            ]);
+            need(raw.length <= 65536, "FULL_BOOTSTRAP_ATTESTATION_BOUND");
+            const value = JSON.parse(raw);
+            keys(value, [
+              "kind",
+              "contextSha",
+              "guardSha",
+              "setupExit",
+              "fresh",
+              "packageInstance",
+              "client",
+              "vpython",
+              "vpythonMachine",
+            ]);
+            need(
+              value.kind === "windows-arm-fresh-pinned-bootstrap" &&
+                value.contextSha === contextSha &&
+                value.guardSha === bootstrap.pin.sha256 &&
+                value.setupExit === 0 &&
+                value.fresh === true &&
+                value.packageInstance === VPYTHON_INSTANCE &&
+                value.client?.sha256 === CIPD_CLIENT_SHA &&
+                value.vpythonMachine === 0x8664,
+              "FULL_BOOTSTRAP_ATTESTATION",
+            );
+            bootstrap.witnessPin = Object.freeze({
+              bytes: raw.length,
+              sha256: sha(raw),
+              nlink: 1,
+            });
+            found = true;
+          }
+          tail = Buffer.alloc(0);
+          dropping = false;
+        }
+        start = end === -1 ? chunk.length : end + 1;
+      }
+    },
+    finish() {
+      need(found, "FULL_BOOTSTRAP_ATTESTATION_MISSING");
+    },
+  };
+}
+
+export function bindBootstrapVector(command, bootstrap) {
+  const witness = "__SORNG_BOOTSTRAP_WITNESS__",
+    guard = "__SORNG_BOOTSTRAP_GUARD__";
+  const hasWitness = command.args.includes(witness),
+    hasGuard = command.args.includes(guard);
+  if (!hasWitness && !hasGuard) return command.args;
+  need(
+    hasWitness &&
+      hasGuard &&
+      command.args.filter((arg) => arg === witness).length === 1 &&
+      command.args.filter((arg) => arg === guard).length === 1 &&
+      /^[a-f0-9]{64}$/.test(bootstrap?.witnessPin?.sha256 ?? "") &&
+      /^[a-f0-9]{64}$/.test(bootstrap?.pin?.sha256 ?? ""),
+    "FULL_BOOTSTRAP_VECTOR_PIN",
+  );
+  return command.args.map((arg) =>
+    arg === witness
+      ? bootstrap.witnessPin.sha256
+      : arg === guard
+        ? bootstrap.pin.sha256
+        : arg,
+  );
+}
+
+export function hookProjectionArguments(depot, commands = depot) {
   return [
     "-B",
     "-c",
     `import sys,os,json
+sys.path.insert(0,sys.argv[2])
+import source_bootstrap
+source_bootstrap.bind(sys.argv[3],sys.argv[4])
 sys.path.insert(0,sys.argv[1])
 import gclient
 options,args=gclient.OptionParser().parse_args(['--jobs','2'])
@@ -359,6 +885,9 @@ if len(raw)>4*1024**2: raise RuntimeError('FULL_HOOK_PROJECTION_BOUND')
 print('FULL_HOOK_PROJECTION:'+raw.decode('ascii'))
 `,
     depot,
+    commands,
+    "__SORNG_BOOTSTRAP_WITNESS__",
+    "__SORNG_BOOTSTRAP_GUARD__",
   ];
 }
 
@@ -367,7 +896,10 @@ export function dependencyHookArguments(depot, adapter, pin) {
     "-B",
     "-c",
     `import sys,os,hashlib,threading
-depot,adapter,digest=sys.argv[1:]
+depot,adapter,digest,expected_bootstrap,expected_guard=sys.argv[1:]
+sys.path.insert(0,os.path.dirname(adapter))
+import source_bootstrap
+source_bootstrap.bind(expected_bootstrap,expected_guard)
 sys.path.insert(0,depot)
 import gclient
 original=gclient.Hook.run
@@ -391,7 +923,7 @@ def admitted_dispatch(command,*args,**kwargs):
    if failed: print('FULL_PYTHON_ADAPTER_CLOSE_FAILURE',file=sys.stderr)
    else: raise
  if len(raw)>4096 or hashlib.sha256(raw).hexdigest()!=digest: raise RuntimeError('FULL_PYTHON_ADAPTER_PIN')
- mapped=[adapter if command[0]=='python3' else os.path.join(depot,'vpython3.bat'),*command[1:]]
+ mapped=[adapter if command[0]=='python3' else os.path.join(os.path.dirname(adapter),'vpython3.bat'),*command[1:]]
  return dispatch(mapped,*args,**kwargs)
 def admitted(self):
  previous=getattr(scope,'active',False)
@@ -405,6 +937,8 @@ sys.exit(gclient.main(['runhooks','--jobs','2']))
     depot,
     adapter,
     pin.sha256,
+    "__SORNG_BOOTSTRAP_WITNESS__",
+    "__SORNG_BOOTSTRAP_GUARD__",
   ];
 }
 
@@ -638,9 +1172,12 @@ export function sourceCommands(root, p, hooks, contextPin) {
         executable: python,
         cwd: files.workspace,
         args: [
+          "-I",
           "-B",
-          path.join(files.depot, "gclient.py"),
-          "sync",
+          path.join(files.commands, "source_bootstrap.py"),
+          "--prepare-sync",
+          "--guard-sha",
+          sha(bootstrapProgram(root, p, contextPin)),
           "--jobs",
           "2",
           "--nohooks",
@@ -654,7 +1191,7 @@ export function sourceCommands(root, p, hooks, contextPin) {
         role: "hook-projection",
         executable: python,
         cwd: files.workspace,
-        args: hookProjectionArguments(files.depot),
+        args: hookProjectionArguments(files.depot, files.commands),
       },
       {
         role: "dependency-hooks",
@@ -876,10 +1413,18 @@ async function executeCommand(
   budget,
   limits,
   capture,
+  bootstrap,
 ) {
   need(expected.includes(command), "FULL_COMMAND_IDENTITY");
   budget.remaining();
   const descriptors = [];
+  const observer =
+    bootstrap && command.role === "sync"
+      ? bootstrapObserver(bootstrap.value, bootstrap.contextSha)
+      : null;
+  const childArgs = bootstrap
+    ? bindBootstrapVector(command, bootstrap.value)
+    : command.args;
   let child,
     timer,
     primary,
@@ -896,6 +1441,26 @@ async function executeCommand(
       "wx",
     );
     descriptors.push(errorOutput);
+    if (bootstrap && childArgs !== command.args) {
+      const record = Buffer.from(
+        "FULL_BOOTSTRAP_VECTOR_BINDING:" +
+          JSON.stringify({
+            role: command.role,
+            witnessSha: bootstrap.value.witnessPin.sha256,
+            guardSha: bootstrap.value.pin.sha256,
+          }) +
+          "\n",
+      );
+      need(
+        limits.bytes + record.length <= limits.cap,
+        "FULL_SOURCE_OUTPUT_BOUND",
+      );
+      need(
+        writeSync(output, record) === record.length,
+        "FULL_SOURCE_LOG_WRITE",
+      );
+      limits.bytes += record.length;
+    }
     const text = [];
     const outcome = await new Promise((resolve, reject) => {
       const deny = (error) => {
@@ -905,7 +1470,7 @@ async function executeCommand(
         }
         reject(primary);
       };
-      child = spawn(command.executable, command.args, {
+      child = spawn(command.executable, childArgs, {
         cwd: command.cwd,
         env,
         windowsHide: true,
@@ -933,6 +1498,7 @@ async function executeCommand(
             );
             if (capture && stream === child.stdout)
               text.push(Buffer.from(chunk));
+            if (observer && stream === child.stdout) observer.push(chunk);
           } catch (error) {
             deny(error);
           }
@@ -952,6 +1518,7 @@ async function executeCommand(
       );
     });
     need(outcome === 0, "FULL_SOURCE_CHILD_FAILED");
+    observer?.finish();
     budget.remaining();
     return Buffer.concat(text).toString("utf8");
   } catch (error) {
@@ -1085,6 +1652,7 @@ export async function main(argv = process.argv.slice(2)) {
     p.python.path,
     budget,
   );
+  const bootstrap = await prepareBootstrap(root, p, argv[2], budget);
   const gnPath = path.join(files.chromium, "buildtools/win/gn.exe"),
     gnPin = p.cipd[0].members.find((row) => row.name === "gn.exe"),
     hookArguments = boundGnArguments(
@@ -1123,6 +1691,7 @@ export async function main(argv = process.argv.slice(2)) {
         helperSourceCommit: p.sourceGn.helpersSourceCommit,
         commands: executionCommands,
         python3Adapter: adapter.pin,
+        bootstrapProgram: bootstrap.pin,
         acquisition: patched.acquisitionSourcePlan(files.workspace, TARGET),
         compilerAllowed: false,
       },
@@ -1140,6 +1709,9 @@ export async function main(argv = process.argv.slice(2)) {
     generatedArguments = null;
   const checked = async (action) => {
     await verifyHostClosure(p, budget, c.image);
+    await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);
+    if (bootstrap.witnessPin !== null)
+      await verifyBootstrap(root, p, bootstrap, budget, argv[2]);
     await held(adapter.file, 4096, budget, adapter.pin);
     for (const primary of HOOK_PRIMARY)
       await held(
@@ -1158,6 +1730,7 @@ export async function main(argv = process.argv.slice(2)) {
     } finally {
       try {
         await verifyHostClosure(p, budget, c.image);
+        await verifyBootstrap(root, p, bootstrap, budget, argv[2]);
         await held(adapter.file, 4096, budget, adapter.pin);
         for (const primary of HOOK_PRIMARY)
           await held(
@@ -1168,6 +1741,7 @@ export async function main(argv = process.argv.slice(2)) {
           );
         await custom.sourceGitEnvironment(gitPolicy, env);
       } catch (error) {
+        console.error("FULL_BOOTSTRAP_OR_SOURCE_POSTCHECK_FAILURE");
         if (!rejected) throw error;
       }
     }
@@ -1198,6 +1772,7 @@ export async function main(argv = process.argv.slice(2)) {
           budget,
           limits,
           false,
+          { value: bootstrap, contextSha: argv[2] },
         ),
       );
     });
@@ -1213,6 +1788,7 @@ export async function main(argv = process.argv.slice(2)) {
             budget,
             limits,
             true,
+            { value: bootstrap, contextSha: argv[2] },
           ),
         ),
       );
@@ -1248,6 +1824,7 @@ export async function main(argv = process.argv.slice(2)) {
           budget,
           limits,
           false,
+          { value: bootstrap, contextSha: argv[2] },
         ),
       );
       await custom.verifySourceBuildIsolation(files.chromium);
@@ -1275,6 +1852,7 @@ export async function main(argv = process.argv.slice(2)) {
             budget,
             limits,
             true,
+            { value: bootstrap, contextSha: argv[2] },
           ),
         );
       }
@@ -1288,6 +1866,7 @@ export async function main(argv = process.argv.slice(2)) {
           budget,
           limits,
           false,
+          { value: bootstrap, contextSha: argv[2] },
         ),
       );
       stage = "source-version";
@@ -1309,6 +1888,7 @@ export async function main(argv = process.argv.slice(2)) {
           budget,
           limits,
           false,
+          { value: bootstrap, contextSha: argv[2] },
         ),
       );
       await held(
