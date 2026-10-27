@@ -70,9 +70,9 @@ jobs:
           function metalCommandStage(executable, args) {
             const same = (value) => JSON.stringify(value) === JSON.stringify(args);
             if (executable === '/usr/bin/xcrun') {
-              if (same(['--no-cache', '--sdk', 'macosx', '--find', 'metal'])) return 'find-metal';
-              if (same(['--no-cache', '--sdk', 'macosx', '--find', 'metallib'])) return 'find-metallib';
-              if (same(['--no-cache', '--sdk', 'macosx', 'metal', '--version'])) return 'metal-version';
+              if (same(['--no-cache', '--find', 'metal'])) return 'find-metal';
+              if (same(['--no-cache', '--find', 'metallib'])) return 'find-metallib';
+              if (same(['--no-cache', 'metal', '--version'])) return 'metal-version';
             }
             if (executable === '/usr/bin/xcodebuild' && same(['-downloadComponent', 'MetalToolchain'])) return 'download-component';
             if (executable === '/usr/bin/codesign' && args.length === 5 &&
@@ -325,9 +325,9 @@ jobs:
                 [
                   ["-sdk", "macosx", "--show-sdk-path"],
                   ["-sdk", "macosx", "--show-sdk-platform-path"],
-                  ["--no-cache", "--sdk", "macosx", "--find", "metal"],
-                  ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
-                  ["--no-cache", "--sdk", "macosx", "metal", "--version"],
+                  ["--no-cache", "--find", "metal"],
+                  ["--no-cache", "--find", "metallib"],
+                  ["--no-cache", "metal", "--version"],
                 ].some((v) => JSON.stringify(v) === vector)) ||
               (file === "/usr/bin/xcode-select" &&
                 vector === JSON.stringify(["-print-path"])) ||

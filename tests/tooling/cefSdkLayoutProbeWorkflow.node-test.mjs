@@ -163,7 +163,7 @@ function observer() {
   ).runInContext(context);
   return context.observeMetalExec;
 }
-const findMetal = ["--no-cache", "--sdk", "macosx", "--find", "metal"];
+const findMetal = ["--no-cache", "--find", "metal"];
 
 test("Metal command observation preserves actual result/error identity and bounds private raw output without argv/env/error dumps", async () => {
   const observe = observer(),
@@ -1973,9 +1973,9 @@ test("both carrier Metal guards admit only documented prefixed vectors and deny 
   const check = censusApi().fixedAppleCommand,
     observe = observer(),
     vectors = [
-      ["--no-cache", "--sdk", "macosx", "--find", "metal"],
-      ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
-      ["--no-cache", "--sdk", "macosx", "metal", "--version"],
+      ["--no-cache", "--find", "metal"],
+      ["--no-cache", "--find", "metallib"],
+      ["--no-cache", "metal", "--version"],
     ];
   let executions = 0;
   const stages = [];
@@ -2038,6 +2038,9 @@ test("actual selected helper five Metal lookups pass both carrier bodies without
   const execute = observe(
     async (file, args, options) => {
       check(file, args);
+      assert.equal(options.env.SDKROOT, selected.SDKROOT);
+      assert.equal(options.env.DEVELOPER_DIR, selected.DEVELOPER_DIR);
+      assert(!args.includes("--sdk"));
       calls.push({ file, args, timeout: options.timeout });
       if (file === "/usr/bin/codesign") return {};
       return args.includes("--find")
@@ -2082,4 +2085,64 @@ test("actual selected helper five Metal lookups pass both carrier bodies without
   assert.equal(macMetalFingerprint(result).tools.length, 2);
   assert.equal(result.componentResourceClosureVerified, false);
   assert.equal(result.nativeCompatibilityVerified, false);
+});
+
+test("both actual Metal guards deny explicit named or absolute SDK overrides in every argument position", async () => {
+  const check = censusApi().fixedAppleCommand,
+    observe = observer(),
+    vectors = [
+      ["--no-cache", "--find", "metal"],
+      ["--no-cache", "--find", "metallib"],
+      ["--no-cache", "metal", "--version"],
+    ];
+  let calls = 0;
+  const execute = observe(
+    async () => {
+      calls++;
+      return {};
+    },
+    async () => {},
+  );
+  for (const vector of vectors)
+    for (const flag of ["--sdk", "-sdk"])
+      for (const sdk of [
+        "macosx",
+        "/Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+        "/foreign/sdk",
+      ]) {
+        for (const at of [0, 1, vector.length]) {
+          const args = [...vector.slice(0, at), flag, sdk, ...vector.slice(at)];
+          assert.throws(
+            () => check("/usr/bin/xcrun", args),
+            /CENSUS_APPLE_COMMAND/,
+          );
+          await assert.rejects(
+            execute("/usr/bin/xcrun", args, { timeout: 30000 }),
+            /METAL_DIAGNOSTIC_COMMAND_DENIED/,
+          );
+        }
+      }
+  for (const args of [
+    ["--no-cache", "--sdk=macosx", "--find", "metal"],
+    ["--no-cache", "--sdk=/foreign/sdk", "metal", "--version"],
+    ["--find", "metal"],
+    ["--no-cache", "--find", "clang"],
+  ]) {
+    assert.throws(() => check("/usr/bin/xcrun", args), /CENSUS_APPLE_COMMAND/);
+    await assert.rejects(
+      execute("/usr/bin/xcrun", args, { timeout: 30000 }),
+      /METAL_DIAGNOSTIC_COMMAND_DENIED/,
+    );
+  }
+  assert.equal(calls, 0);
+  for (const vector of vectors) {
+    check("/usr/bin/xcrun", vector);
+    await execute("/usr/bin/xcrun", vector, { timeout: 30000 });
+  }
+  assert.equal(calls, 3);
+  for (const vector of [
+    ["-sdk", "macosx", "--show-sdk-path"],
+    ["-sdk", "macosx", "--show-sdk-platform-path"],
+  ])
+    check("/usr/bin/xcrun", vector);
 });
