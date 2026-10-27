@@ -333,7 +333,7 @@ import {
   renameSync,
   createWriteStream,
 } from "node:fs";
-import { PassThrough, Readable, Writable } from "node:stream";
+import { PassThrough, Readable, Writable, Transform } from "node:stream";
 import {
   mkdir,
   mkdtemp,
@@ -7113,6 +7113,7 @@ async function compileSupervisorModel(options = {}) {
     signals: [],
     streams: [],
     primary: sentinel,
+    forwarded: [],
   };
   const close = (code = null) => {
     child.exitCode = code;
@@ -7158,16 +7159,24 @@ async function compileSupervisorModel(options = {}) {
     noLinks: async (value) => value,
     lstat: async () => ({ isDirectory: () => true }),
     path,
+    Transform,
     createWriteStream: () => {
       const stream = new Writable({
         write(data, encoding, done) {
-          done();
+          state.forwarded.push(Buffer.from(data));
+          if (!options.stalledWriter) done();
         },
       });
       state.streams.push(stream);
       return stream;
     },
     spawn: () => {
+      if (options.chunks)
+        setTimeout(() => {
+          for (const [channel, data] of options.chunks)
+            child[channel].write(data);
+        }, 3);
+      if (options.cleanExit) setTimeout(() => close(0), 8);
       if (options.naturalExit)
         setTimeout(() => {
           child.exitCode = 0;
@@ -7218,6 +7227,18 @@ async function compileSupervisorModel(options = {}) {
     env: {},
     logs: "/fake",
     milliseconds: 20,
+    ...(options.outputLedger === undefined
+      ? {}
+      : { outputLedger: options.outputLedger }),
+    ...(options.observeRoot === undefined
+      ? {}
+      : {
+          observeRoot: (root, control) => {
+            state.root = root;
+            state.control = control;
+            return options.observeRoot(state, root, control);
+          },
+        }),
   });
   run.catch(() => {});
   try {
@@ -7232,6 +7253,7 @@ async function compileSupervisorModel(options = {}) {
     ]);
     /* exact production arguments are supplied above */
   } catch (reason) {
+    state.failed = true;
     error = reason;
   } finally {
     clearTimeout(modelAlarm);
@@ -10384,5 +10406,183 @@ print('reviewed-Linux exact record/apply/verify sidecar/schema PASS')
       result.stdout,
       /exact record\/apply\/verify sidecar\/schema PASS/,
     );
+  },
+);
+
+test("optional shared output ledger precharges both streams before forwarding and persists across actual supervisor invocations", async () => {
+  const cap = 64 * 1024 ** 2,
+    ledger = { bytes: cap - 3, cap };
+  const first = await compileSupervisorModel({
+    outputLedger: ledger,
+    chunks: [["stdout", "ab"]],
+    cleanExit: true,
+  });
+  assert.equal(first.failed, undefined);
+  assert.equal(first.result.quiescent, true);
+  assert.equal(ledger.bytes, cap - 1);
+  assert.equal(Buffer.concat(first.forwarded).toString(), "ab");
+  const second = await compileSupervisorModel({
+    outputLedger: ledger,
+    chunks: [
+      ["stderr", "c"],
+      ["stdout", "rejected"],
+    ],
+  });
+  assert.equal(second.failed, true);
+  assert.match(second.error.message, /Shared compile output bound/);
+  assert.equal(ledger.bytes, cap);
+  assert.equal(Buffer.concat(second.forwarded).toString(), "c");
+  assert.equal(second.proofs, 0);
+  assert.equal(second.stops, 1);
+  assert.equal(
+    JSON.parse(second.diagnostic.split("compile-supervision=")[1]).failureStage,
+    "output-bound",
+  );
+  for (const invalid of [
+    { bytes: -1, cap },
+    { bytes: 0, cap: cap + 1 },
+    { bytes: 0.5, cap },
+    { bytes: cap + 1, cap },
+  ]) {
+    const denied = await compileSupervisorModel({ outputLedger: invalid });
+    assert.match(denied.error.message, /Fixed shared output ledger/);
+    assert.equal(denied.proofs, 0);
+  }
+});
+
+test("optional actual supervisor observer is creation-bound, tracked without blocking monitoring and joined under original cleanup deadline", async () => {
+  const state = await compileSupervisorModel({
+    cleanExit: true,
+    observeRoot: async (state, root, control) => {
+      assert.deepEqual(root, {
+        pid: 100,
+        parent: 200,
+        start: "Sat Oct 24 00:00:00 2026",
+      });
+      assert.equal(Object.isFrozen(root), true);
+      assert.equal(Object.isFrozen(control), true);
+      assert.equal(control.rootExited(), false);
+      await new Promise((resolve) =>
+        control.signal.addEventListener("abort", resolve, { once: true }),
+      );
+      state.observerJoined = true;
+      assert.equal(control.rootExited(), true);
+    },
+  });
+  assert.equal(state.observerJoined, true);
+  assert.equal(state.result.quiescent, true);
+  assert.equal(state.proofs, 1);
+  const denied = await compileSupervisorModel({
+    badOwner: true,
+    observeRoot: () => assert.fail("foreign root observer must never run"),
+  });
+  assert.equal(denied.root, undefined);
+  assert.equal(denied.proofs, 0);
+  const hung = await compileSupervisorModel({
+    cleanExit: true,
+    observeRoot: () => new Promise(() => {}),
+  });
+  assert.match(hung.error.message, /cleanup deadline/);
+  assert.equal(hung.proofs, 0);
+  assert.equal(
+    JSON.parse(hung.diagnostic.split("compile-supervision=")[1]).failureStage,
+    "observer-join",
+  );
+  assert.ok(hung.elapsedMs < 300);
+});
+
+test("optional observer first errors including falsy values survive later writer failure and stalled writer cannot admit", async () => {
+  for (const primary of [
+    null,
+    0,
+    undefined,
+    new Error("private original observer"),
+  ]) {
+    const state = await compileSupervisorModel({
+      streamError: true,
+      observeRoot: () => {
+        throw primary;
+      },
+    });
+    assert.equal(state.failed, true);
+    assert.equal(state.error, primary);
+    assert.equal(state.stops, 1);
+    assert.equal(state.proofs, 0);
+  }
+  const writer = await compileSupervisorModel({
+    outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 },
+    chunks: [["stdout", "held writer"]],
+    stalledWriter: true,
+    cleanExit: true,
+  });
+  assert.match(writer.error.message, /cleanup deadline/);
+  assert.equal(writer.proofs, 0);
+  assert.ok(writer.elapsedMs < 300);
+  assert.equal(
+    writer.streams.every((stream) => stream.destroyed),
+    true,
+  );
+});
+
+test(
+  "Linux benign owned gate admits a short actor but denies root-exit inherited-output descendants with optional observer and ledger",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "requires actual Linux Node and /proc; Windows is not POSIX proof"
+        : false,
+    timeout: 45000,
+  },
+  async (t) => {
+    for (const descendant of [false, true]) {
+      const root = await scratch(t),
+        gate = path.join(root, "owned-ready-gate"),
+        ledger = { bytes: 0, cap: 64 * 1024 ** 2 };
+      const leaf =
+        "process.stdout.write('owned-child\\n');setInterval(()=>{},100);";
+      const action = descendant
+        ? `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(leaf)}],{stdio:['ignore',1,2]});setTimeout(()=>process.exit(0),900);`
+        : "process.stdout.write('owned-short\\n');";
+      const actor = `const fs=require('node:fs'),path=require('node:path');const gate=process.argv[1];let done=false;const watch=fs.watch(path.dirname(gate),start);const timer=setTimeout(()=>process.exit(77),4000);function start(){if(done||!fs.existsSync(gate))return;done=true;watch.close();clearTimeout(timer);${action}}start();`;
+      let observed = false,
+        joined = false;
+      const call = compileSlice(process.execPath, ["-e", actor, gate], {
+        cwd: root,
+        env: { PATH: path.dirname(process.execPath) },
+        logs: root,
+        milliseconds: 6000,
+        outputLedger: ledger,
+        observeRoot: async (identity, control) => {
+          assert.equal(identity.parent, process.pid);
+          assert.equal(Object.isFrozen(identity), true);
+          assert.equal(control.rootExited(), false);
+          observed = true;
+          await writeFile(gate, "ready", { flag: "wx" });
+          if (!control.signal.aborted)
+            await new Promise((resolve) =>
+              control.signal.addEventListener("abort", resolve, { once: true }),
+            );
+          joined = true;
+        },
+      });
+      if (descendant)
+        await assert.rejects(call, /descendants survived compiler exit/);
+      else {
+        const result = await call;
+        assert.equal(result.quiescent, true);
+        assert.equal(result.exitCode, 0);
+      }
+      assert.equal(observed, true);
+      assert.equal(joined, true);
+      const before = await readFile(
+        path.join(root, "checkpoint-compile.stdout.log"),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      assert.deepEqual(
+        await readFile(path.join(root, "checkpoint-compile.stdout.log")),
+        before,
+      );
+      assert.ok(ledger.bytes > 0 && ledger.bytes <= 64 * 1024 ** 2);
+    }
   },
 );

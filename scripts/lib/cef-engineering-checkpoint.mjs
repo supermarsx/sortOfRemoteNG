@@ -21,7 +21,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import path from "node:path";
 import { hostname, tmpdir, userInfo } from "node:os";
 import { macSourceMetadataPlan } from "./cef-mac-source-metadata.mjs";
@@ -2041,13 +2041,38 @@ async function compileWithin(operation, deadline) {
 export async function compileSlice(
   executable,
   args,
-  { cwd, env, logs, out, milliseconds = LIMITS.compileMs },
+  {
+    cwd,
+    env,
+    logs,
+    out,
+    milliseconds = LIMITS.compileMs,
+    outputLedger,
+    observeRoot,
+  },
 ) {
   assert(
     process.platform !== "win32" &&
       positive(milliseconds) &&
       milliseconds <= LIMITS.maxCompileMs,
     "Bounded Unix engineering slice only",
+  );
+  assert(
+    outputLedger === undefined ||
+      (outputLedger &&
+        Object.getPrototypeOf(outputLedger) === Object.prototype &&
+        Object.keys(outputLedger).length === 2 &&
+        Object.hasOwn(outputLedger, "bytes") &&
+        Object.hasOwn(outputLedger, "cap") &&
+        outputLedger.cap === 64 * 1024 ** 2 &&
+        Number.isSafeInteger(outputLedger.bytes) &&
+        outputLedger.bytes >= 0 &&
+        outputLedger.bytes <= outputLedger.cap),
+    "Fixed shared output ledger required",
+  );
+  assert(
+    observeRoot === undefined || typeof observeRoot === "function",
+    "Owned root observer required",
   );
   for (const key of Object.keys(env))
     assert(
@@ -2103,7 +2128,11 @@ export async function compileSlice(
     wakeStop();
   };
   const observer = new AbortController();
-  const streams = [];
+  const ownedObserverAbort =
+    observeRoot === undefined ? null : new AbortController();
+  let ownedObserver = null;
+  const streams = [],
+    outputGates = [];
   let stdout, stderr, child;
   try {
     for (const name of ["stdout", "stderr"]) {
@@ -2113,6 +2142,28 @@ export async function compileSlice(
       );
       stream.on("error", (error) => fail(error, "writer"));
       streams.push(stream);
+      if (outputLedger !== undefined) {
+        const gate = new Transform({
+          transform(chunk, encoding, done) {
+            try {
+              assert(
+                outputLedger.cap === 64 * 1024 ** 2 &&
+                  Number.isSafeInteger(outputLedger.bytes) &&
+                  outputLedger.bytes >= 0 &&
+                  chunk.length <= outputLedger.cap - outputLedger.bytes,
+                "Shared compile output bound",
+              );
+              outputLedger.bytes += chunk.length; // Precharge before forwarding; never refund.
+              done(null, chunk);
+            } catch (error) {
+              fail(error, "output-bound");
+              done(error);
+            }
+          },
+        });
+        gate.on("error", (error) => fail(error, "writer"));
+        outputGates.push(gate);
+      }
     }
     [stdout, stderr] = streams;
     child = spawn(executable, args, {
@@ -2123,10 +2174,12 @@ export async function compileSlice(
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
-    for (const stream of streams) stream.destroy();
+    for (const stream of [...streams, ...outputGates]) stream.destroy();
     throw error;
   }
-  const outputFinished = Promise.all(streams.map((stream) => finished(stream)));
+  const outputFinished = Promise.all(
+    [...streams, ...outputGates].map((stream) => finished(stream)),
+  );
   outputFinished.catch((error) => fail(error, "writer"));
   let rootExited = false,
     pipeClosed = false,
@@ -2149,8 +2202,13 @@ export async function compileSlice(
   child.once("error", (error) => fail(error, "spawn"));
   child.stdout.on("error", (error) => fail(error, "reader"));
   child.stderr.on("error", (error) => fail(error, "reader"));
-  child.stdout.pipe(stdout);
-  child.stderr.pipe(stderr);
+  if (outputLedger === undefined) {
+    child.stdout.pipe(stdout);
+    child.stderr.pipe(stderr);
+  } else {
+    child.stdout.pipe(outputGates[0]).pipe(stdout);
+    child.stderr.pipe(outputGates[1]).pipe(stderr);
+  }
   const snapshotSeen = (rows) => {
     snapshotPending = false;
     lastSnapshot = {
@@ -2170,6 +2228,28 @@ export async function compileSlice(
       "Exact live child ownership required",
     );
     observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);
+    if (observeRoot !== undefined) {
+      assert(
+        !ownedObserverAbort.signal.aborted,
+        "Owned root observation expired",
+      );
+      // Register independently of the monitor loop; this promise has a rejection
+      // owner immediately and is joined only under the original cleanup end.
+      ownedObserver = Promise.resolve().then(() =>
+        observeRoot(
+          Object.freeze({
+            pid: root.pid,
+            parent: root.parent,
+            start: root.start,
+          }),
+          Object.freeze({
+            signal: ownedObserverAbort.signal,
+            rootExited: () => rootExited,
+          }),
+        ),
+      );
+      ownedObserver.catch((error) => fail(error, "observer"));
+    }
   });
   initial.catch((error) => fail(error, "initial-snapshot"));
   const monitor = (async () => {
@@ -2231,6 +2311,7 @@ export async function compileSlice(
     );
     clearTimeout(timer);
     monitoring = false;
+    ownedObserverAbort?.abort();
     // Let an in-flight fixed ps operation close within its own2s bound;
     // cancelling it without a close witness would deny otherwise clean output.
     try {
@@ -2297,7 +2378,7 @@ export async function compileSlice(
     } catch (error) {
       fail(error, "stdio-close");
     }
-    if (pipeClosed) {
+    if (pipeClosed && outputLedger === undefined) {
       stdout.end();
       stderr.end();
     }
@@ -2306,6 +2387,13 @@ export async function compileSlice(
       outputsJoined = true;
     } catch (error) {
       fail(error, "writer-join");
+    }
+    if (ownedObserver !== null) {
+      try {
+        await compileWithin(() => ownedObserver, cleanupDeadline);
+      } catch (error) {
+        fail(error, "observer-join");
+      }
     }
     if (
       hasFailure &&
@@ -2393,11 +2481,12 @@ export async function compileSlice(
     clearTimeout(timer);
     monitoring = false;
     observer.abort();
+    ownedObserverAbort?.abort();
     // Never wait again with a new deadline or signal a possibly reused group.
     if (!outputsJoined) {
       child.stdout.destroy();
       child.stderr.destroy();
-      for (const stream of streams) stream.destroy();
+      for (const stream of [...streams, ...outputGates]) stream.destroy();
     }
     if (!pipeClosed) child.unref();
     checkpointLog(
@@ -2432,6 +2521,7 @@ export async function compileSlice(
     monitor.catch(() => {});
     initial.catch(() => {});
     outputFinished.catch(() => {});
+    ownedObserver?.catch(() => {});
   }
 }
 
