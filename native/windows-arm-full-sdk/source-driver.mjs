@@ -6,6 +6,7 @@ import {
   writeSync,
   closeSync,
   writeFileSync,
+  watch,
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -1374,7 +1375,169 @@ export async function appendGitPolicyDiagnostic(file, report, budget, limits) {
     }
   }
 }
-export function gitPolicyVerifier(root, file, budget, limits, verify) {
+// Nonrecursive, advisory notifications only. Names never become filesystem paths.
+export async function observeGitHome(root, budget) {
+  need(path.basename(root) === "cef-source-git-policy", "FULL_HOME_WATCH_ROOT");
+  const home = path.join(root, "home"),
+    anchors = [root, home];
+  const identities = async () => {
+    const rows = [];
+    for (const file of anchors) {
+      budget.remaining();
+      await physical(file);
+      const stat = await fs.lstat(file, { bigint: true });
+      const identity = gitDiagnosticIdentity(stat);
+      need(
+        stat.isDirectory() && !stat.isSymbolicLink() && identity !== null,
+        "FULL_HOME_WATCH_IDENTITY",
+      );
+      rows.push(identity);
+    }
+    return rows;
+  };
+  const before = await identities();
+  let armed = false,
+    closed = false,
+    closeRequested = false,
+    failed = false,
+    first,
+    notifications = 0,
+    overflow = false,
+    finishPromise;
+  const rows = [];
+  const fail = (error) => {
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  };
+  const watcher = watch(
+    home,
+    { recursive: false, persistent: false, encoding: "buffer" },
+    (kind, name) => {
+      if (!armed || closeRequested) return;
+      notifications = Math.min(17, notifications + 1);
+      if (rows.length === 16) {
+        overflow = true;
+        return;
+      }
+      const available = Buffer.isBuffer(name),
+        size = available ? name.length : null;
+      const bounded = available && size <= 1024;
+      rows.push({
+        kind: kind === "rename" || kind === "change" ? kind : "unknown",
+        nameBytes: bounded ? size : null,
+        nameOversized: available && size > 1024,
+        nameSha256: bounded ? sha(name) : null,
+        role: !bounded
+          ? "unavailable"
+          : name.equals(Buffer.from(".config"))
+            ? "config"
+            : name.equals(Buffer.from(".cache"))
+              ? "cache"
+              : "other",
+      });
+    },
+  );
+  let resolveClose;
+  const closure = new Promise((resolve) => {
+    resolveClose = resolve;
+  });
+  watcher.once("close", () => {
+    closed = true;
+    armed = false;
+    resolveClose();
+  });
+  watcher.on("error", () => fail(new Error("FULL_HOME_WATCH_ERROR")));
+  const snapshot = () => ({
+    kind: "windows-arm-source-home-events",
+    stage: "sync",
+    capturedEventsOnly: true,
+    observationComplete: false,
+    watcherClosed: closed,
+    observerError: failed,
+    notificationsSaturatedAt: 17,
+    notifications,
+    overflow,
+    omittedForReport: 0,
+    rows: rows.map((row) => ({ ...row })),
+  });
+  const finish = () =>
+    (finishPromise ??= (async () => {
+      closeRequested = true;
+      armed = false;
+      let timer;
+      try {
+        // Request closure even if the original operation deadline has expired.
+        try {
+          watcher.close();
+        } catch (error) {
+          fail(error);
+        }
+        const remaining = Math.floor(
+          Math.min(5000, budget.remaining() - 120000),
+        );
+        need(remaining > 0, "FULL_HOME_WATCH_CLOSE_UNKNOWN");
+        const timeout = new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("FULL_HOME_WATCH_CLOSE_UNKNOWN")),
+            remaining,
+          );
+        });
+        await Promise.race([closure, timeout]);
+        budget.remaining();
+        need(closed, "FULL_HOME_WATCH_CLOSE_UNKNOWN");
+      } catch (error) {
+        fail(error);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (failed) throw first;
+      return snapshot();
+    })());
+  try {
+    const after = await identities();
+    need(
+      before.every((identity, index) => identity === after[index]) && !closed,
+      "FULL_HOME_WATCH_CHANGED",
+    );
+    if (failed) throw first;
+    armed = true;
+    return { snapshot, finish };
+  } catch (error) {
+    try {
+      await finish();
+    } catch {
+      /* Startup's exact first fault wins. */
+    }
+    throw error;
+  }
+}
+function withGitHomeEvents(report, events) {
+  if (!events) return report;
+  const result = {
+    ...report,
+    homeEvents: { ...events, rows: [...events.rows] },
+  };
+  while (
+    Buffer.byteLength(
+      "SOURCE_GIT_DIAGNOSTIC:" + JSON.stringify(result) + "\n",
+    ) > 8192 &&
+    result.homeEvents.rows.length
+  ) {
+    result.homeEvents.rows.pop();
+    result.homeEvents.omittedForReport++;
+  }
+  return result; // The existing append bound still denies an oversized base report.
+}
+export function gitPolicyVerifier(
+  root,
+  file,
+  budget,
+  limits,
+  verify,
+  homeEvents,
+) {
   let baseline = null,
     baselineHome = null,
     reported = false;
@@ -1397,14 +1560,17 @@ export function gitPolicyVerifier(root, file, budget, limits, verify) {
           );
           await appendGitPolicyDiagnostic(
             file,
-            {
-              ...gitPolicyDiagnostic(error, baseline, current),
-              homeCandidates: gitPolicyDiagnostic(
-                null,
-                baselineHome?.rows,
-                home.rows,
-              ).rows,
-            },
+            withGitHomeEvents(
+              {
+                ...gitPolicyDiagnostic(error, baseline, current),
+                homeCandidates: gitPolicyDiagnostic(
+                  null,
+                  baselineHome?.rows,
+                  home.rows,
+                ).rows,
+              },
+              homeEvents?.(),
+            ),
             budget,
             limits,
           );
@@ -2107,14 +2273,16 @@ export async function main(argv = process.argv.slice(2)) {
     success = false,
     graph = null,
     generatedArguments = null;
+  let homeObservation = null;
   const verifyGitPolicy = gitPolicyVerifier(
     path.join(root, "cef-source-git-policy"),
     path.join(files.logs, "sync.stderr.log"),
     budget,
     limits,
     () => custom.sourceGitEnvironment(gitPolicy, env),
+    () => homeObservation?.snapshot(),
   );
-  const checked = async (action) => {
+  const checked = async (action, observeHome = false) => {
     await verifyHostClosure(p, budget, c.image);
     await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);
     if (bootstrap.witnessPin !== null)
@@ -2129,32 +2297,87 @@ export async function main(argv = process.argv.slice(2)) {
       );
     await verifyGitPolicy();
     let rejected = false,
-      value;
-    try {
-      value = await action();
-    } catch (error) {
-      rejected = true;
-      throw error;
-    } finally {
+      value,
+      primary,
+      postFailed = false,
+      postError,
+      observerFailed = false,
+      observerError,
+      reportFailed = false,
+      reportError;
+    homeObservation = null;
+    if (observeHome) {
       try {
-        await verifyHostClosure(p, budget, c.image);
-        await verifyBootstrap(root, p, bootstrap, budget, argv[2]);
-        await held(adapter.file, 4096, budget, adapter.pin);
-        for (const primary of HOOK_PRIMARY)
-          await held(
-            path.join(files.depot, primary.path),
-            primary.bytes,
-            budget,
-            primary,
-          );
-        await verifyGitPolicy();
+        homeObservation = await observeGitHome(
+          path.join(root, "cef-source-git-policy"),
+          budget,
+        );
       } catch (error) {
-        console.error("FULL_BOOTSTRAP_OR_SOURCE_POSTCHECK_FAILURE");
-        if (!rejected) throw error;
+        observerFailed = true;
+        observerError = error;
+        sourceReportingFailure = true;
       }
     }
+    if (!observerFailed) {
+      try {
+        value = await action();
+      } catch (error) {
+        rejected = true;
+        primary = error;
+      }
+    }
+    // Stop/join before postcheck so its first-fault report can include captured
+    // events. Observer/retention faults never skip the authoritative postcheck.
+    try {
+      await homeObservation?.finish();
+    } catch (error) {
+      observerFailed = true;
+      observerError = error;
+      sourceReportingFailure = true;
+    }
+    try {
+      await verifyHostClosure(p, budget, c.image);
+      await verifyBootstrap(root, p, bootstrap, budget, argv[2]);
+      await held(adapter.file, 4096, budget, adapter.pin);
+      for (const primary of HOOK_PRIMARY)
+        await held(
+          path.join(files.depot, primary.path),
+          primary.bytes,
+          budget,
+          primary,
+        );
+      await verifyGitPolicy();
+    } catch (error) {
+      postFailed = true;
+      postError = error;
+      console.error("FULL_BOOTSTRAP_OR_SOURCE_POSTCHECK_FAILURE");
+    }
+    if (homeObservation && !postFailed) {
+      try {
+        await appendGitPolicyDiagnostic(
+          path.join(files.logs, "sync.stderr.log"),
+          withGitHomeEvents(
+            {
+              kind: "windows-arm-source-home-observation",
+              capturedEventsOnly: true,
+            },
+            homeObservation.snapshot(),
+          ),
+          budget,
+          limits,
+        );
+      } catch (error) {
+        reportFailed = true;
+        reportError = error;
+        sourceReportingFailure = true;
+      }
+    }
+    if (rejected) throw primary;
+    if (postFailed) throw postError;
     if (syncCloseReportingFaults.has(value))
       throw syncCloseReportingFaults.get(value);
+    if (observerFailed) throw observerError;
+    if (reportFailed) throw reportError;
     return value;
   };
   try {
@@ -2174,17 +2397,19 @@ export async function main(argv = process.argv.slice(2)) {
         logs: files.logs,
       });
       stage = commands[0].role;
-      await checked(() =>
-        executeCommand(
-          commands[0],
-          commands,
-          env,
-          files,
-          budget,
-          limits,
-          false,
-          { value: bootstrap, contextSha: argv[2] },
-        ),
+      await checked(
+        () =>
+          executeCommand(
+            commands[0],
+            commands,
+            env,
+            files,
+            budget,
+            limits,
+            false,
+            { value: bootstrap, contextSha: argv[2] },
+          ),
+        true,
       );
     });
     await sourceStage(root, budget, "source-hooks-gn", 1800, async () => {

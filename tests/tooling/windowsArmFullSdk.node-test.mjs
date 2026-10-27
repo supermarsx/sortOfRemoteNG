@@ -40,6 +40,7 @@ import {
   deriveBootstrapSetup,
   bindBootstrapVector,
   gitPolicyMetadata,
+  observeGitHome,
   gitHomeCandidateMetadata,
   gitPolicyDiagnostic,
   appendGitPolicyDiagnostic,
@@ -1678,6 +1679,7 @@ async function actualCommandModel(overrides = {}, options = {}) {
     begin = text.indexOf("async function executeCommand("),
     end = text.indexOf("export async function main(", begin);
   assert(begin >= 0 && end > begin);
+  const sequence = [];
   const closed = [],
     opened = [],
     child = new EventEmitter();
@@ -1702,15 +1704,18 @@ async function actualCommandModel(overrides = {}, options = {}) {
     writeSync: (_fd, chunk) => chunk.length,
     spawn: () => {
       spawnCount++;
+      sequence.push("spawn");
       queueMicrotask(() => {
         if (Object.hasOwn(options, "primary"))
           child.stderr.emit("error", options.primary);
-        const close = () =>
-          child.emit(
+        const close = () => {
+          sequence.push("child-close");
+          return child.emit(
             "close",
             options.code === undefined ? 0 : options.code,
             options.signal === undefined ? null : options.signal,
           );
+        };
         if (options.delayedClose) setImmediate(close);
         else close();
       });
@@ -1733,6 +1738,27 @@ async function actualCommandModel(overrides = {}, options = {}) {
     nextStage = false,
     verification = 0;
   Object.assign(scope, {
+    limits,
+    homeObservation: null,
+    observeGitHome: async () => {
+      sequence.push("watch-start");
+      if (Object.hasOwn(options, "watchStartFault"))
+        throw options.watchStartFault;
+      if (options.observation) return options.observation;
+      return {
+        snapshot: () => ({ rows: [], watcherClosed: !options.watchCloseFault }),
+        finish: async () => {
+          sequence.push("watch-close-join");
+          if (Object.hasOwn(options, "watchCloseFault"))
+            throw options.watchCloseFault;
+        },
+      };
+    },
+    withGitHomeEvents: (report) => report,
+    appendGitPolicyDiagnostic: async () => {
+      if (Object.hasOwn(options, "watchReportFault"))
+        throw options.watchReportFault;
+    },
     verifyHostClosure: async () => {},
     p: {},
     budget: {},
@@ -1744,14 +1770,15 @@ async function actualCommandModel(overrides = {}, options = {}) {
     argv: [],
     adapter: { file: "fixture", pin: {} },
     HOOK_PRIMARY: [],
-    files: {},
+    files: { logs: "owned" },
     verifyGitPolicy: async () => {
+      sequence.push(verification === 0 ? "policy-before" : "policy-after");
       if (++verification === 2 && Object.hasOwn(options, "policyFault"))
         throw options.policyFault;
     },
     console: { error() {} },
   });
-  const checkedStart = text.indexOf("  const checked = async (action) => {"),
+  const checkedStart = text.indexOf("  const checked = async (action,"),
     checkedEnd = text.indexOf("\n  try {\n    await sourceStage", checkedStart),
     checked = vm.runInContext(
       `(async()=>{${text.slice(checkedStart, checkedEnd)};return checked})()`,
@@ -1768,7 +1795,11 @@ async function actualCommandModel(overrides = {}, options = {}) {
         limits,
         false,
       );
-    value = options.checked ? await (await checked)(action) : await action();
+    value = options.checked
+      ? await (
+          await checked
+        )(action, options.observeHome ?? false)
+      : await action();
     nextStage = true;
   } catch (value) {
     failed = true;
@@ -1787,6 +1818,7 @@ async function actualCommandModel(overrides = {}, options = {}) {
     value,
     nextStage,
     verification,
+    sequence,
   };
 }
 
@@ -2016,6 +2048,676 @@ test("actual checked boundary prioritizes strict postcheck over optional sync re
   assert.equal(good.failed, false);
   assert.equal(good.nextStage, true);
   assert.equal(good.verification, 2);
+});
+
+test("actual checked HOME lifecycle faults never skip strict postcheck or replace original/policy errors", async () => {
+  const observer = new Error("owned observer fault"),
+    report = new Error("owned append fault"),
+    policy = new Error("owned policy fault");
+  for (const primary of [
+    new Error("owned child fault"),
+    null,
+    false,
+    0,
+    undefined,
+  ]) {
+    const result = await actualCommandModel(
+      {},
+      {
+        role: "sync",
+        checked: true,
+        observeHome: true,
+        primary,
+        watchCloseFault: observer,
+        watchReportFault: report,
+        policyFault: policy,
+      },
+    );
+    assert.equal(result.failed, true);
+    assert.equal(result.error, primary);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+  }
+  for (const policyFault of [policy, null, 0, undefined]) {
+    const result = await actualCommandModel(
+      {},
+      {
+        role: "sync",
+        checked: true,
+        observeHome: true,
+        watchCloseFault: observer,
+        policyFault,
+      },
+    );
+    assert.equal(result.error, policyFault);
+    assert.equal(result.failed, true);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+  }
+  const unknown = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchCloseFault: observer,
+      watchReportFault: report,
+    },
+  );
+  assert.equal(unknown.error, observer);
+  assert.equal(unknown.nextStage, false);
+  const reportOnly = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchReportFault: report,
+    },
+  );
+  assert.equal(reportOnly.error, report);
+  assert.equal(reportOnly.nextStage, false);
+  const start = await actualCommandModel(
+    {},
+    { role: "sync", checked: true, observeHome: true, watchStartFault: null },
+  );
+  assert.equal(start.failed, true);
+  assert.equal(start.error, null);
+  assert.equal(start.spawnCount, 0);
+  assert.equal(start.verification, 2);
+  const startAndPolicy = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchStartFault: null,
+      policyFault: policy,
+    },
+  );
+  assert.equal(startAndPolicy.error, policy);
+  assert.equal(startAndPolicy.spawnCount, 0);
+  assert.equal(startAndPolicy.verification, 2);
+  assert.equal(startAndPolicy.nextStage, false);
+  const both = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchCloseFault: observer,
+      policyFault: policy,
+    },
+  );
+  assert.equal(both.error, policy);
+  assert.equal(both.nextStage, false);
+  const reportFirst = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchCloseFault: observer,
+    },
+  );
+  assert.equal(reportFirst.error, report);
+  assert.equal(reportFirst.nextStage, false);
+  const good = await actualCommandModel(
+    {},
+    { role: "sync", checked: true, observeHome: true },
+  );
+  assert.equal(good.failed, false);
+  assert.equal(good.nextStage, true);
+  assert.deepEqual(good.sequence, [
+    "policy-before",
+    "watch-start",
+    "spawn",
+    "child-close",
+    "watch-close-join",
+    "policy-after",
+  ]);
+});
+
+async function actualHomeWatchModel(options = {}) {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("export async function observeGitHome("),
+    end = text.indexOf("function withGitHomeEvents(", begin);
+  assert(begin >= 0 && end > begin);
+  let callback,
+    reads = 0,
+    watches = 0,
+    closes = 0;
+  const watcher = new EventEmitter();
+  watcher.close = () => {
+    closes++;
+    if (!options.stallClose) queueMicrotask(() => watcher.emit("close"));
+    if (Object.hasOwn(options, "closeFault")) throw options.closeFault;
+  };
+  const stat = (name) => {
+    reads++;
+    const value = {
+      dev: 1n,
+      ino: name.endsWith("home") ? 2n : 1n,
+      birthtimeNs: 1n,
+      mode: 16877n,
+      nlink: 1n,
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+    };
+    if (options.stat) options.stat(value, reads);
+    return value;
+  };
+  const actual = vm.runInNewContext(
+    "(" + text.slice(begin, end).replace("export ", "") + ")",
+    {
+      path,
+      Buffer,
+      Promise,
+      setTimeout: options.setTimeout ?? setTimeout,
+      clearTimeout: options.clearTimeout ?? clearTimeout,
+      need: (ok, code) => assert(ok, code),
+      sha: (raw) => createHash("sha256").update(raw).digest("hex"),
+      gitDiagnosticIdentity: (stat) => {
+        const fields = ["dev", "ino", "birthtimeNs", "mode", "nlink"];
+        return fields.every((key) => typeof stat[key] === "bigint") &&
+          stat.nlink > 0n &&
+          stat.birthtimeNs >= 0n
+          ? fields.map((key) => stat[key].toString()).join(":")
+          : null;
+      },
+      fs: { lstat: async (name) => stat(name) },
+      physical: async () => {
+        if (Object.hasOwn(options, "physicalFault"))
+          throw options.physicalFault;
+      },
+      watch: (_home, watchOptions, receive) => {
+        watches++;
+        callback = receive;
+        assert.deepEqual(JSON.parse(JSON.stringify(watchOptions)), {
+          recursive: false,
+          persistent: false,
+          encoding: "buffer",
+        });
+        receive("rename", Buffer.from("unarmed-private-name"));
+        return watcher;
+      },
+    },
+  );
+  let observation,
+    error,
+    failed = false;
+  try {
+    observation = await actual(
+      path.join(
+        path.parse(process.cwd()).root,
+        "owned",
+        "cef-source-git-policy",
+      ),
+      {
+        remaining: options.remaining ?? (() => 500000),
+      },
+    );
+  } catch (value) {
+    failed = true;
+    error = value;
+  }
+  return {
+    observation,
+    error,
+    failed,
+    watcher,
+    event: (...args) => callback(...args),
+    reads: () => reads,
+    watches: () => watches,
+    closes: () => closes,
+  };
+}
+
+test("actual HOME watch bounds hashes and performs no per-event filesystem queries", async () => {
+  const zero = await actualHomeWatchModel();
+  const empty = await zero.observation.finish();
+  assert.equal(empty.notifications, 0);
+  assert.equal(empty.observationComplete, false);
+  assert.equal(empty.watcherClosed, true);
+  const model = await actualHomeWatchModel();
+  assert.equal(model.failed, false);
+  assert.equal(model.reads(), 4);
+  assert.equal(model.observation.snapshot().rows.length, 0);
+  const events = [
+    ["rename", Buffer.from(".config")],
+    ["change", Buffer.from("private-unknown-name")],
+    ["arbitrary-private-kind", undefined],
+    ["rename", Buffer.alloc(1025, 97)],
+  ];
+  for (const args of events) model.event(...args);
+  for (let i = 0; i < 30; i++)
+    model.event("change", Buffer.from("private-unknown-name"));
+  assert.equal(model.reads(), 4);
+  const snapshot = model.observation.snapshot();
+  assert.equal(snapshot.rows.length, 16);
+  assert.equal(snapshot.notifications, 17);
+  assert.equal(snapshot.overflow, true);
+  assert.equal(snapshot.observationComplete, false);
+  assert.equal(snapshot.rows[0].role, "config");
+  assert.equal(
+    snapshot.rows[1].nameSha256,
+    createHash("sha256").update("private-unknown-name").digest("hex"),
+  );
+  assert.equal(snapshot.rows[2].kind, "unknown");
+  assert.equal(snapshot.rows[2].nameSha256, null);
+  assert.equal(snapshot.rows[3].nameBytes, null);
+  assert.equal(snapshot.rows[3].nameOversized, true);
+  assert.equal(snapshot.rows[3].nameSha256, null);
+  assert(!JSON.stringify(snapshot).includes("private-unknown"));
+  const done = await model.observation.finish();
+  assert.equal(done.watcherClosed, true);
+  model.event("rename", Buffer.from("late-private-name"));
+  assert.equal(model.observation.snapshot().rows.length, 16);
+  await model.observation.finish();
+  assert.equal(model.closes(), 1);
+});
+
+test("actual HOME watch rejects start aliases/replacement and joins or denies original-budget close", async () => {
+  const alias = await actualHomeWatchModel({ physicalFault: null });
+  assert.equal(alias.failed, true);
+  assert.equal(alias.error, null);
+  assert.equal(alias.watches(), 0);
+  for (const field of ["ino", "birthtimeNs", "nlink", "mode"]) {
+    const model = await actualHomeWatchModel({
+      stat: (stat, count) => {
+        if (count === 4) stat[field]++;
+      },
+    });
+    assert.equal(model.failed, true);
+    assert.match(model.error.message, /FULL_HOME_WATCH_CHANGED/);
+    assert.equal(model.closes(), 1);
+  }
+  const unknown = await actualHomeWatchModel({
+    stat: (stat) => {
+      stat.birthtimeNs = undefined;
+    },
+  });
+  assert.equal(unknown.failed, true);
+  assert.equal(unknown.watches(), 0);
+  const linked = await actualHomeWatchModel({
+    stat: (stat) => {
+      stat.isSymbolicLink = () => true;
+    },
+  });
+  assert.equal(linked.failed, true);
+  assert.equal(linked.watches(), 0);
+  const delayed = await actualHomeWatchModel({ stallClose: true });
+  let settled = false;
+  const pending = delayed.observation.finish().then((value) => {
+    settled = true;
+    return value;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  assert.equal(delayed.observation.snapshot().watcherClosed, false);
+  delayed.watcher.emit("close");
+  assert.equal((await pending).watcherClosed, true);
+  const model = await actualHomeWatchModel({
+    stallClose: true,
+    remaining: () => 120005,
+  });
+  await assert.rejects(
+    model.observation.finish(),
+    /FULL_HOME_WATCH_CLOSE_UNKNOWN/,
+  );
+  assert.equal(model.observation.snapshot().watcherClosed, false);
+  assert.equal(model.closes(), 1);
+  model.watcher.emit("close");
+  const first = await actualHomeWatchModel({
+    stallClose: true,
+    remaining: () => 120005,
+  });
+  first.watcher.emit("error", new Error("private raw message"));
+  await assert.rejects(first.observation.finish(), /FULL_HOME_WATCH_ERROR/);
+  assert.equal(first.observation.snapshot().watcherClosed, false);
+  first.watcher.emit("close");
+  const closeOnly = await actualHomeWatchModel({ closeFault: null });
+  let caught = false;
+  try {
+    await closeOnly.observation.finish();
+  } catch (error) {
+    caught = true;
+    assert.equal(error, null);
+  }
+  assert.equal(caught, true);
+  assert.equal(closeOnly.observation.snapshot().watcherClosed, true);
+});
+
+test("actual HOME close join is capped at five seconds, clipped to original reserve, and clears early-close timers", async () => {
+  for (const [remaining, expected] of [
+    [9000000, 5000],
+    [120004.9, 4],
+  ]) {
+    let callback, delay, cleared;
+    const marker = {};
+    const model = await actualHomeWatchModel({
+      stallClose: true,
+      remaining: () => remaining,
+      setTimeout: (fn, ms) => {
+        callback = fn;
+        delay = ms;
+        return marker;
+      },
+      clearTimeout: (timer) => {
+        cleared = timer;
+      },
+    });
+    const pending = model.observation.finish();
+    assert.equal(delay, expected);
+    assert.equal(model.closes(), 1);
+    assert.equal(model.observation.snapshot().watcherClosed, false);
+    callback();
+    await assert.rejects(pending, /FULL_HOME_WATCH_CLOSE_UNKNOWN/);
+    assert.equal(cleared, marker);
+    assert.equal(model.observation.snapshot().watcherClosed, false);
+    await assert.rejects(
+      model.observation.finish(),
+      /FULL_HOME_WATCH_CLOSE_UNKNOWN/,
+    );
+    assert.equal(model.closes(), 1);
+    model.watcher.emit("close");
+  }
+  const unjoined = await actualHomeWatchModel({
+    stallClose: true,
+    remaining: () => 120005,
+  });
+  const denied = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      observation: unjoined.observation,
+    },
+  );
+  assert.equal(denied.failed, true);
+  assert.match(denied.error.message, /FULL_HOME_WATCH_CLOSE_UNKNOWN/);
+  assert.equal(denied.nextStage, false);
+  assert.equal(denied.verification, 2);
+  const policyWins = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      observation: unjoined.observation,
+      policyFault: null,
+    },
+  );
+  assert.equal(policyWins.failed, true);
+  assert.equal(policyWins.error, null);
+  assert.equal(policyWins.nextStage, false);
+  assert.equal(policyWins.verification, 2);
+  unjoined.watcher.emit("close");
+  const cleared = [],
+    marker = {};
+  let delay;
+  const early = await actualHomeWatchModel({
+    setTimeout: (_fn, ms) => {
+      delay = ms;
+      return marker;
+    },
+    clearTimeout: (timer) => cleared.push(timer),
+  });
+  assert.equal((await early.observation.finish()).watcherClosed, true);
+  assert.equal(delay, 5000);
+  assert.deepEqual(cleared, [marker]);
+  let reads = 0,
+    timers = 0;
+  const expired = await actualHomeWatchModel({
+    remaining: () => (++reads <= 4 ? 500000 : 119999),
+    setTimeout: () => {
+      timers++;
+      return {};
+    },
+    clearTimeout() {},
+  });
+  await assert.rejects(
+    expired.observation.finish(),
+    /FULL_HOME_WATCH_CLOSE_UNKNOWN/,
+  );
+  assert.equal(expired.closes(), 1);
+  assert.equal(timers, 0);
+  assert.equal(expired.observation.snapshot().watcherClosed, true);
+});
+
+function waitForOwnedHomeNotification(observation, timers = globalThis) {
+  return new Promise((resolve, reject) => {
+    let settled = false,
+      timer,
+      immediate;
+    const finish = (failed, error) => {
+      if (settled) return;
+      settled = true;
+      timers.clearTimeout(timer);
+      timers.clearImmediate(immediate);
+      if (failed) reject(error);
+      else resolve();
+    };
+    const check = () => {
+      immediate = undefined;
+      if (settled) return;
+      try {
+        if (observation.snapshot().notifications > 0) finish(false);
+        else immediate = timers.setImmediate(check);
+      } catch (error) {
+        finish(true, error);
+      }
+    };
+    timer = timers.setTimeout(
+      () => finish(true, new Error("owned watch notification unavailable")),
+      2000,
+    );
+    check();
+  });
+}
+
+test("owned HOME fixture notification wait cancels pending polling on success, timeout and exact rejection", async () => {
+  for (const mode of ["success", "timeout", "rejection"]) {
+    let timeout,
+      poll,
+      reads = 0,
+      id = 0;
+    const pending = new Map(),
+      cleared = [],
+      timers = {
+        setTimeout(fn, ms) {
+          assert.equal(ms, 2000);
+          timeout = fn;
+          return "timeout";
+        },
+        clearTimeout(timer) {
+          cleared.push(timer);
+        },
+        setImmediate(fn) {
+          poll = fn;
+          pending.set(++id, fn);
+          return id;
+        },
+        clearImmediate(handle) {
+          pending.delete(handle);
+        },
+      };
+    let notifications = 0,
+      rejectRead = false;
+    const observation = {
+      snapshot() {
+        reads++;
+        if (rejectRead) throw null;
+        return { notifications };
+      },
+    };
+    const result = waitForOwnedHomeNotification(observation, timers);
+    assert.equal(pending.size, 1);
+    const latePoll = poll;
+    if (mode === "timeout") {
+      timeout();
+      await assert.rejects(result, /notification unavailable/);
+    } else {
+      pending.clear();
+      if (mode === "success") notifications = 1;
+      else rejectRead = true;
+      poll();
+      if (mode === "success") await result;
+      else {
+        let caught = false;
+        try {
+          await result;
+        } catch (error) {
+          caught = true;
+          assert.equal(error, null);
+        }
+        assert.equal(caught, true);
+      }
+    }
+    assert.equal(pending.size, 0);
+    assert.deepEqual(cleared, ["timeout"]);
+    const count = reads;
+    latePoll();
+    timeout();
+    assert.equal(reads, count);
+    assert.equal(pending.size, 0);
+  }
+});
+
+test("actual HOME report trimming preserves all endpoint facts and the original append bound", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("function withGitHomeEvents("),
+    end = text.indexOf("export function gitPolicyVerifier(", begin);
+  const actual = vm.runInNewContext("(" + text.slice(begin, end) + ")", {
+    Buffer,
+    JSON,
+  });
+  const base = { kind: "fixture", endpointFacts: "x".repeat(7000) },
+    events = {
+      rows: Array.from({ length: 16 }, () => ({
+        nameSha256: "a".repeat(64),
+        kind: "change",
+      })),
+      omittedForReport: 0,
+      watcherClosed: true,
+      observationComplete: false,
+    };
+  const result = actual(base, events);
+  assert.equal(result.endpointFacts, base.endpointFacts);
+  assert(
+    Buffer.byteLength(
+      "SOURCE_GIT_DIAGNOSTIC:" + JSON.stringify(result) + "\n",
+    ) <= 8192,
+  );
+  assert(result.homeEvents.rows.length < 16);
+  assert(result.homeEvents.omittedForReport > 0);
+  assert.equal(events.rows.length, 16);
+  assert.equal(actual(base, null), base);
+  const oversized = actual({ endpointFacts: "x".repeat(8192) }, events);
+  assert.equal(oversized.endpointFacts.length, 8192);
+  assert.equal(oversized.homeEvents.rows.length, 0);
+  assert(
+    Buffer.byteLength(
+      "SOURCE_GIT_DIAGNOSTIC:" + JSON.stringify(oversized) + "\n",
+    ) > 8192,
+  );
+  let calls = 0;
+  const expired = await actualHomeWatchModel({
+    remaining: () => {
+      if (++calls >= 5) throw null;
+      return 500000;
+    },
+  });
+  let caught = false;
+  try {
+    await expired.observation.finish();
+  } catch (error) {
+    caught = true;
+    assert.equal(error, null);
+  }
+  assert.equal(caught, true);
+  assert.equal(expired.closes(), 1);
+});
+
+test("actual owned HOME create-delete emits hash-only notifications while strict policy still denies", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-event-proof-"),
+  );
+  let observation;
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      policy = await prepareSourceGitIsolation(root),
+      budget = { remaining: () => 500000 },
+      file = path.join(root, "home", "owned-transient-public-probe");
+    const log = path.join(directory, "sync.stderr.log"),
+      limits = { bytes: 0, cap: 64 * 1024 ** 2 };
+    await fs.writeFile(log, "");
+    const verify = gitPolicyVerifier(
+      root,
+      log,
+      budget,
+      limits,
+      () => sourceGitEnvironment(policy, {}),
+      () => observation?.snapshot(),
+    );
+    await verify();
+    observation = await observeGitHome(root, budget);
+    await assert.rejects(fs.lstat(file), { code: "ENOENT" });
+    await fs.writeFile(file, "owned benign fixture");
+    await fs.unlink(file);
+    await assert.rejects(fs.lstat(file), { code: "ENOENT" });
+    await waitForOwnedHomeNotification(observation);
+    const facts = await observation.finish();
+    assert.equal(facts.watcherClosed, true);
+    assert.equal(facts.observationComplete, false);
+    assert(
+      facts.rows.some(
+        (row) =>
+          row.nameSha256 ===
+          createHash("sha256")
+            .update("owned-transient-public-probe")
+            .digest("hex"),
+      ),
+    );
+    assert(!JSON.stringify(facts).includes("owned-transient-public-probe"));
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    const retained = await fs.readFile(log, "utf8");
+    assert(Buffer.byteLength(retained) <= 8192);
+    const report = JSON.parse(retained.slice("SOURCE_GIT_DIAGNOSTIC:".length));
+    assert.equal(report.rows.length, 6);
+    assert.equal(report.homeCandidates.length, 6);
+    assert.equal(report.homeEvents.watcherClosed, true);
+    assert.equal(report.homeEvents.observationComplete, false);
+    assert(report.homeEvents.rows.length > 0);
+    console.info(
+      "OWNED_HOME_EVENT_PROOF:" +
+        JSON.stringify({
+          platform: process.platform,
+          endpointAbsentBeforeAfter: true,
+          watcherClosed: facts.watcherClosed,
+          notifications: facts.notifications,
+          observationComplete: false,
+          strictPolicyDenied: true,
+        }),
+    );
+  } finally {
+    if (observation)
+      try {
+        await observation.finish();
+      } catch {
+        /* retained primary */
+      }
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("actual command body closes partial startup resources and preserves exact primary through close faults", async () => {
@@ -3038,12 +3740,13 @@ test("GitPolicy first errors including falsy values survive append/close/deadlin
     }
     fs.open = open;
     const body = await read(prefix + "source-driver.mjs"),
-      start = body.indexOf("  const checked = async (action) => {"),
+      start = body.indexOf("  const checked = async (action,"),
       end = body.indexOf("\n  try {\n    await sourceStage", start);
     const checked = vm.runInNewContext(
       `(async()=>{${body.slice(start, end)};return checked})()`,
       {
         syncCloseReportingFaults: new WeakMap(),
+        homeObservation: null,
         verifyHostClosure: async () => {},
         p: {},
         budget: {},
