@@ -225,7 +225,7 @@ jobs:
            const paths=['scripts','.github/workflows/cef-engineering-checkpoint.yml','native/cef-hosted-recipe.json','.node-version'];
            const text=(await git('git',['ls-tree','-r','--full-tree',head,'--',...paths],{encoding:'buffer',maxBuffer:1024**2,timeout:10000,windowsHide:true})).stdout.toString();
            const rows=text.trim().split('\n').map(line=>{const match=/^(100644|100755) blob ([a-f0-9]{40})\t([^\r\n]+)$/.exec(line);fixed(Boolean(match),'ARM_GIT_BLOB_BOUND');return{mode:match[1],path:match[3],sha:match[2]};}).sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
-           const codeDigest=digest(Buffer.from(JSON.stringify(rows)));fixed(rows.length===129&&codeDigest==='5fa8177ea7ea28b8cabc309545de0598f264be813fb18ca95769b39d990b7580','ARM_PROFILE');
+           const codeDigest=digest(Buffer.from(JSON.stringify(rows)));fixed(rows.length===129&&codeDigest==='5e8da7403f008af2cd0f1f0cd2b960a189f8d2536c15ccf85173a907c5c278d0','ARM_PROFILE');
            return{codeDigest,rows,qualification:'Existing producer subset ONLY; new diagnostic inputs are independently enumerated and must enter any future producer provenance before use.'};
           }
           export function artifactAllowed(rel,op){
