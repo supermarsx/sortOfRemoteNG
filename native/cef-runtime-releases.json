@@ -5,6 +5,10 @@
     "x86_64-pc-windows-msvc": {
       "descriptorUrl": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/cef-patched-bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629-x86_64-pc-windows-msvc/runtime.json",
       "descriptorSha256": "758a4d5fb7e3de8f84c3f22b4015113e3231843235bc2c921efd6b2265990254"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "descriptorUrl": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/cef-patched-8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279-x86_64-unknown-linux-gnu/runtime.json",
+      "descriptorSha256": "5f8c8dd960303b1046d4669b89f4a10c47dd01e70f639a4d6d52ca2c601a7db3"
     }
   }
 }
