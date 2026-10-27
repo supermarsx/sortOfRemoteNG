@@ -45,6 +45,14 @@ const profileRaw = await fs.readFile(path.join(root, prefix, "profile.json"));
 const profile = JSON.parse(profileRaw);
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 
+// Exact c101 Hook.run source, not a rewritten condition model.
+const PINNED_HOOK_RUN = {
+  gitBlob: "c9bf69dac6b34a3c1e7e6ff49817832905c0bede",
+  sha256: "7260c4e825dcd1a3a457625f25b04e7e20aa0b25c2685ce42766a4a5a38493c5",
+  source:
+    'def run(self):\n        """Executes the hook\'s command (provided the condition is met)."""\n        if self._condition and not gclient_eval.EvaluateCondition(\n            self._condition, self._variables\n        ):\n            return\n\n        cmd = list(self._action)\n\n        if cmd[0] == "vpython3" and _detect_host_os() == "win":\n            cmd[0] += ".bat"\n\n        exit_code = 2\n        try:\n            start_time = time.time()\n            gclient_utils.CheckCallAndFilter(\n                cmd,\n                cwd=self.effective_cwd,\n                print_stdout=True,\n                show_header=True,\n                always_show_header=self._verbose,\n            )\n            exit_code = 0\n        except (gclient_utils.Error, subprocess2.CalledProcessError) as e:\n            # Use a discrete exit status code of 2 to indicate that a hook\n            # action failed.  Users of this script may wish to treat hook action\n            # failures differently from VC failures.\n            print("Error: %s" % str(e), file=sys.stderr)\n            sys.exit(exit_code)\n        finally:\n            elapsed_time = time.time() - start_time\n            metrics.collector.add_repeated(\n                "hooks",\n                {\n                    "action": gclient_utils.CommandToStr(cmd),\n                    "name": self._name,\n                    "cwd": os.path.relpath(\n                        os.path.normpath(self.effective_cwd), self._cwd_base\n                    ),\n                    "condition": self._condition,\n                    "execution_time": elapsed_time,\n                    "exit_code": exit_code,\n                },\n            )\n            if elapsed_time > 10:\n                print(\n                    "Hook \'%s\' took %.2f secs"\n                    % (gclient_utils.CommandToStr(cmd), elapsed_time)\n                )',
+};
+
 function syntheticSourcePins() {
   const p = structuredClone(profile);
   p.sourceGn.hostTools = Object.fromEntries(
@@ -155,10 +163,11 @@ test("exclusive actual Python3 adapter preserves Windows owned argv and rejects 
     await fs.mkdir(depot);
     await fs.writeFile(
       path.join(depot, "gclient.py"),
-      `import subprocess
+      `import subprocess,types
+gclient_utils=types.SimpleNamespace(CheckCallAndFilter=lambda command,*args,**kwargs:subprocess.run(command,shell=True,check=True))
 class Hook:
  def __init__(self): self._action=('python3','-c','import sys,json;print(json.dumps(sys.argv[1:]))','two words','a+b@c','')
- def run(self): subprocess.run(self._action,shell=True,check=True)
+ def run(self): gclient_utils.CheckCallAndFilter(list(self._action))
 def main(args):
  assert args==['runhooks','--jobs','2']
  Hook().run()
@@ -198,13 +207,17 @@ test("actual gclient hook wrapper binds absolute adapter and preserves original 
     const adapter = path.join(directory, "python3.bat"),
       raw = Buffer.from("BENIGN ADAPTER DATA");
     await fs.writeFile(adapter, raw);
-    const fixture = `import os
+    const fixture = `import os,types
+def dispatched(command,*args,**kwargs):
+ assert command==[os.path.join(os.path.dirname(__file__),'python3.bat'),'src/test.py','two words']
+ print('FIXED_ADAPTER_DISPATCH')
+gclient_utils=types.SimpleNamespace(CheckCallAndFilter=dispatched)
 class Hook:
  def __init__(self): self._action=('python3','src/test.py','two words'); self.condition='checkout_win'
  def run(self):
   assert self.condition=='checkout_win'
-  assert self._action==(os.path.join(os.path.dirname(__file__),'python3.bat'),'src/test.py','two words')
-  print('FIXED_ADAPTER_DISPATCH')
+  assert self._action==('python3','src/test.py','two words')
+  gclient_utils.CheckCallAndFilter(list(self._action))
 def main(args):
  assert args==['runhooks','--jobs','2']
  hook=Hook(); hook.run()
@@ -230,6 +243,131 @@ def main(args):
         error.stderr.includes("FULL_PYTHON_ADAPTER_PIN") &&
         !error.stdout.includes("FIXED_ADAPTER_DISPATCH"),
     );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("genuine pinned Hook.run controls false, true, thread, nested and first-error dispatch without condition pre-evaluation", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  assert.equal(
+    sha(Buffer.from(PINNED_HOOK_RUN.source)),
+    PINNED_HOOK_RUN.sha256,
+  );
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-real-hook-run-"),
+  );
+  try {
+    const adapter = path.join(directory, "python3.bat"),
+      raw = Buffer.from("INERT HASH-BOUND ADAPTER DATA");
+    await fs.writeFile(adapter, raw);
+    const fixture = `import sys,os,time,types,threading,textwrap,hashlib,json
+pinned=${JSON.stringify(PINNED_HOOK_RUN.source)}
+assert hashlib.sha256(pinned.encode()).hexdigest()==${JSON.stringify(PINNED_HOOK_RUN.sha256)}
+events=[];evaluations=[];reports=[];entered=threading.Event();released=threading.Event();primary=RuntimeError('OWNED_PRIMARY')
+class GclientError(Exception): pass
+class CalledProcessError(Exception): pass
+def evaluated(condition,variables):
+ evaluations.append((condition,variables))
+ if 'fail' in variables: raise variables['fail']
+ return variables['allow']
+def dispatched(command,*args,**kwargs):
+ events.append((threading.current_thread().name,command,kwargs))
+ if 'throw-primary' in command: raise primary
+ if 'nested' in command:
+  Hook(['unsupported','%PATH%'],'false-inner',False).run()
+  try: gclient_utils.CheckCallAndFilter(['unsupported-in-outer'])
+  except RuntimeError as error: assert str(error)=='FULL_HOOK_ENTRY'
+  else: raise AssertionError('outer scope lost after nested false hook')
+ if 'wait-in-thread' in command:
+  entered.set()
+  assert released.wait(2),'controlled release timeout'
+ return 'original-dispatch-result'
+gclient_utils=types.SimpleNamespace(CheckCallAndFilter=dispatched,Error=GclientError,CommandToStr=lambda command:' '.join(command))
+gclient_eval=types.SimpleNamespace(EvaluateCondition=evaluated)
+subprocess2=types.SimpleNamespace(CalledProcessError=CalledProcessError)
+metrics=types.SimpleNamespace(collector=types.SimpleNamespace(add_repeated=lambda kind,value:reports.append(value)))
+_detect_host_os=lambda:'win'
+exec('class Hook:\\n'+textwrap.indent(pinned,' '),globals())
+def initialize(self,action,condition=None,allow=True):
+ self._action=tuple(action);self._condition=condition;self._variables={'allow':allow};self._name='fixture';self._verbose=False;self._cwd_base=os.getcwd()
+Hook.__init__=initialize
+Hook.effective_cwd=property(lambda self:self._cwd_base)
+def main(args):
+ assert args==['runhooks','--jobs','2']
+ outside=['outside-plumbing']
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ assert events[-1][1] is outside
+ start=len(events);before=len(evaluations);adapter=os.path.join(os.path.dirname(__file__),'python3.bat')
+ os.rename(adapter,adapter+'.hidden')
+ try:
+  for action in (['unsupported','%PATH%'],['python3','bad&argument']):
+   assert Hook(action,'false-condition',False).run() is None
+ finally: os.rename(adapter+'.hidden',adapter)
+ assert len(events)==start and len(evaluations)==before+2
+ for action,code in ((['unsupported','safe'],'FULL_HOOK_ENTRY'),(['python3','bad&argument'],'FULL_HOOK_SHELL_ARGUMENT')):
+  before=len(evaluations)
+  try: Hook(action,'true-condition',True).run()
+  except RuntimeError as error: assert str(error)==code
+  else: raise AssertionError('executing action admitted')
+  assert len(evaluations)==before+1
+ assert len(events)==start
+ condition_primary=RuntimeError('OWNED_CONDITION_PRIMARY')
+ hook=Hook(['unsupported'],'condition-error');hook._variables['fail']=condition_primary
+ before=len(evaluations);before_reports=len(reports)
+ try: hook.run()
+ except RuntimeError as error: assert error is condition_primary
+ else: raise AssertionError('condition primary lost')
+ assert len(evaluations)==before+1 and evaluations[-1][1] is hook._variables and len(reports)==before_reports
+ assert len(events)==start
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ before=len(evaluations);hook=Hook(['python3','owned.py','two words'])
+ assert hook.run() is None and len(evaluations)==before
+ assert hook._action==('python3','owned.py','two words')
+ assert events[-1][1]==[adapter,'owned.py','two words']
+ assert events[-1][2]==dict(cwd=os.getcwd(),print_stdout=True,show_header=True,always_show_header=False)
+ hook=Hook(['vpython3','owned.py']);hook.run()
+ assert events[-1][1]==[os.path.join(os.path.dirname(__file__),'vpython3.bat'),'owned.py']
+ assert hook._action==('vpython3','owned.py')
+ try: Hook(['python3','throw-primary']).run()
+ except RuntimeError as error: assert error is primary
+ else: raise AssertionError('primary lost')
+ assert reports[-1]['exit_code']==2
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ Hook(['python3','nested']).run()
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ errors=[]
+ def worker():
+  try: Hook(['python3','wait-in-thread']).run()
+  except BaseException as error: errors.append(error)
+ thread=threading.Thread(target=worker,name='owned-hook-thread');thread.start()
+ try:
+  assert entered.wait(2),'controlled entry timeout'
+  assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ finally: released.set();thread.join(2)
+ assert not thread.is_alive() and not errors
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ print(json.dumps(dict(pinnedBodyHash=${JSON.stringify(PINNED_HOOK_RUN.sha256)},falseHooksDispatched=0,trueUnknownDenied=True,threadLocal=True,nestedFinally=True,primaryIdentityPreserved=True,unconditionalNotEvaluated=True)))
+ return 0
+`;
+    await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    const result = JSON.parse(
+      execFileSync(
+        python,
+        dependencyHookArguments(directory, adapter, { sha256: sha(raw) }),
+        { cwd: directory, encoding: "utf8", timeout: 10000, stdio: "pipe" },
+      ),
+    );
+    assert.equal(result.falseHooksDispatched, 0);
+    assert(
+      result.trueUnknownDenied &&
+        result.threadLocal &&
+        result.nestedFinally &&
+        result.primaryIdentityPreserved &&
+        result.unconditionalNotEvaluated,
+    );
+    t.diagnostic(JSON.stringify(result));
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
@@ -281,10 +419,20 @@ class Flattener:
     assert.equal(projection.origins[0].hierarchy[0][0], "src");
     const packet = (value) =>
       "FULL_HOOK_PROJECTION:" + JSON.stringify(value) + "\n";
+    const inactive = structuredClone(projection);
+    inactive.hooks[0].condition = "False";
+    inactive.hooks[0].action = [
+      "unsupported-platform-tool",
+      "%PATH%",
+      "x&echo y",
+    ];
+    assert.deepEqual(
+      validateHookProjection(packet(inactive)).hooks[0].action,
+      inactive.hooks[0].action,
+    );
     for (const mutate of [
       (value) => (value.hooks[0].cwd = "../foreign"),
-      (value) => (value.hooks[0].action = ["python3", "%PATH%"]),
-      (value) => (value.hooks[0].action = ["python3", "x&echo y"]),
+      (value) => (value.hooks[0].action = ["python3", "bad\0argument"]),
       (value) => (value.hooks[0].extra = true),
       (value) => (value.origins[0].deps_file = ".git/config"),
       (value) => (value.origins[0].hierarchy[0][0] = "/foreign"),

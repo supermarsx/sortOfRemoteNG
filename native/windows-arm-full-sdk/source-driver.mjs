@@ -366,33 +366,40 @@ export function dependencyHookArguments(depot, adapter, pin) {
   return [
     "-B",
     "-c",
-    `import sys,os,hashlib
+    `import sys,os,hashlib,threading
 depot,adapter,digest=sys.argv[1:]
 sys.path.insert(0,depot)
 import gclient
 original=gclient.Hook.run
-def admitted(self):
- action=self._action
- if action and action[0] in ('python3','vpython3'):
-  for value in action:
-   if any(c in value for c in '\\x00\\r\\n%&|<>!^'): raise RuntimeError('FULL_HOOK_SHELL_ARGUMENT')
-  if os.path.islink(adapter) or os.path.realpath(adapter).lower()!=os.path.abspath(adapter).lower(): raise RuntimeError('FULL_PYTHON_ADAPTER_ALIAS')
-  source=open(adapter,'rb')
-  failed=False
-  try: raw=source.read(4097)
+dispatch=gclient.gclient_utils.CheckCallAndFilter
+scope=threading.local()
+def admitted_dispatch(command,*args,**kwargs):
+ if not getattr(scope,'active',False): return dispatch(command,*args,**kwargs)
+ if type(command) is not list or not command or len(command)>64 or command[0] not in ('python3','vpython3.bat'): raise RuntimeError('FULL_HOOK_ENTRY')
+ for value in command:
+  if type(value) is not str or len(value)>4096 or any(c in value for c in '\\x00\\r\\n%&|<>!^'): raise RuntimeError('FULL_HOOK_SHELL_ARGUMENT')
+ if os.path.islink(adapter) or os.path.realpath(adapter).lower()!=os.path.abspath(adapter).lower(): raise RuntimeError('FULL_PYTHON_ADAPTER_ALIAS')
+ source=open(adapter,'rb')
+ failed=False
+ try: raw=source.read(4097)
+ except BaseException:
+  failed=True
+  raise
+ finally:
+  try: source.close()
   except BaseException:
-   failed=True
-   raise
-  finally:
-   try: source.close()
-   except BaseException:
-    if failed: print('FULL_PYTHON_ADAPTER_CLOSE_FAILURE',file=sys.stderr)
-    else: raise
-  if len(raw)>4096 or hashlib.sha256(raw).hexdigest()!=digest: raise RuntimeError('FULL_PYTHON_ADAPTER_PIN')
-  self._action=(adapter if action[0]=='python3' else os.path.join(depot,'vpython3.bat'),*action[1:])
+   if failed: print('FULL_PYTHON_ADAPTER_CLOSE_FAILURE',file=sys.stderr)
+   else: raise
+ if len(raw)>4096 or hashlib.sha256(raw).hexdigest()!=digest: raise RuntimeError('FULL_PYTHON_ADAPTER_PIN')
+ mapped=[adapter if command[0]=='python3' else os.path.join(depot,'vpython3.bat'),*command[1:]]
+ return dispatch(mapped,*args,**kwargs)
+def admitted(self):
+ previous=getattr(scope,'active',False)
+ scope.active=True
  try: return original(self)
- finally: self._action=action
+ finally: scope.active=previous
 gclient.Hook.run=admitted
+gclient.gclient_utils.CheckCallAndFilter=admitted_dispatch
 sys.exit(gclient.main(['runhooks','--jobs','2']))
 `,
     depot,
@@ -454,7 +461,7 @@ export function validateHookProjection(text) {
           (value) =>
             typeof value === "string" &&
             value.length <= 4096 &&
-            !/[\0\r\n%&|<>!^]/.test(value),
+            !/[\0\r\n]/.test(value),
         ),
       "FULL_HOOK_PROJECTION_ACTION",
     );
