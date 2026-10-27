@@ -89,3 +89,59 @@ test("native workflow remains opt-in and all six real launches are mandatory", a
     3,
   );
 });
+
+test("disposable package branch isolates the existing six-platform jobs and keeps an exact x64 fixture", async () => {
+  const workflow = await readFile(
+    new URL(
+      "../../.github/workflows/browser-native-packages.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ref = "refs/heads/codex/ci-linux-package-fixture-20261027";
+  assert.match(
+    workflow,
+    new RegExp("native:\\s+if: github.ref != '" + ref + "'"),
+  );
+  assert(workflow.includes("if: always() && github.ref != '" + ref + "'"));
+  const fixture = workflow.slice(workflow.indexOf("  linux-package-fixture:"));
+  for (const value of [
+    "github.event_name == 'workflow_dispatch'",
+    "github.repository_id == '1010282954'",
+    "github.event.repository.visibility == 'public'",
+    ref,
+    "runs-on: ubuntu-24.04",
+    "timeout-minutes: 135",
+    "cancel-in-progress: false",
+    "npm ci --ignore-scripts",
+    'CARGO_BUILD_JOBS: "2"',
+    "node scripts/cef-linux-package-fixture.mjs --execute",
+  ])
+    assert(fixture.includes(value), value);
+  assert(
+    fixture.indexOf("Verify fixture source contracts") <
+      fixture.indexOf("npm ci"),
+  );
+  assert(
+    fixture.indexOf("npm ci") <
+      fixture.indexOf("node scripts/cef-linux-package-fixture.mjs --execute"),
+  );
+  assert(!fixture.includes("browser-runtime-native-ci.mjs build"));
+  assert(!fixture.includes("--nodeps"));
+  assert(!fixture.includes("--no-sandbox"));
+  assert(!fixture.includes("/**"));
+  for (const leaf of [
+    "context.json",
+    "ready.json",
+    "go.json",
+    "logs/checkpoint-compile.stdout.log",
+    "logs/checkpoint-compile.stderr.log",
+    "logs/checkpoint-compile.outcome.json",
+  ])
+    assert(
+      fixture.includes("sorng-linux-package-fixture-*/actors/*/" + leaf),
+      leaf,
+    );
+  assert(fixture.includes("sorng-linux-package-fixture-*/logs/*.outcome.json"));
+  assert(!fixture.includes("sdk-cache"));
+});
