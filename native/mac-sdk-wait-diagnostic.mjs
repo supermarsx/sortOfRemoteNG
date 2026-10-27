@@ -708,6 +708,49 @@ export async function observeSamplerInterface(
   return result;
 }
 
+// Diagnostic projection only: never spread Stats or expose an error/path value.
+// Oversized or unavailable numeric fields are null, never rounded or stringified
+// without a bound. The original metadata assertion below remains authoritative.
+export function manualMetadataObservation(before) {
+  try {
+    const decimal = (n) =>
+      typeof n === "bigint" && n >= 0n && n <= 18446744073709551615n
+        ? String(n)
+        : null;
+    const regular = before.isFile() === true;
+    const type = regular
+      ? "regular"
+      : before.isSymbolicLink?.() === true
+        ? "symlink"
+        : before.isDirectory?.() === true
+          ? "directory"
+          : "other";
+    const predicates = {
+      regular,
+      nonempty: typeof before.size === "bigint" && before.size > 0n,
+      sizeBound: typeof before.size === "bigint" && before.size <= 65536n,
+      rootOwner: before.uid === 0n,
+      singleton: before.nlink === 1n,
+      nonWritable:
+        typeof before.mode === "bigint" && (before.mode & 0o022n) === 0n,
+    };
+    return {
+      available: true,
+      type,
+      uid: decimal(before.uid),
+      nlink: decimal(before.nlink),
+      mode: decimal(before.mode),
+      size: decimal(before.size),
+      predicates,
+      failedPredicates: Object.keys(predicates).filter(
+        (key) => !predicates[key],
+      ),
+    };
+  } catch {
+    return { available: false, reason: "METADATA_PROJECTION_UNAVAILABLE" };
+  }
+}
+
 // This candidate changes one query option, not the selected SDK or build policy.
 // Installed documentation is observed before any query; no help/tool fallback.
 export async function observeXcrunNoCacheInterface(
@@ -719,25 +762,48 @@ export async function observeXcrunNoCacheInterface(
     observedOnly: true,
     expectedPinsApproved: false,
     manual: null,
+    candidateObservations: [],
     reason: "MANUAL_UNAVAILABLE",
   };
   try {
-    for (const file of [
+    for (const [index, file] of [
       "/usr/share/man/man1/xcrun.1",
       "/usr/share/man/man1/xcrun.1.gz",
       DEVELOPER + "/usr/share/man/man1/xcrun.1",
       DEVELOPER + "/usr/share/man/man1/xcrun.1.gz",
       "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1",
       "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1.gz",
-    ]) {
+    ].entries()) {
       let before;
       try {
         remaining();
         before = await stat(file, { bigint: true });
       } catch (error) {
-        if (error?.code === "ENOENT") continue;
+        if (error?.code === "ENOENT") {
+          result.candidateObservations.push({
+            index,
+            path: file,
+            status: "MISSING",
+            reason: "ENOENT",
+          });
+          continue;
+        }
+        result.candidateObservations.push({
+          index,
+          path: file,
+          status: "STAT_UNAVAILABLE",
+          reason: ["EACCES", "EPERM"].includes(error?.code)
+            ? error.code
+            : "UNCLASSIFIED",
+        });
         throw error;
       }
+      result.candidateObservations.push({
+        index,
+        path: file,
+        status: "METADATA",
+        metadata: manualMetadataObservation(before),
+      });
       assert(
         before.isFile() &&
           before.size > 0n &&

@@ -838,6 +838,7 @@ import {
   parseOwnedPidTuple,
   observeSamplerInterface,
   observeXcrunNoCacheInterface,
+  manualMetadataObservation,
 } from "../../native/mac-sdk-wait-diagnostic.mjs";
 const waitRoot =
   "/Users/runner/work/_temp/cef-mac-sdk-wait-11111111-1111-4111-8111-111111111111";
@@ -2625,5 +2626,177 @@ test("Xcrun manual incompatible or unsafe first existing candidate cannot fall t
   assert.equal(
     waitPrimaryReason(new Error("XCRUN_UNKNOWN_DYNAMIC_VALUE")),
     "SDK_WAIT_UNKNOWN_PRIMARY",
+  );
+});
+
+test("Xcrun candidate diagnostics capture each actual failed metadata predicate without admitting it or changing the original error", async () => {
+  const paths = [
+    "/usr/share/man/man1/xcrun.1",
+    "/usr/share/man/man1/xcrun.1.gz",
+    "/Applications/Xcode_26.3.app/Contents/Developer/usr/share/man/man1/xcrun.1",
+    "/Applications/Xcode_26.3.app/Contents/Developer/usr/share/man/man1/xcrun.1.gz",
+    "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1",
+    "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1.gz",
+  ];
+  for (const failed of [
+    "regular",
+    "nonempty",
+    "sizeBound",
+    "rootOwner",
+    "singleton",
+    "nonWritable",
+  ]) {
+    const failures = new WeakMap(),
+      expectedStamp = {
+        isFile: () => failed !== "regular",
+        isSymbolicLink: () => failed === "regular",
+        size:
+          failed === "nonempty" ? 0n : failed === "sizeBound" ? 65537n : 10n,
+        uid: failed === "rootOwner" ? 501n : 0n,
+        nlink: failed === "singleton" ? 2n : 1n,
+        mode: failed === "nonWritable" ? 0o100666n : 0o100644n,
+        privateUnknown: "SECRET_SHOULD_NEVER_APPEAR",
+        privatePath: "/foreign/private/path",
+      };
+    const observe = new Function(
+      "DEVELOPER",
+      "assert",
+      "manualMetadataObservation",
+      "interfaceFailures",
+      "held",
+      "fs",
+      "hash",
+      "gunzipSync",
+      "return (" + observeXcrunNoCacheInterface.toString() + ");",
+    )(
+      waitSelected.DEVELOPER_DIR,
+      assert,
+      manualMetadataObservation,
+      failures,
+      null,
+      null,
+      null,
+      null,
+    );
+    const result = await observe(() => 1000, {
+      stat: async (file) => {
+        if (file !== paths[4]) throw Object.assign(Error(), { code: "ENOENT" });
+        return expectedStamp;
+      },
+      read: async () => assert.fail("body read after unsafe metadata"),
+    });
+    assert.equal(result.supported, false);
+    assert.equal(result.reason, "XCRUN_INTERFACE_UNAVAILABLE");
+    assert.equal(failures.get(result).message, "XCRUN_MANUAL_METADATA");
+    assert.equal(
+      waitPrimaryReason(failures.get(result)),
+      "XCRUN_MANUAL_METADATA",
+    );
+    assert.deepEqual(
+      result.candidateObservations.slice(0, 4),
+      paths.slice(0, 4).map((path, index) => ({
+        index,
+        path,
+        status: "MISSING",
+        reason: "ENOENT",
+      })),
+    );
+    const row = result.candidateObservations[4];
+    assert.equal(row.index, 4);
+    assert.equal(row.path, paths[4]);
+    assert.equal(row.status, "METADATA");
+    assert.deepEqual(row.metadata.failedPredicates, [failed]);
+    assert.equal(row.metadata.uid, String(expectedStamp.uid));
+    assert.equal(row.metadata.nlink, String(expectedStamp.nlink));
+    assert.equal(row.metadata.mode, String(expectedStamp.mode));
+    assert.equal(row.metadata.size, String(expectedStamp.size));
+    assert(!JSON.stringify(result).includes("SECRET"));
+    assert(!JSON.stringify(result).includes("foreign/private"));
+    assert(
+      Buffer.byteLength(JSON.stringify(result.candidateObservations)) < 2048,
+    );
+  }
+});
+
+test("Xcrun diagnostic metadata is closed, bounded and preserves unavailable original null errors", async () => {
+  const stamp = {
+    isFile: () => true,
+    size: 1n,
+    uid: 0n,
+    nlink: 1n,
+    mode: 0o100644n,
+  };
+  const projected = manualMetadataObservation({
+    ...stamp,
+    uid: 1n << 1000n,
+    mode: 1n << 1000n,
+    extra: "private",
+  });
+  assert.equal(projected.uid, null);
+  assert.equal(projected.mode, null);
+  assert(!JSON.stringify(projected).includes("private"));
+  assert(Buffer.byteLength(JSON.stringify(projected)) < 1024);
+  const unavailable = manualMetadataObservation({
+    isFile() {
+      throw null;
+    },
+  });
+  assert.deepEqual(unavailable, {
+    available: false,
+    reason: "METADATA_PROJECTION_UNAVAILABLE",
+  });
+  for (const original of [
+    null,
+    Object.assign(Error("private message"), { code: "EACCES" }),
+    Object.assign(Error("private message"), { code: "UNKNOWN_PRIVATE_CODE" }),
+  ]) {
+    const failures = new WeakMap();
+    const observe = new Function(
+      "DEVELOPER",
+      "assert",
+      "manualMetadataObservation",
+      "interfaceFailures",
+      "held",
+      "fs",
+      "hash",
+      "gunzipSync",
+      "return (" + observeXcrunNoCacheInterface.toString() + ");",
+    )(
+      waitSelected.DEVELOPER_DIR,
+      assert,
+      manualMetadataObservation,
+      failures,
+      null,
+      null,
+      null,
+      null,
+    );
+    const result = await observe(() => 1000, {
+      stat: async () => {
+        throw original;
+      },
+      read: async () => assert.fail("unexpected read"),
+    });
+    assert.equal(failures.get(result), original);
+    assert.equal(result.candidateObservations.length, 1);
+    assert.equal(result.candidateObservations[0].index, 0);
+    assert.equal(result.candidateObservations[0].status, "STAT_UNAVAILABLE");
+    assert.equal(
+      result.candidateObservations[0].reason,
+      original?.code === "EACCES" ? "EACCES" : "UNCLASSIFIED",
+    );
+    assert(!JSON.stringify(result).includes("private"));
+  }
+  const missing = await observeXcrunNoCacheInterface(() => 1000, {
+    stat: async () => {
+      throw Object.assign(Error(), { code: "ENOENT" });
+    },
+    read: async () => assert.fail("unexpected read"),
+  });
+  assert.equal(missing.candidateObservations.length, 6);
+  assert(
+    missing.candidateObservations.every(
+      (row, index) => row.index === index && row.status === "MISSING",
+    ),
   );
 });
