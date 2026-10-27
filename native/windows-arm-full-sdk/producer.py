@@ -16,7 +16,7 @@ import checkpoint
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-PROFILE_SHA = "5142ffe3fc4a3c84b84788318dc0591887d4603d1c4aca38716752dc8de87285"
+PROFILE_SHA = "cf0c4940fd570bc7a87f782e76c60bad5af465f530a5d49c3de900e2eeb5db73"
 CONTEXT_SHA = None
 COMMAND_INVENTORY_REPORTING_FAILURE = False
 ROLES = ("sdk-data", "llvm-data", "rust-archive", "gn-archive", "siso-archive", "materialize", "runtime-closure")
@@ -28,13 +28,62 @@ COMMAND_CANDIDATES = [
     {'role':'git-command','path':'C:/Program Files/Git/cmd/git.exe','kind':'pe'},
     *({'role':flavor+'-'+name.removesuffix('.exe').removesuffix('.dll'),
        'path':'C:/Program Files/Git/'+flavor+'/'+relative,'kind':'pe'}
-      for flavor in ('ucrt64','mingw64')
+      for flavor in ('ucrt64',)
       for name,relative in [
           ('git.exe','bin/git.exe'),('git-remote-https.exe','libexec/git-core/git-remote-https.exe'),
           *[(dll,'bin/'+dll) for dll in ('libcurl-4.dll','libcrypto-3-x64.dll','libssl-3-x64.dll',
               'libintl-8.dll','libiconv-2.dll','libpcre2-8-0.dll','zlib1.dll')]]),
     {'role':'git-system-config','path':'C:/Program Files/Git/etc/gitconfig','kind':'config'},
 ]
+COMMAND_DLL_ROOT = 'C:/Program Files/Git/ucrt64/bin/'
+COMMAND_SYSTEM_NAMES = sorted(name.lower() for name in (
+    'ADVAPI32.dll','bcrypt.dll','CRYPT32.dll','dbghelp.dll','IPHLPAPI.DLL',
+    'KERNEL32.dll','ntdll.dll','ole32.dll','oleaut32.dll','Secur32.dll',
+    'SHELL32.dll','SHLWAPI.dll','USER32.dll','USERENV.dll','WINMM.dll',
+    'WLDAP32.dll','WS2_32.dll','msvcrt.dll','ucrtbase.dll',
+    *('api-ms-win-crt-'+part+'-l1-1-0.dll' for part in (
+        'convert','environment','filesystem','heap','locale','math','private',
+        'process','runtime','stdio','string','time','utility'))))
+COMMAND_GRAPH_POLICY = {'dllRoot':COMMAND_DLL_ROOT,'uniqueFiles':64,'edges':256,
+                        'systemNames':COMMAND_SYSTEM_NAMES}
+
+
+def command_dll_name(name):
+    data.need(type(name) is str and re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}\.dll',name,re.I)
+              and '..' not in name and name.split('.')[0].upper() not in
+              {'CON','PRN','AUX','NUL','CLOCK$',*(str(prefix)+str(i) for prefix in ('COM','LPT') for i in range(1,10))},
+              'FULL_IMPORT_NAME')
+    return name.lower()
+
+
+def command_import_graph(candidates, clock, read, state):
+    # A finite work queue, never a directory scan or loader search. System names
+    # are labels only: their bytes and actual loader resolution are not proved.
+    queue = list(candidates);known = {row['path'].lower():row['path'] for row in queue}
+    cursor = 0
+    while cursor < len(queue):
+        clock.remaining();candidate = queue[cursor];cursor += 1
+        data.need(cursor <= 64, 'FULL_IMPORT_FILES')
+        row = read(candidate);state['rows'].append(row)
+        if candidate['kind'] != 'pe':continue
+        for kind, names in (('import',row['imports']),('delay',row['delayImports'])):
+            for name in names:
+                clock.remaining();key = command_dll_name(name)
+                data.need(len(state['edges']) < 256, 'FULL_IMPORT_EDGES')
+                edge = {'from':candidate['path'],'kind':kind,'name':name}
+                if key in COMMAND_SYSTEM_NAMES:
+                    edge['classification'] = 'system-name-only'
+                else:
+                    target = COMMAND_DLL_ROOT+name;folded = target.lower()
+                    edge.update(classification='rooted-candidate',target=target)
+                    if folded in known:
+                        data.need(known[folded] == target, 'FULL_IMPORT_CASE')
+                    else:
+                        data.need(len(queue) < 64, 'FULL_IMPORT_FILES')
+                        known[folded] = target
+                        queue.append({'role':'import-'+key,'path':target,'kind':'pe'})
+                state['edges'].append(edge)
+    return state
 
 
 def source_mode(c):
@@ -109,13 +158,15 @@ def command_inventory(root, c, p, clock, *, memory=None, disk=shutil.disk_usage,
     capacity = source_capacity(root, p, local, memory=memory, disk=disk, cpus=cpus, enforce=False)
     candidates = p['commandInventory']['candidates']
     data.need(candidates == COMMAND_CANDIDATES, 'FULL_INVENTORY_CANDIDATES')
-    rows = [];total = 0
+    data.need(p['commandInventory'].get('importGraph') == COMMAND_GRAPH_POLICY, 'FULL_IMPORT_POLICY')
+    state = {'rows':[],'edges':[]};total = 0;identities = {};charged = admitted = 0
     def consumed(count):
         nonlocal total, charged
         data.need(type(count)is int and charged <= count <= admitted, 'FULL_INVENTORY_BYTES')
         total += count-charged;charged=count
         data.need(total <= 512*1024**2, 'FULL_INVENTORY_BYTES')
-    for candidate in candidates:
+    def read(candidate):
+        nonlocal charged, admitted
         row = {'role':candidate['role'], 'publicCandidatePath':candidate['path'],
                'expectedIdentity':None, 'executionAdmitted':False, 'imageLoaded':False}
         try:
@@ -127,6 +178,10 @@ def command_inventory(root, c, p, clock, *, memory=None, disk=shutil.disk_usage,
                 maximum=min(512*1024**2-total,65536 if candidate['kind']=='config' else 256*1024**2),
                 expected_size=admitted,expected_nlink=before.st_nlink,progress=consumed,bounded_reads=True)
             data.need(observed['bytes']==charged,'FULL_INVENTORY_BYTES')
+            identity = tuple(observed['identity'][:2])
+            data.need(identity not in identities or identities[identity] == candidate['path'],
+                      'FULL_IMPORT_IDENTITY_ALIAS')
+            identities[identity] = candidate['path']
             row.update(status='observed', bytes=observed['bytes'], sha256=observed['sha256'],
                        nlink=before.st_nlink)
             if candidate['kind'] == 'pe':
@@ -143,23 +198,35 @@ def command_inventory(root, c, p, clock, *, memory=None, disk=shutil.disk_usage,
                     'hasFilterSection':bool(re.search(r'^\s*\[filter(?:\s|\])',text,re.M|re.I)),
                     'hasUrlSection':bool(re.search(r'^\s*\[url(?:\s|\])',text,re.M|re.I)),
                     'effectiveConfigurationNotProven':True}
-        except FileNotFoundError:
-            row['status'] = 'missing'
-        except data.Denied as error:
-            if failure(error)=='FULL_INVENTORY_BYTES':
-                try:
-                    data.save(root/'command-inventory-observation.json',{'kind':'windows-arm-source-command-inventory',
-                        'success':False,'complete':False,'firstFailure':'FULL_INVENTORY_BYTES',
-                        'rows':rows,'observedBytes':total,'executed':False,'executionAdmitted':False})
-                except BaseException:
-                    COMMAND_INVENTORY_REPORTING_FAILURE=True
-                raise
-            row.update(status='denied', reason=failure(error))
-        rows.append(row);local.remaining()
+        except BaseException as error:
+            row.update(status='missing' if isinstance(error,FileNotFoundError) else 'denied',
+                       reason='FULL_IMPORT_MISSING' if isinstance(error,FileNotFoundError) else failure(error))
+            state['rows'].append(row)
+            if isinstance(error,FileNotFoundError):raise data.Denied('FULL_IMPORT_MISSING') from error
+            raise
+        local.remaining()
+        return row
+    # The same held reader and aggregate ledger cover roots AND every newly
+    # discovered DLL. A failed graph retains its bounded prefix, never executes.
+    try:
+        command_import_graph(candidates,local,read,state)
+    except BaseException as error:
+        partial = {'kind':'windows-arm-source-command-inventory','success':False,'complete':False,
+                   'firstFailure':failure(error),'rows':state['rows'],'edges':state['edges'],
+                   'observedBytes':total,'executed':False,'executionAdmitted':False,
+                   'sourceFetched':False,'gnExecuted':False,'expectedPinsCreated':False}
+        try:
+            data.need(len(json.dumps(partial,ensure_ascii=True).encode('ascii')) <= p['limits']['summaryBytes'],
+                      'FULL_INVENTORY_REPORT_BOUND')
+            data.save(root/'command-inventory-observation.json',partial)
+        except BaseException:
+            COMMAND_INVENTORY_REPORTING_FAILURE=True
+        raise
     result = {'kind':'windows-arm-source-command-inventory','success':True,'complete':True,
               'image':c['image'],'head':c['head'],'repositoryId':c['repositoryId'],
               'runner':p['runner'],'sourceDigest':c['sourceDigest'],'profileSha256':PROFILE_SHA,
-              'capacity':capacity,'rows':rows,'observedBytes':total,'executed':False,
+              'capacity':capacity,'rows':state['rows'],'edges':state['edges'],
+              'observedBytes':total,'executed':False,
               'sourceFetched':False,'gnExecuted':False,'expectedPinsCreated':False,'executionAdmitted':False}
     data.need(len(json.dumps(result,ensure_ascii=True).encode('ascii')) <= p['limits']['summaryBytes'],
               'FULL_INVENTORY_REPORT_BOUND')

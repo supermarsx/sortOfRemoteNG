@@ -345,7 +345,7 @@ def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64
 
 
 # Explicit derivative: original ABI/kernel/lifecycle code above; closed tools admission below.
-PROFILE_SHA = "5142ffe3fc4a3c84b84788318dc0591887d4603d1c4aca38716752dc8de87285"
+PROFILE_SHA = "cf0c4940fd570bc7a87f782e76c60bad5af465f530a5d49c3de900e2eeb5db73"
 def load_profile():
     p=Path(__file__).with_name('profile.json')
     for item in (p,*p.parents):

@@ -321,11 +321,7 @@
     "Microsoft.VisualStudio.Component.VC.ATL.ARM64",
     "Microsoft.VisualStudio.Component.VC.MFC.ARM64"
   ],
-  "modes": [
-    "input-closure",
-    "command-inventory",
-    "source-gn"
-  ],
+  "modes": ["input-closure", "command-inventory", "source-gn"],
   "programs": [
     "sdk-data",
     "llvm-data",
@@ -545,14 +541,8 @@
         "machine": 34404,
         "fileVersion": "14.51.36257.0",
         "sourceFolderVersion": null,
-        "imports": [
-          "KERNEL32.dll"
-        ],
-        "delayImports": [
-          "ADVAPI32.dll",
-          "OLEAUT32.dll",
-          "RPCRT4.dll"
-        ],
+        "imports": ["KERNEL32.dll"],
+        "delayImports": ["ADVAPI32.dll", "OLEAUT32.dll", "RPCRT4.dll"],
         "sourceNlink": 1
       },
       {
@@ -793,14 +783,8 @@
         "machine": 43620,
         "fileVersion": "14.51.36257.0",
         "sourceFolderVersion": null,
-        "imports": [
-          "KERNEL32.dll"
-        ],
-        "delayImports": [
-          "ADVAPI32.dll",
-          "OLEAUT32.dll",
-          "RPCRT4.dll"
-        ],
+        "imports": ["KERNEL32.dll"],
+        "delayImports": ["ADVAPI32.dll", "OLEAUT32.dll", "RPCRT4.dll"],
         "sourceNlink": 1
       },
       {
@@ -1419,57 +1403,51 @@
         "kind": "pe"
       },
       {
-        "role": "mingw64-git",
-        "path": "C:/Program Files/Git/mingw64/bin/git.exe",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-git-remote-https",
-        "path": "C:/Program Files/Git/mingw64/libexec/git-core/git-remote-https.exe",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-libcurl-4",
-        "path": "C:/Program Files/Git/mingw64/bin/libcurl-4.dll",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-libcrypto-3-x64",
-        "path": "C:/Program Files/Git/mingw64/bin/libcrypto-3-x64.dll",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-libssl-3-x64",
-        "path": "C:/Program Files/Git/mingw64/bin/libssl-3-x64.dll",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-libintl-8",
-        "path": "C:/Program Files/Git/mingw64/bin/libintl-8.dll",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-libiconv-2",
-        "path": "C:/Program Files/Git/mingw64/bin/libiconv-2.dll",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-libpcre2-8-0",
-        "path": "C:/Program Files/Git/mingw64/bin/libpcre2-8-0.dll",
-        "kind": "pe"
-      },
-      {
-        "role": "mingw64-zlib1",
-        "path": "C:/Program Files/Git/mingw64/bin/zlib1.dll",
-        "kind": "pe"
-      },
-      {
         "role": "git-system-config",
         "path": "C:/Program Files/Git/etc/gitconfig",
         "kind": "config"
       }
     ],
     "candidateExecutionAllowed": false,
-    "expectedPinsCreated": false
+    "expectedPinsCreated": false,
+    "importGraph": {
+      "dllRoot": "C:/Program Files/Git/ucrt64/bin/",
+      "uniqueFiles": 64,
+      "edges": 256,
+      "systemNames": [
+        "advapi32.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-environment-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-private-l1-1-0.dll",
+        "api-ms-win-crt-process-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-time-l1-1-0.dll",
+        "api-ms-win-crt-utility-l1-1-0.dll",
+        "bcrypt.dll",
+        "crypt32.dll",
+        "dbghelp.dll",
+        "iphlpapi.dll",
+        "kernel32.dll",
+        "msvcrt.dll",
+        "ntdll.dll",
+        "ole32.dll",
+        "oleaut32.dll",
+        "secur32.dll",
+        "shell32.dll",
+        "shlwapi.dll",
+        "ucrtbase.dll",
+        "user32.dll",
+        "userenv.dll",
+        "winmm.dll",
+        "wldap32.dll",
+        "ws2_32.dll"
+      ]
+    }
   }
 }

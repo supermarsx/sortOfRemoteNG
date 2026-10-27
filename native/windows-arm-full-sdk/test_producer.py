@@ -1145,18 +1145,19 @@ class SourceGnTests(unittest.TestCase):
 
     def test_command_inventory_is_closed_to_exact_candidates_no_path_search_and_no_expected_pin_creation(self):
         from types import SimpleNamespace
-        root=self.temp();binary=root/'owned-synthetic.exe';binary.write_bytes(pe())
+        root=self.temp()
+        binaries={c['path']:root/('owned-'+str(i)+'.exe') for i,c in enumerate(producer.COMMAND_CANDIDATES) if c['kind']=='pe'}
+        for binary in binaries.values():binary.write_bytes(pe())
         configuration=root/'owned-config';configuration.write_text('[credential]\n helper = synthetic\n')
-        missing=root/'missing'
         candidates=PROFILE['commandInventory']['candidates'];seen=[]
         def mapped(value):
-            seen.append(str(value));return configuration if str(value).endswith('/etc/gitconfig')else missing if '/mingw64/'in str(value)else binary
+            seen.append(str(value));return configuration if str(value).endswith('/etc/gitconfig')else binaries[str(value)]
         with patch.object(producer,'Path',side_effect=mapped):
             result=producer.command_inventory(root,{'mode':'command-inventory','image':'SYNTHETIC','head':'a'*40,
                 'repositoryId':'1010282954','sourceDigest':'b'*64},PROFILE,clock(),memory=lambda:(32*1024**3,12*1024**3),
                 disk=lambda _:SimpleNamespace(free=110*1024**3),cpus=lambda:4)
         self.assertEqual(seen,[c['path']for c in candidates]);self.assertEqual(len(result['rows']),len(candidates))
-        self.assertTrue(any(row['status']=='missing'for row in result['rows']))
+        self.assertTrue(all(row['status']=='observed'for row in result['rows']))
         self.assertTrue(any(row.get('machine')==0x8664 for row in result['rows']))
         self.assertTrue(result['rows'][-1]['configurationFacts']['hasCredentialSection'])
         self.assertTrue(all(row['expectedIdentity']is None and not row['executionAdmitted']for row in result['rows']))
@@ -1178,13 +1179,14 @@ class SourceGnTests(unittest.TestCase):
             def lstat(self):return SimpleNamespace(st_size=256*1024**2,st_nlink=1)
         def held(path,clk,**kw):
             calls.append(kw['maximum']);kw['progress'](256*1024**2)
-            return {'bytes':256*1024**2,'sha256':'a'*64},b'synthetic'
+            return {'bytes':256*1024**2,'sha256':'a'*64,'identity':[1,len(calls)]},b'synthetic'
         sentinel=acquire.Denied('FULL_INVENTORY_BYTES');original_need=acquire.need
         def need(ok,code):
             if not ok and code=='FULL_INVENTORY_BYTES':raise sentinel
             return original_need(ok,code)
         args=(root,{'mode':'command-inventory'},PROFILE,clock())
-        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',return_value=Candidate()),patch.object(acquire,'plain',return_value=file),patch.object(material,'held',side_effect=held),patch.object(material,'pe_metadata',side_effect=acquire.Denied('SYNTHETIC_PE')),patch.object(acquire,'need',side_effect=need):
+        metadata={'machine':0x8664,'machineKind':'x64','version':None,'versionStatus':'absent','imports':[],'delayImports':[]}
+        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',return_value=Candidate()),patch.object(acquire,'plain',return_value=file),patch.object(material,'held',side_effect=held),patch.object(material,'pe_metadata',return_value=metadata),patch.object(acquire,'need',side_effect=need):
             with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_BYTES')as raised:
                 producer.command_inventory(*args)
             self.assertIs(raised.exception,sentinel)
@@ -1192,8 +1194,9 @@ class SourceGnTests(unittest.TestCase):
         result=json.loads((root/'command-inventory-observation.json').read_bytes())
         self.assertEqual(result['observedBytes'],512*1024**2)
         self.assertIs(result['complete'],False);self.assertIs(result['success'],False)
-        self.assertEqual(len(result['rows']),2) # Both denied PE rows still consume their physical reads.
-        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',return_value=Candidate()),patch.object(acquire,'plain',return_value=file),patch.object(material,'held',side_effect=held),patch.object(material,'pe_metadata',side_effect=acquire.Denied('SYNTHETIC_PE')),patch.object(acquire,'save',side_effect=OSError('private sink')):
+        self.assertEqual([r['status'] for r in result['rows']],['observed','observed','denied'])
+        calls.clear()
+        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',return_value=Candidate()),patch.object(acquire,'plain',return_value=file),patch.object(material,'held',side_effect=held),patch.object(material,'pe_metadata',return_value=metadata),patch.object(acquire,'save',side_effect=OSError('private sink')):
             with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_BYTES'):
                 producer.command_inventory(*args)
 
@@ -1209,13 +1212,15 @@ class SourceGnTests(unittest.TestCase):
                 return self.generic_visit(node)
         body=Cap().visit(body);scope=dict(producer.__dict__)
         exec(compile(ast.fix_missing_locations(ast.Module(body=[body],type_ignores=[])),'actual-inventory-small-cap','exec'),scope)
-        root=self.temp();file=root/'owned';file.write_bytes(raw);opens=[];original=Path.open
+        root=self.temp();files={c['path']:root/('owned-'+str(i)) for i,c in enumerate(producer.COMMAND_CANDIDATES)}
+        for file in files.values():file.write_bytes(raw)
+        opens=[];original=Path.open
         def opened(path,*args,**kw):
-            if path==file and args and args[0]=='rb':opens.append(path)
+            if path in files.values() and args and args[0]=='rb':opens.append(path)
             return original(path,*args,**kw)
-        with patch.object(producer,'Path',return_value=file),patch.object(Path,'open',opened),patch.object(producer,'source_capacity',return_value={}):
+        with patch.object(Path,'open',opened):
             # Extracted function retains the production globals snapshot.
-            scope['Path']=lambda _:file;scope['source_capacity']=lambda *a,**k:{}
+            scope['Path']=lambda value:files[str(value)];scope['source_capacity']=lambda *a,**k:{}
             with self.assertRaisesRegex(acquire.Denied,'FULL_INVENTORY_BYTES'):
                 scope['command_inventory'](root,{'mode':'command-inventory'},PROFILE,clock())
         self.assertEqual(len(opens),2)
@@ -1230,6 +1235,136 @@ class SourceGnTests(unittest.TestCase):
         self.assertEqual(observed['sha256'],hashlib.sha256(file.read_bytes()).hexdigest())
         for value in (True,0,1,3,9):
             with self.assertRaisesRegex(acquire.Denied,'ACQ_FILE'):material.held(file,clock(),expected_nlink=value)
+
+
+class ImportGraphTests(unittest.TestCase):
+    temp=BootstrapTests.temp
+
+    def graph(self, mapping, *, candidates=None, reader=None):
+        state={'rows':[],'edges':[]};seen=[]
+        candidates=candidates or [{'role':'fixture','path':producer.COMMAND_DLL_ROOT+'root.dll','kind':'pe'}]
+        def read(candidate):
+            seen.append(candidate['path'])
+            if reader:return reader(candidate)
+            imports,delay=mapping[candidate['path']]
+            return {'imports':imports,'delayImports':delay}
+        producer.command_import_graph(candidates,clock(),read,state)
+        return state,seen
+
+    def test_transitive_five_observed_missing_names_cycles_and_delays_are_rooted_once(self):
+        base=producer.COMMAND_DLL_ROOT
+        missing=['libbrotlidec.dll','libidn2-0.dll','libpsl-5.dll','libssh2-1.dll','libzstd.dll']
+        mapping={base+'root.dll':(missing,['KERNEL32.dll']),**{base+n:([],[]) for n in missing}}
+        mapping[base+missing[0]]=([missing[1],'root.dll'],[])
+        state,seen=self.graph(mapping)
+        self.assertEqual(seen,[base+'root.dll',*[base+n for n in missing]])
+        self.assertEqual(len(state['edges']),8)
+        self.assertEqual(state['edges'][5]['classification'],'system-name-only')
+        self.assertTrue(all(e.get('target','').startswith(base) for e in state['edges'] if e['classification']=='rooted-candidate'))
+
+    def test_case_collision_denies_before_second_spelling_is_opened(self):
+        base=producer.COMMAND_DLL_ROOT;seen=[];state={'rows':[],'edges':[]}
+        def read(candidate):seen.append(candidate['path']);return {'imports':['safe.dll','SAFE.dll'],'delayImports':[]}
+        with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_CASE'):
+            producer.command_import_graph([{'role':'fixture','path':base+'root.dll','kind':'pe'}],clock(),read,state)
+        self.assertEqual(seen,[base+'root.dll'])
+
+    def test_unsafe_names_do_not_create_candidates(self):
+        for name in ('../escape.dll','a/b.dll','a\\b.dll','C:evil.dll','name.dll ',
+                     'name.dll.','con.dll','LPT1.dll','nul.x.dll','a..b.dll','not-a-dll.exe',42):
+            with self.subTest(name=name):
+                seen=[]
+                def read(candidate):seen.append(candidate['path']);return {'imports':[name],'delayImports':[]}
+                with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_NAME'):
+                    self.graph({},reader=read)
+                self.assertEqual(len(seen),1)
+
+    def test_finite_system_table_does_not_whitelist_unknown_api_or_vendor_runtime(self):
+        base=producer.COMMAND_DLL_ROOT
+        names=['api-ms-win-unknown-l1-1-0.dll','vcruntime140.dll']
+        mapping={base+'root.dll':(names,[]),**{base+n:([],[]) for n in names}}
+        state,seen=self.graph(mapping)
+        self.assertEqual(seen,[base+'root.dll',*[base+n for n in names]])
+        self.assertTrue(all(e['classification']=='rooted-candidate'for e in state['edges']))
+
+    def test_unique_file_and_edge_caps_stop_before_new_reader(self):
+        base=producer.COMMAND_DLL_ROOT;seen=[]
+        def read(candidate):
+            seen.append(candidate['path'])
+            return {'imports':['n'+str(i)+'.dll' for i in range(64)],'delayImports':[]}
+        with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_FILES'):self.graph({},reader=read)
+        self.assertEqual(len(seen),1)
+        def edges(candidate):return {'imports':['KERNEL32.dll']*256,'delayImports':['USER32.dll']}
+        with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_EDGES'):self.graph({},reader=edges)
+        row,seen=self.graph({},reader=lambda c:{'imports':['KERNEL32.dll']*256,'delayImports':[]})
+        self.assertEqual(len(row['edges']),256)
+        def chain(candidate):
+            index=int(Path(candidate['path']).stem[1:])
+            return {'imports':['n'+str(index+1)+'.dll'] if index<63 else [],'delayImports':[]}
+        rows,seen=self.graph({},candidates=[{'role':'fixture','path':base+'n0.dll','kind':'pe'}],reader=chain)
+        self.assertEqual(len(seen),64);self.assertEqual(len(rows['edges']),63)
+
+    def inventory(self,root,reader,*,save=None):
+        from types import SimpleNamespace
+        args=(root,{'mode':'command-inventory','image':'SYNTHETIC','head':'a'*40,
+              'repositoryId':'1010282954','sourceDigest':'b'*64},PROFILE,clock())
+        context=patch.object(acquire,'save',side_effect=save) if save else patch.object(producer,'CONTEXT_SHA',None)
+        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',side_effect=reader),context:
+            return producer.command_inventory(*args)
+
+    def test_missing_candidate_retains_closed_phase_and_never_self_pins(self):
+        root=self.temp();missing=root/'missing';calls=[]
+        def mapped(path):calls.append(path);return missing
+        with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_MISSING')as raised:self.inventory(root,mapped)
+        self.assertIsInstance(raised.exception.__cause__,FileNotFoundError)
+        value=json.loads((root/'command-inventory-observation.json').read_bytes())
+        self.assertEqual(value['rows'][0]['status'],'missing');self.assertEqual(len(calls),1)
+        self.assertFalse(value['complete']);self.assertFalse(value['expectedPinsCreated'])
+
+    def test_distinct_paths_same_physical_file_denied(self):
+        root=self.temp();file=root/'owned';file.write_bytes(pe())
+        with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_IDENTITY_ALIAS'):
+            self.inventory(root,lambda _:file)
+        value=json.loads((root/'command-inventory-observation.json').read_bytes())
+        self.assertEqual([r['status']for r in value['rows']],['observed','denied'])
+
+    def test_real_held_pe_reads_follow_two_transitive_dlls_and_charge_same_ledger(self):
+        root=self.temp();base=producer.COMMAND_DLL_ROOT
+        files={c['path']:root/('fixture-'+str(i)) for i,c in enumerate(producer.COMMAND_CANDIDATES)}
+        files.update({base+name:root/name for name in ('first.dll','second.dll')})
+        total=0
+        for candidate,file in files.items():
+            if candidate.endswith('/etc/gitconfig'):raw=b'[core]\n bare = false\n'
+            else:
+                raw=bytearray(pe(version=False))
+                imported='first.dll' if candidate==base+'libcurl-4.dll' else 'second.dll' if candidate==base+'first.dll' else 'kernel32.dll'
+                raw[0x380:0x400]=bytes(0x80)
+                raw[0x380:0x380+len(imported)+1]=imported.encode()+b'\0'
+                raw=bytes(raw)
+            file.write_bytes(raw);total+=len(raw)
+        seen=[]
+        def mapped(path):seen.append(path);return files[path]
+        result=self.inventory(root,mapped)
+        self.assertEqual(seen,[*[c['path']for c in producer.COMMAND_CANDIDATES],base+'first.dll',base+'second.dll'])
+        self.assertEqual(result['observedBytes'],total)
+        self.assertEqual(len(result['rows']),14)
+        self.assertEqual(len([e for e in result['edges'] if e['classification']=='rooted-candidate']),2)
+        self.assertFalse(result['executionAdmitted']);self.assertFalse(result['gnExecuted'])
+
+    def test_read_primary_is_not_replaced_by_retention_failure(self):
+        root=self.temp();sentinel=OSError('synthetic read failure')
+        def broken(_):raise sentinel
+        producer.COMMAND_INVENTORY_REPORTING_FAILURE=False
+        with self.assertRaises(OSError)as raised:self.inventory(root,broken,save=OSError('synthetic sink'))
+        self.assertIs(raised.exception,sentinel)
+        self.assertTrue(producer.COMMAND_INVENTORY_REPORTING_FAILURE)
+        producer.COMMAND_INVENTORY_REPORTING_FAILURE=False
+
+    def test_changed_graph_policy_denies_before_candidate_reads(self):
+        root=self.temp();p=copy.deepcopy(PROFILE);p['commandInventory']['importGraph']['dllRoot']='C:/arbitrary/'
+        with patch.object(producer,'source_capacity',return_value={}),patch.object(producer,'Path',side_effect=AssertionError('no read')):
+            with self.assertRaisesRegex(acquire.Denied,'FULL_IMPORT_POLICY'):
+                producer.command_inventory(root,{'mode':'command-inventory'},p,clock())
 
 
 class InventoryClockTests(unittest.TestCase):
