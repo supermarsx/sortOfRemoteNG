@@ -863,8 +863,17 @@ function metalFixture(patch = {}) {
       return {};
     }
     assert.equal(executable, "/usr/bin/xcrun");
-    assert.equal(args[0], "--no-cache");
-    assert.equal(args.filter((value) => value === "--no-cache").length, 1);
+    assert(
+      [
+        ["--find", "metal"],
+        ["metal", "--version"],
+        ["--find", "metallib"],
+      ].some((allowed) => JSON.stringify(args) === JSON.stringify(allowed)),
+      "only the existing short SDKROOT-selected default-cache vectors are allowed",
+    );
+    assert.equal(options.env.xcrun_nocache, undefined);
+    assert.equal(options.env.xcrun_log, undefined);
+    assert.equal(options.env.TOOLCHAINS, undefined);
     if (args.includes("--find"))
       return { stdout: patch.path ?? rolePath(args.at(-1)) };
     assert.ok(
@@ -1150,7 +1159,7 @@ test("metallib alias denies unknown target cross-component invalid signature and
   }
 });
 
-test("selected Metal lookup and revalidation use exactly one documented no-cache flag without changing other command authority", async () => {
+test("selected Metal lookup and revalidation use normal caching without changing other command authority", async () => {
   const f = metalFixture();
   const result = await prepareMacMetalToolchain(
     { ...f, platform: "darwin", remainingMilliseconds: () => 12345 },
@@ -1160,11 +1169,11 @@ test("selected Metal lookup and revalidation use exactly one documented no-cache
   assert.deepEqual(
     query.map((call) => call.args),
     [
-      ["--no-cache", "--find", "metal"],
-      ["--no-cache", "metal", "--version"],
-      ["--no-cache", "--find", "metal"],
-      ["--no-cache", "--find", "metallib"],
-      ["--no-cache", "--find", "metallib"],
+      ["--find", "metal"],
+      ["metal", "--version"],
+      ["--find", "metal"],
+      ["--find", "metallib"],
+      ["--find", "metallib"],
     ],
   );
   for (const call of f.calls) {
@@ -1174,8 +1183,9 @@ test("selected Metal lookup and revalidation use exactly one documented no-cache
     assert.equal(call.options.env.HOME, f.env.HOME);
     assert.equal(call.options.env.TMPDIR, f.env.TMPDIR);
     assert.equal(call.options.env.xcrun_nocache, undefined);
-    if (call.executable !== "/usr/bin/xcrun")
-      assert(!call.args.includes("--no-cache"));
+    assert(!call.args.includes("--no-cache"));
+    assert(!call.args.includes("--kill-cache"));
+    assert(!call.args.includes("--sdk"));
   }
   assert.equal(result.componentResourceClosureVerified, false);
   assert.equal(result.nativeCompatibilityVerified, false);
@@ -1186,6 +1196,9 @@ test("selected Metal SDK environment overrides foreign ambient values and invali
   const f = metalFixture();
   f.env.SDKROOT = "/foreign/ambient.sdk";
   f.env.DEVELOPER_DIR = "/foreign/Contents/Developer";
+  f.env.xcrun_nocache = "1";
+  f.env.xcrun_log = "1";
+  f.env.TOOLCHAINS = "foreign";
   const execute = f.dependencies.exec;
   f.dependencies.exec = async (file, args, options) => {
     assert.equal(options.env.SDKROOT, f.selected.SDKROOT);
@@ -1221,4 +1234,116 @@ test("selected Metal SDK environment overrides foreign ambient values and invali
       );
       assert.deepEqual(denied.calls, []);
     }
+});
+
+test("normal-cache initial path, missing file and signature denials precede Metal execution", async () => {
+  for (const [fault, reason] of [
+    ["relative", "MAC_METAL_RESOLVED_PATH"],
+    ["outside", "MAC_METAL_RESOLVED_PATH"],
+    ["missing", "MAC_METAL_UNAVAILABLE"],
+    ["signature", "MAC_METAL_COMMAND_FAILED"],
+  ]) {
+    const f = metalFixture({
+      ...(fault === "relative" ? { path: "relative/metal" } : {}),
+      ...(fault === "outside" ? { path: "/tmp/foreign/metal" } : {}),
+      signingFailure: fault === "signature",
+    });
+    const measured = [];
+    const originalMeasure = f.dependencies.measure;
+    f.dependencies.measure = async (...args) => {
+      measured.push(args[0]);
+      if (fault === "missing") throw new Error("private missing cached file");
+      return originalMeasure(...args);
+    };
+    await assert.rejects(
+      prepareMacMetalToolchain(
+        { ...f, platform: "darwin", allowDownload: true },
+        f.dependencies,
+      ),
+      (error) => error.message === reason,
+    );
+    assert.equal(f.calls.filter((c) => c.args.includes("--version")).length, 0);
+    assert.equal(
+      f.calls.filter((c) => c.executable === "/usr/bin/xcodebuild").length,
+      0,
+    );
+    assert.equal(
+      measured.length,
+      ["relative", "outside"].includes(fault) ? 0 : 1,
+    );
+    assert.equal(
+      f.calls.filter((c) => c.executable === "/usr/bin/codesign").length,
+      fault === "signature" ? 1 : 0,
+    );
+  }
+});
+
+test("normal-cache revalidation denies post-version hash or repeated-path drift without claiming pre-execution denial", async () => {
+  for (const fault of ["hash", "path"]) {
+    const f = metalFixture({ mutation: fault === "hash" });
+    const execute = f.dependencies.exec;
+    let metalFinds = 0;
+    f.dependencies.exec = async (file, args, options) => {
+      const result = await execute(file, args, options);
+      if (
+        file === "/usr/bin/xcrun" &&
+        JSON.stringify(args) === JSON.stringify(["--find", "metal"])
+      ) {
+        metalFinds++;
+        if (fault === "path" && metalFinds === 2)
+          return { stdout: "/tmp/changed/Metal.xctoolchain/usr/bin/metal" };
+      }
+      return result;
+    };
+    await assert.rejects(
+      prepareMacMetalToolchain({ ...f, platform: "darwin" }, f.dependencies),
+      /MAC_METAL_FILE_CHANGED/,
+    );
+    assert.equal(f.calls.filter((c) => c.args.includes("--version")).length, 1);
+    assert.equal(
+      f.calls.filter((c) => c.executable === "/usr/bin/codesign").length,
+      1,
+    );
+    assert.equal(f.calls.filter((c) => c.args.at(-1) === "metallib").length, 0);
+    assert.equal(metalFinds, fault === "hash" ? 1 : 2);
+  }
+});
+
+test("normal-cache actual helper retains measure, signature, version and repeat-lookup order", async () => {
+  const f = metalFixture();
+  const trace = [];
+  const execute = f.dependencies.exec,
+    measure = f.dependencies.measure;
+  f.dependencies.exec = async (file, args, options) => {
+    trace.push(
+      file === "/usr/bin/codesign"
+        ? "signature:" + args.at(-1).split("/").at(-1)
+        : args.join(" "),
+    );
+    return execute(file, args, options);
+  };
+  f.dependencies.measure = async (file, check) => {
+    trace.push("measure:" + file.split("/").at(-1));
+    return measure(file, check);
+  };
+  const result = await prepareMacMetalToolchain(
+    { ...f, platform: "darwin" },
+    f.dependencies,
+  );
+  assert.deepEqual(trace, [
+    "--find metal",
+    "measure:metal",
+    "signature:metal",
+    "metal --version",
+    "measure:metal",
+    "--find metal",
+    "--find metallib",
+    "measure:metallib",
+    "signature:metallib",
+    "measure:metallib",
+    "--find metallib",
+  ]);
+  assert.equal(macMetalFingerprint(result).tools.length, 2);
+  assert.equal(result.componentResourceClosureVerified, false);
+  assert.equal(result.nativeCompatibilityVerified, false);
 });

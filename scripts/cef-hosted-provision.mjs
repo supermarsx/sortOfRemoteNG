@@ -313,11 +313,7 @@ async function prepareMacMetalToolchainImpl(
     left();
     let componentRoot;
     for (const role of ["metal", "metallib"]) {
-      const resolved = await invoke("/usr/bin/xcrun", [
-        "--no-cache",
-        "--find",
-        role,
-      ]);
+      const resolved = await invoke("/usr/bin/xcrun", ["--find", role]);
       const file = String(resolved.stdout ?? "").trim();
       if (
         !path.posix.isAbsolute(file) ||
@@ -355,21 +351,14 @@ async function prepareMacMetalToolchainImpl(
       ]);
       const version =
         role === "metal"
-          ? metalVersion(
-              await invoke("/usr/bin/xcrun", [
-                "--no-cache",
-                "metal",
-                "--version",
-              ]),
-            )
+          ? metalVersion(await invoke("/usr/bin/xcrun", ["metal", "--version"]))
           : null;
       const after = await measure(physical, left);
       if (
         JSON.stringify(before) !== JSON.stringify(after) ||
         (await canonical(
           String(
-            (await invoke("/usr/bin/xcrun", ["--no-cache", "--find", role]))
-              .stdout ?? "",
+            (await invoke("/usr/bin/xcrun", ["--find", role])).stdout ?? "",
           ).trim(),
         )) !== physical
       )
