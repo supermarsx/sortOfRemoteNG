@@ -11581,3 +11581,95 @@ test(
     );
   },
 );
+
+const MAC_EXTERNAL_LINK_DIAGNOSTIC_PROOF = String.raw`import ast,contextlib,copy,hashlib,importlib.util,io,json,pathlib,sys,unittest
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('link_subject',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+source=pathlib.Path(sys.argv[1]).read_bytes();tree=ast.parse(source)
+developer='/Applications/Xcode_26.3.app/Contents/Developer'
+ROOTS={'sdk':m._MAC_EXTERNAL_SDK_ROOT,'toolchain':developer+'/Toolchains/XcodeDefault.xctoolchain','metal':'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/'+'a'*40+'/Metal.xctoolchain','python':'/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework'}
+def inventories():return {role:{'entries':[]}for role in ROOTS}
+def link(values,role,name,target):
+ values[role]['entries'].append({'path':name,'kind':'symlink','target':target,'sha256':hashlib.sha256(target.encode()).hexdigest()})
+def entry(values,role,name,kind='file'):values[role]['entries'].append({'path':name,'kind':kind})
+class ExternalLinkDiagnostic(unittest.TestCase):
+ def printed(self,error):
+  handler=tree.body[-1].body[0].handlers[0];scope=dict(m.__dict__);scope['error']=error;out=io.StringIO()
+  with contextlib.redirect_stdout(out),self.assertRaises(SystemExit)as exit:exec(compile(ast.Module(body=handler.body,type_ignores=[]),'<actual-error-output>','exec'),scope)
+  self.assertEqual(exit.exception.code,1);return json.loads(out.getvalue())
+ def failure(self,values,reason='source-external-input-unattested',projection=None):
+  original=m.require;errors=[];events=[]
+  def checked(ok,label):
+   try:return original(ok,label)
+   except m.CheckpointError as error:
+    if label==reason:errors.append(error);events.append('original')
+    raise
+  def noio(*args,**kwargs):raise AssertionError('resolver/diagnostic must not perform filesystem IO')
+  with contextlib.ExitStack()as stack:
+   for name,value in [('require',checked),('MAC_EXTERNAL_ROLE','python'),('MAC_EXTERNAL_PHASE','links')]:stack.enter_context(patch.object(m,name,value))
+   for name in ['stat','lstat','readlink','scandir','open']:stack.enter_context(patch.object(m.os,name,noio))
+   if projection is not None:
+    def project(*args,**kwargs):events.append('diagnostic');return projection(*args,**kwargs)
+    stack.enter_context(patch.object(m,'external_link_diagnostic',project))
+   try:m.mac_external_links(ROOTS,values,m.Budget(5))
+   except m.CheckpointError as error:
+    self.assertEqual(str(error),reason);self.assertEqual(len(errors),1);self.assertIs(error,errors[0]);printed=self.printed(error);self.assertIs(printed['complete'],False);self.assertEqual(printed['error'],reason);return error,printed,events
+   self.fail('expected original validator denial')
+ def test_missing_declared_row_binds_actual_origin_not_stale_global(self):
+  values=inventories();link(values,'sdk','origin','missing')
+  error,out,_=self.failure(values);d=out['externalLinkFailure'];self.assertEqual(error.external_link_failure,d);self.assertEqual(out['externalRole'],'sdk');self.assertEqual(d['originRole'],'sdk');self.assertEqual(d['originPath']['prefix'],'origin');self.assertEqual(d['classification'],'declared-role-entry-missing');self.assertEqual(d['attemptedDeclaredRole'],'sdk');self.assertEqual(d['attemptedAddress']['scope'],'declared-role');self.assertEqual(d['attemptedAddress']['prefix'],'missing')
+ def test_real_boundary_ancestor_and_underflow_denials_keep_original_error(self):
+  for target,site,classification in [('/Users/private/secret','declared-root-boundary','outside-declared-roots'),('/Applications','declared-root-boundary','verified-root-ancestor-not-final'),('/..','absolute-root-underflow','absolute-root-underflow')]:
+   with self.subTest(target=target):
+    values=inventories();link(values,'sdk','origin',target);error,out,_=self.failure(values);self.assertEqual(out['externalLinkFailure']['site'],site);self.assertEqual(out['externalLinkFailure']['classification'],classification);self.assertNotIn('secret',json.dumps(out))
+ def test_nested_crossrole_preserves_origin_and_last_expansion_separately(self):
+  values=inventories();link(values,'sdk','origin',ROOTS['metal']+'/relay');link(values,'metal','relay','/Users/private/secret')
+  error,out,_=self.failure(values);d=out['externalLinkFailure'];self.assertEqual(out['externalRole'],'sdk');self.assertEqual(d['lastExpandedRole'],'metal');self.assertEqual(d['target']['role'],'metal');self.assertEqual(d['target']['prefix'],'relay');self.assertTrue(d['lastExpandedTarget']['omitted']);self.assertNotIn('secret',json.dumps(out));self.assertNotIn('/Users/',json.dumps(out))
+ def test_public_labels_are_disclosure_only_and_unknown_private_targets_hash_only(self):
+  for label,root in m._EXTERNAL_LINK_PUBLIC_PREFIXES.items():
+   # Real resolver still denies a missing/unattested public location.
+   values=inventories();link(values,'sdk','origin',root+'missing')
+   error,out,_=self.failure(values);projected=out['externalLinkFailure']['target'];self.assertEqual(projected['scope'],'public-prefix');self.assertEqual(projected['publicPrefix'],label);self.assertEqual(projected['prefix'],'missing')
+  for target in ['/Users/private/secret','/private/tmp/secret','/var/private/secret','/etc/private/secret','/home/private/secret','/usr/local/Cellar/unknown/99/secret','/usr/local/Cellar/python@3.14/3.14.8/secret','/System/Library/../Users/private/secret']:
+   with self.subTest(target=target):
+    values=inventories();link(values,'sdk','origin',target);error,out,_=self.failure(values);p=out['externalLinkFailure']['target'];self.assertTrue(p['omitted']);self.assertIsNone(p['prefix']);self.assertEqual(p['sha256'],hashlib.sha256(target.encode()).hexdigest());self.assertNotIn('secret',json.dumps(out))
+  for target in ['../private/secret',r'C:\private\secret',r'\\host\private\secret','~/private/secret','safe\x01secret']:
+   p=m.external_link_text(target,ROOTS,'sdk');self.assertTrue(p['omitted']);self.assertIsNone(p['prefix']);self.assertNotIn('secret',json.dumps(p))
+ def test_diagnostic_fault_occurs_after_primary_and_never_masks_or_attributes(self):
+  def broken(*args):raise RuntimeError('private diagnostic failure')
+  values=inventories();link(values,'sdk','origin','missing');error,out,events=self.failure(values,projection=broken);self.assertEqual(events,['original','diagnostic']);self.assertNotIn('externalLinkFailure',out);self.assertNotIn('externalRole',out);self.assertEqual(out['externalPhase'],'links');self.assertNotIn('private',json.dumps(out))
+  for forged in [{}, {'originRole':'sdk','private':'secret'}, None]:
+   error,out,events=self.failure(values,projection=lambda *args:forged);self.assertNotIn('externalRole',out);self.assertNotIn('externalLinkFailure',out);self.assertNotIn('secret',json.dumps(out));self.assertEqual(events,['original','diagnostic'])
+ def test_forged_unknown_private_and_malformed_projection_fields_are_not_output(self):
+  values=inventories();link(values,'sdk','origin','missing');error,out,_=self.failure(values);original=out['externalLinkFailure'];m.MAC_EXTERNAL_PHASE='links';m.MAC_EXTERNAL_ROLE='python'
+  cases=[lambda d:d.update(private='secret'),lambda d:d['originPath'].update(prefix=''),lambda d:d.update(originRole='unknown'),lambda d:d.update(lastExpandedRole=None),lambda d:d.update(expansions=True),lambda d:d.update(expansions=65),lambda d:d['originPath'].update(prefix='/Users/private/secret'),lambda d:d['originPath'].update(prefix=r'C:\private\secret'),lambda d:d['target'].update(publicPrefix='private-home'),lambda d:d['target'].update(utf8Bytes=True),lambda d:d['target'].update(sha256='private'),lambda d:d['target'].update(prefix='😀'*128),lambda d:d['target'].update(unknown='private'),lambda d:d['target'].update(omitted=True),lambda d:d.update(attemptedDeclaredRole=None)]
+  for change in cases:
+   d=copy.deepcopy(original);change(d);error.external_link_failure=d;self.assertEqual(m.external_link_fields(error),{});printed=self.printed(error);self.assertNotIn('externalLinkFailure',printed);self.assertNotIn('externalRole',printed);self.assertNotIn('secret',json.dumps(printed))
+  error.external_link_failure=original
+  for phase in ['snapshot','pins','readback',None]:
+   m.MAC_EXTERNAL_PHASE=phase;self.assertEqual(m.external_link_fields(error),{})
+  m.MAC_EXTERNAL_PHASE='links';other=m.CheckpointError('archive-deadline');other.external_link_failure=original;self.assertEqual(m.external_link_fields(other),{})
+ def test_escaping_and_attempted_address_budgets_stay_physical_json_bounds(self):
+  name='😀'*200;values=inventories();link(values,'sdk',name,'/Users/private/'+'x'*3000);error,out,_=self.failure(values);d=out['externalLinkFailure'];self.assertLessEqual(len(json.dumps(d,ensure_ascii=True).encode()),4096);self.assertTrue(d['originPath']['truncated']);self.assertLessEqual(len(json.dumps(d['originPath']['prefix'],ensure_ascii=True).encode()),512);self.assertEqual(d['originPath']['sha256'],hashlib.sha256(name.encode()).hexdigest())
+  for target in ['x'*4097,None,42]:
+   p=m.external_link_text(target,ROOTS,'sdk');self.assertEqual(p['omittedReason'],'UNAVAILABLE');self.assertIsNone(p['sha256'])
+  p=m.external_link_address(['x']*1025,ROOTS,'sdk');self.assertEqual(p['omittedReason'],'UNAVAILABLE');self.assertIsNone(p['prefix'])
+ def test_success_and_existing_kind_cycle_deadline_guards_are_unchanged(self):
+  values=inventories();entry(values,'sdk','file');entry(values,'sdk','directory','directory');link(values,'sdk','jump','directory');link(values,'sdk','origin','jump/../file');m.mac_external_links(ROOTS,values,m.Budget(5))
+  values=inventories();entry(values,'sdk','file');link(values,'sdk','origin','file/child');error,out,_=self.failure(values,'source-external-link-kind');self.assertNotIn('externalLinkFailure',out);self.assertNotIn('externalRole',out)
+  values=inventories();link(values,'sdk','origin','origin');error,out,_=self.failure(values,'source-external-link-cycle');self.assertNotIn('externalLinkFailure',out)
+  class Expired:
+   def check(self):raise marker
+  marker=m.CheckpointError('archive-deadline')
+  with self.assertRaises(m.CheckpointError)as caught:m.mac_external_links(ROOTS,values,Expired())
+  self.assertIs(caught.exception,marker);self.assertFalse(hasattr(marker,'external_link_failure'));self.assertFalse(m.MAC_SOURCE_WRITE_ADMITTED)
+unittest.main(argv=['external-link-diagnostic'],verbosity=2)
+`;
+
+test("Mac external link diagnostic executes actual table denials and error output without IO, stale role or private leakage", () => {
+  const result = python(MAC_EXTERNAL_LINK_DIAGNOSTIC_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 8 tests/);
+});
