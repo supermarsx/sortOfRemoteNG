@@ -11673,3 +11673,234 @@ test("Mac external link diagnostic executes actual table denials and error outpu
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stderr, /Ran 8 tests/);
 });
+
+let externalFailureFrames;
+function actualExternalFailureFrames() {
+  if (externalFailureFrames) return externalFailureFrames;
+  const frames = (proof, tail) => {
+    const end = proof.lastIndexOf("\nunittest.main(");
+    assert(end > 0);
+    const result = python(proof.slice(0, end) + "\n" + tail, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const links = frames(
+    MAC_EXTERNAL_LINK_DIAGNOSTIC_PROOF,
+    String.raw`
+case=ExternalLinkDiagnostic();rows=[]
+for target in ['missing','/Users/private/secret','/System/Library/missing']:
+ values=inventories();link(values,'sdk','origin',target);rows.append(case.failure(values)[1])
+values=inventories();link(values,'sdk','origin','missing');rows.append(case.failure(values,projection=lambda *args:None)[1])
+print(json.dumps(rows))
+`,
+  );
+  const members = frames(
+    MAC_MEMBER_DIAGNOSTIC_PROOF,
+    String.raw`
+case=MemberDiagnostic();rows=[]
+for name in ['public/CON.h','public:header.h','public/control\x01.h']:
+ rows.append(case.failure(name)[2])
+print(json.dumps(rows))
+`,
+  );
+  return (externalFailureFrames = { links, members });
+}
+
+test("actual Python external table and CLI failures cross the actual mode-scoped archive projector", () => {
+  const { links, members } = actualExternalFailureFrames();
+  for (const frame of [...links.slice(0, 3), ...members.slice(0, 2)]) {
+    const output = archiveFailureRecord(JSON.stringify(frame), 1, {
+      sourceMode: "mac-external-observe",
+    });
+    assert.equal(output.error, frame.error);
+    assert.equal(output.exitCode, 1);
+    for (const key of ["externalMemberFailure", "externalLinkFailure"])
+      if (Object.hasOwn(frame, key)) assert.deepEqual(output[key], frame[key]);
+    assert.equal(output.externalDiagnosticInvalid, undefined);
+  }
+  const noRole = links[3];
+  assert.equal(noRole.externalRole, undefined);
+  assert.deepEqual(
+    archiveFailureRecord(JSON.stringify(noRole), 1, {
+      sourceMode: "mac-external-observe",
+    }),
+    {
+      error: "source-external-input-unattested",
+      externalPhase: "links",
+      exitCode: 1,
+    },
+  );
+  const stale = { ...noRole, externalRole: "python" };
+  const output = archiveFailureRecord(JSON.stringify(stale), 1, {
+    sourceMode: "mac-external-observe",
+  });
+  assert.equal(output.error, stale.error);
+  assert.equal(output.externalRole, undefined);
+  // Node intentionally omits a stricter-disclosure control-name diagnostic.
+  const control = archiveFailureRecord(JSON.stringify(members[2]), 1, {
+    sourceMode: "mac-external-observe",
+  });
+  assert.equal(control.error, "member-path");
+  assert.equal(control.externalMemberFailure, undefined);
+  assert.equal(control.externalDiagnosticInvalid, true);
+});
+
+test("external archive diagnostics remain unavailable in every unrelated or absent mode and invalid base context", () => {
+  const frame = actualExternalFailureFrames().links[0];
+  for (const sourceMode of [
+    undefined,
+    null,
+    "source-record",
+    "source-verify",
+    "source-apply",
+    "mac-owned-capability-observe",
+    "unknown",
+  ])
+    assert.deepEqual(
+      archiveFailureRecord(JSON.stringify(frame), 1, { sourceMode }),
+      { error: "unknown", exitCode: 1 },
+    );
+  for (const changes of [
+    { complete: true },
+    { error: "PRIVATE_UNKNOWN_ERROR" },
+    { externalRole: "private-role" },
+    { externalPhase: "private-phase" },
+    { privateTop: "PRIVATE_UNKNOWN_TOP" },
+  ])
+    assert.deepEqual(
+      archiveFailureRecord(JSON.stringify({ ...frame, ...changes }), 1, {
+        sourceMode: "mac-external-observe",
+      }),
+      { error: "unknown", exitCode: 1 },
+    );
+  const noRole = actualExternalFailureFrames().links[3];
+  assert.deepEqual(archiveFailureRecord(JSON.stringify(noRole), 1), {
+    error: "unknown",
+    exitCode: 1,
+  });
+});
+
+test("malformed optional Mac projections never replace valid base error, exit, close or join facts or disclose private fields", () => {
+  const { links, members } = actualExternalFailureFrames();
+  const cases = [];
+  const linkChange = (change) => {
+    const frame = structuredClone(links[0]);
+    change(frame.externalLinkFailure, frame);
+    cases.push(frame);
+  };
+  linkChange((value) => {
+    value.privateUnknown = "PRIVATE_UNKNOWN_FIELD";
+  });
+  linkChange((value) => {
+    value.originRole = "python";
+  });
+  linkChange((value) => {
+    value.expansions = 65;
+  });
+  linkChange((value) => {
+    value.expansions = true;
+  });
+  linkChange((value) => {
+    value.expansions = -1;
+  });
+  linkChange((value) => {
+    value.expansions = 0.5;
+  });
+  linkChange((value) => {
+    value.site = "PRIVATE_SITE";
+  });
+  linkChange((value) => {
+    value.attemptedDeclaredRole = null;
+  });
+  linkChange((value) => {
+    value.ancestorNavigation = 1;
+  });
+  linkChange((value) => {
+    value.lastExpandedRole = "PRIVATE_ROLE";
+  });
+  linkChange((value) => {
+    value.classification = "PRIVATE_CLASSIFICATION";
+  });
+  linkChange((value) => {
+    value.originPath.prefix = "/Users/private/PRIVATE_PATH";
+  });
+  linkChange((value) => {
+    value.target.publicPrefix = "PRIVATE_PREFIX";
+  });
+  linkChange((value) => {
+    value.target.scope = "PRIVATE_SCOPE";
+  });
+  linkChange((value) => {
+    value.target.role = "PRIVATE_ROLE";
+  });
+  linkChange((value) => {
+    value.target.sha256 = "not-a-hash";
+  });
+  linkChange((value) => {
+    value.target.utf8Bytes = false;
+  });
+  linkChange((value) => {
+    value.target.omitted = true;
+  });
+  linkChange((value) => {
+    value.target.omittedReason = "PRIVATE_REASON";
+  });
+  linkChange((value) => {
+    value.originPath.prefix = "\ud800";
+  });
+  linkChange((value) => {
+    value.originPath.prefix = "😀".repeat(100);
+  });
+  linkChange((value) => {
+    value.originPath.prefix = "x".repeat(5000);
+  });
+  linkChange((value, frame) => {
+    frame.externalRole = "python";
+  });
+  linkChange((value, frame) => {
+    frame.externalPhase = "readback";
+  });
+  linkChange((value, frame) => {
+    frame.error = "source-external-changed";
+  });
+  for (const changes of [
+    { pathPrefix: "C:PRIVATE_DRIVE" },
+    { pathPrefix: "~/PRIVATE_HOME" },
+    { pathPrefix: "public/../PRIVATE_PARENT" },
+    { utf8Bytes: true },
+    { utf8Bytes: 0 },
+    { characterCount: -1 },
+    { characterCount: 1.5 },
+    { characterCountAtLeast: 1025 },
+    { pathTruncated: true },
+    { pathOmitted: true },
+    { pathPrefix: "\ud800" },
+    { predicate: "PRIVATE_PREDICATE" },
+    { subpredicate: "PRIVATE_SUBPREDICATE" },
+    { privateUnknown: "PRIVATE_MEMBER_FIELD" },
+    { pathPrefix: "x".repeat(5000) },
+  ]) {
+    const frame = structuredClone(members[0]);
+    Object.assign(frame.externalMemberFailure, changes);
+    cases.push(frame);
+  }
+  for (const frame of cases) {
+    frame.sourceCloseFailure = true;
+    frame.sourceJoinFailure = true;
+    const output = archiveFailureRecord(JSON.stringify(frame), 7, {
+      sourceMode: "mac-external-observe",
+      cleanupUnknown: true,
+    });
+    assert.equal(output.error, frame.error);
+    assert.equal(output.exitCode, 7);
+    assert.equal(output.sourceCloseFailure, true);
+    assert.equal(output.sourceJoinFailure, true);
+    assert.equal(output.archiveCleanupUnknown, true);
+    assert.equal(output.externalDiagnosticInvalid, true);
+    assert.equal(output.externalLinkFailure, undefined);
+    assert.equal(output.externalMemberFailure, undefined);
+    assert.doesNotMatch(JSON.stringify(output), /PRIVATE_|😀/);
+  }
+});

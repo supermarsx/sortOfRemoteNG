@@ -1266,6 +1266,235 @@ function sourceIoFailure(value, mode) {
   return value;
 }
 
+const MAC_EXTERNAL_ROLES = ["sdk", "toolchain", "metal", "python"];
+const MAC_EXTERNAL_PUBLIC_LABELS = [
+  "apple-system-library",
+  "apple-system-lib",
+  "apple-system-share",
+  "selected-xcode-developer",
+  "pinned-python-cellar",
+];
+const diagnosticBytes = (value) =>
+  Buffer.byteLength(
+    JSON.stringify(value).replace(
+      /[\u007f-\uffff]/g,
+      (character) =>
+        "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
+    ),
+  );
+const diagnosticKeys = (value, keys) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  Object.keys(value).length === keys.length &&
+  keys.every((key) => Object.hasOwn(value, key));
+const diagnosticRelative = (value) =>
+  typeof value === "string" &&
+  !value.startsWith("/") &&
+  !value.startsWith("~") &&
+  !/^[A-Za-z]:/.test(value) &&
+  Buffer.from(value).toString("utf8") === value &&
+  !/[\\\x00-\x1f\x7f]/.test(value) &&
+  !value.split("/").some((part) => part === "." || part === "..");
+function externalMemberDiagnostic(value) {
+  if (
+    !diagnosticKeys(value, [
+      "role",
+      "phase",
+      "site",
+      "predicate",
+      "subpredicate",
+      "pathPrefix",
+      "pathTruncated",
+      "pathOmitted",
+      "pathOmittedReason",
+      "characterCount",
+      "characterCountAtLeast",
+      "utf8Bytes",
+    ]) ||
+    diagnosticBytes(value) > 4096 ||
+    value.role !== "sdk" ||
+    value.phase !== "snapshot" ||
+    value.site !== "inventory-relative" ||
+    typeof value.pathTruncated !== "boolean" ||
+    typeof value.pathOmitted !== "boolean"
+  )
+    return false;
+  const pairs = {
+    "type-or-byte-bound": ["empty", "byte-bound"],
+    "absolute-backslash-or-colon": ["absolute", "backslash", "colon"],
+    "component-syntax": [
+      "empty-dot-parent",
+      "trailing-space-or-dot",
+      "dos-reserved-component",
+    ],
+    "control-character": ["control"],
+  };
+  if (!pairs[value.predicate]?.includes(value.subpredicate)) return false;
+  if (
+    !["characterCount", "characterCountAtLeast", "utf8Bytes"].every(
+      (key) =>
+        value[key] === null ||
+        (Number.isSafeInteger(value[key]) &&
+          value[key] >= 0 &&
+          value[key] <= 4096),
+    )
+  )
+    return false;
+  if (
+    value.characterCount === null
+      ? value.characterCountAtLeast !== 1025
+      : value.characterCount > 1024 || value.characterCountAtLeast !== null
+  )
+    return false;
+  if ((value.characterCount === null) !== (value.utf8Bytes === null))
+    return false;
+  if (value.pathOmitted)
+    return (
+      value.pathPrefix === null &&
+      value.pathTruncated === false &&
+      value.pathOmittedReason === "ABSOLUTE_OR_UNPROVEN_RELATIVE"
+    );
+  return (
+    diagnosticRelative(value.pathPrefix) &&
+    value.pathPrefix.length <= 256 &&
+    value.pathOmittedReason === null &&
+    value.pathTruncated ===
+      (value.characterCount === null || value.characterCount > 256) &&
+    Array.from(value.pathPrefix).length ===
+      Math.min(256, value.characterCount ?? 1025) &&
+    (value.utf8Bytes === null ||
+      (value.pathTruncated
+        ? value.utf8Bytes >= Buffer.byteLength(value.pathPrefix)
+        : value.utf8Bytes === Buffer.byteLength(value.pathPrefix)))
+  );
+}
+function externalLinkDiagnostic(value) {
+  if (
+    !diagnosticKeys(value, [
+      "originRole",
+      "originPath",
+      "site",
+      "classification",
+      "attemptedDeclaredRole",
+      "ancestorNavigation",
+      "expansions",
+      "target",
+      "lastExpandedRole",
+      "lastExpandedTarget",
+      "attemptedAddress",
+    ]) ||
+    diagnosticBytes(value) > 4096 ||
+    !MAC_EXTERNAL_ROLES.includes(value.originRole) ||
+    !MAC_EXTERNAL_ROLES.includes(value.lastExpandedRole) ||
+    ![null, ...MAC_EXTERNAL_ROLES].includes(value.attemptedDeclaredRole) ||
+    typeof value.ancestorNavigation !== "boolean" ||
+    !Number.isSafeInteger(value.expansions) ||
+    value.expansions < 0 ||
+    value.expansions > 64
+  )
+    return false;
+  const pairs = {
+    "declared-role-entry": ["declared-role-entry-missing"],
+    "declared-root-boundary": [
+      "outside-declared-roots",
+      "verified-root-ancestor-not-final",
+    ],
+    "absolute-root-underflow": ["absolute-root-underflow"],
+  };
+  if (
+    !pairs[value.site]?.includes(value.classification) ||
+    (value.site === "declared-role-entry") !==
+      (value.attemptedDeclaredRole !== null)
+  )
+    return false;
+  for (const key of [
+    "originPath",
+    "target",
+    "lastExpandedTarget",
+    "attemptedAddress",
+  ]) {
+    const item = value[key];
+    if (
+      !diagnosticKeys(item, [
+        "scope",
+        "role",
+        "publicPrefix",
+        "prefix",
+        "utf8Bytes",
+        "sha256",
+        "truncated",
+        "omitted",
+        "omittedReason",
+      ]) ||
+      ![
+        "omitted",
+        "declared-role",
+        "public-prefix",
+        "descendant-relative",
+      ].includes(item.scope) ||
+      ![null, ...MAC_EXTERNAL_ROLES].includes(item.role) ||
+      ![null, ...MAC_EXTERNAL_PUBLIC_LABELS].includes(item.publicPrefix) ||
+      typeof item.truncated !== "boolean" ||
+      typeof item.omitted !== "boolean" ||
+      ![null, "UNAVAILABLE", "UNKNOWN_ABSOLUTE", "UNSAFE_TARGET"].includes(
+        item.omittedReason,
+      )
+    )
+      return false;
+    if (
+      (item.utf8Bytes === null) !== (item.sha256 === null) ||
+      (item.utf8Bytes !== null &&
+        (!Number.isSafeInteger(item.utf8Bytes) ||
+          item.utf8Bytes <= 0 ||
+          item.utf8Bytes > 4096)) ||
+      (item.sha256 !== null &&
+        (typeof item.sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(item.sha256))) ||
+      (item.omittedReason === "UNAVAILABLE" && item.sha256 !== null) ||
+      (["UNKNOWN_ABSOLUTE", "UNSAFE_TARGET"].includes(item.omittedReason) &&
+        item.sha256 === null)
+    )
+      return false;
+    if (item.omitted) {
+      if (
+        item.scope !== "omitted" ||
+        item.prefix !== null ||
+        item.role !== null ||
+        item.publicPrefix !== null ||
+        item.truncated ||
+        item.omittedReason === null
+      )
+        return false;
+    } else {
+      if (
+        !diagnosticRelative(item.prefix) ||
+        item.prefix.length > 128 ||
+        diagnosticBytes(item.prefix) > 512 ||
+        item.omittedReason !== null ||
+        item.sha256 === null ||
+        (item.role !== "sdk" && item.prefix.includes(":"))
+      )
+        return false;
+      if (["declared-role", "descendant-relative"].includes(item.scope)) {
+        if (item.role === null || item.publicPrefix !== null) return false;
+      } else if (
+        item.scope !== "public-prefix" ||
+        item.publicPrefix === null ||
+        item.role !== null
+      )
+        return false;
+    }
+  }
+  return (
+    value.originPath.scope === "declared-role" &&
+    !value.originPath.omitted &&
+    Boolean(value.originPath.prefix) &&
+    value.originPath.utf8Bytes <= 1024 &&
+    value.originPath.role === value.originRole
+  );
+}
+
 export function archiveFailureRecord(
   stdout,
   exitCode,
@@ -1293,7 +1522,61 @@ export function archiveFailureRecord(
       const decoded = JSON.parse(stdout);
       let value = decoded,
         optional,
-        optionalInvalid = false;
+        optionalInvalid = false,
+        externalOptional,
+        externalInvalid = false,
+        externalLinksWithoutRole = false;
+      // Only this fixed read-only worker mode emits the new optional ABI.
+      if (
+        sourceMode === "mac-external-observe" &&
+        decoded &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        externalOptional = {};
+        for (const [key, validate, matches] of [
+          [
+            "externalMemberFailure",
+            externalMemberDiagnostic,
+            value.error === "member-path" &&
+              value.externalPhase === "snapshot" &&
+              value.externalRole === "sdk",
+          ],
+          [
+            "externalLinkFailure",
+            externalLinkDiagnostic,
+            value.error === "source-external-input-unattested" &&
+              value.externalPhase === "links",
+          ],
+        ]) {
+          if (Object.hasOwn(value, key)) {
+            try {
+              if (matches && validate(value[key]))
+                externalOptional[key] = value[key];
+              else externalInvalid = true;
+            } catch {
+              externalInvalid = true;
+            }
+            delete value[key];
+          }
+        }
+        if (value.externalPhase === "links") {
+          const origin = externalOptional.externalLinkFailure?.originRole;
+          if (
+            Object.hasOwn(value, "externalRole") &&
+            MAC_EXTERNAL_ROLES.includes(value.externalRole) &&
+            (!origin || origin !== value.externalRole)
+          ) {
+            if (origin) {
+              delete externalOptional.externalLinkFailure;
+              externalInvalid = true;
+            }
+            delete value.externalRole; // Never attribute a link from the old snapshot-loop scalar.
+          }
+          externalLinksWithoutRole = !Object.hasOwn(value, "externalRole");
+        }
+      }
       if (
         ["source-record", "source-apply", "source-verify"].includes(
           sourceMode,
@@ -1359,6 +1642,7 @@ export function archiveFailureRecord(
             (value.sourceCloseFailure === true ||
               value.sourceJoinFailure === true ||
               value.macReportingFailure === true ||
+              externalLinksWithoutRole ||
               ["sdk", "toolchain", "metal", "python"].includes(
                 value.externalRole,
               )) &&
@@ -1372,8 +1656,9 @@ export function archiveFailureRecord(
               ["sdk", "toolchain", "metal", "python"].includes(
                 value.externalRole,
               )) &&
-            Object.hasOwn(value, "externalRole") ===
-              Object.hasOwn(value, "externalPhase") &&
+            (externalLinksWithoutRole ||
+              Object.hasOwn(value, "externalRole") ===
+                Object.hasOwn(value, "externalPhase")) &&
             (!Object.hasOwn(value, "externalPhase") ||
               [
                 "snapshot",
@@ -1396,6 +1681,9 @@ export function archiveFailureRecord(
                 externalPhase: value.externalPhase,
               }
             : {}),
+          ...(externalLinksWithoutRole ? { externalPhase: "links" } : {}),
+          ...externalOptional,
+          ...(externalInvalid ? { externalDiagnosticInvalid: true } : {}),
           ...(value.macReportingFailure === true
             ? { macReportingFailure: true }
             : {}),
