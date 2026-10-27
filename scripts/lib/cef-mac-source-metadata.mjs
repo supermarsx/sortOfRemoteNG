@@ -319,11 +319,72 @@ export function macSourceMetadataPlan(identity, out, mode) {
   };
 }
 
+const sdkRelations = new WeakMap();
+// Fixed logical SDK version to physical root attestation; never inferred from a basename.
+export async function macSdkRelation({ selected, sdkTargets, check }, io = fs) {
+  const physical =
+    MAC_DEVELOPER + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
+  const logical =
+    MAC_DEVELOPER + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk";
+  assert(
+    selected?.DEVELOPER_DIR === MAC_DEVELOPER &&
+      selected.SDKROOT === physical &&
+      Array.isArray(sdkTargets) &&
+      sdkTargets.length === 3 &&
+      sdkTargets[0] === physical &&
+      typeof check === "function",
+    "MAC_EXTERNAL_SDK_RELATION",
+  );
+  const observe = async () => {
+    check();
+    const link = await io.lstat(logical, { bigint: true });
+    check();
+    assert(link.isSymbolicLink(), "MAC_EXTERNAL_SDK_RELATION");
+    assert(
+      (await io.readlink(logical)) === "MacOSX.sdk",
+      "MAC_EXTERNAL_SDK_RELATION",
+    );
+    check();
+    assert(
+      (await io.realpath(logical)) === physical,
+      "MAC_EXTERNAL_SDK_RELATION",
+    );
+    check();
+    const root = await io.lstat(physical, { bigint: true });
+    assert(
+      root.isDirectory() && !root.isSymbolicLink(),
+      "MAC_EXTERNAL_SDK_RELATION",
+    );
+    check();
+    assert(
+      (await io.realpath(physical)) === physical,
+      "MAC_EXTERNAL_SDK_RELATION",
+    );
+    check();
+    return { link: full(link), root: full(root) };
+  };
+  const before = await observe(),
+    after = await observe();
+  assert(
+    before.link === after.link && before.root === after.root,
+    "MAC_EXTERNAL_SDK_RELATION_CHANGED",
+  );
+  const proof = Object.freeze({
+    logical,
+    physical,
+    literal: "MacOSX.sdk",
+    version: "26.2",
+  });
+  sdkRelations.set(proof, Object.freeze([...sdkTargets]));
+  return proof;
+}
+
 export function macExternalObservationPlan({
   map,
   toolchain,
   selected,
   sdkTargets,
+  sdkRelation,
   metal,
   runnerTemp,
   output,
@@ -348,11 +409,17 @@ export function macExternalObservationPlan({
   const sdk = plainAbsolute(sdkTargets[0]);
   assert(
     sdk ===
-      MAC_DEVELOPER +
-        "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk" &&
+      MAC_DEVELOPER + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" &&
       sdkTargets[1] === MAC_DEVELOPER + "/Platforms/MacOSX.platform" &&
       sdkTargets[2] === MAC_DEVELOPER + "/Toolchains/XcodeDefault.xctoolchain",
     "MAC_EXTERNAL_SDK",
+  );
+  assert(
+    sdkRelations.has(sdkRelation) &&
+      sdkRelations
+        .get(sdkRelation)
+        .every((value, index) => value === sdkTargets[index]),
+    "MAC_EXTERNAL_SDK_RELATION",
   );
   const fingerprint = macMetalFingerprint(metal);
   assert(

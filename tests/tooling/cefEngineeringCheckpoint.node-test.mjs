@@ -9573,6 +9573,28 @@ test("Mac helper failures retain only closed roles, phases and independent repor
   );
 });
 
+function sdkRelationIo(overrides = {}) {
+  const base =
+    "/Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/";
+  return {
+    lstat: async (name) => ({
+      dev: 1n,
+      ino: name.endsWith("26.2.sdk") ? 2n : 3n,
+      nlink: 1n,
+      size: 10n,
+      mode: 0o40755n,
+      birthtimeNs: 1n,
+      mtimeNs: 1n,
+      ctimeNs: 1n,
+      isSymbolicLink: () => name === base + "MacOSX26.2.sdk",
+      isDirectory: () => name === base + "MacOSX.sdk",
+    }),
+    readlink: async () => "MacOSX.sdk",
+    realpath: async () => base + "MacOSX.sdk",
+    ...overrides,
+  };
+}
+
 async function macExternalFixture() {
   const mac = await import("../../scripts/lib/cef-mac-source-metadata.mjs");
   const namespace = path.join(
@@ -9632,7 +9654,7 @@ async function macExternalFixture() {
         developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
     },
     sdkTargets: [
-      developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
       developer + "/Platforms/MacOSX.platform",
       developer + "/Toolchains/XcodeDefault.xctoolchain",
     ],
@@ -9641,6 +9663,10 @@ async function macExternalFixture() {
       "/Users/runner/work/_temp/cef-mac-inputs-11111111-1111-4111-8111-111111111111",
     remainingMilliseconds: () => 500999.9,
   };
+  options.sdkRelation = await mac.macSdkRelation(
+    { ...options, check: () => {} },
+    sdkRelationIo(),
+  );
   return { mac, options, plan: mac.macExternalObservationPlan(options) };
 }
 
@@ -10703,3 +10729,102 @@ test(
     assert.match(result.stderr, /Ran 5 tests/);
   },
 );
+
+test("Mac SDK relation requires exact observed physical root and held logical 26.2 alias", async () => {
+  const { mac, options } = await macExternalFixture();
+  assert.equal(options.sdkRelation.physical, options.sdkTargets[0]);
+  assert.equal(options.sdkRelation.literal, "MacOSX.sdk");
+  const proof = options.sdkRelation;
+  assert.throws(
+    () =>
+      mac.macExternalObservationPlan({ ...options, sdkRelation: { ...proof } }),
+    /SDK_RELATION/,
+  );
+  assert.throws(
+    () =>
+      mac.macExternalObservationPlan({ ...options, sdkRelation: undefined }),
+    /SDK_RELATION/,
+  );
+  for (const io of [
+    sdkRelationIo({ readlink: async () => "MacOSX26.1.sdk" }),
+    sdkRelationIo({ readlink: async () => "../SDKs/MacOSX.sdk" }),
+    sdkRelationIo({ realpath: async () => "/foreign/MacOSX.sdk" }),
+    sdkRelationIo({ lstat: async () => ({ isSymbolicLink: () => false }) }),
+  ])
+    await assert.rejects(
+      mac.macSdkRelation({ ...options, check: () => {} }, io),
+      /SDK_RELATION/,
+    );
+  let reads = 0;
+  const stableIo = sdkRelationIo();
+  await assert.rejects(
+    mac.macSdkRelation(
+      { ...options, check: () => {} },
+      sdkRelationIo({
+        lstat: async (...args) => ({
+          ...(await stableIo.lstat(...args)),
+          ino: BigInt(++reads),
+        }),
+      }),
+    ),
+    /SDK_RELATION_CHANGED/,
+  );
+  await assert.rejects(
+    mac.macSdkRelation(
+      {
+        ...options,
+        sdkTargets: [
+          options.sdkTargets[0].replace("MacOSX.sdk", "MacOSX26.2.sdk"),
+          ...options.sdkTargets.slice(1),
+        ],
+        check: () => {},
+      },
+      sdkRelationIo(),
+    ),
+    /SDK_RELATION/,
+  );
+  let ioCount = 0;
+  await assert.rejects(
+    mac.macSdkRelation(
+      {
+        ...options,
+        check: () => {
+          throw new Error("EXPIRED");
+        },
+      },
+      sdkRelationIo({
+        lstat: async () => {
+          ioCount++;
+        },
+      }),
+    ),
+    /EXPIRED/,
+  );
+  assert.equal(ioCount, 0);
+});
+
+test("actual Python Mac context root admission matches the fixed physical SDK and denies versioned or foreign roots", () => {
+  const result = python(
+    String.raw`import ast,sys,pathlib,types,json,copy
+from unittest.mock import patch
+m=types.ModuleType('sdk_context');exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
+tree=ast.parse(pathlib.Path(sys.argv[1]).read_bytes());node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='mac_external_context')
+# Actual production prefix through roots admission; no output filesystem access or full-runtime claim.
+end=next(i for i,n in enumerate(node.body)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='names'for t in n.targets));node.body=node.body[:end]+[ast.Return(ast.Name(id='context',ctx=ast.Load()))]
+exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),'actual-context-prefix','exec'),m.__dict__)
+d='/Applications/Xcode_26.3.app/Contents/Developer';root='/Users/runner/work/_temp/cef-mac-inputs-11111111-1111-4111-8111-111111111111'
+c={'schemaVersion':1,'kind':'sorng-macarm-external-input-context','target':'aarch64-apple-darwin','roots':{'sdk':d+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk','toolchain':d+'/Toolchains/XcodeDefault.xctoolchain','metal':d+'/Toolchains/XcodeDefault.xctoolchain','python':'/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework'},'runnerTemp':'/Users/runner/work/_temp','outputRoot':root,'requiredPins':[],'limits':{'entries':1000000,'fileBytes':8*1024**3,'bytes':256*1024**3,'metadataBytes':128*1024**2,'readers':4,'seconds':600,'capabilitySeconds':5},'originalMetalFingerprint':{},'historicalMetalResourceClosureVerified':False}
+def run(value):
+ with patch.object(sys,'platform','darwin'),patch.object(m,'source_read_bytes',return_value=json.dumps(value).encode()):return m.mac_external_context(pathlib.PurePosixPath(root+'/context.json'),pathlib.PurePosixPath(root+'/external.json'),'mac-external-observe',m.Budget(5))
+assert run(c)['roots']['sdk']==c['roots']['sdk']
+for name in ['MacOSX26.2.sdk','MacOSX26.3.sdk','Foreign.sdk','MacOSX.sdk/..']:
+ bad=copy.deepcopy(c);bad['roots']['sdk']=d+'/Platforms/MacOSX.platform/Developer/SDKs/'+name
+ try:run(bad);raise AssertionError(name)
+ except m.CheckpointError as e:assert str(e)=='source-mac-roots'
+print('actual roots prefix: physical GREEN; four alias/foreign mutations DENY; admission-only')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /physical GREEN/);
+});

@@ -1360,7 +1360,7 @@ def mac_external_context(file, output, mode, budget):
     require(context['limits'] == expected_limits and all(type(v) is int for v in context['limits'].values()), 'source-mac-limits')
     roots = context['roots'];developer = '/Applications/Xcode_26.3.app/Contents/Developer'
     require(type(roots) is dict and set(roots) == {'sdk','toolchain','metal','python'} and
-            roots['sdk'] == developer + '/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk' and
+            roots['sdk'] == developer + '/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk' and
             roots['toolchain'] == developer + '/Toolchains/XcodeDefault.xctoolchain' and
             roots['python'] == '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework' and
             (roots['metal'] == roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain', roots['metal']) is not None),
