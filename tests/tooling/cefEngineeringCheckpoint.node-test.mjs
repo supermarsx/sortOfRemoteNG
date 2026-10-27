@@ -8810,8 +8810,10 @@ function sdkRelationIo(overrides = {}) {
   };
 }
 
-async function macExternalFixture() {
-  const mac = await import("../../scripts/lib/cef-mac-source-metadata.mjs");
+async function macExternalFixture(moduleOverride = null) {
+  const mac =
+    moduleOverride ??
+    (await import("../../scripts/lib/cef-mac-source-metadata.mjs"));
   const namespace = path.join(
     ROOT,
     "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
@@ -9077,7 +9079,7 @@ test("Mac external report actual reader preserves null/read/hash errors across c
       snapshot: {
         rootMtimeNs: "1",
         gitHeads: {},
-        root: { mode: 0o755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
+        root: { mode: 0o40755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
         localRoot: {
           dev: "1",
           ino: "2",
@@ -9093,7 +9095,7 @@ test("Mac external report actual reader preserves null/read/hash errors across c
           .map((pin) => ({
             path: pin.path,
             kind: "file",
-            mode: 0o644,
+            mode: 0o100644,
             mtimeNs: "1",
             nlink: 1,
             uid: 0,
@@ -9941,3 +9943,258 @@ test("Mac external SDK member diagnostics preserve actual relative denial and cl
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stderr, /Ran 6 tests/);
 });
+
+const MAC_EXTERNAL_FULLMODE_PHYSICAL = String.raw`import hashlib,importlib.util,json,os,pathlib,sys,tempfile
+spec=importlib.util.spec_from_file_location('fullmode_subject',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+assert sys.platform=='linux','owned POSIX fixture only; not Darwin installed SDK evidence'
+with tempfile.TemporaryDirectory(prefix='external-fullmode-')as folder:
+ root=pathlib.Path(folder)/'sdk';(root/'directory').mkdir(parents=True);(root/'file').write_bytes(b'owned full st_mode fixture\n');os.symlink('file',root/'alias')
+ policy={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}}
+ before={str(p.relative_to(root)):m.source_local(p.lstat(),policy)for p in [root,*root.rglob('*')]}
+ snapshot=m.source_snapshot(root,m.Budget(5),context=policy)
+ after={str(p.relative_to(root)):m.source_local(p.lstat(),policy)for p in [root,*root.rglob('*')]};assert before==after
+ assert snapshot['root']['mode']==root.stat().st_mode
+ for row in snapshot['entries']:assert row['mode']==(root/row['path']).lstat().st_mode
+ assert next(r for r in snapshot['entries']if r['path']=='file')['sha256']==hashlib.sha256(b'owned full st_mode fixture\n').hexdigest()
+ print(json.dumps(snapshot,separators=(',',':')))
+`;
+
+function externalFullModeReport(plan, snapshot = null) {
+  const value = {
+    schemaVersion: 1,
+    kind: "sorng-macarm-external-input-observation",
+    target: "aarch64-apple-darwin",
+    policy: "sorng-macarm-readonly-external-inputs-v1",
+    complete: true,
+    externalSnapshotComplete: true,
+    roles: Object.entries(plan.context.roots).map(([role, physicalRoot]) => ({
+      role,
+      physicalRoot,
+      snapshot: {
+        rootMtimeNs: "1",
+        gitHeads: {},
+        root: { mode: 0o40755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
+        localRoot: {
+          dev: "1",
+          ino: "2",
+          ctimeNs: "3",
+          birthtimeNsAvailable: false,
+          birthtimeNs: null,
+        },
+        bytes: plan.context.requiredPins
+          .filter((pin) => pin.role === role)
+          .reduce((sum, pin) => sum + pin.size, 0),
+        entries: plan.context.requiredPins
+          .filter((pin) => pin.role === role)
+          .map((pin) => ({
+            path: pin.path,
+            kind: "file",
+            mode: 0o100644,
+            mtimeNs: "1",
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            size: pin.size,
+            sha256: pin.sha256,
+          })),
+      },
+    })),
+    entries: 10,
+    bytes: plan.context.requiredPins.reduce((sum, pin) => sum + pin.size, 0),
+    runnerUid: 501,
+    historicalMetalResourceClosureVerified: false,
+    sourceWriteAdmitted: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+  };
+  if (snapshot) {
+    const sdk = value.roles.find((row) => row.role === "sdk").snapshot;
+    value.runnerUid = snapshot.root.uid;
+    sdk.root = snapshot.root;
+    sdk.localRoot = snapshot.localRoot;
+    sdk.rootMtimeNs = snapshot.rootMtimeNs;
+    sdk.entries.push(...snapshot.entries);
+    sdk.bytes += snapshot.bytes;
+    value.entries += snapshot.entries.length;
+    value.bytes += snapshot.bytes;
+  }
+  return value;
+}
+
+async function admitExternalFullMode(mac, plan, value) {
+  const raw = Buffer.from(JSON.stringify(value));
+  const identity = {
+    dev: 1n,
+    ino: 2n,
+    mode: 0o100600n,
+    nlink: 1n,
+    size: BigInt(raw.length),
+    mtimeNs: 1n,
+    ctimeNs: 2n,
+    birthtimeNs: 3n,
+    isFile: () => true,
+  };
+  const summary = {
+    complete: true,
+    kind: value.kind,
+    entries: value.entries,
+    bytes: value.bytes,
+    snapshot: {
+      name: "external.json",
+      bytes: raw.length,
+      sha256: hashObject("sha256").update(raw).digest("hex"),
+    },
+    sourceWriteAdmitted: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+  };
+  let closed = 0;
+  try {
+    return await mac.readMacExternalObservation(plan, summary, () => {}, {
+      lstat: async (file) =>
+        file.endsWith("/external.json")
+          ? identity
+          : {
+              ...identity,
+              isDirectory: () => true,
+              isSymbolicLink: () => false,
+            },
+      realpath: async (file) => file,
+      open: async () => ({
+        stat: async () => identity,
+        readFile: async () => raw,
+        close: async () => {
+          closed++;
+        },
+      }),
+    });
+  } finally {
+    assert.equal(closed, 1);
+  }
+}
+
+test("actual Mac external mode reader preserves full typed producer modes and denies permission-only, wrong-kind and malformed modes", async () => {
+  const { mac, plan } = await macExternalFixture();
+  const value = externalFullModeReport(plan);
+  const snapshot = value.roles[0].snapshot;
+  for (const [name, kind, mode, extra] of [
+    [
+      "file",
+      "file",
+      0o100640,
+      { size: 0, sha256: hashObject("sha256").update("").digest("hex") },
+    ],
+    ["directory", "directory", 0o41750, {}],
+    [
+      "alias",
+      "symlink",
+      0o120777,
+      {
+        target: "file",
+        sha256: hashObject("sha256").update("file").digest("hex"),
+      },
+    ],
+  ]) {
+    snapshot.entries.push({
+      path: name,
+      kind,
+      mode,
+      mtimeNs: "1",
+      nlink: 1,
+      uid: 0,
+      gid: 0,
+      ...extra,
+    });
+    value.entries++;
+  }
+  const proof = await admitExternalFullMode(mac, plan, value);
+  const binding = mac.macExternalToolsBinding({}, proof);
+  for (const row of snapshot.entries)
+    assert.equal(
+      binding.macExternalInputs.roles[0].entries.find(
+        (item) => item.path === row.path,
+      ).mode,
+      row.mode,
+    );
+  assert.throws(
+    () => mac.macExternalToolsBinding({}, { ...proof }),
+    /MAC_EXTERNAL_ATTESTATION/,
+  );
+  const badModes = [
+    0,
+    0o755,
+    0o644,
+    0o7777,
+    -1,
+    1.5,
+    "16877",
+    true,
+    null,
+    NaN,
+    Infinity,
+    0x10000,
+    0x14000,
+    0o020644,
+    0o060644,
+    0o140644,
+  ];
+  for (const mode of badModes) {
+    const bad = structuredClone(value);
+    bad.roles[0].snapshot.root.mode = mode;
+    await assert.rejects(
+      admitExternalFullMode(mac, plan, bad),
+      /MAC_EXTERNAL_ROLE/,
+    );
+  }
+  for (const kind of ["file", "directory", "symlink"]) {
+    const at = value.roles[0].snapshot.entries.findIndex(
+      (row) => row.kind === kind,
+    );
+    for (const mode of [...badModes, 0o100644, 0o40755, 0o120777].filter(
+      (mode) =>
+        !(
+          { file: 0o100000, directory: 0o040000, symlink: 0o120000 }[kind] ===
+            (mode & 0xf000) &&
+          Number.isInteger(mode) &&
+          mode >= 0 &&
+          mode <= 0xffff
+        ),
+    )) {
+      const bad = structuredClone(value);
+      bad.roles[0].snapshot.entries[at].mode = mode;
+      await assert.rejects(
+        admitExternalFullMode(mac, plan, bad),
+        /MAC_EXTERNAL_ENTRY/,
+      );
+    }
+  }
+});
+
+test(
+  "physical POSIX full-mode snapshot crosses the actual opaque report reader without mode conversion",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux owned fixture; no Darwin SDK/kernel claim"
+        : false,
+  },
+  async () => {
+    const result = python(MAC_EXTERNAL_FULLMODE_PHYSICAL, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const snapshot = JSON.parse(result.stdout);
+    const { mac, plan } = await macExternalFixture();
+    const value = externalFullModeReport(plan, snapshot);
+    const proof = await admitExternalFullMode(mac, plan, value);
+    const binding = mac.macExternalToolsBinding({}, proof);
+    for (const row of snapshot.entries) {
+      const portable = binding.macExternalInputs.roles[0].entries.find(
+        (item) => item.path === row.path,
+      );
+      assert.equal(portable.mode, row.mode);
+      if (row.kind === "file") assert.equal(portable.sha256, row.sha256);
+    }
+    assert.equal(value.roles[0].snapshot.root.mode, snapshot.root.mode);
+  },
+);

@@ -576,6 +576,15 @@ const exactKeys = (value, keys, code) =>
       keys.every((key) => Object.hasOwn(value, key)),
     code,
   );
+// Python records the complete st_mode, including its type bits. Keep that raw
+// value in the portable binding and require it to agree with the declared kind.
+const externalModeMatches = (mode, kind) =>
+  Number.isInteger(mode) &&
+  mode >= 0 &&
+  mode <= 0xffff &&
+  (mode & 0xf000) ===
+    { file: 0o100000, directory: 0o040000, symlink: 0o120000 }[kind];
+
 const reportIdentity = (value) =>
   ["dev", "ino", "mode", "nlink", "size", "mtimeNs", "ctimeNs", "birthtimeNs"]
     .map((key) => value[key])
@@ -889,9 +898,7 @@ export async function readMacExternalObservation(
         "MAC_EXTERNAL_ROLE",
       );
       assert(
-        Number.isInteger(row.snapshot.root.mode) &&
-          row.snapshot.root.mode >= 0 &&
-          row.snapshot.root.mode <= 0o7777 &&
+        externalModeMatches(row.snapshot.root.mode, "directory") &&
           typeof row.snapshot.root.mtimeNs === "string" &&
           /^(0|[1-9][0-9]{0,18})$/.test(row.snapshot.root.mtimeNs) &&
           BigInt(row.snapshot.root.mtimeNs) < 2n ** 63n &&
@@ -959,9 +966,7 @@ export async function readMacExternalObservation(
           "MAC_EXTERNAL_ENTRY",
         );
         assert(
-          Number.isInteger(item.mode) &&
-            item.mode >= 0 &&
-            item.mode <= 0o7777 &&
+          externalModeMatches(item.mode, item.kind) &&
             typeof item.mtimeNs === "string" &&
             /^(0|[1-9][0-9]{0,18})$/.test(item.mtimeNs) &&
             BigInt(item.mtimeNs) < 2n ** 63n &&
