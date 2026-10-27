@@ -1431,20 +1431,24 @@ export async function main(e = process.env) {
       watchdog.assertActive();
       actorsQuiet = false;
       phase = "query-" + variant;
-      const slice = await compileSlice(
-        process.execPath,
-        [SELF, "--worker", root, hash(context), variant],
-        {
-          cwd: process.cwd(),
-          env: queryEnvironment(selected, variant, root, e),
-          logs: root + "/" + variant,
-          milliseconds: Math.min(35000, remaining - 30000),
-        },
-      );
-      actorsQuiet = slice.quiescent === true;
-      results.push({
-        variant,
-        supervision: {
+      const result = { variant, queryRetention: "NOT_READ" };
+      results.push(result);
+      let slice,
+        sliceFailed = false,
+        sliceError;
+      try {
+        slice = await compileSlice(
+          process.execPath,
+          [SELF, "--worker", root, hash(context), variant],
+          {
+            cwd: process.cwd(),
+            env: queryEnvironment(selected, variant, root, e),
+            logs: root + "/" + variant,
+            milliseconds: Math.min(35000, remaining - 30000),
+          },
+        );
+        actorsQuiet = slice.quiescent === true;
+        result.supervision = {
           outcome: slice.outcome,
           exitCode: slice.exitCode,
           quiescent: slice.quiescent,
@@ -1453,26 +1457,40 @@ export async function main(e = process.env) {
           observedCount: slice.observed.length,
           observedPrefix: slice.observed.slice(0, 32),
           observedTruncated: slice.observed.length > 32,
-        },
-      });
-      // Read any retained query outcome even when supervision rejects the worker.
-      // A diagnostic failure must not erase the original query's observed facts.
+        };
+      } catch (error) {
+        sliceFailed = true;
+        sliceError = error;
+        fail(error);
+        result.supervisionUnavailable = true;
+      }
+      // A rejected supervisor cannot erase an already-retained query, or make
+      // its metadata prove actor quiescence. Retention uses the original clock.
       let row;
       try {
         row = JSON.parse(
           await held(
             root + "/" + variant + "/query.json",
             262144,
-            budget.remaining,
+            sliceFailed ? budget.cleanup : budget.remaining,
           ),
         );
+        assert(
+          row.variant === variant &&
+            row.kind === "owned-metal-query-sampling" &&
+            row.queryAttempted === true &&
+            typeof row.sampler?.attempted === "boolean",
+          "SDK_WAIT_RETAINED_QUERY_INVALID",
+        );
+        result.query = row;
+        result.queryRetention = "RETAINED";
       } catch (error) {
-        if (slice.quiescent && slice.exitCode === 0) throw error;
+        row = undefined;
+        result.queryRetention = "RETAINED_QUERY_UNAVAILABLE";
+        if (!sliceFailed && slice.quiescent && slice.exitCode === 0)
+          throw error;
       }
-      if (row) {
-        assert(row.variant === variant);
-        results.at(-1).query = row;
-      }
+      if (sliceFailed) throw sliceError;
       assert(slice.quiescent && slice.exitCode === 0, "SDK_WAIT_WORKER_FAILED");
       assert(row, "SDK_WAIT_WORKER_FAILED");
     }

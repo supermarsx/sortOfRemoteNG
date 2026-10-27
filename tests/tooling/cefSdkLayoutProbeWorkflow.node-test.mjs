@@ -1260,7 +1260,15 @@ function waitParentFixture() {
       );
       files.set(
         waitRoot + "/" + variant + "/query.json",
-        Buffer.from(JSON.stringify({ variant, failed: variant === "A" })),
+        Buffer.from(
+          JSON.stringify({
+            variant,
+            kind: "owned-metal-query-sampling",
+            queryAttempted: true,
+            sampler: { attempted: true },
+            failed: variant === "A",
+          }),
+        ),
       );
       return {
         exitCode: 0,
@@ -2149,3 +2157,155 @@ test("Metal actual query maximum two stream captures and two projected samples p
     assert.equal(item.complete, false);
   }
 });
+
+function rejectedMetalParent(primary) {
+  const f = waitParentFixture(),
+    terminals = [],
+    cleanupCalls = [];
+  f.scope.hardWatchdog = () => ({
+    fired: false,
+    assertActive() {},
+    release: (quiet, pending) => quiet && pending === 0,
+  });
+  f.scope.console = { log: (x) => terminals.push(JSON.parse(x)), error() {} };
+  const launch = f.scope.compileSlice;
+  f.scope.compileSlice = async (...args) => {
+    await launch(...args);
+    throw primary;
+  };
+  f.scope.cleanupOwned = async (_owned, allowed) => {
+    cleanupCalls.push(allowed);
+    return { rows: [], failed: false };
+  };
+  return { ...f, terminals, cleanupCalls };
+}
+
+test("Metal actual parent retains a query after thrown supervision without changing first null or falsy primary", async () => {
+  for (const primary of [
+    new Error("original"),
+    null,
+    false,
+    0,
+    undefined,
+    "",
+  ]) {
+    const f = rejectedMetalParent(primary),
+      held = f.scope.held;
+    let cleanupClock,
+      reads = 0;
+    f.scope.clock = () => ({
+      remaining: () => 600000,
+      cleanup: (cleanupClock = () => 30000),
+    });
+    f.scope.held = async (file, cap, check) => {
+      if (file.endsWith("/A/query.json")) {
+        reads++;
+        assert.equal(cap, 262144);
+        assert.equal(check, cleanupClock);
+      }
+      return held(file, cap, check);
+    };
+    let thrown = false,
+      actual;
+    try {
+      await f.build()(f.e);
+    } catch (error) {
+      thrown = true;
+      actual = error;
+    }
+    assert.equal(thrown, true);
+    assert.equal(actual, primary);
+    assert.equal(reads, 1);
+    const out = JSON.parse(f.files.get(waitRoot + "/outcome.json"));
+    assert.equal(out.actorsQuiet, false);
+    assert.equal(out.complete, false);
+    assert.equal(out.primaryWasNull, primary === null);
+    assert.equal(out.variants.length, 1);
+    assert.equal(out.variants[0].queryRetention, "RETAINED");
+    assert.equal(out.variants[0].supervisionUnavailable, true);
+    assert.equal(out.variants[0].supervision, undefined);
+    assert.equal(out.variants[0].query.sampler.attempted, true);
+    assert.deepEqual(f.cleanupCalls, [false]);
+    assert.equal(f.terminals.at(-1).samplerAttempted, true);
+    assert.equal(f.terminals.at(-1).complete, false);
+  }
+});
+
+test("Metal thrown-supervisor retention rejects unavailable or malformed evidence and never replaces the original", async () => {
+  for (const mode of [
+    "missing",
+    "invalid-json",
+    "wrong-variant",
+    "wrong-kind",
+    "wrong-attempt",
+    "wrong-sampler",
+    "overbound",
+    "read-failure",
+    "expired",
+  ]) {
+    const original = new Error("first"),
+      f = rejectedMetalParent(original),
+      held = f.scope.held;
+    f.scope.held = async (file, cap, check) => {
+      if (!file.endsWith("/A/query.json")) return held(file, cap, check);
+      if (["missing", "overbound", "read-failure", "expired"].includes(mode))
+        throw new Error(mode);
+      if (mode === "invalid-json") return Buffer.from("{");
+      const row = JSON.parse(await held(file, cap, check));
+      if (mode === "wrong-variant") row.variant = "B";
+      if (mode === "wrong-kind") row.kind = "foreign";
+      if (mode === "wrong-attempt") row.queryAttempted = false;
+      if (mode === "wrong-sampler") row.sampler.attempted = "true";
+      return Buffer.from(JSON.stringify(row));
+    };
+    await assert.rejects(f.build()(f.e), (error) => error === original);
+    const out = JSON.parse(f.files.get(waitRoot + "/outcome.json"));
+    assert.equal(out.variants[0].queryRetention, "RETAINED_QUERY_UNAVAILABLE");
+    assert.equal(out.variants[0].query, undefined);
+    assert.equal(out.actorsQuiet, false);
+    assert.equal(f.terminals.at(-1).samplerAttempted, false);
+    assert.deepEqual(f.cleanupCalls, [false]);
+  }
+});
+
+test(
+  "Metal retained query pending read stays within original cleanup and cannot emit late success",
+  { timeout: 1000 },
+  async () => {
+    const f = rejectedMetalParent(null),
+      held = f.scope.held;
+    let resolveLate;
+    f.scope.clock = () => ({ remaining: () => 600000, cleanup: () => 25 });
+    f.scope.held = async (file, cap, check) => {
+      if (!file.endsWith("/A/query.json")) return held(file, cap, check);
+      assert.equal(cap, 262144);
+      return waitBounded(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve;
+          }),
+        check,
+      );
+    };
+    await assert.rejects(f.build()(f.e), (error) => error === null);
+    const before = Buffer.from(f.files.get(waitRoot + "/outcome.json"));
+    assert.equal(
+      JSON.parse(before).variants[0].queryRetention,
+      "RETAINED_QUERY_UNAVAILABLE",
+    );
+    resolveLate(
+      Buffer.from(
+        JSON.stringify({
+          variant: "A",
+          kind: "owned-metal-query-sampling",
+          queryAttempted: true,
+          sampler: { attempted: true },
+        }),
+      ),
+    );
+    await Promise.resolve();
+    assert.deepEqual(f.files.get(waitRoot + "/outcome.json"), before);
+    assert(f.terminals.every((frame) => frame.complete === false));
+    assert.deepEqual(f.cleanupCalls, [false]);
+  },
+);
