@@ -248,7 +248,6 @@ jobs:
           import {
             checkpointHost,
             canonical,
-            selectedSdkPreflight,
           } from "./scripts/lib/cef-engineering-checkpoint.mjs";
           import {
             verifyToolchainFiles,
@@ -957,7 +956,18 @@ jobs:
                 ].map((p) => realpath(p)),
               );
               clock.remaining();
+              phase = "configured-sdk-attestation";
+              const sdkRelation = await macSdkRelation({ selected, sdkTargets, check: () => clock.remaining() });
+              const sdkSettings = toolchain.files.find((pin) =>
+                pin.path === selected.SDKROOT.slice(1) + "/SDKSettings.json");
+              assert(sdkSettings, "CENSUS_SDK_SETTINGS_PIN");
               await put("selection.json", {
+                selectionMode: "configured-pinned-sdk-roots",
+                queriedDefault: false,
+                queryReceipt: null,
+                configured: selected,
+                sdkRelation,
+                sdkSettings: { path: sdkSettings.path, bytes: sdkSettings.size, sha256: sdkSettings.sha256 },
                 target: profile.target,
                 sourceLockIdentity: profile.source,
                 toolchainSha256: build.toolchainLock.sha256,
@@ -1063,16 +1073,6 @@ jobs:
                 if (hasError) throw error;
                 return result;
               };
-              phase = "sdk-preflight";
-              await selectedSdkPreflight({
-                temp: output,
-                selected,
-                expectedTargets: sdkTargets,
-                run: executeApple,
-                observe: () => {},
-              });
-              clock.remaining();
-              const sdkRelation = await macSdkRelation({ selected, sdkTargets, check: () => clock.remaining() });
               phase = "metal-preparation";
               const metal = await prepareMacMetalToolchain(
                 {

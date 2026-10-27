@@ -1428,7 +1428,12 @@ test("capability reader rejects unknown path/link/overbound/retarget and preserv
     /IDENTITY/,
   );
 });
-async function censusPipelineFixture() {
+async function censusPipelineFixture({
+  aliasLiteral = "MacOSX.sdk",
+  aliasDrift = false,
+  pinsVerified = 9,
+  wrongToolBytes = false,
+} = {}) {
   const target = "aarch64-apple-darwin",
     profile = checkpointHost(target, "darwin", "x64"),
     base = profile.inputs + "/";
@@ -1516,8 +1521,10 @@ async function censusPipelineFixture() {
     identitySha256,
     macMetalFingerprint,
     macExternalObservationPlan: sharedExternalPlan,
-    macSdkRelation: async (options) =>
-      sharedSdkRelation(options, {
+    macSdkRelation: async (options) => {
+      calls.push("sdk-alias");
+      let reads = 0;
+      return sharedSdkRelation(options, {
         lstat: async (name) => ({
           dev: 1n,
           ino: 1n,
@@ -1530,10 +1537,12 @@ async function censusPipelineFixture() {
           isSymbolicLink: () => name.endsWith("MacOSX26.2.sdk"),
           isDirectory: () => name.endsWith("/MacOSX.sdk"),
         }),
-        readlink: async () => "MacOSX.sdk",
+        readlink: async () =>
+          aliasDrift && ++reads > 1 ? "foreign.sdk" : aliasLiteral,
         realpath: async () =>
           developer + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
-      }),
+      });
+    },
     realpath: async (value) => value,
     mkdir: async (value, options) => {
       assert.equal(value, censusRoot);
@@ -1553,7 +1562,9 @@ async function censusPipelineFixture() {
     },
     readFile: async (file) => {
       if (file === "/selected-inputs/" + build.toolchainLock.path)
-        return toolBytes;
+        return wrongToolBytes
+          ? Buffer.concat([toolBytes, Buffer.from(" ")])
+          : toolBytes;
       if (file === "/selected-inputs/cef-ci-runner-aarch64-apple-darwin.json")
         return mapBytes;
       throw new Error("unexpected input read");
@@ -1583,15 +1594,10 @@ async function censusPipelineFixture() {
       assert.equal(options.python, "/" + JSON.parse(mapBytes).python);
       assert.equal(options.runnerMapFromInputs, true);
       calls.push("pins");
-      return { filesVerified: toolchain.files.length };
+      return { filesVerified: pinsVerified };
     },
-    selectedSdkPreflight: async (options) => {
-      calls.push("sdk");
-      await options.run(
-        "/usr/bin/xcrun",
-        ["-sdk", "macosx", "--show-sdk-path"],
-        { timeout: 5000 },
-      );
+    selectedSdkPreflight: async () => {
+      throw new Error("configured census must never query a default SDK");
     },
     prepareMacMetalToolchain: async (options, dependencies) => {
       calls.push("metal");
@@ -1608,6 +1614,17 @@ async function censusPipelineFixture() {
       throw new Error("unexpected direct exec");
     },
     promisify: () => async (_file, _args, options) => {
+      assert.notEqual(_file, "/usr/bin/xcode-select");
+      assert.equal(
+        _args.some((arg) =>
+          [
+            "--show-sdk-path",
+            "--show-sdk-platform-path",
+            "--show-sdk-version",
+          ].includes(arg),
+        ),
+        false,
+      );
       transport.push(options);
       assert.ok(Number.isSafeInteger(options.timeout));
       assert.equal(options.killSignal, "SIGKILL");
@@ -1706,7 +1723,7 @@ test("actual census pipeline verifies cross profile/tools, prepares once, then o
     "map",
     "host",
     "pins",
-    "sdk",
+    "sdk-alias",
     "metal",
     "mac-owned-capability-observe",
     "cap-close",
@@ -1714,11 +1731,39 @@ test("actual census pipeline verifies cross profile/tools, prepares once, then o
     "reader",
   ]);
   assert.equal(f.calls.filter((x) => x === "metal").length, 1);
-  assert.equal(f.transport.length, 2);
+  assert.equal(f.transport.length, 1);
+  const selection = JSON.parse(f.files.get(censusRoot + "/selection.json"));
+  assert.equal(selection.selectionMode, "configured-pinned-sdk-roots");
+  assert.equal(selection.queriedDefault, false);
+  assert.equal(selection.queryReceipt, null);
+  assert.equal(selection.configured.SDKROOT, selection.sdkRelation.physical);
+  assert.equal(selection.sdkSettings.bytes, 7627);
+  assert.equal(
+    selection.sdkSettings.sha256,
+    "95882a9cea02396e76f3e406a5728269b2a1a11bcd241430a84c9e63d09a6cd3",
+  );
   assert.ok(f.files.has(censusRoot + "/context.json"));
   assert.equal(f.readOutcome().nativeAcceptance, false);
   assert.equal(f.readOutcome().checkpointReady, false);
 });
+test("configured census actual pipeline denies wrong or drifting alias and unverified tool pins before any worker", async () => {
+  for (const [options, reason] of [
+    [{ aliasLiteral: "MacOSX99.sdk" }, /MAC_EXTERNAL_SDK_RELATION/],
+    [{ aliasDrift: true }, /MAC_EXTERNAL_SDK_RELATION/],
+    [{ pinsVerified: 8 }, /CENSUS_TOOLS/],
+    [{ wrongToolBytes: true }, /CENSUS_TOOLCHAIN/],
+  ]) {
+    const f = await censusPipelineFixture(options);
+    await assert.rejects(f.context.run(), reason);
+    assert.equal(f.calls.includes("metal"), false);
+    assert.equal(f.calls.includes("mac-owned-capability-observe"), false);
+    assert.equal(f.calls.includes("mac-external-observe"), false);
+    assert.equal(f.transport.length, 0);
+    assert.equal(f.readOutcome().complete, false);
+    assert.equal(f.readOutcome().sourceWriteAdmitted, false);
+  }
+});
+
 test("actual census pipeline preserves first null and stops at tool/Metal/capability failures without fabricated write proof", async () => {
   for (const phase of ["pins", "metal", "capability"]) {
     const f = await censusPipelineFixture();
