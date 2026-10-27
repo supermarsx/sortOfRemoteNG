@@ -115,6 +115,27 @@ def relative(value):
     return value
 
 
+# In-process capability: never serialized or selected by an input/report field.
+_MAC_EXTERNAL_SDK_MEMBERS = object()
+_MAC_EXTERNAL_SDK_ROOT = '/Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk'
+
+
+def mac_external_sdk_relative(value):
+    require(isinstance(value, str) and 0 < len(value.encode()) <= 1024, 'member-path')
+    require(not value.startswith('/') and '\\' not in value and re.match(r'^[A-Za-z]:', value) is None, 'member-path')
+    parts = value.split('/')
+    require(all(x not in ('', '.', '..') and not x.endswith((' ', '.')) and not re.match(r'(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', x) for x in parts), 'member-path')
+    require(not any(ord(c) < 32 or ord(c) == 127 for c in value), 'member-path')
+    return value
+
+
+def source_member_policy(root, policy, member_policy):
+    require(member_policy is None or (member_policy is _MAC_EXTERNAL_SDK_MEMBERS and
+            policy is not None and policy.get('mac') is True and policy.get('external') is True and
+            root == Path(_MAC_EXTERNAL_SDK_ROOT)), 'source-member-policy')
+    return mac_external_sdk_relative if member_policy is _MAC_EXTERNAL_SDK_MEMBERS else relative
+
+
 
 def external_member_diagnostic(value):
     # Observation only. relative() remains the authority and is never bypassed.
@@ -222,7 +243,8 @@ class Budget:
         require(time.monotonic() < self.end, 'archive-deadline')
 
 
-def inventory(root, budget, generated_links=None, source_policy=None):
+def inventory(root, budget, generated_links=None, source_policy=None, *, member_policy=None):
+    member = source_member_policy(root, source_policy, member_policy)
     generated_links = link_recipe(generated_links or {})
     seen_links = set()
     rows, pending, aliases, raw = [], [Path('.')], set(), 0
@@ -233,7 +255,7 @@ def inventory(root, budget, generated_links=None, source_policy=None):
                 budget.check()
                 candidate = (directory / item.name).as_posix()
                 try:
-                    name = relative(candidate)
+                    name = member(candidate)
                 except CheckpointError as error:
                     try:
                         if (error.args == ('member-path',) and source_policy is not None and
@@ -838,9 +860,10 @@ def source_portable(row, digest=None, policy=None):
     return result
 
 
-def source_snapshot(root, budget, guards=None, context=None):
+def source_snapshot(root, budget, guards=None, context=None, *, member_policy=None):
     global SOURCE_JOIN_FAILURE
     from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+    source_member_policy(root, context, member_policy)
     external = context is not None and context.get('external') is True
     require(root.stat().st_uid in (0, os.geteuid()) if external else root.stat().st_uid == os.geteuid(), 'source-owner')
     policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
@@ -848,7 +871,7 @@ def source_snapshot(root, budget, guards=None, context=None):
         policy['_directories'] = {}
         local_before = source_local(root.stat(), policy)
     root_before = stamp(root.stat())
-    rows, total = inventory(root, budget, source_policy=policy)
+    rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
     hashes = {};first = None
     pool = ThreadPoolExecutor(max_workers=4)
     files = iter(row for row in rows if row['kind'] == 'file')
@@ -893,7 +916,7 @@ def source_snapshot(root, budget, guards=None, context=None):
     if external:
         # A second namespace read verifies stability, not a second authority budget.
         policy['aggregate'] = {'entries':0,'bytes':0,'metadata':0}
-    after, after_total = inventory(root, budget, source_policy=policy)
+    after, after_total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
     require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
     if policy.get('mac'):
         require(source_local(root.stat(), policy) == local_before, 'source-mac-root-changed')
@@ -1128,7 +1151,8 @@ def mac_external_observe(context, output, budget):
     for role in ('sdk','toolchain','metal','python'):
         MAC_EXTERNAL_ROLE=role;MAC_EXTERNAL_PHASE='snapshot';budget.check()
         root = safe(Path(roots[role]));require(root.is_dir(), 'source-mac-root-kind')
-        snapshots[role] = source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':aggregate})
+        snapshots[role] = source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':aggregate},
+            member_policy=_MAC_EXTERNAL_SDK_MEMBERS if role == 'sdk' else None)
     MAC_EXTERNAL_PHASE='links';mac_external_links(roots,snapshots,budget)
     for pin in context['requiredPins']:
         MAC_EXTERNAL_ROLE=pin['role'];MAC_EXTERNAL_PHASE='pins';budget.check()
@@ -1139,7 +1163,8 @@ def mac_external_observe(context, output, budget):
     readback_aggregate={'entries':0,'bytes':0,'metadata':0}
     for role in ('sdk','toolchain','metal','python'):
         MAC_EXTERNAL_ROLE=role;budget.check()
-        after=source_snapshot(safe(Path(roots[role])),budget,context={'mac':True,'external':True,'aggregate':readback_aggregate})
+        after=source_snapshot(safe(Path(roots[role])),budget,context={'mac':True,'external':True,'aggregate':readback_aggregate},
+            member_policy=_MAC_EXTERNAL_SDK_MEMBERS if role == 'sdk' else None)
         require(after==snapshots[role], 'source-external-changed')
     value={'schemaVersion':1,'kind':'sorng-macarm-external-input-observation','target':context['target'],
            'policy':'sorng-macarm-readonly-external-inputs-v1','complete':True,'externalSnapshotComplete':True,

@@ -937,10 +937,19 @@ export async function readMacExternalObservation(
             Buffer.byteLength(item.path) <= 1024 &&
             !item.path.startsWith("/") &&
             !item.path.includes("\\") &&
+            !/^[A-Za-z]:/.test(item.path) &&
+            (role === "sdk" || !item.path.includes(":")) &&
             !/[\x00-\x1f\x7f]/.test(item.path) &&
             !item.path
               .split("/")
-              .some((part) => !part || part === "." || part === "..") &&
+              .some(
+                (part) =>
+                  !part ||
+                  part === "." ||
+                  part === ".." ||
+                  /[ .]$/.test(part) ||
+                  /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
+              ) &&
             !names.has(item.path) &&
             ["file", "directory", "symlink"].includes(item.kind),
           "MAC_EXTERNAL_ENTRY",
