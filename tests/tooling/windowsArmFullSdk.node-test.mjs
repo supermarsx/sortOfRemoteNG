@@ -399,6 +399,33 @@ def main(args):
   }
 });
 
+const PINNED_GCLIENT_ENV = {
+  envConstruction: {
+    source:
+      'if "env" not in kwargs:\n    kwargs["env"] = os.environ.copy()\nif "COLUMNS" not in kwargs["env"] or "LINES" not in kwargs["env"]:\n    size = shutil.get_terminal_size()\n    if size.columns and size.lines:\n        kwargs["env"]["COLUMNS"] = str(size.columns)\n        kwargs["env"]["LINES"] = str(size.lines)\n\nkid = subprocess2.Popen(\n    args,\n    bufsize=0,\n    stdout=pipe_writer,\n    stderr=subprocess2.STDOUT,\n    **kwargs,\n)\n',
+    bytes: 427,
+    sha256: "945140cc22facfc3805535ada072899600b163c0430a363d2f0f2fc27bdf08fb",
+  },
+  mainMetadata: {
+    source:
+      'os.environ["GIT_PAGER"] = "cat"\nos.environ["GIT_EDITOR"] = "false"\nif not sys.stdout.isatty():\n    os.environ["GIT_TERMINAL_PROMPT"] = "0"\n\n',
+    bytes: 140,
+    sha256: "f04023562d8384c46a447080c7b6f542b60956500a75cdd4cb9dea25aa96b51c",
+  },
+  syncMetadata: {
+    source:
+      'existing_sync_commits = json.loads(\n    os.environ.get(PREVIOUS_SYNC_COMMITS, "{}")\n)\nexisting_sync_commits[self.name] = latest_commit\nos.environ[PREVIOUS_SYNC_COMMITS] = json.dumps(\n    existing_sync_commits\n)\n',
+    bytes: 211,
+    sha256: "efd3d388bda3e8164b658da67d40029dd6b91eb6ac509ab517d0ca9279bb8e0c",
+  },
+  oldBind: {
+    source:
+      "def bind(expected,guard_sha):\n value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2\n if getattr(subprocess2,'_sorng_cipd_bound',False):return\n original=subprocess2.Popen\n def admitted(argv,*args,**kwargs):\n  if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):\n   values=list(argv[1:]);arguments('cipd',values);data.need(kwargs.get('env')is None,'FULL_BOOTSTRAP_ENV_OVERRIDE');current,_=verify(expected,guard_sha);kwargs['shell']=False\n   return original([current['client']['path'],*values],*args,**kwargs)\n  return original(argv,*args,**kwargs)\n subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True",
+    bytes: 684,
+    sha256: "4d0a43c696aca3d1b2ad4f270adf660f28632bf5a5da93cecc4c3766efe130c1",
+  },
+};
+
 test("bootstrap source templates keep original setup bytes except its client callee and deny an explicitly disabled source policy", async (t) => {
   const python = await benignPython(t);
   if (!python) return;
@@ -570,9 +597,29 @@ for args in (['selfupdate'],['ensure','-service-url','https://example.invalid'],
  try:b.execute('cipd',args,witness_sha,guard_sha,lambda *args:(_ for _ in ()).throw(AssertionError('must not execute')))
  except b.data.Denied:pass
  else:raise AssertionError('CIPD override admitted')
-child=object();popen_calls=[]
-def popen(command,*args,**kwargs):popen_calls.append((command,kwargs));return child
-sys.modules['subprocess2']=types.SimpleNamespace(Popen=popen)
+child=object();popen_calls=[];popen_error=[None]
+def popen(command,*args,**kwargs):
+ popen_calls.append((command,kwargs))
+ if popen_error[0]is not None:raise popen_error[0]
+ return child
+sys.modules['subprocess2']=types.SimpleNamespace(Popen=popen,STDOUT=-2)
+primary_env=${JSON.stringify(PINNED_GCLIENT_ENV.envConstruction.source)}
+primary_main=${JSON.stringify(PINNED_GCLIENT_ENV.mainMetadata.source)}
+primary_sync=${JSON.stringify(PINNED_GCLIENT_ENV.syncMetadata.source)}
+old_bind=${JSON.stringify(PINNED_GCLIENT_ENV.oldBind.source)}
+for key in ('COLUMNS','LINES'):os.environ.pop(key,None)
+# Execute the exact pinned kwargs/env construction with an inert Popen boundary.
+def primary_dispatch(command,kwargs=None,columns=80,lines=24):
+ scope=dict(os=os,shutil=types.SimpleNamespace(get_terminal_size=lambda:types.SimpleNamespace(columns=columns,lines=lines)),subprocess2=sys.modules['subprocess2'],args=command,kwargs={}if kwargs is None else kwargs,pipe_writer=123)
+ exec(compile(primary_env,'pinned-c101-env-construction','exec'),scope)
+ return scope['kid']
+new_bind=b.bind;exec(compile(old_bind,'original-20a-bind','exec'),b.__dict__)
+b.bind(witness_sha,guard_sha)
+try:primary_dispatch(['cipd','expand-package-name','infra/test'])
+except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_ENV_OVERRIDE'
+else:raise AssertionError('old rejection did not reproduce')
+assert not popen_calls
+b.bind=new_bind;sys.modules['subprocess2']=types.SimpleNamespace(Popen=popen,STDOUT=-2)
 b.bind(witness_sha,guard_sha);backend=sys.modules['subprocess2']
 assert backend.Popen(['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],shell=True)is child
 assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
@@ -602,6 +649,68 @@ ordinary=['git','--version'];assert backend.Popen(ordinary,shell=True)is child a
 try:backend.Popen(['cipd','expand-package-name','infra/test'],env={})
 except b.data.Denied:pass
 else:raise AssertionError('env override admitted')
+initial_env=dict(os.environ);environment_denials=[]
+# Actual pinned gclient writes, not a model of accepted arbitrary mutations.
+exec(compile(primary_main,'pinned-c101-main-metadata','exec'),dict(os=os,sys=types.SimpleNamespace(stdout=types.SimpleNamespace(isatty=lambda:False))))
+exec(compile(primary_sync,'pinned-c101-sync-metadata','exec'),dict(os=os,json=json,PREVIOUS_SYNC_COMMITS='GCLIENT_PREVIOUS_SYNC_COMMITS',self=types.SimpleNamespace(name='src'),latest_commit='a'*40))
+ensure=b.ROOT/'tmp/owned.ensure';ensure.write_text('infra/test instance')
+resolved=b.ROOT/'tmp/owned.resolved';resolved.write_text('{}')
+commands=[['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],['cipd','ensure','-log-level','info','-root',b.P['workspace'],'-ensure-file',str(ensure)],['cipd','ensure-file-resolve','-log-level','error','-ensure-file',str(ensure),'-json-output',str(resolved)]]
+for command in commands:
+ assert primary_dispatch(command)is child
+ assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
+ assert popen_calls[-1][1]['env']==dict(os.environ,COLUMNS='80',LINES='24')
+ assert primary_dispatch(command,dict(env=os.environ.copy()))is child
+assert backend.Popen(commands[0])is child
+approved_current=dict(os.environ)
+for key in ('PATH','PYTHONPATH','PYTHONHOME','CIPD_BACKEND','CIPD_SERVICE_URL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','CIPD_CACHE_DIR','VPYTHON_VIRTUALENV_ROOT','GIT_ASKPASS','USERPROFILE','UNKNOWN_ENV'):
+ changed=dict(approved_current);changed[key]='unapproved';before=len(popen_calls)
+ try:primary_dispatch(commands[0],dict(env=changed))
+ except b.data.Denied as error:environment_denials.append(str(error))
+ else:raise AssertionError('changed child environment admitted')
+ assert len(popen_calls)==before
+removed=dict(approved_current);del removed['CIPD_CACHE_DIR']
+try:primary_dispatch(commands[0],dict(env=removed))
+except b.data.Denied:pass
+else:raise AssertionError('removed cache admitted')
+for changed in (dict(COLUMNS='80'),dict(COLUMNS='0',LINES='24'),dict(COLUMNS='080',LINES='24'),dict(COLUMNS='10001',LINES='24'),dict(COLUMNS='80',LINES='2.4'),dict(COLUMNS='80',LINES='24',UNKNOWN_ENV='no')):
+ bad=dict(approved_current,**changed);before=len(popen_calls)
+ try:backend.Popen(commands[0],env=bad)
+ except b.data.Denied:pass
+ else:raise AssertionError('terminal environment widened')
+ assert len(popen_calls)==before
+for key,changed in (('PATH','unapproved'),('GIT_EDITOR','not-false'),('GIT_PAGER','not-cat'),('GIT_TERMINAL_PROMPT','1'),('GCLIENT_UNKNOWN_METADATA','data')):
+ before=len(popen_calls);os.environ[key]=changed
+ try:
+  for kwargs in ({},dict(env=os.environ.copy())):
+   try:backend.Popen(commands[0],**kwargs)
+   except b.data.Denied:pass
+   else:raise AssertionError('changed inherited environment admitted')
+ finally:os.environ.clear();os.environ.update(approved_current)
+ assert len(popen_calls)==before
+before=len(popen_calls);del os.environ['CIPD_CACHE_DIR']
+try:
+ try:backend.Popen(commands[0])
+ except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_INHERITED_ENV'
+ else:raise AssertionError('removed inherited critical key admitted')
+finally:os.environ.clear();os.environ.update(approved_current)
+assert len(popen_calls)==before
+# Windows rejects physical environment values above32767 before our guard;
+# inject only this numeric cap boundary into the actual inherited-env reader.
+original_os=b.os;b.os=types.SimpleNamespace(environ=dict(approved_current,GCLIENT_PREVIOUS_SYNC_COMMITS='x'*(1024**2+1)))
+before=len(popen_calls)
+try:
+ try:backend.Popen(commands[0])
+ except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_INHERITED_ENV'
+ else:raise AssertionError('metadata cap admitted')
+finally:b.os=original_os
+assert len(popen_calls)==before
+popen_primary=RuntimeError('OWNED_POPEN_PRIMARY');popen_error[0]=popen_primary
+try:primary_dispatch(commands[0])
+except RuntimeError as error:assert error is popen_primary
+else:raise AssertionError('Popen primary lost')
+finally:popen_error[0]=None
+os.environ.clear();os.environ.update(initial_env)
 for key,bad in (('fresh',False),('packageInstance','wrong'),('setupExit',False)):
  changed=dict(value);changed[key]=bad;raw=json.dumps(changed).encode();b.WITNESS.write_bytes(raw)
  try:b.verify(hashlib.sha256(raw).hexdigest(),guard_sha)
@@ -630,7 +739,7 @@ try:
  else:raise AssertionError('reserve reset')
  assert observed==[5]
 finally:b.subprocess.run=original_run
-print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecuted=False,validProvisionerCalls=2,firstErrorPreserved=True,originalReservePreserved=True,immutableDispatchDenials=dispatch_denials,witnessSha256=witness_sha,fixtureSourcePins=b.P['sources'],fixtureClientSha=digest)))
+print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecuted=False,validProvisionerCalls=2,firstErrorPreserved=True,originalReservePreserved=True,immutableDispatchDenials=dispatch_denials,environmentDenials=environment_denials,actualPinnedEnvironmentOldRedNewGreen=True,witnessSha256=witness_sha,fixtureSourcePins=b.P['sources'],fixtureClientSha=digest)))
 `;
     const harnessFile = path.join(directory, "harness.py");
     await fs.writeFile(harnessFile, harness);
@@ -644,6 +753,8 @@ print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecu
     assert.equal(result.cases.length, 13);
     assert(result.firstErrorPreserved && result.originalReservePreserved);
     assert.equal(result.immutableDispatchDenials.length, 6);
+    assert.equal(result.environmentDenials.length, 13);
+    assert.equal(result.actualPinnedEnvironmentOldRedNewGreen, true);
     assert.equal(result.vendorExecutableExecuted, false);
     const witness = JSON.parse(await fs.readFile(program.witness, "utf8"));
     for (const [role, name] of [

@@ -586,13 +586,36 @@ def execute(role,args,expected,guard_sha,runner=run_checked):
   except BaseException:
    if not failed:raise
    print('FULL_BOOTSTRAP_POST_FAILURE',file=sys.stderr)
+def inherited_environment(approved,candidate):
+ current=dict(os.environ);expected=dict(approved)
+ # Exact writes from pinned gclient.main; these do not select executables.
+ for key,value in (('GIT_PAGER','cat'),('GIT_EDITOR','false'),('GIT_TERMINAL_PROMPT','0')):
+  if key in current:
+   data.need(current[key]==approved.get(key)or current[key]==value,'FULL_BOOTSTRAP_INHERITED_ENV')
+   expected[key]=current[key]
+ # Pinned GitDependency.update records commit data, not command/config authority.
+ if 'GCLIENT_PREVIOUS_SYNC_COMMITS'in current:
+  value=current['GCLIENT_PREVIOUS_SYNC_COMMITS']
+  data.need(type(value)is str and 0<len(value)<=1024**2 and not any(c in value for c in '\x00\r\n'),'FULL_BOOTSTRAP_INHERITED_ENV')
+  expected['GCLIENT_PREVIOUS_SYNC_COMMITS']=value
+ data.need(current==expected,'FULL_BOOTSTRAP_INHERITED_ENV')
+ if candidate is None:return
+ data.need(type(candidate)is dict,'FULL_BOOTSTRAP_ENV_OVERRIDE');expected=dict(current)
+ if 'COLUMNS'not in current or 'LINES'not in current:
+  if 'COLUMNS'in candidate and 'LINES'in candidate:
+   for key in ('COLUMNS','LINES'):
+    value=candidate[key]
+    data.need(type(value)is str and value.isascii()and value.isdecimal()and 1<=len(value)<=5 and value[0]!='0'and 1<=int(value)<=10000,'FULL_BOOTSTRAP_TERMINAL_ENV')
+    expected[key]=value
+ data.need(candidate==expected,'FULL_BOOTSTRAP_ENV_OVERRIDE')
+
 def bind(expected,guard_sha):
  value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2
  if getattr(subprocess2,'_sorng_cipd_bound',False):return
- original=subprocess2.Popen
+ original=subprocess2.Popen;approved=dict(os.environ)
  def admitted(argv,*args,**kwargs):
   if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):
-   values=list(argv[1:]);arguments('cipd',values);data.need(kwargs.get('env')is None,'FULL_BOOTSTRAP_ENV_OVERRIDE');current,_=verify(expected,guard_sha);kwargs['shell']=False
+   values=list(argv[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
    return original([current['client']['path'],*values],*args,**kwargs)
   return original(argv,*args,**kwargs)
  subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True
