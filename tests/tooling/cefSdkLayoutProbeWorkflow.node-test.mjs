@@ -125,7 +125,10 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
 import { identitySha256 } from "../../scripts/lib/browser-custom-runtime.mjs";
-import { prepareMacMetalToolchain } from "../../scripts/cef-hosted-provision.mjs";
+import {
+  prepareMacMetalToolchain,
+  macMetalEnvironment,
+} from "../../scripts/cef-hosted-provision.mjs";
 import {
   sdkProbeAuthority,
   checkpointHost,
@@ -830,6 +833,10 @@ import {
   main as waitMain,
   hardWatchdog as waitHardWatchdog,
   primaryReason as waitPrimaryReason,
+  sampleProjection,
+  fitSampleEvidence,
+  parseOwnedPidTuple,
+  observeSamplerInterface,
 } from "../../native/mac-sdk-wait-diagnostic.mjs";
 const waitRoot =
   "/Users/runner/work/_temp/cef-mac-sdk-wait-11111111-1111-4111-8111-111111111111";
@@ -923,25 +930,33 @@ test("SDK wait route is a separate mutually exclusive branch-only job with fixed
     );
   assert.throws(() => waitAuthority(waitEnv(), waitEvent, "linux", "x64"));
 });
-test("SDK wait A/B differ only by owned HOME and TMPDIR and preserve original keys and query cap", () => {
-  const a = queryEnvironment(waitSelected, "A", waitRoot),
-    b = queryEnvironment(waitSelected, "B", waitRoot);
-  assert.deepEqual(a, {
-    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
-    LC_ALL: "C",
+test("Metal query uses exactly original macMetalEnvironment and denies B or a foreign root", () => {
+  const inherited = {
+    HOME: "/owned-original-home",
+    TMPDIR: "/owned-original-tmp/",
+    USER: "runner",
+    LOGNAME: "runner",
     LANG: "C",
-    TZ: "UTC",
-    ...waitSelected,
-  });
-  assert.deepEqual(b, {
-    ...a,
-    HOME: waitRoot + "/home",
-    TMPDIR: waitRoot + "/tmp/",
-  });
-  assert(!("USER" in b) && !("LOGNAME" in b));
-  assert.throws(() => queryEnvironment(waitSelected, "C", waitRoot));
-  assert.throws(() => queryEnvironment(waitSelected, "B", "/foreign"));
+    LC_ALL: "C",
+    GH_TOKEN: "discard",
+    NODE_OPTIONS: "discard",
+  };
+  assert.deepEqual(
+    queryEnvironment(waitSelected, "A", waitRoot, inherited),
+    macMetalEnvironment(waitSelected, inherited),
+  );
+  assert(
+    !(
+      "MACOSX_DEPLOYMENT_TARGET" in
+      queryEnvironment(waitSelected, "A", waitRoot, inherited)
+    ),
+  );
+  assert.throws(() => queryEnvironment(waitSelected, "B", waitRoot, inherited));
+  assert.throws(() =>
+    queryEnvironment(waitSelected, "A", "/foreign", inherited),
+  );
 });
+
 test("SDK wait shared clock floors original wall/mono and does not reset cleanup", () => {
   let wall = 0,
     mono = 0n;
@@ -966,7 +981,7 @@ test("SDK wait actual query records callback before close, consumes bounded pipe
     {
       execute: (file, args, options, cb) => {
         assert.equal(file, "/usr/bin/xcrun");
-        assert.deepEqual(args, ["-sdk", "macosx", "--show-sdk-path"]);
+        assert.deepEqual(args, ["--sdk", "macosx", "--find", "metal"]);
         assert.equal(options.timeout, 30000);
         assert.equal(options.maxBuffer, 65536);
         assert.equal(options.killSignal, "SIGKILL");
@@ -1001,9 +1016,10 @@ test("SDK wait actual query records callback before close, consumes bounded pipe
   assert.equal(row.stdinEnded, false);
   assert.equal(row.sampler.attempted, false);
 });
-test("SDK wait actual query clamps cap to remaining and retains both variant outcomes without retry", async () => {
+test("Metal single-query actual body clamps cap and preserves either error or natural exit without a B variant", async () => {
   const rows = [];
-  for (const variant of ["A", "B"]) {
+  for (const failed of [true, false]) {
+    const variant = "A";
     let callback, child;
     const pending = waitQuery(
       variant,
@@ -1019,7 +1035,7 @@ test("SDK wait actual query clamps cap to remaining and retains both variant out
       },
     );
     callback(
-      variant === "A"
+      failed
         ? Object.assign(new Error("fixed"), { code: "ETIMEDOUT" })
         : undefined,
     );
@@ -1031,7 +1047,7 @@ test("SDK wait actual query clamps cap to remaining and retains both variant out
     rows.map((r) => [r.variant, r.failed]),
     [
       ["A", true],
-      ["B", false],
+      ["A", false],
     ],
   );
 });
@@ -1172,6 +1188,13 @@ function waitParentFixture() {
     pendingIO: new Set(),
     hardWatchdog: waitHardWatchdog,
     primaryReason: waitPrimaryReason,
+    interfaceFailures: new WeakMap(),
+    observeSamplerInterface: async () => ({
+      supported: true,
+      manual: { decodedSha256: "d".repeat(64) },
+      tools: [],
+      observedOnly: true,
+    }),
     checkpointHost: () => ({ inputs, target: "aarch64-apple-darwin" }),
     plan: async () => ({
       inputsRoot: "/selected-inputs",
@@ -1256,14 +1279,14 @@ function waitParentFixture() {
     )(...Object.values(scope));
   return { files, launches, scope, e, build };
 }
-test("SDK wait actual parent orchestration gives both fixed workers finite numeric budgets and preserves A failure before B success", async () => {
+test("Metal actual parent launches exactly one creation-owned worker with finite original budgets", async () => {
   const { files, launches, e, build } = waitParentFixture();
   const run = build();
   const result = await run(e);
-  assert.deepEqual(launches, ["A", "B"]);
+  assert.deepEqual(launches, ["A"]);
   assert.deepEqual(
     result.variants.map((v) => v.query.failed),
-    [true, false],
+    [true],
   );
   const outcome = JSON.parse(files.get(waitRoot + "/outcome.json"));
   assert.equal(outcome.environmentCausalityProved, false);
@@ -1475,7 +1498,7 @@ test(
     assert(terminals.every((v) => v.complete === false));
   },
 );
-test("SDK wait B is explicitly not run when A consumes the worst original stage allowance", async () => {
+test("Metal actual parent never launches B even when A consumes the worst original parent stage allowance", async () => {
   const f = waitParentFixture();
   let wall = Date.now();
   f.scope.Date = { now: () => wall };
@@ -1485,16 +1508,11 @@ test("SDK wait B is explicitly not run when A consumes the worst original stage 
     wall += 65000;
     return result;
   };
-  await assert.rejects(f.build()(f.e), /SDK_WAIT_STAGE_ADMISSION/);
+  const result = await f.build()(f.e);
   assert.deepEqual(f.launches, ["A"]);
-  const outcome = JSON.parse(f.files.get(waitRoot + "/outcome.json"));
-  assert.equal(outcome.complete, false);
-  assert.deepEqual(outcome.variants[1], {
-    variant: "B",
-    notRun: true,
-    reason: "INSUFFICIENT_ORIGINAL_STAGE_BUDGET",
-  });
+  assert.equal(result.variants.length, 1);
 });
+
 test(
   "SDK wait actual benign CLI watchdog exits despite a live interval instead of relying on exitCode",
   { timeout: 3000 },
@@ -1566,8 +1584,8 @@ test("SDK wait actual maintained input-admission chain uses the checked-in names
   f.scope.held = async (file, ...rest) =>
     file.includes("cef-ci-runner-") ? raw : held(file, ...rest);
   const result = await f.build()(f.e);
-  assert.deepEqual(f.launches, ["A", "B"]);
-  assert.equal(result.variants.length, 2);
+  assert.deepEqual(f.launches, ["A"]);
+  assert.equal(result.variants.length, 1);
 });
 test("SDK wait terminal reasons are closed before root creation and absent-root upload is skipped", () => {
   assert.equal(
@@ -1593,4 +1611,541 @@ test("SDK wait terminal reasons are closed before root creation and absent-root 
     ).if,
     "always() && steps.sdk_wait.outputs.diagnostic_root != ''",
   );
+});
+function metalVirtualFixture(options = {}) {
+  let time = 0,
+    nextId = 1,
+    target,
+    callback,
+    psCount = 0;
+  const timers = new Map(),
+    commands = [];
+  const schedule = (fn, ms) => {
+    const id = nextId++;
+    timers.set(id, { at: time + ms, fn });
+    return id;
+  };
+  const cancel = (id) => timers.delete(id);
+  const leaf = () => {
+    const c = waitChild();
+    c.pid = nextId++ + 1000;
+    c.stdout.pause = () => {};
+    c.stderr.pause = () => {};
+    c.kill = (signal) => {
+      c.killed = signal;
+      if (!options.unconfirmedClose)
+        queueMicrotask(() => close(c, null, signal));
+      return true;
+    };
+    return c;
+  };
+  function close(c, status = 0, signal = null) {
+    if (c.closed) return;
+    c.closed = true;
+    c.exitCode = status;
+    c.signalCode = signal;
+    c.stdout.emit("end");
+    c.stderr.emit("end");
+    c.stdout.emit("close");
+    c.stderr.emit("close");
+    c.emit("exit", status, signal);
+    c.emit("close", status, signal);
+  }
+  const tuple = (start = "Tue Oct 27 02:00:00 2026") =>
+    `42 ${process.pid} ${process.pid} ${start}\n`;
+  const spawn = (file, args, settings) => {
+    commands.push({ file, args, settings, at: time });
+    const c = leaf();
+    if (file === "/bin/ps") {
+      assert.deepEqual(args, ["-p", "42", "-o", "pid=,ppid=,pgid=,lstart="]);
+      assert.equal(settings.env.LC_ALL, "C");
+      assert.equal(settings.env.TZ, "UTC");
+      psCount++;
+      const current = psCount;
+      if (options.psHang) return c;
+      queueMicrotask(() => {
+        c.stdout.emit(
+          "data",
+          Buffer.from(
+            tuple(
+              options.identityChange === current
+                ? "Tue Oct 27 02:00:01 2026"
+                : undefined,
+            ),
+          ),
+        );
+        close(c);
+      });
+    } else {
+      assert.equal(file, "/usr/bin/sample");
+      assert.deepEqual(args, [
+        "42",
+        "1",
+        "10",
+        "-mayDie",
+        "-file",
+        "/dev/stdout",
+      ]);
+      if (options.sampleHang) return c;
+      schedule(() => {
+        if (options.sampleNull) c.emit("error", null);
+        c.stdout.emit(
+          "data",
+          Buffer.from(
+            options.rawSample ??
+              "  50 __psynch_cvwait (in libsystem_kernel.dylib) + 8 [0x123]\n",
+          ),
+        );
+        if (options.sampleOverflow)
+          c.stderr.emit("data", Buffer.alloc(200000, 120));
+        close(c);
+      }, 1000);
+    }
+    return c;
+  };
+  const promise = waitQuery(
+    "A",
+    queryEnvironment(waitSelected, "A", waitRoot),
+    () => 600000,
+    {
+      now: () => time,
+      wall: () => 100000 + time,
+      schedule,
+      cancel,
+      spawn,
+      sampling: true,
+      execute: (file, args, settings, cb) => {
+        assert.equal(file, "/usr/bin/xcrun");
+        assert.deepEqual(args, ["--sdk", "macosx", "--find", "metal"]);
+        assert.equal(settings.timeout, 30000);
+        callback = cb;
+        target = waitChild();
+        queueMicrotask(() => target.emit("spawn"));
+        return target;
+      },
+    },
+  );
+  const flush = async () => {
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+  };
+  const advance = async (end) => {
+    for (let guard = 0; guard < 10000; guard++) {
+      await flush();
+      const due = [...timers]
+        .filter(([, v]) => v.at <= end)
+        .sort((a, b) => a[1].at - b[1].at);
+      if (!due.length) {
+        time = end;
+        await flush();
+        return;
+      }
+      const [id, item] = due[0];
+      timers.delete(id);
+      time = Math.max(time, item.at);
+      item.fn();
+    }
+    assert.fail("virtual timer bound");
+  };
+  const finish = (error = null) => {
+    callback(error);
+    close(target, error ? null : 0, error ? "SIGKILL" : null);
+  };
+  return {
+    promise,
+    commands,
+    flush,
+    advance,
+    finish,
+    get target() {
+      return target;
+    },
+    get time() {
+      return time;
+    },
+  };
+}
+
+test("Metal actual query skips samples before1s and never schedules a second lookup or changes its30s timeout", async () => {
+  const f = metalVirtualFixture();
+  await f.flush();
+  await f.advance(500);
+  f.finish();
+  const row = await f.promise;
+  assert.equal(row.failed, false);
+  assert.equal(row.timeoutMs, 30000);
+  assert.equal(row.sampler.attempted, false);
+  assert.equal(
+    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
+    0,
+  );
+  await f.advance(20000);
+  assert.equal(
+    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
+    0,
+  );
+  assert.equal(row.sampler.joined, true);
+});
+
+test("Metal actual query samples only at1s and10s, hashes closed bounded captures and joins all owned readers", async () => {
+  const f = metalVirtualFixture();
+  await f.flush();
+  await f.advance(12000);
+  f.finish();
+  const row = await f.promise;
+  assert.equal(row.failed, false);
+  assert.equal(row.timeoutMs, 30000);
+  assert.equal(row.sampler.joined, true);
+  const samples = f.commands.filter((c) => c.file === "/usr/bin/sample");
+  assert.deepEqual(
+    samples.map((c) => c.at),
+    [1000, 10000],
+  );
+  assert.equal(row.sampler.observations.length, 2);
+  for (const item of row.sampler.observations) {
+    assert.equal(item.attributed, true);
+    assert.equal(item.rows[0].symbol, "__psynch_cvwait");
+    assert.equal(item.sample.closed, true);
+    assert.equal(item.sample.readersJoined, true);
+    assert.equal(item.preProcess.joined, true);
+    assert.equal(item.postProcess.joined, true);
+    assert.match(item.sample.capturedSha256, /^[a-f0-9]{64}$/);
+    assert(item.actualElapsedMs <= 3000);
+    assert(Buffer.byteLength(JSON.stringify(item)) <= 4096);
+  }
+  assert(Buffer.byteLength(JSON.stringify(row)) <= 192 * 1024);
+});
+
+test("Metal PID tuple changes and ambiguous/foreign metadata cannot authorize a sampler", async () => {
+  const f = metalVirtualFixture({ identityChange: 2 });
+  await f.flush();
+  await f.advance(12000);
+  f.finish();
+  const row = await f.promise;
+  assert.equal(
+    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
+    0,
+  );
+  assert.equal(row.sampler.observations[0].identityMismatch, true);
+  assert.equal(row.sampler.joined, true);
+  for (const raw of [
+    `42 2 ${process.pid} Tue Oct 27 02:00:00 2026\n`,
+    `42 ${process.pid} 2 Tue Oct 27 02:00:00 2026\n`,
+    `42 ${process.pid} ${process.pid} Tue Oct 27 02:00:00 2026\nextra\n`,
+  ])
+    assert.throws(() => parseOwnedPidTuple(raw, 42, process.pid));
+});
+
+test("Metal observation timeout/close failure stays within original3s and preserves null query error", async () => {
+  for (const options of [
+    { sampleHang: true },
+    { sampleHang: true, unconfirmedClose: true },
+    { psHang: true },
+  ]) {
+    const f = metalVirtualFixture(options);
+    await f.flush();
+    f.target.emit("error", null);
+    await f.advance(6000);
+    f.finish(Object.assign(Error("later"), { code: "ETIMEDOUT" }));
+    const row = await f.promise;
+    assert.equal(row.failed, true);
+    assert.equal(row.primaryWasNull, true);
+    assert.equal(row.failure, "QUERY_FAILED");
+    for (const item of row.sampler.observations)
+      if (item.started) assert(item.actualElapsedMs <= 3000);
+    if (options.unconfirmedClose || options.psHang)
+      assert.equal(row.sampler.joined, false);
+    assert.equal(
+      f.commands.filter((c) => c.file === "/usr/bin/sample").length <= 1,
+      true,
+    );
+  }
+});
+
+test("Metal raw sample overflow is incomplete and never retains raw headers, paths, argv or unclassified private strings", async () => {
+  const privateText =
+    "Process: runner-private /Users/private/home\nBinary Images: /secret/image\nargv SECRET_VALUE\n  8 safe_wait (in libsystem_kernel.dylib) + 1 [0x123]\n  9 /secret/path (in libsystem_kernel.dylib)\n  2 unknown (in foreign_private_module)\n";
+  const projection = sampleProjection(Buffer.from(privateText));
+  assert.deepEqual(projection.rows, [
+    { count: 8, symbol: "safe_wait", module: "libsystem_kernel.dylib" },
+  ]);
+  assert.equal(JSON.stringify(projection).includes("SECRET_VALUE"), false);
+  assert.equal(JSON.stringify(projection).includes("private"), false);
+  assert.equal(sampleProjection(Buffer.from([0xff])).invalidUtf8, true);
+  const f = metalVirtualFixture({
+    sampleOverflow: true,
+    rawSample: privateText,
+  });
+  await f.flush();
+  await f.advance(4000);
+  f.finish();
+  const row = await f.promise;
+  const item = row.sampler.observations[0];
+  assert.equal(item.sample.truncated, true);
+  assert.equal(item.attributed, false);
+  assert(item.sample.capturedBytes <= 128 * 1024);
+  assert.equal(JSON.stringify(item).includes("SECRET_VALUE"), false);
+});
+
+test("Metal maximum original query captures plus escaping-heavy sample projections fit all existing serialized caps", () => {
+  const prefix = Buffer.alloc(65536, 120).toString("base64");
+  const base = {
+    failed: true,
+    primaryWasNull: true,
+    stdout: { base64: prefix },
+    stderr: { base64: prefix },
+    exitCode: null,
+    signal: "SIGKILL",
+  };
+  const observations = [1000, 10000].map((offsetMs) => ({
+    offsetMs,
+    started: true,
+    joined: true,
+    dropped: 0,
+    rows: Array.from({ length: 256 }, () => ({
+      count: 1,
+      symbol: 'quoted"\\\n'.repeat(40),
+      module: "xcrun",
+    })),
+  }));
+  assert.throws(
+    () => fitSampleEvidence(base, [...observations, observations[0]]),
+    /METAL_SAMPLE_COUNT/,
+  );
+  const fitted = fitSampleEvidence(base, observations);
+  assert.equal(fitted.stdout.base64, prefix);
+  assert.equal(fitted.stderr.base64, prefix);
+  assert.equal(fitted.primaryWasNull, true);
+  assert(Buffer.byteLength(JSON.stringify(fitted)) <= 192 * 1024);
+  assert(Buffer.byteLength(JSON.stringify(fitted)) < 262144);
+  for (const item of fitted.sampler.observations) {
+    assert(Buffer.byteLength(JSON.stringify(item)) <= 4096);
+    assert(item.dropped > 0);
+    assert.equal(item.projectionTruncated, true);
+  }
+});
+
+test("Metal installed manual/tool attestation is closed, bounded and unsupported interfaces stop before any query", async () => {
+  const body = Buffer.from(
+    ".Dt SAMPLE 1\n.Sh SYNOPSIS\n.Ar duration\n.Ar interval\n.Fl file\n.Fl mayDie\n",
+  );
+  const tools = Buffer.from("public OS tool fixture");
+  const seen = [];
+  const deps = {
+    stat: async () => ({
+      isFile: () => true,
+      uid: 0n,
+      nlink: 1n,
+      mode: 0o100755n,
+      dev: 1n,
+      ino: 2n,
+      size: BigInt(tools.length),
+      mtimeNs: 1n,
+      ctimeNs: 1n,
+    }),
+    read: async (file, cap, remaining) => {
+      seen.push(file);
+      assert.equal(remaining(), 1234);
+      return file.endsWith("sample.1") ? body : tools;
+    },
+  };
+  const result = await observeSamplerInterface(() => 1234, deps);
+  assert.equal(result.supported, true);
+  assert.equal(result.tools.length, 2);
+  assert.equal(result.expectedPinsApproved, false);
+  assert.equal(result.manual.decodedBytes, body.length);
+  assert.deepEqual(seen, [
+    "/usr/bin/sample",
+    "/bin/ps",
+    "/usr/share/man/man1/sample.1",
+  ]);
+  const unsupported = await observeSamplerInterface(() => 1234, {
+    ...deps,
+    read: async (file) =>
+      file.endsWith("sample.1")
+        ? Buffer.from("no documented interface")
+        : tools,
+  });
+  assert.equal(unsupported.supported, false);
+  const f = waitParentFixture();
+  f.scope.observeSamplerInterface = async () => unsupported;
+  await assert.rejects(f.build()(f.e), /METAL_SAMPLE_INTERFACE_UNAVAILABLE/);
+  assert.deepEqual(f.launches, []);
+  assert.equal(
+    JSON.parse(f.files.get(waitRoot + "/selection.json")).samplerAvailable,
+    false,
+  );
+});
+test("Metal mid-sample target close aborts only its owned observer and suppresses later sampling and success", async () => {
+  const f = metalVirtualFixture();
+  await f.flush();
+  await f.advance(1500);
+  f.finish();
+  await f.advance(1600);
+  const row = await f.promise;
+  assert.equal(row.failed, false);
+  assert.equal(row.exitCode, 0);
+  assert.equal(row.sampler.observations[0].attributed, false);
+  assert.equal(row.sampler.observations[0].sample.stopped, true);
+  const frozen = JSON.stringify(row);
+  await f.advance(20000);
+  assert.equal(JSON.stringify(row), frozen);
+  assert.equal(
+    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
+    1,
+  );
+});
+
+test("Metal worker actual persistence body preserves original null/falsy query failures over reporting faults", async () => {
+  const source = await read("native/mac-sdk-wait-diagnostic.mjs");
+  const body = source.slice(
+    source.indexOf("async function worker("),
+    source.indexOf("export async function main("),
+  );
+  assert.ok(body.startsWith("async function worker("));
+  for (const original of [null, false, 0, ""]) {
+    const row = {
+      variant: "A",
+      failed: true,
+      primaryWasNull: original === null,
+      failure: "QUERY_FAILED",
+      sampler: { joined: true },
+      stdout: { observed: 0, sha256: "a".repeat(64) },
+      stderr: { observed: 0, sha256: "b".repeat(64) },
+      callbackSeen: true,
+      closeSeen: true,
+      exitCode: null,
+      signal: "SIGKILL",
+      timeoutMs: 30000,
+      elapsedMs: 30001,
+    };
+    const failures = new WeakMap([[row, original]]);
+    const summaries = [];
+    const context = Buffer.from(
+      JSON.stringify({
+        root: waitRoot,
+        kind: "owned-metal-query-context",
+        samplerInterface: { supported: true, manualSha256: "d".repeat(64) },
+        selected: waitSelected,
+        stageWallEnd: Date.now() + 120000,
+        stageMonoEnd: String(process.hrtime.bigint() + 120000000000n),
+        workerWallEnd: Date.now() + 35000,
+        workerMonoEnd: String(process.hrtime.bigint() + 35000000000n),
+      }),
+    );
+    const scope = {
+      assert,
+      DEVELOPER: waitSelected.DEVELOPER_DIR,
+      SDK: waitSelected.SDKROOT,
+      process: {
+        platform: "darwin",
+        arch: "x64",
+        env: { HOME: "original" },
+        hrtime: process.hrtime,
+      },
+      Date,
+      BigInt,
+      queryEnvironment,
+      held: async () => context,
+      hash: (buffer) => createHash("sha256").update(buffer).digest("hex"),
+      query: async (_v, env, remaining, options) => {
+        assert.equal(env.HOME, "original");
+        assert.equal(options.sampling, true);
+        assert(remaining() >= 31000);
+        return row;
+      },
+      queryFailures: failures,
+      console: { log: (value) => summaries.push(JSON.parse(value)) },
+      save: async () => {
+        throw Error("secondary persistence");
+      },
+    };
+    const run = new Function(...Object.keys(scope), body + ";return worker;")(
+      ...Object.values(scope),
+    );
+    let rejected = false,
+      caught;
+    try {
+      await run(waitRoot, scope.hash(context), "A");
+    } catch (error) {
+      rejected = true;
+      caught = error;
+    }
+    assert.equal(rejected, true);
+    assert.equal(caught, original);
+    assert.equal(summaries[0].kind, "owned-metal-query-observed");
+    assert.equal(summaries[0].primaryWasNull, original === null);
+    assert.equal("base64" in summaries[0], false);
+  }
+});
+
+test("Metal manual absence and gzip inflation bounds remain an explicit unavailable hold without fallback commands", async () => {
+  const tools = Buffer.from("public tools");
+  const stat = async () => ({
+    isFile: () => true,
+    uid: 0n,
+    nlink: 1n,
+    mode: 0o100755n,
+    dev: 1n,
+    ino: 2n,
+    size: BigInt(tools.length),
+    mtimeNs: 1n,
+    ctimeNs: 1n,
+  });
+  const missing = await observeSamplerInterface(() => 1000, {
+    stat,
+    read: async (file) => {
+      if (file.includes("/man/"))
+        throw Object.assign(Error("missing"), { code: "ENOENT" });
+      return tools;
+    },
+  });
+  assert.equal(missing.supported, false);
+  assert.equal(missing.manual, null);
+  assert.equal(missing.reason, "MANUAL_UNAVAILABLE");
+  const { gzipSync } = await import("node:zlib");
+  const compressed = gzipSync(Buffer.alloc(65537, 120));
+  const inflated = await observeSamplerInterface(() => 1000, {
+    stat,
+    read: async (file) => {
+      if (file.endsWith("sample.1"))
+        throw Object.assign(Error("missing"), { code: "ENOENT" });
+      return file.endsWith(".gz") ? compressed : tools;
+    },
+  });
+  assert.equal(inflated.supported, false);
+  assert.equal(inflated.reason, "SAMPLER_INTERFACE_UNAVAILABLE");
+  const f = waitParentFixture();
+  f.scope.observeSamplerInterface = async () => missing;
+  await assert.rejects(f.build()(f.e), /METAL_SAMPLE_INTERFACE_UNAVAILABLE/);
+  assert.equal(f.launches.length, 0);
+});
+test("Metal actual query maximum two stream captures and two projected samples preserve the original nullable outcome within all caps", async () => {
+  const rawSample = Array.from(
+    { length: 256 },
+    (_, i) =>
+      `  100 public_symbol_${i}_${"x".repeat(70)} (in libsystem_kernel.dylib) + 1 [0x123]\n`,
+  ).join("");
+  const f = metalVirtualFixture({ rawSample });
+  await f.flush();
+  f.target.stdout.emit("data", Buffer.alloc(65536, 120));
+  f.target.stderr.emit("data", Buffer.alloc(65536, 121));
+  f.target.emit("error", null);
+  await f.advance(30000);
+  f.finish(Object.assign(Error("later timeout"), { code: "ETIMEDOUT" }));
+  const row = await f.promise;
+  assert.equal(row.stdout.retained, 65536);
+  assert.equal(row.stderr.retained, 65536);
+  assert.equal(row.primaryWasNull, true);
+  assert.equal(row.failed, true);
+  assert.equal(row.timeoutMs, 30000);
+  assert.equal(row.sampler.observations.length, 2);
+  assert.equal(row.sampler.joined, true);
+  assert(Buffer.byteLength(JSON.stringify(row)) <= 192 * 1024);
+  assert(Buffer.byteLength(JSON.stringify(row)) < 262144);
+  for (const item of row.sampler.observations) {
+    assert(Buffer.byteLength(JSON.stringify(item)) <= 4096);
+    assert(item.dropped > 0);
+    assert.equal(item.projectionTruncated, true);
+    assert.equal(item.complete, false);
+  }
 });

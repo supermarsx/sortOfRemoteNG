@@ -3,11 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn as spawnProcess } from "node:child_process";
+import { gunzipSync } from "node:zlib";
+import { macMetalEnvironment } from "../scripts/cef-hosted-provision.mjs";
 import { plan, validateRunnerMap } from "../scripts/cef-runtime-ci.mjs";
 import {
   checkpointHost,
-  selectedSdkEnvironment,
   compileSlice,
 } from "../scripts/lib/cef-engineering-checkpoint.mjs";
 import {
@@ -58,6 +59,8 @@ export function primaryReason(error) {
       "SDK_WAIT_LINK",
       "SDK_WAIT_DEADLINE",
       "SDK_WAIT_REPORT_BOUND",
+      "METAL_SAMPLE_INTERFACE_UNAVAILABLE",
+      "METAL_SAMPLE_JOIN_UNCONFIRMED",
     ]);
     return known.has(error?.message)
       ? error.message
@@ -209,9 +212,502 @@ export async function bounded(action, remaining) {
     clearTimeout(timer);
   }
 }
-export function queryEnvironment(selected, variant, root) {
+const SAMPLE_BYTES = 4096;
+const QUERY_BYTES = 192 * 1024;
+const SAMPLE_RAW_BYTES = 128 * 1024;
+const PS_ARGS = ["-o", "pid=,ppid=,pgid=,lstart="];
+const interfaceFailures = new WeakMap();
+const queryFailures = new WeakMap();
+const PUBLIC_MODULES = new Set([
+  "xcrun",
+  "dyld",
+  "libxcrun.dylib",
+  "libsystem_kernel.dylib",
+  "libsystem_pthread.dylib",
+  "libsystem_c.dylib",
+  "libdispatch.dylib",
+  "libdyld.dylib",
+  "libobjc.A.dylib",
+  "CoreFoundation",
+  "Foundation",
+  "DVTFoundation",
+  "DVTToolchain",
+  "XcodeSystemSupport",
+]);
+export function sampleProjection(raw) {
+  assert(Buffer.isBuffer(raw) && raw.length <= SAMPLE_RAW_BYTES);
+  const result = { rows: [], dropped: 0, unclassified: 0, invalidUtf8: false };
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  } catch {
+    result.invalidUtf8 = true;
+    return result;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    const row =
+      /^\s*[+!:| ]*([0-9]{1,9})\s+([A-Za-z_$][A-Za-z0-9_$:.<>-]{0,127})\s+\(in ([A-Za-z0-9_.-]{1,64})\)(?:\s+\+\s+[0-9]+)?(?:\s+\[0x[0-9a-fA-F]+\])?\s*$/.exec(
+        line,
+      );
+    if (!row || !PUBLIC_MODULES.has(row[3])) {
+      result.unclassified++;
+      continue;
+    }
+    if (result.rows.length >= 256) {
+      result.dropped++;
+      continue;
+    }
+    result.rows.push({ count: Number(row[1]), symbol: row[2], module: row[3] });
+  }
+  return result;
+}
+export function fitSampleEvidence(queryRecord, observations) {
   assert(
-    ["A", "B"].includes(variant) &&
+    Array.isArray(observations) && observations.length <= 2,
+    "METAL_SAMPLE_COUNT",
+  );
+  const record = {
+    ...queryRecord,
+    sampler: {
+      attempted: observations.some((row) => row.started === true),
+      attribution: "NON_ATOMIC_PRE_POST_OWNED_PID_TUPLE",
+      numericPidRaceResidual: true,
+      waitCauseProved: false,
+      observations: [],
+    },
+  };
+  // Query output/outcome is never discarded to make diagnostics fit.
+  assert(
+    Buffer.byteLength(JSON.stringify(record)) < QUERY_BYTES - 1024,
+    "METAL_QUERY_RECORD_BOUND",
+  );
+  for (const original of observations) {
+    const item = { ...original, rows: [...(original.rows ?? [])] };
+    const available = Math.min(
+      SAMPLE_BYTES,
+      QUERY_BYTES - Buffer.byteLength(JSON.stringify(record)) - 2,
+    );
+    while (
+      Buffer.byteLength(JSON.stringify(item)) > available &&
+      item.rows.length
+    ) {
+      item.rows.pop();
+      item.dropped = (item.dropped ?? 0) + 1;
+      item.projectionTruncated = true;
+      item.complete = false;
+    }
+    if (Buffer.byteLength(JSON.stringify(item)) > available) {
+      record.sampler.observations.push({
+        offsetMs: original.offsetMs,
+        omitted: true,
+        reason: "QUERY_RECORD_BUDGET",
+        dropped: (original.rows?.length ?? 0) + (original.dropped ?? 0),
+        joined: original.joined === true,
+      });
+    } else record.sampler.observations.push(item);
+  }
+  assert(
+    Buffer.byteLength(JSON.stringify(record)) <= QUERY_BYTES,
+    "METAL_QUERY_RECORD_BOUND",
+  );
+  return record;
+}
+export function parseOwnedPidTuple(raw, pid, parent) {
+  assert(
+    typeof raw === "string" &&
+      Buffer.byteLength(raw) <= 4096 &&
+      !/[^\x09\x0a\x0d\x20-\x7e]/.test(raw),
+    "METAL_PID_TUPLE",
+  );
+  const match =
+    /^\s*([1-9][0-9]*)\s+([1-9][0-9]*)\s+([1-9][0-9]*)\s+([A-Z][a-z]{2} [A-Z][a-z]{2}\s+[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$/.exec(
+      raw,
+    );
+  assert(match && [pid, parent].every(Number.isSafeInteger), "METAL_PID_TUPLE");
+  const result = {
+    pid: Number(match[1]),
+    ppid: Number(match[2]),
+    pgid: Number(match[3]),
+    start: match[4],
+  };
+  assert(
+    [result.pid, result.ppid, result.pgid].every(Number.isSafeInteger) &&
+      result.pid === pid &&
+      result.ppid === parent &&
+      result.pgid === parent,
+    "METAL_PID_TUPLE",
+  );
+  return result;
+}
+// Every started process is a direct child object; observed PIDs are never signalled.
+// Timeout, stop, readers and close all consume the SAME caller deadline.
+function observedCommand(file, args, env, left, ceiling, cap, live, deps) {
+  assert(file === "/bin/ps" || file === "/usr/bin/sample");
+  const ms = Math.floor(Math.min(ceiling, left()));
+  assert(
+    ms > 0 && ms <= 3000 && Number.isSafeInteger(ms),
+    "METAL_OBSERVATION_DEADLINE",
+  );
+  const startWall = deps.wall(),
+    startMono = deps.now();
+  return new Promise((resolve) => {
+    let child,
+      timer,
+      closed = false,
+      exited = false,
+      failed = false,
+      ended = false,
+      stopped = false;
+    const chunks = { stdout: [], stderr: [] },
+      counts = { stdout: 0, stderr: 0 };
+    let captured = 0,
+      truncated = false;
+    const streams = { stdout: false, stderr: false };
+    const stop = () => {
+      if (stopped || closed || exited) return;
+      stopped = true;
+      try {
+        child?.kill("SIGKILL");
+      } catch {
+        failed = true;
+      }
+    };
+    const finish = (expired = false) => {
+      if (ended || (!expired && !(closed && streams.stdout && streams.stderr)))
+        return;
+      ended = true;
+      deps.cancel(timer);
+      resolve({
+        closed,
+        exitSeen: exited,
+        readersJoined: streams.stdout && streams.stderr,
+        joined:
+          closed && streams.stdout && streams.stderr && (exited || !child?.pid),
+        failed: failed || expired,
+        stopped,
+        truncated,
+        exitCode: Number.isInteger(child?.exitCode) ? child.exitCode : null,
+        signal: child?.signalCode === "SIGKILL" ? "SIGKILL" : null,
+        stdout: Buffer.concat(chunks.stdout),
+        stderr: Buffer.concat(chunks.stderr),
+        stdoutObserved: counts.stdout,
+        stderrObserved: counts.stderr,
+        capturedBytes: captured,
+      });
+    };
+    const tick = () => {
+      let remain = 0;
+      try {
+        remain = Math.floor(
+          Math.min(
+            ms - (deps.wall() - startWall),
+            ms - (deps.now() - startMono),
+            left(),
+          ),
+        );
+      } catch {
+        failed = true;
+      }
+      if (!live()) {
+        failed = true;
+        stop();
+      }
+      if (remain <= 0) {
+        failed = true;
+        stop();
+        finish(true);
+        return;
+      }
+      timer = deps.schedule(tick, Math.min(20, remain));
+    };
+    try {
+      child = deps.spawn(file, args, {
+        env,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+      });
+      child.on("error", () => {
+        failed = true;
+        stop();
+      });
+      child.on("exit", () => {
+        exited = true;
+      });
+      child.on("close", () => {
+        closed = true;
+        finish();
+      });
+      for (const kind of ["stdout", "stderr"]) {
+        const stream = child[kind];
+        if (!stream) {
+          streams[kind] = true;
+          failed = true;
+          continue;
+        }
+        stream.on("data", (value) => {
+          if (ended) return;
+          const b = Buffer.from(value);
+          counts[kind] += b.length;
+          const keep = Math.max(0, cap - captured);
+          if (keep) {
+            const prefix = b.subarray(0, keep);
+            chunks[kind].push(prefix);
+            captured += prefix.length;
+          }
+          if (b.length > keep) {
+            truncated = true;
+            failed = true;
+            stop();
+            stream.pause?.();
+          }
+        });
+        stream.on("error", () => {
+          failed = true;
+          stop();
+        });
+        const done = () => {
+          streams[kind] = true;
+          finish();
+        };
+        stream.on("end", done);
+        stream.on("close", done);
+      }
+      tick();
+    } catch {
+      failed = true;
+      stop();
+      finish(true);
+    }
+  });
+}
+function compactCommand(value) {
+  return {
+    closed: value.closed,
+    exitSeen: value.exitSeen,
+    readersJoined: value.readersJoined,
+    joined: value.joined,
+    failed: value.failed,
+    stopped: value.stopped,
+    truncated: value.truncated,
+    exitCode: value.exitCode,
+    signal: value.signal,
+    stdoutObserved: value.stdoutObserved,
+    stderrObserved: value.stderrObserved,
+    capturedBytes: value.capturedBytes,
+    capturedSha256: hash(Buffer.concat([value.stdout, value.stderr])),
+    captureOrder: "stdout-then-stderr",
+    captureComplete: value.joined && !value.truncated && !value.stopped,
+  };
+}
+async function sampleOwnedQuery(
+  child,
+  live,
+  queryLeft,
+  offsetMs,
+  deps,
+  creation,
+) {
+  const row = {
+    offsetMs,
+    started: false,
+    joined: true,
+    attributed: false,
+    rows: [],
+    dropped: 0,
+  };
+  if (!live()) {
+    row.notRun = "QUERY_NOT_LIVE";
+    return row;
+  }
+  const initial = Math.floor(Math.min(3000, queryLeft()));
+  if (initial < 2000) {
+    row.notRun = "INSUFFICIENT_ORIGINAL_QUERY_BUDGET";
+    return row;
+  }
+  const startWall = deps.wall(),
+    startMono = deps.now();
+  const left = () =>
+    Math.floor(
+      Math.min(
+        initial - (deps.wall() - startWall),
+        initial - (deps.now() - startMono),
+        queryLeft(),
+      ),
+    );
+  const env = {
+    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+    LC_ALL: "C",
+    LANG: "C",
+    TZ: "UTC",
+  };
+  const ps = async (role) => {
+    assert(live() && left() > 0, "METAL_PID_UNAVAILABLE");
+    const result = await observedCommand(
+      "/bin/ps",
+      ["-p", String(child.pid), ...PS_ARGS],
+      env,
+      left,
+      500,
+      4096,
+      live,
+      deps,
+    );
+    row[role + "Process"] = compactCommand(result);
+    row.joined &&= result.joined;
+    assert(
+      result.joined &&
+        !result.failed &&
+        result.exitCode === 0 &&
+        !result.truncated &&
+        result.stderr.length === 0,
+      "METAL_PID_UNAVAILABLE",
+    );
+    return parseOwnedPidTuple(
+      new TextDecoder("utf-8", { fatal: true }).decode(result.stdout),
+      child.pid,
+      process.pid,
+    );
+  };
+  try {
+    const before = await ps("pre");
+    row.before = before;
+    if (JSON.stringify(before) !== JSON.stringify(creation)) {
+      row.identityMismatch = true;
+      row.reason = "TARGET_IDENTITY_CHANGED";
+      return row;
+    }
+    if (!live() || left() < 1500) {
+      row.notRun = "TARGET_OR_BUDGET_CHANGED";
+      return row;
+    }
+    row.started = true;
+    const result = await observedCommand(
+      "/usr/bin/sample",
+      [String(child.pid), "1", "10", "-mayDie", "-file", "/dev/stdout"],
+      env,
+      left,
+      left(),
+      SAMPLE_RAW_BYTES,
+      live,
+      deps,
+    );
+    row.sample = compactCommand(result);
+    row.joined &&= result.joined;
+    const after = await ps("post");
+    row.after = after;
+    row.identityMismatch = JSON.stringify(before) !== JSON.stringify(after);
+    row.attributed =
+      live() &&
+      !row.identityMismatch &&
+      result.joined &&
+      !result.failed &&
+      result.exitCode === 0 &&
+      !result.truncated;
+    if (row.attributed) Object.assign(row, sampleProjection(result.stdout));
+    else row.reason = "ATTRIBUTION_OR_SAMPLE_INCOMPLETE";
+    row.complete =
+      row.attributed &&
+      !row.invalidUtf8 &&
+      row.unclassified === 0 &&
+      row.dropped === 0;
+  } catch {
+    row.reason = "OWNED_PID_OR_OBSERVATION_UNAVAILABLE";
+  }
+  row.actualElapsedMs = Math.max(0, Math.floor(deps.now() - startMono));
+  return row;
+}
+export async function observeSamplerInterface(
+  remaining,
+  { read = held, stat = fs.lstat } = {},
+) {
+  const result = {
+    supported: false,
+    observedOnly: true,
+    expectedPinsApproved: false,
+    tools: [],
+    manual: null,
+    reason: "MANUAL_UNAVAILABLE",
+  };
+  try {
+    for (const file of ["/usr/bin/sample", "/bin/ps"]) {
+      remaining();
+      const before = await stat(file, { bigint: true });
+      assert(
+        before.isFile() &&
+          before.size > 0n &&
+          before.size <= 8n * 1024n ** 2n &&
+          before.uid === 0n &&
+          before.nlink === 1n &&
+          (before.mode & 0o022n) === 0n,
+        "METAL_OS_TOOL",
+      );
+      const raw = await read(file, 8 * 1024 ** 2, remaining);
+      const after = await stat(file, { bigint: true });
+      assert(
+        before.dev === after.dev &&
+          before.ino === after.ino &&
+          before.mode === after.mode &&
+          before.mtimeNs === after.mtimeNs &&
+          before.ctimeNs === after.ctimeNs &&
+          BigInt(raw.length) === before.size,
+        "METAL_OS_TOOL",
+      );
+      result.tools.push({
+        path: file,
+        bytes: raw.length,
+        sha256: hash(raw),
+        mode: String(before.mode),
+        uid: String(before.uid),
+        nlink: String(before.nlink),
+      });
+    }
+    for (const file of [
+      "/usr/share/man/man1/sample.1",
+      "/usr/share/man/man1/sample.1.gz",
+    ]) {
+      let raw;
+      try {
+        raw = await read(file, 65536, remaining);
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw error;
+      }
+      const body = file.endsWith(".gz")
+        ? gunzipSync(raw, { maxOutputLength: 65536 })
+        : raw;
+      assert(body.length <= 65536);
+      const text = new TextDecoder("utf-8", { fatal: true })
+        .decode(body)
+        .replaceAll("\\-", "-");
+      const flags =
+        /(?:-file\b|\.Fl[ \t]+file\b)/.test(text) &&
+        /(?:-mayDie\b|\.Fl[ \t]+mayDie\b)/.test(text);
+      const args = /duration/i.test(text) && /interval/i.test(text);
+      result.manual = {
+        path: file,
+        bytes: raw.length,
+        sha256: hash(raw),
+        decodedBytes: body.length,
+        decodedSha256: hash(body),
+        bodyBase64: body.toString("base64"),
+        optionsObserved: flags && args,
+      };
+      result.supported = flags && args;
+      result.reason = result.supported ? null : "MANUAL_UNSUPPORTED";
+      break;
+    }
+  } catch (error) {
+    result.reason = "SAMPLER_INTERFACE_UNAVAILABLE";
+    interfaceFailures.set(result, error);
+  }
+  return result;
+}
+
+export function queryEnvironment(selected, variant, root, inherited = {}) {
+  assert(
+    variant === "A" &&
       selected.DEVELOPER_DIR === DEVELOPER &&
       selected.SDKROOT === SDK &&
       selected.MACOSX_DEPLOYMENT_TARGET === "14.0",
@@ -223,35 +719,53 @@ export function queryEnvironment(selected, variant, root) {
     ),
     "SDK_WAIT_ROOT",
   );
-  return {
-    ...selectedSdkEnvironment(selected),
-    ...(variant === "B"
-      ? { HOME: root + "/home", TMPDIR: root + "/tmp/" }
-      : {}),
-  };
+  return macMetalEnvironment(selected, inherited);
 }
-// The containing, reviewed compileSlice owns this worker AND all xcrun descendants.
-// This function records exact execFile events; it never guesses at descendant PIDs.
 export function query(
   variant,
   env,
   remaining,
-  { execute = execFile, now = () => performance.now() } = {},
+  {
+    execute = execFile,
+    now = () => performance.now(),
+    wall = Date.now,
+    spawn = spawnProcess,
+    schedule = setTimeout,
+    cancel = clearTimeout,
+    sampling = false,
+    offsets = [1000, 10000],
+  } = {},
 ) {
-  assert(["A", "B"].includes(variant), "SDK_WAIT_VARIANT");
+  assert(variant === "A", "METAL_SINGLE_QUERY_ONLY");
+  assert(
+    JSON.stringify(offsets) === JSON.stringify([1000, 10000]),
+    "METAL_FIXED_OFFSETS",
+  );
   const timeout = Math.floor(Math.min(30000, remaining()));
   assert(timeout > 0, "SDK_WAIT_QUERY_DEADLINE");
   return new Promise((resolve) => {
-    const begin = now();
+    const begin = now(),
+      beginWall = wall();
     let child,
       first,
       hasFailure = false,
       callback = false,
       closed = false,
-      exited = false;
+      exited = false,
+      settling = false;
+    let closedElapsed = null,
+      spawnBegin = null,
+      creation = null,
+      creationJoined = true,
+      creationProcess = null,
+      observationsQuiet = true,
+      targetBound = true;
     const events = [],
       counts = { stdout: 0, stderr: 0 },
-      buffers = { stdout: [], stderr: [] };
+      buffers = { stdout: [], stderr: [] },
+      tasks = [],
+      scheduled = [];
+    const deps = { spawn, now, wall, schedule, cancel };
     const event = (kind) => {
       if (events.length < 32)
         events.push({
@@ -266,13 +780,55 @@ export function query(
       }
       event("failure");
     };
-    const finish = () => {
-      if (!callback || !closed) return;
-      resolve({
+    const live = () =>
+      !closed && !exited && Number.isSafeInteger(child?.pid) && child.pid > 0;
+    const queryLeft = () => {
+      try {
+        return Math.floor(
+          Math.max(
+            0,
+            Math.min(
+              timeout - (now() - begin),
+              timeout - (wall() - beginWall),
+              remaining(),
+            ),
+          ),
+        );
+      } catch {
+        return 0;
+      }
+    };
+    const cancelPending = () => {
+      for (const item of scheduled)
+        if (!item.started) {
+          item.started = true;
+          cancel(item.timer);
+          item.resolve({
+            offsetMs: item.offset,
+            started: false,
+            joined: true,
+            notRun: "QUERY_NOT_LIVE",
+            rows: [],
+          });
+        }
+    };
+    const finish = async () => {
+      if (settling || !callback || !closed) return;
+      settling = true;
+      cancelPending();
+      const observed = await Promise.all(tasks);
+      const record = {
         variant,
-        command: "selected-sdk-path",
+        kind: "owned-metal-query-sampling",
+        command: "selected-metal-lookup",
+        queryAttempted: true,
         timeoutMs: timeout,
-        elapsedMs: Math.max(0, Math.floor(now() - begin)),
+        elapsedMs: closedElapsed ?? Math.max(0, Math.floor(now() - begin)),
+        observationJoinElapsedMs: Math.max(0, Math.floor(now() - begin)),
+        querySpawnElapsedMs:
+          spawnBegin === null
+            ? null
+            : Math.max(0, Math.floor(spawnBegin - begin)),
         failed: hasFailure,
         primaryWasNull: hasFailure && first === null,
         failure: hasFailure ? code(first) : null,
@@ -296,16 +852,28 @@ export function query(
           sha256: hash(Buffer.concat(buffers.stderr)),
           base64: Buffer.concat(buffers.stderr).toString("base64"),
         },
-        sampler: {
-          attempted: false,
-          reason: "NO_REVIEWED_BOUND_TARGET_AND_REPORT_LIFECYCLE",
-        },
-      });
+        queryCreation: creation,
+        creationObservationJoined: creationJoined,
+        creationProcess,
+      };
+      const result = fitSampleEvidence(
+        record,
+        observed.filter((row) => row.offsetMs !== 0),
+      );
+      result.sampler.enabled = sampling;
+      result.sampler.joined =
+        creationJoined && observed.every((row) => row.joined === true);
+      assert(
+        Buffer.byteLength(JSON.stringify(result)) <= QUERY_BYTES,
+        "METAL_QUERY_RECORD_BOUND",
+      );
+      if (hasFailure) queryFailures.set(result, first);
+      resolve(result);
     };
     try {
       child = execute(
         "/usr/bin/xcrun",
-        ["-sdk", "macosx", "--show-sdk-path"],
+        ["--sdk", "macosx", "--find", "metal"],
         {
           env,
           timeout,
@@ -313,31 +881,151 @@ export function query(
           killSignal: "SIGKILL",
           windowsHide: true,
         },
-        (e) => {
+        (error) => {
           callback = true;
-          if (e !== null && e !== undefined) fail(e);
+          if (error !== null && error !== undefined) fail(error);
           event("callback");
-          finish();
+          void finish();
         },
       );
-    } catch (e) {
-      fail(e);
+    } catch (error) {
+      fail(error);
       callback = true;
       closed = true;
       event("spawn-throw");
-      finish();
+      void finish();
       return;
     }
-    child.on("spawn", () => event("spawn"));
+    child.once("spawn", () => {
+      spawnBegin = now();
+      event("spawn");
+      if (!sampling || !live()) return;
+      const created = (async () => {
+        try {
+          const result = await observedCommand(
+            "/bin/ps",
+            ["-p", String(child.pid), ...PS_ARGS],
+            {
+              PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+              LC_ALL: "C",
+              LANG: "C",
+              TZ: "UTC",
+            },
+            queryLeft,
+            500,
+            4096,
+            live,
+            deps,
+          );
+          creationJoined = result.joined;
+          creationProcess = compactCommand(result);
+          if (
+            !live() ||
+            !result.joined ||
+            result.failed ||
+            result.truncated ||
+            result.exitCode !== 0 ||
+            result.stderr.length
+          )
+            return null;
+          try {
+            creation = parseOwnedPidTuple(
+              new TextDecoder("utf-8", { fatal: true }).decode(result.stdout),
+              child.pid,
+              process.pid,
+            );
+            return creation;
+          } catch {
+            return null;
+          }
+        } catch {
+          creationJoined = false;
+          return null;
+        }
+      })();
+      tasks.push(
+        created.then(() => ({
+          offsetMs: 0,
+          started: false,
+          joined: creationJoined,
+          notRun: creation ? "CREATION_BOUND" : "CREATION_UNAVAILABLE",
+          rows: [],
+        })),
+      );
+      for (const offset of offsets) {
+        let resolveTask;
+        const task = new Promise((resolve) => {
+          resolveTask = resolve;
+        });
+        tasks.push(task);
+        const item = {
+          offset,
+          started: false,
+          resolve: resolveTask,
+          timer: null,
+        };
+        scheduled.push(item);
+        item.timer = schedule(async () => {
+          if (item.started) return;
+          item.started = true;
+          const initial = await created;
+          if (
+            !initial ||
+            !live() ||
+            !creationJoined ||
+            !observationsQuiet ||
+            !targetBound
+          ) {
+            resolveTask({
+              offsetMs: offset,
+              started: false,
+              joined: creationJoined,
+              notRun: "OWNED_CREATION_UNAVAILABLE",
+              rows: [],
+            });
+            return;
+          }
+          try {
+            const actualOffsetMs = Math.max(
+              0,
+              Math.floor(now() - (spawnBegin ?? begin)),
+            );
+            const row = await sampleOwnedQuery(
+              child,
+              live,
+              queryLeft,
+              offset,
+              deps,
+              initial,
+            );
+            row.actualOffsetMs = actualOffsetMs;
+            observationsQuiet &&= row.joined;
+            targetBound &&= !row.identityMismatch;
+            resolveTask(row);
+          } catch {
+            resolveTask({
+              offsetMs: offset,
+              started: false,
+              joined: false,
+              reason: "OBSERVATION_UNCONFIRMED",
+              rows: [],
+            });
+          }
+        }, offset);
+      }
+    });
     child.on("error", fail);
     child.on("exit", () => {
       exited = true;
       event("exit");
+      cancelPending();
     });
     child.on("close", () => {
       closed = true;
+      closedElapsed = Math.max(0, Math.floor(now() - begin));
       event("close");
-      finish();
+      cancelPending();
+      void finish();
     });
     for (const [kind, stream] of [
       ["stdin", child.stdin],
@@ -357,6 +1045,7 @@ export function query(
     }
   });
 }
+
 async function physical(p) {
   assert(path.isAbsolute(p));
   assert((await fs.realpath(p)) === p, "SDK_WAIT_PATH");
@@ -488,23 +1177,64 @@ async function worker(root, pin, variant) {
     variant,
     root,
   );
+  assert(variant === "A", "METAL_SINGLE_QUERY_ONLY");
   const raw = await held(root + "/context.json", 16384, () => 5000);
   assert(hash(raw) === pin, "SDK_WAIT_CONTEXT");
   const c = JSON.parse(raw);
-  assert(c.root === root && c.kind === "sdk-wait-context");
+  assert(
+    c.root === root &&
+      c.kind === "owned-metal-query-context" &&
+      c.samplerInterface?.supported === true &&
+      /^[a-f0-9]{64}$/.test(c.samplerInterface.manualSha256),
+    "SDK_WAIT_CONTEXT",
+  );
   const remaining = () => {
     const n = Math.floor(
       Math.min(
         c.stageWallEnd - Date.now(),
         Number(BigInt(c.stageMonoEnd) - process.hrtime.bigint()) / 1e6,
+        c.workerWallEnd - Date.now(),
+        Number(BigInt(c.workerMonoEnd) - process.hrtime.bigint()) / 1e6,
       ),
     );
     assert(n > 0 && Number.isSafeInteger(n), "SDK_WAIT_STAGE_DEADLINE");
     return n;
   };
-  const env = queryEnvironment(c.selected, variant, root);
-  const result = await query(variant, env, remaining);
-  await save(root + "/" + variant + "/query.json", result, remaining);
+  assert(remaining() >= 31000, "SDK_WAIT_STAGE_ADMISSION");
+  const env = queryEnvironment(c.selected, variant, root, process.env);
+  const result = await query(variant, env, remaining, { sampling: true });
+  // This closed summary precedes fallible persistence; never print sample text,
+  // environment values or raw errors. The full bounded query remains in its file.
+  console.log(
+    JSON.stringify({
+      kind: "owned-metal-query-observed",
+      variant,
+      failed: result.failed,
+      primaryWasNull: result.primaryWasNull,
+      failure: result.failure,
+      timeoutMs: result.timeoutMs,
+      elapsedMs: result.elapsedMs,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      callbackSeen: result.callbackSeen,
+      closeSeen: result.closeSeen,
+      stdoutObserved: result.stdout.observed,
+      stdoutSha256: result.stdout.sha256,
+      stderrObserved: result.stderr.observed,
+      stderrSha256: result.stderr.sha256,
+      sampleActorsJoined: result.sampler.joined,
+    }),
+  );
+  try {
+    await save(root + "/" + variant + "/query.json", result, remaining);
+  } catch (error) {
+    if (queryFailures.has(result)) throw queryFailures.get(result);
+    throw error;
+  }
+  if (result.sampler.joined !== true) {
+    if (queryFailures.has(result)) throw queryFailures.get(result);
+    throw new Error("METAL_SAMPLE_JOIN_UNCONFIRMED");
+  }
   console.log(
     JSON.stringify({
       variant,
@@ -608,7 +1338,7 @@ export async function main(e = process.env) {
     root = temp + "/cef-mac-sdk-wait-" + randomUUID();
     await bounded(() => fs.mkdir(root, { mode: 0o700 }), budget.remaining);
     const identity = await fs.lstat(root, { bigint: true });
-    for (const name of ["home", "tmp", "A", "B"]) {
+    for (const name of ["A"]) {
       const location = root + "/" + name;
       const own =
         name === "home" || name === "tmp" ? { location, stamp: null } : null;
@@ -623,6 +1353,17 @@ export async function main(e = process.env) {
           budget.remaining,
         );
     }
+    if (e.GITHUB_OUTPUT)
+      await bounded(
+        () => fs.appendFile(e.GITHUB_OUTPUT, "diagnostic_root=" + root + "\n"),
+        budget.remaining,
+      );
+    phase = "sampler-interface";
+    const samplerInterface = await observeSamplerInterface(budget.remaining);
+    if (interfaceFailures.has(samplerInterface))
+      fail(interfaceFailures.get(samplerInterface));
+    else if (!samplerInterface.supported)
+      fail(new Error("METAL_SAMPLE_INTERFACE_UNAVAILABLE"));
     await save(
       root + "/selection.json",
       {
@@ -630,26 +1371,37 @@ export async function main(e = process.env) {
         sourceLockIdentity: SOURCE,
         filesVerified: 9,
         selected,
-        samplerAvailable: false,
+        samplerAvailable: samplerInterface.supported,
+        parentCohortStageMs: 120000,
+        queryTimeoutMs: 30000,
+        workerAbsoluteMs: 35000,
+        samplerInterface,
+        environmentKeys: Object.keys(
+          queryEnvironment(selected, "A", root, e),
+        ).sort(),
       },
       budget.remaining,
     );
-    if (e.GITHUB_OUTPUT)
-      await bounded(
-        () => fs.appendFile(e.GITHUB_OUTPUT, "diagnostic_root=" + root + "\n"),
-        budget.remaining,
-      );
+    if (interfaceFailures.has(samplerInterface))
+      throw interfaceFailures.get(samplerInterface);
+    assert(samplerInterface.supported, "METAL_SAMPLE_INTERFACE_UNAVAILABLE");
     const stageMs = Math.min(120000, budget.remaining()),
       stageWallEnd = Date.now() + stageMs,
       stageMonoEnd = String(
         process.hrtime.bigint() + BigInt(stageMs) * 1000000n,
       );
     const c = {
-      kind: "sdk-wait-context",
+      kind: "owned-metal-query-context",
       root,
       selected,
       stageWallEnd,
       stageMonoEnd,
+      workerWallEnd: Date.now() + 35000,
+      workerMonoEnd: String(process.hrtime.bigint() + 35000000000n),
+      samplerInterface: {
+        supported: true,
+        manualSha256: samplerInterface.manual.decodedSha256,
+      },
     };
     const context = Buffer.from(JSON.stringify(c) + "\n");
     await bounded(
@@ -660,7 +1412,7 @@ export async function main(e = process.env) {
         }),
       budget.remaining,
     );
-    for (const variant of ["A", "B"]) {
+    for (const variant of ["A"]) {
       const remaining = Math.floor(
         Math.min(
           budget.remaining(),
@@ -684,7 +1436,7 @@ export async function main(e = process.env) {
         [SELF, "--worker", root, hash(context), variant],
         {
           cwd: process.cwd(),
-          env: queryEnvironment(selected, variant, root),
+          env: queryEnvironment(selected, variant, root, e),
           logs: root + "/" + variant,
           milliseconds: Math.min(35000, remaining - 30000),
         },
@@ -703,16 +1455,26 @@ export async function main(e = process.env) {
           observedTruncated: slice.observed.length > 32,
         },
       });
+      // Read any retained query outcome even when supervision rejects the worker.
+      // A diagnostic failure must not erase the original query's observed facts.
+      let row;
+      try {
+        row = JSON.parse(
+          await held(
+            root + "/" + variant + "/query.json",
+            262144,
+            budget.remaining,
+          ),
+        );
+      } catch (error) {
+        if (slice.quiescent && slice.exitCode === 0) throw error;
+      }
+      if (row) {
+        assert(row.variant === variant);
+        results.at(-1).query = row;
+      }
       assert(slice.quiescent && slice.exitCode === 0, "SDK_WAIT_WORKER_FAILED");
-      const row = JSON.parse(
-        await held(
-          root + "/" + variant + "/query.json",
-          262144,
-          budget.remaining,
-        ),
-      );
-      assert(row.variant === variant);
-      results.at(-1).query = row;
+      assert(row, "SDK_WAIT_WORKER_FAILED");
     }
     const after = await fs.lstat(root, { bigint: true });
     assert(
@@ -735,7 +1497,7 @@ export async function main(e = process.env) {
         await save(
           root + "/outcome.json",
           {
-            kind: "sdk-wait-diagnostic",
+            kind: "owned-metal-query-sampling",
             complete: false,
             observationComplete:
               !hasFailure &&
@@ -770,13 +1532,15 @@ export async function main(e = process.env) {
     fail(new Error("SDK_WAIT_CLEANUP_UNCONFIRMED"));
   console.log(
     JSON.stringify({
-      kind: "sdk-wait-terminal",
+      kind: "owned-metal-query-terminal",
       phase,
       complete: !hasFailure,
       rootCreated: !!root,
       primaryReason: hasFailure ? primaryReason(first) : null,
       sourceWriteAdmitted: false,
-      samplerAttempted: false,
+      samplerAttempted: results.some(
+        (row) => row.query?.sampler?.attempted === true,
+      ),
     }),
   );
   if (hasFailure) throw first;
