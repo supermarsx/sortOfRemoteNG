@@ -60,6 +60,9 @@ export function primaryReason(error) {
       "SDK_WAIT_DEADLINE",
       "SDK_WAIT_REPORT_BOUND",
       "METAL_SAMPLE_INTERFACE_UNAVAILABLE",
+      "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
+      "XCRUN_MANUAL_METADATA",
+      "XCRUN_MANUAL_IDENTITY",
       "METAL_SAMPLE_JOIN_UNCONFIRMED",
     ]);
     return known.has(error?.message)
@@ -722,6 +725,10 @@ export async function observeXcrunNoCacheInterface(
     for (const file of [
       "/usr/share/man/man1/xcrun.1",
       "/usr/share/man/man1/xcrun.1.gz",
+      DEVELOPER + "/usr/share/man/man1/xcrun.1",
+      DEVELOPER + "/usr/share/man/man1/xcrun.1.gz",
+      "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1",
+      "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1.gz",
     ]) {
       let before;
       try {
@@ -1437,7 +1444,7 @@ export async function main(e = process.env) {
         () => fs.appendFile(e.GITHUB_OUTPUT, "diagnostic_root=" + root + "\n"),
         budget.remaining,
       );
-    phase = "sampler-interface";
+    phase = "xcrun-no-cache-interface";
     const cacheBypassInterface = await observeXcrunNoCacheInterface(
       budget.remaining,
     );

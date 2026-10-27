@@ -2515,3 +2515,115 @@ test("No-cache actual worker passes one flag with unchanged environment and neve
   assert.equal(saved[0].stdinEnded, false);
   assert.equal(observations[0].failed, false);
 });
+
+test("Xcrun manual candidates have exact six-path order and choose CLT only after four ENOENT results", async () => {
+  const expected = [
+    "/usr/share/man/man1/xcrun.1",
+    "/usr/share/man/man1/xcrun.1.gz",
+    "/Applications/Xcode_26.3.app/Contents/Developer/usr/share/man/man1/xcrun.1",
+    "/Applications/Xcode_26.3.app/Contents/Developer/usr/share/man/man1/xcrun.1.gz",
+    "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1",
+    "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1.gz",
+  ];
+  const missing = Object.assign(new Error("fixture missing"), {
+    code: "ENOENT",
+  });
+  const body = Buffer.from("--no-cache\nDo not use cached values.\n");
+  const stamp = {
+    isFile: () => true,
+    size: BigInt(body.length),
+    uid: 0n,
+    nlink: 1n,
+    mode: 0o100644n,
+    dev: 1n,
+    ino: 2n,
+    mtimeNs: 3n,
+    ctimeNs: 4n,
+  };
+  for (const allMissing of [true, false]) {
+    const attempts = [],
+      reads = [];
+    const result = await observeXcrunNoCacheInterface(() => 1000, {
+      stat: async (file) => {
+        attempts.push(file);
+        assert(expected.includes(file));
+        if (allMissing || expected.indexOf(file) < 4) throw missing;
+        return stamp;
+      },
+      read: async (file, cap, remaining) => {
+        reads.push(file);
+        assert.equal(cap, 65536);
+        assert.equal(remaining(), 1000);
+        return body;
+      },
+    });
+    if (allMissing) {
+      assert.deepEqual(attempts, expected);
+      assert.equal(result.reason, "MANUAL_UNAVAILABLE");
+      assert.equal(result.manual, null);
+      assert.deepEqual(reads, []);
+    } else {
+      assert.deepEqual(attempts, [...expected.slice(0, 5), expected[4]]);
+      assert.deepEqual(reads, [expected[4]]);
+      assert.equal(result.supported, true);
+      assert.equal(result.manual.path, expected[4]);
+      assert.equal(
+        result.manual.sha256,
+        createHash("sha256").update(body).digest("hex"),
+      );
+    }
+  }
+});
+
+test("Xcrun manual incompatible or unsafe first existing candidate cannot fall through to a later document", async () => {
+  for (const unsafe of [false, true]) {
+    const attempts = [],
+      body = Buffer.from("unsupported document"),
+      stamp = {
+        isFile: () => true,
+        size: BigInt(body.length),
+        uid: 0n,
+        nlink: 1n,
+        mode: unsafe ? 0o100666n : 0o100644n,
+        dev: 1n,
+        ino: 2n,
+        mtimeNs: 3n,
+        ctimeNs: 4n,
+      };
+    const result = await observeXcrunNoCacheInterface(() => 1000, {
+      stat: async (file) => {
+        attempts.push(file);
+        assert.equal(file, "/usr/share/man/man1/xcrun.1");
+        return stamp;
+      },
+      read: async () => body,
+    });
+    assert.equal(result.supported, false);
+    assert.equal(
+      result.reason,
+      unsafe ? "XCRUN_INTERFACE_UNAVAILABLE" : "MANUAL_UNSUPPORTED",
+    );
+    assert.equal(attempts.length, unsafe ? 1 : 2);
+    const f = waitParentFixture();
+    f.scope.observeXcrunNoCacheInterface = async () => result;
+    await assert.rejects(
+      f.build()(f.e),
+      /XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE/,
+    );
+    assert.deepEqual(f.launches, []);
+    const out = JSON.parse(f.files.get(waitRoot + "/outcome.json"));
+    assert.equal(out.phase, "xcrun-no-cache-interface");
+    assert.equal(out.primaryReason, "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE");
+    assert.equal(out.actorsQuiet, true);
+  }
+  for (const message of [
+    "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
+    "XCRUN_MANUAL_METADATA",
+    "XCRUN_MANUAL_IDENTITY",
+  ])
+    assert.equal(waitPrimaryReason(new Error(message)), message);
+  assert.equal(
+    waitPrimaryReason(new Error("XCRUN_UNKNOWN_DYNAMIC_VALUE")),
+    "SDK_WAIT_UNKNOWN_PRIMARY",
+  );
+});
