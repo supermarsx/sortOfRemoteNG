@@ -40,6 +40,7 @@ import {
   deriveBootstrapSetup,
   bindBootstrapVector,
   gitPolicyMetadata,
+  gitHomeCandidateMetadata,
   gitPolicyDiagnostic,
   appendGitPolicyDiagnostic,
   gitPolicyVerifier,
@@ -2802,6 +2803,246 @@ test("GitPolicy first errors including falsy values survive append/close/deadlin
     }
   } finally {
     fs.open = open;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HOME candidates record only fixed metadata from an actual auth-shaped mutation", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-candidate-facts-"),
+  );
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      file = path.join(directory, "sync.stderr.log"),
+      budget = { remaining: () => 10000 },
+      limits = { bytes: 0, cap: 64 * 1024 ** 2 };
+    const policy = await prepareSourceGitIsolation(root);
+    await fs.writeFile(file, "");
+    const verify = gitPolicyVerifier(root, file, budget, limits, () =>
+      sourceGitEnvironment(policy, {}),
+    );
+    await verify();
+    const auth = path.join(root, "home/.config/chrome_infra/auth");
+    await fs.mkdir(auth, { recursive: true });
+    const secret = "NEVER-READ-THIS-CONTENT-private-token";
+    await fs.writeFile(path.join(auth, "tokens.json"), secret);
+    await fs.writeFile(path.join(auth, "creds.json"), secret);
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    const raw = await fs.readFile(file, "utf8"),
+      report = JSON.parse(raw.slice("SOURCE_GIT_DIAGNOSTIC:".length));
+    assert.deepEqual(
+      report.homeCandidates.map((row) => row.role),
+      [
+        "config",
+        "auth-parent",
+        "auth",
+        "auth-tokens",
+        "auth-credentials",
+        "cache",
+      ],
+    );
+    assert.deepEqual(
+      report.homeCandidates.map((row) => row.afterType),
+      ["directory", "directory", "directory", "file", "file", "absent"],
+    );
+    assert(
+      report.homeCandidates.every(
+        (row) => row.beforeType === "absent" || row.beforeType === "blocked",
+      ),
+    );
+    assert.equal(raw.includes(secret), false);
+    assert.equal(raw.includes(directory), false);
+    assert.equal(raw.includes("tokens.json"), false);
+    assert(Buffer.byteLength(raw) <= 8192);
+    assert.equal(limits.bytes, Buffer.byteLength(raw));
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    assert.equal(await fs.readFile(file, "utf8"), raw);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HOME candidates never query descendants of linked, unknown or replaced ancestors", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-candidate-ancestors-"),
+  );
+  const lstat = fs.lstat,
+    open = fs.open,
+    readdir = fs.readdir,
+    realpath = fs.realpath;
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      home = path.join(root, "home"),
+      config = path.join(home, ".config"),
+      budget = { remaining: () => 10000 };
+    await prepareSourceGitIsolation(root);
+    await fs.mkdir(path.join(config, "chrome_infra/auth"), { recursive: true });
+    const baseline = await gitHomeCandidateMetadata(root, budget);
+    let forbiddenIO = 0;
+    fs.open =
+      fs.readdir =
+      fs.realpath =
+        async () => {
+          forbiddenIO++;
+          throw new Error("forbidden diagnostic IO");
+        };
+    for (const ancestor of [directory, root, home, config]) {
+      for (const mutation of [
+        "link",
+        "unknown",
+        "dev",
+        "ino",
+        "birthtimeNs",
+        "mode",
+        "nlink",
+        "unavailable",
+      ]) {
+        const queries = [];
+        fs.lstat = async (file, options) => {
+          queries.push(file);
+
+          if (file === ancestor && mutation === "unavailable")
+            throw Object.assign(new Error("private"), { code: "EACCES" });
+          const stat = await lstat(file, options);
+          if (file !== ancestor) return stat;
+          return new Proxy(stat, {
+            get(target, key) {
+              if (mutation === "link" && key === "isSymbolicLink")
+                return () => true;
+              if (mutation === "unknown" && key === "birthtimeNs")
+                return undefined;
+              if (key === mutation) return target[key] + 1n;
+              const value = target[key];
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+        };
+        const current = await gitHomeCandidateMetadata(root, budget, baseline);
+        assert(queries.includes(ancestor));
+        assert(
+          !queries.some((file) => file.startsWith(ancestor + path.sep)),
+          `queried a descendant after ${mutation}`,
+        );
+        for (const row of current.rows) {
+          if (ancestor === config && row.role === "cache") continue;
+          const type =
+            ancestor === config && row.role === "config" && mutation === "link"
+              ? "link"
+              : ancestor === config &&
+                  row.role === "config" &&
+                  mutation === "unavailable"
+                ? "unavailable"
+                : "blocked";
+          assert.equal(row.type, type, `${mutation}/${row.role}`);
+        }
+      }
+    }
+    fs.lstat = async () => {
+      throw new Error("no baseline must not query");
+    };
+    assert(
+      (await gitHomeCandidateMetadata(root, budget, null)).rows.every(
+        (row) => row.type === "blocked",
+      ),
+    );
+    assert(
+      (
+        await gitHomeCandidateMetadata(root, budget, {
+          anchors: new Map(),
+          trustedHome: false,
+        })
+      ).rows.every((row) => row.type === "blocked"),
+    );
+    assert.equal(forbiddenIO, 0);
+    Object.assign(fs, { lstat, open, readdir, realpath });
+    const saved = path.join(home, "saved-config");
+    await fs.rename(config, saved);
+    await fs.symlink(
+      saved,
+      config,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const queries = [];
+    fs.lstat = async (...args) => {
+      queries.push(args[0]);
+      return lstat(...args);
+    };
+    const linked = await gitHomeCandidateMetadata(root, budget, baseline);
+    assert.equal(linked.rows[0].type, "blocked"); // Replacing an existing directory changes its identity.
+    assert(!queries.some((file) => file.startsWith(config + path.sep)));
+    assert(linked.rows.slice(1, 5).every((row) => row.type === "blocked"));
+  } finally {
+    Object.assign(fs, { lstat, open, readdir, realpath });
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HOME candidates discard in-flight facts when an ancestor changes and retain original deadlines", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-candidate-race-"),
+  );
+  const lstat = fs.lstat;
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      config = path.join(root, "home/.config"),
+      auth = path.join(config, "chrome_infra/auth"),
+      token = path.join(auth, "tokens.json"),
+      budget = { remaining: () => 10000 };
+    await prepareSourceGitIsolation(root);
+    await fs.mkdir(auth, { recursive: true });
+    await fs.writeFile(token, "inert data");
+    const baseline = await gitHomeCandidateMetadata(root, budget);
+    let replaced = false,
+      tokenQueries = 0;
+    fs.lstat = async (file, options) => {
+      const stat = await lstat(file, options);
+      if (file === token) {
+        tokenQueries++;
+        replaced = true;
+      }
+      if (file === config && replaced)
+        return new Proxy(stat, {
+          get(target, key) {
+            if (key === "ino") return target.ino + 1n;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      if (replaced) assert(file !== path.join(auth, "creds.json"));
+      return stat;
+    };
+    const current = await gitHomeCandidateMetadata(root, budget, baseline);
+    assert.equal(tokenQueries, 1);
+    assert.equal(
+      current.rows.find((row) => row.role === "auth-tokens").type,
+      "blocked",
+    );
+    assert.equal(
+      current.rows.find((row) => row.role === "auth-credentials").type,
+      "blocked",
+    );
+    fs.lstat = lstat;
+    let queries = 0;
+    fs.lstat = async (...args) => {
+      queries++;
+      return lstat(...args);
+    };
+    const deadline = new Error("exact original deadline");
+    await assert.rejects(
+      gitHomeCandidateMetadata(
+        root,
+        {
+          remaining() {
+            throw deadline;
+          },
+        },
+        baseline,
+      ),
+      (error) => error === deadline,
+    );
+    assert.equal(queries, 0);
+  } finally {
+    fs.lstat = lstat;
     await fs.rm(directory, { recursive: true, force: true });
   }
 });

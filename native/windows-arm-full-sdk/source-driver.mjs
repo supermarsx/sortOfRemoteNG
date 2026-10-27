@@ -1150,6 +1150,122 @@ export async function gitPolicyMetadata(root, budget) {
   }
   return rows;
 }
+// Closed candidate metadata only. Ancestors are checked from the volume root,
+// and rechecked around each lstat; no contents, enumeration or realpath follows.
+const GIT_HOME_CANDIDATES = Object.freeze([
+  ["config", ".config"],
+  ["auth-parent", ".config/chrome_infra"],
+  ["auth", ".config/chrome_infra/auth"],
+  ["auth-tokens", ".config/chrome_infra/auth/tokens.json"],
+  ["auth-credentials", ".config/chrome_infra/auth/creds.json"],
+  ["cache", ".cache"],
+]);
+const gitDiagnosticIdentity = (stat) => {
+  const fields = ["dev", "ino", "birthtimeNs", "mode", "nlink"];
+  return fields.every((key) => typeof stat[key] === "bigint") &&
+    stat.nlink > 0n &&
+    stat.birthtimeNs >= 0n
+    ? fields.map((key) => stat[key].toString()).join(":")
+    : null;
+};
+export async function gitHomeCandidateMetadata(root, budget, previous) {
+  const rows = [],
+    anchors = new Map();
+  let trustedHome = false;
+  const blocked = (role) => ({ role, type: "blocked", fields: null });
+  // No successful authoritative baseline means no candidate queries.
+  if (
+    previous === null ||
+    (previous !== undefined && previous.trustedHome !== true) ||
+    !path.isAbsolute(root) ||
+    path.resolve(root) !== root
+  )
+    return {
+      rows: GIT_HOME_CANDIDATES.map(([role]) => blocked(role)),
+      anchors,
+      trustedHome,
+    };
+  const readStat = async (file) => {
+    budget.remaining();
+    try {
+      return { stat: await fs.lstat(file, { bigint: true }) };
+    } catch (error) {
+      return { absent: error?.code === "ENOENT" };
+    }
+  };
+  const directory = async (file) => {
+    const { stat } = await readStat(file);
+    if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) return false;
+    const identity = gitDiagnosticIdentity(stat);
+    if (
+      identity === null ||
+      (previous?.anchors.has(file) &&
+        previous.anchors.get(file) !== identity) ||
+      (anchors.has(file) && anchors.get(file) !== identity)
+    )
+      return false;
+    anchors.set(file, identity);
+    return true;
+  };
+  for (const [role, name] of GIT_HOME_CANDIDATES) {
+    const file = path.join(root, "home", name),
+      parents = [];
+    for (let at = path.dirname(file); ; at = path.dirname(at)) {
+      parents.unshift(at);
+      if (path.dirname(at) === at) break;
+      need(parents.length < 64, "FULL_GIT_DIAGNOSTIC_ANCESTORS");
+    }
+    const checkParents = async () => {
+      for (const parent of parents)
+        if (!(await directory(parent))) return false;
+      return true;
+    };
+    if (!(await checkParents())) {
+      rows.push(blocked(role));
+      continue;
+    }
+    if (role === "config" || role === "cache") trustedHome = true;
+    const { stat, absent } = await readStat(file);
+    if (!(await checkParents())) {
+      rows.push(blocked(role));
+      continue;
+    }
+    if (!stat) {
+      rows.push({
+        role,
+        type: absent ? "absent" : "unavailable",
+        fields: null,
+      });
+      continue;
+    }
+    const type = stat.isSymbolicLink()
+      ? "link"
+      : stat.isDirectory()
+        ? "directory"
+        : stat.isFile()
+          ? "file"
+          : "other";
+    const identity = gitDiagnosticIdentity(stat);
+    if (
+      identity === null ||
+      (previous?.anchors.has(file) &&
+        previous.anchors.get(file) !== identity) ||
+      (anchors.has(file) && anchors.get(file) !== identity)
+    ) {
+      rows.push(blocked(role));
+      continue;
+    }
+    if (type === "directory") anchors.set(file, identity);
+    rows.push({
+      role,
+      type,
+      fields: GIT_DIAGNOSTIC_FIELDS.map((key) =>
+        typeof stat[key] === "bigint" ? stat[key].toString() : null,
+      ),
+    });
+  }
+  return { rows, anchors, trustedHome };
+}
 export function gitPolicyDiagnostic(error, before, after) {
   let code = "UNCLASSIFIED";
   try {
@@ -1259,21 +1375,35 @@ export async function appendGitPolicyDiagnostic(file, report, budget, limits) {
 }
 export function gitPolicyVerifier(root, file, budget, limits, verify) {
   let baseline = null,
+    baselineHome = null,
     reported = false;
   return async () => {
     try {
       const result = await verify();
       // Only a successful authoritative verification can refresh the baseline.
       baseline = await gitPolicyMetadata(root, budget);
+      baselineHome = await gitHomeCandidateMetadata(root, budget);
       return result;
     } catch (error) {
       if (!reported) {
         reported = true; // First fault only, even if capture/append/close fails.
         try {
           const current = await gitPolicyMetadata(root, budget);
+          const home = await gitHomeCandidateMetadata(
+            root,
+            budget,
+            baselineHome,
+          );
           await appendGitPolicyDiagnostic(
             file,
-            gitPolicyDiagnostic(error, baseline, current),
+            {
+              ...gitPolicyDiagnostic(error, baseline, current),
+              homeCandidates: gitPolicyDiagnostic(
+                null,
+                baselineHome?.rows,
+                home.rows,
+              ).rows,
+            },
             budget,
             limits,
           );
