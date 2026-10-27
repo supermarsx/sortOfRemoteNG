@@ -315,8 +315,6 @@ async function prepareMacMetalToolchainImpl(
     for (const role of ["metal", "metallib"]) {
       const resolved = await invoke("/usr/bin/xcrun", [
         "--no-cache",
-        "--sdk",
-        "macosx",
         "--find",
         role,
       ]);
@@ -360,8 +358,6 @@ async function prepareMacMetalToolchainImpl(
           ? metalVersion(
               await invoke("/usr/bin/xcrun", [
                 "--no-cache",
-                "--sdk",
-                "macosx",
                 "metal",
                 "--version",
               ]),
@@ -372,15 +368,8 @@ async function prepareMacMetalToolchainImpl(
         JSON.stringify(before) !== JSON.stringify(after) ||
         (await canonical(
           String(
-            (
-              await invoke("/usr/bin/xcrun", [
-                "--no-cache",
-                "--sdk",
-                "macosx",
-                "--find",
-                role,
-              ])
-            ).stdout ?? "",
+            (await invoke("/usr/bin/xcrun", ["--no-cache", "--find", role]))
+              .stdout ?? "",
           ).trim(),
         )) !== physical
       )

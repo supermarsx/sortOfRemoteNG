@@ -998,11 +998,11 @@ test("selected Metal lookup and revalidation use exactly one documented no-cache
   assert.deepEqual(
     query.map((call) => call.args),
     [
-      ["--no-cache", "--sdk", "macosx", "--find", "metal"],
-      ["--no-cache", "--sdk", "macosx", "metal", "--version"],
-      ["--no-cache", "--sdk", "macosx", "--find", "metal"],
-      ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
-      ["--no-cache", "--sdk", "macosx", "--find", "metallib"],
+      ["--no-cache", "--find", "metal"],
+      ["--no-cache", "metal", "--version"],
+      ["--no-cache", "--find", "metal"],
+      ["--no-cache", "--find", "metallib"],
+      ["--no-cache", "--find", "metallib"],
     ],
   );
   for (const call of f.calls) {
@@ -1018,4 +1018,45 @@ test("selected Metal lookup and revalidation use exactly one documented no-cache
   assert.equal(result.componentResourceClosureVerified, false);
   assert.equal(result.nativeCompatibilityVerified, false);
   assert.equal(macMetalFingerprint(result).tools.length, 2);
+});
+
+test("selected Metal SDK environment overrides foreign ambient values and invalid selected roots deny before commands", async () => {
+  const f = metalFixture();
+  f.env.SDKROOT = "/foreign/ambient.sdk";
+  f.env.DEVELOPER_DIR = "/foreign/Contents/Developer";
+  const execute = f.dependencies.exec;
+  f.dependencies.exec = async (file, args, options) => {
+    assert.equal(options.env.SDKROOT, f.selected.SDKROOT);
+    assert.equal(options.env.DEVELOPER_DIR, f.selected.DEVELOPER_DIR);
+    assert(!args.includes("--sdk"));
+    assert(!args.includes("macosx"));
+    return execute(file, args, options);
+  };
+  await prepareMacMetalToolchain({ ...f, platform: "darwin" }, f.dependencies);
+  assert.equal(
+    f.calls.filter((c) => c.executable === "/usr/bin/xcrun").length,
+    5,
+  );
+  for (const key of ["SDKROOT", "DEVELOPER_DIR"])
+    for (const value of [
+      undefined,
+      null,
+      true,
+      17,
+      "macosx",
+      "relative.sdk",
+      "/invalid\0path",
+      "/" + "x".repeat(2048),
+    ]) {
+      const denied = metalFixture();
+      denied.selected[key] = value;
+      await assert.rejects(
+        prepareMacMetalToolchain(
+          { ...denied, platform: "darwin" },
+          denied.dependencies,
+        ),
+        /MAC_METAL_SELECTED_ENV/,
+      );
+      assert.deepEqual(denied.calls, []);
+    }
 });
