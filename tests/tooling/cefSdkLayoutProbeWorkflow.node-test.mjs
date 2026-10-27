@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import YAML from "yaml";
+import ts from "typescript";
 
 const read = (file) =>
   readFile(new URL(`../../${file}`, import.meta.url), "utf8");
@@ -26,7 +27,10 @@ test("SDK layout diagnostics require an explicit public default-branch run", () 
   );
   assert.equal(job.permissions, undefined);
   assert.equal(job["runs-on"], "macos-15-intel");
-  assert.equal(job["timeout-minutes"], "${{ inputs.metal_tools && 15 || 10 }}");
+  assert.equal(
+    job["timeout-minutes"],
+    "${{ (inputs.metal_tools || inputs.mac_arm_external) && 15 || 10 }}",
+  );
   assert.deepEqual(workflow.concurrency, {
     group: "cef-sdk-layout-probe-${{ github.ref }}",
     "cancel-in-progress": true,
@@ -37,7 +41,12 @@ test("SDK layout diagnostics require an explicit public default-branch run", () 
 test("SDK layout diagnostics run only fixed provisioning and the non-build probe", () => {
   const commands = job.steps
     .filter(
-      (step) => step.run && step.name !== "Diagnose selected Apple Metal tools",
+      (step) =>
+        step.run &&
+        ![
+          "Diagnose selected Apple Metal tools",
+          "Reject conflicting diagnostic modes",
+        ].includes(step.name),
     )
     .map((step) => step.run);
   assert.deepEqual(commands, [
@@ -50,14 +59,23 @@ test("SDK layout diagnostics run only fixed provisioning and the non-build probe
     SORNG_CEF_TOOLS_ROOT: "/",
   });
   for (const step of job.steps)
-    if (step.name !== "Diagnose selected Apple Metal tools")
+    if (
+      ![
+        "Diagnose selected Apple Metal tools",
+        "Reject conflicting diagnostic modes",
+      ].includes(step.name)
+    )
       assert.equal(step.env, undefined);
   const metal = job.steps.find(
     (step) => step.name === "Diagnose selected Apple Metal tools",
   );
-  assert.equal(metal.if, "inputs.metal_tools == true");
+  assert.equal(
+    metal.if,
+    "inputs.metal_tools == true || inputs.mac_arm_external == true",
+  );
   assert.deepEqual(metal.env, {
     METAL_TOOLS_ENABLED: "${{ inputs.metal_tools }}",
+    MAC_ARM_EXTERNAL_ENABLED: "${{ inputs.mac_arm_external }}",
   });
   assert.equal(job.environment, undefined);
   assert.equal(job.container, undefined);
@@ -71,6 +89,7 @@ test("SDK layout diagnostics use pinned actions without persisted credentials", 
       "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
       "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
       "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
     ],
   );
   assert.deepEqual(job.steps[0].with, { "persist-credentials": false });
@@ -81,8 +100,10 @@ test("SDK layout diagnostics use pinned actions without persisted credentials", 
 });
 
 test("SDK diagnostic retention preserves failure output without a runtime seal", () => {
-  const retention = job.steps.at(-1);
-  assert.equal(retention.if, "always()");
+  const retention = job.steps.find(
+    (step) => step.name === "Retain bounded diagnostic output",
+  );
+  assert.equal(retention.if, "always() && inputs.mac_arm_external != true");
   assert.deepEqual(retention.with, {
     name: "cef-sdk-layout-probe-${{ github.run_id }}-${{ github.run_attempt }}",
     path: "${{ runner.temp }}/cef-sdk-layout-probe.log\n${{ runner.temp }}/cef-sdk-probe-prerequisites\n${{ runner.temp }}/cef-metal-tools-probe\n",
@@ -129,7 +150,17 @@ import { prepareMacMetalToolchain } from "../../scripts/cef-hosted-provision.mjs
 import {
   sdkProbeAuthority,
   checkpointHost,
+  checkpointProfile,
+  LIMITS,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  plan as actualPlan,
+  validateRunnerMap as actualRunnerMap,
+  releaseIdentity,
+  assertHostedBuildIdentity,
+} from "../../scripts/cef-runtime-ci.mjs";
+import * as actualMac from "../../scripts/lib/cef-mac-source-metadata.mjs";
+import { fileURLToPath } from "node:url";
 
 const metalStep = job.steps.find(
   (step) => step.name === "Diagnose selected Apple Metal tools",
@@ -566,12 +597,24 @@ async function pipelineFixture(t) {
       tools: [],
     }),
   };
-  const stripped = metalBody.replace(/^import .*;\r?$/gm, "");
+  const tree = ts.createSourceFile(
+    "inline.mjs",
+    metalBody,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const declaration = tree.statements.find(
+    (node) =>
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === "runMetalDiagnostic",
+  );
+  assert(declaration);
   const script =
-    stripped.slice(
-      0,
-      stripped.lastIndexOf("try { await runMetalDiagnostic(); }"),
-    ) + "\nglobalThis.run=runMetalDiagnostic;";
+    functionsBody +
+    "\n" +
+    declaration.getText(tree) +
+    "\nglobalThis.run=runMetalDiagnostic;";
   return {
     root,
     env,
@@ -891,4 +934,947 @@ test("diagnostic wrapper records physical air-lld signature as metallib and keep
       0,
     );
   }
+});
+
+test("ARM passive mode is explicit, mutually exclusive and retains one existing Node heredoc and default Intel commands", () => {
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.mac_arm_external, {
+    description:
+      "Read-only ARM65 external inputs; permits only the existing typed missing-Metal component download",
+    type: "boolean",
+    required: false,
+    default: false,
+  });
+  assert.equal(Object.keys(workflow.jobs).length, 1);
+  const raw = job.steps
+    .filter((step) => step.run)
+    .map((step) => step.run)
+    .join("\n");
+  assert.equal(
+    (raw.match(/node --input-type=module <<'NODE'/g) ?? []).length,
+    1,
+  );
+  const conflict = job.steps.findIndex(
+    (step) => step.name === "Reject conflicting diagnostic modes",
+  );
+  assert(
+    conflict >= 0 &&
+      conflict <
+        job.steps.findIndex(
+          (step) =>
+            step.name ===
+            "Prepare existing fixed reviewed native prerequisites",
+        ),
+  );
+  assert.match(
+    job.steps[conflict].run,
+    /METAL_TOOLS_ENABLED.*true.*MAC_ARM_EXTERNAL_ENABLED.*true/,
+  );
+  for (const name of [
+    "Prepare existing fixed reviewed native prerequisites",
+    "Probe selected native SDK links without acquiring sources",
+  ])
+    assert.equal(
+      job.steps.find((step) => step.name === name).if,
+      "inputs.mac_arm_external != true",
+    );
+  const retention = job.steps.find(
+    (step) => step.name === "Retain bounded ARM external observation",
+  );
+  assert.equal(
+    retention.if,
+    "always() && inputs.mac_arm_external == true && steps.diagnostic.outputs.arm_output != ''",
+  );
+  assert.equal(
+    retention.with.path,
+    "${{ steps.diagnostic.outputs.arm_output }}",
+  );
+});
+
+async function armFixture(fault = "") {
+  const profile = checkpointProfile("aarch64-apple-darwin");
+  const repo = fileURLToPath(new URL("../../", import.meta.url)).replaceAll(
+    "\\",
+    "/",
+  );
+  const map = JSON.parse(
+    await read(profile.inputs + "/cef-ci-runner-aarch64-apple-darwin.json"),
+  );
+  const env = {
+    RUNNER_TEMP: "/Users/runner/work/_temp",
+    SORNG_CEF_TOOLS_ROOT: "/",
+    GITHUB_OUTPUT: "/owned-output",
+    MAC_ARM_EXTERNAL_ENABLED: "true",
+    METAL_TOOLS_ENABLED: "false",
+    CEF_DEFAULT_BRANCH: "main",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_REPOSITORY_ID: "1",
+    GITHUB_RUN_ID: "2",
+    GITHUB_RUN_ATTEMPT: "1",
+    GITHUB_WORKFLOW_REF:
+      "supermarsx/sortOfRemoteNG/.github/workflows/cef-sdk-layout-probe.yml@refs/heads/main",
+    ImageOS: map.hosted.imageOS,
+    ImageVersion: map.hosted.imageVersion,
+  };
+  const files = new Map(),
+    directories = new Set(),
+    events = [],
+    frames = [],
+    reads = new Map(),
+    timers = new Map();
+  let clock = fault === "fractional" ? 0.25 : 0,
+    hardTick,
+    intervalCleared = false,
+    exits = [],
+    observation,
+    uidCalls = 0,
+    timerId = 0,
+    releasePersistence;
+  const marker = Error("PRIVATE_FIRST"),
+    secondary = Error("PRIVATE_SECONDARY");
+  let persistenceStartedResolve;
+  const persistenceStarted = new Promise((resolve) => {
+    persistenceStartedResolve = resolve;
+  });
+  const ino = (file) =>
+    file.endsWith("external.json")
+      ? 30n
+      : file.endsWith("capability.json")
+        ? 20n
+        : 10n;
+  const stat = (file, directory = false) => ({
+    dev: 1n,
+    ino: ino(file),
+    mode: directory ? 0o40700n : 0o100600n,
+    uid: 501n,
+    gid: 20n,
+    nlink: 1n,
+    size: BigInt(directory ? 0 : (files.get(file)?.length ?? 0)),
+    mtimeNs: 1n,
+    ctimeNs: 2n,
+    birthtimeNs: 3n,
+    isFile: () => !directory,
+    isDirectory: () => directory,
+    isSymbolicLink: () => false,
+  });
+  const sourceIo = {
+    lstat: async (file) => ({
+      ...stat(file, true),
+      isSymbolicLink: () => file.endsWith("MacOSX26.2.sdk"),
+    }),
+    readlink: async () => (fault === "alias" ? "OTHER.sdk" : "MacOSX.sdk"),
+    realpath: async (file) => file.replace("MacOSX26.2.sdk", "MacOSX.sdk"),
+  };
+  const root =
+    "/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/" +
+    "a".repeat(40) +
+    "/Metal.xctoolchain/usr/bin/";
+  const bytes = Buffer.alloc(16, 65),
+    toolHash = hash(bytes);
+  const makeCapability = () => {
+    const rows = [];
+    for (const [index, role] of [
+      "file",
+      "directory",
+      "root",
+      "symlink",
+    ].entries())
+      for (const kind of ["no-op", "past", "future"]) {
+        const before = {
+          dev: "1",
+          ino: String(index + 1),
+          mode: String(
+            role === "file"
+              ? 0o100600
+              : role === "symlink"
+                ? 0o120777
+                : 0o40700,
+          ),
+          nlink: "1",
+          size: "0",
+          uid: "501",
+          gid: "20",
+          atime_ns: "1",
+          mtime_ns: "10",
+          ctime_ns: "12",
+          birthtimeNsAvailable: false,
+          birthtimeNs: null,
+        };
+        const requested =
+            kind === "no-op" ? "10" : kind === "past" ? "5" : "20",
+          after = { ...before, mtime_ns: requested };
+        rows.push({
+          role,
+          case: kind,
+          requestedMtimeNs: requested,
+          before,
+          after,
+          heldBefore: role === "symlink" ? null : { ...before },
+          heldAfter: role === "symlink" ? null : { ...after },
+          exactMtimeReadback: true,
+        });
+      }
+    if (fault === "cap-invalid") rows[0].unknown = "PRIVATE";
+    const value = {
+      schemaVersion: 1,
+      kind: "sorng-macarm-owned-capability-observation",
+      target: profile.target,
+      complete: true,
+      rows,
+      cleanupConfirmed: true,
+      objectsRemoved: true,
+      handlesClosed: true,
+      error: null,
+      installedInputsWritten: false,
+      sourceWriteAdmitted: false,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+    const raw = Buffer.from(JSON.stringify(value));
+    files.set(observation.context.outputRoot + "/capability.json", raw);
+    return {
+      complete: true,
+      kind: value.kind,
+      rows: 12,
+      observation: {
+        name: "capability.json",
+        bytes: raw.length,
+        sha256: hash(raw),
+      },
+      sourceWriteAdmitted: false,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+  };
+  const makeExternal = () => {
+    const value = {
+      schemaVersion: 1,
+      kind: "sorng-macarm-external-input-observation",
+      target: profile.target,
+      policy: "sorng-macarm-readonly-external-inputs-v1",
+      complete: true,
+      externalSnapshotComplete: true,
+      roles: ["sdk", "toolchain", "metal", "python"].map((role) => ({
+        role,
+        physicalRoot: observation.context.roots[role],
+        snapshot: {
+          entries: observation.context.requiredPins
+            .filter((pin) => pin.role === role)
+            .map((pin) => ({
+              path: pin.path,
+              kind: "file",
+              mode: 0o100644,
+              mtimeNs: "1",
+              nlink: 1,
+              uid: 0,
+              gid: 0,
+              size: pin.size,
+              sha256: pin.sha256,
+            })),
+          rootMtimeNs: "1",
+          gitHeads: {},
+          bytes: observation.context.requiredPins
+            .filter((pin) => pin.role === role)
+            .reduce((sum, pin) => sum + pin.size, 0),
+          root: { mode: 0o40755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
+          localRoot: {
+            dev: "1",
+            ino: "2",
+            ctimeNs: "3",
+            birthtimeNsAvailable: false,
+            birthtimeNs: null,
+          },
+        },
+      })),
+      entries: 10,
+      bytes: observation.context.requiredPins.reduce(
+        (sum, pin) => sum + pin.size,
+        0,
+      ),
+      runnerUid: 501,
+      historicalMetalResourceClosureVerified: false,
+      sourceWriteAdmitted: false,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+    const raw = Buffer.from(JSON.stringify(value));
+    files.set(observation.context.outputRoot + "/external.json", raw);
+    return {
+      complete: true,
+      kind: value.kind,
+      entries: value.entries,
+      bytes: value.bytes,
+      snapshot: { name: "external.json", bytes: raw.length, sha256: hash(raw) },
+      sourceWriteAdmitted: false,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+  };
+  const api = {
+    path: path.posix,
+    Buffer,
+    performance: { now: () => clock },
+    Date: { now: () => 1000000 + clock },
+    createHash,
+    identitySha256,
+    fsConstants: { O_RDONLY: 0, O_NOFOLLOW: 131072 },
+    process: {
+      env,
+      platform: "darwin",
+      arch: "x64",
+      cwd: () => repo,
+      getuid: () => {
+        uidCalls++;
+        return 501;
+      },
+      exit: (code) => exits.push(code),
+    },
+    console: {
+      error: (line) => {
+        try {
+          frames.push(JSON.parse(line));
+        } catch {}
+      },
+    },
+    setInterval: (fn) => {
+      hardTick = fn;
+      return 1;
+    },
+    clearInterval: () => {
+      intervalCleared = true;
+    },
+    setTimeout: (fn) => {
+      const id = ++timerId;
+      timers.set(id, fn);
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+    randomUUID: () => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    sdkProbeAuthority,
+    checkpointProfile,
+    checkpointHost,
+    releaseIdentity,
+    plan: async (options) => {
+      events.push("plan");
+      const value = await actualPlan(options);
+      return { ...value, inputsRoot: value.inputsRoot.replaceAll("\\", "/") };
+    },
+    validateRunnerMap: (value, target) => {
+      events.push("map");
+      return actualRunnerMap(value, target);
+    },
+    assertHostedBuildIdentity: (...args) => assertHostedBuildIdentity(...args),
+    verifyToolchainFiles: async (options) => {
+      events.push("pins");
+      if (fault === "deadline") clock = 600001;
+      assert.equal(options.target, profile.target);
+      assert.equal(options.runnerMapFromInputs, true);
+      return { filesVerified: fault === "pins" ? 8 : 9 };
+    },
+    buildEnvironment: (value, roots) =>
+      Object.fromEntries(
+        Object.entries(value.environment).map(([key, v]) => [
+          key,
+          v.replace(/^@TOOLS@\//, "/"),
+        ]),
+      ),
+    realpath: async (file) => file,
+    lstat: async (file) => {
+      if (file.endsWith("capability-owned"))
+        throw Object.assign(Error("absent"), { code: "ENOENT" });
+      return stat(file, !files.has(file));
+    },
+    mkdir: async (file, options) => {
+      assert.equal(options.mode, 0o700);
+      assert(!directories.has(file));
+      directories.add(file);
+    },
+    appendFile: async (file, text) => {
+      assert.equal(file, env.GITHUB_OUTPUT);
+      assert.match(text, /^arm_output=/);
+    },
+    readFile: async (file) => {
+      const raw = await readActual(file);
+      return fault === "map" &&
+        file.endsWith("cef-ci-runner-aarch64-apple-darwin.json")
+        ? Buffer.from("wrong map")
+        : raw;
+    },
+    writeFile: async (file, raw, options) => {
+      if (fault === "null-persist" && file.endsWith("outcome.json"))
+        throw secondary;
+      if (
+        ["pending-persist", "null-pending"].includes(fault) &&
+        file.endsWith("outcome.json")
+      )
+        return new Promise((resolve) => {
+          persistenceStartedResolve();
+          releasePersistence = () => {
+            files.set(file, Buffer.from(raw));
+            resolve();
+          };
+        });
+      assert.equal(options.flag, "wx");
+      assert(!files.has(file));
+      files.set(file, Buffer.from(raw));
+    },
+    open: async (file, flags) => {
+      if (flags === "wx")
+        return { writeFile: async () => {}, close: async () => {} };
+      const initial = stat(file);
+      let position = 0;
+      const grow =
+        fault ===
+        (file.endsWith("capability.json") ? "cap-growth" : "report-growth");
+      const data = grow
+        ? Buffer.concat([files.get(file), Buffer.alloc(1000)])
+        : files.get(file);
+      return {
+        stat: async () => initial,
+        read: async (buffer, offset, length) => {
+          if (fault === "read-close" && file.endsWith("external.json"))
+            throw marker;
+          const count = Math.min(length, data.length - position);
+          data.copy(buffer, offset, position, position + count);
+          position += count;
+          reads.set(file, position);
+          return { bytesRead: count };
+        },
+        close: async () => {
+          if (fault === "read-close" && file.endsWith("external.json"))
+            throw secondary;
+        },
+      };
+    },
+    macSdkRelation: async (options) => {
+      events.push("alias");
+      return actualMac.macSdkRelation(options, sourceIo);
+    },
+    promisify: (fn) => fn,
+    execFile: async (exe, args) =>
+      exe === "/usr/bin/xcrun"
+        ? {
+            stdout: args.includes("--find")
+              ? root + args.at(-1)
+              : "Apple metal version 32023.104",
+          }
+        : {},
+    prepareMacMetalToolchain: async (options, deps) => {
+      events.push("metal");
+      assert.equal(options.allowDownload, true);
+      return prepareMacMetalToolchain(options, {
+        ...deps,
+        now: () => clock,
+        realpath: async (file) =>
+          file.endsWith("/metallib") ? root + "air-lld" : file,
+        measure: async (file) => ({
+          physicalPath: file,
+          bytes: 16,
+          sha256: toolHash,
+        }),
+      });
+    },
+    macMetalFingerprint: (
+      await import("../../scripts/cef-hosted-provision.mjs")
+    ).macMetalFingerprint,
+    macExternalObservationPlan: (options) => {
+      events.push("external-plan");
+      observation = actualMac.macExternalObservationPlan(options);
+      return observation;
+    },
+    archiveCommand: async (python, helper, args, options) => {
+      const mode = args[0];
+      events.push(mode);
+      assert.equal(
+        python,
+        "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+      );
+      assert(helper.endsWith("scripts/lib/cef-checkpoint-archive.py"));
+      assert(
+        Number.isSafeInteger(options.timeout) &&
+          options.timeout > 0 &&
+          options.timeout <=
+            (mode === "mac-owned-capability-observe" ? 5000 : 600000),
+      );
+      if (mode === "mac-owned-capability-observe") return makeCapability();
+      if (fault === "worker-unknown") {
+        options.observeFailure({
+          error: "source-external-input-unattested",
+          externalPhase: "links",
+          exitCode: 1,
+          archiveCleanupUnknown: true,
+        });
+        throw marker;
+      }
+      if (["null-persist", "null-pending"].includes(fault)) {
+        options.observeFailure({
+          error: "source-external-input-unattested",
+          exitCode: 1,
+        });
+        throw null;
+      }
+      return makeExternal();
+    },
+    readMacExternalObservation: async (...args) => {
+      events.push("reader");
+      return actualMac.readMacExternalObservation(...args);
+    },
+    macExternalToolsBinding: (...args) => {
+      events.push("binding");
+      return actualMac.macExternalToolsBinding(...args);
+    },
+    macExternalObservationEvidence: (...args) =>
+      actualMac.macExternalObservationEvidence(...args),
+    LIMITS,
+  };
+  const tree = ts.createSourceFile(
+    "inline.mjs",
+    metalBody,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const declaration = tree.statements.find(
+    (node) =>
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === "runArmExternalDiagnostic",
+  );
+  assert(declaration);
+  const context = vm.createContext(api);
+  new vm.Script(
+    functionsBody +
+      "\n" +
+      declaration.getText(tree) +
+      "\nglobalThis.run=runArmExternalDiagnostic;",
+  ).runInContext(context);
+  return {
+    env,
+    api,
+    events,
+    files,
+    frames,
+    reads,
+    marker,
+    secondary,
+    run: () => context.run(),
+    uidCalls: () => uidCalls,
+    cleared: () => intervalCleared,
+    exits,
+    persistReady: () => Boolean(releasePersistence),
+    persistenceStarted,
+    expireWork: () => {
+      clock = 600001;
+      for (const fn of [...timers.values()]) fn();
+    },
+    expire: () => {
+      clock = 630001;
+      hardTick();
+      for (const fn of [...timers.values()]) fn();
+    },
+    releasePersistence: () => releasePersistence?.(),
+  };
+}
+
+test("actual ARM body verifies real checked-in source65 chain and crosses genuine opaque SDK/report binding APIs", async () => {
+  const f = await armFixture();
+  await f.run();
+  assert.deepEqual(f.events, [
+    "plan",
+    "map",
+    "pins",
+    "alias",
+    "metal",
+    "external-plan",
+    "mac-owned-capability-observe",
+    "mac-external-observe",
+    "reader",
+    "binding",
+  ]);
+  assert.equal(f.uidCalls(), 1);
+  assert.equal(f.cleared(), true);
+  assert.equal(f.frames.length, 1);
+  assert.equal(f.frames[0].complete, true);
+  assert.equal(f.frames[0].actorsQuiet, true);
+  const binding = JSON.parse(
+    [...f.files.entries()].find(([name]) => name.endsWith("binding.json"))[1],
+  );
+  assert.equal(binding.macExternalInputs.externalSnapshotComplete, true);
+  assert.equal(
+    binding.sourceLockIdentity,
+    checkpointProfile("aarch64-apple-darwin").source,
+  );
+  const outcome = JSON.parse(
+    [...f.files.entries()].find(([name]) => name.endsWith("outcome.json"))[1],
+  );
+  assert.equal(outcome.complete, false);
+  assert.equal(outcome.terminalCompletionRequired, true);
+});
+
+test("actual ARM authority, image, pin and alias denials cannot reach Metal download or census", async () => {
+  for (const fault of [
+    "private-ref",
+    "token",
+    "both",
+    "image",
+    "map",
+    "pins",
+    "alias",
+  ]) {
+    const f = await armFixture(fault);
+    if (fault === "private-ref") f.env.GITHUB_REF = "refs/heads/private";
+    if (fault === "token") f.env.GH_TOKEN = "PRIVATE";
+    if (fault === "both") f.env.METAL_TOOLS_ENABLED = "true";
+    if (fault === "image") f.env.ImageVersion = "foreign";
+    await assert.rejects(f.run());
+    assert(!f.events.includes("metal"));
+    assert(!f.events.includes("mac-owned-capability-observe"));
+    assert.equal(f.frames[0].complete, false);
+    assert.doesNotMatch(JSON.stringify(f.frames), /PRIVATE/);
+  }
+});
+
+test("fixed ARM capability and actual external reader FD adapters bound growing files and preserve primary read against close faults", async () => {
+  for (const fault of [
+    "cap-growth",
+    "report-growth",
+    "cap-invalid",
+    "read-close",
+  ]) {
+    const f = await armFixture(fault);
+    let caught;
+    try {
+      await f.run();
+    } catch (error) {
+      caught = error;
+    }
+    assert(caught);
+    assert.equal(f.frames[0].complete, false);
+    if (fault === "read-close") {
+      assert.equal(caught, f.marker);
+      assert.equal(f.frames[0].handleCleanupUnknown, true);
+      assert.equal(f.frames[0].actorsQuiet, false);
+    } else if (fault.endsWith("growth")) {
+      const suffix =
+        fault === "cap-growth" ? "capability.json" : "external.json";
+      const [name, raw] = [...f.files.entries()].find(([name]) =>
+        name.endsWith(suffix),
+      );
+      assert.equal(f.reads.get(name), raw.length + 1);
+    }
+  }
+});
+
+test("actual ARM null primary survives persistence failure and original630s watchdog remains through hanging persistence", async () => {
+  const nullCase = await armFixture("null-persist");
+  let caught = "missing";
+  try {
+    await nullCase.run();
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(caught, null);
+  assert.equal(nullCase.frames[0].firstWasNull, true);
+  assert.equal(nullCase.frames[0].reportFailure, true);
+  const f = await armFixture("pending-persist"),
+    run = f.run();
+  let timer;
+  try {
+    await Promise.race([
+      f.persistenceStarted,
+      run.then(() => {
+        throw Error("unexpected pre-persistence completion");
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error("bounded fixture setup")), 2000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+  assert.equal(f.persistReady(), true);
+  assert.equal(f.cleared(), false);
+  f.expire();
+  await assert.rejects(
+    Promise.race([
+      run,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(Error("outer bounded test")), 500),
+      ),
+    ]),
+  );
+  assert.deepEqual(f.exits, [1]);
+  assert.equal(f.frames[0].hardExpired, true);
+  assert.equal(f.frames[0].actorsQuiet, false);
+  f.releasePersistence();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(f.frames.every((frame) => frame.complete === false));
+});
+
+test("actual ARM shared clock floors fractional remaining budgets and expires before launching later phases", async () => {
+  const fractional = await armFixture("fractional");
+  await fractional.run();
+  assert.equal(fractional.frames[0].complete, true);
+  const expired = await armFixture("deadline");
+  await assert.rejects(expired.run(), /MAC_ARM_EXTERNAL_DEADLINE/);
+  assert(!expired.events.includes("alias"));
+  assert(!expired.events.includes("metal"));
+  assert(!expired.events.includes("mac-owned-capability-observe"));
+});
+
+test("actual ARM retains leaf cleanup uncertainty and null first fault through original hard deadline", async () => {
+  const unknown = await armFixture("worker-unknown");
+  await assert.rejects(unknown.run(), (error) => error === unknown.marker);
+  assert.equal(unknown.frames[0].workerCleanupUnknown, true);
+  assert.equal(unknown.frames[0].actorsQuiet, false);
+  assert.equal(unknown.cleared(), false);
+  const outcome = JSON.parse(
+    [...unknown.files.entries()].find(([name]) =>
+      name.endsWith("outcome.json"),
+    )[1],
+  );
+  assert.equal(
+    outcome.workerRecords.at(-1).failure.archiveCleanupUnknown,
+    true,
+  );
+  assert.equal(
+    outcome.workerRecords.at(-1).failure.error,
+    "source-external-input-unattested",
+  );
+  const f = await armFixture("null-pending"),
+    run = f.run();
+  let timer;
+  try {
+    await Promise.race([
+      f.persistenceStarted,
+      run.then(() => {
+        throw Error("unexpected completion");
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error("bounded fixture setup")), 2000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+  f.expire();
+  let caught = "missing";
+  try {
+    await run;
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(caught, null);
+  assert.equal(f.frames[0].firstWasNull, true);
+  assert.equal(f.frames[0].complete, false);
+  assert.equal(f.frames[0].hardExpired, true);
+  f.releasePersistence();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(f.frames.every((frame) => frame.complete === false));
+});
+
+// Exact inline body, fake clocks/owned handles only: no Apple process or filesystem.
+async function delayedArmOpen(role, closeMode = "joined") {
+  const f = await armFixture();
+  const suffix = {
+    "command-log": "metal-commands.jsonl",
+    capability: "capability.json",
+    "external-report": "external.json",
+  }[role];
+  const originalOpen = f.api.open,
+    originalWrite = f.api.writeFile;
+  let startedResolve,
+    returnHandle,
+    releaseClose,
+    opened = 0,
+    closes = 0,
+    closeAttempts = 0;
+  const started = new Promise((resolve) => {
+    startedResolve = resolve;
+  });
+  f.api.open = async (file, flags) => {
+    if (!file.endsWith(suffix)) return originalOpen(file, flags);
+    startedResolve();
+    return new Promise((resolve) => {
+      returnHandle = async () => {
+        const fd = await originalOpen(file, flags),
+          originalClose = fd.close;
+        opened++;
+        fd.close = async () => {
+          closeAttempts++;
+          if (closeMode === "failure") throw f.secondary;
+          if (closeMode === "pending")
+            await new Promise((r) => {
+              releaseClose = r;
+            });
+          await originalClose();
+          closes++;
+        };
+        resolve(fd);
+      };
+    });
+  };
+  f.api.writeFile = async (file, ...args) => {
+    if (file.endsWith("outcome.json") && closeMode !== "past-cleanup") {
+      await returnHandle();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    return originalWrite(file, ...args);
+  };
+  return {
+    f,
+    started,
+    releaseOpen: () => returnHandle(),
+    releaseClose: () => releaseClose?.(),
+    counts: () => ({ opened, closes, closeAttempts }),
+  };
+}
+async function armSetupWithin(started, run) {
+  let timer;
+  try {
+    await Promise.race([
+      started,
+      run.then(() => {
+        throw Error("unexpected early completion");
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(Error("bounded acquisition setup")),
+          2000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+test("actual ARM three fixed acquisitions dispose exact late handles before reporting quiet or clearing watchdog", async () => {
+  for (const role of ["command-log", "capability", "external-report"]) {
+    const x = await delayedArmOpen(role),
+      run = x.f.run();
+    await armSetupWithin(x.started, run);
+    x.f.expireWork();
+    await assert.rejects(run, /MAC_ARM_EXTERNAL_DEADLINE/);
+    assert.deepEqual(
+      x.counts(),
+      { opened: 1, closes: 1, closeAttempts: 1 },
+      role,
+    );
+    const frame = x.f.frames[0];
+    assert.equal(frame.complete, false);
+    assert.equal(frame.primaryReason, "MAC_ARM_EXTERNAL_DEADLINE");
+    assert.equal(frame.pendingAcquisitions, 0);
+    assert.equal(frame.ownedDescriptors, 0);
+    assert.equal(frame.pendingOperations, 0);
+    assert.equal(frame.openedDescriptors, frame.closedDescriptors);
+    assert.equal(frame.lateDisposals, 1);
+    assert.equal(frame.handleCleanupUnknown, false);
+    assert.equal(frame.actorsQuiet, true);
+    assert.equal(x.f.cleared(), true);
+  }
+});
+
+test("actual ARM late close failure or unresolved close keeps exact handle ownership and original deadline watch", async () => {
+  for (const closeMode of ["failure", "pending"]) {
+    const x = await delayedArmOpen("capability", closeMode),
+      run = x.f.run();
+    await armSetupWithin(x.started, run);
+    x.f.expireWork();
+    await assert.rejects(run, /MAC_ARM_EXTERNAL_DEADLINE/);
+    assert.deepEqual(x.counts(), { opened: 1, closes: 0, closeAttempts: 1 });
+    const frame = x.f.frames[0];
+    assert.equal(frame.ownedDescriptors, 1);
+    assert.equal(frame.handleCleanupUnknown, true);
+    assert.equal(frame.actorsQuiet, false);
+    assert.equal(x.f.cleared(), false);
+    x.f.expire();
+    assert.deepEqual(x.f.exits, [1]);
+    x.releaseClose();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(x.f.frames.length, 1);
+    assert(x.f.frames.every((value) => value.complete === false));
+    assert.equal(x.f.cleared(), false);
+  }
+});
+
+test("actual ARM open still pending past original cleanup cannot dispose or claim joined using a new clock", async () => {
+  const x = await delayedArmOpen("external-report", "past-cleanup"),
+    run = x.f.run();
+  await armSetupWithin(x.started, run);
+  x.f.expireWork();
+  await assert.rejects(run, /MAC_ARM_EXTERNAL_DEADLINE/);
+  assert.equal(x.f.frames[0].pendingAcquisitions, 1);
+  assert.equal(x.f.frames[0].actorsQuiet, false);
+  assert.equal(x.f.frames[0].handleCleanupUnknown, true);
+  assert.equal(x.f.cleared(), false);
+  x.f.expire();
+  await x.releaseOpen();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(x.counts(), { opened: 1, closes: 0, closeAttempts: 0 });
+  assert.deepEqual(x.f.exits, [1]);
+  assert.equal(x.f.frames.length, 1);
+  assert.equal(x.f.cleared(), false);
+});
+
+test("actual ARM acquisition rejection including null is retained without fabricated close or quiet", async () => {
+  for (const rejection of [null, Error("PRIVATE_OPEN_REJECTION")]) {
+    const f = await armFixture(),
+      open = f.api.open;
+    f.api.open = async (file, flags) => {
+      if (file.endsWith("capability.json")) throw rejection;
+      return open(file, flags);
+    };
+    let caught = "missing";
+    try {
+      await f.run();
+    } catch (error) {
+      caught = error;
+    }
+    assert.equal(caught, rejection);
+    assert.equal(f.frames[0].rejectedAcquisitions, 1);
+    assert.equal(f.frames[0].pendingAcquisitions, 0);
+    assert.equal(f.frames[0].openedDescriptors, f.frames[0].closedDescriptors);
+    assert.equal(f.frames[0].actorsQuiet, false);
+    assert.equal(f.frames[0].handleCleanupUnknown, true);
+    assert.equal(f.frames[0].firstWasNull, rejection === null);
+    assert.equal(f.cleared(), false);
+    assert.doesNotMatch(JSON.stringify(f.frames), /PRIVATE_OPEN/);
+    f.expire();
+  }
+});
+
+test("actual ARM null read remains first when closing the same acquired descriptor fails", async () => {
+  const f = await armFixture(),
+    open = f.api.open;
+  f.api.open = async (file, flags) => {
+    const fd = await open(file, flags);
+    if (file.endsWith("external.json")) {
+      fd.read = async () => {
+        throw null;
+      };
+      fd.close = async () => {
+        throw f.secondary;
+      };
+    }
+    return fd;
+  };
+  let caught = "missing";
+  try {
+    await f.run();
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(caught, null);
+  assert.equal(f.frames[0].firstWasNull, true);
+  assert.equal(f.frames[0].ownedDescriptors, 1);
+  assert.equal(f.frames[0].actorsQuiet, false);
+  assert.equal(f.frames[0].handleCleanupUnknown, true);
+  assert.equal(f.cleared(), false);
+  assert.doesNotMatch(JSON.stringify(f.frames), /PRIVATE_SECONDARY/);
+  f.expire();
 });

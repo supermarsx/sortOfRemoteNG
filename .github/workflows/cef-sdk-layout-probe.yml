@@ -9,6 +9,11 @@ on:
         type: boolean
         required: false
         default: false
+      mac_arm_external:
+        description: "Read-only ARM65 external inputs; permits only the existing typed missing-Metal component download"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -25,7 +30,7 @@ jobs:
   probe:
     if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'
     runs-on: macos-15-intel
-    timeout-minutes: ${{ inputs.metal_tools && 15 || 10 }}
+    timeout-minutes: ${{ (inputs.metal_tools || inputs.mac_arm_external) && 15 || 10 }}
     env:
       CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
@@ -38,23 +43,38 @@ jobs:
         with:
           node-version-file: ".node-version"
           package-manager-cache: false
-      - name: Prepare existing fixed reviewed native prerequisites
-        run: node scripts/cef-hosted-provision.mjs --target x86_64-apple-darwin --output "$RUNNER_TEMP/cef-sdk-probe-prerequisites" --execute
-      - name: Probe selected native SDK links without acquiring sources
-        run: node scripts/cef-engineering-checkpoint.mjs probe-sdk 2>&1 | tee "$RUNNER_TEMP/cef-sdk-layout-probe.log"
-      - name: Diagnose selected Apple Metal tools
-        if: inputs.metal_tools == true
+      - name: Reject conflicting diagnostic modes
         env:
           METAL_TOOLS_ENABLED: ${{ inputs.metal_tools }}
+          MAC_ARM_EXTERNAL_ENABLED: ${{ inputs.mac_arm_external }}
+        run: |
+          if [ "$METAL_TOOLS_ENABLED" = "true" ] && [ "$MAC_ARM_EXTERNAL_ENABLED" = "true" ]; then
+            printf '%s\n' 'MAC_DIAGNOSTIC_MODES_CONFLICT' >&2
+            exit 1
+          fi
+      - name: Prepare existing fixed reviewed native prerequisites
+        if: inputs.mac_arm_external != true
+        run: node scripts/cef-hosted-provision.mjs --target x86_64-apple-darwin --output "$RUNNER_TEMP/cef-sdk-probe-prerequisites" --execute
+      - name: Probe selected native SDK links without acquiring sources
+        if: inputs.mac_arm_external != true
+        run: node scripts/cef-engineering-checkpoint.mjs probe-sdk 2>&1 | tee "$RUNNER_TEMP/cef-sdk-layout-probe.log"
+      - name: Diagnose selected Apple Metal tools
+        id: diagnostic
+        if: inputs.metal_tools == true || inputs.mac_arm_external == true
+        env:
+          METAL_TOOLS_ENABLED: ${{ inputs.metal_tools }}
+          MAC_ARM_EXTERNAL_ENABLED: ${{ inputs.mac_arm_external }}
         run: |
           node --input-type=module <<'NODE'
           import { execFile } from 'node:child_process';
           import { promisify } from 'node:util';
-          import { mkdir, open, readFile, realpath, writeFile } from 'node:fs/promises';
-          import { createHash } from 'node:crypto';
+          import { mkdir, open, readFile, realpath, writeFile, lstat, appendFile } from 'node:fs/promises';
+          import { constants as fsConstants } from 'node:fs';
+          import { createHash, randomUUID } from 'node:crypto';
           import path from 'node:path';
-          import { plan, validateRunnerMap, buildEnvironment } from './scripts/cef-runtime-ci.mjs';
-          import { checkpointHost, sdkProbeAuthority } from './scripts/lib/cef-engineering-checkpoint.mjs';
+          import { plan, validateRunnerMap, buildEnvironment, releaseIdentity, assertHostedBuildIdentity } from './scripts/cef-runtime-ci.mjs';
+          import { checkpointHost, sdkProbeAuthority, checkpointProfile, archiveCommand, LIMITS } from './scripts/lib/cef-engineering-checkpoint.mjs';
+          import { macSdkRelation, macExternalObservationPlan, readMacExternalObservation, macExternalToolsBinding, macExternalObservationEvidence } from './scripts/lib/cef-mac-source-metadata.mjs';
           import { verifyToolchainFiles, identitySha256 } from './scripts/lib/browser-custom-runtime.mjs';
           import { prepareMacMetalToolchain, macMetalFingerprint } from './scripts/cef-hosted-provision.mjs';
 
@@ -209,10 +229,963 @@ jobs:
             }
             if (failed) throw originalError;
           }
+          async function runArmExternalDiagnostic(env = process.env) {
+            const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+            const startedWall = Date.now(),
+              startedMono = performance.now();
+            const workEndWall = startedWall + 600000,
+              workEndMono = startedMono + 600000;
+            const cleanupEndWall = workEndWall + 30000,
+              cleanupEndMono = workEndMono + 30000;
+            let phase = "authority",
+              output,
+              outputIdentity,
+              callerUid,
+              pending = 0,
+              actors = 0;
+            let failed = false,
+              first,
+              reportFailure = false,
+              workerUnknown = false,
+              handleUnknown = false,
+              hardExpired = false,
+              terminalEmitted = false;
+            const records = [],
+              commands = [];
+            const ownedDescriptors = new Map();
+            let pendingAcquisitions = 0,
+              rejectedAcquisitions = 0,
+              openedDescriptors = 0,
+              closedDescriptors = 0,
+              lateDisposals = 0;
+            const handlesUnconfirmed = () =>
+              handleUnknown ||
+              pendingAcquisitions !== 0 ||
+              rejectedAcquisitions !== 0 ||
+              ownedDescriptors.size !== 0;
+            const known = new Set([
+              "MAC_ARM_EXTERNAL_AUTHORITY",
+              "MAC_ARM_EXTERNAL_CAPABILITY",
+              "MAC_ARM_EXTERNAL_CLEANUP_UNCONFIRMED",
+              "MAC_ARM_EXTERNAL_DEADLINE",
+              "MAC_ARM_EXTERNAL_HARD_DEADLINE",
+              "MAC_ARM_EXTERNAL_MODE",
+              "MAC_ARM_EXTERNAL_OUTPUT",
+              "MAC_ARM_EXTERNAL_REPORT",
+              "MAC_ARM_EXTERNAL_SOURCE",
+              "MAC_ARM_EXTERNAL_WORKER_RESULT",
+              "MAC_EXTERNAL_ATTESTATION",
+              "MAC_EXTERNAL_CONTEXT",
+              "MAC_EXTERNAL_DEADLINE",
+              "MAC_EXTERNAL_ENTRY",
+              "MAC_EXTERNAL_ENTRY_CYCLE",
+              "MAC_EXTERNAL_ENTRY_KIND",
+              "MAC_EXTERNAL_ENTRY_TARGET",
+              "MAC_EXTERNAL_METAL",
+              "MAC_EXTERNAL_MODE",
+              "MAC_EXTERNAL_OUTPUT",
+              "MAC_EXTERNAL_PINS",
+              "MAC_EXTERNAL_PLAN",
+              "MAC_EXTERNAL_PYTHON",
+              "MAC_EXTERNAL_REPORT",
+              "MAC_EXTERNAL_REPORT_CHANGED",
+              "MAC_EXTERNAL_REPORT_HASH",
+              "MAC_EXTERNAL_REPORT_PARENT",
+              "MAC_EXTERNAL_REQUIRED_PIN",
+              "MAC_EXTERNAL_RESULT",
+              "MAC_EXTERNAL_ROLE",
+              "MAC_EXTERNAL_SDK",
+              "MAC_EXTERNAL_SDK_RELATION",
+              "MAC_EXTERNAL_SDK_RELATION_CHANGED",
+              "MAC_EXTERNAL_SELECTED",
+              "MAC_EXTERNAL_TARGET",
+              "MAC_EXTERNAL_TOTALS",
+              "MAC_METAL_COMMAND_FAILED",
+              "MAC_METAL_COMPONENT_DRIFT",
+              "MAC_METAL_DEADLINE",
+              "MAC_METAL_DOWNLOAD_POLICY",
+              "MAC_METAL_FILE_BOUND",
+              "MAC_METAL_FILE_CHANGED",
+              "MAC_METAL_OBSERVATION",
+              "MAC_METAL_PROBE_FAILED",
+              "MAC_METAL_RESOLVED_PATH",
+              "MAC_METAL_SELECTED_ENV",
+              "MAC_METAL_UNAVAILABLE",
+              "MAC_METAL_VERSION_BOUND",
+              "MAC_METAL_VERSION_MISSING",
+              "MAC_META_ALIAS",
+              "MAC_META_CHANGED",
+              "MAC_META_CLOSE",
+              "MAC_META_FILE",
+              "MAC_META_HASH",
+              "MAC_META_IDENTITY",
+              "MAC_META_LINK",
+              "MAC_META_POST",
+              "MAC_META_POST_IDENTITY",
+              "MAC_META_READBACK",
+              "MAC_META_ROOT",
+              "MAC_META_SIZE",
+              "MAC_META_SOURCE",
+              "MAC_META_TRANSITION",
+              "MAC_SOURCE_DARWIN_CAPABILITY_UNREVIEWED",
+              "MAC_SOURCE_MODE",
+              "MAC_SOURCE_OUT",
+              "MAC_SOURCE_PATH",
+              "MAC_SOURCE_ROOT",
+              "MAC_SOURCE_TARGET",
+            ]);
+            const primaryReason = () => {
+              if (!failed) return null;
+              if (first === null) return "NULL_PRIMARY";
+              try {
+                return known.has(first?.message) ? first.message : "UNCLASSIFIED";
+              } catch {
+                return "UNCLASSIFIED";
+              }
+            };
+            const exactKeys = (value, keys) =>
+              value &&
+              typeof value === "object" &&
+              !Array.isArray(value) &&
+              Object.keys(value).sort().join() === [...keys].sort().join();
+            const left = (cleanup = false) => {
+              const remaining = Math.floor(
+                Math.min(
+                  (cleanup ? cleanupEndWall : workEndWall) - Date.now(),
+                  (cleanup ? cleanupEndMono : workEndMono) - performance.now(),
+                ),
+              );
+              require(Number.isSafeInteger(remaining), "MAC_ARM_EXTERNAL_DEADLINE");
+              return remaining;
+            };
+            const require = (condition, code) => {
+              if (!condition) throw new Error(code);
+            };
+            const remember = (error) => {
+              if (!failed) {
+                failed = true;
+                first = error;
+              }
+            };
+            const check = () =>
+              require(!hardExpired && left() > 0, "MAC_ARM_EXTERNAL_DEADLINE");
+            const terminal = (complete) => {
+              if (terminalEmitted) return;
+              terminalEmitted = true;
+              console.error(
+                JSON.stringify({
+                  kind: "mac-arm-external-terminal",
+                  phase,
+                  complete,
+                  firstWasNull: failed && first === null,
+                  primaryReason: primaryReason(),
+                  descendantCensusProved: false,
+                  actorsQuiet:
+                    pending === 0 &&
+                    actors === 0 &&
+                    !workerUnknown &&
+                    !handlesUnconfirmed(),
+                  pendingOperations: pending,
+                  workerCleanupUnknown: workerUnknown,
+                  handleCleanupUnknown: handlesUnconfirmed(),
+                  pendingAcquisitions,
+                  rejectedAcquisitions,
+                  ownedDescriptors: ownedDescriptors.size,
+                  openedDescriptors,
+                  closedDescriptors,
+                  lateDisposals,
+                  reportFailure,
+                  hardExpired,
+                  sourceWriteAdmitted: false,
+                  sourceRecordAdmitted: false,
+                  runtimeReady: false,
+                  nativeAcceptance: false,
+                }),
+              );
+            };
+            const hardTimer = setInterval(() => {
+              let remaining = 0;
+              try {
+                remaining = left(true);
+              } catch (error) {
+                remember(error);
+              }
+              if (remaining > 0) return;
+              hardExpired = true;
+              remember(new Error("MAC_ARM_EXTERNAL_HARD_DEADLINE"));
+              terminal(false);
+              process.exit(1);
+            }, 250);
+            const bounded = (operation, cleanup = false) => {
+              const remaining = left(cleanup);
+              require(!hardExpired && remaining > 0, "MAC_ARM_EXTERNAL_DEADLINE");
+              pending++;
+              const task = Promise.resolve().then(operation);
+              task.then(
+                () => pending--,
+                () => pending--,
+              );
+              return new Promise((resolve, reject) => {
+                const timer = setTimeout(
+                  () => reject(new Error("MAC_ARM_EXTERNAL_DEADLINE")),
+                  remaining,
+                );
+                task.then(
+                  (value) => {
+                    clearTimeout(timer);
+                    if (hardExpired || left(cleanup) <= 0)
+                      reject(new Error("MAC_ARM_EXTERNAL_DEADLINE"));
+                    else resolve(value);
+                  },
+                  (error) => {
+                    clearTimeout(timer);
+                    reject(error);
+                  },
+                );
+              });
+            };
+            // Exactly three fixed acquisition roles; handles are never guessed or reopened.
+            const closeOwned = async (fd) => {
+              const entry = ownedDescriptors.get(fd);
+              if (!entry) {
+                handleUnknown = true;
+                throw new Error("MAC_ARM_EXTERNAL_CLEANUP_UNCONFIRMED");
+              }
+              if (!entry.closeTask) {
+                try {
+                  entry.closeTask = bounded(async () => {
+                    if (hardExpired || left(true) <= 0)
+                      throw new Error("MAC_ARM_EXTERNAL_DEADLINE");
+                    await fd.close();
+                    if (hardExpired || left(true) <= 0)
+                      throw new Error("MAC_ARM_EXTERNAL_DEADLINE");
+                    ownedDescriptors.delete(fd);
+                    closedDescriptors++;
+                  }, true);
+                } catch (error) {
+                  handleUnknown = true;
+                  throw error;
+                }
+              }
+              try {
+                await entry.closeTask;
+              } catch (error) {
+                handleUnknown = true;
+                throw error;
+              }
+            };
+            const ownedOpen = async (role, operation) => {
+              require(["capability", "command-log", "external-report"].includes(
+                role,
+              ), "MAC_ARM_EXTERNAL_CLEANUP_UNCONFIRMED");
+              let abandoned = false,
+                returned,
+                scheduled = false;
+              pendingAcquisitions++;
+              try {
+                const request = bounded(async () => {
+                  let fd;
+                  try {
+                    check();
+                    fd = await operation();
+                  } catch (error) {
+                    pendingAcquisitions--;
+                    rejectedAcquisitions++;
+                    handleUnknown = true;
+                    throw error;
+                  }
+                  pendingAcquisitions--;
+                  returned = fd;
+                  openedDescriptors++;
+                  ownedDescriptors.set(fd, { role, closeTask: null });
+                  if (abandoned) {
+                    lateDisposals++;
+                    try {
+                      await closeOwned(fd);
+                    } catch {
+                      reportFailure = true;
+                      handleUnknown = true;
+                    }
+                  }
+                  return fd;
+                });
+                scheduled = true;
+                return await request;
+              } catch (primary) {
+                abandoned = true;
+                if (!scheduled) pendingAcquisitions--;
+                if (returned) {
+                  lateDisposals++;
+                  try {
+                    await closeOwned(returned);
+                  } catch {
+                    reportFailure = true;
+                    handleUnknown = true;
+                  }
+                }
+                throw primary;
+              }
+            };
+            const identity = (info) =>
+              ["dev", "ino", "mode", "uid", "nlink", "size", "mtimeNs", "ctimeNs"]
+                .map((k) => String(info[k]))
+                .join(":");
+            const outputCheck = async (cleanup = false) => {
+              require(output && outputIdentity, "MAC_ARM_EXTERNAL_OUTPUT");
+              const info = await bounded(() => lstat(output, { bigint: true }), cleanup);
+              require(info.isDirectory() &&
+                !info.isSymbolicLink() &&
+                ["dev", "ino", "mode", "uid"].every(
+                  (k) => String(info[k]) === outputIdentity[k],
+                ) &&
+                (await bounded(() => realpath(output), cleanup)) ===
+                  output, "MAC_ARM_EXTERNAL_OUTPUT");
+            };
+            const save = async (name, value, cleanup = false) => {
+              await outputCheck(cleanup);
+              const raw = Buffer.from(JSON.stringify(value) + "\n");
+              require(raw.length <=
+                (name === "binding.json"
+                  ? 128 * 1024 ** 2
+                  : 1024 ** 2), "MAC_ARM_EXTERNAL_REPORT");
+              await bounded(
+                () =>
+                  writeFile(path.join(output, name), raw, {
+                    flag: "wx",
+                    mode: 0o600,
+                  }),
+                cleanup,
+              );
+              await outputCheck(cleanup);
+            };
+            const capability = async (selected, summary) => {
+              require(exactKeys(summary, [
+                "complete",
+                "kind",
+                "rows",
+                "observation",
+                "sourceWriteAdmitted",
+                "nativeAcceptance",
+                "runtimeReady",
+              ]) &&
+                summary.complete === true &&
+                summary.kind === "sorng-macarm-owned-capability-observation" &&
+                summary.rows === 12 &&
+                summary.sourceWriteAdmitted === false &&
+                summary.nativeAcceptance === false &&
+                summary.runtimeReady === false, "MAC_ARM_EXTERNAL_CAPABILITY");
+              const pin = summary.observation;
+              require(exactKeys(pin, ["name", "bytes", "sha256"]) &&
+                pin.name === "capability.json" &&
+                Number.isSafeInteger(pin.bytes) &&
+                pin.bytes > 0 &&
+                pin.bytes <= 65536 &&
+                /^[a-f0-9]{64}$/.test(pin.sha256), "MAC_ARM_EXTERNAL_CAPABILITY");
+              const file = selected.context.outputRoot + "/capability.json";
+              const before = await bounded(() => lstat(file, { bigint: true }));
+              require(before.isFile() &&
+                !before.isSymbolicLink() &&
+                before.uid === BigInt(callerUid) &&
+                before.nlink === 1n &&
+                before.size === BigInt(pin.bytes), "MAC_ARM_EXTERNAL_CAPABILITY");
+              require(Number.isSafeInteger(fsConstants.O_NOFOLLOW) &&
+                fsConstants.O_NOFOLLOW > 0, "MAC_ARM_EXTERNAL_CAPABILITY");
+              const fd = await ownedOpen("capability", () =>
+                open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW),
+              );
+              let primary = false,
+                body;
+              try {
+                require(identity(await bounded(() => fd.stat({ bigint: true }))) ===
+                  identity(before), "MAC_ARM_EXTERNAL_CAPABILITY");
+                const buffer = Buffer.alloc(pin.bytes + 1);
+                let count = 0;
+                while (count < buffer.length) {
+                  check();
+                  const read = await bounded(() =>
+                    fd.read(buffer, count, buffer.length - count, null),
+                  );
+                  if (!read.bytesRead) break;
+                  count += read.bytesRead;
+                }
+                require(count === pin.bytes &&
+                  identity(await bounded(() => fd.stat({ bigint: true }))) ===
+                    identity(before) &&
+                  identity(await bounded(() => lstat(file, { bigint: true }))) ===
+                    identity(before), "MAC_ARM_EXTERNAL_CAPABILITY");
+                body = buffer.subarray(0, count);
+                require(digest(body) === pin.sha256 &&
+                  Buffer.from(body.toString("utf8")).equals(
+                    body,
+                  ), "MAC_ARM_EXTERNAL_CAPABILITY");
+              } catch (error) {
+                primary = true;
+                throw error;
+              } finally {
+                try {
+                  await closeOwned(fd);
+                } catch (error) {
+                  reportFailure = true;
+                  handleUnknown = true;
+                  if (!primary) throw error;
+                }
+              }
+              const value = JSON.parse(body.toString("utf8"));
+              require(exactKeys(value, [
+                "schemaVersion",
+                "kind",
+                "target",
+                "complete",
+                "rows",
+                "cleanupConfirmed",
+                "objectsRemoved",
+                "handlesClosed",
+                "sourceWriteAdmitted",
+                "error",
+                "installedInputsWritten",
+                "nativeAcceptance",
+                "runtimeReady",
+              ]) &&
+                value.schemaVersion === 1 &&
+                value.kind === summary.kind &&
+                value.target === "aarch64-apple-darwin" &&
+                value.complete === true &&
+                value.cleanupConfirmed === true &&
+                value.objectsRemoved === true &&
+                value.handlesClosed === true &&
+                value.error === null &&
+                value.installedInputsWritten === false &&
+                value.sourceWriteAdmitted === false &&
+                value.nativeAcceptance === false &&
+                value.runtimeReady === false &&
+                Array.isArray(value.rows) &&
+                value.rows.length === 12, "MAC_ARM_EXTERNAL_CAPABILITY");
+              const seen = new Set(),
+                fields = [
+                  "dev",
+                  "ino",
+                  "mode",
+                  "nlink",
+                  "size",
+                  "uid",
+                  "gid",
+                  "atime_ns",
+                  "mtime_ns",
+                  "ctime_ns",
+                ];
+              const statValid = (info) =>
+                info &&
+                Object.keys(info).sort().join() ===
+                  [...fields, "birthtimeNsAvailable", "birthtimeNs"].sort().join() &&
+                info.uid === String(callerUid) &&
+                fields.every(
+                  (key) =>
+                    typeof info[key] === "string" &&
+                    /^(0|[1-9][0-9]{0,19})$/.test(info[key]) &&
+                    BigInt(info[key]) < 2n ** 64n,
+                ) &&
+                (info.birthtimeNsAvailable === false
+                  ? info.birthtimeNs === null
+                  : info.birthtimeNsAvailable === true &&
+                    typeof info.birthtimeNs === "string" &&
+                    /^(0|[1-9][0-9]{0,18})$/.test(info.birthtimeNs) &&
+                    BigInt(info.birthtimeNs) < 2n ** 63n);
+              for (const row of value.rows) {
+                require(exactKeys(row, [
+                  "role",
+                  "case",
+                  "requestedMtimeNs",
+                  "before",
+                  "after",
+                  "heldBefore",
+                  "heldAfter",
+                  "exactMtimeReadback",
+                ]) &&
+                  row &&
+                  typeof row === "object" &&
+                  !Array.isArray(row) &&
+                  ["file", "directory", "root", "symlink"].includes(row.role) &&
+                  ["no-op", "past", "future"].includes(row.case) &&
+                  !seen.has(row.role + "/" + row.case) &&
+                  row.exactMtimeReadback === true &&
+                  statValid(row.before) &&
+                  statValid(row.after) &&
+                  typeof row.requestedMtimeNs === "string" &&
+                  /^(0|[1-9][0-9]{0,18})$/.test(row.requestedMtimeNs) &&
+                  BigInt(row.requestedMtimeNs) < 2n ** 63n &&
+                  row.after.mtime_ns ===
+                    row.requestedMtimeNs, "MAC_ARM_EXTERNAL_CAPABILITY");
+                const kind =
+                  row.role === "file"
+                    ? 0o100000n
+                    : row.role === "symlink"
+                      ? 0o120000n
+                      : 0o040000n;
+                require((BigInt(row.before.mode) & 0xf000n) === kind &&
+                  (BigInt(row.after.mode) & 0xf000n) ===
+                    kind, "MAC_ARM_EXTERNAL_CAPABILITY");
+                seen.add(row.role + "/" + row.case);
+                for (const key of ["dev", "ino", "mode", "nlink", "size", "uid", "gid"])
+                  require(row.before[key] ===
+                    row.after[key], "MAC_ARM_EXTERNAL_CAPABILITY");
+                if (row.role === "symlink")
+                  require(row.heldBefore === null &&
+                    row.heldAfter === null, "MAC_ARM_EXTERNAL_CAPABILITY");
+                else
+                  for (const [held, named] of [
+                    [row.heldBefore, row.before],
+                    [row.heldAfter, row.after],
+                  ])
+                    require(statValid(held) &&
+                      [...fields].every(
+                        (key) => held[key] === named[key],
+                      ), "MAC_ARM_EXTERNAL_CAPABILITY");
+              }
+              let absent = false;
+              try {
+                await bounded(() => lstat(output + "/capability-owned"));
+              } catch (error) {
+                if (error?.code === "ENOENT") absent = true;
+                else throw error;
+              }
+              require(absent, "MAC_ARM_EXTERNAL_CAPABILITY");
+              return {
+                summary,
+                reportPin: pin,
+                transitions: value.rows,
+                cleanupConfirmed: true,
+                birthAvailabilityObservedOnly: true,
+                sourceWriteAdmitted: false,
+              };
+            };
+            try {
+              sdkProbeAuthority(env);
+              require(env.MAC_ARM_EXTERNAL_ENABLED === "true" &&
+                env.METAL_TOOLS_ENABLED === "false", "MAC_ARM_EXTERNAL_MODE");
+              const uid = process.getuid?.();
+              require(Number.isSafeInteger(uid) &&
+                uid >= 0 &&
+                uid <= 0xffffffff, "MAC_ARM_EXTERNAL_AUTHORITY");
+              callerUid = uid;
+              const profile = checkpointProfile("aarch64-apple-darwin");
+              checkpointHost(profile.target, process.platform, process.arch);
+              require(profile.source ===
+                "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54", "MAC_ARM_EXTERNAL_SOURCE");
+              phase = "selected-tool-map";
+              const planned = await bounded(() =>
+                plan({
+                  inputs: profile.inputs,
+                  target: profile.target,
+                  checkout: process.cwd(),
+                  runnerMode: "hosted",
+                }),
+              );
+              require(releaseIdentity(planned.sourceLock, profile.target)
+                .sourceLockSha256 === profile.source, "MAC_ARM_EXTERNAL_SOURCE");
+              const build = planned.sourceLock.builds.find(
+                (row) => row.target === profile.target,
+              );
+              require(build?.toolchainLock &&
+                typeof build.toolchainLock.path === "string", "MAC_ARM_EXTERNAL_SOURCE");
+              const toolBytes = await bounded(() =>
+                readFile(path.join(planned.inputsRoot, build.toolchainLock.path)),
+              );
+              require(digest(toolBytes) ===
+                build.toolchainLock.sha256, "MAC_ARM_EXTERNAL_SOURCE");
+              const toolchain = JSON.parse(toolBytes);
+              require(Array.isArray(toolchain.files) &&
+                toolchain.files.length === 9, "MAC_ARM_EXTERNAL_SOURCE");
+              const mapPin = toolchain.files.find(
+                (row) => row.path === "cef-ci-runner-aarch64-apple-darwin.json",
+              );
+              require(mapPin &&
+                Number.isSafeInteger(mapPin.size) &&
+                mapPin.size > 0 &&
+                /^[a-f0-9]{64}$/.test(mapPin.sha256), "MAC_ARM_EXTERNAL_SOURCE");
+              const mapBytes = await bounded(() =>
+                readFile(path.join(planned.inputsRoot, mapPin.path)),
+              );
+              require(mapBytes.length === mapPin.size &&
+                digest(mapBytes) === mapPin.sha256, "MAC_ARM_EXTERNAL_SOURCE");
+              const map = validateRunnerMap(JSON.parse(mapBytes), profile.target);
+              assertHostedBuildIdentity(
+                map,
+                profile.target,
+                env,
+                process.platform,
+                process.arch,
+              );
+              const toolsRoot = await bounded(() => realpath(env.SORNG_CEF_TOOLS_ROOT));
+              require(toolsRoot === "/", "MAC_ARM_EXTERNAL_SOURCE");
+              const python = path.join(toolsRoot, map.python);
+              phase = "selected-tool-pins";
+              const verified = await bounded(() =>
+                verifyToolchainFiles({
+                  sourceLock: planned.sourceLock,
+                  target: profile.target,
+                  inputsRoot: planned.inputsRoot,
+                  toolsRoot,
+                  python,
+                  runnerMapFromInputs: true,
+                }),
+              );
+              require(verified.filesVerified === 9 &&
+                toolchain.files.length === 9, "MAC_ARM_EXTERNAL_SOURCE");
+              const child = buildEnvironment(
+                map,
+                { toolsRoot, source: env.RUNNER_TEMP, depot: env.RUNNER_TEMP, python },
+                env,
+              );
+              const selected = Object.fromEntries(
+                ["DEVELOPER_DIR", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET"].map((key) => [
+                  key,
+                  child[key],
+                ]),
+              );
+              const sdkTargets = await bounded(() =>
+                Promise.all(
+                  [
+                    selected.SDKROOT,
+                    path.join(selected.DEVELOPER_DIR, "Platforms/MacOSX.platform"),
+                    path.join(
+                      selected.DEVELOPER_DIR,
+                      "Toolchains/XcodeDefault.xctoolchain",
+                    ),
+                  ].map((file) => realpath(file)),
+                ),
+              );
+              phase = "sdk-relation";
+              const sdkRelation = await bounded(() =>
+                macSdkRelation({ selected, sdkTargets, check }),
+              );
+              const temp = await bounded(() => realpath(env.RUNNER_TEMP));
+              require(temp === "/Users/runner/work/_temp", "MAC_ARM_EXTERNAL_OUTPUT");
+              output = path.join(temp, "cef-mac-inputs-" + randomUUID());
+              await bounded(() => mkdir(output, { mode: 0o700 }));
+              const info = await bounded(() => lstat(output, { bigint: true }));
+              require(info.isDirectory() &&
+                !info.isSymbolicLink() &&
+                info.uid === BigInt(uid) &&
+                (info.mode & 0o777n) === 0o700n &&
+                (await bounded(() => realpath(output))) ===
+                  output, "MAC_ARM_EXTERNAL_OUTPUT");
+              outputIdentity = Object.fromEntries(
+                ["dev", "ino", "mode", "uid"].map((key) => [key, String(info[key])]),
+              );
+              require(typeof env.GITHUB_OUTPUT === "string" &&
+                env.GITHUB_OUTPUT.length > 0, "MAC_ARM_EXTERNAL_OUTPUT");
+              await bounded(() =>
+                appendFile(env.GITHUB_OUTPUT, "arm_output=" + output + "\n"),
+              );
+              await save("selection.json", {
+                target: profile.target,
+                sourceLockIdentity: profile.source,
+                head: env.GITHUB_SHA,
+                filesVerified: 9,
+                toolchainLockSha256: build.toolchainLock.sha256,
+                runnerMapSha256: mapPin.sha256,
+                selectionMode: "configured-pinned-sdk-roots",
+                queriedDefault: false,
+                queryReceipt: null,
+                sdkRelation,
+                staticPrerequisiteInstallAttempted: false,
+                missingMetalFixedDownloadPermitted: true,
+                sourceWriteAdmitted: false,
+                sourceRecordAdmitted: false,
+              });
+              phase = "metal-helper";
+              const commandLog = await ownedOpen("command-log", () =>
+                open(path.join(output, "metal-commands.jsonl"), "wx", 0o600),
+              );
+              let logPrimary = false,
+                metal;
+              try {
+                const execute = observeMetalExec(
+                  promisify(execFile),
+                  async (row, stdout, stderr) => {
+                    commands.push(row);
+                    const index = String(row.index).padStart(3, "0");
+                    await bounded(() =>
+                      writeFile(path.join(output, "metal-" + index + ".stdout"), stdout, {
+                        flag: "wx",
+                        mode: 0o600,
+                      }),
+                    );
+                    await bounded(() =>
+                      writeFile(path.join(output, "metal-" + index + ".stderr"), stderr, {
+                        flag: "wx",
+                        mode: 0o600,
+                      }),
+                    );
+                    await bounded(() => commandLog.writeFile(JSON.stringify(row) + "\n"));
+                  },
+                );
+                actors++;
+                try {
+                  metal = await bounded(() =>
+                    prepareMacMetalToolchain(
+                      {
+                        selected,
+                        env,
+                        platform: process.platform,
+                        allowDownload: true,
+                        remainingMilliseconds: () => {
+                          check();
+                          return left();
+                        },
+                      },
+                      { exec: execute },
+                    ),
+                  );
+                } finally {
+                  actors--;
+                }
+              } catch (error) {
+                logPrimary = true;
+                throw error;
+              } finally {
+                try {
+                  await closeOwned(commandLog);
+                } catch (error) {
+                  reportFailure = true;
+                  handleUnknown = true;
+                  if (!logPrimary) throw error;
+                }
+              }
+              await save("metal.json", {
+                observation: metal,
+                fingerprint: macMetalFingerprint(metal),
+                cacheHitProved: false,
+                waitCauseProved: false,
+              });
+              const observation = macExternalObservationPlan({
+                map,
+                toolchain,
+                selected,
+                sdkTargets,
+                sdkRelation,
+                metal,
+                runnerTemp: temp,
+                output,
+                remainingMilliseconds: () => {
+                  check();
+                  return left();
+                },
+              });
+              await save("context.json", observation.context);
+              const contextFile = output + "/context.json",
+                helper = path.resolve("scripts/lib/cef-checkpoint-archive.py");
+              const worker = async (mode) => {
+                check();
+                const argv = observation.argv(mode, contextFile),
+                  cap = mode === "mac-owned-capability-observe" ? 5000 : LIMITS.archiveMs;
+                const timeout = Math.floor(Math.min(cap, left()));
+                require(timeout > 0 &&
+                  Number.isSafeInteger(timeout), "MAC_ARM_EXTERNAL_DEADLINE");
+                let failureRecord;
+                actors++;
+                try {
+                  const summary = await bounded(
+                    () =>
+                      archiveCommand(observation.python, helper, argv.slice(3), {
+                        timeout,
+                        observeFailure: (record) => {
+                          failureRecord = record;
+                          if (record.archiveCleanupUnknown) workerUnknown = true;
+                        },
+                      }),
+                    true,
+                  );
+                  const capMode = mode === "mac-owned-capability-observe";
+                  const keys = capMode
+                    ? [
+                        "complete",
+                        "kind",
+                        "rows",
+                        "observation",
+                        "sourceWriteAdmitted",
+                        "nativeAcceptance",
+                        "runtimeReady",
+                      ]
+                    : [
+                        "complete",
+                        "kind",
+                        "entries",
+                        "bytes",
+                        "snapshot",
+                        "sourceWriteAdmitted",
+                        "nativeAcceptance",
+                        "runtimeReady",
+                      ];
+                  const pin = capMode ? summary?.observation : summary?.snapshot;
+                  require(exactKeys(summary, keys) &&
+                    summary.complete === true &&
+                    summary.kind ===
+                      (capMode
+                        ? "sorng-macarm-owned-capability-observation"
+                        : "sorng-macarm-external-input-observation") &&
+                    summary.sourceWriteAdmitted === false &&
+                    summary.nativeAcceptance === false &&
+                    summary.runtimeReady === false &&
+                    exactKeys(pin, ["name", "bytes", "sha256"]) &&
+                    pin.name === (capMode ? "capability.json" : "external.json") &&
+                    Number.isSafeInteger(pin.bytes) &&
+                    pin.bytes > 0 &&
+                    pin.bytes <= (capMode ? 65536 : 128 * 1024 ** 2) &&
+                    /^[a-f0-9]{64}$/.test(pin.sha256) &&
+                    (capMode
+                      ? summary.rows === 12
+                      : Number.isSafeInteger(summary.entries) &&
+                        summary.entries > 0 &&
+                        summary.entries <= 1000000 &&
+                        Number.isSafeInteger(summary.bytes) &&
+                        summary.bytes >= 0 &&
+                        summary.bytes <=
+                          256 * 1024 ** 3), "MAC_ARM_EXTERNAL_WORKER_RESULT");
+                  records.push({ mode, summary });
+                  return summary;
+                } catch (error) {
+                  records.push({ mode, failure: failureRecord ?? null });
+                  throw error;
+                } finally {
+                  actors--;
+                }
+              };
+              phase = "owned-capability";
+              const capSummary = await worker("mac-owned-capability-observe");
+              await save(
+                "capability-assessment.json",
+                await capability(observation, capSummary),
+              );
+              phase = "external-census";
+              const summary = await worker("mac-external-observe");
+              phase = "external-report";
+              // Only this fixed report gets a physically bounded FD reader. Shared core
+              // defaults for other callers are unchanged; no installed-input walker here.
+              const externalIO = {
+                lstat,
+                realpath,
+                open: async (file, flags) => {
+                  require(file === output + "/external.json" &&
+                    Number.isSafeInteger(summary.snapshot?.bytes) &&
+                    summary.snapshot.bytes > 0 &&
+                    summary.snapshot.bytes <= 128 * 1024 ** 2 &&
+                    Number.isSafeInteger(fsConstants.O_NOFOLLOW) &&
+                    fsConstants.O_NOFOLLOW > 0, "MAC_ARM_EXTERNAL_REPORT");
+                  const fd = await ownedOpen("external-report", () =>
+                    open(file, flags | fsConstants.O_NOFOLLOW),
+                  );
+                  return {
+                    stat: (...args) => fd.stat(...args),
+                    readFile: async () => {
+                      const buffer = Buffer.alloc(summary.snapshot.bytes + 1);
+                      let count = 0;
+                      while (count < buffer.length) {
+                        check();
+                        const read = await bounded(() =>
+                          fd.read(
+                            buffer,
+                            count,
+                            Math.min(1024 * 1024, buffer.length - count),
+                            null,
+                          ),
+                        );
+                        if (!read.bytesRead) break;
+                        count += read.bytesRead;
+                      }
+                      require(count ===
+                        summary.snapshot.bytes, "MAC_ARM_EXTERNAL_REPORT");
+                      return buffer.subarray(0, count);
+                    },
+                    close: async () => {
+                      try {
+                        await closeOwned(fd);
+                      } catch (error) {
+                        handleUnknown = true;
+                        throw error;
+                      }
+                    },
+                  };
+                },
+              };
+              const attestation = await bounded(() =>
+                readMacExternalObservation(observation, summary, check, externalIO),
+              );
+              const base = {
+                target: profile.target,
+                sourceLockIdentity: profile.source,
+                toolchainLockSha256: build.toolchainLock.sha256,
+                runnerMapSha256: mapPin.sha256,
+                filesVerified: 9,
+              };
+              await save("binding.json", macExternalToolsBinding(base, attestation));
+              await save("evidence.json", macExternalObservationEvidence(attestation));
+              phase = "complete";
+            } catch (error) {
+              remember(error);
+            } finally {
+              if (outputIdentity) {
+                try {
+                  await save(
+                    "outcome.json",
+                    {
+                      kind: "mac-arm-external-observation-outcome",
+                      complete: false,
+                      terminalCompletionRequired: true,
+                      phase,
+                      failed,
+                      firstWasNull: failed && first === null,
+                      reason: primaryReason(),
+                      workerRecords: records,
+                      commandRecords: commands,
+                      sourceWriteAdmitted: false,
+                      sourceRecordAdmitted: false,
+                      runtimeReady: false,
+                      nativeAcceptance: false,
+                    },
+                    true,
+                  );
+                } catch (error) {
+                  reportFailure = true;
+                  remember(error);
+                }
+              }
+              let cleanupRemaining = 0;
+              try {
+                cleanupRemaining = left(true);
+              } catch (error) {
+                remember(error);
+              }
+              if (
+                pending !== 0 ||
+                actors !== 0 ||
+                workerUnknown ||
+                handlesUnconfirmed() ||
+                cleanupRemaining <= 0 ||
+                hardExpired
+              )
+                remember(new Error("MAC_ARM_EXTERNAL_CLEANUP_UNCONFIRMED"));
+              terminal(!failed && !reportFailure);
+              if (
+                pending === 0 &&
+                actors === 0 &&
+                !workerUnknown &&
+                !handlesUnconfirmed() &&
+                cleanupRemaining > 0 &&
+                !hardExpired
+              )
+                clearInterval(hardTimer);
+            }
+            if (failed) throw first;
+          }
+          if (process.env.MAC_ARM_EXTERNAL_ENABLED === 'true') {
+            try { await runArmExternalDiagnostic(); } catch { console.error('MAC_ARM_EXTERNAL_DIAGNOSTIC_FAILED'); process.exitCode = 1; }
+          } else {
           try { await runMetalDiagnostic(); } catch { console.error('METAL_DIAGNOSTIC_FAILED'); process.exitCode = 1; }
+          }
           NODE
       - name: Retain bounded diagnostic output
-        if: always()
+        if: always() && inputs.mac_arm_external != true
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: cef-sdk-layout-probe-${{ github.run_id }}-${{ github.run_attempt }}
@@ -220,5 +1193,13 @@ jobs:
             ${{ runner.temp }}/cef-sdk-layout-probe.log
             ${{ runner.temp }}/cef-sdk-probe-prerequisites
             ${{ runner.temp }}/cef-metal-tools-probe
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Retain bounded ARM external observation
+        if: always() && inputs.mac_arm_external == true && steps.diagnostic.outputs.arm_output != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-mac-arm-external-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.diagnostic.outputs.arm_output }}
           retention-days: 14
           if-no-files-found: warn
