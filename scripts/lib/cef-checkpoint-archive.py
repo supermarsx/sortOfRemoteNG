@@ -211,6 +211,188 @@ def external_member_fields(error):
     except BaseException:
         return {}
 
+
+# Disclosure labels only: never input roots, filesystem authority or link policy.
+_EXTERNAL_LINK_PUBLIC_PREFIXES = {
+    'apple-system-library': '/System/Library/',
+    'apple-system-lib': '/usr/lib/',
+    'apple-system-share': '/usr/share/',
+    'selected-xcode-developer': '/Applications/Xcode_26.3.app/Contents/Developer/',
+    'pinned-python-cellar': '/usr/local/Cellar/python@3.14/3.14.7/',
+}
+_EXTERNAL_LINK_ROLES = ('sdk', 'toolchain', 'metal', 'python')
+
+
+def external_link_prefix(value):
+    prefix = ''
+    for char in value[:128]:
+        if len(json.dumps(prefix + char, ensure_ascii=True).encode()) > 512:
+            break
+        prefix += char
+    return prefix, len(prefix) < len(value)
+
+
+def external_link_text(value, roots, role, origin=False):
+    result = {'scope':'omitted', 'role':None, 'publicPrefix':None, 'prefix':None,
+              'utf8Bytes':None, 'sha256':None, 'truncated':False, 'omitted':True,
+              'omittedReason':'UNAVAILABLE'}
+    if type(value) is not str or not 0 < len(value) <= 4096:
+        return result
+    raw = value.encode()
+    if len(raw) > 4096:
+        return result
+    result.update(utf8Bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
+                  omittedReason='UNKNOWN_ABSOLUTE' if value.startswith('/') else 'UNSAFE_TARGET')
+    if (value.startswith(('\\','~')) or re.match(r'^[A-Za-z]:',value) or '\\' in value or
+            any(ord(c)<32 or ord(c)==127 for c in value)):
+        return result
+    suffix = value
+    if value.startswith('/'):
+        candidates = [(r,root) for r,root in roots.items() if value==root or value.startswith(root+'/')]
+        if candidates:
+            candidates.sort(key=lambda item:(-len(item[1]),item[0]!=role))
+            selected,root = candidates[0];suffix=value[len(root):].removeprefix('/')
+            result.update(scope='declared-role',role=selected)
+        else:
+            for label,root in _EXTERNAL_LINK_PUBLIC_PREFIXES.items():
+                if value.startswith(root):
+                    suffix=value[len(root):];result.update(scope='public-prefix',publicPrefix=label);break
+            else:
+                return result
+    else:
+        result.update(scope='declared-role' if origin else 'descendant-relative',role=role)
+    try:
+        if suffix:
+            (mac_external_sdk_relative if result['role']=='sdk' else relative)(suffix)
+    except BaseException:
+        result.update(scope='omitted',role=None,publicPrefix=None)
+        return result
+    prefix,truncated=external_link_prefix(suffix)
+    result.update(prefix=prefix,truncated=truncated,omitted=False,omittedReason=None)
+    return result
+
+
+def external_link_address(parts, roots, role):
+    # Capture an existing validator address only; never resolve/stat a new path.
+    if type(parts) not in (tuple,list) or len(parts)>1024:
+        return external_link_text(None,roots,role)
+    size=1
+    for part in parts:
+        if type(part) is not str or len(part)>4096:
+            return external_link_text(None,roots,role)
+        size += len(part.encode())+1
+        if size>4096:
+            return external_link_text(None,roots,role)
+    return external_link_text('/'+'/'.join(parts),roots,role)
+
+
+def external_link_diagnostic(roots, role, row, state):
+    # This function is invoked only AFTER the original validator exception exists.
+    developer='/Applications/Xcode_26.3.app/Contents/Developer'
+    require(type(roots) is dict and set(roots)==set(_EXTERNAL_LINK_ROLES) and
+            roots['sdk']==_MAC_EXTERNAL_SDK_ROOT and
+            roots['toolchain']==developer+'/Toolchains/XcodeDefault.xctoolchain' and
+            roots['python']=='/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework' and
+            (roots['metal']==roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain',roots['metal']) is not None),
+            'external-link-diagnostic-shape')
+    require(role in _EXTERNAL_LINK_ROLES and type(row) is dict and row.get('kind')=='symlink' and
+            type(state) is dict and state.get('site') in ('declared-role-entry','declared-root-boundary','absolute-root-underflow'),
+            'external-link-diagnostic-shape')
+    (mac_external_sdk_relative if role=='sdk' else relative)(row['path'])
+    origin=external_link_text(row['path'],roots,role,origin=True)
+    require(origin['scope']=='declared-role' and not origin['omitted'], 'external-link-diagnostic-shape')
+    target=external_link_text(row['target'],roots,role)
+    require(target['sha256']==row.get('sha256') and target['sha256'] is not None,'external-link-diagnostic-shape')
+    address=state.get('address');site=state['site'];ancestor=state.get('ancestors')
+    require(type(address) in (tuple,list) and type(ancestor) is bool,'external-link-diagnostic-shape')
+    prefix_only=any(len(address)<=len(parts) and parts[:len(address)]==tuple(address)
+                    for parts in (tuple(root.split('/')[1:]) for root in roots.values()))
+    classification=('declared-role-entry-missing' if site=='declared-role-entry' else
+                    'absolute-root-underflow' if site=='absolute-root-underflow' else
+                    'verified-root-ancestor-not-final' if prefix_only and not ancestor else 'outside-declared-roots')
+    value={'originRole':role,'originPath':origin,'site':site,'classification':classification,
+           'attemptedDeclaredRole':state.get('attemptedRole'),'ancestorNavigation':ancestor,
+           'expansions':state.get('expansions',0),'target':target,
+           'lastExpandedRole':state.get('lastRole',role),
+           'lastExpandedTarget':external_link_text(state.get('lastTarget',row['target']),roots,state.get('lastRole',role)),
+           'attemptedAddress':external_link_address(address,roots,state.get('attemptedRole') or role)}
+    require(external_link_projection_valid(value), 'external-link-diagnostic-shape')
+    return value
+
+
+def external_link_projection_valid(value):
+    if type(value) is not dict or set(value)!={'originRole','originPath','site','classification','attemptedDeclaredRole',
+            'ancestorNavigation','expansions','target','lastExpandedRole','lastExpandedTarget','attemptedAddress'}:
+        return False
+    if (value['originRole'] not in _EXTERNAL_LINK_ROLES or value['lastExpandedRole'] not in _EXTERNAL_LINK_ROLES or
+            value['attemptedDeclaredRole'] not in (None,*_EXTERNAL_LINK_ROLES) or
+            type(value['ancestorNavigation']) is not bool or type(value['expansions']) is not int or not 0<=value['expansions']<=64 or
+            (value['site'],value['classification']) not in (
+                ('declared-role-entry','declared-role-entry-missing'),
+                ('declared-root-boundary','outside-declared-roots'),
+                ('declared-root-boundary','verified-root-ancestor-not-final'),
+                ('absolute-root-underflow','absolute-root-underflow'))):
+        return False
+    if (value['site']=='declared-role-entry') != (value['attemptedDeclaredRole'] is not None):
+        return False
+    fields={'scope','role','publicPrefix','prefix','utf8Bytes','sha256','truncated','omitted','omittedReason'}
+    for key in ('originPath','target','lastExpandedTarget','attemptedAddress'):
+        item=value[key]
+        if type(item) is not dict or set(item)!=fields:
+            return False
+        if (item['scope'] not in ('omitted','declared-role','public-prefix','descendant-relative') or
+                item['role'] not in (None,*_EXTERNAL_LINK_ROLES) or
+                item['publicPrefix'] not in (None,*_EXTERNAL_LINK_PUBLIC_PREFIXES) or
+                type(item['truncated']) is not bool or type(item['omitted']) is not bool or
+                item['omittedReason'] not in (None,'UNAVAILABLE','UNKNOWN_ABSOLUTE','UNSAFE_TARGET')):
+            return False
+        if item['utf8Bytes'] is not None and (type(item['utf8Bytes']) is not int or not 0<item['utf8Bytes']<=4096):
+            return False
+        if item['sha256'] is not None and (type(item['sha256']) is not str or re.fullmatch('[a-f0-9]{64}',item['sha256']) is None):
+            return False
+        if (item['utf8Bytes'] is None)!=(item['sha256'] is None):
+            return False
+        if item['omittedReason']=='UNAVAILABLE' and item['sha256'] is not None:
+            return False
+        if item['omittedReason'] in ('UNKNOWN_ABSOLUTE','UNSAFE_TARGET') and item['sha256'] is None:
+            return False
+        if item['omitted']:
+            if item['scope']!='omitted' or item['prefix'] is not None or item['role'] is not None or item['publicPrefix'] is not None or item['truncated'] or item['omittedReason'] is None:
+                return False
+        else:
+            prefix=item['prefix']
+            if (type(prefix) is not str or len(prefix)>128 or len(json.dumps(prefix,ensure_ascii=True).encode())>512 or
+                    item['omittedReason'] is not None or item['sha256'] is None or
+                    prefix.startswith(('/','\\','~')) or re.match(r'^[A-Za-z]:',prefix) or '\\' in prefix or
+                    any(ord(c)<32 or ord(c)==127 for c in prefix) or
+                    any(part in ('.','..') for part in prefix.split('/'))):
+                return False
+            if item['role']!='sdk' and ':' in prefix:
+                return False
+            if (item['scope']=='declared-role' or item['scope']=='descendant-relative'):
+                if item['role'] is None or item['publicPrefix'] is not None:
+                    return False
+            elif item['scope']!='public-prefix' or item['publicPrefix'] is None or item['role'] is not None:
+                return False
+    return (value['originPath']['scope']=='declared-role' and not value['originPath']['omitted'] and
+            bool(value['originPath']['prefix']) and value['originPath']['utf8Bytes']<=1024 and
+            value['originPath']['role']==value['originRole'] and
+            len(json.dumps(value,ensure_ascii=True).encode())<=4096)
+
+
+def external_link_fields(error):
+    try:
+        if (type(error) is not CheckpointError or error.args!=('source-external-input-unattested',) or
+                globals().get('MAC_EXTERNAL_PHASE')!='links'):
+            return {}
+        value=getattr(error,'external_link_failure',None)
+        if not external_link_projection_valid(value):
+            return {}
+        return {'externalRole':value['originRole'],'externalLinkFailure':value}
+    except BaseException:
+        return {}
+
+
 def safe(path):
     absolute = Path(os.path.abspath(path))
     for p in [absolute, *absolute.parents]:
@@ -1092,6 +1274,15 @@ def mac_external_context(file, output, mode, budget):
 def mac_external_links(roots, snapshots, budget):
     by_role = {role:{row['path']:row for row in value['entries']} for role,value in snapshots.items()}
     root_parts = {role:tuple(p.split('/')[1:]) for role,p in roots.items()}
+    observation=None;capture_failed=False
+    def observe(**fields):
+        nonlocal observation,capture_failed
+        try:
+            if not capture_failed:
+                if observation is None:observation={}
+                observation.update(fields)
+        except BaseException:
+            capture_failed=True
     def parts(raw):
         require(isinstance(raw, str) and 0 < len(raw.encode()) <= 4096 and
                 not any(ord(c) < 32 for c in raw), 'source-link')
@@ -1109,10 +1300,12 @@ def mac_external_links(roots, snapshots, budget):
             if not name:
                 return r, {'kind':'directory'}
             row = by_role[r].get(name)
+            observe(site='declared-role-entry',attemptedRole=r,address=absolute,ancestors=ancestors)
             require(row is not None, 'source-external-input-unattested')
             return r, row
         # These exact canonical ancestors were no-link checked with every root.
         # No files outside the four inventoried domains become input authority.
+        observe(site='declared-root-boundary',attemptedRole=None,address=absolute,ancestors=ancestors)
         require(ancestors and any(p[:len(absolute)] == absolute for p in root_parts.values()),
                 'source-external-input-unattested')
         return role, {'kind':'directory'}
@@ -1124,6 +1317,7 @@ def mac_external_links(roots, snapshots, budget):
             if part == '.':
                 continue
             if part == '..':
+                observe(site='absolute-root-underflow',attemptedRole=None,address=resolved,ancestors=True)
                 require(resolved, 'source-external-input-unattested')
                 resolved.pop();role,row = locate(role,tuple(resolved),ancestors=True);kind = row['kind']
                 continue
@@ -1131,6 +1325,7 @@ def mac_external_links(roots, snapshots, budget):
             if row['kind'] == 'symlink':
                 links += 1;require(links <= 64, 'source-external-link-cycle')
                 raw = row['target']
+                observe(expansions=links,lastTarget=raw,lastRole=role)
                 if raw.startswith('/'):
                     resolved = []
                 pending = parts(raw) + pending;kind = 'directory'
@@ -1141,7 +1336,17 @@ def mac_external_links(roots, snapshots, budget):
         return kind
     for role,value in snapshots.items():
         for row in value['entries']:
-            if row['kind'] == 'symlink':resolve(role,row['path'])
+            if row['kind'] == 'symlink':
+                observation=None;capture_failed=False
+                try:
+                    resolve(role,row['path'])
+                except CheckpointError as error:
+                    try:
+                        if error.args==('source-external-input-unattested',) and not capture_failed:
+                            error.external_link_failure=external_link_diagnostic(roots,role,row,observation)
+                    except BaseException:
+                        pass  # The original failing require/exception always wins.
+                    raise
 
 
 def mac_external_observe(context, output, budget):
@@ -1336,5 +1541,5 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **external_member_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **external_member_fields(error), **external_link_fields(error)}))
         raise SystemExit(1)
