@@ -182,6 +182,8 @@ jobs:
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/fresh-graph-pins.json
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/sync.stdout.log
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/sync.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/hook-projection.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/hook-projection.stderr.log
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/dependency-hooks.stdout.log
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/dependency-hooks.stderr.log
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-x86.stdout.log
