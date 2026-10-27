@@ -61,9 +61,12 @@ export function primaryReason(error) {
       "SDK_WAIT_REPORT_BOUND",
       "METAL_SAMPLE_INTERFACE_UNAVAILABLE",
       "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
+      "XCRUN_VERBOSE_INTERFACE_UNAVAILABLE",
       "XCRUN_MANUAL_METADATA",
       "XCRUN_MANUAL_IDENTITY",
       "METAL_SAMPLE_JOIN_UNCONFIRMED",
+      "METAL_PID_JOIN_UNCONFIRMED",
+      "METAL_PID_INTERFACE_UNAVAILABLE",
     ]);
     return known.has(error?.message)
       ? error.message
@@ -316,6 +319,119 @@ export function fitSampleEvidence(queryRecord, observations) {
   );
   return record;
 }
+export function verboseProjection(raw) {
+  assert(Buffer.isBuffer(raw) && raw.length <= 65536, "METAL_VERBOSE_BOUND");
+  const result = {
+    rows: [],
+    lines: 0,
+    dropped: 0,
+    invalidUtf8: false,
+    semanticPhaseProved: false,
+  };
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  } catch {
+    result.invalidUtf8 = true;
+    return result;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    result.lines++;
+    const tokens = [
+      "SDKROOT",
+      "DEVELOPER_DIR",
+      "sdk",
+      "toolchain",
+      "cache",
+      "metal",
+    ].filter((token) => new RegExp("\\b" + token + "\\b", "i").test(line));
+    const paths = [];
+    if (line.includes(SDK)) paths.push("SELECTED_SDK");
+    if (line.includes(DEVELOPER)) paths.push("SELECTED_DEVELOPER");
+    if (
+      /\/Users\/runner\/Library\/Developer\/DVTDownloads\/MetalToolchain\/mounts\/[a-f0-9]{40}\/Metal\.xctoolchain\/usr\/bin\/metal(?:\s|$)/.test(
+        line,
+      )
+    )
+      paths.push("FIXED_METAL_COMPONENT_TOOL");
+    if (
+      line.includes(
+        DEVELOPER + "/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal",
+      )
+    )
+      paths.push("SELECTED_XCODE_METAL");
+    if ((!tokens.length && !paths.length) || result.rows.length >= 32) {
+      result.dropped++;
+      continue;
+    }
+    result.rows.push({
+      line: result.lines,
+      tokens,
+      paths,
+      sha256: hash(Buffer.from(line)),
+    });
+  }
+  return result;
+}
+
+export async function observePidInterface(
+  remaining,
+  { read = held, stat = fs.lstat } = {},
+) {
+  const result = {
+    supported: false,
+    observedOnly: true,
+    expectedPinsApproved: false,
+    tool: null,
+    reason: "PID_TOOL_UNAVAILABLE",
+  };
+  try {
+    const file = "/bin/ps";
+    remaining();
+    const before = await bounded(() => stat(file, { bigint: true }), remaining);
+    assert(
+      before.isFile() &&
+        before.uid === 0n &&
+        before.nlink === 1n &&
+        before.size > 0n &&
+        before.size <= 8n * 1024n ** 2n &&
+        (before.mode & 0o022n) === 0n,
+      "METAL_PID_INTERFACE_UNAVAILABLE",
+    );
+    const raw = await read(file, 8 * 1024 ** 2, remaining);
+    const after = await bounded(() => stat(file, { bigint: true }), remaining);
+    for (const key of [
+      "dev",
+      "ino",
+      "mode",
+      "size",
+      "uid",
+      "nlink",
+      "mtimeNs",
+      "ctimeNs",
+    ])
+      assert(before[key] === after[key], "METAL_PID_INTERFACE_UNAVAILABLE");
+    assert(
+      BigInt(raw.length) === before.size,
+      "METAL_PID_INTERFACE_UNAVAILABLE",
+    );
+    result.tool = {
+      path: file,
+      bytes: raw.length,
+      sha256: hash(raw),
+      uid: String(before.uid),
+      mode: String(before.mode),
+      nlink: String(before.nlink),
+    };
+    result.supported = true;
+    result.reason = null;
+  } catch (error) {
+    interfaceFailures.set(result, error);
+  }
+  return result;
+}
+
 export function parseOwnedPidTuple(raw, pid, parent) {
   assert(
     typeof raw === "string" &&
@@ -346,7 +462,7 @@ export function parseOwnedPidTuple(raw, pid, parent) {
 // Every started process is a direct child object; observed PIDs are never signalled.
 // Timeout, stop, readers and close all consume the SAME caller deadline.
 function observedCommand(file, args, env, left, ceiling, cap, live, deps) {
-  assert(file === "/bin/ps" || file === "/usr/bin/sample");
+  assert(file === "/bin/ps");
   const ms = Math.floor(Math.min(ceiling, left()));
   assert(
     ms > 0 && ms <= 3000 && Number.isSafeInteger(ms),
@@ -504,7 +620,7 @@ function compactCommand(value) {
     captureComplete: value.joined && !value.truncated && !value.stopped,
   };
 }
-async function sampleOwnedQuery(
+async function observeOwnedQuery(
   child,
   live,
   queryLeft,
@@ -518,109 +634,60 @@ async function sampleOwnedQuery(
     joined: true,
     attributed: false,
     rows: [],
-    dropped: 0,
   };
-  if (!live()) {
+  if (!live() || queryLeft() <= 0) {
     row.notRun = "QUERY_NOT_LIVE";
     return row;
   }
-  const initial = Math.floor(Math.min(3000, queryLeft()));
-  if (initial < 2000) {
-    row.notRun = "INSUFFICIENT_ORIGINAL_QUERY_BUDGET";
+  row.started = true;
+  const result = await observedCommand(
+    "/bin/ps",
+    ["-p", String(child.pid), ...PS_ARGS],
+    {
+      PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+      LC_ALL: "C",
+      LANG: "C",
+      TZ: "UTC",
+    },
+    queryLeft,
+    500,
+    4096,
+    live,
+    deps,
+  );
+  row.process = compactCommand(result);
+  row.joined = result.joined;
+  if (
+    !live() ||
+    !result.joined ||
+    result.failed ||
+    result.exitCode !== 0 ||
+    result.truncated ||
+    result.stderr.length
+  ) {
+    row.reason = "OWNED_PID_OR_OBSERVATION_UNAVAILABLE";
     return row;
   }
-  const startWall = deps.wall(),
-    startMono = deps.now();
-  const left = () =>
-    Math.floor(
-      Math.min(
-        initial - (deps.wall() - startWall),
-        initial - (deps.now() - startMono),
-        queryLeft(),
-      ),
-    );
-  const env = {
-    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
-    LC_ALL: "C",
-    LANG: "C",
-    TZ: "UTC",
-  };
-  const ps = async (role) => {
-    assert(live() && left() > 0, "METAL_PID_UNAVAILABLE");
-    const result = await observedCommand(
-      "/bin/ps",
-      ["-p", String(child.pid), ...PS_ARGS],
-      env,
-      left,
-      500,
-      4096,
-      live,
-      deps,
-    );
-    row[role + "Process"] = compactCommand(result);
-    row.joined &&= result.joined;
-    assert(
-      result.joined &&
-        !result.failed &&
-        result.exitCode === 0 &&
-        !result.truncated &&
-        result.stderr.length === 0,
-      "METAL_PID_UNAVAILABLE",
-    );
-    return parseOwnedPidTuple(
+  try {
+    const tuple = parseOwnedPidTuple(
       new TextDecoder("utf-8", { fatal: true }).decode(result.stdout),
       child.pid,
       process.pid,
     );
-  };
-  try {
-    const before = await ps("pre");
-    row.before = before;
-    if (JSON.stringify(before) !== JSON.stringify(creation)) {
-      row.identityMismatch = true;
-      row.reason = "TARGET_IDENTITY_CHANGED";
-      return row;
-    }
-    if (!live() || left() < 1500) {
-      row.notRun = "TARGET_OR_BUDGET_CHANGED";
-      return row;
-    }
-    row.started = true;
-    const result = await observedCommand(
-      "/usr/bin/sample",
-      [String(child.pid), "1", "10", "-mayDie", "-file", "/dev/stdout"],
-      env,
-      left,
-      left(),
-      SAMPLE_RAW_BYTES,
-      live,
-      deps,
-    );
-    row.sample = compactCommand(result);
-    row.joined &&= result.joined;
-    const after = await ps("post");
-    row.after = after;
-    row.identityMismatch = JSON.stringify(before) !== JSON.stringify(after);
-    row.attributed =
-      live() &&
-      !row.identityMismatch &&
-      result.joined &&
-      !result.failed &&
-      result.exitCode === 0 &&
-      !result.truncated;
-    if (row.attributed) Object.assign(row, sampleProjection(result.stdout));
-    else row.reason = "ATTRIBUTION_OR_SAMPLE_INCOMPLETE";
-    row.complete =
-      row.attributed &&
-      !row.invalidUtf8 &&
-      row.unclassified === 0 &&
-      row.dropped === 0;
+    row.identityMismatch = JSON.stringify(tuple) !== JSON.stringify(creation);
+    row.attributed = !row.identityMismatch && live();
+    if (row.attributed) row.tuple = tuple;
+    else row.reason = "TARGET_IDENTITY_CHANGED";
   } catch {
     row.reason = "OWNED_PID_OR_OBSERVATION_UNAVAILABLE";
   }
-  row.actualElapsedMs = Math.max(0, Math.floor(deps.now() - startMono));
+  assert(
+    Buffer.byteLength(JSON.stringify(row)) <= 4096,
+    "METAL_PID_RECORD_BOUND",
+  );
   return row;
 }
+
 export async function observeSamplerInterface(
   remaining,
   { read = held, stat = fs.lstat } = {},
@@ -883,7 +950,12 @@ export async function observeXcrunNoCacheInterface(
       const text = new TextDecoder("utf-8", { fatal: true })
         .decode(body)
         .replaceAll("\\-", "-");
-      result.supported = /(?:--no-cache\b|\.Fl[ \t]+-no-cache\b)/.test(text);
+      const noCacheOptionObserved =
+        /(?:--no-cache\b|\.Fl[ \t]+-no-cache\b)/.test(text);
+      const verboseOptionObserved = /(?:--verbose\b|\.Fl[ \t]+-verbose\b)/.test(
+        text,
+      );
+      result.supported = noCacheOptionObserved && verboseOptionObserved;
       result.manual = {
         path: file,
         bytes: raw.length,
@@ -891,7 +963,8 @@ export async function observeXcrunNoCacheInterface(
         decodedBytes: body.length,
         decodedSha256: hash(body),
         bodyBase64: body.toString("base64"),
-        noCacheOptionObserved: result.supported,
+        noCacheOptionObserved,
+        verboseOptionObserved,
       };
       result.reason = result.supported ? null : "MANUAL_UNSUPPORTED";
       break;
@@ -931,12 +1004,15 @@ export function query(
     schedule = setTimeout,
     cancel = clearTimeout,
     sampling = false,
-    offsets = [1000, 10000],
+    observeProcess = false,
+    offsets = [10000],
   } = {},
 ) {
   assert(variant === "A", "METAL_SINGLE_QUERY_ONLY");
   assert(
-    JSON.stringify(offsets) === JSON.stringify([1000, 10000]),
+    sampling === false &&
+      typeof observeProcess === "boolean" &&
+      JSON.stringify(offsets) === JSON.stringify([10000]),
     "METAL_FIXED_OFFSETS",
   );
   const timeout = Math.floor(Math.min(30000, remaining()));
@@ -958,6 +1034,14 @@ export function query(
       creationProcess = null,
       observationsQuiet = true,
       targetBound = true;
+    const streamTimes = {
+      stdout: { first: null, last: null, chunks: 0 },
+      stderr: { first: null, last: null, chunks: 0 },
+    };
+    const observedHashes = {
+      stdout: createHash("sha256"),
+      stderr: createHash("sha256"),
+    };
     const events = [],
       counts = { stdout: 0, stderr: 0 },
       buffers = { stdout: [], stderr: [] },
@@ -1010,6 +1094,22 @@ export function query(
           });
         }
     };
+    const streamRecord = (kind) => {
+      const raw = Buffer.concat(buffers[kind]);
+      return {
+        observed: counts[kind],
+        retained: raw.length,
+        sha256: hash(raw),
+        observedSha256: observedHashes[kind].digest("hex"),
+        base64: null,
+        persistedRawBytes: 0,
+        truncated: counts[kind] > raw.length,
+        firstDataElapsedMs: streamTimes[kind].first,
+        lastDataElapsedMs: streamTimes[kind].last,
+        chunks: streamTimes[kind].chunks,
+        projection: verboseProjection(raw),
+      };
+    };
     const finish = async () => {
       if (settling || !callback || !closed) return;
       settling = true;
@@ -1040,29 +1140,27 @@ export function query(
         pid: child?.pid ?? null,
         stdinEnded: child?.stdin?.writableEnded ?? null,
         events,
-        stdout: {
-          observed: counts.stdout,
-          retained: Math.min(counts.stdout, 65536),
-          sha256: hash(Buffer.concat(buffers.stdout)),
-          base64: Buffer.concat(buffers.stdout).toString("base64"),
-        },
-        stderr: {
-          observed: counts.stderr,
-          retained: Math.min(counts.stderr, 65536),
-          sha256: hash(Buffer.concat(buffers.stderr)),
-          base64: Buffer.concat(buffers.stderr).toString("base64"),
-        },
+        stdout: streamRecord("stdout"),
+        stderr: streamRecord("stderr"),
         queryCreation: creation,
         creationObservationJoined: creationJoined,
         creationProcess,
       };
-      const result = fitSampleEvidence(
-        record,
-        observed.filter((row) => row.offsetMs !== 0),
-      );
-      result.sampler.enabled = sampling;
-      result.sampler.joined =
-        creationJoined && observed.every((row) => row.joined === true);
+      const result = record;
+      result.sampler = {
+        enabled: false,
+        attempted: false,
+        joined: true,
+        observations: [],
+      };
+      result.processObserver = {
+        enabled: observeProcess,
+        attribution: "NON_ATOMIC_CREATION_BOUND_PID_TUPLE",
+        numericPidRaceResidual: true,
+        waitCauseProved: false,
+        joined: creationJoined && observed.every((row) => row.joined === true),
+        observations: observed,
+      };
       assert(
         Buffer.byteLength(JSON.stringify(result)) <= QUERY_BYTES,
         "METAL_QUERY_RECORD_BOUND",
@@ -1073,7 +1171,7 @@ export function query(
     try {
       child = execute(
         "/usr/bin/xcrun",
-        ["--no-cache", "--sdk", "macosx", "--find", "metal"],
+        ["--verbose", "--no-cache", "--find", "metal"],
         {
           env,
           timeout,
@@ -1099,7 +1197,7 @@ export function query(
     child.once("spawn", () => {
       spawnBegin = now();
       event("spawn");
-      if (!sampling || !live()) return;
+      if (!observeProcess || !live()) return;
       const created = (async () => {
         try {
           const result = await observedCommand(
@@ -1190,7 +1288,7 @@ export function query(
               0,
               Math.floor(now() - (spawnBegin ?? begin)),
             );
-            const row = await sampleOwnedQuery(
+            const row = await observeOwnedQuery(
               child,
               live,
               queryLeft,
@@ -1237,9 +1335,16 @@ export function query(
       stream?.on("end", () => event(kind + "-end"));
       if (kind !== "stdin")
         stream?.on("data", (value) => {
+          if (closed || settling) return;
           const b = Buffer.from(value),
             left = Math.max(0, 65536 - counts[kind]);
           counts[kind] += b.length;
+          observedHashes[kind].update(b);
+          const elapsed = Math.max(0, Math.floor(now() - begin));
+          if (streamTimes[kind].first === null)
+            streamTimes[kind].first = elapsed;
+          streamTimes[kind].last = elapsed;
+          streamTimes[kind].chunks++;
           if (left) buffers[kind].push(b.subarray(0, left));
         });
     }
@@ -1385,6 +1490,7 @@ async function worker(root, pin, variant) {
     c.root === root &&
       c.kind === "owned-metal-query-context" &&
       c.samplerDisabled === true &&
+      c.pidObservationEnabled === true &&
       c.cacheBypassInterface?.supported === true &&
       /^[a-f0-9]{64}$/.test(c.cacheBypassInterface.manualSha256),
     "SDK_WAIT_CONTEXT",
@@ -1403,7 +1509,10 @@ async function worker(root, pin, variant) {
   };
   assert(remaining() >= 31000, "SDK_WAIT_STAGE_ADMISSION");
   const env = queryEnvironment(c.selected, variant, root, process.env);
-  const result = await query(variant, env, remaining, { sampling: false });
+  const result = await query(variant, env, remaining, {
+    sampling: false,
+    observeProcess: true,
+  });
   // This closed summary precedes fallible persistence; never print sample text,
   // environment values or raw errors. The full bounded query remains in its file.
   console.log(
@@ -1424,6 +1533,7 @@ async function worker(root, pin, variant) {
       stderrObserved: result.stderr.observed,
       stderrSha256: result.stderr.sha256,
       sampleActorsJoined: result.sampler.joined,
+      processActorsJoined: result.processObserver?.joined,
     }),
   );
   try {
@@ -1432,9 +1542,9 @@ async function worker(root, pin, variant) {
     if (queryFailures.has(result)) throw queryFailures.get(result);
     throw error;
   }
-  if (result.sampler.joined !== true) {
+  if (result.processObserver?.joined !== true) {
     if (queryFailures.has(result)) throw queryFailures.get(result);
-    throw new Error("METAL_SAMPLE_JOIN_UNCONFIRMED");
+    throw new Error("METAL_PID_JOIN_UNCONFIRMED");
   }
   console.log(
     JSON.stringify({
@@ -1559,14 +1669,32 @@ export async function main(e = process.env) {
         () => fs.appendFile(e.GITHUB_OUTPUT, "diagnostic_root=" + root + "\n"),
         budget.remaining,
       );
-    phase = "xcrun-no-cache-interface";
+    phase = "xcrun-verbose-interface";
     const cacheBypassInterface = await observeXcrunNoCacheInterface(
       budget.remaining,
     );
     if (interfaceFailures.has(cacheBypassInterface))
       fail(interfaceFailures.get(cacheBypassInterface));
     else if (!cacheBypassInterface.supported)
-      fail(new Error("XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE"));
+      fail(
+        new Error(
+          cacheBypassInterface.manual?.noCacheOptionObserved === true
+            ? "XCRUN_VERBOSE_INTERFACE_UNAVAILABLE"
+            : "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
+        ),
+      );
+    let pidInterface = {
+      supported: false,
+      observedOnly: true,
+      notRun: "XCRUN_INTERFACE_UNAVAILABLE",
+    };
+    if (
+      cacheBypassInterface.supported &&
+      !interfaceFailures.has(cacheBypassInterface)
+    ) {
+      phase = "pid-interface";
+      pidInterface = await observePidInterface(budget.remaining);
+    }
     await save(
       root + "/selection.json",
       {
@@ -1575,6 +1703,7 @@ export async function main(e = process.env) {
         filesVerified: 9,
         selected,
         samplerAvailable: false,
+        pidInterface,
         cacheBypassRequested: true,
         cacheConsultationBypassed: "UNPROVED",
         parentCohortStageMs: 120000,
@@ -1591,8 +1720,13 @@ export async function main(e = process.env) {
       throw interfaceFailures.get(cacheBypassInterface);
     assert(
       cacheBypassInterface.supported,
-      "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
+      cacheBypassInterface.manual?.noCacheOptionObserved === true
+        ? "XCRUN_VERBOSE_INTERFACE_UNAVAILABLE"
+        : "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
     );
+    if (interfaceFailures.has(pidInterface))
+      throw interfaceFailures.get(pidInterface);
+    assert(pidInterface.supported, "METAL_PID_INTERFACE_UNAVAILABLE");
     const stageMs = Math.min(120000, budget.remaining()),
       stageWallEnd = Date.now() + stageMs,
       stageMonoEnd = String(
@@ -1607,6 +1741,7 @@ export async function main(e = process.env) {
       workerWallEnd: Date.now() + 35000,
       workerMonoEnd: String(process.hrtime.bigint() + 35000000000n),
       samplerDisabled: true,
+      pidObservationEnabled: true,
       cacheBypassInterface: {
         supported: true,
         manualSha256: cacheBypassInterface.manual.decodedSha256,

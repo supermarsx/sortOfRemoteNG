@@ -839,6 +839,8 @@ import {
   observeSamplerInterface,
   observeXcrunNoCacheInterface,
   manualMetadataObservation,
+  verboseProjection,
+  observePidInterface,
 } from "../../native/mac-sdk-wait-diagnostic.mjs";
 const waitRoot =
   "/Users/runner/work/_temp/cef-mac-sdk-wait-11111111-1111-4111-8111-111111111111";
@@ -983,13 +985,7 @@ test("SDK wait actual query records callback before close, consumes bounded pipe
     {
       execute: (file, args, options, cb) => {
         assert.equal(file, "/usr/bin/xcrun");
-        assert.deepEqual(args, [
-          "--no-cache",
-          "--sdk",
-          "macosx",
-          "--find",
-          "metal",
-        ]);
+        assert.deepEqual(args, ["--verbose", "--no-cache", "--find", "metal"]);
         assert.equal(options.timeout, 30000);
         assert.equal(options.maxBuffer, 65536);
         assert.equal(options.killSignal, "SIGKILL");
@@ -1019,7 +1015,8 @@ test("SDK wait actual query records callback before close, consumes bounded pipe
   assert.equal(row.failed, true);
   assert.equal(row.stdout.observed, 70000);
   assert.equal(row.stdout.retained, 65536);
-  assert.equal(Buffer.from(row.stdout.base64, "base64").length, 65536);
+  assert.equal(row.stdout.base64, null);
+  assert.equal(row.stdout.persistedRawBytes, 0);
   assert(row.events.some((v) => v.kind === "stdin-close") === false);
   assert.equal(row.stdinEnded, false);
   assert.equal(row.sampler.attempted, false);
@@ -1197,6 +1194,11 @@ function waitParentFixture() {
     hardWatchdog: waitHardWatchdog,
     primaryReason: waitPrimaryReason,
     interfaceFailures: new WeakMap(),
+    observePidInterface: async () => ({
+      supported: true,
+      observedOnly: true,
+      tool: { sha256: "c".repeat(64) },
+    }),
     observeXcrunNoCacheInterface: async () => ({
       supported: true,
       manual: { decodedSha256: "d".repeat(64) },
@@ -1678,7 +1680,7 @@ function metalVirtualFixture(options = {}) {
       assert.equal(settings.env.TZ, "UTC");
       psCount++;
       const current = psCount;
-      if (options.psHang) return c;
+      if (options.psHang || options.psHangAt === current) return c;
       queueMicrotask(() => {
         c.stdout.emit(
           "data",
@@ -1692,31 +1694,7 @@ function metalVirtualFixture(options = {}) {
         );
         close(c);
       });
-    } else {
-      assert.equal(file, "/usr/bin/sample");
-      assert.deepEqual(args, [
-        "42",
-        "1",
-        "10",
-        "-mayDie",
-        "-file",
-        "/dev/stdout",
-      ]);
-      if (options.sampleHang) return c;
-      schedule(() => {
-        if (options.sampleNull) c.emit("error", null);
-        c.stdout.emit(
-          "data",
-          Buffer.from(
-            options.rawSample ??
-              "  50 __psynch_cvwait (in libsystem_kernel.dylib) + 8 [0x123]\n",
-          ),
-        );
-        if (options.sampleOverflow)
-          c.stderr.emit("data", Buffer.alloc(200000, 120));
-        close(c);
-      }, 1000);
-    }
+    } else assert.fail("sampler or unknown command is unreachable");
     return c;
   };
   const promise = waitQuery(
@@ -1729,16 +1707,11 @@ function metalVirtualFixture(options = {}) {
       schedule,
       cancel,
       spawn,
-      sampling: true,
+      sampling: false,
+      observeProcess: true,
       execute: (file, args, settings, cb) => {
         assert.equal(file, "/usr/bin/xcrun");
-        assert.deepEqual(args, [
-          "--no-cache",
-          "--sdk",
-          "macosx",
-          "--find",
-          "metal",
-        ]);
+        assert.deepEqual(args, ["--verbose", "--no-cache", "--find", "metal"]);
         assert.equal(settings.timeout, 30000);
         callback = cb;
         target = waitChild();
@@ -1787,7 +1760,7 @@ function metalVirtualFixture(options = {}) {
   };
 }
 
-test("Metal actual query skips samples before1s and never schedules a second lookup or changes its30s timeout", async () => {
+test("Metal actual query exits early without sampling or a later PID recheck or second lookup", async () => {
   const f = metalVirtualFixture();
   await f.flush();
   await f.advance(500);
@@ -1796,59 +1769,51 @@ test("Metal actual query skips samples before1s and never schedules a second loo
   assert.equal(row.failed, false);
   assert.equal(row.timeoutMs, 30000);
   assert.equal(row.sampler.attempted, false);
-  assert.equal(
-    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
-    0,
-  );
+  assert.equal(row.processObserver.joined, true);
+  assert.equal(f.commands.length, 1);
   await f.advance(20000);
-  assert.equal(
-    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
-    0,
-  );
-  assert.equal(row.sampler.joined, true);
+  assert.equal(f.commands.length, 1);
+  assert(f.commands.every((c) => c.file === "/bin/ps"));
 });
 
-test("Metal actual query samples only at1s and10s, hashes closed bounded captures and joins all owned readers", async () => {
+test("Metal actual query performs only creation and10s exact PID tuples and joins all owned readers", async () => {
   const f = metalVirtualFixture();
   await f.flush();
   await f.advance(12000);
   f.finish();
   const row = await f.promise;
   assert.equal(row.failed, false);
-  assert.equal(row.timeoutMs, 30000);
-  assert.equal(row.sampler.joined, true);
-  const samples = f.commands.filter((c) => c.file === "/usr/bin/sample");
+  assert.equal(row.sampler.attempted, false);
+  assert.equal(row.sampler.observations.length, 0);
+  assert.equal(row.processObserver.joined, true);
   assert.deepEqual(
-    samples.map((c) => c.at),
-    [1000, 10000],
+    f.commands.map((c) => [c.file, c.at]),
+    [
+      ["/bin/ps", 0],
+      ["/bin/ps", 10000],
+    ],
   );
-  assert.equal(row.sampler.observations.length, 2);
-  for (const item of row.sampler.observations) {
-    assert.equal(item.attributed, true);
-    assert.equal(item.rows[0].symbol, "__psynch_cvwait");
-    assert.equal(item.sample.closed, true);
-    assert.equal(item.sample.readersJoined, true);
-    assert.equal(item.preProcess.joined, true);
-    assert.equal(item.postProcess.joined, true);
-    assert.match(item.sample.capturedSha256, /^[a-f0-9]{64}$/);
-    assert(item.actualElapsedMs <= 3000);
-    assert(Buffer.byteLength(JSON.stringify(item)) <= 4096);
-  }
+  assert.equal(row.queryCreation.pid, 42);
+  const observed = row.processObserver.observations[1];
+  assert.equal(observed.attributed, true);
+  assert.equal(observed.tuple.pid, 42);
+  assert.equal(observed.process.joined, true);
+  assert.match(observed.process.capturedSha256, /^[a-f0-9]{64}$/);
+  assert(Buffer.byteLength(JSON.stringify(observed)) <= 4096);
   assert(Buffer.byteLength(JSON.stringify(row)) <= 192 * 1024);
 });
 
-test("Metal PID tuple changes and ambiguous/foreign metadata cannot authorize a sampler", async () => {
+test("Metal PID tuple changes and ambiguous foreign metadata cannot authorize attribution", async () => {
   const f = metalVirtualFixture({ identityChange: 2 });
   await f.flush();
   await f.advance(12000);
   f.finish();
   const row = await f.promise;
-  assert.equal(
-    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
-    0,
-  );
-  assert.equal(row.sampler.observations[0].identityMismatch, true);
-  assert.equal(row.sampler.joined, true);
+  assert.equal(f.commands.length, 2);
+  assert(f.commands.every((c) => c.file === "/bin/ps"));
+  assert.equal(row.processObserver.observations[1].identityMismatch, true);
+  assert.equal(row.processObserver.observations[1].attributed, false);
+  assert.equal(row.processObserver.joined, true);
   for (const raw of [
     `42 2 ${process.pid} Tue Oct 27 02:00:00 2026\n`,
     `42 ${process.pid} 2 Tue Oct 27 02:00:00 2026\n`,
@@ -1857,11 +1822,10 @@ test("Metal PID tuple changes and ambiguous/foreign metadata cannot authorize a 
     assert.throws(() => parseOwnedPidTuple(raw, 42, process.pid));
 });
 
-test("Metal observation timeout/close failure stays within original3s and preserves null query error", async () => {
+test("Metal PID observation timeout and unconfirmed close preserve the original null query primary", async () => {
   for (const options of [
-    { sampleHang: true },
-    { sampleHang: true, unconfirmedClose: true },
     { psHang: true },
+    { psHang: true, unconfirmedClose: true },
   ]) {
     const f = metalVirtualFixture(options);
     await f.flush();
@@ -1872,40 +1836,39 @@ test("Metal observation timeout/close failure stays within original3s and preser
     assert.equal(row.failed, true);
     assert.equal(row.primaryWasNull, true);
     assert.equal(row.failure, "QUERY_FAILED");
-    for (const item of row.sampler.observations)
-      if (item.started) assert(item.actualElapsedMs <= 3000);
-    if (options.unconfirmedClose || options.psHang)
-      assert.equal(row.sampler.joined, false);
-    assert.equal(
-      f.commands.filter((c) => c.file === "/usr/bin/sample").length <= 1,
-      true,
-    );
+    assert(f.commands.length <= 1);
+    assert(f.commands.every((c) => c.file === "/bin/ps"));
+    if (options.unconfirmedClose)
+      assert.equal(row.processObserver.joined, false);
+    assert.equal(row.sampler.attempted, false);
   }
 });
 
-test("Metal raw sample overflow is incomplete and never retains raw headers, paths, argv or unclassified private strings", async () => {
+test("Metal actual verbose streams retain only counts hashes and closed lexical public-path facts", async () => {
   const privateText =
-    "Process: runner-private /Users/private/home\nBinary Images: /secret/image\nargv SECRET_VALUE\n  8 safe_wait (in libsystem_kernel.dylib) + 1 [0x123]\n  9 /secret/path (in libsystem_kernel.dylib)\n  2 unknown (in foreign_private_module)\n";
-  const projection = sampleProjection(Buffer.from(privateText));
-  assert.deepEqual(projection.rows, [
-    { count: 8, symbol: "safe_wait", module: "libsystem_kernel.dylib" },
-  ]);
+    "argv SECRET_VALUE /Users/private/home\nSDKROOT /private/secret metal cache\nunknown user data\n";
+  const projection = verboseProjection(Buffer.from(privateText));
   assert.equal(JSON.stringify(projection).includes("SECRET_VALUE"), false);
   assert.equal(JSON.stringify(projection).includes("private"), false);
-  assert.equal(sampleProjection(Buffer.from([0xff])).invalidUtf8, true);
-  const f = metalVirtualFixture({
-    sampleOverflow: true,
-    rawSample: privateText,
-  });
+  assert.equal(projection.semanticPhaseProved, false);
+  assert(projection.rows.some((row) => row.tokens.includes("SDKROOT")));
+  assert.equal(verboseProjection(Buffer.from([0xff])).invalidUtf8, true);
+  const f = metalVirtualFixture();
   await f.flush();
-  await f.advance(4000);
+  f.target.stderr.emit("data", Buffer.from(privateText));
   f.finish();
   const row = await f.promise;
-  const item = row.sampler.observations[0];
-  assert.equal(item.sample.truncated, true);
-  assert.equal(item.attributed, false);
-  assert(item.sample.capturedBytes <= 128 * 1024);
-  assert.equal(JSON.stringify(item).includes("SECRET_VALUE"), false);
+  assert.equal(row.stderr.base64, null);
+  assert.equal(row.stderr.persistedRawBytes, 0);
+  assert.equal(
+    row.stderr.sha256,
+    createHash("sha256").update(privateText).digest("hex"),
+  );
+  assert.equal(JSON.stringify(row).includes("SECRET_VALUE"), false);
+  assert.equal(JSON.stringify(row).includes("/private/secret"), false);
+  assert.equal(row.stderr.firstDataElapsedMs, 0);
+  assert.equal(row.stderr.lastDataElapsedMs, 0);
+  assert.equal(row.stderr.chunks, 1);
 });
 
 test("Metal maximum original query captures plus escaping-heavy sample projections fit all existing serialized caps", () => {
@@ -1997,24 +1960,25 @@ test("Metal installed manual/tool attestation is closed, bounded and unsupported
     false,
   );
 });
-test("Metal mid-sample target close aborts only its owned observer and suppresses later sampling and success", async () => {
-  const f = metalVirtualFixture();
+test("Metal mid-observation query close stops only owned ps and suppresses late attribution", async () => {
+  const f = metalVirtualFixture({ psHangAt: 2 });
   await f.flush();
-  await f.advance(1500);
+  await f.advance(10000);
   f.finish();
-  await f.advance(1600);
+  await f.advance(10500);
   const row = await f.promise;
   assert.equal(row.failed, false);
-  assert.equal(row.exitCode, 0);
-  assert.equal(row.sampler.observations[0].attributed, false);
-  assert.equal(row.sampler.observations[0].sample.stopped, true);
+  const observed = row.processObserver.observations[1];
+  assert.equal(observed.attributed, false);
+  assert.equal(observed.process.stopped, true);
   const frozen = JSON.stringify(row);
+  assert.doesNotThrow(() =>
+    f.target.stdout.emit("data", Buffer.from("late private bytes")),
+  );
   await f.advance(20000);
   assert.equal(JSON.stringify(row), frozen);
-  assert.equal(
-    f.commands.filter((c) => c.file === "/usr/bin/sample").length,
-    1,
-  );
+  assert.equal(f.commands.length, 2);
+  assert(f.commands.every((c) => c.file === "/bin/ps"));
 });
 
 test("Metal worker actual persistence body preserves original null/falsy query failures over reporting faults", async () => {
@@ -2031,6 +1995,7 @@ test("Metal worker actual persistence body preserves original null/falsy query f
       primaryWasNull: original === null,
       failure: "QUERY_FAILED",
       sampler: { joined: true },
+      processObserver: { joined: true },
       stdout: { observed: 0, sha256: "a".repeat(64) },
       stderr: { observed: 0, sha256: "b".repeat(64) },
       callbackSeen: true,
@@ -2047,6 +2012,7 @@ test("Metal worker actual persistence body preserves original null/falsy query f
         root: waitRoot,
         kind: "owned-metal-query-context",
         samplerDisabled: true,
+        pidObservationEnabled: true,
         cacheBypassInterface: { supported: true, manualSha256: "d".repeat(64) },
         selected: waitSelected,
         stageWallEnd: Date.now() + 120000,
@@ -2073,6 +2039,7 @@ test("Metal worker actual persistence body preserves original null/falsy query f
       query: async (_v, env, remaining, options) => {
         assert.equal(env.HOME, "original");
         assert.equal(options.sampling, false);
+        assert.equal(options.observeProcess, true);
         assert(remaining() >= 31000);
         return row;
       },
@@ -2142,35 +2109,31 @@ test("Metal manual absence and gzip inflation bounds remain an explicit unavaila
   await assert.rejects(f.build()(f.e), /XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE/);
   assert.equal(f.launches.length, 0);
 });
-test("Metal actual query maximum two stream captures and two projected samples preserve the original nullable outcome within all caps", async () => {
-  const rawSample = Array.from(
-    { length: 256 },
-    (_, i) =>
-      `  100 public_symbol_${i}_${"x".repeat(70)} (in libsystem_kernel.dylib) + 1 [0x123]\n`,
-  ).join("");
-  const f = metalVirtualFixture({ rawSample });
+test("Metal maximum verbose captures and two bounded PID records preserve nullable query outcome within original caps", async () => {
+  const f = metalVirtualFixture();
   await f.flush();
   f.target.stdout.emit("data", Buffer.alloc(65536, 120));
-  f.target.stderr.emit("data", Buffer.alloc(65536, 121));
+  f.target.stderr.emit("data", Buffer.alloc(65636, 121));
   f.target.emit("error", null);
   await f.advance(30000);
   f.finish(Object.assign(Error("later timeout"), { code: "ETIMEDOUT" }));
   const row = await f.promise;
   assert.equal(row.stdout.retained, 65536);
   assert.equal(row.stderr.retained, 65536);
+  assert.equal(row.stderr.observed, 65636);
+  assert.equal(row.stderr.truncated, true);
+  assert.notEqual(row.stderr.sha256, row.stderr.observedSha256);
   assert.equal(row.primaryWasNull, true);
   assert.equal(row.failed, true);
   assert.equal(row.timeoutMs, 30000);
-  assert.equal(row.sampler.observations.length, 2);
-  assert.equal(row.sampler.joined, true);
+  assert.equal(row.processObserver.observations.length, 2);
+  assert.equal(row.processObserver.joined, true);
   assert(Buffer.byteLength(JSON.stringify(row)) <= 192 * 1024);
   assert(Buffer.byteLength(JSON.stringify(row)) < 262144);
-  for (const item of row.sampler.observations) {
+  for (const item of row.processObserver.observations)
     assert(Buffer.byteLength(JSON.stringify(item)) <= 4096);
-    assert(item.dropped > 0);
-    assert.equal(item.projectionTruncated, true);
-    assert.equal(item.complete, false);
-  }
+  assert.equal(row.stdout.base64, null);
+  assert.equal(row.stderr.base64, null);
 });
 
 function rejectedMetalParent(primary) {
@@ -2329,7 +2292,7 @@ test("No-cache installed manual guard observes only fixed documented options and
   const { gzipSync } = await import("node:zlib");
   for (const gzip of [false, true]) {
     const body = Buffer.from(
-        ".TH xcrun 1\n.B \\-\\-no\\-cache\nDo not use cached values.\n",
+        ".TH xcrun 1\n.B \\-\\-no\\-cache\n.B \\-\\-verbose\nDo not use cached values.\n",
       ),
       raw = gzip ? gzipSync(body) : body,
       seen = [];
@@ -2394,7 +2357,7 @@ test("No-cache manual missing, unsupported, malformed, tampered and overbound de
           ? Buffer.from("-n unrelated")
           : mode === "inflate"
             ? gzipSync(Buffer.alloc(65537, 120))
-            : Buffer.from("--no-cache");
+            : Buffer.from("--no-cache --verbose");
     let stats = 0;
     const result = await observeXcrunNoCacheInterface(() => 1000, {
       stat: async (file) => {
@@ -2431,7 +2394,7 @@ test("No-cache manual missing, unsupported, malformed, tampered and overbound de
   }
 });
 
-test("No-cache actual worker passes one flag with unchanged environment and never invokes PID or sampler commands", async () => {
+test("Verbose actual worker uses the unchanged selected environment, exact current argv and no profiler", async () => {
   const source = await read("native/mac-sdk-wait-diagnostic.mjs"),
     body = source.slice(
       source.indexOf("async function worker("),
@@ -2442,6 +2405,7 @@ test("No-cache actual worker passes one flag with unchanged environment and neve
       root: waitRoot,
       kind: "owned-metal-query-context",
       samplerDisabled: true,
+      pidObservationEnabled: true,
       cacheBypassInterface: { supported: true, manualSha256: "d".repeat(64) },
       selected: waitSelected,
       stageWallEnd: Date.now() + 120000,
@@ -2470,18 +2434,41 @@ test("No-cache actual worker passes one flag with unchanged environment and neve
     save: async (_f, row) => saved.push(row),
     query: async (v, e, left, options) => {
       assert.equal(options.sampling, false);
+      assert.equal(options.observeProcess, true);
       assert.deepEqual(e, queryEnvironment(waitSelected, "A", waitRoot, env));
       return waitQuery(v, e, left, {
         ...options,
-        spawn: () => assert.fail("PID/sample spawn"),
-        schedule: () => assert.fail("sampler timer"),
+        spawn: (file, args) => {
+          assert.equal(file, "/bin/ps");
+          assert.deepEqual(args, [
+            "-p",
+            "42",
+            "-o",
+            "pid=,ppid=,pgid=,lstart=",
+          ]);
+          const c = waitChild();
+          queueMicrotask(() => {
+            c.stdout.emit(
+              "data",
+              Buffer.from(
+                `42 ${process.pid} ${process.pid} Tue Oct 27 02:00:00 2026\n`,
+              ),
+            );
+            c.stdout.emit("end");
+            c.stderr.emit("end");
+            c.stdout.emit("close");
+            c.stderr.emit("close");
+            c.emit("exit", 0);
+            c.emit("close", 0);
+          });
+          return c;
+        },
         execute: (file, args, opt, callback) => {
           executes++;
           assert.equal(file, "/usr/bin/xcrun");
           assert.deepEqual(args, [
+            "--verbose",
             "--no-cache",
-            "--sdk",
-            "macosx",
             "--find",
             "metal",
           ]);
@@ -2529,7 +2516,9 @@ test("Xcrun manual candidates have exact six-path order and choose CLT only afte
   const missing = Object.assign(new Error("fixture missing"), {
     code: "ENOENT",
   });
-  const body = Buffer.from("--no-cache\nDo not use cached values.\n");
+  const body = Buffer.from(
+    "--no-cache\n--verbose\nDo not use cached values.\n",
+  );
   const stamp = {
     isFile: () => true,
     size: BigInt(body.length),
@@ -2613,7 +2602,7 @@ test("Xcrun manual incompatible or unsafe first existing candidate cannot fall t
     );
     assert.deepEqual(f.launches, []);
     const out = JSON.parse(f.files.get(waitRoot + "/outcome.json"));
-    assert.equal(out.phase, "xcrun-no-cache-interface");
+    assert.equal(out.phase, "xcrun-verbose-interface");
     assert.equal(out.primaryReason, "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE");
     assert.equal(out.actorsQuiet, true);
   }
@@ -2812,7 +2801,9 @@ function manualOwnerFixture(index, uid, getuid = () => 501, mutate = (x) => x) {
     "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1",
     "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1.gz",
   ];
-  const body = Buffer.from("--no-cache\nDo not use cached values.\n"),
+  const body = Buffer.from(
+      "--no-cache\n--verbose\nDo not use cached values.\n",
+    ),
     stamp = mutate({
       isFile: () => true,
       size: BigInt(body.length),
@@ -2973,4 +2964,183 @@ test("Same-user Xcode documentation retains every nonownership guard and never e
   assert.equal(closed.predicates.ownerAllowed, false);
   assert.deepEqual(closed.allowedUids, ["0"]);
   assert(!JSON.stringify(closed).includes("private"));
+});
+
+test("Stall PID interface attests only held root-owned ps and blocks unavailable or replaced metadata before query", async () => {
+  const bytes = Buffer.from("owned OS ps fixture"),
+    stamp = {
+      isFile: () => true,
+      uid: 0n,
+      nlink: 1n,
+      mode: 0o104755n,
+      size: BigInt(bytes.length),
+      dev: 1n,
+      ino: 2n,
+      mtimeNs: 3n,
+      ctimeNs: 4n,
+    };
+  const paths = [];
+  const deps = {
+    stat: async (file) => {
+      paths.push(file);
+      return stamp;
+    },
+    read: async (file, cap, left) => {
+      assert.equal(file, "/bin/ps");
+      assert.equal(cap, 8 * 1024 ** 2);
+      assert.equal(left(), 321);
+      return bytes;
+    },
+  };
+  const result = await observePidInterface(() => 321, deps);
+  assert.equal(result.supported, true);
+  assert.equal(result.expectedPinsApproved, false);
+  assert.equal(
+    result.tool.sha256,
+    createHash("sha256").update(bytes).digest("hex"),
+  );
+  assert.deepEqual(paths, ["/bin/ps", "/bin/ps"]);
+  for (const change of [
+    { uid: 501n },
+    { nlink: 2n },
+    { mode: 0o100777n },
+    { size: 0n },
+    { size: 9n * 1024n ** 2n },
+    { isFile: () => false },
+  ]) {
+    let reads = 0;
+    const bad = await observePidInterface(() => 321, {
+      stat: async () => ({ ...stamp, ...change }),
+      read: async () => {
+        reads++;
+        return bytes;
+      },
+    });
+    assert.equal(bad.supported, false);
+    assert.equal(reads, 0);
+  }
+  let calls = 0;
+  const drift = await observePidInterface(() => 321, {
+    ...deps,
+    stat: async () => (++calls === 1 ? stamp : { ...stamp, ino: 3n }),
+  });
+  assert.equal(drift.supported, false);
+  const f = waitParentFixture(),
+    blocked = { supported: false };
+  f.scope.observePidInterface = async () => blocked;
+  f.scope.interfaceFailures.set(blocked, null);
+  let threw = false,
+    actual;
+  try {
+    await f.build()(f.e);
+  } catch (error) {
+    threw = true;
+    actual = error;
+  }
+  assert.equal(threw, true);
+  assert.equal(actual, null);
+  assert.equal(f.launches.length, 0);
+  const outcome = JSON.parse(f.files.get(waitRoot + "/outcome.json"));
+  assert.equal(outcome.primaryWasNull, true);
+  assert.equal(outcome.phase, "pid-interface");
+});
+
+test("Stall installed documentation requires verbose as well as no-cache before even PID inspection", async () => {
+  const body = Buffer.from("--no-cache only\n"),
+    stamp = {
+      isFile: () => true,
+      uid: 0n,
+      nlink: 1n,
+      mode: 0o100644n,
+      size: BigInt(body.length),
+      dev: 1n,
+      ino: 2n,
+      mtimeNs: 3n,
+      ctimeNs: 4n,
+    };
+  const result = await observeXcrunNoCacheInterface(() => 321, {
+    stat: async () => stamp,
+    read: async () => body,
+  });
+  assert.equal(result.supported, false);
+  assert.equal(result.manual.noCacheOptionObserved, true);
+  assert.equal(result.manual.verboseOptionObserved, false);
+  const f = waitParentFixture();
+  f.scope.observeXcrunNoCacheInterface = async () => result;
+  f.scope.observePidInterface = async () =>
+    assert.fail(
+      "PID tool cannot be inspected after unsupported lookup interface",
+    );
+  await assert.rejects(f.build()(f.e), /XCRUN_VERBOSE_INTERFACE_UNAVAILABLE/);
+  assert.equal(f.launches.length, 0);
+  assert.equal(
+    JSON.parse(f.files.get(waitRoot + "/outcome.json")).phase,
+    "xcrun-verbose-interface",
+  );
+});
+
+test("Stall query rejects every sampler or changed-offset admission before invoking any child", () => {
+  let launches = 0;
+  for (const options of [
+    { sampling: true },
+    { offsets: [1000, 10000] },
+    { offsets: [10000, 10000] },
+    { observeProcess: "true" },
+  ])
+    assert.throws(
+      () =>
+        waitQuery(
+          "A",
+          queryEnvironment(waitSelected, "A", waitRoot),
+          () => 600000,
+          {
+            ...options,
+            execute: () => {
+              launches++;
+              assert.fail("denied query must not launch");
+            },
+          },
+        ),
+      /METAL_FIXED_OFFSETS/,
+    );
+  assert.equal(launches, 0);
+});
+
+test("Stall verbose maximum privacy projection and actual stream arrival counters preserve original limits", async () => {
+  const line = "SDKROOT=/Users/private/SECRET_VALUE cache metal toolchain\n",
+    raw = Buffer.from(line.repeat(200));
+  const projection = verboseProjection(raw);
+  assert.equal(projection.rows.length, 32);
+  assert.equal(projection.dropped, 168);
+  assert.equal(projection.semanticPhaseProved, false);
+  assert.equal(JSON.stringify(projection).includes("SECRET_VALUE"), false);
+  assert.equal(JSON.stringify(projection).includes("/Users/"), false);
+  assert(projection.rows.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
+  const selected = verboseProjection(
+    Buffer.from("SDKROOT=" + waitSelected.SDKROOT + "\n"),
+  );
+  assert(selected.rows[0].paths.includes("SELECTED_SDK"));
+  assert.equal(JSON.stringify(selected).includes("/Applications/"), false);
+  assert.throws(
+    () => verboseProjection(Buffer.alloc(65537)),
+    /METAL_VERBOSE_BOUND/,
+  );
+  const f = metalVirtualFixture();
+  await f.flush();
+  f.target.stdout.emit("data", Buffer.from("SDKROOT\n"));
+  await f.advance(500);
+  f.target.stdout.emit("data", Buffer.from("cache\n"));
+  f.finish();
+  const row = await f.promise;
+  assert.equal(row.stdout.firstDataElapsedMs, 0);
+  assert.equal(row.stdout.lastDataElapsedMs, 500);
+  assert.equal(row.stdout.chunks, 2);
+  assert.equal(
+    row.stdout.sha256,
+    createHash("sha256").update("SDKROOT\ncache\n").digest("hex"),
+  );
+  assert.equal(row.stdout.base64, null);
+  assert.equal(row.stdinEnded, false);
+  assert.equal(row.processObserver.joined, true);
+  assert.equal(row.timeoutMs, 30000);
 });
