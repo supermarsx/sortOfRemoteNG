@@ -21,6 +21,13 @@ import {
   sourceBudget,
   sourceEnvironment,
   validateGeneratedArguments,
+  python3Adapter,
+  preparePython3Adapter,
+  hookProjectionArguments,
+  validateHookProjection,
+  boundGnArguments,
+  dependencyHookArguments,
+  retainHookOrigins,
 } from "../../native/windows-arm-full-sdk/source-driver.mjs";
 
 const root = path.resolve(
@@ -51,6 +58,495 @@ function syntheticSourcePins() {
   );
   return p;
 }
+
+async function benignPython(t) {
+  const candidates =
+    process.platform === "win32"
+      ? [
+          profile.python.path,
+          "C:/Users/Mariana/AppData/Local/Programs/Python/Python312/python.exe",
+        ]
+      : ["/usr/bin/python3"];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      /* Explicit test-only candidates. */
+    }
+  }
+  t.skip(
+    "Fixed benign fixture Python is unavailable; no interpreter discovery or installation",
+  );
+}
+
+test("exclusive actual Python3 adapter preserves Windows owned argv and rejects replacement", async (t) => {
+  if (process.platform !== "win32")
+    return t.skip("Actual Windows cmd adapter invocation");
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-python-adapter-"),
+  );
+  const budget = { remaining: () => 10000 };
+  try {
+    const adapter = await preparePython3Adapter(
+      path.join(directory, "commands"),
+      python,
+      budget,
+    );
+    assert.equal(adapter.pin.sha256, sha(python3Adapter(python)));
+    assert.deepEqual(await fs.readFile(adapter.file), python3Adapter(python));
+    // Match pinned subprocess2's real Windows list argv + shell=True boundary.
+    const invocation = [
+        "-I",
+        "-B",
+        "-c",
+        "import subprocess\nsubprocess.run(['python3','-c','import sys,json;print(json.dumps(sys.argv[1:]))','two words','a+b@c',''],shell=True,check=True)",
+      ],
+      env = {
+        SystemRoot: "C:/Windows",
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
+        PATH: path.dirname(adapter.file),
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        TEMP: directory,
+        TMP: directory,
+      };
+    const raw = execFileSync(python, invocation, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10000,
+      cwd: directory,
+      env,
+    });
+    assert.deepEqual(JSON.parse(raw), ["two words", "a+b@c", ""]);
+    assert.throws(
+      () =>
+        execFileSync(python, invocation, {
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 10000,
+          cwd: directory,
+          env: { ...env, ComSpec: "C:/Windows/System32/cmd.exe" },
+          stdio: "pipe",
+        }),
+      (error) =>
+        error.status !== 0 &&
+        error.stderr.includes("syntax of the command is incorrect"),
+    );
+    // Windows searches cwd before PATH. The actual production hook wrapper
+    // must use the absolute adapter, rather than merely prepend its directory.
+    await fs.writeFile(
+      path.join(directory, "python3.bat"),
+      "@echo CWD_SHADOW\r\n",
+    );
+    assert.match(
+      execFileSync(python, invocation, {
+        encoding: "utf8",
+        timeout: 10000,
+        cwd: directory,
+        env,
+      }),
+      /CWD_SHADOW/,
+    );
+    const depot = path.join(directory, "depot");
+    await fs.mkdir(depot);
+    await fs.writeFile(
+      path.join(depot, "gclient.py"),
+      `import subprocess
+class Hook:
+ def __init__(self): self._action=('python3','-c','import sys,json;print(json.dumps(sys.argv[1:]))','two words','a+b@c','')
+ def run(self): subprocess.run(self._action,shell=True,check=True)
+def main(args):
+ assert args==['runhooks','--jobs','2']
+ Hook().run()
+ return 0
+`,
+    );
+    const guarded = execFileSync(
+      python,
+      dependencyHookArguments(depot, adapter.file, adapter.pin),
+      { encoding: "utf8", timeout: 10000, cwd: directory, env },
+    );
+    assert.deepEqual(JSON.parse(guarded), ["two words", "a+b@c", ""]);
+    await assert.rejects(
+      preparePython3Adapter(path.join(directory, "commands"), python, budget),
+      /EEXIST/,
+    );
+    for (const value of [
+      "C:/bad%PATH%/python.exe",
+      "C:/bad&echo/python.exe",
+      "C:/owned/../python.exe",
+      "python.exe",
+    ])
+      assert.throws(() => python3Adapter(value), /FULL_PYTHON_ADAPTER_PATH/);
+    assert.deepEqual(await fs.readFile(adapter.file), python3Adapter(python));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual gclient hook wrapper binds absolute adapter and preserves original condition dispatch", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-hook-dispatch-"),
+  );
+  try {
+    const adapter = path.join(directory, "python3.bat"),
+      raw = Buffer.from("BENIGN ADAPTER DATA");
+    await fs.writeFile(adapter, raw);
+    const fixture = `import os
+class Hook:
+ def __init__(self): self._action=('python3','src/test.py','two words'); self.condition='checkout_win'
+ def run(self):
+  assert self.condition=='checkout_win'
+  assert self._action==(os.path.join(os.path.dirname(__file__),'python3.bat'),'src/test.py','two words')
+  print('FIXED_ADAPTER_DISPATCH')
+def main(args):
+ assert args==['runhooks','--jobs','2']
+ hook=Hook(); hook.run()
+ assert hook._action==('python3','src/test.py','two words')
+ return 0
+`;
+    await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    const args = dependencyHookArguments(directory, adapter, {
+      sha256: sha(raw),
+    });
+    const run = () =>
+      execFileSync(python, args, {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10000,
+        stdio: "pipe",
+      });
+    assert.match(run(), /FIXED_ADAPTER_DISPATCH/);
+    await fs.writeFile(adapter, "changed");
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_PYTHON_ADAPTER_PIN") &&
+        !error.stdout.includes("FIXED_ADAPTER_DISPATCH"),
+    );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual pinned-gclient API projection retains nested conditions and origins with bounded failure", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-hook-projection-"),
+  );
+  try {
+    const fixture = `import types
+class OptionParser:
+ def parse_args(self,args):
+  assert args==['--jobs','2']
+  return types.SimpleNamespace(),[]
+class Client:
+ def __init__(self,options): self.options=options
+ def RunOnDeps(self,command,args,progress):
+  assert command=='flatten' and args==[] and progress is False
+  assert self.options.nohooks and self.options.noprehooks and self.options.process_all_deps
+  return 0
+class GClient:
+ @staticmethod
+ def LoadCurrentConfig(options): return Client(options)
+class Flattener:
+ def __init__(self,client,pin_all_deps):
+  assert pin_all_deps
+  self._hooks=[(None,types.SimpleNamespace(name='nested',condition='checkout_win',pattern='.',effective_cwd='src/nested',action=['python3','src/nested/tool.py']))]
+  self._pre_deps_hooks=[(None,types.SimpleNamespace(name='pre',condition='False',pattern=None,effective_cwd='.',action=['vpython3','src/pre.py']))]
+  self.deps_files=[('https://example.invalid/repo@'+'a'*40,'DEPS',(('src','https://example.invalid/repo@'+'a'*40),))]
+`;
+    await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    const args = hookProjectionArguments(directory);
+    const raw = execFileSync(python, args, {
+      cwd: directory,
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    const projection = validateHookProjection(raw);
+    assert.deepEqual(
+      projection.hooks.map((row) => [row.name, row.condition, row.kind]),
+      [
+        ["nested", "checkout_win", "hooks"],
+        ["pre", "False", "pre_deps_hooks"],
+      ],
+    );
+    assert.equal(projection.origins[0].hierarchy[0][0], "src");
+    const packet = (value) =>
+      "FULL_HOOK_PROJECTION:" + JSON.stringify(value) + "\n";
+    for (const mutate of [
+      (value) => (value.hooks[0].cwd = "../foreign"),
+      (value) => (value.hooks[0].action = ["python3", "%PATH%"]),
+      (value) => (value.hooks[0].action = ["python3", "x&echo y"]),
+      (value) => (value.hooks[0].extra = true),
+      (value) => (value.origins[0].deps_file = ".git/config"),
+      (value) => (value.origins[0].hierarchy[0][0] = "/foreign"),
+      (value) => (value.origins[0].url = "https://example.invalid/repo@main"),
+      (value) => value.origins.push(value.origins[0]),
+      (value) => (value.hooks = Array(513).fill(value.hooks[0])),
+    ]) {
+      const changed = structuredClone(projection);
+      mutate(changed);
+      assert.throws(() => validateHookProjection(packet(changed)), /FULL_/);
+    }
+    assert.throws(
+      () => validateHookProjection(raw + raw),
+      /FULL_HOOK_PROJECTION_PACKET/,
+    );
+    assert.throws(
+      () => validateHookProjection(raw + "trailing"),
+      /FULL_HOOK_PROJECTION_PACKET/,
+    );
+    assert.throws(
+      () => validateHookProjection("x".repeat(4 * 1024 ** 2 + 1)),
+      /FULL_HOOK_PROJECTION_BOUND/,
+    );
+    await fs.writeFile(
+      path.join(directory, "gclient.py"),
+      fixture
+        .replace("self._hooks=[", "self._hooks=[")
+        .replace(
+          "self._pre_deps_hooks=[",
+          "self._hooks*=513\n  self._pre_deps_hooks=[",
+        ),
+    );
+    assert.throws(
+      () =>
+        execFileSync(python, args, {
+          cwd: directory,
+          encoding: "utf8",
+          timeout: 10000,
+          stdio: "pipe",
+        }),
+      (error) => error.status !== 0 && error.stderr.includes("FULL_HOOK_COUNT"),
+    );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual origin retention shares the existing cap and preserves deadline identity without an unbounded append", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-hook-retain-"),
+  );
+  try {
+    const file = path.join(directory, "hook-projection.stdout.log");
+    await fs.writeFile(file, "projection\n");
+    const original = await fs.readFile(file),
+      projection = { origins: [] },
+      limits = { bytes: original.length, cap: 4096 };
+    await retainHookOrigins(
+      file,
+      projection,
+      { remaining: () => 1000 },
+      limits,
+    );
+    assert.match(await fs.readFile(file, "utf8"), /FULL_HOOK_ORIGIN_PINS:/);
+    assert.equal(limits.bytes, (await fs.stat(file)).size);
+    const retained = await fs.readFile(file);
+    await assert.rejects(
+      retainHookOrigins(
+        file,
+        projection,
+        { remaining: () => 1000 },
+        { bytes: 0, cap: 1 },
+      ),
+      /FULL_HOOK_PROJECTION_BOUND/,
+    );
+    assert.deepEqual(await fs.readFile(file), retained);
+    const sentinel = new Error("owned deadline");
+    await assert.rejects(
+      retainHookOrigins(
+        file,
+        projection,
+        {
+          remaining: () => {
+            throw sentinel;
+          },
+        },
+        limits,
+      ),
+      (error) => error === sentinel,
+    );
+    assert.deepEqual(await fs.readFile(file), retained);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual GN wrapper uses real selector then denies alternate, alias and byte mismatch before a benign main", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-gn-selector-"),
+  );
+  try {
+    const expected = path.join(directory, "gn.exe"),
+      alternate = path.join(directory, "alternate.exe"),
+      body = Buffer.from("BENIGN DATA, NEVER EXECUTED"),
+      pin = { bytes: body.length, sha256: sha(body) };
+    await fs.writeFile(expected, body);
+    await fs.writeFile(alternate, body);
+    await fs.writeFile(
+      path.join(directory, "gclient_util.py"),
+      "import subprocess\ndef RunAction(directory,command):\n subprocess.run(command,cwd=directory,check=True)\n",
+    );
+    await fs.writeFile(
+      path.join(directory, "hook.py"),
+      "from gclient_util import RunAction\nRunAction('.', ['gn','gen','out/owned'])\n",
+    );
+    const hooks = [
+      "-B",
+      "-c",
+      "unused",
+      path.join(directory, "hook.py"),
+      path.join(directory, "gn.py"),
+    ];
+    const args = boundGnArguments(hooks, expected, pin);
+    const run = () =>
+      execFileSync(python, args, {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10000,
+        stdio: "pipe",
+      });
+    const module = (candidate) =>
+      `import sys\ndef FindGnTool(): return ${JSON.stringify(candidate)}\ndef main(args):\n selected=FindGnTool()\n assert args[1:]==['gen','out/owned']\n print('BENIGN_SELECTOR_OK')\n return 0\nif __name__=='__main__': sys.exit(main(sys.argv))\n`;
+    await fs.writeFile(path.join(directory, "gn.py"), module(expected));
+    assert.match(run(), /BENIGN_SELECTOR_OK/);
+    await fs.writeFile(path.join(directory, "gn.py"), module(alternate));
+    // The old selector contract reaches benign main with the alternate path.
+    assert.match(
+      execFileSync(
+        python,
+        ["-B", path.join(directory, "gn.py"), "gen", "out/owned"],
+        { cwd: directory, encoding: "utf8", timeout: 10000 },
+      ),
+      /BENIGN_SELECTOR_OK/,
+    );
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_GN_SELECTOR") &&
+        !error.stdout.includes("BENIGN_SELECTOR_OK"),
+    );
+    await fs.writeFile(path.join(directory, "gn.py"), module(expected));
+    await fs.writeFile(expected, Buffer.from("WRONG DATA, NEVER EXECUTED"));
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_GN_SELECTOR_") &&
+        !error.stdout.includes("BENIGN_SELECTOR_OK"),
+    );
+    await fs.writeFile(expected, body);
+    const hardlink = path.join(directory, "gn-hardlink.exe");
+    await fs.link(expected, hardlink);
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_GN_SELECTOR_FILE") &&
+        !error.stdout.includes("BENIGN_SELECTOR_OK"),
+    );
+    await fs.unlink(hardlink);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual GN runner denies shared nlink, birth and availability mismatches before reading and keeps the primary through close", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-gn-crossview-"),
+  );
+  try {
+    const expected = path.join(directory, "gn.exe"),
+      raw = Buffer.from("INERT DATA NEVER EXECUTED");
+    await fs.writeFile(expected, raw);
+    await fs.writeFile(
+      path.join(directory, "gclient_util.py"),
+      "import subprocess\ndef RunAction(directory,command): subprocess.run(command,cwd=directory,check=True)\n",
+    );
+    await fs.writeFile(
+      path.join(directory, "hook.py"),
+      "from gclient_util import RunAction\nRunAction('.', ['gn','gen','out/owned'])\n",
+    );
+    const args = boundGnArguments(
+      [
+        "-B",
+        "-c",
+        "unused",
+        path.join(directory, "hook.py"),
+        path.join(directory, "gn.py"),
+      ],
+      expected,
+      { bytes: raw.length, sha256: sha(raw) },
+    );
+    for (const fault of [
+      "nlink",
+      "birth",
+      "availability",
+      "missing-windows-birth",
+    ]) {
+      const fixture = `import os,types,builtins
+fault=${JSON.stringify(fault)}
+original_stat,original_fstat,original_open=os.stat,os.fstat,builtins.open
+def view(s,fd):
+ names=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_mode','st_nlink')
+ values={name:getattr(s,name) for name in names}
+ values['st_birthtime_ns']=getattr(s,'st_birthtime_ns',123456789)
+ if fd and fault=='nlink': values['st_nlink']+=1
+ if fd and fault=='birth': values['st_birthtime_ns']+=1
+ if fault=='missing-windows-birth' or (fd and fault=='availability'): del values['st_birthtime_ns']
+ return types.SimpleNamespace(**values)
+os.stat=lambda *args,**kwargs:view(original_stat(*args,**kwargs),False)
+os.fstat=lambda fd:view(original_fstat(fd),True)
+if fault=='missing-windows-birth': os.name='nt'
+class Held:
+ def __init__(self,file): self.file=file
+ def __getattr__(self,name): return getattr(self.file,name)
+ def read(self,*args): raise RuntimeError('READ_BEFORE_SHARED_IDENTITY')
+ def close(self):
+  self.file.close()
+  raise RuntimeError('SECONDARY_CLOSE_MUST_NOT_REPLACE_PRIMARY')
+builtins.open=lambda *args,**kwargs:Held(original_open(*args,**kwargs))
+def FindGnTool(): return ${JSON.stringify(expected)}
+def main(args):
+ FindGnTool()
+ print('BENIGN_MAIN_MUST_NOT_BE_REACHED')
+ return 0
+`;
+      await fs.writeFile(path.join(directory, "gn.py"), fixture);
+      assert.throws(
+        () =>
+          execFileSync(python, args, {
+            cwd: directory,
+            encoding: "utf8",
+            timeout: 10000,
+            stdio: "pipe",
+          }),
+        (error) =>
+          error.status !== 0 &&
+          error.stderr.includes(
+            fault === "missing-windows-birth"
+              ? "FULL_GN_SELECTOR_BIRTH"
+              : "FULL_GN_SELECTOR_CHANGED",
+          ) &&
+          !error.stderr.includes("READ_BEFORE_SHARED_IDENTITY") &&
+          !error.stderr.includes("SECONDARY_CLOSE_MUST_NOT_REPLACE_PRIMARY") &&
+          !error.stdout.includes("BENIGN_MAIN_MUST_NOT_BE_REACHED"),
+        fault,
+      );
+    }
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("source GN remains denied until reviewed host byte and execution closure while historical input stays distinct", async () => {
   assert.throws(() => reviewedHostTools(profile), /FULL_HOST_TOOL_PIN_MISSING/);
@@ -100,6 +596,7 @@ test("actual source driver command plan has only fixed sync, hooks, three setup 
     commands.map((row) => row.role),
     [
       "sync",
+      "hook-projection",
       "dependency-hooks",
       "setup-x86",
       "setup-x64",
@@ -113,6 +610,12 @@ test("actual source driver command plan has only fixed sync, hooks, three setup 
     commands.every((row) => Object.isFrozen(row) && Object.isFrozen(row.args)),
   );
   assert(commands.every((row) => row.executable === profile.python.path));
+  assert(commands[0].args.includes("--noprehooks"));
+  assert.deepEqual(commands[1].args, hookProjectionArguments(files.depot));
+  assert(
+    commands.findIndex((row) => row.role === "hook-projection") <
+      commands.findIndex((row) => row.role === "dependency-hooks"),
+  );
   assert.deepEqual(commands.at(-1).args, hooks);
   assert(
     !commands.some((row) =>
@@ -181,6 +684,8 @@ test("source child environment is constructed without inherited credentials, pro
   };
   const env = sourceEnvironment(operation, p, recipe);
   assert.equal(env.PYTHONDONTWRITEBYTECODE, "1");
+  assert.equal(env.ComSpec, "C:\\Windows\\System32\\cmd.exe");
+  assert.equal(env.PATH.split(";")[0], path.join(operation, "source-commands"));
   assert.equal(env.CEF_ENABLE_ARM64, "1");
   assert.equal(env.CEF_VCVARS, "none");
   for (const key of [

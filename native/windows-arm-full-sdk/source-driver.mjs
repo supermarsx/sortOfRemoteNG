@@ -15,6 +15,19 @@ import { spawn } from "node:child_process";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../..");
 const TARGET = "aarch64-pc-windows-msvc";
+// Exact c101dcbe source bodies independently witnessed during hook admission.
+const HOOK_PRIMARY = Object.freeze([
+  Object.freeze({
+    path: "gclient.py",
+    bytes: 197613,
+    sha256: "e4f65024411d1da4a7581b13c4ea2c249c247008d4a7d0dc343d06935e20eaef",
+  }),
+  Object.freeze({
+    path: "gn.py",
+    bytes: 3994,
+    sha256: "52f824935d4cbf07a675438e5ac3eabc7aee360d4d9756b2d17c13db28121677",
+  }),
+]);
 let sourceCloseFailure = false;
 let sourceReportingFailure = false;
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
@@ -191,8 +204,311 @@ export function sourcePaths(root, p) {
     cef: path.join(workspace, "src/cef"),
     depot: path.join(workspace, "depot_tools"),
     logs: path.join(root, "source-gn-logs"),
+    commands: path.join(root, "source-commands"),
     inputs: path.join(REPO, p.sourceGn.namespace),
   };
+}
+
+// Batch expansion is confined to the pinned hook arguments, never an ambient
+// interpreter. Reject cmd metacharacters in the fixed interpreter path itself.
+export function python3Adapter(python) {
+  need(
+    /^C:\/[A-Za-z0-9 ./_-]+\/python\.exe$/.test(python) &&
+      !python.split("/").some((part) => part === "." || part === ".."),
+    "FULL_PYTHON_ADAPTER_PATH",
+  );
+  return Buffer.from(
+    `@echo off\r\n"${python}" -B %*\r\nexit /b %errorlevel%\r\n`,
+    "ascii",
+  );
+}
+
+export async function preparePython3Adapter(directory, python, budget) {
+  const raw = python3Adapter(python);
+  budget.remaining();
+  await physical(path.dirname(directory));
+  await fs.mkdir(directory); // Exclusive owned directory: never replace a shim.
+  await physical(directory);
+  const file = path.join(directory, "python3.bat");
+  await fs.writeFile(file, raw, { flag: "wx" });
+  const pin = Object.freeze({ bytes: raw.length, sha256: sha(raw), nlink: 1 });
+  await held(file, 4096, budget, pin);
+  return Object.freeze({ file, pin });
+}
+
+export function hookProjectionArguments(depot) {
+  return [
+    "-B",
+    "-c",
+    `import sys,os,json
+sys.path.insert(0,sys.argv[1])
+import gclient
+options,args=gclient.OptionParser().parse_args(['--jobs','2'])
+options.nohooks=True
+options.noprehooks=True
+options.process_all_deps=True
+client=gclient.GClient.LoadCurrentConfig(options)
+if client is None: raise RuntimeError('FULL_HOOK_CONFIG')
+if client.RunOnDeps('flatten',args,progress=False)!=0: raise RuntimeError('FULL_HOOK_FLATTEN')
+flat=gclient.Flattener(client,pin_all_deps=True)
+hooks=[]
+for kind,rows in [('hooks',flat._hooks),('pre_deps_hooks',flat._pre_deps_hooks)]:
+ for dep,hook in rows:
+  if len(hooks)>=512: raise RuntimeError('FULL_HOOK_COUNT')
+  hooks.append(dict(kind=kind,name=hook.name,condition=hook.condition,pattern=hook.pattern,cwd=os.path.relpath(hook.effective_cwd).replace('\\\\','/'),action=hook.action))
+origins=[dict(url=url,deps_file=filename,hierarchy=hierarchy) for url,filename,hierarchy in sorted(flat.deps_files)]
+if len(origins)>1024: raise RuntimeError('FULL_HOOK_ORIGIN_COUNT')
+raw=json.dumps(dict(kind='windows-arm-hook-projection',hooks=hooks,origins=origins),ensure_ascii=True,separators=(',',':')).encode('ascii')
+if len(raw)>4*1024**2: raise RuntimeError('FULL_HOOK_PROJECTION_BOUND')
+print('FULL_HOOK_PROJECTION:'+raw.decode('ascii'))
+`,
+    depot,
+  ];
+}
+
+export function dependencyHookArguments(depot, adapter, pin) {
+  return [
+    "-B",
+    "-c",
+    `import sys,os,hashlib
+depot,adapter,digest=sys.argv[1:]
+sys.path.insert(0,depot)
+import gclient
+original=gclient.Hook.run
+def admitted(self):
+ action=self._action
+ if action and action[0] in ('python3','vpython3'):
+  for value in action:
+   if any(c in value for c in '\\x00\\r\\n%&|<>!^'): raise RuntimeError('FULL_HOOK_SHELL_ARGUMENT')
+  if os.path.islink(adapter) or os.path.realpath(adapter).lower()!=os.path.abspath(adapter).lower(): raise RuntimeError('FULL_PYTHON_ADAPTER_ALIAS')
+  source=open(adapter,'rb')
+  failed=False
+  try: raw=source.read(4097)
+  except BaseException:
+   failed=True
+   raise
+  finally:
+   try: source.close()
+   except BaseException:
+    if failed: print('FULL_PYTHON_ADAPTER_CLOSE_FAILURE',file=sys.stderr)
+    else: raise
+  if len(raw)>4096 or hashlib.sha256(raw).hexdigest()!=digest: raise RuntimeError('FULL_PYTHON_ADAPTER_PIN')
+  self._action=(adapter if action[0]=='python3' else os.path.join(depot,'vpython3.bat'),*action[1:])
+ try: return original(self)
+ finally: self._action=action
+gclient.Hook.run=admitted
+sys.exit(gclient.main(['runhooks','--jobs','2']))
+`,
+    depot,
+    adapter,
+    pin.sha256,
+  ];
+}
+
+export function validateHookProjection(text) {
+  need(Buffer.byteLength(text) <= 4 * 1024 ** 2, "FULL_HOOK_PROJECTION_BOUND");
+  const lines = text.trimEnd().split(/\r?\n/),
+    packets = lines.filter((line) => line.startsWith("FULL_HOOK_PROJECTION:"));
+  need(
+    packets.length === 1 && lines.at(-1) === packets[0],
+    "FULL_HOOK_PROJECTION_PACKET",
+  );
+  const result = JSON.parse(packets[0].slice("FULL_HOOK_PROJECTION:".length));
+  keys(result, ["kind", "hooks", "origins"]);
+  need(
+    result.kind === "windows-arm-hook-projection" &&
+      Array.isArray(result.hooks) &&
+      result.hooks.length <= 512 &&
+      Array.isArray(result.origins) &&
+      result.origins.length > 0 &&
+      result.origins.length <= 1024,
+    "FULL_HOOK_PROJECTION_FIELDS",
+  );
+  const relative = (value) =>
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 512 &&
+    /^[A-Za-z0-9_./+-]+$/.test(value) &&
+    !value.startsWith("/") &&
+    !value
+      .split("/")
+      .some(
+        (part) =>
+          !part ||
+          part === "." ||
+          part === ".." ||
+          part.toLowerCase() === ".git",
+      );
+  for (const hook of result.hooks) {
+    keys(hook, ["kind", "name", "condition", "pattern", "cwd", "action"]);
+    need(
+      ["hooks", "pre_deps_hooks"].includes(hook.kind) &&
+        [hook.name, hook.condition, hook.pattern].every(
+          (value) =>
+            value === null ||
+            (typeof value === "string" &&
+              value.length <= 4096 &&
+              !/[\0\r\n]/.test(value)),
+        ) &&
+        (hook.cwd === "." || relative(hook.cwd)) &&
+        Array.isArray(hook.action) &&
+        hook.action.length > 0 &&
+        hook.action.length <= 64 &&
+        hook.action.every(
+          (value) =>
+            typeof value === "string" &&
+            value.length <= 4096 &&
+            !/[\0\r\n%&|<>!^]/.test(value),
+        ),
+      "FULL_HOOK_PROJECTION_ACTION",
+    );
+  }
+  const seen = new Set();
+  for (const origin of result.origins) {
+    keys(origin, ["url", "deps_file", "hierarchy"]);
+    need(
+      typeof origin.url === "string" &&
+        /^https:\/\/[^\s@]+@[a-f0-9]{40}$/.test(origin.url) &&
+        relative(origin.deps_file) &&
+        Array.isArray(origin.hierarchy) &&
+        origin.hierarchy.length > 0 &&
+        origin.hierarchy.length <= 64 &&
+        origin.hierarchy.every(
+          (pair) =>
+            Array.isArray(pair) &&
+            pair.length === 2 &&
+            relative(pair[0]) &&
+            typeof pair[1] === "string" &&
+            pair[1].length <= 4096,
+        ),
+      "FULL_HOOK_PROJECTION_ORIGIN",
+    );
+    const filename = `${origin.hierarchy.at(-1)[0]}/${origin.deps_file}`;
+    need(!seen.has(filename.toLowerCase()), "FULL_HOOK_PROJECTION_DUPLICATE");
+    seen.add(filename.toLowerCase());
+  }
+  return result;
+}
+
+export async function retainHookOrigins(file, projection, budget, limits) {
+  const witness = Buffer.from(
+    "FULL_HOOK_ORIGIN_PINS:" + JSON.stringify(projection) + "\n",
+  );
+  need(
+    witness.length <= 4 * 1024 ** 2 &&
+      limits.bytes + witness.length <= limits.cap,
+    "FULL_HOOK_PROJECTION_BOUND",
+  );
+  await held(file, 4 * 1024 ** 2, budget);
+  const before = await fs.lstat(file, { bigint: true });
+  const fd = await fs.open(file, "a");
+  let failed = false;
+  try {
+    const descriptor = await fd.stat({ bigint: true });
+    need(shared(descriptor) === shared(before), "FULL_HOOK_LOG_IDENTITY");
+    budget.remaining();
+    need(
+      (await fd.write(witness)).bytesWritten === witness.length,
+      "FULL_HOOK_LOG_WRITE",
+    );
+    const after = await fd.stat({ bigint: true });
+    need(
+      after.dev === descriptor.dev &&
+        after.ino === descriptor.ino &&
+        after.nlink === 1n &&
+        after.size === before.size + BigInt(witness.length) &&
+        shared(after) === shared(await fs.lstat(file, { bigint: true })),
+      "FULL_HOOK_LOG_CHANGED",
+    );
+    budget.remaining();
+    limits.bytes += witness.length;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await fd.close();
+    } catch (error) {
+      sourceCloseFailure = true;
+      if (!failed) throw error;
+    }
+  }
+}
+
+// Run the real pinned selector. Its returned path and bytes must match the one
+// already admitted by the driver; its other candidates and PATH never execute.
+export function boundGnArguments(hooks, expected, pin) {
+  need(
+    Number.isSafeInteger(pin.bytes) &&
+      pin.bytes > 0 &&
+      pin.bytes <= 16 * 1024 ** 2 &&
+      /^[a-f0-9]{64}$/.test(pin.sha256),
+    "FULL_GN_PIN",
+  );
+  const runner = `import sys,os,hashlib,stat
+script,expected,size,digest=sys.argv[1:5]
+sys.path.insert(0,os.path.dirname(script))
+import gn
+select=gn.FindGnTool
+def admitted():
+ candidate=select()
+ if candidate is None or os.path.normcase(os.path.abspath(candidate))!=os.path.normcase(os.path.abspath(expected)): raise RuntimeError('FULL_GN_SELECTOR')
+ at=os.path.abspath(candidate)
+ while True:
+  if os.path.islink(at) or os.path.realpath(at).lower()!=at.lower(): raise RuntimeError('FULL_GN_SELECTOR_ALIAS')
+  parent=os.path.dirname(at)
+  if parent==at: break
+  at=parent
+ before=os.stat(candidate,follow_symlinks=False)
+ if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or before.st_size!=int(size): raise RuntimeError('FULL_GN_SELECTOR_FILE')
+ def shared(s):
+  birth=getattr(s,'st_birthtime_ns',None)
+  if os.name=='nt' and (type(birth) is not int or birth<0): raise RuntimeError('FULL_GN_SELECTOR_BIRTH')
+  return (s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,hasattr(s,'st_birthtime_ns'),birth,s.st_nlink)
+ signature=lambda s:(*shared(s),s.st_ctime_ns,s.st_mode)
+ source=open(candidate,'rb')
+ failed=False
+ try:
+  held=os.fstat(source.fileno())
+  if shared(held)!=shared(before): raise RuntimeError('FULL_GN_SELECTOR_CHANGED')
+  actual=hashlib.sha256(source.read(int(size)+1)).hexdigest()
+  after=os.fstat(source.fileno())
+  path_after=os.stat(candidate,follow_symlinks=False)
+  if actual!=digest or signature(held)!=signature(after) or signature(before)!=signature(path_after) or shared(after)!=shared(path_after): raise RuntimeError('FULL_GN_SELECTOR_PIN')
+ except BaseException:
+  failed=True
+  raise
+ finally:
+  try: source.close()
+  except BaseException:
+   if not failed: raise
+ return candidate
+gn.FindGnTool=admitted
+sys.exit(gn.main([script,*sys.argv[5:]]))
+`;
+  return [
+    "-B",
+    "-c",
+    `import os,runpy,sys
+hook,gn,expected,size,digest=sys.argv[1:]
+sys.path.insert(0,os.path.dirname(hook))
+import gclient_util
+original=gclient_util.RunAction
+def reviewed_action(directory,command):
+ if command and command[0]=='gn':
+  if len(command)<3 or command[1]!='gen': raise RuntimeError('FULL_GN_COMMAND')
+  command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]
+ return original(directory,command)
+gclient_util.RunAction=reviewed_action
+sys.argv=[hook]
+runpy.run_path(hook,run_name='__main__')
+`,
+    hooks[3],
+    hooks[4],
+    expected,
+    String(pin.bytes),
+    pin.sha256,
+  ];
 }
 
 // All top-level subprocesses are constructed here; callers cannot supply argv,
@@ -225,22 +541,27 @@ export function sourceCommands(root, p, hooks, contextPin) {
           "--jobs",
           "2",
           "--nohooks",
+          "--noprehooks",
           "--no-history",
           "--revision",
           `src@${p.sourceChromium}`,
         ],
       },
       {
+        role: "hook-projection",
+        executable: python,
+        cwd: files.workspace,
+        args: hookProjectionArguments(files.depot),
+      },
+      {
         role: "dependency-hooks",
         executable: python,
         cwd: files.workspace,
-        args: [
-          "-B",
-          path.join(files.depot, "gclient.py"),
-          "runhooks",
-          "--jobs",
-          "2",
-        ],
+        args: dependencyHookArguments(
+          files.depot,
+          path.join(files.commands, "python3.bat"),
+          { sha256: sha(python3Adapter(python)) },
+        ),
       },
       ...["x86", "x64", "arm64"].map((cpu) => ({
         role: `setup-${cpu}`,
@@ -302,8 +623,9 @@ export function sourceEnvironment(root, p, recipe) {
   return {
     SystemRoot: "C:/Windows",
     WINDIR: "C:/Windows",
-    ComSpec: "C:/Windows/System32/cmd.exe",
+    ComSpec: "C:\\Windows\\System32\\cmd.exe",
     PATH: [
+      files.commands,
       files.depot,
       path.dirname(p.python.path),
       path.dirname(tools.git.path),
@@ -656,6 +978,18 @@ export async function main(argv = process.argv.slice(2)) {
   const gitPolicy = await custom.prepareSourceGitIsolation(
     path.join(root, "cef-source-git-policy"),
   );
+  const adapter = await preparePython3Adapter(
+    files.commands,
+    p.python.path,
+    budget,
+  );
+  const gnPath = path.join(files.chromium, "buildtools/win/gn.exe"),
+    gnPin = p.cipd[0].members.find((row) => row.name === "gn.exe"),
+    hookArguments = boundGnArguments(
+      runtime.cefHookArguments(files.cef, files.depot),
+      gnPath,
+      gnPin,
+    );
   const env = await custom.sourceGitEnvironment(
       gitPolicy,
       sourceEnvironment(root, p, recipe),
@@ -666,6 +1000,15 @@ export async function main(argv = process.argv.slice(2)) {
       runtime.cefHookArguments(files.cef, files.depot),
       argv[2],
     );
+  // The initial plan validates the maintained CEF wrapper; the only replacement
+  // is this local closed GN selector wrapper, never caller-supplied command text.
+  const executionCommands = Object.freeze(
+    commands.map((command) =>
+      command.role === "cef-gn"
+        ? Object.freeze({ ...command, args: Object.freeze(hookArguments) })
+        : command,
+    ),
+  );
   for (const key of Object.keys(process.env)) delete process.env[key];
   Object.assign(process.env, env);
   await fs.mkdir(files.logs);
@@ -676,7 +1019,8 @@ export async function main(argv = process.argv.slice(2)) {
         kind: "windows-arm-source-command-plan",
         sourceId: p.sourceGn.sourceId,
         helperSourceCommit: p.sourceGn.helpersSourceCommit,
-        commands,
+        commands: executionCommands,
+        python3Adapter: adapter.pin,
         acquisition: patched.acquisitionSourcePlan(files.workspace, TARGET),
         compilerAllowed: false,
       },
@@ -693,6 +1037,14 @@ export async function main(argv = process.argv.slice(2)) {
     graph = null,
     generatedArguments = null;
   const checked = async (action) => {
+    await held(adapter.file, 4096, budget, adapter.pin);
+    for (const primary of HOOK_PRIMARY)
+      await held(
+        path.join(files.depot, primary.path),
+        primary.bytes,
+        budget,
+        primary,
+      );
     await custom.sourceGitEnvironment(gitPolicy, env);
     let rejected = false;
     try {
@@ -702,6 +1054,14 @@ export async function main(argv = process.argv.slice(2)) {
       throw error;
     } finally {
       try {
+        await held(adapter.file, 4096, budget, adapter.pin);
+        for (const primary of HOOK_PRIMARY)
+          await held(
+            path.join(files.depot, primary.path),
+            primary.bytes,
+            budget,
+            primary,
+          );
         await custom.sourceGitEnvironment(gitPolicy, env);
       } catch (error) {
         if (!rejected) throw error;
@@ -737,11 +1097,47 @@ export async function main(argv = process.argv.slice(2)) {
       );
     });
     await sourceStage(root, budget, "source-hooks-gn", 1800, async () => {
-      stage = commands[1].role;
+      stage = executionCommands[1].role;
+      const projection = validateHookProjection(
+        await checked(() =>
+          executeCommand(
+            executionCommands[1],
+            executionCommands,
+            env,
+            files,
+            budget,
+            limits,
+            true,
+          ),
+        ),
+      );
+      let originBytes = 0;
+      // Direct files reported by the pinned Flattener, not a new tree walker.
+      for (const origin of projection.origins) {
+        const relative = `${origin.hierarchy.at(-1)[0]}/${origin.deps_file}`;
+        const raw = await held(
+          path.join(files.workspace, relative),
+          Math.min(4 * 1024 ** 2, 16 * 1024 ** 2 - originBytes),
+          budget,
+        );
+        originBytes += raw.length;
+        need(originBytes <= 16 * 1024 ** 2, "FULL_HOOK_ORIGIN_BYTES");
+        origin.bytes = raw.length;
+        origin.sha256 = sha(raw);
+      }
+      // Retain the exact conditions/argv/origins plus their held byte witnesses
+      // in the same bounded projection stdout artifact before any runhooks.
+      await retainHookOrigins(
+        path.join(files.logs, "hook-projection.stdout.log"),
+        projection,
+        budget,
+        limits,
+      );
+      stage = executionCommands[2].role;
       await checked(() =>
         executeCommand(
-          commands[1],
-          commands,
+          executionCommands[2],
+          executionCommands,
           env,
           files,
           budget,
@@ -763,17 +1159,25 @@ export async function main(argv = process.argv.slice(2)) {
         gitExecutable: tools.git.path,
         gitIsolation: gitPolicy,
       });
-      for (const command of commands.slice(2, 5)) {
+      for (const command of executionCommands.slice(3, 6)) {
         stage = command.role;
         await checked(() =>
-          executeCommand(command, commands, env, files, budget, limits, true),
+          executeCommand(
+            command,
+            executionCommands,
+            env,
+            files,
+            budget,
+            limits,
+            true,
+          ),
         );
       }
       stage = "verify-setup";
       await checked(() =>
         executeCommand(
-          commands[5],
-          commands,
+          executionCommands[6],
+          executionCommands,
           env,
           files,
           budget,
@@ -789,17 +1193,12 @@ export async function main(argv = process.argv.slice(2)) {
           lock.upstream.cef.version,
         ),
       );
-      await held(
-        path.join(files.chromium, "buildtools/win/gn.exe"),
-        16 * 1024 ** 2,
-        budget,
-        p.cipd[0].members.find((row) => row.name === "gn.exe"),
-      );
+      await held(gnPath, 16 * 1024 ** 2, budget, gnPin);
       stage = "cef-gn";
       await checked(() =>
         executeCommand(
-          commands[6],
-          commands,
+          executionCommands[7],
+          executionCommands,
           env,
           files,
           budget,
