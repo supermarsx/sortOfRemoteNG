@@ -12206,3 +12206,376 @@ test(
     }
   },
 );
+
+async function intelExternalFixture() {
+  const { mac, options, plan: arm } = await macExternalFixture();
+  const namespace = path.join(
+    ROOT,
+    "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat",
+  );
+  const map = JSON.parse(
+    await readFile(
+      path.join(namespace, "cef-ci-runner-x86_64-apple-darwin.json"),
+    ),
+  );
+  const toolchain = JSON.parse(
+    await readFile(path.join(namespace, "tools/x86_64-apple-darwin.json")),
+  );
+  const selected = {
+    ...options,
+    map,
+    toolchain,
+    sourceLockIdentity: checkpointProfile("x86_64-apple-darwin").source,
+  };
+  return {
+    mac,
+    arm,
+    options: selected,
+    plan: mac.macIntelExternalObservationPlan(selected),
+  };
+}
+
+test("Intel metadata exact source684 policy is distinct and hard-denies every write mode before data", async () => {
+  const { mac, options } = await intelExternalFixture();
+  const policy = mac.MAC_INTEL_SOURCE_POLICY;
+  assert.equal(
+    policy.source,
+    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+  );
+  assert.equal(policy.darwinWriteAdmitted, false);
+  assert.notEqual(policy.kind, mac.MAC_SOURCE_POLICY.kind);
+  const selected = {
+    ...identity,
+    target: policy.target,
+    source: policy.source,
+    canonicalRoot:
+      "/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/" +
+      policy.source,
+  };
+  const out = selected.canonicalRoot + "/source/src/out/Release_GN_x64";
+  for (const mode of ["source-record", "source-verify", "source-apply"]) {
+    assert.throws(
+      () => sourceMetadataPlan(selected, out, mode),
+      /MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+    );
+    assert.throws(
+      () => mac.macSourceMetadataPlan(selected, out, mode),
+      /MAC_SOURCE_TARGET/,
+    );
+  }
+  for (const [changed, output, mode, reason] of [
+    [
+      { ...selected, target: "aarch64-apple-darwin" },
+      out,
+      "source-record",
+      /MAC_SOURCE_TARGET/,
+    ],
+    [
+      { ...selected, source: "0".repeat(64) },
+      out,
+      "source-record",
+      /MAC_SOURCE_ROOT/,
+    ],
+    [
+      { ...selected, canonicalRoot: "/arbitrary" },
+      out,
+      "source-record",
+      /MAC_SOURCE_ROOT/,
+    ],
+    [selected, out + "/other", "source-record", /MAC_SOURCE_OUT/],
+    [selected, out, "pack", /MAC_SOURCE_MODE/],
+  ])
+    assert.throws(
+      () => mac.macIntelSourceMetadataPlan(changed, output, mode),
+      reason,
+    );
+  const unreadable = new Proxy(
+    {},
+    {
+      get() {
+        throw Error("DATA_MUST_NOT_BE_READ");
+      },
+    },
+  );
+  await assert.rejects(
+    mac.prepareAuthoritativeMacIntelGn(unreadable, () => {
+      throw Error("CLOCK_MUST_NOT_BE_READ");
+    }),
+    /MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+  );
+  assert.throws(
+    () => buildEnvironment(options.map, {}, unreadable, "mac-intel"),
+    /MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+  );
+  assert.throws(() =>
+    buildEnvironment(
+      { target: "aarch64-apple-darwin" },
+      unreadable,
+      {},
+      "mac-intel",
+    ),
+  );
+  assert.throws(() => buildEnvironment(options.map, unreadable, {}, "mac-arm"));
+});
+
+test("Intel external plan binds actual source684 tools and keeps ARM context argv and target closure", async () => {
+  const { mac, arm, options, plan } = await intelExternalFixture();
+  assert.equal(plan.context.kind, "sorng-macintel-external-input-context");
+  assert.equal(plan.context.target, "x86_64-apple-darwin");
+  assert.equal(plan.context.source, mac.MAC_INTEL_SOURCE_POLICY.source);
+  assert.equal(Object.hasOwn(arm.context, "source"), false);
+  assert.equal(arm.context.kind, "sorng-macarm-external-input-context");
+  assert.deepEqual(plan.context.roots, arm.context.roots);
+  assert.deepEqual(plan.context.limits, arm.context.limits);
+  assert.equal(plan.context.limits.metadataBytes, 128 * 1024 ** 2);
+  for (const mode of ["mac-external-observe", "mac-owned-capability-observe"])
+    assert.deepEqual(
+      plan.argv(mode, plan.context.outputRoot + "/context.json"),
+      arm.argv(mode, arm.context.outputRoot + "/context.json"),
+    );
+  assert.throws(
+    () => mac.macExternalObservationPlan(options),
+    /MAC_EXTERNAL_TARGET/,
+  );
+  assert.throws(
+    () =>
+      mac.macIntelExternalObservationPlan({
+        ...options,
+        sourceLockIdentity: "0".repeat(64),
+      }),
+    /MAC_SOURCE_ROOT/,
+  );
+  assert.throws(
+    () =>
+      mac.macIntelExternalObservationPlan({
+        ...options,
+        map: { ...options.map, target: "aarch64-apple-darwin" },
+      }),
+    /MAC_EXTERNAL_TARGET/,
+  );
+  await assert.rejects(
+    mac.readMacExternalObservation(plan, null),
+    /MAC_EXTERNAL_PLAN/,
+  );
+  await assert.rejects(
+    mac.readMacIntelExternalObservation(arm, null),
+    /MAC_EXTERNAL_PLAN/,
+  );
+});
+
+function intelExternalReportFixture(plan) {
+  const value = {
+    schemaVersion: 1,
+    kind: "sorng-macintel-external-input-observation",
+    target: plan.context.target,
+    source: plan.context.source,
+    policy: "sorng-macintel-readonly-external-inputs-v1",
+    complete: true,
+    externalSnapshotComplete: true,
+    roles: Object.entries(plan.context.roots).map(([role, physicalRoot]) => ({
+      role,
+      physicalRoot,
+      snapshot: {
+        rootMtimeNs: "1",
+        gitHeads: {},
+        root: { mode: 0o40755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
+        localRoot: {
+          dev: "1",
+          ino: "2",
+          ctimeNs: "3",
+          birthtimeNsAvailable: true,
+          birthtimeNs: "4",
+        },
+        bytes: plan.context.requiredPins
+          .filter((p) => p.role === role)
+          .reduce((n, p) => n + p.size, 0),
+        entries: plan.context.requiredPins
+          .filter((p) => p.role === role)
+          .map((p) => ({
+            path: p.path,
+            kind: "file",
+            mode: 0o100644,
+            mtimeNs: "1",
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            size: p.size,
+            sha256: p.sha256,
+          })),
+      },
+    })),
+    entries: 10,
+    bytes: plan.context.requiredPins.reduce((n, p) => n + p.size, 0),
+    runnerUid: 501,
+    historicalMetalResourceClosureVerified: false,
+    sourceWriteAdmitted: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+  };
+  return (change = {}) => {
+    const raw = Buffer.from(JSON.stringify({ ...value, ...change }));
+    const info = {
+      dev: 1n,
+      ino: 2n,
+      mode: 0o100600n,
+      nlink: 1n,
+      size: BigInt(raw.length),
+      mtimeNs: 1n,
+      ctimeNs: 2n,
+      birthtimeNs: 3n,
+      isFile: () => true,
+    };
+    let closes = 0;
+    const io = {
+      lstat: async (file) =>
+        file.endsWith("/external.json")
+          ? info
+          : { ...info, isDirectory: () => true, isSymbolicLink: () => false },
+      realpath: async (file) => file,
+      open: async () => ({
+        stat: async () => info,
+        readFile: async () => raw,
+        close: async () => {
+          closes++;
+        },
+      }),
+    };
+    const result = {
+      complete: true,
+      kind: value.kind,
+      entries: value.entries,
+      bytes: value.bytes,
+      snapshot: {
+        name: "external.json",
+        bytes: raw.length,
+        sha256: hashObject("sha256").update(raw).digest("hex"),
+      },
+      sourceWriteAdmitted: false,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+    return { io, result, closes: () => closes };
+  };
+}
+
+test("Intel held external reader binds target source kind and opaque tokens without ARM cross-admission", async () => {
+  const { mac, plan } = await intelExternalFixture();
+  const fixture = intelExternalReportFixture(plan);
+  const good = fixture();
+  const token = await mac.readMacIntelExternalObservation(
+    plan,
+    good.result,
+    () => {},
+    good.io,
+  );
+  assert.equal(good.closes(), 1);
+  const binding = mac.macIntelExternalToolsBinding({ fixed: true }, token);
+  assert.equal(
+    binding.macExternalInputs.source,
+    mac.MAC_INTEL_SOURCE_POLICY.source,
+  );
+  assert.equal(binding.macExternalInputs.target, "x86_64-apple-darwin");
+  assert.equal(
+    mac.macIntelExternalObservationEvidence(token).sourceWriteAdmitted,
+    false,
+  );
+  assert.throws(
+    () => mac.macExternalToolsBinding({}, token),
+    /MAC_EXTERNAL_ATTESTATION/,
+  );
+  assert.throws(
+    () => mac.macExternalObservationEvidence(token),
+    /MAC_EXTERNAL_ATTESTATION/,
+  );
+  assert.throws(
+    () => mac.macIntelExternalToolsBinding({}, { ...token }),
+    /MAC_EXTERNAL_ATTESTATION/,
+  );
+  for (const changed of [
+    { source: "0".repeat(64) },
+    { target: "aarch64-apple-darwin" },
+    { kind: "sorng-macarm-external-input-observation" },
+    { policy: "sorng-macarm-readonly-external-inputs-v1" },
+    { sourceWriteAdmitted: true },
+    { extra: true },
+  ]) {
+    const bad = fixture(changed);
+    await assert.rejects(
+      mac.readMacIntelExternalObservation(plan, bad.result, () => {}, bad.io),
+    );
+    assert.equal(bad.closes(), 1);
+  }
+});
+
+test("Intel Python source modes hard-deny before data and exact context rejects ARM cross-kind mutations", () => {
+  const result = python(
+    String.raw`
+import types,pathlib,sys,json
+from unittest.mock import patch
+file=pathlib.Path(sys.argv[1]);m=types.ModuleType('intel_proof');m.__file__=str(file)
+exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
+assert m.MAC_INTEL_SOURCE_WRITE_ADMITTED is False and m.MAC_SOURCE_WRITE_ADMITTED is False
+for mode in ('source-record','source-apply','source-verify'):
+ with patch.object(m,'safe',side_effect=AssertionError('data read')),patch.object(m,'source_snapshot',side_effect=AssertionError('data read')):
+  try:m.source_metadata(mode,None,None,None,platform_policy='mac-intel')
+  except m.CheckpointError as e:assert str(e)=='source-mac-intel-darwin-capability-unreviewed'
+  else:raise AssertionError('admitted')
+ with patch.object(sys,'argv',[str(file),mode,'--input','/must-not-read','--output','/must-not-write','--manifest','/must-not-read','--platform-policy','mac-intel']),patch.object(m.Path,'read_bytes',side_effect=AssertionError('data read')):
+  try:m.main()
+  except m.CheckpointError as e:assert str(e)=='source-mac-intel-darwin-capability-unreviewed'
+  else:raise AssertionError('CLI admitted')
+source=m.MAC_INTEL_SOURCE;work='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+source
+identity=dict(target='x86_64-apple-darwin',source=source,producer='1'*64,canonicalRoot=work,image='20261021.278.1',tools='2'*64,graph='3'*64,siso='4'*64)
+with patch.object(m,'safe',side_effect=lambda p:p):
+ assert m.source_metadata_identity(identity,'mac-intel')==pathlib.Path(work)
+ for delta in ({'source':'0'*64},{'target':'aarch64-apple-darwin'},{'canonicalRoot':'/arbitrary'}):
+  try:m.source_metadata_identity({**identity,**delta},'mac-intel')
+  except m.CheckpointError:pass
+  else:raise AssertionError('identity admitted')
+print('Intel actual Python function+CLI all three false-before-data and exact identity PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("Intel Python full external context matches Node envelope and rejects source target root and ARM aliases", async () => {
+  const { plan } = await intelExternalFixture();
+  const result = python(
+    String.raw`
+import types,pathlib,sys,json,copy,stat,os
+from unittest.mock import patch
+file=pathlib.Path(sys.argv[1]);m=types.ModuleType('intel_context');m.__file__=str(file)
+exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
+value=json.loads(sys.argv[2]);root=pathlib.PurePosixPath(value['outputRoot'])
+class Folder:
+ def stat(self):return types.SimpleNamespace(st_uid=501,st_mode=stat.S_IFDIR|0o700)
+ def __truediv__(self,leaf):return root/leaf
+def run(c):
+ with patch.object(sys,'platform','darwin'),patch.object(m,'source_read_bytes',return_value=json.dumps(c).encode()),patch.object(m,'safe',return_value=Folder()),patch.object(m.os,'geteuid',return_value=501,create=True),patch.object(m.os.path,'lexists',return_value=False):
+  return m.mac_external_context(root/'context.json',root/'external.json','mac-external-observe',m.Budget(5))
+assert run(value)==value
+for delta in ({'source':'0'*64},{'target':'aarch64-apple-darwin'},{'kind':'sorng-macarm-external-input-context'},{'extra':True},{'source':None}):
+ try:run({**value,**delta})
+ except m.CheckpointError:pass
+ else:raise AssertionError('cross envelope admitted')
+arm={k:v for k,v in value.items() if k!='source'};arm.update(kind='sorng-macarm-external-input-context',target='aarch64-apple-darwin')
+assert run(arm)==arm
+for delta in ({'source':value['source']},{'kind':'sorng-macintel-external-input-context'},{'target':'x86_64-apple-darwin'}):
+ try:run({**arm,**delta})
+ except m.CheckpointError:pass
+ else:raise AssertionError('ARM alias admitted')
+for role in ('sdk','toolchain','python','metal'):
+ bad=copy.deepcopy(value);bad['roots'][role]='/arbitrary'
+ try:run(bad)
+ except m.CheckpointError:pass
+ else:raise AssertionError('root widened')
+print('actual full Python context: exact Node Intel and unchanged ARM shapes; 12 cross/source/root denials PASS')
+`,
+    [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      JSON.stringify(plan.context),
+    ],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});

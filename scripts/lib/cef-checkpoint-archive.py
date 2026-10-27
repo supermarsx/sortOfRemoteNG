@@ -782,10 +782,14 @@ def metadata(root, name, value, source=False, owned_sidecar=False):
         require(source is True and name == SOURCE_METADATA_NAME and type(value) is dict and
                 set(value) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
                 type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and
-                value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
                 value['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and type(value['identity']) is dict and
                 isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
-                Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64', 'source-sidecar-role')
+                ((value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
+                  Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
+                 (value['kind'] == 'sorng-macintel-source-metadata' and value['policy'] == MAC_INTEL_SOURCE_METADATA_POLICY and
+                  value['identity'].get('target') == 'x86_64-apple-darwin' and value['identity'].get('source') == MAC_INTEL_SOURCE and
+                  value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE and
+                  Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_x64')), 'source-sidecar-role')
     data = source_io_call('sidecar-encode', root / name, lambda: (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode())
     require(len(data) <= maximum, 'metadata-bound')
     if source:
@@ -1027,6 +1031,9 @@ SOURCE_MAX_ENTRIES = 1000000
 SOURCE_MAX_FILE = 8 * 1024**3
 MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-complete-owned-inputs-v1-unadmitted'
 MAC_SOURCE_WRITE_ADMITTED = False
+MAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'
+MAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-complete-owned-inputs-v1-unadmitted'
+MAC_INTEL_SOURCE_WRITE_ADMITTED = False
 MAC_EXTERNAL_ROLE = None
 MAC_EXTERNAL_PHASE = None
 MAC_REPORT_FAILURE = False
@@ -1568,7 +1575,7 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
 def source_metadata_identity(identity, platform_policy=None):
     fields = {'target','source','producer','canonicalRoot','image','tools','graph','siso'}
     require(isinstance(identity, dict) and set(identity) == fields and
-            identity['target'] == ('aarch64-apple-darwin' if platform_policy == 'mac-arm' else 'aarch64-unknown-linux-gnu'), 'source-identity')
+            identity['target'] == ('aarch64-apple-darwin' if platform_policy == 'mac-arm' else 'x86_64-apple-darwin' if platform_policy == 'mac-intel' else 'aarch64-unknown-linux-gnu'), 'source-identity')
     require(all(isinstance(identity[k], str) and re.fullmatch(r'[a-f0-9]{64}', identity[k])
                 for k in ('source','producer','tools','graph','siso')), 'source-identity')
     require(isinstance(identity['image'], str) and re.fullmatch(r'[0-9]{8}\.[0-9]+\.[0-9]+', identity['image']), 'source-image')
@@ -1576,6 +1583,9 @@ def source_metadata_identity(identity, platform_policy=None):
     if platform_policy == 'mac-arm':
         require(identity['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + identity['source'],
                 'source-root')
+    if platform_policy == 'mac-intel':
+        require(identity['source'] == MAC_INTEL_SOURCE and identity['canonicalRoot'] ==
+                '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE, 'source-root')
     return safe(Path(identity['canonicalRoot']))
 
 
@@ -1591,45 +1601,52 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     SOURCE_CLOSE_FAILURE = SOURCE_JOIN_FAILURE = False
     require(mode in ('source-record','source-verify','source-apply'), 'source-mode')
     SOURCE_PATH_MODE = mode
-    require(platform_policy in (None, 'mac-arm'), 'source-platform-policy')
-    require(sys.platform == ('darwin' if platform_policy == 'mac-arm' else 'linux'),
+    require(platform_policy in (None, 'mac-arm', 'mac-intel'), 'source-platform-policy')
+    if platform_policy == 'mac-intel':
+        # Explicit unadmitted policy: fail before platform, identity or filesystem reads.
+        require(MAC_INTEL_SOURCE_WRITE_ADMITTED, 'source-mac-intel-darwin-capability-unreviewed')
+    require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
     budget = Budget(seconds) if budget is None else budget
     if platform_policy == 'mac-arm':
         # No JSON, external context or fixture output can authorize timestamp writes.
         require(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed')
+    intel = platform_policy == 'mac-intel'
+    sidecar_kind = 'sorng-macintel-source-metadata' if intel else 'sorng-linuxarm-source-metadata'
+    sidecar_policy = MAC_INTEL_SOURCE_METADATA_POLICY if intel else SOURCE_METADATA_POLICY
+    snapshot_context = {'mac':True} if intel else None
     work = source_metadata_identity(identity, platform_policy)
     budget.check()
     root = safe(root);sidecar = Path(sidecar)
-    require(root == work / 'source' and sidecar == root / 'src/out/Release_GN_arm64' / SOURCE_METADATA_NAME,
+    require(root == work / 'source' and sidecar == root / ('src/out/Release_GN_x64' if intel else 'src/out/Release_GN_arm64') / SOURCE_METADATA_NAME,
             'source-fixed-paths')
     require(root.is_dir() and safe(sidecar.parent).is_dir(), 'source-fixed-paths')
     SOURCE_IO_CONTEXT.set((mode, root))
     guards = {}
     if mode == 'source-record':
         with source_nearby_literals(root,source_repositories(root,budget),budget) as record_literals:
-            current = source_snapshot(root, budget, guards)
-            value = {'schemaVersion': 1, 'kind': 'sorng-linuxarm-source-metadata',
-                     'policy': SOURCE_METADATA_POLICY, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
+            current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards)
+            value = {'schemaVersion': 1, 'kind': sidecar_kind,
+                     'policy': sidecar_policy, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
             written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
             require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
             with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
-                require((literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
+                require(intel or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
             return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
                     'bytes': current['bytes'], 'sidecar': written}
     stored = source_read_sidecar(sidecar, budget, owned_sidecar=True)
     require(isinstance(stored, dict) and set(stored) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
-            type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == 'sorng-linuxarm-source-metadata' and
-            stored['policy'] == SOURCE_METADATA_POLICY and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
+            type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == sidecar_kind and
+            stored['policy'] == sidecar_policy and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
             'source-sidecar-binding')
     expected = stored['snapshot']
-    require(isinstance(expected, dict) and set(expected) == {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'} and
+    require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if intel else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
             isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
             'source-sidecar-shape')
-    current = source_snapshot(root, budget, guards)
+    current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards)
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
-    require(expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
+    require(intel or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
     # Compare the entire freshly hashed namespace before the first metadata write.
     without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
     require(json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) ==
@@ -1642,7 +1659,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     if mode == 'source-apply':
         # Revalidate the fixed absence witnesses immediately before any utime.
         with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
-            require((literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
+            require(intel or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
             budget.check();path = root / relative(row['path']);before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
@@ -1684,7 +1701,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             raise
         finally:
             source_close(lambda: os.close(fd), primary)
-    require(source_snapshot(root, budget) == expected, 'source-metadata-postcheck')
+    require((source_snapshot(root, budget, context=snapshot_context) if intel else source_snapshot(root, budget)) == expected, 'source-metadata-postcheck')
     return {'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']}
 
 
@@ -1702,10 +1719,13 @@ def mac_external_context(file, output, mode, budget):
     require(re.fullmatch(re.escape(prefix) + r'cef-mac-inputs-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/context\.json', text),
             'source-mac-context-path')
     context = source_json(source_read_bytes(file, budget, 16384))
-    require(type(context) is dict and set(context) == {'schemaVersion','kind','target','roots','runnerTemp','outputRoot','requiredPins','limits','originalMetalFingerprint','historicalMetalResourceClosureVerified'},
+    intel = type(context) is dict and context.get('kind') == 'sorng-macintel-external-input-context'
+    fields = {'schemaVersion','kind','target','roots','runnerTemp','outputRoot','requiredPins','limits','originalMetalFingerprint','historicalMetalResourceClosureVerified'}
+    require(type(context) is dict and set(context) == (fields | {'source'} if intel else fields),
             'source-mac-context')
     require(type(context['schemaVersion']) is int and context['schemaVersion'] == 1 and
-            context['kind'] == 'sorng-macarm-external-input-context' and context['target'] == 'aarch64-apple-darwin' and
+            ((context['kind'] == 'sorng-macarm-external-input-context' and context['target'] == 'aarch64-apple-darwin') if not intel else
+             (context['target'] == 'x86_64-apple-darwin' and context['source'] == MAC_INTEL_SOURCE)) and
             context['runnerTemp'] == prefix[:-1] and context['outputRoot'] == str(file.parent) and
             context['historicalMetalResourceClosureVerified'] is False, 'source-mac-context')
     expected_limits = {'entries':1000000,'fileBytes':8*1024**3,'bytes':256*1024**3,'metadataBytes':128*1024**2,'readers':4,'seconds':600,'capabilitySeconds':5}
@@ -1834,11 +1854,13 @@ def mac_external_observe(context, output, budget):
         after=source_snapshot(safe(Path(roots[role])),budget,context={'mac':True,'external':True,'aggregate':readback_aggregate},
             member_policy=_MAC_EXTERNAL_SDK_MEMBERS if role == 'sdk' else None)
         require(after==snapshots[role], 'source-external-changed')
-    value={'schemaVersion':1,'kind':'sorng-macarm-external-input-observation','target':context['target'],
-           'policy':'sorng-macarm-readonly-external-inputs-v1','complete':True,'externalSnapshotComplete':True,
+    intel = context.get('kind') == 'sorng-macintel-external-input-context'
+    value={'schemaVersion':1,'kind':'sorng-macintel-external-input-observation' if intel else 'sorng-macarm-external-input-observation','target':context['target'],
+           'policy':'sorng-macintel-readonly-external-inputs-v1' if intel else 'sorng-macarm-readonly-external-inputs-v1','complete':True,'externalSnapshotComplete':True,
            'roles':[{'role':role,'physicalRoot':roots[role],'snapshot':snapshots[role]} for role in ('sdk','toolchain','metal','python')],
            'entries':aggregate['entries'],'bytes':aggregate['bytes'],'runnerUid':os.geteuid(),
            'historicalMetalResourceClosureVerified':False,'sourceWriteAdmitted':False,'nativeAcceptance':False,'runtimeReady':False}
+    if intel:value['source']=context['source']
     budget.check();MAC_EXTERNAL_PHASE='report'
     try:
         written=metadata(output.parent,output.name,value,source=True)
@@ -1934,12 +1956,14 @@ def mac_owned_capability_observe(context, output, budget):
             except BaseException as error:
                 cleanup_errors.append(error)
         if primary is None and cleanup_errors:primary=cleanup_errors[0]
-    value={'schemaVersion':1,'kind':'sorng-macarm-owned-capability-observation','target':context['target'],
+    intel = context.get('kind') == 'sorng-macintel-external-input-context'
+    value={'schemaVersion':1,'kind':'sorng-macintel-owned-capability-observation' if intel else 'sorng-macarm-owned-capability-observation','target':context['target'],
            'complete':primary is None and cleanup and not SOURCE_CLOSE_FAILURE,'rows':rows,
            'cleanupConfirmed':cleanup and not SOURCE_CLOSE_FAILURE,'objectsRemoved':cleanup,
            'handlesClosed':not SOURCE_CLOSE_FAILURE,'sourceWriteAdmitted':False,
            'error':str(primary) if type(primary) is CheckpointError else 'source-mac-capability-io' if primary is not None else None,
            'installedInputsWritten':False,'nativeAcceptance':False,'runtimeReady':False}
+    if intel:value['source']=context['source']
     require(len(json.dumps(value).encode())<=65536,'source-mac-capability-output-bound')
     reporting=None;written=None
     try:
@@ -1962,10 +1986,12 @@ def main():
     parser.add_argument('--manifest')
     parser.add_argument('--seconds', type=int, default=600)
     parser.add_argument('--generated-links')
-    parser.add_argument('--platform-policy', choices=['mac-arm'])
+    parser.add_argument('--platform-policy', choices=['mac-arm','mac-intel'])
     args = parser.parse_args()
     CLI_SOURCE_MODE = args.mode if args.mode in SOURCE_IO_MODES else None
     require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
+    if args.platform_policy == 'mac-intel':
+        require(MAC_INTEL_SOURCE_WRITE_ADMITTED, 'source-mac-intel-darwin-capability-unreviewed')
     links = {}
     if args.generated_links:
         data = Path(args.generated_links).read_bytes()

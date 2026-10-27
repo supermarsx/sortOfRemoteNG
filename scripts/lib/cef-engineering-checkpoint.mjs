@@ -24,7 +24,10 @@ import { finished, pipeline } from "node:stream/promises";
 import { Readable, Transform } from "node:stream";
 import path from "node:path";
 import { hostname, tmpdir, userInfo } from "node:os";
-import { macSourceMetadataPlan } from "./cef-mac-source-metadata.mjs";
+import {
+  macSourceMetadataPlan,
+  macIntelSourceMetadataPlan,
+} from "./cef-mac-source-metadata.mjs";
 
 export const LIMITS = Object.freeze({
   compressed: 32 * 1024 ** 3,
@@ -1091,6 +1094,7 @@ const ARCHIVE_FAILURES = new Set([
   "source-mac-context-path",
   "source-mac-context",
   "source-mac-darwin-capability-unreviewed",
+  "source-mac-intel-darwin-capability-unreviewed",
   "source-mac-directory-changed",
   "source-mac-directory",
   "source-mac-file-changed",
@@ -4874,6 +4878,8 @@ export function sourceMetadataPlan(identity, out, mode) {
   validateIdentity(identity);
   if (identity.target === "aarch64-apple-darwin")
     return macSourceMetadataPlan(identity, out, mode);
+  if (identity.target === "x86_64-apple-darwin")
+    return macIntelSourceMetadataPlan(identity, out, mode);
   assert(
     identity.target === "aarch64-unknown-linux-gnu",
     "Linux ARM source metadata only",

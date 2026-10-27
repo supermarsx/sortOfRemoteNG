@@ -256,6 +256,27 @@ export const MAC_SOURCE_POLICY = Object.freeze({
   name: "sorng-macarm-complete-owned-inputs-v1-unadmitted",
   darwinWriteAdmitted: false,
 });
+export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
+  target: "x86_64-apple-darwin",
+  source: "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+  platform: "darwin",
+  kind: "sorng-macintel-source-metadata",
+  name: "sorng-macintel-complete-owned-inputs-v1-unadmitted",
+  darwinWriteAdmitted: false,
+});
+const ARM_EXTERNAL = Object.freeze({
+  target: MAC_SOURCE_POLICY.target,
+  contextKind: "sorng-macarm-external-input-context",
+  observationKind: "sorng-macarm-external-input-observation",
+  name: "sorng-macarm-readonly-external-inputs-v1",
+});
+const INTEL_EXTERNAL = Object.freeze({
+  target: MAC_INTEL_SOURCE_POLICY.target,
+  source: MAC_INTEL_SOURCE_POLICY.source,
+  contextKind: "sorng-macintel-external-input-context",
+  observationKind: "sorng-macintel-external-input-observation",
+  name: "sorng-macintel-readonly-external-inputs-v1",
+});
 export const MAC_EXTERNAL_LIMITS = Object.freeze({
   entries: 1000000,
   fileBytes: 8 * 1024 ** 3,
@@ -319,6 +340,39 @@ export function macSourceMetadataPlan(identity, out, mode) {
   };
 }
 
+export function assertMacIntelSourceWriteAdmission() {
+  assert(
+    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted,
+    "MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED",
+  );
+}
+export function macIntelSourceMetadataPlan(identity, out, mode) {
+  assert(
+    identity?.target === MAC_INTEL_SOURCE_POLICY.target,
+    "MAC_SOURCE_TARGET",
+  );
+  assert(
+    ["source-record", "source-verify", "source-apply"].includes(mode),
+    "MAC_SOURCE_MODE",
+  );
+  const work = plainAbsolute(identity.canonicalRoot);
+  assert(
+    identity.source === MAC_INTEL_SOURCE_POLICY.source &&
+      work ===
+        "/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/" +
+          MAC_INTEL_SOURCE_POLICY.source,
+    "MAC_SOURCE_ROOT",
+  );
+  assert(out === work + "/source/src/out/Release_GN_x64", "MAC_SOURCE_OUT");
+  assertMacIntelSourceWriteAdmission();
+  return {
+    mode,
+    source: work + "/source",
+    sidecar: out + "/.siso_sorng_source_metadata.json",
+    platformPolicy: "mac-intel",
+  };
+}
+
 const sdkRelations = new WeakMap();
 // Fixed logical SDK version to physical root attestation; never inferred from a basename.
 export async function macSdkRelation({ selected, sdkTargets, check }, io = fs) {
@@ -379,20 +433,35 @@ export async function macSdkRelation({ selected, sdkTargets, check }, io = fs) {
   return proof;
 }
 
-export function macExternalObservationPlan({
-  map,
-  toolchain,
-  selected,
-  sdkTargets,
-  sdkRelation,
-  metal,
-  runnerTemp,
-  output,
-  remainingMilliseconds,
+export function macExternalObservationPlan(options) {
+  return externalObservationPlanFor(ARM_EXTERNAL, options);
+}
+export function macIntelExternalObservationPlan({
+  sourceLockIdentity,
+  ...options
 }) {
   assert(
-    map?.target === MAC_SOURCE_POLICY.target &&
-      toolchain?.target === map.target,
+    sourceLockIdentity === MAC_INTEL_SOURCE_POLICY.source,
+    "MAC_SOURCE_ROOT",
+  );
+  return externalObservationPlanFor(INTEL_EXTERNAL, options);
+}
+function externalObservationPlanFor(
+  envelope,
+  {
+    map,
+    toolchain,
+    selected,
+    sdkTargets,
+    sdkRelation,
+    metal,
+    runnerTemp,
+    output,
+    remainingMilliseconds,
+  },
+) {
+  assert(
+    map?.target === envelope.target && toolchain?.target === map.target,
     "MAC_EXTERNAL_TARGET",
   );
   assert(map.python === MAC_PYTHON.slice(1), "MAC_EXTERNAL_PYTHON");
@@ -461,7 +530,7 @@ export function macExternalObservationPlan({
     "MAC_EXTERNAL_PINS",
   );
   const pins = toolchain.files
-    .filter((p) => p.path !== "cef-ci-runner-aarch64-apple-darwin.json")
+    .filter((p) => p.path !== `cef-ci-runner-${envelope.target}.json`)
     .map((p) => {
       assert(
         p &&
@@ -504,7 +573,7 @@ export function macExternalObservationPlan({
     });
   const context = {
     schemaVersion: 1,
-    kind: "sorng-macarm-external-input-context",
+    kind: envelope.contextKind,
     target: map.target,
     roots: {
       sdk,
@@ -519,6 +588,7 @@ export function macExternalObservationPlan({
     originalMetalFingerprint: fingerprint,
     historicalMetalResourceClosureVerified: false,
   };
+  if (envelope === INTEL_EXTERNAL) context.source = envelope.source;
   assert(typeof remainingMilliseconds === "function", "MAC_EXTERNAL_DEADLINE");
   const argv = (mode, contextFile) => {
     assert(
@@ -731,6 +801,30 @@ export async function readMacExternalObservation(
   check = () => {},
   io = fs,
 ) {
+  assert(
+    externalPlans.has(plan) &&
+      plan.context.target === ARM_EXTERNAL.target &&
+      plan.context.kind === ARM_EXTERNAL.contextKind,
+    "MAC_EXTERNAL_PLAN",
+  );
+  return readExternalObservationFor(ARM_EXTERNAL, plan, result, check, io);
+}
+export async function readMacIntelExternalObservation(
+  plan,
+  result,
+  check = () => {},
+  io = fs,
+) {
+  assert(
+    externalPlans.has(plan) &&
+      plan.context.target === INTEL_EXTERNAL.target &&
+      plan.context.kind === INTEL_EXTERNAL.contextKind &&
+      plan.context.source === INTEL_EXTERNAL.source,
+    "MAC_EXTERNAL_PLAN",
+  );
+  return readExternalObservationFor(INTEL_EXTERNAL, plan, result, check, io);
+}
+async function readExternalObservationFor(envelope, plan, result, check, io) {
   assert(externalPlans.has(plan), "MAC_EXTERNAL_PLAN");
   exactKeys(
     result,
@@ -748,7 +842,7 @@ export async function readMacExternalObservation(
   );
   assert(
     result.complete === true &&
-      result.kind === "sorng-macarm-external-input-observation" &&
+      result.kind === envelope.observationKind &&
       result.sourceWriteAdmitted === false &&
       result.nativeAcceptance === false &&
       result.runtimeReady === false &&
@@ -837,14 +931,16 @@ export async function readMacExternalObservation(
         "sourceWriteAdmitted",
         "nativeAcceptance",
         "runtimeReady",
+        ...(envelope === INTEL_EXTERNAL ? ["source"] : []),
       ],
       "MAC_EXTERNAL_REPORT",
     );
     assert(
       value.schemaVersion === 1 &&
         value.kind === result.kind &&
-        value.target === MAC_SOURCE_POLICY.target &&
-        value.policy === "sorng-macarm-readonly-external-inputs-v1" &&
+        value.target === envelope.target &&
+        (envelope !== INTEL_EXTERNAL || value.source === envelope.source) &&
+        value.policy === envelope.name &&
         value.complete === true &&
         value.externalSnapshotComplete === true &&
         value.entries === result.entries &&
@@ -1076,6 +1172,7 @@ export async function readMacExternalObservation(
       token,
       structuredClone({
         policy: value.policy,
+        ...(envelope === INTEL_EXTERNAL ? { source: envelope.source } : {}),
         portableRoles,
         snapshot: result.snapshot,
         roots: plan.context.roots,
@@ -1098,12 +1195,26 @@ export async function readMacExternalObservation(
   }
 }
 export function macExternalToolsBinding(base, attestation) {
+  return externalToolsBindingFor(ARM_EXTERNAL, base, attestation);
+}
+export function macIntelExternalToolsBinding(base, attestation) {
+  return externalToolsBindingFor(INTEL_EXTERNAL, base, attestation);
+}
+function externalToolsBindingFor(envelope, base, attestation) {
   const external = externalAttestations.get(attestation);
-  assert(external, "MAC_EXTERNAL_ATTESTATION");
+  assert(
+    external &&
+      external.policy === envelope.name &&
+      (envelope !== INTEL_EXTERNAL || external.source === envelope.source),
+    "MAC_EXTERNAL_ATTESTATION",
+  );
   return {
     ...base,
     macExternalInputs: structuredClone({
       policy: external.policy,
+      ...(envelope === INTEL_EXTERNAL
+        ? { target: envelope.target, source: envelope.source }
+        : {}),
       roles: external.portableRoles,
       requiredPins: external.requiredPins,
       originalMetalFingerprint: external.originalMetalFingerprint,
@@ -1113,9 +1224,23 @@ export function macExternalToolsBinding(base, attestation) {
   };
 }
 export function macExternalObservationEvidence(attestation) {
+  return externalObservationEvidenceFor(ARM_EXTERNAL, attestation);
+}
+export function macIntelExternalObservationEvidence(attestation) {
+  return externalObservationEvidenceFor(INTEL_EXTERNAL, attestation);
+}
+function externalObservationEvidenceFor(envelope, attestation) {
   const external = externalAttestations.get(attestation);
-  assert(external, "MAC_EXTERNAL_ATTESTATION");
+  assert(
+    external &&
+      external.policy === envelope.name &&
+      (envelope !== INTEL_EXTERNAL || external.source === envelope.source),
+    "MAC_EXTERNAL_ATTESTATION",
+  );
   return structuredClone({
+    ...(envelope === INTEL_EXTERNAL
+      ? { target: envelope.target, source: envelope.source }
+      : {}),
     snapshot: external.snapshot,
     physicalRoots: external.roots,
     historicalMetalResourceClosureVerified: false,
@@ -1126,10 +1251,18 @@ export function macExternalObservationEvidence(attestation) {
 
 export async function prepareAuthoritativeMacGn(context, check) {
   assertMacSourceWriteAdmission();
+  return prepareAuthoritativeMacGnFor(ARM_EXTERNAL, context, check);
+}
+export async function prepareAuthoritativeMacIntelGn(context, check) {
+  assertMacIntelSourceWriteAdmission();
   assert(
-    context.runner?.target === MAC_SOURCE_POLICY.target,
-    "MAC_SOURCE_TARGET",
+    context.sourceLockIdentity === MAC_INTEL_SOURCE_POLICY.source,
+    "MAC_SOURCE_ROOT",
   );
+  return prepareAuthoritativeMacGnFor(INTEL_EXTERNAL, context, check);
+}
+async function prepareAuthoritativeMacGnFor(envelope, context, check) {
+  assert(context.runner?.target === envelope.target, "MAC_SOURCE_TARGET");
   const physical = async (file) => {
     plainAbsolute(file);
     assert((await fs.realpath(file)) === file, "MAC_META_ALIAS");
