@@ -811,7 +811,11 @@ def source_nearby_literals(root, policy, budget):
         source_cleanup_all([lambda fd=fd:os.close(fd) for _,fd,_ in state['directories'].values()],primary)
 
 
-def source_birth(info):
+def source_birth(info, policy=None):
+    # CPython Darwin exposes float st_birthtime, not exact st_birthtime_ns.
+    # Only read-only external observations may explicitly retain unavailable ns.
+    if not hasattr(info, 'st_birthtime_ns') and policy is not None and policy.get('mac') and policy.get('external') is True:
+        return None
     value = getattr(info, 'st_birthtime_ns', None)
     require(type(value) is int and 0 <= value < 2**63, 'source-mac-birth-unavailable')
     return value
@@ -819,12 +823,12 @@ def source_birth(info):
 
 def source_local(info, policy=None):
     base = (stamp(info), info.st_ctime_ns)
-    return base + (source_birth(info), info.st_uid, info.st_gid) if policy is not None and policy.get('mac') else base
+    return base + (source_birth(info, policy), info.st_uid, info.st_gid) if policy is not None and policy.get('mac') else base
 
 
 def source_mac_row(row, info, policy):
     if policy is not None and policy.get('mac'):
-        row.update(birthNs=source_birth(info), uid=info.st_uid, gid=info.st_gid)
+        row.update(birthNs=source_birth(info, policy), uid=info.st_uid, gid=info.st_gid)
         require(info.st_nlink > 0, 'source-mac-nlink')
 
 
@@ -1083,7 +1087,7 @@ def source_hash(root, row, budget, policy=None):
     require(stat.S_ISREG(before.st_mode) and (before.st_nlink > 0 if policy is not None and policy.get('external') else before.st_nlink == 1) and
             before.st_size <= SOURCE_MAX_FILE and stamp(before) == row['stamp'] and before.st_ctime_ns == row['ctimeNs'], 'source-file-identity')
     if policy is not None and policy.get('mac'):
-        require(source_birth(before) == row['birthNs'] and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
+        require(source_birth(before, policy) == row['birthNs'] and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
     stream = source_io_call('file-open', p, lambda: p.open('rb'));primary = None;reader = HashedReader(stream, budget);count = 0
     try:
         require(opened_identity_matches(row['stamp'], source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) and
@@ -1207,7 +1211,8 @@ def source_snapshot_inventory(root, budget, guards, policy, external):
         value['root'] = {'mode':root_before[4], 'mtimeNs':str(root_before[1]), 'uid':root.stat().st_uid,
                          'gid':root.stat().st_gid, 'nlink':root_before[5]}
         value['localRoot'] = {'dev':str(root_before[2]), 'ino':str(root_before[3]),
-                              'ctimeNs':str(local_before[1]), 'birthtimeNs':str(local_before[2])}
+                              'ctimeNs':str(local_before[1]), 'birthtimeNsAvailable':local_before[2] is not None,
+                              'birthtimeNs':str(local_before[2]) if local_before[2] is not None else None}
         # The caller's shared object was consumed only by the initial inventory.
         require(aggregate['entries'] >= len(rows), 'source-external-aggregate')
     return value
