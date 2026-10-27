@@ -705,6 +705,82 @@ export async function observeSamplerInterface(
   return result;
 }
 
+// This candidate changes one query option, not the selected SDK or build policy.
+// Installed documentation is observed before any query; no help/tool fallback.
+export async function observeXcrunNoCacheInterface(
+  remaining,
+  { read = held, stat = fs.lstat } = {},
+) {
+  const result = {
+    supported: false,
+    observedOnly: true,
+    expectedPinsApproved: false,
+    manual: null,
+    reason: "MANUAL_UNAVAILABLE",
+  };
+  try {
+    for (const file of [
+      "/usr/share/man/man1/xcrun.1",
+      "/usr/share/man/man1/xcrun.1.gz",
+    ]) {
+      let before;
+      try {
+        remaining();
+        before = await stat(file, { bigint: true });
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw error;
+      }
+      assert(
+        before.isFile() &&
+          before.size > 0n &&
+          before.size <= 65536n &&
+          before.uid === 0n &&
+          before.nlink === 1n &&
+          (before.mode & 0o022n) === 0n,
+        "XCRUN_MANUAL_METADATA",
+      );
+      const raw = await read(file, 65536, remaining);
+      const after = await stat(file, { bigint: true });
+      for (const key of [
+        "dev",
+        "ino",
+        "mode",
+        "size",
+        "uid",
+        "nlink",
+        "mtimeNs",
+        "ctimeNs",
+      ])
+        assert(before[key] === after[key], "XCRUN_MANUAL_IDENTITY");
+      assert(BigInt(raw.length) === before.size);
+      const body = file.endsWith(".gz")
+        ? gunzipSync(raw, { maxOutputLength: 65536 })
+        : raw;
+      assert(body.length <= 65536);
+      const text = new TextDecoder("utf-8", { fatal: true })
+        .decode(body)
+        .replaceAll("\\-", "-");
+      result.supported = /(?:--no-cache\b|\.Fl[ \t]+-no-cache\b)/.test(text);
+      result.manual = {
+        path: file,
+        bytes: raw.length,
+        sha256: hash(raw),
+        decodedBytes: body.length,
+        decodedSha256: hash(body),
+        bodyBase64: body.toString("base64"),
+        noCacheOptionObserved: result.supported,
+      };
+      result.reason = result.supported ? null : "MANUAL_UNSUPPORTED";
+      break;
+    }
+  } catch (error) {
+    result.reason = "XCRUN_INTERFACE_UNAVAILABLE";
+    interfaceFailures.set(result, error);
+  }
+  return result;
+}
+
 export function queryEnvironment(selected, variant, root, inherited = {}) {
   assert(
     variant === "A" &&
@@ -821,6 +897,8 @@ export function query(
         variant,
         kind: "owned-metal-query-sampling",
         command: "selected-metal-lookup",
+        cacheBypassRequested: true,
+        cacheConsultationBypassed: "UNPROVED",
         queryAttempted: true,
         timeoutMs: timeout,
         elapsedMs: closedElapsed ?? Math.max(0, Math.floor(now() - begin)),
@@ -873,7 +951,7 @@ export function query(
     try {
       child = execute(
         "/usr/bin/xcrun",
-        ["--sdk", "macosx", "--find", "metal"],
+        ["--no-cache", "--sdk", "macosx", "--find", "metal"],
         {
           env,
           timeout,
@@ -1184,8 +1262,9 @@ async function worker(root, pin, variant) {
   assert(
     c.root === root &&
       c.kind === "owned-metal-query-context" &&
-      c.samplerInterface?.supported === true &&
-      /^[a-f0-9]{64}$/.test(c.samplerInterface.manualSha256),
+      c.samplerDisabled === true &&
+      c.cacheBypassInterface?.supported === true &&
+      /^[a-f0-9]{64}$/.test(c.cacheBypassInterface.manualSha256),
     "SDK_WAIT_CONTEXT",
   );
   const remaining = () => {
@@ -1202,7 +1281,7 @@ async function worker(root, pin, variant) {
   };
   assert(remaining() >= 31000, "SDK_WAIT_STAGE_ADMISSION");
   const env = queryEnvironment(c.selected, variant, root, process.env);
-  const result = await query(variant, env, remaining, { sampling: true });
+  const result = await query(variant, env, remaining, { sampling: false });
   // This closed summary precedes fallible persistence; never print sample text,
   // environment values or raw errors. The full bounded query remains in its file.
   console.log(
@@ -1359,11 +1438,13 @@ export async function main(e = process.env) {
         budget.remaining,
       );
     phase = "sampler-interface";
-    const samplerInterface = await observeSamplerInterface(budget.remaining);
-    if (interfaceFailures.has(samplerInterface))
-      fail(interfaceFailures.get(samplerInterface));
-    else if (!samplerInterface.supported)
-      fail(new Error("METAL_SAMPLE_INTERFACE_UNAVAILABLE"));
+    const cacheBypassInterface = await observeXcrunNoCacheInterface(
+      budget.remaining,
+    );
+    if (interfaceFailures.has(cacheBypassInterface))
+      fail(interfaceFailures.get(cacheBypassInterface));
+    else if (!cacheBypassInterface.supported)
+      fail(new Error("XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE"));
     await save(
       root + "/selection.json",
       {
@@ -1371,20 +1452,25 @@ export async function main(e = process.env) {
         sourceLockIdentity: SOURCE,
         filesVerified: 9,
         selected,
-        samplerAvailable: samplerInterface.supported,
+        samplerAvailable: false,
+        cacheBypassRequested: true,
+        cacheConsultationBypassed: "UNPROVED",
         parentCohortStageMs: 120000,
         queryTimeoutMs: 30000,
         workerAbsoluteMs: 35000,
-        samplerInterface,
+        cacheBypassInterface,
         environmentKeys: Object.keys(
           queryEnvironment(selected, "A", root, e),
         ).sort(),
       },
       budget.remaining,
     );
-    if (interfaceFailures.has(samplerInterface))
-      throw interfaceFailures.get(samplerInterface);
-    assert(samplerInterface.supported, "METAL_SAMPLE_INTERFACE_UNAVAILABLE");
+    if (interfaceFailures.has(cacheBypassInterface))
+      throw interfaceFailures.get(cacheBypassInterface);
+    assert(
+      cacheBypassInterface.supported,
+      "XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE",
+    );
     const stageMs = Math.min(120000, budget.remaining()),
       stageWallEnd = Date.now() + stageMs,
       stageMonoEnd = String(
@@ -1398,9 +1484,10 @@ export async function main(e = process.env) {
       stageMonoEnd,
       workerWallEnd: Date.now() + 35000,
       workerMonoEnd: String(process.hrtime.bigint() + 35000000000n),
-      samplerInterface: {
+      samplerDisabled: true,
+      cacheBypassInterface: {
         supported: true,
-        manualSha256: samplerInterface.manual.decodedSha256,
+        manualSha256: cacheBypassInterface.manual.decodedSha256,
       },
     };
     const context = Buffer.from(JSON.stringify(c) + "\n");

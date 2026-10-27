@@ -837,6 +837,7 @@ import {
   fitSampleEvidence,
   parseOwnedPidTuple,
   observeSamplerInterface,
+  observeXcrunNoCacheInterface,
 } from "../../native/mac-sdk-wait-diagnostic.mjs";
 const waitRoot =
   "/Users/runner/work/_temp/cef-mac-sdk-wait-11111111-1111-4111-8111-111111111111";
@@ -981,7 +982,13 @@ test("SDK wait actual query records callback before close, consumes bounded pipe
     {
       execute: (file, args, options, cb) => {
         assert.equal(file, "/usr/bin/xcrun");
-        assert.deepEqual(args, ["--sdk", "macosx", "--find", "metal"]);
+        assert.deepEqual(args, [
+          "--no-cache",
+          "--sdk",
+          "macosx",
+          "--find",
+          "metal",
+        ]);
         assert.equal(options.timeout, 30000);
         assert.equal(options.maxBuffer, 65536);
         assert.equal(options.killSignal, "SIGKILL");
@@ -1189,7 +1196,7 @@ function waitParentFixture() {
     hardWatchdog: waitHardWatchdog,
     primaryReason: waitPrimaryReason,
     interfaceFailures: new WeakMap(),
-    observeSamplerInterface: async () => ({
+    observeXcrunNoCacheInterface: async () => ({
       supported: true,
       manual: { decodedSha256: "d".repeat(64) },
       tools: [],
@@ -1724,7 +1731,13 @@ function metalVirtualFixture(options = {}) {
       sampling: true,
       execute: (file, args, settings, cb) => {
         assert.equal(file, "/usr/bin/xcrun");
-        assert.deepEqual(args, ["--sdk", "macosx", "--find", "metal"]);
+        assert.deepEqual(args, [
+          "--no-cache",
+          "--sdk",
+          "macosx",
+          "--find",
+          "metal",
+        ]);
         assert.equal(settings.timeout, 30000);
         callback = cb;
         target = waitChild();
@@ -1975,8 +1988,8 @@ test("Metal installed manual/tool attestation is closed, bounded and unsupported
   });
   assert.equal(unsupported.supported, false);
   const f = waitParentFixture();
-  f.scope.observeSamplerInterface = async () => unsupported;
-  await assert.rejects(f.build()(f.e), /METAL_SAMPLE_INTERFACE_UNAVAILABLE/);
+  f.scope.observeXcrunNoCacheInterface = async () => unsupported;
+  await assert.rejects(f.build()(f.e), /XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE/);
   assert.deepEqual(f.launches, []);
   assert.equal(
     JSON.parse(f.files.get(waitRoot + "/selection.json")).samplerAvailable,
@@ -2032,7 +2045,8 @@ test("Metal worker actual persistence body preserves original null/falsy query f
       JSON.stringify({
         root: waitRoot,
         kind: "owned-metal-query-context",
-        samplerInterface: { supported: true, manualSha256: "d".repeat(64) },
+        samplerDisabled: true,
+        cacheBypassInterface: { supported: true, manualSha256: "d".repeat(64) },
         selected: waitSelected,
         stageWallEnd: Date.now() + 120000,
         stageMonoEnd: String(process.hrtime.bigint() + 120000000000n),
@@ -2057,7 +2071,7 @@ test("Metal worker actual persistence body preserves original null/falsy query f
       hash: (buffer) => createHash("sha256").update(buffer).digest("hex"),
       query: async (_v, env, remaining, options) => {
         assert.equal(env.HOME, "original");
-        assert.equal(options.sampling, true);
+        assert.equal(options.sampling, false);
         assert(remaining() >= 31000);
         return row;
       },
@@ -2123,8 +2137,8 @@ test("Metal manual absence and gzip inflation bounds remain an explicit unavaila
   assert.equal(inflated.supported, false);
   assert.equal(inflated.reason, "SAMPLER_INTERFACE_UNAVAILABLE");
   const f = waitParentFixture();
-  f.scope.observeSamplerInterface = async () => missing;
-  await assert.rejects(f.build()(f.e), /METAL_SAMPLE_INTERFACE_UNAVAILABLE/);
+  f.scope.observeXcrunNoCacheInterface = async () => missing;
+  await assert.rejects(f.build()(f.e), /XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE/);
   assert.equal(f.launches.length, 0);
 });
 test("Metal actual query maximum two stream captures and two projected samples preserve the original nullable outcome within all caps", async () => {
@@ -2309,3 +2323,195 @@ test(
     assert.deepEqual(f.cleanupCalls, [false]);
   },
 );
+
+test("No-cache installed manual guard observes only fixed documented options and retains strict held metadata", async () => {
+  const { gzipSync } = await import("node:zlib");
+  for (const gzip of [false, true]) {
+    const body = Buffer.from(
+        ".TH xcrun 1\n.B \\-\\-no\\-cache\nDo not use cached values.\n",
+      ),
+      raw = gzip ? gzipSync(body) : body,
+      seen = [];
+    const stamp = {
+      isFile: () => true,
+      size: BigInt(raw.length),
+      uid: 0n,
+      nlink: 1n,
+      mode: 0o100644n,
+      dev: 1n,
+      ino: 2n,
+      mtimeNs: 3n,
+      ctimeNs: 4n,
+    };
+    const result = await observeXcrunNoCacheInterface(() => 1234, {
+      stat: async (file) => {
+        seen.push(file);
+        if (gzip && file.endsWith(".1"))
+          throw Object.assign(Error(), { code: "ENOENT" });
+        return stamp;
+      },
+      read: async (file, cap, check) => {
+        assert.equal(cap, 65536);
+        assert.equal(check(), 1234);
+        assert.equal(file.endsWith(".gz"), gzip);
+        return raw;
+      },
+    });
+    assert.equal(result.supported, true);
+    assert.equal(result.manual.noCacheOptionObserved, true);
+    assert.equal(result.manual.bodyBase64, body.toString("base64"));
+    assert.equal(result.expectedPinsApproved, false);
+    assert(
+      seen.every(
+        (file) =>
+          file === "/usr/share/man/man1/xcrun.1" ||
+          file === "/usr/share/man/man1/xcrun.1.gz",
+      ),
+    );
+  }
+});
+
+test("No-cache manual missing, unsupported, malformed, tampered and overbound deny before one query", async () => {
+  const { gzipSync } = await import("node:zlib");
+  for (const mode of [
+    "missing",
+    "unsupported",
+    "invalid-utf8",
+    "writable",
+    "foreign-owner",
+    "link",
+    "hardlink",
+    "oversize",
+    "identity",
+    "read-error",
+    "inflate",
+  ]) {
+    const raw =
+      mode === "invalid-utf8"
+        ? Buffer.from([255])
+        : mode === "unsupported"
+          ? Buffer.from("-n unrelated")
+          : mode === "inflate"
+            ? gzipSync(Buffer.alloc(65537, 120))
+            : Buffer.from("--no-cache");
+    let stats = 0;
+    const result = await observeXcrunNoCacheInterface(() => 1000, {
+      stat: async (file) => {
+        if (mode === "missing" || (mode === "inflate" && file.endsWith(".1")))
+          throw Object.assign(Error(), { code: "ENOENT" });
+        stats++;
+        return {
+          isFile: () => mode !== "link",
+          size: mode === "oversize" ? 65537n : BigInt(raw.length),
+          uid: mode === "foreign-owner" ? 501n : 0n,
+          nlink: mode === "hardlink" ? 2n : 1n,
+          mode: mode === "writable" ? 0o100666n : 0o100644n,
+          dev: 1n,
+          ino: mode === "identity" && stats > 1 ? 3n : 2n,
+          mtimeNs: 3n,
+          ctimeNs: 4n,
+        };
+      },
+      read: async () => {
+        if (mode === "read-error") throw null;
+        return raw;
+      },
+    });
+    assert.equal(result.supported, false, mode);
+    const f = waitParentFixture();
+    f.scope.observeXcrunNoCacheInterface = async () => result;
+    // Use the production weak-map error identity, including a null read fault.
+    // The fixture has its own map; this call proves closed unsupported admission.
+    await assert.rejects(
+      f.build()(f.e),
+      /XCRUN_NO_CACHE_INTERFACE_UNAVAILABLE/,
+    );
+    assert.deepEqual(f.launches, []);
+  }
+});
+
+test("No-cache actual worker passes one flag with unchanged environment and never invokes PID or sampler commands", async () => {
+  const source = await read("native/mac-sdk-wait-diagnostic.mjs"),
+    body = source.slice(
+      source.indexOf("async function worker("),
+      source.indexOf("export async function main("),
+    );
+  const context = Buffer.from(
+    JSON.stringify({
+      root: waitRoot,
+      kind: "owned-metal-query-context",
+      samplerDisabled: true,
+      cacheBypassInterface: { supported: true, manualSha256: "d".repeat(64) },
+      selected: waitSelected,
+      stageWallEnd: Date.now() + 120000,
+      stageMonoEnd: String(process.hrtime.bigint() + 120000000000n),
+      workerWallEnd: Date.now() + 35000,
+      workerMonoEnd: String(process.hrtime.bigint() + 35000000000n),
+    }),
+  );
+  const observations = [],
+    saved = [],
+    failures = new WeakMap();
+  let executes = 0;
+  const env = { HOME: "original", TMPDIR: "original-temp" };
+  const scope = {
+    assert,
+    DEVELOPER: waitSelected.DEVELOPER_DIR,
+    SDK: waitSelected.SDKROOT,
+    process: { platform: "darwin", arch: "x64", env, hrtime: process.hrtime },
+    Date,
+    BigInt,
+    queryEnvironment,
+    held: async () => context,
+    hash: (b) => createHash("sha256").update(b).digest("hex"),
+    queryFailures: failures,
+    console: { log: (x) => observations.push(JSON.parse(x)) },
+    save: async (_f, row) => saved.push(row),
+    query: async (v, e, left, options) => {
+      assert.equal(options.sampling, false);
+      assert.deepEqual(e, queryEnvironment(waitSelected, "A", waitRoot, env));
+      return waitQuery(v, e, left, {
+        ...options,
+        spawn: () => assert.fail("PID/sample spawn"),
+        schedule: () => assert.fail("sampler timer"),
+        execute: (file, args, opt, callback) => {
+          executes++;
+          assert.equal(file, "/usr/bin/xcrun");
+          assert.deepEqual(args, [
+            "--no-cache",
+            "--sdk",
+            "macosx",
+            "--find",
+            "metal",
+          ]);
+          assert.equal(opt.timeout, 30000);
+          assert.equal(opt.maxBuffer, 65536);
+          assert.equal(opt.killSignal, "SIGKILL");
+          assert.equal(opt.env, e);
+          const c = waitChild();
+          queueMicrotask(() => {
+            c.emit("spawn");
+            callback(null);
+            c.stdout.emit("close");
+            c.stderr.emit("close");
+            c.emit("exit", 0, null);
+            c.emit("close", 0, null);
+          });
+          return c;
+        },
+      });
+    },
+  };
+  const worker = new Function(...Object.keys(scope), body + ";return worker;")(
+    ...Object.values(scope),
+  );
+  await worker(waitRoot, scope.hash(context), "A");
+  assert.equal(executes, 1);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].sampler.enabled, false);
+  assert.equal(saved[0].sampler.attempted, false);
+  assert.equal(saved[0].sampler.observations.length, 0);
+  assert.equal(saved[0].sampler.joined, true);
+  assert.equal(saved[0].stdinEnded, false);
+  assert.equal(observations[0].failed, false);
+});
