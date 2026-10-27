@@ -19,7 +19,7 @@ const SETUP_BUN_TAG = "v2.2.0";
 
 const EXPECTED_SETUP_NODE_COUNTS = {
   "audit.yml": 1,
-  "browser-native-packages.yml": 1,
+  "browser-native-packages.yml": 2,
   "cargo-update.yml": 2,
   "cef-hosted-capacity.yml": 1,
   "cef-owned-sdk-import.yml": 1,
