@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-owned-publication-review",
+  "target": "x86_64-unknown-linux-gnu",
+  "sourceLockIdentity": "8e8641855d7f7ddc63ce7bfd3e9b5adcc5f5ffc64103b0fc469c69608538f279",
+  "descriptorSha256": "5f8c8dd960303b1046d4669b89f4a10c47dd01e70f639a4d6d52ca2c601a7db3",
+  "producer": {
+    "target": "x86_64-unknown-linux-gnu",
+    "runId": 40405703996,
+    "headSha": "7d2aeca6c30588afb89bfa8087236b4683a5ab19",
+    "artifactId": 12690886375,
+    "artifactSha256": "f080328422abd3458817da788752e77822afe3ff99c06036c743fdafda3c5245",
+    "descriptorSha256": "5f8c8dd960303b1046d4669b89f4a10c47dd01e70f639a4d6d52ca2c601a7db3",
+    "producer": "owned-import",
+    "runAttempt": 1,
+    "completionSha256": "782bbad7b82566ac76ca8a46382311589fa6f497377c78df6eb937e60a0decf8",
+    "reviewedImport": "native/cef-owned-sdk-imports/linux-x64-source25-external-webview-20261026/review.json",
+    "reviewSha256": "830aa9751d8492b403341cee66129409dba107cfd8c52f013785eadb30876b5c"
+  },
+  "acceptance": {
+    "runId": 40423134946,
+    "runAttempt": 1,
+    "headSha": "cd6d75805d5604435e5395579cc7de8d83e47a79",
+    "sourceTree": "7e3b5911ce7cda2fdd09285bc73efe6ab62d41bf",
+    "codeSha256": "e5ddf91ca6c351b8ddf004c23508e07a55e3111d723438843c84f27a226c79e3",
+    "artifactId": 12701401636,
+    "artifactSha256": "e33c23b659935c743b1dbf0ca43191063fb4c4867d63a8b3e83df85fc873bfc8",
+    "sealSha256": "8eef785385059e761cf07348a2fdc41a09ab1c31ac9084165dbe6e3ebe1695bd",
+    "nativeReportSha256": "e86c5316c66c799f854385cdfd534b7e1bad12bcaf2fa11dcfe053ff1cb7eebe"
+  }
+}
