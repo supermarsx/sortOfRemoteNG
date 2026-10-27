@@ -2705,7 +2705,9 @@ test("Xcrun candidate diagnostics capture each actual failed metadata predicate 
     assert.equal(row.index, 4);
     assert.equal(row.path, paths[4]);
     assert.equal(row.status, "METADATA");
-    assert.deepEqual(row.metadata.failedPredicates, [failed]);
+    assert.deepEqual(row.metadata.failedPredicates, [
+      failed === "rootOwner" ? "ownerAllowed" : failed,
+    ]);
     assert.equal(row.metadata.uid, String(expectedStamp.uid));
     assert.equal(row.metadata.nlink, String(expectedStamp.nlink));
     assert.equal(row.metadata.mode, String(expectedStamp.mode));
@@ -2799,4 +2801,176 @@ test("Xcrun diagnostic metadata is closed, bounded and preserves unavailable ori
       (row, index) => row.index === index && row.status === "MISSING",
     ),
   );
+});
+
+function manualOwnerFixture(index, uid, getuid = () => 501, mutate = (x) => x) {
+  const candidates = [
+    "/usr/share/man/man1/xcrun.1",
+    "/usr/share/man/man1/xcrun.1.gz",
+    "/Applications/Xcode_26.3.app/Contents/Developer/usr/share/man/man1/xcrun.1",
+    "/Applications/Xcode_26.3.app/Contents/Developer/usr/share/man/man1/xcrun.1.gz",
+    "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1",
+    "/Library/Developer/CommandLineTools/usr/share/man/man1/xcrun.1.gz",
+  ];
+  const body = Buffer.from("--no-cache\nDo not use cached values.\n"),
+    stamp = mutate({
+      isFile: () => true,
+      size: BigInt(body.length),
+      uid,
+      nlink: 1n,
+      mode: 0o100644n,
+      dev: 1n,
+      ino: 2n,
+      mtimeNs: 3n,
+      ctimeNs: 4n,
+    });
+  let reads = 0,
+    uidCalls = 0;
+  return {
+    candidates,
+    body,
+    stats: () => ({ reads, uidCalls }),
+    deps: {
+      getuid: () => {
+        uidCalls++;
+        return getuid();
+      },
+      stat: async (file) => {
+        if (file !== candidates[index])
+          throw Object.assign(Error(), { code: "ENOENT" });
+        return stamp;
+      },
+      read: async (file, cap) => {
+        reads++;
+        assert.equal(file, candidates[index]);
+        assert.equal(cap, 65536);
+        return body;
+      },
+    },
+  };
+}
+
+test("Selected-Xcode manual accepts root or once-observed caller only; system and CLT remain root-only", async () => {
+  const { gzipSync } = await import("node:zlib");
+  for (let index = 0; index < 6; index++)
+    for (const uid of [0n, 501n, 502n]) {
+      const f = manualOwnerFixture(index, uid),
+        originalRead = f.deps.read;
+      if (index % 2 === 1) {
+        const raw = gzipSync(f.body);
+        f.deps.stat = async (file) => {
+          if (file !== f.candidates[index])
+            throw Object.assign(Error(), { code: "ENOENT" });
+          return {
+            isFile: () => true,
+            size: BigInt(raw.length),
+            uid,
+            nlink: 1n,
+            mode: 0o100644n,
+            dev: 1n,
+            ino: 2n,
+            mtimeNs: 3n,
+            ctimeNs: 4n,
+          };
+        };
+        f.deps.read = async (file, cap) => {
+          await originalRead(file, cap);
+          return raw;
+        };
+      }
+      const result = await observeXcrunNoCacheInterface(() => 1000, f.deps),
+        selected = index === 2 || index === 3,
+        accepted = uid === 0n || (selected && uid === 501n);
+      assert.equal(result.supported, accepted, `${index}/${uid}`);
+      assert.equal(f.stats().uidCalls, 1);
+      assert.equal(f.stats().reads, accepted ? 1 : 0);
+      assert.equal(result.ownerContext.callerUid, "501");
+      assert.equal(result.ownerContext.callerUidStatus, "OBSERVED");
+      const facts = result.candidateObservations.at(-1).metadata;
+      assert.equal(facts.rootOwner, uid === 0n);
+      assert.equal(facts.predicates.ownerAllowed, accepted);
+      assert.equal(
+        facts.role,
+        selected ? "selected-developer-document" : "root-only-document",
+      );
+      assert.deepEqual(facts.allowedUids, selected ? ["0", "501"] : ["0"]);
+      assert.deepEqual(
+        facts.failedPredicates,
+        accepted ? [] : ["ownerAllowed"],
+      );
+      if (accepted) assert.equal(result.manual.path, f.candidates[index]);
+    }
+});
+
+test("Unavailable or malformed caller UID never becomes a guessed installed-document owner", async () => {
+  for (const value of [
+    undefined,
+    null,
+    NaN,
+    Infinity,
+    -1,
+    4294967296,
+    "501",
+    true,
+    501.25,
+    "throw",
+  ]) {
+    for (const uid of [0n, 501n]) {
+      const f = manualOwnerFixture(2, uid, () => {
+        if (value === "throw") throw Error("private UID problem");
+        return value;
+      });
+      const result = await observeXcrunNoCacheInterface(() => 1000, f.deps);
+      assert.equal(result.supported, uid === 0n);
+      assert.equal(f.stats().uidCalls, 1);
+      assert.equal(result.ownerContext.callerUid, null);
+      assert.deepEqual(
+        result.candidateObservations.at(-1).metadata.allowedUids,
+        ["0"],
+      );
+      assert(!JSON.stringify(result).includes("private UID problem"));
+    }
+  }
+  const f = manualOwnerFixture(-1, 501n),
+    result = await observeXcrunNoCacheInterface(() => 1000, f.deps);
+  assert.equal(f.stats().uidCalls, 1);
+  assert.equal(result.candidateObservations.length, 6);
+  assert.equal(result.supported, false);
+});
+
+test("Same-user Xcode documentation retains every nonownership guard and never expands the fixed developer role", async () => {
+  for (const [predicate, mutate] of [
+    [
+      "regular",
+      (s) => ({ ...s, isFile: () => false, isSymbolicLink: () => true }),
+    ],
+    ["nonempty", (s) => ({ ...s, size: 0n })],
+    ["sizeBound", (s) => ({ ...s, size: 65537n })],
+    ["singleton", (s) => ({ ...s, nlink: 2n })],
+    ["nonWritable", (s) => ({ ...s, mode: 0o100666n })],
+  ]) {
+    const f = manualOwnerFixture(2, 501n, () => 501, mutate),
+      result = await observeXcrunNoCacheInterface(() => 1000, f.deps);
+    assert.equal(result.supported, false);
+    assert.equal(f.stats().reads, 0);
+    assert.deepEqual(
+      result.candidateObservations.at(-1).metadata.failedPredicates,
+      [predicate],
+    );
+  }
+  const f = manualOwnerFixture(2, 501n);
+  f.deps.stat = async (file) => {
+    assert(!file.includes("Xcode_99") && !file.includes("foreign"));
+    throw Object.assign(Error(), { code: "ENOENT" });
+  };
+  const result = await observeXcrunNoCacheInterface(() => 1000, f.deps);
+  assert.equal(result.supported, false);
+  assert.equal(result.candidateObservations.length, 6);
+  const closed = manualMetadataObservation(
+    { isFile: () => true, size: 10n, uid: 501n, nlink: 1n, mode: 0o100644n },
+    { selectedDeveloperDocument: "true", callerUid: 501, unknown: "private" },
+  );
+  assert.equal(closed.predicates.ownerAllowed, false);
+  assert.deepEqual(closed.allowedUids, ["0"]);
+  assert(!JSON.stringify(closed).includes("private"));
 });

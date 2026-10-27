@@ -711,7 +711,10 @@ export async function observeSamplerInterface(
 // Diagnostic projection only: never spread Stats or expose an error/path value.
 // Oversized or unavailable numeric fields are null, never rounded or stringified
 // without a bound. The original metadata assertion below remains authoritative.
-export function manualMetadataObservation(before) {
+export function manualMetadataObservation(
+  before,
+  { selectedDeveloperDocument = false, callerUid = null } = {},
+) {
   try {
     const decimal = (n) =>
       typeof n === "bigint" && n >= 0n && n <= 18446744073709551615n
@@ -725,17 +728,34 @@ export function manualMetadataObservation(before) {
         : before.isDirectory?.() === true
           ? "directory"
           : "other";
+    const callerValid =
+      Number.isSafeInteger(callerUid) &&
+      callerUid >= 0 &&
+      callerUid <= 4294967295;
+    const selectedRole = selectedDeveloperDocument === true;
+    const ownerAllowed =
+      before.uid === 0n ||
+      (selectedRole && callerValid && before.uid === BigInt(callerUid));
     const predicates = {
       regular,
       nonempty: typeof before.size === "bigint" && before.size > 0n,
       sizeBound: typeof before.size === "bigint" && before.size <= 65536n,
-      rootOwner: before.uid === 0n,
+      ownerAllowed,
       singleton: before.nlink === 1n,
       nonWritable:
         typeof before.mode === "bigint" && (before.mode & 0o022n) === 0n,
     };
     return {
       available: true,
+      role: selectedRole ? "selected-developer-document" : "root-only-document",
+      rootOwner: before.uid === 0n,
+      callerUid: callerValid ? String(callerUid) : null,
+      allowedUids: [
+        "0",
+        ...(selectedRole && callerValid && callerUid !== 0
+          ? [String(callerUid)]
+          : []),
+      ],
       type,
       uid: decimal(before.uid),
       nlink: decimal(before.nlink),
@@ -755,14 +775,31 @@ export function manualMetadataObservation(before) {
 // Installed documentation is observed before any query; no help/tool fallback.
 export async function observeXcrunNoCacheInterface(
   remaining,
-  { read = held, stat = fs.lstat } = {},
+  { read = held, stat = fs.lstat, getuid = () => process.getuid?.() } = {},
 ) {
+  // Same-user documentation trust only. Never infer UID from env or the file.
+  let callerUid = null,
+    callerUidStatus = "UNAVAILABLE";
+  try {
+    const actual = getuid();
+    if (Number.isSafeInteger(actual) && actual >= 0 && actual <= 4294967295) {
+      callerUid = actual;
+      callerUidStatus = "OBSERVED";
+    } else callerUidStatus = "INVALID";
+  } catch {
+    /* Root-only fallback; no raw error or guessed identity. */
+  }
   const result = {
     supported: false,
     observedOnly: true,
     expectedPinsApproved: false,
     manual: null,
     candidateObservations: [],
+    ownerContext: {
+      callerUid: callerUid === null ? null : String(callerUid),
+      callerUidStatus,
+      sameUserDocumentTrust: true,
+    },
     reason: "MANUAL_UNAVAILABLE",
   };
   try {
@@ -798,17 +835,29 @@ export async function observeXcrunNoCacheInterface(
         });
         throw error;
       }
+      const selectedDeveloperDocument =
+        (index === 2 || index === 3) &&
+        (file === DEVELOPER + "/usr/share/man/man1/xcrun.1" ||
+          file === DEVELOPER + "/usr/share/man/man1/xcrun.1.gz");
+      const ownerAllowed =
+        before.uid === 0n ||
+        (selectedDeveloperDocument &&
+          callerUid !== null &&
+          before.uid === BigInt(callerUid));
       result.candidateObservations.push({
         index,
         path: file,
         status: "METADATA",
-        metadata: manualMetadataObservation(before),
+        metadata: manualMetadataObservation(before, {
+          selectedDeveloperDocument,
+          callerUid,
+        }),
       });
       assert(
         before.isFile() &&
           before.size > 0n &&
           before.size <= 65536n &&
-          before.uid === 0n &&
+          ownerAllowed &&
           before.nlink === 1n &&
           (before.mode & 0o022n) === 0n,
         "XCRUN_MANUAL_METADATA",
