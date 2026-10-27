@@ -340,7 +340,8 @@ def inventory(root, budget, generated_links=None, source_policy=None):
                         target = source_io_call('link-read', p, lambda: os.readlink(p))
                         require(isinstance(target,str) and 0 < len(target.encode()) <= 4096 and not any(ord(c)<32 for c in target), 'source-link')
                         if not external:
-                            source_link_target(root, p, target, budget)
+                            if not source_nearby_literal(source_policy,name,target,s):
+                                source_link_target(root, p, target, budget)
                         row = {'path':name,'kind':'symlink','stamp':stamp(s),'target':target,'ctimeNs':s.st_ctime_ns}
                         source_mac_row(row, s, source_policy)
                         source_aggregate(source_policy, name, 0, target)
@@ -371,7 +372,8 @@ def inventory(root, budget, generated_links=None, source_policy=None):
         expected_links -= set(FRAMEWORK_ROLES)
     require(seen_links == expected_links, 'missing-generated-link')
     if source_policy is not None:
-        source_metadata_precharge(sum(len(r['path'].encode()) + len(r.get('target','').encode()) + 320 for r in rows),
+        literal_bytes = len(json.dumps(source_policy['_nearby_literals']['portable'],sort_keys=True,separators=(',',':')).encode()) if source_policy.get('_nearby_literals') is not None else (2 if not source_policy.get('external') and not source_policy.get('mac') else 0)
+        source_metadata_precharge(sum(len(r['path'].encode()) + len(r.get('target','').encode()) + 320 for r in rows) + literal_bytes,
                                   owned_source=source_policy.get('external') is not True)
     generated_state(root, generated_links, rows, budget)
     return sorted(rows, key=lambda r: r['path']), raw
@@ -672,7 +674,7 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
 
 # Fixed Linux ARM source metadata; never a general extraction or timestamp API.
 SOURCE_METADATA_NAME = '.siso_sorng_source_metadata.json'
-SOURCE_METADATA_POLICY = 'sorng-linuxarm-complete-owned-inputs-v1'
+SOURCE_METADATA_POLICY = 'sorng-linuxarm-complete-owned-inputs-v2-nearby-literals'
 SOURCE_METADATA_DATE_EPOCH = '1790626028'
 SOURCE_CLOSE_FAILURE = False
 SOURCE_JOIN_FAILURE = False
@@ -684,6 +686,129 @@ MAC_SOURCE_WRITE_ADMITTED = False
 MAC_EXTERNAL_ROLE = None
 MAC_EXTERNAL_PHASE = None
 MAC_REPORT_FAILURE = False
+
+# Exact standalone-submodule link declarations from the pinned Nearby tree.
+# These remain literal inputs, never authority to follow an absent target.
+NEARBY_ROOT = 'src/third_party/nearby/src'
+NEARBY_HEAD = '0bad8b0c9877f92eeeb550654f1ea51a71a085e4'
+NEARBY_MODULES_SHA256 = '3914e148331ecf23a42bbe017c0cc8a0efd0f0cf47ccc5b3ad08212ce4a2986f'
+NEARBY_LITERAL_LINKS = (
+    ('third_party/google-toolbox-for-mac/include/GTMDefines.h', '../google-toolbox-for-mac/GTMDefines.h',
+     'third_party/google-toolbox-for-mac/google-toolbox-for-mac', '1b2da5e6e6b5edb1fa1427cc77e23f04069c04ad', 'GTMDefines.h'),
+    ('third_party/google-toolbox-for-mac/include/GoogleToolboxForMac/GTMLogger.h', '../../google-toolbox-for-mac/Foundation/GTMLogger.h',
+     'third_party/google-toolbox-for-mac/google-toolbox-for-mac', '1b2da5e6e6b5edb1fa1427cc77e23f04069c04ad', 'Foundation/GTMLogger.h'),
+    ('third_party/securemessage/include/securemessage', '../securemessage/cpp/include/securemessage',
+     'third_party/securemessage/securemessage', '69a02984d4563c6c21132ee882d1d3df1981f5a1', 'cpp/include/securemessage'),
+    ('third_party/smhasher/include/src', '../../smhasher/smhasher/src',
+     'third_party/smhasher/smhasher', '61a0530f28277f2e850bfc39600ce61d02b518de', 'src'),
+    ('third_party/ukey2/include/securegcm', '../ukey2/src/main/cpp/include/securegcm',
+     'third_party/ukey2/ukey2', '03290b58d9f93cdd5c9f9f7a7f9e8efc640d0c40', 'src/main/cpp/include/securegcm'),
+)
+
+
+def source_nearby_route(root, origin, target, gitlink, remainder, budget):
+    # A fixed declaration still visits every existing ancestor in kernel order.
+    # This route ends at a held EMPTY gitlink; it never follows missing/.. .
+    pending = list(Path(origin).parent.parts) + target.split('/')
+    resolved = []
+    while pending:
+        budget.check();part = pending.pop(0)
+        if part == '..':
+            require(resolved, 'source-nearby-binding');resolved.pop();continue
+        require(part not in ('', '.'), 'source-nearby-binding')
+        resolved.append(part);name = Path(*resolved).as_posix();p = root / name
+        info = p.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and
+                not getattr(info,'st_file_attributes',0) & 0x400 and '.git' not in resolved and
+                name not in ('src/out','acquisition-logs'), 'source-nearby-binding')
+        if name == gitlink:
+            require(pending == remainder.split('/'), 'source-nearby-binding')
+            return
+    raise CheckpointError('source-nearby-binding')
+
+
+def source_nearby_check(state, budget):
+    if state is None:
+        return
+    for p,expected,identity in state['headers']:
+        budget.check();safe(p)
+        require((stamp(p.lstat()),p.lstat().st_ctime_ns) == identity and
+                source_read_bytes(p,budget,len(expected)) == expected, 'source-nearby-changed')
+    for p,target,identity in state['links'].values():
+        budget.check();safe(p.parent);info=p.lstat()
+        require((stamp(info),info.st_ctime_ns) == identity and os.readlink(p) == target,
+                'source-nearby-changed')
+    for p,fd,before in state['directories'].values():
+        budget.check();safe(p);current=p.lstat();held=os.fstat(fd)
+        require(stamp(current)==stamp(before)==stamp(held) and
+                current.st_ctime_ns==before.st_ctime_ns==held.st_ctime_ns and
+                current.st_uid==before.st_uid==held.st_uid, 'source-nearby-changed')
+        entries=os.scandir(fd);primary=None
+        try:
+            require(next(entries,None) is None, 'source-nearby-absence')
+        except BaseException as error:
+            primary=error
+            raise
+        finally:
+            source_close(entries.close,primary)
+        require(stamp(p.lstat())==stamp(before)==stamp(os.fstat(fd)) and
+                p.lstat().st_ctime_ns==before.st_ctime_ns==os.fstat(fd).st_ctime_ns, 'source-nearby-changed')
+
+
+def source_nearby_literal(policy, name, target, info):
+    if policy.get('mac') or name not in {NEARBY_ROOT+'/'+item[0] for item in NEARBY_LITERAL_LINKS}:
+        return False
+    state=policy.get('_nearby_literals')
+    require(state is not None and name in state['links'], 'source-nearby-binding')
+    _,expected,identity=state['links'][name]
+    require(target==expected and (stamp(info),info.st_ctime_ns)==identity, 'source-nearby-changed')
+    return True
+
+
+@contextmanager
+def source_nearby_literals(root, policy, budget):
+    if policy.get('external') or policy.get('mac') or NEARBY_ROOT not in policy.get('repositories',set()):
+        yield None
+        return
+    import sys
+    require(sys.platform=='linux', 'source-linux-only')
+    state={'headers':[],'links':{},'directories':{},'portable':[]};primary=None
+    try:
+        for name,expected in ((NEARBY_ROOT+'/.git/HEAD',(NEARBY_HEAD+'\n').encode()),
+                              (NEARBY_ROOT+'/.gitmodules',None)):
+            p=safe(root/name);before=p.lstat()
+            require(stat.S_ISREG(before.st_mode) and before.st_uid==os.geteuid() and before.st_nlink==1, 'source-nearby-binding')
+            raw=source_read_bytes(p,budget,1512 if expected is None else 41)
+            require(raw==expected if expected is not None else len(raw)==1512 and
+                    hashlib.sha256(raw).hexdigest()==NEARBY_MODULES_SHA256, 'source-nearby-binding')
+            require((stamp(p.lstat()),p.lstat().st_ctime_ns)==(stamp(before),before.st_ctime_ns), 'source-nearby-changed')
+            state['headers'].append((p,raw,(stamp(before),before.st_ctime_ns)))
+        for origin,target,gitlink,commit,remainder in NEARBY_LITERAL_LINKS:
+            budget.check();origin=NEARBY_ROOT+'/'+origin;gitlink=NEARBY_ROOT+'/'+gitlink
+            p=root/origin;safe(p.parent);info=p.lstat()
+            require(stat.S_ISLNK(info.st_mode) and info.st_uid==os.geteuid() and info.st_nlink==1 and
+                    not getattr(info,'st_file_attributes',0)&0x400 and os.readlink(p)==target, 'source-nearby-link')
+            state['links'][origin]=(p,target,(stamp(info),info.st_ctime_ns))
+            source_nearby_route(root,origin,target,gitlink,remainder,budget)
+            if gitlink not in state['directories']:
+                directory=safe(root/gitlink);before=directory.lstat()
+                require(stat.S_ISDIR(before.st_mode) and before.st_uid==os.geteuid() and before.st_nlink>0 and
+                        not before.st_mode&0o7000, 'source-nearby-binding')
+                fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+                # Register creation-owned handle before any fallible validation.
+                state['directories'][gitlink]=(directory,fd,before)
+            state['portable'].append({'kind':'pinned-unpopulated-gitlink-literal','origin':origin,'rawTarget':target,
+                'rawTargetSha256':hashlib.sha256(target.encode()).hexdigest(),'nearbyHead':NEARBY_HEAD,
+                'gitmodulesSha256':NEARBY_MODULES_SHA256,'gitlink':gitlink,'gitlinkCommit':commit,
+                'absentFirstComponent':remainder.split('/')[0],'remainder':remainder,'state':'empty'})
+        source_nearby_check(state,budget)
+        yield state
+        source_nearby_check(state,budget)
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        source_cleanup_all([lambda fd=fd:os.close(fd) for _,fd,_ in state['directories'].values()],primary)
 
 
 def source_birth(info):
@@ -1000,12 +1125,18 @@ def source_portable(row, digest=None, policy=None):
 
 
 def source_snapshot(root, budget, guards=None, context=None):
-    global SOURCE_JOIN_FAILURE
-    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
     external = context is not None and context.get('external') is True
     owner = source_io_call('root-stat', root, root.stat).st_uid
     require(owner in (0, os.geteuid()) if external else owner == os.geteuid(), 'source-owner')
     policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
+    with source_nearby_literals(root,policy,budget) as literals:
+        policy['_nearby_literals']=literals
+        return source_snapshot_inventory(root,budget,guards,policy,external)
+
+
+def source_snapshot_inventory(root, budget, guards, policy, external):
+    global SOURCE_JOIN_FAILURE
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
     if policy.get('mac'):
         policy['_directories'] = {}
         local_before = source_local(root.stat(), policy)
@@ -1054,6 +1185,8 @@ def source_snapshot(root, budget, guards=None, context=None):
     if not external:
         require(hashes.get('.gclient_entries') == policy['registrySha256'], 'source-repositories-changed')
         require({'src','src/cef','depot_tools'} <= set(policy['gitHeads']), 'source-required-repositories')
+        if policy.get('_nearby_literals') is not None:
+            require(policy['gitHeads'].get(NEARBY_ROOT)==NEARBY_HEAD, 'source-nearby-binding')
     aggregate = dict(policy['aggregate']) if external else None
     if external:
         # A second namespace read verifies stability, not a second authority budget.
@@ -1068,6 +1201,8 @@ def source_snapshot(root, budget, guards=None, context=None):
     value = {'entries': [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows],
              'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
              'bytes': total}
+    if not external and not policy.get('mac'):
+        value['literalLinks'] = policy['_nearby_literals']['portable'] if policy['_nearby_literals'] is not None else []
     if external:
         value['root'] = {'mode':root_before[4], 'mtimeNs':str(root_before[1]), 'uid':root.stat().st_uid,
                          'gid':root.stat().st_gid, 'nlink':root_before[5]}
@@ -1120,25 +1255,29 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     SOURCE_IO_CONTEXT.set((mode, root))
     guards = {}
     if mode == 'source-record':
-        current = source_snapshot(root, budget, guards)
-        value = {'schemaVersion': 1, 'kind': 'sorng-linuxarm-source-metadata',
-                 'policy': SOURCE_METADATA_POLICY, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
-        written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
-        require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
-        return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
-                'bytes': current['bytes'], 'sidecar': written}
+        with source_nearby_literals(root,source_repositories(root,budget),budget) as record_literals:
+            current = source_snapshot(root, budget, guards)
+            value = {'schemaVersion': 1, 'kind': 'sorng-linuxarm-source-metadata',
+                     'policy': SOURCE_METADATA_POLICY, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
+            written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
+            require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
+            with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
+                require((literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
+            return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
+                    'bytes': current['bytes'], 'sidecar': written}
     stored = source_read_sidecar(sidecar, budget, owned_sidecar=True)
     require(isinstance(stored, dict) and set(stored) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
             type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == 'sorng-linuxarm-source-metadata' and
             stored['policy'] == SOURCE_METADATA_POLICY and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
             'source-sidecar-binding')
     expected = stored['snapshot']
-    require(isinstance(expected, dict) and set(expected) == {'entries','rootMtimeNs','gitHeads','bytes'} and
+    require(isinstance(expected, dict) and set(expected) == {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'} and
             isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
             'source-sidecar-shape')
     current = source_snapshot(root, budget, guards)
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
+    require(expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
     # Compare the entire freshly hashed namespace before the first metadata write.
     without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
     require(json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) ==
@@ -1149,6 +1288,9 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     require(isinstance(expected['rootMtimeNs'], str) and re.fullmatch(r'0|[1-9][0-9]{0,18}', expected['rootMtimeNs']) and
             int(expected['rootMtimeNs']) < 2**63, 'source-mtime')
     if mode == 'source-apply':
+        # Revalidate the fixed absence witnesses immediately before any utime.
+        with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
+            require((literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
             budget.check();path = root / relative(row['path']);before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')

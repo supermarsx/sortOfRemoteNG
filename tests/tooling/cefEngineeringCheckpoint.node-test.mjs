@@ -10350,7 +10350,7 @@ test(
 );
 
 test(
-  "Linux source transaction and sidecar bytes match the reviewed 9e6 implementation exactly",
+  "Linux source v2 policy rejects legacy sidecars and preserves reviewed payload/schema outside explicit literal witnesses",
   {
     skip:
       process.platform !== "linux"
@@ -10377,16 +10377,26 @@ import types
 old=types.ModuleType('reviewed_linux');old.__file__=sys.argv[2]
 exec(compile(pathlib.Path(sys.argv[2]).read_bytes(),sys.argv[2],'exec'),old.__dict__)
 with fixture(record=False) as (root,sidecar,identity):
- before=old.source_metadata('source-record',root,sidecar,identity,60);raw=sidecar.read_bytes();sidecar.unlink()
- after=m.source_metadata('source-record',root,sidecar,identity,60)
- assert before==after and raw==sidecar.read_bytes(), 'exact-record-sidecar'
- assert old.source_metadata('source-verify',root,sidecar,identity,60)==m.source_metadata('source-verify',root,sidecar,identity,60),'exact-verify'
+ before=old.source_metadata('source-record',root,sidecar,identity,60);raw=sidecar.read_bytes()
+ assert old.source_metadata('source-verify',root,sidecar,identity,60)['complete']
+ with patch.object(m.os,'utime',side_effect=AssertionError('legacy policy must deny before writes')) as writes:
+  try:m.source_metadata('source-apply',root,sidecar,identity,60)
+  except m.CheckpointError as error:assert str(error)=='source-sidecar-binding'
+  else:raise AssertionError('legacy policy admitted')
+  writes.assert_not_called()
+ sidecar.unlink();after=m.source_metadata('source-record',root,sidecar,identity,60);fresh=sidecar.read_bytes()
+ legacy=json.loads(raw);current=json.loads(fresh)
+ assert legacy['policy']!=current['policy'] and current['policy']==m.SOURCE_METADATA_POLICY
+ assert current['snapshot'].pop('literalLinks')==[]
+ current['policy']=legacy['policy'];assert current==legacy,'only-policy-and-fixed-witness-schema-difference'
+ assert {k:v for k,v in before.items() if k!='sidecar'}=={k:v for k,v in after.items() if k!='sidecar'}
+ assert m.source_metadata('source-verify',root,sidecar,identity,60)['complete']
  file=root/'src/input.cc';s=file.stat();shift=s.st_mtime_ns+1000000000
- os.utime(file,ns=(s.st_atime_ns,shift));first=old.source_metadata('source-apply',root,sidecar,identity,60);old_time=file.stat().st_mtime_ns
- os.utime(file,ns=(s.st_atime_ns,shift));second=m.source_metadata('source-apply',root,sidecar,identity,60)
- assert first==second and file.stat().st_mtime_ns==old_time and raw==sidecar.read_bytes(),'exact-apply-sidecar'
- assert set(json.loads(raw))=={'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'}
- assert all('birthNs' not in row and 'uid' not in row and 'nlink' not in row for row in json.loads(raw)['snapshot']['entries'])
+ sidecar.write_bytes(raw);os.utime(file,ns=(s.st_atime_ns,shift));first=old.source_metadata('source-apply',root,sidecar,identity,60);old_time=file.stat().st_mtime_ns
+ sidecar.write_bytes(fresh);os.utime(file,ns=(s.st_atime_ns,shift));second=m.source_metadata('source-apply',root,sidecar,identity,60)
+ assert first==second and file.stat().st_mtime_ns==old_time and fresh==sidecar.read_bytes(),'same-content-and-timestamp-transaction'
+ assert set(json.loads(fresh))=={'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'}
+ assert all('birthNs' not in row and 'uid' not in row and 'nlink' not in row for row in json.loads(fresh)['snapshot']['entries'])
  some=root/'src/some';some.mkdir();(root/'src/foo').mkdir();(some/'out').mkdir()
  (some/'out/file').write_bytes(b'owned lexical decoy');(root/'src/out/file').write_bytes(b'owned excluded fixture')
  os.symlink('../foo',some/'alias');os.symlink('alias/../out/file',some/'jump')
@@ -10395,17 +10405,14 @@ with fixture(record=False) as (root,sidecar,identity):
  try:m.source_link_target(root,some/'jump','alias/../out/file',m.Budget(5))
  except m.CheckpointError as error:assert str(error)=='source-excluded-link','new-strict-denial'
  else:raise AssertionError('new resolver accepted actual excluded traversal')
-print('reviewed-Linux exact record/apply/verify sidecar/schema PASS')
+print('reviewed-Linux payload and transaction parity; explicit new policy and witness schema PASS')
 `;
     const result = python(code, [
       path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
       baseline,
     ]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(
-      result.stdout,
-      /exact record\/apply\/verify sidecar\/schema PASS/,
-    );
+    assert.match(result.stdout, /explicit new policy and witness schema PASS/);
   },
 );
 
@@ -10584,5 +10591,115 @@ test(
       );
       assert.ok(ledger.bytes > 0 && ledger.bytes <= 64 * 1024 ** 2);
     }
+  },
+);
+
+const NEARBY_LITERAL_PROOF = String.raw`
+import base64,hashlib
+MODULES=base64.b64decode('W3N1Ym1vZHVsZSAidGhpcmRfcGFydHkvcHJvdG9idWYiXQoJcGF0aCA9IHRoaXJkX3BhcnR5L3Byb3RvYnVmCgl1cmwgPSBodHRwczovL2dpdGh1Yi5jb20vcHJvdG9jb2xidWZmZXJzL3Byb3RvYnVmCglicmFuY2ggPSAzLjE5LngKW3N1Ym1vZHVsZSAidGhpcmRfcGFydHkvZ3Rlc3QiXQoJcGF0aCA9IHRoaXJkX3BhcnR5L2d0ZXN0Cgl1cmwgPSBodHRwczovL2dpdGh1Yi5jb20vZ29vZ2xlL2dvb2dsZXRlc3QKCWJyYW5jaCA9IG1haW4KW3N1Ym1vZHVsZSAidGhpcmRfcGFydHkvYWJzbCJdCglwYXRoID0gdGhpcmRfcGFydHkvYWJzbAoJdXJsID0gaHR0cHM6Ly9naXRodWIuY29tL2Fic2VpbC9hYnNlaWwtY3BwCglicmFuY2ggPSBtYXN0ZXIKW3N1Ym1vZHVsZSAidGhpcmRfcGFydHkvZGVwb3RfdG9vbHMiXQoJcGF0aCA9IHRoaXJkX3BhcnR5L2RlcG90X3Rvb2xzCgl1cmwgPSBodHRwczovL2Nocm9taXVtLmdvb2dsZXNvdXJjZS5jb20vY2hyb21pdW0vdG9vbHMvZGVwb3RfdG9vbHMuZ2l0CglicmFuY2ggPSBtYWluCltzdWJtb2R1bGUgInRoaXJkX3BhcnR5L3VrZXkyL3VrZXkyIl0KCXBhdGggPSB0aGlyZF9wYXJ0eS91a2V5Mi91a2V5MgoJdXJsID0gaHR0cHM6Ly9naXRodWIuY29tL2dvb2dsZS91a2V5MgoJYnJhbmNoID0gbWFzdGVyCltzdWJtb2R1bGUgInRoaXJkX3BhcnR5L3NtaGFzaGVyL3NtaGFzaGVyIl0KCXBhdGggPSB0aGlyZF9wYXJ0eS9zbWhhc2hlci9zbWhhc2hlcgoJdXJsID0gaHR0cHM6Ly9naXRodWIuY29tL2FhcHBsZWJ5L3NtaGFzaGVyCglicmFuY2ggPSBtYXN0ZXIKW3N1Ym1vZHVsZSAidGhpcmRfcGFydHkvc2VjdXJlbWVzc2FnZS9zZWN1cmVtZXNzYWdlIl0KCXBhdGggPSB0aGlyZF9wYXJ0eS9zZWN1cmVtZXNzYWdlL3NlY3VyZW1lc3NhZ2UKCXVybCA9IGh0dHBzOi8vZ2l0aHViLmNvbS9nb29nbGUvc2VjdXJlbWVzc2FnZS5naXQKCWJyYW5jaCA9IG1hc3Rlcgpbc3VibW9kdWxlICJ0aGlyZF9wYXJ0eS9nb29nbGUtdG9vbGJveC1mb3ItbWFjL2dvb2dsZS10b29sYm94LWZvci1tYWMiXQoJcGF0aCA9IHRoaXJkX3BhcnR5L2dvb2dsZS10b29sYm94LWZvci1tYWMvZ29vZ2xlLXRvb2xib3gtZm9yLW1hYwoJdXJsID0gaHR0cHM6Ly9naXRodWIuY29tL2dvb2dsZS9nb29nbGUtdG9vbGJveC1mb3ItbWFjLmdpdAoJYnJhbmNoID0gbWFpbgpbc3VibW9kdWxlICJ0aGlyZF9wYXJ0eS9tYmVkdGxzIl0KCXBhdGggPSB0aGlyZF9wYXJ0eS9tYmVkdGxzCgl1cmwgPSBodHRwczovL2dpdGh1Yi5jb20vQVJNbWJlZC9tYmVkdGxzCltzdWJtb2R1bGUgInRoaXJkX3BhcnR5L2pzb24vanNvbiJdCglwYXRoID0gdGhpcmRfcGFydHkvanNvbi9qc29uCgl1cmwgPSBodHRwczovL2dpdGh1Yi5jb20vbmxvaG1hbm4vanNvbgoJYnJhbmNoID0gbWFzdGVyCltzdWJtb2R1bGUgInRoaXJkX3BhcnR5L21pY3JvLWVjYyJdCglwYXRoID0gdGhpcmRfcGFydHkvbWljcm8tZWNjCgl1cmwgPSBodHRwczovL2dpdGh1Yi5jb20va21hY2theS9taWNyby1lY2MK')
+assert len(MODULES)==1512 and hashlib.sha256(MODULES).hexdigest()==m.NEARBY_MODULES_SHA256
+@contextmanager
+def nearby_fixture():
+ with fixture(record=False) as (root,sidecar,identity):
+  nearby=root/m.NEARBY_ROOT;nearby.mkdir(parents=True)
+  (nearby/'.git').mkdir();(nearby/'.git/HEAD').write_text(m.NEARBY_HEAD+'\n')
+  (nearby/'.gitmodules').write_bytes(MODULES)
+  (root/'.gclient_entries').write_text('entries = '+repr({'src':'https://public.example/src',m.NEARBY_ROOT:'https://chromium.googlesource.com/external/github.com/google/nearby-connections@'+m.NEARBY_HEAD})+'\n')
+  for origin,target,gitlink,commit,remainder in m.NEARBY_LITERAL_LINKS:
+   link=nearby/origin;link.parent.mkdir(parents=True,exist_ok=True)
+   (nearby/gitlink).mkdir(parents=True,exist_ok=True);os.symlink(target,link)
+  yield root,sidecar,identity
+class NearbyLiteralProof(unittest.TestCase):
+ def test_actual_five_literals_strict_old_red_new_record_apply_verify_green(self):
+  with nearby_fixture() as (root,sidecar,identity):
+   link=root/m.NEARBY_ROOT/'third_party/securemessage/include/securemessage'
+   with self.assertRaises(FileNotFoundError) as caught:m.source_link_target(root,link,os.readlink(link),m.Budget(5))
+   self.assertEqual(pathlib.Path(caught.exception.filename),root/m.NEARBY_ROOT/'third_party/securemessage/securemessage/cpp')
+   self.assertTrue(m.source_metadata('source-record',root,sidecar,identity,60)['complete'])
+   stored=json.loads(sidecar.read_bytes());w=stored['snapshot']['literalLinks'];self.assertEqual(len(w),5)
+   rows={row['path']:row for row in stored['snapshot']['entries']}
+   for origin,target,gitlink,commit,remainder in m.NEARBY_LITERAL_LINKS:
+    self.assertEqual(rows[m.NEARBY_ROOT+'/'+origin]['target'],target)
+    self.assertEqual(rows[m.NEARBY_ROOT+'/'+gitlink]['kind'],'directory')
+   file=root/'src/input.cc';info=file.stat();os.utime(file,ns=(info.st_atime_ns,info.st_mtime_ns+1000000000))
+   self.assertTrue(m.source_metadata('source-apply',root,sidecar,identity,60)['complete'])
+   self.assertTrue(m.source_metadata('source-verify',root,sidecar,identity,60)['complete'])
+   self.assertEqual(json.loads(sidecar.read_bytes()),stored)
+ def test_binding_and_absence_mutants_deny_before_writes(self):
+  for change in ('head','modules','target','nonempty','gitlink-alias','origin-alias','witness','old-policy','setid','header-hardlink','prefix-alias'):
+   with self.subTest(change=change),nearby_fixture() as (root,sidecar,identity):
+    m.source_metadata('source-record',root,sidecar,identity,60)
+    nearby=root/m.NEARBY_ROOT;origin=nearby/m.NEARBY_LITERAL_LINKS[2][0];directory=nearby/m.NEARBY_LITERAL_LINKS[2][2]
+    if change=='head':(nearby/'.git/HEAD').write_text('b'*40+'\n')
+    elif change=='modules':(nearby/'.gitmodules').write_bytes(MODULES.replace(b'https:',b'httpx:'))
+    elif change=='target':origin.unlink();os.symlink('../../../../outside',origin)
+    elif change=='nonempty':(directory/'cpp').mkdir()
+    elif change=='gitlink-alias':directory.rmdir();os.symlink('../include',directory)
+    elif change=='origin-alias':origin.unlink();os.symlink('../securemessage/cpp/include/securemessage/..',origin)
+    elif change=='setid':directory.chmod(directory.stat().st_mode|0o2000)
+    elif change=='header-hardlink':os.link(nearby/'.gitmodules',root/'modules-copy')
+    elif change=='prefix-alias':
+     prefix=origin.parent;prefix.rename(prefix.with_name('saved'));os.symlink('saved',prefix)
+    else:
+     saved=json.loads(sidecar.read_bytes())
+     if change=='witness':saved['snapshot']['literalLinks'][2]['gitlinkCommit']='b'*40
+     else:saved['policy']='sorng-linuxarm-complete-owned-inputs-v1'
+     sidecar.write_text(json.dumps(saved))
+    with patch.object(m.os,'utime',side_effect=AssertionError('no write admitted')) as writes:
+     with self.assertRaises((m.CheckpointError,FileNotFoundError)):m.source_metadata('source-apply',root,sidecar,identity,60)
+     writes.assert_not_called()
+ def test_held_absence_changes_and_replacement_deny(self):
+  for change in ('entry','replace','header','link'):
+   with self.subTest(change=change),nearby_fixture() as (root,sidecar,identity):
+    policy=m.source_repositories(root,m.Budget(5));nearby=root/m.NEARBY_ROOT
+    with self.assertRaises(m.CheckpointError):
+     with m.source_nearby_literals(root,policy,m.Budget(5)):
+      directory=nearby/m.NEARBY_LITERAL_LINKS[2][2]
+      if change=='entry':(directory/'cpp').mkdir()
+      elif change=='replace':directory.rename(directory.with_name('saved'));directory.mkdir()
+      elif change=='header':(nearby/'.git/HEAD').write_text('b'*40+'\n')
+      else:
+       origin=nearby/m.NEARBY_LITERAL_LINKS[2][0];origin.unlink();os.symlink(m.NEARBY_LITERAL_LINKS[2][1],origin)
+ def test_record_checks_original_held_witness_after_sidecar_write(self):
+  with nearby_fixture() as (root,sidecar,identity):
+   directory=root/m.NEARBY_ROOT/m.NEARBY_LITERAL_LINKS[2][2];original=m.metadata
+   def replace_after_write(*args,**kwargs):
+    result=original(*args,**kwargs);directory.rename(directory.with_name('saved'));directory.mkdir();return result
+   with patch.object(m,'metadata',side_effect=replace_after_write):
+    with self.assertRaisesRegex(m.CheckpointError,'source-nearby-changed'):m.source_metadata('source-record',root,sidecar,identity,60)
+ def test_unlisted_links_stay_strict_and_first_error_survives_close(self):
+  for target in ('missing/../input.cc','input.cc/../input.cc','../out/file'):
+   with self.subTest(target=target),nearby_fixture() as (root,sidecar,identity):
+    os.symlink(target,root/'src/unlisted')
+    with self.assertRaises((m.CheckpointError,FileNotFoundError)):m.source_metadata('source-record',root,sidecar,identity,60)
+  with nearby_fixture() as (root,sidecar,identity):
+   first=RuntimeError('primary');close=m.os.close
+   def close_fault(fd):close(fd);raise OSError('secondary')
+   with patch.object(m.os,'close',side_effect=close_fault):
+    try:
+     with m.source_nearby_literals(root,m.source_repositories(root,m.Budget(5)),m.Budget(5)):raise first
+    except RuntimeError as error:self.assertIs(error,first)
+    else:self.fail('primary lost')
+unittest.main(argv=['nearby-literal-proof'])
+`;
+
+test(
+  "Nearby exact pinned empty-gitlink literals preserve full owned inventory and deny mutations before apply",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual POSIX symlink and held directory witnesses"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(setup + NEARBY_LITERAL_PROOF, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /Ran 5 tests/);
   },
 );
