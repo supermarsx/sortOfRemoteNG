@@ -662,7 +662,9 @@ async function writeTree(root, files) {
 }
 async function diskFixture(t, selected = TARGETS[0]) {
   const data = fixture();
-  const root = await mkdtemp(path.join(os.tmpdir(), "sorng-custom-cef-test-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "sorng-custom-cef-test-")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const inputsRoot = path.join(root, "inputs"),
     sdkRoot = path.join(root, "sdk"),
