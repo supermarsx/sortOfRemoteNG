@@ -8165,6 +8165,318 @@ test(
   },
 );
 
+const SOURCE_PATH_DIAGNOSTIC_PROOF =
+  "import pathlib,sys,types,unittest,hashlib,copy\nfrom unittest.mock import patch\nm=types.ModuleType('path_diagnostic_candidate');m.__file__=sys.argv[1]\nexec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)\nclass PathDiagnosticProof(unittest.TestCase):\n def setUp(self):m.SOURCE_PATH_MODE='source-record'\n def test_exact_predicates_and_bounded_public_names(self):\n  cases=[(1,'type'),('','length'),('src/'+('a'*1024),'length'),('/private/path','absolute'),('src/a\\\\b','separator'),('src/a:b','colon'),('src/aux/file','component'),('src/a\\x01b','control')]\n  for value,predicate in cases:\n   with self.subTest(predicate=predicate),self.assertRaises(m.CheckpointError)as caught:m.source_relative(value,'filesystem-member')\n   error=caught.exception;self.assertEqual(error.args,('member-path',))\n   fields=m.source_failure_fields(error)['sourcePathFailure'];self.assertEqual(fields['predicate'],predicate)\n   if isinstance(value,str):self.assertEqual(fields['sha256'],hashlib.sha256(value.encode()).hexdigest())\n   if value=='src/aux/file':self.assertEqual(fields['name'],value)\n   else:self.assertNotIn('name',fields)\n def test_source_mode_only_and_unchanged_direct_guard(self):\n  for mode in (None,'pack','restore','mac-external-observe'):\n   m.SOURCE_PATH_MODE=mode\n   with self.assertRaises(m.CheckpointError)as caught:m.source_relative('src/aux','registry-key')\n   self.assertEqual(m.source_failure_fields(caught.exception),{})\n  m.SOURCE_PATH_MODE='source-record'\n  with self.assertRaises(m.CheckpointError)as caught:m.relative('src/aux')\n  self.assertEqual(m.source_failure_fields(caught.exception),{})\n def test_original_error_and_cause_survive_diagnostic_fault(self):\n  cause=RuntimeError('private cause');primary=m.CheckpointError('member-path');primary.__cause__=cause\n  with patch.object(m,'relative',side_effect=primary),patch.object(m,'source_path_failure',side_effect=RuntimeError('private reporting error')):\n   with self.assertRaises(m.CheckpointError)as caught:m.source_relative('src/aux','registry-key')\n  self.assertIs(caught.exception,primary);self.assertIs(primary.__cause__,cause)\n  self.assertEqual(m.source_failure_fields(primary),{'sourcePathFailureInvalid':True})\n  for unknown in (RuntimeError('private'),KeyboardInterrupt('private')):\n   with patch.object(m,'relative',side_effect=unknown):\n    with self.assertRaises(BaseException)as caught:m.source_relative('src/aux','registry-key')\n   self.assertIs(caught.exception,unknown)\n def test_malformed_optional_fields_never_leak_or_replace_primary(self):\n  good=m.source_path_failure('src/aux','filesystem-member')\n  for mutation in ({'name':'/private/secret'},{'name':'src/aux\\n'},{'bytes':True},{'sha256':'a'*64+'\\n'},{'mode':'pack'},{'phase':'private'},{'extra':'secret'}):\n   error=m.CheckpointError('member-path');value=copy.deepcopy(good);value.update(mutation);error.sourcePathFailure=value\n   self.assertEqual(m.source_failure_fields(error),{'sourcePathFailureInvalid':True});self.assertEqual(error.args,('member-path',))\n  error=m.CheckpointError('member-path');self.assertEqual(m.source_failure_fields(error),{})\n def test_registry_prefix_wrapper_keeps_exact_member_denial(self):\n  with self.assertRaises(m.CheckpointError)as caught:m.source_registry_repository('src/aux','https://public.example/src')\n  fields=m.source_failure_fields(caught.exception)['sourcePathFailure'];self.assertEqual(fields['phase'],'registry-key');self.assertEqual(fields['predicate'],'component');self.assertEqual(fields['name'],'src/aux')\nunittest.main(argv=['source-path-diagnostic-proof'])\n";
+test("source path diagnostics preserve actual guard error objects and closed privacy predicates", () => {
+  const result = python(SOURCE_PATH_DIAGNOSTIC_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 5 tests/);
+});
+test("archive failure projection keeps primary and cleanup while rejecting only malformed optional source facts", () => {
+  const name = "src/aux/file",
+    facts = {
+      mode: "source-record",
+      phase: "filesystem-member",
+      predicate: "component",
+      bytes: Buffer.byteLength(name),
+      sha256: sha(Buffer.from(name)),
+      name,
+    };
+  const base = {
+    complete: false,
+    error: "member-path",
+    sourceCloseFailure: true,
+    sourceJoinFailure: true,
+  };
+  const primary = {
+    error: "member-path",
+    archiveCleanupUnknown: true,
+    sourceCloseFailure: true,
+    sourceJoinFailure: true,
+    exitCode: 1,
+  };
+  assert.deepEqual(
+    archiveFailureRecord(JSON.stringify(base), 1, {
+      cleanupUnknown: true,
+      sourceMode: "source-record",
+    }),
+    primary,
+  );
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({ ...base, sourcePathFailure: facts }),
+      1,
+      { cleanupUnknown: true, sourceMode: "source-record" },
+    ),
+    { ...primary, sourcePathFailure: facts },
+  );
+  const mutants = [
+    null,
+    [],
+    "secret",
+    { ...facts, mode: "pack" },
+    { ...facts, phase: "secret" },
+    { ...facts, predicate: "secret" },
+    { ...facts, bytes: -1 },
+    { ...facts, bytes: 1.5 },
+    { ...facts, bytes: true },
+    { ...facts, bytes: 4194305 },
+    { ...facts, sha256: "a".repeat(64) + "\n" },
+    { ...facts, sha256: "A".repeat(64) },
+    { ...facts, name: "/private/secret" },
+    { ...facts, name: "src/a\n" },
+    { ...facts, name: "src/../secret" },
+    { ...facts, name: "src/a:b" },
+    { ...facts, name: "src/aux/file", sha256: "a".repeat(64) },
+    { ...facts, extra: "secret" },
+    { mode: "source-record" },
+  ];
+  for (const value of mutants) {
+    const result = archiveFailureRecord(
+      JSON.stringify({ ...base, sourcePathFailure: value }),
+      1,
+      { cleanupUnknown: true, sourceMode: "source-record" },
+    );
+    assert.deepEqual(result, { ...primary, sourcePathFailureInvalid: true });
+    assert.doesNotMatch(JSON.stringify(result), /secret/);
+  }
+  for (const value of [true, false, null, "secret"]) {
+    assert.deepEqual(
+      archiveFailureRecord(
+        JSON.stringify({
+          ...base,
+          sourcePathFailure: facts,
+          sourcePathFailureInvalid: value,
+        }),
+        1,
+        { cleanupUnknown: true, sourceMode: "source-record" },
+      ),
+      { ...primary, sourcePathFailureInvalid: true },
+    );
+  }
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: "member-path",
+        sourcePathFailure: {
+          mode: "source-verify",
+          phase: "registry-key",
+          predicate: "type",
+          bytes: null,
+          sha256: null,
+        },
+      }),
+      1,
+      { sourceMode: "source-verify" },
+    ),
+    {
+      error: "member-path",
+      sourcePathFailure: {
+        mode: "source-verify",
+        phase: "registry-key",
+        predicate: "type",
+        bytes: null,
+        sha256: null,
+      },
+      exitCode: 1,
+    },
+  );
+  for (const error of [
+    "source-registry-name",
+    "source-registry-kind",
+    "source-registry-label",
+    "source-registry-value",
+  ]) {
+    assert.deepEqual(
+      archiveFailureRecord(JSON.stringify({ complete: false, error }), 1),
+      { error, exitCode: 1 },
+    );
+  }
+});
+test(
+  "actual helper CLI failure envelope reaches actual archiveCommand observer and existing checkpoint log",
+  { timeout: 10000 },
+  async (t) => {
+    const folder = await scratch(t),
+      helper = path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      executable = python("import sys;print(sys.executable)").stdout.trim(),
+      script = path.join(folder, "closed-cli-fixture.py");
+    assert(path.isAbsolute(executable));
+    await writeFile(
+      script,
+      "HELPER=" +
+        JSON.stringify(helper) +
+        "\n" +
+        "import ast,pathlib,types\nsource=pathlib.Path(HELPER).read_bytes();module=types.ModuleType('actual_helper');module.__file__=HELPER\nexec(compile(source,HELPER,'exec'),module.__dict__)\ndef fixture_main():\n module.SOURCE_PATH_MODE='source-record'\n module.SOURCE_CLOSE_FAILURE=True\n module.SOURCE_JOIN_FAILURE=True\n module.source_relative('src/aux/file','filesystem-member')\nmodule.main=fixture_main;module.__dict__['__name__']='__main__'\nstatement=ast.parse(source).body[-1]\nassert isinstance(statement,ast.If)\nexec(compile(ast.Module(body=[statement],type_ignores=[]),HELPER,'exec'),module.__dict__)\n",
+      { flag: "wx" },
+    );
+    const records = [],
+      lines = [];
+    await assert.rejects(
+      archiveCommand(executable, script, ["source-record"], {
+        timeout: 3000,
+        observeFailure: (record) => {
+          records.push(record);
+          checkpointLog(
+            (line) => lines.push(line),
+            "[cef-engineering-checkpoint] source-metadata-failure=" +
+              canonical({ mode: "source-record", ...record }),
+          );
+        },
+      }),
+      /Checkpoint archive rejected/,
+    );
+    assert.equal(records.length, 1);
+    assert.equal(lines.length, 1);
+    assert.equal(records[0].error, "member-path");
+    assert.equal(records[0].exitCode, 1);
+    assert.equal(records[0].sourceCloseFailure, true);
+    assert.equal(records[0].sourceJoinFailure, true);
+    assert.equal(records[0].sourcePathFailure.name, "src/aux/file");
+    assert.equal(records[0].sourcePathFailure.phase, "filesystem-member");
+    assert.match(lines[0], /source-metadata-failure=/);
+    assert.doesNotMatch(lines[0], /private|https:/);
+  },
+);
+test(
+  "actual Linux source-record CLI retains bounded offending path without changing original denial",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual Linux source-record child; portable actual CLI-envelope test runs on every OS"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        "\nimport subprocess\nwith fixture(record=False)as(root,sidecar,identity):\n (root/'src/aux').write_bytes(b'public-source filename fixture')\n context=root.parent/'identity.json';context.write_text(json.dumps(identity))\n result=subprocess.run([sys.executable,'-I','-B',sys.argv[1],'source-record','--input',str(root),'--output',str(sidecar),'--manifest',str(context),'--seconds','5'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10,env={'PATH':str(pathlib.Path(sys.executable).parent)})\n assert result.returncode==1 and not sidecar.exists()\n value=json.loads(result.stdout);assert value['complete']is False and value['error']=='member-path'\n path=value['sourcePathFailure'];assert path['mode']=='source-record' and path['phase']=='filesystem-member' and path['predicate']=='component' and path['name']=='src/aux'\n assert not result.stderr\n print(json.dumps(value))\nprint('actual Linux source-record CLI failure transport PASS; no sidecar written')\n",
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const value = JSON.parse(result.stdout.split("\n")[0]);
+    assert.equal(value.error, "member-path");
+    assert.equal(value.sourcePathFailure.name, "src/aux");
+    assert.deepEqual(
+      archiveFailureRecord(JSON.stringify(value), 1, {
+        sourceMode: "source-record",
+      }).sourcePathFailure,
+      value.sourcePathFailure,
+    );
+    assert.match(
+      result.stdout,
+      /actual Linux source-record CLI failure transport PASS/,
+    );
+  },
+);
+
+test("actual archive failure body preserves primary through optional validator exceptions", () => {
+  for (const reason of [null, false, new Error("private diagnostic error")]) {
+    const actual = new Function(
+      "LIMITS",
+      "ARCHIVE_FAILURES",
+      "sourcePathFailure",
+      "return (" + archiveFailureRecord.toString() + ")",
+    )(LIMITS, new Set(["member-path"]), () => {
+      throw reason;
+    });
+    assert.deepEqual(
+      actual(
+        JSON.stringify({
+          complete: false,
+          error: "member-path",
+          sourceCloseFailure: true,
+          sourcePathFailure: {},
+        }),
+        1,
+        { cleanupUnknown: true, sourceMode: "source-record" },
+      ),
+      {
+        error: "member-path",
+        sourceCloseFailure: true,
+        archiveCleanupUnknown: true,
+        sourcePathFailureInvalid: true,
+        exitCode: 1,
+      },
+    );
+  }
+});
+
+test(
+  "actual archiveCommand binds source diagnostics to caller mode and rejects pack restore masquerades",
+  { timeout: 20000 },
+  async (t) => {
+    const folder = await scratch(t),
+      executable = python("import sys;print(sys.executable)").stdout.trim(),
+      script = path.join(folder, "untrusted-helper-fixture.py"),
+      name = "src/aux/file";
+    const facts = {
+      mode: "source-record",
+      phase: "filesystem-member",
+      predicate: "component",
+      bytes: Buffer.byteLength(name),
+      sha256: sha(Buffer.from(name)),
+      name,
+    };
+    const payload = {
+      complete: false,
+      error: "member-path",
+      sourceCloseFailure: true,
+      sourceJoinFailure: true,
+      sourcePathFailure: facts,
+    };
+    await writeFile(
+      script,
+      "import sys\nsys.stdout.write(" +
+        JSON.stringify(JSON.stringify(payload) + "\n") +
+        ")\nraise SystemExit(1)\n",
+      { flag: "wx" },
+    );
+    for (const mode of [
+      "pack",
+      "restore",
+      null,
+      "source-invented",
+      "source-verify",
+      "source-apply",
+    ]) {
+      const records = [];
+      await assert.rejects(
+        archiveCommand(executable, script, mode === null ? [] : [mode], {
+          timeout: 3000,
+          observeFailure: (r) => records.push(r),
+        }),
+        /Checkpoint archive rejected/,
+      );
+      assert.equal(records.length, 1);
+      assert.equal(Object.hasOwn(records[0], "sourcePathFailure"), false);
+      if (mode === "source-verify" || mode === "source-apply")
+        assert.deepEqual(records[0], {
+          error: "member-path",
+          sourceCloseFailure: true,
+          sourceJoinFailure: true,
+          sourcePathFailureInvalid: true,
+          exitCode: 1,
+        });
+      else assert.deepEqual(records[0], { error: "unknown", exitCode: 1 });
+    }
+    assert.deepEqual(
+      archiveFailureRecord(
+        JSON.stringify({ ...payload, error: "source-changed" }),
+        1,
+        { sourceMode: "source-record" },
+      ),
+      { error: "unknown", exitCode: 1 },
+    );
+  },
+);
+
 const LINUX_SOURCE_BASELINE_SHA256 =
   "398aa93fc914e305e9856466db00164de7b91eaa0904438f32364ea5ca3d8659";
 const LINUX_SOURCE_BASELINE_GZIP =

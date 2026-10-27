@@ -1033,6 +1033,10 @@ const ARCHIVE_FAILURES = new Set([
   "source-repositories-shape",
   "source-repository-root",
   "source-repository-value",
+  "source-registry-name",
+  "source-registry-kind",
+  "source-registry-label",
+  "source-registry-value",
   "source-unknown-git-root",
   "source-git-admin-kind",
   "source-detached-head",
@@ -1099,14 +1103,87 @@ const ARCHIVE_FAILURES = new Set([
   "link-recipe-bound",
   "link-recipe",
 ]);
+function sourcePathFailure(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    ![
+      "bytes,mode,phase,predicate,sha256",
+      "bytes,mode,name,phase,predicate,sha256",
+    ].includes(Object.keys(value).sort().join()) ||
+    !["source-record", "source-apply", "source-verify"].includes(value.mode) ||
+    !["registry-key", "filesystem-member"].includes(value.phase) ||
+    ![
+      "type",
+      "length",
+      "absolute",
+      "separator",
+      "colon",
+      "component",
+      "control",
+      "unclassified",
+    ].includes(value.predicate)
+  )
+    return null;
+  if (value.predicate === "type") {
+    if (
+      value.bytes !== null ||
+      value.sha256 !== null ||
+      Object.hasOwn(value, "name")
+    )
+      return null;
+  } else if (
+    !Number.isSafeInteger(value.bytes) ||
+    value.bytes < 0 ||
+    value.bytes > 4 * 1024 ** 2 ||
+    typeof value.sha256 !== "string" ||
+    value.sha256.length !== 64 ||
+    !/^[a-f0-9]{64}$/.test(value.sha256)
+  )
+    return null;
+  if (Object.hasOwn(value, "name")) {
+    const name = value.name;
+    if (
+      typeof name !== "string" ||
+      !name ||
+      Buffer.byteLength(name) > 1024 ||
+      /[^A-Za-z0-9_./ +@=-]/.test(name) ||
+      !(
+        ["src", "depot_tools", ".gclient", ".gclient_entries"].includes(name) ||
+        name.startsWith("src/") ||
+        name.startsWith("depot_tools/")
+      ) ||
+      name.split("/").some((part) => !part || part === "." || part === "..") ||
+      Buffer.byteLength(name) !== value.bytes ||
+      createHash("sha256").update(name).digest("hex") !== value.sha256
+    )
+      return null;
+  }
+  return {
+    mode: value.mode,
+    phase: value.phase,
+    predicate: value.predicate,
+    bytes: value.bytes,
+    sha256: value.sha256,
+    ...(Object.hasOwn(value, "name") ? { name: value.name } : {}),
+  };
+}
+
 export function archiveFailureRecord(
   stdout,
   exitCode,
-  { overflow = false, deadline = false, cleanupUnknown = false } = {},
+  {
+    overflow = false,
+    deadline = false,
+    cleanupUnknown = false,
+    sourceMode = null,
+  } = {},
 ) {
   let sourceCloseFailure = false,
     sourceJoinFailure = false,
-    externalFacts;
+    externalFacts,
+    sourceFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1116,7 +1193,33 @@ export function archiveFailureRecord(
     error = "archive-output-bound";
   else if (!deadline && !overflow && typeof stdout === "string") {
     try {
-      const value = JSON.parse(stdout);
+      const decoded = JSON.parse(stdout);
+      let value = decoded,
+        optional,
+        optionalInvalid = false;
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "member-path" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        if (Object.hasOwn(value, "sourcePathFailure")) {
+          try {
+            optional = sourcePathFailure(value.sourcePathFailure);
+            optionalInvalid = optional === null || optional.mode !== sourceMode;
+          } catch {
+            optionalInvalid = true;
+          }
+          delete value.sourcePathFailure;
+        }
+        if (Object.hasOwn(value, "sourcePathFailureInvalid")) {
+          optionalInvalid = true;
+          delete value.sourcePathFailureInvalid;
+        }
+      }
       if (
         value &&
         (Object.keys(value).sort().join() === "complete,error" ||
@@ -1175,6 +1278,12 @@ export function archiveFailureRecord(
             ? { macReportingFailure: true }
             : {}),
         };
+        sourceFacts = {
+          ...(optional && !optionalInvalid
+            ? { sourcePathFailure: optional }
+            : {}),
+          ...(optionalInvalid ? { sourcePathFailureInvalid: true } : {}),
+        };
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -1186,6 +1295,7 @@ export function archiveFailureRecord(
     ...(sourceCloseFailure ? { sourceCloseFailure: true } : {}),
     ...(sourceJoinFailure ? { sourceJoinFailure: true } : {}),
     ...externalFacts,
+    ...sourceFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode
@@ -1234,7 +1344,11 @@ export async function archiveCommand(
       try {
         Promise.resolve(
           observeFailure(
-            archiveFailureRecord(stdout(), code, { ...cause, cleanupUnknown }),
+            archiveFailureRecord(stdout(), code, {
+              ...cause,
+              cleanupUnknown,
+              sourceMode: args[0],
+            }),
           ),
         ).catch(() => {});
       } catch {

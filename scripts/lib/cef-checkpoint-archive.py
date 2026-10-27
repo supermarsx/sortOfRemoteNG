@@ -115,6 +115,77 @@ def relative(value):
     return value
 
 
+def source_path_name(value):
+    return (isinstance(value, str) and 0 < len(value.encode()) <= 1024 and
+            re.fullmatch(r'[A-Za-z0-9_./ +@=-]+', value) is not None and
+            (value in ('src', 'depot_tools', '.gclient', '.gclient_entries') or
+             value.startswith(('src/', 'depot_tools/'))) and
+            all(part not in ('', '.', '..') for part in value.split('/')))
+
+
+def source_path_failure(value, phase):
+    encoded = value.encode() if isinstance(value, str) else None
+    if encoded is None:
+        predicate = 'type'
+    elif not 0 < len(encoded) <= 1024:
+        predicate = 'length'
+    elif value.startswith('/'):
+        predicate = 'absolute'
+    elif '\\' in value:
+        predicate = 'separator'
+    elif ':' in value:
+        predicate = 'colon'
+    elif any(x in ('', '.', '..') or x.endswith((' ', '.')) or
+             re.match(r'(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', x) for x in value.split('/')):
+        predicate = 'component'
+    elif any(ord(c) < 32 or ord(c) == 127 for c in value):
+        predicate = 'control'
+    else:
+        predicate = 'unclassified'
+    return {'mode':SOURCE_PATH_MODE, 'phase':phase, 'predicate':predicate,
+            'bytes':len(encoded) if encoded is not None else None,
+            'sha256':hashlib.sha256(encoded).hexdigest() if encoded is not None else None,
+            **({'name':value} if source_path_name(value) else {})}
+
+
+def source_relative(value, phase):
+    if SOURCE_PATH_MODE not in ('source-record', 'source-apply', 'source-verify'):
+        return relative(value)
+    try:
+        return relative(value)
+    except CheckpointError as error:
+        if type(error) is CheckpointError and error.args == ('member-path',):
+            try:
+                error.sourcePathFailure = source_path_failure(value, phase)
+            except BaseException:
+                error.sourcePathFailureInvalid = True
+        raise
+
+
+def source_failure_fields(error):
+    if SOURCE_PATH_MODE not in ('source-record', 'source-apply', 'source-verify') or type(error) is not CheckpointError:
+        return {}
+    try:
+        value = error.__dict__.get('sourcePathFailure')
+        invalid = error.__dict__.get('sourcePathFailureInvalid') is True
+        if invalid:
+            return {'sourcePathFailureInvalid':True}
+        if value is None:
+            return {}
+        require(type(value) is dict and set(value) in (
+            {'mode','phase','predicate','bytes','sha256'}, {'mode','phase','predicate','bytes','sha256','name'}), 'diagnostic')
+        require(value['mode'] == SOURCE_PATH_MODE and value['phase'] in ('registry-key','filesystem-member') and
+                value['predicate'] in ('type','length','absolute','separator','colon','component','control','unclassified'), 'diagnostic')
+        require((value['predicate']=='type' and value['bytes'] is None and value['sha256'] is None and 'name' not in value) or
+                (value['predicate']!='type' and type(value['bytes']) is int and 0 <= value['bytes'] <= 4*1024**2 and
+                 isinstance(value['sha256'],str) and re.fullmatch(r'[a-f0-9]{64}',value['sha256']) is not None), 'diagnostic')
+        require('name' not in value or (source_path_name(value['name']) and len(value['name'].encode())==value['bytes'] and
+                hashlib.sha256(value['name'].encode()).hexdigest()==value['sha256']), 'diagnostic')
+        return {'sourcePathFailure':value}
+    except BaseException:
+        return {'sourcePathFailureInvalid':True}
+
+
 def safe(path):
     absolute = Path(os.path.abspath(path))
     for p in [absolute, *absolute.parents]:
@@ -156,7 +227,9 @@ def inventory(root, budget, generated_links=None, source_policy=None):
         with source_directory(root, directory, source_policy, budget) as iterator:
             for item in iterator:
                 budget.check()
-                name = relative((directory / item.name).as_posix())
+                raw_name = (directory / item.name).as_posix()
+                name = (source_relative(raw_name, 'filesystem-member') if source_policy is not None and
+                        not source_policy.get('external') else relative(raw_name))
                 alias = unicodedata.normalize('NFC', name).casefold()
                 require(alias not in aliases, 'member-alias')
                 aliases.add(alias)
@@ -489,6 +562,7 @@ SOURCE_METADATA_POLICY = 'sorng-linuxarm-complete-owned-inputs-v1'
 SOURCE_METADATA_DATE_EPOCH = '1790626028'
 SOURCE_CLOSE_FAILURE = False
 SOURCE_JOIN_FAILURE = False
+SOURCE_PATH_MODE = None
 SOURCE_MAX_ENTRIES = 1000000
 SOURCE_MAX_FILE = 8 * 1024**3
 MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-complete-owned-inputs-v1-unadmitted'
@@ -619,12 +693,12 @@ def source_registry_repository(name, value):
     require(isinstance(name, str) and 0 < len(name.encode()) <= 1024, 'source-registry-name')
     require(value is None or isinstance(value, str) and len(value) <= 8192, 'source-repository-value')
     if ':' not in name:
-        relative(name)
+        source_relative(name, 'registry-key')
         require(name == 'src' or name.startswith('src/'), 'source-repository-root')
         return name
     require(name.count(':') == 1 and isinstance(value, str), 'source-registry-kind')
     directory, suffix = name.split(':')
-    relative(directory)
+    source_relative(directory, 'registry-key')
     require(directory == 'src' or directory.startswith('src/'), 'source-repository-root')
     require(suffix and not suffix.startswith('/') and '\\' not in suffix and
             not any(ord(c) < 32 or ord(c) == 127 for c in suffix) and
@@ -881,9 +955,10 @@ def source_metadata_identity(identity, platform_policy=None):
 
 def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, platform_policy=None):
     import sys
-    global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE
+    global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE, SOURCE_PATH_MODE
     SOURCE_CLOSE_FAILURE = SOURCE_JOIN_FAILURE = False
     require(mode in ('source-record','source-verify','source-apply'), 'source-mode')
+    SOURCE_PATH_MODE = mode
     require(platform_policy in (None, 'mac-arm'), 'source-platform-policy')
     require(sys.platform == ('darwin' if platform_policy == 'mac-arm' else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
@@ -1262,5 +1337,5 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {})}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error)}))
         raise SystemExit(1)
