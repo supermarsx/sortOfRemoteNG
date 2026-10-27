@@ -147,7 +147,7 @@ function observer() {
   ).runInContext(context);
   return context.observeMetalExec;
 }
-const findMetal = ["--sdk", "macosx", "--find", "metal"];
+const findMetal = ["--find", "metal"];
 
 test("Metal command observation preserves actual result/error identity and bounds private raw output without argv/env/error dumps", async () => {
   const observe = observer(),
@@ -249,6 +249,22 @@ test("Metal observer denies unknown command vectors and bounds attempts before e
   for (const [exe, args] of [
     ["/bin/sh", ["private shell"]],
     ["/usr/bin/xcrun", ["--sdk", "macosx", "metallib", "--version"]],
+    ...[
+      ["--sdk", "macosx", "--find", "metal"],
+      ["--sdk", "macosx", "--find", "metallib"],
+      ["--sdk", "macosx", "metal", "--version"],
+      ["--no-cache", "--find", "metal"],
+      ["--no-cache", "--find", "metallib"],
+      ["--no-cache", "metal", "--version"],
+      ["--verbose", "--find", "metal"],
+      ["--log", "--find", "metal"],
+      ["--kill-cache"],
+      ["--find", "metallib", "--version"],
+      ["--find", "air-lld"],
+      ["--find", "metal", "extra"],
+      ["metal", "--find"],
+      ["metallib", "--version"],
+    ].map((args) => ["/usr/bin/xcrun", args]),
     ["/usr/bin/xcodebuild", ["-downloadAllPlatforms"]],
   ])
     await assert.rejects(
@@ -263,6 +279,30 @@ test("Metal observer denies unknown command vectors and bounds attempts before e
     /METAL_DIAGNOSTIC_COMMAND_BOUND/,
   );
   assert.equal(calls, 32);
+});
+
+test("actual Metal classifier accepts only the three normal-cache short vectors with unchanged closed stages", async () => {
+  const seen = [],
+    saved = [];
+  const exec = observer()(
+    async (file, args) => {
+      seen.push({ file, args });
+      return { stdout: "owned fixture result" };
+    },
+    async (row) => saved.push(row),
+  );
+  for (const args of [
+    ["--find", "metal"],
+    ["--find", "metallib"],
+    ["metal", "--version"],
+  ])
+    await exec("/usr/bin/xcrun", args, { timeout: 30000 });
+  assert.deepEqual(
+    saved.map((row) => row.stage),
+    ["find-metal", "find-metallib", "metal-version"],
+  );
+  assert.equal(seen.length, 3);
+  assert(seen.every((row) => row.file === "/usr/bin/xcrun"));
 });
 
 function helperFixture(kind) {
@@ -324,6 +364,40 @@ function helperFixture(kind) {
   };
   return { records, outputs, selected, env, dependencies };
 }
+
+test("actual normal-cache Metal helper crosses the actual extracted carrier without extra commands or authority", async () => {
+  const f = helperFixture("stable");
+  const result = await prepareMacMetalToolchain(
+    {
+      selected: f.selected,
+      env: f.env,
+      platform: "darwin",
+      allowDownload: true,
+      remainingMilliseconds: () => 30000,
+    },
+    f.dependencies,
+  );
+  assert.deepEqual(
+    f.records.map((row) => row.stage),
+    [
+      "find-metal",
+      "verify-metal-signature",
+      "metal-version",
+      "find-metal",
+      "find-metallib",
+      "verify-metallib-signature",
+      "find-metallib",
+    ],
+  );
+  assert(
+    f.records.every(
+      (row) => row.result === "success" && row.timeoutMs === 30000,
+    ),
+  );
+  assert.equal(result.downloaded, false);
+  assert.equal(result.componentResourceClosureVerified, false);
+  assert.equal(result.nativeCompatibilityVerified, false);
+});
 
 test("existing Metal helper still downloads only typed missing and preserves signature failure with the diagnostic wrapper", async () => {
   const f = helperFixture("missing"),

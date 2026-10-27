@@ -63,9 +63,9 @@ jobs:
           function metalCommandStage(executable, args) {
             const same = (value) => JSON.stringify(value) === JSON.stringify(args);
             if (executable === '/usr/bin/xcrun') {
-              if (same(['--sdk', 'macosx', '--find', 'metal'])) return 'find-metal';
-              if (same(['--sdk', 'macosx', '--find', 'metallib'])) return 'find-metallib';
-              if (same(['--sdk', 'macosx', 'metal', '--version'])) return 'metal-version';
+              if (same(['--find', 'metal'])) return 'find-metal';
+              if (same(['--find', 'metallib'])) return 'find-metallib';
+              if (same(['metal', '--version'])) return 'metal-version';
             }
             if (executable === '/usr/bin/xcodebuild' && same(['-downloadComponent', 'MetalToolchain'])) return 'download-component';
             if (executable === '/usr/bin/codesign' && args.length === 5 &&
