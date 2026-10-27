@@ -11278,3 +11278,306 @@ test(
     assert.equal(value.roles[0].snapshot.root.mode, snapshot.root.mode);
   },
 );
+
+const MAC_SDK_COLON_PROOF = String.raw`import ast,contextlib,hashlib,importlib.util,json,os,pathlib,sys,tempfile,unittest
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('colon_subject',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+NAME='usr/share/man/mann/ttk::progressbar.ntcl'
+EXTERNAL={'mac':True,'external':True}
+def policy():return {**EXTERNAL,'aggregate':{'entries':0,'bytes':0,'metadata':0}}
+class SdkColon(unittest.TestCase):
+ def test_relative_ast_and_strict_archive_default_and_apply_member_calls_unchanged(self):
+  tree=ast.parse(pathlib.Path(sys.argv[1]).read_bytes());node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='relative')
+  self.assertEqual(hashlib.sha256(ast.dump(node,include_attributes=False).encode()).hexdigest(),'4359080f3212ff3b5d0a7707c3b00719f243bd5724229e10e84c1ee0ecc9c7f4')
+  for name in [NAME,'public:header','file:stream','C:relative','C:/absolute']:
+   with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.relative(name)
+  # Current typed registry/source-IO wrappers still reach the unchanged guard.
+  # Inspect the real current call chain, not the old private direct-call layout.
+  for fn,callee in [('link_recipe','relative'),('source_repositories','source_registry_repository'),('source_registry_repository','source_relative'),('source_relative','relative'),('source_metadata','source_metadata_owned'),('source_metadata_owned','relative')]:
+   node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name==fn)
+   self.assertTrue(any(isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id==callee for n in ast.walk(node)),fn+' -> '+callee)
+  with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.source_relative('src/public:header','filesystem-member')
+  with self.assertRaisesRegex(m.CheckpointError,'^source-registry-kind$'):m.source_registry_repository('src/public:header','https://public.example/repository')
+ def test_literal_colon_and_all_prior_unsafe_components_remain_closed(self):
+  for name in [NAME,'public:header','dir/Unicode-Ł-😀:header']:
+   self.assertEqual(m.mac_external_sdk_relative(name),name)
+  for name in ['',None,42,'/abs','C:relative','c:/absolute',r'c:\absolute',r'\\host\share','a/../b','a/./b','a//b','a/','a/trailing.','a/trailing ','a/CON.h','a/NUL','a/com9.txt','a/control\x00','a/control\x7f','Ł'*513]:
+   with self.subTest(name=repr(name)),self.assertRaisesRegex(m.CheckpointError,'member-path'):m.mac_external_sdk_relative(name)
+ def test_capability_cannot_be_json_global_or_foreign_root_selected(self):
+  root=pathlib.Path(m._MAC_EXTERNAL_SDK_ROOT)
+  self.assertIs(m.source_member_policy(root,policy(),m._MAC_EXTERNAL_SDK_MEMBERS),m.mac_external_sdk_relative)
+  for value in [None,True,'sdk',{'sdk':True},object()]:
+   if value is None:self.assertIs(m.source_member_policy(root,{**policy(),'allowColon':True},value),m.relative)
+   else:
+    with self.assertRaisesRegex(m.CheckpointError,'source-member-policy'):m.source_member_policy(root,policy(),value)
+  for p in [None,{}, {'mac':False,'external':True},{'mac':True,'external':False},{'mac':1,'external':True}]:
+   with self.assertRaisesRegex(m.CheckpointError,'source-member-policy'):m.source_member_policy(root,p,m._MAC_EXTERNAL_SDK_MEMBERS)
+  # Rejection occurs before any Path.stat/read side effect, even on PurePath.
+  with self.assertRaisesRegex(m.CheckpointError,'source-member-policy'):m.source_snapshot(pathlib.PurePosixPath('/wrong'),m.Budget(5),context=policy(),member_policy=m._MAC_EXTERNAL_SDK_MEMBERS)
+  with patch.object(m,'MAC_EXTERNAL_ROLE','sdk'),patch.object(m,'MAC_EXTERNAL_PHASE','snapshot'):
+   self.assertIs(m.source_member_policy(root,policy(),None),m.relative)
+ def test_exact_validated_sdk_branch_propagates_token_to_both_outer_passes(self):
+  root=m._MAC_EXTERNAL_SDK_ROOT;context={'roots':{'sdk':root,'toolchain':'/toolchain','metal':'/metal','python':'/python'},'requiredPins':[],'target':'aarch64-apple-darwin'}
+  calls=[];snapshot={'entries':[]};value={}
+  class Root(pathlib.PurePosixPath):
+   def is_dir(self):return True
+  def capture(root,budget,guards=None,context=None,*,member_policy=None):
+   calls.append((str(root),member_policy));return snapshot
+  def store(root,name,v,source=False):value.update(v);return {'name':name}
+  with patch.object(m.os,'geteuid',return_value=501,create=True),patch.object(m,'Path',Root),patch.object(m,'safe',side_effect=lambda p:p),patch.object(m,'source_snapshot',side_effect=capture),patch.object(m,'mac_external_links'),patch.object(m,'metadata',side_effect=store),patch.object(m,'source_read_sidecar',side_effect=lambda *a:value):
+   result=m.mac_external_observe(context,Root('/owned/external.json'),m.Budget(5))
+  self.assertTrue(result['complete']);self.assertEqual(len(calls),8)
+  for path,token in calls:self.assertIs(token,m._MAC_EXTERNAL_SDK_MEMBERS if path==root else None)
+ @unittest.skipUnless(sys.platform=='linux','actual owned POSIX tree; not a Darwin installed SDK claim')
+ def test_physical_old_red_scoped_snapshot_json_readback_hash_links_and_source_unchanged(self):
+  with tempfile.TemporaryDirectory(prefix='sdk-colon-')as folder:
+   temp=pathlib.Path(folder);root=temp/'sdk';(root/pathlib.Path(NAME).parent).mkdir(parents=True);body=b'owned SDK colon fixture\n';(root/NAME).write_bytes(body);os.symlink(NAME,root/'alias:header')
+   before={str(p.relative_to(root)):m.source_local(p.lstat(),policy())for p in [root,*root.rglob('*')]}
+   # Only the fixed-root constant is mapped to an owned fixture; production
+   # exact-root admission itself is separately exercised above without IO.
+   with patch.object(m,'_MAC_EXTERNAL_SDK_ROOT',str(root)):
+    with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.source_snapshot(root,m.Budget(5),context=policy())
+    for extra in [{'allowColon':True},{'member_policy':'sdk'},{'sdk':True}]:
+     with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.source_snapshot(root,m.Budget(5),context={**policy(),**extra})
+    snapshot=m.source_snapshot(root,m.Budget(5),context=policy(),member_policy=m._MAC_EXTERNAL_SDK_MEMBERS)
+    self.assertEqual(snapshot,m.source_snapshot(root,m.Budget(5),context=policy(),member_policy=m._MAC_EXTERNAL_SDK_MEMBERS))
+    rows={r['path']:r for r in snapshot['entries']};self.assertEqual(rows[NAME]['sha256'],hashlib.sha256(body).hexdigest());self.assertEqual(rows[NAME]['size'],len(body));self.assertEqual(rows['alias:header']['target'],NAME)
+    roots={role:str(root if role=='sdk'else temp/role)for role in ['sdk','toolchain','metal','python']};snapshots={role:snapshot if role=='sdk'else {'entries':[]}for role in roots};m.mac_external_links(roots,snapshots,m.Budget(5))
+    written=m.metadata(temp,'external.json',snapshot,source=True);self.assertEqual(m.source_read_sidecar(temp/'external.json',m.Budget(5)),snapshot);self.assertEqual(written['sha256'],hashlib.sha256((temp/'external.json').read_bytes()).hexdigest())
+   after={str(p.relative_to(root)):m.source_local(p.lstat(),policy())for p in [root,*root.rglob('*')]};self.assertEqual(before,after);print('SDK_COLON_SNAPSHOT:'+json.dumps(snapshot,separators=(',',':')))
+ @unittest.skipUnless(sys.platform=='linux','actual owned POSIX tree; not a Darwin installed SDK claim')
+ def test_physical_second_inventory_mutation_and_held_hash_identity_still_deny(self):
+  with tempfile.TemporaryDirectory(prefix='sdk-colon-drift-')as folder:
+   root=pathlib.Path(folder);(root/NAME).parent.mkdir(parents=True);(root/NAME).write_bytes(b'first');original=m.inventory;calls=0
+   def drift(*args,**kwargs):
+    nonlocal calls
+    calls+=1
+    if calls==2:(root/NAME).write_bytes(b'second-longer')
+    return original(*args,**kwargs)
+   with patch.object(m,'_MAC_EXTERNAL_SDK_ROOT',str(root)),patch.object(m,'inventory',side_effect=drift),self.assertRaisesRegex(m.CheckpointError,'source-tree-changed'):m.source_snapshot(root,m.Budget(5),context=policy(),member_policy=m._MAC_EXTERNAL_SDK_MEMBERS)
+   info=(root/NAME).stat();row={'path':NAME,'stamp':m.stamp(info),'ctimeNs':info.st_ctime_ns,'birthNs':None,'uid':info.st_uid,'gid':info.st_gid};(root/NAME).write_bytes(b'third')
+   with self.assertRaisesRegex(m.CheckpointError,'source-file-identity'):m.source_hash(root,row,m.Budget(5),EXTERNAL)
+unittest.main(argv=['sdk-colon-readonly'],verbosity=2)
+`;
+
+test("Mac external SDK literal-colon capability keeps actual strict paths and physical snapshot roundtrip guards", () => {
+  const result = python(MAC_SDK_COLON_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 6 tests/);
+});
+
+test("actual Mac external reader binds SDK literal-colon rows and rejects other roles, drives and unsafe components", async () => {
+  const { mac, plan } = await macExternalFixture();
+  const fixture = () => ({
+    schemaVersion: 1,
+    kind: "sorng-macarm-external-input-observation",
+    target: "aarch64-apple-darwin",
+    policy: "sorng-macarm-readonly-external-inputs-v1",
+    complete: true,
+    externalSnapshotComplete: true,
+    roles: Object.entries(plan.context.roots).map(([role, physicalRoot]) => ({
+      role,
+      physicalRoot,
+      snapshot: {
+        rootMtimeNs: "1",
+        gitHeads: {},
+        root: { mode: 0o40755, mtimeNs: "1", uid: 0, gid: 0, nlink: 2 },
+        localRoot: {
+          dev: "1",
+          ino: "2",
+          ctimeNs: "3",
+          birthtimeNsAvailable: false,
+          birthtimeNs: null,
+        },
+        bytes: plan.context.requiredPins
+          .filter((pin) => pin.role === role)
+          .reduce((sum, pin) => sum + pin.size, 0),
+        entries: plan.context.requiredPins
+          .filter((pin) => pin.role === role)
+          .map((pin) => ({
+            path: pin.path,
+            kind: "file",
+            mode: 0o100644,
+            mtimeNs: "1",
+            nlink: 1,
+            uid: 0,
+            gid: 0,
+            size: pin.size,
+            sha256: pin.sha256,
+          })),
+      },
+    })),
+    entries: 10,
+    bytes: plan.context.requiredPins.reduce((sum, pin) => sum + pin.size, 0),
+    runnerUid: 501,
+    historicalMetalResourceClosureVerified: false,
+    sourceWriteAdmitted: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+  });
+  const name = "usr/share/man/mann/ttk::progressbar.ntcl";
+  const body = Buffer.from("owned SDK colon fixture\n");
+  const fileRow = {
+    path: name,
+    kind: "file",
+    mode: 0o100644,
+    mtimeNs: "1",
+    nlink: 1,
+    uid: 0,
+    gid: 0,
+    size: body.length,
+    sha256: hashObject("sha256").update(body).digest("hex"),
+  };
+  const add = (value, role, row) => {
+    const snapshot = value.roles.find((entry) => entry.role === role).snapshot;
+    snapshot.entries.push(row);
+    value.entries++;
+    if (row.kind === "file") {
+      snapshot.bytes += row.size;
+      value.bytes += row.size;
+    }
+  };
+  const admit = async (value) => {
+    const raw = Buffer.from(JSON.stringify(value));
+    const identity = {
+      dev: 1n,
+      ino: 2n,
+      mode: 0o100600n,
+      nlink: 1n,
+      size: BigInt(raw.length),
+      mtimeNs: 1n,
+      ctimeNs: 2n,
+      birthtimeNs: 3n,
+      isFile: () => true,
+    };
+    const summary = {
+      complete: true,
+      kind: value.kind,
+      entries: value.entries,
+      bytes: value.bytes,
+      snapshot: {
+        name: "external.json",
+        bytes: raw.length,
+        sha256: hashObject("sha256").update(raw).digest("hex"),
+      },
+      sourceWriteAdmitted: false,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+    let closed = 0;
+    try {
+      return await mac.readMacExternalObservation(plan, summary, () => {}, {
+        lstat: async (file) =>
+          file.endsWith("/external.json")
+            ? identity
+            : {
+                ...identity,
+                isDirectory: () => true,
+                isSymbolicLink: () => false,
+              },
+        realpath: async (file) => file,
+        open: async () => ({
+          stat: async () => identity,
+          readFile: async () => raw,
+          close: async () => {
+            closed++;
+          },
+        }),
+      });
+    } finally {
+      assert.equal(closed, 1);
+    }
+  };
+  const value = fixture();
+  add(value, "sdk", fileRow);
+  const proof = await admit(value);
+  const binding = mac.macExternalToolsBinding({}, proof);
+  assert.deepEqual(
+    binding.macExternalInputs.roles
+      .find((row) => row.role === "sdk")
+      .entries.at(-1),
+    fileRow,
+  );
+  assert.throws(
+    () => mac.macExternalToolsBinding({}, { ...proof }),
+    /MAC_EXTERNAL_ATTESTATION/,
+  );
+  for (const role of ["toolchain", "metal", "python"]) {
+    const bad = fixture();
+    add(bad, role, fileRow);
+    await assert.rejects(admit(bad), /MAC_EXTERNAL_ENTRY/);
+  }
+  for (const invalid of [
+    "/abs",
+    "C:relative",
+    "c:/absolute",
+    "c:\\absolute",
+    "\\\\host\\share",
+    "a/../b",
+    "a/./b",
+    "a//b",
+    "a/",
+    "a/trailing.",
+    "a/trailing ",
+    "a/CON.h",
+    "a/NUL",
+    "a/com9.txt",
+    "a/control\x00",
+    "a/control\x7f",
+    "Ł".repeat(513),
+  ]) {
+    const bad = fixture();
+    add(bad, "sdk", { ...fileRow, path: invalid });
+    await assert.rejects(admit(bad), /MAC_EXTERNAL_ENTRY/);
+  }
+  const ads = fixture();
+  add(ads, "sdk", { ...fileRow, path: "public:header" });
+  await admit(ads); // A literal SDK JSON name, never an archive/Windows ADS write.
+});
+
+test(
+  "physical SDK colon snapshot roundtrips through actual reader and opaque binding unchanged",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux owned POSIX fixture, not installed Darwin SDK evidence"
+        : false,
+  },
+  async () => {
+    const result = python(MAC_SDK_COLON_PROOF, [
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const line = result.stdout
+      .split(/\r?\n/)
+      .find((value) => value.startsWith("SDK_COLON_SNAPSHOT:"));
+    assert(line);
+    const snapshot = JSON.parse(line.slice("SDK_COLON_SNAPSHOT:".length));
+    const { mac, plan } = await macExternalFixture();
+    const value = externalFullModeReport(plan, snapshot),
+      proof = await admitExternalFullMode(mac, plan, value),
+      binding = mac.macExternalToolsBinding({}, proof);
+    const sdk = binding.macExternalInputs.roles.find(
+        (row) => row.role === "sdk",
+      ),
+      name = "usr/share/man/mann/ttk::progressbar.ntcl";
+    for (const row of snapshot.entries) {
+      const portable = sdk.entries.find((item) => item.path === row.path);
+      assert(portable);
+      assert.equal(portable.mode, row.mode);
+      assert.equal(portable.path, row.path);
+      if (row.kind === "file") assert.equal(portable.sha256, row.sha256);
+    }
+    assert.equal(
+      sdk.entries.find((row) => row.path === "alias:header").relativeLiteral,
+      name,
+    );
+    assert.deepEqual(sdk.root, snapshot.root);
+    assert.throws(
+      () => mac.macExternalToolsBinding({}, { ...proof }),
+      /MAC_EXTERNAL_ATTESTATION/,
+    );
+  },
+);
