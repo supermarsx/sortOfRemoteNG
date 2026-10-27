@@ -10948,3 +10948,76 @@ test("Mac external birth availability uses actual guards with strict nonexternal
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stderr, /Ran 4 tests/);
 });
+
+const MAC_MEMBER_DIAGNOSTIC_PROOF = String.raw`
+import ast,contextlib,hashlib,importlib.util,io,json,pathlib,sys,unittest
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('member_subject',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+source=pathlib.Path(sys.argv[1]).read_bytes();tree=ast.parse(source)
+ROOT=pathlib.PurePosixPath('/Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk')
+POLICY={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}}
+class MemberDiagnostic(unittest.TestCase):
+ def failure(self,name,policy=None,role='sdk',phase='snapshot',projection=None):
+  originals=[];calls=[];original_relative=m.relative
+  class Entry:
+   def __init__(self):self.name=name
+   def stat(self,**kwargs):calls.append('stat');raise AssertionError('denial must precede metadata')
+  @contextlib.contextmanager
+  def namespace(*args,**kwargs):yield iter([Entry()])
+  def authority(value):
+   try:return original_relative(value)
+   except m.CheckpointError as error:originals.append(error);raise
+  with contextlib.ExitStack() as stack:
+   for attribute,value in [('Path',pathlib.PurePosixPath),('source_directory',namespace),('relative',authority),('MAC_EXTERNAL_ROLE',role),('MAC_EXTERNAL_PHASE',phase)]:stack.enter_context(patch.object(m,attribute,value))
+   if projection is not None:stack.enter_context(patch.object(m,'external_member_diagnostic',projection))
+   try:m.inventory(ROOT,m.Budget(5),source_policy=POLICY if policy is None else policy)
+   except m.CheckpointError as error:
+    self.assertEqual(len(originals),1);self.assertIs(error,originals[0]);self.assertEqual(str(error),'member-path');self.assertEqual(calls,[])
+    fields=m.external_member_fields(error)
+    # Execute the actual existing top-level exception output/exit body only.
+    handler=tree.body[-1].body[0].handlers[0];scope=dict(m.__dict__);scope['error']=error
+    captured=io.StringIO()
+    with contextlib.redirect_stdout(captured),self.assertRaises(SystemExit) as exit:
+     exec(compile(ast.Module(body=handler.body,type_ignores=[]),'<actual-error-printer>','exec'),scope)
+    self.assertEqual(exit.exception.code,1);printed=json.loads(captured.getvalue());self.assertEqual(printed['error'],'member-path');self.assertIs(printed['complete'],False)
+    self.assertEqual(printed.get('externalMemberFailure'),fields.get('externalMemberFailure'))
+    return error,fields,printed
+   self.fail('expected original member-path denial')
+ def test_relative_ast_and_valid_names_unchanged(self):
+  node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='relative')
+  self.assertEqual(hashlib.sha256(ast.dump(node,include_attributes=False).encode()).hexdigest(),'4359080f3212ff3b5d0a7707c3b00719f243bd5724229e10e84c1ee0ecc9c7f4')
+  for value in ['usr/include/header.h','System/Library/Frameworks/public.h','public/Unicode-Ł-😀.h']:
+   self.assertEqual(m.relative(value),value);self.assertIsNone(m.external_member_diagnostic(value))
+ def test_actual_inventory_group_diagnostics_keep_original_denial_and_no_io(self):
+  cases=[('x'*1025,'type-or-byte-bound','byte-bound'),('public:header.h','absolute-backslash-or-colon','colon'),('public\\header.h','absolute-backslash-or-colon','backslash'),('public/trailing.','component-syntax','trailing-space-or-dot'),('public/CON.h','component-syntax','dos-reserved-component'),('public/control\x01.h','control-character','control')]
+  for name,predicate,subpredicate in cases:
+   with self.subTest(name=name[:32]):
+    error,fields,printed=self.failure(name);row=fields['externalMemberFailure'];self.assertEqual(row['predicate'],predicate);self.assertEqual(row['subpredicate'],subpredicate);self.assertEqual(row['role'],'sdk');self.assertEqual(row['phase'],'snapshot');self.assertEqual(row['site'],'inventory-relative');self.assertLessEqual(len(row['pathPrefix']),256);self.assertLessEqual(len(json.dumps(row,ensure_ascii=True).encode()),4096)
+ def test_nonexternal_linux_and_other_roles_omit_all_member_values(self):
+  for policy,role,phase in [({'mac':False,'external':True},'sdk','snapshot'),({'mac':True,'external':False},'sdk','snapshot'),(POLICY,'metal','snapshot'),(POLICY,None,'snapshot'),(POLICY,'sdk','pins')]:
+   error,fields,printed=self.failure('public/CON.h',policy,role,phase);self.assertEqual(fields,{});self.assertFalse(hasattr(error,'external_member_failure'));self.assertNotIn('externalMemberFailure',printed)
+ def test_projection_failure_never_masks_original(self):
+  def broken(value):raise RuntimeError('private projection error')
+  error,fields,printed=self.failure('public/CON.h',projection=broken);self.assertEqual(fields,{});self.assertNotIn('externalMemberFailure',printed);self.assertNotIn('private',json.dumps(printed))
+ def test_private_absolute_and_parent_values_omitted_and_escaping_bounded(self):
+  for name in ['/Users/private/secret.h','public/../private/secret.h',r'C:\Users\private\secret.h',r'C:private\secret.h',r'\\server\private\secret.h','~/private/secret.h.']:
+   error,fields,printed=self.failure(name);row=fields['externalMemberFailure'];self.assertIsNone(row['pathPrefix']);self.assertIs(row['pathOmitted'],True);self.assertNotIn('secret',json.dumps(printed));self.assertNotIn('private',json.dumps(printed))
+  public=m.external_member_diagnostic('public:header.h');self.assertEqual(public['pathPrefix'],'public:header.h');self.assertEqual(public['subpredicate'],'colon');self.assertIs(public['pathOmitted'],False)
+  row=m.external_member_diagnostic('😀'*1025);self.assertIsNone(row['characterCount']);self.assertEqual(row['characterCountAtLeast'],1025);self.assertIsNone(row['utf8Bytes']);self.assertEqual(len(row['pathPrefix']),256);self.assertLessEqual(len(json.dumps(row,ensure_ascii=True).encode()),4096)
+  for name in ['public/.','public/..','public//file','public/trailing ','public/\x7f.h']:
+   row=m.external_member_diagnostic(name);self.assertIsNotNone(row);self.assertLessEqual(len(json.dumps(row,ensure_ascii=True).encode()),4096)
+ def test_forged_unknown_and_overbound_attributes_not_serialized(self):
+  m.MAC_EXTERNAL_ROLE='sdk';m.MAC_EXTERNAL_PHASE='snapshot'
+  original=m.external_member_diagnostic('public/CON.h')
+  for change in [{'unknown':'private'}, {'pathPrefix':'/Users/private/secret'}, {'pathPrefix':r'C:\Users\private\secret.h'}, {'pathPrefix':r'C:private\secret.h'}, {'pathPrefix':'x'*257}, {'utf8Bytes':'private'}, {'characterCount':True}]:
+   error=m.CheckpointError('member-path');error.external_member_failure={**original,**change};self.assertEqual(m.external_member_fields(error),{})
+unittest.main(argv=['external-member-diagnostic'],verbosity=2)
+`;
+
+test("Mac external SDK member diagnostics preserve actual relative denial and closed error output", () => {
+  const result = python(MAC_MEMBER_DIAGNOSTIC_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /Ran 6 tests/);
+});

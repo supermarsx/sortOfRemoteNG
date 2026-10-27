@@ -281,6 +281,81 @@ def source_failure_fields(error):
         return {'sourcePathFailureInvalid':True}
 
 
+def external_member_diagnostic(value):
+    # Observation only. relative() remains the authority and is never bypassed.
+    if not isinstance(value, str):
+        return None
+    count = len(value)
+    encoded = value.encode() if count <= 1024 else None
+    predicate = subpredicate = None
+    if not count or encoded is None or len(encoded) > 1024:
+        predicate = 'type-or-byte-bound'
+        subpredicate = 'empty' if not count else 'byte-bound'
+    elif value.startswith('/') or '\\' in value or ':' in value:
+        predicate = 'absolute-backslash-or-colon'
+        subpredicate = 'absolute' if value.startswith('/') else 'backslash' if '\\' in value else 'colon'
+    else:
+        for part in value.split('/'):
+            if part in ('', '.', '..'):
+                predicate, subpredicate = 'component-syntax', 'empty-dot-parent'
+            elif part.endswith((' ', '.')):
+                predicate, subpredicate = 'component-syntax', 'trailing-space-or-dot'
+            elif re.match(r'(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', part):
+                predicate, subpredicate = 'component-syntax', 'dos-reserved-component'
+            if predicate is not None:
+                break
+        if predicate is None and any(ord(c) < 32 or ord(c) == 127 for c in value):
+            predicate, subpredicate = 'control-character', 'control'
+    if predicate is None:
+        return None
+    omit = value.startswith(('/', '\\', '~')) or re.match(r'^[A-Za-z]:', value) is not None or '..' in value.split('/')
+    result = {'role':'sdk', 'phase':'snapshot', 'site':'inventory-relative',
+              'predicate':predicate, 'subpredicate':subpredicate,
+              'pathPrefix':None if omit else value[:256],
+              'pathTruncated':not omit and count > 256, 'pathOmitted':omit,
+              'pathOmittedReason':'ABSOLUTE_OR_UNPROVEN_RELATIVE' if omit else None,
+              'characterCount':count if count <= 1024 else None,
+              'characterCountAtLeast':1025 if count > 1024 else None,
+              'utf8Bytes':len(encoded) if encoded is not None else None}
+    require(len(json.dumps(result, ensure_ascii=True).encode()) <= 4096, 'external-member-diagnostic-bound')
+    return result
+
+
+def external_member_fields(error):
+    # Do not serialize arbitrary exception attributes or fields from other roles.
+    try:
+        if (type(error) is not CheckpointError or error.args != ('member-path',) or
+                globals().get('MAC_EXTERNAL_ROLE') != 'sdk' or
+                globals().get('MAC_EXTERNAL_PHASE') != 'snapshot'):
+            return {}
+        value = getattr(error, 'external_member_failure', None)
+        expected = {'role','phase','site','predicate','subpredicate','pathPrefix',
+                    'pathTruncated','pathOmitted','pathOmittedReason',
+                    'characterCount','characterCountAtLeast','utf8Bytes'}
+        if type(value) is not dict or set(value) != expected:
+            return {}
+        if (value['role'] != 'sdk' or value['phase'] != 'snapshot' or value['site'] != 'inventory-relative' or
+                value['predicate'] not in ('type-or-byte-bound','absolute-backslash-or-colon','component-syntax','control-character') or
+                value['subpredicate'] not in ('empty','byte-bound','absolute','backslash','colon','empty-dot-parent','trailing-space-or-dot','dos-reserved-component','control')):
+            return {}
+        prefix = value['pathPrefix']
+        if prefix is not None and (type(prefix) is not str or len(prefix) > 256 or
+                prefix.startswith(('/', '\\', '~')) or re.match(r'^[A-Za-z]:', prefix) is not None or '..' in prefix.split('/')):
+            return {}
+        if (type(value['pathTruncated']) is not bool or type(value['pathOmitted']) is not bool or
+                value['pathOmittedReason'] not in (None,'ABSOLUTE_OR_UNPROVEN_RELATIVE')):
+            return {}
+        for name in ('characterCount','characterCountAtLeast','utf8Bytes'):
+            n = value[name]
+            if n is not None and (type(n) is not int or not 0 <= n <= 4096):
+                return {}
+        if len(json.dumps(value, ensure_ascii=True).encode()) > 4096:
+            return {}
+        return {'externalMemberFailure':value}
+    except BaseException:
+        return {}
+
+
 def safe(path):
     absolute = Path(os.path.abspath(path))
     for p in [absolute, *absolute.parents]:
@@ -323,8 +398,21 @@ def inventory(root, budget, generated_links=None, source_policy=None):
             for item in iterator:
                 budget.check()
                 raw_name = (directory / item.name).as_posix()
-                name = (source_relative(raw_name, 'filesystem-member') if source_policy is not None and
-                        not source_policy.get('external') else relative(raw_name))
+                candidate = raw_name
+                try:
+                    name = (source_relative(raw_name, 'filesystem-member') if source_policy is not None and
+                            not source_policy.get('external') else relative(raw_name))
+                except CheckpointError as error:
+                    try:
+                        if (error.args == ('member-path',) and source_policy is not None and
+                                source_policy.get('mac') is True and source_policy.get('external') is True and
+                                globals().get('MAC_EXTERNAL_ROLE') == 'sdk' and
+                                globals().get('MAC_EXTERNAL_PHASE') == 'snapshot'):
+                            error.external_member_failure = external_member_diagnostic(candidate)
+                    except BaseException:
+                        pass  # Diagnostic projection must never replace the original denial.
+                    raise
+
                 alias = unicodedata.normalize('NFC', name).casefold()
                 require(alias not in aliases, 'member-alias')
                 aliases.add(alias)
@@ -1636,5 +1724,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalRole':MAC_EXTERNAL_ROLE,'externalPhase':MAC_EXTERNAL_PHASE} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error)}))
+
         raise SystemExit(1)
