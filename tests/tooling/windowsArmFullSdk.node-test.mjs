@@ -1673,7 +1673,7 @@ test("generated GN critical arguments bind ARM target, x64 host, local tools, sa
   );
 });
 
-async function actualCommandModel(overrides = {}) {
+async function actualCommandModel(overrides = {}, options = {}) {
   const text = await read(prefix + "source-driver.mjs"),
     begin = text.indexOf("async function executeCommand("),
     end = text.indexOf("export async function main(", begin);
@@ -1688,6 +1688,9 @@ async function actualCommandModel(overrides = {}) {
     path,
     Buffer,
     sourceCloseFailure: false,
+    sourceReportingFailure: false,
+    syncCloseReportingFaults: new WeakMap(),
+    Number,
     need: (ok, code) => assert(ok, code),
     clearTimeout: () => {},
     setTimeout: () => ({}),
@@ -1699,7 +1702,18 @@ async function actualCommandModel(overrides = {}) {
     writeSync: (_fd, chunk) => chunk.length,
     spawn: () => {
       spawnCount++;
-      queueMicrotask(() => child.emit("close", 0, null));
+      queueMicrotask(() => {
+        if (Object.hasOwn(options, "primary"))
+          child.stderr.emit("error", options.primary);
+        const close = () =>
+          child.emit(
+            "close",
+            options.code === undefined ? 0 : options.code,
+            options.signal === undefined ? null : options.signal,
+          );
+        if (options.delayedClose) setImmediate(close);
+        else close();
+      });
       return child;
     },
     ...overrides,
@@ -1707,29 +1721,302 @@ async function actualCommandModel(overrides = {}) {
   const context = vm.createContext(scope),
     actual = vm.runInContext("(" + text.slice(begin, end) + ")", context);
   const command = {
-    role: "owned",
+    role: options.role ?? "owned",
     executable: "never-executed",
     args: [],
     cwd: "owned",
   };
+  const limits = { bytes: 0, cap: options.cap ?? 1024 };
   let failed = false,
-    error;
-  try {
-    await actual(
-      command,
-      [command],
-      {},
-      { logs: "owned" },
-      { remaining: () => 500000 },
-      { bytes: 0, cap: 1024 },
-      false,
+    error,
+    value,
+    nextStage = false,
+    verification = 0;
+  Object.assign(scope, {
+    verifyHostClosure: async () => {},
+    p: {},
+    budget: {},
+    c: { image: "fixture" },
+    held: async () => {},
+    bootstrap: { file: "fixture", pin: {}, witnessPin: null },
+    verifyBootstrap: async () => {},
+    root: "fixture",
+    argv: [],
+    adapter: { file: "fixture", pin: {} },
+    HOOK_PRIMARY: [],
+    files: {},
+    verifyGitPolicy: async () => {
+      if (++verification === 2 && Object.hasOwn(options, "policyFault"))
+        throw options.policyFault;
+    },
+    console: { error() {} },
+  });
+  const checkedStart = text.indexOf("  const checked = async (action) => {"),
+    checkedEnd = text.indexOf("\n  try {\n    await sourceStage", checkedStart),
+    checked = vm.runInContext(
+      `(async()=>{${text.slice(checkedStart, checkedEnd)};return checked})()`,
+      context,
     );
+  try {
+    const action = () =>
+      actual(
+        command,
+        [command],
+        {},
+        { logs: "owned" },
+        { remaining: options.remaining ?? (() => 500000) },
+        limits,
+        false,
+      );
+    value = options.checked ? await (await checked)(action) : await action();
+    nextStage = true;
   } catch (value) {
     failed = true;
     error = value;
   }
-  return { scope, closed, opened, spawnCount, failed, error };
+  if (options.delayedClose)
+    await new Promise((resolve) => setImmediate(resolve));
+  return {
+    scope,
+    closed,
+    opened,
+    spawnCount,
+    failed,
+    error,
+    limits,
+    value,
+    nextStage,
+    verification,
+  };
 }
+
+test("actual sync close retains only observed bounded status and preserves non-sync behavior", async () => {
+  for (const [code, signal] of [
+    [0, null],
+    [128, null],
+    [null, "SIGTERM"],
+    [null, "private signal"],
+  ]) {
+    const writes = [];
+    const result = await actualCommandModel(
+      {
+        writeSync: (fd, raw) => {
+          writes.push({ fd, raw: Buffer.from(raw) });
+          return raw.length;
+        },
+      },
+      { role: "sync", code, signal },
+    );
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].fd, 7);
+    assert(writes[0].raw.length <= 512);
+    const text = writes[0].raw.toString("utf8");
+    assert(text.startsWith("FULL_SYNC_CLOSE:"));
+    assert.deepEqual(JSON.parse(text.slice("FULL_SYNC_CLOSE:".length)), {
+      code,
+      signal: signal === "private signal" ? "UNCLASSIFIED" : signal,
+    });
+    assert.equal(result.limits.bytes, writes[0].raw.length);
+    assert.equal(result.failed, !(code === 0 && signal === null));
+    if (result.failed)
+      assert.equal(result.error.message, "FULL_SOURCE_CHILD_FAILED");
+    assert.deepEqual(result.closed, [7, 8]);
+  }
+  let writes = 0;
+  const ordinary = await actualCommandModel({
+    writeSync: () => {
+      writes++;
+      throw new Error("unexpected");
+    },
+  });
+  assert.equal(ordinary.failed, false);
+  assert.equal(writes, 0);
+});
+
+test("actual sync close reporting cannot replace a primary and precharges its shared ledger", async () => {
+  const reportError = new Error("owned reporting fault");
+  for (const primary of [new Error("owned stream error"), null, false, 0]) {
+    const result = await actualCommandModel(
+      {
+        writeSync: () => {
+          throw reportError;
+        },
+      },
+      { role: "sync", primary },
+    );
+    assert.equal(result.failed, true);
+    assert.equal(result.error, primary);
+    assert.equal(result.scope.sourceReportingFailure, true);
+    assert(result.limits.bytes > 0);
+    assert.deepEqual(result.closed, [7, 8]);
+  }
+  const childFailure = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw reportError;
+      },
+    },
+    { role: "sync", code: 128 },
+  );
+  assert.equal(childFailure.error.message, "FULL_SOURCE_CHILD_FAILED");
+  const reportOnly = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw reportError;
+      },
+    },
+    { role: "sync" },
+  );
+  assert.equal(reportOnly.failed, false);
+  assert.equal(
+    reportOnly.scope.syncCloseReportingFaults.get(reportOnly.value),
+    reportError,
+  );
+  assert.equal(reportOnly.scope.sourceReportingFailure, true);
+  let writes = 0;
+  const bound = await actualCommandModel(
+    {
+      writeSync: () => {
+        writes++;
+        return 0;
+      },
+    },
+    { role: "sync", cap: 1 },
+  );
+  assert.equal(writes, 0);
+  assert.match(
+    bound.scope.syncCloseReportingFaults.get(bound.value).message,
+    /FULL_SOURCE_OUTPUT_BOUND/,
+  );
+  assert.equal(bound.limits.bytes, 0);
+  const short = await actualCommandModel(
+    { writeSync: () => 0 },
+    { role: "sync" },
+  );
+  assert.match(
+    short.scope.syncCloseReportingFaults.get(short.value).message,
+    /FULL_SOURCE_LOG_WRITE/,
+  );
+  assert(short.limits.bytes > 0);
+  let checks = 0;
+  const deadline = new Error("owned deadline");
+  const expired = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw new Error("must not write");
+      },
+    },
+    {
+      role: "sync",
+      remaining: () => {
+        if (++checks >= 3) throw deadline;
+        return 500000;
+      },
+    },
+  );
+  assert.equal(expired.error, deadline);
+  assert.equal(expired.limits.bytes, 0);
+  assert.equal(expired.scope.sourceReportingFailure, true);
+  let lateWrites = 0;
+  const early = new Error("owned early failure");
+  const late = await actualCommandModel(
+    {
+      writeSync: () => {
+        lateWrites++;
+        return 0;
+      },
+    },
+    {
+      role: "sync",
+      primary: early,
+      delayedClose: true,
+    },
+  );
+  assert.equal(late.error, early);
+  assert.equal(lateWrites, 0);
+  assert.equal(late.scope.sourceReportingFailure, true);
+  assert.deepEqual(late.closed, [7, 8]);
+});
+
+test("actual checked boundary prioritizes strict postcheck over optional sync reporting and blocks next stage", async () => {
+  const report = new Error("owned report fault"),
+    policy = new Error("owned policy fault");
+  for (const policyFault of [policy, null, 0, undefined]) {
+    const result = await actualCommandModel(
+      {
+        writeSync: () => {
+          throw report;
+        },
+      },
+      {
+        role: "sync",
+        checked: true,
+        policyFault,
+      },
+    );
+    assert.equal(result.failed, true);
+    assert.equal(result.error, policyFault);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+    assert.equal(result.scope.sourceReportingFailure, true);
+  }
+  const postPass = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    { role: "sync", checked: true },
+  );
+  assert.equal(postPass.failed, true);
+  assert.equal(postPass.error, report);
+  assert.equal(postPass.verification, 2);
+  assert.equal(postPass.nextStage, false);
+  for (const primary of [
+    new Error("owned child fault"),
+    null,
+    false,
+    0,
+    undefined,
+  ]) {
+    const result = await actualCommandModel(
+      {
+        writeSync: () => {
+          throw report;
+        },
+      },
+      {
+        role: "sync",
+        checked: true,
+        primary,
+        policyFault: policy,
+      },
+    );
+    assert.equal(result.error, primary);
+    assert.equal(result.failed, true);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+  }
+  const child = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    {
+      role: "sync",
+      checked: true,
+      code: 128,
+      policyFault: policy,
+    },
+  );
+  assert.equal(child.error.message, "FULL_SOURCE_CHILD_FAILED");
+  assert.equal(child.nextStage, false);
+  const good = await actualCommandModel({}, { role: "sync", checked: true });
+  assert.equal(good.failed, false);
+  assert.equal(good.nextStage, true);
+  assert.equal(good.verification, 2);
+});
 
 test("actual command body closes partial startup resources and preserves exact primary through close faults", async () => {
   for (const sentinel of [new Error("owned open failure"), null, false]) {
@@ -2756,6 +3043,7 @@ test("GitPolicy first errors including falsy values survive append/close/deadlin
     const checked = vm.runInNewContext(
       `(async()=>{${body.slice(start, end)};return checked})()`,
       {
+        syncCloseReportingFaults: new WeakMap(),
         verifyHostClosure: async () => {},
         p: {},
         budget: {},

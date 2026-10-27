@@ -80,6 +80,7 @@ const CIPD_CLIENT_SHA =
 const VPYTHON_INSTANCE = "5_RRshFOtDVoKVpdtehepLtVyYsUdifAy9IHenpJmHoC";
 let sourceCloseFailure = false;
 let sourceReportingFailure = false;
+const syncCloseReportingFaults = new WeakMap();
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
 const need = (ok, code) => {
   if (!ok) throw new Error(code);
@@ -1773,6 +1774,9 @@ async function executeCommand(
     timer,
     primary,
     failed = false,
+    logsClosed = false,
+    reportingFailed = false,
+    reportingError,
     bytes = 0;
   try {
     const output = openSync(
@@ -1849,13 +1853,56 @@ async function executeCommand(
         });
       }
       child.once("error", deny);
-      child.once("close", (code, signal) =>
-        failed
-          ? reject(primary)
-          : code === 0 && signal === null
-            ? resolve(code)
-            : deny(new Error("FULL_SOURCE_CHILD_FAILED")),
-      );
+      child.once("close", (code, signal) => {
+        // Preserve the actual child/stream/deadline failure before best-effort
+        // retention. A numeric close fact never replaces the policy postcheck.
+        if (!failed && !(code === 0 && signal === null)) {
+          failed = true;
+          primary = new Error("FULL_SOURCE_CHILD_FAILED");
+        }
+        if (command.role === "sync") {
+          try {
+            need(!logsClosed, "FULL_SYNC_CLOSE_LOG_CLOSED");
+            budget.remaining();
+            const record = Buffer.from(
+              "FULL_SYNC_CLOSE:" +
+                JSON.stringify({
+                  code: Number.isSafeInteger(code) ? code : null,
+                  signal:
+                    signal === null
+                      ? null
+                      : [
+                            "SIGTERM",
+                            "SIGKILL",
+                            "SIGINT",
+                            "SIGABRT",
+                            "SIGBREAK",
+                          ].includes(signal)
+                        ? signal
+                        : "UNCLASSIFIED",
+                }) +
+                "\n",
+            );
+            need(record.length <= 512, "FULL_SYNC_CLOSE_BOUND");
+            need(
+              limits.bytes + record.length <= limits.cap,
+              "FULL_SOURCE_OUTPUT_BOUND",
+            );
+            // Charge before the write, including a failed or partial write.
+            limits.bytes += record.length;
+            need(
+              writeSync(output, record) === record.length,
+              "FULL_SOURCE_LOG_WRITE",
+            );
+          } catch (error) {
+            sourceReportingFailure = true;
+            reportingFailed = true;
+            reportingError = error;
+          }
+        }
+        if (failed) reject(primary);
+        else resolve(code);
+      });
       timer = setTimeout(
         () => deny(new Error("FULL_DRIVER_DEADLINE")),
         Math.max(1, budget.remaining() - 120000),
@@ -1864,12 +1911,20 @@ async function executeCommand(
     need(outcome === 0, "FULL_SOURCE_CHILD_FAILED");
     observer?.finish();
     budget.remaining();
+    if (reportingFailed) {
+      // An unforgeable outcome defers only this optional reporting fault until
+      // checked() has completed the authoritative source/policy postchecks.
+      const outcome = Object.freeze({});
+      syncCloseReportingFaults.set(outcome, reportingError);
+      return outcome;
+    }
     return Buffer.concat(text).toString("utf8");
   } catch (error) {
     failed = true;
     throw error;
   } finally {
     clearTimeout(timer);
+    logsClosed = true;
     let closeError;
     for (const fd of descriptors)
       try {
@@ -2073,9 +2128,10 @@ export async function main(argv = process.argv.slice(2)) {
         primary,
       );
     await verifyGitPolicy();
-    let rejected = false;
+    let rejected = false,
+      value;
     try {
-      return await action();
+      value = await action();
     } catch (error) {
       rejected = true;
       throw error;
@@ -2097,6 +2153,9 @@ export async function main(argv = process.argv.slice(2)) {
         if (!rejected) throw error;
       }
     }
+    if (syncCloseReportingFaults.has(value))
+      throw syncCloseReportingFaults.get(value);
+    return value;
   };
   try {
     await sourceStage(root, budget, "source-acquisition", 4500, async () => {
