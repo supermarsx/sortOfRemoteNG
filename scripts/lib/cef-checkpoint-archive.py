@@ -303,6 +303,36 @@ def source_literal_member(value):
             hasattr(os, 'uname') and os.uname().sysname == 'Linux')
 
 
+# Exact Linux ARM sysroot case pairs: the Linux uapi netfilter headers and
+# Perl's Sys/ and sys/ directories differ only by case in the same pinned
+# Debian bullseye arm64 sysroot tarball. An alias group is admitted only when
+# every member is listed here; any other case or normalization alias is denied.
+SOURCE_CASE_SYSROOT = 'src/build/linux/debian_bullseye_arm64-sysroot/'
+SOURCE_CASE_MEMBERS = frozenset(SOURCE_CASE_SYSROOT + name for name in (
+    'usr/include/linux/netfilter/xt_CONNMARK.h', 'usr/include/linux/netfilter/xt_connmark.h',
+    'usr/include/linux/netfilter/xt_DSCP.h', 'usr/include/linux/netfilter/xt_dscp.h',
+    'usr/include/linux/netfilter/xt_MARK.h', 'usr/include/linux/netfilter/xt_mark.h',
+    'usr/include/linux/netfilter/xt_RATEEST.h', 'usr/include/linux/netfilter/xt_rateest.h',
+    'usr/include/linux/netfilter/xt_TCPMSS.h', 'usr/include/linux/netfilter/xt_tcpmss.h',
+    'usr/include/linux/netfilter_ipv4/ipt_ECN.h', 'usr/include/linux/netfilter_ipv4/ipt_ecn.h',
+    'usr/include/linux/netfilter_ipv4/ipt_TTL.h', 'usr/include/linux/netfilter_ipv4/ipt_ttl.h',
+    'usr/include/linux/netfilter_ipv6/ip6t_HL.h', 'usr/include/linux/netfilter_ipv6/ip6t_hl.h',
+    'usr/lib/aarch64-linux-gnu/perl/5.32.1/Sys', 'usr/lib/aarch64-linux-gnu/perl/5.32.1/sys',
+))
+
+
+def source_case_member(value):
+    return (value in SOURCE_CASE_MEMBERS and
+            SOURCE_PATH_MODE in ('source-record', 'source-apply', 'source-verify') and
+            hasattr(os, 'uname') and os.uname().sysname == 'Linux')
+
+
+def member_alias(aliases, name, admitted):
+    alias = unicodedata.normalize('NFC', name).casefold()
+    require(alias not in aliases or (admitted is True and aliases[alias] is True), 'member-alias')
+    aliases[alias] = admitted is True and aliases.get(alias, True) is True
+
+
 def source_relative(value, phase):
     if SOURCE_PATH_MODE not in ('source-record', 'source-apply', 'source-verify'):
         return relative(value)
@@ -658,7 +688,7 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
     member = source_member_policy(root, source_policy, member_policy)
     generated_links = link_recipe(generated_links or {})
     seen_links = set()
-    rows, pending, aliases, raw = [], [Path('.')], set(), 0
+    rows, pending, aliases, raw = [], [Path('.')], {}, 0
     while pending:
         directory = pending.pop()
         with source_directory(root, directory, source_policy, budget) as iterator:
@@ -681,9 +711,8 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
                         pass  # Diagnostic projection must never replace the original denial.
                     raise
 
-                alias = unicodedata.normalize('NFC', name).casefold()
-                require(alias not in aliases, 'member-alias')
-                aliases.add(alias)
+                member_alias(aliases, name, source_policy is not None and not source_policy.get('external') and
+                             source_case_member(name))
                 p = root / name
                 external = source_policy is not None and source_policy.get('external') is True
                 if source_policy is not None and not external and source_admin(root, name, source_policy, budget):

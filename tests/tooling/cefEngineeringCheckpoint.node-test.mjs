@@ -12844,3 +12844,61 @@ print('literal member PASS')
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /literal member PASS/);
 });
+
+test("Linux ARM sysroot case pairs are the only admitted member aliases, on Linux source modes only", () => {
+  const result = python(
+    String.raw`import importlib.util,sys,unicodedata
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('case_member',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+root='src/build/linux/debian_bullseye_arm64-sysroot/'
+nf='usr/include/linux/netfilter/';v4='usr/include/linux/netfilter_ipv4/';v6='usr/include/linux/netfilter_ipv6/';perl='usr/lib/aarch64-linux-gnu/perl/5.32.1/'
+pairs=[(nf+'xt_'+x+'.h',nf+'xt_'+x.lower()+'.h') for x in ('CONNMARK','DSCP','MARK','RATEEST','TCPMSS')]
+pairs+=[(v4+'ipt_ECN.h',v4+'ipt_ecn.h'),(v4+'ipt_TTL.h',v4+'ipt_ttl.h'),(v6+'ip6t_HL.h',v6+'ip6t_hl.h'),(perl+'Sys',perl+'sys')]
+pairs=[(root+a,root+b) for a,b in pairs]
+assert m.SOURCE_CASE_MEMBERS==frozenset(x for p in pairs for x in p) and len(m.SOURCE_CASE_MEMBERS)==18
+key=lambda x:unicodedata.normalize('NFC',x).casefold()
+assert len({key(x) for x in m.SOURCE_CASE_MEMBERS})==9 and all(key(a)==key(b) for a,b in pairs)
+class Linux:sysname='Linux'
+class Darwin:sysname='Darwin'
+def denied(names,admit):
+ aliases={}
+ try:
+  for x in names:m.member_alias(aliases,x,admit(x))
+ except m.CheckpointError as error:
+  assert error.args==('member-alias',);return
+ raise AssertionError('admitted '+repr(names))
+def admitted(names,admit):
+ aliases={}
+ for x in names:m.member_alias(aliases,x,admit(x))
+for mode in ('source-record','source-apply','source-verify'):
+ m.SOURCE_PATH_MODE=mode
+ with patch.object(m.os,'uname',lambda:Linux,create=True):
+  for a,b in pairs:
+   assert m.source_case_member(a) and m.source_case_member(b)
+   admitted([a,b],m.source_case_member);admitted([b,a],m.source_case_member)
+   for third in (a.upper(),b.swapcase(),a[:-1]+a[-1].swapcase()):
+    if third in (a,b):continue
+    assert not m.source_case_member(third)
+    denied([a,b,third],m.source_case_member);denied([third,a],m.source_case_member);denied([b,third],m.source_case_member)
+   for other in ['src/'+a,a+'/child',a.replace(root,'src/build/linux/debian_bullseye_amd64-sysroot/')]:
+    assert not m.source_case_member(other)
+   denied([a,b],lambda x:False)
+  nfc,nfd=root+'usr/caf'+chr(0xe9),root+'usr/cafe'+chr(0x301)
+  assert not m.source_case_member(nfc) and not m.source_case_member(nfd)
+  denied([nfc,nfd],m.source_case_member);denied(['src/A','src/a'],m.source_case_member)
+  admitted(['src/A','src/b',pairs[0][0]],m.source_case_member)
+ with patch.object(m.os,'uname',lambda:Darwin,create=True):
+  for a,b in pairs:
+   assert not m.source_case_member(a);denied([a,b],m.source_case_member)
+for mode in (None,'archive'):
+ m.SOURCE_PATH_MODE=mode
+ with patch.object(m.os,'uname',lambda:Linux,create=True):
+  for a,b in pairs:
+   assert not m.source_case_member(a);denied([a,b],m.source_case_member)
+print('case member PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /case member PASS/);
+});
