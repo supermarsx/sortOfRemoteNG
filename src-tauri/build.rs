@@ -129,15 +129,7 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("PROFILE").as_deref() == Ok("release")
     {
-        for argument in ["/OPT:REF", "/OPT:ICF", "/Brepro"] {
-            println!("cargo:rustc-link-arg={argument}");
-        }
-    }
-    // Debug links default to /INCREMENTAL, which leaves stale delay-load
-    // thunks in padding after an import disappears; the browser client import
-    // guard rightly refuses those orphans, so every Windows profile links whole.
-    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
-        for argument in ["/INCREMENTAL:NO"] {
+        for argument in ["/OPT:REF", "/OPT:ICF", "/INCREMENTAL:NO", "/Brepro"] {
             println!("cargo:rustc-link-arg={argument}");
         }
     }
