@@ -289,9 +289,25 @@ def source_path_failure(value, phase):
             **({'name':value} if source_path_name(value) else {})}
 
 
+# Exact Linux ARM sysroot member: systemd escapes '-' in unit names as a literal
+# "\x2d". Chromium's sysroots.json at the pinned commit SHA-256 pins the sysroot
+# tarball, and the source snapshot still hashes and binds this entry's content.
+SOURCE_LITERAL_MEMBERS = frozenset({
+    'src/build/linux/debian_bullseye_arm64-sysroot/lib/systemd/system/system-systemd\\x2dcryptsetup.slice',
+})
+
+
+def source_literal_member(value):
+    return (value in SOURCE_LITERAL_MEMBERS and
+            SOURCE_PATH_MODE in ('source-record', 'source-apply', 'source-verify') and
+            hasattr(os, 'uname') and os.uname().sysname == 'Linux')
+
+
 def source_relative(value, phase):
     if SOURCE_PATH_MODE not in ('source-record', 'source-apply', 'source-verify'):
         return relative(value)
+    if source_literal_member(value):
+        return value
     try:
         return relative(value)
     except CheckpointError as error:
@@ -1661,7 +1677,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
             require(intel or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
-            budget.check();path = root / relative(row['path']);before = source_io_call('apply-stat', path, path.lstat)
+            budget.check();path = root / (row['path'] if source_literal_member(row['path']) else relative(row['path']));before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
             require((stamp(before),before.st_ctime_ns) == guards[row['path']], 'source-write-identity')
             if row['kind'] == 'symlink':

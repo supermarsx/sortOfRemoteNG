@@ -12802,3 +12802,45 @@ print('actual full Python context: exact Node Intel and unchanged ARM shapes; 12
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
+
+test("Linux ARM sysroot systemd literal is the only backslash source member, on Linux source modes only", () => {
+  const result = python(
+    String.raw`import hashlib,importlib.util,sys
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('literal_member',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+name='src/build/linux/debian_bullseye_arm64-sysroot/lib/systemd/system/system-systemd\\x2dcryptsetup.slice'
+assert m.SOURCE_LITERAL_MEMBERS==frozenset({name})
+assert len(name.encode())==99 and name.count(chr(92))==1
+assert hashlib.sha256(name.encode()).hexdigest()=='8680d56d1c6b87c7a099d6c05d62c15b62a772a5491981c0d6210f754fa17e3e'
+class Linux:sysname='Linux'
+class Darwin:sysname='Darwin'
+def denied(value,phase='filesystem-member'):
+ try:m.source_relative(value,phase)
+ except m.CheckpointError as error:return error
+ raise AssertionError('admitted '+repr(value))
+for mode in ('source-record','source-apply','source-verify'):
+ m.SOURCE_PATH_MODE=mode
+ with patch.object(m.os,'uname',lambda:Linux,create=True):
+  assert m.source_relative(name,'filesystem-member')==name and m.source_literal_member(name)
+  for other in [name.replace('cryptsetup','fsck'),name.replace('\\x2d','\\x2e'),'src/'+name,name+'/child','src/a\\b']:
+   assert not m.source_literal_member(other)
+   error=denied(other);assert error.args==('member-path',) and error.sourcePathFailure['predicate']=='separator'
+ with patch.object(m.os,'uname',lambda:Darwin,create=True):
+  assert not m.source_literal_member(name);denied(name)
+for mode in (None,'archive'):
+ m.SOURCE_PATH_MODE=mode
+ with patch.object(m.os,'uname',lambda:Linux,create=True):
+  assert not m.source_literal_member(name)
+  try:m.source_relative(name,'filesystem-member')
+  except m.CheckpointError:pass
+  else:raise AssertionError('admitted outside source modes')
+try:m.relative(name)
+except m.CheckpointError:pass
+else:raise AssertionError('relative widened')
+print('literal member PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /literal member PASS/);
+});
