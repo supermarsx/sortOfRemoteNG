@@ -10987,7 +10987,7 @@ class MemberDiagnostic(unittest.TestCase):
    self.fail('expected original member-path denial')
  def test_relative_ast_and_valid_names_unchanged(self):
   node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='relative')
-  self.assertEqual(hashlib.sha256(ast.dump(node,include_attributes=False).encode()).hexdigest(),'4359080f3212ff3b5d0a7707c3b00719f243bd5724229e10e84c1ee0ecc9c7f4')
+  self.assertEqual(hashlib.sha256(ast.get_source_segment(source.decode(),node).replace('\r\n','\n').encode()).hexdigest(),'f13eff05d5535c5ff6d20706a76a49db211c1cddf8f20a239603864800b2c919')
   for value in ['usr/include/header.h','System/Library/Frameworks/public.h','public/Unicode-Ł-😀.h']:
    self.assertEqual(m.relative(value),value);self.assertIsNone(m.external_member_diagnostic(value))
  def test_actual_inventory_group_diagnostics_keep_original_denial_and_no_io(self):
@@ -11287,8 +11287,8 @@ EXTERNAL={'mac':True,'external':True}
 def policy():return {**EXTERNAL,'aggregate':{'entries':0,'bytes':0,'metadata':0}}
 class SdkColon(unittest.TestCase):
  def test_relative_ast_and_strict_archive_default_and_apply_member_calls_unchanged(self):
-  tree=ast.parse(pathlib.Path(sys.argv[1]).read_bytes());node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='relative')
-  self.assertEqual(hashlib.sha256(ast.dump(node,include_attributes=False).encode()).hexdigest(),'4359080f3212ff3b5d0a7707c3b00719f243bd5724229e10e84c1ee0ecc9c7f4')
+  source=pathlib.Path(sys.argv[1]).read_bytes();tree=ast.parse(source);node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='relative')
+  self.assertEqual(hashlib.sha256(ast.get_source_segment(source.decode(),node).replace('\r\n','\n').encode()).hexdigest(),'f13eff05d5535c5ff6d20706a76a49db211c1cddf8f20a239603864800b2c919')
   for name in [NAME,'public:header','file:stream','C:relative','C:/absolute']:
    with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.relative(name)
   # Current typed registry/source-IO wrappers still reach the unchanged guard.
