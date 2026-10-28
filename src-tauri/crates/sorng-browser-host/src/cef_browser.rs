@@ -3531,11 +3531,11 @@ wrap_client! {
         fn load_handler(&self) -> Option<LoadHandler> { Some(NativeLoad::new(self.shared.clone())) }
         fn focus_handler(&self) -> Option<FocusHandler> { Some(NativeFocus::new(self.shared.clone())) }
         fn find_handler(&self) -> Option<FindHandler> { Some(cef_find::handler(self.shared.clone())) }
-        fn dialog_handler(&self) -> Option<DialogHandler> { Some(DenyFileDialog::new()) }
+        fn dialog_handler(&self) -> Option<DialogHandler> { Some(NativeFileDialog::new(self.shared.clone())) }
         fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(NativeJsDialog::new(self.shared.clone())) }
         fn permission_handler(&self) -> Option<PermissionHandler> { Some(NativePermissions::new(self.shared.clone())) }
         fn download_handler(&self) -> Option<DownloadHandler> { Some(self.downloads.handler()) }
-        fn drag_handler(&self) -> Option<DragHandler> { Some(DenyDrag::new()) }
+        fn drag_handler(&self) -> Option<DragHandler> { Some(NativeDrag::new(self.shared.clone())) }
         fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(context_menu::handler(self.shared.clone(), self.browser.clone(), self.downloads.clone())) }
         fn command_handler(&self) -> Option<CommandHandler> { Some(DenyCommands::new()) }
         fn on_process_message_received(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
@@ -3715,6 +3715,22 @@ wrap_focus_handler! {
 }
 
 wrap_dialog_handler! {
+    struct NativeFileDialog { shared: Arc<Shared> }
+    impl DialogHandler {
+        fn on_file_dialog(&self, browser: Option<&mut Browser>, mode: FileDialogMode,
+            title: Option<&CefString>, default_file_path: Option<&CefString>,
+            accept_filters: Option<&mut CefStringList>, accept_extensions: Option<&mut CefStringList>,
+            accept_descriptions: Option<&mut CefStringList>, callback: Option<&mut FileDialogCallback>) -> i32 {
+            // The attached, current view gets CEF's standard OS picker; the
+            // user's own selection is the only path a file reaches the page.
+            if self.shared.focus_allowed(browser.as_deref()) { return 0; }
+            DenyFileDialog::new().on_file_dialog(browser, mode, title, default_file_path,
+                accept_filters, accept_extensions, accept_descriptions, callback)
+        }
+    }
+}
+
+wrap_dialog_handler! {
     struct DenyFileDialog;
     impl DialogHandler {
         fn on_file_dialog(&self, _browser: Option<&mut Browser>, _mode: FileDialogMode,
@@ -3803,6 +3819,17 @@ wrap_download_handler! {
         }
         fn on_download_updated(&self, _browser: Option<&mut Browser>, _download_item: Option<&mut DownloadItem>,
             callback: Option<&mut DownloadItemCallback>) { if let Some(callback) = callback { callback.cancel(); } }
+    }
+}
+
+wrap_drag_handler! {
+    struct NativeDrag { shared: Arc<Shared> }
+    impl DragHandler {
+        // Hidden, blocked, closing or stale views refuse drops. A file the
+        // page doesn't handle navigates to file://, which request admission denies.
+        fn on_drag_enter(&self, browser: Option<&mut Browser>, _drag_data: Option<&mut DragData>, _mask: DragOperationsMask) -> i32 {
+            i32::from(!self.shared.focus_allowed(browser.as_deref()))
+        }
     }
 }
 
@@ -5314,6 +5341,42 @@ mod tests {
         shared.revoke();
         shared.input_blocked.store(false, Ordering::Release);
         assert_eq!(focus.on_set_focus(Some(&mut browser), FocusSource::NAVIGATION), 1);
+    }
+
+    #[tokio::test]
+    async fn file_picker_and_drops_follow_the_attached_current_view() {
+        let shared = Arc::new(fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await);
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let dialog = NativeFileDialog::new(shared.clone());
+        let drag = NativeDrag::new(shared.clone());
+        let picker = |browser: Option<&mut Browser>| {
+            dialog.on_file_dialog(browser, FileDialogMode::default(), None, None, None, None, None, None)
+        };
+        let drop_in = |browser: Option<&mut Browser>| {
+            drag.on_drag_enter(browser, None, DragOperationsMask::default())
+        };
+        let mut browser = focus_browser(1, 41);
+        assert_eq!(picker(Some(&mut browser)), 0);
+        assert_eq!(drop_in(Some(&mut browser)), 0);
+        shared.input_blocked.store(true, Ordering::Release);
+        assert_eq!(picker(Some(&mut browser)), 1);
+        assert_eq!(drop_in(Some(&mut browser)), 1);
+        shared.input_blocked.store(false, Ordering::Release);
+        shared.state.lock().unwrap().control.hide(&shared.identity).unwrap();
+        assert_eq!(picker(Some(&mut browser)), 1);
+        assert_eq!(drop_in(Some(&mut browser)), 1);
+        shared.state.lock().unwrap().control.show(&shared.identity).unwrap();
+        let mut foreign = focus_browser(1, 42);
+        let mut invalid = focus_browser(0, 41);
+        assert_eq!(picker(Some(&mut foreign)), 1);
+        assert_eq!(picker(Some(&mut invalid)), 1);
+        assert_eq!(picker(None), 1);
+        assert_eq!(drop_in(Some(&mut foreign)), 1);
+        assert_eq!(drop_in(Some(&mut invalid)), 1);
+        assert_eq!(drop_in(None), 1);
+        shared.revoke();
+        assert_eq!(picker(Some(&mut browser)), 1);
+        assert_eq!(drop_in(Some(&mut browser)), 1);
     }
 
     #[test]
