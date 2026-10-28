@@ -280,6 +280,52 @@ const USER32_IMPORTS: &[&str] = &[
     "TrackMouseEvent",
     "TranslateMessage",
     "ValidateRect",
+    // The full app's tray, menu, clipboard and window-text references formed
+    // a detached 44-entry IAT beside the SDK fragment.
+    "SendMessageA",
+    "FindWindowA",
+    "IsClipboardFormatAvailable",
+    "GetClipboardData",
+    "RegisterClipboardFormatW",
+    "UpdateWindow",
+    "InvalidateRect",
+    "SetCursorPos",
+    "FlashWindowEx",
+    "FindWindowExW",
+    "GetParent",
+    "ReleaseDC",
+    "SetParent",
+    "MapWindowPoints",
+    "SetFocus",
+    "SetWindowTextW",
+    "CreateIcon",
+    "GetWindowTextW",
+    "GetWindowTextLengthW",
+    "RegisterClassW",
+    "ChangeWindowMessageFilterEx",
+    "TrackPopupMenu",
+    "SetTimer",
+    "KillTimer",
+    "DrawIconEx",
+    "GetMenuBarInfo",
+    "OffsetRect",
+    "GetWindowDC",
+    "GetMenuItemInfoW",
+    "DrawTextW",
+    "CreateMenu",
+    "CreatePopupMenu",
+    "DrawMenuBar",
+    "SetMenuItemInfoW",
+    "CheckMenuItem",
+    "AppendMenuW",
+    "InsertMenuW",
+    "RemoveMenu",
+    "DestroyAcceleratorTable",
+    "CreateAcceleratorTableW",
+    "SetMenu",
+    "PostQuitMessage",
+    "DestroyMenu",
+    "VkKeyScanW",
 ];
 
 fn canonical_import_directives(cef_enabled: bool, os: &str, env: &str) -> Vec<String> {
@@ -487,8 +533,8 @@ mod tests {
         let directives = canonical_import_directives(true, "windows", "msvc");
         let first = WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + ADVAPI32_IMPORTS.len() + 3;
         assert_eq!(directives[first], "cargo:rustc-link-lib=dylib=user32");
-        assert_eq!(USER32_IMPORTS.len(), 90);
-        assert_eq!(USER32_IMPORTS.iter().collect::<BTreeSet<_>>().len(), 90);
+        assert_eq!(USER32_IMPORTS.len(), 134);
+        assert_eq!(USER32_IMPORTS.iter().collect::<BTreeSet<_>>().len(), 134);
         assert_eq!(directives.len(), first + 1 + USER32_IMPORTS.len());
         for (index, symbol) in USER32_IMPORTS.iter().enumerate() {
             assert_eq!(
