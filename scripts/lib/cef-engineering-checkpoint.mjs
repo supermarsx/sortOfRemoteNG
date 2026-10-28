@@ -1510,11 +1510,11 @@ function sourceBoundFailure(value, mode) {
     value.stage !== "inventory-append" ||
     !Number.isSafeInteger(value.entries) ||
     value.entries < 1 ||
-    value.entries > 1_000_001 ||
+    value.entries > 3_000_001 ||
     !Number.isSafeInteger(value.rawBytes) ||
     value.rawBytes < 0 ||
     value.rawBytes > 264 * 1024 ** 3 ||
-    value.maximumEntries !== 1_000_000 ||
+    value.maximumEntries !== 3_000_000 ||
     value.maximumRawBytes !== 256 * 1024 ** 3 ||
     !(
       value.entries > value.maximumEntries ||
@@ -4872,7 +4872,7 @@ export function graphPinSnapshot(value) {
 // Committer epoch from pinned CEF682c; reproducibility input, never the operation clock.
 export const SOURCE_METADATA_DATE_EPOCH = "1790626028";
 // Only the complete owned-source sidecar; ordinary/external metadata stays128MiB.
-export const SOURCE_METADATA_MAX_BYTES = 512 * 1024 ** 2;
+export const SOURCE_METADATA_MAX_BYTES = 1536 * 1024 ** 2;
 // A new Linux ARM producer seeds this sidecar; old checkpoints never gain it retroactively.
 export function sourceMetadataPlan(identity, out, mode) {
   validateIdentity(identity);
@@ -4921,7 +4921,7 @@ export function sourceMetadataResult(value, mode) {
       value.mode === mode &&
       Number.isSafeInteger(value.entries) &&
       value.entries >= 1 &&
-      value.entries <= 1000000 &&
+      value.entries <= 3000000 &&
       Number.isSafeInteger(value.bytes) &&
       value.bytes >= 0 &&
       value.bytes <= 256 * 1024 ** 3,
