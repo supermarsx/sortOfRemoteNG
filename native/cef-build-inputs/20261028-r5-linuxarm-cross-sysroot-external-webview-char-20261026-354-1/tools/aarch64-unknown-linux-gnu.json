@@ -1,0 +1,32 @@
+{
+  "files": [
+    {
+      "path": "usr/bin/python3.12",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+      "size": 8020928
+    },
+    {
+      "path": "usr/bin/x86_64-linux-gnu-ld.bfd",
+      "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+      "size": 1359128
+    },
+    {
+      "path": "usr/bin/pkgconf",
+      "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b",
+      "size": 45168
+    },
+    {
+      "path": "usr/include/stdio.h",
+      "sha256": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62",
+      "size": 34649
+    },
+    {
+      "path": "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+      "sha256": "0ade5129423cb2392fd1e210a96c33af4e1a6bc90507946fa2efeda929f92236",
+      "size": 412
+    }
+  ],
+  "kind": "sorng-cef-toolchain-lock",
+  "schemaVersion": 1,
+  "target": "aarch64-unknown-linux-gnu"
+}
