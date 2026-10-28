@@ -12803,40 +12803,47 @@ print('actual full Python context: exact Node Intel and unchanged ARM shapes; 12
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-test("Linux ARM sysroot systemd literal is the only backslash source member, on Linux source modes only", () => {
+test("pinned Linux sysroot systemd literals are the only backslash source members, on Linux source modes only", () => {
   const result = python(
     String.raw`import hashlib,importlib.util,sys
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('literal_member',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-name='src/build/linux/debian_bullseye_arm64-sysroot/lib/systemd/system/system-systemd\\x2dcryptsetup.slice'
-assert m.SOURCE_LITERAL_MEMBERS==frozenset({name})
-assert len(name.encode())==99 and name.count(chr(92))==1
-assert hashlib.sha256(name.encode()).hexdigest()=='8680d56d1c6b87c7a099d6c05d62c15b62a772a5491981c0d6210f754fa17e3e'
+unit='lib/systemd/system/system-systemd\\x2dcryptsetup.slice'
+names={'src/build/linux/debian_bullseye_%s-sysroot/'%arch+unit:(size,digest) for arch,size,digest in (
+ ('arm64',99,'8680d56d1c6b87c7a099d6c05d62c15b62a772a5491981c0d6210f754fa17e3e'),
+ ('amd64',99,'170f79cb738eeaf8ed7ab7889d299b02e0393cf9675a621b67538e598104513d'),
+ ('i386',98,'3f2fadaff67575c25d666ae61041946c3d1b576300865636e9757d1cf32fee89'))}
+assert m.SOURCE_LITERAL_MEMBERS==frozenset(names)
+for name,(size,digest) in names.items():
+ assert len(name.encode())==size and name.count(chr(92))==1
+ assert hashlib.sha256(name.encode()).hexdigest()==digest
 class Linux:sysname='Linux'
 class Darwin:sysname='Darwin'
 def denied(value,phase='filesystem-member'):
  try:m.source_relative(value,phase)
  except m.CheckpointError as error:return error
  raise AssertionError('admitted '+repr(value))
-for mode in ('source-record','source-apply','source-verify'):
- m.SOURCE_PATH_MODE=mode
- with patch.object(m.os,'uname',lambda:Linux,create=True):
-  assert m.source_relative(name,'filesystem-member')==name and m.source_literal_member(name)
-  for other in [name.replace('cryptsetup','fsck'),name.replace('\\x2d','\\x2e'),'src/'+name,name+'/child','src/a\\b']:
-   assert not m.source_literal_member(other)
-   error=denied(other);assert error.args==('member-path',) and error.sourcePathFailure['predicate']=='separator'
- with patch.object(m.os,'uname',lambda:Darwin,create=True):
-  assert not m.source_literal_member(name);denied(name)
-for mode in (None,'archive'):
- m.SOURCE_PATH_MODE=mode
- with patch.object(m.os,'uname',lambda:Linux,create=True):
-  assert not m.source_literal_member(name)
-  try:m.source_relative(name,'filesystem-member')
-  except m.CheckpointError:pass
-  else:raise AssertionError('admitted outside source modes')
-try:m.relative(name)
-except m.CheckpointError:pass
-else:raise AssertionError('relative widened')
+for name in names:
+ for mode in ('source-record','source-apply','source-verify'):
+  m.SOURCE_PATH_MODE=mode
+  with patch.object(m.os,'uname',lambda:Linux,create=True):
+   assert m.source_relative(name,'filesystem-member')==name and m.source_literal_member(name)
+   for other in [name.replace('cryptsetup','fsck'),name.replace('\\x2d','\\x2e'),'src/'+name,name+'/child','src/a\\b',
+                 name.replace('-sysroot/','-sysroot/usr/'),'src/build/linux/debian_bullseye_armhf-sysroot/'+unit]:
+    assert not m.source_literal_member(other)
+    error=denied(other);assert error.args==('member-path',) and error.sourcePathFailure['predicate']=='separator'
+  with patch.object(m.os,'uname',lambda:Darwin,create=True):
+   assert not m.source_literal_member(name);denied(name)
+ for mode in (None,'archive'):
+  m.SOURCE_PATH_MODE=mode
+  with patch.object(m.os,'uname',lambda:Linux,create=True):
+   assert not m.source_literal_member(name)
+   try:m.source_relative(name,'filesystem-member')
+   except m.CheckpointError:pass
+   else:raise AssertionError('admitted outside source modes')
+ try:m.relative(name)
+ except m.CheckpointError:pass
+ else:raise AssertionError('relative widened')
 print('literal member PASS')
 `,
     [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
@@ -12845,19 +12852,22 @@ print('literal member PASS')
   assert.match(result.stdout, /literal member PASS/);
 });
 
-test("Linux ARM sysroot case pairs are the only admitted member aliases, on Linux source modes only", () => {
+test("pinned Linux sysroot case pairs are the only admitted member aliases, on Linux source modes only", () => {
   const result = python(
     String.raw`import importlib.util,sys,unicodedata
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('case_member',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-root='src/build/linux/debian_bullseye_arm64-sysroot/'
-nf='usr/include/linux/netfilter/';v4='usr/include/linux/netfilter_ipv4/';v6='usr/include/linux/netfilter_ipv6/';perl='usr/lib/aarch64-linux-gnu/perl/5.32.1/'
-pairs=[(nf+'xt_'+x+'.h',nf+'xt_'+x.lower()+'.h') for x in ('CONNMARK','DSCP','MARK','RATEEST','TCPMSS')]
-pairs+=[(v4+'ipt_ECN.h',v4+'ipt_ecn.h'),(v4+'ipt_TTL.h',v4+'ipt_ttl.h'),(v6+'ip6t_HL.h',v6+'ip6t_hl.h'),(perl+'Sys',perl+'sys')]
-pairs=[(root+a,root+b) for a,b in pairs]
-assert m.SOURCE_CASE_MEMBERS==frozenset(x for p in pairs for x in p) and len(m.SOURCE_CASE_MEMBERS)==18
+roots={'src/build/linux/debian_bullseye_%s-sysroot/'%arch:triplet for arch,triplet in (
+ ('arm64','aarch64-linux-gnu'),('amd64','x86_64-linux-gnu'),('i386','i386-linux-gnu'))}
+nf='usr/include/linux/netfilter/';v4='usr/include/linux/netfilter_ipv4/';v6='usr/include/linux/netfilter_ipv6/'
+common=[(nf+'xt_'+x+'.h',nf+'xt_'+x.lower()+'.h') for x in ('CONNMARK','DSCP','MARK','RATEEST','TCPMSS')]
+common+=[(v4+'ipt_ECN.h',v4+'ipt_ecn.h'),(v4+'ipt_TTL.h',v4+'ipt_ttl.h'),(v6+'ip6t_HL.h',v6+'ip6t_hl.h')]
+pairs=[(root+a,root+b) for root,triplet in roots.items() for a,b in common+[('usr/lib/%s/perl/5.32.1/Sys'%triplet,'usr/lib/%s/perl/5.32.1/sys'%triplet)]]
+assert m.SOURCE_CASE_MEMBERS==frozenset(x for p in pairs for x in p) and len(m.SOURCE_CASE_MEMBERS)==54
 key=lambda x:unicodedata.normalize('NFC',x).casefold()
-assert len({key(x) for x in m.SOURCE_CASE_MEMBERS})==9 and all(key(a)==key(b) for a,b in pairs)
+assert len({key(x) for x in m.SOURCE_CASE_MEMBERS})==27 and all(key(a)==key(b) for a,b in pairs)
+root='src/build/linux/debian_bullseye_arm64-sysroot/'
+wrong=[r+'usr/lib/%s/perl/5.32.1/%s'%(t,d) for r in roots for t in roots.values() if t!=roots[r] for d in ('Sys','sys')]
 class Linux:sysname='Linux'
 class Darwin:sysname='Darwin'
 def denied(names,admit):
@@ -12880,9 +12890,14 @@ for mode in ('source-record','source-apply','source-verify'):
     if third in (a,b):continue
     assert not m.source_case_member(third)
     denied([a,b,third],m.source_case_member);denied([third,a],m.source_case_member);denied([b,third],m.source_case_member)
-   for other in ['src/'+a,a+'/child',a.replace(root,'src/build/linux/debian_bullseye_amd64-sysroot/')]:
+   for other in ['src/'+a,a+'/child',a.replace('-sysroot/','-sysroot/usr/'),
+                 a.replace('debian_bullseye_','debian_bookworm_'),
+                 a[:a.index('debian_bullseye_')]+'debian_bullseye_armhf-sysroot/'+a.split('-sysroot/',1)[1]]:
     assert not m.source_case_member(other)
    denied([a,b],lambda x:False)
+  for other in wrong:
+   assert not m.source_case_member(other)
+  denied([wrong[0],wrong[1]],m.source_case_member)
   nfc,nfd=root+'usr/caf'+chr(0xe9),root+'usr/cafe'+chr(0x301)
   assert not m.source_case_member(nfc) and not m.source_case_member(nfd)
   denied([nfc,nfd],m.source_case_member);denied(['src/A','src/a'],m.source_case_member)

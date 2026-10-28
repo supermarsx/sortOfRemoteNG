@@ -289,12 +289,21 @@ def source_path_failure(value, phase):
             **({'name':value} if source_path_name(value) else {})}
 
 
-# Exact Linux ARM sysroot member: systemd escapes '-' in unit names as a literal
-# "\x2d". Chromium's sysroots.json at the pinned commit SHA-256 pins the sysroot
-# tarball, and the source snapshot still hashes and binds this entry's content.
-SOURCE_LITERAL_MEMBERS = frozenset({
-    'src/build/linux/debian_bullseye_arm64-sysroot/lib/systemd/system/system-systemd\\x2dcryptsetup.slice',
-})
+# Exact members of the three Debian bullseye sysroots a Linux ARM checkout
+# fetches: arm64 (target), amd64 (host) and i386 (fetched by the same DEPS
+# condition on an x64 host). Each tarball is SHA-256 pinned by DEPS and
+# sysroots.json at the pinned commit, and the source snapshot still hashes and
+# binds every entry. Keys are sysroot directory -> multiarch triplet.
+SOURCE_SYSROOTS = {
+    'src/build/linux/debian_bullseye_arm64-sysroot/': 'aarch64-linux-gnu',
+    'src/build/linux/debian_bullseye_amd64-sysroot/': 'x86_64-linux-gnu',
+    'src/build/linux/debian_bullseye_i386-sysroot/': 'i386-linux-gnu',
+}
+
+
+# systemd escapes '-' in unit names as a literal "\x2d".
+SOURCE_LITERAL_MEMBERS = frozenset(
+    root + 'lib/systemd/system/system-systemd\\x2dcryptsetup.slice' for root in SOURCE_SYSROOTS)
 
 
 def source_literal_member(value):
@@ -303,12 +312,11 @@ def source_literal_member(value):
             hasattr(os, 'uname') and os.uname().sysname == 'Linux')
 
 
-# Exact Linux ARM sysroot case pairs: the Linux uapi netfilter headers and
-# Perl's Sys/ and sys/ directories differ only by case in the same pinned
-# Debian bullseye arm64 sysroot tarball. An alias group is admitted only when
-# every member is listed here; any other case or normalization alias is denied.
-SOURCE_CASE_SYSROOT = 'src/build/linux/debian_bullseye_arm64-sysroot/'
-SOURCE_CASE_MEMBERS = frozenset(SOURCE_CASE_SYSROOT + name for name in (
+# Case pairs: the Linux uapi netfilter headers and Perl's Sys/ and sys/
+# directories differ only by case in each sysroot. An alias group is admitted
+# only when every member is listed here; any other case or normalization alias
+# is denied.
+SOURCE_CASE_MEMBERS = frozenset(root + name for root, triplet in SOURCE_SYSROOTS.items() for name in (
     'usr/include/linux/netfilter/xt_CONNMARK.h', 'usr/include/linux/netfilter/xt_connmark.h',
     'usr/include/linux/netfilter/xt_DSCP.h', 'usr/include/linux/netfilter/xt_dscp.h',
     'usr/include/linux/netfilter/xt_MARK.h', 'usr/include/linux/netfilter/xt_mark.h',
@@ -317,7 +325,7 @@ SOURCE_CASE_MEMBERS = frozenset(SOURCE_CASE_SYSROOT + name for name in (
     'usr/include/linux/netfilter_ipv4/ipt_ECN.h', 'usr/include/linux/netfilter_ipv4/ipt_ecn.h',
     'usr/include/linux/netfilter_ipv4/ipt_TTL.h', 'usr/include/linux/netfilter_ipv4/ipt_ttl.h',
     'usr/include/linux/netfilter_ipv6/ip6t_HL.h', 'usr/include/linux/netfilter_ipv6/ip6t_hl.h',
-    'usr/lib/aarch64-linux-gnu/perl/5.32.1/Sys', 'usr/lib/aarch64-linux-gnu/perl/5.32.1/sys',
+    'usr/lib/' + triplet + '/perl/5.32.1/Sys', 'usr/lib/' + triplet + '/perl/5.32.1/sys',
 ))
 
 
