@@ -725,6 +725,7 @@ export async function waitActorFile(directory, name, wallEnd, signal) {
   const file = path.join(directory, name);
   return new Promise((resolve, reject) => {
     let timer,
+      poll,
       watcher,
       checking = false,
       again = false,
@@ -749,6 +750,7 @@ export async function waitActorFile(directory, name, wallEnd, signal) {
       firstError = error;
       result = value;
       clearTimeout(timer);
+      clearInterval(poll);
       signal?.removeEventListener("abort", abort);
       const done = () => {
         closed = true;
@@ -805,6 +807,9 @@ export async function waitActorFile(directory, name, wallEnd, signal) {
       );
       watcher = watch(directory, check);
       watcher.once("error", (error) => finish(true, error));
+      // fs.watch may miss a creation (macOS FSEvents drops events right after
+      // the stream starts), so also re-check on a short interval until finish.
+      poll = setInterval(check, 100);
       timer = setTimeout(
         () => finish(true, new Error("LPF_ACTOR_DEADLINE")),
         wallEnd - Date.now(),
