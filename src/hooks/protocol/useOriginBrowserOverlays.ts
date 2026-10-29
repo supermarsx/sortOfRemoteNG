@@ -4,12 +4,30 @@ import {
   type OriginBrowserBounds,
 } from "../../types/protocols/originBrowser";
 
+/**
+ * The one opt-in for shell UI that floats over a native browser region without
+ * being a dialog, menu, listbox, tooltip or shared popover/modal surface: put
+ * `{...nativeBrowserOcclusion()}` on its outermost box. The sampler then cuts
+ * its rectangle out of every visible native view. `"blocking"` also fences
+ * native input and focus, as a dialog does; use it for screens that take over
+ * the window. Plain notices (toasts, banners) must stay non-blocking.
+ */
+export const NATIVE_BROWSER_OCCLUSION_ATTRIBUTE =
+  "data-native-browser-occlusion";
+export function nativeBrowserOcclusion(mode: "clip" | "blocking" = "clip"): {
+  "data-native-browser-occlusion": string;
+} {
+  return {
+    [NATIVE_BROWSER_OCCLUSION_ATTRIBUTE]: mode === "blocking" ? "blocking" : "",
+  };
+}
+
 const overlays =
   '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion]';
 // Inline failure screens clip retained native content without becoming a dialog.
 // Blocking here would hide their viewport ancestor and oscillate their clipping.
 const interactiveOverlays =
-  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], .sor-popover-surface, .sor-modal-backdrop';
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion="blocking"]';
 interface OverlayState {
   blocked: boolean;
   rectangles: readonly OriginBrowserBounds[];
@@ -126,6 +144,10 @@ export function useOriginBrowserOverlays(active: boolean) {
     });
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, true);
+    // Hover/focus reveals and enter animations move a box through transforms
+    // that neither observer reports; sample again when they settle.
+    document.addEventListener("transitionend", schedule, true);
+    document.addEventListener("animationend", schedule, true);
     refreshRef.current = schedule;
     check();
     return () => {
@@ -136,6 +158,8 @@ export function useOriginBrowserOverlays(active: boolean) {
       resize.disconnect();
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, true);
+      document.removeEventListener("transitionend", schedule, true);
+      document.removeEventListener("animationend", schedule, true);
     };
   }, [active]);
   // Activation must not present an unclipped native child before the layout

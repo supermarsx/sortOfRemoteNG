@@ -3,6 +3,7 @@ import { Monitor, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSplashScreen } from "../../hooks/window/useSplashScreen";
 import { APP_VERSION } from "../../generated/version";
+import { nativeBrowserOcclusion } from "../../hooks/protocol/useOriginBrowserOverlays";
 
 interface SplashScreenProps {
   isLoading: boolean;
@@ -25,6 +26,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   return (
     <div
       data-testid="splash-screen"
+      {...nativeBrowserOcclusion("blocking")}
       className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 transition-opacity duration-200 ${
         mgr.fadeOut ? "opacity-0" : "opacity-100"
       }`}

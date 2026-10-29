@@ -2,6 +2,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { useEffect, useRef, useState } from "react";
 import { getInvoke } from "../../utils/tauri/invoke";
 import type { EncryptionStatus } from "../../types/encryption/encryption";
+import { nativeBrowserOcclusion } from "../../hooks/protocol/useOriginBrowserOverlays";
 
 function InterruptedStorageRecovery({
   onRecovered,
@@ -98,6 +99,7 @@ export function SettingsStorageNotice() {
     return lockError ? (
       <div
         role="alert"
+        {...nativeBrowserOcclusion()}
         className="fixed bottom-6 left-6 right-6 z-[2000] rounded border border-error bg-background p-4 text-sm text-[var(--color-text)]"
       >
         Storage lock was not confirmed: {lockError}{" "}
@@ -113,6 +115,7 @@ export function SettingsStorageNotice() {
   return (
     <div
       role="status"
+      {...nativeBrowserOcclusion("blocking")}
       className="fixed inset-0 z-[2000] flex items-center justify-center bg-background text-[var(--color-text)]"
     >
       <div className="max-w-md space-y-3 p-6">

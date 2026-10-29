@@ -10,6 +10,9 @@ export function useTooltipSystem(): void {
   useEffect(() => {
     const tooltip = document.createElement("div");
     tooltip.className = "app-tooltip";
+    // Toolbar tooltips open over a native browser region; the role is what
+    // the native browser overlay sampler cuts out of that child window.
+    tooltip.setAttribute("role", "tooltip");
     tooltip.style.display = "none";
     document.body.appendChild(tooltip);
     tooltipRef.current = tooltip;

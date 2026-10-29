@@ -3,6 +3,7 @@ import { Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { AutoLockConfig } from "../../types/settings/settings";
 import { Modal } from "../ui/overlays/Modal";
 import { useAutoLockManager } from "../../hooks/security/useAutoLockManager";
+import { nativeBrowserOcclusion } from "../../hooks/protocol/useOriginBrowserOverlays";
 
 type Mgr = ReturnType<typeof useAutoLockManager>;
 
@@ -80,7 +81,10 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
   if (!config.enabled) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-sm">
+    <div
+      {...nativeBrowserOcclusion()}
+      className="fixed bottom-4 right-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-sm"
+    >
       <div className="flex items-center space-x-2">
         <Clock size={16} className="text-primary" />
         <span className="text-[var(--color-textSecondary)]">

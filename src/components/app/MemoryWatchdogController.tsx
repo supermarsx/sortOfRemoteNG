@@ -15,6 +15,7 @@ import {
   type MemoryWatchdogOwner,
   type MemoryWatchdogStatus,
 } from "../../utils/debug/memoryWatchdog";
+import { nativeBrowserOcclusion } from "../../hooks/protocol/useOriginBrowserOverlays";
 
 interface MemoryWatchdogControllerProps {
   settings: MemoryWatchdogSettings;
@@ -101,6 +102,7 @@ export const MemoryWatchdogController: React.FC<
       data-window-label={pressureStatus.windowLabel}
       role="alert"
       aria-live="assertive"
+      {...nativeBrowserOcclusion()}
       className="fixed bottom-3 right-3 z-[2147483646] w-[min(360px,calc(100vw-24px))] rounded-lg border border-red-500 bg-[var(--color-surface)] p-4 text-sm shadow-2xl"
     >
       <div className="mb-2 flex items-start justify-between gap-3">

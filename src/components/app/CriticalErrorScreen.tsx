@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { APP_VERSION } from "../../generated/version";
+import { nativeBrowserOcclusion } from "../../hooks/protocol/useOriginBrowserOverlays";
 
 /**
  * BSOD-style screen shown when the application critically fails to initialize
@@ -112,6 +113,7 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
   return (
     <div
       data-testid="critical-error-screen"
+      {...nativeBrowserOcclusion("blocking")}
       style={{
         position: "fixed",
         inset: 0,

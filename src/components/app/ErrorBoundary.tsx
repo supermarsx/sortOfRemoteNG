@@ -1,5 +1,6 @@
 import React from "react";
 import i18n from "../../i18n";
+import { nativeBrowserOcclusion } from "../../hooks/protocol/useOriginBrowserOverlays";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,7 @@ export class ErrorBoundary extends React.Component<
     return (
       <div
         data-testid="error-boundary-fallback"
+        {...nativeBrowserOcclusion("blocking")}
         style={{
           position: "fixed",
           inset: 0,
