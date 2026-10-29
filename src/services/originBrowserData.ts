@@ -101,7 +101,10 @@ const isByteCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 async function call<T>(
-  command: string,
+  command:
+    | "origin_browser_clear_connection_data"
+    | "origin_browser_http_cache_usage"
+    | "origin_browser_clear_all_http_cache",
   args: Record<string, unknown> | undefined,
   parse: (value: unknown) => T | null,
 ): Promise<OriginBrowserDataOutcome<T>> {
