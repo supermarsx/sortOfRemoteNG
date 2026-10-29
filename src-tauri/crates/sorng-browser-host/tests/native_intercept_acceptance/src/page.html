@@ -9,9 +9,15 @@
   const get = async (path, headers) => {
     try {
       const response = await fetch(path, { headers: headers || {} });
-      const entry = performance.getEntriesByName(new URL(path, location.href).href).pop();
-      return { status: response.status, body: await response.text(),
-               protocol: entry ? entry.nextHopProtocol : "" };
+      const body = await response.text();
+      // The resource timing entry is queued only after the body completes.
+      const name = new URL(path, location.href).href;
+      let entry;
+      for (let i = 0; i < 50 && !entry; i++) {
+        entry = performance.getEntriesByName(name).pop();
+        if (!entry) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return { status: response.status, body, protocol: entry ? entry.nextHopProtocol : "" };
     } catch (error) {
       return { status: 0, body: "", protocol: "", error: String(error && error.name) };
     }
