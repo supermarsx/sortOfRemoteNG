@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Yealink SIP-T21P_E2</title>
+  </head>
+  <body style="visibility: visible">
+    <!-- Structural transcription of the user-supplied SIP-T21P_E2 (firmware
+     52.84.0.140) login body. Browser-extension attributes are omitted; nothing
+     else is invented. There is no <form>: page_login.js reads the two id-only
+     inputs in CheckLogin(), encrypts the password and sends the request. -->
+    <script
+      type="text/javascript"
+      src="/js/pages/page_login.js?52.84.0.140"
+      charset="utf-8"
+    ></script>
+    <div id="_RES_INFO_" style="display: none">{"authstatus":"none"}</div>
+    <div class="loginbox">
+      <table width="100%">
+        <tbody>
+          <tr>
+            <td width="30%" class="loginTitle">
+              <script>
+                T("Login");
+              </script>
+              Login
+            </td>
+            <td width="70%" class="loginDevText">
+              <script>
+                T("Enterprise IP Phone SIP-T21P_E2");
+              </script>
+              Enterprise IP Phone SIP-T21P_E2
+            </td>
+          </tr>
+          <tr height="10">
+            <td colspan="2"><hr /></td>
+          </tr>
+          <tr>
+            <td>
+              <script>
+                T("Username");
+              </script>
+              Username
+            </td>
+            <td>
+              <input
+                type="text"
+                id="idUsername"
+                class="loginInput"
+                value=""
+                maxlength="32"
+                onkeydown="CallEnter(event.keyCode, false)"
+              />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <script>
+                T("Password");
+              </script>
+              Password
+            </td>
+            <td>
+              <input
+                type="password"
+                id="idPassword"
+                class="loginInput"
+                autocomplete="new-password"
+                value=""
+                maxlength="32"
+                onkeydown="CallEnter(event.keyCode, true)"
+              />
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding-top: 20px" align="center">
+              <button
+                type="button"
+                id="idConfirm"
+                class="loginbutton"
+                onclick="CheckLogin()"
+              >
+                <script>
+                  T("Login");
+                </script>
+                Login
+              </button>
+              <button
+                type="button"
+                id="idCancel"
+                class="loginbutton"
+                onclick="g_url.RefreshPage()"
+              >
+                <script>
+                  T("Cancel");
+                </script>
+                Cancel
+              </button>
+            </td>
+          </tr>
+          <tr id="idNotice" height="40">
+            <td
+              id="notice"
+              colspan="2"
+              align="center"
+              style="color: rgb(255, 0, 0)"
+            >
+              <script>
+                T("");
+              </script>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>

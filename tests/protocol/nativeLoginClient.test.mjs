@@ -1022,6 +1022,194 @@ test("Yealink T21P revalidates its header before native credential disclosure", 
   assert.equal(clicks, 0);
 });
 
+const yealinkE2Url =
+  "http://phone.test/servlet?m=mod_listener&p=login&q=loginForm&jumpto=status";
+function yealinkE2Fixture(t) {
+  const f = providerFixture(
+    t,
+    "voip-phone",
+    readFileSync("tests/fixtures/yealink-t21p-e2.html", "utf8"),
+    yealinkE2Url,
+  );
+  const calls = { login: 0, enter: 0, cancel: 0 };
+  // Scripts do not run in this harness; install the page's handlers the way
+  // page_login.js and the inline attributes would.
+  f.w.CheckLogin = () => {
+    calls.login++;
+  };
+  f.w.CallEnter = () => {
+    calls.enter++;
+  };
+  // The live page carries trailing semicolons, which the fixture formatter
+  // drops; keep the attested spelling here.
+  f.field("#idConfirm").setAttribute("onclick", "CheckLogin();");
+  f.field("#idCancel").setAttribute("onclick", "g_url.RefreshPage();");
+  f.field("#idConfirm").onclick = f.w.CheckLogin;
+  f.field("#idCancel").onclick = () => {
+    calls.cancel++;
+  };
+  return { f, calls };
+}
+
+test("Yealink T21P_E2 formless page is filled and its own CheckLogin clicked once", async (t) => {
+  const { f, calls } = yealinkE2Fixture(t);
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["form"]);
+  assert.equal(f.send("form"), true);
+  await f.advance(700);
+  assert.equal(f.field("#idUsername").value, "alice@example.test");
+  assert.equal(f.field("#idPassword").value, "test-secret");
+  assert.equal(calls.login, 1);
+  assert.equal(calls.enter, 0);
+  assert.equal(calls.cancel, 0);
+  assert.equal(f.submits(), 0);
+  assert.equal(f.signals.at(-1), "form-completed");
+  // One delivery per document: a second grant is refused, nothing re-clicks.
+  assert.equal(f.send("form"), false);
+  await f.advance(2000);
+  assert.equal(calls.login, 1);
+});
+
+for (const [label, mutate] of [
+  [
+    "unsupported model",
+    (f) => {
+      f.field("td.loginDevText").textContent =
+        "Enterprise IP Phone SIP-T31P_E2";
+    },
+  ],
+  [
+    "locked authentication state",
+    (f) => {
+      f.field("#_RES_INFO_").textContent = '{"authstatus":"lock"}';
+    },
+  ],
+  [
+    "unparseable authentication state",
+    (f) => {
+      f.field("#_RES_INFO_").textContent = "none";
+    },
+  ],
+  [
+    "visible authentication state",
+    (f) => {
+      f.field("#_RES_INFO_").style.display = "";
+    },
+  ],
+  [
+    "a displayed sign-in error",
+    (f) => {
+      f.field("#notice").append("Wrong username or password!");
+    },
+  ],
+  [
+    "a missing page handler",
+    (f) => {
+      delete f.w.CheckLogin;
+    },
+  ],
+  [
+    "a different confirm handler",
+    (f) => {
+      f.field("#idConfirm").setAttribute("onclick", "OnConfirm();");
+    },
+  ],
+  [
+    "a wrapping form",
+    (f) => {
+      const box = f.field("div.loginbox");
+      const form = f.w.document.createElement("form");
+      box.before(form);
+      form.append(box);
+    },
+  ],
+  [
+    "a form elsewhere on the page",
+    (f) => {
+      f.w.document.body.append(f.w.document.createElement("form"));
+    },
+  ],
+  [
+    "a named password input",
+    (f) => {
+      f.field("#idPassword").name = "pwd";
+    },
+  ],
+  [
+    "an extra input",
+    (f) => {
+      const extra = f.w.document.createElement("input");
+      extra.type = "text";
+      extra.name = "otp";
+      f.field("#idUsername").after(extra);
+    },
+  ],
+  [
+    "a second password field",
+    (f) => {
+      const extra = f.w.document.createElement("input");
+      extra.type = "password";
+      f.w.document.body.append(extra);
+    },
+  ],
+  [
+    "a duplicate login box",
+    (f) => {
+      f.w.document.body.append(f.field("div.loginbox").cloneNode(true));
+    },
+  ],
+]) {
+  test(`Yealink T21P_E2 rejects ${label} before requesting a native grant`, async (t) => {
+    const { f, calls } = yealinkE2Fixture(t);
+    mutate(f);
+    await f.advance(700);
+    assert.equal(f.signals.includes("form"), false);
+    assert.equal(f.field("#idPassword")?.value ?? "", "");
+    assert.equal(calls.login, 0);
+    assert.equal(f.submits(), 0);
+  });
+}
+
+test("Yealink T21P_E2 revalidates the page before native credential disclosure", async (t) => {
+  const { f, calls } = yealinkE2Fixture(t);
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["form"]);
+  f.field("#_RES_INFO_").textContent = '{"authstatus":"lock"}';
+  f.send("form");
+  await f.advance(700);
+  assert.equal(f.field("#idUsername").value, "");
+  assert.equal(f.field("#idPassword").value, "");
+  assert.equal(calls.login, 0);
+  assert.equal(f.signals.at(-1), "form-rejected");
+});
+
+test("Yealink T21P_E2 never clicks when the page handler is replaced after filling", async (t) => {
+  const { f, calls } = yealinkE2Fixture(t);
+  await f.advance(700);
+  f.send("form");
+  f.w.CheckLogin = () => assert.fail("replaced handler must not run");
+  await f.advance(700);
+  assert.equal(calls.login, 0);
+  assert.equal(f.field("#idPassword").value, "");
+  assert.equal(f.signals.at(-1), "form-rejected");
+});
+
+test("Yealink T21P_E2 exemption does not admit new-password fields elsewhere", async (t) => {
+  // The T21P form keeps rejecting a registration-style password field.
+  const f = providerFixture(
+    t,
+    "voip-phone",
+    readFileSync("tests/fixtures/yealink-t21p.html", "utf8"),
+    "http://phone.test/servlet?p=login&q=login",
+  );
+  f.w.OnConfirm = () => assert.fail("blocked form must not submit");
+  f.field("#idConfirm").onclick = f.w.OnConfirm;
+  f.field("form").onsubmit = () => false;
+  f.field('[name="pwd"]').setAttribute("autocomplete", "new-password");
+  await f.advance(700);
+  assert.equal(f.signals.includes("form"), false);
+});
+
 for (const change of [
   "redirect",
   "pagehide",

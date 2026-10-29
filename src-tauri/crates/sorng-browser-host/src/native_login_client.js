@@ -1317,6 +1317,19 @@
         return false;
       }
     }
+    function yealinkE2Password(node) {
+      // The SIP-T21P_E2 login marks its only password input "new-password";
+      // the phone has no registration flow. Exempt exactly that control.
+      // locate() still validates the whole reviewed page before any request.
+      return (
+        provider === "voip-phone" &&
+        !doc.querySelector("form") &&
+        node.matches(
+          'div.loginbox input#idPassword[type="password"][autocomplete="new-password"]:not([name])',
+        ) &&
+        doc.querySelectorAll('input[type="password"]').length === 1
+      );
+    }
     function blocked() {
       // Challenge script globals and hidden nodes can survive a completed
       // challenge. Only the currently displayed interstitial blocks a form.
@@ -1336,6 +1349,7 @@
         ),
       ).some((node) => {
         if (obscuredGoogleConnectionFrame(node)) return false;
+        if (yealinkE2Password(node)) return false;
         if (
           completedTurnstile &&
           (node.matches(".cf-turnstile") ||
@@ -1485,7 +1499,8 @@
         !painted(button) ||
         (field.form !== form &&
           !(
-            provider === "google-account" &&
+            (provider === "google-account" ||
+              (provider === "voip-phone" && target.formless)) &&
             !field.form &&
             form.contains(field)
           )) ||
@@ -1565,7 +1580,9 @@
         form,
         identity = null,
         user = null,
-        extra = [];
+        extra = [],
+        pageHandler = null,
+        formless = false;
       if (provider === "bitwarden-self-hosted") {
         user = only(
           doc,
@@ -1730,7 +1747,7 @@
           );
           if (!identity || painted(identity) || !identity.readOnly) return null;
         }
-      } else if (provider === "voip-phone") {
+      } else if (provider === "voip-phone" && doc.querySelector("form")) {
         // Reviewed keyless SIP-T20P/T21P: OnConfirm owns password processing
         // and submission. Never requestSubmit(), Enter or HTTP-auth fallback.
         form = only(doc, 'form[name="formInput"]');
@@ -1798,6 +1815,74 @@
         )
           return null;
         extra = [model, clear, jump, acc];
+        pageHandler = window.OnConfirm;
+      } else if (provider === "voip-phone") {
+        // Reviewed SIP-T21P_E2 (52.84 servlet UI). There is no <form>: the
+        // page's CheckLogin() reads the two id-only inputs, encrypts the
+        // password with its per-session key and sends the request itself.
+        // Fill both inputs and click Confirm once; never Enter (CallEnter),
+        // a form submission, a replayed request or an HTTP-auth fallback.
+        const text = (node) => {
+          const copy = node.cloneNode(true);
+          copy
+            .querySelectorAll("script,style,template,noscript,[hidden],[inert]")
+            .forEach((child) => child.remove());
+          return copy.textContent.trim();
+        };
+        const handler = (value) =>
+          (value || "").replace(/\s/g, "").replace(/;$/, "");
+        form = only(doc, "div.loginbox");
+        if (!form || !form.parentElement || form.parentElement !== doc.body)
+          return null;
+        const model = only(form, "td.loginDevText");
+        const notice = only(form, "td#notice");
+        // The page's own authentication state. Only a fresh "none" admits a
+        // fill: "lock" (or anything unrecognized) is terminal, never retried.
+        const status = only(doc, "div#_RES_INFO_");
+        if (!model || !notice || !status || form.contains(status)) return null;
+        let auth = null;
+        try {
+          auth = JSON.parse(status.textContent);
+        } catch (_) {
+          return null;
+        }
+        if (
+          painted(status) ||
+          !auth ||
+          typeof auth !== "object" ||
+          Array.isArray(auth) ||
+          Object.keys(auth).join() !== "authstatus" ||
+          auth.authstatus !== "none" ||
+          text(model) !== "Enterprise IP Phone SIP-T21P_E2" ||
+          // A shown error (wrong password, lockout) ends the attempt.
+          text(notice) !== "" ||
+          typeof window.CheckLogin !== "function"
+        )
+          return null;
+        user = only(form, 'input#idUsername[type="text"]:not([name])');
+        field = only(
+          form,
+          'input#idPassword[type="password"][autocomplete="new-password"]:not([name])',
+        );
+        button = only(form, 'button#idConfirm[type="button"]');
+        const clear = only(form, 'button#idCancel[type="button"]');
+        if (
+          !user ||
+          !field ||
+          !button ||
+          !clear ||
+          form.querySelectorAll("input").length !== 2 ||
+          handler(button.getAttribute("onclick")) !== "CheckLogin()" ||
+          typeof button.onclick !== "function" ||
+          handler(clear.getAttribute("onclick")) !== "g_url.RefreshPage()" ||
+          !painted(user) ||
+          user.readOnly ||
+          user.matches(":disabled")
+        )
+          return null;
+        extra = [model, notice, status, clear];
+        pageHandler = window.CheckLogin;
+        formless = true;
       } else {
         if (
           provider === "chatgpt" &&
@@ -1876,7 +1961,8 @@
         identity,
         user,
         extra,
-        onConfirm: provider === "voip-phone" ? window.OnConfirm : null,
+        onConfirm: pageHandler,
+        formless,
         onclick: button.onclick,
         onsubmit: form.onsubmit,
       };

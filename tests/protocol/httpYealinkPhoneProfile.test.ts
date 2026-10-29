@@ -304,6 +304,7 @@ describe("Yealink phone web-login profile", () => {
     );
     expect(profile.description).toMatch(/SIP-T20P.*OnConfirm/);
     expect(profile.description).toMatch(/SIP-T21P.*OnConfirm/);
+    expect(profile.description).toMatch(/SIP-T21P_E2.*CheckLogin/);
     expect(profile.description).toMatch(
       /unsupported forms require manual login/,
     );
