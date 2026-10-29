@@ -525,10 +525,12 @@ fn a_latched_source_change_is_recorded_and_published_before_the_view_closes() {
         "view.host.close(&view.attempt.identity);",
     ]);
     // Both places that meet such a view use it, and neither closes it bare.
+    // The tick retires once no final cookie capture is outstanding (storage
+    // IO may still drain; the view and its close receipt wait for that).
     let tick = squeezed(runtime.split("pub(crate) fn tick() {").nth(1).unwrap()
         .split("pub(crate) fn shutdown()").next().unwrap());
     assert!(tick.contains(
-        "if !view.attempt.current() && !view.checkpoint.draining() { retire(view); }"
+        "if !view.attempt.current() && !view.checkpoint.capturing() && view.host.lifecycle() != Lifecycle::Closed { retire(view); }"
     ));
     assert!(!tick.contains("view.host.close("));
     let operate = squeezed(runtime.split("async fn operate(").nth(1).unwrap()
@@ -683,7 +685,7 @@ fn the_runtime_polls_every_live_view_each_tick_and_never_reuses_a_relay_or_an_at
         "ui.views.retain(|_, view| {",
         "if view.attempt.current() {",
         "let _ = view.host.poll_session_health(); }",
-        "if !view.attempt.current() && !view.checkpoint.draining() { retire(view); }",
+        "if !view.attempt.current() && !view.checkpoint.capturing() && view.host.lifecycle() != Lifecycle::Closed { retire(view); }",
         "let keep = view.host.lifecycle() != Lifecycle::Closed || view.checkpoint.draining();",
     ]);
     // A tab still being prepared is asked on the same tick, before its view.
