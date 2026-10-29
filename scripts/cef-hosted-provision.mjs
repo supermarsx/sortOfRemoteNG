@@ -92,12 +92,42 @@ export function verifyInstallerSignature(
   )
     fail("Pinned Microsoft SDK signature or product identity mismatch");
 }
-export async function acquirePinned(pin, fetcher = fetch) {
-  const response = await fetcher(pin.url, {
-    redirect: "error",
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!response.ok) fail("Pinned prerequisite download failed");
+// Anonymous gitiles fetches from hosted runners are intermittently refused,
+// so only that host gets a bounded retry (transport failures and non-OK
+// status only). Every attempt that returns bytes faces the same size and
+// SHA-256 checks; a mismatch is never retried.
+export const PINNED_GITILES_ATTEMPTS = 3;
+export const PINNED_GITILES_BACKOFF_MS = Object.freeze([5_000, 15_000]);
+export async function acquirePinned(
+  pin,
+  fetcher = fetch,
+  wait = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+) {
+  const attempts =
+    new URL(pin.url).hostname === "chromium.googlesource.com"
+      ? PINNED_GITILES_ATTEMPTS
+      : 1;
+  let response;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      response = await fetcher(pin.url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      response = null;
+    }
+    if (response?.ok) break;
+    if (attempt >= attempts) fail("Pinned prerequisite download failed");
+    try {
+      await response?.body?.cancel();
+    } catch {
+      /* The refused body is discarded either way. */
+    }
+    await wait(PINNED_GITILES_BACKOFF_MS[attempt - 1]);
+  }
   const limit =
     pin.encoding === "base64" ? Math.ceil(pin.size / 3) * 4 + 4096 : pin.size;
   const chunks = [];

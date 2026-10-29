@@ -1347,3 +1347,48 @@ test("normal-cache actual helper retains measure, signature, version and repeat-
   assert.equal(result.componentResourceClosureVerified, false);
   assert.equal(result.nativeCompatibilityVerified, false);
 });
+
+test("only the gitiles prerequisite fetch retries, three attempts with backoff, and never past a digest mismatch", async () => {
+  const data = Buffer.from("synthetic install-build-deps.py");
+  const pin = {
+    url: "https://chromium.googlesource.com/chromium/src/+/abc/build/install-build-deps.py?format=TEXT",
+    size: data.length,
+    sha256: createHash("sha256").update(data).digest("hex"),
+    encoding: "base64",
+  };
+  const run = async (responses, target = pin) => {
+    const waits = [];
+    let calls = 0;
+    const result = acquirePinned(
+      target,
+      async () => {
+        const next = responses[calls++];
+        if (next instanceof Error) throw next;
+        return next();
+      },
+      async (milliseconds) => waits.push(milliseconds),
+    );
+    return { result, waits, calls: () => calls };
+  };
+  const ok = () => new Response(data.toString("base64"));
+  const refused = () => new Response("rate limited", { status: 429 });
+  let attempt = await run([refused, new Error("reset"), ok]);
+  assert.deepEqual(await attempt.result, data);
+  assert.deepEqual(attempt.waits, [5_000, 15_000]);
+  assert.equal(attempt.calls(), 3);
+  attempt = await run([refused, refused, refused, ok]);
+  await assert.rejects(attempt.result, /download failed/);
+  assert.equal(attempt.calls(), 3);
+  attempt = await run([refused, refused, new Error("final transport")]);
+  await assert.rejects(attempt.result, /final transport/);
+  attempt = await run([() => new Response(Buffer.from("changed")), ok]);
+  await assert.rejects(attempt.result, /identity mismatch/);
+  assert.equal(attempt.calls(), 1);
+  attempt = await run([refused, ok], {
+    ...pin,
+    url: "https://download.microsoft.com/fixture",
+  });
+  await assert.rejects(attempt.result, /download failed/);
+  assert.equal(attempt.calls(), 1);
+  assert.deepEqual(attempt.waits, []);
+});
