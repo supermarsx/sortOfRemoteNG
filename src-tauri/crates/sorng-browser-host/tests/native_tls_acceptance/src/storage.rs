@@ -289,7 +289,7 @@ impl Attempt {
     }
 }
 
-fn pump(
+pub(super) fn pump(
     events: &mut EventLoop<()>,
     runtime: &CefRuntime<'_>,
     limit: Duration,

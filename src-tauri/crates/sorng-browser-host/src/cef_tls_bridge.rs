@@ -2,6 +2,9 @@
 //! Main must pump replies on CEF UI and call `after_cef_shutdown` after shutdown.
 //! Export/build checks prove compatibility, not package provenance/containment.
 
+use crate::cef_http_cache::{
+    HttpCacheMemoryReason, HttpCacheReleaseSignal, HttpCacheUse, HttpDiskCacheSpec, RawHttpCache,
+};
 use cef::{
     rc::ConvertReturnValue, ImplRequestContextHandler, RequestContext, RequestContextHandler,
 };
@@ -27,6 +30,8 @@ pub const HTTP2_PATCH_ID: &str = "sorng-tls-v2-682c378-2";
 pub const PROXY_APPLIED_PATCH_ID: &str = "sorng-tls-v2-682c378-3";
 pub const PATCH_ID: &str = "sorng-tls-v2-682c378-4";
 pub const HTTP3_PATCH_ID: &str = "sorng-tls-v2-682c378-5";
+/// Revision 6: revision 5 plus a per-context HTTP disk cache (C-H1).
+pub const HTTP_CACHE_PATCH_ID: &str = "sorng-tls-v2-682c378-6";
 const ABI: u32 = 2;
 const SOCKET: u64 = 1;
 const REVOKE: u64 = 2;
@@ -38,6 +43,10 @@ const SAME_AUTHORITY_HTTP2: u64 = 64;
 const OWNED_HTTP3: u64 = 1 << 7;
 const PROXY_APPLIED: u64 = 1 << 8;
 const BOUNDED_RETIREMENT: u64 = 1 << 9;
+const HTTP_DISK_CACHE: u64 = 1 << 10;
+/// Every revision-6 bit: the full revision-5 transport contract plus the cache.
+const HTTP_CACHE_REVISION: u64 =
+    SAME_AUTHORITY_HTTP2 | OWNED_HTTP3 | PROXY_APPLIED | BOUNDED_RETIREMENT | HTTP_DISK_CACHE;
 const PROXY_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUIRED: u64 = SOCKET | REVOKE | PRIVATE;
 const MAX_CHAIN: usize = 64;
@@ -200,6 +209,12 @@ type Create = unsafe extern "C" fn(
     *const cef::sys::_cef_request_context_settings_t,
     *mut cef::sys::_cef_request_context_handler_t,
 ) -> *mut cef::sys::_cef_request_context_t;
+type CreateWithCache = unsafe extern "C" fn(
+    *const Context,
+    *const cef::sys::_cef_request_context_settings_t,
+    *mut cef::sys::_cef_request_context_handler_t,
+    *const RawHttpCache,
+) -> *mut cef::sys::_cef_request_context_t;
 type Complete = unsafe extern "C" fn(u64, u64, u64, u32, u32) -> i32;
 type Revoke = unsafe extern "C" fn(u64, u64) -> i32;
 type ApplyProxy = unsafe extern "C" fn(u64, u64, u16) -> i32;
@@ -207,6 +222,7 @@ type ConfigureDatagrams = unsafe extern "C" fn(u64, u64, u16, *const u8, usize) 
 #[derive(Clone, Copy)]
 struct Functions {
     create: Create,
+    create_with_cache: Option<CreateWithCache>,
     complete: Complete,
     revoke: Revoke,
     apply_proxy: Option<ApplyProxy>,
@@ -253,12 +269,20 @@ unsafe fn matches_bridge_revision(
             | EXCEPTIONS
             | CUSTOM_CA
             | PROXY_APPLIED
-            | BOUNDED_RETIREMENT)
+            | BOUNDED_RETIREMENT
+            | HTTP_DISK_CACHE)
         != 0
     {
         return false;
     }
     let protocol = capabilities & (HTTP1 | SAME_AUTHORITY_HTTP2);
+    // Revision 6 must carry every revision-5 bit; the cache bit never appears
+    // on (or is implied for) any other revision.
+    if capabilities & HTTP_DISK_CACHE != 0 {
+        return requested == HTTP_CACHE_PATCH_ID
+            && capabilities & (HTTP1 | HTTP_CACHE_REVISION) == HTTP_CACHE_REVISION
+            && unsafe { matches_pin(actual, HTTP_CACHE_PATCH_ID) };
+    }
     if capabilities & OWNED_HTTP3 != 0 {
         return requested == HTTP3_PATCH_ID
             && protocol == SAME_AUTHORITY_HTTP2
@@ -301,7 +325,8 @@ impl NativeTlsBridge {
     /// # Safety
     /// Same initialization and independent provenance requirements as `from_loaded`.
     pub unsafe fn from_loaded_supported() -> Result<Self, NativeTlsError> {
-        unsafe { Self::from_loaded(HTTP3_PATCH_ID) }
+        unsafe { Self::from_loaded(HTTP_CACHE_PATCH_ID) }
+            .or_else(|_| unsafe { Self::from_loaded(HTTP3_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(PROXY_APPLIED_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(HTTP2_PATCH_ID) })
@@ -373,6 +398,15 @@ impl NativeTlsBridge {
                 } else {
                     None
                 },
+                create_with_cache: if api.capabilities & HTTP_DISK_CACHE != 0 {
+                    Some(unsafe {
+                        std::mem::transmute::<*mut c_void, CreateWithCache>(
+                            module.symbol(c"cef_sorng_tls_create_context_with_cache_v2")?,
+                        )
+                    })
+                } else {
+                    None
+                },
                 capabilities: api.capabilities,
             },
             _ui: PhantomData,
@@ -388,9 +422,16 @@ impl NativeTlsBridge {
     pub fn supports_same_authority_http2(&self) -> bool {
         self.functions.capabilities & SAME_AUTHORITY_HTTP2 != 0
     }
+    /// True only for the validated revision-6 engine with its cache export.
+    pub fn supports_http_disk_cache(&self) -> bool {
+        self.functions.capabilities & HTTP_DISK_CACHE != 0
+            && self.functions.create_with_cache.is_some()
+    }
     /// The actual loaded, validated revision, not a requested package label.
     pub fn patch_id(&self) -> &'static str {
-        if self.functions.capabilities & OWNED_HTTP3 != 0 {
+        if self.functions.capabilities & HTTP_DISK_CACHE != 0 {
+            HTTP_CACHE_PATCH_ID
+        } else if self.functions.capabilities & OWNED_HTTP3 != 0 {
             HTTP3_PATCH_ID
         } else if self.functions.capabilities & BOUNDED_RETIREMENT != 0 {
             PATCH_ID
@@ -406,24 +447,116 @@ impl NativeTlsBridge {
     /// Creates only a distinct, nonpersistent native context. Callback userdata
     /// is registered before FFI. Legacy failures retain it conservatively;
     /// revision4 guarantees NULL has no future application callbacks.
+    ///
+    /// `http_cache` asks a revision-6 engine to put only this context's HTTP
+    /// cache on disk. The request settings stay private (empty `cache_path`,
+    /// no persistent session cookies). An engine without the capability, or an
+    /// invalid spec, silently yields today's in-memory context; a NULL from the
+    /// cache variant is retried exactly once without the cache. The outcome is
+    /// [`NativeTlsContext::http_cache_use`].
     pub(crate) fn create_context(
         &self,
         config: &NativeTlsConfig,
         hooks: Arc<dyn NativeTlsHooks>,
         handler: &mut RequestContextHandler,
         cookies_enabled: bool,
+        http_cache: Option<&HttpDiskCacheSpec>,
     ) -> Result<(RequestContext, NativeTlsContext), NativeTlsError> {
         on_ui()?;
+        // V2 specifies a BORROWED handler. Do not transfer an extra Rust ref.
+        self.create_context_inner(
+            config,
+            hooks,
+            handler.get_raw(),
+            cookies_enabled,
+            http_cache,
+        )
+    }
+
+    fn create_context_inner(
+        &self,
+        config: &NativeTlsConfig,
+        hooks: Arc<dyn NativeTlsHooks>,
+        handler: *mut cef::sys::_cef_request_context_handler_t,
+        cookies_enabled: bool,
+        http_cache: Option<&HttpDiskCacheSpec>,
+    ) -> Result<(RequestContext, NativeTlsContext), NativeTlsError> {
         validate_config(config, self.functions.capabilities)?;
+        let reason = match self.requested_cache(http_cache) {
+            Ok(spec) => {
+                match self.create_once(config, hooks.clone(), handler, cookies_enabled, Some(spec))
+                {
+                    Ok(created) => return Ok(created),
+                    Err(CreateFailure::CacheRefused) => HttpCacheMemoryReason::EngineRejected,
+                    Err(CreateFailure::Error(error)) => return Err(error),
+                }
+            }
+            Err(reason) => reason,
+        };
+        match self.create_once(config, hooks, handler, cookies_enabled, None) {
+            Ok((context, mut owner)) => {
+                owner.cache_use = HttpCacheUse::Memory(reason);
+                Ok((context, owner))
+            }
+            Err(CreateFailure::Error(error)) => Err(error),
+            Err(CreateFailure::CacheRefused) => Err(NativeTlsError::Unavailable),
+        }
+    }
+
+    /// Capability fallback, not an error: anything but a valid spec on a
+    /// revision-6 engine means a plain in-memory context, with its reason.
+    fn requested_cache<'a>(
+        &self,
+        http_cache: Option<&'a HttpDiskCacheSpec>,
+    ) -> Result<&'a HttpDiskCacheSpec, HttpCacheMemoryReason> {
+        match http_cache {
+            None => Err(HttpCacheMemoryReason::NotRequested),
+            Some(_) if !self.supports_http_disk_cache() => {
+                Err(HttpCacheMemoryReason::EngineUnsupported)
+            }
+            Some(spec) => spec
+                .validate()
+                .map(|()| spec)
+                .map_err(|_| HttpCacheMemoryReason::InvalidSpec),
+        }
+    }
+
+    fn create_once(
+        &self,
+        config: &NativeTlsConfig,
+        hooks: Arc<dyn NativeTlsHooks>,
+        handler: *mut cef::sys::_cef_request_context_handler_t,
+        cookies_enabled: bool,
+        http_cache: Option<&HttpDiskCacheSpec>,
+    ) -> Result<(RequestContext, NativeTlsContext), CreateFailure> {
+        // Resolve the cache export and its borrowed UTF-8 path before any
+        // registration exists, so nothing has to be unwound on these errors.
+        let cache = match http_cache {
+            None => None,
+            Some(spec) => {
+                let create = self
+                    .functions
+                    .create_with_cache
+                    .ok_or(CreateFailure::Error(NativeTlsError::Unavailable))?;
+                let path = std::ffi::CString::new(
+                    spec.directory
+                        .to_str()
+                        .ok_or(CreateFailure::Error(NativeTlsError::Invalid))?,
+                )
+                .map_err(|_| CreateFailure::Error(NativeTlsError::Invalid))?;
+                Some((create, path, spec.max_bytes))
+            }
+        };
         let token = NEXT_TOKEN
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
-            .map_err(|_| NativeTlsError::Revoked)?;
+            .map_err(|_| CreateFailure::Error(NativeTlsError::Revoked))?;
         let state = Arc::new(Shared {
             token,
             generation: token,
             ca_mode: config.ca_mode,
             functions: self.functions,
             hooks,
+            http_cache: cache.as_ref().map(|_| HttpCacheReleaseSignal::default()),
             data: Mutex::new(Data {
                 status: NativeTlsStatus::Initializing,
                 installed: false,
@@ -439,9 +572,11 @@ impl NativeTlsBridge {
             }),
         });
         {
-            let mut registry = retained().lock().map_err(|_| NativeTlsError::Revoked)?;
+            let mut registry = retained()
+                .lock()
+                .map_err(|_| CreateFailure::Error(NativeTlsError::Revoked))?;
             if registry.len() >= 256 {
-                return Err(NativeTlsError::Unavailable);
+                return Err(CreateFailure::Error(NativeTlsError::Unavailable));
             }
             registry.insert(token, state.clone());
         }
@@ -468,15 +603,65 @@ impl NativeTlsBridge {
         };
         // Empty cache/scheme paths remain private and in memory. Unlike a
         // COOKIES content setting, supported schemes do not also disable IDB
-        // or localStorage. This uses existing CEF fields, not a bridge ABI change.
+        // or localStorage. The disk HTTP cache is a separate bridge argument;
+        // it never sets `cache_path` (which would load a persistent profile).
         let settings = cookie_context_settings(cookies_enabled).into();
-        // V2 specifies a BORROWED handler. Do not transfer an extra Rust ref.
-        let raw = unsafe { (self.functions.create)(&descriptor, &settings, handler.get_raw()) };
+        let raw = match &cache {
+            None => unsafe { (self.functions.create)(&descriptor, &settings, handler) },
+            Some((create, path, max_bytes)) => {
+                let raw_cache = RawHttpCache {
+                    size: std::mem::size_of::<RawHttpCache>() as u32,
+                    reserved: 0,
+                    directory_utf8: path.as_ptr(),
+                    directory_length: path.as_bytes().len(),
+                    max_bytes: *max_bytes,
+                };
+                unsafe { create(&descriptor, &settings, handler, &raw_cache) }
+            }
+        };
         let owner = NativeTlsContext {
             state,
+            cache_use: if cache.is_some() {
+                HttpCacheUse::Disk
+            } else {
+                HttpCacheUse::Memory(HttpCacheMemoryReason::NotRequested)
+            },
             _ui: PhantomData,
         };
-        finish_context_creation(raw, owner)
+        if raw.is_null() && cache.is_some() {
+            return Err(finish_refused_cache_context(owner));
+        }
+        finish_context_creation(raw, owner).map_err(CreateFailure::Error)
+    }
+}
+
+enum CreateFailure {
+    /// The revision-6 cache variant returned NULL; retry once without it.
+    CacheRefused,
+    Error(NativeTlsError),
+}
+
+/// Revision 6 always carries BOUNDED_RETIREMENT, so a NULL is callback
+/// quiescent and leaves no native registration. The owner hooks are NOT
+/// notified: the attempt itself is still alive and immediately retries a
+/// plain context. A poisoned registry is a real error.
+fn finish_refused_cache_context(owner: NativeTlsContext) -> CreateFailure {
+    debug_assert!(owner.state.functions.capabilities & BOUNDED_RETIREMENT != 0);
+    {
+        let mut data = owner.state.data.lock().unwrap_or_else(|e| e.into_inner());
+        data.status = NativeTlsStatus::Failed;
+        data.failure = Some(NativeTlsFailure::ContextCreation);
+        data.challenges.clear();
+    }
+    if let Some(signal) = &owner.state.http_cache {
+        signal.release();
+    }
+    match retained().lock() {
+        Ok(mut registry) => {
+            registry.remove(&owner.state.token);
+            CreateFailure::CacheRefused
+        }
+        Err(_) => CreateFailure::Error(NativeTlsError::Revoked),
     }
 }
 
@@ -565,6 +750,9 @@ struct Shared {
     ca_mode: NativeTlsCaMode,
     functions: Functions,
     hooks: Arc<dyn NativeTlsHooks>,
+    /// Some only for a registration created with a revision-6 disk cache.
+    /// Userdata then stays registered until both state 2 and state 7.
+    http_cache: Option<HttpCacheReleaseSignal>,
     data: Mutex<Data>,
 }
 fn retained() -> &'static Mutex<BTreeMap<u64, Arc<Shared>>> {
@@ -673,9 +861,28 @@ fn validate_decision(
 
 pub struct NativeTlsContext {
     state: Arc<Shared>,
+    cache_use: HttpCacheUse,
     _ui: PhantomData<Rc<()>>,
 }
 impl NativeTlsContext {
+    /// Which HTTP cache the engine was asked to use for this context.
+    pub fn http_cache_use(&self) -> HttpCacheUse {
+        self.cache_use
+    }
+    /// True when this context does not (or no longer) hold a disk cache
+    /// directory: it never had one, the engine reported state 7, or CEF shut
+    /// down. Revocation (state 2) alone does not release the directory.
+    pub fn http_cache_released(&self) -> bool {
+        self.state
+            .http_cache
+            .as_ref()
+            .is_none_or(HttpCacheReleaseSignal::is_released)
+    }
+    /// Sendable state-7 observer that outlives this owner; None without a
+    /// disk cache. An app cache lease must outlive the context until this fires.
+    pub fn http_cache_release_signal(&self) -> Option<HttpCacheReleaseSignal> {
+        self.state.http_cache.clone()
+    }
     /// New engines ACK their exact fixed proxy independently from TLS Ready.
     /// Legacy engines retain their old configuration-only readiness contract.
     pub fn proxy_applied(&self) -> bool {
@@ -1097,10 +1304,17 @@ fn accept_state(
             data.status = NativeTlsStatus::Revoked;
             data.challenges.clear();
             drop(data);
-            retained()
-                .lock()
-                .map_err(|_| NativeTlsFailure::PoisonedState)?
-                .remove(&token);
+            // A disk-cache registration's userdata lives until state 7 too.
+            if state
+                .http_cache
+                .as_ref()
+                .is_none_or(HttpCacheReleaseSignal::is_released)
+            {
+                retained()
+                    .lock()
+                    .map_err(|_| NativeTlsFailure::PoisonedState)?
+                    .remove(&token);
+            }
             if native_initiated {
                 // Revoke app proxy/credential leases too, without holding a
                 // registry or challenge lock across application callbacks.
@@ -1112,6 +1326,25 @@ fn accept_state(
             }
         }
         3 => return Err(NativeTlsFailure::EngineFailure),
+        // HTTP disk cache released: the NetworkContext owning the directory is
+        // gone. Exactly once, only for a cache registration, before or after
+        // state 2. It needs no current owner; the lease outlives the attempt.
+        7 => {
+            let Some(signal) = state.http_cache.as_ref() else {
+                return Err(NativeTlsFailure::InvalidState);
+            };
+            if !signal.release() {
+                return Err(NativeTlsFailure::InvalidState);
+            }
+            let revoked = data.status == NativeTlsStatus::Revoked;
+            drop(data);
+            if revoked {
+                retained()
+                    .lock()
+                    .map_err(|_| NativeTlsFailure::PoisonedState)?
+                    .remove(&token);
+            }
+        }
         _ => return Err(NativeTlsFailure::InvalidState),
     }
     Ok(())
@@ -1315,6 +1548,7 @@ mod tests {
             retained().lock().unwrap().insert(token, state.clone());
             let owner = NativeTlsContext {
                 state: state.clone(),
+                cache_use: HttpCacheUse::Memory(HttpCacheMemoryReason::NotRequested),
                 _ui: PhantomData,
             };
             assert!(matches!(
@@ -1335,6 +1569,7 @@ mod tests {
         retained().lock().unwrap().insert(token, state.clone());
         let owner = NativeTlsContext {
             state: state.clone(),
+            cache_use: HttpCacheUse::Memory(HttpCacheMemoryReason::NotRequested),
             _ui: PhantomData,
         };
         assert!(matches!(
@@ -1403,6 +1638,7 @@ mod tests {
             ca_mode: NativeTlsCaMode::System,
             functions: Functions {
                 create,
+                create_with_cache: None,
                 complete,
                 revoke,
                 apply_proxy: None,
@@ -1410,6 +1646,7 @@ mod tests {
                 capabilities: REQUIRED | EXCEPTIONS | CUSTOM_CA,
             },
             hooks: hooks.clone(),
+            http_cache: None,
             data: Mutex::new(Data {
                 status: NativeTlsStatus::Installed,
                 installed: true,
@@ -1458,6 +1695,7 @@ mod tests {
         shared.functions.apply_proxy = Some(apply_proxy);
         NativeTlsContext {
             state,
+            cache_use: HttpCacheUse::Memory(HttpCacheMemoryReason::NotRequested),
             _ui: PhantomData,
         }
     }
@@ -2220,6 +2458,400 @@ mod tests {
         );
         retained().lock().unwrap().remove(&state.token);
     }
+
+    // ---- Revision 6: per-context HTTP disk cache (C-H1/C-H2) ----
+
+    const REVISION6: u64 = REQUIRED | HTTP_CACHE_REVISION;
+
+    #[test]
+    fn http_cache_revision_is_accepted_only_with_its_exact_pin_and_every_revision5_bit() {
+        let actual = std::ffi::CString::new(HTTP_CACHE_PATCH_ID).unwrap();
+        let revision5 = std::ffi::CString::new(HTTP3_PATCH_ID).unwrap();
+        let check = |pin: &std::ffi::CString, requested: &str, capabilities: u64| unsafe {
+            matches_bridge_revision(pin.as_ptr(), requested, capabilities)
+        };
+        assert!(check(&actual, HTTP_CACHE_PATCH_ID, REVISION6));
+        assert!(check(
+            &actual,
+            HTTP_CACHE_PATCH_ID,
+            REVISION6 | EXCEPTIONS | CUSTOM_CA
+        ));
+        // Missing any revision-5 bit, or the cache bit itself, is rejected.
+        for bit in [
+            SAME_AUTHORITY_HTTP2,
+            OWNED_HTTP3,
+            PROXY_APPLIED,
+            BOUNDED_RETIREMENT,
+            HTTP_DISK_CACHE,
+        ] {
+            assert!(!check(&actual, HTTP_CACHE_PATCH_ID, REVISION6 & !bit));
+        }
+        // Contradictory and unknown bits.
+        assert!(!check(&actual, HTTP_CACHE_PATCH_ID, REVISION6 | HTTP1));
+        assert!(!check(&actual, HTTP_CACHE_PATCH_ID, REVISION6 | (1 << 11)));
+        assert!(!check(&actual, HTTP_CACHE_PATCH_ID, REVISION6 | (1 << 63)));
+        // The bit never upgrades or relabels another revision.
+        assert!(!check(&revision5, HTTP_CACHE_PATCH_ID, REVISION6));
+        assert!(!check(&revision5, HTTP3_PATCH_ID, REVISION6));
+        assert!(!check(&actual, HTTP3_PATCH_ID, REVISION6));
+        assert!(!check(&actual, PATCH_ID, REVISION6));
+        assert!(!check(
+            &actual,
+            HTTP_CACHE_PATCH_ID,
+            REVISION6 & !HTTP_DISK_CACHE
+        ));
+        let current = std::ffi::CString::new(PATCH_ID).unwrap();
+        assert!(!check(
+            &current,
+            PATCH_ID,
+            REQUIRED | SAME_AUTHORITY_HTTP2 | PROXY_APPLIED | BOUNDED_RETIREMENT | HTTP_DISK_CACHE
+        ));
+        // Revision 5 itself is unchanged.
+        assert!(check(
+            &revision5,
+            HTTP3_PATCH_ID,
+            REVISION6 & !HTTP_DISK_CACHE
+        ));
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum FfiCall {
+        Plain {
+            private_settings: bool,
+        },
+        Cache {
+            private_settings: bool,
+            directory: String,
+            max_bytes: u64,
+            size: u32,
+            reserved: u32,
+        },
+    }
+    static FFI_CALLS: Mutex<Vec<FfiCall>> = Mutex::new(Vec::new());
+    static FFI_TOKENS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+    unsafe fn private_settings(
+        context: *const Context,
+        settings: *const cef::sys::_cef_request_context_settings_t,
+    ) -> bool {
+        FFI_TOKENS
+            .lock()
+            .unwrap()
+            .push(unsafe { (*context).context_token });
+        // The invariant at the FFI boundary: still an in-memory profile.
+        let settings = unsafe { &*settings };
+        settings.cache_path.length == 0 && settings.persist_session_cookies == 0
+    }
+    unsafe extern "C" fn fake_plain_create(
+        context: *const Context,
+        settings: *const cef::sys::_cef_request_context_settings_t,
+        _: *mut cef::sys::_cef_request_context_handler_t,
+    ) -> *mut cef::sys::_cef_request_context_t {
+        let private_settings = unsafe { private_settings(context, settings) };
+        FFI_CALLS
+            .lock()
+            .unwrap()
+            .push(FfiCall::Plain { private_settings });
+        ptr::null_mut()
+    }
+    unsafe extern "C" fn fake_cache_create(
+        context: *const Context,
+        settings: *const cef::sys::_cef_request_context_settings_t,
+        _: *mut cef::sys::_cef_request_context_handler_t,
+        cache: *const RawHttpCache,
+    ) -> *mut cef::sys::_cef_request_context_t {
+        let private_settings = unsafe { private_settings(context, settings) };
+        let cache = unsafe { &*cache };
+        let bytes = unsafe {
+            std::slice::from_raw_parts(cache.directory_utf8.cast::<u8>(), cache.directory_length)
+        };
+        FFI_CALLS.lock().unwrap().push(FfiCall::Cache {
+            private_settings,
+            directory: String::from_utf8(bytes.to_vec()).unwrap(),
+            max_bytes: cache.max_bytes,
+            size: cache.size,
+            reserved: cache.reserved,
+        });
+        ptr::null_mut()
+    }
+    fn fake_bridge(capabilities: u64) -> NativeTlsBridge {
+        NativeTlsBridge {
+            functions: Functions {
+                create: fake_plain_create,
+                create_with_cache: (capabilities & HTTP_DISK_CACHE != 0)
+                    .then_some(fake_cache_create as CreateWithCache),
+                complete,
+                revoke,
+                apply_proxy: None,
+                configure_datagrams: None,
+                capabilities,
+            },
+            _ui: PhantomData,
+        }
+    }
+    fn cache_spec() -> HttpDiskCacheSpec {
+        let root = if cfg!(windows) {
+            std::path::PathBuf::from(r"C:\fixture\browser")
+        } else {
+            std::path::PathBuf::from("/fixture/browser")
+        };
+        HttpDiskCacheSpec::new(root.join("http-cache").join("db").join("conn"), 128 << 20).unwrap()
+    }
+    fn create_with_fakes(
+        capabilities: u64,
+        spec: Option<&HttpDiskCacheSpec>,
+    ) -> (Vec<FfiCall>, Arc<Hooks>, NativeTlsError) {
+        FFI_CALLS.lock().unwrap().clear();
+        FFI_TOKENS.lock().unwrap().clear();
+        let hooks = Arc::new(Hooks {
+            current: AtomicBool::new(true),
+            failures: AtomicUsize::new(0),
+        });
+        let bridge = fake_bridge(capabilities);
+        let error = match bridge.create_context_inner(
+            &NativeTlsConfig::default(),
+            hooks.clone(),
+            ptr::null_mut(),
+            true,
+            spec,
+        ) {
+            Ok(_) => panic!("fake factories never create a context"),
+            Err(error) => error,
+        };
+        // Every attempt is callback quiescent (bounded retirement): none of
+        // their userdata may remain registered after NULL.
+        let registry = retained().lock().unwrap();
+        for token in FFI_TOKENS.lock().unwrap().iter() {
+            assert!(!registry.contains_key(token));
+        }
+        drop(registry);
+        (
+            std::mem::take(&mut *FFI_CALLS.lock().unwrap()),
+            hooks,
+            error,
+        )
+    }
+
+    #[test]
+    fn cache_requested_on_engine_without_the_bit_creates_exactly_the_plain_context() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let spec = cache_spec();
+        let revision5 = REQUIRED | (HTTP_CACHE_REVISION & !HTTP_DISK_CACHE);
+        let (calls, hooks, error) = create_with_fakes(revision5, Some(&spec));
+        assert_eq!(
+            calls,
+            vec![FfiCall::Plain {
+                private_settings: true
+            }]
+        );
+        assert_eq!(error, NativeTlsError::Unavailable);
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+        assert!(!fake_bridge(revision5).supports_http_disk_cache());
+        assert_eq!(
+            fake_bridge(revision5).requested_cache(Some(&spec)).err(),
+            Some(HttpCacheMemoryReason::EngineUnsupported)
+        );
+        // A bit without its export (never produced by from_loaded) is not support.
+        let mut orphan = fake_bridge(REVISION6);
+        orphan.functions.create_with_cache = None;
+        assert!(!orphan.supports_http_disk_cache());
+    }
+
+    #[test]
+    fn null_from_the_cache_variant_retries_plain_exactly_once_without_notifying_the_owner() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let spec = cache_spec();
+        let (calls, hooks, error) = create_with_fakes(REVISION6, Some(&spec));
+        assert_eq!(
+            calls,
+            vec![
+                FfiCall::Cache {
+                    private_settings: true,
+                    directory: spec.directory.to_str().unwrap().to_owned(),
+                    max_bytes: 128 << 20,
+                    size: 32,
+                    reserved: 0,
+                },
+                FfiCall::Plain {
+                    private_settings: true
+                },
+            ]
+        );
+        // Only the plain retry's NULL is an owner-visible creation failure.
+        assert_eq!(error, NativeTlsError::Unavailable);
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+        let tokens = FFI_TOKENS.lock().unwrap().clone();
+        assert_eq!(tokens.len(), 2);
+        assert!(tokens[1] > tokens[0], "retry needs a fresh registration");
+    }
+
+    #[test]
+    fn plain_requests_and_invalid_specs_never_reach_the_cache_export() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let (calls, _, _) = create_with_fakes(REVISION6, None);
+        assert_eq!(
+            calls,
+            vec![FfiCall::Plain {
+                private_settings: true
+            }]
+        );
+        let mut invalid = cache_spec();
+        invalid.max_bytes = 0;
+        let (calls, hooks, _) = create_with_fakes(REVISION6, Some(&invalid));
+        assert_eq!(
+            calls,
+            vec![FfiCall::Plain {
+                private_settings: true
+            }]
+        );
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+        let bridge = fake_bridge(REVISION6);
+        assert!(bridge.supports_http_disk_cache());
+        assert_eq!(bridge.patch_id(), HTTP_CACHE_PATCH_ID);
+        assert_eq!(
+            bridge.requested_cache(None).err(),
+            Some(HttpCacheMemoryReason::NotRequested)
+        );
+        assert_eq!(
+            bridge.requested_cache(Some(&invalid)).err(),
+            Some(HttpCacheMemoryReason::InvalidSpec)
+        );
+        assert!(bridge.requested_cache(Some(&cache_spec())).is_ok());
+    }
+
+    fn cache_fixture(token: u64) -> (NativeTlsContext, Arc<Hooks>) {
+        let (mut state, hooks) = fixture();
+        let shared = Arc::get_mut(&mut state).unwrap();
+        shared.token = token;
+        shared.generation = token + 1;
+        shared.functions.capabilities = REVISION6;
+        shared.http_cache = Some(HttpCacheReleaseSignal::default());
+        retained().lock().unwrap().insert(token, state.clone());
+        (
+            NativeTlsContext {
+                state,
+                cache_use: HttpCacheUse::Disk,
+                _ui: PhantomData,
+            },
+            hooks,
+        )
+    }
+
+    #[test]
+    fn cache_userdata_lives_until_both_revocation_and_release_in_either_order() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        // State 7 before state 2: still registered until revocation.
+        let (context, hooks) = cache_fixture(3001);
+        let signal = context.http_cache_release_signal().unwrap();
+        assert_eq!(context.http_cache_use(), HttpCacheUse::Disk);
+        assert!(!context.http_cache_released());
+        // A stale owner does not block the engine's release report.
+        hooks.current.store(false, Ordering::Release);
+        accept_state(&context.state, 3001, 3002, 7).unwrap();
+        assert!(context.http_cache_released() && signal.is_released());
+        assert!(retained().lock().unwrap().contains_key(&3001));
+        assert_eq!(context.status(), NativeTlsStatus::Installed);
+        context.revoke();
+        accept_state(&context.state, 3001, 3002, 2).unwrap();
+        assert!(!retained().lock().unwrap().contains_key(&3001));
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 0);
+
+        // State 2 before state 7: revoked, but userdata and lease are held.
+        let (context, hooks) = cache_fixture(3011);
+        let signal = context.http_cache_release_signal().unwrap();
+        context.revoke();
+        accept_state(&context.state, 3011, 3012, 2).unwrap();
+        assert_eq!(context.status(), NativeTlsStatus::Revoked);
+        assert!(retained().lock().unwrap().contains_key(&3011));
+        assert!(!context.http_cache_released());
+        drop(context); // The lease observer outlives the context owner.
+        assert!(!signal.is_released());
+        let state = retained().lock().unwrap()[&3011].clone();
+        accept_state(&state, 3011, 3012, 7).unwrap();
+        assert!(signal.is_released());
+        assert!(!retained().lock().unwrap().contains_key(&3011));
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn duplicate_foreign_or_uncached_release_is_invalid_state() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        // Duplicate 7 while live: protocol violation fails the context.
+        let (context, hooks) = cache_fixture(3101);
+        assert_eq!(
+            accept_state(&context.state, 3101, 9999, 7),
+            Err(NativeTlsFailure::InvalidState)
+        );
+        assert_eq!(
+            accept_state(&context.state, 9999, 3102, 7),
+            Err(NativeTlsFailure::InvalidState)
+        );
+        assert!(!context.http_cache_released());
+        accept_state(&context.state, 3101, 3102, 7).unwrap();
+        assert_eq!(
+            accept_state(&context.state, 3101, 3102, 7),
+            Err(NativeTlsFailure::InvalidState)
+        );
+        finish_callback(
+            &context.state,
+            Ok(accept_state(&context.state, 3101, 3102, 7)),
+        );
+        assert_eq!(context.status(), NativeTlsStatus::Failed);
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+        accept_state(&context.state, 3101, 3102, 2).unwrap();
+        assert!(!retained().lock().unwrap().contains_key(&3101));
+
+        // Duplicate 7 after both 2 and 7: rejected, nothing resurrected.
+        let (context, hooks) = cache_fixture(3111);
+        context.revoke();
+        accept_state(&context.state, 3111, 3112, 7).unwrap();
+        accept_state(&context.state, 3111, 3112, 2).unwrap();
+        assert!(!retained().lock().unwrap().contains_key(&3111));
+        assert_eq!(
+            accept_state(&context.state, 3111, 3112, 7),
+            Err(NativeTlsFailure::InvalidState)
+        );
+        assert!(!retained().lock().unwrap().contains_key(&3111));
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 0);
+
+        // 7 on a context created without a disk cache, on any revision.
+        for capabilities in [REQUIRED | EXCEPTIONS | CUSTOM_CA, REVISION6] {
+            let (mut state, _) = fixture();
+            Arc::get_mut(&mut state).unwrap().functions.capabilities = capabilities;
+            assert_eq!(
+                accept_state(&state, 71, 72, 7),
+                Err(NativeTlsFailure::InvalidState)
+            );
+            let plain = NativeTlsContext {
+                state,
+                cache_use: HttpCacheUse::Memory(HttpCacheMemoryReason::NotRequested),
+                _ui: PhantomData,
+            };
+            assert!(plain.http_cache_released());
+            assert!(plain.http_cache_release_signal().is_none());
+        }
+    }
+
+    #[test]
+    fn refused_cache_registration_is_removed_silently_and_released() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let (context, hooks) = cache_fixture(3201);
+        let signal = context.http_cache_release_signal().unwrap();
+        let state = context.state.clone();
+        assert!(matches!(
+            finish_refused_cache_context(context),
+            CreateFailure::CacheRefused
+        ));
+        assert!(!retained().lock().unwrap().contains_key(&3201));
+        assert!(signal.is_released());
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 0);
+        assert_eq!(
+            state.data.lock().unwrap().failure,
+            Some(NativeTlsFailure::ContextCreation)
+        );
+        // No registry or engine reference to the refused userdata remains.
+        assert_eq!(Arc::strong_count(&state), 1);
+    }
 }
 
 /// # Safety
@@ -2230,6 +2862,10 @@ pub unsafe fn after_cef_shutdown() {
     let states = std::mem::take(&mut *retained().lock().unwrap_or_else(|e| e.into_inner()));
     for state in states.into_values() {
         state.revoke();
+        // Shutdown destroyed every NetworkContext: no directory is held.
+        if let Some(signal) = &state.http_cache {
+            signal.release();
+        }
     }
 }
 

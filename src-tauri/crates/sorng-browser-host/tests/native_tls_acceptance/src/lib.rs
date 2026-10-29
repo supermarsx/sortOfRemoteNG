@@ -37,6 +37,7 @@ use tao::{
     window::WindowBuilder,
 };
 mod fixture;
+mod http_cache;
 mod ledger;
 #[cfg(any(target_os = "linux", test))]
 #[path = "../../native_acceptance/linux_parent_fixture.rs"]
@@ -116,7 +117,9 @@ fn registration_retirement_for_revision<T>(
     run: impl FnOnce() -> Result<T>,
 ) -> Option<Result<T>> {
     match patch_id {
-        cef_tls_bridge::PATCH_ID | cef_tls_bridge::HTTP3_PATCH_ID => Some(run()),
+        cef_tls_bridge::PATCH_ID
+        | cef_tls_bridge::HTTP3_PATCH_ID
+        | cef_tls_bridge::HTTP_CACHE_PATCH_ID => Some(run()),
         cef_tls_bridge::LEGACY_PATCH_ID
         | cef_tls_bridge::HTTP2_PATCH_ID
         | cef_tls_bridge::PROXY_APPLIED_PATCH_ID => None,
@@ -382,6 +385,7 @@ struct State {
     revoke_observed_ms: u128,
     first_decision: Option<Instant>,
     storage: Option<Arc<Mutex<storage::Evidence>>>,
+    http_cache: Option<Arc<Mutex<http_cache::Evidence>>>,
     static_document: Option<Arc<Mutex<static_document::Evidence>>>,
     login_diagnostics: Arc<NonblockingLoginDiagnostics>,
 }
@@ -416,6 +420,7 @@ impl State {
             revoke_observed_ms: 0,
             first_decision: None,
             storage: None,
+            http_cache: None,
             static_document: (name == "staged")
                 .then(|| Arc::new(Mutex::new(static_document::Evidence::default()))),
             login_diagnostics: Arc::new(NonblockingLoginDiagnostics::new()),
@@ -901,6 +906,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         "loadedBridgeVerified":false,"securitySwitchesClean":false,"networkPolicyConfigured":false,"shutdownComplete":false,"cases":[],"failures":[],
         "manualRequested":manual_requested,"manualStatus":if manual_requested {"pending"} else {"not-run"},
         "storageIsolation":{"status":"not-run"},
+        "httpDiskCache":{"status":"not-run"},
         "remainingGates":["OS socket/DNS containment","native first paint","public provider acceptance","other platform runtime","app trust authority integration","AIA/OCSP/CRL runtime","HTTP keep-alive runtime"]});
     if let Some(evidence) = linux_parent_readiness {
         report["linuxParentReadiness"] = evidence;
@@ -1420,6 +1426,30 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                 }
             }
         }
+        // Revision 6 only; other engines record "skipped" without a context.
+        if failures.is_empty() {
+            match http_cache::run(
+                &runtime,
+                &bridge,
+                certificates.clone(),
+                &asynchronous,
+                &mut events,
+                parent.clone(),
+                &output,
+                &run_id,
+            ) {
+                Ok(cache) => {
+                    if !matches!(cache["status"].as_str(), Some("completed" | "skipped")) {
+                        failures.push("http disk cache probe failed".into());
+                    }
+                    report["httpDiskCache"] = cache;
+                }
+                Err(error) => {
+                    failures.push(format!("http disk cache probe reporting failed: {error}"));
+                    report["httpDiskCache"] = serde_json::json!({"status":"failed"});
+                }
+            }
+        }
     }
     if report.get("errorDrain").is_some() {
         report["registrationRetirementCases"] = serde_json::json!({"required":true,"ok":false,"reason":"primary-error-before-registry-retirement"});
@@ -1727,7 +1757,11 @@ mod retirement_revision_tests {
 
     #[test]
     fn current_retirement_revisions_run_once_and_preserve_results() {
-        for revision in [cef_tls_bridge::PATCH_ID, cef_tls_bridge::HTTP3_PATCH_ID] {
+        for revision in [
+            cef_tls_bridge::PATCH_ID,
+            cef_tls_bridge::HTTP3_PATCH_ID,
+            cef_tls_bridge::HTTP_CACHE_PATCH_ID,
+        ] {
             let calls = Cell::new(0);
             let result = registration_retirement_for_revision(revision, || {
                 calls.set(calls.get() + 1);
@@ -1762,7 +1796,7 @@ mod retirement_revision_tests {
                 .is_none()
             );
         }
-        for revision in ["", "sorng-tls-v2-682c378-6", "sorng-tls-v2-682c378-5-extra"] {
+        for revision in ["", "sorng-tls-v2-682c378-7", "sorng-tls-v2-682c378-6-extra"] {
             let result = registration_retirement_for_revision::<()>(revision, || {
                 panic!("unknown registry invocation")
             });

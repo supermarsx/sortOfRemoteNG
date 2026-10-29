@@ -214,6 +214,9 @@ async fn serve(
             state.proxy_authorization_leaked|=header.to_ascii_lowercase().contains("proxy-authorization:");
             let host=header.lines().find_map(|l|l.split_once(':').filter(|(k,_)|k.eq_ignore_ascii_case("host")).map(|(_,v)|v.trim()));
             state.host_header_exact &= matches!(host,Some("accounts.google.com"|"accounts.google.com:443"));
+            if let Some((content_type,cache_control,body))=crate::http_cache::response(&state,path,&bytes[end..end+len]){
+                format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nCache-Control: {cache_control}\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",body.len())
+            }else{
             let (body,cookie)=if let Some(storage)=crate::storage::response(&state,path,&header,&bytes[end..end+len]){
                 storage
             }else if path=="/proof"{
@@ -228,6 +231,7 @@ async fn serve(
                 (crate::static_document::PAGE.to_owned(),String::new())
             }else{(String::new(),String::new())};
             format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n{cookie}\r\n{body}",body.len())
+            }
         };
         tls.write_all(response.as_bytes()).await?;tls.shutdown().await?;Ok(Outcome::Completed)
     }.await;

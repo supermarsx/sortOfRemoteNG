@@ -2,6 +2,9 @@
 //! navigation or emit host readiness. The process/bootstrap containment gates
 //! and native browser lifecycle must be installed before a host may report Ready.
 
+use crate::cef_http_cache::{
+    HttpCacheMemoryReason, HttpCacheReleaseSignal, HttpCacheUse, HttpDiskCacheSpec,
+};
 use crate::cef_session_retention::{
     self, CookieCapture, CookieOwner, RetentionError, SignInCookie,
 };
@@ -565,6 +568,39 @@ impl PrivateRequestContext {
         hooks: Arc<dyn NativeTlsHooks>,
         capabilities: NativeBrowserCapabilities,
     ) -> Result<Self, ContextError> {
+        Self::create_with_tls_capabilities_and_cache(
+            session,
+            identity,
+            permissions,
+            bridge,
+            config,
+            hooks,
+            capabilities,
+            None,
+        )
+    }
+
+    /// [`Self::create_with_tls_capabilities`] plus an optional per-connection
+    /// HTTP disk cache (revision 6). The context stays attempt-private: empty
+    /// `cache_path`, in-memory cookies/profile, `is_private()` unchanged. A
+    /// missing engine capability, invalid spec or engine refusal falls back to
+    /// the in-memory cache; see [`Self::http_cache_state`]. The caller's cache
+    /// lease must outlive this owner until [`Self::http_cache_released`] (or
+    /// the [`Self::http_cache_release_signal`] it keeps) reports release.
+    ///
+    /// # Safety
+    /// Same initialized UI-thread and shutdown requirements as `create`.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn create_with_tls_capabilities_and_cache(
+        session: Arc<Mutex<OriginBrowserSession>>,
+        identity: BrowserIdentity,
+        permissions: Arc<WebsitePermissionEngine>,
+        bridge: &NativeTlsBridge,
+        config: &NativeTlsConfig,
+        hooks: Arc<dyn NativeTlsHooks>,
+        capabilities: NativeBrowserCapabilities,
+        http_cache: Option<HttpDiskCacheSpec>,
+    ) -> Result<Self, ContextError> {
         capabilities
             .validate()
             .map_err(|_| ContextError::CreationFailed)?;
@@ -601,6 +637,7 @@ impl PrivateRequestContext {
             bound,
             &mut handler,
             capabilities.cookies_enabled,
+            http_cache.as_ref(),
         ) {
             Ok(created) => created,
             Err(_) => {
@@ -617,6 +654,32 @@ impl PrivateRequestContext {
             cookie_import: None,
             _ui_thread: PhantomData,
         })
+    }
+
+    /// Which HTTP cache this context actually uses. Stock (non-bridge)
+    /// contexts and every fallback report `Memory` with the reason.
+    pub fn http_cache_state(&self) -> HttpCacheUse {
+        self.tls.as_ref().map_or(
+            HttpCacheUse::Memory(HttpCacheMemoryReason::NotRequested),
+            NativeTlsContext::http_cache_use,
+        )
+    }
+
+    /// True once no disk cache directory is held for this context: it never
+    /// had one, or the engine reported state 7 (or CEF shut down).
+    pub fn http_cache_released(&self) -> bool {
+        self.tls
+            .as_ref()
+            .is_none_or(NativeTlsContext::http_cache_released)
+    }
+
+    /// Sendable release observer for a disk-cache context, None otherwise.
+    /// Keep it in the cache lease: state 7 normally arrives after this owner
+    /// has been dropped.
+    pub fn http_cache_release_signal(&self) -> Option<HttpCacheReleaseSignal> {
+        self.tls
+            .as_ref()
+            .and_then(NativeTlsContext::http_cache_release_signal)
     }
 
     /// False for stock CEF contexts even when their proxy is configured.

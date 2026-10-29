@@ -19,6 +19,7 @@ pub mod native_automation;
 pub mod native_appearance;
 pub mod native_capabilities;
 pub mod cef_session_retention;
+pub mod cef_http_cache;
 #[cfg(any(feature = "cef-host", test))]
 pub mod native_features;
 pub mod native_media;
