@@ -1,6 +1,7 @@
 import type { HttpProxyPolicy } from "../connection/httpProxyPolicy";
 import type { WebsiteDomainPermissionsSettings } from "./websiteDomainPermissions";
 import type {
+  BrowserHttpCacheSettings,
   BrowserNativePreferences,
   BrowserSessionRetention,
 } from "./browserSession";
@@ -42,6 +43,8 @@ export interface WebBrowserSettingsConfig extends BrowserNativePreferences {
   sessionRetention?: BrowserSessionRetention;
   /** False skips restoration and checkpointing, preserving stored cookies. */
   restoreCookies?: boolean;
+  /** Per-connection page cache; device-local, never synced. */
+  httpCache?: BrowserHttpCacheSettings;
 }
 
 /** Applied when creating a native proxy session, including its derived routes. */

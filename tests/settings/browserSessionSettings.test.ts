@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import schema from "../../src/types/settings/browserSession.schema.json";
 import {
   browserSessionIsolationKey,
+  DEFAULT_BROWSER_HTTP_CACHE,
   DEFAULT_BROWSER_SESSION_RETENTION,
+  normalizeBrowserHttpCacheOverride,
+  normalizeBrowserHttpCacheSettings,
   normalizeBrowserSessionOverrides,
   normalizeBrowserSessionRetention,
   resolveBrowserSessionRetention,
@@ -277,6 +280,114 @@ describe("browser session contract", () => {
     expect(override.properties.perConnectionMb.$ref).toBe(
       "#/$defs/httpCache/properties/perConnectionMb",
     );
+  });
+
+  it("defaults the page cache from the schema and keeps saved values", () => {
+    expect(DEFAULT_BROWSER_HTTP_CACHE).toEqual({
+      enabled: true,
+      perConnectionMb: 128,
+      totalMb: 1024,
+      clearOnDatabaseLock: false,
+    });
+    expect(Object.isFrozen(DEFAULT_BROWSER_HTTP_CACHE)).toBe(true);
+    expect(normalizeBrowserHttpCacheSettings(undefined)).toEqual(
+      DEFAULT_BROWSER_HTTP_CACHE,
+    );
+    expect(normalizeWebBrowserSettings(undefined).httpCache).toEqual(
+      DEFAULT_BROWSER_HTTP_CACHE,
+    );
+    const saved = { enabled: false, totalMb: 4096 };
+    expect(normalizeWebBrowserSettings({ httpCache: saved }).httpCache).toEqual(
+      { ...DEFAULT_BROWSER_HTTP_CACHE, ...saved },
+    );
+    expect(saved).toEqual({ enabled: false, totalMb: 4096 });
+    for (const [key, rule] of Object.entries(schema.$defs.httpCache.properties))
+      expect(
+        DEFAULT_BROWSER_HTTP_CACHE[
+          key as keyof typeof DEFAULT_BROWSER_HTTP_CACHE
+        ],
+      ).toBe(rule.default);
+  });
+
+  it.each([
+    null,
+    [],
+    "on",
+    { enabled: "true" },
+    { perConnectionMb: 15 },
+    { perConnectionMb: 1025 },
+    { perConnectionMb: 64.5 },
+    { totalMb: 127 },
+    { totalMb: 8193 },
+    { clearOnDatabaseLock: 1 },
+    { directory: "C:/cache" },
+  ])("rejects malformed global page-cache settings %j", (httpCache) => {
+    expect(() => normalizeBrowserHttpCacheSettings(httpCache)).toThrow(
+      /Invalid browser session/,
+    );
+    expect(() => normalizeWebBrowserSettings({ httpCache })).toThrow();
+  });
+
+  it.each([
+    null,
+    { enabled: 0 },
+    { perConnectionMb: 8 },
+    { perConnectionMb: 2048 },
+    { totalMb: 1024 },
+    { clearOnDatabaseLock: true },
+    { path: "../other" },
+  ])(
+    "rejects a malformed or non-overridable page-cache override %j",
+    (httpCache) => {
+      expect(() => normalizeBrowserHttpCacheOverride(httpCache)).toThrow(
+        /Invalid browser session/,
+      );
+      expect(() =>
+        normalizeBrowserSessionOverrides({ version: 1, httpCache }),
+      ).toThrow(/Invalid browser session/);
+    },
+  );
+
+  it("resolves sparse page-cache overrides against the global settings", () => {
+    const globals = normalizeWebBrowserSettings({
+      httpCache: { enabled: false, perConnectionMb: 256, totalMb: 2048 },
+    });
+    expect(
+      resolveConnectionBrowserSettings(globals, undefined).httpCache,
+    ).toEqual({
+      enabled: false,
+      perConnectionMb: 256,
+      totalMb: 2048,
+      clearOnDatabaseLock: false,
+    });
+    const overrides = { version: 1, httpCache: { enabled: true } };
+    expect(normalizeBrowserSessionOverrides(overrides)).toEqual(overrides);
+    expect(
+      resolveConnectionBrowserSettings(globals, overrides).httpCache,
+    ).toEqual({
+      enabled: true,
+      perConnectionMb: 256,
+      totalMb: 2048,
+      clearOnDatabaseLock: false,
+    });
+    expect(
+      resolveConnectionBrowserSettings(globals, {
+        version: 1,
+        httpCache: { perConnectionMb: 64 },
+      }).httpCache,
+    ).toMatchObject({ enabled: false, perConnectionMb: 64 });
+    expect(
+      resolveConnectionBrowserSettings(undefined, {
+        version: 1,
+        httpCache: { enabled: false },
+      }).httpCache,
+    ).toEqual({ ...DEFAULT_BROWSER_HTTP_CACHE, enabled: false });
+    // An empty override is not materialized into the saved record.
+    expect(
+      normalizeBrowserSessionOverrides({ version: 1, httpCache: {} }),
+    ).toEqual({ version: 1 });
+    expect(overrides).toEqual({ version: 1, httpCache: { enabled: true } });
+    expect(globals.httpCache?.enabled).toBe(false);
   });
 
   it.each([undefined, "real-origin", "legacy"])(

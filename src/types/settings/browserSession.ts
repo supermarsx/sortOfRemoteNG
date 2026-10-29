@@ -13,6 +13,24 @@ export interface BrowserSessionRetention {
   clearOnDatabaseLock: boolean;
 }
 
+/** Global per-connection HTTP disk cache settings (`webBrowser.httpCache`).
+ * Device-local only: never synced, backed up or exported. Follows site cache headers. */
+export interface BrowserHttpCacheSettings {
+  enabled: boolean;
+  /** Per-connection cache limit, 16–1024 MiB. */
+  perConnectionMb: number;
+  /** All connection caches together, 128–8192 MiB. */
+  totalMb: number;
+  /** Wipe the locked database's page caches when it locks. Default keeps them. */
+  clearOnDatabaseLock: boolean;
+}
+
+/** Sparse per-connection cache override; missing values inherit the global settings. */
+export interface BrowserHttpCacheOverride {
+  enabled?: boolean;
+  perConnectionMb?: number;
+}
+
 /** Requested native features, not runtime availability or permission grants. */
 export interface BrowserNativePreferences {
   /** Isolated, ephemeral site storage; not covered by cookie retention. */
@@ -51,6 +69,8 @@ export interface BrowserSessionPreferences extends BrowserNativePreferences {
 /** Missing fields inherit live app settings. Retention overrides replace the policy. */
 export type BrowserSessionOverrides = {
   version: 1;
+  /** Native support is announced by the `httpDiskCache` retention capability. */
+  httpCache?: BrowserHttpCacheOverride;
 } & Partial<BrowserSessionPreferences>;
 
 /** Native code must derive these from authenticated ownership, not accept profile paths. */
@@ -67,6 +87,19 @@ export interface BrowserSessionRetentionCapabilities {
   /** Expose policy controls only after the native implementation approves them. */
   policyExpiration?: boolean;
   clearOnDatabaseLock?: boolean;
+  /** Absent on native builds that cannot parse page-cache settings yet. */
+  httpDiskCache?: BrowserHttpDiskCacheCapability;
+}
+
+export type BrowserHttpCacheUnavailableReason =
+  | "disabled"
+  | "cache-location-not-local"
+  | "engine-unsupported"
+  | "unavailable";
+
+export interface BrowserHttpDiskCacheCapability {
+  available: boolean;
+  reason?: BrowserHttpCacheUnavailableReason;
 }
 
 export interface EffectiveBrowserSessionRetention {

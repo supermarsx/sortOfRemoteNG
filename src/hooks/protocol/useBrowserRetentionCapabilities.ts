@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
-import type { BrowserSessionRetentionCapabilities } from "../../types/settings/browserSession";
+import type {
+  BrowserHttpDiskCacheCapability,
+  BrowserSessionRetentionCapabilities,
+} from "../../types/settings/browserSession";
 import { getInvoke } from "../../utils/tauri/invoke";
 
-type Capabilities = Required<BrowserSessionRetentionCapabilities>;
+/** `httpDiskCache` stays absent unless native reports it: its presence is what
+ * tells the UI that saved page-cache overrides are understood natively. */
+type Capabilities = Required<
+  Omit<BrowserSessionRetentionCapabilities, "httpDiskCache">
+> &
+  Pick<BrowserSessionRetentionCapabilities, "httpDiskCache">;
 const UNAVAILABLE: Readonly<Capabilities> = Object.freeze({
   memory: false,
   encryptedDatabase: false,
@@ -13,6 +21,29 @@ const POLL_MS = 30_000;
 const UNAVAILABLE_POLL_MS = 60_000;
 const RESPONSE_TIMEOUT_MS = 5_000;
 const isHidden = () => document.visibilityState === "hidden";
+const CACHE_REASONS = new Set([
+  "disabled",
+  "cache-location-not-local",
+  "engine-unsupported",
+  "unavailable",
+]);
+
+/** Malformed reports never claim availability; an unknown reason reads as "unavailable". */
+function parseHttpDiskCache(
+  value: unknown,
+): BrowserHttpDiskCacheCapability | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  const row = value as Record<string, unknown>;
+  if (typeof row.available !== "boolean") return undefined;
+  if (row.available && row.reason === undefined) return { available: true };
+  return {
+    available: false,
+    reason: CACHE_REASONS.has(row.reason as string)
+      ? (row.reason as BrowserHttpDiskCacheCapability["reason"])
+      : "unavailable",
+  };
+}
 
 function parseCapabilities(value: unknown): Capabilities {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -20,11 +51,13 @@ function parseCapabilities(value: unknown): Capabilities {
   const row = value as Record<string, unknown>;
   if (Object.keys(UNAVAILABLE).some((key) => typeof row[key] !== "boolean"))
     return UNAVAILABLE;
+  const httpDiskCache = parseHttpDiskCache(row.httpDiskCache);
   return {
     memory: row.memory as boolean,
     encryptedDatabase: row.encryptedDatabase as boolean,
     policyExpiration: row.policyExpiration as boolean,
     clearOnDatabaseLock: row.clearOnDatabaseLock as boolean,
+    ...(httpDiskCache ? { httpDiskCache } : {}),
   };
 }
 

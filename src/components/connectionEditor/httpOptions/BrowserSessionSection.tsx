@@ -20,6 +20,15 @@ import type { Mgr } from "./types";
 import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
 import BrowserNativeCapabilitiesCard from "../../SettingsDialog/sections/webBrowser/BrowserNativeCapabilitiesCard";
 import BrowserSettingsRepair from "../../SettingsDialog/sections/webBrowser/BrowserSettingsRepair";
+import {
+  clearConnectionData,
+  formatCacheBytes,
+} from "../../../services/originBrowserData";
+import {
+  httpCacheUnavailableText,
+  originBrowserDataErrorText,
+  useHttpCacheUsage,
+} from "../../../hooks/protocol/useHttpCacheUsage";
 
 const numbers = [
   ["defaultZoomPercent", "Website zoom (%)", 50, 200],
@@ -76,9 +85,47 @@ function SessionOverrides({
   retentionCapabilities?: BrowserSessionRetentionCapabilities;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [clearStatus, setClearStatus] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
   const nativeRetentionCapabilities = useBrowserRetentionCapabilities(
     retentionCapabilities === undefined && defaults.engine !== "legacy",
   );
+  const capabilities = retentionCapabilities ?? nativeRetentionCapabilities;
+  // Present only once native parses saved page-cache overrides; until then a
+  // saved override would make native reject the connection's preferences.
+  const cacheCapability = capabilities.httpDiskCache;
+  const connectionId = mgr.formData.id;
+  const nativeEngine = defaults.engine !== "legacy";
+  const { usage, refresh: refreshUsage } = useHttpCacheUsage(
+    connectionId,
+    nativeEngine && !!connectionId && cacheCapability?.available === true,
+  );
+  const clearData = async (cookies: boolean) => {
+    if (!connectionId) return;
+    setClearing(true);
+    setClearStatus(null);
+    try {
+      const outcome = await clearConnectionData({
+        connectionId,
+        cookies,
+        cache: !cookies,
+      });
+      setClearStatus(
+        !outcome.ok
+          ? originBrowserDataErrorText(outcome.error)
+          : cookies
+            ? outcome.value.cookiesCleared
+              ? "Saved sign-in cleared."
+              : "No saved sign-in to clear."
+            : outcome.value.cachePendingRestart
+              ? "Page cache will be cleared on next start."
+              : "Page cache cleared.",
+      );
+      if (!cookies) refreshUsage();
+    } finally {
+      setClearing(false);
+    }
+  };
   const timeoutHelp: Record<string, string> = {
     initialLoadTimeoutSeconds:
       defaults.engine !== "legacy"
@@ -214,6 +261,10 @@ function SessionOverrides({
         overrides={overrides}
         onChange={update}
       />
+      <h5 className="text-sm font-medium">
+        Saved sign-in (cookies, encrypted in this database, 7-day idle / 30-day
+        max)
+      </h5>
       <BrowserSelectRow
         settingKey="browserSession.restoreCookies"
         label="Restore saved cookies"
@@ -263,6 +314,68 @@ function SessionOverrides({
           Runtime support must be confirmed before retention can become active.
         </p>
       )}
+      <button
+        type="button"
+        className="sor-btn sor-btn-secondary"
+        disabled={clearing || !connectionId || !nativeEngine}
+        onClick={() => void clearData(true)}
+      >
+        Clear saved sign-in
+      </button>
+      <h5 className="text-sm font-medium">
+        Page cache (this device only, never synced, follows site cache rules)
+      </h5>
+      <BrowserSelectRow
+        settingKey="browserSession.httpCache.enabled"
+        label="Use page cache for this connection"
+        description="Keeps this connection's pages cached on this device so later visits load faster. Sites decide what may be cached. Applies to new attempts."
+        value={
+          overrides.httpCache?.enabled === undefined
+            ? "inherit"
+            : String(overrides.httpCache.enabled)
+        }
+        disabled={cacheCapability === undefined}
+        options={[
+          {
+            value: "inherit",
+            label: `Use app default (${defaults.httpCache?.enabled !== false ? "on" : "off"})`,
+          },
+          { value: "true", label: "On" },
+          { value: "false", label: "Off" },
+        ]}
+        onChange={(value) => {
+          const next = { ...overrides.httpCache };
+          if (value === "inherit") delete next.enabled;
+          else next.enabled = value === "true";
+          update("httpCache", Object.keys(next).length ? next : undefined);
+        }}
+      />
+      {(cacheCapability === undefined || !cacheCapability.available) && (
+        <p className="text-sm text-warning">
+          {httpCacheUnavailableText(cacheCapability?.reason ?? "unavailable")}
+        </p>
+      )}
+      {usage?.available && (
+        <p className="text-sm text-[var(--color-textSecondary)]">
+          Page cache for this connection: {formatCacheBytes(usage.bytes)} of{" "}
+          {formatCacheBytes(usage.limitBytes)}.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="sor-btn sor-btn-secondary"
+          disabled={clearing || !connectionId || !nativeEngine}
+          onClick={() => void clearData(false)}
+        >
+          Clear page cache
+        </button>
+        {clearStatus && (
+          <span role="status" className="text-sm">
+            {clearStatus}
+          </span>
+        )}
+      </div>
       <button
         type="button"
         className="sor-btn sor-btn-secondary"

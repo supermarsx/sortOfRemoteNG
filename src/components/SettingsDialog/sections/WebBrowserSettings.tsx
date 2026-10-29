@@ -7,6 +7,7 @@ import {
   Fingerprint,
   Info,
   Trash2,
+  HardDrive,
 } from "lucide-react";
 import type { GlobalSettings } from "../../../types/settings/settings";
 import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowser";
@@ -31,7 +32,11 @@ import WebsiteAppearanceSection from "./WebsiteAppearanceSection";
 import ExternalResourceOriginsEditor from "../../security/ExternalResourceOriginsEditor";
 import { OriginBrowserPreferences } from "./webBrowser/OriginBrowserPreferences";
 import BrowserSessionRetentionFields from "./webBrowser/BrowserSessionRetentionFields";
-import { normalizeBrowserSessionRetention } from "../../../utils/settings/browserSessionSettings";
+import BrowserHttpCacheFields from "./webBrowser/BrowserHttpCacheFields";
+import {
+  normalizeBrowserHttpCacheSettings,
+  normalizeBrowserSessionRetention,
+} from "../../../utils/settings/browserSessionSettings";
 import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
 import BrowserNativeCapabilitiesCard from "./webBrowser/BrowserNativeCapabilitiesCard";
 import BrowserDataDirectorySettings from "./webBrowser/BrowserDataDirectorySettings";
@@ -216,6 +221,20 @@ function WebBrowserSettingsContent({
             value={normalizeBrowserSessionRetention(config.sessionRetention)}
             capabilities={retentionCapabilities ?? nativeRetentionCapabilities}
             onChange={(sessionRetention) => update({ sessionRetention })}
+          />
+        </Card>
+      </div>
+      <div className="space-y-4">
+        <SectionHeader icon={<HardDrive size={16} />} title="Page cache" />
+        <Card>
+          <BrowserHttpCacheFields
+            value={normalizeBrowserHttpCacheSettings(config.httpCache)}
+            capability={
+              (retentionCapabilities ?? nativeRetentionCapabilities)
+                .httpDiskCache
+            }
+            nativeEngine={config.engine !== "legacy"}
+            onChange={(httpCache) => update({ httpCache })}
           />
         </Card>
       </div>

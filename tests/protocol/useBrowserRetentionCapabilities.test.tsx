@@ -298,4 +298,41 @@ describe("native browser retention capabilities", () => {
     );
     expect(transport.invoke).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    [{ available: true }, { available: true }],
+    [
+      { available: false, reason: "engine-unsupported" },
+      { available: false, reason: "engine-unsupported" },
+    ],
+    [
+      { available: false, reason: "cache-location-not-local" },
+      { available: false, reason: "cache-location-not-local" },
+    ],
+    [
+      { available: false, reason: "C:/Users/x/AppData" },
+      { available: false, reason: "unavailable" },
+    ],
+    [
+      { available: true, reason: "disabled" },
+      { available: false, reason: "disabled" },
+    ],
+    [{ available: "yes" }, undefined],
+    [null, undefined],
+    [undefined, undefined],
+  ])(
+    "reports the page-cache capability %j only as a validated, path-free shape",
+    async (httpDiskCache, expected) => {
+      transport.invoke.mockResolvedValue({ ...supported, httpDiskCache });
+      const { result, unmount } = renderHook(() =>
+        useBrowserRetentionCapabilities(),
+      );
+      await flush();
+      await flush();
+      expect(result.current.httpDiskCache).toEqual(expected);
+      expect("httpDiskCache" in result.current).toBe(expected !== undefined);
+      expect(result.current).toMatchObject(supported);
+      unmount();
+    },
+  );
 });

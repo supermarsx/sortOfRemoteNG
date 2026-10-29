@@ -6,7 +6,10 @@ import type { HttpProxyPolicy } from "../../types/connection/httpProxyPolicy";
 import { normalizeHttpProxyPolicy } from "../connection/httpProxyPolicy";
 import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../connection/httpFormAutomation";
 import { normalizeWebsiteDomainPermissions } from "./websiteDomainPermissions";
-import { normalizeBrowserSessionRetention } from "./browserSessionSettings";
+import {
+  normalizeBrowserHttpCacheSettings,
+  normalizeBrowserSessionRetention,
+} from "./browserSessionSettings";
 
 export const DEFAULT_INTERNAL_PROXY_SETTINGS: Readonly<InternalProxySettings> =
   Object.freeze({
@@ -96,6 +99,7 @@ export function normalizeWebBrowserSettings(
           "domainPermissions",
           "sessionRetention",
           "restoreCookies",
+          "httpCache",
         ].includes(key),
     )
   )
@@ -187,6 +191,7 @@ export function normalizeWebBrowserSettings(
     defaultPolicy,
     sessionRetention: normalizeBrowserSessionRetention(row.sessionRetention),
     restoreCookies: boolean(row.restoreCookies, true),
+    httpCache: normalizeBrowserHttpCacheSettings(row.httpCache),
     ...(row.domainPermissions === undefined
       ? {}
       : {

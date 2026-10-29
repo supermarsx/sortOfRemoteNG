@@ -1,5 +1,7 @@
 import schema from "../../types/settings/browserSession.schema.json";
 import type {
+  BrowserHttpCacheOverride,
+  BrowserHttpCacheSettings,
   BrowserSessionIdentity,
   BrowserSessionOverrides,
   BrowserSessionRetention,
@@ -20,6 +22,17 @@ export const DEFAULT_BROWSER_SESSION_RETENTION: Readonly<BrowserSessionRetention
     maxAgeHours: schema.$defs.retention.properties.maxAgeHours.default,
     clearOnDatabaseLock:
       schema.$defs.retention.properties.clearOnDatabaseLock.default,
+  });
+
+const httpCacheRules = schema.$defs.httpCache.properties;
+
+/** Global page-cache defaults, read from the schema (the single source of defaults and ranges). */
+export const DEFAULT_BROWSER_HTTP_CACHE: Readonly<BrowserHttpCacheSettings> =
+  Object.freeze({
+    enabled: httpCacheRules.enabled.default,
+    perConnectionMb: httpCacheRules.perConnectionMb.default,
+    totalMb: httpCacheRules.totalMb.default,
+    clearOnDatabaseLock: httpCacheRules.clearOnDatabaseLock.default,
   });
 
 /** Effective policy when retention is unsupported or disabled: never retains cookies. */
@@ -85,6 +98,42 @@ export function normalizeBrowserSessionRetention(
   } as BrowserSessionRetention;
 }
 
+/** Missing fields inherit the schema defaults; malformed values are rejected, never coerced. */
+export function normalizeBrowserHttpCacheSettings(
+  value: unknown,
+): BrowserHttpCacheSettings {
+  if (value === undefined) return { ...DEFAULT_BROWSER_HTTP_CACHE };
+  const row = record(value);
+  const result: Record<string, unknown> = { ...DEFAULT_BROWSER_HTTP_CACHE };
+  for (const [key, item] of Object.entries(row)) {
+    if (!Object.prototype.hasOwnProperty.call(httpCacheRules, key))
+      return invalid();
+    if (!validate(item, httpCacheRules[key as keyof typeof httpCacheRules]))
+      return invalid();
+    result[key] = item;
+  }
+  return result as unknown as BrowserHttpCacheSettings;
+}
+
+/** Sparse per-connection override; an empty override is dropped by the caller. */
+export function normalizeBrowserHttpCacheOverride(
+  value: unknown,
+): BrowserHttpCacheOverride {
+  const row = record(value);
+  const result: BrowserHttpCacheOverride = {};
+  for (const [key, item] of Object.entries(row)) {
+    if (key === "enabled" && validate(item, httpCacheRules.enabled))
+      result.enabled = item as boolean;
+    else if (
+      key === "perConnectionMb" &&
+      validate(item, httpCacheRules.perConnectionMb)
+    )
+      result.perConnectionMb = item as number;
+    else return invalid();
+  }
+  return result;
+}
+
 /** Do not materialize inherited values into saved connection records. */
 export function normalizeBrowserSessionOverrides(
   value: unknown,
@@ -94,6 +143,12 @@ export function normalizeBrowserSessionOverrides(
   if (row.version !== 1) return invalid();
   const result: Record<string, unknown> = { version: 1 };
   for (const [key, item] of Object.entries(row)) {
+    // Validated against $defs.httpCacheOverride; not yet a top-level schema property.
+    if (key === "httpCache") {
+      const cache = normalizeBrowserHttpCacheOverride(item);
+      if (Object.keys(cache).length) result[key] = cache;
+      continue;
+    }
     if (!Object.prototype.hasOwnProperty.call(schema.properties, key))
       return invalid();
     if (key === "sessionRetention") {
@@ -123,14 +178,23 @@ export function normalizeBrowserSessionOverrides(
 export function resolveConnectionBrowserSettings(
   globalSettings: unknown,
   overrides: unknown,
-): WebBrowserSettingsConfig & { sessionRetention: BrowserSessionRetention } {
+): WebBrowserSettingsConfig & {
+  sessionRetention: BrowserSessionRetention;
+  httpCache: BrowserHttpCacheSettings;
+} {
   const defaults = normalizeWebBrowserSettings(globalSettings);
   const connection = normalizeBrowserSessionOverrides(overrides);
   // Revalidate after inheritance, especially the combined autofill delay budget.
-  const merged = normalizeWebBrowserSettings({ ...defaults, ...connection });
+  // The cache override is sparse: missing fields inherit the global cache settings.
+  const merged = normalizeWebBrowserSettings({
+    ...defaults,
+    ...connection,
+    httpCache: { ...defaults.httpCache, ...connection?.httpCache },
+  });
   return {
     ...merged,
     sessionRetention: normalizeBrowserSessionRetention(merged.sessionRetention),
+    httpCache: normalizeBrowserHttpCacheSettings(merged.httpCache),
   };
 }
 

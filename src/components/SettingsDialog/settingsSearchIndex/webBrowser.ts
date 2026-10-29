@@ -133,6 +133,50 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Web Browser",
   },
   {
+    key: "webBrowser.httpCache.enabled",
+    label: "Use a page cache for web connections",
+    description:
+      "Keep a per-connection page cache on this device so later visits load faster. Follows site cache headers; never synced, backed up or exported.",
+    tags: [
+      "cache",
+      "page cache",
+      "http cache",
+      "disk cache",
+      "faster",
+      "speed",
+      "offline",
+      "local",
+    ],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
+    key: "webBrowser.httpCache.perConnectionMb",
+    label: "Page cache size per connection (MB)",
+    description: "Limit each connection's page cache from 16 to 1024 MB.",
+    tags: ["cache", "page cache", "size", "limit", "disk", "storage", "MB"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
+    key: "webBrowser.httpCache.totalMb",
+    label: "Total page cache size (MB)",
+    description:
+      "Limit all page caches together from 128 to 8192 MB; least recently used caches are removed first.",
+    tags: ["cache", "page cache", "total", "size", "limit", "disk", "storage"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
+    key: "webBrowser.httpCache.clearOnDatabaseLock",
+    label: "Clear cache on database lock",
+    description:
+      "Remove a database's page caches when it locks. Off keeps them on this device for faster loading after unlock.",
+    tags: ["cache", "page cache", "lock", "vault", "clear", "privacy", "wipe"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "webBrowser.manualFormSubmit",
     label: "Require manual sign-in submission",
     description:

@@ -878,6 +878,44 @@ describe("Web Browser settings", () => {
     });
   });
 
+  it("saves global page-cache settings under webBrowser.httpCache without probing usage when unavailable", () => {
+    const { update } = setup("browser", {}, true, {
+      memory: false,
+      encryptedDatabase: false,
+    });
+    const enabled = screen.getByRole("checkbox", {
+      name: /^Use a page cache for web connections/,
+    });
+    expect(enabled).toBeChecked();
+    expect(
+      screen.getByText("Page cache status is unavailable in this build."),
+    ).toBeVisible();
+    const total = screen.getByRole("spinbutton", {
+      name: "Total page cache size (MB)",
+    });
+    fireEvent.change(total, { target: { value: "2048" } });
+    fireEvent.blur(total);
+    expect(update.mock.lastCall?.[0].webBrowser.httpCache).toEqual({
+      enabled: true,
+      perConnectionMb: 128,
+      totalMb: 2048,
+      clearOnDatabaseLock: false,
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /^Clear cache on database lock/ }),
+    );
+    expect(
+      update.mock.lastCall?.[0].webBrowser.httpCache.clearOnDatabaseLock,
+    ).toBe(true);
+    fireEvent.click(enabled);
+    expect(update.mock.lastCall?.[0].webBrowser.httpCache.enabled).toBe(false);
+    expect(
+      screen.getByRole("spinbutton", {
+        name: "Page cache size per connection (MB)",
+      }),
+    ).toBeDisabled();
+  });
+
   it("saves requested cookie retention and expiry without claiming runtime support", () => {
     const { update } = setup();
     expect(

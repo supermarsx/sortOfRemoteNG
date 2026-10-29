@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BrowserSessionSection from "../../src/components/connectionEditor/httpOptions/BrowserSessionSection";
 import BrowserSessionRetentionFields from "../../src/components/SettingsDialog/sections/webBrowser/BrowserSessionRetentionFields";
 import type { Mgr } from "../../src/components/connectionEditor/httpOptions/types";
@@ -518,5 +518,173 @@ describe("browser connection overrides", () => {
       screen.getByRole("button", { name: "Reset browser session overrides" }),
     );
     expect(change.mock.lastCall?.[0].browserSession).toBeUndefined();
+  });
+
+  describe("saved sign-in and page cache", () => {
+    const supportedCapabilities = {
+      memory: true,
+      encryptedDatabase: true,
+      policyExpiration: true,
+      clearOnDatabaseLock: true,
+    };
+    function mockNative(
+      handlers: Record<string, (args: unknown) => unknown>,
+      capabilities: Record<string, unknown> = supportedCapabilities,
+    ) {
+      const invoke = vi.fn(async (command: string, args?: unknown) => {
+        if (command === "origin_browser_retention_capabilities")
+          return capabilities;
+        const handler = handlers[command];
+        if (!handler) throw `command ${command} not found`;
+        return handler(args);
+      });
+      vi.spyOn(tauriInvoke, "getInvoke").mockResolvedValue(
+        invoke as unknown as tauriInvoke.TauriInvoke,
+      );
+      return invoke;
+    }
+    afterEach(() => vi.restoreAllMocks());
+
+    it("shows the sign-in and page-cache wording", () => {
+      mockNative({});
+      setup();
+      expect(
+        screen.getByText(
+          "Saved sign-in (cookies, encrypted in this database, 7-day idle / 30-day max)",
+        ),
+      ).toBeVisible();
+      expect(
+        screen.getByText(
+          "Page cache (this device only, never synced, follows site cache rules)",
+        ),
+      ).toBeVisible();
+    });
+
+    it("clears the page cache and saved sign-in separately for this connection", async () => {
+      const invoke = mockNative({
+        origin_browser_clear_connection_data: () => ({
+          cookiesCleared: true,
+          cacheCleared: true,
+          cachePendingRestart: false,
+        }),
+      });
+      setup();
+      fireEvent.click(screen.getByRole("button", { name: "Clear page cache" }));
+      expect(await screen.findByText("Page cache cleared.")).toBeVisible();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Clear saved sign-in" }),
+      );
+      expect(await screen.findByText("Saved sign-in cleared.")).toBeVisible();
+      expect(
+        invoke.mock.calls.filter(
+          ([command]) => command === "origin_browser_clear_connection_data",
+        ),
+      ).toEqual([
+        [
+          "origin_browser_clear_connection_data",
+          {
+            request: {
+              connectionId: "connection",
+              cookies: false,
+              cache: true,
+            },
+          },
+        ],
+        [
+          "origin_browser_clear_connection_data",
+          {
+            request: {
+              connectionId: "connection",
+              cookies: true,
+              cache: false,
+            },
+          },
+        ],
+      ]);
+    });
+
+    it("asks to close the tab first while a browser session is open", async () => {
+      mockNative({
+        origin_browser_clear_connection_data: () => {
+          throw "browser-session-open";
+        },
+      });
+      setup();
+      fireEvent.click(screen.getByRole("button", { name: "Clear page cache" }));
+      expect(
+        await screen.findByText("Close this connection's tab first."),
+      ).toBeVisible();
+    });
+
+    it("degrades to unavailable before the native commands exist, without writing overrides", async () => {
+      mockNative({});
+      const { change } = setup();
+      const toggle = screen.getByRole("combobox", {
+        name: "Use page cache for this connection",
+      });
+      expect(toggle).toHaveTextContent("Use app default (on)");
+      expect(toggle).toBeDisabled();
+      expect(
+        screen.getByText("Page cache status is unavailable in this build."),
+      ).toBeVisible();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Clear saved sign-in" }),
+      );
+      expect(
+        await screen.findByText("Not available in this build yet."),
+      ).toBeVisible();
+      expect(change).not.toHaveBeenCalled();
+    });
+
+    it("writes a sparse page-cache override once native reports the capability, and shows usage", async () => {
+      const invoke = mockNative(
+        {
+          origin_browser_http_cache_usage: () => ({
+            available: true,
+            bytes: 3 * 1024 * 1024,
+            limitBytes: 128 * 1024 * 1024,
+          }),
+        },
+        { ...supportedCapabilities, httpDiskCache: { available: true } },
+      );
+      shared.settings = { webBrowser: { httpCache: { enabled: false } } };
+      const { change } = setup();
+      expect(
+        await screen.findByText(
+          "Page cache for this connection: 3.0 MB of 128 MB.",
+        ),
+      ).toBeVisible();
+      expect(invoke).toHaveBeenCalledWith("origin_browser_http_cache_usage", {
+        request: { connectionId: "connection" },
+      });
+      const label = "Use page cache for this connection";
+      await waitFor(() =>
+        expect(screen.getByRole("combobox", { name: label })).toBeEnabled(),
+      );
+      expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
+        "Use app default (off)",
+      );
+      choose(label, "On");
+      expect(change.mock.lastCall?.[0].browserSession).toEqual({
+        version: 1,
+        httpCache: { enabled: true },
+      });
+      choose(label, "Use app default (off)");
+      expect(change.mock.lastCall?.[0].browserSession).toBeUndefined();
+    });
+
+    it("explains an engine without disk-cache support", async () => {
+      mockNative(
+        {},
+        {
+          ...supportedCapabilities,
+          httpDiskCache: { available: false, reason: "engine-unsupported" },
+        },
+      );
+      setup();
+      expect(
+        await screen.findByText(/does not support a page cache on disk yet/),
+      ).toBeVisible();
+    });
   });
 });
