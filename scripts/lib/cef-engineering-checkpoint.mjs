@@ -2,8 +2,14 @@
 import { createHash } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createReadStream, createWriteStream } from "node:fs";
 import {
+  constants as fsConstants,
+  createReadStream,
+  createWriteStream,
+} from "node:fs";
+import {
+  chmod,
+  copyFile,
   lstat,
   mkdir,
   open,
@@ -18,6 +24,7 @@ import {
   stat,
   symlink,
   unlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { finished, pipeline } from "node:stream/promises";
@@ -570,6 +577,148 @@ export async function assertNoGeneratedLinks(out) {
     } else assert(info.isFile(), "Unreviewed Linux generated file type");
   }
   return {};
+}
+
+// The pinned Debian bullseye sysroots ship Mesa DRI drivers as hard links
+// (one inode, many names). Owned source metadata requires every source file
+// to have exactly one link, because restoring metadata through one name would
+// change the shared inode under its siblings. Before the source is recorded,
+// each extra name inside these exact sysroot directories becomes an
+// independent copy with the same bytes, mode and timestamps. A link group that
+// reaches outside its sysroot fails closed; nothing else in the tree changes.
+export const LINUX_SYSROOT_DIRECTORIES = Object.freeze([
+  "debian_bullseye_arm64-sysroot",
+  "debian_bullseye_amd64-sysroot",
+  "debian_bullseye_i386-sysroot",
+]);
+async function sysrootFileSha(file) {
+  const hash = createHash("sha256");
+  for await (const block of createReadStream(file)) hash.update(block);
+  return hash.digest("hex");
+}
+async function sysrootHardLinkGroups(root) {
+  const groups = new Map(),
+    pending = [root];
+  let visited = 0;
+  while (pending.length) {
+    const current = pending.pop();
+    const entries = await readdir(current, { withFileTypes: true });
+    visited += entries.length;
+    assert(visited <= 300000, "Linux sysroot inventory bound");
+    for (const entry of entries) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(file);
+      else if (entry.isFile()) {
+        const info = await lstat(file, { bigint: true });
+        assert(info.isFile(), "Linux sysroot member changed");
+        if (info.nlink > 1n) {
+          const key = `${info.dev}:${info.ino}`;
+          const group = groups.get(key) ?? { nlink: info.nlink, files: [] };
+          assert(group.nlink === info.nlink, "Linux sysroot member changed");
+          group.files.push(file);
+          groups.set(key, group);
+        }
+      }
+    }
+  }
+  return [...groups.values()].map((group) => {
+    group.files.sort();
+    assert(
+      BigInt(group.files.length) === group.nlink,
+      "Linux sysroot hard link outside its sysroot",
+    );
+    return group.files;
+  });
+}
+async function separateSysrootFile(file, digest) {
+  const before = await lstat(file, { bigint: true });
+  assert(before.isFile() && before.nlink > 1n, "Linux sysroot member changed");
+  const copy = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.sorng-separate`,
+  );
+  await copyFile(file, copy, fsConstants.COPYFILE_EXCL);
+  try {
+    await chmod(copy, Number(before.mode & 0o7777n));
+    // Tar extraction leaves whole-second times, which a double holds exactly;
+    // the bigint readback below rejects any rounding.
+    await utimes(
+      copy,
+      Number(before.atimeNs) / 1e9,
+      Number(before.mtimeNs) / 1e9,
+    );
+    const made = await lstat(copy, { bigint: true });
+    assert(
+      made.isFile() &&
+        made.nlink === 1n &&
+        made.size === before.size &&
+        made.mode === before.mode &&
+        made.mtimeNs === before.mtimeNs &&
+        made.uid === before.uid &&
+        (await sysrootFileSha(copy)) === digest,
+      "Linux sysroot copy differs",
+    );
+    await rename(copy, file);
+  } catch (error) {
+    await rm(copy, { force: true });
+    throw error;
+  }
+  const after = await lstat(file, { bigint: true });
+  assert(
+    after.isFile() &&
+      after.nlink === 1n &&
+      after.ino !== before.ino &&
+      after.size === before.size &&
+      after.mode === before.mode &&
+      after.mtimeNs === before.mtimeNs,
+    "Linux sysroot copy differs",
+  );
+}
+export async function separateLinuxSysrootHardLinks(chromium) {
+  const result = [];
+  for (const directory of LINUX_SYSROOT_DIRECTORIES) {
+    const root = path.join(chromium, "build/linux", directory);
+    let info;
+    try {
+      info = await lstat(root);
+    } catch (error) {
+      if (
+        error?.code === "ENOENT" &&
+        directory !== "debian_bullseye_arm64-sysroot"
+      ) {
+        result.push({ directory, present: false });
+        continue;
+      }
+      throw error;
+    }
+    assert(
+      info.isDirectory() && !info.isSymbolicLink(),
+      "Linux sysroot directory kind",
+    );
+    await noLinks(root);
+    const groups = await sysrootHardLinkGroups(root);
+    let separated = 0;
+    for (const files of groups) {
+      const digest = await sysrootFileSha(files[0]);
+      for (const file of files.slice(1)) {
+        await separateSysrootFile(file, digest);
+        separated++;
+      }
+      const first = await lstat(files[0], { bigint: true });
+      assert(first.nlink === 1n, "Linux sysroot hard link remains");
+    }
+    assert(
+      (await sysrootHardLinkGroups(root)).length === 0,
+      "Linux sysroot hard link remains",
+    );
+    result.push({
+      directory,
+      present: true,
+      groups: groups.length,
+      separated,
+    });
+  }
+  return result;
 }
 
 // Evidence only: links remain forbidden by the independent archive reader.
@@ -1533,6 +1682,48 @@ function sourceBoundFailure(value, mode) {
   };
 }
 
+// Diagnostic only: the owned source file and predicate that failed the
+// identity check, with the candidate projected like any source candidate.
+function sourceFileFailure(value, mode) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join() !== "candidate,mode,predicate,stage" ||
+    value.mode !== mode ||
+    value.stage !== "file-identity" ||
+    !["kind", "nlink", "size", "stamp", "ctime", "descriptor"].includes(
+      value.predicate,
+    ) ||
+    Buffer.byteLength(JSON.stringify(value)) > 2048
+  )
+    return null;
+  const candidate = value.candidate;
+  if (
+    !candidate ||
+    typeof candidate !== "object" ||
+    Array.isArray(candidate) ||
+    !["bytes,sha256", "bytes,name,sha256"].includes(
+      Object.keys(candidate).sort().join(),
+    ) ||
+    !Number.isSafeInteger(candidate.bytes) ||
+    candidate.bytes <= 0 ||
+    !sourcePathFailure({
+      mode,
+      phase: "filesystem-member",
+      predicate: "unclassified",
+      ...candidate,
+    })
+  )
+    return null;
+  return {
+    mode: value.mode,
+    stage: value.stage,
+    predicate: value.predicate,
+    candidate: { ...candidate },
+  };
+}
+
 export function archiveFailureRecord(
   stdout,
   exitCode,
@@ -1548,7 +1739,8 @@ export function archiveFailureRecord(
     externalFacts,
     sourceFacts,
     sourceIoFacts,
-    sourceBoundFacts;
+    sourceBoundFacts,
+    sourceFileFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1643,6 +1835,35 @@ export function archiveFailureRecord(
         sourceBoundFacts = {
           ...(bound && !invalid ? { sourceBoundFailure: bound } : {}),
           ...(invalid ? { sourceBoundFailureInvalid: true } : {}),
+        };
+      }
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "source-file-identity" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        let file,
+          invalid = false;
+        if (Object.hasOwn(value, "sourceFileFailure")) {
+          try {
+            file = sourceFileFailure(value.sourceFileFailure, sourceMode);
+            invalid = file === null;
+          } catch {
+            invalid = true;
+          }
+          delete value.sourceFileFailure;
+        }
+        if (Object.hasOwn(value, "sourceFileFailureInvalid")) {
+          invalid = true;
+          delete value.sourceFileFailureInvalid;
+        }
+        sourceFileFacts = {
+          ...(file && !invalid ? { sourceFileFailure: file } : {}),
+          ...(invalid ? { sourceFileFailureInvalid: true } : {}),
         };
       }
       if (
@@ -1765,6 +1986,7 @@ export function archiveFailureRecord(
       } else {
         sourceIoFacts = undefined;
         sourceBoundFacts = undefined;
+        sourceFileFacts = undefined;
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -1779,6 +2001,7 @@ export function archiveFailureRecord(
     ...sourceFacts,
     ...sourceIoFacts,
     ...sourceBoundFacts,
+    ...sourceFileFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode
@@ -3362,6 +3585,7 @@ export function validateSeal(seal, expected, target = TARGET) {
 const AFTER_GN_PHASES = new Set([
   "sdk-preflight",
   "siso-pin",
+  "sysroot-links",
   "sdk-roots",
   "sdk-links",
   "recipe-write",

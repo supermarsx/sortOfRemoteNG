@@ -12917,3 +12917,207 @@ print('case member PASS')
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /case member PASS/);
 });
+
+test("source-file-identity reports the failing source file and predicate, projected like other source candidates", () => {
+  const result = python(
+    String.raw`import importlib.util,os,pathlib,sys,tempfile,hashlib
+spec=importlib.util.spec_from_file_location('file_identity',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+root=pathlib.Path(tempfile.mkdtemp()).resolve()
+(root/'src').mkdir()
+def make(name,link=None):
+ p=root/name;p.write_bytes(b'driver')
+ if link:os.link(p,root/link)
+ s=os.stat(p);return {'path':name,'kind':'file','stamp':m.stamp(s),'ctimeNs':s.st_ctime_ns}
+def fail(row,mode='source-record'):
+ with m.source_io_scope(mode):
+  try:m.source_hash(root,row,m.Budget(5))
+  except m.CheckpointError as error:
+   assert error.args==('source-file-identity',);return error
+ raise AssertionError('admitted')
+def candidate(name):
+ raw=name.encode();return {'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+row=make('src/a_dri.so','src/b_dri.so')
+error=fail(row)
+assert m.source_file_failure_fields(error,'source-record')=={'sourceFileFailure':{'mode':'source-record','stage':'file-identity','predicate':'nlink','candidate':{**candidate('src/a_dri.so'),'name':'src/a_dri.so'}}}
+assert m.source_file_failure_fields(error,'source-apply')=={'sourceFileFailureInvalid':True}
+assert m.source_file_failure_fields(error,'pack')=={}
+os.unlink(root/'src/b_dri.so')
+row=make('src/c.so');row['stamp'][1]+=1
+assert m.source_file_failure_fields(fail(row,'source-verify'),'source-verify')['sourceFileFailure']['predicate']=='stamp'
+row=make('src/d.so');row['ctimeNs']+=1
+assert m.source_file_failure_fields(fail(row,'source-apply'),'source-apply')['sourceFileFailure']['predicate']=='ctime'
+row=make('src/e~private.so');row['stamp'][1]+=1
+facts=m.source_file_failure_fields(fail(row),'source-record')['sourceFileFailure']
+assert facts['candidate']==candidate('src/e~private.so')
+if os.name!='nt':assert m.source_hash(root,make('src/f.so'),m.Budget(5))==hashlib.sha256(b'driver').hexdigest()
+error=m.source_file_error('src/g.so','nlink')
+assert m.source_file_failure_fields(error,'source-record')=={'sourceFileFailureInvalid':True}
+error=fail(make('src/h.so','src/i.so'))
+error.sourceFileFailure={**error.sourceFileFailure,'predicate':'other'}
+assert m.source_file_failure_fields(error,'source-record')=={'sourceFileFailureInvalid':True}
+other=m.CheckpointError('source-file-changed');other.sourceFileFailure=error.sourceFileFailure
+assert m.source_file_failure_fields(other,'source-record')=={}
+print('file identity PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /file identity PASS/);
+});
+
+test("source-file-identity diagnostic survives the Node failure record only in its exact shape", async () => {
+  const { archiveFailureRecord } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  const name = "src/build/linux/debian_bullseye_arm64-sysroot/usr/a_dri.so";
+  const facts = {
+    mode: "source-record",
+    stage: "file-identity",
+    predicate: "nlink",
+    candidate: {
+      bytes: Buffer.byteLength(name),
+      sha256: hashObject("sha256").update(name).digest("hex"),
+      name,
+    },
+  };
+  const record = (detail, sourceMode = "source-record", extra = {}) =>
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: "source-file-identity",
+        ...extra,
+        ...(detail === undefined ? {} : { sourceFileFailure: detail }),
+      }),
+      1,
+      { sourceMode },
+    );
+  assert.deepEqual(record(facts), {
+    error: "source-file-identity",
+    sourceFileFailure: facts,
+    exitCode: 1,
+  });
+  const { name: _omitted, ...hashed } = facts.candidate;
+  assert.deepEqual(record({ ...facts, candidate: hashed }).sourceFileFailure, {
+    ...facts,
+    candidate: hashed,
+  });
+  assert.deepEqual(record(undefined), {
+    error: "source-file-identity",
+    exitCode: 1,
+  });
+  assert.deepEqual(
+    record(undefined, "source-record", { sourceFileFailureInvalid: true }),
+    {
+      error: "source-file-identity",
+      sourceFileFailureInvalid: true,
+      exitCode: 1,
+    },
+  );
+  for (const detail of [
+    null,
+    [],
+    {},
+    { ...facts, mode: "source-verify" },
+    { ...facts, stage: "file-read" },
+    { ...facts, predicate: "other" },
+    { ...facts, extra: "PRIVATE" },
+    { ...facts, candidate: { ...facts.candidate, bytes: 1 } },
+    { ...facts, candidate: { ...facts.candidate, name: "src/other.so" } },
+    { ...facts, candidate: { ...facts.candidate, name: "/etc/passwd" } },
+    { ...facts, candidate: { ...hashed, sha256: "A".repeat(64) } },
+  ])
+    assert.deepEqual(record(detail), {
+      error: "source-file-identity",
+      sourceFileFailureInvalid: true,
+      exitCode: 1,
+    });
+  assert.deepEqual(
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: "source-file-changed",
+        sourceFileFailure: facts,
+      }),
+      1,
+      { sourceMode: "source-record" },
+    ),
+    { error: "unknown", exitCode: 1 },
+  );
+  assert.deepEqual(record(facts, "pack"), { error: "unknown", exitCode: 1 });
+});
+
+test("pinned Linux sysroot hard links become single-link copies with the same bytes and times", async (t) => {
+  const { separateLinuxSysrootHardLinks, LINUX_SYSROOT_DIRECTORIES } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  const { link, utimes } = await import("node:fs/promises");
+  assert.deepEqual(LINUX_SYSROOT_DIRECTORIES, [
+    "debian_bullseye_arm64-sysroot",
+    "debian_bullseye_amd64-sysroot",
+    "debian_bullseye_i386-sysroot",
+  ]);
+  const temp = await realpath(await mkdtemp(path.join(tmpdir(), "sysroot-")));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const chromium = path.join(temp, "src");
+  const linux = path.join(chromium, "build/linux");
+  const arm = path.join(linux, "debian_bullseye_arm64-sysroot");
+  const dri = path.join(arm, "usr/lib/aarch64-linux-gnu/dri");
+  await mkdir(dri, { recursive: true });
+  await mkdir(path.join(linux, "debian_bullseye_i386-sysroot/usr"), {
+    recursive: true,
+  });
+  const when = new Date(1_700_000_000_000);
+  await writeFile(path.join(dri, "armada-drm_dri.so"), "mesa");
+  await utimes(path.join(dri, "armada-drm_dri.so"), when, when);
+  for (const name of ["msm_dri.so", "lima_dri.so"])
+    await link(path.join(dri, "armada-drm_dri.so"), path.join(dri, name));
+  await writeFile(path.join(dri, "single_dri.so"), "one");
+  await writeFile(path.join(arm, "outside-group.so"), "outer");
+  const before = await lstat(path.join(dri, "msm_dri.so"), { bigint: true });
+  assert.equal(before.nlink, 3n);
+  const result = await separateLinuxSysrootHardLinks(chromium);
+  assert.deepEqual(result, [
+    {
+      directory: "debian_bullseye_arm64-sysroot",
+      present: true,
+      groups: 1,
+      separated: 2,
+    },
+    { directory: "debian_bullseye_amd64-sysroot", present: false },
+    {
+      directory: "debian_bullseye_i386-sysroot",
+      present: true,
+      groups: 0,
+      separated: 0,
+    },
+  ]);
+  const inodes = new Set();
+  for (const name of ["armada-drm_dri.so", "msm_dri.so", "lima_dri.so"]) {
+    const info = await lstat(path.join(dri, name), { bigint: true });
+    assert.equal(info.nlink, 1n);
+    assert.equal(info.mtimeNs, before.mtimeNs);
+    assert.equal(info.size, before.size);
+    inodes.add(info.ino);
+    assert.equal(await readFile(path.join(dri, name), "utf8"), "mesa");
+  }
+  assert.equal(inodes.size, 3);
+  assert.deepEqual((await readdir(dri)).sort(), [
+    "armada-drm_dri.so",
+    "lima_dri.so",
+    "msm_dri.so",
+    "single_dri.so",
+  ]);
+  assert.equal((await separateLinuxSysrootHardLinks(chromium))[0].separated, 0);
+  // A link group reaching outside its sysroot fails closed, untouched.
+  await link(path.join(arm, "outside-group.so"), path.join(temp, "escape.so"));
+  await assert.rejects(
+    separateLinuxSysrootHardLinks(chromium),
+    /hard link outside its sysroot/,
+  );
+  assert.equal(
+    (await lstat(path.join(arm, "outside-group.so"), { bigint: true })).nlink,
+    2n,
+  );
+  await rm(arm, { recursive: true });
+  await assert.rejects(separateLinuxSysrootHardLinks(chromium), {
+    code: "ENOENT",
+  });
+});

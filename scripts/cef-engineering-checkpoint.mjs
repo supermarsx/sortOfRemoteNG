@@ -36,6 +36,7 @@ import {
   checkpointHost,
   checkpointCompileArguments,
   linuxArmRecipe,
+  separateLinuxSysrootHardLinks,
   WORKFLOW,
   authority,
   sdkProbeAuthority,
@@ -421,6 +422,17 @@ async function checkpointMain(argv, env, observer) {
                   "SDK outside verified Developer path",
                 );
               });
+            if (profile.platform === "linux") {
+              // Before linuxArmRecipe and source-record: the pinned sysroots'
+              // hard links become single-link copies (same bytes and times).
+              const separated = await afterGnPhase("sysroot-links", () =>
+                separateLinuxSysrootHardLinks(context.chromium),
+              );
+              checkpointLog(
+                console.log,
+                `[cef-engineering-checkpoint] sysroot-links=${canonical(separated)}`,
+              );
+            }
             const linuxRecipe =
               profile.platform === "linux"
                 ? await afterGnPhase("sdk-roots", () =>

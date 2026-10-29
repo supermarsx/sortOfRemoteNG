@@ -154,6 +154,57 @@ def source_bound_failure_fields(error, mode):
         return {'sourceBoundFailureInvalid':True}
 
 
+# Diagnostic only: which owned source file failed the identity check and which
+# predicate failed. The path is projected like every other source candidate.
+SOURCE_FILE_PREDICATES = ('kind', 'nlink', 'size', 'stamp', 'ctime', 'descriptor')
+
+
+def source_file_value(value, mode):
+    require(type(value) is dict and set(value) == {'mode','stage','predicate','candidate'} and
+            value['mode'] == mode and mode in SOURCE_IO_MODES and value['stage'] == 'file-identity' and
+            value['predicate'] in SOURCE_FILE_PREDICATES, 'diagnostic')
+    item = value['candidate']
+    require(type(item) is dict and set(item) in ({'bytes','sha256'},{'bytes','sha256','name'}) and
+            type(item['bytes']) is int and 0 < item['bytes'] <= 4*1024**2 and
+            isinstance(item['sha256'],str) and re.fullmatch(r'[a-f0-9]{64}',item['sha256']) is not None, 'diagnostic')
+    require('name' not in item or source_path_name(item['name']) and len(item['name'].encode()) == item['bytes'] and
+            hashlib.sha256(item['name'].encode()).hexdigest() == item['sha256'], 'diagnostic')
+    require(len(json.dumps(value).encode()) <= 2048, 'diagnostic')
+    return {'mode':value['mode'], 'stage':value['stage'], 'predicate':value['predicate'], 'candidate':dict(item)}
+
+
+def source_file_error(name, predicate):
+    error = CheckpointError('source-file-identity')
+    try:
+        context = SOURCE_IO_CONTEXT.get()
+        require(type(context) is tuple and len(context) == 2 and context[0] in SOURCE_IO_MODES and
+                isinstance(name, str) and all(part not in ('', '.', '..') for part in name.split('/')), 'diagnostic')
+        raw = name.encode()
+        error.sourceFileFailure = source_file_value({'mode':context[0], 'stage':'file-identity', 'predicate':predicate,
+            'candidate':{'bytes':len(raw), 'sha256':hashlib.sha256(raw).hexdigest(),
+                         **({'name':name} if source_path_name(name) else {})}}, context[0])
+    except Exception:
+        try:
+            error.sourceFileFailureInvalid = True
+        except Exception:
+            pass
+    return error
+
+
+def source_file_failure_fields(error, mode):
+    if mode not in SOURCE_IO_MODES or type(error) is not CheckpointError or str(error) != 'source-file-identity':
+        return {}
+    try:
+        if error.__dict__.get('sourceFileFailureInvalid') is True:
+            return {'sourceFileFailureInvalid':True}
+        value = error.__dict__.get('sourceFileFailure')
+        if value is None:
+            return {}
+        return {'sourceFileFailure':source_file_value(value, mode)}
+    except Exception:
+        return {'sourceFileFailureInvalid':True}
+
+
 MAX_BYTES = 32 * 1024**3
 CHUNK_BYTES = 1024**3
 MAX_RAW = 256 * 1024**3
@@ -1488,14 +1539,19 @@ def source_admin(root, name, policy, budget):
 
 def source_hash(root, row, budget, policy=None):
     p = source_io_call('file-path-stat', root / row['path'], lambda: safe(root / row['path']));before = source_io_call('file-path-stat', p, p.stat)
-    require(stat.S_ISREG(before.st_mode) and (before.st_nlink > 0 if policy is not None and policy.get('external') else before.st_nlink == 1) and
-            before.st_size <= SOURCE_MAX_FILE and stamp(before) == row['stamp'] and before.st_ctime_ns == row['ctimeNs'], 'source-file-identity')
+    for predicate, ok in (('kind', lambda: stat.S_ISREG(before.st_mode)),
+                          ('nlink', lambda: before.st_nlink > 0 if policy is not None and policy.get('external') else before.st_nlink == 1),
+                          ('size', lambda: before.st_size <= SOURCE_MAX_FILE), ('stamp', lambda: stamp(before) == row['stamp']),
+                          ('ctime', lambda: before.st_ctime_ns == row['ctimeNs'])):
+        if not ok():
+            raise source_file_error(row['path'], predicate)
     if policy is not None and policy.get('mac'):
         require(source_birth(before, policy) == row['birthNs'] and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
     stream = source_io_call('file-open', p, lambda: p.open('rb'));primary = None;reader = HashedReader(stream, budget);count = 0
     try:
-        require(opened_identity_matches(row['stamp'], source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) and
-                source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno())).st_ctime_ns == before.st_ctime_ns, 'source-file-identity')
+        if not (opened_identity_matches(row['stamp'], source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) and
+                source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno())).st_ctime_ns == before.st_ctime_ns):
+            raise source_file_error(row['path'], 'descriptor')
         if policy is not None and policy.get('mac'):
             require(source_local(os.fstat(stream.fileno()), policy) == source_local(before, policy), 'source-mac-file-identity')
         while True:
@@ -2087,6 +2143,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
 
         raise SystemExit(1)
