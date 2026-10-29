@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import GeneralSection from "../../src/components/connectionEditor/GeneralSection";
 import SSHOptions from "../../src/components/connectionEditor/SSHOptions";
@@ -157,6 +157,139 @@ describe("ConnectionEditor subcomponents", () => {
     } finally {
       consoleErrorSpy.mockRestore();
     }
+  });
+
+  describe("SSH password field", () => {
+    const makeManager = (
+      password = "stored-password",
+    ): ManagedSshSecretsController => ({
+      passwordInputRef: { current: null },
+      passphraseInputRef: { current: null },
+      privateKeyInputRef: { current: null },
+      hasPassword: password.length > 0,
+      hasPassphrase: false,
+      hasPrivateKey: false,
+      handlePasswordChange: vi.fn(),
+      handlePassphraseChange: vi.fn(),
+      handlePrivateKeyChange: vi.fn(),
+      getPassword: () => password,
+      getPassphrase: () => "",
+      getPrivateKey: () => "",
+      clearAll: vi.fn(),
+    });
+
+    it("shows the saved password masked for SSH connections without a stored authType", () => {
+      render(
+        <SSHOptions
+          formData={{ ...baseData, id: "ssh-1", authType: undefined }}
+          setFormData={() => {}}
+          sshSecretManager={makeManager()}
+          sections={["authentication"]}
+        />,
+      );
+      const input = screen.getByTestId("editor-password");
+      expect(input).toHaveValue("stored-password");
+      expect(input).toHaveAttribute("type", "password");
+      expect(screen.getAllByRole("combobox")[0]).toHaveTextContent("Password");
+    });
+
+    it("reveals the saved password with the eye toggle", () => {
+      render(
+        <SSHOptions
+          formData={{ ...baseData, id: "ssh-1", authType: "password" }}
+          setFormData={() => {}}
+          sshSecretManager={makeManager()}
+          sections={["authentication"]}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+      expect(screen.getByTestId("editor-password")).toHaveAttribute(
+        "type",
+        "text",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+      expect(screen.getByTestId("editor-password")).toHaveAttribute(
+        "type",
+        "password",
+      );
+    });
+
+    it("sends a replacement password through the managed secret save path", () => {
+      const manager = makeManager();
+      const setFormData = vi.fn();
+      render(
+        <SSHOptions
+          formData={{ ...baseData, id: "ssh-1", authType: "password" }}
+          setFormData={setFormData}
+          sshSecretManager={manager}
+          sections={["authentication"]}
+        />,
+      );
+      fireEvent.change(screen.getByTestId("editor-password"), {
+        target: { value: "replacement" },
+      });
+      expect(manager.handlePasswordChange).toHaveBeenCalledWith("replacement");
+      expect(setFormData).not.toHaveBeenCalled();
+    });
+
+    it("hides the password field for key authentication", () => {
+      render(
+        <SSHOptions
+          formData={{ ...baseData, authType: "key" }}
+          setFormData={() => {}}
+          sshSecretManager={makeManager()}
+          sections={["authentication"]}
+        />,
+      );
+      expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText(/BEGIN PRIVATE KEY/),
+      ).toBeInTheDocument();
+    });
+
+    it("explains that a vault credential supplies the password", () => {
+      const { rerender } = render(
+        <SSHOptions
+          formData={{ ...baseData, authType: "password" }}
+          setFormData={() => {}}
+          sshSecretManager={makeManager()}
+          sections={["authentication"]}
+        />,
+      );
+      expect(
+        screen.queryByTestId("ssh-password-vault-note"),
+      ).not.toBeInTheDocument();
+      rerender(
+        <SSHOptions
+          formData={{
+            ...baseData,
+            authType: "password",
+            credentialSource: {
+              kind: "vault",
+              credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            },
+          }}
+          setFormData={() => {}}
+          sshSecretManager={makeManager("")}
+          sections={["authentication"]}
+        />,
+      );
+      expect(screen.getByTestId("ssh-password-vault-note")).toHaveTextContent(
+        /database vault credential selected in Credential source/,
+      );
+      expect(screen.getByTestId("editor-password")).toBeInTheDocument();
+    });
+
+    it("leaves non-SSH protocols without a stored authType unchanged", () => {
+      render(
+        <SSHOptions
+          formData={{ ...baseData, protocol: "rdp", authType: undefined }}
+          setFormData={() => {}}
+          sections={["authentication"]}
+        />,
+      );
+      expect(screen.queryByText("Password")).not.toBeInTheDocument();
+    });
   });
 
   it("adapts SSH core, terminal, and connection controls without overlap", () => {

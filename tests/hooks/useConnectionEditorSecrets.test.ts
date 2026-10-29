@@ -315,4 +315,69 @@ describe("useConnectionEditor SSH secret handling", () => {
     });
     expect(mockToastSuccess).toHaveBeenCalledTimes(1);
   });
+
+  it("resolves a missing SSH authType the way the runtime does", async () => {
+    const { authType: _omit, ...withoutAuthType } = baseConnection;
+    const passwordOnly = { ...withoutAuthType, privateKey: "" };
+    const { result: password } = renderHook(() =>
+      useConnectionEditor(passwordOnly, true, vi.fn()),
+    );
+    await waitFor(() =>
+      expect(password.current.formData.authType).toBe("password"),
+    );
+    // Resolving the auth type alone is not an edit, so nothing is written.
+    await act(async () => {
+      await password.current.handleSubmit({
+        preventDefault: vi.fn(),
+      } as unknown as React.FormEvent);
+    });
+    expect(mockDispatchAndFlush).not.toHaveBeenCalled();
+
+    const { result: key } = renderHook(() =>
+      useConnectionEditor(withoutAuthType, true, vi.fn()),
+    );
+    await waitFor(() => expect(key.current.formData.authType).toBe("key"));
+
+    const vault = {
+      ...withoutAuthType,
+      credentialSource: {
+        kind: "vault" as const,
+        credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      },
+    };
+    const { result: linked } = renderHook(() =>
+      useConnectionEditor(vault, true, vi.fn()),
+    );
+    await waitFor(() =>
+      expect(linked.current.formData.authType).toBe("password"),
+    );
+  });
+
+  it("saves a replacement SSH password for a connection without authType", async () => {
+    const { authType: _omit, ...withoutAuthType } = baseConnection;
+    const { result } = renderHook(() =>
+      useConnectionEditor(
+        { ...withoutAuthType, privateKey: "", passphrase: "" },
+        true,
+        vi.fn(),
+      ),
+    );
+    await waitFor(() =>
+      expect(result.current.formData.authType).toBe("password"),
+    );
+    expect(result.current.sshSecrets.getPassword()).toBe("stored-password");
+    act(() => result.current.sshSecrets.handlePasswordChange("new-password"));
+    await act(async () => {
+      await result.current.handleSubmit({
+        preventDefault: vi.fn(),
+      } as unknown as React.FormEvent);
+    });
+    expect(mockDispatchAndFlush).toHaveBeenCalledWith({
+      type: "UPDATE_CONNECTION",
+      payload: expect.objectContaining({
+        authType: "password",
+        password: "new-password",
+      }),
+    });
+  });
 });

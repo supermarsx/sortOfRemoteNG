@@ -1237,6 +1237,17 @@ export function useConnectionEditor(
         privateKey: isSshConnection ? "" : connection.privateKey || "",
         passphrase: isSshConnection ? "" : connection.passphrase || "",
         totpSecret: isSshConnection ? "" : connection.totpSecret || "",
+        // Imported/older SSH connections may lack authType; resolve it the way
+        // the SSH runtime does so the editor shows the matching secret fields.
+        ...(isSshConnection && !connection.authType
+          ? {
+              authType:
+                connection.credentialSource?.kind !== "vault" &&
+                connection.privateKey
+                  ? ("key" as const)
+                  : ("password" as const),
+            }
+          : {}),
         ignoreSshSecurityErrors: connection.ignoreSshSecurityErrors ?? false,
         sshConnectTimeout: connection.sshConnectTimeout ?? 30,
         sshKeepAliveInterval: connection.sshKeepAliveInterval ?? 30,

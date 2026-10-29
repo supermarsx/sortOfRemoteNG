@@ -50,6 +50,14 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
   const passphraseValue = usesManagedSshSecrets
     ? (sshSecretManager?.getPassphrase() ?? "")
     : formData.passphrase || "";
+  const isSsh = formData.protocol === "ssh";
+  const usesVaultCredential =
+    isSsh && formData.credentialSource?.kind === "vault";
+  // Imported and older SSH connections may have no stored authType. The
+  // selector already displays "Password" for them, so the fields must agree
+  // (useConnectionEditor resolves a stored local key to "key" on load).
+  const effectiveAuthType =
+    formData.authType ?? (isSsh ? "password" : undefined);
   const shows = (section: SSHOptionsSection) =>
     !sections || sections.includes(section);
 
@@ -86,7 +94,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                   <InfoTooltip text="Choose between password-based authentication or public key authentication." />
                 </label>
                 <Select
-                  value={formData.authType ?? "password"}
+                  value={effectiveAuthType ?? "password"}
                   onChange={(v: string) =>
                     setFormData({ ...formData, authType: v as any })
                   }
@@ -306,12 +314,24 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
             </div>
           )}
 
-          {formData.authType === "password" && (
+          {effectiveAuthType === "password" && (
             <div>
               <label className="sor-form-label">
                 Password{" "}
                 <InfoTooltip text="The password used for SSH password authentication." />
               </label>
+              {usesVaultCredential && (
+                <p
+                  role="note"
+                  data-testid="ssh-password-vault-note"
+                  className="mb-2 rounded border border-primary/30 p-2 text-xs text-[var(--color-textSecondary)]"
+                >
+                  This connection signs in with the password from the database
+                  vault credential selected in Credential source above. The
+                  connection-local password below is kept but not used until you
+                  switch back to Connection-local.
+                </p>
+              )}
               {usesManagedSshSecrets ? (
                 <PasswordInput
                   generateable
@@ -344,7 +364,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
             </div>
           )}
 
-          {formData.protocol === "ssh" && formData.authType === "key" && (
+          {isSsh && effectiveAuthType === "key" && (
             <>
               <div>
                 <div className="flex items-center justify-between mb-2">
