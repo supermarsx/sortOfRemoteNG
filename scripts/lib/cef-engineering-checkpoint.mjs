@@ -42,6 +42,13 @@ export const LIMITS = Object.freeze({
   metadata: 128 * 1024 ** 2,
   seal: 1024 ** 2,
   archiveMs: 600_000,
+  // Linux owned-source metadata only (record/apply/verify without a Mac
+  // platform policy): it hashes the whole fetched tree. Pack, restore and
+  // every Mac mode keep archiveMs.
+  linuxSourceMetadataMs: 2_400_000,
+  // Of that bound, the helper's own deadline ends this much earlier so its
+  // progress diagnostic is printed before the hard kill.
+  linuxSourceMetadataGraceMs: 60_000,
   compileMs: 15 * 60_000,
   maxCompileMs: 180 * 60_000,
   hostMs: 300 * 60_000,
@@ -1689,6 +1696,46 @@ function sourceBoundFailure(value, mode) {
   };
 }
 
+// Diagnostic only: owned source metadata progress when its own deadline hit.
+function sourceDeadlineFailure(value, mode) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join() !==
+      "bytes,files,hashedBytes,hashedFiles,mode,seconds,stage" ||
+    value.mode !== mode ||
+    !["inventory", "hash"].includes(value.stage) ||
+    !Number.isSafeInteger(value.seconds) ||
+    value.seconds <= 0 ||
+    value.seconds > LIMITS.linuxSourceMetadataMs / 1000
+  )
+    return null;
+  const counts = [value.hashedFiles, value.hashedBytes];
+  if (value.stage === "inventory") {
+    if (value.files !== null || value.bytes !== null || counts.some(Boolean))
+      return null;
+  } else if (
+    ![value.files, value.bytes, ...counts].every(
+      (count) => Number.isSafeInteger(count) && count >= 0,
+    ) ||
+    value.hashedFiles > value.files ||
+    value.hashedBytes > value.bytes ||
+    value.files > 3_000_000 ||
+    value.bytes > 264 * 1024 ** 3
+  )
+    return null;
+  return {
+    mode: value.mode,
+    stage: value.stage,
+    seconds: value.seconds,
+    files: value.files,
+    bytes: value.bytes,
+    hashedFiles: value.hashedFiles,
+    hashedBytes: value.hashedBytes,
+  };
+}
+
 // Diagnostic only: the owned source file and predicate that failed the
 // identity check, with the candidate projected like any source candidate.
 function sourceFileFailure(value, mode) {
@@ -1747,7 +1794,8 @@ export function archiveFailureRecord(
     sourceFacts,
     sourceIoFacts,
     sourceBoundFacts,
-    sourceFileFacts;
+    sourceFileFacts,
+    sourceDeadlineFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1842,6 +1890,38 @@ export function archiveFailureRecord(
         sourceBoundFacts = {
           ...(bound && !invalid ? { sourceBoundFailure: bound } : {}),
           ...(invalid ? { sourceBoundFailureInvalid: true } : {}),
+        };
+      }
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "archive-deadline" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        let progress,
+          invalid = false;
+        if (Object.hasOwn(value, "sourceDeadlineFailure")) {
+          try {
+            progress = sourceDeadlineFailure(
+              value.sourceDeadlineFailure,
+              sourceMode,
+            );
+            invalid = progress === null;
+          } catch {
+            invalid = true;
+          }
+          delete value.sourceDeadlineFailure;
+        }
+        if (Object.hasOwn(value, "sourceDeadlineFailureInvalid")) {
+          invalid = true;
+          delete value.sourceDeadlineFailureInvalid;
+        }
+        sourceDeadlineFacts = {
+          ...(progress && !invalid ? { sourceDeadlineFailure: progress } : {}),
+          ...(invalid ? { sourceDeadlineFailureInvalid: true } : {}),
         };
       }
       if (
@@ -1994,6 +2074,7 @@ export function archiveFailureRecord(
         sourceIoFacts = undefined;
         sourceBoundFacts = undefined;
         sourceFileFacts = undefined;
+        sourceDeadlineFacts = undefined;
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -2009,6 +2090,7 @@ export function archiveFailureRecord(
     ...sourceIoFacts,
     ...sourceBoundFacts,
     ...sourceFileFacts,
+    ...sourceDeadlineFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode
@@ -2026,7 +2108,12 @@ export async function archiveCommand(
     path.isAbsolute(python) &&
       path.isAbsolute(helper) &&
       positive(timeout) &&
-      timeout <= LIMITS.archiveMs,
+      timeout <=
+        (Array.isArray(args) &&
+        ["source-record", "source-apply", "source-verify"].includes(args[0]) &&
+        !args.includes("--platform-policy")
+          ? LIMITS.linuxSourceMetadataMs
+          : LIMITS.archiveMs),
     "Verified archive tool required",
   );
   return new Promise((resolve, reject) => {

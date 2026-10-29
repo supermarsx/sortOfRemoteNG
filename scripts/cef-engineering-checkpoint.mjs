@@ -575,10 +575,27 @@ async function checkpointMain(argv, env, observer) {
                     "Mac external fingerprint unchanged before source metadata",
                   );
                 }
+                const linuxSource = !selected.platformPolicy;
                 const timeout = Math.floor(
-                  Math.min(LIMITS.archiveMs, hostRemaining(env)),
+                  Math.min(
+                    linuxSource
+                      ? LIMITS.linuxSourceMetadataMs
+                      : LIMITS.archiveMs,
+                    hostRemaining(env),
+                  ),
                 );
                 fail(timeout > 0, "Source metadata original host deadline");
+                // Linux: the helper's deadline ends first so it can print
+                // its progress diagnostic before the hard kill.
+                const helperSeconds = Math.max(
+                  1,
+                  Math.floor(
+                    (linuxSource &&
+                    timeout > 2 * LIMITS.linuxSourceMetadataGraceMs
+                      ? timeout - LIMITS.linuxSourceMetadataGraceMs
+                      : timeout) / 1000,
+                  ),
+                );
                 const result = sourceMetadataResult(
                   await archiveCommand(
                     verified.python,
@@ -595,7 +612,7 @@ async function checkpointMain(argv, env, observer) {
                       "--manifest",
                       identityFile,
                       "--seconds",
-                      String(Math.max(1, Math.floor(timeout / 1000))),
+                      String(helperSeconds),
                     ],
                     {
                       timeout,

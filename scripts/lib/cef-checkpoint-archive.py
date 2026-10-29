@@ -154,6 +154,56 @@ def source_bound_failure_fields(error, mode):
         return {'sourceBoundFailureInvalid':True}
 
 
+# Diagnostic only: how far owned source metadata got when its deadline expired.
+# Counters only (no path); the stage says whether hashing had started.
+def source_deadline_value(value, mode):
+    require(type(value) is dict and set(value) == {'mode','stage','seconds','files','bytes','hashedFiles','hashedBytes'} and
+            value['mode'] == mode and mode in SOURCE_IO_MODES and value['stage'] in ('inventory', 'hash') and
+            type(value['seconds']) is int and 0 < value['seconds'] <= SOURCE_LINUX_SECONDS, 'diagnostic')
+    if value['stage'] == 'inventory':
+        require(value['files'] is None and value['bytes'] is None and
+                type(value['hashedFiles']) is int and value['hashedFiles'] == 0 and
+                type(value['hashedBytes']) is int and value['hashedBytes'] == 0, 'diagnostic')
+    else:
+        require(all(type(value[key]) is int for key in ('files','bytes','hashedFiles','hashedBytes')) and
+                0 <= value['hashedFiles'] <= value['files'] <= SOURCE_MAX_ENTRIES and
+                0 <= value['hashedBytes'] <= value['bytes'] <= MAX_RAW + SOURCE_MAX_FILE, 'diagnostic')
+    require(len(json.dumps(value).encode()) <= 512, 'diagnostic')
+    return {key:value[key] for key in ('mode','stage','seconds','files','bytes','hashedFiles','hashedBytes')}
+
+
+def source_deadline_record(error, budget, stage, files, raw, hashed_files, hashed_bytes):
+    try:
+        context = SOURCE_IO_CONTEXT.get()
+        if (type(error) is not CheckpointError or str(error) != 'archive-deadline' or
+                type(context) is not tuple or len(context) != 2 or context[0] not in SOURCE_IO_MODES):
+            return
+        if 'sourceDeadlineFailure' in error.__dict__ or error.__dict__.get('sourceDeadlineFailureInvalid') is True:
+            return
+        error.sourceDeadlineFailure = source_deadline_value({'mode':context[0], 'stage':stage,
+            'seconds':getattr(budget, 'seconds', None), 'files':files, 'bytes':raw,
+            'hashedFiles':hashed_files, 'hashedBytes':hashed_bytes}, context[0])
+    except Exception:
+        try:
+            error.sourceDeadlineFailureInvalid = True
+        except Exception:
+            pass
+
+
+def source_deadline_failure_fields(error, mode):
+    if mode not in SOURCE_IO_MODES or type(error) is not CheckpointError or str(error) != 'archive-deadline':
+        return {}
+    try:
+        if error.__dict__.get('sourceDeadlineFailureInvalid') is True:
+            return {'sourceDeadlineFailureInvalid':True}
+        value = error.__dict__.get('sourceDeadlineFailure')
+        if value is None:
+            return {}
+        return {'sourceDeadlineFailure':source_deadline_value(value, mode)}
+    except Exception:
+        return {'sourceDeadlineFailureInvalid':True}
+
+
 # Diagnostic only: which owned source file failed the identity check and which
 # predicate failed. The path is projected like every other source candidate.
 SOURCE_FILE_PREDICATES = ('kind', 'nlink', 'size', 'stamp', 'ctime', 'descriptor')
@@ -735,9 +785,18 @@ def opened_identity_matches(expected, opened):
     return expected == actual
 
 
+# Linux owned-source metadata walks and hashes the whole fetched tree (Chromium,
+# three sysroots, toolchains); it alone may use the longer bound. Pack, restore,
+# seal and every Mac mode keep 600 seconds.
+SOURCE_LINUX_SECONDS = 2400
+SOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))
+
+
 class Budget:
-    def __init__(self, seconds):
-        require(isinstance(seconds, int) and 0 < seconds <= 600, 'deadline-bound')
+    def __init__(self, seconds, maximum=600):
+        require(maximum in (600, SOURCE_LINUX_SECONDS) and isinstance(seconds, int) and 0 < seconds <= maximum,
+                'deadline-bound')
+        self.seconds = seconds
         self.end = time.monotonic() + seconds
     def check(self):
         require(time.monotonic() < self.end, 'archive-deadline')
@@ -1607,10 +1666,17 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
         policy['_directories'] = {}
         local_before = source_local(root.stat(), policy)
     root_before = stamp(root.stat())
-    rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
+    try:
+        rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
+    except CheckpointError as error:
+        source_deadline_record(error, budget, 'inventory', None, None, 0, 0)
+        raise
     hashes = {};first = None
-    pool = ThreadPoolExecutor(max_workers=4)
-    files = iter(row for row in rows if row['kind'] == 'file')
+    pool = ThreadPoolExecutor(max_workers=SOURCE_HASH_WORKERS)
+    file_rows = [row for row in rows if row['kind'] == 'file']
+    files = iter(file_rows)
+    sizes = {row['path']: row['stamp'][0] for row in file_rows}
+    hashed_files = hashed_bytes = 0
     pending = {}
     def submit():
         row = next(files, None)
@@ -1621,7 +1687,7 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
             future = source_io_call('reader-submit', root / row['path'], task)
             pending[future] = row['path']
     try:
-        for _ in range(4):
+        for _ in range(SOURCE_HASH_WORKERS):
             submit()
         while pending and first is None:
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
@@ -1629,6 +1695,7 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
                 name = pending.pop(future)
                 try:
                     hashes[name] = future.result()
+                    hashed_files += 1;hashed_bytes += sizes[name]
                 except BaseException as error:
                     if first is None:
                         first = error
@@ -1646,6 +1713,7 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
             if first is None:
                 raise
     if first is not None:
+        source_deadline_record(first, budget, 'hash', len(file_rows), sum(sizes.values()), hashed_files, hashed_bytes)
         raise first
     budget.check()
     if not external:
@@ -1716,7 +1784,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         require(MAC_INTEL_SOURCE_WRITE_ADMITTED, 'source-mac-intel-darwin-capability-unreviewed')
     require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
-    budget = Budget(seconds) if budget is None else budget
+    budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
     if platform_policy == 'mac-arm':
         # No JSON, external context or fixture output can authorize timestamp writes.
         require(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed')
@@ -2117,7 +2185,7 @@ def main():
         with source_io_scope(args.mode):
             context_file = source_io_call('context-read', None, lambda: safe(Path(args.manifest)))
             require(source_io_call('context-read', None, context_file.stat).st_size <= 16384, 'source-context-bound')
-            source_budget = Budget(args.seconds)
+            source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS if args.platform_policy is None else 600)
             identity = source_io_call('context-read', None, lambda: source_json(source_read_bytes(context_file, source_budget, 16384)))
         result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)
     elif args.mode == 'seal':
@@ -2143,6 +2211,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **source_deadline_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
 
         raise SystemExit(1)

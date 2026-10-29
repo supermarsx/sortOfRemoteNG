@@ -10400,7 +10400,7 @@ test("Mac worker pure cleanup, birth, aggregate and literal-link boundaries", ()
   assert.match(result.stderr, /Ran 9 tests/);
 });
 
-test("actual Linux CLI source transaction retains exact reviewed worker argv and original timeout", async () => {
+test("actual Linux CLI source transaction retains exact reviewed worker argv and its bounded timeout", async () => {
   const source = await readFile(
     path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
     "utf8",
@@ -10431,6 +10431,7 @@ test("actual Linux CLI source transaction retains exact reviewed worker argv and
     canonicalRoot: "/owned",
   };
   const calls = [];
+  let remaining = 600000;
   const fn = new Function(
     "sourceMetadataPlan",
     "identity",
@@ -10455,7 +10456,7 @@ test("actual Linux CLI source transaction retains exact reviewed worker argv and
     selected,
     "/owned/source/src/out/Release_GN_arm64",
     LIMITS,
-    () => 600000,
+    () => remaining,
     {},
     assert,
     sourceMetadataResult,
@@ -10486,25 +10487,33 @@ test("actual Linux CLI source transaction retains exact reviewed worker argv and
     "aarch64-unknown-linux-gnu",
     {},
   );
-  for (const mode of ["source-record", "source-apply", "source-verify"]) {
-    assert.equal((await fn(mode)).mode, mode);
-    assert.deepEqual(calls.at(-1), {
-      python: "/fixed/python",
-      helper: "/fixed/helper",
-      timeout: 600000,
-      args: [
-        mode,
-        "--input",
-        "/owned/source",
-        "--output",
-        "/owned/source/src/out/Release_GN_arm64/.siso_sorng_source_metadata.json",
-        "--manifest",
-        "/fixed/identity.json",
-        "--seconds",
-        "600",
-      ],
-    });
-  }
+  // The helper's own deadline ends 60 s early so its progress diagnostic
+  // prints before the hard kill; the Linux bound is 2400 s.
+  for (const [host, timeout, seconds] of [
+    [600000, 600000, "540"],
+    [10_000_000, 2_400_000, "2340"],
+    [100_000, 100_000, "100"],
+  ])
+    for (const mode of ["source-record", "source-apply", "source-verify"]) {
+      remaining = host;
+      assert.equal((await fn(mode)).mode, mode);
+      assert.deepEqual(calls.at(-1), {
+        python: "/fixed/python",
+        helper: "/fixed/helper",
+        timeout,
+        args: [
+          mode,
+          "--input",
+          "/owned/source",
+          "--output",
+          "/owned/source/src/out/Release_GN_arm64/.siso_sorng_source_metadata.json",
+          "--manifest",
+          "/fixed/identity.json",
+          "--seconds",
+          seconds,
+        ],
+      });
+    }
 });
 
 const MAC_ORDERED_POSIX_PROOF = String.raw`import pathlib,sys,types,unittest,tempfile,os,json,time
@@ -13122,4 +13131,146 @@ test("pinned Linux sysroot hard links become single-link copies with the same by
   await assert.rejects(separateLinuxSysrootHardLinks(chromium), {
     code: "ENOENT",
   });
+});
+
+test("Linux owned-source metadata alone gets 2400 s; pack, restore and Mac modes keep 600 s", async () => {
+  assert.equal(LIMITS.archiveMs, 600_000);
+  assert.equal(LIMITS.linuxSourceMetadataMs, 2_400_000);
+  assert.equal(LIMITS.linuxSourceMetadataGraceMs, 60_000);
+  const bound = async (args, timeout) => {
+    try {
+      await archiveCommand(
+        path.resolve("python"),
+        path.resolve("helper"),
+        args,
+        {
+          timeout,
+        },
+      );
+    } catch (error) {
+      return error.message !== "Verified archive tool required";
+    }
+    return true;
+  };
+  for (const mode of ["source-record", "source-apply", "source-verify"]) {
+    assert.equal(await bound([mode], 2_400_001), false);
+    assert.equal(
+      await bound([mode, "--platform-policy", "mac-arm"], 600_001),
+      false,
+    );
+  }
+  for (const mode of ["pack", "restore", "seal", "mac-external-observe"])
+    assert.equal(await bound([mode], 600_001), false);
+  const result = python(
+    String.raw`import importlib.util,os,sys
+spec=importlib.util.spec_from_file_location('budget',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+assert m.SOURCE_LINUX_SECONDS==2400
+assert m.SOURCE_HASH_WORKERS==max(1,min(os.cpu_count() or 4,8)) and 1<=m.SOURCE_HASH_WORKERS<=8
+def denied(*args):
+ try:m.Budget(*args)
+ except m.CheckpointError as error:assert error.args==('deadline-bound',);return
+ raise AssertionError('admitted '+repr(args))
+assert m.Budget(600).seconds==600 and m.Budget(2400,2400).seconds==2400
+for args in [(601,),(0,),(2401,2400),(601,600),(1200,1200),(10,'2400'),(600.0,)]:denied(*args)
+print('budget PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /budget PASS/);
+});
+
+test("an owned-source deadline reports hashing progress counters, validated on both sides", async () => {
+  const result = python(
+    String.raw`import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('deadline',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+budget=m.Budget(2340,2400)
+def record(stage,files,raw,done,done_bytes,mode='source-record',error=None):
+ error=error or m.CheckpointError('archive-deadline')
+ with m.source_io_scope(mode):m.source_deadline_record(error,budget,stage,files,raw,done,done_bytes)
+ return error
+error=record('hash',500000,40*1024**3,250000,20*1024**3)
+assert m.source_deadline_failure_fields(error,'source-record')=={'sourceDeadlineFailure':{'mode':'source-record','stage':'hash','seconds':2340,'files':500000,'bytes':40*1024**3,'hashedFiles':250000,'hashedBytes':20*1024**3}}
+assert m.source_deadline_failure_fields(error,'source-verify')=={'sourceDeadlineFailureInvalid':True}
+assert m.source_deadline_failure_fields(error,'pack')=={}
+error=record('inventory',None,None,0,0,'source-apply')
+assert m.source_deadline_failure_fields(error,'source-apply')['sourceDeadlineFailure']['stage']=='inventory'
+for bad in [('hash',10,10,11,0),('hash',10,10,1,11),('inventory',1,None,0,0),('other',1,1,0,0)]:
+ assert m.source_deadline_failure_fields(record(*bad),'source-record')=={'sourceDeadlineFailureInvalid':True}
+other=record('hash',1,1,0,0,error=m.CheckpointError('source-file-changed'))
+assert 'sourceDeadlineFailure' not in other.__dict__
+first=record('hash',3,3,1,1);again=dict(first.sourceDeadlineFailure)
+with m.source_io_scope('source-record'):m.source_deadline_record(first,budget,'hash',3,3,2,2)
+assert first.sourceDeadlineFailure==again
+outside=m.CheckpointError('archive-deadline');m.source_deadline_record(outside,budget,'hash',1,1,0,0)
+assert m.source_deadline_failure_fields(outside,'source-record')=={}
+print('deadline PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /deadline PASS/);
+  const facts = {
+    mode: "source-record",
+    stage: "hash",
+    seconds: 2340,
+    files: 500000,
+    bytes: 40 * 1024 ** 3,
+    hashedFiles: 250000,
+    hashedBytes: 20 * 1024 ** 3,
+  };
+  const record = (detail, sourceMode = "source-record", extra = {}) =>
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: "archive-deadline",
+        ...extra,
+        ...(detail === undefined ? {} : { sourceDeadlineFailure: detail }),
+      }),
+      1,
+      { sourceMode },
+    );
+  assert.deepEqual(record(facts), {
+    error: "archive-deadline",
+    sourceDeadlineFailure: facts,
+    exitCode: 1,
+  });
+  const inventory = {
+    ...facts,
+    stage: "inventory",
+    files: null,
+    bytes: null,
+    hashedFiles: 0,
+    hashedBytes: 0,
+  };
+  assert.deepEqual(record(inventory).sourceDeadlineFailure, inventory);
+  assert.deepEqual(record(undefined), {
+    error: "archive-deadline",
+    exitCode: 1,
+  });
+  for (const detail of [
+    null,
+    [],
+    { ...facts, mode: "source-apply" },
+    { ...facts, stage: "upload" },
+    { ...facts, seconds: 2401 },
+    { ...facts, hashedFiles: facts.files + 1 },
+    { ...facts, hashedBytes: facts.bytes + 1 },
+    { ...facts, files: 1.5 },
+    { ...facts, path: "src/private" },
+    { ...inventory, files: 1 },
+    { ...inventory, hashedFiles: 1 },
+  ])
+    assert.deepEqual(record(detail), {
+      error: "archive-deadline",
+      sourceDeadlineFailureInvalid: true,
+      exitCode: 1,
+    });
+  assert.deepEqual(
+    archiveFailureRecord("", null, {
+      deadline: true,
+      sourceMode: "source-record",
+    }),
+    { error: "archive-deadline", exitCode: null },
+  );
 });
