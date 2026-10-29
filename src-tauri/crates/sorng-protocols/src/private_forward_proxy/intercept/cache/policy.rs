@@ -115,9 +115,21 @@ pub(crate) fn origin_form(uri: &Uri) -> Uri {
     pq.parse().unwrap_or_else(|_| Uri::from_static("/"))
 }
 
-/// The cache key. Only GET and HEAD are ever keyed.
+/// The request scheme: absolute-form/h2 URIs carry it; an origin-form
+/// request can only come from a TLS tunnel (plain-HTTP proxy requests are
+/// absolute-form), so it is `https`.
+pub(crate) fn request_scheme(uri: &Uri) -> String {
+    uri.scheme_str().unwrap_or("https").to_ascii_lowercase()
+}
+
+/// The cache key (scheme, authority, method, path and query). Only GET and
+/// HEAD are ever keyed.
 pub(crate) fn cache_key(authority: &Authority, method: &Method, uri: &Uri) -> String {
-    format!("{authority}\n{method}\n{}", origin_form(uri))
+    format!(
+        "{}\n{authority}\n{method}\n{}",
+        request_scheme(uri),
+        origin_form(uri)
+    )
 }
 
 pub(crate) fn is_safe(method: &Method) -> bool {
@@ -368,13 +380,14 @@ pub(crate) fn conditional_request(
 }
 
 /// RFC 9111 §4.4: URIs an unsafe request invalidates (the target, plus a
-/// same-authority `Location` / `Content-Location`).
+/// same-authority `Location` / `Content-Location`). Each keeps its scheme
+/// (a relative reference takes the request's) for `cache_key`.
 pub(crate) fn invalidation_targets(
     authority: &Authority,
     req: &http::request::Parts,
     res: &HeaderMap,
 ) -> Vec<Uri> {
-    let mut out = vec![origin_form(&req.uri)];
+    let mut out = vec![req.uri.clone()];
     for name in [header::LOCATION, header::CONTENT_LOCATION] {
         let Some(uri) = res
             .get(&name)
@@ -395,7 +408,17 @@ pub(crate) fn invalidation_targets(
                     && target.port_u16().unwrap_or(default_port) == authority.port()
             }
         };
-        if same_origin {
+        if !same_origin {
+            continue;
+        }
+        if uri.scheme().is_some() {
+            out.push(uri);
+        } else if let Some(scheme) = req.uri.scheme_str() {
+            let absolute = format!("{scheme}://{authority}{}", origin_form(&uri));
+            if let Ok(absolute) = absolute.parse() {
+                out.push(absolute);
+            }
+        } else {
             out.push(origin_form(&uri));
         }
     }
@@ -436,6 +459,12 @@ mod tests {
         assert_eq!(
             cache_key(&a, &Method::GET, &abs),
             cache_key(&a, &Method::GET, &rel)
+        );
+        let plain: Uri = "http://example.test:443/a?b=1".parse().unwrap();
+        assert_ne!(
+            cache_key(&a, &Method::GET, &plain),
+            cache_key(&a, &Method::GET, &rel),
+            "http and https on one authority never collide"
         );
         assert_ne!(
             cache_key(&a, &Method::GET, &rel),
@@ -518,11 +547,39 @@ mod tests {
                 ("content-location", "https://other.test/x"),
             ],
         );
-        let targets: Vec<String> = invalidation_targets(&a, &r, &s.headers)
+        let keys: Vec<String> = invalidation_targets(&a, &r, &s.headers)
             .iter()
-            .map(Uri::to_string)
+            .map(|uri| cache_key(&a, &Method::GET, uri))
             .collect();
-        assert_eq!(targets, vec!["/form".to_string(), "/done".to_string()]);
+        let expected: Vec<String> = ["/form", "/done"]
+            .iter()
+            .map(|p| cache_key(&a, &Method::GET, &p.parse().unwrap()))
+            .collect();
+        assert_eq!(keys, expected);
+        // A plain-http request: a relative Location stays http, an https
+        // Location on the same authority keeps https.
+        let plain = Authority::parse("example.test:8080").unwrap();
+        let r = req(Method::POST, "http://example.test:8080/form", &[]);
+        let s = res(
+            303,
+            &[
+                ("location", "/done"),
+                ("content-location", "https://example.test:8080/c"),
+            ],
+        );
+        let keys: Vec<String> = invalidation_targets(&plain, &r, &s.headers)
+            .iter()
+            .map(|uri| cache_key(&plain, &Method::GET, uri))
+            .collect();
+        let expected: Vec<String> = [
+            "http://example.test:8080/form",
+            "http://example.test:8080/done",
+            "https://example.test:8080/c",
+        ]
+        .iter()
+        .map(|u| cache_key(&plain, &Method::GET, &u.parse().unwrap()))
+        .collect();
+        assert_eq!(keys, expected);
     }
 
     #[test]

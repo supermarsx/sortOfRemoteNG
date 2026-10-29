@@ -334,13 +334,19 @@ impl ProxyCache {
         }
         let expected = policy::content_length(&parts.headers);
         let sink = self.sink(true);
-        let commit: Commit = Box::new(move |body: Bytes| {
-            if expected.is_some_and(|len| len != body.len() as u64) {
-                return;
-            }
-            sink.store(key, Entry { head, body });
-        });
-        http::Response::from_parts(parts, TeeBody::new(body, cap, commit).boxed())
+        if expected == Some(0) || (expected.is_none() && body.is_end_stream()) {
+            // Empty body: hyper may never poll it, so store now.
+            sink.store(
+                key,
+                Entry {
+                    head,
+                    body: Bytes::new(),
+                },
+            );
+            return http::Response::from_parts(parts, body);
+        }
+        let commit: Commit = Box::new(move |body: Bytes| sink.store(key, Entry { head, body }));
+        http::Response::from_parts(parts, TeeBody::new(body, cap, expected, commit).boxed())
     }
 
     fn serve_not_modified(
@@ -483,23 +489,30 @@ impl Sink {
 type Commit = Box<dyn FnOnce(Bytes) + Send + Sync>;
 
 /// Streams the upstream body through unchanged and hands a complete copy to
-/// `commit` at end of stream, unless it grew past `cap`, carried trailers, or
-/// failed.
+/// `commit`, unless it grew past `cap` (or past `Content-Length`), carried
+/// trailers, failed, or was dropped first.
+///
+/// Complete means: the declared `Content-Length` was reached (the hyper
+/// server stops polling a length-delimited body there and never sees the
+/// end), or the inner body reports its end after a frame (h2, chunked), or
+/// a `None` frame arrived without a length mismatch.
 struct TeeBody {
     inner: ProxyBody,
     buf: Option<Vec<Bytes>>,
     len: u64,
     cap: u64,
+    expected: Option<u64>,
     commit: Option<Commit>,
 }
 
 impl TeeBody {
-    fn new(inner: ProxyBody, cap: u64, commit: Commit) -> Self {
+    fn new(inner: ProxyBody, cap: u64, expected: Option<u64>, commit: Commit) -> Self {
         Self {
             inner,
             buf: Some(Vec::new()),
             len: 0,
             cap,
+            expected,
             commit: Some(commit),
         }
     }
@@ -507,6 +520,21 @@ impl TeeBody {
     fn abandon(&mut self) {
         self.buf = None;
         self.commit = None;
+    }
+
+    fn finish(&mut self) {
+        if self.expected.is_some_and(|expected| expected != self.len) {
+            self.abandon();
+            return;
+        }
+        if let (Some(buf), Some(commit)) = (self.buf.take(), self.commit.take()) {
+            let body = if buf.len() == 1 {
+                buf.into_iter().next().unwrap_or_default()
+            } else {
+                Bytes::from(buf.concat())
+            };
+            commit(body);
+        }
     }
 }
 
@@ -522,16 +550,23 @@ impl Body for TeeBody {
         match Pin::new(&mut this.inner).poll_frame(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Ok(frame))) => {
-                match frame.data_ref() {
-                    Some(data) => {
-                        this.len += data.len() as u64;
-                        if this.len > this.cap {
-                            this.abandon();
-                        } else if let Some(buf) = &mut this.buf {
-                            buf.push(data.clone());
+                if this.commit.is_some() {
+                    match frame.data_ref() {
+                        Some(data) => {
+                            this.len += data.len() as u64;
+                            if this.len > this.cap
+                                || this.expected.is_some_and(|expected| this.len > expected)
+                            {
+                                this.abandon();
+                            } else if let Some(buf) = &mut this.buf {
+                                buf.push(data.clone());
+                            }
                         }
+                        None => this.abandon(),
                     }
-                    None => this.abandon(),
+                    if this.expected == Some(this.len) || this.inner.is_end_stream() {
+                        this.finish();
+                    }
                 }
                 Poll::Ready(Some(Ok(frame)))
             }
@@ -540,23 +575,14 @@ impl Body for TeeBody {
                 Poll::Ready(Some(Err(err)))
             }
             Poll::Ready(None) => {
-                if let (Some(buf), Some(commit)) = (this.buf.take(), this.commit.take()) {
-                    let body = if buf.len() == 1 {
-                        buf.into_iter().next().unwrap_or_default()
-                    } else {
-                        Bytes::from(buf.concat())
-                    };
-                    commit(body);
-                }
+                this.finish();
                 Poll::Ready(None)
             }
         }
     }
 
     fn is_end_stream(&self) -> bool {
-        // Report the end only after `poll_frame` returned `None`, so the
-        // commit always runs.
-        self.inner.is_end_stream() && self.commit.is_none()
+        self.inner.is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {

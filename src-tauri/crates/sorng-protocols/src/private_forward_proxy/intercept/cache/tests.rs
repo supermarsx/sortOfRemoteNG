@@ -1271,3 +1271,297 @@ async fn memory_mode_reports_and_defaults() {
     };
     assert_eq!(m.max_bytes(), DEFAULT_MEMORY_BYTES);
 }
+
+// ---- body completion the way hyper's server drives it ----
+
+/// A multi-frame body that never reports its end on its own (like an
+/// upstream `Incoming` body still waiting for the next read).
+fn streamed(chunks: &[&[u8]]) -> ProxyBody {
+    let frames: Vec<Result<Frame<Bytes>, std::io::Error>> = chunks
+        .iter()
+        .map(|c| Ok(Frame::data(Bytes::copy_from_slice(c))))
+        .collect();
+    StreamBody::new(futures_util::stream::iter(frames)).boxed()
+}
+
+fn with_body(status: u16, list: &[(&str, &str)], body: ProxyBody) -> http::Response<ProxyBody> {
+    let mut r = http::Response::new(body);
+    *r.status_mut() = StatusCode::from_u16(status).unwrap();
+    *r.headers_mut() = headers(list);
+    r
+}
+
+/// hyper's h1 server: polls until `Content-Length` bytes were written, then
+/// stops (never observes the end of the stream).
+async fn drive_h1(body: &mut ProxyBody, content_length: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    while out.len() < content_length {
+        let frame = body.frame().await.expect("frame").expect("data");
+        if let Ok(data) = frame.into_data() {
+            out.extend_from_slice(&data);
+        }
+    }
+    out
+}
+
+/// hyper's h2 server: after each frame it asks `is_end_stream()` and stops
+/// polling once that is true (it sets END_STREAM on the last DATA frame).
+async fn drive_h2(body: &mut ProxyBody) -> Vec<u8> {
+    let mut out = Vec::new();
+    while !body.is_end_stream() {
+        match body.frame().await {
+            Some(frame) => {
+                if let Ok(data) = frame.expect("frame").into_data() {
+                    out.extend_from_slice(&data);
+                }
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn content_length_body_commits_when_the_length_is_reached() {
+    let clock = TestClock::new();
+    let cache = memory(&clock);
+    let resp = with_body(
+        200,
+        &[("cache-control", "max-age=60"), ("content-length", "9")],
+        streamed(&[b"abc", b"def", b"ghi"]),
+    );
+    let served = cache
+        .on_upstream(&authority(), &get("/cl"), None, resp, true)
+        .await;
+    let mut body = served.into_body();
+    assert_eq!(drive_h1(&mut body, 9).await, b"abcdefghi");
+    // The server keeps the body alive (keep-alive) but never polls again.
+    match look(&cache, &get("/cl")).await {
+        Kind::Fresh(s) => assert_eq!(&s.body[..], b"abcdefghi"),
+        _ => panic!("length-delimited response must be stored without EOS"),
+    }
+    drop(body);
+    assert_eq!(cache.counters().stores, 1);
+}
+
+#[tokio::test]
+async fn content_length_body_commits_on_disk_without_eos() {
+    let clock = TestClock::new();
+    let dir = TempDir::new("cl-disk");
+    let (cache, _) = disk(&clock, &dir.0, 1, 1);
+    let resp = with_body(
+        200,
+        &[("cache-control", "max-age=60"), ("content-length", "6")],
+        streamed(&[b"one", b"two"]),
+    );
+    let served = cache
+        .on_upstream(&authority(), &get("/cl"), None, resp, true)
+        .await;
+    let mut body = served.into_body();
+    drive_h1(&mut body, 6).await;
+    cache.settle().await;
+    assert_eq!(entry_files(&dir.0).len(), 1);
+    assert!(is_fresh(&cache, &get("/cl")).await);
+}
+
+#[tokio::test]
+async fn h2_style_end_stream_commits() {
+    let clock = TestClock::new();
+    let cache = memory(&clock);
+    // Single-frame body that knows its end (Full), with and without length.
+    for (uri, list) in [
+        (
+            "/full-cl",
+            vec![("cache-control", "max-age=60"), ("content-length", "4")],
+        ),
+        ("/full", vec![("cache-control", "max-age=60")]),
+    ] {
+        let resp = with_body(200, &list, full_body(Bytes::from_static(b"full")));
+        let served = cache
+            .on_upstream(&authority(), &get(uri), None, resp, true)
+            .await;
+        let mut body = served.into_body();
+        assert_eq!(drive_h2(&mut body).await, b"full");
+        assert!(is_fresh(&cache, &get(uri)).await, "{uri}");
+    }
+    // Chunked stream without a length: the end is the `None` frame.
+    let resp = with_body(
+        200,
+        &[("cache-control", "max-age=60")],
+        streamed(&[b"a", b"b"]),
+    );
+    let served = cache
+        .on_upstream(&authority(), &get("/chunks"), None, resp, true)
+        .await;
+    let mut body = served.into_body();
+    assert_eq!(drive_h2(&mut body).await, b"ab");
+    assert!(is_fresh(&cache, &get("/chunks")).await);
+}
+
+#[tokio::test]
+async fn dropped_or_overlong_bodies_are_not_stored() {
+    let clock = TestClock::new();
+    let cache = memory(&clock);
+    // Client went away half-way.
+    let resp = with_body(
+        200,
+        &[("cache-control", "max-age=60"), ("content-length", "6")],
+        streamed(&[b"abc", b"def"]),
+    );
+    let served = cache
+        .on_upstream(&authority(), &get("/half"), None, resp, true)
+        .await;
+    let mut body = served.into_body();
+    drive_h1(&mut body, 3).await;
+    drop(body);
+    assert!(is_miss(&cache, &get("/half")).await);
+    // Upstream sent more than it declared.
+    let resp = with_body(
+        200,
+        &[("cache-control", "max-age=60"), ("content-length", "2")],
+        streamed(&[b"abc"]),
+    );
+    let served = cache
+        .on_upstream(&authority(), &get("/long"), None, resp, true)
+        .await;
+    let _ = read(served).await;
+    assert!(is_miss(&cache, &get("/long")).await);
+    // Declared but empty: stored at once (hyper never polls it).
+    let resp = with_body(
+        200,
+        &[("cache-control", "max-age=60"), ("content-length", "0")],
+        streamed(&[]),
+    );
+    let served = cache
+        .on_upstream(&authority(), &get("/empty"), None, resp, true)
+        .await;
+    drop(served);
+    match look(&cache, &get("/empty")).await {
+        Kind::Fresh(s) => assert!(s.body.is_empty()),
+        _ => panic!("empty length-delimited response must be stored"),
+    }
+    assert_eq!(cache.counters().stores, 1);
+}
+
+/// One request through a real hyper server/client pair; the server answers
+/// with `make()` passed through the cache.
+async fn through_hyper(
+    cache: Arc<ProxyCache>,
+    h2: bool,
+    path: &'static str,
+    make: fn() -> http::Response<ProxyBody>,
+) -> Bytes {
+    use hyper_util::rt::{TokioExecutor, TokioIo};
+    let (client_io, server_io) = tokio::io::duplex(1 << 16);
+    let service =
+        hyper::service::service_fn(move |incoming: http::Request<hyper::body::Incoming>| {
+            let cache = Arc::clone(&cache);
+            async move {
+                let (mut parts, _) = incoming.into_parts();
+                parts.uri = origin_form_for_test(&parts.uri);
+                let resp = cache
+                    .on_upstream(&authority(), &parts, None, make(), true)
+                    .await;
+                Ok::<_, std::convert::Infallible>(resp)
+            }
+        });
+    let request = http::Request::get(format!("https://{HOST}{path}"))
+        .body(http_body_util::Empty::<Bytes>::new())
+        .unwrap();
+    let response = if h2 {
+        tokio::spawn(
+            hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                .serve_connection(TokioIo::new(server_io), service),
+        );
+        let (mut sender, conn) =
+            hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(client_io))
+                .await
+                .unwrap();
+        tokio::spawn(conn);
+        sender.send_request(request).await.unwrap()
+    } else {
+        tokio::spawn(
+            hyper::server::conn::http1::Builder::new()
+                .serve_connection(TokioIo::new(server_io), service),
+        );
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(client_io))
+            .await
+            .unwrap();
+        tokio::spawn(conn);
+        sender.send_request(request).await.unwrap()
+    };
+    response.into_body().collect().await.unwrap().to_bytes()
+}
+
+fn origin_form_for_test(uri: &Uri) -> Uri {
+    policy::origin_form(uri)
+}
+
+fn length_delimited() -> http::Response<ProxyBody> {
+    with_body(
+        200,
+        &[("cache-control", "max-age=60"), ("content-length", "12")],
+        streamed(&[b"hello ", b"world!"]),
+    )
+}
+
+fn chunked_stream() -> http::Response<ProxyBody> {
+    with_body(
+        200,
+        &[("cache-control", "max-age=60")],
+        streamed(&[b"chunk ", b"body"]),
+    )
+}
+
+#[tokio::test]
+async fn real_hyper_h1_and_h2_servers_store_both_framings() {
+    let clock = TestClock::new();
+    for h2 in [false, true] {
+        let cache = memory(&clock);
+        let body = through_hyper(Arc::clone(&cache), h2, "/cl", length_delimited).await;
+        assert_eq!(&body[..], b"hello world!");
+        let body = through_hyper(Arc::clone(&cache), h2, "/chunked", chunked_stream).await;
+        assert_eq!(&body[..], b"chunk body");
+        assert_eq!(cache.counters().stores, 2, "h2={h2}");
+        assert!(is_fresh(&cache, &get("/cl")).await, "h2={h2}");
+        assert!(is_fresh(&cache, &get("/chunked")).await, "h2={h2}");
+    }
+}
+
+#[tokio::test]
+async fn scheme_is_part_of_the_key() {
+    let clock = TestClock::new();
+    let cache = memory(&clock);
+    let plain = |p: &str| get(&format!("http://{HOST}:443{p}"));
+    exchange(
+        &cache,
+        &plain("/s"),
+        resp(200, &[("cache-control", "max-age=60")], b"plain"),
+        true,
+    )
+    .await;
+    assert!(
+        is_miss(&cache, &get("/s")).await,
+        "origin-form (TLS tunnel) is https"
+    );
+    assert!(is_miss(&cache, &get(&format!("https://{HOST}/s"))).await);
+    match look(&cache, &plain("/s")).await {
+        Kind::Fresh(s) => assert_eq!(&s.body[..], b"plain"),
+        _ => panic!("expected the http entry"),
+    }
+    store(&cache, "/s", &[("cache-control", "max-age=60")], b"tls").await;
+    match look(&cache, &get(&format!("https://{HOST}/s"))).await {
+        Kind::Fresh(s) => assert_eq!(&s.body[..], b"tls"),
+        _ => panic!("expected the https entry"),
+    }
+    // Invalidating the https resource leaves the http one alone.
+    exchange(
+        &cache,
+        &req(Method::POST, "/s", &[]),
+        resp(204, &[], b""),
+        true,
+    )
+    .await;
+    assert!(is_miss(&cache, &get("/s")).await);
+    assert!(is_fresh(&cache, &plain("/s")).await);
+}
