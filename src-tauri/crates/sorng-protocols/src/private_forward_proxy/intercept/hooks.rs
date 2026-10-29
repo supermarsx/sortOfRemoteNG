@@ -13,13 +13,21 @@
 use crate::private_forward_proxy::Authority;
 use hyper::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 
-/// Per-exchange context visible to hooks.
-#[derive(Clone, Debug)]
+/// Per-exchange context visible to hooks. `Debug` omits the authority.
+#[derive(Clone)]
 pub struct ExchangeCtx {
     /// The tunnel (CONNECT) or plain-HTTP authority of this exchange.
     pub authority: Authority,
     /// True inside an intercepted TLS tunnel, false for plain `http://`.
     pub secure: bool,
+}
+
+impl std::fmt::Debug for ExchangeCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExchangeCtx")
+            .field("secure", &self.secure)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A static, script-free, form-free response a hook may answer with.
@@ -53,12 +61,21 @@ fn protected(name: &HeaderName) -> bool {
         || name.as_str().starts_with("proxy-")
 }
 
-/// Request head; method and URI (authority, scheme) are read-only.
-#[derive(Debug)]
+/// Request head; method and URI (authority, scheme) are read-only. `Debug`
+/// shows only the method and the header count: never the URI or headers.
 pub struct RequestHeadView {
     method: Method,
     uri: Uri,
     headers: HeaderMap,
+}
+
+impl std::fmt::Debug for RequestHeadView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestHeadView")
+            .field("method", &self.method)
+            .field("header_count", &self.headers.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl RequestHeadView {
@@ -108,10 +125,19 @@ impl RequestHeadView {
 }
 
 /// Response head; status is read-only and `Set-Cookie` may only be removed.
-#[derive(Debug)]
+/// `Debug` shows only the status and the header count.
 pub struct ResponseHeadView {
     status: StatusCode,
     headers: HeaderMap,
+}
+
+impl std::fmt::Debug for ResponseHeadView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResponseHeadView")
+            .field("status", &self.status)
+            .field("header_count", &self.headers.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl ResponseHeadView {
@@ -185,5 +211,66 @@ mod tests {
         );
         assert_eq!(resp.remove_header(&header::SET_COOKIE), Ok(()));
         assert_eq!(resp.remove_header(&header::ALT_SVC), Ok(()));
+    }
+
+    const SENTINEL_HOST: &str = "sentinel-host.invalid";
+    const SENTINEL_VALUE: &str = "sentinel-secret-7f3a";
+
+    fn sentinel_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static(SENTINEL_HOST));
+        headers.insert(header::COOKIE, HeaderValue::from_static(SENTINEL_VALUE));
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static(SENTINEL_VALUE),
+        );
+        headers.insert(header::SET_COOKIE, HeaderValue::from_static(SENTINEL_VALUE));
+        headers
+    }
+
+    fn assert_redacted(debug: &str) {
+        assert!(!debug.contains(SENTINEL_HOST), "host leaked: {debug}");
+        assert!(
+            !debug.contains(SENTINEL_VALUE),
+            "header value leaked: {debug}"
+        );
+        for name in ["cookie", "authorization", "set-cookie", "host"] {
+            assert!(
+                !debug.to_ascii_lowercase().contains(name),
+                "header name leaked: {debug}"
+            );
+        }
+    }
+
+    #[test]
+    fn request_head_debug_is_redacted() {
+        let uri: Uri = format!("https://{SENTINEL_HOST}/{SENTINEL_VALUE}?q={SENTINEL_VALUE}")
+            .parse()
+            .expect("uri");
+        let view = RequestHeadView::new(Method::POST, uri, sentinel_headers());
+        let debug = format!("{view:?} {view:#?}");
+        assert_redacted(&debug);
+        assert!(debug.contains("POST"), "{debug}");
+        assert!(debug.contains("header_count: 4"), "{debug}");
+    }
+
+    #[test]
+    fn response_head_debug_is_redacted() {
+        let view = ResponseHeadView::new(StatusCode::FOUND, sentinel_headers());
+        let debug = format!("{view:?} {view:#?}");
+        assert_redacted(&debug);
+        assert!(debug.contains("302"), "{debug}");
+        assert!(debug.contains("header_count: 4"), "{debug}");
+    }
+
+    #[test]
+    fn exchange_ctx_debug_omits_the_authority() {
+        let ctx = ExchangeCtx {
+            authority: Authority::parse(&format!("{SENTINEL_HOST}:443")).expect("authority"),
+            secure: true,
+        };
+        let debug = format!("{ctx:?} {ctx:#?}");
+        assert_redacted(&debug);
+        assert!(debug.contains("secure: true"), "{debug}");
     }
 }

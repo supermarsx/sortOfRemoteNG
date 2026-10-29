@@ -31,7 +31,7 @@ pub(crate) const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Re-check interval while every HTTP/1.1 connection of an authority is busy.
 const H1_BUSY_POLL: Duration = Duration::from_millis(2);
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 struct Key {
     authority: Authority,
     tls: bool,

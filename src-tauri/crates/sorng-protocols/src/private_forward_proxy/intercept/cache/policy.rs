@@ -56,8 +56,9 @@ pub(crate) fn options() -> CacheOptions {
     }
 }
 
-/// A stored response head plus what is needed to rebuild its policy.
-#[derive(Clone, Debug)]
+/// A stored response head plus what is needed to rebuild its policy. `Debug`
+/// shows only the method, the status and the header counts.
+#[derive(Clone)]
 pub(crate) struct StoredHead {
     pub method: Method,
     /// Origin-form (path and query) URI.
@@ -69,11 +70,31 @@ pub(crate) struct StoredHead {
     pub response_time: SystemTime,
 }
 
-/// One cached response.
-#[derive(Clone, Debug)]
+impl std::fmt::Debug for StoredHead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredHead")
+            .field("method", &self.method)
+            .field("status", &self.status)
+            .field("req_header_count", &self.req_headers.len())
+            .field("res_header_count", &self.res_headers.len())
+            .finish_non_exhaustive()
+    }
+}
+
+/// One cached response. `Debug` shows the redacted head and the body length.
+#[derive(Clone)]
 pub(crate) struct Entry {
     pub head: StoredHead,
     pub body: Bytes,
+}
+
+impl std::fmt::Debug for Entry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entry")
+            .field("head", &self.head)
+            .field("body_len", &self.body.len())
+            .finish()
+    }
 }
 
 impl Entry {
@@ -586,5 +607,44 @@ mod tests {
     fn per_entry_cap_is_min_of_32_mib_and_an_eighth() {
         assert_eq!(per_entry_cap(128 * 1024 * 1024), 16 * 1024 * 1024);
         assert_eq!(per_entry_cap(1024 * 1024 * 1024), PER_ENTRY_MAX);
+    }
+
+    #[test]
+    fn stored_head_and_entry_debug_are_redacted() {
+        const SENTINEL_HOST: &str = "sentinel-host.invalid";
+        const SENTINEL_VALUE: &str = "sentinel-secret-7f3a";
+        let mut headers = HeaderMap::new();
+        headers.insert(header::SET_COOKIE, HeaderValue::from_static(SENTINEL_VALUE));
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static(SENTINEL_VALUE),
+        );
+        headers.insert(header::LOCATION, HeaderValue::from_static(SENTINEL_HOST));
+        let head = StoredHead {
+            method: Method::GET,
+            uri: format!("/{SENTINEL_HOST}?token={SENTINEL_VALUE}")
+                .parse()
+                .unwrap(),
+            status: StatusCode::OK,
+            req_headers: headers.clone(),
+            res_headers: headers,
+            response_time: SystemTime::UNIX_EPOCH,
+        };
+        let entry = Entry {
+            head: head.clone(),
+            body: Bytes::from_static(SENTINEL_VALUE.as_bytes()),
+        };
+        for debug in [
+            format!("{head:?} {head:#?}"),
+            format!("{entry:?} {entry:#?}"),
+        ] {
+            let lower = debug.to_ascii_lowercase();
+            assert!(!debug.contains(SENTINEL_HOST), "host leaked: {debug}");
+            assert!(!debug.contains(SENTINEL_VALUE), "value leaked: {debug}");
+            for name in ["set-cookie", "authorization", "location"] {
+                assert!(!lower.contains(name), "header name leaked: {debug}");
+            }
+            assert!(debug.contains("GET") && debug.contains("200"), "{debug}");
+        }
     }
 }

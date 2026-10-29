@@ -215,12 +215,22 @@ pub(crate) fn modulus_bits(modulus: &[u8]) -> usize {
 }
 
 /// What the handshake verifier saw. Read once the handshake has finished.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// `Debug` shows the OCSP length, never its bytes.
+#[derive(Clone, Default, Eq, PartialEq)]
 pub(crate) struct VerifyRecord {
     /// A structural fatal result that aborted the handshake.
     pub fatal: Option<UpstreamFatal>,
     /// Stapled OCSP response, passed on to the OS validation.
     pub ocsp: Vec<u8>,
+}
+
+impl std::fmt::Debug for VerifyRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VerifyRecord")
+            .field("fatal", &self.fatal)
+            .field("ocsp_len", &self.ocsp.len())
+            .finish()
+    }
 }
 
 /// One per upstream connection.
@@ -467,5 +477,19 @@ pub(crate) mod tests {
             config.system_validation(&[vec![0x30]], &name, &[]),
             SystemValidation::NotValid
         );
+    }
+
+    #[test]
+    fn verify_record_debug_omits_the_ocsp_bytes() {
+        let record = VerifyRecord {
+            fatal: Some(UpstreamFatal::Revoked),
+            ocsp: b"sentinel-host.invalid sentinel-secret-7f3a".to_vec(),
+        };
+        let debug = format!("{record:?} {record:#?}");
+        // `Vec<u8>` debug would print the bytes as decimals; `s` is 115.
+        assert!(!debug.contains("115"), "ocsp bytes leaked: {debug}");
+        assert!(!debug.contains("sentinel"), "ocsp bytes leaked: {debug}");
+        assert!(debug.contains("ocsp_len: 42"), "{debug}");
+        assert!(debug.contains("Revoked"), "{debug}");
     }
 }
