@@ -1210,7 +1210,10 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(screen.getAllByText(message)).toHaveLength(1);
   });
 
-  it("does not toast success when the fresh proxy still fails, and retains failure diagnostics", async () => {
+  const freshProxyFails = async (failure: {
+    code: number;
+    category: "proxy" | "connection";
+  }) => {
     await openTab();
     const native = h.invoke.getMockImplementation()!;
     h.invoke.mockImplementation(async (command, args) => {
@@ -1233,20 +1236,50 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(
       screen.queryByText(/fresh private proxy could not load the website/),
     ).toBeNull();
-    await emit(
-      snapshot("attempt-2", {
-        sequence: 5,
-        loadFailure: { code: -130, category: "proxy" },
-      }),
-    );
+    expect(
+      screen.queryByRole("alert", { name: "Browser proxy stuck" }),
+    ).toBeNull();
+    await emit(snapshot("attempt-2", { sequence: 5, loadFailure: failure }));
     await settle();
     expect(
       screen.queryByText("This tab reconnected with a fresh private proxy."),
     ).toBeNull();
+    expect(notice()).toBeNull();
+  };
+
+  it("does not toast success when the fresh proxy still fails, and retains failure diagnostics", async () => {
+    // The fresh relay was reached (another failure): retrying can still help.
+    await freshProxyFails({ code: -102, category: "connection" });
     const message = /fresh private proxy could not load the website/;
     expect(screen.getAllByText(message)).toHaveLength(1);
     expect(screen.getByText(message).closest('[role="status"]')).not.toBeNull();
-    expect(notice()).toBeNull();
+    expect(
+      screen.queryByRole("alert", { name: "Browser proxy stuck" }),
+    ).toBeNull();
+    await emit(
+      snapshot("attempt-2", {
+        sequence: 6,
+        loadFailure: { code: -102, category: "connection" },
+      }),
+    );
+    await settle();
+    expect(screen.getAllByText(message)).toHaveLength(1);
+  });
+
+  it("asks for an app restart when the engine still cannot reach a fresh proxy at all", async () => {
+    await freshProxyFails({ code: -130, category: "proxy" });
+    // No connection reached the fresh relay either: reconnecting cannot help.
+    const alert = await screen.findByRole("alert", {
+      name: "Browser proxy stuck",
+    });
+    expect(alert).toHaveTextContent(
+      "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
+    );
+    expect(
+      screen.queryByText(/fresh private proxy could not load the website/),
+    ).toBeNull();
+    // No automatic third attempt, and the alert stays a single line.
+    expect(calls("origin_browser_create")).toHaveLength(2);
     await emit(
       snapshot("attempt-2", {
         sequence: 6,
@@ -1254,7 +1287,10 @@ describe("a saved connection edited while its tab is open (K2)", () => {
       }),
     );
     await settle();
-    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(
+      screen.getAllByRole("alert", { name: "Browser proxy stuck" }),
+    ).toHaveLength(1);
+    expect(calls("origin_browser_create")).toHaveLength(2);
   });
 
   it("says so in plain words when the tab reconnects because its private proxy stopped", async () => {

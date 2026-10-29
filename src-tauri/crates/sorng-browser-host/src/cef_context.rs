@@ -269,7 +269,9 @@ fn verify_native_browser_binding(
 fn reassert_native_browser_proxy(browser: &Browser, retained: &mut RequestContext, endpoint: std::net::SocketAddr) -> Result<(), ContextError> {
     let actual = browser.host().and_then(|host| host.request_context()).ok_or(ContextError::SharedContext)?;
     if actual.is_same(Some(retained)) != 1 || !CefPreferences(&actual).is_private() { return Err(ContextError::SharedContext); }
-    proxy_config::install(&mut CefPreferences(&actual), endpoint)?;
+    // An equal write never reaches the network context; reapply() makes the
+    // exact relay a fresh change (via a relay-only variant, never direct).
+    proxy_config::reapply(&mut CefPreferences(&actual), endpoint)?;
     verify_native_browser_binding(browser, retained, endpoint)
 }
 
@@ -795,6 +797,9 @@ impl PrivateRequestContext {
     /// Reassert the attempt's exact retained relay before a new navigation.
     /// A freshly created Chromium context can inherit the global deny proxy;
     /// configuration readback alone does not prove a NetworkService update.
+    /// Rewriting the same value would be dropped by Chromium's pref store, so
+    /// this re-sends it as a real change. Still no proof of application: only
+    /// the patched runtime's ACK (`proxy_application_verified`) is.
     pub(crate) fn reassert_browser_proxy(&self, browser: &Browser) -> Result<(), ContextError> {
         if currently_on(ThreadId::UI) != 1 { return Err(ContextError::WrongThread); }
         if !self.browser_claimed || self.status() != PreparationStatus::ProxyConfigured { return Err(ContextError::SessionUnavailable); }
