@@ -30,6 +30,8 @@ mod accept;
 mod connect_udp;
 #[path = "private_forward_proxy/http.rs"]
 mod forward_http;
+#[path = "private_forward_proxy/intercept/mod.rs"]
+pub mod intercept;
 use accept::{
     rebind, AcceptBackoff, AcceptListener, Endpoint, ListenerSource, LoopbackSource, RebindBudget,
     Rebound,

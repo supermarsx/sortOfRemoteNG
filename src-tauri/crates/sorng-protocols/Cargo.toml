@@ -50,8 +50,20 @@ log = { workspace = true }
 rand = { workspace = true }
 futures-util = "0.3"
 axum = "0.8"
-hyper = { version = "1", features = ["http1", "server", "client"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2", "client-legacy"] }
+# t-mitmproxy (D1): the per-attempt intercepting proxy. Everything below was
+# already locked except http-cache-semantics (the one new package).
+# rcgen mints the in-memory per-attempt CA and its leaves (moved from dev-deps).
+rcgen = "0.12"
+http-body-util = "0.1"
+# Upstream verification records OS-root validity and OS revocation.
+rustls-platform-verifier = "0.7"
+# Proxy cache encryption at rest (AES-256-GCM STREAM, HKDF-derived key).
+aes-gcm = { workspace = true, features = ["stream"] }
+hkdf = "0.12"
+# RFC 9111 private-cache semantics for the proxy cache.
+http-cache-semantics = { version = "2", default-features = false }
 sha1 = "0.10"
 flate2 = "1.0"
 hex = { workspace = true }
@@ -63,8 +75,6 @@ url = "2"
 tauri = { workspace = true }
 
 [dev-dependencies]
-# Synthetic local CA/leaf fixtures only; no OS trust installation or public hosts.
-rcgen = "0.12"
 # The Yealink mock phone in `http_yealink_login_tests.rs` really decrypts the
 # login body, the way `decodeRsaAesLogin` does in the e2e fixture, so the test
 # proves the POST is bound to the session id the login-page GET issued. All

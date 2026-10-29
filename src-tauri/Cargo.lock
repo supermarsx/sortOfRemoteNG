@@ -4207,6 +4207,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-cache-semantics"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4311240f94cb6fe622337dc580b09ddd6ae4a891eb121dba20cf4f77ca4e7129"
+dependencies = [
+ "http",
+ "time",
+]
+
+[[package]]
 name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12365,6 +12375,7 @@ name = "sorng-protocols"
 version = "26.51.0"
 dependencies = [
  "aes 0.8.4",
+ "aes-gcm 0.10.3",
  "axum",
  "base64 0.23.1",
  "cbc 0.1.2",
@@ -12373,6 +12384,9 @@ dependencies = [
  "flate2",
  "futures-util",
  "hex",
+ "hkdf 0.12.4",
+ "http-body-util",
+ "http-cache-semantics",
  "hyper",
  "hyper-util",
  "log",
@@ -12385,6 +12399,7 @@ dependencies = [
  "rsa 0.9.10",
  "rustls",
  "rustls-native-certs 0.8.4",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha1 0.10.7",
