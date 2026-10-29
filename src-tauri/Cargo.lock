@@ -12940,6 +12940,7 @@ dependencies = [
  "regex",
  "rquickjs",
  "rsa 0.9.10",
+ "russh",
  "rustls",
  "rustls-native-certs 0.8.4",
  "rustls-pemfile 2.2.0",

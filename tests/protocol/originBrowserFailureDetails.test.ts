@@ -59,6 +59,14 @@ describe("fixed actionable native failure details", () => {
     ["host-key", "SSH route host-key verification", "network"],
     ["authentication", "SSH route authentication", "network"],
     ["timeout", "SSH route connection deadline", "network"],
+    ["timeout-queue", "SSH route connection deadline", "network"],
+    ["timeout-dns", "SSH route hostname resolution", "network"],
+    ["timeout-transport", "SSH route TCP connection", "network"],
+    ["timeout-handshake", "SSH route handshake", "network"],
+    ["timeout-host-key", "SSH route host-key verification", "network"],
+    ["timeout-authentication", "SSH route authentication", "network"],
+    ["host-key-rejected", "SSH route host-key verification", "network"],
+    ["host-key-unanswered", "SSH route host-key verification", "network"],
     ["capacity", "SSH route connection capacity", "network"],
     ["cancelled", "SSH route connection cancellation", "network"],
     ["unknown", "SSH route connection", "network"],
@@ -81,7 +89,11 @@ describe("fixed actionable native failure details", () => {
       if (reason === "authentication")
         expect(detail.nextStep).toContain("saved SSH source");
       if (reason === "timeout")
-        expect(detail.problem).toContain("did not identify the stage");
+        expect(detail.problem).toContain(
+          "before a connection stage was recorded",
+        );
+      if (reason.startsWith("timeout-"))
+        expect(detail.problem).toContain("deadline");
       if (
         [
           "refused",

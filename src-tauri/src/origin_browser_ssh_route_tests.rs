@@ -124,13 +124,23 @@ fn ssh_connect_failures_preserve_only_known_fixed_reason_codes() {
         ("Failed to connect to SSH establishment endpoint: [forged] private-detail", "connect-transport"),
         ("Failed to connect to SSH establishment endpoint: private-detail [connection-refused] fake", "connect-transport"),
         ("SSH handshake failed: private-detail", "connect-handshake"),
-        ("Host key verification failed for private-host: key rejected by user", "connect-host-key"),
-        ("Host key verification timed out for private-host after waiting for user confirmation", "connect-host-key"),
         ("Failed to write known_hosts file: private-path", "connect-host-key"),
         ("No event emitter configured for host-key verification", "connect-host-key"),
         ("SSH_TRUST_UNAVAILABLE[private-detail]: private-host", "connect-host-key"),
         ("All authentication methods failed", "connect-authentication"),
         ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'overall' exceeded its 30000 ms deadline", "connect-timeout"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'final-ssh-authentication-admission' exceeded its 30000 ms deadline", "connect-timeout-queue"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'direct-dns-resolution' exceeded its 30000 ms deadline", "connect-timeout-dns"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'direct-tcp-connect' exceeded its 30000 ms deadline", "connect-timeout-transport"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'proxy-negotiation' exceeded its 30000 ms deadline", "connect-timeout-transport"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'final-ssh-handshake' exceeded its 30000 ms deadline", "connect-timeout-handshake"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'host-key-verification' exceeded its 30000 ms deadline", "connect-timeout-host-key"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'final-ssh-authentication' exceeded its 30000 ms deadline", "connect-timeout-authentication"),
+        ("SSH_CONNECTION_TIMEOUT: route context: SSH establishment phase 'final-ssh-authentication' exceeded its 30000 ms deadline", "connect-timeout-authentication"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'Private Host' exceeded its 30000 ms deadline", "connect-timeout"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'final-ssh-authentication exceeded its deadline", "connect-timeout"),
+        ("Host key verification failed for private-host: key rejected by user", "connect-host-key-rejected"),
+        ("Host key verification timed out for private-host after waiting for user confirmation", "connect-host-key-unanswered"),
         ("SSH_SESSION_CAPACITY: private-detail", "connect-capacity"),
         ("SSH_HANDSHAKE_CAPACITY: private-detail", "connect-capacity"),
         ("SSH_CONFIG_CAPACITY: private-detail", "connect-capacity"),
@@ -589,4 +599,26 @@ async fn ssh_cleanup_revocation_preempts_retained_owner_and_thread_drop_is_suppo
         .await
         .unwrap()
         .unwrap();
+}
+
+#[test]
+fn ssh_routed_localhost_stays_a_remote_name_and_is_never_rewritten_locally() {
+    // https://localhost:10000 behind a saved SSH jump: Webmin listens on the
+    // SSH server's own loopback. The forward destination keeps the literal
+    // name, so the SSH server resolves it (direct-tcpip), never this machine.
+    let localhost = Authority::parse("localhost:10000").unwrap();
+    let mut config = editor_ssh_jump();
+    config["security"]["tunnelChain"][0]["sshTunnel"] = json!({
+        "connectionId":"saved-ssh","ownerDatabaseId":"db","forwardType":"local"});
+    let selected = selected(&config, &localhost).unwrap().unwrap();
+    assert_eq!(selected.remote, localhost);
+    assert_eq!(selected.remote.host(), "localhost");
+    for loopback in ["127.0.0.1:10000", "[::1]:10000"] {
+        let target = Authority::parse(loopback).unwrap();
+        assert_eq!(selected_remote(&config, &target), target);
+    }
+}
+
+fn selected_remote(config: &Value, target: &Authority) -> Authority {
+    selected(config, target).unwrap().unwrap().remote
 }

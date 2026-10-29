@@ -26,8 +26,16 @@ enum ConnectFailure {
     TransportTimeout,
     Handshake,
     HostKey,
+    HostKeyRejected,
+    HostKeyUnanswered,
     Authentication,
     Timeout,
+    TimeoutQueue,
+    TimeoutDns,
+    TimeoutTransport,
+    TimeoutHandshake,
+    TimeoutHostKey,
+    TimeoutAuthentication,
     Capacity,
     Cancelled,
     Unknown,
@@ -37,8 +45,8 @@ impl ConnectFailure {
     fn classify(error: &str) -> Self {
         if error == "SSH connection cancelled" {
             Self::Cancelled
-        } else if error.starts_with("SSH_CONNECTION_TIMEOUT:") {
-            Self::Timeout
+        } else if let Some(detail) = error.strip_prefix("SSH_CONNECTION_TIMEOUT:") {
+            Self::timeout_stage(detail)
         } else if ["SSH_SESSION_CAPACITY:", "SSH_HANDSHAKE_CAPACITY:", "SSH_CONFIG_CAPACITY:"]
             .iter().any(|prefix| error.starts_with(prefix)) {
             Self::Capacity
@@ -60,6 +68,14 @@ impl ConnectFailure {
             Self::Handshake
         } else if error == "All authentication methods failed" {
             Self::Authentication
+        } else if error.starts_with("Host key verification failed for ")
+            && error.ends_with(": key rejected by user")
+        {
+            Self::HostKeyRejected
+        } else if error.starts_with("Host key verification timed out for ")
+            && error.ends_with(" after waiting for user confirmation")
+        {
+            Self::HostKeyUnanswered
         } else if error == "No event emitter configured for host-key verification"
             || error == "Host key verification failed: unable to determine the home directory for known_hosts"
             || ["SSH_TRUST_UNAVAILABLE[", "Host key verification failed for ", "Host key verification timed out for ", "Failed to create known_hosts handle:", "Failed to lock host-key prompt map:", "Failed to serialize host-key prompt payload:", "Failed to enumerate known_hosts entries:", "Failed to replace existing known_hosts entry:", "Failed to add host key to known_hosts:", "Failed to create known_hosts directory:", "Failed to write known_hosts file:"]
@@ -67,6 +83,42 @@ impl ConnectFailure {
             Self::HostKey
         } else {
             Self::Unknown
+        }
+    }
+
+    /// The SSH service names the interrupted establishment phase with a fixed
+    /// first-party literal. Only that literal's shape is read, and only a
+    /// fixed stage code leaves this function.
+    fn timeout_stage(detail: &str) -> Self {
+        const MARKER: &str = "SSH establishment phase '";
+        let Some((_, rest)) = detail.split_once(MARKER) else {
+            return Self::Timeout;
+        };
+        let Some((phase, _)) = rest.split_once('\'') else {
+            return Self::Timeout;
+        };
+        if phase.is_empty()
+            || phase.len() > 64
+            || !phase
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        {
+            return Self::Timeout;
+        }
+        if phase.ends_with("-admission") {
+            Self::TimeoutQueue
+        } else if phase.contains("dns") {
+            Self::TimeoutDns
+        } else if phase.contains("host-key") {
+            Self::TimeoutHostKey
+        } else if phase.contains("authentication") {
+            Self::TimeoutAuthentication
+        } else if phase.contains("handshake") {
+            Self::TimeoutHandshake
+        } else if phase.contains("tcp") || phase.contains("proxy") || phase.contains("transport") {
+            Self::TimeoutTransport
+        } else {
+            Self::Timeout
         }
     }
 
@@ -82,8 +134,16 @@ impl ConnectFailure {
             Self::TransportTimeout => "connect-transport-timeout",
             Self::Handshake => "connect-handshake",
             Self::HostKey => "connect-host-key",
+            Self::HostKeyRejected => "connect-host-key-rejected",
+            Self::HostKeyUnanswered => "connect-host-key-unanswered",
             Self::Authentication => "connect-authentication",
             Self::Timeout => "connect-timeout",
+            Self::TimeoutQueue => "connect-timeout-queue",
+            Self::TimeoutDns => "connect-timeout-dns",
+            Self::TimeoutTransport => "connect-timeout-transport",
+            Self::TimeoutHandshake => "connect-timeout-handshake",
+            Self::TimeoutHostKey => "connect-timeout-host-key",
+            Self::TimeoutAuthentication => "connect-timeout-authentication",
             Self::Capacity => "connect-capacity",
             Self::Cancelled => "connect-cancelled",
             Self::Unknown => "connect-unknown",

@@ -2282,8 +2282,14 @@ struct SshEstablishmentControl {
     health: sorng_core::route_health::RouteHealth,
     health_final_index: AtomicUsize,
     health_proxy_index: AtomicUsize,
-    deadline: Instant,
+    /// Overall establishment deadline. It moves only while a person is asked
+    /// to decide (host-key confirmation): waiting for a human must not spend
+    /// the network deadline. Every sleeper re-reads it on change.
+    deadline: tokio::sync::watch::Sender<Instant>,
     overall_timeout: Duration,
+    /// Fixed first-party phase names with elapsed time, in entry order. The
+    /// last entry is the stage an overall deadline interrupted.
+    stages: StdMutex<Vec<(String, Instant, Option<Duration>)>>,
     cancellation: Arc<PendingSshConnection>,
     sockets: Arc<StdMutex<Vec<TcpStream>>>,
     outcome: Arc<AtomicU8>,
@@ -2335,6 +2341,7 @@ impl SshEstablishmentControl {
         let watchdog_sockets = Arc::clone(&sockets);
         let watchdog_outcome = Arc::clone(&outcome);
         let watchdog_cancellation = Arc::clone(&cancellation);
+        let (deadline_tx, mut watchdog_deadline) = tokio::sync::watch::channel(deadline);
         let watchdog = runtime.spawn(async move {
             tokio::select! {
                 biased;
@@ -2348,7 +2355,7 @@ impl SshEstablishmentControl {
                         shutdown_establishment_sockets(&watchdog_sockets);
                     }
                 }
-                _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                _ = wait_for_establishment_deadline(&mut watchdog_deadline) => {
                     if watchdog_outcome.compare_exchange(
                         ESTABLISHMENT_ACTIVE,
                         ESTABLISHMENT_TIMED_OUT,
@@ -2366,8 +2373,9 @@ impl SshEstablishmentControl {
             health: Default::default(),
             health_final_index: AtomicUsize::new(0),
             health_proxy_index: AtomicUsize::new(0),
-            deadline,
+            deadline: deadline_tx,
             overall_timeout,
+            stages: StdMutex::new(Vec::new()),
             cancellation,
             sockets,
             outcome,
@@ -2396,8 +2404,97 @@ impl SshEstablishmentControl {
         }
     }
 
+    fn deadline(&self) -> Instant {
+        *self.deadline.borrow()
+    }
+
+    /// Completes when the overall deadline passes, following any extension.
+    async fn overall_deadline_elapsed(&self) {
+        let mut deadline = self.deadline.subscribe();
+        wait_for_establishment_deadline(&mut deadline).await;
+    }
+
+    /// A phase that started on the overall deadline keeps following it, so a
+    /// paused deadline also pauses the phase that is waiting for a person.
+    async fn phase_deadline_elapsed(&self, deadline: Instant, follows_overall: bool) {
+        if follows_overall {
+            self.overall_deadline_elapsed().await;
+        } else {
+            tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
+        }
+    }
+
+    /// Record entry into a fixed, first-party establishment phase.
+    fn enter_stage(&self, phase: &str) {
+        let now = Instant::now();
+        let mut stages = self.stages.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(last) = stages.last_mut() {
+            if last.0 == phase {
+                return;
+            }
+            if last.2.is_none() {
+                last.2 = Some(now.saturating_duration_since(last.1));
+            }
+        }
+        if stages.len() < 64 {
+            stages.push((phase.to_string(), now, None));
+        }
+    }
+
+    /// The stage that was active when the establishment stopped.
+    fn active_stage(&self) -> String {
+        self.stages
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .last()
+            .map(|(phase, _, _)| phase.clone())
+            .unwrap_or_else(|| "overall".to_string())
+    }
+
+    /// `phase=ms` pairs. Phase names are fixed literals; never endpoint data.
+    fn stage_timings(&self) -> String {
+        let now = Instant::now();
+        self.stages
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(phase, started, elapsed)| {
+                let elapsed = elapsed.unwrap_or_else(|| now.saturating_duration_since(*started));
+                format!("{phase}={}ms", elapsed.as_millis())
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The overall deadline fired: name the stage it interrupted.
+    fn overall_timeout_error(&self) -> String {
+        let phase = self.active_stage();
+        log::warn!(
+            target: "ssh::establishment",
+            "SSH establishment deadline exceeded in phase '{phase}' after {} ms; stage timings: {}",
+            self.overall_timeout.as_millis(),
+            self.stage_timings()
+        );
+        self.timeout_error(&phase, self.overall_timeout)
+    }
+
+    /// Stop charging the network deadline while a person decides. The budget
+    /// left when the question was asked is restored when the guard drops.
+    fn suspend_for_user_decision(&self, decision_timeout: Duration) -> UserDecisionSuspension<'_> {
+        let now = Instant::now();
+        let remaining = self.deadline().saturating_duration_since(now);
+        if self.outcome.load(Ordering::Acquire) == ESTABLISHMENT_ACTIVE && !remaining.is_zero() {
+            self.deadline
+                .send_replace(now + decision_timeout + remaining + Duration::from_secs(1));
+        }
+        UserDecisionSuspension {
+            control: self,
+            remaining,
+        }
+    }
+
     fn expire_phase(&self, deadline: Instant) {
-        if deadline >= self.deadline {
+        if deadline >= self.deadline() {
             self.trigger(ESTABLISHMENT_TIMED_OUT);
         } else {
             shutdown_establishment_sockets(&self.sockets);
@@ -2411,11 +2508,16 @@ impl SshEstablishmentControl {
             self.trigger(ESTABLISHMENT_CANCELLED);
             return Err("SSH connection cancelled".to_string());
         }
-        if Instant::now() >= self.deadline
+        if Instant::now() >= self.deadline()
             || self.outcome.load(Ordering::Acquire) == ESTABLISHMENT_TIMED_OUT
         {
             self.trigger(ESTABLISHMENT_TIMED_OUT);
-            return Err(self.timeout_error(phase, self.overall_timeout));
+            let phase = if phase == "overall" {
+                self.active_stage()
+            } else {
+                phase.to_string()
+            };
+            return Err(self.timeout_error(&phase, self.overall_timeout));
         }
         Ok(())
     }
@@ -2423,7 +2525,7 @@ impl SshEstablishmentControl {
     fn effective_deadline(&self, requested: Duration) -> Result<(Instant, Duration), String> {
         self.ensure_active("overall")?;
         let now = Instant::now();
-        let remaining = self.deadline.saturating_duration_since(now);
+        let remaining = self.deadline().saturating_duration_since(now);
         let effective = requested.min(remaining);
         Ok((now + effective, effective))
     }
@@ -2438,6 +2540,7 @@ impl SshEstablishmentControl {
         F: Future<Output = Result<T, String>>,
     {
         let (deadline, effective) = self.effective_deadline(requested)?;
+        self.enter_stage(phase);
         self.run_async_until(phase, deadline, effective, future)
             .await
     }
@@ -2458,6 +2561,7 @@ impl SshEstablishmentControl {
             self.health_final_index.load(Ordering::Relaxed),
             self.health_proxy_index.load(Ordering::Relaxed),
         );
+        let follows_overall = deadline >= self.deadline();
         tokio::pin!(future);
         let result = tokio::select! {
             biased;
@@ -2465,8 +2569,8 @@ impl SshEstablishmentControl {
                 self.trigger(ESTABLISHMENT_CANCELLED);
                 Err("SSH connection cancelled".to_string())
             }
-            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
-                self.expire_phase(deadline);
+            _ = self.phase_deadline_elapsed(deadline, follows_overall) => {
+                self.expire_phase(if follows_overall { self.deadline() } else { deadline });
                 Err(self.timeout_error(phase, effective))
             }
             result = &mut future => result,
@@ -2511,6 +2615,8 @@ impl SshEstablishmentControl {
         F: FnOnce(&SshIsolatedPhaseContext) -> Result<T, String> + Send + 'static,
     {
         let (deadline, effective) = self.effective_deadline(requested)?;
+        // Queueing for a local worker is its own stage: it is not the network.
+        self.enter_stage(&format!("{phase}-admission"));
         let permit = self
             .run_async_until(phase, deadline, effective, async move {
                 admission
@@ -2519,10 +2625,13 @@ impl SshEstablishmentControl {
                     .map_err(|_| "SSH local phase admission is closed".to_string())
             })
             .await?;
+        self.enter_stage(phase);
+        let follows_overall = deadline >= self.deadline();
         let context = SshIsolatedPhaseContext {
             control: Arc::clone(self),
             phase: phase.to_string(),
             deadline,
+            follows_overall,
             effective,
         };
         let worker = tokio::task::spawn_blocking(move || {
@@ -2540,7 +2649,7 @@ impl SshEstablishmentControl {
 
     fn track_blocking_socket(&self, stream: &TcpStream, phase: &str) -> Result<(), String> {
         self.ensure_active(phase)?;
-        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        let remaining = self.deadline().saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             self.trigger(ESTABLISHMENT_TIMED_OUT);
             return Err(self.timeout_error(phase, self.overall_timeout));
@@ -2631,10 +2740,11 @@ impl SshEstablishmentControl {
         requested: Duration,
     ) -> Result<SshBlockingPhaseGuard, String> {
         let (deadline, effective) = self.effective_deadline(requested)?;
+        self.enter_stage(phase);
         let cancellation = Arc::clone(&self.cancellation);
         let sockets = Arc::clone(&self.sockets);
         let outcome = Arc::clone(&self.outcome);
-        let is_overall_deadline = deadline >= self.deadline;
+        let is_overall_deadline = deadline >= self.deadline();
         let task = self.runtime.spawn(async move {
             tokio::select! {
                 biased;
@@ -2731,10 +2841,57 @@ struct SshIsolatedPhaseContext {
     control: Arc<SshEstablishmentControl>,
     phase: String,
     deadline: Instant,
+    follows_overall: bool,
     effective: Duration,
 }
 
+/// Restores the network budget left when a person was asked to decide.
+struct UserDecisionSuspension<'a> {
+    control: &'a SshEstablishmentControl,
+    remaining: Duration,
+}
+
+impl Drop for UserDecisionSuspension<'_> {
+    fn drop(&mut self) {
+        if self.control.outcome.load(Ordering::Acquire) == ESTABLISHMENT_ACTIVE
+            && !self.remaining.is_zero()
+        {
+            self.control
+                .deadline
+                .send_replace(Instant::now() + self.remaining);
+        }
+    }
+}
+
+/// Completes once the watched deadline has passed, re-arming on every change.
+async fn wait_for_establishment_deadline(deadline: &mut tokio::sync::watch::Receiver<Instant>) {
+    loop {
+        let current = *deadline.borrow_and_update();
+        if Instant::now() >= current {
+            return;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(current)) => {}
+            changed = deadline.changed() => {
+                if changed.is_err() {
+                    // The control is gone; its last deadline still applies.
+                    tokio::time::sleep_until(tokio::time::Instant::from_std(current)).await;
+                    return;
+                }
+            }
+        }
+    }
+}
+
 impl SshIsolatedPhaseContext {
+    fn current_deadline(&self) -> Instant {
+        if self.follows_overall {
+            self.control.deadline()
+        } else {
+            self.deadline
+        }
+    }
+
     async fn run_async<T, F>(&self, future: F) -> Result<T, String>
     where
         F: Future<Output = Result<T, String>>,
@@ -2748,8 +2905,9 @@ impl SshIsolatedPhaseContext {
 impl SshDeadlinePhase for SshIsolatedPhaseContext {
     fn ensure_active(&self) -> Result<(), String> {
         self.control.ensure_active(&self.phase)?;
-        if Instant::now() >= self.deadline {
-            self.control.expire_phase(self.deadline);
+        let deadline = self.current_deadline();
+        if Instant::now() >= deadline {
+            self.control.expire_phase(deadline);
             return Err(self.control.timeout_error(&self.phase, self.effective));
         }
         Ok(())
@@ -2757,7 +2915,9 @@ impl SshDeadlinePhase for SshIsolatedPhaseContext {
 
     fn configure_session_timeout(&self, session: &Session) -> Result<(), String> {
         self.ensure_active()?;
-        let remaining = self.deadline.saturating_duration_since(Instant::now());
+        let remaining = self
+            .current_deadline()
+            .saturating_duration_since(Instant::now());
         let timeout_ms = remaining
             .as_millis()
             .saturating_add(1)
@@ -6083,6 +6243,22 @@ impl SshService {
             .clone()
             .ok_or_else(|| "No event emitter configured for host-key verification".to_string())?;
         let (decision_tx, decision_rx) = tokio::sync::oneshot::channel();
+        // A person reading a fingerprint must not spend the connect deadline.
+        let _suspension = self
+            .establishment_control
+            .as_deref()
+            .map(|control| control.suspend_for_user_decision(timeout));
+        // Dropped with this future on cancellation/deadline: a later answer
+        // must find no stale sender for this attempt.
+        struct PendingPromptEntry<'a>(&'a str);
+        impl Drop for PendingPromptEntry<'_> {
+            fn drop(&mut self) {
+                if let Ok(mut pending) = PENDING_HOST_KEY_PROMPTS.lock() {
+                    pending.remove(self.0);
+                }
+            }
+        }
+        let _entry = PendingPromptEntry(session_id);
 
         {
             let mut pending = PENDING_HOST_KEY_PROMPTS
@@ -8885,13 +9061,13 @@ async fn run_admitted_ssh_connection_test(
     let result = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err("SSH connection cancelled".to_string()),
-        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(control.deadline)) => {
+        _ = control.overall_deadline_elapsed() => {
             control.trigger(ESTABLISHMENT_TIMED_OUT);
             finish_timed_out_proxy_command_cleanup(
                 timeout_session_id,
                 timeout_session_lease,
             ).await;
-            Err(control.timeout_error("overall", control.overall_timeout))
+            Err(control.overall_timeout_error())
         },
         result = worker => result
             .map_err(|error| format!("SSH connection test worker failed: {error}"))?,
@@ -8997,13 +9173,13 @@ where
     let result = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err("SSH connection cancelled".to_string()),
-        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(control.deadline)) => {
+        _ = control.overall_deadline_elapsed() => {
             control.trigger(ESTABLISHMENT_TIMED_OUT);
             finish_timed_out_proxy_command_cleanup(
                 timeout_session_id,
                 timeout_session_lease,
             ).await;
-            Err(control.timeout_error("overall", control.overall_timeout))
+            Err(control.overall_timeout_error())
         },
         result = establish(connector, session_id, config, worker_lease) => result,
     };
@@ -14051,3 +14227,7 @@ mod tests {
         assert_sentinel_untouched(&os_home, &sentinel);
     }
 }
+
+#[cfg(test)]
+#[path = "loopback_route_tests.rs"]
+mod loopback_route_tests;

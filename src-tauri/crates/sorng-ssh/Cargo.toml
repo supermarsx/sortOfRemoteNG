@@ -112,6 +112,9 @@ windows-sys = { workspace = true, features = [
 # Generate a self-signed client cert + key PEM bundle to unit-test the SSH3
 # mTLS client-auth config build (t23-e7). Already in the workspace lock.
 rcgen = "0.12"
+# In-process SSH server for the native browser SSH-route integration tests.
+# Already in the workspace lock (sorng-powershell, sorng-cloud-sync).
+russh = { version = "=0.61.2", default-features = false, features = ["ring", "rsa"] }
 
 # rquickjs-sys 0.12 does not ship pre-generated Windows ARM64 bindings.
 # Enable rquickjs's forwarding feature so bindgen reaches both rquickjs-core
