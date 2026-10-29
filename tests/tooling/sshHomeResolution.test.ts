@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, posix, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // Isolated (e2e) profiles must never read or write the user's real ~/.ssh
@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 // which forwards the OS home in production and fails closed in an isolated
 // profile that has no installed SSH home. These source scans fail on any
 // in-process home resolution that bypasses it. Test-only code (`#[cfg(test)]`
-// items, crate `tests/`) is stripped first, so fixtures need no allowlist.
+// items, files of `#[cfg(test)]` out-of-line modules, crate `tests/`) is
+// stripped first, so fixtures need no allowlist.
 
 const repoRoot = process.cwd();
 const tauriRoot = join(repoRoot, "src-tauri");
@@ -29,6 +30,15 @@ interface RustSource {
   /** Comments and literal contents blanked. Offsets match the source. */
   tokens: string;
   literals: RustLiteral[];
+  /** Out-of-line `mod name;` items declared at the file's top level. */
+  modules?: OutOfLineModule[];
+}
+
+interface OutOfLineModule {
+  /** Tauri-root relative path of the module's file, if it exists. */
+  file: string | undefined;
+  /** Whether the declaration only exists in test builds. */
+  testOnly: boolean;
 }
 
 // Blank per UTF-16 code unit so offsets never shift.
@@ -283,13 +293,61 @@ function prepareRust(path: string, source: string): RustSource {
       blank(tokens.slice(start, end)) +
       tokens.slice(end);
   }
+  const inTestRange = (offset: number) =>
+    ranges.some(([start, end]) => start <= offset && offset < end);
   const literals = lexed.literals.filter(
-    (literal) =>
-      !ranges.some(
-        ([start, end]) => start <= literal.start && literal.start < end,
-      ),
+    (literal) => !inTestRange(literal.start),
   );
-  return { path, code, tokens, literals };
+  const modules = outOfLineModules(path, lexed.code, lexed.tokens).map(
+    ({ offset, file }) => ({ file, testOnly: inTestRange(offset) }),
+  );
+  return { path, code, tokens, literals, modules };
+}
+
+/**
+ * Top-level `mod name;` declarations and the file each one loads. A module
+ * declared under `#[cfg(test)]` is test-only code that merely lives in its
+ * own file (`#[path = "x_tests.rs"] mod x_tests;`), so it is stripped too.
+ */
+function outOfLineModules(
+  path: string,
+  code: string,
+  tokens: string,
+): Array<{ offset: number; file: string | undefined }> {
+  const depths: number[] = [];
+  let depth = 0;
+  for (const char of tokens) {
+    depths.push(depth);
+    if (char === "{") depth += 1;
+    else if (char === "}") depth -= 1;
+  }
+  const directory = posix.dirname(path);
+  const stem = posix.basename(path, ".rs");
+  const modRs = ["mod", "lib", "main"].includes(stem);
+  const found: Array<{ offset: number; file: string | undefined }> = [];
+  const declaration =
+    /((?:#\s*\[(?:[^[\]]|\[[^\]]*\])*\]\s*)*)(?:pub(?:\s*\([^)]*\))?\s+)?\bmod\s+([A-Za-z_]\w*)\s*;/g;
+  for (const match of tokens.matchAll(declaration)) {
+    const offset = (match.index ?? 0) + match[0].lastIndexOf("mod");
+    if (depths[offset] !== 0) continue; // inside an inline module or item
+    const attributes = code.slice(
+      match.index ?? 0,
+      (match.index ?? 0) + match[1].length,
+    );
+    const pathAttribute = /#\s*\[\s*path\s*=\s*"([^"]*)"\s*\]/.exec(attributes);
+    const name = match[2];
+    const candidates = pathAttribute
+      ? [posix.join(directory, pathAttribute[1])]
+      : [
+          posix.join(directory, modRs ? "" : stem, `${name}.rs`),
+          posix.join(directory, modRs ? "" : stem, name, "mod.rs"),
+        ];
+    const file = candidates.find((candidate) =>
+      existsSync(join(tauriRoot, candidate)),
+    );
+    found.push({ offset, file });
+  }
+  return found;
 }
 
 function lineOf(source: RustSource, offset: number): number {
@@ -315,13 +373,64 @@ function rustFilesUnder(directory: string): string[] {
   return found.sort();
 }
 
+const preparedCache = new Map<string, RustSource>();
+
+function readRust(path: string): RustSource {
+  let source = preparedCache.get(path);
+  if (!source) {
+    source = prepareRust(path, readFileSync(join(tauriRoot, path), "utf8"));
+    preparedCache.set(path, source);
+  }
+  return source;
+}
+
+const testModuleCache = new Map<string, Set<string>>();
+
+/**
+ * Files under a source root (`src`, `crates/x/src`) that only compile in test
+ * builds: declared by a `#[cfg(test)]` out-of-line module, or declared from a
+ * file that is itself test-only.
+ */
+function testOnlyFiles(root: string): Set<string> {
+  let files = testModuleCache.get(root);
+  if (files) return files;
+  files = new Set<string>();
+  const sources = rustFilesUnder(join(tauriRoot, root)).map((file) =>
+    readRust(toPosix(relative(tauriRoot, file))),
+  );
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const source of sources) {
+      for (const declared of source.modules ?? []) {
+        if (!declared.file || files.has(declared.file)) continue;
+        if (declared.testOnly || files.has(source.path)) {
+          files.add(declared.file);
+          grew = true;
+        }
+      }
+    }
+  }
+  testModuleCache.set(root, files);
+  return files;
+}
+
 const sourceCache = new Map<string, RustSource>();
 
 /** A tauri-root relative path (`crates/x/src/y.rs`), test code stripped. */
 function loadRust(path: string): RustSource {
   let source = sourceCache.get(path);
   if (!source) {
-    source = prepareRust(path, readFileSync(join(tauriRoot, path), "utf8"));
+    source = readRust(path);
+    const root = /^(crates\/[^/]+\/src|src)\//.exec(path)?.[1];
+    if (root && testOnlyFiles(root).has(path)) {
+      source = {
+        path,
+        code: blank(source.code),
+        tokens: blank(source.tokens),
+        literals: [],
+        modules: source.modules,
+      };
+    }
     sourceCache.set(path, source);
   }
   return source;
@@ -673,6 +782,38 @@ describe("Rust source preparation", () => {
     expect(
       prepareRust("whole.rs", "#![cfg(test)]\nfn f() { home_dir(); }").tokens,
     ).not.toMatch(/home_dir/);
+  });
+
+  it("strips the files of test-only out-of-line modules, and only those", () => {
+    const declaring = "crates/sorng-ssh/src/ssh/service.rs";
+    const prepared = prepareRust(
+      declaring,
+      [
+        "#[cfg(test)]",
+        '#[path = "loopback_route_tests.rs"]',
+        "mod loopback_route_tests;",
+        '#[path = "loopback_route_tests.rs"]',
+        "pub(crate) mod production_alias;",
+        "mod inline { #[cfg(test)] mod nested; }",
+      ].join("\n"),
+    );
+    expect(prepared.modules).toEqual([
+      {
+        file: "crates/sorng-ssh/src/ssh/loopback_route_tests.rs",
+        testOnly: true,
+      },
+      {
+        file: "crates/sorng-ssh/src/ssh/loopback_route_tests.rs",
+        testOnly: false,
+      },
+    ]);
+
+    const fixture = loadRust(
+      "crates/sorng-ssh/src/ssh/loopback_route_tests.rs",
+    );
+    expect(fixture.literals).toEqual([]);
+    expect(fixture.tokens).not.toMatch(/\S/);
+    expect(loadRust(declaring).literals).not.toEqual([]);
   });
 });
 
