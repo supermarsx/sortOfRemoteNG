@@ -147,6 +147,9 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_retry_login"
             | "origin_browser_ssh_respond_to_command_review"
             | "origin_browser_ssh_cancel_pending_create"
+            | "origin_browser_clear_connection_data"
+            | "origin_browser_http_cache_usage"
+            | "origin_browser_clear_all_http_cache"
     )
 }
 
@@ -455,18 +458,186 @@ pub(crate) fn origin_browser_cancel_prewarm(window: WebviewWindow) {
 
 /// Read-only implementation capability; never a database unlock, cookie read,
 /// consent grant, or promise that the current database is available.
+/// `httpDiskCache` describes the per-connection page cache (t-cefiso C-H5);
+/// its presence tells the shell that native parsing accepts the
+/// `browserSession.httpCache` override.
 #[tauri::command]
 pub(crate) fn origin_browser_retention_capabilities() -> serde_json::Value {
     #[cfg(feature = "native-browser")]
     let available = crate::origin_browser_runtime::retention_available();
     #[cfg(not(feature = "native-browser"))]
     let available = false;
+    #[cfg(feature = "native-browser")]
+    let http_disk_cache = crate::origin_browser_runtime::http_cache::capability()
+        .err()
+        .map(crate::origin_browser_runtime::http_cache::Unavailable::code);
+    #[cfg(not(feature = "native-browser"))]
+    let http_disk_cache = Some("unavailable");
     serde_json::json!({
         "memory": available,
         "encryptedDatabase": available,
         "policyExpiration": available,
         "clearOnDatabaseLock": available,
+        "httpDiskCache": http_disk_cache_capability(http_disk_cache),
     })
+}
+
+fn http_disk_cache_capability(reason: Option<&'static str>) -> serde_json::Value {
+    match reason {
+        None => serde_json::json!({ "available": true }),
+        Some(reason) => serde_json::json!({ "available": false, "reason": reason }),
+    }
+}
+
+/// Saved connection id from the shell; never a database id, path or size.
+fn valid_connection_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ClearConnectionDataRequest {
+    pub connection_id: String,
+    pub cookies: bool,
+    pub cache: bool,
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
+pub(crate) struct ClearConnectionDataResult {
+    pub cookies_cleared: bool,
+    pub cache_cleared: bool,
+    pub cache_pending_restart: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct HttpCacheUsageRequest {
+    #[serde(default)]
+    pub connection_id: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HttpCacheUsage {
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+    pub bytes: u64,
+    pub limit_bytes: u64,
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
+pub(crate) struct ClearAllHttpCacheResult {
+    pub cleared: bool,
+    pub pending_restart: bool,
+}
+
+/// Clears one connection's retained sign-in cookies and/or page cache in the
+/// databases this window holds unlocked. Refuses with exactly
+/// `browser-session-open` while an attempt of that connection is live.
+#[tauri::command]
+pub(crate) async fn origin_browser_clear_connection_data(
+    window: WebviewWindow,
+    state: State<'_, EncryptionState>,
+    request: ClearConnectionDataRequest,
+) -> Result<ClearConnectionDataResult, String> {
+    crate::application_log_commands::require_shell(&window)
+        .map_err(|_| "Browser data is unavailable outside an app window.")?;
+    if !valid_connection_id(&request.connection_id) {
+        return Err("Browser data request is invalid".into());
+    }
+    #[cfg(feature = "native-browser")]
+    {
+        let (cookies_cleared, cache) = crate::origin_browser_runtime::http_cache::clear_connection_data(
+            &window,
+            &state,
+            &request.connection_id,
+            request.cookies,
+            request.cache,
+        )
+        .await?;
+        Ok(ClearConnectionDataResult {
+            cookies_cleared,
+            cache_cleared: cache.cleared,
+            cache_pending_restart: cache.pending,
+        })
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        let _ = (window, state, request.cookies, request.cache);
+        Err(UNAVAILABLE.into())
+    }
+}
+
+/// Page cache bytes and limit for one connection (databases this window holds
+/// unlocked) or for the whole device cache. Never a path.
+#[tauri::command]
+pub(crate) async fn origin_browser_http_cache_usage(
+    window: WebviewWindow,
+    state: State<'_, EncryptionState>,
+    request: HttpCacheUsageRequest,
+) -> Result<HttpCacheUsage, String> {
+    crate::application_log_commands::require_shell(&window)
+        .map_err(|_| "Browser data is unavailable outside an app window.")?;
+    if request
+        .connection_id
+        .as_deref()
+        .is_some_and(|id| !valid_connection_id(id))
+    {
+        return Err("Browser data request is invalid".into());
+    }
+    #[cfg(feature = "native-browser")]
+    {
+        let (reason, bytes, limit_bytes) = crate::origin_browser_runtime::http_cache::usage_report(
+            &window,
+            &state,
+            request.connection_id.as_deref(),
+        )
+        .await?;
+        Ok(HttpCacheUsage {
+            available: reason.is_none(),
+            reason,
+            bytes: bytes.min(MAX_JS_INTEGER),
+            limit_bytes: limit_bytes.min(MAX_JS_INTEGER),
+        })
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        let _ = (window, state, request.connection_id);
+        Ok(HttpCacheUsage {
+            available: false,
+            reason: Some("unavailable"),
+            bytes: 0,
+            limit_bytes: 0,
+        })
+    }
+}
+
+/// Deletes every page cache of this device profile. Directories still held by
+/// an attempt are deleted when released or on the next start.
+#[tauri::command]
+pub(crate) async fn origin_browser_clear_all_http_cache(
+    window: WebviewWindow,
+) -> Result<ClearAllHttpCacheResult, String> {
+    crate::application_log_commands::require_shell(&window)
+        .map_err(|_| "Browser data is unavailable outside an app window.")?;
+    #[cfg(feature = "native-browser")]
+    {
+        let outcome = crate::origin_browser_runtime::http_cache::clear_all_report().await?;
+        Ok(ClearAllHttpCacheResult {
+            cleared: outcome.cleared,
+            pending_restart: outcome.pending,
+        })
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        let _ = window;
+        Err(UNAVAILABLE.into())
+    }
 }
 
 async fn origin_browser_create(
@@ -656,6 +827,9 @@ mod tests {
             "origin_browser_retry_login",
             "origin_browser_ssh_respond_to_command_review",
             "origin_browser_ssh_cancel_pending_create",
+            "origin_browser_clear_connection_data",
+            "origin_browser_http_cache_usage",
+            "origin_browser_clear_all_http_cache",
         ] {
             assert!(is_command(command));
         }
@@ -716,5 +890,83 @@ mod tests {
             serde_json::json!({"status":"started"}));
         assert_eq!(serde_json::to_value(RetryLoginReceipt::Refused { reason: "code-used" }).unwrap(),
             serde_json::json!({"status":"refused","reason":"code-used"}));
+    }
+
+    #[test]
+    fn browser_data_requests_take_only_a_connection_id_and_two_switches() {
+        let request = serde_json::json!({"connectionId":"conn-1","cookies":true,"cache":false});
+        let parsed = serde_json::from_value::<ClearConnectionDataRequest>(request.clone()).unwrap();
+        assert_eq!((parsed.connection_id.as_str(), parsed.cookies, parsed.cache), ("conn-1", true, false));
+        // No database id, path, size or unknown field rides along.
+        for field in ["databaseId", "ownerDatabaseId", "path", "directory", "maxBytes"] {
+            let mut extra = request.clone();
+            extra[field] = "x".into();
+            assert!(serde_json::from_value::<ClearConnectionDataRequest>(extra).is_err(), "{field}");
+        }
+        for missing in ["connectionId", "cookies", "cache"] {
+            let mut partial = request.clone();
+            partial.as_object_mut().unwrap().remove(missing);
+            assert!(serde_json::from_value::<ClearConnectionDataRequest>(partial).is_err(), "{missing}");
+        }
+        assert!(serde_json::from_value::<ClearConnectionDataRequest>(
+            serde_json::json!({"connectionId":"c","cookies":"true","cache":false})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<HttpCacheUsageRequest>(serde_json::json!({})).unwrap().connection_id.is_none());
+        assert_eq!(
+            serde_json::from_value::<HttpCacheUsageRequest>(serde_json::json!({"connectionId":"c"}))
+                .unwrap()
+                .connection_id
+                .as_deref(),
+            Some("c")
+        );
+        assert!(serde_json::from_value::<HttpCacheUsageRequest>(serde_json::json!({"databaseId":"d"})).is_err());
+        for valid in ["c", "550e8400-e29b-41d4-a716-446655440000", "a/b", "../x"] {
+            assert!(valid_connection_id(valid), "{valid}");
+        }
+        for invalid in ["", "a\u{0}b", "line\nbreak"] {
+            assert!(!valid_connection_id(invalid), "{invalid:?}");
+        }
+        assert!(!valid_connection_id(&"x".repeat(257)));
+    }
+
+    #[test]
+    fn browser_data_results_serialize_as_the_shell_parses_them() {
+        assert_eq!(
+            serde_json::to_value(ClearConnectionDataResult {
+                cookies_cleared: true,
+                cache_cleared: false,
+                cache_pending_restart: true,
+            })
+            .unwrap(),
+            serde_json::json!({"cookiesCleared":true,"cacheCleared":false,"cachePendingRestart":true})
+        );
+        assert_eq!(
+            serde_json::to_value(HttpCacheUsage { available: true, reason: None, bytes: 5, limit_bytes: 6 }).unwrap(),
+            serde_json::json!({"available":true,"bytes":5,"limitBytes":6})
+        );
+        assert_eq!(
+            serde_json::to_value(HttpCacheUsage {
+                available: false,
+                reason: Some("engine-unsupported"),
+                bytes: 0,
+                limit_bytes: 134217728,
+            })
+            .unwrap(),
+            serde_json::json!({"available":false,"reason":"engine-unsupported","bytes":0,"limitBytes":134217728})
+        );
+        assert_eq!(
+            serde_json::to_value(ClearAllHttpCacheResult { cleared: true, pending_restart: false }).unwrap(),
+            serde_json::json!({"cleared":true,"pendingRestart":false})
+        );
+        assert_eq!(http_disk_cache_capability(None), serde_json::json!({"available":true}));
+        for reason in ["disabled", "cache-location-not-local", "engine-unsupported", "unavailable"] {
+            assert_eq!(
+                http_disk_cache_capability(Some(reason)),
+                serde_json::json!({"available":false,"reason":reason})
+            );
+        }
+        let capabilities = origin_browser_retention_capabilities();
+        assert!(capabilities["httpDiskCache"]["available"].is_boolean());
     }
 }

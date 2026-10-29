@@ -555,6 +555,70 @@ pub mod native_browser_owner {
         lease.clear_connection_cookie_record(connection_id).await
     }
 
+    /// A managed database the calling window holds unlocked now, for a native
+    /// per-connection data operation whose request names no database
+    /// (t-cefiso C-H5). `owner` is None when that database has no such saved
+    /// connection (for example after the connection was deleted) or its row
+    /// could not be read.
+    pub struct UnlockedOwner {
+        pub database: String,
+        /// The saved connection row and its lease, as `read` returns them.
+        pub owner: Option<(Value, NativeOwnerLease)>,
+    }
+
+    /// Every managed database this window holds unlocked, each with a lease for
+    /// `connection_id` read exactly as `read` does. The databases come from the
+    /// native unlock witnesses of this window and profile, never from IPC.
+    pub async fn read_unlocked<R: Runtime>(
+        window: &WebviewWindow<R>,
+        state: &EncryptionState,
+        connection_id: &str,
+    ) -> Result<Vec<UnlockedOwner>, String> {
+        let root = native_root(window, state).map_err(|_| UNAVAILABLE)?;
+        let unlocked = browser_sessions::unlocked_for_window(&root, state, window.label())
+            .map_err(|_| UNAVAILABLE)?;
+        let mut owners = Vec::with_capacity(unlocked.len());
+        for (database, revision, token) in unlocked {
+            let owner = read(window, state, &database, connection_id, &revision, &token)
+                .await
+                .ok();
+            owners.push(UnlockedOwner { database, owner });
+        }
+        Ok(owners)
+    }
+
+    /// The profile root this window's native settings and database reads use.
+    /// A native path only; never an IPC result.
+    pub fn profile_root_for<R: Runtime>(
+        window: &WebviewWindow<R>,
+        state: &EncryptionState,
+    ) -> Result<PathBuf, String> {
+        native_root(window, state)
+    }
+
+    /// Coarse route class of a saved row. Every field it reads is also bound by
+    /// `connection_security_digest`; the class keeps the cache binding explicit.
+    fn route_class(connection: &Value) -> &'static str {
+        let set = |key: &str| {
+            connection
+                .get(key)
+                .is_some_and(|value| !value.is_null() && value != "")
+        };
+        let tunnel_layers = connection
+            .pointer("/security/tunnelChain")
+            .and_then(Value::as_array)
+            .is_some_and(|layers| !layers.is_empty());
+        if set("connectionChainId") || set("proxyChainId") || set("tunnelChainId") {
+            "chain"
+        } else if set("tunnelProfileId") || tunnel_layers {
+            "tunnel"
+        } else if set("proxyProfileId") {
+            "proxy"
+        } else {
+            "direct"
+        }
+    }
+
     /// Native-only delivery result. Dormant records release no cookie bytes and
     /// must not be replaced by an empty checkpoint from a fresh browser jar.
     pub struct NativeCookieLoad {
@@ -816,6 +880,30 @@ pub mod native_browser_owner {
             )
             .await
             .map_err(|_| ClearError::Unavailable)
+        }
+
+        /// The security digest of this lease's saved row
+        /// (`browser_sessions::connection_security_digest`) and its coarse
+        /// route class, re-read under the same owner, revision, row and
+        /// dependency fences as a cookie operation. Input to the HTTP disk
+        /// cache binding (t-cefiso C-H4); temporary leases have none.
+        pub async fn http_cache_binding_source(&self) -> Result<([u8; 32], &'static str), String> {
+            if self.0.temporary {
+                return Err(UNAVAILABLE.into());
+            }
+            let id = self.0.connection_id.clone();
+            self.cookie_database(
+                || true,
+                |data, _settings| {
+                    let row = select_connection(data, &id)?;
+                    Ok((
+                        (browser_sessions::connection_security_digest(row)?, route_class(row)),
+                        false,
+                    ))
+                },
+            )
+            .await
+            .map_err(|_| UNAVAILABLE.into())
         }
 
         pub async fn save_cookie_record(
@@ -3845,6 +3933,34 @@ async fn unlock_inner(
     })
 }
 
+/// Native observer of an explicit database lock, called after that database's
+/// unlock sessions were revoked. Device-local caches (the browser HTTP cache,
+/// t-cefiso D-lock) register here once; never reachable from IPC.
+pub type DatabaseLockObserver = fn(&Path, &EncryptionState, &str);
+static LOCK_OBSERVER: std::sync::OnceLock<DatabaseLockObserver> = std::sync::OnceLock::new();
+
+/// Registers the process-wide lock observer. Returns false if one exists.
+pub fn observe_database_lock(observer: DatabaseLockObserver) -> bool {
+    LOCK_OBSERVER.set(observer).is_ok()
+}
+
+/// Native observer of a committed database deletion (its id). Best effort and
+/// non-blocking: it must never fail or delay the deletion. Never IPC.
+pub type DatabaseDeleteObserver = fn(&str);
+static DELETE_OBSERVER: std::sync::OnceLock<DatabaseDeleteObserver> = std::sync::OnceLock::new();
+
+/// Registers the process-wide deletion observer. Returns false if one exists.
+pub fn observe_database_deletion(observer: DatabaseDeleteObserver) -> bool {
+    DELETE_OBSERVER.set(observer).is_ok()
+}
+
+/// Called by the database deletion command after its index commit.
+pub(crate) fn database_deleted(database: &str) {
+    if let Some(observer) = DELETE_OBSERVER.get() {
+        observer(database);
+    }
+}
+
 #[tauri::command]
 pub async fn database_protection_lock<R: Runtime>(
     window: WebviewWindow<R>,
@@ -3872,6 +3988,9 @@ pub async fn database_protection_lock<R: Runtime>(
     )?;
     if cleanup.is_err() {
         result.warnings.push("Database locked; retained sign-in cookie cleanup is pending until its next native unlock".into());
+    }
+    if let Some(observer) = LOCK_OBSERVER.get() {
+        observer(&root, &state, &database_id);
     }
     Ok(result)
 }

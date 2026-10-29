@@ -531,6 +531,53 @@ pub fn prepare_for_startup(
     prepare_startup_directory(&ACTIVE_ROOT, app_data, identifier, alternatives)
 }
 
+/// The working root this process committed at native entry, if any. Native
+/// callers only (e.g. the device-local HTTP cache); never an IPC result.
+pub fn committed_root() -> Option<PathBuf> {
+    ACTIVE_ROOT.get().map(|entry| entry.root.clone())
+}
+
+/// Folders whose contents a sync client uploads or roams. The per-connection
+/// HTTP disk cache must never live below one (t-cefiso F6).
+pub fn sync_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    #[cfg(windows)]
+    for name in ["APPDATA", "OneDrive", "OneDriveCommercial", "OneDriveConsumer"] {
+        if let Some(value) = std::env::var_os(name).filter(|value| !value.is_empty()) {
+            roots.push(PathBuf::from(value));
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
+        let home = PathBuf::from(home);
+        roots.push(home.join("Library").join("Mobile Documents"));
+        roots.push(home.join("Library").join("CloudStorage"));
+    }
+    roots
+}
+
+/// Whether a committed browser root is device-local working storage: below the
+/// app's canonical local-data or cache directory, and below no sync root.
+/// Every input is canonicalized; an unresolvable root is not local. A custom
+/// parent folder qualifies only when it is itself inside those directories.
+pub fn root_is_local(root: &Path, app_local_data: Option<&Path>, app_cache: Option<&Path>) -> bool {
+    root_is_local_with(root, app_local_data, app_cache, &sync_roots())
+}
+
+fn root_is_local_with(
+    root: &Path,
+    app_local_data: Option<&Path>,
+    app_cache: Option<&Path>,
+    sync_roots: &[PathBuf],
+) -> bool {
+    let Ok(root) = root.canonicalize() else {
+        return false;
+    };
+    let below = |base: &Path| base.canonicalize().is_ok_and(|base| root.starts_with(base));
+    [app_local_data, app_cache].into_iter().flatten().any(below)
+        && !sync_roots.iter().any(|sync| below(sync))
+}
+
 #[tauri::command]
 pub fn get_browser_data_directory(app: tauri::AppHandle) -> Result<BrowserDataDirectory, String> {
     let _guard = ACCESS
@@ -1308,5 +1355,67 @@ mod tests {
         );
         assert!(json.get("fallbackReason").unwrap().is_null());
         assert_eq!(json.as_object().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn http_cache_root_eligibility_requires_local_storage_outside_sync_roots() {
+        let local = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let roaming = tempfile::tempdir().unwrap();
+        let custom = tempfile::tempdir().unwrap();
+        let below = |parent: &Path, name: &str| {
+            let path = parent.join(name).join("native-browser");
+            fs::create_dir_all(&path).unwrap();
+            path
+        };
+        let local_root = below(local.path(), "app");
+        let cache_root = below(cache.path(), "app");
+        let roaming_root = below(roaming.path(), "app");
+        let custom_root = below(custom.path(), "sorng-browser");
+        let none: [PathBuf; 0] = [];
+        assert!(root_is_local_with(&local_root, Some(local.path()), Some(cache.path()), &none));
+        assert!(root_is_local_with(&cache_root, Some(local.path()), Some(cache.path()), &none));
+        assert!(root_is_local_with(&cache_root, None, Some(cache.path()), &none));
+        // The Roaming fallback (`app_data_dir`) and custom parents elsewhere.
+        assert!(!root_is_local_with(&roaming_root, Some(local.path()), Some(cache.path()), &none));
+        assert!(!root_is_local_with(&custom_root, Some(local.path()), Some(cache.path()), &none));
+        assert!(!root_is_local_with(&local_root, None, None, &none));
+        // Local data inside a sync folder (OneDrive, %APPDATA%, iCloud) is not local.
+        for sync in [local.path().to_path_buf(), local.path().join("app")] {
+            assert!(!root_is_local_with(&local_root, Some(local.path()), None, &[sync]));
+        }
+        // A custom parent chosen inside local data stays eligible unless synced.
+        let nested = below(&local.path().join("custom"), "sorng-browser");
+        assert!(root_is_local_with(&nested, Some(local.path()), None, &none));
+        assert!(!root_is_local_with(
+            &nested,
+            Some(local.path()),
+            None,
+            &[local.path().join("custom")]
+        ));
+        // Unresolvable roots and unresolvable bases never qualify.
+        assert!(!root_is_local_with(&local.path().join("missing"), Some(local.path()), None, &none));
+        assert!(!root_is_local_with(&local_root, Some(&local.path().join("missing")), None, &none));
+        // A sync root that cannot be resolved does not disqualify a local root.
+        assert!(root_is_local_with(
+            &local_root,
+            Some(local.path()),
+            None,
+            &[roaming.path().join("missing")]
+        ));
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn http_cache_root_eligibility_resolves_links_before_comparing() {
+        let local = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let link = local.path().join("linked");
+        if !make_link(elsewhere.path(), &link, true) {
+            return;
+        }
+        let none: [PathBuf; 0] = [];
+        // A link inside local data that points elsewhere is not local storage.
+        assert!(!root_is_local_with(&link, Some(local.path()), None, &none));
     }
 }

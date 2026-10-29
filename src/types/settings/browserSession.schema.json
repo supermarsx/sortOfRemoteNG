@@ -78,7 +78,8 @@
       "default": true,
       "description": "Restore and checkpoint retained sign-in cookies. False opens a fresh temporary jar without reading, clearing or replacing the saved snapshot."
     },
-    "sessionRetention": { "$ref": "#/$defs/retention" }
+    "sessionRetention": { "$ref": "#/$defs/retention" },
+    "httpCache": { "$ref": "#/$defs/httpCacheOverride" }
   },
   "$defs": {
     "retention": {
@@ -151,7 +152,7 @@
           "$ref": "#/$defs/httpCache/properties/perConnectionMb"
         }
       },
-      "$comment": "Sparse Connection.browserSession.httpCache. Missing values inherit webBrowser.httpCache. Not yet listed in properties: native preference parsing must accept it first."
+      "$comment": "Sparse Connection.browserSession.httpCache. Missing values inherit webBrowser.httpCache. The global webBrowser.httpCache object is validated against $defs.httpCache instead."
     },
     "identity": {
       "type": "object",

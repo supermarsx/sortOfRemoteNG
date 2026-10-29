@@ -1514,7 +1514,10 @@ pub async fn delete_database_data(
         format!(
             "Database files were removed but index cleanup failed; refresh and retry deletion: {e}"
         )
-    })
+    })?;
+    // t-cefiso: the deleted database's device-local page caches, best effort.
+    crate::database_protection::database_deleted(&database_id);
+    Ok(())
 }
 
 // ══════════════════════════════════════════════════════════════════

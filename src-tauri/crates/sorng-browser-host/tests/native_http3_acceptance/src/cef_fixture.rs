@@ -10,7 +10,7 @@ use sorng_browser_host::{
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
         NativeTlsDecision, NativeTlsError, NativeTlsEvidence, NativeTlsFailure, NativeTlsHooks,
-        HTTP3_PATCH_ID,
+        HTTP3_PATCH_ID, HTTP_CACHE_PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -716,7 +716,10 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             Arc::new(|_| {}),
         )?
     };
-    let bridge = unsafe { NativeTlsBridge::from_loaded(HTTP3_PATCH_ID)? };
+    // Revision 6 carries every revision-5 (owned HTTP/3) bit plus the HTTP
+    // disk cache; accept exactly those two revisions, never an older engine.
+    let bridge = unsafe { NativeTlsBridge::from_loaded(HTTP_CACHE_PATCH_ID) }
+        .or_else(|_| unsafe { NativeTlsBridge::from_loaded(HTTP3_PATCH_ID) })?;
     let clean = cef::command_line_get_global().is_some_and(|line| {
         [
             "no-sandbox",

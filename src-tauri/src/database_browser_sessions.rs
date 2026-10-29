@@ -116,6 +116,32 @@ pub(crate) fn remember_unlock(
     Ok(())
 }
 
+/// Managed databases `window` holds unlocked now, from this module's own
+/// unlock witnesses (database, revision, token). Native-only: the token never
+/// leaves native code; a stale witness (locked, released, rotated) is skipped.
+pub(crate) fn unlocked_for_window(
+    root: &Path,
+    state: &EncryptionState,
+    window: &str,
+) -> Result<Vec<(String, String, Zeroizing<String>)>, String> {
+    let profile = profile_binding(root)?;
+    let store = witnesses().lock().map_err(|_| ERROR)?;
+    Ok(store
+        .iter()
+        .filter(|entry| {
+            entry.root == root
+                && entry.window == window
+                && entry.state.database_session_owner() == state.database_session_owner()
+                && session_key(
+                    &entry.token,
+                    &scope(&profile, &entry.database, &entry.revision, &entry.window, &entry.state),
+                )
+                .is_ok()
+        })
+        .map(|entry| (entry.database.clone(), entry.revision.clone(), entry.token.clone()))
+        .collect())
+}
+
 /// Unlock/lock housekeeping over the decrypted body: drops expired and
 /// clear-on-lock records, and eagerly purges records whose saved connection
 /// no longer exists. A body without a readable connection list purges

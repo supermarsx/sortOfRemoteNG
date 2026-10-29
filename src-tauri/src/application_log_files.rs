@@ -423,3 +423,36 @@ pub(crate) async fn read(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The browser log viewer lists only regular journal files directly in its
+    /// root. Subdirectories such as a device-local `http-cache` (t-cefiso) are
+    /// never listed or readable, even with log-shaped names inside or as names.
+    #[test]
+    fn browser_listing_never_descends_into_subdirectories() {
+        let root = tempfile::tempdir().unwrap();
+        let id = format!("browser-startup-{}.jsonl", "a".repeat(32));
+        let nested = format!("browser-startup-{}.jsonl", "b".repeat(32));
+        let shaped_dir = format!("browser-startup-{}.jsonl", "c".repeat(32));
+        fs::write(root.path().join(&id), b"{}\n").unwrap();
+        let cache = root.path().join("http-cache").join("0123456789abcdef0123456789abcdef");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(root.path().join("http-cache").join(&nested), b"{}\n").unwrap();
+        fs::write(cache.join(&nested), b"{}\n").unwrap();
+        fs::write(root.path().join("http-cache").join("CACHEDIR.TAG"), b"Signature").unwrap();
+        fs::create_dir(root.path().join(&shaped_dir)).unwrap();
+        let listed = list(root.path(), LogSource::Browser).unwrap();
+        let ids: Vec<_> = listed.files.iter().map(|file| file.id.as_str()).collect();
+        assert_eq!(ids, vec![id.as_str()]);
+        assert!(!listed.truncated);
+        for name in [&nested, &shaped_dir, &format!("http-cache/{nested}")] {
+            assert!(!allowed_name(LogSource::Browser, name) || checked_path(root.path(), name)
+                .ok()
+                .and_then(|path| open_regular(&path).ok())
+                .is_none(), "{name}");
+        }
+    }
+}

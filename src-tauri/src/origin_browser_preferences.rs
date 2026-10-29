@@ -27,6 +27,39 @@ pub struct NativeBrowserPreferences {
     pub manual_form_submit: bool,
     pub retention: Value,
     pub restore_cookies: bool,
+    pub http_cache: NativeHttpCachePreferences,
+}
+
+/// Effective per-connection HTTP disk cache settings (t-cefiso C-H6), resolved
+/// from the saved global `webBrowser.httpCache` and the sparse connection
+/// override `browserSession.httpCache`. Sizes are MiB, already range-checked
+/// against the bundled schema. Native only: never an IPC payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeHttpCachePreferences {
+    pub enabled: bool,
+    pub per_connection_mb: u64,
+    /// Global only; a connection override cannot change it.
+    pub total_mb: u64,
+    /// Global only; a connection override cannot change it.
+    pub clear_on_database_lock: bool,
+}
+
+impl NativeBrowserPreferences {
+    /// The global HTTP cache layer alone (no connection override), for
+    /// engine-wide work such as the lock-time clear and global usage.
+    pub fn http_cache_from_settings(
+        settings: &Value,
+    ) -> Result<NativeHttpCachePreferences, InvalidNativeBrowserPreferences> {
+        let globals = match settings.get("webBrowser") {
+            None => None,
+            Some(value) => Some(value.as_object().ok_or(InvalidNativeBrowserPreferences)?),
+        };
+        let global = globals.and_then(|row| row.get("httpCache"));
+        if let Some(value) = global {
+            http_cache_layer(value, true).map_err(|()| InvalidNativeBrowserPreferences)?;
+        }
+        http_cache(global, None).map_err(|()| InvalidNativeBrowserPreferences)
+    }
 }
 
 static SCHEMA: LazyLock<Value> = LazyLock::new(|| {
@@ -51,6 +84,59 @@ fn valid(value: &Value, rule: &Value) -> bool {
         Some("boolean") => value.is_boolean(),
         _ => false,
     }
+}
+
+/// Follows a local `#/...` JSON pointer `$ref`, as the schema uses for the
+/// per-connection size rule. Anything else is returned unchanged.
+fn rule_of(rule: &Value) -> &Value {
+    match rule.get("$ref").and_then(Value::as_str) {
+        Some(reference) => reference
+            .strip_prefix('#')
+            .and_then(|pointer| SCHEMA.pointer(pointer))
+            .unwrap_or(&Value::Null),
+        None => rule,
+    }
+}
+
+/// One saved httpCache layer: the global object against `$defs.httpCache`, a
+/// connection override against `$defs.httpCacheOverride`. Unknown keys and
+/// malformed or out-of-range values are errors, never coerced.
+fn http_cache_layer(value: &Value, global: bool) -> Result<(), ()> {
+    let definition = if global { "httpCache" } else { "httpCacheOverride" };
+    let rules = SCHEMA["$defs"][definition]["properties"]
+        .as_object()
+        .ok_or(())?;
+    let row = value.as_object().ok_or(())?;
+    for (key, item) in row {
+        let rule = rules.get(key).ok_or(())?;
+        if !valid(item, rule_of(rule)) {
+            return Err(());
+        }
+    }
+    Ok(())
+}
+
+/// Both layers must already be validated. Missing values inherit: connection
+/// override, then global, then the schema default. Total size and the lock
+/// clear are global-only settings.
+fn http_cache(global: Option<&Value>, connection: Option<&Value>) -> Result<NativeHttpCachePreferences, ()> {
+    let defaults = SCHEMA["$defs"]["httpCache"]["properties"]
+        .as_object()
+        .ok_or(())?;
+    let pick = |key: &str, overridable: bool| -> Result<&Value, ()> {
+        connection
+            .filter(|_| overridable)
+            .and_then(|row| row.get(key))
+            .or_else(|| global.and_then(|row| row.get(key)))
+            .or_else(|| defaults.get(key).and_then(|rule| rule.get("default")))
+            .ok_or(())
+    };
+    Ok(NativeHttpCachePreferences {
+        enabled: pick("enabled", true)?.as_bool().ok_or(())?,
+        per_connection_mb: pick("perConnectionMb", true)?.as_u64().ok_or(())?,
+        total_mb: pick("totalMb", false)?.as_u64().ok_or(())?,
+        clear_on_database_lock: pick("clearOnDatabaseLock", false)?.as_bool().ok_or(())?,
+    })
 }
 
 fn retention(value: Option<&Value>) -> Result<Value, ()> {
@@ -122,11 +208,18 @@ impl NativeBrowserPreferences {
         }
         // Validate both layers, including overridden values. Malformed stored
         // policy is an error, not an implicit permission or coercion.
-        for row in [Some(globals), overrides].into_iter().flatten() {
+        for (row, global) in [(Some(globals), true), (overrides, false)]
+            .into_iter()
+            .filter_map(|(row, global)| row.map(|row| (row, global)))
+        {
             for (key, rule) in properties {
                 if let Some(value) = row.get(key) {
                     if key == "sessionRetention" {
                         retention(Some(value))?;
+                    } else if key == "httpCache" {
+                        // Objects are not schema scalars: the global layer is
+                        // $defs.httpCache, a connection override is sparse.
+                        http_cache_layer(value, global)?;
                     } else if !valid(value, rule) {
                         return Err(());
                     }
@@ -191,6 +284,10 @@ impl NativeBrowserPreferences {
                 .unwrap_or(true),
             retention: retention(get("sessionRetention"))?,
             restore_cookies: enabled("restoreCookies"),
+            http_cache: http_cache(
+                globals.get("httpCache"),
+                overrides.and_then(|row| row.get("httpCache")),
+            )?,
         };
         if result.minimum_form_fill_delay_ms + result.minimum_form_submit_delay_ms > 52_000 {
             return Err(());
@@ -441,10 +538,14 @@ mod tests {
     }
 
     #[test]
-    fn missing_legacy_fields_are_ephemeral_and_connection_fields_inherit() {
+    fn missing_legacy_fields_use_the_encrypted_default_and_connection_fields_inherit() {
         let defaults = NativeBrowserPreferences::from_saved(&json!({}), &Value::Null).unwrap();
         assert_eq!(defaults.default_zoom_percent, 100);
-        assert_eq!(defaults.retention["mode"], "ephemeral");
+        // C-H7: encrypted database, 7-day idle / 30-day max, kept on lock.
+        assert_eq!(
+            defaults.retention,
+            json!({"version":1,"mode":"encrypted-database","idleTimeoutMinutes":10080,"maxAgeHours":720,"clearOnDatabaseLock":false})
+        );
         assert!(defaults.manual_form_submit);
         let saved = NativeBrowserPreferences::from_saved(
             &json!({"browserSession":{"version":1,"defaultZoomPercent":150,"manualFormSubmit":true}}),
@@ -560,5 +661,128 @@ mod tests {
         assert_eq!(effective["webBrowser"]["minimumFormFillDelayMs"], 50);
         assert_eq!(settings["webBrowser"]["manualFormSubmit"], false);
         assert_eq!(connection["httpAutoLogin"], false);
+    }
+
+    #[test]
+    fn http_cache_defaults_come_from_the_schema_and_inherit_sparsely() {
+        let defaults = NativeBrowserPreferences::from_saved(&json!({}), &json!({})).unwrap();
+        assert_eq!(
+            defaults.http_cache,
+            NativeHttpCachePreferences {
+                enabled: true,
+                per_connection_mb: 128,
+                total_mb: 1024,
+                clear_on_database_lock: false,
+            }
+        );
+        let settings = json!({"webBrowser":{"httpCache":{"enabled":false,"perConnectionMb":256,"totalMb":2048,"clearOnDatabaseLock":true}}});
+        let inherited = NativeBrowserPreferences::from_saved(&json!({}), &settings).unwrap();
+        assert_eq!(
+            inherited.http_cache,
+            NativeHttpCachePreferences {
+                enabled: false,
+                per_connection_mb: 256,
+                total_mb: 2048,
+                clear_on_database_lock: true,
+            }
+        );
+        let connection = json!({"browserSession":{"version":1,"httpCache":{"enabled":true}}});
+        let partial = NativeBrowserPreferences::from_saved(&connection, &settings).unwrap();
+        assert!(partial.http_cache.enabled);
+        assert_eq!(partial.http_cache.per_connection_mb, 256);
+        let connection = json!({"browserSession":{"version":1,"httpCache":{"perConnectionMb":64}}});
+        let sized = NativeBrowserPreferences::from_saved(&connection, &json!({})).unwrap();
+        assert_eq!(sized.http_cache.per_connection_mb, 64);
+        assert!(sized.http_cache.enabled);
+        // An empty override is valid and changes nothing.
+        let empty = json!({"browserSession":{"version":1,"httpCache":{}}});
+        assert_eq!(
+            NativeBrowserPreferences::from_saved(&empty, &settings).unwrap().http_cache,
+            inherited.http_cache
+        );
+        assert_eq!(
+            NativeBrowserPreferences::http_cache_from_settings(&settings).unwrap(),
+            inherited.http_cache
+        );
+        assert_eq!(
+            NativeBrowserPreferences::http_cache_from_settings(&Value::Null).unwrap(),
+            defaults.http_cache
+        );
+    }
+
+    #[test]
+    fn http_cache_rejects_malformed_layers_and_global_only_overrides() {
+        for invalid in [
+            json!(null),
+            json!(true),
+            json!([]),
+            json!({"enabled":"true"}),
+            json!({"enabled":1}),
+            json!({"perConnectionMb":15}),
+            json!({"perConnectionMb":1025}),
+            json!({"perConnectionMb":"128"}),
+            json!({"perConnectionMb":128.5}),
+            json!({"totalMb":127}),
+            json!({"totalMb":8193}),
+            json!({"clearOnDatabaseLock":"no"}),
+            json!({"unknown":true}),
+        ] {
+            let settings = json!({"webBrowser":{"httpCache":invalid}});
+            assert!(
+                NativeBrowserPreferences::from_saved(&json!({}), &settings).is_err(),
+                "global {invalid}"
+            );
+            assert!(NativeBrowserPreferences::http_cache_from_settings(&settings).is_err());
+        }
+        for invalid in [
+            json!(null),
+            json!(false),
+            json!({"enabled":"false"}),
+            json!({"perConnectionMb":15}),
+            json!({"perConnectionMb":1025}),
+            // Global-only settings cannot be overridden per connection.
+            json!({"totalMb":2048}),
+            json!({"clearOnDatabaseLock":true}),
+            json!({"path":"C:/elsewhere"}),
+        ] {
+            let connection = json!({"browserSession":{"version":1,"httpCache":invalid}});
+            assert!(
+                NativeBrowserPreferences::from_saved(&connection, &json!({})).is_err(),
+                "override {invalid}"
+            );
+        }
+        // A valid connection override cannot mask an invalid global layer.
+        assert!(NativeBrowserPreferences::from_saved(
+            &json!({"browserSession":{"version":1,"httpCache":{"enabled":true,"perConnectionMb":64}}}),
+            &json!({"webBrowser":{"httpCache":{"perConnectionMb":0}}}),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn http_cache_ranges_mirror_the_schema_and_the_engine_limits() {
+        use sorng_browser_host::cef_http_cache::{HTTP_CACHE_MAX_BYTES, HTTP_CACHE_MIN_BYTES};
+        let rules = &SCHEMA["$defs"]["httpCache"]["properties"];
+        const MIB: u64 = 1024 * 1024;
+        assert_eq!(rules["perConnectionMb"]["minimum"], HTTP_CACHE_MIN_BYTES / MIB);
+        assert_eq!(rules["perConnectionMb"]["maximum"], HTTP_CACHE_MAX_BYTES / MIB);
+        assert_eq!(rules["totalMb"]["minimum"], 128);
+        assert_eq!(rules["totalMb"]["maximum"], 8192);
+        assert_eq!(
+            rule_of(&SCHEMA["$defs"]["httpCacheOverride"]["properties"]["perConnectionMb"]),
+            &rules["perConnectionMb"]
+        );
+        assert_eq!(
+            SCHEMA["properties"]["httpCache"],
+            json!({"$ref":"#/$defs/httpCacheOverride"})
+        );
+        for (mb, ok) in [(15, false), (16, true), (1024, true), (1025, false)] {
+            let connection = json!({"browserSession":{"version":1,"httpCache":{"perConnectionMb":mb}}});
+            assert_eq!(
+                NativeBrowserPreferences::from_saved(&connection, &json!({})).is_ok(),
+                ok,
+                "{mb}"
+            );
+        }
     }
 }

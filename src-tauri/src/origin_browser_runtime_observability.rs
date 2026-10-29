@@ -43,6 +43,7 @@ pub(crate) fn snapshot(window: &WebviewWindow) -> Result<SessionDiagnosticsRespo
                 phase,
                 failure_reason,
                 proxy,
+                http_cache: attempt.engine_observations.http_cache(),
             }
         },
     )

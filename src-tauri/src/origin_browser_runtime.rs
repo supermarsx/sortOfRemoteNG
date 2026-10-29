@@ -6,9 +6,11 @@
 use crate::origin_browser_startup_diagnostics::{
     self as diagnostics, Failure, Stage, TimingStage, Trace,
 };
+use crate::origin_browser_observability::HttpCacheDiagnostic;
 use sorng_browser_host::{
     cef_browser::{BrowserEvent, BrowserEventSink, BrowserFault, CefBrowserHost},
     cef_context::{PreparationStatus, PrivateRequestContext},
+    cef_http_cache::{HttpCacheMemoryReason, HttpCacheUse},
     cef_runtime::{CefRuntime, RuntimeError, ScheduleWake, WakeUnavailable},
     cef_session_retention::{RetentionPolicy, SignInCookie},
     cef_tls_bridge::{self, NativeTlsBridge, NativeTlsConfig},
@@ -85,7 +87,9 @@ pub(crate) mod appearance;
 #[path = "origin_browser_diagnostics_probe.rs"]
 pub(crate) mod diagnostics_probe;
 #[path = "origin_browser_retention.rs"]
-mod retention;
+pub(crate) mod retention;
+#[path = "origin_browser_http_cache.rs"]
+pub(crate) mod http_cache;
 #[path = "origin_browser_retention_flow.rs"]
 mod retention_flow;
 
@@ -444,9 +448,10 @@ async fn ensure_runtime(
                         .into_iter()
                         .filter_map(Result::ok)
                         .collect::<Vec<_>>();
-                    app.path()
-                        .app_local_data_dir()
-                        .ok()
+                    let local_data = app.path().app_local_data_dir().ok();
+                    let cache = app.path().app_cache_dir().ok();
+                    local_data
+                        .clone()
                         .or_else(|| alternatives.first().cloned())
                         .ok_or_else(|| DATA_DIRECTORY_FAILED.to_owned())
                         .and_then(|path| {
@@ -456,9 +461,19 @@ async fn ensure_runtime(
                                 &alternatives,
                             )
                         })
+                        .map(|prepared| {
+                            // F6: the HTTP disk cache only under device-local
+                            // storage, never Roaming or a sync folder.
+                            let local = sorng_commands_core::browser_data_commands::root_is_local(
+                                prepared.root(),
+                                local_data.as_deref(),
+                                cache.as_deref(),
+                            );
+                            (prepared, local)
+                        })
                 })
                 .await;
-                let mut prepared = match prepared {
+                let (mut prepared, http_cache_local) = match prepared {
                     Ok(Ok(prepared)) => prepared,
                     _ => {
                         runtime_failure.record(RuntimeFailureCode::DataDirectory);
@@ -532,6 +547,7 @@ async fn ensure_runtime(
                         });
                         let result = match result {
                             Ok(()) => {
+                                http_cache::configure(&root, http_cache_local);
                                 start_pump(app, pump);
                                 if shared().certificate_hooks.load(Ordering::Acquire) {
                                     Ok(())
@@ -764,6 +780,9 @@ pub(crate) fn start_pump(app: tauri::AppHandle, mut wake: tokio::sync::mpsc::Rec
                 log::warn!("Retained browser cookie cleanup failed; retrying on this device");
             }
             failure_reported = failed;
+            // HTTP cache leases end on the engine's release (state 7); then,
+            // and at start and hourly, housekeeping runs. Never on the UI thread.
+            let _ = tauri::async_runtime::spawn_blocking(http_cache::tick).await;
         }
     });
     tauri::async_runtime::spawn(async move {
@@ -928,6 +947,16 @@ pub(crate) fn install(runtime: CefRuntime<'static>) -> Result<(), String> {
         shared()
             .certificate_hooks
             .store(tls.is_some(), Ordering::Release);
+        http_cache::set_engine_support(
+            tls.as_ref()
+                .is_some_and(NativeTlsBridge::supports_http_disk_cache),
+        );
+        let _ = sorng_commands_core::database_protection::observe_database_lock(
+            on_database_locked,
+        );
+        let _ = sorng_commands_core::database_protection::observe_database_deletion(
+            on_database_deleted,
+        );
         *slot = Some(UiRegistry {
             runtime,
             closing: false,
@@ -1376,6 +1405,152 @@ impl BrowserEventSink for Sink {
     }
 }
 
+/// The connection's HTTP disk cache lease, or why this attempt uses
+/// Chromium's in-memory cache. Never fails the attempt. Ids come from the
+/// authorised identity; the binding is re-read under the owner lease.
+async fn prepare_http_cache(
+    state: &EncryptionState,
+    attempt: &Arc<Attempt>,
+) -> Result<http_cache::CacheLease, HttpCacheDiagnostic> {
+    const MIB: u64 = 1024 * 1024;
+    let preferences = attempt.preferences.http_cache;
+    if !preferences.enabled {
+        return Err(HttpCacheDiagnostic::Disabled);
+    }
+    // Quick Connect owns no database cache, as it owns no retained cookies.
+    if attempt.lease.is_temporary() {
+        return Err(HttpCacheDiagnostic::Unavailable);
+    }
+    http_cache::may_acquire().map_err(http_cache_unavailable)?;
+    let (row, route) = attempt
+        .lease
+        .http_cache_binding_source()
+        .await
+        .map_err(|_| HttpCacheDiagnostic::Unavailable)?;
+    let settings = crate::app_settings_commands::read_app_settings_inner(
+        attempt.lease.profile_root(),
+        state,
+    )
+    .await
+    .map_err(|_| HttpCacheDiagnostic::Unavailable)?
+    .unwrap_or(serde_json::Value::Null);
+    let database = attempt.identity.owner_database_id().to_owned();
+    let connection = attempt.identity.connection_id().to_owned();
+    let trust = http_cache::trust_store_digest(&database, &connection)
+        .await
+        .map_err(|()| HttpCacheDiagnostic::Unavailable)?;
+    let binding = http_cache::binding_digest(
+        &row,
+        &trust,
+        &http_cache::trust_settings_digest(&settings),
+        route,
+    );
+    if !attempt.current() {
+        return Err(HttpCacheDiagnostic::Unavailable);
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        http_cache::acquire(
+            &database,
+            &connection,
+            &binding,
+            preferences.per_connection_mb.saturating_mul(MIB),
+            preferences.total_mb.saturating_mul(MIB),
+        )
+    })
+    .await
+    .map_err(|_| HttpCacheDiagnostic::Unavailable)?
+    .map_err(|refusal| match refusal {
+        http_cache::Refusal::Unavailable(reason) => http_cache_unavailable(reason),
+        http_cache::Refusal::InUse => HttpCacheDiagnostic::InUse,
+        http_cache::Refusal::DeletePending => HttpCacheDiagnostic::DeletePending,
+        http_cache::Refusal::Storage => HttpCacheDiagnostic::Unavailable,
+    })
+}
+
+fn http_cache_unavailable(reason: http_cache::Unavailable) -> HttpCacheDiagnostic {
+    match reason {
+        http_cache::Unavailable::Disabled => HttpCacheDiagnostic::Disabled,
+        http_cache::Unavailable::NotLocal => HttpCacheDiagnostic::NotLocal,
+        http_cache::Unavailable::EngineUnsupported => HttpCacheDiagnostic::EngineUnsupported,
+        http_cache::Unavailable::Runtime => HttpCacheDiagnostic::Unavailable,
+    }
+}
+
+/// Hands a disk lease to the engine's release signal (state 7), or releases
+/// it at once when the context fell back to memory. UI thread; no IO.
+fn attach_http_cache(
+    context: &PrivateRequestContext,
+    lease: Option<http_cache::CacheLease>,
+) -> Option<HttpCacheDiagnostic> {
+    let lease = lease?;
+    match (context.http_cache_state(), context.http_cache_release_signal()) {
+        (HttpCacheUse::Disk, Some(signal)) => {
+            lease.attach(signal);
+            Some(HttpCacheDiagnostic::Disk)
+        }
+        (state, _) => {
+            drop(lease);
+            Some(match state {
+                HttpCacheUse::Memory(HttpCacheMemoryReason::EngineUnsupported) => {
+                    HttpCacheDiagnostic::EngineUnsupported
+                }
+                HttpCacheUse::Memory(HttpCacheMemoryReason::EngineRejected) => {
+                    HttpCacheDiagnostic::EngineRejected
+                }
+                _ => HttpCacheDiagnostic::Unavailable,
+            })
+        }
+    }
+}
+
+/// Explicit database lock (D-lock): the cache is kept unless the saved global
+/// `webBrowser.httpCache.clearOnDatabaseLock` is true. Off the caller's path.
+fn on_database_locked(root: &std::path::Path, state: &EncryptionState, database: &str) {
+    let root = root.to_path_buf();
+    let state = state.clone();
+    let database = database.to_owned();
+    tauri::async_runtime::spawn(async move {
+        let clear = crate::app_settings_commands::read_app_settings_inner(&root, &state)
+            .await
+            .ok()
+            .map(|settings| settings.unwrap_or(serde_json::Value::Null))
+            .and_then(|settings| {
+                origin_browser_authority::NativeBrowserPreferences::http_cache_from_settings(&settings)
+                    .ok()
+            })
+            .is_some_and(|preferences| preferences.clear_on_database_lock);
+        if clear {
+            let cleared =
+                tauri::async_runtime::spawn_blocking(move || http_cache::clear_database(&database))
+                    .await;
+            if !matches!(cleared, Ok(Ok(_))) {
+                log::warn!("Native browser HTTP cache clear on database lock did not complete");
+            }
+        }
+    });
+}
+
+/// A deleted database's page caches (C-H5), best effort and never blocking
+/// or failing the deletion. Held directories are tombstoned.
+fn on_database_deleted(database: &str) {
+    let database = database.to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = http_cache::clear_database(&database);
+    });
+}
+
+/// Whether an attempt of this connection in this database is still live: the
+/// per-connection data commands then refuse with `browser-session-open`.
+pub(crate) fn connection_open(database: &str, connection: &str) -> bool {
+    let mut open = false;
+    flow::visit_attempt_snapshot(&shared().attempts, |attempt| {
+        open |= attempt.current()
+            && attempt.identity.owner_database_id() == database
+            && attempt.identity.connection_id() == connection;
+    });
+    open
+}
+
 pub(crate) async fn create(
     window: WebviewWindow,
     state: &EncryptionState,
@@ -1583,6 +1758,7 @@ async fn create_document(
         }
         attempts.insert(attempt.identity.attempt_id().to_string(), attempt.clone());
     }
+    let http_cache = prepare_http_cache(state, &attempt).await;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let queued = attempt.clone();
     let request_id = request.request_id.clone();
@@ -1611,9 +1787,13 @@ async fn create_document(
                 let _ = sender.send(Err(TLS_UNAVAILABLE.into()));
                 return;
             };
+            let (lease, refused) = match http_cache {
+                Ok(lease) => (Some(lease), None),
+                Err(diagnostic) => (None, Some(diagnostic)),
+            };
             // SAFETY: runtime is owned by this registry on the native UI thread.
             match unsafe {
-                PrivateRequestContext::create_with_tls_capabilities(
+                PrivateRequestContext::create_with_tls_capabilities_and_cache(
                     queued.session.clone(),
                     queued.identity.clone(),
                     permissions,
@@ -1624,10 +1804,17 @@ async fn create_document(
                     },
                     certificate_hooks,
                     queued.preferences.capabilities,
+                    lease.as_ref().map(http_cache::CacheLease::spec),
                 )
             } {
                 Ok(context) => {
                     queued.timing.mark(TimingStage::ContextCreated);
+                    // Take the release signal before the context moves into
+                    // the browser host: the lease outlives this owner.
+                    let observed = attach_http_cache(&context, lease).or(refused);
+                    if let Some(observed) = observed {
+                        queued.engine_observations.observe_http_cache(observed);
+                    }
                     ui.pending.push(Pending {
                         context,
                         attempt: queued.clone(),

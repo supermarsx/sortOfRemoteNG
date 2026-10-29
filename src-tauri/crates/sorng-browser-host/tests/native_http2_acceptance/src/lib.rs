@@ -8,7 +8,7 @@ use sorng_browser_host::{
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
         NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, HTTP3_PATCH_ID,
-        LEGACY_PATCH_ID, PATCH_ID, PROXY_APPLIED_PATCH_ID,
+        HTTP_CACHE_PATCH_ID, LEGACY_PATCH_ID, PATCH_ID, PROXY_APPLIED_PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -115,6 +115,8 @@ fn selected_revision(expect: Option<&str>, pin: Option<&str>) -> Result<&'static
         None => Ok(historical),
         Some(PATCH_ID) if historical == PATCH_ID => Ok(PATCH_ID),
         Some(HTTP3_PATCH_ID) if historical == PATCH_ID => Ok(HTTP3_PATCH_ID),
+        // Revision 6 carries every revision-5 bit plus the HTTP disk cache.
+        Some(HTTP_CACHE_PATCH_ID) if historical == PATCH_ID => Ok(HTTP_CACHE_PATCH_ID),
         _ => Err("explicit native fixture revision differs from protocol selection".into()),
     }
 }
@@ -133,7 +135,7 @@ fn requested_revision() -> Result<&'static str> {
     selected_revision(expect.as_deref(), pin.as_deref())
 }
 fn requires_retirement(patch_id: &str) -> bool {
-    matches!(patch_id, PATCH_ID | HTTP3_PATCH_ID)
+    matches!(patch_id, PATCH_ID | HTTP3_PATCH_ID | HTTP_CACHE_PATCH_ID)
 }
 
 // Absence is not a live CEF browser. Every browser that was actually created
@@ -1437,7 +1439,7 @@ mod revision_selection_tests {
     #[test]
     fn explicit_current_revision_is_orthogonal_to_h1_fallback() {
         for expect in [None, Some("retirement"), Some("h1")] {
-            for patch in [PATCH_ID, HTTP3_PATCH_ID] {
+            for patch in [PATCH_ID, HTTP3_PATCH_ID, HTTP_CACHE_PATCH_ID] {
                 assert_eq!(selected_revision(expect, Some(patch)).unwrap(), patch);
             }
         }
@@ -1450,7 +1452,7 @@ mod revision_selection_tests {
             Some("proxy-ack"),
             Some("unknown"),
         ] {
-            for pin in [PATCH_ID, HTTP3_PATCH_ID] {
+            for pin in [PATCH_ID, HTTP3_PATCH_ID, HTTP_CACHE_PATCH_ID] {
                 assert!(selected_revision(expect, Some(pin)).is_err());
             }
         }
@@ -1459,7 +1461,7 @@ mod revision_selection_tests {
             LEGACY_PATCH_ID,
             HTTP2_PATCH_ID,
             PROXY_APPLIED_PATCH_ID,
-            "sorng-tls-v2-682c378-6",
+            "sorng-tls-v2-682c378-7",
         ] {
             assert!(selected_revision(None, Some(pin)).is_err());
         }
@@ -1468,7 +1470,7 @@ mod revision_selection_tests {
     #[test]
     fn both_current_revisions_require_the_entire_retirement_suite() {
         assert!(!std::mem::needs_drop::<NativeTlsBridge>());
-        for patch in [PATCH_ID, HTTP3_PATCH_ID] {
+        for patch in [PATCH_ID, HTTP3_PATCH_ID, HTTP_CACHE_PATCH_ID] {
             assert!(requires_retirement(patch));
         }
         for patch in [
