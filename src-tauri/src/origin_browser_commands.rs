@@ -243,6 +243,7 @@ impl<'de> serde::Deserialize<'de> for RetryLoginRequest {
 /// not-current, no-login, busy, no-mfa, code-used, rate-limited or no-form.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "status", rename_all = "kebab-case")]
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
 pub(crate) enum RetryLoginReceipt {
     Started,
     Refused { reason: &'static str },
