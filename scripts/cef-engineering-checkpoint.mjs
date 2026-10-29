@@ -424,7 +424,8 @@ async function checkpointMain(argv, env, observer) {
               });
             if (profile.platform === "linux") {
               // Before linuxArmRecipe and source-record: the pinned sysroots'
-              // hard links become single-link copies (same bytes and times).
+              // hard links become single-link copies (same bytes, whole-second
+              // group mtimes).
               const separated = await afterGnPhase("sysroot-links", () =>
                 separateLinuxSysrootHardLinks(context.chromium),
               );

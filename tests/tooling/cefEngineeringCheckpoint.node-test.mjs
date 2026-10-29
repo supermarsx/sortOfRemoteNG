@@ -13045,7 +13045,7 @@ test("source-file-identity diagnostic survives the Node failure record only in i
   assert.deepEqual(record(facts, "pack"), { error: "unknown", exitCode: 1 });
 });
 
-test("pinned Linux sysroot hard links become single-link copies with the same bytes and times", async (t) => {
+test("pinned Linux sysroot hard links become single-link copies with the same bytes and whole-second group times", async (t) => {
   const { separateLinuxSysrootHardLinks, LINUX_SYSROOT_DIRECTORIES } =
     await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
   const { link, utimes } = await import("node:fs/promises");
@@ -13064,7 +13064,8 @@ test("pinned Linux sysroot hard links become single-link copies with the same by
   await mkdir(path.join(linux, "debian_bullseye_i386-sysroot/usr"), {
     recursive: true,
   });
-  const when = new Date(1_700_000_000_000);
+  // gclient extracts with sub-second extraction-time mtimes.
+  const when = 1_700_000_000.75;
   await writeFile(path.join(dri, "armada-drm_dri.so"), "mesa");
   await utimes(path.join(dri, "armada-drm_dri.so"), when, when);
   for (const name of ["msm_dri.so", "lima_dri.so"])
@@ -13093,7 +13094,8 @@ test("pinned Linux sysroot hard links become single-link copies with the same by
   for (const name of ["armada-drm_dri.so", "msm_dri.so", "lima_dri.so"]) {
     const info = await lstat(path.join(dri, name), { bigint: true });
     assert.equal(info.nlink, 1n);
-    assert.equal(info.mtimeNs, before.mtimeNs);
+    assert.equal(info.mtimeNs, 1_700_000_000_000_000_000n);
+    assert.notEqual(before.mtimeNs, info.mtimeNs);
     assert.equal(info.size, before.size);
     inodes.add(info.ino);
     assert.equal(await readFile(path.join(dri, name), "utf8"), "mesa");

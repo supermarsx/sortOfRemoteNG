@@ -584,8 +584,11 @@ export async function assertNoGeneratedLinks(out) {
 // to have exactly one link, because restoring metadata through one name would
 // change the shared inode under its siblings. Before the source is recorded,
 // each extra name inside these exact sysroot directories becomes an
-// independent copy with the same bytes, mode and timestamps. A link group that
-// reaches outside its sysroot fails closed; nothing else in the tree changes.
+// independent copy with the same bytes and mode. gclient extracts with
+// extraction-time mtimes (nanoseconds) and Node sets times as doubles, so
+// every name of a group, the kept one included, gets the group's mtime
+// truncated to whole seconds, which is exact. A link group that reaches
+// outside its sysroot fails closed; nothing else in the tree changes.
 export const LINUX_SYSROOT_DIRECTORIES = Object.freeze([
   "debian_bullseye_arm64-sysroot",
   "debian_bullseye_amd64-sysroot",
@@ -630,7 +633,15 @@ async function sysrootHardLinkGroups(root) {
     return group.files;
   });
 }
-async function separateSysrootFile(file, digest) {
+async function setSysrootSeconds(file, seconds) {
+  await utimes(file, Number(seconds), Number(seconds));
+  const info = await lstat(file, { bigint: true });
+  assert(
+    info.mtimeNs === seconds * 1_000_000_000n,
+    "Linux sysroot time readback",
+  );
+}
+async function separateSysrootFile(file, digest, seconds) {
   const before = await lstat(file, { bigint: true });
   assert(before.isFile() && before.nlink > 1n, "Linux sysroot member changed");
   const copy = path.join(
@@ -640,20 +651,13 @@ async function separateSysrootFile(file, digest) {
   await copyFile(file, copy, fsConstants.COPYFILE_EXCL);
   try {
     await chmod(copy, Number(before.mode & 0o7777n));
-    // Tar extraction leaves whole-second times, which a double holds exactly;
-    // the bigint readback below rejects any rounding.
-    await utimes(
-      copy,
-      Number(before.atimeNs) / 1e9,
-      Number(before.mtimeNs) / 1e9,
-    );
+    await setSysrootSeconds(copy, seconds);
     const made = await lstat(copy, { bigint: true });
     assert(
       made.isFile() &&
         made.nlink === 1n &&
         made.size === before.size &&
         made.mode === before.mode &&
-        made.mtimeNs === before.mtimeNs &&
         made.uid === before.uid &&
         (await sysrootFileSha(copy)) === digest,
       "Linux sysroot copy differs",
@@ -670,7 +674,7 @@ async function separateSysrootFile(file, digest) {
       after.ino !== before.ino &&
       after.size === before.size &&
       after.mode === before.mode &&
-      after.mtimeNs === before.mtimeNs,
+      after.mtimeNs === seconds * 1_000_000_000n,
     "Linux sysroot copy differs",
   );
 }
@@ -700,12 +704,15 @@ export async function separateLinuxSysrootHardLinks(chromium) {
     let separated = 0;
     for (const files of groups) {
       const digest = await sysrootFileSha(files[0]);
+      const seconds =
+        (await lstat(files[0], { bigint: true })).mtimeNs / 1_000_000_000n;
       for (const file of files.slice(1)) {
-        await separateSysrootFile(file, digest);
+        await separateSysrootFile(file, digest, seconds);
         separated++;
       }
       const first = await lstat(files[0], { bigint: true });
       assert(first.nlink === 1n, "Linux sysroot hard link remains");
+      await setSysrootSeconds(files[0], seconds);
     }
     assert(
       (await sysrootHardLinkGroups(root)).length === 0,
