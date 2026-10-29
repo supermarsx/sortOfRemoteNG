@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import type {
   BrowserHttpCacheSettings,
   BrowserHttpDiskCacheCapability,
+  BrowserTlsInterception,
 } from "../../../../types/settings/browserSession";
 import { BrowserNumberRow } from "../../BrowserSettingsFields";
 import { Toggle } from "../../../ui/settings/SettingsPrimitives";
@@ -14,6 +15,10 @@ import {
   originBrowserDataErrorText,
   useHttpCacheUsage,
 } from "../../../../hooks/protocol/useHttpCacheUsage";
+import {
+  HTTP_CACHE_DIRECT_TLS_DEFAULT,
+  HTTP_CACHE_NEEDS_INSPECTION,
+} from "./browserTlsInterceptionCopy";
 
 /** Global page-cache settings. The cache is device-local and never synced;
  * capability and usage come from native, never from these saved values. */
@@ -22,12 +27,15 @@ export default function BrowserHttpCacheFields({
   onChange,
   capability,
   nativeEngine = true,
+  tlsInterception = "auto",
 }: {
   value: BrowserHttpCacheSettings;
   onChange: (value: BrowserHttpCacheSettings) => void;
   capability?: BrowserHttpDiskCacheCapability;
   /** False for the legacy engine: no native usage probe. */
   nativeEngine?: boolean;
+  /** Global HTTPS handling default; the disk cache needs HTTPS inspection. */
+  tlsInterception?: BrowserTlsInterception;
 }) {
   const { usage, refresh } = useHttpCacheUsage(
     undefined,
@@ -65,8 +73,11 @@ export default function BrowserHttpCacheFields({
         Each connection keeps its own cache so later visits load faster. Sites
         decide what may be cached through their cache headers. Caches are never
         included in cloud sync, backups or exports, and caches unused for 30
-        days are deleted.
+        days are deleted. {HTTP_CACHE_NEEDS_INSPECTION}
       </p>
+      {tlsInterception === "off" && (
+        <p className="text-sm text-warning">{HTTP_CACHE_DIRECT_TLS_DEFAULT}</p>
+      )}
       <Toggle
         settingKey="webBrowser.httpCache.enabled"
         label="Use a page cache for web connections"

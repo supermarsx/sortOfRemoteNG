@@ -4,6 +4,7 @@ import type {
   BrowserHttpCacheSettings,
   BrowserNativePreferences,
   BrowserSessionRetention,
+  BrowserTlsInterception,
 } from "./browserSession";
 
 export type WebBrowserEngine = "real-origin" | "legacy";
@@ -45,6 +46,8 @@ export interface WebBrowserSettingsConfig extends BrowserNativePreferences {
   restoreCookies?: boolean;
   /** Per-connection page cache; device-local, never synced. */
   httpCache?: BrowserHttpCacheSettings;
+  /** Default HTTPS handling for web connections; connections may override. */
+  tlsInterception?: BrowserTlsInterception;
 }
 
 /** Applied when creating a native proxy session, including its derived routes. */

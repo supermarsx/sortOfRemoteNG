@@ -878,6 +878,50 @@ describe("Web Browser settings", () => {
     });
   });
 
+  it("defaults HTTPS handling to inspection and persists Direct TLS globally", () => {
+    const { update } = setup("browser", {}, true, {
+      memory: false,
+      encryptedDatabase: false,
+    });
+    const label = "HTTPS handling";
+    expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
+      "Inspect HTTPS in the app (recommended)",
+    );
+    expect(
+      screen.getByText(
+        /keeps its own fingerprint, for sites with strict bot checks/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Direct TLS is the app default/)).toBeNull();
+    choose(label, "Direct TLS");
+    expect(update.mock.lastCall?.[0].webBrowser.tlsInterception).toBe("off");
+    expect(
+      screen.getByText(
+        "Direct TLS is the app default, so connections that inherit it use no disk page cache.",
+      ),
+    ).toBeVisible();
+    choose(label, "Inspect HTTPS in the app (recommended)");
+    expect(update.mock.lastCall?.[0].webBrowser.tlsInterception).toBe("auto");
+  });
+
+  it("indexes the HTTPS handling setting for search", () => {
+    const entry = SETTINGS_SEARCH_INDEX.find(
+      (item) => item.key === "webBrowser.tlsInterception",
+    );
+    expect(entry).toMatchObject({
+      label: "HTTPS handling",
+      section: "webBrowser",
+    });
+    expect(entry?.description).toContain("Direct TLS");
+    expect(entry?.tags).toEqual(
+      expect.arrayContaining(["https", "tls", "direct tls", "inspection"]),
+    );
+    setup("browser", {}, true, { memory: false, encryptedDatabase: false });
+    expect(
+      document.querySelector('[data-setting-key="webBrowser.tlsInterception"]'),
+    ).not.toBeNull();
+  });
+
   it("saves global page-cache settings under webBrowser.httpCache without probing usage when unavailable", () => {
     const { update } = setup("browser", {}, true, {
       memory: false,

@@ -31,6 +31,12 @@ export interface BrowserHttpCacheOverride {
   perConnectionMb?: number;
 }
 
+/** HTTPS handling for web connections (`tlsInterception`). "auto" lets the app's
+ * proxy inspect HTTPS and check certificates itself (and enables the disk page
+ * cache); "off" is Direct TLS: the browser engine verifies TLS and keeps its own
+ * fingerprint, for sites with strict bot checks. */
+export type BrowserTlsInterception = "auto" | "off";
+
 /** Requested native features, not runtime availability or permission grants. */
 export interface BrowserNativePreferences {
   /** Isolated, ephemeral site storage; not covered by cookie retention. */
@@ -71,6 +77,8 @@ export type BrowserSessionOverrides = {
   version: 1;
   /** Native support is announced by the `httpDiskCache` retention capability. */
   httpCache?: BrowserHttpCacheOverride;
+  /** Missing inherits `webBrowser.tlsInterception`. */
+  tlsInterception?: BrowserTlsInterception;
 } & Partial<BrowserSessionPreferences>;
 
 /** Native code must derive these from authenticated ownership, not accept profile paths. */

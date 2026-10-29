@@ -6,6 +6,7 @@ import type {
   BrowserSessionOverrides,
   BrowserSessionRetention,
   BrowserSessionRetentionCapabilities,
+  BrowserTlsInterception,
   EffectiveBrowserSessionRetention,
 } from "../../types/settings/browserSession";
 import type { WebBrowserSettingsConfig } from "../../types/settings/webBrowser";
@@ -34,6 +35,19 @@ export const DEFAULT_BROWSER_HTTP_CACHE: Readonly<BrowserHttpCacheSettings> =
     totalMb: httpCacheRules.totalMb.default,
     clearOnDatabaseLock: httpCacheRules.clearOnDatabaseLock.default,
   });
+
+/** Default HTTPS handling, read from the schema: the app inspects HTTPS. */
+export const DEFAULT_BROWSER_TLS_INTERCEPTION = schema.$defs.tlsInterception
+  .default as BrowserTlsInterception;
+
+/** Missing uses the schema default; anything but "auto" or "off" is rejected. */
+export function normalizeBrowserTlsInterception(
+  value: unknown,
+): BrowserTlsInterception {
+  if (value === undefined) return DEFAULT_BROWSER_TLS_INTERCEPTION;
+  if (!validate(value, schema.$defs.tlsInterception)) return invalid();
+  return value as BrowserTlsInterception;
+}
 
 /** Effective policy when retention is unsupported or disabled: never retains cookies. */
 const ephemeralFallback = (
@@ -181,6 +195,7 @@ export function resolveConnectionBrowserSettings(
 ): WebBrowserSettingsConfig & {
   sessionRetention: BrowserSessionRetention;
   httpCache: BrowserHttpCacheSettings;
+  tlsInterception: BrowserTlsInterception;
 } {
   const defaults = normalizeWebBrowserSettings(globalSettings);
   const connection = normalizeBrowserSessionOverrides(overrides);
@@ -195,6 +210,7 @@ export function resolveConnectionBrowserSettings(
     ...merged,
     sessionRetention: normalizeBrowserSessionRetention(merged.sessionRetention),
     httpCache: normalizeBrowserHttpCacheSettings(merged.httpCache),
+    tlsInterception: normalizeBrowserTlsInterception(merged.tlsInterception),
   };
 }
 

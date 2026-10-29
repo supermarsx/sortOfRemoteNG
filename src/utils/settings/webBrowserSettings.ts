@@ -8,6 +8,7 @@ import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../connection/httpFormAutoma
 import { normalizeWebsiteDomainPermissions } from "./websiteDomainPermissions";
 import {
   normalizeBrowserHttpCacheSettings,
+  normalizeBrowserTlsInterception,
   normalizeBrowserSessionRetention,
 } from "./browserSessionSettings";
 
@@ -100,6 +101,7 @@ export function normalizeWebBrowserSettings(
           "sessionRetention",
           "restoreCookies",
           "httpCache",
+          "tlsInterception",
         ].includes(key),
     )
   )
@@ -192,6 +194,7 @@ export function normalizeWebBrowserSettings(
     sessionRetention: normalizeBrowserSessionRetention(row.sessionRetention),
     restoreCookies: boolean(row.restoreCookies, true),
     httpCache: normalizeBrowserHttpCacheSettings(row.httpCache),
+    tlsInterception: normalizeBrowserTlsInterception(row.tlsInterception),
     ...(row.domainPermissions === undefined
       ? {}
       : {

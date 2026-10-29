@@ -8,6 +8,7 @@ import {
   Info,
   Trash2,
   HardDrive,
+  Lock,
 } from "lucide-react";
 import type { GlobalSettings } from "../../../types/settings/settings";
 import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowser";
@@ -36,7 +37,13 @@ import BrowserHttpCacheFields from "./webBrowser/BrowserHttpCacheFields";
 import {
   normalizeBrowserHttpCacheSettings,
   normalizeBrowserSessionRetention,
+  normalizeBrowserTlsInterception,
 } from "../../../utils/settings/browserSessionSettings";
+import {
+  TLS_INTERCEPTION_HELP,
+  TLS_INTERCEPTION_LABEL,
+  TLS_INTERCEPTION_OPTION_LABELS,
+} from "./webBrowser/browserTlsInterceptionCopy";
 import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
 import BrowserNativeCapabilitiesCard from "./webBrowser/BrowserNativeCapabilitiesCard";
 import BrowserDataDirectorySettings from "./webBrowser/BrowserDataDirectorySettings";
@@ -225,6 +232,24 @@ function WebBrowserSettingsContent({
         </Card>
       </div>
       <div className="space-y-4">
+        <SectionHeader icon={<Lock size={16} />} title="HTTPS handling" />
+        <Card>
+          <BrowserSelectRow
+            settingKey="webBrowser.tlsInterception"
+            label={TLS_INTERCEPTION_LABEL}
+            description={TLS_INTERCEPTION_HELP}
+            value={normalizeBrowserTlsInterception(config.tlsInterception)}
+            options={(["auto", "off"] as const).map((value) => ({
+              value,
+              label: TLS_INTERCEPTION_OPTION_LABELS[value],
+            }))}
+            onChange={(value) =>
+              update({ tlsInterception: value === "off" ? "off" : "auto" })
+            }
+          />
+        </Card>
+      </div>
+      <div className="space-y-4">
         <SectionHeader icon={<HardDrive size={16} />} title="Page cache" />
         <Card>
           <BrowserHttpCacheFields
@@ -234,6 +259,9 @@ function WebBrowserSettingsContent({
                 .httpDiskCache
             }
             nativeEngine={config.engine !== "legacy"}
+            tlsInterception={normalizeBrowserTlsInterception(
+              config.tlsInterception,
+            )}
             onChange={(httpCache) => update({ httpCache })}
           />
         </Card>

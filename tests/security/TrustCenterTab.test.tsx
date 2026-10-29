@@ -272,6 +272,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("dedicated Trust Center", () => {
+  it("says the app checks certificates for web connections", async () => {
+    fixture.records = [];
+    fixture.connectionRecords = [];
+    await mount();
+    expect(
+      screen.getByText(
+        /Certificates are checked by the app for web connections\./,
+      ),
+    ).toBeVisible();
+  });
+
   it("uses themed menus for every identity type and preserves the selected filter", async () => {
     const types = ["https", "certificate", "rdp", "ssh", "tls"] as const;
     fixture.records = types.map((type) => ({

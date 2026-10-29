@@ -79,7 +79,12 @@
       "description": "Restore and checkpoint retained sign-in cookies. False opens a fresh temporary jar without reading, clearing or replacing the saved snapshot."
     },
     "sessionRetention": { "$ref": "#/$defs/retention" },
-    "httpCache": { "$ref": "#/$defs/httpCacheOverride" }
+    "httpCache": { "$ref": "#/$defs/httpCacheOverride" },
+    "tlsInterception": {
+      "type": "string",
+      "enum": ["auto", "off"],
+      "$comment": "Sparse Connection.browserSession.tlsInterception; missing inherits webBrowser.tlsInterception. Same rule as $defs.tlsInterception, inlined so scalar validators need no $ref."
+    }
   },
   "$defs": {
     "retention": {
@@ -153,6 +158,12 @@
         }
       },
       "$comment": "Sparse Connection.browserSession.httpCache. Missing values inherit webBrowser.httpCache. The global webBrowser.httpCache object is validated against $defs.httpCache instead."
+    },
+    "tlsInterception": {
+      "type": "string",
+      "enum": ["auto", "off"],
+      "default": "auto",
+      "$comment": "Global webBrowser.tlsInterception. auto: the app's proxy terminates HTTPS for web connections, checks upstream certificates with the Trust Center and enables the per-connection disk page cache; when the engine cannot trust the attempt CA the attempt uses Direct TLS. off (Direct TLS): Chromium verifies TLS itself and keeps its own fingerprint, the app still decides trust from Chromium's evidence, and no disk page cache is used."
     },
     "identity": {
       "type": "object",

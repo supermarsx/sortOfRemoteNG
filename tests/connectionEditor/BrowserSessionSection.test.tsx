@@ -687,4 +687,86 @@ describe("browser connection overrides", () => {
       ).toBeVisible();
     });
   });
+
+  describe("HTTPS handling (tlsInterception)", () => {
+    const label = "HTTPS handling";
+    afterEach(() => vi.restoreAllMocks());
+
+    it("inherits inspection, persists Direct TLS and auto, and inherit clears the override", () => {
+      vi.spyOn(tauriInvoke, "getInvoke").mockResolvedValue((async () => ({
+        memory: true,
+        encryptedDatabase: true,
+      })) as unknown as tauriInvoke.TauriInvoke);
+      const { change } = setup();
+      const select = screen.getByRole("combobox", { name: label });
+      expect(select).toHaveTextContent(
+        "Use app default (Inspect HTTPS in the app (recommended))",
+      );
+      expect(
+        screen.getByText(
+          /Direct TLS: the browser engine verifies certificates itself/,
+        ),
+      ).toBeVisible();
+      expect(change).not.toHaveBeenCalled();
+      choose(label, "Direct TLS");
+      expect(change.mock.lastCall?.[0].browserSession).toEqual({
+        version: 1,
+        tlsInterception: "off",
+      });
+      expect(
+        screen.getByText(
+          "This connection uses Direct TLS, so it has no disk page cache. Choose Inspect HTTPS in the app to use it.",
+        ),
+      ).toBeVisible();
+      choose(label, "Inspect HTTPS in the app (recommended)");
+      expect(change.mock.lastCall?.[0].browserSession).toEqual({
+        version: 1,
+        tlsInterception: "auto",
+      });
+      expect(screen.queryByText(/This connection uses Direct TLS/)).toBeNull();
+      choose(label, /^Use app default/);
+      expect(change.mock.lastCall?.[0].browserSession).toBeUndefined();
+    });
+
+    it("shows a Direct TLS app default and keeps other overrides when clearing", () => {
+      shared.settings = { webBrowser: { tlsInterception: "off" } };
+      const { change } = setup({
+        browserSession: {
+          version: 1,
+          showBookmarksBar: false,
+          tlsInterception: "auto",
+        },
+      });
+      expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
+        "Inspect HTTPS in the app (recommended)",
+      );
+      choose(label, "Use app default (Direct TLS)");
+      expect(change.mock.lastCall?.[0].browserSession).toEqual({
+        version: 1,
+        showBookmarksBar: false,
+      });
+      expect(screen.getByText(/This connection uses Direct TLS/)).toBeVisible();
+    });
+
+    it("states that the disk cache needs HTTPS inspection", () => {
+      setup();
+      expect(
+        screen.getByText(
+          /The disk page cache is available only when HTTPS inspection is active for the connection\./,
+        ),
+      ).toBeVisible();
+    });
+
+    it("treats an unknown saved value as invalid overrides", () => {
+      setup({
+        browserSession: {
+          version: 1,
+          tlsInterception: "required",
+        } as unknown as Connection["browserSession"],
+      });
+      expect(
+        screen.getByText(/Browser session overrides are invalid/),
+      ).toBeVisible();
+    });
+  });
 });

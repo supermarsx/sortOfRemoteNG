@@ -44,6 +44,31 @@ describe("global page cache fields", () => {
     expect(transport.invoke).not.toHaveBeenCalled();
   });
 
+  it("states that the disk cache needs HTTPS inspection, and flags a Direct TLS default", () => {
+    const { rerender } = render(
+      <BrowserHttpCacheFields
+        value={{ ...DEFAULT_BROWSER_HTTP_CACHE }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Page cache \(this device only/)).toHaveTextContent(
+      "The disk page cache is available only when HTTPS inspection is active for the connection.",
+    );
+    expect(screen.queryByText(/Direct TLS is the app default/)).toBeNull();
+    rerender(
+      <BrowserHttpCacheFields
+        value={{ ...DEFAULT_BROWSER_HTTP_CACHE }}
+        onChange={vi.fn()}
+        tlsInterception="off"
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Direct TLS is the app default, so connections that inherit it use no disk page cache.",
+      ),
+    ).toBeVisible();
+  });
+
   it.each([
     ["disabled", "Page cache is turned off."],
     ["cache-location-not-local", "not a local, non-synced folder"],

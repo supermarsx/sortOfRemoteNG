@@ -160,7 +160,7 @@ export default function TrustCenterTab({
           <p className="mt-1 max-w-3xl text-xs text-[var(--color-textMuted)]">
             {section === "redirects"
               ? "Redirect destination preferences are separate from certificate trust and saved-login permissions."
-              : "Certificates and SSH host identities—not passwords, private keys, or the credential vault. Trust is database-scoped. Global verification policies remain in Settings → Trust Center."}
+              : "Certificates and SSH host identities—not passwords, private keys, or the credential vault. Trust is database-scoped. Certificates are checked by the app for web connections. Global verification policies remain in Settings → Trust Center."}
           </p>
         </div>
         <div className="flex items-center gap-2">

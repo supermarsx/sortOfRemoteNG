@@ -133,6 +133,27 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Web Browser",
   },
   {
+    key: "webBrowser.tlsInterception",
+    label: "HTTPS handling",
+    description:
+      "Inspect HTTPS in the app (recommended) so the app checks certificates and keeps the page cache, or use Direct TLS so the browser engine verifies certificates and keeps its own fingerprint for sites with strict bot checks. Connections can override it.",
+    tags: [
+      "https",
+      "tls",
+      "inspection",
+      "inspect",
+      "direct tls",
+      "certificate",
+      "proxy",
+      "fingerprint",
+      "bot",
+      "cloudflare",
+      "captcha",
+    ],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "webBrowser.httpCache.enabled",
     label: "Use a page cache for web connections",
     description:

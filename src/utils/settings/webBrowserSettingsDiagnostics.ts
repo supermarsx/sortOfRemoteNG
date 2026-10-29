@@ -18,6 +18,8 @@ const fixes: Record<string, string> = {
     "Repair cookie retention: version 1; mode ephemeral, memory or encrypted-database; idleTimeoutMinutes 0–10080; maxAgeHours 1–8760; clearOnDatabaseLock true or false. All five fields are required.",
   httpCache:
     "Repair the page cache: enabled true or false; perConnectionMb 16–1024; totalMb 128–8192; clearOnDatabaseLock true or false. Missing fields use the defaults.",
+  tlsInterception:
+    "Choose Inspect HTTPS in the app (auto) or Direct TLS (off).",
 };
 for (const field of [
   "idlePrewarmEnabled",

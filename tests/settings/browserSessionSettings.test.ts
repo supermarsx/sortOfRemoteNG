@@ -4,10 +4,12 @@ import {
   browserSessionIsolationKey,
   DEFAULT_BROWSER_HTTP_CACHE,
   DEFAULT_BROWSER_SESSION_RETENTION,
+  DEFAULT_BROWSER_TLS_INTERCEPTION,
   normalizeBrowserHttpCacheOverride,
   normalizeBrowserHttpCacheSettings,
   normalizeBrowserSessionOverrides,
   normalizeBrowserSessionRetention,
+  normalizeBrowserTlsInterception,
   resolveBrowserSessionRetention,
   resolveConnectionBrowserSettings,
 } from "../../src/utils/settings/browserSessionSettings";
@@ -255,6 +257,76 @@ describe("browser session contract", () => {
       expect(fallback.reason).toContain("ephemeral storage");
     }
     expect(DEFAULT_BROWSER_SESSION_RETENTION.mode).toBe("encrypted-database");
+  });
+
+  it("publishes tlsInterception as auto|off with an auto default", () => {
+    expect(schema.$defs.tlsInterception).toMatchObject({
+      type: "string",
+      enum: ["auto", "off"],
+      default: "auto",
+    });
+    // Inlined so scalar validators (TS and native) need no $ref resolution.
+    expect(schema.properties.tlsInterception).toMatchObject({
+      type: "string",
+      enum: schema.$defs.tlsInterception.enum,
+    });
+    expect(DEFAULT_BROWSER_TLS_INTERCEPTION).toBe("auto");
+  });
+
+  it.each(["auto", "off"] as const)(
+    "accepts tlsInterception %s globally and per connection",
+    (value) => {
+      expect(normalizeBrowserTlsInterception(value)).toBe(value);
+      expect(
+        normalizeWebBrowserSettings({ tlsInterception: value }),
+      ).toMatchObject({ tlsInterception: value });
+      expect(
+        normalizeBrowserSessionOverrides({
+          version: 1,
+          tlsInterception: value,
+        }),
+      ).toEqual({ version: 1, tlsInterception: value });
+    },
+  );
+
+  it.each(["required", "on", "", "AUTO", true, 1, null, {}])(
+    "rejects tlsInterception %j",
+    (value) => {
+      expect(() => normalizeBrowserTlsInterception(value)).toThrow();
+      expect(() =>
+        normalizeWebBrowserSettings({ tlsInterception: value }),
+      ).toThrow();
+      expect(() =>
+        normalizeBrowserSessionOverrides({
+          version: 1,
+          tlsInterception: value,
+        }),
+      ).toThrow();
+    },
+  );
+
+  it("defaults tlsInterception to auto and inherits it sparsely", () => {
+    expect(normalizeBrowserTlsInterception(undefined)).toBe("auto");
+    expect(normalizeWebBrowserSettings(undefined).tlsInterception).toBe("auto");
+    expect(
+      resolveConnectionBrowserSettings(undefined, undefined).tlsInterception,
+    ).toBe("auto");
+    const globals = normalizeWebBrowserSettings({ tlsInterception: "off" });
+    expect(
+      resolveConnectionBrowserSettings(globals, { version: 1 }).tlsInterception,
+    ).toBe("off");
+    expect(
+      resolveConnectionBrowserSettings(globals, {
+        version: 1,
+        tlsInterception: "auto",
+      }).tlsInterception,
+    ).toBe("auto");
+    expect(
+      resolveConnectionBrowserSettings(undefined, {
+        version: 1,
+        tlsInterception: "off",
+      }).tlsInterception,
+    ).toBe("off");
   });
 
   it("publishes HTTP cache defaults and ranges in the schema", () => {

@@ -29,6 +29,13 @@ import {
   originBrowserDataErrorText,
   useHttpCacheUsage,
 } from "../../../hooks/protocol/useHttpCacheUsage";
+import {
+  HTTP_CACHE_DIRECT_TLS_CONNECTION,
+  HTTP_CACHE_NEEDS_INSPECTION,
+  TLS_INTERCEPTION_HELP,
+  TLS_INTERCEPTION_LABEL,
+  TLS_INTERCEPTION_OPTION_LABELS,
+} from "../../SettingsDialog/sections/webBrowser/browserTlsInterceptionCopy";
 
 const numbers = [
   ["defaultZoomPercent", "Website zoom (%)", 50, 200],
@@ -322,13 +329,34 @@ function SessionOverrides({
       >
         Clear saved sign-in
       </button>
+      <h5 className="text-sm font-medium">{TLS_INTERCEPTION_LABEL}</h5>
+      <BrowserSelectRow
+        settingKey="browserSession.tlsInterception"
+        label={TLS_INTERCEPTION_LABEL}
+        description={TLS_INTERCEPTION_HELP}
+        value={overrides.tlsInterception ?? "inherit"}
+        options={[
+          {
+            value: "inherit",
+            label: `Use app default (${TLS_INTERCEPTION_OPTION_LABELS[defaults.tlsInterception ?? "auto"]})`,
+          },
+          { value: "auto", label: TLS_INTERCEPTION_OPTION_LABELS.auto },
+          { value: "off", label: TLS_INTERCEPTION_OPTION_LABELS.off },
+        ]}
+        onChange={(value) =>
+          update(
+            "tlsInterception",
+            value === "auto" || value === "off" ? value : undefined,
+          )
+        }
+      />
       <h5 className="text-sm font-medium">
         Page cache (this device only, never synced, follows site cache rules)
       </h5>
       <BrowserSelectRow
         settingKey="browserSession.httpCache.enabled"
         label="Use page cache for this connection"
-        description="Keeps this connection's pages cached on this device so later visits load faster. Sites decide what may be cached. Applies to new attempts."
+        description={`Keeps this connection's pages cached on this device so later visits load faster. Sites decide what may be cached. ${HTTP_CACHE_NEEDS_INSPECTION} Applies to new attempts.`}
         value={
           overrides.httpCache?.enabled === undefined
             ? "inherit"
@@ -350,6 +378,11 @@ function SessionOverrides({
           update("httpCache", Object.keys(next).length ? next : undefined);
         }}
       />
+      {effective.tlsInterception === "off" && (
+        <p className="text-sm text-warning">
+          {HTTP_CACHE_DIRECT_TLS_CONNECTION}
+        </p>
+      )}
       {(cacheCapability === undefined || !cacheCapability.available) && (
         <p className="text-sm text-warning">
           {httpCacheUnavailableText(cacheCapability?.reason ?? "unavailable")}
