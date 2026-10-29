@@ -1,5 +1,10 @@
 //! K5: native exchange hooks (owner: x1).
 //!
+//! Request hooks run before the cache lookup; response hooks run on what is
+//! served (cache hit or upstream). A panicking hook turns the exchange into a
+//! synthetic 500; a hook is never skipped. After every response hook the
+//! pipeline strips `Alt-Svc` (no QUIC around the interception).
+//!
 //! Hooks are native only, registered at attempt start in a fixed order, never
 //! defined from IPC or page script. Views see heads only (body hooks are not
 //! in v1) and refuse edits to the authority, scheme, `Host`, `Proxy-*`,
@@ -57,8 +62,6 @@ pub struct RequestHeadView {
 }
 
 impl RequestHeadView {
-    // Constructed by x1's exchange pipeline.
-    #[allow(dead_code)]
     pub(crate) fn new(method: Method, uri: Uri, headers: HeaderMap) -> Self {
         Self {
             method,
@@ -67,8 +70,6 @@ impl RequestHeadView {
         }
     }
 
-    // Consumed by x1's exchange pipeline.
-    #[allow(dead_code)]
     pub(crate) fn into_parts(self) -> (Method, Uri, HeaderMap) {
         (self.method, self.uri, self.headers)
     }
@@ -114,14 +115,10 @@ pub struct ResponseHeadView {
 }
 
 impl ResponseHeadView {
-    // Constructed by x1's exchange pipeline.
-    #[allow(dead_code)]
     pub(crate) fn new(status: StatusCode, headers: HeaderMap) -> Self {
         Self { status, headers }
     }
 
-    // Consumed by x1's exchange pipeline.
-    #[allow(dead_code)]
     pub(crate) fn into_parts(self) -> (StatusCode, HeaderMap) {
         (self.status, self.headers)
     }

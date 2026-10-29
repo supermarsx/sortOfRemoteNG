@@ -1,11 +1,14 @@
 //! t-mitmproxy: per-attempt TLS-terminating, trust-owning, caching proxy.
 //!
-//! Contracts skeleton (batch M0). Every entry point here is a fail-closed stub:
-//! authority generation and server configs return an `Unsupported` io error,
-//! and nothing in the relay switches to interception yet. The passthrough
-//! relay in `private_forward_proxy.rs` is unchanged.
+//! A relay started with `PrivateForwardProxy::start_intercepting` terminates
+//! each CONNECT tunnel with a leaf minted by the attempt CA (`ca`, `accept`),
+//! serves HTTP/1.1 or h2 inside it (`server`), and runs every exchange through
+//! hooks, the cache and the trust-evaluating upstream pool (`forward`,
+//! `websocket`). Plain `http://` requests use the same pipeline with
+//! keep-alive. The passthrough relay (`PrivateForwardProxy::start`) is
+//! unchanged.
 //!
-//! Module ownership for batch M1 (add the `mod` lines below in this file):
+//! Module ownership for batch M1:
 //! - x1: `accept`, `server`, `forward`, `websocket` (+ `tests_core`), and the
 //!   bodies of `ca` and `hooks`;
 //! - x2: `upstream`, `upstream_verify`, `pool`, and the body of `trust`;
@@ -24,7 +27,12 @@ pub mod hooks;
 pub mod trust;
 pub(crate) type ProxyBody =
     http_body_util::combinators::BoxBody<hyper::body::Bytes, std::io::Error>;
-// x1: mod accept; mod server; mod forward; mod websocket;
+pub(crate) mod accept;
+pub(crate) mod forward;
+pub(crate) mod server;
+#[cfg(test)]
+mod tests_core;
+pub(crate) mod websocket;
 pub(crate) mod pool;
 pub(crate) mod upstream;
 pub(crate) mod upstream_verify;
@@ -155,12 +163,10 @@ mod tests {
     use crate::private_forward_proxy::Authority;
 
     #[test]
-    fn skeleton_fails_closed() {
-        let err = match InterceptAuthority::generate() {
-            Ok(_) => panic!("skeleton must not mint a CA"),
-            Err(err) => err,
-        };
-        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+    fn authority_generation_yields_an_anchor() {
+        let authority = InterceptAuthority::generate().expect("attempt CA");
+        assert!(!authority.anchor_der().is_empty());
+        assert_eq!(unavailable().kind(), io::ErrorKind::Unsupported);
     }
 
     #[tokio::test]

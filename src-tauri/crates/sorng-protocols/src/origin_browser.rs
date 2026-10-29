@@ -3,16 +3,21 @@
 //! This is NOT a supported browser engine or a renderer-selectable capability.
 //! Hosts must prove private profile isolation, authenticated fixed-proxy routing
 //! and containment of bypass traffic before reporting readiness. There are no
-//! OS-based readiness defaults, direct fallback, TLS interception or IPC grants.
+//! OS-based readiness defaults, direct fallback or IPC grants. TLS interception
+//! exists only for an attempt started with `start_intercepting`, whose relay
+//! terminates tunnels with that attempt's own CA and owns upstream trust.
 //! The default grant is source-only. Native callers may explicitly grant exact
 //! additional origins or a native network predicate for navigation, redirects
 //! and resources in this attempt.
 //! These grants never imply consent to send credentials or perform login there.
 
+use crate::private_forward_proxy::intercept::{InterceptAuthority, InterceptConfig};
 use crate::private_forward_proxy::{
     Authority, DestinationGrant, PrivateForwardProxy, ProxyLimits, RouteDialer,
 };
 use serde::Serialize;
+use std::future::Future;
+use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, OnceLock};
 use url::Url;
@@ -581,12 +586,58 @@ impl OriginBrowserSession {
         dialer: Arc<dyn RouteDialer>,
         limits: ProxyLimits,
     ) -> Result<Self, BrowserPolicyError> {
+        Self::start_relay(policy, |grant| {
+            PrivateForwardProxy::start(dialer, grant, limits)
+        })
+        .await
+    }
+
+    /// Same session contract as `start`, with an intercepting relay: CONNECT
+    /// tunnels terminate with leaves of `config.authority` (the attempt's CEF
+    /// context trusts only that anchor), and upstream trust is decided by
+    /// `config.trust` before any request byte. Never offers datagrams.
+    pub async fn start_intercepting(
+        policy: OriginBrowserPolicy,
+        dialer: Arc<dyn RouteDialer>,
+        limits: ProxyLimits,
+        config: InterceptConfig,
+    ) -> Result<Self, BrowserPolicyError> {
+        Self::start_relay(policy, |grant| {
+            PrivateForwardProxy::start_intercepting(dialer, grant, limits, config)
+        })
+        .await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn start_intercepting_with_verifier(
+        policy: OriginBrowserPolicy,
+        dialer: Arc<dyn RouteDialer>,
+        limits: ProxyLimits,
+        config: InterceptConfig,
+        verifier: crate::private_forward_proxy::intercept::upstream_verify::UpstreamVerifierConfig,
+    ) -> Result<Self, BrowserPolicyError> {
+        Self::start_relay(policy, |grant| {
+            PrivateForwardProxy::start_intercepting_with_verifier(
+                dialer, grant, limits, config, verifier,
+            )
+        })
+        .await
+    }
+
+    async fn start_relay<F, R>(
+        policy: OriginBrowserPolicy,
+        start: F,
+    ) -> Result<Self, BrowserPolicyError>
+    where
+        F: FnOnce(DestinationGrant) -> R,
+        R: Future<Output = io::Result<PrivateForwardProxy>>,
+    {
         let grant = policy.destination_grant();
         let endpoint = policy.relay_endpoint.clone();
         // Fail closed during the small interval between bind and validation.
         let bound_grant: DestinationGrant =
             Arc::new(move |candidate| endpoint.get().is_some() && grant(candidate));
-        let proxy = PrivateForwardProxy::start(dialer, bound_grant, limits)
+        let proxy = start(bound_grant)
             .await
             .map_err(|_| BrowserPolicyError::ProxyUnavailable)?;
         policy.validate_proxy_endpoint(proxy.local_addr())?;
@@ -616,6 +667,28 @@ impl OriginBrowserSession {
             self.status(),
             BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready
         ) && self.proxy.supports_datagrams()
+    }
+
+    /// The attempt CA when this attempt intercepts; `None` for passthrough.
+    /// Native only: the anchor DER goes to this attempt's CEF context, and
+    /// the CEF TLS hook admits only leaves this authority minted.
+    pub fn intercept_authority(&self) -> Option<Arc<InterceptAuthority>> {
+        self.proxy.intercept_authority()
+    }
+
+    /// Defence in depth for login delivery: the relay admitted (trust-
+    /// evaluated) an upstream connection to exactly this origin's authority
+    /// in this attempt. `origin` is a canonical `http(s)://host[:port]`
+    /// origin. Always false for passthrough attempts and revoked sessions.
+    pub fn upstream_admitted(&self, origin: &str) -> bool {
+        if !matches!(
+            self.status(),
+            BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready
+        ) {
+            return false;
+        }
+        parse_http_origin(origin)
+            .is_ok_and(|(_, authority)| self.proxy.upstream_admitted(&authority))
     }
 
     /// Native owner-fenced diagnostics only; never a readiness or route grant.

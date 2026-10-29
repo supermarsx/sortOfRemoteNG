@@ -1,6 +1,10 @@
 //! Plain HTTP forwarding without URL/body/cookie rewriting or redirect following.
-//! Each browser TCP connection admits one request (Connection: close), preventing
-//! pipelined requests from inheriting its authentication or destination grant.
+//! Passthrough relay: each browser TCP connection admits one request
+//! (Connection: close), preventing pipelined requests from inheriting its
+//! authentication or destination grant.
+//! Intercepting relay (`relay_intercepted`): keep-alive, and EVERY request on
+//! the connection is authenticated and grant-checked again before it enters the
+//! exchange pipeline, so no request inherits another's admission.
 //! Hyper owns message framing and backpressure; no raw upload becomes a tunnel.
 
 use super::*;
@@ -449,6 +453,114 @@ pub(super) async fn relay(
         std::future::pending::<()>().await;
     };
     tokio::select! { _ = serve => {}, _ = drive => {} }
+}
+
+/// Per-request admission on an intercepting relay's plain-HTTP connection.
+struct PlainGate {
+    grant: DestinationGrant,
+    credential_hash: [u8; 32],
+    observations: Arc<Observations>,
+}
+
+fn refusal(status: StatusCode) -> Response<intercept::ProxyBody> {
+    let mut response = intercept::forward::status_response(status);
+    let headers = response.headers_mut();
+    headers.insert("connection", HeaderValue::from_static("close"));
+    if status == StatusCode::PROXY_AUTHENTICATION_REQUIRED {
+        headers.insert(
+            "proxy-authenticate",
+            HeaderValue::from_static("Basic realm=\"private-forward-proxy\""),
+        );
+    }
+    response
+}
+
+impl PlainGate {
+    fn check(&self, request: &Request<hyper::body::Incoming>) -> Result<Authority, u16> {
+        let headers = request.headers();
+        for name in [
+            "host",
+            "content-length",
+            "transfer-encoding",
+            "proxy-authorization",
+            "connection",
+            "upgrade",
+            "expect",
+        ] {
+            if headers.get_all(name).iter().count() > 1 {
+                return Err(400);
+            }
+        }
+        let uri = request.uri();
+        if request.method() == hyper::Method::CONNECT
+            || uri.scheme_str() != Some("http")
+            || !uri.path().starts_with('/')
+        {
+            return Err(400);
+        }
+        let destination = authority(uri.authority().ok_or(400u16)?.as_str())?;
+        let host = headers
+            .get("host")
+            .and_then(|v| v.to_str().ok())
+            .ok_or(400u16)?;
+        if authority(host)? != destination {
+            return Err(400);
+        }
+        authenticate(
+            headers
+                .get("proxy-authorization")
+                .and_then(|v| v.to_str().ok()),
+            &self.credential_hash,
+        )?;
+        if !(self.grant)(&destination) {
+            return Err(403);
+        }
+        Ok(destination)
+    }
+}
+
+impl intercept::server::RequestGate for PlainGate {
+    fn admit(
+        &self,
+        request: &Request<hyper::body::Incoming>,
+    ) -> Result<intercept::ExchangeCtx, intercept::server::Refusal> {
+        match self.check(request) {
+            Ok(authority) => Ok(intercept::ExchangeCtx {
+                authority,
+                secure: false,
+            }),
+            Err(status) => {
+                increment(match status {
+                    407 => &self.observations.authentication_challenges,
+                    403 => &self.observations.destination_denials,
+                    _ => &self.observations.request_rejections,
+                });
+                Err(Box::new(refusal(
+                    StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST),
+                )))
+            }
+        }
+    }
+}
+
+/// Keep-alive plain HTTP on an intercepting relay. `prefix` is the complete
+/// buffered admission (the first request head and any bytes after it); Hyper
+/// re-parses it, and the gate re-checks that first request too.
+pub(super) async fn relay_intercepted(
+    client: TcpStream,
+    prefix: Zeroizing<Vec<u8>>,
+    exchange: Arc<intercept::forward::Exchange>,
+    grant: DestinationGrant,
+    credential_hash: [u8; 32],
+    observations: Arc<Observations>,
+) {
+    let gate = PlainGate {
+        grant,
+        credential_hash,
+        observations,
+    };
+    let io = intercept::accept::Prefixed::new(prefix, client);
+    intercept::server::serve(io, false, exchange, gate).await;
 }
 
 #[cfg(test)]

@@ -1,9 +1,15 @@
 //! Native-only, authenticated HTTP/CONNECT relay. Not a browser integration.
 //!
 //! The caller supplies both an explicit route and destination grants. There is no
-//! default/direct route, TLS interception, page rewriting, IPC or credential
-//! serialization here. The native browser owner must enforce proxy use and isolate
-//! its privileged app endpoints. A loopback address alone is NOT authentication.
+//! default/direct route, page rewriting, IPC or credential serialization here.
+//! The native browser owner must enforce proxy use and isolate its privileged app
+//! endpoints. A loopback address alone is NOT authentication.
+//!
+//! `start` is a passthrough relay. `start_intercepting` terminates every CONNECT
+//! tunnel with a leaf of the attempt's own CA and serves plain HTTP with
+//! keep-alive; both run each exchange through `intercept` (hooks, cache, a
+//! trust-evaluated upstream pool). An intercepting relay never offers owned
+//! datagrams, so its browser context cannot use QUIC.
 
 use crate::private_datagram_proxy::{DatagramLimits, PrivateDatagramProxy};
 use base64::Engine;
@@ -236,6 +242,7 @@ pub struct PrivateForwardProxy {
     task: Option<JoinHandle<io::Result<()>>>,
     observations: Arc<Observations>,
     datagrams: Option<Arc<PrivateDatagramProxy>>,
+    intercept: Option<Arc<intercept::forward::Exchange>>,
 }
 
 #[derive(Clone)]
@@ -243,6 +250,7 @@ struct RelayRoute {
     dialer: Arc<dyn RouteDialer>,
     grant: DestinationGrant,
     datagrams: Option<Arc<PrivateDatagramProxy>>,
+    intercept: Option<Arc<intercept::forward::Exchange>>,
 }
 
 impl PrivateForwardProxy {
@@ -257,11 +265,62 @@ impl PrivateForwardProxy {
         Self::start_with(LoopbackSource, dialer, grant, limits).await
     }
 
+    /// Intercepting relay for one browser attempt: TLS tunnels terminate with
+    /// leaves of `config.authority`, and every upstream connection is verified
+    /// against the OS roots and decided by `config.trust` before any request
+    /// byte. Never offers datagrams.
+    pub async fn start_intercepting(
+        dialer: Arc<dyn RouteDialer>,
+        grant: DestinationGrant,
+        limits: ProxyLimits,
+        config: intercept::InterceptConfig,
+    ) -> io::Result<Self> {
+        Self::start_intercepting_with_verifier(
+            dialer,
+            grant,
+            limits,
+            config,
+            intercept::upstream_verify::UpstreamVerifierConfig::platform(),
+        )
+        .await
+    }
+
+    pub(crate) async fn start_intercepting_with_verifier(
+        dialer: Arc<dyn RouteDialer>,
+        grant: DestinationGrant,
+        limits: ProxyLimits,
+        config: intercept::InterceptConfig,
+        verifier: intercept::upstream_verify::UpstreamVerifierConfig,
+    ) -> io::Result<Self> {
+        let intercept::InterceptConfig {
+            authority,
+            trust,
+            cache,
+            hooks,
+        } = config;
+        let (cache, cache_use) = intercept::cache::ProxyCache::open(cache);
+        let pool = intercept::pool::UpstreamPool::new(dialer.clone(), trust, verifier);
+        let exchange = Arc::new(intercept::forward::Exchange::new(
+            authority, pool, cache, cache_use, hooks,
+        ));
+        Self::start_inner(LoopbackSource, dialer, grant, limits, Some(exchange)).await
+    }
+
     async fn start_with<S: ListenerSource>(
         source: S,
         dialer: Arc<dyn RouteDialer>,
         grant: DestinationGrant,
         limits: ProxyLimits,
+    ) -> io::Result<Self> {
+        Self::start_inner(source, dialer, grant, limits, None).await
+    }
+
+    async fn start_inner<S: ListenerSource>(
+        source: S,
+        dialer: Arc<dyn RouteDialer>,
+        grant: DestinationGrant,
+        limits: ProxyLimits,
+        intercept: Option<Arc<intercept::forward::Exchange>>,
     ) -> io::Result<Self> {
         let limits = limits.validate()?;
         let mut random = Zeroizing::new([0u8; 32]);
@@ -275,7 +334,14 @@ impl PrivateForwardProxy {
         let address = endpoint.address;
         let (stopped, receiver) = watch::channel(false);
         let observations = Arc::new(Observations::default());
-        let datagrams = if let Some(datagram_dialer) = dialer.datagrams() {
+        // An intercepting relay never offers owned datagrams (no QUIC around
+        // the interception).
+        let offered = if intercept.is_none() {
+            dialer.datagrams()
+        } else {
+            None
+        };
+        let datagrams = if let Some(datagram_dialer) = offered {
             let owner = receiver.clone();
             let observed = observations.clone();
             Some(Arc::new(
@@ -294,6 +360,7 @@ impl PrivateForwardProxy {
             dialer,
             grant,
             datagrams: datagrams.clone(),
+            intercept: intercept.clone(),
         };
         let task = tokio::spawn(serve(
             endpoint,
@@ -310,6 +377,7 @@ impl PrivateForwardProxy {
             task: Some(task),
             observations,
             datagrams,
+            intercept,
         })
     }
 
@@ -318,8 +386,43 @@ impl PrivateForwardProxy {
     }
 
     /// Capability of this exact selected route, never a direct UDP fallback.
+    /// Always false for an intercepting relay.
     pub fn supports_datagrams(&self) -> bool {
-        self.is_running() && self.datagrams.is_some()
+        self.is_running() && self.intercept.is_none() && self.datagrams.is_some()
+    }
+
+    /// True for a relay started with `start_intercepting`.
+    pub fn is_intercepting(&self) -> bool {
+        self.intercept.is_some()
+    }
+
+    /// The attempt CA of an intercepting relay (its CEF context's only anchor).
+    pub fn intercept_authority(&self) -> Option<Arc<intercept::InterceptAuthority>> {
+        self.intercept
+            .as_ref()
+            .map(|exchange| exchange.authority.clone())
+    }
+
+    /// An upstream connection to exactly `authority` was trust-admitted in
+    /// this attempt. Always false for a passthrough relay or after revocation.
+    pub fn upstream_admitted(&self, authority: &Authority) -> bool {
+        self.is_running()
+            && self
+                .intercept
+                .as_ref()
+                .is_some_and(|exchange| exchange.pool.admitted(authority))
+    }
+
+    /// K6: which cache an intercepting relay uses (None for passthrough).
+    pub fn intercept_cache_use(&self) -> Option<intercept::CacheUse> {
+        self.intercept.as_ref().map(|exchange| exchange.cache_use())
+    }
+
+    /// K6: cache counters of an intercepting relay (None for passthrough).
+    pub fn intercept_cache_counters(&self) -> Option<intercept::CacheCounters> {
+        self.intercept
+            .as_ref()
+            .map(|exchange| exchange.cache_counters())
     }
 
     /// Native readiness snapshot. Check before Ready/status/authorization; a
@@ -361,6 +464,9 @@ impl PrivateForwardProxy {
         self.stopped.send_replace(true);
         if let Some(datagrams) = &self.datagrams {
             datagrams.revoke();
+        }
+        if let Some(exchange) = &self.intercept {
+            exchange.pool.close_all();
         }
     }
 
@@ -752,6 +858,37 @@ async fn handle_client(
             Err(_) => {
                 increment(&observations.upstream_failures);
                 refuse(&mut client, 502, limits.response_timeout).await;
+            }
+        }
+        return;
+    }
+    if let Some(exchange) = &route.intercept {
+        // Upstream connections are opened (and trust-evaluated) per exchange
+        // by the pool; the grant is re-checked for every request.
+        let exchange = exchange.clone();
+        let grant = route.grant.clone();
+        match admission.forward {
+            Some(_) => {
+                forward_http::relay_intercepted(
+                    client,
+                    admission.early,
+                    exchange,
+                    grant,
+                    credential_hash,
+                    observations,
+                )
+                .await
+            }
+            None => {
+                intercept::accept::serve_tunnel(
+                    client,
+                    admission.early,
+                    admission.authority,
+                    exchange,
+                    grant,
+                    limits,
+                )
+                .await
             }
         }
         return;
