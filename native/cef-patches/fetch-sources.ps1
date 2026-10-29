@@ -5,7 +5,7 @@ if (-not $root.StartsWith([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..
 if (Test-Path -LiteralPath $root) { throw 'Use a new scratch directory' }
 New-Item -ItemType Directory -Path $root | Out-Null
 $sources = @{
-  chromium = @('net/BUILD.gn','net/cert/cert_verify_proc.h','net/cert/cert_verify_proc_builtin.cc','net/cert/internal/system_trust_store.h','services/cert_verifier/cert_verifier_service_factory.cc','services/cert_verifier/cert_verifier_service.cc','services/cert_verifier/cert_verifier_creation.cc','services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom','net/socket/ssl_client_socket_impl.cc','net/socket/ssl_client_socket_impl.h','net/socket/ssl_client_socket.cc','net/socket/ssl_client_socket.h','net/http/http_network_session.cc','net/http/http_network_session.h','services/network/network_context.cc','services/network/network_context.h','services/network/public/mojom/network_context.mojom','services/network/public/mojom/BUILD.gn','net/socket/ssl_client_socket_unittest.cc');
+  chromium = @('net/BUILD.gn','net/cert/cert_verify_proc.h','net/cert/cert_verify_proc_builtin.cc','services/cert_verifier/cert_verifier_service_factory.cc','services/cert_verifier/cert_verifier_service.cc','services/cert_verifier/cert_verifier_creation.cc','services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom','net/socket/ssl_client_socket_impl.cc','net/socket/ssl_client_socket_impl.h','net/socket/ssl_client_socket.cc','net/socket/ssl_client_socket.h','net/http/http_network_session.cc','net/http/http_network_session.h','services/network/network_context.cc','services/network/network_context.h','services/network/public/mojom/network_context.mojom','services/network/public/mojom/BUILD.gn','net/socket/ssl_client_socket_unittest.cc');
   cef = @('libcef/browser/request_context_impl.cc','libcef/browser/request_context_impl.h','libcef/browser/browser_context.cc','libcef/browser/browser_context.h','libcef/browser/chrome/chrome_browser_context.cc','libcef/browser/chrome/chrome_content_browser_client_cef.cc','libcef/browser/chrome/chrome_content_browser_client_cef.h','BUILD.gn','cef_paths2.gypi','libcef/browser/context.h','libcef/browser/context.cc','libcef_dll/libcef.lst')
 }
 foreach ($project in @($sources.Keys)) {
@@ -24,6 +24,35 @@ foreach ($project in @($sources.Keys)) {
       'base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc'
     )
   }
+}
+# Every pre-existing upstream file that any queued patch modifies, so the whole
+# series can be applied in order. Files created by an earlier patch are skipped.
+$series = Join-Path $PSScriptRoot '154.0.8037.58-682c378'
+$created = @{}
+foreach ($line in Get-Content (Join-Path $series 'series')) {
+  if (-not $line.Trim()) { continue }
+  $project, $patch = $line.Split(' ', 2)
+  $current = $null
+  $isNew = $false
+  $entries = @()
+  foreach ($patchLine in [IO.File]::ReadAllLines((Join-Path $series $patch))) {
+    if ($patchLine.StartsWith('diff --git a/')) {
+      if ($current) { $entries += ,@($current, $isNew) }
+      $current = $patchLine.Substring($patchLine.LastIndexOf(' b/') + 3)
+      $isNew = $false
+    } elseif ($patchLine.StartsWith('new file mode') -and $current) {
+      $isNew = $true
+    }
+  }
+  if ($current) { $entries += ,@($current, $isNew) }
+  foreach ($entry in $entries) {
+    $key = "$project/$($entry[0])"
+    if ($entry[1]) { $created[$key] = $true; continue }
+    if ($created.ContainsKey($key)) { continue }
+    if ($sources[$project] -notcontains $entry[0]) { $sources[$project] += $entry[0] }
+  }
+}
+foreach ($project in @($sources.Keys)) {
   $revision = if ($project -eq 'cef') { '682c378d70d5780061e96644dca16ddd8fd157a9' } else { '154.0.8037.58' }
   $repository = if ($project -eq 'cef') { 'chromiumembedded/cef' } else { 'chromium/chromium' }
   foreach ($relative in $sources[$project]) {

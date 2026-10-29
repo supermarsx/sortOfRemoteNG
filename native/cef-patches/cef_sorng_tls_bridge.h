@@ -35,6 +35,10 @@ extern "C" {
 #define CEF_SORNG_TLS_CAP_PROXY_APPLIED (1ull << 8)
 // Revision 4: monotonic token replay fence and bounded live registration state.
 #define CEF_SORNG_TLS_CAP_BOUNDED_CONTEXT_RETIREMENT (1ull << 9)
+// Revision 6: an isolated context may own one on-disk HTTP cache directory.
+// Only the network HTTP cache persists; cookies and all other stores stay in
+// memory. See cef_sorng_tls_create_context_with_cache_v2 and state 7.
+#define CEF_SORNG_TLS_CAP_HTTP_DISK_CACHE (1ull << 10)
 #define CEF_SORNG_TLS_CA_SYSTEM 0u
 #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
 #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
@@ -83,6 +87,11 @@ typedef void(SORNG_TLS_CALL* cef_sorng_tls_evidence_cb_v2)(
 // 4=exact owned proxy applied (only after apply_proxy, with PROXY_APPLIED cap).
 // 5=proxy application failed (same capability; generic TLS faults remain 3).
 // 6=owned datagram transport configured (OWNED_HTTP3 only, after configure).
+// 7=HTTP disk cache released (HTTP_DISK_CACHE only; only for contexts created
+// by cef_sorng_tls_create_context_with_cache_v2). Exactly once per such
+// context: the NetworkContext that held the directory was destroyed or
+// disconnected, or the context was revoked before any NetworkContext received
+// the directory. It may arrive before or after 2.
 typedef void(SORNG_TLS_CALL* cef_sorng_tls_state_cb_v2)(void* user_data,
                                                         uint64_t context_token,
                                                         uint64_t generation,
@@ -148,6 +157,41 @@ cef_sorng_tls_create_context_v2(
     const cef_sorng_tls_context_v2* context,
     const struct _cef_request_context_settings_t* settings,
     struct _cef_request_context_handler_t* handler);
+
+// Revision 6 (HTTP_DISK_CACHE). Borrowed for the call; copied before return.
+typedef struct cef_sorng_http_cache_v2 {
+  uint32_t size;      // Exactly sizeof(cef_sorng_http_cache_v2).
+  uint32_t reserved;  // Must be zero.
+  // Absolute UTF-8 path, not NUL-terminated, no NUL. It must already exist and
+  // be a strict descendant of <CefSettings.root_cache_path>/http-cache/; every
+  // component from http-cache down is a plain directory (no symlink, junction
+  // or other reparse point) and none is "." or "..".
+  const char* directory_utf8;
+  size_t directory_length;
+  uint64_t max_bytes;  // 16 MiB..1 GiB inclusive.
+} cef_sorng_http_cache_v2;
+
+// UI thread only. Same contract as cef_sorng_tls_create_context_v2, plus: the
+// context's first NetworkContext gets <directory>/net/Cache as its disk HTTP
+// cache with max_bytes as its limit. Later NetworkContexts of the same
+// context (other partitions, a restarted network service) and any created
+// after revocation use an in-memory cache. Cookies, transport security,
+// reporting/NEL, trust tokens, shared dictionaries, device-bound sessions and
+// SCT reports are never given a file. The directory is held from a non-NULL
+// return until state(7); while held, no other registration may use it or any
+// directory nested with it. NULL on any failure; after a NULL from a late
+// factory failure the engine may still hold the directory internally (no
+// callbacks) until its NetworkContext is gone. Descriptor and cache
+// validation failures do not consume the token; a later factory failure
+// does, so a caller retrying without the cache uses a new, larger token.
+// Keep callback user_data alive until BOTH state(2) and state(7) have
+// returned, or until CefShutdown returns.
+SORNG_TLS_EXPORT struct _cef_request_context_t* SORNG_TLS_CALL
+cef_sorng_tls_create_context_with_cache_v2(
+    const cef_sorng_tls_context_v2* context,
+    const struct _cef_request_context_settings_t* settings,
+    struct _cef_request_context_handler_t* handler,
+    const cef_sorng_http_cache_v2* http_cache);
 // UI thread only. Engine retains exact native result/chain until completion.
 // ADMIT_NATIVE needs native success and mask=0. ADMIT_EXCEPTION needs a fresh
 // app-authority permit for this exact chain/destination and the EXACT nonzero

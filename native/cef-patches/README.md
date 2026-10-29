@@ -3,6 +3,8 @@
 Pinned CEF: `682c378d70d5780061e96644dca16ddd8fd157a9`.
 Pinned Chromium: `154.0.8037.58`.
 **Current patch ID: `sorng-tls-v2-682c378-4`.**
+**Newest source candidate: `sorng-tls-v2-682c378-6`** (revision 6, HTTP disk
+cache; not yet built, see below). Revision 5 (`-5`) added owned HTTP/3.
 Revision 4 adds bounded registration retirement (capability bit 9). Revision 3
 remains the exact reviewed proxy-ACK contract described below; revision 4 preserves
 that contract and the existing ABI 2 layouts.
@@ -20,6 +22,158 @@ Windows x64 engine has been compiled and packaged locally; full runtime and
 cross-platform acceptance have not passed. See
 [the current readiness checkpoint](../../docs/browser-readiness.md).
 Symbol presence and patch applicability are not runtime security proof.
+
+## Revision 6 — HTTP disk cache for bridge contexts (source candidate, 2026-10-29)
+
+Patch `0024-cef-http-disk-cache.patch` (CEF only) adds capability bit 10
+`CEF_SORNG_TLS_CAP_HTTP_DISK_CACHE` and patch ID `sorng-tls-v2-682c378-6`. The ID
+carries every revision 5 bit (`OWNED_HTTP3 | PROXY_APPLIED |
+BOUNDED_CONTEXT_RETIREMENT | SAME_AUTHORITY_HTTP2`, plus `CUSTOM_CA` where
+`CHROME_ROOT_STORE_SUPPORTED`). ABI stays V2. Existing layouts are unchanged.
+
+New ABI:
+
+- the 32-byte `cef_sorng_http_cache_v2` descriptor;
+- the export `cef_sorng_tls_create_context_with_cache_v2`;
+- state 7, "HTTP disk cache released".
+
+The context stays the per-attempt off-the-record `ChromeBrowserContext`.
+`cache_path` must still be empty and `persist_session_cookies` zero. No profile
+is ever loaded. For the registration's **first** NetworkContext only,
+`CefSorngConfigureTls` sets:
+
+- `http_cache_enabled = true`;
+- `http_cache_max_size = max_bytes`;
+- `reset_http_cache_backend = false`;
+- a fresh `file_paths` containing only `http_cache_directory = <dir>/net/Cache`.
+
+It refuses to merge into pre-existing `file_paths`. Later NetworkContexts of the
+same context, and any created after revocation, keep the in-memory cache.
+
+Native validation rejects with NULL before the token is reserved, leaving no
+registration. It checks:
+
+- `size` exact, `reserved == 0`, `max_bytes` in [16 MiB, 1 GiB];
+- a strict-UTF-8, absolute (Windows: drive-absolute), `.`/`..`-free path of at
+  most 4096 bytes;
+- the path is a strict descendant of `<root_cache_path>/http-cache/`;
+- `http-cache` and every component below it already exist as plain directories
+  (no symlink, junction or reparse point; Windows also rejects `~` there,
+  because 8.3 aliases would defeat the next check);
+- no live registration holds the same or a nested directory.
+
+The lexical part and the hold/state-7 lifecycle live in
+`registration_policy.h`, compiled into the engine and into the standalone test.
+
+**Deviation from plan contract C-H1:** `data_directory` is left **empty**, not
+`<dir>/net`. Chromium 154 `content/browser/network_sandbox.cc`
+`MaybeGrantSandboxAccessToNetworkContextData` DCHECKs `!sandbox_enabled` when a
+`data_directory` comes without `unsandboxed_data_path`. Our engine builds use
+`is_official_build = false`, so `dcheck_always_on` defaults on. An empty
+`data_directory` returns before that DCHECK. It also forces every other
+`NetworkContextFilePaths` store into memory whatever its file name. The on-disk
+layout `<dir>/net/Cache/...` is unchanged.
+
+### Spike answers (pinned Chromium 154.0.8037.58 / CEF 682c378)
+
+1. **Does `file_paths` set in `ChromeContentBrowserClientCef::ConfigureNetworkContextParams` stick for OTR?**
+   Yes, without a profile. The CEF override first calls
+   `ChromeContentBrowserClient::ConfigureNetworkContextParams`, which runs
+   `ProfileNetworkContextService::ConfigureNetworkContextParamsInternal`. For OTR
+   profiles that forces `in_memory = true` and never creates `file_paths`. The
+   bridge hook runs last. `StoragePartitionImpl::InitNetworkContext` then sets
+   `shared_dictionary_directory` only when the partition is not in-memory, so it
+   is never set here. `CreateNetworkContextInNetworkService` appends
+   `Cache_Data` and adds `No_Vary_Search` under `net/Cache`. In
+   `NetworkContext`, `IsIncognitoFromParams` becomes false only because
+   `http_cache_directory` is present, which selects the disk backend
+   (`ChooseCacheType`). Side effect: the variations header treats the context
+   as non-incognito. CEF has no variations seed, so no header is sent.
+2. **Mandatory `NetworkContextFilePaths` fields, and are unset names in memory?**
+   `data_directory` is the only non-optional field, and it may be an empty
+   path. Each of these stays in memory when its name is unset or
+   `data_directory` is empty (per the mojom):
+   - `cookie_database_name`;
+   - `transport_security_persister_file_name`;
+   - `reporting_and_nel_store_database_name`;
+   - `trust_token_database_name`;
+   - `device_bound_sessions_database_name`;
+   - `http_server_properties_file_name`;
+   - `sct_auditing_pending_reports_file_name`.
+
+   `persist_session_cookies` and `restore_old_session_cookies` stay false. The
+   OTR `StoragePartition` stays `is_in_memory()`, so Local Storage, IndexedDB,
+   service workers and Preferences are never on disk.
+
+3. **Windows sandbox grants and the file-operations factory.**
+   `MaybeGrantSandboxAccessToNetworkContextData` creates
+   `<http_cache_directory>/Cache_Data`. For an out-of-process, LPAC-sandboxed
+   network service it ACLs the parent (`net/Cache`) recursively for the
+   capability SID. No `data_directory` or `unsandboxed_data_path` is needed.
+   `CreateNetworkContextInNetworkService` binds
+   `http_cache_file_operations_factory` itself when
+   `kBrokerFileOperationsOnDiskCacheInNetworkService` is enabled, so the bridge
+   sets nothing. The cache lies under `root_cache_path`, which CEF maps to
+   `chrome::DIR_USER_DATA` (`libcef/common/resource_util.cc`). That directory is
+   in `GetNetworkContextsParentDirectory()`, so platform network-service
+   sandboxes permit it. Not exercised on a real sandboxed engine yet (c6).
+4. **SimpleCache single-writer behaviour.**
+   Neither the Simple nor the blockfile backend locks its directory across
+   processes. Two live writers corrupt it. Within one network-service process,
+   `disk_cache::BackendCleanupTracker::TryCreate` serialises backends per path:
+   a new backend for a path waits until the previous backend's file I/O has
+   finished. The engine therefore grants a directory to exactly one
+   NetworkContext, keeps it held until state 7, and rejects identical or nested
+   directories of live registrations. The app's per-connection lease (C-H4) is
+   the primary guard.
+5. **Certificate-error caching (F4).**
+   `HttpCache::Transaction::WriteResponseInfoToEntry` stops caching any response
+   whose `ssl_info.cert_status` has `IsCertStatusError`. Patch 0001's exception
+   admission keeps the native error status (see
+   `ScopedSelfSignedExceptionPreservesNativeStatus`). Responses reached through
+   an app certificate **exception** are therefore never written to the disk
+   cache. Valid chains, including a custom CA, cache normally.
+6. **Where NetworkContext destruction is observed (state 7).**
+   The bridge's per-NetworkContext `SorngTlsClient` pipe. Its remote is owned by
+   the `SorngTlsAdmission` delegate held by that NetworkContext's
+   `SSLClientContext`. It closes only when one of these happens:
+   - the `HttpNetworkSession` is destroyed (during `~NetworkContext`, which also
+     destroys the `HttpCache`);
+   - the network-service process dies;
+   - unused params are dropped.
+
+   The grant records that receiver's `ReceiverId`. Its disconnect releases the
+   directory. A cache registration revoked or detached before any grant
+   releases immediately. A browser-side `StoragePartition` teardown is **not**
+   used: the network service destroys the NetworkContext asynchronously after
+   that. State 7 is emitted exactly once, only for cache registrations, before
+   or after state 2. It is not suppressed by state 2. The registry keeps the
+   registration until both callbacks have returned (`HttpCacheHold::Settled`).
+
+Remaining caveats:
+
+- On Windows the app may see a short-lived sharing violation if it deletes the
+  directory just after state 7 while backend cleanup finishes. Deletion must be
+  retryable (C-H4 tombstones).
+- OTR contexts have no V8 code cache, so only the HTTP cache is gained.
+
+Verification so far (source only, no engine build):
+
+- `check-series.ps1` now applies the whole series in order. It verifies every
+  pinned baseline digest at the patch where that baseline occurs, including
+  baselines created by earlier queued patches. It also checks that the
+  canonical ABI and policy headers equal the engine copies.
+- The standalone policy and ABI tests pass with clang++, g++ and MSVC.
+
+Real-engine acceptance (Batch D, c6) and every platform build remain
+mandatory.
+
+```powershell
+./native/cef-patches/check-series.ps1 -Scratch <repo>/.artifacts/cef-rev6-applycheck-NEW
+clang++ -std=c++17 -Wall -Wextra -Werror native/cef-patches/registration_policy_test.cc -o <scratch>/registration_policy_test.exe
+clang -std=c11 -Wall -Wextra -Werror native/cef-patches/abi_layout_test.c -o <scratch>/abi_c.exe
+clang++ -std=c++17 -Wall -Wextra -Werror -x c++ native/cef-patches/abi_layout_test.c -o <scratch>/abi_cpp.exe
+```
 
 ## Same-authority HTTP/2 candidate — 2026-10-22
 

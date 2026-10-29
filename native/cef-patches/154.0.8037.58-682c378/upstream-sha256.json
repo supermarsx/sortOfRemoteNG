@@ -203,5 +203,20 @@
     "project": "cef",
     "path": "libcef/browser/native/window_x11.cc",
     "sha256": "0ccac4e8f1f8371e42bec473e2b60016f4f68370c3e072d7e44f42c50da3303a"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/net_service/sorng_tls_bridge.h",
+    "sha256": "205f4ba3605431b4cc974a3cc12a33f6044156f1b2d487baf1288b3aef244cba"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/net_service/sorng_tls_registration_policy.h",
+    "sha256": "60f7e6a740ffbc4b005fa4513cfebf625f89bd08b51357262fe769dc86fae975"
+  },
+  {
+    "project": "cef",
+    "path": "libcef_dll/sorng_tls_bridge_exports.cc",
+    "sha256": "ee9d05629db2e8dd9a56fa8290947ba1623b4cba4463e1e26d04d2f9848cfb3f"
   }
 ]

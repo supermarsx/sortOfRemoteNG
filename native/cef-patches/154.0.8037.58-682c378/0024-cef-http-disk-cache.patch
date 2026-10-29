@@ -1,0 +1,775 @@
+diff --git a/include/cef_sorng_tls_bridge.h b/include/cef_sorng_tls_bridge.h
+index e193c8a7675453f9193e11cee06041ff29ee339b..69bce2a266af05384bba2fd69202f7f790400d37 100644
+--- a/include/cef_sorng_tls_bridge.h
++++ b/include/cef_sorng_tls_bridge.h
+@@ -35,6 +35,10 @@ extern "C" {
+ #define CEF_SORNG_TLS_CAP_PROXY_APPLIED (1ull << 8)
+ // Revision 4: monotonic token replay fence and bounded live registration state.
+ #define CEF_SORNG_TLS_CAP_BOUNDED_CONTEXT_RETIREMENT (1ull << 9)
++// Revision 6: an isolated context may own one on-disk HTTP cache directory.
++// Only the network HTTP cache persists; cookies and all other stores stay in
++// memory. See cef_sorng_tls_create_context_with_cache_v2 and state 7.
++#define CEF_SORNG_TLS_CAP_HTTP_DISK_CACHE (1ull << 10)
+ #define CEF_SORNG_TLS_CA_SYSTEM 0u
+ #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
+ #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
+@@ -83,6 +87,11 @@ typedef void(SORNG_TLS_CALL* cef_sorng_tls_evidence_cb_v2)(
+ // 4=exact owned proxy applied (only after apply_proxy, with PROXY_APPLIED cap).
+ // 5=proxy application failed (same capability; generic TLS faults remain 3).
+ // 6=owned datagram transport configured (OWNED_HTTP3 only, after configure).
++// 7=HTTP disk cache released (HTTP_DISK_CACHE only; only for contexts created
++// by cef_sorng_tls_create_context_with_cache_v2). Exactly once per such
++// context: the NetworkContext that held the directory was destroyed or
++// disconnected, or the context was revoked before any NetworkContext received
++// the directory. It may arrive before or after 2.
+ typedef void(SORNG_TLS_CALL* cef_sorng_tls_state_cb_v2)(void* user_data,
+                                                         uint64_t context_token,
+                                                         uint64_t generation,
+@@ -148,6 +157,41 @@ cef_sorng_tls_create_context_v2(
+     const cef_sorng_tls_context_v2* context,
+     const struct _cef_request_context_settings_t* settings,
+     struct _cef_request_context_handler_t* handler);
++
++// Revision 6 (HTTP_DISK_CACHE). Borrowed for the call; copied before return.
++typedef struct cef_sorng_http_cache_v2 {
++  uint32_t size;      // Exactly sizeof(cef_sorng_http_cache_v2).
++  uint32_t reserved;  // Must be zero.
++  // Absolute UTF-8 path, not NUL-terminated, no NUL. It must already exist and
++  // be a strict descendant of <CefSettings.root_cache_path>/http-cache/; every
++  // component from http-cache down is a plain directory (no symlink, junction
++  // or other reparse point) and none is "." or "..".
++  const char* directory_utf8;
++  size_t directory_length;
++  uint64_t max_bytes;  // 16 MiB..1 GiB inclusive.
++} cef_sorng_http_cache_v2;
++
++// UI thread only. Same contract as cef_sorng_tls_create_context_v2, plus: the
++// context's first NetworkContext gets <directory>/net/Cache as its disk HTTP
++// cache with max_bytes as its limit. Later NetworkContexts of the same
++// context (other partitions, a restarted network service) and any created
++// after revocation use an in-memory cache. Cookies, transport security,
++// reporting/NEL, trust tokens, shared dictionaries, device-bound sessions and
++// SCT reports are never given a file. The directory is held from a non-NULL
++// return until state(7); while held, no other registration may use it or any
++// directory nested with it. NULL on any failure; after a NULL from a late
++// factory failure the engine may still hold the directory internally (no
++// callbacks) until its NetworkContext is gone. Descriptor and cache
++// validation failures do not consume the token; a later factory failure
++// does, so a caller retrying without the cache uses a new, larger token.
++// Keep callback user_data alive until BOTH state(2) and state(7) have
++// returned, or until CefShutdown returns.
++SORNG_TLS_EXPORT struct _cef_request_context_t* SORNG_TLS_CALL
++cef_sorng_tls_create_context_with_cache_v2(
++    const cef_sorng_tls_context_v2* context,
++    const struct _cef_request_context_settings_t* settings,
++    struct _cef_request_context_handler_t* handler,
++    const cef_sorng_http_cache_v2* http_cache);
+ // UI thread only. Engine retains exact native result/chain until completion.
+ // ADMIT_NATIVE needs native success and mask=0. ADMIT_EXCEPTION needs a fresh
+ // app-authority permit for this exact chain/destination and the EXACT nonzero
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.cc b/libcef/browser/net_service/sorng_tls_bridge.cc
+index 4d42dd4baa65ebee4d7a63e225717618e8d72a4e..95907b8a7610df35200070513a52b423faa06be2 100644
+--- a/libcef/browser/net_service/sorng_tls_bridge.cc
++++ b/libcef/browser/net_service/sorng_tls_bridge.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2026 The sorng Authors. BSD-3-Clause.
+ #include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
+ #include "cef/libcef/browser/browser_context.h"
++#include "cef/libcef/browser/context.h"
+ #include "cef/libcef/browser/request_context_impl.h"
+ #include "cef/libcef/browser/net_service/sorng_tls_registration_policy.h"
+ #define SORNG_TLS_IMPLEMENTATION
+@@ -10,17 +11,23 @@
+ #include <set>
+ #include <map>
+ #include <memory>
++#include <optional>
+ #include <string>
++#include <string_view>
+ #include <utility>
+ #include <vector>
+ 
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/no_destructor.h"
+ #include "base/strings/string_util.h"
+ #include "base/task/sequenced_task_runner.h"
++#include "base/threading/thread_restrictions.h"
+ #include "base/time/time.h"
++#include "build/build_config.h"
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -36,6 +43,7 @@
+ #include "net/net_buildflags.h"
+ #include "net/proxy_resolution/proxy_info.h"
+ #include "net/socket/sorng_tls_policy.h"
++#include "services/network/public/cpp/transferable_directory.h"
+ #include "services/network/public/mojom/cert_verifier_service_updater.mojom.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "services/network/public/mojom/proxy_lookup_client.mojom.h"
+@@ -43,9 +51,23 @@
+ #include "third_party/boringssl/src/include/openssl/mem.h"
+ #include "third_party/boringssl/src/pki/parsed_certificate.h"
+ 
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++#else
++#include <sys/stat.h>
++#endif
++
+ namespace {
+ constexpr uint32_t kReady = 1, kRevoked = 2, kFault = 3, kProxyApplied = 4,
+-                   kProxyFailed = 5, kDatagramsConfigured = 6;
++                   kProxyFailed = 5, kDatagramsConfigured = 6,
++                   kHttpCacheReleased = 7;
++
++// Revision 6: a validated, canonical disk-cache directory for one registration.
++struct HttpCacheGrant {
++  base::FilePath directory;
++  std::string key;  // sorng_tls::HttpCacheDirectoryKey identity.
++  uint64_t max_bytes = 0;
++};
+ bool OnUi() {
+   return content::BrowserThread::CurrentlyOn(content::BrowserThread::UI);
+ }
+@@ -80,12 +102,16 @@ class Registration final : public network::mojom::SorngTlsClient,
+                            public network::mojom::ProxyLookupClient {
+  public:
+   explicit Registration(const cef_sorng_tls_context_v2& input,
+-                        std::vector<std::vector<uint8_t>> roots)
+-      : input_(input), roots_(std::move(roots)) {
++                        std::vector<std::vector<uint8_t>> roots,
++                        std::optional<HttpCacheGrant> http_cache)
++      : input_(input),
++        roots_(std::move(roots)),
++        http_cache_(std::move(http_cache)),
++        cache_hold_(http_cache_.has_value()) {
+     // Do not retain a borrowed caller pointer.
+     input_.trust_anchors = nullptr;
+-    receivers_.set_disconnect_handler(
+-        base::BindRepeating(&Registration::Fail, weak_factory_.GetWeakPtr()));
++    receivers_.set_disconnect_handler(base::BindRepeating(
++        &Registration::ClientDisconnected, weak_factory_.GetWeakPtr()));
+   }
+   ~Registration() {
+     OPENSSL_cleanse(datagram_password_.data(), datagram_password_.size());
+@@ -114,7 +140,14 @@ class Registration final : public network::mojom::SorngTlsClient,
+   }
+   bool RetirementTaskReady() {
+     retirement_scheduled_ = false;
+-    return lifetime_.CanRetire(control_revocations_.AllSettled());
++    return lifetime_.CanRetire(control_revocations_.AllSettled(),
++                               cache_hold_.Settled());
++  }
++  // Defence in depth for SimpleCache/blockfile single-writer ownership: a
++  // directory stays held until its NetworkContext is gone (state 7).
++  bool HoldsHttpCacheOverlapping(const std::string& key) const {
++    return http_cache_ && cache_hold_.HoldsDirectory() &&
++           sorng_tls::HttpCacheDirectoriesOverlap(http_cache_->key, key);
+   }
+   bool retiring() const { return revoked_; }
+   size_t root_bytes() const {
+@@ -136,10 +169,39 @@ class Registration final : public network::mojom::SorngTlsClient,
+     }
+   }
+   uint64_t generation() const { return input_.generation; }
+-  mojo::PendingRemote<network::mojom::SorngTlsClient> Bind() {
++  void ConfigureNetworkContext(network::mojom::NetworkContextParams* params) {
++    params->sorng_tls_generation = input_.generation;
++    // Only the first NetworkContext of a live registration receives the disk
++    // cache. Others (more partitions, a restarted NetworkService, anything
++    // after revocation) keep the default in-memory cache of this OTR profile.
++    // Existing file paths are never merged with: that would not be cache-only.
++    const bool grant = cache_hold_.CanGrant(revoked_) && !params->file_paths;
+     mojo::PendingRemote<network::mojom::SorngTlsClient> remote;
+-    receivers_.Add(this, remote.InitWithNewPipeAndPassReceiver());
+-    return remote;
++    const mojo::ReceiverId id =
++        receivers_.Add(this, remote.InitWithNewPipeAndPassReceiver());
++    if (grant) {
++      CHECK(cache_hold_.Grant(id));
++      CHECK(sorng_tls::HttpCacheSizeAllowed(http_cache_->max_bytes));
++      params->http_cache_enabled = true;
++      params->http_cache_max_size =
++          static_cast<int32_t>(http_cache_->max_bytes);
++      // Experiment-group resets of an OTR profile's fresh prefs never wipe it.
++      params->reset_http_cache_backend = false;
++      // data_directory stays EMPTY: every other network store (cookies, HSTS,
++      // reporting/NEL, trust tokens, device-bound sessions, SCT reports, HTTP
++      // server properties) is in memory regardless of its file name, and the
++      // sandbox grant needs no unsandboxed_data_path migration. Content appends
++      // Cache_Data and No_Vary_Search below net/Cache and ACLs net/Cache for a
++      // sandboxed network service itself.
++      auto paths = network::mojom::NetworkContextFilePaths::New();
++      paths->http_cache_directory.emplace(
++          http_cache_->directory.Append(FILE_PATH_LITERAL("net"))
++              .Append(FILE_PATH_LITERAL("Cache")));
++      params->file_paths = std::move(paths);
++      params->persist_session_cookies = false;
++      params->restore_old_session_cookies = false;
++    }
++    params->sorng_tls_client = std::move(remote);
+   }
+   void Ready(
+       mojo::PendingRemote<network::mojom::SorngTlsControl> control) override {
+@@ -325,10 +387,39 @@ class Registration final : public network::mojom::SorngTlsClient,
+       std::move(pending_item.callback).Run(0, 0);
+     control_revocations_.RequestAll();
+     for (size_t i = 0; i < controls_.size(); ++i) SendControlRevoke(i + 1);
++    // Revoked before any NetworkContext received the directory: no later
++    // NetworkContext can, so it is released now.
++    const bool cache_released = cache_hold_.Revoked();
+     MaybeCompleteRevocation();
++    if (cache_released) ReportHttpCacheReleased();
+   }
+ 
+  private:
++  void ClientDisconnected() {
++    // The client remote lives in the NetworkContext's admission delegate and is
++    // closed only when that NetworkContext's HttpNetworkSession is destroyed,
++    // its NetworkService process is gone, or the unused params were dropped.
++    // Disk-cache backend shutdown after that is sequenced per path in-process
++    // by disk_cache::BackendCleanupTracker.
++    const bool cache_released =
++        cache_hold_.ReceiverDisconnected(receivers_.current_receiver());
++    Fail();
++    if (cache_released) ReportHttpCacheReleased();
++  }
++  void ReportHttpCacheReleased() {
++    if (!cache_hold_.TakeReleaseReport())
++      return;
++    // Unlike other states this is not suppressed after state 2: the
++    // application keeps user_data until both 2 and 7 (or CefShutdown).
++    // Abandoned (NULL-returned) registrations have no application callback.
++    if (input_.on_state) {
++      sorng_tls::RegistrationCallbackScope callback_scope(lifetime_);
++      input_.on_state(input_.user_data, input_.context_token, input_.generation,
++                      kHttpCacheReleased);
++    }
++    cache_hold_.ReleaseReportReturned();
++    MaybeRetire();
++  }
+   void ExpireProxy() {
+     if (proxy_pending_)
+       ProxyFail();
+@@ -410,7 +501,9 @@ class Registration final : public network::mojom::SorngTlsClient,
+     MaybeRetire();
+   }
+   void MaybeRetire() {
+-    if (!retirement_scheduled_ && lifetime_.CanRetire(control_revocations_.AllSettled())) {
++    if (!retirement_scheduled_ &&
++        lifetime_.CanRetire(control_revocations_.AllSettled(),
++                            cache_hold_.Settled())) {
+       retirement_scheduled_ = true;
+       if (!ScheduleRegistrationRetirement(input_.context_token, input_.generation))
+         retirement_scheduled_ = false;
+@@ -448,6 +541,8 @@ class Registration final : public network::mojom::SorngTlsClient,
+   cef_sorng_tls_context_v2 input_;
+   CefBrowserContext* context_ = nullptr;
+   const std::vector<std::vector<uint8_t>> roots_;
++  const std::optional<HttpCacheGrant> http_cache_;
++  sorng_tls::HttpCacheHold cache_hold_;
+   bool revoked_ = false;
+   bool faulted_ = false;
+   bool terminal_reported_ = false;
+@@ -499,6 +594,86 @@ Registration* Find(uint64_t token, uint64_t generation) {
+              ? it->second.get()
+              : nullptr;
+ }
++
++// Existing directory that is neither a symlink, a junction nor any other
++// reparse point. Never follows the final component.
++bool IsPlainDirectory(const base::FilePath& path) {
++#if BUILDFLAG(IS_WIN)
++  const DWORD attributes = ::GetFileAttributesW(path.value().c_str());
++  return attributes != INVALID_FILE_ATTRIBUTES &&
++         (attributes & FILE_ATTRIBUTE_DIRECTORY) &&
++         !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
++#else
++  struct stat info;
++  return lstat(path.value().c_str(), &info) == 0 && S_ISDIR(info.st_mode);
++#endif
++}
++
++// The candidate prefix names the actual normalized CefSettings.root_cache_path.
++// POSIX CEF stores root_cache_path realpath-resolved, so a caller spelling
++// through a symlinked ancestor of the root is resolved here; nothing at or
++// below <root>/http-cache is ever resolved.
++bool IsRootCachePath(const base::FilePath& prefix, const base::FilePath& root) {
++#if BUILDFLAG(IS_WIN)
++  return base::FilePath::CompareEqualIgnoreCase(prefix.value(), root.value());
++#else
++  return prefix == root || base::MakeAbsoluteFilePath(prefix) == root;
++#endif
++}
++
++std::optional<HttpCacheGrant> ValidateHttpCache(
++    const cef_sorng_http_cache_v2* cache) {
++  if (!cache || cache->size != sizeof(*cache) || cache->reserved ||
++      !sorng_tls::HttpCacheSizeAllowed(cache->max_bytes) ||
++      !cache->directory_utf8 || !cache->directory_length ||
++      cache->directory_length > sorng_tls::kMaxHttpCachePathBytes)
++    return std::nullopt;
++  constexpr auto kStyle = sorng_tls::kNativePathStyle;
++  sorng_tls::ParsedPath parsed;
++  if (!sorng_tls::ParseAbsolutePath(
++          std::string_view(cache->directory_utf8, cache->directory_length),
++          kStyle, parsed))
++    return std::nullopt;
++  auto* context = CefContext::Get();
++  if (!context)
++    return std::nullopt;
++  // Normalized by CefContext::Initialize (absolute, no trailing separator).
++  const base::FilePath root =
++      base::FilePath(CefString(&context->settings().root_cache_path));
++  if (root.empty() || !root.IsAbsolute())
++    return std::nullopt;
++  // Bounded metadata-only checks of a few local directories; CEF validates its
++  // own cache paths on this thread the same way (context.cc).
++  base::ScopedAllowBlockingForTesting allow_blocking;
++  for (const size_t split : sorng_tls::HttpCacheRootSplits(parsed, kStyle)) {
++    if (!IsRootCachePath(
++            base::FilePath::FromUTF8Unsafe(parsed.Join(split, kStyle)), root))
++      continue;
++    // Rebuild below the canonical root and check http-cache and every
++    // component under it: each must already be a plain directory.
++    base::FilePath directory = root;
++    for (size_t i = split; i < parsed.components.size(); ++i) {
++      directory =
++          directory.Append(base::FilePath::FromUTF8Unsafe(parsed.components[i]));
++      if (!IsPlainDirectory(directory))
++        return std::nullopt;
++    }
++    return HttpCacheGrant{
++        directory,
++        sorng_tls::HttpCacheDirectoryKey(root.AsUTF8Unsafe(), parsed, split,
++                                         kStyle),
++        cache->max_bytes};
++  }
++  return std::nullopt;
++}
++
++bool HttpCacheDirectoryHeld(const std::string& key) {
++  for (const auto& [token, registration] : Registrations()) {
++    if (registration->HoldsHttpCacheOverlapping(key))
++      return true;
++  }
++  return false;
++}
+ }  // namespace
+ 
+ void CefSorngAttachTls(CefBrowserContext* context, uint64_t token) {
+@@ -520,16 +695,17 @@ void CefSorngConfigureTls(CefBrowserContext* context,
+   for (const auto& [token, registration] : Registrations()) {
+     if (registration->Matches(context)) {
+       registration->ConfigureRoots(cert_params);
+-      params->sorng_tls_generation = registration->generation();
+-      params->sorng_tls_client = registration->Bind();
++      registration->ConfigureNetworkContext(params);
+       return;
+     }
+   }
+ }
+ 
+-CefRefPtr<CefRequestContext> CefSorngCreateContext(
++namespace {
++CefRefPtr<CefRequestContext> CreateContext(
+     const cef_sorng_tls_context_v2* input, const CefRequestContextSettings& settings,
+-    CefRefPtr<CefRequestContextHandler> handler) {
++    CefRefPtr<CefRequestContextHandler> handler, bool with_http_cache,
++    const cef_sorng_http_cache_v2* http_cache) {
+   if (!OnUi() || !input || input->size != sizeof(*input) ||
+       input->abi_version != CEF_SORNG_TLS_ABI_V2 || !input->context_token ||
+       !input->generation || !input->on_evidence || !input->on_state ||
+@@ -555,15 +731,36 @@ CefRefPtr<CefRequestContext> CefSorngCreateContext(
+     if (!parsed || !parsed->has_basic_constraints() ||
+         !parsed->basic_constraints().is_ca) return nullptr;
+   }
++  std::optional<HttpCacheGrant> grant;
++  if (with_http_cache) {
++    // Validated before the token is reserved: a rejected cache never consumes
++    // the token or leaves a registration behind.
++    grant = ValidateHttpCache(http_cache);
++    if (!grant || HttpCacheDirectoryHeld(grant->key)) return nullptr;
++  }
+   if (!RegistrationTokens().Reserve(input->context_token, input->generation,
+                                      Registrations().size())) return nullptr;
+-  auto registration = std::make_unique<Registration>(*input, std::move(roots));
++  auto registration = std::make_unique<Registration>(*input, std::move(roots),
++                                                     std::move(grant));
+   auto* registered = registration.get();
+   Registrations().emplace(input->context_token, std::move(registration));
+   auto context = CefRequestContextImpl::CreateWithSorngTls(settings, handler, input->context_token);
+   if (!context) registered->Abandon();
+   return context;
+ }
++}  // namespace
++
++CefRefPtr<CefRequestContext> CefSorngCreateContext(
++    const cef_sorng_tls_context_v2* input, const CefRequestContextSettings& settings,
++    CefRefPtr<CefRequestContextHandler> handler) {
++  return CreateContext(input, settings, handler, false, nullptr);
++}
++CefRefPtr<CefRequestContext> CefSorngCreateContextWithCache(
++    const cef_sorng_tls_context_v2* input, const CefRequestContextSettings& settings,
++    CefRefPtr<CefRequestContextHandler> handler,
++    const cef_sorng_http_cache_v2* http_cache) {
++  return CreateContext(input, settings, handler, true, http_cache);
++}
+ 
+ extern "C" {
+ const cef_sorng_tls_api_v2* SORNG_TLS_CALL cef_sorng_tls_get_api_v2(void) {
+@@ -574,14 +771,14 @@ const cef_sorng_tls_api_v2* SORNG_TLS_CALL cef_sorng_tls_get_api_v2(void) {
+           CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 | CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS |
+           CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT | CEF_SORNG_TLS_CAP_PROXY_APPLIED |
+           CEF_SORNG_TLS_CAP_BOUNDED_CONTEXT_RETIREMENT |
+-          CEF_SORNG_TLS_CAP_OWNED_HTTP3
++          CEF_SORNG_TLS_CAP_OWNED_HTTP3 | CEF_SORNG_TLS_CAP_HTTP_DISK_CACHE
+ #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+           | CEF_SORNG_TLS_CAP_CUSTOM_CA
+ #endif
+           ,
+       "682c378d70d5780061e96644dca16ddd8fd157a9",
+       "154.0.8037.58",
+-      "sorng-tls-v2-682c378-5"};
++      "sorng-tls-v2-682c378-6"};
+   return &api;
+ }
+ int SORNG_TLS_CALL cef_sorng_tls_complete_v2(uint64_t token,
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.h b/libcef/browser/net_service/sorng_tls_bridge.h
+index c0819dced366077399e8598807ed01bc8d412298..587bdc161e0c11d91c9815597683398d3f797c47 100644
+--- a/libcef/browser/net_service/sorng_tls_bridge.h
++++ b/libcef/browser/net_service/sorng_tls_bridge.h
+@@ -8,6 +8,13 @@ CefRefPtr<CefRequestContext> CefSorngCreateContext(
+     const cef_sorng_tls_context_v2* config,
+     const CefRequestContextSettings& settings,
+     CefRefPtr<CefRequestContextHandler> handler);
++// Revision 6: as CefSorngCreateContext, plus one validated disk-cache directory.
++struct cef_sorng_http_cache_v2;
++CefRefPtr<CefRequestContext> CefSorngCreateContextWithCache(
++    const cef_sorng_tls_context_v2* config,
++    const CefRequestContextSettings& settings,
++    CefRefPtr<CefRequestContextHandler> handler,
++    const cef_sorng_http_cache_v2* http_cache);
+ #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ // UI thread only. Called during creation, including storage partitions.
+diff --git a/libcef/browser/net_service/sorng_tls_registration_policy.h b/libcef/browser/net_service/sorng_tls_registration_policy.h
+index 7450150513893eadde21c167fe634fa8bf5c8c3b..0d80d993e0d45729a1fbb6073d062c8db2cfc3b7 100644
+--- a/libcef/browser/net_service/sorng_tls_registration_policy.h
++++ b/libcef/browser/net_service/sorng_tls_registration_policy.h
+@@ -6,6 +6,9 @@
+ #include <array>
+ #include <cstddef>
+ #include <cstdint>
++#include <string>
++#include <string_view>
++#include <vector>
+ 
+ namespace sorng_tls {
+ inline constexpr size_t kMaxLiveRegistrations = 1024;
+@@ -36,7 +39,13 @@ class RegistrationLifetime {
+   void TerminalCallbackReturned() { terminal_callback_returned_ = true; }
+   bool callbacks_quiescent() const { return callbacks_quiescent_; }
+   bool CanRetire(bool all_controls_settled) const {
++    return CanRetire(all_controls_settled, true);
++  }
++  // Revision 6: a disk-cache registration also stays until HttpCacheHold is
++  // settled, so its directory remains held while any NetworkContext owns it.
++  bool CanRetire(bool all_controls_settled, bool http_cache_settled) const {
+     return released_ && !attached_ && callback_depth_ == 0 && all_controls_settled &&
++           http_cache_settled &&
+            (terminal_callback_returned_ || callbacks_quiescent_);
+   }
+ 
+@@ -106,5 +115,225 @@ class ControlRevocations {
+   size_t used_ = 0;
+   std::array<Control, kMaxRegistrationControls> controls_{};
+ };
++
++// Revision 6: HTTP disk cache directory policy.
++inline constexpr uint64_t kMinHttpCacheBytes = uint64_t{16} << 20;
++inline constexpr uint64_t kMaxHttpCacheBytes = uint64_t{1} << 30;
++inline constexpr size_t kMaxHttpCachePathBytes = 4096;
++inline constexpr std::string_view kHttpCacheDirectoryName = "http-cache";
++inline constexpr bool HttpCacheSizeAllowed(uint64_t bytes) {
++  return bytes >= kMinHttpCacheBytes && bytes <= kMaxHttpCacheBytes;
++}
++
++enum class PathStyle { kPosix, kWindows };
++#if defined(_WIN32)
++inline constexpr PathStyle kNativePathStyle = PathStyle::kWindows;
++#else
++inline constexpr PathStyle kNativePathStyle = PathStyle::kPosix;
++#endif
++
++// Strict UTF-8: no overlong forms, surrogates or code points above U+10FFFF.
++inline bool IsStrictUtf8(std::string_view text) {
++  size_t i = 0;
++  while (i < text.size()) {
++    const auto lead = static_cast<unsigned char>(text[i]);
++    if (lead < 0x80) {
++      ++i;
++      continue;
++    }
++    size_t extra = 0;
++    uint32_t code = 0;
++    uint32_t minimum = 0;
++    if (lead >= 0xC2 && lead <= 0xDF) {
++      extra = 1; code = lead & 0x1F; minimum = 0x80;
++    } else if (lead >= 0xE0 && lead <= 0xEF) {
++      extra = 2; code = lead & 0x0F; minimum = 0x800;
++    } else if (lead >= 0xF0 && lead <= 0xF4) {
++      extra = 3; code = lead & 0x07; minimum = 0x10000;
++    } else {
++      return false;
++    }
++    if (text.size() - i <= extra) return false;
++    for (size_t k = 1; k <= extra; ++k) {
++      const auto next = static_cast<unsigned char>(text[i + k]);
++      if ((next & 0xC0) != 0x80) return false;
++      code = (code << 6) | (next & 0x3F);
++    }
++    if (code < minimum || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF))
++      return false;
++    i += extra + 1;
++  }
++  return true;
++}
++
++inline char FoldAscii(char c) {
++  return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
++}
++inline bool SameComponent(std::string_view a, std::string_view b, PathStyle style) {
++  if (a.size() != b.size()) return false;
++  for (size_t i = 0; i < a.size(); ++i) {
++    if (style == PathStyle::kWindows ? FoldAscii(a[i]) != FoldAscii(b[i]) : a[i] != b[i])
++      return false;
++  }
++  return true;
++}
++
++// Lexically valid absolute path. POSIX: "/a/b". Windows: drive-absolute only
++// ("C:\a\b" or "C:/a/b"); UNC, device and drive-relative paths are rejected.
++// No empty, "." or ".." component and no control character anywhere. Windows
++// components also reject <>:"|?* and a trailing dot or space (Win32 strips
++// them).
++struct ParsedPath {
++  std::string drive;  // "C:" on Windows; empty on POSIX.
++  std::vector<std::string> components;
++  std::string Join(size_t count, PathStyle style) const {
++    const char separator = style == PathStyle::kWindows ? '\\' : '/';
++    std::string result = drive;
++    result.push_back(separator);
++    for (size_t i = 0; i < count && i < components.size(); ++i) {
++      if (i) result.push_back(separator);
++      result += components[i];
++    }
++    return result;
++  }
++};
++inline bool ParseAbsolutePath(std::string_view path, PathStyle style, ParsedPath& out) {
++  out = ParsedPath();
++  if (path.empty() || path.size() > kMaxHttpCachePathBytes || !IsStrictUtf8(path))
++    return false;
++  for (const char c : path) {
++    const auto byte = static_cast<unsigned char>(c);
++    if (byte < 0x20 || byte == 0x7F) return false;
++  }
++  const auto separator = [style](char c) {
++    return c == '/' || (style == PathStyle::kWindows && c == '\\');
++  };
++  size_t start = 0;
++  if (style == PathStyle::kWindows) {
++    const char letter = FoldAscii(path[0]);
++    if (path.size() < 3 || letter < 'a' || letter > 'z' || path[1] != ':' ||
++        !separator(path[2]))
++      return false;
++    out.drive = std::string(1, static_cast<char>(letter - 'a' + 'A')) + ":";
++    start = 3;
++  } else {
++    if (path[0] != '/') return false;
++    start = 1;
++  }
++  if (start == path.size()) return true;  // Filesystem root.
++  while (true) {
++    size_t end = start;
++    while (end < path.size() && !separator(path[end])) ++end;
++    const std::string_view component = path.substr(start, end - start);
++    if (component.empty() || component == "." || component == "..") return false;
++    if (style == PathStyle::kWindows) {
++      if (component.find_first_of("<>:\"|?*") != std::string_view::npos ||
++          component.back() == '.' || component.back() == ' ')
++        return false;
++    }
++    out.components.emplace_back(component);
++    if (end == path.size()) return true;
++    start = end + 1;
++    if (start == path.size()) return false;  // Trailing separator.
++  }
++}
++
++// Candidate root-prefix lengths: component `index` is "http-cache" and at least
++// one component follows it (strict descendant). The bridge accepts the first
++// candidate whose prefix is the actual CefSettings.root_cache_path. On Windows
++// no component below http-cache may contain '~': 8.3 short-name aliases would
++// defeat the identical/nested directory check. The root itself may.
++inline std::vector<size_t> HttpCacheRootSplits(const ParsedPath& path, PathStyle style) {
++  std::vector<size_t> result;
++  for (size_t index = 0; index + 1 < path.components.size(); ++index) {
++    if (!SameComponent(path.components[index], kHttpCacheDirectoryName, style))
++      continue;
++    bool aliasable = false;
++    for (size_t below = index + 1; below < path.components.size(); ++below) {
++      aliasable = aliasable || (style == PathStyle::kWindows &&
++                                path.components[below].find('~') != std::string::npos);
++    }
++    if (!aliasable) result.push_back(index);
++  }
++  return result;
++}
++
++// Canonical identity used to detect nested or identical cache directories:
++// '/' separators, root without trailing separators, ASCII-folded on Windows.
++inline std::string HttpCacheDirectoryKey(std::string_view root_utf8,
++                                         const ParsedPath& path, size_t split,
++                                         PathStyle style) {
++  std::string key(root_utf8);
++  for (char& c : key) {
++    if (style == PathStyle::kWindows) {
++      if (c == '\\') c = '/';
++      c = FoldAscii(c);
++    }
++  }
++  while (!key.empty() && key.back() == '/') key.pop_back();
++  for (size_t i = split; i < path.components.size(); ++i) {
++    key.push_back('/');
++    for (char c : path.components[i])
++      key.push_back(style == PathStyle::kWindows ? FoldAscii(c) : c);
++  }
++  return key;
++}
++inline bool HttpCacheDirectoriesOverlap(std::string_view a, std::string_view b) {
++  const auto nested = [](std::string_view outer, std::string_view inner) {
++    return inner.size() > outer.size() && inner.substr(0, outer.size()) == outer &&
++           inner[outer.size()] == '/';
++  };
++  return a == b || nested(a, b) || nested(b, a);
++}
++
++// One-shot directory hold of a disk-cache registration (state 7 source).
++// Available: validated, no NetworkContext yet. Granted: exactly one client
++// receiver's NetworkContext owns the directory. Released: that receiver
++// disconnected, or revocation happened before any grant. Never re-granted.
++class HttpCacheHold {
++ public:
++  explicit HttpCacheHold(bool requested)
++      : state_(requested ? State::kAvailable : State::kNone) {}
++  bool requested() const { return state_ != State::kNone; }
++  bool CanGrant(bool revoked) const { return state_ == State::kAvailable && !revoked; }
++  bool Grant(uint64_t receiver_id) {
++    if (state_ != State::kAvailable) return false;
++    state_ = State::kGranted;
++    holder_ = receiver_id;
++    return true;
++  }
++  // Returns true exactly when this disconnect releases the directory.
++  bool ReceiverDisconnected(uint64_t receiver_id) {
++    if (state_ != State::kGranted || holder_ != receiver_id) return false;
++    state_ = State::kReleased;
++    return true;
++  }
++  // Revocation forbids future grants; an ungranted hold is released now.
++  bool Revoked() {
++    if (state_ != State::kAvailable) return false;
++    state_ = State::kReleased;
++    return true;
++  }
++  bool HoldsDirectory() const {
++    return state_ == State::kAvailable || state_ == State::kGranted;
++  }
++  // State 7 is reported once, after release; never for a non-cache registration.
++  bool TakeReleaseReport() {
++    if (state_ != State::kReleased || report_taken_) return false;
++    report_taken_ = true;
++    return true;
++  }
++  void ReleaseReportReturned() { report_returned_ = report_taken_; }
++  bool Settled() const {
++    return state_ == State::kNone || (state_ == State::kReleased && report_returned_);
++  }
++
++ private:
++  enum class State { kNone, kAvailable, kGranted, kReleased };
++  State state_;
++  uint64_t holder_ = 0;
++  bool report_taken_ = false;
++  bool report_returned_ = false;
++};
+ }  // namespace sorng_tls
+ #endif
+diff --git a/libcef_dll/sorng_tls_bridge_exports.cc b/libcef_dll/sorng_tls_bridge_exports.cc
+index 13f7ecc52b130c541f7c6287c4b68323397c7209..7183f1e0b0286c928f2b7b119649f0dbdbd826fa 100644
+--- a/libcef_dll/sorng_tls_bridge_exports.cc
++++ b/libcef_dll/sorng_tls_bridge_exports.cc
+@@ -5,11 +5,12 @@
+ #include "cef/libcef_dll/cpptoc/request_context_cpptoc.h"
+ #include "cef/libcef_dll/ctocpp/request_context_handler_ctocpp.h"
+ 
+-extern "C" struct _cef_request_context_t* SORNG_TLS_CALL
+-cef_sorng_tls_create_context_v2(
+-    const cef_sorng_tls_context_v2* config,
++namespace {
++template <typename Create>
++struct _cef_request_context_t* CreateWrapped(
+     const cef_request_context_settings_t* settings,
+-    struct _cef_request_context_handler_t* handler) {
++    struct _cef_request_context_handler_t* handler,
++    Create create) {
+   // The public bridge retains CEF's opaque client ABI. DLL-side generated
+   // wrappers use versioned C structures and dispatch helpers.
+   auto* handler_v0 = reinterpret_cast<cef_request_context_handler_0_t*>(handler);
+@@ -23,8 +24,38 @@ cef_sorng_tls_create_context_v2(
+   // one transferred reference, so create that reference explicitly first.
+   if (handler_v0) handler_v0->base.add_ref(&handler_v0->base);
+   auto wrapped_handler = CefRequestContextHandlerCToCpp_Wrap(handler_v0);
+-  auto context = CefSorngCreateContext(config, copied, wrapped_handler);
++  auto context = create(copied, wrapped_handler);
+   return context ? reinterpret_cast<struct _cef_request_context_t*>(
+                        CefRequestContextCppToC_Wrap(context))
+                  : nullptr;
+ }
++}  // namespace
++
++extern "C" struct _cef_request_context_t* SORNG_TLS_CALL
++cef_sorng_tls_create_context_v2(
++    const cef_sorng_tls_context_v2* config,
++    const cef_request_context_settings_t* settings,
++    struct _cef_request_context_handler_t* handler) {
++  return CreateWrapped(
++      settings, handler,
++      [config](const CefRequestContextSettings& copied,
++               CefRefPtr<CefRequestContextHandler> wrapped_handler) {
++        return CefSorngCreateContext(config, copied, wrapped_handler);
++      });
++}
++
++// Revision 6. The cache descriptor is validated and copied before return.
++extern "C" struct _cef_request_context_t* SORNG_TLS_CALL
++cef_sorng_tls_create_context_with_cache_v2(
++    const cef_sorng_tls_context_v2* config,
++    const cef_request_context_settings_t* settings,
++    struct _cef_request_context_handler_t* handler,
++    const cef_sorng_http_cache_v2* http_cache) {
++  return CreateWrapped(
++      settings, handler,
++      [config, http_cache](const CefRequestContextSettings& copied,
++                           CefRefPtr<CefRequestContextHandler> wrapped_handler) {
++        return CefSorngCreateContextWithCache(config, copied, wrapped_handler,
++                                              http_cache);
++      });
++}
