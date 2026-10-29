@@ -3539,6 +3539,70 @@ function uploadApiStage(route, upload) {
   }
   return "api-admission";
 }
+// A refused GitHub API response is reported by its public error message,
+// documentation URL and rate-limit headers (never the token or our request),
+// and a JSON request that GitHub rate-limits (429, or 403 with Retry-After,
+// an exhausted limit or a secondary-rate-limit message) is retried at most
+// twice, honouring Retry-After within the client deadline. Asset uploads are
+// never replayed.
+export const GITHUB_RETRY = Object.freeze({ attempts: 3, maxWaitMs: 120_000 });
+export async function githubFailure(response) {
+  const header = (name) => {
+    const value = response.headers?.get?.(name);
+    return typeof value === "string" ? value.slice(0, 64) : null;
+  };
+  let message = null,
+    documentation = null;
+  try {
+    const parts = [];
+    let bytes = 0;
+    for await (const part of response.body ?? []) {
+      bytes += part.length;
+      if (bytes > 64 * 1024) throw Error("bound");
+      parts.push(Buffer.from(part));
+    }
+    const value = JSON.parse(Buffer.concat(parts).toString("utf8"));
+    if (typeof value?.message === "string")
+      message = value.message.replace(/[^\x20-\x7e]/g, "?").slice(0, 300);
+    if (
+      typeof value?.documentation_url === "string" &&
+      /^https:\/\/docs\.github\.com\/[\x21-\x7e]{1,200}$/.test(
+        value.documentation_url,
+      )
+    )
+      documentation = value.documentation_url;
+  } catch {
+    /* A non-JSON body is reported as absent. */
+  }
+  const retryAfter = header("retry-after");
+  const remaining = header("x-ratelimit-remaining");
+  const seconds = /^[0-9]{1,6}$/.test(retryAfter ?? "")
+    ? Number(retryAfter)
+    : null;
+  return {
+    status: response.status,
+    message,
+    documentation,
+    retryAfter: seconds,
+    rateLimitRemaining: /^[0-9]{1,9}$/.test(remaining ?? "")
+      ? Number(remaining)
+      : null,
+    rateLimitResource: /^[a-z_]{1,32}$/.test(
+      header("x-ratelimit-resource") ?? "",
+    )
+      ? header("x-ratelimit-resource")
+      : null,
+    requestId: /^[A-F0-9:]{1,64}$/.test(header("x-github-request-id") ?? "")
+      ? header("x-github-request-id")
+      : null,
+    rateLimited:
+      response.status === 429 ||
+      (response.status === 403 &&
+        (seconds !== null ||
+          remaining === "0" ||
+          /rate limit/i.test(message ?? ""))),
+  };
+}
 export function apiClient(
   repository,
   token,
@@ -3549,6 +3613,8 @@ export function apiClient(
     sdk = false,
     target = TARGET,
     observer,
+    log = console.log,
+    wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   } = {},
 ) {
   const observe = createUploadObserver(observer);
@@ -3613,28 +3679,65 @@ export function apiClient(
           url === repositoryUrl || url.startsWith(`${repositoryUrl}/`),
           "Foreign API route denied",
         );
-        const response = await request(url, {
-          method,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            ...(body
-              ? {
-                  "Content-Type": upload
-                    ? "application/octet-stream"
-                    : "application/json",
-                  ...(upload ? { "Content-Length": String(bodyBytes) } : {}),
-                }
-              : {}),
-          },
-          body: upload ? body : body ? JSON.stringify(body) : undefined,
-          ...(upload ? { duplex: "half" } : {}),
-          signal: AbortSignal.timeout(
-            Math.min(upload ? 600000 : 30000, deadline - Date.now()),
-          ),
-          redirect: "error",
-        });
+        const send = () =>
+          request(url, {
+            method,
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              ...(body
+                ? {
+                    "Content-Type": upload
+                      ? "application/octet-stream"
+                      : "application/json",
+                    ...(upload ? { "Content-Length": String(bodyBytes) } : {}),
+                  }
+                : {}),
+            },
+            body: upload ? body : body ? JSON.stringify(body) : undefined,
+            ...(upload ? { duplex: "half" } : {}),
+            signal: AbortSignal.timeout(
+              Math.min(upload ? 600000 : 30000, deadline - Date.now()),
+            ),
+            redirect: "error",
+          });
+        let response = await send();
+        // Only a readable 4xx/5xx status enters the diagnostic/retry path; a
+        // success is never re-read here.
+        for (let attempt = 1; ; attempt++) {
+          let status = null;
+          try {
+            status = response.status;
+          } catch {
+            break;
+          }
+          if (!Number.isInteger(status) || status < 400) break;
+          const failure = await githubFailure(response);
+          try {
+            log(
+              `[cef-engineering-checkpoint] github-error=${JSON.stringify({ stage: uploadApiStage(route, upload), attempt, ...failure })}`,
+            );
+          } catch {
+            /* Diagnostics never replace the original refusal. */
+          }
+          const pause =
+            failure.retryAfter !== null
+              ? failure.retryAfter * 1000
+              : 15_000 * attempt;
+          if (
+            upload ||
+            !failure.rateLimited ||
+            attempt >= GITHUB_RETRY.attempts ||
+            pause > GITHUB_RETRY.maxWaitMs ||
+            Date.now() + pause + 30_000 >= deadline
+          ) {
+            response = { ok: false, status };
+            break;
+          }
+          await wait(pause);
+          response = await send();
+        }
         try {
           responseFacts.httpStatus = response.status;
           observe({

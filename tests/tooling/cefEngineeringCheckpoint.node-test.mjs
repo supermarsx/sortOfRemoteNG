@@ -381,6 +381,7 @@ import {
   validateManifest,
   validateSeal,
   apiClient,
+  GITHUB_RETRY,
   createUploadObserver,
   uploadPhase,
   uploadCheckpoint,
@@ -13822,4 +13823,94 @@ test("workflow offers the auto slice alongside the reviewed fixed slices", async
     workflow,
     /slice_minutes:\n(?:        .*\n)*?        options: \["15", "30", "60", "120", "180", "auto"\]\n/,
   );
+});
+
+test("refused GitHub API calls are reported by public message and headers, and only rate limits are retried", async () => {
+  const reply = (status, body, headers = {}) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json", ...headers },
+    });
+  const run = async (responses, route = "releases", options = {}) => {
+    const logs = [],
+      waits = [];
+    let calls = 0;
+    const api = apiClient(
+      "owner/repo",
+      "SECRET-TOKEN",
+      async () => responses[calls++](),
+      {
+        log: (line) => logs.push(line),
+        wait: async (ms) => waits.push(ms),
+      },
+    );
+    let result, error;
+    try {
+      result = await api(route, {
+        method: "POST",
+        body: { tag_name: "t" },
+        ...options,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    return { result, error, logs, waits, calls: () => calls };
+  };
+  const limited = () =>
+    reply(
+      403,
+      {
+        message: "You have exceeded a secondary rate limit.",
+        documentation_url: "https://docs.github.com/rest/overview/rate-limits",
+      },
+      { "retry-after": "7", "x-github-request-id": "ABCD:1234" },
+    );
+  const created = () => reply(201, { id: 9, draft: true });
+  let outcome = await run([limited, created]);
+  assert.deepEqual(outcome.result, { id: 9, draft: true });
+  assert.deepEqual(outcome.waits, [7000]);
+  assert.equal(outcome.calls(), 2);
+  const logged = JSON.parse(outcome.logs[0].split("github-error=")[1]);
+  assert.deepEqual(logged, {
+    stage: "draft-create",
+    attempt: 1,
+    status: 403,
+    message: "You have exceeded a secondary rate limit.",
+    documentation: "https://docs.github.com/rest/overview/rate-limits",
+    retryAfter: 7,
+    rateLimitRemaining: null,
+    rateLimitResource: null,
+    requestId: "ABCD:1234",
+    rateLimited: true,
+  });
+  assert.doesNotMatch(outcome.logs.join("\n"), /SECRET-TOKEN|tag_name/);
+  outcome = await run([limited, limited, limited, created]);
+  assert.match(outcome.error.message, /Checkpoint GitHub operation failed/);
+  assert.equal(outcome.calls(), 3);
+  assert.equal(outcome.logs.length, 3);
+  const denied = () =>
+    reply(403, { message: "Resource not accessible by integration\u0007" });
+  outcome = await run([denied, created]);
+  assert.match(outcome.error.message, /Checkpoint GitHub operation failed/);
+  assert.equal(outcome.calls(), 1);
+  assert.equal(
+    JSON.parse(outcome.logs[0].split("github-error=")[1]).message,
+    "Resource not accessible by integration?",
+  );
+  outcome = await run([
+    () => reply(429, { message: "slow down" }, { "retry-after": "500" }),
+  ]);
+  assert.equal(outcome.calls(), 1);
+  assert.deepEqual(outcome.waits, []);
+  outcome = await run(
+    [limited, created],
+    "releases/9/assets?name=manifest.json",
+    {
+      upload: true,
+      body: Buffer.from("x"),
+      bodyBytes: 1,
+    },
+  );
+  assert.equal(outcome.calls(), 1);
+  assert.deepEqual(GITHUB_RETRY, { attempts: 3, maxWaitMs: 120_000 });
 });
