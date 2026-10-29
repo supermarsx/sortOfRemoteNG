@@ -510,3 +510,156 @@ fn windows_acl_rejects_only_broad_allow_entries() {
     let data = tempfile::tempdir().unwrap();
     assert!(private_dir(data.path()));
 }
+
+fn trust_record(host: &str, fingerprint: &str) -> sorng_storage::trust_store::TrustRecord {
+    serde_json::from_value(serde_json::json!({
+        "host": host,
+        "record_type": "tls",
+        "identity": {
+            "kind": "tls",
+            "fingerprint": fingerprint,
+            "first_seen": "2026-01-01T00:00:00Z",
+            "last_seen": "2026-01-01T00:00:00Z",
+            "chain_fingerprints": [fingerprint],
+        },
+        "user_approved": true,
+        "nickname": null,
+        "history": [],
+    }))
+    .unwrap()
+}
+
+fn trust_digest(records: &[sorng_storage::trust_store::TrustRecord]) -> [u8; 32] {
+    trust_projection(
+        records,
+        &sorng_storage::trust_store::TrustPolicy::Tofu,
+        &Default::default(),
+        "conn/1",
+    )
+}
+
+#[test]
+fn trust_binding_covers_scoped_records_and_the_host_level_fallback() {
+    use sorng_storage::trust_store::{TrustPolicy, CONNECTION_SCOPE_PREFIX};
+    let scoped = trust_record(&format!("{CONNECTION_SCOPE_PREFIX}conn%2F1/nas.local/443"), "aa");
+    let fallback = trust_record("nas.local:443", "bb");
+    let other = trust_record(&format!("{CONNECTION_SCOPE_PREFIX}other/nas.local/443"), "cc");
+    let base = trust_digest(&[scoped.clone(), fallback.clone(), other.clone()]);
+    // The database-wide host:port record is what effective_key resolves when
+    // this connection has no scoped record: every decision on it is bound.
+    let mut revoked = fallback.clone();
+    revoked.revoked = true;
+    let mut unapproved = fallback.clone();
+    unapproved.user_approved = false;
+    let mut pinned = fallback.clone();
+    pinned.host_policy = Some(TrustPolicy::CertificatePinning);
+    let rotated = trust_record("nas.local:443", "dd");
+    for changed in [revoked, unapproved, pinned, rotated] {
+        assert_ne!(base, trust_digest(&[scoped.clone(), changed, other.clone()]));
+    }
+    // A new host-level record (approval) and a removed one both change it.
+    let added = trust_record("router.local:8443", "ee");
+    assert_ne!(base, trust_digest(&[scoped.clone(), fallback.clone(), other.clone(), added]));
+    assert_ne!(base, trust_digest(&[scoped.clone(), other.clone()]));
+    // Scoped decisions of this connection stay bound.
+    let mut scoped_revoked = scoped.clone();
+    scoped_revoked.revoked = true;
+    assert_ne!(base, trust_digest(&[scoped_revoked, fallback.clone(), other.clone()]));
+    // Another connection's scoped record never matches this one.
+    let mut other_revoked = other.clone();
+    other_revoked.revoked = true;
+    assert_eq!(base, trust_digest(&[scoped.clone(), fallback.clone(), other_revoked]));
+    // Volatile bookkeeping and order never invalidate the cache.
+    let mut visited = fallback.clone();
+    visited.nickname = Some("renamed".into());
+    visited.tags = vec!["t".into()];
+    if let sorng_storage::trust_store::Identity::Tls(tls) = &mut visited.identity {
+        tls.last_seen = "2026-09-09T00:00:00Z".into();
+    }
+    assert_eq!(base, trust_digest(&[other, visited, scoped]));
+    // The database policy is bound.
+    assert_ne!(
+        base,
+        trust_projection(
+            &[],
+            &TrustPolicy::Strict,
+            &Default::default(),
+            "conn/1"
+        )
+    );
+}
+
+#[test]
+fn lease_attach_and_drop_never_wait_for_housekeeping_io() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let (_data, mut store) = store();
+    let (dropped_key, dropped_id, dropped_dir) = take(&mut store, "db", "dropped", 1).unwrap();
+    let (attached_key, attached_id, attached_dir) = take(&mut store, "db", "attached", 1).unwrap();
+    let dropped = store.lease(
+        dropped_key.clone(),
+        dropped_id,
+        HttpDiskCacheSpec::new(dropped_dir, 16 * MIB).unwrap(),
+    );
+    let attached = store.lease(
+        attached_key.clone(),
+        attached_id,
+        HttpDiskCacheSpec::new(attached_dir, 16 * MIB).unwrap(),
+    );
+    // Housekeeping blocks mid-IO until released by this test (no timing).
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (resume_tx, resume_rx) = mpsc::channel::<()>();
+    let resume_rx = Mutex::new(resume_rx);
+    store.pause = Some(Box::new(move || {
+        let _ = entered_tx.send(());
+        let _ = resume_rx.lock().unwrap().recv();
+    }));
+    let leases = store.leases.clone();
+    let worker = std::thread::spawn(move || {
+        housekeeping(&mut store, NOW);
+        store
+    });
+    entered_rx.recv().unwrap();
+    // The UI-thread paths complete while the walk is still in progress.
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        drop(dropped);
+        attached.attach(sorng_browser_host::cef_http_cache::HttpCacheReleaseSignal::default());
+        let _ = done_tx.send(());
+    });
+    let completed = done_rx.recv_timeout(Duration::from_secs(30)).is_ok();
+    resume_tx.send(()).unwrap();
+    let mut store = worker.join().unwrap();
+    assert!(completed, "lease drop/attach waited for housekeeping IO");
+    {
+        let table = table(&leases);
+        assert!(!table.entries.contains_key(&dropped_key));
+        assert!(table.entries[&attached_key].released.is_some());
+    }
+    // A dropped lease makes housekeeping due on the next tick.
+    assert_eq!(store.take_released(NOW), 1);
+    assert_eq!(store.take_released(NOW), 0);
+    assert!(store.leased("db", "attached"));
+}
+
+#[test]
+fn clear_commands_refuse_with_exactly_browser_session_open_while_live() {
+    use sorng_commands_core::database_protection::native_browser_owner::ClearError;
+    assert_eq!(SESSION_OPEN, "browser-session-open");
+    let live = |database: &str, connection: &str| database == "db-2" && connection == "conn";
+    assert_eq!(
+        refuse_open_session(["db-1", "db-2"], "conn", live),
+        Err("browser-session-open".to_owned())
+    );
+    assert_eq!(refuse_open_session(["db-1"], "conn", live), Ok(()));
+    assert_eq!(refuse_open_session(["db-2"], "other", live), Ok(()));
+    assert_eq!(refuse_open_session([], "conn", live), Ok(()));
+    // A retention attempt that became live before the cookie clear.
+    assert_eq!(
+        cookie_clear_refusal(ClearError::SessionOpen),
+        Err("browser-session-open".to_owned())
+    );
+    for failure in [ClearError::Unavailable, ClearError::WrongConnection] {
+        assert_eq!(cookie_clear_refusal(failure), Ok(()));
+    }
+}

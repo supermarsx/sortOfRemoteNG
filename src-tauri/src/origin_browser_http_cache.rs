@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const KEY_DOMAIN: &[u8] = b"sorng-http-cache-v1\0";
@@ -439,14 +439,34 @@ struct LeaseEntry {
     released: Option<Released>,
 }
 
+/// The leases of one cache root. This is the only cache state the CEF UI
+/// thread touches (lease attach and drop): a leaf lock that is never held
+/// across filesystem IO, so those paths never wait on a directory walk.
+#[derive(Default)]
+pub(crate) struct LeaseTable {
+    entries: HashMap<(String, String), LeaseEntry>,
+    next: u64,
+    /// A lease ended by drop (no engine signal): housekeeping is due.
+    dropped: bool,
+}
+
+type Leases = Arc<Mutex<LeaseTable>>;
+
+fn table(leases: &Leases) -> MutexGuard<'_, LeaseTable> {
+    leases.lock().unwrap_or_else(|error| error.into_inner())
+}
+
 /// Filesystem state of one `<root>/http-cache`. Methods that delete return the
 /// trash they renamed aside; the caller removes it outside any shared lock.
+/// Callers serialize these methods (`&mut self`); the lease table inside is
+/// shared with live `CacheLease`s and locked only briefly, never across IO.
 pub(crate) struct CacheStore {
     root: PathBuf,
-    leases: HashMap<(String, String), LeaseEntry>,
-    next: u64,
+    leases: Leases,
     trash: u64,
     total_limit: u64,
+    #[cfg(test)]
+    pause: Option<Box<dyn Fn() + Send>>,
 }
 
 impl CacheStore {
@@ -464,10 +484,11 @@ impl CacheStore {
         }
         let store = Self {
             root,
-            leases: HashMap::new(),
-            next: 0,
+            leases: Arc::default(),
             trash: 0,
             total_limit: DEFAULT_TOTAL_BYTES,
+            #[cfg(test)]
+            pause: None,
         };
         store.write_tag()?;
         #[cfg(target_os = "macos")]
@@ -550,9 +571,25 @@ impl CacheStore {
         Ok(true)
     }
 
+    fn is_leased(&self, key: &(String, String)) -> bool {
+        table(&self.leases).entries.contains_key(key)
+    }
+
     #[cfg(test)]
     pub(crate) fn leased(&self, database: &str, connection: &str) -> bool {
-        Self::keys(database, connection).is_some_and(|key| self.leases.contains_key(&key))
+        Self::keys(database, connection).is_some_and(|key| self.is_leased(&key))
+    }
+
+    /// The lease handle for an `acquire` result. It shares only the lease
+    /// table, so attaching or dropping it never waits for this store's IO.
+    pub(crate) fn lease(&self, key: (String, String), id: u64, spec: HttpDiskCacheSpec) -> CacheLease {
+        CacheLease {
+            leases: self.leases.clone(),
+            key,
+            id,
+            spec,
+            attached: false,
+        }
     }
 
     /// Prepares the connection directory and takes its lease. A binding
@@ -567,7 +604,7 @@ impl CacheStore {
         trash: &mut Vec<PathBuf>,
     ) -> Result<((String, String), u64, PathBuf), Refusal> {
         let key = Self::keys(database, connection).ok_or(Refusal::Storage)?;
-        if self.leases.contains_key(&key) {
+        if self.is_leased(&key) {
             return Err(Refusal::InUse);
         }
         if fs::symlink_metadata(self.tombstone(&key)).is_ok() {
@@ -605,57 +642,55 @@ impl CacheStore {
             },
         )
         .map_err(storage)?;
-        self.next += 1;
-        self.leases.insert(
-            key.clone(),
-            LeaseEntry {
-                id: self.next,
-                released: None,
-            },
-        );
-        Ok((key, self.next, directory))
+        let mut leases = table(&self.leases);
+        leases.next += 1;
+        let id = leases.next;
+        leases.entries.insert(key.clone(), LeaseEntry { id, released: None });
+        Ok((key, id, directory))
     }
 
     /// Keeps the lease until the engine's release signal fires.
-    pub(crate) fn attach(&mut self, key: &(String, String), id: u64, released: Released) {
-        if let Some(entry) = self.leases.get_mut(key).filter(|entry| entry.id == id) {
-            entry.released = Some(released);
-        }
+    #[cfg(test)]
+    pub(crate) fn attach(&self, key: &(String, String), id: u64, released: Released) {
+        attach_lease(&self.leases, key, id, released);
     }
 
     /// Ends a lease that never reached the engine, or whose context fell back
     /// to memory. Returns whether that exact lease was held.
-    pub(crate) fn release(&mut self, key: &(String, String), id: u64) -> bool {
-        if self.leases.get(key).is_some_and(|entry| entry.id == id) {
-            self.leases.remove(key);
-            true
-        } else {
-            false
-        }
+    pub(crate) fn release(&self, key: &(String, String), id: u64) -> bool {
+        release_lease(&self.leases, key, id)
     }
 
     /// Removes leases whose engine release signal fired and stamps their use.
+    /// Returns how many leases ended since the last call, including drops.
     pub(crate) fn take_released(&mut self, now: u64) -> usize {
-        let released: Vec<_> = self
-            .leases
-            .iter()
-            .filter(|(_, entry)| entry.released.as_ref().is_some_and(|released| released()))
-            .map(|(key, _)| key.clone())
-            .collect();
+        let (released, dropped) = {
+            let mut leases = table(&self.leases);
+            let released: Vec<_> = leases
+                .entries
+                .iter()
+                .filter(|(_, entry)| entry.released.as_ref().is_some_and(|released| released()))
+                .map(|(key, _)| key.clone())
+                .collect();
+            for key in &released {
+                leases.entries.remove(key);
+            }
+            (released, std::mem::take(&mut leases.dropped))
+        };
+        // Lease table unlocked: binding IO never blocks attach or drop.
         for key in &released {
-            self.leases.remove(key);
             let directory = self.directory(key);
             if let Some(mut binding) = read_binding(&directory) {
                 binding.last_used_at = binding.last_used_at.max(now);
                 let _ = write_binding(&directory, &binding);
             }
         }
-        released.len()
+        released.len() + usize::from(dropped)
     }
 
     fn clear_key(&mut self, key: &(String, String), trash: &mut Vec<PathBuf>) -> io::Result<ClearOutcome> {
         let tombstone = self.tombstone(key);
-        if self.leases.contains_key(key) {
+        if self.is_leased(key) {
             if !plain_file(&tombstone) {
                 self.discard(&tombstone, trash)?;
                 fs::OpenOptions::new().create_new(true).write(true).open(&tombstone)?;
@@ -692,7 +727,7 @@ impl CacheStore {
                 pending: false,
             });
         }
-        if !self.leases.keys().any(|(owner, _)| owner == database) {
+        if !table(&self.leases).entries.keys().any(|(owner, _)| owner == database) {
             return Ok(ClearOutcome {
                 cleared: self.discard(&path, trash)?,
                 pending: false,
@@ -751,6 +786,10 @@ impl CacheStore {
         if !plain_dir(&self.root)? {
             return Err(refused());
         }
+        #[cfg(test)]
+        if let Some(pause) = &self.pause {
+            pause();
+        }
         self.write_tag()?;
         let idle = IDLE_LIMIT.as_secs();
         let mut candidates = Vec::new();
@@ -774,7 +813,7 @@ impl CacheStore {
                     let key = (database.clone(), connection.to_owned());
                     if !is_key(connection) || !plain_file(&child.path()) {
                         self.discard(&child.path(), trash)?;
-                    } else if !self.leases.contains_key(&key) {
+                    } else if !self.is_leased(&key) {
                         self.discard(&self.directory(&key), trash)?;
                         self.discard(&child.path(), trash)?;
                     }
@@ -791,7 +830,7 @@ impl CacheStore {
                     continue;
                 }
                 let key = (database.clone(), child_name);
-                let leased = self.leases.contains_key(&key);
+                let leased = self.is_leased(&key);
                 if !leased {
                     // Only the binding and Chromium's net/ belong here.
                     for inner in fs::read_dir(&child_path)?.flatten() {
@@ -842,39 +881,33 @@ pub(crate) fn empty_trash(trash: Vec<PathBuf>) {
     }
 }
 
-#[derive(Default)]
-struct Manager {
-    pending: Option<(PathBuf, bool)>,
-    store: Option<CacheStore>,
-    blocked: Option<Unavailable>,
-    engine: Option<bool>,
-    last_housekeeping: Option<u64>,
+fn attach_lease(leases: &Leases, key: &(String, String), id: u64, released: Released) {
+    if let Some(entry) = table(leases).entries.get_mut(key).filter(|entry| entry.id == id) {
+        entry.released = Some(released);
+    }
 }
 
-impl Manager {
-    fn store(&mut self) -> Result<&mut CacheStore, Unavailable> {
-        if let Some((data_root, local)) = self.pending.take() {
-            if !local {
-                self.blocked = Some(Unavailable::NotLocal);
-            } else {
-                match CacheStore::open(&data_root) {
-                    Ok(store) => {
-                        self.store = Some(store);
-                        self.blocked = None;
-                    }
-                    Err(error) => {
-                        log::warn!("Native browser HTTP cache root is unavailable: {}", error.kind());
-                        self.blocked = Some(Unavailable::Runtime);
-                    }
-                }
-            }
-        }
-        if let Some(blocked) = self.blocked {
-            return Err(blocked);
-        }
-        self.store.as_mut().ok_or(Unavailable::Runtime)
+fn release_lease(leases: &Leases, key: &(String, String), id: u64) -> bool {
+    let mut leases = table(leases);
+    if leases.entries.get(key).is_some_and(|entry| entry.id == id) {
+        leases.entries.remove(key);
+        leases.dropped = true;
+        true
+    } else {
+        false
     }
+}
 
+/// Engine and root status: a leaf lock with no IO, safe on any thread.
+#[derive(Default)]
+struct Status {
+    pending: Option<(PathBuf, bool)>,
+    opened: bool,
+    blocked: Option<Unavailable>,
+    engine: Option<bool>,
+}
+
+impl Status {
     fn engine(&self) -> Result<(), Unavailable> {
         match self.engine {
             Some(true) => Ok(()),
@@ -884,43 +917,92 @@ impl Manager {
     }
 }
 
-fn manager() -> std::sync::MutexGuard<'static, Manager> {
-    static MANAGER: std::sync::OnceLock<Mutex<Manager>> = std::sync::OnceLock::new();
-    MANAGER
+fn status_lock() -> MutexGuard<'static, Status> {
+    static STATUS: std::sync::OnceLock<Mutex<Status>> = std::sync::OnceLock::new();
+    STATUS
         .get_or_init(Default::default)
         .lock()
         .unwrap_or_else(|error| error.into_inner())
 }
 
+/// The opened store. Held across filesystem IO (acquire, housekeeping,
+/// clears), so it is only ever taken off the CEF UI thread.
+#[derive(Default)]
+struct Disk {
+    store: Option<CacheStore>,
+    last_housekeeping: Option<u64>,
+}
+
+fn disk() -> MutexGuard<'static, Disk> {
+    static DISK: std::sync::OnceLock<Mutex<Disk>> = std::sync::OnceLock::new();
+    DISK.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+/// Opens the configured root on first use (IO under the disk lock only).
+fn open_store(disk: &mut Disk) -> Result<&mut CacheStore, Unavailable> {
+    if disk.store.is_none() {
+        let pending = {
+            let status = status_lock();
+            if let Some(blocked) = status.blocked {
+                return Err(blocked);
+            }
+            status.pending.clone()
+        };
+        let outcome = match pending {
+            None => return Err(Unavailable::Runtime),
+            Some((_, false)) => Err(Unavailable::NotLocal),
+            Some((data_root, true)) => CacheStore::open(&data_root).map_err(|error| {
+                log::warn!("Native browser HTTP cache root is unavailable: {}", error.kind());
+                Unavailable::Runtime
+            }),
+        };
+        let mut status = status_lock();
+        status.pending = None;
+        match outcome {
+            Ok(store) => {
+                disk.store = Some(store);
+                status.opened = true;
+            }
+            Err(blocked) => {
+                status.blocked = Some(blocked);
+                return Err(blocked);
+            }
+        }
+    }
+    disk.store.as_mut().ok_or(Unavailable::Runtime)
+}
+
 /// Records the committed browser root and whether it is device-local (F6).
 /// No IO here; the root is opened lazily off the UI thread.
 pub(crate) fn configure(data_root: &Path, local: bool) {
-    let mut manager = manager();
-    if manager.store.is_none() && manager.blocked.is_none() {
-        manager.pending = Some((data_root.to_path_buf(), local));
+    let mut status = status_lock();
+    if !status.opened && status.blocked.is_none() {
+        status.pending = Some((data_root.to_path_buf(), local));
     }
 }
 
 /// Whether the loaded engine reports HTTP_DISK_CACHE (C-H1 bit 10).
 pub(crate) fn set_engine_support(supported: bool) {
-    manager().engine = Some(supported);
+    status_lock().engine = Some(supported);
 }
 
-/// Whether a disk cache could be used at all now (not per connection).
+/// Whether a disk cache could be used at all now (not per connection). May
+/// open the root: never call it on the UI thread.
 pub(crate) fn status() -> Result<(), Unavailable> {
-    let mut manager = manager();
-    manager.engine()?;
-    manager.store().map(|_| ())
+    status_lock().engine()?;
+    open_store(&mut disk()).map(|_| ())
 }
 
 /// Cheap, IO-free gate before an attempt computes its binding.
 pub(crate) fn may_acquire() -> Result<(), Unavailable> {
-    let manager = manager();
-    manager.engine()?;
-    if let Some(blocked) = manager.blocked {
+    let status = status_lock();
+    status.engine()?;
+    if let Some(blocked) = status.blocked {
         return Err(blocked);
     }
-    if manager.store.is_some() || manager.pending.is_some() {
+    if status.opened || status.pending.is_some() {
         Ok(())
     } else {
         Err(Unavailable::Runtime)
@@ -928,8 +1010,11 @@ pub(crate) fn may_acquire() -> Result<(), Unavailable> {
 }
 
 /// A held cache directory. Dropping it before `attach` releases it at once
-/// (context creation failed or fell back to memory).
+/// (context creation failed or fell back to memory). Attach and drop lock
+/// only the lease table, never the store, so the CEF UI thread never waits
+/// on cache IO.
 pub(crate) struct CacheLease {
+    leases: Leases,
     key: (String, String),
     id: u64,
     spec: HttpDiskCacheSpec,
@@ -944,9 +1029,7 @@ impl CacheLease {
     /// Hands the lease to the engine's release signal (state 7). It then ends
     /// only on the housekeeping tick that observes the signal.
     pub(crate) fn attach(mut self, signal: HttpCacheReleaseSignal) {
-        if let Some(store) = manager().store.as_mut() {
-            store.attach(&self.key, self.id, Box::new(move || signal.is_released()));
-        }
+        attach_lease(&self.leases, &self.key, self.id, Box::new(move || signal.is_released()));
         self.attached = true;
     }
 }
@@ -954,9 +1037,7 @@ impl CacheLease {
 impl Drop for CacheLease {
     fn drop(&mut self) {
         if !self.attached {
-            if let Some(store) = manager().store.as_mut() {
-                store.release(&self.key, self.id);
-            }
+            release_lease(&self.leases, &self.key, self.id);
         }
     }
 }
@@ -970,11 +1051,11 @@ pub(crate) fn acquire(
     per_connection_bytes: u64,
     total_bytes: u64,
 ) -> Result<CacheLease, Refusal> {
+    status_lock().engine().map_err(Refusal::Unavailable)?;
     let mut trash = Vec::new();
     let result = (|| {
-        let mut manager = manager();
-        manager.engine().map_err(Refusal::Unavailable)?;
-        let store = manager.store().map_err(Refusal::Unavailable)?;
+        let mut disk = disk();
+        let store = open_store(&mut disk).map_err(Refusal::Unavailable)?;
         let (key, id, directory) = store.acquire(
             database,
             connection,
@@ -984,12 +1065,7 @@ pub(crate) fn acquire(
             &mut trash,
         )?;
         match HttpDiskCacheSpec::new(directory, per_connection_bytes) {
-            Ok(spec) => Ok(CacheLease {
-                key,
-                id,
-                spec,
-                attached: false,
-            }),
+            Ok(spec) => Ok(store.lease(key, id, spec)),
             Err(_) => {
                 store.release(&key, id);
                 Err(Refusal::Storage)
@@ -1002,14 +1078,14 @@ pub(crate) fn acquire(
 
 /// Background tick (about once a second, never on the UI thread): ends leases
 /// whose engine release fired, then runs housekeeping at start, after a
-/// release, and hourly.
+/// release or drop, and hourly.
 pub(crate) fn tick() {
     let mut trash = Vec::new();
     {
-        let mut manager = manager();
-        let last = manager.last_housekeeping;
+        let mut disk = disk();
+        let last = disk.last_housekeeping;
         let now = now_seconds();
-        let Ok(store) = manager.store() else {
+        let Ok(store) = open_store(&mut disk) else {
             return;
         };
         let released = store.take_released(now);
@@ -1019,7 +1095,7 @@ pub(crate) fn tick() {
             if let Err(error) = store.housekeeping(now, &mut trash) {
                 log::warn!("Native browser HTTP cache housekeeping failed: {}", error.kind());
             }
-            manager.last_housekeeping = Some(now);
+            disk.last_housekeeping = Some(now);
         }
     }
     empty_trash(trash);
@@ -1029,8 +1105,7 @@ pub(crate) fn tick() {
 /// a previous attempt still holds it.
 pub(crate) fn clear_connection(database: &str, connection: &str) -> Result<ClearOutcome, Unavailable> {
     let mut trash = Vec::new();
-    let result = manager()
-        .store()
+    let result = open_store(&mut disk())
         .and_then(|store| store.clear_connection(database, connection, &mut trash).map_err(|_| Unavailable::Runtime));
     empty_trash(trash);
     result
@@ -1039,8 +1114,7 @@ pub(crate) fn clear_connection(database: &str, connection: &str) -> Result<Clear
 /// Blocking. Every cache of one database (database deletion, lock clear).
 pub(crate) fn clear_database(database: &str) -> Result<ClearOutcome, Unavailable> {
     let mut trash = Vec::new();
-    let result = manager()
-        .store()
+    let result = open_store(&mut disk())
         .and_then(|store| store.clear_database(database, &mut trash).map_err(|_| Unavailable::Runtime));
     empty_trash(trash);
     result
@@ -1049,8 +1123,7 @@ pub(crate) fn clear_database(database: &str) -> Result<ClearOutcome, Unavailable
 /// Blocking. Every cache of this profile.
 pub(crate) fn clear_all() -> Result<ClearOutcome, Unavailable> {
     let mut trash = Vec::new();
-    let result = manager()
-        .store()
+    let result = open_store(&mut disk())
         .and_then(|store| store.clear_all(&mut trash).map_err(|_| Unavailable::Runtime));
     empty_trash(trash);
     result
@@ -1058,7 +1131,7 @@ pub(crate) fn clear_all() -> Result<ClearOutcome, Unavailable> {
 
 /// Blocking. Bytes on disk for one connection or the whole cache.
 pub(crate) fn usage(entry: Option<(&str, &str)>) -> Result<u64, Unavailable> {
-    manager().store().map(|store| store.usage(entry))
+    open_store(&mut disk()).map(|store| store.usage(entry))
 }
 
 /// Binding over the security-bound connection projection, the authorised
@@ -1079,6 +1152,33 @@ const DATA_UNAVAILABLE: &str =
     "Browser data is unavailable: unlock this connection's database in this window first.";
 const DATA_FAILED: &str = "Browser data could not be cleared; nothing else was changed.";
 
+/// The C-H5 refusal: exactly `browser-session-open` while an attempt of the
+/// connection is live in any of the window's unlocked databases.
+pub(crate) fn refuse_open_session<'a>(
+    databases: impl IntoIterator<Item = &'a str>,
+    connection: &str,
+    open: impl Fn(&str, &str) -> bool,
+) -> Result<(), String> {
+    if databases.into_iter().any(|database| open(database, connection)) {
+        Err(SESSION_OPEN.into())
+    } else {
+        Ok(())
+    }
+}
+
+/// A cookie clear refused because a retention attempt is still live (it can
+/// start between the session check and the clear) is the same refusal.
+/// Other errors are failures the caller reports after finishing its work.
+pub(crate) fn cookie_clear_refusal(
+    error: sorng_commands_core::database_protection::native_browser_owner::ClearError,
+) -> Result<(), String> {
+    use sorng_commands_core::database_protection::native_browser_owner::ClearError;
+    match error {
+        ClearError::SessionOpen => Err(SESSION_OPEN.into()),
+        ClearError::Unavailable | ClearError::WrongConnection => Ok(()),
+    }
+}
+
 /// IO-free capability for settings: whether a disk cache can be used now.
 pub(crate) fn capability() -> Result<(), Unavailable> {
     may_acquire()
@@ -1094,7 +1194,7 @@ pub(crate) async fn clear_connection_data(
     cookies: bool,
     cache: bool,
 ) -> Result<(bool, ClearOutcome), String> {
-    use sorng_commands_core::database_protection::native_browser_owner::{read_unlocked, ClearError};
+    use sorng_commands_core::database_protection::native_browser_owner::read_unlocked;
     use tauri::{Emitter, Manager};
     let owners = read_unlocked(window, state, connection)
         .await
@@ -1102,12 +1202,11 @@ pub(crate) async fn clear_connection_data(
     if owners.is_empty() {
         return Err(DATA_UNAVAILABLE.into());
     }
-    if owners
-        .iter()
-        .any(|owner| super::connection_open(&owner.database, connection))
-    {
-        return Err(SESSION_OPEN.into());
-    }
+    refuse_open_session(
+        owners.iter().map(|owner| owner.database.as_str()),
+        connection,
+        super::connection_open,
+    )?;
     let mut failed = false;
     let mut cookies_cleared = false;
     if cookies {
@@ -1125,8 +1224,10 @@ pub(crate) async fn clear_connection_data(
                     );
                 }
                 Ok(false) => (),
-                Err(ClearError::SessionOpen) => return Err(SESSION_OPEN.into()),
-                Err(_) => failed = true,
+                Err(error) => {
+                    cookie_clear_refusal(error)?;
+                    failed = true;
+                }
             }
         }
     }
@@ -1250,12 +1351,13 @@ fn scope_component(value: &str) -> String {
     result
 }
 
-/// The owning database's trust policy plus this connection's pinned,
-/// approved, revoked or policy-overridden certificate records. Volatile
-/// bookkeeping (last seen, statistics, history, nicknames, tags) is excluded,
-/// so ordinary visits never invalidate the cache.
+/// The owning database's trust policy plus every certificate record that a
+/// certificate lookup for this connection can resolve: its own
+/// connection-scoped records and the database-wide host-level fallbacks.
+/// Volatile bookkeeping (last seen, statistics, history, nicknames, tags) is
+/// excluded, so ordinary visits never invalidate the cache.
 pub(crate) async fn trust_store_digest(database: &str, connection: &str) -> Result<[u8; 32], ()> {
-    use sorng_storage::trust_store::{Identity, TrustStoreService, CONNECTION_SCOPE_PREFIX};
+    use sorng_storage::trust_store::TrustStoreService;
     let shared = TrustStoreService::shared();
     let mut service = shared
         .lock()
@@ -1263,12 +1365,34 @@ pub(crate) async fn trust_store_digest(database: &str, connection: &str) -> Resu
         .scoped_to_database(Some(database.into()))
         .map_err(|_| ())?;
     service.reload_from_disk().map_err(|_| ())?;
+    Ok(trust_projection(
+        &service.get_all_trust_records().await,
+        &service.get_trust_policy().await,
+        &service.get_trust_policy_config().await,
+        connection,
+    ))
+}
+
+/// Pure projection behind `trust_store_digest`.
+pub(crate) fn trust_projection(
+    records: &[sorng_storage::trust_store::TrustRecord],
+    policy: &sorng_storage::trust_store::TrustPolicy,
+    config: &sorng_storage::trust_store::TrustPolicyConfig,
+    connection: &str,
+) -> [u8; 32] {
+    use sorng_storage::trust_store::{Identity, CONNECTION_SCOPE_PREFIX};
     let prefix = format!("{CONNECTION_SCOPE_PREFIX}{}/", scope_component(connection));
-    let mut records: Vec<String> = service
-        .get_all_trust_records()
-        .await
-        .into_iter()
-        .filter(|record| record.host.starts_with(&prefix))
+    let mut rows: Vec<String> = records
+        .iter()
+        // Certificate lookup (`trust_scope::effective_key`) resolves this
+        // connection's endpoint to its own scoped record or, when none
+        // exists, to the database-wide `host:port` record. Bind every
+        // database-wide record (a superset of the endpoints this connection
+        // can resolve): approving, revoking, pinning or re-policing a
+        // host-level record changes the binding.
+        .filter(|record| {
+            record.host.starts_with(&prefix) || !record.host.starts_with(CONNECTION_SCOPE_PREFIX)
+        })
         .map(|record| {
             let identity = match &record.identity {
                 Identity::Tls(tls) => serde_json::json!([tls.fingerprint, tls.chain_fingerprints]),
@@ -1287,13 +1411,13 @@ pub(crate) async fn trust_store_digest(database: &str, connection: &str) -> Resu
             .to_string()
         })
         .collect();
-    records.sort();
+    rows.sort();
     let projection = serde_json::json!({
-        "records": records,
-        "policy": service.get_trust_policy().await,
-        "config": service.get_trust_policy_config().await,
+        "records": rows,
+        "policy": policy,
+        "config": config,
     });
-    Ok(Sha256::digest(projection.to_string().as_bytes()).into())
+    Sha256::digest(projection.to_string().as_bytes()).into()
 }
 
 #[cfg(test)]

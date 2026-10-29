@@ -969,4 +969,20 @@ mod tests {
         let capabilities = origin_browser_retention_capabilities();
         assert!(capabilities["httpDiskCache"]["available"].is_boolean());
     }
+
+    /// The shell maps exactly this string to "Close this connection's tab
+    /// first" (src/services/originBrowserData.ts); any other text reads as
+    /// unavailable or failed.
+    #[cfg(feature = "native-browser")]
+    #[test]
+    fn clear_connection_data_refusal_is_the_exact_shell_string() {
+        use crate::origin_browser_runtime::http_cache::{refuse_open_session, SESSION_OPEN};
+        let shell = include_str!("../../src/services/originBrowserData.ts");
+        assert!(shell.contains(&format!("text.trim() === \"{SESSION_OPEN}\"")));
+        assert_eq!(
+            refuse_open_session(["db"], "conn", |_, _| true).unwrap_err(),
+            "browser-session-open"
+        );
+        assert!(refuse_open_session(["db"], "conn", |_, _| false).is_ok());
+    }
 }
