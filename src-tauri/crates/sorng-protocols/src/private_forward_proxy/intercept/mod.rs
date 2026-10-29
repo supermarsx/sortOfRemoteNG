@@ -22,6 +22,8 @@ pub mod ca;
 pub mod cache;
 pub mod hooks;
 pub mod trust;
+pub(crate) type ProxyBody =
+    http_body_util::combinators::BoxBody<hyper::body::Bytes, std::io::Error>;
 // x1: mod accept; mod server; mod forward; mod websocket;
 // x2: mod upstream; mod upstream_verify; mod pool;
 
