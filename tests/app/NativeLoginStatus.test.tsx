@@ -241,6 +241,8 @@ describe("active native login status", () => {
       /security-check wait reached its time limit/,
     ],
     ["held", "grant-rejected", /did not authorize credential delivery/],
+    ["held", "address-mismatch", /not one of this connection's saved login/],
+    ["held", "consent-expired", /automatic-login permission had expired/],
   ])(
     "explains %s/%s with the actual prior checkpoint and a usable Close action",
     async (stage, reasonCode, expected) => {

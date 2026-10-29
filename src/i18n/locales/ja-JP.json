@@ -3315,7 +3315,6 @@
     "macroManager": "マクロマネージャー",
     "recordingManager": "録画マネージャー",
     "performanceMonitor": "パフォーマンスモニター",
-    "actionLog": "アクションログ",
     "toggleErrorLog": "Toggleエラーログ",
     "devConsole": "開くdevコンソール",
     "debugPanel": "デバッグパネル",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "キーボード ショートカット マネージャー アイコンを表示する",
     "performanceMonitor": "パフォーマンスモニター",
     "performanceMonitorTooltip": "リアルタイム パフォーマンス モニター アイコンを表示する",
-    "actionLog": "アクションログ",
-    "actionLogTooltip": "最近のアプリケーションのアクションとイベントを確認するためのアクション ログ アイコンを表示します",
     "devtools": "開発ツール",
     "devtoolsTooltip": "アプリケーション UI を検査するための開発者ツール アイコンを表示します",
     "debugPanel": "デバッグパ��ル",
@@ -9966,5 +9963,30 @@
     "loginDetails": "自動ログインの詳細",
     "loginElapsed": "経過時間：{{seconds}} 秒",
     "loginCompletionNote": "ログインの送信はウェブサイトでの承認を意味しません。認証や承認の要求がないか確認してください。"
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "サインインを再試行",
+      "credentialsLabel": "保存済みの資格情報で自動ログインを再試行",
+      "mfa": "2FA を再試行",
+      "mfaLabel": "新しい 2FA コードで自動ログインを再試行",
+      "noCredentials": "この接続には自動ログイン用の資格情報が保存されていません。",
+      "noMfa": "この接続では自動 2FA 用の認証システムが選択されていません。",
+      "busy": "自動ログインを実行中です。",
+      "wait": "新しい 2FA コードは {{seconds}} 秒後に利用できます。",
+      "startedCredentials": "このページで自動ログインを再試行しています。",
+      "startedMfa": "このページに新しい 2FA コードを入力しています。",
+      "unavailable": "このページで自動ログインを再試行できませんでした。このバージョンのブラウザーはまだ対応していない可能性があります。",
+      "refused": {
+        "notCurrent": "自動ログインを再試行する前にページが変わりました。もう一度お試しください。",
+        "noLogin": "このタブには再試行できる自動ログインがありません。",
+        "busy": "このページではまだ自動ログインが実行中です。",
+        "noMfa": "このタブには再試行できる自動 2FA がありません。",
+        "codeUsed": "現在の 2FA コードは既に使用されています。新しいコードが利用可能になったら再試行してください。",
+        "rateLimited": "自動ログインの再試行回数が多すぎます。しばらく待ってからもう一度お試しください。",
+        "noForm": "このページには入力できるサインインフォームがありません。サインインページを開いてから再試行してください。"
+      }
+    },
+    "proxyStuckRestartApp": "ブラウザーエンジンは新しいプライベートプロキシにも接続できず、ネットワーク接続が停止しています。このタブで閲覧を再開するには、アプリを再起動してください。"
   }
 }

@@ -3315,7 +3315,6 @@
     "macroManager": "宏管理器",
     "recordingManager": "录制管理器",
     "performanceMonitor": "性能监视器",
-    "actionLog": "操作日志",
     "toggleErrorLog": "Toggle错误日志",
     "devConsole": "打开dev控制台",
     "debugPanel": "调试面板",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "显示键盘快捷键管理器图标",
     "performanceMonitor": "性能监视器",
     "performanceMonitorTooltip": "显示实时性能监视器图标",
-    "actionLog": "行动日志",
-    "actionLogTooltip": "显示操作日志图标以查看最近的应用程序操作和事件",
     "devtools": "开发工具",
     "devtoolsTooltip": "显示用于检查应用程序 UI 的开发人员工具图标",
     "debugPanel": "调试面板",
@@ -9966,5 +9963,30 @@
     "loginDetails": "自动登录详情",
     "loginElapsed": "已用时：{{seconds}} 秒",
     "loginCompletionNote": "提交登录并不代表网站已接受。请检查网站是否需要验证或批准。"
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "重试登录",
+      "credentialsLabel": "使用已保存的凭据重试自动登录",
+      "mfa": "重试 2FA",
+      "mfaLabel": "使用新的 2FA 代码重试自动登录",
+      "noCredentials": "此连接没有为自动登录保存凭据。",
+      "noMfa": "此连接未选择用于自动 2FA 的身份验证器。",
+      "busy": "正在进行自动登录。",
+      "wait": "新的 2FA 代码将在 {{seconds}} 秒后可用。",
+      "startedCredentials": "正在此页面上重试自动登录。",
+      "startedMfa": "正在此页面上输入新的 2FA 代码。",
+      "unavailable": "无法在此页面上重试自动登录。此版本的浏览器可能尚不支持。",
+      "refused": {
+        "notCurrent": "在重试自动登录之前页面已更改。请重试。",
+        "noLogin": "此标签页没有可重试的自动登录。",
+        "busy": "此页面上的自动登录仍在进行中。",
+        "noMfa": "此标签页没有可重试的自动 2FA。",
+        "codeUsed": "当前 2FA 代码已被使用。请在新代码可用时重试。",
+        "rateLimited": "自动登录重试过于频繁。请稍候再试。",
+        "noForm": "此页面没有可填写的登录表单。请打开登录页面后重试。"
+      }
+    },
+    "proxyStuckRestartApp": "浏览器引擎仍无法连接到新的私有代理，其网络连接已卡住。请重新启动应用以恢复此标签页的浏览。"
   }
 }

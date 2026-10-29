@@ -59,12 +59,14 @@ test("renderer evidence uses owner-fenced fixed checkpoints, never page or crede
     /format!|log::|\.lock\(|\.await|\.url\(|credentials\./,
   );
   const checkpoints = [...feature.matchAll(/=>\s*\((\d+),\s*"([a-z-]+)"\)/g)];
-  assert.equal(checkpoints.length, 28);
-  assert.equal(new Set(checkpoints.map((m) => m[1])).size, 28);
+  assert.equal(checkpoints.length, 30);
+  assert.equal(new Set(checkpoints.map((m) => m[1])).size, 30);
   for (const [code, name] of [
     ["40", "login-challenge-waiting"],
     ["41", "login-challenge-reloading"],
     ["42", "login-challenge-timed-out"],
+    ["43", "consent-address-mismatch"],
+    ["44", "consent-expired"],
   ]) {
     assert.ok(checkpoints.some((m) => m[1] === code && m[2] === name));
   }

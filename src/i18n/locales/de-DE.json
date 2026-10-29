@@ -3315,7 +3315,6 @@
     "macroManager": "Makro-Manager",
     "recordingManager": "Aufzeichnungsmanager",
     "performanceMonitor": "Leistung Monitor",
-    "actionLog": "Aktionsprotokoll",
     "toggleErrorLog": "Toggle Fehler Log",
     "devConsole": "Entwicklerkonsole öffnen",
     "debugPanel": "Debug-Panel",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "Zeigen Sie das Symbol des Tastaturkürzel-Managers an",
     "performanceMonitor": "Leistungsmonitor",
     "performanceMonitorTooltip": "Zeigt das Symbol für die Echtzeit-Leistungsüberwachung an",
-    "actionLog": "Aktionsprotokoll",
-    "actionLogTooltip": "Zeigen Sie das Aktionsprotokollsymbol an, um aktuelle Anwendungsaktionen und -ereignisse zu überprüfen",
     "devtools": "Entwicklertools",
     "devtoolsTooltip": "Zeigen Sie das Entwicklertools-Symbol zum Überprüfen der Benutzeroberfläche der Anwendung an",
     "debugPanel": "Debug-Panel",
@@ -9966,5 +9963,30 @@
     "loginDetails": "Details der automatischen Anmeldung",
     "loginElapsed": "Vergangene Zeit: {{seconds}} s",
     "loginCompletionNote": "Das Senden der Anmeldung bestätigt nicht, dass die Website sie akzeptiert hat. Prüfen Sie die Website auf Bestätigungs- oder Genehmigungsanfragen."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "Anmeldung wiederholen",
+      "credentialsLabel": "Automatische Anmeldung mit den gespeicherten Zugangsdaten wiederholen",
+      "mfa": "2FA wiederholen",
+      "mfaLabel": "Automatische Anmeldung mit einem neuen 2FA-Code wiederholen",
+      "noCredentials": "Für diese Verbindung sind keine Zugangsdaten für die automatische Anmeldung gespeichert.",
+      "noMfa": "Für diese Verbindung ist kein Authentifikator für die automatische 2FA ausgewählt.",
+      "busy": "Die automatische Anmeldung läuft.",
+      "wait": "Ein neuer 2FA-Code ist in {{seconds}} s verfügbar.",
+      "startedCredentials": "Automatische Anmeldung wird auf dieser Seite erneut versucht.",
+      "startedMfa": "Ein neuer 2FA-Code wird auf dieser Seite eingegeben.",
+      "unavailable": "Die automatische Anmeldung konnte auf dieser Seite nicht erneut versucht werden. Diese Browserversion unterstützt das möglicherweise noch nicht.",
+      "refused": {
+        "notCurrent": "Die Seite hat sich geändert, bevor die automatische Anmeldung wiederholt werden konnte. Versuchen Sie es erneut.",
+        "noLogin": "Dieser Tab hat keine automatische Anmeldung, die wiederholt werden kann.",
+        "busy": "Die automatische Anmeldung läuft auf dieser Seite noch.",
+        "noMfa": "Dieser Tab hat keine automatische 2FA, die wiederholt werden kann.",
+        "codeUsed": "Der aktuelle 2FA-Code wurde bereits verwendet. Versuchen Sie es erneut, sobald ein neuer Code verfügbar ist.",
+        "rateLimited": "Die automatische Anmeldung wurde zu oft wiederholt. Warten Sie einen Moment und versuchen Sie es dann erneut.",
+        "noForm": "Diese Seite zeigt kein Anmeldeformular zum Ausfüllen. Öffnen Sie die Anmeldeseite und versuchen Sie es dann erneut."
+      }
+    },
+    "proxyStuckRestartApp": "Die Browser-Engine konnte auch einen neuen privaten Proxy nicht erreichen, ihre Netzwerkverbindung hängt. Starten Sie die App neu, um das Surfen in diesem Tab wiederherzustellen."
   }
 }

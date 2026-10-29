@@ -4,12 +4,26 @@
 use sorng_protocols::origin_browser::BrowserIdentity;
 use std::{sync::Mutex, time::Instant};
 
+/// Why a live attempt's grant did not deliver. Fixed codes only: never the
+/// origin that was asked about or any page text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ConsentRefusal {
+    /// The page asked from an origin outside the saved login destinations.
+    AddressMismatch,
+    /// The grant outlived its bound before this request.
+    Expired,
+}
+
+struct Grant {
+    active: bool,
+    expires: Instant,
+}
+
 pub(crate) struct AttemptConsent {
     identity: BrowserIdentity,
     origins: Vec<String>,
-    expires: Instant,
     auto_submit: bool,
-    active: Mutex<bool>,
+    grant: Mutex<Grant>,
 }
 
 impl AttemptConsent {
@@ -22,36 +36,55 @@ impl AttemptConsent {
         Self {
             identity,
             origins,
-            expires,
             auto_submit,
-            active: Mutex::new(true),
+            grant: Mutex::new(Grant {
+                active: true,
+                expires,
+            }),
         }
     }
 
     pub(crate) fn revoke(&self) {
-        *self.active.lock().unwrap_or_else(|e| e.into_inner()) = false;
+        self.grant.lock().unwrap_or_else(|e| e.into_inner()).active = false;
+    }
+
+    /// An explicit user retry approves this same attempt again, over the same
+    /// saved destinations and submission right. Waits for any delivery in
+    /// progress; a grant poisoned by a panicking delivery is never re-armed.
+    pub(crate) fn rearm(&self, expires: Instant) -> bool {
+        let Ok(mut grant) = self.grant.lock() else {
+            return false;
+        };
+        grant.active = true;
+        grant.expires = expires;
+        true
     }
 
     /// The grant stays locked throughout the synchronous borrowed delivery.
     /// Revocation cannot race a new delivery; no IO or awaiting is permitted.
+    /// Returns the reason a live, exact-attempt request was refused.
     pub(crate) fn with_current(
         &self,
         identity: &BrowserIdentity,
         origin: &str,
         now: Instant,
         deliver: &mut dyn FnMut(Instant, bool),
-    ) {
-        let Ok(active) = self.active.lock() else {
+    ) -> Option<ConsentRefusal> {
+        let Ok(grant) = self.grant.lock() else {
             // A panic during a previous delivery invalidates the grant. Never
             // recover an approving boolean from a poisoned delivery boundary.
-            return;
+            return None;
         };
-        if *active
-            && identity == &self.identity
-            && now < self.expires
-            && self.origins.iter().any(|candidate| candidate == origin)
-        {
-            deliver(self.expires, self.auto_submit);
+        if !grant.active || identity != &self.identity {
+            return None;
         }
+        if !self.origins.iter().any(|candidate| candidate == origin) {
+            return Some(ConsentRefusal::AddressMismatch);
+        }
+        if now >= grant.expires {
+            return Some(ConsentRefusal::Expired);
+        }
+        deliver(grant.expires, self.auto_submit);
+        None
     }
 }

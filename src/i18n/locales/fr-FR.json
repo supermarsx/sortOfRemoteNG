@@ -3315,7 +3315,6 @@
     "macroManager": "Macro Gestionnaire",
     "recordingManager": "Recording Gestionnaire",
     "performanceMonitor": "Moniteur de performance",
-    "actionLog": "Journal d'actions",
     "toggleErrorLog": "Toggle Erreur Log",
     "devConsole": "Ouvrir dev console",
     "debugPanel": "Panneau de débogage",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "Afficher l'icône du gestionnaire de raccourcis clavier",
     "performanceMonitor": "Moniteur de performances",
     "performanceMonitorTooltip": "Afficher l'icône du moniteur de performances en temps réel",
-    "actionLog": "Journal des actions",
-    "actionLogTooltip": "Afficher l'icône du journal des actions pour consulter les actions et événements récents de l'application",
     "devtools": "Outils de développement",
     "devtoolsTooltip": "Afficher l'icône des outils de développement pour inspecter l'interface utilisateur de l'application",
     "debugPanel": "Panneau de débogage",
@@ -9966,5 +9963,30 @@
     "loginDetails": "Détails de la connexion automatique",
     "loginElapsed": "Temps écoulé : {{seconds}} s",
     "loginCompletionNote": "L’envoi de la connexion ne confirme pas son acceptation par le site. Vérifiez si le site demande une vérification ou une approbation."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "Réessayer la connexion",
+      "credentialsLabel": "Réessayer la connexion automatique avec les identifiants enregistrés",
+      "mfa": "Réessayer la 2FA",
+      "mfaLabel": "Réessayer la connexion automatique avec un nouveau code 2FA",
+      "noCredentials": "Cette connexion n’a pas d’identifiants enregistrés pour la connexion automatique.",
+      "noMfa": "Aucun authentificateur n’est sélectionné pour la 2FA automatique sur cette connexion.",
+      "busy": "La connexion automatique est en cours.",
+      "wait": "Un nouveau code 2FA sera disponible dans {{seconds}} s.",
+      "startedCredentials": "Nouvelle tentative de connexion automatique sur cette page.",
+      "startedMfa": "Saisie d’un nouveau code 2FA sur cette page.",
+      "unavailable": "Impossible de réessayer la connexion automatique sur cette page. Cette version du navigateur ne le prend peut-être pas encore en charge.",
+      "refused": {
+        "notCurrent": "La page a changé avant que la connexion automatique puisse être réessayée. Réessayez.",
+        "noLogin": "Cet onglet n’a aucune connexion automatique à réessayer.",
+        "busy": "La connexion automatique est toujours en cours sur cette page.",
+        "noMfa": "Cet onglet n’a aucune 2FA automatique à réessayer.",
+        "codeUsed": "Le code 2FA actuel a déjà été utilisé. Réessayez lorsqu’un nouveau code sera disponible.",
+        "rateLimited": "La connexion automatique a été réessayée trop souvent. Patientez un instant, puis réessayez.",
+        "noForm": "Cette page n’affiche aucun formulaire de connexion à remplir. Ouvrez la page de connexion, puis réessayez."
+      }
+    },
+    "proxyStuckRestartApp": "Le moteur du navigateur n'a pas pu joindre un nouveau proxy privé non plus : sa connexion réseau est bloquée. Redémarrez l'application pour rétablir la navigation dans cet onglet."
   }
 }

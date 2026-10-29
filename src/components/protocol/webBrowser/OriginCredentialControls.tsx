@@ -17,6 +17,8 @@ import { useRuntimeVaultTotp } from "../../../hooks/security/useRuntimeVaultTotp
 import RuntimeVaultTotpPanel from "../../security/RuntimeVaultTotpPanel";
 import OriginCredentialCopyPanel from "./OriginCredentialCopyPanel";
 import WebTotpPanel from "./WebTotpPanel";
+import OriginAutoLoginRetryControls from "./OriginAutoLoginRetryControls";
+import type { OriginAutoLoginRetryController } from "../../../hooks/protocol/useOriginAutoLoginRetry";
 import { OriginCredentialTypeCode } from "./OriginCredentialCopyPanel";
 import {
   useOriginCredentialTyping,
@@ -188,6 +190,7 @@ export default function OriginCredentialControls({
   assertOwner,
   onOverlayChange,
   typingOptions,
+  autoLoginRetry,
 }: {
   session: ConnectionSession;
   connection: Connection;
@@ -199,6 +202,8 @@ export default function OriginCredentialControls({
     OriginCredentialTypingOptions,
     "open" | "sessionId" | "assertOwner"
   >;
+  /** Retry rows for automatic login; omitted where the tab cannot restart. */
+  autoLoginRetry?: OriginAutoLoginRetryController;
 }) {
   const { toast } = useToastContext();
   const vaultTotp = useRuntimeVaultTotp(session, connection);
@@ -294,14 +299,22 @@ export default function OriginCredentialControls({
           // the website to focus a field. Toast Cancel/Escape remain active.
           const closePanel = typing.suspended ? () => {} : onClose;
           const credentialActions = (
-            <div className="border-b border-[var(--color-border)] p-3">
-              <OriginCredentialCopyPanel
-                session={session}
-                connection={connection}
-                assertOwner={assertOwner}
-                typing={typing}
-              />
-            </div>
+            <>
+              {autoLoginRetry && (
+                <OriginAutoLoginRetryControls
+                  controller={autoLoginRetry}
+                  onRetry={closePanel}
+                />
+              )}
+              <div className="border-b border-[var(--color-border)] p-3">
+                <OriginCredentialCopyPanel
+                  session={session}
+                  connection={connection}
+                  assertOwner={assertOwner}
+                  typing={typing}
+                />
+              </div>
+            </>
           );
           return connection.credentialSource?.kind === "vault" ? (
             <RuntimeVaultTotpPanel

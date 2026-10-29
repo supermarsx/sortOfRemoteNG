@@ -3315,7 +3315,6 @@
     "macroManager": "Macro Gestor",
     "recordingManager": "Recording Gestor",
     "performanceMonitor": "Rendimiento Monitor",
-    "actionLog": "Registro de acciones",
     "toggleErrorLog": "Alternar registro de errores",
     "devConsole": "Abrir dev console",
     "debugPanel": "Panel de depuración",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "Mostrar el icono del administrador de atajos de teclado",
     "performanceMonitor": "Monitor de rendimiento",
     "performanceMonitorTooltip": "Mostrar el icono del monitor de rendimiento en tiempo real",
-    "actionLog": "Registro de acciones",
-    "actionLogTooltip": "Mostrar el ícono de registro de acciones para revisar acciones y eventos recientes de la aplicación",
     "devtools": "Herramientas de desarrollo",
     "devtoolsTooltip": "Mostrar el ícono de herramientas de desarrollador para inspeccionar la interfaz de usuario de la aplicación",
     "debugPanel": "Panel de depuración",
@@ -9966,5 +9963,30 @@
     "loginDetails": "Detalles del inicio de sesión automático",
     "loginElapsed": "Tiempo transcurrido: {{seconds}} s",
     "loginCompletionNote": "Enviar el inicio de sesión no confirma que el sitio lo haya aceptado. Compruebe si solicita verificación o aprobación."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "Reintentar inicio de sesión",
+      "credentialsLabel": "Reintentar el inicio de sesión automático con las credenciales guardadas",
+      "mfa": "Reintentar 2FA",
+      "mfaLabel": "Reintentar el inicio de sesión automático con un nuevo código 2FA",
+      "noCredentials": "Esta conexión no tiene credenciales guardadas para el inicio de sesión automático.",
+      "noMfa": "No hay ningún autenticador seleccionado para la 2FA automática en esta conexión.",
+      "busy": "El inicio de sesión automático está en curso.",
+      "wait": "Habrá un nuevo código 2FA disponible en {{seconds}} s.",
+      "startedCredentials": "Reintentando el inicio de sesión automático en esta página.",
+      "startedMfa": "Introduciendo un nuevo código 2FA en esta página.",
+      "unavailable": "No se pudo reintentar el inicio de sesión automático en esta página. Es posible que esta versión del navegador aún no lo admita.",
+      "refused": {
+        "notCurrent": "La página cambió antes de poder reintentar el inicio de sesión automático. Inténtalo de nuevo.",
+        "noLogin": "Esta pestaña no tiene ningún inicio de sesión automático que reintentar.",
+        "busy": "El inicio de sesión automático sigue en curso en esta página.",
+        "noMfa": "Esta pestaña no tiene ninguna 2FA automática que reintentar.",
+        "codeUsed": "El código 2FA actual ya se usó. Reinténtalo cuando haya un código nuevo disponible.",
+        "rateLimited": "El inicio de sesión automático se reintentó demasiadas veces. Espera un momento y vuelve a intentarlo.",
+        "noForm": "Esta página no muestra ningún formulario de inicio de sesión que rellenar. Abre la página de inicio de sesión y reinténtalo."
+      }
+    },
+    "proxyStuckRestartApp": "El motor del navegador tampoco pudo conectar con un proxy privado nuevo, así que su conexión de red está bloqueada. Reinicia la aplicación para volver a navegar en esta pestaña."
   }
 }

@@ -44,6 +44,8 @@ describe("native command inventory", () => {
       "origin_browser_page_menu",
       "origin_browser_recording",
       "origin_browser_appearance",
+      "origin_browser_cancel_login",
+      "origin_browser_retry_login",
     ]) {
       expect(commands.has(command)).toBe(true);
       expect(router).toContain(`"${command}"`);

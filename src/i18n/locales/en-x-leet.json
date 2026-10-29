@@ -3315,7 +3315,6 @@
     "macroManager": "M4cr0 M4n463r",
     "recordingManager": "R3c0rd1n6 M4n463r",
     "performanceMonitor": "P3rf0rm4nc3 M0n170r",
-    "actionLog": "4c710n 106",
     "toggleErrorLog": "706613 3rr0r 106",
     "devConsole": "0p3n d3v c0n5013",
     "debugPanel": "D38u6 P4n31",
@@ -3885,8 +3884,6 @@
     "shortcutManagerTooltip": "5h0w 7h3 k3y804rd 5h0r7cu7 m4n463r 1c0n",
     "performanceMonitor": "P3rf0rm4nc3 M0n170r",
     "performanceMonitorTooltip": "5h0w 7h3 real-time p3rf0rm4nc3 m0n170r 1c0n",
-    "actionLog": "4c710n 106",
-    "actionLogTooltip": "5h0w 7h3 4c710n 106 1c0n f0r r3v13w1n6 r3c3n7 4pp11c4710n 4c710n5 4nd 3v3n75",
     "devtools": "D3v70015",
     "devtoolsTooltip": "5h0w 7h3 d3v310p3r 70015 1c0n f0r 1n5p3c71n6 7h3 4pp11c4710n UI",
     "debugPanel": "D38u6 P4n31",
@@ -9966,5 +9963,30 @@
     "loginDetails": "4u70m471c 1061n d374115",
     "loginElapsed": "314p53d: {{seconds}} 5",
     "loginCompletionNote": "5u8m1771n6 4 1061n d035 n07 c0nf1rm 7h47 7h3 w385173 4cc3p73d 17. Ch3ck 7h3 w385173 f0r v3r1f1c4710n 0r 4ppr0v41 pr0mp75."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "R37ry sign-in",
+      "credentialsLabel": "R37ry 4u70m471c 1061n w17h 7h3 54v3d cr3d3n71415",
+      "mfa": "R37ry 2FA",
+      "mfaLabel": "R37ry 4u70m471c 1061n w17h 4 n3w 2FA c0d3",
+      "noCredentials": "7h15 c0nn3c710n h45 n0 54v3d cr3d3n71415 f0r 4u70m471c 1061n.",
+      "noMfa": "N0 4u7h3n71c470r 15 5313c73d f0r 4u70m471c 2FA 0n 7h15 c0nn3c710n.",
+      "busy": "4u70m471c 1061n 15 1n pr06r355.",
+      "wait": "4 n3w 2FA c0d3 15 4v4114813 1n {{seconds}} 5.",
+      "startedCredentials": "R37ry1n6 4u70m471c 1061n 0n 7h15 p463.",
+      "startedMfa": "3n73r1n6 4 n3w 2FA c0d3 0n 7h15 p463.",
+      "unavailable": "4u70m471c 1061n c0u1d n07 83 r37r13d 0n 7h15 p463. 7h15 v3r510n 0f 7h3 8r0w53r m4y n07 5upp0r7 17 y37.",
+      "refused": {
+        "notCurrent": "7h3 p463 ch4n63d 83f0r3 4u70m471c 1061n c0u1d 83 r37r13d. 7ry 4641n.",
+        "noLogin": "7h15 748 h45 n0 4u70m471c 1061n 70 r37ry.",
+        "busy": "4u70m471c 1061n 15 57111 runn1n6 0n 7h15 p463.",
+        "noMfa": "7h15 748 h45 n0 4u70m471c 2FA 70 r37ry.",
+        "codeUsed": "7h3 curr3n7 2FA c0d3 w45 41r34dy u53d. R37ry wh3n 4 n3w c0d3 15 4v4114813.",
+        "rateLimited": "4u70m471c 1061n w45 r37r13d 700 0f73n. W417 4 m0m3n7, 7h3n 7ry 4641n.",
+        "noForm": "7h15 p463 5h0w5 n0 sign-in f0rm 70 f111. 0p3n 7h3 sign-in p463, 7h3n r37ry."
+      }
+    },
+    "proxyStuckRestartApp": "7h3 8r0w53r 3n61n3 57111 c0u1d n07 r34ch 4 fr35h pr1v473 pr0xy, 50 175 n37w0rk c0nn3c710n 15 57uck. R3574r7 7h3 4pp 70 r3570r3 8r0w51n6 1n 7h15 748."
   }
 }

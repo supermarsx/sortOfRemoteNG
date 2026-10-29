@@ -3,7 +3,7 @@
 use super::*;
 use crate::totp::{core::generate_totp_at, types::Algorithm};
 use sorng_browser_host::native_totp::{NativeTotpCode, NativeTotpRequest};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static CATALOG: LazyLock<Value> = LazyLock::new(|| {
@@ -24,7 +24,16 @@ pub(super) struct NativeTotpAuthority {
     submit_delay: Duration,
     configuration: Value,
     used: AtomicBool,
+    /// Code period (time step) of the delivered code; `u64::MAX` before any.
+    used_step: AtomicU64,
     revoked: AtomicBool,
+}
+
+/// Why an explicit retry could not re-arm the one-code grant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TotpRearmRefusal {
+    /// The current period's code was already delivered: the same code again.
+    CodeUsed,
 }
 
 fn unavailable() -> NativeAuthorityError {
@@ -225,6 +234,7 @@ impl NativeTotpAuthority {
             submit_delay: Duration::from_millis(submit_delay),
             configuration,
             used: AtomicBool::new(false),
+            used_step: AtomicU64::new(u64::MAX),
             revoked: AtomicBool::new(false),
         }))
     }
@@ -234,6 +244,24 @@ impl NativeTotpAuthority {
     }
     pub(super) fn revoke(&self) {
         self.revoked.store(true, Ordering::Release);
+    }
+
+    /// An explicit user retry may type one more code, never the one already
+    /// typed: only once the code period has moved on. The owner lease and
+    /// every request check still apply to the code it then generates.
+    pub(super) fn rearm(&self, wall: SystemTime) -> Result<(), TotpRearmRefusal> {
+        let step = wall
+            .duration_since(UNIX_EPOCH)
+            .map(|time| time.as_secs() / u64::from(self.period))
+            .unwrap_or(u64::MAX);
+        if self.used.load(Ordering::Acquire)
+            && (step == u64::MAX || self.used_step.load(Ordering::Acquire) >= step)
+        {
+            return Err(TotpRearmRefusal::CodeUsed);
+        }
+        self.used.store(false, Ordering::Release);
+        self.revoked.store(false, Ordering::Release);
+        Ok(())
     }
 
     pub(super) fn current(&self, request: &NativeTotpRequest<'_>) -> bool {
@@ -314,6 +342,8 @@ impl NativeTotpAuthority {
         if !self.current(request) || self.used.swap(true, Ordering::AcqRel) {
             return None;
         }
+        self.used_step
+            .store(time.as_secs() / u64::from(self.period), Ordering::Release);
         deliver(NativeTotpCode {
             code: &code,
             valid_until: expires,
@@ -519,6 +549,63 @@ mod tests {
             UNIX_EPOCH + Duration::from_secs(1111111111),
             &mut |_| panic!("replayed"),
         );
+    }
+
+    #[tokio::test]
+    async fn an_explicit_rearm_never_types_the_same_period_code_again() {
+        let f = Fixture::new(row()).await;
+        let auth = f.authorize().await.unwrap();
+        let totp = auth.login.totp.as_ref().unwrap();
+        let now = Instant::now();
+        let at = |seconds| UNIX_EPOCH + Duration::from_secs(seconds);
+        // Nothing typed yet: a rearm is a no-op that keeps the grant usable.
+        assert_eq!(totp.rearm(at(1111111111)), Ok(()));
+        let mut typed = Vec::new();
+        totp.with_code_at(
+            &request(auth.policy.identity()),
+            now + Duration::from_secs(60),
+            false,
+            now,
+            at(1111111111),
+            &mut |code| typed.push(code.code.to_owned()),
+        );
+        assert_eq!(typed, ["14050471"]);
+        // Same 30 s period (1111111110..1111111139): refused, still one-shot.
+        assert_eq!(totp.rearm(at(1111111111)), Err(TotpRearmRefusal::CodeUsed));
+        assert_eq!(totp.rearm(at(1111111139)), Err(TotpRearmRefusal::CodeUsed));
+        totp.with_code_at(
+            &request(auth.policy.identity()),
+            now + Duration::from_secs(60),
+            false,
+            now,
+            at(1111111112),
+            &mut |_| panic!("replayed in the same period"),
+        );
+        // The next period re-arms exactly one more, different code.
+        assert_eq!(totp.rearm(at(1111111141)), Ok(()));
+        totp.with_code_at(
+            &request(auth.policy.identity()),
+            now + Duration::from_secs(60),
+            false,
+            now,
+            at(1111111141),
+            &mut |code| typed.push(code.code.to_owned()),
+        );
+        assert_eq!(typed.len(), 2);
+        assert_ne!(typed[0], typed[1]);
+        totp.with_code_at(
+            &request(auth.policy.identity()),
+            now + Duration::from_secs(60),
+            false,
+            now,
+            at(1111111141),
+            &mut |_| panic!("second code in one rearm"),
+        );
+        // A cancelled (revoked) grant is re-armed by an explicit retry, but
+        // only through the owner lease the request check still enforces.
+        totp.revoke();
+        assert_eq!(totp.rearm(at(1111111201)), Ok(()));
+        assert!(totp.current(&request(auth.policy.identity())));
     }
 
     #[tokio::test]

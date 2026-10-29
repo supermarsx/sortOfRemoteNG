@@ -26,6 +26,9 @@ pub(crate) const LOGIN_REQUEST: &str = "sorng.native.login.request.v1";
 pub(crate) const LOGIN_DELIVERY: &str = "sorng.native.login.delivery.v1";
 pub(crate) const LOGIN_DELIVERY_STATUS: &str = "sorng.native.login.delivery-status.v1";
 pub(crate) const FEATURE_STATUS: &str = "sorng.native.features.status.v1";
+/// Browser to renderer only: an explicit user retry re-runs the login client
+/// on the documents that are open now. Carries the origin and step name only.
+pub(crate) const LOGIN_RETRY: &str = "sorng.native.login.retry.v1";
 static NEXT_DOCUMENT: AtomicU64 = AtomicU64::new(1);
 type DocumentKey = (i32, String);
 
@@ -378,7 +381,11 @@ wrap_v8_handler! {
                 if matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
                     let supported = if event.starts_with("google-") { document.scope.adapter == NativeLoginAdapter::Google }
                         else { document.scope.adapter.accepts_stage(NativeLoginStage::Form) || document.scope.adapter.reviewed_provider() };
-                    if supported && !document.scope.delivered.is_empty() {
+                    // A completion needs a delivered grant. A rejection also
+                    // ends a page that asked for a step and never received
+                    // it (native refused), so the attempt cannot hang there.
+                    let asked = event.ends_with("-rejected") && !document.scope.requested.is_empty();
+                    if supported && (!document.scope.delivered.is_empty() || asked) {
                         return Some((frame, document.scope.origin.clone()));
                     }
                     return None;
@@ -620,6 +627,10 @@ fn receive(browser: &Browser, frame: &Frame, source: ProcessId, message: &Proces
         receive_automation(browser, frame, message);
         return 1;
     }
+    if source == ProcessId::BROWSER && CefString::from(&message.name()).to_string() == LOGIN_RETRY {
+        receive_retry(browser, frame, message);
+        return 1;
+    }
     if source != ProcessId::BROWSER
         || CefString::from(&message.name()).to_string() != LOGIN_DELIVERY
     {
@@ -629,6 +640,53 @@ fn receive(browser: &Browser, frame: &Frame, source: ProcessId, message: &Proces
     let outcome = receive_delivery(browser, frame, message).unwrap_or_else(|outcome| outcome);
     report_delivery(frame, outcome);
     1
+}
+
+/// Replay allowance for an explicit user retry: every CURRENT login document
+/// of this browser gets the login client installed again, with a fresh scope
+/// (new nonce, nothing requested or delivered). The superseded client's
+/// signals no longer match any scope. No reload, navigation or page script.
+fn receive_retry(browser: &Browser, frame: &Frame, message: &ProcessMessage) {
+    if frame.is_main() != 1 || frame.is_valid() != 1 {
+        return;
+    }
+    let Some(args) = message.argument_list().filter(|args| args.size() == 2) else {
+        return;
+    };
+    let (Some(origin), Some(step)) = (message_text(&args, 0, 1024), message_text(&args, 1, 16))
+    else {
+        return;
+    };
+    if crate::native_features::NativeLoginRetryStep::parse(&step).is_none()
+        || browser_frame_origin(frame).as_deref() != Some(origin.as_str())
+    {
+        return;
+    }
+    let contexts: Vec<V8Context> = DOCUMENTS.with(|documents| {
+        documents
+            .borrow()
+            .values()
+            .filter(|document| same_browser(&document.owner, browser) && document.context.is_valid() == 1)
+            .map(|document| document.context.clone())
+            .collect()
+    });
+    for mut context in contexts {
+        let Some(document_frame) = context.frame() else {
+            continue;
+        };
+        // Only a context that is still its frame's live document.
+        if document_frame.is_valid() != 1
+            || document_frame
+                .v8_context()
+                .is_none_or(|mut current| context.is_same(Some(&mut current)) != 1)
+            || context.enter() != 1
+        {
+            continue;
+        }
+        // No RefCell borrow is held across the page-visible factory call.
+        let _ = install(browser, &document_frame, &mut context);
+        context.exit();
+    }
 }
 
 fn receive_totp(browser: &Browser, frame: &Frame, message: &ProcessMessage) {

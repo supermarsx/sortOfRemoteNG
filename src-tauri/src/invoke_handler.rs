@@ -39,6 +39,7 @@ pub(crate) fn build() -> InvokeHandler {
         crate::origin_browser_commands::origin_browser_page_menu,
         crate::origin_browser_commands::origin_browser_manual_input,
         crate::origin_browser_commands::origin_browser_cancel_login,
+        crate::origin_browser_commands::origin_browser_retry_login,
         crate::origin_browser_commands::origin_browser_ssh_respond_to_command_review,
         crate::origin_browser_commands::origin_browser_ssh_cancel_pending_create,
         crate::origin_browser_recording::origin_browser_recording,

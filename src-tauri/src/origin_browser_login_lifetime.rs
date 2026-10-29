@@ -1,6 +1,6 @@
 //! Absolute native login-attempt bound, independent of renderer/UI activity.
 use std::{
-    sync::atomic::{AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
     time::{Duration, Instant},
 };
 
@@ -22,7 +22,10 @@ impl CancelReason {
 }
 
 pub(super) struct LoginLifetime {
-    deadline: Instant,
+    started: Instant,
+    /// Absolute deadline, as nanoseconds after `started`. Only an explicit
+    /// user retry moves it, never renderer or UI activity.
+    deadline_ns: AtomicU64,
     state: AtomicU8,
     last_completed: AtomicBool,
 }
@@ -30,19 +33,47 @@ pub(super) struct LoginLifetime {
 impl LoginLifetime {
     pub(super) fn new(started: Instant) -> Self {
         Self {
-            deadline: started + MAX_LOGIN_ATTEMPT,
+            started,
+            deadline_ns: AtomicU64::new(MAX_LOGIN_ATTEMPT.as_nanos() as u64),
             state: AtomicU8::new(0),
             last_completed: AtomicBool::new(false),
         }
     }
     pub(super) fn deadline(&self) -> Instant {
-        self.deadline
+        self.started + Duration::from_nanos(self.deadline_ns.load(Ordering::Acquire))
     }
     pub(super) fn active(&self, now: Instant) -> bool {
-        self.state.load(Ordering::Acquire) == 0 && now < self.deadline
+        self.state.load(Ordering::Acquire) == 0 && now < self.deadline()
     }
     pub(super) fn expired(&self, now: Instant) -> bool {
-        now >= self.deadline
+        now >= self.deadline()
+    }
+    /// An explicit user retry: a full new bound from `now`, and a cancelled or
+    /// timed-out attempt becomes active again. A browser revocation (`stop`)
+    /// stays terminal. Returns false when the attempt cannot be restarted.
+    pub(super) fn restart(&self, now: Instant) -> bool {
+        if self.state.load(Ordering::Acquire) == 3 {
+            return false;
+        }
+        let bound = now.saturating_duration_since(self.started) + MAX_LOGIN_ATTEMPT;
+        self.deadline_ns
+            .fetch_max(bound.as_nanos() as u64, Ordering::AcqRel);
+        self.last_completed.store(false, Ordering::Release);
+        loop {
+            match self.state.load(Ordering::Acquire) {
+                0 => return true,
+                3 => return false,
+                current => {
+                    if self
+                        .state
+                        .compare_exchange(current, 0, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
     }
     /// Presentation only: a renderer checkpoint is not authenticated success
     /// and must never extend or revoke the underlying multi-stage grant.
@@ -148,6 +179,43 @@ mod tests {
                 .count(),
             1
         );
+    }
+    #[test]
+    fn an_explicit_restart_renews_the_bound_and_revives_a_cancelled_or_timed_out_attempt() {
+        let now = Instant::now();
+        let life = LoginLifetime::new(now);
+        let later = now + Duration::from_secs(1800);
+        assert!(life.restart(later));
+        assert_eq!(life.deadline(), later + MAX_LOGIN_ATTEMPT);
+        assert!(life.active(now + MAX_LOGIN_ATTEMPT));
+        // An earlier timer firing at the old bound cannot expire it.
+        assert_eq!(
+            life.cancel(CancelReason::AttemptTimeout, now + MAX_LOGIN_ATTEMPT),
+            None
+        );
+        assert_eq!(
+            life.cancel(CancelReason::UserCancelled, later),
+            Some(CancelReason::UserCancelled)
+        );
+        assert!(!life.active(later));
+        assert!(life.restart(later));
+        assert!(life.active(later));
+        let expired = LoginLifetime::new(now);
+        assert_eq!(
+            expired.cancel(CancelReason::AttemptTimeout, expired.deadline()),
+            Some(CancelReason::AttemptTimeout)
+        );
+        assert!(expired.restart(expired.deadline()));
+        assert!(expired.active(expired.deadline() - Duration::from_secs(1)));
+    }
+    #[test]
+    fn a_browser_revocation_cannot_be_restarted() {
+        let now = Instant::now();
+        let life = LoginLifetime::new(now);
+        life.stop();
+        assert!(!life.restart(now));
+        assert!(!life.active(now));
+        assert_eq!(life.deadline(), now + MAX_LOGIN_ATTEMPT);
     }
     #[test]
     fn completed_checkpoint_expires_grants_without_relabeling_the_finished_display() {

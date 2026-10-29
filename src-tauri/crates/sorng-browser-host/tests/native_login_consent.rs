@@ -228,3 +228,86 @@ fn a_panicking_delivery_poisoning_the_grant_cannot_authorize_another_delivery() 
     });
     grant.revoke();
 }
+
+#[test]
+fn refusals_name_only_a_fixed_cause_for_the_live_exact_attempt() {
+    use consent::ConsentRefusal;
+    let owner = identity("db", "tab");
+    let now = Instant::now();
+    let expires = now + Duration::from_secs(60);
+    let grant = AttemptConsent::approved(
+        owner.clone(),
+        vec!["https://login.example".into()],
+        expires,
+        true,
+    );
+    let mut delivered = 0;
+    let mut never = |_: Instant, _: bool| delivered += 1;
+    assert_eq!(
+        grant.with_current(&owner, "https://dsm.example:5001", now, &mut never),
+        Some(ConsentRefusal::AddressMismatch)
+    );
+    assert_eq!(
+        grant.with_current(&owner, "https://login.example", expires, &mut never),
+        Some(ConsentRefusal::Expired)
+    );
+    // Another attempt or a revoked grant is not this attempt's diagnosis.
+    assert_eq!(
+        grant.with_current(&identity("db", "tab"), "https://login.example", now, &mut never),
+        None
+    );
+    grant.revoke();
+    assert_eq!(
+        grant.with_current(&owner, "https://login.example", now, &mut never),
+        None
+    );
+    assert_eq!(delivered, 0);
+}
+
+#[test]
+fn an_explicit_rearm_approves_only_the_same_attempt_destinations_and_submission_right() {
+    let owner = identity("db", "tab");
+    let now = Instant::now();
+    let grant = AttemptConsent::approved(
+        owner.clone(),
+        vec!["https://login.example".into()],
+        now + Duration::from_secs(60),
+        false,
+    );
+    grant.revoke();
+    let later = now + Duration::from_secs(120);
+    assert!(grant.rearm(later + Duration::from_secs(60)));
+    let mut rights = None;
+    grant.with_current(&owner, "https://login.example", later, &mut |until, submit| {
+        rights = Some((until, submit));
+    });
+    assert_eq!(rights, Some((later + Duration::from_secs(60), false)));
+    grant.with_current(&owner, "https://cdn.example", later, &mut |_, _| {
+        panic!("rearm widened the destinations")
+    });
+    grant.with_current(&identity("db", "tab"), "https://login.example", later, &mut |_, _| {
+        panic!("rearm admitted another attempt")
+    });
+}
+
+#[test]
+fn a_poisoned_grant_is_never_rearmed() {
+    let owner = identity("db", "tab");
+    let now = Instant::now();
+    let grant = AttemptConsent::approved(
+        owner.clone(),
+        vec!["https://login.example".into()],
+        now + Duration::from_secs(60),
+        true,
+    );
+    assert!(std::panic::catch_unwind(|| {
+        grant.with_current(&owner, "https://login.example", now, &mut |_, _| {
+            panic!("synthetic delivery failure");
+        });
+    })
+    .is_err());
+    assert!(!grant.rearm(now + Duration::from_secs(600)));
+    grant.with_current(&owner, "https://login.example", now, &mut |_, _| {
+        panic!("poisoned grant re-armed");
+    });
+}

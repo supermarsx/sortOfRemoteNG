@@ -3724,6 +3724,104 @@ describe("real-origin connection-tab integration", () => {
       }),
     );
   });
+  it("retries automatic login from Credentials & 2FA in place, without reloading or reconnecting", async () => {
+    f.context.state.connections = [
+      {
+        ...connection,
+        password: "saved",
+        httpApplication: { version: 1, id: "gitea", loginMode: "form" },
+      },
+    ];
+    await attached();
+    fireEvent.click(screen.getByRole("button", { name: "Credentials & 2FA" }));
+    await screen.findByRole("region", { name: "Credentials & 2FA" });
+    expect(
+      screen.getByRole("button", {
+        name: /Retry automatic login with a new 2FA code/,
+      }),
+    ).toBeDisabled();
+    const before = f.invoke.mock.calls.length;
+    const native = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation(async (command, args) =>
+      command === "origin_browser_retry_login"
+        ? { status: "started" }
+        : native(command, args),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Retry automatic login with the saved credentials",
+      }),
+    );
+    await waitFor(() =>
+      expect(calls("origin_browser_retry_login")).toHaveLength(1),
+    );
+    expect(calls("origin_browser_retry_login")[0][1]).toEqual({
+      request: {
+        identity: {
+          ownerDatabaseId: "database-1",
+          connectionId: "connection-1",
+          sessionId: "tab-1",
+          attemptId: "attempt-1",
+        },
+        step: "credentials",
+      },
+    });
+    expect(
+      await screen.findByText("Retrying automatic login on this page."),
+    ).toBeTruthy();
+    // In place: no reload, navigation, reconnect or replacement attempt, and
+    // the shell never sends a credential itself.
+    const after = f.invoke.mock.calls
+      .slice(before)
+      .map(([command, args]) => [command, args?.request?.action?.kind]);
+    for (const [command, kind] of after) {
+      expect(command).not.toMatch(
+        /^origin_browser_(close|create|navigate|manual_input|automation)$/,
+      );
+      if (command === "origin_browser_control")
+        expect(["reload", "back", "forward", "stop"]).not.toContain(kind);
+    }
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(
+      screen.queryByRole("status", { name: "Browser reconnection" }),
+    ).toBeNull();
+  });
+  it("reports a host without in-place retry instead of reconnecting", async () => {
+    f.context.state.connections = [
+      {
+        ...connection,
+        password: "saved",
+        httpApplication: { version: 1, id: "gitea", loginMode: "form" },
+      },
+    ];
+    await attached();
+    const native = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation(async (command, args) => {
+      if (command === "origin_browser_retry_login")
+        throw new Error("Command origin_browser_retry_login not found");
+      return native(command, args);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Credentials & 2FA" }));
+    await screen.findByRole("region", { name: "Credentials & 2FA" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Retry automatic login with the saved credentials",
+      }),
+    );
+    expect(
+      await screen.findByText(
+        /Automatic login could not be retried on this page/,
+      ),
+    ).toBeTruthy();
+    expect(calls("origin_browser_close")).toHaveLength(0);
+    expect(calls("origin_browser_create")).toHaveLength(1);
+  });
+  it("offers no auto-login retry for a connection that signs in manually", async () => {
+    await attached();
+    fireEvent.click(screen.getByRole("button", { name: "Credentials & 2FA" }));
+    await screen.findByRole("region", { name: "Credentials & 2FA" });
+    expect(screen.queryByTestId("origin-auto-login-retry")).toBeNull();
+  });
   it("reads every restart reason of the hook", () => {
     expect(restartReasons).toEqual(
       expect.arrayContaining(["requested", "source-changed"]),

@@ -151,6 +151,25 @@ impl State {
         self.pending = None;
         self.keyboard.cancel();
     }
+
+    /// A one-time code or a credential is being typed, or a stage request is
+    /// held for the manual-input slot: a retry now would race that entry.
+    pub(super) fn entering(&self) -> bool {
+        self.pending.is_some() || self.keyboard.busy() || self.held_stages != 0
+    }
+
+    /// Explicit user retry allowance: the page may start code entry again.
+    /// Which code, if any, is still decided by the owner's one-code grant.
+    pub(super) fn rearm_code_entry(&mut self) {
+        if self.pending.is_none() {
+            self.starts = 0;
+        }
+    }
+
+    /// Explicit user credentials retry: typing starts over with the budget.
+    pub(super) fn restart_typing(&mut self) {
+        self.keyboard.restart();
+    }
 }
 
 /// Keep document checks separate from the non-reentrant consent boundary.
@@ -768,6 +787,21 @@ mod tests {
         }
         shared.state.lock().unwrap().control.begin_close(&shared.identity).unwrap();
         assert!(!automatic_input_current(&shared, &browser));
+    }
+
+    #[test]
+    fn a_retry_waits_for_entry_and_rearms_only_code_entry_starts() {
+        let mut state = State::default();
+        assert!(!state.entering());
+        state.starts = 2;
+        state.rearm_code_entry();
+        assert_eq!(state.starts, 0);
+        // A held stage request is about to type: a retry would race it.
+        state.held_stages = 1;
+        assert!(state.entering());
+        state.held_stages = 0;
+        state.restart_typing();
+        assert!(!state.entering());
     }
 
     #[test]

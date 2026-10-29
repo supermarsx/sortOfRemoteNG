@@ -3315,7 +3315,6 @@
     "macroManager": "Macro Manager",
     "recordingManager": "Recording Manager",
     "performanceMonitor": "Performance Monitor",
-    "actionLog": "Action Log",
     "toggleErrorLog": "Toggle Error Log",
     "devConsole": "Open dev console",
     "debugPanel": "Debug Panel",
@@ -3885,8 +3884,6 @@
     "shortcutManagerTooltip": "Show the keyboard shortcut manager icon",
     "performanceMonitor": "Performance Monitor",
     "performanceMonitorTooltip": "Show the real-time performance monitor icon",
-    "actionLog": "Action Log",
-    "actionLogTooltip": "Show the action log icon for reviewing recent application actions and events",
     "devtools": "Devtools",
     "devtoolsTooltip": "Show the developer tools icon for inspecting the application UI",
     "debugPanel": "Debug Panel",
@@ -9966,5 +9963,30 @@
     "loginDetails": "Automatic login details",
     "loginElapsed": "Elapsed: {{seconds}} s",
     "loginCompletionNote": "Submitting a login does not confirm that the website accepted it. Check the website for verification or approval prompts."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "Retry sign-in",
+      "credentialsLabel": "Retry automatic login with the saved credentials",
+      "mfa": "Retry 2FA",
+      "mfaLabel": "Retry automatic login with a new 2FA code",
+      "noCredentials": "This connection has no saved credentials for automatic login.",
+      "noMfa": "No authenticator is selected for automatic 2FA on this connection.",
+      "busy": "Automatic login is in progress.",
+      "wait": "A new 2FA code is available in {{seconds}} s.",
+      "startedCredentials": "Retrying automatic login on this page.",
+      "startedMfa": "Entering a new 2FA code on this page.",
+      "unavailable": "Automatic login could not be retried on this page. This version of the browser may not support it yet.",
+      "refused": {
+        "notCurrent": "The page changed before automatic login could be retried. Try again.",
+        "noLogin": "This tab has no automatic login to retry.",
+        "busy": "Automatic login is still running on this page.",
+        "noMfa": "This tab has no automatic 2FA to retry.",
+        "codeUsed": "The current 2FA code was already used. Retry when a new code is available.",
+        "rateLimited": "Automatic login was retried too often. Wait a moment, then try again.",
+        "noForm": "This page shows no sign-in form to fill. Open the sign-in page, then retry."
+      }
+    },
+    "proxyStuckRestartApp": "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab."
   }
 }

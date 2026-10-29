@@ -33,6 +33,20 @@ struct Pending {
 }
 
 impl State {
+    /// Keys of a released stage are being sent right now.
+    pub(super) fn busy(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// An explicit user credentials retry starts this attempt's typing record
+    /// again, together with the login budget it settles into. Callers first
+    /// check that nothing is being typed.
+    pub(super) fn restart(&mut self) {
+        if self.pending.is_none() {
+            *self = Self::default();
+        }
+    }
+
     pub(super) fn cancel(&mut self) {
         if let Some(pending) = self.pending.take() {
             self.stopped(&pending.origin, pending.stage);

@@ -501,6 +501,42 @@ pub enum NativeFeatureStatus {
     LoginDelivery(NativeLoginDeliveryStatus),
 }
 
+/// The automatic-login step an explicit user retry re-runs on the page that
+/// is open now. A retry never reloads, navigates or reconnects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLoginRetryStep {
+    Credentials,
+    Mfa,
+}
+
+impl NativeLoginRetryStep {
+    pub fn wire(self) -> &'static str {
+        match self {
+            Self::Credentials => "credentials",
+            Self::Mfa => "mfa",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "credentials" => Some(Self::Credentials),
+            "mfa" => Some(Self::Mfa),
+            _ => None,
+        }
+    }
+}
+
+/// Host-side reasons a retry did not start. Fixed codes, no page data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLoginRetryRefusal {
+    /// Text is being entered, a manual-input slot owns the keyboard, or the
+    /// page is still loading.
+    Busy,
+    /// The open page has no login document this attempt may fill.
+    NoForm,
+    /// The native owner declined to re-arm its grant.
+    Owner,
+}
+
 /// Fixed, secret-free checkpoints. No page strings, nonce or credential data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLoginDeliveryStatus {
@@ -1713,6 +1749,16 @@ mod tests {
         assert!(!budget.cancelled(provider, origin, Identifier));
         assert!(!reserve(&mut budget, Identifier));
         assert!(!reserve(&mut budget, IdentifierSubmit));
+    }
+
+    #[test]
+    fn retry_steps_have_exactly_two_fixed_wire_names() {
+        for step in [NativeLoginRetryStep::Credentials, NativeLoginRetryStep::Mfa] {
+            assert_eq!(NativeLoginRetryStep::parse(step.wire()), Some(step));
+        }
+        for other in ["", "Credentials", "mfa ", "totp", "password", "credentials|mfa"] {
+            assert_eq!(NativeLoginRetryStep::parse(other), None);
+        }
     }
 
     #[test]

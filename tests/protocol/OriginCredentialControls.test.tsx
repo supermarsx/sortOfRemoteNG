@@ -12,6 +12,7 @@ import OriginCredentialControls from "../../src/components/protocol/webBrowser/O
 import { PopoverSurface } from "../../src/components/ui/overlays/PopoverSurface";
 import type { ToastUpdate } from "../../src/components/ui/dialogs/Toast";
 import type { CredentialTypingTarget } from "../../src/utils/security/credentialTyping";
+import type { OriginAutoLoginRetryController } from "../../src/hooks/protocol/useOriginAutoLoginRetry";
 import type {
   OriginCredentialInputRequest,
   OriginCredentialInputReply,
@@ -112,12 +113,14 @@ function Harness({
   transport,
   vault = false,
   protocol = "https",
+  autoLoginRetry,
 }: {
   transport: (
     request: OriginCredentialInputRequest,
   ) => Promise<OriginCredentialInputReply>;
   vault?: boolean;
   protocol?: "http" | "https";
+  autoLoginRetry?: OriginAutoLoginRetryController;
 }) {
   const [overlay, setOverlay] = useState(false);
   const connection = useRef({
@@ -152,6 +155,7 @@ function Harness({
             return mutate(2);
           },
         }}
+        autoLoginRetry={autoLoginRetry}
       />
     </>
   );
@@ -205,6 +209,51 @@ function cancelNotification() {
 }
 
 describe("native credential toolbar parity", () => {
+  it.each([false, true])(
+    "offers auto-login retry in the Credentials & 2FA panel and closes it first (vault: %s)",
+    async (vault) => {
+      const retry = vi.fn(async () => ({ status: "started" as const }));
+      const controller: OriginAutoLoginRetryController = {
+        enabled: true,
+        credentials: { available: true, reason: null },
+        mfa: { available: false, reason: "no-mfa" },
+        pending: false,
+        waitSeconds: 0,
+        retry,
+      };
+      const request = transport();
+      render(
+        <Harness
+          transport={request}
+          vault={vault}
+          autoLoginRetry={controller}
+        />,
+      );
+      await open();
+      expect(
+        screen.getByRole("button", {
+          name: /Retry automatic login with a new 2FA code/,
+        }),
+      ).toBeDisabled();
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Retry automatic login with the saved credentials",
+        }),
+      );
+      expect(retry).toHaveBeenCalledExactlyOnceWith("credentials");
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("region", { name: "Credentials & 2FA" }),
+        ).toBeNull(),
+      );
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+  it("shows no retry row without a retry controller", async () => {
+    render(<Harness transport={transport()} />);
+    await open();
+    expect(screen.queryByTestId("origin-auto-login-retry")).toBeNull();
+  });
   it.each(["username", "password", "code"])(
     "warns before explicit HTTP %s typing and still waits for a native capture",
     async (field) => {

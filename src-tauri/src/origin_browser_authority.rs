@@ -87,6 +87,7 @@ mod certificates;
 mod credentials;
 #[path = "origin_browser_totp.rs"]
 mod native_totp;
+pub use native_totp::TotpRearmRefusal;
 #[path = "origin_browser_basic_auth.rs"]
 mod basic_auth;
 #[path = "origin_browser_login_steps.rs"]
@@ -253,6 +254,17 @@ impl NativeLoginAuthority {
 
     pub fn revoke_totp(&self) {
         if let Some(totp) = &self.totp { totp.revoke(); }
+    }
+
+    /// A saved authenticator is selected for automatic 2FA on this attempt.
+    pub fn has_totp(&self) -> bool {
+        self.totp.is_some()
+    }
+
+    /// Explicit user retry only: allow one more code once the period of the
+    /// last delivered code has passed. No authenticator is a no-op.
+    pub fn rearm_totp(&self) -> Result<(), TotpRearmRefusal> {
+        self.totp.as_ref().map_or(Ok(()), |totp| totp.rearm(std::time::SystemTime::now()))
     }
 
     pub fn totp_current(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>,

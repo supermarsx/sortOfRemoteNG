@@ -19,6 +19,8 @@ mod context_menu;
 pub use cef_find::{NativeFindCompletion, NativeFindResult};
 #[path = "cef_login_totp.rs"]
 mod login_totp;
+#[path = "cef_login_retry.rs"]
+mod login_retry;
 use crate::cef_requests::{navigation_allowed, request_handler_with_lifecycle, RequestLifecycle};
 use crate::control::{BrowserControl, ControlError, Lifecycle, ViewportBounds};
 use crate::domain_permissions::WebsitePermissionEngine;
@@ -181,6 +183,71 @@ pub struct BrowserEvent {
 pub struct BrowserDisplayState {
     pub url: String,
     pub title: String,
+    /// `data:image/png;base64,...` of this page's favicon, at most
+    /// `MAX_FAVICON_DATA_URL` bytes, or empty. Fetched by the engine through
+    /// this attempt's own context and relay, never by the shell webview.
+    pub favicon: String,
+}
+
+impl BrowserDisplayState {
+    fn copy(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            title: self.title.clone(),
+            favicon: self.favicon.clone(),
+        }
+    }
+}
+
+/// Bound on the favicon `data:` URL handed to the owner window.
+pub const MAX_FAVICON_DATA_URL: usize = 64 * 1024;
+/// Requested favicon size in pixels; the engine scales larger icons down.
+const FAVICON_PIXELS: u32 = 32;
+const FAVICON_PNG_PREFIX: &str = "data:image/png;base64,";
+
+/// A favicon address the engine may fetch: plain http(s), no credentials,
+/// bounded. Anything else leaves the tab on its default icon.
+fn favicon_source(value: &str) -> bool {
+    value.len() <= 2_048
+        && display_text_safe(value, 2_048)
+        && !value.contains('\\')
+        && url::Url::parse(value).is_ok_and(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+        })
+}
+
+/// Encode engine-decoded PNG bytes as a bounded `data:` URL. Only bytes that
+/// start with the PNG signature are accepted; the result is never larger
+/// than `MAX_FAVICON_DATA_URL`.
+fn favicon_data_url(png: &[u8]) -> Option<String> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if png.len() <= SIGNATURE.len()
+        || !png.starts_with(SIGNATURE)
+        || FAVICON_PNG_PREFIX.len() + png.len().div_ceil(3) * 4 > MAX_FAVICON_DATA_URL
+    {
+        return None;
+    }
+    let mut url = String::with_capacity(FAVICON_PNG_PREFIX.len() + png.len().div_ceil(3) * 4);
+    url.push_str(FAVICON_PNG_PREFIX);
+    for chunk in png.chunks(3) {
+        let bits = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |bits, (index, byte)| bits | (u32::from(*byte) << (16 - 8 * index)));
+        for index in 0..4 {
+            url.push(if index <= chunk.len() {
+                char::from(ALPHABET[((bits >> (18 - 6 * index)) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    Some(url)
 }
 
 fn display_text_safe(value: &str, max: usize) -> bool {
@@ -1026,10 +1093,7 @@ fn emit_state(
             identity: identity.clone(),
             sequence: state.sequence,
             state: state.page.clone(),
-            display: BrowserDisplayState {
-                url: state.display.url.clone(),
-                title: state.display.title.clone(),
-            },
+            display: state.display.copy(),
         }
     };
     catch_unwind(AssertUnwindSafe(|| sink.on_event(event))).is_ok()
@@ -3675,7 +3739,23 @@ wrap_display_handler! {
                 state.page.title = RedactedTitle::Empty;
                 state.display.url = display_url(&native_url);
                 state.display.title.clear();
+                // A favicon never carries over to another address.
+                state.display.favicon.clear();
             });
+        }
+        fn on_favicon_urlchange(&self, browser: Option<&mut Browser>, icon_urls: Option<&mut CefStringList>) {
+            let (Some(browser), Some(icon_urls)) = (browser, icon_urls) else { return; };
+            if !self.shared.accepts(Some(browser)) { return; }
+            let Some(frame) = browser.main_frame().filter(|frame| frame.is_valid() == 1 && frame.is_main() == 1) else { return; };
+            let page = display_url(&CefString::from(&frame.url()).to_string());
+            if page.is_empty() || page == "about:blank" { return; }
+            // The page lists its candidates; the engine picks the best size.
+            let Some(icon) = icon_urls.clone().into_iter().take(16).find(|url| favicon_source(url)) else { return; };
+            let Some(host) = browser.host() else { return; };
+            let mut callback = NativeFavicon::new(Arc::downgrade(&self.shared), browser.clone(), page);
+            // Downloaded by the engine for this browser: its own request
+            // context, proxy and request policy, never the shell webview.
+            host.download_image(Some(&CefString::from(icon.as_str())), 1, FAVICON_PIXELS, 0, Some(&mut callback));
         }
         fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
             let Some(browser) = browser else { return; };
@@ -3697,6 +3777,27 @@ wrap_display_handler! {
         fn on_contents_bounds_change(&self, _browser: Option<&mut Browser>, _new_bounds: Option<&Rect>) -> i32 { 1 }
         fn on_fullscreen_mode_change(&self, browser: Option<&mut Browser>, fullscreen: i32) {
             if fullscreen != 0 { if let Some(host) = browser.and_then(|browser| browser.host()) { host.exit_fullscreen(0); } }
+        }
+    }
+}
+
+wrap_download_image_callback! {
+    struct NativeFavicon { shared: std::sync::Weak<Shared>, browser: Browser, page: String }
+    impl DownloadImageCallback {
+        fn on_download_image_finished(&self, _image_url: Option<&CefString>, _http_status_code: i32, image: Option<&mut Image>) {
+            let Some(shared) = self.shared.upgrade() else { return; };
+            let Some(image) = image.filter(|image| image.is_empty() != 1) else { return; };
+            let Some(png) = image.as_png(1.0, 1, None, None) else { return; };
+            let size = png.size();
+            if size == 0 || size > MAX_FAVICON_DATA_URL { return; }
+            let mut bytes = vec![0; size];
+            if png.data(Some(&mut bytes), 0) != size { return; }
+            let Some(favicon) = favicon_data_url(&bytes) else { return; };
+            let page = self.page.clone();
+            // Only for the page that asked: a later address clears it instead.
+            shared.update_state(Some(&self.browser), move |state| {
+                if state.display.url == page { state.display.favicon = favicon; }
+            });
         }
     }
 }
@@ -4144,6 +4245,67 @@ mod native_surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn favicon_sources_are_plain_bounded_web_addresses() {
+        for accepted in [
+            "https://example.test/favicon.ico",
+            "http://phone.test:8080/img/fav.png",
+            "https://cdn.example.test/icons/32.png?v=3",
+        ] {
+            assert!(favicon_source(accepted), "{accepted}");
+        }
+        let long = format!("https://example.test/{}", "a".repeat(2_100));
+        for rejected in [
+            "",
+            "data:image/png;base64,iVBORw0KGgo=",
+            "javascript:alert(1)",
+            "file:///C:/icon.png",
+            "chrome://favicon/https://example.test",
+            "https://user:secret@example.test/favicon.ico",
+            "https://example.test/fav\u{202e}.ico",
+            "https://example.test/a\\b.ico",
+            long.as_str(),
+        ] {
+            assert!(!favicon_source(rejected), "{rejected}");
+        }
+    }
+
+    #[test]
+    fn favicon_data_urls_are_bounded_png_base64() {
+        let png = |extra: usize| {
+            let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+            bytes.extend((0..extra).map(|i| i as u8));
+            bytes
+        };
+        // Standard padded base64, checked against known encodings.
+        assert_eq!(
+            favicon_data_url(&png(1)).unwrap(),
+            "data:image/png;base64,iVBORw0KGgoA"
+        );
+        assert_eq!(
+            favicon_data_url(&png(2)).unwrap(),
+            "data:image/png;base64,iVBORw0KGgoAAQ=="
+        );
+        assert_eq!(
+            favicon_data_url(&png(3)).unwrap(),
+            "data:image/png;base64,iVBORw0KGgoAAQI="
+        );
+        assert_eq!(
+            favicon_data_url(&png(4)).unwrap(),
+            "data:image/png;base64,iVBORw0KGgoAAQID"
+        );
+        for size in [1, 100, 1_000, 40_000] {
+            let url = favicon_data_url(&png(size)).unwrap();
+            assert!(url.len() <= MAX_FAVICON_DATA_URL);
+            assert_eq!((url.len() - FAVICON_PNG_PREFIX.len()) % 4, 0);
+        }
+        // Not a PNG, only a signature, or too large for the bound.
+        assert_eq!(favicon_data_url(b"GIF89a-not-a-png"), None);
+        assert_eq!(favicon_data_url(b"\x89PNG\r\n\x1a\n"), None);
+        assert_eq!(favicon_data_url(&[]), None);
+        assert_eq!(favicon_data_url(&png(MAX_FAVICON_DATA_URL)), None);
+    }
 
     #[test]
     fn renderer_diagnostics_pin_precedes_closed_optional_metadata() {

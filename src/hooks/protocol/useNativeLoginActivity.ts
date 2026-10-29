@@ -22,6 +22,8 @@ export const nativeLoginReasonCodes = [
   "adapter-rejected",
   "challenge-timeout",
   "grant-rejected",
+  "address-mismatch",
+  "consent-expired",
   "attempt-stopped",
   "user-cancelled",
   "attempt-timeout",
@@ -40,6 +42,9 @@ export interface NativeLoginActivity {
   reasonCode?: NativeLoginReasonCode;
   /** Derived from preceding events in this exact attempt, not payload text. */
   lastActiveStage?: NativeLoginStage;
+  /** Native time of this tab's latest one-time-code entry, in any attempt.
+   * Lets a retry wait for the next code period instead of reusing a code. */
+  codeTypedAtMs?: number;
 }
 
 /** Keep only native-owned identifiers and fixed stages, never payload text. */
@@ -125,6 +130,12 @@ export function useNativeLoginActivity(sessionIds: readonly string[]) {
           !specific(event.reasonCode)
             ? prior.reasonCode
             : event.reasonCode;
+        const codeTypedAtMs =
+          event.stage === "typing-code"
+            ? event.timestampMs
+            : prior?.connectionId === event.connectionId
+              ? prior.codeTypedAtMs
+              : undefined;
         return {
           ...current,
           [event.sessionId]: {
@@ -132,6 +143,7 @@ export function useNativeLoginActivity(sessionIds: readonly string[]) {
             ...(reasonCode ? { reasonCode } : {}),
             observedAtMs: performance.now(),
             ...(lastActiveStage ? { lastActiveStage } : {}),
+            ...(codeTypedAtMs === undefined ? {} : { codeTypedAtMs }),
           },
         };
       });

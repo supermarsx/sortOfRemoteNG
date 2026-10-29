@@ -3315,7 +3315,6 @@
     "macroManager": "Macro Gestor",
     "recordingManager": "Recording Gestor",
     "performanceMonitor": "Desempenho Monitor",
-    "actionLog": "Registo de ações",
     "toggleErrorLog": "Toggle Erro Log",
     "devConsole": "Abrir dev console",
     "debugPanel": "Painel de depuração",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "Mostrar o ícone do gerenciador de atalhos de teclado",
     "performanceMonitor": "Monitor de desempenho",
     "performanceMonitorTooltip": "Mostrar o ícone do monitor de desempenho em tempo real",
-    "actionLog": "Registro de ações",
-    "actionLogTooltip": "Mostrar o ícone do log de ações para revisar ações e eventos recentes do aplicativo",
     "devtools": "Ferramentas de desenvolvimento",
     "devtoolsTooltip": "Mostrar o ícone das ferramentas do desenvolvedor para inspecionar a IU do aplicativo",
     "debugPanel": "Painel de depuração",
@@ -9966,5 +9963,30 @@
     "loginDetails": "Detalhes do início de sessão automático",
     "loginElapsed": "Tempo decorrido: {{seconds}} s",
     "loginCompletionNote": "Enviar o início de sessão não confirma que o site o aceitou. Verifique se o site pede verificação ou aprovação."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "Tentar iniciar sessão novamente",
+      "credentialsLabel": "Tentar novamente o início de sessão automático com as credenciais guardadas",
+      "mfa": "Tentar 2FA novamente",
+      "mfaLabel": "Tentar novamente o início de sessão automático com um novo código 2FA",
+      "noCredentials": "Esta ligação não tem credenciais guardadas para o início de sessão automático.",
+      "noMfa": "Nenhum autenticador está selecionado para a 2FA automática nesta ligação.",
+      "busy": "O início de sessão automático está em curso.",
+      "wait": "Um novo código 2FA estará disponível dentro de {{seconds}} s.",
+      "startedCredentials": "A tentar novamente o início de sessão automático nesta página.",
+      "startedMfa": "A introduzir um novo código 2FA nesta página.",
+      "unavailable": "Não foi possível tentar novamente o início de sessão automático nesta página. Esta versão do navegador pode ainda não o suportar.",
+      "refused": {
+        "notCurrent": "A página mudou antes de ser possível tentar novamente o início de sessão automático. Tente novamente.",
+        "noLogin": "Este separador não tem nenhum início de sessão automático para tentar novamente.",
+        "busy": "O início de sessão automático ainda está em curso nesta página.",
+        "noMfa": "Este separador não tem nenhuma 2FA automática para tentar novamente.",
+        "codeUsed": "O código 2FA atual já foi utilizado. Tente novamente quando estiver disponível um novo código.",
+        "rateLimited": "O início de sessão automático foi repetido demasiadas vezes. Aguarde um momento e tente novamente.",
+        "noForm": "Esta página não mostra nenhum formulário de início de sessão para preencher. Abra a página de início de sessão e tente novamente."
+      }
+    },
+    "proxyStuckRestartApp": "O motor do navegador também não conseguiu ligar a um novo proxy privado, por isso a ligação de rede está bloqueada. Reinicie a aplicação para voltar a navegar neste separador."
   }
 }

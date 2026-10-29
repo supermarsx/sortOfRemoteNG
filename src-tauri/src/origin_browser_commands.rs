@@ -144,6 +144,7 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_diagnose"
             | "origin_browser_manual_input"
             | "origin_browser_cancel_login"
+            | "origin_browser_retry_login"
             | "origin_browser_ssh_respond_to_command_review"
             | "origin_browser_ssh_cancel_pending_create"
     )
@@ -212,6 +213,54 @@ impl<'de> serde::Deserialize<'de> for CancelLoginRequest {
             .map_err(|_| serde::de::Error::custom("Browser login cancellation request is invalid"))?;
         Ok(Self { identity: wire.identity, reason: wire.reason })
     }
+}
+
+/// The automatic-login step a user retries on the page that is open now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum LoginRetryStep { Credentials, Mfa }
+
+/// Only the attempt and the step: never a credential, code, URL or reload.
+pub(crate) struct RetryLoginRequest {
+    pub identity: OriginBrowserIdentity,
+    pub step: LoginRetryStep,
+}
+
+impl<'de> serde::Deserialize<'de> for RetryLoginRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Wire { identity: OriginBrowserIdentity, step: LoginRetryStep }
+        let wire = <Wire as serde::Deserialize>::deserialize(deserializer)
+            .map_err(|_| serde::de::Error::custom("Browser login retry request is invalid"))?;
+        wire.identity.validate()
+            .map_err(|_| serde::de::Error::custom("Browser login retry request is invalid"))?;
+        Ok(Self { identity: wire.identity, step: wire.step })
+    }
+}
+
+/// `{status:"started"}` or `{status:"refused", reason}` with a fixed reason:
+/// not-current, no-login, busy, no-mfa, code-used, rate-limited or no-form.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub(crate) enum RetryLoginReceipt {
+    Started,
+    Refused { reason: &'static str },
+}
+
+/// Re-run automatic login on the CURRENT page of this exact attempt, in place.
+/// Never reloads, navigates or reconnects; refuses rather than falling back.
+#[tauri::command]
+pub(crate) async fn origin_browser_retry_login(
+    window: WebviewWindow,
+    state: State<'_, EncryptionState>,
+    request: RetryLoginRequest,
+) -> Result<RetryLoginReceipt, String> {
+    request.identity.validate().map_err(|_| "Browser login retry request is invalid".to_owned())?;
+    #[cfg(feature = "native-browser")]
+    { crate::origin_browser_runtime::retry_login(window, &state, request).await }
+    #[cfg(not(feature = "native-browser"))]
+    { let _ = (window, state, request.identity, request.step); Err(UNAVAILABLE.into()) }
 }
 
 #[tauri::command]
@@ -603,6 +652,7 @@ mod tests {
             "origin_browser_diagnose",
             "origin_browser_manual_input",
             "origin_browser_cancel_login",
+            "origin_browser_retry_login",
             "origin_browser_ssh_respond_to_command_review",
             "origin_browser_ssh_cancel_pending_create",
         ] {
@@ -635,5 +685,35 @@ mod tests {
         }
         let mut extra = request; extra["url"] = "https://private.invalid".into();
         assert!(serde_json::from_value::<CancelLoginRequest>(extra).is_err());
+    }
+
+    #[test]
+    fn login_retry_accepts_only_exact_identity_and_two_fixed_steps() {
+        let request = serde_json::json!({"identity":{"ownerDatabaseId":"db","connectionId":"connection",
+            "sessionId":"tab","attemptId":"550e8400-e29b-41d4-a716-446655440000"},"step":"credentials"});
+        let parsed = serde_json::from_value::<RetryLoginRequest>(request.clone()).unwrap();
+        assert_eq!(parsed.step, LoginRetryStep::Credentials);
+        let mut mfa = request.clone(); mfa["step"] = "mfa".into();
+        assert_eq!(serde_json::from_value::<RetryLoginRequest>(mfa).unwrap().step, LoginRetryStep::Mfa);
+        for (pointer, value) in [("/step", serde_json::json!("untrusted-private-text")),
+            ("/step", serde_json::json!("Credentials")), ("/step", serde_json::json!(null)),
+            ("/identity/attemptId", serde_json::json!("bad")), ("/identity/ownerDatabaseId", serde_json::json!(""))] {
+            let mut invalid = request.clone(); *invalid.pointer_mut(pointer).unwrap() = value;
+            let error = serde_json::from_value::<RetryLoginRequest>(invalid).err().unwrap().to_string();
+            assert!(!error.contains("untrusted-private-text"));
+        }
+        // No credential, code, address or reload instruction rides along.
+        for field in ["password", "code", "url", "reload"] {
+            let mut extra = request.clone(); extra[field] = "x".into();
+            assert!(serde_json::from_value::<RetryLoginRequest>(extra).is_err(), "{field}");
+        }
+    }
+
+    #[test]
+    fn login_retry_receipts_serialize_as_the_shell_parses_them() {
+        assert_eq!(serde_json::to_value(RetryLoginReceipt::Started).unwrap(),
+            serde_json::json!({"status":"started"}));
+        assert_eq!(serde_json::to_value(RetryLoginReceipt::Refused { reason: "code-used" }).unwrap(),
+            serde_json::json!({"status":"refused","reason":"code-used"}));
     }
 }

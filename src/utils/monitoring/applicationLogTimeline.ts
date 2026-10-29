@@ -165,6 +165,8 @@ const checkpoints = [
   "login-challenge-waiting",
   "login-challenge-reloading",
   "login-challenge-timed-out",
+  "consent-address-mismatch",
+  "consent-expired",
 ];
 const events: Record<string, [LogCategory, string]> = {
   requested: ["navigation", "Navigation requested"],

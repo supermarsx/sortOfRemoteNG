@@ -3,7 +3,8 @@
 use sorng_browser_host::{
     cef_browser::{NativeDocumentHooks, NativeHttpAuthChallenge},
     native_features::{
-        NativeLoginAdapter, NativeLoginCredentials, NativeLoginRequest, NativeLoginStage,
+        NativeLoginAdapter, NativeLoginCredentials, NativeLoginRequest, NativeLoginRetryStep,
+        NativeLoginStage,
     },
 };
 use sorng_commands_core::origin_browser_authority::{
@@ -12,8 +13,9 @@ use sorng_commands_core::origin_browser_authority::{
 };
 use sorng_protocols::origin_browser::BrowserIdentity;
 use std::{
+    collections::VecDeque,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -22,7 +24,7 @@ use tauri::{Emitter, WebviewWindow};
 
 #[path = "origin_browser_login_consent.rs"]
 mod consent;
-use consent::AttemptConsent;
+use consent::{AttemptConsent, ConsentRefusal};
 #[path = "origin_browser_login_lifetime.rs"]
 mod lifetime;
 pub(crate) use lifetime::CancelReason;
@@ -30,7 +32,82 @@ use lifetime::LoginLifetime;
 #[path = "origin_browser_login_delivery.rs"]
 mod delivery;
 
-const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
+/// The grant lives as long as the attempt it belongs to. A shorter bound
+/// refused every later re-login on the same tab silently (a site's idle
+/// logout after ten minutes stayed on "security check"). Cancel, close, lock
+/// and the attempt bound still revoke it.
+const CONSENT_LIFETIME: Duration = lifetime::MAX_LOGIN_ATTEMPT;
+/// Explicit retries: at most one per interval, and a bounded number per window.
+const RETRY_INTERVAL: Duration = Duration::from_secs(5);
+const RETRY_WINDOW: Duration = Duration::from_secs(10 * 60);
+const RETRY_BUDGET: usize = 5;
+
+/// Why an explicit retry did not start. Fixed codes for the owner window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RetryRefusal {
+    NotCurrent,
+    NoLogin,
+    Busy,
+    NoMfa,
+    CodeUsed,
+    RateLimited,
+    NoForm,
+}
+
+impl RetryRefusal {
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::NotCurrent => "not-current",
+            Self::NoLogin => "no-login",
+            Self::Busy => "busy",
+            Self::NoMfa => "no-mfa",
+            Self::CodeUsed => "code-used",
+            Self::RateLimited => "rate-limited",
+            Self::NoForm => "no-form",
+        }
+    }
+}
+
+/// Started retries of one attempt, newest last.
+#[derive(Default)]
+struct RetryLimiter {
+    started: VecDeque<Instant>,
+}
+
+impl RetryLimiter {
+    fn admits(&mut self, now: Instant) -> bool {
+        while self
+            .started
+            .front()
+            .is_some_and(|at| now.saturating_duration_since(*at) >= RETRY_WINDOW)
+        {
+            self.started.pop_front();
+        }
+        self.started.len() < RETRY_BUDGET
+            && self
+                .started
+                .back()
+                .map_or(true, |at| now.saturating_duration_since(*at) >= RETRY_INTERVAL)
+    }
+    fn record(&mut self, now: Instant) {
+        self.started.push_back(now);
+    }
+}
+
+const NO_REFUSAL: u8 = 0;
+fn refusal_wire(refusal: ConsentRefusal) -> u8 {
+    match refusal {
+        ConsentRefusal::AddressMismatch => 1,
+        ConsentRefusal::Expired => 2,
+    }
+}
+fn refusal_from_wire(value: u8) -> Option<ConsentRefusal> {
+    match value {
+        1 => Some(ConsentRefusal::AddressMismatch),
+        2 => Some(ConsentRefusal::Expired),
+        _ => None,
+    }
+}
 /// Reserved application id that maps to the host's declarative adapter.
 const DECLARATIVE_ADAPTER_ID: &str = "declarative-steps";
 
@@ -97,6 +174,10 @@ pub(crate) struct LoginHooks {
     media_owner: MediaOwner,
     adapter: NativeLoginAdapter,
     consent: Option<AttemptConsent>,
+    /// Cause of the latest consent refusal, read once by the delivery status
+    /// that reports it. Fixed values only, never the refused origin.
+    consent_refusal: AtomicU8,
+    retries: std::sync::Mutex<RetryLimiter>,
     basic_auth: Option<Arc<NativeBasicAuth>>,
 }
 
@@ -153,7 +234,9 @@ impl LoginHooks {
     fn arm_deadline(hooks: &Arc<Self>) {
         let deadline = hooks.lifetime.deadline();
         let hooks = Arc::downgrade(hooks);
-        tokio::spawn(async move {
+        // Also called from the UI thread (explicit retry): use the app runtime
+        // handle, not the ambient tokio context.
+        tauri::async_runtime::spawn(async move {
             tokio::time::sleep_until(deadline.into()).await;
             if let Some(hooks) = hooks.upgrade() {
                 hooks.cancel(&hooks.media_owner.identity, CancelReason::AttemptTimeout);
@@ -203,6 +286,8 @@ impl LoginHooks {
                 media_owner: MediaOwner::new(identity),
                 adapter: NativeLoginAdapter::Manual,
                 consent: None,
+                consent_refusal: AtomicU8::new(NO_REFUSAL),
+                retries: Default::default(),
                 basic_auth,
             }));
         }
@@ -251,10 +336,84 @@ impl LoginHooks {
             media_owner: MediaOwner::new(identity),
             adapter,
             consent: Some(consent),
+            consent_refusal: AtomicU8::new(NO_REFUSAL),
+            retries: Default::default(),
             basic_auth,
         });
         Self::arm_deadline(&hooks);
         Ok(hooks)
+    }
+
+    /// Explicit user retry, checked before the page is looked at. Nothing is
+    /// re-armed here; see `retry_admit`.
+    pub(crate) fn retry_precheck(
+        &self,
+        identity: &BrowserIdentity,
+        step: NativeLoginRetryStep,
+    ) -> Result<(), RetryRefusal> {
+        if !self.media_owner.current(identity, || self.lease.is_current()) {
+            return Err(RetryRefusal::NotCurrent);
+        }
+        if self.consent.is_none()
+            || !self.authority.enabled()
+            || self.authority.availability() != NativeCredentialAvailability::Saved
+        {
+            return Err(RetryRefusal::NoLogin);
+        }
+        if step == NativeLoginRetryStep::Mfa && !self.authority.has_totp() {
+            return Err(RetryRefusal::NoMfa);
+        }
+        let admits = self
+            .retries
+            .lock()
+            .map_err(|_| RetryRefusal::NotCurrent)?
+            .admits(Instant::now());
+        if !admits {
+            return Err(RetryRefusal::RateLimited);
+        }
+        Ok(())
+    }
+
+    /// The host found a login document at `origin` on the open page. Re-arm
+    /// this attempt from its saved login: the same destinations and
+    /// submission right, a new attempt bound, and for 2FA one more code once
+    /// the period of the last one has passed. A saved opt-out, another
+    /// destination or a revoked attempt is refused, never widened.
+    pub(crate) fn retry_admit(
+        hooks: &Arc<Self>,
+        identity: &BrowserIdentity,
+        step: NativeLoginRetryStep,
+        origin: &str,
+    ) -> Result<(), RetryRefusal> {
+        // Serialized with cancellation: a cancel either precedes this re-arm
+        // or revokes what it re-armed.
+        let Ok(_cancel) = hooks.cancel_lock.lock() else {
+            return Err(RetryRefusal::NotCurrent);
+        };
+        hooks.retry_precheck(identity, step)?;
+        if !hooks.authority.consent_origins().iter().any(|saved| saved == origin) {
+            return Err(RetryRefusal::NoForm);
+        }
+        let Some(consent) = &hooks.consent else {
+            return Err(RetryRefusal::NoLogin);
+        };
+        let rearmed = hooks.authority.rearm_totp();
+        if step == NativeLoginRetryStep::Mfa && rearmed.is_err() {
+            return Err(RetryRefusal::CodeUsed);
+        }
+        let now = Instant::now();
+        if !hooks.lifetime.restart(now) || !consent.rearm(now + CONSENT_LIFETIME) {
+            return Err(RetryRefusal::NotCurrent);
+        }
+        hooks.consent_refusal.store(NO_REFUSAL, Ordering::Release);
+        hooks
+            .retries
+            .lock()
+            .map_err(|_| RetryRefusal::NotCurrent)?
+            .record(now);
+        Self::arm_deadline(hooks);
+        hooks.activity("waiting-page");
+        Ok(())
     }
 
     pub(crate) fn revoke(&self) {
@@ -346,7 +505,11 @@ impl NativeLoginConsentVerifier for LoginHooks {
     ) {
         if self.lease.is_current() && self.login_current() {
             if let Some(consent) = &self.consent {
-                consent.with_current(identity, origin, Instant::now(), deliver);
+                let refusal = consent.with_current(identity, origin, Instant::now(), deliver);
+                self.consent_refusal.store(
+                    refusal.map_or(NO_REFUSAL, refusal_wire),
+                    Ordering::Release,
+                );
             }
         }
     }
@@ -361,11 +524,23 @@ impl NativeDocumentHooks for LoginHooks {
     ) {
         use sorng_browser_host::native_features::{NativeFeatureStatus as F, NativeLoginDeliveryStatus as D};
         if !self.media_owner.current(identity, || self.lease.is_current()) { return; }
-        if let Some((stage, reason)) = activity::for_status(status) {
+        // Only the status that reports a refused delivery consumes its cause.
+        let refusal = match status {
+            F::LoginDelivery(D::NativeNotDelivered) => {
+                refusal_from_wire(self.consent_refusal.swap(NO_REFUSAL, Ordering::AcqRel))
+            }
+            _ => None,
+        };
+        if let Some((stage, reason)) = activity::for_status(status, refusal) {
             self.activity_with_reason(stage, reason);
         }
         // Fixed checkpoints only: the origin, page text, credentials and native
         // request identity are deliberately absent from the diagnostic payload.
+        let not_delivered = match refusal {
+            Some(ConsentRefusal::AddressMismatch) => (43, "consent-address-mismatch"),
+            Some(ConsentRefusal::Expired) => (44, "consent-expired"),
+            None => (5, "native-not-delivered"),
+        };
         let (code, checkpoint) = match status {
             F::LoginChallengeWaiting => (40, "login-challenge-waiting"),
             F::LoginChallengeReloading => (41, "login-challenge-reloading"),
@@ -376,7 +551,7 @@ impl NativeDocumentHooks for LoginHooks {
             F::LoginAdapterCompleted => (3, "login-adapter-completed"),
             F::LoginAdapterRejected => (4, "login-adapter-rejected"),
             F::LoginDelivery(delivery) => match delivery {
-                D::NativeNotDelivered => (5, "native-not-delivered"),
+                D::NativeNotDelivered => not_delivered,
                 D::NativeRejectedCurrent => (6, "native-rejected-current"),
                 D::NativeRejectedNavigation => (7, "native-rejected-navigation"),
                 D::NativeRejectedGrant => (8, "native-rejected-grant"),

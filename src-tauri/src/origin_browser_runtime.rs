@@ -1089,6 +1089,78 @@ pub(crate) fn cancel_login(
     Ok(attempt.login.cancel(&attempt.identity, reason))
 }
 
+/// Explicit user retry of automatic login on the attempt's open page. The
+/// saved row is re-read first (lease recheck); the page is never reloaded,
+/// navigated or reconnected, and every refusal is a fixed reason.
+pub(crate) async fn retry_login(
+    window: WebviewWindow,
+    state: &EncryptionState,
+    request: crate::origin_browser_commands::RetryLoginRequest,
+) -> Result<crate::origin_browser_commands::RetryLoginReceipt, String> {
+    use crate::origin_browser_commands::{LoginRetryStep, RetryLoginReceipt};
+    use sorng_browser_host::native_features::{NativeLoginRetryRefusal, NativeLoginRetryStep};
+    let refused = |refusal: login::RetryRefusal| RetryLoginReceipt::Refused { reason: refusal.code() };
+    let step = match request.step {
+        LoginRetryStep::Credentials => NativeLoginRetryStep::Credentials,
+        LoginRetryStep::Mfa => NativeLoginRetryStep::Mfa,
+    };
+    let Ok(attempt) = lookup(&window, &request.identity) else {
+        return Ok(refused(login::RetryRefusal::NotCurrent));
+    };
+    if !attempt.current() {
+        return Ok(refused(login::RetryRefusal::NotCurrent));
+    }
+    if let Err(refusal) = attempt.login.retry_precheck(&attempt.identity, step) {
+        return Ok(refused(refusal));
+    }
+    // Re-arming derives from the saved login: re-read it from the unlocked
+    // owning database, exactly as an explicit navigation does.
+    if attempt.lease.recheck(&window, state).await.is_err() {
+        attempt.revoke();
+        return Ok(refused(login::RetryRefusal::NotCurrent));
+    }
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let retained = attempt.clone();
+    window
+        .run_on_main_thread(move || {
+            let outcome = UI.with(|slot| {
+                let slot = slot.borrow();
+                let Some(view) = slot
+                    .as_ref()
+                    .and_then(|ui| ui.views.get(&retained.identity.attempt_id().to_string()))
+                    .filter(|view| Arc::ptr_eq(&view.attempt, &retained))
+                else {
+                    return Err(login::RetryRefusal::NotCurrent);
+                };
+                if !shared().admission.ready() || !retained.current() {
+                    return Err(login::RetryRefusal::NotCurrent);
+                }
+                let mut owner = Ok(());
+                let host = view.host.retry_login(&retained.identity, step, &mut |origin| {
+                    owner = login::LoginHooks::retry_admit(&retained.login, &retained.identity, step, origin);
+                    owner.is_ok()
+                });
+                match host {
+                    Err(_) => Err(login::RetryRefusal::NotCurrent),
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(NativeLoginRetryRefusal::Owner)) => owner,
+                    Ok(Err(NativeLoginRetryRefusal::Busy)) => Err(login::RetryRefusal::Busy),
+                    Ok(Err(NativeLoginRetryRefusal::NoForm)) => Err(login::RetryRefusal::NoForm),
+                }
+            });
+            let _ = sender.send(outcome);
+        })
+        .map_err(|_| UNAVAILABLE.to_owned())?;
+    let outcome = tokio::time::timeout(Duration::from_secs(10), receiver)
+        .await
+        .map_err(|_| UNAVAILABLE.to_owned())?
+        .map_err(|_| UNAVAILABLE.to_owned())?;
+    Ok(match outcome {
+        Ok(()) => RetryLoginReceipt::Started,
+        Err(refusal) => refused(refusal),
+    })
+}
+
 pub(crate) fn status(
     window: &WebviewWindow,
     request: &OriginBrowserStatusRequest,
@@ -1246,38 +1318,16 @@ impl BrowserEventSink for Sink {
         let current = || self.attempt.current();
         // No snapshot lock is held across the owner-window emitter.
         let emit = |next| self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next).is_ok();
-        let publication = if event.state.load_failure.is_some() {
-            display::publish_with_load_failure(
-                &self.attempt.snapshot,
-                &event.identity,
-                event.sequence,
-                (phase, failure_reason),
-                event.state.load_failure,
-                page,
-                current,
-                emit,
-            )
-        } else if failure_reason.is_some() {
-            display::publish_with_reason(
-                &self.attempt.snapshot,
-                &event.identity,
-                event.sequence,
-                (phase, failure_reason),
-                page,
-                current,
-                emit,
-            )
-        } else {
-            display::publish(
-                &self.attempt.snapshot,
-                &event.identity,
-                event.sequence,
-                phase,
-                page,
-                current,
-                emit,
-            )
-        };
+        let publication = display::publish_page(
+            &self.attempt.snapshot,
+            &event.identity,
+            event.sequence,
+            (phase, failure_reason),
+            event.state.load_failure,
+            (page, &event.display.favicon),
+            current,
+            emit,
+        );
         if matches!(
             publication,
             display::Publication::OwnerUnavailable | display::Publication::Failed

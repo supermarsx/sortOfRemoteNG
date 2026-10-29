@@ -3315,7 +3315,6 @@
     "macroManager": "매크로 관리자",
     "recordingManager": "녹화 관리자",
     "performanceMonitor": "성능 모니터",
-    "actionLog": "작업 로그",
     "toggleErrorLog": "Toggle 오류 로그",
     "devConsole": "열기 dev 콘솔",
     "debugPanel": "디버그 패널",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "키보드 단축키 관리자 아이콘 표���",
     "performanceMonitor": "성능 모니터",
     "performanceMonitorTooltip": "실시간 성능 모니터 아이콘 표시",
-    "actionLog": "작업 로그",
-    "actionLogTooltip": "최근 애플리케이션 작업 및 이벤트를 검토하기 위한 작업 로그 아이콘 표시",
     "devtools": "개발자 도구",
     "devtoolsTooltip": "애플리케이션 UI를 검사하기 위한 개발자 도구 아이콘 표시",
     "debugPanel": "디버그 패널",
@@ -9966,5 +9963,30 @@
     "loginDetails": "자동 로그인 세부 정보",
     "loginElapsed": "경과 시간: {{seconds}}초",
     "loginCompletionNote": "로그인 제출은 웹사이트의 수락을 의미하지 않습니다. 웹사이트에서 확인 또는 승인 요청을 확인하세요."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "로그인 다시 시도",
+      "credentialsLabel": "저장된 자격 증명으로 자동 로그인 다시 시도",
+      "mfa": "2FA 다시 시도",
+      "mfaLabel": "새 2FA 코드로 자동 로그인 다시 시도",
+      "noCredentials": "이 연결에는 자동 로그인용으로 저장된 자격 증명이 없습니다.",
+      "noMfa": "이 연결에는 자동 2FA용 인증기가 선택되어 있지 않습니다.",
+      "busy": "자동 로그인이 진행 중입니다.",
+      "wait": "{{seconds}}초 후에 새 2FA 코드를 사용할 수 있습니다.",
+      "startedCredentials": "이 페이지에서 자동 로그인을 다시 시도하는 중입니다.",
+      "startedMfa": "이 페이지에 새 2FA 코드를 입력하는 중입니다.",
+      "unavailable": "이 페이지에서 자동 로그인을 다시 시도할 수 없습니다. 이 브라우저 버전에서 아직 지원하지 않을 수 있습니다.",
+      "refused": {
+        "notCurrent": "자동 로그인을 다시 시도하기 전에 페이지가 변경되었습니다. 다시 시도하세요.",
+        "noLogin": "이 탭에는 다시 시도할 자동 로그인이 없습니다.",
+        "busy": "이 페이지에서 자동 로그인이 아직 진행 중입니다.",
+        "noMfa": "이 탭에는 다시 시도할 자동 2FA가 없습니다.",
+        "codeUsed": "현재 2FA 코드는 이미 사용되었습니다. 새 코드를 사용할 수 있을 때 다시 시도하세요.",
+        "rateLimited": "자동 로그인을 너무 자주 다시 시도했습니다. 잠시 기다린 후 다시 시도하세요.",
+        "noForm": "이 페이지에는 입력할 로그인 양식이 없습니다. 로그인 페이지를 연 후 다시 시도하세요."
+      }
+    },
+    "proxyStuckRestartApp": "브라우저 엔진이 새 개인 프록시에도 연결하지 못해 네트워크 연결이 멈췄습니다. 이 탭에서 다시 탐색하려면 앱을 다시 시작하세요."
   }
 }

@@ -87,6 +87,10 @@ import { useNativeBrowserExtensionReceipt } from "../../../hooks/protocol/useNat
 import NativeBrowserExtensionControls from "./NativeBrowserExtensionControls";
 import progressStyles from "./NavigationProgress.module.css";
 import OriginMfaOriginRepair from "./OriginMfaOriginRepair";
+import { useNativeLoginActivity } from "../../../hooks/protocol/useNativeLoginActivity";
+import { useOriginAutoLoginRetry } from "../../../hooks/protocol/useOriginAutoLoginRetry";
+import { autoLoginRetryMessage } from "../../../utils/protocol/autoLoginRetryMessages";
+import { useTranslation } from "react-i18next";
 import OriginCredentialControls, {
   OriginToolbarPopover,
 } from "./OriginCredentialControls";
@@ -600,6 +604,14 @@ export default function OriginConnectionBrowser({
     toastedProxyRecovery.current = lastRestart.serial;
     toast.success(RESTART_NOTICES["proxy-unreachable"].done);
   }, [lastRestart, restartStage, restarting, phase, rootSnapshot, toast]);
+  // A fresh relay the engine still cannot connect to (-130, nothing accepted)
+  // is not this tab's proxy: the engine's network state is stuck for the
+  // whole process, and another reconnect cannot help. Only a restart can.
+  const proxyStuck =
+    lastRestart?.reason === "proxy-unreachable" &&
+    restartStage === "failed" &&
+    !restarting &&
+    rootSnapshot?.loadFailure?.code === -130;
   const toastedProxyFailure = useRef<number | null>(null);
   useEffect(() => {
     if (
@@ -611,8 +623,9 @@ export default function OriginConnectionBrowser({
     )
       return;
     toastedProxyFailure.current = lastRestart.serial;
-    toast.error(RESTART_NOTICES["proxy-unreachable"].failed);
-  }, [lastRestart, restartStage, restarting, phase, toast]);
+    // The persistent alert below says what to do; no second message.
+    if (!proxyStuck) toast.error(RESTART_NOTICES["proxy-unreachable"].failed);
+  }, [lastRestart, restartStage, restarting, phase, toast, proxyStuck]);
   const [repairedMfaFailure, setRepairedMfaFailure] =
     useState<typeof startupFailure>(null);
   const [devtoolsError, setDevtoolsError] = useState(false);
@@ -803,6 +816,30 @@ export default function OriginConnectionBrowser({
     !dialogOpen &&
     !popupBridge.pending &&
     (!selectedPopupId || selectedPopup?.phase === "adopted");
+  const loginActivity = useNativeLoginActivity(
+    useMemo(() => [session.id], [session.id]),
+  )[session.id];
+  const { t } = useTranslation();
+  // In place: native re-runs the login on the current page, never a reload.
+  const autoLoginRetry = useOriginAutoLoginRetry({
+    connection: isTemporary ? undefined : connection,
+    activity:
+      loginActivity && loginActivity.connectionId === connection?.id
+        ? loginActivity
+        : undefined,
+    identity: rootSnapshot?.identity ?? null,
+    attached:
+      phase === "attached" &&
+      ownerAvailable &&
+      !restarting &&
+      rootSnapshot?.phase === "attached" &&
+      !rootSnapshot.loading &&
+      !rootSnapshot.loadFailure,
+    onOutcome: (step, outcome) => {
+      const { type, message } = autoLoginRetryMessage(t, step, outcome);
+      toast[type](message);
+    },
+  });
   const selectedViewAvailable =
     ownerAvailable &&
     isActive &&
@@ -1307,6 +1344,7 @@ export default function OriginConnectionBrowser({
               ]),
               runInteractive: popupBridge.runInteractive,
             }}
+            autoLoginRetry={autoLoginRetry}
           />
         )}
         <OriginToolbarPopover
@@ -1431,6 +1469,7 @@ export default function OriginConnectionBrowser({
       <OriginPopupTabs
         popups={popups}
         parentTitle={rootSnapshot?.title || "Website"}
+        parentFaviconUrl={rootSnapshot?.faviconUrl}
         parentLoading={
           ownerAvailable &&
           (phase === "starting" ||
@@ -1464,6 +1503,13 @@ export default function OriginConnectionBrowser({
             onNavigate={(url, assertCurrent) =>
               setBookmarkNavigation({ attempt: identity, url, assertCurrent })
             }
+            onOpenInNewTab={(url, assertCurrent) => {
+              // Same queued, presentation-fenced path as "Open in new tab" in
+              // the More menu: native creates the child in this connection's
+              // context and admits the URL like a normal navigation.
+              assertCurrent();
+              pageMenu.openTab(url);
+            }}
             automationSlot={
               <OriginAutomationControls
                 automation={automation}
@@ -1617,6 +1663,22 @@ export default function OriginConnectionBrowser({
               isTemporary ? ["connection"] : ["connection", "application"],
             )}
           </div>
+        </div>
+      )}
+      {proxyStuck && (
+        // In the layout flow: a native child surface paints above DOM overlays.
+        <div
+          role="alert"
+          aria-label="Browser proxy stuck"
+          className="sor-alert-warning mx-3 mt-2 flex shrink-0 min-w-0 items-start gap-2 text-sm text-[var(--color-text)]"
+        >
+          <RotateCw size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 flex-1">
+            {t(
+              "originBrowser.proxyStuckRestartApp",
+              "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
+            )}
+          </p>
         </div>
       )}
       {restartNotice &&

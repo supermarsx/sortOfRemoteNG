@@ -3315,7 +3315,6 @@
     "macroManager": "Gestore macro",
     "recordingManager": "Gestore registrazioni",
     "performanceMonitor": "Monitor prestazioni",
-    "actionLog": "Log azioni",
     "toggleErrorLog": "Attiva/disattiva log errori",
     "devConsole": "Apri console sviluppatore",
     "debugPanel": "Pannello debug",
@@ -3655,8 +3654,6 @@
     "shortcutManagerTooltip": "Mostra l'icona del gestore delle scorciatoie da tastiera",
     "performanceMonitor": "Monitoraggio delle prestazioni",
     "performanceMonitorTooltip": "Mostra l'icona del monitoraggio delle prestazioni in tempo reale",
-    "actionLog": "Registro delle azioni",
-    "actionLogTooltip": "Mostra l'icona del registro delle azioni per rivedere le azioni e gli eventi recenti dell'applicazione",
     "devtools": "Strumenti sviluppatore",
     "devtoolsTooltip": "Mostra l'icona degli strumenti per sviluppatori per ispezionare l'interfaccia utente dell'applicazione",
     "debugPanel": "Pannello di debug",
@@ -9966,5 +9963,30 @@
     "loginDetails": "Dettagli dell’accesso automatico",
     "loginElapsed": "Tempo trascorso: {{seconds}} s",
     "loginCompletionNote": "L’invio dell’accesso non conferma che il sito lo abbia accettato. Verificare se il sito richiede verifiche o approvazioni."
+  },
+  "originBrowser": {
+    "autoLoginRetry": {
+      "credentials": "Riprova accesso",
+      "credentialsLabel": "Riprova l’accesso automatico con le credenziali salvate",
+      "mfa": "Riprova 2FA",
+      "mfaLabel": "Riprova l’accesso automatico con un nuovo codice 2FA",
+      "noCredentials": "Questa connessione non ha credenziali salvate per l’accesso automatico.",
+      "noMfa": "Nessun autenticatore selezionato per la 2FA automatica su questa connessione.",
+      "busy": "Accesso automatico in corso.",
+      "wait": "Un nuovo codice 2FA sarà disponibile tra {{seconds}} s.",
+      "startedCredentials": "Nuovo tentativo di accesso automatico su questa pagina.",
+      "startedMfa": "Inserimento di un nuovo codice 2FA su questa pagina.",
+      "unavailable": "Impossibile riprovare l’accesso automatico su questa pagina. Questa versione del browser potrebbe non supportarlo ancora.",
+      "refused": {
+        "notCurrent": "La pagina è cambiata prima che l’accesso automatico potesse essere riprovato. Riprova.",
+        "noLogin": "Questa scheda non ha un accesso automatico da riprovare.",
+        "busy": "L’accesso automatico è ancora in corso su questa pagina.",
+        "noMfa": "Questa scheda non ha una 2FA automatica da riprovare.",
+        "codeUsed": "Il codice 2FA attuale è già stato usato. Riprova quando sarà disponibile un nuovo codice.",
+        "rateLimited": "L’accesso automatico è stato riprovato troppe volte. Attendi un momento, poi riprova.",
+        "noForm": "Questa pagina non mostra alcun modulo di accesso da compilare. Apri la pagina di accesso, poi riprova."
+      }
+    },
+    "proxyStuckRestartApp": "Il motore del browser non è riuscito a raggiungere nemmeno un nuovo proxy privato, quindi la sua connessione di rete è bloccata. Riavvia l'app per ripristinare la navigazione in questa scheda."
   }
 }

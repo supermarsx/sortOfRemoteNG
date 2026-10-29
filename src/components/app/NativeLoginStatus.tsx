@@ -38,6 +38,10 @@ const reasonLabels: Record<NativeLoginReasonCode, string> = {
     "The page security-check wait reached its time limit. Complete any verification shown on the page, then retry the login.",
   "grant-rejected":
     "The native browser did not authorize credential delivery for this login step. Review the selected saved login and its permissions before retrying.",
+  "address-mismatch":
+    "The login page is on an address that is not one of this connection's saved login destinations, so no credentials were entered. Check that the saved address matches the address the site redirects to.",
+  "consent-expired":
+    "This tab's automatic-login permission had expired, so no credentials were entered. Retry the sign-in to approve it again from the saved settings.",
   "attempt-stopped":
     "This tab's automatic-login attempt was stopped or replaced. Reopen the connection when you are ready to retry.",
   "user-cancelled":
