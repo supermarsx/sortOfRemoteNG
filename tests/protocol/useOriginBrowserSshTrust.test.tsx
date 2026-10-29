@@ -3,9 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
 import { setInlineSsh } from "../../src/components/connection/editor/networkPathModel";
 import {
+  hostKeyPrompt,
   useOriginBrowserSshTrust,
   type NativeBrowserSshTrustOptions,
 } from "../../src/hooks/protocol/useOriginBrowserSshTrust";
+import {
+  getOriginBrowserConfirmation,
+  resetOriginBrowserConfirmationsForTests,
+} from "../../src/hooks/protocol/originBrowserConfirmations";
 
 const h = vi.hoisted(() => ({
   listen: vi.fn(),
@@ -111,6 +116,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  resetOriginBrowserConfirmationsForTests();
 });
 
 describe("native browser SSH host-key trust", () => {
@@ -381,7 +387,8 @@ describe("native browser SSH host-key trust", () => {
     h.verify.mockResolvedValue({ status: "new" });
     await start(props);
     await emit();
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(h.prompt).toHaveBeenCalledOnce();
+    expect(window.confirm).not.toHaveBeenCalled();
     expect(h.trust).not.toHaveBeenCalled();
     expect(h.invoke).toHaveBeenCalledWith(expect.anything(), {
       sessionId: "backend",
@@ -390,7 +397,7 @@ describe("native browser SSH host-key trust", () => {
   });
   it("persists explicit confirmation before accepting the native handshake", async () => {
     h.verify.mockResolvedValue({ status: "mismatch" });
-    vi.mocked(window.confirm).mockReturnValue(true);
+    h.prompt.mockResolvedValue({ confirmed: true, remember: false });
     await start();
     await emit();
     expect(h.trust).toHaveBeenCalledWith(
@@ -415,7 +422,7 @@ describe("native browser SSH host-key trust", () => {
     h.verify.mockResolvedValue({ status: "new" });
     await start(props);
     await emit();
-    expect(window.confirm).not.toHaveBeenCalled();
+    expect(h.prompt).not.toHaveBeenCalled();
     expect(h.trust).not.toHaveBeenCalled();
     expect(h.invoke).toHaveBeenCalledWith(expect.anything(), {
       sessionId: "backend",
@@ -491,7 +498,7 @@ describe("native browser SSH host-key trust", () => {
     await start(props);
     await emit();
     expect(h.trust).not.toHaveBeenCalled();
-    expect(window.confirm).not.toHaveBeenCalled();
+    expect(h.prompt).not.toHaveBeenCalled();
     expect(h.invoke).toHaveBeenCalledWith(expect.anything(), {
       sessionId: "backend",
       decision: "reject",
@@ -723,5 +730,113 @@ describe("native browser SSH command review", () => {
       "origin_browser_ssh_respond_to_command_review",
       { nonce: "command-review-1", accepted: false },
     );
+  });
+});
+
+describe("host-key confirmation in the shell prompt", () => {
+  it("asks through the themed prompt, never window.confirm, with the fingerprint and Reject as default", async () => {
+    h.verify.mockResolvedValue({ status: "new" });
+    await start();
+    await emit();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(h.prompt).toHaveBeenCalledOnce();
+    const [request, options] = h.prompt.mock.calls[0];
+    expect(request).toMatchObject({
+      tone: "warning",
+      defaultAction: "cancel",
+      confirmLabel: "Trust and save key",
+      preview: { label: "SHA-256 fingerprint", text: "SHA256:fixture" },
+      targets: { items: [{ name: "ssh.test:22", detail: "ssh-ed25519" }] },
+    });
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(h.invoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+      sessionId: "backend",
+      decision: "reject",
+    });
+  });
+
+  it("describes a changed key as a danger and brackets an IPv6 endpoint", () => {
+    expect(
+      hostKeyPrompt("::1", 2222, true, "SHA256:x", null, 3072),
+    ).toMatchObject({
+      tone: "danger",
+      confirmLabel: "Replace and trust key",
+      title: expect.stringContaining("changed"),
+      targets: { items: [{ name: "[::1]:2222", detail: "SSH" }] },
+      facts: ["3072 bits", "key changed"],
+    });
+  });
+
+  it("holds the tab's pending confirmation only while the prompt is open", async () => {
+    h.verify.mockResolvedValue({ status: "new" });
+    let answer!: (value: { confirmed: boolean; remember: boolean }) => void;
+    h.prompt.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    await start();
+    let delivered!: Promise<void>;
+    await act(async () => {
+      delivered = h.callbacks[0]({ payload: prompt() });
+    });
+    await waitFor(() => expect(h.prompt).toHaveBeenCalledOnce());
+    expect(getOriginBrowserConfirmation("browser")).toBe("ssh-host-key");
+    await act(async () => {
+      answer({ confirmed: true, remember: false });
+      await delivered;
+    });
+    expect(getOriginBrowserConfirmation("browser")).toBeNull();
+    expect(h.trust).toHaveBeenCalledOnce();
+    expect(h.invoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+      sessionId: "backend",
+      decision: "accept_and_save",
+    });
+  });
+
+  it("closes an open prompt on unmount, releases the hold and a late yes cannot trust", async () => {
+    h.verify.mockResolvedValue({ status: "new" });
+    let answer!: (value: { confirmed: boolean; remember: boolean }) => void;
+    let signal!: AbortSignal;
+    h.prompt.mockImplementation(
+      (_request: unknown, options: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          signal = options.signal;
+          answer = resolve;
+        }),
+    );
+    const view = await start();
+    let delivered!: Promise<void>;
+    await act(async () => {
+      delivered = h.callbacks[0]({ payload: prompt() });
+    });
+    await waitFor(() => expect(h.prompt).toHaveBeenCalledOnce());
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => {
+      answer({ confirmed: true, remember: false });
+      await delivered;
+    });
+    expect(getOriginBrowserConfirmation("browser")).toBeNull();
+    expect(h.trust).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+      sessionId: "backend",
+      decision: "reject",
+    });
+  });
+
+  it("releases the hold and rejects when the prompt host is unavailable", async () => {
+    h.verify.mockResolvedValue({ status: "new" });
+    h.prompt.mockRejectedValue(new Error("no prompt host"));
+    await start();
+    await emit();
+    expect(getOriginBrowserConfirmation("browser")).toBeNull();
+    expect(h.trust).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+      sessionId: "backend",
+      decision: "reject",
+    });
   });
 });

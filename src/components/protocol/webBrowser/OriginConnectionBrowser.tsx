@@ -41,6 +41,7 @@ import { useOriginBrowserOwner } from "../../../hooks/protocol/useOriginBrowserO
 import { useOriginBrowserSshTrust } from "../../../hooks/protocol/useOriginBrowserSshTrust";
 import { useOriginQuickConnection } from "../../../hooks/protocol/useOriginQuickConnection";
 import { useOriginBrowserOverlays } from "../../../hooks/protocol/useOriginBrowserOverlays";
+import { useOriginBrowserConfirmation } from "../../../hooks/protocol/originBrowserConfirmations";
 import {
   originBrowserConnectionTarget,
   originBrowserSavedSource,
@@ -197,7 +198,10 @@ export default function OriginConnectionBrowser({
   }, []);
   const overlays = useOriginBrowserOverlays(isActive);
   const hide = overlays.refresh;
-  const overlayOpen = overlays.blocked;
+  // A pending security prompt for this tab hides its native view outright
+  // instead of only clipping it, so nothing native can sit above the prompt.
+  const awaitingConfirmation = useOriginBrowserConfirmation(session.id);
+  const overlayOpen = overlays.blocked || awaitingConfirmation !== null;
   const temporary = useOriginQuickConnection(
     session,
     context.state.connections,
@@ -317,7 +321,7 @@ export default function OriginConnectionBrowser({
     ownerAvailable: ownerAvailable && sshTrust.ready,
     active: isActive,
     dialogOpen,
-    preserveRenderingUnderOverlays: true,
+    preserveRenderingUnderOverlays: awaitingConfirmation === null,
     occlusions: overlays.rectangles,
     consent: { kind: "required" },
     assertOwner: proof?.assertCurrent,
@@ -1742,7 +1746,8 @@ export default function OriginConnectionBrowser({
         </div>
       )}
       <OriginBrowserViewport
-        preserveRenderingUnderOverlays
+        preserveRenderingUnderOverlays={awaitingConfirmation === null}
+        awaitingConfirmation={awaitingConfirmation}
         controller={{ ...browser, state: viewportState }}
         active={isActive}
         ownerAvailable={ownerAvailable}

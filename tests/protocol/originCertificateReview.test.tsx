@@ -16,6 +16,7 @@ import {
 } from "../../src/hooks/protocol/useOriginCertificateReview";
 import { OriginBrowserCertificateReview } from "../../src/components/security/OriginBrowserCertificateReview";
 import { useOriginBrowserOverlays } from "../../src/hooks/protocol/useOriginBrowserOverlays";
+import { getOriginBrowserConfirmation } from "../../src/hooks/protocol/originBrowserConfirmations";
 import {
   readOriginCertificateReview,
   type OriginCertificatePrompt,
@@ -502,5 +503,51 @@ describe("themed certificate review", () => {
       prompt: { ...value, credentials: "never-copy" },
     });
     expect(JSON.stringify(parsed)).not.toContain("never-copy");
+  });
+});
+
+describe("certificate review keeps its tab waiting", () => {
+  it("marks the prompt's own tab pending while shown and releases on answer", async () => {
+    const b = backend();
+    render(<OriginBrowserCertificateReview transport={b.transport} />);
+    await screen.findByRole("dialog");
+    expect(getOriginBrowserConfirmation("session-a")).toBe("certificate");
+    expect(getOriginBrowserConfirmation("session-b")).toBeNull();
+    b.request.mockResolvedValueOnce(snapshot(2, null));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(getOriginBrowserConfirmation("session-a")).toBeNull();
+  });
+  it("moves the hold to a successor prompt's tab and releases on revocation and unmount", async () => {
+    const b = backend();
+    const view = render(
+      <OriginBrowserCertificateReview transport={b.transport} />,
+    );
+    await screen.findByRole("dialog");
+    b.emit(
+      snapshot(
+        2,
+        prompt("b".repeat(32), {
+          identity: {
+            ownerDatabaseId: "database-a",
+            connectionId: "website-b",
+            sessionId: "session-b",
+            attemptId: "attempt-b",
+          },
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(getOriginBrowserConfirmation("session-b")).toBe("certificate"),
+    );
+    expect(getOriginBrowserConfirmation("session-a")).toBeNull();
+    b.emit(snapshot(3, null));
+    expect(getOriginBrowserConfirmation("session-b")).toBeNull();
+    b.emit(snapshot(4, prompt("c".repeat(32))));
+    await waitFor(() =>
+      expect(getOriginBrowserConfirmation("session-a")).toBe("certificate"),
+    );
+    view.unmount();
+    expect(getOriginBrowserConfirmation("session-a")).toBeNull();
   });
 });

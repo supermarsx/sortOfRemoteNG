@@ -20,6 +20,7 @@ import type { OriginBrowserSnapshot } from "../../src/types/protocols/originBrow
 import progressStyles from "../../src/components/protocol/webBrowser/NavigationProgress.module.css";
 import { useOriginBrowserRecovery } from "../../src/hooks/protocol/useOriginBrowserRecovery";
 import { resetOriginBrowserLifecycleForTests } from "../../src/hooks/protocol/useOriginBrowser";
+import { beginOriginBrowserConfirmation } from "../../src/hooks/protocol/originBrowserConfirmations";
 import { nativeBrowserAuthoritySignature } from "../../src/utils/connection/nativeBrowserAuthoritySignature";
 import OriginConnectionBrowser from "../../src/components/protocol/webBrowser/OriginConnectionBrowser";
 import {
@@ -3979,4 +3980,102 @@ describe("engine preference normalization", () => {
     expect(calls("origin_browser_create")).toHaveLength(1);
     expect(screen.queryByText("Legacy content")).toBeNull();
   });
+});
+
+describe("shell overlays above the native browser", () => {
+  const lastPresentation = (start: number) => {
+    const presentations = calls("origin_browser_control")
+      .slice(start)
+      .filter(([, args]) => args.request.action.kind === "presentation");
+    return presentations[presentations.length - 1]?.[1].request.action;
+  };
+  const appModal = () => {
+    // An app modal mounted outside the browser shell, as a portal would be.
+    const node = document.createElement("div");
+    node.className = "sor-modal-backdrop fixed inset-0";
+    node.setAttribute("role", "dialog");
+    act(() => {
+      document.body.append(node);
+    });
+    return node;
+  };
+
+  it("clips and fences the native view for a foreign app modal, nested ones, and restores after abnormal removal", async () => {
+    await attached();
+    const start = calls("origin_browser_control").length;
+    const outer = appModal();
+    const inner = appModal();
+    try {
+      await waitFor(() =>
+        expect(lastPresentation(start)).toMatchObject({
+          visible: true,
+          inputBlocked: true,
+          occlusions: [expect.any(Object)],
+        }),
+      );
+      // Unmounted without any close callback: the node simply disappears.
+      act(() => inner.remove());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(lastPresentation(start)).toMatchObject({ inputBlocked: true });
+      act(() => outer.remove());
+      await waitFor(() =>
+        expect(lastPresentation(start)).toMatchObject({
+          visible: true,
+          inputBlocked: false,
+          occlusions: [],
+        }),
+      );
+    } finally {
+      inner.remove();
+      outer.remove();
+    }
+    expect(calls("origin_browser_close")).toHaveLength(0);
+  });
+
+  it.each(["certificate", "ssh-host-key"] as const)(
+    "hides the native view and says why while a %s confirmation is pending, then shows it again",
+    async (kind) => {
+      await attached();
+      const start = calls("origin_browser_control").length;
+      let release!: () => void;
+      act(() => {
+        release = beginOriginBrowserConfirmation(session.id, kind);
+      });
+      try {
+        await waitFor(() =>
+          expect(lastPresentation(start)).toMatchObject({
+            visible: false,
+            inputBlocked: true,
+          }),
+        );
+        const waiting = screen.getByTestId(
+          "origin-browser-awaiting-confirmation",
+        );
+        expect(waiting).toHaveTextContent("Waiting for your confirmation");
+        expect(waiting).toHaveTextContent(
+          kind === "certificate" ? "website certificate" : "SSH host key",
+        );
+        // Another tab's prompt does not stall this one.
+        const other = beginOriginBrowserConfirmation("another-tab", kind);
+        other();
+      } finally {
+        act(() => release());
+      }
+      await waitFor(() =>
+        expect(lastPresentation(start)).toMatchObject({
+          visible: true,
+          inputBlocked: false,
+        }),
+      );
+      expect(
+        screen.queryByTestId("origin-browser-awaiting-confirmation"),
+      ).toBeNull();
+      // A second release of the same hold is a no-op, never a stuck state.
+      act(() => release());
+      expect(lastPresentation(start)).toMatchObject({ visible: true });
+      expect(calls("origin_browser_close")).toHaveLength(0);
+    },
+  );
 });

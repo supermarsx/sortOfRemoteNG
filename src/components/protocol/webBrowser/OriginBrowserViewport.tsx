@@ -7,11 +7,21 @@ import {
   RotateCw,
   Settings2,
   ShieldAlert,
+  ShieldQuestion,
 } from "lucide-react";
 import type { OriginBrowserController } from "../../../hooks/protocol/useOriginBrowser";
 import type { SettingsTabId } from "../../SettingsDialog/settingsConstants";
 import { originBrowserBounds } from "../../../types/protocols/originBrowser";
 import { getOriginBrowserFailureDetails } from "../../../hooks/protocol/originBrowserFailureDetails";
+import type { OriginBrowserConfirmationKind } from "../../../hooks/protocol/originBrowserConfirmations";
+
+const confirmationSubject: Record<OriginBrowserConfirmationKind, string> = {
+  "ssh-host-key":
+    "This page is paused until you review the SSH host key of its tunnel.",
+  "ssh-command":
+    "This page is paused until you review the SSH ProxyCommand of its tunnel.",
+  certificate: "This page is paused until you review the website certificate.",
+};
 
 export interface OriginBrowserViewportProps {
   controller: OriginBrowserController;
@@ -19,6 +29,8 @@ export interface OriginBrowserViewportProps {
   ownerAvailable: boolean;
   dialogOpen: boolean;
   preserveRenderingUnderOverlays?: boolean;
+  /** A security prompt this tab is waiting on; the native view is hidden. */
+  awaitingConfirmation?: OriginBrowserConfirmationKind | null;
   title: string;
   showLoadingProgress?: boolean;
   /** Shell-selected native view; a popup need not share the root's load state. */
@@ -40,6 +52,7 @@ export function OriginBrowserViewport({
   ownerAvailable,
   dialogOpen,
   preserveRenderingUnderOverlays = false,
+  awaitingConfirmation = null,
   title,
   showLoadingProgress = true,
   loading,
@@ -192,6 +205,30 @@ export function OriginBrowserViewport({
       }}
       data-origin-browser-viewport=""
     >
+      {awaitingConfirmation && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="origin-browser-awaiting-confirmation"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-background)] p-6"
+        >
+          <div className="sor-alert-warning max-w-md space-y-2 text-sm leading-relaxed text-[var(--color-text)]">
+            <p className="flex items-center gap-2 font-medium">
+              <ShieldQuestion
+                size={18}
+                aria-hidden="true"
+                className="shrink-0 text-warning"
+              />
+              Waiting for your confirmation
+            </p>
+            <p>{confirmationSubject[awaitingConfirmation]}</p>
+            <p className="text-[var(--color-textSecondary)]">
+              Answer the prompt in this window to continue. Nothing is trusted
+              until you confirm it.
+            </p>
+          </div>
+        </div>
+      )}
       {showLoadingProgress && state.phase === "starting" && (
         <p
           role="status"

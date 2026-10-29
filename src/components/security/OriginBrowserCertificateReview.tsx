@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useOriginCertificateReview } from "../../hooks/protocol/useOriginCertificateReview";
+import { beginOriginBrowserConfirmation } from "../../hooks/protocol/originBrowserConfirmations";
 import type { OriginCertificateReviewTransport } from "../../types/protocols/originBrowserCertificateReview";
 import {
   Modal,
@@ -20,6 +21,16 @@ export function OriginBrowserCertificateReview({
   const review = useOriginCertificateReview({ transport });
   const cancelRef = useRef<HTMLButtonElement>(null);
   const prompt = review.prompt;
+  const waitingSession = prompt?.identity.sessionId;
+  // The tab that asked stops presenting its native view and says why while
+  // this review is open; the release runs on answer, expiry and unmount alike.
+  useEffect(
+    () =>
+      waitingSession
+        ? beginOriginBrowserConfirmation(waitingSession, "certificate")
+        : undefined,
+    [waitingSession, prompt?.requestId],
+  );
   if (!prompt) return null;
   const cancel = () => {
     void review.respond(prompt, "cancel");

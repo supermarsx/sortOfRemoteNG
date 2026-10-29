@@ -13,7 +13,11 @@ import {
 import { tunnelSourceIdentity } from "../../utils/ssh/sshTunnelSourceIdentity";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import { connectionEndpointHost } from "../../utils/connection/connectionEndpointHost";
-import { requestPrompt } from "../../utils/prompts/promptQueue";
+import {
+  requestPrompt,
+  type PromptRequest,
+} from "../../utils/prompts/promptQueue";
+import { beginOriginBrowserConfirmation } from "./originBrowserConfirmations";
 
 export interface NativeBrowserSshTrustOptions {
   sessionId: string;
@@ -41,6 +45,40 @@ interface Prompt {
   public_key?: string | null;
 }
 const listeners = new Map<string, object>();
+
+/** The themed host-key question. Exported for its component test. */
+export function hostKeyPrompt(
+  host: string,
+  port: number,
+  mismatch: boolean,
+  fingerprint: string,
+  keyType?: string | null,
+  keyBits?: number | null,
+): PromptRequest {
+  const endpoint = host.includes(":") ? `[${host}]:${port}` : `${host}:${port}`;
+  return {
+    title: mismatch
+      ? "SSH host key changed for this browser's tunnel"
+      : "Trust this browser's SSH tunnel host?",
+    message: mismatch
+      ? "WARNING: the SSH server presented a different key than the one saved. This can mean the connection is being intercepted. Verify the fingerprint with the server administrator through a trusted channel before replacing the saved key."
+      : "This browser's SSH tunnel reached a server whose host key is not saved yet. Verify the fingerprint with the server administrator before trusting it.",
+    confirmLabel: mismatch ? "Replace and trust key" : "Trust and save key",
+    cancelLabel: "Reject",
+    tone: mismatch ? "danger" : "warning",
+    defaultAction: "cancel",
+    preview: { label: "SHA-256 fingerprint", text: fingerprint },
+    targets: {
+      label: "SSH server",
+      items: [{ id: endpoint, name: endpoint, detail: keyType ?? "SSH" }],
+    },
+    facts: [
+      ...(keyBits != null ? [`${keyBits} bits`] : []),
+      mismatch ? "key changed" : "first use",
+    ],
+    hint: "Rejecting stops this browser attempt; nothing is saved. The SSH trust policy is in the connection's SSH settings.",
+  };
+}
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === "string" &&
   value.length > 0 &&
@@ -223,6 +261,8 @@ export function useOriginBrowserSshTrust(
     };
     const pending = new Set<string>();
     const answered = new Set<string>();
+    // Host-key prompts still open; an owner change or unmount closes them.
+    const hostPrompts = new Set<AbortController>();
     const respond = async (
       sessionId: string,
       decision: "reject" | "accept_and_save",
@@ -311,12 +351,35 @@ export function useOriginBrowserSshTrust(
             payload.status === "mismatch" || verification.status === "mismatch";
           if (verification.status === "trusted" && !mismatch)
             decision = "accept_and_save";
-          else if (
-            selected.policy !== "strict" &&
-            window.confirm(
-              `${mismatch ? "WARNING: SSH HOST KEY CHANGED" : "New SSH host key"}\n${selected.host}:${selected.port}\n${payload.key_type ?? "SSH"}\nSHA-256 fingerprint: ${payload.fingerprint}\n\nVerify this fingerprint with the server administrator. Trust and save this key for this browser's SSH tunnel?`,
-            )
-          ) {
+          else if (selected.policy !== "strict") {
+            // The shell's themed prompt, not window.confirm: it is a modal the
+            // native browser overlay sampler clips out, the tab hides its
+            // native view while it is pending, and it never blocks the window.
+            const controller = new AbortController();
+            hostPrompts.add(controller);
+            const release = beginOriginBrowserConfirmation(
+              options.sessionId,
+              "ssh-host-key",
+            );
+            let answer: { confirmed: boolean };
+            try {
+              answer = await requestPrompt(
+                hostKeyPrompt(
+                  selected.host,
+                  selected.port,
+                  mismatch,
+                  payload.fingerprint,
+                  payload.key_type,
+                  payload.key_bits,
+                ),
+                { signal: controller.signal },
+              );
+            } finally {
+              hostPrompts.delete(controller);
+              release();
+            }
+            if (!answer.confirmed || controller.signal.aborted)
+              throw new Error("The SSH host key was not trusted.");
             check();
             await trustIdentity(
               selected.host,
@@ -393,6 +456,10 @@ export function useOriginBrowserSshTrust(
             throw new Error("The SSH command preview is unavailable.");
           await ensureTrustStoreReady();
           checkRequest(true);
+          const release = beginOriginBrowserConfirmation(
+            options.sessionId,
+            "ssh-command",
+          );
           const decision = await requestPrompt(
             {
               title: "Run this browser's SSH ProxyCommand?",
@@ -406,7 +473,7 @@ export function useOriginBrowserSshTrust(
               },
             },
             { signal: controller.signal },
-          );
+          ).finally(release);
           checkRequest(true);
           accepted = decision.confirmed;
         } catch {
@@ -445,6 +512,7 @@ export function useOriginBrowserSshTrust(
       if (token.current === owner) token.current = null;
       if (listeners.get(correlation) === owner) listeners.delete(correlation);
       unlisteners.forEach((off) => off());
+      for (const prompt of hostPrompts) prompt.abort();
       for (const [nonce, prompt] of commandPrompts) {
         prompt.controller.abort();
         void respondCommand(nonce, false);

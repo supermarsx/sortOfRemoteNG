@@ -731,3 +731,43 @@ describe("native browser viewport", () => {
     expect(ctrl.navigate).not.toHaveBeenCalled();
   });
 });
+
+describe("pending security confirmation", () => {
+  it.each([
+    ["ssh-host-key", "SSH host key"],
+    ["ssh-command", "SSH ProxyCommand"],
+    ["certificate", "website certificate"],
+  ] as const)(
+    "drops native bounds and explains a pending %s review",
+    (kind, subject) => {
+      const { ctrl, props, rerender } = fixture();
+      expect(ctrl.setViewport).toHaveBeenLastCalledWith(expect.any(Object));
+      rerender(
+        <OriginBrowserViewport
+          {...props}
+          dialogOpen
+          preserveRenderingUnderOverlays={false}
+          awaitingConfirmation={kind}
+        />,
+      );
+      expect(ctrl.setViewport).toHaveBeenLastCalledWith(null);
+      const status = screen.getByTestId("origin-browser-awaiting-confirmation");
+      expect(status).toHaveAttribute("role", "status");
+      expect(status).toHaveTextContent("Waiting for your confirmation");
+      expect(status).toHaveTextContent(subject);
+      rerender(
+        <OriginBrowserViewport
+          {...props}
+          preserveRenderingUnderOverlays
+          awaitingConfirmation={null}
+        />,
+      );
+      expect(
+        screen.queryByTestId("origin-browser-awaiting-confirmation"),
+      ).toBeNull();
+      expect(ctrl.setViewport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ width: expect.any(Number) }),
+      );
+    },
+  );
+});
