@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>intercept fixture</title>
+<p>Local intercepting-proxy fixture.</p>
+<script>
+(async () => {
+  const attempt = new URLSearchParams(location.search).get("attempt") || "";
+  const r = { attempt, origin: location.origin };
+  const get = async (path, headers) => {
+    try {
+      const response = await fetch(path, { headers: headers || {} });
+      const entry = performance.getEntriesByName(new URL(path, location.href).href).pop();
+      return { status: response.status, body: await response.text(),
+               protocol: entry ? entry.nextHopProtocol : "" };
+    } catch (error) {
+      return { status: 0, body: "", protocol: "", error: String(error && error.name) };
+    }
+  };
+  const navigation = performance.getEntriesByType("navigation")[0];
+  r.protocol = navigation ? navigation.nextHopProtocol : "";
+  r.maxAge = await get("/max-age.txt");
+  r.noStore = await get("/no-store.txt");
+  r.revalidate = await get("/revalidate.txt");
+  r.varyA = await get("/vary.txt", { "X-Sorng-Variant": "a" });
+  if (attempt === "2") r.varyB = await get("/vary.txt", { "X-Sorng-Variant": "b" });
+  r.ws = await new Promise((resolve) => {
+    let socket;
+    try {
+      socket = new WebSocket("wss://" + location.host + "/ws");
+    } catch (error) {
+      resolve("throw");
+      return;
+    }
+    const timer = setTimeout(() => resolve("timeout"), 10000);
+    socket.onopen = () => socket.send("sorng-intercept-echo");
+    socket.onmessage = (event) => {
+      clearTimeout(timer);
+      resolve(String(event.data));
+      socket.close();
+    };
+    socket.onerror = () => {
+      clearTimeout(timer);
+      resolve("error");
+    };
+  });
+  await fetch("/proof", { method: "POST", body: JSON.stringify(r) });
+})();
+</script>

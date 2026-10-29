@@ -181,6 +181,19 @@ jobs:
           path: ${{ runner.temp }}/cef-native-acceptance/seal.json
           retention-days: 30
           if-no-files-found: error
+      - name: Run the intercepting-proxy acceptance on the same staged engine
+        # t-mitmproxy M3. Reuses the verified, staged runtime of the step above
+        # (no engine rebuild); results are retained as intercept-*.json/log.
+        env:
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          CEF_ENTRY: ${{ toJSON(matrix) }}
+          CEF_ACCEPTANCE_OUTPUT: ${{ runner.temp }}/cef-native-acceptance
+        run: |
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            xvfb-run -a --server-args='-screen 0 1280x1024x24 -nolisten tcp' node src-tauri/crates/sorng-browser-host/tests/native_intercept_acceptance/ci-run.mjs
+          else
+            node src-tauri/crates/sorng-browser-host/tests/native_intercept_acceptance/ci-run.mjs
+          fi
       - name: Retain actual native reports, logs and cleanup evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -281,6 +294,19 @@ jobs:
           path: ${{ runner.temp }}/cef-native-acceptance/seal.json
           retention-days: 30
           if-no-files-found: error
+      - name: Run the intercepting-proxy acceptance on the same staged engine
+        # t-mitmproxy M3. Reuses the verified, staged runtime of the step above
+        # (no engine rebuild); results are retained as intercept-*.json/log.
+        env:
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          CEF_ENTRY: ${{ toJSON(matrix) }}
+          CEF_ACCEPTANCE_OUTPUT: ${{ runner.temp }}/cef-native-acceptance
+        run: |
+          if [[ "$RUNNER_OS" == 'Linux' ]]; then
+            xvfb-run -a --server-args='-screen 0 1280x1024x24 -nolisten tcp' node src-tauri/crates/sorng-browser-host/tests/native_intercept_acceptance/ci-run.mjs
+          else
+            node src-tauri/crates/sorng-browser-host/tests/native_intercept_acceptance/ci-run.mjs
+          fi
       - name: Retain actual native reports, logs and cleanup evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
