@@ -3,15 +3,23 @@
 use super::diagnostics::{self, Navigation, TlsBridgeFailure};
 use super::Attempt;
 use sorng_browser_host::cef_tls_bridge::{
-    self, NativeTlsCompletion, NativeTlsDecision, NativeTlsEvidence, NativeTlsFailure, NativeTlsHooks,
+    self, NativeTlsCaMode, NativeTlsCompletion, NativeTlsDecision, NativeTlsEvidence,
+    NativeTlsFailure, NativeTlsHooks,
 };
 use sorng_commands_core::origin_browser_authority::{
     NativeCertificateAuthority, NativeCertificateDecision, NativeCertificateEvidence,
 };
 use sorng_encryption::EncryptionState;
+use sorng_protocols::origin_browser::BrowserIdentity;
+use sorng_protocols::private_forward_proxy::intercept::InterceptAuthority;
 use std::sync::{atomic::AtomicU32, Arc, OnceLock, Weak};
 use tauri::{Manager, WebviewWindow};
 use super::certificate_review::review_certificate;
+
+// t-mitmproxy: upstream trust for intercepting attempts (the proxy's own
+// handshake evidence through the same authority, records and prompt).
+#[path = "origin_browser_upstream_trust.rs"]
+pub(super) mod upstream_trust;
 
 pub(super) struct CertificateHooks {
     attempt: Weak<Attempt>,
@@ -19,6 +27,9 @@ pub(super) struct CertificateHooks {
     window: WebviewWindow,
     timing_samples: AtomicU32,
     owner_rechecks: Arc<owner_rechecks::Coalesced>,
+    // Set only for an intercepting attempt (CUSTOM_ONLY context whose single
+    // anchor is this authority's CA). Unset keeps the verified CEF path.
+    intercept: OnceLock<Arc<InterceptAuthority>>,
 }
 
 impl CertificateHooks {
@@ -33,7 +44,18 @@ impl CertificateHooks {
             window,
             timing_samples: AtomicU32::new(0),
             owner_rechecks: Arc::default(),
+            intercept: OnceLock::new(),
         })
+    }
+
+    /// Marks this attempt as intercepting: from now on the engine may only
+    /// admit leaves this authority minted (synchronous fast path), and the
+    /// app decides upstream trust in the proxy instead. Set once, before the
+    /// context is created; a second call is refused.
+    // t-mitmproxy m4: called from origin_browser_runtime.rs.
+    #[allow(dead_code)]
+    pub(super) fn intercept_with(&self, authority: Arc<InterceptAuthority>) -> bool {
+        self.intercept.set(authority).is_ok()
     }
 }
 
@@ -86,6 +108,28 @@ impl NativeTlsHooks for CertificateHooks {
         let Some(attempt) = self.attempt.upgrade().filter(|attempt| attempt.current()) else {
             return; // Dropping the single-use completion queues denial.
         };
+        if let Some(intercept) = self.intercept.get() {
+            // t-mitmproxy fast path: the proxy owns upstream trust, so the
+            // engine only has to prove it reached our own minted leaf. No
+            // owner recheck, trust store, authority evaluation or prompt.
+            let decision = intercepted_admission(attempt.current(), &evidence, intercept.as_ref());
+            if decision == NativeTlsDecision::Deny {
+                diagnostics::navigation(Navigation::TlsDenied);
+                return; // Dropping the completion queues denial.
+            }
+            diagnostics::navigation(Navigation::TlsAllow);
+            let _ = self.window.run_on_main_thread(move || {
+                completion.complete(if attempt.current() {
+                    decision
+                } else {
+                    NativeTlsDecision::Deny
+                });
+                if cef_tls_bridge::pump_tls().is_err() {
+                    attempt.revoke();
+                }
+            });
+            return;
+        }
         // Do not even create TOFU records for a native failure the engine cannot
         // override (revocation, fatal/HSTS, CT, weak keys, malformed evidence).
         let Some(decision) = admissible_native_result(
@@ -109,17 +153,11 @@ impl NativeTlsHooks for CertificateHooks {
                 timing.outcome(timing::Outcome::OwnerDenied);
                 return;
             }
+            let certificate = cef_certificate_evidence(attempt.identity.clone(), &evidence);
             let origin = evidence.origin;
             let chain = evidence.peer_chain;
             timing.phase(timing::Phase::Certificate);
-            let verdict = authority
-                .evaluate(NativeCertificateEvidence {
-                    identity: attempt.identity.clone(),
-                    origin: origin.clone(),
-                    chain_der: chain.clone(),
-                    system_ca_valid: evidence.native_error == 0 && evidence.issued_by_known_root,
-                })
-                .await;
+            let verdict = authority.evaluate(certificate).await;
             timing.phase(timing::Phase::Review);
             let permit = match verdict {
                 Ok(NativeCertificateDecision::Allow(permit)) => {
@@ -553,6 +591,67 @@ mod owner_rechecks {
 }
 // END owner recheck coalescing
 
+/// The authority's evidence for a CEF-verified handshake: the chain exactly
+/// as the peer sent it, CA-valid only for a native success on a known root.
+/// The proxy builds the same shape from its own handshake
+/// (`upstream_trust::upstream_certificate_evidence`).
+fn cef_certificate_evidence(
+    identity: BrowserIdentity,
+    evidence: &NativeTlsEvidence,
+) -> NativeCertificateEvidence {
+    NativeCertificateEvidence {
+        identity,
+        origin: evidence.origin.clone(),
+        chain_der: evidence.peer_chain.clone(),
+        system_ca_valid: evidence.native_error == 0 && evidence.issued_by_known_root,
+    }
+}
+
+/// What the fast path needs from the attempt's interception CA.
+trait InterceptLeaves {
+    fn anchor_der(&self) -> &[u8];
+    fn admits_leaf(&self, host: &str, port: u16, leaf_der: &[u8]) -> bool;
+}
+
+impl InterceptLeaves for InterceptAuthority {
+    fn anchor_der(&self) -> &[u8] {
+        InterceptAuthority::anchor_der(self)
+    }
+    fn admits_leaf(&self, host: &str, port: u16, leaf_der: &[u8]) -> bool {
+        InterceptAuthority::admits_leaf(self, host, port, leaf_der)
+    }
+}
+
+/// Intercepting attempts: admit natively only a clean native verification
+/// (no error, not fatal, no exception) that chained to this attempt's own
+/// anchor in a CUSTOM_ONLY context and presented the leaf the proxy minted
+/// for exactly this host and port. Everything else is denied; there is no
+/// exception, review or authority evaluation on this path.
+fn intercepted_admission(
+    current: bool,
+    evidence: &NativeTlsEvidence,
+    intercept: &impl InterceptLeaves,
+) -> NativeTlsDecision {
+    let admitted = current
+        && evidence.native_error == 0
+        && !evidence.fatal_error
+        && evidence.allowed_exception_mask == 0
+        && evidence.ca_mode == NativeTlsCaMode::CustomOnly
+        && evidence
+            .verified_chain
+            .last()
+            .is_some_and(|anchor| anchor.as_slice() == intercept.anchor_der())
+        && evidence
+            .peer_chain
+            .first()
+            .is_some_and(|leaf| intercept.admits_leaf(&evidence.hostname, evidence.port, leaf));
+    if admitted {
+        NativeTlsDecision::AdmitNative
+    } else {
+        NativeTlsDecision::Deny
+    }
+}
+
 fn admissible_native_result(error: i32, fatal: bool, mask: u32) -> Option<NativeTlsDecision> {
     if fatal {
         return None;
@@ -594,4 +693,94 @@ mod tests {
         }
     }
 
+    struct FakeIntercept {
+        anchor: Vec<u8>,
+        leaf: Vec<u8>,
+    }
+
+    impl InterceptLeaves for FakeIntercept {
+        fn anchor_der(&self) -> &[u8] {
+            &self.anchor
+        }
+        fn admits_leaf(&self, host: &str, port: u16, leaf_der: &[u8]) -> bool {
+            host == "device.test" && port == 443 && leaf_der == self.leaf
+        }
+    }
+
+    pub(super) fn evidence(peer_chain: Vec<Vec<u8>>, verified_chain: Vec<Vec<u8>>) -> NativeTlsEvidence {
+        NativeTlsEvidence {
+            context_token: 1,
+            generation: 1,
+            challenge: 1,
+            hostname: "device.test".into(),
+            port: 443,
+            origin: "https://device.test".into(),
+            native_error: 0,
+            certificate_status: 0,
+            fatal_error: false,
+            issued_by_known_root: false,
+            peer_chain,
+            verified_chain,
+            ca_mode: NativeTlsCaMode::CustomOnly,
+            allowed_exception_mask: 0,
+        }
+    }
+
+    #[test]
+    fn intercept_fast_path_admits_only_our_minted_leaf_on_a_current_attempt() {
+        let intercept = FakeIntercept {
+            anchor: b"attempt-ca".to_vec(),
+            leaf: b"minted-leaf".to_vec(),
+        };
+        let good = || evidence(vec![intercept.leaf.clone()], vec![intercept.leaf.clone(), intercept.anchor.clone()]);
+        assert_eq!(
+            intercepted_admission(true, &good(), &intercept),
+            NativeTlsDecision::AdmitNative
+        );
+        let with = |change: fn(&mut NativeTlsEvidence)| {
+            let mut e = good();
+            change(&mut e);
+            e
+        };
+        let denied: Vec<(&str, bool, NativeTlsEvidence)> = vec![
+            ("stale attempt", false, good()),
+            ("native error", true, with(|e| e.native_error = -202)),
+            ("scoped exception", true, with(|e| {
+                e.native_error = -202;
+                e.allowed_exception_mask = 4;
+            })),
+            ("mask without error", true, with(|e| e.allowed_exception_mask = 4)),
+            ("fatal", true, with(|e| e.fatal_error = true)),
+            ("system roots context", true, with(|e| e.ca_mode = NativeTlsCaMode::System)),
+            ("system plus custom context", true, with(|e| e.ca_mode = NativeTlsCaMode::SystemPlusCustom)),
+            ("other root", true, with(|e| e.verified_chain[1] = b"public-root".to_vec())),
+            ("no verified chain", true, with(|e| e.verified_chain.clear())),
+            ("foreign leaf under our CA", true, with(|e| e.peer_chain[0] = b"other-leaf".to_vec())),
+            ("no peer chain", true, with(|e| e.peer_chain.clear())),
+            ("other host", true, with(|e| e.hostname = "other.test".into())),
+            ("other port", true, with(|e| e.port = 8443)),
+        ];
+        for (case, current, evidence) in denied {
+            assert_eq!(
+                intercepted_admission(current, &evidence, &intercept),
+                NativeTlsDecision::Deny,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn cef_evidence_is_ca_valid_only_for_native_success_on_a_known_root() {
+        let identity = super::upstream_trust::tests::identity();
+        for (native_error, known_root, valid) in [(0, true, true), (0, false, false), (-202, true, false)] {
+            let mut e = evidence(vec![b"leaf".to_vec(), b"ca".to_vec()], Vec::new());
+            e.native_error = native_error;
+            e.issued_by_known_root = known_root;
+            let built = cef_certificate_evidence(identity.clone(), &e);
+            assert_eq!(built.system_ca_valid, valid);
+            assert_eq!(built.chain_der, e.peer_chain);
+            assert_eq!(built.origin, "https://device.test");
+            assert!(built.identity == identity);
+        }
+    }
 }
