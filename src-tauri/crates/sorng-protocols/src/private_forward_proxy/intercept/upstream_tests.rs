@@ -1187,3 +1187,78 @@ fn structural_checks_flag_weak_keys_but_not_strong_chains() {
     let refs: Vec<&[u8]> = with_root.iter().map(Vec::as_slice).collect();
     assert_eq!(structural_fatal(&refs), None);
 }
+
+// ------------------------------------------------- admission warm-up ----
+
+#[tokio::test]
+async fn warm_admits_without_sending_request_bytes() {
+    let pki = Pki::new();
+    let served = pki.valid(&["a.test"], Validity::Current);
+    for alpn in [Alpn::H2AndH1, Alpn::H1Only] {
+        let f = fixture(&served, alpn, pki.system(&[]), ADMIT, Duration::from_secs(90)).await;
+        let a = authority("a.test:443");
+        assert!(!f.pool.admitted(&a));
+        assert!(f.pool.warm(&a, true).await);
+        assert!(f.pool.admitted(&a));
+        assert_eq!(f.trust.calls(), 1, "evaluated exactly like a request");
+        let stats = f.server.stats.clone();
+        eventually("warm connection closed", || {
+            stats.open.load(Ordering::SeqCst) == 0
+        })
+        .await;
+        assert_eq!(f.server.stats.handshakes.load(Ordering::SeqCst), 1);
+        assert_eq!(f.server.stats.bytes.load(Ordering::SeqCst), 0, "no request byte");
+        // Already admitted: no second dial or evaluation.
+        assert!(f.pool.warm(&a, true).await);
+        f.pool.spawn_warm(&a, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(f.dials.load(Ordering::SeqCst), 1);
+        assert_eq!(f.trust.calls(), 1);
+    }
+}
+
+#[tokio::test]
+async fn warm_never_admits_a_denied_upstream() {
+    let pki = Pki::new();
+    let served = pki.valid(&["a.test"], Validity::Current);
+    for verdict in [UpstreamVerdict::Deny, UpstreamVerdict::Timeout] {
+        let f = fixture(&served, Alpn::H2AndH1, pki.system(&[]), verdict, Duration::from_secs(90)).await;
+        let a = authority("a.test:443");
+        assert!(!f.pool.warm(&a, true).await);
+        assert!(!f.pool.admitted(&a));
+        assert_eq!(f.server.stats.bytes.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn spawned_warm_runs_once_per_authority_and_stops_with_the_pool() {
+    let pki = Pki::new();
+    let served = pki.valid(&["a.test"], Validity::Current);
+    let f = fixture(&served, Alpn::H2AndH1, pki.system(&[]), ADMIT, Duration::from_secs(90)).await;
+    let a = authority("a.test:443");
+    for _ in 0..4 {
+        f.pool.spawn_warm(&a, true);
+    }
+    let pool = f.pool.clone();
+    let probe = a.clone();
+    eventually("warm admitted", move || pool.admitted(&probe)).await;
+    assert_eq!(f.dials.load(Ordering::SeqCst), 1, "deduplicated");
+    assert_eq!(f.server.stats.bytes.load(Ordering::SeqCst), 0);
+    f.pool.close_all();
+    let b = authority("b.test:443");
+    f.pool.spawn_warm(&b, true);
+    assert!(!f.pool.warm(&b, true).await, "closed pool never admits");
+    assert!(!f.pool.admitted(&b));
+}
+
+#[test]
+fn only_document_destinations_are_main_frames() {
+    use super::forward::is_main_frame;
+    use hyper::header::{HeaderMap, HeaderValue};
+    let mut headers = HeaderMap::new();
+    assert!(!is_main_frame(&headers));
+    for (value, main) in [("document", true), ("Document", true), ("iframe", false), ("script", false), ("empty", false)] {
+        headers.insert("sec-fetch-dest", HeaderValue::from_static(value));
+        assert_eq!(is_main_frame(&headers), main, "{value}");
+    }
+}

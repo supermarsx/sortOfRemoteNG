@@ -226,6 +226,13 @@ pub(crate) fn upstream_uri(ctx: &ExchangeCtx, uri: &Uri) -> Option<Uri> {
         .ok()
 }
 
+/// A top-level navigation request (`Sec-Fetch-Dest: document`).
+pub(crate) fn is_main_frame(headers: &HeaderMap) -> bool {
+    headers
+        .get("sec-fetch-dest")
+        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"document"))
+}
+
 impl Exchange {
     pub(crate) fn new(
         authority: Arc<InterceptAuthority>,
@@ -395,7 +402,15 @@ impl Exchange {
             return *response;
         }
         let (upstream, token) = match self.cache.lookup(&ctx.authority, &parts).await {
-            CacheLookup::Fresh(response) => return self.serve(&ctx, response),
+            CacheLookup::Fresh(response) => {
+                // A main-frame hit skips upstream; admit the origin in
+                // parallel so login delivery (which requires an admitted
+                // upstream in this attempt) can proceed. No request bytes.
+                if is_main_frame(&parts.headers) {
+                    self.pool.spawn_warm(&ctx.authority, ctx.secure);
+                }
+                return self.serve(&ctx, response);
+            }
             CacheLookup::Revalidate { conditional, token } => {
                 drop(body);
                 (Request::from_parts(conditional, empty_body()), Some(token))

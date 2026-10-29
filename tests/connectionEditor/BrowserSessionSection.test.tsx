@@ -673,7 +673,7 @@ describe("browser connection overrides", () => {
       expect(change.mock.lastCall?.[0].browserSession).toBeUndefined();
     });
 
-    it("explains an engine without disk-cache support", async () => {
+    it("explains an engine that cannot run HTTPS inspection", async () => {
       mockNative(
         {},
         {
@@ -683,7 +683,9 @@ describe("browser connection overrides", () => {
       );
       setup();
       expect(
-        await screen.findByText(/does not support a page cache on disk yet/),
+        await screen.findByText(
+          /available when HTTPS inspection is active, and the installed browser engine cannot run HTTPS inspection/,
+        ),
       ).toBeVisible();
     });
   });

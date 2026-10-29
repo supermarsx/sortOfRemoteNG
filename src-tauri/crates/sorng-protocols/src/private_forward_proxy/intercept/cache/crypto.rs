@@ -37,7 +37,7 @@ fn random<const N: usize>() -> [u8; N] {
     out
 }
 
-fn derive(ikm: &[u8], salt: Option<&[u8]>, info: &[u8]) -> Zeroizing<[u8; 32]> {
+pub(crate) fn derive(ikm: &[u8], salt: Option<&[u8]>, info: &[u8]) -> Zeroizing<[u8; 32]> {
     let mut out = Zeroizing::new([0u8; 32]);
     // 32 bytes is always a valid HKDF-SHA256 output length.
     let _ = Hkdf::<Sha256>::new(salt, ikm).expand(info, out.as_mut_slice());

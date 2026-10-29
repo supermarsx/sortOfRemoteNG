@@ -10,10 +10,9 @@ use crate::origin_browser_observability::HttpCacheDiagnostic;
 use sorng_browser_host::{
     cef_browser::{BrowserEvent, BrowserEventSink, BrowserFault, CefBrowserHost},
     cef_context::{PreparationStatus, PrivateRequestContext},
-    cef_http_cache::{HttpCacheMemoryReason, HttpCacheUse},
     cef_runtime::{CefRuntime, RuntimeError, ScheduleWake, WakeUnavailable},
     cef_session_retention::{RetentionPolicy, SignInCookie},
-    cef_tls_bridge::{self, NativeTlsBridge, NativeTlsConfig},
+    cef_tls_bridge::{self, NativeTlsBridge},
     control::Lifecycle,
     ipc::*,
     native_automation::{
@@ -27,7 +26,7 @@ use sorng_commands_core::origin_browser_authority::{self, NativeOwnerLease};
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
     origin_browser::{BrowserIdentity, BrowserSessionFailure, BrowserSessionFailureState, NativeHostReadiness, OriginBrowserSession},
-    private_forward_proxy::ProxyLimits,
+    private_forward_proxy::{intercept::InterceptConfig, ProxyLimits},
 };
 use std::{
     cell::RefCell,
@@ -92,6 +91,8 @@ pub(crate) mod retention;
 pub(crate) mod http_cache;
 #[path = "origin_browser_retention_flow.rs"]
 mod retention_flow;
+#[path = "origin_browser_interception.rs"]
+mod interception;
 
 const UNAVAILABLE: &str =
     "The packaged real-origin browser is unavailable; no direct-network fallback was used.";
@@ -167,6 +168,9 @@ struct Attempt {
     load_started: Mutex<Option<Instant>>,
     address_watch: Mutex<sorng_browser_host::native_navigation::FirstAddressWatch>,
     closed: close_ack::CloseSignal,
+    // t-mitmproxy: the connection's proxy disk cache lease, held while this
+    // attempt lives and released when it ends (never handed to CEF).
+    http_cache_lease: Mutex<Option<http_cache::CacheLease>>,
 }
 
 impl Attempt {
@@ -241,6 +245,15 @@ impl Attempt {
             None => session.revoke(&self.identity),
         };
         drop(session);
+        // The relay (and so its proxy cache) is revoked: end the cache lease.
+        let lease = self
+            .http_cache_lease
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        if let Some(lease) = lease {
+            lease.release();
+        }
         if revoked.is_ok() {
             // Never publish on unwind or before the exact session's relay has
             // received its revocation signal. Async retention cleanup may remain.
@@ -266,6 +279,9 @@ struct SharedRegistry {
     admission: flow::RuntimeAdmission,
     runtime_failure: runtime_failure::RuntimeFailureStore,
     certificate_hooks: AtomicBool,
+    // The loaded bridge trusts per-context CAs (CUSTOM_CA): attempts may
+    // intercept. Read once per attempt, before its proxy starts.
+    intercept_capable: AtomicBool,
     attempts: Mutex<HashMap<String, Arc<Attempt>>>,
     closed: Mutex<close_ack::CloseReceipts>,
     exit_requested: Mutex<Option<i32>>,
@@ -955,10 +971,13 @@ pub(crate) fn install(runtime: CefRuntime<'static>) -> Result<(), String> {
         shared()
             .certificate_hooks
             .store(tls.is_some(), Ordering::Release);
-        http_cache::set_engine_support(
-            tls.as_ref()
-                .is_some_and(NativeTlsBridge::supports_http_disk_cache),
-        );
+        // t-mitmproxy: the page cache lives in the intercepting proxy, so it
+        // is available exactly when attempts can intercept.
+        let intercept_capable = tls.as_ref().is_some_and(NativeTlsBridge::supports_custom_ca);
+        shared()
+            .intercept_capable
+            .store(intercept_capable, Ordering::Release);
+        http_cache::set_engine_support(intercept_capable);
         let _ = sorng_commands_core::database_protection::observe_database_lock(
             on_database_locked,
         );
@@ -1422,37 +1441,37 @@ impl BrowserEventSink for Sink {
     }
 }
 
-/// The connection's HTTP disk cache lease, or why this attempt uses
-/// Chromium's in-memory cache. Never fails the attempt. Ids come from the
-/// authorised identity; the binding is re-read under the owner lease.
+/// The connection's proxy disk cache lease, or why this intercepting attempt
+/// uses the proxy's in-memory cache. Never fails the attempt. Ids come from
+/// the authorised identity; the binding is re-read under the owner lease.
 async fn prepare_http_cache(
     state: &EncryptionState,
-    attempt: &Arc<Attempt>,
+    lease: &NativeOwnerLease,
+    identity: &BrowserIdentity,
+    preferences: origin_browser_authority::NativeHttpCachePreferences,
 ) -> Result<http_cache::CacheLease, HttpCacheDiagnostic> {
     const MIB: u64 = 1024 * 1024;
-    let preferences = attempt.preferences.http_cache;
     if !preferences.enabled {
         return Err(HttpCacheDiagnostic::Disabled);
     }
     // Quick Connect owns no database cache, as it owns no retained cookies.
-    if attempt.lease.is_temporary() {
+    if lease.is_temporary() {
         return Err(HttpCacheDiagnostic::Unavailable);
     }
     http_cache::may_acquire().map_err(http_cache_unavailable)?;
-    let (row, route) = attempt
-        .lease
+    let (row, route) = lease
         .http_cache_binding_source()
         .await
         .map_err(|_| HttpCacheDiagnostic::Unavailable)?;
     let settings = crate::app_settings_commands::read_app_settings_inner(
-        attempt.lease.profile_root(),
+        lease.profile_root(),
         state,
     )
     .await
     .map_err(|_| HttpCacheDiagnostic::Unavailable)?
     .unwrap_or(serde_json::Value::Null);
-    let database = attempt.identity.owner_database_id().to_owned();
-    let connection = attempt.identity.connection_id().to_owned();
+    let database = identity.owner_database_id().to_owned();
+    let connection = identity.connection_id().to_owned();
     let trust = http_cache::trust_store_digest(&database, &connection)
         .await
         .map_err(|()| HttpCacheDiagnostic::Unavailable)?;
@@ -1462,7 +1481,7 @@ async fn prepare_http_cache(
         &http_cache::trust_settings_digest(&settings),
         route,
     );
-    if !attempt.current() {
+    if !lease.is_current() {
         return Err(HttpCacheDiagnostic::Unavailable);
     }
     tauri::async_runtime::spawn_blocking(move || {
@@ -1493,31 +1512,32 @@ fn http_cache_unavailable(reason: http_cache::Unavailable) -> HttpCacheDiagnosti
     }
 }
 
-/// Hands a disk lease to the engine's release signal (state 7), or releases
-/// it at once when the context fell back to memory. UI thread; no IO.
-fn attach_http_cache(
-    context: &PrivateRequestContext,
-    lease: Option<http_cache::CacheLease>,
-) -> Option<HttpCacheDiagnostic> {
-    let lease = lease?;
-    match (context.http_cache_state(), context.http_cache_release_signal()) {
-        (HttpCacheUse::Disk, Some(signal)) => {
-            lease.attach(signal);
-            Some(HttpCacheDiagnostic::Disk)
+/// t-mitmproxy: the vault DEK for the cache master key (HKDF in the proxy
+/// crate). `None` when the vault has none or cannot be read; the attempt then
+/// uses the in-memory cache. The DEK is zeroized where it is consumed.
+async fn read_cache_dek() -> Option<Vec<u8>> {
+    sorng_vault::keychain::read_dek().await.ok()
+}
+
+/// t-mitmproxy: a certificate review the user approved after its proxy
+/// request had ended (a synthetic 502 or a cancelled load) reloads the main
+/// frame, after the same owner recheck a shell Reload runs.
+fn reload_after_late_approval(window: WebviewWindow, attempt: Arc<Attempt>) {
+    tauri::async_runtime::spawn(async move {
+        let state = window.state::<EncryptionState>();
+        if attempt.lease.recheck(&window, &state).await.is_err() {
+            attempt.revoke();
+            return;
         }
-        (state, _) => {
-            drop(lease);
-            Some(match state {
-                HttpCacheUse::Memory(HttpCacheMemoryReason::EngineUnsupported) => {
-                    HttpCacheDiagnostic::EngineUnsupported
-                }
-                HttpCacheUse::Memory(HttpCacheMemoryReason::EngineRejected) => {
-                    HttpCacheDiagnostic::EngineRejected
-                }
-                _ => HttpCacheDiagnostic::Unavailable,
-            })
+        if attempt.current() {
+            let _ = operate(
+                window.clone(),
+                attempt,
+                Operation::Control(OriginBrowserAction::Reload {}),
+            )
+            .await;
         }
-    }
+    });
 }
 
 /// Explicit database lock (D-lock): the cache is kept unless the saved global
@@ -1716,8 +1736,55 @@ async fn create_document(
             STALE.to_owned()
         })?;
     timing.mark(TimingStage::OwnerCheckedBeforeProxy);
-    let session = OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
+    // t-mitmproxy: decide HTTPS handling once, before the proxy and the CEF
+    // context exist. The context configuration below is derived from this
+    // plan and the attempt never switches afterwards.
+    let plan = interception::Plan::decide(
+        authorized.preferences.tls_interception,
+        shared().intercept_capable.load(Ordering::Acquire),
+        sorng_protocols::private_forward_proxy::intercept::InterceptAuthority::generate,
+    );
+    if plan.diagnostic() == crate::origin_browser_observability::TlsInterceptionDiagnostic::Unavailable {
+        log::warn!("Native browser stage=tls-interception state=interception-unavailable");
+    }
+    let mut upstream_trust = None;
+    let mut cache_lease = None;
+    let mut cache_requested = HttpCacheDiagnostic::DirectTls;
+    let started = match plan.authority() {
+        Some(authority) => {
+            let trust =
+                tls::upstream_trust::AppUpstreamTrust::new(authorized.certificates.clone(), window.clone());
+            let leased = prepare_http_cache(
+                state,
+                &authorized.lease,
+                &identity,
+                authorized.preferences.http_cache,
+            )
+            .await;
+            let dek = if leased.is_ok() { read_cache_dek().await } else { None };
+            let (cache, lease, requested) = interception::cache_mode(leased, dek);
+            cache_lease = lease;
+            cache_requested = requested;
+            upstream_trust = Some(trust.clone());
+            OriginBrowserSession::start_intercepting(
+                authorized.policy,
+                authorized.route,
+                ProxyLimits::default(),
+                InterceptConfig {
+                    authority: authority.clone(),
+                    trust,
+                    cache,
+                    hooks: Vec::new(),
+                },
+            )
             .await
+        }
+        None => {
+            OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
+                .await
+        }
+    };
+    let session = started
             .map_err(|error| {
                 // Fixed policy text only. The relay logs the bind's own error
                 // kind; nothing of this attempt may outlive the failed start.
@@ -1726,7 +1793,26 @@ async fn create_document(
                 view_failure(Failure::PrivateProxy, PROXY_FAILED)
             })?;
     let failure = session.failure_state();
+    let cache_observed = match plan.authority() {
+        Some(_) => interception::observed_cache(cache_requested, session.intercept_cache_use()),
+        None => HttpCacheDiagnostic::DirectTls,
+    };
+    if cache_observed != HttpCacheDiagnostic::Disk {
+        cache_lease = None; // Memory or Direct TLS: release the directory now.
+    }
     let session = Arc::new(Mutex::new(session));
+    if plan.authority().is_some() {
+        // Defence in depth: credentials only reach an origin whose upstream
+        // the proxy admitted (trust-evaluated) in this attempt.
+        let admitted = Arc::downgrade(&session);
+        login.require_upstream_admission(Arc::new(move |origin: &str| {
+            admitted.upgrade().is_some_and(|session| {
+                session
+                    .lock()
+                    .is_ok_and(|session| session.upstream_admitted(origin))
+            })
+        }));
+    }
     timing.mark(TimingStage::ProxyReady);
     let attempt = Arc::new(Attempt {
         engine_observations: crate::origin_browser_observability::EngineObservations::default(),
@@ -1778,7 +1864,15 @@ async fn create_document(
         load_started: Mutex::new(None),
         address_watch: Mutex::new(Default::default()),
         closed: close_ack::CloseSignal::default(),
+        http_cache_lease: Mutex::new(cache_lease),
     });
+    attempt
+        .engine_observations
+        .observe_tls_interception(plan.diagnostic());
+    attempt.engine_observations.observe_http_cache(cache_observed);
+    if let Some(trust) = &upstream_trust {
+        trust.bind(&attempt);
+    }
     let abandoned = attempt.clone();
     let creation = flow::RevokeOnDrop::new(move || abandoned.revoke());
     retention_setup.disarm();
@@ -1807,7 +1901,6 @@ async fn create_document(
         }
         attempts.insert(attempt.identity.attempt_id().to_string(), attempt.clone());
     }
-    let http_cache = prepare_http_cache(state, &attempt).await;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let queued = attempt.clone();
     let request_id = request.request_id.clone();
@@ -1816,6 +1909,14 @@ async fn create_document(
     let owner_window = window.clone();
     let certificate_hooks =
         tls::CertificateHooks::new(&attempt, authorized.certificates, window.clone());
+    // Intercepting: the engine may only admit leaves of the attempt CA (fast
+    // path); the proxy owns upstream trust. Set before the context exists.
+    let tls_config = interception::context_tls_config(
+        plan.authority().map(|authority| authority.anchor_der()),
+    );
+    if let Some(authority) = plan.authority() {
+        certificate_hooks.intercept_with(authority.clone());
+    }
     attempt.timing.mark(TimingStage::ViewUiQueued);
     let result = window.clone().run_on_main_thread(move || {
         queued.timing.mark(TimingStage::UiEntered);
@@ -1836,10 +1937,6 @@ async fn create_document(
                 let _ = sender.send(Err(TLS_UNAVAILABLE.into()));
                 return;
             };
-            let (lease, refused) = match http_cache {
-                Ok(lease) => (Some(lease), None),
-                Err(diagnostic) => (None, Some(diagnostic)),
-            };
             // SAFETY: runtime is owned by this registry on the native UI thread.
             match unsafe {
                 PrivateRequestContext::create_with_tls_capabilities_and_cache(
@@ -1847,23 +1944,16 @@ async fn create_document(
                     queued.identity.clone(),
                     permissions,
                     bridge,
-                    &NativeTlsConfig {
-                        require_scoped_exceptions: true,
-                        ..NativeTlsConfig::default()
-                    },
+                    &tls_config,
                     certificate_hooks,
                     queued.preferences.capabilities,
-                    lease.as_ref().map(http_cache::CacheLease::spec),
+                    // t-mitmproxy: the proxy owns the page cache; Chromium
+                    // keeps only its in-memory cache.
+                    None,
                 )
             } {
                 Ok(context) => {
                     queued.timing.mark(TimingStage::ContextCreated);
-                    // Take the release signal before the context moves into
-                    // the browser host: the lease outlives this owner.
-                    let observed = attach_http_cache(&context, lease).or(refused);
-                    if let Some(observed) = observed {
-                        queued.engine_observations.observe_http_cache(observed);
-                    }
                     ui.pending.push(Pending {
                         context,
                         attempt: queued.clone(),

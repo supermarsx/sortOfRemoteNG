@@ -460,7 +460,10 @@ pub(crate) fn origin_browser_cancel_prewarm(window: WebviewWindow) {
 /// consent grant, or promise that the current database is available.
 /// `httpDiskCache` describes the per-connection page cache (t-cefiso C-H5);
 /// its presence tells the shell that native parsing accepts the
-/// `browserSession.httpCache` override.
+/// `browserSession.httpCache` override. Since t-mitmproxy the cache lives in
+/// the intercepting proxy: `available` means the engine can run intercepting
+/// attempts (it trusts a per-attempt CA) and the cache root is device-local.
+/// The reason strings are unchanged.
 #[tauri::command]
 pub(crate) fn origin_browser_retention_capabilities() -> serde_json::Value {
     #[cfg(feature = "native-browser")]

@@ -16,7 +16,7 @@ export function httpCacheUnavailableText(
     case "cache-location-not-local":
       return "Page cache is in memory only because the browser data folder is not a local, non-synced folder. Choose a folder under local app data to enable it.";
     case "engine-unsupported":
-      return "The installed browser engine does not support a page cache on disk yet. Pages are cached in memory only.";
+      return "The disk page cache is available when HTTPS inspection is active, and the installed browser engine cannot run HTTPS inspection. Pages are cached in memory only.";
     default:
       return "Page cache status is unavailable in this build.";
   }

@@ -1,6 +1,7 @@
 //! Per-connection HTTP disk cache directories for native browser attempts
-//! (t-cefiso C-H4). Chromium owns the cache contents and follows the sites'
-//! cache headers; this module owns only where a connection's cache lives,
+//! (t-cefiso C-H4). Since t-mitmproxy the attempt's intercepting proxy owns
+//! the cache contents (`proxy-v1/`, encrypted, RFC 9111); Chromium gets no
+//! disk cache. This module owns only where a connection's cache lives,
 //! whether it may be used, and when it is deleted.
 //!
 //! Layout under the committed browser root (never synced, backed up or
@@ -9,22 +10,21 @@
 //! ```text
 //! <root>/http-cache/CACHEDIR.TAG
 //! <root>/http-cache/<dbKey>/<connKey>/binding.v1      JSON {v, bindingDigest, createdAt, lastUsedAt}
-//! <root>/http-cache/<dbKey>/<connKey>/net/Cache/...   Chromium-owned
+//! <root>/http-cache/<dbKey>/<connKey>/proxy-v1/...    proxy store (keys.v1, e/)
+//! <root>/http-cache/<dbKey>/<connKey>/net/Cache/...   legacy Chromium cache
 //! <root>/http-cache/<dbKey>/<connKey>.delete-pending  tombstone while leased
 //! <root>/http-cache/.trash-*                          deletion in progress
 //! ```
 //!
 //! Keys are truncated SHA-256 digests of the authorised database and
 //! connection ids, so no saved identifier appears on disk. One live attempt
-//! per connection holds the directory (a lease); the lease ends only when the
-//! engine reports that the NetworkContext holding it is gone (state 7).
+//! per connection holds the directory (a lease); the lease ends when the
+//! attempt that holds it ends (its owner drops or releases it).
 //! Housekeeping never follows links and never touches anything outside
 //! `<root>/http-cache`.
 
 use sha2::{Digest, Sha256};
-use sorng_browser_host::cef_http_cache::{
-    HttpCacheReleaseSignal, HttpDiskCacheSpec, HTTP_CACHE_DIRECTORY_NAME,
-};
+use sorng_browser_host::cef_http_cache::HTTP_CACHE_DIRECTORY_NAME;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -39,6 +39,8 @@ pub(crate) const BINDING: &str = "binding.v1";
 const BINDING_TEMPORARY: &str = "binding.v1.tmp";
 const BINDING_MAX_BYTES: u64 = 4096;
 pub(crate) const NET: &str = "net";
+/// The intercepting proxy's encrypted store (t-mitmproxy).
+pub(crate) const PROXY: &str = "proxy-v1";
 pub(crate) const TAG_NAME: &str = "CACHEDIR.TAG";
 const TAG: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55\n\
 # This directory holds sortOfRemoteNG device-local browser HTTP caches.\n\
@@ -448,6 +450,8 @@ pub(crate) struct LeaseTable {
     next: u64,
     /// A lease ended by drop (no engine signal): housekeeping is due.
     dropped: bool,
+    /// Directories whose lease ended by drop; their use is stamped next tick.
+    ended: Vec<(String, String)>,
 }
 
 type Leases = Arc<Mutex<LeaseTable>>;
@@ -605,18 +609,27 @@ impl CacheStore {
 
     /// The lease handle for an `acquire` result. It shares only the lease
     /// table, so attaching or dropping it never waits for this store's IO.
-    pub(crate) fn lease(&self, key: (String, String), id: u64, spec: HttpDiskCacheSpec) -> CacheLease {
+    pub(crate) fn lease(
+        &self,
+        key: (String, String),
+        id: u64,
+        directory: PathBuf,
+        max_bytes: u64,
+        binding: [u8; 32],
+    ) -> CacheLease {
         CacheLease {
             leases: self.leases.clone(),
             key,
             id,
-            spec,
-            attached: false,
+            directory,
+            max_bytes,
+            binding,
         }
     }
 
     /// Prepares the connection directory and takes its lease. A binding
-    /// mismatch (security, trust or route change) wipes `net/` first.
+    /// mismatch (security, trust or route change) wipes `proxy-v1/` and the
+    /// legacy `net/` first.
     pub(crate) fn acquire(
         &mut self,
         database: &str,
@@ -646,14 +659,17 @@ impl CacheStore {
             Some(existing) if existing.binding_digest == digest => existing.created_at,
             _ => {
                 // Never reuse content cached under another trust/route binding.
+                self.discard(&directory.join(PROXY), trash).map_err(storage)?;
                 self.discard(&directory.join(NET), trash).map_err(storage)?;
                 now
             }
         };
-        // Chromium must never be handed a linked or non-directory net/.
-        let net = directory.join(NET);
-        if fs::symlink_metadata(&net).is_ok() && !plain_dir(&net).map_err(storage)? {
-            self.discard(&net, trash).map_err(storage)?;
+        // Never hand out a linked or non-directory store.
+        for child in [NET, PROXY] {
+            let path = directory.join(child);
+            if fs::symlink_metadata(&path).is_ok() && !plain_dir(&path).map_err(storage)? {
+                self.discard(&path, trash).map_err(storage)?;
+            }
         }
         write_binding(
             &directory,
@@ -684,10 +700,11 @@ impl CacheStore {
         release_lease(&self.leases, key, id)
     }
 
-    /// Removes leases whose engine release signal fired and stamps their use.
-    /// Returns how many leases ended since the last call, including drops.
+    /// Removes leases whose engine release signal fired and stamps their use
+    /// and that of leases ended by drop. Returns how many leases ended since
+    /// the last call (any number of drops counts once).
     pub(crate) fn take_released(&mut self, now: u64) -> usize {
-        let (released, dropped) = {
+        let (released, dropped, ended) = {
             let mut leases = table(&self.leases);
             let released: Vec<_> = leases
                 .entries
@@ -698,10 +715,17 @@ impl CacheStore {
             for key in &released {
                 leases.entries.remove(key);
             }
-            (released, std::mem::take(&mut leases.dropped))
+            (
+                released,
+                std::mem::take(&mut leases.dropped),
+                std::mem::take(&mut leases.ended),
+            )
         };
         // Lease table unlocked: binding IO never blocks attach or drop.
-        for key in &released {
+        for key in released.iter().chain(&ended) {
+            if self.is_leased(key) {
+                continue; // Re-acquired since; its own end stamps it.
+            }
             let directory = self.directory(key);
             if let Some(mut binding) = read_binding(&directory) {
                 binding.last_used_at = binding.last_used_at.max(now);
@@ -859,11 +883,13 @@ impl CacheStore {
                 let key = (database.clone(), child_name);
                 let leased = self.is_leased(&key);
                 if !leased {
-                    // Only the binding and Chromium's net/ belong here.
+                    // Only the binding, the proxy store and the legacy
+                    // Chromium net/ belong here.
                     for inner in fs::read_dir(&child_path)?.flatten() {
                         let inner_name = inner.file_name();
                         let kept = inner_name == BINDING
-                            || (inner_name == NET && plain_dir(&inner.path())?);
+                            || ((inner_name == NET || inner_name == PROXY)
+                                && plain_dir(&inner.path())?);
                         if !kept {
                             self.discard(&inner.path(), trash)?;
                         }
@@ -908,6 +934,7 @@ pub(crate) fn empty_trash(trash: Vec<PathBuf>) {
     }
 }
 
+#[cfg(test)]
 fn attach_lease(leases: &Leases, key: &(String, String), id: u64, released: Released) {
     if let Some(entry) = table(leases).entries.get_mut(key).filter(|entry| entry.id == id) {
         entry.released = Some(released);
@@ -919,6 +946,7 @@ fn release_lease(leases: &Leases, key: &(String, String), id: u64) -> bool {
     if leases.entries.get(key).is_some_and(|entry| entry.id == id) {
         leases.entries.remove(key);
         leases.dropped = true;
+        leases.ended.push(key.clone());
         true
     } else {
         false
@@ -1075,7 +1103,9 @@ pub(crate) fn configure_before_runtime(data_root: &Path, local: bool) {
     status_lock().configure_before_runtime(data_root, local);
 }
 
-/// Whether the loaded engine reports HTTP_DISK_CACHE (C-H1 bit 10).
+/// Whether the loaded engine can run intercepting attempts (it trusts a
+/// per-context CA: `CEF_SORNG_TLS_CAP_CUSTOM_CA`). The disk cache lives in
+/// the intercepting proxy, so "available" means interception is possible.
 pub(crate) fn set_engine_support(supported: bool) {
     status_lock().engine = Some(supported);
 }
@@ -1101,36 +1131,47 @@ pub(crate) fn may_acquire() -> Result<(), Unavailable> {
     }
 }
 
-/// A held cache directory. Dropping it before `attach` releases it at once
-/// (context creation failed or fell back to memory). Attach and drop lock
-/// only the lease table, never the store, so the CEF UI thread never waits
-/// on cache IO.
+/// A held cache directory, engine-neutral: its owner (the attempt) releases
+/// it explicitly or by dropping it when the attempt ends. Release locks only
+/// the lease table, never the store, so no thread waits on cache IO. Never
+/// handed to CEF (t-mitmproxy: the proxy owns the cache).
 pub(crate) struct CacheLease {
     leases: Leases,
     key: (String, String),
     id: u64,
-    spec: HttpDiskCacheSpec,
-    attached: bool,
+    directory: PathBuf,
+    max_bytes: u64,
+    binding: [u8; 32],
 }
 
 impl CacheLease {
-    pub(crate) fn spec(&self) -> HttpDiskCacheSpec {
-        self.spec.clone()
+    /// The connection directory (`<root>/http-cache/<dbKey>/<connKey>`).
+    pub(crate) fn conn_dir(&self) -> &Path {
+        &self.directory
     }
 
-    /// Hands the lease to the engine's release signal (state 7). It then ends
-    /// only on the housekeeping tick that observes the signal.
-    pub(crate) fn attach(mut self, signal: HttpCacheReleaseSignal) {
-        attach_lease(&self.leases, &self.key, self.id, Box::new(move || signal.is_released()));
-        self.attached = true;
+    /// The proxy store directory, `<connDir>/proxy-v1`.
+    pub(crate) fn directory(&self) -> PathBuf {
+        self.conn_dir().join(PROXY)
     }
+
+    /// The per-connection size limit in bytes.
+    pub(crate) fn max_bytes(&self) -> u64 {
+        self.max_bytes
+    }
+
+    /// The `binding.v1` digest the lease was taken under.
+    pub(crate) fn binding_digest(&self) -> [u8; 32] {
+        self.binding
+    }
+
+    /// Ends the lease now (same as dropping it).
+    pub(crate) fn release(self) {}
 }
 
 impl Drop for CacheLease {
     fn drop(&mut self) {
-        if !self.attached {
-            release_lease(&self.leases, &self.key, self.id);
-        }
+        release_lease(&self.leases, &self.key, self.id);
     }
 }
 
@@ -1156,21 +1197,19 @@ pub(crate) fn acquire(
             now_seconds(),
             &mut trash,
         )?;
-        match HttpDiskCacheSpec::new(directory, per_connection_bytes) {
-            Ok(spec) => Ok(store.lease(key, id, spec)),
-            Err(_) => {
-                store.release(&key, id);
-                Err(Refusal::Storage)
-            }
+        if per_connection_bytes == 0 {
+            store.release(&key, id);
+            return Err(Refusal::Storage);
         }
+        Ok(store.lease(key, id, directory, per_connection_bytes, *binding))
     })();
     empty_trash(trash);
     result
 }
 
-/// Background tick (about once a second, never on the UI thread): ends leases
-/// whose engine release fired, then runs housekeeping at start, after a
-/// release or drop, and hourly.
+/// Background tick (about once a second, never on the UI thread): stamps
+/// ended leases, then runs housekeeping at start, after a release or drop,
+/// and hourly.
 pub(crate) fn tick() {
     let mut trash = Vec::new();
     {
@@ -1349,7 +1388,9 @@ pub(crate) async fn usage_report(
     connection: Option<&str>,
 ) -> Result<(Option<&'static str>, u64, u64), String> {
     use sorng_commands_core::database_protection::native_browser_owner::{profile_root_for, read_unlocked};
-    use sorng_commands_core::origin_browser_authority::NativeBrowserPreferences;
+    use sorng_commands_core::origin_browser_authority::{
+        NativeBrowserPreferences, NativeTlsInterception,
+    };
     const MIB: u64 = 1024 * 1024;
     let root = profile_root_for(window, state).map_err(|_| DATA_UNAVAILABLE.to_owned())?;
     let settings = crate::app_settings_commands::read_app_settings_inner(&root, state)
@@ -1358,8 +1399,17 @@ pub(crate) async fn usage_report(
         .unwrap_or(serde_json::Value::Null);
     let global = NativeBrowserPreferences::http_cache_from_settings(&settings)
         .map_err(|_| DATA_UNAVAILABLE.to_owned())?;
+    // t-mitmproxy: the disk cache lives in the intercepting proxy, so Direct
+    // TLS ("off") reports it as disabled (same C-H5 reason strings).
+    let global_intercepts = NativeBrowserPreferences::tls_interception_from_settings(&settings)
+        .map_err(|_| DATA_UNAVAILABLE.to_owned())?
+        == NativeTlsInterception::Auto;
     let (enabled, limit, entries) = match connection {
-        None => (global.enabled, global.total_mb.saturating_mul(MIB), None),
+        None => (
+            global.enabled && global_intercepts,
+            global.total_mb.saturating_mul(MIB),
+            None,
+        ),
         Some(connection) => {
             let owners = read_unlocked(window, state, connection)
                 .await
@@ -1371,17 +1421,19 @@ pub(crate) async fn usage_report(
                     continue;
                 };
                 if resolved.is_none() {
-                    resolved = Some(
-                        NativeBrowserPreferences::from_saved(row, &settings)
-                            .map_err(|_| DATA_UNAVAILABLE.to_owned())?
-                            .http_cache,
-                    );
+                    let preferences = NativeBrowserPreferences::from_saved(row, &settings)
+                        .map_err(|_| DATA_UNAVAILABLE.to_owned())?;
+                    resolved = Some((
+                        preferences.http_cache,
+                        preferences.tls_interception == NativeTlsInterception::Auto,
+                    ));
                 }
                 databases.push(owner.database);
             }
-            let preferences = resolved.ok_or_else(|| DATA_UNAVAILABLE.to_owned())?;
+            let (preferences, intercepts) =
+                resolved.ok_or_else(|| DATA_UNAVAILABLE.to_owned())?;
             (
-                preferences.enabled,
+                preferences.enabled && intercepts,
                 preferences.per_connection_mb.saturating_mul(MIB),
                 Some((databases, connection.to_owned())),
             )

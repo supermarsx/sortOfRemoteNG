@@ -24,11 +24,23 @@ pub(crate) fn snapshot(window: &WebviewWindow) -> Result<SessionDiagnosticsRespo
             } else {
                 None
             };
-            let proxy = attempt
+            let (proxy, proxy_cache) = attempt
                 .session
                 .try_lock()
                 .ok()
-                .map(|session| session.proxy_diagnostics());
+                .map(|session| {
+                    let cache = session.intercept_cache_counters().map(|counters| {
+                        crate::origin_browser_observability::ProxyCacheDiagnostics {
+                            hits: counters.hits,
+                            misses: counters.misses,
+                            revalidations: counters.revalidations,
+                            stores: counters.stores,
+                        }
+                    });
+                    (Some(session.proxy_diagnostics()), cache)
+                })
+                .unwrap_or((None, None));
+            let tls_interception = attempt.engine_observations.tls_interception();
             let (loaded_patch_id, proxy_applied_at_startup) =
                 attempt.engine_observations.snapshot();
             SessionDiagnostics {
@@ -44,6 +56,10 @@ pub(crate) fn snapshot(window: &WebviewWindow) -> Result<SessionDiagnosticsRespo
                 failure_reason,
                 proxy,
                 http_cache: attempt.engine_observations.http_cache(),
+                upstream: (tls_interception == Some("active"))
+                    .then(|| attempt.engine_observations.upstream()),
+                tls_interception,
+                proxy_cache,
             }
         },
     )

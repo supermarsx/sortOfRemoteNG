@@ -44,7 +44,7 @@ pub mod extensions;
 mod extension_tests;
 #[path = "origin_browser_prewarm.rs"]
 pub mod prewarm;
-pub use preferences::NativeBrowserPreferences;
+pub use preferences::{NativeBrowserPreferences, NativeHttpCachePreferences, NativeTlsInterception};
 #[path = "origin_browser_permission_validation.rs"]
 mod permission_validation;
 use permission_validation::{

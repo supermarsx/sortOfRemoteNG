@@ -10,9 +10,6 @@
 //! - `close_all` (attempt revoke) drops every pooled connection and refuses
 //!   further sends.
 
-// Wired into the exchange pipeline by x1 (forward.rs); unused until then.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use super::trust::UpstreamTrust;
 use super::upstream::{establish, Admission, ConnectRequest, Established, Offer, UpstreamFailure};
 use super::upstream_verify::UpstreamVerifierConfig;
@@ -170,6 +167,8 @@ struct PoolState {
     closed: bool,
     entries: HashMap<Key, Arc<Entry>>,
     admitted: HashSet<Authority>,
+    /// Admission-only warm-ups in flight (main-frame cache hits).
+    warming: HashSet<Authority>,
     hsts: HashSet<Authority>,
     tasks: Vec<AbortHandle>,
 }
@@ -289,6 +288,57 @@ impl UpstreamPool {
     /// True once any connection to `authority` was admitted in this attempt.
     pub(crate) fn admitted(&self, authority: &Authority) -> bool {
         self.state().admitted.contains(authority)
+    }
+
+    /// Admission only (t-mitmproxy m4): dial, handshake and trust-evaluate a
+    /// connection to `authority` exactly as a request would, then drop it
+    /// unwritten. Not one request byte (nor an h2 preface) reaches the
+    /// upstream. Used when a main-frame response came from the cache, so the
+    /// origin is admitted in this attempt (login delivery requires that).
+    /// True once the authority is admitted.
+    pub(crate) async fn warm(&self, authority: &Authority, tls: bool) -> bool {
+        if self.admitted(authority) {
+            return true;
+        }
+        let key = Key {
+            authority: authority.clone(),
+            tls,
+        };
+        let Ok(entry) = self.entry(&key) else {
+            return false;
+        };
+        match self.connect(&key, &entry, Offer::Http11Only).await {
+            Ok(established) => {
+                drop(established);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Starts `warm` in the background unless the authority is already
+    /// admitted or a warm-up for it is running. The task ends with the pool.
+    pub(crate) fn spawn_warm(self: &Arc<Self>, authority: &Authority, tls: bool) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        {
+            let mut state = self.state();
+            if state.closed
+                || state.admitted.contains(authority)
+                || !state.warming.insert(authority.clone())
+            {
+                return;
+            }
+        }
+        let pool = Arc::downgrade(self);
+        let authority = authority.clone();
+        let task = runtime.spawn(async move {
+            let Some(strong) = pool.upgrade() else { return };
+            strong.warm(&authority, tls).await;
+            strong.state().warming.remove(&authority);
+        });
+        self.track(task.abort_handle());
     }
 
     /// The host sent Strict-Transport-Security: later name/date/authority

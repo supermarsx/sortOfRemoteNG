@@ -28,6 +28,20 @@ pub struct NativeBrowserPreferences {
     pub retention: Value,
     pub restore_cookies: bool,
     pub http_cache: NativeHttpCachePreferences,
+    pub tls_interception: NativeTlsInterception,
+}
+
+/// HTTPS handling of an attempt (t-mitmproxy D2), resolved from the sparse
+/// connection override `browserSession.tlsInterception`, then the global
+/// `webBrowser.tlsInterception`, then the schema default ("auto").
+/// Native only: never an IPC payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeTlsInterception {
+    /// The app's proxy terminates HTTPS and owns upstream trust and the disk
+    /// cache, when the engine can trust the attempt CA; otherwise Direct TLS.
+    Auto,
+    /// Direct TLS: Chromium verifies, the app decides from its evidence.
+    Off,
 }
 
 /// Effective per-connection HTTP disk cache settings (t-cefiso C-H6), resolved
@@ -59,6 +73,35 @@ impl NativeBrowserPreferences {
             http_cache_layer(value, true).map_err(|()| InvalidNativeBrowserPreferences)?;
         }
         http_cache(global, None).map_err(|()| InvalidNativeBrowserPreferences)
+    }
+
+    /// The global HTTPS handling alone (no connection override).
+    pub fn tls_interception_from_settings(
+        settings: &Value,
+    ) -> Result<NativeTlsInterception, InvalidNativeBrowserPreferences> {
+        let global = match settings.get("webBrowser") {
+            None => None,
+            Some(value) => Some(value.as_object().ok_or(InvalidNativeBrowserPreferences)?),
+        };
+        tls_interception(global.and_then(|row| row.get("tlsInterception")))
+            .map_err(|()| InvalidNativeBrowserPreferences)
+    }
+}
+
+/// Exactly "auto" or "off"; missing uses the schema default. Anything else is
+/// an error, never coerced.
+fn tls_interception(value: Option<&Value>) -> Result<NativeTlsInterception, ()> {
+    let value = match value {
+        Some(value) => value.as_str().ok_or(())?,
+        None => SCHEMA
+            .pointer("/$defs/tlsInterception/default")
+            .and_then(Value::as_str)
+            .unwrap_or("auto"),
+    };
+    match value {
+        "auto" => Ok(NativeTlsInterception::Auto),
+        "off" => Ok(NativeTlsInterception::Off),
+        _ => Err(()),
     }
 }
 
@@ -288,6 +331,7 @@ impl NativeBrowserPreferences {
                 globals.get("httpCache"),
                 overrides.and_then(|row| row.get("httpCache")),
             )?,
+            tls_interception: tls_interception(get("tlsInterception"))?,
         };
         if result.minimum_form_fill_delay_ms + result.minimum_form_submit_delay_ms > 52_000 {
             return Err(());
@@ -783,6 +827,73 @@ mod tests {
                 ok,
                 "{mb}"
             );
+        }
+    }
+
+    #[test]
+    fn tls_interception_defaults_to_auto_and_inherits_sparsely() {
+        use NativeTlsInterception::{Auto, Off};
+        assert_eq!(SCHEMA["$defs"]["tlsInterception"]["default"], json!("auto"));
+        assert_eq!(SCHEMA["$defs"]["tlsInterception"]["enum"], json!(["auto", "off"]));
+        assert_eq!(SCHEMA["properties"]["tlsInterception"]["enum"], json!(["auto", "off"]));
+        let resolve = |global: Option<&str>, local: Option<&str>| {
+            let mut settings = json!({"webBrowser":{}});
+            let mut connection = json!({"browserSession":{"version":1}});
+            if let Some(value) = global { settings["webBrowser"]["tlsInterception"] = value.into(); }
+            if let Some(value) = local { connection["browserSession"]["tlsInterception"] = value.into(); }
+            NativeBrowserPreferences::from_saved(&connection, &settings).unwrap().tls_interception
+        };
+        assert_eq!(resolve(None, None), Auto);
+        assert_eq!(resolve(Some("off"), None), Off);
+        assert_eq!(resolve(Some("off"), Some("auto")), Auto);
+        assert_eq!(resolve(None, Some("off")), Off);
+        assert_eq!(resolve(Some("auto"), Some("off")), Off);
+        assert_eq!(NativeBrowserPreferences::from_saved(&json!({}), &json!({})).unwrap().tls_interception, Auto);
+        assert_eq!(NativeBrowserPreferences::tls_interception_from_settings(&Value::Null).unwrap(), Auto);
+        assert_eq!(
+            NativeBrowserPreferences::tls_interception_from_settings(&json!({"webBrowser":{"tlsInterception":"off"}})).unwrap(),
+            Off
+        );
+    }
+
+    /// The exact shapes the shell saves (m5, 6c56dd44e): global
+    /// `settings.webBrowser.tlsInterception` next to `httpCache`, and the
+    /// sparse `connection.browserSession.tlsInterception` override; the
+    /// schema rule is the inline enum the bundled schema publishes.
+    #[test]
+    fn tls_interception_reads_the_saved_shell_shapes() {
+        use NativeTlsInterception::{Auto, Off};
+        let rule = &SCHEMA["properties"]["tlsInterception"];
+        assert!(rule.get("$ref").is_none(), "scalar rule is inline");
+        assert_eq!(rule["type"], json!("string"));
+        let settings = json!({"webBrowser":{
+            "version":1,
+            "restoreCookies":true,
+            "httpCache":{"enabled":true,"perConnectionMb":128,"totalMb":1024,"clearOnDatabaseLock":false},
+            "tlsInterception":"off"
+        }});
+        let inherit = json!({"browserSession":{"version":1,"httpCache":{"enabled":true}}});
+        let parsed = NativeBrowserPreferences::from_saved(&inherit, &settings).unwrap();
+        assert_eq!(parsed.tls_interception, Off);
+        assert!(parsed.http_cache.enabled);
+        let opt_in = json!({"browserSession":{"version":1,"httpCache":{"enabled":true},"tlsInterception":"auto"}});
+        assert_eq!(NativeBrowserPreferences::from_saved(&opt_in, &settings).unwrap().tls_interception, Auto);
+        let direct = json!({"browserSession":{"version":1,"tlsInterception":"off"}});
+        assert_eq!(NativeBrowserPreferences::from_saved(&direct, &json!({"webBrowser":{"version":1}})).unwrap().tls_interception, Off);
+        // A missing global means auto; a connection without the key inherits it.
+        assert_eq!(NativeBrowserPreferences::from_saved(&inherit, &json!({"webBrowser":{"version":1}})).unwrap().tls_interception, Auto);
+        assert_eq!(NativeBrowserPreferences::tls_interception_from_settings(&settings).unwrap(), Off);
+        // The key belongs to these two paths only: elsewhere it is unknown.
+        let nested = json!({"browserSession":{"version":1,"httpCache":{"tlsInterception":"off"}}});
+        assert!(NativeBrowserPreferences::from_saved(&nested, &json!({})).is_err());
+    }
+
+    #[test]
+    fn tls_interception_rejects_anything_but_auto_or_off() {
+        for invalid in [Value::Null, json!("required"), json!("Auto"), json!(true), json!(0), json!({}), json!([])] {
+            assert!(NativeBrowserPreferences::from_saved(&json!({}), &json!({"webBrowser":{"tlsInterception":invalid.clone()}})).is_err());
+            assert!(NativeBrowserPreferences::from_saved(&json!({"browserSession":{"version":1,"tlsInterception":invalid.clone()}}), &json!({})).is_err());
+            assert!(NativeBrowserPreferences::tls_interception_from_settings(&json!({"webBrowser":{"tlsInterception":invalid}})).is_err());
         }
     }
 }

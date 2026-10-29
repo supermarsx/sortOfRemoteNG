@@ -44,6 +44,18 @@ use crate::private_forward_proxy::Authority;
 /// In-memory cache size per attempt when the disk store is not used.
 pub const DEFAULT_MEMORY_BYTES: u64 = 32 * 1024 * 1024;
 
+/// HKDF-SHA256 info of the cache master key (plan §4, D3).
+const MASTER_KEY_INFO: &[u8] = b"sorng-http-cache-v1";
+
+/// The cache master key for `DiskCacheConfig::key`: HKDF-SHA256 over the
+/// vault DEK (`sorng_vault::keychain::read_dek`) with info
+/// `sorng-http-cache-v1`. The DEK is taken by value and zeroized here; the
+/// result is never logged or exposed. `None` unless the DEK is 32 bytes.
+pub fn master_key_from_vault_dek(dek: Vec<u8>) -> Option<Zeroizing<[u8; 32]>> {
+    let dek = Zeroizing::new(dek);
+    (dek.len() == 32).then(|| crypto::derive(&dek, None, MASTER_KEY_INFO))
+}
+
 /// Disk cache for one connection. No `Debug`/`Clone`: it carries the key.
 pub struct DiskCacheConfig {
     /// `<connKey>/proxy-v1/` under the c3 lease.

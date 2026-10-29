@@ -691,6 +691,18 @@ impl OriginBrowserSession {
             .is_ok_and(|(_, authority)| self.proxy.upstream_admitted(&authority))
     }
 
+    /// K6: which cache an intercepting attempt uses (None for passthrough).
+    pub fn intercept_cache_use(&self) -> Option<crate::private_forward_proxy::intercept::CacheUse> {
+        self.proxy.intercept_cache_use()
+    }
+
+    /// K6: cache counters of an intercepting attempt (None for passthrough).
+    pub fn intercept_cache_counters(
+        &self,
+    ) -> Option<crate::private_forward_proxy::intercept::CacheCounters> {
+        self.proxy.intercept_cache_counters()
+    }
+
     /// Native owner-fenced diagnostics only; never a readiness or route grant.
     pub fn proxy_diagnostics(&self) -> crate::private_forward_proxy::PrivateProxyDiagnostics {
         self.proxy.diagnostics()

@@ -52,8 +52,6 @@ impl CertificateHooks {
     /// admit leaves this authority minted (synchronous fast path), and the
     /// app decides upstream trust in the proxy instead. Set once, before the
     /// context is created; a second call is refused.
-    // t-mitmproxy m4: called from origin_browser_runtime.rs.
-    #[allow(dead_code)]
     pub(super) fn intercept_with(&self, authority: Arc<InterceptAuthority>) -> bool {
         self.intercept.set(authority).is_ok()
     }
@@ -571,7 +569,7 @@ mod owner_rechecks {
                 let coalesced = coalesced.clone();
                 tokio::spawn(async move {
                     coalesced
-                        .recheck(|| std::future::pending::<bool>())
+                        .recheck(std::future::pending::<bool>)
                         .await
                 })
             };

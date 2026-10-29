@@ -185,7 +185,14 @@ pub(crate) struct LoginHooks {
     consent_refusal: AtomicU8,
     retries: std::sync::Mutex<RetryLimiter>,
     basic_auth: Option<Arc<NativeBasicAuth>>,
+    /// t-mitmproxy: set for an intercepting attempt before its context
+    /// exists. Credentials then reach only an origin whose upstream the
+    /// proxy admitted (trust-evaluated) in this attempt.
+    upstream_admission: std::sync::OnceLock<UpstreamAdmission>,
 }
+
+/// Whether the attempt's proxy admitted an upstream for this exact origin.
+pub(crate) type UpstreamAdmission = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
 #[path = "origin_browser_login_activity.rs"]
 mod activity;
@@ -295,6 +302,7 @@ impl LoginHooks {
                 consent_refusal: AtomicU8::new(NO_REFUSAL),
                 retries: Default::default(),
                 basic_auth,
+                upstream_admission: Default::default(),
             }));
         }
         let provider = authority
@@ -345,9 +353,23 @@ impl LoginHooks {
             consent_refusal: AtomicU8::new(NO_REFUSAL),
             retries: Default::default(),
             basic_auth,
+            upstream_admission: Default::default(),
         });
         Self::arm_deadline(&hooks);
         Ok(hooks)
+    }
+
+    /// Intercepting attempts only, set once before the context is created:
+    /// from then on form credentials require an admitted upstream origin.
+    pub(crate) fn require_upstream_admission(&self, admitted: UpstreamAdmission) {
+        let _ = self.upstream_admission.set(admitted);
+    }
+
+    /// Passthrough attempts have no proxy admission; CEF verified the origin.
+    fn upstream_admitted(&self, origin: &str) -> bool {
+        self.upstream_admission
+            .get()
+            .map_or(true, |admitted| admitted(origin))
     }
 
     /// Explicit user retry, checked before the page is looked at. Nothing is
@@ -481,7 +503,7 @@ impl LoginHooks {
                     username: credentials.username,
                     password: credentials.password,
                     auto_submit: credentials.auto_submit,
-                }, Instant::now()) else { return; };
+                }, Instant::now(), self.upstream_admitted(request.origin)) else { return; };
                 if matches!(
                     request.stage,
                     NativeLoginStage::FormPrepare | NativeLoginStage::FormSubmit | NativeLoginStage::ScmConsent
@@ -759,7 +781,7 @@ impl NativeDocumentHooks for LoginHooks {
                     username: credentials.username,
                     password: credentials.password,
                     auto_submit: credentials.auto_submit,
-                }, Instant::now()) else { return; };
+                }, Instant::now(), self.upstream_admitted(request.origin)) else { return; };
                 self.stage_activity(request.stage);
                 deliver(credentials);
             },

@@ -804,3 +804,23 @@ async fn a_record_approved_under_cef_evidence_admits_the_proxy_evidence() {
         assert!(matches!(result, TrustVerifyResult::Trusted), "{policy:?}");
     }
 }
+
+/// t-mitmproxy m4: only an approval that arrives after its proxy request
+/// ended (a 502 or a cancelled navigation) reloads the main frame.
+#[test]
+fn only_a_late_review_approval_reloads_the_main_frame() {
+    let admit = UpstreamVerdict::Admit { persistent: false };
+    assert!(late_approval(false, true, admit));
+    assert!(late_approval(
+        false,
+        true,
+        UpstreamVerdict::Admit { persistent: true }
+    ));
+    // Delivered in time: the request itself proceeds, no reload.
+    assert!(!late_approval(true, true, admit));
+    // No review: nothing the user did to react to.
+    assert!(!late_approval(false, false, admit));
+    // Denied or expired reviews never reload.
+    assert!(!late_approval(false, true, UpstreamVerdict::Deny));
+    assert!(!late_approval(false, true, UpstreamVerdict::Timeout));
+}

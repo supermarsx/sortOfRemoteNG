@@ -1565,3 +1565,22 @@ async fn scheme_is_part_of_the_key() {
     assert!(is_miss(&cache, &get("/s")).await);
     assert!(is_fresh(&cache, &plain("/s")).await);
 }
+
+#[test]
+fn master_key_is_a_deterministic_hkdf_of_the_vault_dek_and_never_the_dek() {
+    let dek = vec![7u8; 32];
+    let first = master_key_from_vault_dek(dek.clone()).expect("32-byte DEK");
+    let second = master_key_from_vault_dek(dek.clone()).expect("32-byte DEK");
+    assert_eq!(*first, *second, "deterministic");
+    assert_ne!(first.as_slice(), dek.as_slice(), "never the DEK itself");
+    // Pins the HKDF-SHA256 construction and its info string.
+    let mut expected = [0u8; 32];
+    hkdf::Hkdf::<sha2::Sha256>::new(None, &dek)
+        .expand(b"sorng-http-cache-v1", &mut expected)
+        .unwrap();
+    assert_eq!(*first, expected);
+    let other = master_key_from_vault_dek(vec![8u8; 32]).unwrap();
+    assert_ne!(*other, *first);
+    assert!(master_key_from_vault_dek(Vec::new()).is_none());
+    assert!(master_key_from_vault_dek(vec![7u8; 31]).is_none());
+}

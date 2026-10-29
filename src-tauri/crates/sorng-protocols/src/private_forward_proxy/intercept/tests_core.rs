@@ -1799,3 +1799,65 @@ async fn cache_keys_carry_the_scheme_so_http_never_shares_an_https_entry() {
     let counters = proxy.intercept_cache_counters().unwrap();
     assert_eq!((counters.hits, counters.stores), (2, 2));
 }
+
+/// t-mitmproxy m4: a main-frame response served from the cache still admits
+/// its origin (login delivery requires that), through an admission-only
+/// connection that carries no request.
+#[tokio::test]
+async fn main_frame_cache_hit_admits_the_origin_without_an_upstream_request() {
+    let dir = std::env::temp_dir().join(format!(
+        "sorng-m4-warm-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mode = || {
+        CacheMode::Disk(DiskCacheConfig {
+            directory: dir.join("proxy-v1"),
+            max_bytes: 8 * 1024 * 1024,
+            key: zeroize::Zeroizing::new([3; 32]),
+            binding: [4; 32],
+        })
+    };
+    let authority = crate::private_forward_proxy::Authority::parse("upstream.test:443").unwrap();
+    // A first attempt fills the connection's shared disk store.
+    let first = harness_cached(true, Arc::new(AdmitAll), Vec::new(), mode()).await;
+    let mut sender = h1_tunnel(&first).await;
+    let response = send1(&mut sender, get("/cached", Some("upstream.test"))).await;
+    assert_eq!(body(response).await, "cached 1");
+    assert!(first.proxy.upstream_admitted(&authority));
+    // A second attempt of the same connection: fresh pool, nothing admitted.
+    let second = harness_cached(true, Arc::new(AdmitAll), Vec::new(), mode()).await;
+    assert!(!second.proxy.upstream_admitted(&authority));
+    let mut sender = h1_tunnel(&second).await;
+    // A subresource hit does not warm.
+    let response = send1(&mut sender, get("/cached", Some("upstream.test"))).await;
+    assert_eq!(body(response).await, "cached 1");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(!second.proxy.upstream_admitted(&authority));
+    assert_eq!(second.dials.load(Ordering::SeqCst), 0);
+    // A main-frame hit is served from the cache and warms in parallel.
+    let mut navigation = get("/cached", Some("upstream.test"));
+    navigation
+        .headers_mut()
+        .insert("sec-fetch-dest", HeaderValue::from_static("document"));
+    let response = send1(&mut sender, navigation).await;
+    assert_eq!(body(response).await, "cached 1");
+    for _ in 0..200 {
+        if second.proxy.upstream_admitted(&authority) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(second.proxy.upstream_admitted(&authority));
+    assert_eq!(second.dials.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        second.upstream.requests.load(Ordering::SeqCst),
+        0,
+        "admission only: no request reached the upstream"
+    );
+    drop((first, second));
+    let _ = std::fs::remove_dir_all(&dir);
+}

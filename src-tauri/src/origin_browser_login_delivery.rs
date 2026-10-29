@@ -4,13 +4,18 @@ use sorng_browser_host::native_features::{
 };
 use std::time::Instant;
 
+/// `upstream_admitted`: for an intercepting attempt, the proxy admitted
+/// (trust-evaluated) an upstream for exactly `request.origin` in this
+/// attempt; always true for Direct TLS, where CEF verified the origin.
 pub(super) fn project<'a>(
     request: &NativeLoginRequest<'_>,
     credentials: NativeLoginCredentials<'a>,
     now: Instant,
+    upstream_admitted: bool,
 ) -> Option<NativeLoginCredentials<'a>> {
     let origin = url::Url::parse(request.origin).ok()?;
-    if !request.adapter.accepts_stage(request.stage)
+    if !upstream_admitted
+        || !request.adapter.accepts_stage(request.stage)
         || request.identity != credentials.identity
         || request.origin != credentials.origin
         || !matches!(origin.scheme(), "http" | "https")
@@ -152,6 +157,7 @@ mod tests {
                     auto_submit: true,
                 },
                 now,
+                true,
             )
             .unwrap();
             assert_eq!((delivered.username, delivered.password), (user, password));
@@ -173,7 +179,7 @@ mod tests {
                 let delivered = project(&request, NativeLoginCredentials {
                     identity: policy.identity(), origin, valid_until: now + Duration::from_secs(1),
                     username: "user", password: "secret", auto_submit: true,
-                }, now);
+                }, now, true);
                 if origin == policy.source_origin() {
                     let delivered = delivered.expect("exact HTTP source delivery");
                     assert_eq!(delivered.password, if stage == NativeLoginStage::Form { "secret" } else { "" });
@@ -238,9 +244,43 @@ mod tests {
                     password: "secret",
                     auto_submit: false,
                 },
-                now
+                now,
+                true,
             )
             .is_none());
+        }
+    }
+
+    /// t-mitmproxy m4: an intercepting attempt delivers nothing, for any
+    /// stage, until the proxy admitted the exact origin upstream.
+    #[test]
+    fn native_login_delivery_requires_an_admitted_upstream_when_intercepting() {
+        let policy =
+            OriginBrowserPolicy::new("db", "connection", "tab", "https://example.test").unwrap();
+        let now = Instant::now();
+        for stage in [
+            NativeLoginStage::FormPrepare,
+            NativeLoginStage::Form,
+            NativeLoginStage::FormSubmit,
+        ] {
+            let request = NativeLoginRequest {
+                identity: policy.identity(),
+                origin: policy.source_origin(),
+                adapter: NativeLoginAdapter::ModularForm,
+                stage,
+                path: "/",
+                frame: None,
+            };
+            let credentials = || NativeLoginCredentials {
+                identity: policy.identity(),
+                origin: policy.source_origin(),
+                valid_until: now + Duration::from_secs(1),
+                username: "user",
+                password: "secret",
+                auto_submit: true,
+            };
+            assert!(project(&request, credentials(), now, false).is_none());
+            assert!(project(&request, credentials(), now, true).is_some());
         }
     }
 

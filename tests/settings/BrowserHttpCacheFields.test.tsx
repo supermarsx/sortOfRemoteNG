@@ -72,7 +72,7 @@ describe("global page cache fields", () => {
   it.each([
     ["disabled", "Page cache is turned off."],
     ["cache-location-not-local", "not a local, non-synced folder"],
-    ["engine-unsupported", "does not support a page cache on disk yet"],
+    ["engine-unsupported", "engine cannot run HTTPS inspection"],
     ["unavailable", "unavailable in this build"],
   ] as const)("explains the %s reason", (reason, text) => {
     renderFields({ available: false, reason });

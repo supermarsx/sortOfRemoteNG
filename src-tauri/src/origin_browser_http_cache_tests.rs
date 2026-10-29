@@ -1,4 +1,5 @@
 use super::*;
+use sorng_browser_host::cef_http_cache::HttpDiskCacheSpec;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -590,22 +591,16 @@ fn trust_binding_covers_scoped_records_and_the_host_level_fallback() {
 }
 
 #[test]
-fn lease_attach_and_drop_never_wait_for_housekeeping_io() {
+fn lease_release_and_drop_never_wait_for_housekeeping_io() {
     use std::sync::mpsc;
     use std::time::Duration;
     let (_data, mut store) = store();
     let (dropped_key, dropped_id, dropped_dir) = take(&mut store, "db", "dropped", 1).unwrap();
-    let (attached_key, attached_id, attached_dir) = take(&mut store, "db", "attached", 1).unwrap();
-    let dropped = store.lease(
-        dropped_key.clone(),
-        dropped_id,
-        HttpDiskCacheSpec::new(dropped_dir, 16 * MIB).unwrap(),
-    );
-    let attached = store.lease(
-        attached_key.clone(),
-        attached_id,
-        HttpDiskCacheSpec::new(attached_dir, 16 * MIB).unwrap(),
-    );
+    let (released_key, released_id, released_dir) = take(&mut store, "db", "released", 1).unwrap();
+    let (held_key, held_id, held_dir) = take(&mut store, "db", "held", 1).unwrap();
+    let dropped = store.lease(dropped_key.clone(), dropped_id, dropped_dir, 16 * MIB, digest(1));
+    let released = store.lease(released_key.clone(), released_id, released_dir, 16 * MIB, digest(1));
+    let held = store.lease(held_key.clone(), held_id, held_dir, 16 * MIB, digest(1));
     // Housekeeping blocks mid-IO until released by this test (no timing).
     let (entered_tx, entered_rx) = mpsc::channel();
     let (resume_tx, resume_rx) = mpsc::channel::<()>();
@@ -620,26 +615,84 @@ fn lease_attach_and_drop_never_wait_for_housekeeping_io() {
         store
     });
     entered_rx.recv().unwrap();
-    // The UI-thread paths complete while the walk is still in progress.
+    // The attempt-end paths complete while the walk is still in progress.
     let (done_tx, done_rx) = mpsc::channel();
     std::thread::spawn(move || {
         drop(dropped);
-        attached.attach(sorng_browser_host::cef_http_cache::HttpCacheReleaseSignal::default());
+        released.release();
         let _ = done_tx.send(());
     });
     let completed = done_rx.recv_timeout(Duration::from_secs(30)).is_ok();
     resume_tx.send(()).unwrap();
     let mut store = worker.join().unwrap();
-    assert!(completed, "lease drop/attach waited for housekeeping IO");
+    assert!(completed, "lease drop/release waited for housekeeping IO");
     {
         let table = table(&leases);
         assert!(!table.entries.contains_key(&dropped_key));
-        assert!(table.entries[&attached_key].released.is_some());
+        assert!(!table.entries.contains_key(&released_key));
+        assert!(table.entries.contains_key(&held_key));
     }
-    // A dropped lease makes housekeeping due on the next tick.
+    // Ended leases make housekeeping due on the next tick, once.
     assert_eq!(store.take_released(NOW), 1);
     assert_eq!(store.take_released(NOW), 0);
-    assert!(store.leased("db", "attached"));
+    assert!(store.leased("db", "held"));
+    drop(held);
+    assert!(!store.leased("db", "held"));
+}
+
+#[test]
+fn an_attempt_end_releases_the_lease_and_stamps_its_last_use() {
+    let (_data, mut store) = store();
+    let (key, id, directory) = take(&mut store, "db", "conn", 1).unwrap();
+    let lease = store.lease(key, id, directory.clone(), 128 * MIB, digest(1));
+    // Engine-neutral accessors for the proxy store (never handed to CEF).
+    assert_eq!(lease.conn_dir(), directory.as_path());
+    assert_eq!(lease.directory(), directory.join(PROXY));
+    assert_eq!(lease.directory().file_name().unwrap(), "proxy-v1");
+    assert_eq!(lease.max_bytes(), 128 * MIB);
+    assert_eq!(lease.binding_digest(), digest(1));
+    assert_eq!(take(&mut store, "db", "conn", 1).err(), Some(Refusal::InUse));
+    drop(lease);
+    assert!(!store.leased("db", "conn"));
+    assert_eq!(store.take_released(NOW + 50), 1);
+    assert_eq!(read_binding(&directory).unwrap().last_used_at, NOW + 50);
+    // The single lease per connection is free again.
+    let (key, id, directory) = take(&mut store, "db", "conn", 1).unwrap();
+    let lease = store.lease(key, id, directory, 128 * MIB, digest(1));
+    lease.release();
+    assert!(!store.leased("db", "conn"));
+}
+
+#[test]
+fn proxy_store_is_kept_by_housekeeping_and_wiped_on_binding_mismatch() {
+    let (_data, mut store) = store();
+    let (key, id, directory) = take(&mut store, "db", "conn", 1).unwrap();
+    let proxy = directory.join(PROXY);
+    fs::create_dir_all(proxy.join("e")).unwrap();
+    fs::write(proxy.join("keys.v1"), b"wrapped").unwrap();
+    fill(&directory, 64);
+    fs::write(directory.join("stray"), b"x").unwrap();
+    store.release(&key, id);
+    housekeeping(&mut store, NOW + 1);
+    // binding.v1, proxy-v1/ and the legacy net/ are known children.
+    assert!(proxy.join("keys.v1").exists());
+    assert!(directory.join(NET).exists());
+    assert!(directory.join(BINDING).exists());
+    assert!(!directory.join("stray").exists());
+    // Same binding keeps the proxy store; another binding crypto-erases it.
+    let (key, id, _) = take(&mut store, "db", "conn", 1).unwrap();
+    assert!(proxy.join("keys.v1").exists());
+    store.release(&key, id);
+    take(&mut store, "db", "conn", 2).unwrap();
+    assert!(!proxy.exists());
+    assert!(!directory.join(NET).exists());
+    // A non-directory proxy-v1 is never handed out.
+    let (_data, mut store) = self::store();
+    let (key, id, directory) = take(&mut store, "db", "conn", 1).unwrap();
+    store.release(&key, id);
+    fs::write(directory.join(PROXY), b"not a dir").unwrap();
+    take(&mut store, "db", "conn", 1).unwrap();
+    assert!(!directory.join(PROXY).exists());
 }
 
 #[test]
