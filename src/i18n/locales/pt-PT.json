@@ -9995,7 +9995,8 @@
         "noMfa": "Este separador não tem nenhuma 2FA automática para tentar novamente.",
         "codeUsed": "O código 2FA atual já foi utilizado. Tente novamente quando estiver disponível um novo código.",
         "rateLimited": "O início de sessão automático foi repetido demasiadas vezes. Aguarde um momento e tente novamente.",
-        "noForm": "Esta página não mostra nenhum formulário de início de sessão para preencher. Abra a página de início de sessão e tente novamente."
+        "otherAddress": "O endereço desta página não é um dos endereços de início de sessão guardados desta ligação, por isso o início de sessão automático não o preencherá. Abra o endereço guardado ou permita o reencaminhamento do início de sessão guardado para este endereço nas definições avançadas da ligação.",
+        "noForm": "Nenhum formulário de início de sessão apareceu nesta página enquanto o início de sessão automático o procurava. Abra a página de início de sessão e tente novamente."
       }
     },
     "proxyStuckRestartApp": "O motor do navegador também não conseguiu ligar a um novo proxy privado, por isso a ligação de rede está bloqueada. Reinicie a aplicação para voltar a navegar neste separador."

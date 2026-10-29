@@ -9995,7 +9995,8 @@
         "noMfa": "This tab has no automatic 2FA to retry.",
         "codeUsed": "The current 2FA code was already used. Retry when a new code is available.",
         "rateLimited": "Automatic login was retried too often. Wait a moment, then try again.",
-        "noForm": "This page shows no sign-in form to fill. Open the sign-in page, then retry."
+        "otherAddress": "This page's address is not one of this connection's saved sign-in addresses, so automatic login will not fill it. Open the saved address, or allow saved-login forwarding to this address in the connection's Advanced settings.",
+        "noForm": "No sign-in form appeared on this page while automatic login looked for it. Open the sign-in page, then retry."
       }
     },
     "proxyStuckRestartApp": "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab."

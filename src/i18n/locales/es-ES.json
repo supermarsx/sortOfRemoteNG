@@ -9995,7 +9995,8 @@
         "noMfa": "Esta pestaña no tiene ninguna 2FA automática que reintentar.",
         "codeUsed": "El código 2FA actual ya se usó. Reinténtalo cuando haya un código nuevo disponible.",
         "rateLimited": "El inicio de sesión automático se reintentó demasiadas veces. Espera un momento y vuelve a intentarlo.",
-        "noForm": "Esta página no muestra ningún formulario de inicio de sesión que rellenar. Abre la página de inicio de sesión y reinténtalo."
+        "otherAddress": "La dirección de esta página no es una de las direcciones de inicio de sesión guardadas de esta conexión, así que el inicio de sesión automático no la rellenará. Abre la dirección guardada o permite el reenvío del inicio de sesión guardado a esta dirección en la configuración avanzada de la conexión.",
+        "noForm": "No apareció ningún formulario de inicio de sesión en esta página mientras el inicio de sesión automático lo buscaba. Abre la página de inicio de sesión y reinténtalo."
       }
     },
     "proxyStuckRestartApp": "El motor del navegador tampoco pudo conectar con un proxy privado nuevo, así que su conexión de red está bloqueada. Reinicia la aplicación para volver a navegar en esta pestaña."

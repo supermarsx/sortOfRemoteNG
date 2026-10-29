@@ -605,14 +605,24 @@ impl NativeLoginRetryStep {
 /// Host-side reasons a retry did not start. Fixed codes, no page data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeLoginRetryRefusal {
-    /// Text is being entered, a manual-input slot owns the keyboard, or the
-    /// page is still loading.
+    /// Text is being entered, a manual-input slot owns the keyboard, the page
+    /// is still loading, or an earlier retry is still looking for its form.
     Busy,
-    /// The open page has no login document this attempt may fill.
+    /// This browser runs no automatic-login adapter (manual login).
+    NoLogin,
+    /// The open document went away or changed while the retry was checked.
+    NotCurrent,
+    /// The re-run login client looked for the step's form for the whole
+    /// detection bound of a first attempt and found none. Never returned
+    /// before that bound has passed.
     NoForm,
     /// The native owner declined to re-arm its grant.
     Owner,
 }
+
+#[path = "native_login_retry.rs"]
+mod login_retry;
+pub use login_retry::{retry_detection_bound, RetryVerdict, RetryWait, RETRY_SETTLE_MS};
 
 /// Fixed, secret-free checkpoints. No page strings, nonce or credential data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

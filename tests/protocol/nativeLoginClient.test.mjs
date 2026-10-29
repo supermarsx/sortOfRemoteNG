@@ -834,6 +834,77 @@ for (const provider of ["chatgpt", "adobe-admin-console", "synology-dsm"]) {
   });
 }
 
+// An explicit retry re-runs this same factory on the open document (the
+// renderer's replay allowance); the host then waits the client's detection
+// bound for its first request. These pin what that re-run client finds.
+const dsmAccount =
+  '<div id="sds-login-vue-inst"><div class="login-tabs-content-wrapper"><form id="dsm-user-fieldset"><input type="text" syno-id="username" name="username" autocomplete="username"></form><div role="button" syno-id="account-panel-next-btn">Next</div></div></div>';
+function retryClient(f) {
+  const signals = [];
+  f.w.eval(source)((value) => signals.push(value), {
+    provider: "synology-dsm",
+  });
+  return signals;
+}
+
+for (const url of [
+  "https://nas.example.test:5001/",
+  "https://nas.example.test:5001/#/signin",
+  "https://nas.example.test:5001/#/signin/",
+  "https://nas.example.test:5001/#/",
+  "https://nas.example.test:5001/?launchApp=SYNO.SDS.App.FileStation3.Instance",
+  "https://nas.example.test:5001/?launchApp=SYNO.SDS.PkgManApp.Instance#/signin",
+  "https://nas.example.test:5001/webman/index.cgi#/signin",
+  "http://nas.example.test:5000/#/signin",
+])
+  test(`a retry on the DSM sign-in page ${url} asks for the username again`, async (t) => {
+    // The reported case: the first attempt asked for the username and native
+    // never delivered it, leaving the page on the sign-in form.
+    const f = providerFixture(t, "synology-dsm", dsmAccount, url);
+    await f.advance(700);
+    assert.deepEqual(f.signals, ["identifier"]);
+    const retried = retryClient(f);
+    await f.advance(700);
+    assert.deepEqual(retried, ["identifier"]);
+    // The superseded client asks for nothing more.
+    assert.deepEqual(f.signals, ["identifier"]);
+  });
+
+test("a retry finds a DSM sign-in form that renders late within the detection bound", async (t) => {
+  // DSM serves an empty placeholder and mounts its Vue login root later.
+  const f = providerFixture(
+    t,
+    "synology-dsm",
+    '<div id="sds-login-vue"></div>',
+    "https://nas.example.test:5001/#/signin",
+  );
+  const retried = retryClient(f);
+  await f.advance(45_000);
+  assert.deepEqual(retried, []);
+  f.w.document.body.innerHTML = dsmAccount;
+  await f.advance(700);
+  assert.deepEqual(retried, ["identifier"]);
+});
+
+test("a retry on a page without a DSM sign-in form asks for nothing within the bound", async (t) => {
+  // The signed-in desktop: nothing to fill, so the host's wait ends "no form".
+  const f = providerFixture(
+    t,
+    "synology-dsm",
+    '<div id="sds-desktop"></div><div id="sds-taskbar"></div>',
+    "https://nas.example.test:5001/",
+  );
+  const retried = retryClient(f);
+  await f.advance(62_000);
+  assert.ok(
+    !retried.some((signal) => ["identifier", "password"].includes(signal)),
+  );
+  // A form that appears only after the bound is not filled by this run.
+  f.w.document.body.innerHTML = dsmAccount;
+  await f.advance(2_000);
+  assert.ok(!retried.includes("identifier"));
+});
+
 test("Claude is identifier-only and hands email verification to the person", async (t) => {
   const f = providerFixture(
     t,

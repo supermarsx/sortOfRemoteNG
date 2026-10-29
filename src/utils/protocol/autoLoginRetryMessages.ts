@@ -57,9 +57,13 @@ export function autoLoginRetryMessage(
       "originBrowser.autoLoginRetry.refused.rateLimited",
       "Automatic login was retried too often. Wait a moment, then try again.",
     ),
+    "other-address": t(
+      "originBrowser.autoLoginRetry.refused.otherAddress",
+      "This page's address is not one of this connection's saved sign-in addresses, so automatic login will not fill it. Open the saved address, or allow saved-login forwarding to this address in the connection's Advanced settings.",
+    ),
     "no-form": t(
       "originBrowser.autoLoginRetry.refused.noForm",
-      "This page shows no sign-in form to fill. Open the sign-in page, then retry.",
+      "No sign-in form appeared on this page while automatic login looked for it. Open the sign-in page, then retry.",
     ),
   };
   return { type: "warning", message: refused[outcome.reason] };

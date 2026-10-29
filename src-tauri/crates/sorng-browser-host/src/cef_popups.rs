@@ -220,6 +220,7 @@ fn child_shared(
         login_budget: Mutex::new(LoginBudget::default()),
         challenge_reload_used: source.challenge_reload_used.clone(),
         login_totp: Mutex::new(login_totp::State::default()),
+        login_retry: Mutex::default(),
         feature_gate: Mutex::new(RendererFeatureGate::default()),
         certificate_pending: Mutex::new(None),
         automation: Mutex::new(AutomationState::default()),

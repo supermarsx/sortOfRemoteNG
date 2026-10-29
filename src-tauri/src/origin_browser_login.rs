@@ -51,6 +51,11 @@ pub(crate) enum RetryRefusal {
     NoMfa,
     CodeUsed,
     RateLimited,
+    /// The open page is not on one of this login's saved sign-in origins, so
+    /// neither a first attempt nor a retry may fill it.
+    OtherAddress,
+    /// The re-run login client found no form for the step within the first
+    /// attempt's whole detection bound.
     NoForm,
 }
 
@@ -63,6 +68,7 @@ impl RetryRefusal {
             Self::NoMfa => "no-mfa",
             Self::CodeUsed => "code-used",
             Self::RateLimited => "rate-limited",
+            Self::OtherAddress => "other-address",
             Self::NoForm => "no-form",
         }
     }
@@ -391,8 +397,10 @@ impl LoginHooks {
             return Err(RetryRefusal::NotCurrent);
         };
         hooks.retry_precheck(identity, step)?;
-        if !hooks.authority.consent_origins().iter().any(|saved| saved == origin) {
-            return Err(RetryRefusal::NoForm);
+        // The first attempt's own origin rule (`with_credentials`): a page
+        // outside the saved sign-in origins is never filled, and says so.
+        if !hooks.authority.permits_login_origin(origin) {
+            return Err(RetryRefusal::OtherAddress);
         }
         let Some(consent) = &hooks.consent else {
             return Err(RetryRefusal::NoLogin);
@@ -701,6 +709,15 @@ impl NativeDocumentHooks for LoginHooks {
         request: &NativeLoginRequest<'_>,
         deliver: &mut dyn FnMut(NativeLoginCredentials<'_>, Option<&str>),
     ) {
+        // A page outside the saved sign-in origins is refused before consent
+        // is asked; name that cause for the not-delivered status that follows
+        // instead of the causeless "grant-rejected".
+        if self.consent.is_some() && !self.authority.permits_login_origin(request.origin) {
+            self.consent_refusal.store(
+                refusal_wire(ConsentRefusal::AddressMismatch),
+                Ordering::Release,
+            );
+        }
         if self.adapter == NativeLoginAdapter::ModularForm {
             // The inherent method supplies the verifier and borrows both the
             // credentials and extra-field options under the same native grant.
@@ -760,6 +777,17 @@ mod tests {
             .unwrap()
             .identity()
             .clone()
+    }
+
+    #[test]
+    fn a_page_on_another_address_and_a_page_without_a_form_have_their_own_codes() {
+        use RetryRefusal::*;
+        let all = [NotCurrent, NoLogin, Busy, NoMfa, CodeUsed, RateLimited, OtherAddress, NoForm];
+        let codes: std::collections::HashSet<_> = all.iter().map(|r| r.code()).collect();
+        assert_eq!(codes.len(), all.len());
+        // The reported DSM case was an address check worded as a missing form.
+        assert_eq!(OtherAddress.code(), "other-address");
+        assert_eq!(NoForm.code(), "no-form");
     }
 
     #[test]

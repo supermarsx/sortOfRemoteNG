@@ -9995,7 +9995,8 @@
         "noMfa": "This tab has nay automatic 2FA to try anew.",
         "codeUsed": "The current 2FA code was already used. Try anew when a new code is available.",
         "rateLimited": "Automatic login was retried too often. Wait a moment, then make another attempt.",
-        "noForm": "This page shows nay sign-in form to fill. Unfurl the sign-in page, then try anew."
+        "otherAddress": "This page's address is not one of this voyage's saved sign-in addresses, so automatic login will not fill it. Unfurl the saved address, or allow saved-login forwarding to this address in the voyage's Advanced ship's settings.",
+        "noForm": "Nay sign-in form appeared on this page while automatic login looked for it. Unfurl the sign-in page, then try anew."
       }
     },
     "proxyStuckRestartApp": "The browser engine still could not reach a fresh private proxy, so its sea lane voyage is stuck. Restart the app to restore browsing in this tab."

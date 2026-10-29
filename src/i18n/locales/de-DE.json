@@ -9995,7 +9995,8 @@
         "noMfa": "Dieser Tab hat keine automatische 2FA, die wiederholt werden kann.",
         "codeUsed": "Der aktuelle 2FA-Code wurde bereits verwendet. Versuchen Sie es erneut, sobald ein neuer Code verfügbar ist.",
         "rateLimited": "Die automatische Anmeldung wurde zu oft wiederholt. Warten Sie einen Moment und versuchen Sie es dann erneut.",
-        "noForm": "Diese Seite zeigt kein Anmeldeformular zum Ausfüllen. Öffnen Sie die Anmeldeseite und versuchen Sie es dann erneut."
+        "otherAddress": "Die Adresse dieser Seite gehört nicht zu den gespeicherten Anmeldeadressen dieser Verbindung, daher füllt die automatische Anmeldung sie nicht aus. Öffnen Sie die gespeicherte Adresse oder erlauben Sie in den erweiterten Einstellungen der Verbindung die Weitergabe der gespeicherten Anmeldung an diese Adresse.",
+        "noForm": "Während die automatische Anmeldung danach gesucht hat, ist auf dieser Seite kein Anmeldeformular erschienen. Öffnen Sie die Anmeldeseite und versuchen Sie es dann erneut."
       }
     },
     "proxyStuckRestartApp": "Die Browser-Engine konnte auch einen neuen privaten Proxy nicht erreichen, ihre Netzwerkverbindung hängt. Starten Sie die App neu, um das Surfen in diesem Tab wiederherzustellen."

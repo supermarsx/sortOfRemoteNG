@@ -9995,7 +9995,8 @@
         "noMfa": "Cet onglet n’a aucune 2FA automatique à réessayer.",
         "codeUsed": "Le code 2FA actuel a déjà été utilisé. Réessayez lorsqu’un nouveau code sera disponible.",
         "rateLimited": "La connexion automatique a été réessayée trop souvent. Patientez un instant, puis réessayez.",
-        "noForm": "Cette page n’affiche aucun formulaire de connexion à remplir. Ouvrez la page de connexion, puis réessayez."
+        "otherAddress": "L’adresse de cette page ne fait pas partie des adresses de connexion enregistrées de cette connexion : la connexion automatique ne la remplira pas. Ouvrez l’adresse enregistrée ou autorisez le transfert de la connexion enregistrée vers cette adresse dans les paramètres avancés de la connexion.",
+        "noForm": "Aucun formulaire de connexion n’est apparu sur cette page pendant que la connexion automatique le cherchait. Ouvrez la page de connexion, puis réessayez."
       }
     },
     "proxyStuckRestartApp": "Le moteur du navigateur n'a pas pu joindre un nouveau proxy privé non plus : sa connexion réseau est bloquée. Redémarrez l'application pour rétablir la navigation dans cet onglet."

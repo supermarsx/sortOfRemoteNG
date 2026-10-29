@@ -314,6 +314,14 @@ impl NativeLoginAuthority {
         &self.origins
     }
 
+    /// The origin rule of a credential release (`with_credentials`), shared
+    /// by an explicit retry so that both match a page's origin identically:
+    /// one of the saved sign-in origins, in its canonical form.
+    pub fn permits_login_origin(&self, origin: &str) -> bool {
+        self.origins.iter().any(|saved| saved == origin)
+            && canonical_browser_request_origin(origin).as_deref() == Ok(origin)
+    }
+
     pub fn availability(&self) -> NativeCredentialAvailability {
         self.availability
     }
@@ -358,11 +366,10 @@ impl NativeLoginAuthority {
             || !self.supports_default_adapter
             || request.identity != &self.identity
             || !self.lease.is_current()
-            || !self.origins.iter().any(|origin| origin == request.origin)
             // Only the saved source (which may explicitly be HTTP) and separately
             // reviewed HTTPS login destinations enter `origins`. Resource grants
             // and redirects cannot downgrade or extend credential authority.
-            || canonical_browser_request_origin(request.origin).as_deref() != Ok(request.origin)
+            || !self.permits_login_origin(request.origin)
         {
             return;
         }
@@ -914,6 +921,23 @@ fn credential_availability(
     }
 }
 
+/// The DSM HTTPS sign-in origin of the same host for a saved HTTP DSM source:
+/// the default DSM pair (5000 → 5001) or the standard ports (80 → 443). Any
+/// other port, an HTTPS source or another host has none.
+fn synology_https_origin(source: &str) -> Option<String> {
+    let url = Url::parse(source).ok()?;
+    if url.scheme() != "http" || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    let host = url.host_str()?;
+    let port = match url.port() {
+        Some(5000) => ":5001",
+        None => "",
+        Some(_) => return None,
+    };
+    Some(format!("https://{host}{port}"))
+}
+
 fn saved_login(
     connection: &Value,
     settings: &Value,
@@ -1058,6 +1082,15 @@ fn saved_login(
                     add_origin(origin);
                 }
             }
+        }
+    }
+    // Synology DSM's reviewed profile: DSM answers its HTTP port with a
+    // redirect to the HTTPS port of the same host, where the same sign-in
+    // form is shown. That origin is a login origin only while this browser
+    // may navigate to it at all (`add_origin` keeps to the allowed origins).
+    if enabled && !google_login && !drone && steps.is_none() && application_id == "synology-dsm" {
+        if let Some(origin) = synology_https_origin(policy.source_origin()) {
+            add_origin(&origin);
         }
     }
     NativeLoginAuthority {
@@ -3967,6 +4000,110 @@ mod tests {
             },
         );
         assert!(options_released);
+    }
+
+    /// A Synology DSM row saved at its HTTP port, as in the reported case.
+    fn dsm_row(port: u16) -> Value {
+        let mut row = connection();
+        row["protocol"] = "http".into();
+        row["hostname"] = "nas.example.test".into();
+        row["port"] = port.into();
+        row.as_object_mut().unwrap().remove("httpAutoLogin");
+        row["httpApplication"] = json!({"version":1,"id":"synology-dsm","loginMode":"form"});
+        row
+    }
+
+    async fn dsm_login(row: Value) -> NativeAuthorizedBrowser {
+        let mut f = Fixture::new(row.clone()).await;
+        f.request.initial_url = saved_source(&row).unwrap().to_string();
+        f.authorize().await.unwrap()
+    }
+
+    fn page_origin(url: &str) -> String {
+        Url::parse(url).unwrap().origin().ascii_serialization()
+    }
+
+    #[test]
+    fn dsm_https_sign_in_origin_is_the_same_host_default_pair_only() {
+        for (source, expected) in [
+            ("http://nas.example.test:5000", Some("https://nas.example.test:5001")),
+            ("http://192.0.2.10:5000", Some("https://192.0.2.10:5001")),
+            ("http://[2001:db8::1]:5000", Some("https://[2001:db8::1]:5001")),
+            ("http://nas.example.test", Some("https://nas.example.test")),
+            ("http://nas.example.test:5005", None),
+            ("https://nas.example.test:5001", None),
+            ("http://user@nas.example.test:5000", None),
+        ] {
+            assert_eq!(synology_https_origin(source).as_deref(), expected, "{source}");
+        }
+    }
+
+    #[tokio::test]
+    async fn dsm_sign_in_page_reached_by_its_own_https_redirect_is_a_login_origin() {
+        const HTTP: &str = "http://nas.example.test:5000";
+        const HTTPS: &str = "https://nas.example.test:5001";
+        // The reported case: DSM redirects :5000 to :5001, the user trusted
+        // that destination so the sign-in page loads there, and retry said
+        // "no sign-in form". The page is DSM's own sign-in on the same host.
+        let mut row = dsm_row(5000);
+        row["httpTrustedRedirectDestinations"] = json!({"version":1,"origins":[HTTPS]});
+        let authorized = dsm_login(row).await;
+        assert_eq!(authorized.login.application_id(), "synology-dsm");
+        assert_eq!(authorized.login.consent_origins(), &[HTTP, HTTPS]);
+        // Every DSM sign-in address shape on either origin is matched by its
+        // origin, exactly like the first attempt's credential release.
+        for url in [
+            "http://nas.example.test:5000/",
+            "http://nas.example.test:5000/#/signin",
+            "https://nas.example.test:5001/",
+            "https://nas.example.test:5001",
+            "https://nas.example.test:5001/#/signin",
+            "https://nas.example.test:5001/#/signin/",
+            "https://nas.example.test:5001/?launchApp=SYNO.SDS.App.FileStation3.Instance",
+            "https://nas.example.test:5001/?launchApp=SYNO.SDS.PkgManApp.Instance#/signin",
+            "https://NAS.example.test:5001/webman/index.cgi#/signin/password",
+        ] {
+            let origin = page_origin(url);
+            assert!(authorized.login.permits_login_origin(&origin), "{url}");
+            let mut released = false;
+            authorized.login.with_credentials(
+                &NativeLoginRequest { identity: authorized.policy.identity(), origin: &origin },
+                &Consent { allow: true },
+                &mut |_| released = true,
+            );
+            assert!(released, "{url}");
+        }
+        // Not DSM's sign-in: another port, scheme downgrade on 5001, another host.
+        for origin in [
+            "https://nas.example.test:5002",
+            "http://nas.example.test:5001",
+            "https://other.example.test:5001",
+            "https://nas.example.test:5001/",
+        ] {
+            assert!(!authorized.login.permits_login_origin(origin), "{origin}");
+        }
+    }
+
+    #[tokio::test]
+    async fn dsm_https_origin_needs_the_browser_to_reach_it_and_the_dsm_profile() {
+        // Without a navigation grant to :5001 the page cannot load there, and
+        // it is no login origin either.
+        let authorized = dsm_login(dsm_row(5000)).await;
+        assert_eq!(authorized.login.consent_origins(), &["http://nas.example.test:5000"]);
+        assert!(!authorized.login.permits_login_origin("https://nas.example.test:5001"));
+        // Another application on the same host never gets DSM's pair.
+        let mut row = dsm_row(5000);
+        row["httpTrustedRedirectDestinations"] =
+            json!({"version":1,"origins":["https://nas.example.test:5001"]});
+        row["httpApplication"] = json!({"version":1,"id":"generic-form","loginMode":"form"});
+        let authorized = dsm_login(row).await;
+        assert_eq!(authorized.login.consent_origins(), &["http://nas.example.test:5000"]);
+        // A manual DSM login has no login origins at all.
+        let mut row = dsm_row(5000);
+        row["httpTrustedRedirectDestinations"] =
+            json!({"version":1,"origins":["https://nas.example.test:5001"]});
+        row["httpApplication"]["loginMode"] = "manual".into();
+        assert!(dsm_login(row).await.login.consent_origins().is_empty());
     }
 
     #[tokio::test]

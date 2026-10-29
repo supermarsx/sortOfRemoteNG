@@ -98,7 +98,11 @@ export const originBrowserRetryLoginRefusals = [
   "code-used",
   /** Too many retries in a short time. */
   "rate-limited",
-  /** The current page shows no login or 2FA form this step can fill. */
+  /** The current page is not on one of the saved sign-in origins; neither a
+   * first attempt nor a retry fills it. */
+  "other-address",
+  /** The re-run login client looked for this step's form for the first
+   * attempt's whole detection bound and found none. */
   "no-form",
 ] as const;
 export type OriginBrowserRetryLoginRefusal =

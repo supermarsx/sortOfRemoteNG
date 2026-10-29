@@ -476,6 +476,9 @@ impl Shared {
                 return;
             }
             if action == "start" {
+                // A current page asks for a one-time code: an explicit 2FA
+                // retry waiting for its form has found it.
+                self.retry_found(crate::native_features::NativeLoginRetryStep::Mfa);
                 if state.pending.is_some() || state.starts >= 2 {
                     state.cancel();
                     // Answered, never dropped: the renderer must not wait for expiry.

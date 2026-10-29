@@ -7,6 +7,8 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Connection } from "../../src/types/connection/connection";
 import type { NativeLoginActivity } from "../../src/hooks/protocol/useNativeLoginActivity";
 import {
@@ -362,6 +364,116 @@ describe("autoLoginRetryMessage", () => {
       expect(line.message.trim()).not.toBe("");
       expect(line.message).not.toMatch(/reconnect|reload|start page/i);
     }
+  });
+
+  it("tells a page on another address apart from a page without a form", () => {
+    // The reported DSM case: the sign-in page was open, and the old single
+    // code claimed it showed no sign-in form.
+    const other = autoLoginRetryMessage(t, "credentials", {
+      status: "refused",
+      reason: "other-address",
+    }).message;
+    const noForm = autoLoginRetryMessage(t, "credentials", {
+      status: "refused",
+      reason: "no-form",
+    }).message;
+    expect(other).not.toBe(noForm);
+    expect(other).toMatch(/saved sign-in addresses/);
+    expect(other).not.toMatch(/no sign-in form/i);
+    // "No form" is the outcome of a search, never of an address check.
+    expect(noForm).toMatch(/looked for it/);
+    expect(
+      parseRetryLoginReceipt({ status: "refused", reason: "other-address" }),
+    ).toEqual({ status: "refused", reason: "other-address" });
+  });
+
+  it("knows exactly the native refusal codes", () => {
+    const native = readFileSync(
+      resolve(__dirname, "../../src-tauri/src/origin_browser_login.rs"),
+      "utf8",
+    );
+    const block = native.split("impl RetryRefusal {")[1].split("\n}\n")[0];
+    const codes = [...block.matchAll(/=> "([a-z-]+)"/g)].map(
+      ([, code]) => code,
+    );
+    expect([...codes].sort()).toEqual(
+      [...originBrowserRetryLoginRefusals].sort(),
+    );
+  });
+
+  it("has both refusal lines in every locale, English matching the fallback", () => {
+    const dir = resolve(__dirname, "../../src/i18n/locales");
+    const fallback = (key: string) =>
+      autoLoginRetryMessage(
+        ((_key: string, text: string) => text) as never,
+        "credentials",
+        {
+          status: "refused",
+          reason: key === "otherAddress" ? "other-address" : "no-form",
+        },
+      ).message;
+    for (const file of readdirSync(dir).filter((name) =>
+      name.endsWith(".json"),
+    )) {
+      const refused = JSON.parse(readFileSync(resolve(dir, file), "utf8"))
+        .originBrowser.autoLoginRetry.refused;
+      for (const key of ["otherAddress", "noForm"]) {
+        expect(typeof refused[key], `${file} ${key}`).toBe("string");
+        expect(refused[key].trim(), `${file} ${key}`).not.toBe("");
+        if (file === "en-US.json") expect(refused[key]).toBe(fallback(key));
+      }
+      expect(refused.otherAddress).not.toBe(refused.noForm);
+    }
+  });
+});
+
+describe("a retry that waits for its form", () => {
+  const base = (
+    patch: Partial<OriginAutoLoginRetryOptions> = {},
+  ): OriginAutoLoginRetryOptions => ({
+    connection: withMfa,
+    activity: undefined,
+    identity: IDENTITY,
+    attached: true,
+    now: () => 100_000,
+    ...patch,
+  });
+  it("stays busy while native looks, then reports what the search found", async () => {
+    const answers: Array<(value: unknown) => void> = [];
+    const transport = vi.fn(
+      () => new Promise<unknown>((resolve) => answers.push(resolve)),
+    );
+    const onOutcome = vi.fn();
+    const { result } = renderHook(() =>
+      useOriginAutoLoginRetry(base({ transport, onOutcome })),
+    );
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.retry("credentials");
+    });
+    // Native is still inside the first attempt's detection bound.
+    expect(result.current.credentials).toEqual({
+      available: false,
+      reason: "busy",
+    });
+    await act(async () => {
+      // A form that rendered late within the wait: the retry started.
+      answers[0]({ status: "started" });
+      expect(await pending).toEqual({ status: "started" });
+    });
+    expect(onOutcome).toHaveBeenLastCalledWith("credentials", {
+      status: "started",
+    });
+    act(() => {
+      pending = result.current.retry("credentials");
+    });
+    await act(async () => {
+      // The whole bound passed without a form.
+      answers[1]({ status: "refused", reason: "no-form" });
+      expect(await pending).toEqual({ status: "refused", reason: "no-form" });
+    });
+    expect(result.current.pending).toBe(false);
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -21,6 +21,7 @@ pub use cef_find::{NativeFindCompletion, NativeFindResult};
 mod login_totp;
 #[path = "cef_login_retry.rs"]
 mod login_retry;
+pub use login_retry::NativeLoginRetryReply;
 use crate::cef_requests::{navigation_allowed, request_handler_with_lifecycle, RequestLifecycle};
 use crate::control::{BrowserControl, ControlError, Lifecycle, ViewportBounds};
 use crate::domain_permissions::WebsitePermissionEngine;
@@ -822,6 +823,8 @@ struct Shared {
     login_budget: Mutex<LoginBudget>,
     challenge_reload_used: Arc<AtomicBool>,
     login_totp: Mutex<login_totp::State>,
+    /// An explicit retry waiting for its re-run client's first request.
+    login_retry: Mutex<crate::native_features::RetryWait<NativeLoginRetryReply>>,
     feature_gate: Mutex<RendererFeatureGate>,
     login_adapter: NativeLoginAdapter,
     login_frames: crate::cef_login_frames::LoginFramePolicy,
@@ -2088,6 +2091,9 @@ impl Shared {
         let Some(hooks) = &self.hooks else {
             return 1;
         };
+        // The page asked for a step that passed the first attempt's checks:
+        // an explicit retry waiting for its form has found it.
+        self.retry_found(crate::native_features::NativeLoginRetryStep::Credentials);
         if manual {
             // Releasing a stage would make the page focus a login field.
             if !self.hold_stage(browser, frame, &nonce, &origin, stage) {
@@ -2723,6 +2729,7 @@ impl<'a> CefBrowserHost<'a> {
             login_budget: Mutex::new(LoginBudget::default()),
             challenge_reload_used: Arc::default(),
             login_totp: Mutex::new(login_totp::State::default()),
+            login_retry: Mutex::default(),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter,
             login_frames: crate::cef_login_frames::LoginFramePolicy::from_configuration(login_adapter, &login_factory_json),
@@ -5188,6 +5195,7 @@ mod tests {
             login_budget: Mutex::new(LoginBudget::default()),
             challenge_reload_used: Arc::default(),
             login_totp: Mutex::new(login_totp::State::default()),
+            login_retry: Mutex::default(),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter: NativeLoginAdapter::Generic,
             login_frames: crate::cef_login_frames::LoginFramePolicy::default(),

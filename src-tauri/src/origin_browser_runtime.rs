@@ -1098,7 +1098,7 @@ pub(crate) async fn retry_login(
     request: crate::origin_browser_commands::RetryLoginRequest,
 ) -> Result<crate::origin_browser_commands::RetryLoginReceipt, String> {
     use crate::origin_browser_commands::{LoginRetryStep, RetryLoginReceipt};
-    use sorng_browser_host::native_features::{NativeLoginRetryRefusal, NativeLoginRetryStep};
+    use sorng_browser_host::native_features::NativeLoginRetryStep;
     let refused = |refusal: login::RetryRefusal| RetryLoginReceipt::Refused { reason: refusal.code() };
     let step = match request.step {
         LoginRetryStep::Credentials => NativeLoginRetryStep::Credentials,
@@ -1120,6 +1120,9 @@ pub(crate) async fn retry_login(
         return Ok(refused(login::RetryRefusal::NotCurrent));
     }
     let (sender, receiver) = tokio::sync::oneshot::channel();
+    // The host answers a retry that passed its checks once the re-run login
+    // client has looked for its form for the first attempt's whole bound.
+    let (found_sender, found) = tokio::sync::oneshot::channel();
     let retained = attempt.clone();
     window
         .run_on_main_thread(move || {
@@ -1136,16 +1139,21 @@ pub(crate) async fn retry_login(
                     return Err(login::RetryRefusal::NotCurrent);
                 }
                 let mut owner = Ok(());
-                let host = view.host.retry_login(&retained.identity, step, &mut |origin| {
-                    owner = login::LoginHooks::retry_admit(&retained.login, &retained.identity, step, origin);
-                    owner.is_ok()
-                });
+                let host = view.host.retry_login(
+                    &retained.identity,
+                    step,
+                    &mut |origin| {
+                        owner = login::LoginHooks::retry_admit(&retained.login, &retained.identity, step, origin);
+                        owner.is_ok()
+                    },
+                    Box::new(move |verdict| {
+                        let _ = found_sender.send(verdict);
+                    }),
+                );
                 match host {
                     Err(_) => Err(login::RetryRefusal::NotCurrent),
                     Ok(Ok(())) => Ok(()),
-                    Ok(Err(NativeLoginRetryRefusal::Owner)) => owner,
-                    Ok(Err(NativeLoginRetryRefusal::Busy)) => Err(login::RetryRefusal::Busy),
-                    Ok(Err(NativeLoginRetryRefusal::NoForm)) => Err(login::RetryRefusal::NoForm),
+                    Ok(Err(refusal)) => Err(retry_refusal(refusal, owner)),
                 }
             });
             let _ = sender.send(outcome);
@@ -1155,10 +1163,41 @@ pub(crate) async fn retry_login(
         .await
         .map_err(|_| UNAVAILABLE.to_owned())?
         .map_err(|_| UNAVAILABLE.to_owned())?;
-    Ok(match outcome {
+    if let Err(refusal) = outcome {
+        return Ok(refused(refusal));
+    }
+    // The host's own timer ends the wait (at most 182 s); this outer bound
+    // only guards against a host that disappears without answering.
+    let verdict = match tokio::time::timeout(Duration::from_secs(240), found).await {
+        Ok(Ok(verdict)) => verdict.map_err(|refusal| retry_refusal(refusal, Ok(()))),
+        // The browser closed or was replaced while the client was looking.
+        Ok(Err(_)) | Err(_) => Err(login::RetryRefusal::NotCurrent),
+    };
+    Ok(match verdict {
         Ok(()) => RetryLoginReceipt::Started,
+        // An attempt revoked during the wait is reported as such, not as a
+        // page without a form.
+        Err(login::RetryRefusal::NoForm) if !attempt.current() => {
+            refused(login::RetryRefusal::NotCurrent)
+        }
         Err(refusal) => refused(refusal),
     })
+}
+
+/// The owner's fixed refusal for a host refusal. `owner` is what the owner's
+/// admission answered, used when the host reports that the owner declined.
+fn retry_refusal(
+    refusal: sorng_browser_host::native_features::NativeLoginRetryRefusal,
+    owner: Result<(), login::RetryRefusal>,
+) -> login::RetryRefusal {
+    use sorng_browser_host::native_features::NativeLoginRetryRefusal as Host;
+    match refusal {
+        Host::Owner => owner.err().unwrap_or(login::RetryRefusal::NotCurrent),
+        Host::Busy => login::RetryRefusal::Busy,
+        Host::NoLogin => login::RetryRefusal::NoLogin,
+        Host::NotCurrent => login::RetryRefusal::NotCurrent,
+        Host::NoForm => login::RetryRefusal::NoForm,
+    }
 }
 
 pub(crate) fn status(
