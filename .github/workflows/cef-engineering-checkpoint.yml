@@ -17,9 +17,9 @@ on:
         required: true
         default: checkpoint
       slice_minutes:
-        description: Explicit compile slice; controller reserves packaging/transfer within the300-minute host bound
+        description: Explicit compile slice, or auto to fill the 300-minute host bound less the fixed post-compile reserve
         type: choice
-        options: ["15", "30", "60", "120", "180"]
+        options: ["15", "30", "60", "120", "180", "auto"]
         required: true
         default: "15"
       restore_run:

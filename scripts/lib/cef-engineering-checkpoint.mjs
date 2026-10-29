@@ -280,14 +280,27 @@ async function verifyProducerCode(api, producer, expected) {
   );
 }
 export const SLICES = Object.freeze([15, 30, 60, 120, 180]);
+// "auto" fills the job: the slice is whatever remains of the 300-minute host
+// bound at compile start, less a fixed post-compile reserve (verify, pack,
+// upload, seal, plus a 30-minute margin), within [floor, ceiling]. Measured on
+// the Linux ARM restore run 40880216955: verify 4.3, pack 1.3, upload 1 min
+// with a 3 GB graph; the reserve also covers the graph growing toward its
+// 32 GiB archive bound.
+export const AUTO_SLICE = Object.freeze({
+  reserveMs: 70 * 60_000,
+  floorMs: 15 * 60_000,
+  ceilingMs: 180 * 60_000,
+});
 export function executionOptions(mode = "checkpoint", minutes = "15") {
   assert(
     ["checkpoint", "complete-sdk"].includes(mode) &&
-      /^[0-9]+$/.test(String(minutes)) &&
-      String(Number(minutes)) === String(minutes) &&
-      SLICES.includes(Number(minutes)),
+      (minutes === "auto" ||
+        (/^[0-9]+$/.test(String(minutes)) &&
+          String(Number(minutes)) === String(minutes) &&
+          SLICES.includes(Number(minutes)))),
     "Closed engineering mode/slice required",
   );
+  if (minutes === "auto") return { mode, minutes: "auto", milliseconds: null };
   return {
     mode,
     minutes: Number(minutes),
@@ -307,6 +320,24 @@ export function hostRemaining(env, now = Date.now()) {
 }
 export function sliceBudget(options, remaining) {
   const reserve = options.mode === "complete-sdk" ? 60 * 60_000 : 40 * 60_000;
+  if (options.minutes === "auto") {
+    assert(
+      options.milliseconds === null &&
+        Number.isSafeInteger(remaining) &&
+        remaining > 0,
+      "Automatic slice requires the host clock",
+    );
+    const budget = Math.min(
+      AUTO_SLICE.ceilingMs,
+      LIMITS.maxCompileMs,
+      remaining - Math.max(reserve, AUTO_SLICE.reserveMs),
+    );
+    assert(
+      budget >= AUTO_SLICE.floorMs,
+      "Requested slice leaves insufficient packaging/transfer reserve",
+    );
+    return Math.floor(budget / 1000) * 1000;
+  }
   assert(
     Number.isSafeInteger(remaining) &&
       remaining > 0 &&

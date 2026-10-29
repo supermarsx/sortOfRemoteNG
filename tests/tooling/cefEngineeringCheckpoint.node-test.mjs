@@ -355,6 +355,7 @@ import { hostname, tmpdir, userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   LIMITS,
+  AUTO_SLICE,
   executionOptions,
   hostRemaining,
   sliceBudget,
@@ -13768,3 +13769,57 @@ print('toggle sentinel PASS')
     assert.match(result.stdout, /toggle sentinel PASS/);
   },
 );
+
+test("auto slice fills the host bound less the fixed post-compile reserve, within its floor and ceiling", () => {
+  assert.deepEqual(AUTO_SLICE, {
+    reserveMs: 70 * 60_000,
+    floorMs: 15 * 60_000,
+    ceilingMs: 180 * 60_000,
+  });
+  for (const mode of ["checkpoint", "complete-sdk"]) {
+    const options = executionOptions(mode, "auto");
+    assert.deepEqual(options, { mode, minutes: "auto", milliseconds: null });
+    // Restore continuation measured at about 85 minutes before compile.
+    assert.equal(sliceBudget(options, 215 * 60_000), 145 * 60_000);
+    // A first checkpoint starts compiling earlier and is capped.
+    assert.equal(sliceBudget(options, 250 * 60_000), 180 * 60_000);
+    assert.equal(sliceBudget(options, LIMITS.hostMs), 180 * 60_000);
+    // Exactly the floor still compiles; one second less does not.
+    assert.equal(sliceBudget(options, 85 * 60_000), 15 * 60_000);
+    assert.throws(
+      () => sliceBudget(options, 85 * 60_000 - 1000),
+      /insufficient packaging/,
+    );
+    assert.equal(sliceBudget(options, 100 * 60_000 + 1999), 30 * 60_000 + 1000);
+    for (const bad of [0, -1, 1.5, Number.NaN])
+      assert.throws(() => sliceBudget(options, bad));
+    assert.throws(() =>
+      sliceBudget({ ...options, milliseconds: 60_000 }, LIMITS.hostMs),
+    );
+  }
+  assert.ok(AUTO_SLICE.ceilingMs <= LIMITS.maxCompileMs);
+  assert.ok(AUTO_SLICE.reserveMs >= 60 * 60_000);
+  for (const minutes of ["AUTO", "auto ", "0"])
+    assert.throws(() => executionOptions("checkpoint", minutes));
+  assert.deepEqual(
+    argumentsFor([
+      "compile",
+      "--mode",
+      "checkpoint",
+      "--slice-minutes",
+      "auto",
+    ]),
+    { mode: "compile", "--mode": "checkpoint", "--slice-minutes": "auto" },
+  );
+});
+
+test("workflow offers the auto slice alongside the reviewed fixed slices", async () => {
+  const workflow = (await readFile(path.join(ROOT, WORKFLOW), "utf8")).replace(
+    /\r\n/g,
+    "\n",
+  );
+  assert.match(
+    workflow,
+    /slice_minutes:\n(?:        .*\n)*?        options: \["15", "30", "60", "120", "180", "auto"\]\n/,
+  );
+});
