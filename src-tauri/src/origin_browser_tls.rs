@@ -18,6 +18,7 @@ pub(super) struct CertificateHooks {
     authority: Arc<NativeCertificateAuthority>,
     window: WebviewWindow,
     timing_samples: AtomicU32,
+    owner_rechecks: Arc<owner_rechecks::Coalesced>,
 }
 
 impl CertificateHooks {
@@ -31,6 +32,7 @@ impl CertificateHooks {
             authority,
             window,
             timing_samples: AtomicU32::new(0),
+            owner_rechecks: Arc::default(),
         })
     }
 }
@@ -96,10 +98,14 @@ impl NativeTlsHooks for CertificateHooks {
         let authority = self.authority.clone();
         let window = self.window.clone();
         let mut timing = tls_timing(&self.timing_samples);
+        let rechecks = self.owner_rechecks.clone();
         tauri::async_runtime::spawn(async move {
             timing.phase(timing::Phase::OwnerBefore);
             let state = window.state::<EncryptionState>();
-            if attempt.lease.recheck(&window, &state).await.is_err() {
+            if !rechecks
+                .recheck(|| async { attempt.lease.recheck(&window, &state).await.is_ok() })
+                .await
+            {
                 timing.outcome(timing::Outcome::OwnerDenied);
                 return;
             }
@@ -134,7 +140,10 @@ impl NativeTlsHooks for CertificateHooks {
                 return;
             };
             timing.phase(timing::Phase::OwnerAfter);
-            if attempt.lease.recheck(&window, &state).await.is_err() {
+            if !rechecks
+                .recheck(|| async { attempt.lease.recheck(&window, &state).await.is_ok() })
+                .await
+            {
                 timing.outcome(timing::Outcome::OwnerDenied);
                 return;
             }
@@ -391,6 +400,158 @@ mod timing {
     }
 }
 // END std-only TLS timing
+
+// BEGIN owner recheck coalescing
+// A page opens many TLS sockets at once and each admission rechecks the owner
+// lease twice. Every recheck takes the global database-operation lock and
+// re-verifies the encrypted database, so concurrent admissions used to queue
+// one full recheck each. A caller now shares a result only when that recheck
+// STARTED after the caller asked: the freshness each admission relies on is
+// unchanged, while a burst of N waiters costs at most two rechecks.
+mod owner_rechecks {
+    use std::future::Future;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[derive(Default)]
+    pub(super) struct Coalesced {
+        requested: AtomicU64,
+        // (highest ticket covered by the last completed recheck, its result)
+        last: tokio::sync::Mutex<(u64, bool)>,
+    }
+
+    impl Coalesced {
+        pub(super) async fn recheck<F, Fut>(&self, check: F) -> bool
+        where
+            F: FnOnce() -> Fut,
+            Fut: Future<Output = bool>,
+        {
+            let ticket = self.requested.fetch_add(1, Ordering::AcqRel) + 1;
+            let mut last = self.last.lock().await;
+            if last.0 >= ticket {
+                return last.1;
+            }
+            // Every ticket up to here was issued before this recheck begins.
+            let covered = self.requested.load(Ordering::Acquire);
+            let current = check().await;
+            *last = (covered, current);
+            current
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        #[tokio::test]
+        async fn a_burst_shares_rechecks_that_started_after_each_request() {
+            let coalesced = Arc::new(Coalesced::default());
+            let runs = Arc::new(AtomicUsize::new(0));
+            let mut tasks = Vec::new();
+            for _ in 0..16 {
+                let coalesced = coalesced.clone();
+                let runs = runs.clone();
+                tasks.push(tokio::spawn(async move {
+                    coalesced
+                        .recheck(|| async move {
+                            runs.fetch_add(1, Ordering::SeqCst);
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                            true
+                        })
+                        .await
+                }));
+            }
+            for task in tasks {
+                assert!(task.await.unwrap());
+            }
+            let runs = runs.load(Ordering::SeqCst);
+            assert!((1..=2).contains(&runs), "{runs}");
+        }
+
+        #[tokio::test]
+        async fn a_request_made_during_a_recheck_waits_for_a_fresh_one() {
+            let coalesced = Arc::new(Coalesced::default());
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+            let first = {
+                let coalesced = coalesced.clone();
+                tokio::spawn(async move {
+                    coalesced
+                        .recheck(|| async move {
+                            entered_tx.send(()).unwrap();
+                            release_rx.await.unwrap();
+                            true
+                        })
+                        .await
+                })
+            };
+            entered_rx.await.unwrap();
+            // Asked while the first recheck is already running: its result
+            // predates this request and must not be reused.
+            let second_ran = Arc::new(AtomicUsize::new(0));
+            let second = {
+                let coalesced = coalesced.clone();
+                let second_ran = second_ran.clone();
+                tokio::spawn(async move {
+                    coalesced
+                        .recheck(|| async move {
+                            second_ran.fetch_add(1, Ordering::SeqCst);
+                            false
+                        })
+                        .await
+                })
+            };
+            tokio::task::yield_now().await;
+            release_tx.send(()).unwrap();
+            assert!(first.await.unwrap());
+            assert!(!second.await.unwrap());
+            assert_eq!(second_ran.load(Ordering::SeqCst), 1);
+        }
+
+        #[tokio::test]
+        async fn sequential_requests_each_recheck_and_failures_are_returned() {
+            let coalesced = Coalesced::default();
+            let runs = AtomicUsize::new(0);
+            for expected in [true, false, true] {
+                let result = coalesced
+                    .recheck(|| async {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                        expected
+                    })
+                    .await;
+                assert_eq!(result, expected);
+            }
+            assert_eq!(runs.load(Ordering::SeqCst), 3);
+        }
+
+        #[tokio::test]
+        async fn a_cancelled_recheck_publishes_nothing() {
+            let coalesced = Arc::new(Coalesced::default());
+            let pending = {
+                let coalesced = coalesced.clone();
+                tokio::spawn(async move {
+                    coalesced
+                        .recheck(|| std::future::pending::<bool>())
+                        .await
+                })
+            };
+            tokio::task::yield_now().await;
+            pending.abort();
+            let _ = pending.await;
+            let ran = AtomicUsize::new(0);
+            assert!(!coalesced
+                .recheck(|| async {
+                    ran.fetch_add(1, Ordering::SeqCst);
+                    false
+                })
+                .await);
+            assert_eq!(ran.load(Ordering::SeqCst), 1);
+        }
+    }
+}
+// END owner recheck coalescing
 
 fn admissible_native_result(error: i32, fatal: bool, mask: u32) -> Option<NativeTlsDecision> {
     if fatal {
