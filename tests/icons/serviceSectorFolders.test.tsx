@@ -26,10 +26,28 @@ import { publishIconLibrary } from "../../src/utils/icons/iconLibraryRuntime";
 
 type Icon = (typeof FOLDER_ICONS)[number]["icon"];
 
-const KEYS = ["folder-isp", "folder-shopping"] as const;
+const KEYS = ["folder-government", "folder-isp", "folder-shopping"] as const;
 
 // Every query must find the folder through the picker's own search model.
 const SEARCHES = {
+  "folder-government": [
+    "government",
+    "gov",
+    "govt",
+    "public sector",
+    "public administration",
+    "civic",
+    "municipal",
+    "city hall",
+    "council",
+    "federal",
+    "agency",
+    "ministry",
+    "governo",
+    "gobierno",
+    "gouvernement",
+    "regierung",
+  ],
   "folder-isp": [
     "isp",
     "isps",
@@ -72,6 +90,14 @@ const SEARCHES = {
 
 // The nearest existing folder emblems a person could confuse them with.
 const NEIGHBOURS = {
+  "folder-government": [
+    "folder-company-finance",
+    "folder-company-legal",
+    "folder-company-headquarters",
+    "folder-building",
+    "folder-company",
+    "folder-education",
+  ],
   "folder-isp": [
     "folder-tree",
     "folder-network-equipment",
@@ -121,8 +147,8 @@ function entry(key: (typeof KEYS)[number]) {
   return SERVICE_SECTOR_FOLDER_ICONS.find((item) => item.key === key)!;
 }
 
-describe("ISP and shopping folder icons", () => {
-  it("adds exactly two stable folder choices, once each, with paired open states", () => {
+describe("Government, ISP and shopping folder icons", () => {
+  it("adds exactly three stable folder choices, once each, with paired open states", () => {
     expect(SERVICE_SECTOR_FOLDER_ICONS.map(({ key }) => key)).toEqual(KEYS);
     expect(Object.keys(SERVICE_SECTOR_FOLDER_OPEN_ICONS).sort()).toEqual([
       ...KEYS,
@@ -137,6 +163,7 @@ describe("ISP and shopping folder icons", () => {
       );
       expect(getConnectionIconDefinition(key)?.category).toBe("folders");
     }
+    expect(entry("folder-government").label).toBe("Government folder");
     expect(entry("folder-isp").label).toBe("ISPs folder");
     expect(entry("folder-shopping").label).toBe("Shopping folder");
     for (const item of SERVICE_SECTOR_FOLDER_ICONS) {
@@ -275,6 +302,10 @@ describe("ISP and shopping folder icons", () => {
       /shopping-(cart|bag|basket)\b|store|cart/i,
     );
     expect(badgeClass("folder-isp")).toMatch(/\blucide-folder-isp-emblem\b/);
+    expect(badgeClass("folder-government")).toMatch(
+      /\blucide-folder-government-emblem\b/,
+    );
+    expect(badgeClass("folder-government")).not.toMatch(/lucide-landmark/i);
     expect(badgeClass("folder-isp")).not.toMatch(
       /lucide-(globe|earth|router|radio|wifi|cloud|antenna|network)/i,
     );

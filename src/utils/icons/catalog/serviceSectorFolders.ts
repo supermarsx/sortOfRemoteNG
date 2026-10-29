@@ -2,10 +2,22 @@ import { createLucideIcon, type LucideIcon } from "lucide-react";
 import { createRoleIcon } from "../createRoleIcon";
 import { defineIcon } from "./types";
 
-// Provenance: both emblems are original, app-authored geometry drawn for this
-// catalog on Lucide's 24-unit stroke grid (2026-10-13). They trace no logo,
-// copy no Lucide glyph and name no brand. Each stays within three strokes so
-// it reads in the 7 px badge of a 16 px tree folder.
+// Provenance: every emblem is original, app-authored geometry drawn for this
+// catalog on Lucide's 24-unit stroke grid (2026-10-13; government 2026-10-28).
+// They trace no logo, seal or coat of arms, copy no Lucide glyph and name no
+// brand. Each stays within three strokes so it reads in the 7 px badge of a
+// 16 px tree folder.
+
+/**
+ * Domed capitol over a colonnade: a seat of public administration. Drawn
+ * apart from Lucide's pedimented `Landmark`, which already badges the company
+ * finance folder.
+ */
+const GovernmentEmblem = createLucideIcon("FolderGovernmentEmblem", [
+  ["path", { d: "M12 2v3M7 10a5 5 0 0 1 10 0", key: "dome" }],
+  ["path", { d: "M3 10h18M3 21h18", key: "entablature-and-base" }],
+  ["path", { d: "M6 12v7M10 12v7M14 12v7M18 12v7", key: "columns" }],
+]);
 
 /** Globe with two rising carrier-signal bars: internet access sold by an operator. */
 const IspEmblem = createLucideIcon("FolderIspEmblem", [
@@ -22,6 +34,49 @@ const ShoppingEmblem = createLucideIcon("FolderShoppingEmblem", [
 
 // One emblem source drives both states; saved keys never change on expansion.
 const VARIANTS = [
+  [
+    "folder-government",
+    "Government folder",
+    GovernmentEmblem,
+    [
+      "government",
+      "governments",
+      "gov",
+      "govt",
+      "public sector",
+      "public administration",
+      "public services",
+      "civic",
+      "civil service",
+      "municipal",
+      "municipality",
+      "city hall",
+      "town hall",
+      "council",
+      "state",
+      "federal",
+      "agency",
+      "agencies",
+      "ministry",
+      "authority",
+      "parliament",
+      "capitol",
+      "governo",
+      "administração pública",
+      "câmara municipal",
+      "setor público",
+      "gobierno",
+      "sector público",
+      "ayuntamiento",
+      "gouvernement",
+      "secteur public",
+      "mairie",
+      "regierung",
+      "behörde",
+      "öffentlicher dienst",
+    ],
+    "App-authored folder emblem of a domed capitol over columns; generic, not a brand or any government's seal or coat of arms.",
+  ],
   [
     "folder-isp",
     "ISPs folder",
