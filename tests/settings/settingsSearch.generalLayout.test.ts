@@ -228,9 +228,8 @@ describe("settings search — startup", () => {
 });
 
 describe("settings search — layout", () => {
-  it("finds the thirteen icon toggles that were missing from the index", () => {
+  it("finds the icon toggles that were missing from the index", () => {
     const missingBeforeT75: Array<[string, string]> = [
-      ["action log", "showActionLogIcon"],
       ["backup status", "showBackupStatusIcon"],
       ["cloud sync status", "showCloudSyncStatusIcon"],
       ["collection switcher", "showCollectionSwitcherIcon"],

@@ -45,7 +45,6 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
     showMacroManagerIcon: false,
     showRecordingManagerIcon: false,
     showPerformanceMonitorIcon: false,
-    showActionLogIcon: false,
     showErrorLogBar: false,
     showDevtoolsIcon: false,
     showDebugPanelIcon: false,
@@ -78,7 +77,6 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
   setShowMacroManager: vi.fn(),
   setShowRecordingManager: vi.fn(),
   setShowPerformanceMonitor: vi.fn(),
-  setShowActionLog: vi.fn(),
   setShowErrorLog: vi.fn(),
   handleToggleTransparency: vi.fn(),
   handleToggleAlwaysOnTop: vi.fn(),
@@ -124,14 +122,20 @@ describe("AppToolbar", () => {
       screen.queryByRole("button", { name: "Network Toolkit" }),
     ).toBeNull();
   });
-  it("keeps the Action Log visibility preference as a labelled Session Manager shortcut", () => {
+  it("reaches the Action Log only through Session Manager, without a redundant shortcut", () => {
     const props = makeProps();
-    props.appSettings.showActionLogIcon = true;
+    props.appSettings.showRdpSessionsIcon = true;
     props.databaseManager.getCurrentDatabase = () => ({ id: "fixture-db" });
     render(<AppToolbar {...(props as any)} />);
-    fireEvent.click(screen.getByTitle("Session Manager — Action Log"));
-    expect(props.setShowActionLog).toHaveBeenCalledExactlyOnceWith(true);
+    expect(
+      screen.queryByTitle("Session Manager — Action Log"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByTitle("Action Log")).not.toBeInTheDocument();
+    expect(
+      document.querySelector('[data-tool-icon="actionLog"]'),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Session Manager"));
+    expect(props.setRdpPanelOpen).toHaveBeenCalledExactlyOnceWith(true);
   });
   it("opens autonomous security tools from Management without a database and honors both visibility flags", () => {
     const openCredentialVault = vi.fn(),
@@ -527,7 +531,6 @@ describe("AppToolbar", () => {
       showMacroManagerIcon: true,
       showRecordingManagerIcon: true,
       showPerformanceMonitorIcon: true,
-      showActionLogIcon: true,
     });
 
     render(<AppToolbar {...(props as any)} />);
@@ -549,7 +552,6 @@ describe("AppToolbar", () => {
       ["Macro Manager", "macroManager"],
       ["Recording Manager", "recordingManager"],
       ["Performance Monitor", "performanceMonitor"],
-      ["Session Manager — Action Log", "actionLog"],
     ] as const;
 
     expected.forEach(([title, toolKey]) => {

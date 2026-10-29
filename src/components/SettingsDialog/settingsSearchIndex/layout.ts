@@ -359,18 +359,6 @@ export const LAYOUT_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Layout",
   },
   {
-    key: "showActionLogIcon",
-    label: "Session Manager — Action Log",
-    labelKey: "settingsLayout.sessionManagerActionLog",
-    description:
-      "Show a shortcut to the Action Log view inside Session Manager",
-    descriptionKey: "settingsLayout.sessionManagerActionLogTooltip",
-    tags: ["toolbar", "icon", "action log", "audit", "events", "history"],
-    synonyms: ["audit log", "activity log", "event log"],
-    section: "layout",
-    sectionLabel: "Layout",
-  },
-  {
     key: "showDevtoolsIcon",
     label: "Devtools",
     labelKey: "settingsLayout.devtools",

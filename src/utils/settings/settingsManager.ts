@@ -495,7 +495,6 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showHardwareKeysIcon: true,
   showIconExplorerIcon: true,
   showPerformanceMonitorIcon: true,
-  showActionLogIcon: true,
   showDevtoolsIcon: false,
   showDebugPanelIcon: false,
   showSecurityIcon: true,

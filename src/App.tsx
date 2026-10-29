@@ -422,7 +422,6 @@ const AppContent: React.FC = () => {
   if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
       "performanceMonitor",
-      "actionLog",
       "shortcutManager",
       "proxyChain",
       "internalProxy",
@@ -1861,7 +1860,6 @@ const AppContent: React.FC = () => {
             setShowPerformanceMonitor={
               toolShowSetters.current.performanceMonitor
             }
-            setShowActionLog={toolShowSetters.current.actionLog}
             setShowErrorLog={setShowErrorLog}
             handleToggleTransparency={handleToggleTransparency}
             handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}

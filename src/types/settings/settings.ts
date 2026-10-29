@@ -383,7 +383,6 @@ export interface GlobalSettings {
   showHardwareKeysIcon: boolean;
   showIconExplorerIcon: boolean;
   showPerformanceMonitorIcon: boolean;
-  showActionLogIcon: boolean;
   showDevtoolsIcon: boolean;
   showDebugPanelIcon: boolean;
   showSecurityIcon: boolean;

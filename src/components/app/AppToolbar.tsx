@@ -94,7 +94,6 @@ interface AppToolbarProps {
   setShowMacroManager: (v: boolean) => void;
   setShowRecordingManager: (v: boolean) => void;
   setShowPerformanceMonitor: (v: boolean) => void;
-  setShowActionLog: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   handleToggleTransparency: () => void;
   handleToggleAlwaysOnTop: () => void;
@@ -139,7 +138,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowMacroManager,
   setShowRecordingManager,
   setShowPerformanceMonitor,
-  setShowActionLog,
   setShowErrorLog,
   handleToggleTransparency,
   handleToggleAlwaysOnTop,
@@ -527,19 +525,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                 title={t("toolbar.performanceMonitor", "Performance Monitor")}
               >
                 <ToolGlyph tool="performanceMonitor" />
-              </button>
-            )}
-            {appSettings.showActionLogIcon && (
-              <button
-                onClick={() => setShowActionLog(true)}
-                disabled={noCollection}
-                className="app-bar-button p-2"
-                title={t(
-                  "toolbar.sessionManagerActionLog",
-                  "Session Manager — Action Log",
-                )}
-              >
-                <ToolGlyph tool="actionLog" />
               </button>
             )}
             {appSettings.showErrorLogBar && (

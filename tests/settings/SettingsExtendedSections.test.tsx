@@ -147,7 +147,6 @@ const layoutSettings = {
   showInternalProxyIcon: false,
   showShortcutManagerIcon: true,
   showPerformanceMonitorIcon: true,
-  showActionLogIcon: true,
   showDevtoolsIcon: true,
   showSecurityIcon: true,
   showWolIcon: true,

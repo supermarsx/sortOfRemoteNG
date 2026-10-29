@@ -601,20 +601,6 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             )}
           />
           <Toggle
-            checked={settings.showActionLogIcon}
-            onChange={(v) => updateSettings({ showActionLogIcon: v })}
-            icon={<FileStack size={16} />}
-            label={t(
-              "settingsLayout.sessionManagerActionLog",
-              "Session Manager — Action Log",
-            )}
-            settingKey="showActionLogIcon"
-            infoTooltip={t(
-              "settingsLayout.sessionManagerActionLogTooltip",
-              "Show a shortcut to the Action Log view inside Session Manager",
-            )}
-          />
-          <Toggle
             checked={settings.showDevtoolsIcon}
             onChange={(v) => updateSettings({ showDevtoolsIcon: v })}
             icon={<Code size={16} />}
