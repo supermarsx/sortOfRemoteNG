@@ -1,12 +1,12 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
 import {
-  RefreshCw,
   Globe,
   PowerOff,
   Unplug,
@@ -41,7 +41,6 @@ import {
 import {
   ProxyLogsTab,
   ProxyStatsTab,
-  BrowserSessionLogsTab,
   StatusBadge,
 } from "../../network/InternalProxyManager";
 import { classifySession } from "../../network/internalProxySessionStatus";
@@ -51,6 +50,10 @@ import {
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
 import { SshSessionsView } from "./SshSessionsView";
+import {
+  BrowserSessionsView,
+  type BrowserSessionsSubView,
+} from "./BrowserSessionsView";
 import { ApplicationLogsView } from "../../monitoring/ApplicationLogsView";
 import { ActionLogViewer } from "../../monitoring/ActionLogViewer";
 import { getProtocolIcon } from "../../connection/connectionTree/helpers";
@@ -1205,20 +1208,55 @@ const SessionsView: React.FC<{
    Root
    ═══════════════════════════════════════════════════════════════════ */
 
-const VIEWS: {
+interface SessionManagerViewItem {
   id: SessionManagerView;
   label: string;
   icon: React.ElementType;
+}
+
+/** Sidebar sections, in display order. View ids are stable navigation keys. */
+const SESSION_MANAGER_VIEW_GROUPS: {
+  id: string;
+  label: string;
+  views: SessionManagerViewItem[];
 }[] = [
-  { id: "sessions", label: "Sessions", icon: LayoutGrid },
-  { id: "application-logs", label: "Application logs", icon: NotebookText },
-  { id: "action-log", label: "Action Log", icon: ScrollText },
-  { id: "browser-logs", label: "Browser sessions", icon: Globe },
-  { id: "ssh-sessions", label: "SSH Sessions", icon: SshProtocolIcon },
-  { id: "rdp-logs", label: "RDP Logs", icon: ScrollText },
-  { id: "rdp-history", label: "RDP History", icon: History },
-  { id: "proxy-logs", label: "Proxy Log", icon: ScrollText },
-  { id: "proxy-stats", label: "Proxy Stats", icon: BarChart3 },
+  {
+    id: "sessions",
+    label: "Sessions",
+    views: [
+      { id: "sessions", label: "Sessions", icon: LayoutGrid },
+      { id: "ssh-sessions", label: "SSH Sessions", icon: SshProtocolIcon },
+      { id: "browser-logs", label: "Browser sessions", icon: Globe },
+    ],
+  },
+  {
+    id: "rdp",
+    label: "Remote Desktop",
+    views: [
+      { id: "rdp-history", label: "RDP History", icon: History },
+      { id: "rdp-logs", label: "RDP Logs", icon: ScrollText },
+    ],
+  },
+  {
+    id: "proxy",
+    label: "Proxy",
+    views: [
+      { id: "proxy-logs", label: "Proxy Log", icon: ScrollText },
+      { id: "proxy-stats", label: "Proxy Stats", icon: BarChart3 },
+    ],
+  },
+  {
+    id: "activity",
+    label: "Activity",
+    views: [
+      { id: "action-log", label: "Action Log", icon: ScrollText },
+      {
+        id: "application-logs",
+        label: "Application logs",
+        icon: NotebookText,
+      },
+    ],
+  },
 ];
 
 export const SessionManager: React.FC<SessionManagerProps> = ({
@@ -1239,9 +1277,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
 }) => {
   const { state, dispatch } = useConnections();
   const [view, setView] = useState<SessionManagerView>(initialView);
-  const [browserLogView, setBrowserLogView] = useState<"sessions" | "journal">(
-    "sessions",
-  );
+  const [browserLogView, setBrowserLogView] =
+    useState<BrowserSessionsSubView>("sessions");
   const mgr = useUnifiedSessionManager({
     isVisible,
     connections,
@@ -1257,6 +1294,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
         : view,
   });
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
+  const sidebarGroupIdPrefix = useId();
 
   useEffect(() => {
     setView(initialView);
@@ -1321,41 +1359,65 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
       <div className="h-full min-h-0 flex bg-[var(--color-surface)] overflow-hidden">
         {/* Sidebar */}
         <div className="w-48 min-h-0 flex-shrink-0 border-r border-[var(--color-border)] flex flex-col overflow-hidden">
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1">
-            {VIEWS.map((v) => {
-              const Icon = v.icon;
-              const active = view === v.id;
-              const count =
-                v.id === "sessions"
-                  ? totalSessions
-                  : v.id === "ssh-sessions"
-                    ? mgr.sshRows.length
-                    : v.id === "rdp-history"
-                      ? rdpHistory.length
-                      : v.id === "proxy-logs"
-                        ? mgr.proxy.requestLog.length
-                        : undefined;
+          <nav
+            className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3"
+            aria-label="Session manager views"
+          >
+            {SESSION_MANAGER_VIEW_GROUPS.map((group) => {
+              const headingId = `${sidebarGroupIdPrefix}-group-${group.id}`;
               return (
-                <button
-                  key={v.id}
-                  onClick={() => {
-                    setView(v.id);
-                    if (v.id !== "rdp-logs") setLogSessionFilter(null);
-                  }}
-                  className={`sor-sidebar-tab w-full flex items-center gap-2 ${active ? "sor-sidebar-tab-active" : ""}`}
-                  data-testid={`session-view-${v.id}`}
+                <div
+                  key={group.id}
+                  role="group"
+                  aria-labelledby={headingId}
+                  className="space-y-1"
+                  data-testid={`session-view-group-${group.id}`}
                 >
-                  <Icon size={14} />
-                  <span className="flex-1 text-left">{v.label}</span>
-                  {count != null && count > 0 && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">
-                      {count}
-                    </span>
-                  )}
-                </button>
+                  <div
+                    id={headingId}
+                    className="px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-textMuted)]"
+                  >
+                    {group.label}
+                  </div>
+                  {group.views.map((v) => {
+                    const Icon = v.icon;
+                    const active = view === v.id;
+                    const count =
+                      v.id === "sessions"
+                        ? totalSessions
+                        : v.id === "ssh-sessions"
+                          ? mgr.sshRows.length
+                          : v.id === "rdp-history"
+                            ? rdpHistory.length
+                            : v.id === "proxy-logs"
+                              ? mgr.proxy.requestLog.length
+                              : undefined;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          setView(v.id);
+                          if (v.id !== "rdp-logs") setLogSessionFilter(null);
+                        }}
+                        className={`sor-sidebar-tab w-full flex items-center gap-2 ${active ? "sor-sidebar-tab-active" : ""}`}
+                        aria-current={active ? "page" : undefined}
+                        data-testid={`session-view-${v.id}`}
+                      >
+                        <Icon size={14} aria-hidden="true" />
+                        <span className="flex-1 text-left">{v.label}</span>
+                        {count != null && count > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
-          </div>
+          </nav>
           <div className="flex-shrink-0 p-3 border-t border-[var(--color-border)] space-y-2">
             <div
               className="text-[10px] text-[var(--color-textMuted)]"
@@ -1365,14 +1427,11 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             >
               {sessionSourceSummary}
             </div>
-            <p
-              className="text-[11px] text-[var(--color-textMuted)]"
-              data-tooltip="Updates automatically while this view is visible; background polling pauses when hidden or minimized."
-            >
-              {mgr.isLoading
-                ? "Loading session details…"
-                : "Updates automatically"}
-            </p>
+            {mgr.isLoading && (
+              <p className="text-[11px] text-[var(--color-textMuted)]">
+                Loading session details…
+              </p>
+            )}
           </div>
         </div>
 
@@ -1387,56 +1446,19 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             <ApplicationLogsView isActive={mgr.observationActive} />
           )}
           {view === "browser-logs" && (
-            <section
-              aria-label="Browser sessions"
-              className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
-            >
-              <div
-                role="group"
-                aria-label="Browser log views"
-                className="flex shrink-0 flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-2"
-              >
-                <button
-                  type="button"
-                  aria-pressed={browserLogView === "sessions"}
-                  onClick={() => setBrowserLogView("sessions")}
-                  className={`sor-option-chip text-xs ${browserLogView === "sessions" ? "sor-option-chip-active" : ""}`}
-                >
-                  Live sessions
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={browserLogView === "journal"}
-                  onClick={() => setBrowserLogView("journal")}
-                  className={`sor-option-chip text-xs ${browserLogView === "journal" ? "sor-option-chip-active" : ""}`}
-                >
-                  Startup journal
-                </button>
-              </div>
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                {browserLogView === "sessions" ? (
-                  <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={mgr.proxy.handleRefresh}
-                        disabled={!mgr.observationActive || mgr.proxy.isLoading}
-                        className="sor-option-chip text-xs disabled:opacity-40"
-                      >
-                        <RefreshCw size={14} aria-hidden="true" />
-                        Refresh sessions
-                      </button>
-                    </div>
-                    <BrowserSessionLogsTab mgr={mgr.proxy} />
-                  </div>
-                ) : (
-                  <ApplicationLogsView
-                    source="browser"
-                    isActive={mgr.observationActive}
-                  />
-                )}
-              </div>
-            </section>
+            <BrowserSessionsView
+              view={browserLogView}
+              onViewChange={setBrowserLogView}
+              frontendRows={mgr.frontendConnectionRows}
+              connections={connections}
+              diagnostics={mgr.proxy.nativeDiagnostics}
+              diagnosticsError={mgr.proxy.nativeDiagnosticsError}
+              diagnosticsLoading={mgr.proxy.nativeDiagnosticsLoading}
+              isActive={mgr.observationActive}
+              isRefreshing={mgr.proxy.isLoading}
+              onRefresh={mgr.proxy.handleRefresh}
+              onCloseSession={handleCloseManagedSession}
+            />
           )}
 
           {view === "sessions" && (

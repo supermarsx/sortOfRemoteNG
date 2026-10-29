@@ -557,6 +557,13 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("origin_browser_session_diagnostics"),
     );
+    expect(screen.getByTestId("browser-session-table")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Statistics" }));
+    expect(
+      await screen.findByRole("heading", {
+        name: "Browser session statistics",
+      }),
+    ).toBeVisible();
     expect(
       screen.queryByRole("region", { name: "Browser startup journal" }),
     ).toBeNull();
@@ -582,11 +589,62 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     ).toBeNull();
   });
 
-  it("updates automatically without manual refresh controls", async () => {
+  it("groups sidebar views into labelled sections in a stable order", async () => {
     renderManager();
+    await screen.findByText("Prod RDP");
+    const nav = screen.getByRole("navigation", {
+      name: "Session manager views",
+    });
+    const groups = within(nav).getAllByRole("group");
+    expect(groups).toHaveLength(4);
     expect(
-      await screen.findByText("Updates automatically"),
+      groups.map((group) => [
+        document.getElementById(group.getAttribute("aria-labelledby") ?? "")
+          ?.textContent,
+        within(group)
+          .getAllByRole("button")
+          .map((button) => button.getAttribute("data-testid")),
+      ]),
+    ).toEqual([
+      [
+        "Sessions",
+        [
+          "session-view-sessions",
+          "session-view-ssh-sessions",
+          "session-view-browser-logs",
+        ],
+      ],
+      ["Remote Desktop", ["session-view-rdp-history", "session-view-rdp-logs"]],
+      ["Proxy", ["session-view-proxy-logs", "session-view-proxy-stats"]],
+      [
+        "Activity",
+        ["session-view-action-log", "session-view-application-logs"],
+      ],
+    ]);
+    expect(
+      screen.getByRole("group", { name: "Remote Desktop" }),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("session-view-sessions")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    fireEvent.click(screen.getByTestId("session-view-rdp-history"));
+    expect(screen.getByTestId("session-view-rdp-history")).toHaveClass(
+      "sor-sidebar-tab-active",
+    );
+    expect(screen.getByTestId("session-view-rdp-history")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByTestId("session-view-sessions")).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("refreshes without manual refresh controls or an auto-update label", async () => {
+    renderManager();
+    await screen.findByText("Prod RDP");
+    expect(screen.queryByText(/Updates automatically/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Refresh" }),
     ).not.toBeInTheDocument();
