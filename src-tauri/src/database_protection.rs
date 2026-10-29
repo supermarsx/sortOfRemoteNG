@@ -531,6 +531,30 @@ pub mod native_browser_owner {
     #[derive(Clone)]
     pub struct NativeOwnerLease(Arc<LeaseInner>);
 
+    /// Why a native clear of a saved sign-in did not run.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ClearError {
+        /// Temporary, revoked, locked, rotated or stale lease, a changed or
+        /// missing saved row, or unreadable or unwritable storage.
+        Unavailable,
+        /// The lease belongs to another connection.
+        WrongConnection,
+        /// An attempt of this connection is live; close it first.
+        SessionOpen,
+    }
+
+    /// Clears the saved sign-in cookies of `connection_id` (the encrypted
+    /// record only) in the database of `lease`, which must be bound to that
+    /// connection. The app-side wrapper in `origin_browser_retention.rs`
+    /// (`clear_connection_cookies`) also drops the in-memory snapshot and
+    /// refuses while an attempt is live; commands should call that one.
+    pub async fn clear_connection_cookies(
+        lease: &NativeOwnerLease,
+        connection_id: &str,
+    ) -> Result<bool, ClearError> {
+        lease.clear_connection_cookie_record(connection_id).await
+    }
+
     /// Native-only delivery result. Dormant records release no cookie bytes and
     /// must not be replaced by an empty checkpoint from a fresh browser jar.
     pub struct NativeCookieLoad {
@@ -699,6 +723,22 @@ pub mod native_browser_owner {
                         true,
                     ));
                 }
+                // A record still bound by the legacy v1 projection is stored
+                // again with its v2 binding. Outside the logical revision, so
+                // no descriptor change and no browser-sessions event.
+                let mut upgraded = false;
+                if let Some(found) = record.as_mut() {
+                    if browser_sessions::upgrade_legacy_binding(data, found)? {
+                        let mut stored = browser_sessions::private(data)?;
+                        for saved in &mut stored.records {
+                            if saved.connection_id == id {
+                                saved.connection_digest = found.connection_digest;
+                            }
+                        }
+                        browser_sessions::put_private(data, stored)?;
+                        upgraded = true;
+                    }
+                }
                 // Archive/sync preservation is independent of this device's
                 // settings. Only native admission may release these cookies;
                 // a local opt-out/grant mismatch leaves ciphertext dormant.
@@ -709,7 +749,7 @@ pub mod native_browser_owner {
                             dormant: true,
                             changed: false,
                         },
-                        false,
+                        upgraded,
                     ));
                 }
                 if let Some(record) = record.as_mut() {
@@ -728,7 +768,7 @@ pub mod native_browser_owner {
                                 dormant: true,
                                 changed: false,
                             },
-                            false,
+                            upgraded,
                         ));
                     }
                 }
@@ -738,10 +778,44 @@ pub mod native_browser_owner {
                         dormant: false,
                         changed: false,
                     },
-                    false,
+                    upgraded,
                 ))
             })
             .await
+        }
+
+        /// Deletes the saved sign-in record of this lease's connection,
+        /// whatever its revision. For an explicit user clear outside any
+        /// attempt; the caller refuses while an attempt of the connection is
+        /// live. Fenced like every cookie operation: a temporary, revoked,
+        /// locked, rotated or stale lease, or a changed saved row, writes
+        /// nothing. Returns whether a record existed and was removed.
+        pub async fn clear_connection_cookie_record(
+            &self,
+            connection_id: &str,
+        ) -> Result<bool, ClearError> {
+            if self.0.temporary {
+                return Err(ClearError::Unavailable);
+            }
+            if self.0.connection_id != connection_id {
+                return Err(ClearError::WrongConnection);
+            }
+            let id = self.0.connection_id.clone();
+            self.cookie_database(
+                || true,
+                |data, _settings| {
+                    let mut records = browser_sessions::private(data)?;
+                    let before = records.records.len();
+                    records.records.retain(|r| r.connection_id != id);
+                    if records.records.len() == before {
+                        return Ok((false, false));
+                    }
+                    browser_sessions::put_private(data, records)?;
+                    Ok((true, true))
+                },
+            )
+            .await
+            .map_err(|_| ClearError::Unavailable)
         }
 
         pub async fn save_cookie_record(
@@ -2796,12 +2870,12 @@ pub mod native_browser_owner {
         Ok(Sha256::digest(&*bytes).into())
     }
 
-    /// Persisted binding, format v1. `browser_sessions` stores this digest in
-    /// every saved sign-in record and discards a record that no longer
-    /// matches, so its three removals are frozen here and deliberately do not
-    /// follow the shared exclusion file: changing them would silently delete
-    /// every retained sign-in on upgrade. A live lease compares
-    /// `authority_digest` instead.
+    /// Persisted binding, format v1, frozen. New records store the v2
+    /// projection `browser_sessions::connection_security_digest`; this one is
+    /// only recomputed so that records written before v2 are accepted and
+    /// rebound once (`browser_sessions::upgrade_legacy_binding`). Changing
+    /// its three removals would silently delete those records on upgrade. A
+    /// live lease compares `authority_digest` instead.
     pub(super) fn connection_digest(value: &Value) -> Result<[u8; 32], String> {
         let mut connection = value.clone();
         let object = connection.as_object_mut().ok_or(UNAVAILABLE)?;

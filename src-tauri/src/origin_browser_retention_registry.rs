@@ -147,6 +147,18 @@ impl<L> Registry<L> {
         Ok(())
     }
 
+    /// An explicit clear of one connection outside any attempt: drops its
+    /// retained snapshot (memory bytes and expiry bookkeeping). Refuses while
+    /// an attempt of the scope is live, because that attempt may still be the
+    /// snapshot writer. The removed slot must be dropped after releasing the
+    /// registry mutex (it holds a lease).
+    pub fn clear_scope(&mut self, scope: &str) -> Result<Option<Slot<L>>, RetentionError> {
+        if self.active.values().any(|a| a.scope == scope) {
+            return Err(RetentionError::Pending);
+        }
+        Ok(self.slots.remove(scope))
+    }
+
     pub fn retire(
         &mut self,
         scope: &str,
@@ -190,6 +202,22 @@ mod tests {
     }
     fn bytes(value: &[u8]) -> Zeroizing<Vec<u8>> {
         Zeroizing::new(value.to_vec())
+    }
+
+    #[test]
+    fn clear_scope_refuses_live_attempts_and_drops_only_that_snapshot() {
+        let mut r = Registry::default();
+        let a = admit(&mut r, "db/one", "unlocked");
+        admit(&mut r, "db/two", "unlocked");
+        r.save_memory("db/one", a, bytes(b"one")).unwrap();
+        assert_eq!(r.clear_scope("db/one").err(), Some(RetentionError::Pending));
+        assert!(r.slots["db/one"].memory.is_some());
+        drop(r.retire("db/one", a, false));
+        assert!(r.clear_scope("db/one").unwrap().is_some());
+        assert!(!r.slots.contains_key("db/one"));
+        assert!(r.clear_scope("db/one").unwrap().is_none());
+        assert!(r.slots.contains_key("db/two"));
+        assert_eq!(r.clear_scope("db/two").err(), Some(RetentionError::Pending));
     }
 
     #[test]

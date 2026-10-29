@@ -516,3 +516,118 @@ async fn snapshot_expiry_does_not_revoke_independent_live_attempts() {
         clear(owner).await;
     }
 }
+
+async fn checkpoint(
+    owner: &Arc<NativeCookieRetention>,
+    cookies: Vec<SignInCookie>,
+) -> Result<(), RetentionError> {
+    let owner = owner.clone();
+    tauri::async_runtime::spawn_blocking(move || owner.checkpoint(cookies))
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn checkpoint_persists_mid_session_without_finishing_the_slot() {
+    for mode in [RetentionMode::Memory, RetentionMode::EncryptedDatabase] {
+        let fixture = Fixture::new(mode).await;
+        let owner = fixture.owner("tab", "one").await;
+        assert!(load(&owner).await.is_empty());
+        checkpoint(&owner, vec![cookie("first-checkpoint")])
+            .await
+            .unwrap();
+        // Still the live writer: further checkpoints and the final save work.
+        assert!(owner.enabled() && live(&owner));
+        checkpoint(&owner, vec![cookie("second-checkpoint")])
+            .await
+            .unwrap();
+        assert!(owner.enabled() && live(&owner));
+        // A successor sees the latest checkpoint, as after an app crash.
+        let next = fixture.owner("after-crash", "one").await;
+        assert_eq!(load(&next).await[0].value, "second-checkpoint");
+        clear(&owner).await;
+        clear(&next).await;
+    }
+}
+
+#[tokio::test]
+async fn checkpoint_enforces_save_limits_and_never_writes_after_the_attempt_ends() {
+    let fixture = Fixture::new(RetentionMode::EncryptedDatabase).await;
+    let owner = fixture.owner("tab", "one").await;
+    load(&owner).await;
+    checkpoint(&owner, vec![cookie("kept")]).await.unwrap();
+    let before = fixture.database_bytes();
+    // Jar size limit: rejected before any storage IO.
+    let oversized: Vec<_> = (0..257).map(|i| cookie(&format!("v{i}"))).collect();
+    assert_eq!(
+        checkpoint(&owner, oversized).await,
+        Err(RetentionError::Limit)
+    );
+    // Unapproved cookie origin.
+    let mut foreign = cookie("foreign");
+    foreign.origin = "https://elsewhere.example".into();
+    foreign.domain = "elsewhere.example".into();
+    assert_eq!(
+        checkpoint(&owner, vec![foreign]).await,
+        Err(RetentionError::Invalid)
+    );
+    assert_eq!(fixture.database_bytes(), before);
+    // Ended attempts are refused without touching storage. (Finishing may
+    // itself record activity, so compare from after it.)
+    finish(&owner).await;
+    let before = fixture.database_bytes();
+    assert_eq!(
+        checkpoint(&owner, vec![cookie("after-close")]).await,
+        Err(RetentionError::OwnerUnavailable)
+    );
+    assert_eq!(fixture.database_bytes(), before);
+    let next = fixture.owner("next", "one").await;
+    assert_eq!(load(&next).await[0].value, "kept");
+    clear(&next).await;
+}
+
+#[tokio::test]
+async fn ephemeral_checkpoint_writes_nothing() {
+    let fixture = Fixture::new(RetentionMode::Ephemeral).await;
+    let owner = fixture.owner("tab", "one").await;
+    load(&owner).await;
+    let before = fixture.database_bytes();
+    checkpoint(&owner, vec![cookie("ephemeral")]).await.unwrap();
+    assert_eq!(fixture.database_bytes(), before);
+    clear(&owner).await;
+}
+
+#[tokio::test]
+async fn clear_connection_cookies_refuses_live_attempts_and_clears_both_stores() {
+    for mode in [RetentionMode::Memory, RetentionMode::EncryptedDatabase] {
+        let fixture = Fixture::new(mode).await;
+        let owner = fixture.owner("tab", "one").await;
+        load(&owner).await;
+        save(&owner, "signed-in").await;
+        let other = fixture.owner("other", "two").await;
+        load(&other).await;
+        save(&other, "other-signed-in").await;
+        let lease = fixture.authorize("command", "one").await.lease;
+        assert_eq!(
+            clear_connection_cookies(&lease, "one").await,
+            Err(ClearError::SessionOpen)
+        );
+        assert_eq!(
+            clear_connection_cookies(&lease, "two").await,
+            Err(ClearError::WrongConnection)
+        );
+        // Memory mode keeps the snapshot only while the slot exists: end the
+        // attempt the way a closed tab does, without clearing.
+        finish(&owner).await;
+        assert_eq!(clear_connection_cookies(&lease, "one").await, Ok(true));
+        assert_eq!(clear_connection_cookies(&lease, "one").await, Ok(false));
+        let next = fixture.owner("next", "one").await;
+        assert!(load(&next).await.is_empty());
+        // The other connection keeps its sign-in.
+        finish(&other).await;
+        let reopened = fixture.owner("reopened", "two").await;
+        assert_eq!(load(&reopened).await[0].value, "other-signed-in");
+        clear(&next).await;
+        clear(&reopened).await;
+    }
+}

@@ -116,12 +116,25 @@ pub(crate) fn remember_unlock(
     Ok(())
 }
 
-fn prune(records: &mut PrivateSessions, lock: bool) -> bool {
+/// Unlock/lock housekeeping over the decrypted body: drops expired and
+/// clear-on-lock records, and eagerly purges records whose saved connection
+/// no longer exists. A body without a readable connection list purges
+/// nothing; the save and load paths still drop such records by binding.
+fn prune(data: &Value, records: &mut PrivateSessions, lock: bool) -> bool {
     let before = records.records.len();
     let now = stamp();
-    records
-        .records
-        .retain(|r| !r.expired(now) && !(lock && r.policy.clear_on_database_lock));
+    let deleted = |id: &str| {
+        data.get("connections")
+            .and_then(Value::as_array)
+            .is_some_and(|rows| {
+                !rows
+                    .iter()
+                    .any(|row| row.get("id").and_then(Value::as_str) == Some(id))
+            })
+    };
+    records.records.retain(|r| {
+        !r.expired(now) && !(lock && r.policy.clear_on_database_lock) && !deleted(&r.connection_id)
+    });
     before != records.records.len()
 }
 
@@ -163,7 +176,7 @@ pub(crate) async fn before_lock(
         }
         let mut data = SecretData(DatabaseEnvelope::parse(&snapshot.data, database)?.open(&key)?);
         let mut records = private(&data.0)?;
-        if prune(&mut records, true) {
+        if prune(&data.0, &mut records, true) {
             put_private(&mut data.0, records)?;
             commit_session_data(
                 root,
@@ -202,7 +215,7 @@ pub(crate) async fn after_unlock(
         binding.token,
     )?;
     let mut records = private(data)?;
-    if prune(&mut records, true) {
+    if prune(data, &mut records, true) {
         put_private(data, records)?;
         commit_session_data(root, state, binding, snapshot, data).await?;
     }
@@ -482,6 +495,12 @@ pub(crate) fn merge_renderer(
     }
     let mut result = ordinary(proposed)?;
     let mut records = private(current)?;
+    // A record still bound by the legacy v1 projection is rebound against the
+    // body it was valid for, before the proposed edit is compared.
+    // An unreadable row is not fatal here: the record is dropped below.
+    for record in &mut records.records {
+        let _ = upgrade_legacy_binding(current, record);
+    }
     records
         .records
         .retain(|record| record_matches(&result, record).unwrap_or(false));
@@ -491,7 +510,7 @@ pub(crate) fn merge_renderer(
 
 pub(crate) fn record_matches(data: &Value, record: &NativeCookieRecord) -> Result<bool, String> {
     let connection = native_browser_owner::select_connection(data, &record.connection_id)?;
-    if retention_connection_digest(connection)? != record.connection_digest {
+    if binding_of(connection, record)? == Binding::Stale {
         return Ok(false);
     }
     for (vault, id, expected) in &record.dependencies {
@@ -535,10 +554,94 @@ fn remove_cookie_switch(connection: &mut Value) {
     }
 }
 
+/// Members of the saved `browserSession` object that never change what a
+/// retained sign-in is bound to: the cookie switch (a restore gate, see
+/// `remove_cookie_switch`) and the per-connection page-cache override, which
+/// governs only the device-local HTTP cache.
+const RETENTION_NEUTRAL_SESSION_FIELDS: &[&str] = &["cookiesEnabled", "httpCache"];
+
+/// The security-bound projection of a saved connection, binding format v2.
+///
+/// It is `authority_digest` (the reviewed exclusion file
+/// `origin_browser_digest_exclusions.json`: bookkeeping, presentation,
+/// library and display paths) applied after also removing
+/// `RETENTION_NEUTRAL_SESSION_FIELDS`. Its removals are therefore a strict
+/// superset of both the frozen v1 cookie binding and the live lease's
+/// authority digest. Every other field stays bound, including any unknown or
+/// future one: URLs, credentials and vault references, routing (proxy, SSH,
+/// tunnels), trust policy and pins, network permissions, capabilities,
+/// automation consent and the retention override itself.
+///
+/// Retained sign-in records store this digest, and the per-connection HTTP
+/// cache binding hashes it as its connection component. Native only; never
+/// computed from or returned over IPC.
+pub fn connection_security_digest(connection: &Value) -> Result<[u8; 32], String> {
+    let mut value = SecretData(connection.clone());
+    if let Some(session) = value
+        .0
+        .get_mut("browserSession")
+        .and_then(Value::as_object_mut)
+    {
+        for field in RETENTION_NEUTRAL_SESSION_FIELDS {
+            if let Some(mut removed) = session.remove(*field) {
+                wipe(&mut removed);
+            }
+        }
+    }
+    native_browser_owner::authority_digest(&value.0)
+}
+
+/// The digest written into new and rebound records.
 pub(crate) fn retention_connection_digest(connection: &Value) -> Result<[u8; 32], String> {
+    connection_security_digest(connection)
+}
+
+/// Binding format v1, frozen: the three removals of
+/// `native_browser_owner::connection_digest` plus the cookie switch. Only
+/// accepted on load so existing records survive the v2 upgrade once.
+pub(crate) fn legacy_retention_connection_digest(connection: &Value) -> Result<[u8; 32], String> {
     let mut value = SecretData(connection.clone());
     remove_cookie_switch(&mut value.0);
     native_browser_owner::connection_digest(&value.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Binding {
+    Current,
+    Legacy,
+    Stale,
+}
+
+pub(crate) fn binding_of(
+    connection: &Value,
+    record: &NativeCookieRecord,
+) -> Result<Binding, String> {
+    if retention_connection_digest(connection)? == record.connection_digest {
+        Ok(Binding::Current)
+    } else if legacy_retention_connection_digest(connection)? == record.connection_digest {
+        Ok(Binding::Legacy)
+    } else {
+        Ok(Binding::Stale)
+    }
+}
+
+/// Rebinds a record whose stored digest is the v1 projection of its saved
+/// connection in `data` to the v2 projection of that same row. The digest is
+/// local admission metadata outside the logical revision, so the descriptor
+/// and sync state do not change. Returns whether the record was rebound.
+pub(crate) fn upgrade_legacy_binding(
+    data: &Value,
+    record: &mut NativeCookieRecord,
+) -> Result<bool, String> {
+    let Ok(connection) = native_browser_owner::select_connection(data, &record.connection_id)
+    else {
+        return Ok(false);
+    };
+    if binding_of(connection, record)? != Binding::Legacy {
+        return Ok(false);
+    }
+    record.connection_digest = retention_connection_digest(connection)?;
+    Ok(true)
 }
 
 /// Portable security projection v1. Only transformations performed by the

@@ -7,7 +7,7 @@ use sorng_browser_host::cef_session_retention::{
     RetentionMode, RetentionPolicy, SignInCookie,
 };
 use sorng_commands_core::database_protection::native_browser_owner::{
-    NativeCookieOwnerBinding, NativeOwnerLease,
+    ClearError, NativeCookieOwnerBinding, NativeOwnerLease,
 };
 use sorng_encryption::{database_protection::Zeroizing, EncryptionState};
 use sorng_protocols::origin_browser::{
@@ -75,6 +75,15 @@ pub struct NativeCookieRetention {
     preserve_failed_restore: AtomicBool,
     notify: Arc<dyn Fn() + Send + Sync>,
 }
+fn snapshot_scope(owner: &NativeCookieOwnerBinding) -> Result<String, RetentionError> {
+    let bytes = serde_json::to_vec(&serde_json::json!([
+        owner.profile,
+        owner.database,
+        owner.connection
+    ]))
+    .map_err(|_| RetentionError::Invalid)?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
 fn bindings(
     owner: &NativeCookieOwnerBinding,
     source: &str,
@@ -83,14 +92,7 @@ fn bindings(
 ) -> Result<(String, String), RetentionError> {
     let encode =
         |value: serde_json::Value| serde_json::to_vec(&value).map_err(|_| RetentionError::Invalid);
-    let scope = format!(
-        "{:x}",
-        Sha256::digest(encode(serde_json::json!([
-            owner.profile,
-            owner.database,
-            owner.connection
-        ]))?)
-    );
+    let scope = snapshot_scope(owner)?;
     let binding = format!(
         "{:x}",
         Sha256::digest(encode(serde_json::json!([
@@ -106,6 +108,41 @@ fn bindings(
     );
     Ok((scope, binding))
 }
+/// Explicit "clear saved sign-in" for one connection, outside any attempt.
+///
+/// `lease` is a native owner lease of that connection (database and window
+/// come from it, never from IPC). Refuses with `ClearError::SessionOpen`
+/// while an attempt of the connection is live in this window, drops the
+/// in-memory snapshot, then deletes the encrypted record under the lease
+/// fence. Returns whether anything was cleared. The caller emits
+/// `database-protection:browser-sessions-changed` when this returns true.
+// Consumed by the clear-connection-data command (t-cefiso c3).
+#[allow(dead_code)]
+pub(crate) async fn clear_connection_cookies(
+    lease: &NativeOwnerLease,
+    connection_id: &str,
+) -> Result<bool, ClearError> {
+    let (fork, owner) = lease
+        .fork_for_cookie_retention()
+        .map_err(|_| ClearError::Unavailable)?;
+    if owner.connection != connection_id {
+        return Err(ClearError::WrongConnection);
+    }
+    let scope = snapshot_scope(&owner).map_err(|_| ClearError::Unavailable)?;
+    let removed = {
+        let mut store = registry().lock().map_err(|_| ClearError::Unavailable)?;
+        store
+            .clear_scope(&scope)
+            .map_err(|_| ClearError::SessionOpen)?
+    };
+    let memory = removed.as_ref().is_some_and(|slot| slot.memory.is_some());
+    // The slot holds a lease; drop it outside the registry mutex.
+    drop(removed);
+    let stored = fork.clear_connection_cookie_record(connection_id).await;
+    fork.revoke();
+    Ok(stored? || memory)
+}
+
 impl NativeCookieRetention {
     pub async fn prepare<R: Runtime>(
         window: &WebviewWindow<R>,
@@ -429,6 +466,19 @@ impl NativeCookieRetention {
             })
             .map_err(failure)?;
         self.touch(created, None)
+    }
+    /// Mid-session persistence of a captured jar while the attempt stays
+    /// live: the same validation, size/origin limits, owner fences and
+    /// expiry handling as `save`, and it never finishes, retires or clears
+    /// the slot. An attempt that has ended (closed, revoked, cleared) is
+    /// refused without touching storage.
+    // Consumed by the periodic and pre-teardown checkpoints (t-cefiso p3).
+    #[allow(dead_code)]
+    pub fn checkpoint(&self, cookies: Vec<SignInCookie>) -> Result<(), RetentionError> {
+        if self.invalidated.load(Ordering::Acquire) || !self.current() {
+            return Err(RetentionError::OwnerUnavailable);
+        }
+        self.save(cookies)
     }
     fn clear_database(&self) -> Result<(), RetentionError> {
         if !self.generation_current() || self.dormant.load(Ordering::Acquire) {

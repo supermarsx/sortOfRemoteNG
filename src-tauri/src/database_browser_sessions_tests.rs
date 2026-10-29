@@ -1,9 +1,13 @@
 use super::*;
 use sorng_storage::sdbf;
 
+/// Short explicit lifetimes (30 min idle, 24 h max) keep the expiry
+/// fixtures below independent of the app-wide default.
 fn policy() -> RetentionPolicy {
     RetentionPolicy {
         mode: RetentionMode::EncryptedDatabase,
+        idle_timeout_minutes: 30,
+        max_age_hours: 24,
         ..Default::default()
     }
 }
@@ -1376,4 +1380,369 @@ async fn new_destination_dek_reencrypts_portable_sessions_and_final_fence_blocks
             .data
             == stored.data
     );
+}
+
+/// Set a value at an object-key path, creating parent objects.
+fn set_path(row: &mut Value, path: &[&str], value: Value) {
+    let (leaf, parents) = path.split_last().unwrap();
+    let mut node = row;
+    for key in parents {
+        if node.get(*key).is_none() {
+            node[*key] = json!({});
+        }
+        node = &mut node[*key];
+    }
+    node[*leaf] = value;
+}
+
+/// Bookkeeping, presentation, library and display edits that the reviewed
+/// exclusion file lists, plus the cookie switch, never touch what a retained
+/// sign-in is bound to. The page-cache override is covered by the digest test
+/// (saved-settings validation of that override belongs to the cache work).
+const RETENTION_NEUTRAL_EDITS: &[&[&str]] = &[
+    &["httpBookmarks"],
+    &["httpAutomation", "items"],
+    &["updatedAt"],
+    &["lastConnected"],
+    &["connectionCount"],
+    &["name"],
+    &["description"],
+    &["tags"],
+    &["icon"],
+    &["colorTag"],
+    &["tabColor"],
+    &["favorite"],
+    &["order"],
+    &["parentId"],
+    &["browserSession", "defaultZoomPercent"],
+    &["browserSession", "showBookmarksBar"],
+    &["browserSession", "showSecurityInfo"],
+    &["browserSession", "showLoadingProgress"],
+    &["browserSession", "cookiesEnabled"],
+];
+
+/// A saved row as editors write it: automation and session override objects
+/// already exist, so a library or display edit changes only its own member.
+fn neutral_fixture() -> (Value, NativeCookieRecord) {
+    let mut data = public_data();
+    data["connections"][0]["httpAutomation"] =
+        json!({"version":1,"items":[],"scriptInjectionEnabled":false});
+    let saved = record(&data, "SYNTHETIC_NATIVE_COOKIE");
+    let stored = record(&data, "SYNTHETIC_NATIVE_COOKIE");
+    put_private(
+        &mut data,
+        PrivateSessions {
+            version: 1,
+            records: vec![stored],
+        },
+    )
+    .unwrap();
+    (data, saved)
+}
+
+fn neutral_value(path: &[&str]) -> Value {
+    match path {
+        [.., "httpCache"] => json!({"enabled":false,"perConnectionMb":64}),
+        [.., "defaultZoomPercent"] => json!(150),
+        ["connectionCount"] | ["order"] => json!(7),
+        ["browserSession", _] | ["favorite"] => json!(true),
+        ["tags"] | ["httpBookmarks"] | [.., "items"] => json!(["edited"]),
+        _ => json!("edited-value"),
+    }
+}
+
+#[test]
+fn bookkeeping_and_presentation_edits_keep_the_retained_record() {
+    let (current, saved) = neutral_fixture();
+    for path in RETENTION_NEUTRAL_EDITS {
+        let mut edited = current.clone();
+        set_path(&mut edited["connections"][0], path, neutral_value(path));
+        assert!(
+            record_matches(&edited, &saved).unwrap(),
+            "edit of {path:?} dropped the retained sign-in"
+        );
+        let baseline = project(current.clone()).unwrap();
+        let mut proposed = baseline.clone();
+        proposed["connections"][0] = edited["connections"][0].clone();
+        let merged = merge_renderer(&current, proposed, Some(baseline)).unwrap();
+        assert_eq!(
+            private(&merged).unwrap().records.len(),
+            1,
+            "save after editing {path:?} pruned the retained sign-in"
+        );
+    }
+}
+
+#[test]
+fn legacy_v1_projection_is_what_dropped_records_on_presentation_edits() {
+    // Documents the defect the v2 binding fixes: the frozen v1 projection
+    // hashes favourite, order, folder, name and display overrides.
+    let (current, _) = neutral_fixture();
+    let row = &current["connections"][0];
+    let before = legacy_retention_connection_digest(row).unwrap();
+    let mut changed = 0;
+    for path in RETENTION_NEUTRAL_EDITS {
+        let mut edited = row.clone();
+        set_path(&mut edited, path, neutral_value(path));
+        if legacy_retention_connection_digest(&edited).unwrap() != before {
+            changed += 1;
+        }
+        assert_eq!(
+            connection_security_digest(&edited).unwrap(),
+            connection_security_digest(row).unwrap(),
+            "{path:?} must not change the v2 binding"
+        );
+    }
+    // Only the four v1 removals were stable before.
+    assert_eq!(changed, RETENTION_NEUTRAL_EDITS.len() - 4);
+}
+
+#[test]
+fn security_edits_still_invalidate_the_retained_record() {
+    let (current, saved) = neutral_fixture();
+    let edits: &[(&[&str], Value)] = &[
+        (&["hostname"], json!("https://other.example")),
+        (&["port"], json!(8443)),
+        (&["protocol"], json!("http")),
+        (&["username"], json!("someone-else")),
+        (&["password"], json!("changed-fixture")),
+        (&["httpsTrustPolicy"], json!("insecure")),
+        (&["httpVerifySsl"], json!(false)),
+        (&["proxyChain"], json!(["different-route"])),
+        (&["sshTunnel"], json!({"connectionId":"jump"})),
+        (&["credentialVaultEntryId"], json!("vault-two")),
+        (&["httpProxyPolicy", "allowAllRequests"], json!(true)),
+        (&["httpAutomation", "scriptInjectionEnabled"], json!(true)),
+        (
+            &["browserSession", "sessionRetention", "maxAgeHours"],
+            json!(1),
+        ),
+        (&["browserSession", "futureSessionField"], json!(true)),
+        (&["futureSecurityField"], json!(true)),
+    ];
+    for (path, value) in edits {
+        let mut edited = current.clone();
+        set_path(&mut edited["connections"][0], path, value.clone());
+        assert!(
+            !record_matches(&edited, &saved).unwrap(),
+            "edit of {path:?} kept the retained sign-in"
+        );
+        let baseline = project(current.clone()).unwrap();
+        let mut proposed = baseline.clone();
+        proposed["connections"][0] = edited["connections"][0].clone();
+        let merged = merge_renderer(&current, proposed, Some(baseline)).unwrap();
+        assert!(
+            private(&merged).unwrap().records.is_empty(),
+            "save after editing {path:?} kept the retained sign-in"
+        );
+    }
+}
+
+/// A record exactly as written before the v2 binding.
+fn legacy_fixture() -> Value {
+    let (mut data, _) = neutral_fixture();
+    // v1 hashed these presentation fields; v2 does not.
+    data["connections"][0]["name"] = "Example".into();
+    data["connections"][0]["favorite"] = false.into();
+    let mut records = private(&data).unwrap();
+    records.records[0].connection_digest =
+        legacy_retention_connection_digest(&data["connections"][0]).unwrap();
+    put_private(&mut data, records).unwrap();
+    data
+}
+
+#[test]
+fn legacy_binding_is_accepted_and_rebound_once_without_revision_change() {
+    let current = legacy_fixture();
+    let legacy = private(&current).unwrap().records.remove(0);
+    let row = &current["connections"][0];
+    assert_ne!(
+        legacy.connection_digest,
+        connection_security_digest(row).unwrap()
+    );
+    assert_eq!(binding_of(row, &legacy).unwrap(), Binding::Legacy);
+    assert!(record_matches(&current, &legacy).unwrap());
+    // A presentation edit in the same save as the upgrade keeps the record,
+    // rebound to v2 against the body it was valid for.
+    let baseline = project(current.clone()).unwrap();
+    let mut proposed = baseline.clone();
+    proposed["connections"][0]["favorite"] = true.into();
+    proposed["connections"][0]["order"] = 3.into();
+    let merged = merge_renderer(&current, proposed, Some(baseline.clone())).unwrap();
+    let rebound = private(&merged).unwrap().records.remove(0);
+    assert_eq!(
+        rebound.connection_digest,
+        connection_security_digest(&merged["connections"][0]).unwrap()
+    );
+    assert_eq!(rebound.revision, legacy.revision);
+    rebound.validate().unwrap();
+    assert!(descriptor(&merged).unwrap() == descriptor(&current).unwrap());
+    // A legacy record whose row also changed security is still dropped.
+    let mut proposed = baseline;
+    proposed["connections"][0]["hostname"] = "https://other.example".into();
+    let merged = merge_renderer(&current, proposed, Some(project(current.clone()).unwrap()));
+    assert!(private(&merged.unwrap()).unwrap().records.is_empty());
+}
+
+#[test]
+fn security_digest_is_the_stored_binding_and_ignores_cache_and_cookie_switch() {
+    let row = public_data()["connections"][0].clone();
+    let digest = connection_security_digest(&row).unwrap();
+    assert_eq!(retention_connection_digest(&row).unwrap(), digest);
+    let mut edited = row.clone();
+    edited["browserSession"]["httpCache"] = json!({"enabled":true,"perConnectionMb":512});
+    edited["browserSession"]["cookiesEnabled"] = false.into();
+    assert_eq!(connection_security_digest(&edited).unwrap(), digest);
+    // An override object that is left holding only its version is absent.
+    let mut bare = row.clone();
+    bare.as_object_mut().unwrap().remove("browserSession");
+    let mut only_cache = bare.clone();
+    only_cache["browserSession"] = json!({"version":1,"httpCache":{"enabled":false}});
+    assert_eq!(
+        connection_security_digest(&only_cache).unwrap(),
+        connection_security_digest(&bare).unwrap()
+    );
+    edited["hostname"] = "https://other.example".into();
+    assert_ne!(connection_security_digest(&edited).unwrap(), digest);
+    assert!(connection_security_digest(&json!("not-a-row")).is_err());
+}
+
+#[test]
+fn housekeeping_prune_purges_deleted_connections_only() {
+    let mut data = public_data();
+    let mut second = data["connections"][0].clone();
+    second["id"] = "two".into();
+    data["connections"].as_array_mut().unwrap().push(second);
+    let one = record(&data, "one");
+    let mut two = record(&data, "two");
+    two.connection_id = "two".into();
+    two.refresh_revision().unwrap();
+    let mut records = PrivateSessions {
+        version: 1,
+        records: vec![one, two],
+    };
+    assert!(!prune(&data, &mut records, false));
+    assert_eq!(records.records.len(), 2);
+    data["connections"].as_array_mut().unwrap().remove(1);
+    assert!(prune(&data, &mut records, false));
+    assert_eq!(records.records.len(), 1);
+    assert_eq!(records.records[0].connection_id, "one");
+    // An unreadable connection list is not evidence of deletion.
+    let mut unreadable = data.clone();
+    unreadable.as_object_mut().unwrap().remove("connections");
+    assert!(!prune(&unreadable, &mut records, false));
+    assert_eq!(records.records.len(), 1);
+}
+
+#[tokio::test]
+async fn lock_housekeeping_purges_records_of_deleted_connections() {
+    let mut current = with_record();
+    let mut records = private(&current).unwrap();
+    let mut ghost = record(&current, "ghost");
+    ghost.connection_id = "deleted".into();
+    ghost.refresh_revision().unwrap();
+    records.records.push(ghost);
+    put_private(&mut current, records).unwrap();
+    assert_eq!(private(&current).unwrap().records.len(), 2);
+    let fixture = fixture(&current).await;
+    remember_unlock(
+        fixture.root.path(),
+        &fixture.state,
+        "main",
+        "db",
+        "r1",
+        &fixture.token,
+    )
+    .unwrap();
+    let _guard = lock_database_operation(&fixture.root.path().join("databases"))
+        .await
+        .unwrap();
+    before_lock(fixture.root.path(), &fixture.state, "db")
+        .await
+        .unwrap();
+    let snapshot = managed_snapshot(fixture.root.path(), &fixture.state, "db")
+        .await
+        .unwrap();
+    let restored = DatabaseEnvelope::parse(&snapshot.data, "db")
+        .unwrap()
+        .open(&fixture.key)
+        .unwrap();
+    let kept = private(&restored).unwrap().records;
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].connection_id, "one");
+}
+
+async fn stored_records(fixture: &Fixture) -> PrivateSessions {
+    let snapshot = managed_snapshot(fixture.root.path(), &fixture.state, "db")
+        .await
+        .unwrap();
+    let data = DatabaseEnvelope::parse(&snapshot.data, "db")
+        .unwrap()
+        .open(&fixture.key)
+        .unwrap();
+    private(&data).unwrap()
+}
+
+#[tokio::test]
+async fn clear_connection_cookies_is_fenced_by_the_lease_and_its_connection() {
+    let mut data = with_record();
+    let mut second = data["connections"][0].clone();
+    second["id"] = "two".into();
+    data["connections"].as_array_mut().unwrap().push(second);
+    let mut records = private(&data).unwrap();
+    let mut other = record(&data, "other");
+    other.connection_id = "two".into();
+    other.refresh_revision().unwrap();
+    records.records.push(other);
+    put_private(&mut data, records).unwrap();
+    let fixture = fixture(&data).await;
+    let lease = |row: usize| {
+        native_browser_owner::test_cookie_lease(
+            fixture.root.path(),
+            &fixture.state,
+            &fixture.token,
+            &data["connections"][row],
+        )
+    };
+    use native_browser_owner::{clear_connection_cookies, ClearError};
+    // Another connection through this lease: refused, nothing written.
+    let before = managed_snapshot(fixture.root.path(), &fixture.state, "db")
+        .await
+        .unwrap()
+        .data;
+    assert_eq!(
+        clear_connection_cookies(&lease(0), "two").await,
+        Err(ClearError::WrongConnection)
+    );
+    // A revoked lease writes nothing.
+    let revoked = lease(0);
+    revoked.revoke();
+    assert_eq!(
+        clear_connection_cookies(&revoked, "one").await,
+        Err(ClearError::Unavailable)
+    );
+    assert!(
+        managed_snapshot(fixture.root.path(), &fixture.state, "db")
+            .await
+            .unwrap()
+            .data
+            == before
+    );
+    // The bound connection clears only its own record, whatever revision.
+    assert_eq!(clear_connection_cookies(&lease(0), "one").await, Ok(true));
+    let kept = stored_records(&fixture).await.records;
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].connection_id, "two");
+    assert_eq!(clear_connection_cookies(&lease(0), "one").await, Ok(false));
+    // A locked database (revoked session) refuses.
+    let locked = lease(1);
+    database_sessions::global()
+        .lock()
+        .unwrap()
+        .revoke_window(fixture.state.database_session_owner(), "main");
+    assert_eq!(
+        clear_connection_cookies(&locked, "two").await,
+        Err(ClearError::Unavailable)
+    );
+    assert_eq!(stored_records(&fixture).await.records.len(), 1);
 }

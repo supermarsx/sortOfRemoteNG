@@ -74,13 +74,18 @@ pub struct RetentionPolicy {
     pub max_age_hours: u32,
     pub clear_on_database_lock: bool,
 }
+/// The app-wide default: keep sign-in cookies in the owning encrypted
+/// database for 7 days of inactivity, at most 30 days. It must equal the
+/// `$defs.retention` defaults of `src/types/settings/browserSession.schema.json`
+/// (tested). A runtime without the encrypted-database capability falls back
+/// to ephemeral in the settings resolver, never here.
 impl Default for RetentionPolicy {
     fn default() -> Self {
         Self {
             version: 1,
-            mode: RetentionMode::Ephemeral,
-            idle_timeout_minutes: 30,
-            max_age_hours: 24,
+            mode: RetentionMode::EncryptedDatabase,
+            idle_timeout_minutes: 10080,
+            max_age_hours: 720,
             clear_on_database_lock: false,
         }
     }
@@ -854,14 +859,61 @@ mod tests {
         }
     }
     #[test]
-    fn default_is_ephemeral_and_timeout_zero_disables_retention() {
-        assert!(!RetentionPolicy::default().enabled());
+    fn default_persists_encrypted_and_timeout_zero_or_ephemeral_disables_retention() {
+        let policy = RetentionPolicy::default();
+        assert_eq!(policy.validate(), Ok(policy));
+        assert!(policy.enabled());
+        assert_eq!(policy.mode, RetentionMode::EncryptedDatabase);
+        assert_eq!(policy.idle_timeout_minutes, 7 * 24 * 60);
+        assert_eq!(policy.max_age_hours, 30 * 24);
+        assert!(!policy.clear_on_database_lock);
         assert!(!RetentionPolicy {
-            mode: RetentionMode::EncryptedDatabase,
             idle_timeout_minutes: 0,
             ..Default::default()
         }
         .enabled());
+        assert!(!RetentionPolicy {
+            mode: RetentionMode::Ephemeral,
+            ..Default::default()
+        }
+        .enabled());
+    }
+
+    /// The JSON schema is the single source of the settings defaults; the
+    /// native default must be the same policy, value for value.
+    #[test]
+    fn default_policy_equals_the_settings_schema_defaults() {
+        let schema: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../src/types/settings/browserSession.schema.json"
+        )))
+        .unwrap();
+        let properties = schema["$defs"]["retention"]["properties"]
+            .as_object()
+            .unwrap();
+        let defaults: serde_json::Map<_, _> = properties
+            .iter()
+            .map(|(name, rule)| (name.clone(), rule["default"].clone()))
+            .collect();
+        assert!(defaults.values().all(|value| !value.is_null()));
+        let from_schema: RetentionPolicy =
+            serde_json::from_value(serde_json::Value::Object(defaults.clone())).unwrap();
+        assert_eq!(from_schema, RetentionPolicy::default());
+        assert_eq!(
+            serde_json::to_value(RetentionPolicy::default()).unwrap(),
+            serde_json::Value::Object(defaults)
+        );
+        // The schema range is the native range.
+        let idle = &properties["idleTimeoutMinutes"];
+        let age = &properties["maxAgeHours"];
+        assert_eq!(
+            (idle["minimum"].as_u64(), idle["maximum"].as_u64()),
+            (Some(0), Some(10080))
+        );
+        assert_eq!(
+            (age["minimum"].as_u64(), age["maximum"].as_u64()),
+            (Some(1), Some(8760))
+        );
     }
     #[test]
     fn legacy_mode_spelling_serializes_only_as_database_retention() {
