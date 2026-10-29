@@ -696,7 +696,9 @@ struct DecodedArtifact {
     #[cfg(test)]
     hits: usize,
 }
-const MAX_CACHED_OUTER_BYTES: usize = 2 * 1024 * 1024;
+// Above a typical multi-MiB user database: every native owner recheck (one
+// per website TLS socket) must not re-read and decrypt it.
+const MAX_CACHED_OUTER_BYTES: usize = 16 * 1024 * 1024;
 
 fn bounded_decoded_size(value: &serde_json::Value) -> usize {
     use serde_json::Value;
@@ -2573,6 +2575,32 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn native_outer_cache_keeps_multi_mebibyte_databases_up_to_its_bound() {
+        assert_eq!(MAX_CACHED_OUTER_BYTES, 16 * 1024 * 1024);
+        let dir = tempdir().unwrap();
+        let state = EncryptionState::new();
+        for (size, cached) in [(3 * 1024 * 1024, true), (MAX_CACHED_OUTER_BYTES + 1, false)] {
+            let path = dir.path().join(format!("index-{size}.json"));
+            let payload =
+                serde_json::to_vec(&serde_json::json!([{ "id": "x".repeat(size) }])).unwrap();
+            safe_write(&path, &payload).unwrap();
+            let mut cache = None;
+            for _ in 0..2 {
+                encrypted_load_cached(
+                    &state,
+                    ArtifactKind::DatabasesIndex,
+                    &path,
+                    Some(&mut cache),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            }
+            assert_eq!(cache.as_ref().map(|entry| entry.hits), cached.then_some(1));
+        }
     }
 
     #[tokio::test]
