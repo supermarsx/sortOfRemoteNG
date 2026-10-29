@@ -88,6 +88,7 @@ import {
   ConnectionAction,
   ConnectionContext,
   type DatabaseAvailability,
+  type DispatchAndFlushOptions,
 } from "./ConnectionContextTypes";
 import { Connection, ConnectionSession } from "../types/connection/connection";
 import {
@@ -544,6 +545,17 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   }> | null>(null);
   const automationBusyRef = useRef(false);
   const cloudSyncBusyRef = useRef(false);
+  // Editor saves wait for an upload fence instead of being dropped by it.
+  const cloudSyncReleaseWaitersRef = useRef(new Set<() => void>());
+  const releaseCloudSyncFence = useCallback(() => {
+    cloudSyncBusyRef.current = false;
+    const waiters = [...cloudSyncReleaseWaitersRef.current];
+    cloudSyncReleaseWaitersRef.current.clear();
+    for (const wake of waiters) wake();
+  }, []);
+  // Set by the dispatch wrapper when a fence discards a row mutation, so
+  // an awaited save can never report a dropped edit as saved.
+  const lastDispatchFencedRef = useRef(false);
   const dependencyRepairRef = useRef<Promise<void> | null>(null);
   const automationFaultRef = useRef(false);
   const documentsBusyRef = useRef(false);
@@ -894,6 +906,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         activeDatabaseTargetRef.current?.assertAccessible?.();
       const currentState = stateRef.current;
       const nextState = connectionReducer(currentState, action);
+      lastDispatchFencedRef.current = false;
       if (
         (databaseRowsRevokedRef.current ||
           (cloudSyncBusyRef.current && !dependencyRepairRef.current)) &&
@@ -903,8 +916,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           nextState.selectedConnection !== currentState.selectedConnection ||
           nextState.selectedConnectionIds !==
             currentState.selectedConnectionIds)
-      )
+      ) {
+        lastDispatchFencedRef.current = true;
         return;
+      }
       try {
         switch (action.type) {
           case "SET_CONNECTIONS": {
@@ -1224,20 +1239,52 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [databaseManager, flushPendingSave, markPersistenceDirty]);
 
   const dispatchAndFlush = useCallback(
-    async (action: ConnectionAction) => {
-      const target = activeDatabaseTargetRef.current;
-      if (
-        !hasLoadedRef.current ||
-        !target ||
-        databaseManager.getCurrentDatabase()?.id !== target.databaseId
-      )
-        throw new Error(
-          "The owning database is not loaded. Reopen this editor after the database is ready.",
+    async (
+      action: ConnectionAction,
+      options?: DispatchAndFlushOptions,
+    ): Promise<void> => {
+      let target = activeDatabaseTargetRef.current;
+      for (;;) {
+        target = activeDatabaseTargetRef.current;
+        if (
+          !hasLoadedRef.current ||
+          !target ||
+          databaseManager.getCurrentDatabase()?.id !== target.databaseId
+        )
+          throw new Error(
+            "The owning database is not loaded. Reopen this editor after the database is ready.",
+          );
+        if (databaseRowsRevokedRef.current)
+          throw new Error(
+            "The database is being reloaded, so this edit was not applied. Save again after it finishes.",
+          );
+        // A cloud upload freezes rows only while it captures its snapshot.
+        // Queue behind it: dispatching now would silently drop the edit.
+        if (!cloudSyncBusyRef.current || dependencyRepairRef.current) break;
+        await new Promise<void>((resolve) =>
+          cloudSyncReleaseWaitersRef.current.add(resolve),
         );
+      }
       target.assertAccessible?.();
       dispatch(action);
+      if (lastDispatchFencedRef.current)
+        throw new Error(
+          "A database operation blocked this edit, so it was not applied. Save again.",
+        );
+      // The in-memory rows (sidebar, sessions) now carry the edit; durable
+      // persistence continues below and still settles the returned promise.
+      const notifyApplied = () => {
+        try {
+          options?.onApplied?.();
+        } catch (error) {
+          console.error("Applied-edit callback failed:", error);
+        }
+      };
       const revision = dirtyRevisionRef.current;
-      if (revision <= persistedRevisionRef.current) return;
+      if (revision <= persistedRevisionRef.current) {
+        notifyApplied();
+        return;
+      }
       let waiter!: {
         generation: number;
         revision: number;
@@ -1253,6 +1300,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         };
         revisionWaitersRef.current.add(waiter);
       });
+      // Hand control back (dialog close, Connect) before the flush starts its
+      // synchronous snapshot work.
+      notifyApplied();
       // The full loop still drains for database transitions. This caller owns
       // only its captured revision, not later edits queued during its write.
       void flushPendingSave().catch((error) => {
@@ -1608,7 +1658,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             if (dependencyRepairRef.current === repairWait)
               dependencyRepairRef.current = null;
             settleRepair?.();
-            cloudSyncBusyRef.current = false;
+            releaseCloudSyncFence();
           }
         };
         try {
@@ -1623,7 +1673,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           }
           return release;
         } catch (error) {
-          cloudSyncBusyRef.current = false;
+          releaseCloudSyncFence();
           if (restore && stillOwnsBarrier()) {
             databaseRowsRevokedRef.current = false;
             recycleLoadingRef.current = false;
@@ -1639,6 +1689,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       loadData,
       publishDatabaseAvailability,
       captureBrowserSessionProjection,
+      releaseCloudSyncFence,
     ],
   );
 

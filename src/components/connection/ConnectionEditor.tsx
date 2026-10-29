@@ -7,6 +7,7 @@ import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityCo
 import {
   Save,
   Check,
+  Loader2,
   Plus,
   Sparkles,
   ChevronDown,
@@ -106,6 +107,32 @@ const EditorHeader: React.FC<{
   searchBar: React.ReactNode;
 }> = ({ mgr, isSubmitting, onClose, onConnect, searchBar }) => {
   const { t } = useTranslation();
+  // Connect launches once the edit is in memory; this only blocks duplicate
+  // clicks until then (or until the save fails).
+  const connectInFlight = useRef(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const handleConnectClick = () => {
+    if (!onConnect || connectInFlight.current) return;
+    connectInFlight.current = true;
+    setIsConnecting(true);
+    let launched = false;
+    const launch = (target: Connection) => {
+      if (launched) return;
+      launched = true;
+      connectInFlight.current = false;
+      setIsConnecting(false);
+      onConnect(target);
+    };
+    void mgr
+      .saveNow({ onApplied: launch })
+      .then((target) => {
+        if (target) launch(target);
+      })
+      .finally(() => {
+        connectInFlight.current = false;
+        setIsConnecting(false);
+      });
+  };
   return (
     <div
       className="relative min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] px-5 py-3"
@@ -176,18 +203,20 @@ const EditorHeader: React.FC<{
             <button
               type="button"
               data-testid="editor-connect"
-              onClick={() => {
-                void mgr.saveNow().then((target) => {
-                  if (target) onConnect(target);
-                });
-              }}
-              className="h-9 px-3 rounded-lg font-medium transition-all flex items-center gap-2 border border-success/40 bg-success/10 hover:bg-success/20 text-success"
+              onClick={handleConnectClick}
+              disabled={isConnecting}
+              aria-busy={isConnecting}
+              className="h-9 px-3 rounded-lg font-medium transition-all flex items-center gap-2 border border-success/40 bg-success/10 hover:bg-success/20 text-success disabled:opacity-70 disabled:cursor-wait"
               title={t(
                 "connectionEditor.connect.title",
                 "Save changes and connect to this connection",
               )}
             >
-              <Zap size={16} />
+              {isConnecting ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Zap size={16} />
+              )}
               {t("connectionEditor.connect.label", "Connect")}
             </button>
           )}
@@ -220,16 +249,23 @@ const EditorHeader: React.FC<{
             type="submit"
             data-testid="editor-save"
             disabled={isSubmitting}
+            aria-busy={isSubmitting}
             className={`px-4 h-9 rounded-lg font-medium transition-all flex items-center gap-2 ${
               mgr.isNewConnection
                 ? "bg-success hover:bg-success/80 text-[var(--color-text)] shadow-lg shadow-success/20"
                 : "bg-primary hover:bg-primary/80 text-[var(--color-text)] shadow-lg shadow-primary/20"
             }`}
           >
-            <Save size={16} />
-            {mgr.isNewConnection
-              ? t("connectionEditor.header.create", "Create")
-              : t("connectionEditor.header.save", "Save")}
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
+            {isSubmitting
+              ? t("connectionEditor.header.saving", "Saving...")
+              : mgr.isNewConnection
+                ? t("connectionEditor.header.create", "Create")
+                : t("connectionEditor.header.save", "Save")}
           </button>
         </div>
       </div>

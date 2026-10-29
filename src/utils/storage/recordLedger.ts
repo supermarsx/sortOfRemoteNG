@@ -981,12 +981,20 @@ export async function reconcileRecordLedger(
     if (before) change.parentRevision = before.revision;
     journal.push(change);
   };
-  for (const candidate of candidates) {
+  // Enforce the hash work bound before any digest starts, then hash every
+  // record concurrently. Awaiting one WebCrypto digest per record serially
+  // dominated each save (~0.5 s for 2000 connections). The journal below is
+  // still appended strictly in candidate order.
+  const serializedCandidates = candidates.map((candidate) => {
     const serialized = JSON.stringify(candidate.value);
     hashedBytes += byteLength(serialized);
     if (hashedBytes > MAX_HASH_BYTES)
       invalid("hash work limit exceeded", "safety-limit");
-    const contentHash = await sha256(serialized);
+    return serialized;
+  });
+  const contentHashes = await Promise.all(serializedCandidates.map(sha256));
+  for (const [index, candidate] of candidates.entries()) {
+    const contentHash = contentHashes[index];
     const before = records[candidate.key];
     if (before && !before.deletedAt && before.contentHash === contentHash)
       continue;

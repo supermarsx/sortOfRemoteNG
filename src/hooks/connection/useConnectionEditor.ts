@@ -833,6 +833,19 @@ type EditorSaveRequest = {
   runtimeConnection: Connection;
   actionType: "ADD_CONNECTION" | "UPDATE_CONNECTION";
   shouldPersist?: (prepared: PreparedEditorConnection) => boolean;
+  /** Runs once the edit is in the in-memory rows, before durability settles. */
+  onApplied?: (prepared: PreparedEditorConnection) => void;
+  /**
+   * The caller leaves the editor from onApplied (optimistic close). Report the
+   * durable outcome anyway instead of treating the unmount as a supersession,
+   * so a failed background write still reaches the user.
+   */
+  detachOnApplied?: boolean;
+};
+
+type SaveNowOptions = {
+  /** Receives the saved runtime connection once it is in memory. */
+  onApplied?: (connection: Connection) => void;
 };
 
 type EditorSaveOutcome =
@@ -1695,9 +1708,11 @@ export function useConnectionEditor(
             generation: expected.generation,
           });
         };
+        let applied = false;
         const isCurrent = () =>
-          requestId === latestSaveRequestRef.current &&
-          isCurrentEditorRevision(request.revision);
+          (request.detachOnApplied === true && applied) ||
+          (requestId === latestSaveRequestRef.current &&
+            isCurrentEditorRevision(request.revision));
 
         if (!isCurrent()) {
           return { status: "superseded" };
@@ -1732,10 +1747,18 @@ export function useConnectionEditor(
             ]);
             editorBookmarkTreesRef.current = uncertainTrees;
             if (bookmarkScope) bookmarkScope.trees = uncertainTrees;
-            await dispatchAndFlush({
+            const action = {
               type: request.actionType,
               payload: prepared.persistentConnection,
-            });
+            };
+            if (request.onApplied || request.detachOnApplied)
+              await dispatchAndFlush(action, {
+                onApplied: () => {
+                  applied = true;
+                  request.onApplied?.(prepared);
+                },
+              });
+            else await dispatchAndFlush(action);
             if (bookmarkScope && !bookmarkScope.connectionId)
               bookmarkScope.connectionId = prepared.persistentConnection.id;
             const publishedTree = assertBookmarkScope(bookmarkScope);
@@ -1970,11 +1993,36 @@ export function useConnectionEditor(
 
       const revision = editorRevisionRef.current;
       const runtimeConnection = buildConnectionData(true, submittedFormData);
+      // A new connection closes as soon as it is in the tree; its durable
+      // write continues in the background and still reports its outcome.
+      let closedOptimistically = false;
       const outcome = await enqueueConnectionSave({
         revision,
         runtimeConnection,
         actionType: connection ? "UPDATE_CONNECTION" : "ADD_CONNECTION",
+        ...(connection
+          ? {}
+          : {
+              detachOnApplied: true,
+              onApplied: () => {
+                closedOptimistically = true;
+                onClose();
+              },
+            }),
       });
+
+      if (closedOptimistically) {
+        if (outcome.status === "error") {
+          toast.error(
+            persistenceErrorMessage(runtimeConnection, outcome.error),
+          );
+        } else if (outcome.status === "saved") {
+          toast.success(
+            `"${outcome.prepared.persistentConnection.name}" created`,
+          );
+        }
+        return;
+      }
 
       if (
         outcome.status === "superseded" ||
@@ -2033,87 +2081,96 @@ export function useConnectionEditor(
    * its durable flush. Returns null for an unsaved (new), failed, or superseded
    * connection.
    */
-  const saveNow = useCallback(async (): Promise<Connection | null> => {
-    if (!connection) return null;
-    const submittedFormData = resolveBookmarkDraft();
-    if (!submittedFormData) return null;
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-    if (autoSaveIdleTimerRef.current) {
-      clearTimeout(autoSaveIdleTimerRef.current);
-      autoSaveIdleTimerRef.current = null;
-    }
-
-    const revision = editorRevisionRef.current;
-    const runtimeConnection = buildConnectionData(true, submittedFormData);
-    const isIntegration = isIntegrationConnectionProtocol(
-      runtimeConnection.protocol,
-    );
-    const hasChanges =
-      hasUnconfirmedSaveRef.current ||
-      buildEditorSnapshot(submittedFormData) !== originalDataRef.current;
-
-    if (!isIntegration && !hasChanges) {
-      return runtimeConnection;
-    }
-
-    const outcome = await enqueueConnectionSave({
-      revision,
-      runtimeConnection,
-      actionType: "UPDATE_CONNECTION",
-      shouldPersist: isIntegration
-        ? (prepared) =>
-            hasChanges ||
-            prepared.persistentConnection.integration?.instanceId !==
-              connection.integration?.instanceId
-        : undefined,
-    });
-
-    if (outcome.status === "superseded" || !isCurrentEditorRevision(revision)) {
-      return null;
-    }
-    if (outcome.status === "error") {
-      toast.error(persistenceErrorMessage(runtimeConnection, outcome.error));
-      return null;
-    }
-
-    if (bookmarkEdit || submittedFormData !== formData) {
-      setFormData((current) =>
-        current === formData ? submittedFormData : current,
-      );
-      setBookmarkEdit(null);
-    }
-    if (outcome.persisted) {
-      if (isIntegration) {
-        syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
-        originalDataRef.current = persistedEditorSnapshot(
-          submittedFormData,
-          outcome.prepared.persistentConnection,
-        );
-      } else {
-        originalDataRef.current = buildEditorSnapshot(submittedFormData);
+  const saveNow = useCallback(
+    async (options?: SaveNowOptions) => {
+      if (!connection) return null;
+      const submittedFormData = resolveBookmarkDraft();
+      if (!submittedFormData) return null;
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
       }
-      lastEnqueuedSnapshotRef.current = originalDataRef.current;
-    }
-    hasUnconfirmedSaveRef.current = false;
-    return outcome.prepared.runtimeConnection;
-  }, [
-    buildConnectionData,
-    buildEditorSnapshot,
-    connection,
-    enqueueConnectionSave,
-    formData,
-    bookmarkEdit,
-    resolveBookmarkDraft,
-    setBookmarkEdit,
-    isCurrentEditorRevision,
-    persistedEditorSnapshot,
-    persistenceErrorMessage,
-    syncPersistedIntegrationForm,
-    toast,
-  ]);
+      if (autoSaveIdleTimerRef.current) {
+        clearTimeout(autoSaveIdleTimerRef.current);
+        autoSaveIdleTimerRef.current = null;
+      }
+
+      const revision = editorRevisionRef.current;
+      const runtimeConnection = buildConnectionData(true, submittedFormData);
+      const isIntegration = isIntegrationConnectionProtocol(
+        runtimeConnection.protocol,
+      );
+      const hasChanges =
+        hasUnconfirmedSaveRef.current ||
+        buildEditorSnapshot(submittedFormData) !== originalDataRef.current;
+
+      if (!isIntegration && !hasChanges) {
+        return runtimeConnection;
+      }
+
+      const outcome = await enqueueConnectionSave({
+        revision,
+        runtimeConnection,
+        actionType: "UPDATE_CONNECTION",
+        onApplied: options?.onApplied
+          ? (prepared) => options.onApplied!(prepared.runtimeConnection)
+          : undefined,
+        shouldPersist: isIntegration
+          ? (prepared) =>
+              hasChanges ||
+              prepared.persistentConnection.integration?.instanceId !==
+                connection.integration?.instanceId
+          : undefined,
+      });
+
+      if (
+        outcome.status === "superseded" ||
+        !isCurrentEditorRevision(revision)
+      ) {
+        return null;
+      }
+      if (outcome.status === "error") {
+        toast.error(persistenceErrorMessage(runtimeConnection, outcome.error));
+        return null;
+      }
+
+      if (bookmarkEdit || submittedFormData !== formData) {
+        setFormData((current) =>
+          current === formData ? submittedFormData : current,
+        );
+        setBookmarkEdit(null);
+      }
+      if (outcome.persisted) {
+        if (isIntegration) {
+          syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
+          originalDataRef.current = persistedEditorSnapshot(
+            submittedFormData,
+            outcome.prepared.persistentConnection,
+          );
+        } else {
+          originalDataRef.current = buildEditorSnapshot(submittedFormData);
+        }
+        lastEnqueuedSnapshotRef.current = originalDataRef.current;
+      }
+      hasUnconfirmedSaveRef.current = false;
+      return outcome.prepared.runtimeConnection;
+    },
+    [
+      buildConnectionData,
+      buildEditorSnapshot,
+      connection,
+      enqueueConnectionSave,
+      formData,
+      bookmarkEdit,
+      resolveBookmarkDraft,
+      setBookmarkEdit,
+      isCurrentEditorRevision,
+      persistedEditorSnapshot,
+      persistenceErrorMessage,
+      syncPersistedIntegrationForm,
+      toast,
+    ],
+  );
 
   const handleTagsChange = useCallback(
     (tags: string[]) => setFormData((p) => ({ ...p, tags })),

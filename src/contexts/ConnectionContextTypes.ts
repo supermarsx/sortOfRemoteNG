@@ -110,10 +110,18 @@ export interface DatabaseAvailability {
   generation: number;
 }
 
+export interface DispatchAndFlushOptions {
+  /** Runs once the action is in the in-memory rows, before durable persistence settles. */
+  onApplied?: () => void;
+}
+
 export interface ConnectionContextType {
   state: ConnectionState;
   dispatch: React.Dispatch<ConnectionAction>;
-  dispatchAndFlush: (action: ConnectionAction) => Promise<void>;
+  dispatchAndFlush: (
+    action: ConnectionAction,
+    options?: DispatchAndFlushOptions,
+  ) => Promise<void>;
   persistence: ConnectionPersistenceState;
   saveData: () => Promise<void>;
   flushPendingSave: () => Promise<void>;
