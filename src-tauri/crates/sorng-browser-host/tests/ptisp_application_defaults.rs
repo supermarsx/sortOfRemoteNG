@@ -240,7 +240,10 @@ fn native_denial_and_foreign_initiating_website_remain_denied() {
 
 #[test]
 fn authority_installs_default_once_inside_same_origin_gate_before_normal_resolution() {
-    let source = include_str!("../../../src/origin_browser_authority.rs");
+    // Line-ending agnostic: under core.autocrlf=true a `git archive` export or a
+    // cherry-pick writes CRLF, which the `\n` layout check below would misread
+    // as a moved grant.
+    let source = include_str!("../../../src/origin_browser_authority.rs").replace("\r\n", "\n");
     let compiler = source
         .split("fn saved_permissions_inner(")
         .nth(1)

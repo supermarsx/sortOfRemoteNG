@@ -61,6 +61,9 @@ pub enum PopupError {
 /// Resolve an explicit owner-shell address or read the actual selected native
 /// frame. The CEF caller must still run full native navigation authorization.
 #[cfg(any(feature = "cef-host", test))]
+// `test` serves tests/native_popups.rs, which mounts this file by path; the
+// lib unit-test build without cef-host has no caller.
+#[cfg_attr(not(feature = "cef-host"), allow(dead_code))]
 pub(crate) fn tab_destination(
     address: Option<&str>,
     native_url: impl FnOnce() -> Option<String>,
