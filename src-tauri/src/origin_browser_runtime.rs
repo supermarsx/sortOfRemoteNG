@@ -158,6 +158,11 @@ struct Attempt {
     // Cookie-disabled attempts never acquire a retention owner: they cannot
     // load, checkpoint, clear or overwrite dormant encrypted DB cookie data.
     retention: Option<Arc<retention::NativeCookieRetention>>,
+    // Encrypted-database retention: durable mid-session checkpoints.
+    retention_durable: bool,
+    // A main-frame document completed; a later one requests a checkpoint.
+    document_completed: AtomicBool,
+    checkpoint_requested: AtomicBool,
     ordinary_close: AtomicBool,
     load_started: Mutex<Option<Instant>>,
     address_watch: Mutex<sorng_browser_host::native_navigation::FirstAddressWatch>,
@@ -1031,6 +1036,7 @@ fn revoke_stale_window(label: &str) {
 
 pub(crate) fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
     match event {
+        tauri::RunEvent::Ready => prepare_cache_maintenance(app),
         tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -1349,6 +1355,14 @@ impl BrowserEventSink for Sink {
                 // or successful login claim. No URL enters timing diagnostics.
                 self.attempt.timing.mark(TimingStage::FirstDocumentComplete);
                 self.attempt.timing.finish(2);
+                // A document that completes after an earlier one is where a
+                // form-post sign-in, SSO redirect chain or automatic login
+                // lands: checkpoint its cookies now, not on the next interval.
+                if self.attempt.document_completed.swap(true, Ordering::AcqRel) {
+                    self.attempt
+                        .checkpoint_requested
+                        .store(true, Ordering::Release);
+                }
             }
         }
         if matches!(
@@ -1530,6 +1544,33 @@ fn on_database_locked(root: &std::path::Path, state: &EncryptionState, database:
     });
 }
 
+/// App start, without starting CEF: a database locked (with
+/// `httpCache.clearOnDatabaseLock`) or deleted before any browser opens in
+/// this session still clears its page caches from earlier sessions. The root
+/// is the one the saved browser data location resolves to (no directory is
+/// created); the runtime's committed root replaces it once CEF starts.
+fn prepare_cache_maintenance(app: &tauri::AppHandle) {
+    // Process-wide OnceLock registrations; `install` repeats them harmlessly.
+    let _ = sorng_commands_core::database_protection::observe_database_lock(on_database_locked);
+    let _ = sorng_commands_core::database_protection::observe_database_deletion(
+        on_database_deleted,
+    );
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        use sorng_commands_core::browser_data_commands as data;
+        let Ok(directory) = data::get_browser_data_directory(app.clone()) else {
+            return;
+        };
+        let root = std::path::PathBuf::from(directory.effective_directory);
+        let local = data::root_is_local(
+            &root,
+            app.path().app_local_data_dir().ok().as_deref(),
+            app.path().app_cache_dir().ok().as_deref(),
+        );
+        http_cache::configure_before_runtime(&root, local);
+    });
+}
+
 /// A deleted database's page caches (C-H5), best effort and never blocking
 /// or failing the deletion. Held directories are tombstoned.
 fn on_database_deleted(database: &str) {
@@ -1628,6 +1669,8 @@ async fn create_document(
     } else {
         None
     };
+    let retention_durable =
+        retention_flow::durable_checkpoints(retention.is_some(), retention_policy);
     timing.mark(TimingStage::RetentionPrepared);
     let preparing = retention.clone();
     let retention_setup = flow::RevokeOnDrop::new(move || {
@@ -1725,6 +1768,9 @@ async fn create_document(
         automation: authorized.automation,
         preferences: authorized.preferences,
         retention,
+        retention_durable,
+        document_completed: AtomicBool::new(false),
+        checkpoint_requested: AtomicBool::new(false),
         ordinary_close: AtomicBool::new(false),
         load_started: Mutex::new(None),
         address_watch: Mutex::new(Default::default()),
@@ -2599,7 +2645,7 @@ pub(crate) fn tick() {
                                 deadline: renderer_deadline::deadline(Instant::now(), pending.deadline),
                                 response: pending.response,
                             }),
-                            checkpoint: retention_flow::Checkpoint::new(),
+                            checkpoint: retention_flow::Checkpoint::new(attempt.retention_durable),
                         },
                     );
                 }
@@ -2634,6 +2680,9 @@ pub(crate) fn tick() {
                         "kind": "document-load-timeout",
                     }),
                 );
+            }
+            if view.attempt.checkpoint_requested.swap(false, Ordering::AcqRel) {
+                view.checkpoint.request();
             }
             if let Some(retention) = &view.attempt.retention {
                 view.checkpoint
@@ -2726,7 +2775,13 @@ pub(crate) fn tick() {
                     }
                 }
             }
-            if !view.attempt.current() && !view.checkpoint.draining() {
+            // Teardown waits only for an outstanding native capture (bounded
+            // by the checkpoint's final-capture deadline), never for storage
+            // IO: the view and its close receipt stay until that drains.
+            if !view.attempt.current()
+                && !view.checkpoint.capturing()
+                && view.host.lifecycle() != Lifecycle::Closed
+            {
                 retire(view);
             }
             let keep = view.host.lifecycle() != Lifecycle::Closed || view.checkpoint.draining();

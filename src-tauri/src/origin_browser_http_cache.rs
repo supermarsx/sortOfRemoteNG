@@ -905,6 +905,13 @@ struct Status {
     opened: bool,
     blocked: Option<Unavailable>,
     engine: Option<bool>,
+    /// The root came from `configure_before_runtime` (app start, no CEF);
+    /// the runtime's committed root replaces it.
+    provisional: bool,
+    /// Drop the open store before its next use: the runtime committed a
+    /// different root than the provisional one.
+    reopen: bool,
+    opened_root: Option<PathBuf>,
 }
 
 impl Status {
@@ -915,14 +922,48 @@ impl Status {
             None => Err(Unavailable::Runtime),
         }
     }
+
+    fn configure(&mut self, data_root: &Path, local: bool) {
+        if std::mem::take(&mut self.provisional) {
+            // Authoritative over the app-start root: replace it unless that
+            // exact root is already open, and forget its failure.
+            let kept = self.blocked.is_none()
+                && self.opened
+                && local
+                && self.opened_root.as_deref() == Some(data_root);
+            if !kept {
+                self.blocked = None;
+                self.reopen = self.opened;
+                self.opened = false;
+                self.opened_root = None;
+                self.pending = Some((data_root.to_path_buf(), local));
+            }
+            return;
+        }
+        if !self.opened && self.blocked.is_none() {
+            self.pending = Some((data_root.to_path_buf(), local));
+        }
+    }
+
+    fn configure_before_runtime(&mut self, data_root: &Path, local: bool) {
+        if self.pending.is_none() && !self.opened && self.blocked.is_none() {
+            self.pending = Some((data_root.to_path_buf(), local));
+            self.provisional = true;
+        }
+    }
+}
+
+fn status_cell() -> &'static Mutex<Status> {
+    static STATUS: std::sync::OnceLock<Mutex<Status>> = std::sync::OnceLock::new();
+    STATUS.get_or_init(Default::default)
+}
+
+fn lock_status(cell: &Mutex<Status>) -> MutexGuard<'_, Status> {
+    cell.lock().unwrap_or_else(|error| error.into_inner())
 }
 
 fn status_lock() -> MutexGuard<'static, Status> {
-    static STATUS: std::sync::OnceLock<Mutex<Status>> = std::sync::OnceLock::new();
-    STATUS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
+    lock_status(status_cell())
 }
 
 /// The opened store. Held across filesystem IO (acquire, housekeeping,
@@ -942,14 +983,28 @@ fn disk() -> MutexGuard<'static, Disk> {
 
 /// Opens the configured root on first use (IO under the disk lock only).
 fn open_store(disk: &mut Disk) -> Result<&mut CacheStore, Unavailable> {
+    open_store_in(status_cell(), disk)
+}
+
+fn open_store_in<'a>(
+    cell: &Mutex<Status>,
+    disk: &'a mut Disk,
+) -> Result<&'a mut CacheStore, Unavailable> {
+    if std::mem::take(&mut lock_status(cell).reopen) {
+        // Only a provisional (pre-runtime) store is replaced. No lease can
+        // exist on it: the engine admits no attempt before the runtime root.
+        disk.store = None;
+        disk.last_housekeeping = None;
+    }
     if disk.store.is_none() {
         let pending = {
-            let status = status_lock();
+            let status = lock_status(cell);
             if let Some(blocked) = status.blocked {
                 return Err(blocked);
             }
             status.pending.clone()
         };
+        let opening = pending.clone();
         let outcome = match pending {
             None => return Err(Unavailable::Runtime),
             Some((_, false)) => Err(Unavailable::NotLocal),
@@ -958,7 +1013,13 @@ fn open_store(disk: &mut Disk) -> Result<&mut CacheStore, Unavailable> {
                 Unavailable::Runtime
             }),
         };
-        let mut status = status_lock();
+        let mut status = lock_status(cell);
+        if status.reopen || status.pending != opening {
+            // The runtime replaced the root while this one was opening: drop
+            // this store; the next use opens the replacement.
+            return Err(Unavailable::Runtime);
+        }
+        status.opened_root = opening.map(|(root, _)| root);
         status.pending = None;
         match outcome {
             Ok(store) => {
@@ -975,12 +1036,18 @@ fn open_store(disk: &mut Disk) -> Result<&mut CacheStore, Unavailable> {
 }
 
 /// Records the committed browser root and whether it is device-local (F6).
-/// No IO here; the root is opened lazily off the UI thread.
+/// No IO here; the root is opened lazily off the UI thread. It replaces a
+/// provisional app-start root (`configure_before_runtime`).
 pub(crate) fn configure(data_root: &Path, local: bool) {
-    let mut status = status_lock();
-    if !status.opened && status.blocked.is_none() {
-        status.pending = Some((data_root.to_path_buf(), local));
-    }
+    status_lock().configure(data_root, local);
+}
+
+/// App start, before any browser runtime: the root the saved browser data
+/// location resolves to, so a database lock or deletion clears that
+/// database's caches without starting CEF. Provisional: if it cannot be
+/// opened the cache is only unavailable until the runtime's root replaces it.
+pub(crate) fn configure_before_runtime(data_root: &Path, local: bool) {
+    status_lock().configure_before_runtime(data_root, local);
 }
 
 /// Whether the loaded engine reports HTTP_DISK_CACHE (C-H1 bit 10).

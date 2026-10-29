@@ -663,3 +663,91 @@ fn clear_commands_refuse_with_exactly_browser_session_open_while_live() {
         assert_eq!(cookie_clear_refusal(failure), Ok(()));
     }
 }
+
+fn open_in<'a>(cell: &Mutex<Status>, disk: &'a mut Disk) -> Result<&'a mut CacheStore, Unavailable> {
+    open_store_in(cell, disk)
+}
+
+fn cache_root(data: &tempfile::TempDir) -> PathBuf {
+    data.path().join(HTTP_CACHE_DIRECTORY_NAME)
+}
+
+#[test]
+fn provisional_root_failure_does_not_block_the_runtime_root() {
+    let missing = tempfile::tempdir().unwrap();
+    let absent = missing.path().join("not-created");
+    let runtime = tempfile::tempdir().unwrap();
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    lock_status(&cell).configure_before_runtime(&absent, true);
+    assert_eq!(open_in(&cell, &mut disk).err(), Some(Unavailable::Runtime));
+    assert!(!absent.exists(), "the app-start root is never created");
+    lock_status(&cell).configure(runtime.path(), true);
+    assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&runtime));
+    // A non-local provisional root is replaced the same way.
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    lock_status(&cell).configure_before_runtime(runtime.path(), false);
+    assert_eq!(open_in(&cell, &mut disk).err(), Some(Unavailable::NotLocal));
+    lock_status(&cell).configure(runtime.path(), true);
+    assert!(open_in(&cell, &mut disk).is_ok());
+}
+
+#[test]
+fn runtime_root_replaces_a_different_open_provisional_store() {
+    let early = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    lock_status(&cell).configure_before_runtime(early.path(), true);
+    assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&early));
+    lock_status(&cell).configure(runtime.path(), true);
+    assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&runtime));
+    // Later runtime configuration does not move an open runtime store.
+    lock_status(&cell).configure(early.path(), true);
+    lock_status(&cell).configure_before_runtime(early.path(), true);
+    assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&runtime));
+}
+
+#[test]
+fn runtime_root_equal_to_the_provisional_one_keeps_the_open_store() {
+    let data = tempfile::tempdir().unwrap();
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    lock_status(&cell).configure_before_runtime(data.path(), true);
+    let before = open_in(&cell, &mut disk).unwrap() as *const CacheStore;
+    lock_status(&cell).configure(data.path(), true);
+    assert!(!lock_status(&cell).reopen);
+    assert_eq!(open_in(&cell, &mut disk).unwrap() as *const CacheStore, before);
+}
+
+#[test]
+fn provisional_configuration_never_overrides_the_runtime_root() {
+    let runtime = tempfile::tempdir().unwrap();
+    let early = tempfile::tempdir().unwrap();
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    lock_status(&cell).configure(runtime.path(), true);
+    lock_status(&cell).configure_before_runtime(early.path(), true);
+    assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&runtime));
+}
+
+#[test]
+fn database_caches_clear_on_the_provisional_root_before_any_runtime() {
+    let data = tempfile::tempdir().unwrap();
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    lock_status(&cell).configure_before_runtime(data.path(), true);
+    let store = open_in(&cell, &mut disk).unwrap();
+    let entry = cache_root(&data)
+        .join(database_key("db-1").unwrap())
+        .join(connection_key("db-1", "conn").unwrap());
+    fs::create_dir_all(entry.join("net").join("Cache")).unwrap();
+    fs::write(entry.join("net").join("Cache").join("index"), b"x").unwrap();
+    let mut trash = Vec::new();
+    let outcome = store.clear_database("db-1", &mut trash).unwrap();
+    empty_trash(trash);
+    assert!(outcome.cleared && !outcome.pending);
+    assert!(!entry.exists());
+    assert!(cache_root(&data).join(TAG_NAME).is_file());
+}
