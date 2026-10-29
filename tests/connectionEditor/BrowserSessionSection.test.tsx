@@ -463,7 +463,7 @@ describe("browser connection overrides", () => {
         onChange={vi.fn()}
         capabilities={{
           memory: true,
-          encryptedDatabase: false,
+          encryptedDatabase: true,
           policyExpiration: true,
           clearOnDatabaseLock: true,
         }}
@@ -473,7 +473,15 @@ describe("browser connection overrides", () => {
       screen.getByRole("spinbutton", {
         name: "Retained session idle expiry (minutes)",
       }),
-    ).toHaveValue(30);
+    ).toHaveValue(10080);
+    expect(
+      screen.getByRole("spinbutton", {
+        name: "Retained session maximum age (hours)",
+      }),
+    ).toHaveValue(720);
+    expect(
+      screen.queryByText(/runtime support has not been confirmed/),
+    ).toBeNull();
     expect(
       screen.queryByText(/Cookie expiry can be configured now/),
     ).toBeNull();

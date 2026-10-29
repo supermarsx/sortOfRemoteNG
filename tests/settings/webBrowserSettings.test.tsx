@@ -882,7 +882,7 @@ describe("Web Browser settings", () => {
     const { update } = setup();
     expect(
       screen.getByRole("combobox", { name: "Requested cookie retention" }),
-    ).toHaveTextContent("Ephemeral");
+    ).toHaveTextContent("Sign-in cookies in this encrypted database");
     choose("Requested cookie retention", /Memory/);
     expect(update.mock.lastCall?.[0].webBrowser.sessionRetention).toMatchObject(
       { version: 1, mode: "memory" },

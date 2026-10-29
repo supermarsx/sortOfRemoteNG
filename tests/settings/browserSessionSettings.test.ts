@@ -75,7 +75,9 @@ describe("browser session contract", () => {
       crossOriginRequestsEnabled: true,
       websiteExtensionsEnabled: true,
     });
-    expect(effective.sessionRetention.mode).toBe("ephemeral");
+    expect(effective.sessionRetention).toEqual(
+      DEFAULT_BROWSER_SESSION_RETENTION,
+    );
     expect(effective.defaultPolicy.allowAllRequests).toBe(false);
     expect(effective.defaultPolicy.allowAllScripts).toBe(false);
     expect(effective.defaultPolicy.allowCrossOriginRedirects).toBe(false);
@@ -201,12 +203,19 @@ describe("browser session contract", () => {
       );
   });
 
-  it("migrates missing settings to isolated ephemeral defaults without selecting retention", () => {
+  it("defaults missing settings to encrypted-database retention with 7-day idle and 30-day maximum age", () => {
     const resolved = resolveConnectionBrowserSettings(undefined, undefined);
     expect(resolved.sessionRetention).toEqual(
       DEFAULT_BROWSER_SESSION_RETENTION,
     );
-    expect(resolved.sessionRetention.mode).toBe("ephemeral");
+    expect(resolved.sessionRetention).toEqual({
+      version: 1,
+      mode: "encrypted-database",
+      idleTimeoutMinutes: 10080,
+      maxAgeHours: 720,
+      clearOnDatabaseLock: false,
+    });
+    expect(Object.isFrozen(DEFAULT_BROWSER_SESSION_RETENTION)).toBe(true);
     expect(resolved.manualFormSubmit).toBe(true);
     expect(normalizeBrowserSessionOverrides(undefined)).toBeUndefined();
     for (const [key, rule] of Object.entries(schema.$defs.retention.properties))
@@ -215,6 +224,59 @@ describe("browser session contract", () => {
           key as keyof typeof resolved.sessionRetention
         ],
       ).toBe(rule.default);
+  });
+
+  it("resolves the default policy to encrypted-database only when the runtime supports it", () => {
+    const supported = resolveBrowserSessionRetention(undefined, {
+      memory: true,
+      encryptedDatabase: true,
+    });
+    expect(supported).toMatchObject({
+      requested: DEFAULT_BROWSER_SESSION_RETENTION,
+      effective: DEFAULT_BROWSER_SESSION_RETENTION,
+      supported: true,
+    });
+    expect(supported.reason).toBeUndefined();
+    for (const capabilities of [
+      undefined,
+      { memory: true, encryptedDatabase: false },
+      { memory: false, encryptedDatabase: false },
+    ]) {
+      const fallback = resolveBrowserSessionRetention(
+        DEFAULT_BROWSER_SESSION_RETENTION,
+        capabilities,
+      );
+      expect(fallback.requested).toEqual(DEFAULT_BROWSER_SESSION_RETENTION);
+      expect(fallback.effective.mode).toBe("ephemeral");
+      expect(fallback.supported).toBe(false);
+      expect(fallback.reason).toContain("ephemeral storage");
+    }
+    expect(DEFAULT_BROWSER_SESSION_RETENTION.mode).toBe("encrypted-database");
+  });
+
+  it("publishes HTTP cache defaults and ranges in the schema", () => {
+    const cache = schema.$defs.httpCache;
+    expect(cache.additionalProperties).toBe(false);
+    expect(cache.properties).toEqual({
+      enabled: { type: "boolean", default: true },
+      perConnectionMb: {
+        type: "integer",
+        minimum: 16,
+        maximum: 1024,
+        default: 128,
+      },
+      totalMb: { type: "integer", minimum: 128, maximum: 8192, default: 1024 },
+      clearOnDatabaseLock: { type: "boolean", default: false },
+    });
+    const override = schema.$defs.httpCacheOverride;
+    expect(override.additionalProperties).toBe(false);
+    expect(Object.keys(override.properties).sort()).toEqual([
+      "enabled",
+      "perConnectionMb",
+    ]);
+    expect(override.properties.perConnectionMb.$ref).toBe(
+      "#/$defs/httpCache/properties/perConnectionMb",
+    );
   });
 
   it.each([undefined, "real-origin", "legacy"])(
@@ -404,7 +466,9 @@ describe("browser session contract", () => {
       version: 1,
       sessionRetention: DEFAULT_BROWSER_SESSION_RETENTION,
     });
-    expect(resolved.sessionRetention.mode).toBe("ephemeral");
+    expect(resolved.sessionRetention).toEqual(
+      DEFAULT_BROWSER_SESSION_RETENTION,
+    );
     expect(resolved.engine).toBe("legacy");
     expect(resolved.defaultPolicy).toEqual(global.defaultPolicy);
   });

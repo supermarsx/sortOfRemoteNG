@@ -13,12 +13,19 @@ import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../connection/httpFormAutoma
 export const DEFAULT_BROWSER_SESSION_RETENTION: Readonly<BrowserSessionRetention> =
   Object.freeze({
     version: 1,
-    mode: "ephemeral",
+    mode: schema.$defs.retention.properties.mode
+      .default as BrowserSessionRetention["mode"],
     idleTimeoutMinutes:
       schema.$defs.retention.properties.idleTimeoutMinutes.default,
     maxAgeHours: schema.$defs.retention.properties.maxAgeHours.default,
-    clearOnDatabaseLock: false,
+    clearOnDatabaseLock:
+      schema.$defs.retention.properties.clearOnDatabaseLock.default,
   });
+
+/** Effective policy when retention is unsupported or disabled: never retains cookies. */
+const ephemeralFallback = (
+  requested: BrowserSessionRetention,
+): BrowserSessionRetention => ({ ...requested, mode: "ephemeral" });
 
 const invalid = (): never => {
   throw new Error(
@@ -52,7 +59,8 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Missing policy defaults to ephemeral; a supplied policy must be complete.
+/** Missing policy uses the schema default (encrypted database, 7-day idle / 30-day max);
+ * a supplied policy must be complete. Unsupported runtimes resolve it to ephemeral.
  * The legacy mode alias migrates configuration only, never cookie payloads.
  */
 export function normalizeBrowserSessionRetention(
@@ -147,7 +155,7 @@ export function resolveBrowserSessionRetention(
     effective:
       supported && !disabledByExpiry
         ? { ...requested }
-        : { ...DEFAULT_BROWSER_SESSION_RETENTION },
+        : ephemeralFallback(requested),
     supported,
     ...(!supported
       ? {

@@ -32,7 +32,7 @@ export default function BrowserSessionRetentionFields({
       <BrowserSelectRow
         settingKey={`${settingPrefix}.mode`}
         label="Requested cookie retention"
-        description="Applies to new attempts when supported by the runtime. Ephemeral is the default."
+        description="Applies to new attempts when supported by the runtime. Sign-in cookies in the encrypted database (7-day idle, 30-day maximum) is the default; unsupported runtimes use ephemeral."
         value={value.mode}
         options={[
           {

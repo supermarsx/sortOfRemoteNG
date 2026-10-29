@@ -73,7 +73,11 @@
       "maximum": 30000
     },
     "manualFormSubmit": { "type": "boolean" },
-    "restoreCookies": { "type": "boolean", "default": true, "description": "Restore and checkpoint retained sign-in cookies. False opens a fresh temporary jar without reading, clearing or replacing the saved snapshot." },
+    "restoreCookies": {
+      "type": "boolean",
+      "default": true,
+      "description": "Restore and checkpoint retained sign-in cookies. False opens a fresh temporary jar without reading, clearing or replacing the saved snapshot."
+    },
     "sessionRetention": { "$ref": "#/$defs/retention" }
   },
   "$defs": {
@@ -99,23 +103,55 @@
           ],
           "x-legacyAliases": { "encrypted-local": "encrypted-database" },
           "$comment": "encrypted-local is accepted on read only. Normalize it to encrypted-database before returning or saving settings. This alias migrates configuration, not cookie payloads.",
-          "default": "ephemeral"
+          "default": "encrypted-database"
         },
         "idleTimeoutMinutes": {
           "type": "integer",
           "minimum": 0,
           "maximum": 10080,
-          "default": 30
+          "default": 10080
         },
         "maxAgeHours": {
           "type": "integer",
           "minimum": 1,
           "maximum": 8760,
-          "default": 24
+          "default": 720
         },
         "clearOnDatabaseLock": { "type": "boolean", "default": false }
       },
       "$comment": "Retention means sign-in cookie snapshots only, not localStorage, IndexedDB or full browser profiles. Ephemeral always clears on attempt close. Memory must never write cookies to disk. Encrypted-database stores cookies INSIDE the owning encrypted database, protected by its key and included in database sync and exports. Restore requires that database to be unlocked. Support requires explicit encryptedDatabase capability from the admitted patched native runtime; legacy encryptedLocal capability is insufficient. Cookies belong to one database+connection and import into a new isolated attempt. Database lock always stops live browsers; clearOnDatabaseLock affects retained cookies only. Configuration alias normalization does not establish cookie payload migration. No fallback to sidecars, shared or plaintext browser profiles."
+    },
+    "httpCache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "perConnectionMb": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 1024,
+          "default": 128
+        },
+        "totalMb": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 8192,
+          "default": 1024
+        },
+        "clearOnDatabaseLock": { "type": "boolean", "default": false }
+      },
+      "$comment": "Global webBrowser.httpCache. Per-connection Chromium HTTP disk cache that follows site cache headers. Device-local only: never synced, backed up or exported, and only enabled when the browser data root is a local, non-synced directory. Missing values inherit these defaults. Unused per-connection caches are deleted after 30 days. clearOnDatabaseLock wipes that database's cache when it locks; by default the cache is kept."
+    },
+    "httpCacheOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "perConnectionMb": {
+          "$ref": "#/$defs/httpCache/properties/perConnectionMb"
+        }
+      },
+      "$comment": "Sparse Connection.browserSession.httpCache. Missing values inherit webBrowser.httpCache. Not yet listed in properties: native preference parsing must accept it first."
     },
     "identity": {
       "type": "object",
