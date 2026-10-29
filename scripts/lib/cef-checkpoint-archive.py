@@ -1854,6 +1854,25 @@ def source_cipd_target(mapping, root, name, target):
     return prefix + '/'.join(rewritten)
 
 
+# The DEPS hook 'update_depot_tools_toggle.py --disable' writes this sentinel
+# as "Disabled by <script> at <datetime.now()>\n" (depot_tools c101dcbe0489),
+# so only its presence is stable. The Linux snapshot records it in a canonical
+# form after checking the exact text; any other content fails closed.
+SOURCE_TOGGLE_SENTINEL = 'src/third_party/depot_tools/.disable_auto_update'
+
+
+def source_toggle_sentinel(root, digest):
+    path = root / SOURCE_TOGGLE_SENTINEL
+    data = source_io_call('file-read', path, lambda: path.read_bytes())
+    require(len(data) <= 4096 and hashlib.sha256(data).hexdigest() == digest, 'source-toggle-sentinel')
+    script = (str(root) + '/src/third_party/depot_tools/update_depot_tools_toggle.py').encode()
+    require(re.fullmatch(rb'Disabled by ' + re.escape(script) +
+                         rb' at [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{6})?\n', data) is not None,
+            'source-toggle-sentinel')
+    canonical = b'Disabled by ' + script + b' at <time>\n'
+    return len(canonical), hashlib.sha256(canonical).hexdigest()
+
+
 def source_stat_key(row):
     # size, mtime_ns, st_dev, st_ino, mode, nlink, then ctime_ns.
     return tuple(row['stamp']) + (row['ctimeNs'],)
@@ -1964,6 +1983,10 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
             name = source_cipd_path(mapping, row['path'])
             canonical[name] = row['path']
             entry['path'] = name
+            if row['path'] == SOURCE_TOGGLE_SENTINEL:
+                require(row['kind'] == 'file', 'source-toggle-sentinel')
+                entry['size'], entry['sha256'] = source_toggle_sentinel(root, hashes[row['path']])
+                total += entry['size'] - row['stamp'][0]
             if row['kind'] == 'symlink':
                 targets[name] = row['target']
                 target = source_cipd_target(mapping, root, row['path'], row['target'])

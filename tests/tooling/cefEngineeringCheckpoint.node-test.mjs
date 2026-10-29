@@ -13722,3 +13722,49 @@ print('cipd mutation PASS')
     assert.match(result.stdout, /cipd mutation PASS/);
   },
 );
+
+test(
+  "the depot_tools auto-update sentinel is recorded by its exact text with the timestamp canonical; other content still denies",
+  {
+    skip:
+      process.platform !== "linux" ? "Linux owned source transaction" : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        String.raw`
+def sentinel(root,when):
+ p=root/'src/third_party/depot_tools/.disable_auto_update';p.parent.mkdir(parents=True,exist_ok=True)
+ p.write_text('Disabled by %s/src/third_party/depot_tools/update_depot_tools_toggle.py at %s\n'%(root,when));return p
+def denied(root,sidecar,identity,mode):
+ try:m.source_metadata(mode,root,sidecar,identity,60)
+ except m.CheckpointError as error:return str(error)
+ raise AssertionError('admitted')
+with fixture(record=False)as(root,sidecar,identity):
+ sentinel(root,'2026-10-29 11:35:01.123456');m.source_metadata('source-record',root,sidecar,identity,60)
+ for when in ['2026-10-30 09:00:00.654321','2026-10-30 09:00:00']:
+  sentinel(root,when)
+  assert m.source_metadata('source-apply',root,sidecar,identity,60)['complete'],when
+  assert m.source_metadata('source-verify',root,sidecar,identity,60)['complete'],when
+ p=sentinel(root,'2026-10-30 09:00:00.654321');p.write_text(p.read_text().replace('Disabled','Enabled!'))
+ assert denied(root,sidecar,identity,'source-verify')=='source-toggle-sentinel'
+for text in ['Disabled by /elsewhere/update_depot_tools_toggle.py at 2026-10-29 11:35:01\n','Disabled by %s/src/third_party/depot_tools/update_depot_tools_toggle.py at yesterday\n','']:
+ with fixture(record=False)as(root,sidecar,identity):
+  p=sentinel(root,'2026-10-29 11:35:01');p.write_text(text.replace('%s',str(root)))
+  assert denied(root,sidecar,identity,'source-record')=='source-toggle-sentinel',text
+with fixture(record=False)as(root,sidecar,identity):
+ p=root/'depot_tools/.disable_auto_update';p.write_text('Disabled by x at 2026-10-29 11:35:01\n')
+ m.source_metadata('source-record',root,sidecar,identity,60);p.write_text('Disabled by x at 2026-10-29 11:35:02\n')
+ assert denied(root,sidecar,identity,'source-verify')=='source-content-changed'
+print('toggle sentinel PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /toggle sentinel PASS/);
+  },
+);
