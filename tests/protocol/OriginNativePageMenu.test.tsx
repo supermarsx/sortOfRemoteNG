@@ -214,6 +214,36 @@ describe("native page-menu integrations", () => {
       mocked.invoke.mock.calls.some(([cmd]) => cmd === "origin_browser_create"),
     ).toBe(false);
   });
+  it("opens a bookmark URL in a new native tab of the same source after the ACKs", async () => {
+    const h = harness();
+    act(() => h.result.current.menu.openTab("https://fixture.test/bookmark"));
+    // Queued while the bookmark overlay is still open: no native call yet.
+    expect(mutations()).toHaveLength(0);
+    await h.show(3);
+    h.interactive();
+    await waitFor(() => expect(mutations()).toHaveLength(1));
+    expect(mutations()[0]).toEqual([
+      "origin_browser_popup",
+      {
+        request: {
+          sourceIdentity: identity,
+          action: {
+            kind: "open-tab",
+            viewId: null,
+            url: "https://fixture.test/bookmark",
+            presentationRevision: 3,
+          },
+        },
+      },
+    ]);
+    expect(
+      mocked.invoke.mock.calls.some(
+        ([cmd]) =>
+          cmd === "origin_browser_create" || cmd === "origin_browser_navigate",
+      ),
+    ).toBe(false);
+    expect(h.result.current.menu.error).toBe("");
+  });
   it("routes printing to the selected child instead of the hidden root", async () => {
     const h = harness();
     await act(async () =>

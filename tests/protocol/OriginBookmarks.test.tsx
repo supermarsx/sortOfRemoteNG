@@ -590,6 +590,109 @@ describe("native bookmark themed review UI", () => {
     expect(p.onNavigate).not.toHaveBeenCalled();
     expect(p.onOverlayChange).toHaveBeenLastCalledWith(false);
   });
+  it("opens a bookmark in a new sub-tab from its context menu", () => {
+    f.context.state.connections[0].httpBookmarks = [link("saved")];
+    const p = { ...props(), onOpenInNewTab: vi.fn() };
+    render(<OriginBookmarkBar {...p} />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "saved" }), {
+      key: "ContextMenu",
+    });
+    expect(screen.getByRole("menuitem", { name: "Open" })).toBeEnabled();
+    menu("Open in new tab");
+    expect(p.onOpenInNewTab).toHaveBeenCalledExactlyOnceWith(
+      "https://fixture.invalid/saved",
+      expect.any(Function),
+    );
+    expect(p.onNavigate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(p.onOverlayChange).toHaveBeenLastCalledWith(false);
+  });
+  it("keeps plain Open in the context menu navigating the current tab", () => {
+    f.context.state.connections[0].httpBookmarks = [link("saved")];
+    const p = { ...props(), onOpenInNewTab: vi.fn() };
+    render(<OriginBookmarkBar {...p} />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "saved" }));
+    menu("Open");
+    expect(p.onNavigate).toHaveBeenCalledExactlyOnceWith(
+      "https://fixture.invalid/saved",
+      expect.any(Function),
+    );
+    expect(p.onOpenInNewTab).not.toHaveBeenCalled();
+  });
+  it("opens new sub-tabs on middle-click and Ctrl/Cmd+click, including folder rows", () => {
+    f.context.state.connections[0].httpBookmarks = [
+      link("saved"),
+      folder("Tools", [link("child")]),
+    ];
+    const p = { ...props(), onOpenInNewTab: vi.fn() };
+    render(<OriginBookmarkBar {...p} />);
+    const chip = screen.getByRole("button", { name: "saved" });
+    const down = fireEvent.mouseDown(chip, { button: 1 });
+    expect(down).toBe(false); // middle-button autoscroll suppressed
+    fireEvent(
+      chip,
+      new MouseEvent("auxclick", {
+        bubbles: true,
+        cancelable: true,
+        button: 1,
+      }),
+    );
+    fireEvent.click(chip, { ctrlKey: true });
+    fireEvent.click(chip, { metaKey: true });
+    fireEvent(
+      chip,
+      new MouseEvent("auxclick", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "child" }), {
+      ctrlKey: true,
+    });
+    expect(p.onOpenInNewTab.mock.calls.map(([url]) => url)).toEqual([
+      "https://fixture.invalid/saved",
+      "https://fixture.invalid/saved",
+      "https://fixture.invalid/saved",
+      "https://fixture.invalid/child",
+    ]);
+    expect(p.onNavigate).not.toHaveBeenCalled();
+    fireEvent.click(chip);
+    expect(p.onNavigate).toHaveBeenCalledTimes(1);
+  });
+  it("offers no new-tab action without a handler and never opens one when navigation is unavailable", () => {
+    f.context.state.connections[0].httpBookmarks = [link("saved")];
+    const plain = props();
+    render(<OriginBookmarkBar {...plain} />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "saved" }));
+    expect(
+      screen.queryByRole("menuitem", { name: "Open in new tab" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "saved" }), {
+      ctrlKey: true,
+    });
+    // Without a new-tab handler, Ctrl+click stays a normal open.
+    expect(plain.onNavigate).toHaveBeenCalledTimes(1);
+    cleanup();
+    const p = { ...props(), canNavigate: false, onOpenInNewTab: vi.fn() };
+    render(<OriginBookmarkBar {...p} />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "saved" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Open in new tab" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Open" })).toBeDisabled();
+    expect(p.onOpenInNewTab).not.toHaveBeenCalled();
+  });
+  it("fences a stale owner before opening a bookmark in a new sub-tab", () => {
+    f.context.state.connections[0].httpBookmarks = [link("saved")];
+    const p = { ...props(), onOpenInNewTab: vi.fn() };
+    render(<OriginBookmarkBar {...p} />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "saved" }));
+    f.locked = true;
+    menu("Open in new tab");
+    expect(p.onOpenInNewTab).not.toHaveBeenCalled();
+  });
   it("keeps a pending save single-flight and fences completion after unmount", async () => {
     let finish!: () => void;
     f.context.dispatchAndFlush.mockImplementation(

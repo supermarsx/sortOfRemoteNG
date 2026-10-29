@@ -49,7 +49,7 @@ function readHistory(value: unknown): OriginHistorySnapshot {
 }
 type Mutation =
   | { kind: "print" }
-  | { kind: "open-tab" }
+  | { kind: "open-tab"; url?: string }
   | { kind: "historyJump"; snapshotId: string; index: number }
   | { kind: "find" };
 interface Options {
@@ -195,11 +195,15 @@ export function useOriginPageMenu(options: Options) {
             if (work.action.kind === "find") {
               setFindOpenRequest((n) => n + 1);
             } else if (work.action.kind === "open-tab") {
-              // Native duplicates the selected view's canonical current URL and
-              // enforces popup/destination policy within the existing context.
+              // Without a URL native duplicates the selected view's canonical
+              // current URL. A supplied absolute URL (e.g. a bookmark) is
+              // admitted by the same navigation policy as navigate(). Either
+              // way the child is created in the existing context and popup
+              // group (same profile, proxy, admission and tab limit).
               await popupRequest(options.identity!, {
                 kind: "open-tab",
                 viewId: options.viewId,
+                ...(work.action.url !== undefined && { url: work.action.url }),
                 presentationRevision: revision,
               });
             } else {
@@ -235,7 +239,11 @@ export function useOriginPageMenu(options: Options) {
     findOpenRequest,
     refreshHistory,
     print: () => enqueue({ kind: "print" }),
-    openTab: () => enqueue({ kind: "open-tab" }),
+    /** Open a new native sub-tab; the URL must be absolute HTTP(S). */
+    openTab: (url?: string) =>
+      enqueue(
+        url === undefined ? { kind: "open-tab" } : { kind: "open-tab", url },
+      ),
     find: () => enqueue({ kind: "find" }),
     jump: (index: number) => {
       if (

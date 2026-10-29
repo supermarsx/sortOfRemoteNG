@@ -52,6 +52,7 @@ export default function OriginBookmarkBar({
   hideNative,
   onOverlayChange,
   onNavigate,
+  onOpenInNewTab,
   automationSlot,
   automation,
 }: {
@@ -66,6 +67,9 @@ export default function OriginBookmarkBar({
   hideNative: () => void;
   onOverlayChange: (open: boolean) => void;
   onNavigate: (url: string, assertCurrent: () => void) => void;
+  /** Opens the bookmark in a new native sub-tab of this same connection
+   * (context menu, middle-click, Ctrl/Cmd+click). Omitted: unavailable. */
+  onOpenInNewTab?: (url: string, assertCurrent: () => void) => void;
   /** Insertion point for the independently owned scripts/macros controls. */
   automationSlot?: React.ReactNode;
   automation?: ReturnType<typeof useOriginWebsiteAutomation>;
@@ -213,17 +217,31 @@ export default function OriginBookmarkBar({
       if (alive.current) setPending(false);
     }
   };
-  const navigate = (review: OriginBookmarkReview, item: HttpBookmarkItem) => {
+  const navigate = (
+    review: OriginBookmarkReview,
+    item: HttpBookmarkItem,
+    newTab = false,
+  ) => {
     if (item.isFolder || !canNavigate || busy.current) return;
+    if (newTab && !onOpenInNewTab) return;
     try {
       review.assertCurrent();
       const url = resolveHttpBookmarkUrl(item.path, initialUrl, currentUrl);
       if (!url) return;
       close();
-      onNavigate(url, review.assertCurrent);
+      if (newTab) onOpenInNewTab!(url, review.assertCurrent);
+      else onNavigate(url, review.assertCurrent);
     } catch {
       setError(true);
     }
+  };
+  /** Browser convention: Ctrl/Cmd+click or middle-click opens a new tab. */
+  const wantsNewTab = (event: React.MouseEvent) =>
+    !!onOpenInNewTab &&
+    (event.button === 1 ||
+      (event.button === 0 && (event.ctrlKey || event.metaKey)));
+  const suppressAutoscroll = (event: React.MouseEvent) => {
+    if (event.button === 1 && onOpenInNewTab) event.preventDefault();
   };
   const linkAction = async (url: string, external: boolean) => {
     if (!ui || !url || busy.current || !eligible) return;
@@ -425,13 +443,23 @@ export default function OriginBookmarkBar({
               )
                 contextMenu(event, [index]);
             }}
+            onMouseDown={item.isFolder ? undefined : suppressAutoscroll}
+            onAuxClick={(event) => {
+              if (item.isFolder || !wantsNewTab(event)) return;
+              event.preventDefault();
+              try {
+                navigate(capture(), item, true);
+              } catch {
+                setError(true);
+              }
+            }}
             onClick={(event) => {
               if (item.isFolder) {
                 const rect = event.currentTarget.getBoundingClientRect();
                 open("folder", { x: rect.left, y: rect.bottom }, [index]);
               } else {
                 try {
-                  navigate(capture(), item);
+                  navigate(capture(), item, wantsNewTab(event));
                 } catch {
                   setError(true);
                 }
@@ -544,10 +572,16 @@ export default function OriginBookmarkBar({
                         });
                       }
                     }}
-                    onClick={() =>
+                    onMouseDown={item.isFolder ? undefined : suppressAutoscroll}
+                    onAuxClick={(event) => {
+                      if (item.isFolder || !wantsNewTab(event)) return;
+                      event.preventDefault();
+                      navigate(ui.review, item, true);
+                    }}
+                    onClick={(event) =>
                       item.isFolder
                         ? setUi({ ...ui, path: [...folderPath, index] })
-                        : navigate(ui.review, item)
+                        : navigate(ui.review, item, wantsNewTab(event))
                     }
                   >
                     {item.isFolder ? (
@@ -594,6 +628,22 @@ export default function OriginBookmarkBar({
             </>
           ) : selected ? (
             <>
+              {!selected.isFolder && (
+                <>
+                  {action(
+                    "Open",
+                    () => navigate(ui.review, selected),
+                    !canNavigate || !selectedUrl,
+                  )}
+                  {onOpenInNewTab &&
+                    action(
+                      "Open in new tab",
+                      () => navigate(ui.review, selected, true),
+                      !canNavigate || !selectedUrl,
+                    )}
+                  <div className="sor-menu-divider" />
+                </>
+              )}
               {action(selected.isFolder ? "Edit folder" : "Edit bookmark", () =>
                 edit(!!selected.isFolder, ui.path),
               )}
