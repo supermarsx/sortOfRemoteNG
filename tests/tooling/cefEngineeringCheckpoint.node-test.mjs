@@ -13285,7 +13285,7 @@ print(json.dumps([facts,early]))
     );
 });
 
-test("Linux source snapshots are canonical in path order; Mac snapshots keep traversal order", async () => {
+test("Linux source snapshots are canonical in path order; Mac Intel snapshots keep traversal order", async () => {
   const result = python(
     String.raw`import importlib.util,pathlib,sys,tempfile,hashlib
 from unittest.mock import patch
@@ -13311,9 +13311,15 @@ print('order PASS')
       "utf8",
     )
   ).replace(/\r\n/g, "\n");
+  const block = source.slice(
+    source.indexOf(
+      "    if not external and not policy.get('mac'):\n        # Canonical CIPD",
+    ),
+  );
+  assert.ok(block.startsWith("    if not external"));
   assert.match(
-    source,
-    /    if not external and not policy\.get\('mac'\):\n(?:        #[^\n]*\n)+        entries\.sort\(key=lambda entry: entry\['path'\]\)\n/,
+    block.slice(0, block.indexOf("    value = {")),
+    /\n        entries\.sort\(key=lambda entry: entry\['path'\]\)\n/,
   );
 });
 
@@ -13561,5 +13567,158 @@ print('apply stat postcheck PASS')
     );
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /apply stat postcheck PASS/);
+  },
+);
+
+// CIPD assigns .cipd/pkgs/<N> by install order, so a fresh checkout may give
+// the same package another N. These Linux proofs build that layout for real.
+const CIPD_PROOF = String.raw`
+import re,hashlib
+PKGS=['infra/tools/luci/led/linux-amd64','infra/tools/cipd/linux-amd64']
+INSTANCES=['A'*43+'C','B'*43+'C']
+def cipd(root,order=(0,1)):
+ base=root/'depot_tools/.cipd_bin/.cipd/pkgs';(root/'acquisition-logs').mkdir(exist_ok=True)
+ for n,i in enumerate(order):
+  d=base/str(n);(d/INSTANCES[i]/'bin').mkdir(parents=True)
+  (d/'description.json').write_text(json.dumps({'subdir':'','package_name':PKGS[i]}))
+  (d/INSTANCES[i]/'bin/tool').write_bytes(('tool '+PKGS[i]).encode())
+  os.symlink(INSTANCES[i],d/'_current')
+  os.symlink('.cipd/pkgs/%d/_current/bin/tool'%n,root/'depot_tools/.cipd_bin'/PKGS[i].split('/')[-2])
+def permute(root):
+ base=root/'depot_tools/.cipd_bin/.cipd/pkgs'
+ (base/'0').rename(base/'swap');(base/'1').rename(base/'0');(base/'swap').rename(base/'1')
+ for link in (root/'depot_tools/.cipd_bin').iterdir():
+  if link.is_symlink():
+   t=os.readlink(link);n=t.split('/')[2];link.unlink();os.symlink(t.replace('/%s/'%n,'/%d/'%(1-int(n))),link)
+def denied(root,sidecar,identity,mode):
+ try:m.source_metadata(mode,root,sidecar,identity,60)
+ except m.CheckpointError as error:return str(error)
+ except OSError as error:return type(error).__name__
+ raise AssertionError('admitted')
+`;
+
+test(
+  "CIPD packages are keyed by identity, so a permuted pkgs/<N> passes apply and verify",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux CIPD symlink layout; actual owned source transaction"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        CIPD_PROOF +
+        String.raw`
+with fixture(record=False)as(root,sidecar,identity):
+ cipd(root);m.source_metadata('source-record',root,sidecar,identity,60)
+ entries=json.loads(sidecar.read_bytes())['snapshot']['entries'];paths=[e['path'] for e in entries]
+ assert not any(p.startswith('depot_tools/.cipd_bin/.cipd/pkgs/0') or p.startswith('depot_tools/.cipd_bin/.cipd/pkgs/1') for p in paths)
+ assert sum(1 for p in paths if re.fullmatch(r'depot_tools/\.cipd_bin/\.cipd/pkgs/@[a-f0-9]{32}',p))==2
+ links={e['path']:e['target'] for e in entries if e['kind']=='symlink' and e['path'].startswith('depot_tools/.cipd_bin/') and '/.cipd/' not in e['path']}
+ assert all(re.fullmatch(r'\.cipd/pkgs/@[a-f0-9]{32}/_current/bin/tool',t) for t in links.values()) and len(links)==2,links
+ permute(root)
+ applied=m.source_metadata('source-apply',root,sidecar,identity,60)
+ assert applied['complete']
+ assert m.source_metadata('source-verify',root,sidecar,identity,60)['complete']
+ assert os.readlink(root/'depot_tools/.cipd_bin/led').startswith('.cipd/pkgs/1/')
+ assert m.source_snapshot(root,m.Budget(60))==json.loads(sidecar.read_bytes())['snapshot']
+print('cipd permutation PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /cipd permutation PASS/);
+  },
+);
+
+test(
+  "CIPD canonical layout still denies package content changes, swapped identities, dangling or unknown links, missing descriptions and duplicates",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux CIPD symlink layout; actual owned source transaction"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        CIPD_PROOF +
+        String.raw`
+CHANGED=('source-content-changed','source-repository-or-total-changed')
+base=lambda root:root/'depot_tools/.cipd_bin/.cipd/pkgs'
+def content(root):next((base(root)/'1').glob('*/bin/tool')).write_bytes(b'tool CHANGED/linux-amd64')
+def swapped(root):
+ a,b=base(root)/'0/description.json',base(root)/'1/description.json';x,y=a.read_bytes(),b.read_bytes();a.write_bytes(y);b.write_bytes(x)
+for name,change in [('content',content),('swapped-identity',swapped)]:
+ with fixture(record=False)as(root,sidecar,identity):
+  cipd(root);m.source_metadata('source-record',root,sidecar,identity,60);permute(root);change(root)
+  with patch.object(m.os,'utime',side_effect=AssertionError('no writes')) as writes:
+   assert denied(root,sidecar,identity,'source-apply') in CHANGED,name
+   writes.assert_not_called()
+  assert denied(root,sidecar,identity,'source-verify') in CHANGED,name
+def dangling(root):os.symlink('.cipd/pkgs/7/_current/bin/tool',root/'depot_tools/.cipd_bin/dangling')
+def reenter(root):os.symlink('.cipd/pkgs/0/../1/_current/bin/tool',root/'depot_tools/.cipd_bin/reenter')
+def no_description(root):(base(root)/'1/description.json').unlink()
+def bad_description(root):(base(root)/'1/description.json').write_bytes(b'{not json')
+def duplicate(root):(base(root)/'1/description.json').write_bytes((base(root)/'0/description.json').read_bytes())
+def no_current(root):(base(root)/'1/_current').unlink()
+def stray(root):(base(root)/'tmp-entry').mkdir()
+for name,change,errors in [('dangling',dangling,('source-cipd-link','FileNotFoundError')),('reenter',reenter,('source-cipd-link',)),
+  ('no-description',no_description,('source-cipd-description',)),('bad-description',bad_description,('source-cipd-description',)),
+  ('duplicate',duplicate,('source-cipd-duplicate',)),('no-current',no_current,('source-cipd-current','FileNotFoundError')),('stray',stray,('source-cipd-layout',))]:
+ with fixture(record=False)as(root,sidecar,identity):
+  cipd(root);change(root)
+  result=denied(root,sidecar,identity,'source-record')
+  assert result in errors,(name,result)
+print('cipd denials PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /cipd denials PASS/);
+  },
+);
+
+test(
+  "mutation: without the CIPD path mapping, or without the link-target rewrite, a permuted pkgs/<N> is denied",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux CIPD symlink layout; actual owned source transaction"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        CIPD_PROOF +
+        String.raw`
+with fixture(record=False)as(root,sidecar,identity),patch.object(m,'source_cipd_layout',return_value={}),patch.object(m,'source_cipd_path',side_effect=lambda mapping,name:name),patch.object(m,'source_cipd_target',side_effect=lambda mapping,root,name,target:target):
+ cipd(root);m.source_metadata('source-record',root,sidecar,identity,60);permute(root)
+ assert denied(root,sidecar,identity,'source-apply')=='source-content-changed'
+with fixture(record=False)as(root,sidecar,identity),patch.object(m,'source_cipd_target',side_effect=lambda mapping,root,name,target:target):
+ cipd(root);m.source_metadata('source-record',root,sidecar,identity,60);permute(root)
+ assert denied(root,sidecar,identity,'source-apply')=='source-content-changed'
+with fixture(record=False)as(root,sidecar,identity):
+ cipd(root);m.source_metadata('source-record',root,sidecar,identity,60);permute(root)
+ assert m.source_metadata('source-apply',root,sidecar,identity,60)['complete']
+print('cipd mutation PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /cipd mutation PASS/);
   },
 );

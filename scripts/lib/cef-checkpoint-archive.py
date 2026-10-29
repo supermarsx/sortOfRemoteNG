@@ -1751,7 +1751,7 @@ def source_portable(row, digest=None, policy=None):
     return result
 
 
-def source_snapshot(root, budget, guards=None, context=None, *, member_policy=None, reuse=None):
+def source_snapshot(root, budget, guards=None, context=None, *, member_policy=None, reuse=None, layout=None):
     source_member_policy(root, context, member_policy)
     source_phase('repositories')
     external = context is not None and context.get('external') is True
@@ -1760,7 +1760,98 @@ def source_snapshot(root, budget, guards=None, context=None, *, member_policy=No
     policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
     with source_nearby_literals(root,policy,budget) as literals:
         policy['_nearby_literals']=literals
-        return source_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse)
+        return source_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse,layout=layout)
+
+
+# CIPD deploys each package into <root>/.cipd/pkgs/<N>, where N is the
+# smallest free index when that package is installed (luci-go c50a8c237b3c,
+# cipd/client/cipd/deployer/deployer.go packagePath: seenNumbers.smallestNewNum),
+# so parallel installs give the same package a different N in each checkout,
+# and links into it (<tool> -> ../.cipd/pkgs/<N>/_current/...) differ too.
+# The Linux snapshot names each such directory by its package identity
+# (description.json subdir + package_name, and the _current instance ID)
+# instead of N, for exactly these CIPD roots: gclient's DEPS root and the two
+# depot_tools bootstrap roots. Anything unexpected in them fails closed.
+SOURCE_CIPD_ROOTS = ('.cipd', 'depot_tools/.cipd_bin/.cipd', 'src/third_party/depot_tools/.cipd_bin/.cipd')
+
+
+def source_cipd_layout(root, rows):
+    by_path = {row['path']: row for row in rows}
+    mapping = {}
+    for base in SOURCE_CIPD_ROOTS:
+        pkgs = base + '/pkgs'
+        if pkgs not in by_path:
+            continue
+        require(by_path[pkgs]['kind'] == 'directory', 'source-cipd-layout')
+        seen = set()
+        for child in sorted(p for p in by_path if p.startswith(pkgs + '/') and '/' not in p[len(pkgs) + 1:]):
+            index = child[len(pkgs) + 1:]
+            require(re.fullmatch(r'0|[1-9][0-9]{0,8}', index) is not None and by_path[child]['kind'] == 'directory',
+                    'source-cipd-layout')
+            described = by_path.get(child + '/description.json')
+            require(described is not None and described['kind'] == 'file' and 0 < described['stamp'][0] <= 65536,
+                    'source-cipd-description')
+            try:
+                value = json.loads(source_io_call('file-read', root / child / 'description.json',
+                                                  lambda: (root / child / 'description.json').read_bytes()))
+            except (ValueError, UnicodeDecodeError):
+                raise CheckpointError('source-cipd-description')
+            require(type(value) is dict and set(value) <= {'subdir', 'package_name'} and
+                    isinstance(value.get('package_name'), str) and value['package_name'] and
+                    isinstance(value.get('subdir', ''), str), 'source-cipd-description')
+            current = by_path.get(child + '/_current')
+            require(current is not None and current['kind'] == 'symlink' and
+                    re.fullmatch(r'[A-Za-z0-9_-]{20,64}', current['target']) is not None and
+                    by_path.get(child + '/' + current['target'], {}).get('kind') == 'directory', 'source-cipd-current')
+            identity = (value.get('subdir', ''), value['package_name'])
+            require(identity not in seen, 'source-cipd-duplicate')
+            seen.add(identity)
+            key = hashlib.sha256(json.dumps([*identity, current['target']]).encode()).hexdigest()[:32]
+            mapping[child] = pkgs + '/@' + key
+    return mapping
+
+
+def source_cipd_path(mapping, name):
+    for base in SOURCE_CIPD_ROOTS:
+        pkgs = base + '/pkgs/'
+        if name.startswith(pkgs):
+            index = name[len(pkgs):].split('/', 1)[0]
+            prefix = pkgs + index
+            require(prefix in mapping, 'source-cipd-layout')
+            return mapping[prefix] + name[len(prefix):]
+    return name
+
+
+def source_cipd_target(mapping, root, name, target):
+    # Lexically walk the link; a step into <cipd root>/pkgs/<N> is rewritten to
+    # its canonical key. A link through an unknown pkgs entry, or that enters a
+    # package directory and leaves it again, fails closed.
+    prefix = ''
+    if target.startswith('/'):
+        base = str(root)
+        if not (target == base or target.startswith(base + '/')):
+            return target
+        prefix, walk, parts = base, [], target[len(base):].split('/')
+    else:
+        walk, parts = name.split('/')[:-1], target.split('/')
+    rewritten, entered = list(parts), None
+    for i, part in enumerate(parts):
+        if part in ('', '.'):
+            continue
+        if part == '..':
+            if walk:
+                walk.pop()
+            if entered is not None and len(walk) < entered:
+                raise CheckpointError('source-cipd-link')
+            continue
+        walk.append(part)
+        here = '/'.join(walk)
+        for cipd in SOURCE_CIPD_ROOTS:
+            if here.startswith(cipd + '/pkgs/') and here.count('/') == cipd.count('/') + 2:
+                require(here in mapping and entered is None, 'source-cipd-link')
+                rewritten[i] = mapping[here].rsplit('/', 1)[1]
+                entered = len(walk)
+    return prefix + '/'.join(rewritten)
 
 
 def source_stat_key(row):
@@ -1768,7 +1859,7 @@ def source_stat_key(row):
     return tuple(row['stamp']) + (row['ctimeNs'],)
 
 
-def source_snapshot_inventory(root, budget, guards, policy, external, *, member_policy=None, reuse=None):
+def source_snapshot_inventory(root, budget, guards, policy, external, *, member_policy=None, reuse=None, layout=None):
     global SOURCE_JOIN_FAILURE
     from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
@@ -1781,7 +1872,8 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     source_phase('inventory')
     rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
     source_phase('hash')
-    workers = SOURCE_LINUX_HASH_WORKERS if linux else SOURCE_HASH_WORKERS
+    import sys
+    workers = SOURCE_LINUX_HASH_WORKERS if linux and sys.platform.startswith('linux') else SOURCE_HASH_WORKERS
     hashes = {};first = None
     pool = ThreadPoolExecutor(max_workers=workers)
     file_rows = [row for row in rows if row['kind'] == 'file']
@@ -1864,9 +1956,26 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
         guards[''] = (root_before,root.stat().st_ctime_ns)
     entries = [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows]
     if not external and not policy.get('mac'):
+        # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout
+        # out-parameter maps every canonical path back to this checkout.
+        mapping = source_cipd_layout(root, rows)
+        canonical, targets = {}, {}
+        for entry, row in zip(entries, rows):
+            name = source_cipd_path(mapping, row['path'])
+            canonical[name] = row['path']
+            entry['path'] = name
+            if row['kind'] == 'symlink':
+                targets[name] = row['target']
+                target = source_cipd_target(mapping, root, row['path'], row['target'])
+                if target != row['target']:
+                    entry['target'] = target
+                    entry['sha256'] = hashlib.sha256(target.encode()).hexdigest()
+        require(len(canonical) == len(rows), 'source-cipd-layout')
+        if layout is not None:
+            layout.update(canonical=canonical, targets=targets, digests=dict(hashes))
         # Linux directory iteration order is not stable across fresh checkouts
         # (ext4 creation order, parallel git checkout), so the Linux snapshot
-        # is canonical in path order; Mac snapshots keep their reviewed order.
+        # is canonical in path order; Mac Intel snapshots keep their reviewed order.
         entries.sort(key=lambda entry: entry['path'])
     value = {'entries': entries,
              'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
@@ -1928,14 +2037,14 @@ def source_file_sha256(path, budget):
             digest.update(chunk)
 
 
-def source_stat_cache_write(root, sidecar_sha, identity, entries, guards):
+def source_stat_cache_write(root, sidecar_sha, identity, layout, guards):
     logs = root / 'acquisition-logs'
     try:
         info = logs.lstat()
     except FileNotFoundError:
         return False
     require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), 'source-diagnostic-root')
-    rows = [[entry['path'], *guards[entry['path']][0], guards[entry['path']][1]] for entry in entries if entry['kind'] == 'file']
+    rows = [[name, *guards[name][0], guards[name][1], digest] for name, digest in sorted(layout['digests'].items())]
     data = json.dumps({'schemaVersion':1, 'kind':SOURCE_STAT_CACHE_KIND, 'sidecarSha256':sidecar_sha,
                        'identity':identity, 'entries':rows}, separators=(',',':')).encode()
     target, temp = logs / SOURCE_STAT_CACHE_NAME, logs / (SOURCE_STAT_CACHE_NAME + '.partial')
@@ -1951,7 +2060,7 @@ def source_stat_cache_write(root, sidecar_sha, identity, entries, guards):
     return True
 
 
-def source_stat_cache_reuse(root, sidecar, identity, entries, budget):
+def source_stat_cache_reuse(root, sidecar, identity, budget):
     path = root / 'acquisition-logs' / SOURCE_STAT_CACHE_NAME
     try:
         info = path.lstat()
@@ -1962,13 +2071,13 @@ def source_stat_cache_reuse(root, sidecar, identity, entries, budget):
                 value['schemaVersion'] != 1 or value['kind'] != SOURCE_STAT_CACHE_KIND or value['identity'] != identity or
                 value['sidecarSha256'] != source_file_sha256(sidecar, budget) or type(value['entries']) is not list):
             return None
-        digests = {entry['path']: entry['sha256'] for entry in entries if entry['kind'] == 'file'}
         reuse = {}
         for row in value['entries']:
-            if (type(row) is not list or len(row) != 8 or not isinstance(row[0], str) or
-                    not all(type(x) is int for x in row[1:]) or row[0] not in digests):
+            if (type(row) is not list or len(row) != 9 or not isinstance(row[0], str) or
+                    not all(type(x) is int for x in row[1:8]) or not isinstance(row[8], str) or
+                    re.fullmatch(r'[a-f0-9]{64}', row[8]) is None):
                 return None
-            reuse[row[0]] = (tuple(row[1:]), digests[row[0]])
+            reuse[row[0]] = (tuple(row[1:8]), row[8])
         return reuse
     except FileNotFoundError:
         return None
@@ -2015,7 +2124,8 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         return result
     if mode == 'source-record':
         with source_nearby_literals(root,source_repositories(root,budget),budget) as record_literals:
-            current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards)
+            layout = {}
+            current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards, layout=layout)
             value = {'schemaVersion': 1, 'kind': sidecar_kind,
                      'policy': sidecar_policy, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
             source_phase('sidecar-write')
@@ -2027,7 +2137,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                 require(intel or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
             if linux:
                 source_phase('stat-cache-write')
-                source_stat_cache_write(root, written['sha256'], identity, current['entries'], guards)
+                source_stat_cache_write(root, written['sha256'], identity, layout, guards)
             return finish({'complete': True, 'mode': mode, 'entries': len(current['entries']),
                            'bytes': current['bytes'], 'sidecar': written})
     source_phase('sidecar-read')
@@ -2045,8 +2155,11 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         # Verify after a compile in the same workspace: reuse digests only for
         # files whose full stat tuple is unchanged since record/apply hashed them.
         source_phase('stat-cache-read')
-        reuse = source_stat_cache_reuse(root, sidecar, identity, expected['entries'], budget)
-    current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards, reuse=reuse)
+        reuse = source_stat_cache_reuse(root, sidecar, identity, budget)
+    layout = {}
+    current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards, reuse=reuse, layout=layout)
+    # Canonical (sidecar) path -> this checkout's real path; identity on Mac.
+    real = (lambda name: layout['canonical'][name]) if not intel else (lambda name: name)
     source_phase('compare')
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
@@ -2061,7 +2174,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                 int(row['mtimeNs']) < 2**63, 'source-mtime')
     require(isinstance(expected['rootMtimeNs'], str) and re.fullmatch(r'0|[1-9][0-9]{0,18}', expected['rootMtimeNs']) and
             int(expected['rootMtimeNs']) < 2**63, 'source-mtime')
-    digests = {entry['path']: entry['sha256'] for entry in current['entries'] if entry['kind'] == 'file'}
+    digests = layout.get('digests', {})
     # Postcheck reuse: verify writes nothing, so its second pass expects the
     # first pass's own stat tuples; apply records each file's tuple right after
     # its utime (utime cannot change content, and size/inode are checked).
@@ -2074,15 +2187,17 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             require(intel or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
         source_phase('apply-utime')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
-            budget.check();path = root / (row['path'] if source_literal_member(row['path']) else relative(row['path']));before = source_io_call('apply-stat', path, path.lstat)
+            name = real(row['path'])
+            budget.check();path = root / (name if source_literal_member(name) else relative(name));before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
-            require((stamp(before),before.st_ctime_ns) == guards[row['path']], 'source-write-identity')
+            require((stamp(before),before.st_ctime_ns) == guards[name], 'source-write-identity')
             if row['kind'] == 'symlink':
-                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == row['target'], 'source-link-changed')
+                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if intel else layout['targets'][row['path']]),
+                        'source-link-changed')
                 source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))
                 after = path.lstat()
                 require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
-                        os.readlink(path)==row['target'] and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                        os.readlink(path)==(row['target'] if intel else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
             else:
                 safe(path)
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -2096,7 +2211,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                             (after.st_dev,after.st_ino,after.st_mode,after.st_size) and
                             stamp(after)==stamp(held) and held.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
                     if post is not None and row['kind'] == 'file':
-                        post[row['path']] = tuple(stamp(after)) + (after.st_ctime_ns,)
+                        post[name] = tuple(stamp(after)) + (after.st_ctime_ns,)
                 except BaseException as error:
                     primary = error
                     raise
@@ -2120,13 +2235,13 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     if intel:
         require(source_snapshot(root, budget, context=snapshot_context) == expected, 'source-metadata-postcheck')
     else:
-        final_guards = {}
-        final = source_snapshot(root, budget, final_guards,
+        final_guards, final_layout = {}, {}
+        final = source_snapshot(root, budget, final_guards, layout=final_layout,
                                 reuse={name: (key, digests[name]) for name, key in post.items()})
         require(final == expected, 'source-metadata-postcheck')
         if mode == 'source-apply':
             source_phase('stat-cache-write')
-            source_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, final['entries'], final_guards)
+            source_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, final_layout, final_guards)
     return finish({'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']})
 
 
