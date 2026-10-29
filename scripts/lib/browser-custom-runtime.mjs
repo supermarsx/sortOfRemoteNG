@@ -509,6 +509,28 @@ async function inventory(root, prefix = "") {
   return files;
 }
 
+const INVENTORY_DIFFERENCE_SAMPLE = 5;
+/** Name the first few additional/missing SDK paths so a polluted or partial
+ * SDK directory is diagnosable from the error alone. Empty when identical. */
+export function describeInventoryDifference(actual, expected) {
+  const have = new Set(actual);
+  const want = new Set(expected);
+  const additional = [...have].filter((name) => !want.has(name)).sort();
+  const missing = [...want].filter((name) => !have.has(name)).sort();
+  if (!additional.length && !missing.length) return "";
+  const sample = (names) => {
+    const shown = names.slice(0, INVENTORY_DIFFERENCE_SAMPLE).join(", ");
+    const more = names.length - INVENTORY_DIFFERENCE_SAMPLE;
+    return more > 0 ? `${shown}, +${more} more` : shown;
+  };
+  const parts = [];
+  if (additional.length)
+    parts.push(`${additional.length} additional: ${sample(additional)}`);
+  if (missing.length)
+    parts.push(`${missing.length} missing: ${sample(missing)}`);
+  return parts.join("; ");
+}
+
 /** Local-only, fail-closed preflight. Does not extract, install, or load the SDK. */
 export async function preflightCustomRuntime({
   manifest,
@@ -563,11 +585,11 @@ export async function preflightCustomRuntime({
   if (!(await lstat(sdkRoot)).isDirectory())
     fail("SDK root must be a real directory");
   const actual = (await inventory(sdkRoot)).sort();
-  if (
-    JSON.stringify(actual) !==
-    JSON.stringify(artifact.sdkFiles.map((file) => file.path).sort())
-  )
-    fail("SDK inventory mismatch (missing or additional files)");
+  const difference = describeInventoryDifference(
+    actual,
+    artifact.sdkFiles.map((file) => file.path),
+  );
+  if (difference) fail(`SDK inventory mismatch at ${sdkRoot} (${difference})`);
   for (const entry of artifact.sdkFiles) {
     if (entry.type === "file") await verifyFile(sdkRoot, entry);
     else {
@@ -830,11 +852,11 @@ export function sdkLinkTargetMatches(
 }
 
 async function verifySdkInventory(root, entries) {
-  if (
-    JSON.stringify((await inventory(root)).sort()) !==
-    JSON.stringify(entries.map((entry) => entry.path).sort())
-  )
-    fail("Prepared custom SDK inventory changed");
+  const difference = describeInventoryDifference(
+    await inventory(root),
+    entries.map((entry) => entry.path),
+  );
+  if (difference) fail(`Prepared custom SDK inventory changed (${difference})`);
   for (const entry of entries) {
     if (entry.type === "file") await verifyFile(root, entry);
     else {

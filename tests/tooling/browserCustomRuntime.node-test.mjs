@@ -54,6 +54,7 @@ import {
   verifySourceBuildIsolation,
   verifySourceCheckoutVersion,
   sdkLinkTargetMatches,
+  describeInventoryDifference,
   prepareSourceGitIsolation,
   sourceGitEnvironment,
   sourceGitIsolationEvidence,
@@ -944,13 +945,35 @@ test("missing artifact never falls back to stock; archive bytes and SDK extras r
     /Required capability absent/,
   );
   await writeFile(path.join(data.sdkRoot, "extra.dll"), "unlisted");
-  await assert.rejects(preflightCustomRuntime(data), /inventory mismatch/);
+  await assert.rejects(
+    preflightCustomRuntime(data),
+    /SDK inventory mismatch at .*\(1 additional: extra\.dll\)$/,
+  );
   await rm(path.join(data.sdkRoot, "extra.dll"));
+  await rm(path.join(data.sdkRoot, "CREDITS.html"));
+  await assert.rejects(
+    preflightCustomRuntime(data),
+    /\(1 missing: CREDITS\.html\)$/,
+  );
+  await writeFile(
+    path.join(data.sdkRoot, "CREDITS.html"),
+    data.pkg.sdkFiles["CREDITS.html"],
+  );
   await writeFile(
     path.join(data.artifactRoot, data.pkg.artifact.archive.path),
     "corrupt archive",
   );
   await assert.rejects(preflightCustomRuntime(data), /Digest\/size mismatch/);
+});
+
+test("SDK inventory differences name the first few additional and missing paths", () => {
+  assert.equal(describeInventoryDifference(["b", "a"], ["a", "b"]), "");
+  const stray = Array.from({ length: 8 }, (_, i) => `154.0.32/x/${i}.h`);
+  assert.equal(
+    describeInventoryDifference(["a", ...stray.reverse()], ["a", "gone.dll"]),
+    "8 additional: 154.0.32/x/0.h, 154.0.32/x/1.h, 154.0.32/x/2.h, " +
+      "154.0.32/x/3.h, 154.0.32/x/4.h, +3 more; 1 missing: gone.dll",
+  );
 });
 
 test("receipt and SDK bytes are independently checked, not accepted on names", async (t) => {
