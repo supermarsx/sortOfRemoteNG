@@ -2,7 +2,7 @@
 //! synthetic offset from one base: the clock is the test's, never the wall's.
 
 use super::gate::{Gate, Work};
-use super::{durable_checkpoints, Schedule, FINAL_CAPTURE_LIMIT};
+use super::{close_step, durable_checkpoints, CloseStep, Schedule, FINAL_CAPTURE_LIMIT};
 use sorng_browser_host::cef_session_retention::{RetentionMode, RetentionPolicy};
 use std::time::{Duration, Instant};
 
@@ -144,4 +144,91 @@ fn dropped_final_capture_waits_for_an_in_flight_periodic_checkpoint() {
     assert!(gate.claim_finish());
     assert!(!gate.completed(Ok(()), late));
     assert!(!gate.draining());
+}
+
+#[test]
+fn final_capture_bound_holds_while_a_periodic_checkpoint_is_writing() {
+    // Gate g: a tab closed during a periodic save skipped the 3 s bound and
+    // waited for the 12 s close limit, whose expiry clears the record.
+    let t0 = Instant::now();
+    let mut gate = Gate::new(t0);
+    let mut schedule = Schedule::new(true);
+    assert_eq!(gate.start_save(t0), Work::PeriodicSave);
+    assert!(gate.begin_close(t0));
+    schedule.begin_close(t0);
+    let early = t0 + Duration::from_millis(500);
+    assert_eq!(
+        close_step(&gate, &schedule, true, false, early),
+        CloseStep::Poll
+    );
+    let late = t0 + FINAL_CAPTURE_LIMIT;
+    assert_eq!(
+        close_step(&gate, &schedule, true, false, late),
+        CloseStep::Drop
+    );
+    // Dropped: nothing to start until the periodic save completes, then the
+    // slot is finished (never Clear) long before the 12 s close limit.
+    assert_eq!(
+        close_step(&gate, &schedule, false, false, late),
+        CloseStep::Wait
+    );
+    assert!(!gate.expire(late));
+    assert!(!gate.completed(Ok(()), late));
+    assert_eq!(
+        close_step(&gate, &schedule, false, false, late),
+        CloseStep::Finish
+    );
+    assert!(gate.claim_finish());
+    assert!(!gate.completed(Ok(()), late));
+    assert!(!gate.draining());
+    assert_eq!(gate.claim_cleanup(late + Duration::from_secs(60)), None);
+}
+
+#[test]
+fn final_jar_captured_during_a_periodic_save_is_saved_after_it() {
+    let t0 = Instant::now();
+    let mut gate = Gate::new(t0);
+    let mut schedule = Schedule::new(true);
+    gate.start_save(t0);
+    gate.begin_close(t0);
+    schedule.begin_close(t0);
+    // The capture resolved: the host can close; the jar waits for the gate.
+    assert_eq!(
+        close_step(&gate, &schedule, false, true, t0),
+        CloseStep::Wait
+    );
+    gate.completed(Ok(()), t0);
+    // A ready jar is saved even after the capture deadline passed.
+    let late = t0 + FINAL_CAPTURE_LIMIT * 2;
+    assert_eq!(
+        close_step(&gate, &schedule, false, true, late),
+        CloseStep::StartFinalSave
+    );
+    assert_eq!(gate.start_save(late), Work::FinalSave);
+    assert_eq!(
+        close_step(&gate, &schedule, false, false, late),
+        CloseStep::Wait
+    );
+    gate.completed(Ok(()), late);
+    assert!(!gate.draining());
+    assert_eq!(
+        close_step(&gate, &schedule, false, false, late),
+        CloseStep::Wait
+    );
+}
+
+#[test]
+fn close_step_is_inert_while_open_and_after_cleanup_starts() {
+    let t0 = Instant::now();
+    let mut gate = Gate::new(t0);
+    let schedule = Schedule::new(true);
+    assert_eq!(
+        close_step(&gate, &schedule, true, true, t0),
+        CloseStep::Open
+    );
+    assert!(gate.fail(false, t0));
+    assert_eq!(
+        close_step(&gate, &schedule, false, false, t0),
+        CloseStep::Wait
+    );
 }

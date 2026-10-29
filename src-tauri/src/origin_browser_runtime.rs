@@ -552,8 +552,11 @@ async fn ensure_runtime(
                         });
                         let result = match result {
                             Ok(()) => {
-                                http_cache::configure(&root, http_cache_local);
                                 start_pump(app, pump);
+                                // Before any attempt can lease: acquire runs only
+                                // after this start returns, and the pump's first
+                                // cache tick waits a second.
+                                http_cache::configure(&root, http_cache_local);
                                 if shared().certificate_hooks.load(Ordering::Acquire) {
                                     Ok(())
                                 } else {

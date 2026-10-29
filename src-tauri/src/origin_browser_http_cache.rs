@@ -472,6 +472,29 @@ pub(crate) struct CacheStore {
 impl CacheStore {
     /// Opens (creating) `<data_root>/http-cache` with its CACHEDIR.TAG. The
     /// directory must be a plain, private directory.
+    /// App start, before the runtime: never creates anything. A missing
+    /// `<root>/http-cache` gives an empty store whose clears are no-ops and
+    /// whose usage is zero; an existing one is checked like `open`.
+    pub(crate) fn open_existing(data_root: &Path) -> io::Result<Self> {
+        let data_root = ordinary(data_root).ok_or_else(refused)?;
+        let root = data_root.join(HTTP_CACHE_DIRECTORY_NAME);
+        if plain_dir(&root)? {
+            if !private_dir(&root) {
+                return Err(refused());
+            }
+        } else if fs::symlink_metadata(&root).is_ok() {
+            return Err(refused());
+        }
+        Ok(Self {
+            root,
+            leases: Arc::default(),
+            trash: 0,
+            total_limit: DEFAULT_TOTAL_BYTES,
+            #[cfg(test)]
+            pause: None,
+        })
+    }
+
     pub(crate) fn open(data_root: &Path) -> io::Result<Self> {
         let data_root = ordinary(data_root).ok_or_else(refused)?;
         if !plain_dir(&data_root)? {
@@ -756,6 +779,10 @@ impl CacheStore {
 
     pub(crate) fn clear_all(&mut self, trash: &mut Vec<PathBuf>) -> io::Result<ClearOutcome> {
         let mut outcome = ClearOutcome::default();
+        if !plain_dir(&self.root)? {
+            // A pre-runtime store whose cache root was never created.
+            return Ok(outcome);
+        }
         for entry in fs::read_dir(&self.root)?.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if name == TAG_NAME {
@@ -911,7 +938,6 @@ struct Status {
     /// Drop the open store before its next use: the runtime committed a
     /// different root than the provisional one.
     reopen: bool,
-    opened_root: Option<PathBuf>,
 }
 
 impl Status {
@@ -925,19 +951,13 @@ impl Status {
 
     fn configure(&mut self, data_root: &Path, local: bool) {
         if std::mem::take(&mut self.provisional) {
-            // Authoritative over the app-start root: replace it unless that
-            // exact root is already open, and forget its failure.
-            let kept = self.blocked.is_none()
-                && self.opened
-                && local
-                && self.opened_root.as_deref() == Some(data_root);
-            if !kept {
-                self.blocked = None;
-                self.reopen = self.opened;
-                self.opened = false;
-                self.opened_root = None;
-                self.pending = Some((data_root.to_path_buf(), local));
-            }
+            // Authoritative over the app-start root. That store never
+            // created its directory, so it is always reopened, and its
+            // failure is forgotten.
+            self.blocked = None;
+            self.reopen = self.opened;
+            self.opened = false;
+            self.pending = Some((data_root.to_path_buf(), local));
             return;
         }
         if !self.opened && self.blocked.is_none() {
@@ -997,29 +1017,34 @@ fn open_store_in<'a>(
         disk.last_housekeeping = None;
     }
     if disk.store.is_none() {
-        let pending = {
+        let (pending, provisional) = {
             let status = lock_status(cell);
             if let Some(blocked) = status.blocked {
                 return Err(blocked);
             }
-            status.pending.clone()
+            (status.pending.clone(), status.provisional)
         };
         let opening = pending.clone();
+        // Before the runtime nothing is created (no root, no tag).
+        let open = if provisional {
+            CacheStore::open_existing
+        } else {
+            CacheStore::open
+        };
         let outcome = match pending {
             None => return Err(Unavailable::Runtime),
             Some((_, false)) => Err(Unavailable::NotLocal),
-            Some((data_root, true)) => CacheStore::open(&data_root).map_err(|error| {
+            Some((data_root, true)) => open(&data_root).map_err(|error| {
                 log::warn!("Native browser HTTP cache root is unavailable: {}", error.kind());
                 Unavailable::Runtime
             }),
         };
         let mut status = lock_status(cell);
-        if status.reopen || status.pending != opening {
+        if status.reopen || status.pending != opening || status.provisional != provisional {
             // The runtime replaced the root while this one was opening: drop
             // this store; the next use opens the replacement.
             return Err(Unavailable::Runtime);
         }
-        status.opened_root = opening.map(|(root, _)| root);
         status.pending = None;
         match outcome {
             Ok(store) => {

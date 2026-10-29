@@ -26,7 +26,9 @@ use super::retention::NativeCookieRetention;
 use gate::{FailureNotice, Gate, Work};
 use sorng_browser_host::{
     cef_browser::CefBrowserHost,
-    cef_session_retention::{CookieCapture, RetentionError, RetentionMode, RetentionPolicy},
+    cef_session_retention::{
+        CookieCapture, RetentionError, RetentionMode, RetentionPolicy, SignInCookie,
+    },
 };
 use std::{
     sync::Arc,
@@ -97,8 +99,56 @@ impl Schedule {
     }
 }
 
+/// What a closing attempt does next with its final capture. Decided before
+/// (and independent of) any in-flight periodic save: the capture bound holds
+/// and the host is released while storage IO still runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloseStep {
+    /// Not closing.
+    Open,
+    /// The final capture missed its deadline: drop it, keep the checkpoint.
+    Drop,
+    /// Poll the pending final capture.
+    Poll,
+    /// A save, finish or cleanup runs; nothing to start.
+    Wait,
+    /// Save the captured final jar, then finish the slot.
+    StartFinalSave,
+    /// No final jar (dropped or retention off): finish without clearing.
+    Finish,
+}
+
+fn close_step(
+    gate: &Gate,
+    schedule: &Schedule,
+    capture_pending: bool,
+    ready: bool,
+    now: Instant,
+) -> CloseStep {
+    if gate.open() {
+        return CloseStep::Open;
+    }
+    if capture_pending {
+        return if schedule.final_capture_expired(now) {
+            CloseStep::Drop
+        } else {
+            CloseStep::Poll
+        };
+    }
+    if !gate.can_capture() {
+        return CloseStep::Wait;
+    }
+    if ready {
+        CloseStep::StartFinalSave
+    } else {
+        CloseStep::Finish
+    }
+}
+
 pub(super) struct Checkpoint {
     capture: Option<CookieCapture>,
+    // A final jar captured while a periodic save was still in flight.
+    ready: Option<Vec<SignInCookie>>,
     worker: Option<oneshot::Receiver<Result<(), RetentionError>>>,
     gate: Gate,
     schedule: Schedule,
@@ -110,6 +160,7 @@ impl Checkpoint {
     pub(super) fn new(durable: bool) -> Self {
         Self {
             capture: None,
+            ready: None,
             worker: None,
             gate: Gate::new(Instant::now()),
             schedule: Schedule::new(durable),
@@ -153,6 +204,7 @@ impl Checkpoint {
         // Storage must also fence successor generations during retirement.
         owner.invalidate();
         self.capture = None;
+        self.ready = None;
     }
 
     fn record_failure(&mut self, owner: &NativeCookieRetention, error: RetentionError) {
@@ -237,42 +289,38 @@ impl Checkpoint {
             self.record_failure(owner, RetentionError::NativeFailure);
         }
         self.schedule_cleanup(owner);
+        if !self.gate.open() {
+            self.close_tick(owner);
+            return;
+        }
         if !self.gate.can_capture() {
             return;
         }
         // Writer handover can happen during a periodic worker or native
-        // capture. Keep the worker until acknowledged, then finish the reader
-        // without capturing again or deleting the successor's saved snapshot.
+        // capture. Keep the worker until acknowledged; closing then finishes
+        // the reader without deleting the successor's saved snapshot.
         if !owner.enabled() {
             self.capture = None;
-            if self.gate.claim_finish() {
-                self.spawn_work(owner, Work::Finish);
-            }
             return;
         }
         let now = Instant::now();
-        if self.capture.is_some() && self.schedule.final_capture_expired(now) {
-            // Never hold teardown for a stuck cookie manager. The record keeps
-            // the last checkpoint; finishing (not clearing) the slot below.
-            log::warn!("Final sign-in cookie capture timed out; keeping the last checkpoint");
-            self.capture = None;
-        }
         if let Some(capture) = &mut self.capture {
             match capture.take() {
                 Ok(cookies) => {
                     self.capture = None;
                     let work = self.gate.start_save(now);
+                    debug_assert_eq!(work, Work::PeriodicSave);
                     let durable = self.schedule.durable();
                     let (sender, receiver) = oneshot::channel();
                     self.worker = Some(receiver);
                     let owner = owner.clone();
                     tauri::async_runtime::spawn_blocking(move || {
-                        let result = match work {
-                            Work::FinalSave => owner.save(cookies).and_then(|()| owner.finish()),
-                            // A live attempt's durable mid-session checkpoint.
-                            _ if durable => owner.checkpoint(cookies),
-                            // Memory mode: the in-process snapshot only.
-                            _ => owner.save(cookies),
+                        // A live attempt's durable mid-session checkpoint, or
+                        // memory mode's in-process snapshot.
+                        let result = if durable {
+                            owner.checkpoint(cookies)
+                        } else {
+                            owner.save(cookies)
                         };
                         let _ = sender.send(result);
                     });
@@ -280,15 +328,78 @@ impl Checkpoint {
                 Err(RetentionError::Pending) => (),
                 Err(error) => self.fail(owner, error),
             }
-        } else if !self.gate.open() {
-            // Closing without a capture: the final capture was dropped.
-            if self.gate.claim_finish() {
-                self.spawn_work(owner, Work::Finish);
-            }
         } else if self.schedule.capture_due(&self.gate, live, now) {
             match host.capture_sign_in_cookies(owner.clone()) {
                 Ok(capture) => self.capture = Some(capture),
                 Err(error) => self.fail(owner, error),
+            }
+        }
+    }
+
+    /// Closing: the final capture is polled and bounded even while a periodic
+    /// save runs; its save starts once the gate is free.
+    fn close_tick(&mut self, owner: &Arc<NativeCookieRetention>) {
+        if !owner.enabled() {
+            self.capture = None;
+            self.ready = None;
+        }
+        let now = Instant::now();
+        // Drop/poll can each unlock one further step in the same tick.
+        for _ in 0..3 {
+            match close_step(
+                &self.gate,
+                &self.schedule,
+                self.capture.is_some(),
+                self.ready.is_some(),
+                now,
+            ) {
+                CloseStep::Open | CloseStep::Wait => return,
+                CloseStep::Drop => {
+                    // Never hold teardown for a stuck cookie manager. The
+                    // record keeps the last checkpoint; the slot is finished,
+                    // not cleared.
+                    log::warn!(
+                        "Final sign-in cookie capture timed out; keeping the last checkpoint"
+                    );
+                    self.capture = None;
+                }
+                CloseStep::Poll => {
+                    let Some(capture) = &mut self.capture else {
+                        return;
+                    };
+                    match capture.take() {
+                        Ok(cookies) => {
+                            self.capture = None;
+                            self.ready = Some(cookies);
+                        }
+                        Err(RetentionError::Pending) => return,
+                        Err(error) => {
+                            self.fail(owner, error);
+                            return;
+                        }
+                    }
+                }
+                CloseStep::StartFinalSave => {
+                    let Some(cookies) = self.ready.take() else {
+                        return;
+                    };
+                    let work = self.gate.start_save(now);
+                    debug_assert_eq!(work, Work::FinalSave);
+                    let (sender, receiver) = oneshot::channel();
+                    self.worker = Some(receiver);
+                    let owner = owner.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let result = owner.save(cookies).and_then(|()| owner.finish());
+                        let _ = sender.send(result);
+                    });
+                    return;
+                }
+                CloseStep::Finish => {
+                    if self.gate.claim_finish() {
+                        self.spawn_work(owner, Work::Finish);
+                    }
+                    return;
+                }
             }
         }
     }

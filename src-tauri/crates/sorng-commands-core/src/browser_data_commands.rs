@@ -540,20 +540,39 @@ pub fn committed_root() -> Option<PathBuf> {
 /// Folders whose contents a sync client uploads or roams. The per-connection
 /// HTTP disk cache must never live below one (t-cefiso F6).
 pub fn sync_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
+    // One construction per platform: no `mut` binding that is unused on
+    // platforms without known sync roots (Linux `unused_mut`).
     #[cfg(windows)]
-    for name in ["APPDATA", "OneDrive", "OneDriveCommercial", "OneDriveConsumer"] {
-        if let Some(value) = std::env::var_os(name).filter(|value| !value.is_empty()) {
-            roots.push(PathBuf::from(value));
-        }
+    {
+        [
+            "APPDATA",
+            "OneDrive",
+            "OneDriveCommercial",
+            "OneDriveConsumer",
+        ]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .collect()
     }
     #[cfg(target_os = "macos")]
-    if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
-        let home = PathBuf::from(home);
-        roots.push(home.join("Library").join("Mobile Documents"));
-        roots.push(home.join("Library").join("CloudStorage"));
+    {
+        std::env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .map(|home| {
+                vec![
+                    home.join("Library").join("Mobile Documents"),
+                    home.join("Library").join("CloudStorage"),
+                ]
+            })
+            .unwrap_or_default()
     }
-    roots
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        Vec::new()
+    }
 }
 
 /// Whether a committed browser root is device-local working storage: below the

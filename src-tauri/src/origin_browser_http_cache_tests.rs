@@ -674,14 +674,15 @@ fn cache_root(data: &tempfile::TempDir) -> PathBuf {
 
 #[test]
 fn provisional_root_failure_does_not_block_the_runtime_root() {
-    let missing = tempfile::tempdir().unwrap();
-    let absent = missing.path().join("not-created");
+    let early = tempfile::tempdir().unwrap();
+    // A non-directory where the cache root belongs: refused, not repaired.
+    fs::write(cache_root(&early), b"not a directory").unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let cell = Mutex::new(Status::default());
     let mut disk = Disk::default();
-    lock_status(&cell).configure_before_runtime(&absent, true);
+    lock_status(&cell).configure_before_runtime(early.path(), true);
     assert_eq!(open_in(&cell, &mut disk).err(), Some(Unavailable::Runtime));
-    assert!(!absent.exists(), "the app-start root is never created");
+    assert!(cache_root(&early).is_file());
     lock_status(&cell).configure(runtime.path(), true);
     assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&runtime));
     // A non-local provisional root is replaced the same way.
@@ -691,6 +692,40 @@ fn provisional_root_failure_does_not_block_the_runtime_root() {
     assert_eq!(open_in(&cell, &mut disk).err(), Some(Unavailable::NotLocal));
     lock_status(&cell).configure(runtime.path(), true);
     assert!(open_in(&cell, &mut disk).is_ok());
+}
+
+#[test]
+fn pre_runtime_store_creates_nothing_and_its_clears_and_usage_are_empty() {
+    let data = tempfile::tempdir().unwrap();
+    let absent = data.path().join("never-created");
+    let cell = Mutex::new(Status::default());
+    let mut disk = Disk::default();
+    for root in [data.path().to_path_buf(), absent.clone()] {
+        let cell = Mutex::new(Status::default());
+        let mut disk = Disk::default();
+        lock_status(&cell).configure_before_runtime(&root, true);
+        let store = open_in(&cell, &mut disk).unwrap();
+        let mut trash = Vec::new();
+        assert_eq!(store.clear_database("db-1", &mut trash).unwrap(), ClearOutcome::default());
+        assert_eq!(
+            store.clear_connection("db-1", "conn", &mut trash).unwrap(),
+            ClearOutcome::default()
+        );
+        assert_eq!(store.clear_all(&mut trash).unwrap(), ClearOutcome::default());
+        assert_eq!(store.usage(None), 0);
+        assert_eq!(store.usage(Some(("db-1", "conn"))), 0);
+        assert!(trash.is_empty());
+    }
+    assert!(!data.path().join(HTTP_CACHE_DIRECTORY_NAME).exists());
+    assert!(!absent.exists());
+    // The runtime root is opened normally: directory and tag are created.
+    lock_status(&cell).configure_before_runtime(data.path(), true);
+    assert!(open_in(&cell, &mut disk).is_ok());
+    assert!(!data.path().join(HTTP_CACHE_DIRECTORY_NAME).exists());
+    lock_status(&cell).configure(data.path(), true);
+    let store = open_in(&cell, &mut disk).unwrap();
+    assert_eq!(store.root(), cache_root(&data));
+    assert!(cache_root(&data).join(TAG_NAME).is_file());
 }
 
 #[test]
@@ -710,15 +745,17 @@ fn runtime_root_replaces_a_different_open_provisional_store() {
 }
 
 #[test]
-fn runtime_root_equal_to_the_provisional_one_keeps_the_open_store() {
+fn runtime_root_equal_to_the_provisional_one_reopens_creating_the_cache() {
     let data = tempfile::tempdir().unwrap();
     let cell = Mutex::new(Status::default());
     let mut disk = Disk::default();
     lock_status(&cell).configure_before_runtime(data.path(), true);
-    let before = open_in(&cell, &mut disk).unwrap() as *const CacheStore;
+    assert!(open_in(&cell, &mut disk).is_ok());
+    assert!(!cache_root(&data).exists());
     lock_status(&cell).configure(data.path(), true);
-    assert!(!lock_status(&cell).reopen);
-    assert_eq!(open_in(&cell, &mut disk).unwrap() as *const CacheStore, before);
+    assert!(lock_status(&cell).reopen);
+    assert_eq!(open_in(&cell, &mut disk).unwrap().root(), cache_root(&data));
+    assert!(cache_root(&data).join(TAG_NAME).is_file());
 }
 
 #[test]
@@ -749,5 +786,5 @@ fn database_caches_clear_on_the_provisional_root_before_any_runtime() {
     empty_trash(trash);
     assert!(outcome.cleared && !outcome.pending);
     assert!(!entry.exists());
-    assert!(cache_root(&data).join(TAG_NAME).is_file());
+    assert!(!cache_root(&data).join(TAG_NAME).exists(), "pre-runtime never writes");
 }
