@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} inicios de sesión activos",
     "loginDetails": "Detalles del inicio de sesión automático",
     "loginElapsed": "Tiempo transcurrido: {{seconds}} s",
-    "loginCompletionNote": "Enviar el inicio de sesión no confirma que el sitio lo haya aceptado. Compruebe si solicita verificación o aprobación."
+    "loginCompletionNote": "Enviar el inicio de sesión no confirma que el sitio lo haya aceptado. Compruebe si solicita verificación o aprobación.",
+    "loginReasons": {
+      "verification-required": "El sitio web solicitó una verificación, como un CAPTCHA, que el inicio de sesión automático nunca responde. Completa la verificación en la página y termina de iniciar sesión.",
+      "credentials-rejected": "El sitio web mostró un error después de enviar el inicio de sesión, por ejemplo un correo electrónico o una contraseña incorrectos. Lee el mensaje de la página y revisa las credenciales guardadas antes de volver a intentarlo.",
+      "focus-unavailable": "Otro campo de texto mantenía el foco del teclado, o el foco cambió mientras se escribía, así que el inicio de sesión automático se detuvo para no escribir las credenciales en el lugar equivocado. Cierra cualquier diálogo sobre el formulario de inicio de sesión y vuelve a intentarlo.",
+      "user-input": "El inicio de sesión automático se detuvo porque escribiste o hiciste clic en la página mientras se ejecutaba. Puedes terminar de iniciar sesión manualmente.",
+      "page-changed": "La página de inicio de sesión cambió mientras se ejecutaba el inicio de sesión automático (su formulario, destino o dirección), así que se detuvo. Vuelve a intentarlo cuando la página se haya estabilizado.",
+      "field-not-empty": "Un campo de inicio de sesión ya tenía un valor, así que el inicio de sesión automático no lo modificó. Vacía el campo y vuelve a intentarlo, o termina de iniciar sesión manualmente.",
+      "submit-unavailable": "El botón de inicio de sesión nunca estuvo disponible, así que no se envió nada y se borraron las credenciales introducidas. Revisa la página por si faltan campos o hay avisos y vuelve a intentarlo.",
+      "step-not-found": "El siguiente paso del inicio de sesión, como la página de la contraseña tras el correo electrónico, no apareció a tiempo. Revisa la página por si hay un mensaje u otra opción de inicio de sesión y vuelve a intentarlo.",
+      "expired": "El inicio de sesión automático agotó el tiempo de este paso antes de poder terminar. Vuelve a intentarlo cuando la página esté lista."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

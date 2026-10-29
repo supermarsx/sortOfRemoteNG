@@ -365,7 +365,7 @@ function nativeLogin(timeline: Timeline) {
   }
   const signal = (event: string) => {
     signals.push(event);
-    if (event === "form-completed" || event === "form-rejected") return;
+    if (event === "form-completed" || event.startsWith("form-rejected")) return;
     setTimeout(() => {
       if (page.closed()) return;
       if (event.startsWith("type|")) type(event);
@@ -401,7 +401,8 @@ function nativeLogin(timeline: Timeline) {
     async outcome(within: number) {
       const until = Date.now() + within;
       const ended = () =>
-        signals.includes("form-completed") || signals.includes("form-rejected");
+        signals.includes("form-completed") ||
+        signals.some((signal) => signal.startsWith("form-rejected"));
       while (!ended() && Date.now() < until) await delay(20);
       // The page's own reaction to the click (the route home) follows.
       await delay(40);
@@ -555,7 +556,7 @@ describe("Portainer sign-in with the native page client", () => {
       });
       expect(await login.outcome(4000)).toEqual([
         "form-prepare",
-        "form-rejected",
+        "form-rejected|page-changed",
       ]);
       expect(login.keys()).toBe(0);
       expect(login.page.logins).toEqual([]);
@@ -574,7 +575,7 @@ describe("Portainer sign-in with the native page client", () => {
     expect(await login.outcome(4000)).toEqual([
       "form-prepare",
       "form",
-      "form-rejected",
+      "form-rejected|page-changed",
     ]);
     // The whole username and three characters of the password.
     expect(login.keys()).toBe(USERNAME.length + 3);

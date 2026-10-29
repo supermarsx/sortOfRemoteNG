@@ -497,8 +497,85 @@ pub enum NativeFeatureStatus {
     LoginFormDetected,
     LoginAdapterCompleted,
     LoginAdapterRejected,
+    /// The page adapter stopped and named one fixed cause.
+    LoginAdapterStopped(NativeLoginRejection),
     /// Delivery progress only. Neither sent nor accepted means authenticated.
     LoginDelivery(NativeLoginDeliveryStatus),
+}
+
+/// Why a page login adapter stopped, as a fixed code the renderer accepts
+/// from page script (`form-rejected|<wire>`). Never page text, field values
+/// or account data; anything else is the plain, causeless rejection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeLoginRejection {
+    /// A CAPTCHA, Turnstile or hCaptcha the user must answer is displayed.
+    VerificationRequired,
+    /// After the submit, the page showed a refusal next to the login fields.
+    CredentialsRejected,
+    /// Keyboard focus was held by another text entry or moved away mid-typing.
+    FocusUnavailable,
+    /// The user typed, clicked or pressed Escape during the attempt.
+    UserInput,
+    /// The page, form, its destination or address changed during the attempt.
+    PageChanged,
+    /// A login field already held a value nobody typed for this attempt.
+    FieldNotEmpty,
+    /// The submit control never became usable within its bound.
+    SubmitUnavailable,
+    /// The next step of a multi-step login never appeared within its bound.
+    StepNotFound,
+    /// A grant or the credential's validity ran out.
+    Expired,
+}
+
+impl NativeLoginRejection {
+    pub const ALL: [Self; 9] = [
+        Self::VerificationRequired,
+        Self::CredentialsRejected,
+        Self::FocusUnavailable,
+        Self::UserInput,
+        Self::PageChanged,
+        Self::FieldNotEmpty,
+        Self::SubmitUnavailable,
+        Self::StepNotFound,
+        Self::Expired,
+    ];
+    /// Renderer-to-browser feature-status prefix; the wire name follows it.
+    pub const STATUS_PREFIX: &'static str = "login-rejected:";
+
+    pub fn wire(self) -> &'static str {
+        match self {
+            Self::VerificationRequired => "verification-required",
+            Self::CredentialsRejected => "credentials-rejected",
+            Self::FocusUnavailable => "focus-unavailable",
+            Self::UserInput => "user-input",
+            Self::PageChanged => "page-changed",
+            Self::FieldNotEmpty => "field-not-empty",
+            Self::SubmitUnavailable => "submit-unavailable",
+            Self::StepNotFound => "step-not-found",
+            Self::Expired => "expired",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|cause| cause.wire() == value)
+    }
+
+    /// The page event `form-rejected|<wire>` names this cause.
+    pub fn from_page_event(event: &str) -> Option<Self> {
+        Self::parse(event.strip_prefix("form-rejected|")?)
+    }
+
+    /// The renderer's feature status for this cause, at most 40 bytes.
+    pub fn status(self) -> String {
+        format!("{}{}", Self::STATUS_PREFIX, self.wire())
+    }
+
+    /// The adapter-stopped status a renderer status names, if any.
+    pub fn feature_status(status: &str) -> Option<NativeFeatureStatus> {
+        Self::parse(status.strip_prefix(Self::STATUS_PREFIX)?)
+            .map(NativeFeatureStatus::LoginAdapterStopped)
+    }
 }
 
 /// The automatic-login step an explicit user retry re-runs on the page that
@@ -1313,6 +1390,64 @@ impl DeclarativeLoginPolicy {
         }) && (step.kind != Submit
             || credential_stage(self.steps[index - 1].kind)
                 .is_some_and(|previous| released(&step.origin, previous)))
+    }
+}
+
+#[cfg(test)]
+mod rejection_tests {
+    use super::*;
+
+    #[test]
+    fn every_rejection_cause_round_trips_through_its_fixed_wire_name() {
+        let mut seen = std::collections::HashSet::new();
+        for cause in NativeLoginRejection::ALL {
+            assert!(seen.insert(cause.wire()), "duplicate wire {}", cause.wire());
+            assert_eq!(NativeLoginRejection::parse(cause.wire()), Some(cause));
+            assert_eq!(
+                NativeLoginRejection::from_page_event(&format!("form-rejected|{}", cause.wire())),
+                Some(cause)
+            );
+            // The renderer passes the status in a 40-byte message slot.
+            assert!(cause.status().len() <= 40, "{}", cause.status());
+            assert_eq!(
+                NativeLoginRejection::feature_status(&cause.status()),
+                Some(NativeFeatureStatus::LoginAdapterStopped(cause))
+            );
+        }
+        assert_eq!(seen.len(), 9);
+    }
+
+    #[test]
+    fn only_exact_fixed_causes_are_accepted_from_page_events() {
+        for event in [
+            "form-rejected",
+            "form-rejected|",
+            "form-rejected|Expired",
+            "form-rejected|expired ",
+            "form-rejected|expired|x",
+            "form-rejected|wrong password for alice@example.test",
+            "form-completed|expired",
+            "google-rejected|expired",
+            "expired",
+        ] {
+            assert_eq!(
+                NativeLoginRejection::from_page_event(event),
+                None,
+                "{event}"
+            );
+        }
+        for status in [
+            "login-rejected",
+            "login-rejected:",
+            "login-rejected:other",
+            "expired",
+        ] {
+            assert_eq!(
+                NativeLoginRejection::feature_status(status),
+                None,
+                "{status}"
+            );
+        }
     }
 }
 

@@ -5,6 +5,53 @@
 // the text typed into the focused field is erased (prototype setter, then
 // input and change events, so a framework sees the empty value), and
 // `onEscape` ends the whole attempt, whose client erases its other fields.
+//
+// Fields inside OPEN shadow roots are typed like any other: the focused
+// element and an event's real target are read through the shadow boundary.
+// Closed roots stay unreachable and are never forced open.
+function composedTarget(event) {
+  try {
+    const path =
+      typeof event.composedPath === "function" ? event.composedPath() : null;
+    if (path && path.length) return path[0];
+  } catch (_) {
+    /* A detached event has no path: its target is all there is. */
+  }
+  return event.target;
+}
+function deepActiveElement(doc) {
+  let node = doc.activeElement;
+  for (let depth = 0; depth < 32 && node?.shadowRoot?.activeElement; depth++)
+    node = node.shadowRoot.activeElement;
+  return node;
+}
+// An element where the user may be entering text: typing must never take
+// focus away from it. A button, a cookie banner or a dialog container does
+// not hold text, so focus may move from it to the login field.
+function holdsTextEntry(node) {
+  if (!node || node.nodeType !== 1) return false;
+  const tag = node.tagName;
+  if (
+    ["TEXTAREA", "SELECT", "IFRAME", "FRAME", "OBJECT", "EMBED"].includes(tag)
+  )
+    return true;
+  if (tag === "INPUT")
+    return ![
+      "button",
+      "submit",
+      "reset",
+      "image",
+      "checkbox",
+      "radio",
+      "range",
+      "color",
+      "file",
+      "hidden",
+    ].includes(String(node.type).toLowerCase());
+  if (node.isContentEditable === true) return true;
+  const editable = node.getAttribute("contenteditable");
+  return editable !== null && editable.toLowerCase() !== "false";
+}
 function createLoginKeyboard(signal, onEscape) {
   let active = null,
     lastField = null,
@@ -58,8 +105,8 @@ function createLoginKeyboard(signal, onEscape) {
     )
       return false;
     const row = active;
-    if (row ? event.target !== row.element : !filled.includes(event.target))
-      return false;
+    const target = composedTarget(event);
+    if (row ? target !== row.element : !filled.includes(target)) return false;
     event.preventDefault();
     if (typeof event.stopImmediatePropagation === "function")
       event.stopImmediatePropagation();
@@ -71,13 +118,17 @@ function createLoginKeyboard(signal, onEscape) {
         row.element.value === row.text.slice(0, row.position);
       // A requested key may still be on its way from the host.
       if (row.armed) stray = { element: row.element, until: now() + 1500 };
-      finish(false);
+      finish(false, "user");
       if (ours) erase(row.element);
     }
     onEscape();
     return true;
   }
-  function finish(ok) {
+  // A failed row names a fixed kind for its client: "focus" when focus left
+  // the field, "user" for the user's own key, pointer or Escape, "expired"
+  // past the credential's validity, otherwise "cancelled". The kind is a
+  // constant, never page data.
+  function finish(ok, kind) {
     const row = active;
     if (!row) return;
     active = null;
@@ -90,7 +141,23 @@ function createLoginKeyboard(signal, onEscape) {
       row.resolve(true);
     } else {
       send(row, "cancel");
-      row.reject(new Error("native-typing-cancelled"));
+      const failed =
+        kind ||
+        (now() >= row.until
+          ? "expired"
+          : row.element.isConnected &&
+              deepActiveElement(document) !== row.element
+            ? "focus"
+            : "cancelled");
+      row.reject(
+        new Error(
+          {
+            focus: "native-typing-focus",
+            user: "native-typing-user",
+            expired: "native-typing-expired",
+          }[failed] || "native-typing-cancelled",
+        ),
+      );
     }
   }
   function current(row) {
@@ -99,7 +166,7 @@ function createLoginKeyboard(signal, onEscape) {
       now() < row.until &&
       guarded(row.guard) &&
       location.href === row.url &&
-      document.activeElement === row.element &&
+      deepActiveElement(document) === row.element &&
       row.element.isConnected &&
       !row.element.disabled &&
       !row.element.readOnly &&
@@ -161,7 +228,7 @@ function createLoginKeyboard(signal, onEscape) {
       if (
         !row.armed ||
         !current(row) ||
-        event.target !== row.element ||
+        composedTarget(event) !== row.element ||
         event.ctrlKey ||
         event.altKey ||
         event.metaKey ||
@@ -169,7 +236,8 @@ function createLoginKeyboard(signal, onEscape) {
           !["Unidentified", "Process"].includes(event.key))
       ) {
         if (row.armed) event.preventDefault();
-        finish(false);
+        // A trusted key native typing did not request is the user's.
+        finish(false, !row.armed && event.isTrusted ? "user" : undefined);
         return;
       }
       row.down = true;
@@ -182,7 +250,7 @@ function createLoginKeyboard(signal, onEscape) {
       if (stray && event.isTrusted && event.inputType === "insertText") {
         const held = stray;
         stray = null;
-        if (event.target === held.element && now() < held.until) {
+        if (composedTarget(event) === held.element && now() < held.until) {
           event.preventDefault();
           return;
         }
@@ -193,7 +261,7 @@ function createLoginKeyboard(signal, onEscape) {
         !row.armed ||
         !event.isTrusted ||
         !current(row) ||
-        event.target !== row.element ||
+        composedTarget(event) !== row.element ||
         event.inputType !== "insertText" ||
         !event.data ||
         row.text.slice(row.position, row.position + event.data.length) !==
@@ -214,7 +282,7 @@ function createLoginKeyboard(signal, onEscape) {
       if (
         !row.armed ||
         !event.isTrusted ||
-        event.target !== row.element ||
+        composedTarget(event) !== row.element ||
         !guarded(row.guard) ||
         event.inputType !== "insertText" ||
         length <= row.position ||
@@ -239,7 +307,7 @@ function createLoginKeyboard(signal, onEscape) {
     "keyup",
     (event) => {
       const row = active;
-      if (!row || !row.down || event.target !== row.element) return;
+      if (!row || !row.down || composedTarget(event) !== row.element) return;
       row.down = false;
       if (
         !row.armed &&
@@ -250,11 +318,12 @@ function createLoginKeyboard(signal, onEscape) {
     },
     true,
   );
-  document.addEventListener("pointerdown", () => finish(false), true);
+  document.addEventListener("pointerdown", () => finish(false, "user"), true);
   document.addEventListener(
     "focusin",
     (event) => {
-      if (active && event.target !== active.element) finish(false);
+      if (active && composedTarget(event) !== active.element)
+        finish(false, "focus");
     },
     true,
   );
@@ -278,10 +347,27 @@ function createLoginKeyboard(signal, onEscape) {
           text.length > 4096 ||
           /[\x00-\x1f\x7f]/.test(text) ||
           !guarded(guard) ||
-          until <= now() ||
-          ![document.body, element, lastField].includes(document.activeElement)
+          until <= now()
         ) {
           reject(new Error("native-typing-target"));
+          return;
+        }
+        // Focus moves to the field from nothing, the field itself, the field
+        // this attempt filled last, or an element that holds no text entry
+        // (a cookie banner, a button, a dialog container). Never from another
+        // text entry or a frame, where the user may be typing.
+        const focused = deepActiveElement(document);
+        if (
+          focused &&
+          ![
+            document.body,
+            document.documentElement,
+            element,
+            lastField,
+          ].includes(focused) &&
+          holdsTextEntry(focused)
+        ) {
+          reject(new Error("native-typing-focus"));
           return;
         }
         // `receipt` is the host's last `probe` index: -1 until the start is

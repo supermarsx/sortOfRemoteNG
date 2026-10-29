@@ -167,6 +167,16 @@ const checkpoints = [
   "login-challenge-timed-out",
   "consent-address-mismatch",
   "consent-expired",
+  // A page adapter stop with its fixed cause (NativeLoginRejection).
+  "login-stopped-verification-required",
+  "login-stopped-credentials-rejected",
+  "login-stopped-focus-unavailable",
+  "login-stopped-user-input",
+  "login-stopped-page-changed",
+  "login-stopped-field-not-empty",
+  "login-stopped-submit-unavailable",
+  "login-stopped-step-not-found",
+  "login-stopped-expired",
 ];
 const events: Record<string, [LogCategory, string]> = {
   requested: ["navigation", "Navigation requested"],

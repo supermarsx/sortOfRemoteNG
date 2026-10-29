@@ -101,11 +101,36 @@ function findInRoot(root, ov, options) {
   return { user: user, pw: pw, form: pw.form || null, submit: submit };
 }
 
+// OPEN shadow roots of a document, nested ones included, for login forms
+// built from web components. Bounded in roots and elements visited; closed
+// roots are unreachable and are never forced open.
+function openShadowRoots(doc) {
+  var roots = [];
+  var queue = [doc];
+  var visited = 0;
+  while (queue.length && roots.length < 32 && visited < 20000) {
+    var all = queue.shift().querySelectorAll("*");
+    for (var i = 0; i < all.length && visited < 20000; i++, visited++) {
+      var root = all[i].shadowRoot;
+      if (root && roots.length < 32) {
+        roots.push(root);
+        queue.push(root);
+      }
+    }
+  }
+  return roots;
+}
+
 // Walk the main document plus SAME-ORIGIN iframes (cross-origin frames are
-// inaccessible — documented R1 limitation).
+// inaccessible — documented R1 limitation), then open shadow roots.
 function findLoginForm(ov, options) {
   var hit = findInRoot(document, ov, options);
   if (hit) return hit;
+  var shadows = openShadowRoots(document);
+  for (var s = 0; s < shadows.length; s++) {
+    var shit = findInRoot(shadows[s], ov, options);
+    if (shit) return shit;
+  }
   var frames = document.querySelectorAll("iframe, frame");
   for (var i = 0; i < frames.length; i++) {
     var doc = null;

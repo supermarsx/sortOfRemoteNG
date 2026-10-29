@@ -221,3 +221,64 @@ for (const id of ["windmill", "windmill-self-hosted"]) {
       assert.equal(p.typed.length, 0);
     });
 }
+
+// Self-hosted releases up to v1.793 render #email/#password (with
+// autocomplete email before v1.79x). The reviewed plan pinned only the
+// current `${uid}-email` layout, so detection never found these forms and the
+// attempt stopped without a word. Both layouts sign in, open or behind the
+// "Log in without third-party" entry point.
+{
+  const plan = JSON.parse(
+    readFileSync(
+      "src/data/loginSteps/self-hosted/windmill-self-hosted.json",
+      "utf8",
+    ),
+  );
+  const origin = "https://windmill.example.test:8443";
+  const configuration = () => ({
+    ...loginSteps(plan.loginSteps, { connection: origin, origins: [] }),
+    preparation: "windmill-password-form",
+  });
+  const closed = readFileSync(
+    "tests/fixtures/logins/windmill-self-hosted/fixture.closed.html",
+    "utf8",
+  );
+  for (const layout of ["legacy", "v1793"]) {
+    const fixture = readFileSync(
+      `tests/fixtures/logins/windmill-self-hosted/fixture.${layout}.html`,
+      "utf8",
+    );
+    for (const hidden of [false, true])
+      test(`windmill-self-hosted ${layout} layout signs in${hidden ? " behind the password entry point" : ""}`, async (t) => {
+        const h = host();
+        const p = page(
+          t,
+          h,
+          `${origin}/user/login`,
+          hidden ? closed : fixture,
+          configuration(),
+        );
+        let opens = 0,
+          entries = 0;
+        const arm = () =>
+          p.$("#password").addEventListener("keyup", (event) => {
+            if (event.key === "Enter") entries++;
+          });
+        if (hidden)
+          p.$("#password-entry").onclick = () => {
+            opens++;
+            assert.ok(!h.requests.some(([, stage]) => stage === "form"));
+            p.doc.body.innerHTML = fixture;
+            arm();
+          };
+        else arm();
+        await h.advance(3000);
+        assert.equal(opens, hidden ? 1 : 0);
+        assert.equal(p.$("#email").value, USER);
+        assert.equal(p.$("#password").value, SECRET);
+        assert.equal(entries, 1);
+        assert.equal(p.reason(), "completed");
+        assert.deepEqual(h.errors, []);
+      });
+  }
+}

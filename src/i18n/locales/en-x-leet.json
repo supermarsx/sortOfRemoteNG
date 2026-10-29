@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} 4c71v3 1061n5",
     "loginDetails": "4u70m471c 1061n d374115",
     "loginElapsed": "314p53d: {{seconds}} 5",
-    "loginCompletionNote": "5u8m1771n6 4 1061n d035 n07 c0nf1rm 7h47 7h3 w385173 4cc3p73d 17. Ch3ck 7h3 w385173 f0r v3r1f1c4710n 0r 4ppr0v41 pr0mp75."
+    "loginCompletionNote": "5u8m1771n6 4 1061n d035 n07 c0nf1rm 7h47 7h3 w385173 4cc3p73d 17. Ch3ck 7h3 w385173 f0r v3r1f1c4710n 0r 4ppr0v41 pr0mp75.",
+    "loginReasons": {
+      "verification-required": "7h3 w385173 45k3d f0r 4 v3r1f1c4710n ch3ck, 5uch 45 4 C4P7CH4, 7h47 4u70m471c 1061n n3v3r 4n5w3r5. C0mp1373 7h3 ch3ck 0n 7h3 p463, 7h3n f1n15h 516n1n6 1n.",
+      "credentials-rejected": "7h3 w385173 5h0w3d 4n 3rr0r 4f73r 7h3 1061n w45 5u8m1773d, f0r 3x4mp13 4 wr0n6 3m411 0r p455w0rd. R34d 7h3 m355463 0n 7h3 p463 4nd ch3ck 7h3 54v3d cr3d3n71415 83f0r3 r37ry1n6.",
+      "focus-unavailable": "4n07h3r 73x7 f131d k3p7 7h3 k3y804rd f0cu5, 0r 7h3 f0cu5 m0v3d 4w4y wh113 7yp1n6, 50 4u70m471c 1061n 570pp3d 70 4v01d 3n73r1n6 cr3d3n71415 1n 7h3 wr0n6 p14c3. C1053 4ny d14106 0v3r 7h3 1061n f0rm, 7h3n r37ry.",
+      "user-input": "4u70m471c 1061n 570pp3d 83c4u53 y0u 7yp3d 0r c11ck3d 1n 7h3 p463 wh113 17 w45 runn1n6. Y0u c4n f1n15h 516n1n6 1n m4nu411y.",
+      "page-changed": "7h3 1061n p463 ch4n63d wh113 4u70m471c 1061n w45 runn1n6 (175 f0rm, d3571n4710n 0r 4ddr355), 50 17 570pp3d. R37ry 0nc3 7h3 p463 h45 537713d.",
+      "field-not-empty": "4 1061n f131d 41r34dy c0n741n3d 4 v41u3, 50 4u70m471c 1061n 13f7 17 un70uch3d. C134r 7h3 f131d 4nd r37ry, 0r f1n15h 516n1n6 1n m4nu411y.",
+      "submit-unavailable": "7h3 sign-in 8u770n n3v3r 83c4m3 4v4114813, 50 n07h1n6 w45 5u8m1773d 4nd 7h3 3n73r3d cr3d3n71415 w3r3 c134r3d. Ch3ck 7h3 p463 f0r m1551n6 f131d5 0r pr0mp75, 7h3n r37ry.",
+      "step-not-found": "7h3 n3x7 sign-in 573p, 5uch 45 7h3 p455w0rd p463 4f73r 7h3 3m411, d1d n07 4pp34r 1n 71m3. Ch3ck 7h3 p463 f0r 4 m355463 0r 4n07h3r sign-in 0p710n, 7h3n r37ry.",
+      "expired": "4u70m471c 1061n r4n 0u7 0f 71m3 f0r 7h15 573p 83f0r3 17 c0u1d f1n15h. R37ry wh3n 7h3 p463 15 r34dy."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

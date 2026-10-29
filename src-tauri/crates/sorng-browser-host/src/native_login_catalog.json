@@ -645,8 +645,8 @@
             "kind": "form",
             "paths": ["/user/login"],
             "selectors": {
-              "username": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
-              "password": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]"
+              "username": "input[type=\"email\"]:is([id$=\"-email\"][autocomplete=\"username\"],#email:is([autocomplete=\"email\"],[autocomplete=\"username\"]))",
+              "password": "input[type=\"password\"][autocomplete=\"current-password\"]:is([id$=\"-password\"],#password)"
             }
           },
           {

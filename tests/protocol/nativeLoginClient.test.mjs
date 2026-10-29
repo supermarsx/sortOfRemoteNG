@@ -28,6 +28,10 @@ const selectors = {
   submit: "#login",
 };
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A rejection signal: the bare one or one with its fixed cause.
+const rejected = (signal) =>
+  typeof signal === "string" &&
+  (signal === "form-rejected" || signal.startsWith("form-rejected|"));
 
 test("Brevo native modular form handles reviewed handler-only controls without GET or eye toggle", async (t) => {
   const html =
@@ -1510,7 +1514,7 @@ for (const stage of ["identifier", "password"]) {
       await f.advance(400);
       assert.equal(clicks, 1);
       assert.equal(f.signals.filter((value) => value === stage).length, 1);
-      assert.equal(f.signals.includes("form-rejected"), false);
+      assert.equal(f.signals.some(rejected), false);
     });
   }
 }
@@ -1835,7 +1839,13 @@ for (const change of [
       change === "manual-edit" ? "manual-value" : "",
     );
     assert.equal(f.submits(), 0);
-    assert.equal(f.signals.at(-1), "form-rejected");
+    // A fixed cause names why the attempt stopped.
+    assert.equal(
+      f.signals.at(-1),
+      change === "expiry"
+        ? "form-rejected|expired"
+        : "form-rejected|page-changed",
+    );
   });
 }
 
@@ -2325,7 +2335,7 @@ function loginDocument(t, clock, options = {}) {
   const signals = [];
   const signal = (event) => {
     signals.push(event);
-    if (event === "form-completed" || event === "form-rejected") return;
+    if (event === "form-completed" || rejected(event)) return;
     clock.host(() => {
       if (closed) return;
       if (event.startsWith("type|")) return typing(event);
@@ -2454,9 +2464,9 @@ test("an attempt the user ended while the document was loading asks for nothing 
   await clock.advance(1000);
   assert.deepEqual(f.signals, []);
   f.press("username", "x");
-  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.signals, ["form-rejected|user-input"]);
   await clock.advance(5000);
-  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.signals, ["form-rejected|user-input"]);
   assert.deepEqual(f.host.deliveries, []);
   assert.equal(f.field("username").value, "x");
 });
@@ -2515,7 +2525,7 @@ test("a key the host holds for 10 s under manual entry is resumed, not timed out
   f.host.manual = true;
   await clock.advance(10000);
   assert.equal(f.host.keys.length, typed);
-  assert.equal(f.signals.includes("form-rejected"), false);
+  assert.equal(f.signals.some(rejected), false);
   f.host.manual = false;
   await loggedIn(f, 3000);
 });
@@ -2537,7 +2547,7 @@ test("a credential that arrives after a held request keeps its whole validity fo
   // 36 s after the request, 16 s after the credential was delivered.
   f.host.manual = true;
   await clock.advance(16000);
-  assert.equal(f.signals.includes("form-rejected"), false);
+  assert.equal(f.signals.some(rejected), false);
   f.host.manual = false;
   await loggedIn(f, 3000);
 });
@@ -2548,7 +2558,11 @@ test("a stage request the host abandons ends the attempt at its own bound withou
   await clock.advance(34000);
   assert.deepEqual(f.signals, ["form-prepare", "form"]);
   await clock.advance(2000);
-  assert.deepEqual(f.signals, ["form-prepare", "form", "form-rejected"]);
+  assert.deepEqual(f.signals, [
+    "form-prepare",
+    "form",
+    "form-rejected|expired",
+  ]);
   assert.equal(
     f.deliver(
       f.origin,
@@ -2574,7 +2588,11 @@ test("a host cancel in the middle of the password erases everything typed and no
   });
   await clock.advance(5000);
   assert.equal(f.host.keys.length, 16 + 5);
-  assert.equal(f.signals.at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(
+    f.signals.at(-1),
+    "form-rejected|page-changed",
+    JSON.stringify(f.signals),
+  );
   assert.equal(f.field("username").value, "");
   assert.equal(f.field("password").value, "");
   assert.equal(f.submits(), 0);
@@ -2649,7 +2667,11 @@ test("a value the user put in the field is never erased, even when it is a prefi
   const prefix = f.values.username.slice(0, 2);
   f.paste("username", prefix);
   await clock.advance(1000);
-  assert.equal(f.signals.at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(
+    f.signals.at(-1),
+    "form-rejected|user-input",
+    JSON.stringify(f.signals),
+  );
   assert.equal(f.field("username").value, prefix);
   assert.equal(f.field("password").value, "");
   assert.equal(f.submits(), 0);
@@ -2666,7 +2688,7 @@ test("typing the host stops before its first key is reported, and only the next 
     "form",
     "type|start|form|username|0",
     "type|cancel|form|username|0",
-    "form-rejected",
+    "form-rejected|page-changed",
   ]);
   assert.equal(budget.rearmed, true);
   // The same document asks for nothing more, so nothing can be typed twice.
@@ -2681,7 +2703,7 @@ test("typing the host stops before its first key is reported, and only the next 
   // Re-armed once: a third document of this attempt is given nothing.
   const third = loginDocument(t, clock, { budget });
   await clock.advance(40000);
-  assert.deepEqual(third.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(third.signals, ["form-prepare", "form-rejected|expired"]);
   assert.deepEqual(third.host.keys, []);
   assert.equal(third.submits(), 0);
 });
@@ -2867,9 +2889,9 @@ test("an event that names the bound address as the one left ends the attempt, ev
     );
   });
   await clock.advance(600);
-  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected|page-changed"]);
   await clock.advance(6000);
-  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected|page-changed"]);
   assert.deepEqual(f.host.keys, []);
 });
 
@@ -2883,9 +2905,9 @@ test("a popstate that follows a move to another address ends the attempt at once
     f.w.dispatchEvent(new f.w.PopStateEvent("popstate"));
   });
   await clock.advance(600);
-  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected|page-changed"]);
   await clock.advance(6000);
-  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected|page-changed"]);
   assert.deepEqual(f.host.keys, []);
 });
 
@@ -2895,26 +2917,31 @@ const afterFound = [
     "while the prepare grant is held",
     { holdStage: { "form-prepare": 5000 } },
     500,
-    ["form-prepare", "form-rejected"],
+    ["form-prepare", "form-rejected|page-changed"],
   ],
   [
     "while the saved fill delay runs",
     { saved: { fillDelayMs: 3000 } },
     500,
-    ["form-prepare", "form-rejected"],
+    ["form-prepare", "form-rejected|page-changed"],
   ],
   [
     "while the credential grant is held",
     { holdStage: { form: 5000 } },
     500,
-    ["form-prepare", "form", "form-rejected"],
+    ["form-prepare", "form", "form-rejected|page-changed"],
   ],
-  ["during typing", {}, 300, ["form-prepare", "form", "form-rejected"]],
+  [
+    "during typing",
+    {},
+    300,
+    ["form-prepare", "form", "form-rejected|page-changed"],
+  ],
   [
     "while the submit grant is held",
     { holdStage: { "form-submit": 5000 } },
     3000,
-    ["form-prepare", "form", "form-submit", "form-rejected"],
+    ["form-prepare", "form", "form-submit", "form-rejected|page-changed"],
   ],
 ];
 for (const kind of ["hash", "history"]) {
@@ -2950,7 +2977,7 @@ test("a page that rewrites its address forever without showing a form ends at th
   // The window closed with the attempt: a form that shows up now is ignored.
   render(f);
   await clock.advance(5000);
-  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.ok(f.signals.every(rejected));
   assert.deepEqual(f.host.deliveries, []);
   assert.deepEqual(f.host.keys, []);
 });
@@ -2966,7 +2993,11 @@ test("a page that keeps rewriting its address after its form is found is not sig
   pageAt(f, 30, rewrite);
   pageAt(f, 300, () => render(f));
   await clock.advance(10000);
-  assert.equal(stages(f).at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(
+    stages(f).at(-1),
+    "form-rejected|page-changed",
+    JSON.stringify(f.signals),
+  );
   assert.equal(f.signals.includes("form-completed"), false);
   assert.equal(f.field("username").value, "");
   assert.equal(f.field("password").value, "");
@@ -3030,7 +3061,7 @@ test("a page that loads late and never shows a form is given up on, whatever it 
   render(f);
   routes.hash(f, "#!/third");
   await clock.advance(10000);
-  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.ok(f.signals.every(rejected));
   assert.deepEqual(f.host.deliveries, []);
   assert.deepEqual(f.host.keys, []);
 });
@@ -3082,7 +3113,7 @@ test("after a load end at 10 s a form that appears 8.5 s later is not signed in,
   assert.deepEqual(f.signals, []);
   await clock.advance(5000);
   assert.ok(f.signals.length > 0);
-  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.ok(f.signals.every(rejected));
   assert.deepEqual(f.host.deliveries, []);
   assert.equal(f.field("username").value, "");
 });
@@ -3108,7 +3139,7 @@ test("a document that never finishes loading is given up on at the load bound, w
   await clock.advance(59000);
   assert.deepEqual(f.signals, []);
   await clock.advance(2000);
-  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.signals, ["form-rejected|expired"]);
   assert.deepEqual(f.host.deliveries, []);
   assert.deepEqual(f.host.keys, []);
 });
@@ -3121,9 +3152,9 @@ test("a user who types during a ten-second load ends the attempt: nothing is ask
   await clock.advance(9000);
   assert.deepEqual(f.signals, []);
   f.press("username", "x");
-  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.signals, ["form-rejected|user-input"]);
   await clock.advance(20000);
-  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.signals, ["form-rejected|user-input"]);
   assert.deepEqual(f.host.deliveries, []);
   assert.equal(f.field("username").value, "x");
   assert.equal(f.field("password").value, "");
@@ -3142,7 +3173,7 @@ test("a user who types elsewhere in the page while the form is still awaited aft
   f.press("search", "q");
   await clock.advance(10000);
   assert.ok(f.signals.length > 0);
-  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.ok(f.signals.every(rejected));
   assert.deepEqual(f.host.deliveries, []);
   assert.equal(f.field("username").value, "");
   assert.equal(f.field("search").value, "q");
@@ -3186,10 +3217,12 @@ for (const [label, options, within] of [
     await clock.advance(within);
     const said = f.signals.length;
     assert.ok(
-      ["form-completed", "form-rejected"].includes(f.signals.at(-1)),
+      f.signals.at(-1) === "form-completed" || rejected(f.signals.at(-1)),
       JSON.stringify(f.signals),
     );
-    await clock.advance(300);
+    // A submitted login watches its own document for a refusal for at
+    // most 12 s; nothing else outlives the attempt.
+    await clock.advance(label === "a completed login" ? 12300 : 300);
     assert.equal(clock.pagePending(), 0);
     f.load();
     f.w.dispatchEvent(new f.w.PopStateEvent("popstate"));
@@ -3213,6 +3246,6 @@ test("a document that was reopened and is completing again asks for nothing once
   pageAt(f, 1000, () => f.load());
   await clock.advance(5000);
   assert.ok(f.signals.length > 0);
-  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.ok(f.signals.every(rejected));
   assert.deepEqual(f.host.deliveries, []);
 });

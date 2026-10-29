@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} connexions actives",
     "loginDetails": "Détails de la connexion automatique",
     "loginElapsed": "Temps écoulé : {{seconds}} s",
-    "loginCompletionNote": "L’envoi de la connexion ne confirme pas son acceptation par le site. Vérifiez si le site demande une vérification ou une approbation."
+    "loginCompletionNote": "L’envoi de la connexion ne confirme pas son acceptation par le site. Vérifiez si le site demande une vérification ou une approbation.",
+    "loginReasons": {
+      "verification-required": "Le site web a demandé une vérification, par exemple un CAPTCHA, à laquelle la connexion automatique ne répond jamais. Effectuez la vérification sur la page, puis terminez la connexion.",
+      "credentials-rejected": "Le site web a affiché une erreur après l'envoi de la connexion, par exemple une adresse e-mail ou un mot de passe incorrect. Lisez le message sur la page et vérifiez les identifiants enregistrés avant de réessayer.",
+      "focus-unavailable": "Un autre champ de texte avait le focus du clavier, ou le focus a changé pendant la saisie : la connexion automatique s'est arrêtée pour ne pas saisir les identifiants au mauvais endroit. Fermez toute boîte de dialogue au-dessus du formulaire de connexion, puis réessayez.",
+      "user-input": "La connexion automatique s'est arrêtée parce que vous avez saisi du texte ou cliqué dans la page pendant son exécution. Vous pouvez terminer la connexion manuellement.",
+      "page-changed": "La page de connexion a changé pendant la connexion automatique (son formulaire, sa destination ou son adresse) : celle-ci s'est donc arrêtée. Réessayez une fois la page stabilisée.",
+      "field-not-empty": "Un champ de connexion contenait déjà une valeur : la connexion automatique ne l'a pas modifié. Videz le champ et réessayez, ou terminez la connexion manuellement.",
+      "submit-unavailable": "Le bouton de connexion n'est jamais devenu disponible : rien n'a été envoyé et les identifiants saisis ont été effacés. Vérifiez si la page signale des champs manquants ou des invites, puis réessayez.",
+      "step-not-found": "L'étape de connexion suivante, par exemple la page du mot de passe après l'adresse e-mail, n'est pas apparue à temps. Vérifiez si la page affiche un message ou une autre option de connexion, puis réessayez.",
+      "expired": "La connexion automatique a dépassé le temps imparti pour cette étape avant d'avoir pu se terminer. Réessayez lorsque la page est prête."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

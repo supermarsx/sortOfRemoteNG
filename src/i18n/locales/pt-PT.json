@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} inícios de sessão ativos",
     "loginDetails": "Detalhes do início de sessão automático",
     "loginElapsed": "Tempo decorrido: {{seconds}} s",
-    "loginCompletionNote": "Enviar o início de sessão não confirma que o site o aceitou. Verifique se o site pede verificação ou aprovação."
+    "loginCompletionNote": "Enviar o início de sessão não confirma que o site o aceitou. Verifique se o site pede verificação ou aprovação.",
+    "loginReasons": {
+      "verification-required": "O site pediu uma verificação, como um CAPTCHA, à qual o início de sessão automático nunca responde. Conclua a verificação na página e, em seguida, termine o início de sessão.",
+      "credentials-rejected": "O site mostrou um erro depois de o início de sessão ser enviado, por exemplo um e-mail ou uma palavra-passe incorretos. Leia a mensagem na página e verifique as credenciais guardadas antes de tentar novamente.",
+      "focus-unavailable": "Outro campo de texto manteve o foco do teclado, ou o foco mudou durante a escrita, pelo que o início de sessão automático parou para não introduzir as credenciais no sítio errado. Feche qualquer caixa de diálogo sobre o formulário de início de sessão e tente novamente.",
+      "user-input": "O início de sessão automático parou porque escreveu ou clicou na página enquanto estava em execução. Pode terminar o início de sessão manualmente.",
+      "page-changed": "A página de início de sessão mudou enquanto o início de sessão automático decorria (o formulário, o destino ou o endereço), pelo que parou. Tente novamente quando a página estiver estável.",
+      "field-not-empty": "Um campo de início de sessão já tinha um valor, pelo que o início de sessão automático não o alterou. Limpe o campo e tente novamente, ou termine o início de sessão manualmente.",
+      "submit-unavailable": "O botão de início de sessão nunca ficou disponível, pelo que nada foi enviado e as credenciais introduzidas foram apagadas. Verifique se a página indica campos em falta ou avisos e tente novamente.",
+      "step-not-found": "O passo seguinte do início de sessão, como a página da palavra-passe após o e-mail, não apareceu a tempo. Verifique se a página mostra uma mensagem ou outra opção de início de sessão e tente novamente.",
+      "expired": "O início de sessão automático esgotou o tempo deste passo antes de o conseguir concluir. Tente novamente quando a página estiver pronta."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

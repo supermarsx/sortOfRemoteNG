@@ -246,7 +246,7 @@ for (const [label, peer] of [
     assert.equal(f.key("username", 0), true);
     f.addFrame(peer);
     f.deliver.nativeTyping("probe", 1, f.deadline, false, "type|form|username");
-    await until(() => f.signals.includes("form-rejected"), () => JSON.stringify(f.signals));
+    await until(() => f.signals.some((s) => s.startsWith("form-rejected")), () => JSON.stringify(f.signals));
     assert.deepEqual(f.keys, [["username", 0]]);
     assert.equal(f.signals.filter(signal => signal.startsWith("type|key|")).length, 1);
     assert.equal(f.signals.some(signal => signal.startsWith("type|start|form|password|")), false);

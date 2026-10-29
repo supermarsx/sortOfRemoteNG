@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} active logins",
     "loginDetails": "Automatic login details",
     "loginElapsed": "Elapsed: {{seconds}} s",
-    "loginCompletionNote": "Submitting a login does not confirm that the website accepted it. Check the website for verification or approval prompts."
+    "loginCompletionNote": "Submitting a login does not confirm that the website accepted it. Check the website for verification or approval prompts.",
+    "loginReasons": {
+      "verification-required": "The website asked for a verification check, such as a CAPTCHA, that automatic login never answers. Complete the check on the page, then finish signing in.",
+      "credentials-rejected": "The website showed an error after the login was submitted, for example a wrong email or password. Read the message on the page and check the saved credentials before retrying.",
+      "focus-unavailable": "Another text field kept the keyboard focus, or the focus moved away while typing, so automatic login stopped to avoid entering credentials in the wrong place. Close any dialog over the login form, then retry.",
+      "user-input": "Automatic login stopped because you typed or clicked in the page while it was running. You can finish signing in manually.",
+      "page-changed": "The login page changed while automatic login was running (its form, destination or address), so it stopped. Retry once the page has settled.",
+      "field-not-empty": "A login field already contained a value, so automatic login left it untouched. Clear the field and retry, or finish signing in manually.",
+      "submit-unavailable": "The sign-in button never became available, so nothing was submitted and the entered credentials were cleared. Check the page for missing fields or prompts, then retry.",
+      "step-not-found": "The next sign-in step, such as the password page after the email, did not appear in time. Check the page for a message or another sign-in option, then retry.",
+      "expired": "Automatic login ran out of time for this step before it could finish. Retry when the page is ready."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

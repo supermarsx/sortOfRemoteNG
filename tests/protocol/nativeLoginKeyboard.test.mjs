@@ -382,7 +382,11 @@ for (const name of [
     f.hooks.beforeKey = (_field, index) => {
       if (index === 2) unsafeGoogleFrames[name](f.doc, frame, child);
     };
-    for (let i = 0; i < 60 && !f.signals.includes("form-rejected"); i++)
+    for (
+      let i = 0;
+      i < 60 && !f.signals.some((s) => s.startsWith("form-rejected"));
+      i++
+    )
       await delay(50);
     assert.equal(f.signals.at(-1), "form-rejected");
     assert.ok(f.keys.length > 0 && f.keys.length <= 3);
@@ -397,7 +401,11 @@ test("Google rechecks opaque cover after the final receipt and before Next", asy
     if (field === "username" && count === f.values.username.length)
       f.doc.body.style.backgroundColor = "transparent";
   };
-  for (let i = 0; i < 60 && !f.signals.includes("form-rejected"); i++)
+  for (
+    let i = 0;
+    i < 60 && !f.signals.some((s) => s.startsWith("form-rejected"));
+    i++
+  )
     await delay(50);
   assert.equal(f.signals.at(-1), "form-rejected");
   assert.equal(f.keys.length, f.values.username.length);
@@ -604,7 +612,12 @@ for (const change of [
     );
     assert.equal(f.submits(), 0);
     if (change !== "wrong-receipt")
-      assert.equal(f.signals.at(-1), "form-rejected");
+      assert.equal(
+        f.signals.at(-1),
+        change === "expired-grant"
+          ? "form-rejected|expired"
+          : "form-rejected|page-changed",
+      );
     assert.deepEqual(f.errors, []);
     if (change === "manual-edit")
       assert.equal(f.doc.getElementById("username").value, "manual-user");
@@ -961,7 +974,7 @@ test("a key that arrives while the start waits is the user's: typing stops witho
   const f = keyboardFixture(t, "ab");
   assert.equal(f.wait(200), true);
   assert.equal(f.press("x"), true);
-  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(await f.settled(), "native-typing-user");
   f.fire(200);
   assert.deepEqual(f.signals, [START, CANCEL]);
   assert.equal(f.input.value, "x");
@@ -1084,7 +1097,12 @@ for (const [name, drive] of [
     f.probe(0);
     f.key(f.text[0], "Unidentified");
     drive(f);
-    assert.equal(await f.settled(), "native-typing-cancelled");
+    // Focus moving away and the user's own Escape name their kind.
+    assert.equal(
+      await f.settled(),
+      { blur: "native-typing-focus", Escape: "native-typing-user" }[name] ??
+        "native-typing-cancelled",
+    );
     assert.deepEqual(f.keys(), [KEY(0)]);
     assert.ok(f.signals.includes(CANCEL));
   });
@@ -1129,7 +1147,7 @@ test("Escape while a field is typed cancels typing and erases the typed text wit
   const event = f.escape();
   assert.equal(event.prevented, true);
   assert.equal(event.stopped, true);
-  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(await f.settled(), "native-typing-user");
   assert.equal(f.signals.at(-1), CANCEL);
   assert.equal(f.input.value, "");
   assert.deepEqual(f.observed, [
@@ -1156,7 +1174,7 @@ test("Escape between keys erases the field and holds back nothing the user types
   // The DOM event arrived; its receipt has not, so no key is requested.
   const event = f.escape();
   assert.equal(event.prevented, true);
-  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(await f.settled(), "native-typing-user");
   assert.equal(f.input.value, "");
   assert.equal(f.press("x"), true);
   assert.equal(f.input.value, "x");
@@ -1182,7 +1200,7 @@ test("Escape before the first key stops typing and leaves the empty field untouc
   assert.equal(f.wait(200), true);
   const event = f.escape();
   assert.equal(event.prevented, true);
-  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(await f.settled(), "native-typing-user");
   assert.equal(f.input.value, "");
   assert.deepEqual(f.observed, []);
 });
@@ -1194,7 +1212,7 @@ test("Escape never erases text the page or user put in the field", async (t) => 
   // A page script rewrote the field; the next check would fail typing anyway.
   f.input.value = "page";
   f.escape();
-  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(await f.settled(), "native-typing-user");
   assert.equal(f.input.value, "page");
   assert.deepEqual(f.observed, []);
 });
@@ -1218,8 +1236,14 @@ test("an untrusted or modified Escape is not the user's take-back", async (t) =>
     assert.equal(f.probe(0), true);
     assert.equal(f.key("a"), true);
     f.escape(overrides);
-    // Any other key still stops typing, as before, without erasing.
-    assert.equal(await f.settled(), "native-typing-cancelled");
+    // Any other key still stops typing, as before, without erasing. A
+    // trusted key is the user's; an untrusted one is not.
+    assert.equal(
+      await f.settled(),
+      overrides.isTrusted === false
+        ? "native-typing-cancelled"
+        : "native-typing-user",
+    );
     assert.equal(f.input.value, "a");
     assert.equal(escapes, 0);
   }
@@ -1267,7 +1291,7 @@ test("Escape outside an active fill keeps its normal page behaviour", async (t) 
   const elsewhere = g.escape({ target: other });
   assert.equal(elsewhere.prevented, undefined);
   assert.equal(elsewhere.stopped, undefined);
-  assert.equal(await g.settled(), "native-typing-cancelled");
+  assert.equal(await g.settled(), "native-typing-user");
   assert.equal(escapes, 0);
 });
 
@@ -1289,7 +1313,11 @@ test("Escape while the password is typed erases both fields, fires their events 
     event = f.escape();
     return false;
   };
-  for (let i = 0; i < 100 && !f.signals.includes("form-rejected"); i++)
+  for (
+    let i = 0;
+    i < 100 && !f.signals.some((s) => s.startsWith("form-rejected"));
+    i++
+  )
     await delay(50);
   assert.ok(event, JSON.stringify(f.signals));
   assert.equal(event.prevented, true);
@@ -1297,7 +1325,7 @@ test("Escape while the password is typed erases both fields, fires their events 
   assert.equal(f.doc.getElementById("username").value, "");
   assert.equal(f.doc.getElementById("password").value, "");
   assert.equal(f.submits(), 0);
-  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.equal(f.signals.at(-1), "form-rejected|user-input");
   assert.ok(f.signals.includes("type|cancel|form|password|0"));
   for (const id of ["username", "password"])
     assert.deepEqual(
@@ -1322,7 +1350,11 @@ test("Escape after the username is typed and before the password starts erases t
     event = f.escape();
     return false;
   };
-  for (let i = 0; i < 100 && !f.signals.includes("form-rejected"); i++)
+  for (
+    let i = 0;
+    i < 100 && !f.signals.some((s) => s.startsWith("form-rejected"));
+    i++
+  )
     await delay(50);
   assert.ok(event, JSON.stringify(f.signals));
   assert.equal(event.prevented, true);
@@ -1330,7 +1362,7 @@ test("Escape after the username is typed and before the password starts erases t
   assert.equal(f.doc.getElementById("username").value, "");
   assert.equal(f.doc.getElementById("password").value, "");
   assert.equal(f.submits(), 0);
-  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.equal(f.signals.at(-1), "form-rejected|user-input");
   assert.deepEqual(f.errors, []);
 });
 
@@ -1345,7 +1377,11 @@ test("Escape in the typed password while the attempt waits to submit ends it and
       event = f.escape(password);
     }, 0);
   };
-  for (let i = 0; i < 100 && !f.signals.includes("form-rejected"); i++)
+  for (
+    let i = 0;
+    i < 100 && !f.signals.some((s) => s.startsWith("form-rejected"));
+    i++
+  )
     await delay(50);
   assert.ok(event, JSON.stringify(f.signals));
   assert.equal(event.prevented, true);
@@ -1354,6 +1390,6 @@ test("Escape in the typed password while the attempt waits to submit ends it and
   assert.equal(f.doc.getElementById("username").value, "");
   assert.equal(password.value, "");
   assert.equal(f.submits(), 0);
-  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.equal(f.signals.at(-1), "form-rejected|user-input");
   assert.deepEqual(f.errors, []);
 });

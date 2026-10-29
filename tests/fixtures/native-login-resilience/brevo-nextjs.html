@@ -1,0 +1,51 @@
+<!--
+  Synthetic structure of the public https://login.brevo.com/ page (Next.js
+  app router, reviewed 2026-10-29): React-controlled email/password inputs in
+  a form with no method or action, a handler-only type="button" submit, an
+  eye toggle, invisible reCAPTCHA v3 and a OneTrust cookie banner that holds
+  keyboard focus when the page's slow load ends. Controls and their ancestors
+  only: no vendor script, style, copy, account or network.
+-->
+<div
+  id="onetrust-banner-sdk"
+  tabindex="0"
+  role="region"
+  aria-label="Cookie banner"
+>
+  <p>Cookie notice</p>
+  <button id="onetrust-accept-btn-handler" type="button">Accept</button>
+</div>
+<div class="LoginForm_form__block">
+  <div class="LoginForm_form__heading">Log in</div>
+  <div class="LoginForm_form__wrapper">
+    <form class="sib-form">
+      <div>
+        <label for="email">Email</label>
+        <input type="text" id="email" name="email" required value="" />
+      </div>
+      <div style="position: relative">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          required
+          value=""
+        />
+        <button
+          type="button"
+          data-testid="sib-button-testId"
+          aria-label="show password"
+          id="eyeIcon"
+        ></button>
+      </div>
+      <button type="button" data-testid="submit-button">Log in</button>
+    </form>
+  </div>
+</div>
+<iframe
+  title="reCAPTCHA"
+  src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=synthetic-site-key&amp;size=invisible"
+  width="256"
+  height="60"
+></iframe>

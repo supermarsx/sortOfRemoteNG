@@ -550,6 +550,20 @@ impl NativeDocumentHooks for LoginHooks {
             F::LoginFormDetected => (2, "login-form-detected"),
             F::LoginAdapterCompleted => (3, "login-adapter-completed"),
             F::LoginAdapterRejected => (4, "login-adapter-rejected"),
+            F::LoginAdapterStopped(cause) => {
+                use sorng_browser_host::native_features::NativeLoginRejection as R;
+                match cause {
+                    R::VerificationRequired => (45, "login-stopped-verification-required"),
+                    R::CredentialsRejected => (46, "login-stopped-credentials-rejected"),
+                    R::FocusUnavailable => (47, "login-stopped-focus-unavailable"),
+                    R::UserInput => (48, "login-stopped-user-input"),
+                    R::PageChanged => (49, "login-stopped-page-changed"),
+                    R::FieldNotEmpty => (50, "login-stopped-field-not-empty"),
+                    R::SubmitUnavailable => (51, "login-stopped-submit-unavailable"),
+                    R::StepNotFound => (52, "login-stopped-step-not-found"),
+                    R::Expired => (53, "login-stopped-expired"),
+                }
+            }
             F::LoginDelivery(delivery) => match delivery {
                 D::NativeNotDelivered => not_delivered,
                 D::NativeRejectedCurrent => (6, "native-rejected-current"),

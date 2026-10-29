@@ -16,6 +16,18 @@ export const loginActivityStages = [
   "stopped",
 ] as const;
 export type NativeLoginStage = (typeof loginActivityStages)[number];
+/** Fixed causes a page adapter names when it stops (NativeLoginRejection). */
+export const nativeLoginAdapterStopReasonCodes = [
+  "verification-required",
+  "credentials-rejected",
+  "focus-unavailable",
+  "user-input",
+  "page-changed",
+  "field-not-empty",
+  "submit-unavailable",
+  "step-not-found",
+  "expired",
+] as const;
 export const nativeLoginReasonCodes = [
   "current-context-rejected",
   "navigation-scope-rejected",
@@ -27,6 +39,7 @@ export const nativeLoginReasonCodes = [
   "attempt-stopped",
   "user-cancelled",
   "attempt-timeout",
+  ...nativeLoginAdapterStopReasonCodes,
 ] as const;
 export type NativeLoginReasonCode = (typeof nativeLoginReasonCodes)[number];
 export interface NativeLoginActivity {
@@ -122,12 +135,21 @@ export function useNativeLoginActivity(sessionIds: readonly string[]) {
           priorFailure &&
           prior.attemptId === event.attemptId &&
           prior.connectionId === event.connectionId;
-        const specific = (code?: NativeLoginReasonCode) =>
-          !!code && !["adapter-rejected", "attempt-stopped"].includes(code);
+        // A native cause outranks the page adapter's own stop cause, which
+        // outranks a causeless code. Within one failure chain a later, less
+        // specific report never hides an earlier, more specific one.
+        const rank = (code?: NativeLoginReasonCode) =>
+          !code || ["adapter-rejected", "attempt-stopped"].includes(code)
+            ? 0
+            : (nativeLoginAdapterStopReasonCodes as readonly string[]).includes(
+                  code,
+                )
+              ? 1
+              : 2;
         const reasonCode =
           sameFailureChain &&
-          specific(prior.reasonCode) &&
-          !specific(event.reasonCode)
+          rank(prior.reasonCode) > 0 &&
+          rank(prior.reasonCode) > rank(event.reasonCode)
             ? prior.reasonCode
             : event.reasonCode;
         const codeTypedAtMs =

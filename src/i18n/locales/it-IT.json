@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} accessi attivi",
     "loginDetails": "Dettagli dell’accesso automatico",
     "loginElapsed": "Tempo trascorso: {{seconds}} s",
-    "loginCompletionNote": "L’invio dell’accesso non conferma che il sito lo abbia accettato. Verificare se il sito richiede verifiche o approvazioni."
+    "loginCompletionNote": "L’invio dell’accesso non conferma che il sito lo abbia accettato. Verificare se il sito richiede verifiche o approvazioni.",
+    "loginReasons": {
+      "verification-required": "Il sito web ha richiesto una verifica, ad esempio un CAPTCHA, a cui l'accesso automatico non risponde mai. Completa la verifica nella pagina, quindi termina l'accesso.",
+      "credentials-rejected": "Il sito web ha mostrato un errore dopo l'invio dell'accesso, ad esempio un indirizzo email o una password errati. Leggi il messaggio nella pagina e controlla le credenziali salvate prima di riprovare.",
+      "focus-unavailable": "Un altro campo di testo aveva il focus della tastiera, oppure il focus è cambiato durante la digitazione, quindi l'accesso automatico si è interrotto per non inserire le credenziali nel posto sbagliato. Chiudi eventuali finestre di dialogo sopra il modulo di accesso, quindi riprova.",
+      "user-input": "L'accesso automatico si è interrotto perché hai digitato o fatto clic nella pagina mentre era in esecuzione. Puoi completare l'accesso manualmente.",
+      "page-changed": "La pagina di accesso è cambiata durante l'accesso automatico (modulo, destinazione o indirizzo), quindi si è interrotto. Riprova quando la pagina si è stabilizzata.",
+      "field-not-empty": "Un campo di accesso conteneva già un valore, quindi l'accesso automatico non lo ha modificato. Svuota il campo e riprova, oppure completa l'accesso manualmente.",
+      "submit-unavailable": "Il pulsante di accesso non è mai diventato disponibile, quindi non è stato inviato nulla e le credenziali inserite sono state cancellate. Controlla nella pagina se mancano campi o ci sono richieste, quindi riprova.",
+      "step-not-found": "Il passaggio di accesso successivo, ad esempio la pagina della password dopo l'indirizzo email, non è comparso in tempo. Controlla nella pagina se c'è un messaggio o un'altra opzione di accesso, quindi riprova.",
+      "expired": "L'accesso automatico ha esaurito il tempo per questo passaggio prima di poterlo completare. Riprova quando la pagina è pronta."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

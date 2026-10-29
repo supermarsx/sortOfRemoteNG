@@ -106,7 +106,8 @@ function host({
     request(page, event) {
       requests.push([page.origin(), event]);
       if (event.startsWith("type|")) return page.typing(event);
-      if (["form-completed", "form-rejected"].includes(event)) return;
+      if (event === "form-completed" || event.startsWith("form-rejected"))
+        return;
       const key = `${page.origin()} ${event}`;
       if (released.has(key) || refuse(page.origin(), event)) return;
       released.add(key);
@@ -253,10 +254,15 @@ function page(t, h, url, html, configuration, options = {}) {
     origin: () => win.location.origin,
     $: (selector) => doc.querySelector(selector),
     key(field, index) {
-      const element = doc.activeElement;
+      // The engine types into the focused element, inside open shadow roots
+      // too; a document listener sees it through the event's composed path.
+      let element = doc.activeElement;
+      while (element?.shadowRoot?.activeElement)
+        element = element.shadowRoot.activeElement;
       const unit = h.values[field][index];
       const event = {
         target: element,
+        composedPath: () => [element],
         isTrusted: true,
         key: unit,
         data: unit,
@@ -268,7 +274,11 @@ function page(t, h, url, html, configuration, options = {}) {
       for (const type of ["keydown", "beforeinput"])
         for (const fn of listeners.get(type) ?? []) fn(event);
       if (event.prevented) return;
-      element.value += unit;
+      // Engine typing never runs page-defined value setters.
+      Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(element),
+        "value",
+      ).set.call(element, element.value + unit);
       try {
         element.setSelectionRange(element.value.length, element.value.length);
       } catch (_) {

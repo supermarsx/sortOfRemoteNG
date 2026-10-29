@@ -1863,7 +1863,13 @@ impl Shared {
                 Some("challenge-reloading") => NativeFeatureStatus::LoginChallengeReloading,
                 Some("challenge-timeout") => NativeFeatureStatus::LoginChallengeTimedOut,
                 Some("login-rejected") => NativeFeatureStatus::LoginAdapterRejected,
-                _ => return 1,
+                Some(other) => {
+                    match crate::native_features::NativeLoginRejection::feature_status(other) {
+                        Some(status) => status,
+                        None => return 1,
+                    }
+                }
+                None => return 1,
             };
             self.feature_event(Some(browser), &origin, status);
             return 1;
@@ -1912,7 +1918,13 @@ impl Shared {
             Some("challenge-waiting") => NativeFeatureStatus::LoginChallengeWaiting,
             Some("challenge-reloading") => NativeFeatureStatus::LoginChallengeReloading,
             Some("challenge-timeout") => NativeFeatureStatus::LoginChallengeTimedOut,
-            _ => return 1,
+            Some(other) => {
+                match crate::native_features::NativeLoginRejection::feature_status(other) {
+                    Some(status) => status,
+                    None => return 1,
+                }
+            }
+            None => return 1,
         };
         let diagnostic = renderer_install_diagnostic(status, &pin, || {
             if args.size() == 3 {

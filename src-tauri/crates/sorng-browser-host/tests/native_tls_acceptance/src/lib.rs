@@ -281,6 +281,7 @@ impl LoginDiagnostics {
             Feature::LoginFormDetected => "login-form-detected",
             Feature::LoginAdapterCompleted => "login-adapter-completed",
             Feature::LoginAdapterRejected => "login-adapter-rejected",
+            Feature::LoginAdapterStopped(_) => "login-adapter-stopped",
             Feature::LoginDelivery(status) => match status {
                 Delivery::NativeNotDelivered => "native-not-delivered",
                 Delivery::NativeRejectedCurrent => "native-rejected-current",

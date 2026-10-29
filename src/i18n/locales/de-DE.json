@@ -9962,7 +9962,18 @@
     "concurrentLogins": "{{count}} aktive Anmeldungen",
     "loginDetails": "Details der automatischen Anmeldung",
     "loginElapsed": "Vergangene Zeit: {{seconds}} s",
-    "loginCompletionNote": "Das Senden der Anmeldung bestätigt nicht, dass die Website sie akzeptiert hat. Prüfen Sie die Website auf Bestätigungs- oder Genehmigungsanfragen."
+    "loginCompletionNote": "Das Senden der Anmeldung bestätigt nicht, dass die Website sie akzeptiert hat. Prüfen Sie die Website auf Bestätigungs- oder Genehmigungsanfragen.",
+    "loginReasons": {
+      "verification-required": "Die Website verlangt eine Prüfung, etwa ein CAPTCHA, die die automatische Anmeldung nie beantwortet. Schließen Sie die Prüfung auf der Seite ab und melden Sie sich dann fertig an.",
+      "credentials-rejected": "Die Website hat nach dem Absenden der Anmeldung einen Fehler angezeigt, zum Beispiel eine falsche E-Mail-Adresse oder ein falsches Passwort. Lesen Sie die Meldung auf der Seite und prüfen Sie die gespeicherten Anmeldedaten, bevor Sie es erneut versuchen.",
+      "focus-unavailable": "Ein anderes Textfeld hatte den Tastaturfokus, oder der Fokus wechselte während der Eingabe, daher wurde die automatische Anmeldung beendet, um keine Anmeldedaten an der falschen Stelle einzugeben. Schließen Sie Dialoge über dem Anmeldeformular und versuchen Sie es erneut.",
+      "user-input": "Die automatische Anmeldung wurde beendet, weil Sie währenddessen auf der Seite getippt oder geklickt haben. Sie können die Anmeldung manuell abschließen.",
+      "page-changed": "Die Anmeldeseite hat sich während der automatischen Anmeldung geändert (Formular, Ziel oder Adresse), daher wurde sie beendet. Versuchen Sie es erneut, sobald die Seite vollständig geladen ist.",
+      "field-not-empty": "Ein Anmeldefeld enthielt bereits einen Wert, daher hat die automatische Anmeldung es nicht verändert. Leeren Sie das Feld und versuchen Sie es erneut, oder melden Sie sich manuell an.",
+      "submit-unavailable": "Die Anmeldeschaltfläche wurde nie verfügbar, daher wurde nichts gesendet und die eingegebenen Anmeldedaten wurden gelöscht. Prüfen Sie die Seite auf fehlende Felder oder Hinweise und versuchen Sie es erneut.",
+      "step-not-found": "Der nächste Anmeldeschritt, etwa die Passwortseite nach der E-Mail-Adresse, ist nicht rechtzeitig erschienen. Prüfen Sie die Seite auf eine Meldung oder eine andere Anmeldeoption und versuchen Sie es erneut.",
+      "expired": "Für diesen Schritt ist die Zeit der automatischen Anmeldung abgelaufen, bevor sie abgeschlossen werden konnte. Versuchen Sie es erneut, sobald die Seite bereit ist."
+    }
   },
   "originBrowser": {
     "autoLoginRetry": {

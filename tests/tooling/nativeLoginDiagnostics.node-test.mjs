@@ -59,14 +59,26 @@ test("renderer evidence uses owner-fenced fixed checkpoints, never page or crede
     /format!|log::|\.lock\(|\.await|\.url\(|credentials\./,
   );
   const checkpoints = [...feature.matchAll(/=>\s*\((\d+),\s*"([a-z-]+)"\)/g)];
-  assert.equal(checkpoints.length, 30);
-  assert.equal(new Set(checkpoints.map((m) => m[1])).size, 30);
+  assert.equal(checkpoints.length, 39);
+  assert.equal(new Set(checkpoints.map((m) => m[1])).size, 39);
+  // The observation gate keeps one bit per checkpoint in a u64.
+  assert.ok(checkpoints.every((m) => Number(m[1]) < 64));
   for (const [code, name] of [
     ["40", "login-challenge-waiting"],
     ["41", "login-challenge-reloading"],
     ["42", "login-challenge-timed-out"],
     ["43", "consent-address-mismatch"],
     ["44", "consent-expired"],
+    // A page adapter stop names its fixed cause (NativeLoginRejection).
+    ["45", "login-stopped-verification-required"],
+    ["46", "login-stopped-credentials-rejected"],
+    ["47", "login-stopped-focus-unavailable"],
+    ["48", "login-stopped-user-input"],
+    ["49", "login-stopped-page-changed"],
+    ["50", "login-stopped-field-not-empty"],
+    ["51", "login-stopped-submit-unavailable"],
+    ["52", "login-stopped-step-not-found"],
+    ["53", "login-stopped-expired"],
   ]) {
     assert.ok(checkpoints.some((m) => m[1] === code && m[2] === name));
   }

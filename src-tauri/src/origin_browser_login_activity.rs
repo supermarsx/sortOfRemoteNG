@@ -16,6 +16,7 @@ pub(super) fn for_status(
         F::LoginFormDetected => ("security-check", None),
         F::LoginAdapterCompleted => ("completed", None),
         F::LoginAdapterRejected => ("cancelled", Some("adapter-rejected")),
+        F::LoginAdapterStopped(cause) => stopped(cause),
         F::LoginDelivery(D::NativeRejectedGrant) => ("held", Some("grant-rejected")),
         // Native refused this step without sending anything. Each page asks
         // for a step once, so leaving the status on "security check" would
@@ -34,6 +35,21 @@ pub(super) fn for_status(
         }
         _ => return None,
     })
+}
+
+/// A page adapter's fixed stop cause. A verification the user must answer
+/// holds the attempt for them; a refusal shown after the submit stops it;
+/// every other cause cancels it. The code is the cause's own wire name.
+fn stopped(
+    cause: sorng_browser_host::native_features::NativeLoginRejection,
+) -> (&'static str, Option<&'static str>) {
+    use sorng_browser_host::native_features::NativeLoginRejection as R;
+    let stage = match cause {
+        R::VerificationRequired => "held",
+        R::CredentialsRejected => "stopped",
+        _ => "cancelled",
+    };
+    (stage, Some(cause.wire()))
 }
 
 #[cfg(test)]
@@ -77,6 +93,39 @@ mod tests {
         ] {
             assert_eq!(for_status(status, None), Some(expected));
         }
+    }
+
+    #[test]
+    fn every_adapter_stop_cause_reaches_the_activity_as_its_own_fixed_code() {
+        use sorng_browser_host::native_features::{
+            NativeFeatureStatus as F, NativeLoginRejection as R,
+        };
+        let mut codes = std::collections::HashSet::new();
+        for cause in R::ALL {
+            let (stage, code) = for_status(F::LoginAdapterStopped(cause), None).unwrap();
+            let code = code.unwrap();
+            assert_eq!(code, cause.wire());
+            assert!(codes.insert(code));
+            // Never the causeless code, and never a native consent cause.
+            assert!(!matches!(
+                code,
+                "adapter-rejected" | "grant-rejected" | "address-mismatch" | "consent-expired"
+            ));
+            assert_eq!(
+                stage,
+                match cause {
+                    R::VerificationRequired => "held",
+                    R::CredentialsRejected => "stopped",
+                    _ => "cancelled",
+                }
+            );
+            // A consent refusal never relabels an adapter stop.
+            assert_eq!(
+                for_status(F::LoginAdapterStopped(cause), Some(ConsentRefusal::Expired)),
+                Some((stage, Some(code)))
+            );
+        }
+        assert_eq!(codes.len(), 9);
     }
 
     #[test]

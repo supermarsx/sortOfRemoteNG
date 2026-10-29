@@ -350,6 +350,9 @@ wrap_v8_handler! {
             let event = arguments.and_then(|args| args.first()).and_then(Option::as_ref)
                 .filter(|value| value.is_string() == 1)
                 .map(|value| CefString::from(&value.string_value()).to_string()).unwrap_or_else(|| "form".into());
+            // A form rejection may name one fixed cause; anything else after
+            // the separator is not a rejection and is dropped below.
+            let rejection = crate::native_features::NativeLoginRejection::from_page_event(&event);
             let send = DOCUMENTS.with(|documents| {
                 let mut documents = documents.borrow_mut();
                 let document = documents.get_mut(&self.key)?;
@@ -378,13 +381,13 @@ wrap_v8_handler! {
                 if matches!(event.as_str(), "challenge-waiting" | "challenge-reloading" | "challenge-timeout") {
                     return (frame.is_main() == 1).then(|| (frame, document.scope.origin.clone()));
                 }
-                if matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
+                if rejection.is_some() || matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
                     let supported = if event.starts_with("google-") { document.scope.adapter == NativeLoginAdapter::Google }
                         else { document.scope.adapter.accepts_stage(NativeLoginStage::Form) || document.scope.adapter.reviewed_provider() };
                     // A completion needs a delivered grant. A rejection also
                     // ends a page that asked for a step and never received
                     // it (native refused), so the attempt cannot hang there.
-                    let asked = event.ends_with("-rejected") && !document.scope.requested.is_empty();
+                    let asked = (rejection.is_some() || event.ends_with("-rejected")) && !document.scope.requested.is_empty();
                     if supported && (!document.scope.delivered.is_empty() || asked) {
                         return Some((frame, document.scope.origin.clone()));
                     }
@@ -397,6 +400,10 @@ wrap_v8_handler! {
             });
             if let Some((frame, origin)) = send {
                 if matches!(event.as_str(), "challenge-waiting" | "challenge-reloading" | "challenge-timeout") { report(&frame, &event); return 1; }
+                if let Some(cause) = rejection {
+                    report(&frame, &cause.status());
+                    return 1;
+                }
                 if matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
                     report(&frame, if event.ends_with("-completed") { "login-completed" } else { "login-rejected" });
                     return 1;
@@ -448,11 +455,10 @@ fn report_install(frame: &Frame, result: Result<(), RendererInstallFailure>) {
     }
 }
 fn report_with_reason(frame: &Frame, status: &str, reason: Option<RendererInstallFailure>) {
-    let origin = feature_origin(frame).or_else(|| {
-        matches!(status, "login-completed" | "login-rejected")
-            .then(|| browser_frame_origin(frame))
-            .flatten()
-    });
+    let login = matches!(status, "login-completed" | "login-rejected")
+        || status.starts_with(crate::native_features::NativeLoginRejection::STATUS_PREFIX);
+    let origin =
+        feature_origin(frame).or_else(|| login.then(|| browser_frame_origin(frame)).flatten());
     let Some(origin) = origin else {
         return;
     };

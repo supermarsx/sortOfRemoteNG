@@ -4,7 +4,7 @@
   "id": "windmill-self-hosted",
   "class": "A",
   "source": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
-  "reviewed": "2026-10-22",
+  "reviewed": "2026-10-29",
   "mechanism": "form",
   "summary": "Explicit /user/login route: saved email and password in the revealed password pane. The website handles Enter on the password input and owns the login request.",
   "sources": [
@@ -47,22 +47,38 @@
       "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
       "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
       "retrieved": "2026-10-22"
+    },
+    {
+      "id": "login-v1793",
+      "kind": "public-source",
+      "title": "Password sign-in component before generated ids (v1.793.0)",
+      "url": "https://github.com/windmill-labs/windmill/blob/v1.793.0/frontend/src/lib/components/Login.svelte",
+      "version": "v1.793.0",
+      "retrieved": "2026-10-29"
+    },
+    {
+      "id": "login-v1570",
+      "kind": "public-source",
+      "title": "Password sign-in component with autocomplete email (v1.570.0)",
+      "url": "https://github.com/windmill-labs/windmill/blob/v1.570.0/frontend/src/lib/components/Login.svelte",
+      "version": "v1.570.0",
+      "retrieved": "2026-10-29"
     }
   ],
   "selectors": [
     {
-      "selector": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
+      "selector": "input[type=\"email\"]:is([id$=\"-email\"][autocomplete=\"username\"],#email:is([autocomplete=\"email\"],[autocomplete=\"username\"]))",
       "role": "username",
       "source": "login",
       "basis": "observed",
-      "locator": "emailId is `${uid}-email`; TextInput receives type email and autocomplete username."
+      "locator": "From v1.794 emailId is `${uid}-email` with autocomplete username; up to v1.793 the input is id email with autocomplete email (username from v1.79x). TextInput or a plain input renders type email."
     },
     {
-      "selector": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]",
+      "selector": "input[type=\"password\"][autocomplete=\"current-password\"]:is([id$=\"-password\"],#password)",
       "role": "password",
       "source": "login",
       "basis": "observed",
-      "locator": "passwordId is `${uid}-password`; Password receives current-password and allowMultiline=false, forwards onKeyDown to handleKeyDown; Password and TextInput sources render the native input."
+      "locator": "From v1.794 passwordId is `${uid}-password`; up to v1.793 the input is id password. Both render type password with autocomplete current-password and handle Enter on it."
     }
   ],
   "fixtures": [
@@ -75,6 +91,16 @@
       "file": "fixture.closed.html",
       "path": "/user/login",
       "derivedFrom": ["password-entry"]
+    },
+    {
+      "file": "fixture.legacy.html",
+      "path": "/user/login",
+      "derivedFrom": ["login-v1570"]
+    },
+    {
+      "file": "fixture.v1793.html",
+      "path": "/user/login",
+      "derivedFrom": ["login-v1793"]
     }
   ],
   "staysInteractive": [
@@ -91,5 +117,5 @@
       "note": "Disabled password login, first-time setup and workspace selection remain interactive. Native preparation only opens the reviewed password entry point; it never selects an SSO provider."
     }
   ],
-  "notes": "Pinned public source only; no account test or hosted DOM capture. Native preparation may click the exact Log in without third-party button once before any credential grant, only for the selected Windmill profile on /user/login. An already visible password pane needs no click. SSO, MFA, setup and recovery remain interactive. Synthetic fixtures contain no vendor scripts or account data."
+  "notes": "Pinned public source only; no account test or hosted DOM capture. Native preparation may click the exact Log in without third-party button once before any credential grant, only for the selected Windmill profile on /user/login. An already visible password pane needs no click. SSO, MFA, setup and recovery remain interactive. Synthetic fixtures contain no vendor scripts or account data. Self-hosted releases up to v1.793 render #email/#password (fixture.v1793.html; autocomplete email before v1.79x, fixture.legacy.html); the selectors accept both layouts."
 }

@@ -41,6 +41,22 @@ describe("bounded application log timeline", () => {
       logRowsText([auth("stale-attempt"), auth("private-sentinel")]),
     ).not.toContain("private-sentinel");
   });
+  it("names a page adapter's fixed stop cause and nothing that is not one", () => {
+    const feature = (checkpoint: string) =>
+      browser({
+        version: 1,
+        navigation: { event: "renderer-feature", sample: 1, checkpoint },
+      });
+    expect(feature("login-stopped-focus-unavailable").details).toContain(
+      "login stopped focus unavailable",
+    );
+    expect(feature("login-stopped-verification-required").details).toContain(
+      "login stopped verification required",
+    );
+    expect(feature("login-stopped-wrong-password-alice").details).not.toContain(
+      "login stopped wrong password alice",
+    );
+  });
   it("preserves proxy acknowledgement observation time in the application sink", () => {
     const row = parseLogTimeline(
       "[2026-10-22T11:00:01Z][INFO][native_browser::proxy] Native browser proxy: timestampUnixMs=1792663200000 source=native event=private-proxy-applied",

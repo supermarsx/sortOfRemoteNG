@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseNativeLoginActivity } from "../../src/hooks/protocol/useNativeLoginActivity";
+import {
+  nativeLoginAdapterStopReasonCodes,
+  nativeLoginReasonCodes,
+  parseNativeLoginActivity,
+} from "../../src/hooks/protocol/useNativeLoginActivity";
+import enUS from "../../src/i18n/locales/en-US.json";
 describe("native login activity projection", () => {
   const event = {
     connectionId: "connection-1",
@@ -66,5 +71,47 @@ describe("native login activity projection", () => {
         }),
       ).toEqual({ ...event, stage: "cancelled" });
     }
+  });
+  it("accepts every page adapter stop cause as its own fixed code", () => {
+    // NativeLoginRejection::ALL in native_features.rs, in its order.
+    expect([...nativeLoginAdapterStopReasonCodes]).toEqual([
+      "verification-required",
+      "credentials-rejected",
+      "focus-unavailable",
+      "user-input",
+      "page-changed",
+      "field-not-empty",
+      "submit-unavailable",
+      "step-not-found",
+      "expired",
+    ]);
+    expect(new Set(nativeLoginReasonCodes).size).toBe(
+      nativeLoginReasonCodes.length,
+    );
+    for (const reasonCode of nativeLoginAdapterStopReasonCodes)
+      for (const stage of ["held", "stopped", "cancelled"])
+        expect(
+          parseNativeLoginActivity({ ...event, stage, reasonCode }),
+        ).toEqual({ ...event, stage, reasonCode });
+    // A cause with page text appended is not a cause.
+    expect(
+      parseNativeLoginActivity({
+        ...event,
+        stage: "stopped",
+        reasonCode: "credentials-rejected|Wrong password for alice",
+      }),
+    ).toEqual({ ...event, stage: "stopped" });
+  });
+  it("has a distinct, translated en-US message for every page adapter stop cause", () => {
+    const reasons = (
+      enUS as { statusBar: { loginReasons: Record<string, string> } }
+    ).statusBar.loginReasons;
+    const messages = nativeLoginAdapterStopReasonCodes.map(
+      (code) => reasons[code],
+    );
+    expect(
+      messages.every((text) => typeof text === "string" && text.length > 40),
+    ).toBe(true);
+    expect(new Set(messages).size).toBe(messages.length);
   });
 });

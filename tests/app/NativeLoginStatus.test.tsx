@@ -11,6 +11,8 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import { NativeLoginStatus } from "../../src/components/app/NativeLoginStatus";
+import { nativeLoginAdapterStopReasonCodes } from "../../src/hooks/protocol/useNativeLoginActivity";
+import enUS from "../../src/i18n/locales/en-US.json";
 
 const events = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -243,6 +245,44 @@ describe("active native login status", () => {
     ["held", "grant-rejected", /did not authorize credential delivery/],
     ["held", "address-mismatch", /not one of this connection's saved login/],
     ["held", "consent-expired", /automatic-login permission had expired/],
+    // The page adapter's own fixed stop causes.
+    [
+      "held",
+      "verification-required",
+      /verification check, such as a CAPTCHA, that automatic login never answers/,
+    ],
+    [
+      "stopped",
+      "credentials-rejected",
+      /showed an error after the login was submitted/,
+    ],
+    [
+      "cancelled",
+      "focus-unavailable",
+      /Another text field kept the keyboard focus/,
+    ],
+    [
+      "cancelled",
+      "user-input",
+      /you typed or clicked in the page while it was running/,
+    ],
+    [
+      "cancelled",
+      "page-changed",
+      /login page changed while automatic login was running/,
+    ],
+    ["cancelled", "field-not-empty", /A login field already contained a value/],
+    [
+      "cancelled",
+      "submit-unavailable",
+      /sign-in button never became available/,
+    ],
+    [
+      "cancelled",
+      "step-not-found",
+      /next sign-in step, such as the password page after the email/,
+    ],
+    ["cancelled", "expired", /ran out of time for this step/],
   ])(
     "explains %s/%s with the actual prior checkpoint and a usable Close action",
     async (stage, reasonCode, expected) => {
@@ -272,6 +312,60 @@ describe("active native login status", () => {
       expect(screen.getByRole("dialog")).toHaveTextContent(expected);
     },
   );
+  it.each([...nativeLoginAdapterStopReasonCodes])(
+    "shows the en-US catalog message for the %s stop cause",
+    async (reasonCode) => {
+      render(
+        <NativeLoginStatus
+          connections={connections}
+          sessions={sessions}
+          activeSessionId="s1"
+        />,
+      );
+      await waitFor(() => expect(events.listener).toBeDefined());
+      emit("s1", "c1", "filling-password", 100);
+      emit("s1", "c1", "cancelled", 200, { reasonCode });
+      fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+      expect(screen.getByRole("dialog")).toHaveTextContent(
+        enUS.statusBar.loginReasons[reasonCode],
+      );
+      expect(screen.getByRole("dialog")).not.toHaveTextContent(
+        "No specific cancellation reason",
+      );
+    },
+  );
+  it("keeps a native cause over a later page-adapter cause in the same failure chain, but shows a refusal reported after completion", async () => {
+    render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "filling-password", 100);
+    emit("s1", "c1", "cancelled", 200, {
+      reasonCode: "current-context-rejected",
+    });
+    emit("s1", "c1", "cancelled", 300, { reasonCode: "page-changed" });
+    fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "page, login step or browser context no longer matched",
+    );
+    // A causeless report never hides the adapter's own cause either.
+    emit("s1", "c1", "filling-password", 400);
+    emit("s1", "c1", "cancelled", 500, { reasonCode: "focus-unavailable" });
+    emit("s1", "c1", "cancelled", 600, { reasonCode: "adapter-rejected" });
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Another text field kept the keyboard focus",
+    );
+    // After a submitted login, the page's refusal is the new outcome.
+    emit("s1", "c1", "completed", 700);
+    emit("s1", "c1", "stopped", 800, { reasonCode: "credentials-rejected" });
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "showed an error after the login was submitted",
+    );
+  });
   it("provides an honest fallback without leaking unknown codes or inheriting another attempt's checkpoint", async () => {
     render(
       <NativeLoginStatus

@@ -824,7 +824,9 @@
   // Native production always passes true. The old three-argument standalone
   // harness remains useful for testing the shared provider/form modules.
   const keyboard =
-    nativeTyping === true ? createLoginKeyboard(notify, () => cancel()) : null;
+    nativeTyping === true
+      ? createLoginKeyboard(notify, () => cancel("user-input"))
+      : null;
   const attachKeyboard = (deliver) => {
     if (keyboard)
       Object.defineProperty(deliver, "nativeTyping", {
@@ -984,13 +986,14 @@
   function typedPrefix(value, typed, text) {
     return !!text && typed === text.length && value.startsWith(text);
   }
-  function cancel() {
+  // cause: the fixed rejection cause an active form attempt reports.
+  function cancel(cause) {
     stopped = true;
     stopWatchingParent();
     if (keyboard) keyboard.cancel();
     clearTimeout(startTimer);
     clearTimeout(expiryTimer);
-    if (cancelActive) cancelActive();
+    if (cancelActive) cancelActive(cause);
     cancelActive = null;
   }
   function report(result) {
@@ -1002,6 +1005,206 @@
           ? "form-completed"
           : "form-rejected",
     );
+  }
+  // Fixed rejection causes, the NativeLoginRejection wire names in
+  // native_features.rs. The renderer forwards nothing else: never page text,
+  // field values or account data.
+  function rejection(cause) {
+    return [
+      "verification-required",
+      "credentials-rejected",
+      "focus-unavailable",
+      "user-input",
+      "page-changed",
+      "field-not-empty",
+      "submit-unavailable",
+      "step-not-found",
+      "expired",
+    ].includes(cause)
+      ? `form-rejected|${cause}`
+      : "form-rejected";
+  }
+  // The native keyboard's fixed failure kinds as rejection causes.
+  function typingCause(error) {
+    const kind = error && error.message;
+    return kind === "native-typing-focus"
+      ? "focus-unavailable"
+      : kind === "native-typing-user"
+        ? "user-input"
+        : kind === "native-typing-expired"
+          ? "expired"
+          : null;
+  }
+  // Displayed now: connected, not hidden by an attribute or style, and at
+  // least a small box. Layout-free documents report no box and nothing shows.
+  function displayedBox(element, minimum) {
+    if (!element || !element.isConnected) return false;
+    const view = element.ownerDocument.defaultView || window;
+    for (let node = element; node; node = node.parentElement) {
+      const style = view.getComputedStyle(node);
+      if (
+        node.hidden ||
+        node.getAttribute("aria-hidden") === "true" ||
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.opacity === "0"
+      )
+        return false;
+    }
+    return Array.from(element.getClientRects()).some(
+      (rect) => rect.width >= minimum && rect.height >= minimum,
+    );
+  }
+  // A verification the user must answer (Turnstile, hCaptcha, reCAPTCHA v2
+  // or a challenge popup) that is displayed and not yet answered. Invisible
+  // scoring such as reCAPTCHA v3 is not one. Detection only: nothing here
+  // clicks, solves or reads a widget, and an answered widget's token field
+  // lets the attempt go on.
+  function verificationFrame(source, base) {
+    let url;
+    try {
+      url = new URL(source, base);
+    } catch (_) {
+      return false;
+    }
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    if (host === "challenges.cloudflare.com") return true;
+    if (host === "hcaptcha.com" || host.endsWith(".hcaptcha.com"))
+      return !/checkbox-invisible/.test(url.hash);
+    if (host.endsWith(".arkoselabs.com") || host.endsWith(".funcaptcha.com"))
+      return true;
+    return (
+      [
+        "www.google.com",
+        "google.com",
+        "www.recaptcha.net",
+        "recaptcha.net",
+      ].includes(host) &&
+      /^\/recaptcha\/(api2|enterprise)\/(anchor|bframe)$/.test(url.pathname) &&
+      url.searchParams.get("size") !== "invisible"
+    );
+  }
+  function verificationPending(root) {
+    try {
+      const answered = Array.from(
+        root.querySelectorAll(
+          '[name="cf-turnstile-response"], [name="g-recaptcha-response"], [name="h-captcha-response"]',
+        ),
+      ).some((field) => typeof field.value === "string" && field.value !== "");
+      if (answered) return false;
+      for (const frame of root.querySelectorAll("iframe[src]"))
+        if (
+          verificationFrame(frame.getAttribute("src"), root.baseURI) &&
+          displayedBox(frame, 16)
+        )
+          return true;
+      return Array.from(
+        root.querySelectorAll(".cf-turnstile, .h-captcha, .g-recaptcha"),
+      ).some(
+        (element) =>
+          (element.getAttribute("data-size") || "").toLowerCase() !==
+            "invisible" && displayedBox(element, 16),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+  // Refusal markers after a submit, watched for at most 12 s: an alert
+  // anywhere, or an error element next to the login fields. Page text is
+  // compared here only, never kept past the watch or forwarded.
+  function refusalScope(fields) {
+    let scope = fields[0]?.parentElement || null;
+    while (scope && !fields.every((field) => scope.contains(field)))
+      scope = scope.parentElement;
+    for (let up = 0; scope && up < 3; up++) {
+      const parent = scope.parentElement;
+      if (!parent || parent === document.body) break;
+      scope = parent;
+    }
+    return scope;
+  }
+  function refusalMarkers(fields) {
+    const scope = refusalScope(fields);
+    const found = new Map();
+    const add = (element) => {
+      if (fields.some((field) => element === field || element.contains(field)))
+        return;
+      const text = displayedBox(element, 1)
+        ? (element.textContent || "").trim().slice(0, 512)
+        : "";
+      if (text) found.set(element, text);
+    };
+    document
+      .querySelectorAll('[role="alert"], [aria-live="assertive"]')
+      .forEach(add);
+    if (scope)
+      scope
+        .querySelectorAll(
+          '.alert-danger, .alert-error, .error-message, .invalid-feedback, .form-error, .login-error, [class*="error" i], [data-testid*="error" i]',
+        )
+        .forEach(add);
+    return {
+      alerts: found,
+      invalid: fields.filter(
+        (field) => field.getAttribute("aria-invalid") === "true",
+      ),
+    };
+  }
+  function afterSubmitBaseline(fields) {
+    const live = fields.filter(Boolean);
+    try {
+      return live.length
+        ? { fields: live, before: refusalMarkers(live) }
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function watchAfterSubmit(baseline) {
+    if (!baseline) return;
+    const watched = document,
+      href = location.href,
+      began = Date.now();
+    let timer = null,
+      ended = false;
+    const end = () => {
+      ended = true;
+      clearInterval(timer);
+      window.removeEventListener("pagehide", end);
+      baseline = null;
+    };
+    window.addEventListener("pagehide", end, { once: true });
+    timer = setInterval(() => {
+      if (ended) return;
+      if (
+        document !== watched ||
+        location.href !== href ||
+        Date.now() - began > 12000
+      )
+        return end();
+      let cause = null;
+      try {
+        if (verificationPending(watched)) cause = "verification-required";
+        else if (baseline.fields.every((field) => displayedBox(field, 1))) {
+          const seen = refusalMarkers(baseline.fields);
+          if (
+            seen.invalid.some(
+              (field) => !baseline.before.invalid.includes(field),
+            ) ||
+            Array.from(seen.alerts).some(
+              ([element, text]) => baseline.before.alerts.get(element) !== text,
+            )
+          )
+            cause = "credentials-rejected";
+        }
+      } catch (_) {
+        return end();
+      }
+      if (!cause) return;
+      end();
+      notify(rejection(cause));
+    }, 250);
   }
   // HTTP documents have getRandomValues but no SubtleCrypto. Keep the same
   // salted SHA-256 edit/identity receipts without retaining credential text.
@@ -2410,7 +2613,9 @@
         entry.hash = null;
       }
     }
-    function finish(ok, status) {
+    // cause is one fixed rejection cause. keep leaves typed values in
+    // place for the user (a verification they must answer before submitting).
+    function finish(ok, status, cause, keep) {
       if (done) return;
       if (keyboard) keyboard.cancel();
       done = true;
@@ -2419,7 +2624,7 @@
       clearInterval(timer);
       clearTimeout(lifetime);
       clearTimeout(expiryTimer);
-      scrub(records, !ok);
+      scrub(records, !ok && !keep);
       records = [];
       if (captured)
         captured.extras.forEach((field) => {
@@ -2429,21 +2634,34 @@
       cancelActive = null;
       doc.removeEventListener("input", edited, true);
       doc.removeEventListener("click", edited, true);
-      if (status !== null) notify(ok ? "form-completed" : "form-rejected");
+      if (status !== null) notify(ok ? "form-completed" : rejection(cause));
     }
     function edited(event) {
       if (!event.isTrusted) return;
-      if (!keyboard?.ownsEvent(event)) return finish(false);
-      const entry = records.find((item) => item.element === event.target);
-      if (entry) entry.typed = event.target.value.length;
+      if (!keyboard?.ownsEvent(event))
+        return finish(false, undefined, "user-input");
+      const target = composedTarget(event);
+      const entry = records.find((item) => item.element === target);
+      if (entry) entry.typed = target.value.length;
     }
     // No deadline covers the whole attempt. Finding the form has the detection
     // deadline; every later wait starts its own bound here.
     function bound(ms) {
       waitDeadline = now() + ms;
       clearTimeout(lifetime);
-      lifetime = setTimeout(() => finish(false), Math.max(0, ms));
+      lifetime = setTimeout(timedOut, Math.max(0, ms));
     }
+    function timedOut() {
+      if (phase !== "waiting-submit")
+        return finish(false, undefined, "expired");
+      // The submit control never became usable. A verification waiting for
+      // the user keeps the typed values so they can answer it and submit.
+      if (verificationPending(doc))
+        return finish(false, undefined, "verification-required", true);
+      finish(false, undefined, "submit-unavailable");
+    }
+    const invalidCause = () =>
+      now() >= waitDeadline ? "expired" : "page-changed";
     function valid() {
       if (done || !current() || now() >= waitDeadline || !captured)
         return false;
@@ -2525,7 +2743,7 @@
       if (done || phase !== "found") return;
       // An address change since the form was found ends the attempt before
       // anything is requested, also when no event announced it.
-      if (!current()) return finish(false);
+      if (!current()) return finish(false, undefined, "page-changed");
       if (!mainDocumentLoaded()) return;
       phase = "form-prepare";
       bound(GRANT_WAIT_MS);
@@ -2538,16 +2756,19 @@
         return;
       busy = true;
       try {
-        if (!valid()) return finish(false);
+        if (!valid()) return finish(false, undefined, invalidCause());
         if (now() < eligibleAt || !controlsReady()) return;
         if (!(await controlsSettled()) || !valid()) return;
         if (
           phase === "waiting-fill" &&
           (captured.target.pw.value || captured.target.user?.value)
         )
-          return finish(false);
+          return finish(false, undefined, "field-not-empty");
         if (phase === "waiting-submit" && !(await valuesMatch()))
-          return finish(false);
+          return finish(false, undefined, "page-changed");
+        // An unanswered verification holds the submit request until the
+        // user answers it or this wait's bound ends (see timedOut).
+        if (phase === "waiting-submit" && verificationPending(doc)) return;
         // A credential request gets its own bound. A submit request stays
         // under the one that began when the fill ended, so typed values never
         // outlive it.
@@ -2555,7 +2776,7 @@
         phase = phase === "waiting-fill" ? "form" : "form-submit";
         notify(phase);
       } catch (_) {
-        finish(false);
+        finish(false, undefined, "page-changed");
       } finally {
         busy = false;
       }
@@ -2639,8 +2860,17 @@
         // saved detection time again; after it the typed values are erased.
         bound(metadata.detectionTimeoutMs);
         tick();
-      } catch (_) {
-        finish(false);
+      } catch (error) {
+        finish(
+          false,
+          undefined,
+          typingCause(error) ||
+            (error?.message === "edited"
+              ? "field-not-empty"
+              : error?.message === "expired" || now() >= expires
+                ? "expired"
+                : "page-changed"),
+        );
       } finally {
         username = password = "";
         options.fields.forEach((field) => {
@@ -2650,16 +2880,19 @@
     }
     async function submit(autoSubmit) {
       try {
-        if (
-          !autoSubmit ||
-          !metadata.submit ||
-          !(await valuesMatch()) ||
-          now() >= expires ||
-          !controlsReady()
-        )
-          return finish(false);
+        if (!autoSubmit || !metadata.submit || !(await valuesMatch()))
+          return finish(false, undefined, "page-changed");
+        if (now() >= expires) return finish(false, undefined, "expired");
+        if (!controlsReady())
+          return finish(false, undefined, "submit-unavailable");
         if (captured.joomlaMfa || hasJoomlaTwoFactorField(captured.target))
           return finish(true);
+        // The page's state before the one submit, to tell a refusal it then
+        // shows from what was already there.
+        const baseline = afterSubmitBaseline([
+          captured.target.user,
+          captured.target.pw,
+        ]);
         // Consume the sole action before invoking any page event handlers.
         phase = "submitted";
         guardedSubmit(
@@ -2668,8 +2901,9 @@
           config.readinessProfile,
         );
         finish(true);
+        watchAfterSubmit(baseline);
       } catch (_) {
-        finish(false);
+        finish(false, undefined, "page-changed");
       }
     }
     routing = topDocument;
@@ -2696,7 +2930,7 @@
             );
           // The detection deadline ends here: it governed finding the form.
           phase = "found";
-          cancelActive = () => finish(false);
+          cancelActive = (cause) => finish(false, undefined, cause);
           bound(SETTLE_WAIT_MS);
           prepare();
         },
@@ -2708,8 +2942,8 @@
     timer = setInterval(tick, 100);
     window.addEventListener("load", tick, { once: true });
     const abort = () => {
-      if (cancelActive) cancelActive();
-      finish(false);
+      if (cancelActive) cancelActive("page-changed");
+      finish(false, undefined, "page-changed");
     };
     window.addEventListener("pagehide", abort, { once: true });
     window.addEventListener("unload", abort, { once: true });
@@ -2740,7 +2974,7 @@
       deliveredStage,
     ) {
       if (!current()) {
-        finish(false);
+        finish(false, undefined, "page-changed");
         return false;
       }
       if (
@@ -2793,7 +3027,7 @@
           const operation = phase;
           phase = "processing";
           expiryTimer = setTimeout(
-            () => finish(false),
+            () => finish(false, undefined, "expired"),
             Math.max(0, expires - now()),
           );
           if (operation === "form") {
@@ -2803,7 +3037,7 @@
         }
         return true;
       } catch (_) {
-        finish(false);
+        finish(false, undefined, "page-changed");
         return false;
       }
     };
@@ -3100,8 +3334,41 @@
         throw new Error();
       return value;
     }
-    function finish(ok, why) {
+    // The fixed rejection cause of a stop, from its reason and the phase it
+    // ended in. A typing failure names its own cause (	yped).
+    function causeOf(why, during, typed) {
+      if (typed) return typed;
+      switch (why) {
+        case "user-input":
+        case "field-not-empty":
+        case "verification-required":
+        case "expired":
+          return why;
+        case "no-grant":
+          return "expired";
+        case "changed":
+        case "navigation":
+          return "page-changed";
+        case "layout-mismatch":
+          // The submit control never became usable, or the next step of a
+          // flow that already typed in this document never appeared.
+          if (during === "waiting-submit") return "submit-unavailable";
+          return from > 0 ? "step-not-found" : "page-changed";
+        default:
+          return undefined;
+      }
+    }
+    function finish(ok, why, typed) {
       if (done) return;
+      const during = phase;
+      // A verification the user must answer still showing when the submit
+      // wait ends: keep the typed values so they can answer it and submit.
+      const keep =
+        !ok &&
+        during === "waiting-submit" &&
+        why === "layout-mismatch" &&
+        verificationPending(doc);
+      if (keep) why = "verification-required";
       done = true;
       stopped = true;
       reason = why;
@@ -3110,12 +3377,12 @@
       clearInterval(timer);
       clearTimeout(lifetime);
       clearTimeout(expiryTimer);
-      scrub(!ok);
+      scrub(!ok && !keep);
       pending = current_ = stable = typedLast = null;
       cancelActive = null;
       doc.removeEventListener("input", edited, true);
       doc.removeEventListener("click", edited, true);
-      notify(ok ? "form-completed" : "form-rejected");
+      notify(ok ? "form-completed" : rejection(causeOf(why, during, typed)));
     }
     function scrub(erase) {
       for (const entry of records) {
@@ -3145,8 +3412,9 @@
       if (!event.isTrusted) return;
       // The user is in charge: any input or click of theirs ends the attempt.
       if (!keyboard?.ownsEvent(event)) return finish(false, "user-input");
-      const entry = records.find((item) => item.element === event.target);
-      if (entry) entry.typed = event.target.value.length;
+      const target = composedTarget(event);
+      const entry = records.find((item) => item.element === target);
+      if (entry) entry.typed = target.value.length;
     }
     function bound(ms, why) {
       clearTimeout(lifetime);
@@ -3411,6 +3679,16 @@
       bound(GRANT_WAIT_MS, "no-grant");
       notify(pending.stage);
     }
+    const WINDMILL_SELECTORS = [
+      [
+        'input[id$="-email"][type="email"][autocomplete="username"]',
+        'input[id$="-password"][type="password"][autocomplete="current-password"]',
+      ],
+      [
+        'input[type="email"]:is([id$="-email"][autocomplete="username"],#email:is([autocomplete="email"],[autocomplete="username"]))',
+        'input[type="password"][autocomplete="current-password"]:is([id$="-password"],#password)',
+      ],
+    ];
     function prepareWindmillPasswordForm() {
       if (
         preparation !== "windmill-password-form" ||
@@ -3423,10 +3701,14 @@
         !applies(steps[0]) ||
         steps[0].kind !== "form" ||
         steps[0].frame !== null ||
-        steps[0].selectors.username !==
-          'input[id$="-email"][type="email"][autocomplete="username"]' ||
-        steps[0].selectors.password !==
-          'input[id$="-password"][type="password"][autocomplete="current-password"]' ||
+        // The reviewed Windmill pairs only: Cloud runs the current release
+        // (${uid}-email, ${uid}-password); self-hosted releases up to
+        // v1.793 also render #email/#password (Login.svelte).
+        !WINDMILL_SELECTORS.some(
+          ([username, password]) =>
+            steps[0].selectors.username === username &&
+            steps[0].selectors.password === password,
+        ) ||
         cloudflareInterstitial()
       )
         return;
@@ -3502,6 +3784,9 @@
         if (!located) return;
         if (!(await valuesMatch()) || !stepCurrent())
           return finish(false, "changed");
+        // An unanswered verification holds the submit request until the
+        // user answers it or this wait's bound ends (see finish).
+        if (verificationPending(doc)) return;
         current_.submit = located;
         phase = "submit-requested";
         pending = { stage: SUBMITS[current_.step.kind] };
@@ -3577,8 +3862,8 @@
         eligibleAt = now() + submitDelayMs;
         bound(submitDelayMs + detectionMs, "layout-mismatch");
         awaitSubmit();
-      } catch (_) {
-        finish(false, done ? reason : "changed");
+      } catch (error) {
+        finish(false, done ? reason : "changed", typingCause(error));
       } finally {
         username = password = "";
       }
@@ -3601,6 +3886,12 @@
         throw new Error("unsafe");
       if (step.submission === "enter" && !safeForm(form, null))
         throw new Error("unsafe");
+      // The page's state before the submit, to tell a refusal it then shows
+      // from what was already there.
+      const baseline = afterSubmitBaseline([
+        current_.target.user,
+        current_.target.pw,
+      ]);
       // Consumed before any page handler runs.
       handedOver = true;
       phase = "submitted";
@@ -3643,6 +3934,8 @@
       for (const entry of records) entry.hash = null;
       records = [];
       if (!done) next(index);
+      // The last step was submitted: watch this document for a refusal.
+      if (done && reason === "completed") watchAfterSubmit(baseline);
     }
     // Configuration: native-owned values only (never page content).
     try {
@@ -3717,7 +4010,7 @@
           { once: true },
         );
     }
-    cancelActive = () => finish(false, "cancelled");
+    cancelActive = (cause) => finish(false, "cancelled", cause);
     const leave = () =>
       finish(handedOver, handedOver ? "handed-over" : "navigation");
     window.addEventListener("pagehide", leave, { once: true });

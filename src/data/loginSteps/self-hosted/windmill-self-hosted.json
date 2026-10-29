@@ -5,7 +5,7 @@
   "evidence": {
     "class": "A",
     "source": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
-    "reviewed": "2026-10-22"
+    "reviewed": "2026-10-29"
   },
   "credentialOrigins": [],
   "loginSteps": [
@@ -13,8 +13,8 @@
       "kind": "form",
       "paths": ["/user/login"],
       "selectors": {
-        "username": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
-        "password": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]"
+        "username": "input[type=\"email\"]:is([id$=\"-email\"][autocomplete=\"username\"],#email:is([autocomplete=\"email\"],[autocomplete=\"username\"]))",
+        "password": "input[type=\"password\"][autocomplete=\"current-password\"]:is([id$=\"-password\"],#password)"
       }
     },
     {
