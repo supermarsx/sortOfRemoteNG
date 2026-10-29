@@ -101,6 +101,7 @@ import {
   normalizeSshQuickActions,
 } from "../utils/connection/sessionQuickActions";
 import { applyTrustedRedirectChanges } from "../utils/security/trustedRedirectManagement";
+import { clearDeletedConnectionBrowserData } from "../utils/connection/clearDeletedConnectionBrowserData";
 import { resolveDefaultTabGroup } from "../utils/session/resolveDefaultTabGroup";
 import { getQuickConnectConnection } from "../utils/session/runtimeConnectionRegistry";
 import {
@@ -1763,8 +1764,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         await flushPendingSave();
         assertRecycleScope(scope);
+        const before = stateRef.current.connections;
         const result = operation(
-          stateRef.current.connections,
+          before,
           recycleBinRef.current,
           Date.now(),
           generateId(),
@@ -1778,6 +1780,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         assertRecycleScope(scope, false);
         recycleReviewsRef.current.clear();
+        // Best effort, never awaited: deleted web connections' cookies and page cache.
+        if (result.archived)
+          clearDeletedConnectionBrowserData(before, result.connections);
         return {
           committed: true,
           archived: result.archived ?? 0,
