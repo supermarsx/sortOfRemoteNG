@@ -708,6 +708,10 @@ async fn handle_client(
     limits: ProxyLimits,
     observations: Arc<Observations>,
 ) {
+    // Browser-side loopback socket: never hold a small TLS/H2 record back for
+    // an ACK (Nagle). The dialed upstream already sets TCP_NODELAY; failure
+    // to set it only costs latency, never admission.
+    let _ = client.set_nodelay(true);
     let admission = match tokio::time::timeout(
         limits.header_timeout,
         read_admission(&mut client, &credential_hash, limits.max_header_bytes),
