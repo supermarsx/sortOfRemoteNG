@@ -1696,6 +1696,80 @@ function sourceBoundFailure(value, mode) {
   };
 }
 
+// Diagnostic only: how a fresh source namespace differs from the recorded one.
+function sourceContentFailure(value, mode) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join() !==
+      "added,changed,missing,mode,reordered,samples,stage" ||
+    value.mode !== mode ||
+    value.stage !== "content" ||
+    ![value.changed, value.missing, value.added].every(
+      (count) =>
+        Number.isSafeInteger(count) && count >= 0 && count <= 3_000_000,
+    ) ||
+    typeof value.reordered !== "boolean" ||
+    !Array.isArray(value.samples) ||
+    value.samples.length > 8 ||
+    Buffer.byteLength(JSON.stringify(value)) > 4096
+  )
+    return null;
+  const samples = [];
+  for (const sample of value.samples) {
+    if (
+      !sample ||
+      typeof sample !== "object" ||
+      Array.isArray(sample) ||
+      Object.keys(sample).sort().join() !== "candidate,fields,kind" ||
+      !["changed", "missing", "added"].includes(sample.kind) ||
+      !Array.isArray(sample.fields) ||
+      sample.fields.length > 16 ||
+      !sample.fields.every(
+        (field, index) =>
+          typeof field === "string" &&
+          /^[A-Za-z][A-Za-z0-9]{0,31}$/.test(field) &&
+          (index === 0 || sample.fields[index - 1] < field),
+      ) ||
+      (sample.kind === "changed") !== sample.fields.length > 0
+    )
+      return null;
+    const candidate = sample.candidate;
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate) ||
+      !["bytes,sha256", "bytes,name,sha256"].includes(
+        Object.keys(candidate).sort().join(),
+      ) ||
+      !Number.isSafeInteger(candidate.bytes) ||
+      candidate.bytes <= 0 ||
+      !sourcePathFailure({
+        mode,
+        phase: "filesystem-member",
+        predicate: "unclassified",
+        ...candidate,
+      })
+    )
+      return null;
+    samples.push({
+      kind: sample.kind,
+      fields: [...sample.fields],
+      candidate: { ...candidate },
+    });
+  }
+  return {
+    mode: value.mode,
+    stage: value.stage,
+    changed: value.changed,
+    missing: value.missing,
+    added: value.added,
+    reordered: value.reordered,
+    samples,
+  };
+}
+
 // Diagnostic only: owned source metadata progress when its own deadline hit.
 function sourceDeadlineFailure(value, mode) {
   if (
@@ -1795,7 +1869,8 @@ export function archiveFailureRecord(
     sourceIoFacts,
     sourceBoundFacts,
     sourceFileFacts,
-    sourceDeadlineFacts;
+    sourceDeadlineFacts,
+    sourceContentFacts;
   let error = deadline
     ? "archive-deadline"
     : overflow
@@ -1890,6 +1965,38 @@ export function archiveFailureRecord(
         sourceBoundFacts = {
           ...(bound && !invalid ? { sourceBoundFailure: bound } : {}),
           ...(invalid ? { sourceBoundFailureInvalid: true } : {}),
+        };
+      }
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "source-content-changed" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        let content,
+          invalid = false;
+        if (Object.hasOwn(value, "sourceContentFailure")) {
+          try {
+            content = sourceContentFailure(
+              value.sourceContentFailure,
+              sourceMode,
+            );
+            invalid = content === null;
+          } catch {
+            invalid = true;
+          }
+          delete value.sourceContentFailure;
+        }
+        if (Object.hasOwn(value, "sourceContentFailureInvalid")) {
+          invalid = true;
+          delete value.sourceContentFailureInvalid;
+        }
+        sourceContentFacts = {
+          ...(content && !invalid ? { sourceContentFailure: content } : {}),
+          ...(invalid ? { sourceContentFailureInvalid: true } : {}),
         };
       }
       if (
@@ -2075,6 +2182,7 @@ export function archiveFailureRecord(
         sourceBoundFacts = undefined;
         sourceFileFacts = undefined;
         sourceDeadlineFacts = undefined;
+        sourceContentFacts = undefined;
       }
     } catch {
       /* Untrusted/partial helper output never becomes a log label. */
@@ -2091,6 +2199,7 @@ export function archiveFailureRecord(
     ...sourceBoundFacts,
     ...sourceFileFacts,
     ...sourceDeadlineFacts,
+    ...sourceContentFacts,
     exitCode:
       Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
         ? exitCode

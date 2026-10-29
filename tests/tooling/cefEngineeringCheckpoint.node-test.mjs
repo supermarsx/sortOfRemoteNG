@@ -13274,3 +13274,114 @@ print('deadline PASS')
     { error: "archive-deadline", exitCode: null },
   );
 });
+
+test("Linux source snapshots are canonical in path order; Mac snapshots keep traversal order", async () => {
+  const result = python(
+    String.raw`import importlib.util,pathlib,sys,tempfile,hashlib
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('snapshot_order',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+root=pathlib.Path(tempfile.mkdtemp()).resolve()
+names=['src/z','.gclient_entries','src/a/b','depot_tools/x','src/a']
+rows=[{'path':p,'kind':'file','stamp':[1,1,0,0,0o100644,1],'ctimeNs':0} for p in names]
+digest=lambda root,row,budget,*rest:hashlib.sha256(row['path'].encode()).hexdigest()
+policy={'gitHeads':{'src':'a'*40,'src/cef':'b'*40,'depot_tools':'c'*40},'registrySha256':digest(None,{'path':'.gclient_entries'},None),'_nearby_literals':None}
+with patch.object(m,'inventory',return_value=(rows,5)),patch.object(m,'source_hash',side_effect=digest):
+ value=m.source_snapshot_inventory(root,m.Budget(5),None,dict(policy),False)
+assert [e['path'] for e in value['entries']]==sorted(names),value['entries']
+assert all(e['sha256']==hashlib.sha256(e['path'].encode()).hexdigest() for e in value['entries'])
+print('order PASS')
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /order PASS/);
+  const source = (
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      "utf8",
+    )
+  ).replace(/\r\n/g, "\n");
+  assert.match(
+    source,
+    /    if not external and not policy\.get\('mac'\):\n(?:        #[^\n]*\n)+        entries\.sort\(key=lambda entry: entry\['path'\]\)\n/,
+  );
+});
+
+test("source-content-changed reports counts and spread samples of differing paths and fields", async () => {
+  const result = python(
+    String.raw`import importlib.util,sys,hashlib,json
+spec=importlib.util.spec_from_file_location('content',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+def row(p,sha='a'*64,mode=33188):return {'path':p,'kind':'file','mode':mode,'size':1,'sha256':sha}
+expected=[row('src/keep'),row('src/gone'),row('src/mode')]+[row('src/pyc/%02d.pyc'%i) for i in range(20)]
+current=[row('src/keep'),row('src/new'),row('src/mode',mode=33261)]+[row('src/pyc/%02d.pyc'%i,sha='b'*64) for i in range(20)]
+with m.source_io_scope('source-apply'):error=m.source_content_error(expected,current)
+assert error.args==('source-content-changed',)
+facts=m.source_content_failure_fields(error,'source-apply')['sourceContentFailure']
+assert (facts['changed'],facts['missing'],facts['added'],facts['reordered'])==(21,1,1,False),facts
+assert len(facts['samples'])==8 and facts['samples'][0]['kind']=='missing' and facts['samples'][0]['candidate']['name']=='src/gone'
+kinds={s['candidate']['name']:(s['kind'],s['fields']) for s in facts['samples']}
+assert any(k==('changed',['sha256']) for k in kinds.values()),kinds
+with m.source_io_scope('source-apply'):error=m.source_content_error([row('src/x~private')],[row('src/x~private',sha='c'*64)])
+sample=m.source_content_failure_fields(error,'source-apply')['sourceContentFailure']['samples'][0]
+assert 'name' not in sample['candidate'] and sample['candidate']['sha256']==hashlib.sha256(b'src/x~private').hexdigest()
+with m.source_io_scope('source-apply'):error=m.source_content_error([row('src/a'),row('src/b')],[row('src/b'),row('src/a')])
+assert m.source_content_failure_fields(error,'source-apply')['sourceContentFailure']['reordered'] is True
+assert m.source_content_failure_fields(error,'source-verify')=={'sourceContentFailureInvalid':True}
+assert m.source_content_failure_fields(error,'pack')=={}
+assert m.source_content_failure_fields(m.source_content_error([row('src/a')],[]),'source-apply')=={'sourceContentFailureInvalid':True}
+print(json.dumps(facts))
+`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const facts = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  const record = (detail, sourceMode = "source-apply", extra = {}) =>
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: "source-content-changed",
+        ...extra,
+        ...(detail === undefined ? {} : { sourceContentFailure: detail }),
+      }),
+      1,
+      { sourceMode },
+    );
+  assert.deepEqual(record(facts), {
+    error: "source-content-changed",
+    sourceContentFailure: facts,
+    exitCode: 1,
+  });
+  assert.deepEqual(record(undefined), {
+    error: "source-content-changed",
+    exitCode: 1,
+  });
+  const sample = facts.samples.find((item) => item.kind === "changed");
+  for (const detail of [
+    null,
+    { ...facts, mode: "source-verify" },
+    { ...facts, stage: "hash" },
+    { ...facts, changed: -1 },
+    { ...facts, reordered: "no" },
+    { ...facts, samples: Array(9).fill(sample) },
+    { ...facts, samples: [{ ...sample, fields: [] }] },
+    { ...facts, samples: [{ ...sample, fields: ["size", "mode"] }] },
+    { ...facts, samples: [{ ...sample, fields: ["sha-256"] }] },
+    { ...facts, samples: [{ ...sample, kind: "missing" }] },
+    {
+      ...facts,
+      samples: [
+        { ...sample, candidate: { ...sample.candidate, name: "src/other" } },
+      ],
+    },
+    { ...facts, extra: "PRIVATE" },
+  ])
+    assert.deepEqual(record(detail), {
+      error: "source-content-changed",
+      sourceContentFailureInvalid: true,
+      exitCode: 1,
+    });
+  assert.deepEqual(
+    record(facts, "source-apply", { private: "private" }).error,
+    "unknown",
+  );
+});

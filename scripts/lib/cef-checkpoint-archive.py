@@ -154,6 +154,86 @@ def source_bound_failure_fields(error, mode):
         return {'sourceBoundFailureInvalid':True}
 
 
+# Diagnostic only: how the freshly hashed namespace differs from the recorded
+# one. Counts plus up to eight evenly spread samples; each sample names the
+# differing field keys and projects its path like every source candidate.
+SOURCE_CONTENT_SAMPLES = 8
+
+
+def source_content_value(value, mode):
+    require(type(value) is dict and set(value) == {'mode','stage','changed','missing','added','reordered','samples'} and
+            value['mode'] == mode and mode in SOURCE_IO_MODES and value['stage'] == 'content' and
+            all(type(value[key]) is int and 0 <= value[key] <= SOURCE_MAX_ENTRIES for key in ('changed','missing','added')) and
+            type(value['reordered']) is bool and type(value['samples']) is list and
+            len(value['samples']) <= SOURCE_CONTENT_SAMPLES, 'diagnostic')
+    samples = []
+    for sample in value['samples']:
+        require(type(sample) is dict and set(sample) == {'kind','fields','candidate'} and
+                sample['kind'] in ('changed','missing','added') and type(sample['fields']) is list and
+                len(sample['fields']) <= 16 and sample['fields'] == sorted(set(sample['fields'])) and
+                all(isinstance(x, str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9]{0,31}', x) for x in sample['fields']) and
+                (sample['kind'] == 'changed') == bool(sample['fields']), 'diagnostic')
+        item = sample['candidate']
+        require(type(item) is dict and set(item) in ({'bytes','sha256'},{'bytes','sha256','name'}) and
+                type(item['bytes']) is int and 0 < item['bytes'] <= 4*1024**2 and
+                isinstance(item['sha256'],str) and re.fullmatch(r'[a-f0-9]{64}',item['sha256']) is not None, 'diagnostic')
+        require('name' not in item or source_path_name(item['name']) and len(item['name'].encode()) == item['bytes'] and
+                hashlib.sha256(item['name'].encode()).hexdigest() == item['sha256'], 'diagnostic')
+        samples.append({'kind':sample['kind'], 'fields':list(sample['fields']), 'candidate':dict(item)})
+    require(len(json.dumps(value).encode()) <= 4096, 'diagnostic')
+    return {'mode':value['mode'], 'stage':'content', 'changed':value['changed'], 'missing':value['missing'],
+            'added':value['added'], 'reordered':value['reordered'], 'samples':samples}
+
+
+def source_content_error(expected, current):
+    error = CheckpointError('source-content-changed')
+    try:
+        context = SOURCE_IO_CONTEXT.get()
+        require(type(context) is tuple and len(context) == 2 and context[0] in SOURCE_IO_MODES, 'diagnostic')
+        old = {row['path']: row for row in expected}
+        new = {row['path']: row for row in current}
+        differences = []
+        for name in sorted(set(old) | set(new)):
+            if name not in new:
+                differences.append((name, 'missing', []))
+            elif name not in old:
+                differences.append((name, 'added', []))
+            elif old[name] != new[name]:
+                differences.append((name, 'changed', sorted({key for key in set(old[name]) | set(new[name])
+                                                            if old[name].get(key) != new[name].get(key)})))
+        count = lambda kind: sum(1 for item in differences if item[1] == kind)
+        step = max(1, -(-len(differences) // SOURCE_CONTENT_SAMPLES))
+        samples = []
+        for name, kind, fields in differences[::step][:SOURCE_CONTENT_SAMPLES]:
+            raw = name.encode()
+            samples.append({'kind':kind, 'fields':fields,
+                            'candidate':{'bytes':len(raw), 'sha256':hashlib.sha256(raw).hexdigest(),
+                                         **({'name':name} if source_path_name(name) else {})}})
+        error.sourceContentFailure = source_content_value({'mode':context[0], 'stage':'content',
+            'changed':count('changed'), 'missing':count('missing'), 'added':count('added'),
+            'reordered':not differences and len(expected) == len(current), 'samples':samples}, context[0])
+    except Exception:
+        try:
+            error.sourceContentFailureInvalid = True
+        except Exception:
+            pass
+    return error
+
+
+def source_content_failure_fields(error, mode):
+    if mode not in SOURCE_IO_MODES or type(error) is not CheckpointError or str(error) != 'source-content-changed':
+        return {}
+    try:
+        if error.__dict__.get('sourceContentFailureInvalid') is True:
+            return {'sourceContentFailureInvalid':True}
+        value = error.__dict__.get('sourceContentFailure')
+        if value is None:
+            return {}
+        return {'sourceContentFailure':source_content_value(value, mode)}
+    except Exception:
+        return {'sourceContentFailureInvalid':True}
+
+
 # Diagnostic only: how far owned source metadata got when its deadline expired.
 # Counters only (no path); the stage says whether hashing had started.
 def source_deadline_value(value, mode):
@@ -1733,7 +1813,13 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     if guards is not None:
         guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
         guards[''] = (root_before,root.stat().st_ctime_ns)
-    value = {'entries': [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows],
+    entries = [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows]
+    if not external and not policy.get('mac'):
+        # Linux directory iteration order is not stable across fresh checkouts
+        # (ext4 creation order, parallel git checkout), so the Linux snapshot
+        # is canonical in path order; Mac snapshots keep their reviewed order.
+        entries.sort(key=lambda entry: entry['path'])
+    value = {'entries': entries,
              'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
              'bytes': total}
     if not external and not policy.get('mac'):
@@ -1826,8 +1912,9 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     require(intel or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
     # Compare the entire freshly hashed namespace before the first metadata write.
     without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
-    require(json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) ==
-            json.dumps(without_time(current['entries']),sort_keys=True,separators=(',',':')), 'source-content-changed')
+    if (json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) !=
+            json.dumps(without_time(current['entries']),sort_keys=True,separators=(',',':'))):
+        raise source_content_error(without_time(expected['entries']), without_time(current['entries']))
     for row in expected['entries']:
         require(isinstance(row['mtimeNs'], str) and re.fullmatch(r'0|[1-9][0-9]{0,18}', row['mtimeNs']) and
                 int(row['mtimeNs']) < 2**63, 'source-mtime')
@@ -2211,6 +2298,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **source_deadline_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **source_deadline_failure_fields(error, CLI_SOURCE_MODE), **source_content_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
 
         raise SystemExit(1)
