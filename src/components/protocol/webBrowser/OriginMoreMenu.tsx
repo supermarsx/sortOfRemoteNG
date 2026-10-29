@@ -2,7 +2,9 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Copy,
+  DatabaseZap,
   ExternalLink,
+  LogOut,
   Eraser,
   MoreHorizontal,
   KeyRound,
@@ -29,10 +31,17 @@ import NativeBrowserRecordingControls from "./NativeBrowserRecordingControls";
 import OriginHistoryList from "./OriginHistoryList";
 import type { NativeBrowserRecordingController } from "../../../hooks/protocol/useNativeBrowserRecording";
 import type { OriginPageMenuController } from "../../../hooks/protocol/useOriginPageMenu";
+import { useTranslation } from "react-i18next";
+
+/** What an in-tab clear removes: the whole session (saved sign-in and page
+ * cache), only the page cache, or only the saved sign-in. */
+export type OriginBrowserClearKind = "session" | "cache" | "sign-in";
 
 type Review =
   | { kind: "external"; url: string }
-  | { kind: "clear" | "credentials" | "history" | "recording" };
+  | {
+      kind: "clear" | "clear-sign-in" | "credentials" | "history" | "recording";
+    };
 
 /** Mounted per native attempt. Full addresses stay volatile and leave only on
  * an explicit copy/open click; diagnostic URLs and address drafts are not used. */
@@ -43,7 +52,7 @@ export default function OriginMoreMenu({
   assertOwner,
   hideNative,
   onOverlayChange,
-  onRestart,
+  onClear,
   session,
   connection,
   pageMenu,
@@ -55,12 +64,15 @@ export default function OriginMoreMenu({
   assertOwner: () => void;
   hideNative: () => void;
   onOverlayChange: (open: boolean) => void;
-  onRestart: () => Promise<void>;
+  /** Closes the attempt, clears the saved data, then starts a replacement.
+   * Rejects only when no replacement was confirmed. */
+  onClear: (kind: OriginBrowserClearKind) => Promise<void>;
   session: ConnectionSession;
   connection?: Connection;
   pageMenu: OriginPageMenuController;
   recording: NativeBrowserRecordingController;
 }) {
+  const { t } = useTranslation();
   const trigger = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(
@@ -163,10 +175,42 @@ export default function OriginMoreMenu({
       if (alive.current) setBusy(false);
     }
   };
+  // No review: clearing the page cache signs nothing out. The menu stays open
+  // and busy until the replacement is confirmed, like a copy.
+  const clearCache = async () => {
+    if (!connection || pending.current || surface.current !== "menu") return;
+    const epoch = opening.current;
+    const currentOpening = () =>
+      alive.current &&
+      opening.current === epoch &&
+      surface.current === "menu" &&
+      latest.current.eligible;
+    try {
+      check();
+      pending.current = true;
+      setBusy(true);
+      setMessage("");
+      await onClear("cache");
+      if (currentOpening()) dismiss();
+    } catch {
+      if (currentOpening())
+        setMessage(
+          t(
+            "originBrowser.clearData.notConfirmed",
+            "The action could not be completed. Check database access and try again.",
+          ),
+        );
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
+  };
   const confirm = async () => {
     if (
       !review ||
-      (review.kind !== "external" && review.kind !== "clear") ||
+      (review.kind !== "external" &&
+        review.kind !== "clear" &&
+        review.kind !== "clear-sign-in") ||
       pending.current ||
       surface.current !== review
     )
@@ -182,7 +226,7 @@ export default function OriginMoreMenu({
           throw new Error();
         // Shared app opener; no window.open or rejected-command fallback.
         await invoke("open_url_external", { url: captured.url });
-      } else await onRestart();
+      } else await onClear(captured.kind === "clear" ? "session" : "sign-in");
       if (alive.current && surface.current === captured) dismiss();
     } catch {
       if (
@@ -203,11 +247,13 @@ export default function OriginMoreMenu({
       ? "Open in system browser?"
       : review?.kind === "clear"
         ? "Clear this browser session?"
-        : review?.kind === "history"
-          ? "Browsing history"
-          : review?.kind === "recording"
-            ? "Recording"
-            : "Copy connection credentials";
+        : review?.kind === "clear-sign-in"
+          ? t("originBrowser.clearData.signInTitle", "Clear saved sign-in?")
+          : review?.kind === "history"
+            ? "Browsing history"
+            : review?.kind === "recording"
+              ? "Recording"
+              : "Copy connection credentials";
   const runAfterClose = (action: () => void) => {
     try {
       check();
@@ -319,6 +365,32 @@ export default function OriginMoreMenu({
           className="sor-menu-item gap-2"
           role="menuitem"
           disabled={!connection || busy}
+          onClick={() => void clearCache()}
+        >
+          <DatabaseZap size={16} aria-hidden="true" />
+          {t(
+            "originBrowser.clearData.cacheMenu",
+            "Clear page cache and reload",
+          )}
+        </button>
+        <button
+          type="button"
+          className="sor-menu-item gap-2"
+          role="menuitem"
+          disabled={!connection || busy}
+          onClick={() => openReview({ kind: "clear-sign-in" })}
+        >
+          <LogOut size={16} aria-hidden="true" />
+          {t(
+            "originBrowser.clearData.signInMenu",
+            "Clear saved sign-in and reconnect…",
+          )}
+        </button>
+        <button
+          type="button"
+          className="sor-menu-item gap-2"
+          role="menuitem"
+          disabled={!connection || busy}
           onClick={() => openReview({ kind: "credentials" })}
         >
           <KeyRound size={16} aria-hidden="true" />
@@ -413,11 +485,19 @@ export default function OriginMoreMenu({
               </>
             ) : review.kind === "clear" ? (
               <p className="text-sm text-[var(--color-textSecondary)]">
-                Close this attempt and start the saved connection in a new
-                ephemeral browser context. This ends this context's cookies and
-                sign-in state. It does not delete persistent browser profiles,
-                saved credentials, other tabs, or system-browser sessions.
-                Auto-login will require fresh native consent.
+                {connection
+                  ? t(
+                      "originBrowser.clearData.sessionBody",
+                      "Close this attempt, delete this connection's saved sign-in cookies and page cache, and start the saved connection in a new browser context. Websites will ask you to sign in again. It does not delete saved credentials, other connections, or system-browser sessions. Auto-login will require fresh native consent.",
+                    )
+                  : "Close this attempt and start the connection in a new ephemeral browser context. This ends this context's cookies and sign-in state. It does not delete saved credentials, other tabs, or system-browser sessions. Auto-login will require fresh native consent."}
+              </p>
+            ) : review.kind === "clear-sign-in" ? (
+              <p className="text-sm text-[var(--color-textSecondary)]">
+                {t(
+                  "originBrowser.clearData.signInBody",
+                  "Close this attempt, delete this connection's saved sign-in cookies, and reconnect. Websites that relied on them will ask you to sign in again. The page cache, saved credentials and other connections are not changed. Other tabs of this connection must be closed first.",
+                )}
               </p>
             ) : review.kind === "history" ? (
               <OriginHistoryList
@@ -452,11 +532,15 @@ export default function OriginMoreMenu({
               disabled={busy}
               onClick={dismiss}
             >
-              {review.kind === "external" || review.kind === "clear"
+              {review.kind === "external" ||
+              review.kind === "clear" ||
+              review.kind === "clear-sign-in"
                 ? "Cancel"
                 : "Done"}
             </button>
-            {(review.kind === "external" || review.kind === "clear") && (
+            {(review.kind === "external" ||
+              review.kind === "clear" ||
+              review.kind === "clear-sign-in") && (
               <button
                 type="button"
                 className="sor-btn sor-btn-primary"
@@ -467,7 +551,12 @@ export default function OriginMoreMenu({
                   ? "Working…"
                   : review.kind === "external"
                     ? "Open in system browser"
-                    : "Clear and restart"}
+                    : review.kind === "clear-sign-in"
+                      ? t(
+                          "originBrowser.clearData.signInConfirm",
+                          "Clear sign-in and reconnect",
+                        )
+                      : "Clear and restart"}
               </button>
             )}
           </ModalFooter>

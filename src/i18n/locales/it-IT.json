@@ -9999,6 +9999,19 @@
         "noForm": "Nessun modulo di accesso è comparso in questa pagina mentre l’accesso automatico lo cercava. Apri la pagina di accesso, poi riprova."
       }
     },
-    "proxyStuckRestartApp": "Il motore del browser non è riuscito a raggiungere nemmeno un nuovo proxy privato, quindi la sua connessione di rete è bloccata. Riavvia l'app per ripristinare la navigazione in questa scheda."
+    "proxyStuckRestartApp": "Il motore del browser non è riuscito a raggiungere nemmeno un nuovo proxy privato, quindi la sua connessione di rete è bloccata. Riavvia l'app per ripristinare la navigazione in questa scheda.",
+    "clearData": {
+      "cacheMenu": "Svuota la cache delle pagine e ricarica",
+      "signInMenu": "Cancella l'accesso salvato e riconnetti…",
+      "signInTitle": "Cancellare l'accesso salvato?",
+      "signInBody": "Questo tentativo viene chiuso, i cookie di accesso salvati di questa connessione vengono eliminati e la connessione viene ristabilita. I siti web che li usavano chiederanno di accedere di nuovo. La cache delle pagine, le credenziali salvate e le altre connessioni non cambiano. Prima occorre chiudere le altre schede di questa connessione.",
+      "signInConfirm": "Cancella l'accesso e riconnetti",
+      "sessionBody": "Questo tentativo viene chiuso, i cookie di accesso salvati e la cache delle pagine di questa connessione vengono eliminati e la connessione salvata si avvia in un nuovo contesto del browser. I siti web chiederanno di accedere di nuovo. Non vengono eliminati le credenziali salvate, le altre connessioni né le sessioni del browser di sistema. L'accesso automatico richiederà un nuovo consenso nativo.",
+      "sessionOpen": "I dati del browser salvati non sono stati cancellati perché un'altra scheda di questa connessione è ancora aperta. Chiudila e riprova. Questa scheda si è riconnessa.",
+      "unavailable": "Questa versione dell'app non può cancellare i dati del browser salvati. Questa scheda si è riconnessa.",
+      "failed": "Impossibile cancellare i dati del browser salvati. Controlla l'accesso al database e riprova. Questa scheda si è riconnessa.",
+      "cachePendingRestart": "Una parte della cache delle pagine di questa connessione è ancora in uso. Verrà rimossa al riavvio del motore del browser.",
+      "notConfirmed": "Impossibile completare l'azione. Controlla l'accesso al database e riprova."
+    }
   }
 }

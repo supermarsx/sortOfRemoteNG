@@ -9999,6 +9999,19 @@
         "noForm": "Nenhum formulário de início de sessão apareceu nesta página enquanto o início de sessão automático o procurava. Abra a página de início de sessão e tente novamente."
       }
     },
-    "proxyStuckRestartApp": "O motor do navegador também não conseguiu ligar a um novo proxy privado, por isso a ligação de rede está bloqueada. Reinicie a aplicação para voltar a navegar neste separador."
+    "proxyStuckRestartApp": "O motor do navegador também não conseguiu ligar a um novo proxy privado, por isso a ligação de rede está bloqueada. Reinicie a aplicação para voltar a navegar neste separador.",
+    "clearData": {
+      "cacheMenu": "Limpar a cache de páginas e recarregar",
+      "signInMenu": "Limpar o início de sessão guardado e voltar a ligar…",
+      "signInTitle": "Limpar o início de sessão guardado?",
+      "signInBody": "Esta tentativa é fechada, os cookies de início de sessão guardados desta ligação são eliminados e a ligação é restabelecida. Os sites que dependiam deles vão pedir-lhe que inicie sessão novamente. A cache de páginas, as credenciais guardadas e as outras ligações não são alteradas. Primeiro é necessário fechar os outros separadores desta ligação.",
+      "signInConfirm": "Limpar início de sessão e voltar a ligar",
+      "sessionBody": "Esta tentativa é fechada, os cookies de início de sessão guardados e a cache de páginas desta ligação são eliminados e a ligação guardada inicia num novo contexto de navegador. Os sites vão pedir-lhe que inicie sessão novamente. Não são eliminadas as credenciais guardadas, outras ligações nem as sessões do navegador do sistema. O início de sessão automático exigirá um novo consentimento nativo.",
+      "sessionOpen": "Os dados guardados do navegador não foram limpos porque outro separador desta ligação continua aberto. Feche-o e tente novamente. Este separador voltou a ligar.",
+      "unavailable": "Esta versão da aplicação não consegue limpar os dados guardados do navegador. Este separador voltou a ligar.",
+      "failed": "Não foi possível limpar os dados guardados do navegador. Verifique o acesso à base de dados e tente novamente. Este separador voltou a ligar.",
+      "cachePendingRestart": "Parte da cache de páginas desta ligação ainda está em uso. Será removida quando o motor do navegador reiniciar.",
+      "notConfirmed": "Não foi possível concluir a ação. Verifique o acesso à base de dados e tente novamente."
+    }
   }
 }

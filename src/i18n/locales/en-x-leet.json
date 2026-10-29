@@ -9999,6 +9999,19 @@
         "noForm": "N0 sign-in f0rm 4pp34r3d 0n 7h15 p463 wh113 4u70m471c 1061n 100k3d f0r 17. 0p3n 7h3 sign-in p463, 7h3n r37ry."
       }
     },
-    "proxyStuckRestartApp": "7h3 8r0w53r 3n61n3 57111 c0u1d n07 r34ch 4 fr35h pr1v473 pr0xy, 50 175 n37w0rk c0nn3c710n 15 57uck. R3574r7 7h3 4pp 70 r3570r3 8r0w51n6 1n 7h15 748."
+    "proxyStuckRestartApp": "7h3 8r0w53r 3n61n3 57111 c0u1d n07 r34ch 4 fr35h pr1v473 pr0xy, 50 175 n37w0rk c0nn3c710n 15 57uck. R3574r7 7h3 4pp 70 r3570r3 8r0w51n6 1n 7h15 748.",
+    "clearData": {
+      "cacheMenu": "C134r p463 c4ch3 4nd r3104d",
+      "signInMenu": "C134r 54v3d sign-in 4nd r3c0nn3c7…",
+      "signInTitle": "C134r 54v3d sign-in?",
+      "signInBody": "C1053 7h15 4773mp7, d31373 7h15 c0nn3c710n'5 54v3d sign-in c00k135, 4nd r3c0nn3c7. W3851735 7h47 r3113d 0n 7h3m w111 45k y0u 70 516n 1n 4641n. 7h3 p463 c4ch3, 54v3d cr3d3n71415 4nd 07h3r c0nn3c710n5 4r3 n07 ch4n63d. 07h3r 7485 0f 7h15 c0nn3c710n mu57 83 c1053d f1r57.",
+      "signInConfirm": "C134r sign-in 4nd r3c0nn3c7",
+      "sessionBody": "C1053 7h15 4773mp7, d31373 7h15 c0nn3c710n'5 54v3d sign-in c00k135 4nd p463 c4ch3, 4nd 574r7 7h3 54v3d c0nn3c710n 1n 4 n3w 8r0w53r c0n73x7. W3851735 w111 45k y0u 70 516n 1n 4641n. 17 d035 n07 d31373 54v3d cr3d3n71415, 07h3r c0nn3c710n5, 0r system-browser 535510n5. Auto-login w111 r3qu1r3 fr35h n471v3 c0n53n7.",
+      "sessionOpen": "54v3d 8r0w53r d474 w45 n07 c134r3d 83c4u53 4n07h3r 748 0f 7h15 c0nn3c710n 15 57111 0p3n. C1053 17 4nd 7ry 4641n. 7h15 748 r3c0nn3c73d.",
+      "unavailable": "7h15 v3r510n 0f 7h3 4pp c4nn07 c134r 54v3d 8r0w53r d474. 7h15 748 r3c0nn3c73d.",
+      "failed": "54v3d 8r0w53r d474 c0u1d n07 83 c134r3d. Ch3ck d4748453 4cc355 4nd 7ry 4641n. 7h15 748 r3c0nn3c73d.",
+      "cachePendingRestart": "P4r7 0f 7h15 c0nn3c710n'5 p463 c4ch3 15 57111 1n u53. 17 15 r3m0v3d wh3n 7h3 8r0w53r 3n61n3 r3574r75.",
+      "notConfirmed": "7h3 4c710n c0u1d n07 83 c0mp1373d. Ch3ck d4748453 4cc355 4nd 7ry 4641n."
+    }
   }
 }

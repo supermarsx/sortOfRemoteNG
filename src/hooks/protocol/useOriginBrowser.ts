@@ -135,6 +135,10 @@ const restartReasons = [
   "requested",
   "settings-saved",
   "session-cleared",
+  /** The user cleared this connection's page cache between close and create. */
+  "cache-cleared",
+  /** The user cleared this connection's saved sign-in between close and create. */
+  "sign-in-cleared",
   "source-changed",
   /** A live tab's private relay ended; a fresh attempt gets a fresh relay. */
   "relay-ended",

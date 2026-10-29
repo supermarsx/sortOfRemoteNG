@@ -53,6 +53,12 @@ const f = vi.hoisted(() => ({
   hookOptions: null as any,
   /** Stands in for the reason of the hook's last restart, when set. */
   restartReason: null as string | null,
+  /** The per-connection data clear (cookies and/or page cache). */
+  clearData: vi.fn(),
+}));
+vi.mock("../../src/services/originBrowserData", async (original) => ({
+  ...(await original<typeof import("../../src/services/originBrowserData")>()),
+  clearConnectionData: (request: unknown) => f.clearData(request),
 }));
 vi.mock(
   "../../src/components/protocol/webBrowser/OriginMfaOriginRepair",
@@ -340,6 +346,16 @@ beforeEach(() => {
         snapshot: snapshot(`attempt-${++f.serial}`),
       };
   });
+  f.clearData.mockImplementation(
+    async (request: { cookies: boolean; cache: boolean }) => ({
+      ok: true,
+      value: {
+        cookiesCleared: request.cookies,
+        cacheCleared: request.cache,
+        cachePendingRestart: false,
+      },
+    }),
+  );
   f.legacy.mockReturnValue({ browserSettings: { showBookmarksBar: false } });
   f.updateSettings.mockResolvedValue(undefined);
   vi.stubGlobal(
@@ -401,6 +417,24 @@ const restartReasons = [
 ].map((match) => match[1]);
 function render(ui: React.ReactNode) {
   return renderView(ui, { wrapper: ToastProvider });
+}
+/** The first attempt closed, then the data was cleared, then the second
+ * attempt was created. */
+function expectCloseClearCreate() {
+  const order = (name: string, index: number) =>
+    f.invoke.mock.invocationCallOrder[
+      f.invoke.mock.calls.findIndex(
+        (call, at) =>
+          call[0] === name &&
+          f.invoke.mock.calls.slice(0, at).filter(([c]) => c === name)
+            .length === index,
+      )
+    ];
+  const close = order("origin_browser_close", 0);
+  const clear = f.clearData.mock.invocationCallOrder[0];
+  const create = order("origin_browser_create", 1);
+  expect(close).toBeLessThan(clear);
+  expect(clear).toBeLessThan(create);
 }
 async function attached() {
   const view = render(<WebBrowser session={session} />);
@@ -2468,22 +2502,131 @@ describe("real-origin connection-tab integration", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Clear this browser session?",
     });
-    expect(dialog).toHaveTextContent("new ephemeral browser context");
-    expect(dialog).toHaveTextContent(
-      "does not delete persistent browser profiles",
-    );
+    expect(dialog).toHaveTextContent("saved sign-in cookies and page cache");
+    expect(dialog).toHaveTextContent("does not delete saved credentials");
     expect(calls("origin_browser_close")).toHaveLength(0);
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Clear and restart" }),
     );
     await waitFor(() => expect(calls("origin_browser_close")).toHaveLength(1));
     expect(calls("origin_browser_create")).toHaveLength(1);
+    // Native refuses while the attempt is live: nothing is cleared before
+    // the close is acknowledged.
+    expect(f.clearData).not.toHaveBeenCalled();
     await act(async () => finish());
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    expect(f.clearData).toHaveBeenCalledExactlyOnceWith({
+      connectionId: "connection-1",
+      cookies: true,
+      cache: true,
+    });
+    expectCloseClearCreate();
     expect(
       calls("origin_browser_create")[1][1].request.policy.autoLogin.consent,
     ).toEqual({ kind: "required" });
     expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["cache", { cookies: false, cache: true }],
+    ["sign-in", { cookies: true, cache: false }],
+  ] as const)(
+    "clears only the %s data between close and the replacement",
+    async (kind, scope) => {
+      await attached();
+      fireEvent.click(
+        screen.getByRole("button", { name: "More browser actions" }),
+      );
+      if (kind === "cache")
+        fireEvent.click(
+          screen.getByRole("menuitem", { name: "Clear page cache and reload" }),
+        );
+      else {
+        fireEvent.click(
+          screen.getByRole("menuitem", {
+            name: "Clear saved sign-in and reconnect…",
+          }),
+        );
+        const dialog = screen.getByRole("dialog", {
+          name: "Clear saved sign-in?",
+        });
+        expect(dialog).toHaveTextContent("The page cache");
+        expect(f.clearData).not.toHaveBeenCalled();
+        expect(calls("origin_browser_close")).toHaveLength(0);
+        fireEvent.click(
+          within(dialog).getByRole("button", {
+            name: "Clear sign-in and reconnect",
+          }),
+        );
+      }
+      await waitFor(() =>
+        expect(calls("origin_browser_create")).toHaveLength(2),
+      );
+      expect(f.clearData).toHaveBeenCalledExactlyOnceWith({
+        connectionId: "connection-1",
+        ...scope,
+      });
+      expectCloseClearCreate();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+      );
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    },
+  );
+  it.each([
+    ["refused", { ok: false, error: "browser-session-open" }, /another tab/],
+    ["unavailable", { ok: false, error: "unavailable" }, /cannot clear/],
+    ["failed", { ok: false, error: "failed" }, /could not be cleared/],
+    ["thrown", new Error("SECRET_NATIVE_ERROR"), /could not be cleared/],
+  ] as const)(
+    "a %s clear shows a toast and the tab still comes back",
+    async (_name, outcome, toast) => {
+      f.clearData.mockImplementation(async () => {
+        if (outcome instanceof Error) throw outcome;
+        return outcome;
+      });
+      await attached();
+      fireEvent.click(
+        screen.getByRole("button", { name: "More browser actions" }),
+      );
+      fireEvent.click(screen.getByText("Clear session…"));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Clear and restart" }),
+      );
+      await waitFor(() =>
+        expect(calls("origin_browser_create")).toHaveLength(2),
+      );
+      expectCloseClearCreate();
+      expect(await screen.findByText(toast)).toBeInTheDocument();
+      expect(screen.queryByText(/SECRET_NATIVE_ERROR/)).toBeNull();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+      );
+      // The clear failed: the tab does not claim that it was cleared.
+      expect(screen.queryByText(/Browser session cleared/)).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    },
+  );
+  it("says when part of the page cache is removed only at the next engine start", async () => {
+    f.clearData.mockResolvedValue({
+      ok: true,
+      value: {
+        cookiesCleared: false,
+        cacheCleared: false,
+        cachePendingRestart: true,
+      },
+    });
+    await attached();
+    fireEvent.click(
+      screen.getByRole("button", { name: "More browser actions" }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Clear page cache and reload" }),
+    );
+    expect(
+      await screen.findByText(/removed when the browser engine restarts/),
+    ).toBeInTheDocument();
+    expect(calls("origin_browser_create")).toHaveLength(2);
   });
   it("mounts scoped copy-only credentials and removes the panel on owner loss", async () => {
     await attached();

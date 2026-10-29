@@ -9999,6 +9999,19 @@
         "noForm": "Aucun formulaire de connexion n’est apparu sur cette page pendant que la connexion automatique le cherchait. Ouvrez la page de connexion, puis réessayez."
       }
     },
-    "proxyStuckRestartApp": "Le moteur du navigateur n'a pas pu joindre un nouveau proxy privé non plus : sa connexion réseau est bloquée. Redémarrez l'application pour rétablir la navigation dans cet onglet."
+    "proxyStuckRestartApp": "Le moteur du navigateur n'a pas pu joindre un nouveau proxy privé non plus : sa connexion réseau est bloquée. Redémarrez l'application pour rétablir la navigation dans cet onglet.",
+    "clearData": {
+      "cacheMenu": "Vider le cache des pages et recharger",
+      "signInMenu": "Effacer la connexion enregistrée et reconnecter…",
+      "signInTitle": "Effacer la connexion enregistrée ?",
+      "signInBody": "Cette tentative est fermée, les cookies de connexion enregistrés pour cette connexion sont supprimés, puis la connexion est rétablie. Les sites web qui s'en servaient vous demanderont de vous reconnecter. Le cache des pages, les identifiants enregistrés et les autres connexions ne changent pas. Les autres onglets de cette connexion doivent d'abord être fermés.",
+      "signInConfirm": "Effacer la connexion et reconnecter",
+      "sessionBody": "Cette tentative est fermée, les cookies de connexion enregistrés et le cache des pages de cette connexion sont supprimés, et la connexion enregistrée démarre dans un nouveau contexte de navigateur. Les sites web vous demanderont de vous reconnecter. Les identifiants enregistrés, les autres connexions et les sessions du navigateur système ne sont pas supprimés. La connexion automatique nécessitera un nouveau consentement natif.",
+      "sessionOpen": "Les données de navigateur enregistrées n'ont pas été effacées, car un autre onglet de cette connexion est encore ouvert. Fermez-le et réessayez. Cet onglet s'est reconnecté.",
+      "unavailable": "Cette version de l'application ne peut pas effacer les données de navigateur enregistrées. Cet onglet s'est reconnecté.",
+      "failed": "Les données de navigateur enregistrées n'ont pas pu être effacées. Vérifiez l'accès à la base de données et réessayez. Cet onglet s'est reconnecté.",
+      "cachePendingRestart": "Une partie du cache des pages de cette connexion est encore utilisée. Elle sera supprimée au redémarrage du moteur du navigateur.",
+      "notConfirmed": "L'action n'a pas pu être effectuée. Vérifiez l'accès à la base de données et réessayez."
+    }
   }
 }

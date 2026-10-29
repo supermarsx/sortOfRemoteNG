@@ -9999,6 +9999,19 @@
         "noForm": "No apareció ningún formulario de inicio de sesión en esta página mientras el inicio de sesión automático lo buscaba. Abre la página de inicio de sesión y reinténtalo."
       }
     },
-    "proxyStuckRestartApp": "El motor del navegador tampoco pudo conectar con un proxy privado nuevo, así que su conexión de red está bloqueada. Reinicia la aplicación para volver a navegar en esta pestaña."
+    "proxyStuckRestartApp": "El motor del navegador tampoco pudo conectar con un proxy privado nuevo, así que su conexión de red está bloqueada. Reinicia la aplicación para volver a navegar en esta pestaña.",
+    "clearData": {
+      "cacheMenu": "Vaciar la caché de páginas y recargar",
+      "signInMenu": "Borrar el inicio de sesión guardado y reconectar…",
+      "signInTitle": "¿Borrar el inicio de sesión guardado?",
+      "signInBody": "Se cierra este intento, se eliminan las cookies de inicio de sesión guardadas de esta conexión y se vuelve a conectar. Los sitios web que dependían de ellas le pedirán que inicie sesión de nuevo. La caché de páginas, las credenciales guardadas y las demás conexiones no cambian. Antes hay que cerrar las demás pestañas de esta conexión.",
+      "signInConfirm": "Borrar inicio de sesión y reconectar",
+      "sessionBody": "Se cierra este intento, se eliminan las cookies de inicio de sesión guardadas y la caché de páginas de esta conexión, y la conexión guardada se inicia en un nuevo contexto de navegador. Los sitios web le pedirán que inicie sesión de nuevo. No se eliminan las credenciales guardadas, otras conexiones ni las sesiones del navegador del sistema. El inicio de sesión automático requerirá un nuevo consentimiento nativo.",
+      "sessionOpen": "Los datos guardados del navegador no se borraron porque otra pestaña de esta conexión sigue abierta. Ciérrela e inténtelo de nuevo. Esta pestaña se reconectó.",
+      "unavailable": "Esta versión de la aplicación no puede borrar los datos guardados del navegador. Esta pestaña se reconectó.",
+      "failed": "No se pudieron borrar los datos guardados del navegador. Compruebe el acceso a la base de datos e inténtelo de nuevo. Esta pestaña se reconectó.",
+      "cachePendingRestart": "Parte de la caché de páginas de esta conexión sigue en uso. Se eliminará cuando se reinicie el motor del navegador.",
+      "notConfirmed": "No se pudo completar la acción. Compruebe el acceso a la base de datos e inténtelo de nuevo."
+    }
   }
 }

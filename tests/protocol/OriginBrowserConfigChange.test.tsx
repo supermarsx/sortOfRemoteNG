@@ -85,6 +85,25 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
 vi.mock("../../src/utils/tauri/invoke", () => ({
   getInvoke: async () => null,
 }));
+// The saved connection's sign-in cookies and page cache are cleared through
+// their own native command, between the close and the replacement.
+vi.mock("../../src/services/originBrowserData", async (original) => ({
+  ...(await original<typeof import("../../src/services/originBrowserData")>()),
+  clearConnectionData: async (request: {
+    cookies: boolean;
+    cache: boolean;
+  }) => {
+    h.order.push("clear");
+    return {
+      ok: true,
+      value: {
+        cookiesCleared: request.cookies,
+        cacheCleared: request.cache,
+        cachePendingRestart: false,
+      },
+    };
+  },
+}));
 vi.mock("../../src/utils/recording/webAutomationLibrary", async (original) => ({
   ...(await original<
     typeof import("../../src/utils/recording/webAutomationLibrary")
@@ -744,6 +763,9 @@ describe("in-tab session restart", () => {
       "connected",
     ]);
     expect(h.save).not.toHaveBeenCalled();
+    expect(
+      h.order.filter((step) => ["close", "clear", "create"].includes(step)),
+    ).toEqual(["create", "close", "clear", "create"]);
     expect(notice()).toHaveTextContent(
       "Browser session cleared. This tab reconnected with a new one.",
     );

@@ -9999,6 +9999,19 @@
         "noForm": "Während die automatische Anmeldung danach gesucht hat, ist auf dieser Seite kein Anmeldeformular erschienen. Öffnen Sie die Anmeldeseite und versuchen Sie es dann erneut."
       }
     },
-    "proxyStuckRestartApp": "Die Browser-Engine konnte auch einen neuen privaten Proxy nicht erreichen, ihre Netzwerkverbindung hängt. Starten Sie die App neu, um das Surfen in diesem Tab wiederherzustellen."
+    "proxyStuckRestartApp": "Die Browser-Engine konnte auch einen neuen privaten Proxy nicht erreichen, ihre Netzwerkverbindung hängt. Starten Sie die App neu, um das Surfen in diesem Tab wiederherzustellen.",
+    "clearData": {
+      "cacheMenu": "Seitencache leeren und neu laden",
+      "signInMenu": "Gespeicherte Anmeldung löschen und neu verbinden…",
+      "signInTitle": "Gespeicherte Anmeldung löschen?",
+      "signInBody": "Dieser Versuch wird geschlossen, die gespeicherten Anmelde-Cookies dieser Verbindung werden gelöscht und die Verbindung wird neu aufgebaut. Websites, die sie verwendet haben, fordern Sie erneut zur Anmeldung auf. Seitencache, gespeicherte Zugangsdaten und andere Verbindungen bleiben unverändert. Andere Tabs dieser Verbindung müssen zuerst geschlossen werden.",
+      "signInConfirm": "Anmeldung löschen und neu verbinden",
+      "sessionBody": "Dieser Versuch wird geschlossen, die gespeicherten Anmelde-Cookies und der Seitencache dieser Verbindung werden gelöscht und die gespeicherte Verbindung startet in einem neuen Browserkontext. Websites fordern Sie erneut zur Anmeldung auf. Gespeicherte Zugangsdaten, andere Verbindungen und Sitzungen des Systembrowsers werden nicht gelöscht. Die automatische Anmeldung erfordert eine neue native Zustimmung.",
+      "sessionOpen": "Die gespeicherten Browserdaten wurden nicht gelöscht, weil noch ein anderer Tab dieser Verbindung geöffnet ist. Schließen Sie ihn und versuchen Sie es erneut. Dieser Tab wurde neu verbunden.",
+      "unavailable": "Diese Version der App kann gespeicherte Browserdaten nicht löschen. Dieser Tab wurde neu verbunden.",
+      "failed": "Die gespeicherten Browserdaten konnten nicht gelöscht werden. Prüfen Sie den Datenbankzugriff und versuchen Sie es erneut. Dieser Tab wurde neu verbunden.",
+      "cachePendingRestart": "Ein Teil des Seitencaches dieser Verbindung wird noch verwendet. Er wird beim Neustart der Browser-Engine entfernt.",
+      "notConfirmed": "Die Aktion konnte nicht abgeschlossen werden. Prüfen Sie den Datenbankzugriff und versuchen Sie es erneut."
+    }
   }
 }

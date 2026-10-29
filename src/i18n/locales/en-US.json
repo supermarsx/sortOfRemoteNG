@@ -9999,6 +9999,19 @@
         "noForm": "No sign-in form appeared on this page while automatic login looked for it. Open the sign-in page, then retry."
       }
     },
-    "proxyStuckRestartApp": "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab."
+    "proxyStuckRestartApp": "The browser engine still could not reach a fresh private proxy, so its network connection is stuck. Restart the app to restore browsing in this tab.",
+    "clearData": {
+      "cacheMenu": "Clear page cache and reload",
+      "signInMenu": "Clear saved sign-in and reconnect…",
+      "signInTitle": "Clear saved sign-in?",
+      "signInBody": "Close this attempt, delete this connection's saved sign-in cookies, and reconnect. Websites that relied on them will ask you to sign in again. The page cache, saved credentials and other connections are not changed. Other tabs of this connection must be closed first.",
+      "signInConfirm": "Clear sign-in and reconnect",
+      "sessionBody": "Close this attempt, delete this connection's saved sign-in cookies and page cache, and start the saved connection in a new browser context. Websites will ask you to sign in again. It does not delete saved credentials, other connections, or system-browser sessions. Auto-login will require fresh native consent.",
+      "sessionOpen": "Saved browser data was not cleared because another tab of this connection is still open. Close it and try again. This tab reconnected.",
+      "unavailable": "This version of the app cannot clear saved browser data. This tab reconnected.",
+      "failed": "Saved browser data could not be cleared. Check database access and try again. This tab reconnected.",
+      "cachePendingRestart": "Part of this connection's page cache is still in use. It is removed when the browser engine restarts.",
+      "notConfirmed": "The action could not be completed. Check database access and try again."
+    }
   }
 }

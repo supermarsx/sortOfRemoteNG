@@ -28,6 +28,13 @@ import type {
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { useToastContext } from "../../../contexts/ToastContext";
+import type { TFunction } from "i18next";
+import {
+  clearConnectionData,
+  type ClearConnectionDataResult,
+  type OriginBrowserDataError,
+  type OriginBrowserDataOutcome,
+} from "../../../services/originBrowserData";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
 import {
   useOriginBrowser,
@@ -67,7 +74,7 @@ import OriginBrowserCapabilityNotice from "./OriginBrowserCapabilityNotice";
 import OriginBookmarkBar from "./OriginBookmarkBar";
 import OriginBookmarkButton from "./OriginBookmarkButton";
 import OriginPageTools from "./OriginPageTools";
-import OriginMoreMenu from "./OriginMoreMenu";
+import OriginMoreMenu, { type OriginBrowserClearKind } from "./OriginMoreMenu";
 import OriginHistoryMenu from "./OriginHistoryMenu";
 import { useOriginPageMenu } from "../../../hooks/protocol/useOriginPageMenu";
 import { useOriginFindResults } from "../../../hooks/protocol/useOriginFindResults";
@@ -141,6 +148,18 @@ const RESTART_NOTICES: Record<
     failed:
       "The browser session was cleared, but this tab could not reconnect. The error below explains why.",
   },
+  "cache-cleared": {
+    running: "Clearing this connection's page cache and reconnecting…",
+    done: "Page cache cleared. This tab reconnected and reloaded the website.",
+    failed:
+      "The page cache was cleared, but this tab could not reconnect. The error below explains why.",
+  },
+  "sign-in-cleared": {
+    running: "Clearing this connection's saved sign-in and reconnecting…",
+    done: "Saved sign-in cleared. This tab reconnected without it.",
+    failed:
+      "The saved sign-in was cleared, but this tab could not reconnect. The error below explains why.",
+  },
   "relay-ended": {
     running:
       "The app's private proxy for this tab stopped. Reconnecting this tab with a new one…",
@@ -161,6 +180,43 @@ const RESTART_NOTICES: Record<
     failed: "This tab could not reconnect. The error below explains why.",
   },
 };
+
+/** What each in-tab clear removes from the saved connection, and the restart
+ * that replaces the closed attempt. */
+const CLEAR_SCOPES: Record<
+  OriginBrowserClearKind,
+  { cookies: boolean; cache: boolean; reason: OriginBrowserRestartReason }
+> = {
+  session: { cookies: true, cache: true, reason: "session-cleared" },
+  cache: { cookies: false, cache: true, reason: "cache-cleared" },
+  "sign-in": { cookies: true, cache: false, reason: "sign-in-cleared" },
+};
+const CLEAR_REASONS: ReadonlySet<OriginBrowserRestartReason> = new Set(
+  Object.values(CLEAR_SCOPES).map((scope) => scope.reason),
+);
+
+function clearFailureMessage(
+  t: TFunction,
+  error: OriginBrowserDataError,
+): string {
+  switch (error) {
+    case "browser-session-open":
+      return t(
+        "originBrowser.clearData.sessionOpen",
+        "Saved browser data was not cleared because another tab of this connection is still open. Close it and try again. This tab reconnected.",
+      );
+    case "unavailable":
+      return t(
+        "originBrowser.clearData.unavailable",
+        "This version of the app cannot clear saved browser data. This tab reconnected.",
+      );
+    default:
+      return t(
+        "originBrowser.clearData.failed",
+        "Saved browser data could not be cleared. Check database access and try again. This tab reconnected.",
+      );
+  }
+}
 
 export default function OriginConnectionBrowser({
   session,
@@ -548,6 +604,8 @@ export default function OriginConnectionBrowser({
   const [settingsSave, setSettingsSave] = useState<
     "pending" | "saved" | "failed"
   >("pending");
+  // The last in-tab clear failed: its restart says only that it reconnected.
+  const [clearFailed, setClearFailed] = useState(false);
   useEffect(() => {
     if (!lastRestart) return;
     const stage =
@@ -583,9 +641,10 @@ export default function OriginConnectionBrowser({
   const restartNotice =
     lastRestart && restartStage
       ? (RESTART_NOTICES[
-          lastRestart.reason !== "settings-saved" ||
-          settingsSave === "saved" ||
-          (settingsSave === "pending" && restartStage === "running")
+          (lastRestart.reason !== "settings-saved" ||
+            settingsSave === "saved" ||
+            (settingsSave === "pending" && restartStage === "running")) &&
+          !(clearFailed && CLEAR_REASONS.has(lastRestart.reason))
             ? lastRestart.reason
             : "requested"
         ] ?? RESTART_NOTICES.requested)[restartStage]
@@ -663,13 +722,6 @@ export default function OriginConnectionBrowser({
     enabled: isActive && ownerAvailable,
     assertOwner: assertShellOwner,
   });
-  const restartEphemeralContext = async () => {
-    assertShellOwner();
-    // Close, then create, inside the hook: the tab never reads as ended, and
-    // the hook checks the owner again before it creates.
-    if (!(await browser.restart("session-cleared")))
-      throw new Error("Browser restart was not confirmed.");
-  };
   const appearanceStatus = useNativeBrowserAppearance(
     rootSnapshot?.identity ?? null,
     // Native prepaint darkness remains active while loading. Request the
@@ -844,6 +896,49 @@ export default function OriginConnectionBrowser({
       toast[type](message);
     },
   });
+  // Saved sign-in cookies (encrypted, restored on every start) and the page
+  // cache belong to the saved connection, not to the attempt. Native refuses
+  // to clear them while an attempt of the connection is live, so the hook
+  // closes this one first, the data is cleared in between, and the
+  // replacement starts without it. A clear that fails never stops the
+  // replacement: the tab always comes back, and a toast says what was kept.
+  const clearAndRestart = async (kind: OriginBrowserClearKind) => {
+    assertShellOwner();
+    const scope = CLEAR_SCOPES[kind];
+    const connectionId = isTemporary ? undefined : connection?.id;
+    let outcome: OriginBrowserDataOutcome<ClearConnectionDataResult> | null =
+      null;
+    setClearFailed(false);
+    const replaced = await browser.restart(scope.reason, {
+      beforeCreate: connectionId
+        ? async () => {
+            try {
+              outcome = await clearConnectionData({
+                connectionId,
+                cookies: scope.cookies,
+                cache: scope.cache,
+              });
+            } catch {
+              outcome = { ok: false, error: "failed" };
+            }
+            if (!outcome.ok && lifetime.current) setClearFailed(true);
+          }
+        : undefined,
+    });
+    const settled =
+      outcome as OriginBrowserDataOutcome<ClearConnectionDataResult> | null;
+    if (settled && lifetime.current) {
+      if (!settled.ok) toast.error(clearFailureMessage(t, settled.error));
+      else if (settled.value.cachePendingRestart)
+        toast.info(
+          t(
+            "originBrowser.clearData.cachePendingRestart",
+            "Part of this connection's page cache is still in use. It is removed when the browser engine restarts.",
+          ),
+        );
+    }
+    if (!replaced) throw new Error("Browser restart was not confirmed.");
+  };
   const selectedViewAvailable =
     ownerAvailable &&
     isActive &&
@@ -1463,7 +1558,7 @@ export default function OriginConnectionBrowser({
           assertOwner={assertShellOwner}
           hideNative={hide}
           onOverlayChange={setMoreOpen}
-          onRestart={restartEphemeralContext}
+          onClear={clearAndRestart}
           session={session}
           connection={isTemporary ? undefined : connection}
           pageMenu={pageMenu}
