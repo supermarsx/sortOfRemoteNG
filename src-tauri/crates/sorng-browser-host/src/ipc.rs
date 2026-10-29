@@ -851,10 +851,33 @@ pub struct OriginBrowserSnapshot {
     current_url: String,
     display_url: String,
     title: String,
+    /// Owner-window tab icon only: a bounded `data:image/png;base64,` URL the
+    /// engine fetched through this attempt's relay, never a remote address.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    favicon_url: String,
     loading: bool,
     document_loaded: bool,
     can_go_back: bool,
     can_go_forward: bool,
+}
+
+/// Bound on a snapshot favicon. Matches the native host's own bound.
+pub const MAX_FAVICON_URL_BYTES: usize = 64 * 1024;
+
+/// A PNG `data:` URL: canonical padded base64 that starts with the PNG
+/// signature (`iVBORw0KGgo` encodes its first eight bytes).
+fn favicon_url(value: &str) -> bool {
+    let Some(data) = value.strip_prefix("data:image/png;base64,") else {
+        return false;
+    };
+    let body = data.trim_end_matches('=');
+    value.len() <= MAX_FAVICON_URL_BYTES
+        && data.len() % 4 == 0
+        && data.len() - body.len() <= 2
+        && data.starts_with("iVBORw0KGgo")
+        && body
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
 }
 
 impl OriginBrowserSnapshot {
@@ -914,6 +937,7 @@ impl OriginBrowserSnapshot {
             current_url,
             display_url,
             title,
+            favicon_url: String::new(),
             loading: page.loading,
             document_loaded: page.document_loaded && matches!(phase, OriginBrowserPhase::Attached),
             can_go_back: page.can_go_back,
@@ -950,6 +974,19 @@ impl OriginBrowserSnapshot {
             .map(Into::into);
     }
 
+    /// Tab icon for an attached page: a bounded PNG `data:` URL from the
+    /// native host. Anything else is dropped, and a scrubbed or terminal
+    /// snapshot never carries one.
+    pub fn set_favicon_url(&mut self, value: &str) {
+        self.favicon_url.clear();
+        if matches!(self.phase, OriginBrowserPhase::Attached)
+            && !self.display_url.is_empty()
+            && favicon_url(value)
+        {
+            self.favicon_url.push_str(value);
+        }
+    }
+
     /// Retain identity, lifecycle and ordering, but remove owner-private page
     /// data and activity when the native owner is no longer authorized.
     /// This is logical scrubbing for retention/serialization, not zeroization.
@@ -958,6 +995,7 @@ impl OriginBrowserSnapshot {
         self.current_url.clear();
         self.display_url.clear();
         self.title.clear();
+        self.favicon_url.clear();
         self.loading = false;
         self.document_loaded = false;
         self.can_go_back = false;

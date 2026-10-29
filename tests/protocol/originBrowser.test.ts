@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { originBrowserBounds } from "../../src/types/protocols/originBrowser";
+import {
+  originBrowserBounds,
+  originBrowserFaviconUrl,
+} from "../../src/types/protocols/originBrowser";
 
 describe("native browser logical viewport contract", () => {
   it("preserves fractional logical pixels and strips extra fields", () => {
@@ -38,5 +41,33 @@ describe("native browser logical viewport contract", () => {
     expect(
       originBrowserBounds({ x: 24_576, y: 24_576, width: 8192, height: 8192 }),
     ).not.toBeNull();
+  });
+});
+
+describe("native browser favicon contract", () => {
+  it("accepts base64 raster data URLs and plain https URLs only", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    expect(originBrowserFaviconUrl(png)).toBe(png);
+    expect(
+      originBrowserFaviconUrl("data:image/x-icon;base64,AAABAA=="),
+    ).toBeDefined();
+    expect(originBrowserFaviconUrl("https://example.test/favicon.ico")).toBe(
+      "https://example.test/favicon.ico",
+    );
+    for (const rejected of [
+      undefined,
+      "",
+      7,
+      "http://example.test/favicon.ico",
+      "https://u:p@example.test/favicon.ico",
+      "https://example.test/fav icon.ico",
+      "javascript:alert(1)",
+      "data:image/svg+xml;base64,PHN2Zz4=",
+      "data:image/png,raw",
+      "data:image/png;base64,iVBOR w0K",
+      `data:image/png;base64,${"A".repeat(65_536)}`,
+      `https://example.test/${"a".repeat(2_048)}`,
+    ])
+      expect(originBrowserFaviconUrl(rejected)).toBeUndefined();
   });
 });

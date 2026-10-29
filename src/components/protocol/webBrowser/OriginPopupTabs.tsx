@@ -4,6 +4,53 @@ import React, { useId, useLayoutEffect, useRef, useState } from "react";
 import { Globe, LoaderCircle, X } from "lucide-react";
 import type { OriginBrowserPopups } from "../../../hooks/protocol/useOriginBrowserPopups";
 import styles from "./OriginPopupTabs.module.css";
+import { originBrowserFaviconUrl } from "../../../types/protocols/originBrowser";
+
+/** Spinner while loading; otherwise the page favicon when native reported a
+ * safe one, falling back to the globe when absent or when the image fails. */
+function TabIcon({
+  loading,
+  faviconUrl,
+}: {
+  loading: boolean;
+  faviconUrl?: string;
+}) {
+  const src = originBrowserFaviconUrl(faviconUrl);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (loading)
+    return (
+      <LoaderCircle
+        size={14}
+        aria-hidden="true"
+        data-tab-icon="loading"
+        className={`${styles.icon} ${styles.loadingIcon}`}
+      />
+    );
+  if (src && src !== failedSrc)
+    return (
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
+        width={14}
+        height={14}
+        draggable={false}
+        referrerPolicy="no-referrer"
+        decoding="async"
+        data-tab-icon="favicon"
+        className={`${styles.icon} ${styles.favicon}`}
+        onError={() => setFailedSrc(src)}
+      />
+    );
+  return (
+    <Globe
+      size={14}
+      aria-hidden="true"
+      data-tab-icon="globe"
+      className={styles.icon}
+    />
+  );
+}
 
 /** Only adopted native child handles appear here. Main renders the selected
  * child's native viewport; this strip never creates a browser or app session. */
@@ -11,10 +58,13 @@ export default function OriginPopupTabs({
   popups,
   parentTitle = "Website",
   parentLoading = false,
+  parentFaviconUrl,
 }: {
   popups: OriginBrowserPopups;
   parentTitle?: string;
   parentLoading?: boolean;
+  /** Owner page favicon; sanitized again before rendering. */
+  parentFaviconUrl?: string;
 }) {
   const helpId = useId();
   const tabButtons = useRef(new Map<string | null, HTMLButtonElement>());
@@ -161,11 +211,7 @@ export default function OriginPopupTabs({
             onKeyDown={(event) => onKeyDown(event, null)}
             onClick={() => popups.select(null)}
           >
-            <Globe
-              size={14}
-              aria-hidden="true"
-              className={`${styles.icon}${parentLoading ? ` ${styles.loadingIcon}` : ""}`}
-            />
+            <TabIcon loading={parentLoading} faviconUrl={parentFaviconUrl} />
             <span className={styles.title}>{parentTitle}</span>
           </button>
         </div>
@@ -269,19 +315,10 @@ export default function OriginPopupTabs({
                 onKeyDown={(event) => onKeyDown(event, tab.viewId)}
                 onClick={() => popups.select(tab.viewId)}
               >
-                {busy ? (
-                  <LoaderCircle
-                    size={14}
-                    aria-hidden="true"
-                    className={`${styles.icon} ${styles.loadingIcon}`}
-                  />
-                ) : (
-                  <Globe
-                    size={14}
-                    aria-hidden="true"
-                    className={`${styles.icon}${pageLoading ? ` ${styles.loadingIcon}` : ""}`}
-                  />
-                )}
+                <TabIcon
+                  loading={busy || !!pageLoading}
+                  faviconUrl={tab.snapshot?.faviconUrl}
+                />
                 <span className={styles.title}>{title}</span>
                 {status && <span className={styles.status}> · {status}</span>}
               </button>

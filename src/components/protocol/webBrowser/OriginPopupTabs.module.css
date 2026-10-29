@@ -88,9 +88,15 @@
   flex-shrink: 0;
 }
 
+.favicon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
 /* Loading is operational feedback, independent of decorative 0/50ms app
-   transitions and OS motion hints. Keep the site icon in place; aria-busy
-   exposes the same state without adding visible loading text. */
+   transitions and OS motion hints. A spinner replaces the site icon while
+   loading; aria-busy exposes the same state without visible loading text. */
 .trigger .loadingIcon {
   animation: tab-loading-spin 1s linear infinite !important;
   transform-origin: center;

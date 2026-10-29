@@ -30,6 +30,7 @@ import {
   ORIGIN_BROWSER_STATE_EVENT,
   originBrowserBounds,
   originBrowserFailureReason,
+  originBrowserFaviconUrl,
   originBrowserLoadFailure,
   originBrowserRuntimeFailure,
   type OriginBrowserAction,
@@ -288,6 +289,7 @@ function shellSnapshot(
     value.failureReason,
   );
   const loadFailure = originBrowserLoadFailure(value.phase, value.loadFailure);
+  const faviconUrl = originBrowserFaviconUrl(value.faviconUrl);
   return {
     identity: copyIdentity(value.identity),
     sequence: value.sequence,
@@ -297,6 +299,7 @@ function shellSnapshot(
     displayUrl,
     ...(currentUrl === undefined ? {} : { currentUrl }),
     title: Array.from(value.title).filter(printable).join(""),
+    ...(faviconUrl === undefined ? {} : { faviconUrl }),
     loading: value.loading,
     ...(value.documentLoaded === undefined
       ? {}

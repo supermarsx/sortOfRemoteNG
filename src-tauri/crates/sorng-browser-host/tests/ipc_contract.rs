@@ -433,6 +433,47 @@ fn snapshot(native: &NativePolicy, sequence: u64, url: &str, title: &str) -> Ori
 }
 
 #[test]
+fn snapshot_favicon_is_an_optional_bounded_png_data_url_scrubbed_with_the_page() {
+    let native = NativePolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
+    let icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
+    let mut attached = snapshot(&native, 1, "https://fixture.test/home", "Home");
+    assert!(serde_json::to_value(&attached).unwrap().get("faviconUrl").is_none());
+    attached.set_favicon_url(icon);
+    assert_eq!(serde_json::to_value(&attached).unwrap()["faviconUrl"], icon);
+    // Remote addresses, other types, malformed data and oversize are dropped.
+    let oversize = format!("data:image/png;base64,iVBORw0KGgo{}", "A".repeat(70_000));
+    for rejected in [
+        "https://fixture.test/favicon.ico",
+        "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+        "data:image/png;base64,R0lGODlhAQABAAAAACw=",
+        "data:image/png;base64,iVBORw0KGgo!",
+        "data:image/png;base64,iVBORw0KGgoA===",
+        "data:image/png,iVBORw0KGgo",
+        oversize.as_str(),
+    ] {
+        let mut next = attached.clone();
+        next.set_favicon_url(rejected);
+        assert!(serde_json::to_value(&next).unwrap().get("faviconUrl").is_none(), "{rejected}");
+    }
+    // A blank page or a non-attached snapshot carries none.
+    let mut blank = snapshot(&native, 2, "", "");
+    blank.set_favicon_url(icon);
+    assert!(serde_json::to_value(&blank).unwrap().get("faviconUrl").is_none());
+    let mut closed = OriginBrowserSnapshot::new(
+        native.identity(),
+        3,
+        OriginBrowserPhase::Closed,
+        OriginBrowserPageState { url: "https://fixture.test/home", title: "", loading: false,
+            document_loaded: false, can_go_back: false, can_go_forward: false },
+    )
+    .unwrap();
+    closed.set_favicon_url(icon);
+    assert!(serde_json::to_value(&closed).unwrap().get("faviconUrl").is_none());
+    attached.scrub_page_state();
+    assert!(serde_json::to_value(&attached).unwrap().get("faviconUrl").is_none());
+}
+
+#[test]
 fn create_matches_the_frontend_camel_case_contract_without_implicit_authority() {
     let request = decode::<OriginBrowserCreateRequest>(create())
         .unwrap_or_else(|_| panic!("Valid fixture rejected"));

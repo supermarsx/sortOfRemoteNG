@@ -153,6 +153,9 @@ export interface OriginBrowserSnapshot {
    * persist or copy into diagnostics. Optional for older native payloads. */
   readonly currentUrl?: string;
   readonly title: string;
+  /** Page favicon for the tab strip, already sanitized by
+   * `originBrowserFaviconUrl`. Optional: current native hosts do not emit it. */
+  readonly faviconUrl?: string;
   readonly loading: boolean;
   /** Native verified main-document OnLoadEnd; attachment alone is insufficient. */
   readonly documentLoaded?: boolean;
@@ -214,6 +217,31 @@ export function originBrowserLoadFailure(
       return Object.freeze({ code, category });
     default:
       return undefined;
+  }
+}
+
+const FAVICON_DATA_URL =
+  /^data:image\/(?:png|jpeg|gif|webp|bmp|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/** Favicons come from arbitrary sites. Accept only base64 raster data URLs
+ * and plain https URLs (the app CSP's img-src blocks http), with no userinfo
+ * or control characters. Anything else is dropped so the tab shows the globe;
+ * an invalid favicon never invalidates the snapshot carrying it. */
+export function originBrowserFaviconUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  if (value.startsWith("data:")) {
+    return value.length <= 65_536 && FAVICON_DATA_URL.test(value)
+      ? value
+      : undefined;
+  }
+  if (value.length > 2_048 || /[\p{Cc}\s]/u.test(value)) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password)
+      return undefined;
+    return url.href;
+  } catch {
+    return undefined;
   }
 }
 

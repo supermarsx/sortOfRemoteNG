@@ -171,6 +171,7 @@ fn inventory(view: &View) -> Result<Value, String> {
                 .ok()
                 .map(|mut snapshot| {
                     snapshot.set_load_failure(state.load_failure);
+                    snapshot.set_favicon_url(&child.display.favicon);
                     snapshot
                 })
             });

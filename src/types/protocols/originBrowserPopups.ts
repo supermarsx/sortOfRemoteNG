@@ -1,5 +1,6 @@
 import {
   originBrowserFailureReason,
+  originBrowserFaviconUrl,
   originBrowserLoadFailure,
   type OriginBrowserIdentity,
   type OriginBrowserSnapshot,
@@ -176,6 +177,7 @@ function readPopupSnapshot(
     row.failureReason,
   );
   const loadFailure = originBrowserLoadFailure(row.phase, row.loadFailure);
+  const faviconUrl = originBrowserFaviconUrl(row.faviconUrl);
   return Object.freeze({
     identity: Object.freeze({ ...source }),
     sequence: row.sequence as number,
@@ -185,6 +187,7 @@ function readPopupSnapshot(
     title: row.title,
     displayUrl: row.displayUrl,
     currentUrl: row.currentUrl,
+    ...(faviconUrl === undefined ? {} : { faviconUrl }),
     loading: row.loading as boolean,
     canGoBack: row.canGoBack as boolean,
     canGoForward: row.canGoForward as boolean,

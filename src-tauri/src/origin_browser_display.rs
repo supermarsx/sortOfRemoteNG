@@ -21,6 +21,9 @@ pub(super) fn scrub_retained(snapshot: &Mutex<OriginBrowserSnapshot>) {
         .scrub_page_state();
 }
 
+// The app publishes through `publish_page`; the CEF-free contract tests keep
+// driving these narrower entry points.
+#[allow(dead_code)]
 pub(super) fn publish(
     snapshot: &Mutex<OriginBrowserSnapshot>,
     identity: &BrowserIdentity,
@@ -43,6 +46,7 @@ pub(super) fn publish(
 
 /// The reason is fixed native lifecycle metadata, never private page content.
 /// Existing callers without a native fault can keep using `publish`.
+#[allow(dead_code)]
 pub(super) fn publish_with_reason(
     snapshot: &Mutex<OriginBrowserSnapshot>,
     identity: &BrowserIdentity,
@@ -64,6 +68,31 @@ pub(super) fn publish_with_load_failure(
     phase_and_reason: (OriginBrowserPhase, Option<OriginBrowserFailureReason>),
     load_failure: Option<sorng_browser_host::native_navigation::LoadFailure>,
     page: OriginBrowserPageState<'_>,
+    current: impl FnMut() -> bool,
+    emit: impl FnOnce(OriginBrowserSnapshot) -> bool,
+) -> Publication {
+    publish_page(
+        snapshot,
+        identity,
+        sequence,
+        phase_and_reason,
+        load_failure,
+        (page, ""),
+        current,
+        emit,
+    )
+}
+
+/// As `publish_with_load_failure`, with the page's native favicon `data:`
+/// URL. A terminal event drops it with the rest of the private page data.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn publish_page(
+    snapshot: &Mutex<OriginBrowserSnapshot>,
+    identity: &BrowserIdentity,
+    sequence: u64,
+    phase_and_reason: (OriginBrowserPhase, Option<OriginBrowserFailureReason>),
+    load_failure: Option<sorng_browser_host::native_navigation::LoadFailure>,
+    (page, favicon): (OriginBrowserPageState<'_>, &str),
     mut current: impl FnMut() -> bool,
     emit: impl FnOnce(OriginBrowserSnapshot) -> bool,
 ) -> Publication {
@@ -95,6 +124,9 @@ pub(super) fn publish_with_load_failure(
     };
     next.set_failure_reason(reason);
     next.set_load_failure(load_failure);
+    if !terminal {
+        next.set_favicon_url(favicon);
+    }
     {
         let mut previous = match snapshot.lock() {
             Ok(previous) => previous,

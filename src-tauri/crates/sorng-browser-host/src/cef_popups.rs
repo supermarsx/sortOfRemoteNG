@@ -813,10 +813,7 @@ impl CefBrowserHost<'_> {
                             phase: view.phase,
                             state: event.map(|event| event.state.clone()),
                             display: event
-                                .map(|event| BrowserDisplayState {
-                                    url: event.display.url.clone(),
-                                    title: event.display.title.clone(),
-                                })
+                                .map(|event| event.display.copy())
                                 .unwrap_or_default(),
                         }
                     })

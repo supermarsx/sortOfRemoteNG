@@ -185,7 +185,7 @@ describe("independent native tab page loading", () => {
   });
 });
 
-it("rotates the existing site icon without visible loading text under every motion preference", async () => {
+it("replaces the site icon with a spinner without visible loading text under every motion preference", async () => {
   const css = postcss.parse(
     readFileSync(
       "src/components/protocol/webBrowser/OriginPopupTabs.module.css",
@@ -242,8 +242,10 @@ it("rotates the existing site icon without visible loading text under every moti
   const f = await mountTabs();
   f.setParentLoading(true);
   expect(tab("Owner")).not.toHaveTextContent("Loading");
-  expect(tab("Owner").querySelector(".lucide-globe")).not.toBeNull();
-  expect(tab("Owner").querySelector(".lucide-loader-circle")).toBeNull();
+  expect(tab("Owner").querySelector(".lucide-globe")).toBeNull();
+  expect(tab("Owner").querySelector(".lucide-loader-circle")).toHaveClass(
+    styles.loadingIcon,
+  );
   const fChild = child("a", {
     snapshot: {
       identity,
@@ -259,11 +261,107 @@ it("rotates the existing site icon without visible loading text under every moti
   });
   f.emit([fChild]);
   expect(tab("A")).not.toHaveTextContent("Loading");
-  expect(tab("A").querySelector(".lucide-globe")).toHaveClass(
+  expect(tab("A").querySelector(".lucide-globe")).toBeNull();
+  expect(tab("A").querySelector(".lucide-loader-circle")).toHaveClass(
     styles.loadingIcon,
   );
-  expect(tab("A").querySelector(".lucide-loader-circle")).toBeNull();
   expect(tab("Owner")).toHaveAttribute("aria-busy", "true");
+});
+
+describe("tab favicons", () => {
+  const PNG = "data:image/png;base64,iVBORw0KGgo=";
+  const page = (patch = {}) => ({
+    identity,
+    sequence: 1,
+    phase: "attached" as const,
+    displayUrl: "https://fixture.invalid/",
+    currentUrl: "https://fixture.invalid/",
+    title: "Fixture",
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+    ...patch,
+  });
+  const icon = (name: string) =>
+    tab(name).querySelector("[data-tab-icon]")?.getAttribute("data-tab-icon");
+
+  it("shows a child favicon when idle, the spinner while loading, and the globe after an image error", async () => {
+    const f = await mountTabs([
+      child("a", { snapshot: page({ faviconUrl: PNG }) }),
+    ]);
+    const img = tab("A").querySelector("img")!;
+    expect(img).toHaveAttribute("src", PNG);
+    expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
+    expect(img).toHaveAttribute("alt", "");
+    expect(img).not.toHaveAttribute("crossorigin");
+    f.emit([
+      child("a", {
+        snapshot: page({ sequence: 2, loading: true, faviconUrl: PNG }),
+      }),
+    ]);
+    expect(icon("A")).toBe("loading");
+    expect(tab("A").querySelector("img")).toBeNull();
+    f.emit([child("a", { snapshot: page({ sequence: 3, faviconUrl: PNG }) })]);
+    fireEvent.error(tab("A").querySelector("img")!);
+    expect(icon("A")).toBe("globe");
+    // A different favicon gets its own chance to load.
+    const other = "https://fixture.invalid/favicon.ico";
+    f.emit([
+      child("a", { snapshot: page({ sequence: 4, faviconUrl: other }) }),
+    ]);
+    expect(tab("A").querySelector("img")).toHaveAttribute("src", other);
+  });
+
+  it.each([
+    "http://fixture.invalid/favicon.ico",
+    "javascript:alert(1)",
+    "https://user:pass@fixture.invalid/favicon.ico",
+    "data:text/html;base64,PHNjcmlwdD4=",
+    "data:image/svg+xml;base64,PHN2Zz4=",
+    "file:///C:/Windows/win.ini",
+    "blob:https://fixture.invalid/x",
+    42,
+  ])("drops unsafe favicon %s and shows the globe", async (faviconUrl) => {
+    await mountTabs([child("a", { snapshot: page({ faviconUrl }) })]);
+    expect(icon("A")).toBe("globe");
+    expect(tab("A").querySelector("img")).toBeNull();
+  });
+
+  it("renders the owner favicon prop and still falls back to the globe", () => {
+    const popups = {
+      tabs: [child("a")],
+      activeViewId: null,
+      error: null,
+      select: vi.fn(),
+      close: vi.fn(),
+      reorder: vi.fn(),
+    } as unknown as OriginBrowserPopups;
+    const view = render(
+      <OriginPopupTabs
+        popups={popups}
+        parentTitle="Owner"
+        parentFaviconUrl={PNG}
+      />,
+    );
+    expect(icon("Owner")).toBe("favicon");
+    view.rerender(
+      <OriginPopupTabs
+        popups={popups}
+        parentTitle="Owner"
+        parentFaviconUrl={PNG}
+        parentLoading
+      />,
+    );
+    expect(icon("Owner")).toBe("loading");
+    view.rerender(
+      <OriginPopupTabs
+        popups={popups}
+        parentTitle="Owner"
+        parentFaviconUrl="javascript:alert(1)"
+      />,
+    );
+    expect(icon("Owner")).toBe("globe");
+  });
 });
 const auxClick = (node: Element, button = 1) =>
   fireEvent(

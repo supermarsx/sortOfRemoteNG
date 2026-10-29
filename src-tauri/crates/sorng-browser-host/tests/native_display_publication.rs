@@ -38,6 +38,52 @@ fn wire(snapshot: &OriginBrowserSnapshot) -> serde_json::Value {
     serde_json::to_value(snapshot).unwrap()
 }
 
+const ICON: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
+
+#[test]
+fn the_page_favicon_publishes_with_its_page_and_never_with_a_terminal_event() {
+    let identity = identity();
+    let snapshot = retained(&identity);
+    assert_eq!(
+        display::publish_page(&snapshot, &identity, 2, (OriginBrowserPhase::Attached, None), None,
+            (private_page(), ICON), || true, |event| {
+                assert_eq!(wire(&event)["faviconUrl"], ICON);
+                true
+            }),
+        Publication::Published
+    );
+    assert_eq!(wire(&snapshot.lock().unwrap())["faviconUrl"], ICON);
+    // A remote address is never forwarded for the shell to fetch.
+    assert_eq!(
+        display::publish_page(&snapshot, &identity, 3, (OriginBrowserPhase::Attached, None), None,
+            (private_page(), "https://fixture.test/favicon.ico"), || true, |event| {
+                assert!(wire(&event).get("faviconUrl").is_none());
+                true
+            }),
+        Publication::Published
+    );
+    for phase in [OriginBrowserPhase::Closing, OriginBrowserPhase::Closed, OriginBrowserPhase::Failed] {
+        let snapshot = retained(&identity);
+        assert_eq!(
+            display::publish_page(&snapshot, &identity, 4, (phase, None), None,
+                (private_page(), ICON), || true, |event| {
+                    assert!(wire(&event).get("faviconUrl").is_none());
+                    true
+                }),
+            Publication::Published
+        );
+        assert!(wire(&snapshot.lock().unwrap()).get("faviconUrl").is_none());
+    }
+    // An owner that is no longer current keeps nothing.
+    let snapshot = retained(&identity);
+    assert_eq!(
+        display::publish_page(&snapshot, &identity, 5, (OriginBrowserPhase::Attached, None), None,
+            (private_page(), ICON), || false, |_| panic!("published for a stale owner")),
+        Publication::OwnerUnavailable
+    );
+    assert!(wire(&snapshot.lock().unwrap()).get("faviconUrl").is_none());
+}
+
 #[test]
 fn native_document_completion_survives_retained_status_without_a_loading_edge() {
     let identity = identity();
@@ -314,7 +360,7 @@ fn production_renderer_fault_revokes_before_owner_window_terminal_publication() 
     assert!(sink.contains("Lifecycle::Faulted => OriginBrowserPhase::Failed"));
     assert!(
         sink.find("self.attempt.revoke();").unwrap()
-            < sink.find("display::publish_with_reason(").unwrap()
+            < sink.find("display::publish_page(").unwrap()
     );
     for name in ["Renderer", "Callback", "NativeSurface", "Load"] {
         assert!(sink.contains(&format!(

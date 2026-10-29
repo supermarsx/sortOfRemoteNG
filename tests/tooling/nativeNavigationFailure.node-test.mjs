@@ -151,7 +151,8 @@ test("owner-window IPC retains only fixed load evidence and does not count faile
     runtime.indexOf("pub\(crate\) async fn create("),
   );
   assert.match(sink, /event\.state\.load_failure\.is_none\(\)/);
-  assert.match(sink, /display::publish_with_load_failure\(/);
+  // One publication path carries the fixed load evidence (and the favicon).
+  assert.match(sink, /display::publish_page\([^;]*event\.state\.load_failure,/);
   assert.match(
     sink,
     /Lifecycle::Attached \| Lifecycle::Hidden => OriginBrowserPhase::Attached/,
