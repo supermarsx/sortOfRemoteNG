@@ -1771,42 +1771,79 @@ function sourceContentFailure(value, mode) {
 }
 
 // Diagnostic only: owned source metadata progress when its own deadline hit.
+export const SOURCE_METADATA_PHASES = Object.freeze([
+  "start",
+  "sidecar-read",
+  "stat-cache-read",
+  "repositories",
+  "inventory",
+  "hash",
+  "post-inventory",
+  "compare",
+  "apply-literals",
+  "apply-utime",
+  "postcheck",
+  "sidecar-write",
+  "sidecar-readback",
+  "record-literals",
+  "stat-cache-write",
+  "done",
+]);
+const sourceCount = (value) =>
+  Number.isSafeInteger(value) && value >= 0 && value <= 264 * 1024 ** 3;
+const sourcePhases = (phases) =>
+  Array.isArray(phases) &&
+  phases.length <= 64 &&
+  phases.every(
+    (item) =>
+      Array.isArray(item) &&
+      item.length === 2 &&
+      SOURCE_METADATA_PHASES.includes(item[0]) &&
+      sourceCount(item[1]),
+  );
 function sourceDeadlineFailure(value, mode) {
   if (
     !value ||
     typeof value !== "object" ||
     Array.isArray(value) ||
     Object.keys(value).sort().join() !==
-      "bytes,files,hashedBytes,hashedFiles,mode,seconds,stage" ||
+      "bytes,elapsedMs,files,hashedBytes,hashedFiles,mode,phase,phaseMs,phases,reusedFiles,seconds,walked" ||
     value.mode !== mode ||
-    !["inventory", "hash"].includes(value.stage) ||
+    !SOURCE_METADATA_PHASES.includes(value.phase) ||
+    !sourcePhases(value.phases) ||
+    ![
+      value.elapsedMs,
+      value.phaseMs,
+      value.walked,
+      value.hashedFiles,
+      value.hashedBytes,
+      value.reusedFiles,
+    ].every(sourceCount) ||
     !Number.isSafeInteger(value.seconds) ||
     value.seconds <= 0 ||
-    value.seconds > LIMITS.linuxSourceMetadataMs / 1000
-  )
-    return null;
-  const counts = [value.hashedFiles, value.hashedBytes];
-  if (value.stage === "inventory") {
-    if (value.files !== null || value.bytes !== null || counts.some(Boolean))
-      return null;
-  } else if (
-    ![value.files, value.bytes, ...counts].every(
-      (count) => Number.isSafeInteger(count) && count >= 0,
-    ) ||
-    value.hashedFiles > value.files ||
-    value.hashedBytes > value.bytes ||
-    value.files > 3_000_000 ||
-    value.bytes > 264 * 1024 ** 3
+    value.seconds > LIMITS.linuxSourceMetadataMs / 1000 ||
+    (value.files === null) !== (value.bytes === null) ||
+    (value.files !== null &&
+      (!sourceCount(value.files) ||
+        !sourceCount(value.bytes) ||
+        value.hashedFiles + value.reusedFiles > value.files ||
+        value.hashedBytes > value.bytes)) ||
+    Buffer.byteLength(JSON.stringify(value)) > 4096
   )
     return null;
   return {
-    mode: value.mode,
-    stage: value.stage,
-    seconds: value.seconds,
-    files: value.files,
     bytes: value.bytes,
-    hashedFiles: value.hashedFiles,
+    elapsedMs: value.elapsedMs,
+    files: value.files,
     hashedBytes: value.hashedBytes,
+    hashedFiles: value.hashedFiles,
+    mode: value.mode,
+    phase: value.phase,
+    phaseMs: value.phaseMs,
+    phases: value.phases.map((item) => [...item]),
+    reusedFiles: value.reusedFiles,
+    seconds: value.seconds,
+    walked: value.walked,
   };
 }
 
@@ -5337,12 +5374,29 @@ export function sourceMetadataResult(value, mode) {
     ["source-record", "source-apply", "source-verify"].includes(mode),
     "Closed source metadata mode",
   );
-  shape(
-    value,
-    mode === "source-record"
+  // Linux results carry per-phase timings; Mac results never do.
+  const timed = Object.hasOwn(value ?? {}, "timing");
+  shape(value, [
+    ...(mode === "source-record"
       ? ["complete", "mode", "entries", "bytes", "sidecar"]
-      : ["complete", "mode", "entries", "bytes"],
-  );
+      : ["complete", "mode", "entries", "bytes"]),
+    ...(timed ? ["timing"] : []),
+  ]);
+  if (timed) {
+    shape(value.timing, [
+      "phases",
+      "hashedFiles",
+      "hashedBytes",
+      "reusedFiles",
+    ]);
+    assert(
+      sourcePhases(value.timing.phases) &&
+        sourceCount(value.timing.hashedFiles) &&
+        sourceCount(value.timing.hashedBytes) &&
+        sourceCount(value.timing.reusedFiles),
+      "Bounded source metadata timing",
+    );
+  }
   assert(
     value.complete === true &&
       value.mode === mode &&

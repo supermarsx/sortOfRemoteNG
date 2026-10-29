@@ -10695,12 +10695,12 @@ with fixture(record=False) as (root,sidecar,identity):
  assert legacy['policy']!=current['policy'] and current['policy']==m.SOURCE_METADATA_POLICY
  assert current['snapshot'].pop('literalLinks')==[]
  current['policy']=legacy['policy'];assert current==legacy,'only-policy-and-fixed-witness-schema-difference'
- assert {k:v for k,v in before.items() if k!='sidecar'}=={k:v for k,v in after.items() if k!='sidecar'}
+ assert {k:v for k,v in before.items() if k!='sidecar'}=={k:v for k,v in after.items() if k not in ('sidecar','timing')}
  assert m.source_metadata('source-verify',root,sidecar,identity,60)['complete']
  file=root/'src/input.cc';s=file.stat();shift=s.st_mtime_ns+1000000000
  sidecar.write_bytes(raw);os.utime(file,ns=(s.st_atime_ns,shift));first=old.source_metadata('source-apply',root,sidecar,identity,60);old_time=file.stat().st_mtime_ns
  sidecar.write_bytes(fresh);os.utime(file,ns=(s.st_atime_ns,shift));second=m.source_metadata('source-apply',root,sidecar,identity,60)
- assert first==second and file.stat().st_mtime_ns==old_time and fresh==sidecar.read_bytes(),'same-content-and-timestamp-transaction'
+ assert first=={k:v for k,v in second.items() if k!='timing'} and file.stat().st_mtime_ns==old_time and fresh==sidecar.read_bytes(),'same-content-and-timestamp-transaction'
  assert set(json.loads(fresh))=={'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'}
  assert all('birthNs' not in row and 'uid' not in row and 'nlink' not in row for row in json.loads(fresh)['snapshot']['entries'])
  some=root/'src/some';some.mkdir();(root/'src/foo').mkdir();(some/'out').mkdir()
@@ -13180,46 +13180,38 @@ print('budget PASS')
   assert.match(result.stdout, /budget PASS/);
 });
 
-test("an owned-source deadline reports hashing progress counters, validated on both sides", async () => {
+test("an owned-source deadline always reports its phase, completed phase times and walk/hash progress", async () => {
   const result = python(
     String.raw`import importlib.util,json,sys
 spec=importlib.util.spec_from_file_location('deadline',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-budget=m.Budget(2340,2400)
-def record(stage,files,raw,done,done_bytes,mode='source-record',error=None):
- error=error or m.CheckpointError('archive-deadline')
- with m.source_io_scope(mode):m.source_deadline_record(error,budget,stage,files,raw,done,done_bytes)
- return error
-error=record('hash',500000,40*1024**3,250000,20*1024**3)
-assert m.source_deadline_failure_fields(error,'source-record')=={'sourceDeadlineFailure':{'mode':'source-record','stage':'hash','seconds':2340,'files':500000,'bytes':40*1024**3,'hashedFiles':250000,'hashedBytes':20*1024**3}}
-assert m.source_deadline_failure_fields(error,'source-verify')=={'sourceDeadlineFailureInvalid':True}
-assert m.source_deadline_failure_fields(error,'pack')=={}
-error=record('inventory',None,None,0,0,'source-apply')
-assert m.source_deadline_failure_fields(error,'source-apply')['sourceDeadlineFailure']['stage']=='inventory'
-for bad in [('hash',10,10,11,0),('hash',10,10,1,11),('inventory',1,None,0,0),('other',1,1,0,0)]:
- assert m.source_deadline_failure_fields(record(*bad),'source-record')=={'sourceDeadlineFailureInvalid':True}
-other=record('hash',1,1,0,0,error=m.CheckpointError('source-file-changed'))
-assert 'sourceDeadlineFailure' not in other.__dict__
-first=record('hash',3,3,1,1);again=dict(first.sourceDeadlineFailure)
-with m.source_io_scope('source-record'):m.source_deadline_record(first,budget,'hash',3,3,2,2)
-assert first.sourceDeadlineFailure==again
-outside=m.CheckpointError('archive-deadline');m.source_deadline_record(outside,budget,'hash',1,1,0,0)
-assert m.source_deadline_failure_fields(outside,'source-record')=={}
-print('deadline PASS')
+deadline=m.CheckpointError('archive-deadline')
+m.SOURCE_PROGRESS=None
+assert m.source_deadline_failure_fields(deadline,'source-record')=={}
+m.source_progress_start(2340)
+for name in ['sidecar-read','repositories','inventory','hash','post-inventory']:m.source_phase(name)
+m.SOURCE_PROGRESS['walked']=7
+m.SOURCE_PROGRESS.update(files=10,bytes=100,hashedFiles=3,hashedBytes=30,reusedFiles=7)
+facts=m.source_deadline_failure_fields(deadline,'source-verify')['sourceDeadlineFailure']
+assert facts['phase']=='post-inventory' and [p[0] for p in facts['phases']]==['start','sidecar-read','repositories','inventory','hash']
+assert (facts['walked'],facts['files'],facts['hashedFiles'],facts['reusedFiles'],facts['seconds'])==(7,10,3,7,2340)
+assert m.source_deadline_failure_fields(deadline,'pack')=={}
+assert m.source_deadline_failure_fields(m.CheckpointError('source-file-changed'),'source-verify')=={}
+m.SOURCE_PROGRESS['hashedFiles']=4
+assert m.source_deadline_failure_fields(deadline,'source-verify')=={'sourceDeadlineFailureInvalid':True}
+m.SOURCE_PROGRESS['hashedFiles']=3
+try:m.source_phase('unknown')
+except m.CheckpointError as error:assert error.args==('source-phase',)
+else:raise AssertionError('unknown phase admitted')
+m.source_progress_start(60);m.source_phase('repositories');m.source_phase('inventory')
+early=m.source_deadline_failure_fields(deadline,'source-record')['sourceDeadlineFailure']
+assert early['files'] is None and early['bytes'] is None and early['phase']=='inventory'
+print(json.dumps([facts,early]))
 `,
     [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /deadline PASS/);
-  const facts = {
-    mode: "source-record",
-    stage: "hash",
-    seconds: 2340,
-    files: 500000,
-    bytes: 40 * 1024 ** 3,
-    hashedFiles: 250000,
-    hashedBytes: 20 * 1024 ** 3,
-  };
-  const record = (detail, sourceMode = "source-record", extra = {}) =>
+  const [facts, early] = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  const record = (detail, sourceMode = "source-verify", extra = {}) =>
     archiveFailureRecord(
       JSON.stringify({
         complete: false,
@@ -13235,15 +13227,7 @@ print('deadline PASS')
     sourceDeadlineFailure: facts,
     exitCode: 1,
   });
-  const inventory = {
-    ...facts,
-    stage: "inventory",
-    files: null,
-    bytes: null,
-    hashedFiles: 0,
-    hashedBytes: 0,
-  };
-  assert.deepEqual(record(inventory).sourceDeadlineFailure, inventory);
+  assert.deepEqual(record(early, "source-record").sourceDeadlineFailure, early);
   assert.deepEqual(record(undefined), {
     error: "archive-deadline",
     exitCode: 1,
@@ -13252,14 +13236,15 @@ print('deadline PASS')
     null,
     [],
     { ...facts, mode: "source-apply" },
-    { ...facts, stage: "upload" },
+    { ...facts, phase: "upload" },
+    { ...facts, phases: [["upload", 1]] },
+    { ...facts, phases: [["hash", -1]] },
     { ...facts, seconds: 2401 },
     { ...facts, hashedFiles: facts.files + 1 },
     { ...facts, hashedBytes: facts.bytes + 1 },
-    { ...facts, files: 1.5 },
+    { ...facts, files: null },
+    { ...facts, walked: 1.5 },
     { ...facts, path: "src/private" },
-    { ...inventory, files: 1 },
-    { ...inventory, hashedFiles: 1 },
   ])
     assert.deepEqual(record(detail), {
       error: "archive-deadline",
@@ -13273,6 +13258,31 @@ print('deadline PASS')
     }),
     { error: "archive-deadline", exitCode: null },
   );
+  const base = {
+    complete: true,
+    mode: "source-verify",
+    entries: 10,
+    bytes: 100,
+  };
+  const timing = {
+    phases: facts.phases,
+    hashedFiles: 3,
+    hashedBytes: 30,
+    reusedFiles: 7,
+  };
+  assert.deepEqual(sourceMetadataResult({ ...base, timing }, "source-verify"), {
+    ...base,
+    timing,
+  });
+  assert.deepEqual(sourceMetadataResult(base, "source-verify"), base);
+  for (const bad of [
+    { ...timing, phases: [["upload", 1]] },
+    { ...timing, extra: 1 },
+    { ...timing, reusedFiles: -1 },
+  ])
+    assert.throws(() =>
+      sourceMetadataResult({ ...base, timing: bad }, "source-verify"),
+    );
 });
 
 test("Linux source snapshots are canonical in path order; Mac snapshots keep traversal order", async () => {
@@ -13385,3 +13395,171 @@ print(json.dumps(facts))
     "unknown",
   );
 });
+
+// Linux only: the cheap verify and apply-postcheck reuse a digest only when a
+// file's full stat tuple is unchanged. ctime cannot be set from userspace, so a
+// write that restores mtime still differs; each case below must still fail.
+const STAT_REUSE_PROOF = String.raw`
+import hashlib,shutil
+def setup(root,sidecar,identity):
+ (root/'acquisition-logs').mkdir()
+ return m.source_metadata('source-record',root,sidecar,identity,60)
+def files(root,sidecar):
+ return sum(1 for e in json.loads(sidecar.read_bytes())['snapshot']['entries'] if e['kind']=='file')
+def keep_mtime(p,write):
+ s=p.stat();write();os.utime(p,ns=(s.st_atime_ns,s.st_mtime_ns))
+def denied(root,sidecar,identity,mode='source-verify'):
+ try:m.source_metadata(mode,root,sidecar,identity,60)
+ except m.CheckpointError as error:return str(error)
+ raise AssertionError('admitted')
+CHANGE_DENIALS=('source-content-changed','source-repository-or-total-changed','source-file-identity','source-file-changed')
+def cases():
+ def content(root):
+  p=root/'src/input.cc';keep_mtime(p,lambda:p.write_bytes(b'X'+p.read_bytes()[1:]))
+ def size(root):
+  p=root/'src/input.cc';keep_mtime(p,lambda:p.write_bytes(p.read_bytes()+b'more'))
+ def inode(root):
+  p=root/'src/input.cc';s=p.stat();data=b'Y'+p.read_bytes()[1:];q=p.with_name('replacement')
+  q.write_bytes(data);os.utime(q,ns=(s.st_atime_ns,s.st_mtime_ns));os.replace(q,p)
+ def missing(root):(root/'src/input.cc').unlink()
+ def added(root):(root/'src/added-after-record.cc').write_bytes(b'new input')
+ return {'content-same-mtime':content,'size':size,'replaced-inode':inode,'missing':missing,'added':added}
+`;
+
+test(
+  "stat-reuse verify rehashes nothing unchanged and still denies content (same mtime, new ctime), size, replaced inode, missing and added entries",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux ctime semantics; actual owned source transaction"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        STAT_REUSE_PROOF +
+        String.raw`
+with fixture(record=False)as(root,sidecar,identity):
+ recorded=setup(root,sidecar,identity);count=files(root,sidecar)
+ assert recorded['timing']['hashedFiles']==count and recorded['timing']['reusedFiles']==0
+ assert (root/'acquisition-logs'/m.SOURCE_STAT_CACHE_NAME).is_file()
+ verified=m.source_metadata('source-verify',root,sidecar,identity,60)
+ assert verified['timing']['hashedFiles']==0 and verified['timing']['reusedFiles']==2*count,verified
+ assert [p[0] for p in verified['timing']['phases']][:3]==['start','sidecar-read','stat-cache-read']
+for name,change in cases().items():
+ with fixture(record=False)as(root,sidecar,identity):
+  setup(root,sidecar,identity);change(root)
+  assert denied(root,sidecar,identity) in CHANGE_DENIALS,name
+ # The same change is reported by a full rehash without the cache.
+ with fixture(record=False)as(root,sidecar,identity):
+  setup(root,sidecar,identity);change(root);(root/'acquisition-logs'/m.SOURCE_STAT_CACHE_NAME).unlink()
+  assert denied(root,sidecar,identity) in CHANGE_DENIALS,name
+# Unchanged bytes in a replaced inode are rehashed, not denied.
+with fixture(record=False)as(root,sidecar,identity):
+ setup(root,sidecar,identity);p=root/'src/input.cc';s=p.stat();d=p.parent.stat();q=p.with_name('same');q.write_bytes(p.read_bytes())
+ os.utime(q,ns=(s.st_atime_ns,s.st_mtime_ns));os.replace(q,p);os.utime(p.parent,ns=(d.st_atime_ns,d.st_mtime_ns))
+ assert m.source_metadata('source-verify',root,sidecar,identity,60)['timing']['hashedFiles']==1
+# A stale, foreign or malformed cache only costs a full rehash.
+for corrupt in ['sidecar','identity','garbage','row']:
+ with fixture(record=False)as(root,sidecar,identity):
+  setup(root,sidecar,identity);cache=root/'acquisition-logs'/m.SOURCE_STAT_CACHE_NAME;value=json.loads(cache.read_bytes())
+  if corrupt=='sidecar':value['sidecarSha256']='0'*64
+  elif corrupt=='identity':value['identity']={**identity,'graph':'b'*64}
+  elif corrupt=='row':value['entries'][0]=value['entries'][0][:3]
+  cache.write_bytes(b'not json' if corrupt=='garbage' else json.dumps(value).encode())
+  result=m.source_metadata('source-verify',root,sidecar,identity,60)['timing']
+  assert result['reusedFiles']==files(root,sidecar) and result['hashedFiles']==files(root,sidecar),(corrupt,result)
+print('stat reuse verify PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /stat reuse verify PASS/);
+  },
+);
+
+test(
+  "mutation: a stat key without ctime or size would admit a same-mtime content change, so the reuse key needs both",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux ctime semantics; actual owned source transaction"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        STAT_REUSE_PROOF +
+        String.raw`
+real=m.source_stat_key;real_reuse=m.source_stat_cache_reuse
+for label,cut in [('no-ctime',lambda t:t[:-1]),('no-ctime-no-size',lambda t:t[1:-1])]:
+ def weak_reuse(*args,cut=cut):
+  found=real_reuse(*args);return None if found is None else {k:(cut(v[0]),v[1]) for k,v in found.items()}
+ with fixture(record=False)as(root,sidecar,identity),patch.object(m,'source_stat_key',side_effect=lambda row,cut=cut:cut(real(row))),patch.object(m,'source_stat_cache_reuse',side_effect=weak_reuse):
+  setup(root,sidecar,identity);cases()['content-same-mtime'](root)
+  assert m.source_metadata('source-verify',root,sidecar,identity,60)['complete'],label
+with fixture(record=False)as(root,sidecar,identity):
+ setup(root,sidecar,identity);cases()['content-same-mtime'](root)
+ assert denied(root,sidecar,identity)=='source-content-changed'
+print('stat key mutation PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /stat key mutation PASS/);
+  },
+);
+
+test(
+  "apply keeps a full first-pass hash, checks its postcheck by post-utime stat tuples and leaves a cache that verify reuses",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Linux ctime semantics; actual owned source transaction"
+        : false,
+  },
+  () => {
+    const setup = SOURCE_METADATA_PROOF.slice(
+      0,
+      SOURCE_METADATA_PROOF.indexOf("class SourceMetadataProof"),
+    );
+    const result = python(
+      setup +
+        STAT_REUSE_PROOF +
+        String.raw`
+with fixture(record=False)as(root,sidecar,identity):
+ setup(root,sidecar,identity);count=files(root,sidecar);cache=root/'acquisition-logs'/m.SOURCE_STAT_CACHE_NAME
+ for name in ['src/input.cc','depot_tools/helper.py']:
+  p=root/name;s=p.stat();os.utime(p,ns=(s.st_atime_ns,s.st_mtime_ns+1000000000))
+ cache.unlink()
+ applied=m.source_metadata('source-apply',root,sidecar,identity,60)['timing']
+ assert applied['hashedFiles']==count and applied['reusedFiles']==count,applied
+ assert cache.is_file()
+ verified=m.source_metadata('source-verify',root,sidecar,identity,60)['timing']
+ assert verified['hashedFiles']==0 and verified['reusedFiles']==2*count,verified
+ # A content change after apply is still caught by the next verify.
+ cases()['content-same-mtime'](root)
+ assert denied(root,sidecar,identity)=='source-content-changed'
+# The first apply pass never trusts the cache.
+for name,change in cases().items():
+ with fixture(record=False)as(root,sidecar,identity):
+  setup(root,sidecar,identity);change(root)
+  with patch.object(m.os,'utime',side_effect=AssertionError('no timestamp write before complete match')) as writes:
+   assert denied(root,sidecar,identity,'source-apply') in CHANGE_DENIALS,name
+   writes.assert_not_called()
+print('apply stat postcheck PASS')
+`,
+      [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /apply stat postcheck PASS/);
+  },
+);

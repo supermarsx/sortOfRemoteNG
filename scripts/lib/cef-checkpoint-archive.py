@@ -234,52 +234,71 @@ def source_content_failure_fields(error, mode):
         return {'sourceContentFailureInvalid':True}
 
 
-# Diagnostic only: how far owned source metadata got when its deadline expired.
-# Counters only (no path); the stage says whether hashing had started.
+# Progress of the running owned-source metadata call: the current phase, the
+# completed phases with their wall times, and walk/hash counters. Only the
+# main thread writes it. A deadline reports it, so it always says where it was;
+# a Linux success returns the phase timings.
+SOURCE_PHASES = ('start', 'sidecar-read', 'stat-cache-read', 'repositories', 'inventory', 'hash',
+                 'post-inventory', 'compare', 'apply-literals', 'apply-utime', 'postcheck',
+                 'sidecar-write', 'sidecar-readback', 'record-literals', 'stat-cache-write', 'done')
+SOURCE_PROGRESS = None
+
+
+def source_progress_start(seconds):
+    global SOURCE_PROGRESS
+    SOURCE_PROGRESS = {'phase':'start', 'since':time.monotonic(), 'began':time.monotonic(), 'phases':[],
+                       'walked':0, 'files':None, 'bytes':None, 'hashedFiles':0, 'hashedBytes':0,
+                       'reusedFiles':0, 'seconds':seconds, 'totals':[0, 0, 0]}
+
+
+def source_phase(name):
+    progress = SOURCE_PROGRESS
+    if progress is None:
+        return
+    require(name in SOURCE_PHASES, 'source-phase')
+    now = time.monotonic()
+    if len(progress['phases']) < 64:
+        progress['phases'].append([progress['phase'], int((now - progress['since']) * 1000)])
+    progress['phase'], progress['since'] = name, now
+    if name in ('inventory', 'post-inventory'):
+        progress['walked'] = 0
+
+
+def source_progress_value(mode):
+    progress = SOURCE_PROGRESS
+    require(type(progress) is dict, 'diagnostic')
+    now = time.monotonic()
+    return {'mode':mode, 'phase':progress['phase'], 'elapsedMs':int((now - progress['began']) * 1000),
+            'phaseMs':int((now - progress['since']) * 1000), 'phases':[list(item) for item in progress['phases']],
+            'walked':progress['walked'], 'files':progress['files'], 'bytes':progress['bytes'],
+            'hashedFiles':progress['hashedFiles'], 'hashedBytes':progress['hashedBytes'],
+            'reusedFiles':progress['reusedFiles'], 'seconds':progress['seconds']}
+
+
 def source_deadline_value(value, mode):
-    require(type(value) is dict and set(value) == {'mode','stage','seconds','files','bytes','hashedFiles','hashedBytes'} and
-            value['mode'] == mode and mode in SOURCE_IO_MODES and value['stage'] in ('inventory', 'hash') and
-            type(value['seconds']) is int and 0 < value['seconds'] <= SOURCE_LINUX_SECONDS, 'diagnostic')
-    if value['stage'] == 'inventory':
-        require(value['files'] is None and value['bytes'] is None and
-                type(value['hashedFiles']) is int and value['hashedFiles'] == 0 and
-                type(value['hashedBytes']) is int and value['hashedBytes'] == 0, 'diagnostic')
-    else:
-        require(all(type(value[key]) is int for key in ('files','bytes','hashedFiles','hashedBytes')) and
-                0 <= value['hashedFiles'] <= value['files'] <= SOURCE_MAX_ENTRIES and
-                0 <= value['hashedBytes'] <= value['bytes'] <= MAX_RAW + SOURCE_MAX_FILE, 'diagnostic')
-    require(len(json.dumps(value).encode()) <= 512, 'diagnostic')
-    return {key:value[key] for key in ('mode','stage','seconds','files','bytes','hashedFiles','hashedBytes')}
-
-
-def source_deadline_record(error, budget, stage, files, raw, hashed_files, hashed_bytes):
-    try:
-        context = SOURCE_IO_CONTEXT.get()
-        if (type(error) is not CheckpointError or str(error) != 'archive-deadline' or
-                type(context) is not tuple or len(context) != 2 or context[0] not in SOURCE_IO_MODES):
-            return
-        if 'sourceDeadlineFailure' in error.__dict__ or error.__dict__.get('sourceDeadlineFailureInvalid') is True:
-            return
-        error.sourceDeadlineFailure = source_deadline_value({'mode':context[0], 'stage':stage,
-            'seconds':getattr(budget, 'seconds', None), 'files':files, 'bytes':raw,
-            'hashedFiles':hashed_files, 'hashedBytes':hashed_bytes}, context[0])
-    except Exception:
-        try:
-            error.sourceDeadlineFailureInvalid = True
-        except Exception:
-            pass
+    keys = {'mode','phase','elapsedMs','phaseMs','phases','walked','files','bytes','hashedFiles','hashedBytes','reusedFiles','seconds'}
+    count = lambda x: type(x) is int and 0 <= x <= MAX_RAW + SOURCE_MAX_FILE
+    require(type(value) is dict and set(value) == keys and value['mode'] == mode and mode in SOURCE_IO_MODES and
+            value['phase'] in SOURCE_PHASES and all(count(value[key]) for key in
+            ('elapsedMs','phaseMs','walked','hashedFiles','hashedBytes','reusedFiles')) and
+            type(value['seconds']) is int and 0 < value['seconds'] <= SOURCE_LINUX_SECONDS and
+            type(value['phases']) is list and len(value['phases']) <= 64 and
+            all(type(item) is list and len(item) == 2 and item[0] in SOURCE_PHASES and count(item[1]) for item in value['phases']) and
+            (value['files'] is None) == (value['bytes'] is None) and
+            (value['files'] is None or (count(value['files']) and count(value['bytes']) and
+             value['hashedFiles'] + value['reusedFiles'] <= value['files'] and value['hashedBytes'] <= value['bytes'])),
+            'diagnostic')
+    require(len(json.dumps(value).encode()) <= 4096, 'diagnostic')
+    return {key:(list(map(list, value[key])) if key == 'phases' else value[key]) for key in sorted(keys)}
 
 
 def source_deadline_failure_fields(error, mode):
     if mode not in SOURCE_IO_MODES or type(error) is not CheckpointError or str(error) != 'archive-deadline':
         return {}
     try:
-        if error.__dict__.get('sourceDeadlineFailureInvalid') is True:
-            return {'sourceDeadlineFailureInvalid':True}
-        value = error.__dict__.get('sourceDeadlineFailure')
-        if value is None:
+        if SOURCE_PROGRESS is None:
             return {}
-        return {'sourceDeadlineFailure':source_deadline_value(value, mode)}
+        return {'sourceDeadlineFailure':source_deadline_value(source_progress_value(mode), mode)}
     except Exception:
         return {'sourceDeadlineFailureInvalid':True}
 
@@ -870,6 +889,9 @@ def opened_identity_matches(expected, opened):
 # seal and every Mac mode keep 600 seconds.
 SOURCE_LINUX_SECONDS = 2400
 SOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))
+# Linux owned-source hashing is I/O-bound (1.2M mostly small files), so it
+# overlaps reads with twice the CPU count, still capped at eight readers.
+SOURCE_LINUX_HASH_WORKERS = max(1, min(2 * (os.cpu_count() or 4), 8))
 
 
 class Budget:
@@ -892,6 +914,8 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
         with source_directory(root, directory, source_policy, budget) as iterator:
             for item in iterator:
                 budget.check()
+                if SOURCE_PROGRESS is not None:
+                    SOURCE_PROGRESS['walked'] += 1
                 raw_name = (directory / item.name).as_posix()
                 candidate = raw_name
                 try:
@@ -1727,18 +1751,24 @@ def source_portable(row, digest=None, policy=None):
     return result
 
 
-def source_snapshot(root, budget, guards=None, context=None, *, member_policy=None):
+def source_snapshot(root, budget, guards=None, context=None, *, member_policy=None, reuse=None):
     source_member_policy(root, context, member_policy)
+    source_phase('repositories')
     external = context is not None and context.get('external') is True
     owner = source_io_call('root-stat', root, root.stat).st_uid
     require(owner in (0, os.geteuid()) if external else owner == os.geteuid(), 'source-owner')
     policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
     with source_nearby_literals(root,policy,budget) as literals:
         policy['_nearby_literals']=literals
-        return source_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy)
+        return source_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse)
 
 
-def source_snapshot_inventory(root, budget, guards, policy, external, *, member_policy=None):
+def source_stat_key(row):
+    # size, mtime_ns, st_dev, st_ino, mode, nlink, then ctime_ns.
+    return tuple(row['stamp']) + (row['ctimeNs'],)
+
+
+def source_snapshot_inventory(root, budget, guards, policy, external, *, member_policy=None, reuse=None):
     global SOURCE_JOIN_FAILURE
     from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
@@ -1746,28 +1776,45 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
         policy['_directories'] = {}
         local_before = source_local(root.stat(), policy)
     root_before = stamp(root.stat())
-    try:
-        rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
-    except CheckpointError as error:
-        source_deadline_record(error, budget, 'inventory', None, None, 0, 0)
-        raise
+    linux = not external and not policy.get('mac')
+    require(reuse is None or (linux and type(reuse) is dict), 'source-stat-reuse')
+    source_phase('inventory')
+    rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
+    source_phase('hash')
+    workers = SOURCE_LINUX_HASH_WORKERS if linux else SOURCE_HASH_WORKERS
     hashes = {};first = None
-    pool = ThreadPoolExecutor(max_workers=SOURCE_HASH_WORKERS)
+    pool = ThreadPoolExecutor(max_workers=workers)
     file_rows = [row for row in rows if row['kind'] == 'file']
     files = iter(file_rows)
     sizes = {row['path']: row['stamp'][0] for row in file_rows}
-    hashed_files = hashed_bytes = 0
+    progress = SOURCE_PROGRESS if SOURCE_PROGRESS is not None else {}
+    progress.update(files=len(file_rows), bytes=sum(sizes.values()), hashedFiles=0, hashedBytes=0, reusedFiles=0)
     pending = {}
     def submit():
-        row = next(files, None)
-        if row is not None:
+        while True:
+            row = next(files, None)
+            if row is None:
+                return
+            # Stat reuse (Linux only, same filesystem): a file whose full stat
+            # tuple -- size, mtime_ns, ctime_ns, inode, device, mode and link
+            # count -- equals the one taken when it was last hashed keeps that
+            # digest. Any write changes ctime, which userspace cannot set back;
+            # a replacement changes the inode. Every other file is rehashed.
+            known = reuse.get(row['path']) if reuse is not None else None
+            if known is not None and known[0] == source_stat_key(row):
+                hashes[row['path']] = known[1]
+                progress['reusedFiles'] += 1
+                if 'totals' in progress:
+                    progress['totals'][2] += 1
+                continue
             # ContextVar state is not inherited by executor threads. Each task
             # receives its own copy; exception annotations stay on that exception.
             task = lambda: pool.submit(copy_context().run, source_hash, root, row, budget, policy) if policy.get('mac') else pool.submit(copy_context().run, source_hash, root, row, budget)
             future = source_io_call('reader-submit', root / row['path'], task)
             pending[future] = row['path']
+            return
     try:
-        for _ in range(SOURCE_HASH_WORKERS):
+        for _ in range(workers):
             submit()
         while pending and first is None:
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
@@ -1775,7 +1822,9 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
                 name = pending.pop(future)
                 try:
                     hashes[name] = future.result()
-                    hashed_files += 1;hashed_bytes += sizes[name]
+                    progress['hashedFiles'] += 1;progress['hashedBytes'] += sizes[name]
+                    if 'totals' in progress:
+                        progress['totals'][0] += 1;progress['totals'][1] += sizes[name]
                 except BaseException as error:
                     if first is None:
                         first = error
@@ -1793,7 +1842,6 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
             if first is None:
                 raise
     if first is not None:
-        source_deadline_record(first, budget, 'hash', len(file_rows), sum(sizes.values()), hashed_files, hashed_bytes)
         raise first
     budget.check()
     if not external:
@@ -1805,6 +1853,7 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     if external:
         # A second namespace read verifies stability, not a second authority budget.
         policy['aggregate'] = {'entries':0,'bytes':0,'metadata':0}
+    source_phase('post-inventory')
     after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy, member_policy=member_policy))
 
     require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
@@ -1858,6 +1907,75 @@ def source_metadata(mode, root, sidecar, identity, seconds=600, budget=None, pla
                               seconds, budget=budget, platform_policy=platform_policy))
 
 
+# Local-only stat cache for Linux owned-source metadata, written by record and
+# apply and read by a later verify in the same workspace. It lives in the
+# owned diagnostic root (never inventoried, never archived) and is bound to
+# the sidecar bytes and identity; anything unexpected discards it, which only
+# means a full rehash.
+SOURCE_STAT_CACHE_NAME = '.sorng-source-stat-cache.json'
+SOURCE_STAT_CACHE_KIND = 'sorng-linuxarm-source-stat-cache'
+SOURCE_STAT_CACHE_MAX = 1024**3
+
+
+def source_file_sha256(path, budget):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        while True:
+            budget.check()
+            chunk = stream.read(1 << 20)
+            if not chunk:
+                return digest.hexdigest()
+            digest.update(chunk)
+
+
+def source_stat_cache_write(root, sidecar_sha, identity, entries, guards):
+    logs = root / 'acquisition-logs'
+    try:
+        info = logs.lstat()
+    except FileNotFoundError:
+        return False
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), 'source-diagnostic-root')
+    rows = [[entry['path'], *guards[entry['path']][0], guards[entry['path']][1]] for entry in entries if entry['kind'] == 'file']
+    data = json.dumps({'schemaVersion':1, 'kind':SOURCE_STAT_CACHE_KIND, 'sidecarSha256':sidecar_sha,
+                       'identity':identity, 'entries':rows}, separators=(',',':')).encode()
+    target, temp = logs / SOURCE_STAT_CACHE_NAME, logs / (SOURCE_STAT_CACHE_NAME + '.partial')
+    for old in (temp,):
+        try:
+            require(stat.S_ISREG(old.lstat().st_mode), 'source-diagnostic-root');old.unlink()
+        except FileNotFoundError:
+            pass
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(data);stream.flush();os.fsync(stream.fileno())
+    os.replace(temp, target)
+    return True
+
+
+def source_stat_cache_reuse(root, sidecar, identity, entries, budget):
+    path = root / 'acquisition-logs' / SOURCE_STAT_CACHE_NAME
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > SOURCE_STAT_CACHE_MAX:
+            return None
+        value = json.loads(path.read_bytes())
+        if (type(value) is not dict or set(value) != {'schemaVersion','kind','sidecarSha256','identity','entries'} or
+                value['schemaVersion'] != 1 or value['kind'] != SOURCE_STAT_CACHE_KIND or value['identity'] != identity or
+                value['sidecarSha256'] != source_file_sha256(sidecar, budget) or type(value['entries']) is not list):
+            return None
+        digests = {entry['path']: entry['sha256'] for entry in entries if entry['kind'] == 'file'}
+        reuse = {}
+        for row in value['entries']:
+            if (type(row) is not list or len(row) != 8 or not isinstance(row[0], str) or
+                    not all(type(x) is int for x in row[1:]) or row[0] not in digests):
+                return None
+            reuse[row[0]] = (tuple(row[1:]), digests[row[0]])
+        return reuse
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=None, platform_policy=None):
     import sys
     global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE, SOURCE_PATH_MODE
@@ -1871,6 +1989,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
     budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
+    source_progress_start(getattr(budget, 'seconds', seconds))
     if platform_policy == 'mac-arm':
         # No JSON, external context or fixture output can authorize timestamp writes.
         require(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed')
@@ -1886,17 +2005,32 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     require(root.is_dir() and safe(sidecar.parent).is_dir(), 'source-fixed-paths')
     SOURCE_IO_CONTEXT.set((mode, root))
     guards = {}
+    linux = platform_policy is None
+    def finish(result):
+        source_phase('done')
+        if linux:
+            result['timing'] = {'phases':[list(item) for item in SOURCE_PROGRESS['phases']],
+                                'hashedFiles':SOURCE_PROGRESS['totals'][0], 'hashedBytes':SOURCE_PROGRESS['totals'][1],
+                                'reusedFiles':SOURCE_PROGRESS['totals'][2]}
+        return result
     if mode == 'source-record':
         with source_nearby_literals(root,source_repositories(root,budget),budget) as record_literals:
             current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards)
             value = {'schemaVersion': 1, 'kind': sidecar_kind,
                      'policy': sidecar_policy, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
+            source_phase('sidecar-write')
             written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
+            source_phase('sidecar-readback')
             require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
+            source_phase('record-literals')
             with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
                 require(intel or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
-            return {'complete': True, 'mode': mode, 'entries': len(current['entries']),
-                    'bytes': current['bytes'], 'sidecar': written}
+            if linux:
+                source_phase('stat-cache-write')
+                source_stat_cache_write(root, written['sha256'], identity, current['entries'], guards)
+            return finish({'complete': True, 'mode': mode, 'entries': len(current['entries']),
+                           'bytes': current['bytes'], 'sidecar': written})
+    source_phase('sidecar-read')
     stored = source_read_sidecar(sidecar, budget, owned_sidecar=True)
     require(isinstance(stored, dict) and set(stored) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
             type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == sidecar_kind and
@@ -1906,7 +2040,14 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if intel else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
             isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
             'source-sidecar-shape')
-    current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards)
+    reuse = None
+    if linux and mode == 'source-verify':
+        # Verify after a compile in the same workspace: reuse digests only for
+        # files whose full stat tuple is unchanged since record/apply hashed them.
+        source_phase('stat-cache-read')
+        reuse = source_stat_cache_reuse(root, sidecar, identity, expected['entries'], budget)
+    current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards, reuse=reuse)
+    source_phase('compare')
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
     require(intel or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
@@ -1920,10 +2061,18 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                 int(row['mtimeNs']) < 2**63, 'source-mtime')
     require(isinstance(expected['rootMtimeNs'], str) and re.fullmatch(r'0|[1-9][0-9]{0,18}', expected['rootMtimeNs']) and
             int(expected['rootMtimeNs']) < 2**63, 'source-mtime')
+    digests = {entry['path']: entry['sha256'] for entry in current['entries'] if entry['kind'] == 'file'}
+    # Postcheck reuse: verify writes nothing, so its second pass expects the
+    # first pass's own stat tuples; apply records each file's tuple right after
+    # its utime (utime cannot change content, and size/inode are checked).
+    post = {name: source_stat_key({'stamp':value[0], 'ctimeNs':value[1]}) for name, value in guards.items()
+            if name in digests} if linux else None
     if mode == 'source-apply':
+        source_phase('apply-literals')
         # Revalidate the fixed absence witnesses immediately before any utime.
         with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
             require(intel or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
+        source_phase('apply-utime')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
             budget.check();path = root / (row['path'] if source_literal_member(row['path']) else relative(row['path']));before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
@@ -1946,6 +2095,8 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                     require((before.st_dev,before.st_ino,before.st_mode,before.st_size)==
                             (after.st_dev,after.st_ino,after.st_mode,after.st_size) and
                             stamp(after)==stamp(held) and held.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                    if post is not None and row['kind'] == 'file':
+                        post[row['path']] = tuple(stamp(after)) + (after.st_ctime_ns,)
                 except BaseException as error:
                     primary = error
                     raise
@@ -1965,8 +2116,18 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             raise
         finally:
             source_close(lambda: os.close(fd), primary)
-    require((source_snapshot(root, budget, context=snapshot_context) if intel else source_snapshot(root, budget)) == expected, 'source-metadata-postcheck')
-    return {'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']}
+    source_phase('postcheck')
+    if intel:
+        require(source_snapshot(root, budget, context=snapshot_context) == expected, 'source-metadata-postcheck')
+    else:
+        final_guards = {}
+        final = source_snapshot(root, budget, final_guards,
+                                reuse={name: (key, digests[name]) for name, key in post.items()})
+        require(final == expected, 'source-metadata-postcheck')
+        if mode == 'source-apply':
+            source_phase('stat-cache-write')
+            source_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, final['entries'], final_guards)
+    return finish({'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']})
 
 
 def source_read_sidecar(path, budget, owned_sidecar=False):
