@@ -55,11 +55,6 @@ describe("GitHub Actions Node runtime contracts", () => {
         "v7.0.0",
       ],
       [
-        "actions/setup-go",
-        "924ae3a1cded613372ab5595356fb5720e22ba16",
-        "v6.5.0",
-      ],
-      [
         "actions/upload-artifact",
         "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
         "v6.0.0",

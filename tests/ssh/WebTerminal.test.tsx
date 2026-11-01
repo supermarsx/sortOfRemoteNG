@@ -578,7 +578,9 @@ describe("WebTerminal", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
     });
 
@@ -611,7 +613,9 @@ describe("WebTerminal", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
     });
 
@@ -686,7 +690,9 @@ describe("WebTerminal", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
     });
 
@@ -710,7 +716,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", { name: "SSH connection failed" }),
+        ).toBeInTheDocument();
       });
       expect(
         mockInvoke.mock.calls.some(([command]) => command === "connect_ssh"),
@@ -783,7 +791,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
         expect(screen.queryByText(/SSH lib:/)).not.toBeInTheDocument();
         expect(
           JSON.parse(window.localStorage.getItem("sshSessionActivity") ?? "[]"),
@@ -803,7 +813,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", { name: "SSH connection failed" }),
+        ).toBeInTheDocument();
         expect(
           screen.getAllByText(
             "Connection refused - please check the host and port",
@@ -1152,7 +1164,9 @@ describe("WebTerminal", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", { name: "SSH connection failed" }),
+        ).toBeInTheDocument();
         expect(
           screen.getAllByText(
             "Host key verification failed - server may have changed",
@@ -1224,7 +1238,9 @@ describe("WebTerminal", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", { name: "SSH connection failed" }),
+        ).toBeInTheDocument();
         expect(screen.queryByText("Unknown Host Key")).not.toBeInTheDocument();
       });
       await expect(promptListener).resolves.toBeUndefined();
@@ -1276,7 +1292,9 @@ describe("WebTerminal", () => {
 
       // Wait for connection to establish
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       // Simulate typing 'ls' and pressing Enter by calling the onData callback
@@ -1299,12 +1317,14 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       // This test would need more complex mocking of the terminal
       // For now, we verify the component renders without crashing
-      expect(screen.getByText("Connected")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled();
     });
   });
 
@@ -1315,7 +1335,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
       await waitFor(() => expect(mockFit).toHaveBeenCalled());
       mockFit.mockClear();
@@ -1329,7 +1351,9 @@ describe("WebTerminal", () => {
 
       expect(screen.getByTestId("ssh-terminal")).toHaveClass("fixed");
       expect(screen.getByTestId("terminal-canvas")).toBeInTheDocument();
-      expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Disconnect" }),
+      ).not.toBeInTheDocument();
       expect(
         screen.getByRole("button", {
           name: "Exit no-distraction fullscreen for Test Session",
@@ -1354,7 +1378,9 @@ describe("WebTerminal", () => {
 
       fireEvent.keyDown(window, { key: "Escape" });
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
         expect(
           screen.getByRole("button", { name: /fullscreen/i }),
         ).toHaveFocus();
@@ -1374,7 +1400,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const historyButton = screen.getByRole("button", {
@@ -1407,7 +1435,9 @@ describe("WebTerminal", () => {
       const { unmount } = renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       unmount();
@@ -1438,7 +1468,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1453,7 +1485,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1474,7 +1508,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1495,7 +1531,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       fireEvent.click(screen.getByRole("button", { name: /run script/i }));
@@ -1523,7 +1561,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1544,7 +1584,9 @@ describe("WebTerminal", () => {
       const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1581,7 +1623,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1610,7 +1654,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1643,7 +1689,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       fireEvent.click(screen.getByRole("button", { name: /run script/i }));
@@ -1669,7 +1717,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       fireEvent.click(screen.getByRole("button", { name: /run script/i }));
@@ -1695,7 +1745,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1726,7 +1778,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const runScriptButton = screen.getByRole("button", {
@@ -1767,7 +1821,9 @@ describe("WebTerminal", () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
       renderWithProviders(mockSession);
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
       const opener = screen.getByRole("button", { name: /run script/i });
       opener.focus();
@@ -1846,7 +1902,9 @@ describe("WebTerminal", () => {
       const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
         expect(mockListen).toHaveBeenCalledWith(
           "ssh-output",
           expect.any(Function),
@@ -1872,7 +1930,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       const ctrlCButton = screen.getByRole("button", { name: /send ctrl\+c/i });
@@ -1894,7 +1954,9 @@ describe("WebTerminal", () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Disconnect" }),
+        ).toBeEnabled();
       });
 
       fireEvent.click(screen.getByRole("button", { name: /replay macro/i }));

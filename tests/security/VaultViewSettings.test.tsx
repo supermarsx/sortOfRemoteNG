@@ -43,7 +43,7 @@ it("exposes persisted visible columns, width, page size and infinite scrolling i
   );
   fireEvent.mouseDown(screen.getByRole("option", { name: "Infinite scroll" }));
   expect(save.mock.lastCall?.[0].credentialVaultView).toMatchObject({
-    columns: ["name", "categories", "assigned", "actions"],
+    columns: ["name", "types", "categories", "assigned", "updated", "actions"],
     widths: { assigned: 120 },
     pageSize: 250,
     mode: "infinite",

@@ -314,7 +314,7 @@ const mount = async (
 ) => {
   const view = render(<Tree {...props} />);
   await waitFor(() =>
-    expect(screen.getByText("Connected")).toBeInTheDocument(),
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled(),
   );
   // The terminal focuses itself once when it opens; count only what follows.
   await waitFor(() => expect(h.terminal.open).toHaveBeenCalled());

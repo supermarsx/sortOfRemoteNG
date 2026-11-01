@@ -198,7 +198,7 @@ describe("ProxyCommand import-confirmation gate (frontend)", () => {
     // Retry happened (connect_ssh called a second time) and succeeded.
     await waitFor(() => {
       expect(connectAttempts).toBe(2);
-      expect(screen.getByText("Connected")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled();
     });
   });
 
@@ -229,7 +229,9 @@ describe("ProxyCommand import-confirmation gate (frontend)", () => {
     fireEvent.click(screen.getByTestId("proxy-command-confirm-decline"));
 
     await waitFor(() => {
-      expect(screen.getByText("Error")).toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "SSH connection failed" }),
+      ).toBeInTheDocument();
     });
 
     // Never confirmed, never retried, never persisted.

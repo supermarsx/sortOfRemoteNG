@@ -342,8 +342,8 @@ describe("native Quick Connect shell", () => {
       registerQuickConnectConnection(connection());
       await attached();
       expect(
-        screen.getByRole("button", { name: "Browser settings" }),
-      ).toBeDisabled();
+        screen.queryByRole("button", { name: "Browser settings" }),
+      ).toBeNull();
       expect(screen.queryByRole("button", { name: "Add bookmark" })).toBeNull();
       expect(
         screen.queryByRole("button", { name: "Save favorite" }),

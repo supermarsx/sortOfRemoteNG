@@ -143,6 +143,13 @@ function fixture(initial = [connection("a")], vault = true) {
 }
 const table = () =>
   screen.getByRole("table", { name: "Database vault credentials" });
+function cell(row: HTMLElement, heading: string) {
+  const headers = within(table()).getAllByRole("columnheader");
+  const header = within(table()).getByRole("columnheader", {
+    name: new RegExp(`^${heading}`),
+  });
+  return within(row).getAllByRole("cell")[headers.indexOf(header)];
+}
 function source(label: string) {
   fireEvent.click(
     screen.getByRole("combobox", { name: "Credential source filter" }),
@@ -176,13 +183,18 @@ describe("protected connection-backed credential inventory", () => {
         name: "Edit credentials in connection Server a",
       })
       .closest("tr")!;
-    const categories = within(ownerRow).getAllByRole("cell")[2];
+    const categories = cell(ownerRow, "Category tags");
     expect(categories).toHaveTextContent("—");
     expect(categories).toHaveAttribute(
       "data-tooltip",
+      "Category tags are assigned to reusable vault entries",
+    );
+    const types = cell(ownerRow, "Credential types");
+    expect(types).toHaveTextContent("Private key / key file");
+    expect(types).toHaveAttribute(
+      "data-tooltip",
       expect.stringContaining("Private key / key file"),
     );
-    expect(table()).not.toHaveTextContent("Private key / key file");
     expect(table()).toHaveTextContent("Database vault link");
     expect(table()).toHaveTextContent("External reference");
     expect(within(ownerRow).getByText("· Local retained")).toHaveAttribute(
@@ -247,7 +259,7 @@ describe("protected connection-backed credential inventory", () => {
     expect(within(updated).getAllByRole("cell")[0]).toHaveTextContent(
       "Updated owner record",
     );
-    expect(within(updated).getAllByRole("cell")[3]).toHaveTextContent(
+    expect(cell(updated, "Assigned to")).toHaveTextContent(
       "Updated owner record",
     );
     expect(within(table()).queryByText("Server 0")).not.toBeInTheDocument();

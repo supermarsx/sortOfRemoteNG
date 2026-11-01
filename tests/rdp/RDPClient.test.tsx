@@ -447,6 +447,15 @@ const renderWithProviders = (session: ConnectionSession) => {
   );
 };
 
+/** The connected desktop enables remote-session controls only after the
+ * backend status transition; the redundant text badge is intentionally absent. */
+const expectConnectedDesktop = () => {
+  expect(screen.getByTestId("rdp-canvas")).toBeInTheDocument();
+  expect(
+    document.querySelector('button[data-tooltip="Sign out remote session"]'),
+  ).toBeEnabled();
+};
+
 const renderWithRenderActivity = (
   session: ConnectionSession,
   initialActive = true,
@@ -2532,10 +2541,17 @@ describe("RDPClient", () => {
 
     it("should display connecting status initially", () => {
       renderWithProviders(mockSession);
-      expect(screen.getByText("connecting")).toBeInTheDocument();
+      expect(
+        screen.getByText("Connecting to RDP server..."),
+      ).toBeInTheDocument();
+      expect(
+        document.querySelector(
+          'button[data-tooltip="Sign out remote session"]',
+        ),
+      ).toBeDisabled();
     });
 
-    it("should display connected status when backend emits connected event", async () => {
+    it("enables desktop controls when the backend emits a connected event", async () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -2555,7 +2571,7 @@ describe("RDPClient", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
     });
 
@@ -2581,7 +2597,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
       const actorA = [...connectionContextMocks.dispatch.mock.calls]
         .reverse()
@@ -2701,7 +2717,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       const legacyOwnerSession: ConnectionSession = {
@@ -2750,7 +2766,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       const actorA = [...connectionContextMocks.dispatch.mock.calls]
@@ -2857,7 +2873,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       const actorA = [...connectionContextMocks.dispatch.mock.calls]
@@ -2974,7 +2990,7 @@ describe("RDPClient", () => {
           }),
         ]),
       );
-      expect(screen.getByText("connected")).toBeInTheDocument();
+      expectConnectedDesktop();
     });
 
     it("does not let deferred terminal cleanup overwrite a replacement lifecycle actor", async () => {
@@ -3005,7 +3021,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       const closingActor: ConnectionSession = {
@@ -3111,7 +3127,15 @@ describe("RDPClient", () => {
       emitStatus("error", "Authentication failed", "rdp-session-123");
 
       await waitFor(() => {
-        expect(screen.getByText("error")).toBeInTheDocument();
+        expect(screen.getByTestId("rdp-error-screen")).toBeInTheDocument();
+        expect(screen.getAllByText("Authentication failed")).not.toHaveLength(
+          0,
+        );
+        expect(
+          document.querySelector(
+            'button[data-tooltip="Sign out remote session"]',
+          ),
+        ).toBeDisabled();
       });
     });
 
@@ -3171,7 +3195,7 @@ describe("RDPClient", () => {
         });
         emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
         await waitFor(() => {
-          expect(screen.getByText("connected")).toBeInTheDocument();
+          expectConnectedDesktop();
         });
 
         const canvas = screen.getByTestId("rdp-canvas") as HTMLCanvasElement;
@@ -3275,7 +3299,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       fireEvent.click(
@@ -3387,7 +3411,7 @@ describe("RDPClient", () => {
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       await act(async () => {
@@ -3511,7 +3535,7 @@ describe("RDPClient", () => {
       });
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
       mockInvoke.mockClear();
       vi.useFakeTimers();
@@ -3638,7 +3662,7 @@ describe("RDPClient", () => {
         });
         emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
         await waitFor(() => {
-          expect(screen.getByText("connected")).toBeInTheDocument();
+          expectConnectedDesktop();
         });
         const fallbackInvoke = mockInvoke.getMockImplementation();
         let resolveAdaptive!: () => void;
@@ -3806,7 +3830,7 @@ describe("RDPClient", () => {
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       const fullscreenButton = document.querySelector(
@@ -3837,7 +3861,7 @@ describe("RDPClient", () => {
       );
       await waitFor(() => {
         expect(resizeListener).toHaveBeenCalledTimes(1);
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
       window.removeEventListener("resize", resizeListener);
     });
@@ -4202,7 +4226,7 @@ describe("RDPClient", () => {
   });
 
   describe("Connection Status Icons", () => {
-    it("should show correct icon for connected status", async () => {
+    it("offers connection health after the desktop connects", async () => {
       renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -4212,14 +4236,16 @@ describe("RDPClient", () => {
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
-      const statusIcon = document.querySelector("svg");
-      expect(statusIcon).toBeInTheDocument();
+      const healthControl = screen.getByRole("button", {
+        name: /^Connection health:/,
+      });
+      expect(healthControl.querySelector("svg")).toBeInTheDocument();
     });
 
-    it("should show correct icon for connecting status", () => {
+    it("keeps desktop controls disabled while the connection is pending", () => {
       mockInvoke.mockImplementation(
         () =>
           new Promise((resolve) =>
@@ -4228,7 +4254,14 @@ describe("RDPClient", () => {
       );
 
       renderWithProviders(mockSession);
-      expect(screen.getByText("connecting")).toBeInTheDocument();
+      expect(
+        screen.getByText("Connecting to RDP server..."),
+      ).toBeInTheDocument();
+      expect(
+        document.querySelector(
+          'button[data-tooltip="Sign out remote session"]',
+        ),
+      ).toBeDisabled();
     });
   });
 
@@ -4246,7 +4279,7 @@ describe("RDPClient", () => {
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
       await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
+        expectConnectedDesktop();
       });
 
       const canvas = document.querySelector("canvas") as HTMLCanvasElement;

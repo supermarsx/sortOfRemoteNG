@@ -482,11 +482,12 @@ const reconnected = (creates: number) =>
     expect(tab().status).toBe("connected");
   });
 /** Opens the tab's settings dialog and adds one per-connection override. */
-function editPermissions() {
+async function editPermissions() {
   fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
-  const dialog = screen.getByRole("dialog", {
-    name: "Browser request permissions",
+  const dialog = await screen.findByRole("dialog", {
+    name: "Browser settings",
   });
+  fireEvent.click(within(dialog).getByRole("tab", { name: "Permissions" }));
   const overrides = within(dialog).getByRole("region", {
     name: "Connection website request overrides",
   });
@@ -514,7 +515,7 @@ describe("opening a native tab", () => {
 describe("in-tab Save and reconnect (R2)", () => {
   it("keeps the browser mounted, saves the permissions and creates again", async () => {
     const mounted = await openTab();
-    editPermissions();
+    await editPermissions();
     fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
     await waitFor(() => expect(calls("origin_browser_close")).toHaveLength(1));
     await settle();
@@ -560,7 +561,7 @@ describe("in-tab Save and reconnect (R2)", () => {
     // The shell renders that the write finished while the save that made it
     // is still on its way back to the dialog.
     h.afterWrite = () => new Promise((resolve) => setTimeout(resolve, 60));
-    editPermissions();
+    await editPermissions();
     fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
     await reattached(2);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -576,14 +577,14 @@ describe("in-tab Save and reconnect (R2)", () => {
   it("reports a failed save in the dialog, keeps the edits and saves on the next try", async () => {
     const mounted = await openTab();
     h.save.mockRejectedValueOnce(new Error("disk write secret"));
-    const { dialog, overrides } = editPermissions();
+    const { dialog, overrides } = await editPermissions();
     fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "The settings could not be fully saved.",
+      "Your draft is kept.",
     );
     await reconnected(2);
     expect(within(dialog).getByRole("alert")).toHaveTextContent(
-      "This tab was restarted with what is saved now. Check database access, then save again. Your changes are still in this form.",
+      "Retry saving or reopen the connection.",
     );
     expect(h.disk[0].websiteDomainPermissions).toBeUndefined();
     expect(h.updateSettings).not.toHaveBeenCalled();
@@ -618,7 +619,7 @@ describe("in-tab Save and reconnect (R2)", () => {
         ? Promise.reject(new Error("native secret"))
         : native(command, args),
     );
-    const { dialog } = editPermissions();
+    const { dialog } = await editPermissions();
     fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "Nothing was saved.",
@@ -642,7 +643,7 @@ describe("in-tab Save and reconnect when native never answers the close", () => 
         ? new Promise(() => {})
         : native(command, args),
     );
-    const { dialog, overrides } = editPermissions();
+    const { dialog, overrides } = await editPermissions();
     vi.useFakeTimers();
     try {
       fireEvent.click(
@@ -680,7 +681,7 @@ describe("in-tab Save and reconnect when native never answers the close", () => 
 describe("in-tab Save for next connection", () => {
   it("closes the page, saves only the connection, then ends the tab", async () => {
     await openTab();
-    editPermissions();
+    await editPermissions();
     fireEvent.click(
       screen.getByRole("button", { name: "Save for next connection" }),
     );
@@ -699,12 +700,12 @@ describe("in-tab Save for next connection", () => {
   it("keeps the tab and the form while a failed save is on screen", async () => {
     await openTab();
     h.save.mockRejectedValueOnce(new Error("disk write secret"));
-    const { dialog, overrides } = editPermissions();
+    const { dialog, overrides } = await editPermissions();
     fireEvent.click(
       screen.getByRole("button", { name: "Save for next connection" }),
     );
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "The settings could not be fully saved, and this tab's page is already closed.",
+      "The browser was closed, but saving or reconnecting did not finish.",
     );
     await settle();
     expect(screen.queryByText("Session ended")).toBeNull();
@@ -714,7 +715,9 @@ describe("in-tab Save for next connection", () => {
       within(overrides).getByRole("combobox", { name: "Website origin" }),
     ).toHaveTextContent("https://fixture.invalid");
     // Leaving the form ends the tab whose page was already closed.
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close browser settings" }),
+    );
     expect(await screen.findByText("Session ended")).toBeVisible();
     expect(calls("origin_browser_create")).toHaveLength(1);
   });
@@ -722,7 +725,7 @@ describe("in-tab Save for next connection", () => {
   it("can still save and reconnect from the form after that failed save", async () => {
     const mounted = await openTab();
     h.save.mockRejectedValueOnce(new Error("disk write secret"));
-    const { dialog } = editPermissions();
+    const { dialog } = await editPermissions();
     fireEvent.click(
       screen.getByRole("button", { name: "Save for next connection" }),
     );

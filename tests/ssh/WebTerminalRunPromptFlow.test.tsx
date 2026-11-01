@@ -276,7 +276,7 @@ const Tree = ({
 const mount = async (props: { host?: boolean } = {}) => {
   const view = render(<Tree {...props} />);
   await waitFor(() =>
-    expect(screen.getByText("Connected")).toBeInTheDocument(),
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled(),
   );
   // The terminal focuses itself once when it opens; count only what follows.
   await waitFor(() => expect(h.terminal.open).toHaveBeenCalled());
@@ -575,7 +575,7 @@ describe("SSH terminal: run a script", () => {
       ).toHaveLength(2),
     );
     await waitFor(() =>
-      expect(screen.getByText("Connected")).toBeInTheDocument(),
+      expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled(),
     );
     await run(true);
     expect(sent()).toHaveLength(6);
@@ -965,9 +965,13 @@ describe("SSH terminal: two sessions that share a display name", () => {
         </div>
       </>,
     );
-    await waitFor(() =>
-      expect(screen.getAllByText("Connected")).toHaveLength(2),
-    );
+    await waitFor(() => {
+      const controls = screen.getAllByRole("button", {
+        name: "Disconnect",
+      });
+      expect(controls).toHaveLength(2);
+      controls.forEach((control) => expect(control).toBeEnabled());
+    });
     const first = within(screen.getByTestId("first"));
     const second = within(screen.getByTestId("second"));
 
