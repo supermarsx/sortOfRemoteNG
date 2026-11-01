@@ -102,6 +102,7 @@ async fn child_controls_and_events_are_distinct_from_parent() {
         Arc::new(PopupSink {
             events: events.clone(),
             view_id: "popup-1".into(),
+            source: root.sink.clone(),
         }),
     );
     assert!(!Arc::ptr_eq(&root.state, &popup.state));

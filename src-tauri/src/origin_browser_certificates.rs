@@ -20,6 +20,7 @@ struct TemporaryPin {
     fingerprint: String,
     chain_fingerprints: Vec<String>,
     revision: u64,
+    user_approved: bool,
 }
 
 impl TemporaryPin {
@@ -32,6 +33,15 @@ impl TemporaryPin {
 
 impl TemporaryPins {
     fn remember(&mut self, origin: &str, cert: &CertIdentity) -> Result<(), NativeAuthorityError> {
+        self.record(origin, cert, false)
+    }
+
+    fn record(
+        &mut self,
+        origin: &str,
+        cert: &CertIdentity,
+        user_approved: bool,
+    ) -> Result<(), NativeAuthorityError> {
         let error = NativeAuthorityError::CertificatePolicyUnsupported;
         if !valid_temporary_chain(cert)
             || canonical_website_permission_origin(origin).as_deref() != Ok(origin)
@@ -48,6 +58,7 @@ impl TemporaryPins {
                 fingerprint: cert.fingerprint.clone(),
                 chain_fingerprints: cert.chain_fingerprints.clone(),
                 revision,
+                user_approved,
             },
         );
         self.revision = revision;
@@ -67,7 +78,7 @@ impl TemporaryPins {
             return Err(NativeAuthorityError::CertificatePolicyUnsupported);
         }
         if remember {
-            self.remember(origin, cert)?;
+            self.record(origin, cert, true)?;
         }
         Ok(())
     }
@@ -123,11 +134,17 @@ fn temporary_action(
             "Temporary connection: this policy requires certificate approval on every handshake",
         );
     }
-    if pin.is_some() {
-        return Action::Allow;
+    if let Some(pin) = pin {
+        return require_explicit_trust(
+            Action::Allow,
+            system_ca && system_ca_valid,
+            pin.user_approved,
+            policy,
+            policy,
+        );
     }
-    if *policy == Tofu && !system_ca {
-        return Action::Review("Temporary connection: review new certificates is enabled");
+    if *policy == Tofu && !(system_ca && system_ca_valid) {
+        return Action::Review("Temporary connection: review this certificate before connecting");
     }
     // TOFU and CA-only both bind their first accepted chain to this attempt.
     // Native CA success can never overwrite a subsequently changed pin.
@@ -182,6 +199,14 @@ impl NativeCertificateReview {
     }
     pub fn reason(&self) -> &'static str {
         self.reason
+    }
+
+    /// Bounded public fields from this review's captured certificate only.
+    pub fn certificate(&self) -> Option<Value> {
+        let Identity::Tls(cert) = &self.identity else {
+            return None;
+        };
+        Some(certificate_summary(cert))
     }
 
     /// Lets the native prompt describe attempt-only remembering accurately.
@@ -245,6 +270,52 @@ impl NativeCertificateReview {
             self.lease,
         ))
     }
+}
+
+fn certificate_summary(cert: &CertIdentity) -> Value {
+    let text = |value: Option<&str>| {
+        let mut out = String::new();
+        for character in value
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| !c.is_control())
+        {
+            if out.len() + character.len_utf8() > 8192 {
+                break;
+            }
+            out.push(character);
+        }
+        out
+    };
+    let date = |value: Option<&str>| {
+        value
+            .filter(|date| date.len() <= 128 && chrono::DateTime::parse_from_rfc3339(date).is_ok())
+            .map(str::to_owned)
+    };
+    let mut dns = Vec::new();
+    let mut ips = Vec::new();
+    for san in cert.san.iter().flatten() {
+        if dns.len() + ips.len() >= 64 {
+            break;
+        }
+        if let Some(name) = san.strip_prefix("DNS:") {
+            if !name.is_empty() && name.len() <= 253 && !name.chars().any(char::is_control) {
+                dns.push(name.to_owned());
+            }
+        } else if let Some(address) = san.strip_prefix("IP:") {
+            if let Ok(address) = address.parse::<std::net::IpAddr>() {
+                ips.push(address.to_string());
+            }
+        }
+    }
+    serde_json::json!({
+        "subject": text(cert.subject.as_deref()),
+        "issuer": text(cert.issuer.as_deref()),
+        "validFrom": date(cert.valid_from.as_deref()),
+        "validTo": date(cert.valid_to.as_deref()),
+        "dnsNames": dns,
+        "ipAddresses": ips,
+    })
 }
 
 /// Short-lived exact-handshake permit. Host must compare the actual certificate
@@ -529,6 +600,13 @@ impl NativeCertificateAuthority {
             system_ca_valid,
             ca_first_use,
         );
+        decision = require_explicit_trust(
+            decision,
+            system_ca_valid,
+            existing.as_ref().is_some_and(|record| record.user_approved),
+            &effective,
+            &self.policy,
+        );
         if effective == TrustPolicy::CertificatePinning
             || self.policy == TrustPolicy::CertificatePinning
         {
@@ -727,11 +805,37 @@ fn action(result: &TrustVerifyResult, policy: &TrustPolicy, ca: bool) -> Action 
         } => Action::Review("This certificate requires a fresh explicit approval"),
         FirstUse { .. } => match policy {
             Tofu if ca => Action::Allow,
-            Tofu => Action::Remember,
+            Tofu => Action::Review("Review this website certificate before connecting"),
             CaTrustOnly if ca => Action::Allow,
             Strict | CertificatePinning | CaTrustOnly | AlwaysTrust => Action::Deny,
             _ => Action::Review("Review this website certificate before connecting"),
         },
+    }
+}
+
+/// A historical automatic TOFU pin is not a user's certificate exception.
+/// Apply only after the store has matched the actual identity and policy;
+/// this never turns a denial or a changed/revoked certificate into an allow.
+fn require_explicit_trust(
+    decision: Action,
+    system_ca_valid: bool,
+    user_approved: bool,
+    effective: &TrustPolicy,
+    requested: &TrustPolicy,
+) -> Action {
+    if !system_ca_valid && !user_approved && matches!(decision, Action::Allow | Action::Remember) {
+        if [effective, requested].iter().any(|policy| {
+            matches!(
+                policy,
+                TrustPolicy::Strict | TrustPolicy::CertificatePinning | TrustPolicy::CaTrustOnly
+            )
+        }) {
+            Action::Deny
+        } else {
+            Action::Review("Review this unverified website certificate before connecting")
+        }
+    } else {
+        decision
     }
 }
 fn permit(
@@ -890,7 +994,7 @@ mod tests {
                 ));
                 let tofu =
                     temporary_action(None, &cert, &TrustPolicy::Tofu, system_ca, ca_valid, true);
-                if system_ca {
+                if system_ca && ca_valid {
                     assert_eq!(tofu, Action::Remember);
                 } else {
                     assert!(matches!(tofu, Action::Review(_)));
@@ -956,7 +1060,7 @@ mod tests {
         let mut attempt = TemporaryPins::default();
         let reconnect = TemporaryPins::default();
         let origin = "https://device.test";
-        attempt.remember(origin, &cert).unwrap();
+        attempt.approve(origin, &cert, None, true).unwrap();
         assert!(!reconnect.origins.contains_key(origin));
         for other in ["https://device.test:8443", "https://other.test"] {
             assert!(!attempt.origins.contains_key(other));
@@ -1102,6 +1206,51 @@ mod tests {
                 false,
                 true
             ),
+            Action::Allow
+        );
+    }
+
+    #[test]
+    fn temporary_auto_ca_pin_cannot_be_reused_as_an_unverified_exception() {
+        let mut pins = TemporaryPins::default();
+        let origin = "https://device.test";
+        let cert = temporary_certificate('a', 'b');
+        pins.remember(origin, &cert).unwrap();
+        let automatic = pins.origins.get(origin).cloned().unwrap();
+        assert!(!automatic.user_approved);
+        assert!(matches!(
+            temporary_action(
+                Some(&automatic),
+                &cert,
+                &TrustPolicy::Tofu,
+                true,
+                false,
+                true
+            ),
+            Action::Review(_)
+        ));
+        assert_eq!(
+            temporary_action(
+                Some(&automatic),
+                &cert,
+                &TrustPolicy::Tofu,
+                true,
+                true,
+                true
+            ),
+            Action::Allow
+        );
+        for policy in [TrustPolicy::Strict, TrustPolicy::CertificatePinning] {
+            assert_eq!(
+                temporary_action(Some(&automatic), &cert, &policy, true, false, true),
+                Action::Deny
+            );
+        }
+        pins.approve(origin, &cert, Some(&automatic), true).unwrap();
+        let explicit = pins.origins.get(origin).unwrap();
+        assert!(explicit.user_approved);
+        assert_eq!(
+            temporary_action(Some(explicit), &cert, &TrustPolicy::Tofu, true, false, true),
             Action::Allow
         );
     }
@@ -1436,7 +1585,7 @@ mod tests {
                 TrustPolicy::Tofu,
                 TrustPolicy::Tofu,
                 false,
-                Action::Remember,
+                Action::Review("Review this website certificate before connecting"),
             ),
             (TrustPolicy::Strict, TrustPolicy::Tofu, true, Action::Deny),
             (TrustPolicy::Tofu, TrustPolicy::Strict, true, Action::Deny),
@@ -1560,7 +1709,10 @@ mod tests {
             requires_approval: false,
         };
         assert_eq!(action(&first, &TrustPolicy::Tofu, true), Action::Allow);
-        assert_eq!(action(&first, &TrustPolicy::Tofu, false), Action::Remember);
+        assert!(matches!(
+            action(&first, &TrustPolicy::Tofu, false),
+            Action::Review(_)
+        ));
         assert_eq!(
             action(&first, &TrustPolicy::CertificatePinning, true),
             Action::Deny
@@ -1582,6 +1734,172 @@ mod tests {
             Action::Review(_)
         ));
         assert_eq!(action(&forgotten, &TrustPolicy::Strict, true), Action::Deny);
+    }
+
+    #[tokio::test]
+    async fn untrusted_first_use_requires_review_without_persisting_an_implicit_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        let service =
+            TrustStoreService::new(dir.path().join("trust.json").to_string_lossy().into_owned());
+        let mut service = service.lock().await;
+        service.set_trust_policy(TrustPolicy::Tofu).await.unwrap();
+        let host = "@sorng/connection/v1/c/internal.test/8443";
+        let requested = saved_policy(&serde_json::json!({}), &serde_json::json!({})).unwrap();
+        let effective = service.get_trust_policy().await;
+        let (result, ca_first_use) = service
+            .verify_https_with_ca(host, identity(), requested.clone(), false, |_, _, _| {
+                panic!("an untrusted chain must not use the native CA shortcut")
+            })
+            .unwrap();
+        assert!(!ca_first_use);
+        assert!(matches!(
+            combined_action(&result, &effective, &requested, false, ca_first_use),
+            Action::Review(_)
+        ));
+        service.reload_from_disk().unwrap();
+        assert!(service
+            .get_effective_stored_identity(host, "https")
+            .unwrap()
+            .is_none());
+
+        // Only the explicit remember decision writes trust. The exact approved
+        // identity then remains usable; a changed leaf still requires review.
+        service
+            .trust_identity(host.into(), "https".into(), identity(), true)
+            .await
+            .unwrap();
+        for changed in [false, true] {
+            let mut presented = identity();
+            if changed {
+                let Identity::Tls(cert) = &mut presented else {
+                    unreachable!()
+                };
+                cert.fingerprint = "b".repeat(64);
+            }
+            let (result, ca_first_use) = service
+                .verify_https_with_ca(host, presented, requested.clone(), false, |_, _, _| {
+                    panic!("an approved pin must not use native CA first-use")
+                })
+                .unwrap();
+            let decision = combined_action(&result, &effective, &requested, false, ca_first_use);
+            if changed {
+                assert!(matches!(decision, Action::Review(_)));
+            } else {
+                assert_eq!(decision, Action::Allow);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn historical_implicit_pins_need_review_but_explicit_approval_is_preserved() {
+        for approved in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let service = TrustStoreService::new(
+                dir.path().join("trust.json").to_string_lossy().into_owned(),
+            );
+            let mut service = service.lock().await;
+            service.set_trust_policy(TrustPolicy::Tofu).await.unwrap();
+            let host = "@sorng/connection/v1/c/internal.test/8443";
+            service
+                .trust_identity(host.into(), "https".into(), identity(), approved)
+                .await
+                .unwrap();
+            let existing = service
+                .get_effective_stored_identity(host, "https")
+                .unwrap()
+                .unwrap();
+            let (result, ca_first_use) = service
+                .verify_https_with_ca(
+                    host,
+                    identity(),
+                    TrustPolicy::Tofu,
+                    false,
+                    |_, _, _| unreachable!(),
+                )
+                .unwrap();
+            assert!(matches!(result, TrustVerifyResult::Trusted));
+            let decision = combined_action(
+                &result,
+                &TrustPolicy::Tofu,
+                &TrustPolicy::Tofu,
+                false,
+                ca_first_use,
+            );
+            let decision = require_explicit_trust(
+                decision,
+                false,
+                existing.user_approved,
+                &TrustPolicy::Tofu,
+                &TrustPolicy::Tofu,
+            );
+            if approved {
+                assert_eq!(decision, Action::Allow);
+            } else {
+                assert!(matches!(decision, Action::Review(_)));
+            }
+        }
+        for policy in [
+            TrustPolicy::Strict,
+            TrustPolicy::CertificatePinning,
+            TrustPolicy::CaTrustOnly,
+        ] {
+            assert_eq!(
+                require_explicit_trust(Action::Allow, false, false, &policy, &TrustPolicy::Tofu),
+                Action::Deny
+            );
+            assert_eq!(
+                require_explicit_trust(Action::Deny, false, true, &policy, &TrustPolicy::Tofu),
+                Action::Deny
+            );
+        }
+        assert_eq!(
+            require_explicit_trust(
+                Action::Allow,
+                true,
+                false,
+                &TrustPolicy::Tofu,
+                &TrustPolicy::Tofu
+            ),
+            Action::Allow
+        );
+    }
+
+    #[test]
+    fn prompt_certificate_summary_is_bounded_actual_metadata_without_private_fields() {
+        let Identity::Tls(mut cert) = identity() else {
+            unreachable!()
+        };
+        cert.subject = Some(format!("CN=internal\n{}", "é".repeat(9000)));
+        cert.issuer = Some("CN=Private CA".into());
+        cert.valid_from = Some("2026-01-01T00:00:00Z".into());
+        cert.valid_to = Some("invalid".into());
+        cert.pem = Some("PRIVATE_SENTINEL".into());
+        cert.san = Some(vec![
+            "DNS:internal.test".into(),
+            "IP:127.0.0.1".into(),
+            "URI:https://not-a-dns.test".into(),
+            "DNS:bad\nname".into(),
+        ]);
+        let summary = certificate_summary(&cert);
+        assert_eq!(summary["dnsNames"], serde_json::json!(["internal.test"]));
+        assert_eq!(summary["ipAddresses"], serde_json::json!(["127.0.0.1"]));
+        assert_eq!(summary["validFrom"], "2026-01-01T00:00:00Z");
+        assert!(summary["validTo"].is_null());
+        let subject = summary["subject"].as_str().unwrap();
+        assert!(subject.len() <= 8192 && !subject.chars().any(char::is_control));
+        assert!(!summary.to_string().contains("PRIVATE_SENTINEL"));
+        cert.san = Some(
+            (0..100)
+                .map(|index| format!("DNS:device-{index}.test"))
+                .collect(),
+        );
+        assert_eq!(
+            certificate_summary(&cert)["dnsNames"]
+                .as_array()
+                .unwrap()
+                .len(),
+            64
+        );
     }
 
     #[test]

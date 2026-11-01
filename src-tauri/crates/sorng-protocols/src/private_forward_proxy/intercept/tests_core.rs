@@ -158,6 +158,11 @@ async fn upstream_service(
             .header("strict-transport-security", "max-age=60")
             .body(text("hsts"))
             .unwrap(),
+        "/hsts-close" => Response::builder()
+            .header("strict-transport-security", "max-age=60")
+            .header(header::CONNECTION, "close")
+            .body(text("hsts"))
+            .unwrap(),
         "/headers" => {
             let mut lines: Vec<String> = request
                 .headers()
@@ -712,6 +717,19 @@ fn leaves_have_exact_sans_server_auth_and_seven_day_validity() {
     ] {
         let der = leaf_der(&ca, target, now);
         let cert = parse(&der);
+        // RFC 5280 section 4.1.2.6: an empty subject requires a critical SAN.
+        // Chromium enforces this even when WebPKI accepts the exact IP SAN.
+        let critical_san = cert.extensions().iter().any(|extension| {
+            extension.critical
+                && matches!(
+                    extension.parsed_extension(),
+                    x509_parser::extensions::ParsedExtension::SubjectAlternativeName(_)
+                )
+        });
+        assert!(
+            cert.subject().iter_attributes().next().is_some() || critical_san,
+            "{target}: empty certificate subject with noncritical SAN is rejected by Chromium"
+        );
         let sans: Vec<String> = cert
             .subject_alternative_name()
             .unwrap()
@@ -1450,6 +1468,65 @@ async fn hsts_is_recorded_for_tls_only_and_hop_headers_are_stripped() {
     assert!(seen.contains("host: upstream.test"), "{seen}");
     assert!(!seen.contains("x-private"), "{seen}");
     assert!(!seen.contains("proxy-authorization"), "{seen}");
+}
+
+#[tokio::test]
+async fn certificate_exceptions_cannot_install_hsts_that_blocks_the_next_review() {
+    struct RecordAdmission(Mutex<Vec<bool>>);
+    impl UpstreamTrust for RecordAdmission {
+        fn evaluate(&self, evidence: UpstreamEvidence) -> UpstreamTrustFuture {
+            self.0.lock().unwrap().push(evidence.system_ca_valid);
+            Box::pin(async { UpstreamVerdict::Admit { persistent: true } })
+        }
+    }
+    for name_mismatch in [false, true] {
+        let pki = public_pki();
+        let upstream = upstream(Some(pki.server_config(&[ALPN_HTTP11]))).await;
+        let trust = Arc::new(RecordAdmission(Mutex::new(Vec::new())));
+        let dials = Arc::new(AtomicUsize::new(0));
+        let verifier = if name_mismatch {
+            UpstreamVerifierConfig::for_tests(std::slice::from_ref(&pki.root), &[])
+        } else {
+            UpstreamVerifierConfig::for_tests(&[], &[])
+        };
+        let proxy = PrivateForwardProxy::start_intercepting_with_verifier(
+            dialer_to(upstream.address, dials.clone()),
+            Arc::new(|_| true),
+            ProxyLimits::default(),
+            config(
+                InterceptAuthority::generate().unwrap(),
+                trust.clone(),
+                Vec::new(),
+            ),
+            verifier,
+        )
+        .await
+        .unwrap();
+        let hostname = if name_mismatch {
+            "alias.test"
+        } else {
+            "upstream.test"
+        };
+        let target = format!("{hostname}:443");
+        let tls = tunnel(&proxy, &target, hostname, &[ALPN_HTTP11], true)
+            .await
+            .unwrap();
+        let mut sender = h1(tls).await;
+        let exchange = proxy.intercept.clone().unwrap();
+        let response = send1(&mut sender, get("/hsts-close", Some(hostname))).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body(response).await.as_ref(), b"hsts");
+        assert_eq!(exchange.counters.hsts_marks.load(Ordering::Relaxed), 0);
+        // The upstream explicitly closes. A fresh connection must still reach
+        // app trust rather than fail before its review callback under HSTS.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let response = send1(&mut sender, get("/hsts", Some(hostname))).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body(response).await.as_ref(), b"hsts");
+        assert_eq!(*trust.0.lock().unwrap(), vec![false, false]);
+        assert_eq!(dials.load(Ordering::SeqCst), 2);
+        assert_eq!(exchange.counters.hsts_marks.load(Ordering::Relaxed), 0);
+    }
 }
 
 #[tokio::test]

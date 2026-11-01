@@ -159,6 +159,8 @@ async fn decide(
     if !(attempt.current() && permit.permits(&attempt.identity, &origin, &chain)) {
         return (UpstreamVerdict::Deny, reviewed);
     }
+    attempt.security.record_transport(&origin, &chain, e.system_ca_valid, Some(reviewed),
+        e.tls_version, e.cipher_suite, "upstream-handshake", false);
     (
         admitted(attempt.lease.is_temporary(), reviewed, e.temporary_ok),
         reviewed,

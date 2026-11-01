@@ -23,6 +23,12 @@ pub(super) struct ForwardRequest {
     headers: HeaderMap,
     websocket: bool,
     has_body: bool,
+    pub(super) head: bool,
+}
+impl ForwardRequest {
+    pub(super) fn error_accept(&self) -> Option<&HeaderValue> {
+        self.headers.get("accept")
+    }
 }
 
 fn token(value: &str) -> bool {
@@ -155,6 +161,7 @@ pub(super) fn validate(header: &[u8], credential_hash: &[u8; 32]) -> Result<Forw
         headers,
         websocket,
         has_body,
+        head: method == "HEAD",
     })
 }
 
@@ -193,9 +200,15 @@ fn strip_hop_headers(headers: &mut HeaderMap) -> Result<(), u16> {
     Ok(())
 }
 
-fn failure(status: StatusCode) -> Response<Body> {
-    let mut response = Response::new(Body::empty());
-    *response.status_mut() = status;
+fn failure(
+    status: StatusCode,
+    kind: error_response::Failure,
+    error: Option<&(dyn std::error::Error + 'static)>,
+    accept: Option<&HeaderValue>,
+    head: bool,
+) -> Response<Body> {
+    let response = error_response::response(status, kind, error, true);
+    let mut response = error_response::negotiate(response, accept, head).map(Body::new);
     response
         .headers_mut()
         .insert("connection", HeaderValue::from_static("close"));
@@ -329,9 +342,24 @@ pub(super) async fn relay(
             .handshake::<_, Body>(TokioIo::new(upstream)),
     )
     .await;
-    let Ok(Ok((mut sender, connection))) = handshake else {
-        refuse(&mut client, 502, limits.response_timeout).await;
-        return;
+    let (mut sender, connection) = match handshake {
+        Ok(Ok(value)) => value,
+        failure => {
+            let source = match &failure {
+                Ok(Err(error)) => Some(error as &(dyn std::error::Error + 'static)),
+                _ => None,
+            };
+            let response = error_response::response(
+                StatusCode::BAD_GATEWAY,
+                error_response::Failure::HttpTransport,
+                source,
+                true,
+            );
+            let response =
+                error_response::negotiate(response, forward.error_accept(), forward.head);
+            error_response::write_response(&mut client, response, limits.response_timeout).await;
+            return;
+        }
     };
     let (upgrades, mut upgraded) = oneshot::channel();
     let once = Mutex::new(Some((forward, upgrades)));
@@ -340,8 +368,17 @@ pub(super) async fn relay(
         let once = &once;
         let sender = &sender;
         async move {
+            let head = request.method() == hyper::Method::HEAD;
+            let accept = request.headers().get("accept").cloned();
+            let fail = |status, kind, error: Option<&(dyn std::error::Error + 'static)>| {
+                failure(status, kind, error, accept.as_ref(), head)
+            };
             let Some((forward, upgrades)) = once.lock().await.take() else {
-                return Ok::<_, Infallible>(failure(StatusCode::BAD_REQUEST));
+                return Ok::<_, Infallible>(fail(
+                    StatusCode::BAD_REQUEST,
+                    error_response::Failure::Status,
+                    None,
+                ));
             };
             let client_upgrade = forward.websocket.then(|| hyper::upgrade::on(&mut request));
             *request.uri_mut() = forward.path;
@@ -361,15 +398,31 @@ pub(super) async fn relay(
                     .await;
             let mut response = match result {
                 Ok(Ok(response)) => response,
-                Ok(Err(_)) => return Ok(failure(StatusCode::BAD_GATEWAY)),
-                Err(_) => return Ok(failure(StatusCode::GATEWAY_TIMEOUT)),
+                Ok(Err(error)) => {
+                    return Ok(fail(
+                        StatusCode::BAD_GATEWAY,
+                        error_response::Failure::HttpTransport,
+                        Some(&error),
+                    ))
+                }
+                Err(_) => {
+                    return Ok(fail(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        error_response::Failure::ResponseTimeout,
+                        None,
+                    ))
+                }
             };
             let switch = response.status() == StatusCode::SWITCHING_PROTOCOLS;
             // Hyper decodes chunking but does not decode other transfer codings.
             // Never retain an ignored Content-Length or label compressed bytes
             // as identity content by removing unsupported Transfer-Encoding.
             if !valid_response_framing(response.headers()) {
-                return Ok(failure(StatusCode::BAD_GATEWAY));
+                return Ok(fail(
+                    StatusCode::BAD_GATEWAY,
+                    error_response::Failure::ResponseFraming,
+                    None,
+                ));
             }
             if switch
                 && (!forward.websocket
@@ -380,7 +433,11 @@ pub(super) async fn relay(
                     || !connection_tokens(response.headers())
                         .is_ok_and(|v| v.iter().any(|v| v == "upgrade")))
             {
-                return Ok(failure(StatusCode::BAD_GATEWAY));
+                return Ok(fail(
+                    StatusCode::BAD_GATEWAY,
+                    error_response::Failure::ResponseFraming,
+                    None,
+                ));
             }
             // Never let a hop declaration strip framing and turn it into an
             // accidental close-delimited response.
@@ -389,7 +446,11 @@ pub(super) async fn relay(
                     .any(|v| matches!(v.as_str(), "content-length" | "transfer-encoding"))
             }) || strip_hop_headers(response.headers_mut()).is_err()
             {
-                return Ok(failure(StatusCode::BAD_GATEWAY));
+                return Ok(fail(
+                    StatusCode::BAD_GATEWAY,
+                    error_response::Failure::ResponseFraming,
+                    None,
+                ));
             }
             if switch {
                 response

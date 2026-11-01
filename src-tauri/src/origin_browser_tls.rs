@@ -82,6 +82,9 @@ impl NativeTlsHooks for CertificateHooks {
             NativeTlsFailure::CompleteRejected => TlsBridgeFailure::CompleteRejected,
             NativeTlsFailure::RevokeRejected => TlsBridgeFailure::RevokeRejected,
             NativeTlsFailure::EngineRevoked => TlsBridgeFailure::EngineRevoked,
+            NativeTlsFailure::EngineFailureBeforeEvidence => {
+                TlsBridgeFailure::EngineFailureBeforeEvidence
+            }
             NativeTlsFailure::EngineFailure => TlsBridgeFailure::EngineFailure,
             NativeTlsFailure::PoisonedState => TlsBridgeFailure::PoisonedState,
             NativeTlsFailure::WrongThread => TlsBridgeFailure::WrongThread,
@@ -152,11 +155,13 @@ impl NativeTlsHooks for CertificateHooks {
                 return;
             }
             let certificate = cef_certificate_evidence(attempt.identity.clone(), &evidence);
+            let system_ca_valid = certificate.system_ca_valid;
             let origin = evidence.origin;
             let chain = evidence.peer_chain;
             timing.phase(timing::Phase::Certificate);
             let verdict = authority.evaluate(certificate).await;
             timing.phase(timing::Phase::Review);
+            let reviewed = matches!(&verdict, Ok(NativeCertificateDecision::Review(_)));
             let permit = match verdict {
                 Ok(NativeCertificateDecision::Allow(permit)) => {
                     diagnostics::navigation(Navigation::TlsAllow);
@@ -186,6 +191,9 @@ impl NativeTlsHooks for CertificateHooks {
             // Recheck the exact native chain/owner/expiry on CEF UI immediately
             // before draining the completion. A delayed UI cannot use an
             // expired permit merely because async work previously approved it.
+            if attempt.current() && permit.permits(&attempt.identity, &origin, &chain) {
+                attempt.security.record(&origin, &chain, system_ca_valid, reviewed);
+            }
             timing.phase(timing::Phase::UiQueue);
             let _ = window.run_on_main_thread(move || {
                 timing.phase(timing::Phase::UiCompletion);

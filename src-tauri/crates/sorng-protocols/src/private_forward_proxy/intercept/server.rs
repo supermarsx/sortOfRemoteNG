@@ -132,6 +132,18 @@ async fn handle<G: RequestGate>(
     tasks: &ConnectionTasks,
     request: Request<Incoming>,
 ) -> Response<ProxyBody> {
+    let head = request.method() == Method::HEAD;
+    let accept = request.headers().get(header::ACCEPT).cloned();
+    let response = handle_inner(exchange, gate, tasks, request).await;
+    crate::private_forward_proxy::error_response::negotiate(response, accept.as_ref(), head)
+}
+
+async fn handle_inner<G: RequestGate>(
+    exchange: &Exchange,
+    gate: &G,
+    tasks: &ConnectionTasks,
+    request: Request<Incoming>,
+) -> Response<ProxyBody> {
     if request.method() == Method::CONNECT {
         // Includes extended CONNECT, which is never advertised. Nothing about
         // the request is consulted, so this needs no admission.

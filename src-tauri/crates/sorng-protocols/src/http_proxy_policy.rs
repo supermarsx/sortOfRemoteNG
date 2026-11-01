@@ -73,6 +73,7 @@ fn default_external_resource_origins() -> Vec<ExternalResourceOrigin> {
 pub enum NativeBrowsingMode {
     Standard,
     Restricted,
+    Strict,
 }
 
 fn deserialize_native_browsing_mode<'de, D: serde::Deserializer<'de>>(
@@ -381,7 +382,7 @@ mod tests {
         assert!(absent.get("nativeBrowsingMode").is_none());
         let restored: HttpProxyPolicy = serde_json::from_value(absent).unwrap();
         assert!(restored.native_browsing_mode.is_none());
-        for mode in ["standard", "restricted"] {
+        for mode in ["standard", "restricted", "strict"] {
             let mut value = serde_json::to_value(HttpProxyPolicy::default()).unwrap();
             value["nativeBrowsingMode"] = mode.into();
             let policy: HttpProxyPolicy = serde_json::from_value(value).unwrap();

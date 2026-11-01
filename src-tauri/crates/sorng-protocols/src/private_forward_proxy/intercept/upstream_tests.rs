@@ -389,6 +389,8 @@ struct Seen {
     chain: Vec<Vec<u8>>,
     system_ca_valid: bool,
     temporary_ok: bool,
+    tls_version: Option<String>,
+    cipher_suite: Option<String>,
 }
 
 struct TestTrust {
@@ -415,6 +417,8 @@ impl UpstreamTrust for TestTrust {
             chain: e.chain_der,
             system_ca_valid: e.system_ca_valid,
             temporary_ok: e.temporary_ok,
+            tls_version: e.tls_version,
+            cipher_suite: e.cipher_suite,
         });
         let verdict = *self.verdict.lock().unwrap();
         Box::pin(async move { verdict })
@@ -511,7 +515,13 @@ async fn pool_is_keyed_by_exact_authority_and_never_coalesces() {
     let b = authority("b.test:443");
     for _ in 0..3 {
         let (response, admission) = f.pool.send(&a, true, get("/x")).await.unwrap();
-        assert_eq!(admission, Admission { persistent: true });
+        assert_eq!(
+            admission,
+            Admission {
+                persistent: true,
+                system_ca_valid: true
+            }
+        );
         assert!(text(response).await.ends_with("a.test"));
         let (response, _) = f.pool.send(&b, true, get("/y")).await.unwrap();
         assert!(text(response).await.ends_with("b.test"));
@@ -523,6 +533,14 @@ async fn pool_is_keyed_by_exact_authority_and_never_coalesces() {
     authorities.sort();
     assert_eq!(authorities, ["a.test:443", "b.test:443"]);
     assert!(seen.iter().all(|s| s.system_ca_valid && s.temporary_ok));
+    // The reused H2 sockets report their actual initial upstream negotiation,
+    // including ordinary CA-valid certificates that never prompt.
+    assert!(seen
+        .iter()
+        .all(|s| s.tls_version.as_deref() == Some("TLS 1.3")
+            && s.cipher_suite
+                .as_deref()
+                .is_some_and(|suite| suite.starts_with("TLS13_") && suite.len() <= 128)));
     // Different port = different authority.
     drop(seen);
     assert!(f.pool.admitted(&a) && f.pool.admitted(&b));
@@ -727,7 +745,13 @@ async fn temporary_admission_is_reported_per_exchange() {
     let a = authority("a.test:443");
     for _ in 0..2 {
         let (response, admission) = f.pool.send(&a, true, get("/t")).await.unwrap();
-        assert_eq!(admission, Admission { persistent: false });
+        assert_eq!(
+            admission,
+            Admission {
+                persistent: false,
+                system_ca_valid: true
+            }
+        );
         text(response).await;
     }
 }
@@ -775,7 +799,13 @@ async fn plain_http_keeps_alive_without_trust_evaluation() {
     let a = authority("device.test:80");
     for path in ["/a", "/b", "/c"] {
         let (response, admission) = pool.send(&a, false, get(path)).await.unwrap();
-        assert_eq!(admission, Admission { persistent: true });
+        assert_eq!(
+            admission,
+            Admission {
+                persistent: true,
+                system_ca_valid: false
+            }
+        );
         assert_eq!(text(response).await, format!("{path} HTTP/1.1 device.test"));
     }
     assert_eq!(server.stats.accepts.load(Ordering::SeqCst), 1);
@@ -1195,7 +1225,14 @@ async fn warm_admits_without_sending_request_bytes() {
     let pki = Pki::new();
     let served = pki.valid(&["a.test"], Validity::Current);
     for alpn in [Alpn::H2AndH1, Alpn::H1Only] {
-        let f = fixture(&served, alpn, pki.system(&[]), ADMIT, Duration::from_secs(90)).await;
+        let f = fixture(
+            &served,
+            alpn,
+            pki.system(&[]),
+            ADMIT,
+            Duration::from_secs(90),
+        )
+        .await;
         let a = authority("a.test:443");
         assert!(!f.pool.admitted(&a));
         assert!(f.pool.warm(&a, true).await);
@@ -1207,7 +1244,11 @@ async fn warm_admits_without_sending_request_bytes() {
         })
         .await;
         assert_eq!(f.server.stats.handshakes.load(Ordering::SeqCst), 1);
-        assert_eq!(f.server.stats.bytes.load(Ordering::SeqCst), 0, "no request byte");
+        assert_eq!(
+            f.server.stats.bytes.load(Ordering::SeqCst),
+            0,
+            "no request byte"
+        );
         // Already admitted: no second dial or evaluation.
         assert!(f.pool.warm(&a, true).await);
         f.pool.spawn_warm(&a, true);
@@ -1222,7 +1263,14 @@ async fn warm_never_admits_a_denied_upstream() {
     let pki = Pki::new();
     let served = pki.valid(&["a.test"], Validity::Current);
     for verdict in [UpstreamVerdict::Deny, UpstreamVerdict::Timeout] {
-        let f = fixture(&served, Alpn::H2AndH1, pki.system(&[]), verdict, Duration::from_secs(90)).await;
+        let f = fixture(
+            &served,
+            Alpn::H2AndH1,
+            pki.system(&[]),
+            verdict,
+            Duration::from_secs(90),
+        )
+        .await;
         let a = authority("a.test:443");
         assert!(!f.pool.warm(&a, true).await);
         assert!(!f.pool.admitted(&a));
@@ -1234,7 +1282,14 @@ async fn warm_never_admits_a_denied_upstream() {
 async fn spawned_warm_runs_once_per_authority_and_stops_with_the_pool() {
     let pki = Pki::new();
     let served = pki.valid(&["a.test"], Validity::Current);
-    let f = fixture(&served, Alpn::H2AndH1, pki.system(&[]), ADMIT, Duration::from_secs(90)).await;
+    let f = fixture(
+        &served,
+        Alpn::H2AndH1,
+        pki.system(&[]),
+        ADMIT,
+        Duration::from_secs(90),
+    )
+    .await;
     let a = authority("a.test:443");
     for _ in 0..4 {
         f.pool.spawn_warm(&a, true);
@@ -1257,7 +1312,13 @@ fn only_document_destinations_are_main_frames() {
     use hyper::header::{HeaderMap, HeaderValue};
     let mut headers = HeaderMap::new();
     assert!(!is_main_frame(&headers));
-    for (value, main) in [("document", true), ("Document", true), ("iframe", false), ("script", false), ("empty", false)] {
+    for (value, main) in [
+        ("document", true),
+        ("Document", true),
+        ("iframe", false),
+        ("script", false),
+        ("empty", false),
+    ] {
         headers.insert("sec-fetch-dest", HeaderValue::from_static(value));
         assert_eq!(is_main_frame(&headers), main, "{value}");
     }

@@ -14,6 +14,8 @@ mod cef_occlusion;
 pub mod domain_permissions;
 pub mod ipc;
 pub mod native_navigation;
+#[cfg(any(feature = "cef-host", test))]
+mod native_security;
 pub mod message_pump;
 pub mod native_automation;
 pub mod native_appearance;

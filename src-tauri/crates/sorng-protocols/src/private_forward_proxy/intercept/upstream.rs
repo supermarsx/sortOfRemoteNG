@@ -65,6 +65,8 @@ impl UpstreamFailure {
 pub(crate) struct Admission {
     /// `false` for allow-once / temporary admissions: never disk-cached.
     pub persistent: bool,
+    /// Exact connection's OS name/date/chain verdict, never a remembered exception.
+    pub system_ca_valid: bool,
 }
 
 /// Which ALPN protocols to offer upstream.
@@ -153,9 +155,15 @@ pub(crate) fn handshake_failure(
 }
 
 /// Maps the app's verdict.
-pub(crate) fn verdict_admission(verdict: UpstreamVerdict) -> Result<Admission, UpstreamFailure> {
+pub(crate) fn verdict_admission(
+    verdict: UpstreamVerdict,
+    system_ca_valid: bool,
+) -> Result<Admission, UpstreamFailure> {
     match verdict {
-        UpstreamVerdict::Admit { persistent } => Ok(Admission { persistent }),
+        UpstreamVerdict::Admit { persistent } => Ok(Admission {
+            persistent,
+            system_ca_valid,
+        }),
         UpstreamVerdict::Deny => Err(UpstreamFailure::Denied),
         UpstreamVerdict::Timeout => Err(UpstreamFailure::Timeout),
     }
@@ -191,7 +199,10 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
         return Ok(Established {
             io: stream,
             h2: false,
-            admission: Admission { persistent: true },
+            admission: Admission {
+                persistent: true,
+                system_ca_valid: false,
+            },
         });
     }
     let name = server_name(authority).ok_or(UpstreamFailure::RouteFailed)?;
@@ -210,7 +221,7 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
     if let Some(fatal) = record.fatal {
         return Err(UpstreamFailure::Fatal(fatal));
     }
-    let (chain, h2) = {
+    let (chain, h2, tls_version, cipher_suite) = {
         let (_, connection) = tls.get_ref();
         let chain: Vec<Vec<u8>> = connection
             .peer_certificates()
@@ -218,7 +229,22 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
             .iter()
             .map(|der| der.as_ref().to_vec())
             .collect();
-        (chain, connection.alpn_protocol() == Some(ALPN_H2))
+        let tls_version = connection
+            .protocol_version()
+            .and_then(|version| match version {
+                rustls::ProtocolVersion::TLSv1_2 => Some("TLS 1.2".to_owned()),
+                rustls::ProtocolVersion::TLSv1_3 => Some("TLS 1.3".to_owned()),
+                _ => None,
+            });
+        let cipher_suite = connection
+            .negotiated_cipher_suite()
+            .map(|suite| format!("{:?}", suite.suite()));
+        (
+            chain,
+            connection.alpn_protocol() == Some(ALPN_H2),
+            tls_version,
+            cipher_suite,
+        )
     };
     if chain.is_empty() {
         return Err(UpstreamFailure::Fatal(UpstreamFatal::Malformed));
@@ -244,10 +270,12 @@ pub(crate) async fn establish(request: ConnectRequest<'_>) -> Result<Established
                 chain_der: chain,
                 system_ca_valid,
                 temporary_ok: true,
+                tls_version,
+                cipher_suite,
             })
             .await
     };
-    let admission = verdict_admission(verdict)?;
+    let admission = verdict_admission(verdict, system_ca_valid)?;
     Ok(Established {
         io: Box::new(tls),
         h2,

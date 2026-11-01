@@ -14,6 +14,9 @@ mod manual_input;
 pub use manual_input::{ManualInputCompletion, ManualInputGuard};
 #[path = "cef_devtools.rs"]
 pub(crate) mod cef_devtools;
+#[path = "cef_security.rs"]
+mod cef_security;
+pub use cef_security::NativeSecurityEvidence;
 #[path = "cef_context_menu.rs"]
 mod context_menu;
 pub use cef_find::{NativeFindCompletion, NativeFindResult};
@@ -287,6 +290,9 @@ fn display_url(value: &str) -> String {
 /// work promptly. Panics revoke the attempt and never unwind through CEF.
 pub trait BrowserEventSink: Send + Sync {
     fn on_event(&self, event: BrowserEvent);
+    /// Private certificate metadata for the exact current view. Observation
+    /// only: implementations must enqueue promptly and never grant trust.
+    fn on_security(&self, _evidence: NativeSecurityEvidence) {}
     /// Fixed observations only; never admission or native close authority.
     /// Called without session/control locks. Observer panics are isolated.
     fn on_diagnostic(&self, _diagnostic: NativeBrowserDiagnostic) {}
@@ -3205,6 +3211,12 @@ impl<'a> CefBrowserHost<'a> {
         page_menu::print(self, identity)
     }
 
+    /// Inspect the current root/child navigation locally, including cache hits.
+    /// The sink receives a bounded initial certificate and terminal TLS update.
+    pub fn inspect_security(&self, identity: &BrowserIdentity, inspection_id: u64) -> Result<(), BrowserError> {
+        cef_security::inspect(self, identity, inspection_id)
+    }
+
     pub fn manual_input(&self, identity: &BrowserIdentity, action: &crate::native_manual_input::ManualInputAction,
         guard: ManualInputGuard, completion: ManualInputCompletion) -> Result<(), BrowserError> {
         manual_input::operate(self, identity, action, guard, completion)
@@ -3704,6 +3716,7 @@ wrap_life_span_handler! {
         }
 
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
+            cef_security::close(&self.shared);
             self.shared.diagnostic(NativeBrowserDiagnostic::NativeBeforeClose);
             self.shared.revoke();
             cef_popups::close_source(&self.shared.popup);

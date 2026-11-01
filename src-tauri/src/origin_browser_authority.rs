@@ -1739,7 +1739,8 @@ fn saved_permissions_inner(
         .or_else(|| settings.pointer("/webBrowser/defaultPolicy"))
         .and_then(|p| p.get("sameOriginOnly"))
         .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || policy.and_then(|p| p.get("nativeBrowsingMode")).and_then(Value::as_str) == Some("strict");
     let mut candidates: BTreeMap<String, BTreeMap<WebsiteRequestClass, WebsitePermissionDecision>> =
         BTreeMap::new();
     candidates.insert(

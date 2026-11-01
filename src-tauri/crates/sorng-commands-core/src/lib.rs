@@ -13,9 +13,6 @@ mod telegram_commands;
 #[doc(hidden)]
 pub mod telegram_handler;
 
-#[cfg(all(feature = "opkssh", not(feature = "ops")))]
-pub use sorng_opkssh as opkssh;
-
 // t5-e7: connection clone command (in-crate module, not an `include!` shim)
 pub mod connection_clone_cmds;
 pub mod browser_data_commands;
@@ -101,9 +98,6 @@ mod meshcentral_commands;
 mod network_commands;
 #[path = "../../../src/network_toolkit_commands.rs"]
 mod network_toolkit_commands;
-#[cfg(all(feature = "opkssh", not(feature = "ops")))]
-#[path = "../../../src/opkssh_commands.rs"]
-mod opkssh_commands;
 #[path = "../../../src/passkey_commands.rs"]
 mod passkey_commands;
 #[cfg(feature = "ops")]

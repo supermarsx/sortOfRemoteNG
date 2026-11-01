@@ -34,6 +34,8 @@ use zeroize::{Zeroize, Zeroizing};
 mod accept;
 #[path = "private_forward_proxy/connect_udp.rs"]
 mod connect_udp;
+#[path = "private_forward_proxy/error_response.rs"]
+mod error_response;
 #[path = "private_forward_proxy/http.rs"]
 mod forward_http;
 #[path = "private_forward_proxy/intercept/mod.rs"]
@@ -902,12 +904,37 @@ async fn handle_client(
         Ok(Ok(stream)) => stream,
         result => {
             increment(&observations.upstream_failures);
-            refuse(
-                &mut client,
-                if result.is_err() { 504 } else { 502 },
-                limits.response_timeout,
-            )
-            .await;
+            let timed_out = result.is_err();
+            let source = match &result {
+                Ok(Err(error)) => Some(error as &(dyn std::error::Error + 'static)),
+                _ => None,
+            };
+            let response = error_response::response(
+                if timed_out {
+                    hyper::StatusCode::GATEWAY_TIMEOUT
+                } else {
+                    hyper::StatusCode::BAD_GATEWAY
+                },
+                if timed_out {
+                    error_response::Failure::RouteTimeout
+                } else {
+                    error_response::Failure::Route
+                },
+                source,
+                true,
+            );
+            let response = error_response::negotiate(
+                response,
+                admission
+                    .forward
+                    .as_ref()
+                    .and_then(|forward| forward.error_accept()),
+                admission
+                    .forward
+                    .as_ref()
+                    .is_some_and(|forward| forward.head),
+            );
+            error_response::write_response(&mut client, response, limits.response_timeout).await;
             return;
         }
     };

@@ -21,6 +21,9 @@ base64 = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 x509-parser = "0.18"
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls-platform-verifier = "0.7"
 uuid = { workspace = true }
 chrono = { workspace = true }
 sha2 = { workspace = true }

@@ -8,8 +8,7 @@
 //! ## Implementation strategy (plan `.orchestration/plans/t23-ssh3-real.md`)
 //! Built **natively** on the workspace's existing `quinn` (0.11) + `rustls`
 //! (0.23) stack plus `h3` / `h3-quinn` for HTTP/3 — NOT by embedding the
-//! upstream Go `ssh3` client. SSH3 and OPKSSH are orthogonal and stay
-//! decoupled.
+//! upstream Go `ssh3` client.
 //!
 //! ## Module layout (foundation seams for t23-e2…e6)
 //! - [`transport`] — QUIC/H3 connection setup + rustls config (`e2`, `e6`).
@@ -83,8 +82,7 @@ pub struct Ssh3ConnectionConfig {
     /// When set, SSH3 authenticates with `Authorization: Bearer <token>` —
     /// the standard HTTP Bearer scheme (RFC 6750). The token is acquired out
     /// of band by an OIDC/OAuth2 flow (e.g. Google/Microsoft/GitHub login) and
-    /// passed in here; SSH3's bearer path is deliberately **decoupled** from
-    /// the OPKSSH dylib (we reuse only the OIDC *concept*, not its transport).
+    /// passed in here.
     /// Carried as a plain `Option<String>` on the serde surface to keep the
     /// IPC contract additive; copied into a [`secrecy::SecretString`] the
     /// moment it is used so it is never logged.

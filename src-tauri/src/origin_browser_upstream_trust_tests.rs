@@ -93,6 +93,8 @@ fn proxy_origin_matches_the_bridge_origin_for_every_authority_form() {
             chain_der: vec![b"leaf".to_vec()],
             system_ca_valid: false,
             temporary_ok: true,
+            tls_version: None,
+            cipher_suite: None,
         };
         let built = upstream_certificate_evidence(identity(), &evidence).unwrap();
         assert_eq!(built.origin, origin, "{authority}");
@@ -514,6 +516,8 @@ fn proxy_evidence(row: &Row) -> Option<NativeCertificateEvidence> {
             chain_der: row.chain.clone(),
             system_ca_valid,
             temporary_ok: true,
+            tls_version: None,
+            cipher_suite: None,
         },
     )
 }
@@ -763,6 +767,8 @@ async fn a_record_approved_under_cef_evidence_admits_the_proxy_evidence() {
             chain_der: chain,
             system_ca_valid: false,
             temporary_ok: true,
+            tls_version: None,
+            cipher_suite: None,
         },
     )
     .unwrap();

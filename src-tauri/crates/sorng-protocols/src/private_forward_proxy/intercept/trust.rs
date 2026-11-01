@@ -31,6 +31,10 @@ pub struct UpstreamEvidence {
     pub system_ca_valid: bool,
     /// A temporary ("allow once") admission is acceptable for this exchange.
     pub temporary_ok: bool,
+    /// Negotiated on this actual authenticated upstream TLS connection.
+    /// Never copied from the proxy-facing browser TLS session.
+    pub tls_version: Option<String>,
+    pub cipher_suite: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]

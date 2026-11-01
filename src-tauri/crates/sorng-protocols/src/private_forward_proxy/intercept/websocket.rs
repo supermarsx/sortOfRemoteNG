@@ -58,7 +58,7 @@ pub(crate) async fn upgrade(
         exchange.pool.connect_upgrade(&ctx.authority, ctx.secure),
     )
     .await;
-    let (mut sender, _admission) = match connected {
+    let (mut sender, admission) = match connected {
         Ok(Ok(connected)) => connected,
         Ok(Err(failure)) => return exchange.upstream_failure(failure),
         Err(_) => return exchange.head_timeout(),
@@ -75,6 +75,7 @@ pub(crate) async fn upgrade(
         }
         Err(_) => return exchange.head_timeout(),
     };
+    exchange.observe_hsts(&ctx, response.headers(), admission.system_ca_valid);
     if response.status() != StatusCode::SWITCHING_PROTOCOLS {
         // A refusal (e.g. 403) is an ordinary response to serve.
         return match exchange.downstream(response) {

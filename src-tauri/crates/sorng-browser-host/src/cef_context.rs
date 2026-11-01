@@ -1549,6 +1549,7 @@ mod tests {
         async fn bridge_reason_precedes_cleanup_and_typed_or_legacy_delivery_is_unlocked() {
             for reason in [
                 Some(NativeTlsFailure::CompleteRejected),
+                Some(NativeTlsFailure::EngineFailureBeforeEvidence),
                 Some(NativeTlsFailure::EngineFailure),
                 None,
             ] {

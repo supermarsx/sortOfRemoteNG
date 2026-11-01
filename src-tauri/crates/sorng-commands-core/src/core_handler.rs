@@ -3,8 +3,6 @@ use crate::*;
 use connection_clone_cmds as connection_clone_commands;
 use database_protection::browser_sessions as database_browser_sessions;
 use database_protection::delegation as database_delegation;
-#[cfg(all(feature = "opkssh", not(feature = "ops")))]
-use opkssh_commands::inner as opkssh_inner_commands;
 use sorng_encryption::commands as encryption_commands;
 use sorng_encryption::master_recovery as master_recovery_commands;
 use sorng_probes::commands as probe_commands;
@@ -27,7 +25,6 @@ mod runtime_capability_commands {
         pub collab: bool,
         pub softether: bool,
         pub script_engine: bool,
-        pub opkssh: bool,
     }
 
     #[tauri::command]
@@ -50,7 +47,6 @@ mod runtime_capability_commands {
             collab: cfg!(any(feature = "collab", feature = "platform")),
             softether: cfg!(feature = "vpn-softether"),
             script_engine: cfg!(feature = "script-engine"),
-            opkssh: cfg!(feature = "opkssh"),
         }
     }
 }
@@ -211,56 +207,6 @@ define_command_group!(
         #[cfg(debug_assertions)]
         app_shell_commands::open_devtools,
         app_shell_commands::open_url_external,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_await_login,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_add_identity_cmd,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_add_provider_cmd,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_audit_cmd,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_env_string,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_install_cmd,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_remove_identity_cmd,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_build_remove_provider_cmd,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_cancel_login,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_check_binary,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_get_audit_results,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_get_client_config,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_get_download_url,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_get_login_operation,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_get_server_config,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_get_status,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_list_keys,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_login,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_parse_audit_output,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_parse_server_config,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_remove_key,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_server_read_config_script,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_start_login,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_update_client_config,
-        #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-        opkssh_inner_commands::opkssh_well_known_providers,
         storage_commands::read_app_data,
         app_settings_commands::read_app_settings,
         app_auth_commands::remove_user,

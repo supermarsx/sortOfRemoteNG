@@ -15,6 +15,8 @@ pub(crate) struct Prompt {
     pub reason: String,
     pub temporary: bool,
     pub expires_at_unix_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Serialize)]
@@ -175,6 +177,7 @@ mod tests {
             reason: "Review certificate".into(),
             temporary: false,
             expires_at_unix_ms: 123,
+            certificate: None,
         }
     }
     const ID: &str = "12345678123456781234567812345678";

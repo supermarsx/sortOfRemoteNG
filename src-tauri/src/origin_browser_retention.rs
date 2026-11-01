@@ -144,6 +144,27 @@ pub(crate) async fn clear_connection_cookies(
 }
 
 impl NativeCookieRetention {
+    /// Disabled retention uses a fresh jar without opening stored snapshots or
+    /// acquiring a retention writer. The caller keeps the browser owner gates.
+    pub async fn prepare_for_restore<R: Runtime>(
+        window: &WebviewWindow<R>,
+        state: &EncryptionState,
+        lease: &NativeOwnerLease,
+        browser: &OriginBrowserPolicy,
+        policy: RetentionPolicy,
+    ) -> Result<Option<Arc<Self>>, RetentionError> {
+        policy.validate()?;
+        if !lease.is_current() {
+            return Err(RetentionError::OwnerUnavailable);
+        }
+        if !policy.enabled() {
+            return Ok(None);
+        }
+        Self::prepare(window, state, lease, browser, policy)
+            .await
+            .map(Some)
+    }
+
     pub async fn prepare<R: Runtime>(
         window: &WebviewWindow<R>,
         state: &EncryptionState,

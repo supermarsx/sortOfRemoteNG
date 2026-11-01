@@ -25,6 +25,9 @@ pub(super) struct PopupRole {
 }
 
 impl PopupRole {
+    pub(super) fn view_id(&self) -> Option<String> {
+        self.child.as_ref().map(|(id, _)| id.clone())
+    }
     pub(super) fn root() -> Self {
         Self {
             group: NEXT_GROUP.fetch_add(1, Ordering::Relaxed),
@@ -99,8 +102,12 @@ struct Events {
 struct PopupSink {
     events: Arc<Events>,
     view_id: String,
+    source: Arc<dyn BrowserEventSink>,
 }
 impl BrowserEventSink for PopupSink {
+    fn on_security(&self, evidence: NativeSecurityEvidence) {
+        self.source.on_security(evidence);
+    }
     fn on_event(&self, event: BrowserEvent) {
         if let Ok(mut events) = self.events.values.lock() {
             events.insert(self.view_id.clone(), event);
@@ -329,6 +336,7 @@ pub(super) fn before_popup(
         let sink = Arc::new(PopupSink {
             events: group.events.clone(),
             view_id: id.clone(),
+            source: opener.sink.clone(),
         });
         let role = PopupRole {
             group: opener.popup.group,

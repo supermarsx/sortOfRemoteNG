@@ -16,8 +16,7 @@
 //!   [`build_pubkey_jwt`].
 //! - **bearer / OIDC / OAuth2** → a raw bearer token (acquired out of band by an
 //!   OIDC/OAuth2 flow — Google/Microsoft/GitHub, etc.) sent verbatim as
-//!   `Bearer <token>`. Decoupled from the OPKSSH dylib by design (we reuse the
-//!   OIDC *concept* only). See [`build_bearer_auth_value`].
+//!   `Bearer <token>`. See [`build_bearer_auth_value`].
 //! - **certificate** → SSH3 has no `Authorization`-header certificate scheme;
 //!   client certificates are presented at the **TLS (mTLS) layer**, configured
 //!   in [`super::transport`], not here. The [`Ssh3AuthMethod::Certificate`] arm

@@ -289,10 +289,13 @@ impl InterceptAuthority {
         params.alg = &PKCS_ECDSA_P256_SHA256;
         let host = authority.host();
         let mut name = DistinguishedName::new();
+        // rcgen emits a noncritical SAN. RFC 5280 requires a nonempty subject
+        // in that case, including IP-only sites; Chromium rejects an empty one.
+        // The exact DNS/IP SAN remains the identity used for verification.
+        name.push(DnType::CommonName, host);
         match host.parse::<IpAddr>() {
             Ok(ip) => params.subject_alt_names = vec![SanType::IpAddress(ip)],
             Err(_) => {
-                name.push(DnType::CommonName, host);
                 params.subject_alt_names = vec![SanType::DnsName(host.to_string())];
             }
         }

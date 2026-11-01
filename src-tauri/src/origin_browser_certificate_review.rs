@@ -95,6 +95,7 @@ pub(super) async fn review_certificate(
         reason: review.reason().into(),
         temporary: review.is_temporary(),
         expires_at_unix_ms,
+        certificate: review.certificate(),
     };
     let weak = Arc::downgrade(attempt);
     let current = Arc::new(move || weak.upgrade().is_some_and(|attempt| attempt.current()));

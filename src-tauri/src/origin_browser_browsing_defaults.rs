@@ -5,7 +5,7 @@ pub(super) fn standard(policy: Option<&Value>) -> bool {
     let Some(policy) = policy else { return true };
     match policy.get("nativeBrowsingMode").and_then(Value::as_str) {
         Some("standard") => return true,
-        Some("restricted") => return false,
+        Some("restricted" | "strict") => return false,
         _ if policy.get("nativeBrowsingMode").is_some() => return false,
         _ => {}
     }

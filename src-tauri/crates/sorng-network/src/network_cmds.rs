@@ -11,17 +11,16 @@ pub async fn ping_host(
 
 #[tauri::command]
 pub async fn ping_host_detailed(
-    state: tauri::State<'_, NetworkServiceState>,
+    _state: tauri::State<'_, NetworkServiceState>,
     host: String,
     _count: Option<u32>,
-    _timeout_secs: Option<u64>,
+    timeout_secs: Option<u64>,
 ) -> Result<PingResult, String> {
-    let network = state.lock().await;
     let start = std::time::Instant::now();
-
-    match network.ping_host(host).await {
-        Ok(success) => {
-            let elapsed = start.elapsed().as_millis() as u64;
+    let budget = Duration::from_secs(timeout_secs.unwrap_or(2).clamp(1, 5));
+    match native_diagnostics::ping(&host, budget).await {
+        Ok((success, elapsed)) => {
+            let elapsed = elapsed.unwrap_or(start.elapsed().as_millis() as u64);
             Ok(PingResult {
                 success,
                 time_ms: if success { Some(elapsed) } else { None },
@@ -38,48 +37,23 @@ pub async fn ping_host_detailed(
 
 #[tauri::command]
 pub async fn ping_gateway(timeout_secs: Option<u64>) -> Result<PingResult, String> {
-    // Try to get the default gateway
-    let gateway = get_default_gateway()?;
-
-    let start = std::time::Instant::now();
-    #[cfg(target_os = "windows")]
-    let timeout_ms = (timeout_secs.unwrap_or(5) * 1000) as u32;
-
-    // Use ICMP ping directly - gateways typically don't have TCP services open
-    let mut cmd = Command::new("ping");
-    #[cfg(target_os = "windows")]
-    cmd.arg("-n").arg("1").arg("-w").arg(timeout_ms.to_string());
-    #[cfg(not(target_os = "windows"))]
-    cmd.arg("-c")
-        .arg("1")
-        .arg("-W")
-        .arg((timeout_secs.unwrap_or(5)).to_string());
-    cmd.arg(&gateway)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-
-    match cmd.output().await {
-        Ok(output) if output.status.success() => {
-            // Try to parse ping time from output
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let time_ms = parse_ping_time(&stdout).unwrap_or(start.elapsed().as_millis() as u64);
-            Ok(PingResult {
-                success: true,
-                time_ms: Some(time_ms),
-                error: None,
-            })
-        }
-        Ok(_) => Ok(PingResult {
+    let gateway = tokio::task::spawn_blocking(get_default_gateway)
+        .await
+        .map_err(|_| "Native gateway worker failed".to_string())??;
+    let budget = Duration::from_secs(timeout_secs.unwrap_or(3).clamp(1, 5));
+    let result = native_diagnostics::ping(&gateway, budget).await;
+    Ok(match result {
+        Ok((success, time_ms)) => PingResult {
+            success,
+            time_ms,
+            error: None,
+        },
+        Err(error) => PingResult {
             success: false,
             time_ms: None,
-            error: Some(format!("Gateway {} not reachable via ICMP", gateway)),
-        }),
-        Err(e) => Ok(PingResult {
-            success: false,
-            time_ms: None,
-            error: Some(format!("Ping command failed: {}", e)),
-        }),
-    }
+            error: Some(error),
+        },
+    })
 }
 
 #[tauri::command]
@@ -264,137 +238,12 @@ pub async fn traceroute(
     max_hops: Option<u32>,
     timeout_secs: Option<u64>,
 ) -> Result<Vec<TracerouteHop>, String> {
-    let max_hops = max_hops.unwrap_or(30);
-
-    #[cfg(target_os = "windows")]
-    let cmd_name = "tracert";
-    #[cfg(not(target_os = "windows"))]
-    let cmd_name = "traceroute";
-
-    let mut cmd = Command::new(cmd_name);
-
-    #[cfg(target_os = "windows")]
-    {
-        cmd.arg("-d") // Don't resolve hostnames (faster)
-            .arg("-h")
-            .arg(max_hops.to_string())
-            .arg("-w")
-            .arg((timeout_secs.unwrap_or(3) * 1000).to_string())
-            .arg(&host);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        cmd.arg("-n") // Don't resolve hostnames
-            .arg("-m")
-            .arg(max_hops.to_string())
-            .arg("-w")
-            .arg(timeout_secs.unwrap_or(3).to_string())
-            .arg(&host);
-    }
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run traceroute: {}", e))?;
-
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    let mut hops = Vec::new();
-
-    for line in output_str.lines() {
-        // Parse traceroute output - format varies by OS
-        let trimmed = line.trim();
-
-        // Skip empty lines and headers
-        if trimmed.is_empty() || trimmed.starts_with("Tracing") || trimmed.starts_with("traceroute")
-        {
-            continue;
-        }
-
-        // Try to parse hop number
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.is_empty() {
-            continue;
-        }
-
-        if let Ok(hop_num) = parts[0].parse::<u32>() {
-            let mut hop = TracerouteHop {
-                hop: hop_num,
-                ip: None,
-                hostname: None,
-                time_ms: None,
-                timeout: false,
-            };
-
-            // Check for timeout (asterisks)
-            if trimmed.contains("*") && !trimmed.contains("ms") {
-                hop.timeout = true;
-            } else {
-                // Try to find IP address
-                for part in &parts[1..] {
-                    // Check if it looks like an IP
-                    if part.contains('.') && !part.contains("ms") {
-                        let ip =
-                            part.trim_matches(|c| c == '(' || c == ')' || c == '[' || c == ']');
-                        hop.ip = Some(ip.to_string());
-                        break;
-                    }
-                }
-
-                // Try to find timing
-                for (i, part) in parts.iter().enumerate() {
-                    if *part == "ms" || part.ends_with("ms") {
-                        // Get the number before "ms"
-                        let num_str = if *part == "ms" {
-                            if i > 0 {
-                                parts[i - 1]
-                            } else {
-                                continue;
-                            }
-                        } else {
-                            part.trim_end_matches("ms")
-                        };
-
-                        if let Ok(time) = num_str.parse::<f64>() {
-                            hop.time_ms = Some(time as u64);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            let hop_num_check = hop.hop;
-            hops.push(hop);
-
-            // Stop if we've reached the target (check if "Trace complete" or similar)
-            if trimmed.contains("Trace complete") || hop_num_check >= max_hops {
-                break;
-            }
-        }
-    }
-
-    // Perform reverse DNS lookups for all discovered IPs in parallel
-    let dns_futures: Vec<_> = hops
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, hop)| {
-            hop.ip.as_ref().map(|ip| {
-                let ip_clone = ip.clone();
-                async move { (idx, reverse_dns_lookup(&ip_clone).await) }
-            })
-        })
-        .collect();
-
-    let dns_results = join_all(dns_futures).await;
-
-    // Apply reverse DNS results to hops
-    for (idx, hostname) in dns_results {
-        if let Some(hop) = hops.get_mut(idx) {
-            hop.hostname = hostname;
-        }
-    }
-
-    Ok(hops)
+    native_diagnostics::trace(
+        &host,
+        max_hops.unwrap_or(30),
+        Duration::from_secs(timeout_secs.unwrap_or(2).clamp(1, 5)),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -480,97 +329,28 @@ pub async fn tcp_connection_timing(
 /// Check MTU to host using ping with don't fragment flag
 #[tauri::command]
 pub async fn check_mtu(host: String) -> Result<MtuCheckResult, String> {
-    let test_sizes = vec![1472, 1400, 1300, 1200, 1000, 576];
+    let target = native_diagnostics::resolve(&host, Duration::from_secs(3)).await?;
     let mut test_results = Vec::new();
-    let mut largest_working = 576u32;
+    let mut largest = None;
     let mut fragmentation_needed = false;
-
-    for size in &test_sizes {
-        let mut cmd = Command::new("ping");
-
-        #[cfg(target_os = "windows")]
-        {
-            cmd.arg("-n")
-                .arg("1")
-                .arg("-f") // Don't fragment
-                .arg("-l")
-                .arg(size.to_string())
-                .arg("-w")
-                .arg("2000")
-                .arg(&host);
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            cmd.arg("-c")
-                .arg("1")
-                .arg("-M")
-                .arg("do") // Don't fragment (Linux)
-                .arg("-s")
-                .arg(size.to_string())
-                .arg("-W")
-                .arg("2")
-                .arg(&host);
-        }
-
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        match cmd.output().await {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr).to_lowercase();
-
-                // Check for fragmentation needed messages
-                let needs_frag = combined.contains("fragmentation needed")
-                    || combined.contains("frag needed")
-                    || combined.contains("message too long")
-                    || combined.contains("packet needs to be fragmented");
-
-                let success = output.status.success() && !needs_frag;
-
-                if needs_frag {
-                    fragmentation_needed = true;
-                }
-
-                if success && *size as u32 > largest_working {
-                    largest_working = *size as u32;
-                }
-
-                test_results.push(MtuTestPoint {
-                    size: *size as u32,
-                    success,
-                });
-            }
-            Err(_) => {
-                test_results.push(MtuTestPoint {
-                    size: *size as u32,
-                    success: false,
-                });
-            }
+    for size in [1472u16, 1400, 1300, 1200, 1000, 576] {
+        let reply =
+            native_diagnostics::echo(target, 64, size, true, Duration::from_secs(1)).await?;
+        fragmentation_needed |= reply.status == 11009;
+        let success = reply.reached(target);
+        test_results.push(MtuTestPoint {
+            size: size as u32,
+            success,
+        });
+        if success {
+            largest = Some(size as u32 + 28);
+            break;
         }
     }
-
-    // Path MTU = largest working payload + 28 (IP header + ICMP header)
-    let path_mtu = if largest_working > 576 {
-        Some(largest_working + 28)
-    } else {
-        None
-    };
-
-    // Standard ethernet MTU is 1500, recommend 1400 for safe internet traversal
-    let recommended = if largest_working >= 1472 {
-        1500
-    } else if largest_working >= 1400 {
-        1428
-    } else {
-        largest_working + 28
-    };
-
     Ok(MtuCheckResult {
-        path_mtu,
+        path_mtu: largest,
         fragmentation_needed,
-        recommended_mtu: recommended,
+        recommended_mtu: largest.unwrap_or(1400),
         test_results,
         error: None,
     })
@@ -582,19 +362,8 @@ pub async fn detect_icmp_blockade(
     host: String,
     port: Option<u16>,
 ) -> Result<IcmpBlockadeResult, String> {
-    // First try ICMP ping
-    let mut ping_cmd = Command::new("ping");
-
-    #[cfg(target_os = "windows")]
-    ping_cmd.arg("-n").arg("2").arg("-w").arg("2000").arg(&host);
-
-    #[cfg(not(target_os = "windows"))]
-    ping_cmd.arg("-c").arg("2").arg("-W").arg("2").arg(&host);
-
-    ping_cmd.stdout(Stdio::null()).stderr(Stdio::null());
-
-    let icmp_result = ping_cmd.status().await;
-    let icmp_allowed = icmp_result.map(|s| s.success()).unwrap_or(false);
+    // A denied/unsupported native ICMP probe is not proof of a firewall.
+    let (icmp_allowed, _) = native_diagnostics::ping(&host, Duration::from_secs(2)).await?;
 
     // Try TCP connection to common ports or specified port
     let ports_to_try = if let Some(p) = port {
@@ -634,15 +403,6 @@ pub async fn detect_icmp_blockade(
 }
 
 const MAX_TLS_HOST_BYTES: usize = 253;
-const MAX_TLS_PROCESS_STREAM_BYTES: usize = 8 * 1024;
-const MAX_TLS_DIAGNOSTIC_CHARS: usize = 1_536;
-
-struct BoundedTlsCommandOutput {
-    success: bool,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    truncated: bool,
-}
 
 fn canonical_tls_host(input: &str) -> Result<String, String> {
     if input.is_empty() || input.len() > MAX_TLS_HOST_BYTES {
@@ -690,456 +450,10 @@ fn validated_tls_port(port: Option<u16>) -> Result<u16, String> {
     Ok(port)
 }
 
-fn sanitize_tls_diagnostic(value: &str, max_chars: usize) -> String {
-    value
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .take(max_chars)
-        .collect::<String>()
-        .trim()
-        .to_string()
-}
-
-fn failed_tls_check(start: &std::time::Instant, error: impl Into<String>) -> TlsCheckResult {
-    TlsCheckResult {
-        tls_supported: false,
-        tls_version: None,
-        certificate_valid: false,
-        certificate_subject: None,
-        certificate_issuer: None,
-        certificate_expiry: None,
-        handshake_time_ms: start.elapsed().as_millis() as u64,
-        error: Some(error.into()),
-    }
-}
-
-async fn read_bounded_tls_stream<R>(mut reader: R, limit: usize) -> std::io::Result<(Vec<u8>, bool)>
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    let mut retained = Vec::with_capacity(limit.min(1024));
-    let mut buffer = [0u8; 1024];
-    let mut truncated = false;
-    loop {
-        let count = reader.read(&mut buffer).await?;
-        if count == 0 {
-            break;
-        }
-        let remaining = limit.saturating_sub(retained.len());
-        let keep = remaining.min(count);
-        retained.extend_from_slice(&buffer[..keep]);
-        truncated |= keep < count;
-    }
-    Ok((retained, truncated))
-}
-
-async fn run_bounded_tls_command(
-    mut command: Command,
-    timeout_duration: Duration,
-) -> Result<BoundedTlsCommandOutput, String> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("TLS check failed: {}", error))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "TLS check failed to capture standard output".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "TLS check failed to capture standard error".to_string())?;
-
-    let collect = async move {
-        let (status, stdout, stderr) = tokio::join!(
-            child.wait(),
-            read_bounded_tls_stream(stdout, MAX_TLS_PROCESS_STREAM_BYTES),
-            read_bounded_tls_stream(stderr, MAX_TLS_PROCESS_STREAM_BYTES),
-        );
-        let status = status.map_err(|error| format!("TLS check failed: {}", error))?;
-        let (stdout, stdout_truncated) =
-            stdout.map_err(|error| format!("TLS output read failed: {}", error))?;
-        let (stderr, stderr_truncated) =
-            stderr.map_err(|error| format!("TLS error output read failed: {}", error))?;
-        Ok(BoundedTlsCommandOutput {
-            success: status.success(),
-            stdout,
-            stderr,
-            truncated: stdout_truncated || stderr_truncated,
-        })
-    };
-
-    timeout(timeout_duration, collect)
-        .await
-        .map_err(|_| "TLS check timed out".to_string())?
-}
-
-/// Check TLS/SSL handshake and platform trust for a canonical DNS name or IP.
+/// In-process TLS handshake and OS certificate validation; no utility process.
 #[tauri::command]
 pub async fn check_tls(host: String, port: Option<u16>) -> Result<TlsCheckResult, String> {
-    let host = canonical_tls_host(&host)?;
-    let port = validated_tls_port(port)?;
-    let start = std::time::Instant::now();
-
-    #[cfg(target_os = "windows")]
-    {
-        // The script is constant. Untrusted endpoint values are passed through the
-        // child environment and parsed as data, never interpolated as PowerShell.
-        const SCRIPT: &str = r#"
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-function Limit-Text {
-    param([AllowNull()][object]$Value, [int]$Maximum = 512)
-    if ($null -eq $Value) { return $null }
-    $text = [string]$Value
-    $text = $text -replace '[\x00-\x1f\x7f]', ' '
-    if ($text.Length -gt $Maximum) { return $text.Substring(0, $Maximum) }
-    return $text
-}
-
-$tcp = $null
-$ssl = $null
-try {
-    $hostName = [Environment]::GetEnvironmentVariable('SORNG_TLS_HOST', 'Process')
-    $portText = [Environment]::GetEnvironmentVariable('SORNG_TLS_PORT', 'Process')
-    [UInt16]$portNumber = 0
-    if ([string]::IsNullOrWhiteSpace($hostName) -or
-        -not [UInt16]::TryParse($portText, [ref]$portNumber) -or
-        $portNumber -eq 0) {
-        throw 'TLS endpoint input is invalid.'
-    }
-
-    $script:policyErrors = [System.Net.Security.SslPolicyErrors]::None
-    $script:chainStatuses = @()
-    $script:certificatePresented = $false
-    $script:certificateSubject = $null
-    $script:certificateIssuer = $null
-    $script:certificateExpiry = $null
-    $script:certificateNotBefore = $null
-    $script:authenticationError = $null
-
-    $validationCallback = {
-        param($sender, $certificate, $chain, $sslPolicyErrors)
-        $script:policyErrors = $sslPolicyErrors
-        if ($null -ne $certificate) {
-            $script:certificatePresented = $true
-            $certificate2 = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificate)
-            $script:certificateSubject = Limit-Text $certificate2.Subject
-            $script:certificateIssuer = Limit-Text $certificate2.Issuer
-            $script:certificateExpiry = $certificate2.NotAfter.ToUniversalTime()
-            $script:certificateNotBefore = $certificate2.NotBefore.ToUniversalTime()
-        }
-        if ($null -ne $chain) {
-            $script:chainStatuses = @(
-                $chain.ChainStatus |
-                    Where-Object {
-                        $_.Status -ne [System.Security.Cryptography.X509Certificates.X509ChainStatusFlags]::NoError
-                    } |
-                    ForEach-Object {
-                        Limit-Text ('{0}: {1}' -f $_.Status, $_.StatusInformation) 256
-                    }
-            )
-        }
-        return ($sslPolicyErrors -eq [System.Net.Security.SslPolicyErrors]::None)
-    }
-
-    $tcp = [System.Net.Sockets.TcpClient]::new()
-    $connectTask = $tcp.ConnectAsync($hostName, $portNumber)
-    if (-not $connectTask.Wait([TimeSpan]::FromSeconds(5))) {
-        throw 'TCP connection timed out.'
-    }
-    $ssl = [System.Net.Security.SslStream]::new(
-        $tcp.GetStream(),
-        $false,
-        $validationCallback
-    )
-
-    $authenticated = $false
-    try {
-        $ssl.AuthenticateAsClient($hostName)
-        $authenticated = $ssl.IsAuthenticated
-    } catch {
-        $script:authenticationError = Limit-Text $_.Exception.Message
-    }
-
-    $nameMismatch = [System.Net.Security.SslPolicyErrors]::RemoteCertificateNameMismatch
-    $chainErrors = [System.Net.Security.SslPolicyErrors]::RemoteCertificateChainErrors
-    $nameValid = $script:certificatePresented -and (($script:policyErrors -band $nameMismatch) -eq 0)
-    $chainValid = $script:certificatePresented -and
-        (($script:policyErrors -band $chainErrors) -eq 0) -and
-        $script:chainStatuses.Count -eq 0
-    $now = [DateTime]::UtcNow
-    $timeValid = $script:certificatePresented -and
-        $script:certificateNotBefore -le $now -and
-        $script:certificateExpiry -ge $now
-    $valid = $authenticated -and
-        $script:policyErrors -eq [System.Net.Security.SslPolicyErrors]::None -and
-        $nameValid -and $chainValid -and $timeValid
-
-    $issues = @()
-    if ($script:policyErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
-        $issues += 'SslPolicyErrors: ' + $script:policyErrors.ToString()
-    }
-    if (-not $nameValid) { $issues += 'Certificate name validation failed' }
-    if (-not $chainValid) {
-        $chainSummary = if ($script:chainStatuses.Count -gt 0) {
-            $script:chainStatuses -join ', '
-        } else {
-            'no valid certificate chain'
-        }
-        $issues += 'Certificate chain validation failed: ' + $chainSummary
-    }
-    if (-not $timeValid) { $issues += 'Certificate time validation failed' }
-    if (-not $authenticated -and $script:authenticationError) {
-        $issues += 'TLS authentication failed: ' + $script:authenticationError
-    }
-
-    [ordered]@{
-        TlsSupported = ($script:certificatePresented -or $authenticated)
-        HandshakeSucceeded = $authenticated
-        TlsVersion = if ($authenticated) { $ssl.SslProtocol.ToString() } else { $null }
-        Subject = $script:certificateSubject
-        Issuer = $script:certificateIssuer
-        Expiry = if ($script:certificateExpiry) { $script:certificateExpiry.ToString('o') } else { $null }
-        Valid = $valid
-        PolicyErrors = $script:policyErrors.ToString()
-        NameValid = $nameValid
-        ChainValid = $chainValid
-        TimeValid = $timeValid
-        ChainStatus = Limit-Text ($script:chainStatuses -join ', ') 1024
-        Error = if ($issues.Count -gt 0) { Limit-Text ($issues -join '; ') 1536 } else { $null }
-    } | ConvertTo-Json -Compress -Depth 3
-} catch {
-    [ordered]@{
-        TlsSupported = $false
-        HandshakeSucceeded = $false
-        TlsVersion = $null
-        Subject = $null
-        Issuer = $null
-        Expiry = $null
-        Valid = $false
-        PolicyErrors = 'Unknown'
-        NameValid = $false
-        ChainValid = $false
-        TimeValid = $false
-        ChainStatus = $null
-        Error = Limit-Text $_.Exception.Message 1536
-    } | ConvertTo-Json -Compress -Depth 3
-} finally {
-    if ($null -ne $ssl) { $ssl.Dispose() }
-    if ($null -ne $tcp) { $tcp.Dispose() }
-}
-"#;
-
-        let mut command = Command::new("powershell");
-        command
-            .arg("-NoLogo")
-            .arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-Command")
-            .arg(SCRIPT)
-            .env("SORNG_TLS_HOST", &host)
-            .env("SORNG_TLS_PORT", port.to_string());
-
-        let output = match run_bounded_tls_command(command, Duration::from_secs(10)).await {
-            Ok(output) => output,
-            Err(error) => return Ok(failed_tls_check(&start, error)),
-        };
-        if output.truncated {
-            return Ok(failed_tls_check(
-                &start,
-                "TLS diagnostic output exceeded the safety limit",
-            ));
-        }
-        if !output.success {
-            return Ok(failed_tls_check(&start, "TLS diagnostic process failed"));
-        }
-
-        let json = match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-            Ok(json) => json,
-            Err(_) => {
-                return Ok(failed_tls_check(
-                    &start,
-                    "Failed to parse bounded TLS response",
-                ))
-            }
-        };
-        let tls_supported = json
-            .get("TlsSupported")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let handshake_succeeded = json
-            .get("HandshakeSucceeded")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let policy_errors = json
-            .get("PolicyErrors")
-            .and_then(|value| value.as_str())
-            .unwrap_or("Unknown");
-        let name_valid = json
-            .get("NameValid")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let chain_valid = json
-            .get("ChainValid")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let time_valid = json
-            .get("TimeValid")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let certificate_valid = handshake_succeeded
-            && policy_errors == "None"
-            && name_valid
-            && chain_valid
-            && time_valid
-            && json
-                .get("Valid")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-
-        let mut issues = Vec::new();
-        if let Some(error) = json.get("Error").and_then(|value| value.as_str()) {
-            let error = sanitize_tls_diagnostic(error, MAX_TLS_DIAGNOSTIC_CHARS);
-            if !error.is_empty() {
-                issues.push(error);
-            }
-        }
-        if !certificate_valid && issues.is_empty() {
-            issues.push(format!(
-                "Certificate validation failed (policy: {}; name valid: {}; chain valid: {}; time valid: {})",
-                sanitize_tls_diagnostic(policy_errors, 128),
-                name_valid,
-                chain_valid,
-                time_valid
-            ));
-        }
-
-        Ok(TlsCheckResult {
-            tls_supported,
-            tls_version: json
-                .get("TlsVersion")
-                .and_then(|value| value.as_str())
-                .map(|value| sanitize_tls_diagnostic(value, 64)),
-            certificate_valid,
-            certificate_subject: json
-                .get("Subject")
-                .and_then(|value| value.as_str())
-                .map(|value| sanitize_tls_diagnostic(value, 512)),
-            certificate_issuer: json
-                .get("Issuer")
-                .and_then(|value| value.as_str())
-                .map(|value| sanitize_tls_diagnostic(value, 512)),
-            certificate_expiry: json
-                .get("Expiry")
-                .and_then(|value| value.as_str())
-                .map(|value| sanitize_tls_diagnostic(value, 64)),
-            handshake_time_ms: start.elapsed().as_millis() as u64,
-            error: if issues.is_empty() {
-                None
-            } else {
-                Some(sanitize_tls_diagnostic(
-                    &issues.join("; "),
-                    MAX_TLS_DIAGNOSTIC_CHARS,
-                ))
-            },
-        })
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let endpoint = match host.parse::<std::net::IpAddr>() {
-            Ok(std::net::IpAddr::V6(_)) => format!("[{}]:{}", host, port),
-            _ => format!("{}:{}", host, port),
-        };
-        let mut command = Command::new("openssl");
-        command
-            .arg("s_client")
-            .arg("-connect")
-            .arg(endpoint)
-            .arg("-brief")
-            .arg("-verify_return_error");
-        if host.parse::<std::net::IpAddr>().is_ok() {
-            command.arg("-verify_ip").arg(&host);
-        } else {
-            command
-                .arg("-verify_hostname")
-                .arg(&host)
-                .arg("-servername")
-                .arg(&host);
-        }
-
-        let output = match run_bounded_tls_command(command, Duration::from_secs(10)).await {
-            Ok(output) => output,
-            Err(error) => return Ok(failed_tls_check(&start, error)),
-        };
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let combined = format!("{}\n{}", stdout, stderr);
-        let tls_supported = combined.contains("CONNECTION ESTABLISHED")
-            || combined.contains("Protocol version:")
-            || combined.contains("Verification:");
-        let tls_version = if combined.contains("TLSv1.3") {
-            Some("TLS 1.3".to_string())
-        } else if combined.contains("TLSv1.2") {
-            Some("TLS 1.2".to_string())
-        } else if combined.contains("TLSv1.1") {
-            Some("TLS 1.1".to_string())
-        } else if combined.contains("TLSv1") {
-            Some("TLS 1.0".to_string())
-        } else {
-            None
-        };
-        let certificate_valid =
-            !output.truncated && output.success && combined.contains("Verification: OK");
-
-        let error = if output.truncated {
-            Some("TLS diagnostic output exceeded the safety limit".to_string())
-        } else if certificate_valid {
-            None
-        } else {
-            let diagnostic = combined
-                .lines()
-                .find(|line| {
-                    let lower = line.to_ascii_lowercase();
-                    lower.contains("verify error")
-                        || lower.contains("verification error")
-                        || lower.contains("certificate verify failed")
-                        || lower.contains("connect:")
-                })
-                .map(|line| sanitize_tls_diagnostic(line, 512))
-                .filter(|line| !line.is_empty())
-                .unwrap_or_else(|| {
-                    if tls_supported {
-                        "TLS certificate chain or endpoint name validation failed".to_string()
-                    } else {
-                        "TLS connection failed".to_string()
-                    }
-                });
-            Some(diagnostic)
-        };
-
-        Ok(TlsCheckResult {
-            tls_supported,
-            tls_version,
-            certificate_valid,
-            certificate_subject: None,
-            certificate_issuer: None,
-            certificate_expiry: None,
-            handshake_time_ms: start.elapsed().as_millis() as u64,
-            error,
-        })
-    }
+    Ok(native_diagnostics::tls(canonical_tls_host(&host)?, validated_tls_port(port)?).await)
 }
 
 #[cfg(test)]
@@ -1314,67 +628,24 @@ pub async fn detect_asymmetric_routing(
     host: String,
     sample_count: Option<u32>,
 ) -> Result<AsymmetricRoutingResult, String> {
-    let samples = sample_count.unwrap_or(5);
+    let samples = sample_count.unwrap_or(5).clamp(1, 8);
+    let target = native_diagnostics::resolve(&host, Duration::from_secs(3)).await?;
     let mut notes = Vec::new();
     let mut latencies: Vec<f64> = Vec::new();
-    let mut ttl_values: Vec<u8> = Vec::new();
-    let mut outbound_hops: Vec<String> = Vec::new();
-
-    // Run multiple pings to gather TTL data
-    #[cfg(target_os = "windows")]
-    let ping_cmd = "ping";
-    #[cfg(not(target_os = "windows"))]
-    let ping_cmd = "ping";
-
+    let mut ttl_values = Vec::new();
+    let mut outbound_hops = Vec::new();
     for _ in 0..samples {
-        let output = Command::new(ping_cmd)
-            .args(if cfg!(target_os = "windows") {
-                vec!["-n", "1", "-w", "2000", &host]
-            } else {
-                vec!["-c", "1", "-W", "2", &host]
-            })
-            .output()
-            .await
-            .map_err(|e| format!("Ping failed: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // Parse TTL from ping output
-        if let Some(ttl) = parse_ttl_from_ping(&stdout) {
-            ttl_values.push(ttl);
-        }
-
-        // Parse latency
-        if let Some(latency) = parse_latency_from_ping(&stdout) {
-            latencies.push(latency);
-        }
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-    // Run a quick traceroute to get outbound path (limited hops)
-    let traceroute_output = Command::new(if cfg!(target_os = "windows") {
-        "tracert"
-    } else {
-        "traceroute"
-    })
-    .args(if cfg!(target_os = "windows") {
-        vec!["-d", "-h", "5", "-w", "1000", &host]
-    } else {
-        vec!["-n", "-m", "5", "-w", "1", &host]
-    })
-    .output()
-    .await;
-
-    if let Ok(output) = traceroute_output {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines().skip(1) {
-            // Extract IP addresses from traceroute output
-            if let Some(ip) = extract_ip_from_traceroute_line(line) {
-                if !ip.is_empty() && ip != "*" {
-                    outbound_hops.push(ip);
-                }
+        let reply = native_diagnostics::echo(target, 64, 32, false, Duration::from_secs(1)).await?;
+        if reply.reached(target) {
+            latencies.push(reply.time_ms as f64);
+            if let Some(ttl) = reply.ttl {
+                ttl_values.push(ttl);
             }
+        }
+    }
+    for hop in native_diagnostics::trace(&host, 5, Duration::from_millis(500)).await? {
+        if let Some(ip) = hop.ip {
+            outbound_hops.push(ip);
         }
     }
 

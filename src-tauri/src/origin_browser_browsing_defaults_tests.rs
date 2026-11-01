@@ -141,3 +141,20 @@ fn absent_and_old_normalized_policy_default_to_normal_native_browsing() {
         assert!(!finite.iter().any(|entry| entry == target));
     }
 }
+
+#[test]
+fn strict_mode_is_same_origin_even_with_stale_broad_flags_or_explicit_external_grants() {
+    let origin = "https://example.com";
+    let target = "https://external.example";
+    let mut row = tests::connection();
+    row["hostname"] = origin.into();
+    row["httpProxyPolicy"] = json!({"nativeBrowsingMode":"strict", "sameOriginOnly":false, "allowAllRequests":true,"allowAllScripts":true});
+    row["websiteDomainPermissions"] = json!({"version":1,"websites":[{"origin":origin,"requestClasses":{},"destinations":[{"origin":target,"requestClasses":{"script":"allow","navigation":"allow"}}]}]});
+    let (engine, finite) = saved_permissions(&row, &json!({}), &Url::parse(origin).unwrap()).unwrap();
+    assert!(!finite.iter().any(|value| value == target));
+    for (_, class) in CLASSES {
+        for (destination, expected) in [(origin, WebsitePermissionDecision::Allow), (target, WebsitePermissionDecision::Deny)] {
+            assert_eq!(engine.resolve(WebsitePermissionQuery {website_origin:origin,destination_origin:destination,request_class:class,native_denied:false}).decision, expected, "{destination}/{class}");
+        }
+    }
+}

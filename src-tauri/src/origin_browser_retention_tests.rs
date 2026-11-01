@@ -152,6 +152,21 @@ impl Fixture {
     fn database_bytes(&self) -> Vec<u8> {
         std::fs::read(self.root.path().join("databases/db.json")).unwrap()
     }
+    fn set_saved_policy(&self, policy: RetentionPolicy) {
+        let document = sorng_storage::sdbf::safe_read(&self.root.path().join("databases/db.json"))
+            .unwrap()
+            .unwrap()
+            .value;
+        let mut envelope = DatabaseEnvelope::parse(&document, "db").unwrap();
+        let mut data = envelope.open(&self.key).unwrap();
+        data["connections"][0]["browserSession"]["sessionRetention"] = json!(policy);
+        envelope.replace_data(&data, &self.key).unwrap();
+        sorng_storage::sdbf::safe_write(
+            &self.root.path().join("databases/db.json"),
+            &serde_json::to_vec(&envelope.value().unwrap()).unwrap(),
+        )
+        .unwrap();
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -595,6 +610,70 @@ async fn ephemeral_checkpoint_writes_nothing() {
     checkpoint(&owner, vec![cookie("ephemeral")]).await.unwrap();
     assert_eq!(fixture.database_bytes(), before);
     clear(&owner).await;
+}
+
+#[tokio::test]
+async fn disabled_restore_skips_database_io_and_preserves_saved_cookies() {
+    for policy in [
+        RetentionPolicy {
+            mode: RetentionMode::Ephemeral,
+            ..Default::default()
+        },
+        RetentionPolicy {
+            idle_timeout_minutes: 0,
+            ..Default::default()
+        },
+    ] {
+        let fixture = Fixture::new(RetentionMode::EncryptedDatabase).await;
+        let saved = fixture.owner("saved", "one").await;
+        load(&saved).await;
+        save(&saved, "retain-before-disabled-attempt").await;
+        finish(&saved).await;
+        fixture.set_saved_policy(policy);
+        let native = fixture.authorize("disabled", "one").await;
+        let effective: RetentionPolicy =
+            serde_json::from_value(native.preferences.retention.clone()).unwrap();
+        assert_eq!(effective, policy);
+        let before = fixture.database_bytes();
+        // Any retention preparation/load that opens the database would wait here.
+        // The production fast path must not take this coordinator or read cookies.
+        let guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
+        let prepared = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            NativeCookieRetention::prepare_for_restore(
+                &fixture.window,
+                &fixture.state,
+                &native.lease,
+                &native.policy,
+                effective,
+            ),
+        )
+        .await
+        .expect("disabled retention must not wait for database IO")
+        .unwrap();
+        assert!(prepared.is_none());
+        assert_eq!(fixture.database_bytes(), before);
+        native.lease.revoke();
+        assert!(matches!(
+            NativeCookieRetention::prepare_for_restore(
+                &fixture.window,
+                &fixture.state,
+                &native.lease,
+                &native.policy,
+                effective,
+            )
+            .await,
+            Err(RetentionError::OwnerUnavailable)
+        ));
+        drop(guard);
+        fixture.set_saved_policy(fixture.policy);
+        let reopened = fixture.owner("reopened", "one").await;
+        assert_eq!(
+            load(&reopened).await[0].value,
+            "retain-before-disabled-attempt"
+        );
+        clear(&reopened).await;
+    }
 }
 
 #[tokio::test]

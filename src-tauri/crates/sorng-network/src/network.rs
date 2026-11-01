@@ -5,11 +5,9 @@ use futures::stream::{self, StreamExt};
 use mac_address::get_mac_address;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-pub use std::process::Stdio;
 use std::sync::Arc;
 pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub use tokio::net::TcpStream;
-pub use tokio::process::Command;
 use tokio::sync::Mutex;
 pub use tokio::time::{timeout, Duration};
 
@@ -48,70 +46,8 @@ const MAX_VNC_PROBE_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_DISCOVERY_PING_CONCURRENCY: usize = 16;
 const MAX_DISCOVERY_PING_CONCURRENCY: usize = 32;
 const DISCOVERY_PING_TIMEOUT: Duration = Duration::from_millis(1_500);
-// One second for a response and at most one more for process cleanup.
-const HOST_PING_TIMEOUT: Duration = Duration::from_secs(1);
-const HOST_PING_REAP_TIMEOUT: Duration = Duration::from_secs(1);
-
-fn host_ping_command(host: &str) -> Command {
-    // BSD/macOS ship a separate executable for IPv6 literals. Keep hostnames
-    // intact so the system utility can still resolve them.
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    let program = if host.parse::<std::net::Ipv6Addr>().is_ok() {
-        "ping6"
-    } else {
-        "ping"
-    };
-    #[cfg(not(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    )))]
-    let program = "ping";
-    let mut command = Command::new(program);
-    #[cfg(windows)]
-    {
-        command.args(["-n", "1", "-w", "1000"]);
-        // CREATE_NO_WINDOW: background reachability checks must stay invisible.
-        command.creation_flags(0x0800_0000);
-    }
-    #[cfg(not(windows))]
-    {
-        // -n is numeric output on Unix, not the Windows packet count. Unix
-        // timeout flags differ in units, so use the async deadline below.
-        command.args(["-n", "-c", "1"]);
-    }
-    command
-        .arg(host)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    command
-}
-
-async fn wait_for_host_ping(
-    child: &mut tokio::process::Child,
-    deadline: Duration,
-) -> Result<bool, String> {
-    let result = match timeout(deadline, child.wait()).await {
-        Ok(Ok(status)) => return Ok(status.success()),
-        Ok(Err(error)) => Err(format!("Failed to wait for ping: {error}")),
-        Err(_) => Ok(false),
-    };
-    // Kill AND reap on a deadline, including a stalled DNS lookup. Bound the
-    // cleanup as well; kill_on_drop also protects caller cancellation.
-    match timeout(HOST_PING_REAP_TIMEOUT, child.kill()).await {
-        Ok(Ok(())) => result,
-        Ok(Err(error)) => Err(format!("Failed to terminate ping: {error}")),
-        Err(_) => Err("Timed out terminating ping".to_string()),
-    }
-}
+#[path = "native_diagnostics.rs"]
+pub mod native_diagnostics;
 
 fn is_rfb_banner(banner: &[u8; 12]) -> bool {
     banner.starts_with(b"RFB ")
@@ -194,24 +130,11 @@ where
 }
 
 async fn ping_discovery_host(ip: String) -> Option<String> {
-    let mut cmd = Command::new("ping");
-    #[cfg(target_os = "windows")]
-    cmd.args(["-n", "1", "-w", "500", &ip]);
-    #[cfg(not(target_os = "windows"))]
-    cmd.args(["-c", "1", "-W", "1", &ip]);
-    cmd.stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-
-    let mut child = cmd.spawn().ok()?;
-    let status = match timeout(DISCOVERY_PING_TIMEOUT, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(_)) | Err(_) => {
-            let _ = child.kill().await;
-            return None;
-        }
-    };
-    status.success().then_some(ip)
+    native_diagnostics::ping(&ip, DISCOVERY_PING_TIMEOUT)
+        .await
+        .ok()?
+        .0
+        .then_some(ip)
 }
 
 pub struct NetworkService {
@@ -224,10 +147,9 @@ impl NetworkService {
     }
 
     pub async fn ping_host(&self, host: String) -> Result<bool, String> {
-        let mut child = host_ping_command(&host)
-            .spawn()
-            .map_err(|e| format!("Failed to execute ping: {}", e))?;
-        wait_for_host_ping(&mut child, HOST_PING_TIMEOUT).await
+        native_diagnostics::ping(&host, Duration::from_secs(1))
+            .await
+            .map(|(reached, _)| reached)
     }
 
     pub async fn ping_host_with_timing(&self, host: String) -> Result<(bool, Option<u64>), String> {
@@ -472,68 +394,7 @@ pub fn parse_ping_time(output: &str) -> Option<u64> {
 }
 
 pub fn get_default_gateway() -> Result<String, String> {
-    #[cfg(target_os = "windows")]
-    {
-        // On Windows, use ipconfig
-        let output = std::process::Command::new("ipconfig")
-            .output()
-            .map_err(|e| format!("Failed to get gateway: {}", e))?;
-
-        let output_str = String::from_utf8_lossy(&output.stdout);
-        for line in output_str.lines() {
-            if line.contains("Default Gateway") && line.contains(":") {
-                let parts: Vec<&str> = line.split(':').collect();
-                if parts.len() > 1 {
-                    let gateway = parts[1].trim();
-                    if !gateway.is_empty() && gateway.contains('.') {
-                        return Ok(gateway.to_string());
-                    }
-                }
-            }
-        }
-        Err("Could not find default gateway".to_string())
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let output = std::process::Command::new("ip")
-            .args(["route", "show", "default"])
-            .output()
-            .map_err(|e| format!("Failed to get gateway: {}", e))?;
-
-        let output_str = String::from_utf8_lossy(&output.stdout);
-        for line in output_str.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() > 2 && parts[0] == "default" {
-                return Ok(parts[2].to_string());
-            }
-        }
-        Err("Could not find default gateway".to_string())
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let output = std::process::Command::new("netstat")
-            .args(["-nr"])
-            .output()
-            .map_err(|e| format!("Failed to get gateway: {}", e))?;
-
-        let output_str = String::from_utf8_lossy(&output.stdout);
-        for line in output_str.lines() {
-            if line.starts_with("default") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() > 1 {
-                    return Ok(parts[1].to_string());
-                }
-            }
-        }
-        Err("Could not find default gateway".to_string())
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    {
-        Err("Gateway detection not supported on this platform".to_string())
-    }
+    native_diagnostics::gateway()
 }
 
 #[path = "service_probe.rs"]
@@ -1007,34 +868,13 @@ pub async fn resolve_dns_with_server_detection(_domain: &str) -> Result<Vec<Stri
     // that returns the resolver's IP in the DNS response
 
     // For now, just return system DNS servers from config
+    #[cfg(not(target_os = "windows"))]
     let mut servers = Vec::new();
 
     #[cfg(target_os = "windows")]
-    {
-        // Try to get DNS servers from ipconfig
-        if let Ok(output) = Command::new("ipconfig").arg("/all").output().await {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                if line.to_lowercase().contains("dns servers")
-                    || (line.starts_with("   ")
-                        && line.trim().parse::<std::net::Ipv4Addr>().is_ok())
-                {
-                    let parts: Vec<&str> = line.split(':').collect();
-                    if parts.len() > 1 {
-                        let ip = parts[1].trim();
-                        if is_valid_ip(ip) {
-                            servers.push(ip.to_string());
-                        }
-                    } else {
-                        let ip = line.trim();
-                        if is_valid_ip(ip) {
-                            servers.push(ip.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let servers = tokio::task::spawn_blocking(native_diagnostics::dns_servers)
+        .await
+        .map_err(|_| "Native DNS configuration worker failed".to_string())??;
 
     #[cfg(not(target_os = "windows"))]
     {
@@ -1076,104 +916,6 @@ pub async fn reverse_dns_lookup(ip: &str) -> Option<String> {
             }
         }
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod ping_host_tests {
-    use super::*;
-
-    #[test]
-    fn uses_platform_packet_count_and_preserves_hostnames() {
-        assert_eq!(
-            HOST_PING_TIMEOUT + HOST_PING_REAP_TIMEOUT,
-            Duration::from_secs(2)
-        );
-        for host in ["127.0.0.1", "::1", "server.example.test"] {
-            let command = host_ping_command(host);
-            let args: Vec<_> = command.as_std().get_args().collect();
-            #[cfg(windows)]
-            assert_eq!(args, ["-n", "1", "-w", "1000", host]);
-            #[cfg(not(windows))]
-            assert_eq!(args, ["-n", "-c", "1", host]);
-
-            #[cfg(any(
-                target_os = "macos",
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd"
-            ))]
-            let expected_program = if host == "::1" { "ping6" } else { "ping" };
-            #[cfg(not(any(
-                target_os = "macos",
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd"
-            )))]
-            let expected_program = "ping";
-            assert_eq!(command.as_std().get_program(), expected_program);
-        }
-    }
-
-    // Reuse the test executable as a deterministic subprocess, without a
-    // shell, ICMP permissions, network access, or global environment mutation.
-    const CHILD_MODE: &str = "SORNG_HOST_PING_TEST_CHILD";
-
-    #[test]
-    fn ping_child_process_fixture() {
-        match std::env::var(CHILD_MODE).as_deref() {
-            Ok("sleep") => std::thread::sleep(Duration::from_secs(60)),
-            Ok("failure") => std::process::exit(1),
-            _ => {}
-        }
-    }
-
-    fn test_child(mode: &str) -> tokio::process::Child {
-        let mut command = Command::new(std::env::current_exe().unwrap());
-        command
-            .args([
-                "--exact",
-                "network::ping_host_tests::ping_child_process_fixture",
-            ])
-            .env(CHILD_MODE, mode)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        #[cfg(windows)]
-        command.creation_flags(0x0800_0000);
-        command.spawn().unwrap()
-    }
-
-    #[tokio::test]
-    async fn times_out_kills_and_reaps_a_stalled_ping() {
-        let mut child = test_child("sleep");
-        let result = timeout(
-            Duration::from_secs(5),
-            wait_for_host_ping(&mut child, Duration::from_millis(100)),
-        )
-        .await
-        .expect("ping timeout and cleanup must be bounded")
-        .unwrap();
-        assert!(!result);
-        assert!(child.id().is_none(), "timed-out child must be reaped");
-        assert!(!child.try_wait().unwrap().unwrap().success());
-    }
-
-    #[tokio::test]
-    async fn preserves_success_and_unreachable_exit_statuses() {
-        for (mode, expected) in [("success", true), ("failure", false)] {
-            let mut child = test_child(mode);
-            let result = timeout(
-                Duration::from_secs(5),
-                wait_for_host_ping(&mut child, HOST_PING_TIMEOUT),
-            )
-            .await
-            .expect("ping completion must be bounded")
-            .unwrap();
-            assert_eq!(result, expected);
-            assert!(child.id().is_none());
-        }
     }
 }
 

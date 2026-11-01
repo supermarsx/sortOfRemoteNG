@@ -134,6 +134,9 @@ pub enum NativeTlsFailure {
     CompleteRejected,
     RevokeRejected,
     EngineRevoked,
+    /// The engine reported a context fault before this CEF registration
+    /// delivered certificate evidence. Proxy upstream trust is separate.
+    EngineFailureBeforeEvidence,
     EngineFailure,
     PoisonedState,
     WrongThread,
@@ -1325,7 +1328,13 @@ fn accept_state(
                 }));
             }
         }
-        3 => return Err(NativeTlsFailure::EngineFailure),
+        3 => {
+            return Err(if data.seen.is_empty() {
+                NativeTlsFailure::EngineFailureBeforeEvidence
+            } else {
+                NativeTlsFailure::EngineFailure
+            });
+        }
         // HTTP disk cache released: the NetworkContext owning the directory is
         // gone. Exactly once, only for a cache registration, before or after
         // state 2. It needs no current owner; the lease outlives the attempt.
@@ -1876,7 +1885,7 @@ mod tests {
         assert!(!context.prepare_proxy_inner(41201, apply_proxy).unwrap());
         assert!(matches!(
             accept_state(&context.state, 1201, 1301, 3),
-            Err(NativeTlsFailure::EngineFailure)
+            Err(NativeTlsFailure::EngineFailureBeforeEvidence)
         ));
         assert!(matches!(
             accept_state(&context.state, 1201, 1301, 5),
@@ -2146,6 +2155,7 @@ mod tests {
             NativeTlsFailure::CompleteRejected,
             NativeTlsFailure::RevokeRejected,
             NativeTlsFailure::EngineRevoked,
+            NativeTlsFailure::EngineFailureBeforeEvidence,
             NativeTlsFailure::EngineFailure,
             NativeTlsFailure::PoisonedState,
             NativeTlsFailure::WrongThread,
@@ -2245,6 +2255,16 @@ mod tests {
             accept_state(&state, 71, 99, 3),
             Err(NativeTlsFailure::InvalidState)
         );
+        finish_callback(&state, Ok(accept_state(&state, 71, 72, 3)));
+        assert_eq!(
+            *hooks.reasons.lock().unwrap(),
+            vec![NativeTlsFailure::EngineFailureBeforeEvidence]
+        );
+        assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 1);
+        // Completed challenges leave their replay fence in `seen`: an empty
+        // pending map must not misclassify a later context fault as pre-review.
+        let (state, hooks) = typed_fixture(complete, revoke);
+        state.data.lock().unwrap().seen.insert(1);
         finish_callback(&state, Ok(accept_state(&state, 71, 72, 3)));
         assert_eq!(
             *hooks.reasons.lock().unwrap(),

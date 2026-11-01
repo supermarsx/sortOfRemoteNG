@@ -214,8 +214,7 @@ clean apply checks in `.artifacts/cef-recovery-applycheck-20261007-02`.
 The app's native-browser `cargo check`, full library compilation and Windows
 `cargo rustc --lib --crate-type cdylib` link passed locally as well. The latter
 produced `src-tauri/target/debug/app_lib.dll`; it was not launched against the
-production profile. One existing localized MSVC informational linker-output
-warning remains in the OPKSSH dependency, not a link failure.
+production profile. The build emitted one localized MSVC informational linker-output warning.
 
 The automated native TLS/storage run
 `.artifacts/cef-recovery-tls-run-04c-20261007/acceptance.json` passed with exit 0:
@@ -246,7 +245,7 @@ directory is not a shared persistent website profile.
 A later full development-app crash when opening a website was symbolized with
 its matching DLL/PDB: `__delayLoadHelper2 -> WSAStartup -> Tokio TcpListener::bind
 -> PrivateForwardProxy::start`. Nearest-export labels in the crash log falsely
-suggested AWS-LC/OPKSSH; the GPU overlay warning did not identify this cause.
+suggested unrelated dependencies; the GPU overlay warning did not identify this cause.
 MSVC 14.44/14.51 can mix lower/upper-case Winsock import libraries into orphaned
 delay-call stubs. The broken app had 358 valid stubs and two orphaned startup/
 cleanup stubs. SDK-first linking alone, or anchoring only those two imports,

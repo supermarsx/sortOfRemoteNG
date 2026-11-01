@@ -1326,6 +1326,8 @@ mod tests {
                 chain_der: chain,
                 system_ca_valid: false,
                 temporary_ok: false,
+                tls_version: None,
+                cipher_suite: None,
             }))
         };
         assert_eq!(

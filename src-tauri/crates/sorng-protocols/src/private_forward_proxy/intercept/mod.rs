@@ -176,6 +176,8 @@ mod tests {
             chain_der: vec![vec![0x30]],
             system_ca_valid: true,
             temporary_ok: false,
+            tls_version: None,
+            cipher_suite: None,
         };
         assert_eq!(
             DenyAllUpstreamTrust.evaluate(evidence).await,

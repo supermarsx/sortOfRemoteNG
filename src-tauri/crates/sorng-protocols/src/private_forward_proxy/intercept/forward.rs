@@ -12,8 +12,10 @@ use super::hooks::{ExchangeCtx, ExchangeHook, HookVerdict, RequestHeadView, Resp
 use super::pool::UpstreamPool;
 use super::upstream::UpstreamFailure;
 use super::{CacheUse, InterceptAuthority, ProxyBody};
-use crate::private_forward_proxy::Authority;
-use crate::themed_errors::{render_error_page, ProxyErrorKind};
+use crate::private_forward_proxy::{
+    error_response::{self, Failure},
+    Authority,
+};
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::http::{
@@ -67,47 +69,16 @@ pub(crate) fn incoming_body(body: Incoming) -> ProxyBody {
     body.map_err(io::Error::other).boxed()
 }
 
-/// A bodiless response that is never cached.
+/// A request-policy failure that is never cached. Admission failures do not
+/// capture a native stack before authenticated forwarding.
 pub(crate) fn status_response(status: StatusCode) -> Response<ProxyBody> {
-    let mut response = Response::new(empty_body());
-    *response.status_mut() = status;
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
-        .headers_mut()
-        .insert(header::CONTENT_LENGTH, HeaderValue::from_static("0"));
-    response
+    error_response::response(status, Failure::Status, None, false)
 }
 
 /// Static app error page: no script, no form, no request data.
-pub(crate) fn synthetic(
-    status: StatusCode,
-    kind: ProxyErrorKind,
-    tag: Option<&'static str>,
-) -> Response<ProxyBody> {
-    let page = render_error_page(
-        kind,
-        "",
-        tag.unwrap_or(kind.code()),
-        &crate::theme_tokens::ThemeTokens::dark_default(),
-    );
-    let mut response = Response::new(full_body(page));
-    *response.status_mut() = status;
+fn synthetic(status: StatusCode, kind: Failure, tag: Option<&'static str>) -> Response<ProxyBody> {
+    let mut response = error_response::response(status, kind, None, true);
     let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/html; charset=utf-8"),
-    );
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'"),
-    );
     if let Some(tag) = tag {
         headers.insert(
             HeaderName::from_static(UPSTREAM_TAG),
@@ -119,10 +90,20 @@ pub(crate) fn synthetic(
 
 pub(crate) fn upstream_failure(failure: UpstreamFailure) -> Response<ProxyBody> {
     let (tag, kind) = match failure {
-        UpstreamFailure::Denied => ("certificate-denied", ProxyErrorKind::TlsFailure),
-        UpstreamFailure::Timeout => ("review-timeout", ProxyErrorKind::TlsFailure),
-        UpstreamFailure::Fatal(_) => ("fatal", ProxyErrorKind::TlsFailure),
-        UpstreamFailure::RouteFailed => ("route-failed", ProxyErrorKind::GenericConnect),
+        UpstreamFailure::Denied => ("certificate-denied", Failure::CertificateDenied),
+        UpstreamFailure::Timeout => ("review-timeout", Failure::ReviewTimeout),
+        UpstreamFailure::Fatal(reason) => (
+            "fatal",
+            match reason {
+                super::trust::UpstreamFatal::Revoked => Failure::Revoked,
+                super::trust::UpstreamFatal::BadSignature => Failure::BadSignature,
+                super::trust::UpstreamFatal::Malformed => Failure::MalformedCertificate,
+                super::trust::UpstreamFatal::WeakKey => Failure::WeakKey,
+                super::trust::UpstreamFatal::Protocol => Failure::TlsProtocol,
+                super::trust::UpstreamFatal::HstsViolation => Failure::Hsts,
+            },
+        ),
+        UpstreamFailure::RouteFailed => ("route-failed", Failure::Route),
     };
     synthetic(StatusCode::BAD_GATEWAY, kind, Some(tag))
 }
@@ -279,18 +260,14 @@ impl Exchange {
     pub(crate) fn head_timeout(&self) -> Response<ProxyBody> {
         self.fail(synthetic(
             StatusCode::GATEWAY_TIMEOUT,
-            ProxyErrorKind::Timeout,
+            Failure::ResponseTimeout,
             None,
         ))
     }
 
     fn hook_failed(&self) -> Response<ProxyBody> {
         self.counters.hook_failures.fetch_add(1, Ordering::Relaxed);
-        synthetic(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ProxyErrorKind::Other,
-            None,
-        )
+        synthetic(StatusCode::INTERNAL_SERVER_ERROR, Failure::Hook, None)
     }
 
     /// Runs request hooks in registration order. `Err` is the response to
@@ -333,7 +310,23 @@ impl Exchange {
         Ok(())
     }
 
-    /// Everything served passes here: HSTS observation, response hooks, and
+    /// Learn HSTS only from an actual, error-free upstream TLS connection.
+    /// RFC 6797 section 8.1 excludes certificate exceptions; cache delivery
+    /// cannot establish the current attempt's transport validity either.
+    pub(crate) fn observe_hsts(
+        &self,
+        ctx: &ExchangeCtx,
+        headers: &HeaderMap,
+        system_ca_valid: bool,
+    ) {
+        if ctx.secure && system_ca_valid && headers.contains_key(header::STRICT_TRANSPORT_SECURITY)
+        {
+            self.pool.mark_hsts(&ctx.authority);
+            self.counters.hsts_marks.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Everything served passes here: response hooks, and
     /// the built-in `Alt-Svc` strip (after hooks, so none can re-add it).
     pub(crate) fn serve(
         &self,
@@ -341,14 +334,6 @@ impl Exchange {
         response: Response<ProxyBody>,
     ) -> Response<ProxyBody> {
         let (mut parts, body) = response.into_parts();
-        if ctx.secure
-            && parts
-                .headers
-                .contains_key(header::STRICT_TRANSPORT_SECURITY)
-        {
-            self.pool.mark_hsts(&ctx.authority);
-            self.counters.hsts_marks.fetch_add(1, Ordering::Relaxed);
-        }
         if !self.hooks.is_empty() {
             let mut view = ResponseHeadView::new(parts.status, std::mem::take(&mut parts.headers));
             for hook in &self.hooks {
@@ -371,7 +356,7 @@ impl Exchange {
         if !supported_response_framing(response.headers()) {
             return Err(Box::new(self.fail(synthetic(
                 StatusCode::BAD_GATEWAY,
-                ProxyErrorKind::Other,
+                Failure::ResponseFraming,
                 None,
             ))));
         }
@@ -439,6 +424,7 @@ impl Exchange {
             Ok(response) => response,
             Err(failure) => return *failure,
         };
+        self.observe_hsts(&ctx, response.headers(), admission.system_ca_valid);
         let response = self
             .cache
             .on_upstream(

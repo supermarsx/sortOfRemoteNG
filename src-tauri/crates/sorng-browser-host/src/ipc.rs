@@ -953,6 +953,11 @@ impl OriginBrowserSnapshot {
         self.sequence
     }
 
+    /// Owning shell inspection only; never include this address in logs.
+    pub fn current_url(&self) -> &str {
+        &self.current_url
+    }
+
     pub fn phase(&self) -> OriginBrowserPhase {
         self.phase
     }

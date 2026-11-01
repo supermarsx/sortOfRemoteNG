@@ -12,6 +12,7 @@ pub(crate) enum TlsBridgeFailure {
     CompleteRejected,
     RevokeRejected,
     EngineRevoked,
+    EngineFailureBeforeEvidence,
     EngineFailure,
     PoisonedState,
     WrongThread,
@@ -33,6 +34,10 @@ mod tests {
             (TlsBridgeFailure::CompleteRejected, "complete-rejected"),
             (TlsBridgeFailure::RevokeRejected, "revoke-rejected"),
             (TlsBridgeFailure::EngineRevoked, "engine-revoked"),
+            (
+                TlsBridgeFailure::EngineFailureBeforeEvidence,
+                "engine-failure-before-evidence",
+            ),
             (TlsBridgeFailure::EngineFailure, "engine-failure"),
             (TlsBridgeFailure::PoisonedState, "poisoned-state"),
             (TlsBridgeFailure::WrongThread, "wrong-thread"),

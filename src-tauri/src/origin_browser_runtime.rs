@@ -133,6 +133,7 @@ fn view_failure(failure: Failure, message: &'static str) -> String {
 }
 
 struct Attempt {
+    security: crate::origin_browser_security::Observations,
     engine_observations: crate::origin_browser_observability::EngineObservations,
     renderer_startup: renderer_startup::RendererStartup,
     route_health: sorng_core::route_health::RouteHealthReader,
@@ -1257,6 +1258,52 @@ fn retry_refusal(
     }
 }
 
+pub(crate) async fn security_info(
+    window: WebviewWindow,
+    request: crate::origin_browser_security::Request,
+) -> Result<crate::origin_browser_security::Response, String> {
+    let attempt = lookup(&window, &request.identity)?;
+    if !attempt.current() { return Err(STALE.into()); }
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    window.run_on_main_thread(move || {
+        if sender.is_closed() { return; }
+        let result = UI.with(|slot| {
+            let slot = slot.borrow();
+            let view = slot.as_ref().and_then(|ui| ui.views.get(&attempt.identity.attempt_id().to_string())).ok_or(STALE)?;
+            if !Arc::ptr_eq(&view.attempt, &attempt) || !attempt.current()
+                || request.view_id != view.popups.selected { return Err(STALE.to_owned()); }
+            let valid = if let Some(view_id) = &request.view_id {
+                let inventory = view.host.popup_inventory(&attempt.identity).map_err(|_| STALE)?;
+                inventory.sequence == request.sequence && inventory.views.iter().any(|child|
+                    child.view_id == *view_id && child.phase == sorng_browser_host::native_popups::PopupPhase::Adopted
+                    && crate::origin_browser_security::canonical_origin(&child.display.url).as_deref() == Some(request.origin.as_str()))
+            } else {
+                let snapshot = attempt.snapshot.lock().map_err(|_| STALE)?;
+                matches!(snapshot.phase(), OriginBrowserPhase::Attached)
+                    && crate::origin_browser_security::matches_page(snapshot.sequence(), snapshot.current_url(), &request)
+            };
+            if !valid { return Err(STALE.to_owned()); }
+            attempt.security.protect_view(&request.view_id, &request.origin);
+            let intercepted = attempt.engine_observations.tls_interception() == Some("active");
+            if let Some(ticket) = (!intercepted).then(|| attempt.security.begin_inspection(&request.view_id, request.sequence, &request.origin)).flatten() {
+                match request.view_id.as_deref() {
+                    Some(id) => view.host.with_popup(&attempt.identity, id, |host| host.inspect_security(&attempt.identity, ticket)).map_err(|_| STALE)?.map_err(|_| STALE)?,
+                    None => view.host.inspect_security(&attempt.identity, ticket).map_err(|_| STALE)?,
+                }
+            }
+            let (availability, observation) = attempt.security.read_view(&request.origin, &request.view_id);
+            if !attempt.current() { return Err(STALE.to_owned()); }
+            Ok(crate::origin_browser_security::Response {
+                identity: request.identity, sequence: request.sequence, origin: request.origin,
+                observation, availability, view_id: request.view_id,
+            })
+        });
+        let _ = sender.send(result);
+    }).map_err(|_| STALE.to_owned())?;
+    tokio::time::timeout(Duration::from_secs(5), receiver).await
+        .map_err(|_| STALE.to_owned())?.map_err(|_| STALE.to_owned())?
+}
+
 pub(crate) fn status(
     window: &WebviewWindow,
     request: &OriginBrowserStatusRequest,
@@ -1299,9 +1346,24 @@ struct Sink {
     attempt: Arc<Attempt>,
 }
 impl BrowserEventSink for Sink {
+    fn on_security(&self, evidence: sorng_browser_host::cef_browser::NativeSecurityEvidence) {
+        if evidence.identity != self.attempt.identity || !self.attempt.current() { return; }
+        let attempt = self.attempt.clone();
+        // Never parse certificates on the CEF UI thread. This is observational
+        // only; the existing handshake admission remains authoritative.
+        tauri::async_runtime::spawn_blocking(move || {
+            if !attempt.current() { return; }
+            attempt.security.record_navigation(evidence.view_id, evidence.inspection_id, evidence.sequence, &evidence.origin,
+                &evidence.chain_der, evidence.system_ca_valid, evidence.tls_version,
+                evidence.cipher_suite, evidence.transport_pending);
+        });
+    }
     fn on_event(&self, event: BrowserEvent) {
         if event.identity != self.attempt.identity {
             return;
+        }
+        if let Some(origin) = crate::origin_browser_security::canonical_origin(&event.display.url) {
+            self.attempt.security.protect(&origin, false);
         }
         if !self.attempt.cancelled.load(Ordering::Acquire) {
             if let Some(failure) = event.state.load_failure {
@@ -1676,19 +1738,17 @@ async fn create_document(
         && !authorized.lease.is_temporary()
         && authorized.preferences.restore_cookies
     {
-        Some(
-            retention::NativeCookieRetention::prepare(
-                &window,
-                state,
-                &authorized.lease,
-                &authorized.policy,
-                retention_policy,
-            )
-            .await
-            .map_err(|_| {
-                "Sign-in cookie retention could not be prepared for this database.".to_owned()
-            })?,
+        retention::NativeCookieRetention::prepare_for_restore(
+            &window,
+            state,
+            &authorized.lease,
+            &authorized.policy,
+            retention_policy,
         )
+        .await
+        .map_err(|_| {
+            "Sign-in cookie retention could not be prepared for this database.".to_owned()
+        })?
     } else {
         None
     };
@@ -1815,6 +1875,7 @@ async fn create_document(
     }
     timing.mark(TimingStage::ProxyReady);
     let attempt = Arc::new(Attempt {
+        security: crate::origin_browser_security::Observations::default(),
         engine_observations: crate::origin_browser_observability::EngineObservations::default(),
         renderer_startup: renderer_startup::RendererStartup::default(),
         timing: timing.clone(),
