@@ -8,9 +8,12 @@ import {
   type Connection,
 } from "../../../types/connection/connection";
 import { generateId } from "../../../utils/core/id";
+import { folderSubtree } from "./helpers";
 import {
   Activity,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ClipboardList,
   Cog,
   Copy,
@@ -143,6 +146,19 @@ function TreeItemMenu({
       });
     dispatch({ type: "ADD_CONNECTION", payload: child });
     onRename(child);
+  };
+  const folders = connection.isGroup
+    ? folderSubtree(state.connections, connection.id)
+    : [];
+  const setFolderExpansion = (expanded: boolean) => {
+    for (const folder of folders) {
+      if (!!folder.expanded !== expanded) {
+        dispatch({
+          type: "UPDATE_CONNECTION",
+          payload: { ...folder, expanded },
+        });
+      }
+    }
   };
   const enableWinrm =
     connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
@@ -279,6 +295,31 @@ function TreeItemMenu({
           >
             <FolderOpen size={14} className="mr-2" />
             Browse folder documents
+          </button>
+        </>
+      )}
+      {connection.isGroup && (
+        <>
+          <div role="separator" className="sor-menu-divider" />
+          <button
+            type="button"
+            role="menuitem"
+            className="sor-menu-item disabled:opacity-40"
+            disabled={!folders.some((folder) => !folder.expanded)}
+            onClick={act(() => setFolderExpansion(true))}
+          >
+            <ChevronsUpDown size={14} className="mr-2" aria-hidden="true" />
+            {t("connections.expandAll", "Expand all")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="sor-menu-item disabled:opacity-40"
+            disabled={!folders.some((folder) => folder.expanded)}
+            onClick={act(() => setFolderExpansion(false))}
+          >
+            <ChevronsDownUp size={14} className="mr-2" aria-hidden="true" />
+            {t("connections.collapseAll", "Collapse all")}
           </button>
         </>
       )}

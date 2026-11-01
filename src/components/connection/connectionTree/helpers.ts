@@ -11,6 +11,35 @@ import {
   resolveEffectiveConnectionIcon,
 } from "../../../utils/icons/resolveConnectionIcon";
 
+/** Loaded folder rows only, including the selected folder. Never fetch children. */
+export function folderSubtree(
+  connections: readonly Connection[],
+  folderId: string,
+): Connection[] {
+  const root = connections.find(
+    (connection) => connection.id === folderId && connection.isGroup,
+  );
+  if (!root) return [];
+  const children = new Map<string, Connection[]>();
+  for (const connection of connections) {
+    if (!connection.isGroup || !connection.parentId) continue;
+    const siblings = children.get(connection.parentId) ?? [];
+    siblings.push(connection);
+    children.set(connection.parentId, siblings);
+  }
+  const result: Connection[] = [];
+  const visited = new Set<string>();
+  const pending = [root];
+  while (pending.length) {
+    const folder = pending.pop()!;
+    if (visited.has(folder.id)) continue;
+    visited.add(folder.id);
+    result.push(folder);
+    for (const child of children.get(folder.id) ?? []) pending.push(child);
+  }
+  return result;
+}
+
 export const getProtocolIcon = (protocol: string): LucideIcon => {
   const integrationKey = getConnectionIntegrationKey({ protocol });
   return getProtocolDefaultIcon(

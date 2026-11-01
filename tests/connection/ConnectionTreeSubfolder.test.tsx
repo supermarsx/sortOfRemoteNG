@@ -12,6 +12,7 @@ import { ConnectionTree } from "../../src/components/connection/ConnectionTree";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
+import { folderSubtree } from "../../src/components/connection/connectionTree/helpers";
 
 // These component fixtures exercise a deliberately available synthetic database.
 vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
@@ -80,14 +81,16 @@ const seeds: Connection[] = [
 
 function TreeFixture({
   onNewConnection,
+  initialConnections = seeds,
 }: {
   onNewConnection?: (parentId: string) => void;
+  initialConnections?: Connection[];
 }) {
   const { state, dispatch } = useConnections();
   React.useEffect(() => {
-    dispatch({ type: "SET_CONNECTIONS", payload: seeds });
+    dispatch({ type: "SET_CONNECTIONS", payload: initialConnections });
     dispatch({ type: "SELECT_CONNECTION", payload: seeds[1] });
-  }, [dispatch]);
+  }, [dispatch, initialConnections]);
   return (
     <>
       <ConnectionTree
@@ -103,11 +106,17 @@ function TreeFixture({
     </>
   );
 }
-async function mounted(onNewConnection?: (parentId: string) => void) {
+async function mounted(
+  onNewConnection?: (parentId: string) => void,
+  initialConnections = seeds,
+) {
   const view = render(
     <ToastProvider>
       <ConnectionProvider>
-        <TreeFixture onNewConnection={onNewConnection} />
+        <TreeFixture
+          onNewConnection={onNewConnection}
+          initialConnections={initialConnections}
+        />
       </ConnectionProvider>
     </ToastProvider>,
   );
@@ -215,5 +224,136 @@ describe("folder New subfolder context action", () => {
     fireEvent.contextMenu(container.querySelector('[role="tree"]')!);
     expect(screen.queryByRole("button", { name: "New subfolder" })).toBeNull();
     expect(current()).toHaveLength(seeds.length);
+  });
+});
+
+describe("folder subtree expansion context actions", () => {
+  const folder = (
+    id: string,
+    name: string,
+    parentId: string,
+    expanded = false,
+  ): Connection => ({
+    id,
+    name,
+    parentId,
+    expanded,
+    isGroup: true,
+    protocol: "rdp",
+    hostname: "",
+    port: 3389,
+    createdAt: stamp,
+    updatedAt: stamp,
+  });
+  const nested = [
+    ...seeds,
+    folder("child", "Nested folder", "target"),
+    folder("grandchild", "Deep folder", "child"),
+    folder("sibling", "Sibling folder", "target", true),
+    folder("other-child", "Unrelated nested folder", "other"),
+    {
+      ...seeds[2],
+      id: "deep-endpoint",
+      name: "Deep endpoint",
+      parentId: "grandchild",
+      expanded: true,
+    },
+    {
+      ...seeds[2],
+      id: "other-endpoint",
+      name: "Unrelated endpoint",
+      parentId: "other",
+    },
+  ];
+  it("expands and collapses the clicked folder and all loaded descendant folders while preserving unrelated branches", async () => {
+    await mounted(undefined, nested);
+    expect(screen.queryByText("Nested folder")).toBeNull();
+    expect(screen.getByText("Unrelated endpoint")).toBeVisible();
+    fireEvent.contextMenu(screen.getByText("Target folder"));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Expand all" }),
+    );
+    expect(screen.getByText("Deep endpoint")).toBeVisible();
+    expect(screen.queryByTestId("connection-tree-item-menu")).toBeNull();
+    for (const id of ["target", "child", "grandchild", "sibling"])
+      expect(current().find((row) => row.id === id)?.expanded).toBe(true);
+    for (const id of [
+      "other",
+      "other-child",
+      "other-endpoint",
+      "deep-endpoint",
+      "endpoint",
+    ])
+      expect(current().find((row) => row.id === id)).toEqual(
+        nested.find((row) => row.id === id),
+      );
+    fireEvent.contextMenu(screen.getByText("Target folder"));
+    expect(
+      await screen.findByRole("menuitem", { name: "Expand all" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Collapse all" }));
+    expect(screen.queryByText("Nested folder")).toBeNull();
+    expect(screen.queryByText("Deep endpoint")).toBeNull();
+    expect(screen.getByText("Unrelated endpoint")).toBeVisible();
+    for (const id of ["target", "child", "grandchild", "sibling"])
+      expect(current().find((row) => row.id === id)?.expanded).toBe(false);
+    for (const id of [
+      "other",
+      "other-child",
+      "other-endpoint",
+      "deep-endpoint",
+      "endpoint",
+    ])
+      expect(current().find((row) => row.id === id)).toEqual(
+        nested.find((row) => row.id === id),
+      );
+  });
+
+  it("includes empty folders themselves and disables actions that would make no change", async () => {
+    await mounted();
+    fireEvent.contextMenu(screen.getByText("Target folder"));
+    expect(
+      await screen.findByRole("menuitem", { name: "Collapse all" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Expand all" }));
+    expect(current().find((row) => row.id === "target")?.expanded).toBe(true);
+    fireEvent.contextMenu(screen.getByText("Target folder"));
+    expect(
+      await screen.findByRole("menuitem", { name: "Expand all" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Collapse all" }));
+    expect(current().find((row) => row.id === "target")?.expanded).toBe(false);
+  });
+
+  it("hides folder expansion commands and their divider for endpoints and the background menu", async () => {
+    const { container } = await mounted();
+    fireEvent.contextMenu(screen.getByText("Saved endpoint"));
+    const menu = await screen.findByTestId("connection-tree-item-menu");
+    expect(
+      within(menu).queryByRole("menuitem", { name: "Expand all" }),
+    ).toBeNull();
+    expect(
+      within(menu).queryByRole("menuitem", { name: "Collapse all" }),
+    ).toBeNull();
+    expect(within(menu).queryByRole("separator")).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await act(async () => {});
+    fireEvent.contextMenu(container.querySelector('[role="tree"]')!);
+    expect(screen.queryByRole("menuitem", { name: "Expand all" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Collapse all" })).toBeNull();
+  });
+
+  it("bounds traversal of malformed cycles and ignores non-folder roots and descendants", () => {
+    const cyclic = [
+      folder("one", "One", "two"),
+      folder("two", "Two", "one"),
+      { ...seeds[2], parentId: "one" },
+    ];
+    expect(folderSubtree(cyclic, "one").map((row) => row.id)).toEqual([
+      "one",
+      "two",
+    ]);
+    expect(folderSubtree(cyclic, "endpoint")).toEqual([]);
+    expect(folderSubtree(cyclic, "missing")).toEqual([]);
   });
 });
