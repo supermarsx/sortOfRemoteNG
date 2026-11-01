@@ -10,7 +10,7 @@ import acquire as data
 
 
 def run(root,c,_profile,clock):
-    data.need(c['mode']=='current-source-gn','FULL_METRICS_FIXTURE_MODE')
+    data.need(c['mode'] in ('current-source-gn','reviewed-20261021-source-gn'),'FULL_METRICS_FIXTURE_MODE')
     root=data.plain(root);before=time.process_time();count=0
     while time.process_time()-before<0.125:
         count=(count*33+17)%1000003

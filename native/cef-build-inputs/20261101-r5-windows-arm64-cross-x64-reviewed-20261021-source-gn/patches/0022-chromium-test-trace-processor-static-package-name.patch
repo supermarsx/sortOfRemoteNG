@@ -1,0 +1,21 @@
+diff --git a/base/test/tracing/test_trace_processor.cc b/base/test/tracing/test_trace_processor.cc
+--- a/base/test/tracing/test_trace_processor.cc
++++ b/base/test/tracing/test_trace_processor.cc
+@@ -46,7 +46,7 @@
+   });
+ }
+ 
+-std::string kChromeSqlPackageName = "chrome";
++constexpr char kChromeSqlPackageName[] = "chrome";
+ // A command-line switch to save the trace test trace processor generated to
+ // make debugging complex traces.
+ constexpr char kSaveTraceSwitch[] = "ttp-save-trace";
+@@ -63,7 +63,7 @@
+     if (include_key.ends_with(".sql")) {
+       include_key.resize(include_key.size() - 4);
+     }
+-    stdlib.emplace_back(kChromeSqlPackageName + "." + include_key,
++    stdlib.emplace_back(std::string(kChromeSqlPackageName) + "." + include_key,
+                         std::string(file_to_sql.sql_view()));
+   }
+   return stdlib;
