@@ -286,6 +286,12 @@ const INTEL_EXTERNAL = Object.freeze({
   observationKind: "sorng-macintel-external-input-observation",
   name: "sorng-macintel-readonly-external-inputs-v1",
 });
+const PYTHON_PACKAGE_PROOF = Object.freeze({
+  target: "python3.14.7-cellar",
+  contextKind: "sorng-mac-python-package-proof-context",
+  observationKind: "sorng-mac-python-package-proof-observation",
+  name: "sorng-mac-python-package-proof-v1",
+});
 export const MAC_EXTERNAL_LIMITS = Object.freeze({
   entries: 1000000,
   fileBytes: 8 * 1024 ** 3,
@@ -299,6 +305,8 @@ const MAC_DEVELOPER = "/Applications/Xcode_26.3.app/Contents/Developer";
 const MAC_PYTHON_FRAMEWORK =
   "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework";
 const MAC_PYTHON = MAC_PYTHON_FRAMEWORK + "/Versions/3.14/bin/python3.14";
+export const MAC_PYTHON_PACKAGE_PROOF_ROOT =
+  "/usr/local/Cellar/python@3.14/3.14.7";
 const plainAbsolute = (p) => {
   assert(
     typeof p === "string" &&
@@ -485,6 +493,68 @@ export async function macSdkRelation({ selected, sdkTargets, check }, io = fs) {
 
 export function macExternalObservationPlan(options) {
   return externalObservationPlanFor(ARM_EXTERNAL, options);
+}
+// Candidate observation only. Production plans above retain the Framework root.
+export function macPythonPackageProofPlan(options) {
+  exactKeys(options, ["runnerTemp", "output"], "MAC_EXTERNAL_CONTEXT");
+  const { runnerTemp, output } = options;
+  assert(runnerTemp === "/Users/runner/work/_temp", "MAC_EXTERNAL_OUTPUT");
+  plainAbsolute(output);
+  assert(
+    path.posix.dirname(output) === runnerTemp &&
+      /^cef-mac-inputs-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(
+        path.posix.basename(output),
+      ),
+    "MAC_EXTERNAL_OUTPUT",
+  );
+  const context = {
+    schemaVersion: 1,
+    kind: PYTHON_PACKAGE_PROOF.contextKind,
+    target: PYTHON_PACKAGE_PROOF.target,
+    roots: { python: MAC_PYTHON_PACKAGE_PROOF_ROOT },
+    runnerTemp,
+    outputRoot: output,
+    requiredPins: [
+      {
+        role: "python",
+        path: "Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+        size: 13592,
+        sha256:
+          "b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d",
+      },
+    ],
+    limits: { ...MAC_EXTERNAL_LIMITS, seconds: 100 },
+    originalMetalFingerprint: null,
+    historicalMetalResourceClosureVerified: false,
+  };
+  const plan = Object.freeze({
+    context: freezeData(context),
+    python: MAC_PYTHON,
+    argv(contextFile, seconds) {
+      assert(
+        contextFile === output + "/context.json" &&
+          Number.isSafeInteger(seconds) &&
+          seconds > 0 &&
+          seconds <= 100,
+        "MAC_EXTERNAL_DEADLINE",
+      );
+      return [
+        "-I",
+        "-B",
+        "-S",
+        "scripts/lib/cef-checkpoint-archive.py",
+        "mac-python-package-observe",
+        "--input",
+        contextFile,
+        "--output",
+        output + "/external.json",
+        "--seconds",
+        String(seconds),
+      ];
+    },
+  });
+  externalPlans.add(plan);
+  return plan;
 }
 export function macIntelExternalObservationPlan({
   sourceLockIdentity,
@@ -712,10 +782,15 @@ const reportIdentity = (value) =>
 
 // Data-only POSIX component resolution against the complete declared-role rows.
 // In particular, a symlink is expanded BEFORE a subsequent '..' is interpreted.
-function macExternalResolver(roots, snapshots, check) {
+function macExternalResolver(
+  roots,
+  snapshots,
+  check,
+  roles = ["sdk", "toolchain", "metal", "python"],
+) {
   const tables = {},
     ancestors = new Set();
-  for (const role of ["sdk", "toolchain", "metal", "python"]) {
+  for (const role of roles) {
     plainAbsolute(roots[role]);
     assert(
       roots[role] !== "/" && Array.isArray(snapshots[role]),
@@ -859,6 +934,31 @@ export async function readMacExternalObservation(
   );
   return readExternalObservationFor(ARM_EXTERNAL, plan, result, check, io);
 }
+export async function readMacPythonPackageProof(
+  plan,
+  result,
+  check = () => {},
+  io = fs,
+) {
+  assert(
+    externalPlans.has(plan) &&
+      plan.context.kind === PYTHON_PACKAGE_PROOF.contextKind &&
+      plan.context.target === PYTHON_PACKAGE_PROOF.target &&
+      Object.keys(plan.context.roots).join() === "python" &&
+      plan.context.roots.python === MAC_PYTHON_PACKAGE_PROOF_ROOT,
+    "MAC_EXTERNAL_PLAN",
+  );
+  return readExternalObservationFor(
+    PYTHON_PACKAGE_PROOF,
+    plan,
+    result,
+    check,
+    io,
+  );
+}
+export function macPythonPackageProofEvidence(token) {
+  return externalObservationEvidenceFor(PYTHON_PACKAGE_PROOF, token);
+}
 export async function readMacIntelExternalObservation(
   plan,
   result,
@@ -876,6 +976,10 @@ export async function readMacIntelExternalObservation(
 }
 async function readExternalObservationFor(envelope, plan, result, check, io) {
   assert(externalPlans.has(plan), "MAC_EXTERNAL_PLAN");
+  const roles =
+    envelope === PYTHON_PACKAGE_PROOF
+      ? ["python"]
+      : ["sdk", "toolchain", "metal", "python"];
   exactKeys(
     result,
     [
@@ -1002,19 +1106,14 @@ async function readExternalObservationFor(envelope, plan, result, check, io) {
         value.nativeAcceptance === false &&
         value.runtimeReady === false &&
         Array.isArray(value.roles) &&
-        value.roles.length === 4,
+        value.roles.length === roles.length,
       "MAC_EXTERNAL_REPORT",
     );
     let entries = 0,
       bytes = 0;
     const portableRoles = [],
       symbolic = [];
-    for (const [index, role] of [
-      "sdk",
-      "toolchain",
-      "metal",
-      "python",
-    ].entries()) {
+    for (const [index, role] of roles.entries()) {
       const row = value.roles[index];
       exactKeys(row, ["role", "physicalRoot", "snapshot"], "MAC_EXTERNAL_ROLE");
       assert(
@@ -1189,7 +1288,12 @@ async function readExternalObservationFor(envelope, plan, result, check, io) {
     const snapshots = Object.fromEntries(
       value.roles.map((row) => [row.role, row.snapshot.entries]),
     );
-    const resolve = macExternalResolver(plan.context.roots, snapshots, check);
+    const resolve = macExternalResolver(
+      plan.context.roots,
+      snapshots,
+      check,
+      roles,
+    );
     for (const item of symbolic) {
       const target = resolve(item.role, item.path, item.raw);
       item.portable.target = target.literal;

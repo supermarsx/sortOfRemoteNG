@@ -6,6 +6,7 @@ import {
   heldBytes,
   outputPath,
   validateReport,
+  validateSupervisorReport,
 } from "../fixtures/cef/mac_process_census_carrier.mjs";
 
 function report() {
@@ -146,6 +147,147 @@ test("selector accepts only completed ABI and owned cleanup proof with productio
     mutate(bad);
     assert.throws(() => validateReport(bad));
   }
+});
+
+function supervisorReport() {
+  const names = [
+    "normal",
+    "slice-stop",
+    "cancel",
+    "reparent",
+    "foreign",
+    "worker-timeout",
+  ];
+  return {
+    schemaVersion: 1,
+    kind: "mac-census-supervisor-integration-proof",
+    complete: true,
+    cleanupConfirmed: true,
+    productionAdmitted: false,
+    productionInputWrites: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+    hostPlatform: "darwin",
+    hostArchitecture: "x86_64",
+    image: "20260824.0482.1",
+    evidence:
+      "ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855",
+    requestDeadlineMs: 2000,
+    cadenceMs: 250,
+    maximumRequests: 43328,
+    originalLeaseMs: 160000,
+    cases: names.map((name) => ({
+      name,
+      target:
+        name === "foreign" ? "aarch64-apple-darwin" : "x86_64-apple-darwin",
+      complete: true,
+      helperJoined: true,
+      rootJoined: true,
+      uniformMicrosecondIdentity: true,
+      proofMutationDenied: true,
+      expectedDenial: name === "cancel" || name === "worker-timeout",
+      terminalCode:
+        name === "cancel"
+          ? "CANCELLED"
+          : name === "worker-timeout"
+            ? "CENSUS_DEADLINE"
+            : "NONE",
+      reparentRetained: name === "reparent" ? true : null,
+      foreignUntouched: name === "foreign" ? true : null,
+      laterSessionJoined: name === "normal" ? true : null,
+      poisonedFactoryRetryDenied: name === "worker-timeout" ? true : null,
+    })),
+  };
+}
+
+test("supervisor selector requires all actual cases, denials and helper joins with no admission", () => {
+  const good = supervisorReport();
+  assert.equal(validateSupervisorReport(good), good);
+  for (const mutate of [
+    (r) => r.cases.pop(),
+    (r) => r.cases.reverse(),
+    (r) => r.cases.push(r.cases[0]),
+    (r) => (r.complete = false),
+    (r) => (r.cleanupConfirmed = false),
+    (r) => (r.productionAdmitted = true),
+    (r) => (r.productionInputWrites = true),
+    (r) => (r.nativeAcceptance = true),
+    (r) => (r.runtimeReady = true),
+    (r) => (r.evidence = "0".repeat(64)),
+    (r) => (r.image = "other"),
+    (r) => (r.maximumRequests = 10000),
+    (r) => (r.originalLeaseMs = 180000),
+    (r) => (r.cases[0].target = "aarch64-apple-darwin"),
+    (r) => (r.cases[4].target = "x86_64-apple-darwin"),
+    (r) => (r.cases[0].helperJoined = false),
+    (r) => (r.cases[0].rootJoined = false),
+    (r) => (r.cases[0].uniformMicrosecondIdentity = false),
+    (r) => (r.cases[1].proofMutationDenied = false),
+    (r) => (r.cases[2].expectedDenial = false),
+    (r) => (r.cases[2].terminalCode = "NONE"),
+    (r) => (r.cases[3].reparentRetained = null),
+    (r) => (r.cases[4].foreignUntouched = null),
+    (r) => (r.cases[5].poisonedFactoryRetryDenied = null),
+    (r) => (r.cases[5].terminalCode = "CANCELLED"),
+    (r) => (r.cases[1].laterSessionJoined = true),
+    (r) => (r.cases[0].pid = 123),
+    (r) => (r.privateError = "SECRET"),
+  ]) {
+    const bad = supervisorReport();
+    mutate(bad);
+    assert.throws(() => validateSupervisorReport(bad));
+  }
+});
+
+test("supervisor has an independent five-minute job and exact scratch report namespace", async () => {
+  const workflow = YAML.parse(
+    await readFile(
+      new URL(
+        "../../.github/workflows/cef-mac-process-census-proof.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.proof.options, [
+    "measurement",
+    "supervisor",
+  ]);
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.proof.default,
+    "measurement",
+  );
+  assert.match(workflow.jobs.proof.if, /inputs.proof == 'measurement'/);
+  const job = workflow.jobs.supervisor;
+  assert.equal(job["timeout-minutes"], 5);
+  assert.equal(job["runs-on"], "macos-15-intel");
+  assert.match(job.if, /inputs.proof == 'supervisor'/);
+  assert.match(job.if, /repository_id == '1010282954'/);
+  assert.match(job.if, /visibility == 'public'/);
+  const proof = job.steps.find((row) =>
+    row.run?.includes("mac_census_supervisor_proof.mjs --output"),
+  );
+  assert.equal(proof["timeout-minutes"], 3);
+  assert.match(
+    job.steps.find((row) => row.run?.endsWith("validate-supervisor")).if,
+    /always\(\)/,
+  );
+  assert.equal(job.steps.at(-1).if, "always()");
+  assert.equal(
+    job.steps.at(-1).with.path,
+    "${{ runner.temp }}/cef-mac-census-supervisor-proof-*/proof.json",
+  );
+  for (const row of job.steps.filter((row) => row.uses))
+    assert.match(row.uses, /@[a-f0-9]{40}$/);
+  const temp = "/Users/runner/work/_temp",
+    file =
+      temp +
+      "/cef-mac-census-supervisor-proof-11111111-1111-4111-8111-111111111111";
+  assert.equal(outputPath(file, temp, true), file);
+  assert.throws(() => outputPath(file, temp));
+  assert.throws(() =>
+    outputPath(file.replace("supervisor-proof", "proof"), temp, true),
+  );
 });
 
 test("output is one absent UUID child of the exact runner temp namespace", () => {

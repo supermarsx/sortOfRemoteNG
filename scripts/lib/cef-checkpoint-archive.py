@@ -17,6 +17,9 @@ import zipfile
 from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
 
+_MAC_PYTHON_PACKAGE_PROOF_ROOT = '/usr/local/Cellar/python@3.14/3.14.7'
+_MAC_PYTHON_PACKAGE_PROOF_KIND = 'sorng-mac-python-package-proof-context'
+
 SOURCE_IO_MODES = ('source-record', 'source-verify', 'source-apply')
 SOURCE_IO_STAGES = ('unlocated', 'context-read', 'registry-read', 'registry-parse', 'repository-head',
                     'root-stat', 'directory-open', 'directory-next', 'member-stat', 'link-read',
@@ -757,11 +760,12 @@ def external_link_address(parts, roots, role):
 def external_link_diagnostic(roots, role, row, state):
     # This function is invoked only AFTER the original validator exception exists.
     developer='/Applications/Xcode_26.3.app/Contents/Developer'
-    require(type(roots) is dict and set(roots)==set(_EXTERNAL_LINK_ROLES) and
+    package_proof = roots == {'python': _MAC_PYTHON_PACKAGE_PROOF_ROOT}
+    require(package_proof or (type(roots) is dict and set(roots)==set(_EXTERNAL_LINK_ROLES) and
             roots['sdk']==_MAC_EXTERNAL_SDK_ROOT and
             roots['toolchain']==developer+'/Toolchains/XcodeDefault.xctoolchain' and
             roots['python']=='/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework' and
-            (roots['metal']==roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain',roots['metal']) is not None),
+            (roots['metal']==roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain',roots['metal']) is not None)),
             'external-link-diagnostic-shape')
     require(role in _EXTERNAL_LINK_ROLES and type(row) is dict and row.get('kind')=='symlink' and
             type(state) is dict and state.get('site') in ('declared-role-entry','declared-root-boundary','absolute-root-underflow'),
@@ -2407,6 +2411,31 @@ def mac_external_context(file, output, mode, budget):
     return context
 
 
+def mac_python_package_context(file, output, budget):
+    import sys
+    require(sys.platform == 'darwin' and platform.machine() == 'x86_64' and
+            os.environ.get('ImageOS') == 'macos15' and os.environ.get('ImageVersion') == '20260824.0482.1' and
+            os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY') == 'public', 'source-mac-package-host')
+    prefix = '/Users/runner/work/_temp/'
+    require(re.fullmatch(re.escape(prefix) + r'cef-mac-inputs-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/context\.json', str(file)), 'source-mac-context-path')
+    context = source_json(source_read_bytes(file, budget, 16384))
+    fields = {'schemaVersion','kind','target','roots','runnerTemp','outputRoot','requiredPins','limits','originalMetalFingerprint','historicalMetalResourceClosureVerified'}
+    require(type(context) is dict and set(context) == fields and type(context['schemaVersion']) is int and context['schemaVersion'] == 1 and
+            context['kind'] == _MAC_PYTHON_PACKAGE_PROOF_KIND and context['target'] == 'python3.14.7-cellar' and
+            context['roots'] == {'python': _MAC_PYTHON_PACKAGE_PROOF_ROOT} and context['runnerTemp'] == prefix[:-1] and
+            context['outputRoot'] == str(file.parent) and context['originalMetalFingerprint'] is None and
+            context['historicalMetalResourceClosureVerified'] is False, 'source-mac-package-context')
+    limits = {'entries':1000000,'fileBytes':8*1024**3,'bytes':256*1024**3,'metadataBytes':128*1024**2,'readers':4,'seconds':100,'capabilitySeconds':5}
+    require(context['limits'] == limits and all(type(v) is int for v in context['limits'].values()), 'source-mac-limits')
+    require(context['requiredPins'] == [{'role':'python','path':'Frameworks/Python.framework/Versions/3.14/bin/python3.14',
+             'size':13592,'sha256':'b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d'}], 'source-mac-pins')
+    folder = safe(file.parent); info = folder.stat()
+    require(info.st_uid == os.geteuid() and stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o700, 'source-mac-output-owner')
+    require(output == folder/'external.json' and not os.path.lexists(output), 'source-mac-output')
+    return context
+
+
 def mac_external_links(roots, snapshots, budget):
     by_role = {role:{row['path']:row for row in value['entries']} for role,value in snapshots.items()}
     root_parts = {role:tuple(p.split('/')[1:]) for role,p in roots.items()}
@@ -2489,7 +2518,9 @@ def mac_external_observe(context, output, budget):
     global MAC_EXTERNAL_ROLE, MAC_EXTERNAL_PHASE, MAC_REPORT_FAILURE
     aggregate = {'entries':0,'bytes':0,'metadata':0};snapshots = {}
     roots = context['roots']
-    for role in ('sdk','toolchain','metal','python'):
+    package_proof = context.get('kind') == _MAC_PYTHON_PACKAGE_PROOF_KIND
+    roles = ('python',) if package_proof else ('sdk','toolchain','metal','python')
+    for role in roles:
         MAC_EXTERNAL_ROLE=role;MAC_EXTERNAL_PHASE='snapshot';budget.check()
         root = safe(Path(roots[role]));require(root.is_dir(), 'source-mac-root-kind')
         snapshots[role] = source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':aggregate},
@@ -2502,15 +2533,15 @@ def mac_external_observe(context, output, budget):
     MAC_EXTERNAL_PHASE='readback'
     # Re-read every declared root with the SAME bounded transaction and clock.
     readback_aggregate={'entries':0,'bytes':0,'metadata':0}
-    for role in ('sdk','toolchain','metal','python'):
+    for role in roles:
         MAC_EXTERNAL_ROLE=role;budget.check()
         after=source_snapshot(safe(Path(roots[role])),budget,context={'mac':True,'external':True,'aggregate':readback_aggregate},
             member_policy=_MAC_EXTERNAL_SDK_MEMBERS if role == 'sdk' else None)
         require(after==snapshots[role], 'source-external-changed')
     intel = context.get('kind') == 'sorng-macintel-external-input-context'
-    value={'schemaVersion':1,'kind':'sorng-macintel-external-input-observation' if intel else 'sorng-macarm-external-input-observation','target':context['target'],
-           'policy':'sorng-macintel-readonly-external-inputs-v1' if intel else 'sorng-macarm-readonly-external-inputs-v1','complete':True,'externalSnapshotComplete':True,
-           'roles':[{'role':role,'physicalRoot':roots[role],'snapshot':snapshots[role]} for role in ('sdk','toolchain','metal','python')],
+    value={'schemaVersion':1,'kind':'sorng-mac-python-package-proof-observation' if package_proof else 'sorng-macintel-external-input-observation' if intel else 'sorng-macarm-external-input-observation','target':context['target'],
+           'policy':'sorng-mac-python-package-proof-v1' if package_proof else 'sorng-macintel-readonly-external-inputs-v1' if intel else 'sorng-macarm-readonly-external-inputs-v1','complete':True,'externalSnapshotComplete':True,
+           'roles':[{'role':role,'physicalRoot':roots[role],'snapshot':snapshots[role]} for role in roles],
            'entries':aggregate['entries'],'bytes':aggregate['bytes'],'runnerUid':os.geteuid(),
            'historicalMetalResourceClosureVerified':False,'sourceWriteAdmitted':False,'nativeAcceptance':False,'runtimeReady':False}
     if intel:value['source']=context['source']
@@ -2641,7 +2672,7 @@ def main():
     global CLI_SOURCE_MODE
     CLI_SOURCE_MODE = None
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['pack', 'restore', 'seal', 'source-record', 'source-verify', 'source-apply', 'mac-external-observe', 'mac-owned-capability-observe'])
+    parser.add_argument('mode', choices=['pack', 'restore', 'seal', 'source-record', 'source-verify', 'source-apply', 'mac-external-observe', 'mac-owned-capability-observe', 'mac-python-package-observe'])
     parser.add_argument('--input', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--manifest')
@@ -2649,6 +2680,9 @@ def main():
     parser.add_argument('--generated-links')
     parser.add_argument('--platform-policy', choices=['mac-arm','mac-intel'])
     args = parser.parse_args()
+    if args.mode == 'mac-python-package-observe':
+        require(args.manifest is None and args.generated_links is None and args.platform_policy is None and
+                0 < args.seconds <= 100, 'source-mac-package-context')
     CLI_SOURCE_MODE = args.mode if args.mode in SOURCE_IO_MODES else None
     require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
     if args.platform_policy == 'mac-intel':
@@ -2659,7 +2693,11 @@ def main():
         require(len(data) <= 16384, 'link-recipe-bound')
         links = json.loads(data)
         link_recipe(links)
-    if args.mode in ('mac-external-observe','mac-owned-capability-observe'):
+    if args.mode == 'mac-python-package-observe':
+        require(args.manifest is None and not links and args.platform_policy is None and 0 < args.seconds <= 100, 'source-mac-package-context')
+        budget=Budget(args.seconds);context=mac_python_package_context(Path(args.input),Path(args.output),budget)
+        result=mac_external_observe(context,Path(args.output),budget)
+    elif args.mode in ('mac-external-observe','mac-owned-capability-observe'):
         require(args.manifest is None and not links and args.platform_policy is None,'source-mac-context')
         require(args.mode!='mac-owned-capability-observe' or 0 < args.seconds <= 5,'source-mac-capability-deadline')
         budget=Budget(args.seconds);context=mac_external_context(Path(args.input),Path(args.output),args.mode,budget)

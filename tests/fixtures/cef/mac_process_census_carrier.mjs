@@ -203,13 +203,125 @@ export function validateReport(report) {
   sample(collect);
   return report;
 }
-export function outputPath(file, temp) {
+export function validateSupervisorReport(report) {
+  exact(report, [
+    "schemaVersion",
+    "kind",
+    "complete",
+    "productionAdmitted",
+    "productionInputWrites",
+    "nativeAcceptance",
+    "runtimeReady",
+    "hostPlatform",
+    "hostArchitecture",
+    "image",
+    "evidence",
+    "requestDeadlineMs",
+    "cadenceMs",
+    "maximumRequests",
+    "originalLeaseMs",
+    "cases",
+    "cleanupConfirmed",
+  ]);
+  assert(
+    report.schemaVersion === 1 &&
+      report.kind === "mac-census-supervisor-integration-proof" &&
+      report.hostPlatform === "darwin" &&
+      report.hostArchitecture === "x86_64" &&
+      report.image === "20260824.0482.1" &&
+      report.evidence ===
+        "ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855",
+    "CENSUS_SUPERVISOR_IDENTITY",
+  );
+  for (const key of ["complete", "cleanupConfirmed"])
+    assert(report[key] === true, "CENSUS_SUPERVISOR_INCOMPLETE");
+  for (const key of [
+    "productionAdmitted",
+    "productionInputWrites",
+    "nativeAcceptance",
+    "runtimeReady",
+  ])
+    assert(report[key] === false, "CENSUS_SUPERVISOR_ADMISSION");
+  assert(
+    report.requestDeadlineMs === 2000 &&
+      report.cadenceMs === 250 &&
+      report.maximumRequests === 43328 &&
+      report.originalLeaseMs === 160000,
+    "CENSUS_SUPERVISOR_BOUNDS",
+  );
+  const cases = [
+    "normal",
+    "slice-stop",
+    "cancel",
+    "reparent",
+    "foreign",
+    "worker-timeout",
+  ];
+  assert(
+    Array.isArray(report.cases) && report.cases.length === cases.length,
+    "CENSUS_SUPERVISOR_CASES",
+  );
+  for (const [index, row] of report.cases.entries()) {
+    exact(row, [
+      "name",
+      "target",
+      "complete",
+      "expectedDenial",
+      "helperJoined",
+      "rootJoined",
+      "uniformMicrosecondIdentity",
+      "reparentRetained",
+      "foreignUntouched",
+      "proofMutationDenied",
+      "laterSessionJoined",
+      "poisonedFactoryRetryDenied",
+      "terminalCode",
+    ]);
+    const name = cases[index];
+    assert(
+      row.name === name &&
+        row.target ===
+          (name === "foreign" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"),
+      "CENSUS_SUPERVISOR_CASES",
+    );
+    for (const key of [
+      "complete",
+      "helperJoined",
+      "rootJoined",
+      "uniformMicrosecondIdentity",
+      "proofMutationDenied",
+    ])
+      assert(row[key] === true, "CENSUS_SUPERVISOR_INCOMPLETE");
+    assert(
+      row.expectedDenial === (name === "cancel" || name === "worker-timeout") &&
+        row.terminalCode ===
+          (name === "cancel"
+            ? "CANCELLED"
+            : name === "worker-timeout"
+              ? "CENSUS_DEADLINE"
+              : "NONE"),
+      "CENSUS_SUPERVISOR_TERMINAL",
+    );
+    for (const [key, subject] of [
+      ["reparentRetained", "reparent"],
+      ["foreignUntouched", "foreign"],
+      ["laterSessionJoined", "normal"],
+      ["poisonedFactoryRetryDenied", "worker-timeout"],
+    ])
+      assert(
+        row[key] === (name === subject ? true : null),
+        "CENSUS_SUPERVISOR_EVIDENCE",
+      );
+  }
+  return report;
+}
+export function outputPath(file, temp, supervisor = false) {
   assert(
     temp === "/Users/runner/work/_temp" &&
       path.posix.dirname(file) === temp &&
-      /^cef-mac-census-proof-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
-        path.posix.basename(file),
-      ),
+      new RegExp(
+        `^cef-mac-census-${supervisor ? "supervisor-proof" : "proof"}-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`,
+      ).test(path.posix.basename(file)),
     "CENSUS_OUTPUT",
   );
   return file;
@@ -218,12 +330,18 @@ export async function main() {
   authority(process.env, process.platform, process.arch);
   assert(
     process.argv.length === 3 &&
-      ["prepare", "validate"].includes(process.argv[2]),
+      [
+        "prepare",
+        "validate",
+        "prepare-supervisor",
+        "validate-supervisor",
+      ].includes(process.argv[2]),
     "CENSUS_CARRIER_ARGUMENTS",
   );
   const temp = await fs.realpath(process.env.RUNNER_TEMP);
   assert(temp === "/Users/runner/work/_temp", "CENSUS_TEMP");
-  if (process.argv[2] === "prepare") {
+  const supervisor = process.argv[2].endsWith("-supervisor");
+  if (process.argv[2].startsWith("prepare")) {
     const python = await heldBytes(PYTHON, 13592);
     assert(
       python.length === 13592 &&
@@ -232,13 +350,19 @@ export async function main() {
       "CENSUS_PYTHON_PIN",
     );
     const output = outputPath(
-      path.posix.join(temp, "cef-mac-census-proof-" + randomUUID()),
+      path.posix.join(
+        temp,
+        `cef-mac-census-${supervisor ? "supervisor-proof" : "proof"}-` +
+          randomUUID(),
+      ),
       temp,
+      supervisor,
     );
     await assert.rejects(fs.lstat(output), { code: "ENOENT" });
+    if (supervisor) await fs.mkdir(output, { mode: 0o700 });
     await fs.appendFile(process.env.GITHUB_OUTPUT, `output=${output}\n`);
   } else {
-    const output = outputPath(process.env.CEF_CENSUS_OUTPUT, temp);
+    const output = outputPath(process.env.CEF_CENSUS_OUTPUT, temp, supervisor);
     const directory = await fs.lstat(output, { bigint: true });
     assert(
       directory.isDirectory() &&
@@ -248,7 +372,7 @@ export async function main() {
         (await fs.realpath(output)) === output,
       "CENSUS_REPORT_DIRECTORY",
     );
-    const report = validateReport(
+    const report = (supervisor ? validateSupervisorReport : validateReport)(
       JSON.parse(
         (
           await heldBytes(path.posix.join(output, "proof.json"), 128 * 1024)
@@ -269,8 +393,9 @@ export async function main() {
       JSON.stringify({
         kind: report.kind,
         complete: true,
-        abiConfirmed: true,
-        samples: report.samples,
+        ...(supervisor
+          ? { cases: report.cases.map((row) => row.name) }
+          : { abiConfirmed: true, samples: report.samples }),
         productionAdmitted: false,
         nativeAcceptance: false,
         runtimeReady: false,

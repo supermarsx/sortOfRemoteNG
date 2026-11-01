@@ -20,10 +20,14 @@ jobs:
       CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
     steps:
+      - name: Start the original whole-job proof clock
+        run: echo "CEF_MAC_PACKAGE_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        id: checkout
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        id: node
         with:
           node-version-file: ".node-version"
           package-manager-cache: false
@@ -168,6 +172,11 @@ jobs:
           }
           try { await runOwnedSourceProof(); } catch { console.error('OWNED_DARWIN_PROOF_FAILED'); process.exitCode = 1; }
           NODE
+      - name: Prove the exact Python package candidate closure without production admission
+        id: package
+        if: always() && steps.checkout.outcome == 'success' && steps.node.outcome == 'success'
+        timeout-minutes: 2
+        run: node tests/fixtures/cef/mac_python_package_proof.mjs
       - name: Retain only the owned metadata proof
         if: always() && steps.proof.outputs.root != ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -176,6 +185,17 @@ jobs:
           path: |
             ${{ steps.proof.outputs.root }}/proof.json
             ${{ steps.proof.outputs.root }}/carrier.json
+          retention-days: 14
+          if-no-files-found: warn
+          compression-level: 6
+      - name: Retain the independently labeled Python candidate proof
+        if: always() && steps.package.outputs.root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-mac-python-package-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.package.outputs.root }}/proof.json
+            ${{ steps.package.outputs.root }}/external.json
           retention-days: 14
           if-no-files-found: warn
           compression-level: 6

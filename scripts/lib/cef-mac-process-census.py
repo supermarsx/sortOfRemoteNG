@@ -29,6 +29,15 @@ ROLES = ('root', 'child', 'grandchild', 'launcher', 'detached', 'foreign',
 ABI_FIELDS = ('recordBytes', 'pidOffset', 'pidBytes', 'parentOffset', 'parentBytes',
               'groupOffset', 'groupBytes', 'secondsOffset', 'secondsBytes',
               'microsOffset', 'microsBytes', 'pointerBytes', 'longBytes', 'mib')
+NATIVE_ABI = {'recordBytes':648,'pidOffset':40,'pidBytes':4,'parentOffset':560,'parentBytes':4,
+              'groupOffset':564,'groupBytes':4,'secondsOffset':0,'secondsBytes':8,
+              'microsOffset':8,'microsBytes':4,'pointerBytes':8,'longBytes':8,'mib':[1,14,0,0]}
+NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855'
+NATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',
+                  'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}
+NATIVE_MAX_WORK_MS = 180*60*1000
+NATIVE_MAX_REQUESTS = 43328
+NATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
 
 # This executable is an ABI oracle used only by the native scratch proof.
 # Production will use reviewed, code-pinned offsets only after separate review.
@@ -278,6 +287,112 @@ def worker(root):
         print(response,flush=True)
 
 
+def native_root(root):
+    import re
+    root=Path(root);temp=Path(os.environ['RUNNER_TEMP'])
+    need(root.is_absolute() and root.resolve(strict=True)==root and root.parent.parent==temp and
+         re.fullmatch('cef-mac-census-session-'+NATIVE_UUID,root.name) and
+         re.fullmatch('cef-mac-census-(integration|production)-'+NATIVE_UUID,root.parent.name),'CENSUS_ROOT')
+    for path in (temp,root.parent,root):
+        info=path.lstat()
+        need(stat.S_ISDIR(info.st_mode) and not path.is_symlink() and info.st_uid==os.geteuid(),'CENSUS_ROOT')
+        if path!=temp:need(stat.S_IMODE(info.st_mode)==0o700,'CENSUS_ROOT')
+    return root
+
+
+def native_context(root,raw):
+    value=json.loads(raw)
+    fields={'kind','mode','target','source','canonicalRoot','image','phase','workMilliseconds',
+            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence'}
+    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and
+         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and
+         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and
+         value['evidence']==NATIVE_EVIDENCE,'CENSUS_ROOT')
+    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']
+    need(value['canonicalRoot']==expected,'CENSUS_ROOT')
+    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and
+         1<=value['workMilliseconds']<=NATIVE_MAX_WORK_MS and
+         type(value['leaseMilliseconds'])is int and 1<=value['leaseMilliseconds']<=NATIVE_MAX_WORK_MS+30000 and
+         type(value['wallEndMilliseconds'])is int and
+         time.time()*1000<value['wallEndMilliseconds']<=time.time()*1000+NATIVE_MAX_WORK_MS+30000 and
+         type(value['requestBudget'])is int and
+         value['requestBudget']==((value['workMilliseconds']+249)//250+128 if value['phase']=='compile' else 8) and
+         value['requestBudget']<=NATIVE_MAX_REQUESTS,'CENSUS_DEADLINE')
+    if value['mode']=='production':
+        need(PRODUCTION_CENSUS_ADMITTED and root.parent.name.startswith('cef-mac-census-production-'),'CENSUS_UNADMITTED')
+        source=Path(expected)
+        need(source.resolve(strict=True)==source and stat.S_ISDIR(source.lstat().st_mode) and
+             source.lstat().st_uid==os.geteuid() and source.lstat().st_mode&0o700==0o700 and
+             source.lstat().st_mode&0o022==0,'CENSUS_ROOT')
+    else:need(root.parent.name.startswith('cef-mac-census-integration-'),'CENSUS_ROOT')
+    return value
+
+
+def native_worker(root):
+    root=native_root(root)
+    raw=held_bytes(root/'context.json',4096)
+    value=native_context(root,raw)
+    end=min(time.monotonic()+value['leaseMilliseconds']/1000,
+            time.monotonic()+(value['wallEndMilliseconds']/1000-time.time()))
+    provider=SysctlCensus(NATIVE_ABI)
+    print(json.dumps({'kind':'mac-census-native-ready','abi':NATIVE_ABI,
+        'contextSha256':hashlib.sha256(raw).hexdigest(),'productionAdmitted':False},separators=(',',':')),flush=True)
+    previous=0
+    for line in iter(lambda:sys.stdin.buffer.readline(129),b''):
+        need(time.monotonic()<end and len(line)<=128 and line.endswith(b'\n'),'CENSUS_DEADLINE')
+        request=json.loads(line)
+        need(type(request)is dict and set(request)=={'request'} and type(request['request'])is int and
+             request['request']==previous+1 and request['request']<=value['requestBudget'],'CENSUS_REQUEST')
+        previous=request['request'];began=time.monotonic();rows=provider.snapshot()
+        need(time.monotonic()<end,'CENSUS_DEADLINE')
+        response=json.dumps({'request':previous,'rows':rows,
+            'collectMicros':max(0,int((time.monotonic()-began)*1000000))},separators=(',',':'))
+        need(len(response.encode())<=MAX_OUTPUT,'CENSUS_OUTPUT_BOUND');print(response,flush=True)
+
+
+def integration_actor(root,role):
+    import re
+    need(role in ('normal','slice-stop','cancel','reparent','worker-timeout','foreign','launcher','detached'),'CENSUS_ROLE')
+    root=Path(root);temp=Path(os.environ['RUNNER_TEMP'])
+    need(root.parent==temp and root.resolve(strict=True)==root and
+         re.fullmatch('cef-mac-census-integration-'+NATIVE_UUID,root.name),'CENSUS_ROOT')
+    info=root.lstat();need(stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid() and stat.S_IMODE(info.st_mode)==0o700,'CENSUS_ROOT')
+    if role=='detached':os.setsid()
+    original_parent=os.getppid();stopping=False;children=[]
+    def stop(signum,frame):
+        nonlocal stopping
+        stopping=True
+    signal.signal(signal.SIGTERM,stop)
+    def receipt(name,value):
+        target=root/(name+'.json');partial=root/(name+'.partial')
+        with partial.open('x')as stream:os.chmod(stream.name,0o600);json.dump(value,stream)
+        os.rename(partial,target)
+    receipt(role,{'pid':os.getpid(),'parent':original_parent,'group':os.getpgrp()})
+    env={k:v for k,v in os.environ.items()if k in ('PATH','RUNNER_TEMP','ImageOS','ImageVersion','RUNNER_ENVIRONMENT','RUNNER_TRACKING_ID')}
+    def spawn_role(child):
+        process=subprocess.Popen([PYTHON,'-I','-B','-S',str(Path(__file__).resolve()),'--integration-actor',str(root),child],cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        children.append(process)
+    end=time.monotonic()+60;reparented=False
+    try:
+        if role=='launcher':spawn_role('detached')
+        while not stopping and time.monotonic()<end:
+            if role=='detached' and not reparented and os.getppid()!=original_parent:
+                receipt('reparented',{'confirmed':True});reparented=True
+            if role=='launcher' and (root/'reparent-now').exists():return
+            if role not in ('launcher','detached','foreign') and (root/'start').exists():
+                need(held_bytes(root/'start',64)==b'start\n','CENSUS_COMPILE_GATE')
+                if role=='normal':time.sleep(.3);return
+                if role=='reparent' and not children:spawn_role('launcher')
+            time.sleep(.025)
+    finally:
+        if role!='launcher' or not (root/'reparent-now').exists():
+            for child in children:
+                if child.poll()is None:child.terminate()
+            for child in children:
+                try:child.wait(timeout=2)
+                except subprocess.TimeoutExpired:child.kill();child.wait(timeout=2)
+
+
 def actor(root,role):
     need(role in ROLES,'CENSUS_ROLE')
     if role=='detached':
@@ -322,6 +437,13 @@ def actor(root,role):
 
 
 def main(args):
+    if len(args)==3 and args[0]=='--integration-actor':
+        need(PRODUCTION_CENSUS_ADMITTED is False,'CENSUS_PROOF_ONLY')
+        authority(require_public=False);held_pin(*PINS[0],time.monotonic()+2)
+        integration_actor(args[1],args[2]);return
+    if len(args)==2 and args[0]=='--census-worker':
+        authority(require_public=False);held_pin(*PINS[0],time.monotonic()+2)
+        native_worker(args[1]);return
     need(len(args) in (2,3) and args[0] in ('--proof-prepare','--proof-compile','--proof-worker','--proof-actor'),'CENSUS_ARGUMENTS')
     need(PRODUCTION_CENSUS_ADMITTED is False,'CENSUS_UNADMITTED')
     authority(require_public=args[0]!='--proof-compile');root=root_path(args[1])

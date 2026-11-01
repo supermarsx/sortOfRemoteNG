@@ -7222,11 +7222,30 @@ test("observability preserves every existing API uploader and CLI policy asserti
     );
     const rows = [],
       sourceMetadataGuards = [],
-      macSourceGuards = [];
+      macSourceGuards = [],
+      censusGuards = [],
+      censusQuiescenceBindings = [];
     const serialize = (node) => {
-      const kids = node
+      let kids = node
         .getChildren(ast)
         .filter((n) => n.kind !== ts.SyntaxKind.CommaToken);
+      // Preserve the historical two-argument quiescence signature while
+      // separately requiring the exact new scoped-provider binding.
+      if (
+        node.kind === ts.SyntaxKind.SyntaxList &&
+        ts.isCallExpression(node.parent) &&
+        node.parent.expression.getText(ast) === "observedQuiet"
+      ) {
+        const call = node.parent;
+        assert.equal(call.arguments.length, 3);
+        const binding = call.arguments[2]
+          .getText(ast)
+          .replace(/\s+/g, "")
+          .replace(/,}/g, "}");
+        assert.equal(binding, "{censusFactory}");
+        censusQuiescenceBindings.push(binding);
+        kids = kids.filter((child) => child !== call.arguments[2]);
+      }
       return kids.length
         ? [node.kind, ...kids.map(serialize)]
         : [node.kind, node.getText(ast)];
@@ -7238,6 +7257,12 @@ test("observability preserves every existing API uploader and CLI policy asserti
       ) {
         const message = n.arguments[1]?.text;
         if (
+          ["uploadCheckpoint", "uploadSdkBundle"].includes(name) &&
+          message === "CENSUS_CAPABILITY"
+        ) {
+          censusGuards.push(n.arguments[0].getText(ast).replace(/\s+/g, ""));
+          assert.equal(fn.body.statements[0].expression, n);
+        } else if (
           name === "checkpointMain" &&
           [
             "Fixed source bytecode policy",
@@ -7269,6 +7294,12 @@ test("observability preserves every existing API uploader and CLI policy asserti
       ts.forEachChild(n, visit);
     };
     visit(fn);
+    if (["uploadCheckpoint", "uploadSdkBundle"].includes(name)) {
+      assert.deepEqual(censusGuards, [
+        "censusFactory===undefined||(macCensusFactories.has(censusFactory)&&!macCensusFactories.get(censusFactory).proofOnly)",
+      ]);
+      assert.deepEqual(censusQuiescenceBindings, ["{censusFactory}"]);
+    }
     if (name === "checkpointMain") {
       assert.deepEqual(sourceMetadataGuards, [
         [

@@ -47,7 +47,12 @@ test("proof uses only the intended reviewed Intel Mac ARM cross-build host and n
   assert.equal(workflow.jobs.proof["runs-on"], "macos-15-intel");
   assert.equal(workflow.jobs.proof["timeout-minutes"], 5);
   assert.equal(step["timeout-minutes"], 3);
-  assert.equal(workflow.jobs.proof.steps[0].with["persist-credentials"], false);
+  assert.equal(
+    workflow.jobs.proof.steps.find((row) =>
+      row.uses?.startsWith("actions/checkout@"),
+    ).with["persist-credentials"],
+    false,
+  );
   assert(
     workflow.jobs.proof.steps
       .filter((row) => row.uses)
@@ -89,7 +94,9 @@ test("proof uses only the intended reviewed Intel Mac ARM cross-build host and n
     /\['-I', '-B', 'tests\/fixtures\/cef\/mac_owned_source_proof.py', '--output', output\]/,
   );
   assert.equal(
-    workflow.jobs.proof.steps.at(-1).with.path.trim(),
+    workflow.jobs.proof.steps
+      .find((row) => row.with?.name?.startsWith("cef-mac-owned-source-proof-"))
+      .with.path.trim(),
     "${{ steps.proof.outputs.root }}/proof.json\n${{ steps.proof.outputs.root }}/carrier.json",
   );
 });

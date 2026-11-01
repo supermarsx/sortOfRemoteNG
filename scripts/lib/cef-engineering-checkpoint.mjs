@@ -1,5 +1,5 @@
 // Engineering checkpoints never confer runtime or SDK admission.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -16,6 +16,7 @@ import {
   opendir,
   mkdtemp,
   rm,
+  rmdir,
   readFile,
   readdir,
   readlink,
@@ -30,6 +31,7 @@ import {
 import { finished, pipeline } from "node:stream/promises";
 import { Readable, Transform } from "node:stream";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { hostname, tmpdir, userInfo } from "node:os";
 import {
   macSourceMetadataPlan,
@@ -1002,14 +1004,17 @@ export function validateCompile(value) {
     "Bounded observed lineage required",
   );
   const pids = new Set();
+  const nativeIdentity =
+    value.observed[0]?.start?.startsWith("darwin-v1:") === true;
   for (const row of value.observed) {
     shape(row, ["pid", "start"]);
     assert(
       positive(row.pid) &&
         !pids.has(row.pid) &&
-        /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/.test(
-          row.start,
-        ),
+        (nativeIdentity
+          ? /^darwin-v1:[1-9][0-9]{0,11}:(?:0|[1-9][0-9]{0,5})$/
+          : /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/
+        ).test(row.start),
       "Invalid observed process",
     );
     pids.add(row.pid);
@@ -1287,6 +1292,8 @@ const ARCHIVE_FAILURES = new Set([
   "source-mac-capability-report-readback",
   "source-mac-context-path",
   "source-mac-context",
+  "source-mac-package-host",
+  "source-mac-package-context",
   "source-mac-darwin-capability-unreviewed",
   "source-mac-intel-darwin-capability-unreviewed",
   "source-mac-directory-changed",
@@ -1955,9 +1962,11 @@ export function archiveFailureRecord(
         externalOptional,
         externalInvalid = false,
         externalLinksWithoutRole = false;
-      // Only this fixed read-only worker mode emits the new optional ABI.
+      // Only these fixed read-only observer modes emit the optional ABI.
       if (
-        sourceMode === "mac-external-observe" &&
+        ["mac-external-observe", "mac-python-package-observe"].includes(
+          sourceMode,
+        ) &&
         decoded &&
         typeof decoded === "object" &&
         !Array.isArray(decoded)
@@ -2430,13 +2439,37 @@ export async function archiveCommand(
       finish();
     }, timeout);
     try {
-      child = spawn(python, ["-I", "-B", helper, ...args], {
-        shell: false,
-        windowsHide: true,
-        detached: process.platform !== "win32",
-        env: { PATH: path.dirname(python) },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      child = spawn(
+        python,
+        [
+          "-I",
+          "-B",
+          ...(args[0] === "mac-python-package-observe" ? ["-S"] : []),
+          helper,
+          ...args,
+        ],
+        {
+          shell: false,
+          windowsHide: true,
+          detached: process.platform !== "win32",
+          env:
+            args[0] === "mac-python-package-observe"
+              ? {
+                  PATH: path.dirname(python),
+                  ImageOS: process.env.ImageOS,
+                  ImageVersion: process.env.ImageVersion,
+                  GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+                  RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
+                  GITHUB_REPOSITORY_VISIBILITY:
+                    process.env.GITHUB_REPOSITORY_VISIBILITY,
+                  ...(process.env.RUNNER_TRACKING_ID
+                    ? { RUNNER_TRACKING_ID: process.env.RUNNER_TRACKING_ID }
+                    : {}),
+                }
+              : { PATH: path.dirname(python) },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
       child.on("error", (error) => fail(error));
       child.once("exit", (exitCode) => {
         rootExited = true;
@@ -2524,6 +2557,10 @@ const compileMonitorCodes = new Set([
   "OWN_ROOT_REPLACED",
   "OWN_ACTIVE_BOUND",
   "OWN_MONITOR_TURN_BOUND",
+  "CENSUS_DEADLINE",
+  "CENSUS_EOF",
+  "CENSUS_OUTPUT_BOUND",
+  "CENSUS_READY_DEADLINE",
 ]);
 export function compileMonitorRecord(value, code, facts = {}) {
   if (value === null || !["object", "function"].includes(typeof value))
@@ -2609,9 +2646,424 @@ export function processRows(text) {
   return rows;
 }
 
-// The native collector remains proof-only until its exact Darwin ABI and owned
-// process fixtures have been reviewed. It cannot produce a live compile receipt.
+// Production admission stays disabled until the scoped factory and real
+// supervisor integration have been reviewed. Proofs cannot mint live receipts.
 export const MAC_NATIVE_CENSUS_ADMITTED = false;
+export const MAC_CENSUS_ABI = Object.freeze({
+  recordBytes: 648,
+  pidOffset: 40,
+  pidBytes: 4,
+  parentOffset: 560,
+  parentBytes: 4,
+  groupOffset: 564,
+  groupBytes: 4,
+  secondsOffset: 0,
+  secondsBytes: 8,
+  microsOffset: 8,
+  microsBytes: 4,
+  pointerBytes: 8,
+  longBytes: 8,
+  mib: Object.freeze([1, 14, 0, 0]),
+});
+export const MAC_CENSUS_EVIDENCE = Object.freeze({
+  runId: 41339128028,
+  artifactId: 13096432034,
+  sha256: "ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855",
+});
+const MAC_CENSUS_SOURCES = Object.freeze({
+  "x86_64-apple-darwin":
+    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+  "aarch64-apple-darwin":
+    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+});
+const MAC_CENSUS_PYTHON =
+  "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14";
+const macCensusFactories = new WeakMap();
+const macCensusSessions = new WeakSet();
+export function macCensusRequestBudget(workMilliseconds, phase = "compile") {
+  assert(
+    Number.isInteger(workMilliseconds) &&
+      workMilliseconds > 0 &&
+      workMilliseconds <= LIMITS.maxCompileMs,
+    "CENSUS_REQUEST_BOUND",
+  );
+  assert(phase === "compile" || phase === "readonly", "CENSUS_PHASE");
+  // Monitor <=ceil(work/250)+8; initial+freeze+kill+50 reap+terminal probes
+  // fit within the remaining120 slots. Read-only phases need at most8 reads.
+  return phase === "readonly" ? 8 : Math.ceil(workMilliseconds / 250) + 128;
+}
+function censusScope(value, proofOnly) {
+  shape(value, [
+    "target",
+    "source",
+    "canonicalRoot",
+    "scratch",
+    "python",
+    "deadline",
+  ]);
+  assert(
+    Object.values(Object.getOwnPropertyDescriptors(value)).every((field) =>
+      Object.hasOwn(field, "value"),
+    ),
+    "CENSUS_ROOT",
+  );
+  assert(
+    process.platform === "darwin" &&
+      process.arch === "x64" &&
+      process.env.ImageOS === "macos15" &&
+      process.env.ImageVersion === "20260824.0482.1" &&
+      process.env.RUNNER_ENVIRONMENT === "github-hosted",
+    "CENSUS_HOST",
+  );
+  assert(
+    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&
+      value.source === MAC_CENSUS_SOURCES[value.target] &&
+      value.canonicalRoot ===
+        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&
+      value.python === MAC_CENSUS_PYTHON,
+    "CENSUS_ROOT",
+  );
+  assert(
+    Number.isFinite(value.deadline) &&
+      value.deadline > performance.now() &&
+      value.deadline - performance.now() <= LIMITS.hostMs,
+    "CENSUS_DEADLINE",
+  );
+  const prefix = proofOnly ? "integration" : "production";
+  assert(
+    typeof process.env.RUNNER_TEMP === "string" &&
+      path.dirname(value.scratch) === process.env.RUNNER_TEMP &&
+      new RegExp(
+        `^cef-mac-census-${prefix}-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`,
+      ).test(path.basename(value.scratch)),
+    "CENSUS_ROOT",
+  );
+}
+async function censusOwnedRoot(root, { privateDirectory = true } = {}) {
+  assert((await noLinks(root)) === root, "CENSUS_ROOT");
+  const info = await lstat(root, { bigint: true });
+  assert(
+    info.isDirectory() &&
+      info.uid === BigInt(userInfo().uid) &&
+      (privateDirectory
+        ? (info.mode & 0o777n) === 0o700n
+        : (info.mode & 0o700n) === 0o700n && (info.mode & 0o022n) === 0n),
+    "CENSUS_ROOT",
+  );
+  return info;
+}
+async function censusPythonPin(python) {
+  assert((await noLinks(python)) === python, "CENSUS_TOOL_PIN");
+  const before = await lstat(python, { bigint: true });
+  assert(
+    before.isFile() && before.size === 13592n && before.nlink === 1n,
+    "CENSUS_TOOL_PIN",
+  );
+  const same = (info) =>
+    [
+      "dev",
+      "ino",
+      "mode",
+      "size",
+      "mtimeNs",
+      "ctimeNs",
+      "nlink",
+      "uid",
+      "gid",
+    ].every((k) => before[k] === info[k]);
+  const handle = await open(
+    python,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    assert(same(await handle.stat({ bigint: true })), "CENSUS_TOOL_PIN");
+    const buffer = Buffer.alloc(13593);
+    let count = 0;
+    for (;;) {
+      const read = await handle.read(
+        buffer,
+        count,
+        buffer.length - count,
+        count,
+      );
+      if (!read.bytesRead) break;
+      count += read.bytesRead;
+      assert(count <= 13592, "CENSUS_TOOL_PIN");
+    }
+    assert(
+      count === 13592 &&
+        sha(buffer.subarray(0, count)) ===
+          "b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d" &&
+        same(await handle.stat({ bigint: true })) &&
+        same(await lstat(python, { bigint: true })),
+      "CENSUS_TOOL_PIN",
+    );
+  } finally {
+    await handle.close();
+  }
+}
+async function censusFactory(value, proofOnly) {
+  censusScope(value, proofOnly);
+  const rootIdentity = await censusOwnedRoot(value.scratch);
+  if (!proofOnly)
+    await censusOwnedRoot(value.canonicalRoot, { privateDirectory: false });
+  await censusPythonPin(value.python);
+  const capability = Object.freeze({ kind: "scoped-mac-census-factory" });
+  macCensusFactories.set(capability, {
+    ...value,
+    proofOnly,
+    rootIdentity,
+    sessions: 0,
+    joinedSessions: 0,
+    responses: 0,
+    active: false,
+    failed: null,
+  });
+  return capability;
+}
+export async function createMacProcessCensusFactory(value) {
+  assert(MAC_NATIVE_CENSUS_ADMITTED, "CENSUS_UNADMITTED");
+  return censusFactory(value, false);
+}
+export async function createMacCensusIntegrationProofFactory(value) {
+  assert(MAC_NATIVE_CENSUS_ADMITTED === false, "CENSUS_PROOF_ONLY");
+  return censusFactory(value, true);
+}
+async function openCensusSession(
+  factory,
+  { deadline, workMilliseconds, phase, startupDeadline = deadline },
+) {
+  const startupEnd = Math.min(
+    deadline,
+    startupDeadline,
+    performance.now() + 2000,
+  );
+  const binding = macCensusFactories.get(factory);
+  assert(
+    binding && !binding.failed && !binding.active && binding.sessions < 16,
+    "CENSUS_CAPABILITY",
+  );
+  censusScope(
+    {
+      ...Object.fromEntries(
+        [
+          "target",
+          "source",
+          "canonicalRoot",
+          "scratch",
+          "python",
+          "deadline",
+        ].map((k) => [k, binding[k]]),
+      ),
+    },
+    binding.proofOnly,
+  );
+  assert(
+    Number.isFinite(deadline) &&
+      deadline <= binding.deadline &&
+      deadline > performance.now(),
+    "CENSUS_DEADLINE",
+  );
+  const root = await censusOwnedRoot(binding.scratch);
+  assert(
+    ["dev", "ino", "mode", "uid"].every(
+      (k) => root[k] === binding.rootIdentity[k],
+    ),
+    "CENSUS_ROOT",
+  );
+  await censusPythonPin(binding.python);
+  assert(performance.now() < startupEnd, "CENSUS_DEADLINE");
+  const requestBudget = macCensusRequestBudget(workMilliseconds, phase);
+  binding.active = true;
+  binding.sessions++;
+  const sessionRoot = path.join(
+    binding.scratch,
+    "cef-mac-census-session-" + randomUUID(),
+  );
+  let setupComplete = false;
+  try {
+    await mkdir(sessionRoot, { mode: 0o700 });
+    const sessionIdentity = await censusOwnedRoot(sessionRoot);
+    const context = {
+      kind: "mac-census-session",
+      mode: binding.proofOnly ? "integration-proof" : "production",
+      target: binding.target,
+      source: binding.source,
+      canonicalRoot: binding.canonicalRoot,
+      image: "20260824.0482.1",
+      phase,
+      workMilliseconds,
+      leaseMilliseconds: Math.max(1, Math.floor(deadline - performance.now())),
+      wallEndMilliseconds: Math.floor(
+        Date.now() + deadline - performance.now(),
+      ),
+      requestBudget,
+      evidence: MAC_CENSUS_EVIDENCE.sha256,
+    };
+    const raw = Buffer.from(canonical(context) + "\n");
+    await writeFile(path.join(sessionRoot, "context.json"), raw, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    assert(performance.now() < startupEnd, "CENSUS_DEADLINE");
+    const env = {
+      PATH: "/usr/bin:/bin",
+      HOME: sessionRoot,
+      TMPDIR: sessionRoot,
+      RUNNER_TEMP: process.env.RUNNER_TEMP,
+      ImageOS: "macos15",
+      ImageVersion: "20260824.0482.1",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      LC_ALL: "C",
+      TZ: "UTC",
+    };
+    if (process.env.RUNNER_TRACKING_ID)
+      env.RUNNER_TRACKING_ID = process.env.RUNNER_TRACKING_ID;
+    const child = spawn(
+      binding.python,
+      [
+        "-I",
+        "-B",
+        "-S",
+        fileURLToPath(new URL("./cef-mac-process-census.py", import.meta.url)),
+        "--census-worker",
+        sessionRoot,
+      ],
+      { cwd: sessionRoot, env, shell: false, stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const client = macCensusClient(child, {
+      deadline,
+      requestBudget,
+      readyMilliseconds: Math.max(1, startupEnd - performance.now()),
+      contextSha256: sha(raw),
+    });
+    binding.worker = child;
+    let closed = false,
+      closingPromise;
+    const deny = (error) => {
+      binding.failed ??= error;
+      return binding.failed;
+    };
+    const session = {
+      async snapshot(options = {}) {
+        try {
+          assert(
+            !binding.failed &&
+              !closed &&
+              !options.signal?.aborted &&
+              performance.now() < (options.deadline ?? deadline),
+            "CENSUS_DEADLINE",
+          );
+          const value = await client.snapshot();
+          binding.responses++;
+          assert(
+            performance.now() < (options.deadline ?? deadline) &&
+              !options.signal?.aborted,
+            "CENSUS_DEADLINE",
+          );
+          return compileMonitorRecord(value.rows, "NONE", {
+            snapshotElapsedMs: Math.floor(value.roundtripMicros / 1000),
+            snapshotRows: value.rows.length,
+          });
+        } catch (error) {
+          const code = [
+            "CENSUS_DEADLINE",
+            "CENSUS_EOF",
+            "CENSUS_OUTPUT_BOUND",
+            "CENSUS_READY_DEADLINE",
+          ].includes(error?.message)
+            ? error.message
+            : "UNKNOWN";
+          throw deny(compileMonitorRecord(error, code));
+        }
+      },
+      close(closeDeadline = deadline) {
+        if (closingPromise) return closingPromise;
+        closed = true;
+        closingPromise = (async () => {
+          let failure;
+          try {
+            const result = await client.close({ deadline: closeDeadline });
+            if (result.joined) binding.joinedSessions++;
+            if (result.failed)
+              failure = binding.failed ?? new Error("CENSUS_FAILED");
+            assert(performance.now() < closeDeadline, "CENSUS_DEADLINE");
+            const current = await censusOwnedRoot(sessionRoot);
+            assert(
+              ["dev", "ino", "mode", "uid"].every(
+                (k) => current[k] === sessionIdentity[k],
+              ),
+              "CENSUS_ROOT",
+            );
+            const parent = await censusOwnedRoot(binding.scratch);
+            assert(
+              ["dev", "ino", "mode", "uid"].every(
+                (k) => parent[k] === binding.rootIdentity[k],
+              ),
+              "CENSUS_ROOT",
+            );
+            await unlink(path.join(sessionRoot, "context.json"));
+            await rmdir(sessionRoot); // Empty, creation-owned session directory only.
+            assert(performance.now() < closeDeadline, "CENSUS_DEADLINE");
+          } catch (error) {
+            failure ??= error;
+          } finally {
+            binding.active = false;
+            binding.worker = null;
+          }
+          if (failure) throw deny(failure);
+        })();
+        return closingPromise;
+      },
+    };
+    try {
+      await client.ready;
+      assert(performance.now() < startupEnd, "CENSUS_DEADLINE");
+    } catch (error) {
+      deny(error);
+      try {
+        await session.close();
+      } catch {}
+      throw error;
+    }
+    macCensusSessions.add(session);
+    setupComplete = true;
+    return session;
+  } catch (error) {
+    binding.failed ??= error;
+    if (!setupComplete) binding.active = false;
+    throw error;
+  }
+}
+// Fixed proof-only failure injection. The handle was created by this factory;
+// callers cannot provide a PID, signal, executable or alternative backend.
+export function pauseMacCensusIntegrationWorker(factory) {
+  const binding = macCensusFactories.get(factory);
+  assert(
+    binding?.proofOnly &&
+      binding.active &&
+      binding.worker?.exitCode === null &&
+      binding.worker?.signalCode === null,
+    "CENSUS_CAPABILITY",
+  );
+  assert(binding.worker.kill("SIGSTOP"), "CENSUS_PROOF_STOP");
+}
+export function macCensusIntegrationStatus(factory) {
+  const binding = macCensusFactories.get(factory);
+  assert(binding?.proofOnly, "CENSUS_PROOF_ONLY");
+  return Object.freeze({
+    sessions: binding.sessions,
+    joinedSessions: binding.joinedSessions,
+    responses: binding.responses,
+    active: binding.active,
+    poisoned: binding.failed !== null,
+    workerJoined:
+      binding.sessions > 0 &&
+      binding.sessions === binding.joinedSessions &&
+      !binding.active &&
+      binding.worker === null,
+  });
+}
 const CENSUS_FAILURE_CODES = new Set([
   "CENSUS_HOST",
   "CENSUS_IMAGE",
@@ -2706,6 +3158,21 @@ export function createMacCensusProofClient(child, { deadline } = {}) {
       deadline > performance.now(),
     "CENSUS_PROOF_ONLY",
   );
+  return macCensusClient(child, { deadline });
+}
+function macCensusClient(
+  child,
+  {
+    deadline,
+    requestBudget = 10000,
+    readyMilliseconds = 45000,
+    contextSha256,
+  } = {},
+) {
+  const readyDeadline = Math.min(
+    deadline,
+    performance.now() + readyMilliseconds,
+  );
   let buffer = Buffer.alloc(0),
     pending,
     request = 0,
@@ -2742,12 +3209,24 @@ export function createMacCensusProofClient(child, { deadline } = {}) {
     try {
       const value = JSON.parse(line.toString("utf8"));
       if (!readyValue) {
-        shape(value, ["kind", "abi", "oracleSha256", "productionAdmitted"]);
+        assert(performance.now() < readyDeadline, "CENSUS_READY_DEADLINE");
+        shape(value, [
+          "kind",
+          "abi",
+          contextSha256 ? "contextSha256" : "oracleSha256",
+          "productionAdmitted",
+        ]);
         assert(
           line.length <= 4096 &&
-            value.kind === "mac-census-proof-ready" &&
+            value.kind ===
+              (contextSha256
+                ? "mac-census-native-ready"
+                : "mac-census-proof-ready") &&
             value.productionAdmitted === false &&
-            /^[a-f0-9]{64}$/.test(value.oracleSha256),
+            (contextSha256
+              ? value.contextSha256 === contextSha256 &&
+                canonical(value.abi) === canonical(MAC_CENSUS_ABI)
+              : /^[a-f0-9]{64}$/.test(value.oracleSha256)),
           "CENSUS_READY",
         );
         assert(
@@ -2815,7 +3294,7 @@ export function createMacCensusProofClient(child, { deadline } = {}) {
   });
   readyTimer = setTimeout(
     () => deny(new Error("CENSUS_READY_DEADLINE")),
-    Math.max(1, Math.min(45000, deadline - performance.now())),
+    Math.max(1, readyDeadline - performance.now()),
   );
   return {
     ready,
@@ -2828,6 +3307,7 @@ export function createMacCensusProofClient(child, { deadline } = {}) {
       await ready;
       if (failed) throw firstError;
       assert(!pending && !closing && !joined, "CENSUS_REQUEST");
+      assert(request < requestBudget, "CENSUS_REQUEST_BOUND");
       const begin = performance.now(),
         end = Math.min(begin + 2000, deadline);
       assert(end > begin, "CENSUS_DEADLINE");
@@ -2853,14 +3333,18 @@ export function createMacCensusProofClient(child, { deadline } = {}) {
         }
       });
     },
-    async close() {
+    async close({ deadline: joinDeadline = deadline } = {}) {
       closing = true;
       if (pending) deny(new Error("CENSUS_ABORT"));
       if (!joined) {
         if (failed) child.kill("SIGKILL");
         else child.stdin.end();
       }
-      const end = Math.min(deadline, performance.now() + COMPILE_CLEANUP_MS);
+      const end = Math.min(
+        deadline,
+        joinDeadline,
+        performance.now() + COMPILE_CLEANUP_MS,
+      );
       const timer = setTimeout(
         () => {
           if (!joined) child.kill("SIGKILL");
@@ -2894,7 +3378,12 @@ async function processSnapshot({
   deadline = performance.now() + 2000,
   signal,
   probeJoins,
+  censusSession,
 } = {}) {
+  if (censusSession !== undefined) {
+    assert(macCensusSessions.has(censusSession), "CENSUS_CAPABILITY");
+    return censusSession.snapshot({ deadline, signal });
+  }
   compileMonitorGuard(
     !signal?.aborted && performance.now() < deadline,
     "Ownership snapshot deadline",
@@ -3059,6 +3548,51 @@ export function sameObservedCohort(left, right) {
   return key(left) === key(right);
 }
 export async function observedQuiet(records, group, options = {}) {
+  const native = records.some(
+    (row) =>
+      typeof row.start === "string" && row.start.startsWith("darwin-v1:"),
+  );
+  if (native) {
+    assert(
+      records.every((row) =>
+        /^darwin-v1:[1-9][0-9]{0,11}:(?:0|[1-9][0-9]{0,5})$/.test(row.start),
+      ),
+      "CENSUS_MIXED_IDENTITY",
+    );
+    if (options.censusSession === undefined) {
+      const factory = macCensusFactories.get(options.censusFactory);
+      assert(factory, "CENSUS_CAPABILITY");
+      const deadline = Math.min(
+        options.deadline ?? performance.now() + COMPILE_CLEANUP_MS,
+        factory.deadline,
+      );
+      const session = await openCensusSession(options.censusFactory, {
+        deadline,
+        workMilliseconds: Math.max(
+          1,
+          Math.min(
+            LIMITS.maxCompileMs,
+            Math.floor(deadline - performance.now()),
+          ),
+        ),
+        phase: "readonly",
+      });
+      try {
+        return await observedQuiet(records, group, {
+          ...options,
+          deadline,
+          censusSession: session,
+        });
+      } finally {
+        await session.close();
+      }
+    }
+  } else
+    assert(
+      options.censusSession === undefined &&
+        options.censusFactory === undefined,
+      "CENSUS_MIXED_IDENTITY",
+    );
   const rows = await processSnapshot(options);
   // A reused foreign PID is never signalled and is not our old process.
   if (
@@ -3072,7 +3606,7 @@ export async function observedQuiet(records, group, options = {}) {
 async function stopObserved(
   child,
   initial,
-  { deadline = performance.now() + 10000, probeJoins } = {},
+  { deadline = performance.now() + 10000, probeJoins, censusSession } = {},
 ) {
   let owned = initial,
     stable = false;
@@ -3080,7 +3614,7 @@ async function stopObserved(
   // created separate process groups. No global executable-name selection.
   for (let round = 0; round < 8; round++) {
     assert(performance.now() < deadline, "Owned freeze deadline");
-    const rows = await processSnapshot({ deadline, probeJoins });
+    const rows = await processSnapshot({ deadline, probeJoins, censusSession });
     const next = observedLineage(rows, owned);
     for (const record of next) {
       const current = rows.find((row) => row.pid === record.pid);
@@ -3101,7 +3635,11 @@ async function stopObserved(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert(stable, "Observed lineage did not stabilize");
-  const snapshot = await processSnapshot({ deadline, probeJoins });
+  const snapshot = await processSnapshot({
+    deadline,
+    probeJoins,
+    censusSession,
+  });
   for (const record of [...owned].reverse()) {
     const current = snapshot.find((row) => row.pid === record.pid);
     if (!current) continue;
@@ -3115,7 +3653,13 @@ async function stopObserved(
   // Never send a group kill after its leader exited: a reused group could
   // belong to someone else. Remaining group peers make the proof fail closed.
   for (let i = 0; i < 50; i++) {
-    if (await observedQuiet(owned, child.pid, { deadline, probeJoins }))
+    if (
+      await observedQuiet(owned, child.pid, {
+        deadline,
+        probeJoins,
+        censusSession,
+      })
+    )
       return owned;
     assert(performance.now() < deadline, "Owned reap deadline");
     await new Promise((resolve) =>
@@ -3199,9 +3743,14 @@ export async function compileSlice(
     outputLedger,
     observeRoot,
     stopSignal,
+    censusFactory,
   },
 ) {
   if (stopSignal?.aborted) throw stopSignal.reason;
+  const censusBinding =
+    censusFactory === undefined ? null : macCensusFactories.get(censusFactory);
+  assert(censusFactory === undefined || censusBinding, "CENSUS_CAPABILITY");
+  assert(!censusBinding?.proofOnly || out === undefined, "CENSUS_PROOF_ONLY");
   assert(
     process.platform !== "win32" &&
       positive(milliseconds) &&
@@ -3288,9 +3837,28 @@ export async function compileSlice(
   let ownedObserver = null;
   const streams = [],
     outputGates = [];
-  let stdout, stderr, child;
+  let stdout, stderr, child, censusSession;
   try {
     if (hasFailure) throw firstError;
+    if (censusBinding) {
+      assert(
+        workDeadline + COMPILE_CLEANUP_MS <= censusBinding.deadline,
+        "CENSUS_DEADLINE",
+      );
+      censusSession = await openCensusSession(censusFactory, {
+        deadline: Math.min(
+          censusBinding.deadline,
+          workDeadline + COMPILE_CLEANUP_MS,
+        ),
+        workMilliseconds: milliseconds,
+        phase: "compile",
+        startupDeadline: workDeadline,
+      });
+      assert(
+        performance.now() < workDeadline && !stopSignal?.aborted,
+        "CENSUS_DEADLINE",
+      );
+    }
     for (const name of ["stdout", "stderr"]) {
       const stream = createWriteStream(
         path.join(logs, `checkpoint-compile.${name}.log`),
@@ -3323,6 +3891,11 @@ export async function compileSlice(
     }
     [stdout, stderr] = streams;
     if (hasFailure) throw firstError;
+    if (censusBinding)
+      assert(
+        performance.now() < workDeadline && !stopSignal?.aborted,
+        "CENSUS_DEADLINE",
+      );
     child = spawn(executable, args, {
       cwd,
       env: { ...env, TZ: "UTC" },
@@ -3333,7 +3906,13 @@ export async function compileSlice(
   } catch (error) {
     stopSignal?.removeEventListener("abort", cancelled);
     for (const stream of [...streams, ...outputGates]) stream.destroy();
-    throw error;
+    if (censusSession)
+      try {
+        await censusSession.close();
+      } catch {
+        /* Preserve startup/spawn failure. */
+      }
+    throw hasFailure ? firstError : error;
   }
   const outputFinished = Promise.all(
     [...streams, ...outputGates].map((stream) => finished(stream)),
@@ -3379,6 +3958,7 @@ export async function compileSlice(
     deadline: workDeadline + COMPILE_CLEANUP_MS,
     signal: observer.signal,
     probeJoins,
+    censusSession,
   }).then((rows) => {
     snapshotSeen(rows);
     const root = rows.find((row) => row.pid === child.pid);
@@ -3435,6 +4015,7 @@ export async function compileSlice(
         deadline: workDeadline + COMPILE_CLEANUP_MS,
         signal: observer.signal,
         probeJoins,
+        censusSession,
       });
       snapshotSeen(rows);
       observed = observedLineage(rows, observed);
@@ -3496,6 +4077,7 @@ export async function compileSlice(
             observedQuiet(observed, child.pid, {
               deadline: cleanupDeadline,
               probeJoins,
+              censusSession,
             }),
           cleanupDeadline,
         );
@@ -3522,6 +4104,7 @@ export async function compileSlice(
             stopObserved(child, observed, {
               deadline: cleanupDeadline,
               probeJoins,
+              censusSession,
             }),
           cleanupDeadline,
         );
@@ -3530,6 +4113,7 @@ export async function compileSlice(
             observedQuiet(observed, child.pid, {
               deadline: cleanupDeadline,
               probeJoins,
+              censusSession,
             }),
           cleanupDeadline,
         );
@@ -3576,6 +4160,11 @@ export async function compileSlice(
     }
     try {
       await compileWithin(() => Promise.all([...probeJoins]), cleanupDeadline);
+      if (censusSession)
+        await compileWithin(
+          () => censusSession.close(cleanupDeadline),
+          cleanupDeadline,
+        );
       probesJoined = true;
     } catch (error) {
       fail(error, "probe-join");
@@ -3650,16 +4239,18 @@ export async function compileSlice(
       quiescence: "observed-lineage-and-root-group",
       observed,
     };
-    liveCompileSlices.set(result, {
-      loggerIdentity,
-      uid: BigInt(owner.uid),
-      beginWallMs,
-      endWallMs: Date.now(),
-      groupId: child.pid,
-      canonicalOut,
-      outIdentity,
-      observed: observed.map(({ pid, start }) => ({ pid, start })),
-    });
+    if (!censusBinding?.proofOnly)
+      liveCompileSlices.set(result, {
+        loggerIdentity,
+        uid: BigInt(owner.uid),
+        beginWallMs,
+        endWallMs: Date.now(),
+        groupId: child.pid,
+        canonicalOut,
+        outIdentity,
+        observed: observed.map(({ pid, start }) => ({ pid, start })),
+        censusFactory,
+      });
     return result;
   } catch (error) {
     fail(error);
@@ -4126,8 +4717,14 @@ export async function verifyProducer(api, producer) {
 }
 export async function uploadCheckpoint(
   api,
-  { bundle, manifest, producer, observer },
+  { bundle, manifest, producer, observer, censusFactory },
 ) {
+  assert(
+    censusFactory === undefined ||
+      (macCensusFactories.has(censusFactory) &&
+        !macCensusFactories.get(censusFactory).proofOnly),
+    "CENSUS_CAPABILITY",
+  );
   const observe = createUploadObserver(observer);
   return uploadPhase(observe, "upload", async () => {
     await uploadPhase(observe, "state-validation", async () => {
@@ -4148,6 +4745,7 @@ export async function uploadCheckpoint(
         await observedQuiet(
           manifest.compile.observed,
           manifest.compile.groupId,
+          { censusFactory },
         ),
         "Compiler group no longer quiescent",
       );
@@ -4876,7 +5474,9 @@ export async function removeQuiescentSisoLog(
     "Compile output path differs",
   );
   assert(
-    await observedQuiet(proof.observed, proof.groupId),
+    await observedQuiet(proof.observed, proof.groupId, {
+      censusFactory: proof.censusFactory,
+    }),
     "Siso writers must be quiescent",
   );
   await noLinks(out);
@@ -4955,7 +5555,9 @@ export async function removeQuiescentSisoLog(
   };
   await beforeUnlink(record); // Persist fixed private evidence before mutation.
   assert(
-    await observedQuiet(proof.observed, proof.groupId),
+    await observedQuiet(proof.observed, proof.groupId, {
+      censusFactory: proof.censusFactory,
+    }),
     "Siso writers returned",
   );
   await noLinks(out);
@@ -6436,8 +7038,14 @@ export function validateSdkSeal(seal, producer) {
 }
 export async function uploadSdkBundle(
   api,
-  { bundle, completion, producer, observer },
+  { bundle, completion, producer, observer, censusFactory },
 ) {
+  assert(
+    censusFactory === undefined ||
+      (macCensusFactories.has(censusFactory) &&
+        !macCensusFactories.get(censusFactory).proofOnly),
+    "CENSUS_CAPABILITY",
+  );
   const observe = createUploadObserver(observer);
   return uploadPhase(observe, "upload", async () => {
     await uploadPhase(observe, "state-validation", async () => {
@@ -6458,6 +7066,7 @@ export async function uploadSdkBundle(
         await observedQuiet(
           completion.compile.observed,
           completion.compile.groupId,
+          { censusFactory },
         ),
         "SDK compiler no longer quiescent",
       );
