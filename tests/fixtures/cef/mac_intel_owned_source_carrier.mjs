@@ -148,8 +148,10 @@ export function validateReport(report) {
         "sourceLockReference",
         "sourceWriteAdmitted",
         "productionInputWrites",
-        "publicIntelAdmissionDeniedBefore",
-        "publicIntelAdmissionDeniedAfter",
+        "publicOutOfScopeDeniedBefore",
+        "publicOutOfScopeDeniedAfter",
+        "scopedSourceWritesSupported",
+        "scopedSourcePolicy",
         "nativeAcceptance",
         "runtimeReady",
         "failure",
@@ -172,6 +174,9 @@ export function validateReport(report) {
       report.targetArchitecture === "x64" &&
       report.image === "20260824.0482.1" &&
       report.sourceLockReference === SOURCE &&
+      report.scopedSourceWritesSupported === true &&
+      report.scopedSourcePolicy ===
+        "sorng-macintel-owned-source-metadata-intel-20260824-v1" &&
       report.failure === null &&
       report.failureCode === null,
     "INTEL_PROOF_IDENTITY",
@@ -179,8 +184,8 @@ export function validateReport(report) {
   for (const key of [
     "complete",
     "cleanupConfirmed",
-    "publicIntelAdmissionDeniedBefore",
-    "publicIntelAdmissionDeniedAfter",
+    "publicOutOfScopeDeniedBefore",
+    "publicOutOfScopeDeniedAfter",
     "proofWriterClosed",
     "proofWriterCapabilityRetired",
   ])

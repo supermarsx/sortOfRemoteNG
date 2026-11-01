@@ -748,7 +748,8 @@ export function buildEnvironment(
     fail("Closed Linux ARM source metadata environment");
   if (sourceMetadata === "mac-arm")
     assertMacSourceWriteAdmission(undefined, inherited, map);
-  if (sourceMetadata === "mac-intel") assertMacIntelSourceWriteAdmission();
+  if (sourceMetadata === "mac-intel")
+    assertMacIntelSourceWriteAdmission(undefined, inherited, map);
   const env = { ...inherited };
   // Credentials belong to the read/publish client, never upstream build hooks.
   for (const key of Object.keys(env))

@@ -269,9 +269,22 @@ export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   target: "x86_64-apple-darwin",
   source: "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
   platform: "darwin",
+  architecture: "x64",
+  imageOS: "macos15",
+  image: "20260824.0482.1",
   kind: "sorng-macintel-source-metadata",
-  name: "sorng-macintel-complete-owned-inputs-v1-unadmitted",
-  darwinWriteAdmitted: false,
+  name: "sorng-macintel-owned-source-metadata-intel-20260824-v1",
+  darwinWriteAdmitted: true,
+  evidence: Object.freeze({
+    runId: 41348226366,
+    artifactId: 13099539006,
+    source: "499ade0595d3e3d90fa15aea1ffb8499e297bf3f",
+    rawProofBytes: 16278,
+    rawProofSha256:
+      "2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249",
+    artifactZipSha256:
+      "c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5",
+  }),
 });
 const ARM_EXTERNAL = Object.freeze({
   target: MAC_SOURCE_POLICY.target,
@@ -414,11 +427,58 @@ export function macSourceMetadataPlan(identity, out, mode) {
   };
 }
 
-export function assertMacIntelSourceWriteAdmission() {
+export function validateMacIntelSourceWriteScope(identity, host) {
   assert(
-    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted,
-    "MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED",
+    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&
+      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&
+      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&
+      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&
+      host.image === MAC_INTEL_SOURCE_POLICY.image &&
+      host.githubActions === "true" &&
+      host.runnerEnvironment === "github-hosted" &&
+      host.repositoryVisibility === "public",
+    "MAC_INTEL_SOURCE_HOST_SCOPE",
   );
+  if (identity !== undefined)
+    assert(
+      identity?.target === MAC_INTEL_SOURCE_POLICY.target &&
+        identity.source === MAC_INTEL_SOURCE_POLICY.source &&
+        identity.image === MAC_INTEL_SOURCE_POLICY.image &&
+        identity.canonicalRoot ===
+          "/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/" +
+            MAC_INTEL_SOURCE_POLICY.source,
+      "MAC_INTEL_SOURCE_IDENTITY_SCOPE",
+    );
+}
+export function assertMacIntelSourceWriteAdmission(
+  identity,
+  environment = process.env,
+  runner,
+) {
+  validateMacIntelSourceWriteScope(identity, {
+    platform: process.platform,
+    architecture: process.arch,
+    imageOS: process.env.ImageOS,
+    image: process.env.ImageVersion,
+    githubActions: process.env.GITHUB_ACTIONS,
+    runnerEnvironment: process.env.RUNNER_ENVIRONMENT,
+    repositoryVisibility: process.env.GITHUB_REPOSITORY_VISIBILITY,
+  });
+  assert(
+    environment?.ImageOS === process.env.ImageOS &&
+      environment.ImageVersion === process.env.ImageVersion,
+    "MAC_INTEL_SOURCE_ENV_SCOPE",
+  );
+  if (runner !== undefined)
+    assert(
+      runner.target === MAC_INTEL_SOURCE_POLICY.target &&
+        runner.hosted?.platform === MAC_INTEL_SOURCE_POLICY.platform &&
+        runner.hosted.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&
+        runner.hosted.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&
+        runner.hosted.imageVersion === MAC_INTEL_SOURCE_POLICY.image &&
+        runner.hosted.runner === "macos-15-intel",
+      "MAC_INTEL_SOURCE_RUNNER_SCOPE",
+    );
 }
 export function macIntelSourceMetadataPlan(identity, out, mode) {
   assert(
@@ -438,7 +498,7 @@ export function macIntelSourceMetadataPlan(identity, out, mode) {
     "MAC_SOURCE_ROOT",
   );
   assert(out === work + "/source/src/out/Release_GN_x64", "MAC_SOURCE_OUT");
-  assertMacIntelSourceWriteAdmission();
+  assertMacIntelSourceWriteAdmission(identity);
   return {
     mode,
     source: work + "/source",
@@ -1440,6 +1500,16 @@ export async function prepareAuthoritativeMacGn(context, check) {
 }
 export async function prepareAuthoritativeMacIntelGn(context, check) {
   assertMacIntelSourceWriteAdmission();
+  assertMacIntelSourceWriteAdmission(
+    {
+      target: context.runner?.target,
+      source: context.sourceLockIdentity,
+      canonicalRoot: context.work,
+      image: context.env?.ImageVersion,
+    },
+    context.env,
+    context.runner,
+  );
   assert(
     context.sourceLockIdentity === MAC_INTEL_SOURCE_POLICY.source,
     "MAC_SOURCE_ROOT",

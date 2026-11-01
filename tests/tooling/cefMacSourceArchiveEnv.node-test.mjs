@@ -185,12 +185,12 @@ test("policy-bearing source argv rejects malformed or unreviewed grammar before 
   }
 });
 
-test("public host facts do not authorize the still-unadmitted real Intel source codec", () => {
+test("public host facts cannot bypass exact Intel source scope before filesystem IO", () => {
   const helper = path.resolve("scripts/lib/cef-checkpoint-archive.py");
   const code = `import importlib.util,json,pathlib,sys
 spec=importlib.util.spec_from_file_location('archive',sys.argv[1])
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-assert module.MAC_INTEL_SOURCE_WRITE_ADMITTED is False
+assert module.MAC_INTEL_SOURCE_WRITE_ADMITTED is True
 def no_io(*args,**kwargs): raise AssertionError('unexpected filesystem access')
 module.source_metadata_identity=no_io
 module._source_metadata_owned_codec=no_io
@@ -198,8 +198,8 @@ results=[]
 for mode in ('source-record','source-apply','source-verify'):
  try: module.source_metadata_owned(mode,pathlib.Path('/not-read'),pathlib.Path('/not-written'),{},platform_policy='mac-intel')
  except module.CheckpointError as error: results.append(str(error))
- else: raise AssertionError('unadmitted source codec ran')
-print(json.dumps(results))
+ else: raise AssertionError('out-of-scope source codec ran')
+print(json.dumps({'hostEligible':sys.platform=='darwin' and module.platform.machine()=='x86_64','results':results}))
 `;
   const child = spawnSync("python", ["-I", "-B", "-c", code, helper], {
     encoding: "utf8",
@@ -209,8 +209,14 @@ print(json.dumps(results))
     env: { PATH: process.env.PATH, ...facts },
   });
   assert.equal(child.status, 0, child.stderr);
+  const decoded = JSON.parse(child.stdout);
+  assert.equal(typeof decoded.hostEligible, "boolean");
   assert.deepEqual(
-    JSON.parse(child.stdout),
-    modes.map(() => "source-mac-intel-darwin-capability-unreviewed"),
+    decoded.results,
+    modes.map(() =>
+      decoded.hostEligible
+        ? "source-mac-identity-scope"
+        : "source-mac-host-scope",
+    ),
   );
 });

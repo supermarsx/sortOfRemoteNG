@@ -100,13 +100,13 @@ class OwnedCodecRouting(unittest.TestCase):
             return m._source_metadata_owned_codec(mode, self.root, self.sidecar, self.identity,
                                                   self.work, budget or m.Budget(5), 'mac-arm')
 
-    def test_out_of_scope_arm_and_unreviewed_intel_deny_before_any_path_read(self):
+    def test_out_of_scope_arm_and_intel_deny_before_any_path_read(self):
         self.assertTrue(m.MAC_SOURCE_WRITE_ADMITTED)
-        self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
+        self.assertTrue(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
         for policy in ['mac-arm','mac-intel']:
             for mode in m.SOURCE_IO_MODES:
                 with patch.object(sys,'platform','darwin'), patch.object(m,'safe',side_effect=AssertionError('no path access')):
-                    reason = 'source-mac-(host|identity)-scope' if policy=='mac-arm' else 'darwin-capability-unreviewed'
+                    reason = 'source-mac-(host|identity)-scope'
                     with self.assertRaisesRegex(m.CheckpointError, reason):
                         m.source_metadata_owned(mode,self.root,self.sidecar,{},platform_policy=policy)
 

@@ -4,6 +4,8 @@ import vm from "node:vm";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
+import { macSourceOperations } from "../../scripts/cef-engineering-checkpoint.mjs";
+import * as metadata from "../../scripts/lib/cef-mac-source-metadata.mjs";
 
 const source = await readFile("scripts/cef-engineering-checkpoint.mjs", "utf8");
 const helper = source.slice(
@@ -284,4 +286,154 @@ test("actual metadata worker argv keeps one exact trailing Mac policy and Linux 
       ...(policy ? ["--platform-policy", policy] : []),
     ]);
   }
+});
+
+test("each Mac target selects only its own complete observation and authoritative GN operations", () => {
+  for (const [target, mode, names] of [
+    [
+      "aarch64-apple-darwin",
+      "mac-arm",
+      [
+        "macExternalObservationPlan",
+        "readMacExternalObservation",
+        "macExternalObservationEvidence",
+        "macExternalToolsBinding",
+        "prepareAuthoritativeMacGn",
+      ],
+    ],
+    [
+      "x86_64-apple-darwin",
+      "mac-intel",
+      [
+        "macIntelExternalObservationPlan",
+        "readMacIntelExternalObservation",
+        "macIntelExternalObservationEvidence",
+        "macIntelExternalToolsBinding",
+        "prepareAuthoritativeMacIntelGn",
+      ],
+    ],
+  ]) {
+    const ops = macSourceOperations(target);
+    assert(Object.isFrozen(ops));
+    assert.equal(ops.mode, mode);
+    assert.deepEqual(Object.keys(ops).sort(), [
+      "binding",
+      "evidence",
+      "mode",
+      "plan",
+      "prepare",
+      "read",
+    ]);
+    for (const [index, key] of [
+      "plan",
+      "read",
+      "evidence",
+      "binding",
+      "prepare",
+    ].entries())
+      assert.equal(ops[key], metadata[names[index]]);
+  }
+  assert.equal(macSourceOperations("aarch64-unknown-linux-gnu"), null);
+  for (const target of [
+    undefined,
+    "foreign",
+    "aarch64-pc-windows-msvc",
+    {},
+    "mac-intel",
+  ])
+    assert.throws(
+      () => macSourceOperations(target),
+      /Reviewed source metadata target/,
+    );
+});
+
+test("Intel enters the existing pre-acquisition, fixed-five, binding and complete sidecar lifecycle", () => {
+  const ast = ts.createSourceFile(
+    "cli.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const calls = [],
+    objectDeclarations = [];
+  const visit = (node) => {
+    if (ts.isCallExpression(node)) calls.push(node);
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(ast) === "sourceMetadata"
+    )
+      objectDeclarations.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert.equal(objectDeclarations.length, 1);
+  const policy = objectDeclarations[0].initializer.getText(ast);
+  for (const [target, expected] of [
+    ["aarch64-apple-darwin", "mac-arm"],
+    ["x86_64-apple-darwin", "mac-intel"],
+    ["aarch64-unknown-linux-gnu", true],
+  ])
+    assert.equal(
+      vm.runInNewContext(policy, { macSource: macSourceOperations(target) }),
+      expected,
+    );
+  for (const name of ["plan", "read", "evidence", "prepare"])
+    assert.equal(
+      calls.filter(
+        (call) => call.expression.getText(ast) === "macSource." + name,
+      ).length,
+      1,
+    );
+  assert.equal(
+    calls.filter((call) => call.expression.getText(ast) === "macSource.binding")
+      .length,
+    3,
+  );
+  const plan = calls.find(
+    (call) => call.expression.getText(ast) === "macSource.plan",
+  );
+  const argument = plan.arguments[0].getText(ast);
+  for (const mode of ["mac-arm", "mac-intel"]) {
+    const result = vm.runInNewContext("(" + argument + ")", {
+      verified: {},
+      sdkRelation: {},
+      context: { metal: {} },
+      env: { RUNNER_TEMP: "/owned" },
+      output: "/owned/output",
+      hostRemaining: () => 1234,
+      macSource: { mode },
+      SOURCE_ID: "fixed-source",
+    });
+    assert.equal(
+      result.sourceLockIdentity,
+      mode === "mac-intel" ? "fixed-source" : undefined,
+    );
+  }
+  const lifecycle = calls.filter(
+    (call) =>
+      call.expression.getText(ast) === "sourceMetadata" ||
+      call.expression.getText(ast) === "context.checkpoint.sourceMetadata",
+  );
+  assert.deepEqual(lifecycle.map((call) => call.arguments[0].text).sort(), [
+    "source-apply",
+    "source-apply",
+    "source-record",
+    "source-verify",
+  ]);
+  const prepare = calls.find(
+    (call) => call.expression.getText(ast) === "macSource.prepare",
+  );
+  const graph = calls.find(
+    (call) => call.expression.getText(ast) === "graphInventory",
+  );
+  assert(prepare.pos < graph.pos);
+  assert.match(
+    source,
+    /if \(macSource\) \{\s*const fresh = await context\.reobserveMacExternalInputs\(\)/,
+  );
+  assert.match(
+    source,
+    /if \(macSource \|\| TARGET === "aarch64-unknown-linux-gnu"\)/,
+  );
 });

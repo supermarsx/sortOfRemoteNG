@@ -448,6 +448,7 @@ import {
 } from "../../scripts/cef-runtime-ci.mjs";
 import {
   argumentsFor,
+  macSourceOperations,
   main,
 } from "../../scripts/cef-engineering-checkpoint.mjs";
 import {
@@ -7334,7 +7335,7 @@ test("observability preserves every existing API uploader and CLI policy asserti
         ["Mac metadata original host deadline", "hostRemaining(env)>0"],
         [
           "Mac external fingerprint unchanged before source metadata",
-          "canonical(macExternalToolsBinding({},fresh))===canonical(macExternalToolsBinding({},context.macExternalInputs))",
+          "canonical(macSource.binding({},fresh))===canonical(macSource.binding({},context.macExternalInputs))",
         ],
       ]);
     }
@@ -9627,11 +9628,10 @@ test("source metadata production CLI verifies closure before either SDK continua
     cli,
     /if\s*\(sourceMetadata\s*&&\s*!resumedSource\)\s*await sourceMetadata\("source-record"\)/,
   );
-  assert.match(
-    cli,
-    /sourceMetadata:\s*TARGET === "aarch64-unknown-linux-gnu"\s*\?\s*true/,
-  );
-  assert.match(cli, /TARGET === "aarch64-apple-darwin"\s*\?\s*"mac-arm"/);
+  assert.match(cli, /sourceMetadata:\s*macSource\?\.mode\s*\?\?\s*true/);
+  assert.equal(macSourceOperations("aarch64-unknown-linux-gnu"), null);
+  assert.equal(macSourceOperations("aarch64-apple-darwin").mode, "mac-arm");
+  assert.equal(macSourceOperations("x86_64-apple-darwin").mode, "mac-intel");
 });
 
 test("source metadata helper failures retain only fixed labels and separate cleanup flags", () => {
@@ -10682,6 +10682,7 @@ test("actual Linux CLI source transaction retains exact reviewed worker argv and
     "canonical",
     "console",
     "TARGET",
+    "macSource",
     "context",
     `return (${arrow});`,
   )(
@@ -10718,6 +10719,7 @@ test("actual Linux CLI source transaction retains exact reviewed worker argv and
     JSON.stringify,
     { log() {} },
     "aarch64-unknown-linux-gnu",
+    null,
     {},
   );
   // The helper's own deadline ends 60 s early so its progress diagnostic
@@ -11258,72 +11260,86 @@ test("actual checkpoint beforeAcquire obtains its SDK receipt before the externa
       end + "return attestation;".length,
     ) +
     "})";
-  const { mac, options } = await macExternalFixture();
-  const { sdkRelation: oldReceipt, ...verified } = options;
-  assert(oldReceipt);
-  for (const invalid of [false, true]) {
-    let relations = 0,
-      plans = 0,
-      writes = 0,
-      archives = 0,
-      receipt;
-    const original = new Error("controlled archive boundary");
-    const call = vm.runInNewContext(callback, {
-      verified,
-      env: { RUNNER_TEMP: options.runnerTemp },
-      path,
-      randomUUID: () => "11111111-1111-4111-8111-111111111111",
-      hostRemaining: () => 10000,
-      macSdkRelation: async (input) => {
-        relations++;
-        receipt = await mac.macSdkRelation(
-          input,
-          invalid
-            ? sdkRelationIo({ readlink: async () => "MacOSX26.1.sdk" })
-            : sdkRelationIo(),
+  for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin"]) {
+    const { mac, options } = await (target === "x86_64-apple-darwin"
+      ? intelExternalFixture()
+      : macExternalFixture());
+    const { sdkRelation: oldReceipt, ...verified } = options;
+    assert(oldReceipt);
+    for (const invalid of [false, true]) {
+      let relations = 0,
+        plans = 0,
+        writes = 0,
+        archives = 0,
+        receipt;
+      const original = new Error("controlled archive boundary");
+      const call = vm.runInNewContext(callback, {
+        verified,
+        SOURCE_ID: checkpointProfile(target).source,
+        env: { RUNNER_TEMP: options.runnerTemp },
+        path,
+        randomUUID: () => "11111111-1111-4111-8111-111111111111",
+        hostRemaining: () => 10000,
+        macSdkRelation: async (input) => {
+          relations++;
+          receipt = await mac.macSdkRelation(
+            input,
+            invalid
+              ? sdkRelationIo({ readlink: async () => "MacOSX26.1.sdk" })
+              : sdkRelationIo(),
+          );
+          return receipt;
+        },
+        macSource: {
+          ...macSourceOperations(target),
+          plan(input) {
+            plans++;
+            const plan = macSourceOperations(target).plan(input);
+            assert.equal(
+              input.sourceLockIdentity,
+              target === "x86_64-apple-darwin"
+                ? checkpointProfile(target).source
+                : undefined,
+            );
+            assert.equal(input.sdkRelation, receipt);
+            assert.equal(relations, 1);
+            return plan;
+          },
+        },
+        mkdir: async () => {
+          writes++;
+        },
+        realpath: async (file) => file,
+        writeFile: async () => {
+          writes++;
+        },
+        canonical,
+        fail: (condition, message) => assert(condition, message),
+        LIMITS,
+        HELPER: path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+        archiveCommand: async () => {
+          archives++;
+          throw original;
+        },
+      });
+      if (invalid) {
+        await assert.rejects(
+          call({ metal: options.metal, logs: "/owned/logs" }),
+          /MAC_EXTERNAL_SDK_RELATION/,
         );
-        return receipt;
-      },
-      macExternalObservationPlan(input) {
-        plans++;
-        const plan = mac.macExternalObservationPlan(input);
-        assert.equal(input.sdkRelation, receipt);
+        assert.equal(plans, 0);
+        assert.equal(writes, 0);
+        assert.equal(archives, 0);
+      } else {
+        await assert.rejects(
+          call({ metal: options.metal, logs: "/owned/logs" }),
+          (error) => error === original,
+        );
         assert.equal(relations, 1);
-        return plan;
-      },
-      mkdir: async () => {
-        writes++;
-      },
-      realpath: async (file) => file,
-      writeFile: async () => {
-        writes++;
-      },
-      canonical,
-      fail: (condition, message) => assert(condition, message),
-      LIMITS,
-      HELPER: path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
-      archiveCommand: async () => {
-        archives++;
-        throw original;
-      },
-    });
-    if (invalid) {
-      await assert.rejects(
-        call({ metal: options.metal, logs: "/owned/logs" }),
-        /MAC_EXTERNAL_SDK_RELATION/,
-      );
-      assert.equal(plans, 0);
-      assert.equal(writes, 0);
-      assert.equal(archives, 0);
-    } else {
-      await assert.rejects(
-        call({ metal: options.metal, logs: "/owned/logs" }),
-        (error) => error === original,
-      );
-      assert.equal(relations, 1);
-      assert.equal(plans, 1);
-      assert.equal(writes, 2);
-      assert.equal(archives, 1);
+        assert.equal(plans, 1);
+        assert.equal(writes, 2);
+        assert.equal(archives, 1);
+      }
     }
   }
 });
@@ -11854,12 +11870,11 @@ class SdkColon(unittest.TestCase):
   self.assertLess(identity.lineno,delegated.lineno)
   scoped=[n for n in ast.walk(wrapper)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='source_mac_write_admission']
   self.assertEqual(len(scoped),1);self.assertLess(scoped[0].lineno,identity.lineno)
-  for flag in ['MAC_INTEL_SOURCE_WRITE_ADMITTED']:
-   guarded=[n for n in ast.walk(wrapper)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='require'and n.args and isinstance(n.args[0],ast.Name)and n.args[0].id==flag]
-   self.assertEqual(len(guarded),1);self.assertLess(guarded[0].lineno,identity.lineno)
+  intel_scoped=[n for n in ast.walk(wrapper)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='source_mac_intel_write_admission']
+  self.assertEqual(len(intel_scoped),1);self.assertLess(intel_scoped[0].lineno,identity.lineno)
   for platform_policy in ['mac-arm','mac-intel']:
    with patch.object(sys,'platform','darwin'),patch.object(m,'_source_metadata_owned_codec')as core,patch.object(m,'source_metadata_identity')as identity_reader:
-    reason='source-mac-(host|identity)-scope' if platform_policy=='mac-arm'else'darwin-capability-unreviewed'
+    reason='source-mac-(host|identity)-scope'
     with self.assertRaisesRegex(m.CheckpointError,reason):m.source_metadata_owned('source-apply',pathlib.PurePosixPath('/not-read'),pathlib.PurePosixPath('/not-written'),{},platform_policy=platform_policy)
     core.assert_not_called();identity_reader.assert_not_called()
   with patch.object(sys,'platform','linux'),patch.object(m,'_source_metadata_owned_codec')as core:
@@ -12834,7 +12849,7 @@ test("promoted Python package scope preserves both producer envelopes and the un
         /MAC_EXTERNAL_PYTHON_HOST/,
       );
   }
-  assert.equal(arm.mac.MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted, false);
+  assert.equal(arm.mac.MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted, true);
 });
 
 async function intelExternalFixture() {
@@ -12865,14 +12880,14 @@ async function intelExternalFixture() {
   };
 }
 
-test("Intel metadata exact source684 policy is distinct and hard-denies every write mode before data", async () => {
+test("Intel metadata exact source684 policy is distinct and scope-denies every off-host write before data", async () => {
   const { mac, options } = await intelExternalFixture();
   const policy = mac.MAC_INTEL_SOURCE_POLICY;
   assert.equal(
     policy.source,
     "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
   );
-  assert.equal(policy.darwinWriteAdmitted, false);
+  assert.equal(policy.darwinWriteAdmitted, true);
   assert.notEqual(policy.kind, mac.MAC_SOURCE_POLICY.kind);
   const selected = {
     ...identity,
@@ -12886,7 +12901,7 @@ test("Intel metadata exact source684 policy is distinct and hard-denies every wr
   for (const mode of ["source-record", "source-verify", "source-apply"]) {
     assert.throws(
       () => sourceMetadataPlan(selected, out, mode),
-      /MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+      /MAC_INTEL_SOURCE_HOST_SCOPE/,
     );
     assert.throws(
       () => mac.macSourceMetadataPlan(selected, out, mode),
@@ -12931,11 +12946,11 @@ test("Intel metadata exact source684 policy is distinct and hard-denies every wr
     mac.prepareAuthoritativeMacIntelGn(unreadable, () => {
       throw Error("CLOCK_MUST_NOT_BE_READ");
     }),
-    /MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+    /MAC_INTEL_SOURCE_HOST_SCOPE/,
   );
   assert.throws(
     () => buildEnvironment(options.map, {}, unreadable, "mac-intel"),
-    /MAC_INTEL_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+    /MAC_INTEL_SOURCE_HOST_SCOPE/,
   );
   assert.throws(() =>
     buildEnvironment(
@@ -13150,28 +13165,28 @@ import types,pathlib,sys,json
 from unittest.mock import patch
 file=pathlib.Path(sys.argv[1]);m=types.ModuleType('intel_proof');m.__file__=str(file)
 exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
-assert m.MAC_INTEL_SOURCE_WRITE_ADMITTED is False and m.MAC_SOURCE_WRITE_ADMITTED is True
+assert m.MAC_INTEL_SOURCE_WRITE_ADMITTED is True and m.MAC_SOURCE_WRITE_ADMITTED is True
 try:m.source_mac_write_admission({})
 except m.CheckpointError as e:assert str(e) in ('source-mac-host-scope','source-mac-identity-scope')
 else:raise AssertionError('unscoped ARM admitted')
 for mode in ('source-record','source-apply','source-verify'):
  with patch.object(m,'safe',side_effect=AssertionError('data read')),patch.object(m,'source_snapshot',side_effect=AssertionError('data read')):
   try:m.source_metadata(mode,None,None,None,platform_policy='mac-intel')
-  except m.CheckpointError as e:assert str(e)=='source-mac-intel-darwin-capability-unreviewed'
+  except m.CheckpointError as e:assert str(e) in ('source-mac-host-scope','source-mac-identity-scope')
   else:raise AssertionError('admitted')
  with patch.object(sys,'argv',[str(file),mode,'--input','/must-not-read','--output','/must-not-write','--manifest','/must-not-read','--platform-policy','mac-intel']),patch.object(m.Path,'read_bytes',side_effect=AssertionError('data read')):
   try:m.main()
-  except m.CheckpointError as e:assert str(e)=='source-mac-intel-darwin-capability-unreviewed'
+  except m.CheckpointError as e:assert str(e)=='source-mac-host-scope'
   else:raise AssertionError('CLI admitted')
 source=m.MAC_INTEL_SOURCE;work='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+source
-identity=dict(target='x86_64-apple-darwin',source=source,producer='1'*64,canonicalRoot=work,image='20261021.278.1',tools='2'*64,graph='3'*64,siso='4'*64)
+identity=dict(target='x86_64-apple-darwin',source=source,producer='1'*64,canonicalRoot=work,image='20260824.0482.1',tools='2'*64,graph='3'*64,siso='4'*64)
 with patch.object(m,'safe',side_effect=lambda p:p):
  assert m.source_metadata_identity(identity,'mac-intel')==pathlib.Path(work)
  for delta in ({'source':'0'*64},{'target':'aarch64-apple-darwin'},{'canonicalRoot':'/arbitrary'}):
   try:m.source_metadata_identity({**identity,**delta},'mac-intel')
   except m.CheckpointError:pass
   else:raise AssertionError('identity admitted')
-print('Intel actual Python function+CLI all three false-before-data and exact identity PASS')
+print('Intel actual Python function+CLI all three scoped-before-data and exact identity PASS')
 `,
     [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
   );

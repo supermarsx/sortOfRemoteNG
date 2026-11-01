@@ -31,11 +31,11 @@ class IntelCodec(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def core(self,mode,budget=None):
         with m.source_io_scope(mode):return m._source_metadata_owned_codec(mode,self.root,self.sidecar,self.identity,self.work,budget or m.Budget(5),'mac-intel')
-    def test_public_gate_stays_false_before_all_io_and_mutations(self):
-        self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
+    def test_public_scope_denies_before_all_io_and_mutations(self):
+        self.assertTrue(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
         for mode in m.SOURCE_IO_MODES:
             with patch.object(m,'safe',side_effect=AssertionError('no path access')),patch.object(m,'_source_metadata_owned_codec',side_effect=AssertionError('no private call')),patch.object(m.os,'utime',side_effect=AssertionError('no mutation')):
-                with self.assertRaisesRegex(m.CheckpointError,'source-mac-intel-darwin-capability-unreviewed'):
+                with self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):
                     m.source_metadata(mode,None,None,None,platform_policy='mac-intel')
     def test_owned_intel_birth_is_opaque_and_nonowned_stays_strict(self):
         info=SimpleNamespace(st_size=1,st_mtime_ns=2,st_dev=3,st_ino=4,st_mode=0o100600,st_nlink=1,st_ctime_ns=5,st_uid=6,st_gid=7,st_birthtime=1790000000.125)
@@ -147,9 +147,10 @@ class ActualProofWriter(unittest.TestCase):
             written=self.write()
             self.assertEqual(json.loads((self.out/m.SOURCE_METADATA_NAME).read_bytes()),self.value)
             self.assertEqual(written['bytes'],(self.out/m.SOURCE_METADATA_NAME).stat().st_size)
-            self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
+            self.assertTrue(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
             for mode in m.SOURCE_IO_MODES:
-                with self.assertRaisesRegex(m.CheckpointError,'source-mac-intel-darwin-capability-unreviewed'):m.source_metadata(mode,None,None,None,platform_policy='mac-intel')
+                for attempted in (None,self.identity):
+                    with self.assertRaisesRegex(m.CheckpointError,'source-mac-identity-scope'):m.source_metadata(mode,None,None,attempted,platform_policy='mac-intel')
         with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write()
         with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m._mac_intel_owned_proof_path(receipt)
     def test_wrong_identity_kind_policy_path_phase_and_forgery_never_write(self):
@@ -199,6 +200,43 @@ class ActualProofWriter(unittest.TestCase):
                 self.assertTrue(result['recreatedInode']);self.assertTrue(result['corruptBytesDeniedBeforeUtime'])
                 self.assertTrue(result['verified']);self.assertTrue(tree.cleanup())
             with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m._mac_intel_owned_proof_path(receipt)
+
+
+class IntelPublicScope(unittest.TestCase):
+    def identity(self):
+        return {'target':'x86_64-apple-darwin','source':m.MAC_INTEL_SOURCE,'image':m.MAC_INTEL_SOURCE_IMAGE,
+                'canonicalRoot':'/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+m.MAC_INTEL_SOURCE,
+                **{key:'a'*64 for key in ('producer','tools','graph','siso')}}
+    def host(self,**changes):
+        stack=ExitStack();stack.enter_context(patch.object(sys,'platform','darwin'))
+        stack.enter_context(patch.object(m.platform,'machine',return_value='x86_64'))
+        stack.enter_context(patch.dict(os.environ,{'ImageOS':'macos15','ImageVersion':m.MAC_INTEL_SOURCE_IMAGE,
+            'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public',**changes},clear=True))
+        return stack
+    def test_exact_qualified_public_scope_reaches_codec_and_binds_raw_proof(self):
+        identity=self.identity();work=Path(identity['canonicalRoot'])
+        with self.host(),patch.object(m,'safe',side_effect=lambda path:path),patch.object(m,'_source_metadata_owned_codec',return_value={'complete':True})as core:
+            for mode in m.SOURCE_IO_MODES:
+                self.assertEqual(m.source_metadata_owned(mode,work/'source',work/'source/src/out/Release_GN_x64'/m.SOURCE_METADATA_NAME,identity,platform_policy='mac-intel'),{'complete':True})
+                self.assertEqual(core.call_args.args[4],work);self.assertEqual(core.call_args.args[-1],'mac-intel')
+        self.assertEqual(m.MAC_INTEL_SOURCE_PROOF,(41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,
+            '2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249',
+            'c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5'))
+    def test_unqualified_host_identity_and_cli_fail_before_filesystem_io(self):
+        cases=[({'ImageVersion':'latest'},{}),({'ImageOS':'macos14'},{}),({'GITHUB_ACTIONS':'false'},{}),
+            ({'RUNNER_ENVIRONMENT':'self-hosted'},{}),({'GITHUB_REPOSITORY_VISIBILITY':'private'},{}),
+            ({},{'source':'0'*64}),({},{'target':'aarch64-apple-darwin'}),({},{'image':'latest'}),({},{'canonicalRoot':'/arbitrary'})]
+        for env,identity in cases:
+            with self.host(**env),patch.object(m,'source_metadata_identity',side_effect=AssertionError('no identity IO')),patch.object(m,'safe',side_effect=AssertionError('no filesystem IO')),patch.object(m,'_source_metadata_owned_codec',side_effect=AssertionError('no codec')):
+                for mode in m.SOURCE_IO_MODES:
+                    with self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):
+                        m.source_metadata_owned(mode,None,None,{**self.identity(),**identity},platform_policy='mac-intel')
+        for platform_name,architecture in [('linux','x86_64'),('darwin','arm64')]:
+            with self.host(),patch.object(sys,'platform',platform_name),patch.object(m.platform,'machine',return_value=architecture),patch.object(m,'safe',side_effect=AssertionError('no path IO')):
+                with self.assertRaisesRegex(m.CheckpointError,'source-mac-host-scope'):m.source_metadata_owned('source-apply',None,None,self.identity(),platform_policy='mac-intel')
+        for mode in m.SOURCE_IO_MODES:
+            with self.host(ImageVersion='wrong'),patch.object(sys,'argv',['archive',mode,'--input','PRIVATE','--output','PRIVATE','--manifest','PRIVATE','--platform-policy','mac-intel']),patch.object(Path,'read_bytes',side_effect=AssertionError('no manifest read')):
+                with self.assertRaisesRegex(m.CheckpointError,'source-mac-host-scope'):m.main()
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

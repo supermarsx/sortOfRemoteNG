@@ -512,7 +512,9 @@ class Test(unittest.TestCase):
   source=inspect.getsource(m.mac_external_context)
   self.assertIn("roots['python'] == _MAC_PYTHON_PACKAGE_QUALIFICATION[0]",source)
   self.assertIn('Frameworks/Python.framework/Versions/3.14/bin/python3.14',source)
-  self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
+  self.assertTrue(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
+  with patch.object(m,'safe',side_effect=AssertionError('no public source IO')):
+   with self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):m.source_metadata_owned('source-record',None,None,{},platform_policy='mac-intel')
  def test_complete_and_readback_share_original_budget(self):
   with tempfile.TemporaryDirectory() as folder:
    budget=m.Budget(5);value=copy.deepcopy(context);value['roots']={'python':folder};value['requiredPins']=[];snapshot={'entries':[],'bytes':0};calls=[];written=[]

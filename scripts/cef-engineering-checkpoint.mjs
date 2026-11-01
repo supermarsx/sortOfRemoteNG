@@ -31,6 +31,11 @@ import {
   macExternalToolsBinding,
   macExternalObservationEvidence,
   prepareAuthoritativeMacGn,
+  macIntelExternalObservationPlan,
+  readMacIntelExternalObservation,
+  macIntelExternalToolsBinding,
+  macIntelExternalObservationEvidence,
+  prepareAuthoritativeMacIntelGn,
 } from "./lib/cef-mac-source-metadata.mjs";
 import { verifyToolchainFiles } from "./lib/browser-custom-runtime.mjs";
 import {
@@ -95,6 +100,30 @@ const fail = (ok, message) => {
   if (!ok) throw new Error(message);
 };
 const json = async (p) => JSON.parse(await readFile(p, "utf8"));
+export function macSourceOperations(target) {
+  if (target === "aarch64-unknown-linux-gnu") return null;
+  if (target === "aarch64-apple-darwin")
+    return Object.freeze({
+      mode: "mac-arm",
+      plan: macExternalObservationPlan,
+      read: readMacExternalObservation,
+      evidence: macExternalObservationEvidence,
+      binding: macExternalToolsBinding,
+      prepare: prepareAuthoritativeMacGn,
+    });
+  fail(
+    target === "x86_64-apple-darwin",
+    "Reviewed source metadata target required",
+  );
+  return Object.freeze({
+    mode: "mac-intel",
+    plan: macIntelExternalObservationPlan,
+    read: readMacIntelExternalObservation,
+    evidence: macIntelExternalObservationEvidence,
+    binding: macIntelExternalToolsBinding,
+    prepare: prepareAuthoritativeMacIntelGn,
+  });
+}
 // A fresh live capability per CLI phase. Saved state never carries authority.
 export async function withMacCensusFactory(
   { env, profile, python, canonicalRoot },
@@ -275,6 +304,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 async function checkpointMain(argv, env, observer) {
   const profile = checkpointProfile(env.CEF_ENGINEERING_TARGET),
     { inputs: INPUTS, target: TARGET, source: SOURCE_ID } = profile;
+  const macSource = macSourceOperations(TARGET);
   const options = argumentsFor(argv),
     producer =
       options.mode === "probe-sdk" ? sdkProbeAuthority(env) : authority(env);
@@ -365,19 +395,14 @@ async function checkpointMain(argv, env, observer) {
             checkout: ROOT,
             runnerMode: "hosted",
             engineering: {
-              sourceMetadata:
-                TARGET === "aarch64-unknown-linux-gnu"
-                  ? true
-                  : TARGET === "aarch64-apple-darwin"
-                    ? "mac-arm"
-                    : false,
+              sourceMetadata: macSource?.mode ?? true,
               completeSdk: execution.mode === "complete-sdk",
               packagingMilliseconds: () =>
                 Math.floor(
                   Math.min(40 * 60_000, hostRemaining(env) - 20 * 60_000),
                 ),
               workspace: work,
-              ...(TARGET === "aarch64-apple-darwin"
+              ...(macSource
                 ? {
                     async beforeAcquire(context) {
                       const sdkRelation = await macSdkRelation({
@@ -393,8 +418,11 @@ async function checkpointMain(argv, env, observer) {
                         env.RUNNER_TEMP,
                         "cef-mac-inputs-" + randomUUID(),
                       );
-                      const selected = macExternalObservationPlan({
+                      const selected = macSource.plan({
                         ...verified,
+                        ...(macSource.mode === "mac-intel"
+                          ? { sourceLockIdentity: SOURCE_ID }
+                          : {}),
                         sdkRelation,
                         metal: context.metal,
                         runnerTemp: env.RUNNER_TEMP,
@@ -439,7 +467,7 @@ async function checkpointMain(argv, env, observer) {
                             ),
                         },
                       );
-                      const attestation = await readMacExternalObservation(
+                      const attestation = await macSource.read(
                         selected,
                         result,
                         () => {
@@ -454,7 +482,7 @@ async function checkpointMain(argv, env, observer) {
                           context.logs,
                           path.basename(output) + "-binding.json",
                         ),
-                        canonical(macExternalObservationEvidence(attestation)),
+                        canonical(macSource.evidence(attestation)),
                         { flag: "wx" },
                       );
                       return attestation;
@@ -462,16 +490,13 @@ async function checkpointMain(argv, env, observer) {
                   }
                 : {}),
               async afterGn(context) {
-                if (TARGET === "aarch64-apple-darwin") {
-                  const transition = await prepareAuthoritativeMacGn(
-                    context,
-                    () => {
-                      fail(
-                        hostRemaining(env) > 0,
-                        "Mac metadata original host deadline",
-                      );
-                    },
-                  );
+                if (macSource) {
+                  const transition = await macSource.prepare(context, () => {
+                    fail(
+                      hostRemaining(env) > 0,
+                      "Mac metadata original host deadline",
+                    );
+                  });
                   await writeFile(
                     path.join(
                       context.logs,
@@ -590,8 +615,8 @@ async function checkpointMain(argv, env, observer) {
                   image: env.ImageVersion,
                   tools: sha(
                     canonical(
-                      TARGET === "aarch64-apple-darwin"
-                        ? macExternalToolsBinding(
+                      macSource
+                        ? macSource.binding(
                             {
                               toolchain: verified.toolchain,
                               supplementalMetal: macMetalFingerprint(
@@ -634,12 +659,7 @@ async function checkpointMain(argv, env, observer) {
                 context.checkpoint = { out, identity, digest, recipePath };
                 let resumedSource = false;
                 let sourceMetadata;
-                if (
-                  [
-                    "aarch64-unknown-linux-gnu",
-                    "aarch64-apple-darwin",
-                  ].includes(TARGET)
-                ) {
+                if (macSource || TARGET === "aarch64-unknown-linux-gnu") {
                   fail(
                     context.env.PYTHONDONTWRITEBYTECODE === "1" &&
                       context.env.PYTHONPYCACHEPREFIX === undefined &&
@@ -656,15 +676,12 @@ async function checkpointMain(argv, env, observer) {
                   });
                   sourceMetadata = async (mode) => {
                     const selected = sourceMetadataPlan(identity, out, mode);
-                    if (TARGET === "aarch64-apple-darwin") {
+                    if (macSource) {
                       const fresh = await context.reobserveMacExternalInputs();
                       fail(
-                        canonical(macExternalToolsBinding({}, fresh)) ===
+                        canonical(macSource.binding({}, fresh)) ===
                           canonical(
-                            macExternalToolsBinding(
-                              {},
-                              context.macExternalInputs,
-                            ),
+                            macSource.binding({}, context.macExternalInputs),
                           ),
                         "Mac external fingerprint unchanged before source metadata",
                       );

@@ -1,4 +1,4 @@
-"""Fixed Intel scratch codec proof. Public Intel writes stay unadmitted."""
+"""Fixed Intel scratch codec proof. This diagnostic writes no production inputs."""
 import hashlib
 import importlib.util
 import json
@@ -37,12 +37,12 @@ def failure_code(error,module):
 
 
 def public_denied(module, output):
-    need(module.MAC_INTEL_SOURCE_WRITE_ADMITTED is False)
+    need(module.MAC_INTEL_SOURCE_WRITE_ADMITTED is True)
     for mode in module.SOURCE_IO_MODES:
         try:
             module.source_metadata(mode, output/'must-not-read', output/'must-not-write', {}, platform_policy='mac-intel')
         except module.CheckpointError as error:
-            need(str(error) == 'source-mac-intel-darwin-capability-unreviewed')
+            need(str(error) == 'source-mac-identity-scope')
         else:
             need(False)
 
@@ -178,7 +178,11 @@ def preflight(args):
     base.at_stage('helper-import')
     module = base.helper()
     base.at_stage('admission')
-    need(module.MAC_INTEL_SOURCE_WRITE_ADMITTED is False and module.MAC_INTEL_SOURCE == SOURCE)
+    need(module.MAC_INTEL_SOURCE_WRITE_ADMITTED is True and module.MAC_INTEL_SOURCE == SOURCE and
+         module.MAC_INTEL_SOURCE_IMAGE == base.IMAGE and module.MAC_INTEL_SOURCE_PROOF ==
+         (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,
+          '2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249',
+          'c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5'))
     started = int(os.environ['CEF_MAC_PACKAGE_JOB_STARTED_MS'])
     now = time.time_ns()//1_000_000
     seconds = min(100,(started+300000-now-30000)//1000)
@@ -193,8 +197,9 @@ def main(args):
     report = {'schemaVersion':1,'kind':'sorng-macintel-owned-source-proof','complete':False,
               'hostPlatform':'darwin','hostArchitecture':'x86_64','targetArchitecture':'x64',
               'image':base.IMAGE,'sourceLockReference':SOURCE,'sourceWriteAdmitted':False,
-              'productionInputWrites':False,'publicIntelAdmissionDeniedBefore':False,
-              'publicIntelAdmissionDeniedAfter':False,'nativeAcceptance':False,'runtimeReady':False,
+              'productionInputWrites':False,'publicOutOfScopeDeniedBefore':False,
+              'publicOutOfScopeDeniedAfter':False,'scopedSourceWritesSupported':True,
+              'scopedSourcePolicy':module.MAC_INTEL_SOURCE_METADATA_POLICY,'nativeAcceptance':False,'runtimeReady':False,
               'proofWriterClosed':False,'proofWriterCapabilityRetired':False,'failure':None,'failureCode':None}
     def failed(error):
         if report['failure'] is None:
@@ -215,11 +220,11 @@ def main(args):
                      all(row['exactMtimeReadback'] and row['symlinkTargetUnchanged'] for row in report['capability']['rows']))
                 base.at_stage('public-gates')
                 public_denied(module,output)
-                report['publicIntelAdmissionDeniedBefore'] = True
+                report['publicOutOfScopeDeniedBefore'] = True
                 base.at_stage('roundtrip')
                 report['roundtrip'] = roundtrip(tree,module,budget)
                 public_denied(module,output)
-                report['publicIntelAdmissionDeniedAfter'] = True
+                report['publicOutOfScopeDeniedAfter'] = True
                 budget.check()
             except BaseException as error:
                 failed(error)

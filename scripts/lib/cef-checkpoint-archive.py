@@ -1156,6 +1156,7 @@ def metadata(root, name, value, source=False, owned_sidecar=False):
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macintel-source-metadata' and value['policy'] == MAC_INTEL_SOURCE_METADATA_POLICY and
                   value['identity'].get('target') == 'x86_64-apple-darwin' and value['identity'].get('source') == MAC_INTEL_SOURCE and
+                  value['identity'].get('image') == MAC_INTEL_SOURCE_IMAGE and
                   (value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE or
                    _mac_intel_proof_writer_allowed(root,value)) and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_x64')), 'source-sidecar-role')
@@ -1407,8 +1408,13 @@ MAC_SOURCE_IMAGE = '20260824.0482.1'
 MAC_SOURCE_PROOF = (41328841230, 13092905128,
                     'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')
 MAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'
-MAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-complete-owned-inputs-v1-unadmitted'
-MAC_INTEL_SOURCE_WRITE_ADMITTED = False
+MAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'
+MAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'
+# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.
+MAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,
+    '2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249',
+    'c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5')
+MAC_INTEL_SOURCE_WRITE_ADMITTED = True
 MAC_EXTERNAL_ROLE = None
 MAC_EXTERNAL_PHASE = None
 MAC_REPORT_FAILURE = False
@@ -2182,6 +2188,22 @@ def source_mac_write_admission(identity):
             'source-mac-identity-scope')
 
 
+def source_mac_intel_write_host_admission():
+    import sys
+    require(MAC_INTEL_SOURCE_WRITE_ADMITTED and sys.platform=='darwin' and platform.machine()=='x86_64' and
+            os.environ.get('ImageOS')=='macos15' and os.environ.get('ImageVersion')==MAC_INTEL_SOURCE_IMAGE and
+            os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public','source-mac-host-scope')
+
+
+def source_mac_intel_write_admission(identity):
+    source_mac_intel_write_host_admission()
+    require(isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and
+            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and
+            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,
+            'source-mac-identity-scope')
+
+
 def source_metadata_identity(identity, platform_policy=None):
     fields = {'target','source','producer','canonicalRoot','image','tools','graph','siso'}
     require(isinstance(identity, dict) and set(identity) == fields and
@@ -2195,7 +2217,7 @@ def source_metadata_identity(identity, platform_policy=None):
                 identity['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,
                 'source-root')
     if platform_policy == 'mac-intel':
-        require(identity['source'] == MAC_INTEL_SOURCE and identity['canonicalRoot'] ==
+        require(identity['source'] == MAC_INTEL_SOURCE and identity['image'] == MAC_INTEL_SOURCE_IMAGE and identity['canonicalRoot'] ==
                 '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE, 'source-root')
     return safe(Path(identity['canonicalRoot']))
 
@@ -2283,8 +2305,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     SOURCE_PATH_MODE = mode
     require(platform_policy in (None, 'mac-arm', 'mac-intel'), 'source-platform-policy')
     if platform_policy == 'mac-intel':
-        # Explicit unadmitted policy: fail before platform, identity or filesystem reads.
-        require(MAC_INTEL_SOURCE_WRITE_ADMITTED, 'source-mac-intel-darwin-capability-unreviewed')
+        source_mac_intel_write_admission(identity)
     if platform_policy == 'mac-arm':
         source_mac_write_admission(identity)
     require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
@@ -2790,7 +2811,7 @@ def main():
     CLI_SOURCE_MODE = args.mode if args.mode in SOURCE_IO_MODES else None
     require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
     if args.platform_policy == 'mac-intel':
-        require(MAC_INTEL_SOURCE_WRITE_ADMITTED, 'source-mac-intel-darwin-capability-unreviewed')
+        source_mac_intel_write_host_admission()
     links = {}
     if args.generated_links:
         data = Path(args.generated_links).read_bytes()
