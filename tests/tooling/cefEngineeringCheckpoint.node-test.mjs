@@ -347,6 +347,7 @@ import {
   unlink,
   realpath,
   lstat,
+  opendir,
   rename,
   open,
   cp,
@@ -5826,6 +5827,31 @@ test("post-slice link diagnostic bounds traversal, link count, target and escape
   assert.equal(LINK_DIAGNOSTIC_LIMITS.milliseconds, 180000);
 });
 
+function linkDiagnosticWithClock(clock) {
+  // Execute the unchanged production body with a test-owned monotonic clock.
+  // Real timeout scheduling remains in place; no production limit is extended.
+  return new Function(
+    "assert",
+    "path",
+    "lstat",
+    "opendir",
+    "readlink",
+    "LINK_DIAGNOSTIC_LIMITS",
+    "canonical",
+    "performance",
+    `return (${generatedLinkInventory.toString()});`,
+  )(
+    assert,
+    path,
+    lstat,
+    opendir,
+    readlink,
+    LINK_DIAGNOSTIC_LIMITS,
+    canonical,
+    clock,
+  );
+}
+
 test("post-slice link diagnostic closes own directory on denial and hung read deadline with fixed errors", async (t) => {
   const root = await scratch(t);
   await writeFile(path.join(root, "a"), "a");
@@ -5845,18 +5871,24 @@ test("post-slice link diagnostic closes own directory on denial and hung read de
   assert.equal(canonical(denied).includes("raw-secret"), false);
   let closed = 0,
     pending = true,
-    settleRead;
-  const result = await generatedLinkInventory(root, {
+    settleRead,
+    now = 0;
+  const stamp = await lstat(root);
+  const run = linkDiagnosticWithClock({ now: () => now });
+  const result = await run(root, {
     limits: { milliseconds: 20 },
     io: {
+      lstat: async () => stamp,
       opendir: async () => ({
-        read: () =>
-          new Promise((resolve) => {
+        read: () => {
+          now = 21;
+          return new Promise((resolve) => {
             settleRead = () => {
               pending = false;
               resolve(null);
             };
-          }),
+          });
+        },
         close: async () => {
           if (pending)
             throw Object.assign(new Error("concurrent read"), {
@@ -5870,6 +5902,8 @@ test("post-slice link diagnostic closes own directory on denial and hung read de
   assert.equal(result.failure, "deadline");
   assert.equal(result.complete, false);
   assert.equal(closed, 0);
+  assert.equal(now, 21);
+  assert.equal(typeof settleRead, "function", "pending read was entered");
   settleRead();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(closed, 1);
@@ -5882,26 +5916,36 @@ test("post-slice link diagnostic closes own directory on denial and hung read de
 test("post-slice link diagnostic closes late opendir handles and rejects undersized fixed envelopes", async (t) => {
   const root = await scratch(t);
   let settleOpen,
-    closed = 0;
-  const result = await generatedLinkInventory(root, {
+    closed = 0,
+    now = 0;
+  const stamp = await lstat(root);
+  const run = linkDiagnosticWithClock({ now: () => now });
+  const result = await run(root, {
     limits: { milliseconds: 20 },
     io: {
-      opendir: () =>
-        new Promise((resolve) => {
+      lstat: async () => stamp,
+      opendir: () => {
+        now = 21;
+        return new Promise((resolve) => {
           settleOpen = () =>
             resolve({
               close: async () => {
                 closed++;
               },
             });
-        }),
+        });
+      },
     },
   });
   assert.equal(result.failure, "deadline");
   assert.equal(closed, 0);
+  assert.equal(now, 21);
+  assert.equal(typeof settleOpen, "function", "pending open was entered");
   settleOpen();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(closed, 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, 1); // No double-close after late open completion.
   await assert.rejects(
     generatedLinkInventory(root, { limits: { outputBytes: 1 } }),
     /error-envelope capacity/,
@@ -5916,6 +5960,39 @@ test("post-slice link diagnostic closes late opendir handles and rejects undersi
   });
   assert.equal(minimum.failure, "io-error");
   assert.ok(Buffer.byteLength(canonical(minimum)) <= 512);
+});
+
+test("post-slice link diagnostic can expire during ancestor IO before owning an open callback", async (t) => {
+  const root = await scratch(t),
+    stamp = await lstat(root);
+  let enteredOpen = false,
+    finishStat,
+    delay;
+  const slowStat = new Promise((resolve) => {
+    finishStat = () => resolve(stamp);
+  });
+  try {
+    const result = await generatedLinkInventory(root, {
+      limits: { milliseconds: 20 },
+      io: {
+        lstat: () => {
+          delay ??= setTimeout(finishStat, 50);
+          return slowStat;
+        },
+        opendir: () => {
+          enteredOpen = true;
+          assert.fail("expired ancestor IO must not open a directory");
+        },
+      },
+    });
+    assert.equal(result.failure, "deadline");
+    assert.equal(result.complete, false);
+    assert.equal(enteredOpen, false);
+  } finally {
+    clearTimeout(delay);
+    finishStat();
+    await slowStat;
+  }
 });
 
 test("post-slice link diagnostic denies root aliases and changed directory identities", async (t) => {
