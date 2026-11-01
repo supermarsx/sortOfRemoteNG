@@ -614,9 +614,12 @@ test("capacity already sufficient touches no disposable directory or command", a
   );
 });
 
-test("checkpoint reserve reclaims only reviewed documentation while retaining the 100 GiB build minimum", async () => {
+test("checkpoint reserve reclaims reviewed documentation while retaining the 100 GiB build minimum", async () => {
   const documents = "/usr/share/doc";
-  assert.deepEqual(RECIPE.linuxCheckpointCleanupPaths, [documents]);
+  assert.deepEqual(RECIPE.linuxCheckpointCleanupPaths, [
+    documents,
+    "/usr/share/swift",
+  ]);
   assert.equal(RECIPE.minimumFreeDiskGiB, 100);
   assert.equal(RECIPE.linuxCheckpointReserveGiB, 4);
   assert.throws(
@@ -670,6 +673,135 @@ test("checkpoint reserve reclaims only reviewed documentation while retaining th
   await assert.rejects(
     cleanupLinuxCapacity({ ...capacityOptions, checkpointReserve: "4" }, f.io),
     /Invalid/,
+  );
+});
+
+test("checkpoint-only Swift cleanup uses the exact measured unused host root and preserves every guard", async () => {
+  const swift = "/usr/share/swift";
+  assert.equal(
+    assertCleanupTarget(swift, { ...cleanupOptions, checkpointReserve: true }),
+    swift,
+  );
+  assert.throws(
+    () => assertCleanupTarget(swift, cleanupOptions),
+    /allowlisted/,
+  );
+  for (const candidate of [
+    swift + "/usr",
+    swift + "-other",
+    "/usr/local/share/powershell",
+  ])
+    assert.throws(
+      () =>
+        assertCleanupTarget(candidate, {
+          ...cleanupOptions,
+          checkpointReserve: true,
+        }),
+      /allowlisted/,
+    );
+  for (const patch of [
+    { symlink: true },
+    { canonical: "/foreign" },
+    { platform: "darwin" },
+    { env: { ...hosted, RUNNER_ENVIRONMENT: "self-hosted" } },
+    { env: { ...hosted, GITHUB_REPOSITORY_VISIBILITY: "private" } },
+    { checkout: swift + "/checkout" },
+    { temp: swift + "/temp" },
+  ])
+    assert.throws(() =>
+      assertCleanupTarget(swift, {
+        ...cleanupOptions,
+        checkpointReserve: true,
+        ...patch,
+      }),
+    );
+
+  // Read-only run41332085052 measured this allocation on image20261026.354.1.
+  // This exercises the existing admission code; actual reclaim is not assumed.
+  const measured = 3710959616;
+  const f = capacityFixture({
+    freeGiB: 103.11,
+    gains: { [swift]: measured / 1024 ** 3 },
+  });
+  f.present.clear();
+  f.present.add(swift);
+  const command = f.io.command;
+  f.io.command = (...args) =>
+    args[1].includes("du") ? `${measured}\t${swift}` : command(...args);
+  assert.deepEqual(
+    await cleanupLinuxCapacity(
+      { ...capacityOptions, checkpointReserve: true },
+      f.io,
+    ),
+    [swift],
+  );
+  const receipt = f.receipts.at(-1);
+  assert.equal(receipt.requiredFreeGiB, 104);
+  assert.equal(receipt.buildMinimumGiB, 100);
+  assert.equal(receipt.checkpointReserveGiB, 4);
+  assert(receipt.freeDiskAfterGiB > 106.56 && receipt.sufficient);
+  assert(f.calls.every((call) => call.candidate === swift));
+  const fresh = capacityFixture({ freeGiB: 103.11 });
+  fresh.present.add(swift);
+  assert.deepEqual(await cleanupLinuxCapacity(capacityOptions, fresh.io), []);
+  assert.equal(fresh.calls.length, 0);
+});
+
+test("checkpoint Swift aliases are rejected before any privileged inventory or deletion", async () => {
+  for (const alias of ["symbolic", "canonical"]) {
+    const f = capacityFixture({ freeGiB: 103.11 });
+    f.present.clear();
+    f.present.add("/usr/share/swift");
+    const lstat = f.io.lstat;
+    if (alias === "symbolic")
+      f.io.lstat = async (...args) => ({
+        ...(await lstat(...args)),
+        isSymbolicLink: () => true,
+      });
+    else f.io.realpath = async () => "/foreign";
+    await assert.rejects(
+      cleanupLinuxCapacity(
+        { ...capacityOptions, checkpointReserve: true },
+        f.io,
+      ),
+      /allowlisted/,
+    );
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test("adding checkpoint candidates retains the original four-path 480 second whole cleanup budget", async () => {
+  const f = capacityFixture();
+  for (const candidate of RECIPE.linuxCheckpointCleanupPaths)
+    f.present.add(candidate);
+  const command = f.io.command;
+  f.io.command = async (...args) => {
+    if (args[1].includes("du")) {
+      if (RECIPE.linuxCheckpointCleanupPaths.includes(args[1].at(-1))) {
+        f.advance(100);
+        return `1\t${args[1].at(-1)}`;
+      }
+      return command(...args);
+    }
+    f.calls.push({
+      operation: "rm",
+      candidate: args[1].at(-1),
+      timeout: args[3],
+    });
+    f.advance(args[3]);
+    throw Object.assign(new Error("bounded GNU timeout"), { code: 124 });
+  };
+  await assert.rejects(
+    cleanupLinuxCapacity({ ...capacityOptions, checkpointReserve: true }, f.io),
+    /phase budget/,
+  );
+  assert.equal(RECIPE.linuxCleanupPaths.length, 4);
+  assert.equal(f.receipts.at(-1).elapsedMs, 480000);
+  assert.deepEqual(
+    f.calls
+      .filter((call) => call.operation === "rm")
+      .map((call) => call.timeout),
+    [120000, 120000, 120000, 119400],
   );
 });
 

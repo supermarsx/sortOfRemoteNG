@@ -14,7 +14,7 @@
   "minimumMacSdkMajor": 15,
   "minimumFreeDiskGiB": 100,
   "linuxCheckpointReserveGiB": 4,
-  "linuxCheckpointCleanupPaths": ["/usr/share/doc"],
+  "linuxCheckpointCleanupPaths": ["/usr/share/doc", "/usr/share/swift"],
   "minimumMemoryGiB": 8,
   "provisioning": {
     "windowsSdk": {
