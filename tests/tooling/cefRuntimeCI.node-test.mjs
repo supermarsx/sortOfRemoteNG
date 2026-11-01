@@ -2486,9 +2486,7 @@ test("ordinary and engineering producers share Metal attestation after reviewed 
     "utf8",
   );
   const verify = source.indexOf("await verifyToolchainFiles({");
-  const prepare = source.indexOf(
-    "const metal = await prepareMacMetalToolchain({",
-  );
+  const prepare = source.indexOf("prepareMacMetalToolchain({", verify);
   const acquire = source.indexOf('"acquire",', prepare);
   assert.ok(verify >= 0 && prepare > verify && acquire > prepare);
   assert.match(source, /platform: expectedPlatform/);

@@ -7278,6 +7278,7 @@ test("observability preserves every existing API uploader and CLI policy asserti
         ["Source metadata original host deadline", "timeout>0"],
       ]);
       assert.deepEqual(macSourceGuards, [
+        ["Mac external original host deadline", "hostRemaining(env)>0"],
         ["Mac external owned output alias", "(awaitrealpath(output))===output"],
         ["Mac external original host deadline", "timeout>=1000"],
         ["Mac external original host deadline", "hostRemaining(env)>0"],
@@ -11139,6 +11140,91 @@ test(
     assert.match(result.stderr, /Ran 5 tests/);
   },
 );
+
+test("actual checkpoint beforeAcquire obtains its SDK receipt before the external plan and rejects changed aliases before writes", async () => {
+  const source = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const start = source.indexOf("async beforeAcquire(context) {");
+  const end = source.indexOf("return attestation;", start);
+  assert(start >= 0 && end > start);
+  const callback =
+    "(async function(context) {" +
+    source.slice(
+      start + "async beforeAcquire(context) {".length,
+      end + "return attestation;".length,
+    ) +
+    "})";
+  const { mac, options } = await macExternalFixture();
+  const { sdkRelation: oldReceipt, ...verified } = options;
+  assert(oldReceipt);
+  for (const invalid of [false, true]) {
+    let relations = 0,
+      plans = 0,
+      writes = 0,
+      archives = 0,
+      receipt;
+    const original = new Error("controlled archive boundary");
+    const call = vm.runInNewContext(callback, {
+      verified,
+      env: { RUNNER_TEMP: options.runnerTemp },
+      path,
+      randomUUID: () => "11111111-1111-4111-8111-111111111111",
+      hostRemaining: () => 10000,
+      macSdkRelation: async (input) => {
+        relations++;
+        receipt = await mac.macSdkRelation(
+          input,
+          invalid
+            ? sdkRelationIo({ readlink: async () => "MacOSX26.1.sdk" })
+            : sdkRelationIo(),
+        );
+        return receipt;
+      },
+      macExternalObservationPlan(input) {
+        plans++;
+        const plan = mac.macExternalObservationPlan(input);
+        assert.equal(input.sdkRelation, receipt);
+        assert.equal(relations, 1);
+        return plan;
+      },
+      mkdir: async () => {
+        writes++;
+      },
+      realpath: async (file) => file,
+      writeFile: async () => {
+        writes++;
+      },
+      canonical,
+      fail: (condition, message) => assert(condition, message),
+      LIMITS,
+      HELPER: path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      archiveCommand: async () => {
+        archives++;
+        throw original;
+      },
+    });
+    if (invalid) {
+      await assert.rejects(
+        call({ metal: options.metal, logs: "/owned/logs" }),
+        /MAC_EXTERNAL_SDK_RELATION/,
+      );
+      assert.equal(plans, 0);
+      assert.equal(writes, 0);
+      assert.equal(archives, 0);
+    } else {
+      await assert.rejects(
+        call({ metal: options.metal, logs: "/owned/logs" }),
+        (error) => error === original,
+      );
+      assert.equal(relations, 1);
+      assert.equal(plans, 1);
+      assert.equal(writes, 2);
+      assert.equal(archives, 1);
+    }
+  }
+});
 
 test("Mac SDK relation requires exact observed physical root and held logical 26.2 alias", async () => {
   const { mac, options } = await macExternalFixture();

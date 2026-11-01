@@ -23,6 +23,7 @@ import {
 } from "./cef-runtime-ci.mjs";
 import { macMetalFingerprint } from "./cef-hosted-provision.mjs";
 import {
+  macSdkRelation,
   macExternalObservationPlan,
   readMacExternalObservation,
   macExternalToolsBinding,
@@ -329,12 +330,22 @@ async function checkpointMain(argv, env, observer) {
           ...(TARGET === "aarch64-apple-darwin"
             ? {
                 async beforeAcquire(context) {
+                  const sdkRelation = await macSdkRelation({
+                    selected: verified.selected,
+                    sdkTargets: verified.sdkTargets,
+                    check: () =>
+                      fail(
+                        hostRemaining(env) > 0,
+                        "Mac external original host deadline",
+                      ),
+                  });
                   const output = path.posix.join(
                     env.RUNNER_TEMP,
                     "cef-mac-inputs-" + randomUUID(),
                   );
                   const selected = macExternalObservationPlan({
                     ...verified,
+                    sdkRelation,
                     metal: context.metal,
                     runnerTemp: env.RUNNER_TEMP,
                     output,
