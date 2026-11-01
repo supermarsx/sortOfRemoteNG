@@ -61,9 +61,10 @@ class ImageDispatchTests(unittest.TestCase):
         images=list(boot.IMAGE_TUPLES)
         for index,image in enumerate(images):
             with tempfile.TemporaryDirectory()as folder:
+                root=Path(folder).resolve(strict=True)
                 for supplied in (b'{}',(HERE/boot.IMAGE_TUPLES[images[1-index]]['profile']).read_bytes()):
-                    target=Path(folder)/boot.IMAGE_TUPLES[image]['profile'];target.write_bytes(supplied)
-                    with patch.object(boot,'HERE',Path(folder)),self.assertRaisesRegex(data.Denied,'ACQ_HASH'):
+                    target=root/boot.IMAGE_TUPLES[image]['profile'];target.write_bytes(supplied)
+                    with patch.object(boot,'HERE',root),self.assertRaisesRegex(data.Denied,'ACQ_HASH'):
                         boot.image_profile(copy.deepcopy(BASE),clock(),image)
     def test_opposite_sealed_driver_cannot_run_and_resource_caps_stay_fixed(self):
         for image,tuple_ in boot.IMAGE_TUPLES.items():
