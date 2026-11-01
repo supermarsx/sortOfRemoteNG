@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import io
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -1053,6 +1054,10 @@ def metadata(root, name, value, source=False, owned_sidecar=False):
                 isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
                 ((value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
+                 (value['kind'] == 'sorng-macarm-source-metadata' and value['policy'] == MAC_SOURCE_METADATA_POLICY and
+                  value['identity'].get('target') == 'aarch64-apple-darwin' and
+                  isinstance(value['identity'].get('source'), str) and re.fullmatch('[a-f0-9]{64}', value['identity']['source']) and
+                  Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macintel-source-metadata' and value['policy'] == MAC_INTEL_SOURCE_METADATA_POLICY and
                   value['identity'].get('target') == 'x86_64-apple-darwin' and value['identity'].get('source') == MAC_INTEL_SOURCE and
                   value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE and
@@ -1439,15 +1444,49 @@ def source_birth(info, policy=None):
     return value
 
 
+def source_birth_identity(info):
+    """Local supplementary identity; never a portable or inferred nanosecond date."""
+    value = getattr(info, 'st_birthtime_ns', None)
+    if value is not None:
+        require(type(value) is int and 0 <= value < 2**63, 'source-mac-birth-unavailable')
+        return ('birthtime-ns', str(value))
+    value = getattr(info, 'st_birthtime', None)
+    require(type(value) is float and math.isfinite(value) and 0 <= value < 2**63,
+            'source-mac-birth-unavailable')
+    token = value.hex()
+    require(len(token) <= 64 and float.fromhex(token).hex() == token,
+            'source-mac-birth-unavailable')
+    return ('darwin-birthtime-float-hex', token)
+
+
 def source_local(info, policy=None):
     base = (stamp(info), info.st_ctime_ns)
-    return base + (source_birth(info, policy), info.st_uid, info.st_gid) if policy is not None and policy.get('mac') else base
+    birth = source_birth_identity(info) if policy is not None and policy.get('ownedMacArm') else source_birth(info, policy) if policy is not None and policy.get('mac') else None
+    return base + (birth, info.st_uid, info.st_gid) if policy is not None and policy.get('mac') else base
 
 
 def source_mac_row(row, info, policy):
     if policy is not None and policy.get('mac'):
-        row.update(birthNs=source_birth(info, policy), uid=info.st_uid, gid=info.st_gid)
+        row.update(uid=info.st_uid, gid=info.st_gid)
+        if policy.get('ownedMacArm'):
+            row['birthIdentity'] = source_birth_identity(info)
+        else:
+            row['birthNs'] = source_birth(info, policy)
         require(info.st_nlink > 0, 'source-mac-nlink')
+
+
+def source_owned_mac_transition(before, after, held=None):
+    # utime may itself adjust Darwin birthtime for a past mtime. Birth is a
+    # supplementary observation of this owned mutation, never a portable pin.
+    stable = lambda info: (info.st_dev, info.st_ino, info.st_mode, info.st_size,
+                           info.st_nlink, info.st_uid, info.st_gid)
+    require(stable(before) == stable(after), 'source-mac-write-identity')
+    previous, current = source_birth_identity(before), source_birth_identity(after)
+    if held is not None:
+        require(source_local(after, {'mac':True,'ownedMacArm':True}) ==
+                source_local(held, {'mac':True,'ownedMacArm':True}), 'source-mac-write-identity')
+    return {'kind':'owned-utime-birth-observation', 'before':list(previous), 'after':list(current),
+            'changed':previous != current}
 
 
 def source_aggregate(policy, name, size, target=''):
@@ -1709,7 +1748,8 @@ def source_hash(root, row, budget, policy=None):
         if not ok():
             raise source_file_error(row['path'], predicate)
     if policy is not None and policy.get('mac'):
-        require(source_birth(before, policy) == row['birthNs'] and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
+        same_birth = source_birth_identity(before) == row['birthIdentity'] if policy.get('ownedMacArm') else source_birth(before, policy) == row['birthNs']
+        require(same_birth and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
     stream = source_io_call('file-open', p, lambda: p.open('rb'));primary = None;reader = HashedReader(stream, budget);count = 0
     try:
         if not (opened_identity_matches(row['stamp'], source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) and
@@ -1971,8 +2011,12 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     if policy.get('mac'):
         require(source_local(root.stat(), policy) == local_before, 'source-mac-root-changed')
     if guards is not None:
-        guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
-        guards[''] = (root_before,root.stat().st_ctime_ns)
+        if policy.get('ownedMacArm'):
+            guards.update({row['path']: (row['stamp'],row['ctimeNs'],row['birthIdentity'],row['uid'],row['gid']) for row in rows})
+            guards[''] = source_local(root.stat(), policy)
+        else:
+            guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
+            guards[''] = (root_before,root.stat().st_ctime_ns)
     entries = [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows]
     if not external and not policy.get('mac'):
         # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout
@@ -2125,11 +2169,30 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     if platform_policy == 'mac-arm':
         # No JSON, external context or fixture output can authorize timestamp writes.
         require(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed')
-    intel = platform_policy == 'mac-intel'
-    sidecar_kind = 'sorng-macintel-source-metadata' if intel else 'sorng-linuxarm-source-metadata'
-    sidecar_policy = MAC_INTEL_SOURCE_METADATA_POLICY if intel else SOURCE_METADATA_POLICY
-    snapshot_context = {'mac':True} if intel else None
     work = source_metadata_identity(identity, platform_policy)
+    return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
+
+
+def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy):
+    """Private codec. Public callers must pass the source-controlled admission gate.
+
+    The closed native proof binds this core only to its fresh creation-owned
+    tiny fixture; it cannot promote a report, JSON field or environment gate.
+    """
+    import sys
+    global SOURCE_CLOSE_FAILURE, SOURCE_JOIN_FAILURE, SOURCE_PATH_MODE
+    require(mode in SOURCE_IO_MODES and platform_policy in (None, 'mac-arm', 'mac-intel'), 'source-mode')
+    require(sys.platform == ('linux' if platform_policy is None else 'darwin'), 'source-platform-policy')
+    require(Path(identity['canonicalRoot']) == work, 'source-root')
+    SOURCE_CLOSE_FAILURE = SOURCE_JOIN_FAILURE = False
+    SOURCE_PATH_MODE = mode
+    source_progress_start(getattr(budget, 'seconds', 600))
+    intel = platform_policy == 'mac-intel'
+    arm = platform_policy == 'mac-arm'
+    mac = intel or arm
+    sidecar_kind = 'sorng-macintel-source-metadata' if intel else 'sorng-macarm-source-metadata' if arm else 'sorng-linuxarm-source-metadata'
+    sidecar_policy = MAC_INTEL_SOURCE_METADATA_POLICY if intel else MAC_SOURCE_METADATA_POLICY if arm else SOURCE_METADATA_POLICY
+    snapshot_context = {'mac':True, **({'ownedMacArm':True} if arm else {})} if mac else None
     budget.check()
     root = safe(root);sidecar = Path(sidecar)
     require(root == work / 'source' and sidecar == root / ('src/out/Release_GN_x64' if intel else 'src/out/Release_GN_arm64') / SOURCE_METADATA_NAME,
@@ -2146,9 +2209,9 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                                 'reusedFiles':SOURCE_PROGRESS['totals'][2]}
         return result
     if mode == 'source-record':
-        with source_nearby_literals(root,source_repositories(root,budget),budget) as record_literals:
+        with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as record_literals:
             layout = {}
-            current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards, layout=layout)
+            current = source_snapshot(root, budget, guards, context=snapshot_context) if mac else source_snapshot(root, budget, guards, layout=layout)
             value = {'schemaVersion': 1, 'kind': sidecar_kind,
                      'policy': sidecar_policy, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
             source_phase('sidecar-write')
@@ -2156,8 +2219,8 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             source_phase('sidecar-readback')
             require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
             source_phase('record-literals')
-            with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
-                require(intel or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
+            with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as literals:
+                require(mac or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
             if linux:
                 source_phase('stat-cache-write')
                 source_stat_cache_write(root, written['sha256'], identity, layout, guards)
@@ -2170,7 +2233,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             stored['policy'] == sidecar_policy and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
             'source-sidecar-binding')
     expected = stored['snapshot']
-    require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if intel else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
+    require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if mac else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
             isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
             'source-sidecar-shape')
     reuse = None
@@ -2180,13 +2243,13 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         source_phase('stat-cache-read')
         reuse = source_stat_cache_reuse(root, sidecar, identity, budget)
     layout = {}
-    current = source_snapshot(root, budget, guards, context=snapshot_context) if intel else source_snapshot(root, budget, guards, reuse=reuse, layout=layout)
+    current = source_snapshot(root, budget, guards, context=snapshot_context) if mac else source_snapshot(root, budget, guards, reuse=reuse, layout=layout)
     # Canonical (sidecar) path -> this checkout's real path; identity on Mac.
-    real = (lambda name: layout['canonical'][name]) if not intel else (lambda name: name)
+    real = (lambda name: name) if mac else (lambda name: layout['canonical'][name])
     source_phase('compare')
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
-    require(intel or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
+    require(mac or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
     # Compare the entire freshly hashed namespace before the first metadata write.
     without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
     if (json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) !=
@@ -2206,21 +2269,23 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     if mode == 'source-apply':
         source_phase('apply-literals')
         # Revalidate the fixed absence witnesses immediately before any utime.
-        with source_nearby_literals(root,source_repositories(root,budget),budget) as literals:
-            require(intel or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
+        with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as literals:
+            require(mac or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
         source_phase('apply-utime')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
             name = real(row['path'])
             budget.check();path = root / (name if source_literal_member(name) else relative(name));before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
-            require((stamp(before),before.st_ctime_ns) == guards[name], 'source-write-identity')
+            require((source_local(before, snapshot_context) if arm else (stamp(before),before.st_ctime_ns)) == guards[name], 'source-write-identity')
             if row['kind'] == 'symlink':
-                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if intel else layout['targets'][row['path']]),
+                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if mac else layout['targets'][row['path']]),
                         'source-link-changed')
                 source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))
                 after = path.lstat()
                 require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
-                        os.readlink(path)==(row['target'] if intel else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                        os.readlink(path)==(row['target'] if mac else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                if arm:
+                    source_owned_mac_transition(before, after)
             else:
                 safe(path)
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -2228,11 +2293,15 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                 try:
                     info = os.fstat(fd)
                     require(stamp(info) == stamp(before), 'source-write-identity')
+                    if arm:
+                        require(source_local(info, snapshot_context) == source_local(before, snapshot_context), 'source-mac-write-identity')
                     source_io_call('apply-utime', path, lambda: os.utime(fd, ns=(info.st_atime_ns,int(row['mtimeNs']))))
                     after = path.lstat();held = os.fstat(fd)
                     require((before.st_dev,before.st_ino,before.st_mode,before.st_size)==
                             (after.st_dev,after.st_ino,after.st_mode,after.st_size) and
                             stamp(after)==stamp(held) and held.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                    if arm:
+                        source_owned_mac_transition(before, after, held)
                     if post is not None and row['kind'] == 'file':
                         post[name] = tuple(stamp(after)) + (after.st_ctime_ns,)
                 except BaseException as error:
@@ -2241,7 +2310,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
                 finally:
                     source_close(lambda: os.close(fd), primary)
         budget.check();safe(root);info = root.stat()
-        require((stamp(info),info.st_ctime_ns)==guards[''], 'source-root-changed')
+        require((source_local(info, snapshot_context) if arm else (stamp(info),info.st_ctime_ns))==guards[''], 'source-root-changed')
         fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         primary = None
         try:
@@ -2249,13 +2318,15 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))
             require(root.stat().st_mtime_ns==int(expected['rootMtimeNs']) and
                     stamp(root.stat())==stamp(os.fstat(fd)), 'source-root-readback')
+            if arm:
+                source_owned_mac_transition(info, root.stat(), os.fstat(fd))
         except BaseException as error:
             primary=error
             raise
         finally:
             source_close(lambda: os.close(fd), primary)
     source_phase('postcheck')
-    if intel:
+    if mac:
         require(source_snapshot(root, budget, context=snapshot_context) == expected, 'source-metadata-postcheck')
     else:
         final_guards, final_layout = {}, {}
@@ -2448,10 +2519,11 @@ def mac_capability_identity(info):
     return (info.st_dev,info.st_ino,info.st_mode,info.st_nlink,info.st_size,info.st_uid,info.st_gid)
 
 
-def mac_owned_capability_observe(context, output, budget):
+def mac_owned_capability_observe(context, output, budget, *, owned_birth_proof=False):
     # Exactly four fresh owned objects. Never inventory or change installed data.
     global MAC_REPORT_FAILURE, SOURCE_CLOSE_FAILURE
     SOURCE_CLOSE_FAILURE=False
+    require(type(owned_birth_proof) is bool, 'source-mac-capability-mode')
     budget.check()
     require(budget.end-time.monotonic() <= 5, 'source-mac-capability-deadline')
     root=Path(context['outputRoot'])/'capability-owned';require(not os.path.lexists(root),'source-mac-capability-exists')
@@ -2488,16 +2560,23 @@ def mac_owned_capability_observe(context, output, budget):
                 if held_before is not None:require(stamp(held_before)==stamp(before),'source-mac-capability-identity')
                 if role=='symlink':
                     require(os.readlink(p)=='file','source-mac-capability-link')
+                    target_before = source_local(os.fstat(handles['file']), {'mac':True,'ownedMacArm':True}) if owned_birth_proof else None
                     os.utime(p,ns=(before.st_atime_ns,target),follow_symlinks=False)
                 else:os.utime(handles[role],ns=(before.st_atime_ns,target))
                 after=p.lstat();held_after=os.fstat(handles[role]) if role in handles else None
                 require(mac_capability_identity(after)==identities[role] and
                         (held_after is None or stamp(held_after)==stamp(after)),'source-mac-capability-identity')
                 if role=='symlink':require(os.readlink(p)=='file','source-mac-capability-link')
+                if owned_birth_proof and role=='symlink':
+                    require(source_local(os.fstat(handles['file']), {'mac':True,'ownedMacArm':True}) == target_before,
+                            'source-mac-capability-link-target-changed')
                 rows.append({'role':role,'case':case,'requestedMtimeNs':str(target),'before':mac_capability_stat(before),
                              'after':mac_capability_stat(after),'heldBefore':mac_capability_stat(held_before) if held_before is not None else None,
                              'heldAfter':mac_capability_stat(held_after) if held_after is not None else None,
                              'exactMtimeReadback':after.st_mtime_ns==target})
+                if owned_birth_proof:
+                    rows[-1]['birthTransition'] = source_owned_mac_transition(before, after, held_after)
+                    rows[-1]['symlinkTargetUnchanged'] = role != 'symlink' or target_before == source_local(os.fstat(handles['file']), {'mac':True,'ownedMacArm':True})
         budget.check()
     except BaseException as error:
         primary=error
