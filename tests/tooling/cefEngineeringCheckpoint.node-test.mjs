@@ -5059,22 +5059,59 @@ test("checkpoint provisioning reserves restore capacity only with explicit Linux
   );
   const command =
     'node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute';
-  const expected = `if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then\n  ${command} --cleanup --checkpoint-reserve\nelse\n  ${command}\nfi\n`;
+  const expected = `if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then\n  if [ "$CEF_RESTORE_RUN" = "0" ]; then\n    ${command} --cleanup\n  else\n    ${command} --cleanup --checkpoint-reserve\n  fi\nelse\n  ${command}\nfi\n`;
   assert.equal(step.run, expected);
+  const bash =
+    process.platform === "win32"
+      ? path.join(
+          process.env.ProgramFiles ?? "C:/Program Files",
+          "Git/bin/bash.exe",
+        )
+      : "/bin/bash";
   for (const target of [
     TARGET,
     "aarch64-apple-darwin",
     "aarch64-unknown-linux-gnu",
   ]) {
     const profile = checkpointProfile(target);
-    const branch =
-      step.run.split("\n")[target === "aarch64-unknown-linux-gnu" ? 1 : 3];
-    assert.equal(branch.includes("--cleanup"), profile.platform === "linux");
+    for (const restoreRun of ["0", "40997890250"]) {
+      // Execute the actual workflow branch with an inert Node function. No
+      // provisioning, package acquisition or cleanup command runs in this test.
+      const argv = execFileSync(
+        bash,
+        [
+          "--noprofile",
+          "--norc",
+          "-c",
+          `node() { printf '%s\\n' "$@"; }\n${step.run}`,
+        ],
+        {
+          encoding: "utf8",
+          timeout: 10000,
+          windowsHide: true,
+          env: {
+            ...process.env,
+            CEF_ENGINEERING_TARGET: target,
+            CEF_PROVISION_TARGET: profile.provisionTarget,
+            CEF_RESTORE_RUN: restoreRun,
+            RUNNER_TEMP: "/owned-temp",
+          },
+        },
+      )
+        .trim()
+        .split(/\r?\n/);
+      assert.equal(argv.includes("--cleanup"), profile.platform === "linux");
+      assert.equal(
+        argv.includes("--checkpoint-reserve"),
+        profile.platform === "linux" && restoreRun !== "0",
+      );
+    }
   }
   assert.equal(
     step.env.CEF_PROVISION_TARGET,
     "${{ steps.profile.outputs.provision }}",
   );
+  assert.equal(step.env.CEF_RESTORE_RUN, "${{ inputs.restore_run }}");
 });
 
 test("post-slice diagnostics identify fixed stages without changing the original failure", async () => {

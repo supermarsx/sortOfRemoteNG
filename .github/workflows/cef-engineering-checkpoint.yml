@@ -65,9 +65,14 @@ jobs:
       - name: Prepare existing fixed reviewed native prerequisites
         env:
           CEF_PROVISION_TARGET: ${{ steps.profile.outputs.provision }}
+          CEF_RESTORE_RUN: ${{ inputs.restore_run }}
         run: |
           if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then
-            node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute --cleanup --checkpoint-reserve
+            if [ "$CEF_RESTORE_RUN" = "0" ]; then
+              node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute --cleanup
+            else
+              node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute --cleanup --checkpoint-reserve
+            fi
           else
             node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
           fi

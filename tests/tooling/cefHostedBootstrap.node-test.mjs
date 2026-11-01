@@ -643,13 +643,13 @@ test("checkpoint reserve reclaims only reviewed documentation while retaining th
         ...patch,
       }),
     );
-  const f = capacityFixture({ freeGiB: 102.43, gains: { [documents]: 2 } });
+  const f = capacityFixture({ freeGiB: 103.98, gains: { [documents]: 0.06 } });
   f.present.clear();
   f.present.add(documents);
   const original = f.io.command;
   f.io.command = async (...args) =>
     args[1].includes("du")
-      ? `${2 * 1024 ** 3}\t${documents}`
+      ? `${Math.round(0.06 * 1024 ** 3)}\t${documents}`
       : original(...args);
   assert.deepEqual(
     await cleanupLinuxCapacity(
@@ -662,7 +662,7 @@ test("checkpoint reserve reclaims only reviewed documentation while retaining th
   assert.equal(receipt.requiredFreeGiB, 104);
   assert.equal(receipt.buildMinimumGiB, 100);
   assert.equal(receipt.checkpointReserveGiB, 4);
-  assert.equal(receipt.freeDiskAfterGiB, 104.43);
+  assert.equal(receipt.freeDiskAfterGiB, 104.04);
   // The failing remote run spent ~0.62 GiB on prerequisites and ~2.58 GiB
   // on its sealed checkpoint. Neither cost may consume the build's 100 GiB.
   assert(receipt.freeDiskAfterGiB - 0.62 - 2.58 >= 100);
@@ -671,6 +671,38 @@ test("checkpoint reserve reclaims only reviewed documentation while retaining th
     cleanupLinuxCapacity({ ...capacityOptions, checkpointReserve: "4" }, f.io),
     /Invalid/,
   );
+});
+
+test("observed 103.11 GiB image admits a fresh build and cannot invent restored checkpoint capacity", async () => {
+  // Run 41323265998: all ordinary candidates plus documentation left 103.11
+  // GiB, and documentation recovered only 0.06 GiB. Fresh downloads no archive.
+  const fresh = capacityFixture({ freeGiB: 103.11 });
+  assert.deepEqual(await cleanupLinuxCapacity(capacityOptions, fresh.io), []);
+  assert.equal(fresh.calls.length, 0);
+  assert.equal(fresh.receipts.at(-1).requiredFreeGiB, 100);
+  assert(fresh.receipts.at(-1).freeDiskAfterGiB - 0.62 >= 100);
+
+  const documents = "/usr/share/doc";
+  const restore = capacityFixture({
+    freeGiB: 103.05,
+    gains: { [documents]: 0.06 },
+  });
+  restore.present.clear();
+  restore.present.add(documents);
+  const command = restore.io.command;
+  restore.io.command = async (...args) =>
+    args[1].includes("du")
+      ? `${Math.round(0.06 * 1024 ** 3)}\t${documents}`
+      : command(...args);
+  await assert.rejects(
+    cleanupLinuxCapacity(
+      { ...capacityOptions, checkpointReserve: true },
+      restore.io,
+    ),
+    /104 GiB/,
+  );
+  assert.equal(restore.receipts.at(-1).freeDiskAfterGiB, 103.11);
+  assert.equal(restore.receipts.at(-1).sufficient, false);
 });
 
 test("measured smaller candidates reclaim enough capacity before expensive Android removal", async () => {
