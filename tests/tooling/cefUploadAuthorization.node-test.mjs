@@ -98,7 +98,7 @@ test("workflow is manual public Main-only with pinned Node and cancel-older poli
     workflow,
     /workflows: write|workflow_run:|pull_request:|schedule:|execFile|spawn\(|curl|git push/,
   );
-  assert.equal((workflow.match(/GH_TOKEN:/g) ?? []).length, 1);
+  assert.equal((workflow.match(/GH_TOKEN:/g) ?? []).length, 2);
   assert.equal((workflow.match(/deps\.fetch\(/g) ?? []).length, 1);
 });
 
@@ -114,6 +114,16 @@ test("legitimate CRLF workflow smudge exercises the same actual authorization li
   assert.deepEqual(
     actual.releaseBody(tag, env.GITHUB_SHA),
     api.releaseBody(tag, env.GITHUB_SHA),
+  );
+});
+
+test("legacy mode admits its explicit default input and refuses the v2 execution mode", () => {
+  assert.equal(
+    api.authority(env, { ...event, inputs: { proof: "current-head" } }),
+    tag,
+  );
+  assert.throws(() =>
+    api.authority(env, { ...event, inputs: { proof: "transport-v2" } }),
   );
 });
 

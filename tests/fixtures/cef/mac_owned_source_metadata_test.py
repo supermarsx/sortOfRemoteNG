@@ -42,7 +42,7 @@ class BirthIdentity(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(m.CheckpointError):
                 m.source_birth_identity(info(st_birthtime_ns=value))
 
-    def test_darwin_fallback_is_arm_owned_only_and_external_projection_unchanged(self):
+    def test_darwin_fallback_is_owned_scope_only_and_external_projection_unchanged(self):
         row = {}
         m.source_mac_row(row, info(), {'mac':True, 'ownedMacArm':True})
         self.assertIn('birthIdentity', row)

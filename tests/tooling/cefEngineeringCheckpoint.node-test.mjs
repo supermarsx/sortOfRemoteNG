@@ -7227,8 +7227,20 @@ test("observability preserves every existing API uploader and CLI policy asserti
       sourceMetadataGuards = [],
       macSourceGuards = [],
       censusGuards = [],
-      censusQuiescenceBindings = [];
+      censusQuiescenceBindings = [],
+      transportResponseBindings = [];
     const serialize = (node) => {
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+        node.right.getText(ast).replace(/\s+/g, "") ===
+          "release.target_commitish===transport.carrierHead"
+      ) {
+        transportResponseBindings.push(
+          "release.target_commitish===transport.carrierHead",
+        );
+        return serialize(node.left);
+      }
       let kids = node
         .getChildren(ast)
         .filter((n) => n.kind !== ts.SyntaxKind.CommaToken);
@@ -7302,6 +7314,9 @@ test("observability preserves every existing API uploader and CLI policy asserti
         "censusFactory===undefined||(macCensusFactories.has(censusFactory)&&!macCensusFactories.get(censusFactory).proofOnly)",
       ]);
       assert.deepEqual(censusQuiescenceBindings, ["{censusFactory}"]);
+      assert.deepEqual(transportResponseBindings, [
+        "release.target_commitish===transport.carrierHead",
+      ]);
     }
     if (name === "checkpointMain") {
       assert.deepEqual(sourceMetadataGuards, [

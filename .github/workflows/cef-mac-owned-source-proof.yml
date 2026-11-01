@@ -177,6 +177,11 @@ jobs:
         if: always() && steps.checkout.outcome == 'success' && steps.node.outcome == 'success'
         timeout-minutes: 2
         run: node tests/fixtures/cef/mac_python_package_proof.mjs
+      - name: Prove Intel source metadata only on fresh owned objects
+        id: intel
+        if: always() && steps.checkout.outcome == 'success' && steps.node.outcome == 'success'
+        timeout-minutes: 2
+        run: node tests/fixtures/cef/mac_intel_owned_source_carrier.mjs
       - name: Retain only the owned metadata proof
         if: always() && steps.proof.outputs.root != ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -185,6 +190,17 @@ jobs:
           path: |
             ${{ steps.proof.outputs.root }}/proof.json
             ${{ steps.proof.outputs.root }}/carrier.json
+          retention-days: 14
+          if-no-files-found: warn
+          compression-level: 6
+      - name: Retain the independently labeled Intel scratch codec proof
+        if: always() && steps.intel.outputs.root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-mac-intel-owned-source-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.intel.outputs.root }}/proof.json
+            ${{ steps.intel.outputs.root }}/carrier.json
           retention-days: 14
           if-no-files-found: warn
           compression-level: 6

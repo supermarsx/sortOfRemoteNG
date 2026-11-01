@@ -1,6 +1,13 @@
 name: CEF current-head upload authorization diagnostic
 on:
   workflow_dispatch:
+    inputs:
+      proof:
+        description: Bounded unpublished permission diagnostic
+        type: choice
+        options: [current-head, transport-v2]
+        default: current-head
+        required: true
 permissions:
   contents: write
 concurrency:
@@ -11,6 +18,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/main' && github.event.repository.default_branch == 'main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -21,8 +31,9 @@ jobs:
           architecture: x64
           package-manager-cache: false
       - name: Verify the closed diagnostic contract without credentials
-        run: node --test tests/tooling/cefUploadAuthorization.node-test.mjs
+        run: node --test tests/tooling/cefUploadAuthorization.node-test.mjs tests/tooling/cefTechnicalTransportAuthorization.node-test.mjs
       - name: One unpublished technical draft against verified current Main
+        if: inputs.proof == 'current-head'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -40,7 +51,8 @@ jobs:
               event?.repository?.id===Number(REPOSITORY_ID)&&event.repository.full_name===REPOSITORY&&
               event.repository.private===false&&event.repository.visibility==='public'&&event.repository.default_branch==='main'&&
               Object.hasOwn(event,'inputs')&&(event.inputs===null||(typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&
-                Object.getPrototypeOf(event.inputs)===Object.prototype&&Object.keys(event.inputs).length===0)),
+                Object.getPrototypeOf(event.inputs)===Object.prototype&&(Object.keys(event.inputs).length===0||
+                  (Object.keys(event.inputs).length===1&&event.inputs.proof==='current-head')))),
               'AUTHORITY_DENIED');
             return 'cef-upload-authorization-probe-'+e.GITHUB_RUN_ID+'-'+e.GITHUB_RUN_ATTEMPT;
           }
@@ -141,6 +153,12 @@ jobs:
           catch{report.success=false;report.reportingFailure='RESULT_WRITE_DENIED';}
           console.log(JSON.stringify(report));if(!report.success)process.exitCode=1;
           NODE
+      - name: One source-separated technical transport draft with no runtime or seal
+        if: inputs.proof == 'transport-v2'
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tests/fixtures/cef/technical_transport_authorization.mjs
       - name: Retain only the closed authorization result
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

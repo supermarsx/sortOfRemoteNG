@@ -4592,7 +4592,7 @@ export function apiClient(
         );
         assert(Date.now() < deadline, "Checkpoint transport deadline");
         const readRoute =
-          /^(?:|actions\/workflows\/cef-engineering-checkpoint\.yml|actions\/runs\/[1-9][0-9]*(?:\/artifacts\?per_page=100)?|releases\/[1-9][0-9]*(?:\/assets\?per_page=100)?|git\/commits\/[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}\?recursive=1)$/;
+          /^(?:|actions\/workflows\/cef-engineering-checkpoint\.yml|actions\/runs\/[1-9][0-9]*(?:\/artifacts\?per_page=100)?|releases\/[1-9][0-9]*(?:\/assets\?per_page=100)?|git\/ref\/heads\/main|git\/commits\/[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}\?recursive=1)$/;
         const uploadRoute =
           /^releases\/[1-9][0-9]*\/assets\?name=(?:checkpoint-[0-9]{5}\.bin|inventory\.json|manifest\.json)$/;
         assert(
@@ -4736,6 +4736,106 @@ export async function verifyProducer(api, producer) {
   );
   return run;
 }
+export function validateTechnicalTransport(value) {
+  shape(value, ["kind", "defaultBranch", "carrierHead"]);
+  assert(
+    value.kind === "default-branch-container" &&
+      value.defaultBranch === "main" &&
+      typeof value.carrierHead === "string" &&
+      /^[a-f0-9]{40}$/.test(value.carrierHead),
+    "Exact technical transport carrier required",
+  );
+  return value;
+}
+export async function resolveTechnicalTransport(api, producer) {
+  shape(producer, [
+    "repository",
+    "repositoryId",
+    "runId",
+    "attempt",
+    "head",
+    "branch",
+    "workflow",
+  ]);
+  assert(
+    producer.branch === "main" &&
+      typeof producer.repository === "string" &&
+      /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(producer.repository) &&
+      positive(producer.repositoryId) &&
+      positive(producer.runId) &&
+      positive(producer.attempt) &&
+      typeof producer.head === "string" &&
+      /^[a-f0-9]{40}$/.test(producer.head) &&
+      producer.workflow === WORKFLOW,
+    "Technical transport requires original default-branch producer",
+  );
+  const repo = await api("");
+  assert(
+    repo.id === producer.repositoryId &&
+      repo.full_name === producer.repository &&
+      repo.private === false &&
+      repo.visibility === "public" &&
+      repo.default_branch === "main",
+    "Technical transport repository mismatch",
+  );
+  const ref = await api("git/ref/heads/main");
+  assert(
+    ref.ref === "refs/heads/main" && ref.object?.type === "commit",
+    "Technical transport ref mismatch",
+  );
+  return Object.freeze(
+    validateTechnicalTransport({
+      kind: "default-branch-container",
+      defaultBranch: "main",
+      carrierHead: ref.object.sha,
+    }),
+  );
+}
+function transportHead(seal, producer) {
+  return seal.schemaVersion === 2
+    ? validateTechnicalTransport(seal.transport).carrierHead
+    : producer.head;
+}
+async function verifyTechnicalReadback(
+  api,
+  releaseId,
+  tag,
+  transport,
+  expected,
+) {
+  validateTechnicalTransport(transport);
+  const [release, assets] = await Promise.all([
+    api(`releases/${releaseId}`),
+    api(`releases/${releaseId}/assets?per_page=100`),
+  ]);
+  assert(
+    release.id === releaseId &&
+      release.draft === true &&
+      release.prerelease === true &&
+      release.tag_name === tag &&
+      release.target_commitish === transport.carrierHead,
+    "Technical transport draft changed before sealing",
+  );
+  assert(
+    Array.isArray(assets) &&
+      assets.length === expected.length &&
+      new Set(assets.map((x) => x.id)).size === expected.length &&
+      new Set(assets.map((x) => x.name)).size === expected.length &&
+      new Set(expected.map((x) => x.id)).size === expected.length,
+    "Technical transport asset set changed before sealing",
+  );
+  for (const pin of expected) {
+    const row = assets.find((x) => x.id === pin.id);
+    assert(
+      row &&
+        row.name === pin.name &&
+        row.size === pin.bytes &&
+        row.state === "uploaded" &&
+        row.digest === `sha256:${pin.sha256}`,
+      "Technical transport asset changed before sealing",
+    );
+  }
+}
 export async function uploadCheckpoint(
   api,
   { bundle, manifest, producer, observer, censusFactory },
@@ -4802,16 +4902,17 @@ export async function uploadCheckpoint(
       },
     );
     const tag = `cef-checkpoint-${manifest.identity.target}-${manifest.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+    const transport = await resolveTechnicalTransport(api, producer);
     const release = await api("releases", {
       method: "POST",
       body: {
         tag_name: tag,
-        target_commitish: producer.head,
+        target_commitish: transport.carrierHead,
         name: tag,
         draft: true,
         prerelease: true,
         make_latest: "false",
-        body: "Engineering checkpoint only. Not a runtime, SDK, acceptance or application release.",
+        body: `Engineering checkpoint transport only. Technical container ${transport.carrierHead}; immutable build source ${producer.head}, run ${producer.runId}, attempt ${producer.attempt}. Not a runtime, SDK, acceptance or application release.`,
       },
     });
     await uploadPhase(observe, "response-validation", async () =>
@@ -4819,7 +4920,8 @@ export async function uploadCheckpoint(
         positive(release.id) &&
           release.draft === true &&
           release.prerelease === true &&
-          release.tag_name === tag,
+          release.tag_name === tag &&
+          release.target_commitish === transport.carrierHead,
         "Unexpected checkpoint draft",
       ),
     );
@@ -4846,15 +4948,21 @@ export async function uploadCheckpoint(
       );
       assets.push({ id: uploaded.id, ...p });
     }
-    return {
-      schemaVersion: 1,
-      kind: "sorng-cef-engineering-seal",
+    await verifyTechnicalReadback(api, release.id, tag, transport, assets);
+    return validateSeal(
+      {
+        schemaVersion: 2,
+        kind: "sorng-cef-engineering-seal",
+        producer,
+        transport,
+        identitySha256: manifest.identitySha256,
+        release: { id: release.id, tag },
+        manifest: manifestPin,
+        assets,
+      },
       producer,
-      identitySha256: manifest.identitySha256,
-      release: { id: release.id, tag },
-      manifest: manifestPin,
-      assets,
-    };
+      manifest.identity.target,
+    );
   });
 }
 export function validateSeal(seal, expected, target = TARGET) {
@@ -4867,14 +4975,22 @@ export function validateSeal(seal, expected, target = TARGET) {
     "release",
     "manifest",
     "assets",
+    ...(seal?.schemaVersion === 2 ? ["transport"] : []),
   ]);
   assert(
-    seal.schemaVersion === 1 &&
+    [1, 2].includes(seal.schemaVersion) &&
       seal.kind === "sorng-cef-engineering-seal" &&
       hex(seal.identitySha256) &&
       canonical(seal.producer) === canonical(expected),
     "Seal producer mismatch",
   );
+  if (seal.schemaVersion === 2) {
+    validateTechnicalTransport(seal.transport);
+    assert(
+      expected.branch === seal.transport.defaultBranch,
+      "Technical transport producer branch mismatch",
+    );
+  }
   shape(seal.release, ["id", "tag"]);
   assert(
     positive(seal.release.id) &&
@@ -6767,7 +6883,7 @@ export async function restoreDownload(
     release.draft === true &&
       release.prerelease === true &&
       release.tag_name === seal.release.tag &&
-      release.target_commitish === producer.head,
+      release.target_commitish === transportHead(seal, producer),
     "Draft checkpoint identity changed",
   );
   const names = new Set(seal.assets.map((a) => a.name));
@@ -7013,13 +7129,21 @@ export function validateSdkSeal(seal, producer) {
     "completion",
     "completionSha256",
     "assets",
+    ...(seal?.schemaVersion === 2 ? ["transport"] : []),
   ]);
   assert(
-    seal.schemaVersion === 1 &&
+    [1, 2].includes(seal.schemaVersion) &&
       seal.kind === "sorng-cef-engineering-sdk-seal" &&
       canonical(seal.producer) === canonical(producer),
     "SDK seal producer mismatch",
   );
+  if (seal.schemaVersion === 2) {
+    validateTechnicalTransport(seal.transport);
+    assert(
+      producer.branch === seal.transport.defaultBranch,
+      "Technical transport producer branch mismatch",
+    );
+  }
   validateSdkCompletion(seal.completion);
   assert(
     canonical(seal.completion.producer) === canonical(producer) &&
@@ -7107,16 +7231,17 @@ export async function uploadSdkBundle(
         ),
       );
     const tag = `cef-sdk-checkpoint-${completion.target}-${completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+    const transport = await resolveTechnicalTransport(api, producer);
     const release = await api("releases", {
       method: "POST",
       body: {
         tag_name: tag,
-        target_commitish: producer.head,
+        target_commitish: transport.carrierHead,
         name: tag,
         draft: true,
         prerelease: true,
         make_latest: "false",
-        body: "Completed SDK transport only; native acceptance and runtime publication remain separate.",
+        body: `Completed SDK byte transport only. Technical container ${transport.carrierHead}; immutable build source ${producer.head}, run ${producer.runId}, attempt ${producer.attempt}. Native acceptance and runtime publication remain separate.`,
       },
     });
     await uploadPhase(observe, "response-validation", async () =>
@@ -7124,7 +7249,8 @@ export async function uploadSdkBundle(
         positive(release.id) &&
           release.draft === true &&
           release.prerelease === true &&
-          release.tag_name === tag,
+          release.tag_name === tag &&
+          release.target_commitish === transport.carrierHead,
         "Unexpected SDK transport draft",
       ),
     );
@@ -7151,11 +7277,13 @@ export async function uploadSdkBundle(
       );
       assets.push({ id: uploaded.id, ...pin });
     }
+    await verifyTechnicalReadback(api, release.id, tag, transport, assets);
     return validateSdkSeal(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "sorng-cef-engineering-sdk-seal",
         producer,
+        transport,
         release: { id: release.id, tag },
         completion,
         completionSha256: completionSha(completion),
@@ -7261,7 +7389,7 @@ export async function downloadSdkBundle(
     release.draft === true &&
       release.prerelease === true &&
       release.tag_name === seal.release.tag &&
-      release.target_commitish === producer.head &&
+      release.target_commitish === transportHead(seal, producer) &&
       Array.isArray(assets) &&
       assets.length === 5 &&
       new Set(assets.map((row) => row.id)).size === 5,
