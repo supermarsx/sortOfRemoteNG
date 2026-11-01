@@ -1,0 +1,32 @@
+name: CEF Linux read-only capacity inventory
+# Measurements only. No cleanup, build, download or checkpoint admission.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.repository_id == '1010282954' && github.event.repository.visibility == 'public'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Measure only the two fixed candidate namespaces
+        run: node tests/fixtures/cef/linux_capacity_inventory.mjs
+      - name: Retain aggregate metadata measurements
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cef-linux-capacity-inventory
+          path: ${{ runner.temp }}/cef-linux-capacity-inventory.json
+          if-no-files-found: warn
+          retention-days: 7
