@@ -257,8 +257,11 @@ test("actual proof selector requires all native cases, cleanup and the ARM codec
     sourceLockReference:
       "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
     cleanupConfirmed: true,
-    publicAdmissionDeniedBefore: true,
-    publicAdmissionDisabledAfter: true,
+    scopedSourceWritesSupported: true,
+    scopedSourcePolicy: "sorng-macarm-owned-source-metadata-intel-20260824-v1",
+    productionInputWrites: false,
+    publicOutOfScopeDeniedBefore: true,
+    publicOutOfScopeDeniedAfter: true,
     capability: {
       complete: true,
       cleanupConfirmed: true,
@@ -309,13 +312,22 @@ test("actual proof selector requires all native cases, cleanup and the ARM codec
       value.targetArchitecture = "x86_64";
     },
     (value) => {
-      value.publicAdmissionDeniedBefore = false;
+      value.publicOutOfScopeDeniedBefore = false;
     },
     (value) => {
-      value.publicAdmissionDisabledAfter = false;
+      value.publicOutOfScopeDeniedAfter = false;
     },
     (value) => {
       value.image = "future";
+    },
+    (value) => {
+      value.scopedSourceWritesSupported = false;
+    },
+    (value) => {
+      value.scopedSourcePolicy = "unscoped";
+    },
+    (value) => {
+      value.productionInputWrites = true;
     },
     (value) => {
       value.capability.handlesClosed = false;

@@ -266,8 +266,21 @@ def preflight(args):
     at_stage('helper-import')
     module = helper()
     at_stage('admission')
-    need(module.MAC_SOURCE_WRITE_ADMITTED is False)
+    need(module.MAC_SOURCE_WRITE_ADMITTED is True and module.MAC_SOURCE == SOURCE and
+         module.MAC_SOURCE_IMAGE == IMAGE and module.MAC_SOURCE_PROOF ==
+         (41328841230, 13092905128, 'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90'))
     return output, module
+
+
+def deny_out_of_scope(module, output):
+    for mode in module.SOURCE_IO_MODES:
+        try:
+            module.source_metadata(mode, output / 'must-not-read', output / 'must-not-write', {},
+                                   platform_policy='mac-arm')
+        except module.CheckpointError as error:
+            need(str(error) == 'source-mac-identity-scope')
+        else:
+            need(False)
 
 
 def main(args):
@@ -277,6 +290,8 @@ def main(args):
     report = {'schemaVersion': 1, 'kind': 'sorng-macarm-owned-source-proof', 'complete': False,
               'hostPlatform': 'darwin', 'hostArchitecture': 'x86_64', 'targetArchitecture': 'arm64',
               'image': IMAGE, 'sourceLockReference': SOURCE, 'sourceWriteAdmitted': False,
+              'scopedSourceWritesSupported': True, 'scopedSourcePolicy': module.MAC_SOURCE_METADATA_POLICY,
+              'productionInputWrites': False,
               'nativeAcceptance': False, 'runtimeReady': False, 'failure': None}
     try:
         at_stage('capability')
@@ -289,19 +304,12 @@ def main(args):
         need(capability['complete'] and len(capability['rows']) == 12)
         need(all(row['exactMtimeReadback'] and row['symlinkTargetUnchanged'] for row in capability['rows']))
         at_stage('public-gates')
-        for mode in module.SOURCE_IO_MODES:
-            try:
-                module.source_metadata(mode, output / 'must-not-read', output / 'must-not-write', {},
-                                       platform_policy='mac-arm')
-            except module.CheckpointError as error:
-                need(str(error) == 'source-mac-darwin-capability-unreviewed')
-            else:
-                need(False)
-        report['publicAdmissionDeniedBefore'] = True
+        deny_out_of_scope(module, output)
+        report['publicOutOfScopeDeniedBefore'] = True
         at_stage('roundtrip')
         report['roundtrip'] = roundtrip(tree, module)
-        need(module.MAC_SOURCE_WRITE_ADMITTED is False)
-        report['publicAdmissionDisabledAfter'] = True
+        deny_out_of_scope(module, output)
+        report['publicOutOfScopeDeniedAfter'] = True
     except BaseException:
         report['failure'] = 'OWNED_SOURCE_PROOF_FAILED'
     finally:

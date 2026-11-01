@@ -1,6 +1,6 @@
 name: CEF owned Darwin source metadata proof
-# Fresh temporary objects only. This workflow grants no source-write admission,
-# compiler permission, native CEF acceptance or runtime publication authority.
+# Fresh temporary objects only. Policy support is reported separately from this
+# diagnostic's production writes. Results grant no compiler, CEF or release authority.
 on:
   workflow_dispatch:
 permissions:
@@ -125,7 +125,7 @@ jobs:
           export function validateReport(report) {
             assert(report.complete === true && report.sourceWriteAdmitted === false && report.nativeAcceptance === false && report.runtimeReady === false, 'OWNED_PROOF_RESULT');
             assert(report.hostPlatform === 'darwin' && report.hostArchitecture === 'x86_64' && report.targetArchitecture === 'arm64', 'OWNED_PROOF_RESULT_HOST');
-            assert(report.image === '20260824.0482.1' && report.sourceLockReference === '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' && report.cleanupConfirmed === true && report.publicAdmissionDeniedBefore === true && report.publicAdmissionDisabledAfter === true, 'OWNED_PROOF_QUALIFICATION');
+            assert(report.image === '20260824.0482.1' && report.sourceLockReference === '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' && report.cleanupConfirmed === true && report.scopedSourceWritesSupported === true && report.scopedSourcePolicy === 'sorng-macarm-owned-source-metadata-intel-20260824-v1' && report.productionInputWrites === false && report.publicOutOfScopeDeniedBefore === true && report.publicOutOfScopeDeniedAfter === true, 'OWNED_PROOF_QUALIFICATION');
             const cap = report.capability;
             assert(cap?.complete === true && cap.cleanupConfirmed === true && cap.objectsRemoved === true && cap.handlesClosed === true && Array.isArray(cap.rows) && cap.rows.length === 12, 'OWNED_PROOF_CAPABILITY');
             const cases = new Set();
@@ -164,7 +164,7 @@ jobs:
             }
             const report = JSON.parse((await heldBytes(path.join(output, 'proof.json'), 128 * 1024)).toString('utf8'));
             validateReport(report);
-            console.log('Owned Darwin metadata proof complete; production admission remains disabled.');
+            console.log('Owned Darwin metadata proof complete; scoped policy support and zero production input writes verified separately.');
           }
           try { await runOwnedSourceProof(); } catch { console.error('OWNED_DARWIN_PROOF_FAILED'); process.exitCode = 1; }
           NODE

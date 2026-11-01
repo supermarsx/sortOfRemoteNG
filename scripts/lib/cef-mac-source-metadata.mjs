@@ -251,10 +251,19 @@ export async function authoritativeGn(context, operations) {
 import { macMetalFingerprint } from "../cef-hosted-provision.mjs";
 export const MAC_SOURCE_POLICY = Object.freeze({
   target: "aarch64-apple-darwin",
+  source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
   platform: "darwin",
+  architecture: "x64",
+  imageOS: "macos15",
+  image: "20260824.0482.1",
   kind: "sorng-macarm-source-metadata",
-  name: "sorng-macarm-complete-owned-inputs-v1-unadmitted",
-  darwinWriteAdmitted: false,
+  name: "sorng-macarm-owned-source-metadata-intel-20260824-v1",
+  darwinWriteAdmitted: true,
+  evidence: Object.freeze({
+    runId: 41328841230,
+    artifactId: 13092905128,
+    sha256: "fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90",
+  }),
 });
 export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   target: "x86_64-apple-darwin",
@@ -309,11 +318,52 @@ const freezeData = (value) => {
   }
   return value;
 };
-export function assertMacSourceWriteAdmission() {
+export function validateMacSourceWriteScope(identity, host) {
   assert(
-    MAC_SOURCE_POLICY.darwinWriteAdmitted,
-    "MAC_SOURCE_DARWIN_CAPABILITY_UNREVIEWED",
+    MAC_SOURCE_POLICY.darwinWriteAdmitted &&
+      host?.platform === MAC_SOURCE_POLICY.platform &&
+      host.architecture === MAC_SOURCE_POLICY.architecture &&
+      host.imageOS === MAC_SOURCE_POLICY.imageOS &&
+      host.image === MAC_SOURCE_POLICY.image,
+    "MAC_SOURCE_HOST_SCOPE",
   );
+  if (identity !== undefined)
+    assert(
+      identity?.target === MAC_SOURCE_POLICY.target &&
+        identity.source === MAC_SOURCE_POLICY.source &&
+        identity.image === MAC_SOURCE_POLICY.image &&
+        identity.canonicalRoot ===
+          "/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/" +
+            MAC_SOURCE_POLICY.source,
+      "MAC_SOURCE_IDENTITY_SCOPE",
+    );
+}
+export function assertMacSourceWriteAdmission(
+  identity,
+  environment = process.env,
+  runner,
+) {
+  validateMacSourceWriteScope(identity, {
+    platform: process.platform,
+    architecture: process.arch,
+    imageOS: process.env.ImageOS,
+    image: process.env.ImageVersion,
+  });
+  assert(
+    environment?.ImageOS === process.env.ImageOS &&
+      environment.ImageVersion === process.env.ImageVersion,
+    "MAC_SOURCE_ENV_SCOPE",
+  );
+  if (runner !== undefined)
+    assert(
+      runner.target === MAC_SOURCE_POLICY.target &&
+        runner.hosted?.platform === MAC_SOURCE_POLICY.platform &&
+        runner.hosted.architecture === MAC_SOURCE_POLICY.architecture &&
+        runner.hosted.imageOS === MAC_SOURCE_POLICY.imageOS &&
+        runner.hosted.imageVersion === MAC_SOURCE_POLICY.image &&
+        runner.hosted.runner === "macos-15-intel",
+      "MAC_SOURCE_RUNNER_SCOPE",
+    );
 }
 export function macSourceMetadataPlan(identity, out, mode) {
   assert(identity?.target === MAC_SOURCE_POLICY.target, "MAC_SOURCE_TARGET");
@@ -331,7 +381,7 @@ export function macSourceMetadataPlan(identity, out, mode) {
   );
   assert(out === work + "/source/src/out/Release_GN_arm64", "MAC_SOURCE_OUT");
   // A report or external-read context cannot switch this source-controlled gate.
-  assertMacSourceWriteAdmission();
+  assertMacSourceWriteAdmission(identity);
   return {
     mode,
     source: work + "/source",
@@ -1250,7 +1300,16 @@ function externalObservationEvidenceFor(envelope, attestation) {
 }
 
 export async function prepareAuthoritativeMacGn(context, check) {
-  assertMacSourceWriteAdmission();
+  assertMacSourceWriteAdmission(
+    {
+      target: context.runner?.target,
+      source: context.sourceLockIdentity,
+      canonicalRoot: context.work,
+      image: context.env?.ImageVersion,
+    },
+    context.env,
+    context.runner,
+  );
   return prepareAuthoritativeMacGnFor(ARM_EXTERNAL, context, check);
 }
 export async function prepareAuthoritativeMacIntelGn(context, check) {

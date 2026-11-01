@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import vm from "node:vm";
 // SOURCE I/O diagnostics are optional, never authority for a path or caller.
 test("source IO normal directory EOF performs no diagnostic work and unexpected StopIteration remains visible", () => {
   const result = python(
@@ -9700,27 +9701,120 @@ print('actual pinned predicate old date drift / fixed epoch stable')`,
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-test("Mac source policy cannot be admitted by an external context, result or environment", async () => {
+test("Mac source admission binds the proved Intel host image and exact ARM source before IO", async () => {
   const mac = await import("../../scripts/lib/cef-mac-source-metadata.mjs");
   const source = checkpointProfile("aarch64-apple-darwin").source;
   const selected = {
     ...identity,
     target: "aarch64-apple-darwin",
     source,
+    image: mac.MAC_SOURCE_POLICY.image,
     canonicalRoot:
       "/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/" +
       source,
   };
-  for (const mode of ["source-record", "source-apply", "source-verify"])
+  const host = {
+    platform: "darwin",
+    architecture: "x64",
+    imageOS: "macos15",
+    image: "20260824.0482.1",
+  };
+  mac.validateMacSourceWriteScope(selected, host);
+  const actualHostAdmitted =
+    process.platform === host.platform &&
+    process.arch === host.architecture &&
+    process.env.ImageOS === host.imageOS &&
+    process.env.ImageVersion === host.image;
+  for (const mode of ["source-record", "source-apply", "source-verify"]) {
+    const call = () =>
+      sourceMetadataPlan(
+        selected,
+        selected.canonicalRoot + "/source/src/out/Release_GN_arm64",
+        mode,
+      );
+    if (actualHostAdmitted) assert.equal(call().platformPolicy, "mac-arm");
+    else assert.throws(call, /MAC_SOURCE_HOST_SCOPE/);
+  }
+  for (const changed of [
+    { platform: "linux" },
+    { architecture: "arm64" },
+    { imageOS: "macos14" },
+    { image: "20261030.294.1" },
+  ])
     assert.throws(
-      () =>
-        sourceMetadataPlan(
-          selected,
-          selected.canonicalRoot + "/source/src/out/Release_GN_arm64",
-          mode,
-        ),
-      /MAC_SOURCE_DARWIN_CAPABILITY_UNREVIEWED/,
+      () => mac.validateMacSourceWriteScope(selected, { ...host, ...changed }),
+      /MAC_SOURCE_HOST_SCOPE/,
     );
+  for (const changed of [
+    { target: "x86_64-apple-darwin" },
+    { source: "b".repeat(64) },
+    { image: "20261030.294.1" },
+    { canonicalRoot: "/arbitrary" },
+  ])
+    assert.throws(
+      () => mac.validateMacSourceWriteScope({ ...selected, ...changed }, host),
+      /MAC_SOURCE_IDENTITY_SCOPE/,
+    );
+  // Execute the actual runtime binder with closed host facts. Caller environment
+  // switches cannot turn a real Linux or native-ARM host into this Intel host.
+  const admission = (platform, arch) =>
+    vm.runInNewContext(
+      "(" + mac.assertMacSourceWriteAdmission.toString() + ")",
+      {
+        process: {
+          platform,
+          arch,
+          env: { ImageOS: host.imageOS, ImageVersion: host.image },
+        },
+        validateMacSourceWriteScope: mac.validateMacSourceWriteScope,
+        MAC_SOURCE_POLICY: mac.MAC_SOURCE_POLICY,
+        assert,
+      },
+    );
+  const environment = {
+    ImageOS: host.imageOS,
+    ImageVersion: host.image,
+    MAC_SOURCE_WRITE_ADMITTED: "true",
+  };
+  const runner = {
+    target: selected.target,
+    hosted: { ...host, imageVersion: host.image, runner: "macos-15-intel" },
+  };
+  admission("darwin", "x64")(selected, environment, runner);
+  assert.throws(
+    () =>
+      admission("darwin", "x64")(
+        selected,
+        { ...environment, ImageVersion: "20261030.294.1" },
+        runner,
+      ),
+    /MAC_SOURCE_ENV_SCOPE/,
+  );
+  for (const [platform, arch] of [
+    ["linux", "x64"],
+    ["darwin", "arm64"],
+  ])
+    assert.throws(
+      () => admission(platform, arch)(selected, environment, runner),
+      /MAC_SOURCE_HOST_SCOPE/,
+    );
+  assert.throws(
+    () =>
+      admission("darwin", "x64")(selected, environment, {
+        ...runner,
+        hosted: { ...runner.hosted, runner: "macos-15" },
+      }),
+    /MAC_SOURCE_RUNNER_SCOPE/,
+  );
+  assert(
+    Object.isFrozen(mac.MAC_SOURCE_POLICY) &&
+      Object.isFrozen(mac.MAC_SOURCE_POLICY.evidence),
+  );
+  assert.deepEqual(mac.MAC_SOURCE_POLICY.evidence, {
+    runId: 41328841230,
+    artifactId: 13092905128,
+    sha256: "fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90",
+  });
   assert.throws(
     () =>
       mac.macSourceMetadataPlan(
@@ -9738,16 +9832,13 @@ test("Mac source policy cannot be admitted by an external context, result or env
       ),
     /MAC_EXTERNAL_ATTESTATION/,
   );
-  assert.equal(mac.MAC_SOURCE_POLICY.darwinWriteAdmitted, false);
+  assert.equal(mac.MAC_SOURCE_POLICY.darwinWriteAdmitted, true);
   const worker = await readFile(
     path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
     "utf8",
   );
-  assert.match(worker, /MAC_SOURCE_WRITE_ADMITTED = False/);
-  assert.match(
-    worker,
-    /require\(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed'\)/,
-  );
+  assert.match(worker, /source_mac_write_admission\(identity\)/);
+  assert.match(worker, /MAC_SOURCE_PROOF = \(41328841230, 13092905128/);
 });
 
 test("copied Mac authoritative GN hook preserves exact ordering and original first rejection", async () => {
@@ -10405,7 +10496,7 @@ class Proof(unittest.TestCase):
  def test_source_darwin_gate_precedes_all_path_access_and_writes(self):
   with patch.object(sys,'platform','darwin'),patch.object(pathlib.Path,'lstat',side_effect=AssertionError('no source metadata access')),patch.object(m.os,'utime',side_effect=AssertionError('no writes')):
    for mode in ['source-record','source-apply','source-verify']:
-    with self.subTest(mode=mode),self.assertRaisesRegex(m.CheckpointError,'source-mac-darwin-capability-unreviewed'):
+    with self.subTest(mode=mode),self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):
      m.source_metadata(mode,pathlib.Path('/not-read'),pathlib.Path('/not-written'),{},5,platform_policy='mac-arm')
  def snapshots(self):
    roots={'sdk':'/sdk','toolchain':'/tools','metal':'/metal','python':'/python'}
@@ -11165,7 +11256,8 @@ class BirthAvailability(unittest.TestCase):
   self.assertIsNone(m.source_birth(info,external))
   for policy in [None,{}, {'mac':True}, {'mac':True,'external':False}, {'mac':False,'external':True}, {'mac':True,'external':1}]:
    with self.subTest(policy=policy),self.assertRaisesRegex(m.CheckpointError,'source-mac-birth-unavailable'):m.source_birth(info,policy)
-  self.assertFalse(m.MAC_SOURCE_WRITE_ADMITTED)
+  self.assertTrue(m.MAC_SOURCE_WRITE_ADMITTED)
+  with self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):m.source_mac_write_admission({})
  def test_available_exact_and_all_malformed_attributes_deny(self):
   for value in [0,1770000000123456789,2**63-1]:
    self.assertEqual(m.source_birth(self.info(st_birthtime_ns=value),external),value)
@@ -11572,12 +11664,15 @@ class SdkColon(unittest.TestCase):
   self.assertEqual(delegated.value.func.id,'_source_metadata_owned_codec')
   identity=next(n for n in wrapper.body if isinstance(n,ast.Assign)and isinstance(n.value,ast.Call)and isinstance(n.value.func,ast.Name)and n.value.func.id=='source_metadata_identity')
   self.assertLess(identity.lineno,delegated.lineno)
-  for flag in ['MAC_SOURCE_WRITE_ADMITTED','MAC_INTEL_SOURCE_WRITE_ADMITTED']:
+  scoped=[n for n in ast.walk(wrapper)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='source_mac_write_admission']
+  self.assertEqual(len(scoped),1);self.assertLess(scoped[0].lineno,identity.lineno)
+  for flag in ['MAC_INTEL_SOURCE_WRITE_ADMITTED']:
    guarded=[n for n in ast.walk(wrapper)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='require'and n.args and isinstance(n.args[0],ast.Name)and n.args[0].id==flag]
    self.assertEqual(len(guarded),1);self.assertLess(guarded[0].lineno,identity.lineno)
   for platform_policy in ['mac-arm','mac-intel']:
    with patch.object(sys,'platform','darwin'),patch.object(m,'_source_metadata_owned_codec')as core,patch.object(m,'source_metadata_identity')as identity_reader:
-    with self.assertRaisesRegex(m.CheckpointError,'darwin-capability-unreviewed'):m.source_metadata_owned('source-apply',pathlib.PurePosixPath('/not-read'),pathlib.PurePosixPath('/not-written'),{},platform_policy=platform_policy)
+    reason='source-mac-(host|identity)-scope' if platform_policy=='mac-arm'else'darwin-capability-unreviewed'
+    with self.assertRaisesRegex(m.CheckpointError,reason):m.source_metadata_owned('source-apply',pathlib.PurePosixPath('/not-read'),pathlib.PurePosixPath('/not-written'),{},platform_policy=platform_policy)
     core.assert_not_called();identity_reader.assert_not_called()
   with patch.object(sys,'platform','linux'),patch.object(m,'_source_metadata_owned_codec')as core:
    with self.assertRaisesRegex(m.CheckpointError,'source-identity'):m.source_metadata_owned('source-apply',pathlib.PurePosixPath('/not-read'),pathlib.PurePosixPath('/not-written'),{})
@@ -11948,7 +12043,8 @@ class ExternalLinkDiagnostic(unittest.TestCase):
    def check(self):raise marker
   marker=m.CheckpointError('archive-deadline')
   with self.assertRaises(m.CheckpointError)as caught:m.mac_external_links(ROOTS,values,Expired())
-  self.assertIs(caught.exception,marker);self.assertFalse(hasattr(marker,'external_link_failure'));self.assertFalse(m.MAC_SOURCE_WRITE_ADMITTED)
+  self.assertIs(caught.exception,marker);self.assertFalse(hasattr(marker,'external_link_failure'));self.assertTrue(m.MAC_SOURCE_WRITE_ADMITTED)
+  with self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):m.source_mac_write_admission({})
 unittest.main(argv=['external-link-diagnostic'],verbosity=2)
 `;
 
@@ -12800,7 +12896,10 @@ import types,pathlib,sys,json
 from unittest.mock import patch
 file=pathlib.Path(sys.argv[1]);m=types.ModuleType('intel_proof');m.__file__=str(file)
 exec(compile(file.read_bytes(),str(file),'exec'),m.__dict__)
-assert m.MAC_INTEL_SOURCE_WRITE_ADMITTED is False and m.MAC_SOURCE_WRITE_ADMITTED is False
+assert m.MAC_INTEL_SOURCE_WRITE_ADMITTED is False and m.MAC_SOURCE_WRITE_ADMITTED is True
+try:m.source_mac_write_admission({})
+except m.CheckpointError as e:assert str(e) in ('source-mac-host-scope','source-mac-identity-scope')
+else:raise AssertionError('unscoped ARM admitted')
 for mode in ('source-record','source-apply','source-verify'):
  with patch.object(m,'safe',side_effect=AssertionError('data read')),patch.object(m,'source_snapshot',side_effect=AssertionError('data read')):
   try:m.source_metadata(mode,None,None,None,platform_policy='mac-intel')

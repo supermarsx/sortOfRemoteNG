@@ -100,13 +100,14 @@ class OwnedCodecRouting(unittest.TestCase):
             return m._source_metadata_owned_codec(mode, self.root, self.sidecar, self.identity,
                                                   self.work, budget or m.Budget(5), 'mac-arm')
 
-    def test_public_arm_and_intel_gates_stay_closed_before_any_path_read(self):
-        self.assertFalse(m.MAC_SOURCE_WRITE_ADMITTED)
+    def test_out_of_scope_arm_and_unreviewed_intel_deny_before_any_path_read(self):
+        self.assertTrue(m.MAC_SOURCE_WRITE_ADMITTED)
         self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
         for policy in ['mac-arm','mac-intel']:
             for mode in m.SOURCE_IO_MODES:
                 with patch.object(sys,'platform','darwin'), patch.object(m,'safe',side_effect=AssertionError('no path access')):
-                    with self.assertRaisesRegex(m.CheckpointError, 'darwin-capability-unreviewed'):
+                    reason = 'source-mac-(host|identity)-scope' if policy=='mac-arm' else 'darwin-capability-unreviewed'
+                    with self.assertRaisesRegex(m.CheckpointError, reason):
                         m.source_metadata_owned(mode,self.root,self.sidecar,{},platform_policy=policy)
 
     def test_arm_records_distinct_mac_schema_with_raw_namespace_and_no_linux_cache(self):
@@ -172,6 +173,61 @@ class OwnedCodecRouting(unittest.TestCase):
              patch.object(m.os,'utime',side_effect=AssertionError('no timestamp writes')):
             with self.assertRaisesRegex(m.CheckpointError,'controlled-cancellation'):
                 self.core('source-record',Cancelled())
+
+
+class SourceWriteScope(unittest.TestCase):
+    def identity(self):
+        return {'target':'aarch64-apple-darwin','source':m.MAC_SOURCE,
+                'canonicalRoot':'/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/'+m.MAC_SOURCE,
+                'image':m.MAC_SOURCE_IMAGE,**{key:'a'*64 for key in ('producer','tools','graph','siso')}}
+
+    def host(self, **environment):
+        stack=ExitStack()
+        stack.enter_context(patch.object(sys,'platform','darwin'))
+        stack.enter_context(patch.object(m.platform,'machine',return_value='x86_64'))
+        stack.enter_context(patch.dict(m.os.environ,{'ImageOS':'macos15','ImageVersion':m.MAC_SOURCE_IMAGE,
+                                                   **environment},clear=True))
+        return stack
+
+    def test_exact_reviewed_scope_reaches_public_codec_with_validated_identity(self):
+        identity=self.identity();work=Path(identity['canonicalRoot'])
+        with self.host(),patch.object(m,'safe',side_effect=lambda p:p), \
+             patch.object(m,'_source_metadata_owned_codec',return_value={'complete':True})as core:
+            for mode in m.SOURCE_IO_MODES:
+                self.assertEqual(m.source_metadata_owned(mode,work/'source',work/'sidecar',identity,
+                    platform_policy='mac-arm'),{'complete':True})
+                self.assertEqual(core.call_args.args[0],mode)
+                self.assertEqual(core.call_args.args[4],work)
+        self.assertEqual(m.MAC_SOURCE_PROOF,(41328841230,13092905128,
+            'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90'))
+
+    def test_unreviewed_host_image_source_target_and_root_deny_before_root_io(self):
+        cases=[('host',{}, {},'linux','x86_64'),('native-arm',{}, {},'darwin','arm64'),
+               ('image',{'ImageVersion':'20261030.294.1'},{},'darwin','x86_64'),
+               ('image-os',{'ImageOS':'macos14'},{},'darwin','x86_64'),
+               ('source',{}, {'source':'b'*64},'darwin','x86_64'),
+               ('target',{}, {'target':'x86_64-apple-darwin'},'darwin','x86_64'),
+               ('root',{}, {'canonicalRoot':'/arbitrary'},'darwin','x86_64'),
+               ('identity-image',{}, {'image':'20261030.294.1'},'darwin','x86_64')]
+        for name,env,changed,host,arch in cases:
+            with self.subTest(case=name),self.host(**env),patch.object(sys,'platform',host), \
+                 patch.object(m.platform,'machine',return_value=arch), \
+                 patch.object(m,'safe',side_effect=AssertionError('no root access')), \
+                 patch.object(m,'_source_metadata_owned_codec',side_effect=AssertionError('no codec')), \
+                 patch.object(m.os,'utime',side_effect=AssertionError('no writes')):
+                for mode in m.SOURCE_IO_MODES:
+                    with self.assertRaisesRegex(m.CheckpointError,'source-mac-(host|identity)-scope'):
+                        m.source_metadata_owned(mode,Path('/not-read'),Path('/not-written'),
+                            {**self.identity(),**changed},platform_policy='mac-arm')
+
+    def test_public_identity_validator_rejects_other_arm_source_or_image_before_safe(self):
+        with patch.object(m,'safe',side_effect=lambda p:p)as safe:
+            self.assertEqual(m.source_metadata_identity(self.identity(),'mac-arm'),Path(self.identity()['canonicalRoot']))
+        safe.assert_called_once()
+        for changed in [{'source':'b'*64},{'image':'20261030.294.1'}]:
+            with self.subTest(changed=changed),patch.object(m,'safe',side_effect=AssertionError('no root IO')):
+                with self.assertRaisesRegex(m.CheckpointError,'source-root'):
+                    m.source_metadata_identity({**self.identity(),**changed},'mac-arm')
 
 
 class PreflightStages(unittest.TestCase):

@@ -6,6 +6,7 @@ import io
 import json
 import math
 import os
+import platform
 import re
 from pathlib import Path
 import stat
@@ -1301,8 +1302,14 @@ SOURCE_JOIN_FAILURE = False
 SOURCE_PATH_MODE = None
 SOURCE_MAX_ENTRIES = 3000000
 SOURCE_MAX_FILE = 8 * 1024**3
-MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-complete-owned-inputs-v1-unadmitted'
-MAC_SOURCE_WRITE_ADMITTED = False
+MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v1'
+# Source-controlled scope, supported by the reviewed native scratch proof only.
+# No report, caller flag or environment toggle can broaden this identity.
+MAC_SOURCE_WRITE_ADMITTED = True
+MAC_SOURCE = '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'
+MAC_SOURCE_IMAGE = '20260824.0482.1'
+MAC_SOURCE_PROOF = (41328841230, 13092905128,
+                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')
 MAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'
 MAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-complete-owned-inputs-v1-unadmitted'
 MAC_INTEL_SOURCE_WRITE_ADMITTED = False
@@ -2060,6 +2067,18 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     return value
 
 
+def source_mac_write_admission(identity):
+    import sys
+    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and
+            platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and
+            os.environ.get('ImageVersion') == MAC_SOURCE_IMAGE, 'source-mac-host-scope')
+    require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and
+            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and
+            identity.get('canonicalRoot') ==
+            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,
+            'source-mac-identity-scope')
+
+
 def source_metadata_identity(identity, platform_policy=None):
     fields = {'target','source','producer','canonicalRoot','image','tools','graph','siso'}
     require(isinstance(identity, dict) and set(identity) == fields and
@@ -2069,7 +2088,8 @@ def source_metadata_identity(identity, platform_policy=None):
     require(isinstance(identity['image'], str) and re.fullmatch(r'[0-9]{8}\.[0-9]+\.[0-9]+', identity['image']), 'source-image')
     require(isinstance(identity['canonicalRoot'], str), 'source-root')
     if platform_policy == 'mac-arm':
-        require(identity['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + identity['source'],
+        require(identity['source'] == MAC_SOURCE and identity['image'] == MAC_SOURCE_IMAGE and
+                identity['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,
                 'source-root')
     if platform_policy == 'mac-intel':
         require(identity['source'] == MAC_INTEL_SOURCE and identity['canonicalRoot'] ==
@@ -2162,13 +2182,12 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     if platform_policy == 'mac-intel':
         # Explicit unadmitted policy: fail before platform, identity or filesystem reads.
         require(MAC_INTEL_SOURCE_WRITE_ADMITTED, 'source-mac-intel-darwin-capability-unreviewed')
+    if platform_policy == 'mac-arm':
+        source_mac_write_admission(identity)
     require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
     budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
     source_progress_start(getattr(budget, 'seconds', seconds))
-    if platform_policy == 'mac-arm':
-        # No JSON, external context or fixture output can authorize timestamp writes.
-        require(MAC_SOURCE_WRITE_ADMITTED, 'source-mac-darwin-capability-unreviewed')
     work = source_metadata_identity(identity, platform_policy)
     return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
 

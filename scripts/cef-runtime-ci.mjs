@@ -634,7 +634,8 @@ export function buildEnvironment(
     (sourceMetadata === "mac-intel" && map.target !== "x86_64-apple-darwin")
   )
     fail("Closed Linux ARM source metadata environment");
-  if (sourceMetadata === "mac-arm") assertMacSourceWriteAdmission();
+  if (sourceMetadata === "mac-arm")
+    assertMacSourceWriteAdmission(undefined, inherited, map);
   if (sourceMetadata === "mac-intel") assertMacIntelSourceWriteAdmission();
   const env = { ...inherited };
   // Credentials belong to the read/publish client, never upstream build hooks.
@@ -1421,6 +1422,7 @@ export async function build(
   );
   Object.assign(childEnv, recipe.environment);
   const engineeringContext = {
+    sourceLockIdentity: identity.sourceLockSha256,
     metal,
     ...(macExternalInputs === undefined ? {} : { macExternalInputs }),
     ...(engineering?.beforeAcquire
