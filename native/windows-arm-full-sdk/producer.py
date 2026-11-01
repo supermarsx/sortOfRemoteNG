@@ -1,4 +1,4 @@
-"""Fixed bootstrap data workers. No GN, Rust, compiler or acquired binary execution."""
+"""Fixed legacy data/source workers and a separately admitted version preflight."""
 import hashlib
 import json
 import math
@@ -24,6 +24,15 @@ CARRIER_REF = "refs/heads/codex/windows-arm-full-sdk-source-20261026"
 SOURCE_GN_REF = "refs/heads/codex/windows-arm-source-gn-20261026"
 INVENTORY_REF = "refs/heads/codex/windows-arm-current-inventory-20261101"
 INVENTORY_IMAGE = "20261030.294.1"
+PREFLIGHT_REF = "refs/heads/codex/windows-arm-current-source-preflight-20261101"
+PREFLIGHT_MODE = "source-preflight"
+PREFLIGHT_SOURCES = [
+    '.github/workflows/windows-arm-source-preflight.yml',
+    'native/windows-arm-full-sdk/preflight-profile.json',
+    'native/windows-arm-full-sdk/preflight.py',
+    'native/windows-arm-full-sdk/test_preflight.py',
+    'tests/tooling/windowsArmSourcePreflight.node-test.mjs',
+]
 SOURCE_GN_NAMESPACE = "native/cef-build-inputs/20261026-r5-capsule23-windows-arm64-cross-x64-external-webview/"
 COMMAND_CANDIDATES = [
     {'role':'node','path':'C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe','kind':'pe'},
@@ -89,7 +98,7 @@ def command_import_graph(candidates, clock, read, state):
 
 
 def source_mode(c):
-    data.need(c.get('mode') in ('input-closure', 'command-inventory', 'source-gn'), 'FULL_MODE')
+    data.need(c.get('mode') in ('input-closure', 'command-inventory', 'source-gn', PREFLIGHT_MODE), 'FULL_MODE')
     return c['mode'] == 'source-gn'
 
 
@@ -118,10 +127,10 @@ def source_execution_policy(p):
     data.need(p['phaseAdmission'].get('source-gn') is True, 'FULL_SOURCE_ADMISSION_UNAVAILABLE')
 
 
-def source_host_closure_rows(p, image):
+def source_host_closure_rows(p, image, *, reviewed_image='20261021.278.1'):
     value = p['sourceGn']['hostClosure']; tools = source_host_tools(p)
     data.need(type(value) is dict and set(value) == {'image','rows','peBytes','edgeCount','edgeSha256'} and
-              image == value['image'] == p['image'] == '20261021.278.1', 'FULL_HOST_IMAGE')
+              image == value['image'] == p['image'] == reviewed_image, 'FULL_HOST_IMAGE')
     rows = value['rows']
     data.need(type(rows) is list and len(rows) == 18, 'FULL_HOST_CLOSURE_ROWS')
     found = {}; total = 0
@@ -156,9 +165,9 @@ def source_edges_digest(edges):
     return hashlib.sha256(json.dumps(ordered,sort_keys=True,separators=(',',':')).encode('utf-8')).hexdigest()
 
 
-def verify_source_host_closure(p, clock, image, *, reader=None):
+def verify_source_host_closure(p, clock, image, *, reader=None, reviewed_image='20261021.278.1'):
     import extract
-    expected = source_host_closure_rows(p,image)
+    expected = source_host_closure_rows(p,image,reviewed_image=reviewed_image)
     reader = extract.held if reader is None else reader
     state = {'rows':[],'edges':[]}; seen = {}; identities = set(); total = charged = admitted = 0
     def consumed(count):
@@ -374,7 +383,7 @@ def worker_policy(role, c):
 
 def role_in_mode(role,c):
     source_mode(c)
-    allowed = ('operation','command-inventory') if c['mode']=='command-inventory' else (
+    allowed = ('preflight','sdk-data','llvm-data','runtime-closure','git-version','clang-version') if c['mode']==PREFLIGHT_MODE else ('operation','command-inventory') if c['mode']=='command-inventory' else (
         *ROLES,'operation',*(('source-gn',)if c['mode']=='source-gn'else()))
     data.need(role in allowed,'FULL_ROLE_MODE')
     return role
@@ -395,17 +404,16 @@ def profile(clock):
 
 def bootstrap_authority(c, p):
     data.need(c["kind"] == "windows-arm-full-sdk-context" and
-              c["mode"] in ("input-closure", "command-inventory", "source-gn") and c["repository"] == "supermarsx/sortOfRemoteNG" and
+              c["mode"] in ("input-closure", "command-inventory", "source-gn", PREFLIGHT_MODE) and c["repository"] == "supermarsx/sortOfRemoteNG" and
               c["repositoryId"] == "1010282954" and c["visibility"] == "public" and
               c["event"] == "workflow_dispatch" and c["defaultBranch"] == "main" and
               c["ref"] == (CARRIER_REF if c["mode"] == "input-closure" else
-                           INVENTORY_REF if c["mode"] == "command-inventory" else SOURCE_GN_REF) and
+                           INVENTORY_REF if c["mode"] == "command-inventory" else PREFLIGHT_REF if c["mode"] == PREFLIGHT_MODE else SOURCE_GN_REF) and
               ((c['mode'] == 'input-closure' and (c['inputs'] is None or type(c['inputs']) is dict and not c['inputs'])) or
                (c['mode'] != 'input-closure' and c['inputs'] == {'mode':c['mode']})) and
-              c["workflow"] == p["sourcePaths"][0] and
-              c["workflow"] == ".github/workflows/windows-x64-arm-toolchain.yml" and
+              c["workflow"] == (PREFLIGHT_SOURCES[0] if c['mode']==PREFLIGHT_MODE else p["sourcePaths"][0]) and
               c["workflowSha"] == c["head"] and re.fullmatch("[a-f0-9]{40}", c["head"]) and
-              c["image"] == (INVENTORY_IMAGE if c["mode"] == "command-inventory" else p["image"]) and
+              c["image"] == (INVENTORY_IMAGE if c["mode"] in ("command-inventory", PREFLIGHT_MODE) else p["image"]) and
               re.fullmatch("[1-9][0-9]*", c["runId"]) and
               re.fullmatch("[1-9][0-9]*", c["attempt"]), "BOOT_AUTHORITY")
 
@@ -423,7 +431,8 @@ def verified_sources(root, expected=None, bind=False):
     clock = data.Clock(c["wallWorkEnd"], c["monotonicWorkEnd"])
     p = profile(clock)
     bootstrap_authority(c, p)
-    data.need(checkpoint.closed_sources(c["sources"], p["sourcePaths"]) == c["sourceDigest"], "BOOT_SOURCE_DIGEST")
+    paths=p['sourcePaths']+(PREFLIGHT_SOURCES if c['mode']==PREFLIGHT_MODE else [])
+    data.need(checkpoint.closed_sources(c["sources"], paths) == c["sourceDigest"], "BOOT_SOURCE_DIGEST")
     for i, row in enumerate(c["sources"]):
         _, snapshot = data.held(root / "source-inputs" / str(i), clock, row["bytes"], row["sha256"], retain=True, maximum=2 * 1024**2)
         _, live = data.held(ROOT / row["path"], clock, row["bytes"], row["sha256"], retain=True, maximum=2 * 1024**2)
@@ -449,7 +458,7 @@ def verified_sources(root, expected=None, bind=False):
 
 
 def worker_argv(role, root, p):
-    data.need(role in (*ROLES, "operation", "source-gn", "command-inventory") and CONTEXT_SHA is not None, "BOOT_ROLE")
+    data.need(role in (*ROLES, "operation", "source-gn", "command-inventory", "preflight") and CONTEXT_SHA is not None, "BOOT_ROLE")
     if role == 'source-gn':
         tools = source_host_tools(p)
         return [tools['node']['path'], '--disable-proto=throw', '--no-addons', str(HERE / 'source-driver.mjs'),
@@ -462,7 +471,7 @@ def closed_worker_command(argv, root, p):
     if type(argv) is list and len(argv) == 8 and argv[4] == '--source-gn':
         data.need(argv == worker_argv('source-gn', Path(root), p) and Path(root) == Path.cwd(), 'FULL_NODE_COMMAND')
         return 'source-gn'
-    data.need(type(argv) is list and len(argv) == 9 and argv[5] in (*ROLES, "operation", "command-inventory") and
+    data.need(type(argv) is list and len(argv) == 9 and argv[5] in (*ROLES, "operation", "command-inventory", "preflight") and
               argv == worker_argv(argv[5], Path(root), p) and Path(root) == Path.cwd(), "BOOT_COMMAND")
     return argv[5]
 
@@ -690,7 +699,8 @@ def supervise(root, c, p, clock):
         parent = job.ParentCancel(threading.Event())
         seconds = clock.remaining() - 3
         data.need(seconds > 0, "BOOT_ADMISSION")
-        result = job.run_job(worker_argv("operation", root, p), str(root), root / "jobs/operation",
+        role = 'preflight' if c['mode']==PREFLIGHT_MODE else 'operation'
+        result = job.run_job(worker_argv(role, root, p), str(root), root / ('jobs/'+role),
                              seconds, cancel=parent, cap=131072)
         result["parentCreationFiletime"] = parent.parent_creation
         result["parentExitObserved"] = parent.exit_observed
@@ -706,7 +716,7 @@ def supervise(root, c, p, clock):
         report = {"kind": "bootstrap-supervisor", "success": bool(result and result.get("success") and closed and not primary),
                   "firstFailure": primary, "originalJob": result, "parentHandleClosed": closed,
                   "sdkBuilt": False, "outputExecuted": False}
-        if source_mode(c):report['outputExecuted'] = None
+        if source_mode(c) or c['mode']==PREFLIGHT_MODE:report['outputExecuted'] = None
         try:
             verified_sources(root);clock.remaining();report["sourcePostVerified"] = True
         except BaseException:
@@ -728,11 +738,14 @@ def main(argv):
         data.need(Path(sys.executable).resolve() == Path(p["python"]["path"]).resolve(), "BOOT_PYTHON")
         return supervise(root, c, p, clock)
     data.need(os.name == "nt" and len(argv) == 5 and argv[0] == "--worker" and
-              argv[1] in (*ROLES, "operation", "command-inventory") and argv[4] == "--execute", "BOOT_ARGV")
+              argv[1] in (*ROLES, "operation", "command-inventory", "preflight") and argv[4] == "--execute", "BOOT_ARGV")
     root = Path(argv[2])
     c, p, clock = verified_sources(root, argv[3], bind=True)
     data.need(Path(sys.executable).resolve() == Path(p["python"]["path"]).resolve(), "BOOT_PYTHON")
     role_in_mode(argv[1],c)
+    if argv[1]=='preflight':
+        import preflight
+        return preflight.run(root,c,p,clock)
     return operation(root, c, p, clock) if argv[1] == "operation" else data_worker(argv[1], root, c, p, clock)
 
 

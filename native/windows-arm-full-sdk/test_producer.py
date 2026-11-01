@@ -105,9 +105,16 @@ class BootstrapTests(unittest.TestCase):
                 return self.generic_visit(node)
         normal=PolicyDefaults();new=normal.visit(new)
         self.assertEqual(normal.counts,{'processes':2,'memoryBytes':2,'cpuRate':1})
+        # Only the role-bound environment selector differs in the Job lifecycle;
+        # creation, assignment, limits, handles, cancellation and cleanup match.
+        selectors=[n for n in ast.walk(run) if isinstance(n,ast.Call) and
+                   isinstance(n.func,ast.Name) and n.func.id=='launch_environment']
+        self.assertEqual(len(selectors),1)
+        self.assertEqual(ast.unparse(selectors[0]),'launch_environment(role, cwd)')
+        selectors[0].func.id='environment';selectors[0].args=[]
         def body(tree):
             return [ast.dump(node, include_attributes=False) for node in tree.body
-                    if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in ("approved_tool_command","load_profile"))
+                    if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in ("approved_tool_command","load_profile","launch_environment"))
                     and not (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PROFILE_SHA" for t in node.targets))]
         self.assertEqual(body(old), body(new))
         self.assertEqual(producer.worker_policy('operation',{'mode':'input-closure'}),

@@ -229,7 +229,7 @@ def run_job(argv, cwd, output, seconds, *, cancel=None, _test_fault=None, cap=64
         si.startup.cb, si.startup.flags = C.sizeof(si), 0x100
         si.startup.stdin, si.startup.stdout, si.startup.stderr = handles
         si.attributes = attrs
-        env = C.create_unicode_buffer("\0".join(k + "=" + v for k, v in sorted(environment().items(), key=lambda kv: kv[0].upper())) + "\0\0")
+        env = C.create_unicode_buffer("\0".join(k + "=" + v for k, v in sorted(launch_environment(role,cwd).items(), key=lambda kv: kv[0].upper())) + "\0\0")
         command = C.create_unicode_buffer(subprocess.list2cmdline([str(a) for a in argv]))
         if cancel is not None and cancel.is_set():
             raise CancelledBeforeRun()
@@ -357,11 +357,26 @@ def load_profile():
 
 def approved_tool_command(argv,cwd):
     from producer import closed_worker_command, verified_sources, role_in_mode
-    role=closed_worker_command(argv,cwd,load_profile())
-    c,_,_ = verified_sources(Path(cwd))
+    if type(argv)is list and len(argv)==2:
+        c,p,clock = verified_sources(Path(cwd))
+        # Legacy eleven-file contexts do not seal the optional preflight module.
+        # Deny those modes before Python can import any of its code.
+        role_in_mode('git-version',c)
+        import preflight
+        role=preflight.closed_command(argv,Path(cwd),p,c,clock)
+    else:
+        role=closed_worker_command(argv,cwd,load_profile())
+        c,_,_ = verified_sources(Path(cwd))
     role_in_mode(role,c)
     environment()
     return role
+
+def launch_environment(role,cwd):
+    original=environment()
+    if role in ('git-version','clang-version'):
+        import preflight
+        return preflight.version_environment(role,Path(cwd),original)
+    return original
 
 class ParentCancel:
     def __init__(self,event):

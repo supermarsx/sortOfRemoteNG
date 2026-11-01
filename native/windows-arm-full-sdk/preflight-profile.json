@@ -1,0 +1,187 @@
+{
+  "kind": "windows-arm-current-source-preflight",
+  "mode": "source-preflight",
+  "ref": "refs/heads/codex/windows-arm-current-source-preflight-20261101",
+  "image": "20261030.294.1",
+  "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  "inventoryEvidence": {
+    "runId": 41325335383,
+    "head": "bcf300cb68f5857420e210535f99a1117b985816",
+    "artifactId": 13091241054,
+    "artifactSha256": "2212a2c650834f35e3092b5aa4ce731545b2eddb01ee6e69d24285836e48d088",
+    "sourceDigest": "df160f109b9ba3b7a64458e6d5ec7521fb0b4eb9c8df861fe0ee5befd99f6d9f"
+  },
+  "benignVersionExecutionAllowed": true,
+  "sourceFetchAllowed": false,
+  "gnAllowed": false,
+  "engineCompilationAllowed": false,
+  "sdkAllowed": false,
+  "publicationAllowed": false,
+  "clang": {
+    "relativePath": "llvm/bin/clang-cl.exe",
+    "bytes": 103794176,
+    "sha256": "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7",
+    "argv": [
+      "--version"
+    ],
+    "imports": [
+      "KERNEL32.dll",
+      "ADVAPI32.dll",
+      "ntdll.dll",
+      "VERSION.dll",
+      "OLEAUT32.dll"
+    ],
+    "delayImports": [
+      "ole32.dll",
+      "SHELL32.dll"
+    ]
+  },
+  "hostTools": {
+    "node": {
+      "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+      "bytes": 92825416,
+      "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+      "nlink": 1
+    },
+    "git": {
+      "path": "C:/Program Files/Git/cmd/git.exe",
+      "bytes": 44888,
+      "sha256": "20d0dde30a65afb6e5810a883700a94dcd77fbf3b44b32868d45bf7c9b30137c",
+      "nlink": 2
+    }
+  },
+  "hostClosure": {
+    "image": "20261030.294.1",
+    "rows": [
+      {
+        "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+        "bytes": 92825416,
+        "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+        "nlink": 1,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/cmd/git.exe",
+        "bytes": 44888,
+        "sha256": "20d0dde30a65afb6e5810a883700a94dcd77fbf3b44b32868d45bf7c9b30137c",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/git.exe",
+        "bytes": 4412760,
+        "sha256": "9c75f3f41eb5686bacde4b7c4fdfcd7970e8b699ee05c8d7a0cc9c8a7ddaffe8",
+        "nlink": 4,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/libexec/git-core/git-remote-https.exe",
+        "bytes": 2614632,
+        "sha256": "ad461657eca12dfeb50f281d107ac3760ac355a20882e4a3b0d470cb6bab77c6",
+        "nlink": 1,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libcurl-4.dll",
+        "bytes": 1024172,
+        "sha256": "3e4d1b80a3479ca518a5d7f2e4fecc00f5ec22932ac22fb6d23d6eb20ef8885a",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libcrypto-3-x64.dll",
+        "bytes": 5399196,
+        "sha256": "f8839fd7d5b5e7b1763c88705538c5762a2f97df17f37092e37de3c663f30b1e",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libssl-3-x64.dll",
+        "bytes": 966300,
+        "sha256": "6af55a4d522e2cc29ff0833cad4f6f7560f8ba2d107b97990d9415c590a4224a",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libintl-8.dll",
+        "bytes": 298164,
+        "sha256": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libiconv-2.dll",
+        "bytes": 1141951,
+        "sha256": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libpcre2-8-0.dll",
+        "bytes": 706022,
+        "sha256": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/zlib1.dll",
+        "bytes": 121530,
+        "sha256": "8ae7aeb0467763a1e271cd831ca8e2f7fd101602adb9923100ea26c6be2a559b",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libbrotlidec.dll",
+        "bytes": 60224,
+        "sha256": "c4c987a01597ddf969d93023f933f999a20f285588b0decb4deeb780c9e9cdf8",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libidn2-0.dll",
+        "bytes": 246525,
+        "sha256": "a054a6bb69aaf4666157f968740412e9697085cbc1e48a78f8dd9622169c5aaf",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libpsl-5.dll",
+        "bytes": 105846,
+        "sha256": "a531e72de3c64d43fb83cbfb6fa63e5ee982a970292ec51314e29d0acabf1dd5",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libssh2-1.dll",
+        "bytes": 270863,
+        "sha256": "a0e7eea75814708ce5c9b2a83998b14ac1268b70cccc2c22686f4ab585a3aac1",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libzstd.dll",
+        "bytes": 1217412,
+        "sha256": "48368ab0ca622d0ec12f41ce85d91f22866bf5da92c77a69a06483564c93816c",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libbrotlicommon.dll",
+        "bytes": 140697,
+        "sha256": "7b0047dc16dd92a7932124dfd5a6e698d342f533a15d37d61f710def66091436",
+        "nlink": 2,
+        "machine": 34404
+      },
+      {
+        "path": "C:/Program Files/Git/ucrt64/bin/libunistring-5.dll",
+        "bytes": 2256134,
+        "sha256": "ee39258fa1086269674a8179d3cfaf7c4e380ada14441b5dd9ed53d82d15c4e3",
+        "nlink": 2,
+        "machine": 34404
+      }
+    ],
+    "peBytes": 113852732,
+    "edgeCount": 242,
+    "edgeSha256": "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a"
+  }
+}
