@@ -1026,7 +1026,7 @@ export function hookProjectionArguments(depot, commands = depot) {
   return [
     "-B",
     "-c",
-    `import sys,os,json
+    `import sys,os,json,re
 sys.path.insert(0,sys.argv[2])
 import source_bootstrap
 source_bootstrap.bind(sys.argv[3],sys.argv[4])
@@ -1039,13 +1039,60 @@ options.process_all_deps=True
 client=gclient.GClient.LoadCurrentConfig(options)
 if client is None: raise RuntimeError('FULL_HOOK_CONFIG')
 if client.RunOnDeps('flatten',args,progress=False)!=0: raise RuntimeError('FULL_HOOK_FLATTEN')
-flat=gclient.Flattener(client,pin_all_deps=True)
+# Hook observation needs scoped native objects, not a global DEPS vars map.
+# Flattener's global-var consistency assertion remains unchanged upstream.
+all_deps={};groups={'hooks':[],'pre_deps_hooks':[]};active=set();counts=[0,0]
+def add_dep(dep):
+ if dep.name in all_deps and all_deps[dep.name]!=dep: raise RuntimeError('FULL_HOOK_DEP_IDENTITY')
+ if dep.url: all_deps[dep.name]=dep
+ if len(all_deps)>4096: raise RuntimeError('FULL_HOOK_DEP_BOUND')
+def collect(dep,depth):
+ if depth>=64 or id(dep) in active: raise RuntimeError('FULL_HOOK_DEP_CYCLE_OR_DEPTH')
+ counts[0]+=1
+ if counts[0]>4096: raise RuntimeError('FULL_HOOK_DEP_BOUND')
+ if not dep.deps_parsed: raise RuntimeError('FULL_HOOK_DEPS_UNPARSED')
+ active.add(id(dep))
+ try:
+  for kind,rows in [('hooks',dep.deps_hooks),('pre_deps_hooks',dep.pre_deps_hooks)]:
+   for hook in rows:
+    if counts[1]>=512: raise RuntimeError('FULL_HOOK_COUNT')
+    counts[1]+=1;groups[kind].append((dep,hook))
+  for child in dep.dependencies: add_dep(child)
+  for child in dep.dependencies:
+   if child.should_recurse: collect(child,depth+1)
+ finally: active.remove(id(dep))
+for solution in client.dependencies:
+ add_dep(solution);collect(solution,0)
+def relative(value):
+ return (type(value)is str and 0<len(value)<=512 and re.fullmatch(r'[A-Za-z0-9_./+-]+',value) is not None and not value.startswith('/') and
+  all(part and part not in ('.','..') and part.lower()!='.git' for part in value.split('/')))
+# Validate recursive origin paths before native pinning or metadata queries.
+# Nonrecursive CIPD names legitimately contain ':', and are never DEPS paths.
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ hierarchy=dep.hierarchy_data()
+ if (not relative(dep.name) or not relative(dep.deps_file) or type(hierarchy)not in(tuple,list) or not 0<len(hierarchy)<=64 or
+  any(type(pair)not in(tuple,list) or len(pair)!=2 or not relative(pair[0]) or type(pair[1])is not str or len(pair[1])>4096 for pair in hierarchy)):
+  raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+# Reuse the unchanged pinned native helper, which has no instance state.
+# This retains pin_all_deps behavior without constructing the DEPS formatter.
+for dep in all_deps.values(): gclient.Flattener._pin_dep(None,dep)
+origin_rows=set()
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ if type(dep.url)is not str or re.fullmatch(r'https://[^\\s@]+@[a-f0-9]{40}',dep.url)is None: raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+ filename=dep.deps_file
+ if not os.path.exists(os.path.join(client.root_dir,dep.name,filename)):
+  filename='DEPS'
+  if not os.path.exists(os.path.join(client.root_dir,dep.name,filename)): continue
+ origin_rows.add((dep.url,filename,dep.hierarchy_data()))
+ if len(origin_rows)>1024: raise RuntimeError('FULL_HOOK_ORIGIN_COUNT')
 hooks=[]
-for kind,rows in [('hooks',flat._hooks),('pre_deps_hooks',flat._pre_deps_hooks)]:
+for kind,rows in [('hooks',groups['hooks']),('pre_deps_hooks',groups['pre_deps_hooks'])]:
  for dep,hook in rows:
   if len(hooks)>=512: raise RuntimeError('FULL_HOOK_COUNT')
   hooks.append(dict(kind=kind,name=hook.name,condition=hook.condition,pattern=hook.pattern,cwd=os.path.relpath(hook.effective_cwd).replace('\\\\','/'),action=hook.action))
-origins=[dict(url=url,deps_file=filename,hierarchy=hierarchy) for url,filename,hierarchy in sorted(flat.deps_files)]
+origins=[dict(url=url,deps_file=filename,hierarchy=hierarchy) for url,filename,hierarchy in sorted(origin_rows)]
 if len(origins)>1024: raise RuntimeError('FULL_HOOK_ORIGIN_COUNT')
 raw=json.dumps(dict(kind='windows-arm-hook-projection',hooks=hooks,origins=origins),ensure_ascii=True,separators=(',',':')).encode('ascii')
 if len(raw)>4*1024**2: raise RuntimeError('FULL_HOOK_PROJECTION_BOUND')

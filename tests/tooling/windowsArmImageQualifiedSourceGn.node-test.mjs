@@ -1065,3 +1065,201 @@ test(
     );
   },
 );
+
+async function projectionFixturePython() {
+  try {
+    const raw = await fs.readFile(base.python.path);
+    assert.equal(raw.length, base.python.bytes);
+    assert.equal(sha(raw), base.python.sha256);
+    return base.python.path;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    assert(
+      process.platform !== "win32" || process.env.GITHUB_ACTIONS !== "true",
+      "Hosted Windows projection fixture requires the pinned Python",
+    );
+    return process.platform === "win32" ? "python" : "python3";
+  }
+}
+
+async function selectedProjectionCases(driver, cases) {
+  const python = await projectionFixturePython();
+  const program = driver.hookProjectionArguments("fixture-depot")[2];
+  assert(Buffer.byteLength(program) < 32768);
+  const fixture =
+    "import sys,json;from pathlib import Path;sys.path.insert(0,str(Path('native/windows-arm-full-sdk').resolve()));import test_image_dispatch as t;raw=sys.stdin.read(32769);assert len(raw)<=32768;p=json.loads(raw);print(json.dumps([t.selected_hook_projection_case(p['program'],case) for case in p['cases']]))";
+  const result = spawnSync(python, ["-I", "-B", "-c", fixture], {
+    cwd: root,
+    input: JSON.stringify({ program, cases }),
+    encoding: "utf8",
+    timeout: 20000,
+    maxBuffer: 262144,
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test("selected hook projection supports actual pinned sibling DEPS scoped vars without flattening them", async () => {
+  for (const driver of [currentDriver, oldDriver]) {
+    const [value] = await selectedProjectionCases(driver, ["scoped"]);
+    assert.equal(value.error, null, JSON.stringify(value.error));
+    assert.equal(value.flattenerConstructed, 0);
+    assert.equal(value.parsed, 1);
+    assert.equal(value.bootstrapBound, 1);
+    assert.equal(value.varsUnchanged, true);
+    assert.equal(value.outsideMetadataQueried, false);
+    const projection = driver.validateHookProjection(
+      "FULL_HOOK_PROJECTION:" + JSON.stringify(value.packet) + "\n",
+    );
+    assert.deepEqual(
+      projection.hooks.map((hook) => [hook.name, hook.condition, hook.kind]),
+      [
+        ["src", "checkout_win", "hooks"],
+        ["src/third_party/angle", "checkout_win", "hooks"],
+        ["src/third_party/dawn", "False", "hooks"],
+        ["pre", "False", "pre_deps_hooks"],
+      ],
+    );
+    assert.deepEqual(projection.hooks[2].action, [
+      "unsupported-platform-tool",
+      "%PATH%",
+      "x&echo y",
+    ]);
+    assert.equal(projection.origins.length, 3);
+  }
+});
+
+test("selected hook projection retains native full-revision pinning, DEPS fallback and scoped Hook order", async () => {
+  for (const driver of [currentDriver, oldDriver]) {
+    const values = await selectedProjectionCases(driver, [
+      "pinning",
+      "custom-origin",
+      "nonrecursive-pin",
+      "shared-subtree",
+    ]);
+    for (const value of values) {
+      assert.equal(value.error, null, JSON.stringify(value));
+      assert.equal(value.varsUnchanged, true);
+      assert.equal(value.flattenerConstructed, 0);
+      assert.equal(value.outsideMetadataQueried, false);
+      driver.validateHookProjection(
+        "FULL_HOOK_PROJECTION:" + JSON.stringify(value.packet) + "\n",
+      );
+    }
+    assert.deepEqual(values[0].pins, ["src/third_party/angle"]);
+    assert(
+      values[0].packet.origins.some((origin) =>
+        origin.url.endsWith("@" + "b".repeat(40)),
+      ),
+    );
+    const preferred = values[1].packet.origins;
+    assert.equal(
+      preferred.find(
+        (origin) => origin.hierarchy.at(-1)[0] === "src/third_party/angle",
+      ).deps_file,
+      "DEPS",
+    );
+    assert.equal(
+      preferred.find(
+        (origin) => origin.hierarchy.at(-1)[0] === "src/third_party/dawn",
+      ).deps_file,
+      "DEPS.custom",
+    );
+    assert.deepEqual(values[2].pins, ["src/packages:vendor/package"]);
+    assert.equal(values[2].packet.origins.length, 3);
+    assert.deepEqual(
+      values[3].packet.hooks.map((hook) => hook.name),
+      [
+        "src",
+        "src/third_party/angle",
+        "src/third_party/dawn",
+        "src/third_party/angle",
+        "pre",
+      ],
+    );
+    const depArgs = driver.dependencyHookArguments(
+      "fixed-depot",
+      "fixed-adapter",
+      "a".repeat(64),
+    );
+    // Existing genuine Hook.run controls condition evaluation and dispatch.
+    // Projection never replaces or pre-evaluates that existing execution API.
+    const legacy =
+      await import("../../native/windows-arm-full-sdk/source-driver.mjs");
+    assert.deepEqual(
+      depArgs,
+      legacy.dependencyHookArguments(
+        "fixed-depot",
+        "fixed-adapter",
+        "a".repeat(64),
+      ),
+    );
+  }
+});
+
+test("selected hook projection denies graph, origin, pin and output failures before runhooks", async () => {
+  const expected = {
+    identity: "FULL_HOOK_DEP_IDENTITY",
+    cycle: "FULL_HOOK_DEP_CYCLE_OR_DEPTH",
+    unparsed: "FULL_HOOK_DEPS_UNPARSED",
+    "hook-bound": "FULL_HOOK_COUNT",
+    "dep-bound": "FULL_HOOK_DEP_BOUND",
+    depth: "FULL_HOOK_DEP_CYCLE_OR_DEPTH",
+    "unsafe-origin": "FULL_HOOK_PROJECTION_ORIGIN",
+    "unsafe-name": "FULL_HOOK_PROJECTION_ORIGIN",
+    "unsafe-url": "FULL_HOOK_PROJECTION_ORIGIN",
+    "unsafe-url-space": "FULL_HOOK_PROJECTION_ORIGIN",
+    "origin-bound": "FULL_HOOK_ORIGIN_COUNT",
+    "output-bound": "FULL_HOOK_PROJECTION_BOUND",
+    "pin-failure": "FULL_FIXTURE_PIN_FAILED",
+  };
+  for (const driver of [currentDriver, oldDriver]) {
+    for (const value of await selectedProjectionCases(
+      driver,
+      Object.keys(expected),
+    )) {
+      assert.equal(value.packet, null, value.case);
+      assert.equal(value.error?.message, expected[value.case], value.case);
+      assert.equal(value.varsUnchanged, true, value.case);
+      assert.equal(value.flattenerConstructed, 0, value.case);
+      assert.equal(value.outsideMetadataQueried, false, value.case);
+    }
+  }
+});
+
+test("only the two selected hook projection functions differ from exact 93d22 historical drivers", async () => {
+  const legacy =
+    await import("../../native/windows-arm-full-sdk/source-driver.mjs");
+  const previous = "export " + legacy.hookProjectionArguments.toString();
+  for (const [label, driver, expected] of [
+    [
+      "current",
+      currentDriver,
+      "7c02861f5a153e7945556dbdb99267ab8386cd98682ba7ef932aa40c7c096833",
+    ],
+    [
+      "20261021",
+      oldDriver,
+      "e98e2a38f282090fcde7fe900751d22b977d3e9d3fa1ce662b9527711bf0e06d",
+    ],
+  ]) {
+    const next = driver.hookProjectionArguments.toString();
+    assert.equal(
+      sha(next),
+      "a630542cf8874e30a76b7e2eedc7621ac544322e7ac0a16cc5473809e541f747",
+    );
+    const text = (
+      await read(
+        `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+      )
+    ).toString();
+    assert.equal(text.split("export " + next).length, 2);
+    const normalized = text.replace("export " + next, previous);
+    assert.equal(sha(normalized), expected);
+    assert.deepEqual(
+      driver.dependencyHookArguments("depot", "adapter", "a".repeat(64)),
+      legacy.dependencyHookArguments("depot", "adapter", "a".repeat(64)),
+    );
+  }
+});

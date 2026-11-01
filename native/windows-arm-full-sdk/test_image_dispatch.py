@@ -320,4 +320,184 @@ with opener().open(urllib.request.Request(original["url"]), timeout=min(15, cloc
                     self.assert_no_output(s)
                 self.assertEqual(len(s.opens),1)
 
+
+
+# Native method fixture from depot_tools@c101dcbe0489c455fce7c2247bfee19680b116c3.
+# // Copyright 2009 The Chromium Authors
+# //
+# // Redistribution and use in source and binary forms, with or without
+# // modification, are permitted provided that the following conditions are
+# // met:
+# //
+# //    * Redistributions of source code must retain the above copyright
+# // notice, this list of conditions and the following disclaimer.
+# //    * Redistributions in binary form must reproduce the above
+# // copyright notice, this list of conditions and the following disclaimer
+# // in the documentation and/or other materials provided with the
+# // distribution.
+# //    * Neither the name of Google LLC nor the names of its
+# // contributors may be used to endorse or promote products derived from
+# // this software without specific prior written permission.
+# //
+# // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# // "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# // LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# // A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# // OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# // SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# // LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# // DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+PINNED_FLATTENER_SOURCE = 'class NativePinnedFlattener:\n    def _pin_dep(self, dep):\n        """Pins a dependency to specific full revision sha.\n\n        Arguments:\n            dep (Dependency): dependency to process\n        """\n        if dep.url is None:\n            return\n\n        # Make sure the revision is always fully specified (a hash),\n        # as opposed to refs or tags which might change. Similarly,\n        # shortened shas might become ambiguous; make sure to always\n        # use full one for pinning.\n        revision = gclient_utils.SplitUrlRevision(dep.url)[1]\n        if not revision or not gclient_utils.IsFullGitSha(revision):\n            dep.PinToActualRevision()\n\n    def _add_dep(self, dep):\n        """Helper to add a dependency to flattened DEPS.\n\n        Arguments:\n            dep (Dependency): dependency to add\n        """\n        assert dep.name not in self._deps or self._deps.get(dep.name) == dep, (\n            dep.name,\n            self._deps.get(dep.name),\n        )\n        if dep.url:\n            self._deps[dep.name] = dep\n\n    def _flatten_dep(self, dep):\n        """Visits a dependency in order to flatten it (see CMDflatten).\n\n        Arguments:\n            dep (Dependency): dependency to process\n        """\n        logging.debug("_flatten_dep(%s)", dep.name)\n\n        assert dep.deps_parsed, (\n            "Attempted to flatten %s but it has not been processed." % dep.name\n        )\n\n        self._allowed_hosts.update(dep.allowed_hosts)\n\n        # Only include vars explicitly listed in the DEPS files or gclient\n        # solution, not automatic, local overrides (i.e. not all of\n        # dep.get_vars()).\n        hierarchy = dep.hierarchy(include_url=False)\n        for key, value in dep._vars.items():\n            # Make sure there are no conflicting variables. It is fine however\n            # to use same variable name, as long as the value is consistent.\n            assert key not in self._vars or self._vars[key][1] == value, (\n                "dep:%s key:%s value:%s != %s"\n                % (dep.name, key, value, self._vars[key][1])\n            )\n            self._vars[key] = (hierarchy, value)\n        # Override explicit custom variables.\n        for key, value in dep.custom_vars.items():\n            # Do custom_vars that don\'t correspond to DEPS vars ever make sense?\n            # DEPS conditionals shouldn\'t be using vars that aren\'t also defined\n            # in the DEPS (presubmit actually disallows this), so any new\n            # custom_var must be unused in the DEPS, so no need to add it to the\n            # flattened output either.\n            if key not in self._vars:\n                continue\n            # Don\'t "override" existing vars if it\'s actually the same value.\n            if self._vars[key][1] == value:\n                continue\n            # Anything else is overriding a default value from the DEPS.\n            self._vars[key] = (hierarchy + " [custom_var override]", value)\n\n        self._pre_deps_hooks.extend(\n            [(dep, hook) for hook in dep.pre_deps_hooks]\n        )\n        self._hooks.extend([(dep, hook) for hook in dep.deps_hooks])\n\n        for sub_dep in dep.dependencies:\n            self._add_dep(sub_dep)\n\n        for d in dep.dependencies:\n            if d.should_recurse:\n                self._flatten_dep(d)\n\n'
+PINNED_FLATTENER_METHOD_SHA256 = 'c182a251969b0b6cfc0683ba83d97639c55f0dabd8153af6d0e61fde6f1c63b1'
+
+
+def _native_projection_fixture(folder, case):
+    """Synthetic parsed objects; exact native methods and actual DEPS locals.
+
+    URL utilities are a closed full-SHA fixture seam. PinToActualRevision only
+    updates fixture metadata; no SCM, process, network or hook execution occurs.
+    """
+    import logging
+    import re
+    import types
+    namespace={'logging':logging,'gclient_utils':types.SimpleNamespace(
+        SplitUrlRevision=lambda url:url.rsplit('@',1),
+        IsFullGitSha=lambda value:bool(re.fullmatch('[a-fA-F0-9]{40}',value)))}
+    assert hashlib.sha256(PINNED_FLATTENER_SOURCE.encode()).hexdigest()==PINNED_FLATTENER_METHOD_SHA256
+    exec(compile(PINNED_FLATTENER_SOURCE,'<pinned-e4f650-Flattener-methods>','exec'),namespace)
+    Native=namespace['NativePinnedFlattener']
+    state=types.SimpleNamespace(constructed=0,parsed=0,bound=0,pins=[],queries=[])
+    class Dep:
+        def __init__(self,name,parent=None,value=None):
+            self.name=name;self.parent=parent;self.dependencies=[]
+            self._vars={}if value is None else{'chromium_revision':value}
+            self.custom_vars={};self.allowed_hosts=set();self.deps_parsed=True;self.should_recurse=True
+            self.deps_file='DEPS';self.url='https://example.invalid/'+name+'@'+'a'*40
+            self.deps_hooks=[types.SimpleNamespace(name=name,condition='checkout_win',pattern=None,
+                effective_cwd=name,action=['python3','known.py'],variables=self._vars)]
+            self.pre_deps_hooks=[]
+        def hierarchy(self,include_url=False):return self.name
+        def hierarchy_data(self):
+            out=[];at=self
+            while at:
+                out.insert(0,(at.name,at.url));at=at.parent
+            return tuple(out)
+        def PinToActualRevision(self):
+            state.pins.append(self.name)
+            if case=='pin-failure':raise RuntimeError('FULL_FIXTURE_PIN_FAILED')
+            self.url=self.url.rsplit('@',1)[0]+'@'+'b'*40
+    top=Dep('src')
+    angle=Dep('src/third_party/angle',top,'80685c1f3c2953578acb9987fd63af524e7435cb')
+    dawn=Dep('src/third_party/dawn',top,'9d728f73dd5798b6cdef64b1dbe3270a04aca336')
+    top.dependencies=[angle,dawn]
+    top.pre_deps_hooks=[types.SimpleNamespace(name='pre',condition='False',pattern=None,effective_cwd='.',action=['vpython3','pre.py'],variables=top._vars)]
+    dawn.deps_hooks[0].condition='False'
+    dawn.deps_hooks[0].action=['unsupported-platform-tool','%PATH%','x&echo y']
+    angle.deps_file='DEPS.chromium'  # Missing explicit name uses native DEPS fallback.
+    for dep in(top,angle,dawn):
+        file=folder/dep.name/'DEPS';file.parent.mkdir(parents=True,exist_ok=True);file.write_text('# fixture metadata only\n')
+    if case=='pinning' or case=='pin-failure':angle.url=angle.url.rsplit('@',1)[0]+'@main'
+    elif case=='custom-origin':
+        dawn.deps_file='DEPS.custom';(folder/dawn.name/dawn.deps_file).write_text('# preferred fixture\n')
+    elif case=='identity':top.dependencies.append(Dep(angle.name,top))
+    elif case=='cycle':angle.dependencies=[top]
+    elif case=='unparsed':angle.deps_parsed=False
+    elif case=='hook-bound':top.deps_hooks*=513
+    elif case=='dep-bound':
+        top.dependencies=[Dep('src/leaf'+str(i),top)for i in range(4097)]
+        for dep in top.dependencies:dep.should_recurse=False
+    elif case=='depth':
+        at=top
+        for i in range(65):
+            child=Dep('src/nested'+str(i),at);child.deps_hooks=[];at.dependencies=[child];at=child
+    elif case=='unsafe-origin':angle.deps_file='../outside'
+    elif case=='unsafe-name':angle.name='src/../outside'
+    elif case=='unsafe-url':angle.url='http://example.invalid/repo@'+'a'*40
+    elif case=='unsafe-url-space':angle.url='https://example.invalid/has space@'+'a'*40
+    elif case=='nonrecursive-pin':
+        package=Dep('src/packages:vendor/package',top);package.should_recurse=False;package.deps_file=None
+        package.url='https://example.invalid/pkg@version';top.dependencies.append(package)
+    elif case=='shared-subtree':top.dependencies.append(angle)
+    elif case=='origin-bound':
+        top.dependencies=[Dep('src/origin'+str(i),top)for i in range(1025)]
+        for dep in top.dependencies:dep.deps_hooks=[]
+    elif case=='output-bound':top.deps_hooks[0].action=['x'*(4*1024**2+1)]
+    elif case not in('scoped','custom-origin'):raise ValueError('unknown fixture case')
+    before=copy.deepcopy((top._vars,angle._vars,dawn._vars))
+    class Client:
+        dependencies=(top,)
+        root_dir=str(folder)
+        def __init__(self,options):self.options=options
+        def RunOnDeps(self,command,args,progress):
+            assert command=='flatten'and args==[]and progress is False
+            assert self.options.nohooks and self.options.noprehooks and self.options.process_all_deps
+            state.parsed+=1;return 0
+    class FixtureFlattener(Native):
+        def __init__(self,client,pin_all_deps):
+            state.constructed+=1;assert pin_all_deps
+            self._client=client;self._allowed_hosts=set();self._vars={};self._deps={};self._hooks=[];self._pre_deps_hooks=[]
+            for solution in client.dependencies:self._add_dep(solution);self._flatten_dep(solution)
+            for dep in self._deps.values():self._pin_dep(dep)
+        @property
+        def deps_files(self):
+            rows=[]
+            for dep in self._deps.values():
+                if not dep.should_recurse:continue
+                name=dep.deps_file
+                if not (folder/dep.name/name).exists():name='DEPS'
+                if not (folder/dep.name/name).exists():continue
+                rows.append((dep.url,name,dep.hierarchy_data()))
+            return rows
+    class Parser:
+        def parse_args(self,args):assert args==['--jobs','2'];return types.SimpleNamespace(),[]
+    module=types.ModuleType('gclient');module.OptionParser=Parser;module.Flattener=FixtureFlattener
+    module.GClient=types.SimpleNamespace(LoadCurrentConfig=lambda options:Client(options))
+    bootstrap=types.ModuleType('source_bootstrap')
+    def bind(a,b):assert(a,b)==('a'*64,'b'*64);state.bound+=1
+    bootstrap.bind=bind
+    return module,bootstrap,state,(top,angle,dawn),before
+
+
+def selected_hook_projection_case(program,case):
+    """Execute one actual generated projection over the closed fixture tree."""
+    import contextlib
+    import io
+    import os
+    with tempfile.TemporaryDirectory(prefix='cef-scoped-hooks-')as temp:
+        folder=Path(temp).resolve();module,bootstrap,state,deps,before=_native_projection_fixture(folder,case)
+        output=io.StringIO();old_cwd=Path.cwd();old_argv=sys.argv
+        original_exists=os.path.exists
+        def exists(file):
+            candidate=Path(file).absolute();state.queries.append(str(candidate))
+            assert candidate.is_relative_to(folder),'fixture queried outside owned root'
+            return True if case=='origin-bound' else original_exists(file)
+        error=None
+        try:
+            os.chdir(folder);sys.argv=['-c',str(folder),str(folder),'a'*64,'b'*64]
+            with patch.dict(sys.modules,{'gclient':module,'source_bootstrap':bootstrap}),patch('os.path.exists',side_effect=exists),contextlib.redirect_stdout(output):
+                exec(compile(program,'<actual-selected-hook-projection>','exec'),{})
+        except BaseException as caught:error={'type':type(caught).__name__,'message':str(caught)[:512]}
+        finally:os.chdir(old_cwd);sys.argv=old_argv
+        packet=None
+        if error is None:
+            text=output.getvalue();assert text.startswith('FULL_HOOK_PROJECTION:')and text.count('\n')==1
+            packet=json.loads(text.split(':',1)[1])
+        return {'case':case,'error':error,'packet':packet,'flattenerConstructed':state.constructed,
+            'parsed':state.parsed,'bootstrapBound':state.bound,'pins':state.pins,
+            'varsUnchanged':(deps[0]._vars,deps[1]._vars,deps[2]._vars)==before,
+            'outsideMetadataQueried':any(not Path(p).is_relative_to(folder)for p in state.queries)}
+
+
+class PinnedScopedHookTests(unittest.TestCase):
+    def test_native_global_variable_assertion_is_retained_and_reproduces_the_actual_failure(self):
+        with tempfile.TemporaryDirectory()as temp:
+            module,_,_,_,_=_native_projection_fixture(Path(temp).resolve(),'scoped')
+            options=module.OptionParser().parse_args(['--jobs','2'])[0]
+            client=module.GClient.LoadCurrentConfig(options)
+            with self.assertRaisesRegex(AssertionError,'dep:src/third_party/dawn key:chromium_revision value:9d728f73dd5798b6cdef64b1dbe3270a04aca336 != 80685c1f3c2953578acb9987fd63af524e7435cb'):
+                module.Flattener(client,pin_all_deps=True)
+
 if __name__=='__main__':unittest.main()
