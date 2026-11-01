@@ -102,6 +102,21 @@ describe("Web Browser settings", () => {
       update.mock.lastCall?.[0].webBrowser.defaultPolicy.nativeBrowsingMode,
     ).toBe("standard");
   });
+  it("offers Strict browsing and restores compatible content when returning to Standard", () => {
+    const { update } = setup();
+    choose("Browsing mode", "Strict browsing");
+    expect(update.mock.lastCall?.[0].webBrowser.defaultPolicy).toMatchObject({
+      nativeBrowsingMode: "strict",
+      sameOriginOnly: true,
+      pageScripts: "allow",
+    });
+    choose("Browsing mode", "Standard browsing");
+    expect(update.mock.lastCall?.[0].webBrowser.defaultPolicy).toMatchObject({
+      nativeBrowsingMode: "standard",
+      sameOriginOnly: false,
+      pageScripts: "allow",
+    });
+  });
   it("allows downloads by default in the native browser while preserving explicit saved blocks", () => {
     expect(normalizeWebBrowserSettings(undefined).allowDownloads).toBe(true);
     expect(normalizeWebBrowserSettings(undefined).allowPageDialogs).toBe(true);

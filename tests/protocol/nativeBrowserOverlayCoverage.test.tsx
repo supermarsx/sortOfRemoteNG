@@ -80,6 +80,41 @@ function add(attributes: Record<string, string>) {
 }
 
 describe("native browser overlay sampler", () => {
+  it("clips extension panels and dropdowns, and fences them if promoted to a modal", () => {
+    const surface = add({ class: "sor-popover-surface" });
+    const panel = document.createElement("div");
+    panel.setAttribute("role", "dialog");
+    surface.append(panel);
+    const menu = add({ role: "listbox" });
+    const { result } = renderHook(() => useOriginBrowserOverlays(true));
+    expect(result.current).toMatchObject({ blocked: false, rectangles: [box] });
+    panel.setAttribute("aria-modal", "true");
+    act(() => mutation());
+    flush();
+    expect(result.current.blocked).toBe(true);
+    panel.setAttribute("aria-modal", "false");
+    act(() => mutation());
+    flush();
+    expect(result.current.blocked).toBe(false);
+    surface.remove();
+    menu.remove();
+  });
+
+  it("clips compact toast dialogs but protects unknown custom dialogs", () => {
+    const surface = add({
+      class: "sor-modal-backdrop sor-modal-toast-backdrop",
+    });
+    const panel = document.createElement("div");
+    panel.setAttribute("role", "dialog");
+    surface.append(panel);
+    const { result } = renderHook(() => useOriginBrowserOverlays(true));
+    expect(result.current.blocked).toBe(false);
+    document.body.append(panel);
+    act(() => mutation());
+    flush();
+    expect(result.current.blocked).toBe(true);
+  });
+
   it("blocks for nested dialogs until the last one closes, then restores", () => {
     const outer = add({ role: "dialog" });
     const inner = add({ role: "alertdialog" });

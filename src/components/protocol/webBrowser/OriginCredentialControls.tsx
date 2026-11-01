@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { Shield } from "lucide-react";
+import { reclaimShellFocus } from "../../../utils/window/reclaimShellFocus";
 import { useToastContext } from "../../../contexts/ToastContext";
 import type {
   Connection,
@@ -104,10 +105,15 @@ export function OriginToolbarPopover({
   }, [open, onOpenChange]);
   useEffect(() => {
     if (!open || suspended) return;
-    const frame = requestAnimationFrame(() => {
-      panelRef.current
-        ?.querySelector<HTMLElement>("button:not(:disabled)")
-        ?.focus({ preventScroll: true });
+    reclaimShellFocus();
+    let frame = requestAnimationFrame(() => {
+      // PopoverSurface reveals its portal in the first frame. Wait for that
+      // commit before focusing: browsers reject focus inside a hidden panel.
+      frame = requestAnimationFrame(() => {
+        panelRef.current
+          ?.querySelector<HTMLElement>("button:not(:disabled)")
+          ?.focus({ preventScroll: true });
+      });
     });
     const leave = (event: FocusEvent) => {
       const target = event.target as Node | null;

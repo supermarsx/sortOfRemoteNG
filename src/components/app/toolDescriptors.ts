@@ -67,7 +67,6 @@ export const TOOL_DESCRIPTORS = Object.freeze({
   networkToolkit: defineTool("networkToolkit", Waypoints, "app"),
   bulkSsh: defineTool("bulkSsh", Terminal),
   serverStats: defineTool("serverStats", Server),
-  opkssh: defineTool("opkssh", Shield),
   mcpServer: defineTool("mcpServer", Server),
   scriptManager: defineTool("scriptManager", FileCode, "app"),
   macroManager: defineTool("macroManager", ListVideo, "app"),

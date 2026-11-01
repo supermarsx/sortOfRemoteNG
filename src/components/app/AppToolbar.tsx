@@ -88,7 +88,6 @@ interface AppToolbarProps {
   setShowNetworkToolkit?: (v: boolean) => void;
   setShowBulkSSH: (v: boolean) => void;
   setShowServerStats: (v: boolean) => void;
-  setShowOpkssh: (v: boolean) => void;
   setShowMcpServer: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
   setShowMacroManager: (v: boolean) => void;
@@ -132,7 +131,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowNetworkToolkit,
   setShowBulkSSH,
   setShowServerStats,
-  setShowOpkssh,
   setShowMcpServer,
   setShowScriptManager,
   setShowMacroManager,
@@ -320,16 +318,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                 title={t("toolbar.proxyVpn", "Proxy & VPN")}
               >
                 <ToolGlyph tool="proxyChain" />
-              </button>
-            )}
-            {appSettings.showOpksshIcon && (
-              <button
-                onClick={() => setShowOpkssh(true)}
-                disabled={noCollection}
-                className="app-bar-button p-2"
-                title={t("opkssh.title", "opkssh")}
-              >
-                <ToolGlyph tool="opkssh" />
               </button>
             )}
           </ToolbarGroup>

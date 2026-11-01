@@ -119,6 +119,7 @@ const loadPresentations: Record<
   blocked: {
     title: "The website request was blocked",
     guidance: [
+      "The browser's connection checks can block a request before certificate review. Native browser diagnostics can help distinguish this from a saved website block.",
       "Review the saved destination permissions, redirects and browser security policy.",
       "Check the blocked request in DevTools while this browser attempt remains available.",
       "Change a destination permission only after reviewing the intended website.",

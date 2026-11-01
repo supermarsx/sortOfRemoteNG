@@ -126,7 +126,7 @@ export function parseNativeBrowserDiagnostics(
         row.loadedPatchId !== undefined &&
         row.loadedPatchId !== null &&
         (typeof row.loadedPatchId !== "string" ||
-          !/^sorng-tls-v2-682c378-[1-5]$/.test(row.loadedPatchId))
+          !/^sorng-tls-v2-682c378-[1-6]$/.test(row.loadedPatchId))
       )
         throw invalid();
       if (
@@ -137,7 +137,7 @@ export function parseNativeBrowserDiagnostics(
       if (
         row.proxyAppliedAtStartup === true &&
         (typeof row.loadedPatchId !== "string" ||
-          !/^sorng-tls-v2-682c378-[3-5]$/.test(row.loadedPatchId))
+          !/^sorng-tls-v2-682c378-[3-6]$/.test(row.loadedPatchId))
       )
         throw invalid();
       return {

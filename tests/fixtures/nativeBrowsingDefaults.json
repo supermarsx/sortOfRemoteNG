@@ -723,5 +723,16 @@
       "queryParameters": []
     },
     "standard": true
+  },
+  {
+    "name": "explicit strict mode never adopts standard content defaults",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "nativeBrowsingMode": "strict",
+      "sameOriginOnly": false,
+      "allowAllRequests": true
+    },
+    "standard": false
   }
 ]

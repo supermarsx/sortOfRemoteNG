@@ -1060,12 +1060,10 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     const mounted = await openTab();
     fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
     const panel = await screen.findByRole("dialog", {
-      name: "Native website extensions",
+      name: "Website extensions",
     });
     // What the panel promises is what the rest of this test observes.
-    expect(panel).toHaveTextContent(
-      "After a change is saved, this tab reconnects by itself to apply it.",
-    );
+    expect(panel).toHaveTextContent("The tab reconnects after saving.");
     const scripts = within(panel).getByRole("checkbox", {
       name: "User scripts",
     });
@@ -1094,7 +1092,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     await openTab();
     fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
     const panel = await screen.findByRole("dialog", {
-      name: "Native website extensions",
+      name: "Website extensions",
     });
     const scripts = () =>
       within(panel).getByRole("checkbox", { name: "User scripts" });
@@ -1115,8 +1113,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     await waitFor(() => expect(attach).toBeDefined());
     await settle();
     expect(tab().status).toBe("reconnecting");
-    const savedLine =
-      "Saved to this connection. This tab now reconnects by itself to apply the change.";
+    const savedLine = "Saved. Reconnecting this tab to apply your changes…";
     expect(panel).toBeInTheDocument();
     expect(within(panel).getByText(savedLine)).toBeVisible();
     expect(scripts()).toBeDisabled();
@@ -1138,17 +1135,77 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(calls("origin_browser_create")).toHaveLength(2);
   });
 
+  it("keeps an appearance draft through an automation save and applies it only after explicit appearance save", async () => {
+    await openTab();
+    fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
+    const panel = await screen.findByRole("dialog", {
+      name: "Website extensions",
+    });
+    fireEvent.click(within(panel).getByRole("tab", { name: "Appearance" }));
+    fireEvent.click(
+      within(panel).getByRole("combobox", { name: "Appearance settings" }),
+    );
+    const custom = screen.getByRole("option", {
+      name: "Customize this connection",
+    });
+    fireEvent.mouseDown(custom);
+    fireEvent.click(custom);
+    fireEvent.click(
+      within(panel).getByRole("checkbox", { name: "Follow app theme colors" }),
+    );
+    fireEvent.change(within(panel).getByLabelText("Background color"), {
+      target: { value: "#374859" },
+    });
+    expect(within(panel).getByLabelText("Background color")).toHaveValue(
+      "#374859",
+    );
+    expect(within(panel).getByText("Unsaved appearance changes")).toBeVisible();
+    fireEvent.click(within(panel).getByRole("tab", { name: "Automation" }));
+    fireEvent.click(
+      within(panel).getByRole("checkbox", { name: "User scripts" }),
+    );
+    await reconnected(2);
+    await settle();
+    expect(panel).toBeInTheDocument();
+    expect(h.disk[0].httpAutomation.scriptInjectionEnabled).toBe(true);
+    expect(h.disk[0].httpAutomation.darkMode?.theme?.backgroundColor).not.toBe(
+      "#374859",
+    );
+    fireEvent.click(within(panel).getByRole("tab", { name: "Appearance" }));
+    expect(within(panel).getByLabelText("Background color")).toHaveValue(
+      "#374859",
+    );
+    expect(within(panel).getByText("Unsaved appearance changes")).toBeVisible();
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Save appearance" }),
+    );
+    await reconnected(3);
+    await settle();
+    expect(h.disk[0].httpAutomation.darkMode).toMatchObject({
+      useGlobalDefaults: false,
+      theme: { backgroundColor: "#374859" },
+    });
+    expect(h.disk[0].httpAutomation.scriptInjectionEnabled).toBe(true);
+    expect(calls("origin_browser_create")).toHaveLength(3);
+  });
+
   it("reconnects once after the tab's appearance is saved, with a notice that is not an error", async () => {
     await openTab();
     fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
     const panel = await screen.findByRole("dialog", {
-      name: "Native website extensions",
+      name: "Website extensions",
     });
-    const defaults = within(panel).getByRole("checkbox", {
-      name: "Use global website appearance defaults",
+    fireEvent.click(within(panel).getByRole("tab", { name: "Appearance" }));
+    const defaults = within(panel).getByRole("combobox", {
+      name: "Appearance settings",
     });
     await waitFor(() => expect(defaults).toBeEnabled());
     fireEvent.click(defaults);
+    const custom = screen.getByRole("option", {
+      name: "Customize this connection",
+    });
+    fireEvent.mouseDown(custom);
+    fireEvent.click(custom);
     fireEvent.click(
       within(panel).getByRole("checkbox", { name: "Follow app theme colors" }),
     );

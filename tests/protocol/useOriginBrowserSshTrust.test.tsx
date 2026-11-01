@@ -5,6 +5,7 @@ import { setInlineSsh } from "../../src/components/connection/editor/networkPath
 import {
   hostKeyPrompt,
   useOriginBrowserSshTrust,
+  NATIVE_BROWSER_SSH_REGISTRATION_TIMEOUT_MS,
   type NativeBrowserSshTrustOptions,
 } from "../../src/hooks/protocol/useOriginBrowserSshTrust";
 import {
@@ -116,10 +117,71 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   resetOriginBrowserConfirmationsForTests();
 });
 
 describe("native browser SSH host-key trust", () => {
+  it("bounds pending registration, releases late listeners and permits an explicit retry", async () => {
+    vi.useFakeTimers();
+    let finish!: (off: () => void) => void;
+    const lateOff = vi.fn();
+    const readyOff = vi.fn();
+    h.listen.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    h.listen.mockResolvedValueOnce(readyOff);
+    const props = options();
+    const view = renderHook(() => useOriginBrowserSshTrust(props));
+    await act(async () => {});
+    expect(view.result.current.ready).toBe(false);
+    expect(view.result.current.failed).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        NATIVE_BROWSER_SSH_REGISTRATION_TIMEOUT_MS,
+      );
+    });
+    expect(view.result.current.failed).toBe(true);
+    expect(view.result.current.ready).toBe(false);
+    expect(readyOff).toHaveBeenCalledTimes(1);
+    await act(async () => finish(lateOff));
+    expect(lateOff).toHaveBeenCalledTimes(1);
+    expect(readyOff).toHaveBeenCalledTimes(1);
+    expect(view.result.current.failed).toBe(true);
+    expect(view.result.current.ready).toBe(false);
+    await act(async () => view.result.current.retry());
+    expect(view.result.current.failed).toBe(false);
+    expect(view.result.current.ready).toBe(true);
+    expect(h.listen).toHaveBeenCalledTimes(4);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("clears the registration deadline on unmount and rejects late readiness", async () => {
+    vi.useFakeTimers();
+    let finish!: (off: () => void) => void;
+    h.listen.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const props = options();
+    const view = renderHook(() => useOriginBrowserSshTrust(props));
+    await act(async () => {});
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      finish(h.off);
+      await vi.advanceTimersByTimeAsync(
+        NATIVE_BROWSER_SSH_REGISTRATION_TIMEOUT_MS,
+      );
+    });
+    expect(h.off).toHaveBeenCalledTimes(2);
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
   it("binds a linked SSH source to its canonical hostname despite retained integration settings", async () => {
     const props = options();
     props.connections = [

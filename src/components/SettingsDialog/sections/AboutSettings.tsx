@@ -559,12 +559,6 @@ const CREDIT_GROUPS: CreditGroup[] = [
         license: "MIT",
       },
       {
-        name: "OpenPubkey OPKSSH",
-        author: "OpenPubkey contributors",
-        detail: "OPKSSH integration and vendored metadata support.",
-        license: "Apache-2.0",
-      },
-      {
         name: "Win32 / windows-rs",
         author: "Microsoft and contributors",
         detail: "Windows platform bindings and native integration.",
@@ -882,7 +876,6 @@ const CREDIT_REPOSITORY_URLS: Record<string, string> = {
   Quinn: "https://github.com/quinn-rs/quinn",
   "tokio-tungstenite": "https://github.com/snapview/tokio-tungstenite",
   defguard_wireguard_rs: "https://github.com/DefGuard/wireguard-rs",
-  "OpenPubkey OPKSSH": "https://github.com/openpubkey/opkssh",
   "Win32 / windows-rs": "https://github.com/microsoft/windows-rs",
   "AWS SDK ecosystem": "https://github.com/awslabs/aws-sdk-rust",
   "Azure SDK ecosystem": "https://github.com/Azure/azure-sdk-for-rust",

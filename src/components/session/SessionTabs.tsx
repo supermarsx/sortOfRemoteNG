@@ -276,6 +276,8 @@ interface SessionTabsProps {
   /** Assign a session to a specific tile slot. Required when
    *  `tabLayout` is in a tiling mode for "Move to tile" to work. */
   onAssignSessionToSlot?: (sessionId: string, slotIndex: number) => void;
+  /** Fixed controls at the right edge, outside the scrolling tab list. */
+  trailingActions?: React.ReactNode;
 }
 
 export const SessionTabs: React.FC<SessionTabsProps> = ({
@@ -292,6 +294,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   middleClickCloseTab = true,
   tabLayout,
   onAssignSessionToSlot,
+  trailingActions,
 }) => {
   // ── Tiling awareness ─────────────────────────────────
   // When the tabs are showing inside a tiled layout, each tab
@@ -1314,13 +1317,27 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   if (sessions.length === 0) {
     return (
       <div
-        className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-center"
-        role="tablist"
-        aria-label="Session tabs"
+        data-testid="session-tabs"
+        className="h-10 shrink-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center"
+        data-tauri-disable-drag="true"
       >
-        <span className="text-[var(--color-textMuted)] text-sm select-none">
-          No session selected
-        </span>
+        <div
+          className="min-w-0 flex-1 text-center"
+          role="tablist"
+          aria-label="Session tabs"
+        >
+          <span className="text-[var(--color-textMuted)] text-sm select-none">
+            No session selected
+          </span>
+        </div>
+        {trailingActions && (
+          <div
+            data-testid="session-tabs-actions"
+            className="flex h-full shrink-0 items-center border-l border-[var(--color-border)] px-1"
+          >
+            {trailingActions}
+          </div>
+        )}
       </div>
     );
   }
@@ -1329,10 +1346,10 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     <>
       <div
         data-testid="session-tabs"
-        className="bg-[var(--color-surface)] border-b border-[var(--color-border)] flex flex-col"
+        className="min-w-0 shrink-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex flex-col"
         data-tauri-disable-drag="true"
       >
-        <div className="h-10 flex items-center">
+        <div className="h-10 min-w-0 flex items-center">
           {/* Scroll left arrow */}
           {canScrollLeft && (
             <button
@@ -1348,7 +1365,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           <div
             ref={scrollRef}
             data-testid="session-tabs-scroll"
-            className="flex-1 flex items-center h-full overflow-x-auto"
+            className="min-w-0 flex-1 flex items-center h-full overflow-x-auto"
             role="tablist"
             aria-label="Session tabs"
           >
@@ -1451,6 +1468,14 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                   })}
                 </div>
               )}
+            </div>
+          )}
+          {trailingActions && (
+            <div
+              data-testid="session-tabs-actions"
+              className="flex h-full shrink-0 items-center border-l border-[var(--color-border)] px-1"
+            >
+              {trailingActions}
             </div>
           )}
         </div>

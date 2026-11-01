@@ -82,6 +82,22 @@ describe("ConnectionDiagnostics", () => {
     expect(screen.getByText(/Test Server/i)).toBeInTheDocument();
   });
 
+  it("shows browser route guidance before any general network probe is run", () => {
+    renderWithProviders(
+      <ConnectionDiagnostics
+        connection={{ ...mockConnection, protocol: "https", port: 443 }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Diagnostics in the active browser tab",
+    );
+    expect(
+      screen.getByRole("button", { name: "Show available checks" }),
+    ).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("displays connection hostname", () => {
     renderWithProviders(
       <ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />,

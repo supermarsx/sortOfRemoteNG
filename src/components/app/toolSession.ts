@@ -199,7 +199,6 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   networkToolkit: "Network Toolkit",
   bulkSsh: "Bulk SSH",
   serverStats: "Server Stats",
-  opkssh: "opkssh",
   mcpServer: "MCP Server",
   scriptManager: "Script Manager",
   macroManager: "Macros",

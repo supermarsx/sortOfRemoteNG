@@ -2,13 +2,16 @@ import React from "react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import ts from "typescript";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppBottomBars } from "../../src/components/app/AppBottomBars";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, fallback?: string, values?: Record<string, unknown>) =>
+      (fallback ?? key).replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(values?.[name] ?? `{{${name}}}`),
+      ),
   }),
 }));
 
@@ -25,6 +28,46 @@ const props: React.ComponentProps<typeof AppBottomBars> = {
 };
 
 describe("app bottom bar stacking", () => {
+  it("shows the session total in the bottom status bar without counting tool or panel tabs", () => {
+    const session = (
+      id: string,
+      protocol: string,
+    ): (typeof props.sessions)[number] => ({
+      id,
+      protocol,
+      connectionId: id,
+      hostname: "example.test",
+      name: id,
+      status: "connected",
+      startTime: new Date(),
+    });
+    const view = render(
+      <AppBottomBars
+        {...props}
+        sessions={[
+          session("ssh", "ssh"),
+          session("https", "https"),
+          session("settings", "tool:settings"),
+          session("services", "winmgmt:services"),
+          session("netbox", "integration:netbox"),
+        ]}
+      />,
+    );
+    const counter = screen.getByTestId("status-bar-session-counter");
+    expect(within(counter).getByText("2 sessions")).toBeVisible();
+    expect(counter.closest(".app-status-bar")).not.toBeNull();
+    view.rerender(
+      <AppBottomBars {...props} sessions={[session("ssh", "ssh")]} />,
+    );
+    expect(within(counter).getByText("1 session")).toBeVisible();
+    view.rerender(
+      <AppBottomBars
+        {...props}
+        sessions={[session("settings", "tool:settings")]}
+      />,
+    );
+    expect(within(counter).getByText("0 sessions")).toBeVisible();
+  });
   it("keeps the real collapsed and expanded log above the normal status bar in flow", () => {
     render(<AppBottomBars {...props} />);
     const stack = screen.getByTestId("app-bottom-bars");

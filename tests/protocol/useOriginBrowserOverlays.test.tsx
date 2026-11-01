@@ -147,11 +147,11 @@ describe("native browser overlay activation", () => {
     });
   });
 
-  it.each(["tooltip", "toast"])(
+  it.each(["tooltip", "toast", "menu", "listbox"])(
     "clips a %s that appeared while inactive without a blocked frame",
     (kind) => {
       const view = tab(false);
-      if (kind === "tooltip") overlay("tooltip");
+      if (kind !== "toast") overlay(kind);
       else
         wrapper((node) =>
           node.setAttribute("data-native-browser-occlusion", ""),
@@ -166,7 +166,7 @@ describe("native browser overlay activation", () => {
     },
   );
 
-  it.each(["dialog", "alertdialog", "menu", "listbox"])(
+  it.each(["dialog", "alertdialog"])(
     "is blocked from its first frame while a %s is showing",
     (role) => {
       const view = tab(false);

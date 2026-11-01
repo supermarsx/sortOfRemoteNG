@@ -64,7 +64,6 @@ const capabilities = {
   collab: true,
   softether: true,
   scriptEngine: true,
-  opkssh: true,
 };
 const artifactStatus = {
   unlocked: true,

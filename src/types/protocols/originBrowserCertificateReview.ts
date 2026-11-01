@@ -3,6 +3,15 @@ import type { OriginBrowserIdentity } from "./originBrowser";
 export const ORIGIN_CERTIFICATE_REVIEW_EVENT =
   "origin-browser-certificate-review";
 export type OriginCertificateDecision = "allow-once" | "remember" | "cancel";
+/** Public leaf-certificate details for display, never approval authority. */
+export interface OriginCertificateDetails {
+  readonly subject: string;
+  readonly issuer: string;
+  readonly validFrom: string | null;
+  readonly validTo: string | null;
+  readonly dnsNames: readonly string[];
+  readonly ipAddresses: readonly string[];
+}
 export interface OriginCertificatePrompt {
   readonly requestId: string;
   readonly identity: OriginBrowserIdentity;
@@ -11,6 +20,7 @@ export interface OriginCertificatePrompt {
   readonly reason: string;
   readonly temporary: boolean;
   readonly expiresAtUnixMs: number;
+  readonly certificate?: OriginCertificateDetails;
 }
 export interface OriginCertificateReviewSnapshot {
   readonly revision: number;
@@ -34,6 +44,44 @@ const text = (value: unknown, max: number): value is string =>
   value.trim().length > 0 &&
   value.length <= max &&
   !/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u.test(value);
+
+function readCertificate(value: unknown): OriginCertificateDetails | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const name = (value: unknown) =>
+    typeof value === "string" &&
+    value.length <= 8192 &&
+    (value === "" || text(value, 8192));
+  const date = (value: unknown) =>
+    value === null ||
+    (typeof value === "string" &&
+      value.length <= 64 &&
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.test(
+        value,
+      ) &&
+      Number.isFinite(Date.parse(value)));
+  const names = (value: unknown): value is string[] =>
+    Array.isArray(value) &&
+    value.length <= 64 &&
+    value.every((name) => text(name, 253));
+  if (
+    !name(row.subject) ||
+    !name(row.issuer) ||
+    !date(row.validFrom) ||
+    !date(row.validTo) ||
+    !names(row.dnsNames) ||
+    !names(row.ipAddresses)
+  )
+    return null;
+  return Object.freeze({
+    subject: row.subject as string,
+    issuer: row.issuer as string,
+    validFrom: row.validFrom as string | null,
+    validTo: row.validTo as string | null,
+    dnsNames: Object.freeze([...row.dnsNames]),
+    ipAddresses: Object.freeze([...row.ipAddresses]),
+  });
+}
 
 /** Display validation only. Approval authority and certificate evidence stay native. */
 export function readOriginCertificateReview(
@@ -79,6 +127,11 @@ export function readOriginCertificateReview(
   } catch {
     return null;
   }
+  const certificate =
+    prompt.certificate === undefined
+      ? undefined
+      : readCertificate(prompt.certificate);
+  if (certificate === null) return null;
   return {
     revision: row.revision as number,
     prompt: Object.freeze({
@@ -94,6 +147,7 @@ export function readOriginCertificateReview(
       reason: prompt.reason,
       temporary: prompt.temporary,
       expiresAtUnixMs: prompt.expiresAtUnixMs as number,
+      ...(certificate === undefined ? {} : { certificate }),
     }),
   };
 }

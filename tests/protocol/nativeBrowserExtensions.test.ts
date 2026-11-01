@@ -71,6 +71,29 @@ describe("native extension saved settings", () => {
       forceDark: true,
     });
   });
+  it.each(["scripts", "macros"] as const)(
+    "preserves implicit native appearance when %s first materializes automation settings",
+    (kind) => {
+      const original = { ...fixture(), httpAutomation: undefined };
+      const changed = changeNativeBrowserExtension(original, {
+        kind,
+        enabled: true,
+      });
+      expect(changed.httpAutomation).toMatchObject({
+        forceDark: true,
+        scriptInjectionEnabled: kind === "scripts",
+        interactionMacrosEnabled: kind === "macros",
+      });
+      expect(original.httpAutomation).toBeUndefined();
+      expect(changed.httpAutoLogin).toBe(original.httpAutoLogin);
+      const explicitOff = fixture();
+      explicitOff.httpAutomation!.forceDark = false;
+      expect(
+        changeNativeBrowserExtension(explicitOff, { kind, enabled: true })
+          .httpAutomation?.forceDark,
+      ).toBe(false);
+    },
+  );
   it("uses the authoritative application login mode and preserves credentials", () => {
     const original = {
       ...fixture(),

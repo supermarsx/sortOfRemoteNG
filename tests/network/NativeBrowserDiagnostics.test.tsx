@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 describe("native diagnostics scalar projection", () => {
-  it.each([1, 2, 3, 4, 5])(
+  it.each([1, 2, 3, 4, 5, 6])(
     "retains only a known observed engine revision %s and honest startup proof",
     (revision) => {
       const data = snapshot();
@@ -85,7 +85,7 @@ describe("native diagnostics scalar projection", () => {
   );
   it.each([
     { loadedPatchId: "SECRET/path" },
-    { loadedPatchId: "sorng-tls-v2-682c378-6" },
+    { loadedPatchId: "sorng-tls-v2-682c378-7" },
     { loadedPatchId: "sorng-tls-v2-682c378-1", proxyAppliedAtStartup: true },
     { loadedPatchId: null, proxyAppliedAtStartup: true },
     {
@@ -100,6 +100,19 @@ describe("native diagnostics scalar projection", () => {
         sessions: [{ ...data.sessions[0], ...fields }],
       }),
     ).toThrow("Native browser diagnostics are unavailable.");
+  });
+  it("preserves a current revision-six session failure and its relay evidence", () => {
+    const data = snapshot();
+    const row = {
+      ...data.sessions[0],
+      loadedPatchId: "sorng-tls-v2-682c378-6",
+      proxyAppliedAtStartup: true,
+      phase: "failed",
+      failureReason: "certificate-bridge",
+    };
+    expect(
+      parseNativeBrowserDiagnostics({ ...data, sessions: [row] }).sessions[0],
+    ).toEqual(row);
   });
   it("does not retain database IDs, source tokens, URLs, credentials, or native errors", () => {
     const data = snapshot();

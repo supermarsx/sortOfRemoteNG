@@ -37,6 +37,7 @@ export interface WebsiteDomainPermissionsEditorProps {
   /** Known native denials for the preview, never editable policy grants. */
   nativeDeniedClasses?: readonly WebsiteRequestClass[];
   disabled?: boolean;
+  portalContainer?: HTMLElement | null;
 }
 
 const CLASS_LABELS: Record<WebsiteRequestClass, string> = {
@@ -252,6 +253,7 @@ function PermissionEditor({
   scope = "shared",
   nativeDeniedClasses = [],
   disabled = false,
+  portalContainer,
 }: WebsiteDomainPermissionsEditorProps & {
   settings: WebsiteDomainPermissionsSettings;
   sharedSettings: WebsiteDomainPermissionsSettings;
@@ -457,6 +459,7 @@ function PermissionEditor({
                 className="min-w-0 flex-[1_1_16rem]"
               >
                 <Select
+                  portalContainer={portalContainer}
                   id={`${id}-selected-website`}
                   label="Website origin"
                   value={websiteOrigin}
@@ -500,6 +503,7 @@ function PermissionEditor({
                 className="min-w-0 flex-[1_1_16rem]"
               >
                 <Select
+                  portalContainer={portalContainer}
                   id={`${id}-selected-target`}
                   label="Rule target"
                   value={destinationOrigin}
@@ -588,6 +592,7 @@ function PermissionEditor({
                       </p>
                     </div>
                     <Select
+                      portalContainer={portalContainer}
                       id={`${id}-${requestClass}`}
                       label={CLASS_LABELS[requestClass]}
                       value={values?.[requestClass] ?? "inherit"}

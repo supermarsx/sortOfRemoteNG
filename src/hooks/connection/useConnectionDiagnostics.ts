@@ -33,6 +33,11 @@ export function useConnectionDiagnostics(connection: Connection) {
   const { toast } = useToastContext();
   const { settings } = useSettings();
   const diag = settings.diagnostics;
+  const browserRouteNotice = ["http", "https"].includes(
+    connection.protocol.toLowerCase(),
+  )
+    ? "Run Diagnostics in the active browser tab to test this connection's private proxy route. Open or retry the browser connection first if no active session is available. Saved configuration can be reviewed here."
+    : null;
 
   /* ── state ── */
   const [results, setResults] = useState<DiagnosticResults>(
@@ -383,6 +388,34 @@ export function useConnectionDiagnostics(connection: Connection) {
       return;
     }
 
+    // General probes have no native browser identity or private relay lease.
+    // Never send direct DNS/ICMP/TCP/HTTP probes around that browser's route.
+    if (browserRouteNotice) {
+      setProtocolReport({
+        host: connection.hostname,
+        port:
+          connection.port ||
+          (connection.protocol.toLowerCase() === "https" ? 443 : 80),
+        protocol: connection.protocol,
+        resolvedIp: null,
+        steps: [
+          {
+            name: "Browser route",
+            status: "info",
+            message: browserRouteNotice,
+            durationMs: 0,
+            detail: null,
+          },
+        ],
+        summary: browserRouteNotice,
+        rootCauseHint: null,
+        totalDurationMs: 0,
+      });
+      setIsRunning(false);
+      setCurrentStep("");
+      return;
+    }
+
     try {
       setCurrentStep(t("diagnostics.runningAll", "Running diagnostics..."));
       const port =
@@ -698,7 +731,7 @@ export function useConnectionDiagnostics(connection: Connection) {
       setIsRunning(false);
       setCurrentStep("");
     }
-  }, [connection, t, diag]);
+  }, [connection, t, diag, browserRouteNotice]);
 
   /* ── auto-run on mount ── */
   useEffect(() => {
@@ -710,6 +743,7 @@ export function useConnectionDiagnostics(connection: Connection) {
 
   return {
     /* state */
+    browserRouteNotice,
     results,
     isRunning,
     currentStep,

@@ -107,12 +107,6 @@ function rdpInvokeCall() {
     .mock.calls.find((c) => c[0] === "diagnose_rdp_connection");
 }
 
-function httpInvokeCall() {
-  return vi
-    .mocked(invoke)
-    .mock.calls.find((c) => c[0] === "diagnose_http_connection");
-}
-
 describe("useConnectionDiagnostics — diagnose_rdp_connection invoke contract", () => {
   it("invokes diagnose_rdp_connection with the `rdpSettings` key (NOT `settings`)", async () => {
     const rdpSettings = {
@@ -184,30 +178,26 @@ describe("useConnectionDiagnostics — diagnose_rdp_connection invoke contract",
   });
 });
 
-describe("useConnectionDiagnostics — proxied HTTP diagnostic contract", () => {
-  it("passes the active global HTTP(S) proxy through the command boundary", async () => {
-    const connection: Connection = {
-      ...baseRdpConnection,
-      id: "https-1",
-      name: "Managed appliance",
-      protocol: "https",
-      hostname: "appliance.example.test",
-      port: 8443,
-    };
-
-    const { result } = renderHook(() => useConnectionDiagnostics(connection));
-    await act(async () => {
-      await result.current.runDiagnostics();
-    });
-
-    expect(httpInvokeCall()).toEqual([
-      "diagnose_http_connection",
-      expect.objectContaining({
-        host: "appliance.example.test",
+describe("useConnectionDiagnostics — native browser route ownership", () => {
+  it.each(["http", "https"] as const)(
+    "does not start direct network probes for %s connections",
+    async (protocol) => {
+      const connection: Connection = {
+        ...baseRdpConnection,
+        protocol,
+        hostname: "appliance.example.test",
         port: 8443,
-        useTls: true,
-        proxyUrl: "http://proxy-user:proxy-secret@proxy.example.test:8080",
-      }),
-    ]);
-  });
+      };
+      const { result } = renderHook(() => useConnectionDiagnostics(connection));
+      await act(async () => {
+        await result.current.runDiagnostics();
+      });
+      expect(invoke).not.toHaveBeenCalled();
+      expect(result.current.browserRouteNotice).toContain("active browser tab");
+      expect(result.current.browserRouteNotice).toContain(
+        "private proxy route",
+      );
+      expect(result.current.isRunning).toBe(false);
+    },
+  );
 });

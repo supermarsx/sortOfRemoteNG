@@ -22,7 +22,7 @@ export type NativeBrowserExtensionChange =
     };
 
 export const CHROMIUM_EXTENSION_UNAVAILABLE =
-  "Installing Chromium extensions is unavailable in this isolated native browser. The bundled engine has no per-connection extension installation API.";
+  "Chrome Web Store add-ons cannot be installed here. Use the built-in automation and appearance tools in this popup.";
 
 export const NATIVE_EXTENSION_WIRING_REQUIRED =
   "This native session has not confirmed support for app-extension controls.";

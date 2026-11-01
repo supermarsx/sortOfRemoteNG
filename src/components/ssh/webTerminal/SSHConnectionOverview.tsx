@@ -280,11 +280,6 @@ function SSHConnectionOverview({ mgr }: { mgr: WebTerminalMgr }) {
               </span>
             </p>
           </div>
-          <span
-            className={`app-badge ${retrying ? "app-badge--warning" : "app-badge--error"}`}
-          >
-            {retrying ? "Reconnecting" : "Needs attention"}
-          </span>
         </div>
       </div>
 

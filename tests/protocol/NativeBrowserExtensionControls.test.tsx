@@ -6,6 +6,8 @@ import {
   render,
   renderHook,
   screen,
+  waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -17,7 +19,9 @@ import {
   useNativeBrowserExtensions,
   type NativeBrowserExtensionsOptions,
 } from "../../src/hooks/protocol/useNativeBrowserExtensions";
-import { NativeBrowserExtensionPanel } from "../../src/components/protocol/webBrowser/NativeBrowserExtensionControls";
+import NativeBrowserExtensionControls, {
+  NativeBrowserExtensionPanel,
+} from "../../src/components/protocol/webBrowser/NativeBrowserExtensionControls";
 import { NATIVE_EXTENSION_WIRING_REQUIRED } from "../../src/types/protocols/nativeBrowserExtensions";
 
 const db = vi.hoisted(() => ({
@@ -231,6 +235,13 @@ describe("native extension controller", () => {
   });
 });
 
+function choose(label: string, option: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: label }));
+  const item = screen.getByRole("option", { name: option });
+  fireEvent.mouseDown(item);
+  fireEvent.click(item);
+}
+
 describe("native extension controls", () => {
   it("explains pending Chromium support without install buttons and keeps app controls functional", async () => {
     const props = options();
@@ -249,25 +260,28 @@ describe("native extension controls", () => {
       screen.queryByRole("button", { name: "Load unpacked" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("region", { name: "Native website appearance" }),
+      screen.queryByRole("region", { name: "Chromium extensions" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    expect(
+      screen.getByRole("region", { name: "Website appearance" }),
     ).toHaveTextContent("Follow app theme colors");
     for (const checkbox of screen.getAllByRole("checkbox")) {
       expect(checkbox).toHaveClass("sor-settings-checkbox");
     }
     expect(
-      screen.getByRole("checkbox", { name: "User scripts" }),
-    ).toBeEnabled();
-    expect(
       screen.getByRole("checkbox", { name: "Follow app theme colors" }),
     ).toBeDisabled();
+    fireEvent.click(screen.getByRole("tab", { name: "Automation" }));
+    expect(
+      screen.getByRole("checkbox", { name: "User scripts" }),
+    ).toBeEnabled();
     await act(async () =>
       fireEvent.click(screen.getByRole("checkbox", { name: "User scripts" })),
     );
     expect(db.persisted[0].httpAutomation?.scriptInjectionEnabled).toBe(true);
     expect(
-      screen.getByText(
-        "Saved to this connection. This tab now reconnects by itself to apply the change.",
-      ),
+      screen.getByText("Saved. Reconnecting this tab to apply your changes…"),
     ).toBeInTheDocument();
   });
   it("does not expose functioning toggles before native enforcement is confirmed", () => {
@@ -284,11 +298,11 @@ describe("native extension controls", () => {
       expect(checkbox).toBeDisabled();
     expect(
       screen.getByRole("combobox", {
-        name: "App login and website automation",
+        name: "Automation for this connection",
       }),
     ).toBeDisabled();
     expect(
-      screen.getByRole("combobox", { name: "App login and website automation" })
+      screen.getByRole("combobox", { name: "Automation for this connection" })
         .tagName,
     ).toBe("BUTTON");
   });
@@ -302,11 +316,8 @@ describe("native extension controls", () => {
       );
     }
     render(<Panel />, { wrapper });
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: "Use global website appearance defaults",
-      }),
-    );
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    choose("Appearance settings", "Customize this connection");
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Follow app theme colors" }),
     );
@@ -347,4 +358,325 @@ describe("native extension controls", () => {
       else expect(db.persisted[0].httpAutomation?.[field]).toBe(true);
     },
   );
+
+  function uiController() {
+    const hook = renderHook(() => useNativeBrowserExtensions(options()), {
+      wrapper,
+    });
+    return { ...hook.result.current, save: vi.fn().mockResolvedValue(true) };
+  }
+  async function openPopup() {
+    fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
+    return screen.findByRole("dialog", { name: "Website extensions" });
+  }
+  function customAppearance() {
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    choose("Appearance settings", "Customize this connection");
+  }
+
+  it("offers linked keyboard-accessible subtabs and keeps unsupported add-ons in About", async () => {
+    const controller = uiController();
+    render(<NativeBrowserExtensionControls controller={controller} />);
+    const dialog = await openPopup();
+    const automation = within(dialog).getByRole("tab", { name: "Automation" });
+    await waitFor(() => expect(automation).toHaveFocus());
+    expect(automation).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "Automation" }).id).toBe(
+      automation.getAttribute("aria-controls"),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Chromium extensions" }),
+    ).toBeNull();
+    fireEvent.keyDown(automation, { key: "ArrowRight" });
+    const appearance = screen.getByRole("tab", { name: "Appearance" });
+    expect(appearance).toHaveFocus();
+    expect(appearance).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    fireEvent.keyDown(appearance, { key: "End" });
+    expect(screen.getByRole("tab", { name: "About" })).toHaveFocus();
+    expect(
+      screen.getByRole("region", { name: "Chromium extensions" }),
+    ).toHaveTextContent("Chrome Web Store add-ons cannot be installed here");
+    expect(
+      screen.queryByRole("button", { name: /install|load unpacked/i }),
+    ).toBeNull();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "About" }), {
+      key: "Home",
+    });
+    expect(automation).toHaveFocus();
+    expect(controller.save).not.toHaveBeenCalled();
+  });
+
+  it("keeps nested source, mode and preset pointer gestures inside the owning popup", async () => {
+    const controller = uiController();
+    render(<NativeBrowserExtensionControls controller={controller} />);
+    const dialog = await openPopup();
+    customAppearance();
+    expect(dialog).toBeInTheDocument();
+    choose("Conversion mode", "Filter");
+    expect(dialog).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Conversion mode" }),
+    ).toHaveTextContent("Filter");
+    choose("Apply appearance preset", "Dim");
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue(
+      "85",
+    );
+    expect(dialog).toBeInTheDocument();
+    expect(controller.save).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Website extensions" }),
+    ).toHaveFocus();
+  });
+
+  it("keeps an unsaved appearance draft across subtabs and a same-owner attempt reconnect", async () => {
+    const controller = uiController();
+    const view = render(
+      <NativeBrowserExtensionControls controller={controller} />,
+    );
+    await openPopup();
+    customAppearance();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Follow app theme colors" }),
+    );
+    fireEvent.change(screen.getByLabelText("Background color"), {
+      target: { value: "#123456" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Automation" }));
+    view.rerender(
+      <NativeBrowserExtensionControls
+        controller={{
+          ...controller,
+          scope: "replacement-attempt",
+          available: false,
+          saved: true,
+          reason: "Waiting for replacement",
+        }}
+      />,
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Saved. Reconnecting this tab",
+    );
+    expect(screen.queryByText("Waiting for replacement")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    expect(screen.getByLabelText("Background color")).toHaveValue("#123456");
+    expect(
+      screen.getByRole("button", { name: "Save appearance" }),
+    ).toBeDisabled();
+    view.rerender(
+      <NativeBrowserExtensionControls
+        controller={{ ...controller, scope: "replacement-attempt" }}
+      />,
+    );
+    expect(screen.getByText("Unsaved appearance changes")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Save appearance" }));
+    await waitFor(() =>
+      expect(controller.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "appearance",
+          configuration: expect.objectContaining({
+            theme: expect.objectContaining({ backgroundColor: "#123456" }),
+          }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save appearance" }),
+      ).toBeDisabled(),
+    );
+  });
+
+  it("starts customization from current defaults and preserves custom edits when toggling the source", async () => {
+    const controller = uiController();
+    controller.appearance = {
+      ...controller.appearance,
+      defaults: {
+        ...controller.appearance.defaults,
+        defaults: {
+          ...controller.appearance.defaults.defaults,
+          followAppTheme: false,
+          brightness: 83,
+          backgroundColor: "#102030",
+        },
+      },
+    };
+    render(<NativeBrowserExtensionPanel controller={controller} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    expect(screen.getByRole("slider", { name: "Brightness" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue(
+      "83",
+    );
+    choose("Appearance settings", "Customize this connection");
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue(
+      "83",
+    );
+    fireEvent.change(screen.getByRole("slider", { name: "Brightness" }), {
+      target: { value: "95" },
+    });
+    fireEvent.change(screen.getByLabelText("Background color"), {
+      target: { value: "#445566" },
+    });
+    choose("Appearance settings", "Use app defaults");
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue(
+      "83",
+    );
+    choose("Appearance settings", "Customize this connection");
+    expect(screen.getByRole("slider", { name: "Brightness" })).toHaveValue(
+      "95",
+    );
+    expect(screen.getByLabelText("Background color")).toHaveValue("#445566");
+    fireEvent.click(screen.getByRole("button", { name: "Save appearance" }));
+    await waitFor(() =>
+      expect(controller.save).toHaveBeenCalledWith({
+        kind: "appearance",
+        enabled: true,
+        configuration: expect.objectContaining({
+          useGlobalDefaults: false,
+          theme: expect.objectContaining({
+            brightness: 95,
+            backgroundColor: "#445566",
+          }),
+        }),
+      }),
+    );
+    expect(controller.appearance.defaults.defaults.brightness).toBe(83);
+  });
+
+  it("retains invalid or unsaved CSS for correction and reports a refused save", async () => {
+    const controller = uiController();
+    controller.save.mockResolvedValue(false);
+    render(<NativeBrowserExtensionPanel controller={controller} />);
+    customAppearance();
+    choose("Conversion mode", "Custom CSS");
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom CSS" }), {
+      target: { value: "@import 'unsafe.css';" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save appearance" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Review the appearance values",
+    );
+    expect(controller.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    expect(screen.getByRole("textbox", { name: "Custom CSS" })).toHaveValue(
+      "@import 'unsafe.css';",
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom CSS" }), {
+      target: { value: "body { color: #eeeeee; }" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save appearance" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Appearance was not saved",
+    );
+    expect(screen.getByRole("textbox", { name: "Custom CSS" })).toHaveValue(
+      "body { color: #eeeeee; }",
+    );
+  });
+
+  it.each(["owner", "visibility"] as const)(
+    "closes immediately on %s loss and does not reopen when it returns",
+    async (change) => {
+      const controller = uiController();
+      const view = render(
+        <NativeBrowserExtensionControls controller={controller} />,
+      );
+      await openPopup();
+      customAppearance();
+      view.rerender(
+        <NativeBrowserExtensionControls
+          visible={change !== "visibility"}
+          controller={
+            change === "owner"
+              ? { ...controller, owner: "another-owner" }
+              : controller
+          }
+        />,
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      view.rerender(<NativeBrowserExtensionControls controller={controller} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await openPopup();
+      expect(screen.getByRole("tab", { name: "Automation" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+      expect(
+        screen.getByRole("combobox", { name: "Appearance settings" }),
+      ).toHaveTextContent("Use app defaults");
+    },
+  );
+
+  it("blocks every close gesture while saving, then permits dismissal", async () => {
+    const controller = uiController();
+    const view = render(
+      <NativeBrowserExtensionControls controller={controller} />,
+    );
+    const dialog = await openPopup();
+    view.rerender(
+      <NativeBrowserExtensionControls
+        controller={{ ...controller, busy: true }}
+      />,
+    );
+    expect(dialog).toHaveTextContent("Saving changes…");
+    expect(
+      screen.getByRole("button", { name: "Website extensions" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Close extension settings" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.mouseDown(document.body);
+    expect(dialog).toBeInTheDocument();
+    view.rerender(<NativeBrowserExtensionControls controller={controller} />);
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("dismisses the nonmodal popup when keyboard focus leaves without stealing the new focus", async () => {
+    const controller = uiController();
+    render(
+      <>
+        <NativeBrowserExtensionControls controller={controller} />
+        <button>Next control</button>
+      </>,
+    );
+    await openPopup();
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Automation" })).toHaveFocus(),
+    );
+    const outside = screen.getByRole("button", { name: "Next control" });
+    act(() => outside.focus());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(outside).toHaveFocus();
+  });
+
+  it("dismisses focus leaving through the anchor and saves only the requested automation override", async () => {
+    const controller = uiController();
+    render(
+      <>
+        <NativeBrowserExtensionControls controller={controller} />
+        <button>Outside</button>
+      </>,
+    );
+    await openPopup();
+    choose("Automation for this connection", "Off for this connection");
+    expect(controller.save).toHaveBeenCalledExactlyOnceWith({
+      kind: "app",
+      enabled: false,
+    });
+    expect(screen.getByRole("dialog")).toBeVisible();
+    act(() =>
+      screen.getByRole("button", { name: "Website extensions" }).focus(),
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    const outside = screen.getByRole("button", { name: "Outside" });
+    act(() => outside.focus());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(outside).toHaveFocus();
+  });
 });

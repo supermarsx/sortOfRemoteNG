@@ -23,6 +23,11 @@ import { resetOriginBrowserLifecycleForTests } from "../../src/hooks/protocol/us
 import { beginOriginBrowserConfirmation } from "../../src/hooks/protocol/originBrowserConfirmations";
 import { nativeBrowserAuthoritySignature } from "../../src/utils/connection/nativeBrowserAuthoritySignature";
 import OriginConnectionBrowser from "../../src/components/protocol/webBrowser/OriginConnectionBrowser";
+import { OriginBrowserCertificateReview } from "../../src/components/security/OriginBrowserCertificateReview";
+import type {
+  OriginCertificatePrompt,
+  OriginCertificateReviewTransport,
+} from "../../src/types/protocols/originBrowserCertificateReview";
 import {
   registerQuickConnectConnection,
   releaseRuntimeConnection,
@@ -436,6 +441,10 @@ function expectCloseClearCreate() {
   expect(close).toBeLessThan(clear);
   expect(clear).toBeLessThan(create);
 }
+async function openBrowserSettings() {
+  fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+  return screen.findByRole("dialog", { name: "Browser settings" });
+}
 async function attached() {
   const view = render(<WebBrowser session={session} />);
   await waitFor(() =>
@@ -675,10 +684,83 @@ describe("real-origin connection-tab integration", () => {
       ).toBe(true),
     );
     expect(calls("origin_browser_create")).toHaveLength(0);
+    expect(
+      screen.queryByText(/Experimental native browser unavailable/),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-native-browser-occlusion]"),
+    ).toBeNull();
+    expect(
+      f.context.dispatch.mock.calls.some(
+        ([action]: [
+          { type: string; payload: { status?: string; errorMessage?: string } },
+        ]) =>
+          action.type === "UPDATE_SESSION" && action.payload.status === "error",
+      ),
+    ).toBe(false);
     await act(async () => release());
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+    );
+    expect(
+      f.context.dispatch.mock.calls.some(
+        ([action]: [
+          { type: string; payload: { status?: string; errorMessage?: string } },
+        ]) =>
+          action.type === "UPDATE_SESSION" && action.payload.status === "error",
+      ),
+    ).toBe(false);
+    expect(
+      screen.queryByText(/Experimental native browser unavailable/),
+    ).toBeNull();
     expect(f.hookOptions.initialUrl).toBe("https://127.0.10.14:10000/");
     expect(f.hookOptions.startTimeoutMs).toBeGreaterThanOrEqual(180_000);
+  });
+
+  it("keeps an actual SSH listener failure visible and publishes its error without creating CEF", async () => {
+    f.context.state.connections = [
+      setInlineSsh(connection, {
+        forwardType: "local",
+        connectionId: "ssh-host",
+        ownerDatabaseId: "database-1",
+      }),
+      {
+        id: "ssh-host",
+        protocol: "ssh",
+        hostname: "server.example.test",
+        port: 22,
+      },
+    ];
+    const originalListen = f.listen.getMockImplementation()!;
+    f.listen.mockImplementation(async (name, callback) => {
+      if (name === "ssh://host-key-prompt")
+        throw new Error("PRIVATE_SSH_LISTEN_ERROR");
+      return originalListen(name, callback);
+    });
+    render(<WebBrowser session={session} />);
+    await waitFor(() =>
+      expect(
+        f.context.dispatch.mock.calls.some(
+          ([action]: [
+            {
+              type: string;
+              payload: { status?: string; errorMessage?: string };
+            },
+          ]) =>
+            action.type === "UPDATE_SESSION" &&
+            action.payload.status === "error" &&
+            action.payload.errorMessage?.includes(
+              "SSH host-key verification could not start",
+            ),
+        ),
+      ).toBe(true),
+    );
+    expect(calls("origin_browser_create")).toHaveLength(0);
+    expect(
+      screen.getAllByText(/SSH host-key verification could not start/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/PRIVATE_SSH_LISTEN_ERROR/)).toBeNull();
   });
 
   it("publishes connected session status before login consent or automation readiness and while subresources load", async () => {
@@ -925,7 +1007,7 @@ describe("real-origin connection-tab integration", () => {
     fireEvent.click(permissions);
     expect(
       await screen.findByRole("dialog", {
-        name: "Browser request permissions",
+        name: "Browser settings",
       }),
     ).toBeVisible();
     expect(
@@ -1123,8 +1205,54 @@ describe("real-origin connection-tab integration", () => {
       expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
     },
   );
+  it("opens current-attempt security information without reconnecting or probing the network", async () => {
+    await attached();
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 9,
+          currentUrl: "https://10.15.27.1/path?private=value",
+        }),
+      }),
+    );
+    const previous = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_security_info"
+        ? Promise.resolve({ ...args.request, observation: null })
+        : previous(command, args),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Security information" }),
+    );
+    const panel = await screen.findByRole("region", {
+      name: "Website security information",
+    });
+    expect(panel).toHaveTextContent("https://10.15.27.1");
+    expect(panel).not.toHaveTextContent("private=value");
+    await waitFor(() =>
+      expect(calls("origin_browser_security_info")).toHaveLength(1),
+    );
+    expect(calls("origin_browser_security_info")[0][1].request).toMatchObject({
+      sequence: 9,
+      origin: "https://10.15.27.1",
+      identity: { attemptId: "attempt-1" },
+    });
+    await waitFor(() =>
+      expect(panel).toHaveTextContent("certificate evidence unavailable"),
+    );
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(calls("origin_browser_close")).toHaveLength(0);
+    expect(calls("origin_browser_probe")).toHaveLength(0);
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Close security information" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Website security information" }),
+    ).toBeNull();
+  });
+
   it.each(["Credentials & 2FA", "Recording"])(
-    "%s is a compact anchored popup that shields input while keeping native rendering visible",
+    "%s clips its own rectangle while keeping native rendering and outside input available",
     async (label) => {
       await attached();
       const trigger = screen.getByRole("button", { name: label });
@@ -1150,7 +1278,7 @@ describe("real-origin connection-tab integration", () => {
           presentations[presentations.length - 1]?.[1].request.action,
         ).toMatchObject({
           visible: true,
-          inputBlocked: true,
+          inputBlocked: false,
           occlusions: [expect.any(Object)],
         });
       });
@@ -1162,23 +1290,37 @@ describe("real-origin connection-tab integration", () => {
       const viewport = document.querySelector(
         "[data-origin-browser-viewport]",
       )!;
-      expect(viewport).toHaveAttribute("aria-hidden", "true");
+      expect(viewport).toHaveAttribute("aria-hidden", "false");
       const focusCalls = calls("origin_browser_control").filter(
         ([, args]) => args.request.action.kind === "focus",
       ).length;
       fireEvent.focus(viewport);
       fireEvent.pointerDown(viewport);
-      expect(
-        calls("origin_browser_control").filter(
-          ([, args]) => args.request.action.kind === "focus",
-        ),
-      ).toHaveLength(focusCalls);
+      await waitFor(() =>
+        expect(
+          calls("origin_browser_control").filter(
+            ([, args]) => args.request.action.kind === "focus",
+          ).length,
+        ).toBeGreaterThan(focusCalls),
+      );
       fireEvent.keyDown(close, { key: "Escape" });
       expect(screen.queryByRole("region", { name: label })).toBeNull();
       expect(trigger).toHaveFocus();
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
       );
+      await waitFor(() => {
+        const restored = calls("origin_browser_control")
+          .slice(start)
+          .filter(([, args]) => args.request.action.kind === "presentation");
+        expect(restored[restored.length - 1]?.[1].request.action).toMatchObject(
+          {
+            visible: true,
+            inputBlocked: false,
+            occlusions: [],
+          },
+        );
+      });
       const presentations = calls("origin_browser_control")
         .slice(start)
         .filter(([, args]) => args.request.action.kind === "presentation");
@@ -1487,6 +1629,72 @@ describe("real-origin connection-tab integration", () => {
       expect(calls("origin_browser_create")).toHaveLength(1);
     },
   );
+  it("reads security details for the selected login popup instead of the hidden root", async () => {
+    await attached();
+    await waitFor(() => expect(f.popupListener).not.toBeNull());
+    const previous = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_security_info"
+        ? Promise.resolve({
+            ...args.request,
+            observation: null,
+            availability: "unavailable",
+          })
+        : previous(command, args),
+    );
+    act(() =>
+      f.popupListener?.({
+        payload: {
+          sourceIdentity: snapshot().identity,
+          sequence: 2,
+          sourceClosed: false,
+          views: [
+            {
+              viewId: "adobe-child",
+              disposition: "foreground",
+              phase: "adopted",
+              title: "Adobe sign in",
+              snapshot: snapshot("attempt-1", {
+                sequence: 7,
+                title: "Adobe sign in",
+                currentUrl:
+                  "https://auth.services.adobe.com/login?private=value",
+              }),
+            },
+          ],
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("tab", { name: "Adobe sign in" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tab", { name: "Adobe sign in" }),
+      ).toHaveAttribute("aria-selected", "true"),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Security information" }),
+    );
+    const panel = await screen.findByRole("region", {
+      name: "Website security information",
+    });
+    expect(panel).toHaveTextContent("https://auth.services.adobe.com");
+    expect(panel).not.toHaveTextContent("private=value");
+    await waitFor(() =>
+      expect(calls("origin_browser_security_info")).toHaveLength(1),
+    );
+    expect(calls("origin_browser_security_info")[0][1].request).toMatchObject({
+      viewId: "adobe-child",
+      sequence: 7,
+      origin: "https://auth.services.adobe.com",
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Fixture native" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Website security information" }),
+      ).toBeNull(),
+    );
+  });
+
   it("shows selected popup diagnostics and preserves the hidden root's distinct load failure", async () => {
     await attached();
     await waitFor(() => expect(f.popupListener).not.toBeNull());
@@ -2342,9 +2550,9 @@ describe("real-origin connection-tab integration", () => {
     expect(
       screen.queryByText(/Native browser attached|Required policy:/),
     ).toBeNull();
-    expect(screen.getByLabelText("Browser policy")).toHaveAttribute(
+    expect(screen.getByLabelText("Security information")).toHaveAttribute(
       "data-tooltip",
-      expect.stringContaining("Forced dark"),
+      "Security information",
     );
     const trigger = screen.getByRole("button", {
       name: "More browser actions",
@@ -2368,7 +2576,7 @@ describe("real-origin connection-tab integration", () => {
     );
     expect(presentations.slice(-1)[0][1].request.action).toMatchObject({
       visible: true,
-      inputBlocked: true,
+      inputBlocked: false,
     });
     expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();
     fireEvent.keyDown(menu, { key: "Escape" });
@@ -2807,7 +3015,7 @@ describe("real-origin connection-tab integration", () => {
       expect(
         !!screen.queryByRole("group", { name: "Saved website bookmarks" }),
       ).toBe(visible);
-      expect(!!screen.queryByLabelText("Browser policy")).toBe(visible);
+      expect(!!screen.queryByLabelText("Security information")).toBe(visible);
       await act(async () =>
         f.snapshotListener?.({
           payload: snapshot("attempt-1", { sequence: 2, loading: true }),
@@ -2850,7 +3058,7 @@ describe("real-origin connection-tab integration", () => {
       expect(
         !!screen.queryByRole("group", { name: "Saved website bookmarks" }),
       ).toBe(visible);
-      expect(!!screen.queryByLabelText("Browser policy")).toBe(visible);
+      expect(!!screen.queryByLabelText("Security information")).toBe(visible);
       await act(async () =>
         f.snapshotListener?.({
           payload: snapshot("attempt-1", { sequence: 2, loading: true }),
@@ -2889,7 +3097,7 @@ describe("real-origin connection-tab integration", () => {
         screen.getByRole("button", { name: "Reset zoom" }),
       ).toHaveTextContent("150%"),
     );
-    expect(screen.queryByLabelText("Browser policy")).toBeNull();
+    expect(screen.queryByLabelText("Security information")).toBeNull();
     expect(
       screen.queryByRole("group", { name: "Saved website bookmarks" }),
     ).toBeNull();
@@ -2962,7 +3170,7 @@ describe("real-origin connection-tab integration", () => {
     };
     f.context.state.connections = [{ ...connection, browserSession }];
     await attached();
-    fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+    await openBrowserSettings();
     fireEvent.click(
       screen.getByRole("button", { name: "Save for next connection" }),
     );
@@ -2976,6 +3184,59 @@ describe("real-origin connection-tab integration", () => {
       browserSession,
     );
   });
+  it("saves a browser preference without losing other saved connection fields", async () => {
+    f.context.state.connections = [
+      { ...connection, description: "Keep this note" },
+    ];
+    await attached();
+    await openBrowserSettings();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Override default zoom (%)" }),
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Default zoom (%)" }),
+      { target: { value: "150" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
+    await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    expect(f.context.state.connections[0]).toMatchObject({
+      description: "Keep this note",
+      browserSession: { version: 1, defaultZoomPercent: 150 },
+    });
+    expect(f.updateSettings).not.toHaveBeenCalled();
+    expect(calls("origin_browser_close")).toHaveLength(1);
+  });
+
+  it("keeps a changed saved policy when it changes while the page closes for settings save", async () => {
+    await attached();
+    const previous = f.invoke.getMockImplementation()!;
+    let finishClose!: () => void;
+    f.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_close"
+        ? new Promise<void>((resolve) => {
+            finishClose = resolve;
+          })
+        : previous(command, args),
+    );
+    await openBrowserSettings();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save for next connection" }),
+    );
+    await waitFor(() => expect(finishClose).toBeTypeOf("function"));
+    const changed = {
+      ...connection,
+      browserSession: { version: 1, defaultZoomPercent: 175 },
+    };
+    f.context.state.connections = [changed];
+    await act(async () => finishClose());
+    await screen.findByText(/browser was closed, but saving/i);
+    expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(f.context.state.connections[0]).toBe(changed);
+    expect(
+      screen.getByRole("dialog", { name: "Browser settings" }),
+    ).toBeVisible();
+  });
+
   it("keeps malformed override errors static and disables page tools without crashing the shell", async () => {
     f.context.state.connections = [
       {
@@ -3083,7 +3344,7 @@ describe("real-origin connection-tab integration", () => {
       target: { value: "é".repeat(513) },
     });
     expect(screen.getByRole("button", { name: "Next match" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+    await openBrowserSettings();
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Find in page" })).toBeDisabled();
     await waitFor(() => {
@@ -3092,7 +3353,7 @@ describe("real-origin connection-tab integration", () => {
         .filter((action) => action.kind === "presentation");
       expect(actions.slice(-1)[0]).toMatchObject({
         visible: true,
-        inputBlocked: true,
+        inputBlocked: false,
       });
     });
     act(() => {
@@ -3113,7 +3374,7 @@ describe("real-origin connection-tab integration", () => {
     ).toHaveLength(0);
     await act(async () => {});
   });
-  it("reviews and saves current-page bookmarks while blocking native input, without reconnecting", async () => {
+  it("reviews and saves current-page bookmarks while clipping the popup, without reconnecting", async () => {
     const view = await attached();
     act(() =>
       f.snapshotListener?.({
@@ -3131,7 +3392,7 @@ describe("real-origin connection-tab integration", () => {
     );
     expect(presentations.slice(-1)[0][1].request.action).toMatchObject({
       visible: true,
-      inputBlocked: true,
+      inputBlocked: false,
     });
     expect(
       screen.getByRole("menuitem", { name: "Bookmark this page" }),
@@ -3291,7 +3552,7 @@ describe("real-origin connection-tab integration", () => {
     await act(async () => {});
   });
 
-  it("uses shared modal sections and themed actions while fencing dismissal during pending save", async () => {
+  it("uses an anchored settings popup and fences dismissal during pending save", async () => {
     await attached();
     const previous = f.invoke.getMockImplementation()!;
     let finishClose!: () => void;
@@ -3302,30 +3563,25 @@ describe("real-origin connection-tab integration", () => {
           })
         : previous(command, args),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+    await openBrowserSettings();
     const dialog = screen.getByRole("dialog", {
-      name: "Browser request permissions",
+      name: "Browser settings",
     });
-    expect(dialog.querySelector(".sor-modal-header")).not.toBeNull();
-    expect(dialog.querySelector(".sor-modal-body")).toHaveClass(
+    expect(dialog.closest(".sor-popover-surface")).toHaveClass("fixed");
+    expect(dialog).toHaveAttribute("aria-modal", "false");
+    expect(dialog.querySelector("header")).not.toBeNull();
+    expect(dialog.querySelector("[role=tabpanel]")?.parentElement).toHaveClass(
       "overflow-y-auto",
       "min-h-0",
     );
-    expect(dialog.querySelector(".sor-modal-footer")).toHaveClass(
-      "flex-wrap",
-      "shrink-0",
-    );
-    expect(dialog.querySelectorAll(".sor-settings-card")).toHaveLength(1);
+    expect(dialog.querySelector("footer")).toHaveClass("shrink-0");
+    expect(within(dialog).getAllByRole("tab")).toHaveLength(5);
     expect(
       within(dialog).queryByRole("combobox", { name: /browser engine/i }),
     ).toBeNull();
-    for (const name of [
-      "Save for next connection",
-      "Save and reconnect",
-      "Cancel",
-    ])
+    for (const name of ["Save for next connection", "Save and reconnect"])
       expect(within(dialog).getByRole("button", { name })).toHaveClass(
-        "sor-btn",
+        name === "Save and reconnect" ? "sor-btn-primary" : "sor-btn-secondary",
       );
     expect(
       within(dialog).getByRole("button", { name: "Save and reconnect" }),
@@ -3334,14 +3590,12 @@ describe("real-origin connection-tab integration", () => {
       within(dialog).getByRole("button", { name: "Save for next connection" }),
     );
     expect(within(dialog).getByRole("status")).toHaveTextContent(
-      "Saving permissions",
+      "Saving settings",
     );
-    expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull();
-    for (const name of [
-      "Save for next connection",
-      "Save and reconnect",
-      "Cancel",
-    ])
+    expect(
+      within(dialog).getByRole("button", { name: "Close browser settings" }),
+    ).toBeDisabled();
+    for (const name of ["Save for next connection", "Save and reconnect"])
       expect(within(dialog).getByRole("button", { name })).toBeDisabled();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(dialog).toBeInTheDocument();
@@ -4010,7 +4264,8 @@ describe("real-origin connection-tab integration", () => {
   );
   it("edits only connection permissions and closes before persisting and reconnecting", async () => {
     await attached();
-    fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+    await openBrowserSettings();
+    fireEvent.click(screen.getByRole("tab", { name: "Permissions" }));
     expect(
       screen.queryByRole("combobox", { name: /browser engine/i }),
     ).toBeNull();
@@ -4030,9 +4285,9 @@ describe("real-origin connection-tab integration", () => {
       expect(args.request.policy.autoLogin.consent).toEqual({
         kind: "required",
       });
-    expect(screen.getByLabelText("Browser policy")).toHaveAttribute(
+    expect(screen.getByLabelText("Security information")).toHaveAttribute(
       "data-tooltip",
-      expect.stringContaining("fresh native consent for each attempt"),
+      "Security information",
     );
     const closeOrder =
       f.invoke.mock.invocationCallOrder[
@@ -4051,7 +4306,7 @@ describe("real-origin connection-tab integration", () => {
         ? Promise.reject(new Error("native secret"))
         : previous(command, args),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
+    await openBrowserSettings();
     fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
     await screen.findByText(/Nothing was saved\./);
     expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
@@ -4219,6 +4474,91 @@ describe("shell overlays above the native browser", () => {
       act(() => release());
       expect(lastPresentation(start)).toMatchObject({ visible: true });
       expect(calls("origin_browser_close")).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    ["Allow once", "allow-once"],
+    ["Remember in Trust Center", "remember"],
+    ["Cancel", "cancel"],
+    ["native revocation", null],
+  ] as const)(
+    "shows the actual certificate prompt above a hidden native view and restores it after %s",
+    async (label, decision) => {
+      await attached();
+      let receive!: (value: unknown) => void;
+      const request = vi.fn<OriginCertificateReviewTransport["request"]>(
+        async () => ({ revision: 0, prompt: null }),
+      );
+      const transport: OriginCertificateReviewTransport = {
+        listen: async (listener) => {
+          receive = listener;
+          return () => {};
+        },
+        request,
+      };
+      render(<OriginBrowserCertificateReview transport={transport} />);
+      await waitFor(() => expect(request).toHaveBeenCalledOnce());
+      const prompt: OriginCertificatePrompt = {
+        requestId: "a".repeat(32),
+        identity: snapshot().identity,
+        origin: "https://fixture.invalid",
+        fingerprint: "ab".repeat(32),
+        reason: "The website uses an untrusted certificate.",
+        temporary: false,
+        expiresAtUnixMs: Date.now() + 90_000,
+      };
+      const start = calls("origin_browser_control").length;
+      act(() => receive({ revision: 1, prompt }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "Review website certificate",
+      });
+      expect(dialog).toBeVisible();
+      expect(dialog.closest(".sor-modal-backdrop")).not.toBeNull();
+      expect(dialog).toHaveTextContent(prompt.origin);
+      expect(dialog).toHaveTextContent(prompt.fingerprint);
+      await waitFor(() =>
+        expect(lastPresentation(start)).toMatchObject({
+          visible: false,
+          inputBlocked: true,
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole("button", { name: "Cancel" }),
+        ).toHaveFocus(),
+      );
+      expect(
+        screen.getByTestId("origin-browser-awaiting-confirmation"),
+      ).toHaveTextContent("website certificate");
+      if (decision) {
+        request.mockResolvedValueOnce({ revision: 2, prompt: null });
+        fireEvent.click(within(dialog).getByRole("button", { name: label }));
+        await waitFor(() =>
+          expect(request).toHaveBeenLastCalledWith({
+            action: "respond",
+            requestId: prompt.requestId,
+            identity: prompt.identity,
+            decision,
+          }),
+        );
+      } else {
+        act(() => receive({ revision: 2, prompt: null }));
+        expect(request).toHaveBeenCalledOnce();
+      }
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() =>
+        expect(lastPresentation(start)).toMatchObject({
+          visible: true,
+          inputBlocked: false,
+          occlusions: [],
+        }),
+      );
+      expect(
+        screen.queryByTestId("origin-browser-awaiting-confirmation"),
+      ).toBeNull();
+      expect(calls("origin_browser_close")).toHaveLength(0);
+      expect(calls("origin_browser_create")).toHaveLength(1);
     },
   );
 });

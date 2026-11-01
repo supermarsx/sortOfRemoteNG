@@ -396,7 +396,6 @@ export const defaultSettings: GlobalSettings = {
   showMacroManagerIcon: true,
   showDocumentsIcon: true,
   showServerStatsIcon: true,
-  showOpksshIcon: true,
   showMcpServerIcon: true,
   showSyncBackupStatusIcon: false, // Legacy combined - disabled by default
   showBackupStatusIcon: true, // Separate backup icon
@@ -589,7 +588,6 @@ export const defaultSettings: GlobalSettings = {
     shortcutManager: "tab" as const,
     bulkSsh: "tab" as const,
     serverStats: "tab" as const,
-    opkssh: "tab" as const,
     mcpServer: "tab" as const,
     internalProxy: "tab" as const,
     proxyChain: "tab" as const,

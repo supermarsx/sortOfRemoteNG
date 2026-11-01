@@ -16,7 +16,6 @@ export interface NativeRuntimeCapabilities {
   collab?: boolean;
   softether?: boolean;
   scriptEngine?: boolean;
-  opkssh?: boolean;
 }
 
 export interface RuntimeCapabilities extends NativeRuntimeCapabilities {
@@ -49,7 +48,6 @@ const EXTENDED_CAPABILITY_KEYS = [
   "collab",
   "softether",
   "scriptEngine",
-  "opkssh",
 ] as const;
 
 export const UNAVAILABLE_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
@@ -67,7 +65,6 @@ export const UNAVAILABLE_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   collab: false,
   softether: false,
   scriptEngine: false,
-  opkssh: false,
   source: "unavailable",
 };
 

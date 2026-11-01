@@ -6,6 +6,7 @@ import {
 } from "../../src/types/connection/httpProxyPolicy";
 import {
   nativeBrowsingMode,
+  nativeBrowsingPreset,
   nativeBrowserContentAllowed,
 } from "../../src/utils/connection/nativeBrowsingDefaults";
 import { normalizeHttpProxyPolicy } from "../../src/utils/connection/httpProxyPolicy";
@@ -85,6 +86,42 @@ describe("normal native browsing defaults", () => {
     expect(policy.allowAllRequests).toBe(false);
     expect(policy.allowAllScripts).toBe(false);
     expect(resolveBrowserProxyPolicy(policy, undefined)).toEqual(policy);
+  });
+  it("applies three restriction levels and restores ordinary website content when Standard is selected", () => {
+    const legacy = {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      sameOriginOnly: true,
+      pageScripts: "block" as const,
+    };
+    const standard = normalizeHttpProxyPolicy({
+      ...legacy,
+      ...nativeBrowsingPreset("standard"),
+    });
+    expect(nativeBrowserContentAllowed(connection, standard, undefined)).toBe(
+      true,
+    );
+    const restricted = normalizeHttpProxyPolicy({
+      ...standard,
+      ...nativeBrowsingPreset("restricted"),
+    });
+    expect(nativeBrowserContentAllowed(connection, restricted, undefined)).toBe(
+      false,
+    );
+    expect(restricted.sameOriginOnly).toBe(false);
+    const strict = normalizeHttpProxyPolicy({
+      ...standard,
+      ...nativeBrowsingPreset("strict"),
+    });
+    expect(nativeBrowsingMode(strict)).toBe("strict");
+    expect(strict.sameOriginOnly).toBe(true);
+    // A stale broad flag cannot make the preview advertise unrestricted content.
+    expect(
+      nativeBrowserContentAllowed(
+        connection,
+        { ...strict, sameOriginOnly: false, allowAllRequests: true },
+        undefined,
+      ),
+    ).toBe(false);
   });
   it("persists an explicit restricted decision across normalization and shared inheritance", () => {
     const policy = normalizeHttpProxyPolicy({

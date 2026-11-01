@@ -45,6 +45,7 @@ interface Prompt {
   public_key?: string | null;
 }
 const listeners = new Map<string, object>();
+export const NATIVE_BROWSER_SSH_REGISTRATION_TIMEOUT_MS = 15_000;
 
 /** The themed host-key question. Exported for its component test. */
 export function hostKeyPrompt(
@@ -227,6 +228,19 @@ export function useOriginBrowserSshTrust(
     let active = true;
     const unlisteners: Array<() => void> = [];
     let registrationFailed = false;
+    const failRegistration = () => {
+      if (registrationFailed) return;
+      registrationFailed = true;
+      clearTimeout(registrationDeadline);
+      unlisteners.forEach((off) => off());
+      if (active)
+        setFailure({
+          token: owner,
+          binding,
+          proof: options.proof,
+          correlation,
+        });
+    };
     const retain = (promise: Promise<() => void>) =>
       promise.then((off) => {
         let listening = true;
@@ -281,6 +295,7 @@ export function useOriginBrowserSshTrust(
       const scope = getTrustStoreScope();
       if (
         !active ||
+        registrationFailed ||
         listeners.get(correlation) !== owner ||
         !live.enabled ||
         live.sessionId !== options.sessionId ||
@@ -482,10 +497,15 @@ export function useOriginBrowserSshTrust(
         await respondCommand(payload.nonce, accepted);
       }),
     );
+    const registrationDeadline = setTimeout(
+      failRegistration,
+      NATIVE_BROWSER_SSH_REGISTRATION_TIMEOUT_MS,
+    );
     void Promise.all([hostListening, commandListening])
       .then((offs) => {
+        clearTimeout(registrationDeadline);
         const off = () => offs.forEach((close) => close());
-        if (!active) {
+        if (!active || registrationFailed) {
           off();
           return;
         }
@@ -496,19 +516,10 @@ export function useOriginBrowserSshTrust(
           correlation,
         });
       })
-      .catch(() => {
-        registrationFailed = true;
-        unlisteners.forEach((off) => off());
-        if (active)
-          setFailure({
-            token: owner,
-            binding,
-            proof: options.proof,
-            correlation,
-          });
-      });
+      .catch(failRegistration);
     return () => {
       active = false;
+      clearTimeout(registrationDeadline);
       if (token.current === owner) token.current = null;
       if (listeners.get(correlation) === owner) listeners.delete(correlation);
       unlisteners.forEach((off) => off());

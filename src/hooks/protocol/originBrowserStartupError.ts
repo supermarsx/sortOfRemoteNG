@@ -277,9 +277,9 @@ const proxyRules = {
     "Use policy version 1 when the version field is present.",
   ],
   "native-browsing-mode": [
-    "nativeBrowsingMode must be standard or restricted when present",
+    "nativeBrowsingMode must be standard, restricted or strict when present",
     "nativeBrowsingMode",
-    "Choose Standard or Restricted in the native browsing controls, then save the connection.",
+    "Choose Standard, Restricted or Strict in the browsing controls, then save the connection.",
   ],
   "page-scripts": [
     "pageScripts must be allow when present",

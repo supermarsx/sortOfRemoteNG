@@ -6,33 +6,26 @@ function TerminalStatusBar({ mgr }: { mgr: WebTerminalMgr }) {
     <div
       className={`${mgr.isSsh ? "ssh-terminal-status " : ""}flex flex-wrap items-center gap-2 px-4 pb-3 text-[10px] uppercase tracking-[0.2em]`}
     >
-      <span
-        className={`app-badge ${mgr.statusToneClass}`}
-        data-testid="terminal-connection-status"
-        style={
-          mgr.isSsh
-            ? {
-                padding: "1px 5px",
-                fontSize: "10px",
-                lineHeight: "14px",
-                letterSpacing: "normal",
-                textTransform: "none",
-              }
-            : undefined
-        }
-      >
-        {mgr.status === "connected"
-          ? "Connected"
-          : mgr.status === "reconnecting"
-            ? "Reconnecting"
-            : mgr.status === "connecting"
-              ? "Connecting"
-              : mgr.status === "error"
-                ? "Error"
-                : "Idle"}
-      </span>
+      {!mgr.isSsh && (
+        <span
+          className={`app-badge ${mgr.statusToneClass}`}
+          data-testid="terminal-connection-status"
+        >
+          {mgr.status === "connected"
+            ? "Connected"
+            : mgr.status === "reconnecting"
+              ? "Reconnecting"
+              : mgr.status === "connecting"
+                ? "Connecting"
+                : mgr.status === "error"
+                  ? "Error"
+                  : "Idle"}
+        </span>
+      )}
       {mgr.error && (
-        <span className="app-badge app-badge--error normal-case tracking-normal">
+        <span
+          className={`${mgr.isSsh ? "text-error" : "app-badge app-badge--error"} normal-case tracking-normal`}
+        >
           {mgr.error}
         </span>
       )}

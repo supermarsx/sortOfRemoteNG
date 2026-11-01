@@ -12,10 +12,12 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     key: "webBrowser.defaultPolicy.nativeBrowsingMode",
     label: "Browsing mode",
     description:
-      "Standard browsing loads website scripts and content normally through the private proxy. Restricted browsing uses approved sources and preserves saved website blocks.",
+      "Standard browsing is recommended for everyday websites. Restricted allows approved external sources. Strict keeps requests on the website only. All levels use the private proxy and respect saved website blocks.",
     tags: [
       "standard",
       "restricted",
+      "strict",
+      "compatibility",
       "scripts",
       "content",
       "CEF",
@@ -27,6 +29,8 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "Standard browsing",
       "restricted",
       "Restricted browsing",
+      "strict",
+      "Strict browsing",
     ],
     section: "webBrowser",
     sectionLabel: "Web Browser",

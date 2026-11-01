@@ -17,7 +17,12 @@ import {
   DEFAULT_EXTERNAL_FONT_ORIGINS,
   type HttpProxyPolicy,
 } from "../../../types/connection/httpProxyPolicy";
-import { nativeBrowsingMode } from "../../../utils/connection/nativeBrowsingDefaults";
+import {
+  nativeBrowsingMode,
+  nativeBrowsingPreset,
+  NATIVE_BROWSING_MODE_OPTIONS,
+  NATIVE_BROWSING_MODE_HELP,
+} from "../../../utils/connection/nativeBrowsingDefaults";
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
 import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../../../utils/connection/httpFormAutomation";
 import { normalizeExternalFontOrigins } from "../../../utils/connection/httpProxyPolicy";
@@ -417,19 +422,16 @@ function WebBrowserSettingsContent({
             settingKey="webBrowser.defaultPolicy.nativeBrowsingMode"
             label="Browsing mode"
             value={nativeBrowsingMode(policy)}
-            description="Load websites normally, including scripts, media and embedded content. Your custom site blocks still apply. Restricted browsing limits external content to the sources you choose below."
+            description={NATIVE_BROWSING_MODE_HELP}
             disabled={config.engine === "legacy"}
             onChange={(value) =>
               updatePolicy({
-                nativeBrowsingMode: value as "standard" | "restricted",
-                allowAllScripts: false,
-                allowAllRequests: false,
+                ...nativeBrowsingPreset(
+                  value as NonNullable<HttpProxyPolicy["nativeBrowsingMode"]>,
+                ),
               })
             }
-            options={[
-              { value: "standard", label: "Standard browsing" },
-              { value: "restricted", label: "Restricted browsing" },
-            ]}
+            options={NATIVE_BROWSING_MODE_OPTIONS}
           />
           <BrowserSelectRow
             settingKey="webBrowser.defaultPolicy.pageScripts"
@@ -459,7 +461,20 @@ function WebBrowserSettingsContent({
             label="Restrict to the same origin"
             checked={policy.sameOriginOnly}
             description="Restrict mediated redirects, resources and forms to the website origin"
-            onChange={(sameOriginOnly) => updatePolicy({ sameOriginOnly })}
+            onChange={(sameOriginOnly) =>
+              updatePolicy({
+                sameOriginOnly,
+                ...(config.engine !== "legacy"
+                  ? {
+                      nativeBrowsingMode: sameOriginOnly
+                        ? ("strict" as const)
+                        : ("restricted" as const),
+                      allowAllRequests: false,
+                      allowAllScripts: false,
+                    }
+                  : {}),
+              })
+            }
           />
           <BrowserSelectRow
             settingKey="webBrowser.defaultPolicy.cacheMode"

@@ -108,12 +108,22 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
     const reposition = () => updatePosition();
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
+    // Subtabs, validation messages and expanded fields can change an open
+    // popup's height. Recheck its viewport fit without closing the editor.
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(reposition);
+    if (popoverRef.current) observer?.observe(popoverRef.current);
     return () => {
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
+      observer?.disconnect();
     };
+    // Initial-open portals may mount after the first effect; observe again
+    // after their visible commit so subsequent content changes are measured.
     // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- reposition is stable within effect scope
-  }, [isOpen, align, offset, viewportPadding]);
+  }, [isOpen, position.visible, align, offset, viewportPadding]);
 
   useEffect(() => {
     if (!isOpen || !onClose || !closeOnOutside) return;

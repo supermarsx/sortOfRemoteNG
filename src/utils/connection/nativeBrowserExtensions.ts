@@ -62,6 +62,9 @@ export function changeNativeBrowserExtension(
         ...connection,
         httpAutomation: {
           ...normalizeHttpAutomation(connection.httpAutomation),
+          // Native appearance is on when the entire automation block is absent.
+          // Materializing script/macro settings must preserve that appearance.
+          forceDark: connection.httpAutomation?.forceDark ?? true,
           [change.kind === "scripts"
             ? "scriptInjectionEnabled"
             : "interactionMacrosEnabled"]: change.enabled,

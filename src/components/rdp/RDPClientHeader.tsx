@@ -28,10 +28,6 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
           sessionName={p.sessionName}
           sessionHostname={p.sessionHostname}
         />
-        <div className={`flex items-center space-x-1 ${p.getStatusColor()}`}>
-          {p.getStatusIcon()}
-          <span className="text-xs capitalize">{p.connectionStatus}</span>
-        </div>
         {p.statusMessage && (
           <span className="text-xs text-[var(--color-textSecondary)] ml-2 truncate max-w-xs">
             {p.statusMessage}

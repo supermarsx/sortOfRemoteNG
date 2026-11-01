@@ -23,11 +23,24 @@ export function nativeBrowserOcclusion(mode: "clip" | "blocking" = "clip"): {
 }
 
 const overlays =
-  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion]';
+  '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion]';
 // Inline failure screens clip retained native content without becoming a dialog.
 // Blocking here would hide their viewport ancestor and oscillate their clipping.
-const interactiveOverlays =
-  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion="blocking"]';
+const blockingOverlays =
+  '[role="alertdialog"], [aria-modal="true"], .sor-modal-backdrop:not(.sor-modal-toast-backdrop), [data-native-browser-occlusion="blocking"]';
+
+function blocksNativeInput(node: HTMLElement): boolean {
+  if (node.matches(blockingOverlays)) return true;
+  // Older custom dialogs may have no aria-modal declaration. Keep those
+  // protected, while anchored nonmodal panels only clip their own rectangle.
+  return (
+    node.matches('[role="dialog"]') &&
+    node.getAttribute("aria-modal") !== "false" &&
+    !node.closest(
+      '.sor-popover-surface, .sor-modal-toast-backdrop, [data-native-browser-occlusion]:not([data-native-browser-occlusion="blocking"])',
+    )
+  );
+}
 interface OverlayState {
   blocked: boolean;
   rectangles: readonly OriginBrowserBounds[];
@@ -91,7 +104,7 @@ export function useOriginBrowserOverlays(active: boolean) {
           height: Math.min(innerHeight, box.bottom + 2) - y,
         });
         if (!rect) continue;
-        blocked ||= node.matches(interactiveOverlays);
+        blocked ||= blocksNativeInput(node);
         if (
           !rectangles.some(
             (r) =>
@@ -137,6 +150,7 @@ export function useOriginBrowserOverlays(active: boolean) {
         "style",
         "hidden",
         "aria-hidden",
+        "aria-modal",
         "inert",
         "role",
         "data-native-browser-occlusion",
@@ -178,9 +192,9 @@ export function useOriginBrowserOverlays(active: boolean) {
   // what the sample can block for the same document.
   const pendingBlocked =
     pending &&
-    Array.from(
-      document.querySelectorAll<HTMLElement>(interactiveOverlays),
-    ).some(shown);
+    Array.from(document.querySelectorAll<HTMLElement>(overlays)).some(
+      (node) => shown(node) && blocksNativeInput(node),
+    );
   const presentation = active
     ? (state ?? {
         blocked: pendingBlocked,

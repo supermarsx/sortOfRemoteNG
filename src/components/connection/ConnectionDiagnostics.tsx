@@ -1635,7 +1635,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
             ) : (
               <Play size={12} />
             )}
-            Run All
+            {mgr.browserRouteNotice ? "Show available checks" : "Run All"}
           </button>
           <button
             onClick={mgr.copyDiagnosticsToClipboard}
@@ -1666,6 +1666,15 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
           </button>
         </div>
       </div>
+
+      {mgr.browserRouteNotice && (
+        <div
+          role="status"
+          className="shrink-0 border-b border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-textSecondary)]"
+        >
+          {mgr.browserRouteNotice}
+        </div>
+      )}
 
       {/* ── Body: sidebar + content ──────────────────────────── */}
       <div className="flex flex-1 min-h-0">

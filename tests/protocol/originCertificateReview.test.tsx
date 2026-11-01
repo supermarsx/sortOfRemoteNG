@@ -412,6 +412,136 @@ describe("native certificate review lifecycle", () => {
 });
 
 describe("themed certificate review", () => {
+  it("shows the requested IP beside certificate names and remembers only the original owner-bound receipt", async () => {
+    const certificate = {
+      subject: "CN=webmin.internal",
+      issuer: "CN=Internal CA",
+      validFrom: "2025-01-01T00:00:00Z",
+      validTo: "2026-01-01T00:00:00Z",
+      dnsNames: ["webmin.internal", "*.internal.example"],
+      ipAddresses: ["192.0.2.10"],
+    };
+    const value = prompt(undefined, {
+      origin: "https://127.0.0.2:10000",
+      reason: "The certificate name does not match the requested website.",
+      certificate,
+    });
+    const b = backend(snapshot(1, value));
+    render(<OriginBrowserCertificateReview transport={b.transport} />);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Review website certificate",
+    });
+    expect(dialog).toHaveTextContent("Requested website");
+    expect(dialog).toHaveTextContent(value.origin);
+    expect(dialog).toHaveTextContent(value.reason);
+    expect(dialog).toHaveTextContent("Certificate covers");
+    for (const name of [
+      ...certificate.dnsNames,
+      ...certificate.ipAddresses,
+      certificate.subject,
+      certificate.issuer,
+    ])
+      expect(dialog).toHaveTextContent(name);
+    expect(
+      dialog.querySelector('time[datetime="2026-01-01T00:00:00Z"]'),
+    ).not.toBeNull();
+    expect(dialog).toHaveTextContent(
+      "Manage or remove the saved approval in Trust Center",
+    );
+    expect(dialog).toHaveTextContent("without saving a trust decision");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus(),
+    );
+    b.request.mockResolvedValueOnce(snapshot(2, null));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remember in Trust Center" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(b.request).toHaveBeenLastCalledWith({
+      action: "respond",
+      requestId: value.requestId,
+      identity: value.identity,
+      decision: "remember",
+    });
+    expect(getOriginBrowserConfirmation(value.identity.sessionId)).toBeNull();
+  });
+  it("does not invent a name mismatch, missing SANs or validity facts", async () => {
+    const value = prompt(undefined, {
+      certificate: {
+        subject: "",
+        issuer: "",
+        validFrom: null,
+        validTo: null,
+        dnsNames: [],
+        ipAddresses: [],
+      },
+    });
+    const b = backend(snapshot(1, value));
+    render(<OriginBrowserCertificateReview transport={b.transport} />);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Review website certificate",
+    });
+    expect(dialog).toHaveTextContent(value.reason);
+    expect(dialog).toHaveTextContent(
+      "No DNS names or IP addresses were reported",
+    );
+    expect(dialog).toHaveTextContent("Not supplied");
+    expect(dialog).toHaveTextContent("Not reported");
+    expect(dialog).not.toHaveTextContent(
+      /expired|name mismatch|does not match/i,
+    );
+    expect(dialog.querySelector("time")).toBeNull();
+  });
+  it("bounds optional public certificate details and excludes unrecognized fields", () => {
+    const certificate = {
+      subject: "CN=internal",
+      issuer: "CN=issuer",
+      validFrom: null,
+      validTo: "2026-01-01T00:00:00Z",
+      dnsNames: ["internal.test"],
+      ipAddresses: ["127.0.0.2"],
+    };
+    const parsed = readOriginCertificateReview(
+      snapshot(
+        1,
+        prompt(undefined, {
+          certificate: {
+            ...certificate,
+            password: "not-a-public-field",
+          } as typeof certificate,
+        }),
+      ),
+    );
+    expect(parsed?.prompt?.certificate).toEqual(certificate);
+    expect(JSON.stringify(parsed)).not.toContain("not-a-public-field");
+    expect(Object.isFrozen(parsed?.prompt?.certificate?.dnsNames)).toBe(true);
+    const invalid = [
+      { ...certificate, subject: "x".repeat(8193) },
+      { ...certificate, issuer: "x".repeat(8193) },
+      { ...certificate, dnsNames: Array(65).fill("internal.test") },
+      { ...certificate, ipAddresses: Array(65).fill("127.0.0.2") },
+      { ...certificate, dnsNames: ["x".repeat(254)] },
+      { ...certificate, ipAddresses: ["x".repeat(254)] },
+      { ...certificate, dnsNames: ["misleading\u202e.example"] },
+      { ...certificate, subject: "bad\nsubject" },
+      { ...certificate, validFrom: "yesterday" },
+      { ...certificate, validTo: "2026-99-01T00:00:00Z" },
+      { ...certificate, validTo: "2026-01-01" },
+      { ...certificate, validFrom: undefined },
+    ];
+    for (const details of invalid)
+      expect(
+        readOriginCertificateReview(
+          snapshot(
+            1,
+            prompt(undefined, { certificate: details as typeof certificate }),
+          ),
+        ),
+      ).toBeNull();
+    expect(
+      readOriginCertificateReview(snapshot(1, prompt()))?.prompt?.certificate,
+    ).toBeUndefined();
+  });
   it.each([false, true])(
     "uses the shell Modal, defaults to Cancel, and accurately scopes temporary=%s trust",
     async (temporary) => {
@@ -433,7 +563,9 @@ describe("themed certificate review", () => {
       );
       expect(
         screen.getByRole("button", {
-          name: temporary ? "Trust for this attempt" : "Remember and continue",
+          name: temporary
+            ? "Trust for this attempt"
+            : "Remember in Trust Center",
         }),
       ).toBeEnabled();
       expect(dialog).toHaveTextContent(

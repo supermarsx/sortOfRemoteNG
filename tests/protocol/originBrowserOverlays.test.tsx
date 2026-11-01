@@ -88,7 +88,7 @@ it("coalesces app mutations and keeps stable geometry instead of hiding the page
   menu.setAttribute("role", "menu");
   document.body.append(menu);
   const { result } = renderHook(() => useOriginBrowserOverlays(true));
-  expect(result.current.blocked).toBe(true);
+  expect(result.current.blocked).toBe(false);
   expect(result.current.rectangles).toEqual([
     { x: 298, y: 98, width: 204, height: 154 },
   ]);
@@ -284,11 +284,11 @@ it("resamples on activation and shields the first presentation from stale geomet
   presented.length = 0;
   rerender({ active: true });
   expect(presented[0]).toMatchObject({
-    blocked: true,
+    blocked: false,
     rectangles: [{ x: 0, y: 0, width: innerWidth, height: innerHeight }],
   });
   expect(result.current).toMatchObject({
-    blocked: true,
+    blocked: false,
     rectangles: [{ x: 298, y: 98, width: 204, height: 154 }],
   });
   expect(mutationObservers).toBe(2);

@@ -69,11 +69,13 @@ export function OriginConnectionPermissions({
   sharedSettings,
   onChange,
   disabled,
+  portalContainer,
 }: {
   settings: WebsiteDomainPermissionsSettings | undefined;
   sharedSettings: WebsiteDomainPermissionsSettings | undefined;
   onChange: (settings: WebsiteDomainPermissionsSettings) => void;
   disabled?: boolean;
+  portalContainer?: HTMLElement | null;
 }) {
   return (
     <WebsiteDomainPermissionsEditor
@@ -82,6 +84,7 @@ export function OriginConnectionPermissions({
       sharedSettings={sharedSettings}
       onChange={onChange}
       disabled={disabled}
+      portalContainer={portalContainer}
     />
   );
 }

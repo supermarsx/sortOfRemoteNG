@@ -10,6 +10,8 @@ interface Props {
   onChange: (theme: WebsiteDarkTheme) => void;
   disabled?: boolean;
   presets?: WebsiteDarkPreset[];
+  /** Keep nested selectors inside an owning popup or modal. */
+  portalContainer?: HTMLElement | null;
 }
 
 /** Draft-only fields shared by the tab, connection editor and app settings. */
@@ -18,6 +20,7 @@ export function WebsiteDarkModeFields({
   onChange,
   disabled = false,
   presets = [],
+  portalContainer,
 }: Props) {
   const patch = (value: Partial<WebsiteDarkTheme>) =>
     onChange({ ...theme, ...value });
@@ -39,6 +42,7 @@ export function WebsiteDarkModeFields({
           <span>Conversion mode</span>
           <Select
             label="Conversion mode"
+            portalContainer={portalContainer}
             value={theme.mode}
             disabled={disabled}
             searchable
@@ -59,6 +63,7 @@ export function WebsiteDarkModeFields({
             <span>Apply preset</span>
             <Select
               label="Apply appearance preset"
+              portalContainer={portalContainer}
               value=""
               placeholder="Choose a preset"
               searchable

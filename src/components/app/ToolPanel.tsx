@@ -120,10 +120,6 @@ const ServerStatsPanel = dynamic(
     import("../ssh/ServerStatsPanel").then((module) => module.ServerStatsPanel),
   { ssr: false },
 );
-const OpksshPanel = dynamic(
-  () => import("../ssh/OpksshPanel").then((module) => module.OpksshPanel),
-  { ssr: false },
-);
 const McpServerPanel = dynamic(
   () => import("../ssh/McpServerPanel").then((module) => module.McpServerPanel),
   { ssr: false },
@@ -614,7 +610,6 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       {toolKey === "serverStats" && (
         <ServerStatsPanel isOpen onClose={onClose} />
       )}
-      {toolKey === "opkssh" && <OpksshPanel isOpen onClose={onClose} />}
       {toolKey === "mcpServer" && <McpServerPanel isOpen onClose={onClose} />}
       {toolKey === "scriptManager" && (
         <ScriptManager isOpen onClose={onClose} />

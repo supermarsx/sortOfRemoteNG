@@ -18,10 +18,11 @@ import {
  * default-shaped policy adopts normal native browsing; custom restrictions stay. */
 export function nativeBrowsingMode(
   policy: Partial<HttpProxyPolicy> | undefined,
-): "standard" | "restricted" {
+): NonNullable<HttpProxyPolicy["nativeBrowsingMode"]> {
   if (
     policy?.nativeBrowsingMode === "standard" ||
-    policy?.nativeBrowsingMode === "restricted"
+    policy?.nativeBrowsingMode === "restricted" ||
+    policy?.nativeBrowsingMode === "strict"
   )
     return policy.nativeBrowsingMode;
   if (!policy) return "standard";
@@ -54,6 +55,29 @@ export function nativeBrowsingMode(
   return "standard";
 }
 
+export const NATIVE_BROWSING_MODE_OPTIONS = [
+  { value: "standard", label: "Standard browsing" },
+  { value: "restricted", label: "Restricted browsing" },
+  { value: "strict", label: "Strict browsing" },
+];
+
+export const NATIVE_BROWSING_MODE_HELP =
+  "Standard is recommended for everyday websites: scripts, media and embedded content load normally. Restricted allows approved external sources. Strict keeps requests on this website only and can break sign-in. All three use the private proxy and respect your saved website blocks.";
+
+/** Selecting a level applies its content defaults; domain blocks and TLS trust stay separate. */
+export function nativeBrowsingPreset(
+  mode: NonNullable<HttpProxyPolicy["nativeBrowsingMode"]>,
+): Partial<HttpProxyPolicy> {
+  return {
+    nativeBrowsingMode: mode,
+    pageScripts: "allow",
+    sameOriginOnly: mode === "strict",
+    allowAllScripts: false,
+    allowAllRequests: false,
+    allowExternalFonts: mode !== "strict",
+  };
+}
+
 /** Preview class defaults only; explicit destination rules and native checks remain. */
 export function nativeBrowserContentAllowed(
   connection: Partial<Connection>,
@@ -63,6 +87,7 @@ export function nativeBrowserContentAllowed(
 ): boolean {
   if (
     connection.isGroup ||
+    nativeBrowsingMode(policy) === "strict" ||
     policy.sameOriginOnly ||
     policy.pageScripts !== "allow"
   )

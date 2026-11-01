@@ -27,6 +27,9 @@ import {
 
 import {
   nativeBrowsingMode,
+  nativeBrowsingPreset,
+  NATIVE_BROWSING_MODE_OPTIONS,
+  NATIVE_BROWSING_MODE_HELP,
   nativeBrowserContentAllowed,
 } from "../../../utils/connection/nativeBrowsingDefaults";
 
@@ -184,20 +187,15 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
             variant="form"
             onChange={(value) =>
               update({
-                nativeBrowsingMode: value as "standard" | "restricted",
-                allowAllRequests: false,
-                allowAllScripts: false,
+                ...nativeBrowsingPreset(
+                  value as NonNullable<HttpProxyPolicy["nativeBrowsingMode"]>,
+                ),
               })
             }
-            options={[
-              { value: "standard", label: "Standard browsing" },
-              { value: "restricted", label: "Restricted browsing" },
-            ]}
+            options={NATIVE_BROWSING_MODE_OPTIONS}
           />
           <p className="text-xs text-[var(--color-textMuted)]">
-            Load websites normally, including scripts, media and embedded
-            content. Your custom site blocks still apply. Restricted browsing
-            limits external content to the sources you choose below.
+            {NATIVE_BROWSING_MODE_HELP}
           </p>
         </div>
       )}
@@ -272,7 +270,13 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
             sameOriginOnly,
             allowAllScripts: false,
             allowAllRequests: false,
-            ...(native ? { nativeBrowsingMode: "restricted" as const } : {}),
+            ...(native
+              ? {
+                  nativeBrowsingMode: sameOriginOnly
+                    ? ("strict" as const)
+                    : ("restricted" as const),
+                }
+              : {}),
           })
         }
         label="Same-origin resources and forms"
@@ -289,11 +293,9 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           onChange={(allowAllRequests) =>
             native
               ? update({
-                  nativeBrowsingMode: allowAllRequests
-                    ? "standard"
-                    : "restricted",
-                  allowAllRequests,
-                  allowAllScripts: false,
+                  ...nativeBrowsingPreset(
+                    allowAllRequests ? "standard" : "restricted",
+                  ),
                 })
               : appRequestOrigin
                 ? mgr.setFormData((previous) => {

@@ -394,7 +394,6 @@ export interface GlobalSettings {
   showNetworkToolkitIcon: boolean;
   showBulkSSHIcon: boolean;
   showServerStatsIcon: boolean;
-  showOpksshIcon: boolean;
   showMcpServerIcon: boolean;
   showScriptManagerIcon: boolean;
   showMacroManagerIcon: boolean;
@@ -1451,7 +1450,6 @@ export interface ToolDisplayModes {
   shortcutManager: "tab";
   bulkSsh: "tab";
   serverStats: "tab";
-  opkssh: "tab";
   mcpServer: "tab";
   internalProxy: "tab";
   proxyChain: "tab";

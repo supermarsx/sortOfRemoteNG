@@ -38,25 +38,51 @@ const CollectionLabel: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const SessionIndicator: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { connected, connecting, errored, total } = mgr.sessionsByStatus;
-  if (total === 0) return null;
+  const countLabel =
+    total === 1
+      ? mgr.t("session.tabLayout.counters.sessionsOne", "{{count}} session", {
+          count: total,
+        })
+      : mgr.t(
+          "session.tabLayout.counters.sessionsOther",
+          "{{count}} sessions",
+          { count: total },
+        );
 
   return (
-    <div className="flex items-center gap-1.5">
-      <MonitorSmartphone size={12} className="text-[var(--color-textMuted)]" />
+    <div
+      className="flex items-center gap-1.5 tabular-nums"
+      data-testid="status-bar-session-counter"
+    >
+      <MonitorSmartphone
+        size={12}
+        aria-hidden="true"
+        className="text-[var(--color-textMuted)]"
+      />
+      <span>{countLabel}</span>
       {connected > 0 && (
-        <span className="flex items-center gap-1">
+        <span
+          className="flex items-center gap-1"
+          title={mgr.t("session.connected", "Connected")}
+        >
           <CircleDot size={8} className="text-success" />
           {connected}
         </span>
       )}
       {connecting > 0 && (
-        <span className="flex items-center gap-1">
+        <span
+          className="flex items-center gap-1"
+          title={mgr.t("session.connecting", "Connecting...")}
+        >
           <Loader2 size={8} className="animate-spin text-primary" />
           {connecting}
         </span>
       )}
       {errored > 0 && (
-        <span className="flex items-center gap-1">
+        <span
+          className="flex items-center gap-1"
+          title={mgr.t("session.disconnected", "Disconnected")}
+        >
           <AlertCircle size={8} className="text-error" />
           {errored}
         </span>

@@ -186,7 +186,7 @@ describe("Internal proxy controls", () => {
     expect(draft().httpProxyPolicy.nativeBrowsingMode).toBe("restricted");
   });
   it.each(["mode", "requests"])(
-    "preserves inherited restrictions when changing native %s",
+    "applies the selected level while preserving source lists when changing native %s",
     (control) => {
       const inherited = {
         ...DEFAULT_HTTP_PROXY_POLICY,
@@ -217,16 +217,50 @@ describe("Internal proxy controls", () => {
           screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
         );
       expect(draft().httpProxyPolicy).toMatchObject({
-        sameOriginOnly: true,
+        sameOriginOnly: false,
         externalResourceOrigins: [],
         externalFontOrigins: [],
         nativeBrowsingMode: "standard",
       });
       expect(
         screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
-      ).not.toBeChecked();
+      ).toBeChecked();
     },
   );
+  it("applies Strict browsing and restores website compatibility by selecting Standard", () => {
+    render(
+      <Fixture
+        initial={{
+          id: "pfsense",
+          protocol: "https",
+          hostname: "firewall.example",
+        }}
+      />,
+    );
+    const select = () =>
+      screen.getByRole("combobox", { name: "Browsing mode" });
+    fireEvent.click(select());
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Strict browsing" }),
+    );
+    expect(draft().httpProxyPolicy).toMatchObject({
+      nativeBrowsingMode: "strict",
+      sameOriginOnly: true,
+      pageScripts: "allow",
+    });
+    fireEvent.click(select());
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Standard browsing" }),
+    );
+    expect(draft().httpProxyPolicy).toMatchObject({
+      nativeBrowsingMode: "standard",
+      sameOriginOnly: false,
+      pageScripts: "allow",
+    });
+    expect(
+      screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
+    ).toBeChecked();
+  });
   it("defaults an ordinary native website to normal content and persists a restricted opt-out", () => {
     const initial = {
       id: "ordinary",

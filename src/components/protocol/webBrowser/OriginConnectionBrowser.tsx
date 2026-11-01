@@ -14,9 +14,6 @@ import {
   LoaderCircle,
   RotateCcw,
   RotateCw,
-  Save,
-  Settings2,
-  ShieldCheck,
   Square,
   Video,
   X,
@@ -57,16 +54,6 @@ import { nativeBrowserAuthoritySignature } from "../../../utils/connection/nativ
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
 import { resolveConnectionBrowserSettings } from "../../../utils/settings/browserSessionSettings";
 import { captureSessionDatabaseAccess } from "../../../utils/session/sessionDatabaseOwnership";
-import {
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-} from "../../ui/overlays/Modal";
-import { SettingsCard } from "../../ui/settings/SettingsPrimitives";
-import { OriginConnectionPermissions } from "../../SettingsDialog/sections/webBrowser/OriginBrowserPreferences";
-import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowser";
-import type { WebsiteDomainPermissionsSettings } from "../../../types/settings/websiteDomainPermissions";
 import type { SettingsTabId } from "../../SettingsDialog/settingsConstants";
 import OriginBrowserViewport from "./OriginBrowserViewport";
 import { TextInput } from "../../ui/forms/TextInput";
@@ -113,14 +100,16 @@ import { requestOriginBrowserRecovery } from "../../../utils/session/originBrows
 import { getQuickConnectConnection } from "../../../utils/session/runtimeConnectionRegistry";
 import OriginBrowserRecoveryActions from "./OriginBrowserRecoveryActions";
 import OriginConnectionHealthControl from "./OriginConnectionHealthControl";
+import OriginBrowserSecurityControl from "./OriginBrowserSecurityControl";
+import NativeBrowserSettingsControls, {
+  NativeBrowserSettingsSaveAfterCloseError,
+  type NativeBrowserSettingsChanges,
+} from "./NativeBrowserSettingsControls";
 import { useOriginConnectionHealth } from "../../../hooks/protocol/useOriginConnectionHealth";
 
 /** Native answers a create within its 20 s engine wait plus the saved initial
  * load timeout and 5 s. The rest is the slack the hook's own default leaves. */
 const NATIVE_START_MARGIN_SECONDS = 60;
-
-/** The save failed after the open page was already closed for it. */
-class SaveAfterCloseError extends Error {}
 
 type RestartStage = "running" | "done" | "failed";
 /** One notice per in-place restart, in the user's terms. Proxy recovery is
@@ -293,10 +282,14 @@ export default function OriginConnectionBrowser({
     browserConfigInvalid = true;
   }
   const [editing, setEditing] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"General" | "Permissions">(
+    "General",
+  );
   const [moreOpen, setMoreOpen] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
   const [recordingOpen, setRecordingOpen] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
   // Native builds a saved tab's source from the saved row alone, so the
@@ -347,6 +340,7 @@ export default function OriginConnectionBrowser({
     bookmarksOpen ||
     credentialsOpen ||
     healthOpen ||
+    securityOpen ||
     recordingOpen ||
     overlayOpen;
   const popupBridge = useNativeOriginPopupBridge();
@@ -376,7 +370,7 @@ export default function OriginConnectionBrowser({
     enabled: settingsReady !== false && !globalBrowserConfigInvalid,
     ownerAvailable: ownerAvailable && sshTrust.ready,
     active: isActive,
-    dialogOpen,
+    dialogOpen: overlayOpen,
     preserveRenderingUnderOverlays: awaitingConfirmation === null,
     occlusions: overlays.rectangles,
     consent: { kind: "required" },
@@ -407,6 +401,18 @@ export default function OriginConnectionBrowser({
   sshStarting.current =
     nativeBrowser.state.phase === "starting" ||
     nativeBrowser.state.phase === "idle";
+  const ownerlessState =
+    nativeBrowser.state.unavailableReason === "owner-unavailable";
+  const ownerStateSeen = useRef(false);
+  // Listener registration temporarily gates native ownership. Keep its waiting
+  // state through the commit that releases that gate, until native has observed
+  // the real owner. A subsequent owner loss or registration failure stays an error.
+  const preparingNativeStart =
+    ownerAvailable &&
+    settingsReady !== false &&
+    !globalBrowserConfigInvalid &&
+    !sshTrust.failed &&
+    (!sshTrust.ready || (ownerlessState && !ownerStateSeen.current));
   const browser = sshTrust.failed
     ? {
         ...nativeBrowser,
@@ -423,7 +429,23 @@ export default function OriginConnectionBrowser({
         connectionStatus: "error" as const,
         reconnect: sshTrust.retry,
       }
-    : nativeBrowser;
+    : preparingNativeStart
+      ? {
+          ...nativeBrowser,
+          state: {
+            phase: "starting" as const,
+            snapshot: null,
+            error: null,
+            unavailableReason: null,
+            startupFailure: null,
+            configurationFailure: null,
+            operationFailure: null,
+            runtimeFailure: null,
+            restart: null,
+          },
+          connectionStatus: "connecting" as const,
+        }
+      : nativeBrowser;
   const { close, navigate: nativeNavigate } = browser;
   useLayoutEffect(() => {
     closeRef.current = close;
@@ -449,16 +471,13 @@ export default function OriginConnectionBrowser({
   // The commit in which an owner appears still shows the state the hook held
   // without one. The hook replaces it before the next render, so that state
   // is never published as this session's error.
-  const ownerlessState =
-    browser.state.unavailableReason === "owner-unavailable";
-  const ownerStateSeen = useRef(false);
   useEffect(() => {
     if (
       !lifetime.current ||
       !ownerAvailable ||
       !proof ||
       !connectionStatus ||
-      (ownerlessState && !ownerStateSeen.current) ||
+      (ownerlessState && !ownerStateSeen.current && !sshTrust.failed) ||
       (connectionStatus === "disconnected" && holdFinalStatus) ||
       !liveSession ||
       liveSession.connectionId !== session.connectionId ||
@@ -494,12 +513,21 @@ export default function OriginConnectionBrowser({
     connectionStatus,
     sessionError,
     ownerlessState,
+    sshTrust.failed,
     holdFinalStatus,
   ]);
   useEffect(() => {
     ownerStateSeen.current =
-      ownerAvailable && (ownerStateSeen.current || !ownerlessState);
-  }, [ownerAvailable, ownerlessState]);
+      ownerAvailable &&
+      sshTrust.ready &&
+      (ownerStateSeen.current ||
+        (!ownerlessState && nativeBrowser.state.phase !== "idle"));
+  }, [
+    ownerAvailable,
+    ownerlessState,
+    sshTrust.ready,
+    nativeBrowser.state.phase,
+  ]);
   // A document load error retains its native attempt for back/address/inspection.
   const nativeAttached =
     phase === "attached" ||
@@ -1166,6 +1194,7 @@ export default function OriginConnectionBrowser({
           throw new Error("The saved connection changed.");
         if (action === "permissions") {
           hide();
+          setSettingsTab("Permissions");
           setEditing(true);
           return;
         }
@@ -1263,6 +1292,121 @@ export default function OriginConnectionBrowser({
     setNavigationError(false);
     setDevtoolsError(false);
   }, [identity, reportedAddress]);
+
+  const saveBrowserSettings = async (
+    changes: NativeBrowserSettingsChanges,
+    reconnect: boolean,
+  ) => {
+    assertShellOwner();
+    if (!connection || !canEdit) throw new Error();
+    const editableSettings = (row: Connection) =>
+      JSON.stringify({
+        browserSession: row.browserSession,
+        httpProxyPolicy: row.httpProxyPolicy,
+        websiteDomainPermissions: row.websiteDomainPermissions,
+      });
+    const lease = captureSessionDatabaseAccess(session);
+    const settingsAtStart = JSON.stringify(settings.webBrowser);
+    const assertAccess = () => {
+      lease();
+      if (
+        !lifetime.current ||
+        JSON.stringify(currentSettings.current) !== settingsAtStart
+      )
+        throw new Error();
+    };
+    const scope = context.databaseAvailability!;
+    const currentRow = () =>
+      context
+        .getCurrentConnections?.({
+          databaseId: session.ownerDatabaseId!,
+          generation: scope.generation,
+        })
+        ?.find((row) => row.id === connection!.id);
+    const saved = currentRow();
+    if (!saved || editableSettings(saved) !== editableSettings(connection))
+      throw new Error();
+    // Runs only once the open page is confirmed closed.
+    const persist = async () => {
+      assertAccess();
+      const savedAfterClose = currentRow();
+      if (
+        !savedAfterClose ||
+        editableSettings(savedAfterClose) !== editableSettings(saved)
+      )
+        throw new Error();
+      await context.dispatchAndFlush({
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...savedAfterClose,
+          ...changes,
+        },
+      });
+      // The attempt created next reads this row: it is not a change
+      // that a second, automatic reconnect has to follow.
+      const written = currentRow();
+      if (
+        !written ||
+        editableSettings(written) !==
+          editableSettings({ ...savedAfterClose, ...changes })
+      )
+        throw new Error();
+      if (written && lifetime.current)
+        setApplied((current) => ({
+          ...current,
+          authoritySignature: nativeBrowserAuthoritySignature(written),
+        }));
+      assertAccess();
+      lease();
+    };
+    if (!reconnect) {
+      setFinishing(true);
+      try {
+        await browser.close(true);
+      } catch (failure) {
+        // The page is still open, so the tab does not end.
+        if (lifetime.current) setFinishing(false);
+        throw failure;
+      }
+      try {
+        await persist();
+      } catch {
+        throw new NativeBrowserSettingsSaveAfterCloseError();
+      }
+      if (!lifetime.current) return;
+      setEditing(false);
+      setFinishing(false);
+      return;
+    }
+    let persisted = false;
+    let replaced: boolean;
+    setSettingsSave("pending");
+    try {
+      // Close, save, create: the tab never reads as ended in between.
+      replaced = await browser.restart("settings-saved", {
+        beforeCreate: async () => {
+          try {
+            await persist();
+          } catch (failure) {
+            if (lifetime.current) setSettingsSave("failed");
+            throw failure;
+          }
+          persisted = true;
+          if (lifetime.current) setSettingsSave("saved");
+        },
+      });
+    } catch {
+      // The hook replaces the tab even though the save then failed.
+      throw new NativeBrowserSettingsSaveAfterCloseError();
+    }
+    // Refused, or the open page could not be confirmed closed.
+    if (!replaced && !persisted) throw new Error();
+    if (!lifetime.current) return;
+    setEditing(false);
+    // Released only now: a page closed by an earlier, failed "Save for
+    // next connection" must not end the tab while it is replaced.
+    setFinishing(false);
+  };
 
   return (
     <div
@@ -1396,20 +1540,28 @@ export default function OriginConnectionBrowser({
         >
           <RotateCw size={16} aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          aria-label="Browser settings"
-          data-tooltip={
-            isTemporary
-              ? "Save a connection to change its browser settings."
-              : "Browser settings"
-          }
-          className="sor-btn sor-icon-btn-sm shrink-0"
-          disabled={!canEdit || !ownerAvailable || !recoveryAllowed}
-          onClick={() => recover("permissions")}
-        >
-          <Settings2 size={16} aria-hidden="true" />
-        </button>
+        {connection && !isTemporary && (
+          <NativeBrowserSettingsControls
+            session={session}
+            connection={connection}
+            config={globalBrowserConfig}
+            owner={`settings:${session.id}:${ownerDatabaseId}`}
+            visible={isActive && ownerAvailable}
+            available={
+              canEdit &&
+              ownerAvailable &&
+              settingsReady !== false &&
+              !overlayOpen
+            }
+            open={permissionsOpen}
+            initialTab={settingsTab}
+            onOpenChange={(open) => {
+              if (!open) setSettingsTab("General");
+              setEditing(open);
+            }}
+            onSave={saveBrowserSettings}
+          />
+        )}
         <NativeBrowserDownloads
           controller={downloads}
           allowed={browserConfig.allowDownloads}
@@ -1422,6 +1574,17 @@ export default function OriginConnectionBrowser({
           assertOwner={assertShellOwner}
           onOverlayChange={setHealthOpen}
         />
+        {browserConfig.showSecurityInfo && (
+          <OriginBrowserSecurityControl
+            snapshot={snapshot ?? null}
+            viewId={selectedPopupId}
+            eligible={isActive && ownerAvailable}
+            scope={`security:${session.id}:${ownerDatabaseId}`}
+            assertOwner={assertShellOwner}
+            onOverlayChange={setSecurityOpen}
+            onOpenTrustCenter={() => onOpenSettings?.("trust")}
+          />
+        )}
         {!isTemporary && connection && (
           <OriginCredentialControls
             key={`credentials:${identity}:${session.id}:${session.ownerDatabaseId}`}
@@ -1538,6 +1701,7 @@ export default function OriginConnectionBrowser({
         <NativeBrowserExtensionControls
           controller={extensions}
           appearanceStatus={appearanceStatus}
+          visible={isActive && ownerAvailable}
         />
         <OriginPageTools
           key={`${identity}:${ownerAvailable}`}
@@ -1846,7 +2010,7 @@ export default function OriginConnectionBrowser({
         controller={{ ...browser, state: viewportState }}
         active={isActive}
         ownerAvailable={ownerAvailable}
-        dialogOpen={dialogOpen}
+        dialogOpen={overlayOpen}
         title={snapshot?.title || session.name}
         showLoadingProgress={false}
         loading={loading}
@@ -1913,285 +2077,7 @@ export default function OriginConnectionBrowser({
                 ? ` · ${viewportState.phase}`
                 : ""}
         </span>
-        {browserConfig.showSecurityInfo && (
-          <span
-            tabIndex={0}
-            aria-label="Browser policy"
-            data-tooltip="Forced dark content. Auto-login requires fresh native consent for each attempt. Requests remain subject to native route and domain policy."
-            className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <ShieldCheck size={14} aria-hidden="true" />
-          </span>
-        )}
       </div>
-      {permissionsOpen && connection && (
-        <BrowserPermissionsDialog
-          session={session}
-          connection={connection}
-          config={globalBrowserConfig}
-          onClose={() => setEditing(false)}
-          onSave={async (permissions, reconnect) => {
-            assertShellOwner();
-            const lease = captureSessionDatabaseAccess(session);
-            const settingsAtStart = JSON.stringify(settings.webBrowser);
-            const assertAccess = () => {
-              lease();
-              if (
-                !lifetime.current ||
-                JSON.stringify(currentSettings.current) !== settingsAtStart
-              )
-                throw new Error();
-            };
-            const scope = context.databaseAvailability!;
-            const currentRow = () =>
-              context
-                .getCurrentConnections?.({
-                  databaseId: session.ownerDatabaseId!,
-                  generation: scope.generation,
-                })
-                ?.find((row) => row.id === connection.id);
-            const saved = currentRow();
-            if (
-              !saved ||
-              saved.websiteDomainPermissions !==
-                connection.websiteDomainPermissions
-            )
-              throw new Error();
-            // Runs only once the open page is confirmed closed.
-            const persist = async () => {
-              assertAccess();
-              const savedAfterClose = currentRow();
-              if (
-                !savedAfterClose ||
-                savedAfterClose.websiteDomainPermissions !==
-                  saved.websiteDomainPermissions
-              )
-                throw new Error();
-              await context.dispatchAndFlush({
-                type: "UPDATE_CONNECTION",
-                payload: {
-                  ...savedAfterClose,
-                  websiteDomainPermissions: permissions,
-                },
-              });
-              // The attempt created next reads this row: it is not a change
-              // that a second, automatic reconnect has to follow.
-              const written = currentRow();
-              if (written && lifetime.current)
-                setApplied((current) => ({
-                  ...current,
-                  authoritySignature: nativeBrowserAuthoritySignature(written),
-                }));
-              assertAccess();
-              lease();
-            };
-            if (!reconnect) {
-              setFinishing(true);
-              try {
-                await browser.close(true);
-              } catch (failure) {
-                // The page is still open, so the tab does not end.
-                if (lifetime.current) setFinishing(false);
-                throw failure;
-              }
-              try {
-                await persist();
-              } catch {
-                throw new SaveAfterCloseError();
-              }
-              if (!lifetime.current) return;
-              setEditing(false);
-              setFinishing(false);
-              return;
-            }
-            let persisted = false;
-            let replaced: boolean;
-            setSettingsSave("pending");
-            try {
-              // Close, save, create: the tab never reads as ended in between.
-              replaced = await browser.restart("settings-saved", {
-                beforeCreate: async () => {
-                  try {
-                    await persist();
-                  } catch (failure) {
-                    if (lifetime.current) setSettingsSave("failed");
-                    throw failure;
-                  }
-                  persisted = true;
-                  if (lifetime.current) setSettingsSave("saved");
-                },
-              });
-            } catch {
-              // The hook replaces the tab even though the save then failed.
-              throw new SaveAfterCloseError();
-            }
-            // Refused, or the open page could not be confirmed closed.
-            if (!replaced && !persisted) throw new Error();
-            if (!lifetime.current) return;
-            setEditing(false);
-            // Released only now: a page closed by an earlier, failed "Save for
-            // next connection" must not end the tab while it is replaced.
-            setFinishing(false);
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-function BrowserPermissionsDialog({
-  session,
-  connection,
-  config,
-  onClose,
-  onSave,
-}: {
-  session: ConnectionSession;
-  connection: Connection;
-  config: WebBrowserSettingsConfig;
-  onClose: () => void;
-  onSave: (
-    permissions: WebsiteDomainPermissionsSettings | undefined,
-    reconnect: boolean,
-  ) => Promise<void>;
-}) {
-  const [permissions, setPermissions] = useState(
-    connection.websiteDomainPermissions,
-  );
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<
-    false | "unsaved" | "restarted" | "closed"
-  >(false);
-  const alive = useRef(true);
-  const original = useRef({
-    config: JSON.stringify(config),
-    permissions: JSON.stringify(connection.websiteDomainPermissions),
-  });
-  useLayoutEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  const save = async (reconnect: boolean) => {
-    if (pending) return;
-    setError(false);
-    setPending(true);
-    try {
-      captureSessionDatabaseAccess(session)();
-      const saved = JSON.stringify(connection.websiteDomainPermissions);
-      if (
-        original.current.config !== JSON.stringify(config) ||
-        // Unchanged since this form opened, or already what an earlier save
-        // of this same form wrote before it failed.
-        (original.current.permissions !== saved &&
-          saved !== JSON.stringify(permissions))
-      )
-        throw new Error();
-      await onSave(permissions, reconnect);
-    } catch (failure) {
-      if (alive.current)
-        setError(
-          !(failure instanceof SaveAfterCloseError)
-            ? "unsaved"
-            : reconnect
-              ? "restarted"
-              : "closed",
-        );
-    } finally {
-      if (alive.current) setPending(false);
-    }
-  };
-  return (
-    <Modal
-      isOpen
-      onClose={pending ? undefined : onClose}
-      ariaLabel="Browser request permissions"
-      panelClassName="max-w-4xl w-full mx-3 max-h-[90dvh]"
-      contentClassName="flex min-h-0 flex-col overflow-hidden"
-    >
-      <ModalHeader
-        className="shrink-0"
-        title={
-          <h3 className="flex items-center gap-2">
-            <Settings2 size={18} className="text-primary" aria-hidden="true" />
-            Connection permissions
-          </h3>
-        }
-        onClose={pending ? undefined : onClose}
-      />
-      <ModalBody className="min-h-0 overflow-y-auto p-4 space-y-4">
-        <p className="text-sm leading-relaxed text-[var(--color-textSecondary)]">
-          These permissions apply only to this connection. Shared defaults are
-          managed in Settings. Saved permissions never apply to a page that is
-          already open. Save and reconnect closes this page, saves and opens it
-          again in this tab. Save for next connection closes this page, saves
-          and leaves this tab disconnected. Login consent and certificate trust
-          remain separate.
-        </p>
-        <SettingsCard>
-          <OriginConnectionPermissions
-            settings={permissions}
-            sharedSettings={config.domainPermissions}
-            onChange={setPermissions}
-            disabled={pending}
-          />
-        </SettingsCard>
-        {error && (
-          <p
-            role="alert"
-            className="sor-alert-error text-sm text-[var(--color-text)]"
-          >
-            {error === "unsaved"
-              ? "Nothing was saved. Check database access and the browser status behind this dialog, then try again. If these settings were changed elsewhere in the meantime, reopen this dialog first."
-              : error === "restarted"
-                ? "The settings could not be fully saved. This tab was restarted with what is saved now. Check database access, then save again."
-                : "The settings could not be fully saved, and this tab's page is already closed. Check database access, then save again."}{" "}
-            Your changes are still in this form.
-          </p>
-        )}
-        {pending && (
-          <p
-            role="status"
-            className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]"
-          >
-            <LoaderCircle
-              size={16}
-              className="animate-spin motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-            Saving permissions and closing this browser attempt…
-          </p>
-        )}
-      </ModalBody>
-      <ModalFooter className="shrink-0 flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
-          className="sor-btn sor-btn-secondary"
-          disabled={pending}
-          onClick={() => void save(false)}
-        >
-          <Save size={16} aria-hidden="true" />
-          Save for next connection
-        </button>
-        <button
-          type="button"
-          className="sor-btn sor-btn-primary"
-          disabled={pending}
-          onClick={() => void save(true)}
-        >
-          <RotateCcw size={16} aria-hidden="true" />
-          Save and reconnect
-        </button>
-        <button
-          type="button"
-          className="sor-btn sor-btn-secondary"
-          disabled={pending}
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-      </ModalFooter>
-    </Modal>
   );
 }

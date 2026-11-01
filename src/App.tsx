@@ -77,6 +77,7 @@ import { SessionTabs } from "./components/session/SessionTabs";
 import { SessionViewer } from "./components/session/SessionViewer";
 import type { SettingsTabId } from "./components/SettingsDialog/settingsConstants";
 import { TabLayoutManager } from "./components/session/TabLayoutManager";
+import { TabLayoutControls } from "./components/session/TabLayoutControls";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { ScriptTrustReconciler } from "./components/recording/scriptTrust/ScriptTrustReconciler";
 import { PromptHost } from "./components/ui/dialogs/PromptHost";
@@ -430,7 +431,6 @@ const AppContent: React.FC = () => {
       "networkToolkit",
       "bulkSsh",
       "serverStats",
-      "opkssh",
       "mcpServer",
       "importExport",
       "scriptManager",
@@ -1852,7 +1852,6 @@ const AppContent: React.FC = () => {
             setShowNetworkToolkit={toolShowSetters.current.networkToolkit}
             setShowBulkSSH={toolShowSetters.current.bulkSsh}
             setShowServerStats={toolShowSetters.current.serverStats}
-            setShowOpkssh={toolShowSetters.current.opkssh}
             setShowMcpServer={toolShowSetters.current.mcpServer}
             setShowScriptManager={toolShowSetters.current.scriptManager}
             setShowMacroManager={toolShowSetters.current.macroManager}
@@ -1899,6 +1898,15 @@ const AppContent: React.FC = () => {
                 enableReorder={appSettings.enableTabReorder}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
                 tabLayout={tabLayout}
+                trailingActions={
+                  <TabLayoutControls
+                    sessions={visibleSessions}
+                    activeSessionId={activeSessionId}
+                    layout={tabLayout}
+                    onLayoutChange={setTabLayout}
+                    onSessionSelect={setActiveSessionId}
+                  />
+                }
                 onAssignSessionToSlot={(sessionId, slotIndex) => {
                   setTabLayout((current) => {
                     if (slotIndex < 0 || slotIndex >= current.sessions.length)

@@ -41,33 +41,30 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SSH session status badges", () => {
-  it("keeps the connection status compact without changing non-SSH badge sizing", () => {
-    const view = render(<TerminalStatusBar mgr={manager()} />);
-    expect(screen.getByTestId("terminal-connection-status")).toHaveStyle({
-      padding: "1px 5px",
-      fontSize: "10px",
-      lineHeight: "14px",
-      textTransform: "none",
-    });
-    view.rerender(<TerminalStatusBar mgr={manager({ isSsh: false })} />);
-    expect(screen.getByTestId("terminal-connection-status").style.cssText).toBe(
-      "",
-    );
-  });
   it.each([
-    ["connected", "Connected"],
     ["reconnecting", "Reconnecting"],
     ["connecting", "Connecting"],
     ["error", "Error"],
     ["idle", "Idle"],
   ] as const)(
-    "preserves the %s status without the irrelevant SSH implementation label",
+    "uses connection health instead of a duplicate %s SSH badge",
     (status, label) => {
       render(<TerminalStatusBar mgr={manager({ status })} />);
-      expect(screen.getByText(label)).toBeVisible();
+      expect(screen.queryByTestId("terminal-connection-status")).toBeNull();
+      expect(screen.queryByText(label)).toBeNull();
       expect(screen.queryByText(/SSH lib|Rust/)).toBeNull();
     },
   );
+
+  it("hides the connected badge for SSH while keeping it for other terminals", () => {
+    const view = render(<TerminalStatusBar mgr={manager()} />);
+    expect(screen.queryByTestId("terminal-connection-status")).toBeNull();
+    expect(screen.queryByText("Connected")).toBeNull();
+    view.rerender(<TerminalStatusBar mgr={manager({ isSsh: false })} />);
+    expect(screen.getByTestId("terminal-connection-status")).toHaveTextContent(
+      "Connected",
+    );
+  });
 
   it("keeps trust, algorithm, fingerprint inspection and active recording indicators", () => {
     const mgr = manager();
@@ -126,7 +123,7 @@ describe("SSH session status badges", () => {
         <TerminalStatusBar mgr={manager()} />,
       );
       const badges = container.querySelectorAll(".app-badge");
-      expect(badges.length).toBe(4);
+      expect(badges.length).toBe(3);
       for (const badge of badges)
         expect(getComputedStyle(badge).borderRadius).toBe("0.25rem");
       rerender(<TerminalStatusBar mgr={manager({ isSsh: false })} />);
