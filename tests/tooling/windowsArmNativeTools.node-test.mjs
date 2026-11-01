@@ -229,7 +229,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(actual.rows.length, 128);
   assert.equal(
     actual.codeDigest,
-    "338663ac12b8e94146e0a4821807bc1b5ec2103910786fc44f52e7e70264678a",
+    "a5bbba9039279052fb10c9a1036db1bbe44e61a825226d54954de86bbbb24b8e",
   );
   assert(
     !actual.rows.some((row) =>

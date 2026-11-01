@@ -1053,6 +1053,93 @@ def source_metadata_precharge(size, owned_source=False):
     require(type(size) is int and 0 <= size <= source_metadata_limit(owned_source), 'source-sidecar-bound')
 
 
+_MAC_INTEL_PROOF_WRITER = ContextVar('mac_intel_proof_writer', default=None)
+_MAC_INTEL_PROOF_RECEIPTS = {}
+
+
+def _mac_intel_proof_stamp(info):
+    # Owned child creation and utime may change nlink/size/times legitimately.
+    return (info.st_dev,info.st_ino,info.st_mode,info.st_uid,info.st_gid)
+
+
+def _mac_intel_proof_current(record):
+    root,fd,identity = record
+    require(safe(root) == root, 'source-sidecar-role')
+    path_info=root.lstat();held=os.fstat(fd)
+    require(stat.S_ISDIR(path_info.st_mode) and stat.S_ISDIR(held.st_mode) and
+            stat.S_IMODE(path_info.st_mode)==0o700 and path_info.st_uid==os.geteuid() and
+            root.parent.lstat().st_uid==os.geteuid() and
+            _mac_intel_proof_stamp(path_info)==identity==_mac_intel_proof_stamp(held), 'source-sidecar-role')
+    return root
+
+
+@contextmanager
+def _mac_intel_owned_proof_tree(output, budget):
+    """Creation-owned scratch writer receipt; never public source admission."""
+    import sys
+    require(sys.platform=='darwin' and platform.machine()=='x86_64' and
+            os.environ.get('ImageOS')=='macos15' and os.environ.get('ImageVersion')=='20260824.0482.1' and
+            os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public', 'source-sidecar-role')
+    budget.check()
+    temp=safe(Path(os.environ['RUNNER_TEMP']));root=Path(output)
+    require(root.is_absolute() and root.parent==temp and str(root)==os.path.abspath(root) and
+            re.fullmatch(r'cef-mac-intel-owned-proof-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}',root.name) and
+            stat.S_ISDIR(temp.stat().st_mode) and temp.stat().st_uid==os.geteuid() and
+            not os.path.lexists(root), 'source-sidecar-role')
+    root.mkdir(mode=0o700)  # Exclusive creation is the authority for this root.
+    fd=None;context=None;receipt=object();primary=None
+    try:
+        before=root.lstat()
+        require(stat.S_ISDIR(before.st_mode) and stat.S_IMODE(before.st_mode)==0o700 and
+                before.st_uid==os.geteuid(), 'source-sidecar-role')
+        fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        record=(root,fd,_mac_intel_proof_stamp(before))
+        _mac_intel_proof_current(record)
+        _MAC_INTEL_PROOF_RECEIPTS[receipt]=record
+        context=_MAC_INTEL_PROOF_WRITER.set(receipt)
+        budget.check()
+        yield receipt
+        budget.check()
+        _mac_intel_proof_current(record)
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        if context is not None:_MAC_INTEL_PROOF_WRITER.reset(context)
+        _MAC_INTEL_PROOF_RECEIPTS.pop(receipt,None)  # Invalidate before closing.
+        if fd is not None:source_close(lambda:os.close(fd),primary)
+
+
+def _mac_intel_owned_proof_path(receipt):
+    require(type(receipt) is object and receipt is _MAC_INTEL_PROOF_WRITER.get() and receipt in _MAC_INTEL_PROOF_RECEIPTS,
+            'source-sidecar-role')
+    return _mac_intel_proof_current(_MAC_INTEL_PROOF_RECEIPTS[receipt])
+
+
+def _mac_intel_proof_writer_allowed(root,value):
+    receipt=_MAC_INTEL_PROOF_WRITER.get()
+    if type(receipt) is not object or receipt not in _MAC_INTEL_PROOF_RECEIPTS:return False
+    proof_root=_mac_intel_owned_proof_path(receipt);work=proof_root/'work'
+    identity=value['identity']
+    matched=(set(identity)=={'target','source','producer','canonicalRoot','image','tools','graph','siso'} and
+            all(type(identity[key])is str and re.fullmatch(r'[a-f0-9]{64}',identity[key]) for key in ('producer','tools','graph','siso')) and
+            identity.get('target')=='x86_64-apple-darwin' and identity.get('source')==MAC_INTEL_SOURCE and
+            identity.get('image')=='20260824.0482.1' and identity.get('canonicalRoot')==str(work) and
+            Path(root)==work/'source/src/out/Release_GN_x64' and
+            SOURCE_IO_CONTEXT.get()==('source-record',work/'source'))
+    if not matched:return False
+    try:
+        safe(Path(root))
+        current=Path(root)
+        while current!=proof_root:
+            info=current.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.geteuid():return False
+            current=current.parent
+    except (OSError,CheckpointError):return False
+    return True
+
+
 def metadata(root, name, value, source=False, owned_sidecar=False):
     maximum = source_metadata_limit(owned_sidecar)
     if owned_sidecar:
@@ -1069,7 +1156,8 @@ def metadata(root, name, value, source=False, owned_sidecar=False):
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macintel-source-metadata' and value['policy'] == MAC_INTEL_SOURCE_METADATA_POLICY and
                   value['identity'].get('target') == 'x86_64-apple-darwin' and value['identity'].get('source') == MAC_INTEL_SOURCE and
-                  value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE and
+                  (value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE or
+                   _mac_intel_proof_writer_allowed(root,value)) and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_x64')), 'source-sidecar-role')
     data = source_io_call('sidecar-encode', root / name, lambda: (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode())
     require(len(data) <= maximum, 'metadata-bound')

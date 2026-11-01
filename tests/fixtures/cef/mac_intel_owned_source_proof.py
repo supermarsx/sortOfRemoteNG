@@ -16,6 +16,24 @@ spec.loader.exec_module(base)
 SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'
 TARGET = 'x86_64-apple-darwin'
 need = base.need
+FAILURE_CODES = frozenset(('source-sidecar-role','source-sidecar-binding','source-content-changed',
+    'source-metadata-postcheck','source-mac-write-identity','source-write-identity',
+    'source-mac-birth-unavailable','source-mac-root-changed','source-root-changed',
+    'source-close-failure','archive-deadline'))
+
+
+class IntelOwnedTree(base.OwnedTree):
+    def __init__(self,module,receipt):
+        # Adopt the helper's genuine exclusive creation; do not mkdir again.
+        self.root = module._mac_intel_owned_proof_path(receipt)
+        self.created = {self.root:base.owner(self.root.lstat())}
+        self.check(self.root)
+
+
+def failure_code(error,module):
+    if type(error) is module.CheckpointError and len(error.args)==1 and type(error.args[0])is str and error.args[0] in FAILURE_CODES:
+        return error.args[0]
+    return 'source-close-failure' if module.SOURCE_CLOSE_FAILURE else 'OWNED_INTEL_SOURCE_PROOF_FAILED'
 
 
 def public_denied(module, output):
@@ -171,46 +189,59 @@ def preflight(args):
 def main(args):
     output, module, budget = preflight(args)
     base.at_stage('owned-root')
-    tree = base.OwnedTree(output)
+    tree=None;clean=False;writer_closed=False;retired=False
     report = {'schemaVersion':1,'kind':'sorng-macintel-owned-source-proof','complete':False,
               'hostPlatform':'darwin','hostArchitecture':'x86_64','targetArchitecture':'x64',
               'image':base.IMAGE,'sourceLockReference':SOURCE,'sourceWriteAdmitted':False,
               'productionInputWrites':False,'publicIntelAdmissionDeniedBefore':False,
-              'publicIntelAdmissionDeniedAfter':False,'nativeAcceptance':False,'runtimeReady':False,'failure':None}
+              'publicIntelAdmissionDeniedAfter':False,'nativeAcceptance':False,'runtimeReady':False,
+              'proofWriterClosed':False,'proofWriterCapabilityRetired':False,'failure':None,'failureCode':None}
+    def failed(error):
+        if report['failure'] is None:
+            report['failure']='OWNED_INTEL_SOURCE_PROOF_FAILED'
+            report['failureStage']=base.CURRENT_STAGE
+            report['failureCode']=failure_code(error,module)
     try:
-        base.at_stage('capability')
-        budget.check()
-        module.mac_owned_capability_observe({'kind':'sorng-macintel-external-input-context','source':SOURCE,
-            'outputRoot':str(output),'target':TARGET},output/'capability.json',module.Budget(5),owned_birth_proof=True)
-        tree.adopt_file(output/'capability.json',65536)
-        report['capability'] = json.loads((output/'capability.json').read_bytes())
-        need(report['capability']['complete'] and len(report['capability']['rows']) == 12 and
-             all(row['exactMtimeReadback'] and row['symlinkTargetUnchanged'] for row in report['capability']['rows']))
-        base.at_stage('public-gates')
-        public_denied(module,output)
-        report['publicIntelAdmissionDeniedBefore'] = True
-        base.at_stage('roundtrip')
-        report['roundtrip'] = roundtrip(tree,module,budget)
-        public_denied(module,output)
-        report['publicIntelAdmissionDeniedAfter'] = True
-        budget.check()
-    except BaseException:
-        report['failure'] = 'OWNED_INTEL_SOURCE_PROOF_FAILED'
-        report['failureStage'] = base.CURRENT_STAGE
-    finally:
-        base.at_stage('cleanup')
-        try:
-            clean = tree.cleanup()
-        except BaseException:
-            clean = False
-        report['cleanupConfirmed'] = clean
-        if 'roundtrip' in report:
-            report['roundtrip']['cleanupConfirmed'] = clean
-        report['complete'] = report['failure'] is None and clean
-        raw = (json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode()
-        need(len(raw) <= 128*1024)
-        base.at_stage('report')
-        tree.file('proof.json',raw,maximum=128*1024)
+        with module._mac_intel_owned_proof_tree(output,budget) as receipt:
+            tree=IntelOwnedTree(module,receipt)
+            try:
+                base.at_stage('capability')
+                budget.check()
+                module.mac_owned_capability_observe({'kind':'sorng-macintel-external-input-context','source':SOURCE,
+                    'outputRoot':str(output),'target':TARGET},output/'capability.json',module.Budget(5),owned_birth_proof=True)
+                tree.adopt_file(output/'capability.json',65536)
+                report['capability'] = json.loads((output/'capability.json').read_bytes())
+                need(report['capability']['complete'] and len(report['capability']['rows']) == 12 and
+                     all(row['exactMtimeReadback'] and row['symlinkTargetUnchanged'] for row in report['capability']['rows']))
+                base.at_stage('public-gates')
+                public_denied(module,output)
+                report['publicIntelAdmissionDeniedBefore'] = True
+                base.at_stage('roundtrip')
+                report['roundtrip'] = roundtrip(tree,module,budget)
+                public_denied(module,output)
+                report['publicIntelAdmissionDeniedAfter'] = True
+                budget.check()
+            except BaseException as error:
+                failed(error)
+            finally:
+                base.at_stage('cleanup')
+                try:clean=tree.cleanup()
+                except BaseException as error:failed(error)
+        writer_closed=True
+        try:module._mac_intel_owned_proof_path(receipt)
+        except module.CheckpointError as error:retired=error.args==('source-sidecar-role',)
+        need(retired)
+    except BaseException as error:
+        failed(error)
+    report['proofWriterClosed']=writer_closed
+    report['proofWriterCapabilityRetired']=retired
+    report['cleanupConfirmed']=clean and writer_closed and retired and not module.SOURCE_CLOSE_FAILURE
+    if 'roundtrip' in report:report['roundtrip']['cleanupConfirmed']=report['cleanupConfirmed']
+    report['complete']=report['failure'] is None and report['cleanupConfirmed']
+    raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode()
+    need(len(raw)<=128*1024 and tree is not None)
+    base.at_stage('report')
+    tree.file('proof.json',raw,maximum=128*1024)
     need(report['complete'])
 
 

@@ -237,3 +237,51 @@ test("actual CLI wraps compile and each upload with fresh authority and threads 
   }
   assert.doesNotMatch(helper, /saved\.|manifest|JSON\.parse|recursive|rm\(/);
 });
+
+test("actual metadata worker argv keeps one exact trailing Mac policy and Linux has none", () => {
+  const ast = ts.createSourceFile(
+    "cli.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const arrays = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(ast) === "archiveCommand" &&
+      ts.isArrayLiteralExpression(node.arguments[2]) &&
+      node.arguments[2].elements[0]?.getText(ast) === "selected.mode"
+    )
+      arrays.push(node.arguments[2]);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert.equal(arrays.length, 1);
+  for (const policy of [undefined, "mac-arm", "mac-intel"]) {
+    const selected = {
+      mode: "source-record",
+      source: "/owned/source",
+      sidecar: "/owned/source/src/out/sidecar",
+      platformPolicy: policy,
+    };
+    const actual = vm.runInNewContext("(" + arrays[0].getText(ast) + ")", {
+      selected,
+      identityFile: "/owned/identity.json",
+      helperSeconds: 15,
+    });
+    assert.deepEqual(Array.from(actual), [
+      "source-record",
+      "--input",
+      selected.source,
+      "--output",
+      selected.sidecar,
+      "--manifest",
+      "/owned/identity.json",
+      "--seconds",
+      "15",
+      ...(policy ? ["--platform-policy", policy] : []),
+    ]);
+  }
+});

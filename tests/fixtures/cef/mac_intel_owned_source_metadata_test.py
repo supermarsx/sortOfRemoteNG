@@ -9,6 +9,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from contextlib import contextmanager, ExitStack
 
 ROOT=Path(__file__).resolve().parents[3]
 def load(name,path):
@@ -87,6 +88,117 @@ class IntelCodec(unittest.TestCase):
             before=file.stat();proof.replace_input(tree,file,b'owned bytes')
             self.assertNotEqual((file.stat().st_dev,file.stat().st_ino),(before.st_dev,before.st_ino))
             self.assertTrue(tree.cleanup());folder.rmdir()
+    def test_failure_code_projection_is_closed_and_never_raw_exception(self):
+        with patch.object(m,'SOURCE_CLOSE_FAILURE',False):
+            self.assertEqual(proof.failure_code(m.CheckpointError('source-sidecar-role'),m),'source-sidecar-role')
+            for error in (m.CheckpointError('PRIVATE_PATH'),OSError('PRIVATE_PATH')):
+                self.assertEqual(proof.failure_code(error,m),'OWNED_INTEL_SOURCE_PROOF_FAILED')
+
+
+class ActualProofWriter(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.temp_path=Path(self.temp.name).resolve()
+        self.output=self.temp_path/'cef-mac-intel-owned-proof-12345678-1234-4123-8123-123456789abc'
+        self.work=self.output/'work';self.out=self.work/'source/src/out/Release_GN_x64'
+        self.identity={'target':'x86_64-apple-darwin','source':m.MAC_INTEL_SOURCE,'canonicalRoot':str(self.work),'image':'20260824.0482.1',**{key:'a'*64 for key in ('producer','tools','graph','siso')}}
+        self.value={'schemaVersion':1,'kind':'sorng-macintel-source-metadata','policy':m.MAC_INTEL_SOURCE_METADATA_POLICY,'sourceDateEpoch':m.SOURCE_METADATA_DATE_EPOCH,'identity':self.identity,'snapshot':{'entries':[],'rootMtimeNs':'1','gitHeads':{},'bytes':0}}
+        m.SOURCE_CLOSE_FAILURE=False
+    def tearDown(self):self.temp.cleanup()
+    @contextmanager
+    def host(self):
+        # Writer IO is never mocked. Windows lacks directory FDs/mode0700;
+        # model ONLY that kernel boundary, using real creation and close handles.
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(sys,'platform','darwin'))
+            stack.enter_context(patch.object(m.platform,'machine',return_value='x86_64'))
+            stack.enter_context(patch.dict(os.environ,{'RUNNER_TEMP':str(self.temp_path),'ImageOS':'macos15','ImageVersion':'20260824.0482.1','GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public'},clear=True))
+            stack.enter_context(patch.object(os,'geteuid',return_value=self.temp_path.stat().st_uid,create=True))
+            if os.name=='nt':
+                original_lstat=Path.lstat;original_open=os.open;original_fstat=os.fstat;directory_fds=set()
+                def local_lstat(path,*args,**kwargs):
+                    info=original_lstat(path,*args,**kwargs)
+                    if path!=self.output:return info
+                    return SimpleNamespace(**{key:getattr(info,key) for key in ('st_dev','st_ino','st_uid','st_gid')},st_mode=0o40700)
+                holder=self.temp_path/'directory-fd-model';holder.write_bytes(b'owned descriptor model')
+                def local_open(path,flags,*args,**kwargs):
+                    if Path(path)==self.output:
+                        fd=original_open(holder,os.O_RDONLY);directory_fds.add(fd);return fd
+                    return original_open(path,flags,*args,**kwargs)
+                def local_fstat(fd):
+                    value=original_fstat(fd)  # Prove this actual handle is live.
+                    return local_lstat(self.output) if fd in directory_fds else value
+                stack.enter_context(patch.object(Path,'lstat',local_lstat))
+                stack.enter_context(patch.object(os,'open',side_effect=local_open))
+                stack.enter_context(patch.object(os,'fstat',side_effect=local_fstat))
+                stack.enter_context(patch.object(os,'O_DIRECTORY',0,create=True));stack.enter_context(patch.object(os,'O_NOFOLLOW',0,create=True))
+            yield
+    def write(self,value=None,root=None,name=None,mode='source-record'):
+        with m.source_io_scope(mode):
+            m.SOURCE_IO_CONTEXT.set((mode,self.work/'source'))
+            return m.metadata(root or self.out,name or m.SOURCE_METADATA_NAME,value or self.value,source=True,owned_sidecar=True)
+    def test_unmocked_writer_reproduces_original_denial_without_scope(self):
+        self.out.mkdir(parents=True)
+        with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write()
+        self.assertFalse((self.out/m.SOURCE_METADATA_NAME).exists())
+    def test_unmocked_writer_accepts_only_created_scope_and_retires_it(self):
+        with self.host(),m._mac_intel_owned_proof_tree(self.output,m.Budget(5))as receipt:
+            self.assertEqual(m._mac_intel_owned_proof_path(receipt),self.output)
+            self.out.mkdir(parents=True)
+            written=self.write()
+            self.assertEqual(json.loads((self.out/m.SOURCE_METADATA_NAME).read_bytes()),self.value)
+            self.assertEqual(written['bytes'],(self.out/m.SOURCE_METADATA_NAME).stat().st_size)
+            self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
+            for mode in m.SOURCE_IO_MODES:
+                with self.assertRaisesRegex(m.CheckpointError,'source-mac-intel-darwin-capability-unreviewed'):m.source_metadata(mode,None,None,None,platform_policy='mac-intel')
+        with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write()
+        with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m._mac_intel_owned_proof_path(receipt)
+    def test_wrong_identity_kind_policy_path_phase_and_forgery_never_write(self):
+        with self.host(),m._mac_intel_owned_proof_tree(self.output,m.Budget(5)):
+            self.out.mkdir(parents=True)
+            for change in ({'kind':'sorng-macarm-source-metadata'},{'policy':'wrong'},{'identity':{**self.identity,'source':'0'*64}},{'identity':{**self.identity,'target':'aarch64-apple-darwin'}},{'identity':{**self.identity,'image':'latest'}},{'identity':{**self.identity,'canonicalRoot':str(self.work/'other')}}):
+                with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write({**self.value,**change})
+            for mode in ('source-apply','source-verify'):
+                with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write(mode=mode)
+            with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write(root=self.out.parent)
+            with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write(name='wrong.json')
+            for fake in (object(),{},True,'forged'):
+                token=m._MAC_INTEL_PROOF_WRITER.set(fake)
+                try:
+                    with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write()
+                finally:m._MAC_INTEL_PROOF_WRITER.reset(token)
+            self.assertFalse((self.out/m.SOURCE_METADATA_NAME).exists())
+    def test_replaced_root_and_close_fault_cannot_keep_a_live_receipt(self):
+        with self.host():
+            receipt=None
+            with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):
+                with m._mac_intel_owned_proof_tree(self.output,m.Budget(5))as receipt:
+                    old=self.output.with_name(self.output.name+'-old');self.output.rename(old);self.output.mkdir(mode=0o700)
+                    self.out.mkdir(parents=True)
+                    with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):self.write()
+            self.assertNotIn(receipt,m._MAC_INTEL_PROOF_RECEIPTS)
+        # A fresh separate namespace, with a real close that then reports fault.
+        self.output=self.temp_path/'cef-mac-intel-owned-proof-12345678-1234-4123-8123-123456789abd'
+        with self.host():
+            close=os.close
+            def faulty_close(fd):close(fd);raise OSError('PRIVATE_CLOSE')
+            with self.assertRaises(OSError),patch.object(os,'close',side_effect=faulty_close):
+                with m._mac_intel_owned_proof_tree(self.output,m.Budget(5))as receipt:pass
+            self.assertTrue(m.SOURCE_CLOSE_FAILURE);self.assertNotIn(receipt,m._MAC_INTEL_PROOF_RECEIPTS)
+            with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m._mac_intel_owned_proof_path(receipt)
+    @unittest.skipUnless(os.name=='posix','full FD/scandir filesystem integration requires POSIX; Windows is not Darwin proof')
+    def test_complete_real_codec_writer_recreated_inode_and_cleanup(self):
+        with self.host(),ExitStack() as stack:
+            if sys.platform!='darwin' or not hasattr(self.temp_path.stat(),'st_birthtime'):
+                # Linux models only Darwin's unavailable birth supplement;
+                # source snapshots, hashing, worker joins and writer IO are real.
+                stack.enter_context(patch.object(m,'source_birth_identity',return_value=('darwin-birthtime-float-hex','0x1.0p+30')))
+            budget=m.Budget(15)
+            with m._mac_intel_owned_proof_tree(self.output,budget)as receipt:
+                tree=proof.IntelOwnedTree(m,receipt)
+                result=proof.roundtrip(tree,m,budget)
+                self.assertTrue(result['recreatedInode']);self.assertTrue(result['corruptBytesDeniedBeforeUtime'])
+                self.assertTrue(result['verified']);self.assertTrue(tree.cleanup())
+            with self.assertRaisesRegex(m.CheckpointError,'source-sidecar-role'):m._mac_intel_owned_proof_path(receipt)
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -153,6 +153,9 @@ export function validateReport(report) {
         "nativeAcceptance",
         "runtimeReady",
         "failure",
+        "failureCode",
+        "proofWriterClosed",
+        "proofWriterCapabilityRetired",
         "capability",
         "roundtrip",
         "cleanupConfirmed",
@@ -169,7 +172,8 @@ export function validateReport(report) {
       report.targetArchitecture === "x64" &&
       report.image === "20260824.0482.1" &&
       report.sourceLockReference === SOURCE &&
-      report.failure === null,
+      report.failure === null &&
+      report.failureCode === null,
     "INTEL_PROOF_IDENTITY",
   );
   for (const key of [
@@ -177,6 +181,8 @@ export function validateReport(report) {
     "cleanupConfirmed",
     "publicIntelAdmissionDeniedBefore",
     "publicIntelAdmissionDeniedAfter",
+    "proofWriterClosed",
+    "proofWriterCapabilityRetired",
   ])
     assert(report[key] === true, "INTEL_PROOF_INCOMPLETE");
   for (const key of [

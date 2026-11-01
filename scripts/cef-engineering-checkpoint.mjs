@@ -700,13 +700,13 @@ async function checkpointMain(argv, env, observer) {
                           selected.source,
                           "--output",
                           selected.sidecar,
-                          ...(selected.platformPolicy
-                            ? ["--platform-policy", selected.platformPolicy]
-                            : []),
                           "--manifest",
                           identityFile,
                           "--seconds",
                           String(helperSeconds),
+                          ...(selected.platformPolicy
+                            ? ["--platform-policy", selected.platformPolicy]
+                            : []),
                         ],
                         {
                           timeout,

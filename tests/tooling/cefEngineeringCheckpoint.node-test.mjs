@@ -13580,10 +13580,26 @@ test("Linux owned-source metadata alone gets 2400 s; pack, restore and Mac modes
   };
   for (const mode of ["source-record", "source-apply", "source-verify"]) {
     assert.equal(await bound([mode], 2_400_001), false);
-    assert.equal(
-      await bound([mode, "--platform-policy", "mac-arm"], 600_001),
-      false,
-    );
+    for (const policy of ["mac-arm", "mac-intel"])
+      assert.equal(
+        await bound(
+          [
+            mode,
+            "--input",
+            path.resolve("source"),
+            "--output",
+            path.resolve("sidecar"),
+            "--manifest",
+            path.resolve("identity.json"),
+            "--seconds",
+            "600",
+            "--platform-policy",
+            policy,
+          ],
+          600_001,
+        ),
+        false,
+      );
   }
   for (const mode of ["pack", "restore", "seal", "mac-external-observe"])
     assert.equal(await bound([mode], 600_001), false);

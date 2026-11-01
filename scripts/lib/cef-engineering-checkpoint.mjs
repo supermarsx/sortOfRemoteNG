@@ -2290,6 +2290,42 @@ export async function archiveCommand(
   args,
   { timeout = LIMITS.archiveMs, observeFailure } = {},
 ) {
+  let macSourceHostFacts = false;
+  if (
+    Array.isArray(args) &&
+    ["source-record", "source-apply", "source-verify"].includes(args[0]) &&
+    args.some(
+      (value) =>
+        typeof value === "string" && value.startsWith("--platform-policy"),
+    )
+  ) {
+    const flags = [
+      "--input",
+      "--output",
+      "--manifest",
+      "--seconds",
+      "--platform-policy",
+    ];
+    assert(
+      args.length === 11 &&
+        flags.every((flag, index) => args[index * 2 + 1] === flag) &&
+        args.filter((value) => value === "--platform-policy").length === 1 &&
+        [args[2], args[4], args[6]].every(
+          (value) =>
+            typeof value === "string" &&
+            value.length > 0 &&
+            Buffer.byteLength(value) <= 32768 &&
+            !/[\x00-\x1f\x7f]/.test(value) &&
+            !value.startsWith("--"),
+        ) &&
+        typeof args[8] === "string" &&
+        /^[1-9][0-9]{0,2}$/.test(args[8]) &&
+        Number(args[8]) <= 600 &&
+        ["mac-arm", "mac-intel"].includes(args[10]),
+      "Fixed Mac source archive flags required",
+    );
+    macSourceHostFacts = true;
+  }
   assert(
     path.isAbsolute(python) &&
       path.isAbsolute(helper) &&
@@ -2452,24 +2488,26 @@ export async function archiveCommand(
           shell: false,
           windowsHide: true,
           detached: process.platform !== "win32",
-          env: [
-            "mac-python-package-observe",
-            "mac-external-observe",
-            "mac-owned-capability-observe",
-          ].includes(args[0])
-            ? {
-                PATH: path.dirname(python),
-                ImageOS: process.env.ImageOS,
-                ImageVersion: process.env.ImageVersion,
-                GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
-                RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
-                GITHUB_REPOSITORY_VISIBILITY:
-                  process.env.GITHUB_REPOSITORY_VISIBILITY,
-                ...(process.env.RUNNER_TRACKING_ID
-                  ? { RUNNER_TRACKING_ID: process.env.RUNNER_TRACKING_ID }
-                  : {}),
-              }
-            : { PATH: path.dirname(python) },
+          env:
+            macSourceHostFacts ||
+            [
+              "mac-python-package-observe",
+              "mac-external-observe",
+              "mac-owned-capability-observe",
+            ].includes(args[0])
+              ? {
+                  PATH: path.dirname(python),
+                  ImageOS: process.env.ImageOS,
+                  ImageVersion: process.env.ImageVersion,
+                  GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+                  RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
+                  GITHUB_REPOSITORY_VISIBILITY:
+                    process.env.GITHUB_REPOSITORY_VISIBILITY,
+                  ...(process.env.RUNNER_TRACKING_ID
+                    ? { RUNNER_TRACKING_ID: process.env.RUNNER_TRACKING_ID }
+                    : {}),
+                }
+              : { PATH: path.dirname(python) },
           stdio: ["ignore", "pipe", "pipe"],
         },
       );

@@ -64,6 +64,9 @@ function report() {
     nativeAcceptance: false,
     runtimeReady: false,
     failure: null,
+    failureCode: null,
+    proofWriterClosed: true,
+    proofWriterCapabilityRetired: true,
     cleanupConfirmed: true,
     capability: {
       schemaVersion: 1,
@@ -111,7 +114,7 @@ test("actual Intel codec regressions preserve false public admission and full ow
     { encoding: "utf8", timeout: 15000, maxBuffer: 65536, windowsHide: true },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /Ran 8 tests/);
+  assert.match(result.stderr, /Ran 14 tests/);
   assert.match(result.stderr, /\bOK\b/);
 });
 test("fixed Intel entry denies unknown arguments without raw path, argument or exception", () => {
@@ -173,6 +176,9 @@ test("Intel selector requires exact scope,12unique kernel cases,recreatedinode,p
     (v) => (v.hostArchitecture = "arm64"),
     (v) => (v.image = "latest"),
     (v) => (v.publicIntelAdmissionDeniedAfter = false),
+    (v) => (v.proofWriterClosed = false),
+    (v) => (v.proofWriterCapabilityRetired = false),
+    (v) => (v.failureCode = "PRIVATE"),
     (v) => (v.roundtrip.recreatedInode = false),
     (v) => (v.roundtrip.corruptBytesDeniedBeforeUtime = false),
     (v) => (v.roundtrip.sidecarKind = "sorng-macarm-source-metadata"),
