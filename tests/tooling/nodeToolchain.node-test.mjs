@@ -22,6 +22,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "browser-native-packages.yml": 2,
   "cargo-update.yml": 2,
   "cef-hosted-capacity.yml": 1,
+  "cef-mac-owned-source-proof.yml": 1,
   "cef-owned-sdk-import.yml": 1,
   "cef-owned-sdk-publish.yml": 2,
   "cef-engineering-checkpoint.yml": 1,

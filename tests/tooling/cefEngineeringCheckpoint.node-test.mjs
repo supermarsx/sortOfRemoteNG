@@ -11564,9 +11564,24 @@ class SdkColon(unittest.TestCase):
    with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.relative(name)
   # Current typed registry/source-IO wrappers still reach the unchanged guard.
   # Inspect the real current call chain, not the old private direct-call layout.
-  for fn,callee in [('link_recipe','relative'),('source_repositories','source_registry_repository'),('source_registry_repository','source_relative'),('source_relative','relative'),('source_metadata','source_metadata_owned'),('source_metadata_owned','relative')]:
+  for fn,callee in [('link_recipe','relative'),('source_repositories','source_registry_repository'),('source_registry_repository','source_relative'),('source_relative','relative'),('source_metadata','source_metadata_owned'),('source_metadata_owned','source_metadata_identity'),('source_metadata_owned','_source_metadata_owned_codec'),('_source_metadata_owned_codec','relative'),('_source_metadata_owned_codec','source_snapshot'),('source_snapshot','source_member_policy')]:
    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name==fn)
    self.assertTrue(any(isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id==callee for n in ast.walk(node)),fn+' -> '+callee)
+  wrapper=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='source_metadata_owned')
+  delegated=wrapper.body[-1];self.assertIsInstance(delegated,ast.Return);self.assertIsInstance(delegated.value,ast.Call)
+  self.assertEqual(delegated.value.func.id,'_source_metadata_owned_codec')
+  identity=next(n for n in wrapper.body if isinstance(n,ast.Assign)and isinstance(n.value,ast.Call)and isinstance(n.value.func,ast.Name)and n.value.func.id=='source_metadata_identity')
+  self.assertLess(identity.lineno,delegated.lineno)
+  for flag in ['MAC_SOURCE_WRITE_ADMITTED','MAC_INTEL_SOURCE_WRITE_ADMITTED']:
+   guarded=[n for n in ast.walk(wrapper)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='require'and n.args and isinstance(n.args[0],ast.Name)and n.args[0].id==flag]
+   self.assertEqual(len(guarded),1);self.assertLess(guarded[0].lineno,identity.lineno)
+  for platform_policy in ['mac-arm','mac-intel']:
+   with patch.object(sys,'platform','darwin'),patch.object(m,'_source_metadata_owned_codec')as core,patch.object(m,'source_metadata_identity')as identity_reader:
+    with self.assertRaisesRegex(m.CheckpointError,'darwin-capability-unreviewed'):m.source_metadata_owned('source-apply',pathlib.PurePosixPath('/not-read'),pathlib.PurePosixPath('/not-written'),{},platform_policy=platform_policy)
+    core.assert_not_called();identity_reader.assert_not_called()
+  with patch.object(sys,'platform','linux'),patch.object(m,'_source_metadata_owned_codec')as core:
+   with self.assertRaisesRegex(m.CheckpointError,'source-identity'):m.source_metadata_owned('source-apply',pathlib.PurePosixPath('/not-read'),pathlib.PurePosixPath('/not-written'),{})
+   core.assert_not_called()
   with self.assertRaisesRegex(m.CheckpointError,'member-path'):m.source_relative('src/public:header','filesystem-member')
   with self.assertRaisesRegex(m.CheckpointError,'^source-registry-kind$'):m.source_registry_repository('src/public:header','https://public.example/repository')
  def test_literal_colon_and_all_prior_unsafe_components_remain_closed(self):

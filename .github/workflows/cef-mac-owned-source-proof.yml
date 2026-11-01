@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: .node-version
+          node-version-file: ".node-version"
           package-manager-cache: false
       - name: Prove only owned Darwin metadata on the reviewed Intel cross-build host
         id: proof
@@ -81,6 +81,47 @@ jobs:
               ImageOS: env.ImageOS, ImageVersion: env.ImageVersion, GITHUB_ACTIONS: 'true',
               RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_REPOSITORY_VISIBILITY: 'public' };
           }
+          export function childFailure(error) {
+            const allowedStages = new Set(['arguments', 'host', 'image', 'runner', 'python-executable', 'python-pin', 'temp', 'output', 'helper-import', 'admission', 'owned-root', 'capability', 'public-gates', 'roundtrip', 'cleanup', 'report']);
+            const text = typeof error?.stdout === 'string' ? error.stdout.trim() : '';
+            const denied = /^OWNED_SOURCE_PROOF_DENIED(?::([a-z-]{1,48}))?$/.exec(text);
+            let preflight;
+            if (Buffer.byteLength(text) <= 2048) {
+              try {
+                const value = JSON.parse(text);
+                const keys = Object.keys(value).sort().join(',');
+                const interpreter = value.interpreter;
+                const exactKeys = interpreter === undefined ? 'complete,failure,kind,sourceWriteAdmitted,stage' : 'complete,failure,interpreter,kind,sourceWriteAdmitted,stage';
+                const validInterpreter = interpreter === undefined || (
+                  Object.keys(interpreter).sort().join(',') === 'basename,canonicalMatch,lexicalMatch,role' &&
+                  ['reviewed-launcher', 'framework-app', 'other'].includes(interpreter.role) &&
+                  ['python3.14', 'Python', 'python3', 'python', 'python.exe', 'other'].includes(interpreter.basename) &&
+                  typeof interpreter.lexicalMatch === 'boolean' && (interpreter.canonicalMatch === null || typeof interpreter.canonicalMatch === 'boolean')
+                );
+                if (keys === exactKeys && value.kind === 'sorng-macarm-owned-source-preflight' && value.complete === false && value.failure === 'OWNED_SOURCE_PROOF_DENIED' && value.sourceWriteAdmitted === false && allowedStages.has(value.stage) && validInterpreter)
+                  preflight = { stage: value.stage, ...(interpreter ? { interpreter: { role: interpreter.role, basename: interpreter.basename, lexicalMatch: interpreter.lexicalMatch, canonicalMatch: interpreter.canonicalMatch } } : {}) };
+              } catch { /* Unknown output is never retained or echoed. */ }
+            }
+            const signals = new Set(['SIGKILL', 'SIGTERM', 'SIGABRT', 'SIGSEGV', 'SIGBUS']);
+            return { kind: 'sorng-owned-darwin-proof-carrier', complete: false, phase: 'python-child',
+              exit: Number.isSafeInteger(error?.code) && error.code >= 0 && error.code <= 2147483647 ? error.code : null,
+              signal: signals.has(error?.signal) ? error.signal : null,
+              preflightStage: preflight?.stage ?? (denied && allowedStages.has(denied[1]) ? denied[1] : 'unavailable'),
+              denied: Boolean(preflight || denied),
+              ...(preflight?.interpreter ? { interpreter: preflight.interpreter } : {}),
+              stdoutBytes: Math.min(65536, typeof error?.stdout === 'string' ? Buffer.byteLength(error.stdout) : 0),
+              stderrBytes: Math.min(65536, typeof error?.stderr === 'string' ? Buffer.byteLength(error.stderr) : 0),
+              sourceWriteAdmitted: false, nativeAcceptance: false, runtimeReady: false };
+          }
+          export async function retainChildFailure(output, record, io = fs, uid = process.getuid()) {
+            assert(/^cef-mac-owned-proof-[a-f0-9-]{36}$/.test(path.basename(output)), 'OWNED_PROOF_OUTPUT');
+            try { await io.mkdir(output, { mode: 0o700 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+            const before = await io.lstat(output, { bigint: true });
+            assert(before.isDirectory() && !before.isSymbolicLink() && before.uid === BigInt(uid) && (before.mode & 0o777n) === 0o700n && await io.realpath(output) === output, 'OWNED_PROOF_OUTPUT');
+            await io.writeFile(path.join(output, 'carrier.json'), JSON.stringify(record) + '\n', { flag: 'wx', mode: 0o600 });
+            const after = await io.lstat(output, { bigint: true });
+            assert([before.dev, before.ino, before.mode, before.uid, before.gid].map(String).join(':') === [after.dev, after.ino, after.mode, after.uid, after.gid].map(String).join(':'), 'OWNED_PROOF_OUTPUT_CHANGED');
+          }
           export function validateReport(report) {
             assert(report.complete === true && report.sourceWriteAdmitted === false && report.nativeAcceptance === false && report.runtimeReady === false, 'OWNED_PROOF_RESULT');
             assert(report.hostPlatform === 'darwin' && report.hostArchitecture === 'x86_64' && report.targetArchitecture === 'arm64', 'OWNED_PROOF_RESULT_HOST');
@@ -110,10 +151,17 @@ jobs:
             await fs.appendFile(process.env.GITHUB_OUTPUT, 'root=' + output + '\n');
             // Fixed scratch-only fixture; no tokens, inherited Python flags,
             // Xcode/Metal queries, installed-input mutation or native build.
-            await promisify(execFile)(PYTHON, ['-I', '-B', 'tests/fixtures/cef/mac_owned_source_proof.py', '--output', output], {
-              cwd: process.env.GITHUB_WORKSPACE, env: childEnvironment(process.env),
-              timeout: 120000, maxBuffer: 65536, killSignal: 'SIGKILL', windowsHide: true
-            });
+            try {
+              await promisify(execFile)(PYTHON, ['-I', '-B', 'tests/fixtures/cef/mac_owned_source_proof.py', '--output', output], {
+                cwd: process.env.GITHUB_WORKSPACE, env: childEnvironment(process.env),
+                timeout: 120000, maxBuffer: 65536, killSignal: 'SIGKILL', windowsHide: true
+              });
+            } catch (error) {
+              const record = childFailure(error);
+              console.error(JSON.stringify(record));
+              try { await retainChildFailure(output, record); } catch { /* Keep the original child failure. */ }
+              throw error;
+            }
             const report = JSON.parse((await heldBytes(path.join(output, 'proof.json'), 128 * 1024)).toString('utf8'));
             validateReport(report);
             console.log('Owned Darwin metadata proof complete; production admission remains disabled.');
@@ -125,7 +173,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: cef-mac-owned-source-proof-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.proof.outputs.root }}/proof.json
+          path: |
+            ${{ steps.proof.outputs.root }}/proof.json
+            ${{ steps.proof.outputs.root }}/carrier.json
           retention-days: 14
           if-no-files-found: warn
           compression-level: 6

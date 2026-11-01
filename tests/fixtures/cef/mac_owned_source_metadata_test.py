@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+from contextlib import ExitStack
 from pathlib import Path
 import sys
 import tempfile
@@ -13,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('codec_under_test', ROOT / 'scripts/lib/cef-checkpoint-archive.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+proof_spec = importlib.util.spec_from_file_location('proof_under_test', ROOT / 'tests/fixtures/cef/mac_owned_source_proof.py')
+proof = importlib.util.module_from_spec(proof_spec)
+proof_spec.loader.exec_module(proof)
 
 
 def info(**changed):
@@ -168,6 +172,62 @@ class OwnedCodecRouting(unittest.TestCase):
              patch.object(m.os,'utime',side_effect=AssertionError('no timestamp writes')):
             with self.assertRaisesRegex(m.CheckpointError,'controlled-cancellation'):
                 self.core('source-record',Cancelled())
+
+
+class PreflightStages(unittest.TestCase):
+    def prefix(self, **environment):
+        stack = ExitStack()
+        stack.enter_context(patch.object(sys,'platform','darwin'))
+        stack.enter_context(patch.object(proof.platform,'machine',return_value='x86_64'))
+        stack.enter_context(patch.object(sys,'executable',proof.PYTHON))
+        stack.enter_context(patch.dict(proof.os.environ, {
+            'ImageOS':'macos15','ImageVersion':proof.IMAGE,'GITHUB_ACTIONS':'true',
+            'RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public',**environment},clear=True))
+        return stack
+
+    def test_unknown_arguments_emit_only_closed_stage_facts(self):
+        with self.assertRaises(RuntimeError):
+            proof.preflight(['--PRIVATE_ARGUMENT'])
+        value = proof.preflight_failure()
+        self.assertEqual(value['stage'],'arguments')
+        self.assertNotIn('interpreter',value)
+        self.assertNotIn('PRIVATE',json.dumps(value))
+        self.assertFalse(value['sourceWriteAdmitted'])
+        self.assertLess(len(json.dumps(value)),2048)
+
+    def test_host_image_and_runner_fail_before_interpreter_execution_or_output_creation(self):
+        cases = [('host',{},'linux'),('image',{'ImageVersion':'wrong'},'darwin'),('runner',{'GITHUB_ACTIONS':'false'},'darwin')]
+        for stage,environment,host in cases:
+            with self.subTest(stage=stage),self.prefix(**environment),patch.object(sys,'platform',host), \
+                 patch.object(proof,'verify_python')as verify,patch.object(proof,'OwnedTree')as output:
+                with self.assertRaises(RuntimeError):
+                    proof.main(['--output','/not-created'])
+                self.assertEqual(proof.preflight_failure()['stage'],stage)
+                verify.assert_not_called();output.assert_not_called()
+
+    def test_canonical_interpreter_relation_does_not_relax_the_existing_lexical_guard(self):
+        framework = str(Path(proof.PYTHON).parents[1] / 'Resources/Python.app/Contents/MacOS/Python')
+        with self.prefix(),patch.object(sys,'executable',framework),patch.object(Path,'resolve',return_value=Path(proof.PYTHON)), \
+             patch.object(proof,'verify_python')as verify,patch.object(proof,'OwnedTree')as output:
+            with self.assertRaises(RuntimeError):
+                proof.main(['--output','/not-created'])
+            value = proof.preflight_failure()
+            self.assertEqual(value['stage'],'python-executable')
+            self.assertEqual(value['interpreter'],{'role':'framework-app','basename':'Python','lexicalMatch':False,'canonicalMatch':True})
+            self.assertNotIn('/usr/',json.dumps(value))
+            verify.assert_not_called();output.assert_not_called()
+
+    def test_pin_failure_retains_fixed_stage_without_raw_exception_or_path(self):
+        marker = OSError('PRIVATE_PIN_PATH_AND_ERROR')
+        with self.prefix(),patch.object(proof,'verify_python',side_effect=marker),patch.object(proof,'OwnedTree')as output:
+            with self.assertRaises(OSError)as raised:
+                proof.main(['--output','/not-created'])
+            self.assertIs(raised.exception,marker)
+            value = proof.preflight_failure()
+            self.assertEqual(value['stage'],'python-pin')
+            self.assertEqual(value['interpreter']['role'],'reviewed-launcher')
+            self.assertTrue(value['interpreter']['lexicalMatch'])
+            self.assertNotIn('PRIVATE',json.dumps(value));output.assert_not_called()
 
 
 if __name__ == '__main__':

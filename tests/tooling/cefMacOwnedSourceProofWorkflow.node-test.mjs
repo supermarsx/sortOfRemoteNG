@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import YAML from "yaml";
 
 const root = new URL("../../", import.meta.url);
@@ -88,8 +89,8 @@ test("proof uses only the intended reviewed Intel Mac ARM cross-build host and n
     /\['-I', '-B', 'tests\/fixtures\/cef\/mac_owned_source_proof.py', '--output', output\]/,
   );
   assert.equal(
-    workflow.jobs.proof.steps.at(-1).with.path,
-    "${{ steps.proof.outputs.root }}/proof.json",
+    workflow.jobs.proof.steps.at(-1).with.path.trim(),
+    "${{ steps.proof.outputs.root }}/proof.json\n${{ steps.proof.outputs.root }}/carrier.json",
   );
 });
 
@@ -357,4 +358,141 @@ test("actual proof selector requires all native cases, cleanup and the ARM codec
     mutate(invalid);
     assert.throws(() => mod.validateReport(invalid), /OWNED_PROOF_/);
   }
+});
+
+test("child failure projection retains only closed preflight stages and bounded public process facts", () => {
+  const result = mod.childFailure({
+    code: 1,
+    signal: null,
+    stdout: "OWNED_SOURCE_PROOF_DENIED:python-executable\n",
+    stderr: "private details",
+    message: "private details",
+    path: "/private",
+  });
+  assert.equal(result.preflightStage, "python-executable");
+  assert.equal(result.exit, 1);
+  assert.equal(result.complete, false);
+  assert.equal(result.sourceWriteAdmitted, false);
+  assert(!JSON.stringify(result).includes("private"));
+  const unknown = mod.childFailure({
+    code: "private",
+    signal: "private",
+    stdout: "OWNED_SOURCE_PROOF_DENIED:private-value",
+    stderr: "x".repeat(70000),
+  });
+  assert.equal(unknown.preflightStage, "unavailable");
+  assert.equal(unknown.exit, null);
+  assert.equal(unknown.signal, null);
+  assert.equal(unknown.stderrBytes, 65536);
+  assert(!JSON.stringify(unknown).includes("private"));
+  const preflight = {
+    kind: "sorng-macarm-owned-source-preflight",
+    complete: false,
+    stage: "python-executable",
+    failure: "OWNED_SOURCE_PROOF_DENIED",
+    sourceWriteAdmitted: false,
+    interpreter: {
+      role: "framework-app",
+      basename: "Python",
+      lexicalMatch: false,
+      canonicalMatch: false,
+    },
+  };
+  const projected = mod.childFailure({
+    code: 1,
+    stdout: JSON.stringify(preflight),
+  });
+  assert.equal(projected.preflightStage, "python-executable");
+  assert.deepEqual(projected.interpreter, preflight.interpreter);
+  for (const mutate of [
+    (value) => {
+      value.privatePath = "/private";
+    },
+    (value) => {
+      value.interpreter.role = "private";
+    },
+    (value) => {
+      value.interpreter.basename = "private";
+    },
+    (value) => {
+      value.interpreter.canonicalMatch = "/private";
+    },
+    (value) => {
+      value.sourceWriteAdmitted = true;
+    },
+  ]) {
+    const malformed = structuredClone(preflight);
+    mutate(malformed);
+    const result = mod.childFailure({
+      code: 1,
+      stdout: JSON.stringify(malformed),
+    });
+    assert.equal(result.preflightStage, "unavailable");
+    assert.equal(result.interpreter, undefined);
+    assert(!JSON.stringify(result).includes("private"));
+  }
+});
+
+test("failure receipt creates only a private owned output and denies aliases before writing", async () => {
+  const output =
+    "/owned/cef-mac-owned-proof-11111111-1111-4111-8111-111111111111";
+  const info = {
+    dev: 1n,
+    ino: 2n,
+    mode: 0o40700n,
+    uid: 12n,
+    gid: 34n,
+    isDirectory: () => true,
+    isSymbolicLink: () => false,
+  };
+  const writes = [];
+  const io = {
+    mkdir: async (file, options) => {
+      assert.equal(file, output);
+      assert.equal(options.mode, 0o700);
+    },
+    lstat: async () => info,
+    realpath: async (file) => file,
+    writeFile: async (...args) => {
+      writes.push(args);
+    },
+  };
+  const record = mod.childFailure({
+    code: 1,
+    stdout: "OWNED_SOURCE_PROOF_DENIED:host",
+  });
+  await mod.retainChildFailure(output, record, io, 12);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], path.join(output, "carrier.json"));
+  assert.deepEqual(writes[0][2], { flag: "wx", mode: 0o600 });
+  assert.deepEqual(JSON.parse(writes[0][1]), record);
+  for (const patch of [
+    { uid: 99n },
+    { mode: 0o40755n },
+    { isSymbolicLink: () => true },
+    { isDirectory: () => false },
+  ]) {
+    writes.length = 0;
+    await assert.rejects(
+      mod.retainChildFailure(
+        output,
+        record,
+        { ...io, lstat: async () => ({ ...info, ...patch }) },
+        12,
+      ),
+      /OWNED_PROOF_OUTPUT/,
+    );
+    assert.equal(writes.length, 0);
+  }
+  writes.length = 0;
+  await assert.rejects(
+    mod.retainChildFailure(
+      output,
+      record,
+      { ...io, realpath: async () => "/elsewhere" },
+      12,
+    ),
+    /OWNED_PROOF_OUTPUT/,
+  );
+  assert.equal(writes.length, 0);
 });

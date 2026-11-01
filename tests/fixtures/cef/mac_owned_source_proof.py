@@ -16,11 +16,44 @@ SOURCE = '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'
 PYTHON = '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14'
 PYTHON_SHA = 'b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d'
 UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
+PREFLIGHT_STAGES = ('arguments', 'host', 'image', 'runner', 'python-executable',
+                    'python-pin', 'temp', 'output', 'helper-import', 'admission',
+                    'owned-root', 'capability', 'public-gates', 'roundtrip', 'cleanup', 'report')
+CURRENT_STAGE = 'arguments'
+INTERPRETER_FACTS = None
 
 
 def need(value):
     if not value:
         raise RuntimeError('OWNED_SOURCE_PROOF_DENIED')
+
+
+def at_stage(stage):
+    global CURRENT_STAGE
+    need(stage in PREFLIGHT_STAGES)
+    CURRENT_STAGE = stage
+
+
+def interpreter_relation():
+    actual, expected = Path(sys.executable), Path(PYTHON)
+    framework = expected.parents[1] / 'Resources/Python.app/Contents/MacOS/Python'
+    role = 'reviewed-launcher' if actual == expected else 'framework-app' if actual == framework else 'other'
+    basename = actual.name if actual.name in ('python3.14', 'Python', 'python3', 'python', 'python.exe') else 'other'
+    try:
+        canonical = actual.resolve(strict=True) == expected.resolve(strict=True)
+    except (OSError, RuntimeError):
+        canonical = None
+    return {'role': role, 'basename': basename, 'lexicalMatch': sys.executable == PYTHON,
+            'canonicalMatch': canonical}
+
+
+def preflight_failure():
+    value = {'kind': 'sorng-macarm-owned-source-preflight', 'complete': False,
+             'stage': CURRENT_STAGE, 'failure': 'OWNED_SOURCE_PROOF_DENIED',
+             'sourceWriteAdmitted': False}
+    if INTERPRETER_FACTS is not None:
+        value['interpreter'] = INTERPRETER_FACTS
+    return value
 
 
 def helper():
@@ -197,28 +230,48 @@ def roundtrip(tree, module):
             'entries': record['entries'], 'cleanupConfirmed': False}
 
 
-def main(args):
+def preflight(args):
+    global INTERPRETER_FACTS
+    INTERPRETER_FACTS = None
+    at_stage('arguments')
     need(len(args) == 2 and args[0] == '--output')
+    at_stage('host')
     need(sys.platform == 'darwin' and platform.machine() == 'x86_64')
+    at_stage('image')
     need(os.environ.get('ImageOS') == 'macos15' and os.environ.get('ImageVersion') == IMAGE)
+    at_stage('runner')
     need(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted')
     need(os.environ.get('GITHUB_REPOSITORY_VISIBILITY') == 'public')
+    at_stage('python-executable')
+    INTERPRETER_FACTS = interpreter_relation()
     need(sys.executable == PYTHON)
+    at_stage('python-pin')
     verify_python()
+    at_stage('temp')
     temp = Path(os.environ['RUNNER_TEMP'])
     need(temp.is_absolute() and temp.resolve(strict=True) == temp and not temp.is_symlink())
     need(temp.stat().st_uid == os.geteuid())
+    at_stage('output')
     output = Path(args[1])
     need(output.parent == temp and re.fullmatch('cef-mac-owned-proof-' + UUID, output.name))
     need(not os.path.lexists(output))
+    at_stage('helper-import')
     module = helper()
+    at_stage('admission')
     need(module.MAC_SOURCE_WRITE_ADMITTED is False)
+    return output, module
+
+
+def main(args):
+    output, module = preflight(args)
+    at_stage('owned-root')
     tree = OwnedTree(output)
     report = {'schemaVersion': 1, 'kind': 'sorng-macarm-owned-source-proof', 'complete': False,
               'hostPlatform': 'darwin', 'hostArchitecture': 'x86_64', 'targetArchitecture': 'arm64',
               'image': IMAGE, 'sourceLockReference': SOURCE, 'sourceWriteAdmitted': False,
               'nativeAcceptance': False, 'runtimeReady': False, 'failure': None}
     try:
+        at_stage('capability')
         capability_path = output / 'capability.json'
         module.mac_owned_capability_observe({'outputRoot': str(output), 'target': 'aarch64-apple-darwin'},
                                            capability_path, module.Budget(5), owned_birth_proof=True)
@@ -227,6 +280,7 @@ def main(args):
         report['capability'] = capability
         need(capability['complete'] and len(capability['rows']) == 12)
         need(all(row['exactMtimeReadback'] and row['symlinkTargetUnchanged'] for row in capability['rows']))
+        at_stage('public-gates')
         for mode in module.SOURCE_IO_MODES:
             try:
                 module.source_metadata(mode, output / 'must-not-read', output / 'must-not-write', {},
@@ -236,12 +290,14 @@ def main(args):
             else:
                 need(False)
         report['publicAdmissionDeniedBefore'] = True
+        at_stage('roundtrip')
         report['roundtrip'] = roundtrip(tree, module)
         need(module.MAC_SOURCE_WRITE_ADMITTED is False)
         report['publicAdmissionDisabledAfter'] = True
     except BaseException:
         report['failure'] = 'OWNED_SOURCE_PROOF_FAILED'
     finally:
+        at_stage('cleanup')
         try:
             clean = tree.cleanup()
         except BaseException:
@@ -252,6 +308,7 @@ def main(args):
         report['complete'] = report['failure'] is None and clean
         raw = (json.dumps(report, sort_keys=True, separators=(',', ':')) + '\n').encode()
         need(len(raw) <= 128 * 1024)
+        at_stage('report')
         tree.file('proof.json', raw, maximum=128 * 1024)
     print(json.dumps({'complete': report['complete'], 'sourceWriteAdmitted': False}))
     return 0 if report['complete'] else 1
@@ -263,5 +320,5 @@ if __name__ == '__main__':
     except SystemExit:
         raise
     except BaseException:
-        print('OWNED_SOURCE_PROOF_DENIED')
+        print(json.dumps(preflight_failure(), sort_keys=True, separators=(',', ':')))
         raise SystemExit(1)

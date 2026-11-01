@@ -16,7 +16,7 @@ test("Mac ARM codec routing, identity, cancellation and bounds regressions use t
     },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /Ran 13 tests/);
+  assert.match(result.stderr, /Ran 17 tests/);
   assert.match(result.stderr, /\bOK\b/);
 });
 
@@ -32,6 +32,13 @@ test("closed native proof rejects unknown arguments without disclosing raw failu
     { encoding: "utf8", timeout: 10000, maxBuffer: 4096, windowsHide: true },
   );
   assert.equal(result.status, 1);
-  assert.equal(result.stdout.trim(), "OWNED_SOURCE_PROOF_DENIED");
+  assert.deepEqual(JSON.parse(result.stdout), {
+    kind: "sorng-macarm-owned-source-preflight",
+    complete: false,
+    stage: "arguments",
+    failure: "OWNED_SOURCE_PROOF_DENIED",
+    sourceWriteAdmitted: false,
+  });
+  assert(result.stdout.length <= 2048);
   assert.equal(result.stderr, "");
 });
