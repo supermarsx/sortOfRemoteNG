@@ -140,7 +140,7 @@ class PreflightTests(unittest.TestCase):
                 optional_imports.append(name)
                 raise AssertionError('legacy context attempted unsealed optional import')
             return original_import(name,*args,**kwargs)
-        for mode in ('input-closure','command-inventory','source-gn','current-source-gn','reviewed-20261021-source-gn'):
+        for mode in ('input-closure','command-inventory','source-gn','current-source-gn','reviewed-20261021-source-gn','image-qualified-source-gn'):
             with self.subTest(mode=mode),patch.object(boot,'verified_sources',
                     return_value=({**context(),'mode':mode},BASE,clock())),\
                  patch('builtins.__import__',side_effect=guarded_import):

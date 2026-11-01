@@ -105,7 +105,7 @@ class MetricsTests(unittest.TestCase):
         # and scratch environment. On-disk production admission is untouched.
         with patch.object(job,'approved_tool_command',side_effect=approved),\
              patch.object(job,'environment',return_value=env),\
-             patch.object(producer,'verified_sources',return_value=({'mode':producer.REVIEWED_MODE},None,None)):
+             patch.object(producer,'verified_sources',return_value=({'mode':producer.IMAGE_MODE},None,None)):
             receipt=job.run_job(argv,str(root),root/'jobs/metrics-fixture',10,cap=32768,_test_observe=observer)
         report=json.loads((root/'jobs/metrics-fixture/metrics.json').read_bytes())
         self.assertTrue(receipt['success'],receipt)
@@ -121,7 +121,7 @@ class MetricsTests(unittest.TestCase):
         self.assertGreaterEqual(int(last['ioWriteBytes'])-int(first['ioWriteBytes']),proof['writtenBytes'])
         self.assertFalse(proof['candidateToolExecuted'])
         evidence={'kind':'windows-arm-owned-metrics-fixture-proof','fixtureOnly':True,
-            'productionAdmissionNotModified':True,'sourceAdmissionNotProven':True,'fixtureJobResourceMode':producer.REVIEWED_MODE,
+            'productionAdmissionNotModified':True,'sourceAdmissionNotProven':True,'fixtureJobResourceMode':producer.IMAGE_MODE,
             'testOnlySubstitutions':['exact local fixture argv','closed owned scratch environment',
                                     'fixture context for Job resource policy'],
             'sourceHashes':{name:hashlib.sha256((HERE/name).read_bytes()).hexdigest()
