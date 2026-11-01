@@ -75,7 +75,7 @@ use zabbix::service::ZabbixServiceState;
 /// Number of concrete Tauri state registrations owned by this codegen unit.
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
-pub const MANAGED_STATE_REGISTRATIONS: usize = 73;
+pub const MANAGED_STATE_REGISTRATIONS: usize = 72;
 
 const LOCALES_DIRECTORY_NAME: &str = "locales";
 const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";

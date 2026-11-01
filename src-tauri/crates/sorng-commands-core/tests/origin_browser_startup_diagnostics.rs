@@ -6,19 +6,28 @@ mod diagnostics;
 #[test]
 fn relay_failure_hook_is_identity_fenced_nonblocking_and_diagnostic_only() {
     let runtime = include_str!("../../../src/origin_browser_runtime.rs");
-    let hook = runtime
+    let callback = runtime
         .split("fn on_event(&self, event: BrowserEvent)")
         .nth(1)
         .unwrap()
         .split("let mut finished_load = false;")
         .next()
         .unwrap();
+    let relay_start = "if !self.attempt.cancelled.load(Ordering::Acquire)";
     in_order(
-        hook,
+        callback,
         &[
             "event.identity != self.attempt.identity",
             "return;",
-            "!self.attempt.cancelled.load(Ordering::Acquire)",
+            relay_start,
+        ],
+    );
+    // Security observation may read the canonical document origin before this
+    // branch. Only the relay failure diagnostic must remain URL-free.
+    let hook = &callback[callback.find(relay_start).unwrap()..];
+    in_order(
+        hook,
+        &[
             "if let Some(failure) = event.state.load_failure",
             ".try_lock()",
             ".ok()",
