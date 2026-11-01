@@ -568,7 +568,19 @@ jobs:
           node scripts/generate-native-login-catalog.mjs --check
           node --test tests/tooling/nativeLoginCatalog.node-test.mjs tests/tooling/loginFixtureCorpus.node-test.mjs
       - name: Deterministic browser and native transport contracts
+        id: browser_readiness
         run: npm run browser:readiness -- --native --report .artifacts/browser-readiness-${{ runner.os }}.json
+      - name: Observe only private proxy test failure names on Linux
+        if: failure() && runner.os == 'Linux' && steps.browser_readiness.outcome == 'failure'
+        timeout-minutes: 30
+        run: node tests/tooling/browserPrivateProxyFailureDiagnostic.mjs --output "$RUNNER_TEMP/browser-private-proxy-diagnostic.json"
+      - name: Retain only the bounded private proxy diagnostic
+        if: always() && runner.os == 'Linux' && steps.browser_readiness.outcome == 'failure'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: browser-private-proxy-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-private-proxy-diagnostic.json
+          if-no-files-found: warn
       - name: Real-origin host lifecycle and permission contracts
         run: node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --lib --test ipc_contract --locked
       - name: Platform-native CEF host contracts

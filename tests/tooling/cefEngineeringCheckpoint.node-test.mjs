@@ -7420,6 +7420,7 @@ async function compileSupervisorModel(options = {}) {
   const state = {
     snapshots: 0,
     stops: 0,
+    stoppedCohorts: [],
     kills: 0,
     unrefs: 0,
     proofs: 0,
@@ -7512,6 +7513,9 @@ async function compileSupervisorModel(options = {}) {
     observedLineage: (_, owned) => owned,
     stopObserved: async (_, owned) => {
       state.stops++;
+      state.stoppedCohorts.push(
+        owned.map(({ pid, start }) => ({ pid, start })),
+      );
       if (options.stopError) throw sentinel;
       child.kill("SIGKILL");
       return owned;
@@ -7633,18 +7637,35 @@ test("an unjoined creation-owned census probe still denies a settled monitor and
 test("explicit cancellation preserves its reason, creates no compile proof and joins the same owned cohort", async () => {
   const controller = new AbortController(),
     marker = new Error("PRIVATE_CANCELLATION");
-  const timer = setTimeout(() => controller.abort(marker), 5);
-  const state = await compileSupervisorModel({ stopSignal: controller.signal });
-  clearTimeout(timer);
+  const state = await compileSupervisorModel({
+    stopSignal: controller.signal,
+    observeRoot(state, root, control) {
+      // Admission has captured the exact cohort before cancellation. A wall
+      // timer could fire while this model was still reading/parsing its source.
+      assert.equal(state.snapshots, 1);
+      assert.equal(state.stops, 0);
+      assert.equal(state.kills, 0);
+      assert.equal(root.pid, 100);
+      assert.equal(root.parent, 200);
+      assert.equal(control.rootExited(), false);
+      assert.equal(control.signal.aborted, false);
+      controller.abort(marker);
+    },
+  });
   assert.equal(state.error, marker);
   assert.equal(state.proofs, 0);
   assert.equal(state.stops, 1);
+  assert.deepEqual(state.stoppedCohorts, [
+    [{ pid: state.root.pid, start: state.root.start }],
+  ]);
   const stopped = new AbortController();
   stopped.abort(marker);
   const before = await compileSupervisorModel({ stopSignal: stopped.signal });
   assert.equal(before.error, marker);
   assert.equal(before.snapshots, 0);
   assert.equal(before.kills, 0);
+  assert.equal(before.stops, 0);
+  assert.equal(before.proofs, 0);
 });
 test("never resolving initial snapshot denies admission finitely without guessed cohort signals", async () => {
   const state = await compileSupervisorModel({
