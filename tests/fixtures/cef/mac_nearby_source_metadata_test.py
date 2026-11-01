@@ -78,8 +78,8 @@ class PrivateNearby(unittest.TestCase):
         with m.source_io_scope(mode):
             m.SOURCE_IO_CONTEXT.set((mode,Path(value['identity']['canonicalRoot'])/'source'))
             return m.metadata(out,m.SOURCE_METADATA_NAME,value,source=True,owned_sidecar=True)
-    def test_production_admission_stays_false_and_public_wrong_scope_denies_before_io(self):
-        self.assertIs(m.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED,False)
+    def test_policy_availability_does_not_admit_private_proof_or_public_wrong_scope(self):
+        self.assertIs(type(m.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED),bool)
         self.assertEqual(m._MAC_NEARBY_PROOF_TEMP,'/Users/runner/work/_temp')
         for policy in ('mac-arm','mac-intel'):
             for mode in m.SOURCE_IO_MODES:

@@ -7,6 +7,7 @@ import json
 import math
 import os
 import platform
+import posixpath
 import re
 from pathlib import Path
 import stat
@@ -1143,6 +1144,61 @@ def _mac_intel_proof_writer_allowed(root,value):
 _MAC_NEARBY_PROOF_WRITER = ContextVar('mac_nearby_proof_writer', default=None)
 _MAC_NEARBY_PROOF_RECEIPTS = {}
 _MAC_NEARBY_PROOF_TEMP = '/Users/runner/work/_temp'
+_MAC_NEARBY_PUBLIC_SCOPE = ContextVar('mac_nearby_public_scope', default=None)
+_MAC_NEARBY_PUBLIC_RECEIPTS = {}
+
+
+def _mac_nearby_public_shape(mode,root,sidecar,identity,platform_policy):
+    # All admission checks are pure and precede safe(), manifests or source IO.
+    require(MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is True and mode in SOURCE_IO_MODES and
+            platform_policy in ('mac-arm','mac-intel'), 'source-mac-nearby-public-scope')
+    (source_mac_intel_write_admission if platform_policy=='mac-intel' else source_mac_write_admission)(identity)
+    require(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public', 'source-mac-host-scope')
+    require(type(identity)is dict and set(identity)=={'target','source','producer','canonicalRoot','image','tools','graph','siso'} and
+            all(type(identity[key])is str and re.fullmatch('[a-f0-9]{64}',identity[key]) for key in ('source','producer','tools','graph','siso')),
+            'source-mac-nearby-public-scope')
+    work=Path(identity['canonicalRoot'])
+    require(isinstance(root,(str,Path)) and isinstance(sidecar,(str,Path)) and Path(root)==work/'source' and
+            Path(sidecar)==work/'source/src/out'/('Release_GN_x64' if platform_policy=='mac-intel' else 'Release_GN_arm64')/SOURCE_METADATA_NAME,
+            'source-mac-nearby-public-scope')
+    return work
+
+
+@contextmanager
+def _mac_nearby_public_scope(mode,root,sidecar,identity,platform_policy):
+    work=_mac_nearby_public_shape(mode,root,sidecar,identity,platform_policy)
+    receipt=object()
+    record=(mode,Path(root),Path(sidecar),tuple(sorted(identity.items())),work,platform_policy)
+    _MAC_NEARBY_PUBLIC_RECEIPTS[receipt]=record
+    token=_MAC_NEARBY_PUBLIC_SCOPE.set(receipt)
+    try:yield
+    finally:
+        _MAC_NEARBY_PUBLIC_SCOPE.reset(token)
+        _MAC_NEARBY_PUBLIC_RECEIPTS.pop(receipt,None)
+
+
+def _mac_nearby_public_current(receipt):
+    require(type(receipt)is object and receipt is _MAC_NEARBY_PUBLIC_SCOPE.get() and
+            receipt in _MAC_NEARBY_PUBLIC_RECEIPTS, 'source-mac-nearby-public-scope')
+    record=_MAC_NEARBY_PUBLIC_RECEIPTS[receipt]
+    mode,root,sidecar,identity,work,platform_policy=record
+    require(_mac_nearby_public_shape(mode,root,sidecar,dict(identity),platform_policy)==work,
+            'source-mac-nearby-public-scope')
+    return record
+
+
+def _mac_nearby_scope_selection(root,identity,work,platform_policy,mode=None):
+    public=_MAC_NEARBY_PUBLIC_SCOPE.get()
+    if public is not None:
+        selected,source,_,bound,canonical,policy=_mac_nearby_public_current(public)
+        require(Path(root)==source and Path(work)==canonical and type(identity)is dict and
+                tuple(sorted(identity.items()))==bound and platform_policy==policy and
+                (mode is None or mode==selected), 'source-mac-nearby-public-scope')
+        return public
+    if _mac_nearby_proof_selection(root,identity,work,platform_policy):
+        return _MAC_NEARBY_PROOF_WRITER.get()
+    return None
 
 
 def _mac_nearby_proof_current(record):
@@ -1162,7 +1218,7 @@ def _mac_nearby_owned_proof_tree(output,budget):
     """A creation receipt for a closed scratch proof, never public admission."""
     import sys
     branch='refs/heads/codex/mac-nearby-source-qualification-20261101'
-    require(MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is False and sys.platform=='darwin' and
+    require(sys.platform=='darwin' and
             platform.machine()=='x86_64' and os.environ.get('ImageOS')=='macos15' and
             os.environ.get('ImageVersion')==MAC_SOURCE_IMAGE and
             os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
@@ -1215,7 +1271,7 @@ def _mac_nearby_proof_selection(root,identity,work,platform_policy):
     receipt=_MAC_NEARBY_PROOF_WRITER.get()
     if receipt is None:return False
     proof_root=_mac_nearby_owned_proof_path(receipt)
-    require(MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is False and platform_policy in ('mac-arm','mac-intel') and
+    require(platform_policy in ('mac-arm','mac-intel') and
             type(identity)is dict, 'source-mac-nearby-proof-scope')
     intel=platform_policy=='mac-intel'
     expected_work=proof_root/('intel' if intel else 'arm')/'work'
@@ -1232,21 +1288,22 @@ def _mac_nearby_proof_selection(root,identity,work,platform_policy):
 def _mac_nearby_policy_owned(policy,root=None):
     if policy is None or policy.get('mac') is not True or policy.get('_macNearbyReceipt') is None:return False
     receipt=policy['_macNearbyReceipt']
-    _mac_nearby_owned_proof_path(receipt)
     require(source_owned_mac(policy) and policy.get('external') is not True and
             policy.get('nearbyLiteralPolicy')==MAC_NEARBY_LITERAL_POLICY, 'source-mac-nearby-proof-scope')
     identity=policy.get('_macNearbyIdentity');source_root=policy.get('_macNearbyRoot')
     require(type(identity)is dict and isinstance(source_root,Path) and (root is None or root==source_root),
             'source-mac-nearby-proof-scope')
-    _mac_nearby_proof_selection(source_root,identity,Path(identity['canonicalRoot']),policy.get('_macNearbyPlatform'))
+    require(_mac_nearby_scope_selection(source_root,identity,Path(identity['canonicalRoot']),policy.get('_macNearbyPlatform'),
+            policy.get('_macNearbyMode')) is receipt, 'source-mac-nearby-public-scope')
     return True
 
 
-def _mac_nearby_proof_writer_allowed(root,value):
-    if _MAC_NEARBY_PROOF_WRITER.get() is None:return False
+def _mac_nearby_scoped_writer_allowed(root,value):
+    if _MAC_NEARBY_PROOF_WRITER.get() is None and _MAC_NEARBY_PUBLIC_SCOPE.get() is None:return False
     identity=value['identity'];intel=identity.get('target')=='x86_64-apple-darwin'
     work=Path(identity.get('canonicalRoot','/'))
-    _mac_nearby_proof_selection(work/'source',identity,work,'mac-intel' if intel else 'mac-arm')
+    receipt=_mac_nearby_scope_selection(work/'source',identity,work,'mac-intel' if intel else 'mac-arm','source-record')
+    require(receipt is not None, 'source-sidecar-role')
     require(value['schemaVersion']==2 and value['policy']==(MAC_INTEL_NEARBY_METADATA_POLICY if intel else MAC_ARM_NEARBY_METADATA_POLICY) and
             value['kind']==('sorng-macintel-source-metadata' if intel else 'sorng-macarm-source-metadata') and
             set(value['snapshot'])=={'entries','rootMtimeNs','gitHeads','bytes','literalLinks'} and
@@ -1254,12 +1311,41 @@ def _mac_nearby_proof_writer_allowed(root,value):
             Path(root)==work/'source/src/out'/('Release_GN_x64' if intel else 'Release_GN_arm64') and
             SOURCE_IO_CONTEXT.get()==('source-record',work/'source'), 'source-sidecar-role')
     safe(Path(root))
-    current=Path(root);proof_root=_mac_nearby_owned_proof_path(_MAC_NEARBY_PROOF_WRITER.get())
+    current=Path(root)
+    proof_root=work if receipt is _MAC_NEARBY_PUBLIC_SCOPE.get() else _mac_nearby_owned_proof_path(receipt)
     while current!=proof_root:
         info=current.lstat()
         require(stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid(), 'source-sidecar-role')
         current=current.parent
     return True
+
+
+def _mac_nearby_protected_namespace(identity):
+    # Classify the effective POSIX namespace independently of the claimed role.
+    # No filesystem lookup is allowed before this legacy-format boundary.
+    if type(identity)is not dict or type(identity.get('canonicalRoot'))is not str:return False
+    value=identity['canonicalRoot']
+    if not value.startswith('/') or '\x00'in value:return False
+    normalized=posixpath.normpath('/'+value.lstrip('/')).casefold()
+    namespace='/Users/runner/work/_temp/sorng-cef-engineering'.casefold()
+    return normalized==namespace or normalized.startswith(namespace+'/')
+
+
+def _mac_nearby_legacy_private_namespace(identity):
+    # Legacy scratch codecs stay usable. Canonical production paths cannot
+    # opt back into v1 by supplying old JSON or bypassing the public wrapper.
+    if type(identity)is not dict or type(identity.get('canonicalRoot'))is not str:return False
+    value=identity['canonicalRoot']
+    if not value or '\x00'in value or value.startswith('//'):return False
+    try:
+        path=Path(value)
+        if not path.is_absolute() or str(path)!=value or any(part in ('.','..')for part in path.parts):return False
+        # Conservatively protect case aliases on Darwin's common APFS layout;
+        # lexical classification must not rely on realpath canonicalizing case.
+        normalized=path.as_posix().casefold()
+    except (TypeError,ValueError):return False
+    namespace='/Users/runner/work/_temp/sorng-cef-engineering'.casefold()
+    return normalized!=namespace and not normalized.startswith(namespace+'/')
 
 
 def metadata(root, name, value, source=False, owned_sidecar=False):
@@ -1270,14 +1356,17 @@ def metadata(root, name, value, source=False, owned_sidecar=False):
                 type(value['schemaVersion']) is int and value['schemaVersion'] in (1,2) and
                 value['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and type(value['identity']) is dict and
                 isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
-                ((value['schemaVersion']==2 and _mac_nearby_proof_writer_allowed(root,value)) or
+                not (value['schemaVersion']==1 and _mac_nearby_protected_namespace(value['identity'])) and
+                ((value['schemaVersion']==2 and _mac_nearby_scoped_writer_allowed(root,value)) or
                  (value['schemaVersion']==1 and ((value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macarm-source-metadata' and value['policy'] == MAC_SOURCE_METADATA_POLICY and
+                  _mac_nearby_legacy_private_namespace(value['identity']) and
                   value['identity'].get('target') == 'aarch64-apple-darwin' and
                   isinstance(value['identity'].get('source'), str) and re.fullmatch('[a-f0-9]{64}', value['identity']['source']) and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macintel-source-metadata' and value['policy'] == MAC_INTEL_SOURCE_METADATA_POLICY and
+                  _mac_nearby_legacy_private_namespace(value['identity']) and
                   value['identity'].get('target') == 'x86_64-apple-darwin' and value['identity'].get('source') == MAC_INTEL_SOURCE and
                   value['identity'].get('image') == MAC_INTEL_SOURCE_IMAGE and
                   (value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE or
@@ -1538,7 +1627,12 @@ MAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8
     '2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249',
     'c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5')
 MAC_INTEL_SOURCE_WRITE_ADMITTED = True
-MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED = False
+MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED = True
+# run, artifact, reviewed source, RAW proof bytes/SHA, ZIP bytes/SHA. These are
+# code-owned qualification facts; no report is loaded as admission authority.
+MAC_NEARBY_LITERAL_PROOF = (41359670492,13104029618,'0b12590921384faa4eef4a64a6c9c0cd5a699ead',2052,
+    '6edf2afc493e35c5089ffa64c6686701e234323fe6e502a29a24644bb808ce33',827,
+    '357439ca1b6cf013ed6e0f3aca0f773faa06bf5ffb6c90b33ee97c8fbc1e7c8d')
 MAC_NEARBY_LITERAL_POLICY = 'sorng-mac-owned-nearby-empty-gitlinks-v1'
 MAC_ARM_NEARBY_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v2-nearby-literals'
 MAC_INTEL_NEARBY_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v2-nearby-literals'
@@ -2339,11 +2433,17 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     return value
 
 
-def source_mac_write_admission(identity):
+def source_mac_write_host_admission():
     import sys
     require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and
             platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and
-            os.environ.get('ImageVersion') == MAC_SOURCE_IMAGE, 'source-mac-host-scope')
+            os.environ.get('ImageVersion') == MAC_SOURCE_IMAGE and
+            os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public', 'source-mac-host-scope')
+
+
+def source_mac_write_admission(identity):
+    source_mac_write_host_admission()
     require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and
             identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and
             identity.get('canonicalRoot') ==
@@ -2475,6 +2575,10 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
     budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
     source_progress_start(getattr(budget, 'seconds', seconds))
+    if platform_policy in ('mac-arm','mac-intel'):
+        with _mac_nearby_public_scope(mode,root,sidecar,identity,platform_policy):
+            work = source_metadata_identity(identity, platform_policy)
+            return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
     work = source_metadata_identity(identity, platform_policy)
     return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
 
@@ -2499,13 +2603,16 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     sidecar_kind = 'sorng-macintel-source-metadata' if intel else 'sorng-macarm-source-metadata' if arm else 'sorng-linuxarm-source-metadata'
     sidecar_policy = MAC_INTEL_SOURCE_METADATA_POLICY if intel else MAC_SOURCE_METADATA_POLICY if arm else SOURCE_METADATA_POLICY
     snapshot_context = {'mac':True, 'ownedMacIntel' if intel else 'ownedMacArm':True} if mac else None
-    nearby_mac = mac and _mac_nearby_proof_selection(root,identity,work,platform_policy)
+    nearby_scope = _mac_nearby_scope_selection(root,identity,work,platform_policy,mode) if mac else None
+    nearby_mac = nearby_scope is not None
+    if mac and not nearby_mac:
+        require(_mac_nearby_legacy_private_namespace(identity), 'source-mac-nearby-public-scope')
     schema_version = 2 if nearby_mac else 1
     if nearby_mac:
         sidecar_policy = MAC_INTEL_NEARBY_METADATA_POLICY if intel else MAC_ARM_NEARBY_METADATA_POLICY
         snapshot_context.update(nearbyLiteralPolicy=MAC_NEARBY_LITERAL_POLICY,
-            _macNearbyReceipt=_MAC_NEARBY_PROOF_WRITER.get(),_macNearbyIdentity=dict(identity),
-            _macNearbyRoot=Path(root),_macNearbyPlatform=platform_policy)
+            _macNearbyReceipt=nearby_scope,_macNearbyIdentity=dict(identity),
+            _macNearbyRoot=Path(root),_macNearbyPlatform=platform_policy,_macNearbyMode=mode)
     budget.check()
     root = safe(root);sidecar = Path(sidecar)
     require(root == work / 'source' and sidecar == root / ('src/out/Release_GN_x64' if intel else 'src/out/Release_GN_arm64') / SOURCE_METADATA_NAME,
@@ -2982,6 +3089,8 @@ def main():
     require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
     if args.platform_policy == 'mac-intel':
         source_mac_intel_write_host_admission()
+    if args.platform_policy == 'mac-arm':
+        source_mac_write_host_admission()
     links = {}
     if args.generated_links:
         data = Path(args.generated_links).read_bytes()

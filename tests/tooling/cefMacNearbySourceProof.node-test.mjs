@@ -31,13 +31,14 @@ const qualified = () => ({
 });
 function report() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: "sorng-mac-nearby-owned-source-proof",
     complete: true,
     hostPlatform: "darwin",
     hostArchitecture: "x86_64",
     image: "20260824.0482.1",
     productionLiteralAdmission: false,
+    scopedLiteralPolicyAvailable: true,
     productionInputWrites: false,
     compilerExecuted: false,
     sdkBuilt: false,
@@ -129,6 +130,7 @@ test("leaf environment is closed, token-free and retains the runner containment 
 });
 test("strict report binds both exact v2 policies, all negatives and writer retirement without admission", () => {
   validateReport(report());
+  validateReport({ ...report(), scopedLiteralPolicyAvailable: false });
   const mutations = [
     (r) => (r.productionLiteralAdmission = true),
     (r) => (r.nativeAcceptance = true),
@@ -175,7 +177,7 @@ test("failure observer retains only a closed stage, never raw child output or pa
 });
 test("portable private creator, real writer, actual snapshot projection and denial tests pass", () => {
   const value = spawnSync(
-    "python",
+    process.platform === "win32" ? "python" : "python3",
     ["-I", "-B", "-S", "tests/fixtures/cef/mac_nearby_source_metadata_test.py"],
     { encoding: "utf8", timeout: 60000, maxBuffer: 65536, windowsHide: true },
   );

@@ -120,6 +120,7 @@ export function validateReport(value) {
     "hostArchitecture",
     "image",
     "productionLiteralAdmission",
+    "scopedLiteralPolicyAvailable",
     "productionInputWrites",
     "compilerExecuted",
     "sdkBuilt",
@@ -135,13 +136,14 @@ export function validateReport(value) {
     "proofWriterRetired",
   ]);
   assert(
-    value.schemaVersion === 1 &&
+    value.schemaVersion === 2 &&
       value.kind === "sorng-mac-nearby-owned-source-proof" &&
       value.hostPlatform === "darwin" &&
       value.hostArchitecture === "x86_64" &&
       value.image === "20260824.0482.1" &&
       value.failureCode === null &&
-      value.failureStage === null,
+      value.failureStage === null &&
+      typeof value.scopedLiteralPolicyAvailable === "boolean",
     "NEARBY_PROOF_IDENTITY",
   );
   for (const key of [

@@ -248,19 +248,22 @@ def preflight(args):
     child_end=int(os.environ['CEF_MAC_NEARBY_CHILD_DEADLINE_MS'])
     seconds=min(95,(started+300000-now-30000)//1000,(child_end-now)//1000)
     need(started>0 and now>=started and child_end<=started+300000-30000 and seconds>=15)
-    module=base.helper();need(module.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is False)
+    module=base.helper();need(type(module.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED)is bool)
     return output,module,module.Budget(seconds-2)
 
 
 def main(args):
     global CURRENT_STAGE
     output,module,budget=preflight(args);tree=None;receipt=None;clean=False;closed=False;retired=False
-    report={'schemaVersion':1,'kind':'sorng-mac-nearby-owned-source-proof','complete':False,'hostPlatform':'darwin',
+    report={'schemaVersion':2,'kind':'sorng-mac-nearby-owned-source-proof','complete':False,'hostPlatform':'darwin',
         'hostArchitecture':'x86_64','image':base.IMAGE,'productionLiteralAdmission':False,'productionInputWrites':False,
+        'scopedLiteralPolicyAvailable':module.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED,
         'compilerExecuted':False,'sdkBuilt':False,'nativeAcceptance':False,'runtimeReady':False,
         'publicDeniedBefore':False,'publicDeniedAfter':False,'cases':[],'failureStage':None,'failureCode':None}
     def public_denied():
-        need(module.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is False)
+        # Availability of a canonical policy is independent of this proof's
+        # creation-only scope. No production capability is minted here.
+        need(type(module.MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED)is bool)
         for policy in('mac-arm','mac-intel'):
             for mode in module.SOURCE_IO_MODES:
                 try:module.source_metadata(mode,output/'must-not-read',output/'must-not-write',{},platform_policy=policy)

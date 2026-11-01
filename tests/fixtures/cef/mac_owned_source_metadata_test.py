@@ -186,6 +186,7 @@ class SourceWriteScope(unittest.TestCase):
         stack.enter_context(patch.object(sys,'platform','darwin'))
         stack.enter_context(patch.object(m.platform,'machine',return_value='x86_64'))
         stack.enter_context(patch.dict(m.os.environ,{'ImageOS':'macos15','ImageVersion':m.MAC_SOURCE_IMAGE,
+                                                   'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public',
                                                    **environment},clear=True))
         return stack
 
@@ -194,7 +195,7 @@ class SourceWriteScope(unittest.TestCase):
         with self.host(),patch.object(m,'safe',side_effect=lambda p:p), \
              patch.object(m,'_source_metadata_owned_codec',return_value={'complete':True})as core:
             for mode in m.SOURCE_IO_MODES:
-                self.assertEqual(m.source_metadata_owned(mode,work/'source',work/'sidecar',identity,
+                self.assertEqual(m.source_metadata_owned(mode,work/'source',work/'source/src/out/Release_GN_arm64'/m.SOURCE_METADATA_NAME,identity,
                     platform_policy='mac-arm'),{'complete':True})
                 self.assertEqual(core.call_args.args[0],mode)
                 self.assertEqual(core.call_args.args[4],work)
