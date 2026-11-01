@@ -3,7 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import platform
 import re
 import stat
@@ -41,7 +41,7 @@ def interpreter_relation():
     basename = actual.name if actual.name in ('python3.14', 'Python', 'python3', 'python', 'python.exe') else 'other'
     try:
         canonical = actual.resolve(strict=True) == expected.resolve(strict=True)
-    except (OSError, RuntimeError):
+    except (OSError, RuntimeError, ValueError):
         canonical = None
     return {'role': role, 'basename': basename, 'lexicalMatch': sys.executable == PYTHON,
             'canonicalMatch': canonical}
@@ -244,7 +244,15 @@ def preflight(args):
     need(os.environ.get('GITHUB_REPOSITORY_VISIBILITY') == 'public')
     at_stage('python-executable')
     INTERPRETER_FACTS = interpreter_relation()
-    need(sys.executable == PYTHON)
+    # Homebrew's reviewed framework launcher reports a canonical alias on this
+    # image. Admit only the same absolute basename resolving to that exact pin;
+    # byte/hash/FD identity verification still precedes all scratch output.
+    executable = PurePosixPath(sys.executable)
+    need(executable.is_absolute() and executable.anchor == '/' and str(executable) == sys.executable and
+         '..' not in executable.parts and '\\' not in sys.executable and
+         '\x00' not in sys.executable and len(sys.executable) <= 4096 and
+         executable.name == PurePosixPath(PYTHON).name and
+         INTERPRETER_FACTS['canonicalMatch'] is True)
     at_stage('python-pin')
     verify_python()
     at_stage('temp')

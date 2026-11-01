@@ -205,7 +205,7 @@ class PreflightStages(unittest.TestCase):
                 self.assertEqual(proof.preflight_failure()['stage'],stage)
                 verify.assert_not_called();output.assert_not_called()
 
-    def test_canonical_interpreter_relation_does_not_relax_the_existing_lexical_guard(self):
+    def test_wrong_basename_is_denied_even_with_the_pinned_canonical_target(self):
         framework = str(Path(proof.PYTHON).parents[1] / 'Resources/Python.app/Contents/MacOS/Python')
         with self.prefix(),patch.object(sys,'executable',framework),patch.object(Path,'resolve',return_value=Path(proof.PYTHON)), \
              patch.object(proof,'verify_python')as verify,patch.object(proof,'OwnedTree')as output:
@@ -217,9 +217,43 @@ class PreflightStages(unittest.TestCase):
             self.assertNotIn('/usr/',json.dumps(value))
             verify.assert_not_called();output.assert_not_called()
 
+    def test_absolute_same_basename_alias_reaches_held_pin_before_any_output(self):
+        alias = '/usr/local/opt/python@3.14/bin/python3.14'
+        marker = OSError('PRIVATE_PIN_PATH_AND_ERROR')
+        with self.prefix(),patch.object(sys,'executable',alias), \
+             patch.object(Path,'resolve',return_value=Path(proof.PYTHON)), \
+             patch.object(proof,'verify_python',side_effect=marker)as verify, \
+             patch.object(proof,'OwnedTree')as output:
+            with self.assertRaises(OSError)as raised:
+                proof.main(['--output','/not-created'])
+            self.assertIs(raised.exception,marker)
+            value = proof.preflight_failure()
+            self.assertEqual(value['stage'],'python-pin')
+            self.assertEqual(value['interpreter'],{'role':'other','basename':'python3.14',
+                'lexicalMatch':False,'canonicalMatch':True})
+            verify.assert_called_once_with();output.assert_not_called()
+
+    def test_foreign_target_relative_and_malformed_aliases_cannot_reach_pin_or_output(self):
+        cases = [('/foreign/python3.14',False),('python3.14',True),
+                 ('relative/python3.14',True),('/usr/../bin/python3.14',True),
+                 ('/usr//bin/python3.14',True),('/usr/./bin/python3.14',True),
+                 ('//usr/bin/python3.14',True),('/usr/\\bin/python3.14',True),
+                 ('/usr/bin/python3.14\x00',True),('/usr/bin/python3',True)]
+        for executable,matching in cases:
+            def resolved(path, **kwargs):
+                return Path(proof.PYTHON) if matching or path==Path(proof.PYTHON) else Path('/private/foreign/python3.14')
+            with self.subTest(executable=executable),self.prefix(), \
+                 patch.object(sys,'executable',executable),patch.object(Path,'resolve',autospec=True,side_effect=resolved), \
+                 patch.object(proof,'verify_python')as verify,patch.object(proof,'OwnedTree')as output:
+                with self.assertRaises(RuntimeError):
+                    proof.main(['--output','/not-created'])
+                self.assertEqual(proof.preflight_failure()['stage'],'python-executable')
+                verify.assert_not_called();output.assert_not_called()
+
     def test_pin_failure_retains_fixed_stage_without_raw_exception_or_path(self):
         marker = OSError('PRIVATE_PIN_PATH_AND_ERROR')
-        with self.prefix(),patch.object(proof,'verify_python',side_effect=marker),patch.object(proof,'OwnedTree')as output:
+        with self.prefix(),patch.object(Path,'resolve',return_value=Path(proof.PYTHON)), \
+             patch.object(proof,'verify_python',side_effect=marker),patch.object(proof,'OwnedTree')as output:
             with self.assertRaises(OSError)as raised:
                 proof.main(['--output','/not-created'])
             self.assertIs(raised.exception,marker)
