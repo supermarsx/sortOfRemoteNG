@@ -1299,6 +1299,10 @@ const sourceGitDirectory = (s) =>
         s.nlink,
       ]
   ).join(":");
+// Only this separately creation-owned runtime profile permits cache writes.
+// Existing policy directories retain their complete timestamp fingerprints.
+const sourceGitRuntimeDirectory = (s) =>
+  [s.dev, s.ino, s.birthtimeNs, s.mode, s.nlink].join(":");
 async function sourceGitPhysical(file) {
   if (
     !path.isAbsolute(file) ||
@@ -1374,7 +1378,18 @@ async function sourceGitFile(file, expected) {
 /** Explicit capability: an exclusively created policy directory, never caller
  * GIT_CONFIG values. Existing callers remain unchanged when no policy is given.
  */
-export async function prepareSourceGitIsolation(directory) {
+export async function prepareSourceGitIsolation(directory, options) {
+  const windowsLongPaths = options !== undefined;
+  if (
+    windowsLongPaths &&
+    (process.platform !== "win32" ||
+      !options ||
+      Object.getPrototypeOf(options) !== Object.prototype ||
+      Reflect.ownKeys(options).length !== 1 ||
+      Object.getOwnPropertyDescriptor(options, "windowsLongPaths")?.value !==
+        true)
+  )
+    fail("SOURCE_GIT_WINDOWS_LONGPATHS_OPTION");
   if (
     !path.isAbsolute(directory) ||
     path.basename(directory) !== "cef-source-git-policy"
@@ -1384,9 +1399,21 @@ export async function prepareSourceGitIsolation(directory) {
   await mkdir(directory, { mode: 0o700 });
   for (const name of ["home", "xdg", "hooks"])
     await mkdir(path.join(directory, name), { mode: 0o700 });
+  let runtimeProfile;
+  if (windowsLongPaths) {
+    const profile = path.join(directory, "runtime-profile");
+    await mkdir(profile, { mode: 0o700 });
+    await sourceGitPhysical(profile);
+    runtimeProfile = {
+      path: profile,
+      identity: sourceGitRuntimeDirectory(
+        await lstat(profile, { bigint: true }),
+      ),
+    };
+  }
   await sourceGitPhysical(directory);
   const global = Buffer.from(
-    `[core]\n\thooksPath = "${path.join(directory, "hooks").replaceAll("\\", "/")}"\n\tfsmonitor = false\n\tuntrackedCache = false\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n[protocol "https"]\n\tallow = always\n`,
+    `[core]\n${windowsLongPaths ? "\tlongpaths = true\n" : ""}\thooksPath = "${path.join(directory, "hooks").replaceAll("\\", "/")}"\n\tfsmonitor = false\n\tuntrackedCache = false\n[credential]\n\thelper =\n[protocol]\n\tallow = never\n[protocol "https"]\n\tallow = always\n`,
   );
   const files = [
     { path: path.join(directory, "global.gitconfig"), bytes: global },
@@ -1409,6 +1436,7 @@ export async function prepareSourceGitIsolation(directory) {
     directory,
     files,
     directories,
+    runtimeProfile,
     verificationFailed: false,
   });
   await sourceGitEnvironment(token, {});
@@ -1432,6 +1460,15 @@ export async function sourceGitEnvironment(token, inherited) {
       if (
         !current.isDirectory() ||
         sourceGitDirectory(current) !== item.identity
+      )
+        fail("SOURCE_GIT_POLICY_DIRECTORY");
+    }
+    if (policy.runtimeProfile) {
+      await sourceGitPhysical(policy.runtimeProfile.path);
+      const current = await lstat(policy.runtimeProfile.path, { bigint: true });
+      if (
+        !current.isDirectory() ||
+        sourceGitRuntimeDirectory(current) !== policy.runtimeProfile.identity
       )
         fail("SOURCE_GIT_POLICY_DIRECTORY");
     }
@@ -1463,7 +1500,8 @@ export async function sourceGitEnvironment(token, inherited) {
     return {
       ...env,
       HOME: path.join(policy.directory, "home"),
-      USERPROFILE: path.join(policy.directory, "home"),
+      USERPROFILE:
+        policy.runtimeProfile?.path ?? path.join(policy.directory, "home"),
       XDG_CONFIG_HOME: path.join(policy.directory, "xdg"),
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_SYSTEM: policy.files[1].path,

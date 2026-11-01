@@ -28,6 +28,22 @@ class ReviewedSourceTests(unittest.TestCase):
         self.assertEqual(len(p['sourcePaths']),62)
         for row in (*p['sourceGn']['helpers'],*p['sourceGn']['sourceData']):
             raw=(boot.ROOT/row['path']).read_bytes()
+            if row['path']==boot.CURRENT_MIRROR+'scripts/lib/browser-custom-runtime.mjs':
+                # Only the image-qualified recipe adopts reviewed commit8f0b.
+                # This old profile/pin stays immutable; normalize that exact delta.
+                self.assertEqual((len(raw),hashlib.sha256(raw).hexdigest()),(70755,'f6772b8785ccf96a721013fa93a79c3ae252d19b986e338f59265f3c62f8827f'))
+                start=raw.index(b'// Only this separately creation-owned runtime profile')
+                end=raw.index(b'async function sourceGitPhysical(file)',start);raw=raw[:start]+raw[end:]
+                start=raw.index(b'  let runtimeProfile;\n');end=raw.index(b'  await sourceGitPhysical(directory);',start);raw=raw[:start]+raw[end:]
+                raw=raw.replace(b'    runtimeProfile,\n',b'',1)
+                start=raw.index(b'    if (policy.runtimeProfile) {\n');end=raw.index(b'    const hooks = await opendir(',start);raw=raw[:start]+raw[end:]
+                raw=raw.replace(b'      USERPROFILE:\n        policy.runtimeProfile?.path ?? path.join(policy.directory, "home"),',b'      USERPROFILE: path.join(policy.directory, "home"),',1)
+                self.assertEqual((len(raw),hashlib.sha256(raw).hexdigest()),(69741,'7a2fb8f3ca0ba4404050e37b7382fe53789cdb3b70682d1930205508c72a3217'))
+                start=raw.index(b'  const windowsLongPaths = options !== undefined;\n')
+                end=raw.index(b'  if (\n    !path.isAbsolute(directory)',start)
+                raw=raw[:start]+raw[end:]
+                raw=raw.replace(b'prepareSourceGitIsolation(directory, options)',b'prepareSourceGitIsolation(directory)',1)
+                raw=raw.replace(b'${windowsLongPaths ? "\\tlongpaths = true\\n" : ""}',b'',1)
             self.assertEqual((len(raw),hashlib.sha256(raw).hexdigest()),(row['bytes'],row['sha256']),row['path'])
         lock=json.loads((boot.ROOT/p['sourceGn']['namespace']/'source-lock.json').read_bytes())
         identity=hashlib.sha256(json.dumps(lock,sort_keys=True,separators=(',',':')).encode()).hexdigest()

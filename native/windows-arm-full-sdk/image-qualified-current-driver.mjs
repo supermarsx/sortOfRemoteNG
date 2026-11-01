@@ -2290,7 +2290,7 @@ export async function loadSealedProfile(
   );
   need(
     sha(selectedRaw) ===
-      "323b09244942b991c903838a9d1d36a3eed26e49fb38875745ad4102214b766f",
+      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
     "FULL_CURRENT_PROFILE",
   );
   const selected = JSON.parse(selectedRaw);

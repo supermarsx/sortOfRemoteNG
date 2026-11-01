@@ -6,18 +6,123 @@ import os from "node:os";
 import vm from "node:vm";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as currentDriver from "../../native/windows-arm-full-sdk/image-qualified-current-driver.mjs";
 import * as oldDriver from "../../native/windows-arm-full-sdk/image-qualified-20261021-driver.mjs";
 import {
   customRuntimeBuildRecipe,
   validateSourceLock,
   identitySha256,
+  prepareSourceGitIsolation,
+  sourceGitEnvironment,
 } from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs";
 import { cefHookArguments } from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (p) => fs.readFile(path.join(root, p));
 const sha = (b) => createHash("sha256").update(b).digest("hex");
+const adoptedHelper =
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs";
+const adoptedPin = {
+  bytes: 70755,
+  sha256: "f6772b8785ccf96a721013fa93a79c3ae252d19b986e338f59265f3c62f8827f",
+};
+const runtimeProfilePolicy = {
+  kind: "owned-windows-runtime-profile-v1",
+  scope: "explicit-windows-option-only",
+  baseBytes: 69741,
+  baseSha256:
+    "7a2fb8f3ca0ba4404050e37b7382fe53789cdb3b70682d1930205508c72a3217",
+  callerPathAccepted: false,
+};
+const runtimeDelta = [
+  [
+    `// Only this separately creation-owned runtime profile permits cache writes.
+// Existing policy directories retain their complete timestamp fingerprints.
+const sourceGitRuntimeDirectory = (s) =>
+  [s.dev, s.ino, s.birthtimeNs, s.mode, s.nlink].join(":");
+`,
+    "",
+  ],
+  [
+    `  let runtimeProfile;
+  if (windowsLongPaths) {
+    const profile = path.join(directory, "runtime-profile");
+    await mkdir(profile, { mode: 0o700 });
+    await sourceGitPhysical(profile);
+    runtimeProfile = {
+      path: profile,
+      identity: sourceGitRuntimeDirectory(
+        await lstat(profile, { bigint: true }),
+      ),
+    };
+  }
+`,
+    "",
+  ],
+  ["    runtimeProfile,\n", ""],
+  [
+    `    if (policy.runtimeProfile) {
+      await sourceGitPhysical(policy.runtimeProfile.path);
+      const current = await lstat(policy.runtimeProfile.path, { bigint: true });
+      if (
+        !current.isDirectory() ||
+        sourceGitRuntimeDirectory(current) !== policy.runtimeProfile.identity
+      )
+        fail("SOURCE_GIT_POLICY_DIRECTORY");
+    }
+`,
+    "",
+  ],
+  [
+    `      USERPROFILE:
+        policy.runtimeProfile?.path ?? path.join(policy.directory, "home"),`,
+    '      USERPROFILE: path.join(policy.directory, "home"),',
+  ],
+];
+const adoption = {
+  commit: "8f0b0dd0fbfc9aefe00bb00871752e195eea447a",
+  operation: "windows-longpaths-option-only",
+  baseBytes: 69294,
+  baseSha256:
+    "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b",
+};
+const adoptionBlock = `  const windowsLongPaths = options !== undefined;
+  if (
+    windowsLongPaths &&
+    (process.platform !== "win32" ||
+      !options ||
+      Object.getPrototypeOf(options) !== Object.prototype ||
+      Reflect.ownKeys(options).length !== 1 ||
+      Object.getOwnPropertyDescriptor(options, "windowsLongPaths")?.value !==
+        true)
+  )
+    fail("SOURCE_GIT_WINDOWS_LONGPATHS_OPTION");
+`;
+test("one mirrored helper carries separately reviewed Windows option/profile deltas with the entire historical helper preserved", async () => {
+  const raw = await read(adoptedHelper);
+  assert.equal(raw.length, adoptedPin.bytes);
+  assert.equal(sha(raw), adoptedPin.sha256);
+  let text = raw.toString();
+  for (const [added, previous] of runtimeDelta) {
+    assert.equal(text.split(added).length, 2);
+    text = text.replace(added, previous);
+  }
+  assert.equal(Buffer.byteLength(text), runtimeProfilePolicy.baseBytes);
+  assert.equal(sha(text), runtimeProfilePolicy.baseSha256);
+  assert.equal(text.split(adoptionBlock).length, 2);
+  const stanza = '${windowsLongPaths ? "\\tlongpaths = true\\n" : ""}';
+  assert.equal(text.split(stanza).length, 2);
+  const historical = text
+    .replace(adoptionBlock, "")
+    .replace(
+      "export async function prepareSourceGitIsolation(directory, options)",
+      "export async function prepareSourceGitIsolation(directory)",
+    )
+    .replace(stanza, "");
+  assert.equal(Buffer.byteLength(historical), adoption.baseBytes);
+  assert.equal(sha(historical), adoption.baseSha256);
+});
 const base = JSON.parse(await read("native/windows-arm-full-sdk/profile.json"));
 const workflow = (
   await read(".github/workflows/windows-arm-source-preflight.yml")
@@ -277,7 +382,46 @@ for (const [label, driver, originalName] of [
         );
         assert.equal(pin.sha256, origin.sha256);
         assert.equal(pin.bytes, origin.bytes);
+        if (origin.path === adoptedHelper) {
+          assert.deepEqual(origin.reviewedDelta, adoption);
+          assert.deepEqual(origin.runtimeProfilePolicy, runtimeProfilePolicy);
+        } else {
+          assert.equal(
+            origin.reviewedDelta,
+            undefined,
+            "other twelve mirrors have no override",
+          );
+          assert.equal(origin.runtimeProfilePolicy, undefined);
+        }
       }
+      assert.equal(
+        selected.helperOrigins.filter((origin) => origin.reviewedDelta).length,
+        1,
+      );
+      const delta =
+        ',\n      "reviewedDelta": ' +
+        JSON.stringify(adoption, null, 2).replaceAll("\n", "\n      ") +
+        ',\n      "runtimeProfilePolicy": ' +
+        JSON.stringify(runtimeProfilePolicy, null, 2).replaceAll(
+          "\n",
+          "\n      ",
+        );
+      const profileText = raw.toString();
+      assert.equal(profileText.split(adoptedPin.sha256).length, 3);
+      assert.equal(profileText.split(delta).length, 2);
+      const historicalProfile = profileText
+        .replaceAll(adoptedPin.sha256, adoption.baseSha256)
+        .replaceAll(
+          '"bytes": ' + adoptedPin.bytes,
+          '"bytes": ' + adoption.baseBytes,
+        )
+        .replace(delta, "");
+      assert.equal(
+        sha(historicalProfile),
+        label === "current"
+          ? "323b09244942b991c903838a9d1d36a3eed26e49fb38875745ad4102214b766f"
+          : "ccf53e052f146ad9a5305cb90c60c720cbb8b9612af57d1338402032f3cc63c2",
+      );
       const lock = validateSourceLock(
         JSON.parse(
           await read(selected.sourceGn.namespace + "source-lock.json"),
@@ -296,6 +440,287 @@ for (const [label, driver, originalName] of [
           .sha256,
         "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce",
       );
+    },
+  );
+
+  test(
+    label +
+      ": actual selected driver adopts the deployed helper and checks out a fresh nested long-path repository",
+    {
+      timeout: 30000,
+    },
+    async (t) => {
+      const text = (
+        await read(
+          `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+        )
+      ).toString();
+      const start = text.indexOf(
+          "  const gitPolicy = await custom.prepareSourceGitIsolation(",
+        ),
+        end = text.indexOf("  const adapter =", start);
+      assert(start > 0 && end > start);
+      assert.equal(text.split("custom.prepareSourceGitIsolation(").length, 2);
+      const call = text.slice(start, end),
+        AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      const folder = await fs.mkdtemp(
+        path.join(await fs.realpath(os.tmpdir()), "deployed-source-longpath-"),
+      );
+      t.after(async () => {
+        assert.equal(await fs.realpath(folder), folder);
+        assert.equal(path.dirname(folder), await fs.realpath(os.tmpdir()));
+        await fs.rm(folder, { recursive: true, force: true });
+      });
+      const invoke = new AsyncFunction(
+        "root",
+        "custom",
+        "path",
+        call + "return gitPolicy;",
+      );
+      if (process.platform !== "win32") {
+        await assert.rejects(
+          invoke(folder, { prepareSourceGitIsolation }, path),
+          /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+        );
+        await assert.rejects(
+          fs.lstat(path.join(folder, "cef-source-git-policy")),
+          { code: "ENOENT" },
+        );
+        return;
+      }
+      const token = await invoke(folder, { prepareSourceGitIsolation }, path);
+      const safe = {
+        SystemRoot: process.env.SystemRoot,
+        PATH: "C:/Program Files/Git/cmd",
+        LC_ALL: "C",
+        APPDATA: path.join(folder, "owned-caches", "roaming"),
+        LOCALAPPDATA: path.join(folder, "owned-caches", "local"),
+      };
+      const env = await sourceGitEnvironment(token, {
+        ...safe,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "core.longpaths",
+        GIT_CONFIG_VALUE_0: "false",
+      });
+      assert.equal(env.GIT_CONFIG_COUNT, undefined);
+      assert.equal(env.GIT_ALLOW_PROTOCOL, "https");
+      assert.equal(
+        env.HOME,
+        path.join(folder, "cef-source-git-policy", "home"),
+      );
+      assert.equal(
+        env.XDG_CONFIG_HOME,
+        path.join(folder, "cef-source-git-policy", "xdg"),
+      );
+      assert.equal(
+        env.USERPROFILE,
+        path.join(folder, "cef-source-git-policy", "runtime-profile"),
+      );
+      assert.notEqual(env.HOME, env.USERPROFILE);
+      const beforeHome = await fs.lstat(env.HOME, { bigint: true });
+      let python = base.python.path;
+      try {
+        const raw = await fs.readFile(python);
+        assert.equal(raw.length, base.python.bytes);
+        assert.equal(sha(raw), base.python.sha256);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        assert.notEqual(
+          process.env.GITHUB_ACTIONS,
+          "true",
+          "Hosted fixture requires the exact pinned Python executable",
+        );
+        // Local Windows behavior qualification only. A hosted run must use
+        // the existing exact3.12.10 executable pin above, never a fallback.
+        const local = spawnSync(
+          "python",
+          ["-I", "-B", "-c", "import sys;print(sys.executable)"],
+          {
+            encoding: "utf8",
+            timeout: 5000,
+            maxBuffer: 4096,
+            windowsHide: true,
+          },
+        );
+        assert.equal(local.status, 0, local.stderr);
+        python = local.stdout.trim();
+      }
+      const pythonResult = execFileSync(
+        python,
+        [
+          "-I",
+          "-B",
+          "-c",
+          [
+            "import os,pathlib,json",
+            "home=pathlib.Path.home()",
+            "assert os.name=='nt' and str(home)==os.environ['USERPROFILE']",
+            "for name in ('AppData','.gsutil'): (home/name).mkdir()",
+            "print(json.dumps({'home':str(home),'expanded':os.path.expanduser('~'),'appdata':os.environ.get('APPDATA'),'localappdata':os.environ.get('LOCALAPPDATA')}))",
+          ].join("\n"),
+        ],
+        {
+          env,
+          encoding: "utf8",
+          timeout: 5000,
+          maxBuffer: 4096,
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const observed = JSON.parse(pythonResult);
+      assert.equal(observed.home, env.USERPROFILE);
+      assert.equal(observed.expanded, env.USERPROFILE);
+      assert.equal(observed.appdata, safe.APPDATA);
+      assert.equal(observed.localappdata, safe.LOCALAPPDATA);
+      for (const name of ["AppData", ".gsutil"]) {
+        assert(
+          (await fs.lstat(path.join(env.USERPROFILE, name))).isDirectory(),
+        );
+        await assert.rejects(fs.lstat(path.join(env.HOME, name)), {
+          code: "ENOENT",
+        });
+      }
+      const afterHome = await fs.lstat(env.HOME, { bigint: true });
+      for (const key of [
+        "dev",
+        "ino",
+        "mtimeNs",
+        "ctimeNs",
+        "birthtimeNs",
+        "mode",
+        "nlink",
+      ])
+        assert.equal(afterHome[key], beforeHome[key], key);
+      await fs.writeFile(
+        path.join(env.USERPROFILE, ".gitconfig"),
+        "[core]\n longpaths = false\n",
+      );
+      await sourceGitEnvironment(token, safe);
+      assert(
+        (await fs.readFile(env.GIT_CONFIG_GLOBAL, "utf8")).includes(
+          "\tlongpaths = true\n",
+        ),
+      );
+      const executable = "C:/Program Files/Git/cmd/git.exe";
+      const git = (cwd, args, environment = env) =>
+        execFileSync(executable, ["-C", cwd, ...args], {
+          env: environment,
+          encoding: "utf8",
+          timeout: 5000,
+          maxBuffer: 1024 * 1024,
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      const origin = git(folder, [
+        "config",
+        "--show-origin",
+        "--get",
+        "core.longpaths",
+      ]).trim();
+      const [location, value] = origin.split("\t");
+      assert.equal(value, "true");
+      assert(location.startsWith("file:"));
+      const file = location.slice(5),
+        decoded = file.startsWith('"') ? JSON.parse(file) : file;
+      assert.equal(
+        path.normalize(decoded),
+        path.normalize(env.GIT_CONFIG_GLOBAL),
+      );
+      assert.notEqual(
+        path.normalize(decoded),
+        path.join(env.USERPROFILE, ".gitconfig"),
+      );
+      const repo = path.join(folder, "seed"),
+        checkout = path.join(
+          folder,
+          "source-checkout",
+          "src",
+          "docs",
+          "website",
+        );
+      await fs.mkdir(repo);
+      await fs.mkdir(path.dirname(checkout), { recursive: true });
+      git(repo, ["init", "--template="]);
+      git(repo, ["config", "user.name", "Owned deployed fixture"]);
+      git(repo, ["config", "user.email", "owned@example.invalid"]);
+      git(repo, ["config", "core.autocrlf", "false"]);
+      const components = Array.from(
+        { length: 9 },
+        (_, i) => `segment-${i}-` + "a".repeat(24),
+      );
+      const relative = components.join("/") + "/proof.txt",
+        leaf = path.join(repo, ...components, "proof.txt"),
+        content = "owned deployed longpath\n";
+      assert(relative.length > 260);
+      await fs.mkdir(path.dirname(leaf), { recursive: true });
+      await fs.writeFile(leaf, content);
+      git(repo, ["add", "--", relative]);
+      git(repo, ["commit", "-qm", "owned fixture"]);
+      // This sole local clone exception is test-only. Production HTTPS-only
+      // protocol policy and all acquisition URLs remain unchanged.
+      git(
+        folder,
+        [
+          "-c",
+          "protocol.file.allow=always",
+          "clone",
+          "--no-checkout",
+          "--local",
+          repo,
+          checkout,
+        ],
+        { ...env, GIT_ALLOW_PROTOCOL: "file" },
+      );
+      assert.throws(
+        () => git(checkout, ["config", "--local", "--get", "core.longpaths"]),
+        (error) => error.status === 1,
+      );
+      assert.equal(
+        git(checkout, ["config", "--bool", "core.longpaths"]).trim(),
+        "true",
+      );
+      const defaultParent = path.join(folder, "default");
+      await fs.mkdir(defaultParent);
+      const legacy = await prepareSourceGitIsolation(
+        path.join(defaultParent, "cef-source-git-policy"),
+      );
+      const legacyEnv = await sourceGitEnvironment(legacy, safe);
+      assert.equal(legacyEnv.USERPROFILE, legacyEnv.HOME);
+      await assert.rejects(
+        fs.lstat(
+          path.join(defaultParent, "cef-source-git-policy", "runtime-profile"),
+        ),
+        { code: "ENOENT" },
+      );
+      assert.throws(
+        () => git(checkout, ["checkout", "--force", "HEAD"], legacyEnv),
+        (error) => {
+          assert(error.status !== 0);
+          assert.match(
+            error.stderr,
+            /Filename too long|cannot create directory/i,
+          );
+          return true;
+        },
+      );
+      const partial = path.join(checkout, components[0]);
+      try {
+        await fs.lstat(partial);
+        await fs.rm(partial, { recursive: true, force: true });
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      git(checkout, ["checkout", "--force", "HEAD"]);
+      assert.equal(
+        await fs.readFile(
+          path.join(checkout, ...components, "proof.txt"),
+          "utf8",
+        ),
+        content,
+      );
+      await sourceGitEnvironment(token, safe);
+      await sourceGitEnvironment(legacy, safe);
     },
   );
 
@@ -548,3 +973,95 @@ for (const [label, driver, originalName] of [
     },
   );
 }
+
+test(
+  "deployed Windows profile capability rejects caller paths, replacement, aliases and sealed HOME writes",
+  {
+    skip:
+      process.platform !== "win32"
+        ? "Requires native Windows profile and junction behavior"
+        : false,
+  },
+  async (t) => {
+    const temp = await fs.realpath(os.tmpdir()),
+      folder = await fs.mkdtemp(path.join(temp, "deployed-profile-guards-"));
+    t.after(async () => {
+      assert.equal(await fs.realpath(folder), folder);
+      assert.equal(path.dirname(folder), temp);
+      await fs.rm(folder, { recursive: true, force: true });
+    });
+    let getterRead = false;
+    const getter = {};
+    Object.defineProperty(getter, "windowsLongPaths", {
+      get() {
+        getterRead = true;
+        throw Error("must not run");
+      },
+    });
+    for (const [i, options] of [
+      null,
+      {},
+      false,
+      { windowsLongPaths: false },
+      { windowsLongPaths: true, runtimeProfile: folder },
+      Object.create(null),
+      getter,
+    ].entries()) {
+      const parent = path.join(folder, "option-" + i);
+      await fs.mkdir(parent);
+      const policy = path.join(parent, "cef-source-git-policy");
+      await assert.rejects(
+        prepareSourceGitIsolation(policy, options),
+        /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+      );
+      await assert.rejects(fs.lstat(policy), { code: "ENOENT" });
+    }
+    assert.equal(getterRead, false);
+    for (const kind of [
+      "profile-replacement",
+      "profile-link",
+      "root-replacement",
+      "home-write",
+    ]) {
+      const parent = path.join(folder, kind);
+      await fs.mkdir(parent);
+      const policy = path.join(parent, "cef-source-git-policy"),
+        token = await prepareSourceGitIsolation(policy, {
+          windowsLongPaths: true,
+        });
+      const env = await sourceGitEnvironment(token, {});
+      if (kind === "home-write") await fs.mkdir(path.join(env.HOME, "AppData"));
+      else if (kind === "root-replacement") {
+        await fs.rename(policy, policy + "-old");
+        await fs.mkdir(policy);
+      } else {
+        await fs.rename(env.USERPROFILE, env.USERPROFILE + "-old");
+        if (kind === "profile-link")
+          await fs.symlink(
+            env.USERPROFILE + "-old",
+            env.USERPROFILE,
+            "junction",
+          );
+        else await fs.mkdir(env.USERPROFILE);
+      }
+      await assert.rejects(
+        sourceGitEnvironment(token, {}),
+        /SOURCE_GIT_POLICY_|ENOENT/,
+      );
+    }
+    const ordinary = path.join(folder, "ordinary"),
+      alias = path.join(folder, "alias");
+    await fs.mkdir(ordinary);
+    await fs.symlink(ordinary, alias, "junction");
+    await assert.rejects(
+      prepareSourceGitIsolation(path.join(alias, "cef-source-git-policy"), {
+        windowsLongPaths: true,
+      }),
+      /SOURCE_GIT_POLICY_ALIAS|SOURCE_GIT_POLICY_LINK/,
+    );
+    await assert.rejects(
+      fs.lstat(path.join(ordinary, "cef-source-git-policy")),
+      { code: "ENOENT" },
+    );
+  },
+);

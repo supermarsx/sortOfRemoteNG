@@ -175,8 +175,8 @@
       },
       {
         "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
-        "bytes": 69294,
-        "sha256": "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b"
+        "bytes": 70755,
+        "sha256": "f6772b8785ccf96a721013fa93a79c3ae252d19b986e338f59265f3c62f8827f"
       },
       {
         "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
@@ -568,9 +568,22 @@
     },
     {
       "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
-      "bytes": 69294,
-      "sha256": "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b",
-      "originalPath": "scripts/lib/browser-custom-runtime.mjs"
+      "bytes": 70755,
+      "sha256": "f6772b8785ccf96a721013fa93a79c3ae252d19b986e338f59265f3c62f8827f",
+      "originalPath": "scripts/lib/browser-custom-runtime.mjs",
+      "reviewedDelta": {
+        "commit": "8f0b0dd0fbfc9aefe00bb00871752e195eea447a",
+        "operation": "windows-longpaths-option-only",
+        "baseBytes": 69294,
+        "baseSha256": "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b"
+      },
+      "runtimeProfilePolicy": {
+        "kind": "owned-windows-runtime-profile-v1",
+        "scope": "explicit-windows-option-only",
+        "baseBytes": 69741,
+        "baseSha256": "7a2fb8f3ca0ba4404050e37b7382fe53789cdb3b70682d1930205508c72a3217",
+        "callerPathAccepted": false
+      }
     },
     {
       "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
