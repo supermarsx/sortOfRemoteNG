@@ -12880,7 +12880,7 @@ async function intelExternalFixture() {
   };
 }
 
-test("Intel metadata exact source684 policy is distinct and scope-denies every off-host write before data", async () => {
+test("Intel metadata exact source684 policy accepts its qualified native host and denies invalid scope before data", async () => {
   const { mac, options } = await intelExternalFixture();
   const policy = mac.MAC_INTEL_SOURCE_POLICY;
   assert.equal(
@@ -12889,20 +12889,37 @@ test("Intel metadata exact source684 policy is distinct and scope-denies every o
   );
   assert.equal(policy.darwinWriteAdmitted, true);
   assert.notEqual(policy.kind, mac.MAC_SOURCE_POLICY.kind);
+  const qualifiedHost =
+    process.platform === policy.platform &&
+    process.arch === policy.architecture &&
+    process.env.ImageOS === policy.imageOS &&
+    process.env.ImageVersion === policy.image &&
+    process.env.GITHUB_ACTIONS === "true" &&
+    process.env.RUNNER_ENVIRONMENT === "github-hosted" &&
+    process.env.GITHUB_REPOSITORY_VISIBILITY === "public";
   const selected = {
     ...identity,
     target: policy.target,
     source: policy.source,
+    image: policy.image,
     canonicalRoot:
       "/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/" +
       policy.source,
   };
   const out = selected.canonicalRoot + "/source/src/out/Release_GN_x64";
   for (const mode of ["source-record", "source-verify", "source-apply"]) {
-    assert.throws(
-      () => sourceMetadataPlan(selected, out, mode),
-      /MAC_INTEL_SOURCE_HOST_SCOPE/,
-    );
+    if (qualifiedHost)
+      assert.deepEqual(sourceMetadataPlan(selected, out, mode), {
+        mode,
+        source: selected.canonicalRoot + "/source",
+        sidecar: out + "/.siso_sorng_source_metadata.json",
+        platformPolicy: "mac-intel",
+      });
+    else
+      assert.throws(
+        () => sourceMetadataPlan(selected, out, mode),
+        /MAC_INTEL_SOURCE_HOST_SCOPE/,
+      );
     assert.throws(
       () => mac.macSourceMetadataPlan(selected, out, mode),
       /MAC_SOURCE_TARGET/,
@@ -12943,15 +12960,67 @@ test("Intel metadata exact source684 policy is distinct and scope-denies every o
     },
   );
   await assert.rejects(
-    mac.prepareAuthoritativeMacIntelGn(unreadable, () => {
-      throw Error("CLOCK_MUST_NOT_BE_READ");
-    }),
-    /MAC_INTEL_SOURCE_HOST_SCOPE/,
+    mac.prepareAuthoritativeMacIntelGn(
+      {
+        runner: options.map,
+        env: process.env,
+        work: selected.canonicalRoot,
+        sourceLockIdentity: "0".repeat(64),
+        get sourceLock() {
+          throw Error("SOURCE_MUST_NOT_BE_READ");
+        },
+        get chromium() {
+          throw Error("FILESYSTEM_MUST_NOT_BE_READ");
+        },
+      },
+      () => {
+        throw Error("CLOCK_MUST_NOT_BE_READ");
+      },
+    ),
+    qualifiedHost
+      ? /MAC_INTEL_SOURCE_IDENTITY_SCOPE/
+      : /MAC_INTEL_SOURCE_HOST_SCOPE/,
   );
   assert.throws(
-    () => buildEnvironment(options.map, {}, unreadable, "mac-intel"),
-    /MAC_INTEL_SOURCE_HOST_SCOPE/,
+    () =>
+      buildEnvironment(
+        options.map,
+        {},
+        { ...process.env, ImageVersion: "unqualified-unit-image" },
+        "mac-intel",
+      ),
+    qualifiedHost
+      ? /MAC_INTEL_SOURCE_ENV_SCOPE/
+      : /MAC_INTEL_SOURCE_HOST_SCOPE/,
   );
+  if (qualifiedHost) {
+    const source = selected.canonicalRoot + "/source";
+    const environment = buildEnvironment(
+      options.map,
+      {
+        toolsRoot: "/",
+        source,
+        depot: source + "/depot_tools",
+        python: "/" + options.map.python,
+      },
+      process.env,
+      "mac-intel",
+    );
+    assert.equal(environment.PYTHONDONTWRITEBYTECODE, "1");
+    assert.equal(environment.SOURCE_DATE_EPOCH, SOURCE_METADATA_DATE_EPOCH);
+    assert.equal(environment.PYTHONPYCACHEPREFIX, undefined);
+  } else {
+    await assert.rejects(
+      mac.prepareAuthoritativeMacIntelGn(unreadable, () => {
+        throw Error("CLOCK_MUST_NOT_BE_READ");
+      }),
+      /MAC_INTEL_SOURCE_HOST_SCOPE/,
+    );
+    assert.throws(
+      () => buildEnvironment(options.map, {}, unreadable, "mac-intel"),
+      /MAC_INTEL_SOURCE_HOST_SCOPE/,
+    );
+  }
   assert.throws(() =>
     buildEnvironment(
       { target: "aarch64-apple-darwin" },
@@ -13158,7 +13227,7 @@ test("Intel held external reader binds target source kind and opaque tokens with
   }
 });
 
-test("Intel Python source modes hard-deny before data and exact context rejects ARM cross-kind mutations", () => {
+test("Intel Python source modes deny explicit invalid scope before data and accept qualified pure admission", () => {
   const result = python(
     String.raw`
 import types,pathlib,sys,json
@@ -13174,12 +13243,18 @@ for mode in ('source-record','source-apply','source-verify'):
   try:m.source_metadata(mode,None,None,None,platform_policy='mac-intel')
   except m.CheckpointError as e:assert str(e) in ('source-mac-host-scope','source-mac-identity-scope')
   else:raise AssertionError('admitted')
- with patch.object(sys,'argv',[str(file),mode,'--input','/must-not-read','--output','/must-not-write','--manifest','/must-not-read','--platform-policy','mac-intel']),patch.object(m.Path,'read_bytes',side_effect=AssertionError('data read')):
+ with patch.dict(m.os.environ,{'ImageVersion':'unqualified-unit-image'}),patch.object(sys,'argv',[str(file),mode,'--input','/must-not-read','--output','/must-not-write','--manifest','/must-not-read','--platform-policy','mac-intel']),patch.object(m,'safe',side_effect=AssertionError('path read')),patch.object(m.Path,'read_bytes',side_effect=AssertionError('data read')):
   try:m.main()
   except m.CheckpointError as e:assert str(e)=='source-mac-host-scope'
   else:raise AssertionError('CLI admitted')
 source=m.MAC_INTEL_SOURCE;work='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+source
 identity=dict(target='x86_64-apple-darwin',source=source,producer='1'*64,canonicalRoot=work,image='20260824.0482.1',tools='2'*64,graph='3'*64,siso='4'*64)
+qualified=(sys.platform=='darwin' and m.platform.machine()=='x86_64' and m.os.environ.get('ImageOS')=='macos15' and m.os.environ.get('ImageVersion')==m.MAC_INTEL_SOURCE_IMAGE and m.os.environ.get('GITHUB_ACTIONS')=='true' and m.os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and m.os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public')
+if qualified:
+ assert m.source_mac_intel_write_admission(identity) is None
+else:
+ try:m.source_mac_intel_write_admission(identity);raise AssertionError('off-host admission accepted')
+ except m.CheckpointError as error:assert str(error)=='source-mac-host-scope'
 with patch.object(m,'safe',side_effect=lambda p:p):
  assert m.source_metadata_identity(identity,'mac-intel')==pathlib.Path(work)
  for delta in ({'source':'0'*64},{'target':'aarch64-apple-darwin'},{'canonicalRoot':'/arbitrary'}):
