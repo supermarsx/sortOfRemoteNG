@@ -1464,7 +1464,7 @@ class InventoryClockTests(unittest.TestCase):
                 runtime.body.remove(completion)
                 call=next(n for n in ast.walk(function)if isinstance(n,ast.Call)and isinstance(n.func,ast.Attribute)and n.func.attr=='installed_inventory')
                 call.args[1]=ast.Name(id='clock',ctx=ast.Load())
-                self.assertEqual(hashlib.sha256(ast.dump(function,include_attributes=False).encode()).hexdigest(),'144c4d772d2b075c35e6a8b50eca879c0a26ffdec393647ee0366c60cb635439')
+                self.assertEqual(hashlib.sha256(ast.dump(function,include_attributes=False).encode()).hexdigest(),'b949ac055a2b270904b709f36de286f33a9868977a6042244f4104ab6447d5fb')
                 scope=dict(producer.__dict__)
                 exec(compile(ast.fix_missing_locations(ast.Module(body=[function],type_ignores=[])),'actual-pinned59e-worker','exec'),scope)
                 worker=scope['data_worker']

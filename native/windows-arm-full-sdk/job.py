@@ -364,6 +364,11 @@ def approved_tool_command(argv,cwd):
         role_in_mode('git-version',c)
         import preflight
         role=preflight.closed_command(argv,Path(cwd),p,c,clock)
+    elif type(argv)is list and len(argv)==8 and argv[4]=='--source-gn':
+        # Resolve the mode-sealed derivative profile before selecting its fixed
+        # Node driver; legacy contexts still select only the legacy driver.
+        c,p,_ = verified_sources(Path(cwd))
+        role=closed_worker_command(argv,cwd,p)
     else:
         role=closed_worker_command(argv,cwd,load_profile())
         c,_,_ = verified_sources(Path(cwd))

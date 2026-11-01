@@ -129,7 +129,7 @@ class PreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(data.Denied,'FULL_PREFLIGHT_CWD'):
             preflight.closed_command(preflight.version_argv('git-version',root,BASE,SELECTED),root,BASE,context(),clock())
 
-    def test_legacy_length_two_request_cannot_import_unsealed_preflight_module(self):
+    def test_nonpreflight_length_two_request_cannot_import_unsealed_preflight_module(self):
         root=self.temp();tree=ast.parse((HERE/'job.py').read_bytes())
         node=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='approved_tool_command')
         ns={'Path':Path,'load_profile':lambda:BASE,'environment':lambda:{}}
@@ -140,7 +140,7 @@ class PreflightTests(unittest.TestCase):
                 optional_imports.append(name)
                 raise AssertionError('legacy context attempted unsealed optional import')
             return original_import(name,*args,**kwargs)
-        for mode in ('input-closure','command-inventory','source-gn'):
+        for mode in ('input-closure','command-inventory','source-gn','current-source-gn'):
             with self.subTest(mode=mode),patch.object(boot,'verified_sources',
                     return_value=({**context(),'mode':mode},BASE,clock())),\
                  patch('builtins.__import__',side_effect=guarded_import):

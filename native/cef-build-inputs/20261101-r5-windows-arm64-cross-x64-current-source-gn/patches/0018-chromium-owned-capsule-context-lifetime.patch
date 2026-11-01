@@ -1,0 +1,515 @@
+diff --git a/net/socket/sorng_capsule_datagram_client_socket.cc b/net/socket/sorng_capsule_datagram_client_socket.cc
+--- a/net/socket/sorng_capsule_datagram_client_socket.cc
++++ b/net/socket/sorng_capsule_datagram_client_socket.cc
+@@ -517,7 +517,11 @@
+   proxy_->admission()->RemoveSocket(this);
+   if (stream_) {
+     stream_->Disconnect();
+-  }
++    // Brokered streams retain their creating factory. Disconnect alone keeps
++    // that raw pointer alive past NetworkContext teardown.
++    stream_.reset();
++  }
++  factory_ = nullptr;
+   connect_callback_.Reset();
+   read_callback_.Reset();
+   write_callback_.Reset();
+diff --git a/net/socket/sorng_capsule_datagram_client_socket.h b/net/socket/sorng_capsule_datagram_client_socket.h
+--- a/net/socket/sorng_capsule_datagram_client_socket.h
++++ b/net/socket/sorng_capsule_datagram_client_socket.h
+@@ -114,7 +114,7 @@
+   void OnRevoked();
+   const scoped_refptr<SorngDatagramProxy> proxy_;
+   const HostPortPair destination_;
+-  const raw_ptr<ClientSocketFactory> factory_;
++  raw_ptr<ClientSocketFactory> factory_;
+   std::unique_ptr<StreamSocket> stream_;
+   State state_ = State::kNew;
+   scoped_refptr<IOBufferWithSize> receive_;
+diff --git a/net/socket/sorng_capsule_datagram_client_socket_unittest.cc b/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
+--- a/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
++++ b/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
+@@ -4,6 +4,7 @@
+ #include "net/socket/sorng_capsule_datagram_client_socket.h"
+ 
+ #include "base/base64.h"
++#include "base/functional/bind.h"
+ #include "base/test/task_environment.h"
+ #include "net/base/test_completion_callback.h"
+ #include "net/socket/socket_test_util.h"
+@@ -42,6 +43,56 @@
+ constexpr char kResponse[] =
+     "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "
+     "connect-udp\r\nCapsule-Protocol: ?1\r\n\r\n";
++struct StreamLifetime {
++  bool factory_alive = true;
++  int streams = 0;
++  int destroyed = 0;
++};
++class LifetimeSocket final : public MockTCPClientSocket {
++ public:
++  LifetimeSocket(const AddressList& addresses,
++                 NetLog* log,
++                 SocketDataProvider* data,
++                 ClientSocketFactory* factory,
++                 StreamLifetime* lifetime)
++      : MockTCPClientSocket(addresses, log, data),
++        factory_(factory),
++        lifetime_(lifetime) {
++    ++lifetime_->streams;
++  }
++  ~LifetimeSocket() override {
++    EXPECT_TRUE(lifetime_->factory_alive);
++    --lifetime_->streams;
++    ++lifetime_->destroyed;
++  }
++
++ private:
++  const raw_ptr<ClientSocketFactory> factory_;
++  const raw_ptr<StreamLifetime> lifetime_;
++};
++class LifetimeFactory final : public MockClientSocketFactory {
++ public:
++  LifetimeFactory(SocketDataProvider* data, StreamLifetime* lifetime)
++      : data_(data), lifetime_(lifetime) {}
++  ~LifetimeFactory() override {
++    EXPECT_EQ(0, lifetime_->streams);
++    lifetime_->factory_alive = false;
++  }
++  std::unique_ptr<TransportClientSocket> CreateTransportClientSocket(
++      const AddressList& addresses,
++      handles::NetworkHandle,
++      std::unique_ptr<SocketPerformanceWatcher>,
++      NetworkQualityEstimator*,
++      NetLog* log,
++      const NetLogSource&) override {
++    return std::make_unique<LifetimeSocket>(addresses, log, data_, this,
++                                            lifetime_);
++  }
++
++ private:
++  const raw_ptr<SocketDataProvider> data_;
++  const raw_ptr<StreamLifetime> lifetime_;
++};
+ class SorngCapsuleSocketTest : public testing::Test {
+  protected:
+   std::string Request(std::string_view host = "example.test") {
+@@ -213,5 +264,103 @@
+   task_environment_.FastForwardBy(base::Seconds(10));
+   EXPECT_EQ(ERR_TIMED_OUT, cb.WaitForResult());
+ }
++TEST_F(SorngCapsuleSocketTest, CloseReleasesFactoryAndStreamBeforeOwnerDies) {
++  StreamLifetime lifetime;
++  StaticSocketDataProvider pending;
++  pending.set_connect_data(MockConnect(ASYNC, ERR_IO_PENDING));
++  auto factory = std::make_unique<LifetimeFactory>(&pending, &lifetime);
++  auto socket = std::make_unique<SorngCapsuleDatagramClientSocket>(
++      proxy_, HostPortPair("example.test", 443), factory.get());
++  int callbacks = 0;
++  ASSERT_EQ(ERR_IO_PENDING,
++            socket->ConnectAsync(
++                proxy_->endpoint(),
++                base::BindOnce([](int* count, int) { ++*count; }, &callbacks)));
++  ASSERT_EQ(1, lifetime.streams);
++  socket->Close();
++  EXPECT_EQ(0, lifetime.streams);
++  EXPECT_EQ(1, lifetime.destroyed);
++  // Keep the closed capsule alive beyond its creating factory, like a retained
++  // asynchronous QUIC callback. No BRP/DPD suppression is used.
++  factory.reset();
++  socket->Close();
++  admission_->Revoke();
++  socket.reset();
++  task_environment_.RunUntilIdle();
++  EXPECT_EQ(0, callbacks);  // Explicit Close cancels owner callbacks.
++  EXPECT_EQ(1, lifetime.destroyed);
++}
++TEST_F(SorngCapsuleSocketTest,
++       RevokeCompletesPendingConnectExactlyOnceAndDropsStream) {
++  StreamLifetime lifetime;
++  StaticSocketDataProvider pending;
++  pending.set_connect_data(MockConnect(ASYNC, ERR_IO_PENDING));
++  auto factory = std::make_unique<LifetimeFactory>(&pending, &lifetime);
++  auto socket = std::make_unique<SorngCapsuleDatagramClientSocket>(
++      proxy_, HostPortPair("example.test", 443), factory.get());
++  int callbacks = 0;
++  int terminal = OK;
++  ASSERT_EQ(ERR_IO_PENDING,
++            socket->ConnectAsync(proxy_->endpoint(),
++                                 base::BindOnce(
++                                     [](int* count, int* terminal, int result) {
++                                       ++*count;
++                                       *terminal = result;
++                                     },
++                                     &callbacks, &terminal)));
++  admission_->Revoke();
++  EXPECT_EQ(1, callbacks);
++  EXPECT_EQ(ERR_ABORTED, terminal);
++  EXPECT_EQ(0, lifetime.streams);
++  EXPECT_EQ(1, lifetime.destroyed);
++  factory.reset();
++  admission_->Revoke();
++  socket->Close();
++  auto bytes = base::MakeRefCounted<StringIOBuffer>("never-sent");
++  TestCompletionCallback ignored;
++  EXPECT_EQ(ERR_ABORTED,
++            socket->Write(bytes.get(), bytes->size(), ignored.callback(),
++                          TRAFFIC_ANNOTATION_FOR_TESTS));
++  EXPECT_EQ(ERR_ABORTED,
++            socket->ConnectAsync(proxy_->endpoint(), ignored.callback()));
++  socket.reset();
++  task_environment_.RunUntilIdle();
++  EXPECT_EQ(1, callbacks);
++}
++TEST_F(SorngCapsuleSocketTest,
++       ReentrantRevokeCompletionCanDeleteCapsuleAndFactory) {
++  StreamLifetime lifetime;
++  StaticSocketDataProvider pending;
++  pending.set_connect_data(MockConnect(ASYNC, ERR_IO_PENDING));
++  auto factory = std::make_unique<LifetimeFactory>(&pending, &lifetime);
++  auto socket = std::make_unique<SorngCapsuleDatagramClientSocket>(
++      proxy_, HostPortPair("example.test", 443), factory.get());
++  int callbacks = 0;
++  ASSERT_EQ(ERR_IO_PENDING,
++            socket->ConnectAsync(
++                proxy_->endpoint(),
++                base::BindOnce(
++                    [](scoped_refptr<Admission> admission,
++                       std::unique_ptr<SorngCapsuleDatagramClientSocket>* owned,
++                       std::unique_ptr<LifetimeFactory>* factory,
++                       StreamLifetime* state, int* count, int result) {
++                      EXPECT_EQ(ERR_ABORTED, result);
++                      EXPECT_EQ(0, state->streams);
++                      EXPECT_TRUE(state->factory_alive);
++                      ++*count;
++                      admission->Revoke();
++                      owned->reset();
++                      factory->reset();
++                    },
++                    admission_, &socket, &factory, &lifetime, &callbacks)));
++  admission_->Revoke();
++  EXPECT_FALSE(socket);
++  EXPECT_FALSE(factory);
++  EXPECT_EQ(1, callbacks);
++  EXPECT_EQ(1, lifetime.destroyed);
++  admission_->Revoke();
++  task_environment_.RunUntilIdle();
++  EXPECT_EQ(1, callbacks);
++}
+ }  // namespace
+ }  // namespace net
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -741,6 +741,11 @@
+     if (!ok) FailClosed();
+     std::move(callback).Run(ok);
+   }
++  // Called at NetworkContext destructor entry, before URLRequestContext tears
++  // down the brokered socket factory. Repeated/late control revokes stay
++  // closed.
++  void Shutdown() { FailClosed(); }
++
+  private:
+   ~SorngTlsAdmission() override = default;
+   void OnDecision(uint64_t id, int native_error, uint32_t status, bool fatal,
+@@ -928,17 +933,25 @@
+       params_->bound_network);
+   url_request_context_ = url_request_context_owner_.url_request_context.get();
+   if (params_->sorng_tls_client) {
+-    auto* session = url_request_context_->http_transaction_factory()->GetSession();
++    auto* session =
++        url_request_context_->http_transaction_factory()->GetSession();
+     CHECK(session);
++    auto admission = base::MakeRefCounted<SorngTlsAdmission>(
++        std::move(params_->sorng_tls_client), params_->sorng_tls_generation,
++        base::BindRepeating(
++            [](base::WeakPtr<NetworkContext> context, uint16_t port,
++               std::string password) {
++              return context && context->ConfigureSorngDatagrams(
++                                    port, std::move(password));
++            },
++            weak_factory_.GetWeakPtr()));
++    // Pending QUIC verification/connect callbacks can retain a capsule socket
++    // after its pool is destroyed. Retire them while this context's socket
++    // factory is still alive, rather than waiting for a later Mojo disconnect.
++    sorng_tls_shutdown_ =
++        base::BindOnce(&SorngTlsAdmission::Shutdown, admission);
+     session->ssl_client_context()->SetTlsAdmissionDelegate(
+-        base::MakeRefCounted<SorngTlsAdmission>(
+-            std::move(params_->sorng_tls_client), params_->sorng_tls_generation,
+-            base::BindRepeating(
+-                [](base::WeakPtr<NetworkContext> context, uint16_t port,
+-                   std::string password) {
+-                  return context && context->ConfigureSorngDatagrams(
+-                      port, std::move(password));
+-                }, weak_factory_.GetWeakPtr())));
++        std::move(admission));
+   }
+ 
+   cookie_manager_ = std::make_unique<CookieManager>(
+@@ -1120,6 +1133,9 @@
+ 
+ NetworkContext::~NetworkContext() {
+   is_destructing_ = true;
++  if (sorng_tls_shutdown_) {
++    std::move(sorng_tls_shutdown_).Run();
++  }
+ 
+   // Clear pending HttpCacheDataRemovers and counters explicitly to cancel
+   // any in-flight background operations and avoid callback races.
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -970,6 +970,11 @@
+   // URLRequestContext.
+   URLRequestContextOwner url_request_context_owner_;
+ 
++  // Explicitly run at destructor entry, while the context/session/factory live.
++  // Captures only the context's own admission; ordinary contexts leave it
++  // empty.
++  base::OnceClosure sorng_tls_shutdown_;
++
+   raw_ptr<net::URLRequestContext> url_request_context_;
+ 
+ #if BUILDFLAG(ENABLE_REPORTING)
+diff --git a/services/network/sorng_datagram_configuration_unittest.cc b/services/network/sorng_datagram_configuration_unittest.cc
+--- a/services/network/sorng_datagram_configuration_unittest.cc
++++ b/services/network/sorng_datagram_configuration_unittest.cc
+@@ -1,17 +1,25 @@
+ // Copyright 2026 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
++#include "base/functional/bind.h"
++#include "base/memory/raw_ptr.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/test/task_environment.h"
+ #include "base/test/test_future.h"
+ #include "mojo/core/embedder/embedder.h"
+ #include "net/base/network_change_notifier.h"
++#include "net/cert/cert_verify_result.h"
+ #include "net/http/http_network_session.h"
+ #include "net/http/http_transaction_factory.h"
+ #include "net/proxy_resolution/proxy_config.h"
+ #include "net/proxy_resolution/proxy_config_with_annotation.h"
++#include "net/socket/socket_test_util.h"
++#include "net/socket/sorng_capsule_datagram_client_socket.h"
++#include "net/test/cert_test_util.h"
++#include "net/test/test_data_directory.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "net/url_request/url_request_context.h"
++#include "net/url_request/url_request_context_builder.h"
+ #include "services/network/network_context.h"
+ #include "services/network/network_service.h"
+ #include "services/network/test/fake_test_cert_verifier_params_factory.h"
+@@ -35,12 +43,72 @@
+                 int32_t,
+                 bool,
+                 EvaluateCallback callback) override {
+-    std::move(callback).Run(0, 0);
+-  }
++    if (hold_evaluations) {
++      pending.push_back(std::move(callback));
++    } else {
++      std::move(callback).Run(0, 0);
++    }
++  }
++  bool hold_evaluations = false;
++  std::vector<EvaluateCallback> pending;
+   mojo::Remote<mojom::SorngTlsControl> control;
+ 
+  private:
+   mojo::Receiver<mojom::SorngTlsClient> receiver_{this};
++};
++// The production NetworkContext and capsule are real. Only TCP transport is
++// replaced; its factory back-reference intentionally has the same BRP lifetime
++// contract as BrokeredTcpClientSocket, with no suppression or dangling opt-out.
++struct ContextStreamLifetime {
++  bool factory_alive = true;
++  int streams = 0;
++  int destroyed = 0;
++};
++class ContextLifetimeSocket final : public net::MockTCPClientSocket {
++ public:
++  ContextLifetimeSocket(const net::AddressList& addresses,
++                        net::NetLog* log,
++                        net::SocketDataProvider* data,
++                        net::ClientSocketFactory* factory,
++                        ContextStreamLifetime* lifetime)
++      : net::MockTCPClientSocket(addresses, log, data),
++        factory_(factory),
++        lifetime_(lifetime) {
++    ++lifetime_->streams;
++  }
++  ~ContextLifetimeSocket() override {
++    EXPECT_TRUE(lifetime_->factory_alive);
++    --lifetime_->streams;
++    ++lifetime_->destroyed;
++  }
++
++ private:
++  const raw_ptr<net::ClientSocketFactory> factory_;
++  const raw_ptr<ContextStreamLifetime> lifetime_;
++};
++class ContextLifetimeFactory final : public net::MockClientSocketFactory {
++ public:
++  ContextLifetimeFactory(net::SocketDataProvider* data,
++                         ContextStreamLifetime* lifetime)
++      : data_(data), lifetime_(lifetime) {}
++  ~ContextLifetimeFactory() override {
++    EXPECT_EQ(0, lifetime_->streams);
++    lifetime_->factory_alive = false;
++  }
++  std::unique_ptr<net::TransportClientSocket> CreateTransportClientSocket(
++      const net::AddressList& addresses,
++      net::handles::NetworkHandle,
++      std::unique_ptr<net::SocketPerformanceWatcher>,
++      net::NetworkQualityEstimator*,
++      net::NetLog* log,
++      const net::NetLogSource&) override {
++    return std::make_unique<ContextLifetimeSocket>(addresses, log, data_, this,
++                                                   lifetime_);
++  }
++
++ private:
++  const raw_ptr<net::SocketDataProvider> data_;
++  const raw_ptr<ContextStreamLifetime> lifetime_;
+ };
+ class SorngDatagramConfigurationTest : public testing::Test {
+  protected:
+@@ -53,7 +121,10 @@
+           ->GetSession();
+     }
+   };
+-  Context Create(NativeClient* client, uint64_t generation, uint16_t port) {
++  Context Create(NativeClient* client,
++                 uint64_t generation,
++                 uint16_t port,
++                 std::unique_ptr<net::ClientSocketFactory> factory = nullptr) {
+     auto params = CreateNetworkContextParamsForTesting();
+     params->cert_verifier_params =
+         FakeTestCertVerifierParamsFactory::GetCertVerifierParams();
+@@ -70,9 +141,18 @@
+       params->sorng_tls_generation = generation;
+     }
+     Context context;
++    NetworkContext::OnURLRequestContextBuilderConfiguredCallback configured;
++    if (factory) {
++      configured = base::BindOnce(
++          [](std::unique_ptr<net::ClientSocketFactory> owned,
++             net::URLRequestContextBuilder* builder) {
++            builder->set_client_socket_factory(std::move(owned));
++          },
++          std::move(factory));
++    }
+     context.value = NetworkContext::CreateForTesting(
+         service_.get(), context.remote.BindNewPipeAndPassReceiver(),
+-        std::move(params), {});
++        std::move(params), std::move(configured));
+     task_environment_.RunUntilIdle();
+     return context;
+   }
+@@ -148,5 +228,103 @@
+   EXPECT_TRUE(
+       old.session()->quic_session_pool()->sorng_datagram_proxy()->IsActive());
+ }
++TEST_F(SorngDatagramConfigurationTest,
++       ContextShutdownRetiresPendingOwnedCapsuleBeforeFactoryAndLateRevoke) {
++  NativeClient first_client, successor_client;
++  first_client.hold_evaluations = true;
++  ContextStreamLifetime lifetime;
++  net::StaticSocketDataProvider pending;
++  pending.set_connect_data(net::MockConnect(net::ASYNC, net::ERR_IO_PENDING));
++  auto first =
++      Create(&first_client, 1, 32123,
++             std::make_unique<ContextLifetimeFactory>(&pending, &lifetime));
++  ASSERT_TRUE(Configure(first_client, 1, 32123));
++  auto successor = Create(&successor_client, 2, 32124);
++  ASSERT_TRUE(Configure(successor_client, 2, 32124));
++  scoped_refptr<net::SorngDatagramProxy> proxy =
++      first.session()->quic_session_pool()->sorng_datagram_proxy();
++  scoped_refptr<net::SSLClientContext::TlsAdmissionDelegate> admission =
++      proxy->admission();
++  auto socket = std::make_unique<net::SorngCapsuleDatagramClientSocket>(
++      proxy, net::HostPortPair("example.test", 443),
++      first.session()->context().client_socket_factory);
++  int connect_callbacks = 0;
++  ASSERT_EQ(
++      net::ERR_IO_PENDING,
++      socket->ConnectAsync(proxy->endpoint(),
++                           base::BindOnce([](int* count, int) { ++*count; },
++                                          &connect_callbacks)));
++  ASSERT_EQ(1, lifetime.streams);
++  auto certificate =
++      net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
++  ASSERT_TRUE(certificate);
++  net::CertVerifyResult verified;
++  verified.verified_cert = certificate;
++  int terminal_callbacks = 0;
++  int terminal_error = net::OK;
++  admission->Verify(
++      net::HostPortPair("example.test", 443), certificate, verified, net::OK,
++      false,
++      base::BindOnce(
++          [](std::unique_ptr<net::SorngCapsuleDatagramClientSocket> retained,
++             int* count, int* result, ContextStreamLifetime* state,
++             NativeClient* native, int error) {
++            EXPECT_TRUE(state->factory_alive);
++            ++*count;
++            *result = error;
++            // Exercise the real admission implementation reentrantly while the
++            // pending closure still owns the capsule. Each snapshot must
++            // tolerate socket unregistration and the later outer shutdown pass.
++            base::test::TestFuture<void> nested_revoke;
++            native->control->Revoke(1, nested_revoke.GetCallback());
++            EXPECT_TRUE(nested_revoke.Wait());
++            EXPECT_EQ(0, state->streams);
++            EXPECT_EQ(1, state->destroyed);
++            auto payload =
++                base::MakeRefCounted<net::StringIOBuffer>("never-sent");
++            EXPECT_EQ(
++                net::ERR_ABORTED,
++                retained->Write(payload.get(), 10, base::BindOnce([](int) {
++                                  ADD_FAILURE() << "closed payload callback";
++                                }),
++                                TRAFFIC_ANNOTATION_FOR_TESTS));
++            // Destruction is deliberately at callback scope exit, like the
++            // pending QUIC session-creation closure in the actual fatal stack.
++          },
++          std::move(socket), &terminal_callbacks, &terminal_error, &lifetime,
++          &first_client));
++  task_environment_.RunUntilIdle();
++  ASSERT_EQ(1u, first_client.pending.size());
++  EXPECT_EQ(0, terminal_callbacks);
++  first.value.reset();
++  EXPECT_EQ(1, terminal_callbacks);
++  EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, terminal_error);
++  EXPECT_EQ(0, lifetime.streams);
++  EXPECT_EQ(1, lifetime.destroyed);
++  EXPECT_FALSE(lifetime.factory_alive);
++  EXPECT_FALSE(admission->IsActive());
++  EXPECT_TRUE(successor.session()
++                  ->quic_session_pool()
++                  ->sorng_datagram_proxy()
++                  ->IsActive());
++  // A late allow reply, duplicate revoke and Mojo disconnect cannot revive the
++  // old context, deliver twice, or close the simultaneously live successor.
++  std::move(first_client.pending.front()).Run(1, 0);
++  for (int i = 0; i < 2; ++i) {
++    base::test::TestFuture<void> revoked;
++    first_client.control->Revoke(1, revoked.GetCallback());
++    ASSERT_TRUE(revoked.Wait());
++  }
++  first_client.control.reset();
++  task_environment_.RunUntilIdle();
++  EXPECT_EQ(1, terminal_callbacks);
++  EXPECT_EQ(1, connect_callbacks);
++  EXPECT_EQ(1, lifetime.destroyed);
++  EXPECT_FALSE(admission->IsActive());
++  EXPECT_TRUE(successor.session()
++                  ->quic_session_pool()
++                  ->sorng_datagram_proxy()
++                  ->IsActive());
++}
+ }  // namespace
+ }  // namespace network

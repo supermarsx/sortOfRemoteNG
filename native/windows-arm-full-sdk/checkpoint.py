@@ -13,7 +13,7 @@ def identity(value):
 
 
 def closed_sources(rows, paths):
-    if not isinstance(rows, list) or len(paths) not in (11,16) or len(rows) != len(paths) or [r.get("path") for r in rows] != paths:
+    if not isinstance(rows, list) or len(paths) not in (11,16,62) or len(rows) != len(paths) or [r.get("path") for r in rows] != paths:
         raise ValueError("BOOT_SOURCE_SET")
     for row in rows:
         if (set(row) != {"path", "bytes", "sha256", "canonicalBytes", "canonicalSha256", "encoding"} or
@@ -23,7 +23,7 @@ def closed_sources(rows, paths):
                     set(row[k]) - set("0123456789abcdef") for k in ("sha256", "canonicalSha256")) or
                 row["encoding"] not in ("exact", "git-crlf")):
             raise ValueError("BOOT_SOURCE_ROW")
-        crlf=(paths[0],paths[-1]) if len(paths)==11 else (paths[0],paths[10],paths[11],paths[15])
+        crlf=(paths[0],paths[-1]) if len(paths)==11 else (paths[0],paths[10],paths[11],paths[15]if len(paths)==16 else paths[18])
         if row["encoding"] == "git-crlf" and row["path"] not in crlf:
             raise ValueError("BOOT_SOURCE_ENCODING")
     return identity(rows)
