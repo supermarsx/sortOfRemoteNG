@@ -356,6 +356,32 @@ class BootstrapTests(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaisesRegex(acquire.Denied, "BOOT_AUTHORITY"):
                 producer.bootstrap_authority({**c, key: value}, PROFILE)
 
+    def test_current_image_inventory_is_separate_from_source_and_compiler_admission(self):
+        c = {"kind": "windows-arm-full-sdk-context", "mode": "command-inventory",
+             "repository": "supermarsx/sortOfRemoteNG", "repositoryId": "1010282954",
+             "visibility": "public", "event": "workflow_dispatch", "defaultBranch": "main",
+             "ref": producer.INVENTORY_REF, "inputs": {"mode": "command-inventory"},
+             "workflow": PROFILE["sourcePaths"][0], "head": "a" * 40,
+             "workflowSha": "a" * 40, "image": "20261030.294.1", "runId": "123", "attempt": "1"}
+        producer.bootstrap_authority(c, PROFILE)
+        for change in [
+            {"ref": producer.SOURCE_GN_REF}, {"ref": "refs/heads/main"},
+            {"image": PROFILE["image"]}, {"image": "20261031.1.1"},
+            {"mode": "source-gn", "inputs": {"mode": "source-gn"}},
+            {"mode": "source-gn", "inputs": {"mode": "source-gn"}, "ref": producer.SOURCE_GN_REF},
+        ]:
+            with self.subTest(change=change), self.assertRaisesRegex(acquire.Denied, "BOOT_AUTHORITY"):
+                producer.bootstrap_authority({**c, **change}, PROFILE)
+        for role in (*producer.ROLES, "source-gn", "compile", "complete-sdk"):
+            with self.subTest(role=role), self.assertRaises(acquire.Denied):
+                producer.role_in_mode(role, c)
+        with self.assertRaisesRegex(acquire.Denied, "FULL_HOST_IMAGE"):
+            producer.source_host_closure_rows(PROFILE, c["image"])
+        self.assertEqual(PROFILE["image"], "20261021.278.1")
+        self.assertFalse(PROFILE["buildAdmission"])
+        for flag in ("compilerAllowed", "checkpointAllowed", "restoreAllowed", "sdkAllowed"):
+            self.assertFalse(PROFILE["sourceGn"][flag])
+
     def test_closed_commands_cannot_run_any_acquired_executable(self):
         producer.CONTEXT_SHA = "a" * 64
         root = Path.cwd()

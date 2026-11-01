@@ -1,15 +1,14 @@
-name: Windows ARM isolated source and GN only
+name: Windows ARM current-image passive tool inventory
 on:
   workflow_dispatch:
     inputs:
       mode:
         type: choice
-        description: Closed passive inventory or source and GN only
+        description: Read-only candidate tool inventory; no source or compiler execution
         required: true
         default: command-inventory
         options:
           - command-inventory
-          - source-gn
 permissions:
   contents: read
 concurrency:
@@ -17,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   toolchain:
-    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-source-gn-20261026'
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-current-inventory-20261101'
     runs-on: windows-2025-vs2026
     timeout-minutes: 150
     env:
@@ -65,7 +64,7 @@ jobs:
           const remaining=()=>Math.min(begin+workMs-Date.now(), workMs-(performance.now()-beginMono));
           // BEGIN FIXED CARRIER AUTHORITY
           function carrierAuthority(e,event){
-            const ref='refs/heads/codex/windows-arm-source-gn-20261026';
+            const ref='refs/heads/codex/windows-arm-current-inventory-20261101';
             assert(e.GITHUB_EVENT_NAME==='workflow_dispatch'&&e.GITHUB_REPOSITORY==='supermarsx/sortOfRemoteNG'&&
               e.GITHUB_REPOSITORY_ID==='1010282954'&&e.GITHUB_REPOSITORY_VISIBILITY==='public'&&
               e.CEF_DEFAULT_BRANCH==='main'&&e.GITHUB_REF===ref&&/^[a-f0-9]{40}$/.test(e.GITHUB_SHA)&&
@@ -75,10 +74,53 @@ jobs:
               event.repository.private===false&&event.repository.visibility==='public'&&event.repository.default_branch==='main'&&
               Object.hasOwn(event,'inputs')&&event.inputs!==null&&typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&
                 Object.getPrototypeOf(event.inputs)===Object.prototype&&Object.keys(event.inputs).length===1&&
-                Object.hasOwn(event.inputs,'mode')&&['command-inventory','source-gn'].includes(event.inputs.mode),'BOOT_CARRIER_AUTHORITY');
+                Object.hasOwn(event.inputs,'mode')&&event.inputs.mode==='command-inventory','BOOT_CARRIER_AUTHORITY');
             return event.inputs.mode;
           }
+          function carrierImage(mode,profile){
+            assert(mode==='command-inventory','BOOT_INVENTORY_MODE');
+            assert(profile.image==='20261021.278.1'&&profile.buildAdmission===false,'BOOT_INVENTORY_PROFILE');
+            return '20261030.294.1';
+          }
           // END FIXED CARRIER AUTHORITY
+          // BEGIN FIXED INVENTORY SOURCE WITNESS
+          async function canonicalSource(head,file,remaining,fetcher=fetch){
+            const allowed=['.github/workflows/windows-x64-arm-toolchain.yml','native/windows-arm-full-sdk/profile.json','native/windows-arm-full-sdk/acquire.py','native/windows-arm-full-sdk/extract.py','native/windows-arm-full-sdk/environment.py','native/windows-arm-full-sdk/producer.py','native/windows-arm-full-sdk/checkpoint.py','native/windows-arm-full-sdk/job.py','native/windows-arm-full-sdk/test_producer.py','native/windows-arm-full-sdk/source-driver.mjs','tests/tooling/windowsArmFullSdk.node-test.mjs'];
+            assert(/^[a-f0-9]{40}$/.test(head)&&allowed.includes(file),'SOURCE_WITNESS_SOURCE');
+            const ms=Math.min(15000,remaining()-3000);
+            assert(Number.isFinite(ms)&&ms>0,'SOURCE_WITNESS_DEADLINE');
+            const url='https://raw.githubusercontent.com/supermarsx/sortOfRemoteNG/'+head+'/'+file;
+            const controller=new AbortController();let timer,reader;
+            const timeout=new Promise((resolve,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('SOURCE_WITNESS_DEADLINE'));},ms);});
+            try{
+              return await Promise.race([timeout,(async()=>{
+                const response=await fetcher(url,{redirect:'error',credentials:'omit',referrerPolicy:'no-referrer',headers:{Accept:'application/octet-stream'},signal:controller.signal});
+                if(controller.signal.aborted){if(response.body)void response.body.cancel().catch(()=>{});throw new Error('SOURCE_WITNESS_DEADLINE');}
+                assert(response.status===200&&!response.redirected&&response.url===url,'SOURCE_WITNESS_RESPONSE');
+                const length=response.headers.get('content-length');
+                assert(length===null||/^\d{1,9}$/.test(length)&&Number(length)<=2097152,'SOURCE_WITNESS_BOUND');
+                assert(response.body&&typeof response.body.getReader==='function','SOURCE_WITNESS_BODY');
+                reader=response.body.getReader();const chunks=[];let bytes=0;
+                while(true){
+                  assert(!controller.signal.aborted&&remaining()>3000,'SOURCE_WITNESS_DEADLINE');
+                  const {done,value}=await reader.read();if(done)break;
+                  assert(!controller.signal.aborted,'SOURCE_WITNESS_DEADLINE');
+                  assert(value instanceof Uint8Array&&value.byteLength<=2097152-bytes,'SOURCE_WITNESS_BOUND');
+                  bytes+=value.byteLength;chunks.push(Buffer.from(value));
+                }
+                assert(!controller.signal.aborted&&remaining()>3000,'SOURCE_WITNESS_DEADLINE');
+                return Buffer.concat(chunks,bytes);
+              })()]);
+            }finally{clearTimeout(timer);controller.abort();if(reader)void reader.cancel().catch(()=>{});}
+          }
+          function sourceEncoding(file,canonical,live){
+            if(live.equals(canonical))return 'exact';
+            assert(file==='.github/workflows/windows-x64-arm-toolchain.yml'||file==='tests/tooling/windowsArmFullSdk.node-test.mjs','SOURCE_WITNESS_MISMATCH');
+            const text=new TextDecoder('utf-8',{fatal:true}).decode(canonical);
+            assert(!text.includes('\r')&&live.equals(Buffer.from(text.replaceAll('\n','\r\n'))),'SOURCE_WITNESS_MISMATCH');
+            return 'git-crlf';
+          }
+          // END FIXED INVENTORY SOURCE WITNESS
           let child, root, originalFailure, outcome=null, phase='authority';
           async function physical(p){
             assert(path.isAbsolute(p)&&!p.replaceAll('\\','/').split('/').some(x=>x==='.'||x==='..'));
@@ -102,25 +144,25 @@ jobs:
             workMs=mode==='source-gn'?7200000:120000;assert(remaining()>0);
             const repo=await physical(process.cwd()),dir=path.join(repo,'native/windows-arm-full-sdk');
             phase='profile';const rawProfile=await held(path.join(dir,'profile.json')),p=JSON.parse(rawProfile);
-            assert.equal(p.kind,'sorng-windows-arm-full-sdk-source');assert.equal(p.buildAdmission,false);assert.equal(process.env.ImageVersion,p.image);
-            phase='python';const py=await held(p.python.path,262144);assert.equal(py.length,p.python.bytes);assert.equal(hash(py),p.python.sha256);
+            assert.equal(hash(rawProfile),'ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a');
+            assert.equal(p.kind,'sorng-windows-arm-full-sdk-source');assert.equal(p.buildAdmission,false);assert.equal(process.env.ImageVersion,carrierImage(mode,p));
+            const pinnedPython=async()=>{const py=await held(p.python.path,262144);assert.equal(py.length,p.python.bytes);assert.equal(hash(py),p.python.sha256);};
+            phase='python';await pinnedPython();
             const parent=path.join(repo,'.artifacts');await fs.mkdir(parent,{recursive:true});await physical(parent);
             root=path.join(parent,'windows-arm-full-sdk-'+randomUUID());await fs.mkdir(root);
             for(const name of ['tmp','home','source-inputs'])await fs.mkdir(path.join(root,name));
-            phase='source-snapshot';const sources=[];
+            phase='source-snapshot';const sources=[];let sourceBytes=0;
             for(const [i,file]of p.sourcePaths.entries()){
               assert(!file.split('/').some(x=>x==='.'||x==='..'));
-              const canonical=(await execute('git',['cat-file','blob',process.env.GITHUB_SHA+':'+file],{encoding:'buffer',windowsHide:true,timeout:10000,maxBuffer:2097152})).stdout;
-              const live=await held(path.join(repo,file));let encoding='exact';
-              if(!live.equals(canonical)){
-                assert(file==='.github/workflows/windows-x64-arm-toolchain.yml'||file==='tests/tooling/windowsArmFullSdk.node-test.mjs');
-                const text=new TextDecoder('utf-8',{fatal:true}).decode(canonical);assert(!text.includes('\r'));assert(live.equals(Buffer.from(text.replaceAll('\n','\r\n'))));encoding='git-crlf';
-              }
+              const canonical=await canonicalSource(process.env.GITHUB_SHA,file,remaining);
+              sourceBytes+=canonical.length;assert(sourceBytes<=16777216,'SOURCE_WITNESS_AGGREGATE');
+              const live=await held(path.join(repo,file)),encoding=sourceEncoding(file,canonical,live);
               await fs.writeFile(path.join(root,'source-inputs',String(i)),live,{flag:'wx'});
               sources.push({path:file,bytes:live.length,sha256:hash(live),canonicalBytes:canonical.length,canonicalSha256:hash(canonical),encoding});
             }
             // Same Python clock epoch as later workers, sampled once before context sealing.
             const env={SystemRoot:'C:/Windows',WINDIR:'C:/Windows',Path:path.dirname(p.python.path)+';C:/Windows/System32',TEMP:path.join(root,'tmp'),TMP:path.join(root,'tmp'),USERPROFILE:path.join(root,'home'),PYTHONDONTWRITEBYTECODE:'1'};
+            await pinnedPython();
             const monoRaw=(await execute(p.python.path,['-I','-B','-c','import time;print(time.monotonic())'],{env,windowsHide:true,timeout:10000,maxBuffer:1024})).stdout.trim();
             assert(/^\d+(\.\d+)?$/.test(monoRaw)&&remaining()>0);const mono=Number(monoRaw);assert(Number.isFinite(mono)&&mono>0&&mono<1e12);
             const sourceDigest=hash(Buffer.from(JSON.stringify(sources.map(row=>Object.fromEntries(Object.entries(row).sort(([a],[b])=>a<b?-1:a>b?1:0))))));
@@ -130,7 +172,7 @@ jobs:
             const args=['-I','-B',path.join(dir,'producer.py'),'--supervise',root,hash(contextRaw),'--execute'];
             const buffers=[],errors=[];let count=0,stopFailure=false;
             const stop=()=>{try{child?.kill();}catch{stopFailure=true;}};
-            phase='owned-operation';child=spawn(p.python.path,args,{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
+            phase='owned-operation';await pinnedPython();child=spawn(p.python.path,args,{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
             for(const [stream,list]of [[child.stdout,buffers],[child.stderr,errors]])stream.on('data',b=>{count+=b.length;if(count>131072){originalFailure??='TOOLCHAIN_PARENT_OUTPUT_BOUND';stop();}else list.push(b);});
             const timer=setTimeout(()=>{originalFailure??='TOOLCHAIN_PARENT_DEADLINE';stop();},Math.max(1,remaining()));
             const hard=setTimeout(()=>{originalFailure??='TOOLCHAIN_PARENT_CLEANUP_UNCONFIRMED';stop();child.stdout.destroy();child.stderr.destroy();},Math.max(1,remaining()+30000));

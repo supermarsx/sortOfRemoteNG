@@ -3058,7 +3058,7 @@ test("workflow is manual public fixed branch with truthful default Main, read pe
     "github.event.repository.visibility == 'public'",
     "github.repository_id == '1010282954'",
     "github.event.repository.default_branch == 'main'",
-    "github.ref == 'refs/heads/codex/windows-arm-source-gn-20261026'",
+    "github.ref == 'refs/heads/codex/windows-arm-current-inventory-20261101'",
   ])
     assert(workflow.includes(required));
   assert.match(workflow, /runs-on: windows-2025-vs2026/);
@@ -3076,9 +3076,9 @@ test("Node 24 uses maintained pinned setup, exact workflow and Python source wit
   );
   assert.match(workflow, /node-version-file: "\.node-version"/);
   assert.match(workflow, /e\.GITHUB_WORKFLOW_SHA===e\.GITHUB_SHA/);
-  assert.match(
-    workflow,
-    /\['cat-file','blob',process\.env\.GITHUB_SHA\+':\'\+file\]/,
+  assert(!workflow.includes("execute('git'"));
+  assert(
+    workflow.includes("canonicalSource(process.env.GITHUB_SHA,file,remaining)"),
   );
   assert(
     workflow.includes(
@@ -3092,6 +3092,18 @@ test("Node 24 uses maintained pinned setup, exact workflow and Python source wit
   );
   for (const name of ["producer.py", "job.py"])
     assert((await read(prefix + name)).includes(sha(profileRaw)));
+  assert(
+    workflow.includes(`assert.equal(hash(rawProfile),'${sha(profileRaw)}')`),
+  );
+  assert(workflow.includes("phase='python';await pinnedPython();"));
+  assert(
+    workflow.includes("await pinnedPython();\n            const monoRaw="),
+  );
+  assert(
+    workflow.includes(
+      "phase='owned-operation';await pinnedPython();child=spawn(p.python.path",
+    ),
+  );
 });
 
 test("actual Node carrier authority denies Main, foreign branches and forged default/source/input identity", () => {
@@ -3102,7 +3114,7 @@ test("actual Node carrier authority denies Main, foreign branches and forged def
     workflow.slice(begin, end) + "\ncarrierAuthority;",
     { assert, Object },
   );
-  const ref = "refs/heads/codex/windows-arm-source-gn-20261026";
+  const ref = "refs/heads/codex/windows-arm-current-inventory-20261101";
   const env = {
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
@@ -3127,9 +3139,9 @@ test("actual Node carrier authority denies Main, foreign branches and forged def
     inputs: { mode: "command-inventory" },
   };
   assert.equal(authority(env, event), "command-inventory");
-  assert.equal(
-    authority(env, { ...event, inputs: { mode: "source-gn" } }),
-    "source-gn",
+  assert.throws(
+    () => authority(env, { ...event, inputs: { mode: "source-gn" } }),
+    /BOOT_CARRIER_AUTHORITY/,
   );
   for (const [key, value] of [
     ["GITHUB_REF", "refs/heads/main"],
@@ -3170,6 +3182,238 @@ test("actual Node carrier authority denies Main, foreign branches and forged def
       () => authority(env, { ...event, ...change }),
       /BOOT_CARRIER_AUTHORITY/,
     );
+});
+
+test("new runner image is admitted only to passive inventory, keeping source tool pins closed", () => {
+  const begin = workflow.indexOf("// BEGIN FIXED CARRIER AUTHORITY");
+  const end = workflow.indexOf("// END FIXED CARRIER AUTHORITY", begin);
+  const image = vm.runInNewContext(
+    workflow.slice(begin, end) + "\ncarrierImage;",
+    { assert, Object },
+  );
+  assert.equal(image("command-inventory", profile), "20261030.294.1");
+  for (const mode of ["source-gn", "input-closure", "compile", "complete-sdk"])
+    assert.throws(() => image(mode, profile), /BOOT_INVENTORY_MODE/);
+  assert.throws(
+    () => image("command-inventory", { ...profile, image: "20261030.294.1" }),
+    /BOOT_INVENTORY_PROFILE/,
+  );
+  assert.equal(profile.image, "20261021.278.1");
+  assert.equal(profile.sourceGn.hostClosure.image, profile.image);
+  for (const flag of [
+    "compilerAllowed",
+    "checkpointAllowed",
+    "restoreAllowed",
+    "sdkAllowed",
+  ])
+    assert.equal(profile.sourceGn[flag], false);
+  assert.equal(profile.commandInventory.candidateExecutionAllowed, false);
+  assert.equal(profile.commandInventory.expectedPinsCreated, false);
+});
+
+function sourceWitnessFunctions(overrides = {}) {
+  const begin = workflow.indexOf("// BEGIN FIXED INVENTORY SOURCE WITNESS");
+  const end = workflow.indexOf("// END FIXED INVENTORY SOURCE WITNESS", begin);
+  assert(begin >= 0 && end > begin);
+  return vm.runInNewContext(
+    workflow.slice(begin, end) + "\n({canonicalSource,sourceEncoding});",
+    {
+      assert,
+      Buffer,
+      Uint8Array,
+      TextDecoder,
+      AbortController,
+      setTimeout,
+      clearTimeout,
+      ...overrides,
+    },
+  );
+}
+function sourceResponse(
+  url,
+  chunks = [Buffer.from("committed source\n")],
+  extra = {},
+) {
+  let index = 0;
+  const reader = {
+    read: async () =>
+      index < chunks.length
+        ? { done: false, value: chunks[index++] }
+        : { done: true },
+    cancel: async () => {},
+  };
+  return {
+    status: 200,
+    redirected: false,
+    url,
+    headers: { get: () => null },
+    body: { getReader: () => reader, cancel: async () => {} },
+    ...extra,
+  };
+}
+test("inventory source witnesses use only the exact public commit and closed paths without candidate Git", async () => {
+  const { canonicalSource } = sourceWitnessFunctions();
+  const calls = [];
+  const fetcher = async (url, options) => {
+    calls.push({ url, options });
+    return sourceResponse(url);
+  };
+  const head = "a".repeat(40),
+    file = "native/windows-arm-full-sdk/producer.py";
+  assert.equal(
+    (await canonicalSource(head, file, () => 120000, fetcher)).toString(),
+    "committed source\n",
+  );
+  assert.equal(
+    calls[0].url,
+    `https://raw.githubusercontent.com/supermarsx/sortOfRemoteNG/${head}/${file}`,
+  );
+  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.deepEqual(Object.keys(calls[0].options.headers), ["Accept"]);
+  assert(calls[0].options.signal.aborted);
+  for (const [sha, candidatePath] of [
+    ["main", file],
+    [head, "../outside"],
+    [head, "scripts/cef-hosted-bootstrap.mjs"],
+    ["b".repeat(39), file],
+  ])
+    await assert.rejects(
+      canonicalSource(sha, candidatePath, () => 120000, fetcher),
+      /SOURCE_WITNESS_SOURCE/,
+    );
+  assert.equal(calls.length, 1);
+  assert(!/execute\(['"]git['"]|spawn\(['"]git['"]/.test(workflow));
+});
+test("inventory source witnesses deny redirects, wrong repository responses and oversized streams", async () => {
+  const { canonicalSource } = sourceWitnessFunctions(),
+    head = "a".repeat(40),
+    file = "native/windows-arm-full-sdk/producer.py";
+  for (const extra of [
+    { status: 302 },
+    { redirected: true },
+    { url: "https://raw.githubusercontent.com/foreign/repo/main/file" },
+  ])
+    await assert.rejects(
+      canonicalSource(
+        head,
+        file,
+        () => 120000,
+        async (url) => sourceResponse(url, [], extra),
+      ),
+      /SOURCE_WITNESS_RESPONSE/,
+    );
+  await assert.rejects(
+    canonicalSource(
+      head,
+      file,
+      () => 120000,
+      async (url) =>
+        sourceResponse(url, [], { headers: { get: () => "2097153" } }),
+    ),
+    /SOURCE_WITNESS_BOUND/,
+  );
+  await assert.rejects(
+    canonicalSource(
+      head,
+      file,
+      () => 120000,
+      async (url) => sourceResponse(url, [new Uint8Array(2097153)]),
+    ),
+    /SOURCE_WITNESS_BOUND/,
+  );
+});
+test("inventory source witnesses enforce request and whole deadlines, canceling late bodies", async () => {
+  let deadline,
+    resolve,
+    signal,
+    cancelled = 0;
+  const { canonicalSource } = sourceWitnessFunctions({
+    setTimeout(fn) {
+      deadline = fn;
+      return 1;
+    },
+    clearTimeout() {},
+  });
+  const pending = canonicalSource(
+    "a".repeat(40),
+    "native/windows-arm-full-sdk/producer.py",
+    () => 120000,
+    (url, options) => {
+      signal = options.signal;
+      return new Promise((done) => {
+        resolve = () =>
+          done(
+            sourceResponse(url, [], {
+              body: {
+                cancel: async () => {
+                  cancelled++;
+                },
+                getReader() {
+                  throw new Error("late body must not be read");
+                },
+              },
+            }),
+          );
+      });
+    },
+  );
+  deadline();
+  await assert.rejects(pending, /SOURCE_WITNESS_DEADLINE/);
+  assert(signal.aborted);
+  resolve();
+  await new Promise((done) => setImmediate(done));
+  assert.equal(cancelled, 1);
+  const ordinary = sourceWitnessFunctions().canonicalSource;
+  let checks = 0;
+  await assert.rejects(
+    ordinary(
+      "a".repeat(40),
+      "native/windows-arm-full-sdk/producer.py",
+      () => (++checks === 1 ? 10000 : 2999),
+      async (url) => sourceResponse(url),
+    ),
+    /SOURCE_WITNESS_DEADLINE/,
+  );
+});
+test("source byte comparison rejects mutation and allows CRLF only for the two existing checkout exceptions", () => {
+  const { sourceEncoding } = sourceWitnessFunctions();
+  const canonical = Buffer.from("first\nsecond\n"),
+    crlf = Buffer.from("first\r\nsecond\r\n");
+  assert.equal(
+    sourceEncoding(
+      "native/windows-arm-full-sdk/producer.py",
+      canonical,
+      canonical,
+    ),
+    "exact",
+  );
+  assert.equal(
+    sourceEncoding(
+      ".github/workflows/windows-x64-arm-toolchain.yml",
+      canonical,
+      crlf,
+    ),
+    "git-crlf",
+  );
+  assert.throws(
+    () =>
+      sourceEncoding(
+        "native/windows-arm-full-sdk/producer.py",
+        canonical,
+        crlf,
+      ),
+    /SOURCE_WITNESS_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      sourceEncoding(
+        ".github/workflows/windows-x64-arm-toolchain.yml",
+        canonical,
+        Buffer.from("changed\n"),
+      ),
+    /SOURCE_WITNESS_MISMATCH/,
+  );
 });
 
 test("checkout-only fixed Git environment preserves raw native LF pins despite autocrlf=true", async (t) => {

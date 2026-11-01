@@ -22,6 +22,8 @@ COMMAND_INVENTORY_REPORTING_FAILURE = False
 ROLES = ("sdk-data", "llvm-data", "rust-archive", "gn-archive", "siso-archive", "materialize", "runtime-closure")
 CARRIER_REF = "refs/heads/codex/windows-arm-full-sdk-source-20261026"
 SOURCE_GN_REF = "refs/heads/codex/windows-arm-source-gn-20261026"
+INVENTORY_REF = "refs/heads/codex/windows-arm-current-inventory-20261101"
+INVENTORY_IMAGE = "20261030.294.1"
 SOURCE_GN_NAMESPACE = "native/cef-build-inputs/20261026-r5-capsule23-windows-arm64-cross-x64-external-webview/"
 COMMAND_CANDIDATES = [
     {'role':'node','path':'C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe','kind':'pe'},
@@ -396,13 +398,15 @@ def bootstrap_authority(c, p):
               c["mode"] in ("input-closure", "command-inventory", "source-gn") and c["repository"] == "supermarsx/sortOfRemoteNG" and
               c["repositoryId"] == "1010282954" and c["visibility"] == "public" and
               c["event"] == "workflow_dispatch" and c["defaultBranch"] == "main" and
-              c["ref"] == (CARRIER_REF if c["mode"] == "input-closure" else SOURCE_GN_REF) and
+              c["ref"] == (CARRIER_REF if c["mode"] == "input-closure" else
+                           INVENTORY_REF if c["mode"] == "command-inventory" else SOURCE_GN_REF) and
               ((c['mode'] == 'input-closure' and (c['inputs'] is None or type(c['inputs']) is dict and not c['inputs'])) or
                (c['mode'] != 'input-closure' and c['inputs'] == {'mode':c['mode']})) and
               c["workflow"] == p["sourcePaths"][0] and
               c["workflow"] == ".github/workflows/windows-x64-arm-toolchain.yml" and
               c["workflowSha"] == c["head"] and re.fullmatch("[a-f0-9]{40}", c["head"]) and
-              c["image"] == p["image"] and re.fullmatch("[1-9][0-9]*", c["runId"]) and
+              c["image"] == (INVENTORY_IMAGE if c["mode"] == "command-inventory" else p["image"]) and
+              re.fullmatch("[1-9][0-9]*", c["runId"]) and
               re.fullmatch("[1-9][0-9]*", c["attempt"]), "BOOT_AUTHORITY")
 
 
