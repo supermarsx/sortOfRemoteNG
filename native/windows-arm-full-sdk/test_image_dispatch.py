@@ -100,4 +100,224 @@ class ImageDispatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'BOOT_SOURCE_ENCODING'):checkpoint.closed_sources(bad,paths)
         for index in (0,10,11,20):
             good=copy.deepcopy(rows);good[index]['encoding']='git-crlf';checkpoint.closed_sources(good,paths)
+class UpstreamTimeoutRetryTests(unittest.TestCase):
+    def acquisition(self):
+        from contextlib import ExitStack, contextmanager
+        import base64
+        @contextmanager
+        def fixture():
+            with tempfile.TemporaryDirectory() as folder, ExitStack() as stack:
+                root=Path(folder).resolve(strict=True);(root/'archives').mkdir()
+                profile=copy.deepcopy(BASE);profile['upstreamSources']=profile['upstreamSources'][:1]
+                payload=b'pinned metadata\n';row=profile['upstreamSources'][0]
+                row.update(bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+                state=SimpleNamespace(expired=False,opens=[],closes=0,reads=[],payload=payload,
+                    encoded=base64.b64encode(payload),root=root,row=row,open_error=None,
+                    read_error=None,close_error=None,status=200,url=row['url'],on_open=None,on_read=None)
+                class Budget:
+                    def remaining(self):
+                        data.need(not state.expired,'ACQ_DEADLINE')
+                        return 30
+                class Response:
+                    @property
+                    def status(self):return state.status
+                    def geturl(self):return state.url
+                    def read(self,bound):
+                        state.reads.append(bound)
+                        if state.on_read:return state.on_read()
+                        if state.read_error:raise state.read_error
+                        return state.encoded
+                    def __enter__(self):return self
+                    def __exit__(self,*args):
+                        state.closes+=1
+                        if state.close_error:raise state.close_error
+                def open_url(request,**kwargs):
+                    state.opens.append((request,kwargs))
+                    if state.on_open:return state.on_open(Response)
+                    if state.open_error:raise state.open_error
+                    return Response()
+                def held(path,*args,**kwargs):
+                    if Path(path).name=='sdk-acquisition.json':
+                        return {},json.dumps({'archives':[],'sdkFiles':[]}).encode()
+                    return {},None
+                stack.enter_context(patch.object(data,'held',side_effect=held))
+                stack.enter_context(patch.object(data,'fixed_download',return_value={}))
+                stack.enter_context(patch.object(data,'extract_tar',return_value=[]))
+                stack.enter_context(patch.object(data,'opener',return_value=SimpleNamespace(open=open_url)))
+                state.run=lambda:data.acquire_llvm(root,profile,Budget())
+                state.output=root/'chromium'/row['path']
+                yield state
+        return fixture()
+
+    def assert_no_output(self,s):
+        self.assertFalse(s.output.exists());self.assertFalse((s.root/'acquisition.json').exists())
+
+    def test_open_timeout_retries_same_request_then_validates_pinned_bytes(self):
+        with self.acquisition()as s:
+            def opened(Response):
+                if len(s.opens)==1:raise TimeoutError('secret')
+                return Response()
+            s.on_open=opened;s.run()
+            self.assertEqual(s.output.read_bytes(),s.payload)
+            self.assertEqual(len(s.opens),2);self.assertIs(s.opens[0][0],s.opens[1][0])
+            self.assertEqual([r.full_url for r,_ in s.opens],[s.row['url']]*2)
+            self.assertEqual([kw for _,kw in s.opens],[{'timeout':15}]*2)
+            self.assertEqual(s.closes,1)
+
+    def test_wrapped_open_timeout_recovers_without_rewriting_original_url(self):
+        from urllib.error import URLError
+        with self.acquisition()as s:
+            def opened(Response):
+                if len(s.opens)<3:raise URLError(URLError(TimeoutError('secret')))
+                return Response()
+            s.on_open=opened;s.run()
+            self.assertEqual(len(s.opens),3);self.assertEqual(s.output.read_bytes(),s.payload)
+            self.assertEqual({r.full_url for r,_ in s.opens},{s.row['url']})
+
+    def test_read_timeout_discards_partial_response_and_opens_fresh_response(self):
+        with self.acquisition()as s:
+            responses=[]
+            def opened(Response):
+                response=Response();responses.append(response);return response
+            def read():
+                if len(s.reads)==1:raise TimeoutError('partial response discarded')
+                return s.encoded
+            s.on_open=opened;s.on_read=read;s.run()
+            self.assertEqual(s.output.read_bytes(),s.payload);self.assertEqual(len(s.opens),2)
+            self.assertIsNot(responses[0],responses[1]);self.assertEqual(s.closes,2)
+            self.assertEqual(s.reads,[4*1024**2+1]*2)
+
+    def test_repeated_timeout_caps_three_attempts_and_preserves_exact_terminal_error(self):
+        from urllib.error import URLError
+        for reading in (False,True):
+            with self.subTest(reading=reading),self.acquisition()as s:
+                errors=[TimeoutError('secret1'),URLError(TimeoutError('secret2')),TimeoutError('secret3')]
+                if reading:
+                    def read():raise errors[len(s.reads)-1]
+                    s.on_read=read
+                else:
+                    def opened(Response):raise errors[len(s.opens)-1]
+                    s.on_open=opened
+                with self.assertRaises(TimeoutError)as found:s.run()
+                self.assertIs(found.exception,errors[-1]);self.assertEqual(len(s.opens),3)
+                self.assertEqual(s.closes,3 if reading else 0);self.assert_no_output(s)
+                self.assertEqual(boot.llvm_failure_diagnostic(found.exception),
+                    {'category':'socket-timeout','stage':'upstream-witness','ordinal':0})
+
+    def test_wrapped_timeout_depth_is_bounded_and_cycles_or_strings_never_retry(self):
+        from urllib.error import URLError
+        cycle=URLError('cycle');cycle.reason=cycle
+        allowed=[TimeoutError('secret'),URLError(TimeoutError('secret')),URLError(URLError(TimeoutError('secret')))]
+        denied=[URLError(URLError(URLError(TimeoutError('secret')))),cycle,URLError('timed out'),RuntimeError('timed out')]
+        for error in allowed:self.assertTrue(data.upstream_socket_timeout(error))
+        for error in denied:
+            with self.subTest(errorType=type(error).__name__),self.acquisition()as s:
+                s.open_error=error
+                with self.assertRaises(type(error))as found:s.run()
+                self.assertIs(found.exception,error);self.assertEqual(len(s.opens),1);self.assert_no_output(s)
+
+    def test_http_tls_dns_and_nested_non_timeout_errors_are_never_retried(self):
+        import socket,ssl
+        from urllib.error import URLError,HTTPError
+        errors=[HTTPError('secret',429,'secret',{},None),ssl.SSLError('secret'),
+            socket.gaierror('secret'),ConnectionError('secret')]
+        for error in list(errors):errors.append(URLError(error))
+        for reading in (False,True):
+            for error in errors:
+                with self.subTest(reading=reading,errorType=type(error).__name__),self.acquisition()as s:
+                    if reading:s.read_error=error
+                    else:s.open_error=error
+                    with self.assertRaises(type(error))as found:s.run()
+                    self.assertIs(found.exception,error);self.assertEqual(len(s.opens),1);self.assert_no_output(s)
+
+    def test_expiry_before_retry_after_read_and_before_file_creation_prevents_output(self):
+        for phase in ('retry','after-read','before-write'):
+            with self.subTest(phase=phase),self.acquisition()as s:
+                decode_patch=None
+                if phase=='retry':
+                    def opened(Response):s.expired=True;raise TimeoutError('secret')
+                    s.on_open=opened
+                elif phase=='after-read':
+                    def read():s.expired=True;return s.encoded
+                    s.on_read=read
+                else:
+                    original=data.base64.b64decode
+                    def decoded(*args,**kwargs):
+                        result=original(*args,**kwargs);s.expired=True;return result
+                    decode_patch=patch.object(data.base64,'b64decode',side_effect=decoded);decode_patch.start()
+                try:
+                    with self.assertRaisesRegex(data.Denied,'ACQ_DEADLINE'):s.run()
+                finally:
+                    if decode_patch:decode_patch.stop()
+                self.assertEqual(len(s.opens),1);self.assert_no_output(s)
+
+    def test_validation_and_local_io_failures_never_retry_or_create_unverified_output(self):
+        import binascii
+        for phase in ('url','status','redirect','size','base64','length','hash','close','mkdir','opener'):
+            with self.subTest(phase=phase),self.acquisition()as s:
+                error=TimeoutError('local secret');manager=None;expected=data.Denied
+                if phase=='url':s.row['url']='https://invalid.example/'
+                if phase=='status':s.status=503
+                if phase=='redirect':s.url='https://invalid.example/'
+                if phase=='size':s.encoded=b'a'*(4*1024**2+1)
+                if phase=='base64':s.encoded=b'!';expected=binascii.Error
+                if phase=='length':s.row['bytes']+=1
+                if phase=='hash':s.row['sha256']='0'*64
+                if phase=='close':s.close_error=error;expected=TimeoutError
+                if phase=='mkdir':manager=patch.object(data,'mkdir_owned',side_effect=error);expected=TimeoutError
+                if phase=='opener':manager=patch.object(data,'opener',side_effect=error);expected=TimeoutError
+                if manager:manager.start()
+                try:
+                    with self.assertRaises(expected)as found:s.run()
+                    if expected is TimeoutError:self.assertIs(found.exception,error)
+                finally:
+                    if manager:manager.stop()
+                self.assertEqual(len(s.opens),0 if phase in ('url','mkdir','opener')else 1);self.assert_no_output(s)
+
+    def test_close_failure_after_retryable_read_timeout_is_not_retried(self):
+        with self.acquisition()as s:
+            s.read_error=TimeoutError('read timeout');s.close_error=TimeoutError('close failure')
+            with self.assertRaises(TimeoutError)as found:s.run()
+            self.assertIs(found.exception,s.close_error)
+            self.assertEqual(len(s.opens),1);self.assertEqual(s.closes,1);self.assert_no_output(s)
+
+    def test_acquire_ast_only_replaces_exact_network_block_and_adds_prewrite_deadline(self):
+        import ast
+        tree=ast.parse((HERE/'acquire.py').read_text())
+        function=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='acquire_llvm')
+        loops=[n for n in ast.walk(function)if isinstance(n,ast.For)and ast.unparse(n.target)=='(ordinal, original)']
+        self.assertEqual(len(loops),1);loop=loops[0]
+        retry=ast.Module(body=loop.body[4:7],type_ignores=[])
+        self.assertEqual(hashlib.sha256(ast.dump(retry,include_attributes=False).encode()).hexdigest(),
+            'ce06254c2fd352057e4c04ac26d9f540c5858d3468a27d015021dc9cd004d8fe')
+        self.assertEqual(ast.unparse(loop.body[9]),'clock.remaining()')
+        self.assertIsInstance(loop.body[10],ast.With)
+        self.assertEqual(ast.unparse(loop.body[10].items[0].context_expr),"file.open('xb')")
+        del loop.body[9]
+        # Restore only the pinned historical single request, not any other guard.
+        loop.body[4:7]=ast.parse('''
+with opener().open(urllib.request.Request(original["url"]), timeout=min(15, clock.remaining())) as response:
+    need(response.status == 200 and response.geturl() == original["url"], "ACQ_RESPONSE")
+    encoded = response.read(4 * 1024**2 + 1)
+    need(len(encoded) <= 4 * 1024**2, "ACQ_SOURCE_SIZE")
+''').body
+        self.assertEqual(hashlib.sha256(ast.dump(function,include_attributes=False).encode()).hexdigest(),
+            'bc5f9447bd590c7d1402703214c1d8e0de092c9babf49c1b4b887e5f49919aec')
+
+    def test_create_new_and_save_timeout_failures_do_not_trigger_network_retry(self):
+        for existing in (False,True):
+            with self.subTest(existing=existing),self.acquisition()as s:
+                if existing:
+                    s.output.parent.mkdir(parents=True);s.output.write_bytes(b'preserved')
+                    with self.assertRaises(FileExistsError):s.run()
+                    self.assertEqual(s.output.read_bytes(),b'preserved')
+                else:
+                    original=Path.open
+                    def opening(path,*args,**kwargs):
+                        if args and args[0]=='xb':raise TimeoutError('local save timeout')
+                        return original(path,*args,**kwargs)
+                    with patch.object(Path,'open',opening),self.assertRaises(TimeoutError):s.run()
+                    self.assert_no_output(s)
+                self.assertEqual(len(s.opens),1)
+
 if __name__=='__main__':unittest.main()

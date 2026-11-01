@@ -7,11 +7,14 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import socket
+import ssl
 import stat
 import struct
 import sys
 import time
 import urllib.request
+import urllib.error
 import uuid
 import zipfile
 import tarfile
@@ -581,6 +584,19 @@ def acquire_sdk(root, profile, clock):
     return result
 
 
+def upstream_socket_timeout(error):
+    # Only typed socket timeouts, with at most two URLError wrappers.
+    for _ in range(3):
+        if isinstance(error, (urllib.error.HTTPError, ssl.SSLError, socket.gaierror)):
+            return False
+        if isinstance(error, TimeoutError):
+            return True
+        if not isinstance(error, urllib.error.URLError):
+            return False
+        error = error.reason
+    return False
+
+
 def acquire_llvm(root, profile, clock):
     phase, ordinal = 'unknown', None
     try:
@@ -606,12 +622,31 @@ def acquire_llvm(root, profile, clock):
             mkdir_owned(root, str(PurePosixPath("chromium/" + original["path"]).parent), clock)
             need(original["url"] == "https://chromium.googlesource.com/chromium/src/+/" +
                  profile["sourceChromium"] + "/" + original["path"] + "?format=TEXT", "ACQ_SOURCE_URL")
-            with opener().open(urllib.request.Request(original["url"]), timeout=min(15, clock.remaining())) as response:
-                need(response.status == 200 and response.geturl() == original["url"], "ACQ_RESPONSE")
-                encoded = response.read(4 * 1024**2 + 1)
-                need(len(encoded) <= 4 * 1024**2, "ACQ_SOURCE_SIZE")
+            request = urllib.request.Request(original["url"])
+            open_url = opener().open
+            for attempt in range(3):
+                remaining = clock.remaining()
+                try:
+                    response = open_url(request, timeout=min(15, remaining))
+                except Exception as error:
+                    if attempt < 2 and upstream_socket_timeout(error):
+                        continue
+                    raise
+                # Status/redirect validation and response cleanup never trigger retries.
+                with response:
+                    need(response.status == 200 and response.geturl() == original["url"], "ACQ_RESPONSE")
+                    try:
+                        encoded = response.read(4 * 1024**2 + 1)
+                    except Exception as error:
+                        if attempt < 2 and upstream_socket_timeout(error):
+                            continue  # Discard this response; __exit__ runs before the next open.
+                        raise
+                    clock.remaining()
+                    need(len(encoded) <= 4 * 1024**2, "ACQ_SOURCE_SIZE")
+                break
             raw = base64.b64decode(encoded, validate=True)
             need(len(raw) == original["bytes"] and hashlib.sha256(raw).hexdigest() == original["sha256"], "ACQ_SOURCE_PIN")
+            clock.remaining()
             with file.open("xb") as stream:
                 stream.write(raw)
             held(file, clock, len(raw), original["sha256"], maximum=4 * 1024**2)
@@ -631,8 +666,8 @@ def acquire_llvm(root, profile, clock):
         raise
 
 
-# Bootstrap additions below do not execute any acquired file. The prefix above
-# is the reviewed 8872 SDK/LLVM data acquisition implementation.
+# Bootstrap additions below do not execute any acquired file. The data prefix
+# retains the reviewed 8872 acquisition guards, plus typed upstream timeout retries.
 CIPD_FIXED = {
     "gn-archive": ("gn/gn/windows-amd64", "git_revision:150a9d6ba0aa7f407aa4feeabc5f03ce9aa7e04b"),
     "siso-archive": ("build/siso/windows-amd64", "git_revision:efbbe7f1892211b5e9512576843a3c247b6a6d7c"),

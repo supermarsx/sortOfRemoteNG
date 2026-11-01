@@ -153,7 +153,7 @@ class ReviewedSourceTests(unittest.TestCase):
                     def __exit__(self,*args):pass
                 def open_url(request,**kwargs):
                     ordinal=len(opened);opened.append(request.full_url)
-                    if selected=='upstream-witness'and ordinal==selected_ordinal:raise error
+                    if selected=='upstream-witness'and request.full_url==p['upstreamSources'][selected_ordinal]['url']:raise error
                     return Response(request.full_url)
                 stack.enter_context(patch.object(data,'opener',return_value=SimpleNamespace(open=open_url)))
                 with self.assertRaises(TimeoutError)as observed:data.acquire_llvm(root,p,clock())
