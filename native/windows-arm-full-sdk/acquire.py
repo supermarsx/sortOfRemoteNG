@@ -582,38 +582,53 @@ def acquire_sdk(root, profile, clock):
 
 
 def acquire_llvm(root, profile, clock):
-    root = plain(root)
-    _, raw_sdk = held(root / "sdk-acquisition.json", clock, retain=True, maximum=8 * 1024**2)
-    sdk = json.loads(raw_sdk)
-    archive_rows, outputs = sdk["archives"], sdk["sdkFiles"]
-    archives = root / "archives"
-    llvm = dict(profile["llvm"])
-    llvm["url"] = "https://commondatastorage.googleapis.com/chromium-browser-clang/" + llvm["object"] + "?generation=" + llvm["generation"]
-    target = archives / "clang.tar.xz"
-    archive_rows.append({"role": "clang24", **fixed_download(llvm, target, clock, 192 * 1024**2, llvm["url"])})
-    llvm_rows = extract_tar(target, root / "llvm", profile["limits"], clock)
-    held(root / "llvm/bin/clang-cl.exe", clock, sha256=llvm["clangSha256"], maximum=256 * 1024**2)
-    held(root / "llvm/bin/lld-link.exe", clock, sha256=llvm["lldSha256"], maximum=256 * 1024**2)
-    # Targeted upstream setup reader and its actual two stdlib-only imports.
-    for original in profile["upstreamSources"]:
-        file = root / "chromium" / original["path"]
-        mkdir_owned(root, str(PurePosixPath("chromium/" + original["path"]).parent), clock)
-        need(original["url"] == "https://chromium.googlesource.com/chromium/src/+/" +
-             profile["sourceChromium"] + "/" + original["path"] + "?format=TEXT", "ACQ_SOURCE_URL")
-        with opener().open(urllib.request.Request(original["url"]), timeout=min(15, clock.remaining())) as response:
-            need(response.status == 200 and response.geturl() == original["url"], "ACQ_RESPONSE")
-            encoded = response.read(4 * 1024**2 + 1)
-            need(len(encoded) <= 4 * 1024**2, "ACQ_SOURCE_SIZE")
-        raw = base64.b64decode(encoded, validate=True)
-        need(len(raw) == original["bytes"] and hashlib.sha256(raw).hexdigest() == original["sha256"], "ACQ_SOURCE_PIN")
-        with file.open("xb") as stream:
-            stream.write(raw)
-        held(file, clock, len(raw), original["sha256"], maximum=4 * 1024**2)
-    result = {"archives": archive_rows, "sdkFiles": outputs, "llvmFiles": llvm_rows,
-              "rustAcquired": False, "extraRuntimeSelected": False, "signatureVerified": False,
-              "sdkBuilt": False, "outputExecuted": False}
-    save(root / "acquisition.json", result)
-    return result
+    phase, ordinal = 'unknown', None
+    try:
+        root = plain(root)
+        _, raw_sdk = held(root / "sdk-acquisition.json", clock, retain=True, maximum=8 * 1024**2)
+        sdk = json.loads(raw_sdk)
+        archive_rows, outputs = sdk["archives"], sdk["sdkFiles"]
+        archives = root / "archives"
+        llvm = dict(profile["llvm"])
+        llvm["url"] = "https://commondatastorage.googleapis.com/chromium-browser-clang/" + llvm["object"] + "?generation=" + llvm["generation"]
+        target = archives / "clang.tar.xz"
+        phase, ordinal = 'download', None
+        archive_rows.append({"role": "clang24", **fixed_download(llvm, target, clock, 192 * 1024**2, llvm["url"])})
+        phase = 'extract'
+        llvm_rows = extract_tar(target, root / "llvm", profile["limits"], clock)
+        phase = 'pin-check'
+        held(root / "llvm/bin/clang-cl.exe", clock, sha256=llvm["clangSha256"], maximum=256 * 1024**2)
+        held(root / "llvm/bin/lld-link.exe", clock, sha256=llvm["lldSha256"], maximum=256 * 1024**2)
+        # Targeted upstream setup reader and its actual two stdlib-only imports.
+        for ordinal, original in enumerate(profile["upstreamSources"]):
+            phase = 'upstream-witness'
+            file = root / "chromium" / original["path"]
+            mkdir_owned(root, str(PurePosixPath("chromium/" + original["path"]).parent), clock)
+            need(original["url"] == "https://chromium.googlesource.com/chromium/src/+/" +
+                 profile["sourceChromium"] + "/" + original["path"] + "?format=TEXT", "ACQ_SOURCE_URL")
+            with opener().open(urllib.request.Request(original["url"]), timeout=min(15, clock.remaining())) as response:
+                need(response.status == 200 and response.geturl() == original["url"], "ACQ_RESPONSE")
+                encoded = response.read(4 * 1024**2 + 1)
+                need(len(encoded) <= 4 * 1024**2, "ACQ_SOURCE_SIZE")
+            raw = base64.b64decode(encoded, validate=True)
+            need(len(raw) == original["bytes"] and hashlib.sha256(raw).hexdigest() == original["sha256"], "ACQ_SOURCE_PIN")
+            with file.open("xb") as stream:
+                stream.write(raw)
+            held(file, clock, len(raw), original["sha256"], maximum=4 * 1024**2)
+        phase, ordinal = 'unknown', None
+        result = {"archives": archive_rows, "sdkFiles": outputs, "llvmFiles": llvm_rows,
+                  "rustAcquired": False, "extraRuntimeSelected": False, "signatureVerified": False,
+                  "sdkBuilt": False, "outputExecuted": False}
+        save(root / "acquisition.json", result)
+        return result
+
+    except BaseException as error:
+        try:
+            # Fixed local observation only; no message, path or URL is retained.
+            error._sorng_llvm_failure_stage = (phase, ordinal)
+        except BaseException:
+            pass  # Metadata failure must preserve this exact original exception.
+        raise
 
 
 # Bootstrap additions below do not execute any acquired file. The prefix above

@@ -1453,6 +1453,16 @@ class InventoryClockTests(unittest.TestCase):
                 self.assertEqual(len(first.body),1)
                 self.assertEqual(ast.unparse(first.body[0]),'command_inventory(root, c, p, clock)')
                 attempt=next(n for n in function.body if isinstance(n,ast.Try));attempt.body[0]=first.orelse[0]
+                # The historical worker predates opaque LLVM failure observation.
+                # Remove only the exact new non-authoritative branch; the pinned
+                # historical AST hash below remains unchanged.
+                handler=attempt.handlers[0]
+                self.assertEqual(len(handler.body),2)
+                diagnostic=handler.body[1]
+                self.assertEqual(ast.unparse(diagnostic.test),"role == 'llvm-data' and result['firstFailure'] == 'BOOT_UNAVAILABLE'")
+                self.assertEqual(ast.unparse(diagnostic.body[0].body[0]),"result['failureDiagnostic'] = llvm_failure_diagnostic(error)")
+                self.assertEqual(ast.unparse(diagnostic.body[0].handlers[0].body[0]),"result['failureDiagnostic'] = {'category': 'other', 'stage': 'unknown'}")
+                handler.body.remove(diagnostic)
                 flag=next(n for n in attempt.finalbody if isinstance(n,ast.If)and ast.unparse(n.test)=='COMMAND_INVENTORY_REPORTING_FAILURE')
                 self.assertEqual(ast.unparse(flag.body[0]),"result['inventoryObservationReportingFailure'] = True")
                 attempt.finalbody.remove(flag)

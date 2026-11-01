@@ -556,6 +556,41 @@ def failure(error):
     return code if re.fullmatch("(?:BOOT|ACQ|FULL|IDX|INV|ENV)_[A-Z_]{1,56}", code) else "BOOT_UNAVAILABLE"
 
 
+def llvm_failure_diagnostic(error):
+    """Closed type-only projection; never inspect/stringify network messages or URLs."""
+    stage = {'stage': 'unknown'}
+    try:
+        observed = getattr(error, '_sorng_llvm_failure_stage', None)
+        if type(observed) is tuple and len(observed) == 2:
+            phase, ordinal = observed
+            if type(phase) is str:
+                if phase == 'upstream-witness' and type(ordinal) is int and 0 <= ordinal <= 2:
+                    stage = {'stage': phase, 'ordinal': ordinal}
+                elif phase in ('download', 'extract', 'pin-check', 'unknown') and ordinal is None:
+                    stage = {'stage': phase}
+    except BaseException:
+        pass
+    import socket
+    import ssl
+    from urllib.error import HTTPError, URLError
+    for _ in range(3):
+        if isinstance(error, HTTPError):
+            code = error.code
+            return {**stage, 'category': 'http', **({'httpStatus': code}
+                if type(code) is int and 100 <= code <= 599 else {})}
+        if isinstance(error, ssl.SSLError):
+            return {**stage, 'category': 'tls'}
+        if isinstance(error, TimeoutError):
+            return {**stage, 'category': 'socket-timeout'}
+        if isinstance(error, socket.gaierror):
+            return {**stage, 'category': 'dns'}
+        if isinstance(error, URLError):
+            error = error.reason
+            continue
+        break
+    return {**stage, 'category': 'other'}
+
+
 def retain(root, name, result):
     try:
         data.save(root / name, result)
@@ -667,6 +702,12 @@ def data_worker(role, root, c, p, clock):
         result["success"] = True
     except BaseException as error:
         result["firstFailure"] = failure(error)
+        if role == 'llvm-data' and result['firstFailure'] == 'BOOT_UNAVAILABLE':
+            try:
+                result['failureDiagnostic'] = llvm_failure_diagnostic(error)
+            except BaseException:
+                # Observation cannot replace the original acquisition failure.
+                result['failureDiagnostic'] = {'category': 'other', 'stage': 'unknown'}
     finally:
         if getattr(sys.modules.get('extract'),'FILE_CLOSE_FAILURE',False):
             result['sourceCloseFailure']=True

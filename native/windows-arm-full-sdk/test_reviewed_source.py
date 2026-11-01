@@ -98,6 +98,115 @@ class ReviewedSourceTests(unittest.TestCase):
                 self.assertEqual(report['firstFailure'],failure)
                 self.assertEqual(report['jobs'],[])
 
+    def test_llvm_diagnostic_categories_are_type_only_bounded_and_redacted(self):
+        import socket
+        import ssl
+        from urllib.error import HTTPError, URLError
+        secret='https://user:token@private.invalid/path?secret=token'
+        cases=[(HTTPError(secret,503,secret,{'Authorization':secret},None),{'stage':'unknown','category':'http','httpStatus':503}),
+            (ssl.SSLError(secret),{'stage':'unknown','category':'tls'}),(TimeoutError(secret),{'stage':'unknown','category':'socket-timeout'}),
+            (socket.gaierror(-2,secret),{'stage':'unknown','category':'dns'}),(OSError(secret),{'stage':'unknown','category':'other'})]
+        for error,expected in cases:
+            for wrapped in (error,URLError(error),URLError(URLError(error))):
+                self.assertEqual(boot.llvm_failure_diagnostic(wrapped),expected)
+                self.assertNotIn('token',json.dumps(boot.llvm_failure_diagnostic(wrapped)))
+        self.assertEqual(boot.llvm_failure_diagnostic(URLError(URLError(URLError(TimeoutError(secret))))),{'stage':'unknown','category':'other'})
+        self.assertEqual(boot.llvm_failure_diagnostic(URLError(secret)),{'stage':'unknown','category':'other'})
+        cycle=URLError(secret);cycle.reason=cycle
+        self.assertEqual(boot.llvm_failure_diagnostic(cycle),{'stage':'unknown','category':'other'})
+        for status in (True,99,600,secret):
+            error=HTTPError(secret,503,secret,{},None);error.code=status
+            self.assertEqual(boot.llvm_failure_diagnostic(error),{'stage':'unknown','category':'http'})
+        class SecretError(Exception):
+            def __str__(self):raise AssertionError('must not stringify secret error')
+        self.assertEqual(boot.llvm_failure_diagnostic(SecretError()),{'stage':'unknown','category':'other'})
+
+    def test_actual_acquisition_stages_retain_exact_exception_without_any_secret(self):
+        import base64
+        import tempfile
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        payload=b'test'
+        stages=[('download',None),('extract',None),('pin-check',None),
+            ('upstream-witness',0),('upstream-witness',1),('upstream-witness',2)]
+        for selected,selected_ordinal in stages:
+            with self.subTest(stage=selected,ordinal=selected_ordinal),tempfile.TemporaryDirectory()as folder,ExitStack()as stack:
+                root=Path(folder).resolve();(root/'archives').mkdir()
+                p=copy.deepcopy(BASE)
+                for row in p['upstreamSources']:
+                    row['bytes']=len(payload);row['sha256']=hashlib.sha256(payload).hexdigest()
+                error=TimeoutError('https://private.invalid/secret?token=credential')
+                def held(path,*args,**kwargs):
+                    if Path(path).name=='sdk-acquisition.json':return ({},json.dumps({'archives':[],'sdkFiles':[]}).encode())
+                    if selected=='pin-check':raise error
+                    return ({},None)
+                stack.enter_context(patch.object(data,'held',side_effect=held))
+                stack.enter_context(patch.object(data,'fixed_download',side_effect=error if selected=='download'else lambda *a,**k:{}))
+                stack.enter_context(patch.object(data,'extract_tar',side_effect=error if selected=='extract'else lambda *a,**k:[]))
+                opened=[]
+                class Response:
+                    status=200
+                    def __init__(self,url):self.url=url
+                    def geturl(self):return self.url
+                    def read(self,_bound):return base64.b64encode(payload)
+                    def __enter__(self):return self
+                    def __exit__(self,*args):pass
+                def open_url(request,**kwargs):
+                    ordinal=len(opened);opened.append(request.full_url)
+                    if selected=='upstream-witness'and ordinal==selected_ordinal:raise error
+                    return Response(request.full_url)
+                stack.enter_context(patch.object(data,'opener',return_value=SimpleNamespace(open=open_url)))
+                with self.assertRaises(TimeoutError)as observed:data.acquire_llvm(root,p,clock())
+                self.assertIs(observed.exception,error)
+                expected={'category':'socket-timeout','stage':selected}
+                if selected_ordinal is not None:expected['ordinal']=selected_ordinal
+                self.assertEqual(boot.llvm_failure_diagnostic(error),expected)
+                self.assertNotIn('secret',json.dumps(boot.llvm_failure_diagnostic(error)))
+
+    def test_acquisition_annotation_failure_and_untrusted_stage_fields_are_secondary(self):
+        import tempfile
+        class AnnotationError(TimeoutError):
+            def __setattr__(self,name,value):
+                if name=='_sorng_llvm_failure_stage':raise RuntimeError('secret annotation failure')
+                super().__setattr__(name,value)
+        error=AnnotationError('secret transport failure')
+        with tempfile.TemporaryDirectory()as folder,patch.object(data,'held',side_effect=error):
+            with self.assertRaises(AnnotationError)as observed:data.acquire_llvm(Path(folder).resolve(),BASE,clock())
+        self.assertIs(observed.exception,error)
+        self.assertEqual(boot.llvm_failure_diagnostic(error),{'category':'socket-timeout','stage':'unknown'})
+        for bad in [('https://private.invalid',None),('download',0),('upstream-witness',True),
+                    ('upstream-witness',3),('upstream-witness',-1),['download',None]]:
+            unknown=TimeoutError('secret');unknown._sorng_llvm_failure_stage=bad
+            self.assertEqual(boot.llvm_failure_diagnostic(unknown),{'category':'socket-timeout','stage':'unknown'})
+
+    def test_actual_llvm_worker_preserves_failure_and_redacts_diagnostic(self):
+        import tempfile
+        from urllib.error import HTTPError
+        for observe_failure in (False,True):
+            with self.subTest(observe_failure=observe_failure),tempfile.TemporaryDirectory()as folder:
+                root=Path(folder).resolve();error=HTTPError('https://private.invalid/token',429,'secret token',{},None)
+                original=boot.llvm_failure_diagnostic
+                observer=patch.object(boot,'llvm_failure_diagnostic',side_effect=RuntimeError('secret observer token')) if observe_failure else patch.object(boot,'llvm_failure_diagnostic',side_effect=original)
+                with patch.object(sys,'addaudithook'),patch.object(data,'acquire_llvm',side_effect=error),\
+                     patch.object(boot,'verified_sources'),observer:
+                    self.assertEqual(boot.data_worker('llvm-data',root,{},BASE,clock()),1)
+                report=json.loads((root/'llvm-data-result.json').read_bytes())
+                self.assertEqual(report['firstFailure'],'BOOT_UNAVAILABLE')
+                self.assertFalse(report['success']);self.assertFalse(report['executed'])
+                self.assertTrue(report['sourcePostVerified'])
+                self.assertEqual(report['failureDiagnostic'],{'stage':'unknown','category':'other'} if observe_failure else {'stage':'unknown','category':'http','httpStatus':429})
+                self.assertNotIn('secret',json.dumps(report));self.assertNotIn('private',json.dumps(report));self.assertNotIn('token',json.dumps(report))
+
+    def test_explicit_llvm_pin_denial_remains_primary_without_network_reclassification(self):
+        import tempfile
+        with tempfile.TemporaryDirectory()as folder:
+            root=Path(folder).resolve()
+            with patch.object(sys,'addaudithook'),patch.object(data,'acquire_llvm',side_effect=data.Denied('ACQ_HASH')),\
+                 patch.object(boot,'verified_sources'),patch.object(boot,'llvm_failure_diagnostic',side_effect=AssertionError('not an opaque exception')):
+                self.assertEqual(boot.data_worker('llvm-data',root,{},BASE,clock()),1)
+            report=json.loads((root/'llvm-data-result.json').read_bytes())
+            self.assertEqual(report['firstFailure'],'ACQ_HASH');self.assertNotIn('failureDiagnostic',report)
+
     def test_only_mode_sealed_profile_selects_new_driver_and_keeps_limits(self):
         p=boot.reviewed_profile(copy.deepcopy(BASE),clock());root=boot.ROOT/'.artifacts/windows-arm-full-sdk-fixture'
         with patch.object(boot,'CONTEXT_SHA','a'*64),patch('os.getcwd',return_value=str(root)):
