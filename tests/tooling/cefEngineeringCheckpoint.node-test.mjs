@@ -5049,7 +5049,7 @@ test("checkpoint contracts install locked dependencies before importing YAML", a
   );
 });
 
-test("checkpoint provisioning enables only the existing Linux cleanup opt-in", async () => {
+test("checkpoint provisioning reserves restore capacity only with explicit Linux cleanup", async () => {
   const workflow = YAML.parse(
     await readFile(path.join(ROOT, WORKFLOW), "utf8"),
   );
@@ -5059,7 +5059,7 @@ test("checkpoint provisioning enables only the existing Linux cleanup opt-in", a
   );
   const command =
     'node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute';
-  const expected = `if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then\n  ${command} --cleanup\nelse\n  ${command}\nfi\n`;
+  const expected = `if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then\n  ${command} --cleanup --checkpoint-reserve\nelse\n  ${command}\nfi\n`;
   assert.equal(step.run, expected);
   for (const target of [
     TARGET,

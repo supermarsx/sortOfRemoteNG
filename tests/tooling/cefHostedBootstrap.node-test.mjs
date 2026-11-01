@@ -614,6 +614,65 @@ test("capacity already sufficient touches no disposable directory or command", a
   );
 });
 
+test("checkpoint reserve reclaims only reviewed documentation while retaining the 100 GiB build minimum", async () => {
+  const documents = "/usr/share/doc";
+  assert.deepEqual(RECIPE.linuxCheckpointCleanupPaths, [documents]);
+  assert.equal(RECIPE.minimumFreeDiskGiB, 100);
+  assert.equal(RECIPE.linuxCheckpointReserveGiB, 4);
+  assert.throws(
+    () => assertCleanupTarget(documents, cleanupOptions),
+    /allowlisted/,
+  );
+  assert.equal(
+    assertCleanupTarget(documents, {
+      ...cleanupOptions,
+      checkpointReserve: true,
+    }),
+    documents,
+  );
+  for (const patch of [
+    { symlink: true },
+    { canonical: "/elsewhere" },
+    { env: { ...hosted, RUNNER_ENVIRONMENT: "self-hosted" } },
+    { checkout: "/usr/share/doc/checkout" },
+  ])
+    assert.throws(() =>
+      assertCleanupTarget(documents, {
+        ...cleanupOptions,
+        checkpointReserve: true,
+        ...patch,
+      }),
+    );
+  const f = capacityFixture({ freeGiB: 102.43, gains: { [documents]: 2 } });
+  f.present.clear();
+  f.present.add(documents);
+  const original = f.io.command;
+  f.io.command = async (...args) =>
+    args[1].includes("du")
+      ? `${2 * 1024 ** 3}\t${documents}`
+      : original(...args);
+  assert.deepEqual(
+    await cleanupLinuxCapacity(
+      { ...capacityOptions, checkpointReserve: true },
+      f.io,
+    ),
+    [documents],
+  );
+  const receipt = f.receipts.at(-1);
+  assert.equal(receipt.requiredFreeGiB, 104);
+  assert.equal(receipt.buildMinimumGiB, 100);
+  assert.equal(receipt.checkpointReserveGiB, 4);
+  assert.equal(receipt.freeDiskAfterGiB, 104.43);
+  // The failing remote run spent ~0.62 GiB on prerequisites and ~2.58 GiB
+  // on its sealed checkpoint. Neither cost may consume the build's 100 GiB.
+  assert(receipt.freeDiskAfterGiB - 0.62 - 2.58 >= 100);
+  assert(f.calls.every((call) => call.candidate === documents));
+  await assert.rejects(
+    cleanupLinuxCapacity({ ...capacityOptions, checkpointReserve: "4" }, f.io),
+    /Invalid/,
+  );
+});
+
 test("measured smaller candidates reclaim enough capacity before expensive Android removal", async () => {
   const f = capacityFixture({
     gains: {

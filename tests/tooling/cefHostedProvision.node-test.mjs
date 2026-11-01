@@ -26,6 +26,37 @@ const PINNED_INSTALL_PACKAGES = {
   body: 'def install_packages(options):\n    try:\n        packages = find_missing_packages(options)\n        if packages:\n            cmd = ["apt-get", "install"]\n            if options.no_prompt:\n                cmd = [\n                    "DEBIAN_FRONTEND=noninteractive",\n                    *cmd,\n                    "-qq",\n                    "--allow-downgrades",\n                    "--assume-yes",\n                ]\n            subprocess.check_call(["sudo", *cmd, *packages])\n            logger.info("")\n        else:\n            logger.info("No missing packages, and the packages are up to date.")\n\n    except subprocess.CalledProcessError as e:\n        # An apt-get exit status of 100 indicates that a real error has occurred.\n        logger.error("`apt-get --just-print install ...` failed")\n        if e.stdout is not None:\n            logger.error("It produced the following output:\\n")\n            logger.error(e.stdout.decode("utf-8"))\n        logger.error("You will have to install the above packages yourself.\\n")\n        sys.exit(100)',
 };
 
+test("checkpoint reserve requires the explicit Linux cleanup mode", async () => {
+  await assert.rejects(
+    provision(
+      { target: "x86_64-unknown-linux-gnu", checkpointReserve: true },
+      {},
+      { platform: "linux", architecture: "x64" },
+    ),
+    /explicit hosted Linux cleanup/,
+  );
+  await assert.rejects(
+    provision(
+      { target: "x86_64-apple-darwin", cleanup: true, checkpointReserve: true },
+      {},
+      { platform: "darwin", architecture: "x64" },
+    ),
+    /explicit hosted Linux cleanup/,
+  );
+  await assert.rejects(
+    provision(
+      {
+        target: "x86_64-unknown-linux-gnu",
+        cleanup: true,
+        checkpointReserve: "yes",
+      },
+      {},
+      { platform: "linux", architecture: "x64" },
+    ),
+    /explicit hosted Linux cleanup/,
+  );
+});
+
 test("actual installer body clones only the pinned no-prompt APT vector with finite transport policy", async () => {
   assert.equal(
     createHash("sha256").update(PINNED_INSTALL_PACKAGES.body).digest("hex"),

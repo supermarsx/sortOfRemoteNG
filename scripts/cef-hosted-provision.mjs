@@ -601,7 +601,13 @@ runpy.run_path(sys.argv[0], run_name='__main__')
 `;
 
 export async function provision(
-  { target, output, execute = false, cleanup = false },
+  {
+    target,
+    output,
+    execute = false,
+    cleanup = false,
+    checkpointReserve = false,
+  },
   env = process.env,
   dependencies = {},
 ) {
@@ -612,6 +618,11 @@ export async function provision(
   const acquire = dependencies.acquire ?? acquirePinned;
   const nativeShell = dependencies.nativeShell ?? nativeWindowsShell;
   const plan = provisionPlan(target, platform, architecture);
+  if (
+    typeof checkpointReserve !== "boolean" ||
+    (checkpointReserve && (!cleanup || platform !== "linux"))
+  )
+    fail("Checkpoint capacity reserve requires explicit hosted Linux cleanup");
   if (!execute) return plan;
   assertProvisionHost(env);
   if (!output || !env.RUNNER_TEMP)
@@ -682,7 +693,12 @@ export async function provision(
   try {
     // The observer alone owns the canonical fixed Linux cleanup allowlist.
     const before = await observer(
-      { target, output: path.join(destination, "before"), cleanup },
+      {
+        target,
+        output: path.join(destination, "before"),
+        cleanup,
+        ...(checkpointReserve ? { checkpointReserve: true } : {}),
+      },
       env,
     );
     if (platform === "linux" && before.availableGiB < RECIPE.minimumFreeDiskGiB)
@@ -785,13 +801,21 @@ export async function main(args = process.argv.slice(2)) {
   const options = {};
   for (let i = 0; i < args.length; i++) {
     const key = args[i].replace(/^--/, "");
+    const property = key === "checkpoint-reserve" ? "checkpointReserve" : key;
     if (
       !args[i].startsWith("--") ||
-      !["target", "output", "execute", "cleanup"].includes(key) ||
-      key in options
+      ![
+        "target",
+        "output",
+        "execute",
+        "cleanup",
+        "checkpoint-reserve",
+      ].includes(key) ||
+      property in options
     )
       fail("Unknown or duplicate provision option");
-    if (["execute", "cleanup"].includes(key)) options[key] = true;
+    if (["execute", "cleanup", "checkpoint-reserve"].includes(key))
+      options[property] = true;
     else {
       const value = args[++i];
       if (!value || value.startsWith("--")) fail("Missing provision argument");

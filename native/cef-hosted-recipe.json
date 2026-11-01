@@ -13,6 +13,8 @@
   "minimumWindowsDebugger": [10, 0, 26100, 3323],
   "minimumMacSdkMajor": 15,
   "minimumFreeDiskGiB": 100,
+  "linuxCheckpointReserveGiB": 4,
+  "linuxCheckpointCleanupPaths": ["/usr/share/doc"],
   "minimumMemoryGiB": 8,
   "provisioning": {
     "windowsSdk": {

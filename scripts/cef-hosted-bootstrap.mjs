@@ -148,6 +148,7 @@ export function assertCleanupTarget(
     checkout = ROOT,
     temp = env.RUNNER_TEMP,
     symlink = false,
+    checkpointReserve = false,
   } = {},
 ) {
   if (
@@ -158,7 +159,11 @@ export function assertCleanupTarget(
   )
     fail("Cleanup is limited to public GitHub-hosted Linux runners");
   if (
-    !RECIPE.linuxCleanupPaths.includes(candidate) ||
+    !(
+      RECIPE.linuxCleanupPaths.includes(candidate) ||
+      (checkpointReserve === true &&
+        RECIPE.linuxCheckpointCleanupPaths.includes(candidate))
+    ) ||
     canonical !== candidate ||
     symlink
   )
@@ -434,7 +439,14 @@ async function nativeTools(platform) {
 // The former four unconditional 120s deletions define the entire phase budget.
 // GNU timeout runs privileged too: killing only Node's sudo child is insufficient.
 export async function cleanupLinuxCapacity(
-  { temp, destination, env, platform = process.platform, checkout = ROOT },
+  {
+    temp,
+    destination,
+    env,
+    platform = process.platform,
+    checkout = ROOT,
+    checkpointReserve = false,
+  },
   io = {
     lstat,
     realpath,
@@ -444,11 +456,18 @@ export async function cleanupLinuxCapacity(
     now: () => performance.now(),
   },
 ) {
-  const guards = { platform, env, checkout, temp };
+  if (typeof checkpointReserve !== "boolean")
+    fail("Invalid checkpoint capacity reserve");
+  const guards = { platform, env, checkout, temp, checkpointReserve };
   assertCleanupTarget(RECIPE.linuxCleanupPaths[0], guards);
+  const candidates = [
+    ...RECIPE.linuxCleanupPaths,
+    ...(checkpointReserve ? RECIPE.linuxCheckpointCleanupPaths : []),
+  ];
+  const reserveGiB = checkpointReserve ? RECIPE.linuxCheckpointReserveGiB : 0;
   const began = io.now();
   const deadline = began + RECIPE.linuxCleanupPaths.length * 120_000;
-  const required = RECIPE.minimumFreeDiskGiB * 1024 ** 3;
+  const required = (RECIPE.minimumFreeDiskGiB + reserveGiB) * 1024 ** 3;
   const free = async () => {
     const disk = await io.statfs(temp);
     const bytes = disk.bavail * disk.bsize;
@@ -458,8 +477,14 @@ export async function cleanupLinuxCapacity(
   };
   const before = await free();
   const receipt = {
-    reviewedAllowlist: RECIPE.linuxCleanupPaths,
-    requiredFreeGiB: RECIPE.minimumFreeDiskGiB,
+    reviewedAllowlist: candidates,
+    requiredFreeGiB: RECIPE.minimumFreeDiskGiB + reserveGiB,
+    ...(checkpointReserve
+      ? {
+          buildMinimumGiB: RECIPE.minimumFreeDiskGiB,
+          checkpointReserveGiB: reserveGiB,
+        }
+      : {}),
     freeDiskBeforeGiB: gib(before),
     freeDiskAfterGiB: gib(before),
     completed: [],
@@ -523,7 +548,7 @@ export async function cleanupLinuxCapacity(
       outer,
     );
   };
-  for (const candidate of RECIPE.linuxCleanupPaths) {
+  for (const candidate of candidates) {
     if (!(await validate(candidate))) continue;
     const row = { path: candidate, bytes: null, status: "unknown" };
     receipt.inventory.push(row);
@@ -555,12 +580,12 @@ export async function cleanupLinuxCapacity(
     await save();
   }
   // Smaller known directories finish first; expensive/unknown inventories last.
-  const candidates = [...receipt.inventory].sort(
+  const ordered = [...receipt.inventory].sort(
     (a, b) =>
       (a.bytes === null) - (b.bytes === null) ||
       (a.bytes ?? 0) - (b.bytes ?? 0),
   );
-  const pending = [...candidates];
+  const pending = [...ordered];
   const initialIdentities = new Map(),
     attemptsPerPath = new Map();
   // Appending only a known partial result preserves the complete initial pass.
@@ -658,15 +683,19 @@ export async function cleanupLinuxCapacity(
   receipt.sufficient = finalAvailable >= required;
   await save();
   if (!receipt.sufficient)
-    fail("Less than 100 GiB is available after bounded allowlisted cleanup");
+    fail(
+      `Less than ${RECIPE.minimumFreeDiskGiB + reserveGiB} GiB is available after bounded allowlisted cleanup`,
+    );
   return receipt.completed;
 }
 
 export async function observe(
-  { target, output, cleanup = false },
+  { target, output, cleanup = false, checkpointReserve = false },
   env = process.env,
 ) {
   const selected = selectTarget(target);
+  if (checkpointReserve && (!cleanup || process.platform !== "linux"))
+    fail("Checkpoint capacity reserve requires explicit hosted Linux cleanup");
   if (
     env.GITHUB_ACTIONS !== "true" ||
     env.RUNNER_ENVIRONMENT !== "github-hosted" ||
@@ -684,7 +713,7 @@ export async function observe(
     fail("Discovery output resolves outside the runner workspace");
   const diskBefore = await statfs(temp);
   const cleaned = cleanup
-    ? await cleanupLinuxCapacity({ temp, destination, env })
+    ? await cleanupLinuxCapacity({ temp, destination, env, checkpointReserve })
     : [];
   const python = await command(
     process.platform === "win32" ? "python" : "python3",
