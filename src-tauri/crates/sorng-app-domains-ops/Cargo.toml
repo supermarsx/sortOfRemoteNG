@@ -54,7 +54,6 @@ sorng-nginx = { path = "../sorng-nginx" }
 sorng-nginx-proxy-mgr = { path = "../sorng-nginx-proxy-mgr" }
 sorng-notifications = { path = "../sorng-notifications" }
 sorng-opendkim = { path = "../sorng-opendkim" }
-sorng-opkssh = { path = "../sorng-opkssh" }
 sorng-os-detect = { path = "../sorng-os-detect" }
 sorng-osticket = { path = "../sorng-osticket" }
 sorng-p2p = { path = "../sorng-p2p" }

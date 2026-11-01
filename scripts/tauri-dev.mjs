@@ -18,7 +18,6 @@ import {
   resolveDevPort,
   DEFAULT_PORT,
 } from "./dev-port.mjs";
-import { stageVendorArtifact } from "./stage-opkssh-vendor.mjs";
 import { stageFileViewerHost } from "./stage-file-viewer-host.mjs";
 import { buildNativeChildEnvironment } from "./lib/native-child-env.mjs";
 import { requiresBrowserBuildDriver } from "./lib/browser-build-route.mjs";
@@ -282,24 +281,6 @@ export function buildTauriLaunchPlan({
   };
 }
 
-export function prepareTauriDevOpkssh(
-  passthrough,
-  env,
-  log,
-  stage = stageVendorArtifact,
-) {
-  return stage({
-    argv: passthrough.filter(
-      (arg, index) =>
-        arg === "--target" ||
-        passthrough[index - 1] === "--target" ||
-        arg.startsWith("--target="),
-    ),
-    env,
-    log,
-  });
-}
-
 export async function main(argv = process.argv.slice(2), dependencies = {}) {
   const host = dependencies.process ?? process;
   const baseEnv = dependencies.env ?? host.env;
@@ -346,14 +327,6 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
   log(describeDevBuildResources(plan.buildResources));
   log(
     "Cargo defaults include all supported features; reduced builds require --no-default-features. Native services still require their documented drivers/tools.",
-  );
-  log(
-    "Checking the embedded OPKSSH runtime before native launch; explicit CLI-only opt-out uses SORNG_OPKSSH_VENDOR_DISABLE_BRIDGE=1.",
-  );
-  (dependencies.prepareTauriDevOpkssh ?? prepareTauriDevOpkssh)(
-    passthrough,
-    plan.env,
-    log,
   );
   (dependencies.stageFileViewerHost ?? stageFileViewerHost)({
     argv: passthrough,

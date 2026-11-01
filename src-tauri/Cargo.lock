@@ -296,7 +296,6 @@ dependencies = [
  "sorng-core",
  "sorng-encryption",
  "sorng-ftp",
- "sorng-opkssh",
  "sorng-protocols",
  "sorng-recording",
  "sorng-storage",
@@ -9777,7 +9776,6 @@ dependencies = [
  "sorng-nginx-proxy-mgr",
  "sorng-notifications",
  "sorng-opendkim",
- "sorng-opkssh",
  "sorng-os-detect",
  "sorng-osticket",
  "sorng-p2p",
@@ -9882,7 +9880,6 @@ dependencies = [
  "sorng-docker",
  "sorng-encryption",
  "sorng-llm",
- "sorng-opkssh",
  "sorng-recording",
  "sorng-storage",
  "sorng-telegram",
@@ -10365,7 +10362,6 @@ dependencies = [
  "sorng-encryption",
  "sorng-llm",
  "sorng-network",
- "sorng-opkssh",
  "sorng-probes",
  "sorng-protocols",
  "sorng-recording",
@@ -10644,7 +10640,6 @@ dependencies = [
  "sorng-marketplace",
  "sorng-mcp",
  "sorng-notifications",
- "sorng-opkssh",
  "sorng-portable",
  "sorng-rdpfile",
  "sorng-replay",
@@ -11861,6 +11856,8 @@ dependencies = [
  "md-5 0.10.6",
  "qrcode",
  "reqwest 0.12.28",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha1 0.10.7",
@@ -11869,6 +11866,7 @@ dependencies = [
  "sorng-dns",
  "sysinfo",
  "tokio",
+ "tokio-rustls",
  "uuid",
  "windows-sys 0.61.2",
  "x509-parser",
@@ -12017,29 +12015,6 @@ dependencies = [
  "tauri",
  "tokio",
  "uuid",
-]
-
-[[package]]
-name = "sorng-opkssh"
-version = "26.51.0"
-dependencies = [
- "chrono",
- "dirs 6.0.0",
- "libloading 0.8.9",
- "log",
- "serde",
- "serde_json",
- "sorng-opkssh-vendor",
- "tokio",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "sorng-opkssh-vendor"
-version = "26.51.0"
-dependencies = [
- "serde_json",
 ]
 
 [[package]]

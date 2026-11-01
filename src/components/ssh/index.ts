@@ -1,7 +1,6 @@
 export { BulkSSHCommander } from "./BulkSSHCommander";
 export { GpgAgentManager } from "./GpgAgentManager";
 export { McpServerPanel } from "./McpServerPanel";
-export { OpksshPanel } from "./OpksshPanel";
 export { ServerStatsPanel } from "./ServerStatsPanel";
 export { SSHAgentManager } from "./SSHAgentManager";
 export { default as SSHKeyManager } from "./SSHKeyManager";

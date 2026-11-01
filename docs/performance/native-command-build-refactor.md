@@ -67,7 +67,7 @@ The messaging registrar now contains only RabbitMQ commands. The former Kafka cr
 | `sorng-commands-ops-platform`      | netbox 143, cups 52, about 14, remote_backup 13                                 |   222 |
 | `sorng-commands-ops-monitoring`    | grafana 46, prometheus 22, zabbix 53, ups_mgmt 70, ipmi 41                      |   232 |
 | `sorng-commands-ops-orchestration` | compose 52, cicd 57, etcd 42, consul 32, ceph 57                                |   240 |
-| `sorng-commands-ops-messaging`     | rabbitmq 58                                                                  |    58 |
+| `sorng-commands-ops-messaging`     | rabbitmq 58                                                                     |    58 |
 
 ## Record comparable builds
 
@@ -95,7 +95,7 @@ Before/after results for the registrar split and their verification status are p
 
 ### Baseline evidence
 
-These are the observations that motivated the split, not results of it. They come from one cold full-feature `dev` build of each of two revisions, each in its own source snapshot and fresh target directory: `before` at `3d645bd8` and `boxed` at `65140e2b`. `65140e2b` differs from the revision this split started from only in tooling files. The dated Cargo HTML reports and console logs are local, untracked artifacts under `.cache/` and were summarized with `scripts/ci/summarize-native-build-timings.mjs`. Each case ran once. The exact command line, job count, available memory and process exit status were not retained with them; each log ends in Cargo's `Finished` line (6 m 49 s and 4 m 39 s), which suggests the builds completed but is not an external wall-clock record. Native staging state differed: the `before` log reports a metadata-only OPKSSH vendor wrapper with no staged bridge, while the `boxed` log does not.
+These are the observations that motivated the split, not results of it. They come from one cold full-feature `dev` build of each of two revisions, each in its own source snapshot and fresh target directory: `before` at `3d645bd8` and `boxed` at `65140e2b`. `65140e2b` differs from the revision this split started from only in tooling files. The dated Cargo HTML reports and console logs are local, untracked artifacts under `.cache/` and were summarized with `scripts/ci/summarize-native-build-timings.mjs`. Each case ran once. The exact command line, job count, available memory and process exit status were not retained with them; each log ends in Cargo's `Finished` line (6 m 49 s and 4 m 39 s), which suggests the builds completed but is not an external wall-clock record. Native staging state differed: the `before` log reports a metadata-only vendor wrapper (since removed) with no staged bridge, while the `boxed` log does not.
 
 Seconds below are Cargo plot positions and unit phases. Units overlap and must not be summed.
 

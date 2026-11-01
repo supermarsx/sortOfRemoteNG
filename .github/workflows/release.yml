@@ -78,9 +78,9 @@ concurrency:
 
 env:
   RELEASE_FEATURES_BUNDLED: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser
   RELEASE_FEATURES_WINDOWS: >-
-    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser
   FLATPAK_APP_ID: com.sortofremote.ng
   FLATPAK_BUILDER_PACKAGE: 1.4.2-1build2
   FLATPAK_BUILDER_VERSION: 1.4.2
@@ -470,7 +470,6 @@ jobs:
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}
       CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ matrix.release_opt_level }}
-      SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
     steps:
       - name: Checkout immutable release snapshot
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -518,57 +517,6 @@ jobs:
           if ($actualHost -ne $env:EXPECTED_RUST_HOST) {
             throw "Expected the MSVC release host $env:EXPECTED_RUST_HOST, found $actualHost."
           }
-
-      - name: Check out pinned OPKSSH source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          repository: openpubkey/opkssh
-          ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
-          fetch-depth: 1
-          persist-credentials: false
-          path: .ci/opkssh-source
-
-      - name: Install Go toolchain for embedded OPKSSH bridge
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version: "1.24.12"
-          cache-dependency-path: .ci/opkssh-source/go.sum
-
-      - name: Provision x64 GNU OPKSSH bridge toolchain
-        if: matrix.rust_target == 'x86_64-pc-windows-msvc'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
-          if ($LASTEXITCODE -ne 0) { throw "Could not install the native GNU bridge toolchain." }
-          $gccTarget = & gcc -dumpmachine
-          if ($LASTEXITCODE -ne 0 -or $gccTarget.Trim() -ne 'x86_64-w64-mingw32') {
-            throw "The Windows x64 runner must provide native MinGW gcc for the embedded Go bridge."
-          }
-
-      - name: Provision verified ARM64 LLVM-MinGW OPKSSH bridge toolchain
-        if: matrix.rust_target == 'aarch64-pc-windows-msvc'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          rustup target add aarch64-pc-windows-gnullvm
-          if ($LASTEXITCODE -ne 0) { throw "Could not install the native ARM64 bridge target." }
-          $archiveName = 'llvm-mingw-20260616-ucrt-aarch64.zip'
-          $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
-          $expectedHash = '312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba'
-          Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/20260616/$archiveName" -OutFile $archivePath
-          if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
-            throw "The pinned ARM64 LLVM-MinGW archive failed SHA256 verification."
-          }
-          $extractRoot = Join-Path $env:RUNNER_TEMP 'opkssh-llvm-mingw'
-          Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
-          $compilerBin = Join-Path $extractRoot 'llvm-mingw-20260616-ucrt-aarch64/bin'
-          if (-not (Test-Path -LiteralPath (Join-Path $compilerBin 'aarch64-w64-mingw32-clang.exe'))) {
-            throw "Verified LLVM-MinGW archive is missing its native ARM64 compiler."
-          }
-          # Only the OPKSSH child build may put LLVM-MinGW on PATH. Its plain
-          # clang cannot discover MSVC headers when ring builds the Tauri app.
-          "SORNG_OPKSSH_LLVM_MINGW_BIN=$compilerBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Cache Cargo build
         if: matrix.platform != 'linux'
@@ -801,7 +749,6 @@ jobs:
           const bundle = {
             createUpdaterArtifacts: process.env.UPDATER_ENABLED === "true",
             resources: {
-              "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
               "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
               "../src/i18n/locales/": "locales/",
               "resources/native-runtime-licenses/": "native-runtime-licenses/",
@@ -1519,17 +1466,12 @@ jobs:
             fi
           done
 
-          opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
           locale_source="$GITHUB_WORKSPACE/src/i18n/locales"
-          test -d "$opkssh_source"
           test -d "$locale_source"
-          opkssh_file_count=$(find "$opkssh_source" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')
           locale_file_count=$(find "$locale_source" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')
           locale_total_file_count=$(find "$locale_source" -type f | wc -l | tr -d '[:space:]')
-          [[ "$opkssh_file_count" =~ ^[0-9]+$ ]]
           [[ "$locale_file_count" =~ ^[0-9]+$ ]]
           [[ "$locale_total_file_count" =~ ^[0-9]+$ ]]
-          test "$opkssh_file_count" -gt 0
           test "$locale_file_count" -gt 0
           test "$locale_file_count" -eq "$locale_total_file_count"
           mkdir -p "$payload/resources" "$payload/lib" "$preserved_bundles"
@@ -1538,7 +1480,6 @@ jobs:
           cef_payload=$(node -e 'const fs=require("node:fs"),path=require("node:path"); console.log(JSON.parse(fs.readFileSync(path.join(process.env.SORNG_CEF_OUTPUT,"plan.json"))).payload)')
           cp -a "$cef_payload/." "$payload/lib/"
           install -m 0755 "$openh264_source" "$payload/lib/libopenh264.so.8"
-          cp -a "$opkssh_source" "$payload/resources/opkssh"
           cp -a "$locale_source" "$payload/resources/locales"
           cp -a "$native_license_source" "$payload/resources/native-runtime-licenses"
 
@@ -1606,11 +1547,9 @@ jobs:
           test -f "$payload/lib/libopenh264.so.8"
           test ! -L "$payload/lib/libopenh264.so.8"
           cmp "$openh264_source" "$payload/lib/libopenh264.so.8"
-          test -d "$payload/resources/opkssh"
           test -d "$payload/resources/locales"
           test -s "$payload/resources/native-runtime-licenses/openh264.txt"
           cmp "$openh264_notice_source" "$payload/resources/native-runtime-licenses/openh264.txt"
-          test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -eq "$opkssh_file_count"
           test "$(find "$payload/resources/locales" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')" -eq "$locale_file_count"
           diff -u \
             <(cd "$locale_source" && sha256sum ./*.json | LC_ALL=C sort -k2) \
@@ -1733,8 +1672,6 @@ jobs:
           test ! -L "$payload/lib/libopenh264.so.8"
           cmp "$openh264_source" "$payload/lib/libopenh264.so.8"
           readelf -h "$payload/lib/libopenh264.so.8" | grep -F "Machine:" | grep -F "$expected_elf_machine"
-          test -d "$payload/resources/opkssh"
-          test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -gt 0
           test -d "$payload/resources/locales"
           test -s "$payload/resources/native-runtime-licenses/openh264.txt"
           cmp "$openh264_notice_source" "$payload/resources/native-runtime-licenses/openh264.txt"
@@ -1838,9 +1775,6 @@ jobs:
               test -s /app/share/metainfo/com.sortofremote.ng.metainfo.xml
               test -f /app/lib/sortOfRemoteNG/libopenh264.so.8
               test ! -L /app/lib/sortOfRemoteNG/libopenh264.so.8
-              test -d /app/bin/resources/opkssh
-              resource_count=$(find /app/bin/resources/opkssh -type f ! -name .gitkeep | wc -l)
-              test "$resource_count" -gt 0
               test -d /app/bin/resources/locales
               test -s /app/bin/resources/native-runtime-licenses/openh264.txt
               locale_count=$(find /app/bin/resources/locales -maxdepth 1 -type f -name "*.json" | wc -l)
@@ -2115,15 +2049,6 @@ jobs:
           }
           $expectedNativeLicenseHashes = @(Get-RelativeFileHashes -Root $nativeLicenseSource)
 
-          $opksshSource = "src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
-          $opksshFiles = @(Get-ChildItem -LiteralPath $opksshSource -Recurse -File)
-          if ($opksshFiles.Count -eq 0) {
-            throw "Portable OPKSSH resources were not staged at $opksshSource."
-          }
-          $expectedResourceHashes = @(Get-RelativeFileHashes -Root $opksshSource)
-          if ($expectedResourceHashes.Count -eq 0) {
-            throw "Portable OPKSSH resource manifest is empty."
-          }
           $viewerSource = "src-tauri/crates/sorng-file-viewer-host/bundle"
           $viewerBinaries = @(Get-ChildItem -LiteralPath $viewerSource -Recurse -File -Filter sorng-file-viewer-host.exe)
           if ($viewerBinaries.Count -ne 1 -or (Get-PeMachine -Path $viewerBinaries[0].FullName) -ne $expectedMachine) {
@@ -2166,7 +2091,6 @@ jobs:
 
           $resourceRoot = Join-Path $portableRoot "resources"
           New-Item -ItemType Directory -Path $resourceRoot | Out-Null
-          Copy-Item -LiteralPath $opksshSource -Destination (Join-Path $resourceRoot "opkssh") -Recurse
           Copy-Item -LiteralPath $viewerSource -Destination (Join-Path $resourceRoot "file-viewer") -Recurse
           Copy-Item -LiteralPath $localeSource -Destination (Join-Path $resourceRoot "locales") -Recurse
           Copy-Item -LiteralPath $nativeLicenseSource -Destination (Join-Path $resourceRoot "native-runtime-licenses") -Recurse
@@ -2194,10 +2118,6 @@ jobs:
             if (-not (Test-Path -LiteralPath (Join-Path $verificationRoot $requiredFile) -PathType Leaf)) {
               throw "Portable archive is missing required file $requiredFile."
             }
-          }
-          $verifiedResourceRoot = Join-Path $verificationRoot "resources/opkssh"
-          if (-not (Test-Path -LiteralPath $verifiedResourceRoot -PathType Container)) {
-            throw "Portable archive is missing the resources/opkssh directory."
           }
           $verifiedLocaleRoot = Join-Path $verificationRoot "resources/locales"
           $verifiedViewerRoot = Join-Path $verificationRoot "resources/file-viewer"
@@ -2255,17 +2175,6 @@ jobs:
           $verifiedMarkerHash = (Get-FileHash -LiteralPath $verifiedMarker -Algorithm SHA256).Hash
           if ($verifiedMarkerHash -ne $sourceMarkerHash) {
             throw "Extracted .portable marker does not match the staged marker."
-          }
-
-          $verifiedResourceHashes = @(Get-RelativeFileHashes -Root $verifiedResourceRoot)
-          $resourceDifference = @(
-            Compare-Object `
-              -ReferenceObject $expectedResourceHashes `
-              -DifferenceObject $verifiedResourceHashes
-          )
-          if ($resourceDifference.Count -ne 0) {
-            $resourceDifference | Format-Table | Out-String | Write-Host
-            throw "Extracted OPKSSH resources do not match the staged source manifest."
           }
 
           $verifiedLocaleHashes = @(Get-RelativeFileHashes -Root $verifiedLocaleRoot)
@@ -2340,7 +2249,6 @@ jobs:
               one "$bundle/flatpak" '*.flatpak' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.flatpak" >/dev/null
 
               expected_binary_path="/usr/bin/$LINUX_PACKAGE_MAIN_BINARY"
-              expected_resource_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/opkssh"
               expected_locale_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/locales"
               expected_openh264_path="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/libopenh264.so.8"
               expected_openh264_notice_path="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/native-runtime-licenses/openh264.txt"
@@ -2583,13 +2491,6 @@ jobs:
                 printf 'Verified %s OpenH264 payload (%s): %s\n' \
                   "$label" "$identity_mode" "$resolved_library"
               }
-              opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
-              expected_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-expected-opkssh-files.txt"
-              (
-                cd "$opkssh_source"
-                find . -type f ! -name .gitkeep -printf '%P\n' | LC_ALL=C sort
-              ) > "$expected_resource_files"
-              test -s "$expected_resource_files"
               locale_source="$GITHUB_WORKSPACE/src/i18n/locales"
               locale_file_count=$(find "$locale_source" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')
               locale_total_file_count=$(find "$locale_source" -type f | wc -l | tr -d '[:space:]')
@@ -2621,7 +2522,6 @@ jobs:
               grep -Fx "$expected_binary_path" "$rpm_file_list"
               test "$(grep -Fxc "$expected_openh264_path" "$rpm_file_list")" -eq 1
               test "$(grep -Fxc "$expected_openh264_notice_path" "$rpm_file_list")" -eq 1
-              grep -Eq "^${expected_resource_root}/.+[^/]$" "$rpm_file_list"
               grep -Eq "^${expected_locale_root}/.+\.json$" "$rpm_file_list"
               for icon_path in "${expected_linux_icon_paths[@]}"; do
                 grep -Fx "$icon_path" "$rpm_file_list"
@@ -2644,13 +2544,6 @@ jobs:
                 cmp "${expected_linux_icon_sources[$index]}" \
                   "$rpm_extract_root${expected_linux_icon_paths[$index]}"
               done
-              rpm_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-opkssh-files.txt"
-              rpm -qpvl "$rpm_source" |
-                awk -v prefix="${expected_resource_root}/" \
-                  '$1 ~ /^-/ && index($NF, prefix) == 1 { print substr($NF, length(prefix) + 1) }' |
-                grep -Ev '(^|/)\.gitkeep$' |
-                LC_ALL=C sort > "$rpm_resource_files"
-              diff -u "$expected_resource_files" "$rpm_resource_files"
               rpm_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-locale-files.txt"
               rpm -qpvl "$rpm_source" |
                 awk -v prefix="${expected_locale_root}/" \
@@ -2673,14 +2566,7 @@ jobs:
               grep -Fx "$expected_binary_path" "$deb_payload_files"
               test "$(grep -Fxc "$expected_openh264_path" "$deb_payload_files")" -eq 1
               test "$(grep -Fxc "$expected_openh264_notice_path" "$deb_payload_files")" -eq 1
-              grep -Eq "^${expected_resource_root}/.+[^/]$" "$deb_payload_files"
               grep -Eq "^${expected_locale_root}/.+\.json$" "$deb_payload_files"
-              deb_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-opkssh-files.txt"
-              relative_deb_files_under_exact_root "$expected_resource_root" \
-                < "$deb_payload_files" |
-                grep -Ev '(^|/)\.gitkeep$' |
-                LC_ALL=C sort > "$deb_resource_files"
-              diff -u "$expected_resource_files" "$deb_resource_files"
               deb_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-locale-files.txt"
               relative_deb_files_under_exact_root "$expected_locale_root" \
                 < "$deb_payload_files" |
@@ -2732,17 +2618,7 @@ jobs:
                 "$appimage_root$appimage_runtime_openh264_path" \
                 "AppImage linuxdeploy copy" \
                 strip-safe
-              test -d "$appimage_root$expected_resource_root"
               test -d "$appimage_root$expected_locale_root"
-              appimage_resource_count=$(find "$appimage_root$expected_resource_root" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')
-              [[ "$appimage_resource_count" =~ ^[0-9]+$ ]]
-              test "$appimage_resource_count" -gt 0
-              appimage_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-opkssh-files.txt"
-              (
-                cd "$appimage_root$expected_resource_root"
-                find . -type f ! -name .gitkeep -printf '%P\n' | LC_ALL=C sort
-              ) > "$appimage_resource_files"
-              diff -u "$expected_resource_files" "$appimage_resource_files"
               appimage_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-locale-files.txt"
               (
                 cd "$appimage_root$expected_locale_root"
@@ -2828,7 +2704,7 @@ jobs:
                 builder_version: process.env.FLATPAK_BUILDER_VERSION,
                 manifest_path: process.env.FLATPAK_MANIFEST,
                 manifest_sha256: process.env.FLATPAK_MANIFEST_SHA256,
-                resource_path: "/app/bin/resources/opkssh",
+                resource_path: "/app/bin/resources/locales",
               },
             };
           }

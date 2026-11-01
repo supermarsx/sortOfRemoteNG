@@ -147,7 +147,7 @@ function validateProvenance(assetDir, version, updaterMode, errors) {
         sdk_ref: `runtime/org.gnome.Sdk/${expectedArch}/50`,
         builder_version: "1.4.2",
         manifest_path: "packaging/flatpak/com.sortofremote.ng.yml",
-        resource_path: "/app/bin/resources/opkssh",
+        resource_path: "/app/bin/resources/locales",
       };
       const linuxPackages = provenance.linux_packages;
       if (!linuxPackages || typeof linuxPackages !== "object") {

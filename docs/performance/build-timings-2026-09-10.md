@@ -35,7 +35,7 @@ All successful phases in each mode produced the same EXE byte size within that m
 | Artifact subset                            | Static bytes | Dynamic bytes |
 | ------------------------------------------ | -----------: | ------------: |
 | `app.exe`                                  |  365,477,888 |   361,887,232 |
-| Existing OPKSSH vendor DLL, common to both |   16,454,656 |    16,454,656 |
+| Former vendor DLL, common to both          |   16,454,656 |    16,454,656 |
 | Nine additional staged native-runtime DLLs |            0 |    13,556,736 |
 | Sum of these artifacts only                |  381,932,544 |   391,898,624 |
 
@@ -50,7 +50,7 @@ The EXE shrank by 3,590,656 bytes (3.42 MiB), but this explicit EXE-plus-staged-
 - Unmodified snapshot `dev` profile: incremental enabled, first-party debug info off, unpacked split debug info, dependency optimization level 1, build-script level 2, named RDP/runtime packages level 2, existing per-package codegen overrides retained. This does not predict release/LTO results.
 - Fresh, separate `target-static` and `target-dynamic` directories. Cargo downloads and OS filesystem caches were warm; no `cargo clean`, user-target reuse, user-process termination or user-app restart.
 - Native prerequisite copies took 1.382 seconds including inventory/hashing. Static prerequisite metadata took 2.807 seconds. Dynamic prerequisite rebuilding/staging plus metadata took **252.019 seconds**, separate from all build columns. Relocating the existing cache actually rebuilt eight native packages; this was not free reuse of prebuilt binaries.
-- Pinned vcpkg baseline: `b9b668c1de09b065f53a3943939801b901b585ef`. Benchmark-local installed/staged outputs used the existing pinned vcpkg tool and warm downloads. The real OPKSSH vendor artifact was copied unchanged, not replaced by a stub.
+- Pinned vcpkg baseline: `b9b668c1de09b065f53a3943939801b901b585ef`. Benchmark-local installed/staged outputs used the existing pinned vcpkg tool and warm downloads. The then-required vendor artifact was copied unchanged, not replaced by a stub. That integration has since been removed.
 
 The dynamic triplet uses release native libraries with static CRT, whereas source-built native dependencies inherit their respective Cargo/cc settings. Dynamic versions include librdkafka 2.15.0, libssh2 1.11.1, OpenH264 2.6.0, OpenSSL 3.6.4, SQLite 3.53.4, lz4 1.10.0, zlib 1.3.2 and zstd 1.5.7. Static `rdkafka-sys` is `4.10.0+2.12.1`; its selected source-build flags include `cmake-build` and `libz`, while the dynamic vendor enables SSL/zstd and additional features. SQLite and OpenH264 also switch source/linkage paths, and the dynamic wrapper selects pkg-config libssh2. Native capability/version/optimization parity remains an outstanding prerequisite for a stricter linkage-only experiment.
 

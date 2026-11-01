@@ -51,9 +51,8 @@ FROM debian:bookworm-slim AS chef-base
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TERM_COLOR=never \
     RUST_BACKTRACE=1 \
-    PATH="/root/.cargo/bin:/usr/local/node/bin:/usr/local/go/bin:${PATH}" \
+    PATH="/root/.cargo/bin:/usr/local/node/bin:${PATH}" \
     NODE_VERSION=20.18.1 \
-    GO_VERSION=1.24.12 \
     RUSTUP_HOME=/root/.rustup \
     CARGO_HOME=/root/.cargo
 
@@ -92,18 +91,6 @@ RUN set -eux; \
     | tar -xJ --strip-components=1 -C /usr/local/node; \
     node --version; \
     npm --version
-
-# Go is required when the OPKSSH vendored wrapper can build the embedded bridge.
-RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "$arch" in \
-    amd64) go_arch=amd64 ;; \
-    arm64) go_arch=arm64 ;; \
-    *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz" \
-    | tar -xz -C /usr/local; \
-    go version
 
 # Rust stable toolchain (MSVC pinning only matters on Windows; on Linux we
 # use the default GNU target).
@@ -147,34 +134,21 @@ WORKDIR /build
 # --- Source copy ---
 COPY . .
 
-# Release builds include the OPKSSH vendored wrapper. Fetch the pinned upstream
-# source so the staged artifact can carry the embedded bridge when supported.
-RUN set -eux; \
-    mkdir -p /build/.ci/opkssh-source; \
-    git init /build/.ci/opkssh-source; \
-    git -C /build/.ci/opkssh-source remote add origin https://github.com/openpubkey/opkssh.git; \
-    git -C /build/.ci/opkssh-source fetch --depth 1 origin 193d79871f3bad3cd27cfb94734c265773a99c9b; \
-    git -C /build/.ci/opkssh-source checkout --detach FETCH_HEAD
-
 # Build the static frontend (Next.js `output: 'export'` → ./out/).
 RUN npm run build
-
-# Stage the native OPKSSH wrapper into the Tauri resource tree used by release builds.
-RUN SORNG_OPKSSH_VENDOR_CHECKOUT=/build/.ci/opkssh-source npm run stage:opkssh-vendor -- --release --enable
 
 # Build the Rust workspace release binary.
 # We build the `app` package (Tauri host) with the release/full feature set;
 # bare cargo builds intentionally use the lean developer profile.
-RUN SORNG_OPKSSH_VENDOR_CHECKOUT=/build/.ci/opkssh-source cargo build --release --manifest-path src-tauri/Cargo.toml -p app --no-default-features --features full \
+RUN cargo build --release --manifest-path src-tauri/Cargo.toml -p app --no-default-features --features full \
     && ls -la src-tauri/target/release/
 
 # Stage the distributable layout for the runtime image.
 RUN set -eux; \
-    mkdir -p /stage/opt/sortofremoteng/bin /stage/opt/sortofremoteng/frontend /stage/opt/sortofremoteng/opkssh; \
+    mkdir -p /stage/opt/sortofremoteng/bin /stage/opt/sortofremoteng/frontend; \
     cp src-tauri/target/release/app /stage/opt/sortofremoteng/bin/app; \
     strip /stage/opt/sortofremoteng/bin/app || true; \
     cp -r out/. /stage/opt/sortofremoteng/frontend/; \
-    cp -r src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/. /stage/opt/sortofremoteng/opkssh/; \
     cp license.md /stage/opt/sortofremoteng/LICENSE.md; \
     cp readme.md /stage/opt/sortofremoteng/README.md; \
     du -sh /stage/opt/sortofremoteng

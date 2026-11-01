@@ -57,7 +57,7 @@ function makeAssets(updaterMode) {
           builder_version: "1.4.2",
           manifest_path: "packaging/flatpak/com.sortofremote.ng.yml",
           manifest_sha256: "c".repeat(64),
-          resource_path: "/app/bin/resources/opkssh",
+          resource_path: "/app/bin/resources/locales",
         },
       };
     }
@@ -299,7 +299,7 @@ test("rejects Linux package architecture and Flatpak contract drift", () => {
     provenance.linux_packages.rpm.arch = "x86_64";
     provenance.linux_packages.flatpak.app_ref =
       "app/com.sortofremote.ng/x86_64/stable";
-    provenance.linux_packages.flatpak.resource_path = "/app/resources/opkssh";
+    provenance.linux_packages.flatpak.resource_path = "/app/resources/locales";
     writeFileSync(provenancePath, `${JSON.stringify(provenance)}\n`);
 
     const errors = validatePublishedReleaseAssets({
@@ -322,7 +322,7 @@ test("rejects Linux package architecture and Flatpak contract drift", () => {
     assert.ok(
       errors.some((error) =>
         error.includes(
-          "linux_packages.flatpak.resource_path must equal /app/bin/resources/opkssh",
+          "linux_packages.flatpak.resource_path must equal /app/bin/resources/locales",
         ),
       ),
     );

@@ -738,7 +738,7 @@ For release, Tauri first builds with `--no-bundle`; the driver verifies the CEF
 closure and then calls Tauri's **bundle-only** command. Tauri owns the final
 Info.plist, configured signing and notarization; existing bundle hooks remain.
 The published Windows executable is the genuine CEF bootstrap and its matching
-DLL is bundled alongside it. App resource maps, OPKSSH/file-viewer payloads,
+DLL is bundled alongside it. App resource maps, file-viewer payloads,
 native DLLs and locale JSONs are retained alongside CEF locale PAKs. Linux
 installs the public X11 launcher in `usr/bin` and its executable/helper/CEF data
 through Tauri resources in `usr/lib/PRODUCT_NAME`; both native binaries use
@@ -789,7 +789,7 @@ uses the earlier compiled frontend, not these later diagnostic UI edits.
 
 #### Normal build and packaging
 
-The later normal `npm run tauri:build` invocation retained frontend, OPKSSH and
+The later normal `npm run tauri:build` invocation retained frontend and
 file-viewer preparation hooks and selected the complete
 `full-windows-dynamic,native-browser` release configuration. After the short-cache
 repair, native compilation/linking finished successfully in **39m14s**. The real
@@ -921,7 +921,7 @@ the feature in isolation:
    selection. At that time, `native-build-env.mjs` required exactly `--features full`
    for its dynamic selector: appending `,native-browser` in that CLI argument
    alone would break it. Feature-family wiring avoids that mismatch. Keep all
-   frontend, OPKSSH, file-viewer and dynamic-native staging steps.
+   frontend, file-viewer and dynamic-native staging steps.
 3. **Windows build/bundle split:** in a disposable dedicated target directory,
    build the production-feature app library with `cargo rustc --lib --crate-type
 cdylib` and the same Tauri release asset/configuration flags as the normal
@@ -936,7 +936,7 @@ cdylib` and the same Tauri release asset/configuration flags as the normal
    EXE or ship the ordinary EXE instead of the bootstrap.
 4. **Windows resources:** merge every CEF payload file and locale into the
    generated `bundle.resources` map with executable-relative destinations. Also
-   retain the existing native DLL set, `opkssh/`, `file-viewer/`, app locale JSONs
+   retain the existing native DLL set, `file-viewer/`, app locale JSONs
    and license resources. CEF locale `.pak` files and app locale `.json` files
    must both survive; never replace the app locale directory wholesale. Sign
    only after the full payload exists; recheck final installed/portable copies.

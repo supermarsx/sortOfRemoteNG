@@ -402,7 +402,6 @@ export function openh264GithubEnvironment(environment, loaderVariable) {
 
 export function openh264NativeTauriConfig(platform, runtime) {
   const resources = {
-    "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
     "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
     "resources/native-runtime-licenses/": "native-runtime-licenses/",

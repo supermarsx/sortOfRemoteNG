@@ -365,12 +365,18 @@ test("reads PE imports and rejects unstaged or dynamic-CRT dependencies", (t) =>
   t.after(() => rmSync(fixtureRoot, { recursive: true, force: true }));
   const fixtureNative = path.join(fixtureRoot, "fixture-native.dll");
   const zlib = path.join(fixtureRoot, "z.dll");
-  writeFileSync(fixtureNative, peWithImports(0x8664, ["KERNEL32.dll", "z.dll"]));
+  writeFileSync(
+    fixtureNative,
+    peWithImports(0x8664, ["KERNEL32.dll", "z.dll"]),
+  );
   writeFileSync(zlib, peWithImports(0x8664, ["KERNEL32.dll"]));
 
   assert.deepEqual(readPeImports(fixtureNative), ["kernel32.dll", "z.dll"]);
   assert.deepEqual(
-    validateRuntimeDependencyClosure(fixtureRoot, ["fixture-native.dll", "z.dll"]),
+    validateRuntimeDependencyClosure(fixtureRoot, [
+      "fixture-native.dll",
+      "z.dll",
+    ]),
     {
       "fixture-native.dll": ["kernel32.dll", "z.dll"],
       "z.dll": ["kernel32.dll"],
@@ -380,13 +386,19 @@ test("reads PE imports and rejects unstaged or dynamic-CRT dependencies", (t) =>
   writeFileSync(fixtureNative, peWithImports(0x8664, ["VCRUNTIME140.dll"]));
   assert.throws(
     () =>
-      validateRuntimeDependencyClosure(fixtureRoot, ["fixture-native.dll", "z.dll"]),
+      validateRuntimeDependencyClosure(fixtureRoot, [
+        "fixture-native.dll",
+        "z.dll",
+      ]),
     /static MSVC runtime/,
   );
   writeFileSync(fixtureNative, peWithImports(0x8664, ["unexpected.dll"]));
   assert.throws(
     () =>
-      validateRuntimeDependencyClosure(fixtureRoot, ["fixture-native.dll", "z.dll"]),
+      validateRuntimeDependencyClosure(fixtureRoot, [
+        "fixture-native.dll",
+        "z.dll",
+      ]),
     /unstaged non-system dependency/,
   );
 });
@@ -396,12 +408,7 @@ test("pins the all-platform OpenH264 dependency and Windows-only native closure"
   assert.equal(nativeManifest["builtin-baseline"], VCPKG_BASELINE);
 
   const names = nativeManifest.dependencies.map(dependencyName).sort();
-  assert.deepEqual(names, [
-    "libssh2",
-    "openh264",
-    "pkgconf",
-    "sqlite3",
-  ]);
+  assert.deepEqual(names, ["libssh2", "openh264", "pkgconf", "sqlite3"]);
 
   const libssh2 = nativeManifest.dependencies.find(
     (dependency) => dependencyName(dependency) === "libssh2",
@@ -465,7 +472,11 @@ test("custom Windows triplets keep DLLs while preserving the bundled SQLite cont
 test("native staging no longer provisions or probes Kafka", () => {
   assert.doesNotMatch(nativeRuntimeStager, /kafka/i);
   assert.doesNotMatch(releaseWorkflow, /kafka/i);
-  assert.ok(!nativeManifest.dependencies.some((item) => dependencyName(item) === "librdkafka"));
+  assert.ok(
+    !nativeManifest.dependencies.some(
+      (item) => dependencyName(item) === "librdkafka",
+    ),
+  );
 });
 
 test("requires the exact architecture-specific native DLL closure", () => {
@@ -537,7 +548,6 @@ test("normal Windows Tauri builds select the staged dynamic feature set", () => 
     Object.keys(resources).sort(),
     [
       "../src/i18n/locales/",
-      "crates/sorng-opkssh-vendor/bundle/opkssh/",
       "crates/sorng-file-viewer-host/bundle/",
       "resources/native-runtime-licenses/",
       ...runtimeDlls.map((filename) => `resources/native-runtime/${filename}`),

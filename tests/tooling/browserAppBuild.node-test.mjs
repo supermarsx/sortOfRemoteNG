@@ -1168,7 +1168,10 @@ test("Windows/Linux bundler retains app resources and complete private CEF paylo
         beforeBundleCommand: "check-existing-resources",
       },
       bundle: {
-        resources: { "app-locales/": "locales/", "opkssh/": "opkssh/" },
+        resources: {
+          "app-locales/": "locales/",
+          "file-viewer/": "file-viewer/",
+        },
       },
     };
     const files = [

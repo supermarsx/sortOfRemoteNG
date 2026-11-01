@@ -61,20 +61,16 @@ otherwise the leased atomic push fails before either the branch or tag moves.
 5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`.
 6. Generate and validate `latest.json` in both signed and unsigned modes, and include it in every successfully promoted release. Signed mode references the verifiable updater payloads. Without the updater key, the feed declares `updater_signing: false`, carries empty signature strings, and links to the existing public installers only for discovery and manual installation. An updater password configured without its private key fails closed as an incomplete secret set. Once the latest public release has a signed updater feed, the signing key must remain available: promotion fails rather than replacing that usable signed feed with an unsigned discovery feed.
 
-The Windows x64 and ARM64 portable ZIPs are installer-free extract-and-run packages. Each archive contains the executable for its named architecture, the adjacent `.portable` runtime marker, and the bundled OPKSSH resources; release CI extracts the ZIP and verifies those files against the matching build inputs. Here, portable describes delivery without an installer; it does not promise that every setting, credential, cache, operating-system dependency, or updater state remains inside the extracted directory.
+The Windows x64 and ARM64 portable ZIPs are installer-free extract-and-run packages. Each archive contains the executable for its named architecture, the adjacent `.portable` runtime marker, and the bundled application resources; release CI extracts the ZIP and verifies those files against the matching build inputs. Here, portable describes delivery without an installer; it does not promise that every setting, credential, cache, operating-system dependency, or updater state remains inside the extracted directory.
 
 Portable ZIPs are part of the exact public asset contract and, like every release asset, are downloaded again by immutable release ID and checked against GitHub's SHA-256 digest before promotion. Per-target provenance records the build target and signing state; it does not duplicate the release-asset digest ledger.
 
-Linux AppImage, Debian, and RPM bundles use Tauri's native resource layout:
-`/usr/lib/sortOfRemoteNG/opkssh` under their package or mounted prefix. Release
-CI inspects all three formats and compares their packaged OPKSSH file lists with
-the staged source bundle. The single-file Flatpak bundles are built from the
+Linux AppImage, Debian, and RPM bundles use Tauri's native resource layout
+under their package or mounted prefix. The single-file Flatpak bundles are built from the
 same native executable on the corresponding x64 or ARM64 runner using the
 checked-in `packaging/flatpak/com.sortofremote.ng.yml` manifest,
 `org.gnome.Platform//50`, `org.gnome.Sdk//50`, and the pinned
-`flatpak-builder` 1.4.2 tool. The Flatpak keeps OPKSSH resources beside the
-executable at `/app/bin/resources/opkssh`, matching the runtime lookup rooted
-at `current_exe()`. Installing the `.flatpak` may download the pinned GNOME
+`flatpak-builder` 1.4.2 tool. Installing the `.flatpak` may download the pinned GNOME
 runtime from Flathub. RPM and Flatpak are public install artifacts; automatic
 updates are available only to signed AppImage installations on Linux. Flatpak
 builds intentionally do not check or install `latest.json` updates because

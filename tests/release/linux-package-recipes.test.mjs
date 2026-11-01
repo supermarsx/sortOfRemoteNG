@@ -28,13 +28,8 @@ test("Arch and Alpine recipes build the system-native Linux feature profile", ()
     assert.match(recipe, /LIBSSH2_SYS_USE_PKG_CONFIG=1/);
     assert.match(recipe, /OPENSSL_NO_VENDOR=1/);
     assert.match(recipe, /OPENH264_LIB_DIR=\/usr\/lib/);
-    assert.match(recipe, /SORNG_OPKSSH_VENDOR_CHECKOUT=/);
     assert.match(recipe, /npm ci --ignore-scripts/);
     assert.match(recipe, /cargo fetch --locked/);
-    assert.match(
-      recipe,
-      /stage-opkssh-vendor\.mjs --release --enable --frozen/,
-    );
     assert.match(
       recipe,
       /--config packaging\/linux\/tauri\.distro\.conf\.json/,
@@ -67,10 +62,6 @@ test("package checks enforce every requested shared native library", () => {
       assert.match(recipe, new RegExp(soname.replaceAll(".", "\\.")));
     }
     assert.match(recipe, /readelf -d/);
-    assert.match(recipe, /sorng_opkssh_vendor_abi_version/);
-    assert.match(recipe, /sorng_opkssh_vendor_embedded_runtime/);
-    assert.match(recipe, /sorng_opkssh_vendor_backend_callable/);
-    assert.match(recipe, /ctypes\.CDLL/);
   }
 });
 
@@ -98,7 +89,6 @@ test("recipes install the executable, desktop metadata, icons, and resources", (
     assert.match(recipe, /com\.sortofremote\.ng\.metainfo\.xml/);
     assert.match(recipe, /hicolor\/512x512\/apps\/com\.sortofremote\.ng\.png/);
     assert.match(recipe, /src\/i18n\/locales/);
-    assert.match(recipe, /sorng-opkssh-vendor\/bundle\/opkssh/);
   }
 });
 

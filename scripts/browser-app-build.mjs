@@ -745,7 +745,7 @@ async function copyTreeEntriesExclusive(source, destination) {
 }
 
 // Expand the resource MAP without dropping native libraries, app locale JSONs,
-// OPKSSH or the file-viewer host. CEF locale .pak files coexist with app JSONs.
+// the file-viewer host. CEF locale .pak files coexist with app JSONs.
 async function copyResources(resources, destination) {
   for (const [source, relative] of Object.entries(resources ?? {})) {
     if (/[?*\[\]]/.test(source))

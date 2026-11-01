@@ -25,8 +25,6 @@ members = [
   "crates/sorng-compression-vendor",
   "crates/sorng-file-viewer-host",
   "crates/sorng-browser-host",
-  "crates/sorng-opkssh",
-  "crates/sorng-opkssh-vendor",
   "crates/sorng-protocols",
   "crates/sorng-socket-transport",
   "crates/sorng-vpn",
@@ -301,7 +299,10 @@ defguard_wireguard_rs = "0.8"
 # ── Common utilities ──────────────────────────────────────────────────
 log = "0.4"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "json", "std"] }
+# `try_init` installs the global log::Log bridge only with `tracing-log`.
+# Native protocol diagnostics use log!, then the existing tracing safety filters
+# and encrypted writer; omitting this feature silently discards those records.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "json", "std", "tracing-log"] }
 tracing-test = "0.2"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -352,7 +353,6 @@ sorng-protocols = { path = "crates/sorng-protocols", default-features = false }
 sorng-app-startup-connectivity = { path = "crates/sorng-app-startup-connectivity", default-features = false }
 sorng-app-startup-state = { path = "crates/sorng-app-startup-state", default-features = false }
 sorng-core = { path = "crates/sorng-core" }
-sorng-opkssh = { path = "crates/sorng-opkssh", optional = true, default-features = false }
 sorng-commands-ops = { path = "crates/sorng-commands-ops", optional = true }
 sorng-commands-infra = { path = "crates/sorng-commands-infra", optional = true }
 sorng-commands-mail = { path = "crates/sorng-commands-mail", optional = true }
@@ -423,23 +423,22 @@ reqwest = { workspace = true }
 native-browser = ["sorng-browser-host/cef-host"]
 # Full functionality is the default. Reduced builds must explicitly opt out.
 default = ["full"]
-lean = ["opkssh", "protocol-serial-dynamic"]
-full = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+lean = ["protocol-serial-dynamic"]
+full = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "logs-json", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 # Normal `npm run tauri:build` selects this feature set only on Windows after
 # staging the pinned DLL closure. `full` remains portable for non-Windows and
 # callers that intentionally want bundled SQLite.
-full-windows-dynamic = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite-dynamic", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+full-windows-dynamic = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite-dynamic", "logs-json", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 # Linux and macOS local production builds retain the normal platform-native
 # SQLite choices while replacing source-backed OpenH264 with the staged,
 # required shared library used by release CI.
-full-unix-dynamic = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+full-unix-dynamic = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "logs-json", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 # Distribution-native Linux packages use the system copies of every native
 # library that has a supported shared-link contract. OpenH264 remains a hard
 # ELF import through `rdp-software-decode-dynamic`; libssh2 is forced through
 # pkg-config by the package recipe's `LIBSSH2_SYS_USE_PKG_CONFIG=1` environment.
-full-linux-system = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite-dynamic", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
-# Development has the same capabilities as the default binary, including the
-# OPKSSH wrapper.
+full-linux-system = ["native-browser", "cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite-dynamic", "logs-json", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-software-decode-dynamic", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
+# Development has the same capabilities as the default binary.
 # Platform release bundles still select their exact linkage lists explicitly
 # with --no-default-features; never combine incompatible native link variants.
 full-dev = ["full"]
@@ -453,12 +452,6 @@ db-postgres = ["sorng-app-domains/db-postgres", "sorng-app-startup-state/db-post
 db-redis = ["sorng-app-domains/db-redis", "sorng-app-startup-state/db-redis", "sorng-commands-core/db-redis", "sorng-commands-sessions/db-redis"]
 db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite", "sorng-commands-core/db-sqlite", "sorng-commands-sessions/db-sqlite"]
 db-sqlite-dynamic = ["sorng-app-domains/db-sqlite-dynamic", "sorng-app-startup-state/db-sqlite-dynamic", "sorng-commands-core/db-sqlite-dynamic", "sorng-commands-sessions/db-sqlite-dynamic"]
-# OPKSSH wrapper linkage for release builds. The native bridge embeds when a
-# pinned OPKSSH checkout and Go toolchain are available; otherwise the wrapper
-# remains metadata-only and runtime status keeps CLI fallback explicit. Tauri
-# and Docker production builds stage the wrapper artifact by default.
-opkssh = ["dep:sorng-opkssh", "sorng-app-startup-state/opkssh", "sorng-commands-core/opkssh"]
-opkssh-vendored-wrapper = ["opkssh", "sorng-opkssh/vendored-wrapper"]
 ops = ["sorng-app-domains/ops", "sorng-app-startup-state/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
 platform = ["sorng-app-domains/platform", "sorng-app-startup-state/platform", "sorng-commands-core/platform", "dep:sorng-commands-platform"]
 rdp = ["sorng-app-domains/rdp", "sorng-app-startup-connectivity/rdp", "sorng-commands-core/rdp"]

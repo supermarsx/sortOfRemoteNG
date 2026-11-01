@@ -94,12 +94,17 @@ test("all fourteen explicit RDP pixel/protocol/decoder hot paths stay opt2 in de
         profile(key)["opt-level"] === 2,
     )
     .map((key) => key.slice("profile.dev.package.".length));
-  assert.deepEqual(actual.sort(), [...runtimePackages, ...databasePackages].sort());
+  assert.deepEqual(
+    actual.sort(),
+    [...runtimePackages, ...databasePackages].sort(),
+  );
 });
 
 test("database integrity and owner codec hot paths stay optimized without optimizing all dependencies", () => {
   for (const name of databasePackages)
-    assert.deepEqual(profile(`profile.dev.package.${name}`), { "opt-level": 2 });
+    assert.deepEqual(profile(`profile.dev.package.${name}`), {
+      "opt-level": 2,
+    });
   assert.equal(profile('profile.dev.package."*"')["opt-level"], 0);
 });
 
@@ -174,7 +179,6 @@ test("full native feature defaults and full-dev alias stay full, never silently 
     "db-redis",
     "db-sqlite",
     "logs-json",
-    "opkssh-vendored-wrapper",
     "ops",
     "platform",
     "protocol-serial-dynamic",

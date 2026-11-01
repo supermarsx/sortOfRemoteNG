@@ -86,7 +86,6 @@ import {
  * @property {Array<{ path: string, exists: boolean, type: string | null, mtimeMs: number | null }>} webview2Storage
  * @property {{ roaming: string[] | null, local: string[] | null }} knownFolderNames
  * @property {MetadataSnapshot} ssh
- * @property {MetadataSnapshot} opk
  * @property {string | null} knownHostsSha256
  * @property {{ supported: boolean, entries: Array<{ target: string, type: number, lastWritten: string }> }} credentials
  * @property {{ supported: boolean, names: string[] }} runValues
@@ -372,7 +371,6 @@ export function snapshotLocations({
     e2eLocal: path.join(knownFolders.local, identifier),
     sshDir,
     knownHosts: path.join(sshDir, "known_hosts"),
-    opkDir: path.join(knownFolders.home, ".opk"),
   };
 }
 
@@ -670,7 +668,6 @@ export function captureProductionSnapshot({
       local: directoryNames(fs, locations.localParent),
     },
     ssh: snapshotFileMetadata(locations.sshDir, { depth: 1, fs, maxEntries }),
-    opk: snapshotFileMetadata(locations.opkDir, { depth: 1, fs, maxEntries }),
     knownHostsSha256: hashFileIfExists(locations.knownHosts, { fs }),
     credentials: adapter.listProductionCredentials(),
     runValues: adapter.listRunValueNames(),
@@ -692,7 +689,6 @@ export function summarizeSnapshot(snapshot) {
     webview2StorageDirs: snapshot.webview2Storage.filter(({ exists }) => exists)
       .length,
     sshEntries: snapshot.ssh.exists ? snapshot.ssh.entries.length : null,
-    opkEntries: snapshot.opk.exists ? snapshot.opk.entries.length : null,
     knownHosts: snapshot.knownHostsSha256 ? "hashed" : "absent",
     credentials: snapshot.credentials.supported
       ? snapshot.credentials.entries.length
@@ -710,7 +706,7 @@ export function summarizeSnapshot(snapshot) {
  */
 export function snapshotGaps(snapshot) {
   const gaps = [];
-  for (const section of ["appData", "localData", "ssh", "opk"]) {
+  for (const section of ["appData", "localData", "ssh"]) {
     if (snapshot[section].truncated) {
       gaps.push(`${section} listing was truncated`);
     }
@@ -777,7 +773,7 @@ export function diffSnapshots(
   const record = (section, kind, name, detail = {}) =>
     changes.push({ section, kind, path: name, ...detail });
 
-  for (const section of ["appData", "localData", "ssh", "opk"]) {
+  for (const section of ["appData", "localData", "ssh"]) {
     diffMetadata(section, before[section], after[section], record);
   }
 
@@ -1777,7 +1773,7 @@ export const CORE_PHASES = Object.freeze([
       return {
         summary:
           production.evidence.production === "unchanged"
-            ? "production snapshot, EBWebView storage mtimes, credentials, known_hosts, Run values, ~/.ssh and ~/.opk unchanged"
+            ? "production snapshot, EBWebView storage mtimes, credentials, known_hosts, Run values, ~/.ssh unchanged"
             : "production changed",
         evidence: production.evidence,
         problems: production.problems,

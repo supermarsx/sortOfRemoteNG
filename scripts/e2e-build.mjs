@@ -46,17 +46,9 @@ export const DEFAULT_E2E_TARGET_DIR = path.join(".artifacts", "e2e", "target");
 export const E2E_BIN_ROOT = path.join(".artifacts", "e2e", "bin");
 export const E2E_CARGO_TARGET_DIR_ENV = "SORNG_E2E_CARGO_TARGET_DIR";
 /** Runtime resource folders Tauri stages beside the executable. */
-export const RUNTIME_RESOURCE_DIRS = Object.freeze([
-  "opkssh",
-  "file-viewer",
-  "locales",
-]);
+export const RUNTIME_RESOURCE_DIRS = Object.freeze(["file-viewer", "locales"]);
 /** Resource sources that only the production `beforeBuildCommand` stages. */
 export const STAGED_RESOURCE_SOURCES = Object.freeze([
-  {
-    source: path.join("src-tauri", "crates", "sorng-opkssh-vendor", "bundle"),
-    hint: "npm run stage:opkssh-vendor -- --release --enable",
-  },
   {
     source: path.join(
       "src-tauri",

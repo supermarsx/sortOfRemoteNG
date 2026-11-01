@@ -34,7 +34,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "windows-arm-native-compile.yml": 1,
   "windows-x64-arm-clang-slice.yml": 1,
   "windows-x64-arm-toolchain.yml": 1,
-  "ci.yml": 10,
+  "ci.yml": 9,
   "coverage.yml": 1,
   "docs-pages.yml": 1,
   "e2e.yml": 1,
@@ -52,20 +52,6 @@ const RUST_TOOLCHAIN_EXCEPTIONS = [
     count: 2,
     reason:
       "Windows release matrix: hosted 1.97.1 produced an app archive MSVC rejected with LNK4003 (6d9c7c43)",
-  },
-  {
-    workflow: "ci.yml",
-    toolchain: "stable-x86_64-pc-windows-gnu",
-    count: 1,
-    reason:
-      "OPKSSH GNU bridge toolchain named by scripts/opkssh-vendor-artifact.mjs",
-  },
-  {
-    workflow: "release.yml",
-    toolchain: "stable-x86_64-pc-windows-gnu",
-    count: 1,
-    reason:
-      "OPKSSH GNU bridge toolchain named by scripts/opkssh-vendor-artifact.mjs",
   },
 ];
 

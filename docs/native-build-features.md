@@ -16,7 +16,7 @@ npm run tauri:dev:no-watch
 
 This is shorthand for `npm run tauri dev -- --no-watch`. The initial incremental native build still runs, and the frontend dev server keeps hot reload enabled. Restart the command to pick up Rust or native configuration changes. Other launch options can be combined, for example `npm run tauri:dev:no-watch -- --isolated-profile`.
 
-`default = ["full"]`; `full-dev` is a compatibility alias for `full`. This includes operations, platform integrations, cloud, collaboration, all six database drivers, RDP and its supported decoders/snapshots, serial, OPKSSH, certificate details/authentication, script engine and SoftEther. Security, database ownership, permissions and explicit website automation consent are unchanged. Host-specific APIs still require their supported OS, drivers, services and tools.
+`default = ["full"]`; `full-dev` is a compatibility alias for `full`. This includes operations, platform integrations, cloud, collaboration, all six database drivers, RDP and its supported decoders/snapshots, serial, certificate details/authentication, script engine and SoftEther. Security, database ownership, permissions and explicit website automation consent are unchanged. Host-specific APIs still require their supported OS, drivers, services and tools.
 
 Reduced builds are explicit:
 
@@ -66,11 +66,3 @@ Unset any global `CARGO_INCREMENTAL` or `CARGO_BUILD_INCREMENTAL` override befor
 Rust classifies MSVC's English `Creating library ...` output as informational. If Visual Studio has only a non-English C++ language pack, `link.exe` can fall back to localized output even though rustc requests `VSLANG=1033`. For example, `warning: linker stdout: Criando biblioteca ... e objeto ...` is a library/export-file creation message, not an unresolved-symbol error.
 
 Add the English language pack to the **Visual Studio Build Tools installation containing the C++ compiler**, then rebuild affected outputs. This is a machine setup change, not an application dependency. Do not disable `linker_messages` globally: genuine linker warnings must remain visible. See [Rust's linker-output classification](https://github.com/rust-lang/rust/blob/1.98.0/compiler/rustc_codegen_ssa/src/back/link.rs) and [localization setup](https://github.com/rust-lang/rust/blob/1.98.0/compiler/rustc_codegen_ssa/src/back/linker.rs).
-
-## OPKSSH runtime prerequisites
-
-The default includes `opkssh-vendored-wrapper`. Managed development now verifies/stages its real embedded runtime before native launch; production staging uses the same checks. On Windows/MSVC, the statically linked Rust wrapper is deliberately metadata-only: the application dynamically loads a separately staged GNU bridge. On Windows x64, a healthy staged or cached bridge is reused; otherwise `npm run vendor:opkssh:build -- --skip-stage` builds it using the documented Go/GNU-toolchain and pinned-upstream prerequisites. Missing prerequisites fail visibly rather than replacing the bridge with a metadata-only DLL. No toolchain is installed automatically.
-
-For explicit CLI-only development/build, set `SORNG_OPKSSH_VENDOR_DISABLE_BRIDGE=1`. This skips the embedded builder and removes only the selected target's staged bridge; the supported OPKSSH CLI must be installed separately. Other platform bundles are preserved. Direct Cargo builds do not run the Node preflight: run `npm run stage:opkssh-vendor` first if embedded OPKSSH is needed.
-
-Windows ARM64 uses a native ARM64 Rust host, an installed `aarch64-pc-windows-gnullvm` target, Go and LLVM-MinGW. Staging selects this builder for the ARM64 MSVC application; it never builds an x64 substitute. A matching prebuilt bridge can instead be supplied through the absolute `SORNG_OPKSSH_VENDOR_ARTIFACT` path. Staging checks PE architecture, all eight exported ABI entry points and embedded-runtime markers. ARM64 runtime proof requires a native ARM64 runner, and neither compilation nor these checks are live-provider authentication proof. See the pinned LLVM-MinGW download/checksum and [OPKSSH bridge instructions](opkssh-vendor-bridge.md).

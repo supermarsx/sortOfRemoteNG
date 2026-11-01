@@ -57,11 +57,6 @@ In text: **views → typed wrappers → registered IPC → native services**. Pr
 
 These rules explain the conservative labels in the [protocol matrix]({{ '/protocols/' | relative_url }}).
 
-## Architectural records
-
-- [OPKSSH in-process boundary and dylink decision]({{ '/architecture/opkssh-dylink-adr/' | relative_url }}) records why the project keeps a narrow library seam and CLI fallback without prematurely freezing a shared-library ABI.
-- [OPKSSH library contract]({{ '/architecture/opkssh-lib-contract/' | relative_url }}) describes the wrapper-facing contract and ownership boundaries.
-
 ## Adding a cross-boundary feature
 
 Start with the smallest typed contract that represents the user workflow. Place input validation near the privileged boundary, keep protocol implementation in its domain crate, register only the commands required by the UI, and add tests at both the normalization and native boundary when behavior spans them.

@@ -576,7 +576,7 @@ const RESOLVER_CRATES = ["sorng-ssh", "sorng-sftp", "sorng-scp"] as const;
 const isWorkspaceSshLiteral = ({ kind, value }: RustLiteral): boolean =>
   kind === "string" &&
   !/\s/.test(value) &&
-  (/(^|[/\\])\.(ssh|opk)([/\\]|$)/.test(value) ||
+  (/(^|[/\\])\.ssh([/\\]|$)/.test(value) ||
     /(^|[/\\])known_hosts$/.test(value));
 
 const resolvesHomeInProcess = (source: RustSource): boolean =>
@@ -607,128 +607,6 @@ const EXTERNAL_OPENSSH_TOOLS = [
   { file: "crates/sorng-x2go/src/x2go/session.rs", runs: "x2go client" },
   { file: "crates/sorng-nx/src/nx/proxy.rs", runs: "nxproxy over ssh" },
 ] as const;
-
-// ── opkssh home rules ───────────────────────────────────────────────────────
-
-// sorng-opkssh does not depend on sorng-core, so it carries its own set-once
-// home (`sorng_opkssh::service`). Its `~/.opk` and `~/.ssh` paths start only
-// from `opk_home(dirs::home_dir)`, `opk_home_with(<OpkHome>, dirs::home_dir)`
-// or, for the library login's explicit paths, `wrapper_home_override(<OpkHome>,
-// override_home_dir)`, where an installed isolated home beats HOME/USERPROFILE.
-const OPK_RESOLVER_CALL = String.raw`\b(?:crate::service::)?(?:opk_home\s*\(\s*dirs::home_dir|opk_home_with\s*\(\s*[A-Za-z_]\w*(?:\s*\(\s*\))?\s*,\s*dirs::home_dir|wrapper_home_override\s*\(\s*[A-Za-z_]\w*(?:\s*\(\s*\))?\s*,\s*override_home_dir)\s*,?\s*\)`;
-
-const isOpkHomeLiteral = ({ kind, value }: RustLiteral): boolean =>
-  kind === "string" &&
-  !/\s/.test(value) &&
-  /(^|[/\\])\.(ssh|opk)([/\\]|$)/.test(value);
-
-/** Documented exceptions: `file` + function, with why no home is built. */
-const OPKSSH_ALLOWED = {
-  osHome: [
-    {
-      file: "crates/sorng-opkssh/src/binary.rs",
-      fn: "find_binary",
-      why: "read-only discovery of opkssh.exe; writes no state",
-    },
-  ],
-  sshLiteral: [
-    {
-      file: "crates/sorng-opkssh/src/login.rs",
-      fn: "extract_path_from_line",
-      why: "recognises a key path the CLI printed; builds no path",
-    },
-  ],
-} as const;
-
-const allowedIn = (
-  entries: ReadonlyArray<{ file: string; fn: string }>,
-  source: RustSource,
-  span: FunctionSpan | undefined,
-): boolean =>
-  span !== undefined &&
-  entries.some((entry) => entry.file === source.path && entry.fn === span.name);
-
-function opksshHomeViolations(crate: RustSource[]): string[] {
-  const violations: string[] = [];
-  const resolver = new RegExp(OPK_RESOLVER_CALL, "g");
-  const service = "crates/sorng-opkssh/src/service.rs";
-  for (const source of crate) {
-    const where = (offset: number) =>
-      `${source.path}:${lineOf(source, offset)}`;
-    const outsideResolver = source.tokens.replace(resolver, (call) =>
-      blank(call),
-    );
-    for (const match of outsideResolver.matchAll(
-      /\b(?:dirs|env)::home_dir\b|(?<![\w:])home_dir\s*\(/g,
-    )) {
-      const span = enclosingFunction(source, match.index ?? 0);
-      const builds =
-        span !== undefined &&
-        source.literals.some(
-          (literal) =>
-            isOpkHomeLiteral(literal) &&
-            span.bodyStart < literal.start &&
-            literal.start < span.bodyEnd,
-        );
-      if (!allowedIn(OPKSSH_ALLOWED.osHome, source, span) || builds) {
-        violations.push(
-          `${where(match.index ?? 0)}: OS home outside opk_home(dirs::home_dir)`,
-        );
-      }
-    }
-    for (const literal of source.literals) {
-      const span = enclosingFunction(source, literal.start);
-      if (HOME_ENV_VARS.has(literal.value)) {
-        const readsEnvHome =
-          source.path === service && span?.name === "override_home_dir";
-        const setsChildEnv =
-          source.path === "crates/sorng-opkssh/src/login.rs" &&
-          span?.name === "login_command" &&
-          /\.env(?:_remove)?\s*\(\s*$/.test(
-            source.tokens.slice(0, literal.start),
-          );
-        if (!readsEnvHome && !setsChildEnv) {
-          violations.push(
-            `${where(literal.start)}: ${literal.value} is only read by override_home_dir or set on the login child`,
-          );
-        }
-      } else if (
-        isOpkHomeLiteral(literal) &&
-        !allowedIn(OPKSSH_ALLOWED.sshLiteral, source, span) &&
-        (!span || !isResolverFed(span, source, crate, OPK_RESOLVER_CALL))
-      ) {
-        violations.push(
-          `${where(literal.start)}: "${literal.value}" is built outside a function fed by the opkssh home`,
-        );
-      }
-    }
-    // The environment home is only ever an input to wrapper_home_override,
-    // after an installed isolated home.
-    const envHomeUses = [...source.tokens.matchAll(/\boverride_home_dir\b/g)];
-    const guardedUses = [...source.tokens.matchAll(resolver)].filter((call) =>
-      /override_home_dir/.test(call[0]),
-    ).length;
-    const definitions = /\bfn\s+override_home_dir\b/.test(source.tokens)
-      ? 1
-      : 0;
-    if (envHomeUses.length - definitions !== guardedUses) {
-      violations.push(
-        `${source.path}: override_home_dir used outside wrapper_home_override`,
-      );
-    }
-    // Only the service's set-once slot decides which home is in effect.
-    if (source.path !== service) {
-      for (const match of source.tokens.matchAll(
-        /\bOpkHome::(?:Os|Isolated)\b/g,
-      )) {
-        violations.push(
-          `${where(match.index ?? 0)}: OpkHome is constructed outside the service slot`,
-        );
-      }
-    }
-  }
-  return violations;
-}
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
@@ -1008,10 +886,8 @@ describe("SSH, SFTP and SCP resolve SSH-home paths only through sorng_core::ssh_
 });
 
 describe("no other crate builds an SSH-home path in process", () => {
-  it("pairs an in-process home with .ssh, .opk or known_hosts only in the resolver crates and opkssh", () => {
-    const exempt = [...RESOLVER_CRATES, "sorng-opkssh"].map(
-      (crate) => `crates/${crate}/`,
-    );
+  it("pairs an in-process home with .ssh or known_hosts only in the resolver crates", () => {
+    const exempt = RESOLVER_CRATES.map((crate) => `crates/${crate}/`);
     const offenders = workspaceRustSources()
       .filter(
         (source) => !exempt.some((prefix) => source.path.startsWith(prefix)),
@@ -1037,129 +913,6 @@ describe("no other crate builds an SSH-home path in process", () => {
       expect(buildsSshHomePath(loadRust(file))).toBe(false);
     },
   );
-});
-
-describe("opkssh resolves ~/.opk and ~/.ssh only through its installed home", () => {
-  const opksshCrate = () => crateSources("sorng-opkssh");
-
-  it("has no bypass", () => {
-    expect(opksshHomeViolations(opksshCrate())).toEqual([]);
-  });
-
-  it("every documented exception still exists", () => {
-    const entries = [...OPKSSH_ALLOWED.osHome, ...OPKSSH_ALLOWED.sshLiteral];
-    for (const entry of entries) {
-      const names = functionSpans(loadRust(entry.file)).map(
-        (span) => span.name,
-      );
-      expect(names, `${entry.file}: ${entry.why}`).toContain(entry.fn);
-    }
-  });
-
-  it("exposes the install and getter the app glue calls", () => {
-    const service = loadRust("crates/sorng-opkssh/src/service.rs").tokens;
-    expect(service).toMatch(
-      /\bpub\s+fn\s+install_isolated_home\s*\(\s*path\s*:\s*PathBuf\s*\)\s*->\s*Result<\(\),\s*String>/,
-    );
-    expect(service).toMatch(
-      /\bpub\s+fn\s+isolated_home\s*\(\s*\)\s*->\s*Option<&'static\s+Path>/,
-    );
-  });
-
-  const mutate = (path: string, edit: (source: string) => string) => {
-    const original = readFileSync(join(tauriRoot, path), "utf8");
-    const mutated = edit(original);
-    expect(mutated, `${path} mutation must apply`).not.toBe(original);
-    return opksshHomeViolations(
-      opksshCrate().map((source) =>
-        source.path === path ? prepareRust(path, mutated) : source,
-      ),
-    );
-  };
-
-  it.each([
-    [
-      "the key scan reads the OS home",
-      "crates/sorng-opkssh/src/keys.rs",
-      (source: string) =>
-        source.replace(
-          "ssh_dir_in(crate::service::opk_home(dirs::home_dir))",
-          "ssh_dir_in(dirs::home_dir())",
-        ),
-    ],
-    [
-      "the client config reads the OS home",
-      "crates/sorng-opkssh/src/providers.rs",
-      (source: string) =>
-        source.replace(
-          "config_dir_in(crate::service::opk_home(dirs::home_dir))",
-          "config_dir_in(dirs::home_dir())",
-        ),
-    ],
-    [
-      "the library login prefers the environment home again",
-      "crates/sorng-opkssh/src/service.rs",
-      (source: string) =>
-        source.replace(
-          /wrapper_home_override\(opk_home_state\(\), override_home_dir\)\?/,
-          "override_home_dir()",
-        ),
-    ],
-    [
-      "a new function reads USERPROFILE",
-      "crates/sorng-opkssh/src/keys.rs",
-      (source: string) =>
-        `${source}\nfn profile_ssh_dir() -> Option<PathBuf> {\n    std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".ssh"))\n}\n`,
-    ],
-    [
-      "another module picks the OS home itself",
-      "crates/sorng-opkssh/src/login.rs",
-      (source: string) =>
-        `${source}\nfn force_os_home() -> Option<PathBuf> {\n    crate::service::opk_home_with(crate::service::OpkHome::Os, dirs::home_dir)\n}\n`,
-    ],
-  ])("detects a regression: %s", (_, path, edit) => {
-    expect(mutate(path, edit)).not.toEqual([]);
-  });
-});
-
-describe("the vendored opkssh bridge never configures ~/.ssh/config", () => {
-  // Go's `LoginCmd.ConfigureArg` writes `~/.ssh/config` through
-  // `os.UserHomeDir()`, which no Rust-side home can redirect.
-  const bridge = () =>
-    readFileSync(
-      join(tauriRoot, "crates/sorng-opkssh-vendor/build.rs"),
-      "utf8",
-    );
-
-  it("has no request field or login construction that sets ConfigureArg", () => {
-    const source = bridge();
-    const request = /type loginRequestModel struct \{([^}]*)\}/.exec(source);
-    expect(request).not.toBeNull();
-    expect(request?.[1]).not.toMatch(/configure/i);
-
-    const constructions = [...source.matchAll(/&LoginCmd\{([^}]*)\}/g)];
-    expect(constructions.length).toBeGreaterThan(0);
-    const setters = constructions.filter((match) =>
-      /\bConfigureArg\s*:/.test(match[1]),
-    );
-    // Only the upstream `NewLogin` constructor, which the bridge never calls.
-    expect(setters).toHaveLength(1);
-    expect(source.slice(0, setters[0].index)).toMatch(
-      /func NewLogin\([^{]*\{\s*return\s*$/,
-    );
-    expect([...source.matchAll(/\bNewLogin\(/g)]).toHaveLength(1);
-  });
-
-  it("no Rust source names the configure flag", () => {
-    for (const crate of ["sorng-opkssh", "sorng-opkssh-vendor"]) {
-      for (const source of crateSources(crate)) {
-        const named = source.literals.filter((literal) =>
-          /^(--)?configure(Arg)?$/i.test(literal.value),
-        );
-        expect(named, source.path).toEqual([]);
-      }
-    }
-  });
 });
 
 /** Where the app glue installs and verifies the SSH homes (addendum §2.4). */
@@ -1188,8 +941,6 @@ function appGlueViolations(profile: RustSource): string[] {
   const installs = {
     "sorng_core::ssh_home::install_isolated_home":
       /\bsorng_core::ssh_home::install_isolated_home\s*\(/,
-    "sorng_opkssh::service::install_isolated_home":
-      /\bsorng_opkssh::service::install_isolated_home\s*\(/,
   };
   for (const [name, pattern] of Object.entries(installs)) {
     const at = offsetOf(pattern);
@@ -1211,32 +962,7 @@ function appGlueViolations(profile: RustSource): string[] {
     }
   }
 
-  const opkssh = offsetOf(
-    installs["sorng_opkssh::service::install_isolated_home"],
-  );
-  const gated =
-    opkssh >= 0 &&
-    [
-      ...profile.code.matchAll(
-        /#\s*\[\s*cfg\s*\(\s*feature\s*=\s*"opkssh"\s*\)\s*\]/g,
-      ),
-    ].some((gate) => {
-      const end = (gate.index ?? 0) + gate[0].length;
-      return (
-        end <= opkssh &&
-        itemEnd(profile.tokens, skipAttributes(profile.tokens, end)) > opkssh
-      );
-    });
-  if (opkssh >= 0 && !gated) {
-    violations.push(
-      'sorng_opkssh::service::install_isolated_home is not gated on #[cfg(feature = "opkssh")]',
-    );
-  }
-
-  for (const getter of [
-    /\bsorng_core::ssh_home::isolated_home\s*\(\s*\)/,
-    /\bsorng_opkssh::service::isolated_home\s*\(\s*\)/,
-  ]) {
+  for (const getter of [/\bsorng_core::ssh_home::isolated_home\s*\(\s*\)/]) {
     if (!getter.test(profile.tokens)) {
       violations.push(`verify_runtime never reads ${getter.source}`);
     }
@@ -1256,12 +982,10 @@ describe("the app installs the SSH homes before anything connects", () => {
        }
        fn install_ssh_homes(home: PathBuf) -> Result<(), String> {
          sorng_core::ssh_home::install_isolated_home(home.clone())?;
-         #[cfg(feature = "opkssh")]
-         sorng_opkssh::service::install_isolated_home(home)?;
          Ok(())
        }
        fn verify_runtime() {
-         ${verify ? 'sorng_core::ssh_home::isolated_home(); #[cfg(feature = "opkssh")] sorng_opkssh::service::isolated_home();' : ""}
+         ${verify ? "sorng_core::ssh_home::isolated_home();" : ""}
        }`,
     );
 
@@ -1269,8 +993,8 @@ describe("the app installs the SSH homes before anything connects", () => {
     expect(appGlueViolations(glue("install_ssh_homes(home)?;"))).toEqual([]);
   });
 
-  it("rejects glue that is missing, early, ungated or unverified", () => {
-    expect(appGlueViolations(glue(""))).toHaveLength(2);
+  it("rejects glue that is missing, early or unverified", () => {
+    expect(appGlueViolations(glue(""))).toHaveLength(1);
     expect(
       appGlueViolations(
         prepareRust(
@@ -1285,24 +1009,11 @@ describe("the app installs the SSH homes before anything connects", () => {
       ),
     ).not.toEqual([]);
     expect(
-      appGlueViolations(
-        prepareRust(
-          "src/app_profile.rs",
-          glue("install_ssh_homes(home)?;").code.replace(
-            '#[cfg(feature = "opkssh")]\n         sorng_opkssh',
-            "sorng_opkssh",
-          ),
-        ),
-      ),
-    ).toEqual([
-      'sorng_opkssh::service::install_isolated_home is not gated on #[cfg(feature = "opkssh")]',
-    ]);
-    expect(
       appGlueViolations(glue("install_ssh_homes(home)?;", false)),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
-  it("src/app_profile.rs installs and verifies both SSH homes", () => {
+  it("src/app_profile.rs installs and verifies the SSH home", () => {
     expect(appGlueViolations(loadRust("src/app_profile.rs"))).toEqual([]);
   });
 });

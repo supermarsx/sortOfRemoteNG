@@ -1,5 +1,4 @@
 pub use sorng_warpgate as warpgate;
-pub use sorng_opkssh as opkssh;
 pub use sorng_ssh_scripts as ssh_scripts;
 pub use sorng_mcp as mcp_server;
 pub use sorng_snmp as snmp;
@@ -18,8 +17,6 @@ pub use sorng_scheduler as scheduler;
 // Use #[path] to reference the command files in the ops crate
 #[path = "../../sorng-commands-ops/src/warpgate_commands.rs"]
 mod warpgate_commands;
-#[path = "../../sorng-commands-ops/src/opkssh_commands.rs"]
-mod opkssh_commands;
 #[path = "../../sorng-commands-ops/src/ssh_scripts_commands.rs"]
 mod ssh_scripts_commands;
 #[path = "../../sorng-commands-ops/src/mcp_server_commands.rs"]

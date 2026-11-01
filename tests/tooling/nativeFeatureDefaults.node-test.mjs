@@ -64,7 +64,6 @@ test("normal Cargo and full-dev include the full supported capability set", () =
     "rdp-mf-decode",
     "rdp-snapshot",
     "rdp-software-decode",
-    "opkssh-vendored-wrapper",
     "script-engine",
     "protocol-serial-dynamic",
     "cert-auth",
@@ -120,7 +119,11 @@ test("release and platform bundles retain full capabilities without conflicting 
 });
 
 test("Kafka no longer contributes a build feature or startup dependency", () => {
-  for (const file of ["src-tauri/Cargo.toml", "src-tauri/crates/sorng-app-domains/Cargo.toml", "src-tauri/crates/sorng-app-domains-ops/Cargo.toml"]) {
+  for (const file of [
+    "src-tauri/Cargo.toml",
+    "src-tauri/crates/sorng-app-domains/Cargo.toml",
+    "src-tauri/crates/sorng-app-domains-ops/Cargo.toml",
+  ]) {
     assert.doesNotMatch(read(file), /kafka/i, file);
   }
   assert.doesNotMatch(read("src-tauri/src/state_registry/ops.rs"), /kafka/i);
@@ -202,7 +205,7 @@ test("ordinary vendor wrappers retain complete Rust APIs without unused DLL outp
       ),
     );
 
-    // These are not the explicitly staged OPKSSH/native C runtimes. Adding a
+    // These are not explicitly staged native C runtimes. Adding a
     // wrapper DLL to packaging would contradict their rlib-only contract.
     for (const path of [
       "src-tauri/tauri.conf.json",

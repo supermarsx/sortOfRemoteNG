@@ -377,7 +377,6 @@ test("importing the non-dev launcher does not load development staging modules",
   assert.ok(loaded.some((url) => url.endsWith("tauri.mjs")));
   for (const script of [
     "tauri-dev.mjs",
-    "stage-opkssh-vendor.mjs",
     "stage-file-viewer-host.mjs",
     "dev-port.mjs",
   ])

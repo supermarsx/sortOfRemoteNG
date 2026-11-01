@@ -43,7 +43,6 @@ use netbox::service::NetboxServiceState;
 use nginx::service::NginxServiceState;
 use nginx_proxy_mgr::service::NpmServiceState;
 use opendkim::service::OpendkimServiceState;
-use opkssh::service::OpksshServiceState;
 use os_detect::service::OsDetectServiceState;
 use osticket::service::OsticketServiceState;
 use pam::service::PamServiceState;
@@ -178,10 +177,6 @@ pub fn register(
     let le_storage = app_dir.join(".letsencrypt").to_string_lossy().to_string();
     let le_state = letsencrypt::service::LetsEncryptService::new_default(&le_storage);
     app.manage(le_state);
-
-    let opkssh_state: OpksshServiceState =
-        Arc::new(Mutex::new(opkssh::service::OpksshService::new()));
-    app.manage(opkssh_state);
 
     let ssh_scripts_state: SshScriptEngineState = ssh_scripts::engine::SshScriptEngine::new_state();
     app.manage(ssh_scripts_state);

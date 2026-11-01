@@ -1,6 +1,6 @@
 ---
 title: Native build review — 14 September 2026
-description: Verified vendor output and OPKSSH build-input cleanup, targeted validation, and limits of the available performance evidence.
+description: Verified vendor output cleanup, targeted validation, and limits of the available performance evidence.
 permalink: /performance/build-review-2026-09-14/
 hide_page_header: true
 ---
@@ -34,45 +34,9 @@ wrapper also does not stop normal downstream recompilation: Cargo already caches
 unchanged dependencies. See the [Rust Reference on linkage](https://doc.rust-lang.org/reference/linkage.html).
 
 This does **not** remove native zstd support or change its C linkage selection.
-The staged OpenH264, Kafka, SQLite, SSH and OPKSSH runtime contracts are separate
+The staged OpenH264, Kafka, SQLite and SSH runtime contracts are separate
 and remain intact. No features were gated, no dependency was removed, and
 `Cargo.lock` was not changed by this cleanup.
-
-## Avoiding unrelated OPKSSH build-script invalidation
-
-The MSVC OPKSSH build-script branch reads a fixed staged DLL and returns without
-discovering or invoking Go. It nevertheless registered `PATH` and `Path` as
-inputs before that return. Those two watches now occur only in the Go-building
-branch; explicit checkout/disable/Go overrides and staged-DLL change/health checks
-remain unchanged. Cargo reruns scripts when watched environment values change,
-so shell/npm path differences need not invalidate the metadata-only MSVC wrapper.
-See [Cargo's change-detection contract](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rerun-if-env-changed).
-
-An isolated compilation of the original `build.rs` reproduced both unwanted
-MSVC watches. After the move, all four regression tests passed: MSVC x64/ARM64
-retained missing/valid/stub/wrong-architecture DLL checks without path watches;
-GNU retained them and stopped at a synthetic missing checkout without invoking
-Go. Disabled/cross-platform branches also retained their explicit inputs.
-Real staged DLLs, user environment and checkouts were untouched.
-
-A subsequent full-app build attempt before this watch fix reached final linking
-but could not replace the running, locked `app.exe` (AccessDenied); it was **not
-a successful full build**. Its timing trace showed another commands/app rebuild
-tail, but did not establish the precise invalidation cause through fingerprint
-logging. Neither that attempt nor the fixture tests measure an end-to-end speedup.
-
-CI runs the source contract in `opksshBuildScript.node-test.mjs`; the three
-compiled fixtures explicitly skip unless an executable is supplied. To run all
-four on Windows without Cargo or a real Go build, from the repository root:
-
-```powershell
-$opksshFixtureDir = Join-Path ([System.IO.Path]::GetTempPath()) ("sorng-opkssh-watch-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $opksshFixtureDir | Out-Null
-$opksshFixtureExe = Join-Path $opksshFixtureDir "build-script.exe"
-rustc --edition 2021 --crate-name opkssh_watch_fixture -C debuginfo=0 src-tauri/crates/sorng-opkssh-vendor/build.rs -o $opksshFixtureExe
-if ($LASTEXITCODE -ne 0) { throw "Build-script fixture compilation failed" }
-node --input-type=module -e 'import { spawnSync } from "node:child_process"; const result = spawnSync(process.execPath, ["--test", "tests/tooling/opksshBuildScript.node-test.mjs"], {env:{...process.env,SORNG_TEST_OPKSSH_BUILD_SCRIPT:process.argv[1]},stdio:"inherit",windowsHide:true}); process.exitCode=result.status ?? 1;' $opksshFixtureExe
-```
 
 ## Measured baseline, not new results
 

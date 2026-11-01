@@ -24,6 +24,7 @@ pub(crate) fn build() -> InvokeHandler {
     ]);
     let origin_browser_handler = erase_handler(tauri::generate_handler![
         crate::origin_browser_commands::origin_browser_session_diagnostics,
+        crate::origin_browser_commands::origin_browser_security_info,
         crate::origin_browser_commands::origin_browser_cancel_prewarm,
         crate::origin_browser_commands::origin_browser_status,
         crate::origin_browser_commands::origin_browser_retention_capabilities,

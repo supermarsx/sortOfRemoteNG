@@ -7,7 +7,6 @@ description = "Tools command handlers — split from services to reduce coherenc
 
 [dependencies]
 sorng-warpgate = { path = "../sorng-warpgate" }
-sorng-opkssh = { path = "../sorng-opkssh" }
 sorng-ssh-scripts = { path = "../sorng-ssh-scripts" }
 sorng-mcp = { path = "../sorng-mcp" }
 sorng-snmp = { path = "../sorng-snmp" }

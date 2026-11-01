@@ -42,7 +42,7 @@ jobs:
       - name: Install pinned launcher dependencies
         run: npm ci
       - name: Verify full-feature native defaults and launchers
-        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs tests/tooling/kafkaRemoval.node-test.mjs tests/tooling/ciConcurrency.node-test.mjs
+        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs tests/tooling/kafkaRemoval.node-test.mjs tests/tooling/ciConcurrency.node-test.mjs
       - name: Verify generated cache exclusions
         run: node --test tests/tooling/buildCacheExclusions.node-test.mjs
       - name: Verify patched browser release producer and developer acquisition
@@ -593,99 +593,6 @@ jobs:
             .artifacts/macos-cef-*-lldb.log
           if-no-files-found: warn
 
-  # ── t8-e19 + t8-e21: wrapped OPKSSH contract + optional staging gate ──
-  # Phase E is proceeding under the relaxed dylink recommendation. This
-  # lane verifies both the CLI fallback and vendor C ABI contracts, then
-  # stages a real embedded runtime by default. Only explicit --disable opts out.
-  rust-opkssh-targeted:
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-opkssh-targeted-${{ matrix.target }}
-      cancel-in-progress: true
-    name: OPKSSH targeted (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    env:
-      SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: linux
-          - os: windows-latest
-            target: windows
-          - os: macos-latest
-            target: macos
-    defaults:
-      run:
-        working-directory: src-tauri
-    steps:
-      - uses: actions/checkout@v5
-      - name: Check out pinned OPKSSH source (193d79871f3bad3cd27cfb94734c265773a99c9b)
-        uses: actions/checkout@v5
-        with:
-          repository: openpubkey/opkssh
-          ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
-          fetch-depth: 1
-          path: .ci/opkssh-source
-      - name: Install Go toolchain for embedded OPKSSH bridge
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.24.12"
-          cache-dependency-path: .ci/opkssh-source/go.sum
-      - name: Install Linux build prerequisites (app crate check)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev
-      - name: Pin MSVC host toolchain (explicit)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: rustup set default-host x86_64-pc-windows-msvc
-      - name: Install Rust toolchain (non-Windows)
-        if: runner.os != 'Windows'
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
-        with:
-          toolchain: "1.98.1"
-      - name: Install Rust toolchain (Windows MSVC)
-        if: runner.os == 'Windows'
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
-        with:
-          toolchain: "1.98.1-x86_64-pc-windows-msvc"
-          targets: x86_64-pc-windows-msvc
-      - name: Verify MSVC host active
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          rustc -vV
-          rustup show active-toolchain
-      - name: Provision native GNU OPKSSH bridge toolchain
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
-          if ($LASTEXITCODE -ne 0) { throw "Could not install the native GNU bridge toolchain." }
-          $gccTarget = & gcc -dumpmachine
-          if ($LASTEXITCODE -ne 0 -or $gccTarget.Trim() -ne 'x86_64-w64-mingw32') {
-            throw "The Windows runner must provide native MinGW gcc for the embedded Go bridge."
-          }
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: cargo test (OPKSSH default wrapper contract)
-        run: cargo test -p sorng-opkssh --tests -- --nocapture
-      - name: cargo test (OPKSSH vendored-wrapper feature contract)
-        run: cargo test -p sorng-opkssh --tests --features vendored-wrapper -- --nocapture
-      - name: cargo check (app feature forwards OPKSSH vendored wrapper)
-        # Targeted compile contract only; this job does not ship an app binary.
-        run: cargo check -p app --no-default-features --features lean,opkssh-vendored-wrapper
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: ".node-version"
-          package-manager-cache: false
-      - name: Verify explicit OPKSSH vendor staging opt-out
-        run: node ../scripts/stage-opkssh-vendor.mjs --disable
-      - name: stage OPKSSH vendor artifact into the Tauri resource tree
-        run: node ../scripts/stage-opkssh-vendor.mjs --enable
-
   # ── t7-e19: targeted RDP gate across Linux + Windows ───────────────
   # This keeps the Phase C RDP surface blocking in normal CI without
   # depending on Docker: explicit app `rdp` feature build, input PDU
@@ -773,7 +680,7 @@ jobs:
       - name: cargo check (shipping feature set — full)
         run: >-
           cargo check -p app --no-default-features
-          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
 
   rust-lint:
     concurrency:
@@ -801,7 +708,7 @@ jobs:
       - name: cargo clippy (shipping feature set — full)
         run: >-
           cargo clippy -p app --no-default-features
-          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
           --all-targets -- -D warnings
 
   rolling-release:
@@ -821,7 +728,6 @@ jobs:
       - rust-check-linux
       - rust-check-windows
       - browser-transport-contracts
-      - rust-opkssh-targeted
       - rust-rdp-targeted
       - rust-check-all-features-linux
       - rust-lint

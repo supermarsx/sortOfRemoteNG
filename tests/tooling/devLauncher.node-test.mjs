@@ -106,10 +106,6 @@ for (const [name, launch, prefix] of [
             freeMemoryBytes: 230 * 1024 ** 3,
           },
         },
-        prepareTauriDevOpkssh: (received, env) => {
-          assert.deepEqual(received, args);
-          staged.push(env);
-        },
         stageFileViewerHost: ({ argv, env }) => {
           assert.deepEqual(argv, args);
           staged.push(env);
@@ -138,7 +134,7 @@ for (const [name, launch, prefix] of [
         },
       });
       assert.equal(returned, child);
-      assert.equal(staged.length, 2);
+      assert.equal(staged.length, 1);
       assert.deepEqual(actualChildEnvironment, {
         lib: directory,
         libs: "libssl_static:libcrypto_static",
@@ -388,7 +384,6 @@ async function launchWithFakes(launch, argv, env = {}) {
       assert.equal(options.env, env);
       return windowsKnownFolders;
     },
-    prepareTauriDevOpkssh: (received) => staged.push(received),
     stageFileViewerHost: ({ argv: received }) => staged.push(received),
     spawn: (executable, received, options) => {
       events.push("spawn");
@@ -462,7 +457,7 @@ test("default tauri dev spawns the unchanged override after the production banne
       ["dev", "-c", realOverrideBytes(), ...args],
       name,
     );
-    assert.deepEqual(staged, [args, args]);
+    assert.deepEqual(staged, [args]);
     const banner = bannerFor(PRODUCTION_IDENTIFIER);
     assert.equal(banner.length, 1);
     assert.deepEqual(
@@ -542,7 +537,7 @@ test("tauri dev consumes --isolated-profile instead of forwarding it", async () 
           spawned.args.slice(1).some((arg) => arg.includes("isolated-profile")),
           false,
         );
-        assert.deepEqual(staged, [args, args]);
+        assert.deepEqual(staged, [args]);
         assert.equal(
           spawned.options.env.SORNG_EXPECT_ISOLATED_PROFILE,
           undefined,

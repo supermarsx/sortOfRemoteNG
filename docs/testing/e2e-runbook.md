@@ -244,7 +244,7 @@ no variable can point a build at another profile.
   dir is removed after the run unless `SORNG_E2E_KEEP_RUN_DIR=1`, and the next
   preflight removes run dirs that no live run owns.
 - **SSH home.** Isolated builds resolve the default `known_hosts`, default SSH
-  key discovery and opkssh's `~/.opk` and `~/.ssh` state under
+  key discovery under
   `<app data>\ssh-home`, for example
   `%APPDATA%\com.sortofremote.ng.e2e\ssh-home\.ssh\known_hosts`. Every run
   starts with it absent. The real `~/.ssh` is never read or written by the app;
@@ -363,9 +363,7 @@ keychain namespace and WebView2 folder. Switching rebuilds the app crate.
      build runs `npm run build`, which a browser `npm run dev` holding
      `.next/dev/lock` refuses; the managed `tauri dev` uses `.next-tauri-dev` and
      does not conflict.
-   - The e2e overlay does not stage the opkssh vendor bundle or the file viewer
-     host. If the build reports missing resources, stage them once with
-     `npm run stage:opkssh-vendor -- --release --enable` and
+   - The e2e overlay does not stage the file viewer host. If the build reports missing resources, stage it once with
      `npm run stage:file-viewer -- --release`.
 2. **Prove isolation once per binary.** Run
    `npm run e2e:isolation:selftest -- --binary <path>`. It automates the
@@ -376,7 +374,7 @@ keychain namespace and WebView2 folder. Switching rebuilds the app crate.
    - a metadata-only production snapshot. It records names, sizes and mtimes of
      `%APPDATA%\com.sortofremote.ng`, the top level of
      `%LOCALAPPDATA%\com.sortofremote.ng` and the mtimes of its `EBWebView`
-     storage directories, the `~/.ssh` and `~/.opk` listings, the SHA-256 of
+     storage directories, the `~/.ssh` listing, the SHA-256 of
      `known_hosts`, Credential Manager target names with their last-written
      time, and HKCU Run value names. It never reads file contents or credential
      secrets;

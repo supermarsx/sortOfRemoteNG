@@ -12,7 +12,7 @@ import {
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { opksshTarget } from "./stage-opkssh-vendor.mjs";
+import { nativeTarget } from "./native-target.mjs";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 export function verifyViewerExecutable(filename, architecture) {
@@ -116,7 +116,7 @@ export function stageFileViewerHost({
   run = spawnSync,
   log = console.log,
 } = {}) {
-  const target = opksshTarget(argv, env, platform, arch);
+  const target = nativeTarget(argv, env, platform, arch);
   if (target.osKey !== "windows") {
     log(
       "OS-isolated file viewing is not available on this platform; no unsandboxed fallback is bundled.",

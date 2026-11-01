@@ -76,7 +76,6 @@ export function windowsNativeTauriConfig(
   runtimeDlls = runtimeDllsForArchitecture(process.arch),
 ) {
   const resources = {
-    "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
     "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
     "resources/native-runtime-licenses/": "native-runtime-licenses/",

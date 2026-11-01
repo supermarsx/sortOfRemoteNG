@@ -49,7 +49,7 @@ const WEBVIEW2_FLAG: &str = "--sorng-webview2-user-data-folder";
 const PROBE_OUT_ENV: &str = "SORNG_PROFILE_PROBE_OUT";
 const PROBE_SCHEMA: &str = "sorng-profile-probe/v1";
 
-/// Isolated builds keep `.ssh` and `.opk` state in `<app data>/ssh-home`.
+/// Isolated builds keep `.ssh` state in `<app data>/ssh-home`.
 const SSH_HOME_DIRNAME: &str = sorng_core::ssh_home::ISOLATED_SSH_HOME_DIRNAME;
 
 /// Microsoft's documented override. WebView2 uses it in place of the
@@ -235,13 +235,10 @@ fn start_process_profile() -> Result<StartupPlan, StartupError> {
 }
 
 /// Point every SSH-state consumer at the isolated SSH home, so an isolated
-/// build never reads or writes the user's `~/.ssh` or `~/.opk`.
+/// build never reads or writes the user's `~/.ssh`.
 fn install_ssh_homes(ssh_home: &Path) -> Result<(), String> {
     sorng_core::ssh_home::install_isolated_home(ssh_home.to_path_buf())
         .map_err(|error| format!("cannot install the SSH home: {error}"))?;
-    #[cfg(feature = "opkssh")]
-    sorng_opkssh::service::install_isolated_home(ssh_home.to_path_buf())
-        .map_err(|error| format!("cannot install the opkssh home: {error}"))?;
     Ok(())
 }
 
@@ -251,20 +248,7 @@ fn installed_ssh_homes() -> Vec<(&'static str, Option<&'static Path>)> {
         "sorng_core::ssh_home",
         sorng_core::ssh_home::isolated_home(),
     );
-    #[cfg(feature = "opkssh")]
-    {
-        vec![
-            ssh,
-            (
-                "sorng_opkssh::service",
-                sorng_opkssh::service::isolated_home(),
-            ),
-        ]
-    }
-    #[cfg(not(feature = "opkssh"))]
-    {
-        vec![ssh]
-    }
+    vec![ssh]
 }
 
 /// `<app data>/<identifier>/ssh-home` (under Tauri's `app_data_dir`) for an
@@ -1583,10 +1567,7 @@ mod tests {
         let env = Some(OsStr::new(folder));
         let dirs = runtime_dirs(E2E);
         let home = ssh_home_for(E2E);
-        let installed = [
-            ("ssh", Some(home.as_path())),
-            ("opkssh", Some(home.as_path())),
-        ];
+        let installed = [("ssh", Some(home.as_path()))];
 
         assert_eq!(verify(&arg, &observed(&dirs, env, &installed)), Ok(()));
 
@@ -1635,12 +1616,11 @@ mod tests {
         let arg = isolated_profile(Some(folder), Webview2Source::Arg);
         let env = Some(OsStr::new(folder));
         let dirs = runtime_dirs(E2E);
-        let home = ssh_home_for(E2E);
         let elsewhere = Path::new(folder).parent().unwrap().join("ssh-home");
 
-        let missing = [("ssh", Some(home.as_path())), ("opkssh", None)];
+        let missing = [("ssh", None)];
         let message = verify(&arg, &observed(&dirs, env, &missing)).unwrap_err();
-        assert!(message.contains("opkssh"), "{message}");
+        assert!(message.contains("ssh"), "{message}");
         let moved = [("ssh", Some(elsewhere.as_path()))];
         assert!(verify(&arg, &observed(&dirs, env, &moved)).is_err());
 

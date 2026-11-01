@@ -1,5 +1,4 @@
 export * from "./useBulkSSHCommander";
-export * from "./useOpkssh";
 export * from "./useServerStats";
 export * from "./useSSHAgentManager";
 export * from "./useSSHCommandHistory";

@@ -88,31 +88,6 @@ pub fn is_command(command: &str) -> bool {
             | "warpgate_query_logs"
             | "warpgate_get_parameters"
             | "warpgate_update_parameters"
-            | "opkssh_check_binary"
-            | "opkssh_get_download_url"
-            | "opkssh_start_login"
-            | "opkssh_get_login_operation"
-            | "opkssh_await_login"
-            | "opkssh_cancel_login"
-            | "opkssh_login"
-            | "opkssh_list_keys"
-            | "opkssh_remove_key"
-            | "opkssh_get_client_config"
-            | "opkssh_update_client_config"
-            | "opkssh_well_known_providers"
-            | "opkssh_build_env_string"
-            | "opkssh_server_read_config_script"
-            | "opkssh_parse_server_config"
-            | "opkssh_get_server_config"
-            | "opkssh_build_add_identity_cmd"
-            | "opkssh_build_remove_identity_cmd"
-            | "opkssh_build_add_provider_cmd"
-            | "opkssh_build_remove_provider_cmd"
-            | "opkssh_build_install_cmd"
-            | "opkssh_build_audit_cmd"
-            | "opkssh_parse_audit_output"
-            | "opkssh_get_audit_results"
-            | "opkssh_get_status"
             | "ssh_scripts_create_script"
             | "ssh_scripts_get_script"
             | "ssh_scripts_list_scripts"
@@ -511,32 +486,6 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         warpgate_commands::warpgate_query_logs,
         warpgate_commands::warpgate_get_parameters,
         warpgate_commands::warpgate_update_parameters,
-        // OpenPubkey SSH (opkssh) commands
-        opkssh_commands::opkssh_check_binary,
-        opkssh_commands::opkssh_get_download_url,
-        opkssh_commands::opkssh_start_login,
-        opkssh_commands::opkssh_get_login_operation,
-        opkssh_commands::opkssh_await_login,
-        opkssh_commands::opkssh_cancel_login,
-        opkssh_commands::opkssh_login,
-        opkssh_commands::opkssh_list_keys,
-        opkssh_commands::opkssh_remove_key,
-        opkssh_commands::opkssh_get_client_config,
-        opkssh_commands::opkssh_update_client_config,
-        opkssh_commands::opkssh_well_known_providers,
-        opkssh_commands::opkssh_build_env_string,
-        opkssh_commands::opkssh_server_read_config_script,
-        opkssh_commands::opkssh_parse_server_config,
-        opkssh_commands::opkssh_get_server_config,
-        opkssh_commands::opkssh_build_add_identity_cmd,
-        opkssh_commands::opkssh_build_remove_identity_cmd,
-        opkssh_commands::opkssh_build_add_provider_cmd,
-        opkssh_commands::opkssh_build_remove_provider_cmd,
-        opkssh_commands::opkssh_build_install_cmd,
-        opkssh_commands::opkssh_build_audit_cmd,
-        opkssh_commands::opkssh_parse_audit_output,
-        opkssh_commands::opkssh_get_audit_results,
-        opkssh_commands::opkssh_get_status,
         // SSH event-scripts commands
         ssh_scripts_commands::ssh_scripts_create_script,
         ssh_scripts_commands::ssh_scripts_get_script,

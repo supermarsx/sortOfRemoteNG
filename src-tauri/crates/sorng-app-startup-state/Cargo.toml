@@ -15,7 +15,6 @@ sorng-core = { path = "../sorng-core" }
 sorng-encryption = { path = "../sorng-encryption" }
 sorng-llm = { path = "../sorng-llm" }
 sorng-telegram = { path = "../sorng-telegram" }
-sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-recording = { path = "../sorng-recording" }
 sorng-docker = { path = "../sorng-docker", optional = true }
 sorng-vault = { path = "../sorng-vault" }
@@ -42,6 +41,5 @@ db-postgres = ["sorng-app-domains/db-postgres"]
 db-redis = ["sorng-app-domains/db-redis"]
 db-sqlite = ["sorng-app-domains/db-sqlite"]
 db-sqlite-dynamic = ["sorng-app-domains/db-sqlite-dynamic"]
-opkssh = ["dep:sorng-opkssh"]
 ops = ["sorng-app-domains/ops", "sorng-app-domains/platform", "dep:sorng-docker"]
 platform = ["sorng-app-domains/platform", "sorng-app-domains/collab", "dep:sorng-docker"]

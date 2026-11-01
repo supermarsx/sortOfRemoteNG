@@ -120,18 +120,6 @@ jobs:
       - name: Test disposable HTTP fixture preflight
         run: node --test ./tests/e2e-http-fixtures/*.test.mjs
 
-      # ── t8-e19: wrapped-contract + packaging-truthfulness smoke ────
-      # Keep nightly/manual evidence aligned with the relaxed dylink ADR:
-      # the current product path is the wrapped Rust seam plus CLI fallback,
-      # not a bundled OPKSSH shared-library artifact.
-      - name: OPKSSH wrapped-contract smoke (t8-e19)
-        id: test-opkssh-contract
-        continue-on-error: true
-        working-directory: src-tauri
-        run: |
-          cargo test -p sorng-opkssh --tests -- --nocapture \
-            2>&1 | tee ../e2e-opkssh-contract.log
-
       - name: Prepare compose .env
         working-directory: e2e
         run: |
@@ -397,7 +385,6 @@ jobs:
         with:
           name: e2e-test-output
           path: |
-            e2e-opkssh-contract.log
             e2e-ssh.log
             e2e-sftp.log
             e2e-smb.log
@@ -437,7 +424,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| test | outcome |" >> $GITHUB_STEP_SUMMARY
           echo "|------|---------|" >> $GITHUB_STEP_SUMMARY
-          echo "| opkssh wrapped contract (t8-e19) | ${{ steps.test-opkssh-contract.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ssh (t3-e6) | ${{ steps.test-ssh.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| sftp (t3-e6) | ${{ steps.test-sftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| smb (t3-e7) | ${{ steps.test-smb.outcome }} |" >> $GITHUB_STEP_SUMMARY
@@ -453,7 +439,6 @@ jobs:
           # Fail the job if any test step failed.
           fails=0
           for o in \
-            "${{ steps.test-opkssh-contract.outcome }}" \
             "${{ steps.test-ssh.outcome }}" \
             "${{ steps.test-sftp.outcome }}" \
             "${{ steps.test-smb.outcome }}" \

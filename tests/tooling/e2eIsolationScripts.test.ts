@@ -393,7 +393,7 @@ describe("e2e-build frontend preflight", () => {
 
   it("warns about resources only the production beforeBuildCommand stages", () => {
     const root = tempDir();
-    expect(build.stagedResourceWarnings({ repoRoot: root })).toHaveLength(2);
+    expect(build.stagedResourceWarnings({ repoRoot: root })).toHaveLength(1);
     for (const { source } of build.STAGED_RESOURCE_SOURCES) {
       fs.mkdirSync(path.join(root, source), { recursive: true });
     }
@@ -437,11 +437,9 @@ describe("e2e-build copy plan", () => {
     const root = tempDir();
     const debug = path.join(root, "target", "debug");
     const exe = writeFile(path.join(debug, "app.exe"), "exe");
-    writeFile(path.join(debug, "opkssh", "opkssh.exe"));
     writeFile(path.join(debug, "file-viewer", "windows-amd64", "host.exe"));
     writeFile(path.join(debug, "locales", "en.json"));
     writeFile(path.join(debug, "wintun.dll"));
-    writeFile(path.join(debug, "sorng_opkssh_vendor.dll"));
     writeFile(path.join(debug, "app.pdb"));
     writeFile(path.join(debug, "deps", "libx.rlib"));
     writeFile(path.join(debug, "build", "out.txt"));
@@ -465,10 +463,8 @@ describe("e2e-build copy plan", () => {
     expect(plan.directories.map(({ to }) => path.basename(to))).toEqual([
       "file-viewer",
       "locales",
-      "opkssh",
     ]);
     expect(plan.libraries.map(({ to }) => path.basename(to))).toEqual([
-      "sorng_opkssh_vendor.dll",
       "wintun.dll",
     ]);
 
@@ -482,8 +478,6 @@ describe("e2e-build copy plan", () => {
       "app.exe",
       "file-viewer",
       "locales",
-      "opkssh",
-      "sorng_opkssh_vendor.dll",
       "wintun.dll",
     ]);
     expect(
@@ -517,7 +511,7 @@ describe("e2e-build copy plan", () => {
       args: ["node", "tauri.js"],
       sourceExe: "S",
       plan: {
-        directories: [{ to: "x/opkssh" }],
+        directories: [{ to: "x/file-viewer" }],
         libraries: [{ to: "x/a.dll" }],
       },
     });
@@ -531,7 +525,7 @@ describe("e2e-build copy plan", () => {
       gitHead: "a".repeat(40),
       gitDirty: true,
       targetDir: "T",
-      resources: ["opkssh"],
+      resources: ["file-viewer"],
       libraries: ["a.dll"],
     });
     expect(
@@ -1005,7 +999,6 @@ function baseSnapshot(): Snapshot {
       truncated: false,
       entries: [{ path: "known_hosts", type: "file", size: 3, mtimeMs: 9 }],
     },
-    opk: { root: "O", exists: false, truncated: false, entries: [] },
     knownHostsSha256: "a".repeat(64),
     credentials: {
       supported: true,
@@ -1128,13 +1121,6 @@ describe("snapshot diff", () => {
       "ssh: added id_ed25519",
     ],
     [
-      "a created ~/.opk",
-      (after) => {
-        (after.opk as { exists: boolean }).exists = true;
-      },
-      "opk: added <root>",
-    ],
-    [
       "a rewritten production DEK",
       (after) => {
         after.credentials.entries[0] = {
@@ -1218,7 +1204,6 @@ describe("snapshot diff", () => {
       localDataEntries: 0,
       webview2StorageDirs: 1,
       sshEntries: 1,
-      opkEntries: null,
       knownHosts: "hashed",
       credentials: 1,
       runValues: 1,

@@ -47,7 +47,6 @@ pub use sorng_nginx as nginx;
 pub use sorng_nginx_proxy_mgr as nginx_proxy_mgr;
 pub use sorng_notifications as notifications;
 pub use sorng_opendkim as opendkim;
-pub use sorng_opkssh as opkssh;
 pub use sorng_os_detect as os_detect;
 pub use sorng_osticket as osticket;
 pub use sorng_p2p as p2p;

@@ -149,9 +149,6 @@ use vmware_desktop::service::VmwDesktopServiceState;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 use voip_phone::service::VoipPhoneServiceState;
 
-#[cfg(all(feature = "opkssh", not(feature = "ops")))]
-use sorng_opkssh::service::OpksshServiceState;
-
 /// Exact managed-state order before connectivity registration.
 pub const INFRASTRUCTURE_PREFIX_REGISTRATION_ORDER: &[&str] = &[
     "LaunchArgs",
@@ -163,8 +160,6 @@ pub const INFRASTRUCTURE_PREFIX_REGISTRATION_ORDER: &[&str] = &[
     "SshServiceState",
     "SftpServiceState",
     "SmbServiceState",
-    #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-    "OpksshServiceState",
 ];
 
 /// Exact managed-state order in the always-on security/data registrar.
@@ -262,9 +257,9 @@ pub const COLLAB_REGISTRATION_ORDER: &[&str] = &[
 pub const API_REGISTRATION_ORDER: &[&str] =
     &["ApiService", "DisabledCapsSetter", "ApiServerController"];
 
-/// Maximum moved inventory: 13 infrastructure/API + 43 security/data + 5
+/// Maximum moved inventory: 12 infrastructure/API + 43 security/data + 5
 /// access + 14 platform (including Docker for ops/platform) + 11 collaboration registrations.
-pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 86;
+pub const MAX_MANAGED_STATE_REGISTRATIONS: usize = 85;
 
 pub struct InfrastructureHandles {
     pub app_dir: std::path::PathBuf,
@@ -407,13 +402,6 @@ pub fn register_infrastructure_prefix(
     let smb_service: Arc<Mutex<SmbService>> = Arc::new(Mutex::new(SmbService::new()));
     app.manage(smb_service);
 
-    #[cfg(all(feature = "opkssh", not(feature = "ops")))]
-    {
-        let state: OpksshServiceState =
-            Arc::new(Mutex::new(sorng_opkssh::service::OpksshService::new()));
-        app.manage(state);
-    }
-
     Ok(InfrastructureHandles {
         app_dir,
         auth_service,
@@ -500,7 +488,7 @@ mod tests {
         assert_eq!(COLLAB_REGISTRATION_ORDER.len(), 11);
         assert_eq!(API_REGISTRATION_ORDER.len(), 3);
         assert_eq!(37 + 6, 43);
-        assert_eq!(10 + 3 + 43 + 5 + 14 + 11, MAX_MANAGED_STATE_REGISTRATIONS);
+        assert_eq!(9 + 3 + 43 + 5 + 14 + 11, MAX_MANAGED_STATE_REGISTRATIONS);
     }
 
     #[test]

@@ -116,10 +116,6 @@ const linuxDesktopTemplate = readFileSync(
   new URL("../../src-tauri/packaging/linux.desktop", import.meta.url),
   "utf8",
 );
-const opksshBinarySource = readFileSync(
-  new URL("../../src-tauri/crates/sorng-opkssh/src/binary.rs", import.meta.url),
-  "utf8",
-);
 const stateRegistryOpsSource = readFileSync(
   new URL("../../src-tauri/src/state_registry/ops.rs", import.meta.url),
   "utf8",
@@ -462,7 +458,6 @@ test("release actions use audited Node 24-compatible immutable releases", () => 
       "820762786026740c76f36085b0efc47a31fe5020",
       "v7.0.0",
     ],
-    ["actions/setup-go", "924ae3a1cded613372ab5595356fb5720e22ba16", "v6.5.0"],
     [
       "actions/upload-artifact",
       "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
@@ -604,7 +599,6 @@ test("normal main CI calls release only after every internal job", () => {
     "updater-signature-verifier",
     "rust-check-linux",
     "rust-check-windows",
-    "rust-opkssh-targeted",
     "rust-rdp-targeted",
     "rust-check-all-features-linux",
     "rust-lint",
@@ -716,7 +710,7 @@ test("release Tauri launchers give the inherited Next build a 4 GiB Node heap", 
   );
   assert.equal(
     tauriConfig.build.beforeBuildCommand,
-    "npm run build && npm run stage:opkssh-vendor -- --release --enable && npm run stage:file-viewer -- --release",
+    "npm run build && npm run stage:file-viewer -- --release",
   );
 });
 
@@ -931,9 +925,7 @@ test("Windows release compiler is pinned and verified without changing other pla
   const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
   const buildSteps = buildJob.slice(buildJob.indexOf("    steps:"));
   const toolchainStart = buildJob.indexOf("- name: Install Rust target");
-  const checkoutStart = buildJob.indexOf(
-    "- name: Check out pinned OPKSSH source",
-  );
+  const checkoutStart = buildJob.indexOf("- name: Cache Cargo build");
   const toolchainSteps = buildJob.slice(toolchainStart, checkoutStart);
   const verifierStart = toolchainSteps.indexOf(
     "- name: Verify pinned Windows release compiler",
@@ -1041,11 +1033,11 @@ test("resource controls preserve platform release features and signing inputs", 
   )?.[1];
   assert.equal(
     bundledReleaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser",
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser",
   );
   assert.equal(
     windowsReleaseFeatures,
-    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser",
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite-dynamic,logs-json,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode-dynamic,rdp-snapshot,script-engine,tls-cert-details,vpn-softether,native-browser",
   );
   assert.equal(
     (releaseWorkflow.match(/^  RELEASE_FEATURES_(?:BUNDLED|WINDOWS):/gm) ?? [])
@@ -1283,7 +1275,6 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
   assert.equal(releaseConfigWrite?.path, "src-tauri/tauri.release.conf.json");
   const windowsReleaseConfig = JSON.parse(releaseConfigWrite.contents);
   assert.deepEqual(windowsReleaseConfig.bundle.resources, {
-    "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
     "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
     "resources/native-runtime-licenses/": "native-runtime-licenses/",
@@ -1581,10 +1572,6 @@ test("Windows signing is architecture-aware and both portable archives are compl
   );
   assert.match(
     portableStep,
-    /sorng-opkssh-vendor\/bundle\/opkssh[\s\S]*?resources[\s\S]*?Copy-Item -LiteralPath \$opksshSource/,
-  );
-  assert.match(
-    portableStep,
     /\$localeSource = "src\/i18n\/locales"[\s\S]*?\$expectedLocaleHashes = @\(Get-RelativeFileHashes -Root \$localeSource\)/,
   );
   assert.match(
@@ -1647,10 +1634,6 @@ test("Windows signing is architecture-aware and both portable archives are compl
   );
   assert.match(
     portableStep,
-    /expectedResourceHashes[\s\S]*?verifiedResourceHashes[\s\S]*?Compare-Object[\s\S]*?Extracted OPKSSH resources do not match/,
-  );
-  assert.match(
-    portableStep,
     /verifiedLocaleRoot[\s\S]*?resources\/locales[\s\S]*?verifiedLocaleHashes[\s\S]*?Compare-Object[\s\S]*?Extracted locale resources do not match/,
   );
   assert.match(
@@ -1675,7 +1658,6 @@ test("Windows signing is architecture-aware and both portable archives are compl
     "sortOfRemoteNG.exe",
     ".portable",
     ...expectedNativeDllNames,
-    "resources/opkssh",
     "resources/file-viewer",
     "resources/locales",
     "resources/native-runtime-licenses",
@@ -2289,10 +2271,6 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     preserveLinux,
-    /cp -a "\$opkssh_source" "\$payload\/resources\/opkssh"/,
-  );
-  assert.match(
-    preserveLinux,
     /locale_source="\$GITHUB_WORKSPACE\/src\/i18n\/locales"[\s\S]*?cp -a "\$locale_source" "\$payload\/resources\/locales"/,
   );
   assert.match(
@@ -2339,7 +2317,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
-    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?test -x \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.bin[\s\S]*?test -x \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.helper[\s\S]*?test -s \/app\/lib\/sortOfRemoteNG\/libcef\.so[\s\S]*?test -s \/app\/lib\/sortOfRemoteNG\/locales\/en-US\.pak[\s\S]*?ldd \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.bin[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path/,
+    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -f \/app\/lib\/sortOfRemoteNG\/libopenh264\.so\.8[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?test -x \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.bin[\s\S]*?test -x \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.helper[\s\S]*?test -s \/app\/lib\/sortOfRemoteNG\/libcef\.so[\s\S]*?test -s \/app\/lib\/sortOfRemoteNG\/locales\/en-US\.pak[\s\S]*?ldd \/app\/lib\/sortOfRemoteNG\/com\.sortofremote\.ng\.bin[\s\S]*?grep -F "not found"[\s\S]*?openh264_ldd_path/,
   );
   assert.match(
     flatpakBuild,
@@ -2385,10 +2363,6 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(
     stageStep,
     /expected_binary_path="\/usr\/bin\/\$LINUX_PACKAGE_MAIN_BINARY"/,
-  );
-  assert.match(
-    stageStep,
-    /expected_resource_root="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/opkssh"/,
   );
   assert.match(
     stageStep,
@@ -2461,14 +2435,6 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.equal(
     (
       stageStep.match(
-        /diff -u "\$expected_resource_files" "\$(?:rpm|deb|appimage)_resource_files"/g,
-      ) ?? []
-    ).length,
-    3,
-  );
-  assert.equal(
-    (
-      stageStep.match(
         /diff -u "\$expected_locale_files" "\$(?:rpm|deb|appimage)_locale_files"/g,
       ) ?? []
     ).length,
@@ -2484,26 +2450,9 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.equal(tauriConfig.productName, "sortOfRemoteNG");
   assert.deepEqual(tauriConfig.bundle.resources, {
-    "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
     "crates/sorng-file-viewer-host/bundle/": "file-viewer/",
     "../src/i18n/locales/": "locales/",
   });
-  assert.match(
-    opksshBinarySource,
-    /const TAURI_PRODUCT_NAME: &str = "sortOfRemoteNG";/,
-  );
-  assert.match(
-    opksshBinarySource,
-    /prefix[\s\S]*?join\("lib"\)[\s\S]*?join\(TAURI_PRODUCT_NAME\)[\s\S]*?join\(BUNDLE_RESOURCE_ROOT\)/,
-  );
-  assert.match(
-    opksshBinarySource,
-    /linux_package_resource_root_uses_the_tauri_product_name[\s\S]*?\/usr\/bin\/app[\s\S]*?\/usr\/lib\/sortOfRemoteNG\/opkssh/,
-  );
-  assert.match(
-    opksshBinarySource,
-    /linux_appimage_resource_root_uses_the_mounted_prefix[\s\S]*?\/tmp\/\.mount_sortOfRemoteNG\/usr\/bin\/app[\s\S]*?\/tmp\/\.mount_sortOfRemoteNG\/usr\/lib\/sortOfRemoteNG\/opkssh/,
-  );
   assert.match(stageStep, /linux_packages =/);
   for (const field of [
     "runtime_ref",
@@ -2546,13 +2495,13 @@ test("DEB staging canonicalizes supported dpkg paths before exact validation", (
   );
   const expectedPayload = [
     "/usr/bin/app",
-    "/usr/lib/sortOfRemoteNG/opkssh/linux-amd64/libsorng_opkssh_vendor.so",
+    "/usr/lib/sortOfRemoteNG/locales/en-US.json",
   ].join("\n");
 
   for (const prefix of ["usr", "./usr"]) {
     const listing = [
       `-rwxr-xr-x 0/0 42 2026-07-24 09:22 ${prefix}/bin/app`,
-      `-rwxr-xr-x 0/0 17 2026-07-24 09:22 ${prefix}/lib/sortOfRemoteNG/opkssh/linux-amd64/libsorng_opkssh_vendor.so`,
+      `-rwxr-xr-x 0/0 17 2026-07-24 09:22 ${prefix}/lib/sortOfRemoteNG/locales/en-US.json`,
     ].join("\n");
     const result = runBashSnippet(String.raw`
 set -euo pipefail
@@ -2568,10 +2517,10 @@ DPKG_LIST
   const exactResourceResult = runBashSnippet(String.raw`
 set -euo pipefail
 ${resourceExtractor}
-cat <<'NORMALIZED_PATHS' | relative_deb_files_under_exact_root "/usr/lib/sortOfRemoteNG/opkssh"
-/opt/cache/usr/lib/sortOfRemoteNG/opkssh/linux-amd64/unrelated.so
-/usr/lib/sortOfRemoteNG/opkssh-evil/linux-amd64/unrelated.so
-/usr/lib/sortOfRemoteNG/opkssh/linux-amd64/libsorng_opkssh_vendor.so
+cat <<'NORMALIZED_PATHS' | relative_deb_files_under_exact_root "/usr/lib/sortOfRemoteNG/locales"
+/opt/cache/usr/lib/sortOfRemoteNG/locales/unrelated.json
+/usr/lib/sortOfRemoteNG/locales-evil/unrelated.json
+/usr/lib/sortOfRemoteNG/locales/en-US.json
 NORMALIZED_PATHS
 `);
   assert.equal(
@@ -2579,10 +2528,7 @@ NORMALIZED_PATHS
     0,
     `${exactResourceResult.stdout}\n${exactResourceResult.stderr}`,
   );
-  assert.equal(
-    exactResourceResult.stdout.trim(),
-    "linux-amd64/libsorng_opkssh_vendor.so",
-  );
+  assert.equal(exactResourceResult.stdout.trim(), "en-US.json");
 
   const unrelatedBinaryResult = runBashSnippet(String.raw`
 set -o pipefail
@@ -2597,7 +2543,7 @@ DPKG_LIST
 set -o pipefail
 ${normalizer}
 cat <<'DPKG_LIST' | normalize_deb_file_list
--rwxr-xr-x 0/0 42 2026-07-24 09:22 usr/lib/sortOfRemoteNG/opkssh/../escape.so
+-rwxr-xr-x 0/0 42 2026-07-24 09:22 usr/lib/sortOfRemoteNG/locales/../escape.json
 DPKG_LIST
 `);
   assert.notEqual(traversalResult.status, 0);
@@ -2609,7 +2555,7 @@ DPKG_LIST
   );
   assert.match(
     stageScript,
-    /relative_deb_files_under_exact_root "\$expected_resource_root"[\s\\]+< "\$deb_payload_files"/,
+    /relative_deb_files_under_exact_root "\$expected_locale_root"[\s\\]+< "\$deb_payload_files"/,
   );
   assert.doesNotMatch(
     stageScript,

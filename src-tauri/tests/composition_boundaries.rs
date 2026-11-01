@@ -73,7 +73,7 @@ fn remaining_startup_registrars_are_concrete_and_preserve_state_identity() {
 
 #[test]
 fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
-    assert_eq!(sorng_app_startup_state::MAX_MANAGED_STATE_REGISTRATIONS, 86);
+    assert_eq!(sorng_app_startup_state::MAX_MANAGED_STATE_REGISTRATIONS, 85);
     assert_eq!(sorng_app_startup_state::ACCESS_REGISTRATION_ORDER.len(), 5);
     assert_eq!(
         sorng_app_startup_state::PLATFORM_REGISTRATION_ORDER.len(),
@@ -98,7 +98,7 @@ fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
         37 + enabled_databases
     );
 
-    let expected_prefix = 9 + usize::from(cfg!(all(feature = "opkssh", not(feature = "ops"))));
+    let expected_prefix = 9;
     assert_eq!(
         sorng_app_startup_state::INFRASTRUCTURE_PREFIX_REGISTRATION_ORDER.len(),
         expected_prefix
@@ -146,7 +146,7 @@ fn root_registry_orchestrates_external_registrars_and_its_owned_route_adapter_in
 }
 
 #[test]
-fn startup_state_crate_owns_all_eighty_six_manage_monomorphizations() {
+fn startup_state_crate_owns_all_eighty_five_manage_monomorphizations() {
     let sources = [
         include_str!("../crates/sorng-app-startup-state/src/lib.rs"),
         include_str!("../crates/sorng-app-startup-state/src/security_data.rs"),
@@ -158,7 +158,7 @@ fn startup_state_crate_owns_all_eighty_six_manage_monomorphizations() {
         .iter()
         .map(|source| source.matches("app.manage(").count())
         .sum::<usize>();
-    assert_eq!(registrations, 86);
+    assert_eq!(registrations, 85);
 }
 
 fn assert_source_fragments_in_order(source: &str, registrar: &str, fragments: &[&str]) {
@@ -186,8 +186,6 @@ fn every_moved_registrar_keeps_its_internal_registration_order() {
             "app.manage(ssh_service.clone());",
             "app.manage(SftpService::new());",
             "app.manage(smb_service);",
-            "let state: OpksshServiceState",
-            "app.manage(state);",
             "app.manage(api_service.clone());",
             "sorng_commands_core::api_capability_commands::DisabledCapsSetter(",
             "sorng_commands_core::api_server_commands::ApiServerController::new(",
