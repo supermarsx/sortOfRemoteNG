@@ -24,6 +24,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "cef-hosted-capacity.yml": 1,
   "cef-linux-capacity-inventory.yml": 1,
   "cef-mac-owned-source-proof.yml": 1,
+  "cef-mac-process-census-proof.yml": 1,
   "cef-owned-sdk-import.yml": 1,
   "cef-owned-sdk-publish.yml": 2,
   "cef-engineering-checkpoint.yml": 1,

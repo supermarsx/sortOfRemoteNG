@@ -226,10 +226,10 @@ test("Producer code remains a separately attested subset and cannot substitute f
     windowsHide: true,
   }).trim();
   const actual = await mod.producerPins(head);
-  assert.equal(actual.rows.length, 127);
+  assert.equal(actual.rows.length, 128);
   assert.equal(
     actual.codeDigest,
-    "45bb37f6ba737a31834bc3b47038c28903f239b2efb25b0cffad1dba079e3cb7",
+    "95c14eb0194922c3348ec0b8534fb9a9c8c249b69a648734ea4d83aa427eac27",
   );
   assert(
     !actual.rows.some((row) =>

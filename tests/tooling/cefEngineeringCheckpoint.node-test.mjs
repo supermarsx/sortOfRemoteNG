@@ -7451,8 +7451,9 @@ async function compileSupervisorModel(options = {}) {
       return child;
     },
     finished: options.neverFinished ? () => new Promise(() => {}) : finished,
-    processSnapshot: async () => {
+    processSnapshot: async ({ probeJoins } = {}) => {
       state.snapshots++;
+      if (options.unjoinedProbe) probeJoins.add(new Promise(() => {}));
       if (options.neverSnapshot) return new Promise(() => {});
       if (options.badOwner) return [];
       if (options.monitorError && state.snapshots > 1) throw sentinel;
@@ -7491,6 +7492,9 @@ async function compileSupervisorModel(options = {}) {
     env: {},
     logs: "/fake",
     milliseconds: 20,
+    ...(options.stopSignal === undefined
+      ? {}
+      : { stopSignal: options.stopSignal }),
     ...(options.outputLedger === undefined
       ? {}
       : { outputLedger: options.outputLedger }),
@@ -7560,7 +7564,37 @@ test("monitor failure still attempts cohort cleanup and retains the original err
   assert.equal(state.error, state.primary);
   assert.equal(state.stops, 1);
   assert.equal(state.proofs, 0);
+  assert.equal(state.writes.length, 1);
+  assert.equal(JSON.parse(state.writes[0].data).checkpointAllowed, false);
+});
+
+test("an unjoined creation-owned census probe still denies a settled monitor and otherwise quiet output", async () => {
+  const state = await compileSupervisorModel({ unjoinedProbe: true });
+  assert.equal(state.proofs, 0);
   assert.equal(state.writes.length, 0);
+  assert.match(state.error.message, /cleanup deadline/);
+  const diagnostic = JSON.parse(
+    state.diagnostic.split("compile-supervision=")[1],
+  );
+  assert.equal(diagnostic.monitorJoined, true);
+  assert.equal(diagnostic.probesJoined, false);
+});
+
+test("explicit cancellation preserves its reason, creates no compile proof and joins the same owned cohort", async () => {
+  const controller = new AbortController(),
+    marker = new Error("PRIVATE_CANCELLATION");
+  const timer = setTimeout(() => controller.abort(marker), 5);
+  const state = await compileSupervisorModel({ stopSignal: controller.signal });
+  clearTimeout(timer);
+  assert.equal(state.error, marker);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.stops, 1);
+  const stopped = new AbortController();
+  stopped.abort(marker);
+  const before = await compileSupervisorModel({ stopSignal: stopped.signal });
+  assert.equal(before.error, marker);
+  assert.equal(before.snapshots, 0);
+  assert.equal(before.kills, 0);
 });
 test("never resolving initial snapshot denies admission finitely without guessed cohort signals", async () => {
   const state = await compileSupervisorModel({
@@ -7708,13 +7742,25 @@ test("fixed ps timeout kills only its creation-owned helper and cannot retain st
     ...Object.keys(dependencies),
     "return (" + body + ")",
   )(...Object.values(dependencies));
+  const probeJoins = new Set();
   await assert.rejects(
-    snapshot({ deadline: performance.now() + 100 }),
+    snapshot({ deadline: performance.now() + 100, probeJoins }),
     /Ownership snapshot deadline/,
   );
   assert.equal(killed, 1);
   assert.equal(unref, 1);
   assert.equal(ps.stdout.destroyed, true);
+  assert.equal(
+    probeJoins.size,
+    1,
+    "rejection alone is not a child-close witness",
+  );
+  ps.emit("close", null);
+  assert.equal(
+    probeJoins.size,
+    0,
+    "only actual child close retires the held probe",
+  );
 });
 
 test("a null primary rejection remains null through subsequent cleanup failures", async () => {
@@ -8620,7 +8666,8 @@ test("monitor rejected promise is distinguished from an unjoined live task witho
   const facts = JSON.parse(state.diagnostic.split("compile-supervision=")[1]);
   assert.equal(facts.failure, "UNCONFIRMED");
   assert.equal(facts.failureStage, "monitor");
-  assert.equal(facts.monitorJoined, false);
+  assert.equal(facts.monitorJoined, true);
+  assert.equal(facts.probesJoined, true);
   assert.equal(facts.monitorSettled, true);
   assert.equal(facts.monitorResult, "rejected");
   assert.equal(facts.monitorFailure.code, "PS_STDOUT_BOUND");

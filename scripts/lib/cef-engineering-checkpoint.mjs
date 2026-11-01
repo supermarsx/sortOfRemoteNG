@@ -2608,9 +2608,292 @@ export function processRows(text) {
   }
   return rows;
 }
+
+// The native collector remains proof-only until its exact Darwin ABI and owned
+// process fixtures have been reviewed. It cannot produce a live compile receipt.
+export const MAC_NATIVE_CENSUS_ADMITTED = false;
+const CENSUS_FAILURE_CODES = new Set([
+  "CENSUS_HOST",
+  "CENSUS_IMAGE",
+  "CENSUS_RUNNER",
+  "CENSUS_PYTHON",
+  "CENSUS_ROOT",
+  "CENSUS_TOOL_PIN",
+  "CENSUS_TOOL_CHANGED",
+  "CENSUS_DEADLINE",
+  "CENSUS_TOOL_BOUND",
+  "CENSUS_OWNED_FILE",
+  "CENSUS_ABI",
+  "CENSUS_ROWS_BOUND",
+  "CENSUS_ROWS_IDENTITY",
+  "CENSUS_ROWS_EMPTY",
+  "CENSUS_SYSCTL",
+  "CENSUS_ROOT_NOT_EMPTY",
+  "CENSUS_ORACLE_SOURCE",
+  "CENSUS_COMPILE_GATE",
+  "CENSUS_ORACLE_COMPILE",
+  "CENSUS_ORACLE_EXEC",
+  "CENSUS_REQUEST",
+  "CENSUS_OUTPUT_BOUND",
+  "CENSUS_ROLE",
+  "CENSUS_ACTOR_FILE",
+  "CENSUS_ARGUMENTS",
+  "CENSUS_UNADMITTED",
+  "CENSUS_FAILED",
+]);
+export function censusFailureCode(text) {
+  try {
+    assert(
+      typeof text === "string" && Buffer.byteLength(text) <= 4096,
+      "CENSUS_DIAGNOSTIC",
+    );
+    const value = JSON.parse(text);
+    shape(value, ["kind", "code", "productionAdmitted"]);
+    if (
+      value.kind === "mac-census-proof-failure" &&
+      value.productionAdmitted === false &&
+      CENSUS_FAILURE_CODES.has(value.code)
+    )
+      return value.code;
+  } catch {
+    /* Only a closed worker code is retained. */
+  }
+  return "CENSUS_UNAVAILABLE";
+}
+export function nativeCensusRows(value, request) {
+  shape(value, ["request", "rows", "collectMicros"]);
+  assert(value.request === request && positive(request), "CENSUS_REQUEST");
+  assert(
+    Number.isSafeInteger(value.collectMicros) &&
+      value.collectMicros >= 0 &&
+      value.collectMicros < 2_000_000,
+    "CENSUS_DEADLINE",
+  );
+  assert(
+    Array.isArray(value.rows) &&
+      value.rows.length > 0 &&
+      value.rows.length <= 32768,
+    "CENSUS_ROWS_BOUND",
+  );
+  const seen = new Set();
+  for (const row of value.rows) {
+    shape(row, ["pid", "parent", "group", "start"]);
+    assert(
+      positive(row.pid) &&
+        row.pid <= 2147483647 &&
+        Number.isSafeInteger(row.parent) &&
+        row.parent >= 0 &&
+        row.parent <= 2147483647 &&
+        Number.isSafeInteger(row.group) &&
+        row.group >= 0 &&
+        row.group <= 2147483647 &&
+        typeof row.start === "string" &&
+        /^darwin-v1:[1-9][0-9]{0,11}:(?:0|[1-9][0-9]{0,5})$/.test(row.start) &&
+        !seen.has(row.pid),
+      "CENSUS_ROWS_IDENTITY",
+    );
+    seen.add(row.pid);
+  }
+  return value.rows;
+}
+
+export function createMacCensusProofClient(child, { deadline } = {}) {
+  assert(
+    MAC_NATIVE_CENSUS_ADMITTED === false &&
+      positive(child?.pid) &&
+      typeof child.kill === "function" &&
+      Number.isFinite(deadline) &&
+      deadline > performance.now(),
+    "CENSUS_PROOF_ONLY",
+  );
+  let buffer = Buffer.alloc(0),
+    pending,
+    request = 0,
+    readyValue,
+    firstError,
+    failed = false,
+    closing = false,
+    joined = false,
+    closedValue,
+    readyTimer;
+  let readyResolve, readyReject, closedResolve;
+  const ready = new Promise((resolve, reject) => {
+    readyResolve = resolve;
+    readyReject = reject;
+  });
+  ready.catch(() => {});
+  const closed = new Promise((resolve) => {
+    closedResolve = resolve;
+  });
+  const deny = (error) => {
+    if (!failed) {
+      failed = true;
+      firstError = error;
+    }
+    clearTimeout(readyTimer);
+    readyReject(firstError);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pending.reject(firstError);
+      pending = null;
+    }
+  };
+  const frame = (line) => {
+    try {
+      const value = JSON.parse(line.toString("utf8"));
+      if (!readyValue) {
+        shape(value, ["kind", "abi", "oracleSha256", "productionAdmitted"]);
+        assert(
+          line.length <= 4096 &&
+            value.kind === "mac-census-proof-ready" &&
+            value.productionAdmitted === false &&
+            /^[a-f0-9]{64}$/.test(value.oracleSha256),
+          "CENSUS_READY",
+        );
+        assert(
+          value.abi &&
+            typeof value.abi === "object" &&
+            !Array.isArray(value.abi),
+          "CENSUS_ABI",
+        );
+        clearTimeout(readyTimer);
+        readyValue = value;
+        readyResolve(value);
+        return;
+      }
+      assert(pending && !failed, "CENSUS_UNSOLICITED");
+      const rows = nativeCensusRows(value, pending.id);
+      assert(performance.now() < pending.end, "CENSUS_DEADLINE");
+      const current = pending;
+      pending = null;
+      clearTimeout(current.timer);
+      current.resolve({
+        rows,
+        collectMicros: value.collectMicros,
+        roundtripMicros: Math.max(
+          0,
+          Math.floor((performance.now() - current.begin) * 1000),
+        ),
+      });
+    } catch (error) {
+      deny(error);
+    }
+  };
+  child.stdout.on("data", (chunk) => {
+    if (failed) return;
+    if (buffer.length + chunk.length > 4 * 1024 ** 2) {
+      deny(new Error("CENSUS_OUTPUT_BOUND"));
+      return;
+    }
+    buffer = Buffer.concat([buffer, chunk]);
+    for (;;) {
+      const index = buffer.indexOf(10);
+      if (index < 0) break;
+      const line = buffer.subarray(0, index);
+      buffer = buffer.subarray(index + 1);
+      frame(line);
+      if (failed) break;
+    }
+  });
+  child.stdout.on("error", (error) => deny(error));
+  child.stdin.on("error", (error) => deny(error));
+  let stderrBytes = 0;
+  const stderrChunks = [];
+  child.stderr.on("data", (chunk) => {
+    stderrBytes += chunk.length;
+    if (stderrBytes <= 4096) stderrChunks.push(chunk);
+    if (stderrBytes > 4096) deny(new Error("CENSUS_STDERR_BOUND"));
+  });
+  child.stderr.on("error", (error) => deny(error));
+  child.once("error", (error) => deny(error));
+  child.once("close", (code, signal) => {
+    joined = true;
+    closedValue = { code, signal };
+    closedResolve(closedValue);
+    clearTimeout(readyTimer);
+    if (!closing || pending || buffer.length) deny(new Error("CENSUS_EOF"));
+  });
+  readyTimer = setTimeout(
+    () => deny(new Error("CENSUS_READY_DEADLINE")),
+    Math.max(1, Math.min(45000, deadline - performance.now())),
+  );
+  return {
+    ready,
+    diagnostics: () => ({
+      code: censusFailureCode(Buffer.concat(stderrChunks).toString("utf8")),
+      stderrBytes,
+    }),
+    abort: (error = new Error("CENSUS_ABORT")) => deny(error),
+    async snapshot() {
+      await ready;
+      if (failed) throw firstError;
+      assert(!pending && !closing && !joined, "CENSUS_REQUEST");
+      const begin = performance.now(),
+        end = Math.min(begin + 2000, deadline);
+      assert(end > begin, "CENSUS_DEADLINE");
+      return new Promise((resolve, reject) => {
+        const id = ++request;
+        pending = {
+          id,
+          begin,
+          end,
+          resolve,
+          reject,
+          timer: setTimeout(
+            () => deny(new Error("CENSUS_DEADLINE")),
+            Math.max(1, Math.floor(end - begin)),
+          ),
+        };
+        try {
+          child.stdin.write(JSON.stringify({ request: id }) + "\n", (error) => {
+            if (error) deny(error);
+          });
+        } catch (error) {
+          deny(error);
+        }
+      });
+    },
+    async close() {
+      closing = true;
+      if (pending) deny(new Error("CENSUS_ABORT"));
+      if (!joined) {
+        if (failed) child.kill("SIGKILL");
+        else child.stdin.end();
+      }
+      const end = Math.min(deadline, performance.now() + COMPILE_CLEANUP_MS);
+      const timer = setTimeout(
+        () => {
+          if (!joined) child.kill("SIGKILL");
+        },
+        Math.max(1, Math.min(1000, end - performance.now() - 100)),
+      );
+      try {
+        const result = await compileWithin(() => closed, end);
+        assert(joined && (failed || result.code === 0), "CENSUS_JOIN");
+        return {
+          joined: true,
+          code: result.code,
+          failed,
+          requests: request,
+          stderrBytes,
+        };
+      } finally {
+        clearTimeout(timer);
+        if (!joined) {
+          child.kill("SIGKILL");
+          child.stdout.destroy();
+          child.stderr.destroy();
+          child.stdin.destroy();
+          child.unref();
+        }
+      }
+    },
+  };
+}
 async function processSnapshot({
   deadline = performance.now() + 2000,
   signal,
+  probeJoins,
 } = {}) {
   compileMonitorGuard(
     !signal?.aborted && performance.now() < deadline,
@@ -2623,6 +2906,15 @@ async function processSnapshot({
       shell: false,
       env: { PATH: "/usr/bin:/bin", LC_ALL: "C", TZ: "UTC" },
       stdio: ["ignore", "pipe", "ignore"],
+    });
+    let probeClosed;
+    const closeWitness = new Promise((resolve) => {
+      probeClosed = resolve;
+    });
+    probeJoins?.add(closeWitness);
+    ps.once("close", () => {
+      probeClosed();
+      probeJoins?.delete(closeWitness);
     });
     let text = "",
       failure = null,
@@ -2780,7 +3072,7 @@ export async function observedQuiet(records, group, options = {}) {
 async function stopObserved(
   child,
   initial,
-  { deadline = performance.now() + 10000 } = {},
+  { deadline = performance.now() + 10000, probeJoins } = {},
 ) {
   let owned = initial,
     stable = false;
@@ -2788,7 +3080,7 @@ async function stopObserved(
   // created separate process groups. No global executable-name selection.
   for (let round = 0; round < 8; round++) {
     assert(performance.now() < deadline, "Owned freeze deadline");
-    const rows = await processSnapshot({ deadline });
+    const rows = await processSnapshot({ deadline, probeJoins });
     const next = observedLineage(rows, owned);
     for (const record of next) {
       const current = rows.find((row) => row.pid === record.pid);
@@ -2809,7 +3101,7 @@ async function stopObserved(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert(stable, "Observed lineage did not stabilize");
-  const snapshot = await processSnapshot({ deadline });
+  const snapshot = await processSnapshot({ deadline, probeJoins });
   for (const record of [...owned].reverse()) {
     const current = snapshot.find((row) => row.pid === record.pid);
     if (!current) continue;
@@ -2823,7 +3115,8 @@ async function stopObserved(
   // Never send a group kill after its leader exited: a reused group could
   // belong to someone else. Remaining group peers make the proof fail closed.
   for (let i = 0; i < 50; i++) {
-    if (await observedQuiet(owned, child.pid, { deadline })) return owned;
+    if (await observedQuiet(owned, child.pid, { deadline, probeJoins }))
+      return owned;
     assert(performance.now() < deadline, "Owned reap deadline");
     await new Promise((resolve) =>
       setTimeout(
@@ -2905,8 +3198,10 @@ export async function compileSlice(
     milliseconds = LIMITS.compileMs,
     outputLedger,
     observeRoot,
+    stopSignal,
   },
 ) {
+  if (stopSignal?.aborted) throw stopSignal.reason;
   assert(
     process.platform !== "win32" &&
       positive(milliseconds) &&
@@ -2984,6 +3279,10 @@ export async function compileSlice(
     wakeStop();
   };
   const observer = new AbortController();
+  const cancelled = () => fail(stopSignal.reason, "cancel");
+  stopSignal?.addEventListener("abort", cancelled, { once: true });
+  if (stopSignal?.aborted) cancelled();
+  const probeJoins = new Set();
   const ownedObserverAbort =
     observeRoot === undefined ? null : new AbortController();
   let ownedObserver = null;
@@ -2991,6 +3290,7 @@ export async function compileSlice(
     outputGates = [];
   let stdout, stderr, child;
   try {
+    if (hasFailure) throw firstError;
     for (const name of ["stdout", "stderr"]) {
       const stream = createWriteStream(
         path.join(logs, `checkpoint-compile.${name}.log`),
@@ -3022,6 +3322,7 @@ export async function compileSlice(
       }
     }
     [stdout, stderr] = streams;
+    if (hasFailure) throw firstError;
     child = spawn(executable, args, {
       cwd,
       env: { ...env, TZ: "UTC" },
@@ -3030,6 +3331,7 @@ export async function compileSlice(
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
+    stopSignal?.removeEventListener("abort", cancelled);
     for (const stream of [...streams, ...outputGates]) stream.destroy();
     throw error;
   }
@@ -3076,6 +3378,7 @@ export async function compileSlice(
   const initial = processSnapshot({
     deadline: workDeadline + COMPILE_CLEANUP_MS,
     signal: observer.signal,
+    probeJoins,
   }).then((rows) => {
     snapshotSeen(rows);
     const root = rows.find((row) => row.pid === child.pid);
@@ -3131,6 +3434,7 @@ export async function compileSlice(
       const rows = await processSnapshot({
         deadline: workDeadline + COMPILE_CLEANUP_MS,
         signal: observer.signal,
+        probeJoins,
       });
       snapshotSeen(rows);
       observed = observedLineage(rows, observed);
@@ -3157,6 +3461,7 @@ export async function compileSlice(
   let cleanupDeadline,
     quiet = false,
     monitorJoined = false,
+    probesJoined = false,
     outputsJoined = false;
   try {
     // Exit, not close: descendants can retain inherited pipes after root exit.
@@ -3171,8 +3476,16 @@ export async function compileSlice(
     // Let an in-flight fixed ps operation close within its own2s bound;
     // cancelling it without a close witness would deny otherwise clean output.
     try {
-      await compileWithin(() => monitor, cleanupDeadline);
+      const outcome = await compileWithin(
+        () =>
+          monitor.then(
+            () => ({ passed: true }),
+            (error) => ({ passed: false, error }),
+          ),
+        cleanupDeadline,
+      );
       monitorJoined = true;
+      if (!outcome.passed) fail(outcome.error, "monitor-join");
     } catch (error) {
       fail(error, "monitor-join");
     }
@@ -3180,7 +3493,10 @@ export async function compileSlice(
       try {
         quiet = await compileWithin(
           () =>
-            observedQuiet(observed, child.pid, { deadline: cleanupDeadline }),
+            observedQuiet(observed, child.pid, {
+              deadline: cleanupDeadline,
+              probeJoins,
+            }),
           cleanupDeadline,
         );
       } catch (error) {
@@ -3202,12 +3518,19 @@ export async function compileSlice(
           "Unconfirmed compiler ownership; checkpoint denied",
         );
         observed = await compileWithin(
-          () => stopObserved(child, observed, { deadline: cleanupDeadline }),
+          () =>
+            stopObserved(child, observed, {
+              deadline: cleanupDeadline,
+              probeJoins,
+            }),
           cleanupDeadline,
         );
         quiet = await compileWithin(
           () =>
-            observedQuiet(observed, child.pid, { deadline: cleanupDeadline }),
+            observedQuiet(observed, child.pid, {
+              deadline: cleanupDeadline,
+              probeJoins,
+            }),
           cleanupDeadline,
         );
         assert(quiet, "Observed descendants not reaped; checkpoint denied");
@@ -3251,10 +3574,17 @@ export async function compileSlice(
         fail(error, "observer-join");
       }
     }
+    try {
+      await compileWithin(() => Promise.all([...probeJoins]), cleanupDeadline);
+      probesJoined = true;
+    } catch (error) {
+      fail(error, "probe-join");
+    }
     if (
       hasFailure &&
       quiet &&
       monitorJoined &&
+      probesJoined &&
       outputsJoined &&
       rootExited &&
       pipeClosed
@@ -3286,6 +3616,7 @@ export async function compileSlice(
       !hasFailure &&
         quiet &&
         monitorJoined &&
+        probesJoined &&
         outputsJoined &&
         rootExited &&
         pipeClosed,
@@ -3334,6 +3665,7 @@ export async function compileSlice(
     fail(error);
     throw firstError;
   } finally {
+    stopSignal?.removeEventListener("abort", cancelled);
     clearTimeout(timer);
     monitoring = false;
     observer.abort();
@@ -3353,6 +3685,7 @@ export async function compileSlice(
         rootExited,
         pipeClosed,
         monitorJoined,
+        probesJoined,
         monitorSettled,
         monitorResult,
         monitorFailure,
