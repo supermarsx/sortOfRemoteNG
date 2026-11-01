@@ -52,6 +52,8 @@ mod native_dialogs;
 mod origin_browser_commands;
 #[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
 mod origin_browser_observability;
+// Keep the fail-closed command DTOs available in builds without CEF.
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
 mod origin_browser_security;
 mod origin_browser_diagnostics;
 mod origin_browser_recording;

@@ -146,6 +146,8 @@ impl Observations {
         }
     }
 
+    // Preserve the exact handshake evidence and its admission metadata together.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_transport(
         &self,
         origin: &str,
@@ -171,6 +173,8 @@ impl Observations {
         );
     }
 
+    // A navigation observation binds the view, inspection and shell sequence.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_navigation(
         &self,
         view_id: Option<String>,
@@ -198,6 +202,8 @@ impl Observations {
         );
     }
 
+    // Shared insertion keeps the identity fence and transport evidence atomic.
+    #[allow(clippy::too_many_arguments)]
     fn record_key(
         &self,
         key: &str,
@@ -220,7 +226,7 @@ impl Observations {
             || chain
                 .iter()
                 .try_fold(0usize, |total, der| total.checked_add(der.len()))
-                .is_none_or(|total| total > 2 * 1024 * 1024)
+                .map_or(true, |total| total > 2 * 1024 * 1024)
         {
             // Admission and inspection have different payload limits. An
             // admitted replacement too large for this inspector must clear
@@ -393,6 +399,7 @@ impl Observations {
             }
         }
     }
+    #[cfg(test)]
     pub fn read(&self, origin: &str) -> (&'static str, Option<Observation>) {
         self.read_view(origin, &None)
     }
@@ -423,6 +430,7 @@ impl Observations {
             None => ("pending", None),
         }
     }
+    #[cfg(test)]
     pub fn get(&self, origin: &str) -> Option<Observation> {
         self.0
             .try_lock()
