@@ -530,6 +530,118 @@ const ADMISSION_STAGES = new Set([
   "workdir",
 ]);
 
+const PREPARATION_PHASES = new Set(["environment", "metal", "external-inputs"]);
+const PREPARATION_CAUSES = new Set([
+  "MAC_SOURCE_HOST_SCOPE",
+  "MAC_SOURCE_ENV_SCOPE",
+  "MAC_SOURCE_RUNNER_SCOPE",
+  "MAC_SOURCE_IDENTITY_SCOPE",
+  "MAC_METAL_SELECTED_ENV",
+  "MAC_METAL_FILE_BOUND",
+  "MAC_METAL_FILE_CHANGED",
+  "MAC_METAL_VERSION_BOUND",
+  "MAC_METAL_VERSION_MISSING",
+  "MAC_METAL_OBSERVATION",
+  "MAC_METAL_DOWNLOAD_POLICY",
+  "MAC_METAL_DEADLINE",
+  "MAC_METAL_COMMAND_FAILED",
+  "MAC_METAL_RESOLVED_PATH",
+  "MAC_METAL_COMPONENT_DRIFT",
+  "MAC_METAL_PROBE_FAILED",
+  "MAC_METAL_UNAVAILABLE",
+  "MAC_EXTERNAL_ATTESTATION",
+  "MAC_EXTERNAL_CONTEXT",
+  "MAC_EXTERNAL_DEADLINE",
+  "MAC_EXTERNAL_ENTRY_CYCLE",
+  "MAC_EXTERNAL_ENTRY_KIND",
+  "MAC_EXTERNAL_ENTRY_TARGET",
+  "MAC_EXTERNAL_ENTRY",
+  "MAC_EXTERNAL_METAL",
+  "MAC_EXTERNAL_MODE",
+  "MAC_EXTERNAL_OUTPUT",
+  "MAC_EXTERNAL_PINS",
+  "MAC_EXTERNAL_PLAN",
+  "MAC_EXTERNAL_PYTHON",
+  "MAC_EXTERNAL_REPORT_CHANGED",
+  "MAC_EXTERNAL_REPORT_HASH",
+  "MAC_EXTERNAL_REPORT_PARENT",
+  "MAC_EXTERNAL_REPORT",
+  "MAC_EXTERNAL_REQUIRED_PIN",
+  "MAC_EXTERNAL_RESULT",
+  "MAC_EXTERNAL_ROLE",
+  "MAC_EXTERNAL_SDK_RELATION_CHANGED",
+  "MAC_EXTERNAL_SDK_RELATION",
+  "MAC_EXTERNAL_SDK",
+  "MAC_EXTERNAL_SELECTED",
+  "MAC_EXTERNAL_TARGET",
+  "MAC_EXTERNAL_TOTALS",
+]);
+
+// At most two closed-schema records per fixed phase. Observation failures never
+// replace the operation's original result, exception or cancellation object.
+export async function observePreparationPhase(
+  logs,
+  phase,
+  operation,
+  { openFile = open, emit = console.log } = {},
+) {
+  if (!PREPARATION_PHASES.has(phase))
+    fail("Invalid preparation observation phase");
+  let file;
+  try {
+    file = await openFile(
+      path.join(logs, `preparation-${phase}.jsonl`),
+      "wx",
+      0o600,
+    );
+  } catch {
+    /* Observation only. */
+  }
+  const record = async (status, cause) => {
+    const value = {
+      kind: "cef-pre-acquisition",
+      phase,
+      status,
+      ...(cause ? { cause } : {}),
+    };
+    const line = JSON.stringify(value);
+    try {
+      emit(`[cef-runtime-ci] preparation=${line}`);
+    } catch {
+      /* Observation only. */
+    }
+    try {
+      await file?.writeFile(line + "\n");
+    } catch {
+      /* Observation only. */
+    }
+  };
+  try {
+    await record("start");
+    try {
+      const result = await operation();
+      await record("pass");
+      return result;
+    } catch (error) {
+      let cause = "operation-failed";
+      try {
+        const message = error?.message;
+        if (PREPARATION_CAUSES.has(message)) cause = message;
+      } catch {
+        /* Even an error accessor must not replace the primary. */
+      }
+      await record("failure", cause);
+      throw error;
+    }
+  } finally {
+    try {
+      await file?.close();
+    } catch {
+      /* Observation only. */
+    }
+  }
+}
+
 // Retain an exclusive file handle in the already-owned preparation logs. No
 // exception text or caller-supplied record is serialized. These observations do
 // not grant admission or change the original checks, inputs or deadlines.
@@ -1233,15 +1345,17 @@ export async function build(
   const chromium = path.join(source, "src"),
     cef = path.join(chromium, "cef"),
     depot = path.join(source, "depot_tools");
-  const childEnv = buildEnvironment(
-    runner,
-    { toolsRoot, source, depot, python },
-    env,
-    engineering?.sourceMetadata === "mac-intel"
-      ? "mac-intel"
-      : engineering?.sourceMetadata === "mac-arm"
-        ? "mac-arm"
-        : engineering?.sourceMetadata === true,
+  const childEnv = await observePreparationPhase(logs, "environment", () =>
+    buildEnvironment(
+      runner,
+      { toolsRoot, source, depot, python },
+      env,
+      engineering?.sourceMetadata === "mac-intel"
+        ? "mac-intel"
+        : engineering?.sourceMetadata === "mac-arm"
+          ? "mac-arm"
+          : engineering?.sourceMetadata === true,
+    ),
   );
   // Non-secret job ownership marker permits the Actions runner's final cleanup
   // if stopping the exact owned child tree itself fails.
@@ -1279,18 +1393,20 @@ export async function build(
   };
   // Supplemental Apple components are observed AFTER the selected tool-map pins;
   // they are not retroactively claimed to be part of that static inventory.
-  const metal = await prepareMacMetalToolchain({
-    platform: expectedPlatform,
-    selected: {
-      DEVELOPER_DIR: childEnv.DEVELOPER_DIR,
-      SDKROOT: childEnv.SDKROOT,
-    },
-    env,
-    allowDownload: runnerMode === "hosted",
-    remainingMilliseconds: () =>
-      budget?.remaining() ??
-      HOSTED_RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
-  });
+  const metal = await observePreparationPhase(logs, "metal", () =>
+    prepareMacMetalToolchain({
+      platform: expectedPlatform,
+      selected: {
+        DEVELOPER_DIR: childEnv.DEVELOPER_DIR,
+        SDKROOT: childEnv.SDKROOT,
+      },
+      env,
+      allowDownload: runnerMode === "hosted",
+      remainingMilliseconds: () =>
+        budget?.remaining() ??
+        HOSTED_RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
+    }),
+  );
   if (metal)
     await writeFile(
       path.join(logs, "mac-metal-toolchain.json"),
@@ -1301,13 +1417,15 @@ export async function build(
       { flag: "wx" },
     );
   const macExternalInputs = engineering?.beforeAcquire
-    ? await engineering.beforeAcquire({
-        metal,
-        env: childEnv,
-        logs,
-        runner,
-        work,
-      })
+    ? await observePreparationPhase(logs, "external-inputs", () =>
+        engineering.beforeAcquire({
+          metal,
+          env: childEnv,
+          logs,
+          runner,
+          work,
+        }),
+      )
     : undefined;
   const patched = path.join(checkout, "scripts/cef-patched-runtime.mjs");
   const facts = JSON.parse(

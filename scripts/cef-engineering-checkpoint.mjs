@@ -357,7 +357,14 @@ async function checkpointMain(argv, env, observer) {
                     verified.python,
                     HELPER,
                     selected.argv("mac-external-observe", contextFile).slice(3),
-                    { timeout },
+                    {
+                      timeout,
+                      observeFailure: (record) =>
+                        checkpointLog(
+                          console.log,
+                          `[cef-engineering-checkpoint] mac-external=${canonical(record)}`,
+                        ),
+                    },
                   );
                   const attestation = await readMacExternalObservation(
                     selected,
