@@ -97,6 +97,7 @@ function Fixture({
   settingsReady = true,
   documentReady = true,
   scopeKey = "db:unlock-1",
+  onReady,
 }: {
   doc?: OriginAutomationDocument | null;
   fetchNative?: boolean;
@@ -106,8 +107,9 @@ function Fixture({
   settingsReady?: boolean;
   documentReady?: boolean;
   scopeKey?: string;
+  onReady?: () => void;
 }) {
-  current = useOriginWebsiteAutomation({
+  const automation = useOriginWebsiteAutomation({
     connection,
     ownerDatabaseId: "db",
     settings,
@@ -123,6 +125,11 @@ function Fixture({
     transport,
     updateConnection: boundary.update,
   });
+  current = automation;
+  const ready = automation.pageReady && automation.libraryReady;
+  React.useLayoutEffect(() => {
+    if (ready) onReady?.();
+  }, [ready, onReady]);
   return <OriginAutomationControls automation={current} />;
 }
 const documentReads = () =>
@@ -228,6 +235,24 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("native automation hook and reused controls", () => {
+  it("keeps a recording started as soon as the new document becomes ready", async () => {
+    let started: Promise<boolean> | undefined;
+    const onReady = vi.fn(() => {
+      started = current.startRecording();
+    });
+    const view = render(
+      <Fixture fetchNative documentReady={false} onReady={onReady} />,
+    );
+    await waitFor(() => expect(current.libraryReady).toBe(true));
+    expect(onReady).not.toHaveBeenCalled();
+    view.rerender(<Fixture fetchNative documentReady onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      expect(await started).toBe(true);
+    });
+    expect(current.recording).toBe(true);
+    expect(documentReads()).toHaveLength(1);
+  });
   it("waits for native document completion even when loading and URL are unchanged", async () => {
     const view = render(<Fixture fetchNative documentReady={false} />);
     await waitFor(() => expect(current.libraryReady).toBe(true));

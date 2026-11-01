@@ -1,4 +1,11 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import type { AutomationScope } from "../../types/recording/automationLibrary";
 import type { Connection } from "../../types/connection/connection";
@@ -565,7 +572,9 @@ export function useWebAutomation(options: Options) {
   ]);
 
   const executionKey = `${options.navigationKey}:${options.blocked}:${accessKey}:${JSON.stringify(permissions.value)}`;
-  useEffect(() => {
+  // Finish the old document's cancellation before the ready controls can start
+  // work for the new document. A deferred effect could cancel that new work.
+  useLayoutEffect(() => {
     cancel();
     bridge.cancel(false);
     // A document replacement invalidates pending requests, but it must not
