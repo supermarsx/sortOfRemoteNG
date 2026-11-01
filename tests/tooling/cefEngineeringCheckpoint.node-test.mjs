@@ -3728,9 +3728,10 @@ test("selected SDK preflight uses actual factory argv and token-free environment
     compile.indexOf('afterGnPhase("sdk-preflight"') <
       compile.indexOf("await workspace("),
   );
+  const buildCall = /\bbuild\(/.exec(compile);
   assert(
-    compile.indexOf('afterGnPhase("sdk-preflight"') <
-      compile.indexOf("await build("),
+    buildCall &&
+      compile.indexOf('afterGnPhase("sdk-preflight"') < buildCall.index,
   );
   assert.deepEqual(argumentsFor(["probe-sdk"]), { mode: "probe-sdk" });
   assert.throws(() => argumentsFor(["probe-sdk", "--mode", "checkpoint"]));
@@ -6230,13 +6231,15 @@ test("Mac supplemental compiler identity participates in fresh checkpoint identi
     new URL("../../scripts/cef-engineering-checkpoint.mjs", import.meta.url),
     "utf8",
   );
-  assert.match(
-    source,
-    /supplementalMetal: macMetalFingerprint\(context\.metal\)/,
-  );
-  assert.ok(
-    source.indexOf("macMetalFingerprint(context.metal)") <
-      source.indexOf('afterGnPhase("restore"'),
+  const metalBindings = [
+    ...source.matchAll(
+      /supplementalMetal:\s*macMetalFingerprint\(\s*context\.metal,?\s*\)/g,
+    ),
+  ];
+  assert.equal(metalBindings.length, 2);
+  const restore = source.indexOf('afterGnPhase("restore"');
+  assert(
+    restore >= 0 && metalBindings.every((binding) => binding.index < restore),
   );
   assert.match(
     source,
@@ -10411,6 +10414,12 @@ test("Mac external report actual reader preserves null/read/hash errors across c
           .macExternalInputs.historicalMetalResourceClosureVerified,
         false,
       );
+      const binding = mac.macExternalToolsBinding({}, proof).macExternalInputs;
+      assert.equal(binding.roles.length, 4);
+      assert.equal(
+        binding.requiredPins.find((pin) => pin.role === "python").path,
+        "Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+      );
       assert.throws(
         () => mac.macExternalToolsBinding({}, { ...proof }),
         /MAC_EXTERNAL_ATTESTATION/,
@@ -11387,9 +11396,9 @@ tree=ast.parse(pathlib.Path(sys.argv[1]).read_bytes());node=next(n for n in tree
 end=next(i for i,n in enumerate(node.body)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='names'for t in n.targets));node.body=node.body[:end]+[ast.Return(ast.Name(id='context',ctx=ast.Load()))]
 exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),'actual-context-prefix','exec'),m.__dict__)
 d='/Applications/Xcode_26.3.app/Contents/Developer';root='/Users/runner/work/_temp/cef-mac-inputs-11111111-1111-4111-8111-111111111111'
-c={'schemaVersion':1,'kind':'sorng-macarm-external-input-context','target':'aarch64-apple-darwin','roots':{'sdk':d+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk','toolchain':d+'/Toolchains/XcodeDefault.xctoolchain','metal':d+'/Toolchains/XcodeDefault.xctoolchain','python':'/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework'},'runnerTemp':'/Users/runner/work/_temp','outputRoot':root,'requiredPins':[],'limits':{'entries':1000000,'fileBytes':8*1024**3,'bytes':256*1024**3,'metadataBytes':128*1024**2,'readers':4,'seconds':600,'capabilitySeconds':5},'originalMetalFingerprint':{},'historicalMetalResourceClosureVerified':False}
+c={'schemaVersion':1,'kind':'sorng-macarm-external-input-context','target':'aarch64-apple-darwin','roots':{'sdk':d+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk','toolchain':d+'/Toolchains/XcodeDefault.xctoolchain','metal':d+'/Toolchains/XcodeDefault.xctoolchain','python':'/usr/local/Cellar/python@3.14/3.14.7'},'runnerTemp':'/Users/runner/work/_temp','outputRoot':root,'requiredPins':[],'limits':{'entries':1000000,'fileBytes':8*1024**3,'bytes':256*1024**3,'metadataBytes':128*1024**2,'readers':4,'seconds':600,'capabilitySeconds':5},'originalMetalFingerprint':{},'historicalMetalResourceClosureVerified':False}
 def run(value):
- with patch.object(sys,'platform','darwin'),patch.object(m,'source_read_bytes',return_value=json.dumps(value).encode()):return m.mac_external_context(pathlib.PurePosixPath(root+'/context.json'),pathlib.PurePosixPath(root+'/external.json'),'mac-external-observe',m.Budget(5))
+ with patch.object(sys,'platform','darwin'),patch.object(m.platform,'machine',return_value='x86_64'),patch.dict(m.os.environ,{'ImageOS':'macos15','ImageVersion':'20260824.0482.1','GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public'},clear=True),patch.object(m,'source_read_bytes',return_value=json.dumps(value).encode()):return m.mac_external_context(pathlib.PurePosixPath(root+'/context.json'),pathlib.PurePosixPath(root+'/external.json'),'mac-external-observe',m.Budget(5))
 assert run(c)['roots']['sdk']==c['roots']['sdk']
 for name in ['MacOSX26.2.sdk','MacOSX26.3.sdk','Foreign.sdk','MacOSX.sdk/..']:
  bad=copy.deepcopy(c);bad['roots']['sdk']=d+'/Platforms/MacOSX.platform/Developer/SDKs/'+name
@@ -12132,7 +12141,7 @@ from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('link_subject',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 source=pathlib.Path(sys.argv[1]).read_bytes();tree=ast.parse(source)
 developer='/Applications/Xcode_26.3.app/Contents/Developer'
-ROOTS={'sdk':m._MAC_EXTERNAL_SDK_ROOT,'toolchain':developer+'/Toolchains/XcodeDefault.xctoolchain','metal':'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/'+'a'*40+'/Metal.xctoolchain','python':'/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework'}
+ROOTS={'sdk':m._MAC_EXTERNAL_SDK_ROOT,'toolchain':developer+'/Toolchains/XcodeDefault.xctoolchain','metal':'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/'+'a'*40+'/Metal.xctoolchain','python':'/usr/local/Cellar/python@3.14/3.14.7'}
 def inventories():return {role:{'entries':[]}for role in ROOTS}
 def link(values,role,name,target):
  values[role]['entries'].append({'path':name,'kind':'symlink','target':target,'sha256':hashlib.sha256(target.encode()).hexdigest()})
@@ -12174,7 +12183,7 @@ class ExternalLinkDiagnostic(unittest.TestCase):
   for label,root in m._EXTERNAL_LINK_PUBLIC_PREFIXES.items():
    # Real resolver still denies a missing/unattested public location.
    values=inventories();link(values,'sdk','origin',root+'missing')
-   error,out,_=self.failure(values);projected=out['externalLinkFailure']['target'];self.assertEqual(projected['scope'],'public-prefix');self.assertEqual(projected['publicPrefix'],label);self.assertEqual(projected['prefix'],'missing')
+   error,out,_=self.failure(values);projected=out['externalLinkFailure']['target'];self.assertEqual(projected['scope'],'declared-role' if label=='pinned-python-cellar' else 'public-prefix');self.assertEqual(projected['publicPrefix'],None if label=='pinned-python-cellar' else label);self.assertEqual(projected['prefix'],'missing')
   for target in ['/Users/private/secret','/private/tmp/secret','/var/private/secret','/etc/private/secret','/home/private/secret','/usr/local/Cellar/unknown/99/secret','/usr/local/Cellar/python@3.14/3.14.8/secret','/System/Library/../Users/private/secret']:
    with self.subTest(target=target):
     values=inventories();link(values,'sdk','origin',target);error,out,_=self.failure(values);p=out['externalLinkFailure']['target'];self.assertTrue(p['omitted']);self.assertIsNone(p['prefix']);self.assertEqual(p['sha256'],hashlib.sha256(target.encode()).hexdigest());self.assertNotIn('secret',json.dumps(out))
@@ -12753,6 +12762,66 @@ test(
   },
 );
 
+test("promoted Python package scope preserves both producer envelopes and the unchanged pinned executable", async () => {
+  const arm = await macExternalFixture(),
+    intel = await intelExternalFixture();
+  const qualification = arm.mac.MAC_PYTHON_PACKAGE_QUALIFICATION;
+  assert(
+    Object.isFrozen(qualification) && Object.isFrozen(qualification.evidence),
+  );
+  assert.equal(qualification.root, "/usr/local/Cellar/python@3.14/3.14.7");
+  assert.deepEqual(qualification.evidence, {
+    runId: 41342493469,
+    artifactId: 13097771563,
+    sha256: "4ba4519035f4f650bc9cff34c95c54ab1c02573caac3a6344bab9c66aa024fed",
+    snapshotSha256:
+      "2087e50be429d407b2b6a217b030cf6102cf968a3b1d8bed0ba1690638cef2b2",
+  });
+  for (const { options, plan, mac } of [arm, intel]) {
+    assert.deepEqual(Object.keys(plan.context.roots), [
+      "sdk",
+      "toolchain",
+      "metal",
+      "python",
+    ]);
+    assert.equal(plan.context.roots.python, qualification.root);
+    assert.equal(plan.context.requiredPins.length, 10);
+    const pin = plan.context.requiredPins.find((pin) => pin.role === "python");
+    assert.equal(
+      pin.path,
+      "Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+    );
+    assert.equal(pin.size, 13592);
+    assert.equal(
+      pin.sha256,
+      "b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d",
+    );
+    assert.equal(qualification.root + "/" + pin.path, "/" + options.map.python);
+    const create =
+      options.map.target === "x86_64-apple-darwin"
+        ? mac.macIntelExternalObservationPlan
+        : mac.macExternalObservationPlan;
+    for (const change of [
+      { architecture: "arm64" },
+      { imageVersion: "latest" },
+      { platform: "linux" },
+      { runner: "macos-15" },
+    ])
+      assert.throws(
+        () =>
+          create({
+            ...options,
+            map: {
+              ...options.map,
+              hosted: { ...options.map.hosted, ...change },
+            },
+          }),
+        /MAC_EXTERNAL_PYTHON_HOST/,
+      );
+  }
+  assert.equal(arm.mac.MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted, false);
+});
+
 async function intelExternalFixture() {
   const { mac, options, plan: arm } = await macExternalFixture();
   const namespace = path.join(
@@ -13021,6 +13090,12 @@ test("Intel held external reader binds target source kind and opaque tokens with
     mac.MAC_INTEL_SOURCE_POLICY.source,
   );
   assert.equal(binding.macExternalInputs.target, "x86_64-apple-darwin");
+  assert.equal(binding.macExternalInputs.roles.length, 4);
+  assert.equal(
+    binding.macExternalInputs.requiredPins.find((pin) => pin.role === "python")
+      .path,
+    "Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+  );
   assert.equal(
     mac.macIntelExternalObservationEvidence(token).sourceWriteAdmitted,
     false,
@@ -13100,16 +13175,18 @@ value=json.loads(sys.argv[2]);root=pathlib.PurePosixPath(value['outputRoot'])
 class Folder:
  def stat(self):return types.SimpleNamespace(st_uid=501,st_mode=stat.S_IFDIR|0o700)
  def __truediv__(self,leaf):return root/leaf
-def run(c):
- with patch.object(sys,'platform','darwin'),patch.object(m,'source_read_bytes',return_value=json.dumps(c).encode()),patch.object(m,'safe',return_value=Folder()),patch.object(m.os,'geteuid',return_value=501,create=True),patch.object(m.os.path,'lexists',return_value=False):
-  return m.mac_external_context(root/'context.json',root/'external.json','mac-external-observe',m.Budget(5))
+def run(c,mode='mac-external-observe'):
+ with patch.object(sys,'platform','darwin'),patch.object(m.platform,'machine',return_value='x86_64'),patch.dict(m.os.environ,{'ImageOS':'macos15','ImageVersion':'20260824.0482.1','GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public'},clear=True),patch.object(m,'source_read_bytes',return_value=json.dumps(c).encode()),patch.object(m,'safe',return_value=Folder()),patch.object(m.os,'geteuid',return_value=501,create=True),patch.object(m.os.path,'lexists',return_value=False):
+  return m.mac_external_context(root/'context.json',root/('capability.json' if mode=='mac-owned-capability-observe' else 'external.json'),mode,m.Budget(5))
 assert run(value)==value
+assert run(value,'mac-owned-capability-observe')==value
 for delta in ({'source':'0'*64},{'target':'aarch64-apple-darwin'},{'kind':'sorng-macarm-external-input-context'},{'extra':True},{'source':None}):
  try:run({**value,**delta})
  except m.CheckpointError:pass
  else:raise AssertionError('cross envelope admitted')
 arm={k:v for k,v in value.items() if k!='source'};arm.update(kind='sorng-macarm-external-input-context',target='aarch64-apple-darwin')
 assert run(arm)==arm
+assert run(arm,'mac-owned-capability-observe')==arm
 for delta in ({'source':value['source']},{'kind':'sorng-macintel-external-input-context'},{'target':'x86_64-apple-darwin'}):
  try:run({**arm,**delta})
  except m.CheckpointError:pass
@@ -13119,6 +13196,23 @@ for role in ('sdk','toolchain','python','metal'):
  try:run(bad)
  except m.CheckpointError:pass
  else:raise AssertionError('root widened')
+for original in (value,arm):
+ for wrong in ('/usr/local','/usr/local/opt/python@3.14','/usr/local/Cellar/python@3.14','/usr/local/Cellar/python@3.14/3.14.6',original['roots']['python']+'/Frameworks/Python.framework'):
+  bad=copy.deepcopy(original);bad['roots']['python']=wrong
+  try:run(bad);raise AssertionError('unqualified Python root admitted')
+  except m.CheckpointError as error:assert str(error)=='source-mac-roots'
+ bad=copy.deepcopy(original);next(pin for pin in bad['requiredPins'] if pin['role']=='python')['path']='Versions/3.14/bin/python3.14'
+ try:run(bad);raise AssertionError('stale Framework-relative pin admitted')
+ except m.CheckpointError as error:assert str(error)=='source-mac-pins'
+goodenv={'ImageOS':'macos15','ImageVersion':'20260824.0482.1','GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public'}
+for change in ({'ImageOS':'macos14'},{'ImageVersion':'latest'},{'GITHUB_ACTIONS':'false'},{'RUNNER_ENVIRONMENT':'self-hosted'},{'GITHUB_REPOSITORY_VISIBILITY':'private'}):
+ with patch.object(sys,'platform','darwin'),patch.object(m.platform,'machine',return_value='x86_64'),patch.dict(m.os.environ,{**goodenv,**change},clear=True),patch.object(m,'source_read_bytes',side_effect=AssertionError('context read before actualhost qualification')):
+  try:m.mac_external_context(root/'context.json',root/'external.json','mac-external-observe',m.Budget(5));raise AssertionError('unqualified host admitted')
+  except m.CheckpointError as error:assert str(error)=='source-mac-package-host'
+with patch.object(sys,'platform','darwin'),patch.object(m.platform,'machine',return_value='arm64'),patch.dict(m.os.environ,goodenv,clear=True),patch.object(m,'source_read_bytes',side_effect=AssertionError('context read before actualarchitecture qualification')):
+ try:m.mac_external_context(root/'context.json',root/'external.json','mac-external-observe',m.Budget(5));raise AssertionError('unqualified architecture admitted')
+ except m.CheckpointError as error:assert str(error)=='source-mac-package-host'
+assert isinstance(m._MAC_PYTHON_PACKAGE_QUALIFICATION,tuple) and m._MAC_PYTHON_PACKAGE_QUALIFICATION[5:]==(41342493469,13097771563,'4ba4519035f4f650bc9cff34c95c54ab1c02573caac3a6344bab9c66aa024fed','2087e50be429d407b2b6a217b030cf6102cf968a3b1d8bed0ba1690638cef2b2')
 print('actual full Python context: exact Node Intel and unchanged ARM shapes; 12 cross/source/root denials PASS')
 `,
     [

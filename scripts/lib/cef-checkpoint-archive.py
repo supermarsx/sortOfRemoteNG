@@ -17,7 +17,11 @@ import zipfile
 from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
 
-_MAC_PYTHON_PACKAGE_PROOF_ROOT = '/usr/local/Cellar/python@3.14/3.14.7'
+_MAC_PYTHON_PACKAGE_QUALIFICATION = ('/usr/local/Cellar/python@3.14/3.14.7',
+    'darwin', 'x86_64', 'macos15', '20260824.0482.1', 41342493469, 13097771563,
+    '4ba4519035f4f650bc9cff34c95c54ab1c02573caac3a6344bab9c66aa024fed',
+    '2087e50be429d407b2b6a217b030cf6102cf968a3b1d8bed0ba1690638cef2b2')
+_MAC_PYTHON_PACKAGE_PROOF_ROOT = _MAC_PYTHON_PACKAGE_QUALIFICATION[0]
 _MAC_PYTHON_PACKAGE_PROOF_KIND = 'sorng-mac-python-package-proof-context'
 
 SOURCE_IO_MODES = ('source-record', 'source-verify', 'source-apply')
@@ -764,7 +768,7 @@ def external_link_diagnostic(roots, role, row, state):
     require(package_proof or (type(roots) is dict and set(roots)==set(_EXTERNAL_LINK_ROLES) and
             roots['sdk']==_MAC_EXTERNAL_SDK_ROOT and
             roots['toolchain']==developer+'/Toolchains/XcodeDefault.xctoolchain' and
-            roots['python']=='/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework' and
+            roots['python']==_MAC_PYTHON_PACKAGE_QUALIFICATION[0] and
             (roots['metal']==roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain',roots['metal']) is not None)),
             'external-link-diagnostic-shape')
     require(role in _EXTERNAL_LINK_ROLES and type(row) is dict and row.get('kind')=='symlink' and
@@ -2371,6 +2375,11 @@ def source_read_sidecar(path, budget, owned_sidecar=False):
 def mac_external_context(file, output, mode, budget):
     import sys
     require(sys.platform == 'darwin', 'source-mac-only')
+    require(platform.machine() == _MAC_PYTHON_PACKAGE_QUALIFICATION[2] and
+            os.environ.get('ImageOS') == _MAC_PYTHON_PACKAGE_QUALIFICATION[3] and
+            os.environ.get('ImageVersion') == _MAC_PYTHON_PACKAGE_QUALIFICATION[4] and
+            os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY') == 'public', 'source-mac-package-host')
     prefix = '/Users/runner/work/_temp/'
     text = str(file)
     require(re.fullmatch(re.escape(prefix) + r'cef-mac-inputs-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/context\.json', text),
@@ -2391,11 +2400,11 @@ def mac_external_context(file, output, mode, budget):
     require(type(roots) is dict and set(roots) == {'sdk','toolchain','metal','python'} and
             roots['sdk'] == developer + '/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk' and
             roots['toolchain'] == developer + '/Toolchains/XcodeDefault.xctoolchain' and
-            roots['python'] == '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework' and
+            roots['python'] == _MAC_PYTHON_PACKAGE_QUALIFICATION[0] and
             (roots['metal'] == roots['toolchain'] or re.fullmatch(r'/Users/runner/Library/Developer/DVTDownloads/MetalToolchain/mounts/[a-f0-9]{40}/Metal\.xctoolchain', roots['metal']) is not None),
             'source-mac-roots')
     names = {('sdk','usr/include/'+n+'.modulemap') for n in ('DarwinFoundation1','DarwinFoundation2','DarwinFoundation3','libunwind')}
-    names |= {('sdk','SDKSettings.json'),('sdk','usr/lib/libSystem.B.tbd'),('toolchain','usr/bin/clang'),('python','Versions/3.14/bin/python3.14'),('metal','usr/bin/metal'),('metal','usr/bin/air-lld')}
+    names |= {('sdk','SDKSettings.json'),('sdk','usr/lib/libSystem.B.tbd'),('toolchain','usr/bin/clang'),('python','Frameworks/Python.framework/Versions/3.14/bin/python3.14'),('metal','usr/bin/metal'),('metal','usr/bin/air-lld')}
     pins = context['requiredPins'];require(type(pins) is list and len(pins) == 10, 'source-mac-pins')
     actual = set()
     for pin in pins:

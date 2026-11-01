@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
@@ -10,6 +11,7 @@ import {
   MAC_NATIVE_CENSUS_ADMITTED,
   MAC_CENSUS_ABI,
   MAC_CENSUS_EVIDENCE,
+  MAC_CENSUS_SUPERVISOR_QUALIFICATION,
   LIMITS,
   canonical,
   shape,
@@ -22,6 +24,7 @@ import {
   validateCompile,
   uploadCheckpoint,
   uploadSdkBundle,
+  archiveCommand,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import {
   integrationCaseNames,
@@ -76,11 +79,11 @@ function scopeValidator(process = host) {
     },
   });
 }
-test("factory scope is exact before any IO and public admission remains false", async () => {
-  assert.equal(MAC_NATIVE_CENSUS_ADMITTED, false);
+test("reviewed production admission still requires exact factory scope before any IO", async () => {
+  assert.equal(MAC_NATIVE_CENSUS_ADMITTED, true);
   await assert.rejects(
     createMacProcessCensusFactory(null),
-    /CENSUS_UNADMITTED/,
+    /Invalid checkpoint object shape/,
   );
   scopeValidator()(scope, true);
   for (const changed of [
@@ -328,9 +331,9 @@ from unittest.mock import patch
 s=importlib.util.spec_from_file_location('census',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 root=pathlib.Path('/owned/cef-mac-census-integration-12345678-1234-4123-8123-123456789abc/cef-mac-census-session-12345678-1234-4123-8123-123456789abc')
 target='x86_64-apple-darwin';digest=m.NATIVE_SOURCES[target]
-c={'kind':'mac-census-session','mode':'integration-proof','target':target,'source':digest,'canonicalRoot':'/Users/runner/work/_temp/sorng-cef-engineering/'+target+'/'+digest,'image':m.IMAGE,'phase':'compile','workMilliseconds':m.NATIVE_MAX_WORK_MS,'leaseMilliseconds':m.NATIVE_MAX_WORK_MS+30000,'wallEndMilliseconds':int(time.time()*1000)+m.NATIVE_MAX_WORK_MS,'requestBudget':43328,'evidence':m.NATIVE_EVIDENCE}
+c={'kind':'mac-census-session','mode':'integration-proof','target':target,'source':digest,'canonicalRoot':'/Users/runner/work/_temp/sorng-cef-engineering/'+target+'/'+digest,'image':m.IMAGE,'phase':'compile','workMilliseconds':m.NATIVE_MAX_WORK_MS,'leaseMilliseconds':m.NATIVE_MAX_WORK_MS+30000,'wallEndMilliseconds':int(time.time()*1000)+m.NATIVE_MAX_WORK_MS,'requestBudget':43328,'evidence':m.NATIVE_EVIDENCE,'supervisorEvidence':m.NATIVE_SUPERVISOR_QUALIFICATION['sha256']}
 assert m.native_context(root,json.dumps(c))==c
-for change in ({'source':'a'*64},{'image':'20261030.294.1'},{'requestBudget':43329},{'workMilliseconds':m.NATIVE_MAX_WORK_MS+1},{'canonicalRoot':c['canonicalRoot']+'/other'},{'mode':'production'},{'evidence':'0'*64},{'private':'unexpected'}):
+for change in ({'source':'a'*64},{'image':'20261030.294.1'},{'requestBudget':43329},{'workMilliseconds':m.NATIVE_MAX_WORK_MS+1},{'canonicalRoot':c['canonicalRoot']+'/other'},{'mode':'production'},{'evidence':'0'*64},{'supervisorEvidence':'0'*64},{'abi':m.NATIVE_ABI},{'private':'unexpected'}):
  try:m.native_context(root,json.dumps({**c,**change}));raise AssertionError('bad scope admitted')
  except m.CensusError:pass
 with patch.object(m,'native_root',side_effect=m.CensusError('CENSUS_ROOT')),patch.object(m,'held_bytes',side_effect=AssertionError('IO before root fence')),patch.object(m,'SysctlCensus',side_effect=AssertionError('libc before root fence')):
@@ -359,6 +362,110 @@ print('fixed native worker scope and43328request cap passed')
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
+test("ready admission is bound to the selected native session mode and proof diagnostics remain non-authorizing", async () => {
+  const text = source.slice(
+    source.indexOf("function macCensusClient("),
+    source.indexOf("async function processSnapshot("),
+  );
+  const create = vm.runInNewContext("(" + text + ")", {
+    assert,
+    shape,
+    canonical,
+    nativeCensusRows,
+    MAC_CENSUS_ABI,
+    JSON,
+    Buffer,
+    performance,
+    setTimeout,
+    clearTimeout,
+    positive: (x) => Number.isSafeInteger(x) && x > 0,
+    COMPILE_CLEANUP_MS: 30000,
+    censusFailureCode: () => "CENSUS_UNAVAILABLE",
+    compileWithin: (operation) => operation(),
+  });
+  for (const admitted of [false, true])
+    for (const matches of [false, true]) {
+      const child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.stdin = new PassThrough();
+      child.stdin.on("finish", () =>
+        queueMicrotask(() => child.emit("close", 0, null)),
+      );
+      child.kill = () => {
+        queueMicrotask(() => child.emit("close", null, "SIGKILL"));
+        return true;
+      };
+      child.unref = () => {};
+      const client = create(child, {
+        deadline: performance.now() + 1000,
+        requestBudget: 8,
+        readyMilliseconds: 500,
+        contextSha256: "a".repeat(64),
+        productionAdmitted: admitted,
+      });
+      child.stdout.write(
+        JSON.stringify({
+          kind: "mac-census-native-ready",
+          abi: MAC_CENSUS_ABI,
+          contextSha256: "a".repeat(64),
+          productionAdmitted: matches ? admitted : !admitted,
+        }) + "\n",
+      );
+      if (matches) await client.ready;
+      else await assert.rejects(client.ready, /CENSUS_READY/);
+      const result = await client.close();
+      assert.equal(result.joined, true);
+      assert.equal(result.failed, !matches);
+    }
+  const { censusFailureCode } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  for (const mode of ["production", "integration-proof", "unavailable"]) {
+    const value = {
+      kind: "mac-census-native-failure",
+      mode,
+      code: "CENSUS_DEADLINE",
+      productionAdmitted: mode === "production",
+    };
+    assert.equal(censusFailureCode(JSON.stringify(value)), "CENSUS_DEADLINE");
+    assert.equal(
+      censusFailureCode(
+        JSON.stringify({
+          ...value,
+          productionAdmitted: !value.productionAdmitted,
+        }),
+      ),
+      "CENSUS_UNAVAILABLE",
+    );
+  }
+});
+test("actual Python worker emits the mode-bound admission flag without promoting proof context", () => {
+  const result = spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    [
+      "-I",
+      "-B",
+      "-S",
+      "-c",
+      String.raw`
+import importlib.util,json,sys,pathlib,time,io
+from unittest.mock import patch
+s=importlib.util.spec_from_file_location('census',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+class Input:buffer=io.BytesIO(b'')
+class Provider:
+ def __init__(self,abi):assert abi==m.NATIVE_ABI
+for mode in ('production','integration-proof'):
+ out=io.StringIO();value={'mode':mode,'leaseMilliseconds':1000,'wallEndMilliseconds':int(time.time()*1000)+1000,'requestBudget':8}
+ with patch.object(m,'native_root',return_value=pathlib.Path('owned')),patch.object(m,'held_bytes',return_value=b'fixture'),patch.object(m,'native_context',return_value=value),patch.object(m,'SysctlCensus',Provider),patch.object(sys,'stdin',Input()),patch.object(sys,'stdout',out):m.native_worker('owned')
+ receipt=json.loads(out.getvalue());assert receipt['productionAdmitted']==(mode=='production') and receipt['abi']==m.NATIVE_ABI
+print('actual worker mode-bound ready receipts passed')
+`,
+      "scripts/lib/cef-mac-process-census.py",
+    ],
+    { encoding: "utf8", timeout: 10000, maxBuffer: 8192, windowsHide: true },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
 test("ABI and evidence pins describe the exact native proof, not compiler/runtime admission", () => {
   assert.equal(MAC_CENSUS_ABI.recordBytes, 648);
   assert.equal(MAC_CENSUS_ABI.microsBytes, 4);
@@ -367,5 +474,76 @@ test("ABI and evidence pins describe the exact native proof, not compiler/runtim
     MAC_CENSUS_EVIDENCE.sha256,
     "ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855",
   );
-  assert.equal(MAC_NATIVE_CENSUS_ADMITTED, false);
+  assert.equal(MAC_NATIVE_CENSUS_ADMITTED, true);
+  assert.equal(MAC_CENSUS_SUPERVISOR_QUALIFICATION.runId, 41342489672);
+  assert.equal(
+    MAC_CENSUS_SUPERVISOR_QUALIFICATION.sha256,
+    "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c",
+  );
+});
+
+test("actual archive leaves receive only closed host facts for the three fixed Mac observation modes", async () => {
+  const selected = spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    ["-I", "-B", "-c", "import sys;print(sys.executable)"],
+    { encoding: "utf8", timeout: 5000, maxBuffer: 4096, windowsHide: true },
+  );
+  assert.equal(selected.status, 0, selected.stderr);
+  const root = await mkdtemp(path.join(tmpdir(), "census-host-facts-"));
+  const helper = path.join(root, "leaf.py");
+  const facts = {
+    ImageOS: "macos15",
+    ImageVersion: "20260824.0482.1",
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    GH_TOKEN: "fixture-private-token",
+    CENSUS_TEST_PRIVATE: "fixture-private-value",
+  };
+  const prior = Object.fromEntries(
+    Object.keys(facts).map((k) => [k, process.env[k]]),
+  );
+  try {
+    Object.assign(process.env, facts);
+    await writeFile(
+      helper,
+      "import json,os,sys\nprint(json.dumps({'noSite':sys.flags.no_site,'facts':{key:os.environ.get(key)for key in " +
+        JSON.stringify(Object.keys(facts)) +
+        "}}))\n",
+      { flag: "wx" },
+    );
+    for (const mode of [
+      "mac-python-package-observe",
+      "mac-external-observe",
+      "mac-owned-capability-observe",
+      "source-verify",
+    ]) {
+      const result = await archiveCommand(
+        selected.stdout.trim(),
+        helper,
+        [mode],
+        { timeout: 5000 },
+      );
+      assert.equal(
+        result.noSite,
+        mode === "mac-python-package-observe" ? 1 : 0,
+      );
+      for (const key of Object.keys(facts))
+        assert.equal(
+          result.facts[key],
+          mode !== "source-verify" &&
+            !["GH_TOKEN", "CENSUS_TEST_PRIVATE"].includes(key)
+            ? facts[key]
+            : null,
+          `${mode}:${key}`,
+        );
+    }
+  } finally {
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await unlink(helper);
+    await rmdir(root);
+  }
 });

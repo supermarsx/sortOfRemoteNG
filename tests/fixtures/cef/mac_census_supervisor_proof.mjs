@@ -6,7 +6,6 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  MAC_NATIVE_CENSUS_ADMITTED,
   MAC_CENSUS_EVIDENCE,
   noLinks,
   compileSlice,
@@ -158,7 +157,6 @@ export async function runSupervisorProof(output) {
       process.env.RUNNER_ENVIRONMENT === "github-hosted",
     "INTEGRATION_HOST",
   );
-  assert(MAC_NATIVE_CENSUS_ADMITTED === false, "INTEGRATION_UNADMITTED");
   const temp = process.env.RUNNER_TEMP;
   assert(
     path.dirname(output) === temp &&

@@ -302,11 +302,27 @@ export const MAC_EXTERNAL_LIMITS = Object.freeze({
   capabilitySeconds: 5,
 });
 const MAC_DEVELOPER = "/Applications/Xcode_26.3.app/Contents/Developer";
-const MAC_PYTHON_FRAMEWORK =
-  "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework";
-const MAC_PYTHON = MAC_PYTHON_FRAMEWORK + "/Versions/3.14/bin/python3.14";
+export const MAC_PYTHON_PACKAGE_QUALIFICATION = Object.freeze({
+  root: "/usr/local/Cellar/python@3.14/3.14.7",
+  platform: "darwin",
+  architecture: "x64",
+  imageOS: "macos15",
+  imageVersion: "20260824.0482.1",
+  runner: "macos-15-intel",
+  evidence: Object.freeze({
+    runId: 41342493469,
+    artifactId: 13097771563,
+    sha256: "4ba4519035f4f650bc9cff34c95c54ab1c02573caac3a6344bab9c66aa024fed",
+    snapshotSha256:
+      "2087e50be429d407b2b6a217b030cf6102cf968a3b1d8bed0ba1690638cef2b2",
+  }),
+});
 export const MAC_PYTHON_PACKAGE_PROOF_ROOT =
-  "/usr/local/Cellar/python@3.14/3.14.7";
+  MAC_PYTHON_PACKAGE_QUALIFICATION.root;
+const MAC_PYTHON_RELATIVE =
+  "Frameworks/Python.framework/Versions/3.14/bin/python3.14";
+const MAC_PYTHON =
+  MAC_PYTHON_PACKAGE_QUALIFICATION.root + "/" + MAC_PYTHON_RELATIVE;
 const plainAbsolute = (p) => {
   assert(
     typeof p === "string" &&
@@ -494,7 +510,7 @@ export async function macSdkRelation({ selected, sdkTargets, check }, io = fs) {
 export function macExternalObservationPlan(options) {
   return externalObservationPlanFor(ARM_EXTERNAL, options);
 }
-// Candidate observation only. Production plans above retain the Framework root.
+// Independent diagnostic observation; its token never admits producer inputs.
 export function macPythonPackageProofPlan(options) {
   exactKeys(options, ["runnerTemp", "output"], "MAC_EXTERNAL_CONTEXT");
   const { runnerTemp, output } = options;
@@ -517,7 +533,7 @@ export function macPythonPackageProofPlan(options) {
     requiredPins: [
       {
         role: "python",
-        path: "Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+        path: MAC_PYTHON_RELATIVE,
         size: 13592,
         sha256:
           "b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d",
@@ -583,6 +599,12 @@ function externalObservationPlanFor(
   assert(
     map?.target === envelope.target && toolchain?.target === map.target,
     "MAC_EXTERNAL_TARGET",
+  );
+  assert(
+    ["platform", "architecture", "imageOS", "imageVersion", "runner"].every(
+      (key) => map.hosted?.[key] === MAC_PYTHON_PACKAGE_QUALIFICATION[key],
+    ),
+    "MAC_EXTERNAL_PYTHON_HOST",
   );
   assert(map.python === MAC_PYTHON.slice(1), "MAC_EXTERNAL_PYTHON");
   assert(
@@ -670,7 +692,7 @@ function externalObservationPlanFor(
         relative = p.path.slice(toolPrefix.length);
       } else if (p.path === MAC_PYTHON.slice(1)) {
         role = "python";
-        relative = "Versions/3.14/bin/python3.14";
+        relative = MAC_PYTHON_RELATIVE;
       } else assert.fail("MAC_EXTERNAL_PINS");
       assert(
         relative &&
@@ -699,7 +721,7 @@ function externalObservationPlanFor(
       sdk,
       toolchain: sdkTargets[2],
       metal: metalRoots[0],
-      python: MAC_PYTHON_FRAMEWORK,
+      python: MAC_PYTHON_PACKAGE_QUALIFICATION.root,
     },
     runnerTemp: temp,
     outputRoot: destination,

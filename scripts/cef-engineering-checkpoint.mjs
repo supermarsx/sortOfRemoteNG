@@ -4,10 +4,12 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFile,
+  lstat,
   mkdir,
   readFile,
   readdir,
   realpath,
+  rmdir,
   statfs,
   writeFile,
 } from "node:fs/promises";
@@ -74,6 +76,7 @@ import {
   validateManifest,
   archiveCommand,
   compileSlice,
+  createMacProcessCensusFactory,
   apiClient,
   restoreDownload,
   uploadCheckpoint,
@@ -92,6 +95,48 @@ const fail = (ok, message) => {
   if (!ok) throw new Error(message);
 };
 const json = async (p) => JSON.parse(await readFile(p, "utf8"));
+// A fresh live capability per CLI phase. Saved state never carries authority.
+export async function withMacCensusFactory(
+  { env, profile, python, canonicalRoot },
+  action,
+) {
+  if (profile.platform !== "darwin") return action(undefined);
+  const temp = await noLinks(env.RUNNER_TEMP);
+  const scratch = path.join(temp, "cef-mac-census-production-" + randomUUID());
+  await mkdir(scratch, { mode: 0o700 });
+  const before = await lstat(scratch, { bigint: true });
+  let failed = false;
+  try {
+    const factory = await createMacProcessCensusFactory({
+      target: profile.target,
+      source: profile.source,
+      canonicalRoot,
+      scratch,
+      python,
+      deadline: performance.now() + hostRemaining(env),
+    });
+    return await action(factory);
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      const after = await lstat(scratch, { bigint: true });
+      fail(
+        (await noLinks(scratch)) === scratch &&
+          after.isDirectory() &&
+          !after.isSymbolicLink() &&
+          ["dev", "ino", "mode", "uid", "gid"].every(
+            (key) => before[key] === after[key],
+          ),
+        "Census scratch identity changed",
+      );
+      await rmdir(scratch); // Creation-owned, empty directory only; never recurse.
+    } catch (error) {
+      if (!failed) throw error;
+    }
+  }
+}
 export function argumentsFor(argv) {
   const [mode, ...args] = argv;
   fail(
@@ -308,602 +353,644 @@ async function checkpointMain(argv, env, observer) {
           )
         : null;
     const work = await workspace(temp, SOURCE_ID, TARGET);
-    const result = await build(
-      {
-        inputs: INPUTS,
-        target: TARGET,
-        repository: producer.repository,
-        execute: true,
-        checkout: ROOT,
-        runnerMode: "hosted",
-        engineering: {
-          sourceMetadata:
-            TARGET === "aarch64-unknown-linux-gnu"
-              ? true
-              : TARGET === "aarch64-apple-darwin"
-                ? "mac-arm"
-                : false,
-          completeSdk: execution.mode === "complete-sdk",
-          packagingMilliseconds: () =>
-            Math.floor(Math.min(40 * 60_000, hostRemaining(env) - 20 * 60_000)),
-          workspace: work,
-          ...(TARGET === "aarch64-apple-darwin"
-            ? {
-                async beforeAcquire(context) {
-                  const sdkRelation = await macSdkRelation({
-                    selected: verified.selected,
-                    sdkTargets: verified.sdkTargets,
-                    check: () =>
+    const result = await withMacCensusFactory(
+      { env, profile, python: verified.python, canonicalRoot: work },
+      (censusFactory) =>
+        build(
+          {
+            inputs: INPUTS,
+            target: TARGET,
+            repository: producer.repository,
+            execute: true,
+            checkout: ROOT,
+            runnerMode: "hosted",
+            engineering: {
+              sourceMetadata:
+                TARGET === "aarch64-unknown-linux-gnu"
+                  ? true
+                  : TARGET === "aarch64-apple-darwin"
+                    ? "mac-arm"
+                    : false,
+              completeSdk: execution.mode === "complete-sdk",
+              packagingMilliseconds: () =>
+                Math.floor(
+                  Math.min(40 * 60_000, hostRemaining(env) - 20 * 60_000),
+                ),
+              workspace: work,
+              ...(TARGET === "aarch64-apple-darwin"
+                ? {
+                    async beforeAcquire(context) {
+                      const sdkRelation = await macSdkRelation({
+                        selected: verified.selected,
+                        sdkTargets: verified.sdkTargets,
+                        check: () =>
+                          fail(
+                            hostRemaining(env) > 0,
+                            "Mac external original host deadline",
+                          ),
+                      });
+                      const output = path.posix.join(
+                        env.RUNNER_TEMP,
+                        "cef-mac-inputs-" + randomUUID(),
+                      );
+                      const selected = macExternalObservationPlan({
+                        ...verified,
+                        sdkRelation,
+                        metal: context.metal,
+                        runnerTemp: env.RUNNER_TEMP,
+                        output,
+                        remainingMilliseconds: () => hostRemaining(env),
+                      });
+                      await mkdir(output, { mode: 0o700 });
                       fail(
-                        hostRemaining(env) > 0,
+                        (await realpath(output)) === output,
+                        "Mac external owned output alias",
+                      );
+                      const contextFile = path.posix.join(
+                        output,
+                        "context.json",
+                      );
+                      await writeFile(
+                        contextFile,
+                        canonical(selected.context),
+                        {
+                          flag: "wx",
+                        },
+                      );
+                      const timeout = Math.floor(
+                        Math.min(LIMITS.archiveMs, hostRemaining(env)),
+                      );
+                      fail(
+                        timeout >= 1000,
                         "Mac external original host deadline",
-                      ),
-                  });
-                  const output = path.posix.join(
-                    env.RUNNER_TEMP,
-                    "cef-mac-inputs-" + randomUUID(),
-                  );
-                  const selected = macExternalObservationPlan({
-                    ...verified,
-                    sdkRelation,
-                    metal: context.metal,
-                    runnerTemp: env.RUNNER_TEMP,
-                    output,
-                    remainingMilliseconds: () => hostRemaining(env),
-                  });
-                  await mkdir(output, { mode: 0o700 });
-                  fail(
-                    (await realpath(output)) === output,
-                    "Mac external owned output alias",
-                  );
-                  const contextFile = path.posix.join(output, "context.json");
-                  await writeFile(contextFile, canonical(selected.context), {
-                    flag: "wx",
-                  });
-                  const timeout = Math.floor(
-                    Math.min(LIMITS.archiveMs, hostRemaining(env)),
-                  );
-                  fail(timeout >= 1000, "Mac external original host deadline");
-                  const result = await archiveCommand(
-                    verified.python,
-                    HELPER,
-                    selected.argv("mac-external-observe", contextFile).slice(3),
-                    {
-                      timeout,
-                      observeFailure: (record) =>
-                        checkpointLog(
-                          console.log,
-                          `[cef-engineering-checkpoint] mac-external=${canonical(record)}`,
+                      );
+                      const result = await archiveCommand(
+                        verified.python,
+                        HELPER,
+                        selected
+                          .argv("mac-external-observe", contextFile)
+                          .slice(3),
+                        {
+                          timeout,
+                          observeFailure: (record) =>
+                            checkpointLog(
+                              console.log,
+                              `[cef-engineering-checkpoint] mac-external=${canonical(record)}`,
+                            ),
+                        },
+                      );
+                      const attestation = await readMacExternalObservation(
+                        selected,
+                        result,
+                        () => {
+                          fail(
+                            hostRemaining(env) > 0,
+                            "Mac external original host deadline",
+                          );
+                        },
+                      );
+                      await writeFile(
+                        path.join(
+                          context.logs,
+                          path.basename(output) + "-binding.json",
                         ),
+                        canonical(macExternalObservationEvidence(attestation)),
+                        { flag: "wx" },
+                      );
+                      return attestation;
                     },
-                  );
-                  const attestation = await readMacExternalObservation(
-                    selected,
-                    result,
+                  }
+                : {}),
+              async afterGn(context) {
+                if (TARGET === "aarch64-apple-darwin") {
+                  const transition = await prepareAuthoritativeMacGn(
+                    context,
                     () => {
                       fail(
                         hostRemaining(env) > 0,
-                        "Mac external original host deadline",
+                        "Mac metadata original host deadline",
                       );
                     },
                   );
                   await writeFile(
                     path.join(
                       context.logs,
-                      path.basename(output) + "-binding.json",
+                      "fixed-five-metadata-transition.json",
                     ),
-                    canonical(macExternalObservationEvidence(attestation)),
+                    canonical(transition),
                     { flag: "wx" },
                   );
-                  return attestation;
-                },
-              }
-            : {}),
-          async afterGn(context) {
-            if (TARGET === "aarch64-apple-darwin") {
-              const transition = await prepareAuthoritativeMacGn(
-                context,
-                () => {
-                  fail(
-                    hostRemaining(env) > 0,
-                    "Mac metadata original host deadline",
-                  );
-                },
-              );
-              await writeFile(
-                path.join(context.logs, "fixed-five-metadata-transition.json"),
-                canonical(transition),
-                { flag: "wx" },
-              );
-            }
-            const out = path.join(context.chromium, "out", profile.outConfig);
-            const siso = await afterGnPhase("siso-pin", () =>
-              filePin(
-                path.join(context.chromium, "third_party/siso/cipd/siso"),
-                256 * 1024 ** 2,
-              ),
-            );
-            if (profile.platform === "darwin")
-              await afterGnPhase("sdk-roots", async () => {
-                const developer = await realpath(context.env.DEVELOPER_DIR),
-                  sdk = await realpath(context.env.SDKROOT);
-                fail(
-                  sdk.startsWith(
-                    path.join(
-                      developer,
-                      "Platforms",
-                      "MacOSX.platform",
-                      "Developer",
-                      "SDKs",
-                    ) + path.sep,
-                  ),
-                  "SDK outside verified Developer path",
+                }
+                const out = path.join(
+                  context.chromium,
+                  "out",
+                  profile.outConfig,
                 );
-              });
-            if (profile.platform === "linux") {
-              // Before linuxArmRecipe and source-record: the pinned sysroots'
-              // hard links become single-link copies (same bytes, whole-second
-              // group mtimes).
-              const separated = await afterGnPhase("sysroot-links", () =>
-                separateLinuxSysrootHardLinks(context.chromium),
-              );
-              checkpointLog(
-                console.log,
-                `[cef-engineering-checkpoint] sysroot-links=${canonical(separated)}`,
-              );
-            }
-            const linuxRecipe =
-              profile.platform === "linux"
-                ? await afterGnPhase("sdk-roots", () =>
-                    linuxArmRecipe(context.chromium, out),
-                  )
-                : null;
-            const linkRecipe =
-              profile.platform === "linux"
-                ? linuxRecipe.generatedLinks
-                : await afterGnPhase("sdk-links", () =>
-                    normalizeSdkLinks(out, {
-                      developerDir: context.env.DEVELOPER_DIR,
-                      sdkRoot: context.env.SDKROOT,
-                      expectedTargets: verified.sdkTargets,
-                      aliasAttestation,
-                      observe: logSdkLayout,
-                    }).then(checkpointLinkRecipe),
+                const siso = await afterGnPhase("siso-pin", () =>
+                  filePin(
+                    path.join(context.chromium, "third_party/siso/cipd/siso"),
+                    256 * 1024 ** 2,
+                  ),
+                );
+                if (profile.platform === "darwin")
+                  await afterGnPhase("sdk-roots", async () => {
+                    const developer = await realpath(context.env.DEVELOPER_DIR),
+                      sdk = await realpath(context.env.SDKROOT);
+                    fail(
+                      sdk.startsWith(
+                        path.join(
+                          developer,
+                          "Platforms",
+                          "MacOSX.platform",
+                          "Developer",
+                          "SDKs",
+                        ) + path.sep,
+                      ),
+                      "SDK outside verified Developer path",
+                    );
+                  });
+                if (profile.platform === "linux") {
+                  // Before linuxArmRecipe and source-record: the pinned sysroots'
+                  // hard links become single-link copies (same bytes, whole-second
+                  // group mtimes).
+                  const separated = await afterGnPhase("sysroot-links", () =>
+                    separateLinuxSysrootHardLinks(context.chromium),
                   );
-            const recipePath = path.join(
-              context.logs,
-              "generated-sdk-links.json",
-            );
-            await afterGnPhase("recipe-write", () =>
-              writeFile(recipePath, canonical(linkRecipe), { flag: "wx" }),
-            );
-            const restoreObserver = createRestoreObserver((record) =>
-              console.log(
-                `[cef-engineering-checkpoint] restore ${canonical(record)}`,
-              ),
-            );
-            const graph = await afterGnPhase("graph-inventory", () =>
-              graphInventory(out, {
-                async observePins(pins) {
-                  try {
-                    await writeFile(
-                      path.join(context.logs, "fresh-graph-pins.json"),
-                      graphPinSnapshot(pins),
-                      { flag: "wx" },
-                    );
-                    await restoreObserver({
-                      stage: "graph-snapshot",
-                      event: "complete",
-                    });
-                  } catch {
-                    await restoreObserver({
-                      stage: "graph-snapshot",
-                      event: "unavailable",
-                    });
-                  }
-                },
-                observe(record) {
-                  if (record.phase !== "hashing")
-                    console.log(
-                      `[cef-engineering-checkpoint] graph-inventory ${graphInventoryRecord(record)}`,
-                    );
-                },
-              }),
-            );
-            console.log(
-              `[cef-engineering-checkpoint] graph files=${graph.files} bytes=${graph.bytes} visited=${graph.visited}`,
-            );
-            const identity = await afterGnPhase("identity", async () => ({
-              target: TARGET,
-              source: SOURCE_ID,
-              producer: code,
-              canonicalRoot: work,
-              image: env.ImageVersion,
-              tools: sha(
-                canonical(
-                  TARGET === "aarch64-apple-darwin"
-                    ? macExternalToolsBinding(
-                        {
-                          toolchain: verified.toolchain,
-                          supplementalMetal: macMetalFingerprint(context.metal),
-                          linkRecipe,
-                          nodeVersion: process.version,
-                          nodeExecutable: await filePin(
-                            await realpath(process.execPath),
-                            256 * 1024 ** 2,
-                          ),
-                        },
-                        context.macExternalInputs,
+                  checkpointLog(
+                    console.log,
+                    `[cef-engineering-checkpoint] sysroot-links=${canonical(separated)}`,
+                  );
+                }
+                const linuxRecipe =
+                  profile.platform === "linux"
+                    ? await afterGnPhase("sdk-roots", () =>
+                        linuxArmRecipe(context.chromium, out),
                       )
-                    : {
-                        toolchain: verified.toolchain,
-                        ...(profile.platform === "darwin"
-                          ? {
+                    : null;
+                const linkRecipe =
+                  profile.platform === "linux"
+                    ? linuxRecipe.generatedLinks
+                    : await afterGnPhase("sdk-links", () =>
+                        normalizeSdkLinks(out, {
+                          developerDir: context.env.DEVELOPER_DIR,
+                          sdkRoot: context.env.SDKROOT,
+                          expectedTargets: verified.sdkTargets,
+                          aliasAttestation,
+                          observe: logSdkLayout,
+                        }).then(checkpointLinkRecipe),
+                      );
+                const recipePath = path.join(
+                  context.logs,
+                  "generated-sdk-links.json",
+                );
+                await afterGnPhase("recipe-write", () =>
+                  writeFile(recipePath, canonical(linkRecipe), { flag: "wx" }),
+                );
+                const restoreObserver = createRestoreObserver((record) =>
+                  console.log(
+                    `[cef-engineering-checkpoint] restore ${canonical(record)}`,
+                  ),
+                );
+                const graph = await afterGnPhase("graph-inventory", () =>
+                  graphInventory(out, {
+                    async observePins(pins) {
+                      try {
+                        await writeFile(
+                          path.join(context.logs, "fresh-graph-pins.json"),
+                          graphPinSnapshot(pins),
+                          { flag: "wx" },
+                        );
+                        await restoreObserver({
+                          stage: "graph-snapshot",
+                          event: "complete",
+                        });
+                      } catch {
+                        await restoreObserver({
+                          stage: "graph-snapshot",
+                          event: "unavailable",
+                        });
+                      }
+                    },
+                    observe(record) {
+                      if (record.phase !== "hashing")
+                        console.log(
+                          `[cef-engineering-checkpoint] graph-inventory ${graphInventoryRecord(record)}`,
+                        );
+                    },
+                  }),
+                );
+                console.log(
+                  `[cef-engineering-checkpoint] graph files=${graph.files} bytes=${graph.bytes} visited=${graph.visited}`,
+                );
+                const identity = await afterGnPhase("identity", async () => ({
+                  target: TARGET,
+                  source: SOURCE_ID,
+                  producer: code,
+                  canonicalRoot: work,
+                  image: env.ImageVersion,
+                  tools: sha(
+                    canonical(
+                      TARGET === "aarch64-apple-darwin"
+                        ? macExternalToolsBinding(
+                            {
+                              toolchain: verified.toolchain,
                               supplementalMetal: macMetalFingerprint(
                                 context.metal,
                               ),
-                            }
-                          : {}),
-                        linkRecipe,
-                        ...(linuxRecipe ? { linuxRecipe } : {}),
-                        nodeVersion: process.version,
-                        nodeExecutable: await filePin(
-                          await realpath(process.execPath),
-                          256 * 1024 ** 2,
-                        ),
-                      },
-                ),
-              ),
-              graph: graph.sha256,
-              siso: siso.sha256,
-            }));
-            const digest = await afterGnPhase("identity", () =>
-              validateIdentity(identity),
-            );
-            context.checkpoint = { out, identity, digest, recipePath };
-            let resumedSource = false;
-            let sourceMetadata;
-            if (
-              ["aarch64-unknown-linux-gnu", "aarch64-apple-darwin"].includes(
-                TARGET,
-              )
-            ) {
-              fail(
-                context.env.PYTHONDONTWRITEBYTECODE === "1" &&
-                  context.env.PYTHONPYCACHEPREFIX === undefined &&
-                  context.env.SOURCE_DATE_EPOCH === SOURCE_METADATA_DATE_EPOCH,
-                "Fixed source bytecode policy",
-              );
-              const identityFile = path.join(
-                context.logs,
-                "source-metadata-identity.json",
-              );
-              await writeFile(identityFile, canonical(identity), {
-                flag: "wx",
-              });
-              sourceMetadata = async (mode) => {
-                const selected = sourceMetadataPlan(identity, out, mode);
-                if (TARGET === "aarch64-apple-darwin") {
-                  const fresh = await context.reobserveMacExternalInputs();
+                              linkRecipe,
+                              nodeVersion: process.version,
+                              nodeExecutable: await filePin(
+                                await realpath(process.execPath),
+                                256 * 1024 ** 2,
+                              ),
+                            },
+                            context.macExternalInputs,
+                          )
+                        : {
+                            toolchain: verified.toolchain,
+                            ...(profile.platform === "darwin"
+                              ? {
+                                  supplementalMetal: macMetalFingerprint(
+                                    context.metal,
+                                  ),
+                                }
+                              : {}),
+                            linkRecipe,
+                            ...(linuxRecipe ? { linuxRecipe } : {}),
+                            nodeVersion: process.version,
+                            nodeExecutable: await filePin(
+                              await realpath(process.execPath),
+                              256 * 1024 ** 2,
+                            ),
+                          },
+                    ),
+                  ),
+                  graph: graph.sha256,
+                  siso: siso.sha256,
+                }));
+                const digest = await afterGnPhase("identity", () =>
+                  validateIdentity(identity),
+                );
+                context.checkpoint = { out, identity, digest, recipePath };
+                let resumedSource = false;
+                let sourceMetadata;
+                if (
+                  [
+                    "aarch64-unknown-linux-gnu",
+                    "aarch64-apple-darwin",
+                  ].includes(TARGET)
+                ) {
                   fail(
-                    canonical(macExternalToolsBinding({}, fresh)) ===
-                      canonical(
-                        macExternalToolsBinding({}, context.macExternalInputs),
-                      ),
-                    "Mac external fingerprint unchanged before source metadata",
+                    context.env.PYTHONDONTWRITEBYTECODE === "1" &&
+                      context.env.PYTHONPYCACHEPREFIX === undefined &&
+                      context.env.SOURCE_DATE_EPOCH ===
+                        SOURCE_METADATA_DATE_EPOCH,
+                    "Fixed source bytecode policy",
                   );
-                }
-                const linuxSource = !selected.platformPolicy;
-                const timeout = Math.floor(
-                  Math.min(
-                    linuxSource
-                      ? LIMITS.linuxSourceMetadataMs
-                      : LIMITS.archiveMs,
-                    hostRemaining(env),
-                  ),
-                );
-                fail(timeout > 0, "Source metadata original host deadline");
-                // Linux: the helper's deadline ends first so it can print
-                // its progress diagnostic before the hard kill.
-                const helperSeconds = Math.max(
-                  1,
-                  Math.floor(
-                    (linuxSource &&
-                    timeout > 2 * LIMITS.linuxSourceMetadataGraceMs
-                      ? timeout - LIMITS.linuxSourceMetadataGraceMs
-                      : timeout) / 1000,
-                  ),
-                );
-                const result = sourceMetadataResult(
-                  await archiveCommand(
-                    verified.python,
-                    HELPER,
-                    [
-                      selected.mode,
-                      "--input",
-                      selected.source,
-                      "--output",
-                      selected.sidecar,
-                      ...(selected.platformPolicy
-                        ? ["--platform-policy", selected.platformPolicy]
-                        : []),
-                      "--manifest",
-                      identityFile,
-                      "--seconds",
-                      String(helperSeconds),
-                    ],
-                    {
-                      timeout,
-                      observeFailure: (record) =>
-                        checkpointLog(
-                          console.log,
-                          `[cef-engineering-checkpoint] source-metadata-failure=${canonical({ mode, ...record })}`,
-                        ),
-                    },
-                  ),
-                  mode,
-                );
-                checkpointLog(
-                  console.log,
-                  `[cef-engineering-checkpoint] source-metadata=${canonical(result)}`,
-                );
-                return result;
-              };
-              context.checkpoint.sourceMetadata = sourceMetadata;
-            }
-            await afterGnPhase("restore", async () => {
-              const prior = await restorePhase(
-                restoreObserver,
-                "proof-read",
-                async () => {
-                  try {
-                    return await json(
-                      path.join(download, "download-proof.json"),
-                    );
-                  } catch (error) {
-                    if (error.code !== "ENOENT") throw error;
-                  }
-                },
-              );
-              if (prior) {
-                const manifestBytes = await restorePhase(
-                  restoreObserver,
-                  "manifest-read",
-                  () => readFile(path.join(download, "manifest.json")),
-                );
-                await restorePhase(restoreObserver, "manifest-digest", () =>
-                  fail(
-                    /^[a-f0-9]{64}$/.test(env.CEF_RESTORE_MANIFEST_SHA ?? "") &&
-                      sha(manifestBytes) === env.CEF_RESTORE_MANIFEST_SHA,
-                    "Manifest differs from trusted download-step output",
-                  ),
-                );
-                await restorePhase(restoreObserver, "proof-match", () =>
-                  fail(
-                    canonical(JSON.parse(manifestBytes)) ===
-                      canonical(prior.manifest),
-                    "Restore proof differs from pinned manifest",
-                  ),
-                );
-                await restorePhase(
-                  restoreObserver,
-                  "manifest-validation",
-                  async () => {
-                    try {
-                      return validateManifest(prior.manifest, digest);
-                    } finally {
-                      await restoreObserver({
-                        stage: "identity-comparison",
-                        event: "complete",
-                        comparison: restoreIdentityComparison(
-                          identity,
-                          prior.manifest,
-                        ),
-                      });
-                    }
-                  },
-                );
-                await restorePhase(
-                  restoreObserver,
-                  "disk-capacity",
-                  async () => {
-                    const free = await statfs(path.dirname(out));
-                    fail(
-                      free.bavail * free.bsize >=
-                        prior.manifest.archive.rawBytes + 2 * 1024 ** 3,
-                      "Restore disk capacity",
-                    );
-                  },
-                );
-                const restored = path.join(
-                  path.dirname(out),
-                  "checkpoint-restored",
-                );
-                const result = await restorePhase(
-                  restoreObserver,
-                  "archive-restore",
-                  () =>
-                    archiveCommand(verified.python, HELPER, [
-                      "restore",
-                      "--input",
-                      download,
-                      "--output",
-                      restored,
-                      "--manifest",
-                      path.join(download, "manifest.json"),
-                      "--generated-links",
-                      recipePath,
-                    ]),
-                );
-                await restorePhase(restoreObserver, "archive-result", () =>
-                  fail(
-                    result.complete === true && result.linksExtracted === false,
-                    "Incomplete verified restore",
-                  ),
-                );
-                await restoreVerifiedGraph({
-                  observe: restoreObserver,
-                  fresh: out,
-                  restored,
-                  expectedGraph: identity.graph,
-                  ...(sourceMetadata
-                    ? {
-                        beforeAuthoritativeGn: () =>
-                          sourceMetadata("source-apply"),
-                        afterAuthoritativeGn: () =>
-                          sourceMetadata("source-apply"),
-                      }
-                    : {}),
-                  revalidateGn: context.revalidateGn,
-                  verifyGenerated: async () => {
-                    if (profile.platform === "linux") {
-                      const regenerated = await linuxArmRecipe(
-                        context.chromium,
-                        out,
-                      );
+                  const identityFile = path.join(
+                    context.logs,
+                    "source-metadata-identity.json",
+                  );
+                  await writeFile(identityFile, canonical(identity), {
+                    flag: "wx",
+                  });
+                  sourceMetadata = async (mode) => {
+                    const selected = sourceMetadataPlan(identity, out, mode);
+                    if (TARGET === "aarch64-apple-darwin") {
+                      const fresh = await context.reobserveMacExternalInputs();
                       fail(
-                        canonical(regenerated) === canonical(linuxRecipe),
-                        "Post-GN Linux dependency recipe changed",
+                        canonical(macExternalToolsBinding({}, fresh)) ===
+                          canonical(
+                            macExternalToolsBinding(
+                              {},
+                              context.macExternalInputs,
+                            ),
+                          ),
+                        "Mac external fingerprint unchanged before source metadata",
                       );
-                      return;
                     }
-                    const regenerated = await afterGnPhase("sdk-links", () =>
-                      normalizeSdkLinks(out, {
-                        developerDir: context.env.DEVELOPER_DIR,
-                        sdkRoot: context.env.SDKROOT,
-                        expectedTargets: verified.sdkTargets,
-                        aliasAttestation,
-                        observe: logSdkLayout,
-                      }),
+                    const linuxSource = !selected.platformPolicy;
+                    const timeout = Math.floor(
+                      Math.min(
+                        linuxSource
+                          ? LIMITS.linuxSourceMetadataMs
+                          : LIMITS.archiveMs,
+                        hostRemaining(env),
+                      ),
                     );
-                    fail(
-                      canonical(checkpointLinkRecipe(regenerated)) ===
-                        canonical(linkRecipe),
-                      "Post-GN SDK recipe differs from verified physical targets",
+                    fail(timeout > 0, "Source metadata original host deadline");
+                    // Linux: the helper's deadline ends first so it can print
+                    // its progress diagnostic before the hard kill.
+                    const helperSeconds = Math.max(
+                      1,
+                      Math.floor(
+                        (linuxSource &&
+                        timeout > 2 * LIMITS.linuxSourceMetadataGraceMs
+                          ? timeout - LIMITS.linuxSourceMetadataGraceMs
+                          : timeout) / 1000,
+                      ),
                     );
-                    await attestFrameworkLinks(out);
-                  },
-                });
-                resumedSource = true;
-              }
-            });
-            if (sourceMetadata && !resumedSource)
-              await sourceMetadata("source-record");
-          },
-          async compile(context) {
-            checkpointCompileArguments(TARGET, context.args);
-            const compile = await checkpointPhase("compile-result", () =>
-              compileSlice(context.executable, context.args, {
-                cwd: context.cwd,
-                env: context.env,
-                logs: context.logs,
-                out: context.checkpoint.out,
-                milliseconds: sliceBudget(
-                  execution,
-                  Math.floor(hostRemaining(env)),
-                ),
-              }),
-            );
-            if (context.checkpoint.sourceMetadata)
-              await context.checkpoint.sourceMetadata("source-verify");
-            const { out, identity, digest, recipePath } = context.checkpoint;
-            if (
-              execution.mode === "complete-sdk" &&
-              compile.outcome === "compiler-complete" &&
-              compile.exitCode === 0
-            ) {
-              await withVerifiedGraph(out, identity.graph, async () => {}, {
-                log: console.log,
-              });
-              return { kind: "continue-sdk", compile };
-            }
-            await checkpointPhase("capacity", async () => {
-              const free = await statfs(temp);
-              const available = free.bavail * free.bsize;
-              const required = LIMITS.compressed + 2 * 1024 ** 3;
-              checkpointLog(
-                console.log,
-                `[cef-engineering-checkpoint] checkpoint capacity=${canonical(checkpointCapacityRecord(available, required))}`,
-              );
-              fail(available >= required, "Full checkpoint output capacity");
-            });
-            const archive = await withVerifiedGraph(
-              out,
-              identity.graph,
-              async () => {
-                // The exact live compile result is retained; never decode/copy it.
-                const logAlias = await observeThenRemoveSisoLog(
-                  out,
-                  context.logs,
-                  compile,
-                  {
-                    log: console.log,
-                  },
-                );
-                await writeFile(
-                  path.join(context.logs, "siso-log-alias.json"),
-                  canonical(logAlias),
-                  { flag: "wx" },
-                );
-                if (profile.platform === "darwin")
-                  await attestFrameworkLinks(out);
-                return checkpointPhase("pack", () =>
-                  archiveCommand(
-                    verified.python,
-                    HELPER,
-                    [
-                      "pack",
-                      "--input",
-                      out,
-                      "--output",
-                      bundle,
-                      "--generated-links",
-                      recipePath,
-                    ],
-                    {
-                      observeFailure: (record) =>
-                        checkpointLog(
-                          console.log,
-                          `[cef-engineering-checkpoint] checkpoint archive=${canonical(record)}`,
-                        ),
+                    const result = sourceMetadataResult(
+                      await archiveCommand(
+                        verified.python,
+                        HELPER,
+                        [
+                          selected.mode,
+                          "--input",
+                          selected.source,
+                          "--output",
+                          selected.sidecar,
+                          ...(selected.platformPolicy
+                            ? ["--platform-policy", selected.platformPolicy]
+                            : []),
+                          "--manifest",
+                          identityFile,
+                          "--seconds",
+                          String(helperSeconds),
+                        ],
+                        {
+                          timeout,
+                          observeFailure: (record) =>
+                            checkpointLog(
+                              console.log,
+                              `[cef-engineering-checkpoint] source-metadata-failure=${canonical({ mode, ...record })}`,
+                            ),
+                        },
+                      ),
+                      mode,
+                    );
+                    checkpointLog(
+                      console.log,
+                      `[cef-engineering-checkpoint] source-metadata=${canonical(result)}`,
+                    );
+                    return result;
+                  };
+                  context.checkpoint.sourceMetadata = sourceMetadata;
+                }
+                await afterGnPhase("restore", async () => {
+                  const prior = await restorePhase(
+                    restoreObserver,
+                    "proof-read",
+                    async () => {
+                      try {
+                        return await json(
+                          path.join(download, "download-proof.json"),
+                        );
+                      } catch (error) {
+                        if (error.code !== "ENOENT") throw error;
+                      }
                     },
+                  );
+                  if (prior) {
+                    const manifestBytes = await restorePhase(
+                      restoreObserver,
+                      "manifest-read",
+                      () => readFile(path.join(download, "manifest.json")),
+                    );
+                    await restorePhase(restoreObserver, "manifest-digest", () =>
+                      fail(
+                        /^[a-f0-9]{64}$/.test(
+                          env.CEF_RESTORE_MANIFEST_SHA ?? "",
+                        ) &&
+                          sha(manifestBytes) === env.CEF_RESTORE_MANIFEST_SHA,
+                        "Manifest differs from trusted download-step output",
+                      ),
+                    );
+                    await restorePhase(restoreObserver, "proof-match", () =>
+                      fail(
+                        canonical(JSON.parse(manifestBytes)) ===
+                          canonical(prior.manifest),
+                        "Restore proof differs from pinned manifest",
+                      ),
+                    );
+                    await restorePhase(
+                      restoreObserver,
+                      "manifest-validation",
+                      async () => {
+                        try {
+                          return validateManifest(prior.manifest, digest);
+                        } finally {
+                          await restoreObserver({
+                            stage: "identity-comparison",
+                            event: "complete",
+                            comparison: restoreIdentityComparison(
+                              identity,
+                              prior.manifest,
+                            ),
+                          });
+                        }
+                      },
+                    );
+                    await restorePhase(
+                      restoreObserver,
+                      "disk-capacity",
+                      async () => {
+                        const free = await statfs(path.dirname(out));
+                        fail(
+                          free.bavail * free.bsize >=
+                            prior.manifest.archive.rawBytes + 2 * 1024 ** 3,
+                          "Restore disk capacity",
+                        );
+                      },
+                    );
+                    const restored = path.join(
+                      path.dirname(out),
+                      "checkpoint-restored",
+                    );
+                    const result = await restorePhase(
+                      restoreObserver,
+                      "archive-restore",
+                      () =>
+                        archiveCommand(verified.python, HELPER, [
+                          "restore",
+                          "--input",
+                          download,
+                          "--output",
+                          restored,
+                          "--manifest",
+                          path.join(download, "manifest.json"),
+                          "--generated-links",
+                          recipePath,
+                        ]),
+                    );
+                    await restorePhase(restoreObserver, "archive-result", () =>
+                      fail(
+                        result.complete === true &&
+                          result.linksExtracted === false,
+                        "Incomplete verified restore",
+                      ),
+                    );
+                    await restoreVerifiedGraph({
+                      observe: restoreObserver,
+                      fresh: out,
+                      restored,
+                      expectedGraph: identity.graph,
+                      ...(sourceMetadata
+                        ? {
+                            beforeAuthoritativeGn: () =>
+                              sourceMetadata("source-apply"),
+                            afterAuthoritativeGn: () =>
+                              sourceMetadata("source-apply"),
+                          }
+                        : {}),
+                      revalidateGn: context.revalidateGn,
+                      verifyGenerated: async () => {
+                        if (profile.platform === "linux") {
+                          const regenerated = await linuxArmRecipe(
+                            context.chromium,
+                            out,
+                          );
+                          fail(
+                            canonical(regenerated) === canonical(linuxRecipe),
+                            "Post-GN Linux dependency recipe changed",
+                          );
+                          return;
+                        }
+                        const regenerated = await afterGnPhase(
+                          "sdk-links",
+                          () =>
+                            normalizeSdkLinks(out, {
+                              developerDir: context.env.DEVELOPER_DIR,
+                              sdkRoot: context.env.SDKROOT,
+                              expectedTargets: verified.sdkTargets,
+                              aliasAttestation,
+                              observe: logSdkLayout,
+                            }),
+                        );
+                        fail(
+                          canonical(checkpointLinkRecipe(regenerated)) ===
+                            canonical(linkRecipe),
+                          "Post-GN SDK recipe differs from verified physical targets",
+                        );
+                        await attestFrameworkLinks(out);
+                      },
+                    });
+                    resumedSource = true;
+                  }
+                });
+                if (sourceMetadata && !resumedSource)
+                  await sourceMetadata("source-record");
+              },
+              async compile(context) {
+                checkpointCompileArguments(TARGET, context.args);
+                const compile = await checkpointPhase("compile-result", () =>
+                  compileSlice(context.executable, context.args, {
+                    cwd: context.cwd,
+                    env: context.env,
+                    logs: context.logs,
+                    out: context.checkpoint.out,
+                    milliseconds: sliceBudget(
+                      execution,
+                      Math.floor(hostRemaining(env)),
+                    ),
+                    censusFactory,
+                  }),
+                );
+                if (context.checkpoint.sourceMetadata)
+                  await context.checkpoint.sourceMetadata("source-verify");
+                const { out, identity, digest, recipePath } =
+                  context.checkpoint;
+                if (
+                  execution.mode === "complete-sdk" &&
+                  compile.outcome === "compiler-complete" &&
+                  compile.exitCode === 0
+                ) {
+                  await withVerifiedGraph(out, identity.graph, async () => {}, {
+                    log: console.log,
+                  });
+                  return { kind: "continue-sdk", compile };
+                }
+                await checkpointPhase("capacity", async () => {
+                  const free = await statfs(temp);
+                  const available = free.bavail * free.bsize;
+                  const required = LIMITS.compressed + 2 * 1024 ** 3;
+                  checkpointLog(
+                    console.log,
+                    `[cef-engineering-checkpoint] checkpoint capacity=${canonical(checkpointCapacityRecord(available, required))}`,
+                  );
+                  fail(
+                    available >= required,
+                    "Full checkpoint output capacity",
+                  );
+                });
+                const archive = await withVerifiedGraph(
+                  out,
+                  identity.graph,
+                  async () => {
+                    // The exact live compile result is retained; never decode/copy it.
+                    const logAlias = await observeThenRemoveSisoLog(
+                      out,
+                      context.logs,
+                      compile,
+                      {
+                        log: console.log,
+                      },
+                    );
+                    await writeFile(
+                      path.join(context.logs, "siso-log-alias.json"),
+                      canonical(logAlias),
+                      { flag: "wx" },
+                    );
+                    if (profile.platform === "darwin")
+                      await attestFrameworkLinks(out);
+                    return checkpointPhase("pack", () =>
+                      archiveCommand(
+                        verified.python,
+                        HELPER,
+                        [
+                          "pack",
+                          "--input",
+                          out,
+                          "--output",
+                          bundle,
+                          "--generated-links",
+                          recipePath,
+                        ],
+                        {
+                          observeFailure: (record) =>
+                            checkpointLog(
+                              console.log,
+                              `[cef-engineering-checkpoint] checkpoint archive=${canonical(record)}`,
+                            ),
+                        },
+                      ),
+                    );
+                  },
+                  { log: console.log },
+                );
+                const manifest = {
+                  schemaVersion: 1,
+                  kind: "sorng-cef-engineering-checkpoint",
+                  identity,
+                  identitySha256: digest,
+                  producer,
+                  archive,
+                  compile,
+                  nativeAcceptance: false,
+                  runtimeReady: false,
+                };
+                await checkpointPhase("manifest", () =>
+                  validateManifest(manifest, digest),
+                );
+                await checkpointPhase("state", () =>
+                  writeFile(
+                    state,
+                    `${canonical({ kind: "checkpoint", manifest, bundle, logs: context.logs })}\n`,
+                    { flag: "wx" },
                   ),
                 );
+                return {
+                  checkpoint: true,
+                  compile,
+                  identitySha256: digest,
+                  nativeAcceptance: false,
+                  runtimeReady: false,
+                };
               },
-              { log: console.log },
-            );
-            const manifest = {
-              schemaVersion: 1,
-              kind: "sorng-cef-engineering-checkpoint",
-              identity,
-              identitySha256: digest,
-              producer,
-              archive,
-              compile,
-              nativeAcceptance: false,
-              runtimeReady: false,
-            };
-            await checkpointPhase("manifest", () =>
-              validateManifest(manifest, digest),
-            );
-            await checkpointPhase("state", () =>
-              writeFile(
-                state,
-                `${canonical({ kind: "checkpoint", manifest, bundle, logs: context.logs })}\n`,
-                { flag: "wx" },
-              ),
-            );
-            return {
-              checkpoint: true,
-              compile,
-              identitySha256: digest,
-              nativeAcceptance: false,
-              runtimeReady: false,
-            };
+            },
           },
-        },
-      },
-      env,
+          env,
+        ),
     );
     if (result.sdkCompletion) {
       fail(
@@ -965,18 +1052,37 @@ async function checkpointMain(argv, env, observer) {
     await uploadPhase(observer, "bundle-validation", () =>
       verifyBundle(saved.bundle, producer.repository),
     );
-    const seal = await uploadSdkBundle(
-      apiClient(producer.repository, env.GH_TOKEN, fetch, {
-        sdk: true,
-        target: TARGET,
-        observer,
-      }),
+    const uploadPython =
+      profile.platform === "darwin"
+        ? (await tools(env, profile)).python
+        : undefined;
+    const seal = await withMacCensusFactory(
       {
-        bundle: saved.bundle,
-        completion: saved.completion,
-        producer,
-        observer,
+        env,
+        profile,
+        python: uploadPython,
+        canonicalRoot: path.join(
+          temp,
+          "sorng-cef-engineering",
+          TARGET,
+          SOURCE_ID,
+        ),
       },
+      (censusFactory) =>
+        uploadSdkBundle(
+          apiClient(producer.repository, env.GH_TOKEN, fetch, {
+            sdk: true,
+            target: TARGET,
+            observer,
+          }),
+          {
+            bundle: saved.bundle,
+            completion: saved.completion,
+            producer,
+            observer,
+            censusFactory,
+          },
+        ),
     );
     await uploadPhase(observer, "seal-write", async () => {
       const sealRoot = path.join(temp, "cef-engineering-sdk-seal");
@@ -1014,9 +1120,27 @@ async function checkpointMain(argv, env, observer) {
       runtimeReady: false,
     };
   }
-  const seal = await uploadCheckpoint(
-    apiClient(producer.repository, env.GH_TOKEN, fetch, { observer }),
-    { bundle, manifest: saved.manifest, producer, observer },
+  const uploadPython =
+    profile.platform === "darwin"
+      ? (await tools(env, profile)).python
+      : undefined;
+  const seal = await withMacCensusFactory(
+    {
+      env,
+      profile,
+      python: uploadPython,
+      canonicalRoot: path.join(
+        temp,
+        "sorng-cef-engineering",
+        TARGET,
+        SOURCE_ID,
+      ),
+    },
+    (censusFactory) =>
+      uploadCheckpoint(
+        apiClient(producer.repository, env.GH_TOKEN, fetch, { observer }),
+        { bundle, manifest: saved.manifest, producer, observer, censusFactory },
+      ),
   );
   await uploadPhase(observer, "seal-write", async () => {
     const sealRoot = path.join(temp, "cef-engineering-seal");

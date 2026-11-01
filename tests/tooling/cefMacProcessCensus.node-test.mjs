@@ -68,7 +68,7 @@ function worker({ respond, ignoreEnd = false } = {}) {
 }
 
 test("native rows keep canonical microsecond identity through every lineage clone and reparenting", () => {
-  assert.equal(MAC_NATIVE_CENSUS_ADMITTED, false);
+  assert.equal(MAC_NATIVE_CENSUS_ADMITTED, true);
   nativeCensusRows({ request: 1, rows, collectMicros: 2 }, 1);
   const owned = observedLineage(rows, [{ pid: 100, start: rows[0].start }]);
   assert.deepEqual(owned, [
@@ -177,7 +177,7 @@ test("protocol, EOF, output and lease failures reject instead of creating produc
       assert.equal(receipt.joined, true);
       assert.equal(receipt.failed, true);
     }
-    assert.equal(MAC_NATIVE_CENSUS_ADMITTED, false);
+    assert.equal(MAC_NATIVE_CENSUS_ADMITTED, true);
   }
 });
 
@@ -213,7 +213,7 @@ test("native proof command is closed and Python decoder uses an oracle rather th
       String.raw`
 import ctypes as C,importlib.util,json,struct,sys
 file=sys.argv[1];spec=importlib.util.spec_from_file_location('census',file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-assert m.PRODUCTION_CENSUS_ADMITTED is False
+assert m.PRODUCTION_CENSUS_ADMITTED is True
 # Artificial data-only ABI, never a tuple inferred or admitted for Darwin.
 a=dict(recordBytes=128,pidOffset=0,pidBytes=4,parentOffset=4,parentBytes=4,groupOffset=8,groupBytes=4,secondsOffset=16,secondsBytes=8,microsOffset=24,microsBytes=4,pointerBytes=8,longBytes=8,mib=[1,14,0,0])
 b=bytearray(128);struct.pack_into('<iii',b,0,10,9,10);struct.pack_into('<q',b,16,1793550000);struct.pack_into('<i',b,24,123456)

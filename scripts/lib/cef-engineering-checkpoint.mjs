@@ -2452,21 +2452,24 @@ export async function archiveCommand(
           shell: false,
           windowsHide: true,
           detached: process.platform !== "win32",
-          env:
-            args[0] === "mac-python-package-observe"
-              ? {
-                  PATH: path.dirname(python),
-                  ImageOS: process.env.ImageOS,
-                  ImageVersion: process.env.ImageVersion,
-                  GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
-                  RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
-                  GITHUB_REPOSITORY_VISIBILITY:
-                    process.env.GITHUB_REPOSITORY_VISIBILITY,
-                  ...(process.env.RUNNER_TRACKING_ID
-                    ? { RUNNER_TRACKING_ID: process.env.RUNNER_TRACKING_ID }
-                    : {}),
-                }
-              : { PATH: path.dirname(python) },
+          env: [
+            "mac-python-package-observe",
+            "mac-external-observe",
+            "mac-owned-capability-observe",
+          ].includes(args[0])
+            ? {
+                PATH: path.dirname(python),
+                ImageOS: process.env.ImageOS,
+                ImageVersion: process.env.ImageVersion,
+                GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+                RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
+                GITHUB_REPOSITORY_VISIBILITY:
+                  process.env.GITHUB_REPOSITORY_VISIBILITY,
+                ...(process.env.RUNNER_TRACKING_ID
+                  ? { RUNNER_TRACKING_ID: process.env.RUNNER_TRACKING_ID }
+                  : {}),
+              }
+            : { PATH: path.dirname(python) },
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
@@ -2646,9 +2649,9 @@ export function processRows(text) {
   return rows;
 }
 
-// Production admission stays disabled until the scoped factory and real
-// supervisor integration have been reviewed. Proofs cannot mint live receipts.
-export const MAC_NATIVE_CENSUS_ADMITTED = false;
+// Exact Intel-image/source scope is qualified by the immutable records below.
+// Integration and ABI proofs never mint live compile receipts.
+export const MAC_NATIVE_CENSUS_ADMITTED = true;
 export const MAC_CENSUS_ABI = Object.freeze({
   recordBytes: 648,
   pidOffset: 40,
@@ -2669,6 +2672,12 @@ export const MAC_CENSUS_EVIDENCE = Object.freeze({
   runId: 41339128028,
   artifactId: 13096432034,
   sha256: "ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855",
+});
+export const MAC_CENSUS_SUPERVISOR_QUALIFICATION = Object.freeze({
+  runId: 41342489672,
+  artifactId: 13097527087,
+  source: "ce297732e385466d4d8fe731e30441408fec6d30",
+  sha256: "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c",
 });
 const MAC_CENSUS_SOURCES = Object.freeze({
   "x86_64-apple-darwin":
@@ -2826,7 +2835,6 @@ export async function createMacProcessCensusFactory(value) {
   return censusFactory(value, false);
 }
 export async function createMacCensusIntegrationProofFactory(value) {
-  assert(MAC_NATIVE_CENSUS_ADMITTED === false, "CENSUS_PROOF_ONLY");
   return censusFactory(value, true);
 }
 async function openCensusSession(
@@ -2899,6 +2907,7 @@ async function openCensusSession(
       ),
       requestBudget,
       evidence: MAC_CENSUS_EVIDENCE.sha256,
+      supervisorEvidence: MAC_CENSUS_SUPERVISOR_QUALIFICATION.sha256,
     };
     const raw = Buffer.from(canonical(context) + "\n");
     await writeFile(path.join(sessionRoot, "context.json"), raw, {
@@ -2936,6 +2945,7 @@ async function openCensusSession(
       requestBudget,
       readyMilliseconds: Math.max(1, startupEnd - performance.now()),
       contextSha256: sha(raw),
+      productionAdmitted: !binding.proofOnly,
     });
     binding.worker = child;
     let closed = false,
@@ -3100,10 +3110,20 @@ export function censusFailureCode(text) {
       "CENSUS_DIAGNOSTIC",
     );
     const value = JSON.parse(text);
-    shape(value, ["kind", "code", "productionAdmitted"]);
+    shape(
+      value,
+      value?.kind === "mac-census-native-failure"
+        ? ["kind", "code", "mode", "productionAdmitted"]
+        : ["kind", "code", "productionAdmitted"],
+    );
     if (
-      value.kind === "mac-census-proof-failure" &&
-      value.productionAdmitted === false &&
+      ((value.kind === "mac-census-proof-failure" &&
+        value.productionAdmitted === false) ||
+        (value.kind === "mac-census-native-failure" &&
+          ["production", "integration-proof", "unavailable"].includes(
+            value.mode,
+          ) &&
+          value.productionAdmitted === (value.mode === "production"))) &&
       CENSUS_FAILURE_CODES.has(value.code)
     )
       return value.code;
@@ -3151,8 +3171,7 @@ export function nativeCensusRows(value, request) {
 
 export function createMacCensusProofClient(child, { deadline } = {}) {
   assert(
-    MAC_NATIVE_CENSUS_ADMITTED === false &&
-      positive(child?.pid) &&
+    positive(child?.pid) &&
       typeof child.kill === "function" &&
       Number.isFinite(deadline) &&
       deadline > performance.now(),
@@ -3167,6 +3186,7 @@ function macCensusClient(
     requestBudget = 10000,
     readyMilliseconds = 45000,
     contextSha256,
+    productionAdmitted = false,
   } = {},
 ) {
   const readyDeadline = Math.min(
@@ -3222,7 +3242,8 @@ function macCensusClient(
               (contextSha256
                 ? "mac-census-native-ready"
                 : "mac-census-proof-ready") &&
-            value.productionAdmitted === false &&
+            value.productionAdmitted ===
+              (contextSha256 ? productionAdmitted : false) &&
             (contextSha256
               ? value.contextSha256 === contextSha256 &&
                 canonical(value.abi) === canonical(MAC_CENSUS_ABI)

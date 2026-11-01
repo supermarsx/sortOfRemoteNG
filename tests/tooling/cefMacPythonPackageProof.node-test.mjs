@@ -490,7 +490,7 @@ test("workflow shares its original five-minute job clock and independently retai
   );
   assert(!argv.includes("...process.env"));
 });
-test("Python candidate validator denies broad roots before installed traversal; public producer root stays Framework-only", () => {
+test("Python candidate validator denies broad roots before installed traversal; public producer root is exactly qualified Cellar", () => {
   const py = String.raw`
 import importlib.util,pathlib,unittest,json,sys,os,tempfile,copy
 from unittest.mock import patch
@@ -510,7 +510,8 @@ class Test(unittest.TestCase):
  def test_producer_unchanged(self):
   import inspect
   source=inspect.getsource(m.mac_external_context)
-  self.assertIn('/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework',source)
+  self.assertIn("roots['python'] == _MAC_PYTHON_PACKAGE_QUALIFICATION[0]",source)
+  self.assertIn('Frameworks/Python.framework/Versions/3.14/bin/python3.14',source)
   self.assertFalse(m.MAC_INTEL_SOURCE_WRITE_ADMITTED)
  def test_complete_and_readback_share_original_budget(self):
   with tempfile.TemporaryDirectory() as folder:

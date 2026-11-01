@@ -1,4 +1,4 @@
-"""Proof-only Darwin census. No production monitor admission or arbitrary tool API."""
+"""Scoped Darwin ownership census and fixed native integration fixtures."""
 import ctypes as C
 import hashlib
 import json
@@ -12,7 +12,8 @@ import subprocess
 import sys
 import time
 
-PRODUCTION_CENSUS_ADMITTED = False
+PRODUCTION_CENSUS_ADMITTED = True
+ACTIVE_NATIVE_MODE = None
 IMAGE = '20260824.0482.1'
 PYTHON = '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14'
 DEVELOPER = '/Applications/Xcode_26.3.app/Contents/Developer'
@@ -33,6 +34,9 @@ NATIVE_ABI = {'recordBytes':648,'pidOffset':40,'pidBytes':4,'parentOffset':560,'
               'groupOffset':564,'groupBytes':4,'secondsOffset':0,'secondsBytes':8,
               'microsOffset':8,'microsBytes':4,'pointerBytes':8,'longBytes':8,'mib':[1,14,0,0]}
 NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855'
+NATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,
+    'source':'ce297732e385466d4d8fe731e30441408fec6d30',
+    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}
 NATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',
                   'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}
 NATIVE_MAX_WORK_MS = 180*60*1000
@@ -303,11 +307,11 @@ def native_root(root):
 def native_context(root,raw):
     value=json.loads(raw)
     fields={'kind','mode','target','source','canonicalRoot','image','phase','workMilliseconds',
-            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence'}
+            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence','supervisorEvidence'}
     need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and
          value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and
          value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and
-         value['evidence']==NATIVE_EVIDENCE,'CENSUS_ROOT')
+         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==NATIVE_SUPERVISOR_QUALIFICATION['sha256'],'CENSUS_ROOT')
     expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']
     need(value['canonicalRoot']==expected,'CENSUS_ROOT')
     need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and
@@ -329,14 +333,16 @@ def native_context(root,raw):
 
 
 def native_worker(root):
+    global ACTIVE_NATIVE_MODE
     root=native_root(root)
     raw=held_bytes(root/'context.json',4096)
     value=native_context(root,raw)
+    ACTIVE_NATIVE_MODE=value['mode']
     end=min(time.monotonic()+value['leaseMilliseconds']/1000,
             time.monotonic()+(value['wallEndMilliseconds']/1000-time.time()))
     provider=SysctlCensus(NATIVE_ABI)
     print(json.dumps({'kind':'mac-census-native-ready','abi':NATIVE_ABI,
-        'contextSha256':hashlib.sha256(raw).hexdigest(),'productionAdmitted':False},separators=(',',':')),flush=True)
+        'contextSha256':hashlib.sha256(raw).hexdigest(),'productionAdmitted':value['mode']=='production'},separators=(',',':')),flush=True)
     previous=0
     for line in iter(lambda:sys.stdin.buffer.readline(129),b''):
         need(time.monotonic()<end and len(line)<=128 and line.endswith(b'\n'),'CENSUS_DEADLINE')
@@ -438,14 +444,12 @@ def actor(root,role):
 
 def main(args):
     if len(args)==3 and args[0]=='--integration-actor':
-        need(PRODUCTION_CENSUS_ADMITTED is False,'CENSUS_PROOF_ONLY')
         authority(require_public=False);held_pin(*PINS[0],time.monotonic()+2)
         integration_actor(args[1],args[2]);return
     if len(args)==2 and args[0]=='--census-worker':
         authority(require_public=False);held_pin(*PINS[0],time.monotonic()+2)
         native_worker(args[1]);return
     need(len(args) in (2,3) and args[0] in ('--proof-prepare','--proof-compile','--proof-worker','--proof-actor'),'CENSUS_ARGUMENTS')
-    need(PRODUCTION_CENSUS_ADMITTED is False,'CENSUS_UNADMITTED')
     authority(require_public=args[0]!='--proof-compile');root=root_path(args[1])
     held_pin(*PINS[0],time.monotonic()+5)
     if args[0]=='--proof-prepare':
@@ -463,5 +467,9 @@ if __name__=='__main__':
         main(sys.argv[1:])
     except BaseException as error:
         code=str(error) if isinstance(error,CensusError) else 'CENSUS_FAILED'
-        print(json.dumps({'kind':'mac-census-proof-failure','code':code,'productionAdmitted':False}),file=sys.stderr)
+        native=len(sys.argv)>1 and sys.argv[1]=='--census-worker'
+        value={'kind':'mac-census-native-failure'if native else'mac-census-proof-failure','code':code,
+               'productionAdmitted':ACTIVE_NATIVE_MODE=='production'if native else False}
+        if native:value['mode']=ACTIVE_NATIVE_MODE or'unavailable'
+        print(json.dumps(value),file=sys.stderr)
         raise SystemExit(1)

@@ -11,7 +11,6 @@ import {
   createMacCensusProofClient,
   compileSlice,
   censusFailureCode,
-  MAC_NATIVE_CENSUS_ADMITTED,
   observedLineage,
   processRows,
 } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
@@ -256,7 +255,6 @@ export async function runProof(output) {
       process.env.ImageVersion === "20260824.0482.1",
     "PROOF_HOST",
   );
-  assert(MAC_NATIVE_CENSUS_ADMITTED === false, "PROOF_UNADMITTED");
   const pinnedPython = await held(PYTHON, 13592);
   assert(
     pinnedPython.length === 13592 &&
