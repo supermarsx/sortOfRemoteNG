@@ -11,6 +11,7 @@ import type { ApplicationLogSource } from "../../types/monitoring/applicationLog
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import { Checkbox, Select } from "../ui/forms";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
+import { LogSelectionToolbar } from "./LogSelectionToolbar";
 import {
   logCategories,
   logRowsText,
@@ -34,21 +35,33 @@ export function ApplicationLogTimelineView({
     owner?.status,
   ]);
   const [selection, setSelection] = useState("recent");
+  const selectionOwner = JSON.stringify([source, ownerKey]);
+  const [selectingOwner, setSelectingOwner] = useState<string | null>(null);
+  const selecting = isActive && selectingOwner === selectionOwner;
   const application = useApplicationLogs(
     "application",
     isActive && source === "application",
     ownerKey,
     selection === "recent",
+    selecting,
   );
   const browser = useApplicationLogs(
     "browser",
     isActive,
     ownerKey,
     selection === "recent",
+    selecting,
   );
   const [category, setCategory] = useState<LogCategory | "all">("all");
   const [search, setSearch] = useState("");
   const [copyRevision, setCopyRevision] = useState<string | null>(null);
+  const [copyScope, setCopyScope] = useState<"displayed" | "selected">(
+    "displayed",
+  );
+  const [rowSelection, setRowSelection] = useState({
+    revision: "",
+    ids: new Set<string>(),
+  });
   const [copyResult, setCopyResult] = useState("");
   const [copying, setCopying] = useState(false);
   const title =
@@ -131,22 +144,58 @@ export function ApplicationLogTimelineView({
     application.revision,
     browser.revision,
   ]);
+  // Tail row IDs include order, so a new read must never reuse an old selection.
+  const selectedIds =
+    selecting && rowSelection.revision === revision
+      ? rowSelection.ids
+      : new Set<string>();
+  const selectedRows = displayedRows.filter((row) => selectedIds.has(row.id));
+  const selectedRowsToken = JSON.stringify(selectedRows.map((row) => row.id));
+  const copyText =
+    copyScope === "selected" ? logRowsText(selectedRows) : displayedText;
+  const copyToken = JSON.stringify([
+    revision,
+    copyScope,
+    copyScope === "selected" ? selectedRows.map((row) => row.id) : [],
+  ]);
   const current = () =>
     isActive &&
     selectedReaders.every((reader) => reader.isCurrent(reader.revision));
-  const setApplicationAutoRefresh = application.setAutoRefresh;
-  const setBrowserAutoRefresh = browser.setAutoRefresh;
   useEffect(() => {
     setSelection("recent");
     setCategory("all");
     setSearch("");
-    setApplicationAutoRefresh(false);
-    setBrowserAutoRefresh(false);
-  }, [source, ownerKey, setApplicationAutoRefresh, setBrowserAutoRefresh]);
+    setSelectingOwner(null);
+  }, [source, ownerKey]);
+  useEffect(() => {
+    if (!isActive) setSelectingOwner(null);
+  }, [isActive]);
   useEffect(() => {
     setCopyRevision(null);
     setCopyResult("");
-  }, [revision, isActive]);
+    setRowSelection((previous) =>
+      previous.revision === revision ? previous : { revision, ids: new Set() },
+    );
+  }, [revision, selectedRowsToken, isActive]);
+  const toggleRow = (id: string, checked: boolean) => {
+    if (!selecting || !current()) return;
+    setRowSelection((previous) => {
+      const ids = new Set(previous.revision === revision ? previous.ids : []);
+      if (checked) ids.add(id);
+      else ids.delete(id);
+      return { revision, ids };
+    });
+  };
+  const requestCopy = (scope: "displayed" | "selected") => {
+    setCopyScope(scope);
+    setCopyRevision(
+      JSON.stringify([
+        revision,
+        scope,
+        scope === "selected" ? selectedRows.map((row) => row.id) : [],
+      ]),
+    );
+  };
   const select = async (key: string) => {
     setCopyRevision(null);
     if (key === "recent") {
@@ -168,14 +217,16 @@ export function ApplicationLogTimelineView({
   };
   const refresh = () => Promise.all(readers.map((reader) => reader.refresh()));
   const copy = async () => {
-    if (!current() || copyRevision !== revision || !displayedText || copying)
+    if (!current() || copyRevision !== copyToken || !copyText || copying)
       return;
     setCopyRevision(null);
     setCopying(true);
     try {
-      await navigator.clipboard.writeText(displayedText);
+      await navigator.clipboard.writeText(copyText);
       if (current())
-        setCopyResult("Displayed log records copied. Review before sharing.");
+        setCopyResult(
+          `${copyScope === "selected" ? "Selected" : "Displayed"} log records copied. Review before sharing.`,
+        );
     } catch {
       if (current())
         setCopyResult(
@@ -200,13 +251,13 @@ export function ApplicationLogTimelineView({
             <p className="mt-1 text-xs text-[var(--color-textMuted)]">
               {source === "application"
                 ? "Application logs and native browser journals in one timeline. Recent view reads the newest file from each source; select a file to read its archive."
-                : "Native browser startup and lifecycle records. Website console and page content are not included."}
+                : "Native browser startup and lifecycle records. Website console and page content are not included. SSH tunnel establishment records are in Application logs: choose All categories or Application network, then search for SSH establishment observed."}
             </p>
           </div>
           <button
             type="button"
             onClick={() => void refresh()}
-            disabled={!isActive || loading}
+            disabled={!isActive || loading || selecting}
             className="sor-option-chip text-xs disabled:opacity-40"
           >
             <RefreshCw
@@ -218,7 +269,7 @@ export function ApplicationLogTimelineView({
           </button>
           <button
             type="button"
-            onClick={() => setCopyRevision(revision)}
+            onClick={() => requestCopy("displayed")}
             disabled={!isActive || !displayedText || loading || copying}
             className="sor-option-chip text-xs disabled:opacity-40"
           >
@@ -270,9 +321,9 @@ export function ApplicationLogTimelineView({
               onChange={(value) =>
                 readers.forEach((reader) => reader.setAutoRefresh(value))
               }
-              disabled={!isActive}
+              disabled={!isActive || selecting}
             />
-            Auto-refresh every 10 s
+            Live updates
           </label>
           <div className="relative min-w-44 flex-1">
             <Search
@@ -291,13 +342,49 @@ export function ApplicationLogTimelineView({
             />
           </div>
         </div>
+        <LogSelectionToolbar
+          selecting={selecting}
+          selectedCount={selectedRows.length}
+          allSelected={
+            !!displayedRows.length &&
+            selectedRows.length === displayedRows.length
+          }
+          disabled={
+            !isActive ||
+            loading ||
+            copying ||
+            !displayedRows.length ||
+            !current()
+          }
+          onToggleMode={() => {
+            setSelectingOwner(selecting ? null : selectionOwner);
+            setRowSelection({ revision, ids: new Set() });
+            setCopyRevision(null);
+          }}
+          onSelectAll={(checked) =>
+            setRowSelection({
+              revision,
+              ids: new Set(checked ? displayedRows.map((row) => row.id) : []),
+            })
+          }
+          onClear={() => setRowSelection({ revision, ids: new Set() })}
+          onCopy={() => requestCopy("selected")}
+        />
+        {selecting && (
+          <p className="text-xs text-[var(--color-textMuted)]">
+            Live updates paused while selecting. Changing filters clears the
+            selection.
+          </p>
+        )}
       </header>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-4">
         <p className="shrink-0 text-xs text-[var(--color-textMuted)]">
           Newest records first. Records without a wall timestamp use file
           modification and recorded order; timing values are elapsed from start.
           Application log text may contain private information; review before
-          sharing.
+          sharing. Search covers loaded excerpts of up to 2,000 newest lines per
+          file, rather than the complete log archive. Older records may require
+          selecting another log file.
         </p>
         {readers
           .filter((reader) => reader.error)
@@ -355,9 +442,21 @@ export function ApplicationLogTimelineView({
           >
             {displayedRows.length ? (
               <ol className="divide-y divide-[var(--color-border)]">
-                {displayedRows.map((row) => (
-                  <li key={row.id}>
-                    <details className="group">
+                {displayedRows.map((row, index) => (
+                  <li
+                    key={row.id}
+                    className={`flex min-w-0 items-start ${selectedIds.has(row.id) ? "bg-primary/10" : ""}`}
+                  >
+                    {selecting && (
+                      <Checkbox
+                        aria-label={`Select log record ${index + 1}`}
+                        checked={selectedIds.has(row.id)}
+                        onChange={(checked) => toggleRow(row.id, checked)}
+                        disabled={!current() || loading}
+                        className="ml-3 mt-2 shrink-0"
+                      />
+                    )}
+                    <details className="group min-w-0 flex-1">
                       <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs hover:bg-[var(--color-surfaceHover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
                         <ChevronRight
                           size={12}
@@ -428,10 +527,10 @@ export function ApplicationLogTimelineView({
       </div>
       <ConfirmDialog
         isOpen={
-          isActive && copyRevision === revision && !!displayedText && current()
+          isActive && copyRevision === copyToken && !!copyText && current()
         }
         title="Copy log text?"
-        message="Application logs may contain private addresses, account identifiers or file paths and are not automatically redacted. Only the displayed formatted records and their file provenance will be copied. Review before sharing."
+        message={`Application logs may contain private addresses, account identifiers or file paths and are not automatically redacted. Only the ${copyScope === "selected" ? "selected" : "displayed"} formatted records and their file provenance will be copied. Review before sharing.`}
         confirmText="Copy log text"
         variant="warning"
         confirmOnEnter={false}

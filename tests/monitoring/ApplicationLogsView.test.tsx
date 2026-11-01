@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationLogsView } from "../../src/components/monitoring/ApplicationLogsView";
@@ -164,6 +165,42 @@ describe("Application logs", () => {
       source: "application",
     });
   });
+  it("keeps SSH establishment visible under the network filter and text search", async () => {
+    const message =
+      "SSH establishment observed: attempt=7 caller=native-browser phase=connect outcome=timeout family=ipv4";
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "application_logs_list"
+        ? { files, truncated: false }
+        : {
+            text:
+              args.source === "application"
+                ? `[2026-11-01T12:40:42Z][INFO][ssh::establishment] ${message}`
+                : '{"version":1,"stage":"ready"}',
+            truncated: false,
+          },
+    );
+    render(<ApplicationLogsView isActive />);
+    const region = await screen.findByRole("region", { name: "Log content" });
+    await waitFor(() => expect(region).toHaveTextContent(message));
+    const category = screen.getByRole("combobox", { name: "Log category" });
+    fireEvent.mouseDown(category);
+    fireEvent.click(category);
+    const option = screen.getByRole("option", { name: "Application network" });
+    fireEvent.mouseDown(option);
+    fireEvent.click(option);
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search log text" }),
+      { target: { value: "SSH establishment observed" } },
+    );
+    expect(region).toHaveTextContent(message);
+    expect(region).not.toHaveTextContent("Native browser ready");
+    fireEvent.click(screen.getByRole("button", { name: "Copy displayed log" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Application logs may contain private addresses",
+    );
+    expect(mocks.clipboard).not.toHaveBeenCalled();
+  });
+
   it("retains archive provenance and clears copy confirmation when the view is hidden", async () => {
     mocks.invoke.mockImplementation(async (command, args) =>
       command === "application_logs_list"
@@ -212,26 +249,31 @@ describe("Application logs", () => {
     expect(screen.queryByRole("region", { name: "Log content" })).toBeNull();
     expect(mocks.clipboard).not.toHaveBeenCalled();
   });
-  it("stops browser auto-refresh when switching to the merged application view", async () => {
+  it("keeps a user's live updates preference when switching log views", async () => {
     const view = render(<ApplicationLogsView isActive source="browser" />);
     await screen.findByRole("region", { name: "Log content" });
     vi.useFakeTimers();
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Auto-refresh every 10 s" }),
-    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Live updates" }));
     expect(
-      screen.getByRole("checkbox", { name: "Auto-refresh every 10 s" }),
-    ).toBeChecked();
+      screen.getByRole("checkbox", { name: "Live updates" }),
+    ).not.toBeChecked();
     view.rerender(<ApplicationLogsView isActive />);
     await act(async () => {});
     expect(
-      screen.getByRole("checkbox", { name: "Auto-refresh every 10 s" }),
+      screen.getByRole("checkbox", { name: "Live updates" }),
     ).not.toBeChecked();
     const before = mocks.invoke.mock.calls.length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(20_000);
     });
-    expect(mocks.invoke).toHaveBeenCalledTimes(before);
+    expect(
+      mocks.invoke.mock.calls
+        .slice(before)
+        .some(
+          ([command, args]) =>
+            command === "application_logs_list" && args.source === "browser",
+        ),
+    ).toBe(false);
     vi.useRealTimers();
   });
   it("renders native files in an app-themed scrollable view with manual refresh", async () => {
@@ -243,8 +285,8 @@ describe("Application logs", () => {
       await screen.findByRole("region", { name: "Log content" }),
     ).toHaveClass("overflow-auto", "min-h-0");
     expect(
-      screen.getByRole("checkbox", { name: "Auto-refresh every 10 s" }),
-    ).not.toBeChecked();
+      screen.getByRole("checkbox", { name: "Live updates" }),
+    ).toBeChecked();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
     expect(screen.queryByRole("region", { name: "Action Log" })).toBeNull();
     expect(screen.queryByRole("button", { name: /close/i })).toBeNull();
@@ -279,6 +321,132 @@ describe("Application logs", () => {
     );
   });
 
+  it("selects individual records and copies their complete text and provenance after confirmation", async () => {
+    render(<ApplicationLogsView isActive />);
+    const region = await screen.findByRole("region", { name: "Log content" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select logs" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    const row = [...region.querySelectorAll("li")].find((item) =>
+      item.textContent?.includes("private address"),
+    )!;
+    fireEvent.click(within(row).getByRole("checkbox"));
+    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Live updates" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected (1)" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Only the selected formatted records",
+    );
+    expect(mocks.clipboard).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Copy log text" }));
+    await waitFor(() => expect(mocks.clipboard).toHaveBeenCalledTimes(1));
+    const copied = mocks.clipboard.mock.calls[0][0];
+    expect(copied).toContain("[ERROR] private address");
+    expect(copied).toContain("application.log");
+    expect(copied).not.toContain("startup");
+    expect(copied).not.toContain("Native browser ready");
+  });
+
+  it("selects only filtered records and invalidates a copy when selection or filters change", async () => {
+    render(<ApplicationLogsView isActive />);
+    await screen.findByRole("region", { name: "Log content" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select logs" })).toBeEnabled(),
+    );
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search log text" }),
+      { target: { value: "ERROR" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all filtered logs" }),
+    );
+    expect(screen.getByText("1 selected")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Copy selected (0)" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all filtered logs" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected (1)" }));
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search log text" }),
+      { target: { value: "startup" } },
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("0 selected")).toBeVisible();
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search log text" }),
+      { target: { value: "ERROR" } },
+    );
+    expect(screen.getByText("0 selected")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: "Select log record 1" }),
+    ).not.toBeChecked();
+    expect(mocks.clipboard).not.toHaveBeenCalled();
+  });
+
+  it("pauses live polling during selection and resumes the saved live setting on Done", async () => {
+    render(<ApplicationLogsView isActive />);
+    await screen.findByRole("region", { name: "Log content" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select logs" })).toBeEnabled(),
+    );
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    const calls = mocks.invoke.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4500);
+    });
+    expect(mocks.invoke).toHaveBeenCalledTimes(calls);
+    expect(
+      screen.getByText(/Live updates paused while selecting/),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Done selecting" }));
+    expect(
+      screen.getByRole("checkbox", { name: "Live updates" }),
+    ).toBeChecked();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(mocks.invoke.mock.calls.length).toBeGreaterThan(calls);
+    expect(
+      mocks.invoke.mock.calls
+        .slice(calls)
+        .every(([command]) => command === "application_logs_list"),
+    ).toBe(true);
+  });
+
+  it("clears selection and its pending copy when hidden without restoring stale rows", async () => {
+    const view = render(<ApplicationLogsView isActive />);
+    await screen.findByRole("region", { name: "Log content" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select logs" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all filtered logs" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy selected (3)" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    view.rerender(<ApplicationLogsView isActive={false} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done selecting" })).toBeNull();
+    view.rerender(<ApplicationLogsView isActive />);
+    await screen.findByRole("region", { name: "Log content" });
+    expect(
+      screen.queryByRole("checkbox", { name: /Select log record/ }),
+    ).toBeNull();
+    expect(mocks.clipboard).not.toHaveBeenCalled();
+  });
+
   it("clears previous text and copy confirmation on refresh failure, exposing the real error", async () => {
     render(<ApplicationLogsView isActive />);
     await screen.findByRole("region", { name: "Log content" });
@@ -305,10 +473,23 @@ describe("Application logs", () => {
     expect(
       screen.getByRole("region", { name: "Browser startup journal" }),
     ).toHaveTextContent("Website console and page content are not included");
+    expect(
+      screen.getByRole("region", { name: "Browser startup journal" }),
+    ).toHaveTextContent(
+      "SSH tunnel establishment records are in Application logs",
+    );
+    expect(
+      screen.getByRole("region", { name: "Browser startup journal" }),
+    ).toHaveTextContent(
+      "Search covers loaded excerpts of up to 2,000 newest lines per file",
+    );
     await screen.findByRole("region", { name: "Log content" });
     expect(screen.getByText(/bounded excerpt/)).toBeVisible();
     expect(mocks.invoke).toHaveBeenCalledWith("application_logs_list", {
       source: "browser",
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("application_logs_list", {
+      source: "application",
     });
   });
 

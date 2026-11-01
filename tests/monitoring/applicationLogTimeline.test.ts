@@ -14,6 +14,32 @@ const file = {
 const browser = (row: unknown) =>
   parseLogTimeline(JSON.stringify(row), "browser", file)[0];
 describe("bounded application log timeline", () => {
+  it.each([
+    "[2026-11-01T12:40:42Z][INFO][ssh::establishment] ",
+    "2026-11-01T12:40:42Z INFO ssh::establishment: ",
+  ])(
+    "classifies SSH establishment as network without changing its diagnostic fields (%s)",
+    (prefix) => {
+      const message =
+        "SSH establishment observed: timestampUnixMs=1793536842000 attempt=7 caller=native-browser route=direct target=opaque endpoint=opaque policy=auto phase=connect outcome=timeout candidate=0 address=opaque family=ipv4 candidates=1 ipv4=1 ipv6=0 elapsedMs=30000 overallMs=30001 budgetMs=30000";
+      const row = parseLogTimeline(
+        `${prefix}${message}`,
+        "application",
+        file,
+      )[0];
+      expect(row.category).toBe("network");
+      expect(row.message).toBe(message);
+      expect(row.details).toContain("Module: ssh::establishment");
+      expect(logRowsText([row])).toContain("caller=native-browser");
+      expect(
+        parseLogTimeline(
+          `[2026-11-01T12:40:42Z][INFO][ssh::establishment_extra] ${message}`,
+          "application",
+          file,
+        )[0].category,
+      ).toBe("application");
+    },
+  );
   it("distinguishes native credential dispatch from handled cancellation without exposing challenge data", () => {
     const auth = (outcome?: unknown) =>
       browser({
@@ -100,6 +126,26 @@ describe("bounded application log timeline", () => {
       level: "WARN",
     });
     expect(row.details).toContain("Reason: proxy configuration");
+    expect(logRowsText([row])).not.toContain("private-sentinel");
+  });
+  it("explains a failure before certificate evidence without blaming certificate trust", () => {
+    const row = browser({
+      version: 1,
+      navigation: {
+        event: "tls-bridge-failed",
+        reason: "engine-failure-before-evidence",
+        url: "https://private-sentinel.invalid",
+        password: "private-sentinel",
+      },
+    });
+    expect(row.category).toBe("tls");
+    expect(row.message).toBe(
+      "Browser connection stopped before browser certificate evidence",
+    );
+    expect(row.details).toContain("before delivering certificate evidence");
+    expect(row.details).toContain(
+      "does not establish a problem with the server certificate",
+    );
     expect(logRowsText([row])).not.toContain("private-sentinel");
   });
   it("shows bounded TLS phase timings from journals without disclosing unrelated fields", () => {

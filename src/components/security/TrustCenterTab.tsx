@@ -33,6 +33,7 @@ const button =
   "inline-flex items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:cursor-not-allowed";
 const field =
   "rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary";
+const rowButton = `${button} !p-1`;
 const actionLabels: Record<TrustCenterAction, string> = {
   revoke: "Revoke",
   reinstate: "Reinstate",
@@ -484,13 +485,22 @@ export default function TrustCenterTab({
                   : "No stored identities to manage. Accepted connection identities appear here; you can also review and import a trust export."}
               </p>
             ) : (
-              <table className="w-full min-w-[48rem] text-left text-xs">
+              <table className="w-full min-w-[48rem] table-fixed text-left text-xs">
                 <caption className="sr-only">
                   Stored trusted certificates and host identities
                 </caption>
+                <colgroup>
+                  <col className="w-8" />
+                  <col />
+                  <col className="w-32" />
+                  <col className="w-[15%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-28" />
+                  <col className="w-40" />
+                </colgroup>
                 <thead className="sticky top-0 bg-[var(--color-surface)]">
                   <tr>
-                    <th className="p-3">
+                    <th scope="col" className="px-2 py-2">
                       <input
                         type="checkbox"
                         aria-label="Select identities on this page"
@@ -525,7 +535,11 @@ export default function TrustCenterTab({
                       "Last seen",
                       "Actions",
                     ].map((label) => (
-                      <th key={label} className="p-3">
+                      <th
+                        key={label}
+                        scope="col"
+                        className="px-2 py-2 whitespace-nowrap"
+                      >
                         {label}
                       </th>
                     ))}
@@ -535,9 +549,9 @@ export default function TrustCenterTab({
                   {pageRows.map((row) => (
                     <tr
                       key={row.id}
-                      className="border-t border-[var(--color-border)]"
+                      className="border-t border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]"
                     >
-                      <td className="p-3">
+                      <td className="px-2 py-1">
                         <input
                           type="checkbox"
                           aria-label={`Select ${row.record.type} ${row.record.host} ${connectionName(row)}`}
@@ -554,59 +568,92 @@ export default function TrustCenterTab({
                           }}
                         />
                       </td>
-                      <td className="p-3">
-                        <span className="font-medium">
-                          {row.record.nickname || row.record.host}
-                        </span>
-                        {row.record.nickname && (
-                          <span className="block text-[var(--color-textMuted)]">
-                            {row.record.host}
-                          </span>
-                        )}
-                        {row.record.description && (
+                      <td className="px-2 py-1">
+                        <div
+                          className="flex min-w-0 items-center gap-2 whitespace-nowrap"
+                          title={[
+                            row.record.host,
+                            row.record.description,
+                            row.record.tags?.join(", "),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        >
                           <span
-                            className="block max-w-56 truncate text-xs text-[var(--color-textMuted)]"
-                            title={row.record.description}
+                            className="min-w-0 shrink truncate font-medium"
+                            title={row.record.nickname || row.record.host}
                           >
-                            {row.record.description}
+                            {row.record.nickname || row.record.host}
                           </span>
-                        )}
-                        {!!row.record.tags?.length && (
-                          <span
-                            className="block max-w-56 truncate text-xs text-[var(--color-textSecondary)]"
-                            title={row.record.tags.join(", ")}
-                          >
-                            {row.record.tags.join(" · ")}
-                          </span>
-                        )}
+                          {row.record.nickname && (
+                            <span
+                              className="min-w-0 shrink truncate text-[var(--color-textMuted)]"
+                              title={row.record.host}
+                            >
+                              {row.record.host}
+                            </span>
+                          )}
+                          {row.record.description && (
+                            <span
+                              className="hidden min-w-0 flex-1 truncate text-xs text-[var(--color-textMuted)] 2xl:inline"
+                              title={row.record.description}
+                            >
+                              {row.record.description}
+                            </span>
+                          )}
+                          {!!row.record.tags?.length && (
+                            <span
+                              className="hidden min-w-0 flex-1 truncate text-xs text-[var(--color-textSecondary)] 2xl:inline"
+                              title={row.record.tags.join(", ")}
+                            >
+                              {row.record.tags.join(" · ")}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="p-3">
+                      <td
+                        className="px-2 py-1 whitespace-nowrap"
+                        title={
+                          row.record.trustExpires
+                            ? `Trust expires: ${row.record.trustExpires}`
+                            : undefined
+                        }
+                      >
                         {row.record.type.toUpperCase()}
                         <span
-                          className={`block ${row.record.revoked ? "text-error" : "text-[var(--color-textMuted)]"}`}
+                          className={`ml-1.5 ${row.record.revoked ? "text-error" : "text-[var(--color-textMuted)]"}`}
                         >
                           {row.record.revoked ? "Revoked" : "Not revoked"}
                         </span>
                         {row.record.trustExpires && (
-                          <span className="block">
+                          <span className="sr-only">
                             Trust expires: {row.record.trustExpires}
                           </span>
                         )}
                       </td>
-                      <td className="max-w-48 break-words p-3">
+                      <td
+                        className="truncate px-2 py-1"
+                        title={connectionName(row)}
+                      >
                         {connectionName(row)}
                       </td>
-                      <td className="max-w-64 break-all p-3 font-mono">
+                      <td
+                        className="truncate px-2 py-1 font-mono"
+                        title={row.record.identity.fingerprint}
+                      >
                         {row.record.identity.fingerprint}
                       </td>
-                      <td className="whitespace-nowrap p-3">
+                      <td
+                        className="truncate px-2 py-1 tabular-nums"
+                        title={row.record.identity.lastSeen || "Unknown"}
+                      >
                         {row.record.identity.lastSeen || "Unknown"}
                       </td>
-                      <td className="p-3">
+                      <td className="px-2 py-1">
                         <div className="flex gap-1">
                           <button
                             type="button"
-                            className={button}
+                            className={rowButton}
                             disabled={disabled}
                             aria-label={`Edit tags and description for ${row.record.host}`}
                             data-tooltip="Edit searchable tags and description without changing trust"
@@ -621,7 +668,7 @@ export default function TrustCenterTab({
                           </button>
                           <button
                             type="button"
-                            className={button}
+                            className={rowButton}
                             aria-label={`Inspect ${row.record.host}`}
                             disabled={disabled}
                             data-tooltip="Inspect identity and certificate details"
@@ -637,7 +684,7 @@ export default function TrustCenterTab({
                           </button>
                           <button
                             type="button"
-                            className={button}
+                            className={rowButton}
                             disabled={disabled}
                             aria-label={`${row.record.revoked ? "Reinstate" : "Revoke"} ${row.record.host}`}
                             data-tooltip={
@@ -660,7 +707,7 @@ export default function TrustCenterTab({
                           </button>
                           <button
                             type="button"
-                            className={button}
+                            className={rowButton}
                             disabled={disabled}
                             aria-label={`Forget ${row.record.host}`}
                             data-tooltip={actionHints.forget}
@@ -670,7 +717,7 @@ export default function TrustCenterTab({
                           </button>
                           <button
                             type="button"
-                            className={button}
+                            className={rowButton}
                             disabled={disabled}
                             aria-label={`Change scope for ${row.record.host}`}
                             data-tooltip={actionHints.scope}

@@ -20,6 +20,8 @@ import {
 } from "../../hooks/monitoring/useActionLogViewer";
 import { useLocaleFormat } from "../../hooks/settings/useLocaleFormat";
 import { EmptyState } from "../ui/display";
+import { Checkbox } from "../ui/forms";
+import { LogSelectionToolbar } from "./LogSelectionToolbar";
 
 interface ActionLogViewerProps {
   isOpen: boolean;
@@ -208,6 +210,22 @@ function LogToolbar({ manager: m }: { manager: Manager }) {
         Diagnostics omit legacy application names and free-text action/details.
         CSV includes all matching rows, not just the current page.
       </p>
+      <LogSelectionToolbar
+        selecting={m.selecting}
+        selectedCount={m.selectedCount}
+        allSelected={m.allSelected}
+        disabled={!m.filteredLogs.length || m.copying !== null}
+        onToggleMode={m.toggleSelection}
+        onSelectAll={m.selectAll}
+        onClear={m.clearSelection}
+        onCopy={() => void m.copySelectedDiagnostics()}
+      />
+      {m.selecting && (
+        <p role="status" className="text-[11px] text-[var(--color-textMuted)]">
+          Updates are paused while selecting logs. Done selecting resumes
+          current activity.
+        </p>
+      )}
       {m.feedback && (
         <p role="status" className="text-xs text-[var(--color-textSecondary)]">
           {m.feedback}
@@ -227,145 +245,168 @@ function SortHeading({
   children: React.ReactNode;
 }) {
   return (
-    <th
-      scope="col"
-      aria-sort={
-        m.sortKey !== field
-          ? "none"
-          : m.sortDirection === "asc"
-            ? "ascending"
-            : "descending"
+    <button
+      type="button"
+      onClick={() => m.sortBy(field)}
+      aria-label={`Sort logs by ${field}`}
+      aria-pressed={m.sortKey === field}
+      title={
+        m.sortKey === field
+          ? `Sorted ${m.sortDirection === "asc" ? "ascending" : "descending"}`
+          : `Sort by ${field}`
       }
-      className="sor-th whitespace-nowrap"
+      className="sor-option-chip text-xs"
     >
-      <button
-        type="button"
-        onClick={() => m.sortBy(field)}
-        aria-label={`Sort logs by ${field}`}
-        className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
-      >
-        {children}
-        <ArrowUpDown
-          size={12}
-          aria-hidden="true"
-          className={m.sortKey === field ? "text-primary" : "opacity-50"}
-        />
-      </button>
-    </th>
+      {children}
+      <ArrowUpDown
+        size={12}
+        aria-hidden="true"
+        className={m.sortKey === field ? "text-primary" : "opacity-50"}
+      />
+      {m.sortKey === field && (
+        <span className="sr-only">
+          {m.sortDirection === "asc" ? "ascending" : "descending"}
+        </span>
+      )}
+    </button>
   );
 }
 
-function LogTable({ manager: m }: { manager: Manager }) {
+function LogList({ manager: m }: { manager: Manager }) {
   const { formatDate, formatTime } = useLocaleFormat();
   return (
-    <div
-      className="min-h-0 flex-1 overflow-auto"
-      data-testid="action-log-scroll-region"
-    >
-      <table
-        className="sor-data-table w-full text-xs"
-        aria-label="Action log entries"
+    <>
+      <div
+        role="group"
+        aria-label="Sort action logs"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2 text-xs"
       >
-        <thead className="sticky top-0 z-10 bg-[var(--color-surface)]">
-          <tr>
-            <SortHeading manager={m} field="timestamp">
-              Time
-            </SortHeading>
-            <SortHeading manager={m} field="source">
-              Source
-            </SortHeading>
-            <SortHeading manager={m} field="level">
-              Level
-            </SortHeading>
-            <SortHeading manager={m} field="action">
-              Action
-            </SortHeading>
-            <SortHeading manager={m} field="connection">
-              Connection
-            </SortHeading>
-            <th scope="col" className="sor-th">
-              Details
-            </th>
-            <SortHeading manager={m} field="duration">
-              Duration
-            </SortHeading>
-            <th scope="col" className="sor-th">
-              <span className="sr-only">Copy diagnostics</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--color-border)]">
+        <span className="text-[var(--color-textMuted)]">Sort by</span>
+        {(
+          [
+            ["timestamp", "Time"],
+            ["source", "Source"],
+            ["level", "Level"],
+            ["action", "Action"],
+            ["connection", "Connection"],
+            ["duration", "Duration"],
+          ] as const
+        ).map(([field, label]) => (
+          <SortHeading key={field} manager={m} field={field}>
+            {label}
+          </SortHeading>
+        ))}
+      </div>
+      <div
+        role="region"
+        aria-label="Action log entries"
+        tabIndex={0}
+        className="@container min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--color-background)] text-[var(--color-text)]"
+        data-testid="action-log-scroll-region"
+      >
+        <ol className="divide-y divide-[var(--color-border)]">
           {m.pageLogs.map((log) => (
-            <tr
+            <li
               key={log.rowKey}
-              className="hover:bg-[var(--color-surfaceHover)]"
               data-testid="action-log-row"
+              className={`flex min-w-0 items-start ${m.selectedIds.has(log.rowKey) ? "bg-primary/10" : ""}`}
             >
-              <td className="px-3 py-2 whitespace-nowrap text-[var(--color-textSecondary)]">
-                <time dateTime={String(log.timestamp)}>
-                  <span className="block">{formatDate(log.timestamp)}</span>
-                  <span className="text-[var(--color-textMuted)]">
-                    {formatTime(log.timestamp)}
+              {m.selecting && (
+                <Checkbox
+                  aria-label={`Select ${log.localAlias}`}
+                  checked={m.selectedIds.has(log.rowKey)}
+                  onChange={(checked) => m.selectRow(log.rowKey, checked)}
+                  className="ml-3 mt-2 shrink-0"
+                />
+              )}
+              <details className="group min-w-0 flex-1">
+                <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs hover:bg-[var(--color-surfaceHover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
+                  <ChevronRight
+                    size={12}
+                    aria-hidden="true"
+                    className="shrink-0 transition-transform group-open:rotate-90"
+                  />
+                  <time
+                    dateTime={String(log.timestamp)}
+                    title={`${formatDate(log.timestamp)} ${formatTime(log.timestamp)}`}
+                    className="w-24 min-w-0 shrink truncate tabular-nums text-[var(--color-textMuted)] @2xl:w-40"
+                  >
+                    {formatDate(log.timestamp)} {formatTime(log.timestamp)}
+                  </time>
+                  <span
+                    className="hidden w-36 shrink-0 truncate text-[var(--color-textMuted)] @2xl:block"
+                    title={log.sourceLabel}
+                  >
+                    {log.sourceLabel}
                   </span>
-                </time>
-              </td>
-              <td className="px-3 py-2 whitespace-nowrap text-[var(--color-textSecondary)]">
-                {log.sourceLabel}
-              </td>
-              <td className="px-3 py-2">
-                <span className={`capitalize ${LEVEL_COLORS[log.level]}`}>
-                  {log.level === "warn" ? "Warning" : log.level}
-                </span>
-              </td>
-              <td className="px-3 py-2 font-medium text-[var(--color-text)]">
-                {log.action}
-              </td>
-              <td className="max-w-48 px-3 py-2 break-words text-[var(--color-textSecondary)]">
-                {log.connectionName || "—"}
-              </td>
-              <td className="min-w-48 max-w-xl px-3 py-2 text-[var(--color-textSecondary)]">
-                <p className="break-words">{log.details}</p>
-              </td>
-              <td className="px-3 py-2 whitespace-nowrap tabular-nums text-[var(--color-textSecondary)]">
-                {log.duration == null ? "—" : `${log.duration} ms`}
-              </td>
-              <td className="px-2 py-2">
-                <button
-                  type="button"
-                  aria-label={`Copy diagnostics for ${log.localAlias}`}
-                  title="Copy diagnostics; legacy names and free text are omitted"
-                  disabled={m.copying !== null}
-                  onClick={() => void m.copyLog(log)}
-                  className="sor-icon-btn-sm disabled:opacity-40"
-                >
-                  {m.copied === log.rowKey ? (
-                    <Check size={14} aria-hidden="true" />
-                  ) : (
-                    <Copy size={14} aria-hidden="true" />
+                  <span
+                    className={`w-12 shrink-0 rounded px-1.5 text-center uppercase ${LEVEL_COLORS[log.level]}`}
+                  >
+                    {log.level}
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    title={`${log.action}: ${log.details}`}
+                  >
+                    {log.action} · {log.details.replace(/\s+/g, " ")}
+                  </span>
+                  {log.duration != null && (
+                    <span className="hidden shrink-0 tabular-nums text-[var(--color-textMuted)] @2xl:block">
+                      {log.duration} ms
+                    </span>
                   )}
-                </button>
-              </td>
-            </tr>
+                </summary>
+                <div className="space-y-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
+                  <p className="select-text whitespace-pre-wrap break-words text-sm">
+                    {log.details}
+                  </p>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-[var(--color-textSecondary)]">
+                    <dt>Action</dt>
+                    <dd className="break-words">{log.action}</dd>
+                    <dt>Source</dt>
+                    <dd>{log.sourceLabel}</dd>
+                    <dt>Connection</dt>
+                    <dd className="break-words">{log.connectionName || "—"}</dd>
+                    <dt>Duration</dt>
+                    <dd>{log.duration == null ? "—" : `${log.duration} ms`}</dd>
+                  </dl>
+                </div>
+              </details>
+              <button
+                type="button"
+                aria-label={`Copy diagnostics for ${log.localAlias}`}
+                title="Copy diagnostics; legacy names and free text are omitted"
+                disabled={m.copying !== null}
+                onClick={() => void m.copyLog(log)}
+                className="sor-icon-btn-sm mt-1 mr-2 shrink-0 disabled:opacity-40"
+              >
+                {m.copied === log.rowKey ? (
+                  <Check size={14} aria-hidden="true" />
+                ) : (
+                  <Copy size={14} aria-hidden="true" />
+                )}
+              </button>
+            </li>
           ))}
-        </tbody>
-      </table>
-      {!m.filteredLogs.length && (
-        <EmptyState
-          icon={ScrollText}
-          iconSize={32}
-          message={
-            m.logs.length
-              ? "No matching log entries"
-              : "No activity recorded yet"
-          }
-          hint={
-            m.logs.length
-              ? "Adjust your search or filters to see more activity."
-              : "Application and session actions will appear here when logging is enabled."
-          }
-        />
-      )}
-    </div>
+        </ol>
+        {!m.filteredLogs.length && (
+          <EmptyState
+            icon={ScrollText}
+            iconSize={32}
+            message={
+              m.logs.length
+                ? "No matching log entries"
+                : "No activity recorded yet"
+            }
+            hint={
+              m.logs.length
+                ? "Adjust your search or filters to see more activity."
+                : "Application and session actions will appear here when logging is enabled."
+            }
+          />
+        )}
+      </div>
+    </>
   );
 }
 
@@ -432,7 +473,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
         className="h-full min-h-0 min-w-0 flex flex-col overflow-hidden bg-[var(--color-surface)]"
       >
         <LogToolbar manager={manager} />
-        <LogTable manager={manager} />
+        <LogList manager={manager} />
         <LogPagination manager={manager} />
       </section>
       <ConfirmDialog

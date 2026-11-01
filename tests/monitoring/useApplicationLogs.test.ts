@@ -56,9 +56,144 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("native application log reads", () => {
+  it("reads changed file metadata once and keeps current text while its update is pending", async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() =>
+      useApplicationLogs("application", true),
+    );
+    await act(async () => {});
+    const pending = deferred<ApplicationLogContent>();
+    const changed = [
+      { ...files[0], modifiedUnixMs: files[0].modifiedUnixMs + 1 },
+      files[1],
+    ];
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "application_logs_list"
+        ? { files: changed, truncated: false }
+        : pending.promise,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1600);
+    });
+    expect(readCount()).toBe(2);
+    expect(result.current.content?.text).toBe("application:latest");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(readCount()).toBe(2);
+    await act(async () =>
+      pending.resolve({ text: "changed", truncated: false }),
+    );
+    expect(result.current.content?.text).toBe("changed");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(readCount()).toBe(2);
+    await act(async () => result.current.refresh());
+    expect(readCount()).toBe(3);
+  });
+  it("pauses metadata I/O while hidden and catches up once visible", async () => {
+    vi.useFakeTimers();
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    const { result } = renderHook(() => useApplicationLogs("browser", true));
+    await act(async () => {});
+    const count = mocks.invoke.mock.calls.length;
+    visibility.mockReturnValue("hidden");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mocks.invoke).toHaveBeenCalledTimes(count);
+    visibility.mockReturnValue("visible");
+    await act(async () =>
+      document.dispatchEvent(new Event("visibilitychange")),
+    );
+    expect(mocks.invoke).toHaveBeenCalledTimes(count + 1);
+    expect(readCount()).toBe(1);
+    expect(result.current.autoRefresh).toBe(true);
+  });
+  it("selection pause retains the live preference, content and lock listener without refetching", async () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ paused }) =>
+        useApplicationLogs("browser", true, "owner", true, paused),
+      { initialProps: { paused: false } },
+    );
+    await act(async () => {});
+    const content = result.current.content;
+    const count = mocks.invoke.mock.calls.length;
+    rerender({ paused: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mocks.invoke).toHaveBeenCalledTimes(count);
+    expect(mocks.listen).toHaveBeenCalledTimes(1);
+    expect(mocks.off).not.toHaveBeenCalled();
+    expect(result.current.content).toBe(content);
+    expect(result.current.autoRefresh).toBe(true);
+    rerender({ paused: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1600);
+    });
+    expect(mocks.invoke).toHaveBeenCalledTimes(count + 1);
+    expect(readCount()).toBe(1);
+  });
+  it("keeps a user-disabled live preference across inactive and active transitions", async () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ active }) => useApplicationLogs("application", active),
+      { initialProps: { active: true } },
+    );
+    await act(async () => {});
+    act(() => result.current.setAutoRefresh(false));
+    rerender({ active: false });
+    rerender({ active: true });
+    await act(async () => {});
+    const count = mocks.invoke.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mocks.invoke).toHaveBeenCalledTimes(count);
+    expect(result.current.autoRefresh).toBe(false);
+  });
+  it("coalesces repeated manual requests behind one pending native read", async () => {
+    const { result } = renderHook(() =>
+      useApplicationLogs("application", true),
+    );
+    await waitFor(() => expect(result.current.content).not.toBeNull());
+    const pending = deferred<ApplicationLogContent>();
+    let nextRead = 0;
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "application_logs_list"
+        ? { files, truncated: false }
+        : ++nextRead === 1
+          ? pending.promise
+          : { text: "latest explicit request", truncated: false },
+    );
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => expect(readCount()).toBe(2));
+    act(() => {
+      void result.current.refresh();
+      void result.current.refresh();
+      void result.current.refresh();
+    });
+    expect(readCount()).toBe(2);
+    await act(async () =>
+      pending.resolve({ text: "superseded", truncated: false }),
+    );
+    await waitFor(() =>
+      expect(result.current.content?.text).toBe("latest explicit request"),
+    );
+    expect(readCount()).toBe(3);
+  });
   it.each([
     { ...files[0], name: {} },
     { ...files[0], modifiedUnixMs: NaN },
@@ -137,10 +272,10 @@ describe("native application log reads", () => {
     );
     rerender({ owner: "new-owner" });
     expect(result.current.content).toBeNull();
-    await waitFor(() => expect(result.current.content?.text).toBe("new-owner"));
     await act(async () =>
       pending.resolve({ text: "old-owner-private", truncated: false }),
     );
+    await waitFor(() => expect(result.current.content?.text).toBe("new-owner"));
     expect(result.current.content?.text).toBe("new-owner");
   });
   it("loads only fixed-source IDs after subscribing to storage locks", async () => {
@@ -154,7 +289,7 @@ describe("native application log reads", () => {
       ["application_logs_list", { source: "application" }],
       ["application_logs_read", { source: "application", id: "latest" }],
     ]);
-    expect(result.current.autoRefresh).toBe(false);
+    expect(result.current.autoRefresh).toBe(true);
     expect(mocks.listen.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.invoke.mock.invocationCallOrder[0],
     );
@@ -181,10 +316,14 @@ describe("native application log reads", () => {
       void result.current.selectFile("older");
     });
     expect(result.current.content).toBeNull();
-    await act(async () => result.current.selectFile("latest"));
+    let latest: Promise<void>;
+    act(() => {
+      latest = result.current.selectFile("latest");
+    });
     await act(async () =>
       pending.resolve({ text: "stale secret", truncated: false }),
     );
+    await act(async () => latest!);
     expect(result.current.content?.text).toBe("fresh");
   });
   it("discards in-flight content when switching sources or hiding the view", async () => {
@@ -204,11 +343,11 @@ describe("native application log reads", () => {
     await waitFor(() => expect(readCount()).toBe(1));
     rerender({ source: "browser", active: true });
     expect(result.current.content).toBeNull();
-    await waitFor(() =>
-      expect(result.current.content?.text).toBe("browser only"),
-    );
     await act(async () =>
       pending.resolve({ text: "old application secret", truncated: false }),
+    );
+    await waitFor(() =>
+      expect(result.current.content?.text).toBe("browser only"),
     );
     expect(result.current.content?.text).toBe("browser only");
     rerender({ source: "browser", active: false });
@@ -232,22 +371,32 @@ describe("native application log reads", () => {
       expect(result.current.loading).toBe(false);
     },
   );
-  it("auto refresh is opt-in, visible-only and does not overlap slow reads", async () => {
+  it("live metadata checks default on, skip unchanged decryption, and serialize slow reads", async () => {
+    vi.useFakeTimers();
     const { result, rerender } = renderHook(
       ({ active }) => useApplicationLogs("browser", active),
       { initialProps: { active: true } },
     );
-    await waitFor(() => expect(result.current.content).not.toBeNull());
-    vi.useFakeTimers();
-    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    await act(async () => {});
+    expect(result.current.content).not.toBeNull();
+    const revision = result.current.revision;
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(readCount()).toBe(1);
+    expect(result.current.isCurrent(revision)).toBe(true);
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "application_logs_list",
+      ).length,
+    ).toBeGreaterThan(1);
     const pending = deferred<ApplicationLogContent>();
     mocks.invoke.mockImplementation(async (command) =>
       command === "application_logs_list"
-        ? { files, truncated: false }
+        ? {
+            files: [{ ...files[0], sizeBytes: 400 }, files[1]],
+            truncated: false,
+          }
         : pending.promise,
     );
-    act(() => result.current.setAutoRefresh(true));
     await act(async () => vi.advanceTimersByTimeAsync(35_000));
     expect(readCount()).toBe(2);
     rerender({ active: false });

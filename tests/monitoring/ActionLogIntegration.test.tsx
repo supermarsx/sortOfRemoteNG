@@ -117,9 +117,152 @@ async function exportedText() {
 }
 
 describe("embedded action log integration", () => {
+  it("shows a compact summary and expands details with the row gesture", () => {
+    fixture.logs = [{ ...legacy(), details: "First line\nSecond line" }];
+    render(<ActionLogViewer isOpen />);
+    const summary = screen
+      .getByText("Legacy action 1 · First line Second line")
+      .closest("summary")!;
+    const details = summary.closest("details")!;
+    expect(summary).toHaveClass("whitespace-nowrap");
+    expect(details).not.toHaveAttribute("open");
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(
+      within(details).getByText("First line Second line", { selector: "p" }),
+    ).toHaveClass("whitespace-pre-wrap");
+    fireEvent.click(summary);
+    expect(details).not.toHaveAttribute("open");
+  });
+
+  it("selects individual rows without expanding and copies only safe selected diagnostics", async () => {
+    fixture.logs = [legacy(1), legacy(2)];
+    render(<ActionLogViewer isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    const row = screen
+      .getAllByTestId("action-log-row")
+      .find((item) => item.textContent?.includes("Legacy action 1"))!;
+    fireEvent.click(
+      within(row).getByRole("checkbox", { name: "Select application entry 1" }),
+    );
+    expect(row.querySelector("details")).not.toHaveAttribute("open");
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy selected (1)" }),
+      ),
+    );
+    const copied = fixture.clipboard.mock.calls[0][0];
+    expect(JSON.parse(copied).reference).toBe("application entry 1");
+    expect(copied).not.toContain("legacy-output-secret");
+    expect(copied).not.toContain("legacy-private-name");
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(
+      screen.getByRole("button", { name: "Copy selected (0)" }),
+    ).toBeDisabled();
+  });
+
+  it("selects all filtered pages and resets selection when filters change", async () => {
+    fixture.logs = Array.from({ length: 61 }, (_, index) => legacy(index));
+    render(<ActionLogViewer isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all filtered logs" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Copy selected (61)" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByLabelText("Next log page"));
+    expect(
+      screen
+        .getAllByRole("checkbox")
+        .every((checkbox) => (checkbox as HTMLInputElement).checked),
+    ).toBe(true);
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy selected (61)" }),
+      ),
+    );
+    expect(JSON.parse(fixture.clipboard.mock.calls[0][0])).toHaveLength(61);
+    fireEvent.change(screen.getByLabelText("Search logs"), {
+      target: { value: "secret-60" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Copy selected (0)" }),
+    ).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Search logs"), {
+      target: { value: "" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Copy selected (0)" }),
+    ).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Search logs"), {
+      target: { value: "secret-60" },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all filtered logs" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Copy selected (1)" }),
+    ).toBeEnabled();
+  });
+
+  it("freezes selection across same-key source replacements and resumes fresh rows when finished", async () => {
+    render(<ActionLogViewer isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select application entry 1" }),
+    );
+    const reads = fixture.getActionLog.mock.calls.length;
+    fixture.logs = [
+      { ...legacy(), duration: 777, action: "Replacement action" },
+    ];
+    changed();
+    act(() => recordSessionActivity(context, "ssh_script", "completed"));
+    expect(fixture.getActionLog).toHaveBeenCalledTimes(reads);
+    expect(screen.queryByText(/Replacement action ·/)).toBeNull();
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy selected (1)" }),
+      ),
+    );
+    expect(JSON.parse(fixture.clipboard.mock.calls[0][0]).durationMs).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "Done selecting" }));
+    expect(screen.getByText(/Replacement action ·/)).toBeVisible();
+    expect(screen.getAllByTestId("action-log-row")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Select logs" }));
+    expect(
+      screen.getByRole("button", { name: "Copy selected (0)" }),
+    ).toBeDisabled();
+  });
+
+  it("rejects a stale copy callback after source refresh or deactivation", async () => {
+    const view = renderHook(({ active }) => useActionLogViewer(active), {
+      initialProps: { active: true },
+    });
+    const oldRow = view.result.current.logs[0];
+    const staleCopy = view.result.current.copyLog;
+    fixture.logs = [{ ...legacy(), duration: 777 }];
+    changed();
+    await act(async () => staleCopy(oldRow));
+    expect(fixture.clipboard).not.toHaveBeenCalled();
+    act(() => {
+      view.result.current.toggleSelection();
+      view.result.current.selectAll(true);
+    });
+    const copySelected = view.result.current.copySelectedDiagnostics;
+    view.rerender({ active: false });
+    await act(async () => copySelected());
+    expect(fixture.clipboard).not.toHaveBeenCalled();
+    expect(view.result.current.selecting).toBe(false);
+    view.rerender({ active: true });
+    expect(view.result.current.selectedCount).toBe(0);
+  });
+
   it("merges new session events immediately, retains old display text, and filters sources", () => {
     render(<ActionLogViewer isOpen />);
-    expect(screen.getByText("legacy-output-secret-1")).toBeVisible();
+    expect(
+      screen.getByText("Legacy action 1 · legacy-output-secret-1"),
+    ).toBeVisible();
     act(() =>
       recordSessionActivity(context, "website_script", "completed", {
         durationMs: 42,
@@ -127,7 +270,7 @@ describe("embedded action log integration", () => {
     );
     expect(
       screen.getByText(
-        "The action runner completed. Remote application success is not inferred.",
+        /· The action runner completed. Remote application success is not inferred\./,
       ),
     ).toBeVisible();
     fireEvent.change(screen.getByLabelText("Filter by source"), {
@@ -138,7 +281,9 @@ describe("embedded action log integration", () => {
     fireEvent.change(screen.getByLabelText("Filter by source"), {
       target: { value: "application" },
     });
-    expect(screen.getByText("legacy-output-secret-1")).toBeVisible();
+    expect(
+      screen.getByText("Legacy action 1 · legacy-output-secret-1"),
+    ).toBeVisible();
   });
 
   it("paginates retained history, sorts across all rows, and resets pages after filtering", () => {
@@ -154,15 +299,16 @@ describe("embedded action log integration", () => {
     expect(screen.getAllByTestId("action-log-row")).toHaveLength(1);
     fireEvent.click(screen.getByText("Clear filters"));
     fireEvent.click(screen.getByLabelText("Sort logs by timestamp"));
-    const table = screen.getByRole("table", { name: "Action log entries" });
-    expect(within(table).getAllByTestId("action-log-row")[0]).toHaveTextContent(
-      "Legacy action 0",
-    );
+    const timeline = screen.getByRole("region", { name: "Action log entries" });
     expect(
-      screen
-        .getByRole("button", { name: "Sort logs by timestamp" })
-        .closest("th"),
-    ).toHaveAttribute("aria-sort", "ascending");
+      within(timeline).getAllByTestId("action-log-row")[0],
+    ).toHaveTextContent("Legacy action 0");
+    expect(
+      screen.getByRole("button", { name: "Sort logs by timestamp" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Sort logs by timestamp" }),
+    ).toHaveAttribute("title", "Sorted ascending");
     fireEvent.change(screen.getByLabelText("Log rows per page"), {
       target: { value: "100" },
     });

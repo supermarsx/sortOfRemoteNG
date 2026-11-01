@@ -77,15 +77,17 @@ describe("ActionLogViewer", () => {
 
     // Component renders when open - check for log entries
     expect(
-      await screen.findByText("Connected successfully"),
+      await screen.findByText("connect · Connected successfully"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Authentication failed")).toBeInTheDocument();
+    expect(screen.getByText("auth · Authentication failed")).toBeVisible();
 
     const search = screen.getByPlaceholderText("Search logs...");
     fireEvent.change(search, { target: { value: "prod-1" } });
 
     await waitFor(() => {
-      expect(screen.getByText("Connected successfully")).toBeInTheDocument();
+      expect(
+        screen.getByText("connect · Connected successfully"),
+      ).toBeVisible();
       expect(
         screen.queryByText("Authentication failed"),
       ).not.toBeInTheDocument();

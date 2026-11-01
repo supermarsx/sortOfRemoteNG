@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useId, useRef, useState } from "react";
 import {
   KeyRound,
   Plus,
@@ -12,12 +12,20 @@ import {
   ArrowRightToLine,
   ChevronLeft,
   ChevronRight,
+  Filter,
+  ArrowUpDown,
 } from "lucide-react";
 import SettingsContext from "../../contexts/SettingsContext";
 import {
   normalizeCredentialVaultView,
   VAULT_COLUMNS,
   type VaultColumn,
+  EMPTY_CREDENTIAL_FILTERS,
+  credentialInventoryMatches,
+  compareCredentialInventory,
+  type CredentialInventoryFilters,
+  type CredentialInventorySort,
+  type CredentialInventoryViewMetadata,
 } from "../../utils/settings/credentialVaultView";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import type { Connection } from "../../types/connection/connection";
@@ -139,6 +147,27 @@ function VaultWorkspace({
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(0);
   const [source, setSource] = useState<"all" | "vault" | "connections">("all");
+  const [advanced, setAdvanced] = useState(false);
+  const filterPanelId = useId();
+  const [filters, setFilters] = useState<CredentialInventoryFilters>({
+    ...EMPTY_CREDENTIAL_FILTERS,
+  });
+  const [sort, setSort] = useState<CredentialInventorySort>("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const advancedFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount =
+    advancedFilterCount + Number(source !== "all") + Number(!!search.trim());
+  const changeFilter = (key: keyof CredentialInventoryFilters, value: string) =>
+    setFilters((old) => ({ ...old, [key]: value }));
+  const clearFilters = () => {
+    setFilters({ ...EMPTY_CREDENTIAL_FILTERS });
+    setSource("all");
+    setSearch("");
+  };
+  const sortBy = (key: CredentialInventorySort) => {
+    setSortDirection(sort === key && sortDirection === "asc" ? "desc" : "asc");
+    setSort(key);
+  };
   const [review, setReview] = useState<{
     id: string;
     message: string;
@@ -192,34 +221,91 @@ function VaultWorkspace({
           .join(", ") || "Not assigned";
   const categoryLabels = (row: DatabaseCredentialMetadata) =>
     vaultCredentialCategories(row);
-  const vaultRows = (mgr.snapshot?.entries ?? []).filter((row) =>
-    `${row.name} ${row.availableFacets.map((key) => FACET_LABELS[key]).join(" ")} ${categoryLabels(row).join(" ")} ${assignmentText(row.id)}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
-  const rows = [
-    ...(source === "connections"
-      ? []
-      : vaultRows.map((row) => ({ source: "vault" as const, row }))),
-    ...(source === "vault"
-      ? []
-      : inventory.rows
-          .filter(
-            (row) =>
-              connectionCredentialMatches(row, search) ||
-              [inventory.applications.get(row.id) ?? ""]
-                .join(" ")
-                .toLowerCase()
-                .includes(search.trim().toLowerCase()),
-          )
-          .map((row) => ({ source: "connection" as const, row }))),
+  const allRows = [
+    ...(mgr.snapshot?.entries ?? []).map((row) => {
+      const assignments = inventory.assignments?.get(row.id) ?? [];
+      const metadata: CredentialInventoryViewMetadata = {
+        key: `vault:${row.id}`,
+        name: row.name,
+        source: "vault",
+        types: [
+          ...new Set(
+            row.availableFacets.map((key) =>
+              key === "username" || key === "domain" ? "account" : key,
+            ),
+          ),
+        ],
+        tags: categoryLabels(row),
+        protocols: assignments.map((assignment) => assignment.protocol),
+        applications: assignments.flatMap((assignment) =>
+          assignment.application ? [assignment.application] : [],
+        ),
+        assignment:
+          inventory.assignments === null
+            ? "unavailable"
+            : assignments.length
+              ? "assigned"
+              : "unassigned",
+        storage: ["vault"],
+        updatedAt: row.updatedAt,
+      };
+      const matchesSearch =
+        `${row.name} ${row.availableFacets.map((key) => FACET_LABELS[key]).join(" ")} ${metadata.tags.join(" ")} ${assignmentText(row.id)}`
+          .toLocaleLowerCase()
+          .includes(search.trim().toLocaleLowerCase());
+      return { source: "vault" as const, row, metadata, matchesSearch };
+    }),
+    ...inventory.rows.map((row) => {
+      const application = inventory.applications.get(row.id);
+      const metadata: CredentialInventoryViewMetadata = {
+        key: `connection:${row.id}`,
+        name: row.name,
+        source: "connection",
+        types: row.kinds,
+        tags: [],
+        protocols: [row.protocol],
+        applications: application ? [application] : [],
+        assignment: "connection",
+        storage: row.storage,
+        updatedAt: null,
+      };
+      const matchesSearch =
+        connectionCredentialMatches(row, search) ||
+        (application ?? "")
+          .toLocaleLowerCase()
+          .includes(search.trim().toLocaleLowerCase());
+      return { source: "connection" as const, row, metadata, matchesSearch };
+    }),
   ];
+  const rows = allRows
+    .filter(
+      (item) =>
+        item.matchesSearch &&
+        (source === "all" ||
+          (source === "vault"
+            ? item.source === "vault"
+            : item.source === "connection")) &&
+        credentialInventoryMatches(item.metadata, filters),
+    )
+    .sort((a, b) =>
+      compareCredentialInventory(a.metadata, b.metadata, sort, sortDirection),
+    );
+  const filterOptions = (
+    key: "types" | "tags" | "protocols" | "applications",
+  ) => [...new Set(allRows.flatMap((item) => [...item.metadata[key]]))].sort();
+  const typeLabels: Record<string, string> = {
+    ...FACET_LABELS,
+    ...CONNECTION_CREDENTIAL_LABELS,
+  };
   const scope = JSON.stringify([
     credentialVaultScopeKey(api),
     search,
     source,
     view.pageSize,
     view.mode,
+    filters,
+    sort,
+    sortDirection,
   ]);
   const scrollPane = useRef<HTMLDivElement>(null);
   const [windowState, setWindowState] = useState({
@@ -380,7 +466,114 @@ function VaultWorkspace({
             ]}
           />
         </div>
+        <button
+          type="button"
+          className="sor-option-chip text-xs"
+          aria-expanded={advanced}
+          aria-controls={filterPanelId}
+          onClick={() => setAdvanced((open) => !open)}
+        >
+          <Filter size={14} aria-hidden="true" /> Advanced filters
+          {advancedFilterCount ? ` (${advancedFilterCount})` : ""}
+        </button>
+        {activeFilterCount > 0 && (
+          <>
+            <span
+              role="status"
+              className="text-xs text-[var(--color-textSecondary)]"
+            >
+              {activeFilterCount} active{" "}
+              {activeFilterCount === 1 ? "filter" : "filters"}
+            </span>
+            <button
+              type="button"
+              className="sor-option-chip text-xs"
+              onClick={clearFilters}
+            >
+              Clear filters
+            </button>
+          </>
+        )}
       </div>
+      {advanced && (
+        <div
+          id={filterPanelId}
+          role="group"
+          aria-label="Advanced credential filters"
+          className="grid shrink-0 gap-3 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          {(
+            [
+              [
+                "type",
+                "Credential type",
+                filterOptions("types").map((value) => ({
+                  value,
+                  label: typeLabels[value] ?? value,
+                })),
+              ],
+              [
+                "tag",
+                "Category tag",
+                filterOptions("tags").map((value) => ({ value, label: value })),
+              ],
+              [
+                "protocol",
+                "Protocol",
+                filterOptions("protocols").map((value) => ({
+                  value,
+                  label: value,
+                })),
+              ],
+              [
+                "application",
+                "Application",
+                filterOptions("applications").map((value) => ({
+                  value,
+                  label: value,
+                })),
+              ],
+              [
+                "assignment",
+                "Assignment",
+                [
+                  { value: "assigned", label: "Assigned vault entries" },
+                  { value: "unassigned", label: "Unassigned vault entries" },
+                  { value: "unavailable", label: "Assignments unavailable" },
+                  { value: "connection", label: "Connection-owned" },
+                ],
+              ],
+              [
+                "storage",
+                "Credential storage",
+                [
+                  { value: "vault", label: "Database vault" },
+                  { value: "embedded", label: "Connection-local" },
+                  { value: "external", label: "External reference" },
+                ],
+              ],
+            ] as const
+          ).map(([key, label, options]) => (
+            <div key={key} className="min-w-0 space-y-1 text-xs">
+              <span className="text-[var(--color-textSecondary)]">{label}</span>
+              <Select
+                label={`${label} filter`}
+                variant="form-sm"
+                value={filters[key]}
+                onChange={(value) => changeFilter(key, value)}
+                options={[
+                  { value: "", label: `Any ${label.toLowerCase()}` },
+                  ...options,
+                ]}
+              />
+            </div>
+          ))}
+          <p className="text-[11px] text-[var(--color-textSecondary)] sm:col-span-2 xl:col-span-3">
+            Filters use metadata only. Category tags are explicitly assigned to
+            vault entries; connection update times are not reported.
+          </p>
+        </div>
+      )}
       <div
         className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4"
         style={{
@@ -415,7 +608,7 @@ function VaultWorkspace({
                 0,
               ),
             }}
-            className="mx-auto table-fixed text-left text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5"
+            className="mx-auto table-fixed rounded border border-[var(--color-border)] bg-[var(--color-background)] text-left text-xs [&_td]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2"
             aria-label="Database vault credentials"
             aria-busy={mgr.loading}
           >
@@ -435,8 +628,39 @@ function VaultWorkspace({
                 {VAULT_COLUMNS.filter((column) =>
                   view.columns.includes(column.id),
                 ).map(({ id, label, min }) => (
-                  <th key={id} scope="col" className="relative truncate p-2">
-                    {label}
+                  <th
+                    key={id}
+                    scope="col"
+                    className="relative truncate px-3 py-2"
+                    aria-sort={
+                      id === sort
+                        ? sortDirection === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : ["name", "source", "updated"].includes(id)
+                          ? "none"
+                          : undefined
+                    }
+                  >
+                    {id === "name" || id === "source" || id === "updated" ? (
+                      <button
+                        type="button"
+                        className="inline-flex max-w-full items-center gap-1 font-medium hover:text-primary"
+                        aria-label={`Sort credentials by ${id}`}
+                        onClick={() => sortBy(id)}
+                      >
+                        {label}
+                        <ArrowUpDown
+                          size={12}
+                          aria-hidden="true"
+                          className={
+                            id === sort ? "text-primary" : "opacity-40"
+                          }
+                        />
+                      </button>
+                    ) : (
+                      label
+                    )}
                     <span
                       role="separator"
                       aria-label={`Resize ${label} column`}
@@ -522,7 +746,7 @@ function VaultWorkspace({
                   item.source === "connection" ? (
                     <tr
                       key={`connection:${item.row.id}`}
-                      className="border-b border-[var(--color-border)]"
+                      className="border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surfaceHover)]"
                     >
                       <td
                         hidden={!view.columns.includes("name")}
@@ -564,9 +788,20 @@ function VaultWorkspace({
                         )}
                       </td>
                       <td
+                        hidden={!view.columns.includes("types")}
+                        className="truncate text-[var(--color-textSecondary)]"
+                        data-tooltip={item.row.kinds
+                          .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
+                          .join(" · ")}
+                      >
+                        {item.row.kinds
+                          .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
+                          .join(" · ") || "Not reported"}
+                      </td>
+                      <td
                         hidden={!view.columns.includes("categories")}
                         className="truncate text-[var(--color-textSecondary)]"
-                        data-tooltip={`Types: ${item.row.kinds.map((key) => CONNECTION_CREDENTIAL_LABELS[key]).join(", ")}`}
+                        data-tooltip="Category tags are assigned to reusable vault entries"
                       >
                         <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
                           —
@@ -586,6 +821,12 @@ function VaultWorkspace({
                             ? ` (${inventory.applications.get(item.row.id)})`
                             : ""}
                         </span>
+                      </td>
+                      <td
+                        hidden={!view.columns.includes("updated")}
+                        className="truncate text-[var(--color-textMuted)]"
+                      >
+                        Not reported
                       </td>
                       <td
                         hidden={!view.columns.includes("actions")}
@@ -630,7 +871,7 @@ function VaultWorkspace({
                   ) : (
                     <tr
                       key={`vault:${item.row.id}`}
-                      className="border-b border-[var(--color-border)]"
+                      className="border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surfaceHover)]"
                     >
                       <td
                         hidden={!view.columns.includes("name")}
@@ -646,9 +887,23 @@ function VaultWorkspace({
                         Reusable vault
                       </td>
                       <td
+                        hidden={!view.columns.includes("types")}
+                        className="truncate text-[var(--color-textSecondary)]"
+                        data-tooltip={item.row.availableFacets
+                          .map((key) => FACET_LABELS[key])
+                          .join(" · ")}
+                      >
+                        {item.row.availableFacets
+                          .map((key) => FACET_LABELS[key])
+                          .join(" · ") || "None reported"}
+                      </td>
+                      <td
                         hidden={!view.columns.includes("categories")}
                         className="truncate text-[var(--color-textSecondary)]"
-                        data-tooltip={`${categoryLabels(item.row).join(", ")} · Types: ${item.row.availableFacets.map((key) => FACET_LABELS[key]).join(", ")}`}
+                        data-tooltip={
+                          categoryLabels(item.row).join(", ") ||
+                          "No category tags assigned"
+                        }
                       >
                         <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
                           {categoryLabels(item.row).join(" · ") || "—"}
@@ -678,6 +933,21 @@ function VaultWorkspace({
                             {assignmentText(item.row.id)}
                           </span>
                         </span>
+                      </td>
+                      <td
+                        hidden={!view.columns.includes("updated")}
+                        className="truncate tabular-nums text-[var(--color-textSecondary)]"
+                      >
+                        {Number.isFinite(Date.parse(item.row.updatedAt)) ? (
+                          <time
+                            dateTime={item.row.updatedAt}
+                            data-tooltip={item.row.updatedAt}
+                          >
+                            {new Date(item.row.updatedAt).toLocaleString()}
+                          </time>
+                        ) : (
+                          "Not reported"
+                        )}
                       </td>
                       <td
                         hidden={!view.columns.includes("actions")}
@@ -725,7 +995,7 @@ function VaultWorkspace({
                       ? "Loading credential metadata…"
                       : mgr.error
                         ? "The vault is unavailable. Reload after restoring access."
-                        : search
+                        : activeFilterCount
                           ? "No matching credentials."
                           : "No credentials in this source. Create a reusable credential or save credentials in a connection."}
                   </td>

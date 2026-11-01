@@ -125,6 +125,7 @@ const failures = [
   "revoke-rejected",
   "engine-revoked",
   "engine-failure",
+  "engine-failure-before-evidence",
   "poisoned-state",
   "wrong-thread",
   "database-owner",
@@ -317,7 +318,13 @@ function journal(
   const [category, message] =
     nav.event === "tls-bridge-failed" && nav.reason === "proxy-configuration"
       ? (["proxy", "Private proxy configuration failed"] as const)
-      : events[nav.event];
+      : nav.event === "tls-bridge-failed" &&
+          nav.reason === "engine-failure-before-evidence"
+        ? ([
+            "tls",
+            "Browser connection stopped before browser certificate evidence",
+          ] as const)
+        : events[nav.event];
   if (nav.event === "tls-timing") {
     if (
       !number(nav.outcome) ||
@@ -377,6 +384,13 @@ function journal(
     details.push(`Native code: ${nav.code}`);
   if (typeof nav.reason === "string" && failures.includes(nav.reason))
     details.push(`Reason: ${human(nav.reason)}`);
+  if (
+    nav.event === "tls-bridge-failed" &&
+    nav.reason === "engine-failure-before-evidence"
+  )
+    details.push(
+      "The browser engine stopped before delivering certificate evidence to its TLS bridge. Upstream certificate checks may run separately. This does not establish a problem with the server certificate.",
+    );
   if (
     typeof nav.checkpoint === "string" &&
     checkpoints.includes(nav.checkpoint)
@@ -632,7 +646,8 @@ export function parseLogTimeline(
         : timestampMs;
     const category: LogCategory =
       browserCategory ??
-      (inModule([
+      (moduleName === "ssh::establishment" ||
+      inModule([
         "sorng_ssh",
         "sorng_socket_transport",
         "sorng_protocols::private_forward_proxy",

@@ -170,6 +170,201 @@ function deferred<T>() {
 afterEach(cleanup);
 
 describe("database vault manager", () => {
+  it("shows actual metadata types and dates, sorts by updated metadata, and never resolves list secrets", async () => {
+    const second = {
+      ...entry(),
+      id: crypto.randomUUID(),
+      name: "Zulu operator",
+      updatedAt: "2026-10-31T12:00:00Z",
+    };
+    const { api } = facade([entry(), second]);
+    const ctx = {
+      ...context(api),
+      getCurrentConnections: () =>
+        [
+          {
+            id: "connection-one",
+            name: "Local connection",
+            protocol: "ssh",
+            username: "SECRET_ACCOUNT",
+            password: "SECRET_VALUE",
+          },
+        ] as Connection[],
+    };
+    render(
+      <ConnectionContext.Provider value={ctx}>
+        <DatabaseCredentialVault />
+      </ConnectionContext.Provider>,
+    );
+    const row = (
+      await screen.findByRole("button", { name: "Edit NAS operator" })
+    ).closest("tr")!;
+    expect(row).toHaveTextContent(
+      "Username · Password · Private key · TOTP authenticators",
+    );
+    expect(row.querySelector("time")).toHaveAttribute(
+      "datetime",
+      entry().updatedAt,
+    );
+    const connection = screen
+      .getByRole("button", {
+        name: "Edit credentials in connection Local connection",
+      })
+      .closest("tr")!;
+    expect(connection).toHaveTextContent("Account / domain · Password");
+    expect(within(connection).getByText("Not reported")).toBeVisible();
+    const sortUpdated = screen.getByRole("button", {
+      name: "Sort credentials by updated",
+    });
+    fireEvent.click(sortUpdated);
+    expect(sortUpdated.closest("th")).toHaveAttribute("aria-sort", "ascending");
+    fireEvent.click(sortUpdated);
+    expect(sortUpdated.closest("th")).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    const rows = within(
+      screen.getByRole("table", { name: "Database vault credentials" }),
+    )
+      .getAllByRole("row")
+      .slice(1);
+    expect(rows[0]).toHaveTextContent("Zulu operator");
+    expect(rows[rows.length - 1]).toHaveTextContent("Local connection");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sort credentials by source" }),
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Sort credentials by source" })
+        .closest("th"),
+    ).toHaveAttribute("aria-sort", "ascending");
+    expect(api.resolve).not.toHaveBeenCalled();
+    expect(document.body.innerHTML).not.toMatch(
+      /PRIVATE_|JBSW|SECRET_VALUE|SECRET_ACCOUNT/,
+    );
+  });
+
+  it("ANDs keyboard and pointer metadata choices and keeps clear/count visible when collapsed", async () => {
+    const { api } = facade([
+      { ...entry(), tags: ["Finance"] },
+      {
+        ...entry(),
+        id: crypto.randomUUID(),
+        name: "Other account",
+        tags: ["Other"],
+      },
+      {
+        ...entry(),
+        id: crypto.randomUUID(),
+        name: "No tags",
+        facets: { username: "SECRET_ACCOUNT", password: "SECRET_VALUE" },
+      },
+    ]);
+    const connection = {
+      id: "webmin-one",
+      name: "Webmin administration",
+      protocol: "https",
+      httpApplication: { version: 1, id: "webmin", loginMode: "digest" },
+      credentialSource: { kind: "vault", credentialId: id },
+    } as Connection;
+    const ctx = { ...context(api), getCurrentConnections: () => [connection] };
+    render(
+      <ConnectionContext.Provider value={ctx}>
+        <DatabaseCredentialVault />
+      </ConnectionContext.Provider>,
+    );
+    await screen.findByRole("button", { name: "Edit NAS operator" });
+    const toggle = screen.getByRole("button", { name: "Advanced filters" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const choose = (label: string, option: string) => {
+      fireEvent.click(screen.getByRole("combobox", { name: label }));
+      fireEvent.mouseDown(screen.getByRole("option", { name: option }));
+    };
+    const typeFilter = screen.getByRole("combobox", {
+      name: "Credential type filter",
+    });
+    typeFilter.focus();
+    fireEvent.keyDown(typeFilter, { key: "Enter" });
+    const passwordIndex = screen
+      .getAllByRole("option")
+      .findIndex((option) => option.textContent === "Password");
+    expect(passwordIndex).toBeGreaterThan(0);
+    fireEvent.keyDown(typeFilter, { key: "Home" });
+    for (let index = 0; index < passwordIndex; index++)
+      fireEvent.keyDown(typeFilter, { key: "ArrowDown" });
+    fireEvent.keyDown(typeFilter, { key: "Enter" });
+    expect(typeFilter).toHaveTextContent("Password");
+    choose("Category tag filter", "Finance");
+    choose("Protocol filter", "https");
+    choose("Application filter", "Webmin");
+    choose("Assignment filter", "Assigned vault entries");
+    choose("Credential storage filter", "Database vault");
+    const table = screen.getByRole("table", {
+      name: "Database vault credentials",
+    });
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(within(table).getByText("NAS operator")).toBeVisible();
+    expect(screen.getByText("6 active filters")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Advanced filters (6)" }),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Advanced credential filters" }),
+    ).toBeNull();
+    expect(screen.getByText("6 active filters")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(within(table).getAllByRole("row")).toHaveLength(5);
+    expect(
+      screen.getByRole("button", { name: "Advanced filters" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(api.resolve).not.toHaveBeenCalled();
+    expect(document.body.innerHTML).not.toMatch(
+      /PRIVATE_|JBSW|SECRET_VALUE|SECRET_ACCOUNT/,
+    );
+  });
+
+  it.each(["paged", "infinite"] as const)(
+    "applies advanced filters before %s navigation and resets its window",
+    async (mode) => {
+      const entries = manyEntries(60).map((row, index) => ({
+        ...row,
+        tags: [index === 59 ? "Final" : "Other"],
+      }));
+      const { api } = facade(entries);
+      render(<VaultLayoutFixture api={api} mode={mode} pageSize={25} />);
+      await screen.findByText("Fixture credential 024");
+      if (mode === "paged")
+        fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      else {
+        fireEvent.scroll(
+          screen.getByRole("region", { name: "Credential inventory" }),
+        );
+        expect(screen.getByText("Fixture credential 049")).toBeVisible();
+      }
+      fireEvent.click(screen.getByRole("button", { name: "Advanced filters" }));
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Category tag filter" }),
+      );
+      fireEvent.mouseDown(screen.getByRole("option", { name: "Final" }));
+      expect(screen.getByText("Fixture credential 059")).toBeVisible();
+      if (mode === "paged")
+        expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+      expect(
+        within(
+          screen.getByRole("table", { name: "Database vault credentials" }),
+        ).getAllByRole("row"),
+      ).toHaveLength(2);
+      fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+      expect(screen.getByText("Fixture credential 024")).toBeVisible();
+      expect(
+        screen.queryByText("Fixture credential 025"),
+      ).not.toBeInTheDocument();
+      expect(api.resolve).not.toHaveBeenCalled();
+    },
+  );
+
   it("shows compact icon-only rows, category tags and actual application assignments with no secret resolution, then drops revoked assignment metadata", async () => {
     const { api } = facade([{ ...entry(), tags: ["SMTP", "Finance"] }]);
     const rows = [
@@ -885,26 +1080,29 @@ describe("user-assigned vault tags and stationary controls", () => {
     const untaggedRow = (
       await screen.findByRole("button", { name: "Edit NAS operator" })
     ).closest("tr")!;
-    expect(within(untaggedRow).getAllByRole("cell")[2]).toHaveTextContent(
-      /^—$/,
-    );
+    const categoryColumn = screen.getByRole("columnheader", {
+      name: /^Category tags/,
+    }) as HTMLTableCellElement;
+    expect(
+      within(untaggedRow).getAllByRole("cell")[categoryColumn.cellIndex],
+    ).toHaveTextContent(/^—$/);
     const connectionRow = screen
       .getByRole("button", {
         name: "Edit credentials in connection Outgoing mail",
       })
       .closest("tr")!;
-    expect(within(connectionRow).getAllByRole("cell")[2]).toHaveTextContent(
-      /^—$/,
-    );
+    expect(
+      within(connectionRow).getAllByRole("cell")[categoryColumn.cellIndex],
+    ).toHaveTextContent(/^—$/);
     const taggedRow = screen
       .getByRole("button", { name: "Edit Custom tags saved" })
       .closest("tr")!;
-    expect(within(taggedRow).getAllByRole("cell")[2]).toHaveTextContent(
-      "SMTP · Accounts team",
-    );
-    expect(within(taggedRow).getAllByRole("cell")[2]).not.toHaveTextContent(
-      /User\/password|Private key|Other/,
-    );
+    expect(
+      within(taggedRow).getAllByRole("cell")[categoryColumn.cellIndex],
+    ).toHaveTextContent("SMTP · Accounts team");
+    expect(
+      within(taggedRow).getAllByRole("cell")[categoryColumn.cellIndex],
+    ).not.toHaveTextContent(/User\/password|Private key|Other/);
     fireEvent.change(screen.getByLabelText("Search vault credentials"), {
       target: { value: "User/password" },
     });

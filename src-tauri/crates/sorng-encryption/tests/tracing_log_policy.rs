@@ -4,7 +4,11 @@ use sorng_encryption::{
     artifact_policy::{self, ProtectionMode},
     log_adapter, ArtifactKind, EncryptionState, MasterDek,
 };
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tracing_subscriber::prelude::*;
 
 async fn wait_for(mut predicate: impl FnMut() -> bool) {
@@ -41,21 +45,30 @@ async fn tracing_bridge_persists_redacted_policy_output_and_pauses_without_losin
     let state = Arc::new(EncryptionState::new());
     state.install(MasterDek::generate()).await;
     artifact_policy::initialize(&state, tmp.path()).await;
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(log_adapter::tracing_writer),
+    );
+    // Match production: initialize tracing before attaching the encrypted
+    // writer. try_init must also install the log facade bridge; a scoped
+    // Dispatch alone cannot detect a missing tracing-log feature.
+    subscriber.try_init().unwrap();
     log_adapter::EncryptedLogAdapter::install_tracing_bridge(
         state.clone(),
         logs.clone(),
         log::LevelFilter::Info,
     )
     .unwrap();
-    let subscriber = tracing_subscriber::registry().with(
-        tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .with_writer(log_adapter::tracing_writer),
-    );
-    let dispatch = tracing::Dispatch::new(subscriber);
-    tracing::dispatcher::with_default(&dispatch, || {
-        tracing::info!("bridge fixture Bearer abcdef1234567890")
-    });
+    tracing::info!("bridge fixture Bearer abcdef1234567890");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    // Same closed field vocabulary as the native SSH establishment producer;
+    // endpoint/address values are synthetic privacy-safe fixture hashes.
+    log::info!(target: "ssh::establishment", "SSH establishment observed: timestampUnixMs={timestamp} attempt=41 caller=native-browser route=direct target=11111111111111111111111111111111 endpoint=11111111111111111111111111111111 policy=auto phase=connect outcome=connected candidate=0 address=22222222222222222222222222222222 family=ipv4 candidates=0 ipv4=0 ipv6=0 elapsedMs=1 overallMs=2 budgetMs=15000");
+    log::info!(target: "ssh::establishment", "SSH facade redaction fixture Bearer ssh-fixture-secret");
     wait_for(|| matching_file(&logs, ".log.enc").is_some()).await;
     let encrypted = matching_file(&logs, ".log.enc").unwrap();
     let first = std::fs::read(&encrypted).unwrap();
@@ -66,11 +79,14 @@ async fn tracing_bridge_persists_redacted_policy_output_and_pauses_without_losin
     assert!(text.contains("bridge fixture"));
     assert!(text.contains("[REDACTED:bearer-token]"));
     assert!(!text.contains("abcdef1234567890"));
+    assert!(text.contains("ssh::establishment"));
+    assert_eq!(text.matches("SSH establishment observed:").count(), 1);
+    assert!(!text.contains("ssh-fixture-secret"));
 
     log_adapter::pause_for_artifact_preview("old", Duration::from_secs(30));
     log_adapter::pause_for_artifact_preview("current", Duration::from_secs(30));
     log_adapter::release_artifact_preview("old");
-    tracing::dispatcher::with_default(&dispatch, || tracing::info!("held during preview"));
+    tracing::info!("held during preview");
     tokio::time::sleep(Duration::from_millis(2100)).await;
     assert_eq!(std::fs::read(&encrypted).unwrap(), first);
     log_adapter::release_artifact_preview("current");
@@ -91,17 +107,19 @@ async fn tracing_bridge_persists_redacted_policy_output_and_pauses_without_losin
         .unwrap();
         artifact_policy::refresh(&state).await;
     }
-    tracing::dispatcher::with_default(&dispatch, || {
-        tracing::info!("plaintext fixture Bearer abcdef1234567890")
-    });
+    tracing::info!("plaintext fixture Bearer abcdef1234567890");
+    log::info!(target: "ssh::establishment", "SSH plaintext transport fixture password=secret-fixture-password");
     wait_for(|| matching_file(&logs, ".log").is_some()).await;
     let plaintext_path = matching_file(&logs, ".log").unwrap();
     let bytes = std::fs::read(&plaintext_path).unwrap();
     let text = String::from_utf8(bytes.clone()).unwrap();
     assert!(text.contains("plaintext fixture"));
     assert!(!text.contains("abcdef1234567890"));
+    assert!(text.contains("SSH plaintext transport fixture"));
+    assert!(text.contains("[REDACTED:password]"));
+    assert!(!text.contains("secret-fixture-password"));
     state.lock().await;
-    tracing::dispatcher::with_default(&dispatch, || tracing::info!("held while locked"));
+    tracing::info!("held while locked");
     tokio::time::sleep(Duration::from_millis(2100)).await;
     assert_eq!(std::fs::read(&plaintext_path).unwrap(), bytes);
     log_adapter::release_all_artifact_previews();

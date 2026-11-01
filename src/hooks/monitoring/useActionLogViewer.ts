@@ -95,6 +95,15 @@ export function useActionLogViewer(isOpen: boolean) {
   const [feedback, setFeedback] = useState("");
   const [copying, setCopying] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [rowSelection, setRowSelection] = useState({
+    scope: "",
+    ids: new Set<string>(),
+  });
+  const selectingRef = useRef(false);
+  const logsRef = useRef(logs);
+  const activeRef = useRef(isOpen);
+  activeRef.current = isOpen;
   const copyingRef = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
@@ -105,6 +114,9 @@ export function useActionLogViewer(isOpen: boolean) {
   }, []);
 
   const loadLogs = useCallback(() => {
+    // Keep the exact bounded rows stable while selecting. Resume from the
+    // current sources when selection ends; never reuse a replaced row key.
+    if (selectingRef.current) return;
     const limit = settingsManager.getSettings().maxLogEntries;
     setSessionLimit(
       Number.isInteger(limit) && limit > 0 ? Math.min(1000, limit) : 1000,
@@ -127,7 +139,9 @@ export function useActionLogViewer(isOpen: boolean) {
         connectionName: log.connectionId,
       }),
     );
-    setLogs([...application, ...activity]);
+    const next = [...application, ...activity];
+    logsRef.current = next;
+    setLogs(next);
   }, [settingsManager]);
 
   useEffect(() => {
@@ -140,6 +154,14 @@ export function useActionLogViewer(isOpen: boolean) {
       unsubscribeActivity();
     };
   }, [isOpen, loadLogs, settingsManager]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      selectingRef.current = false;
+      setSelecting(false);
+      setRowSelection({ scope: "", ids: new Set() });
+    }
+  }, [isOpen]);
 
   const uniqueActions = useMemo(
     () => [...new Set(logs.map((log) => log.action))].sort(),
@@ -244,6 +266,61 @@ export function useActionLogViewer(isOpen: boolean) {
     () => filteredLogs.filter((log) => log.source === "application"),
     [filteredLogs],
   );
+  const selectionScope = JSON.stringify([
+    searchTerm,
+    sourceFilter,
+    levelFilter,
+    actionFilter,
+    connectionFilter,
+    dateFilter,
+    sortKey,
+    sortDirection,
+  ]);
+  useEffect(() => {
+    setRowSelection((previous) =>
+      previous.scope === selectionScope
+        ? previous
+        : { scope: selectionScope, ids: new Set() },
+    );
+  }, [selectionScope]);
+  const selectedIds =
+    selecting && rowSelection.scope === selectionScope
+      ? rowSelection.ids
+      : new Set<string>();
+  const selectedRows = filteredLogs.filter((row) =>
+    selectedIds.has(row.rowKey),
+  );
+  const toggleSelection = () => {
+    selectingRef.current = !selectingRef.current && activeRef.current;
+    setSelecting(selectingRef.current);
+    setRowSelection({ scope: selectionScope, ids: new Set() });
+    if (!selectingRef.current && activeRef.current) loadLogs();
+  };
+  const selectRow = (key: string, checked: boolean) => {
+    if (
+      !activeRef.current ||
+      !selectingRef.current ||
+      !filteredLogs.some((row) => row.rowKey === key)
+    )
+      return;
+    setRowSelection((previous) => {
+      const ids = new Set(
+        previous.scope === selectionScope ? previous.ids : [],
+      );
+      if (checked) ids.add(key);
+      else ids.delete(key);
+      return { scope: selectionScope, ids };
+    });
+  };
+  const selectAll = (checked: boolean) => {
+    if (!activeRef.current || !selectingRef.current) return;
+    setRowSelection({
+      scope: selectionScope,
+      ids: new Set(checked ? filteredLogs.map((row) => row.rowKey) : []),
+    });
+  };
+  const clearSelection = () =>
+    setRowSelection({ scope: selectionScope, ids: new Set() });
   useEffect(() => {
     setPage(1);
   }, [
@@ -271,9 +348,13 @@ export function useActionLogViewer(isOpen: boolean) {
   };
   const clearLogs = () => setShowClearConfirm(true);
   const confirmClearLogs = () => {
+    selectingRef.current = false;
+    setSelecting(false);
+    clearSelection();
     settingsManager.clearActionLog();
     clearSessionActivityLog();
     setLogs([]);
+    logsRef.current = [];
     setShowClearConfirm(false);
     setCopied(null);
     setFeedback("Action log cleared.");
@@ -357,8 +438,9 @@ export function useActionLogViewer(isOpen: boolean) {
   const copyRows = async (rows: ActionLogRow[], key: string) => {
     if (
       copyingRef.current ||
+      !activeRef.current ||
       !rows.length ||
-      rows.some((row) => !logs.includes(row))
+      rows.some((row) => !logsRef.current.includes(row))
     )
       return;
     copyingRef.current = true;
@@ -393,6 +475,7 @@ export function useActionLogViewer(isOpen: boolean) {
   };
   const copyLog = (log: ActionLogRow) => copyRows([log], log.rowKey);
   const copyFilteredDiagnostics = () => copyRows(filteredLogs, "filtered");
+  const copySelectedDiagnostics = () => copyRows(selectedRows, "selected");
   const resetFilters = () => {
     setSourceFilter("all");
     setLevelFilter("all");
@@ -453,5 +536,15 @@ export function useActionLogViewer(isOpen: boolean) {
     copied,
     copyLog,
     copyFilteredDiagnostics,
+    selecting,
+    selectedIds,
+    selectedCount: selectedRows.length,
+    allSelected:
+      filteredLogs.length > 0 && selectedRows.length === filteredLogs.length,
+    toggleSelection,
+    selectRow,
+    selectAll,
+    clearSelection,
+    copySelectedDiagnostics,
   };
 }
