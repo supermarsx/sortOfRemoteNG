@@ -15,6 +15,7 @@ import {
   validateReport,
   selectSuccess,
   failureCode,
+  verifySubjectBytes,
   main,
 } from "../fixtures/cef/linux_migration_proof_carrier.mjs";
 
@@ -119,6 +120,60 @@ test("authority requires the exact private Linux x64 host, image, source and tok
     assert.throws(() =>
       authority({ ...qualified(), ...changes }, "linux", "x64"),
     );
+});
+
+test("actual carrier subject guard matches current committed bytes and rejects the historical size pin", async () => {
+  const actual = Buffer.from(
+    (
+      await readFile(
+        new URL("scripts/lib/cef-linux-producer-migration.mjs", root),
+        "utf8",
+      )
+    ).replaceAll("\r\n", "\n"),
+  );
+  const committed = spawnSync(
+    "git",
+    ["show", "HEAD:scripts/lib/cef-linux-producer-migration.mjs"],
+    {
+      cwd: fileURLToPath(root),
+      timeout: 10000,
+      maxBuffer: 256 * 1024,
+      windowsHide: true,
+    },
+  );
+  assert.equal(committed.status, 0);
+  assert.deepEqual(actual, committed.stdout);
+  assert.equal(verifySubjectBytes(actual), undefined);
+  assert.throws(() => verifySubjectBytes(Buffer.alloc(94129)), /SOURCE/);
+  const changed = Buffer.from(actual);
+  changed[0] ^= 1;
+  assert.throws(() => verifySubjectBytes(changed), /SOURCE/);
+  assert.throws(() => verifySubjectBytes({ length: actual.length }), /SOURCE/);
+  let previous = (await readFile(carrierURL, "utf8")).replaceAll("\r\n", "\n");
+  const start = "// BEGIN current final-helper subject pin\n",
+    end = "// END current final-helper subject pin\n";
+  assert.equal(previous.split(start).length, 2);
+  assert.equal(previous.split(end).length, 2);
+  previous = previous.replace(
+    previous.slice(previous.indexOf(start), previous.indexOf(end) + end.length),
+    "",
+  );
+  const current = "      if (name === CORE) verifySubjectBytes(held.raw);\n";
+  const original = String.raw`      if (name === CORE)
+        need(
+          held.raw.length === 94129 &&
+            sha(held.raw) ===
+              "5da6dd95dc4ad77d2822255880e27fc4052e00551a933e2cb1821c285043a8c3",
+          "SOURCE",
+        );
+`;
+  assert.equal(previous.split(current).length, 2);
+  previous = previous.replace(current, original);
+  assert.equal(Buffer.byteLength(previous), 18035);
+  assert.equal(
+    createHash("sha256").update(previous).digest("hex"),
+    "5cc151384358108e6e46df52ba5c0c37770b77c44b22ec883486dda024d5001f",
+  );
 });
 
 test("final-helper retarget restores the complete2dbe core through exactly three pins without ancestor lookup", async () => {
@@ -362,11 +417,7 @@ test("actual carrier awaits the real entry, seals its own Git bytes, and writes 
   );
   assert.match(source, /held\.raw\.equals\(git\(\["show", "HEAD:" \+ name\]/);
   assert.match(source, /\[SELF, CORE\]/);
-  assert.match(source, /94129/);
-  assert.match(
-    source,
-    /5da6dd95dc4ad77d2822255880e27fc4052e00551a933e2cb1821c285043a8c3/,
-  );
+  assert.match(source, /if \(name === CORE\) verifySubjectBytes\(held\.raw\)/);
   assert(
     source.indexOf("authority(process.env") <
       source.indexOf('git(["rev-parse"'),
