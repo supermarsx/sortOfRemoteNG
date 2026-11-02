@@ -59,3 +59,5 @@ native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char
 packaging/linux/cef-sandbox-deb.postinst.sh text eol=lf
 packaging/linux/cef-sandbox-rpm.postinst.sh text eol=lf
 tests/fixtures/cef/mac_nearby.gitmodules -text
+tests/fixtures/cef/mac_clang_chromium.DEPS -text
+tests/fixtures/cef/mac_clang_openscreen.DEPS -text

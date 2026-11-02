@@ -958,7 +958,8 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
                         target = source_io_call('link-read', p, lambda: os.readlink(p))
                         require(isinstance(target,str) and 0 < len(target.encode()) <= 4096 and not any(ord(c)<32 for c in target), 'source-link')
                         if not external:
-                            if not source_nearby_literal(source_policy,name,target,s):
+                            if not (source_nearby_literal(source_policy,name,target,s) or
+                                    source_clang_literal(source_policy,name,target,s)):
                                 source_link_target(root, p, target, budget)
                         row = {'path':name,'kind':'symlink','stamp':stamp(s),'target':target,'ctimeNs':s.st_ctime_ns}
                         source_mac_row(row, s, source_policy)
@@ -995,6 +996,8 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
     require(seen_links == expected_links, 'missing-generated-link')
     if source_policy is not None:
         literal_bytes = len(json.dumps(source_policy['_nearby_literals']['portable'],sort_keys=True,separators=(',',':')).encode()) if source_policy.get('_nearby_literals') is not None else (2 if not source_policy.get('external') and not source_policy.get('mac') else 0)
+        if source_policy.get('_clang_literals')is not None:
+            literal_bytes+=len(json.dumps(source_policy['_clang_literals']['portable'],sort_keys=True,separators=(',',':')).encode())
         source_metadata_precharge(sum(len(r['path'].encode()) + len(r.get('target','').encode()) + 320 for r in rows) + literal_bytes,
                                   owned_source=source_policy.get('external') is not True)
     generated_state(root, generated_links, rows, budget)
@@ -1189,6 +1192,8 @@ def _mac_nearby_public_current(receipt):
 
 
 def _mac_nearby_scope_selection(root,identity,work,platform_policy,mode=None):
+    if _MAC_CLANG_PROOF_SCOPE.get() is not None:
+        return _mac_clang_scope_selection(root,identity,work,platform_policy,mode)
     public=_MAC_NEARBY_PUBLIC_SCOPE.get()
     if public is not None:
         selected,source,_,bound,canonical,policy=_mac_nearby_public_current(public)
@@ -1348,16 +1353,189 @@ def _mac_nearby_legacy_private_namespace(identity):
     return normalized!=namespace and not normalized.startswith(namespace+'/')
 
 
+# BEGIN INACTIVE MAC CLANG PROOF SCOPE
+# A separate, creation-owned proof class. The existing Nearby v2 evidence and
+# public selection are unchanged; neither JSON nor the new policy grants v3.
+MAC_CLANG_LITERAL_PRODUCTION_ADMITTED = False
+MAC_CLANG_LITERAL_POLICY = 'sorng-mac-pinned-clang-runtime-literals-v1'
+MAC_ARM_CLANG_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v3-nearby-clang-literals'
+MAC_INTEL_CLANG_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v3-nearby-clang-literals'
+_MAC_CLANG_PROOF_SCOPE = ContextVar('mac_clang_proof_scope', default=None)
+_MAC_CLANG_PROOF_RECEIPTS = {}
+_MAC_CLANG_PROOF_TEMP = '/Users/runner/work/_temp'
+MAC_CLANG_SOURCE_ROWS = (
+    ('src/third_party/llvm-build/Release+Asserts', 'src',
+     'a654841425914cbb703a2931e07b70a83aedbafd', 'src/DEPS', 197649,
+     'cd59c0f5c31e1dbbc65b2db96bb11a18f7bdc91496fafb5b6a4e7f94d8ad797c',
+     'Mac/clang-llvmorg-24-init-3796-g20e97c4b-27.tar.xz', 1789127451696206, 56431916,
+     '3ea3524d8f9c996934bf217fbd027e933570b96226f9db5c7a5bb657e1742972'),
+    ('src/third_party/openscreen/src/third_party/llvm-build/Release+Asserts',
+     'src/third_party/openscreen/src', 'fb748e428dfda43d3b55f3fb8c98d933ef66aa1c',
+     'src/third_party/openscreen/src/DEPS', 26191,
+     '153767cd478bd2cc2c48470fe8b1c04abe1afb3a8abc9865e788a43491feea13',
+     'Mac/clang-llvmorg-24-init-3796-g20e97c4b-2.tar.xz', 1786821111761283, 56450032,
+     'ec510fb1db5e96d127eaeb55ff61daf49d58647c653a65c6ffec42c0b59e3d84'),
+)
+MAC_CLANG_RUNTIME_ALIASES = (
+    ('aarch64-cros-linux-gnu','aarch64-unknown-linux-gnu'),
+    ('armv7a-cros-linux-gnueabihf','armv7-unknown-linux-gnueabihf'),
+    ('x86_64-cros-linux-gnu','x86_64-unknown-linux-gnu'),
+)
+
+
+def _mac_clang_portable_declarations():
+    return [{'kind':'pinned-clang-dangling-runtime-alias','origin':prefix+'/lib/clang/24/lib/'+origin,
+             'rawTarget':target,'rawTargetSha256':hashlib.sha256(target.encode()).hexdigest(),
+             'chromiumHead':MAC_CLANG_SOURCE_ROWS[0][2],
+             'openscreenHead':head if repository!= 'src' else None,
+             'depsPath':deps,'depsRawSha256':deps_sha,'packageObject':package,
+             'packageGeneration':generation,'packageBytes':size,'packageSha256':package_sha,
+             'targetState':'absent'}
+            for prefix,repository,head,deps,_,deps_sha,package,generation,size,package_sha in MAC_CLANG_SOURCE_ROWS
+            for origin,target in MAC_CLANG_RUNTIME_ALIASES]
+
+
+def _mac_clang_proof_identity(info):
+    return _mac_intel_proof_stamp(info)+(source_birth_identity(info),)
+
+
+def _mac_clang_proof_current(record):
+    root,fd,identity,original_end=record
+    require(time.monotonic()<original_end, 'archive-deadline')
+    require(safe(root)==root, 'source-mac-clang-proof-scope')
+    named=root.lstat();held=os.fstat(fd)
+    require(stat.S_ISDIR(named.st_mode) and stat.S_ISDIR(held.st_mode) and
+            stat.S_IMODE(named.st_mode)==0o700 and named.st_uid==os.geteuid() and
+            root.parent.lstat().st_uid==os.geteuid() and
+            _mac_clang_proof_identity(named)==identity==_mac_clang_proof_identity(held),
+            'source-mac-clang-proof-scope')
+    require(time.monotonic()<original_end, 'archive-deadline')
+    return root
+
+
+@contextmanager
+def _mac_clang_owned_proof_tree(output,budget):
+    """Exclusive proof root only; never an issuer for production source paths."""
+    import sys
+    branch='refs/heads/codex/mac-clang-resource-metadata-20261102'
+    require(sys.platform=='darwin' and platform.machine()=='x86_64' and
+            os.environ.get('ImageOS')=='macos15' and os.environ.get('ImageVersion')==MAC_SOURCE_IMAGE and
+            os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public' and
+            os.environ.get('GITHUB_REPOSITORY')=='supermarsx/sortOfRemoteNG' and
+            os.environ.get('GITHUB_REPOSITORY_ID')=='1010282954' and
+            os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and os.environ.get('GITHUB_REF')==branch and
+            re.fullmatch('[a-f0-9]{40}',os.environ.get('GITHUB_SHA','')) and
+            os.environ.get('GITHUB_WORKFLOW_SHA')==os.environ['GITHUB_SHA'] and
+            os.environ.get('GITHUB_WORKFLOW_REF')=='supermarsx/sortOfRemoteNG/.github/workflows/cef-mac-clang-resource-proof.yml@'+branch,
+            'source-mac-clang-proof-scope')
+    budget.check();temp=safe(Path(os.environ['RUNNER_TEMP']));root=Path(output)
+    require(str(temp)==_MAC_CLANG_PROOF_TEMP and root.parent==temp and root.is_absolute() and
+            str(root)==os.path.abspath(root) and
+            re.fullmatch(r'cef-mac-clang-owned-proof-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}',root.name) and
+            temp.lstat().st_uid==os.geteuid() and not os.path.lexists(root), 'source-mac-clang-proof-scope')
+    root.mkdir(mode=0o700)
+    fd=None;token=None;receipt=object();primary=None
+    try:
+        before=root.lstat()
+        require(stat.S_ISDIR(before.st_mode) and stat.S_IMODE(before.st_mode)==0o700 and
+                before.st_uid==os.geteuid(), 'source-mac-clang-proof-scope')
+        fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        record=(root,fd,_mac_clang_proof_identity(before),budget.end)
+        _mac_clang_proof_current(record)
+        _MAC_CLANG_PROOF_RECEIPTS[receipt]=record
+        token=_MAC_CLANG_PROOF_SCOPE.set(receipt)
+        budget.check();yield receipt;budget.check();_mac_clang_proof_current(record)
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        if token is not None:_MAC_CLANG_PROOF_SCOPE.reset(token)
+        _MAC_CLANG_PROOF_RECEIPTS.pop(receipt,None)  # Retire before awaited/failed closes.
+        if fd is not None:source_close(lambda:os.close(fd),primary)
+
+
+def _mac_clang_owned_proof_path(receipt):
+    require(type(receipt)is object and receipt is _MAC_CLANG_PROOF_SCOPE.get() and
+            receipt in _MAC_CLANG_PROOF_RECEIPTS, 'source-mac-clang-proof-scope')
+    return _mac_clang_proof_current(_MAC_CLANG_PROOF_RECEIPTS[receipt])
+
+
+def _mac_clang_scope_selection(root,identity,work,platform_policy,mode=None):
+    receipt=_MAC_CLANG_PROOF_SCOPE.get()
+    if receipt is None:return None
+    proof_root=_mac_clang_owned_proof_path(receipt)
+    require(platform_policy in ('mac-arm','mac-intel') and type(identity)is dict and
+            (mode is None or mode in SOURCE_IO_MODES), 'source-mac-clang-proof-scope')
+    intel=platform_policy=='mac-intel';expected=proof_root/('intel'if intel else'arm')/'work'
+    require(Path(work)==expected and Path(root)==expected/'source' and
+            set(identity)=={'target','source','producer','canonicalRoot','image','tools','graph','siso'} and
+            identity['target']==('x86_64-apple-darwin'if intel else'aarch64-apple-darwin') and
+            identity['source']==(MAC_INTEL_SOURCE if intel else MAC_SOURCE) and
+            identity['image']==MAC_SOURCE_IMAGE and identity['canonicalRoot']==str(expected) and
+            all(type(identity[key])is str and re.fullmatch('[a-f0-9]{64}',identity[key])for key in('producer','tools','graph','siso')),
+            'source-mac-clang-proof-scope')
+    return receipt
+
+
+def _mac_clang_policy_owned(policy,root=None):
+    if policy is None or policy.get('mac')is not True or policy.get('_macClangReceipt')is None:return False
+    require(source_owned_mac(policy) and policy.get('external')is not True and
+            policy.get('clangLiteralPolicy')==MAC_CLANG_LITERAL_POLICY, 'source-mac-clang-proof-scope')
+    identity=policy.get('_macClangIdentity');source=policy.get('_macClangRoot')
+    require(type(identity)is dict and isinstance(source,Path) and (root is None or root==source) and
+            _mac_clang_scope_selection(source,identity,Path(identity['canonicalRoot']),policy.get('_macClangPlatform'),
+                                       policy.get('_macClangMode'))is policy['_macClangReceipt'], 'source-mac-clang-proof-scope')
+    return True
+
+
+def _mac_clang_scoped_writer_allowed(root,value):
+    if _MAC_CLANG_PROOF_SCOPE.get()is None:return False
+    identity=value['identity'];intel=identity.get('target')=='x86_64-apple-darwin'
+    work=Path(identity.get('canonicalRoot','/'));platform_policy='mac-intel'if intel else'mac-arm'
+    receipt=_mac_clang_scope_selection(work/'source',identity,work,platform_policy,'source-record')
+    require(receipt is not None and value['schemaVersion']==3 and
+            value['kind']==('sorng-macintel-source-metadata'if intel else'sorng-macarm-source-metadata') and
+            value['policy']==(MAC_INTEL_CLANG_METADATA_POLICY if intel else MAC_ARM_CLANG_METADATA_POLICY) and
+            set(value['snapshot'])=={'entries','rootMtimeNs','gitHeads','bytes','literalLinks','compilerLiteralLinks'} and
+            value['snapshot']['literalLinks']==_mac_nearby_portable_declarations() and
+            value['snapshot']['compilerLiteralLinks']==_mac_clang_portable_declarations() and
+            Path(root)==work/'source/src/out'/('Release_GN_x64'if intel else'Release_GN_arm64') and
+            SOURCE_IO_CONTEXT.get()==('source-record',work/'source'), 'source-sidecar-role')
+    safe(Path(root));current=Path(root);proof_root=_mac_clang_owned_proof_path(receipt)
+    while current!=proof_root:
+        info=current.lstat();require(stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid(), 'source-sidecar-role')
+        current=current.parent
+    return True
+
+
+def _mac_clang_writer_namespace(root,identity):
+    receipt=_MAC_CLANG_PROOF_SCOPE.get()
+    if receipt is None:return False
+    require(type(receipt)is object and receipt in _MAC_CLANG_PROOF_RECEIPTS, 'source-sidecar-role')
+    # Protect only this creation-owned v3 tree, independently of claimed kind.
+    # A real Linux tree elsewhere keeps its ordinary schema1 writer contract.
+    namespace=_MAC_CLANG_PROOF_RECEIPTS[receipt][0].as_posix().casefold()
+    for raw in (str(root),identity.get('canonicalRoot')):
+        if type(raw)is str and raw.startswith('/') and '\x00'not in raw:
+            normalized=posixpath.normpath('/'+raw.lstrip('/')).casefold()
+            if normalized==namespace or normalized.startswith(namespace+'/'):return True
+    return False
+# END INACTIVE MAC CLANG PROOF SCOPE
+
+
 def metadata(root, name, value, source=False, owned_sidecar=False):
     maximum = source_metadata_limit(owned_sidecar)
     if owned_sidecar:
         require(source is True and name == SOURCE_METADATA_NAME and type(value) is dict and
                 set(value) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
-                type(value['schemaVersion']) is int and value['schemaVersion'] in (1,2) and
+                type(value['schemaVersion']) is int and value['schemaVersion'] in (1,2,3) and
                 value['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and type(value['identity']) is dict and
                 isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
                 not (value['schemaVersion']==1 and _mac_nearby_protected_namespace(value['identity'])) and
-                ((value['schemaVersion']==2 and _mac_nearby_scoped_writer_allowed(root,value)) or
+                not (value['schemaVersion']!=3 and _mac_clang_writer_namespace(root,value['identity'])) and
+                ((value['schemaVersion']==3 and _mac_clang_scoped_writer_allowed(root,value)) or
+                 (value['schemaVersion']==2 and _mac_nearby_scoped_writer_allowed(root,value)) or
                  (value['schemaVersion']==1 and ((value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macarm-source-metadata' and value['policy'] == MAC_SOURCE_METADATA_POLICY and
@@ -1800,6 +1978,99 @@ def source_nearby_literals(root, policy, budget):
         source_cleanup_all(closes,primary)
 
 
+# BEGIN INACTIVE MAC CLANG LITERAL INSPECTORS
+def source_clang_check(state,budget):
+    if state is None:return
+    _mac_clang_policy_owned(state['policy'],state['root'])
+    for p,expected,identity in state['headers']:
+        budget.check();safe(p)
+        require(source_local(p.lstat(),state['policy'])==identity and
+                source_read_bytes(p,budget,len(expected))==expected and
+                source_local(p.lstat(),state['policy'])==identity, 'source-clang-changed')
+    for p,target,identity in state['links'].values():
+        budget.check();safe(p.parent)
+        require(source_local(p.lstat(),state['policy'])==identity and os.readlink(p)==target and
+                source_local(p.lstat(),state['policy'])==identity, 'source-clang-changed')
+    for p,fd,identity in state['directories']:
+        budget.check();safe(p)
+        require(source_local(p.lstat(),state['policy'])==identity==source_local(os.fstat(fd),state['policy']),
+                'source-clang-changed')
+        # Exact absent target names only. Never follow an absent path or allow
+        # an existing directory/file/link merely because its name is known.
+        for _,target in MAC_CLANG_RUNTIME_ALIASES:
+            budget.check()
+            try:os.stat(target,dir_fd=fd,follow_symlinks=False)
+            except FileNotFoundError:pass
+            else:raise CheckpointError('source-clang-target-present')
+        require(source_local(p.lstat(),state['policy'])==identity==source_local(os.fstat(fd),state['policy']),
+                'source-clang-changed')
+
+
+def source_clang_literal(policy,name,target,info):
+    # Ordinary Linux paths, including these exact names with real resolving
+    # targets, retain the existing resolver. No namespace-based denial.
+    if not _mac_clang_policy_owned(policy):return False
+    if name not in {row['origin']for row in _mac_clang_portable_declarations()}:return False
+    state=policy.get('_clang_literals')
+    require(state is not None and name in state['links'], 'source-clang-binding')
+    p,expected,identity=state['links'][name]
+    require(target==expected and source_local(info,policy)==identity and os.readlink(p)==expected,
+            'source-clang-changed')
+    return True
+
+
+@contextmanager
+def source_clang_literals(root,policy,budget):
+    if not _mac_clang_policy_owned(policy,root):
+        yield None
+        return
+    state={'policy':policy,'root':root,'headers':[],'links':{},'directories':[],
+           'portable':_mac_clang_portable_declarations()};primary=None
+    try:
+        for prefix,repository,head,deps,deps_bytes,deps_sha,_,_,_,_ in MAC_CLANG_SOURCE_ROWS:
+            require(repository in policy.get('repositories',set()), 'source-clang-binding')
+            for name,size,expected_sha,expected in (
+                (repository+'/.git/HEAD',41,None,(head+'\n').encode()),
+                (deps,deps_bytes,deps_sha,None)):
+                p=safe(root/name);before=p.lstat()
+                require(stat.S_ISREG(before.st_mode) and before.st_uid==os.geteuid() and before.st_nlink==1,
+                        'source-clang-binding')
+                raw=source_read_bytes(p,budget,size)
+                require((raw==expected if expected is not None else len(raw)==size and
+                        hashlib.sha256(raw).hexdigest()==expected_sha), 'source-clang-binding')
+                identity=source_local(before,policy)
+                require(source_local(p.lstat(),policy)==identity, 'source-clang-changed')
+                state['headers'].append((p,raw,identity))
+            parent=safe(root/prefix/'lib/clang/24/lib');before=parent.lstat()
+            require(stat.S_ISDIR(before.st_mode) and before.st_uid==os.geteuid() and
+                    before.st_nlink>0 and not before.st_mode&0o7000, 'source-clang-binding')
+            fd=os.open(parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            state['directories'].append((parent,fd,source_local(before,policy)))
+            for origin,target in MAC_CLANG_RUNTIME_ALIASES:
+                p=parent/origin;info=p.lstat()
+                require(stat.S_ISLNK(info.st_mode) and info.st_uid==os.geteuid() and info.st_nlink==1 and
+                        not getattr(info,'st_file_attributes',0)&0x400 and os.readlink(p)==target,
+                        'source-clang-link')
+                name=p.relative_to(root).as_posix()
+                state['links'][name]=(p,target,source_local(info,policy))
+        source_clang_check(state,budget)
+        yield state
+        source_clang_check(state,budget)
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        source_cleanup_all([lambda fd=fd:os.close(fd)for _,fd,_ in state['directories']],primary)
+
+
+@contextmanager
+def source_metadata_literals(root,policy,budget):
+    with source_nearby_literals(root,policy,budget)as nearby:
+        with source_clang_literals(root,policy,budget)as compiler:
+            yield nearby,compiler
+# END INACTIVE MAC CLANG LITERAL INSPECTORS
+
+
 def source_birth(info, policy=None):
     # CPython Darwin exposes float st_birthtime, not exact st_birthtime_ns.
     # Only read-only external observations may explicitly retain unavailable ns.
@@ -2171,8 +2442,9 @@ def source_snapshot(root, budget, guards=None, context=None, *, member_policy=No
     owner = source_io_call('root-stat', root, root.stat).st_uid
     require(owner in (0, os.geteuid()) if external else owner == os.geteuid(), 'source-owner')
     policy = dict(context) if external else {**source_repositories(root, budget), **(context or {})}
-    with source_nearby_literals(root,policy,budget) as literals:
+    with source_metadata_literals(root,policy,budget) as (literals,compiler):
         policy['_nearby_literals']=literals
+        policy['_clang_literals']=compiler
         return source_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse,layout=layout)
 
 
@@ -2422,6 +2694,8 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
              'bytes': total}
     if not external and (not policy.get('mac') or _mac_nearby_policy_owned(policy)):
         value['literalLinks'] = policy['_nearby_literals']['portable'] if policy['_nearby_literals'] is not None else []
+    if not external and _mac_clang_policy_owned(policy):
+        value['compilerLiteralLinks']=policy['_clang_literals']['portable']
     if external:
         value['root'] = {'mode':root_before[4], 'mtimeNs':str(root_before[1]), 'uid':root.stat().st_uid,
                          'gid':root.stat().st_gid, 'nlink':root_before[5]}
@@ -2604,15 +2878,21 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     sidecar_policy = MAC_INTEL_SOURCE_METADATA_POLICY if intel else MAC_SOURCE_METADATA_POLICY if arm else SOURCE_METADATA_POLICY
     snapshot_context = {'mac':True, 'ownedMacIntel' if intel else 'ownedMacArm':True} if mac else None
     nearby_scope = _mac_nearby_scope_selection(root,identity,work,platform_policy,mode) if mac else None
+    compiler_scope = _mac_clang_scope_selection(root,identity,work,platform_policy,mode) if mac else None
     nearby_mac = nearby_scope is not None
     if mac and not nearby_mac:
         require(_mac_nearby_legacy_private_namespace(identity), 'source-mac-nearby-public-scope')
-    schema_version = 2 if nearby_mac else 1
+    schema_version = 3 if compiler_scope is not None else 2 if nearby_mac else 1
     if nearby_mac:
         sidecar_policy = MAC_INTEL_NEARBY_METADATA_POLICY if intel else MAC_ARM_NEARBY_METADATA_POLICY
         snapshot_context.update(nearbyLiteralPolicy=MAC_NEARBY_LITERAL_POLICY,
             _macNearbyReceipt=nearby_scope,_macNearbyIdentity=dict(identity),
             _macNearbyRoot=Path(root),_macNearbyPlatform=platform_policy,_macNearbyMode=mode)
+    if compiler_scope is not None:
+        sidecar_policy=MAC_INTEL_CLANG_METADATA_POLICY if intel else MAC_ARM_CLANG_METADATA_POLICY
+        snapshot_context.update(clangLiteralPolicy=MAC_CLANG_LITERAL_POLICY,
+            _macClangReceipt=compiler_scope,_macClangIdentity=dict(identity),
+            _macClangRoot=Path(root),_macClangPlatform=platform_policy,_macClangMode=mode)
     budget.check()
     root = safe(root);sidecar = Path(sidecar)
     require(root == work / 'source' and sidecar == root / ('src/out/Release_GN_x64' if intel else 'src/out/Release_GN_arm64') / SOURCE_METADATA_NAME,
@@ -2629,7 +2909,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                                 'reusedFiles':SOURCE_PROGRESS['totals'][2]}
         return result
     if mode == 'source-record':
-        with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as record_literals:
+        with source_metadata_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as (record_literals,record_compiler):
             layout = {}
             current = source_snapshot(root, budget, guards, context=snapshot_context) if mac else source_snapshot(root, budget, guards, layout=layout)
             value = {'schemaVersion': schema_version, 'kind': sidecar_kind,
@@ -2639,8 +2919,9 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             source_phase('sidecar-readback')
             require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
             source_phase('record-literals')
-            with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as literals:
+            with source_metadata_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as (literals,compiler):
                 require((mac and not nearby_mac) or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
+                require(compiler_scope is None or compiler['portable']==current['compilerLiteralLinks'], 'source-clang-binding')
             if linux:
                 source_phase('stat-cache-write')
                 source_stat_cache_write(root, written['sha256'], identity, layout, guards)
@@ -2653,7 +2934,9 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             stored['policy'] == sidecar_policy and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
             'source-sidecar-binding')
     expected = stored['snapshot']
-    require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if mac and not nearby_mac else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
+    expected_fields={'entries','rootMtimeNs','gitHeads','bytes'} if mac and not nearby_mac else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}
+    if compiler_scope is not None:expected_fields.add('compilerLiteralLinks')
+    require(isinstance(expected, dict) and set(expected) == expected_fields and
             isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
             'source-sidecar-shape')
     reuse = None
@@ -2670,6 +2953,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
     require((mac and not nearby_mac) or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
+    require(compiler_scope is None or expected['compilerLiteralLinks']==current['compilerLiteralLinks'], 'source-clang-binding')
     # Compare the entire freshly hashed namespace before the first metadata write.
     without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
     if (json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) !=
@@ -2689,8 +2973,9 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     if mode == 'source-apply':
         source_phase('apply-literals')
         # Revalidate the fixed absence witnesses immediately before any utime.
-        with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as literals:
+        with source_metadata_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as (literals,compiler):
             require((mac and not nearby_mac) or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
+            require(compiler_scope is None or compiler['portable']==expected['compilerLiteralLinks'], 'source-clang-binding')
         source_phase('apply-utime')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
             name = real(row['path'])
