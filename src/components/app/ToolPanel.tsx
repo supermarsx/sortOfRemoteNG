@@ -533,6 +533,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
             key={databaseMountKey}
             sessionId={session.id}
             onEditConnection={onEditConnection}
+            onOpenConnection={onReconnect}
             onOpenEditor={onActivateSession ? openCredentialEditor : undefined}
           />
         )}

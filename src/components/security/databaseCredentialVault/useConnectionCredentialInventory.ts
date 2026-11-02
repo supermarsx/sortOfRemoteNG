@@ -63,6 +63,7 @@ export function useConnectionCredentialInventory(
   let categories = new Map<string, string[]>();
   let applications = new Map<string, string>();
   let migratable = new Set<string>();
+  let vaultLinks = new Map<string, string>();
   let unavailable = !context?.getCurrentConnections || !connectionScope;
   if (
     !loading &&
@@ -74,6 +75,13 @@ export function useConnectionCredentialInventory(
     try {
       if (context?.getCurrentConnections && connectionScope) {
         const connections = context.getCurrentConnections(connectionScope);
+        vaultLinks = new Map(
+          connections.flatMap((row) =>
+            row.credentialSource?.kind === "vault"
+              ? [[row.id, row.credentialSource.credentialId]]
+              : [],
+          ),
+        );
         rows = connectionCredentialInventory(connections);
         usage = credentialVaultUsage(connections);
         assignments = credentialVaultAssignments(connections, rows);
@@ -158,6 +166,7 @@ export function useConnectionCredentialInventory(
     categories,
     applications,
     migratable,
+    vaultLinks,
     unavailable,
     opening,
     error,

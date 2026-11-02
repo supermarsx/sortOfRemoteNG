@@ -14,6 +14,11 @@ import {
   ChevronRight,
   Filter,
   ArrowUpDown,
+  UserRound,
+  Copy,
+  ShieldCheck,
+  LocateFixed,
+  ExternalLink,
 } from "lucide-react";
 import SettingsContext from "../../contexts/SettingsContext";
 import {
@@ -50,6 +55,11 @@ import {
 import { useConnectionCredentialInventory } from "./databaseCredentialVault/useConnectionCredentialInventory";
 import { vaultCredentialCategories } from "../../utils/security/credentialVaultCategories";
 import type { DatabaseCredentialMetadata } from "../../types/security/databaseCredentialVault";
+import { PopoverSurface } from "../ui/overlays/PopoverSurface";
+import {
+  useCredentialVaultActions,
+  type VaultActionTarget,
+} from "./databaseCredentialVault/useCredentialVaultActions";
 const VaultArchiveDialog = React.lazy(
   () => import("./databaseCredentialVault/VaultArchiveDialog"),
 );
@@ -59,6 +69,7 @@ interface Props {
   onDirtyChange?: (value: boolean) => void;
   onBusyChange?: (value: boolean) => void;
   onEditConnection?: (connection: Connection) => void;
+  onOpenConnection?: (connection: Connection) => void;
   onOpenEditor?: (request: CredentialEditorRequest) => void;
 }
 
@@ -68,6 +79,7 @@ function VaultWorkspace({
   onBusyChange,
   sessionId,
   onEditConnection,
+  onOpenConnection,
   onOpenEditor,
 }: Props & { api: DatabaseCredentialVaultApi }) {
   const preferences = useContext(SettingsContext);
@@ -103,12 +115,24 @@ function VaultWorkspace({
     mgr.loading,
     onEditConnection,
   );
+  const actions = useCredentialVaultActions(
+    api,
+    mgr.snapshot,
+    onOpenConnection,
+  );
+  const actionAnchor = useRef<HTMLElement>(null);
+  const choiceSearch = useRef<HTMLInputElement>(null);
+  const [choiceFilter, setChoiceFilter] = useState("");
+  useEffect(() => {
+    setChoiceFilter("");
+    if (actions.choice) choiceSearch.current?.focus();
+  }, [actions.choice]);
   const [archive, setArchive] = useState<{
     mode: "import" | "export";
     snapshot: DatabaseCredentialSnapshot;
   } | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
-  const busy = mgr.busy || archiveBusy || inventory.opening;
+  const busy = mgr.busy || archiveBusy || inventory.opening || actions.busy;
   const draftVersion = useRef({
     draft: mgr.draft,
     busy,
@@ -290,6 +314,127 @@ function VaultWorkspace({
     .sort((a, b) =>
       compareCredentialInventory(a.metadata, b.metadata, sort, sortDirection),
     );
+  const actionTarget = (item: (typeof allRows)[number]): VaultActionTarget => {
+    const credentialId =
+      item.source === "vault"
+        ? item.row.id
+        : inventory.vaultLinks.get(item.row.id);
+    const facets =
+      mgr.snapshot?.entries.find((row) => row.id === credentialId)
+        ?.availableFacets ?? [];
+    const fields: VaultActionTarget["fields"] = credentialId
+      ? (["username", "password", "totp"] as const).filter((field) =>
+          facets.includes(field),
+        )
+      : item.source === "connection" &&
+          item.row.storage.includes("embedded") &&
+          !item.row.localValuesIgnored
+        ? (["username", "password", "totp"] as const).filter((field) =>
+            field === "username"
+              ? item.row.kinds.includes("account")
+              : field === "password"
+                ? item.row.kinds.includes("password") ||
+                  item.row.kinds.includes("webAuth")
+                : item.row.kinds.includes("totp"),
+          )
+        : [];
+    return {
+      source: item.source,
+      id: item.row.id,
+      name: item.row.name,
+      fields,
+      ...(item.source === "connection" && credentialId ? { credentialId } : {}),
+      connections:
+        item.source === "vault"
+          ? (inventory.assignments?.get(item.row.id) ?? [])
+          : [
+              {
+                connectionId: item.row.id,
+                name: item.row.name,
+                protocol: item.row.protocol,
+                categories: [],
+              },
+            ],
+    };
+  };
+  const rowActions = (target: VaultActionTarget) => (
+    <>
+      {(
+        [
+          ["username", "Copy username", UserRound],
+          ["password", "Copy password", Copy],
+          ["totp", "Copy 2FA code", ShieldCheck],
+        ] as const
+      ).map(([field, label, Icon]) => (
+        <button
+          key={field}
+          type="button"
+          className="sor-btn-icon"
+          aria-label={`${label} for ${target.name}`}
+          data-tooltip={
+            target.fields.includes(field) ? label : `${label} unavailable`
+          }
+          disabled={busy || mgr.loading || !target.fields.includes(field)}
+          onClick={(event) => {
+            actionAnchor.current = event.currentTarget;
+            void actions.copy(target, field);
+          }}
+        >
+          <Icon size={14} />
+        </button>
+      ))}
+      <button
+        type="button"
+        className="sor-btn-icon"
+        aria-label={`Go to connection for ${target.name}`}
+        data-tooltip={
+          target.connections.length
+            ? "Go to connection"
+            : "No associated connection"
+        }
+        disabled={
+          busy ||
+          mgr.loading ||
+          inventory.unavailable ||
+          !target.connections.length
+        }
+        onClick={(event) => {
+          actionAnchor.current = event.currentTarget;
+          void actions.navigate(target, "go");
+        }}
+      >
+        <LocateFixed size={14} />
+      </button>
+      <button
+        type="button"
+        className="sor-btn-icon"
+        aria-label={`Open connection for ${target.name}`}
+        data-tooltip={
+          !target.connections.length
+            ? "No associated connection"
+            : !onOpenConnection
+              ? "Connection opening unavailable"
+              : target.connections.length === 1 &&
+                  ["http", "https"].includes(target.connections[0].protocol)
+                ? "Open link"
+                : "Open connection"
+        }
+        disabled={
+          busy ||
+          mgr.loading ||
+          inventory.unavailable ||
+          !target.connections.length ||
+          !onOpenConnection
+        }
+        onClick={(event) => {
+          actionAnchor.current = event.currentTarget;
+          void actions.navigate(target, "open");
+        }}
+      >
+        <ExternalLink size={14} />
+      </button>
+    </>
+  );
   const filterOptions = (
     key: "types" | "tags" | "protocols" | "applications",
   ) => [...new Set(allRows.flatMap((item) => [...item.metadata[key]]))].sort();
@@ -410,6 +555,14 @@ function VaultWorkspace({
       {inventory.error && (
         <p role="alert" className="m-4 text-sm text-error">
           {inventory.error}
+        </p>
+      )}
+      {actions.message && (
+        <p
+          role={actions.failed ? "alert" : "status"}
+          className={`mx-4 mt-3 text-sm ${actions.failed ? "text-error" : "text-[var(--color-textSecondary)]"}`}
+        >
+          {actions.message}
         </p>
       )}
       {inventory.unavailable && !mgr.loading && (
@@ -832,7 +985,8 @@ function VaultWorkspace({
                         hidden={!view.columns.includes("actions")}
                         className="p-2 text-right"
                       >
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {rowActions(actionTarget(item))}
                           {inventory.migratable.has(item.row.id) && (
                             <button
                               type="button"
@@ -953,7 +1107,8 @@ function VaultWorkspace({
                         hidden={!view.columns.includes("actions")}
                         className="p-2"
                       >
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {rowActions(actionTarget(item))}
                           <button
                             type="button"
                             className="sor-btn-icon"
@@ -1005,6 +1160,76 @@ function VaultWorkspace({
           </table>
         </>
       </div>
+      <PopoverSurface
+        isOpen={!!actions.choice}
+        anchorRef={actionAnchor}
+        onClose={actions.dismiss}
+        className="w-72 max-w-[calc(100vw-16px)] rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-xl"
+      >
+        {actions.choice && (
+          <section
+            role="dialog"
+            aria-label={
+              actions.choice.action === "totp"
+                ? "Choose authenticator"
+                : "Choose connection"
+            }
+          >
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <strong>
+                {actions.choice.action === "totp"
+                  ? "Choose authenticator"
+                  : "Choose connection"}
+              </strong>
+              <button
+                type="button"
+                onClick={actions.dismiss}
+                className="sor-btn-icon"
+                aria-label="Close choices"
+              >
+                ×
+              </button>
+            </div>
+            <input
+              ref={choiceSearch}
+              aria-label="Filter choices"
+              placeholder="Search…"
+              value={choiceFilter}
+              onChange={(event) => setChoiceFilter(event.target.value)}
+              className="sor-input mb-2 w-full"
+            />
+            <div className="max-h-60 overflow-y-auto">
+              {actions.choice.items
+                .filter((item) =>
+                  item.label
+                    .toLocaleLowerCase()
+                    .includes(choiceFilter.toLocaleLowerCase()),
+                )
+                .slice(0, 25)
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="block w-full truncate rounded px-2 py-2 text-left text-sm hover:bg-[var(--color-surfaceHover)]"
+                    data-tooltip={item.label}
+                    onClick={() => actions.choose(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+            </div>
+            {actions.choice.items.filter((item) =>
+              item.label
+                .toLocaleLowerCase()
+                .includes(choiceFilter.toLocaleLowerCase()),
+            ).length > 25 && (
+              <p className="mt-2 text-xs text-[var(--color-textSecondary)]">
+                Showing 25 matches. Refine the search.
+              </p>
+            )}
+          </section>
+        )}
+      </PopoverSurface>
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-3 text-xs">
         <span>
           {rows.length} results ·{" "}

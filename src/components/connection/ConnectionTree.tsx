@@ -306,10 +306,22 @@ const AvailableConnectionTree: React.FC<ConnectionTreeProps> = ({
           });
         parentId = parent.parentId;
       }
+      setEntryFilter("connections");
+      setSelectedDocumentId(null);
+      setFocusId(connectionRowKey(connectionId));
       setRevealId(connectionId);
     };
     window.addEventListener("reveal-connection", handler);
-    return () => window.removeEventListener("reveal-connection", handler);
+    // A collapsed sidebar unmounts this component. Announce readiness only
+    // after its reveal listener exists; callers may also ping a mounted tree.
+    const ready = () =>
+      window.dispatchEvent(new Event("connection-tree-ready"));
+    window.addEventListener("connection-tree-reveal-request", ready);
+    ready();
+    return () => {
+      window.removeEventListener("reveal-connection", handler);
+      window.removeEventListener("connection-tree-reveal-request", ready);
+    };
   }, [connections, dispatch]);
 
   useEffect(() => {

@@ -6,6 +6,7 @@ import {
   createToolSession,
   createTrustCenterSession,
   createIconExplorerSession,
+  createSecurityToolSession,
 } from "../../src/components/app/toolSession";
 import { TOOL_DESCRIPTORS } from "../../src/components/app/toolDescriptors";
 const h = vi.hoisted(() => ({
@@ -17,6 +18,11 @@ const h = vi.hoisted(() => ({
   mounts: vi.fn(),
   unmounts: vi.fn(),
   dispatch: vi.fn(),
+  savedConnection: {
+    id: "linked",
+    protocol: "https",
+    hostname: "https://private.test/path",
+  },
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -52,6 +58,17 @@ vi.mock("../../src/components/connection/ConnectionEditor", () => ({
 }));
 vi.mock("../../src/components/security/TrustCenterTab", () => ({
   default: () => <div>Private trust identities</div>,
+}));
+vi.mock("../../src/components/security/DatabaseCredentialVault", () => ({
+  default: ({
+    onOpenConnection,
+  }: {
+    onOpenConnection?: (connection: unknown) => void;
+  }) => (
+    <button onClick={() => onOpenConnection?.(h.savedConnection)}>
+      Open associated saved connection
+    </button>
+  ),
 }));
 vi.mock("../../src/components/documents/DocumentsWorkspace", () => ({
   default: ({
@@ -91,6 +108,28 @@ const editor = () => ({
   ownerDatabaseId: "db-a",
 });
 describe("database-owned tool tab access", () => {
+  it("forwards vault Open to the canonical reconnect handler without rewriting its saved connection", async () => {
+    h.availability = { status: "ready", databaseId: "db-a", generation: 1 };
+    const onReconnect = vi.fn();
+    render(
+      <ToolTabViewer
+        session={createSecurityToolSession(
+          "credentialVault",
+          undefined,
+          "db-a",
+        )}
+        onClose={vi.fn()}
+        onReconnect={onReconnect}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open associated saved connection",
+      }),
+    );
+    expect(onReconnect).toHaveBeenCalledExactlyOnceWith(h.savedConnection);
+    expect(onReconnect.mock.calls[0][0]).toBe(h.savedConnection);
+  });
   it.each(["none", "suspended", "ready"])(
     "keeps App-wide documents independent of database availability (%s)",
     async (status) => {
