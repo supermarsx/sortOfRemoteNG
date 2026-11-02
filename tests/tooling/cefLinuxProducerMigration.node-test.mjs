@@ -35,6 +35,20 @@ function withoutCliModuleDelta(text) {
   return text;
 }
 function withoutTransactionAdmission(text) {
+  const clock = `  const tools = {
+    ...originalTools,
+    remaining: () => Math.floor(transactionCheck(state)),
+  };`;
+  assert.equal(text.split(clock).length, 2);
+  text = text.replace(
+    clock,
+    "  const tools = { ...originalTools, remaining: () => transactionCheck(state) };",
+  );
+  assert.equal(Buffer.byteLength(text), 120115);
+  assert.equal(
+    core.sha(text),
+    "f79bc80ac6ed697ab7115d19b636f6fec6118e8a2e69fe80b7218eb955aebe45",
+  );
   const current =
     "// Fixed Linux migration: only the context-bound complete transaction can execute.\n// Standalone preparation APIs stay closed; matching JSON grants no authority.\n";
   const previous =
@@ -772,6 +786,8 @@ async function transactionModel({
   retireAt,
   usedInitially = false,
   closeFault = false,
+  ownerRemaining = 60000,
+  checkRestoreBudget = false,
 } = {}) {
   // Execute the actual closed orchestration and guards in disjoint VM maps.
   // These staged command/FS outcomes are NOT genuine GN or production tokens.
@@ -791,6 +807,17 @@ async function transactionModel({
   let used = usedInitially,
     live = true,
     applies = 0;
+  const restoreReached = new Error("MODEL_RESTORE_IO");
+  const restoreBoundary = checkRestoreBudget
+    ? await privateFunctions(["restorePreparedCommon", "need"], {
+        positive: (value) => Number.isSafeInteger(value) && value > 0,
+        LIMITS: core.LIMITS,
+        path: path.posix,
+        noLinks: async () => {
+          throw restoreReached;
+        },
+      })
+    : null;
   const selected = {
     freshIdentity: { canonicalRoot: "/owned", graph: "g" },
     currentProducer: { head: "h" },
@@ -822,7 +849,7 @@ async function transactionModel({
       logs: "/owned/logs",
       initialCohortQuietProven: true,
       revalidationUsed: used,
-      remainingMilliseconds: 60000,
+      remainingMilliseconds: ownerRemaining,
     };
   };
   const stage = (name) => {
@@ -863,6 +890,16 @@ async function transactionModel({
       restoreOwnedCommon: async (s, t, o, ledger) => {
         stage("restore");
         assert.equal(ledger, creators);
+        if (restoreBoundary)
+          await restoreBoundary
+            .restorePreparedCommon(s, { check: t.remaining })
+            .then(
+              () =>
+                assert.fail("Restore boundary must stop before filesystem IO"),
+              (error) => {
+                if (error !== restoreReached) throw error;
+              },
+            );
         const token = {};
         creators.set(token, { handle: {}, rootHandle: {} });
         return token;
@@ -927,6 +964,40 @@ async function transactionModel({
     view,
   };
 }
+
+test("actual fractional hosted clock reaches restore through conservative whole-millisecond admission", async () => {
+  const { createHostedBuildBudget } =
+    await import("../../scripts/cef-runtime-ci.mjs");
+  let elapsed = 0;
+  const budget = createHostedBuildBudget(60000, () => elapsed);
+  elapsed = 0.25;
+  assert.equal(budget.remaining(), 59999.75);
+  assert.equal(Number.isSafeInteger(budget.remaining()), false);
+  const model = await transactionModel({
+    ownerRemaining: budget.remaining(),
+    checkRestoreBudget: true,
+  });
+  const completion = await model.api.runClosedLinuxMigrationTransaction(
+    model.context,
+    model.candidate,
+    model.toolsToken,
+  );
+  assert.equal(completion.authorizing, false);
+  assert(model.events.includes("new-record"));
+  const expired = await transactionModel({
+    ownerRemaining: 0.75,
+    checkRestoreBudget: true,
+  });
+  await assert.rejects(
+    expired.api.runClosedLinuxMigrationTransaction(
+      expired.context,
+      expired.candidate,
+      expired.toolsToken,
+    ),
+    /ORIGINAL_LEASE/,
+  );
+  assert(!expired.events.includes("old-apply1"));
+});
 
 test("private transaction fixes both old applies around genuine GN and consumes readiness before retirement", async () => {
   const m = await transactionModel();

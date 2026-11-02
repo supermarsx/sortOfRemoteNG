@@ -189,6 +189,20 @@ test("current composed carrier retarget preserves its complete historical pre-gu
 });
 
 function qualifiedFinalHelperModule(text) {
+  const clock = `  const tools = {
+    ...originalTools,
+    remaining: () => Math.floor(transactionCheck(state)),
+  };`;
+  assert.equal(text.split(clock).length, 2);
+  text = text.replace(
+    clock,
+    "  const tools = { ...originalTools, remaining: () => transactionCheck(state) };",
+  );
+  assert.equal(Buffer.byteLength(text), 120115);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "f79bc80ac6ed697ab7115d19b636f6fec6118e8a2e69fe80b7218eb955aebe45",
+  );
   const current =
     "// Fixed Linux migration: only the context-bound complete transaction can execute.\n// Standalone preparation APIs stay closed; matching JSON grants no authority.\n";
   const previous =
@@ -236,7 +250,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "59853deefce088fb777d28fbfb6771602a8117bd49cba941a84ee91a1b4eca9d",
+    "1eddf4f9c05172f03fb155346b1055f4d12b24505e608c3b7074245f530ff01c",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

@@ -2320,7 +2320,10 @@ async function runClosedLinuxMigrationTransaction(
     controlHandle: null,
   };
   activeMigrationTransactions.set(context, state);
-  const tools = { ...originalTools, remaining: () => transactionCheck(state) };
+  const tools = {
+    ...originalTools,
+    remaining: () => Math.floor(transactionCheck(state)),
+  };
   let failed = false,
     primary,
     result;
