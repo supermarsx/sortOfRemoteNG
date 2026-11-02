@@ -23,8 +23,14 @@ async fn test_ping_localhost() {
     })
     .await
     .expect("localhost ping exceeded the five-second deadline");
-    // Ping might succeed or fail depending on system, but should not panic
-    assert!(result.is_ok());
+    #[cfg(windows)]
+    assert!(result.is_ok(), "native localhost ping failed: {result:?}");
+    #[cfg(not(windows))]
+    assert_eq!(
+        result,
+        Err("In-process ICMP diagnostics are unavailable on this platform; no external utility was launched".to_string()),
+        "unsupported native ICMP must report its provider contract",
+    );
 }
 
 /// Test ping with invalid host
