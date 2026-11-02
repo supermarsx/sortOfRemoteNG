@@ -1102,9 +1102,7 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
       rows.find((row) => row.path === name).sha = sha;
   }
   if (["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)) {
-    // Both Mac witnesses include the reviewed cold-discovery source; Intel retains Y.
-    // Only Intel receives the newly reviewed cold-discovery producer. The
-    // active Linux and ARM runs retain their exact historical source trees.
+    // Both Mac witnesses include the reviewed cold-discovery source.
     const coldMetalBlobs = {
       "scripts/cef-hosted-provision.mjs":
         "9fb323d215e1d246f537685b360d3a665f87f748",
@@ -1115,7 +1113,7 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
     for (const [name, sha] of Object.entries(coldMetalBlobs))
       rows.find((row) => row.path === name).sha = sha;
   }
-  if (target === "aarch64-apple-darwin") {
+  if (["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)) {
     // Exact new source-budget composition; modeled SDK transport only.
     const sourceBudgetBlobs = {
       "scripts/cef-engineering-checkpoint.mjs":
@@ -1417,10 +1415,36 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
+test("failed Intel producer retarget restores the entire prior adapter and keeps both other target bindings", () => {
+  const raw = readFileSync(
+    new URL(
+      "../../native/cef-engineering-sdk-publication/publish.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  const current =
+    'export const ENGINEERING_PRODUCER =\n  "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3";';
+  const previous =
+    'export const ENGINEERING_PRODUCER =\n  "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f";';
+  assert.equal(raw.split(current).length, 2);
+  const restored = raw.replace(current, previous);
+  assert.equal(Buffer.byteLength(restored), 23685);
+  assert.equal(
+    hash(restored),
+    "fc696792dd81caf6b7d8a89c36d3a284637c291882ecac1e09df14cac31309ac",
+  );
+  const fixture = engineeringFixture("x86_64-apple-darwin");
+  const staleReview = structuredClone(fixture.review);
+  staleReview.producerCodeSha256 =
+    "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f";
+  assert.throws(() => validateEngineeringReview(staleReview));
+});
+
 test("engineering publication exact target producers select repaired source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f",
+    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],

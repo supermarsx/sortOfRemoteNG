@@ -41,7 +41,7 @@ const ROOT = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
 const REPOSITORY = "supermarsx/sortOfRemoteNG";
 const NATIVE_WORKFLOW = ".github/workflows/cef-runtime-acceptance.yml";
 export const ENGINEERING_PRODUCER =
-  "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f";
+  "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3";
 export const ENGINEERING_PRODUCERS = Object.freeze({
   // Source binding only. A future actual successful run and both independent
   // completion/native seals are still mandatory; no failed run is selected.
