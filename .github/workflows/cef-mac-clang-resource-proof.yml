@@ -1,0 +1,44 @@
+name: CEF private Mac Clang resource metadata proof
+# Registration on main is inert. This exact branch proves scratch inputs only.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cef-mac-clang-proof-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  proof:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/mac-clang-resource-metadata-20261102' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
+    runs-on: macos-15-intel
+    timeout-minutes: 5
+    env:
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - name: Start the original whole-job proof clock
+        run: echo "CEF_MAC_CLANG_JOB_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Prove only creation-owned Clang resource metadata
+        id: proof
+        timeout-minutes: 3
+        run: node tests/fixtures/cef/mac_clang_resource_carrier.mjs
+      - name: Retain only the closed proof reports
+        if: always() && steps.proof.outputs.root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-mac-clang-resource-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.proof.outputs.root }}/proof.json
+            ${{ steps.proof.outputs.root }}/carrier.json
+          if-no-files-found: warn
+          retention-days: 14
