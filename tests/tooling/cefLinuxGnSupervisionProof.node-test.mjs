@@ -3,8 +3,10 @@ import test from "node:test";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import vm from "node:vm";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   authority,
   originalEnd,
@@ -60,7 +62,11 @@ const names = [
   "setup-clock",
   "late-postcheck",
   "delayed-close",
+  "direct-natural-zero",
+  "direct-nonzero",
+  "direct-output-bound",
 ];
+const capCase = (id) => ["output-bound", "direct-output-bound"].includes(id);
 const falseFlags = {
   vendorGnExecuted: false,
   sourceAcquisition: false,
@@ -90,19 +96,22 @@ function syntheticReport() {
     ...falseFlags,
     cases: names.map((id) => {
       const idle = ["reserve", "setup-clock"].includes(id),
-        positive = id === "natural-zero";
+        direct = id.startsWith("direct-"),
+        positive = ["natural-zero", "direct-natural-zero"].includes(id);
       return {
         id,
         complete: true,
         fulfilled: positive,
         rejected: !positive,
-        observerAssisted: !idle,
+        observerAssisted: !idle && !direct,
+        executionMode: direct ? "direct" : idle ? "idle" : "observer-assisted",
+        actorHandshakeJoined: direct ? true : null,
         faultScheduling: [
           "setup-clock",
           "late-postcheck",
           "delayed-close",
         ].includes(id),
-        supervisorJoined: idle ? null : id === "output-bound" ? false : true,
+        supervisorJoined: idle ? null : capCase(id) ? false : true,
         supervisorObservation: idle
           ? null
           : {
@@ -110,15 +119,15 @@ function syntheticReport() {
               pipeClosed: true,
               monitorJoined: true,
               probesJoined: true,
-              outputsJoined: id !== "output-bound",
+              outputsJoined: !capCase(id),
               outputsSettled: true,
               outputHandlesClosed: true,
               cohortQuiet: true,
               observedProcesses: 1,
-              phase: id === "output-bound" ? "denied" : "complete",
-              failureStage: id === "output-bound" ? "output-bound" : "none",
+              phase: capCase(id) ? "denied" : "complete",
+              failureStage: capCase(id) ? "output-bound" : "none",
             },
-        expectedOutputRejection: id === "output-bound",
+        expectedOutputRejection: capCase(id),
         spawned: idle ? 0 : positive ? 2 : 1,
         closeAttempts: id === "reserve" ? 0 : positive ? 2 : 1,
         reparentWitness: id === "detached-writer",
@@ -287,11 +296,7 @@ test("strict case observations reject missing or false joins and confine the cap
       "cohortQuiet",
     ])
       for (const observed of [null, undefined, 0, "true", false]) {
-        if (
-          id === "output-bound" &&
-          key === "outputsJoined" &&
-          observed === false
-        )
+        if (capCase(id) && key === "outputsJoined" && observed === false)
           continue;
         const changed = structuredClone(value);
         changed.cases[index].supervisorObservation[key] = observed;
@@ -309,7 +314,7 @@ test("strict case observations reject missing or false joins and confine the cap
       changed.cases[index].supervisorObservation[key] = observed;
       assert.throws(() => validateReport(changed), id + key);
     }
-    if (id === "output-bound") {
+    if (capCase(id)) {
       for (const [key, observed] of [
         ["phase", "complete"],
         ["failureStage", "writer"],
@@ -340,7 +345,8 @@ test("actual diagnostic and cap assertions require exact first error and physica
   assert(start > 0 && end > start);
   const scope = vm.createContext({ assert, JSON });
   const api = vm.runInContext(
-    fixture.slice(start, end) + "\n({diagnostic,joined,outputBoundClosed})",
+    fixture.slice(start, end) +
+      "\n({diagnostic,joined,outputBoundClosed,outputBoundCase})",
     scope,
   );
   const summary =
@@ -357,7 +363,7 @@ test("actual diagnostic and cap assertions require exact first error and physica
       assert.throws(() => api.diagnostic(message(changed)));
       assert.equal(api.outputBoundClosed(changed), false);
     }
-  const a = fixture.lastIndexOf('  if (id === "output-bound")'),
+  const a = fixture.lastIndexOf("  if (outputBoundCase(id))"),
     b = fixture.indexOf('  if (["reserve", "setup-clock"].includes(id))', a);
   assert(a > end && b > a);
   const assertion = fixture.slice(a, b);
@@ -379,10 +385,689 @@ test("actual diagnostic and cap assertions require exact first error and physica
         rejection,
         summary,
         outputBoundClosed: api.outputBoundClosed,
+        outputBoundCase: api.outputBoundCase,
         assertionFailureCode,
       });
     if (assertionFailureCode(rejection) === "COMPILE_OUTPUT_BOUND") evaluate();
     else assert.throws(evaluate, /PROOF_OUTPUT_STAGE/);
+  }
+});
+
+function directFunctions(bindings = {}) {
+  const a = fixture.indexOf("const DIRECT_ROLES = Object.freeze({"),
+    b = fixture.indexOf("\nasync function caseRun(", a);
+  const checkStart = fixture.indexOf("function check(end) {"),
+    checkEnd = fixture.indexOf("\nasync function held(", checkStart),
+    pollStart = fixture.indexOf("async function poll(work, end) {"),
+    pollEnd = fixture.indexOf("\nasync function optional(", pollStart);
+  assert(a > 0 && b > a && checkStart > 0 && pollStart > 0);
+  const dependencies = {
+    assert,
+    Buffer,
+    path,
+    constants: { O_RDONLY: 0 },
+    performance: { now: () => 0 },
+    setTimeout,
+    clearTimeout,
+    ...bindings,
+    modelDelay: bindings.delay,
+  };
+  return new Function(
+    ...Object.keys(dependencies),
+    fixture.slice(checkStart, checkEnd) +
+      "\n" +
+      (bindings.delay ? "delay = modelDelay;\n" : "") +
+      fixture.slice(pollStart, pollEnd) +
+      "\n" +
+      fixture.slice(a, b) +
+      "\nreturn {directCompile,directActorHandshake};",
+  )(...Object.values(dependencies));
+}
+
+test("actual wrapper initial and revalidation forward direct options with no observer out or census own properties", async () => {
+  const { directCompile } = directFunctions();
+  const forwarded = [],
+    joins = [];
+  let coordinated = 0;
+  const core = {
+    compileSlice: async (exe, args, options) => {
+      forwarded.push({ exe, args, options });
+      return quiet();
+    },
+  };
+  const m = model((exe, args, options) =>
+    directCompile(
+      core,
+      exe,
+      args,
+      options,
+      async () => {
+        coordinated++;
+      },
+      joins,
+      1000,
+    ),
+  );
+  await m.api.superviseLinuxSourceGn(m.capture, "initial");
+  await m.api.withLinuxSourceOwner({}, m.capture, async (context) => {
+    const receipt = await m.api.revalidateLinuxSourceOwner(context);
+    assert.equal(
+      m.api.assertLinuxSourceOwnerReceipt(context, receipt).cohortQuietProven,
+      true,
+    );
+  });
+  assert.equal(forwarded.length, 2);
+  assert.equal(coordinated, 2);
+  assert.equal(joins.length, 2);
+  for (const [index, { exe, args, options }] of forwarded.entries()) {
+    assert.equal(exe, m.capture.python);
+    assert.equal(args, m.capture.args);
+    assert.equal(options.env, m.capture.env);
+    assert.equal(options.cwd, m.capture.cwd);
+    assert.equal(
+      options.logs,
+      "/proof/logs/source-gn-" + (index ? "revalidation" : "initial"),
+    );
+    assert.equal(options.milliseconds, 30000);
+    assert.deepEqual(JSON.parse(JSON.stringify(options.outputLedger)), {
+      bytes: 0,
+      cap: 64 * 1024 ** 2,
+    });
+    assert.equal(
+      Object.getPrototypeOf(options.outputLedger),
+      Object.getPrototypeOf(core),
+    );
+    for (const key of ["observeRoot", "out", "censusFactory"])
+      assert.equal(Object.hasOwn(options, key), false);
+    assert.equal(Object.hasOwn(options, "stopSignal"), index === 1);
+  }
+  for (const key of ["observeRoot", "out", "censusFactory"]) {
+    let called = false;
+    await assert.rejects(
+      directCompile(
+        {
+          compileSlice: () => {
+            called = true;
+          },
+        },
+        "fixed",
+        [],
+        { [key]: undefined },
+        () => {
+          called = true;
+        },
+        [],
+        1000,
+      ),
+      /PROOF_DIRECT_OPTIONS/,
+    );
+    assert.equal(called, false);
+  }
+});
+
+test("direct coordinator remains joined after first supervisor rejection and preserves falsy original reasons", async () => {
+  const { directCompile } = directFunctions();
+  for (const first of [
+    false,
+    0,
+    null,
+    undefined,
+    Error("Shared compile output bound"),
+  ]) {
+    let release,
+      settled = false;
+    const joins = [];
+    const run = directCompile(
+      {
+        compileSlice: async () => {
+          throw first;
+        },
+      },
+      "fixed",
+      [],
+      { outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 } },
+      () =>
+        new Promise((_, reject) => {
+          release = () => reject(Error("later fixture failure"));
+        }),
+      joins,
+      1000,
+    );
+    run.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await new Promise(setImmediate);
+    assert.equal(settled, false);
+    assert.equal(joins.length, 1);
+    release();
+    await run.then(
+      () => assert.fail("rejection lost"),
+      (error) => assert.equal(error, first),
+    );
+  }
+  let release;
+  const joins = [];
+  await assert.rejects(
+    directCompile(
+      { compileSlice: async () => quiet() },
+      "fixed",
+      [],
+      { outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 } },
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      joins,
+      15,
+    ),
+    /PROOF_DEADLINE/,
+  );
+  release();
+  await Promise.all(joins);
+  const marker = Error("independent handshake failed");
+  await assert.rejects(
+    directCompile(
+      { compileSlice: async () => quiet() },
+      "fixed",
+      [],
+      { outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 } },
+      async () => {
+        throw marker;
+      },
+      [],
+      1000,
+    ),
+    (error) => error === marker,
+  );
+});
+
+async function handshakeFixture(t, role, options = {}) {
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "gn-direct-handshake-")),
+  );
+  const attempt = path.join(root, "attempt-initial");
+  await fs.mkdir(attempt);
+  const leaf = (name) => path.join(attempt, name);
+  const facts = { pid: 12345, parent: 4321 };
+  await fs.writeFile(leaf("claimed"), "12345");
+  await fs.writeFile(leaf(role + ".json"), JSON.stringify(facts));
+  if (role === "natural-zero")
+    await fs.writeFile(
+      leaf("child-natural.json"),
+      JSON.stringify({ pid: 12346, parent: 12345 }),
+    );
+  t.after(async () => {
+    for (const directory of [attempt, path.join(root, "saved")]) {
+      if (!(await fs.stat(directory).catch(() => null))) continue;
+      for (const entry of await fs.readdir(directory)) {
+        const file = path.join(directory, entry);
+        assert(file.startsWith(root + path.sep));
+        const info = await fs.lstat(file);
+        assert(info.isFile() && !info.isSymbolicLink());
+        await fs.unlink(file);
+      }
+      await fs.rmdir(directory);
+    }
+    await fs.rmdir(root);
+  });
+  let clock = 0,
+    closes = 0;
+  const stamp = (value) =>
+    [
+      value.dev,
+      value.ino,
+      value.mode,
+      value.uid,
+      value.size,
+      value.nlink,
+      value.mtimeNs,
+      value.ctimeNs,
+    ].join(":");
+  const identity = stamp(await fs.lstat(attempt, { bigint: true }))
+    .split(":")
+    .slice(0, 4)
+    .join(":");
+  const state = {
+    root,
+    attempt,
+    leaf,
+    handles: [],
+    releases: [],
+    pids: new Set(),
+  };
+  const owned = {
+    current: async () => assert(!options.retired, "PROOF_RETIRED"),
+    directoryCurrent: async (value) => {
+      assert.equal(value, attempt);
+      assert.equal(
+        stamp(await fs.lstat(attempt, { bigint: true }))
+          .split(":")
+          .slice(0, 4)
+          .join(":"),
+        identity,
+        "PROOF_DIRECTORY_CHANGED",
+      );
+    },
+  };
+  const api = directFunctions({
+    fs: {
+      ...fs,
+      open: async (...args) => {
+        const fd = await fs.open(...args);
+        state.handles.push(fd);
+        if (options.lateOpen)
+          await new Promise((resolve) => {
+            state.releaseOpen = resolve;
+          });
+        return {
+          stat: (...values) => fd.stat(...values),
+          read: (...values) => fd.read(...values),
+          close: () => {
+            closes++;
+            if (options.neverClose)
+              return new Promise((resolve) => {
+                state.releases.push(async () => {
+                  await fd.close();
+                  resolve();
+                });
+              });
+            return fd.close().then(() => {
+              if (options.closeError) throw options.closeError;
+            });
+          },
+        };
+      },
+    },
+    process: { pid: 4321 },
+    full: stamp,
+    ordinary: (value) => value.isFile() && value.nlink === 1n,
+    performance: { now: () => clock },
+    delay: async (ms, end) => {
+      clock += ms;
+      await options.onDelay?.(state);
+      assert(clock < end, "PROOF_DEADLINE");
+    },
+  });
+  // Replace only scheduling in this model; actual helper source owns real leaf
+  // descriptors. Directory ownership and process identities are modeled.
+  if (options.mutate) await options.mutate(state);
+  state.run = (end = 6000) =>
+    api.directActorHandshake(role, attempt, owned, end, state.pids);
+  state.closes = () => closes;
+  return state;
+}
+
+test("direct handshake uses actual held leaf descriptors and fixed releases without process probes", async (t) => {
+  for (const role of ["natural-zero", "nonzero", "output-bound"]) {
+    const state = await handshakeFixture(t, role);
+    await state.run();
+    assert.equal(state.closes(), role === "natural-zero" ? 3 : 2);
+    assert(state.handles.every((fd) => fd.fd === -1));
+    assert.deepEqual(
+      [...state.pids],
+      role === "natural-zero" ? [12345, 12346] : [12345],
+    );
+    if (role !== "output-bound")
+      assert.equal(
+        await fs.readFile(
+          state.leaf(
+            role === "natural-zero" ? "release-child" : "release-root",
+          ),
+          "utf8",
+        ),
+        "release",
+      );
+  }
+});
+
+test("direct handshake denies missing partial mismatched changed retired and late inputs and joins every owned close", async (t) => {
+  for (const mutate of [
+    (s) => fs.unlink(s.leaf("claimed")),
+    (s) => fs.writeFile(s.leaf("nonzero.json"), "{"),
+    (s) => fs.writeFile(s.leaf("claimed"), "12347"),
+    (s) =>
+      fs.writeFile(
+        s.leaf("nonzero.json"),
+        JSON.stringify({ pid: 12345, parent: 9 }),
+      ),
+  ]) {
+    const state = await handshakeFixture(t, "nonzero", { mutate });
+    await assert.rejects(state.run(40));
+    assert(state.handles.every((fd) => fd.fd === -1));
+    assert.equal(
+      await fs.stat(state.leaf("release-root")).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
+  }
+  for (const options of [
+    { retired: true },
+    {
+      onDelay: (s) =>
+        fs.writeFile(
+          s.leaf("nonzero.json"),
+          JSON.stringify({ pid: 12349, parent: 4321 }),
+        ),
+    },
+    {
+      onDelay: async (s) => {
+        await fs.rename(s.attempt, path.join(s.root, "saved"));
+        await fs.mkdir(s.attempt);
+      },
+    },
+    { closeError: Error("owned close denied") },
+  ]) {
+    const state = await handshakeFixture(t, "nonzero", options);
+    await assert.rejects(state.run());
+    assert(state.handles.every((fd) => fd.fd === -1));
+  }
+  for (const child of [
+    { pid: 12345, parent: 12345 },
+    { pid: 12346, parent: 9 },
+  ]) {
+    const state = await handshakeFixture(t, "natural-zero", {
+      mutate: (s) =>
+        fs.writeFile(s.leaf("child-natural.json"), JSON.stringify(child)),
+    });
+    await assert.rejects(state.run(), /PROOF_DIRECT_LINEAGE/);
+    assert.equal(state.closes(), 3);
+    assert(state.handles.every((fd) => fd.fd === -1));
+  }
+  const late = await handshakeFixture(t, "nonzero");
+  await assert.rejects(late.run(1000), /PROOF_DEADLINE/);
+  assert(late.handles.every((fd) => fd.fd === -1));
+  const pending = await handshakeFixture(t, "output-bound", {
+    neverClose: true,
+  });
+  await assert.rejects(pending.run(20), /PROOF_DEADLINE/);
+  assert.equal(pending.closes(), 2);
+  await Promise.all(pending.releases.map((release) => release()));
+  assert(pending.handles.every((fd) => fd.fd === -1));
+  const opening = await handshakeFixture(t, "output-bound", { lateOpen: true });
+  await assert.rejects(opening.run(20), /PROOF_DEADLINE/);
+  assert.equal(opening.closes(), 0);
+  opening.releaseOpen();
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert(opening.handles.every((fd) => fd.fd === -1));
+});
+
+test("strict fourteen-case schema requires direct labels and joined independent handshakes", () => {
+  const report = syntheticReport();
+  assert.equal(report.cases.length, 14);
+  for (const [index, row] of report.cases.entries()) {
+    for (const [key, values] of [
+      [
+        "executionMode",
+        [
+          undefined,
+          null,
+          "UNKNOWN",
+          row.executionMode === "direct" ? "observer-assisted" : "direct",
+        ],
+      ],
+      [
+        "actorHandshakeJoined",
+        [undefined, false, row.actorHandshakeJoined === true ? null : true],
+      ],
+    ])
+      for (const value of values) {
+        const changed = structuredClone(report);
+        changed.cases[index][key] = value;
+        assert.throws(() => validateReport(changed), row.id + key);
+      }
+  }
+});
+
+test("actual direct case orchestration uses the actual wrapper and real handshake files with modeled processes only", async (t) => {
+  const helpersStart = fixture.indexOf("function diagnostic(message) {"),
+    helpersEnd = fixture.indexOf(
+      "const DIRECT_ROLES = Object.freeze({",
+      helpersStart,
+    ),
+    caseStart = fixture.indexOf("async function caseRun("),
+    caseEnd = fixture.indexOf(
+      "\nasync function claimActorDirectory(",
+      caseStart,
+    );
+  assert(helpersStart > 0 && helpersEnd > helpersStart && caseEnd > caseStart);
+  const predicates = new Function(
+    "assert",
+    fixture.slice(helpersStart, helpersEnd) +
+      "\nreturn {diagnostic,joined,outputBoundClosed};",
+  )(assert);
+  for (const id of [
+    "direct-natural-zero",
+    "direct-nonzero",
+    "direct-output-bound",
+  ]) {
+    // Real files/leaf FDs; child execution, UIDs, directory modes/FDs and the
+    // existing final process sample are modeled. No local child is started.
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "gn-direct-case-")),
+    );
+    let clock = 0,
+      polls = 0,
+      leavesClosed = 0,
+      calls = 0;
+    const release = new Map(),
+      consoleModel = { error: () => {} };
+    const normalize = (value) => {
+      const copy = Object.assign(
+        Object.create(Object.getPrototypeOf(value)),
+        value,
+      );
+      copy.uid = typeof copy.uid === "bigint" ? 0n : 0;
+      if (copy.isDirectory())
+        copy.mode =
+          typeof copy.mode === "bigint"
+            ? (copy.mode & ~0o777n) | 0o700n
+            : (copy.mode & ~0o777) | 0o700;
+      return copy;
+    };
+    const stat = async (...args) => normalize(await fs.lstat(...args));
+    const physical = (s) => [s.dev, s.ino, s.mode, s.uid].map(String).join(":"),
+      full = (s) =>
+        physical(s) + ":" + [s.size, s.nlink, s.mtimeNs, s.ctimeNs].join(":");
+    const directories = new Map([
+      [root, physical(await stat(root, { bigint: true }))],
+    ]);
+    const owned = {
+      root,
+      observers: new Set(),
+      assertActive: () => assert(clock < 160000),
+      current: async () =>
+        assert.equal(
+          physical(await stat(root, { bigint: true })),
+          directories.get(root),
+        ),
+      directoryCurrent: async (directory) => {
+        assert(directories.has(directory));
+        assert.equal(
+          physical(await stat(directory, { bigint: true })),
+          directories.get(directory),
+        );
+      },
+      mkdir: async (directory) => {
+        assert(directories.has(path.dirname(directory)));
+        await fs.mkdir(directory, { mode: 0o700 });
+        directories.set(
+          directory,
+          physical(await stat(directory, { bigint: true })),
+        );
+      },
+    };
+    t.after(async () => {
+      for (const directory of [...directories.keys()].sort(
+        (a, b) => b.length - a.length,
+      )) {
+        assert(directory === root || directory.startsWith(root + path.sep));
+        for (const leaf of await fs.readdir(directory)) {
+          const name = path.join(directory, leaf),
+            value = await fs.lstat(name);
+          assert(value.isFile() && !value.isSymbolicLink());
+          await fs.unlink(name);
+        }
+        await fs.rmdir(directory);
+      }
+    });
+    const io = {
+      ...fs,
+      lstat: stat,
+      writeFile: async (name, ...args) => {
+        await fs.writeFile(name, ...args);
+        release.get(path.dirname(name))?.();
+      },
+      open: async (name, ...args) => {
+        const info = await fs.lstat(name);
+        if (info.isDirectory())
+          return {
+            stat: async () => stat(name, { bigint: true }),
+            close: async () => {},
+          };
+        const fd = await fs.open(name, ...args);
+        return {
+          stat: async (...args) => normalize(await fd.stat(...args)),
+          read: (...args) => fd.read(...args),
+          close: async () => {
+            await fd.close();
+            leavesClosed++;
+          },
+        };
+      },
+    };
+    const scheduling = {
+      performance: { now: () => clock },
+      delay: async (ms, end) => {
+        clock += ms;
+        assert(clock < end);
+      },
+      fs: io,
+      process: { pid: process.pid },
+      full,
+      ordinary: (s) => s.isFile() && s.nlink === 1n,
+    };
+    const { directCompile, directActorHandshake } = directFunctions(scheduling);
+    const core = {
+      hostRemaining: () => 160000 - clock,
+      compileSlice: async (_exe, args, options) => {
+        calls++;
+        for (const key of ["observeRoot", "out", "censusFactory"])
+          assert(!Object.hasOwn(options, key));
+        const attempt = path.join(
+          args[3],
+          options.logs.endsWith("initial")
+            ? "attempt-initial"
+            : "attempt-revalidation",
+        );
+        const role = args[2],
+          pid = 20000 + calls * 10;
+        writeFileSync(path.join(attempt, "claimed"), String(pid));
+        writeFileSync(
+          path.join(attempt, role + ".json"),
+          JSON.stringify({ pid, parent: process.pid }),
+        );
+        if (role === "natural-zero")
+          writeFileSync(
+            path.join(attempt, "child-natural.json"),
+            JSON.stringify({ pid: pid + 1, parent: pid }),
+          );
+        if (role !== "output-bound")
+          await new Promise((resolve) => release.set(attempt, resolve));
+        consoleModel.error(
+          "[cef-engineering-checkpoint] compile-supervision=" +
+            JSON.stringify({
+              rootExited: true,
+              pipeClosed: true,
+              monitorJoined: true,
+              probesJoined: true,
+              outputsJoined: role !== "output-bound",
+              outputsSettled: true,
+              outputHandlesClosed: true,
+              cohortQuiet: true,
+              observedProcesses: 1,
+              phase: role === "output-bound" ? "denied" : "complete",
+              failureStage: role === "output-bound" ? "output-bound" : "none",
+            }),
+        );
+        if (role === "output-bound") throw Error("Shared compile output bound");
+        return role === "nonzero"
+          ? { ...quiet(), outcome: "compiler-failed", exitCode: 7 }
+          : quiet();
+      },
+    };
+    const dependencies = {
+      assert,
+      fs: io,
+      path,
+      constants: { O_RDONLY: 0 },
+      process: {
+        pid: process.pid,
+        execPath: "/modeled/node",
+        env: { RUNNER_TEMP: root },
+        getuid: () => 0,
+      },
+      performance: scheduling.performance,
+      console: consoleModel,
+      vm,
+      AbortController,
+      setTimeout,
+      clearTimeout,
+      ROOT: fileURLToPath(new URL("../../", import.meta.url)),
+      RUNTIME: "scripts/cef-runtime-ci.mjs",
+      SELF: "/fixed/fixture",
+      physical,
+      ...predicates,
+      directCompile,
+      directActorHandshake,
+      DIRECT_ROLES: {
+        "direct-natural-zero": "natural-zero",
+        "direct-nonzero": "nonzero",
+        "direct-output-bound": "output-bound",
+      },
+      outputBoundCase: capCase,
+      kernelBlocks,
+      pathToFileURL,
+      supervisorObservation,
+      assertionFailureCode,
+      ps: async () => {
+        polls++;
+        return [];
+      },
+      lastCaseDiagnostic: null,
+      within: async (work) => work(),
+      delay: scheduling.delay,
+    };
+    const execute = new Function(
+      ...Object.keys(dependencies),
+      "return (" + fixture.slice(caseStart, caseEnd) + ");",
+    )(...Object.values(dependencies));
+    const known = new Map();
+    const row = await execute(
+      id,
+      owned,
+      { contents: new Map([["scripts/cef-runtime-ci.mjs", runtime]]) },
+      core,
+      160000,
+      known,
+    );
+    assert.equal(row.actorHandshakeJoined, true);
+    assert.equal(row.observerAssisted, false);
+    assert.equal(row.executionMode, "direct");
+    assert.equal(calls, id === "direct-natural-zero" ? 2 : 1);
+    assert.equal(polls, 1);
+    assert.equal(known.size, 0);
+    assert.equal(owned.observers.size, 0);
+    assert.equal(leavesClosed, id === "direct-natural-zero" ? 6 : 2);
+    const report = syntheticReport();
+    report.cases[names.indexOf(id)] = JSON.parse(JSON.stringify(row));
+    assert.equal(validateReport(report), report);
   }
 });
 
@@ -1039,6 +1724,405 @@ test("fixed own-descriptor assertions and supervisor diagnostic copies disclose 
   assert.equal(getters, 0);
 });
 
+// Invert only the direct-case delta before the previously qualified history.
+const directCaseInverse = [
+  {
+    start: 82,
+    remove: [
+      '  "direct-natural-zero",',
+      '  "direct-nonzero",',
+      '  "direct-output-bound",',
+    ],
+    replace: [],
+  },
+  {
+    start: 691,
+    remove: [
+      "const DIRECT_ROLES = Object.freeze({",
+      '  "direct-natural-zero": "natural-zero",',
+      '  "direct-nonzero": "nonzero",',
+      '  "direct-output-bound": "output-bound",',
+      "});",
+      "function outputBoundCase(id) {",
+      '  return id === "output-bound" || id === "direct-output-bound";',
+      "}",
+      "async function directActorHandshake(role, attempt, owned, end, pids) {",
+      '  assert(Object.values(DIRECT_ROLES).includes(role), "PROOF_DIRECT_ROLE");',
+      '  const names = ["claimed", role + ".json"];',
+      '  if (role === "natural-zero") names.push("child-natural.json");',
+      "  const handles = [],",
+      "    witnesses = [];",
+      "  let failed = false,",
+      "    first,",
+      "    active = true;",
+      "  try {",
+      "    const operation = (async () => {",
+      "      await poll(async () => {",
+      "        await owned.current();",
+      "        await owned.directoryCurrent(attempt);",
+      "        try {",
+      "          for (const name of names) await fs.lstat(path.join(attempt, name));",
+      "          return true;",
+      "        } catch (error) {",
+      '          if (error.code === "ENOENT") return false;',
+      "          throw error;",
+      "        }",
+      "      }, end);",
+      "      for (const name of names) {",
+      "        check(end);",
+      "        await owned.directoryCurrent(attempt);",
+      "        const file = path.join(attempt, name);",
+      '        assert.equal(await fs.realpath(file), file, "PROOF_DIRECT_ALIAS");',
+      "        const before = await fs.lstat(file, { bigint: true });",
+      "        assert(",
+      "          ordinary(before) && before.size > 0n && before.size <= 4096n,",
+      '          "PROOF_DIRECT_FILE",',
+      "        );",
+      "        const fd = await fs.open(",
+      "          file,",
+      "          constants.O_RDONLY | constants.O_NOFOLLOW,",
+      "        );",
+      "        if (!active) {",
+      "          const closing = Promise.resolve().then(() => fd.close());",
+      "          closing.catch(() => {});",
+      '          throw Error("PROOF_DIRECT_EXPIRED");',
+      "        }",
+      "        handles.push(fd);",
+      "        assert.equal(",
+      "          full(await fd.stat({ bigint: true })),",
+      "          full(before),",
+      '          "PROOF_DIRECT_CHANGED",',
+      "        );",
+      "        const buffer = Buffer.alloc(4097);",
+      "        const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0);",
+      '        assert(bytesRead === Number(before.size), "PROOF_DIRECT_FILE");',
+      "        const raw = buffer.subarray(0, bytesRead);",
+      "        witnesses.push({ file, fd, stamp: full(before), raw });",
+      "      }",
+      "      const current = async () => {",
+      "        check(end);",
+      "        await owned.current();",
+      "        await owned.directoryCurrent(attempt);",
+      "        for (const row of witnesses)",
+      "          assert(",
+      "            full(await row.fd.stat({ bigint: true })) === row.stamp &&",
+      "              full(await fs.lstat(row.file, { bigint: true })) === row.stamp &&",
+      "              (await fs.realpath(row.file)) === row.file,",
+      '            "PROOF_DIRECT_CHANGED",',
+      "          );",
+      "        check(end);",
+      "      };",
+      "      await current();",
+      "      const claim = witnesses[0].raw.toString();",
+      '      assert(/^[1-9][0-9]{0,9}$/.test(claim), "PROOF_DIRECT_CLAIM");',
+      "      const root = JSON.parse(witnesses[1].raw);",
+      "      const actor = (value, parent) => {",
+      "        assert(",
+      "          value &&",
+      '            Object.keys(value).sort().join(":") === "parent:pid" &&',
+      "            Number.isSafeInteger(value.pid) &&",
+      "            value.pid > 1 &&",
+      "            value.parent === parent &&",
+      "            !pids.has(value.pid),",
+      '          "PROOF_DIRECT_LINEAGE",',
+      "        );",
+      "        pids.add(value.pid);",
+      "      };",
+      "      actor(root, process.pid);",
+      '      assert.equal(root.pid, Number(claim), "PROOF_DIRECT_CLAIM");',
+      '      if (role === "natural-zero")',
+      "        actor(JSON.parse(witnesses[2].raw), root.pid);",
+      '      if (role !== "output-bound") {',
+      "        // Scheduling only: the actual supervisor must independently prove every",
+      "        // join. This hold neither observes nor acknowledges its initial snapshot.",
+      "        await delay(2000, end);",
+      "        await current();",
+      "        await fs.writeFile(",
+      "          path.join(",
+      "            attempt,",
+      '            role === "natural-zero" ? "release-child" : "release-root",',
+      "          ),",
+      '          "release",',
+      '          { flag: "wx", mode: 0o600 },',
+      "        );",
+      "        await current();",
+      "      }",
+      "    })();",
+      "    operation.catch(() => {});",
+      "    await within(() => operation, end);",
+      "  } catch (error) {",
+      "    failed = true;",
+      "    first = error;",
+      "  } finally {",
+      "    active = false;",
+      "    // Close owners are attached even when the original work end has expired.",
+      "    const closing = Promise.allSettled(",
+      "      handles.reverse().map((fd) => Promise.resolve().then(() => fd.close())),",
+      "    );",
+      "    try {",
+      "      const results = await within(() => closing, end);",
+      "      for (const result of results)",
+      '        if (result.status === "rejected") throw result.reason;',
+      "    } catch (error) {",
+      "      if (!failed) {",
+      "        failed = true;",
+      "        first = error;",
+      "      }",
+      "    }",
+      "  }",
+      "  if (failed) throw first;",
+      "}",
+      "async function directCompile(core, exe, args, options, coordinate, joins, end) {",
+      "  assert(",
+      '    ["observeRoot", "out", "censusFactory"].every(',
+      "      (key) => !Object.hasOwn(options, key),",
+      "    ),",
+      '    "PROOF_DIRECT_OPTIONS",',
+      "  );",
+      "  const work = Promise.resolve().then(() =>",
+      "    core.compileSlice(exe, args, {",
+      "      ...options,",
+      "      outputLedger: { ...options.outputLedger },",
+      "    }),",
+      "  );",
+      "  work.catch(() => {});",
+      "  const handshake = Promise.resolve().then(coordinate);",
+      "  handshake.catch(() => {});",
+      "  joins.push(handshake);",
+      "  const results = await within(",
+      "    () => Promise.allSettled([work, handshake]),",
+      "    end,",
+      "  );",
+      "  // A later fixture cleanup/coordinator error cannot replace the actual",
+      "  // supervisor's original rejection, including a falsy reason.",
+      '  if (results[0].status === "rejected") throw results[0].reason;',
+      '  if (results[1].status === "rejected") throw results[1].reason;',
+      "  return results[0].value;",
+      "}",
+      "",
+    ],
+    replace: [],
+  },
+  {
+    start: 854,
+    remove: ["  const direct = Object.hasOwn(DIRECT_ROLES, id);"],
+    replace: [],
+  },
+  {
+    start: 867,
+    remove: [
+      "  const naturalRole = direct",
+      "    ? DIRECT_ROLES[id]",
+      '    : ["reserve", "setup-clock", "late-postcheck", "delayed-close"].includes(id)',
+      '      ? "natural-zero"',
+      "      : id;",
+    ],
+    replace: [
+      "  const naturalRole = [",
+      '    "reserve",',
+      '    "setup-clock",',
+      '    "late-postcheck",',
+      '    "delayed-close",',
+      "  ].includes(id)",
+      '    ? "natural-zero"',
+      "    : id;",
+    ],
+  },
+  {
+    start: 926,
+    remove: [
+      "  // The original executed cases retain their supported creation observer.",
+      "  // Direct cases instead coordinate fixed actors through owned files only.",
+      '  const assisted = !direct && !["reserve", "setup-clock"].includes(id);',
+    ],
+    replace: [
+      "  // Every native child gets the supported observer for creation ownership.",
+      "  // This is explicitly observer-assisted, rather than exact production options.",
+      '  const assisted = !["reserve", "setup-clock"].includes(id);',
+    ],
+  },
+  {
+    start: 931,
+    remove: [
+      "    fdJoins = [],",
+      "    directJoins = [],",
+      "    directPids = new Set();",
+      "  let actorHandshakeJoined = null;",
+    ],
+    replace: ["    fdJoins = [];"],
+  },
+  {
+    start: 1111,
+    remove: [
+      "      if (direct) {",
+      "        const role = path.basename(options.logs);",
+      "        assert(",
+      '          ["source-gn-initial", "source-gn-revalidation"].includes(role),',
+      '          "PROOF_DIRECT_ATTEMPT",',
+      "        );",
+      '        const attempt = attempts[role === "source-gn-initial" ? 0 : 1];',
+      "        return directCompile(",
+      "          core,",
+      "          exe,",
+      "          args,",
+      "          options,",
+      "          () =>",
+      "            directActorHandshake(",
+      "              naturalRole,",
+      "              attempt,",
+      "              owned,",
+      "              Math.min(end, phaseEnd - 30000),",
+      "              directPids,",
+      "            ),",
+      "          directJoins,",
+      "          Math.min(end, phaseEnd),",
+      "        );",
+      "      }",
+    ],
+    replace: [],
+  },
+  {
+    start: 1200,
+    remove: [
+      '      if (naturalRole === "natural-zero" && (id === "natural-zero" || direct)) {',
+    ],
+    replace: ['      if (id === "natural-zero") {'],
+  },
+  {
+    start: 1235,
+    remove: [
+      "    if (direct) {",
+      "      const results = await within(",
+      "        () => Promise.allSettled(directJoins),",
+      "        Math.min(end, phaseEnd),",
+      "      );",
+      "      actorHandshakeJoined =",
+      "        results.length === spawned &&",
+      '        results.every((result) => result.status === "fulfilled");',
+      "    }",
+    ],
+    replace: [],
+  },
+  {
+    start: 1250,
+    remove: [
+      "  if (direct)",
+      "    assert(",
+      "      actorHandshakeJoined === true && !observerEntered,",
+      '      "PROOF_DIRECT_JOIN",',
+      "    );",
+      '  if (id === "natural-zero" || id === "direct-natural-zero")',
+    ],
+    replace: ['  if (id === "natural-zero")'],
+  },
+  {
+    start: 1267,
+    remove: [
+      "      outputBoundCase(id) ? outputBoundClosed(summary) : joined(summary),",
+    ],
+    replace: [
+      '      id === "output-bound" ? outputBoundClosed(summary) : joined(summary),',
+    ],
+  },
+  {
+    start: 1306,
+    remove: ["  if (outputBoundCase(id))"],
+    replace: ['  if (id === "output-bound")'],
+  },
+  {
+    start: 1327,
+    remove: [
+      "  for (const pid of directPids)",
+      "    assert(",
+      "      !current.some((row) => row.pid === pid),",
+      '      "PROOF_DIRECT_ACTOR_PRESENT",',
+      "    );",
+    ],
+    replace: [],
+  },
+  {
+    start: 1344,
+    remove: [
+      '    executionMode: direct ? "direct" : assisted ? "observer-assisted" : "idle",',
+      "    actorHandshakeJoined,",
+    ],
+    replace: [],
+  },
+  {
+    start: 1353,
+    remove: ["    expectedOutputRejection: outputBoundCase(id),"],
+    replace: ['    expectedOutputRejection: id === "output-bound",'],
+  },
+  {
+    start: 1630,
+    remove: [
+      "        /^(case-(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|reserve|setup-clock|late-postcheck|delayed-close|direct-natural-zero|direct-nonzero|direct-output-bound|foreign-control)|logs|source-gn-(?:initial|revalidation)|checkpoint-compile\\.(?:stdout\\.log|stderr\\.log|outcome\\.json)|actor-environment\\.json|(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|child-natural|child-writer|child-pipe|child-hold|foreign)\\.json|counter|reparented|release-root|release-child|attempt-initial|attempt-revalidation|claimed)$/.test(",
+    ],
+    replace: [
+      "        /^(case-(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|reserve|setup-clock|late-postcheck|delayed-close|foreign-control)|logs|source-gn-(?:initial|revalidation)|checkpoint-compile\\.(?:stdout\\.log|stderr\\.log|outcome\\.json)|actor-environment\\.json|(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|child-natural|child-writer|child-pipe|child-hold|foreign)\\.json|counter|reparented|release-root|release-child|attempt-initial|attempt-revalidation|claimed)$/.test(",
+    ],
+  },
+  {
+    start: 1774,
+    remove: ['          "executionMode",', '          "actorHandshakeJoined",'],
+    replace: [],
+  },
+  {
+    start: 1793,
+    remove: [
+      "      direct = Object.hasOwn(DIRECT_ROLES, id),",
+      '      positive = id === "natural-zero" || id === "direct-natural-zero";',
+    ],
+    replace: ['      positive = id === "natural-zero";'],
+  },
+  {
+    start: 1823,
+    remove: ["            (outputBoundCase(id)"],
+    replace: ['            (id === "output-bound"'],
+  },
+  {
+    start: 1834,
+    remove: [
+      "        row.observerAssisted === (!idle && !direct) &&",
+      "        row.executionMode ===",
+      '          (direct ? "direct" : idle ? "idle" : "observer-assisted") &&',
+      "        row.actorHandshakeJoined === (direct ? true : null) &&",
+    ],
+    replace: ["        row.observerAssisted === !idle &&"],
+  },
+  {
+    start: 1841,
+    remove: [
+      "          (idle ? null : outputBoundCase(id) ? false : true) &&",
+      "        row.expectedOutputRejection === outputBoundCase(id) &&",
+    ],
+    replace: [
+      '          (idle ? null : id === "output-bound" ? false : true) &&',
+      '        row.expectedOutputRejection === (id === "output-bound") &&',
+    ],
+  },
+];
+function withoutDirectCases(source) {
+  const lines = source.split("\n");
+  for (const hunk of [...directCaseInverse].reverse()) {
+    assert.deepEqual(
+      lines.slice(hunk.start, hunk.start + hunk.remove.length),
+      hunk.remove,
+    );
+    lines.splice(hunk.start, hunk.remove.length, ...hunk.replace);
+  }
+  return lines.join("\n");
+}
+
+test("direct-case inverse restores the complete qualified3df fixture before every prior inverse", () => {
+  const original = withoutDirectCases(fixture);
+  assert.equal(Buffer.byteLength(original), 60167);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "4bf021d1de32dedaffa5cf143c5f6f3fb604aab6008b3bacbf164237f08e4398",
+  );
+});
+
 // Exact inverse of this output-close integration, before the earlier diagnostic inverse.
 const outputCloseInverse = [
   {
@@ -1202,7 +2286,7 @@ function withoutOutputCloseIntegration(source) {
 }
 
 test("output-close integration inverse restores the complete4662 fixture before diagnostic history", () => {
-  const original = withoutOutputCloseIntegration(fixture);
+  const original = withoutOutputCloseIntegration(withoutDirectCases(fixture));
   assert.equal(Buffer.byteLength(original), 57732);
   assert.equal(
     createHash("sha256").update(original).digest("hex"),
@@ -1264,7 +2348,7 @@ function withoutFailureDiagnostics(source) {
 
 test("fixed diagnostics exact inverse preserves complete8b4 actors limits expected outcomes and source", () => {
   const original = withoutFailureDiagnostics(
-    withoutOutputCloseIntegration(fixture),
+    withoutOutputCloseIntegration(withoutDirectCases(fixture)),
   );
   assert.equal(Buffer.byteLength(original), 52966);
   assert.equal(

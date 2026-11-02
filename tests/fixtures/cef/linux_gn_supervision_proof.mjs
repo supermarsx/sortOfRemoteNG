@@ -80,6 +80,9 @@ const CASES = Object.freeze([
   "setup-clock",
   "late-postcheck",
   "delayed-close",
+  "direct-natural-zero",
+  "direct-nonzero",
+  "direct-output-bound",
 ]);
 const ROLES = new Set([
   "natural-zero",
@@ -686,7 +689,170 @@ function outputBoundClosed(value) {
   );
 }
 
+const DIRECT_ROLES = Object.freeze({
+  "direct-natural-zero": "natural-zero",
+  "direct-nonzero": "nonzero",
+  "direct-output-bound": "output-bound",
+});
+function outputBoundCase(id) {
+  return id === "output-bound" || id === "direct-output-bound";
+}
+async function directActorHandshake(role, attempt, owned, end, pids) {
+  assert(Object.values(DIRECT_ROLES).includes(role), "PROOF_DIRECT_ROLE");
+  const names = ["claimed", role + ".json"];
+  if (role === "natural-zero") names.push("child-natural.json");
+  const handles = [],
+    witnesses = [];
+  let failed = false,
+    first,
+    active = true;
+  try {
+    const operation = (async () => {
+      await poll(async () => {
+        await owned.current();
+        await owned.directoryCurrent(attempt);
+        try {
+          for (const name of names) await fs.lstat(path.join(attempt, name));
+          return true;
+        } catch (error) {
+          if (error.code === "ENOENT") return false;
+          throw error;
+        }
+      }, end);
+      for (const name of names) {
+        check(end);
+        await owned.directoryCurrent(attempt);
+        const file = path.join(attempt, name);
+        assert.equal(await fs.realpath(file), file, "PROOF_DIRECT_ALIAS");
+        const before = await fs.lstat(file, { bigint: true });
+        assert(
+          ordinary(before) && before.size > 0n && before.size <= 4096n,
+          "PROOF_DIRECT_FILE",
+        );
+        const fd = await fs.open(
+          file,
+          constants.O_RDONLY | constants.O_NOFOLLOW,
+        );
+        if (!active) {
+          const closing = Promise.resolve().then(() => fd.close());
+          closing.catch(() => {});
+          throw Error("PROOF_DIRECT_EXPIRED");
+        }
+        handles.push(fd);
+        assert.equal(
+          full(await fd.stat({ bigint: true })),
+          full(before),
+          "PROOF_DIRECT_CHANGED",
+        );
+        const buffer = Buffer.alloc(4097);
+        const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0);
+        assert(bytesRead === Number(before.size), "PROOF_DIRECT_FILE");
+        const raw = buffer.subarray(0, bytesRead);
+        witnesses.push({ file, fd, stamp: full(before), raw });
+      }
+      const current = async () => {
+        check(end);
+        await owned.current();
+        await owned.directoryCurrent(attempt);
+        for (const row of witnesses)
+          assert(
+            full(await row.fd.stat({ bigint: true })) === row.stamp &&
+              full(await fs.lstat(row.file, { bigint: true })) === row.stamp &&
+              (await fs.realpath(row.file)) === row.file,
+            "PROOF_DIRECT_CHANGED",
+          );
+        check(end);
+      };
+      await current();
+      const claim = witnesses[0].raw.toString();
+      assert(/^[1-9][0-9]{0,9}$/.test(claim), "PROOF_DIRECT_CLAIM");
+      const root = JSON.parse(witnesses[1].raw);
+      const actor = (value, parent) => {
+        assert(
+          value &&
+            Object.keys(value).sort().join(":") === "parent:pid" &&
+            Number.isSafeInteger(value.pid) &&
+            value.pid > 1 &&
+            value.parent === parent &&
+            !pids.has(value.pid),
+          "PROOF_DIRECT_LINEAGE",
+        );
+        pids.add(value.pid);
+      };
+      actor(root, process.pid);
+      assert.equal(root.pid, Number(claim), "PROOF_DIRECT_CLAIM");
+      if (role === "natural-zero")
+        actor(JSON.parse(witnesses[2].raw), root.pid);
+      if (role !== "output-bound") {
+        // Scheduling only: the actual supervisor must independently prove every
+        // join. This hold neither observes nor acknowledges its initial snapshot.
+        await delay(2000, end);
+        await current();
+        await fs.writeFile(
+          path.join(
+            attempt,
+            role === "natural-zero" ? "release-child" : "release-root",
+          ),
+          "release",
+          { flag: "wx", mode: 0o600 },
+        );
+        await current();
+      }
+    })();
+    operation.catch(() => {});
+    await within(() => operation, end);
+  } catch (error) {
+    failed = true;
+    first = error;
+  } finally {
+    active = false;
+    // Close owners are attached even when the original work end has expired.
+    const closing = Promise.allSettled(
+      handles.reverse().map((fd) => Promise.resolve().then(() => fd.close())),
+    );
+    try {
+      const results = await within(() => closing, end);
+      for (const result of results)
+        if (result.status === "rejected") throw result.reason;
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        first = error;
+      }
+    }
+  }
+  if (failed) throw first;
+}
+async function directCompile(core, exe, args, options, coordinate, joins, end) {
+  assert(
+    ["observeRoot", "out", "censusFactory"].every(
+      (key) => !Object.hasOwn(options, key),
+    ),
+    "PROOF_DIRECT_OPTIONS",
+  );
+  const work = Promise.resolve().then(() =>
+    core.compileSlice(exe, args, {
+      ...options,
+      outputLedger: { ...options.outputLedger },
+    }),
+  );
+  work.catch(() => {});
+  const handshake = Promise.resolve().then(coordinate);
+  handshake.catch(() => {});
+  joins.push(handshake);
+  const results = await within(
+    () => Promise.allSettled([work, handshake]),
+    end,
+  );
+  // A later fixture cleanup/coordinator error cannot replace the actual
+  // supervisor's original rejection, including a falsy reason.
+  if (results[0].status === "rejected") throw results[0].reason;
+  if (results[1].status === "rejected") throw results[1].reason;
+  return results[0].value;
+}
+
 async function caseRun(id, owned, witness, core, end, known) {
+  const direct = Object.hasOwn(DIRECT_ROLES, id);
   await owned.current();
   const directory = path.join(owned.root, "case-" + id);
   await owned.mkdir(directory);
@@ -699,14 +865,11 @@ async function caseRun(id, owned, witness, core, end, known) {
   const parentStamp = physical(await fs.lstat(directory, { bigint: true }));
   const logs = path.join(directory, "logs");
   await owned.mkdir(logs);
-  const naturalRole = [
-    "reserve",
-    "setup-clock",
-    "late-postcheck",
-    "delayed-close",
-  ].includes(id)
-    ? "natural-zero"
-    : id;
+  const naturalRole = direct
+    ? DIRECT_ROLES[id]
+    : ["reserve", "setup-clock", "late-postcheck", "delayed-close"].includes(id)
+      ? "natural-zero"
+      : id;
   const phaseEnd = Math.min(
     end,
     performance.now() + (id === "timeout" ? 31500 : 36000),
@@ -761,12 +924,15 @@ async function caseRun(id, owned, witness, core, end, known) {
     spawned = 0,
     closeAttempts = 0,
     releaseClose;
-  // Every native child gets the supported observer for creation ownership.
-  // This is explicitly observer-assisted, rather than exact production options.
-  const assisted = !["reserve", "setup-clock"].includes(id);
+  // The original executed cases retain their supported creation observer.
+  // Direct cases instead coordinate fixed actors through owned files only.
+  const assisted = !direct && !["reserve", "setup-clock"].includes(id);
   const stateContext = {},
     events = [],
-    fdJoins = [];
+    fdJoins = [],
+    directJoins = [],
+    directPids = new Set();
+  let actorHandshakeJoined = null;
   const capture = Object.freeze({
     python: process.execPath,
     args: Object.freeze([SELF, "--launch", naturalRole, directory]),
@@ -943,6 +1109,30 @@ async function caseRun(id, owned, witness, core, end, known) {
       );
       // Only realm-reconstructed plain data is copied: the real API rejects
       // another realm's Object.prototype. Values/bound remain exactly unchanged.
+      if (direct) {
+        const role = path.basename(options.logs);
+        assert(
+          ["source-gn-initial", "source-gn-revalidation"].includes(role),
+          "PROOF_DIRECT_ATTEMPT",
+        );
+        const attempt = attempts[role === "source-gn-initial" ? 0 : 1];
+        return directCompile(
+          core,
+          exe,
+          args,
+          options,
+          () =>
+            directActorHandshake(
+              naturalRole,
+              attempt,
+              owned,
+              Math.min(end, phaseEnd - 30000),
+              directPids,
+            ),
+          directJoins,
+          Math.min(end, phaseEnd),
+        );
+      }
       if (id === "cancel") {
         assert(options.stopSignal, "PROOF_OWNER_SIGNAL");
         options.stopSignal.addEventListener(
@@ -1008,7 +1198,7 @@ async function caseRun(id, owned, witness, core, end, known) {
           });
         });
       } else await api.superviseLinuxSourceGn(capture, "initial");
-      if (id === "natural-zero") {
+      if (naturalRole === "natural-zero" && (id === "natural-zero" || direct)) {
         assert(joined(summary), "PROOF_FIRST_JOIN");
         summary = null;
         await api.withLinuxSourceOwner(
@@ -1043,13 +1233,27 @@ async function caseRun(id, owned, witness, core, end, known) {
     // A negative wrapper result stays negative. This separate outer-lease join
     // merely prevents an outstanding owned FD from outliving the proof case.
     await within(() => Promise.all(fdJoins), end);
+    if (direct) {
+      const results = await within(
+        () => Promise.allSettled(directJoins),
+        Math.min(end, phaseEnd),
+      );
+      actorHandshakeJoined =
+        results.length === spawned &&
+        results.every((result) => result.status === "fulfilled");
+    }
   }
   assert(
     physical(await fs.lstat(directory, { bigint: true })) === parentStamp,
     "PROOF_CASE_ROOT_CHANGED",
   );
   if (diagnosticFailure !== undefined) throw diagnosticFailure;
-  if (id === "natural-zero")
+  if (direct)
+    assert(
+      actorHandshakeJoined === true && !observerEntered,
+      "PROOF_DIRECT_JOIN",
+    );
+  if (id === "natural-zero" || id === "direct-natural-zero")
     assert(
       fulfilled &&
         !rejected &&
@@ -1061,7 +1265,7 @@ async function caseRun(id, owned, witness, core, end, known) {
   else assert(rejected && !fulfilled, "PROOF_DENIAL");
   if (!["reserve", "setup-clock"].includes(id))
     assert(
-      id === "output-bound" ? outputBoundClosed(summary) : joined(summary),
+      outputBoundCase(id) ? outputBoundClosed(summary) : joined(summary),
       "PROOF_JOIN",
     );
   if (assisted) assert(observerEntered, "PROOF_ROOT_ADMISSION");
@@ -1100,7 +1304,7 @@ async function caseRun(id, owned, witness, core, end, known) {
       "PROOF_LATE_WRITER",
     );
   }
-  if (id === "output-bound")
+  if (outputBoundCase(id))
     assert(
       rejected &&
         !fulfilled &&
@@ -1121,6 +1325,11 @@ async function caseRun(id, owned, witness, core, end, known) {
       "PROOF_CLOSE",
     );
   const current = await ps(core, end);
+  for (const pid of directPids)
+    assert(
+      !current.some((row) => row.pid === pid),
+      "PROOF_DIRECT_ACTOR_PRESENT",
+    );
   for (const row of known.values())
     assert(
       !current.some((r) => r.pid === row.pid && r.start === row.start),
@@ -1133,6 +1342,8 @@ async function caseRun(id, owned, witness, core, end, known) {
     fulfilled,
     rejected,
     observerAssisted: assisted,
+    executionMode: direct ? "direct" : assisted ? "observer-assisted" : "idle",
+    actorHandshakeJoined,
     faultScheduling: [
       "setup-clock",
       "late-postcheck",
@@ -1140,7 +1351,7 @@ async function caseRun(id, owned, witness, core, end, known) {
     ].includes(id),
     supervisorJoined: summary ? joined(summary) : null,
     supervisorObservation: supervisorObservation(summary),
-    expectedOutputRejection: id === "output-bound",
+    expectedOutputRejection: outputBoundCase(id),
     spawned,
     closeAttempts,
     reparentWitness: id === "detached-writer",
@@ -1417,7 +1628,7 @@ async function cleanup(owned, end) {
       );
       const file = path.join(dir, entry.name);
       assert(
-        /^(case-(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|reserve|setup-clock|late-postcheck|delayed-close|foreign-control)|logs|source-gn-(?:initial|revalidation)|checkpoint-compile\.(?:stdout\.log|stderr\.log|outcome\.json)|actor-environment\.json|(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|child-natural|child-writer|child-pipe|child-hold|foreign)\.json|counter|reparented|release-root|release-child|attempt-initial|attempt-revalidation|claimed)$/.test(
+        /^(case-(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|reserve|setup-clock|late-postcheck|delayed-close|direct-natural-zero|direct-nonzero|direct-output-bound|foreign-control)|logs|source-gn-(?:initial|revalidation)|checkpoint-compile\.(?:stdout\.log|stderr\.log|outcome\.json)|actor-environment\.json|(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|child-natural|child-writer|child-pipe|child-hold|foreign)\.json|counter|reparented|release-root|release-child|attempt-initial|attempt-revalidation|claimed)$/.test(
           entry.name,
         ),
         "PROOF_UNKNOWN_LEAF",
@@ -1561,6 +1772,8 @@ export function validateReport(value) {
           "fulfilled",
           "rejected",
           "observerAssisted",
+          "executionMode",
+          "actorHandshakeJoined",
           "faultScheduling",
           "supervisorJoined",
           "supervisorObservation",
@@ -1578,7 +1791,8 @@ export function validateReport(value) {
     );
     const id = CASES[index],
       idle = ["reserve", "setup-clock"].includes(id),
-      positive = id === "natural-zero";
+      direct = Object.hasOwn(DIRECT_ROLES, id),
+      positive = id === "natural-zero" || id === "direct-natural-zero";
     const observation = row.supervisorObservation;
     const copiedObservation = supervisorObservation(observation);
     assert(
@@ -1607,7 +1821,7 @@ export function validateReport(value) {
             (!positive ||
               (observation.phase === "complete" &&
                 observation.failureStage === "none")) &&
-            (id === "output-bound"
+            (outputBoundCase(id)
               ? outputBoundClosed(observation)
               : observation.failureStage !== "output-bound" &&
                 joined(observation)),
@@ -1618,12 +1832,15 @@ export function validateReport(value) {
         row.complete === true &&
         row.fulfilled === positive &&
         row.rejected === !positive &&
-        row.observerAssisted === !idle &&
+        row.observerAssisted === (!idle && !direct) &&
+        row.executionMode ===
+          (direct ? "direct" : idle ? "idle" : "observer-assisted") &&
+        row.actorHandshakeJoined === (direct ? true : null) &&
         row.faultScheduling ===
           ["setup-clock", "late-postcheck", "delayed-close"].includes(id) &&
         row.supervisorJoined ===
-          (idle ? null : id === "output-bound" ? false : true) &&
-        row.expectedOutputRejection === (id === "output-bound") &&
+          (idle ? null : outputBoundCase(id) ? false : true) &&
+        row.expectedOutputRejection === outputBoundCase(id) &&
         row.spawned === (idle ? 0 : positive ? 2 : 1) &&
         row.closeAttempts === (id === "reserve" ? 0 : positive ? 2 : 1) &&
         row.reparentWitness === (id === "detached-writer") &&
