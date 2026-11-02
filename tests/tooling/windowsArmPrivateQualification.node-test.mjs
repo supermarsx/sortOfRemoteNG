@@ -26,6 +26,7 @@ import {
   prepareSourceGitIsolation,
   sourceGitEnvironment,
 } from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs";
+import { graphPinSnapshot } from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs";
 
 const base = "native/windows-arm-full-sdk/";
 const hash = (raw) => createHash("sha256").update(raw).digest("hex");
@@ -523,6 +524,293 @@ test("falsy source-budget exceptions permanently poison the phase and preserve t
 });
 
 const driverText = await readFile(base + "private-source-driver.mjs", "utf8");
+const coordinatorBegin = "// BEGIN INACTIVE SOURCE OWNED COORDINATOR\n";
+const coordinatorEnd = "// END INACTIVE SOURCE OWNED COORDINATOR";
+assert.equal(driverText.split(coordinatorBegin).length, 2);
+assert.equal(driverText.split(coordinatorEnd).length, 2);
+const coordinatorBlock =
+  coordinatorBegin +
+  driverText.split(coordinatorBegin)[1].split(coordinatorEnd)[0] +
+  coordinatorEnd;
+// Exact historical inverse literals; no ancestor objects or Git process are required.
+const HISTORICAL_POST_GN = String.raw`      await held(
+        path.join(files.chromium, "out/Release_GN_arm64/build.ninja"),
+        16 * 1024 ** 2,
+        budget,
+      );
+      generatedArguments = validateGeneratedArguments(
+        await held(
+          path.join(files.chromium, "out/Release_GN_arm64/args.gn"),
+          1024 ** 2,
+          budget,
+        ),
+      );
+      stage = "graph-inventory";
+      currentProgress.phase("graph-inventory");
+      let snapshot;
+      const maximum = Math.min(180000, Math.floor(budget.remaining() - 120000));
+      need(maximum > 0, "FULL_SOURCE_RESERVE");
+      graph = await checkpoint.graphInventory(
+        path.join(files.chromium, "out/Release_GN_arm64"),
+        {
+          timeoutMs: maximum,
+          observePins: (value) => {
+            snapshot = checkpoint.graphPinSnapshot(value);
+          },
+        },
+      );
+      need(snapshot !== undefined, "FULL_GRAPH_PINS");
+      budget.remaining();
+      await fs.writeFile(
+        path.join(files.logs, "fresh-graph-pins.json"),
+        JSON.stringify(snapshot) + "\n",
+        { flag: "wx" },
+      );
+      budget.remaining();`;
+const HISTORICAL_HANDOFF = String.raw`async function privateQualificationHandoff({
+  root,
+  c,
+  p,
+  budget,
+  graph,
+  generatedArguments,
+  custom,
+  gitPolicy,
+  env,
+  privatePolicyRaw,
+  staticToolObservations,
+}) {
+  need(PRIVATE_DRIVER_ADMITTED, "PRIVATE_EXECUTION_CLOSED");
+  const phase = qualificationPhaseClock(budget);
+  let failed = false,
+    primary;
+  const report = {
+    kind: "windows-arm-private-qualification",
+    success: false,
+    sourceGnCompleted: true,
+    target: TARGET,
+    sourceId: p.sourceGn.sourceId,
+    compilerExecuted: false,
+    generatedSecurityHeadersVerified: false,
+    engineCompilationRequested: false,
+    sdkBuilt: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+    outerJobCleanupNotInferred: true,
+    firstFailure: null,
+  };
+  const timer = setTimeout(
+    () => {
+      try {
+        writeFileSync(
+          path.join(root, "private-qualification-deadline.json"),
+          JSON.stringify({
+            ...report,
+            firstFailure: "PRIVATE_PHASE_DEADLINE",
+          }) + "\n",
+          { flag: "wx" },
+        );
+      } catch {
+        sourceReportingFailure = true;
+      }
+      // The dedicated creation-assigned Job reaps this exact worker cohort.
+      process.exit(124);
+    },
+    Math.max(1, phase.maximumWorkMs),
+  );
+  try {
+    need(
+      graph !== null && generatedArguments !== null,
+      "PRIVATE_FRESH_GRAPH_REQUIRED",
+    );
+    phase.observe();
+    // This is the still-live WeakMap token, not a serialized env/report claim.
+    await custom.sourceGitEnvironment(gitPolicy, env);
+    phase.observe();
+    need(
+      p.privatePolicy.environmentContractApproved === true,
+      "PRIVATE_ENVIRONMENT_UNAVAILABLE",
+    );
+    staticLoadingProjection(
+      {
+        ...c,
+        root: root.replaceAll("\\", "/"),
+        image: p.image,
+        host: {
+          platform: process.platform,
+          architecture: process.arch,
+          runner: p.privatePolicy.runner,
+        },
+        source: {
+          target: TARGET,
+          sourceId: p.sourceGn.sourceId,
+          profileSha256: p.privateSelectedSha256,
+          chromium: p.privatePolicy.chromium,
+          cef: p.privatePolicy.cef,
+        },
+      },
+      privatePolicyRaw,
+      staticToolObservations,
+    );
+    privateCommandProjections(
+      { ...c, root: root.replaceAll("\\", "/") },
+      privatePolicyRaw,
+      sha(Buffer.from(JSON.stringify(c))),
+    );
+    phase.observe();
+    // Installing this source derivative does not implement the remaining
+    // evaluated-GN/action/header/binary validators or the six-command executor.
+    // Unknown/incomplete facts can never fall through to a compiler spawn.
+    throw new Error("PRIVATE_QUALIFICATION_EXECUTOR_CLOSED");
+  } catch (error) {
+    failed = true;
+    primary = error;
+    report.firstFailure = /^(?:PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(
+      error?.message ?? "",
+    )
+      ? error.message
+      : "PRIVATE_QUALIFICATION_UNAVAILABLE";
+    throw primary;
+  } finally {
+    try {
+      phase.observe();
+      await fs.writeFile(
+        path.join(root, "private-qualification-result.json"),
+        JSON.stringify(report, null, 2) + "\n",
+        { flag: "wx" },
+      );
+      phase.observe();
+    } catch (error) {
+      sourceReportingFailure = true;
+      if (!failed) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}`;
+const HISTORICAL_SESSION_PHASE = String.raw`  // The eventual source-run issuer must own these exact directories before
+  // minting; this first primitive slice does not implement that issuer.
+  const began = performance.now();
+  const phase = qualificationPhaseClock(source.budget);
+`;
+const HISTORICAL_PYTHON_METHOD = String.raw`    def test_new_readers_joiners_have_no_entry_or_source_run_issuer(self):
+        text = (HERE / 'private-source-driver.mjs').read_text(encoding='utf-8')
+        self.assertEqual(text.count('qualificationSourceRuns.set('), 0)
+        self.assertIn('export const PRIVATE_DRIVER_ADMITTED = false;', text)
+        self.assertIn('throw new Error("PRIVATE_QUALIFICATION_EXECUTOR_CLOSED")', text)
+        for name in ('createQualificationSession', 'issueActualObservation', 'runFixedJoined'):
+            self.assertNotIn('export function ' + name, text)
+            self.assertNotIn('export async function ' + name, text)
+        # Expected BUILD bytes are from the separately audited patched tree.
+        self.assertIn('2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0', text)
+        self.assertIn('e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15', text)
+`;
+const historyFunctions = [
+  "privateSourceBody",
+  "privateQualificationHandoff",
+  "qualificationPoison",
+  "createQualificationSession",
+  "runFixedJoined",
+  "qualificationCloseLogs",
+];
+function restoreCoordinatorHistory() {
+  let restored = driverText.replace(coordinatorBlock + "\n\n", "");
+  const current = parse(restored, {
+    sourceType: "module",
+    ecmaVersion: "latest",
+  });
+  const node = (name) =>
+    current.body.find((item) => (item.declaration ?? item).id?.name === name);
+  const once = (text, expected, previous) => {
+    assert.equal(
+      text.split(expected).length,
+      2,
+      "exact historical inverse occurs once",
+    );
+    return text.replace(expected, previous);
+  };
+  const inverse = (name, text) => {
+    if (name === "privateQualificationHandoff") return HISTORICAL_HANDOFF;
+    if (name === "privateSourceBody") {
+      text = once(text, "  let qualificationOwner;\n", "");
+      const begin = text.indexOf(
+        "      qualificationOwner = beginQualificationSource({",
+      );
+      const end = text.indexOf(
+        "\n    });\n    const qualificationSource = commitQualificationGraph(qualificationOwner);",
+        begin,
+      );
+      assert(begin > 0 && end > begin);
+      text = text.slice(0, begin) + HISTORICAL_POST_GN + text.slice(end);
+      for (const line of [
+        "    const qualificationSource = commitQualificationGraph(qualificationOwner);\n",
+        "      qualificationSource,\n",
+        "    retireQualificationSource(qualificationOwner, true, error);\n",
+        "    retireQualificationSource(qualificationOwner);\n",
+      ])
+        text = once(text, line, "");
+      return text;
+    }
+    if (name === "qualificationPoison")
+      return once(
+        text,
+        "  if (state.source.owner)\n    retireQualificationSource(state.source.owner, true, state.primary);\n",
+        "",
+      );
+    if (name === "createQualificationSession") {
+      text = once(
+        text,
+        '  const phase = source.phase;\n  need(phase && Number.isFinite(source.end), "PRIVATE_SOURCE_PHASE");\n',
+        HISTORICAL_SESSION_PHASE,
+      );
+      text = once(
+        text,
+        "  const state = {\n    token,\n",
+        "  const state = {\n",
+      );
+      text = once(
+        text,
+        "    end: source.end,",
+        "    end: began + phase.maximumWorkMs,",
+      );
+      return once(text, "  source.sessions?.add(state);\n", "");
+    }
+    if (name === "runFixedJoined")
+      return once(
+        text,
+        "qualificationCoordinatorSources.has(state.sourceToken)",
+        "state.source.coordinatorVerified === true",
+      );
+    assert.equal(name, "qualificationCloseLogs");
+    return once(
+      text,
+      "primary = qualificationPoison(state, error);",
+      "primary = error;",
+    );
+  };
+  const changes = historyFunctions.map((name) => ({ next: node(name), name }));
+  for (const { next, name } of changes.sort(
+    (a, b) => b.next.start - a.next.start,
+  )) {
+    assert(next, name);
+    restored =
+      restored.slice(0, next.start) +
+      inverse(name, restored.slice(next.start, next.end)) +
+      restored.slice(next.end);
+  }
+  restored = once(
+    restored,
+    "// Only the private source-owned issuer below populates this map. The actual\n// source entry and every workload admission remain closed.\n",
+    "// No production writer populates this map. JSON projections, model-test maps,\n// and source reports cannot construct a source-run capability. These helpers\n// are deliberately not connected to the still-denied private entry/handoff.\n",
+  );
+  assert.equal(
+    hash(restored),
+    "f83d3cf3c9d6f7808d3229e93a0a599e3ea2d5eeba55d468d22a31946465601a",
+    "complete historical8e bytes, independent of shallow Git history",
+  );
+  return restored;
+}
+const historicalDriverText = restoreCoordinatorHistory();
 const pureStart = driverText.indexOf(
   "// BEGIN INACTIVE PURE QUALIFICATION INSPECTORS\n",
 );
@@ -531,7 +819,6 @@ const pureEnd =
   driverText.indexOf(pureEndMarker, pureStart) + pureEndMarker.length;
 assert(pureStart > 0 && pureEnd > pureStart);
 const pureVerifierBlock = driverText.slice(pureStart, pureEnd);
-const withoutPureDriver = driverText.replace(pureVerifierBlock + "\n\n", "");
 const joinedStart = driverText.indexOf(
   "// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES\n",
 );
@@ -729,7 +1016,7 @@ test("new pure inspector block restores exact995 driver and creates no process o
     "ccfffb973a7c008feda1933c6e620d57778eb1bc8b440d3e92ac2d29596f43e8",
   );
   assert.equal(
-    hash(withoutPureDriver),
+    hash(historicalDriverText.replace(pureVerifierBlock + "\n\n", "")),
     "2a2957e415479d3584666d6de690895008e799be750320fcbe5b689a2ef561c8",
   );
   const ast = parse(pureVerifierBlock, {
@@ -770,7 +1057,7 @@ test("new pure inspector block restores exact995 driver and creates no process o
   walk(ast);
   assert.equal(
     (driverText.match(/qualificationSourceRuns\.set\(/g) ?? []).length,
-    0,
+    1,
   );
   assert.equal(PRIVATE_DRIVER_ADMITTED, false);
 });
@@ -1268,7 +1555,8 @@ function primitiveModel(overrides = {}) {
       `
       ({ createQualificationSession, issueActualObservation, qualificationHeld,
          qualificationStaticPe, qualificationNoAdjacentDlls, runFixedJoined,
-         qualificationSourceRuns, qualificationSessions, qualificationObservations })`,
+         qualificationSourceRuns, qualificationSessions, qualificationObservations,
+         qualificationCoordinatorSources })`,
     {
       fs,
       constants: syncFs.constants,
@@ -1282,6 +1570,7 @@ function primitiveModel(overrides = {}) {
       PRIVATE_PROFILE_SHA256: hash(rawPolicy),
       PRIVATE_ROLES: policy.qualificationRoles,
       qualificationPhaseClock,
+      qualificationCoordinatorSources: new WeakSet(),
       privateCommandProjections,
       staticProjectionEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
       sha: hash,
@@ -1357,7 +1646,10 @@ async function primitiveFixture(t, overrides = {}, sourceOverrides = {}) {
     validateAfter: async () => {},
     ...sourceOverrides,
   };
+  source.phase = qualificationPhaseClock(source.budget);
+  source.end = performance.now() + source.phase.maximumWorkMs;
   model.qualificationSourceRuns.set(sourceToken, source);
+  model.qualificationCoordinatorSources.add(sourceToken);
   const session = model.createQualificationSession(sourceToken);
   const state = model.qualificationSessions.get(session);
   const receipt = Object.freeze({ modelOnly: true });
@@ -1395,6 +1687,16 @@ function modelChild() {
 }
 
 test("inactive joined block is private, non-authorizing and restores exact 7ee driver bytes", () => {
+  const joinedPrimitiveBlock = historicalDriverText.slice(
+    historicalDriverText.indexOf(
+      "// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES\n",
+    ),
+    historicalDriverText.indexOf(joinedEndMarker) + joinedEndMarker.length,
+  );
+  const withoutPureDriver = historicalDriverText.replace(
+    pureVerifierBlock + "\n\n",
+    "",
+  );
   assert.equal(
     hash(joinedPrimitiveBlock),
     "1d7aae9e52636742a0c7af0d722a3c09c8ed61b63629f13e7e2018069ffc5902",
@@ -1405,7 +1707,7 @@ test("inactive joined block is private, non-authorizing and restores exact 7ee d
   );
   assert.equal(
     (driverText.match(/qualificationSourceRuns\.set\(/g) ?? []).length,
-    0,
+    1,
   );
   assert.equal(PRIVATE_DRIVER_ADMITTED, false);
   for (const name of [
@@ -1904,6 +2206,7 @@ test("pre-abort and forged/serialized receipts launch no process; no coordinator
     },
     { coordinatorVerified: false },
   );
+  h.model.qualificationCoordinatorSources.delete(h.state.sourceToken);
   await assert.rejects(
     h.model.runFixedJoined(h.session, policy.qualificationRoles[0], h.receipt),
     /PRIVATE_COORDINATOR_CLOSED/,
@@ -2065,6 +2368,20 @@ test("deadline or late root close denies and retires only creation-owned streams
 });
 
 test("named static policy delta normalizes exactly to prior driver, policy and pure/probe module bytes", async () => {
+  const driverText = historicalDriverText;
+  const driverAst = parse(driverText, {
+    sourceType: "module",
+    ecmaVersion: "latest",
+  });
+  const withoutPureDriver = driverText.replace(pureVerifierBlock + "\n\n", "");
+  const functionText = (name) => {
+    const node = functionNode(driverAst, name);
+    return driverText.slice(node.start, node.end);
+  };
+  const joinedPrimitiveBlock = driverText.slice(
+    driverText.indexOf("// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES\n"),
+    driverText.indexOf(joinedEndMarker) + joinedEndMarker.length,
+  );
   for (const [name, expected] of Object.entries({
     privateQualificationHandoff:
       "aae468a24322ee38d3c5b8242f693ab7bb9a5e4d61682cde48f6dab5bf691126",
@@ -2150,6 +2467,7 @@ test("named static policy delta normalizes exactly to prior driver, policy and p
 });
 
 test("private derivative restores exact historical source body after five explicit reviewed function replacements", async () => {
+  const driverText = historicalDriverText;
   const original = await readFile(
     base + "image-qualified-current-driver.mjs",
     "utf8",
@@ -2320,7 +2638,7 @@ test("private fixed six vectors match the actual independent Python projection w
   assert(projected.every((command) => command.executionAdmitted === false));
 });
 
-test("live-token handoff rejects forged policy token, unknown environment and missing static observations without dynamic-loader claims", async (t) => {
+test("live-token handoff rejects forged Git policy and unknown environment, then reaches only the unqualified-defaults stop", async (t) => {
   // Trusted unit seam only: no real Job receipt, process permission or mutable
   // source authority is minted. Actual module gate remains false throughout.
   const directory = await fs.realpath(
@@ -2336,12 +2654,24 @@ test("live-token handoff rejects forged policy token, unknown environment and mi
   let records = [],
     cleared = 0,
     metadataAt = 0;
+  const sourceRuns = new WeakMap();
+  const owners = new WeakMap();
   const runner = vm.runInNewContext(
     "(" + functionText("privateQualificationHandoff") + ")",
     {
       PRIVATE_DRIVER_ADMITTED: true,
       TARGET: "aarch64-pc-windows-msvc",
       PRIVATE_ROLES: policy.qualificationRoles,
+      qualificationSourceRuns: sourceRuns,
+      retireQualificationSource(owner) {
+        const source = owners.get(owner);
+        source.retired = true;
+        sourceRuns.delete(source.token);
+      },
+      coordinateQualification() {
+        throw new Error("PRIVATE_ARM64_DEFAULTS_UNQUALIFIED");
+      },
+      performance: { now: () => metadataAt },
       need: (condition, code) => {
         if (!condition) throw new Error(code);
       },
@@ -2387,9 +2717,25 @@ test("live-token handoff rejects forged policy token, unknown environment and mi
     gitPolicy,
     candidate,
     liveEnvironment = sourceGitEnvironment,
-    staticToolObservations,
-  ) =>
-    runner({
+  ) => {
+    metadataAt = 0;
+    const owner = {},
+      qualificationSource = {};
+    const source = {
+      owner,
+      token: qualificationSource,
+      root: ROOT,
+      policyImage: "20261030.294.1",
+      phase: qualificationPhaseClock(
+        { remaining: () => 1600000 },
+        () => metadataAt,
+      ),
+      end: 900000,
+    };
+    owners.set(owner, source);
+    sourceRuns.set(qualificationSource, source);
+    return runner({
+      qualificationSource,
       root: ROOT,
       c: scope(),
       p: {
@@ -2405,8 +2751,8 @@ test("live-token handoff rejects forged policy token, unknown environment and mi
       gitPolicy,
       env: { PATH: "C:/Windows/System32" },
       privatePolicyRaw: rawPolicy,
-      staticToolObservations,
     });
+  };
   await assert.rejects(invoke({}, policy), /SOURCE_GIT_POLICY_CAPABILITY/);
   await assert.rejects(
     invoke(token, policy),
@@ -2415,16 +2761,7 @@ test("live-token handoff rejects forged policy token, unknown environment and mi
   const knownEnvironment = { ...policy, environmentContractApproved: true };
   await assert.rejects(
     invoke(token, knownEnvironment),
-    /PRIVATE_STATIC_LOADING_FIELDS/,
-  );
-  await assert.rejects(
-    invoke(
-      token,
-      knownEnvironment,
-      sourceGitEnvironment,
-      staticLoadingFixture().observations,
-    ),
-    /PRIVATE_QUALIFICATION_EXECUTOR_CLOSED/,
+    /PRIVATE_ARM64_DEFAULTS_UNQUALIFIED/,
   );
   await assert.rejects(
     invoke(token, policy, async (...args) => {
@@ -2434,15 +2771,14 @@ test("live-token handoff rejects forged policy token, unknown environment and mi
     }),
     /PRIVATE_PHASE_DEADLINE/,
   );
-  assert.equal(cleared, 5);
-  assert.equal(records.length, 4);
+  assert.equal(cleared, 4);
+  assert.equal(records.length, 3);
   assert.deepEqual(
     records.map((record) => record.firstFailure),
     [
       "SOURCE_GIT_POLICY_CAPABILITY",
       "PRIVATE_ENVIRONMENT_UNAVAILABLE",
-      "PRIVATE_STATIC_LOADING_FIELDS",
-      "PRIVATE_QUALIFICATION_EXECUTOR_CLOSED",
+      "PRIVATE_ARM64_DEFAULTS_UNQUALIFIED",
     ],
   );
   assert(
@@ -2453,6 +2789,745 @@ test("live-token handoff rejects forged policy token, unknown environment and mi
         !record.success &&
         record.outerJobCleanupNotInferred,
     ),
+  );
+});
+
+// Isolated same-realm lexical maps. This fixture cannot register a source run
+// in the imported production module and has no workload executable seam.
+test("source coordinator slice restores exact8e, revokes synchronously and changes only the superseded Python source contract", async () => {
+  const approved = {
+    privateSourceBody:
+      "ed0d5b6a8fad7f1b991b3ab55cc344f92255d8ad82500a7d3fb6af601bfe9076",
+    privateQualificationHandoff:
+      "a181fb5428689c6ab6650928522cd890dbbacd5c52ead4da435124448d95e7c9",
+    qualificationPoison:
+      "93acd882f5a618d0b759abb8a791abb3e7956713c403fc2d99b5c0377fe578c0",
+    createQualificationSession:
+      "a84d7ca058245bc70c22af78e45f821e90167dbd9c52a32c1b53b615621ef2fb",
+    runFixedJoined:
+      "86ff6e28a8e663c80e7f52b5f6ff335e00009136cac12d8a3a3584f0ef622528",
+    qualificationCloseLogs:
+      "c95cf7934e92baf68fa3c0192072eaac6db36ca512a19ea632091bee1ee191b7",
+  };
+  assert.equal(
+    hash(coordinatorBlock),
+    "41f8b98e07048353386ece2efa2839d6a0949fc5a71edafb06d6e5745d806132",
+  );
+  assert.deepEqual(Object.keys(approved), historyFunctions);
+  for (const [name, pin] of Object.entries(approved))
+    assert.equal(hash(functionText(name)), pin, name);
+  assert.equal(
+    hash(historicalDriverText),
+    "f83d3cf3c9d6f7808d3229e93a0a599e3ea2d5eeba55d468d22a31946465601a",
+  );
+  assert.equal(
+    (coordinatorBlock.match(/qualificationSourceRuns\.set\(/g) ?? []).length,
+    1,
+  );
+  const ast = parse(coordinatorBlock, {
+    sourceType: "module",
+    ecmaVersion: "latest",
+  });
+  assert(ast.body.every((node) => !node.type.startsWith("Export")));
+  const retire = functionNode(ast, "retireQualificationSource");
+  const walk = (node) => {
+    if (!node || typeof node !== "object") return;
+    assert.notEqual(node.type, "AwaitExpression");
+    for (const item of Object.values(node))
+      if (Array.isArray(item)) item.forEach(walk);
+      else if (item && typeof item === "object") walk(item);
+  };
+  walk(retire);
+  const session = functionText("createQualificationSession");
+  assert.match(session, /const phase = source.phase;/);
+  assert(!session.includes("qualificationPhaseClock("));
+  const body = functionText("privateSourceBody");
+  assert(
+    body.indexOf("qualificationOwner = beginQualificationSource(") <
+      body.indexOf("const capture = await collectQualificationGraph("),
+  );
+  assert(
+    body.indexOf("const capture = await collectQualificationGraph(") <
+      body.indexOf("commitQualificationGraph("),
+  );
+  const sourceWriter = functionText("commitQualificationGraph");
+  assert(
+    sourceWriter.indexOf("qualificationOwnerCheck(owner)") <
+      sourceWriter.indexOf("qualificationGraphReceipts.set("),
+  );
+  assert(
+    sourceWriter.indexOf("qualificationGraphReceipts.set(") <
+      sourceWriter.indexOf("qualificationSourceRuns.set("),
+  );
+  const current = await readFile(
+    base + "test_private_qualification.py",
+    "utf8",
+  );
+  const begin = current.indexOf(
+    "    def test_private_source_issuer_has_no_public_entry_or_arm_defaults_grant(self):",
+  );
+  const end = current.indexOf("\n\nif __name__", begin);
+  assert(begin > 0 && end > begin);
+  assert.equal(
+    hash(
+      current.slice(0, begin) + HISTORICAL_PYTHON_METHOD + current.slice(end),
+    ),
+    "3ba4d689527b49832aea77eef15a9a2a76bd2e00d0bbec5b1e533c0f76c88f5c",
+    "exact old whole Python source after only one literal method inverse",
+  );
+});
+
+const outputFixture = (image) => ({
+  ...freshPure(image),
+  wallNow: 200,
+  monotonicNow: 200,
+});
+function sourceOwnerModel(hooks = {}, overrides = {}) {
+  const joined = joinedPrimitiveBlock.replace(
+    'import { fstatSync as qualificationFdStat } from "node:fs";\n',
+    "",
+  );
+  const rootNode = driverAst.body.find(
+    (item) =>
+      item.type === "VariableDeclaration" &&
+      item.declarations.some((row) => row.id.name === "PRIVATE_ROOT"),
+  );
+  const names = [
+    "fs",
+    "path",
+    "Buffer",
+    "structuredClone",
+    "performance",
+    "setTimeout",
+    "clearTimeout",
+    "createHash",
+    "constants",
+    "openSync",
+    "writeSync",
+    "closeSync",
+    "qualificationFdStat",
+    "sha",
+    "need",
+    "REPO",
+    "HERE",
+    "TARGET",
+    "process",
+    "PRIVATE_MODE",
+    "PRIVATE_REF",
+    "PRIVATE_WORKFLOW",
+    "PRIVATE_ROLES",
+    "PRIVATE_PROFILE_SHA256",
+    "qualificationPhaseClock",
+    "privateCommandProjections",
+    "held",
+    "testHooks",
+  ];
+  const values = {
+    fs,
+    path,
+    Buffer,
+    structuredClone,
+    performance,
+    setTimeout,
+    clearTimeout,
+    createHash,
+    constants: syncFs.constants,
+    openSync: syncFs.openSync,
+    writeSync: syncFs.writeSync,
+    closeSync: syncFs.closeSync,
+    qualificationFdStat: syncFs.fstatSync,
+    sha: hash,
+    need(value, code) {
+      if (!value) throw Error(code);
+    },
+    REPO: process.cwd(),
+    HERE: path.resolve(base),
+    TARGET: policy.target,
+    process: { platform: "win32", arch: "x64" },
+    PRIVATE_MODE: policy.mode,
+    PRIVATE_REF: policy.ref,
+    PRIVATE_WORKFLOW: policy.workflow,
+    PRIVATE_ROLES: policy.qualificationRoles,
+    PRIVATE_PROFILE_SHA256: hash(rawPolicy),
+    qualificationPhaseClock,
+    privateCommandProjections,
+    held: async (file) =>
+      file.endsWith("engine-qualification-profile.json")
+        ? Buffer.from(candidatePolicyRaw)
+        : Buffer.from("fixed model read"),
+    testHooks: hooks,
+    ...overrides,
+  };
+  const factory = new Function(
+    ...names,
+    driverText.slice(rootNode.start, rootNode.end) +
+      "\n" +
+      functionText("staticProjectionEqual") +
+      "\n" +
+      functionText("requirePrivateScope").replace(/^export /, "") +
+      "\n" +
+      "const signature=" +
+      ((s) =>
+        [
+          s.dev,
+          s.ino,
+          s.size,
+          s.mtimeNs,
+          s.ctimeNs,
+          s.birthtimeNs,
+          s.mode,
+          s.nlink,
+        ].join(":")).toString() +
+      ";\n" +
+      functionText("physical") +
+      "\n" +
+      joined +
+      "\n" +
+      pureVerifierBlock +
+      "\n" +
+      coordinatorBlock +
+      `
+    if(testHooks.validate) validateQualificationSource=testHooks.validate;
+    if(testHooks.observe) issueActualObservation=testHooks.observe;
+    if(testHooks.run) runFixedJoined=testHooks.run;
+    if(testHooks.readLog) qualificationReadLog=testHooks.readLog;
+    if(testHooks.metadata) qualificationMetadataObservation=testHooks.metadata;
+    if(testHooks.readPin) qualificationHeld=testHooks.readPin;
+    if(testHooks.adjacent) qualificationNoAdjacentDlls=testHooks.adjacent;
+    return {beginQualificationSource,collectQualificationGraph,commitQualificationGraph,
+      retireQualificationSource,qualificationOwnerAwait,qualificationOwnerCheck,
+      qualificationSourceOwners,qualificationSourceRuns,qualificationGraphReceipts,
+      qualificationSessions,qualificationObservations,createQualificationSession,
+      qualificationCheck,qualificationHeld,qualificationInspectMetadata,
+      coordinateQualification,qualificationCoordinatorSources,validateQualificationSource};`,
+  );
+  return factory(...names.map((name) => values[name]));
+}
+
+function sourceOwnerFixture(options = {}) {
+  let at = 0,
+    left = 600000;
+  const modelRoot =
+    options.input?.root ??
+    (process.platform === "win32"
+      ? ROOT
+      : "/tmp/sorng-private-source-owner-model");
+  const directory = {
+    dev: 1n,
+    ino: 1n,
+    size: 0n,
+    mtimeNs: 0n,
+    ctimeNs: 0n,
+    birthtimeNs: 1n,
+    mode: 0o40700n,
+    nlink: 1n,
+    isDirectory: () => true,
+    isSymbolicLink: () => false,
+  };
+  const modelFs = {
+    ...fs,
+    realpath: async (file) => file,
+    lstat: async () => ({ ...directory }),
+    mkdir: async () => {},
+  };
+  const packet = outputFixture("20261030.294.1");
+  const graphPins = ["args.gn", "build.ninja"].map((name) => ({
+    path: name,
+    name,
+    bytes: name === "args.gn" ? packet.observed.files.args.raw.length : 1,
+    sha256:
+      name === "args.gn"
+        ? hash(packet.observed.files.args.raw)
+        : hash(Buffer.from("n")),
+  }));
+  const canonical = (value) =>
+    Array.isArray(value)
+      ? "[" + value.map(canonical).join(",") + "]"
+      : value !== null && typeof value === "object"
+        ? "{" +
+          Object.keys(value)
+            .sort()
+            .map((key) => JSON.stringify(key) + ":" + canonical(value[key]))
+            .join(",") +
+          "}"
+        : JSON.stringify(value);
+  const pins = {
+    pins: graphPins,
+    files: 2,
+    bytes: graphPins.reduce((n, row) => n + row.bytes, 0),
+    sha256: hash(Buffer.from(canonical(graphPins))),
+  };
+  const summary = {
+    files: pins.files,
+    bytes: pins.bytes,
+    sha256: pins.sha256,
+    visited: 2,
+  };
+  const hooks = options.hooks ?? {};
+  const model = sourceOwnerModel(hooks, {
+    performance: { now: () => at },
+    fs: modelFs,
+    ...options.globals,
+  });
+  const policyClone = structuredClone(policy);
+  policyClone.environmentContractApproved = true; // isolated model, never actual policy bytes
+  const controls = { post: null, graph: null };
+  const input = {
+    root: modelRoot,
+    c: { ...scope(), ...packet.context, sources: [] },
+    p: { image: packet.context.image, privatePolicy: policyClone },
+    files: { chromium: modelRoot + "/source-checkout/src" },
+    tools: {},
+    privatePolicyRaw: rawPolicy,
+    contextSha: "a".repeat(64),
+    budget: { remaining: () => left },
+    output: { bytes: 0 },
+    custom: { sourceGitEnvironment: async (_token, env) => ({ ...env }) },
+    gitPolicy: {},
+    env: { MODEL: "closed" },
+    checked: async (action) => {
+      const result = await action();
+      await controls.post?.();
+      return result;
+    },
+    checkpoint: {
+      graphPinSnapshot,
+      graphInventory: async (_out, args) => {
+        if (controls.graph) return controls.graph(args, pins, summary);
+        args.observePins(pins);
+        return structuredClone(summary);
+      },
+    },
+    ...options.input,
+  };
+  const owner = model.beginQualificationSource(input);
+  return {
+    model,
+    owner,
+    input,
+    controls,
+    packet,
+    pins,
+    summary,
+    directory,
+    clock(value, remaining = left) {
+      at = value;
+      left = remaining;
+    },
+  };
+}
+
+test("source-owned graph capability rejects forged/missing/repeated/cross-owner data and failed native postchecks", async () => {
+  const forged = sourceOwnerFixture();
+  assert.throws(
+    () => forged.model.commitQualificationGraph({ ...forged.owner }),
+    /PRIVATE_SOURCE_OWNER/,
+  );
+  await assert.rejects(
+    forged.model.collectQualificationGraph(
+      JSON.parse(JSON.stringify(forged.owner)),
+    ),
+    /PRIVATE_SOURCE_OWNER/,
+  );
+  const other = sourceOwnerFixture();
+  assert.throws(
+    () => other.model.commitQualificationGraph(forged.owner),
+    /PRIVATE_SOURCE_OWNER/,
+  );
+  for (const variation of ["missing", "repeat", "summary", "post"]) {
+    const f = sourceOwnerFixture();
+    if (variation === "post")
+      f.controls.post = () => {
+        throw Error("FIXED_POSTCHECK");
+      };
+    else
+      f.controls.graph = (args, pins, summary) => {
+        if (variation !== "missing") args.observePins(pins);
+        if (variation === "repeat") {
+          try {
+            args.observePins(pins);
+          } catch {
+            /* native helper swallows */
+          }
+        }
+        return {
+          ...summary,
+          ...(variation === "summary" ? { bytes: summary.bytes + 1 } : {}),
+        };
+      };
+    await assert.rejects(
+      f.model.collectQualificationGraph(f.owner),
+      /PRIVATE_GRAPH|FIXED_POSTCHECK/,
+    );
+    assert.equal(f.model.qualificationSourceOwners.get(f.owner).retired, true);
+    assert.throws(() => f.model.commitQualificationGraph(f.owner));
+  }
+});
+
+test("graph callback data is captured before await; late caller mutation and diagnostic JSON cannot rebrand it", async () => {
+  const f = sourceOwnerFixture();
+  f.controls.graph = async (args, pins, summary) => {
+    args.observePins(pins);
+    pins.pins[0].sha256 = "f".repeat(64);
+    return structuredClone(summary);
+  };
+  await f.model.collectQualificationGraph(f.owner);
+  const token = f.model.commitQualificationGraph(f.owner);
+  const state = f.model.qualificationSourceOwners.get(f.owner);
+  const receipt = f.model.qualificationGraphReceipts.get(state.graphReceipt);
+  assert.notEqual(receipt.snapshot.pins[0].sha256, f.pins.pins[0].sha256);
+  assert.equal(f.model.qualificationSourceRuns.has(token), true);
+  assert.equal(
+    f.model.qualificationSourceRuns.has(JSON.parse(JSON.stringify(token))),
+    false,
+  );
+  assert.equal(
+    f.model.qualificationGraphReceipts.has(
+      JSON.parse(JSON.stringify(state.graphReceipt)),
+    ),
+    false,
+  );
+  f.model.retireQualificationSource(f.owner);
+});
+
+test("same source-owned graph rejects physical directory replacement and swallowed later callback corruption", async () => {
+  const replaced = sourceOwnerFixture();
+  await replaced.model.collectQualificationGraph(replaced.owner);
+  const token = replaced.model.commitQualificationGraph(replaced.owner);
+  replaced.directory.ino++;
+  await assert.rejects(
+    replaced.model.validateQualificationSource(replaced.owner),
+    /PRIVATE_SOURCE_DIRECTORY_CHANGED/,
+  );
+  assert.equal(replaced.model.qualificationSourceRuns.has(token), false);
+  const corrupted = sourceOwnerFixture();
+  await corrupted.model.collectQualificationGraph(corrupted.owner);
+  const other = corrupted.model.commitQualificationGraph(corrupted.owner);
+  corrupted.controls.graph = (args, pins, summary) => {
+    args.observePins(pins);
+    try {
+      args.observePins(pins);
+    } catch {
+      /* actual graph helper treats observer errors as diagnostic */
+    }
+    return structuredClone(summary);
+  };
+  await assert.rejects(
+    corrupted.model.validateQualificationSource(corrupted.owner),
+    /PRIVATE_GRAPH_CALLBACK/,
+  );
+  assert.equal(corrupted.model.qualificationSourceRuns.has(other), false);
+});
+
+test("source retirement poisons before awaited cleanup, pending callbacks and last-await publication", async () => {
+  const f = sourceOwnerFixture();
+  await f.model.collectQualificationGraph(f.owner);
+  const token = f.model.commitQualificationGraph(f.owner),
+    session = f.model.createQualificationSession(token);
+  const state = f.model.qualificationSourceOwners.get(f.owner);
+  const sessionState = f.model.qualificationSessions.get(session);
+  let finish;
+  const close = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const pending = f.model.qualificationOwnerAwait(f.owner, close);
+  f.model.retireQualificationSource(f.owner, true, 0);
+  assert.equal(f.model.qualificationSourceRuns.has(token), false);
+  assert.equal(
+    f.model.qualificationGraphReceipts.has(state.graphReceipt),
+    false,
+  );
+  assert.equal(sessionState.closed, true);
+  assert.throws(
+    () => f.model.qualificationCheck(sessionState),
+    (error) => error === 0,
+  );
+  finish("late close");
+  await assert.rejects(pending, (error) => error === 0);
+  assert.throws(
+    () => f.model.commitQualificationGraph(f.owner),
+    (error) => error === 0,
+  );
+  const late = sourceOwnerFixture();
+  late.controls.post = () => {
+    queueMicrotask(() => late.model.retireQualificationSource(late.owner));
+  };
+  await assert.rejects(
+    late.model.collectQualificationGraph(late.owner),
+    /PRIVATE_SOURCE_RETIRED/,
+  );
+  assert.throws(
+    () => late.model.commitQualificationGraph(late.owner),
+    /PRIVATE_SOURCE_RETIRED/,
+  );
+});
+
+test("all falsy original source failures poison graph/source/session reuse without resetting one phase", async () => {
+  for (const original of [0, false, null, undefined, Error("fixed")]) {
+    const f = sourceOwnerFixture();
+    f.controls.post = () => {
+      throw original;
+    };
+    await assert.rejects(
+      f.model.collectQualificationGraph(f.owner),
+      (error) => error === original,
+    );
+    assert.throws(
+      () => f.model.commitQualificationGraph(f.owner),
+      (error) => error === original,
+    );
+    assert.throws(
+      () => f.model.qualificationOwnerCheck(f.owner),
+      (error) => error === original,
+    );
+  }
+  const f = sourceOwnerFixture();
+  f.clock(100000, 500000);
+  await f.model.collectQualificationGraph(f.owner);
+  const token = f.model.commitQualificationGraph(f.owner),
+    source = f.model.qualificationSourceRuns.get(token);
+  const session = f.model.createQualificationSession(token),
+    current = f.model.qualificationSessions.get(session);
+  assert.equal(
+    current.phase,
+    f.model.qualificationSourceOwners.get(f.owner).phase,
+  );
+  assert.equal(current.end, 450000);
+  assert.equal(source.end, current.end);
+  f.clock(450001, 149999);
+  assert.throws(
+    () => f.model.qualificationCheck(current),
+    /PRIVATE_PHASE_DEADLINE/,
+  );
+  assert.equal(f.model.qualificationSourceRuns.has(token), false);
+});
+
+test("actual held-FD failure revokes graph/source/session before its delayed close can settle", async (t) => {
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "sorng-source-retire-")),
+  );
+  t.after(async () => {
+    assert.equal(await fs.realpath(root), root);
+    await fs.rm(root, { recursive: true });
+  });
+  const file = path.join(root, "owned-input"),
+    raw = Buffer.from("owned immutable fixture");
+  await fs.writeFile(file, raw, { flag: "wx" });
+  await fs.mkdir(path.join(root, "source-checkout/src/out/Release_GN_arm64"), {
+    recursive: true,
+  });
+  let closeEntered,
+    finishClose,
+    closes = 0;
+  const entered = new Promise((resolve) => {
+    closeEntered = resolve;
+  });
+  const closeGate = new Promise((resolve) => {
+    finishClose = resolve;
+  });
+  const mockFs = {
+    ...fs,
+    async open(...args) {
+      const fd = await fs.open(...args);
+      return {
+        stat: (...args) => fd.stat(...args),
+        read: (...args) => fd.read(...args),
+        async close() {
+          closes++;
+          closeEntered();
+          await fd.close();
+          await closeGate;
+        },
+      };
+    },
+  };
+  const f = sourceOwnerFixture({ input: { root }, globals: { fs: mockFs } });
+  await f.model.collectQualificationGraph(f.owner);
+  const token = f.model.commitQualificationGraph(f.owner),
+    session = f.model.createQualificationSession(token);
+  const state = f.model.qualificationSessions.get(session),
+    ownerState = f.model.qualificationSourceOwners.get(f.owner);
+  const pending = f.model.qualificationHeld(
+    file,
+    { bytes: raw.length, sha256: "0".repeat(64) },
+    state,
+  );
+  // Observe rejection now so no late promise rejection can escape this test.
+  const denial = assert.rejects(pending, /PRIVATE_READ/);
+  await entered;
+  assert.equal(closes, 1);
+  assert.equal(f.model.qualificationSourceRuns.has(token), false);
+  assert.equal(
+    f.model.qualificationGraphReceipts.has(ownerState.graphReceipt),
+    false,
+  );
+  assert.equal(state.closed, true);
+  assert.equal(state.failed, true);
+  finishClose();
+  await denial;
+  assert.equal(closes, 1);
+});
+
+test("metadata-only inspector matches full actual Python metadata and never treats minimums as ARM defaults", () => {
+  const model = sourceOwnerModel();
+  for (const image of Object.keys(pureFixtures)) {
+    const f = outputFixture(image),
+      files = f.observed.files;
+    delete files.coff;
+    delete files.pe;
+    const observed = model.qualificationInspectMetadata(
+      f.context,
+      rawPolicy,
+      candidatePolicyRaw,
+      f.observed,
+      f.wallNow,
+      f.monotonicNow,
+    );
+    const full = outputFixture(image);
+    const reference = pureApi.qualificationInspectOutputs(
+      full.context,
+      rawPolicy,
+      candidatePolicyRaw,
+      full.observed,
+      full.wallNow,
+      full.monotonicNow,
+    );
+    for (const key of [
+      "metadata",
+      "literalArguments",
+      "partitionAllocMacros",
+      "cefHeader",
+    ])
+      assert.deepEqual(observed[key], reference[key]);
+    assert.equal(observed.fullArm64DefaultsQualified, false);
+    assert.equal(observed.compilerExecuted, false);
+    assert.equal(observed.cohortQuietProven, false);
+    const bad = outputFixture(image);
+    delete bad.observed.files.coff;
+    delete bad.observed.files.pe;
+    bad.observed.files.partitionAlloc.pin.sha256 = "0".repeat(64);
+    assert.throws(
+      () =>
+        model.qualificationInspectMetadata(
+          bad.context,
+          rawPolicy,
+          candidatePolicyRaw,
+          bad.observed,
+          bad.wallNow,
+          bad.monotonicNow,
+        ),
+      /PRIVATE_OUTPUT_PIN/,
+    );
+  }
+});
+
+test("source-owned postchecks stream all fixed tool/archive/patched/probe pins and revoke on changed post-input", async () => {
+  for (const corrupt of [false, true]) {
+    const reads = [],
+      failure = Error("FIXED_POST_INPUT_CHANGED");
+    let adjacent = 0;
+    const f = sourceOwnerFixture({
+      hooks: {
+        readPin: async (file, pin) => {
+          assert(Number.isSafeInteger(pin.bytes) && pin.bytes > 0);
+          assert.match(pin.sha256, /^[a-f0-9]{64}$/);
+          reads.push(file);
+          if (
+            corrupt &&
+            file.replaceAll("\\", "/").endsWith("partition_alloc/BUILD.gn")
+          )
+            throw failure;
+          return {};
+        },
+        adjacent: async () => {
+          adjacent++;
+        },
+      },
+    });
+    await f.model.collectQualificationGraph(f.owner);
+    const token = f.model.commitQualificationGraph(f.owner),
+      session = f.model.createQualificationSession(token);
+    const state = f.model.qualificationSessions.get(session);
+    state.running = true;
+    const source = f.model.qualificationSourceRuns.get(token);
+    if (corrupt) {
+      await assert.rejects(
+        source.validateAfter(policy.qualificationRoles[0]),
+        (error) => error === failure,
+      );
+      assert.equal(f.model.qualificationSourceRuns.has(token), false);
+      assert.equal(state.closed, true);
+      assert.equal(adjacent, 0);
+    } else {
+      await source.validateAfter(policy.qualificationRoles[0]);
+      assert.equal(reads.length, 9);
+      assert.equal(adjacent, 1);
+      assert.equal(f.model.qualificationSourceRuns.has(token), true);
+      f.model.retireQualificationSource(f.owner);
+    }
+  }
+});
+
+test("genuine coordinator model performs only four fixed steps and always stops before clang despite matching full61 metadata", async () => {
+  const calls = [],
+    metadata = [];
+  let f;
+  const packet = outputFixture("20261030.294.1");
+  const hooks = {
+    validate: async () => {},
+    observe: async (session, role) => ({ session, role }),
+    run: async (session, role) => {
+      const state = f.model.qualificationSessions.get(session);
+      state.phase.before(role);
+      calls.push(role);
+      state.phase.after(role);
+      state.next++;
+    },
+    readLog: async (_owner, _session, index) =>
+      [
+        packet.observed.gnDescPartitionAlloc,
+        packet.observed.gnDescCef,
+        packet.observed.gnArgs,
+      ][index],
+    metadata: async () => {
+      const fixture = outputFixture("20261030.294.1");
+      delete fixture.observed.files.coff;
+      delete fixture.observed.files.pe;
+      const result = f.model.qualificationInspectMetadata(
+        fixture.context,
+        rawPolicy,
+        candidatePolicyRaw,
+        fixture.observed,
+        fixture.wallNow,
+        fixture.monotonicNow,
+      );
+      metadata.push(result);
+      return { ...result, fullArm64DefaultsQualified: true };
+    },
+  };
+  f = sourceOwnerFixture({
+    hooks,
+    globals: {
+      held: async (file) =>
+        file.endsWith("args.gn")
+          ? Buffer.from(packet.observed.files.args.raw)
+          : Buffer.from(candidatePolicyRaw),
+    },
+  });
+  await f.model.collectQualificationGraph(f.owner);
+  const token = f.model.commitQualificationGraph(f.owner);
+  await assert.rejects(
+    f.model.coordinateQualification(token),
+    /PRIVATE_ARM64_DEFAULTS_UNQUALIFIED/,
+  );
+  assert.deepEqual(calls, policy.qualificationRoles.slice(0, 4));
+  assert.equal(metadata.length, 1);
+  assert.equal(metadata[0].completeMacroInventoryMatches, true);
+  assert.equal(metadata[0].fullArm64DefaultsQualified, false);
+  assert.equal(f.model.qualificationSourceRuns.has(token), false);
+  await assert.rejects(
+    f.model.coordinateQualification(token),
+    /PRIVATE_SOURCE_RUN/,
   );
 });
 

@@ -2668,6 +2668,7 @@ async function privateSourceBody(argv) {
     if (reportFailed) throw reportError;
     return value;
   };
+  let qualificationOwner;
   currentProgress = new SourceProgress(root, argv[2]);
   try {
     await sourceStage(root, budget, "source-acquisition", 4500, async () => {
@@ -2818,45 +2819,62 @@ async function privateSourceBody(argv) {
           { value: bootstrap, contextSha: argv[2] },
         ),
       );
-      await held(
-        path.join(files.chromium, "out/Release_GN_arm64/build.ninja"),
-        16 * 1024 ** 2,
+      qualificationOwner = beginQualificationSource({
+        root,
+        c,
+        p,
         budget,
+        tools,
+        files,
+        privatePolicyRaw,
+        custom,
+        checkpoint,
+        gitPolicy,
+        env,
+        checked,
+        output: limits,
+        contextSha: argv[2],
+      });
+      await qualificationOwnerAwait(
+        qualificationOwner,
+        held(
+          path.join(files.chromium, "out/Release_GN_arm64/build.ninja"),
+          16 * 1024 ** 2,
+          budget,
+        ),
       );
       generatedArguments = validateGeneratedArguments(
-        await held(
-          path.join(files.chromium, "out/Release_GN_arm64/args.gn"),
-          1024 ** 2,
-          budget,
+        await qualificationOwnerAwait(
+          qualificationOwner,
+          held(
+            path.join(files.chromium, "out/Release_GN_arm64/args.gn"),
+            1024 ** 2,
+            budget,
+          ),
         ),
       );
       stage = "graph-inventory";
       currentProgress.phase("graph-inventory");
-      let snapshot;
-      const maximum = Math.min(180000, Math.floor(budget.remaining() - 120000));
-      need(maximum > 0, "FULL_SOURCE_RESERVE");
-      graph = await checkpoint.graphInventory(
-        path.join(files.chromium, "out/Release_GN_arm64"),
-        {
-          timeoutMs: maximum,
-          observePins: (value) => {
-            snapshot = checkpoint.graphPinSnapshot(value);
-          },
-        },
-      );
-      need(snapshot !== undefined, "FULL_GRAPH_PINS");
+      const capture = await collectQualificationGraph(qualificationOwner);
+      graph = capture.summary;
+      const snapshot = capture.diagnostic;
       budget.remaining();
-      await fs.writeFile(
-        path.join(files.logs, "fresh-graph-pins.json"),
-        JSON.stringify(snapshot) + "\n",
-        { flag: "wx" },
+      await qualificationOwnerAwait(
+        qualificationOwner,
+        fs.writeFile(
+          path.join(files.logs, "fresh-graph-pins.json"),
+          JSON.stringify(snapshot) + "\n",
+          { flag: "wx" },
+        ),
       );
       budget.remaining();
     });
+    const qualificationSource = commitQualificationGraph(qualificationOwner);
     success = true;
     currentProgress.phase("complete");
     stage = "private-qualification";
     await privateQualificationHandoff({
+      qualificationSource,
       root,
       c,
       p,
@@ -2870,10 +2888,12 @@ async function privateSourceBody(argv) {
       privatePolicyRaw,
     });
   } catch (error) {
+    retireQualificationSource(qualificationOwner, true, error);
     failed = true;
     primary = error;
     throw error;
   } finally {
+    retireQualificationSource(qualificationOwner);
     currentProgress?.close();
     const code =
       typeof primary?.message === "string" &&
@@ -2925,20 +2945,19 @@ function privateImage(p) {
 }
 
 async function privateQualificationHandoff({
+  qualificationSource,
   root,
-  c,
   p,
-  budget,
   graph,
   generatedArguments,
   custom,
   gitPolicy,
   env,
-  privatePolicyRaw,
-  staticToolObservations,
 }) {
   need(PRIVATE_DRIVER_ADMITTED, "PRIVATE_EXECUTION_CLOSED");
-  const phase = qualificationPhaseClock(budget);
+  const source = qualificationSourceRuns.get(qualificationSource);
+  need(source, "PRIVATE_SOURCE_RUN");
+  const phase = source.phase;
   let failed = false,
     primary;
   const report = {
@@ -2958,6 +2977,11 @@ async function privateQualificationHandoff({
   };
   const timer = setTimeout(
     () => {
+      retireQualificationSource(
+        source.owner,
+        true,
+        new Error("PRIVATE_PHASE_DEADLINE"),
+      );
       try {
         writeFileSync(
           path.join(root, "private-qualification-deadline.json"),
@@ -2973,7 +2997,7 @@ async function privateQualificationHandoff({
       // The dedicated creation-assigned Job reaps this exact worker cohort.
       process.exit(124);
     },
-    Math.max(1, phase.maximumWorkMs),
+    Math.max(1, source.end - performance.now()),
   );
   try {
     need(
@@ -2988,47 +3012,25 @@ async function privateQualificationHandoff({
       p.privatePolicy.environmentContractApproved === true,
       "PRIVATE_ENVIRONMENT_UNAVAILABLE",
     );
-    staticLoadingProjection(
-      {
-        ...c,
-        root: root.replaceAll("\\", "/"),
-        image: p.image,
-        host: {
-          platform: process.platform,
-          architecture: process.arch,
-          runner: p.privatePolicy.runner,
-        },
-        source: {
-          target: TARGET,
-          sourceId: p.sourceGn.sourceId,
-          profileSha256: p.privateSelectedSha256,
-          chromium: p.privatePolicy.chromium,
-          cef: p.privatePolicy.cef,
-        },
-      },
-      privatePolicyRaw,
-      staticToolObservations,
-    );
-    privateCommandProjections(
-      { ...c, root: root.replaceAll("\\", "/") },
-      privatePolicyRaw,
-      sha(Buffer.from(JSON.stringify(c))),
+    need(
+      source.root === root && source.policyImage === p.image,
+      "PRIVATE_SOURCE_RUN",
     );
     phase.observe();
-    // Installing this source derivative does not implement the remaining
-    // evaluated-GN/action/header/binary validators or the six-command executor.
-    // Unknown/incomplete facts can never fall through to a compiler spawn.
-    throw new Error("PRIVATE_QUALIFICATION_EXECUTOR_CLOSED");
+    // Even genuine metadata cannot qualify the still-unreviewed ARM defaults.
+    await coordinateQualification(qualificationSource);
   } catch (error) {
     failed = true;
     primary = error;
-    report.firstFailure = /^(?:PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(
-      error?.message ?? "",
-    )
-      ? error.message
-      : "PRIVATE_QUALIFICATION_UNAVAILABLE";
+    retireQualificationSource(source.owner, true, error);
+    report.firstFailure =
+      error?.message === "PRIVATE_ARM64_DEFAULTS_UNQUALIFIED" ||
+      /^(?:PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(error?.message ?? "")
+        ? error.message
+        : "PRIVATE_QUALIFICATION_UNAVAILABLE";
     throw primary;
   } finally {
+    retireQualificationSource(source.owner);
     try {
       phase.observe();
       await fs.writeFile(
@@ -3474,9 +3476,8 @@ export function qualificationPhaseClock(
 
 // BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES
 import { fstatSync as qualificationFdStat } from "node:fs";
-// No production writer populates this map. JSON projections, model-test maps,
-// and source reports cannot construct a source-run capability. These helpers
-// are deliberately not connected to the still-denied private entry/handoff.
+// Only the private source-owned issuer below populates this map. The actual
+// source entry and every workload admission remain closed.
 const qualificationSourceRuns = new WeakMap();
 const qualificationSessions = new WeakMap();
 const qualificationObservations = new WeakMap();
@@ -3501,6 +3502,8 @@ function qualificationPoison(state, error) {
     state.failedAt = performance.now();
     state.epoch++;
   }
+  if (state.source.owner)
+    retireQualificationSource(state.source.owner, true, state.primary);
   return state.primary;
 }
 
@@ -3522,16 +3525,15 @@ function qualificationCheck(state) {
 function createQualificationSession(sourceToken) {
   const source = qualificationSourceRuns.get(sourceToken);
   need(source, "PRIVATE_SOURCE_RUN");
-  // The eventual source-run issuer must own these exact directories before
-  // minting; this first primitive slice does not implement that issuer.
-  const began = performance.now();
-  const phase = qualificationPhaseClock(source.budget);
+  const phase = source.phase;
+  need(phase && Number.isFinite(source.end), "PRIVATE_SOURCE_PHASE");
   const token = Object.freeze({ kind: "private-qualification-session" });
   const state = {
+    token,
     sourceToken,
     source,
     phase,
-    end: began + phase.maximumWorkMs,
+    end: source.end,
     epoch: 0,
     failed: false,
     primary: undefined,
@@ -3544,6 +3546,7 @@ function createQualificationSession(sourceToken) {
     logFiles: new Map(),
   };
   qualificationSessions.set(token, state);
+  source.sessions?.add(state);
   qualificationCheck(state);
   return token;
 }
@@ -4076,7 +4079,7 @@ async function qualificationCloseLogs(state, logs, verify) {
   const fail = (error) => {
     if (!failed) {
       failed = true;
-      primary = error;
+      primary = qualificationPoison(state, error);
     }
   };
   for (const row of logs) {
@@ -4154,7 +4157,7 @@ async function runFixedJoined(session, role, observation) {
     // This separate barrier remains closed until the genuine graph/header/
     // environment coordinator and source-run issuer have been reviewed.
     need(
-      state.source.coordinatorVerified === true,
+      qualificationCoordinatorSources.has(state.sourceToken),
       "PRIVATE_COORDINATOR_CLOSED",
     );
     state.phase.before(role);
@@ -5374,6 +5377,715 @@ function qualificationInspectOutputs(
   };
 }
 // END INACTIVE PURE QUALIFICATION INSPECTORS
+
+// BEGIN INACTIVE SOURCE OWNED COORDINATOR
+// Only privateSourceBody calls begin/collect/commit. These maps have no public
+// setter, diagnostic reader or environment/JSON rehydration path. The source
+// entry, Python adapter and policy gates remain independently closed.
+const qualificationSourceOwners = new WeakMap();
+const qualificationGraphReceipts = new WeakMap();
+const qualificationCoordinatorSources = new WeakSet();
+
+function beginQualificationSource(input) {
+  const began = performance.now(),
+    phase = qualificationPhaseClock(input.budget);
+  const owner = Object.freeze({ kind: "private-source-operation" });
+  const state = {
+    ...input,
+    c: structuredClone(input.c),
+    privatePolicyRaw: Buffer.from(input.privatePolicyRaw),
+    phase,
+    end: began + phase.maximumWorkMs,
+    retired: false,
+    failed: false,
+    primary: undefined,
+    epoch: 0,
+    graphPending: null,
+    graphReceipt: null,
+    sourceToken: null,
+    collecting: false,
+    sessions: new Set(),
+    directoryIdentities: new Map(),
+  };
+  qualificationSourceOwners.set(owner, state);
+  qualificationOwnerCheck(owner);
+  return owner;
+}
+
+function qualificationOwnerCheck(owner) {
+  const state = qualificationSourceOwners.get(owner);
+  need(state, "PRIVATE_SOURCE_OWNER");
+  if (state.failed) throw state.primary;
+  try {
+    need(!state.retired && !state.signal?.aborted, "PRIVATE_SOURCE_RETIRED");
+    state.phase.observe();
+    need(performance.now() < state.end, "PRIVATE_PHASE_DEADLINE");
+    return state;
+  } catch (error) {
+    retireQualificationSource(owner, true, error);
+    throw state.primary;
+  }
+}
+
+function retireQualificationSource(owner, failed = false, error) {
+  const state = qualificationSourceOwners.get(owner);
+  if (!state) return;
+  // Revoke BEFORE any awaited close/reporting. A pending read/close/callback
+  // can settle later but can neither republish a receipt nor resume a role.
+  if (failed && !state.failed) {
+    state.failed = true;
+    state.primary = error;
+  }
+  if (state.retired) return;
+  state.retired = true;
+  state.epoch++;
+  state.graphPending = null;
+  if (state.graphReceipt) qualificationGraphReceipts.delete(state.graphReceipt);
+  if (state.sourceToken) {
+    qualificationSourceRuns.delete(state.sourceToken);
+    qualificationCoordinatorSources.delete(state.sourceToken);
+  }
+  for (const session of state.sessions) {
+    qualificationSessions.delete(session.token);
+    session.closed = true;
+    session.epoch++;
+    if (failed && !session.failed) {
+      session.failed = true;
+      session.primary = state.primary;
+      session.failedAt = performance.now();
+    }
+  }
+}
+
+async function qualificationOwnerAwait(owner, operation) {
+  const state = qualificationSourceOwners.get(owner);
+  const observed = Promise.resolve(operation);
+  observed.catch(() => {});
+  let timer;
+  try {
+    qualificationOwnerCheck(owner);
+    const result = await Promise.race([
+      observed,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("PRIVATE_PHASE_DEADLINE")),
+          Math.max(1, Math.ceil(state.end - performance.now())),
+        );
+      }),
+    ]);
+    qualificationOwnerCheck(owner);
+    return result;
+  } catch (error) {
+    retireQualificationSource(owner, true, error);
+    throw state?.failed ? state.primary : error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function collectQualificationGraph(owner) {
+  const state = qualificationOwnerCheck(owner);
+  need(
+    !state.collecting && state.graphPending === null,
+    "PRIVATE_GRAPH_REPEAT",
+  );
+  state.collecting = true;
+  const epoch = state.epoch;
+  let calls = 0,
+    callbackFailed = false,
+    callbackError,
+    snapshot;
+  const observePins = (value) => {
+    try {
+      qualificationOwnerCheck(owner);
+      need(state.epoch === epoch && ++calls === 1, "PRIVATE_GRAPH_CALLBACK");
+      // graphPinSnapshot is a pure canonical string projection, not a brand.
+      // Copy its data synchronously BEFORE the callback's first possible await.
+      snapshot = JSON.parse(state.checkpoint.graphPinSnapshot(value));
+    } catch (error) {
+      callbackFailed = true;
+      callbackError = error;
+      retireQualificationSource(owner, true, error);
+      throw error;
+    }
+  };
+  try {
+    const summary = await qualificationOwnerAwait(
+      owner,
+      state.checked(async () => {
+        await qualificationSourceDirectories(owner);
+        qualificationOwnerCheck(owner);
+        const result = await qualificationOwnerAwait(
+          owner,
+          state.checkpoint.graphInventory(
+            path.join(state.files.chromium, "out/Release_GN_arm64"),
+            {
+              timeoutMs: Math.max(
+                1,
+                Math.floor(Math.min(180000, state.end - performance.now())),
+              ),
+              observePins,
+            },
+          ),
+        );
+        if (callbackFailed) throw callbackError;
+        await qualificationSourceDirectories(owner);
+        need(
+          calls === 1 &&
+            snapshot &&
+            snapshot.complete === true &&
+            snapshot.kind === "sorng-cef-fresh-graph-pins" &&
+            snapshot.sha256 === result.sha256 &&
+            snapshot.files === result.files &&
+            snapshot.bytes === result.bytes,
+          "PRIVATE_GRAPH_SUMMARY",
+        );
+        return structuredClone(result);
+      }),
+    );
+    await qualificationSourceDirectories(owner);
+    qualificationOwnerCheck(owner);
+    need(state.epoch === epoch && calls === 1, "PRIVATE_GRAPH_CALLBACK");
+    // This is still pending until the enclosing source stage/postchecks return.
+    state.graphPending = { summary, snapshot, epoch };
+    return {
+      summary: structuredClone(summary),
+      diagnostic: JSON.stringify(snapshot),
+    };
+  } catch (error) {
+    retireQualificationSource(owner, true, error);
+    throw state.failed ? state.primary : error;
+  }
+}
+
+function commitQualificationGraph(owner) {
+  const state = qualificationOwnerCheck(owner),
+    pending = state.graphPending;
+  need(
+    pending &&
+      pending.epoch === state.epoch &&
+      !state.graphReceipt &&
+      !state.sourceToken,
+    "PRIVATE_GRAPH_COMMIT",
+  );
+  const graphReceipt = Object.freeze({ kind: "private-fresh-graph" });
+  qualificationGraphReceipts.set(graphReceipt, {
+    owner,
+    state,
+    epoch: state.epoch,
+    snapshot: pending.snapshot,
+    summary: pending.summary,
+  });
+  state.graphReceipt = graphReceipt;
+  const sourceToken = Object.freeze({ kind: "private-source-run" });
+  state.sourceToken = sourceToken;
+  const source = {
+    owner,
+    root: state.root,
+    policyImage: state.p.image,
+    context: { ...state.c, root: state.root.replaceAll("\\", "/") },
+    contextSha: state.contextSha,
+    budget: state.budget,
+    phase: state.phase,
+    end: state.end,
+    signal: state.signal,
+    sessions: state.sessions,
+    privatePolicyRaw: Buffer.from(state.privatePolicyRaw),
+    custom: state.custom,
+    gitPolicy: state.gitPolicy,
+    environment: state.env,
+    output: state.output,
+    validateBefore: () => validateQualificationSource(owner),
+    validateAfter: async (role) => {
+      await validateQualificationSource(owner);
+      qualificationOwnerCheck(owner);
+      await qualificationPostInputs(owner, role);
+      qualificationOwnerCheck(owner);
+    },
+  };
+  qualificationSourceRuns.set(sourceToken, source);
+  return sourceToken;
+}
+
+async function qualificationPostInputs(owner, role) {
+  const state = qualificationOwnerCheck(owner);
+  try {
+    const active = [...state.sessions].find((session) => !session.closed);
+    need(
+      active?.running && PRIVATE_ROLES[active.next] === role,
+      "PRIVATE_POSTREAD_ROLE",
+    );
+    const policy = JSON.parse(state.privatePolicyRaw);
+    need(
+      sha(state.privatePolicyRaw) === PRIVATE_PROFILE_SHA256,
+      "PRIVATE_POLICY_PIN",
+    );
+    const rows = [
+      ...Object.values(policy.tools).map((pin) => ({
+        file: pin.path ?? path.join(state.root, pin.relativePath),
+        pin,
+      })),
+      {
+        file: path.join(state.root, "archives/clang.tar.xz"),
+        pin: policy.staticLoadingPolicy.llvmArchive,
+      },
+      ...QUALIFICATION_PATCHED_INPUTS.map((pin) => ({
+        file: path.join(state.root, pin.relative),
+        pin,
+      })),
+      {
+        file: path.join(REPO, policy.probeSource),
+        pin: {
+          bytes: 2651,
+          sha256:
+            "0e291acd6f1fdcbd7f79d2874e760927e92bc13eeab241016bb87878867f9220",
+        },
+      },
+    ];
+    for (const { file, pin } of rows) {
+      qualificationOwnerCheck(owner);
+      // Same byte pins imply the same prechecked static projection; this reread
+      // streams the actual FD rather than buffering another executable image.
+      await qualificationHeld(file, pin, active);
+      qualificationOwnerCheck(owner);
+    }
+    await qualificationNoAdjacentDlls(active);
+    qualificationOwnerCheck(owner);
+  } catch (error) {
+    retireQualificationSource(owner, true, error);
+    throw state.primary;
+  }
+}
+
+async function qualificationSourceDirectories(owner) {
+  const state = qualificationOwnerCheck(owner);
+  for (const directory of [
+    state.root,
+    state.files.chromium,
+    path.join(state.files.chromium, "out/Release_GN_arm64"),
+  ]) {
+    qualificationOwnerCheck(owner);
+    await qualificationOwnerAwait(owner, physical(directory));
+    const info = await qualificationOwnerAwait(
+      owner,
+      fs.lstat(directory, { bigint: true }),
+    );
+    need(
+      info.isDirectory() && !info.isSymbolicLink(),
+      "PRIVATE_SOURCE_DIRECTORY",
+    );
+    const identity = qualificationStableFile(info);
+    if (state.directoryIdentities.has(directory))
+      need(
+        state.directoryIdentities.get(directory) === identity,
+        "PRIVATE_SOURCE_DIRECTORY_CHANGED",
+      );
+    else state.directoryIdentities.set(directory, identity);
+  }
+  qualificationOwnerCheck(owner);
+}
+
+async function validateQualificationSource(owner) {
+  const state = qualificationOwnerCheck(owner);
+  const receipt = qualificationGraphReceipts.get(state.graphReceipt);
+  need(
+    receipt?.owner === owner &&
+      receipt.state === state &&
+      receipt.epoch === state.epoch,
+    "PRIVATE_GRAPH_RECEIPT",
+  );
+  await qualificationOwnerAwait(
+    owner,
+    state.checked(async () => {
+      await qualificationSourceDirectories(owner);
+      for (const [index, row] of state.c.sources.entries()) {
+        qualificationOwnerCheck(owner);
+        await qualificationOwnerAwait(
+          owner,
+          held(path.join(REPO, row.path), 2 * 1024 ** 2, state.budget, row),
+        );
+        await qualificationOwnerAwait(
+          owner,
+          held(
+            path.join(state.root, "source-inputs", String(index)),
+            2 * 1024 ** 2,
+            state.budget,
+            row,
+          ),
+        );
+      }
+      let snapshot,
+        callbackFailed = false,
+        callbackError;
+      const result = await qualificationOwnerAwait(
+        owner,
+        state.checkpoint.graphInventory(
+          path.join(state.files.chromium, "out/Release_GN_arm64"),
+          {
+            timeoutMs: Math.max(
+              1,
+              Math.floor(Math.min(180000, state.end - performance.now())),
+            ),
+            observePins(value) {
+              try {
+                qualificationOwnerCheck(owner);
+                need(snapshot === undefined, "PRIVATE_GRAPH_CALLBACK");
+                snapshot = state.checkpoint.graphPinSnapshot(value);
+              } catch (error) {
+                callbackFailed = true;
+                callbackError = error;
+                retireQualificationSource(owner, true, error);
+                throw error;
+              }
+            },
+          },
+        ),
+      );
+      if (callbackFailed) throw callbackError;
+      need(
+        snapshot === JSON.stringify(receipt.snapshot) ||
+          (snapshot !== undefined &&
+            staticProjectionEqual(JSON.parse(snapshot), receipt.snapshot)),
+        "PRIVATE_GRAPH_CHANGED",
+      );
+      need(
+        staticProjectionEqual(result, receipt.summary),
+        "PRIVATE_GRAPH_CHANGED",
+      );
+      await qualificationSourceDirectories(owner);
+    }),
+  );
+  qualificationOwnerCheck(owner);
+}
+
+function qualificationInspectMetadata(
+  context,
+  rawPolicy,
+  rawCandidatePolicy,
+  observations,
+  wallNow,
+  monotonicNow,
+) {
+  const { candidate } = qualificationInspectContext(
+    context,
+    rawPolicy,
+    rawCandidatePolicy,
+    wallNow,
+    monotonicNow,
+  );
+  qualificationShape(
+    observations,
+    ["gnDescPartitionAlloc", "gnDescCef", "gnArgs", "files"],
+    "PRIVATE_OUTPUT_FIELDS",
+  );
+  const pa = qualificationInspectAction(
+    observations.gnDescPartitionAlloc,
+    "partitionAlloc",
+    rawPolicy,
+    rawCandidatePolicy,
+  );
+  const cef = qualificationInspectAction(
+    observations.gnDescCef,
+    "cefConfig",
+    rawPolicy,
+    rawCandidatePolicy,
+  );
+  const evaluated = qualificationInspectEvaluatedArgs(observations.gnArgs);
+  const out = context.root + "/source-checkout/src/out/Release_GN_arm64/";
+  const files = observations.files,
+    paths = {
+      args: out + "args.gn",
+      partitionAlloc: out + candidate.generatedInputs[0].relativeOutput,
+      cefConfig: out + candidate.generatedInputs[1].relativeOutput,
+    };
+  qualificationShape(files, Object.keys(paths), "PRIVATE_METADATA_FILE_FIELDS");
+  for (const [role, file] of Object.entries(paths)) {
+    const row = files[role];
+    qualificationShape(row, ["pin", "raw"], "PRIVATE_OUTPUT_CANDIDATE");
+    qualificationShape(
+      row.pin,
+      ["path", "bytes", "sha256"],
+      "PRIVATE_OUTPUT_PIN_FIELDS",
+    );
+    need(
+      Buffer.isBuffer(row.raw) &&
+        row.raw.length > 0 &&
+        row.raw.length <= 8 * 1024 ** 2 &&
+        row.pin.path === file &&
+        row.pin.bytes === row.raw.length &&
+        row.pin.sha256 === sha(row.raw),
+      "PRIVATE_OUTPUT_PIN",
+    );
+  }
+  need(
+    staticProjectionEqual(files.args.pin, context.bindings.args),
+    "PRIVATE_OUTPUT_ARGS_CHANGED",
+  );
+  const literal = qualificationParseLiteralArgs(files.args.raw);
+  need(
+    literal.lines.includes('target_cpu="arm64"'),
+    "PRIVATE_CEF_GENERATOR_CPU_LINE",
+  );
+  const cefHeader = qualificationInspectCefHeader(files.cefConfig.raw);
+  const macros = qualificationInspectPaHeader(
+    files.partitionAlloc.raw,
+    candidate,
+    pa.evaluatedMacroValues,
+  );
+  for (const [name, value] of Object.entries(literal.values))
+    if (Object.hasOwn(evaluated.values, name))
+      need(
+        value === evaluated.values[name],
+        "PRIVATE_LITERAL_EVALUATED_MISMATCH",
+      );
+  return {
+    metadata: { partitionAlloc: pa, cefConfig: cef, arguments: evaluated },
+    literalArguments: literal.projection,
+    partitionAllocMacros: macros,
+    cefHeader,
+    policyMinimumsMet: true,
+    completeMacroInventoryMatches: true,
+    fullArm64DefaultsQualified: false,
+    compilerExecuted: false,
+    cohortQuietProven: false,
+    executionAdmitted: false,
+  };
+}
+
+async function qualificationReadLog(owner, session, index) {
+  const state = qualificationOwnerCheck(owner),
+    current = qualificationSessions.get(session);
+  need(
+    current?.sourceToken === state.sourceToken && current.next > index,
+    "PRIVATE_METADATA_ROLE",
+  );
+  await qualificationLogDirectory(current);
+  qualificationOwnerCheck(owner);
+  const file = path.join(
+    state.root,
+    "private-qualification-logs",
+    PRIVATE_ROLES[index] + ".stdout.log",
+  );
+  const raw = Buffer.from(
+    await qualificationOwnerAwait(
+      owner,
+      held(file, index < 2 ? 1048576 : 4194304, state.budget),
+    ),
+  );
+  await qualificationLogDirectory(current);
+  qualificationOwnerCheck(owner);
+  return raw;
+}
+
+async function qualificationCandidatePolicy(owner) {
+  const state = qualificationOwnerCheck(owner);
+  const raw = Buffer.from(
+    await qualificationOwnerAwait(
+      owner,
+      held(
+        path.join(HERE, "engine-qualification-profile.json"),
+        65536,
+        state.budget,
+      ),
+    ),
+  );
+  need(
+    sha(raw) === state.p.privatePolicy.baseCandidatePolicySha256,
+    "PRIVATE_BASE_POLICY_PIN",
+  );
+  qualificationOwnerCheck(owner);
+  return raw;
+}
+
+async function qualificationMetadataObservation(owner, session) {
+  const state = qualificationOwnerCheck(owner),
+    source = qualificationSourceRuns.get(state.sourceToken);
+  need(
+    source && qualificationSessions.get(session)?.source === source,
+    "PRIVATE_SOURCE_RUN",
+  );
+  const graph = qualificationGraphReceipts.get(state.graphReceipt);
+  need(graph?.owner === owner, "PRIVATE_GRAPH_RECEIPT");
+  const root = state.root.replaceAll("\\", "/"),
+    out = root + "/source-checkout/src/out/Release_GN_arm64/";
+  const row = async (file, maximum) => {
+    qualificationOwnerCheck(owner);
+    const raw = Buffer.from(
+      await qualificationOwnerAwait(owner, held(file, maximum, state.budget)),
+    );
+    return { raw, pin: { path: file, bytes: raw.length, sha256: sha(raw) } };
+  };
+  const files = {};
+  files.args = await row(out + "args.gn", 1024 ** 2);
+  for (const [role, item] of [
+    ["partitionAlloc", state.p.privatePolicy.generatedInputs[0]],
+    ["cefConfig", state.p.privatePolicy.generatedInputs[1]],
+  ])
+    files[role] = await row(out + item.relativeOutput, 8 * 1024 ** 2);
+  const gnDescPartitionAlloc = await qualificationReadLog(owner, session, 0),
+    gnDescCef = await qualificationReadLog(owner, session, 1),
+    gnArgs = await qualificationReadLog(owner, session, 2);
+  const policy = state.p.privatePolicy,
+    selected = policy.images[state.p.image];
+  const original = (name) =>
+    graph.snapshot.pins.find((pin) => pin.path === name);
+  for (const name of ["args.gn", "build.ninja"])
+    need(original(name), "PRIVATE_GRAPH_INCOMPLETE");
+  const projectionPin = (name) => ({
+    path: out + name,
+    bytes: original(name).bytes,
+    sha256: original(name).sha256,
+  });
+  const remaining = state.budget.remaining() / 1000;
+  const context = {
+    kind: "windows-arm-private-input-projection",
+    mode: state.c.mode,
+    ref: state.c.ref,
+    workflow: state.c.workflow,
+    repository: state.c.repository,
+    repositoryId: state.c.repositoryId,
+    visibility: state.c.visibility,
+    event: state.c.event,
+    head: state.c.head,
+    workflowSha: state.c.workflowSha,
+    image: state.p.image,
+    host: {
+      platform: process.platform,
+      architecture: process.arch,
+      runner: policy.runner,
+    },
+    root,
+    source: {
+      target: TARGET,
+      sourceId: selected.sourceId,
+      profileSha256: selected.profileSha256,
+      chromium: policy.chromium,
+      cef: policy.cef,
+    },
+    sources: structuredClone(state.c.sources),
+    sourceDigest: sha(Buffer.from(qualificationCanonical(state.c.sources))),
+    bindings: {
+      args: projectionPin("args.gn"),
+      graph: projectionPin("build.ninja"),
+      graphInventory: structuredClone(graph.summary),
+      tools: Object.fromEntries(
+        Object.entries(policy.tools).map(([role, pin]) => [
+          role,
+          {
+            path: pin.path ?? root + "/" + pin.relativePath,
+            bytes: pin.bytes,
+            sha256: pin.sha256,
+          },
+        ]),
+      ),
+    },
+    wallWorkEnd: Math.min(state.c.wallWorkEnd, Date.now() / 1000 + remaining),
+    monotonicWorkEnd: performance.now() / 1000 + remaining,
+  };
+  qualificationOwnerCheck(owner);
+  const candidateRaw = await qualificationCandidatePolicy(owner);
+  qualificationOwnerCheck(owner);
+  return qualificationInspectMetadata(
+    context,
+    state.privatePolicyRaw,
+    candidateRaw,
+    { gnDescPartitionAlloc, gnDescCef, gnArgs, files },
+    Date.now() / 1000,
+    performance.now() / 1000,
+  );
+}
+
+async function coordinateQualification(sourceToken) {
+  const source = qualificationSourceRuns.get(sourceToken);
+  need(source, "PRIVATE_SOURCE_RUN");
+  const owner = source.owner,
+    state = qualificationOwnerCheck(owner);
+  let failed = false,
+    primary;
+  try {
+    need(
+      state.p.privatePolicy.environmentContractApproved === true,
+      "PRIVATE_ENVIRONMENT_UNAVAILABLE",
+    );
+    await qualificationOwnerAwait(owner, validateQualificationSource(owner));
+    for (const relative of [
+      "private-qualification",
+      "private-qualification-tmp",
+      "private-qualification-logs",
+    ]) {
+      qualificationOwnerCheck(owner);
+      await qualificationOwnerAwait(
+        owner,
+        fs.mkdir(path.join(source.root, relative), { mode: 0o700 }),
+      );
+    }
+    qualificationOwnerCheck(owner);
+    const logs = await qualificationOwnerAwait(
+      owner,
+      fs.lstat(path.join(source.root, "private-qualification-logs"), {
+        bigint: true,
+      }),
+    );
+    source.logsIdentity = signature(logs);
+    qualificationCoordinatorSources.add(sourceToken);
+    const session = createQualificationSession(sourceToken);
+    const candidateRaw = await qualificationCandidatePolicy(owner);
+    for (const [index, role] of PRIVATE_ROLES.slice(0, 4).entries()) {
+      const observation = await issueActualObservation(session, role);
+      qualificationOwnerCheck(owner);
+      await runFixedJoined(session, role, observation);
+      qualificationOwnerCheck(owner);
+      // Check action metadata/evaluated args BEFORE Siso can generate files.
+      if (index < 2)
+        qualificationInspectAction(
+          await qualificationReadLog(owner, session, index),
+          index === 0 ? "partitionAlloc" : "cefConfig",
+          state.privatePolicyRaw,
+          candidateRaw,
+        );
+      else if (index === 2) {
+        const evaluated = qualificationInspectEvaluatedArgs(
+          await qualificationReadLog(owner, session, index),
+        );
+        const original = qualificationGraphReceipts
+          .get(state.graphReceipt)
+          .snapshot.pins.find((pin) => pin.path === "args.gn");
+        need(original, "PRIVATE_GRAPH_INCOMPLETE");
+        const literal = qualificationParseLiteralArgs(
+          await qualificationOwnerAwait(
+            owner,
+            held(
+              path.join(state.files.chromium, "out/Release_GN_arm64/args.gn"),
+              1024 ** 2,
+              state.budget,
+              original,
+            ),
+          ),
+        );
+        for (const [name, value] of Object.entries(literal.values))
+          if (Object.hasOwn(evaluated.values, name))
+            need(
+              value === evaluated.values[name],
+              "PRIVATE_LITERAL_EVALUATED_MISMATCH",
+            );
+      }
+      qualificationOwnerCheck(owner);
+    }
+    await qualificationMetadataObservation(owner, session);
+    qualificationOwnerCheck(owner);
+    // No flag, matching policy minimum or same-operation observation can
+    // override the missing independent full61 ARM default qualification.
+    throw new Error("PRIVATE_ARM64_DEFAULTS_UNQUALIFIED");
+  } catch (error) {
+    failed = true;
+    primary = error;
+    retireQualificationSource(owner, true, error);
+    throw state.failed ? state.primary : error;
+  } finally {
+    retireQualificationSource(owner, failed, primary);
+  }
+}
+// END INACTIVE SOURCE OWNED COORDINATOR
 
 export async function main(argv = process.argv.slice(2)) {
   need(

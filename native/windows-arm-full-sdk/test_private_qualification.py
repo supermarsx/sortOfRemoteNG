@@ -697,12 +697,20 @@ class JoinedStaticReferenceTests(unittest.TestCase):
         with self.assertRaisesRegex(extract.Denied, 'INV_PE_DELAY_FORMAT'):
             extract.pe_metadata(changed)
 
-    def test_new_readers_joiners_have_no_entry_or_source_run_issuer(self):
+    def test_private_source_issuer_has_no_public_entry_or_arm_defaults_grant(self):
         text = (HERE / 'private-source-driver.mjs').read_text(encoding='utf-8')
-        self.assertEqual(text.count('qualificationSourceRuns.set('), 0)
+        self.assertEqual(text.count('qualificationSourceRuns.set('), 1)
         self.assertIn('export const PRIVATE_DRIVER_ADMITTED = false;', text)
-        self.assertIn('throw new Error("PRIVATE_QUALIFICATION_EXECUTOR_CLOSED")', text)
-        for name in ('createQualificationSession', 'issueActualObservation', 'runFixedJoined'):
+        issuer = text.split('function commitQualificationGraph(owner) {', 1)[1].split('\nasync function qualificationPostInputs', 1)[0]
+        self.assertIn('qualificationOwnerCheck(owner)', issuer)
+        self.assertIn('pending.epoch === state.epoch', issuer)
+        self.assertLess(issuer.index('qualificationGraphReceipts.set('), issuer.index('qualificationSourceRuns.set('))
+        self.assertIn('throw new Error("PRIVATE_ARM64_DEFAULTS_UNQUALIFIED")', text)
+        self.assertIn('PRIVATE_ROLES.slice(0, 4)', text)
+        self.assertIn('const phase = source.phase;', text)
+        for name in ('createQualificationSession', 'issueActualObservation', 'runFixedJoined',
+                     'beginQualificationSource', 'collectQualificationGraph', 'commitQualificationGraph',
+                     'retireQualificationSource', 'coordinateQualification'):
             self.assertNotIn('export function ' + name, text)
             self.assertNotIn('export async function ' + name, text)
         # Expected BUILD bytes are from the separately audited patched tree.
