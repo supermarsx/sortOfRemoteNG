@@ -19,6 +19,7 @@ import {
   extractSubject,
   caseFileScope,
   validateControllerResult,
+  validateControllerFailure,
   main,
 } from "../fixtures/cef/windows_arm_qualification_job_proof.mjs";
 
@@ -198,6 +199,248 @@ function python(code) {
   );
 }
 
+test("controller failure observation projects only fixed Python phase code and numeric native fields without getters", () => {
+  const output = JSON.parse(
+    python(String.raw`
+import ast,json,sys
+from pathlib import Path
+namespace={'__name__':'review_only','__file__':sys.argv[1]}
+exec(compile(Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),namespace)
+namespace['_observe_controller']('case-parent',namespace['CASES'][0],0)
+error=OSError(5,'PRIVATE_PATH_COMMAND_TOKEN')
+error.stage='proof-controller-handle'
+native=namespace['controller_failure'](error)
+assert native['nativeStage']=='proof-controller-handle' and native['nativeErrno']==5
+assert native['code']=='NATIVE_OS_ERROR' and native['phase']=='case-parent'
+assert native['case']=='six-role-normal' and native['completedCases']==0
+class Hostile(ValueError):
+ def __getattribute__(self,name):raise AssertionError('getter must not run')
+ def __str__(self):raise AssertionError('str must not run')
+ @property
+ def __dict__(self):raise AssertionError('dict getter must not run')
+value=namespace['controller_failure'](Hostile('PRIVATE_PATH_COMMAND_TOKEN'))
+assert value['code']=='UNKNOWN' and value['nativeStage'] is None and value['nativeErrno'] is None
+assert namespace['controller_failure'](ValueError('PROOF_CONTEXT'))['code']=='PROOF_CONTEXT'
+assert namespace['controller_failure'](ValueError('PROOF_NOT_REVIEWED_PRIVATE'))['code']=='UNKNOWN'
+assert namespace['controller_failure'](ValueError('PRIVATE_PATH_COMMAND_TOKEN'*10000))['code']=='UNKNOWN'
+error.stage='PRIVATE_PATH_COMMAND_TOKEN';error.errno=True
+value=namespace['controller_failure'](error)
+assert value['nativeStage'] is None and value['nativeErrno'] is None
+for value in (None,False,0,'PRIVATE_PATH_COMMAND_TOKEN'):
+ assert namespace['controller_failure'](value)['code']=='UNKNOWN'
+native_labels=set()
+for filename in (sys.argv[1],sys.argv[2]):
+ for node in ast.walk(ast.parse(Path(filename).read_bytes())):
+  if isinstance(node,ast.Call) and len(node.args)>1 and isinstance(node.args[1],ast.Constant) and isinstance(node.args[1].value,str):
+   if isinstance(node.func,ast.Attribute) and node.func.attr=='checked' or isinstance(node.func,ast.Name) and node.func.id=='checked':native_labels.add(node.args[1].value)
+assert native_labels <= namespace['_CONTROLLER_STAGES']
+print(json.dumps({'native':native,'codes':sorted(namespace['_CONTROLLER_CODES']),'phases':sorted(namespace['_CONTROLLER_PHASES']),'stages':sorted(namespace['_CONTROLLER_STAGES'])}))
+`),
+  );
+  assert(!JSON.stringify(output).includes("PRIVATE_PATH_COMMAND_TOKEN"));
+  assert.equal(
+    validateControllerFailure(Buffer.from(JSON.stringify(output.native))).code,
+    "NATIVE_OS_ERROR",
+  );
+  const block = fixture.slice(
+    fixture.indexOf("// BEGIN bounded controller failure validation"),
+    fixture.indexOf("// END bounded controller failure validation"),
+  );
+  const enums = vm.runInNewContext(
+    block.replace(
+      "export function validateControllerFailure",
+      "function validateControllerFailure",
+    ) +
+      ";({phases:[...CONTROLLER_FAILURE_PHASES],codes:[...CONTROLLER_FAILURE_CODES],stages:[...CONTROLLER_FAILURE_STAGES]});",
+    { Buffer, CASES, exact: () => {} },
+  );
+  assert.deepEqual([...enums.phases].sort(), output.phases);
+  assert.deepEqual([...enums.stages].sort(), output.stages);
+  for (const code of output.codes) assert(enums.codes.includes(code));
+});
+
+function controllerFailureFixture() {
+  return {
+    schemaVersion: 1,
+    kind: "windows-benign-job-controller-failure",
+    complete: false,
+    failure: "PROOF_DENIED",
+    phase: "case-parent",
+    case: CASES[0],
+    completedCases: 0,
+    code: "NATIVE_OS_ERROR",
+    nativeStage: "proof-controller-handle",
+    nativeErrno: 5,
+    productionAdmission: false,
+    runtimeReady: false,
+  };
+}
+
+test("controller failure observation strict Node selector rejects raw output private additions invalid fields and success claims", () => {
+  const raw = Buffer.from(JSON.stringify(controllerFailureFixture()));
+  assert.equal(validateControllerFailure(raw).nativeErrno, 5);
+  for (const [key, value] of [
+    ["phase", "PRIVATE_SECRET"],
+    ["case", "PRIVATE_SECRET"],
+    ["completedCases", -1],
+    ["completedCases", 10],
+    ["completedCases", true],
+    ["code", "PROOF_NOT_REVIEWED_PRIVATE"],
+    ["nativeStage", "PRIVATE_SECRET"],
+    ["nativeErrno", -1],
+    ["nativeErrno", true],
+    ["nativeErrno", 4294967296],
+    ["runtimeReady", true],
+    ["productionAdmission", true],
+    ["complete", true],
+  ])
+    assert.equal(
+      validateControllerFailure(
+        Buffer.from(
+          JSON.stringify({ ...controllerFailureFixture(), [key]: value }),
+        ),
+      ),
+      null,
+    );
+  assert.equal(
+    validateControllerFailure(
+      Buffer.from(
+        JSON.stringify({
+          ...controllerFailureFixture(),
+          private: "PRIVATE_SECRET",
+        }),
+      ),
+    ),
+    null,
+  );
+  assert.equal(
+    validateControllerFailure(Buffer.from("PRIVATE_SECRET\n" + raw)),
+    null,
+  );
+  assert.equal(validateControllerFailure(Buffer.alloc(2049)), null);
+  assert.equal(validateControllerFailure("PRIVATE_SECRET"), null);
+  assert.equal(
+    validateControllerFailure(
+      Buffer.from('{"complete":false,"failure":"PROOF_DENIED"}'),
+    ),
+    null,
+  );
+});
+
+test("controller failure observation logs only validated closed data after actual child close and keeps original failure", async () => {
+  const from = fixture.indexOf("async function runController("),
+    until = fixture.indexOf("export function validateControllerResult(");
+  const body = fixture.slice(from, until);
+  for (const mode of ["known", "private", "logger-fault", "first-falsy"]) {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    let closed = false,
+      kills = 0;
+    const logged = [];
+    child.kill = () => {
+      kills++;
+      return true;
+    };
+    child.unref = () => {};
+    const run = vm.runInNewContext(body + ";runController", {
+      path,
+      Buffer,
+      performance,
+      setTimeout,
+      clearTimeout,
+      ROOT,
+      validateControllerFailure,
+      checkEnd: (end) => {
+        if (performance.now() >= end) throw new Error("PROOF_DEADLINE");
+      },
+      need: (value, code) => {
+        if (!value) throw new Error(code);
+      },
+      console: {
+        error(raw) {
+          assert(closed);
+          if (mode === "logger-fault") throw "PRIVATE_LOGGER";
+          logged.push(raw);
+        },
+      },
+      spawn: () => {
+        queueMicrotask(async () => {
+          child.stdout.write(
+            mode === "private"
+              ? "PRIVATE_STDOUT"
+              : JSON.stringify(controllerFailureFixture()),
+          );
+          child.stderr.write("PRIVATE_STDERR");
+          if (mode === "first-falsy") child.stdout.emit("error", false);
+          child.emit("exit", 1, null);
+          await Promise.resolve();
+          assert.equal(logged.length, 0, "root exit alone is not child close");
+          closed = true;
+          child.emit("close", 1, null);
+        });
+        return child;
+      },
+    });
+    let rejected = false;
+    try {
+      await run(
+        policy,
+        "owned-model-only",
+        "a".repeat(64),
+        performance.now() + 1000,
+        environment(),
+      );
+    } catch (error) {
+      rejected = true;
+      if (mode === "first-falsy") assert.equal(error, false);
+      else assert.equal(error.message, "PROOF_CONTROLLER_EXIT");
+    }
+    assert(rejected);
+    assert.equal(kills, mode === "first-falsy" ? 1 : 0);
+    assert.equal(logged.length, mode === "known" ? 1 : 0);
+    assert(!logged.join().includes("PRIVATE"));
+    if (logged.length)
+      assert.equal(
+        JSON.parse(logged[0]).nativeStage,
+        "proof-controller-handle",
+      );
+  }
+});
+
+test("controller failure observation inverse restores complete e46 Python and Node with kernel profile subject unchanged", async () => {
+  for (const [body, pythonBody, bytes, digest] of [
+    [
+      adapter,
+      true,
+      32305,
+      "c0d5b2db0392f00a7314557b44719635303ab411e8d80e30af80f9b48be21bd1",
+    ],
+    [
+      fixture,
+      false,
+      38078,
+      "cca6f37e2452c16902b57492d6c0e4d007fb557fe8687a9945d27ae29b968ead",
+    ],
+  ]) {
+    const original = previousControllerFailureObservation(body, pythonBody);
+    assert.equal(Buffer.byteLength(original), bytes);
+    assert.equal(hash(original), digest);
+  }
+  assert.equal(
+    hash(rawPolicy),
+    "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c",
+  );
+  assert.equal(
+    hash(await fs.readFile(path.join(DIR, "job.py"))),
+    policy.kernel.sha256,
+  );
+  assert.equal(
+    hash(await fs.readFile(path.join(ROOT, policy.subject.path))),
+    policy.subject.sha256,
+  );
+});
+
 test("only the benign proof profile is active across exactly seven paths, without production activation", async () => {
   assert.equal(policy.workflowActivation, true);
   assert.equal(policy.proofExecutionAdmitted, true);
@@ -247,6 +490,41 @@ function restoreCurrentImageSelection(text) {
   }
   return text;
 }
+function previousControllerFailureObservation(text, pythonBody = false) {
+  if (pythonBody) {
+    const block =
+      /\n# BEGIN bounded controller failure observation\n[\s\S]*?# END bounded controller failure observation\n\n\n/;
+    assert.equal([...text.matchAll(new RegExp(block.source, "g"))].length, 1);
+    text = text.replace(block, "");
+    const caught =
+      "    except BaseException as error:  # controller-observation\n";
+    assert.equal(text.split(caught).length, 2);
+    text = text.replace(caught, "    except BaseException:\n");
+    const printed =
+      '        print(json.dumps(controller_failure(error), separators=(",", ":")), flush=True)  # controller-observation\n';
+    assert.equal(text.split(printed).length, 2);
+    text = text.replace(
+      printed,
+      '        print(\'{"complete":false,"failure":"PROOF_DENIED"}\', flush=True)\n',
+    );
+    return text.replace(
+      /^ *_observe_controller\([^\n]*# controller-observation\n/gm,
+      "",
+    );
+  }
+  for (const pattern of [
+    /\/\/ BEGIN bounded controller failure validation\n[\s\S]*?\/\/ END bounded controller failure validation\n{1,3}/,
+    /^    \/\/ BEGIN bounded controller failure logging\n[\s\S]*?^    \/\/ END bounded controller failure logging\n/m,
+  ]) {
+    assert.equal(
+      [...text.matchAll(new RegExp(pattern.source, pattern.flags + "g"))]
+        .length,
+      1,
+    );
+    text = text.replace(pattern, "");
+  }
+  return text;
+}
 
 test("the two proof flags and two exact pin literals invert through the entire current-image baseline to reviewed inactive bytes", () => {
   const old =
@@ -278,8 +556,12 @@ test("the two proof flags and two exact pin literals invert through the entire c
       "ecaedcbe0ef4adee1a89b2262136c3437c3430611f76373a5c55dc0f21f3ea38",
     ],
   ]) {
-    assert.equal(body.split(current).length, 2);
-    const currentBody = body.replace(current, reviewedCurrent);
+    const beforeDiagnostics = previousControllerFailureObservation(
+      body,
+      body === adapter,
+    );
+    assert.equal(beforeDiagnostics.split(current).length, 2);
+    const currentBody = beforeDiagnostics.replace(current, reviewedCurrent);
     assert.equal(hash(currentBody), currentDigest);
     const previous = currentBody.replace(reviewedCurrent, old);
     assert.equal(Buffer.byteLength(previous), bytes);

@@ -22,6 +22,86 @@ CASES = (
 )
 
 
+
+# BEGIN bounded controller failure observation
+_CONTROLLER_PHASES = frozenset(["entry","profile","authority","arguments","preparation","suite-context","source-witnesses","kernel-import","case-prepare","case-parent","case-run","case-readback","case-complete","source-recheck","scratch-cleanup","complete","success-report"])
+_CONTROLLER_CODES = frozenset(["PROOF_ARGV","PROOF_ASSIGN_CANCEL","PROOF_AUTHORITY","PROOF_CASE","PROOF_CASE_ASSIGNMENT","PROOF_CASE_CLEANUP","PROOF_CASE_OBSERVER","PROOF_CASE_OUTCOME","PROOF_CASE_POLICY","PROOF_CASE_RESUME","PROOF_CLEANUP_ABI","PROOF_CLEANUP_BOUND","PROOF_CLEANUP_BYTES","PROOF_CLEANUP_CHANGED","PROOF_CLEANUP_CLOSE","PROOF_CLEANUP_DEPTH","PROOF_CLEANUP_FILE_INFO","PROOF_CLEANUP_LEDGER","PROOF_CLEANUP_OPEN","PROOF_CLEANUP_PARENT","PROOF_CLEANUP_READ","PROOF_CLEANUP_TYPE","PROOF_CLEANUP_UNKNOWN","PROOF_CLOCK","PROOF_CLOCK_DRIFT","PROOF_CLOSE_LEDGER","PROOF_COMMAND","PROOF_CONTEXT","PROOF_CONTEXT_PIN","PROOF_CONTEXT_WRITE","PROOF_DEADLINE","PROOF_ENVIRONMENT","PROOF_FILE","PROOF_FILE_CHANGED","PROOF_FILE_IDENTITY","PROOF_HOST","PROOF_INACTIVE","PROOF_JOB_HANDLE","PROOF_KERNEL_AST","PROOF_KERNEL_RECEIPT","PROOF_LINK","PROOF_NODE_JOIN","PROOF_NODE_OUTCOME","PROOF_NODE_RESULT","PROOF_NORMAL","PROOF_ORPHAN","PROOF_PATH","PROOF_PIN","PROOF_POLICY","PROOF_PREABORT","PROOF_PROFILE","PROOF_REPARENT","PROOF_RESERVE","PROOF_ROLE","PROOF_ROOT","PROOF_ROOT_CHANGED","PROOF_TRACKING"])
+_CONTROLLER_STAGES = frozenset(["assign-before-resume","atomic-suite-job-list","bounded-job-pids","child-job-identity","cleanup-deadline","close-parent-handle","cpu-policy","create-job","create-suspended","explicit-handle-list","final-root-exit","inherit-explicit-handle","init-handle-list","job-handle-not-inherited","job-limits","job-noninheritable","job-not-stdio-handle","open-owned-job-child","parent-creation","proof-controller-close","proof-controller-handle","proof-controller-outside","proof-membership","proof-observed-child-close","proof-parent-close","proof-root-creation","query-job","query-job-pids","read-job-handle-flags","readback-cpu-policy","readback-job-limits","reap-owned-job-child","reap-owned-root","reap-suspended-owned-root","resume-owned-root","root-creation-time","root-exit","terminate-owned-job","terminate-suspended-owned-root","verify-atomic-suite-membership","verify-child-job","wait-root"])
+_CONTROLLER_NATIVE_REASONS = {
+    "parent-handle-unavailable": "NATIVE_PARENT_HANDLE_UNAVAILABLE",
+    "parent-identity-unavailable": "NATIVE_PARENT_IDENTITY_UNAVAILABLE",
+    "parent-observation-failed": "NATIVE_PARENT_OBSERVATION_FAILED",
+    "prototype-policy-mismatch": "NATIVE_POLICY_MISMATCH",
+}
+_controller_observation = {"phase": "entry", "case": None, "completedCases": 0}
+
+
+def _observe_controller(phase, case=None, completed=0):
+    # Observation only: no paths, probes, clocks, assertions or authority.
+    try:
+        if phase in _CONTROLLER_PHASES and (case is None or case in CASES) and type(completed) is int and 0 <= completed <= len(CASES):
+            _controller_observation.update(phase=phase, case=case, completedCases=completed)
+    except BaseException:
+        pass
+
+
+def controller_failure(error):
+    value = {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",
+             "complete": False, "failure": "PROOF_DENIED", "phase": "entry",
+             "case": None, "completedCases": 0, "code": "UNKNOWN",
+             "nativeStage": None, "nativeErrno": None,
+             "productionAdmission": False, "runtimeReady": False}
+    try:
+        phase = dict.get(_controller_observation, "phase")
+        case = dict.get(_controller_observation, "case")
+        completed = dict.get(_controller_observation, "completedCases")
+        if type(phase) is str and len(phase) <= 64 and phase in _CONTROLLER_PHASES:
+            value["phase"] = phase
+        if case is None or type(case) is str and len(case) <= 64 and case in CASES:
+            value["case"] = case
+        if type(completed) is int and 0 <= completed <= len(CASES):
+            value["completedCases"] = completed
+        # Built-in descriptors bypass user __getattribute__, properties and str.
+        args = BaseException.args.__get__(error, BaseException)
+        if type(args) is tuple and len(args) == 1 and type(args[0]) is str and len(args[0]) <= 64:
+            if args[0] in _CONTROLLER_CODES:
+                value["code"] = args[0]
+            elif args[0] in _CONTROLLER_NATIVE_REASONS:
+                value["code"] = _CONTROLLER_NATIVE_REASONS[args[0]]
+        native = any(type(error) is cls for cls in
+                     (OSError, PermissionError, FileNotFoundError, FileExistsError,
+                      NotADirectoryError, IsADirectoryError, TimeoutError, InterruptedError,
+                      ProcessLookupError, ChildProcessError, ConnectionError,
+                      BrokenPipeError, ConnectionAbortedError, ConnectionRefusedError,
+                      ConnectionResetError, BlockingIOError))
+        if native:
+            number = OSError.errno.__get__(error, OSError)
+            fields = BaseException.__dict__["__dict__"].__get__(error, BaseException)
+            stage = dict.get(fields, "stage") if type(fields) is dict else None
+            if type(number) is int and 0 <= number <= 4294967295:
+                value["nativeErrno"] = number
+            if type(stage) is str and len(stage) <= 64 and stage in _CONTROLLER_STAGES:
+                value["nativeStage"] = stage
+            if value["code"] == "UNKNOWN":
+                value["code"] = "NATIVE_OS_ERROR"
+        elif type(error) is TypeError:
+            value["code"] = "PYTHON_TYPE_ERROR"
+        elif type(error) is KeyError:
+            value["code"] = "PYTHON_KEY_ERROR"
+        elif type(error) is json.JSONDecodeError:
+            value["code"] = "PYTHON_JSON_ERROR"
+        if len(json.dumps(value, separators=(",", ":")).encode()) <= 2048:
+            return value
+    except BaseException:
+        pass
+    return {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",
+            "complete": False, "failure": "PROOF_DENIED", "phase": "entry",
+            "case": None, "completedCases": 0, "code": "UNKNOWN",
+            "nativeStage": None, "nativeErrno": None,
+            "productionAdmission": False, "runtimeReady": False}
+# END bounded controller failure observation
+
+
 def need(value, code):
     if not value:
         raise ValueError(code)
@@ -471,20 +551,24 @@ def remove_owned_tree(root, original, clock, known_paths):
 
 
 def suite(root, context_raw, p):
+    _observe_controller("suite-context")  # controller-observation
     context = json.loads(context_raw)
     clock = SuiteClock(context["startedMs"])
     need(context["kind"] == "windows-benign-job-preparation" and context["head"] == os.environ.get("GITHUB_SHA"), "PROOF_CONTEXT")
     root = checked_root(root, context["nonce"])
     root_identity = identity(root.lstat())
+    _observe_controller("source-witnesses")  # controller-observation
     for name in p["sourcePaths"]:
         clock.left()
         held(REPO / name, 4 * 1024 * 1024, context["sources"][name])
     held(Path(p["python"]["path"]), p["python"]["bytes"], p["python"])
     held(Path(p["node"]["path"]), p["node"]["bytes"], p["node"])
+    _observe_controller("kernel-import")  # controller-observation
     kernel = load_kernel(p)
     case_rows, receipts = [], []
     fixture = REPO / "tests/fixtures/cef/windows_arm_qualification_job_proof.mjs"
     for name in CASES:
+        _observe_controller("case-prepare", name, len(case_rows))  # controller-observation
         seconds = clock.case_seconds(name)
         held(Path(p["python"]["path"]), p["python"]["bytes"], p["python"])
         held(Path(p["node"]["path"]), p["node"]["bytes"], p["node"])
@@ -516,6 +600,7 @@ def suite(root, context_raw, p):
         controller = None
         parent = None
         try:
+            _observe_controller("case-parent", name, len(case_rows))  # controller-observation
             controller = kernel.open_process(0x100000 | 0x1000, False, os.getpid())
             kernel.checked(controller, "proof-controller-handle")
             controller_created = kernel.ParentCancel.creation(controller)
@@ -569,7 +654,9 @@ def suite(root, context_raw, p):
 
         failed = False
         try:
+            _observe_controller("case-run", name, len(case_rows))  # controller-observation
             result = kernel.run_job(command, case, case / "jobs" / role, seconds, cancel=Cancellation(), cap=p["caseOutputCapBytes"], _test_observe=observer)
+            _observe_controller("case-readback", name, len(case_rows))  # controller-observation
             clock.left()
             held(Path(p["python"]["path"]), p["python"]["bytes"], p["python"])
             held(Path(p["node"]["path"]), p["node"]["bytes"], p["node"])
@@ -587,6 +674,7 @@ def suite(root, context_raw, p):
             row = checked_case(name, result, node, ledger.snapshot(result["started"]), foreign, observed[0], reparent[0])
             row["kernelReceiptPin"] = {"bytes": len(raw_receipt), "sha256": sha(raw_receipt)}
             case_rows.append(row)
+            _observe_controller("case-complete", name, len(case_rows))  # controller-observation
             import base64
             receipts.append(base64.b64encode(raw_receipt).decode("ascii"))
         except BaseException:
@@ -610,9 +698,11 @@ def suite(root, context_raw, p):
                 sys.modules.pop("producer", None)
             else:
                 sys.modules["producer"] = previous
+    _observe_controller("source-recheck", completed=len(case_rows))  # controller-observation
     clock.left()
     for name in p["sourcePaths"]:
         held(REPO / name, 4 * 1024 * 1024, context["sources"][name])
+    _observe_controller("scratch-cleanup", completed=len(case_rows))  # controller-observation
     cleanup = remove_owned_tree(root, root_identity, clock, cleanup_paths())
     need(cleanup["readHandlesClosed"] is True, "PROOF_CLEANUP_CLOSE")
     clock.left()
@@ -620,20 +710,25 @@ def suite(root, context_raw, p):
 
 
 def main(argv):
+    _observe_controller("profile")  # controller-observation
     p = profile()
+    _observe_controller("authority")  # controller-observation
     authority(p)  # Inactive before argv-selected paths or native module imports.
+    _observe_controller("arguments")  # controller-observation
     need(len(argv) == 3 and argv[0] == "--suite", "PROOF_ARGV")
     need(len(argv[2]) == 64 and all(c in "0123456789abcdef" for c in argv[2]), "PROOF_CONTEXT_PIN")
+    _observe_controller("preparation")  # controller-observation
     raw = held(Path(argv[1]) / "preparation.json", 131072)
     need(sha(raw) == argv[2], "PROOF_CONTEXT_PIN")
     value = suite(Path(argv[1]), raw, p)
+    _observe_controller("success-report", completed=len(CASES))  # controller-observation
     print(json.dumps(value, separators=(",", ":")), flush=True)
 
 
 if __name__ == "__main__":
     try:
         main(sys.argv[1:])
-    except BaseException:
+    except BaseException as error:  # controller-observation
         # No raw exceptions/paths/arguments/environment in workflow output.
-        print('{"complete":false,"failure":"PROOF_DENIED"}', flush=True)
+        print(json.dumps(controller_failure(error), separators=(",", ":")), flush=True)  # controller-observation
         raise SystemExit(1)

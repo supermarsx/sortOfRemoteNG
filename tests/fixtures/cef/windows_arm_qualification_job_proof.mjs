@@ -379,6 +379,194 @@ async function writeExclusive(file, raw, end) {
     "PROOF_WRITE",
   );
 }
+// BEGIN bounded controller failure validation
+const CONTROLLER_FAILURE_PHASES = new Set([
+  "entry",
+  "profile",
+  "authority",
+  "arguments",
+  "preparation",
+  "suite-context",
+  "source-witnesses",
+  "kernel-import",
+  "case-prepare",
+  "case-parent",
+  "case-run",
+  "case-readback",
+  "case-complete",
+  "source-recheck",
+  "scratch-cleanup",
+  "complete",
+  "success-report",
+]);
+const CONTROLLER_FAILURE_CODES = new Set([
+  "PROOF_ARGV",
+  "PROOF_ASSIGN_CANCEL",
+  "PROOF_AUTHORITY",
+  "PROOF_CASE",
+  "PROOF_CASE_ASSIGNMENT",
+  "PROOF_CASE_CLEANUP",
+  "PROOF_CASE_OBSERVER",
+  "PROOF_CASE_OUTCOME",
+  "PROOF_CASE_POLICY",
+  "PROOF_CASE_RESUME",
+  "PROOF_CLEANUP_ABI",
+  "PROOF_CLEANUP_BOUND",
+  "PROOF_CLEANUP_BYTES",
+  "PROOF_CLEANUP_CHANGED",
+  "PROOF_CLEANUP_CLOSE",
+  "PROOF_CLEANUP_DEPTH",
+  "PROOF_CLEANUP_FILE_INFO",
+  "PROOF_CLEANUP_LEDGER",
+  "PROOF_CLEANUP_OPEN",
+  "PROOF_CLEANUP_PARENT",
+  "PROOF_CLEANUP_READ",
+  "PROOF_CLEANUP_TYPE",
+  "PROOF_CLEANUP_UNKNOWN",
+  "PROOF_CLOCK",
+  "PROOF_CLOCK_DRIFT",
+  "PROOF_CLOSE_LEDGER",
+  "PROOF_COMMAND",
+  "PROOF_CONTEXT",
+  "PROOF_CONTEXT_PIN",
+  "PROOF_CONTEXT_WRITE",
+  "PROOF_DEADLINE",
+  "PROOF_ENVIRONMENT",
+  "PROOF_FILE",
+  "PROOF_FILE_CHANGED",
+  "PROOF_FILE_IDENTITY",
+  "PROOF_HOST",
+  "PROOF_INACTIVE",
+  "PROOF_JOB_HANDLE",
+  "PROOF_KERNEL_AST",
+  "PROOF_KERNEL_RECEIPT",
+  "PROOF_LINK",
+  "PROOF_NODE_JOIN",
+  "PROOF_NODE_OUTCOME",
+  "PROOF_NODE_RESULT",
+  "PROOF_NORMAL",
+  "PROOF_ORPHAN",
+  "PROOF_PATH",
+  "PROOF_PIN",
+  "PROOF_POLICY",
+  "PROOF_PREABORT",
+  "PROOF_PROFILE",
+  "PROOF_REPARENT",
+  "PROOF_RESERVE",
+  "PROOF_ROLE",
+  "PROOF_ROOT",
+  "PROOF_ROOT_CHANGED",
+  "PROOF_TRACKING",
+  "NATIVE_PARENT_HANDLE_UNAVAILABLE",
+  "NATIVE_PARENT_IDENTITY_UNAVAILABLE",
+  "NATIVE_PARENT_OBSERVATION_FAILED",
+  "NATIVE_POLICY_MISMATCH",
+  "NATIVE_OS_ERROR",
+  "PYTHON_TYPE_ERROR",
+  "PYTHON_KEY_ERROR",
+  "PYTHON_JSON_ERROR",
+  "UNKNOWN",
+]);
+const CONTROLLER_FAILURE_STAGES = new Set([
+  "assign-before-resume",
+  "atomic-suite-job-list",
+  "bounded-job-pids",
+  "child-job-identity",
+  "cleanup-deadline",
+  "close-parent-handle",
+  "cpu-policy",
+  "create-job",
+  "create-suspended",
+  "explicit-handle-list",
+  "final-root-exit",
+  "inherit-explicit-handle",
+  "init-handle-list",
+  "job-handle-not-inherited",
+  "job-limits",
+  "job-noninheritable",
+  "job-not-stdio-handle",
+  "open-owned-job-child",
+  "parent-creation",
+  "proof-controller-close",
+  "proof-controller-handle",
+  "proof-controller-outside",
+  "proof-membership",
+  "proof-observed-child-close",
+  "proof-parent-close",
+  "proof-root-creation",
+  "query-job",
+  "query-job-pids",
+  "read-job-handle-flags",
+  "readback-cpu-policy",
+  "readback-job-limits",
+  "reap-owned-job-child",
+  "reap-owned-root",
+  "reap-suspended-owned-root",
+  "resume-owned-root",
+  "root-creation-time",
+  "root-exit",
+  "terminate-owned-job",
+  "terminate-suspended-owned-root",
+  "verify-atomic-suite-membership",
+  "verify-child-job",
+  "wait-root",
+]);
+export function validateControllerFailure(raw) {
+  try {
+    if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > 2048)
+      return null;
+    const text = raw.toString("utf8");
+    if (!Buffer.from(text).equals(raw)) return null;
+    const value = JSON.parse(text);
+    exact(value, [
+      "schemaVersion",
+      "kind",
+      "complete",
+      "failure",
+      "phase",
+      "case",
+      "completedCases",
+      "code",
+      "nativeStage",
+      "nativeErrno",
+      "productionAdmission",
+      "runtimeReady",
+    ]);
+    if (
+      value.schemaVersion !== 1 ||
+      value.kind !== "windows-benign-job-controller-failure" ||
+      value.complete !== false ||
+      value.failure !== "PROOF_DENIED" ||
+      typeof value.phase !== "string" ||
+      !CONTROLLER_FAILURE_PHASES.has(value.phase) ||
+      !(value.case === null || CASES.includes(value.case)) ||
+      !Number.isInteger(value.completedCases) ||
+      value.completedCases < 0 ||
+      value.completedCases > CASES.length ||
+      typeof value.code !== "string" ||
+      !CONTROLLER_FAILURE_CODES.has(value.code) ||
+      !(
+        value.nativeStage === null ||
+        (typeof value.nativeStage === "string" &&
+          CONTROLLER_FAILURE_STAGES.has(value.nativeStage))
+      ) ||
+      !(
+        value.nativeErrno === null ||
+        (Number.isInteger(value.nativeErrno) &&
+          value.nativeErrno >= 0 &&
+          value.nativeErrno <= 4294967295)
+      ) ||
+      value.productionAdmission !== false ||
+      value.runtimeReady !== false
+    )
+      return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+// END bounded controller failure validation
+
 async function runController(p, root, pin, end, env) {
   checkEnd(end);
   const childEnv = {
@@ -481,6 +669,16 @@ async function runController(p, root, pin, end, env) {
     ]);
     if (failed) throw primary;
     checkEnd(end);
+    // BEGIN bounded controller failure logging
+    if (closed && (code !== 0 || signal !== null)) {
+      try {
+        const diagnostic = validateControllerFailure(Buffer.concat(chunks));
+        if (diagnostic !== null) console.error(JSON.stringify(diagnostic));
+      } catch {
+        // Keep the original failure, including logger/observer faults.
+      }
+    }
+    // END bounded controller failure logging
     need(code === 0 && signal === null, "PROOF_CONTROLLER_EXIT");
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch (error) {
