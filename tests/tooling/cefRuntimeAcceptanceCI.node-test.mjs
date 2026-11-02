@@ -2281,3 +2281,38 @@ test(
     assert.equal(env.LD_LIBRARY_PATH, undefined);
   },
 );
+
+test("native acceptance concurrency keeps distinct reviewed source profiles independent and supersedes only the same profile", async () => {
+  const value = YAML.parse(
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
+  );
+  assert.equal(
+    value.concurrency.group,
+    "cef-native-acceptance-${{ github.ref }}-${{ inputs.reviewed_inputs }}",
+  );
+  assert.equal(value.concurrency["cancel-in-progress"], true);
+  const inputs = [
+    "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1",
+    "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat",
+    "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
+  ];
+  const group = (input, ref = "refs/heads/main") =>
+    value.concurrency.group
+      .replace("${{ github.ref }}", ref)
+      .replace("${{ inputs.reviewed_inputs }}", input);
+  assert.equal(new Set(inputs.map((input) => group(input))).size, 3);
+  assert.equal(group(inputs[0]), group(inputs[0]));
+  assert.notEqual(group(inputs[0]), group(inputs[0], "refs/heads/another"));
+  const text = (
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8")
+  ).replaceAll("\r\n", "\n");
+  const previous = text.replace(
+    "group: cef-native-acceptance-${{ github.ref }}-${{ inputs.reviewed_inputs }}",
+    "group: cef-native-acceptance-${{ github.ref }}",
+  );
+  assert.equal(Buffer.byteLength(previous), 15814);
+  assert.equal(
+    createHash("sha256").update(previous).digest("hex"),
+    "8c3caed4a2b6f6f46263f40fd4ed8492472f77557824cf3605da1c205d08540f",
+  );
+});

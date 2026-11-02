@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: cef-native-acceptance-${{ github.ref }}
+  group: cef-native-acceptance-${{ github.ref }}-${{ inputs.reviewed_inputs }}
   cancel-in-progress: true
 
 defaults:
