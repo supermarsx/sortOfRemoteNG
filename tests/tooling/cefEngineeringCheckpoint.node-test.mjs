@@ -7956,6 +7956,8 @@ test("response diagnostic getters cannot replace the original API result or add 
 });
 
 async function compileSupervisorModel(options = {}) {
+  // Process APIs are modeled below; output lifecycle cases can use actual fs
+  // WriteStreams and actual Transforms without starting any child process.
   const source = await readFile(
     new URL(
       "../../scripts/lib/cef-engineering-checkpoint.mjs",
@@ -8007,6 +8009,27 @@ async function compileSupervisorModel(options = {}) {
     streams: [],
     primary: sentinel,
     forwarded: [],
+    outputs: [],
+    finishedOwned: [],
+  };
+  const output = (stream) => {
+    const index = state.outputs.length;
+    state.outputs.push(stream);
+    if (options.closeFault?.index === index) {
+      const destroy = stream._destroy.bind(stream);
+      stream._destroy = (error, done) => {
+        state.closePending = true;
+        const finish = () => destroy(options.closeFault.error ?? error, done);
+        if (options.closeFault.kind === "never") state.releaseClose = finish;
+        else if (options.closeFault.kind === "late") {
+          setImmediate(() => {
+            clockOffset = 200;
+            finish();
+          });
+        } else setTimeout(finish, 12);
+      };
+    }
+    return stream;
   };
   const close = (code = null) => {
     child.exitCode = code;
@@ -8052,18 +8075,33 @@ async function compileSupervisorModel(options = {}) {
     noLinks: async (value) => value,
     lstat: async () => ({ isDirectory: () => true }),
     path,
-    Transform,
-    createWriteStream: () => {
-      const stream = new Writable({
-        write(data, encoding, done) {
-          state.forwarded.push(Buffer.from(data));
-          if (!options.stalledWriter) done();
-        },
-      });
+    Transform: class extends Transform {
+      constructor(options) {
+        super(options);
+        output(this);
+      }
+    },
+    createWriteStream: (file, streamOptions) => {
+      const stream = options.realLogsRoot
+        ? createWriteStream(
+            path.join(options.realLogsRoot, path.basename(file)),
+            streamOptions,
+          )
+        : new Writable({
+            write(data, encoding, done) {
+              state.forwarded.push(Buffer.from(data));
+              if (!options.stalledWriter) done();
+            },
+          });
       state.streams.push(stream);
-      return stream;
+      return output(stream);
     },
     spawn: () => {
+      state.outputOwnersAtSpawn = state.outputs.every(
+        (stream) =>
+          state.finishedOwned.includes(stream) && stream.listenerCount("close"),
+      );
+      if (options.spawnFailure) throw sentinel;
       if (options.chunks)
         setTimeout(() => {
           for (const [channel, data] of options.chunks)
@@ -8079,7 +8117,20 @@ async function compileSupervisorModel(options = {}) {
         setTimeout(() => state.streams[0].emit("error", sentinel), 5);
       return child;
     },
-    finished: options.neverFinished ? () => new Promise(() => {}) : finished,
+    finished: (stream) => {
+      state.finishedOwned.push(stream);
+      if (options.neverFinished) return new Promise(() => {});
+      const completion = finished(stream);
+      completion.catch(() => {
+        state.firstFinishedRejection ??= {
+          closed: state.outputs.map((output) => output.closed),
+          closePending: state.closePending === true,
+          runSettled: state.runSettled === true,
+          diagnostic: state.diagnostic,
+        };
+      });
+      return completion;
+    },
     processSnapshot: async ({ probeJoins } = {}) => {
       state.snapshots++;
       if (options.unjoinedProbe) probeJoins.add(new Promise(() => {}));
@@ -8140,7 +8191,10 @@ async function compileSupervisorModel(options = {}) {
           },
         }),
   });
-  run.catch(() => {});
+  run.then(
+    () => (state.runSettled = true),
+    () => (state.runSettled = true),
+  );
   try {
     result = await Promise.race([
       run,
@@ -8169,6 +8223,8 @@ async function compileSupervisorModel(options = {}) {
   child.stdout.destroy();
   child.stderr.destroy();
   for (const stream of state.streams) stream.destroy();
+  state.releaseClose?.();
+  await Promise.allSettled(state.outputs.map((stream) => finished(stream)));
   return state;
 }
 
@@ -11612,6 +11668,143 @@ test("optional shared output ledger precharges both streams before forwarding an
     assert.match(denied.error.message, /Fixed shared output ledger/);
     assert.equal(denied.proofs, 0);
   }
+});
+
+test("output physical closure with modeled processes joins actual writers and gates without changing output failure fulfillment", async (t) => {
+  const root = await scratch(t);
+  for (const ledger of [undefined, { bytes: 0, cap: 64 * 1024 ** 2 }]) {
+    const logs = path.join(root, ledger ? "gated" : "direct");
+    await mkdir(logs);
+    const state = await compileSupervisorModel({
+      cleanExit: true,
+      realLogsRoot: logs,
+      outputLedger: ledger,
+      chunks: [["stdout", "physical writer"]],
+    });
+    assert.equal(state.failed, undefined);
+    const diagnostic = JSON.parse(
+      state.diagnostic.split("compile-supervision=")[1],
+    );
+    assert.equal(diagnostic.outputsJoined, true);
+    assert.equal(diagnostic.outputsSettled, true);
+    assert.equal(diagnostic.outputHandlesClosed, true);
+    assert.equal(state.outputs.length, ledger ? 4 : 2);
+    assert(state.outputs.every((stream) => stream.closed));
+    assert(state.streams.every((stream) => stream.fd === null));
+    assert.equal(
+      await readFile(path.join(logs, "checkpoint-compile.stdout.log"), "utf8"),
+      "physical writer",
+    );
+  }
+  const cap = 64 * 1024 ** 2;
+  for (const index of [0, 1, 2, 3]) {
+    const logs = path.join(root, `cap-${index}`);
+    await mkdir(logs);
+    const state = await compileSupervisorModel({
+      realLogsRoot: logs,
+      outputLedger: { bytes: cap, cap },
+      chunks: [["stdout", "rejected"]],
+      closeFault: { index, kind: "delayed" },
+    });
+    const diagnostic = JSON.parse(
+      state.diagnostic.split("compile-supervision=")[1],
+    );
+    assert.equal(state.failed, true);
+    assert.match(state.error.message, /Shared compile output bound/);
+    assert.equal(diagnostic.failureStage, "output-bound");
+    assert.equal(diagnostic.outputsJoined, false);
+    assert.equal(diagnostic.outputsSettled, true);
+    assert.equal(diagnostic.outputHandlesClosed, true);
+    assert.equal(state.closePending, true);
+    assert(state.outputs.every((stream) => stream.closed));
+    assert(state.streams.every((stream) => stream.fd === null));
+    assert.equal(state.finishedOwned.length, 4);
+    assert.equal(state.outputOwnersAtSpawn, true);
+    if (index !== 1) {
+      // The first gate rejects before the independent output has physically
+      // closed; the later delayed destroy must still be joined before return.
+      assert.equal(state.firstFinishedRejection.closed[index], false);
+      assert.equal(state.firstFinishedRejection.runSettled, false);
+      assert.equal(state.firstFinishedRejection.diagnostic, undefined);
+    }
+    assert.equal(state.proofs, 0);
+  }
+});
+
+test("output physical closure with modeled processes cannot qualify late or absent closes under the original cleanup clock", async (t) => {
+  const root = await scratch(t);
+  const cap = 64 * 1024 ** 2;
+  for (const kind of ["never", "late"])
+    for (const index of [0, 1, 2, 3]) {
+      const logs = path.join(root, `${kind}-${index}`);
+      await mkdir(logs);
+      const state = await compileSupervisorModel({
+        realLogsRoot: logs,
+        outputLedger: { bytes: cap, cap },
+        chunks: [["stdout", "rejected"]],
+        closeFault: { index, kind },
+      });
+      const diagnostic = JSON.parse(
+        state.diagnostic.split("compile-supervision=")[1],
+      );
+      assert.equal(state.failed, true);
+      assert.match(state.error.message, /Shared compile output bound/);
+      assert.equal(diagnostic.failureStage, "output-bound");
+      assert.equal(diagnostic.outputsJoined, false);
+      assert.equal(diagnostic.outputsSettled, false);
+      assert.equal(diagnostic.outputHandlesClosed, false);
+      assert.equal(state.closePending, true);
+      assert.equal(state.proofs, 0);
+      assert.equal(state.writes.length, 0);
+      assert.ok(state.elapsedMs < 300);
+    }
+});
+
+test("output physical closure with modeled processes preserves falsy first errors through delayed owned destruction", async (t) => {
+  const root = await scratch(t);
+  for (const [index, first] of [false, 0, null, undefined].entries()) {
+    const logs = path.join(root, `falsy-${index}`);
+    await mkdir(logs);
+    const state = await compileSupervisorModel({
+      realLogsRoot: logs,
+      error: first,
+      closeFault: {
+        index: 1,
+        kind: "delayed",
+        error: Error("owned close fault"),
+      },
+      observeRoot: () => {
+        throw first;
+      },
+    });
+    const diagnostic = JSON.parse(
+      state.diagnostic.split("compile-supervision=")[1],
+    );
+    assert.equal(state.failed, true);
+    assert.equal(state.error, first);
+    assert.equal(diagnostic.outputsJoined, false);
+    assert.equal(diagnostic.outputsSettled, true);
+    assert.equal(diagnostic.outputHandlesClosed, true);
+    assert.equal(state.proofs, 0);
+  }
+});
+
+test("output physical closure with modeled spawn failure owns rejections without a new cleanup lease or closure claim", async (t) => {
+  const root = await scratch(t);
+  const state = await compileSupervisorModel({
+    realLogsRoot: root,
+    spawnFailure: true,
+    closeFault: { index: 1, kind: "delayed", error: Error("close failure") },
+  });
+  assert.equal(state.error, state.primary);
+  assert.equal(state.finishedOwned.length, 2);
+  assert.equal(state.outputOwnersAtSpawn, true);
+  assert.equal(state.firstFinishedRejection.runSettled, true);
+  assert.equal(state.diagnostic, undefined);
+  assert.equal(state.snapshots, 0);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.writes.length, 0);
+  assert(state.streams.every((stream) => stream.fd === null));
 });
 
 test("optional actual supervisor observer is creation-bound, tracked without blocking monitoring and joined under original cleanup deadline", async () => {

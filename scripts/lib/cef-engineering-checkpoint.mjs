@@ -3895,7 +3895,18 @@ export async function compileSlice(
     observeRoot === undefined ? null : new AbortController();
   let ownedObserver = null;
   const streams = [],
-    outputGates = [];
+    outputGates = [],
+    outputCompletions = [],
+    outputCloses = [];
+  const registerOutput = (stream) => {
+    // Install both witnesses synchronously, before any pipe can write. Error
+    // settlement is distinct from the creation-owned stream's physical close.
+    outputCloses.push(new Promise((resolve) => stream.once("close", resolve)));
+    const completion = finished(stream);
+    completion.catch((error) => fail(error, "writer"));
+    outputCompletions.push(completion);
+    return stream;
+  };
   let stdout, stderr, child, censusSession;
   try {
     if (hasFailure) throw firstError;
@@ -3919,31 +3930,34 @@ export async function compileSlice(
       );
     }
     for (const name of ["stdout", "stderr"]) {
-      const stream = createWriteStream(
-        path.join(logs, `checkpoint-compile.${name}.log`),
-        { flags: "wx" },
+      const stream = registerOutput(
+        createWriteStream(path.join(logs, `checkpoint-compile.${name}.log`), {
+          flags: "wx",
+        }),
       );
       stream.on("error", (error) => fail(error, "writer"));
       streams.push(stream);
       if (outputLedger !== undefined) {
-        const gate = new Transform({
-          transform(chunk, encoding, done) {
-            try {
-              assert(
-                outputLedger.cap === 64 * 1024 ** 2 &&
-                  Number.isSafeInteger(outputLedger.bytes) &&
-                  outputLedger.bytes >= 0 &&
-                  chunk.length <= outputLedger.cap - outputLedger.bytes,
-                "Shared compile output bound",
-              );
-              outputLedger.bytes += chunk.length; // Precharge before forwarding; never refund.
-              done(null, chunk);
-            } catch (error) {
-              fail(error, "output-bound");
-              done(error);
-            }
-          },
-        });
+        const gate = registerOutput(
+          new Transform({
+            transform(chunk, encoding, done) {
+              try {
+                assert(
+                  outputLedger.cap === 64 * 1024 ** 2 &&
+                    Number.isSafeInteger(outputLedger.bytes) &&
+                    outputLedger.bytes >= 0 &&
+                    chunk.length <= outputLedger.cap - outputLedger.bytes,
+                  "Shared compile output bound",
+                );
+                outputLedger.bytes += chunk.length; // Precharge before forwarding; never refund.
+                done(null, chunk);
+              } catch (error) {
+                fail(error, "output-bound");
+                done(error);
+              }
+            },
+          }),
+        );
         gate.on("error", (error) => fail(error, "writer"));
         outputGates.push(gate);
       }
@@ -3973,9 +3987,9 @@ export async function compileSlice(
       }
     throw hasFailure ? firstError : error;
   }
-  const outputFinished = Promise.all(
-    [...streams, ...outputGates].map((stream) => finished(stream)),
-  );
+  const outputFinished = Promise.all(outputCompletions);
+  const outputSettlement = Promise.allSettled(outputCompletions);
+  const outputClosure = Promise.all(outputCloses);
   outputFinished.catch((error) => fail(error, "writer"));
   let rootExited = false,
     pipeClosed = false,
@@ -4102,7 +4116,25 @@ export async function compileSlice(
     quiet = false,
     monitorJoined = false,
     probesJoined = false,
-    outputsJoined = false;
+    outputsJoined = false,
+    outputsSettled = false,
+    outputHandlesClosed = false;
+  const joinOutputHandles = async () => {
+    if (!outputsJoined)
+      for (const stream of [...streams, ...outputGates]) stream.destroy();
+    // Never create a cleanup lease here, including on startup failure.
+    if (cleanupDeadline === undefined) return;
+    try {
+      await compileWithin(() => outputSettlement, cleanupDeadline);
+      assert(performance.now() < cleanupDeadline, "Output settlement deadline");
+      outputsSettled = true;
+      await compileWithin(() => outputClosure, cleanupDeadline);
+      assert(performance.now() < cleanupDeadline, "Output close deadline");
+      outputHandlesClosed = true;
+    } catch (error) {
+      fail(error, "output-close");
+    }
+  };
   try {
     // Exit, not close: descendants can retain inherited pipes after root exit.
     await Promise.race([rootExit, closed, stopRequested]);
@@ -4210,6 +4242,7 @@ export async function compileSlice(
     } catch (error) {
       fail(error, "writer-join");
     }
+    await joinOutputHandles();
     if (ownedObserver !== null) {
       try {
         await compileWithin(() => ownedObserver, cleanupDeadline);
@@ -4266,6 +4299,8 @@ export async function compileSlice(
         monitorJoined &&
         probesJoined &&
         outputsJoined &&
+        outputsSettled &&
+        outputHandlesClosed &&
         rootExited &&
         pipeClosed,
       "Compile cleanup unconfirmed; checkpoint denied",
@@ -4326,6 +4361,7 @@ export async function compileSlice(
       child.stderr.destroy();
       for (const stream of [...streams, ...outputGates]) stream.destroy();
     }
+    if (!outputsSettled || !outputHandlesClosed) await joinOutputHandles();
     if (!pipeClosed) child.unref();
     checkpointLog(
       console.error,
@@ -4340,6 +4376,8 @@ export async function compileSlice(
         monitorResult,
         monitorFailure,
         outputsJoined,
+        outputsSettled,
+        outputHandlesClosed,
         cohortQuiet: quiet,
         observedProcesses: observed.length,
         cleanupElapsedMs:
