@@ -1,0 +1,1407 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import { createHash } from "node:crypto";
+import vm from "node:vm";
+import path from "node:path";
+import {
+  authority,
+  originalEnd,
+  kernelBlocks,
+  validateReport,
+  runProof,
+  lastObservation,
+  failureCode,
+  assertionFailureCode,
+  supervisorObservation,
+} from "../fixtures/cef/linux_gn_supervision_proof.mjs";
+
+// Portable tests only. No native child, Git, ps or proof main is executed here.
+const ref = "refs/heads/codex/linux-gn-supervision-proof-20261102";
+const facts = () => ({
+  ImageOS: "ubuntu24",
+  ImageVersion: "20261026.354.1",
+  GITHUB_ACTIONS: "true",
+  RUNNER_ENVIRONMENT: "github-hosted",
+  GITHUB_REPOSITORY_VISIBILITY: "public",
+  GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
+  GITHUB_REPOSITORY_ID: "1010282954",
+  GITHUB_EVENT_NAME: "workflow_dispatch",
+  GITHUB_REF: ref,
+  GITHUB_WORKFLOW_REF: `supermarsx/sortOfRemoteNG/.github/workflows/cef-linux-gn-supervision-proof.yml@${ref}`,
+  GITHUB_SHA: "a".repeat(40),
+  GITHUB_WORKFLOW_SHA: "a".repeat(40),
+  GITHUB_RUN_ID: "123",
+  GITHUB_RUN_ATTEMPT: "1",
+});
+
+const runtime = (
+  await fs.readFile(
+    new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
+    "utf8",
+  )
+).replaceAll("\r\n", "\n");
+const fixture = (
+  await fs.readFile(
+    new URL("../fixtures/cef/linux_gn_supervision_proof.mjs", import.meta.url),
+    "utf8",
+  )
+).replaceAll("\r\n", "\n");
+const names = [
+  "natural-zero",
+  "nonzero",
+  "timeout",
+  "cancel",
+  "detached-writer",
+  "pipe-holder",
+  "output-bound",
+  "reserve",
+  "setup-clock",
+  "late-postcheck",
+  "delayed-close",
+];
+const falseFlags = {
+  vendorGnExecuted: false,
+  sourceAcquisition: false,
+  sourceRestarted: false,
+  sourceInputsRevalidated: false,
+  productionReadinessIssued: false,
+  sourceMigrationAdmitted: false,
+  compilerExecuted: false,
+  sdkProduced: false,
+  nativeAcceptance: false,
+  runtimeReady: false,
+  exactImageAdmission: false,
+};
+function syntheticReport() {
+  // Pure validation input, explicitly NOT an executed native proof.
+  return {
+    kind: "linux-gn-benign-native-proof",
+    complete: true,
+    cleanupConfirmed: true,
+    attemptId: "12345678-1234-4123-8123-123456789abc",
+    head: "a".repeat(40),
+    runId: "123",
+    runAttempt: "1",
+    sourceWitnessSha256: "b".repeat(64),
+    observedHost: authority(facts(), "linux", "x64"),
+    foreignPreserved: true,
+    ...falseFlags,
+    cases: names.map((id) => {
+      const idle = ["reserve", "setup-clock"].includes(id),
+        positive = id === "natural-zero";
+      return {
+        id,
+        complete: true,
+        fulfilled: positive,
+        rejected: !positive,
+        observerAssisted: !idle,
+        faultScheduling: [
+          "setup-clock",
+          "late-postcheck",
+          "delayed-close",
+        ].includes(id),
+        supervisorJoined: idle ? null : id === "output-bound" ? false : true,
+        supervisorObservation: idle
+          ? null
+          : {
+              rootExited: true,
+              pipeClosed: true,
+              monitorJoined: true,
+              probesJoined: true,
+              outputsJoined: id !== "output-bound",
+              outputsSettled: true,
+              outputHandlesClosed: true,
+              cohortQuiet: true,
+              observedProcesses: 1,
+              phase: id === "output-bound" ? "denied" : "complete",
+              failureStage: id === "output-bound" ? "output-bound" : "none",
+            },
+        expectedOutputRejection: id === "output-bound",
+        spawned: idle ? 0 : positive ? 2 : 1,
+        closeAttempts: id === "reserve" ? 0 : positive ? 2 : 1,
+        reparentWitness: id === "detached-writer",
+        noLateWriter: id === "detached-writer",
+        productionReceiptRejected: positive,
+        heldFdJoined: true,
+      };
+    }),
+  };
+}
+
+test("pure authority checks exact private workflow/head/host, with image observed rather than asserted354", () => {
+  for (const image of ["20261026.353.1", "20261026.354.1"]) {
+    const value = authority(
+      { ...facts(), ImageVersion: image },
+      "linux",
+      "x64",
+    );
+    assert.equal(value.imageVersion, image);
+    assert.equal(value.source, "process-and-runner-environment");
+    assert(Object.isFrozen(value));
+  }
+  for (const [platform, arch] of [
+    ["darwin", "x64"],
+    ["linux", "arm64"],
+    ["win32", "x64"],
+  ])
+    assert.throws(() => authority(facts(), platform, arch));
+  for (const key of Object.keys(facts()))
+    for (const value of [undefined, "foreign"])
+      assert.throws(
+        () => authority({ ...facts(), [key]: value }, "linux", "x64"),
+        key,
+      );
+  assert.throws(() =>
+    authority({ ...facts(), GITHUB_REF: "refs/heads/main" }, "linux", "x64"),
+  );
+});
+
+test("one original monotonic end includes checkout age and fixed30s cleanup, never refreshed", () => {
+  const now = 1793664000000;
+  assert.equal(originalEnd(String(now), now, 100), 160100);
+  assert.equal(originalEnd(String(now - 200000), now, 100), 70100);
+  assert.equal(originalEnd(String(now - 200000), now + 10000, 10100), 70100);
+  for (const started of [
+    String(now + 1),
+    String(now - 240000),
+    "0",
+    "invalid",
+    undefined,
+  ])
+    assert.throws(() => originalEnd(started, now, 100));
+});
+
+test("full canonical runtime and both original marked bodies are exact before evaluation", () => {
+  const blocks = kernelBlocks(runtime);
+  assert.equal(blocks.length, 2);
+  assert(blocks[0].includes("await compileSlice(capture.python, capture.args"));
+  assert(blocks[1].includes("state.active = false;"));
+  for (const changed of [
+    runtime + "\n",
+    runtime.replace("state.active = false;", "state.active = true;"),
+    runtime.replace("30000", "30001"),
+  ])
+    assert.throws(() => kernelBlocks(changed));
+});
+
+test("strict pure report validator rejects missing/native-invented claims, incomplete cases and extra data", () => {
+  const value = syntheticReport();
+  assert.equal(validateReport(value), value);
+  for (const key of Object.keys(value)) {
+    const changed = structuredClone(value);
+    delete changed[key];
+    assert.throws(() => validateReport(changed), key);
+  }
+  for (const key of Object.keys(falseFlags)) {
+    const changed = structuredClone(value);
+    changed[key] = true;
+    assert.throws(() => validateReport(changed), key);
+  }
+  for (const mutate of [
+    (v) => {
+      v.foreignPreserved = false;
+    },
+    (v) => {
+      v.rawError = "PRIVATE";
+    },
+    (v) => {
+      v.observedHost.expectedImage = "20261026.354.1";
+    },
+    (v) => {
+      v.observedHost.platform = "darwin";
+    },
+    (v) => {
+      v.cases.reverse();
+    },
+    (v) => {
+      v.cases.pop();
+    },
+  ]) {
+    const changed = structuredClone(value);
+    mutate(changed);
+    assert.throws(() => validateReport(changed));
+  }
+});
+
+test("all case facts enforce real joins, both roots, exact64MiB path and labeled injected faults", () => {
+  for (let index = 0; index < names.length; index++) {
+    const value = syntheticReport();
+    for (const key of Object.keys(value.cases[index])) {
+      const changed = structuredClone(value);
+      delete changed.cases[index][key];
+      assert.throws(() => validateReport(changed), names[index] + key);
+    }
+    for (const key of [
+      "complete",
+      "fulfilled",
+      "rejected",
+      "observerAssisted",
+      "faultScheduling",
+      "reparentWitness",
+      "noLateWriter",
+      "productionReceiptRejected",
+      "heldFdJoined",
+      "expectedOutputRejection",
+    ]) {
+      const changed = structuredClone(value);
+      changed.cases[index][key] = !changed.cases[index][key];
+      assert.throws(() => validateReport(changed), names[index] + key);
+    }
+    for (const key of ["spawned", "closeAttempts"]) {
+      const changed = structuredClone(value);
+      changed.cases[index][key]++;
+      assert.throws(() => validateReport(changed));
+    }
+    const changed = structuredClone(value);
+    changed.cases[index].supervisorJoined = "root-only";
+    assert.throws(() => validateReport(changed));
+  }
+});
+
+test("strict case observations reject missing or false joins and confine the cap exception to its exact denied case", () => {
+  for (const [index, id] of names.entries()) {
+    const value = syntheticReport();
+    if (["reserve", "setup-clock"].includes(id)) {
+      for (const observation of [{}, value.cases[0].supervisorObservation]) {
+        const changed = structuredClone(value);
+        changed.cases[index].supervisorObservation = observation;
+        assert.throws(() => validateReport(changed), id);
+      }
+      continue;
+    }
+    for (const key of Object.keys(value.cases[index].supervisorObservation)) {
+      const missing = structuredClone(value);
+      delete missing.cases[index].supervisorObservation[key];
+      assert.throws(() => validateReport(missing), id + key);
+    }
+    for (const key of [
+      "rootExited",
+      "pipeClosed",
+      "monitorJoined",
+      "probesJoined",
+      "outputsJoined",
+      "outputsSettled",
+      "outputHandlesClosed",
+      "cohortQuiet",
+    ])
+      for (const observed of [null, undefined, 0, "true", false]) {
+        if (
+          id === "output-bound" &&
+          key === "outputsJoined" &&
+          observed === false
+        )
+          continue;
+        const changed = structuredClone(value);
+        changed.cases[index].supervisorObservation[key] = observed;
+        assert.throws(() => validateReport(changed), id + key + observed);
+      }
+    const extra = structuredClone(value);
+    extra.cases[index].supervisorObservation.rawError = "PRIVATE";
+    assert.throws(() => validateReport(extra));
+    for (const [key, observed] of [
+      ["phase", "UNKNOWN"],
+      ["failureStage", "PRIVATE"],
+      ["observedProcesses", 4097],
+    ]) {
+      const changed = structuredClone(value);
+      changed.cases[index].supervisorObservation[key] = observed;
+      assert.throws(() => validateReport(changed), id + key);
+    }
+    if (id === "output-bound") {
+      for (const [key, observed] of [
+        ["phase", "complete"],
+        ["failureStage", "writer"],
+        ["outputsJoined", true],
+      ]) {
+        const changed = structuredClone(value);
+        changed.cases[index].supervisorObservation[key] = observed;
+        assert.throws(() => validateReport(changed), key);
+      }
+    } else {
+      const mislabeled = structuredClone(value);
+      mislabeled.cases[index].supervisorObservation.failureStage =
+        "output-bound";
+      assert.throws(() => validateReport(mislabeled), id + "stage mislabel");
+      const changed = structuredClone(value);
+      changed.cases[index].expectedOutputRejection = true;
+      changed.cases[index].supervisorJoined = false;
+      changed.cases[index].supervisorObservation =
+        value.cases[names.indexOf("output-bound")].supervisorObservation;
+      assert.throws(() => validateReport(changed), id + "exception mislabel");
+    }
+  }
+});
+
+test("actual diagnostic and cap assertions require exact first error and physical closure in a portable model", () => {
+  const start = fixture.indexOf("function diagnostic(message) {"),
+    end = fixture.indexOf("\nasync function caseRun(", start);
+  assert(start > 0 && end > start);
+  const scope = vm.createContext({ assert, JSON });
+  const api = vm.runInContext(
+    fixture.slice(start, end) + "\n({diagnostic,joined,outputBoundClosed})",
+    scope,
+  );
+  const summary =
+    syntheticReport().cases[names.indexOf("output-bound")]
+      .supervisorObservation;
+  const message = (value) =>
+    "[cef-engineering-checkpoint] compile-supervision=" + JSON.stringify(value);
+  assert.equal(api.joined(summary), false);
+  assert.equal(api.outputBoundClosed(summary), true);
+  assert.equal(api.diagnostic(message(summary)).outputsJoined, false);
+  for (const key of ["outputsSettled", "outputHandlesClosed"])
+    for (const value of [undefined, null, 0, "true"]) {
+      const changed = { ...summary, [key]: value };
+      assert.throws(() => api.diagnostic(message(changed)));
+      assert.equal(api.outputBoundClosed(changed), false);
+    }
+  const a = fixture.lastIndexOf('  if (id === "output-bound")'),
+    b = fixture.indexOf('  if (["reserve", "setup-clock"].includes(id))', a);
+  assert(a > end && b > a);
+  const assertion = fixture.slice(a, b);
+  for (const rejection of [
+    false,
+    0,
+    null,
+    undefined,
+    Error("writer failure"),
+    Error("Shared compile output bound PRIVATE"),
+    Error("Shared compile output bound"),
+  ]) {
+    const evaluate = () =>
+      vm.runInNewContext(assertion, {
+        assert,
+        id: "output-bound",
+        rejected: true,
+        fulfilled: false,
+        rejection,
+        summary,
+        outputBoundClosed: api.outputBoundClosed,
+        assertionFailureCode,
+      });
+    if (assertionFailureCode(rejection) === "COMPILE_OUTPUT_BOUND") evaluate();
+    else assert.throws(evaluate, /PROOF_OUTPUT_STAGE/);
+  }
+});
+
+test("actual public proof entry rejects extraargs before native/unsafe IO and clears last observation", async () => {
+  await assert.rejects(runProof("not allowed"), /PROOF_ENTRY/);
+  assert.equal(lastObservation(), null);
+  assert.throws(() => lastObservation("extra"), /PROOF_ENTRY/);
+  const old = process.env.GITHUB_REF;
+  try {
+    process.env.GITHUB_REF = "refs/heads/closed-negative";
+    await assert.rejects(runProof(), /PROOF_HOST|PROOF_SCOPE/);
+    const observation = lastObservation();
+    assert.equal(observation.complete, false);
+    assert.equal(observation.code, "PROOF_FAILED");
+    assert(Object.isFrozen(observation));
+    await assert.rejects(
+      runProof({ report: syntheticReport() }),
+      /PROOF_ENTRY/,
+    );
+    assert.equal(lastObservation(), null);
+  } finally {
+    if (old === undefined) delete process.env.GITHUB_REF;
+    else process.env.GITHUB_REF = old;
+  }
+});
+
+test("closed failure projection labels unobserved reparenting without invoking thrown getters", () => {
+  assert.equal(
+    failureCode(Error("PROOF_REPARENT_UNOBSERVED")),
+    "REPARENT_WITNESS_UNOBSERVED",
+  );
+  for (const value of [
+    undefined,
+    null,
+    false,
+    0,
+    "PRIVATE",
+    Error("PRIVATE"),
+    Object.defineProperty({}, "message", {
+      get() {
+        assert.fail("getter");
+      },
+    }),
+    new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw Error("PRIVATE trap");
+        },
+      },
+    ),
+  ])
+    assert.equal(failureCode(value), "PROOF_FAILED");
+});
+
+test("actual private root creator in isolated FS model records creation and retires normal operations before cleanup", async () => {
+  const a = fixture.indexOf("async function ownedRoot(end) {"),
+    b = fixture.indexOf("\nasync function actorMain(", a);
+  assert(a > 0 && b > a);
+  const dirs = new Map([
+    [
+      "/temp",
+      { dev: 1n, ino: 1n, mode: 0o40700n, uid: 0n, isDirectory: () => true },
+    ],
+  ]);
+  let ordinal = 1n,
+    creates = 0;
+  const scope = vm.createContext({
+    assert,
+    path: path.posix,
+    Map,
+    BigInt,
+    constants: { O_RDONLY: 0, O_DIRECTORY: 1, O_NOFOLLOW: 2 },
+    process: { env: { RUNNER_TEMP: "/temp" }, getuid: () => 0 },
+    randomUUID: () => "12345678-1234-4123-8123-123456789abc",
+    physical: (s) => [s.dev, s.ino, s.mode, s.uid].map(String).join(":"),
+    check: () => {},
+    fs: {
+      realpath: async (p) => p,
+      lstat: async (p) => {
+        assert(dirs.has(p));
+        return dirs.get(p);
+      },
+      mkdir: async (p) => {
+        assert(!dirs.has(p));
+        creates++;
+        dirs.set(p, {
+          dev: 1n,
+          ino: ++ordinal,
+          mode: 0o40700n,
+          uid: 0n,
+          isDirectory: () => true,
+        });
+      },
+      open: async (p) => {
+        const original = dirs.get(p);
+        return { stat: async () => original, close: async () => {} };
+      },
+    },
+  });
+  const create = vm.runInContext("(" + fixture.slice(a, b) + ")", scope);
+  const owned = await create(1000);
+  await owned.current();
+  await owned.mkdir(owned.root + "/logs");
+  assert.equal(creates, 2);
+  await assert.rejects(owned.mkdir(owned.root + "/unknown/child"));
+  assert.equal(creates, 2);
+  const original = dirs.get(owned.root + "/logs");
+  dirs.set(owned.root + "/logs", { ...original, ino: 999n });
+  await assert.rejects(
+    owned.mkdir(owned.root + "/logs/child"),
+    /DIRECTORY_CHANGED/,
+  );
+  assert.equal(creates, 2);
+  owned.retire();
+  assert.throws(() => owned.assertActive(), /RETIRED/);
+  await assert.rejects(owned.current(), /RETIRED/);
+  await owned.cleanupCurrent(); // Separate private physical check cannot mint work.
+  dirs.set(owned.root, { ...dirs.get(owned.root), ino: 1000n });
+  await assert.rejects(owned.cleanupCurrent(), /CHANGED/);
+});
+
+test("actual private launcher claims two disjoint actor attempts for unchanged initial/revalidation argv", async () => {
+  const a = fixture.indexOf("async function claimActorDirectory(directory) {"),
+    b = fixture.indexOf("\nasync function launch(", a);
+  assert(a > 0 && b > a);
+  const files = new Set(),
+    flags = [],
+    closed = [];
+  let primary;
+  const scope = vm.createContext({
+    assert,
+    path: path.posix,
+    constants: { O_WRONLY: 1, O_CREAT: 2, O_EXCL: 4, O_NOFOLLOW: 8 },
+    process: { getuid: () => 0, pid: 1234 },
+    fs: {
+      realpath: async (p) => p,
+      lstat: async () => ({ isDirectory: () => true, uid: 0, mode: 0o40700 }),
+      open: async (file, mode) => {
+        flags.push(mode);
+        if (primary) throw primary;
+        if (files.has(file))
+          throw Object.assign(Error("exists"), { code: "EEXIST" });
+        files.add(file);
+        return {
+          writeFile: async (value) => assert.equal(value, "1234"),
+          close: async () => {
+            closed.push(file);
+          },
+        };
+      },
+    },
+  });
+  const claim = vm.runInContext("(" + fixture.slice(a, b) + ")", scope);
+  assert.equal(await claim("/owned/case"), "/owned/case/attempt-initial");
+  assert.equal(await claim("/owned/case"), "/owned/case/attempt-revalidation");
+  await assert.rejects(claim("/owned/case"), /INVOCATIONS/);
+  assert.equal(files.size, 2);
+  assert.equal(closed.length, 2);
+  assert(flags.every((mode) => mode === 15));
+  primary = Object.assign(Error("denied"), { code: "EACCES" });
+  await claim("/owned/other-case").then(
+    () => assert.fail("failure adopted"),
+    (error) => assert.equal(error, primary),
+  );
+  assert.equal(files.size, 2);
+});
+
+test("actor and oracle source keeps commands/env/namespace fixed with no vendor or input-selected module", () => {
+  assert.match(
+    fixture,
+    /fixedChild\(\s*"\/bin\/ps",\s*\["-axo", "pid=,ppid=,lstart="\]/,
+  );
+  assert.match(
+    fixture,
+    /fixedChild\(\s*"\/usr\/bin\/git",\s*\["cat-file", "--batch"\]/,
+  );
+  assert(fixture.includes("sourceWitness(end)"));
+  assert(
+    fixture.includes("await import(pathToFileURL(path.join(ROOT, CORE)))"),
+  );
+  assert(fixture.includes("outputLedger: { ...options.outputLedger }"));
+  assert(fixture.includes("64 * 1024 ** 2 + 1"));
+  assert(!fixture.includes('exec("'));
+  assert(!fixture.includes("shell: true"));
+  assert(!fixture.includes("censusFactory:"));
+  assert(!fixture.includes("out:"));
+});
+
+function model(supervisor) {
+  const [wrapper, owner] = kernelBlocks(runtime);
+  let remaining = 60000;
+  const dirs = new Map([["/proof/logs", 1n]]);
+  let ino = 1n,
+    opened = 0,
+    closed = 0;
+  const info = (name) => ({
+    dev: 1n,
+    ino: dirs.get(name),
+    mode: name === "/proof/logs" ? 0o40755n : 0o40700n,
+    uid: 0n,
+    isDirectory: () => true,
+    isSymbolicLink: () => false,
+  });
+  const scope = vm.createContext({
+    path: path.posix,
+    constants: { O_RDONLY: 0, O_NOFOLLOW: 1, O_DIRECTORY: 2 },
+    process: { getuid: () => 0 },
+    realpath: async (p) => p,
+    lstat: async (p) => info(p),
+    mkdir: async (p) => {
+      assert(!dirs.has(p));
+      dirs.set(p, ++ino);
+    },
+    open: async (p) => {
+      opened++;
+      return {
+        stat: async () => info(p),
+        close: async () => {
+          closed++;
+        },
+      };
+    },
+    hostRemaining: () => remaining,
+    fail: (message) => {
+      throw Error(message);
+    },
+    setTimeout,
+    clearTimeout,
+    AbortController,
+    compileSlice: (...args) => supervisor(...args),
+  });
+  const api = vm.runInContext(
+    wrapper +
+      owner.replace(/^export /gm, "") +
+      "\n({superviseLinuxSourceGn,withLinuxSourceOwner,revalidateLinuxSourceOwner,assertLinuxSourceOwnerReceipt})",
+    scope,
+  );
+  const capture = {
+    python: "/fixed/node",
+    args: Object.freeze([
+      "/fixed/fixture",
+      "--launch",
+      "natural-zero",
+      "/proof/case-natural-zero",
+    ]),
+    cwd: "/fixed",
+    env: Object.freeze({ PATH: "/usr/bin:/bin", TZ: "UTC" }),
+    logs: "/proof/logs",
+    remaining: () => remaining,
+    hostClock: {},
+    binding: {},
+  };
+  return {
+    scope,
+    api,
+    capture,
+    expire: () => {
+      remaining = 0;
+    },
+    closeCount: () => closed,
+    openCount: () => opened,
+  };
+}
+const quiet = () => ({
+  outcome: "compiler-complete",
+  exitCode: 0,
+  quiescent: true,
+  quiescence: "observed-lineage-and-root-group",
+});
+
+test("portable exact-wrapper model passes both roles but no raw capability reaches isolated receipt", async () => {
+  const called = [];
+  const m = model(async (exe, args, options) => {
+    called.push({ exe, args, options });
+    return quiet();
+  });
+  await m.api.superviseLinuxSourceGn(m.capture, "initial");
+  const context = {};
+  let issued;
+  await m.api.withLinuxSourceOwner(context, m.capture, async (value) => {
+    issued = await m.api.revalidateLinuxSourceOwner(value);
+    const observed = m.api.assertLinuxSourceOwnerReceipt(value, issued);
+    assert.equal(observed.cohortQuietProven, true);
+    assert.equal(observed.productionReadinessIssued, false);
+    assert.equal(observed.runtimeReady, false);
+    assert(!("observed" in observed));
+  });
+  assert.equal(called.length, 2);
+  assert.equal(m.closeCount(), 2);
+  assert.throws(
+    () => m.api.assertLinuxSourceOwnerReceipt(context, issued),
+    /RECEIPT/,
+  );
+  for (const call of called) {
+    assert.equal(call.exe, m.capture.python);
+    assert.equal(call.args, m.capture.args);
+    assert.equal(call.options.milliseconds, 30000);
+    assert.equal(call.options.outputLedger.cap, 64 * 1024 ** 2);
+    assert.equal(call.options.out, undefined);
+    assert.equal(call.options.censusFactory, undefined);
+  }
+});
+
+test("portable exact-wrapper model preserves falsy rejection and refuses post-await expired clocks", async () => {
+  for (const marker of [undefined, null, false, 0, ""]) {
+    const m = model(async () => {
+      throw marker;
+    });
+    await m.api.superviseLinuxSourceGn(m.capture, "initial").then(
+      () => assert.fail("failure lost"),
+      (error) => assert.equal(error, marker),
+    );
+    assert.equal(m.closeCount(), 1);
+  }
+  let m;
+  m = model(async () => {
+    m.expire();
+    return quiet();
+  });
+  await assert.rejects(
+    m.api.superviseLinuxSourceGn(m.capture, "initial"),
+    /DEADLINE/,
+  );
+  assert.equal(m.closeCount(), 1);
+});
+
+test("portable root0 alone, timeout, nonzero and missing lineage are not supervisor qualification", async () => {
+  for (const change of [
+    { outcome: "slice-ended" },
+    { exitCode: 7 },
+    { quiescent: false },
+    { quiescence: "root-only" },
+  ]) {
+    const m = model(async () => ({ ...quiet(), ...change }));
+    await assert.rejects(
+      m.api.superviseLinuxSourceGn(m.capture, "initial"),
+      /UNCONFIRMED/,
+    );
+    assert.equal(m.closeCount(), 1);
+  }
+});
+
+const cleanup887 =
+  'async function cleanup(owned, end) {\n  await owned.cleanupCurrent();\n  async function remove(dir) {\n    await owned.directoryCurrent(dir);\n    const info = await fs.lstat(dir, { bigint: true });\n    assert(\n      info.isDirectory() &&\n        info.uid === BigInt(process.getuid()) &&\n        (info.mode & 0o777n) === 0o700n,\n      "PROOF_CLEANUP_DIR",\n    );\n    const stamp = owned.directories.get(dir);\n    assert(\n      stamp !== undefined && physical(info) === stamp,\n      "PROOF_CLEANUP_CREATION",\n    );\n    const entries = await fs.readdir(dir, { withFileTypes: true });\n    for (const entry of entries) {\n      await owned.cleanupCurrent();\n      await owned.directoryCurrent(dir);\n      assert(\n        physical(await fs.lstat(dir, { bigint: true })) === stamp,\n        "PROOF_CLEANUP_CHANGED",\n      );\n      const file = path.join(dir, entry.name);\n      assert(\n        /^(case-(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|reserve|setup-clock|late-postcheck|delayed-close|foreign-control)|logs|source-gn-(?:initial|revalidation)|checkpoint-compile\\.(?:stdout\\.log|stderr\\.log|outcome\\.json)|actor-environment\\.json|(?:natural-zero|nonzero|timeout|cancel|detached-writer|pipe-holder|output-bound|child-natural|child-writer|child-pipe|child-hold|foreign)\\.json|counter|reparented|release-root|release-child|attempt-initial|attempt-revalidation|claimed)$/.test(\n          entry.name,\n        ),\n        "PROOF_UNKNOWN_LEAF",\n      );\n      if (entry.isDirectory()) await remove(file);\n      else {\n        const before = await fs.lstat(file, { bigint: true });\n        assert(ordinary(before), "PROOF_CLEANUP_FILE");\n        assert(\n          full(await fs.lstat(file, { bigint: true })) === full(before),\n          "PROOF_CLEANUP_CHANGED",\n        );\n        await owned.cleanupCurrent();\n        await owned.directoryCurrent(dir);\n        assert(\n          physical(await fs.lstat(dir, { bigint: true })) === stamp,\n          "PROOF_CLEANUP_CHANGED",\n        );\n        await fs.unlink(file);\n      }\n    }\n    assert(\n      physical(await fs.lstat(dir, { bigint: true })) === stamp,\n      "PROOF_CLEANUP_CHANGED",\n    );\n    await owned.directoryCurrent(dir);\n    if (dir !== owned.root) await fs.rmdir(dir);\n  }\n  await remove(owned.root);\n  await owned.cleanupCurrent();\n  await within(() => owned.fd.close(), end);\n  assert(\n    physical(await fs.lstat(owned.root, { bigint: true })) === owned.identity,\n    "PROOF_CLEANUP_CHANGED",\n  );\n  await fs.rmdir(owned.root);\n}\n';
+
+// Real file/rename/read/unlink and real leaf FD IO; only UID/directory modes
+// and the root-directory FD are modeled for this portable Windows regression.
+test(
+  "actual cleanup denies last-await file/content/directory swaps and preserves foreign replacements",
+  { timeout: 10000 },
+  async () => {
+    assert.equal(
+      createHash("sha256").update(cleanup887).digest("hex"),
+      "06482c6793257db4fe1493f43df1bcdcf0dc3629904c371a90899e1ffd7c424e",
+    );
+    const a = fixture.indexOf("async function cleanup(owned, end) {"),
+      b = fixture.indexOf("\nexport function validateReport(", a);
+    assert(a > 0 && b > a);
+    const actual = fixture.slice(a, b);
+    const facts = (s) => {
+      const copy = Object.assign(Object.create(Object.getPrototypeOf(s)), s);
+      copy.uid = 0n;
+      if (copy.isDirectory()) copy.mode = (copy.mode & ~0o777n) | 0o700n;
+      return copy;
+    };
+    const physical = (s) => [s.dev, s.ino, s.mode, s.uid].map(String).join(":");
+    const full = (s) =>
+      physical(s) + ":" + [s.size, s.nlink, s.mtimeNs, s.ctimeNs].join(":");
+    for (const variant of ["unchanged", "leaf", "content", "directory", "root"])
+      for (const [label, body] of [
+        ["old887", cleanup887],
+        ["current", actual],
+      ]) {
+        const base = await fs.realpath(
+          await fs.mkdtemp(
+            path.join(os.tmpdir(), "codex-gn-cleanup-regression-"),
+          ),
+        );
+        const root = path.join(base, "owned"),
+          leaf = path.join(root, "actor-environment.json"),
+          saved = path.join(base, "saved-owned"),
+          sub = path.join(root, "logs");
+        await fs.mkdir(root, { mode: 0o700 });
+        if (variant === "directory") await fs.mkdir(sub, { mode: 0o700 });
+        else if (variant !== "root")
+          await fs.writeFile(leaf, "OWNED", { flag: "wx" });
+        const stat = async (p) => facts(await fs.lstat(p, { bigint: true }));
+        const identity = physical(await stat(root));
+        const directories = new Map([[root, identity]]);
+        if (variant === "directory")
+          directories.set(sub, physical(await stat(sub)));
+        let leafStats = 0,
+          subChecks = 0,
+          replaced = false,
+          completed = false,
+          failure,
+          leafCloses = 0;
+        const rootCurrent = async () =>
+          assert.equal(physical(await stat(root)), identity);
+        const owned = {
+          root,
+          identity,
+          directories,
+          fd: {
+            close: async () => {
+              if (variant === "root") {
+                await fs.rename(root, saved);
+                await fs.mkdir(root, { mode: 0o700 });
+                replaced = true;
+              }
+            },
+          },
+          cleanupCurrent: async () => {
+            if (
+              ["leaf", "content"].includes(variant) &&
+              leafStats >= 2 &&
+              !replaced
+            ) {
+              if (variant === "leaf") {
+                await fs.rename(leaf, saved);
+                await fs.writeFile(leaf, "ALIEN", { flag: "wx" });
+              } else await fs.writeFile(leaf, "ALIEN");
+              replaced = true;
+            }
+            await rootCurrent();
+          },
+          directoryCurrent: async (dir) => {
+            await rootCurrent();
+            if (variant === "directory" && dir === sub && ++subChecks === 2) {
+              await fs.rename(sub, saved);
+              await fs.mkdir(sub, { mode: 0o700 });
+              replaced = true;
+            }
+          },
+        };
+        const io = {
+          ...fs,
+          lstat: async (p) => {
+            if (p === leaf) leafStats++;
+            return stat(p);
+          },
+          open: async (...args) => {
+            const fd = await fs.open(...args);
+            return {
+              stat: async (options) => facts(await fd.stat(options)),
+              read: (...values) => fd.read(...values),
+              close: async () => {
+                leafCloses++;
+                await fd.close();
+              },
+            };
+          },
+        };
+        const end = performance.now() + 5000;
+        const cleanup = vm.runInNewContext("(" + body + ")", {
+          assert,
+          path,
+          physical,
+          full,
+          ordinary: (s) => s.isFile() && s.nlink === 1n && s.uid === 0n,
+          process: { getuid: () => 0 },
+          within: async (work) => {
+            assert(performance.now() < end);
+            const value = await work();
+            assert(performance.now() < end);
+            return value;
+          },
+          fs: io,
+        });
+        try {
+          try {
+            await cleanup(owned, end);
+            completed = true;
+          } catch (error) {
+            failure = error;
+          }
+          if (variant === "unchanged") {
+            assert.equal(completed, true, label);
+            assert.equal(
+              await fs.lstat(root).then(
+                () => true,
+                () => false,
+              ),
+              false,
+            );
+          } else {
+            assert.equal(replaced, true, variant + label);
+            const target = ["leaf", "content"].includes(variant)
+              ? leaf
+              : variant === "directory"
+                ? sub
+                : root;
+            if (label === "old887" && variant !== "root") {
+              assert.equal(completed, true, variant);
+              assert.equal(
+                await fs.lstat(target).then(
+                  () => true,
+                  () => false,
+                ),
+                false,
+                "RED: foreign replacement was deleted",
+              );
+            } else {
+              assert.equal(completed, false, variant);
+              assert.match(failure.message, /PROOF_CLEANUP_CHANGED/);
+              assert.equal(
+                await fs.lstat(target).then(
+                  () => true,
+                  () => false,
+                ),
+                true,
+                "GREEN: foreign replacement preserved",
+              );
+              if (["leaf", "content"].includes(variant))
+                assert.equal(await fs.readFile(target, "utf8"), "ALIEN");
+            }
+          }
+          if (label === "current" && !["directory", "root"].includes(variant))
+            assert.equal(leafCloses, 1, "one actual leaf FD close");
+        } finally {
+          // Only these freshly created known test paths; no recursive cleanup.
+          for (const p of [leaf, sub, saved, root]) {
+            assert(p.startsWith(base + path.sep));
+            const info = await fs.lstat(p).catch((error) => {
+              if (error.code !== "ENOENT") throw error;
+              return null;
+            });
+            if (!info) continue;
+            assert(!info.isSymbolicLink());
+            if (info.isDirectory()) await fs.rmdir(p);
+            else await fs.unlink(p);
+          }
+          await fs.rmdir(base);
+        }
+      }
+  },
+);
+
+test("fixed own-descriptor assertions and supervisor diagnostic copies disclose no raw errors", () => {
+  for (const [message, code] of [
+    ["PROOF_JOIN", "ASSERT_JOIN"],
+    ["PROOF_DENIAL", "ASSERT_DENIAL"],
+    ["PROOF_OUTPUT_STAGE", "ASSERT_OUTPUT_STAGE"],
+    ["PROOF_ROOT_ADMISSION", "ASSERT_ROOT_ADMISSION"],
+    ["PROOF_SUMMARY_ONCE", "ASSERT_SUMMARY_ONCE"],
+    ["PROOF_SUPERVISOR_DIAGNOSTIC", "ASSERT_SUPERVISOR_DIAGNOSTIC"],
+    ["PROOF_CASE_ROOT_CHANGED", "ASSERT_CASE_ROOT_CHANGED"],
+    ["PROOF_FIXED_COMMAND", "ASSERT_FIXED_COMMAND"],
+    ["Shared compile output bound", "COMPILE_OUTPUT_BOUND"],
+    ["PROOF_REPARENT_UNOBSERVED", "REPARENT_WITNESS_UNOBSERVED"],
+  ])
+    assert.equal(assertionFailureCode(Error(message)), code);
+  let getters = 0;
+  const hostile = Object.defineProperty({}, "message", {
+    get() {
+      getters++;
+      throw Error("PRIVATE");
+    },
+  });
+  for (const value of [
+    hostile,
+    false,
+    0,
+    null,
+    undefined,
+    "PROOF_JOIN",
+    Error("PROOF_JOIN PRIVATE"),
+    new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw Error("PRIVATE");
+        },
+      },
+    ),
+  ])
+    assert.equal(assertionFailureCode(value), "PROOF_FAILED");
+  const summary = {
+    rootExited: true,
+    pipeClosed: true,
+    monitorJoined: true,
+    probesJoined: true,
+    outputsJoined: false,
+    outputsSettled: true,
+    outputHandlesClosed: false,
+    cohortQuiet: true,
+    observedProcesses: 1,
+    phase: "denied",
+    failureStage: "output-bound",
+    rawError: "PRIVATE",
+  };
+  const copied = supervisorObservation(summary);
+  assert.equal(copied.outputsJoined, false);
+  assert.equal(copied.outputsSettled, true);
+  assert.equal(copied.outputHandlesClosed, false);
+  assert.equal(copied.failureStage, "output-bound");
+  summary.outputsJoined = true;
+  summary.outputsSettled = false;
+  summary.outputHandlesClosed = true;
+  assert.equal(copied.outputsJoined, false);
+  assert.equal(copied.outputsSettled, true);
+  assert.equal(copied.outputHandlesClosed, false);
+  for (const key of ["outputsSettled", "outputHandlesClosed"])
+    for (const value of [undefined, null, 0, "true"])
+      assert.equal(
+        supervisorObservation({ ...summary, [key]: value })[key],
+        null,
+      );
+  for (const key of ["outputsSettled", "outputHandlesClosed"]) {
+    const withGetter = Object.defineProperty({ ...summary }, key, {
+      get() {
+        getters++;
+        throw Error("PRIVATE");
+      },
+    });
+    assert.equal(supervisorObservation(withGetter)[key], null);
+  }
+  assert(Object.isFrozen(copied));
+  assert(!JSON.stringify(copied).includes("PRIVATE"));
+  assert.equal(
+    supervisorObservation({
+      ...summary,
+      phase: "PRIVATE",
+      failureStage: "PRIVATE",
+    }).failureStage,
+    "OTHER",
+  );
+  assert.equal(
+    supervisorObservation({ ...summary, phase: "PRIVATE" }).phase,
+    "UNKNOWN",
+  );
+  for (const value of [
+    null,
+    {},
+    new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw Error("PRIVATE");
+        },
+      },
+    ),
+    Object.defineProperty({ ...summary }, "outputsJoined", {
+      get() {
+        getters++;
+        throw Error("PRIVATE");
+      },
+    }),
+    { ...summary, observedProcesses: 4097 },
+    { ...summary, rootExited: 1 },
+  ])
+    assert.equal(supervisorObservation(value), null);
+  assert.equal(getters, 0);
+});
+
+// Exact inverse of this output-close integration, before the earlier diagnostic inverse.
+const outputCloseInverse = [
+  {
+    start: 31,
+    remove: [
+      "    232441,",
+      '    "fa669f8e3bae755bcac623cbb9c567665405d58fbb5ca3d2130331101005947f",',
+    ],
+    replace: [
+      "    230823,",
+      '    "8c40dbd4461582659f5f92f8f9b07c0aa68d1df5525aad68a6119fd4c4d3c0ec",',
+    ],
+  },
+  {
+    start: 641,
+    remove: ['    "outputsSettled",', '    "outputHandlesClosed",'],
+    replace: [],
+  },
+  {
+    start: 663,
+    remove: [
+      '      "outputsSettled",',
+      '      "outputHandlesClosed",',
+      '      "cohortQuiet",',
+      "    ].every((key) => value[key] === true)",
+      "  );",
+      "}",
+      "",
+      "function outputBoundClosed(value) {",
+      "  return (",
+      "    value !== null &&",
+      '    value?.phase === "denied" &&',
+      '    value.failureStage === "output-bound" &&',
+      "    value.outputsJoined === false &&",
+      "    [",
+      '      "rootExited",',
+      '      "pipeClosed",',
+      '      "monitorJoined",',
+      '      "probesJoined",',
+      '      "outputsSettled",',
+      '      "outputHandlesClosed",',
+    ],
+    replace: [],
+  },
+  {
+    start: 1062,
+    remove: [
+      "    assert(",
+      '      id === "output-bound" ? outputBoundClosed(summary) : joined(summary),',
+      '      "PROOF_JOIN",',
+      "    );",
+    ],
+    replace: ['    assert(joined(summary), "PROOF_JOIN");'],
+  },
+  {
+    start: 1103,
+    remove: [
+      "    assert(",
+      "      rejected &&",
+      "        !fulfilled &&",
+      '        assertionFailureCode(rejection) === "COMPILE_OUTPUT_BOUND" &&',
+      "        outputBoundClosed(summary),",
+      '      "PROOF_OUTPUT_STAGE",',
+      "    );",
+    ],
+    replace: [
+      '    assert(summary.failureStage === "output-bound", "PROOF_OUTPUT_STAGE");',
+    ],
+  },
+  {
+    start: 1141,
+    remove: [
+      "    supervisorObservation: supervisorObservation(summary),",
+      '    expectedOutputRejection: id === "output-bound",',
+    ],
+    replace: [],
+  },
+  {
+    start: 1565,
+    remove: [
+      '          "supervisorObservation",',
+      '          "expectedOutputRejection",',
+    ],
+    replace: [],
+  },
+  {
+    start: 1581,
+    remove: [
+      "    const observation = row.supervisorObservation;",
+      "    const copiedObservation = supervisorObservation(observation);",
+      "    assert(",
+      "      idle",
+      "        ? observation === null",
+      "        : observation !== null &&",
+      '            Object.keys(observation).sort().join(":") ===',
+      "              [",
+      '                "rootExited",',
+      '                "pipeClosed",',
+      '                "monitorJoined",',
+      '                "probesJoined",',
+      '                "outputsJoined",',
+      '                "outputsSettled",',
+      '                "outputHandlesClosed",',
+      '                "cohortQuiet",',
+      '                "observedProcesses",',
+      '                "phase",',
+      '                "failureStage",',
+      "              ]",
+      "                .sort()",
+      '                .join(":") &&',
+      "            copiedObservation !== null &&",
+      '            ["complete", "denied"].includes(observation.phase) &&',
+      "            copiedObservation.failureStage === observation.failureStage &&",
+      "            (!positive ||",
+      '              (observation.phase === "complete" &&',
+      '                observation.failureStage === "none")) &&',
+      '            (id === "output-bound"',
+      "              ? outputBoundClosed(observation)",
+      '              : observation.failureStage !== "output-bound" &&',
+      "                joined(observation)),",
+      '      "PROOF_CASE_JOINS",',
+      "    );",
+    ],
+    replace: [],
+  },
+  {
+    start: 1623,
+    remove: [
+      "        row.supervisorJoined ===",
+      '          (idle ? null : id === "output-bound" ? false : true) &&',
+      '        row.expectedOutputRejection === (id === "output-bound") &&',
+    ],
+    replace: ["        row.supervisorJoined === (idle ? null : true) &&"],
+  },
+  {
+    start: 1708,
+    remove: [
+      '    for (const key of ["outputsSettled", "outputHandlesClosed"]) {',
+      "      const observed = diagnosticOwn(value, key);",
+      '      result[key] = typeof observed === "boolean" ? observed : null;',
+      "    }",
+    ],
+    replace: [],
+  },
+  {
+    start: 1723,
+    remove: ['      "output-close",'],
+    replace: [],
+  },
+];
+function withoutOutputCloseIntegration(source) {
+  const lines = source.split("\n");
+  for (const hunk of [...outputCloseInverse].reverse()) {
+    assert.deepEqual(
+      lines.slice(hunk.start, hunk.start + hunk.remove.length),
+      hunk.remove,
+    );
+    lines.splice(hunk.start, hunk.remove.length, ...hunk.replace);
+  }
+  return lines.join("\n");
+}
+
+test("output-close integration inverse restores the complete4662 fixture before diagnostic history", () => {
+  const original = withoutOutputCloseIntegration(fixture);
+  assert.equal(Buffer.byteLength(original), 57732);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "4662e1add9fd3390c1ddf2e215200974c2eb27c95ac1445df89c529c9025bb92",
+  );
+});
+
+function withoutFailureDiagnostics(source) {
+  for (const name of [
+    "state",
+    "capture",
+    "projection",
+    "reset",
+    "cleanup state",
+    "case reset",
+    "existing sample",
+    "containment",
+    "containment result",
+    "cleanup attempt",
+    "cleanup completion",
+  ]) {
+    const start = "fixed failure diagnostic " + name;
+    const expression = new RegExp(
+      "^[ \\t]*// BEGIN " +
+        start +
+        "\\n[\\s\\S]*?^[ \\t]*// END " +
+        start +
+        "\\n",
+      "gm",
+    );
+    assert.equal([...source.matchAll(expression)].length, 1, start);
+    source = source.replace(expression, "");
+    if (name === "projection")
+      source = source.replace(
+        "\n\nexport async function runProof",
+        "\nexport async function runProof",
+      );
+  }
+  const old = `    const code = failureCode(first),
+      unsupported = code === "REPARENT_WITNESS_UNOBSERVED";
+    last = freeze({
+      kind: "linux-gn-benign-native-proof-failure",
+      attemptId,
+      complete: false,
+      code,
+      phase: firstPhase,
+      activeCase,
+      completedCases,
+      incomplete: true,
+      unsupported,
+      ...FALSE_FLAGS,
+    });
+`;
+  const expression =
+    /^    \/\/ BEGIN fixed failure diagnostic envelope\n[\s\S]*?^    \/\/ END fixed failure diagnostic envelope\n/gm;
+  assert.equal([...source.matchAll(expression)].length, 1);
+  return source.replace(expression, old);
+}
+
+test("fixed diagnostics exact inverse preserves complete8b4 actors limits expected outcomes and source", () => {
+  const original = withoutFailureDiagnostics(
+    withoutOutputCloseIntegration(fixture),
+  );
+  assert.equal(Buffer.byteLength(original), 52966);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "b3b4c1e842523a58139a2aaa21b5d0f13d737de21e20099574d449a7bdf3e93c",
+  );
+});
+
+test("actual proof control preserves falsy primary and reports only observed cleanup completion", async () => {
+  // Actual runProof body with ONLY the dynamic module load replaced by a
+  // fixed nonminting model. No native process, Git, ps or actor runs here.
+  const original = runProof.toString();
+  const load = "core = await import(pathToFileURL(path.join(ROOT, CORE)));";
+  assert.equal(original.split(load).length, 2);
+  const body = original.replace(load, "core = modelCore;");
+  const a = fixture.indexOf("function boundedFailureObservation("),
+    b = fixture.indexOf("// END fixed failure diagnostic projection", a);
+  assert(a > 0 && b > a);
+  const bounded = fixture.slice(a, b);
+  const project = vm.runInNewContext("(" + bounded + ")", {
+    Buffer,
+    supervisorObservation,
+    freeze: (value) => Object.freeze(value),
+  });
+  const fallback = {
+    kind: "fixed-failure",
+    complete: false,
+    code: "PROOF_FAILED",
+  };
+  const malformedFacts = Object.defineProperty({}, "attempted", {
+    get() {
+      throw Error("PRIVATE diagnostic failure");
+    },
+  });
+  const safe = project(fallback, null, malformedFacts);
+  assert.equal(
+    safe,
+    fallback,
+    "projection failure retains original fixed envelope",
+  );
+  assert(Object.isFrozen(safe));
+  assert(Buffer.byteLength(JSON.stringify(safe)) <= 4096);
+  assert(!JSON.stringify(safe).includes("PRIVATE"));
+  for (const primary of [false, 0, null, undefined, Error("PROOF_JOIN")])
+    for (const cleanupFails of [false, true]) {
+      const observed = [];
+      let scope;
+      const diagnostic =
+        syntheticReport().cases[names.indexOf("output-bound")]
+          .supervisorObservation;
+      const bindings = {
+        assert,
+        randomUUID: () => "00000000-0000-4000-8000-000000000001",
+        Map,
+        Set,
+        Promise,
+        Buffer,
+        performance,
+        authority: () => ({}),
+        process: {
+          env: {},
+          platform: "model",
+          arch: "model",
+          versions: { node: "model" },
+        },
+        originalEnd: () => performance.now() + 1000,
+        sourceWitness: async () => ({
+          contents: new Map([
+            [".node-version", "model"],
+            ["runtime", "model"],
+          ]),
+        }),
+        kernelBlocks: () => {},
+        RUNTIME: "runtime",
+        modelCore: {},
+        check: () => {},
+        ownedRoot: async () => ({
+          observers: new Set(),
+          retire() {
+            observed.push("retire");
+          },
+        }),
+        foreignActor: async () => ({
+          ready: async () => {},
+          current: async () => {},
+          stop: async () => {
+            observed.push("foreign-stop");
+          },
+        }),
+        CASES: ["output-bound"],
+        modeledDiagnostic: diagnostic,
+        caseRun: async () => {
+          vm.runInContext("lastCaseDiagnostic=modeledDiagnostic", scope);
+          throw primary;
+        },
+        within: async (work) => await work(),
+        cleanup: async () => {
+          observed.push("cleanup");
+          if (cleanupFails) throw Error("PRIVATE cleanup");
+        },
+        assertionFailureCode,
+        supervisorObservation,
+        freeze: (value) => Object.freeze(value),
+        FALSE_FLAGS: { productionReadinessIssued: false, runtimeReady: false },
+        JSON,
+      };
+      scope = vm.createContext(bindings);
+      const model = vm.runInNewContext(
+        `let last=null,running=false,lastCaseDiagnostic=null;${bounded}\nconst run=${body};({run,observation:()=>last});`,
+        scope,
+      );
+      let rejected = false,
+        caught;
+      try {
+        await model.run();
+      } catch (error) {
+        rejected = true;
+        caught = error;
+      }
+      assert.equal(rejected, true);
+      assert.equal(caught, primary, "including falsy original throw");
+      const observation = model.observation();
+      assert.equal(
+        observation.code,
+        primary instanceof Error ? "ASSERT_JOIN" : "PROOF_FAILED",
+      );
+      assert.equal(observation.cleanupAttempted, true);
+      assert.equal(observation.cleanupCompleted, !cleanupFails);
+      assert.equal(observation.knownOwnedActorsRemaining, null);
+      assert.equal(observation.supervisorObservation.outputsJoined, false);
+      assert.equal(observation.supervisorObservation.outputsSettled, true);
+      assert.equal(observation.supervisorObservation.outputHandlesClosed, true);
+      assert(Object.isFrozen(observation.supervisorObservation));
+      assert.equal(observation.extraContainmentUsed, false);
+      assert.equal(observation.runtimeReady, false);
+      assert(Buffer.byteLength(JSON.stringify(observation)) <= 4096);
+      assert(!JSON.stringify(observation).includes("PRIVATE"));
+      assert.deepEqual(observed, ["retire", "foreign-stop", "cleanup"]);
+    }
+});
