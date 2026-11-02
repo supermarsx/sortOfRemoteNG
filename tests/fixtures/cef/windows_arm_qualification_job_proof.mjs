@@ -599,6 +599,71 @@ const CONTROLLER_FAILURE_STAGES = new Set([
   "verify-child-job",
   "wait-root",
 ]);
+// BEGIN closed kernel result validation
+const CONTROLLER_KERNEL_OUTCOMES = new Set([
+  "launcher-failure",
+  "running",
+  "cancelled",
+  "deadline",
+  "log-failure",
+  "output-cap",
+  "success",
+  "compiler-failure",
+  "descendants-left",
+]);
+function validateKernelFailure(value) {
+  if (value === null) return;
+  exact(value, [
+    "outcome",
+    "rootExit",
+    "nativeStage",
+    "nativeErrno",
+    "activeAtEnd",
+    "cleanupVerified",
+    "logReadersStopped",
+    "rootReaped",
+    "observerStopped",
+    "started",
+    "resumed",
+    "assignedBeforeResume",
+  ]);
+  const integer = (field, maximum) =>
+    field === null ||
+    (Number.isSafeInteger(field) && field >= 0 && field <= maximum);
+  need(
+    value.outcome === null ||
+      (typeof value.outcome === "string" &&
+        CONTROLLER_KERNEL_OUTCOMES.has(value.outcome)),
+    "PROOF_SCHEMA",
+  );
+  need(
+    integer(value.rootExit, 4294967295) &&
+      integer(value.nativeErrno, 4294967295) &&
+      integer(value.activeAtEnd, 64),
+    "PROOF_SCHEMA",
+  );
+  need(
+    value.nativeStage === null ||
+      (typeof value.nativeStage === "string" &&
+        (CONTROLLER_FAILURE_STAGES.has(value.nativeStage) ||
+          value.nativeStage === "launcher-io")),
+    "PROOF_SCHEMA",
+  );
+  for (const key of [
+    "cleanupVerified",
+    "logReadersStopped",
+    "rootReaped",
+    "observerStopped",
+    "started",
+    "resumed",
+    "assignedBeforeResume",
+  ])
+    need(
+      value[key] === null || typeof value[key] === "boolean",
+      "PROOF_SCHEMA",
+    );
+}
+// END closed kernel result validation
 export function validateControllerFailure(raw) {
   try {
     if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > 2048)
@@ -617,6 +682,7 @@ export function validateControllerFailure(raw) {
       "code",
       "nativeStage",
       "nativeErrno",
+      "kernel",
       "productionAdmission",
       "runtimeReady",
     ]);
@@ -646,6 +712,12 @@ export function validateControllerFailure(raw) {
       ) ||
       value.productionAdmission !== false ||
       value.runtimeReady !== false
+    )
+      return null;
+    validateKernelFailure(value.kernel);
+    if (
+      value.kernel !== null &&
+      (value.phase !== "case-readback" || !CASES.includes(value.case))
     )
       return null;
     return value;

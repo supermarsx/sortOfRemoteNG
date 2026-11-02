@@ -24,6 +24,52 @@ import {
   readReviewedProofPolicy,
 } from "../fixtures/cef/windows_arm_qualification_job_proof.mjs";
 
+const KERNEL_DIAGNOSTIC_INVERSE = {
+  python: [
+    [
+      '    "parent-observation-failed": "NATIVE_PARENT_OBSERVATION_FAILED",\n    "prototype-policy-mismatch": "NATIVE_POLICY_MISMATCH",\n}\n_controller_observation = {"phase": "entry", "case": None, "completedCases": 0, "kernel": None}\n\n\ndef _observe_controller(phase, case=None, completed=0):\n    # Observation only: no paths, probes, clocks, assertions or authority.\n    try:\n        if phase in _CONTROLLER_PHASES and (case is None or case in CASES) and type(completed) is int and 0 <= completed <= len(CASES):\n            _controller_observation.update(phase=phase, case=case, completedCases=completed, kernel=None)\n    except BaseException:\n        pass\n\n\n# BEGIN closed kernel result observation\n_KERNEL_OUTCOMES = frozenset(("launcher-failure", "running", "cancelled", "deadline", "log-failure", "output-cap", "success", "compiler-failure", "descendants-left"))\n_KERNEL_BOOL_FIELDS = ("cleanupVerified", "logReadersStopped", "rootReaped", "observerStopped", "started", "resumed", "assignedBeforeResume")\n\n\ndef _observe_kernel_result(result):\n    # Only the exact returned dict\'s primitive fields; no accessors, raw logs,\n    # messages, paths, exception objects or additional native observation.\n    try:\n        _controller_observation["kernel"] = None\n        if type(result) is not dict or len(result) > 64 or not all(type(key) is str and len(key) <= 64 for key in dict.keys(result)) or dict.get(_controller_observation, "phase") != "case-readback":\n            return\n        value = {"outcome": None, "rootExit": None, "nativeStage": None, "nativeErrno": None, "activeAtEnd": None}\n        for name in _KERNEL_BOOL_FIELDS:\n            field = dict.get(result, name)\n            value[name] = field if type(field) is bool else None\n        field = dict.get(result, "outcome")\n        if type(field) is str and len(field) <= 64 and field in _KERNEL_OUTCOMES:\n            value["outcome"] = field\n        for original, projected, maximum in (("rootExit", "rootExit", 4294967295), ("winerror", "nativeErrno", 4294967295), ("activeAtEnd", "activeAtEnd", 64)):\n            field = dict.get(result, original)\n            if type(field) is int and 0 <= field <= maximum:\n                value[projected] = field\n        field = dict.get(result, "failureStage")\n        if type(field) is str and len(field) <= 64 and (field in _CONTROLLER_STAGES or field == "launcher-io"):\n            value["nativeStage"] = field\n        _controller_observation["kernel"] = value\n    except BaseException:\n        pass\n# END closed kernel result observation\n\n\ndef controller_failure(error):\n    value = {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",\n             "complete": False, "failure": "PROOF_DENIED", "phase": "entry",\n             "case": None, "completedCases": 0, "code": "UNKNOWN",\n             "nativeStage": None, "nativeErrno": None, "kernel": None,\n             "productionAdmission": False, "runtimeReady": False}\n    try:\n        phase = dict.get(_controller_observation, "phase")\n',
+      '    "parent-observation-failed": "NATIVE_PARENT_OBSERVATION_FAILED",\n    "prototype-policy-mismatch": "NATIVE_POLICY_MISMATCH",\n}\n_controller_observation = {"phase": "entry", "case": None, "completedCases": 0}\n\n\ndef _observe_controller(phase, case=None, completed=0):\n    # Observation only: no paths, probes, clocks, assertions or authority.\n    try:\n        if phase in _CONTROLLER_PHASES and (case is None or case in CASES) and type(completed) is int and 0 <= completed <= len(CASES):\n            _controller_observation.update(phase=phase, case=case, completedCases=completed)\n    except BaseException:\n        pass\n\n\ndef controller_failure(error):\n    value = {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",\n             "complete": False, "failure": "PROOF_DENIED", "phase": "entry",\n             "case": None, "completedCases": 0, "code": "UNKNOWN",\n             "nativeStage": None, "nativeErrno": None,\n             "productionAdmission": False, "runtimeReady": False}\n    try:\n        phase = dict.get(_controller_observation, "phase")\n',
+    ],
+    [
+      '            value["case"] = case\n        if type(completed) is int and 0 <= completed <= len(CASES):\n            value["completedCases"] = completed\n        # The observer already copied every permitted primitive. Copy again so\n        # the emitted envelope cannot alias even that private observation dict.\n        kernel = dict.get(_controller_observation, "kernel")\n        if value["phase"] == "case-readback" and type(kernel) is dict:\n            value["kernel"] = dict.copy(kernel)\n        # Built-in descriptors bypass user __getattribute__, properties and str.\n        args = BaseException.args.__get__(error, BaseException)\n        if type(args) is tuple and len(args) == 1 and type(args[0]) is str and len(args[0]) <= 64:\n',
+      '            value["case"] = case\n        if type(completed) is int and 0 <= completed <= len(CASES):\n            value["completedCases"] = completed\n        # Built-in descriptors bypass user __getattribute__, properties and str.\n        args = BaseException.args.__get__(error, BaseException)\n        if type(args) is tuple and len(args) == 1 and type(args[0]) is str and len(args[0]) <= 64:\n',
+    ],
+    [
+      '    return {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",\n            "complete": False, "failure": "PROOF_DENIED", "phase": "entry",\n            "case": None, "completedCases": 0, "code": "UNKNOWN",\n            "nativeStage": None, "nativeErrno": None, "kernel": None,\n            "productionAdmission": False, "runtimeReady": False}\n# END bounded controller failure observation\n\n',
+      '    return {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",\n            "complete": False, "failure": "PROOF_DENIED", "phase": "entry",\n            "case": None, "completedCases": 0, "code": "UNKNOWN",\n            "nativeStage": None, "nativeErrno": None,\n            "productionAdmission": False, "runtimeReady": False}\n# END bounded controller failure observation\n\n',
+    ],
+    [
+      '            _observe_controller("case-run", name, len(case_rows))  # controller-observation\n            result = kernel.run_job(command, case, case / "jobs" / role, seconds, cancel=Cancellation(), cap=p["caseOutputCapBytes"], _test_observe=observer)\n            _observe_controller("case-readback", name, len(case_rows))  # controller-observation\n            _observe_kernel_result(result)  # closed-kernel-observation\n            clock.left()\n            held(Path(p["python"]["path"]), p["python"]["bytes"], p["python"])\n            held(Path(p["node"]["path"]), p["node"]["bytes"], p["node"])\n',
+      '            _observe_controller("case-run", name, len(case_rows))  # controller-observation\n            result = kernel.run_job(command, case, case / "jobs" / role, seconds, cancel=Cancellation(), cap=p["caseOutputCapBytes"], _test_observe=observer)\n            _observe_controller("case-readback", name, len(case_rows))  # controller-observation\n            clock.left()\n            held(Path(p["python"]["path"]), p["python"]["bytes"], p["python"])\n            held(Path(p["node"]["path"]), p["node"]["bytes"], p["node"])\n',
+    ],
+  ],
+  node: [
+    [
+      '  "verify-child-job",\n  "wait-root",\n]);\n// BEGIN closed kernel result validation\nconst CONTROLLER_KERNEL_OUTCOMES = new Set([\n  "launcher-failure",\n  "running",\n  "cancelled",\n  "deadline",\n  "log-failure",\n  "output-cap",\n  "success",\n  "compiler-failure",\n  "descendants-left",\n]);\nfunction validateKernelFailure(value) {\n  if (value === null) return;\n  exact(value, [\n    "outcome",\n    "rootExit",\n    "nativeStage",\n    "nativeErrno",\n    "activeAtEnd",\n    "cleanupVerified",\n    "logReadersStopped",\n    "rootReaped",\n    "observerStopped",\n    "started",\n    "resumed",\n    "assignedBeforeResume",\n  ]);\n  const integer = (field, maximum) =>\n    field === null ||\n    (Number.isSafeInteger(field) && field >= 0 && field <= maximum);\n  need(\n    value.outcome === null ||\n      (typeof value.outcome === "string" &&\n        CONTROLLER_KERNEL_OUTCOMES.has(value.outcome)),\n    "PROOF_SCHEMA",\n  );\n  need(\n    integer(value.rootExit, 4294967295) &&\n      integer(value.nativeErrno, 4294967295) &&\n      integer(value.activeAtEnd, 64),\n    "PROOF_SCHEMA",\n  );\n  need(\n    value.nativeStage === null ||\n      (typeof value.nativeStage === "string" &&\n        (CONTROLLER_FAILURE_STAGES.has(value.nativeStage) ||\n          value.nativeStage === "launcher-io")),\n    "PROOF_SCHEMA",\n  );\n  for (const key of [\n    "cleanupVerified",\n    "logReadersStopped",\n    "rootReaped",\n    "observerStopped",\n    "started",\n    "resumed",\n    "assignedBeforeResume",\n  ])\n    need(\n      value[key] === null || typeof value[key] === "boolean",\n      "PROOF_SCHEMA",\n    );\n}\n// END closed kernel result validation\nexport function validateControllerFailure(raw) {\n  try {\n    if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > 2048)\n',
+      '  "verify-child-job",\n  "wait-root",\n]);\nexport function validateControllerFailure(raw) {\n  try {\n    if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > 2048)\n',
+    ],
+    [
+      '      "code",\n      "nativeStage",\n      "nativeErrno",\n      "kernel",\n      "productionAdmission",\n      "runtimeReady",\n    ]);\n',
+      '      "code",\n      "nativeStage",\n      "nativeErrno",\n      "productionAdmission",\n      "runtimeReady",\n    ]);\n',
+    ],
+    [
+      '      ) ||\n      value.productionAdmission !== false ||\n      value.runtimeReady !== false\n    )\n      return null;\n    validateKernelFailure(value.kernel);\n    if (\n      value.kernel !== null &&\n      (value.phase !== "case-readback" || !CASES.includes(value.case))\n    )\n      return null;\n    return value;\n',
+      "      ) ||\n      value.productionAdmission !== false ||\n      value.runtimeReady !== false\n    )\n      return null;\n    return value;\n",
+    ],
+  ],
+};
+function previousKernelResultDiagnostics(text, role) {
+  for (const [current, previous] of KERNEL_DIAGNOSTIC_INVERSE[role]) {
+    assert.equal(
+      text.split(current).length,
+      2,
+      role + " exact closed-kernel inverse",
+    );
+    text = text.replace(current, previous);
+  }
+  return text;
+}
+
 // Exact historical views are used only by the pre-registry inverse guards.
 const REVIEWED_REGISTRY_INVERSE = {
   python: [
@@ -110,6 +156,7 @@ const REVIEWED_REGISTRY_INVERSE = {
   ],
 };
 function previousReviewedImages(text, role) {
+  if (role !== "workflow") text = previousKernelResultDiagnostics(text, role);
   for (const [current, previous] of REVIEWED_REGISTRY_INVERSE[role]) {
     assert.equal(
       text.split(current).length,
@@ -463,6 +510,7 @@ function controllerFailureFixture() {
     code: "NATIVE_OS_ERROR",
     nativeStage: "proof-controller-handle",
     nativeErrno: 5,
+    kernel: null,
     productionAdmission: false,
     runtimeReady: false,
   };
@@ -2637,5 +2685,166 @@ test("reviewed image worker and actor actual context guards reject mixed image o
   assert.match(
     proofJob.steps[0].run,
     /-cne '20261021\.278\.1' -and \$env:ImageVersion -cne '20261030\.294\.1'/,
+  );
+});
+
+test("closed kernel result diagnostic copies only bounded own primitives and never changes a primary failure", () => {
+  const output = JSON.parse(
+    python(String.raw`
+import ast,json,sys
+from pathlib import Path
+ns={'__name__':'closed_kernel_diagnostic_model','__file__':sys.argv[1]}
+exec(compile(Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),ns)
+case=ns['CASES'][5];observe=ns['_observe_controller'];copy=ns['_observe_kernel_result'];failure=ns['controller_failure']
+observe('case-readback',case,5)
+raw={'outcome':'compiler-failure','rootExit':1,'failureStage':'root-exit','winerror':5,'activeAtEnd':0,'cleanupVerified':True,'logReadersStopped':True,'rootReaped':True,'observerStopped':True,'started':True,'resumed':True,'assignedBeforeResume':True,'stderr':'PRIVATE_PATH_COMMAND_TOKEN','message':'PRIVATE_PATH_COMMAND_TOKEN'}
+copy(raw);primary=ValueError('PROOF_CASE_OUTCOME');value=failure(primary)
+assert primary.args==('PROOF_CASE_OUTCOME',) and value['code']=='PROOF_CASE_OUTCOME'
+assert value['kernel']=={'outcome':'compiler-failure','rootExit':1,'nativeStage':'root-exit','nativeErrno':5,'activeAtEnd':0,'cleanupVerified':True,'logReadersStopped':True,'rootReaped':True,'observerStopped':True,'started':True,'resumed':True,'assignedBeforeResume':True}
+raw['rootExit']=99;assert value['kernel']['rootExit']==1
+ns['_controller_observation']['kernel']['rootExit']=33;assert value['kernel']['rootExit']==1
+joined=value
+class Hostile:
+ def __getattribute__(self,key):raise AssertionError('object getter invoked')
+ def __str__(self):raise AssertionError('object string invoked')
+ def __bool__(self):raise AssertionError('object boolean invoked')
+class Mapping(dict):
+ def get(self,*args):raise AssertionError('mapping getter invoked')
+ def keys(self):raise AssertionError('mapping keys invoked')
+for bad in(None,False,Hostile(),Mapping(raw),{Hostile():1},{str(i):i for i in range(65)}):
+ copy(bad);assert failure(primary)['kernel']is None
+unknown={key:Hostile()for key in raw if key not in('stderr','message')};copy(unknown)
+assert all(field is None for field in failure(primary)['kernel'].values())
+for key,bad in [('outcome','PRIVATE_PATH_COMMAND_TOKEN'),('outcome','x'*100000),('rootExit',True),('rootExit',-1),('rootExit',4294967296),('winerror',False),('winerror',-1),('activeAtEnd',65),('cleanupVerified',1),('failureStage','PRIVATE_PATH_COMMAND_TOKEN')]:
+ changed={**raw,key:bad};copy(changed);projected={'winerror':'nativeErrno','failureStage':'nativeStage'}.get(key,key)
+ assert failure(primary)['kernel'][projected] is None
+copy({'outcome':'launcher-failure','failureStage':'launcher-io','winerror':4294967295,'rootExit':4294967295})
+boundary=failure(primary);assert boundary['kernel']['nativeStage']=='launcher-io' and boundary['kernel']['nativeErrno']==4294967295
+observe('case-prepare',ns['CASES'][6],5);assert failure(primary)['kernel']is None
+copy(raw);assert failure(primary)['kernel']is None
+assert len(json.dumps(joined,separators=(',',':')).encode())<=2048
+assert 'PRIVATE_PATH_COMMAND_TOKEN'not in json.dumps(joined)
+# Closed enum is derived from the unchanged actual kernel's outcome literals.
+tree=ast.parse(Path(sys.argv[2]).read_bytes());labels=set()
+for node in ast.walk(tree):
+ if isinstance(node,ast.Assign)and any(isinstance(t,ast.Subscript)and isinstance(t.value,ast.Name)and t.value.id=='result'and isinstance(t.slice,ast.Constant)and t.slice.value=='outcome'for t in node.targets):
+  labels.update(item.value for item in ast.walk(node.value)if isinstance(item,ast.Constant)and isinstance(item.value,str))
+assert labels<=ns['_KERNEL_OUTCOMES']
+print(json.dumps({'observed':joined,'boundary':boundary,'outcomes':sorted(ns['_KERNEL_OUTCOMES'])}))`),
+  );
+  const selected = validateControllerFailure(
+    Buffer.from(JSON.stringify(output.observed)),
+  );
+  assert(selected);
+  assert.equal(selected.kernel.rootExit, 1);
+  assert.equal(selected.kernel.cleanupVerified, true);
+  assert(
+    validateControllerFailure(Buffer.from(JSON.stringify(output.boundary))),
+  );
+  assert(!JSON.stringify(output).includes("PRIVATE_PATH_COMMAND_TOKEN"));
+  assert.match(
+    adapter,
+    /_observe_controller\("case-readback", name, len\(case_rows\)\)[^\n]*\n            _observe_kernel_result\(result\)/,
+  );
+  const block = fixture.slice(
+    fixture.indexOf("// BEGIN closed kernel result validation"),
+    fixture.indexOf("// END closed kernel result validation"),
+  );
+  const enums = vm.runInNewContext(
+    block + ";([...CONTROLLER_KERNEL_OUTCOMES])",
+  );
+  assert.deepEqual([...enums].sort(), output.outcomes);
+});
+
+test("closed kernel failure Node selector rejects unknown fields malformed enums and forged join or numeric types", () => {
+  const envelope = {
+    ...controllerFailureFixture(),
+    phase: "case-readback",
+    case: CASES[5],
+    completedCases: 5,
+    code: "PROOF_CASE_OUTCOME",
+    kernel: {
+      outcome: "descendants-left",
+      rootExit: 0,
+      nativeStage: null,
+      nativeErrno: null,
+      activeAtEnd: 0,
+      cleanupVerified: true,
+      logReadersStopped: true,
+      rootReaped: true,
+      observerStopped: true,
+      started: true,
+      resumed: true,
+      assignedBeforeResume: true,
+    },
+  };
+  const select = (value) =>
+    validateControllerFailure(Buffer.from(JSON.stringify(value)));
+  assert(select(envelope));
+  for (const [key, value] of [
+    ["outcome", "PRIVATE_SECRET"],
+    ["outcome", null],
+    ["rootExit", true],
+    ["rootExit", 4294967296],
+    ["nativeErrno", -1],
+    ["activeAtEnd", 65],
+    ["activeAtEnd", 0.5],
+    ["nativeStage", "PRIVATE_SECRET"],
+    ["cleanupVerified", 1],
+    ["rootReaped", "true"],
+    ["private", "PRIVATE_SECRET"],
+  ]) {
+    const candidate = {
+      ...envelope,
+      kernel: { ...envelope.kernel, [key]: value },
+    };
+    if (key === "outcome" && value === null) assert(select(candidate));
+    else assert.equal(select(candidate), null);
+  }
+  const missing = { ...envelope, kernel: { ...envelope.kernel } };
+  delete missing.kernel.rootExit;
+  assert.equal(select(missing), null);
+  assert.equal(select({ ...envelope, phase: "case-run" }), null);
+  assert.equal(select({ ...envelope, case: null }), null);
+  assert.equal(select({ ...envelope, kernel: [] }), null);
+  assert.equal(select({ ...envelope, kernel: 42 }), null);
+  const old = { ...envelope };
+  delete old.kernel;
+  assert.equal(select(old), null);
+});
+
+test("closed kernel diagnostics exact inverse preserves full reviewed89a Python and Node and every original outcome actor and lease", async () => {
+  const expected = {
+    python: [
+      43258,
+      "6a9fa579246ff0ba0d011e688ab72c63f6cfc9eb7c80f04b94b5ac5cd21e36b2",
+    ],
+    node: [
+      47206,
+      "1819b4c3b8febb915c66d244626157d29774112841e2ea09e78322550d321bd9",
+    ],
+  };
+  for (const [role, body] of [
+    ["python", adapter],
+    ["node", fixture],
+  ]) {
+    const old = previousKernelResultDiagnostics(body, role);
+    assert.equal(Buffer.byteLength(old), expected[role][0]);
+    assert.equal(hash(old), expected[role][1]);
+  }
+  const kernel = Buffer.from(
+    (await fs.readFile(path.join(DIR, "job.py"), "utf8")).replaceAll(
+      "\r\n",
+      "\n",
+    ),
+  );
+  assert.equal(kernel.length, 23788);
+  assert.equal(
+    hash(kernel),
+    "70f10cc78c6b75519d3b33cb02788b49f058bdfdf0780b27aeb7becde0b5e716",
+  );
+  assert.equal(
+    hash(rawRegistry),
+    "63c72846b9506a78f6d968a64445a9f495bc04523509327c43286dde1baa6240",
   );
 });

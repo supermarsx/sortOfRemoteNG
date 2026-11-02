@@ -39,23 +39,55 @@ _CONTROLLER_NATIVE_REASONS = {
     "parent-observation-failed": "NATIVE_PARENT_OBSERVATION_FAILED",
     "prototype-policy-mismatch": "NATIVE_POLICY_MISMATCH",
 }
-_controller_observation = {"phase": "entry", "case": None, "completedCases": 0}
+_controller_observation = {"phase": "entry", "case": None, "completedCases": 0, "kernel": None}
 
 
 def _observe_controller(phase, case=None, completed=0):
     # Observation only: no paths, probes, clocks, assertions or authority.
     try:
         if phase in _CONTROLLER_PHASES and (case is None or case in CASES) and type(completed) is int and 0 <= completed <= len(CASES):
-            _controller_observation.update(phase=phase, case=case, completedCases=completed)
+            _controller_observation.update(phase=phase, case=case, completedCases=completed, kernel=None)
     except BaseException:
         pass
+
+
+# BEGIN closed kernel result observation
+_KERNEL_OUTCOMES = frozenset(("launcher-failure", "running", "cancelled", "deadline", "log-failure", "output-cap", "success", "compiler-failure", "descendants-left"))
+_KERNEL_BOOL_FIELDS = ("cleanupVerified", "logReadersStopped", "rootReaped", "observerStopped", "started", "resumed", "assignedBeforeResume")
+
+
+def _observe_kernel_result(result):
+    # Only the exact returned dict's primitive fields; no accessors, raw logs,
+    # messages, paths, exception objects or additional native observation.
+    try:
+        _controller_observation["kernel"] = None
+        if type(result) is not dict or len(result) > 64 or not all(type(key) is str and len(key) <= 64 for key in dict.keys(result)) or dict.get(_controller_observation, "phase") != "case-readback":
+            return
+        value = {"outcome": None, "rootExit": None, "nativeStage": None, "nativeErrno": None, "activeAtEnd": None}
+        for name in _KERNEL_BOOL_FIELDS:
+            field = dict.get(result, name)
+            value[name] = field if type(field) is bool else None
+        field = dict.get(result, "outcome")
+        if type(field) is str and len(field) <= 64 and field in _KERNEL_OUTCOMES:
+            value["outcome"] = field
+        for original, projected, maximum in (("rootExit", "rootExit", 4294967295), ("winerror", "nativeErrno", 4294967295), ("activeAtEnd", "activeAtEnd", 64)):
+            field = dict.get(result, original)
+            if type(field) is int and 0 <= field <= maximum:
+                value[projected] = field
+        field = dict.get(result, "failureStage")
+        if type(field) is str and len(field) <= 64 and (field in _CONTROLLER_STAGES or field == "launcher-io"):
+            value["nativeStage"] = field
+        _controller_observation["kernel"] = value
+    except BaseException:
+        pass
+# END closed kernel result observation
 
 
 def controller_failure(error):
     value = {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",
              "complete": False, "failure": "PROOF_DENIED", "phase": "entry",
              "case": None, "completedCases": 0, "code": "UNKNOWN",
-             "nativeStage": None, "nativeErrno": None,
+             "nativeStage": None, "nativeErrno": None, "kernel": None,
              "productionAdmission": False, "runtimeReady": False}
     try:
         phase = dict.get(_controller_observation, "phase")
@@ -67,6 +99,11 @@ def controller_failure(error):
             value["case"] = case
         if type(completed) is int and 0 <= completed <= len(CASES):
             value["completedCases"] = completed
+        # The observer already copied every permitted primitive. Copy again so
+        # the emitted envelope cannot alias even that private observation dict.
+        kernel = dict.get(_controller_observation, "kernel")
+        if value["phase"] == "case-readback" and type(kernel) is dict:
+            value["kernel"] = dict.copy(kernel)
         # Built-in descriptors bypass user __getattribute__, properties and str.
         args = BaseException.args.__get__(error, BaseException)
         if type(args) is tuple and len(args) == 1 and type(args[0]) is str and len(args[0]) <= 64:
@@ -103,7 +140,7 @@ def controller_failure(error):
     return {"schemaVersion": 1, "kind": "windows-benign-job-controller-failure",
             "complete": False, "failure": "PROOF_DENIED", "phase": "entry",
             "case": None, "completedCases": 0, "code": "UNKNOWN",
-            "nativeStage": None, "nativeErrno": None,
+            "nativeStage": None, "nativeErrno": None, "kernel": None,
             "productionAdmission": False, "runtimeReady": False}
 # END bounded controller failure observation
 
@@ -685,6 +722,7 @@ def suite(root, context_raw, p):
             _observe_controller("case-run", name, len(case_rows))  # controller-observation
             result = kernel.run_job(command, case, case / "jobs" / role, seconds, cancel=Cancellation(), cap=p["caseOutputCapBytes"], _test_observe=observer)
             _observe_controller("case-readback", name, len(case_rows))  # controller-observation
+            _observe_kernel_result(result)  # closed-kernel-observation
             clock.left()
             held(Path(p["python"]["path"]), p["python"]["bytes"], p["python"])
             held(Path(p["node"]["path"]), p["node"]["bytes"], p["node"])
