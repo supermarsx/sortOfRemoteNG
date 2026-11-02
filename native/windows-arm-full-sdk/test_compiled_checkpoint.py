@@ -22,6 +22,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compiled_checkpoint as subject
 
 
+CARRIER_HEAD = 'c' * 40  # Modeled current main H; original producer B stays a*40.
+
+
+def carrier_metadata(route):
+    prefix = '/repos/' + subject.REPOSITORY
+    if route == prefix:
+        return dict(id=subject.REPOSITORY_ID, full_name=subject.REPOSITORY,
+                    private=False, visibility='public', default_branch='main')
+    if route == prefix + '/git/ref/heads/main':
+        return dict(ref='refs/heads/main', node_id='modeled-reference',
+                    url=subject.API + prefix + '/git/refs/heads/main',
+                    object=dict(type='commit', sha=CARRIER_HEAD,
+                                url=subject.API + prefix + '/git/commits/' + CARRIER_HEAD))
+    if route == prefix + '/git/commits/' + CARRIER_HEAD:
+        return dict(sha=CARRIER_HEAD, tree=dict(sha='d' * 40))
+    return None
+
+
 def job(deadline=False):
     value = dict(kind='owned-job-proof', started=True, jobCreated=True, assignedBeforeResume=True, resumed=True,
                  assignedAtCreationVerified=True, handleListOnly=True, cleanupVerified=True, rootReaped=True,
@@ -384,6 +402,181 @@ class CodecTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'EVIDENCE_PIN'):
             subject.validate_evidence(sealed['record'], changed)
 
+    def test_fresh_carrier_finite_inverse_restores_complete_reviewed_codec(self):
+        raw = Path(subject.__file__).read_text()
+        start = raw.index('# BEGIN FRESH DEFAULT-MAIN TRANSPORT CARRIER\n')
+        end = raw.index('# END FRESH DEFAULT-MAIN TRANSPORT CARRIER\n', start) + len('# END FRESH DEFAULT-MAIN TRANSPORT CARRIER\n\n\n')
+        raw = raw[:start] + raw[end:]
+        replacements = (
+            ("\n\nSAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',\n                                    'CARRIER_CHANGED', 'CARRIER_RELEASE'})\n",
+             ''),
+            ("                      r'/actions/workflows/windows-arm-full-sdk\\.yml', r'/git/ref/heads/main', r'/git/commits/[a-f0-9]{40}',\n",
+             "                      r'/actions/workflows/windows-arm-full-sdk\\.yml', r'/git/commits/[a-f0-9]{40}',\n"),
+            ('    release = _create_transport_release(client, release_tag)\n',
+             "    release = client.post('/repos/' + REPOSITORY + '/releases', dict(tag_name=release_tag, name=release_tag,\n                         target_commitish=current['head_sha'], draft=True, prerelease=True))\n"),
+            ("         release.get('tag_name') == release_tag, 'SDK_QUARANTINE_RELEASE')\n",
+             "         release.get('tag_name') == release_tag and release.get('target_commitish') == current['head_sha'], 'SDK_QUARANTINE_RELEASE')\n"),
+            ("                    release=dict(id=release['id'], tag=release_tag, head=source['head'], carrierHead=release['target_commitish']),\n",
+             "                    release=dict(id=release['id'], tag=release_tag, head=source['head']),\n"),
+            ("    need(type(seal['release']) is dict and set(seal['release']) == {'id', 'tag', 'head', 'carrierHead'} and\n",
+             "    need(type(seal['release']) is dict and set(seal['release']) == {'id', 'tag', 'head'} and\n"),
+            ("         type(seal['release']['carrierHead']) is str and re.fullmatch('[a-f0-9]{40}', seal['release']['carrierHead']) and\n",
+             ''),
+            ("    _carrier_commit(client, immutable['release']['carrierHead'])\n",
+             ''),
+            ("    need(type(release) is dict and release.get('id') == immutable['release']['id'] and\n         release.get('tag_name') == immutable['release']['tag'] and release.get('name') == immutable['release']['tag'] and\n         release.get('draft') is True and release.get('prerelease') is True and\n         release.get('target_commitish') == immutable['release']['carrierHead'], 'RELEASE_SCOPE')\n",
+             "    need(release.get('id') == immutable['release']['id'] and release.get('tag_name') == immutable['release']['tag'] and\n         release.get('draft') is True and release.get('prerelease') is True and release.get('target_commitish') == prior['head_sha'], 'RELEASE_SCOPE')\n"),
+            ('    release = _create_transport_release(client, tag(record, record_pin))\n',
+             "    release = client.post('/repos/' + REPOSITORY + '/releases',\n                          dict(tag_name=tag(record, record_pin), target_commitish=current['head_sha'],\n                               name=tag(record, record_pin), draft=True, prerelease=True))\n"),
+            ("         release.get('tag_name') == tag(record, record_pin), 'UPLOAD_RELEASE')\n",
+             "         release.get('target_commitish') == current['head_sha'] and release.get('tag_name') == tag(record, record_pin), 'UPLOAD_RELEASE')\n"),
+            ("                    identity=identity, release=dict(id=release['id'], tag=release['tag_name'], head=current['head_sha'], carrierHead=release['target_commitish']),\n",
+             "                    identity=identity, release=dict(id=release['id'], tag=release['tag_name'], head=current['head_sha']),\n"),
+        )
+        for after, before in replacements:
+            self.assertEqual(raw.count(after), 1)
+            raw = raw.replace(after, before, 1)
+        self.assertEqual(subject.sha(raw.encode()), 'a945464bead52c2d8413fd05fdc158f250749a8d85caab87a29782a5edeae2d9')
+
+    def test_fresh_transport_carrier_rechecks_public_default_main_before_one_post(self):
+        prefix = '/repos/' + subject.REPOSITORY
+        class Client:
+            clock = self.clock
+            def __init__(self):
+                self.posts, self.gets, self.release = [], [], None
+            def get(self, route):
+                self.gets.append(route)
+                return copy.deepcopy(self.release if route == prefix + '/releases/42' else carrier_metadata(route))
+            def post(self, route, body):
+                self.posts.append((route, copy.deepcopy(body)))
+                self.release = dict(id=42, **body)
+                return copy.deepcopy(self.release)
+        client = Client()
+        result = subject._create_transport_release(client, 'fixed-fixture-tag')
+        self.assertEqual(result['target_commitish'], CARRIER_HEAD)
+        self.assertEqual(client.gets, [prefix, prefix + '/git/ref/heads/main',
+                         prefix + '/git/commits/' + CARRIER_HEAD, prefix,
+                         prefix + '/git/ref/heads/main', prefix + '/releases/42'])
+        self.assertEqual(len(client.posts), 1)
+        # Every preflight mismatch denies before POST. These are transport
+        # observations, not caller-supplied source or execution permissions.
+        for label, route_suffix, occurrence, mutate in (
+            ('private', '', 1, lambda v: v.update(private=True)),
+            ('internal', '', 1, lambda v: v.update(visibility='internal')),
+            ('visibility-missing', '', 1, lambda v: v.pop('visibility')),
+            ('repository', '', 1, lambda v: v.update(id=1)),
+            ('default', '', 2, lambda v: v.update(default_branch='other')),
+            ('ref', '/git/ref/heads/main', 1, lambda v: v.update(ref='refs/heads/other')),
+            ('ref-url', '/git/ref/heads/main', 1, lambda v: v.update(url='https://foreign.example/ref')),
+            ('object', '/git/ref/heads/main', 1, lambda v: v['object'].update(type='tag')),
+            ('commit', '/git/commits/' + CARRIER_HEAD, 1, lambda v: v.update(sha='e' * 40)),
+            ('tree', '/git/commits/' + CARRIER_HEAD, 1, lambda v: v.update(tree=None)),
+            ('moved', '/git/ref/heads/main', 2, lambda v: v['object'].update(
+                sha='e' * 40, url=subject.API + prefix + '/git/commits/' + 'e' * 40)),
+        ):
+            client = Client()
+            original = client.get
+            seen = []
+            def changed(route):
+                value = original(route)
+                if route == prefix + route_suffix:
+                    seen.append(route)
+                    if len(seen) == occurrence: mutate(value)
+                return value
+            client.get = changed
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                subject._create_transport_release(client, 'fixed-fixture-tag')
+            self.assertFalse(client.posts)
+        # The original clock failure is propagated without retries or renewal.
+        failure = RuntimeError('modeled original lease expiry')
+        client = Client()
+        calls = []
+        def remaining():
+            calls.append(None)
+            if len(calls) == 2: raise failure
+            return 1
+        client.clock = types.SimpleNamespace(remaining=remaining)
+        with self.assertRaises(RuntimeError) as caught:
+            subject._create_transport_release(client, 'fixed-fixture-tag')
+        self.assertIs(caught.exception, failure)
+        self.assertFalse(client.posts)
+
+    def test_transport_carrier_post_and_readback_are_exact_no_retry_or_producer_relabel(self):
+        prefix = '/repos/' + subject.REPOSITORY
+        for location in ('post', 'readback'):
+            for field, wrong in (('id', 43), ('tag_name', 'other'), ('name', 'other'),
+                                 ('target_commitish', self.source['head']), ('draft', False), ('prerelease', False)):
+                posts = []
+                class Client:
+                    clock = self.clock
+                    def post(self, route, body):
+                        posts.append(body)
+                        result = dict(id=42, **body)
+                        if location == 'post': result[field] = wrong if field != 'id' else 0
+                        return result
+                    def get(self, route):
+                        value = carrier_metadata(route)
+                        if value is not None: return value
+                        self_test.assertEqual(route, prefix + '/releases/42')
+                        result = dict(id=42, **posts[0])
+                        result[field] = wrong
+                        return result
+                self_test = self
+                with self.subTest(location=location, field=field), self.assertRaisesRegex(ValueError, 'CARRIER_RELEASE'):
+                    subject._create_transport_release(Client(), 'fixed-fixture-tag')
+                self.assertEqual(len(posts), 1)
+        # Python bool equality cannot substitute for typed numeric release id.
+        class BooleanReadback:
+            clock = self.clock
+            def post(self, route, body):
+                self.release = dict(id=1, **body)
+                return copy.deepcopy(self.release)
+            def get(self, route):
+                if route == prefix + '/releases/1': return dict(self.release, id=True)
+                return carrier_metadata(route)
+        with self.assertRaisesRegex(ValueError, 'CARRIER_RELEASE'):
+            subject._create_transport_release(BooleanReadback(), 'fixed-fixture-tag')
+        class Denied:
+            clock = self.clock
+            def get(self, route): return carrier_metadata(route)
+            def post(self, route, body): raise subject.CheckpointFailure('API_STATUS')
+        with self.assertRaisesRegex(ValueError, 'API_STATUS'):
+            subject._create_transport_release(Denied(), 'fixed-fixture-tag')
+
+    def test_carrier_ref_uses_authenticated_fixed_route_and_never_follows_redirect(self):
+        from email.message import Message
+        prefix = '/repos/' + subject.REPOSITORY
+        requests = []
+        class Response(io.BytesIO):
+            status = 200
+            def __init__(self):
+                raw = subject.canonical(carrier_metadata(prefix + '/git/ref/heads/main'))
+                super().__init__(raw)
+                self.headers = Message()
+                self.headers['Content-Length'] = str(len(raw))
+        client = subject.Github('fixture-secret', self.clock)
+        def opened(request, timeout):
+            requests.append(request)
+            return Response()
+        client.opener = types.SimpleNamespace(open=opened)
+        self.assertEqual(subject._carrier_ref(client), CARRIER_HEAD)
+        self.assertEqual(requests[0].get_header('Authorization'), 'Bearer fixture-secret')
+        self.assertEqual(requests[0].full_url, subject.API + prefix + '/git/ref/heads/main')
+        for method, route in (('GET', '/git/ref/heads/other'), ('GET', '/git/refs/heads/main'),
+                              ('POST', '/git/ref/heads/main'), ('GET', '/git/ref/heads/main?x=1')):
+            with self.subTest(method=method, route=route), self.assertRaisesRegex(ValueError, 'API_CLOSED_ROUTE'):
+                client.response(method, prefix + route)
+        self.assertEqual(len(requests), 1)
+        def redirected(request, timeout):
+            requests.append(request)
+            headers = Message()
+            headers['Location'] = 'https://release-assets.githubusercontent.com/foreign-ref'
+            raise subject.urllib.error.HTTPError(request.full_url, 302, 'redirect', headers, io.BytesIO())
+        client.opener = types.SimpleNamespace(open=redirected)
+        with self.assertRaisesRegex(ValueError, 'API_STATUS'):
+            subject._carrier_ref(client)
+        self.assertEqual(len(requests), 2)
+
     def test_actual_git_blob_tree_binding_denies_foreign_workflow_or_changed_producer_bytes(self):
         workflow = b'fixed workflow bytes\n'
         rows = [*self.rows, dict(path=subject.WORKFLOW, bytes=len(workflow), sha256=subject.sha(workflow))]
@@ -414,12 +607,13 @@ class CodecTests(unittest.TestCase):
         names = [dict(name='checkpoint.json', **rp), *subject.validate_record(record, self.identity)]
         bodies = {index: (self.root / subject.OUTPUT / row['name']).read_bytes() for index, row in enumerate(names, 1)}
         assets = [dict(id=index, name=row['name'], size=row['bytes'], state='uploaded', digest='sha256:' + row['sha256']) for index, row in enumerate(names, 1)]
-        release = dict(id=42, tag_name=subject.tag(record, rp), draft=True, prerelease=True, target_commitish=self.source['head'])
+        release = dict(id=42, tag_name=subject.tag(record, rp), name=subject.tag(record, rp),
+                       draft=True, prerelease=True, target_commitish=CARRIER_HEAD)
         current = dict(id=5678, run_attempt=1)
         prior = dict(head_sha=self.source['head'])
         policy = dict(producerInputs=self.rows, workflowPin=dict(bytes=1, sha256='b' * 64))
         seal = dict(schemaVersion=1, kind='windows-arm-full-sdk-immutable-checkpoint-seal', workflow=record['workflow'], identity=self.identity,
-                    release=dict(id=42, tag=release['tag_name'], head=self.source['head']), record=rp,
+                    release=dict(id=42, tag=release['tag_name'], head=self.source['head'], carrierHead=CARRIER_HEAD), record=rp,
                     assets=[dict(id=index, **row) for index, row in enumerate(names, 1)],
                     nativeEvidence=record['nativeEvidence'], sourceContext=record['rawChain']['sourceContext'])
         zip_buffer = io.BytesIO()
@@ -432,20 +626,56 @@ class CodecTests(unittest.TestCase):
         class Client:
             clock = self.clock
             def get(self, route, maximum=subject.MAX_RECORD):
+                metadata = carrier_metadata(route)
+                if metadata is not None: return metadata
                 if '/artifacts?' in route: return dict(total_count=1, artifacts=[artifact])
                 return assets if '/assets?' in route else release
             def response(self, method, route, **kwargs):
+                downloads.append(route)
                 raw = zip_raw if '/actions/artifacts/' in route else bodies[int(route.rsplit('/', 1)[1])]
                 return io.BytesIO(raw), len(raw)
         temp = self.repo.parent.parent / '_temp'
         temp.mkdir()
         with patch.dict(os.environ, RUNNER_TEMP=str(temp)), patch.object(subject, '_transport_scope', return_value=(current, policy)), \
              patch.object(subject, '_run', return_value=prior), patch.object(subject, '_tree'):
+            downloads = []
             result = subject.transport_download(Client(), '1234', '1', self.source['image'])
             ready = temp / 'sorng-windows-arm-checkpoint-5678-1/ready.json'
             self.assertEqual(subject.sha(ready.read_bytes()), result['readyPin']['sha256'])
             self.assertEqual(json.loads(ready.read_bytes())['priorRunId'], '1234')
             self.assertEqual(json.loads(ready.read_bytes())['sealArtifact']['id'], 999)
+            # Stored H is transport data, not current main and never producer
+            # B. A mutable release or raw immutable seal cannot swap those roles.
+            original_release, original_seal = copy.deepcopy(release), copy.deepcopy(seal)
+            for index, (label, expected) in enumerate((('target', 'RELEASE_SCOPE'), ('name', 'RELEASE_SCOPE'),
+                    ('producer', 'SEAL_RELEASE'), ('missing-carrier', 'SEAL_RELEASE'), ('carrier', 'CARRIER_COMMIT'))):
+                current['id'] = 5680 + index
+                release.clear()
+                release.update(copy.deepcopy(original_release))
+                seal.clear()
+                seal.update(copy.deepcopy(original_seal))
+                if label == 'target': release['target_commitish'] = self.source['head']
+                elif label == 'name': release['name'] = 'other'
+                elif label == 'producer': seal['release']['head'] = CARRIER_HEAD
+                elif label == 'missing-carrier': del seal['release']['carrierHead']
+                elif label == 'carrier': seal['release']['carrierHead'] = 'e' * 40
+                buffer = io.BytesIO()
+                with subject.zipfile.ZipFile(buffer, 'w', compression=subject.zipfile.ZIP_DEFLATED) as zipped:
+                    zipped.writestr('checkpoint-seal.json', subject.canonical(seal))
+                zip_raw = buffer.getvalue()
+                artifact.update(size_in_bytes=len(zip_raw), digest='sha256:' + subject.sha(zip_raw))
+                downloads.clear()
+                with self.subTest(label=label), self.assertRaisesRegex(ValueError, expected):
+                    subject.transport_download(Client(), '1234', '1', self.source['image'])
+                self.assertTrue(all('/actions/artifacts/' in route for route in downloads))
+                self.assertFalse((temp / ('sorng-windows-arm-checkpoint-' + str(current['id']) + '-1/ready.json')).exists())
+            release.clear()
+            release.update(original_release)
+            buffer = io.BytesIO()
+            with subject.zipfile.ZipFile(buffer, 'w', compression=subject.zipfile.ZIP_DEFLATED) as zipped:
+                zipped.writestr('checkpoint-seal.json', subject.canonical(original_seal))
+            zip_raw = buffer.getvalue()
+            artifact.update(size_in_bytes=len(zip_raw), digest='sha256:' + subject.sha(zip_raw))
             # Same authenticated record, one actual body byte changed. The next
             # exclusive handoff directory may contain partial files, never ready.
             current['id'] = 5679
@@ -465,6 +695,7 @@ class CodecTests(unittest.TestCase):
         current = dict(id=1234, run_attempt=1, head_sha=self.source['head'])
         assets, posts = [], []
         class Client:
+            clock = self.clock
             def post(self, route, body):
                 posts.append(body)
                 return dict(id=42, **body)
@@ -474,11 +705,19 @@ class CodecTests(unittest.TestCase):
                 assets.append(row)
                 raw = subject.canonical(row)
                 return io.BytesIO(raw), len(raw)
-            def get(self, route): return assets
+            def get(self, route):
+                metadata = carrier_metadata(route)
+                if metadata is not None: return metadata
+                return assets if '/assets?' in route else dict(id=42, **posts[-1])
         with patch.object(subject, '_transport_scope', return_value=(current, dict(producerInputs=self.rows))):
             result = subject.transport_upload(Client(), self.source['image'], self.clock, self.fence)
             self.assertTrue(result['usableOnlyAfterWorkflowSuccess'])
             self.assertTrue(posts[0]['draft'])
+            self.assertEqual(posts[0]['target_commitish'], CARRIER_HEAD)
+            raw_seal = json.loads((self.root / result['sealFile']).read_bytes())
+            self.assertEqual(raw_seal['workflow']['head'], self.source['head'])
+            self.assertEqual(raw_seal['release']['head'], self.source['head'])
+            self.assertEqual(raw_seal['release']['carrierHead'], CARRIER_HEAD)
             self.assertEqual(len(assets), 7)
             self.put('full-sdk-engine-closed-cef-engine.json', dict(self.closed, ownHandleClosed=False))
             posts.clear()
@@ -568,16 +807,22 @@ class CodecTests(unittest.TestCase):
                       sdkBuilt=True, nativeAcceptance=False, runtimeReady=False, publicationAllowed=False, bundle=subject.SDK_BUNDLE,
                       assets=[dict(row, identity='held-fixture-physical-id') for row in assets])
         self.put('full-sdk-controller-result.json', report)
-        uploaded = []
+        uploaded, posts = [], []
         class Client:
-            def post(self, route, value): return dict(id=42, **value)
+            clock = self.clock
+            def post(self, route, value):
+                posts.append(value)
+                return dict(id=42, **value)
             def response(self, method, route, data=None):
                 name = subject.urllib.parse.parse_qs(subject.urllib.parse.urlsplit(route).query)['name'][0]
                 row = dict(id=len(uploaded) + 1, name=name, size=len(data), digest='sha256:' + subject.sha(data), state='uploaded')
                 uploaded.append(row)
                 raw = subject.canonical(row)
                 return io.BytesIO(raw), len(raw)
-            def get(self, route): return uploaded
+            def get(self, route):
+                metadata = carrier_metadata(route)
+                if metadata is not None: return metadata
+                return uploaded if '/assets?' in route else dict(id=42, **posts[-1])
         current = dict(id=1234, run_attempt=1, head_sha=self.source['head'])
         with patch.object(subject, '_transport_scope', return_value=(current, dict(producerInputs=self.rows))):
             result = subject.transport_upload(Client(), self.source['image'], self.clock, self.fence)
@@ -587,6 +832,10 @@ class CodecTests(unittest.TestCase):
         self.assertFalse(result['publicationAllowed'])
         raw_seal = json.loads((self.root / result['sealFile']).read_bytes())
         self.assertEqual(raw_seal['origin'], 'owned-windows-arm64-full-sdk')
+        self.assertEqual(posts[0]['target_commitish'], CARRIER_HEAD)
+        self.assertEqual(raw_seal['release']['head'], self.source['head'])
+        self.assertEqual(raw_seal['release']['carrierHead'], CARRIER_HEAD)
+        self.assertEqual(raw_seal['workflow']['head'], self.source['head'])
         self.assertNotIn('checkpoint', raw_seal['kind'])
         self.assertEqual(len(raw_seal['nativePhases']), 20)
         self.put('jobs/probe-link/receipt.json', dict(job(), rootReaped=False))

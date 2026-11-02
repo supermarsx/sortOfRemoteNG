@@ -54,6 +54,10 @@ SIDECAR_CODES = {'CHECKPOINT_INPUTS_BYTES': 'SIDECAR_BYTES', 'CHECKPOINT_INPUTS_
 ARCHIVE_CODES = {'archive-deadline': 'ARCHIVE_ARCHIVE_DEADLINE', 'asset-hash': 'ARCHIVE_ASSET_HASH', 'asset-size': 'ARCHIVE_ASSET_SIZE', 'checkpoint-envelope': 'ARCHIVE_CHECKPOINT_ENVELOPE', 'chunk-bound': 'ARCHIVE_CHUNK_BOUND', 'chunk-name': 'ARCHIVE_CHUNK_NAME', 'compressed-bound': 'ARCHIVE_COMPRESSED_BOUND', 'deadline-bound': 'ARCHIVE_DEADLINE_BOUND', 'decoded-byte-bound': 'ARCHIVE_DECODED_BYTE_BOUND', 'decoded-read-bound': 'ARCHIVE_DECODED_READ_BOUND', 'diagnostic': 'ARCHIVE_DIAGNOSTIC', 'external-link-diagnostic-shape': 'ARCHIVE_EXTERNAL_LINK_DIAGNOSTIC_SHAPE', 'external-member-diagnostic-bound': 'ARCHIVE_EXTERNAL_MEMBER_DIAGNOSTIC_BOUND', 'generated-link-kind': 'ARCHIVE_GENERATED_LINK_KIND', 'generated-link-owner': 'ARCHIVE_GENERATED_LINK_OWNER', 'generated-link-recipe': 'ARCHIVE_GENERATED_LINK_RECIPE', 'generated-link-recipe-mismatch': 'ARCHIVE_GENERATED_LINK_RECIPE_MISMATCH', 'generated-link-state': 'ARCHIVE_GENERATED_LINK_STATE', 'generated-link-target': 'ARCHIVE_GENERATED_LINK_TARGET', 'input-alias': 'ARCHIVE_INPUT_ALIAS', 'input-bound': 'ARCHIVE_INPUT_BOUND', 'input-link': 'ARCHIVE_INPUT_LINK', 'inventory-file-alias': 'ARCHIVE_INVENTORY_FILE_ALIAS', 'inventory-file-pin': 'ARCHIVE_INVENTORY_FILE_PIN', 'inventory-files': 'ARCHIVE_INVENTORY_FILES', 'inventory-mode': 'ARCHIVE_INVENTORY_MODE', 'inventory-row': 'ARCHIVE_INVENTORY_ROW', 'inventory-shape': 'ARCHIVE_INVENTORY_SHAPE', 'inventory-stamp': 'ARCHIVE_INVENTORY_STAMP', 'link-recipe': 'ARCHIVE_LINK_RECIPE', 'link-recipe-bound': 'ARCHIVE_LINK_RECIPE_BOUND', 'lossless-inventory-stamp': 'ARCHIVE_LOSSLESS_INVENTORY_STAMP', 'manifest-bound': 'ARCHIVE_MANIFEST_BOUND', 'manifest-required': 'ARCHIVE_MANIFEST_REQUIRED', 'member-alias': 'ARCHIVE_MEMBER_ALIAS', 'member-hash': 'ARCHIVE_MEMBER_HASH', 'member-path': 'ARCHIVE_MEMBER_PATH', 'member-pax': 'ARCHIVE_MEMBER_PAX', 'member-pax-bound': 'ARCHIVE_MEMBER_PAX_BOUND', 'member-size': 'ARCHIVE_MEMBER_SIZE', 'member-type': 'ARCHIVE_MEMBER_TYPE', 'metadata-bound': 'ARCHIVE_METADATA_BOUND', 'missing-generated-link': 'ARCHIVE_MISSING_GENERATED_LINK', 'missing-member': 'ARCHIVE_MISSING_MEMBER', 'output-bound': 'ARCHIVE_OUTPUT_BOUND', 'overlap': 'ARCHIVE_OVERLAP', 'pin-bound': 'ARCHIVE_PIN_BOUND', 'pin-shape': 'ARCHIVE_PIN_SHAPE', 'restore-output': 'ARCHIVE_RESTORE_OUTPUT', 'restored-metadata': 'ARCHIVE_RESTORED_METADATA', 'seal-bound': 'ARCHIVE_SEAL_BOUND', 'seal-zip-bound': 'ARCHIVE_SEAL_ZIP_BOUND', 'seal-zip-members': 'ARCHIVE_SEAL_ZIP_MEMBERS', 'short-member': 'ARCHIVE_SHORT_MEMBER', 'short-write': 'ARCHIVE_SHORT_WRITE', 'source-changed': 'ARCHIVE_SOURCE_CHANGED', 'source-cipd-current': 'ARCHIVE_SOURCE_CIPD_CURRENT', 'source-cipd-description': 'ARCHIVE_SOURCE_CIPD_DESCRIPTION', 'source-cipd-duplicate': 'ARCHIVE_SOURCE_CIPD_DUPLICATE', 'source-cipd-layout': 'ARCHIVE_SOURCE_CIPD_LAYOUT', 'source-cipd-link': 'ARCHIVE_SOURCE_CIPD_LINK', 'source-context-bound': 'ARCHIVE_SOURCE_CONTEXT_BOUND', 'source-context-required': 'ARCHIVE_SOURCE_CONTEXT_REQUIRED', 'source-detached-head': 'ARCHIVE_SOURCE_DETACHED_HEAD', 'source-diagnostic-root': 'ARCHIVE_SOURCE_DIAGNOSTIC_ROOT', 'source-entry-bound': 'ARCHIVE_SOURCE_ENTRY_BOUND', 'source-excluded-link': 'ARCHIVE_SOURCE_EXCLUDED_LINK', 'source-external-aggregate': 'ARCHIVE_SOURCE_EXTERNAL_AGGREGATE', 'source-external-changed': 'ARCHIVE_SOURCE_EXTERNAL_CHANGED', 'source-external-input-unattested': 'ARCHIVE_SOURCE_EXTERNAL_INPUT_UNATTESTED', 'source-external-link': 'ARCHIVE_SOURCE_EXTERNAL_LINK', 'source-external-link-cycle': 'ARCHIVE_SOURCE_EXTERNAL_LINK_CYCLE', 'source-external-link-kind': 'ARCHIVE_SOURCE_EXTERNAL_LINK_KIND', 'source-external-report-readback': 'ARCHIVE_SOURCE_EXTERNAL_REPORT_READBACK', 'source-file-changed': 'ARCHIVE_SOURCE_FILE_CHANGED', 'source-file-size': 'ARCHIVE_SOURCE_FILE_SIZE', 'source-fixed-paths': 'ARCHIVE_SOURCE_FIXED_PATHS', 'source-git-admin-kind': 'ARCHIVE_SOURCE_GIT_ADMIN_KIND', 'source-identity': 'ARCHIVE_SOURCE_IDENTITY', 'source-image': 'ARCHIVE_SOURCE_IMAGE', 'source-json-duplicate': 'ARCHIVE_SOURCE_JSON_DUPLICATE', 'source-link': 'ARCHIVE_SOURCE_LINK', 'source-link-changed': 'ARCHIVE_SOURCE_LINK_CHANGED', 'source-link-cycle': 'ARCHIVE_SOURCE_LINK_CYCLE', 'source-link-kind': 'ARCHIVE_SOURCE_LINK_KIND', 'source-linux-only': 'ARCHIVE_SOURCE_LINUX_ONLY', 'source-mac-birth-unavailable': 'ARCHIVE_SOURCE_MAC_BIRTH_UNAVAILABLE', 'source-mac-capability-cleanup': 'ARCHIVE_SOURCE_MAC_CAPABILITY_CLEANUP', 'source-mac-capability-deadline': 'ARCHIVE_SOURCE_MAC_CAPABILITY_DEADLINE', 'source-mac-capability-exists': 'ARCHIVE_SOURCE_MAC_CAPABILITY_EXISTS', 'source-mac-capability-identity': 'ARCHIVE_SOURCE_MAC_CAPABILITY_IDENTITY', 'source-mac-capability-link': 'ARCHIVE_SOURCE_MAC_CAPABILITY_LINK', 'source-mac-capability-link-target-changed': 'ARCHIVE_SOURCE_MAC_CAPABILITY_LINK_TARGET_CHANGED', 'source-mac-capability-mode': 'ARCHIVE_SOURCE_MAC_CAPABILITY_MODE', 'source-mac-capability-output-bound': 'ARCHIVE_SOURCE_MAC_CAPABILITY_OUTPUT_BOUND', 'source-mac-capability-report-readback': 'ARCHIVE_SOURCE_MAC_CAPABILITY_REPORT_READBACK', 'source-mac-context': 'ARCHIVE_SOURCE_MAC_CONTEXT', 'source-mac-context-path': 'ARCHIVE_SOURCE_MAC_CONTEXT_PATH', 'source-mac-directory': 'ARCHIVE_SOURCE_MAC_DIRECTORY', 'source-mac-directory-changed': 'ARCHIVE_SOURCE_MAC_DIRECTORY_CHANGED', 'source-mac-file-changed': 'ARCHIVE_SOURCE_MAC_FILE_CHANGED', 'source-mac-file-identity': 'ARCHIVE_SOURCE_MAC_FILE_IDENTITY', 'source-mac-host-scope': 'ARCHIVE_SOURCE_MAC_HOST_SCOPE', 'source-mac-identity-scope': 'ARCHIVE_SOURCE_MAC_IDENTITY_SCOPE', 'source-mac-intel-darwin-capability-unreviewed': 'ARCHIVE_SOURCE_MAC_INTEL_DARWIN_CAPABILITY_UNREVIEWED', 'source-mac-limits': 'ARCHIVE_SOURCE_MAC_LIMITS', 'source-mac-nlink': 'ARCHIVE_SOURCE_MAC_NLINK', 'source-mac-only': 'ARCHIVE_SOURCE_MAC_ONLY', 'source-mac-output': 'ARCHIVE_SOURCE_MAC_OUTPUT', 'source-mac-output-owner': 'ARCHIVE_SOURCE_MAC_OUTPUT_OWNER', 'source-mac-pins': 'ARCHIVE_SOURCE_MAC_PINS', 'source-mac-required-pin': 'ARCHIVE_SOURCE_MAC_REQUIRED_PIN', 'source-mac-root-changed': 'ARCHIVE_SOURCE_MAC_ROOT_CHANGED', 'source-mac-root-kind': 'ARCHIVE_SOURCE_MAC_ROOT_KIND', 'source-mac-roots': 'ARCHIVE_SOURCE_MAC_ROOTS', 'source-mac-write-identity': 'ARCHIVE_SOURCE_MAC_WRITE_IDENTITY', 'source-member-policy': 'ARCHIVE_SOURCE_MEMBER_POLICY', 'source-metadata-postcheck': 'ARCHIVE_SOURCE_METADATA_POSTCHECK', 'source-metadata-read-bound': 'ARCHIVE_SOURCE_METADATA_READ_BOUND', 'source-metadata-read-changed': 'ARCHIVE_SOURCE_METADATA_READ_CHANGED', 'source-mode': 'ARCHIVE_SOURCE_MODE', 'source-mtime': 'ARCHIVE_SOURCE_MTIME', 'source-mtime-readback': 'ARCHIVE_SOURCE_MTIME_READBACK', 'source-nearby-absence': 'ARCHIVE_SOURCE_NEARBY_ABSENCE', 'source-nearby-binding': 'ARCHIVE_SOURCE_NEARBY_BINDING', 'source-nearby-changed': 'ARCHIVE_SOURCE_NEARBY_CHANGED', 'source-nearby-link': 'ARCHIVE_SOURCE_NEARBY_LINK', 'source-output-root': 'ARCHIVE_SOURCE_OUTPUT_ROOT', 'source-owner': 'ARCHIVE_SOURCE_OWNER', 'source-phase': 'ARCHIVE_SOURCE_PHASE', 'source-platform-policy': 'ARCHIVE_SOURCE_PLATFORM_POLICY', 'source-registry-kind': 'ARCHIVE_SOURCE_REGISTRY_KIND', 'source-registry-label': 'ARCHIVE_SOURCE_REGISTRY_LABEL', 'source-registry-name': 'ARCHIVE_SOURCE_REGISTRY_NAME', 'source-registry-value': 'ARCHIVE_SOURCE_REGISTRY_VALUE', 'source-repositories-bound': 'ARCHIVE_SOURCE_REPOSITORIES_BOUND', 'source-repositories-changed': 'ARCHIVE_SOURCE_REPOSITORIES_CHANGED', 'source-repositories-shape': 'ARCHIVE_SOURCE_REPOSITORIES_SHAPE', 'source-repository-changed': 'ARCHIVE_SOURCE_REPOSITORY_CHANGED', 'source-repository-or-total-changed': 'ARCHIVE_SOURCE_REPOSITORY_OR_TOTAL_CHANGED', 'source-repository-root': 'ARCHIVE_SOURCE_REPOSITORY_ROOT', 'source-repository-value': 'ARCHIVE_SOURCE_REPOSITORY_VALUE', 'source-required-repositories': 'ARCHIVE_SOURCE_REQUIRED_REPOSITORIES', 'source-root': 'ARCHIVE_SOURCE_ROOT', 'source-root-changed': 'ARCHIVE_SOURCE_ROOT_CHANGED', 'source-root-readback': 'ARCHIVE_SOURCE_ROOT_READBACK', 'source-sidecar-binding': 'ARCHIVE_SOURCE_SIDECAR_BINDING', 'source-sidecar-bound': 'ARCHIVE_SOURCE_SIDECAR_BOUND', 'source-sidecar-readback': 'ARCHIVE_SOURCE_SIDECAR_READBACK', 'source-sidecar-role': 'ARCHIVE_SOURCE_SIDECAR_ROLE', 'source-sidecar-shape': 'ARCHIVE_SOURCE_SIDECAR_SHAPE', 'source-stat-reuse': 'ARCHIVE_SOURCE_STAT_REUSE', 'source-toggle-sentinel': 'ARCHIVE_SOURCE_TOGGLE_SENTINEL', 'source-tree-changed': 'ARCHIVE_SOURCE_TREE_CHANGED', 'source-unknown-git-root': 'ARCHIVE_SOURCE_UNKNOWN_GIT_ROOT', 'source-write-identity': 'ARCHIVE_SOURCE_WRITE_IDENTITY', 'special-input': 'ARCHIVE_SPECIAL_INPUT', 'unexpected-member': 'ARCHIVE_UNEXPECTED_MEMBER', 'unreviewed-generated-link': 'ARCHIVE_UNREVIEWED_GENERATED_LINK'}
 
 
+SAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',
+                                    'CARRIER_CHANGED', 'CARRIER_RELEASE'})
+
+
 class CheckpointFailure(ValueError):
     def __init__(self, code):
         self.code = code if code in SAFE_CODES or code == 'API_STATUS' else 'UNKNOWN'
@@ -577,7 +581,7 @@ class Github:
         tail = route.removeprefix('/repos/' + REPOSITORY)
         get_routes = (r'', r'/actions/runs/[1-9][0-9]{0,19}', r'/actions/runs/[1-9][0-9]{0,19}/attempts/[1-9][0-9]{0,8}',
                       r'/actions/runs/[1-9][0-9]{0,19}/artifacts\?per_page=100', r'/actions/artifacts/[1-9][0-9]{0,19}/zip',
-                      r'/actions/workflows/windows-arm-full-sdk\.yml', r'/git/commits/[a-f0-9]{40}',
+                      r'/actions/workflows/windows-arm-full-sdk\.yml', r'/git/ref/heads/main', r'/git/commits/[a-f0-9]{40}',
                       r'/git/trees/[a-f0-9]{40}\?recursive=1', r'/git/blobs/[a-f0-9]{40}',
                       r'/releases\?per_page=100', r'/releases/[1-9][0-9]{0,19}', r'/releases/[1-9][0-9]{0,19}/assets\?per_page=100',
                       r'/releases/assets/[1-9][0-9]{0,19}')
@@ -737,6 +741,64 @@ def _release_assets(client, release, expected_names=None):
     return assets
 
 
+# BEGIN FRESH DEFAULT-MAIN TRANSPORT CARRIER
+def _carrier_repository(client):
+    repository = client.get('/repos/' + REPOSITORY)
+    need(type(repository) is dict and repository.get('id') == REPOSITORY_ID and
+         repository.get('full_name') == REPOSITORY and repository.get('private') is False and repository.get('visibility') == 'public' and
+         repository.get('default_branch') == 'main', 'CARRIER_REPOSITORY')
+
+
+def _carrier_ref(client):
+    value = client.get('/repos/' + REPOSITORY + '/git/ref/heads/main')
+    need(type(value) is dict and set(value) == {'ref', 'node_id', 'url', 'object'} and
+         value['ref'] == 'refs/heads/main' and type(value['node_id']) is str and
+         0 < len(value['node_id']) <= 256 and
+         value['url'] == API + '/repos/' + REPOSITORY + '/git/refs/heads/main', 'CARRIER_REF')
+    obj = value['object']
+    need(type(obj) is dict and set(obj) == {'type', 'sha', 'url'} and obj['type'] == 'commit' and
+         type(obj['sha']) is str and re.fullmatch('[a-f0-9]{40}', obj['sha']) and
+         obj['url'] == API + '/repos/' + REPOSITORY + '/git/commits/' + obj['sha'], 'CARRIER_REF')
+    return obj['sha']
+
+
+def _carrier_commit(client, head):
+    need(type(head) is str and re.fullmatch('[a-f0-9]{40}', head), 'CARRIER_COMMIT')
+    commit = client.get('/repos/' + REPOSITORY + '/git/commits/' + head)
+    need(type(commit) is dict and commit.get('sha') == head and type(commit.get('tree')) is dict and
+         type(commit['tree'].get('sha')) is str and
+         re.fullmatch('[a-f0-9]{40}', commit['tree']['sha']), 'CARRIER_COMMIT')
+
+
+def _create_transport_release(client, release_tag):
+    # H accounts for technical transport only. No producer/source/record field
+    # is relabeled with it. Resolve immediately before this one POST, using the
+    # same original workflow clock and fixed authenticated repository routes.
+    client.clock.remaining()
+    _carrier_repository(client)
+    head = _carrier_ref(client)
+    _carrier_commit(client, head)
+    _carrier_repository(client)
+    need(_carrier_ref(client) == head, 'CARRIER_CHANGED')
+    client.clock.remaining()
+    release = client.post('/repos/' + REPOSITORY + '/releases',
+                          dict(tag_name=release_tag, name=release_tag, target_commitish=head,
+                               draft=True, prerelease=True))
+    need(type(release) is dict and type(release.get('id')) is int and release['id'] > 0,
+         'CARRIER_RELEASE')
+    release_id = release['id']
+    def checked(actual):
+        need(type(actual) is dict and type(actual.get('id')) is int and actual['id'] == release_id and actual.get('tag_name') == release_tag and
+             actual.get('name') == release_tag and
+             actual.get('draft') is True and actual.get('prerelease') is True and
+             actual.get('target_commitish') == head, 'CARRIER_RELEASE')
+    checked(release)
+    checked(client.get('/repos/' + REPOSITORY + '/releases/' + str(release_id)))
+    client.clock.remaining()
+    return dict(id=release_id, tag_name=release_tag, draft=True, prerelease=True, target_commitish=head)
+# END FRESH DEFAULT-MAIN TRANSPORT CARRIER
+
+
 def _sdk_phases(guard, source, source_pin):
     from full_sdk_engine import validate_packet
     evidence, previous = {}, None
@@ -836,10 +898,9 @@ def sdk_quarantine(client, root, report, clock, fence, current, policy):
     report_pin, report_raw = held(guard, 'full-sdk-controller-result.json')
     need(strict_json(report_raw) == report, 'SDK_REPORT_CHANGED')
     release_tag = 'windows-arm-full-sdk-quarantine-' + source['runId'] + '-' + source['attempt'] + '-' + source['sourceId'][:12] + '-' + report_pin['sha256'][:16]
-    release = client.post('/repos/' + REPOSITORY + '/releases', dict(tag_name=release_tag, name=release_tag,
-                         target_commitish=current['head_sha'], draft=True, prerelease=True))
+    release = _create_transport_release(client, release_tag)
     need(type(release.get('id')) is int and release['id'] > 0 and release.get('draft') is True and release.get('prerelease') is True and
-         release.get('tag_name') == release_tag and release.get('target_commitish') == current['head_sha'], 'SDK_QUARANTINE_RELEASE')
+         release.get('tag_name') == release_tag, 'SDK_QUARANTINE_RELEASE')
     for row in assets:
         with stage('asset-upload', row['name'], bytes=row['bytes']):
             _, raw = held(guard, SDK_BUNDLE + '/' + row['name'], SDK_MAX_ASSET, {key: row[key] for key in ('bytes', 'sha256')})
@@ -870,7 +931,7 @@ def sdk_quarantine(client, root, report, clock, fence, current, policy):
     raw_seal = dict(schemaVersion=1, kind='windows-arm-full-sdk-quarantine-seal', origin='owned-windows-arm64-full-sdk',
                     target=SDK_TARGET, identity=identity, workflow=dict(repository=REPOSITORY, repositoryId=REPOSITORY_ID,
                     path=WORKFLOW, ref='refs/heads/main', head=source['head'], runId=source['runId'], attempt=source['attempt']),
-                    release=dict(id=release['id'], tag=release_tag, head=source['head']),
+                    release=dict(id=release['id'], tag=release_tag, head=source['head'], carrierHead=release['target_commitish']),
                     assets=[dict(id=uploaded[row['name']]['id'], **row) for row in assets],
                     controller=dict(**report_pin, base64=base64.b64encode(report_raw).decode()), nativePhases=phase_evidence,
                     sourceChain=cef_chain, sourceNative=source_native, sdkBuilt=True, nativeAcceptance=False, runtimeReady=False, publicationAllowed=False)
@@ -1000,8 +1061,9 @@ def authenticated_seal(client, prior, run_id, attempt, destination):
     pin(seal['record'])
     pin(seal['nativeEvidence'])
     pin(seal['sourceContext'])
-    need(type(seal['release']) is dict and set(seal['release']) == {'id', 'tag', 'head'} and
+    need(type(seal['release']) is dict and set(seal['release']) == {'id', 'tag', 'head', 'carrierHead'} and
          type(seal['release']['id']) is int and seal['release']['id'] > 0 and seal['release']['head'] == prior['head_sha'] and
+         type(seal['release']['carrierHead']) is str and re.fullmatch('[a-f0-9]{40}', seal['release']['carrierHead']) and
          type(seal['assets']) is list and 1 <= len(seal['assets']) <= 38, 'SEAL_RELEASE')
     names = set()
     for row in seal['assets']:
@@ -1032,9 +1094,12 @@ def transport_download(client, prior_run, prior_attempt, image):
         immutable, artifact_pin = authenticated_seal(client, prior, prior_run, prior_attempt, destination)
     need(immutable['identity']['image'] == image and immutable['identity']['sourceId'] == inputs.SOURCES[image] and
          immutable['identity']['producerSha256'] == producer_digest(policy['producerInputs']), 'SEAL_SCOPE')
+    _carrier_commit(client, immutable['release']['carrierHead'])
     release = client.get('/repos/' + REPOSITORY + '/releases/' + str(immutable['release']['id']))
-    need(release.get('id') == immutable['release']['id'] and release.get('tag_name') == immutable['release']['tag'] and
-         release.get('draft') is True and release.get('prerelease') is True and release.get('target_commitish') == prior['head_sha'], 'RELEASE_SCOPE')
+    need(type(release) is dict and release.get('id') == immutable['release']['id'] and
+         release.get('tag_name') == immutable['release']['tag'] and release.get('name') == immutable['release']['tag'] and
+         release.get('draft') is True and release.get('prerelease') is True and
+         release.get('target_commitish') == immutable['release']['carrierHead'], 'RELEASE_SCOPE')
     assets = _release_assets(client, release)
     need('checkpoint.json' in assets and 0 < assets['checkpoint.json']['size'] <= MAX_RECORD, 'RECORD_ASSET')
     # Record digest is committed in the fixed tag; full asset digest from API is
@@ -1090,11 +1155,9 @@ def transport_upload(client, image, clock, fence):
          record['workflow']['attempt'] == str(current['run_attempt']) and record['workflow']['head'] == current['head_sha'] and
          source['head'] == current['head_sha'] and identity['image'] == image and
          identity['producerSha256'] == producer_digest(policy['producerInputs']), 'UPLOAD_BINDING')
-    release = client.post('/repos/' + REPOSITORY + '/releases',
-                          dict(tag_name=tag(record, record_pin), target_commitish=current['head_sha'],
-                               name=tag(record, record_pin), draft=True, prerelease=True))
+    release = _create_transport_release(client, tag(record, record_pin))
     need(type(release.get('id')) is int and release.get('draft') is True and release.get('prerelease') is True and
-         release.get('target_commitish') == current['head_sha'] and release.get('tag_name') == tag(record, record_pin), 'UPLOAD_RELEASE')
+         release.get('tag_name') == tag(record, record_pin), 'UPLOAD_RELEASE')
     for row in [dict(name='checkpoint.json', **record_pin), *expected]:
         with stage('asset-upload', row['name'], bytes=row['bytes']):
             seal, raw = held(guard, OUTPUT + '/' + row['name'], max(MAX_CHUNK, inputs.MAX_SIDECAR),
@@ -1112,7 +1175,7 @@ def transport_upload(client, image, clock, fence):
          all(actual_assets[row['name']]['size'] == row['bytes'] and actual_assets[row['name']].get('digest') == 'sha256:' + row['sha256']
              for row in all_expected), 'UPLOADED_SET')
     raw_seal = dict(schemaVersion=1, kind='windows-arm-full-sdk-immutable-checkpoint-seal', workflow=record['workflow'],
-                    identity=identity, release=dict(id=release['id'], tag=release['tag_name'], head=current['head_sha']),
+                    identity=identity, release=dict(id=release['id'], tag=release['tag_name'], head=current['head_sha'], carrierHead=release['target_commitish']),
                     record=record_pin, assets=[dict(id=actual_assets[row['name']]['id'], **row) for row in all_expected],
                     nativeEvidence=record['nativeEvidence'], sourceContext=chain['sourceContext'])
     seal_pin = write(guard, OUTPUT + '/checkpoint-seal.json', raw_seal)
