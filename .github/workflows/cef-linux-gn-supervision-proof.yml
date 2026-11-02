@@ -1,0 +1,80 @@
+name: CEF private Linux GN supervision proof
+# Default-branch registration is inert. Only the exact reviewed private branch
+# runs fixed benign Node actors; this cannot acquire source or admit a runtime.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cef-linux-gn-proof-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  proof:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/linux-gn-supervision-proof-20261102' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - name: Start the original whole-job proof clock
+        run: echo "CEF_LINUX_GN_PROOF_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Prove the actual supervisor with fixed benign processes
+        id: proof
+        timeout-minutes: 4
+        run: |
+          report_root="$RUNNER_TEMP/sorng-linux-gn-report-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -m 700 -- "$report_root"
+          echo "root=$report_root" >> "$GITHUB_OUTPUT"
+          export CEF_LINUX_GN_REPORT_ROOT="$report_root"
+          node tests/fixtures/cef/linux_gn_supervision_proof.mjs > "$report_root/proof.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { lstat, readFile, writeFile } from 'node:fs/promises';
+          import path from 'node:path';
+          import { validateReport } from './tests/fixtures/cef/linux_gn_supervision_proof.mjs';
+          const root = process.env.CEF_LINUX_GN_REPORT_ROOT;
+          const name = path.join(root, 'proof.json');
+          const info = await lstat(name);
+          assert(info.isFile() && !info.isSymbolicLink() && info.size <= 128 * 1024);
+          const raw = await readFile(name);
+          assert(raw.length === info.size);
+          const report = JSON.parse(raw);
+          validateReport(report);
+          assert.equal(report.head, process.env.GITHUB_SHA);
+          assert.equal(report.runId, process.env.GITHUB_RUN_ID);
+          assert.equal(report.runAttempt, process.env.GITHUB_RUN_ATTEMPT);
+          await writeFile(path.join(root, 'carrier.json'), JSON.stringify({
+            kind: 'linux-gn-benign-native-proof-carrier',
+            childExitCode: 0,
+            complete: true,
+            head: report.head,
+            runId: report.runId,
+            runAttempt: report.runAttempt,
+            attemptId: report.attemptId,
+            sourceWitnessSha256: report.sourceWitnessSha256,
+            productionAdmission: false,
+            nativeAcceptance: false,
+            runtimeReady: false,
+          }) + '\n', { flag: 'wx', mode: 0o600 });
+          NODE
+      - name: Retain only the two bounded proof reports
+        if: always() && steps.proof.outputs.root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-linux-gn-supervision-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.proof.outputs.root }}/proof.json
+            ${{ steps.proof.outputs.root }}/carrier.json
+          if-no-files-found: warn
+          retention-days: 14
