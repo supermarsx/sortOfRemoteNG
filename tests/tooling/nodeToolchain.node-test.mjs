@@ -26,6 +26,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "cef-linux-producer-migration-proof.yml": 1,
   "cef-mac-owned-source-proof.yml": 1,
   "cef-mac-nearby-source-proof.yml": 1,
+  "cef-mac-clang-resource-proof.yml": 1,
   "cef-mac-process-census-proof.yml": 2,
   "cef-owned-sdk-import.yml": 1,
   "cef-owned-sdk-publish.yml": 2,
