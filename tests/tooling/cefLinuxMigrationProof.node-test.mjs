@@ -188,7 +188,32 @@ test("current composed carrier retarget preserves its complete historical pre-gu
   );
 });
 
+function withoutRecordNormalization(text) {
+  for (const name of ["rehold", "normalization"]) {
+    const first = `  ${name === "rehold" ? "  " : ""}// BEGIN exact source-record sentinel ${name}\n`;
+    const last = `  ${name === "rehold" ? "  " : ""}// END exact source-record sentinel ${name}\n`;
+    assert.equal(text.split(first).length, 2);
+    assert.equal(text.split(last).length, 2);
+    text = text.replace(
+      text.slice(text.indexOf(first), text.indexOf(last) + last.length),
+      "",
+    );
+  }
+  const current = "      recorded.timing.hashedFiles <= recorded.entries,\n";
+  assert.equal(text.split(current).length, 2);
+  text = text.replace(
+    current,
+    "      recorded.timing.hashedFiles <= recorded.entries &&\n      recorded.timing.hashedBytes === recorded.bytes,\n",
+  );
+  assert.equal(Buffer.byteLength(text), 121802);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "1bc8994f15a9a54357046046ed7d9864ab2775375635651b16ea1ef206e1f311",
+  );
+  return text;
+}
 function withoutMigrationDiagnostics(text) {
+  text = withoutRecordNormalization(text);
   {
     const current =
         '    bytes: 209272,\n    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",',
@@ -337,7 +362,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "bd8e67ca51e817002781f4d047e3f813fa1069f3aa686fc44f61fc14de899106",
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

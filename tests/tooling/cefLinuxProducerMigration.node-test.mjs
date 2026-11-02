@@ -16,6 +16,30 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutRecordNormalization(text) {
+  for (const name of ["rehold", "normalization"]) {
+    const first = `  ${name === "rehold" ? "  " : ""}// BEGIN exact source-record sentinel ${name}\n`;
+    const last = `  ${name === "rehold" ? "  " : ""}// END exact source-record sentinel ${name}\n`;
+    assert.equal(text.split(first).length, 2);
+    assert.equal(text.split(last).length, 2);
+    text = text.replace(
+      text.slice(text.indexOf(first), text.indexOf(last) + last.length),
+      "",
+    );
+  }
+  const current = "      recorded.timing.hashedFiles <= recorded.entries,\n";
+  assert.equal(text.split(current).length, 2);
+  text = text.replace(
+    current,
+    "      recorded.timing.hashedFiles <= recorded.entries &&\n      recorded.timing.hashedBytes === recorded.bytes,\n",
+  );
+  assert.equal(Buffer.byteLength(text), 121802);
+  assert.equal(
+    core.sha(text),
+    "1bc8994f15a9a54357046046ed7d9864ab2775375635651b16ea1ef206e1f311",
+  );
+  return text;
+}
 function withoutCliModuleDelta(text) {
   for (const name of [
     "closed migration CLI source delta",
@@ -35,6 +59,7 @@ function withoutCliModuleDelta(text) {
   return text;
 }
 function withoutMigrationDiagnostics(text) {
+  text = withoutRecordNormalization(text);
   {
     const current =
         '    bytes: 209272,\n    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",',
@@ -1329,6 +1354,328 @@ test("cache header binding also requires actual full-record counters and a held 
       );
       if (mode === "reused" || mode === "wrong-bytes") assert.equal(holds, 0);
     }
+  }
+});
+
+async function fullRecordFixture(t, when = "2026-11-02 15:00:00.123456") {
+  const root = await scratch(t),
+    source = path.join(root, "source"),
+    out = path.join(root, "out"),
+    name = path.join(
+      source,
+      "src/third_party/depot_tools/.disable_auto_update",
+    ),
+    cacheName = path.join(
+      source,
+      "acquisition-logs/.sorng-source-stat-cache.json",
+    );
+  await fs.mkdir(path.dirname(name), { recursive: true });
+  await fs.mkdir(path.dirname(cacheName), { recursive: true });
+  await fs.mkdir(out);
+  const prefix = `Disabled by ${source}/src/third_party/depot_tools/update_depot_tools_toggle.py at `,
+    raw = Buffer.from(prefix + when + "\n"),
+    canonicalBytes = Buffer.byteLength(prefix + "<time>\n");
+  await fs.writeFile(name, raw);
+  const identity = { producer: "new", source: "fixed" },
+    sidecar = Buffer.from("held synthetic sidecar\n");
+  await fs.writeFile(path.join(out, M.sidecar), sidecar);
+  await fs.writeFile(
+    cacheName,
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "sorng-linuxarm-source-stat-cache",
+      sidecarSha256: core.sha(sidecar),
+      identity,
+      entries: [],
+    }),
+  );
+  let retired = false;
+  const state = {
+      source,
+      originalTools: { out },
+      handles: [],
+      selected: { freshIdentity: identity },
+    },
+    recorded = {
+      entries: 3,
+      bytes: 8 + canonicalBytes,
+      timing: { reusedFiles: 0, hashedFiles: 2, hashedBytes: 8 + raw.length },
+      sidecar: { name: M.sidecar, ...pin(sidecar) },
+    },
+    check = () => {
+      if (retired) throw false;
+      return 60000;
+    },
+    uid = (await fs.lstat(name, { bigint: true })).uid,
+    scope = {
+      fs,
+      constants,
+      Buffer,
+      createHash,
+      path,
+      noLinks: core.noLinks,
+      stamp: (s) =>
+        [
+          s.dev,
+          s.ino,
+          s.uid,
+          s.mode,
+          s.nlink,
+          s.size,
+          s.mtimeNs,
+          s.ctimeNs,
+        ].join(":"),
+      process: { getuid: () => Number(uid) },
+      LINUX_MIGRATION: M,
+      SOURCE_METADATA_MAX_BYTES: core.SOURCE_METADATA_MAX_BYTES,
+      transactionCheck: check,
+    };
+  const io = await privateFunctions(
+    ["need", "heldFile", "revalidateHeldFile", "closeHeld"],
+    scope,
+  );
+  const current = await privateFunctions(["need", "transactionNewRecord"], {
+    ...scope,
+    ...io,
+  });
+  const previousSource = withoutRecordNormalization(
+      (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n"),
+    ),
+    ast = ts.createSourceFile(
+      MODULE,
+      previousSource,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    previousBody = ast.statements
+      .find(
+        (node) =>
+          ts.isFunctionDeclaration(node) &&
+          node.name?.text === "transactionNewRecord",
+      )
+      .getText(ast),
+    previous = vm.runInNewContext(previousBody + "\ntransactionNewRecord", {
+      ...scope,
+      ...io,
+      canonical: core.canonical,
+    });
+  t.after(async () => {
+    assert.equal((await io.closeHeld(state.handles)).length, 0);
+  });
+  return {
+    state,
+    recorded,
+    current: current.transactionNewRecord,
+    previous,
+    io,
+    scope,
+    name,
+    raw,
+    prefix,
+    retire: () => {
+      retired = true;
+    },
+  };
+}
+
+test("full-record exact physical byte normalization uses actual held sentinel and preserves old guard causally", async (t) => {
+  for (const when of ["2026-11-02 15:00:00", "2026-11-02 15:00:00.123456"]) {
+    const f = await fullRecordFixture(t, when);
+    await assert.rejects(
+      f.previous(f.state, f.recorded),
+      /TRANSACTION_FULL_RECORD/,
+    );
+    assert.equal(f.state.handles.length, 0);
+    await f.current(f.state, f.recorded);
+    assert.equal(f.state.handles.length, 3);
+    assert.equal(f.state.recordNormalization.path, f.name);
+    assert.equal(f.state.recordNormalization.file.pin.sha256, core.sha(f.raw));
+    await f.io.revalidateHeldFile(
+      f.state.recordNormalization.file,
+      f.name,
+      () => 60000,
+    );
+    await fs.writeFile(
+      f.name,
+      f.raw.toString().replace("15:00:00", "15:00:01"),
+    );
+    await assert.rejects(
+      f.io.revalidateHeldFile(
+        f.state.recordNormalization.file,
+        f.name,
+        () => 60000,
+      ),
+      /FILE_CHANGED/,
+    );
+  }
+});
+
+test(
+  "actual Linux Python full-record counters pass only the exact held normalization guard",
+  {
+    skip:
+      process.platform !== "linux"
+        ? "Actual POSIX owned-source helper and cache"
+        : false,
+  },
+  async (t) => {
+    const fixtureText = await fs.readFile(
+        path.join(ROOT, "tests/tooling/cefEngineeringCheckpoint.node-test.mjs"),
+        "utf8",
+      ),
+      fixtureAst = ts.createSourceFile(
+        "fixture.mjs",
+        fixtureText,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.JS,
+      ),
+      declaration = fixtureAst.statements
+        .flatMap((node) =>
+          ts.isVariableStatement(node)
+            ? [...node.declarationList.declarations]
+            : [],
+        )
+        .find(
+          (node) => node.name.getText(fixtureAst) === "SOURCE_METADATA_PROOF",
+        ),
+      proof = vm.runInNewContext(declaration.initializer.getText(fixtureAst), {
+        String,
+      }),
+      setup = proof.slice(0, proof.indexOf("class SourceMetadataProof"));
+    for (const when of ["2026-11-02 15:00:00", "2026-11-02 15:00:00.123456"]) {
+      const f = await fullRecordFixture(t),
+        work = path.join(await scratch(t), "work");
+      await fs.mkdir(work);
+      const raw = execFileSync(
+        "python3",
+        [
+          "-I",
+          "-B",
+          "-S",
+          "-c",
+          setup +
+            String.raw`
+@contextmanager
+def owned_temp(**kwargs):yield sys.argv[2]
+with patch.object(tempfile,'TemporaryDirectory',owned_temp),fixture(record=False) as (root,sidecar,identity):
+ (root/'acquisition-logs').mkdir()
+ p=root/'src/third_party/depot_tools/.disable_auto_update';p.parent.mkdir(parents=True,exist_ok=True)
+ p.write_text('Disabled by %s/src/third_party/depot_tools/update_depot_tools_toggle.py at %s\n'%(root,sys.argv[3]))
+ identity=json.loads(json.dumps(identity,sort_keys=True)) # Actual canonical identity-file order.
+ result=m.source_metadata('source-record',root,sidecar,identity,60)
+ entries=json.loads(sidecar.read_bytes())['snapshot']['entries'];files=[r for r in entries if r['kind']=='file']
+ assert result['timing']['reusedFiles']==0 and result['timing']['hashedFiles']==len(files)
+ assert result['bytes']==sum(r['size']for r in files)
+ assert result['timing']['hashedBytes']-result['bytes']==len(sys.argv[3])-len('<time>')
+ print(json.dumps({'source':str(root),'sidecar':str(sidecar),'identity':identity,'result':result}))
+`,
+          path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+          work,
+          when,
+        ],
+        {
+          encoding: "utf8",
+          timeout: 15000,
+          maxBuffer: 65536,
+          env: { PATH: process.env.PATH },
+        },
+      );
+      const value = JSON.parse(raw);
+      assert.equal(value.source, path.join(work, "source"));
+      f.state.source = value.source;
+      f.state.originalTools.out = path.dirname(value.sidecar);
+      f.state.selected.freshIdentity = value.identity;
+      await assert.rejects(
+        f.previous(f.state, value.result),
+        /TRANSACTION_FULL_RECORD/,
+      );
+      await f.current(
+        f.state,
+        core.sourceMetadataResult(value.result, "source-record"),
+      );
+      assert.equal(f.state.handles.length, 3);
+      assert.equal(
+        f.state.recordNormalization.file.pin.bytes -
+          Buffer.byteLength(
+            `Disabled by ${value.source}/src/third_party/depot_tools/update_depot_tools_toggle.py at <time>\n`,
+          ),
+        when.length - "<time>".length,
+      );
+    }
+  },
+);
+
+test("full-record sentinel rejects counter nearmisses, malformed same-size timestamps, owners and file substitution", async (t) => {
+  for (const mode of [
+    "counter",
+    "counter-length",
+    "reused",
+    "prefix",
+    "time",
+    "newline",
+    "growth",
+    "directory",
+    "hardlink",
+    "owner",
+    "race",
+    "retired",
+  ]) {
+    const f = await fullRecordFixture(t);
+    if (mode === "counter") f.recorded.timing.hashedBytes++;
+    if (mode === "counter-length") f.recorded.timing.hashedBytes -= 7;
+    if (mode === "reused") f.recorded.timing.reusedFiles = 1;
+    if (mode === "prefix")
+      await fs.writeFile(
+        f.name,
+        f.raw.toString().replace("Disabled", "Enabled!"),
+      );
+    if (mode === "time")
+      await fs.writeFile(
+        f.name,
+        f.raw.toString().replace(".123456", ".12345x"),
+      );
+    if (mode === "newline")
+      await fs.writeFile(f.name, f.raw.toString().slice(0, -1) + "x");
+    if (mode === "growth") await fs.writeFile(f.name, Buffer.alloc(4097, 120));
+    if (mode === "directory") {
+      await fs.unlink(f.name);
+      await fs.mkdir(f.name);
+    }
+    if (mode === "hardlink") await fs.link(f.name, f.name + ".alias");
+    const api = await privateFunctions(["need", "transactionNewRecord"], {
+      ...f.scope,
+      ...f.io,
+      ...(mode === "owner"
+        ? { process: { getuid: () => f.scope.process.getuid() + 1 } }
+        : {}),
+      heldFile: async (...args) => {
+        const held = await f.io.heldFile(...args);
+        if (args[0] === f.name) {
+          if (mode === "race")
+            await fs.writeFile(
+              f.name,
+              f.raw.toString().replace("15:00:00", "15:00:01"),
+            );
+          if (mode === "retired") f.retire();
+        }
+        return held;
+      },
+    });
+    await assert.rejects(
+      api.transactionNewRecord(f.state, f.recorded),
+      (error) =>
+        mode === "retired"
+          ? error === false
+          : /FULL_RECORD|REGULAR_FILE|FILE_CHANGED/.test(error.message),
+      mode,
+    );
+    assert.equal(
+      f.state.handles.length <= 1,
+      true,
+      "No sidecar/cache acceptance on invalid normalization",
+    );
   }
 });
 

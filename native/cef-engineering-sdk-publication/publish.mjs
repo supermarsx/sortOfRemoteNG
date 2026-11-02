@@ -46,7 +46,7 @@ export const ENGINEERING_PRODUCERS = Object.freeze({
   // Source binding only. A future actual successful run and both independent
   // completion/native seals are still mandatory; no failed run is selected.
   "aarch64-unknown-linux-gnu":
-    "0ebae8f031b3d8900efdd752abaa8520634a53e7abc4ac58bdec935d27ce0d79",
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   "x86_64-apple-darwin": ENGINEERING_PRODUCER,
   "aarch64-apple-darwin": ENGINEERING_PRODUCER,
 });

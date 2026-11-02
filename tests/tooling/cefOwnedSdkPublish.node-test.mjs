@@ -1080,11 +1080,11 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
   if (target === "aarch64-unknown-linux-gnu") {
     const currentLinuxBlobs = {
       "scripts/lib/cef-checkpoint-archive.py":
-        "2bfcdd7cddc49e2ec4a8aa339cb7c938053422ad",
+        "66e77e0ec607aee4d80fae3ad1f185fbf0b6600f",
       "scripts/lib/cef-engineering-checkpoint.mjs":
         "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
       "scripts/lib/cef-linux-producer-migration.mjs":
-        "719ec73bce3cb7a46c701220aca021824510072b",
+        "434bb814abbc4c16ac417477a081ce9c7abf6f77",
     };
     for (const [name, sha] of Object.entries(currentLinuxBlobs))
       rows.find((row) => row.path === name).sha = sha;
@@ -1387,7 +1387,7 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
-test("engineering publication exact target producers select reviewed post-CEF Mac source and preserve active Linux source without source-only admission", () => {
+test("engineering publication exact target producers preserve reviewed Mac source and select repaired Linux source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
     "bd8e67ca51e817002781f4d047e3f813fa1069f3aa686fc44f61fc14de899106",
@@ -1402,7 +1402,7 @@ test("engineering publication exact target producers select reviewed post-CEF Ma
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
-    "0ebae8f031b3d8900efdd752abaa8520634a53e7abc4ac58bdec935d27ce0d79",
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   );
   for (const target of Object.keys(ENGINEERING_PRODUCERS)) {
     const f = engineeringFixture(target);

@@ -2047,6 +2047,11 @@ async function transactionRecheck(state) {
     [tools.archiveFile, HELPER],
     [tools.retirementFile, RETIREMENT_HELPER],
     ...state.identities.map((row) => [row, row.path]),
+    // BEGIN exact source-record sentinel rehold
+    ...(state.recordNormalization
+      ? [[state.recordNormalization.file, state.recordNormalization.path]]
+      : []),
+    // END exact source-record sentinel rehold
   ])
     await revalidateHeldFile(file, name, check);
   need(
@@ -2275,11 +2280,50 @@ async function transactionNewRecord(state, recorded) {
   need(
     recorded.timing?.reusedFiles === 0 &&
       recorded.timing.hashedFiles > 0 &&
-      recorded.timing.hashedFiles <= recorded.entries &&
-      recorded.timing.hashedBytes === recorded.bytes,
+      recorded.timing.hashedFiles <= recorded.entries,
     "TRANSACTION_FULL_RECORD",
   );
   const check = () => transactionCheck(state);
+  // BEGIN exact source-record sentinel normalization
+  // The helper hashes physical bytes before canonicalizing this one reviewed
+  // timestamp. Keep exact byte equality; authenticate the sole possible delta.
+  if (recorded.timing.hashedBytes !== recorded.bytes) {
+    need(
+      [13, 20].includes(recorded.timing.hashedBytes - recorded.bytes),
+      "TRANSACTION_FULL_RECORD",
+    );
+    const name = path.join(
+      state.source,
+      "src/third_party/depot_tools/.disable_auto_update",
+    );
+    const file = await heldFile(name, 4096, null, check);
+    state.handles.push(file);
+    check();
+    const prefix = Buffer.from(
+      `Disabled by ${state.source}/src/third_party/depot_tools/update_depot_tools_toggle.py at `,
+    );
+    const tail = file.raw.subarray(prefix.length).toString("utf8");
+    const match =
+      /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{6})?\n$/.exec(
+        tail,
+      );
+    need(
+      file.owner === BigInt(process.getuid()) &&
+        file.raw.subarray(0, prefix.length).equals(prefix) &&
+        match &&
+        match[0] === tail &&
+        recorded.timing.hashedBytes ===
+          recorded.bytes +
+            file.raw.length -
+            prefix.length -
+            Buffer.byteLength("<time>\n"),
+      "TRANSACTION_FULL_RECORD",
+    );
+    state.recordNormalization = { file, path: name };
+    await revalidateHeldFile(file, name, check);
+    check();
+  }
+  // END exact source-record sentinel normalization
   const sidecar = await heldFile(
     path.join(state.originalTools.out, LINUX_MIGRATION.sidecar),
     SOURCE_METADATA_MAX_BYTES,
