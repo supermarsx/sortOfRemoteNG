@@ -129,6 +129,51 @@ const workflow = (
 )
   .toString()
   .replaceAll("\r\n", "\n");
+const virtualenvExportCase = String.raw`  if args[0]=='export':
+   data.need(len(args)==5 and args[1]=='--root' and args[3:]==['--ensure-file','-'],'FULL_BOOTSTRAP_CIPD_EXPORT_ARGV')
+   out=data.plain(args[2]);name=out.parent.name;identity=name[len('virtualenv+'):]
+   data.need(args[2].replace('\\','/')==out.as_posix() and out.name=='contents' and out.parent.parent==ROOT/'source-caches/vpython/store' and name.startswith('virtualenv+') and len(identity)==26 and all(c in '0123456789abcdefghijklmnopqrstuv'for c in identity) and identity[-1]in '048cgkos' and stat.S_ISDIR(out.lstat().st_mode),'FULL_BOOTSTRAP_CIPD_EXPORT_ROOT');return
+`;
+const virtualenvInputHelper = String.raw`def export_input(clock):
+ # Exact pinned Chromium 3.11 install -> infra c77 / LUCI 7ba3 CIPDExport.
+ # ensure.File.Serialize writes two spaces between this package and version.
+ expected=b'infra/3pp/tools/virtualenv  version:2@20.25.1.chromium.8\n'
+ clock.remaining();raw=sys.stdin.buffer.read(len(expected)+1);clock.remaining()
+ data.need(type(raw)is bytes and raw==expected,'FULL_BOOTSTRAP_CIPD_EXPORT_INPUT')
+ return raw
+
+`;
+const virtualenvExportDelta = [
+  [
+    "def run_checked(command,clock,stdin=None):",
+    "def run_checked(command,clock):",
+  ],
+  [
+    " if stdin is not None:return subprocess.run(command,check=False,shell=False,timeout=seconds,input=stdin).returncode\n",
+    "",
+  ],
+  [virtualenvExportCase, ""],
+  [virtualenvInputHelper, ""],
+  [
+    " stdin=export_input(context())if role=='cipd'and args[0]=='export'else None\n",
+    "",
+  ],
+  [
+    "  command=[value['client'if role=='cipd'else 'vpython']['path'],*args]\n  code=runner(command,clock)if stdin is None else runner(command,clock,stdin)",
+    "  code=runner([value['client'if role=='cipd'else 'vpython']['path'],*args],clock)",
+  ],
+  [
+    ";data.need(not(values and values[0]=='export'),'FULL_BOOTSTRAP_CIPD_EXPORT_ROLE');arguments",
+    ";arguments",
+  ],
+];
+function previousVirtualenvBootstrap(text) {
+  for (const [added, previous] of virtualenvExportDelta) {
+    assert.equal(text.split(added).length, 2, added);
+    text = text.replace(added, previous);
+  }
+  return text;
+}
 for (const [label, driver, originalName] of [
   ["current", currentDriver, "current"],
   ["20261021", oldDriver, "reviewed-20261021"],
@@ -161,6 +206,114 @@ for (const [label, driver, originalName] of [
       "image-qualified-source-gn": true,
     },
   };
+  test(
+    label +
+      ": actual generated vpython export fixes pinned-native old RED with exact root and stdin while old CIPD families remain closed",
+    async (t) => {
+      const python = await projectionFixturePython();
+      const directory = await fs.realpath(
+        await fs.mkdtemp(path.join(os.tmpdir(), "cef-vpython-export-")),
+      );
+      t.after(async () => {
+        assert.equal(await fs.realpath(directory), directory);
+        await fs.rm(directory, { recursive: true });
+      });
+      const program = bootstrapProgram(directory, p, "a".repeat(64)).toString();
+      const previous = previousVirtualenvBootstrap(program);
+      const run =
+        "import sys,json;from pathlib import Path;sys.path.insert(0,str(Path('native/windows-arm-full-sdk').resolve()));import test_image_dispatch as t;raw=sys.stdin.read(131073);assert len(raw)<=131072;p=json.loads(raw);print(json.dumps(t.selected_virtualenv_export_case(p['program'],p['previous'],p['root'])))";
+      const result = spawnSync(python, ["-I", "-B", "-c", run], {
+        cwd: root,
+        input: JSON.stringify({ program, previous, root: directory }),
+        encoding: "utf8",
+        timeout: 20000,
+        maxBuffer: 65536,
+        windowsHide: true,
+      });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const facts = JSON.parse(result.stdout);
+      assert.equal(facts.legacyDenied, "FULL_BOOTSTRAP_CIPD_ARGV");
+      assert.equal(facts.newAccepted, true);
+      assert.equal(facts.stdinBytes, 57);
+      assert.equal(
+        facts.stdinSha256,
+        "6668f72f25b7f434c5ca5b8205410289381cdbd7d98cc3aaa8fbb6ce991eaf1b",
+      );
+      assert.deepEqual(facts.argv, [
+        "export",
+        "--root",
+        path.join(
+          directory,
+          "source-caches/vpython/store/virtualenv+n21fvm7m09pn5o63l11eh3li0k/contents",
+        ),
+        "--ensure-file",
+        "-",
+      ]);
+      assert.equal(facts.malformedVectorsDenied, 13);
+      assert.equal(facts.stdinCasesDenied, 7);
+      assert.equal(facts.directExportDenied, true);
+      assert.equal(facts.oldEnsureFamiliesUnchanged, true);
+      assert.equal(facts.payloadExecutablesInvoked, 0);
+      assert.equal(facts.sourceDerivedNotObservedArgv, true);
+      t.diagnostic(
+        JSON.stringify({
+          ...facts,
+          argv: [
+            facts.argv[0],
+            facts.argv[1],
+            "<owned-vpython-store-contents>",
+            ...facts.argv.slice(3),
+          ],
+        }),
+      );
+    },
+  );
+  test(
+    label +
+      ": actual generated export rejects an owned-looking junction before stdin or client dispatch",
+    async (t) => {
+      const python = await projectionFixturePython();
+      const directory = await fs.realpath(
+        await fs.mkdtemp(path.join(os.tmpdir(), "cef-vpython-alias-")),
+      );
+      t.after(async () => {
+        assert.equal(await fs.realpath(directory), directory);
+        await fs.rm(directory, { recursive: true });
+      });
+      const store = path.join(directory, "source-caches/vpython/store");
+      await fs.mkdir(store, { recursive: true });
+      const target = path.join(directory, "alias-target");
+      await fs.mkdir(path.join(target, "contents"), { recursive: true });
+      const alias = path.join(store, "virtualenv+n21fvm7m09pn5o63l11eh3li0k");
+      await fs.symlink(target, alias, "junction");
+      const program = bootstrapProgram(directory, p, "a".repeat(64)).toString();
+      const run =
+        "import sys,json;from pathlib import Path;sys.path.insert(0,str(Path('native/windows-arm-full-sdk').resolve()));import test_image_dispatch as t;raw=sys.stdin.read(65537);assert len(raw)<=65536;p=json.loads(raw);print(json.dumps(t.selected_virtualenv_export_guard(p['program'],p['root'],p['argv'])))";
+      const result = spawnSync(python, ["-I", "-B", "-c", run], {
+        cwd: root,
+        input: JSON.stringify({
+          program,
+          root: directory,
+          argv: [
+            "export",
+            "--root",
+            path.join(alias, "contents"),
+            "--ensure-file",
+            "-",
+          ],
+        }),
+        encoding: "utf8",
+        timeout: 20000,
+        maxBuffer: 65536,
+        windowsHide: true,
+      });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout), {
+        denied: true,
+        code: "ACQ_LINK",
+      });
+    },
+  );
   test(
     label +
       ": " +
@@ -1291,7 +1444,7 @@ test("selected hook projection denies graph, origin, pin and output failures bef
   }
 });
 
-test("only the two selected hook projection functions differ from exact 93d22 historical drivers", async () => {
+test("only reviewed selected hook projections and the exact virtualenv bootstrap delta differ from historical drivers", async () => {
   const legacy =
     await import("../../native/windows-arm-full-sdk/source-driver.mjs");
   const previous = "export " + legacy.hookProjectionArguments.toString();
@@ -1312,11 +1465,18 @@ test("only the two selected hook projection functions differ from exact 93d22 hi
       sha(next),
       "ed7df75819d0af5e05b2e5bdca75838c0d3fb8c83da5e402c115a52a2a5d6a5d",
     );
-    const text = (
+    const current = (
       await read(
         `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
       )
     ).toString();
+    const text = previousVirtualenvBootstrap(current);
+    assert.equal(
+      sha(text),
+      label === "current"
+        ? "bf5ca75e2ea8dbda8cea19b6f276dfd1e64faa5f11d33d315a4528cd44a47eeb"
+        : "dea410fbc0eb7a2b1c1a4449a052d309b33ee632b0065280f33efbccdc2c9e35",
+    );
     assert.equal(text.split("export " + next).length, 2);
     assert.equal(next.split(originPinning).length, 2);
     const priorFunction = next.replace(originPinning, formatterPinning);

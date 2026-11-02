@@ -861,4 +861,158 @@ class PinnedScopedHookTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError,'dep:src/third_party/dawn key:chromium_revision value:9d728f73dd5798b6cdef64b1dbe3270a04aca336 != 80685c1f3c2953578acb9987fd63af524e7435cb'):
                 module.Flattener(client,pin_all_deps=True)
 
+# Pinned infra c77fff30 -> LUCI Gitlink 7ba3e893. The actual action constructs
+# this vector, independently witnessed in actions/cipd.go (a097c57b...); its
+# stdin is ensure.File.Serialize from the one virtualenv package. These are
+# source-derived bytes, not a claim that the failed runner recorded argv.
+VIRTUALENV_EXPORT_GO_CALL = 'cmd := cipdCommand(ctx, "export", "--root", out, "--ensure-file", "-")'
+VIRTUALENV_EXPORT_STDIN = b'infra/3pp/tools/virtualenv  version:2@20.25.1.chromium.8\n'
+VIRTUALENV_EXPORT_STDIN_SHA256 = '6668f72f25b7f434c5ca5b8205410289381cdbd7d98cc3aaa8fbb6ce991eaf1b'
+VIRTUALENV_PACKAGE_ID = 'virtualenv+n21fvm7m09pn5o63l11eh3li0k'
+
+
+def _bootstrap_export_namespace(program, root):
+    import ast, os, stat, types
+    names = {'arguments', 'run_checked', 'export_input', 'execute', 'bind'}
+    functions = [node for node in ast.parse(program).body
+                 if isinstance(node, ast.FunctionDef) and node.name in names]
+    need_names = names - {'export_input'}
+    assert need_names <= {node.name for node in functions}
+    state = SimpleNamespace(verify=0, context=0, subprocess=[], direct=[])
+
+    class Clock:
+        def remaining(self): return 600
+
+    clock = Clock()
+    client = root/'client-is-never-executed.exe'
+
+    def verify(expected, guard):
+        assert expected == 'a'*64 and guard == 'b'*64
+        state.verify += 1
+        return {'client': {'path': str(client)}, 'vpython': {'path': str(client)}}, clock
+
+    def context():
+        state.context += 1
+        return clock
+
+    def run(command, **kwargs):
+        state.subprocess.append((command, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    namespace = {'Path': Path, 'P': {'workspace': str(root/'source-checkout')},
+                 'ROOT': root, 'DEPOT': root/'source-checkout/depot_tools', 'data': data,
+                 'stat': stat, 'os': os, 'sys': SimpleNamespace(path=list(sys.path)),
+                 'verify': verify, 'context': context,
+                 'inherited_environment': lambda *a: None,
+                 'subprocess': SimpleNamespace(run=run)}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), '<actual-generated-bootstrap>', 'exec'), namespace)
+    return namespace, state, clock
+
+
+def selected_virtualenv_export_case(program, previous, root):
+    """Actual generated guards/runners plus owned files; no payload executable."""
+    import io, re, types
+    root = Path(root).resolve()
+    out = root/'source-caches/vpython/store'/VIRTUALENV_PACKAGE_ID/'contents'
+    out.mkdir(parents=True)
+    (root/'source-checkout').mkdir()
+    (root/'tmp').mkdir()
+    ensure = root/'tmp/ensure.txt'
+    ensure.write_bytes(b'owned old native ensure fixture')
+    output = root/'tmp/result.json'
+    output.write_bytes(b'{}')
+    assert len(VIRTUALENV_EXPORT_STDIN) == 57
+    assert hashlib.sha256(VIRTUALENV_EXPORT_STDIN).hexdigest() == VIRTUALENV_EXPORT_STDIN_SHA256
+    literals = re.findall(r'"([^"]*)"', VIRTUALENV_EXPORT_GO_CALL)
+    assert literals == ['export', '--root', '--ensure-file', '-']
+    vector = [*literals[:2], str(out), *literals[2:]]
+    old, _, _ = _bootstrap_export_namespace(previous, root)
+    try: old['arguments']('cipd', vector)
+    except data.Denied as error: assert str(error) == 'FULL_BOOTSTRAP_CIPD_ARGV'
+    else: raise AssertionError('old guard unexpectedly admitted export')
+    current, state, clock = _bootstrap_export_namespace(program, root)
+    current['arguments']('cipd', vector)
+    current['sys'].stdin = SimpleNamespace(buffer=io.BytesIO(VIRTUALENV_EXPORT_STDIN))
+    current['execute']('cipd', vector, 'a'*64, 'b'*64)
+    assert state.context == 1 and state.verify == 2
+    assert len(state.subprocess) == 1
+    command, options = state.subprocess[0]
+    assert command[1:] == vector and options == {
+        'check': False, 'shell': False, 'timeout': 480, 'input': VIRTUALENV_EXPORT_STDIN}
+    # Old families retain the exact two-argument runner and no stdin option.
+    for argv in (["ensure", "-log-level", "info", "-root", str(root/'source-checkout'), "-ensure-file", str(ensure)],
+                 ["ensure-file-resolve", "-log-level", "error", "-ensure-file", str(ensure), "-json-output", str(output)]):
+        current['execute']('cipd', argv, 'a'*64, 'b'*64)
+        assert state.subprocess[-1] == ([command[0], *argv], {'check': False, 'shell': False, 'timeout': 480})
+    bad_vectors = [vector+['--extra'], ['export', '-root', str(out), '--ensure-file', '-'],
+                   ['export', '--ensure-file', '-', '--root', str(out)],
+                   [*vector[:3], '--ensure-file', str(ensure)],
+                   ['export', '--root', str(root), '--ensure-file', '-']]
+    for name in ('wheels+'+'a'*25+'0', 'cpython+'+'a'*25+'0',
+                 'virtualenv+'+'a'*25, 'virtualenv+'+'a'*25+'1',
+                 'virtualenv+'+'a'*25+'w'):
+        bad = out.parent.parent/name/'contents'
+        bad.mkdir(parents=True)
+        bad_vectors.append(['export', '--root', str(bad), '--ensure-file', '-'])
+    outside = root/'tmp'/VIRTUALENV_PACKAGE_ID/'contents'
+    outside.mkdir(parents=True)
+    bad_vectors.append(['export', '--root', str(outside), '--ensure-file', '-'])
+    file_out = out.parent.parent/('virtualenv+'+'b'*25+'0')/'contents'
+    file_out.parent.mkdir()
+    file_out.write_bytes(b'not a directory')
+    bad_vectors.append(['export', '--root', str(file_out), '--ensure-file', '-'])
+    bad_vectors.append(['export', '--root', str(out)+'/', '--ensure-file', '-'])
+    for argv in bad_vectors:
+        try: current['arguments']('cipd', argv)
+        except (data.Denied, OSError): pass
+        else: raise AssertionError('unexpected export vector accepted')
+    bodies = [b'', VIRTUALENV_EXPORT_STDIN.replace(b'  ', b' '),
+              VIRTUALENV_EXPORT_STDIN.replace(b'\n', b'\r\n'),
+              VIRTUALENV_EXPORT_STDIN+b'other/package version:1\n',
+              VIRTUALENV_EXPORT_STDIN.replace(b'20.25.1', b'20.25.2'),
+              b'$ServiceURL https://private.invalid\n'+VIRTUALENV_EXPORT_STDIN,
+              b'x'*100000]
+    before = len(state.subprocess)
+    for body in bodies:
+        stream = io.BytesIO(body)
+        current['sys'].stdin = SimpleNamespace(buffer=stream)
+        try: current['execute']('cipd', vector, 'a'*64, 'b'*64)
+        except data.Denied as error: assert str(error) == 'FULL_BOOTSTRAP_CIPD_EXPORT_INPUT'
+        else: raise AssertionError('unexpected ensure stdin accepted')
+        assert stream.tell() <= 58
+    assert len(state.subprocess) == before
+    class Expired:
+        def remaining(self): raise data.Denied('ACQ_DEADLINE')
+    try: current['export_input'](Expired())
+    except data.Denied as error: assert str(error) == 'ACQ_DEADLINE'
+    else: raise AssertionError('export input created a new clock')
+    # The direct subprocess2 redirection must never bypass stdin validation.
+    class Popen:
+        def __init__(self, args, **kwargs): state.direct.append((args, kwargs))
+    module = types.ModuleType('subprocess2')
+    module.Popen = Popen
+    with patch.dict(sys.modules, {'subprocess2': module}):
+        current['bind']('a'*64, 'b'*64)
+        try: module.Popen(['cipd', *vector])
+        except data.Denied as error: assert str(error) == 'FULL_BOOTSTRAP_CIPD_EXPORT_ROLE'
+        else: raise AssertionError('direct redirection bypassed stdin verifier')
+        assert not state.direct
+        module.Popen(['cipd', 'expand-package-name', 'infra/tools/${platform}'])
+        assert state.direct[-1][0] == [command[0], 'expand-package-name', 'infra/tools/${platform}']
+        assert state.direct[-1][1]['shell'] is False
+    return {'legacyDenied': 'FULL_BOOTSTRAP_CIPD_ARGV', 'newAccepted': True,
+            'argv': vector, 'stdinBytes': len(VIRTUALENV_EXPORT_STDIN),
+            'stdinSha256': VIRTUALENV_EXPORT_STDIN_SHA256,
+            'malformedVectorsDenied': len(bad_vectors), 'stdinCasesDenied': len(bodies),
+            'directExportDenied': True, 'oldEnsureFamiliesUnchanged': True,
+            'payloadExecutablesInvoked': 0, 'sourceDerivedNotObservedArgv': True}
+
+
+def selected_virtualenv_export_guard(program, root, vector):
+    namespace, _, _ = _bootstrap_export_namespace(program, Path(root))
+    try: namespace['arguments']('cipd', vector)
+    except (data.Denied, OSError) as error: return {'denied': True, 'code': str(error)}
+    return {'denied': False}
+
+
 if __name__=='__main__':unittest.main()

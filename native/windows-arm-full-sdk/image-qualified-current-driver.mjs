@@ -652,8 +652,9 @@ def empty_directory(path,clock):
 def override_absent():absent(DEPOT/'.cipd_client_platform')
 def shim(role,guard_sha,witness_sha):
  return ('@echo off\r\n"'+P['python']+'" -I -B "'+str(SCRIPT)+'" --execute '+role+' '+guard_sha+' '+witness_sha+' %*\r\nexit /b %errorlevel%\r\n').encode('ascii')
-def run_checked(command,clock):
+def run_checked(command,clock,stdin=None):
  seconds=clock.remaining()-120;data.need(seconds>0,'FULL_SOURCE_RESERVE')
+ if stdin is not None:return subprocess.run(command,check=False,shell=False,timeout=seconds,input=stdin).returncode
  return subprocess.run(command,check=False,shell=False,timeout=seconds).returncode
 def derived_setup(raw):
  old=b'call "%~dp0\\cipd.bat" ensure';new=b'"%~dp0\\.cipd_client.exe" ensure'
@@ -707,6 +708,10 @@ def verify(expected,guard_sha):
 def arguments(role,args):
  data.need(type(args)is list and 0<len(args)<=64 and all(type(value)is str and len(value)<=4096 and not any(c in value for c in '\x00\r\n%&|<>!^')for value in args),'FULL_BOOTSTRAP_ARGV')
  if role=='cipd':
+  if args[0]=='export':
+   data.need(len(args)==5 and args[1]=='--root' and args[3:]==['--ensure-file','-'],'FULL_BOOTSTRAP_CIPD_EXPORT_ARGV')
+   out=data.plain(args[2]);name=out.parent.name;identity=name[len('virtualenv+'):]
+   data.need(args[2].replace('\\','/')==out.as_posix() and out.name=='contents' and out.parent.parent==ROOT/'source-caches/vpython/store' and name.startswith('virtualenv+') and len(identity)==26 and all(c in '0123456789abcdefghijklmnopqrstuv'for c in identity) and identity[-1]in '048cgkos' and stat.S_ISDIR(out.lstat().st_mode),'FULL_BOOTSTRAP_CIPD_EXPORT_ROOT');return
   if args[0]=='expand-package-name':
    data.need(len(args)==2 and args[1] and not args[1].startswith(('-','/')) and '..'not in args[1] and all(c in 'abcdefghijklmnopqrstuvwxyz0123456789_/{}.-'+chr(36)for c in args[1]),'FULL_BOOTSTRAP_CIPD_ARGV');return
   data.need(len(args)==7 and args[0]in ('ensure','ensure-file-resolve') and args[1]=='-log-level' and args[2]in ('info','error'),'FULL_BOOTSTRAP_CIPD_ARGV')
@@ -717,11 +722,21 @@ def arguments(role,args):
    data.need(args[3]=='-ensure-file' and args[5]=='-json-output','FULL_BOOTSTRAP_CIPD_ARGV');paths=[args[4],args[6]]
   for value in paths:
    path=data.plain(value);info=path.lstat();data.need(path.parent==ROOT/'tmp' and stat.S_ISREG(info.st_mode) and info.st_nlink==1,'FULL_BOOTSTRAP_TEMP_PATH')
+def export_input(clock):
+ # Exact pinned Chromium 3.11 install -> infra c77 / LUCI 7ba3 CIPDExport.
+ # ensure.File.Serialize writes two spaces between this package and version.
+ expected=b'infra/3pp/tools/virtualenv  version:2@20.25.1.chromium.8\n'
+ clock.remaining();raw=sys.stdin.buffer.read(len(expected)+1);clock.remaining()
+ data.need(type(raw)is bytes and raw==expected,'FULL_BOOTSTRAP_CIPD_EXPORT_INPUT')
+ return raw
+
 def execute(role,args,expected,guard_sha,runner=run_checked):
  data.need(role in ('cipd','vpython'),'FULL_BOOTSTRAP_ROLE');arguments(role,args)
+ stdin=export_input(context())if role=='cipd'and args[0]=='export'else None
  value,clock=verify(expected,guard_sha);failed=False
  try:
-  code=runner([value['client'if role=='cipd'else 'vpython']['path'],*args],clock)
+  command=[value['client'if role=='cipd'else 'vpython']['path'],*args]
+  code=runner(command,clock)if stdin is None else runner(command,clock,stdin)
   data.need(type(code)is int and code==0,'FULL_BOOTSTRAP_CHILD_EXIT')
  except BaseException:failed=True;raise
  finally:
@@ -759,7 +774,7 @@ def bind(expected,guard_sha):
  original_init=popen.__init__;approved=dict(os.environ)
  def admitted(self,args,**kwargs):
   if isinstance(args,(list,tuple))and args and args[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):
-   values=list(args[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
+   values=list(args[1:]);data.need(not(values and values[0]=='export'),'FULL_BOOTSTRAP_CIPD_EXPORT_ROLE');arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
    return original_init(self,[current['client']['path'],*values],**kwargs)
   return original_init(self,args,**kwargs)
  popen.__init__=admitted;subprocess2._sorng_cipd_bound=True
