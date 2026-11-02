@@ -4383,6 +4383,998 @@ async function runFixedJoined(session, role, observation) {
 }
 // END INACTIVE JOINED OBSERVATION PRIMITIVES
 
+// BEGIN INACTIVE PURE QUALIFICATION INSPECTORS
+// Byte/JSON candidate projections only. These functions perform no IO and do
+// not register source runs, produce Job capabilities or enable any executor.
+// Canonical references: private_qualification.py and engine_qualification.py.
+const QUALIFICATION_PA_GUARD =
+  "BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_BUILDFLAGS_H_";
+const QUALIFICATION_ARM_TOOLCHAIN = "//build/toolchain/win:win_clang_arm64";
+const QUALIFICATION_GN_ARGUMENT_SOURCE = Object.freeze({
+  url: "https://gn.googlesource.com/gn/+/150a9d6ba0aa7f407aa4feeabc5f03ce9aa7e04b/src/gn/args.cc?format=TEXT",
+  bytes: 17609,
+  sha256: "2f79a7cf16e873ce7730d3da3e4b8885038ba9b71817fb8be99703814c0e5d29",
+});
+const QUALIFICATION_DECLARED_ARGS = Object.freeze({
+  is_clang: "true",
+  use_lld: "true",
+  use_remoteexec: "false",
+  use_siso: "true",
+  is_component_build: "false",
+  is_debug: "false",
+  enable_backup_ref_ptr_instance_tracer: "false",
+  v8_enable_sandbox: "true",
+});
+const QUALIFICATION_CPU_ARGS = Object.freeze({
+  target_cpu: '"arm64"',
+  host_cpu: '"x64"',
+});
+// Python str.splitlines/str.isspace semantics used by the canonical flat GN
+// parser. In particular, a UTF-8 BOM is not silently treated as whitespace.
+const QUALIFICATION_PY_SPACE =
+  "[\\x09-\\x0d\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]";
+const QUALIFICATION_GN_LITERAL = new RegExp(
+  /^\s*([a-z][a-z0-9_]*)\s*=\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\$\x00-\x1f]|\\["\\])*")\s*(?:#.*)?$/.source.replaceAll(
+    "\\s",
+    QUALIFICATION_PY_SPACE,
+  ),
+  "u",
+);
+
+function qualificationShape(value, fields, code) {
+  need(
+    value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.getPrototypeOf(value) === Object.prototype &&
+      Object.keys(value).length === fields.length &&
+      fields.every((key) => Object.hasOwn(value, key)),
+    code,
+  );
+}
+function qualificationInteger(value, low, high, code) {
+  need(Number.isSafeInteger(value) && value >= low && value <= high, code);
+}
+function qualificationStringBound(value, maximum) {
+  if (typeof value !== "string") return false;
+  let count = 0;
+  for (let at = 0; at < value.length; at++) {
+    if (++count > maximum) return false;
+    if (value.codePointAt(at) > 0xffff) at++;
+  }
+  return true;
+}
+function qualificationCanonical(value) {
+  if (Array.isArray(value))
+    return "[" + value.map(qualificationCanonical).join(",") + "]";
+  if (value !== null && typeof value === "object")
+    return (
+      "{" +
+      Object.keys(value)
+        .sort()
+        .map(
+          (key) =>
+            JSON.stringify(key) + ":" + qualificationCanonical(value[key]),
+        )
+        .join(",") +
+      "}"
+    );
+  return JSON.stringify(value);
+}
+function qualificationPolicy(rawPolicy, rawCandidatePolicy) {
+  need(
+    Buffer.isBuffer(rawPolicy) &&
+      rawPolicy.length > 0 &&
+      rawPolicy.length <= 65536 &&
+      sha(rawPolicy) === PRIVATE_PROFILE_SHA256,
+    "PRIVATE_POLICY_PIN",
+  );
+  const policy = JSON.parse(rawPolicy.toString("utf8"));
+  need(
+    policy.mode === PRIVATE_MODE &&
+      policy.ref === PRIVATE_REF &&
+      policy.workflow === PRIVATE_WORKFLOW &&
+      policy.repository === "supermarsx/sortOfRemoteNG" &&
+      policy.repositoryId === "1010282954" &&
+      staticProjectionEqual(policy.qualificationRoles, PRIVATE_ROLES),
+    "PRIVATE_POLICY_SCOPE",
+  );
+  need(
+    [
+      "privateAuthorityAdmitted",
+      "workflowActivation",
+      "publicExecuteAdmitted",
+      "engineCompilationAllowed",
+      "sdkAllowed",
+      "nativeAcceptance",
+      "runtimeReady",
+      "environmentContractApproved",
+    ].every((key) => policy[key] === false) &&
+      policy.sourceClosureStatus === "planned-files-incomplete",
+    "PRIVATE_POLICY_CLOSED",
+  );
+  need(
+    Buffer.isBuffer(rawCandidatePolicy) &&
+      rawCandidatePolicy.length > 0 &&
+      rawCandidatePolicy.length <= 65536 &&
+      sha(rawCandidatePolicy) === policy.baseCandidatePolicySha256,
+    "PRIVATE_CANDIDATE_POLICY_PIN",
+  );
+  return { policy, candidate: JSON.parse(rawCandidatePolicy.toString("utf8")) };
+}
+
+function qualificationBoundedJson(raw, maximum = 4 * 1024 ** 2) {
+  need(
+    Buffer.isBuffer(raw) &&
+      raw.length > 0 &&
+      raw.length <= maximum &&
+      !raw.includes(0),
+    "PRIVATE_JSON_BOUND",
+  );
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      raw,
+    );
+  } catch {
+    throw new Error("PRIVATE_JSON_SYNTAX");
+  }
+  let at = 0;
+  const space = () => {
+    while (at < text.length && /[\x20\t\r\n]/.test(text[at])) at++;
+  };
+  const string = () => {
+    need(text[at] === '"', "PRIVATE_JSON_SYNTAX");
+    const start = at++;
+    let escaped = false;
+    while (at < text.length) {
+      const char = text[at++];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        try {
+          return JSON.parse(text.slice(start, at));
+        } catch {
+          throw new Error("PRIVATE_JSON_SYNTAX");
+        }
+      }
+    }
+    throw new Error("PRIVATE_JSON_SYNTAX");
+  };
+  const value = (depth) => {
+    space();
+    if (text[at] === '"') return string();
+    if (text[at] === "[" || text[at] === "{") {
+      need(depth < 32, "PRIVATE_JSON_DEPTH");
+      const array = text[at++] === "[",
+        end = array ? "]" : "}";
+      const result = array ? [] : {},
+        seen = new Set();
+      space();
+      if (text[at] === end) {
+        at++;
+        return result;
+      }
+      for (;;) {
+        let key;
+        if (!array) {
+          key = string();
+          space();
+          need(text[at++] === ":", "PRIVATE_JSON_SYNTAX");
+        }
+        const entry = value(depth + 1);
+        if (array) result.push(entry);
+        else {
+          need(!seen.has(key), "PRIVATE_JSON_DUPLICATE");
+          seen.add(key);
+          Object.defineProperty(result, key, {
+            value: entry,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        }
+        space();
+        if (text[at] === end) {
+          at++;
+          return result;
+        }
+        need(text[at++] === ",", "PRIVATE_JSON_SYNTAX");
+        space();
+      }
+    }
+    for (const [word, result] of [
+      ["true", true],
+      ["false", false],
+      ["null", null],
+    ])
+      if (text.startsWith(word, at)) {
+        at += word.length;
+        return result;
+      }
+    need(
+      !["NaN", "Infinity", "-Infinity"].some((word) =>
+        text.startsWith(word, at),
+      ),
+      "PRIVATE_JSON_CONSTANT",
+    );
+    const number = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+    number.lastIndex = at;
+    const match = number.exec(text);
+    need(match, "PRIVATE_JSON_SYNTAX");
+    at = number.lastIndex;
+    return Number(match[0]);
+  };
+  const result = value(0);
+  space();
+  need(at === text.length, "PRIVATE_JSON_SYNTAX");
+  return result;
+}
+
+function qualificationInspectEvaluatedArgs(raw) {
+  const rows = qualificationBoundedJson(raw);
+  need(
+    Array.isArray(rows) && rows.length >= 1 && rows.length <= 8192,
+    "PRIVATE_GN_ARGS_ROWS",
+  );
+  const values = {};
+  for (const row of rows) {
+    qualificationShape(
+      row,
+      Object.hasOwn(row ?? {}, "current")
+        ? ["name", "default", "current"]
+        : ["name", "default"],
+      "PRIVATE_GN_ARG_FIELDS",
+    );
+    need(
+      typeof row.name === "string" &&
+        /^[a-z][a-z0-9_]{0,127}$/.test(row.name) &&
+        !Object.hasOwn(values, row.name),
+      "PRIVATE_GN_ARG_NAME",
+    );
+    for (const key of ["default", "current"])
+      if (Object.hasOwn(row, key)) {
+        qualificationShape(row[key], ["value"], "PRIVATE_GN_ARG_VALUE_FIELDS");
+        need(
+          typeof row[key].value === "string" &&
+            qualificationStringBound(row[key].value, 65536) &&
+            !row[key].value.includes("\0"),
+          "PRIVATE_GN_ARG_VALUE",
+        );
+      }
+    values[row.name] =
+      row[Object.hasOwn(row, "current") ? "current" : "default"].value;
+  }
+  for (const [name, expected] of Object.entries(QUALIFICATION_DECLARED_ARGS))
+    need(values[name] === expected, "PRIVATE_GN_ARG_CRITICAL");
+  for (const [name, expected] of Object.entries(QUALIFICATION_CPU_ARGS))
+    need(values[name] === expected, "PRIVATE_GN_ARG_CPU");
+  return {
+    kind: "windows-arm-candidate-evaluated-args",
+    sha256: sha(raw),
+    bytes: raw.length,
+    values,
+    criticalDeclaredValuesMatch: true,
+    builtinCpuRowsRequired: true,
+    processProvenanceVerified: false,
+    executionAdmitted: false,
+  };
+}
+
+function qualificationInspectAction(raw, role, rawPolicy, rawCandidatePolicy) {
+  const { candidate } = qualificationPolicy(rawPolicy, rawCandidatePolicy);
+  need(["partitionAlloc", "cefConfig"].includes(role), "PRIVATE_GN_DESC_ROLE");
+  const expected = candidate.generatedInputs.find((row) => row.role === role),
+    label = expected.label;
+  const top = qualificationBoundedJson(raw, 1024 ** 2);
+  qualificationShape(top, [label], "PRIVATE_GN_DESC_LABEL");
+  const action = top[label];
+  qualificationShape(
+    action,
+    [
+      "type",
+      "toolchain",
+      "metadata",
+      "visibility",
+      "testonly",
+      "check_includes_strict",
+      "public",
+      "script",
+      "args",
+      "outputs",
+      "deps",
+      ...(role === "partitionAlloc" ? ["response_file_contents"] : ["inputs"]),
+    ],
+    "PRIVATE_GN_DESC_FIELDS",
+  );
+  need(
+    action.type === "action" &&
+      action.toolchain === QUALIFICATION_ARM_TOOLCHAIN &&
+      staticProjectionEqual(action.metadata, {}) &&
+      action.testonly === false &&
+      typeof action.check_includes_strict === "boolean" &&
+      action.public === "*",
+    "PRIVATE_GN_DESC_ACTION",
+  );
+  need(
+    Array.isArray(action.visibility) &&
+      action.visibility.length >= 1 &&
+      action.visibility.length <= 128 &&
+      action.visibility.every(
+        (item) =>
+          typeof item === "string" &&
+          item.length > 0 &&
+          item.length <= 1024 &&
+          !/[^\x20-\x7e]/.test(item),
+      ),
+    "PRIVATE_GN_DESC_VISIBILITY",
+  );
+  const out = "//out/Release_GN_arm64/";
+  need(
+    staticProjectionEqual(action.outputs, [out + expected.relativeOutput]),
+    "PRIVATE_GN_DESC_OUTPUT",
+  );
+  let macros = null;
+  if (role === "partitionAlloc") {
+    const prefix = "//base/allocator/partition_allocator/src/partition_alloc";
+    need(
+      action.script === prefix + "/write_buildflag_header.py" &&
+        staticProjectionEqual(action.args, [
+          "--output",
+          "base/allocator/partition_allocator/src/partition_alloc/buildflags.h",
+          "--rulename",
+          label,
+          "--gen-dir",
+          "gen",
+          "--definitions",
+          "{{response_file_name}}",
+        ]) &&
+        staticProjectionEqual(action.deps, [prefix + ":buildflag_macro"]),
+      "PRIVATE_GN_DESC_COMMAND",
+    );
+    const flags = action.response_file_contents,
+      names = candidate.partitionAllocMacros;
+    need(
+      Array.isArray(flags) &&
+        flags.length === names.length + 1 &&
+        flags[0] === "--flags",
+      "PRIVATE_GN_DESC_FLAGS",
+    );
+    macros = {};
+    for (const [index, name] of names.entries()) {
+      const flag = flags[index + 1];
+      need(
+        typeof flag === "string" && flag.startsWith(name + "="),
+        "PRIVATE_GN_DESC_FLAG_ORDER",
+      );
+      const text = flag.slice(name.length + 1);
+      if (name === "USER_SPACE_ZERO_SEGMENT_SIZE_MB") {
+        need(
+          /^(?:0|[1-9][0-9]{0,9})$/.test(text) && Number(text) <= 2147483647,
+          "PRIVATE_GN_DESC_FLAG_VALUE",
+        );
+        macros[name] = Number(text);
+      } else {
+        need(text === "true" || text === "false", "PRIVATE_GN_DESC_FLAG_VALUE");
+        macros[name] = Number(text === "true");
+      }
+    }
+  } else
+    need(
+      action.script === "//cef/tools/make_config_header.py" &&
+        staticProjectionEqual(action.args, [
+          "gen/cef/include/cef_config.h",
+          "args.gn",
+        ]) &&
+        staticProjectionEqual(action.inputs, [out + "args.gn"]) &&
+        staticProjectionEqual(action.deps, ["//cef:args_gn_source"]),
+      "PRIVATE_GN_DESC_COMMAND",
+    );
+  return {
+    kind: "windows-arm-candidate-action-desc",
+    role,
+    label,
+    bytes: raw.length,
+    sha256: sha(raw),
+    toolchain: QUALIFICATION_ARM_TOOLCHAIN,
+    outputs: [...action.outputs],
+    evaluatedMacroValues: macros,
+    actionProjectionMatches: true,
+    processProvenanceVerified: false,
+    fullArm64DefaultsQualified: false,
+    executionAdmitted: false,
+  };
+}
+
+function qualificationLines(text) {
+  return text.split(/\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/u);
+}
+function qualificationTrim(text) {
+  return text.replace(
+    new RegExp(`^${QUALIFICATION_PY_SPACE}+|${QUALIFICATION_PY_SPACE}+$`, "gu"),
+    "",
+  );
+}
+function qualificationParseLiteralArgs(raw) {
+  need(
+    Buffer.isBuffer(raw) &&
+      raw.length > 0 &&
+      raw.length <= 1024 ** 2 &&
+      !raw.includes(0),
+    "QUAL_ARGS_BOUND",
+  );
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      raw,
+    );
+  } catch {
+    throw new Error("QUAL_ARGS_ENCODING");
+  }
+  const expected = {
+    ...QUALIFICATION_CPU_ARGS,
+    ...QUALIFICATION_DECLARED_ARGS,
+  };
+  delete expected.v8_enable_sandbox;
+  const values = {},
+    lines = qualificationLines(text);
+  for (const line of lines) {
+    const stripped = qualificationTrim(line);
+    if (!stripped || stripped.startsWith("#")) continue;
+    const match = QUALIFICATION_GN_LITERAL.exec(line);
+    need(match, "QUAL_ARGS_SYNTAX");
+    const [, name, value] = match;
+    need(
+      !Object.hasOwn(values, name) &&
+        ![
+          "if",
+          "else",
+          "foreach",
+          "true",
+          "false",
+          "import",
+          "template",
+        ].includes(name),
+      "QUAL_ARGS_DUPLICATE_OR_KEYWORD",
+    );
+    values[name] = value;
+    if (Object.hasOwn(expected, name))
+      need(value === expected[name], "QUAL_ARGS_CRITICAL");
+    if (name.includes("sandbox")) need(value === "true", "QUAL_ARGS_SANDBOX");
+  }
+  need(
+    Object.keys(expected).every((name) => Object.hasOwn(values, name)),
+    "QUAL_ARGS_CRITICAL",
+  );
+  return {
+    values,
+    lines,
+    projection: {
+      kind: "windows-arm-candidate-args",
+      bytes: raw.length,
+      sha256: sha(raw),
+      criticalLiteralDeclarationsVerified: true,
+      evaluatedGnVerified: false,
+      generatedSecurityHeadersVerified: false,
+      executionAdmitted: false,
+    },
+  };
+}
+function qualificationHeaderText(raw) {
+  need(
+    Buffer.isBuffer(raw) &&
+      raw.length > 0 &&
+      raw.length <= 65536 &&
+      !raw.includes(0) &&
+      !raw.includes(92),
+    "QUAL_HEADER_BOUND",
+  );
+  need(
+    raw.every((byte) => byte < 128),
+    "QUAL_HEADER_ENCODING",
+  );
+  let text = raw.toString("ascii").replaceAll("\r\n", "\n");
+  need(!text.includes("\r"), "QUAL_HEADER_ENCODING");
+  text = text
+    .replace(/\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+  need(!text.includes("/*") && !text.includes("*/"), "QUAL_HEADER_COMMENT");
+  return qualificationLines(text).map(qualificationTrim).filter(Boolean);
+}
+function qualificationInspectCefHeader(raw) {
+  need(
+    staticProjectionEqual(qualificationHeaderText(raw), [
+      "#ifndef CEF_INCLUDE_CEF_CONFIG_H_",
+      "#define CEF_INCLUDE_CEF_CONFIG_H_",
+      "#define CEF_V8_ENABLE_SANDBOX 1",
+      "#endif",
+    ]),
+    "QUAL_CEF_CONFIG",
+  );
+  return {
+    kind: "windows-arm-candidate-cef-config-header",
+    bytes: raw.length,
+    sha256: sha(raw),
+    v8SandboxDeclared: true,
+    executionAdmitted: false,
+  };
+}
+function qualificationInspectPaHeader(raw, candidate, evaluatedMacros) {
+  const lines = qualificationHeaderText(raw);
+  need(
+    staticProjectionEqual(lines.slice(0, 3), [
+      "#ifndef " + QUALIFICATION_PA_GUARD,
+      "#define " + QUALIFICATION_PA_GUARD,
+      '#include "partition_alloc/buildflag.h"',
+    ]) && staticProjectionEqual(lines.slice(-1), ["#endif"]),
+    "PRIVATE_PA_HEADER",
+  );
+  const macros = {};
+  for (const line of lines.slice(3, -1)) {
+    const match =
+      /^#define PA_BUILDFLAG_INTERNAL_([A-Z][A-Z0-9_]*)\(\) \((0|[1-9][0-9]{0,9})\)$/.exec(
+        line,
+      );
+    need(match && !Object.hasOwn(macros, match[1]), "PRIVATE_PA_MACRO");
+    macros[match[1]] = Number(match[2]);
+  }
+  need(
+    staticProjectionEqual(
+      Object.keys(macros),
+      candidate.partitionAllocMacros,
+    ) && staticProjectionEqual(macros, evaluatedMacros),
+    "PRIVATE_PA_DESC_HEADER_MISMATCH",
+  );
+  for (const [name, expected] of Object.entries({
+    ...candidate.explicitArgumentInvariants,
+    ...candidate.securityPolicyMinimums,
+  }))
+    need(macros[name] === expected, "PRIVATE_PA_SECURITY_MINIMUM");
+  return macros;
+}
+
+function qualificationInspectCoff(raw) {
+  need(
+    Buffer.isBuffer(raw) && raw.length >= 20 && raw.length <= 8 * 1024 ** 2,
+    "QUAL_COFF_BOUND",
+  );
+  const machine = raw.readUInt16LE(0),
+    sections = raw.readUInt16LE(2),
+    symbolsAt = raw.readUInt32LE(8),
+    symbols = raw.readUInt32LE(12),
+    optional = raw.readUInt16LE(16),
+    flags = raw.readUInt16LE(18);
+  need(
+    machine === 0xaa64 &&
+      optional === 0 &&
+      sections >= 1 &&
+      sections <= 96 &&
+      !(flags & 0x2000) &&
+      20 + sections * 40 <= raw.length,
+    "QUAL_COFF_HEADER",
+  );
+  for (let index = 0; index < sections; index++) {
+    const at = 20 + index * 40,
+      size = raw.readUInt32LE(at + 16),
+      offset = raw.readUInt32LE(at + 20);
+    need(
+      size === 0 ||
+        (offset >= 20 + sections * 40 && offset + size <= raw.length),
+      "QUAL_COFF_SECTION",
+    );
+  }
+  if (symbolsAt || symbols) {
+    qualificationInteger(symbols, 0, 100000, "QUAL_COFF_SYMBOLS");
+    const end = symbolsAt + symbols * 18;
+    need(
+      symbolsAt >= 20 + sections * 40 && end + 4 <= raw.length,
+      "QUAL_COFF_SYMBOLS",
+    );
+    const strings = raw.readUInt32LE(end);
+    need(strings >= 4 && end + strings <= raw.length, "QUAL_COFF_SYMBOLS");
+  }
+  return {
+    kind: "windows-arm-candidate-coff",
+    machine,
+    sections,
+    bytes: raw.length,
+    sha256: sha(raw),
+    structureOnly: true,
+    executionAdmitted: false,
+  };
+}
+function qualificationInspectProbePe(raw) {
+  need(
+    Buffer.isBuffer(raw) &&
+      raw.length >= 64 &&
+      raw.length <= 8 * 1024 ** 2 &&
+      raw.toString("ascii", 0, 2) === "MZ",
+    "QUAL_PE_BOUND",
+  );
+  const offset = raw.readUInt32LE(60);
+  need(
+    offset >= 64 &&
+      offset <= raw.length - 264 &&
+      raw.readUInt32LE(offset) === 0x00004550,
+    "QUAL_PE_OFFSET",
+  );
+  const machine = raw.readUInt16LE(offset + 4),
+    sections = raw.readUInt16LE(offset + 6),
+    optional = raw.readUInt16LE(offset + 20),
+    flags = raw.readUInt16LE(offset + 22);
+  need(
+    machine === 0xaa64 &&
+      sections >= 1 &&
+      sections <= 96 &&
+      optional === 240 &&
+      (flags & 2) !== 0 &&
+      !(flags & (0x100 | 0x2000)),
+    "QUAL_PE_HEADER",
+  );
+  const header = offset + 24;
+  need(
+    raw.readUInt16LE(header) === 0x20b &&
+      raw.readUInt16LE(header + 68) === 3 &&
+      raw.readUInt32LE(header + 108) === 16,
+    "QUAL_PE_OPTIONAL",
+  );
+  for (const directory of [1, 12, 13, 14])
+    need(
+      raw.readUInt32LE(header + 112 + directory * 8) === 0 &&
+        raw.readUInt32LE(header + 116 + directory * 8) === 0,
+      "QUAL_PE_IMPORTS",
+    );
+  const table = header + optional,
+    entry = raw.readUInt32LE(header + 16);
+  need(table + sections * 40 <= raw.length, "QUAL_PE_SECTIONS");
+  let executable = 0;
+  for (let index = 0; index < sections; index++) {
+    const at = table + index * 40,
+      virtualSize = raw.readUInt32LE(at + 8),
+      address = raw.readUInt32LE(at + 12),
+      size = raw.readUInt32LE(at + 16),
+      fileAt = raw.readUInt32LE(at + 20),
+      sectionFlags = raw.readUInt32LE(at + 36);
+    need(
+      size === 0 ||
+        (fileAt >= table + sections * 40 && fileAt + size <= raw.length),
+      "QUAL_PE_SECTION",
+    );
+    if (
+      size > 0 &&
+      address <= entry &&
+      entry < address + Math.min(virtualSize, size) &&
+      sectionFlags & 0x20000000
+    )
+      executable++;
+  }
+  need(entry > 0 && executable === 1, "QUAL_PE_ENTRY");
+  return {
+    kind: "windows-arm-candidate-pe",
+    machine,
+    sections,
+    bytes: raw.length,
+    sha256: sha(raw),
+    structureOnly: true,
+    outputExecuted: false,
+    executionAdmitted: false,
+  };
+}
+
+function qualificationInspectContext(
+  context,
+  rawPolicy,
+  rawCandidatePolicy,
+  wallNow,
+  monotonicNow,
+) {
+  requirePrivateScope(context);
+  const { policy, candidate } = qualificationPolicy(
+    rawPolicy,
+    rawCandidatePolicy,
+  );
+  qualificationShape(
+    context,
+    [
+      "kind",
+      "mode",
+      "ref",
+      "workflow",
+      "repository",
+      "repositoryId",
+      "visibility",
+      "event",
+      "head",
+      "workflowSha",
+      "image",
+      "host",
+      "root",
+      "source",
+      "sources",
+      "sourceDigest",
+      "bindings",
+      "wallWorkEnd",
+      "monotonicWorkEnd",
+    ],
+    "PRIVATE_CONTEXT_FIELDS",
+  );
+  need(
+    context.kind === "windows-arm-private-input-projection" &&
+      typeof context.head === "string" &&
+      /^[a-f0-9]{40}$/.test(context.head) &&
+      context.head === context.workflowSha,
+    "PRIVATE_CONTEXT_HEAD",
+  );
+  need(
+    typeof context.image === "string" &&
+      Object.hasOwn(policy.images, context.image) &&
+      staticProjectionEqual(context.host, {
+        platform: "win32",
+        architecture: "x64",
+        runner: policy.runner,
+      }),
+    "PRIVATE_HOST_IMAGE",
+  );
+  need(
+    typeof context.root === "string" && PRIVATE_ROOT.test(context.root),
+    "PRIVATE_ROOT",
+  );
+  const selected = policy.images[context.image];
+  need(
+    staticProjectionEqual(context.source, {
+      target: "aarch64-pc-windows-msvc",
+      sourceId: selected.sourceId,
+      profileSha256: selected.profileSha256,
+      chromium: policy.chromium,
+      cef: policy.cef,
+    }),
+    "PRIVATE_SOURCE_SCOPE",
+  );
+  need(
+    Array.isArray(context.sources) &&
+      context.sources.length === policy.sourcePaths.length,
+    "PRIVATE_SOURCE_TUPLE",
+  );
+  for (const [index, row] of context.sources.entries()) {
+    qualificationShape(
+      row,
+      [
+        "path",
+        "bytes",
+        "sha256",
+        "canonicalBytes",
+        "canonicalSha256",
+        "encoding",
+      ],
+      "PRIVATE_SOURCE_FIELDS",
+    );
+    need(row.path === policy.sourcePaths[index], "PRIVATE_SOURCE_TUPLE");
+    for (const key of ["bytes", "canonicalBytes"])
+      qualificationInteger(row[key], 1, 2 * 1024 ** 2, "PRIVATE_SOURCE_BOUND");
+    for (const key of ["sha256", "canonicalSha256"])
+      need(
+        typeof row[key] === "string" && /^[a-f0-9]{64}$/.test(row[key]),
+        "PRIVATE_SOURCE_HASH",
+      );
+    need(
+      row.encoding === "exact" ||
+        (row.encoding === "git-crlf" && policy.crlfPositions.includes(index)),
+      "PRIVATE_SOURCE_ENCODING",
+    );
+    need(
+      row.encoding === "exact"
+        ? row.bytes === row.canonicalBytes && row.sha256 === row.canonicalSha256
+        : row.bytes >= row.canonicalBytes &&
+            row.bytes - row.canonicalBytes <= row.canonicalBytes,
+      "PRIVATE_SOURCE_ENCODING",
+    );
+  }
+  need(
+    typeof context.sourceDigest === "string" &&
+      /^[a-f0-9]{64}$/.test(context.sourceDigest) &&
+      sha(Buffer.from(qualificationCanonical(context.sources))) ===
+        context.sourceDigest,
+    "PRIVATE_SOURCE_DIGEST",
+  );
+  const bindings = context.bindings,
+    out = context.root + "/source-checkout/src/out/Release_GN_arm64";
+  qualificationShape(
+    bindings,
+    ["args", "graph", "graphInventory", "tools"],
+    "PRIVATE_BINDING_FIELDS",
+  );
+  const pin = (row, file, expected) => {
+    qualificationShape(row, ["path", "bytes", "sha256"], "PRIVATE_FILE_FIELDS");
+    need(
+      row.path === file &&
+        Number.isSafeInteger(row.bytes) &&
+        row.bytes > 0 &&
+        row.bytes <= 256 * 1024 ** 2 &&
+        typeof row.sha256 === "string" &&
+        /^[a-f0-9]{64}$/.test(row.sha256),
+      "PRIVATE_FILE_PIN",
+    );
+    if (expected)
+      need(
+        row.bytes === expected.bytes && row.sha256 === expected.sha256,
+        "PRIVATE_TOOL_PIN",
+      );
+  };
+  pin(bindings.args, out + "/args.gn");
+  pin(bindings.graph, out + "/build.ninja");
+  const inventory = bindings.graphInventory;
+  qualificationShape(
+    inventory,
+    ["files", "visited", "bytes", "sha256"],
+    "PRIVATE_GRAPH_FIELDS",
+  );
+  need(
+    Number.isSafeInteger(inventory.files) &&
+      inventory.files >= 1 &&
+      inventory.files <= 50000 &&
+      Number.isSafeInteger(inventory.visited) &&
+      inventory.visited >= inventory.files &&
+      inventory.visited <= 300000 &&
+      Number.isSafeInteger(inventory.bytes) &&
+      inventory.bytes > 0 &&
+      inventory.bytes <= 8 * 1024 ** 3 &&
+      typeof inventory.sha256 === "string" &&
+      /^[a-f0-9]{64}$/.test(inventory.sha256),
+    "PRIVATE_GRAPH_BOUND",
+  );
+  qualificationShape(
+    bindings.tools,
+    Object.keys(policy.tools),
+    "PRIVATE_TOOL_FIELDS",
+  );
+  for (const [role, expected] of Object.entries(policy.tools))
+    pin(
+      bindings.tools[role],
+      expected.path ?? context.root + "/" + expected.relativePath,
+      expected,
+    );
+  need(
+    [
+      context.wallWorkEnd,
+      context.monotonicWorkEnd,
+      wallNow,
+      monotonicNow,
+    ].every((value) => typeof value === "number" && Number.isFinite(value)),
+    "PRIVATE_CLOCK",
+  );
+  const remaining = Math.min(
+    context.wallWorkEnd - wallNow,
+    context.monotonicWorkEnd - monotonicNow,
+  );
+  need(remaining > 150 && remaining <= 7200, "PRIVATE_DEADLINE");
+  return { policy, candidate };
+}
+
+function qualificationInspectOutputs(
+  context,
+  rawPolicy,
+  rawCandidatePolicy,
+  observations,
+  wallNow,
+  monotonicNow,
+) {
+  const { policy, candidate } = qualificationInspectContext(
+    context,
+    rawPolicy,
+    rawCandidatePolicy,
+    wallNow,
+    monotonicNow,
+  );
+  qualificationShape(
+    observations,
+    ["gnDescPartitionAlloc", "gnDescCef", "gnArgs", "files"],
+    "PRIVATE_OUTPUT_FIELDS",
+  );
+  const pa = qualificationInspectAction(
+    observations.gnDescPartitionAlloc,
+    "partitionAlloc",
+    rawPolicy,
+    rawCandidatePolicy,
+  );
+  const cef = qualificationInspectAction(
+    observations.gnDescCef,
+    "cefConfig",
+    rawPolicy,
+    rawCandidatePolicy,
+  );
+  const evaluated = qualificationInspectEvaluatedArgs(observations.gnArgs),
+    root = context.root;
+  const out = root + "/source-checkout/src/out/Release_GN_arm64/";
+  const paths = {
+    args: out + "args.gn",
+    partitionAlloc: out + candidate.generatedInputs[0].relativeOutput,
+    cefConfig: out + candidate.generatedInputs[1].relativeOutput,
+    coff: root + "/private-qualification/probe.obj",
+    pe: root + "/private-qualification/probe.exe",
+  };
+  const files = observations.files;
+  qualificationShape(files, Object.keys(paths), "PRIVATE_OUTPUT_FILE_FIELDS");
+  for (const [role, file] of Object.entries(paths)) {
+    const row = files[role];
+    qualificationShape(row, ["pin", "raw"], "PRIVATE_OUTPUT_CANDIDATE");
+    qualificationShape(
+      row.pin,
+      ["path", "bytes", "sha256"],
+      "PRIVATE_OUTPUT_PIN_FIELDS",
+    );
+    need(
+      Buffer.isBuffer(row.raw) &&
+        row.raw.length > 0 &&
+        row.raw.length <= 8 * 1024 ** 2 &&
+        Number.isSafeInteger(row.pin.bytes) &&
+        row.pin.path === file &&
+        row.pin.bytes === row.raw.length &&
+        row.pin.sha256 === sha(row.raw),
+      "PRIVATE_OUTPUT_PIN",
+    );
+  }
+  need(
+    staticProjectionEqual(files.args.pin, context.bindings.args),
+    "PRIVATE_OUTPUT_ARGS_CHANGED",
+  );
+  const literal = qualificationParseLiteralArgs(files.args.raw);
+  need(
+    literal.lines.includes('target_cpu="arm64"'),
+    "PRIVATE_CEF_GENERATOR_CPU_LINE",
+  );
+  const cefHeader = qualificationInspectCefHeader(files.cefConfig.raw),
+    coff = qualificationInspectCoff(files.coff.raw),
+    pe = qualificationInspectProbePe(files.pe.raw);
+  const macros = qualificationInspectPaHeader(
+    files.partitionAlloc.raw,
+    candidate,
+    pa.evaluatedMacroValues,
+  );
+  for (const [name, value] of Object.entries(literal.values))
+    if (Object.hasOwn(evaluated.values, name))
+      need(
+        value === evaluated.values[name],
+        "PRIVATE_LITERAL_EVALUATED_MISMATCH",
+      );
+  return {
+    kind: "windows-arm-private-output-candidate",
+    source: structuredClone(context.source),
+    image: context.image,
+    inputBindings: structuredClone(context.bindings),
+    privatePolicySha256: sha(rawPolicy),
+    inertPolicySha256: sha(rawCandidatePolicy),
+    argumentSchemaSource: { ...QUALIFICATION_GN_ARGUMENT_SOURCE },
+    metadata: { partitionAlloc: pa, cefConfig: cef, arguments: evaluated },
+    literalArguments: literal.projection,
+    partitionAllocMacros: macros,
+    cefHeader,
+    coff,
+    pe,
+    filePins: Object.fromEntries(
+      Object.entries(files).map(([role, row]) => [role, { ...row.pin }]),
+    ),
+    policyMinimumsMet: true,
+    evaluatedMetadataProjectionMatches: true,
+    completeMacroInventoryMatches: true,
+    fullArm64DefaultsQualified: false,
+    processProvenanceVerified: false,
+    liveJobCapability: false,
+    generatedSecurityHeadersVerified: false,
+    executionAdmitted: false,
+    outputsExecuted: false,
+    sdkBuilt: false,
+    nativeAcceptance: false,
+    missing: [...policy.missingBeforePrivateActivation],
+  };
+}
+// END INACTIVE PURE QUALIFICATION INSPECTORS
+
 export async function main(argv = process.argv.slice(2)) {
   need(
     argv.length === 4 &&

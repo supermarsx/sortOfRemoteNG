@@ -523,6 +523,15 @@ test("falsy source-budget exceptions permanently poison the phase and preserve t
 });
 
 const driverText = await readFile(base + "private-source-driver.mjs", "utf8");
+const pureStart = driverText.indexOf(
+  "// BEGIN INACTIVE PURE QUALIFICATION INSPECTORS\n",
+);
+const pureEndMarker = "// END INACTIVE PURE QUALIFICATION INSPECTORS";
+const pureEnd =
+  driverText.indexOf(pureEndMarker, pureStart) + pureEndMarker.length;
+assert(pureStart > 0 && pureEnd > pureStart);
+const pureVerifierBlock = driverText.slice(pureStart, pureEnd);
+const withoutPureDriver = driverText.replace(pureVerifierBlock + "\n\n", "");
 const joinedStart = driverText.indexOf(
   "// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES\n",
 );
@@ -542,6 +551,697 @@ const functionText = (name) => {
   assert(node, name);
   return driverText.slice(node.start, node.end);
 };
+
+const pureApi = (() => {
+  const rootNode = driverAst.body.find(
+    (node) =>
+      node.type === "VariableDeclaration" &&
+      node.declarations.some((row) => row.id.name === "PRIVATE_ROOT"),
+  );
+  const factory = new Function(
+    "Buffer",
+    "sha",
+    "need",
+    "PRIVATE_MODE",
+    "PRIVATE_REF",
+    "PRIVATE_WORKFLOW",
+    "PRIVATE_ROLES",
+    "PRIVATE_PROFILE_SHA256",
+    driverText.slice(rootNode.start, rootNode.end) +
+      "\n" +
+      functionText("staticProjectionEqual") +
+      "\n" +
+      functionText("requirePrivateScope").replace(/^export /, "") +
+      "\n" +
+      pureVerifierBlock +
+      "\nreturn {qualificationBoundedJson,qualificationInspectEvaluatedArgs,qualificationInspectAction,qualificationParseLiteralArgs,qualificationInspectCefHeader,qualificationInspectCoff,qualificationInspectProbePe,qualificationInspectOutputs};",
+  );
+  return factory(
+    Buffer,
+    hash,
+    (value, code) => {
+      if (!value) throw Error(code);
+    },
+    policy.mode,
+    policy.ref,
+    policy.workflow,
+    policy.qualificationRoles,
+    hash(rawPolicy),
+  );
+})();
+const candidatePolicyRaw = await readFile(
+  base + "engine-qualification-profile.json",
+);
+const encodePure = (value) =>
+  Buffer.isBuffer(value)
+    ? { __qualification_bytes: value.toString("base64") }
+    : Array.isArray(value)
+      ? value.map(encodePure)
+      : value !== null && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value).map(([key, item]) => [key, encodePure(item)]),
+          )
+        : value;
+const decodePure = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  Object.keys(value).length === 1 &&
+  Object.hasOwn(value, "__qualification_bytes")
+    ? Buffer.from(value.__qualification_bytes, "base64")
+    : Array.isArray(value)
+      ? value.map(decodePure)
+      : value !== null && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value).map(([key, item]) => [key, decodePure(item)]),
+          )
+        : value;
+function purePython(request) {
+  const script = String.raw`import sys,json,base64
+sys.path.insert(0,${JSON.stringify(path.resolve(base))})
+import test_private_qualification as t, private_qualification as p, engine_qualification as e
+def encode(value):
+ if type(value)is bytes:return {'__qualification_bytes':base64.b64encode(value).decode()}
+ if type(value)is dict:return {key:encode(item)for key,item in value.items()}
+ if type(value)is list or type(value)is tuple:return [encode(item)for item in value]
+ return value
+def decode(value):
+ if type(value)is dict and set(value)=={'__qualification_bytes'}:return base64.b64decode(value['__qualification_bytes'],validate=True)
+ if type(value)is dict:return {key:decode(item)for key,item in value.items()}
+ if type(value)is list:return [decode(item)for item in value]
+ return value
+raw=sys.stdin.buffer.read(16*1024**2+1);assert len(raw)<=16*1024**2
+request=decode(json.loads(raw))
+if request['operation']=='fixtures':
+ print(json.dumps(encode({image:{'context':value,'observed':observed}for image in t.POLICY['images']for value,observed in [t.output_fixture(image)]})))
+else:
+ def no_io(*args,**kwargs):raise AssertionError('PURE_READER_MUST_NOT_READ_PROFILE')
+ e.load_profile=no_io
+ results=[]
+ for case in request['cases']:
+  try:
+   op=case['op'];raw_policy=case.get('rawPolicy',t.RAW);base_policy=case.get('basePolicy',t.BASE_RAW)
+   if op=='full':value=p.inspect_private_outputs(case['context'],raw_policy,base_policy,case['observed'],wall_now=case.get('wallNow',200),monotonic_now=case.get('monotonicNow',200))
+   elif op=='action':value=p.inspect_action_desc(case['raw'],case['role'],raw_policy,base_policy)
+   elif op=='evaluated':value=p.inspect_evaluated_args(case['raw'])
+   elif op=='literal':value=e.inspect_args(case['raw'])
+   elif op=='cef':value=e.inspect_cef_config_header(case['raw'])
+   elif op=='coff':value=e.inspect_coff(case['raw'])
+   elif op=='pe':value=e.inspect_pe(case['raw'])
+   elif op=='json':value=p.bounded_json(case['raw'])
+   else:raise AssertionError('CLOSED_PURE_TEST_OP')
+   results.append({'ok':True,'value':encode(value)})
+  except (p.Denied,e.QualificationError)as error:results.append({'ok':False,'error':str(error)})
+ print(json.dumps(results))
+`;
+  const result = spawnSync("python", ["-I", "-B", "-c", script], {
+    input: JSON.stringify(encodePure(request)),
+    encoding: "utf8",
+    timeout: 20000,
+    maxBuffer: 16 * 1024 ** 2,
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return decodePure(JSON.parse(result.stdout));
+}
+const pureFixtures = purePython({ operation: "fixtures" });
+const freshPure = (image = "20261030.294.1") =>
+  decodePure(encodePure(pureFixtures[image]));
+const pureRaw = (value) => Buffer.from(JSON.stringify(value));
+const setPureFile = (packet, role, raw) => {
+  const row = packet.observed.files[role];
+  row.raw = raw;
+  row.pin = { path: row.pin.path, bytes: raw.length, sha256: hash(raw) };
+};
+function nodePure(case_) {
+  try {
+    const rp = case_.rawPolicy ?? rawPolicy,
+      bp = case_.basePolicy ?? candidatePolicyRaw;
+    let value;
+    if (case_.op === "full")
+      value = pureApi.qualificationInspectOutputs(
+        case_.context,
+        rp,
+        bp,
+        case_.observed,
+        Object.hasOwn(case_, "wallNow") ? case_.wallNow : 200,
+        Object.hasOwn(case_, "monotonicNow") ? case_.monotonicNow : 200,
+      );
+    else if (case_.op === "action")
+      value = pureApi.qualificationInspectAction(case_.raw, case_.role, rp, bp);
+    else if (case_.op === "evaluated")
+      value = pureApi.qualificationInspectEvaluatedArgs(case_.raw);
+    else if (case_.op === "literal")
+      value = pureApi.qualificationParseLiteralArgs(case_.raw).projection;
+    else if (case_.op === "cef")
+      value = pureApi.qualificationInspectCefHeader(case_.raw);
+    else if (case_.op === "coff")
+      value = pureApi.qualificationInspectCoff(case_.raw);
+    else if (case_.op === "pe")
+      value = pureApi.qualificationInspectProbePe(case_.raw);
+    else if (case_.op === "json")
+      value = pureApi.qualificationBoundedJson(case_.raw);
+    else assert.fail("closed Node pure test operation");
+    return { ok: true, value };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+const pureDifferentialStats = { groups: 0, cases: 0, accepted: 0, denied: 0 };
+function comparePure(cases) {
+  const reference = purePython({ operation: "cases", cases });
+  assert.equal(reference.length, cases.length);
+  for (const [index, case_] of cases.entries())
+    assert.deepEqual(
+      nodePure(case_),
+      reference[index],
+      case_.id ?? case_.op + ":" + index,
+    );
+  pureDifferentialStats.groups++;
+  pureDifferentialStats.cases += cases.length;
+  pureDifferentialStats.accepted += reference.filter((row) => row.ok).length;
+  pureDifferentialStats.denied += reference.filter((row) => !row.ok).length;
+  return reference;
+}
+
+test("new pure inspector block restores exact995 driver and creates no process or receipt authority", () => {
+  assert.equal(
+    hash(pureVerifierBlock),
+    "ccfffb973a7c008feda1933c6e620d57778eb1bc8b440d3e92ac2d29596f43e8",
+  );
+  assert.equal(
+    hash(withoutPureDriver),
+    "2a2957e415479d3584666d6de690895008e799be750320fcbe5b689a2ef561c8",
+  );
+  const ast = parse(pureVerifierBlock, {
+    sourceType: "module",
+    ecmaVersion: "latest",
+  });
+  const walk = (node) => {
+    if (!node || typeof node !== "object") return;
+    assert(!node.type?.startsWith("Export"));
+    if (node.type === "CallExpression")
+      assert(
+        ![
+          "spawn",
+          "execFile",
+          "executeCommand",
+          "held",
+          "physical",
+          "open",
+          "require",
+          "runFixedJoined",
+          "createQualificationSession",
+        ].includes(node.callee?.name),
+      );
+    if (node.type === "Identifier")
+      assert(
+        ![
+          "qualificationSourceRuns",
+          "qualificationSessions",
+          "qualificationObservations",
+          "fs",
+          "process",
+        ].includes(node.name),
+      );
+    for (const child of Object.values(node))
+      if (Array.isArray(child)) child.forEach(walk);
+      else if (child && typeof child === "object") walk(child);
+  };
+  walk(ast);
+  assert.equal(
+    (driverText.match(/qualificationSourceRuns\.set\(/g) ?? []).length,
+    0,
+  );
+  assert.equal(PRIVATE_DRIVER_ADMITTED, false);
+});
+
+test("in-process full output projections match actual Python fixtures for both images without inventing ARM defaults", () => {
+  const cases = Object.keys(pureFixtures).map((image) => ({
+    op: "full",
+    id: image,
+    ...freshPure(image),
+  }));
+  const changed = freshPure();
+  const top = JSON.parse(changed.observed.gnDescPartitionAlloc),
+    action = Object.values(top)[0];
+  action.response_file_contents[1] = "ENABLE_USER_SPACE_ZERO_SEGMENT=true";
+  changed.observed.gnDescPartitionAlloc = pureRaw(top);
+  setPureFile(
+    changed,
+    "partitionAlloc",
+    Buffer.from(
+      changed.observed.files.partitionAlloc.raw
+        .toString()
+        .replace(
+          "ENABLE_USER_SPACE_ZERO_SEGMENT() (0)",
+          "ENABLE_USER_SPACE_ZERO_SEGMENT() (1)",
+        ),
+    ),
+  );
+  cases.push({
+    op: "full",
+    id: "unconstrained observed flag may differ from synthetic defaults",
+    ...changed,
+  });
+  const results = comparePure(cases);
+  for (const result of results) {
+    assert(result.ok);
+    assert.equal(Object.keys(result.value.partitionAllocMacros).length, 61);
+    assert.equal(result.value.completeMacroInventoryMatches, true);
+    for (const key of [
+      "fullArm64DefaultsQualified",
+      "processProvenanceVerified",
+      "liveJobCapability",
+      "generatedSecurityHeadersVerified",
+      "executionAdmitted",
+      "outputsExecuted",
+      "sdkBuilt",
+      "nativeAcceptance",
+    ])
+      assert.equal(result.value[key], false, key);
+  }
+});
+
+test("duplicate-aware bounded GN JSON port matches Python and never changes object prototypes", () => {
+  const rawCases = [
+    '{"same":1,"same":2}',
+    '{"nested":{"same":1,"same":2}}',
+    Buffer.from([255]),
+    Buffer.from([239, 187, 191, 91, 93]),
+    "[NaN]",
+    "[Infinity]",
+    "[-Infinity]",
+    "[".repeat(33) + "]".repeat(33),
+    "[]\0",
+    "[1,]",
+    '{"x":}',
+    '{"__proto__":{"polluted":true},"constructor":null}',
+    '{"text":"braces [ \\" quote ","x":[true,false,null,0,-1,1.5]}',
+    "[]",
+    " ".repeat(4 * 1024 ** 2 + 1),
+  ];
+  comparePure(
+    rawCases.map((value, index) => ({
+      op: "json",
+      id: "json:" + index,
+      raw: Buffer.isBuffer(value) ? value : Buffer.from(value),
+    })),
+  );
+  assert.equal({}.polluted, undefined);
+});
+
+test("GN evaluated/current values, critical CPUs and exact action schema reject the same substitutions as Python", () => {
+  const cases = [],
+    base = freshPure();
+  const addRows = (id, change) => {
+    const rows = JSON.parse(base.observed.gnArgs);
+    change(rows);
+    cases.push({ op: "evaluated", id, raw: pureRaw(rows) });
+  };
+  addRows("current false cannot fall back to default true", (rows) => {
+    rows[0].current = { value: "false" };
+  });
+  addRows("current true legitimately overrides default false", (rows) => {
+    rows[0].default.value = "false";
+    rows[0].current = { value: "true" };
+  });
+  addRows("built-in CPU current", (rows) => {
+    const row = rows.find((r) => r.name === "target_cpu");
+    row.default.value = '""';
+    row.current = { value: '"arm64"' };
+  });
+  addRows("CPU missing", (rows) => {
+    rows.pop();
+  });
+  addRows("duplicate declaration", (rows) => rows.push(rows[0]));
+  addRows("typed bool is not GN text", (rows) => {
+    rows[0].default.value = true;
+  });
+  addRows("long schema rejected", (rows) => {
+    rows[0].default.file = "//other";
+  });
+  addRows("expression not critical true", (rows) => {
+    rows[0].default.value = "true || false";
+  });
+  addRows("unrelated Unicode value remains string", (rows) => {
+    rows.push({ name: "other", default: { value: "😀".repeat(32769) } });
+  });
+  for (const role of ["partitionAlloc", "cefConfig"])
+    for (const [field, bad] of [
+      ["toolchain", "//build/toolchain/win:win_clang_x64"],
+      ["type", "action_foreach"],
+      ["script", "//other.py"],
+      ["args", ["--run"]],
+      ["outputs", ["//out/Release_GN_arm64/../else.h"]],
+      ["deps", []],
+      ["testonly", true],
+      ["metadata", { hook: ["other"] }],
+      ["sources", []],
+      ["visibility", ["bad\nvisibility"]],
+    ]) {
+      const top = JSON.parse(
+        role === "partitionAlloc"
+          ? base.observed.gnDescPartitionAlloc
+          : base.observed.gnDescCef,
+      );
+      Object.values(top)[0][field] = bad;
+      cases.push({
+        op: "action",
+        role,
+        id: role + ":" + field,
+        raw: pureRaw(top),
+      });
+    }
+  for (const change of [
+    "missing",
+    "extra",
+    "order",
+    "boolean-as-one",
+    "negative",
+    "overflow",
+  ]) {
+    const top = JSON.parse(base.observed.gnDescPartitionAlloc),
+      flags = Object.values(top)[0].response_file_contents;
+    if (change === "missing") flags.pop();
+    else if (change === "extra") flags.push("UNKNOWN=true");
+    else if (change === "order") [flags[1], flags[2]] = [flags[2], flags[1]];
+    else if (change === "boolean-as-one")
+      flags[1] = "ENABLE_USER_SPACE_ZERO_SEGMENT=1";
+    else
+      flags[2] =
+        "USER_SPACE_ZERO_SEGMENT_SIZE_MB=" +
+        (change === "negative" ? "-1" : "2147483648");
+    cases.push({
+      op: "action",
+      role: "partitionAlloc",
+      id: change,
+      raw: pureRaw(top),
+    });
+  }
+  comparePure(cases);
+});
+
+test("flat literal GN/header text ports reject overrides, interpolation, unknown macros and policy failures like Python", () => {
+  const cases = [],
+    fixture = freshPure(),
+    args = fixture.observed.files.args.raw;
+  for (const suffix of [
+    'target_cpu += "x64"',
+    'if (true) { target_cpu = "x64" }',
+    'import("//other.gni")',
+    "sandbox_other=false",
+    'name="${target_cpu}"',
+    "unknown = 00",
+    "# ordinary comment",
+    'extra="Unicode 😀"',
+    'extra="escaped \\" quote"',
+  ])
+    cases.push({
+      op: "literal",
+      id: suffix,
+      raw: Buffer.concat([args, Buffer.from(suffix + "\n")]),
+    });
+  cases.push({
+    op: "literal",
+    id: "BOM is not whitespace",
+    raw: Buffer.concat([Buffer.from([239, 187, 191]), args]),
+  });
+  cases.push({
+    op: "literal",
+    id: "Python whitespace",
+    raw: Buffer.from(
+      args.toString().replace('target_cpu="arm64"', '\u0085target_cpu="arm64"'),
+    ),
+  });
+  cases.push({
+    op: "literal",
+    id: "Python non-ASCII whitespace around assignment",
+    raw: Buffer.from(
+      args
+        .toString()
+        .replace("is_clang=true", "is_clang\u200a=\u00a0true\u001f"),
+    ),
+  });
+  for (const raw of [
+    Buffer.from("/* unclosed"),
+    Buffer.from("/* bad */ */"),
+    Buffer.from("\\\n"),
+    Buffer.from([255]),
+    Buffer.from(
+      fixture.observed.files.cefConfig.raw
+        .toString()
+        .replace("SANDBOX 1", "SANDBOX 0"),
+    ),
+    Buffer.from(
+      fixture.observed.files.cefConfig.raw.toString().replaceAll("\n", "\r\n"),
+    ),
+  ])
+    cases.push({ op: "cef", raw });
+  for (const change of [
+    "unknown",
+    "duplicate",
+    "order",
+    "mismatch",
+    "minimum",
+    "extra-include",
+  ]) {
+    const packet = freshPure(),
+      original = packet.observed.files.partitionAlloc.raw.toString();
+    let text = original;
+    if (change === "unknown")
+      text = text.replace("ENABLE_USER_SPACE_ZERO_SEGMENT", "UNKNOWN_MACRO");
+    if (change === "duplicate")
+      text = text.replace(
+        "#endif",
+        "#define PA_BUILDFLAG_INTERNAL_CHECKED_SPAN() (0)\n#endif",
+      );
+    if (change === "order") {
+      const lines = text.split("\n");
+      [lines[4], lines[5]] = [lines[5], lines[4]];
+      text = lines.join("\n");
+    }
+    if (change === "mismatch")
+      text = text.replace(
+        "ENABLE_USER_SPACE_ZERO_SEGMENT() (0)",
+        "ENABLE_USER_SPACE_ZERO_SEGMENT() (1)",
+      );
+    if (change === "extra-include") text += '#include "extra.h"\n';
+    if (change === "minimum") {
+      text = text.replace(
+        "USE_RAW_PTR_BACKUP_REF_IMPL() (1)",
+        "USE_RAW_PTR_BACKUP_REF_IMPL() (0)",
+      );
+      const top = JSON.parse(packet.observed.gnDescPartitionAlloc),
+        flags = Object.values(top)[0].response_file_contents;
+      flags[
+        flags.findIndex((row) => row.startsWith("USE_RAW_PTR_BACKUP_REF_IMPL="))
+      ] = "USE_RAW_PTR_BACKUP_REF_IMPL=false";
+      packet.observed.gnDescPartitionAlloc = pureRaw(top);
+    }
+    setPureFile(packet, "partitionAlloc", Buffer.from(text));
+    cases.push({ op: "full", id: change, ...packet });
+  }
+  const mismatch = freshPure();
+  const changedArgs = Buffer.concat([
+    mismatch.observed.files.args.raw,
+    Buffer.from("extra=27\n"),
+  ]);
+  setPureFile(mismatch, "args", changedArgs);
+  mismatch.context.bindings.args = mismatch.observed.files.args.pin;
+  const evaluated = JSON.parse(mismatch.observed.gnArgs);
+  evaluated.push({ name: "extra", default: { value: "28" } });
+  mismatch.observed.gnArgs = pureRaw(evaluated);
+  cases.push({ op: "full", id: "literal/evaluated mismatch", ...mismatch });
+  comparePure(cases);
+});
+
+test("ARM64 COFF and no-CRT PE ports match Python on bounds, targets, section/symbol overflow and import ambiguities", () => {
+  const fixture = freshPure(),
+    cases = [];
+  for (const op of ["coff", "pe"]) {
+    const raw = fixture.observed.files[op].raw;
+    cases.push({ op, id: op + ":valid", raw });
+    for (const size of [0, 19, 30, Math.max(1, raw.length - 1)])
+      cases.push({
+        op,
+        id: op + ":truncate" + size,
+        raw: raw.subarray(0, size),
+      });
+    cases.push({
+      op,
+      id: op + ":oversize",
+      raw: Buffer.alloc(8 * 1024 ** 2 + 1),
+    });
+  }
+  for (const [id, offset, value, width] of [
+    ["target", 0, 0x8664, 2],
+    ["optional", 16, 240, 2],
+    ["sections", 2, 97, 2],
+    ["raw-offset", 40, 0xffffffff, 4],
+    ["symbols", 12, 100001, 4],
+    ["symbols-at", 8, 0xffffffff, 4],
+  ]) {
+    const raw = Buffer.from(fixture.observed.files.coff.raw);
+    width === 2
+      ? raw.writeUInt16LE(value, offset)
+      : raw.writeUInt32LE(value, offset);
+    cases.push({ op: "coff", id, raw });
+  }
+  for (const [id, offset, value, width] of [
+    ["target", 132, 0x8664, 2],
+    ["PE32", 152, 0x10b, 2],
+    ["DLL", 150, 0x2002, 2],
+    ["bad-offset", 60, 0xffffffff, 4],
+    ["import", 272, 0x1000, 4],
+    ["IAT", 360, 0x1000, 4],
+    ["delay", 368, 0x1000, 4],
+    ["CLR", 376, 0x1000, 4],
+    ["entry", 168, 0xffffffff, 4],
+    ["section", 412, 0xffffffff, 4],
+  ]) {
+    const raw = Buffer.from(fixture.observed.files.pe.raw);
+    width === 2
+      ? raw.writeUInt16LE(value, offset)
+      : raw.writeUInt32LE(value, offset);
+    cases.push({ op: "pe", id, raw });
+  }
+  // Keep each bounded differential packet below the test harness's 16MiB cap.
+  for (const case_ of cases.filter((row) => row.id.endsWith(":oversize")))
+    comparePure([case_]);
+  comparePure(cases.filter((row) => !row.id.endsWith(":oversize")));
+});
+
+test("full private context, policies, all paths and file pins are checked before candidate output acceptance", (t) => {
+  const cases = [];
+  for (const [id, change] of [
+    [
+      "source",
+      (p) => {
+        p.context.source.sourceId = "b".repeat(64);
+      },
+    ],
+    [
+      "image",
+      (p) => {
+        p.context.image = "20261101.000.1";
+      },
+    ],
+    [
+      "mode",
+      (p) => {
+        p.context.mode = "source-gn";
+      },
+    ],
+    [
+      "root-alias",
+      (p) => {
+        p.context.root += "/..";
+      },
+    ],
+    [
+      "graph",
+      (p) => {
+        p.context.bindings.graph.path += "/alias";
+      },
+    ],
+    [
+      "tool",
+      (p) => {
+        p.context.bindings.tools.clang.sha256 = "b".repeat(64);
+      },
+    ],
+    [
+      "source-encoding",
+      (p) => {
+        p.context.sources[1].encoding = "git-crlf";
+      },
+    ],
+    [
+      "source-digest",
+      (p) => {
+        p.context.sourceDigest = "b".repeat(64);
+      },
+    ],
+    [
+      "ambient-env-not-input",
+      (p) => {
+        p.context.environment = { CL: "/unsafe" };
+      },
+    ],
+    [
+      "unknown-output-env",
+      (p) => {
+        p.observed.environment = { PATH: "C:/other" };
+      },
+    ],
+    [
+      "expired",
+      (p) => {
+        p.context.wallWorkEnd = 349;
+      },
+    ],
+    [
+      "typed-bool",
+      (p) => {
+        p.context.bindings.graphInventory.files = true;
+      },
+    ],
+  ]) {
+    const packet = freshPure();
+    change(packet);
+    cases.push({ op: "full", id, ...packet });
+  }
+  for (const role of ["args", "partitionAlloc", "cefConfig", "coff", "pe"])
+    for (const [field, bad] of [
+      ["path", ROOT + "/alias"],
+      ["bytes", true],
+      ["sha256", "b".repeat(64)],
+    ]) {
+      const packet = freshPure();
+      packet.observed.files[role].pin[field] = bad;
+      cases.push({ op: "full", id: role + ":" + field, ...packet });
+    }
+  const changed = freshPure();
+  setPureFile(
+    changed,
+    "args",
+    Buffer.concat([changed.observed.files.args.raw, Buffer.from("\n")]),
+  );
+  cases.push({ op: "full", id: "args readback replaced", ...changed });
+  cases.push({
+    op: "full",
+    id: "private-policy",
+    ...freshPure(),
+    rawPolicy: Buffer.concat([rawPolicy, Buffer.from(" ")]),
+  });
+  cases.push({
+    op: "full",
+    id: "inert-policy",
+    ...freshPure(),
+    basePolicy: Buffer.concat([candidatePolicyRaw, Buffer.from(" ")]),
+  });
+  cases.push({
+    op: "full",
+    id: "null is not a missing clock",
+    ...freshPure(),
+    wallNow: null,
+  });
+  cases.push({
+    op: "full",
+    id: "boolean clock cannot select a default",
+    ...freshPure(),
+    monotonicNow: false,
+  });
+  comparePure(cases);
+  t.diagnostic(
+    JSON.stringify({
+      kind: "actual-python-node-pure-differential",
+      ...pureDifferentialStats,
+      processAuthority: false,
+      nativeDefaultsQualified: false,
+    }),
+  );
+});
 
 // This VM holds separate source/session/observation maps. It cannot mint a
 // production receipt, invoke a workload tool, or bypass the module's gate.
@@ -700,7 +1400,7 @@ test("inactive joined block is private, non-authorizing and restores exact 7ee d
     "1d7aae9e52636742a0c7af0d722a3c09c8ed61b63629f13e7e2018069ffc5902",
   );
   assert.equal(
-    hash(driverText.replace(joinedPrimitiveBlock + "\n\n", "")),
+    hash(withoutPureDriver.replace(joinedPrimitiveBlock + "\n\n", "")),
     "e74804c90200aaf58429f629459f63c78d4de4f8bd77a704e8c51eaa2fb772f6",
   );
   assert.equal(
@@ -1404,7 +2104,10 @@ test("named static policy delta normalizes exactly to prior driver, policy and p
   ];
   // First remove only the newly appended, independently tested inactive block.
   // All historical source/function/policy checks below remain unchanged.
-  let priorDriver = driverText.replace(joinedPrimitiveBlock + "\n\n", "");
+  let priorDriver = withoutPureDriver.replace(
+    joinedPrimitiveBlock + "\n\n",
+    "",
+  );
   for (const edit of edits.sort((a, b) => b.start - a.start))
     priorDriver =
       priorDriver.slice(0, edit.start) +
