@@ -1560,7 +1560,7 @@ async function actor(kind, file, pin, p) {
         env: process.env,
         shell: false,
         windowsHide: true,
-        detached: false,
+        detached: true,
         stdio:
           kind === "pipe-descendant"
             ? ["ignore", "inherit", "inherit"]

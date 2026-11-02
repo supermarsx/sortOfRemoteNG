@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn as nativeSpawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,7 +58,23 @@ const KERNEL_DIAGNOSTIC_INVERSE = {
     ],
   ],
 };
+function previousActorLiveness(text) {
+  const start = text.indexOf(
+    '  if (kind === "orphan" || kind === "pipe-descendant" || kind === "middle") {\n',
+  );
+  assert(start > 0);
+  const end = text.indexOf('  need(false, "PROOF_ACTOR");', start);
+  assert(end > start);
+  const branch = text.slice(start, end);
+  assert.equal(branch.split("        detached: true,\n").length, 2);
+  return (
+    text.slice(0, start) +
+    branch.replace("        detached: true,\n", "        detached: false,\n") +
+    text.slice(end)
+  );
+}
 function previousKernelResultDiagnostics(text, role) {
+  if (role === "node") text = previousActorLiveness(text);
   for (const [current, previous] of KERNEL_DIAGNOSTIC_INVERSE[role]) {
     assert.equal(
       text.split(current).length,
@@ -2812,6 +2828,225 @@ test("closed kernel failure Node selector rejects unknown fields malformed enums
   delete old.kernel;
   assert.equal(select(old), null);
 });
+
+function actualActorSource(text) {
+  const start = text.indexOf("async function actor(");
+  const end = text.indexOf("export async function main(", start);
+  assert(start > 0 && end > start);
+  return text.slice(start, end);
+}
+
+test("actor hold-child detachment exact inverse restores complete053 before kernel and registry history", () => {
+  const old = previousActorLiveness(fixture);
+  assert.equal(Buffer.byteLength(old), 48966);
+  assert.equal(
+    hash(old),
+    "1890a4b7b32a6ac4b213a850e612dbe576978db8e6dfd097e91e801ddf0e9e3e",
+  );
+  assert.equal(actualActorSource(fixture).split("detached: true").length, 2);
+  assert.equal(actualActorSource(fixture).split("detached: false").length, 2);
+});
+
+test("actual actor forwards only orphan pipe-descendant and middle hold children detached while reparent remains joined (modeled process)", async () => {
+  for (const kind of ["orphan", "pipe-descendant", "middle", "reparent"]) {
+    const observations = [];
+    for (const text of [previousActorLiveness(fixture), fixture]) {
+      const calls = [];
+      const writes = [];
+      const file = path.join("owned", "case", "case.json");
+      const context = {
+        image: policy.image,
+        selectedProfileSha256: registry.profiles[policy.image].sha256,
+        case: "case",
+        nonce,
+        root: path.dirname(file),
+        workEndMs: Date.now() + 10000,
+      };
+      const run = vm.runInNewContext(`(${actualActorSource(text)})`, {
+        process: {
+          platform: "win32",
+          arch: "x64",
+          env: { FIXED_MODELED_ENV: "same" },
+          stdout: { write: (raw) => writes.push(raw) },
+        },
+        path,
+        Date,
+        JSON,
+        SELF: "fixed-fixture.mjs",
+        need: (ok, code) => assert(ok, code),
+        caseFileScope: () => nonce,
+        selectedProfileSha: () => context.selectedProfileSha256,
+        held: async () => ({ raw: Buffer.from(JSON.stringify(context)) }),
+        fs: {
+          stat: async () => ({ size: 1 }),
+          writeFile: async () => {},
+        },
+        spawn: (executable, argv, options) => {
+          calls.push(JSON.parse(JSON.stringify({ executable, argv, options })));
+          const child = new EventEmitter();
+          child.pid = 12345;
+          child.stdout = new EventEmitter();
+          child.unref = () => writes.push("unref");
+          queueMicrotask(() => {
+            child.emit("spawn");
+            child.stdout.emit("data", Buffer.from("PROOF_CHILD:23456\n"));
+            child.emit("close", 0);
+          });
+          return child;
+        },
+      });
+      await run(kind, file, "a".repeat(64), policy);
+      assert.equal(calls.length, 1);
+      observations.push({ call: calls[0], writes });
+    }
+    const [old, current] = observations;
+    assert.equal(old.call.options.detached, false);
+    assert.equal(current.call.options.detached, kind !== "reparent");
+    assert.deepEqual(current.writes, old.writes);
+    const expected = structuredClone(old.call);
+    expected.options.detached = kind !== "reparent";
+    assert.deepEqual(current.call, expected);
+    assert.equal(current.call.argv[4], kind === "reparent" ? "middle" : "hold");
+    assert.deepEqual(
+      current.call.options.stdio,
+      kind === "reparent"
+        ? ["ignore", "pipe", "pipe"]
+        : kind === "pipe-descendant"
+          ? ["ignore", "inherit", "inherit"]
+          : "ignore",
+    );
+  }
+});
+
+test(
+  "Windows actual extracted actor RED non-detached and GREEN detached hold liveness across parent exit (no kernel Job qualification)",
+  {
+    skip: process.platform !== "win32" || process.arch !== "x64",
+    timeout: 35000,
+  },
+  async (t) => {
+    t.diagnostic(
+      `Local fixture semantics only: ${process.version}; hosted Node24.19 source binding is separate`,
+    );
+    const owned = await fs.mkdtemp(path.join(os.tmpdir(), "cef-actor-exit-"));
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const exists = async (file) =>
+      fs.stat(file).then(
+        () => true,
+        () => false,
+      );
+    const alive = (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        if (error.code === "ESRCH") return false;
+        throw error;
+      }
+    };
+    const until = async (predicate, end) => {
+      while (!(await predicate())) {
+        assert(Date.now() < end, "finite actor observation deadline");
+        await sleep(20);
+      }
+    };
+    let childPid;
+    try {
+      for (const [label, text, expectedAlive] of [
+        ["red", previousActorLiveness(fixture), false],
+        ["green", fixture, true],
+      ]) {
+        const root = path.join(owned, label);
+        await fs.mkdir(root);
+        const file = path.join(root, "case.json");
+        const context = {
+          image: "inert-test",
+          selectedProfileSha256: "b".repeat(64),
+          case: label,
+          nonce,
+          root,
+          workEndMs: Date.now() + 30000,
+        };
+        const raw = Buffer.from(JSON.stringify(context));
+        await fs.writeFile(file, raw);
+        const script = path.join(root, "actor.cjs");
+        await fs.writeFile(
+          script,
+          `const {spawn}=require('node:child_process');
+const fs=require('node:fs/promises'), syncFs=require('node:fs'),path=require('node:path');
+const {createHash}=require('node:crypto');
+const SELF=__filename, p={image:'inert-test',node:{path:process.execPath}};
+const need=(ok,code)=>{if(!ok)throw new Error(code)},caseFileScope=()=>${JSON.stringify(nonce)},selectedProfileSha=()=>${JSON.stringify(context.selectedProfileSha256)};
+const held=async(file,cap,pin)=>{const raw=await fs.readFile(file);need(raw.length===pin.bytes&&raw.length<=cap&&createHash('sha256').update(raw).digest('hex')===pin.sha256,'INERT_PIN');return {raw}};
+${actualActorSource(text)}
+actor(process.argv[3],process.argv[4],process.argv[5],p).then(()=>{
+if(process.argv[3]==='hold'){
+syncFs.writeFileSync(path.join(path.dirname(process.argv[4]),'ready'),'ready');
+process.once('exit',()=>syncFs.writeFileSync(path.join(path.dirname(process.argv[4]),'done'),'done'));
+}
+}).catch(()=>{process.exitCode=1});
+`,
+        );
+        const parent = nativeSpawn(
+          process.execPath,
+          [
+            "--disable-proto=throw",
+            "--no-addons",
+            script,
+            "--actor",
+            "middle",
+            file,
+            hash(raw),
+          ],
+          {
+            cwd: root,
+            windowsHide: true,
+            detached: false,
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+        let stdout = "",
+          stderr = "";
+        parent.stdout.on("data", (raw) => {
+          stdout += raw;
+        });
+        parent.stderr.on("data", (raw) => {
+          stderr += raw;
+        });
+        const code = await new Promise((resolve, reject) => {
+          parent.once("error", reject);
+          parent.once("close", resolve);
+        });
+        assert.equal(code, 0, stderr);
+        const matched = /^PROOF_CHILD:([1-9][0-9]{0,9})\n$/.exec(stdout);
+        assert(matched);
+        childPid = Number(matched[1]);
+        if (expectedAlive) {
+          await until(
+            () => exists(path.join(root, "ready")),
+            Date.now() + 3000,
+          );
+          assert.equal(
+            alive(childPid),
+            true,
+            "detached hold survives spawning parent exit",
+          );
+          await until(
+            () => exists(path.join(root, "done")),
+            Date.now() + 22000,
+          );
+        }
+        await until(() => !alive(childPid), Date.now() + 3000);
+        childPid = undefined;
+      }
+    } finally {
+      // The exact hold actor self-exits after20s; no kill, adoption or Job probe.
+      if (childPid !== undefined)
+        await until(() => !alive(childPid), Date.now() + 23000);
+      await fs.rm(owned, { recursive: true, force: true });
+    }
+  },
+);
 
 test("closed kernel diagnostics exact inverse preserves full reviewed89a Python and Node and every original outcome actor and lease", async () => {
   const expected = {
