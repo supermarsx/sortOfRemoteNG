@@ -160,10 +160,32 @@ const historicalAdmitted = String.raw`def admitted(self):
  finally: scope.active=previous
 `;
 function previousTwoWorkerProjection(text) {
+  // The same legacy projection also receives a single native Python program,
+  // which has no JS observation blocks. Whole-driver inverses require all five.
+  if (text.startsWith("// Closed Windows ARM source/GN adapter."))
+    text = previousSourceApplyObservation(text);
   const current = " effective=list(command);effective[5]='--num_threads=4'\n";
   const previous = " effective=list(command);effective[5]='--num_threads=2'\n";
   assert.equal(text.split(current).length, 2, "one exact four-worker inverse");
   return text.replace(current, previous);
+}
+function previousSourceApplyObservation(text) {
+  const patterns = [
+    /\n\/\/ BEGIN bounded source-apply observation\n[\s\S]*?\/\/ END bounded source-apply observation\n\n/,
+    /^  \/\/ BEGIN held source-apply observation snapshot\n[\s\S]*?^  \/\/ END held source-apply observation snapshot\n/m,
+    /^  \/\/ BEGIN source-apply observation state\n[\s\S]*?^  \/\/ END source-apply observation state\n/m,
+    /^    \/\/ BEGIN source-apply observation capture\n[\s\S]*?^    \/\/ END source-apply observation capture\n/m,
+    /^      \/\/ BEGIN source-apply observation report\n[\s\S]*?^      \/\/ END source-apply observation report\n/m,
+  ];
+  for (const pattern of patterns) {
+    assert.equal(
+      [...text.matchAll(new RegExp(pattern.source, pattern.flags + "g"))]
+        .length,
+      1,
+    );
+    text = text.replace(pattern, "");
+  }
+  return text;
 }
 function previousApacheProjection(text) {
   text = previousTwoWorkerProjection(text);
@@ -182,6 +204,383 @@ function previousApacheProjection(text) {
   }
   return text;
 }
+async function sourceApplyObservationModel(label = "current") {
+  const text = (
+    await read(
+      `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+    )
+  ).toString();
+  const begin = text.indexOf("// BEGIN bounded source-apply observation\n");
+  const end = text.indexOf("// END bounded source-apply observation\n", begin);
+  assert(begin > 0 && end > begin);
+  const block = text.slice(begin, end);
+  assert(!block.includes("export "));
+  const { pathToFileURL } = await import("node:url");
+  const context = vm.createContext({
+    path,
+    pathToFileURL,
+    Buffer,
+    HELPER_ROOT: path.join(
+      root,
+      "native/windows-arm-full-sdk/current-source-helpers",
+    ),
+  });
+  const model = vm.runInContext(
+    block +
+      "\n({ projectSourceApplyFailure, captureSourceApplyPatches, SOURCE_APPLY_FRAME_MODULES });",
+    context,
+  );
+  return { ...model, text, context };
+}
+
+test("source-apply observation exact public preflight reasons replace legacy unknown without emitting messages", async () => {
+  const helper = (await read(adoptedHelper)).toString();
+  const fail = helper.slice(
+    helper.indexOf("const fail = (message) => {"),
+    helper.indexOf("function shape("),
+  );
+  assert.equal(
+    fail.trim(),
+    "const fail = (message) => {\n  throw new Error(message);\n};",
+  );
+  for (const label of ["current", "20261021"]) {
+    const model = await sourceApplyObservationModel(label);
+    const actualFail = vm.runInContext(
+      fail +
+        "\n(message) => {try {fail(message);} catch(error) {return error;}}",
+      model.context,
+    );
+    for (const repository of ["cef", "chromium", "depotTools"]) {
+      for (const [suffix, reason] of [
+        ["checkout root required", "CHECKOUT_ROOT_REQUIRED"],
+        ["source revision mismatch", "SOURCE_REVISION_MISMATCH"],
+        [
+          "clean checkout required; existing changes are never reset",
+          "CLEAN_CHECKOUT_REQUIRED",
+        ],
+      ]) {
+        const message = repository + ": " + suffix;
+        assert(helper.includes("`${name}: " + suffix + "`"));
+        const error = actualFail(message);
+        const legacy = /^(?:FULL|SOURCE_GIT)_[A-Z_]{1,56}$/.test(error.message)
+          ? error.message
+          : "FULL_SOURCE_FAILED";
+        assert.equal(legacy, "FULL_SOURCE_FAILED");
+        const value = model.projectSourceApplyFailure(error);
+        assert.equal(value.reason, reason);
+        assert.equal(value.repository, repository);
+        assert.equal(value.provider, "helper-preflight");
+        assert.equal(value.frames, null);
+        assert(!JSON.stringify(value).includes(message));
+      }
+    }
+  }
+});
+
+test("source-apply observation identifies actual wrapped constructor only through copied reviewed patch tuples", async () => {
+  const helper = (await read(adoptedHelper)).toString();
+  const begin = helper.indexOf(
+    "        `Patch application failed; applied repositories:",
+  );
+  const end = helper.indexOf("\n      );", begin);
+  assert(begin > 0 && end > begin);
+  const constructor = "throw new Error(\n" + helper.slice(begin, end) + "\n);";
+  for (const [label, namespace] of [
+    ["current", "current"],
+    ["20261021", "reviewed-20261021"],
+  ]) {
+    const model = await sourceApplyObservationModel(label);
+    const lock = JSON.parse(
+      await read(
+        `native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-${namespace}-source-gn/source-lock.json`,
+      ),
+    );
+    const selectedProfile = JSON.parse(
+      await read(
+        `native/windows-arm-full-sdk/image-qualified-${label}-profile.json`,
+      ),
+    );
+    assert.equal(identitySha256(lock), selectedProfile.sourceGn.sourceId);
+    const expected = lock.patches.map((patch, index) => ({ ...patch, index }));
+    assert.equal(expected.length, 23);
+    const patches = model.captureSourceApplyPatches(lock);
+    assert.equal(patches.length, 23);
+    const makeError = vm.runInContext(
+      "(appliedRepositories, group, appliedPatches, error) => {" +
+        constructor +
+        "}",
+      model.context,
+    );
+    const completed = [];
+    for (const repository of ["cef", "chromium"]) {
+      const group = expected.filter((patch) => patch.repository === repository);
+      for (const [count, patch] of group.entries()) {
+        let error;
+        try {
+          makeError(completed, { repository }, count, {
+            message: "PRIVATE_URL_TOKEN_PATH\n".repeat(1500),
+          });
+        } catch (value) {
+          error = value;
+        }
+        assert(error);
+        assert.equal(
+          model.projectSourceApplyFailure(error).reason,
+          "UNKNOWN",
+          "bare projector has no trusted patch snapshot",
+        );
+        const value = model.projectSourceApplyFailure(error, patches);
+        assert.equal(value.reason, "PATCH_APPLY_FAILED");
+        assert.equal(value.repository, repository);
+        assert.equal(value.patchIndex, patch.index);
+        assert.equal(value.patchSha256, patch.sha256);
+        assert.equal(value.code, null);
+        assert(!JSON.stringify(value).includes("PRIVATE_URL_TOKEN_PATH"));
+        assert(!JSON.stringify(value).includes(patch.path));
+        lock.patches[patch.index].sha256 = "f".repeat(64);
+        assert.equal(
+          model.projectSourceApplyFailure(error, patches).patchSha256,
+          patch.sha256,
+        );
+      }
+      if (group.length) completed.push(repository);
+    }
+    for (const message of [
+      "PRIVATE Patch application failed; applied repositories: none; current repository: cef; completed patches: 0. No rollback/reset performed. private",
+      "Patch application failed; applied repositories: none; current repository: cef; completed patches: 99. No rollback/reset performed. private",
+      "Patch application failed; applied repositories: none; current repository: chromium; completed patches: 0. No rollback/reset performed. private",
+    ])
+      assert.equal(
+        model.projectSourceApplyFailure({ message }, patches).reason,
+        "UNKNOWN",
+      );
+    assert.equal(
+      model.captureSourceApplyPatches({ patches: Array(25).fill(expected[0]) }),
+      null,
+    );
+    const identity = model.text.indexOf('"FULL_SOURCE_IDENTITY",');
+    const capture = model.text.indexOf(
+      "const sourceApplyPatches = captureSourceApplyPatches(lock);",
+    );
+    const recipe = model.text.indexOf(
+      "const recipe = await custom.customRuntimeBuildRecipe(",
+    );
+    assert(identity < capture && capture < recipe);
+    assert.equal(
+      model.text.split("captureSourceApplyPatches(lock)").length,
+      3,
+      "private declaration and sole held-lock callsite",
+    );
+  }
+});
+
+test("source-apply observation never calls hostile own getters and denies inherited or unknown fields", async () => {
+  const { projectSourceApplyFailure: project } =
+    await sourceApplyObservationModel();
+  let calls = 0;
+  const hostile = {};
+  for (const name of ["message", "stack", "code", "signal"])
+    Object.defineProperty(hostile, name, {
+      get() {
+        calls++;
+        throw "PRIVATE_SECRET";
+      },
+    });
+  const result = project(hostile);
+  assert.equal(calls, 0);
+  assert.equal(result.reason, "UNKNOWN");
+  assert.equal(result.frames, null);
+  const inherited = Object.create({
+    message: "cef: checkout root required",
+    code: 2,
+    signal: "SIGKILL",
+  });
+  assert.equal(project(inherited).reason, "UNKNOWN");
+  assert.equal(project(inherited).exitCode, null);
+  const proxy = new Proxy(
+    {},
+    {
+      getOwnPropertyDescriptor() {
+        throw "PRIVATE_PROXY";
+      },
+    },
+  );
+  assert.equal(project(proxy).reason, "UNKNOWN");
+  for (const value of [null, false, 0, "PRIVATE_SECRET", undefined])
+    assert.equal(project(value).reason, "UNKNOWN");
+  for (const code of [
+    "PRIVATE_SECRET",
+    "PRIVATE_SECRET".repeat(10000),
+    "FULL_NOT_REVIEWED",
+    true,
+    NaN,
+    Infinity,
+    -1,
+    256,
+  ]) {
+    const value = project({
+      code,
+      signal: "PRIVATE_SECRET",
+      message: "PRIVATE_SECRET",
+    });
+    assert.equal(value.code, null);
+    assert.equal(value.exitCode, null);
+    assert.equal(value.signal, null);
+    assert(!JSON.stringify(value).includes("PRIVATE_SECRET"));
+  }
+  for (const code of [0, 2, 255])
+    assert.equal(project({ code }).exitCode, code);
+  for (const code of [
+    "EACCES",
+    "ENOSPC",
+    "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+    "SOURCE_GIT_POLICY_CHANGED",
+  ])
+    assert.equal(project({ code }).code, code);
+  assert.equal(
+    project({ message: "SOURCE_GIT_POLICY_CAPABILITY" }).provider,
+    "helper-git-policy",
+  );
+});
+
+test("source-apply observation filters own data frames to exact pinned public modules and bounds", async () => {
+  const model = await sourceApplyObservationModel();
+  const [source, pack] = model.SOURCE_APPLY_FRAME_MODULES;
+  for (const subject of model.SOURCE_APPLY_FRAME_MODULES) {
+    const file =
+      subject.module === "source-helper"
+        ? adoptedHelper
+        : "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs";
+    assert.equal(
+      (await read(file)).toString().split("\n").length - 1,
+      subject.lines,
+    );
+  }
+  const lines = [
+    "Error: PRIVATE_SECRET",
+    `    at fail (${source.uri}:112:9)`,
+    `    at ${pack.uri}:1:1`,
+  ];
+  const good = model.projectSourceApplyFailure({ stack: lines.join("\n") });
+  assert.equal(good.frameEvidence, "own-data-stack");
+  assert.equal(
+    JSON.stringify(good.frames),
+    JSON.stringify([
+      { module: "source-helper", line: 112, column: 9 },
+      { module: "package-helper", line: 1, column: 1 },
+    ]),
+  );
+  assert(!JSON.stringify(good).includes(source.uri));
+  assert(!JSON.stringify(good).includes("PRIVATE_SECRET"));
+  for (const frame of [
+    `${source.uri}.private:112:9`,
+    source.uri.replace("current-source-helpers/", "foreign/") + ":112:9",
+    `${source.uri}?private:112:9`,
+    `${source.uri}#private:112:9`,
+    `${source.uri}:0:1`,
+    `${source.uri}:${source.lines + 1}:1`,
+    `${source.uri}:1:4097`,
+    `${source.uri}:1:01`,
+    `${source.uri.replace("/scripts/lib/", "/scripts/../lib/")}:112:9`,
+  ])
+    assert.equal(
+      model.projectSourceApplyFailure({ stack: "    at " + frame }).frames,
+      null,
+    );
+  assert.equal(
+    model.projectSourceApplyFailure({ stack: "x".repeat(16385) }).frames,
+    null,
+  );
+  assert.equal(
+    model.projectSourceApplyFailure({
+      stack: Array(33).fill(`at ${source.uri}:112:9`).join("\n"),
+    }).frames,
+    null,
+  );
+  const native = new Error("PRIVATE_SECRET");
+  assert.equal(
+    typeof Object.getOwnPropertyDescriptor(native, "stack").get,
+    "function",
+    "pinned Node24 native Error stack is accessor-backed",
+  );
+  assert.equal(
+    model.projectSourceApplyFailure(native).frames,
+    null,
+    "no native accessor invocation or guaranteed frames claim",
+  );
+});
+
+test("source-apply observation catch preserves identical falsy primary when projection fails", async () => {
+  const model = await sourceApplyObservationModel();
+  const begin = model.text.indexOf(
+    "    failed = true;\n    primary = error;\n    // BEGIN source-apply observation capture",
+  );
+  const end =
+    model.text.indexOf("    throw error;", begin) + "    throw error;".length;
+  assert(begin > 0 && end > begin);
+  const body = model.text.slice(begin, end);
+  const invoke = vm.runInContext(
+    "(value, phase) => {let failed=false,primary,sourceApplyDiagnostic=null;const stage=phase,sourceApplyPatches=null;try {throw value;}catch(error){" +
+      body +
+      "}}",
+    model.context,
+  );
+  vm.runInContext(
+    "projectSourceApplyFailure = () => {throw new Error('PRIVATE_OBSERVER');};",
+    model.context,
+  );
+  for (const value of [
+    null,
+    false,
+    0,
+    undefined,
+    new Error("PRIVATE_PRIMARY"),
+  ]) {
+    let caught = false;
+    try {
+      invoke(value, "source-apply");
+    } catch (error) {
+      caught = true;
+      assert.equal(error, value);
+    }
+    assert(caught);
+  }
+  assert.equal(body.split("throw error;").length, 2);
+  assert(!body.includes("await"));
+});
+
+test("source-apply observation inverse restores complete d61 drivers and keeps helpers and native Hook fixture exact", async () => {
+  for (const [label, bytes, digest] of [
+    [
+      "current",
+      102193,
+      "836f0023528a8e4c52154fadcf8d9230bf3d6cb0fe01525226877e329b0d1de2",
+    ],
+    [
+      "20261021",
+      102205,
+      "6293f2bcebdd8d6b4b59149471a2d89f9aa0305e8d599fc83d979f590eb7f4e5",
+    ],
+  ]) {
+    const model = await sourceApplyObservationModel(label);
+    const original = previousSourceApplyObservation(model.text);
+    assert.equal(Buffer.byteLength(original), bytes);
+    assert.equal(sha(original), digest);
+    const observation = model.text.slice(
+      model.text.indexOf("// BEGIN bounded source-apply observation"),
+      model.text.indexOf("// END bounded source-apply observation"),
+    );
+    assert(!observation.includes("prepareStackTrace"));
+    assert(!observation.includes("await "));
+    assert(!observation.includes("readFile"));
+  }
+  assert.equal(sha(await read(adoptedHelper)), adoptedPin.sha256);
+  assert.equal(
+    sha(await read("native/windows-arm-full-sdk/test_image_dispatch.py")),
+    "bbe9a49a3039da95d49d55fb2dab55329a765471d82e659e30f0987f0ad44664",
+  );
+});
+
 function historicalDependencyArguments(driver, depot, adapter, pin) {
   const args = driver.dependencyHookArguments(depot, adapter, pin);
   args[2] = previousApacheProjection(args[2]);

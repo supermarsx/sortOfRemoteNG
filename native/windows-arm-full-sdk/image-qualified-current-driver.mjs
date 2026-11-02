@@ -18,6 +18,263 @@ import { spawn } from "node:child_process";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../..");
 const HELPER_ROOT = path.join(HERE, "current-source-helpers");
+
+// BEGIN bounded source-apply observation
+const SOURCE_APPLY_REASONS = new Map();
+for (const repository of ["cef", "chromium", "depotTools"]) {
+  for (const [suffix, reason] of [
+    ["checkout root required", "CHECKOUT_ROOT_REQUIRED"],
+    ["source revision mismatch", "SOURCE_REVISION_MISMATCH"],
+    [
+      "clean checkout required; existing changes are never reset",
+      "CLEAN_CHECKOUT_REQUIRED",
+    ],
+  ]) {
+    SOURCE_APPLY_REASONS.set(repository + ": " + suffix, {
+      reason,
+      repository,
+    });
+  }
+}
+for (const [message, reason] of [
+  [
+    "CEF checkout must be chromium/cef for upstream hooks",
+    "CEF_CHECKOUT_PLACEMENT",
+  ],
+  [
+    "Patch temporary directory is outside its resolved temporary root",
+    "PATCH_TEMPORARY_ROOT",
+  ],
+  [
+    "Patch temporary directory identity changed; cleanup refused",
+    "PATCH_TEMPORARY_IDENTITY",
+  ],
+]) {
+  SOURCE_APPLY_REASONS.set(message, { reason, repository: null });
+}
+const SOURCE_APPLY_GIT_CODES = new Set([
+  "SOURCE_GIT_POLICY_ALIAS",
+  "SOURCE_GIT_POLICY_LINK",
+  "SOURCE_GIT_POLICY_FILE",
+  "SOURCE_GIT_POLICY_IDENTITY",
+  "SOURCE_GIT_POLICY_CHANGED",
+  "SOURCE_GIT_POLICY_ROOT",
+  "SOURCE_GIT_POLICY_CAPABILITY",
+  "SOURCE_GIT_POLICY_DIRECTORY",
+  "SOURCE_GIT_POLICY_HOOKS",
+  "SOURCE_GIT_ENVIRONMENT_VALUE",
+]);
+const SOURCE_APPLY_SYSTEM_CODES = new Set([
+  "EACCES",
+  "EPERM",
+  "ENOENT",
+  "ENOTDIR",
+  "ELOOP",
+  "EMFILE",
+  "ENFILE",
+  "ENOSPC",
+  "EIO",
+  "ETIMEDOUT",
+  "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+]);
+const SOURCE_APPLY_FRAME_MODULES = [
+  ["source-helper", "scripts/lib/browser-custom-runtime.mjs", 2129],
+  ["package-helper", "scripts/browser-runtime-package.mjs", 1379],
+].map(([module, relative, lines]) => ({
+  module,
+  uri: pathToFileURL(path.join(HELPER_ROOT, relative)).href,
+  lines,
+}));
+function sourceApplyOwnData(error, name) {
+  const descriptor = Object.getOwnPropertyDescriptor(error, name);
+  return descriptor && Object.hasOwn(descriptor, "value")
+    ? descriptor.value
+    : undefined;
+}
+function sourceApplyUnknown() {
+  return {
+    schemaVersion: 1,
+    phase: "source-apply",
+    provider: "unknown",
+    reason: "UNKNOWN",
+    repository: null,
+    patchIndex: null,
+    patchSha256: null,
+    code: null,
+    exitCode: null,
+    signal: null,
+    frames: null,
+    frameEvidence: "none",
+  };
+}
+function captureSourceApplyPatches(lock) {
+  try {
+    if (
+      !Array.isArray(lock.patches) ||
+      lock.patches.length < 1 ||
+      lock.patches.length > 24
+    )
+      return null;
+    const patches = lock.patches.map((patch, index) => {
+      if (
+        !["cef", "chromium"].includes(patch.repository) ||
+        typeof patch.path !== "string" ||
+        patch.path.length > 512 ||
+        !/^[A-Za-z0-9_./+-]+$/.test(patch.path) ||
+        typeof patch.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(patch.sha256)
+      )
+        throw null;
+      return Object.freeze({
+        repository: patch.repository,
+        path: patch.path,
+        sha256: patch.sha256,
+        index,
+      });
+    });
+    const templates = [],
+      completed = [];
+    for (const repository of ["cef", "chromium"]) {
+      const group = patches.filter((patch) => patch.repository === repository);
+      for (const [count, patch] of group.entries()) {
+        templates.push(
+          Object.freeze({
+            prefix:
+              "Patch application failed; applied repositories: " +
+              (completed.join(",") || "none") +
+              "; current repository: " +
+              repository +
+              "; completed patches: " +
+              count +
+              ". No rollback/reset performed. ",
+            repository,
+            patchIndex: patch.index,
+            patchSha256: patch.sha256,
+          }),
+        );
+      }
+      if (group.length) completed.push(repository);
+    }
+    return Object.freeze(templates);
+  } catch {
+    return null;
+  }
+}
+function projectSourceApplyFailure(error, patches = null) {
+  const unknown = sourceApplyUnknown();
+  try {
+    if (error === null || !["object", "function"].includes(typeof error))
+      return unknown;
+    const result = sourceApplyUnknown();
+    const message = sourceApplyOwnData(error, "message");
+    const code = sourceApplyOwnData(error, "code");
+    const signal = sourceApplyOwnData(error, "signal");
+    if (typeof message === "string" && message.length <= 8192) {
+      const known = SOURCE_APPLY_REASONS.get(message);
+      if (known) {
+        result.provider = "helper-preflight";
+        result.reason = known.reason;
+        result.repository = known.repository;
+      } else if (SOURCE_APPLY_GIT_CODES.has(message)) {
+        result.provider = "helper-git-policy";
+        result.reason = "SOURCE_GIT_POLICY";
+        result.code = message;
+      }
+    }
+    // Only main's private snapshot of the held source-ID-verified lock supplies
+    // these complete known constructor prefixes. Never emit its dynamic tail.
+    if (typeof message === "string" && patches !== null) {
+      for (const patch of patches) {
+        if (!message.startsWith(patch.prefix)) continue;
+        result.provider = "helper-patch-apply";
+        result.reason = "PATCH_APPLY_FAILED";
+        result.repository = patch.repository;
+        result.patchIndex = patch.patchIndex;
+        result.patchSha256 = patch.patchSha256;
+        break;
+      }
+    }
+    if (
+      typeof code === "string" &&
+      code.length <= 64 &&
+      SOURCE_APPLY_GIT_CODES.has(code)
+    ) {
+      result.code = code;
+      if (result.reason === "UNKNOWN") {
+        result.provider = "helper-git-policy";
+        result.reason = "SOURCE_GIT_POLICY";
+      }
+    } else if (
+      typeof code === "string" &&
+      code.length <= 64 &&
+      SOURCE_APPLY_SYSTEM_CODES.has(code)
+    ) {
+      result.code = code;
+      if (result.reason === "UNKNOWN") {
+        result.provider = "os-or-node-code";
+        result.reason = "PROCESS_OR_FILESYSTEM_CODE";
+      }
+    } else if (Number.isInteger(code) && code >= 0 && code <= 255) {
+      // An observed Error field, never an independent process-exit proof.
+      result.exitCode = code;
+    }
+    if (
+      typeof signal === "string" &&
+      ["SIGTERM", "SIGKILL", "SIGABRT", "SIGINT"].includes(signal)
+    )
+      result.signal = signal;
+    const stack = sourceApplyOwnData(error, "stack");
+    if (typeof stack === "string" && stack.length <= 16384) {
+      const lines = stack.split("\n");
+      if (lines.length <= 32) {
+        const frames = [];
+        for (const raw of lines) {
+          if (raw.length > 512 || !/^ {0,8}at /.test(raw)) continue;
+          let frame = raw.trim().slice(3);
+          if (frame.endsWith(")")) {
+            const opening = frame.indexOf(" (");
+            if (
+              opening < 1 ||
+              !/^[A-Za-z0-9_.$<>\[\] ]{1,100}$/.test(frame.slice(0, opening))
+            )
+              continue;
+            frame = frame.slice(opening + 2, -1);
+          }
+          for (const subject of SOURCE_APPLY_FRAME_MODULES) {
+            if (!frame.startsWith(subject.uri + ":")) continue;
+            const suffix = frame.slice(subject.uri.length + 1);
+            const numbers = /^([1-9][0-9]{0,4}):([1-9][0-9]{0,3})$/.exec(
+              suffix,
+            );
+            if (!numbers) continue;
+            const line = Number(numbers[1]),
+              column = Number(numbers[2]);
+            if (line > subject.lines || column > 4096) continue;
+            if (
+              frames.length < 4 &&
+              !frames.some(
+                (item) =>
+                  item.module === subject.module &&
+                  item.line === line &&
+                  item.column === column,
+              )
+            )
+              frames.push({ module: subject.module, line, column });
+          }
+        }
+        if (frames.length) {
+          result.frames = frames;
+          result.frameEvidence = "own-data-stack";
+        }
+      }
+    }
+    return Buffer.byteLength(JSON.stringify(result)) <= 4096 ? result : unknown;
+  } catch {
+    return unknown;
+  }
+}
+// END bounded source-apply observation
+
 const SOURCE_PHASES = new Set([
   "source-admission",
   "repository-fetch",
@@ -2504,6 +2761,9 @@ export async function main(argv = process.argv.slice(2)) {
     custom.identitySha256(lock) === p.sourceGn.sourceId,
     "FULL_SOURCE_IDENTITY",
   );
+  // BEGIN held source-apply observation snapshot
+  const sourceApplyPatches = captureSourceApplyPatches(lock);
+  // END held source-apply observation snapshot
   const recipe = await custom.customRuntimeBuildRecipe({
     sourceLock: lock,
     target: TARGET,
@@ -2578,6 +2838,9 @@ export async function main(argv = process.argv.slice(2)) {
     { flag: "wx" },
   );
   const limits = { bytes: 0, cap: p.sourceGn.limits.outputBytes };
+  // BEGIN source-apply observation state
+  let sourceApplyDiagnostic = null;
+  // END source-apply observation state
   let stage = "source-acquire",
     primary,
     failed = false,
@@ -2881,6 +3144,18 @@ export async function main(argv = process.argv.slice(2)) {
   } catch (error) {
     failed = true;
     primary = error;
+    // BEGIN source-apply observation capture
+    if (stage === "source-apply") {
+      try {
+        sourceApplyDiagnostic = projectSourceApplyFailure(
+          error,
+          sourceApplyPatches,
+        );
+      } catch {
+        // Observation must preserve even a falsy original failure.
+      }
+    }
+    // END source-apply observation capture
     throw error;
   } finally {
     currentProgress?.close();
@@ -2906,6 +3181,9 @@ export async function main(argv = process.argv.slice(2)) {
       sdkBuilt: false,
       nativeAcceptance: false,
       sourceCloseFailure,
+      // BEGIN source-apply observation report
+      sourceApplyDiagnostic,
+      // END source-apply observation report
       gitPolicy: custom.sourceGitIsolationEvidence(gitPolicy),
       outerJobCleanupNotInferred: true,
     };
