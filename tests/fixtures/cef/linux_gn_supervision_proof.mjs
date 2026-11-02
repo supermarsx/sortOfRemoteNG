@@ -39,13 +39,13 @@ const PINS = [
   ],
   [
     "scripts/lib/cef-mac-source-metadata.mjs",
-    51268,
-    "3243205a53d0e8a9309ab85b407aea3b26d9296bb331d738acbd582c1d14000b",
+    52286,
+    "8b6fb0fc8f98eb6f5f7baf9cc66ec92ac86eb4bc3531865466fe628f65a76617",
   ],
   [
     RUNTIME,
-    75872,
-    "6e5245ff09fc15a2cbffd350f7b798ed3d7464b26e6fb0ec17f6c5d33ea5b65c",
+    76412,
+    "8eaf57312438c26ed5bc8e58070bb685daf11aeaa83e06594cfb746c4d8b20fe",
   ],
   [
     "scripts/browser-runtime-package.mjs",
@@ -175,7 +175,7 @@ export function kernelBlocks(source) {
     ],
     [
       "inactive Linux genuine source owner",
-      "cce18ed831a632f3bafac9778e342c6dd116ca1bd537b503c00c5941b0594b87",
+      "5a9c44c51a15f044f7c157569ad81ed17116b5957ce43a609972f54f62830758",
     ],
   ].map(([name, expected]) => {
     const a = `// BEGIN ${name}\n`,
@@ -1746,6 +1746,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === SELF) {
     const result = await operation();
     if (result) console.log(JSON.stringify(result));
   } catch {
+    const failure = lastObservation();
+    if (failure) console.log(JSON.stringify(failure));
     console.error("LINUX_GN_PROOF_FAILED");
     process.exitCode = 1;
   }
