@@ -7989,12 +7989,21 @@ async function compileSupervisorModel(options = {}) {
       .getText(ast)
       .replace(/^export /, "");
   let clockOffset = 0;
-  const clock = { now: () => performance.now() + clockOffset };
+  const clock = options.modelClock ?? {
+    now: () => performance.now() + clockOffset,
+  };
   const within = new Function(
     "assert",
     "performance",
+    "setTimeout",
+    "clearTimeout",
     "return (" + body("compileWithin") + ")",
-  )(assert, clock);
+  )(
+    assert,
+    clock,
+    options.modelClock?.setTimeout ?? setTimeout,
+    options.modelClock?.clearTimeout ?? clearTimeout,
+  );
   const child = new EventEmitter();
   Object.assign(child, {
     pid: 100,
@@ -8028,14 +8037,18 @@ async function compileSupervisorModel(options = {}) {
       const destroy = stream._destroy.bind(stream);
       stream._destroy = (error, done) => {
         state.closePending = true;
-        const finish = () => destroy(options.closeFault.error ?? error, done);
+        const finish = () => {
+          if (options.closeFault.advanceMs)
+            options.modelClock.advance(options.closeFault.advanceMs);
+          destroy(options.closeFault.error ?? error, done);
+        };
         if (options.closeFault.kind === "never") state.releaseClose = finish;
         else if (options.closeFault.kind === "late") {
           setImmediate(() => {
             clockOffset = 200;
             finish();
           });
-        } else setTimeout(finish, 12);
+        } else setTimeout(finish, options.closeFault.delayMs ?? 12);
       };
     }
     return stream;
@@ -8163,15 +8176,17 @@ async function compileSupervisorModel(options = {}) {
     writeFile: async (file, data) => state.writes.push({ file, data }),
     canonical,
     liveCompileSlices: { set: () => state.proofs++ },
-    setTimeout: (callback, ms, ...args) =>
-      setTimeout(
-        () => {
-          if (options.delayedTimer && ms !== 250) clockOffset = 200;
-          callback(...args);
-        },
-        ms === 250 ? 10 : ms,
-      ),
-    clearTimeout,
+    setTimeout:
+      options.modelClock?.setTimeout ??
+      ((callback, ms, ...args) =>
+        setTimeout(
+          () => {
+            if (options.delayedTimer && ms !== 250) clockOffset = 200;
+            callback(...args);
+          },
+          ms === 250 ? 10 : ms,
+        )),
+    clearTimeout: options.modelClock?.clearTimeout ?? clearTimeout,
   };
   const execute = new Function(
     ...Object.keys(dependencies),
@@ -11679,12 +11694,45 @@ test("optional shared output ledger precharges both streams before forwarding an
   }
 });
 
+function outputLifecycleClock() {
+  let now = 0;
+  const pending = new Set();
+  return {
+    now: () => now,
+    setTimeout(callback, milliseconds, ...args) {
+      // The modeled process monitor still takes an asynchronous turn. Only
+      // deadline passage is explicit; real stream IO must not advance it.
+      if (milliseconds === 250)
+        return { monitor: setTimeout(callback, 10, ...args) };
+      const timer = {
+        callback: () => callback(...args),
+        due: now + milliseconds,
+      };
+      pending.add(timer);
+      return timer;
+    },
+    clearTimeout(timer) {
+      if (timer?.monitor) clearTimeout(timer.monitor);
+      else pending.delete(timer);
+    },
+    advance(milliseconds) {
+      now += milliseconds;
+      for (const timer of [...pending])
+        if (timer.due <= now) {
+          pending.delete(timer);
+          timer.callback();
+        }
+    },
+  };
+}
+
 test("output physical closure with modeled processes joins actual writers and gates without changing output failure fulfillment", async (t) => {
   const root = await scratch(t);
   for (const ledger of [undefined, { bytes: 0, cap: 64 * 1024 ** 2 }]) {
     const logs = path.join(root, ledger ? "gated" : "direct");
     await mkdir(logs);
     const state = await compileSupervisorModel({
+      modelClock: outputLifecycleClock(),
       cleanExit: true,
       realLogsRoot: logs,
       outputLedger: ledger,
@@ -11710,6 +11758,7 @@ test("output physical closure with modeled processes joins actual writers and ga
     const logs = path.join(root, `cap-${index}`);
     await mkdir(logs);
     const state = await compileSupervisorModel({
+      modelClock: outputLifecycleClock(),
       realLogsRoot: logs,
       outputLedger: { bytes: cap, cap },
       chunks: [["stdout", "rejected"]],
@@ -11737,6 +11786,40 @@ test("output physical closure with modeled processes joins actual writers and ga
       assert.equal(state.firstFinishedRejection.diagnostic, undefined);
     }
     assert.equal(state.proofs, 0);
+  }
+});
+
+test("output physical closure uses explicit model time while actual owned FD destruction is pending", async (t) => {
+  const root = await scratch(t),
+    cap = 64 * 1024 ** 2;
+  for (const mode of ["wall", "controlled", "expired"]) {
+    const controlled = mode !== "wall";
+    const logs = path.join(root, mode);
+    await mkdir(logs);
+    const state = await compileSupervisorModel({
+      ...(controlled ? { modelClock: outputLifecycleClock() } : {}),
+      realLogsRoot: logs,
+      outputLedger: { bytes: cap, cap },
+      chunks: [["stdout", "rejected"]],
+      closeFault: {
+        index: 0,
+        kind: "delayed",
+        delayMs: 120,
+        ...(mode === "expired" ? { advanceMs: 81 } : {}),
+      },
+    });
+    const diagnostic = JSON.parse(
+      state.diagnostic.split("compile-supervision=")[1],
+    );
+    assert.equal(state.failed, true);
+    assert.match(state.error.message, /Shared compile output bound/);
+    assert.equal(diagnostic.outputsSettled, mode === "controlled");
+    assert.equal(diagnostic.outputHandlesClosed, mode === "controlled");
+    assert.equal(state.proofs, 0);
+    if (mode === "controlled") {
+      assert(state.outputs.every((stream) => stream.closed));
+      assert(state.streams.every((stream) => stream.fd === null));
+    }
   }
 });
 

@@ -61,6 +61,37 @@ function command(executable, args, cwd, timeout = 30_000) {
     maxBuffer: 1024 * 1024,
   });
 }
+function commandFailure(result) {
+  const code = Object.getOwnPropertyDescriptor(
+    result.error ?? {},
+    "code",
+  )?.value;
+  return JSON.stringify({
+    status: result.status,
+    signal: result.signal ?? null,
+    errorCode: ["ETIMEDOUT", "ENOENT", "EACCES", "EPERM", "ENOBUFS"].includes(
+      code,
+    )
+      ? code
+      : null,
+  });
+}
+
+test("standalone compiler failures retain bounded timeout and launch diagnostics", () => {
+  for (const code of ["ETIMEDOUT", "ENOENT", "EACCES"]) {
+    assert.deepEqual(
+      JSON.parse(
+        commandFailure({ status: null, signal: "SIGTERM", error: { code } }),
+      ),
+      { status: null, signal: "SIGTERM", errorCode: code },
+    );
+  }
+  assert.equal(
+    JSON.parse(commandFailure({ status: 1, error: { code: "PRIVATE_VALUE" } }))
+      .errorCode,
+    null,
+  );
+});
 async function scratch(t) {
   const parent = path.join(ROOT, ".artifacts");
   await mkdir(parent, { recursive: true });
@@ -142,46 +173,60 @@ test("actual patched C++ guard changes default+zero only; old fragment leaves in
     "The pristine complete hunk has no intervening colormap correction",
   );
   const source = `namespace x11 { enum class ColorMap : unsigned {}; }
-struct Connection { struct Visual { unsigned visual_id; }; struct Screen { x11::ColorMap default_colormap; }; Visual default_root_visual(){return {33};} Screen default_screen(){return {x11::ColorMap{17}};} };
-unsigned current(unsigned visual, x11::ColorMap colormap) { Connection connection; auto* connection_=&connection;
+struct Connection { struct Visual { unsigned visual_id; }; struct Screen { x11::ColorMap default_colormap; }; constexpr Visual default_root_visual(){return {33};} constexpr Screen default_screen(){return {x11::ColorMap{17}};} };
+constexpr unsigned current(unsigned visual, x11::ColorMap colormap) { Connection connection; auto* connection_=&connection;
 ${actual}
 return static_cast<unsigned>(colormap); }
-unsigned previous(unsigned visual, x11::ColorMap colormap) { Connection connection; auto* connection_=&connection;
+constexpr unsigned previous(unsigned visual, x11::ColorMap colormap) { Connection connection; auto* connection_=&connection;
 ${before}
 return static_cast<unsigned>(colormap); }
-int main(int argc,char**){
-if(argc>1) return previous(33,x11::ColorMap{})==17 ? 0 : 23;
-if(current(33,x11::ColorMap{})!=17) return 1;
-if(current(33,x11::ColorMap{99})!=99) return 2;
-if(current(463,x11::ColorMap{})!=0) return 3;
-if(current(463,x11::ColorMap{99})!=99) return 4;
-if(current(0,x11::ColorMap{})!=0) return 5;
-if(previous(33,x11::ColorMap{})!=0) return 6;
-return 0; }
+#ifdef PROVE_PRISTINE
+static_assert(previous(33,x11::ColorMap{})==17,"pristine-default-colormap");
+#else
+static_assert(current(33,x11::ColorMap{})==17);
+static_assert(current(33,x11::ColorMap{99})==99);
+static_assert(current(463,x11::ColorMap{})==0);
+static_assert(current(463,x11::ColorMap{99})==99);
+static_assert(current(0,x11::ColorMap{})==0);
+static_assert(previous(33,x11::ColorMap{})==0);
+#endif
 `;
   const input = path.join(directory, "guard.cc"),
-    output = path.join(
-      directory,
-      process.platform === "win32" ? "guard.exe" : "guard",
-    );
+    output = path.join(directory, "guard.o");
   await writeFile(input, source);
   const compiled = command(
     compiler,
-    ["-std=c++17", input, "-o", output],
+    ["-std=c++17", "-c", input, "-o", output],
     directory,
   );
-  assert.equal(compiled.status, 0, compiled.stderr);
-  const previous = command(output, ["before"], directory, 10_000);
   assert.equal(
+    compiled.status,
+    0,
+    commandFailure(compiled) + "\n" + compiled.stderr,
+  );
+  const previous = command(
+    compiler,
+    [
+      "-std=c++17",
+      "-DPROVE_PRISTINE",
+      "-c",
+      input,
+      "-o",
+      path.join(directory, "before.o"),
+    ],
+    directory,
+  );
+  assert.equal(previous.error, undefined, commandFailure(previous));
+  assert.equal(previous.signal, null, commandFailure(previous));
+  assert.notEqual(
     previous.status,
-    23,
-    "Pristine statements reproduce inherited-zero mismatch before the correction",
+    0,
+    "Pristine statements must fail the desired default colormap assertion",
   );
+  assert.match(previous.stderr, /pristine-default-colormap/);
   t.diagnostic(
-    "actual pristine fragment RED exit23; actual patched fragment GREEN exit0 (standalone colormap contract, not X server acceptance)",
+    "actual pristine fragment RED static_assert; actual patched fragment GREEN constant evaluation (compile-only colormap contract, not X server acceptance)",
   );
-  const result = command(output, [], directory, 10_000);
-  assert.equal(result.status, 0, result.stderr);
 });
 
 test("new R4 namespaces preserve every inherited payload and append only the reviewed patch", async () => {
