@@ -38,6 +38,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "cef-sdk-layout-probe.yml": 1,
   "windows-arm-job-benign.yml": 1,
   "windows-arm-native-tools.yml": 1,
+  "windows-arm-full-sdk.yml": 1,
   "windows-arm-source-preflight.yml": 1,
   "windows-arm-qualification-job-proof.yml": 1,
   "windows-arm-native-compile.yml": 1,

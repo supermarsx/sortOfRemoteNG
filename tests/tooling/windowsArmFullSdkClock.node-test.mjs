@@ -13,6 +13,177 @@ import {
   intersectWorkflowClock,
 } from "../../native/windows-arm-full-sdk/workflow-clock.mjs";
 
+// BEGIN EXACT STARTUP OBSERVABILITY INVERSE
+const STARTUP_OBSERVABILITY_HISTORY = {
+  rows: [
+    {
+      oldRaw:
+        '  );\n  operationState(token);\n  return c; // Accounting/identity DATA only; no source/session is issued.\n}\n\nasync function createSourceOperation(bootstrap) {\n  const owner = bootstrapState(bootstrap);\n  // Native/public activation is separate. No boolean/report can open this code gate.\n  need(SOURCE_QUALIFICATION_ALLOWED, "SOURCE_QUALIFICATION_CLOSED");\n  need(!owner.operation, "BOOTSTRAP_REUSE");\n  const profileRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_HERE, "full-sdk-source-profile.json"),\n      65536,\n',
+      newRaw:
+        '  );\n  operationState(token);\n  return c; // Accounting/identity DATA only; no source/session is issued.\n}\n\n// BEGIN BOUNDED STARTUP OBSERVABILITY\n// Diagnostic DATA only. No path/message/env/stack or capability is serialized.\nconst startupErrorContexts = new WeakMap();\nconst STARTUP_FILE_KINDS = Object.freeze({\n  initial: "none",\n  profile: "profile",\n  policy: "policy",\n  workflow: "workflow",\n  scope: "none",\n  node: "node",\n  python: "python",\n  "workflow-clock": "clock",\n  "parent-clock": "clock",\n  "root-module": "root-module",\n  "source-root": "source-root",\n  "source-input": "producer-input",\n  "source-context": "context",\n  "source-launch": "launcher",\n});\nconst STARTUP_ERROR_CODES = new Set([\n  "ENOENT",\n  "EACCES",\n  "EPERM",\n  "ENOTDIR",\n  "EISDIR",\n  "ELOOP",\n  "EMFILE",\n  "ENFILE",\n  "EBADF",\n  "EIO",\n  "EINVAL",\n  "ENOSPC",\n  "ERR_INVALID_ARG_TYPE",\n  "ERR_INVALID_ARG_VALUE",\n  "ERR_ACCESS_DENIED",\n]);\nconst STARTUP_SYSCALLS = new Set([\n  "open",\n  "lstat",\n  "stat",\n  "realpath",\n  "read",\n  "write",\n  "close",\n  "spawn",\n]);\nfunction observeStartupPhase(bootstrap, phase) {\n  const owner = bootstrapOwners.get(bootstrap);\n  need(owner && !owner.closed && owner.pid === process.pid, "BOOTSTRAP_BRAND");\n  need(Object.hasOwn(STARTUP_FILE_KINDS, phase), "BOOTSTRAP_PHASE");\n  owner.startupPhase = phase;\n}\nfunction captureStartupFailure(bootstrap, error) {\n  const owner = bootstrapOwners.get(bootstrap);\n  if (\n    !owner ||\n    owner.closed ||\n    owner.pid !== process.pid ||\n    utilTypes.isProxy(error) ||\n    !utilTypes.isNativeError(error) ||\n    startupErrorContexts.has(error)\n  )\n    return;\n  const phase = Object.hasOwn(STARTUP_FILE_KINDS, owner.startupPhase)\n    ? owner.startupPhase\n    : "initial";\n  startupErrorContexts.set(\n    error,\n    Object.freeze({ phase, fileKind: STARTUP_FILE_KINDS[phase] }),\n  );\n}\nfunction startupFailureReport(error) {\n  const native = !utilTypes.isProxy(error) && utilTypes.isNativeError(error);\n  const own = (key) =>\n    native ? Object.getOwnPropertyDescriptor(error, key)?.value : undefined;\n  const message = own("message");\n  const code =\n    typeof message === "string" &&\n    /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message)\n      ? message\n      : "FULL_SDK_CONTROL_FAILED";\n  let name = native ? "NativeError" : "ThrownValue";\n  if (native) {\n    const prototype = Object.getPrototypeOf(error);\n    for (const type of [\n      Error,\n      TypeError,\n      RangeError,\n      SyntaxError,\n      ReferenceError,\n      EvalError,\n      URIError,\n      AggregateError,\n    ])\n      if (prototype === type.prototype) name = type.name;\n  }\n  const diagnostic = {\n    ...((native ? startupErrorContexts.get(error) : undefined) ?? {\n      phase: "unknown",\n      fileKind: "none",\n    }),\n    name,\n  };\n  if (STARTUP_ERROR_CODES.has(own("code"))) diagnostic.code = own("code");\n  if (STARTUP_SYSCALLS.has(own("syscall"))) diagnostic.syscall = own("syscall");\n  return {\n    kind: "windows-arm-full-sdk-failure",\n    error: code,\n    diagnostic,\n    sdkBuilt: false,\n    nativeAcceptance: false,\n  };\n}\n// END BOUNDED STARTUP OBSERVABILITY\n\nasync function createSourceOperation(bootstrap) {\n  const owner = bootstrapState(bootstrap);\n  // Native/public activation is separate. No boolean/report can open this code gate.\n  need(SOURCE_QUALIFICATION_ALLOWED, "SOURCE_QUALIFICATION_CLOSED");\n  need(!owner.operation, "BOOTSTRAP_REUSE");\n  observeStartupPhase(bootstrap, "profile");\n  const profileRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_HERE, "full-sdk-source-profile.json"),\n      65536,\n',
+      oldSha256:
+        "b5669efdc9aa73d7d72b448e2d4274ec726170371ce18bd23deaf6121454fb9b",
+      newSha256:
+        "289a9cd9d16840dea9063266210737478507f0fb38079a7f2f70120ebccf0993",
+    },
+    {
+      oldRaw:
+        '  need(\n    profile.workflow === ".github/workflows/windows-arm-full-sdk.yml" &&\n      profile.policy === "native/windows-arm-full-sdk/sdk-origin-review.json",\n    "SOURCE_FIXED_ENTRY",\n  );\n  const policyRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_REPO, profile.policy),\n      1048576,\n',
+      newRaw:
+        '  need(\n    profile.workflow === ".github/workflows/windows-arm-full-sdk.yml" &&\n      profile.policy === "native/windows-arm-full-sdk/sdk-origin-review.json",\n    "SOURCE_FIXED_ENTRY",\n  );\n  observeStartupPhase(bootstrap, "policy");\n  const policyRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_REPO, profile.policy),\n      1048576,\n',
+      oldSha256:
+        "25023aececc507c239b67764e64ce9471aad02cad59548d54c23b776d990f66b",
+      newSha256:
+        "372513cdd4fa282ee8e6c530b045103dfad25f2a77747055ba6241f3bcb95e51",
+    },
+    {
+      oldRaw:
+        '    policy.schemaVersion === 1 &&\n      policy.recordSchemaVersion === 1 &&\n      policy.kind === "sorng-windows-arm64-sdk-origin-policy",\n    "SOURCE_POLICY_KIND",\n  );\n  const workflow = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_REPO, profile.workflow),\n      2097152,\n      policy.workflowPin,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  need(\n    workflow.length === policy.workflowPin.bytes &&\n      hashBytes(workflow) === policy.workflowPin.sha256 &&\n      policy.workflow === profile.workflow &&\n      policy.origin === "owned-windows-arm64-full-sdk" &&\n',
+      newRaw:
+        '    policy.schemaVersion === 1 &&\n      policy.recordSchemaVersion === 1 &&\n      policy.kind === "sorng-windows-arm64-sdk-origin-policy",\n    "SOURCE_POLICY_KIND",\n  );\n  observeStartupPhase(bootstrap, "workflow");\n  const workflow = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_REPO, profile.workflow),\n      2097152,\n      policy.workflowPin,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  observeStartupPhase(bootstrap, "scope");\n  need(\n    workflow.length === policy.workflowPin.bytes &&\n      hashBytes(workflow) === policy.workflowPin.sha256 &&\n      policy.workflow === profile.workflow &&\n      policy.origin === "owned-windows-arm64-full-sdk" &&\n',
+      oldSha256:
+        "a8d81a50a42c5180a48b6805f9dbeac74ea95b5a5e010335416061bfb790df2f",
+      newSha256:
+        "0e21a50f0ad5903b4f455e25246b4e4e1a9067c36b24a65af6608f400ade1b73",
+    },
+    {
+      oldRaw:
+        '    SystemRoot: "C:/Windows",\n    WINDIR: "C:/Windows",\n    PATH: "C:/Windows/System32",\n    PYTHONDONTWRITEBYTECODE: "1",\n  });\n  const actualNode = await fs.realpath(process.execPath);\n  bootstrapState(bootstrap);\n  need(\n    actualNode.replaceAll("\\\\", "/").toLowerCase() ===\n      profile.node.path.toLowerCase(),\n',
+      newRaw:
+        '    SystemRoot: "C:/Windows",\n    WINDIR: "C:/Windows",\n    PATH: "C:/Windows/System32",\n    PYTHONDONTWRITEBYTECODE: "1",\n  });\n  observeStartupPhase(bootstrap, "node");\n  const actualNode = await fs.realpath(process.execPath);\n  bootstrapState(bootstrap);\n  need(\n    actualNode.replaceAll("\\\\", "/").toLowerCase() ===\n      profile.node.path.toLowerCase(),\n',
+      oldSha256:
+        "2d31bf72ace606e3037cdda992674f899387738e55a7ba560f91e8301b55c8fe",
+      newSha256:
+        "7bd09df0695dc0442613d0cc3b8185c6ed081ebdb1ce176f16058e01506a6eea",
+    },
+    {
+      oldRaw:
+        '      hashBytes(nodeRaw) === profile.node.sha256 &&\n      fileId(await fs.lstat(actualNode, { bigint: true })) === fileId(nodeInfo),\n    "SOURCE_NODE_PIN",\n  );\n  bootstrapState(bootstrap);\n  const pythonRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      profile.python.path,\n      profile.python.bytes,\n',
+      newRaw:
+        '      hashBytes(nodeRaw) === profile.node.sha256 &&\n      fileId(await fs.lstat(actualNode, { bigint: true })) === fileId(nodeInfo),\n    "SOURCE_NODE_PIN",\n  );\n  bootstrapState(bootstrap);\n  observeStartupPhase(bootstrap, "python");\n  const pythonRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      profile.python.path,\n      profile.python.bytes,\n',
+      oldSha256:
+        "5ec854098dafcd7a34c3e11c05d4eccc473a3ec4afde7096e45b23bb6be2f73d",
+      newSha256:
+        "79683a7d9012e6cce6fd3dd73b0979f88e9e6604fd1b0b58f61cbb58e2570d4e",
+    },
+    {
+      oldRaw:
+        '  need(\n    pythonRaw.length === profile.python.bytes &&\n      hashBytes(pythonRaw) === profile.python.sha256,\n    "SOURCE_PYTHON_PIN",\n  );\n  // BEGIN FIRST WORKFLOW CLOCK INTERSECTION\n  // The checked workflow is the origin of this accounting record. It cannot\n  // open either code gate or replace source/native qualification authority.\n  need(!owner.workflowClock, "WORKFLOW_CLOCK_REUSE");\n  const workflowClock = readWorkflowClock(\n',
+      newRaw:
+        '  need(\n    pythonRaw.length === profile.python.bytes &&\n      hashBytes(pythonRaw) === profile.python.sha256,\n    "SOURCE_PYTHON_PIN",\n  );\n  observeStartupPhase(bootstrap, "workflow-clock");\n  // BEGIN FIRST WORKFLOW CLOCK INTERSECTION\n  // The checked workflow is the origin of this accounting record. It cannot\n  // open either code gate or replace source/native qualification authority.\n  need(!owner.workflowClock, "WORKFLOW_CLOCK_REUSE");\n  const workflowClock = readWorkflowClock(\n',
+      oldSha256:
+        "d7e588ddc913615bb313f88abfa027a9b67adf0084580a48bf9b5b80596b5e13",
+      newSha256:
+        "cbd3bf1edf4212950008304311a9b806b4fd8090f30379ed154b27cdcc12423c",
+    },
+    {
+      oldRaw:
+        "  const wholeLease = leases.get(owner.lease);\n  wholeLease.wallEnd = Math.min(wholeLease.wallEnd, workflowClock.wallEndMs);\n  bootstrapState(bootstrap);\n  const clockProbeMonoStart = performance.now();\n  // END FIRST WORKFLOW CLOCK INTERSECTION\n  const sample = await samplePythonClock(\n    bootstrap,\n    profile.python.path,\n    environment,\n  );\n",
+      newRaw:
+        '  const wholeLease = leases.get(owner.lease);\n  wholeLease.wallEnd = Math.min(wholeLease.wallEnd, workflowClock.wallEndMs);\n  bootstrapState(bootstrap);\n  const clockProbeMonoStart = performance.now();\n  // END FIRST WORKFLOW CLOCK INTERSECTION\n  observeStartupPhase(bootstrap, "parent-clock");\n  const sample = await samplePythonClock(\n    bootstrap,\n    profile.python.path,\n    environment,\n  );\n',
+      oldSha256:
+        "227f88f5e36a5f4648800b63ed53b47f3aff5c3e94a9052c0440903a5bae19c4",
+      newSha256:
+        "bd203f0add9cdc599870abf05898271a179e8b4e16507bc1a005971ad3969e7a",
+    },
+    {
+      oldRaw:
+        '  wholeLease.monoEnd = inheritedEnds.monoEnd;\n  owner.workflowClock = workflowClock;\n  bootstrapState(bootstrap);\n  // END FIRST WORKFLOW CLOCK NATIVE PROJECTION\n  // Stable naming DATA; exclusive mkdir below still creates a fresh lifetime.\n  const rootCode = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_HERE, "source-root.mjs"),\n      1895,\n',
+      newRaw:
+        '  wholeLease.monoEnd = inheritedEnds.monoEnd;\n  owner.workflowClock = workflowClock;\n  bootstrapState(bootstrap);\n  // END FIRST WORKFLOW CLOCK NATIVE PROJECTION\n  // Stable naming DATA; exclusive mkdir below still creates a fresh lifetime.\n  observeStartupPhase(bootstrap, "root-module");\n  const rootCode = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_HERE, "source-root.mjs"),\n      1895,\n',
+      oldSha256:
+        "e0c72a53dfa04f812f6ecd38811146e9ef212024ab4d38e4b1bab7096a51796b",
+      newSha256:
+        "2e0c150c9d2028d441c602849115a56ddd5eee5f4dc47fa23ef05868d3939172",
+    },
+    {
+      oldRaw:
+        '        row.bytes === rootCode.length &&\n        row.sha256 === hashBytes(rootCode),\n    ).length === 1,\n    "SOURCE_ROOT_CODE_CLOSURE",\n  );\n  const root = path.join(\n    CONTROLLER_REPO,\n    ".artifacts",\n    fullSdkSourceRootName(process.env.ImageVersion, selected.id),\n  );\n',
+      newRaw:
+        '        row.bytes === rootCode.length &&\n        row.sha256 === hashBytes(rootCode),\n    ).length === 1,\n    "SOURCE_ROOT_CODE_CLOSURE",\n  );\n  observeStartupPhase(bootstrap, "source-root");\n  const root = path.join(\n    CONTROLLER_REPO,\n    ".artifacts",\n    fullSdkSourceRootName(process.env.ImageVersion, selected.id),\n  );\n',
+      oldSha256:
+        "0bd0a1f8a17e82c7ff3b31ea66ad4c11c76ccbb9794cf91aee794937db9f4914",
+      newSha256:
+        "8f0b49f7a52c1aef8417665608f0f3793fc7f9c91c0509a4baf7a99f7b40a3c7",
+    },
+    {
+      oldRaw:
+        '        typeof row.path === "string" &&\n          !path.isAbsolute(row.path) &&\n          row.path.split(/[\\\\/]/).every((x) => x && x !== "." && x !== ".."),\n        "SOURCE_INPUT_PATH",\n      );\n      const raw = (\n        await operationWork(token, () =>\n          bootstrapHeldFile(\n            bootstrap,\n            path.join(CONTROLLER_REPO, row.path),\n',
+      newRaw:
+        '        typeof row.path === "string" &&\n          !path.isAbsolute(row.path) &&\n          row.path.split(/[\\\\/]/).every((x) => x && x !== "." && x !== ".."),\n        "SOURCE_INPUT_PATH",\n      );\n      observeStartupPhase(bootstrap, "source-input");\n      const raw = (\n        await operationWork(token, () =>\n          bootstrapHeldFile(\n            bootstrap,\n            path.join(CONTROLLER_REPO, row.path),\n',
+      oldSha256:
+        "04b7c2c970dba576879c5e8f7db429aaddeb5e9e847063d9a74468e7869df1ae",
+      newSha256:
+        "feaaf3b5a77e2515cdf5f4977dfc49d97caea5df60b441e93b6680c207a7fc1a",
+    },
+    {
+      oldRaw:
+        '        fs.writeFile(path.join(root, "source-inputs", String(index)), raw, {\n          flag: "wx",\n        }),\n      );\n    }\n    const c = sourceContextRecord(token, profile, policy, policyRaw, sample);\n    const contextRaw = Buffer.from(JSON.stringify(c, null, 2) + "\\n");\n    await operationFence(token);\n    await operationWork(token, () =>\n      fs.writeFile(path.join(root, "context.json"), contextRaw, { flag: "wx" }),\n',
+      newRaw:
+        '        fs.writeFile(path.join(root, "source-inputs", String(index)), raw, {\n          flag: "wx",\n        }),\n      );\n    }\n    observeStartupPhase(bootstrap, "source-context");\n    const c = sourceContextRecord(token, profile, policy, policyRaw, sample);\n    const contextRaw = Buffer.from(JSON.stringify(c, null, 2) + "\\n");\n    await operationFence(token);\n    await operationWork(token, () =>\n      fs.writeFile(path.join(root, "context.json"), contextRaw, { flag: "wx" }),\n',
+      oldSha256:
+        "a962286d0ab38b357c9126348cafba92a906c5c15a375cb79f3247f0ded55606",
+      newSha256:
+        "fefdec8264096b94411fc8368d3f69829298e2c585226dd3de5a6d8779ec289f",
+    },
+    {
+      oldRaw:
+        '    }\n  };\n  try {\n    bootstrapState(bootstrap);\n    operation = await createSourceOperation(bootstrap);\n    const source = await runSourcePhase(operation);\n    control = await createControl(source, owner.lease);\n    await prepareFreshPolicy(control);\n    await runEnginePhase(control, "probe-clang");\n    await runEnginePhase(control, "probe-link");\n',
+      newRaw:
+        '    }\n  };\n  try {\n    bootstrapState(bootstrap);\n    operation = await createSourceOperation(bootstrap);\n    observeStartupPhase(bootstrap, "source-launch");\n    const source = await runSourcePhase(operation);\n    control = await createControl(source, owner.lease);\n    await prepareFreshPolicy(control);\n    await runEnginePhase(control, "probe-clang");\n    await runEnginePhase(control, "probe-link");\n',
+      oldSha256:
+        "44d762a02933a6163361065e979b10d5901489563d3f9eb40dc81fe0356168ab",
+      newSha256:
+        "54f03cccc3dd4c89512c63d1fe805231c37ad368d33b6c7f7075d5e9069a19b5",
+    },
+    {
+      oldRaw:
+        '      await runEnginePhase(control, "package");\n      result = await verifyProducedSdk(control);\n    }\n    await publishControllerOutcome(control, result);\n  } catch (error) {\n    remember(error);\n  } finally {\n    if (failed && !owner.cancel.signal.aborted) owner.cancel.abort(primary);\n    const controlState = control ? controls.get(control) : undefined;\n    try {\n',
+      newRaw:
+        '      await runEnginePhase(control, "package");\n      result = await verifyProducedSdk(control);\n    }\n    await publishControllerOutcome(control, result);\n  } catch (error) {\n    captureStartupFailure(bootstrap, error);\n    remember(error);\n  } finally {\n    if (failed && !owner.cancel.signal.aborted) owner.cancel.abort(primary);\n    const controlState = control ? controls.get(control) : undefined;\n    try {\n',
+      oldSha256:
+        "58f2f5eee1725e7b0235090d8faf3f3372ad03f3a36cd8a629589428ca98db21",
+      newSha256:
+        "7adbc66c1bffeaf92d426485814d0a8099532c6ef0ee1b13efbcac06809c656c",
+    },
+    {
+      oldRaw:
+        '        argv[0] === "--execute",\n      "ENTRY_ARGV",\n    );\n    return runFullSdkTransaction(bootstrap);\n  } catch (error) {\n    const owner = bootstrapOwners.get(bootstrap);\n    owner.closed = true;\n    leases.get(owner.lease).closed = true;\n    bootstrapOwners.delete(bootstrap);\n    throw error;\n',
+      newRaw:
+        '        argv[0] === "--execute",\n      "ENTRY_ARGV",\n    );\n    return runFullSdkTransaction(bootstrap);\n  } catch (error) {\n    captureStartupFailure(bootstrap, error);\n    const owner = bootstrapOwners.get(bootstrap);\n    owner.closed = true;\n    leases.get(owner.lease).closed = true;\n    bootstrapOwners.delete(bootstrap);\n    throw error;\n',
+      oldSha256:
+        "1235478ea088c3230edadc8645fcd0f27863b41045926a4ef6e20e2ea0fb80f8",
+      newSha256:
+        "f490deea9e9da663e2751bed1447fcf99f8475f97d95c158f33c80a411ef04d5",
+    },
+    {
+      oldRaw:
+        '  path.resolve(process.argv[1]) === fileURLToPath(MODULE_URL)\n) {\n  Promise.resolve()\n    .then(() => main())\n    .catch((error) => {\n      const code = /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(error?.message ?? "")\n        ? error.message\n        : "FULL_SDK_CONTROL_FAILED";\n      console.error(\n        JSON.stringify({\n          kind: "windows-arm-full-sdk-failure",\n          error: code,\n          sdkBuilt: false,\n          nativeAcceptance: false,\n        }),\n      );\n      process.exitCode = 1;\n    });\n}\n',
+      newRaw:
+        "  path.resolve(process.argv[1]) === fileURLToPath(MODULE_URL)\n) {\n  Promise.resolve()\n    .then(() => main())\n    .catch((error) => {\n      console.error(JSON.stringify(startupFailureReport(error)));\n      process.exitCode = 1;\n    });\n}\n",
+      oldSha256:
+        "113b9553e292fe11ac84d9d0644fc792a0f269b087115014f3d0b3e02c887944",
+      newSha256:
+        "9225655ad454e8be739ad29ed3760f091d9eebce4db246f82cb923fc8eabd0e7",
+    },
+  ],
+  bytes: 161561,
+  sha256: "43604b5ddf7c738270bb5bead62a1ae4f321176a4cbb77288ef4022818b2e9cf",
+};
+function startupControllerInverse(text) {
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of [...STARTUP_OBSERVABILITY_HISTORY.rows].reverse()) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(hash(row.oldRaw), row.oldSha256);
+    assert.equal(text.split(row.newRaw).length, 2);
+    text = text.replace(row.newRaw, () => row.oldRaw);
+  }
+  assert.equal(Buffer.byteLength(text), STARTUP_OBSERVABILITY_HISTORY.bytes);
+  assert.equal(hash(text), STARTUP_OBSERVABILITY_HISTORY.sha256);
+  return text;
+}
+// END EXACT STARTUP OBSERVABILITY INVERSE
+
 // BEGIN FINITE ASSEMBLY HISTORY
 const ASSEMBLY_HISTORY = {
   controller: {
@@ -293,6 +464,7 @@ const ASSEMBLY_HISTORY = {
   },
 };
 function assemblyInverse(text, name) {
+  if (name === "controller") text = startupControllerInverse(text);
   const spec = ASSEMBLY_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of [...spec.rows].reverse()) {

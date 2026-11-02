@@ -3456,11 +3456,127 @@ function sourceContextRecord(token, profile, policy, policyRaw, sample) {
   return c; // Accounting/identity DATA only; no source/session is issued.
 }
 
+// BEGIN BOUNDED STARTUP OBSERVABILITY
+// Diagnostic DATA only. No path/message/env/stack or capability is serialized.
+const startupErrorContexts = new WeakMap();
+const STARTUP_FILE_KINDS = Object.freeze({
+  initial: "none",
+  profile: "profile",
+  policy: "policy",
+  workflow: "workflow",
+  scope: "none",
+  node: "node",
+  python: "python",
+  "workflow-clock": "clock",
+  "parent-clock": "clock",
+  "root-module": "root-module",
+  "source-root": "source-root",
+  "source-input": "producer-input",
+  "source-context": "context",
+  "source-launch": "launcher",
+});
+const STARTUP_ERROR_CODES = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "ENOTDIR",
+  "EISDIR",
+  "ELOOP",
+  "EMFILE",
+  "ENFILE",
+  "EBADF",
+  "EIO",
+  "EINVAL",
+  "ENOSPC",
+  "ERR_INVALID_ARG_TYPE",
+  "ERR_INVALID_ARG_VALUE",
+  "ERR_ACCESS_DENIED",
+]);
+const STARTUP_SYSCALLS = new Set([
+  "open",
+  "lstat",
+  "stat",
+  "realpath",
+  "read",
+  "write",
+  "close",
+  "spawn",
+]);
+function observeStartupPhase(bootstrap, phase) {
+  const owner = bootstrapOwners.get(bootstrap);
+  need(owner && !owner.closed && owner.pid === process.pid, "BOOTSTRAP_BRAND");
+  need(Object.hasOwn(STARTUP_FILE_KINDS, phase), "BOOTSTRAP_PHASE");
+  owner.startupPhase = phase;
+}
+function captureStartupFailure(bootstrap, error) {
+  const owner = bootstrapOwners.get(bootstrap);
+  if (
+    !owner ||
+    owner.closed ||
+    owner.pid !== process.pid ||
+    utilTypes.isProxy(error) ||
+    !utilTypes.isNativeError(error) ||
+    startupErrorContexts.has(error)
+  )
+    return;
+  const phase = Object.hasOwn(STARTUP_FILE_KINDS, owner.startupPhase)
+    ? owner.startupPhase
+    : "initial";
+  startupErrorContexts.set(
+    error,
+    Object.freeze({ phase, fileKind: STARTUP_FILE_KINDS[phase] }),
+  );
+}
+function startupFailureReport(error) {
+  const native = !utilTypes.isProxy(error) && utilTypes.isNativeError(error);
+  const own = (key) =>
+    native ? Object.getOwnPropertyDescriptor(error, key)?.value : undefined;
+  const message = own("message");
+  const code =
+    typeof message === "string" &&
+    /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message)
+      ? message
+      : "FULL_SDK_CONTROL_FAILED";
+  let name = native ? "NativeError" : "ThrownValue";
+  if (native) {
+    const prototype = Object.getPrototypeOf(error);
+    for (const type of [
+      Error,
+      TypeError,
+      RangeError,
+      SyntaxError,
+      ReferenceError,
+      EvalError,
+      URIError,
+      AggregateError,
+    ])
+      if (prototype === type.prototype) name = type.name;
+  }
+  const diagnostic = {
+    ...((native ? startupErrorContexts.get(error) : undefined) ?? {
+      phase: "unknown",
+      fileKind: "none",
+    }),
+    name,
+  };
+  if (STARTUP_ERROR_CODES.has(own("code"))) diagnostic.code = own("code");
+  if (STARTUP_SYSCALLS.has(own("syscall"))) diagnostic.syscall = own("syscall");
+  return {
+    kind: "windows-arm-full-sdk-failure",
+    error: code,
+    diagnostic,
+    sdkBuilt: false,
+    nativeAcceptance: false,
+  };
+}
+// END BOUNDED STARTUP OBSERVABILITY
+
 async function createSourceOperation(bootstrap) {
   const owner = bootstrapState(bootstrap);
   // Native/public activation is separate. No boolean/report can open this code gate.
   need(SOURCE_QUALIFICATION_ALLOWED, "SOURCE_QUALIFICATION_CLOSED");
   need(!owner.operation, "BOOTSTRAP_REUSE");
+  observeStartupPhase(bootstrap, "profile");
   const profileRaw = (
     await bootstrapHeldFile(
       bootstrap,
@@ -3481,6 +3597,7 @@ async function createSourceOperation(bootstrap) {
       profile.policy === "native/windows-arm-full-sdk/sdk-origin-review.json",
     "SOURCE_FIXED_ENTRY",
   );
+  observeStartupPhase(bootstrap, "policy");
   const policyRaw = (
     await bootstrapHeldFile(
       bootstrap,
@@ -3513,6 +3630,7 @@ async function createSourceOperation(bootstrap) {
       policy.kind === "sorng-windows-arm64-sdk-origin-policy",
     "SOURCE_POLICY_KIND",
   );
+  observeStartupPhase(bootstrap, "workflow");
   const workflow = (
     await bootstrapHeldFile(
       bootstrap,
@@ -3522,6 +3640,7 @@ async function createSourceOperation(bootstrap) {
     )
   ).raw;
   bootstrapState(bootstrap);
+  observeStartupPhase(bootstrap, "scope");
   need(
     workflow.length === policy.workflowPin.bytes &&
       hashBytes(workflow) === policy.workflowPin.sha256 &&
@@ -3572,6 +3691,7 @@ async function createSourceOperation(bootstrap) {
     PATH: "C:/Windows/System32",
     PYTHONDONTWRITEBYTECODE: "1",
   });
+  observeStartupPhase(bootstrap, "node");
   const actualNode = await fs.realpath(process.execPath);
   bootstrapState(bootstrap);
   need(
@@ -3604,6 +3724,7 @@ async function createSourceOperation(bootstrap) {
     "SOURCE_NODE_PIN",
   );
   bootstrapState(bootstrap);
+  observeStartupPhase(bootstrap, "python");
   const pythonRaw = (
     await bootstrapHeldFile(
       bootstrap,
@@ -3618,6 +3739,7 @@ async function createSourceOperation(bootstrap) {
       hashBytes(pythonRaw) === profile.python.sha256,
     "SOURCE_PYTHON_PIN",
   );
+  observeStartupPhase(bootstrap, "workflow-clock");
   // BEGIN FIRST WORKFLOW CLOCK INTERSECTION
   // The checked workflow is the origin of this accounting record. It cannot
   // open either code gate or replace source/native qualification authority.
@@ -3632,6 +3754,7 @@ async function createSourceOperation(bootstrap) {
   bootstrapState(bootstrap);
   const clockProbeMonoStart = performance.now();
   // END FIRST WORKFLOW CLOCK INTERSECTION
+  observeStartupPhase(bootstrap, "parent-clock");
   const sample = await samplePythonClock(
     bootstrap,
     profile.python.path,
@@ -3652,6 +3775,7 @@ async function createSourceOperation(bootstrap) {
   bootstrapState(bootstrap);
   // END FIRST WORKFLOW CLOCK NATIVE PROJECTION
   // Stable naming DATA; exclusive mkdir below still creates a fresh lifetime.
+  observeStartupPhase(bootstrap, "root-module");
   const rootCode = (
     await bootstrapHeldFile(
       bootstrap,
@@ -3680,6 +3804,7 @@ async function createSourceOperation(bootstrap) {
     ).length === 1,
     "SOURCE_ROOT_CODE_CLOSURE",
   );
+  observeStartupPhase(bootstrap, "source-root");
   const root = path.join(
     CONTROLLER_REPO,
     ".artifacts",
@@ -3771,6 +3896,7 @@ async function createSourceOperation(bootstrap) {
           row.path.split(/[\\/]/).every((x) => x && x !== "." && x !== ".."),
         "SOURCE_INPUT_PATH",
       );
+      observeStartupPhase(bootstrap, "source-input");
       const raw = (
         await operationWork(token, () =>
           bootstrapHeldFile(
@@ -3794,6 +3920,7 @@ async function createSourceOperation(bootstrap) {
         }),
       );
     }
+    observeStartupPhase(bootstrap, "source-context");
     const c = sourceContextRecord(token, profile, policy, policyRaw, sample);
     const contextRaw = Buffer.from(JSON.stringify(c, null, 2) + "\n");
     await operationFence(token);
@@ -5185,6 +5312,7 @@ async function runFullSdkTransaction(bootstrap) {
   try {
     bootstrapState(bootstrap);
     operation = await createSourceOperation(bootstrap);
+    observeStartupPhase(bootstrap, "source-launch");
     const source = await runSourcePhase(operation);
     control = await createControl(source, owner.lease);
     await prepareFreshPolicy(control);
@@ -5200,6 +5328,7 @@ async function runFullSdkTransaction(bootstrap) {
     }
     await publishControllerOutcome(control, result);
   } catch (error) {
+    captureStartupFailure(bootstrap, error);
     remember(error);
   } finally {
     if (failed && !owner.cancel.signal.aborted) owner.cancel.abort(primary);
@@ -5288,6 +5417,7 @@ export function main(argv = process.argv.slice(2)) {
     );
     return runFullSdkTransaction(bootstrap);
   } catch (error) {
+    captureStartupFailure(bootstrap, error);
     const owner = bootstrapOwners.get(bootstrap);
     owner.closed = true;
     leases.get(owner.lease).closed = true;
@@ -5302,17 +5432,7 @@ if (
   Promise.resolve()
     .then(() => main())
     .catch((error) => {
-      const code = /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(error?.message ?? "")
-        ? error.message
-        : "FULL_SDK_CONTROL_FAILED";
-      console.error(
-        JSON.stringify({
-          kind: "windows-arm-full-sdk-failure",
-          error: code,
-          sdkBuilt: false,
-          nativeAcceptance: false,
-        }),
-      );
+      console.error(JSON.stringify(startupFailureReport(error)));
       process.exitCode = 1;
     });
 }
