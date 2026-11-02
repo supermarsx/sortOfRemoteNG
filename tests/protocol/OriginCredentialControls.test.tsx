@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OriginCredentialControls from "../../src/components/protocol/webBrowser/OriginCredentialControls";
 import { PopoverSurface } from "../../src/components/ui/overlays/PopoverSurface";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { ToastUpdate } from "../../src/components/ui/dialogs/Toast";
 import type { CredentialTypingTarget } from "../../src/utils/security/credentialTyping";
 import type { OriginAutoLoginRetryController } from "../../src/hooks/protocol/useOriginAutoLoginRetry";
@@ -94,6 +95,10 @@ function Panel(props: Record<string, any>) {
       </section>
     </PopoverSurface>
   );
+}
+function Tooltips() {
+  useTooltipSystem();
+  return null;
 }
 const identity = {
   ownerDatabaseId: "db",
@@ -258,12 +263,31 @@ describe("native credential toolbar parity", () => {
     "warns before explicit HTTP %s typing and still waits for a native capture",
     async (field) => {
       const request = transport();
-      render(<Harness transport={request} protocol="http" />);
+      render(
+        <>
+          <Tooltips />
+          <Harness transport={request} protocol="http" />
+        </>,
+      );
       await open();
       expect(screen.getByRole("note")).toHaveTextContent(
         "HTTP transmits credentials unencrypted to http://example.test:8080.",
       );
-      expect(screen.getByText(/HTTP typing is limited/)).toBeVisible();
+      const help = screen.getByRole("button", { name: "Copy and typing help" });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      fireEvent.mouseOver(help);
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "HTTP typing stays on the configured origin and port.",
+      );
+      fireEvent.mouseOut(help, { relatedTarget: document.body });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      act(() => help.focus());
+      expect(screen.getByRole("tooltip")).toBeVisible();
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "HTTP typing stays on the configured origin and port.",
+      );
+      act(() => help.blur());
+      expect(screen.queryByRole("tooltip")).toBeNull();
       expect(request).not.toHaveBeenCalled();
       expect(mock.type).not.toHaveBeenCalled();
       expect(mock.code).not.toHaveBeenCalled();
