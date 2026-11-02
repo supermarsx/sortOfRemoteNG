@@ -78,7 +78,7 @@ const ownedRetirements = new WeakMap();
 let proofActive = false;
 let lastProofObservation = null;
 const PROOF = Object.freeze({
-  branch: "refs/heads/codex/linux-arm-3aa-producer-migration-20261102",
+  branch: "refs/heads/codex/linux-arm-final-helper-proof-20261102",
   workflow: ".github/workflows/cef-linux-producer-migration-proof.yml",
   temp: "/home/runner/work/_temp",
   python: "/usr/bin/python3.12",
@@ -87,8 +87,8 @@ const PROOF = Object.freeze({
     sha256: "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
   }),
   archivePin: Object.freeze({
-    bytes: 181586,
-    sha256: "839ed8a3be5f81dd7778bf7fb4d76209d7e64342ec9387dc323d5c280098165d",
+    bytes: 203191,
+    sha256: "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",
   }),
   modules: "tests/fixtures/cef/mac_nearby.gitmodules",
   modulesPin: Object.freeze({

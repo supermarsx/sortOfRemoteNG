@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
+import { codeTreeDigest } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import {
   BRANCH,
   WORKFLOW,
@@ -105,6 +106,9 @@ test("authority requires the exact private Linux x64 host, image, source and tok
     {
       GITHUB_REF: "refs/heads/codex/linux-arm-a148-producer-migration-20261101",
     },
+    {
+      GITHUB_REF: "refs/heads/codex/linux-arm-3aa-producer-migration-20261102",
+    },
     { ImageVersion: "20261021.278.1" },
     { GH_TOKEN: "SECRET" },
     { GITHUB_TOKEN: "SECRET" },
@@ -117,18 +121,52 @@ test("authority requires the exact private Linux x64 host, image, source and tok
     );
 });
 
-test("retarget binds the reachable committed core and exact new candidate without old ancestor lookup", async () => {
+test("final-helper retarget restores the complete2dbe core through exactly three pins without ancestor lookup", async () => {
   assert.equal(
     BRANCH,
-    "refs/heads/codex/linux-arm-3aa-producer-migration-20261102",
+    "refs/heads/codex/linux-arm-final-helper-proof-20261102",
   );
   assert.equal(
     CODE_DIGEST,
-    "b061c0ecf1b6a7b6a67f2e64845987993686dfbd3312d5819bec715dcc620dc6",
+    "d060f671e8a784046f16cd50f8661da8c9883b623c376e23eccf2f4ccc4a9472",
   );
-  const current = spawnSync(
+  const physical = await readFile(
+    new URL("scripts/lib/cef-linux-producer-migration.mjs", root),
+  );
+  let previous = physical.toString().replaceAll("\r\n", "\n");
+  for (const [current, old] of [
+    [
+      '  branch: "refs/heads/codex/linux-arm-final-helper-proof-20261102",',
+      '  branch: "refs/heads/codex/linux-arm-3aa-producer-migration-20261102",',
+    ],
+    ["    bytes: 203191,", "    bytes: 181586,"],
+    [
+      '    sha256: "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",',
+      '    sha256: "839ed8a3be5f81dd7778bf7fb4d76209d7e64342ec9387dc323d5c280098165d",',
+    ],
+  ]) {
+    assert.equal(previous.split(current).length, 2);
+    previous = previous.replace(current, old);
+  }
+  assert.equal(Buffer.byteLength(previous), 114830);
+  assert.equal(
+    createHash("sha256").update(previous).digest("hex"),
+    "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
+  );
+});
+test("the final-helper digest is the actual131-row candidate with only its exact module substitution", async () => {
+  const listed = spawnSync(
     "git",
-    ["show", "HEAD:scripts/lib/cef-linux-producer-migration.mjs"],
+    [
+      "ls-tree",
+      "-r",
+      "HEAD",
+      "--",
+      "scripts",
+      "native/cef-hosted-recipe.json",
+      ".node-version",
+      ".github/workflows/cef-engineering-checkpoint.yml",
+    ],
     {
       cwd: fileURLToPath(root),
       timeout: 10000,
@@ -136,19 +174,24 @@ test("retarget binds the reachable committed core and exact new candidate withou
       windowsHide: true,
     },
   );
-  assert.equal(current.status, 0);
-  assert.equal(current.stdout.length, 94129);
-  assert.equal(
-    createHash("sha256").update(current.stdout).digest("hex"),
-    "5da6dd95dc4ad77d2822255880e27fc4052e00551a933e2cb1821c285043a8c3",
-  );
-  const physical = await readFile(
-    new URL("scripts/lib/cef-linux-producer-migration.mjs", root),
-  );
-  assert.equal(
-    physical.toString().replaceAll("\r\n", "\n"),
-    current.stdout.toString(),
-  );
+  assert.equal(listed.status, 0);
+  const rows = [];
+  for (const line of listed.stdout.toString().trim().split("\n")) {
+    const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(line);
+    assert(match);
+    const [, mode, committed, path] = match;
+    const raw = await readFile(new URL(path, root));
+    const canonical = Buffer.from(raw.toString().replaceAll("\r\n", "\n"));
+    const sha = createHash("sha1")
+      .update(Buffer.from(`blob ${canonical.length}\0`))
+      .update(canonical)
+      .digest("hex");
+    if (path !== "scripts/lib/cef-linux-producer-migration.mjs")
+      assert.equal(sha, committed, path);
+    rows.push({ type: "blob", mode, sha, path });
+  }
+  assert.equal(rows.length, 131);
+  assert.equal(codeTreeDigest(rows), CODE_DIGEST);
 });
 test("the unchanged original five-minute start reserves cleanup and never resets the core lease", () => {
   assert.deepEqual(budget(100000, 100000), {
