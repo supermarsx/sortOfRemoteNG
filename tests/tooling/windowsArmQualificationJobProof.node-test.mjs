@@ -21,22 +21,136 @@ import {
   validateControllerResult,
   validateControllerFailure,
   main,
+  readReviewedProofPolicy,
 } from "../fixtures/cef/windows_arm_qualification_job_proof.mjs";
+
+// Exact historical views are used only by the pre-registry inverse guards.
+const REVIEWED_REGISTRY_INVERSE = {
+  python: [
+    [
+      "import time\nimport types\n\nPROFILE_SHA = \"63c72846b9506a78f6d968a64445a9f495bc04523509327c43286dde1baa6240\"\nREPO = Path(__file__).resolve().parents[2]\nPROFILE = Path(__file__).with_name(\"qualification-job-proof-profile.json\")\n# BEGIN fixed reviewed-image registry\nREVIEWED_IMAGES = {'20261021.278.1': {'profile': 'qualification-job-proof-20261021-profile.json', 'bytes': 3210, 'sha256': 'bf1d4969b8b2a20164440e7a3b52a6ca5d64d80f2427192cbb9bb8cf918850c2', 'sourceProfile': 'image-qualified-20261021-profile.json', 'sourceBytes': 35867, 'sourceSha256': '3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637', 'sourceId': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}, '20261030.294.1': {'profile': 'qualification-job-proof-20261030-profile.json', 'bytes': 3210, 'sha256': '44ab70cfc7a8a37c3e79c96d2a1c167830d3d3af57116d5ff83b4918023edad9', 'sourceProfile': 'image-qualified-current-profile.json', 'sourceBytes': 34813, 'sourceSha256': '55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041', 'sourceId': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90'}}\nPRIVATE_POLICY = {'path': 'private-qualification-profile.json', 'bytes': 22347, 'sha256': 'e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052'}\ndef selected_profile_sha(p):\n    return REVIEWED_IMAGES[p[\"image\"]][\"sha256\"]\n# END fixed reviewed-image registry\nCASES = (\n    \"six-role-normal\", \"second-role-nonzero\", \"session-cancel-after-owned-output\",\n    \"preaborted\", \"outer-cancel-after-assignment-before-resume\",\n",
+      'import time\nimport types\n\nPROFILE_SHA = "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c"\nREPO = Path(__file__).resolve().parents[2]\nPROFILE = Path(__file__).with_name("qualification-job-proof-profile.json")\nCASES = (\n    "six-role-normal", "second-role-nonzero", "session-cancel-after-owned-output",\n    "preaborted", "outer-cancel-after-assignment-before-resume",\n',
+    ],
+    [
+      '\n\ndef profile():\n    image = os.environ.get("ImageVersion")\n    need(image in REVIEWED_IMAGES, "PROOF_AUTHORITY")\n    row = REVIEWED_IMAGES[image]\n    raw = held(PROFILE, 65536)\n    need(sha(raw) == PROFILE_SHA, "PROOF_PROFILE")\n    registry = json.loads(raw)\n    value = json.loads(held(PROFILE.parent / row["profile"], row["bytes"], row))\n    source = json.loads(held(PROFILE.parent / row["sourceProfile"], row["sourceBytes"], {"bytes":row["sourceBytes"], "sha256":row["sourceSha256"]}))\n    private = json.loads(held(PROFILE.parent / PRIVATE_POLICY["path"], PRIVATE_POLICY["bytes"], PRIVATE_POLICY))\n    need(registry["profiles"] == REVIEWED_IMAGES and registry["kind"] == "windows-benign-reviewed-image-registry" and registry["schemaVersion"] == 1 and\n         all(value[key] == registry[key] for key in ("ref", "workflow", "repository", "repositoryId", "sourcePaths")) and\n         value["image"] == image == os.environ.get("ImageVersion") and len(value["sourcePaths"]) == 12 and\n         source["image"] == image and private["images"][image]["sourceId"] == row["sourceId"] and private["images"][image]["profileSha256"] == row["sourceSha256"] and\n         private["tools"]["python"] == value["python"] and private["driverNode"] == value["node"] and\n         private["staticLoadingPolicy"]["systemImageIsTrustedTcb"] is True and private["staticLoadingPolicy"]["actualLoaderClosureApproved"] is False and private["staticLoadingPolicy"]["system32ByteSetProven"] is False and\n         value["cases"] == list(CASES) and value["suiteSeconds"] == 300 and value["workSeconds"] == 150 and value["finalReserveSeconds"] == 150, "PROOF_POLICY")\n    return value\n\n\n',
+      '\n\ndef profile():\n    raw = held(PROFILE, 65536)\n    need(sha(raw) == PROFILE_SHA, "PROOF_PROFILE")\n    value = json.loads(raw)\n    need(value["cases"] == list(CASES) and value["suiteSeconds"] == 300 and value["workSeconds"] == 150 and value["finalReserveSeconds"] == 150, "PROOF_POLICY")\n    return value\n\n\n',
+    ],
+    [
+      '    return module\n\n\ndef launch_environment(root, image):\n    need(image in REVIEWED_IMAGES and os.environ.get("ImageVersion") == image, "PROOF_ENVIRONMENT")\n    value = {"ImageVersion": image, "SystemRoot": "C:/Windows", "WINDIR": "C:/Windows", "PATH": "C:/Windows/System32", "TEMP": str(root / "tmp"), "TMP": str(root / "tmp"), "USERPROFILE": str(root / "home"), "PYTHONDONTWRITEBYTECODE": "1"}\n    tracking = os.environ.get("RUNNER_TRACKING_ID")\n    if tracking:\n        need(len(tracking) <= 256 and tracking.isascii() and all(32 <= ord(c) < 127 for c in tracking), "PROOF_TRACKING")\n',
+      '    return module\n\n\ndef launch_environment(root):\n    value = {"SystemRoot": "C:/Windows", "WINDIR": "C:/Windows", "PATH": "C:/Windows/System32", "TEMP": str(root / "tmp"), "TMP": str(root / "tmp"), "USERPROFILE": str(root / "home"), "PYTHONDONTWRITEBYTECODE": "1"}\n    tracking = os.environ.get("RUNNER_TRACKING_ID")\n    if tracking:\n        need(len(tracking) <= 256 and tracking.isascii() and all(32 <= ord(c) < 127 for c in tracking), "PROOF_TRACKING")\n',
+    ],
+    [
+      '    _observe_controller("suite-context")  # controller-observation\n    context = json.loads(context_raw)\n    clock = SuiteClock(context["startedMs"])\n    need(context["kind"] == "windows-benign-job-preparation" and context["head"] == os.environ.get("GITHUB_SHA") and context["image"] == p["image"] and context["selectedProfileSha256"] == selected_profile_sha(p), "PROOF_CONTEXT")\n    root = checked_root(root, context["nonce"])\n    root_identity = identity(root.lstat())\n    _observe_controller("source-witnesses")  # controller-observation\n',
+      '    _observe_controller("suite-context")  # controller-observation\n    context = json.loads(context_raw)\n    clock = SuiteClock(context["startedMs"])\n    need(context["kind"] == "windows-benign-job-preparation" and context["head"] == os.environ.get("GITHUB_SHA"), "PROOF_CONTEXT")\n    root = checked_root(root, context["nonce"])\n    root_identity = identity(root.lstat())\n    _observe_controller("source-witnesses")  # controller-observation\n',
+    ],
+    [
+      '        event = threading.Event()\n        if name == "preaborted":\n            event.set()\n        case_context = {"image": p["image"], "selectedProfileSha256": selected_profile_sha(p), "kind": "windows-benign-job-case", "case": name, "root": str(case), "nonce": context["nonce"], "head": context["head"], "sourceHead": context["head"], "workEndMs": min(context["startedMs"] + 150000, int(time.time() * 1000 + (20 if name == "deadline-with-pipe-descendant" else seconds) * 1000)), "subjectSha256": p["subject"]["sha256"]}\n        raw = (json.dumps(case_context, separators=(",", ":")) + "\\n").encode()\n        case_file = case / "case.json"\n        with case_file.open("xb") as stream:\n',
+      '        event = threading.Event()\n        if name == "preaborted":\n            event.set()\n        case_context = {"kind": "windows-benign-job-case", "case": name, "root": str(case), "nonce": context["nonce"], "head": context["head"], "sourceHead": context["head"], "workEndMs": min(context["startedMs"] + 150000, int(time.time() * 1000 + (20 if name == "deadline-with-pipe-descendant" else seconds) * 1000)), "subjectSha256": p["subject"]["sha256"]}\n        raw = (json.dumps(case_context, separators=(",", ":")) + "\\n").encode()\n        case_file = case / "case.json"\n        with case_file.open("xb") as stream:\n',
+    ],
+    [
+      '        previous = sys.modules.get("producer")\n        sys.modules["producer"] = producer\n        kernel.approved_tool_command = lambda argv, cwd: role if argv == command and Path(cwd) == case else need(False, "PROOF_COMMAND")\n        kernel.launch_environment = lambda selected, cwd: launch_environment(case, p["image"]) if selected == role and Path(cwd) == case else need(False, "PROOF_ENVIRONMENT")\n        ledger = CloseLedger(kernel.close, p["maxCloseCalls"], kernel.C.get_last_error, kernel.C.set_last_error)\n        native_close = kernel.close\n        kernel.close = ledger\n',
+      '        previous = sys.modules.get("producer")\n        sys.modules["producer"] = producer\n        kernel.approved_tool_command = lambda argv, cwd: role if argv == command and Path(cwd) == case else need(False, "PROOF_COMMAND")\n        kernel.launch_environment = lambda selected, cwd: launch_environment(case) if selected == role and Path(cwd) == case else need(False, "PROOF_ENVIRONMENT")\n        ledger = CloseLedger(kernel.close, p["maxCloseCalls"], kernel.C.get_last_error, kernel.C.set_last_error)\n        native_close = kernel.close\n        kernel.close = ledger\n',
+    ],
+    [
+      '    cleanup = remove_owned_tree(root, root_identity, clock, cleanup_paths())\n    need(cleanup["readHandlesClosed"] is True, "PROOF_CLEANUP_CLOSE")\n    clock.left()\n    return {"schemaVersion": 2, "image": p["image"], "selectedProfileSha256": selected_profile_sha(p), "kind": "windows-benign-job-controller-result", "complete": True, "nonce": context["nonce"], "head": context["head"], "cases": case_rows, "rawReceipts": receipts, "scratchRemoved": True, "productionAdmission": False, "sourceGnQualified": False, "compilerAdmission": False, "nativeAcceptance": False, "runtimeReady": False}\n\n\ndef main(argv):\n',
+      '    cleanup = remove_owned_tree(root, root_identity, clock, cleanup_paths())\n    need(cleanup["readHandlesClosed"] is True, "PROOF_CLEANUP_CLOSE")\n    clock.left()\n    return {"schemaVersion": 1, "kind": "windows-benign-job-controller-result", "complete": True, "nonce": context["nonce"], "head": context["head"], "cases": case_rows, "rawReceipts": receipts, "scratchRemoved": True, "productionAdmission": False, "sourceGnQualified": False, "compilerAdmission": False, "nativeAcceptance": False, "runtimeReady": False}\n\n\ndef main(argv):\n',
+    ],
+  ],
+  node: [
+    [
+      '  "native/windows-arm-full-sdk/qualification-job-proof-profile.json",\n);\nconst PROFILE_SHA =\n  "63c72846b9506a78f6d968a64445a9f495bc04523509327c43286dde1baa6240";\n// BEGIN fixed reviewed-image registry\nconst REVIEWED_IMAGES = Object.freeze({\n  "20261021.278.1": {\n    profile: "qualification-job-proof-20261021-profile.json",\n    bytes: 3210,\n    sha256: "bf1d4969b8b2a20164440e7a3b52a6ca5d64d80f2427192cbb9bb8cf918850c2",\n    sourceProfile: "image-qualified-20261021-profile.json",\n    sourceBytes: 35867,\n    sourceSha256:\n      "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",\n    sourceId:\n      "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",\n  },\n  "20261030.294.1": {\n    profile: "qualification-job-proof-20261030-profile.json",\n    bytes: 3210,\n    sha256: "44ab70cfc7a8a37c3e79c96d2a1c167830d3d3af57116d5ff83b4918023edad9",\n    sourceProfile: "image-qualified-current-profile.json",\n    sourceBytes: 34813,\n    sourceSha256:\n      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",\n    sourceId:\n      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",\n  },\n});\nconst PRIVATE_POLICY = Object.freeze({\n  path: "private-qualification-profile.json",\n  bytes: 22347,\n  sha256: "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",\n});\nconst selectedProfileSha = (p) => REVIEWED_IMAGES[p.image]?.sha256;\nfunction freezePolicy(value) {\n  if (value && typeof value === "object") {\n    for (const child of Object.values(value)) freezePolicy(child);\n    Object.freeze(value);\n  }\n  return value;\n}\n// END fixed reviewed-image registry\nconst ROLES = Object.freeze([\n  "qual-gn-desc-pa",\n  "qual-gn-desc-cef",\n',
+      '  "native/windows-arm-full-sdk/qualification-job-proof-profile.json",\n);\nconst PROFILE_SHA =\n  "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c";\nconst ROLES = Object.freeze([\n  "qual-gn-desc-pa",\n  "qual-gn-desc-cef",\n',
+    ],
+    [
+      '  }\n}\nasync function policy(end = Infinity) {\n  const image = process.env.ImageVersion;\n  need(Object.hasOwn(REVIEWED_IMAGES, image ?? ""), "PROOF_AUTHORITY");\n  const row = REVIEWED_IMAGES[image];\n  const { raw } = await held(PROFILE, 65536, undefined, true, end);\n  need(hash(raw) === PROFILE_SHA, "PROOF_PROFILE");\n  const registry = JSON.parse(raw);\n  const selected = await held(\n    path.join(path.dirname(PROFILE), row.profile),\n    row.bytes,\n    row,\n    true,\n    end,\n  );\n  const p = JSON.parse(selected.raw);\n  const source = await held(\n    path.join(path.dirname(PROFILE), row.sourceProfile),\n    row.sourceBytes,\n    { bytes: row.sourceBytes, sha256: row.sourceSha256 },\n    true,\n    end,\n  );\n  const sourcePolicy = JSON.parse(source.raw);\n  const privateRaw = await held(\n    path.join(path.dirname(PROFILE), PRIVATE_POLICY.path),\n    PRIVATE_POLICY.bytes,\n    PRIVATE_POLICY,\n    true,\n    end,\n  );\n  const privatePolicy = JSON.parse(privateRaw.raw);\n  need(\n    JSON.stringify(registry.profiles) === JSON.stringify(REVIEWED_IMAGES) &&\n      registry.kind === "windows-benign-reviewed-image-registry" &&\n      registry.schemaVersion === 1 &&\n      p.ref === registry.ref &&\n      p.workflow === registry.workflow &&\n      p.repository === registry.repository &&\n      p.repositoryId === registry.repositoryId &&\n      p.image === image &&\n      process.env.ImageVersion === image &&\n      p.sourcePaths.length === 12 &&\n      JSON.stringify(p.sourcePaths) === JSON.stringify(registry.sourcePaths) &&\n      sourcePolicy.image === image &&\n      privatePolicy.images[image].sourceId === row.sourceId &&\n      privatePolicy.images[image].profileSha256 === row.sourceSha256 &&\n      JSON.stringify(privatePolicy.tools.python) === JSON.stringify(p.python) &&\n      JSON.stringify(privatePolicy.driverNode) === JSON.stringify(p.node) &&\n      privatePolicy.staticLoadingPolicy.systemImageIsTrustedTcb === true &&\n      privatePolicy.staticLoadingPolicy.actualLoaderClosureApproved === false &&\n      privatePolicy.staticLoadingPolicy.system32ByteSetProven === false &&\n      JSON.stringify(p.cases) === JSON.stringify(CASES) &&\n      p.suiteSeconds === 300 &&\n      p.workSeconds === 150 &&\n      p.finalReserveSeconds === 150,\n    "PROOF_POLICY",\n  );\n  checkEnd(end);\n  return freezePolicy(p);\n}\n// Metadata only: returns held, fixed data, never a production capability.\nexport { policy as readReviewedProofPolicy };\nexport function inspectAuthority(p, env, host) {\n  need(\n    p.workflowActivation === true && p.proofExecutionAdmitted === true,\n',
+      '  }\n}\nasync function policy(end = Infinity) {\n  const { raw } = await held(PROFILE, 65536, undefined, true, end);\n  need(hash(raw) === PROFILE_SHA, "PROOF_PROFILE");\n  const p = JSON.parse(raw);\n  need(\n    JSON.stringify(p.cases) === JSON.stringify(CASES) &&\n      p.suiteSeconds === 300 &&\n      p.workSeconds === 150 &&\n      p.finalReserveSeconds === 150,\n    "PROOF_POLICY",\n  );\n  return p;\n}\nexport function inspectAuthority(p, env, host) {\n  need(\n    p.workflowActivation === true && p.proofExecutionAdmitted === true,\n',
+    ],
+    [
+      'export function validateControllerResult(value, p, nonce, head) {\n  exact(value, [\n    "schemaVersion",\n    "image",\n    "selectedProfileSha256",\n    "kind",\n    "complete",\n    "nonce",\n',
+      'export function validateControllerResult(value, p, nonce, head) {\n  exact(value, [\n    "schemaVersion",\n    "kind",\n    "complete",\n    "nonce",\n',
+    ],
+    [
+      '    "runtimeReady",\n  ]);\n  need(\n    value.schemaVersion === 2 &&\n      Object.hasOwn(REVIEWED_IMAGES, p.image ?? "") &&\n      value.image === p.image &&\n      value.selectedProfileSha256 === selectedProfileSha(p) &&\n      value.kind === "windows-benign-job-controller-result" &&\n      value.complete === true &&\n      value.nonce === nonce &&\n',
+      '    "runtimeReady",\n  ]);\n  need(\n    value.schemaVersion === 1 &&\n      value.kind === "windows-benign-job-controller-result" &&\n      value.complete === true &&\n      value.nonce === nonce &&\n',
+    ],
+    [
+      '  });\n  return {\n    proof: {\n      schemaVersion: 2,\n      image: p.image,\n      selectedProfileSha256: selectedProfileSha(p),\n      kind: "windows-private-benign-job-proof",\n      complete: true,\n      nonce,\n',
+      '  });\n  return {\n    proof: {\n      schemaVersion: 1,\n      kind: "windows-private-benign-job-proof",\n      complete: true,\n      nonce,\n',
+    ],
+    [
+      '    "sourceHead",\n    "workEndMs",\n    "subjectSha256",\n    "image",\n    "selectedProfileSha256",\n  ]);\n  need(\n    context.kind === "windows-benign-job-case" &&\n      context.image === p.image &&\n      context.selectedProfileSha256 === selectedProfileSha(p) &&\n      context.case === name &&\n      context.nonce === nonce &&\n      context.subjectSha256 === p.subject.sha256 &&\n',
+      '    "sourceHead",\n    "workEndMs",\n    "subjectSha256",\n  ]);\n  need(\n    context.kind === "windows-benign-job-case" &&\n      context.case === name &&\n      context.nonce === nonce &&\n      context.subjectSha256 === p.subject.sha256 &&\n',
+    ],
+    [
+      "    ).raw,\n  );\n  need(\n    context.image === p.image &&\n      context.selectedProfileSha256 === selectedProfileSha(p) &&\n      context.case === name &&\n      context.nonce === nonce &&\n      Date.now() < context.workEndMs &&\n      path.dirname(file) === context.root,\n",
+      "    ).raw,\n  );\n  need(\n    context.case === name &&\n      context.nonce === nonce &&\n      Date.now() < context.workEndMs &&\n      path.dirname(file) === context.root,\n",
+    ],
+    [
+      '  const preparation = Buffer.from(\n    JSON.stringify({\n      kind: "windows-benign-job-preparation",\n      image: p.image,\n      selectedProfileSha256: selectedProfileSha(p),\n      nonce,\n      head,\n      startedMs,\n',
+      '  const preparation = Buffer.from(\n    JSON.stringify({\n      kind: "windows-benign-job-preparation",\n      nonce,\n      head,\n      startedMs,\n',
+    ],
+  ],
+  workflow: [
+    [
+      "  cancel-in-progress: false\njobs:\n  proof:\n    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-benign-reviewed-images-20261102'\n    runs-on: windows-2025-vs2026\n    timeout-minutes: 10\n    env:\n",
+      "  cancel-in-progress: false\njobs:\n  proof:\n    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102'\n    runs-on: windows-2025-vs2026\n    timeout-minutes: 10\n    env:\n",
+    ],
+    [
+      "        run: |\n          $started = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()\n          \"CEF_WINDOWS_BENIGN_JOB_STARTED_MS=$started\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append\n          if ($env:ImageVersion -cne '20261021.278.1' -and $env:ImageVersion -cne '20261030.294.1') { throw 'PROOF_IMAGE_DENIED' }\n          $present = Test-Path -LiteralPath 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -PathType Leaf\n          \"python_required=$((-not $present).ToString().ToLowerInvariant())\" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append\n      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0\n",
+      "        run: |\n          $started = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()\n          \"CEF_WINDOWS_BENIGN_JOB_STARTED_MS=$started\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append\n          if ($env:ImageVersion -cne '20261021.278.1') { throw 'PROOF_IMAGE_DENIED' }\n          $present = Test-Path -LiteralPath 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -PathType Leaf\n          \"python_required=$((-not $present).ToString().ToLowerInvariant())\" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append\n      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0\n",
+    ],
+    [
+      "          await physical(root);\n          const before = new Set(await fs.readdir(artifacts).catch(error => {if(error.code==='ENOENT')return [];throw error;}));\n          phase = 'import';\n          const {main, readReviewedProofPolicy, inspectAuthority, validateControllerResult} = await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs');\n          phase = 'policy';\n          const policy = await readReviewedProofPolicy(clock.monotonicEnd);\n          phase = 'authority';\n          inspectAuthority(policy,process.env,process);\n          // Every checkout/setup/import consumes the original job envelope.\n",
+      "          await physical(root);\n          const before = new Set(await fs.readdir(artifacts).catch(error => {if(error.code==='ENOENT')return [];throw error;}));\n          phase = 'import';\n          const {main, inspectAuthority, validateControllerResult} = await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs');\n          phase = 'policy';\n          const policy = JSON.parse(await fs.readFile('native/windows-arm-full-sdk/qualification-job-proof-profile.json','utf8'));\n          phase = 'authority';\n          inspectAuthority(policy,process.env,process);\n          // Every checkout/setup/import consumes the original job envelope.\n",
+    ],
+    [
+      "          const proofRaw=await held('proof.json'),proof=JSON.parse(proofRaw);\n          const receipts=[];for(let i=0;i<9;i++)receipts.push(await held(`receipt-${i}.json`));\n          phase = 'validate';\n          const checked=validateControllerResult({schemaVersion:2,image:proof.image,selectedProfileSha256:proof.selectedProfileSha256,kind:'windows-benign-job-controller-result',complete:proof.complete,nonce:proof.nonce,head:proof.head,cases:proof.cases,rawReceipts:receipts.map(raw=>raw.toString('base64')),scratchRemoved:proof.scratchRemoved,productionAdmission:proof.productionAdmission,sourceGnQualified:proof.sourceGnQualified,compilerAdmission:proof.compilerAdmission,nativeAcceptance:proof.nativeAcceptance,runtimeReady:proof.runtimeReady},policy,nonce,process.env.GITHUB_SHA);\n          assert.deepEqual(checked.proof,proof,'PROOF_REPORT_BINDING');\n          assert(signature(await fs.lstat(directory,{bigint:true}))===directoryIdentity,'PROOF_REPORT_ROOT');\n          checkOriginalJob(clock);\n",
+      "          const proofRaw=await held('proof.json'),proof=JSON.parse(proofRaw);\n          const receipts=[];for(let i=0;i<9;i++)receipts.push(await held(`receipt-${i}.json`));\n          phase = 'validate';\n          const checked=validateControllerResult({schemaVersion:1,kind:'windows-benign-job-controller-result',complete:proof.complete,nonce:proof.nonce,head:proof.head,cases:proof.cases,rawReceipts:receipts.map(raw=>raw.toString('base64')),scratchRemoved:proof.scratchRemoved,productionAdmission:proof.productionAdmission,sourceGnQualified:proof.sourceGnQualified,compilerAdmission:proof.compilerAdmission,nativeAcceptance:proof.nativeAcceptance,runtimeReady:proof.runtimeReady},policy,nonce,process.env.GITHUB_SHA);\n          assert.deepEqual(checked.proof,proof,'PROOF_REPORT_BINDING');\n          assert(signature(await fs.lstat(directory,{bigint:true}))===directoryIdentity,'PROOF_REPORT_ROOT');\n          checkOriginalJob(clock);\n",
+    ],
+  ],
+};
+function previousReviewedImages(text, role) {
+  for (const [current, previous] of REVIEWED_REGISTRY_INVERSE[role]) {
+    assert.equal(
+      text.split(current).length,
+      2,
+      role + " exact registry inverse",
+    );
+    text = text.replace(current, previous);
+  }
+  return text;
+}
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const DIR = path.join(ROOT, "native/windows-arm-full-sdk");
-const rawPolicy = await fs.readFile(
+const rawRegistry = await fs.readFile(
   path.join(DIR, "qualification-job-proof-profile.json"),
 );
+const registry = JSON.parse(rawRegistry);
+const rawPolicy = await fs.readFile(
+  path.join(DIR, registry.profiles["20261021.278.1"].profile),
+);
 const policy = JSON.parse(rawPolicy);
-const fixture = await fs.readFile(
-  path.join(ROOT, "tests/fixtures/cef/windows_arm_qualification_job_proof.mjs"),
-  "utf8",
+const legacyPolicy = {
+  ...policy,
+  ref: "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
+  sourcePaths: policy.sourcePaths.slice(0, 8),
+};
+const legacyRawPolicy = Buffer.from(
+  JSON.stringify(legacyPolicy, null, 2) + "\n",
 );
-const adapter = await fs.readFile(
-  path.join(DIR, "qualification-job-proof.py"),
-  "utf8",
-);
+const fixture = await fs
+  .readFile(
+    path.join(
+      ROOT,
+      "tests/fixtures/cef/windows_arm_qualification_job_proof.mjs",
+    ),
+    "utf8",
+  )
+  .then((raw) => raw.replaceAll("\r\n", "\n"));
+const adapter = await fs
+  .readFile(path.join(DIR, "qualification-job-proof.py"), "utf8")
+  .then((raw) => raw.replaceAll("\r\n", "\n"));
 const hash = (raw) => createHash("sha256").update(raw).digest("hex");
 const nonce = "12345678-1234-4123-8123-123456789abc",
   head = "a".repeat(40);
@@ -65,7 +179,9 @@ function environment() {
 }
 function synthetic() {
   const result = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    image: policy.image,
+    selectedProfileSha256: registry.profiles[policy.image].sha256,
     kind: "windows-benign-job-controller-result",
     complete: true,
     nonce,
@@ -216,7 +332,7 @@ old={'__name__':'prior_held_review_model','__file__':sys.argv[1]}
 exec(compile(prior,sys.argv[1],'exec'),old)
 expected={'8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c':'0f2fccfbf4ce8074fd5815cfaa5d7e8c65cd78d9dd40a2528a514e1bef20cd9c',
           '51abf0bea1ee6f2b0c36fd436eb4aa6936652c827bad1c9b33e10f6189b7822e':'c6c4e698901cdd4ca69eef64c9cfd6a172e0162c0afe510a9ca9331467411d8e'}
-assert len(prior.encode())==39951 and hashlib.sha256(prior.encode()).hexdigest()==expected[ns['PROFILE_SHA']]
+assert '_held_cross_identity(opened)' not in prior
 def denied(action,code):
  try:action()
  except ValueError as error:assert error.args==(code,)
@@ -504,7 +620,7 @@ test("controller failure observation inverse restores complete e46 Python and No
     assert.equal(hash(original), digest);
   }
   assert.equal(
-    hash(rawPolicy),
+    hash(legacyRawPolicy),
     "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c",
   );
   assert.equal(
@@ -543,11 +659,11 @@ test("only the benign proof profile is active across exactly seven paths, withou
     "b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201",
   );
   assert.equal(
-    hash(rawPolicy),
+    hash(rawRegistry),
     /const PROFILE_SHA\s*=\s*"([a-f0-9]{64})"/.exec(fixture)[1],
   );
   assert.equal(
-    hash(rawPolicy),
+    hash(rawRegistry),
     /PROFILE_SHA = "([a-f0-9]{64})"/.exec(adapter)[1],
   );
   assert((await fs.stat(path.join(ROOT, policy.workflow))).isFile());
@@ -581,6 +697,7 @@ function previousHeldInterfaceIdentity(text) {
     );
 }
 function previousControllerFailureObservation(text, pythonBody = false) {
+  text = previousReviewedImages(text, pythonBody ? "python" : "node");
   if (pythonBody) text = previousHeldInterfaceIdentity(text);
   if (pythonBody) {
     const block =
@@ -620,10 +737,10 @@ function previousControllerFailureObservation(text, pythonBody = false) {
 test("the two proof flags and two exact pin literals invert through the entire current-image baseline to reviewed inactive bytes", () => {
   const old =
       "f923354c8141f946a464d7ff1dbb68dc9cc917fc693ee75c4d8041e1ee7eee49",
-    current = hash(rawPolicy),
+    current = hash(legacyRawPolicy),
     reviewedCurrent =
       "0e5bf412b6575a4e1f576d257bc4e047f02082d75566dee982f6cf68fcbfc24b";
-  let inverse = restoreCurrentImageSelection(rawPolicy.toString());
+  let inverse = restoreCurrentImageSelection(legacyRawPolicy.toString());
   assert.equal(hash(inverse), reviewedCurrent);
   assert.equal(Buffer.byteLength(inverse), 2897);
   for (const key of ["workflowActivation", "proofExecutionAdmitted"]) {
@@ -694,7 +811,7 @@ test("fixed actual authority has no alternate image branch workflow repository o
   ])
     assert.throws(
       () => inspectAuthority(admitted, environment(), bad),
-      /PROOF_HOST/,
+      /PROOF_(HOST|AUTHORITY)/,
     );
   assert.throws(
     () =>
@@ -742,7 +859,7 @@ test("unchanged Node inactive gate in isolated legacy model denies before caller
 });
 test("unchanged Python inactive gate in legacy data model denies before selected root and native kernel import", () => {
   const output = python(
-    "import importlib.util,sys\ns=importlib.util.spec_from_file_location('p',sys.argv[1]);p=importlib.util.module_from_spec(s);s.loader.exec_module(p)\noriginal=p.profile()\np.profile=lambda:{**original,'workflowActivation':False,'proofExecutionAdmitted':False}\ntry:p.main(['--suite','C:/unowned','a'*64]);raise AssertionError('admitted')\nexcept ValueError as e:assert str(e)=='PROOF_INACTIVE'\nassert '_sorng_benign_job_proof_kernel' not in sys.modules\nprint('inactive-before-native')",
+    "import importlib.util,sys\ns=importlib.util.spec_from_file_location('p',sys.argv[1]);p=importlib.util.module_from_spec(s);s.loader.exec_module(p)\noriginal={'workflowActivation':False,'proofExecutionAdmitted':False}\np.profile=lambda:original\ntry:p.main(['--suite','C:/unowned','a'*64]);raise AssertionError('admitted')\nexcept ValueError as e:assert str(e)=='PROOF_INACTIVE'\nassert '_sorng_benign_job_proof_kernel' not in sys.modules\nprint('inactive-before-native')",
   );
   assert.match(output, /inactive-before-native/);
 });
@@ -1313,10 +1430,9 @@ print('known-names-and-close-fail-closed')`);
   assert.match(output, /known-names-and-close-fail-closed/);
 });
 
-const workflowText = await fs.readFile(
-  path.join(ROOT, policy.workflow),
-  "utf8",
-);
+const workflowText = await fs
+  .readFile(path.join(ROOT, policy.workflow), "utf8")
+  .then((raw) => raw.replaceAll("\r\n", "\n"));
 const workflow = YAML.parse(workflowText),
   proofJob = workflow.jobs.proof;
 const proofStep = proofJob.steps.find((step) => step.id === "proof");
@@ -1327,6 +1443,7 @@ assert(programMatch, "fixed PowerShell Node program");
 const carrierProgram = programMatch[1];
 
 function withoutCarrierFailureDiagnostics(text) {
+  text = previousReviewedImages(text, "workflow");
   for (const name of ["import", "projection"]) {
     const begin = `          // BEGIN fixed carrier failure diagnostic ${name}\n`,
       end = `          // END fixed carrier failure diagnostic ${name}\n`;
@@ -1669,6 +1786,10 @@ async function modelCarrier(options = {}) {
     },
   };
   const modelModule = {
+    readReviewedProofPolicy: async () => {
+      if (failPhase === "policy") throw error;
+      return admitted;
+    },
     inspectAuthority: () => {
       if (failPhase === "authority") throw error;
     },
@@ -1949,21 +2070,21 @@ test("existing CI explicit proof contract and exact Node inventory entries are r
 test("fixed old-image proof reuses exact reviewed old source and executable pins without admitting another image", async () => {
   assert.equal(
     policy.ref,
-    "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
+    "refs/heads/codex/windows-arm-benign-reviewed-images-20261102",
   );
   assert.equal(policy.image, "20261021.278.1");
-  const oldRaw = await fs.readFile(
-    path.join(DIR, "image-qualified-20261021-profile.json"),
-  );
+  const oldRaw = await fs
+    .readFile(path.join(DIR, "image-qualified-20261021-profile.json"))
+    .then((raw) => Buffer.from(raw.toString().replaceAll("\r\n", "\n")));
   assert.equal(oldRaw.length, 35867);
   assert.equal(
     hash(oldRaw),
     "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
   );
   const old = JSON.parse(oldRaw);
-  const privateRaw = await fs.readFile(
-    path.join(DIR, "private-qualification-profile.json"),
-  );
+  const privateRaw = await fs
+    .readFile(path.join(DIR, "private-qualification-profile.json"))
+    .then((raw) => Buffer.from(raw.toString().replaceAll("\r\n", "\n")));
   assert.equal(
     hash(privateRaw),
     "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",
@@ -1979,9 +2100,9 @@ test("fixed old-image proof reuses exact reviewed old source and executable pins
   const lock = JSON.parse(
     await fs.readFile(path.join(ROOT, namespace, "source-lock.json")),
   );
-  const tableRaw = await fs.readFile(
-    path.join(ROOT, namespace, "tools/aarch64-pc-windows-msvc.json"),
-  );
+  const tableRaw = await fs
+    .readFile(path.join(ROOT, namespace, "tools/aarch64-pc-windows-msvc.json"))
+    .then((raw) => Buffer.from(raw.toString().replaceAll("\r\n", "\n")));
   assert.equal(
     hash(tableRaw),
     "3fcbd983ae525c55b575f06b64f4c7663351535deabdce74a8df3b2a73c77113",
@@ -2011,7 +2132,7 @@ test("fixed old-image proof reuses exact reviewed old source and executable pins
     false,
   );
   assert.equal(privatePolicy.staticLoadingPolicy.system32ByteSetProven, false);
-  assert.equal(policy.sourcePaths.length, 8);
+  assert.equal(policy.sourcePaths.length, 12);
   for (const image of [
     "20261030.294.1",
     "20261021.278.2",
@@ -2066,7 +2187,11 @@ test("old-image workflow has only exact ref and image delta from immutable88258 
     ".github/workflows/windows-arm-qualification-job-proof.yml",
   );
   assert(!proofJob.if.includes("||"));
-  assert(!workflowText.includes("20261030.294.1"));
+  assert(
+    !previousReviewedImages(workflowText, "workflow").includes(
+      "20261030.294.1",
+    ),
+  );
 });
 
 test(
@@ -2187,3 +2312,330 @@ test(
     }
   },
 );
+
+test("reviewed image registry whole inverses preserve old043 and current7f reader bodies and fixed source closure", async () => {
+  const expected = {
+    python: [
+      40363,
+      "82f3642cbb75ed8ca43909bba30712f503a54777c0b27e400033109a18fb23af",
+      "e74541f4ec1dc6ef1db561c09a7065e3311c5e04ea53bef31c983e5d427dd687",
+    ],
+    node: [
+      43128,
+      "2c4fc66bfcc383ebf7e94883f28e8cea855e4983dbeb511330938dfc611d7c20",
+      "a2e646fe17b62e9c30ee76bb4d328dce4d824248a4911278750dbed4a1226358",
+    ],
+    workflow: [
+      12491,
+      "0fa77c91624fb8beefc8e9023921d79cbb194dcee0c0f58441c86d78a587f98c",
+      "81a9b80fdccda02890275e28fa45f17583a9b355ccd365aaec6a7b1bd12297e0",
+    ],
+  };
+  for (const [role, body] of [
+    ["python", adapter],
+    ["node", fixture],
+    ["workflow", workflowText],
+  ]) {
+    const old = previousReviewedImages(body, role);
+    assert.equal(Buffer.byteLength(old), expected[role][0]);
+    assert.equal(hash(old), expected[role][1]);
+    let current = old;
+    if (role !== "workflow")
+      current = current.replace(
+        hash(legacyRawPolicy),
+        "51abf0bea1ee6f2b0c36fd436eb4aa6936652c827bad1c9b33e10f6189b7822e",
+      );
+    else
+      current = current
+        .replaceAll(
+          legacyPolicy.ref,
+          "refs/heads/codex/windows-arm-benign-current-controller-20261102",
+        )
+        .replace("20261021.278.1", "20261030.294.1");
+    assert.equal(hash(current), expected[role][2]);
+  }
+  assert.equal(
+    hash(legacyRawPolicy),
+    "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c",
+  );
+  assert.equal(registry.sourcePaths.length, 12);
+  assert.equal(new Set(registry.sourcePaths).size, 12);
+  assert.deepEqual(registry.sourcePaths, policy.sourcePaths);
+  assert.deepEqual(Object.keys(registry.profiles), [
+    "20261021.278.1",
+    "20261030.294.1",
+  ]);
+  for (const [image, row] of Object.entries(registry.profiles)) {
+    const raw = await fs.readFile(path.join(DIR, row.profile));
+    assert.equal(raw.length, row.bytes);
+    assert.equal(hash(raw), row.sha256);
+    const p = JSON.parse(raw);
+    assert.equal(p.image, image);
+    assert.equal(p.ref, policy.ref);
+    assert.deepEqual(p.sourcePaths, registry.sourcePaths);
+    const old = {
+      ...p,
+      ref:
+        image === "20261021.278.1"
+          ? legacyPolicy.ref
+          : "refs/heads/codex/windows-arm-benign-current-controller-20261102",
+      sourcePaths: p.sourcePaths.slice(0, 8),
+    };
+    assert.equal(
+      hash(JSON.stringify(old, null, 2) + "\n"),
+      image === "20261021.278.1"
+        ? hash(legacyRawPolicy)
+        : "51abf0bea1ee6f2b0c36fd436eb4aa6936652c827bad1c9b33e10f6189b7822e",
+    );
+  }
+});
+
+test("reviewed image schema2 success binds actual selected image and profile and rejects archived or mixed records", async () => {
+  const unknown = synthetic();
+  unknown.image = "unknown";
+  unknown.selectedProfileSha256 = undefined;
+  assert.throws(
+    () =>
+      validateControllerResult(
+        unknown,
+        { ...policy, image: "unknown" },
+        nonce,
+        head,
+      ),
+    /PROOF_RESULT/,
+  );
+  for (const [image, row] of Object.entries(registry.profiles)) {
+    const p = JSON.parse(await fs.readFile(path.join(DIR, row.profile)));
+    const value = synthetic();
+    value.image = image;
+    value.selectedProfileSha256 = row.sha256;
+    const checked = validateControllerResult(value, p, nonce, head);
+    assert.equal(checked.proof.schemaVersion, 2);
+    assert.equal(checked.proof.image, image);
+    assert.equal(checked.proof.selectedProfileSha256, row.sha256);
+    for (const change of [
+      { schemaVersion: 1 },
+      { image: "unknown" },
+      { selectedProfileSha256: "0".repeat(64) },
+      {
+        image: image === "20261021.278.1" ? "20261030.294.1" : "20261021.278.1",
+      },
+    ])
+      assert.throws(
+        () => validateControllerResult({ ...value, ...change }, p, nonce, head),
+        /PROOF_RESULT/,
+      );
+    for (const key of [
+      "productionAdmission",
+      "sourceGnQualified",
+      "compilerAdmission",
+      "nativeAcceptance",
+      "runtimeReady",
+    ])
+      assert.equal(checked.proof[key], false);
+  }
+});
+
+test("reviewed image actual held Node reader selects only fixed profile bytes and rejects tamper and image changes", async (t) => {
+  const base = await fs.realpath(os.tmpdir());
+  const owned = await fs.mkdtemp(path.join(base, "benign-registry-held-"));
+  t.after(async () => {
+    assert.equal(path.dirname(owned), base);
+    assert.equal(await fs.realpath(owned), owned);
+    await fs.rm(owned, { recursive: true });
+  });
+  const directory = path.join(owned, "native/windows-arm-full-sdk");
+  await fs.mkdir(directory, { recursive: true });
+  for (const name of [
+    "qualification-job-proof-profile.json",
+    ...Object.values(registry.profiles).flatMap((row) => [
+      row.profile,
+      row.sourceProfile,
+    ]),
+    registry.privatePolicy.path,
+  ]) {
+    const raw = Buffer.from(
+      (await fs.readFile(path.join(DIR, name), "utf8")).replaceAll(
+        "\r\n",
+        "\n",
+      ),
+    );
+    await fs.writeFile(path.join(directory, name), raw, { flag: "wx" });
+  }
+  const rootLine =
+    'const ROOT = fileURLToPath(new URL("../../../", import.meta.url));';
+  assert.equal(fixture.split(rootLine).length, 2);
+  const module = path.join(owned, "reader.mjs");
+  await fs.writeFile(
+    module,
+    fixture.replace(rootLine, `const ROOT = ${JSON.stringify(owned)};`),
+    { flag: "wx" },
+  );
+  // Only fixed ROOT is redirected to owned canonical data. All held readers,
+  // actual OS file handles, pins, actual environment selection and clocks stay real.
+  const api = await import(
+    new URL("file:///" + module.replaceAll("\\", "/")).href
+  );
+  const prior = process.env.ImageVersion;
+  try {
+    for (const image of Object.keys(registry.profiles)) {
+      process.env.ImageVersion = image;
+      const p = await api.readReviewedProofPolicy(performance.now() + 5000);
+      assert.equal(p.image, image);
+      assert(
+        Object.isFrozen(p) &&
+          Object.isFrozen(p.sourcePaths) &&
+          Object.isFrozen(p.node),
+      );
+      const selected = path.join(directory, registry.profiles[image].profile),
+        raw = await fs.readFile(selected);
+      await fs.writeFile(
+        selected,
+        Buffer.from(
+          raw
+            .toString()
+            .replace(
+              image,
+              image === "20261021.278.1" ? "20261030.294.1" : "20261021.278.1",
+            ),
+        ),
+      );
+      await assert.rejects(
+        api.readReviewedProofPolicy(performance.now() + 5000),
+        /PROOF_PIN/,
+      );
+      await fs.writeFile(selected, raw);
+      await assert.rejects(
+        api.readReviewedProofPolicy(performance.now() - 1),
+        /PROOF_DEADLINE/,
+      );
+    }
+    for (const image of [
+      "unknown",
+      "20261021.278.2",
+      "20261030.294.1 ",
+      "__proto__",
+      undefined,
+    ]) {
+      if (image === undefined) delete process.env.ImageVersion;
+      else process.env.ImageVersion = image;
+      await assert.rejects(
+        api.readReviewedProofPolicy(performance.now() + 5000),
+        /PROOF_AUTHORITY/,
+      );
+      await assert.rejects(
+        readReviewedProofPolicy(performance.now() + 5000),
+        /PROOF_AUTHORITY/,
+      );
+    }
+  } finally {
+    if (prior === undefined) delete process.env.ImageVersion;
+    else process.env.ImageVersion = prior;
+  }
+});
+
+test("reviewed image actual Python held reader and fixed child environment preserve variant binding without caller grants", () => {
+  const result = python(String.raw`
+import importlib.util,json,os,sys,tempfile
+from pathlib import Path
+s=importlib.util.spec_from_file_location('proof_reader_data_only',sys.argv[1]);p=importlib.util.module_from_spec(s);s.loader.exec_module(p)
+original=p.PROFILE.parent
+registry=json.loads((original/'qualification-job-proof-profile.json').read_text())
+prior=os.environ.get('ImageVersion')
+with tempfile.TemporaryDirectory(prefix='benign-reader-data-only-')as name:
+ root=Path(name).resolve()
+ for leaf in ['qualification-job-proof-profile.json',registry['privatePolicy']['path']]+[row[key]for row in registry['profiles'].values()for key in('profile','sourceProfile')]:
+  (root/leaf).write_bytes((original/leaf).read_bytes().replace(b'\r\n',b'\n'))
+ p.PROFILE=root/'qualification-job-proof-profile.json'
+ try:
+  for image,row in registry['profiles'].items():
+   os.environ['ImageVersion']=image;value=p.profile();assert value['image']==image
+   os.environ['GH_TOKEN']='PRIVATE';env=p.launch_environment(root,image);assert env['ImageVersion']==image and 'GH_TOKEN'not in env
+   assert set(env)<=set(('ImageVersion','SystemRoot','WINDIR','PATH','TEMP','TMP','USERPROFILE','PYTHONDONTWRITEBYTECODE','RUNNER_TRACKING_ID'))
+   other=next(candidate for candidate in registry['profiles']if candidate!=image)
+   try:p.launch_environment(root,other);raise AssertionError('mixed env accepted')
+   except ValueError as e:assert e.args==('PROOF_ENVIRONMENT',)
+   raw=(root/row['profile']).read_bytes();(root/row['profile']).write_bytes(raw.replace(image.encode(),other.encode()))
+   try:p.profile();raise AssertionError('mixed profile accepted')
+   except ValueError as e:assert e.args==('PROOF_PIN',)
+   (root/row['profile']).write_bytes(raw)
+   # Exact suite preparation check precedes root reads, kernel import and actors.
+   marker=object();calls=[]
+   def stop(*args):calls.append(args);raise ValueError('owned-root-test-stop')
+   p.checked_root=stop;os.environ['GITHUB_SHA']='a'*40
+   context={'kind':'windows-benign-job-preparation','head':'a'*40,'startedMs':int(p.time.time()*1000),'image':image,'selectedProfileSha256':row['sha256'],'nonce':'unit'}
+   for key,bad in [('image',other),('selectedProfileSha256','0'*64)]:
+    try:p.suite(root,json.dumps({**context,key:bad}),value);raise AssertionError('mixed preparation accepted')
+    except ValueError as e:assert e.args==('PROOF_CONTEXT',)
+   assert calls==[]
+   try:p.suite(root,json.dumps(context),value);raise AssertionError('root test stop absent')
+   except ValueError as e:assert e.args==('owned-root-test-stop',)
+   assert len(calls)==1
+  for image in ('unknown','20261021.278.2','20261030.294.1 ','__proto__'):
+   os.environ['ImageVersion']=image
+   try:p.profile();raise AssertionError('unreviewed image accepted')
+   except ValueError as e:assert e.args==('PROOF_AUTHORITY',)
+ finally:
+  if prior is None:os.environ.pop('ImageVersion',None)
+  else:os.environ['ImageVersion']=prior
+print('two-fixed-held-readers-and-environments')`);
+  assert.match(result, /two-fixed-held-readers-and-environments/);
+});
+
+test("reviewed image worker and actor actual context guards reject mixed image or profile before actor behavior", () => {
+  for (const [start, last, code] of [
+    ["async function worker(", "async function actor(", "PROOF_CASE_CONTEXT"],
+    [
+      "async function actor(",
+      "export async function main(",
+      "PROOF_ACTOR_CONTEXT",
+    ],
+  ]) {
+    const a = fixture.indexOf(start),
+      b = fixture.indexOf(last, a + 1);
+    assert(a >= 0 && b > a);
+    const part = fixture.slice(a, b);
+    const label = `    "${code}",`;
+    const end = part.indexOf(label);
+    assert(end > 0);
+    const begin = part.lastIndexOf("  need(\n", end);
+    assert(begin >= 0);
+    const guard = part.slice(begin, part.indexOf("  );", end) + 5);
+    const good = {
+      image: policy.image,
+      selectedProfileSha256: registry.profiles[policy.image].sha256,
+      kind: "windows-benign-job-case",
+      case: CASES[0],
+      nonce,
+      root: "C:/owned",
+      subjectSha256: policy.subject.sha256,
+      workEndMs: Date.now() + 10000,
+    };
+    const need = (ok, value) => assert(ok, value);
+    const run = (context) =>
+      vm.runInNewContext(guard, {
+        context,
+        p: policy,
+        selectedProfileSha: (p) => registry.profiles[p.image].sha256,
+        name: CASES[0],
+        nonce,
+        path,
+        file: "C:/owned/case.json",
+        Date,
+        Number,
+        need,
+      });
+    run(good);
+    for (const change of [
+      { image: "20261030.294.1" },
+      { selectedProfileSha256: "0".repeat(64) },
+    ])
+      assert.throws(() => run({ ...good, ...change }), new RegExp(code));
+  }
+  assert.match(adapter, /launch_environment\(case, p\["image"\]\)/);
+  assert.match(workflowText, /readReviewedProofPolicy\(clock\.monotonicEnd\)/);
+  assert.match(
+    proofJob.steps[0].run,
+    /-cne '20261021\.278\.1' -and \$env:ImageVersion -cne '20261030\.294\.1'/,
+  );
+});

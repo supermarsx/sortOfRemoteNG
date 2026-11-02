@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   proof:
-    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102'
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-benign-reviewed-images-20261102'
     runs-on: windows-2025-vs2026
     timeout-minutes: 10
     env:
@@ -20,7 +20,7 @@ jobs:
         run: |
           $started = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
           "CEF_WINDOWS_BENIGN_JOB_STARTED_MS=$started" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          if ($env:ImageVersion -cne '20261021.278.1') { throw 'PROOF_IMAGE_DENIED' }
+          if ($env:ImageVersion -cne '20261021.278.1' -and $env:ImageVersion -cne '20261030.294.1') { throw 'PROOF_IMAGE_DENIED' }
           $present = Test-Path -LiteralPath 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -PathType Leaf
           "python_required=$((-not $present).ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -117,9 +117,9 @@ jobs:
           await physical(root);
           const before = new Set(await fs.readdir(artifacts).catch(error => {if(error.code==='ENOENT')return [];throw error;}));
           phase = 'import';
-          const {main, inspectAuthority, validateControllerResult} = await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs');
+          const {main, readReviewedProofPolicy, inspectAuthority, validateControllerResult} = await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs');
           phase = 'policy';
-          const policy = JSON.parse(await fs.readFile('native/windows-arm-full-sdk/qualification-job-proof-profile.json','utf8'));
+          const policy = await readReviewedProofPolicy(clock.monotonicEnd);
           phase = 'authority';
           inspectAuthority(policy,process.env,process);
           // Every checkout/setup/import consumes the original job envelope.
@@ -156,7 +156,7 @@ jobs:
           const proofRaw=await held('proof.json'),proof=JSON.parse(proofRaw);
           const receipts=[];for(let i=0;i<9;i++)receipts.push(await held(`receipt-${i}.json`));
           phase = 'validate';
-          const checked=validateControllerResult({schemaVersion:1,kind:'windows-benign-job-controller-result',complete:proof.complete,nonce:proof.nonce,head:proof.head,cases:proof.cases,rawReceipts:receipts.map(raw=>raw.toString('base64')),scratchRemoved:proof.scratchRemoved,productionAdmission:proof.productionAdmission,sourceGnQualified:proof.sourceGnQualified,compilerAdmission:proof.compilerAdmission,nativeAcceptance:proof.nativeAcceptance,runtimeReady:proof.runtimeReady},policy,nonce,process.env.GITHUB_SHA);
+          const checked=validateControllerResult({schemaVersion:2,image:proof.image,selectedProfileSha256:proof.selectedProfileSha256,kind:'windows-benign-job-controller-result',complete:proof.complete,nonce:proof.nonce,head:proof.head,cases:proof.cases,rawReceipts:receipts.map(raw=>raw.toString('base64')),scratchRemoved:proof.scratchRemoved,productionAdmission:proof.productionAdmission,sourceGnQualified:proof.sourceGnQualified,compilerAdmission:proof.compilerAdmission,nativeAcceptance:proof.nativeAcceptance,runtimeReady:proof.runtimeReady},policy,nonce,process.env.GITHUB_SHA);
           assert.deepEqual(checked.proof,proof,'PROOF_REPORT_BINDING');
           assert(signature(await fs.lstat(directory,{bigint:true}))===directoryIdentity,'PROOF_REPORT_ROOT');
           checkOriginalJob(clock);

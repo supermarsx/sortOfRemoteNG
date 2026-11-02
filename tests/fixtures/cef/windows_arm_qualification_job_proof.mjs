@@ -14,7 +14,46 @@ const PROFILE = path.join(
   "native/windows-arm-full-sdk/qualification-job-proof-profile.json",
 );
 const PROFILE_SHA =
-  "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c";
+  "63c72846b9506a78f6d968a64445a9f495bc04523509327c43286dde1baa6240";
+// BEGIN fixed reviewed-image registry
+const REVIEWED_IMAGES = Object.freeze({
+  "20261021.278.1": {
+    profile: "qualification-job-proof-20261021-profile.json",
+    bytes: 3210,
+    sha256: "bf1d4969b8b2a20164440e7a3b52a6ca5d64d80f2427192cbb9bb8cf918850c2",
+    sourceProfile: "image-qualified-20261021-profile.json",
+    sourceBytes: 35867,
+    sourceSha256:
+      "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+    sourceId:
+      "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+  },
+  "20261030.294.1": {
+    profile: "qualification-job-proof-20261030-profile.json",
+    bytes: 3210,
+    sha256: "44ab70cfc7a8a37c3e79c96d2a1c167830d3d3af57116d5ff83b4918023edad9",
+    sourceProfile: "image-qualified-current-profile.json",
+    sourceBytes: 34813,
+    sourceSha256:
+      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+    sourceId:
+      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+  },
+});
+const PRIVATE_POLICY = Object.freeze({
+  path: "private-qualification-profile.json",
+  bytes: 22347,
+  sha256: "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",
+});
+const selectedProfileSha = (p) => REVIEWED_IMAGES[p.image]?.sha256;
+function freezePolicy(value) {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) freezePolicy(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+// END fixed reviewed-image registry
 const ROLES = Object.freeze([
   "qual-gn-desc-pa",
   "qual-gn-desc-cef",
@@ -162,18 +201,67 @@ async function held(file, maximum, expected, retain = true, end = Infinity) {
   }
 }
 async function policy(end = Infinity) {
+  const image = process.env.ImageVersion;
+  need(Object.hasOwn(REVIEWED_IMAGES, image ?? ""), "PROOF_AUTHORITY");
+  const row = REVIEWED_IMAGES[image];
   const { raw } = await held(PROFILE, 65536, undefined, true, end);
   need(hash(raw) === PROFILE_SHA, "PROOF_PROFILE");
-  const p = JSON.parse(raw);
+  const registry = JSON.parse(raw);
+  const selected = await held(
+    path.join(path.dirname(PROFILE), row.profile),
+    row.bytes,
+    row,
+    true,
+    end,
+  );
+  const p = JSON.parse(selected.raw);
+  const source = await held(
+    path.join(path.dirname(PROFILE), row.sourceProfile),
+    row.sourceBytes,
+    { bytes: row.sourceBytes, sha256: row.sourceSha256 },
+    true,
+    end,
+  );
+  const sourcePolicy = JSON.parse(source.raw);
+  const privateRaw = await held(
+    path.join(path.dirname(PROFILE), PRIVATE_POLICY.path),
+    PRIVATE_POLICY.bytes,
+    PRIVATE_POLICY,
+    true,
+    end,
+  );
+  const privatePolicy = JSON.parse(privateRaw.raw);
   need(
-    JSON.stringify(p.cases) === JSON.stringify(CASES) &&
+    JSON.stringify(registry.profiles) === JSON.stringify(REVIEWED_IMAGES) &&
+      registry.kind === "windows-benign-reviewed-image-registry" &&
+      registry.schemaVersion === 1 &&
+      p.ref === registry.ref &&
+      p.workflow === registry.workflow &&
+      p.repository === registry.repository &&
+      p.repositoryId === registry.repositoryId &&
+      p.image === image &&
+      process.env.ImageVersion === image &&
+      p.sourcePaths.length === 12 &&
+      JSON.stringify(p.sourcePaths) === JSON.stringify(registry.sourcePaths) &&
+      sourcePolicy.image === image &&
+      privatePolicy.images[image].sourceId === row.sourceId &&
+      privatePolicy.images[image].profileSha256 === row.sourceSha256 &&
+      JSON.stringify(privatePolicy.tools.python) === JSON.stringify(p.python) &&
+      JSON.stringify(privatePolicy.driverNode) === JSON.stringify(p.node) &&
+      privatePolicy.staticLoadingPolicy.systemImageIsTrustedTcb === true &&
+      privatePolicy.staticLoadingPolicy.actualLoaderClosureApproved === false &&
+      privatePolicy.staticLoadingPolicy.system32ByteSetProven === false &&
+      JSON.stringify(p.cases) === JSON.stringify(CASES) &&
       p.suiteSeconds === 300 &&
       p.workSeconds === 150 &&
       p.finalReserveSeconds === 150,
     "PROOF_POLICY",
   );
-  return p;
+  checkEnd(end);
+  return freezePolicy(p);
 }
+// Metadata only: returns held, fixed data, never a production capability.
+export { policy as readReviewedProofPolicy };
 export function inspectAuthority(p, env, host) {
   need(
     p.workflowActivation === true && p.proofExecutionAdmitted === true,
@@ -697,6 +785,8 @@ async function runController(p, root, pin, end, env) {
 export function validateControllerResult(value, p, nonce, head) {
   exact(value, [
     "schemaVersion",
+    "image",
+    "selectedProfileSha256",
     "kind",
     "complete",
     "nonce",
@@ -711,7 +801,10 @@ export function validateControllerResult(value, p, nonce, head) {
     "runtimeReady",
   ]);
   need(
-    value.schemaVersion === 1 &&
+    value.schemaVersion === 2 &&
+      Object.hasOwn(REVIEWED_IMAGES, p.image ?? "") &&
+      value.image === p.image &&
+      value.selectedProfileSha256 === selectedProfileSha(p) &&
       value.kind === "windows-benign-job-controller-result" &&
       value.complete === true &&
       value.nonce === nonce &&
@@ -946,7 +1039,9 @@ export function validateControllerResult(value, p, nonce, head) {
   });
   return {
     proof: {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      image: p.image,
+      selectedProfileSha256: selectedProfileSha(p),
       kind: "windows-private-benign-job-proof",
       complete: true,
       nonce,
@@ -1035,9 +1130,13 @@ async function worker(p, name, file, pin) {
     "sourceHead",
     "workEndMs",
     "subjectSha256",
+    "image",
+    "selectedProfileSha256",
   ]);
   need(
     context.kind === "windows-benign-job-case" &&
+      context.image === p.image &&
+      context.selectedProfileSha256 === selectedProfileSha(p) &&
       context.case === name &&
       context.nonce === nonce &&
       context.subjectSha256 === p.subject.sha256 &&
@@ -1300,7 +1399,9 @@ async function actor(kind, file, pin, p) {
     ).raw,
   );
   need(
-    context.case === name &&
+    context.image === p.image &&
+      context.selectedProfileSha256 === selectedProfileSha(p) &&
+      context.case === name &&
       context.nonce === nonce &&
       Date.now() < context.workEndMs &&
       path.dirname(file) === context.root,
@@ -1450,6 +1551,8 @@ export async function main(argv = process.argv.slice(2)) {
   const preparation = Buffer.from(
     JSON.stringify({
       kind: "windows-benign-job-preparation",
+      image: p.image,
+      selectedProfileSha256: selectedProfileSha(p),
       nonce,
       head,
       startedMs,

@@ -11,9 +11,15 @@ import threading
 import time
 import types
 
-PROFILE_SHA = "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c"
+PROFILE_SHA = "63c72846b9506a78f6d968a64445a9f495bc04523509327c43286dde1baa6240"
 REPO = Path(__file__).resolve().parents[2]
 PROFILE = Path(__file__).with_name("qualification-job-proof-profile.json")
+# BEGIN fixed reviewed-image registry
+REVIEWED_IMAGES = {'20261021.278.1': {'profile': 'qualification-job-proof-20261021-profile.json', 'bytes': 3210, 'sha256': 'bf1d4969b8b2a20164440e7a3b52a6ca5d64d80f2427192cbb9bb8cf918850c2', 'sourceProfile': 'image-qualified-20261021-profile.json', 'sourceBytes': 35867, 'sourceSha256': '3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637', 'sourceId': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}, '20261030.294.1': {'profile': 'qualification-job-proof-20261030-profile.json', 'bytes': 3210, 'sha256': '44ab70cfc7a8a37c3e79c96d2a1c167830d3d3af57116d5ff83b4918023edad9', 'sourceProfile': 'image-qualified-current-profile.json', 'sourceBytes': 34813, 'sourceSha256': '55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041', 'sourceId': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90'}}
+PRIVATE_POLICY = {'path': 'private-qualification-profile.json', 'bytes': 22347, 'sha256': 'e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052'}
+def selected_profile_sha(p):
+    return REVIEWED_IMAGES[p["image"]]["sha256"]
+# END fixed reviewed-image registry
 CASES = (
     "six-role-normal", "second-role-nonzero", "session-cancel-after-owned-output",
     "preaborted", "outer-cancel-after-assignment-before-resume",
@@ -215,10 +221,22 @@ class CloseLedger:
 
 
 def profile():
+    image = os.environ.get("ImageVersion")
+    need(image in REVIEWED_IMAGES, "PROOF_AUTHORITY")
+    row = REVIEWED_IMAGES[image]
     raw = held(PROFILE, 65536)
     need(sha(raw) == PROFILE_SHA, "PROOF_PROFILE")
-    value = json.loads(raw)
-    need(value["cases"] == list(CASES) and value["suiteSeconds"] == 300 and value["workSeconds"] == 150 and value["finalReserveSeconds"] == 150, "PROOF_POLICY")
+    registry = json.loads(raw)
+    value = json.loads(held(PROFILE.parent / row["profile"], row["bytes"], row))
+    source = json.loads(held(PROFILE.parent / row["sourceProfile"], row["sourceBytes"], {"bytes":row["sourceBytes"], "sha256":row["sourceSha256"]}))
+    private = json.loads(held(PROFILE.parent / PRIVATE_POLICY["path"], PRIVATE_POLICY["bytes"], PRIVATE_POLICY))
+    need(registry["profiles"] == REVIEWED_IMAGES and registry["kind"] == "windows-benign-reviewed-image-registry" and registry["schemaVersion"] == 1 and
+         all(value[key] == registry[key] for key in ("ref", "workflow", "repository", "repositoryId", "sourcePaths")) and
+         value["image"] == image == os.environ.get("ImageVersion") and len(value["sourcePaths"]) == 12 and
+         source["image"] == image and private["images"][image]["sourceId"] == row["sourceId"] and private["images"][image]["profileSha256"] == row["sourceSha256"] and
+         private["tools"]["python"] == value["python"] and private["driverNode"] == value["node"] and
+         private["staticLoadingPolicy"]["systemImageIsTrustedTcb"] is True and private["staticLoadingPolicy"]["actualLoaderClosureApproved"] is False and private["staticLoadingPolicy"]["system32ByteSetProven"] is False and
+         value["cases"] == list(CASES) and value["suiteSeconds"] == 300 and value["workSeconds"] == 150 and value["finalReserveSeconds"] == 150, "PROOF_POLICY")
     return value
 
 
@@ -255,8 +273,9 @@ def load_kernel(p):
     return module
 
 
-def launch_environment(root):
-    value = {"SystemRoot": "C:/Windows", "WINDIR": "C:/Windows", "PATH": "C:/Windows/System32", "TEMP": str(root / "tmp"), "TMP": str(root / "tmp"), "USERPROFILE": str(root / "home"), "PYTHONDONTWRITEBYTECODE": "1"}
+def launch_environment(root, image):
+    need(image in REVIEWED_IMAGES and os.environ.get("ImageVersion") == image, "PROOF_ENVIRONMENT")
+    value = {"ImageVersion": image, "SystemRoot": "C:/Windows", "WINDIR": "C:/Windows", "PATH": "C:/Windows/System32", "TEMP": str(root / "tmp"), "TMP": str(root / "tmp"), "USERPROFILE": str(root / "home"), "PYTHONDONTWRITEBYTECODE": "1"}
     tracking = os.environ.get("RUNNER_TRACKING_ID")
     if tracking:
         need(len(tracking) <= 256 and tracking.isascii() and all(32 <= ord(c) < 127 for c in tracking), "PROOF_TRACKING")
@@ -563,7 +582,7 @@ def suite(root, context_raw, p):
     _observe_controller("suite-context")  # controller-observation
     context = json.loads(context_raw)
     clock = SuiteClock(context["startedMs"])
-    need(context["kind"] == "windows-benign-job-preparation" and context["head"] == os.environ.get("GITHUB_SHA"), "PROOF_CONTEXT")
+    need(context["kind"] == "windows-benign-job-preparation" and context["head"] == os.environ.get("GITHUB_SHA") and context["image"] == p["image"] and context["selectedProfileSha256"] == selected_profile_sha(p), "PROOF_CONTEXT")
     root = checked_root(root, context["nonce"])
     root_identity = identity(root.lstat())
     _observe_controller("source-witnesses")  # controller-observation
@@ -589,7 +608,7 @@ def suite(root, context_raw, p):
         event = threading.Event()
         if name == "preaborted":
             event.set()
-        case_context = {"kind": "windows-benign-job-case", "case": name, "root": str(case), "nonce": context["nonce"], "head": context["head"], "sourceHead": context["head"], "workEndMs": min(context["startedMs"] + 150000, int(time.time() * 1000 + (20 if name == "deadline-with-pipe-descendant" else seconds) * 1000)), "subjectSha256": p["subject"]["sha256"]}
+        case_context = {"image": p["image"], "selectedProfileSha256": selected_profile_sha(p), "kind": "windows-benign-job-case", "case": name, "root": str(case), "nonce": context["nonce"], "head": context["head"], "sourceHead": context["head"], "workEndMs": min(context["startedMs"] + 150000, int(time.time() * 1000 + (20 if name == "deadline-with-pipe-descendant" else seconds) * 1000)), "subjectSha256": p["subject"]["sha256"]}
         raw = (json.dumps(case_context, separators=(",", ":")) + "\n").encode()
         case_file = case / "case.json"
         with case_file.open("xb") as stream:
@@ -602,7 +621,7 @@ def suite(root, context_raw, p):
         previous = sys.modules.get("producer")
         sys.modules["producer"] = producer
         kernel.approved_tool_command = lambda argv, cwd: role if argv == command and Path(cwd) == case else need(False, "PROOF_COMMAND")
-        kernel.launch_environment = lambda selected, cwd: launch_environment(case) if selected == role and Path(cwd) == case else need(False, "PROOF_ENVIRONMENT")
+        kernel.launch_environment = lambda selected, cwd: launch_environment(case, p["image"]) if selected == role and Path(cwd) == case else need(False, "PROOF_ENVIRONMENT")
         ledger = CloseLedger(kernel.close, p["maxCloseCalls"], kernel.C.get_last_error, kernel.C.set_last_error)
         native_close = kernel.close
         kernel.close = ledger
@@ -715,7 +734,7 @@ def suite(root, context_raw, p):
     cleanup = remove_owned_tree(root, root_identity, clock, cleanup_paths())
     need(cleanup["readHandlesClosed"] is True, "PROOF_CLEANUP_CLOSE")
     clock.left()
-    return {"schemaVersion": 1, "kind": "windows-benign-job-controller-result", "complete": True, "nonce": context["nonce"], "head": context["head"], "cases": case_rows, "rawReceipts": receipts, "scratchRemoved": True, "productionAdmission": False, "sourceGnQualified": False, "compilerAdmission": False, "nativeAcceptance": False, "runtimeReady": False}
+    return {"schemaVersion": 2, "image": p["image"], "selectedProfileSha256": selected_profile_sha(p), "kind": "windows-benign-job-controller-result", "complete": True, "nonce": context["nonce"], "head": context["head"], "cases": case_rows, "rawReceipts": receipts, "scratchRemoved": True, "productionAdmission": False, "sourceGnQualified": False, "compilerAdmission": False, "nativeAcceptance": False, "runtimeReady": False}
 
 
 def main(argv):
