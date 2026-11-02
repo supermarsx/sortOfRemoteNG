@@ -34,12 +34,11 @@ import {
 export const LINUX_MIGRATION = Object.freeze({
   target: "aarch64-unknown-linux-gnu",
   source: "8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb",
-  runId: 41378060040,
   head: "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c",
   producer: "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",
   sourceFiles: 129,
   policyPath:
-    "native/cef-checkpoint-migrations/linux-arm-41378060040-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
   sidecar: ".siso_sorng_source_metadata.json",
   metadataPolicy: "sorng-linuxarm-complete-owned-inputs-v2-nearby-literals",
   epoch: "1790626028",
@@ -135,6 +134,7 @@ const IDENTITY_FIELDS = [
 const CHANGED_PATHS = new Set([
   "scripts/lib/cef-linux-producer-migration.mjs",
   "scripts/cef-engineering-checkpoint.mjs",
+  "scripts/cef-runtime-ci.mjs",
   "scripts/lib/cef-engineering-checkpoint.mjs",
   "scripts/lib/cef-checkpoint-archive.py",
   "scripts/lib/cef-mac-source-metadata.mjs",
@@ -353,12 +353,7 @@ function producer(value, old = false) {
       hex(value.head, 40),
     "PRODUCER",
   );
-  if (old)
-    need(
-      value.runId === LINUX_MIGRATION.runId &&
-        value.head === LINUX_MIGRATION.head,
-      "OLD_PRODUCER",
-    );
+  if (old) need(value.head === LINUX_MIGRATION.head, "OLD_PRODUCER");
 }
 
 // An estimate against the ORIGINAL host start, never a replacement lease.
@@ -414,8 +409,11 @@ export async function inspectLinuxMigrationCandidate({
   oldInventoryBytes,
   check = () => {},
 }) {
-  need(restoreRun === LINUX_MIGRATION.runId, "FIXED_RUN");
+  need(positive(restoreRun), "FIXED_RUN");
   producer(currentProducer);
+  // BEGIN fixed same-producer capsule head
+  const expectedCurrentHead = currentProducer.head;
+  // END fixed same-producer capsule head
   check();
   const root = await noLinks(repositoryRoot);
   need(
@@ -499,6 +497,7 @@ export async function inspectLinuxMigrationCandidate({
   );
   exact(policy.from, [
     "producer",
+    "checkpointProducer",
     "identitySha256",
     "sealArtifact",
     "seal",
@@ -506,6 +505,12 @@ export async function inspectLinuxMigrationCandidate({
     "inventory",
     "sidecar",
   ]);
+  // BEGIN fixed same-producer capsule selector
+  // Run41378060040 is historical seed evidence, not an execution selector.
+  // Only this exact held current-Git capsule selects a reviewed run/attempt.
+  producer(policy.from.checkpointProducer, true);
+  need(restoreRun === policy.from.checkpointProducer.runId, "FIXED_RUN");
+  // END fixed same-producer capsule selector
   need(policy.from.producer === LINUX_MIGRATION.producer, "FROM_DIGEST");
   need(
     Array.isArray(policy.oldSourceTree) &&
@@ -562,6 +567,12 @@ export async function inspectLinuxMigrationCandidate({
     policy.from.identitySha256,
   );
   producer(manifest.producer, true);
+  // BEGIN fixed same-producer capsule record binding
+  need(
+    canonical(manifest.producer) === canonical(policy.from.checkpointProducer),
+    "CAPSULE_PRODUCER",
+  );
+  // END fixed same-producer capsule record binding
   need(manifest.identity.producer === LINUX_MIGRATION.producer, "OLD_CODE");
   const seal = validateSeal(
     json(oldSealBytes, LIMITS.seal),
@@ -622,6 +633,12 @@ export async function inspectLinuxMigrationCandidate({
     "EXISTING_SIDECAR",
   );
   check();
+  // BEGIN fixed same-producer capsule final head
+  need(
+    git(root, ["rev-parse", "HEAD"]).toString().trim() === expectedCurrentHead,
+    "CURRENT_HEAD",
+  );
+  // END fixed same-producer capsule final head
   const candidate = Object.freeze({
     kind: "linux-arm-migration-candidate",
     authorizing: false,
@@ -629,6 +646,8 @@ export async function inspectLinuxMigrationCandidate({
     policyBlob: policyRows[0].sha,
     policySha256: sha(policyRaw),
     fromProducer: LINUX_MIGRATION.producer,
+    fromRunId: policy.from.checkpointProducer.runId,
+    fromAttempt: policy.from.checkpointProducer.attempt,
     toProducer: currentDigest,
   });
   candidates.set(candidate, {

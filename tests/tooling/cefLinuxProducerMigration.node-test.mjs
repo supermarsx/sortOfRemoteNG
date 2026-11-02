@@ -16,6 +16,8 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+// Historical seed for synthetic envelopes, never production run authority.
+const SEED_RUN = 41378060040;
 const selected = [
   "scripts",
   "native/cef-hosted-recipe.json",
@@ -218,24 +220,24 @@ async function scratch(t) {
   });
   return root;
 }
-function oldProducer() {
+function oldProducer(runId = SEED_RUN, attempt = 1) {
   return {
     repository: "supermarsx/sortOfRemoteNG",
     repositoryId: 1010282954,
-    runId: M.runId,
-    attempt: 1,
+    runId,
+    attempt,
     head: M.head,
     branch: "main",
     workflow: core.WORKFLOW,
   };
 }
-function manifest(identity, inventory) {
+function manifest(identity, inventory, selectedProducer = oldProducer()) {
   return {
     schemaVersion: 1,
     kind: "sorng-cef-engineering-checkpoint",
     identity,
     identitySha256: core.validateIdentity(identity),
-    producer: oldProducer(),
+    producer: selectedProducer,
     archive: {
       complete: true,
       chunks: [
@@ -259,7 +261,7 @@ function manifest(identity, inventory) {
     runtimeReady: false,
   };
 }
-async function fixture(t) {
+async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
   const root = await scratch(t),
     repo = path.join(root, "repo");
   await fs.mkdir(repo);
@@ -326,16 +328,20 @@ async function fixture(t) {
     files: [{ path: M.sidecar, sha256: core.sha(sidecar) }],
     generatedLinks: {},
   });
-  const oldManifest = manifest(identity, inventory),
+  const oldManifest = manifest(
+      identity,
+      inventory,
+      oldProducer(oldRunId, oldAttempt),
+    ),
     manifestBytes = rawJson(oldManifest);
   const seal = {
     schemaVersion: 1,
     kind: "sorng-cef-engineering-seal",
-    producer: oldProducer(),
+    producer: oldManifest.producer,
     identitySha256: oldManifest.identitySha256,
     release: {
       id: 15,
-      tag: `cef-checkpoint-${M.target}-${oldManifest.identitySha256.slice(0, 16)}-${M.runId}-1`,
+      tag: `cef-checkpoint-${M.target}-${oldManifest.identitySha256.slice(0, 16)}-${oldRunId}-${oldAttempt}`,
     },
     manifest: { name: "manifest.json", ...pin(manifestBytes) },
     assets: [
@@ -359,6 +365,7 @@ async function fixture(t) {
     },
     from: {
       producer: M.producer,
+      checkpointProducer: structuredClone(oldManifest.producer),
       identitySha256: oldManifest.identitySha256,
       sealArtifact,
       seal: pin(sealBytes),
@@ -399,7 +406,7 @@ async function fixture(t) {
   }
   const args = {
     repositoryRoot: repo,
-    restoreRun: M.runId,
+    restoreRun: oldRunId,
     currentProducer: {
       ...oldProducer(),
       runId: 41359999999,
@@ -415,7 +422,11 @@ async function fixture(t) {
 }
 
 test("inactive retarget binds the actual main3aa129-row producer and canonical LF helper without inventing a seal", async () => {
-  assert.equal(M.runId, 41378060040);
+  assert.equal(Object.hasOwn(M, "runId"), false);
+  assert.equal(
+    M.policyPath,
+    "native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
+  );
   assert.equal(M.head, "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c");
   assert.equal(
     M.producer,
@@ -591,11 +602,171 @@ test("canonical fixed-run capsule inspection is read-only and cannot activate re
   );
 });
 
+test("a committed synthetic newer run and attempt are data-selectable but never authenticated or activated", async (t) => {
+  const moduleBefore = await fs.readFile(MODULE);
+  const f = await fixture(t, { oldRunId: 41390000001, oldAttempt: 2 });
+  const candidate = await migration.inspectLinuxMigrationCandidate(f.args);
+  assert.equal(candidate.fromRunId, 41390000001);
+  assert.equal(candidate.fromAttempt, 2);
+  assert.equal(candidate.authorizing, false);
+  assert.equal(candidate.activation, "not-implemented");
+  await assert.rejects(
+    migration.prepareLinuxMigrationRestore(candidate, {}),
+    /NOT_ACTIVATED/,
+  );
+  await assert.rejects(
+    migration.inspectLinuxMigrationCandidate({
+      ...f.args,
+      restoreRun: SEED_RUN,
+    }),
+    /FIXED_RUN/,
+  );
+  for (const change of [
+    (producer) => {
+      producer.runId = SEED_RUN;
+    },
+    (producer) => {
+      producer.attempt = 3;
+    },
+    (producer) => {
+      producer.head = "b".repeat(40);
+    },
+    (producer) => {
+      producer.repository = "foreign/repository";
+    },
+    (producer) => {
+      producer.repositoryId++;
+    },
+    (producer) => {
+      producer.branch = "foreign";
+    },
+    (producer) => {
+      producer.workflow = ".github/workflows/foreign.yml";
+    },
+  ]) {
+    const policy = structuredClone(f.policy);
+    change(policy.from.checkpointProducer);
+    const head = await f.writePolicy(policy);
+    await assert.rejects(
+      migration.inspectLinuxMigrationCandidate({
+        ...f.args,
+        restoreRun: policy.from.checkpointProducer.runId,
+        currentProducer: { ...f.args.currentProducer, head },
+      }),
+      /PRODUCER/,
+    );
+  }
+  assert.deepEqual(await fs.readFile(MODULE), moduleBefore);
+});
+
+test("an arbitrary alternate policy path or caller JSON cannot replace the fixed committed capsule", async (t) => {
+  const f = await fixture(t);
+  const alternate = "native/cef-checkpoint-migrations/arbitrary.json";
+  git(f.repo, ["mv", "--", M.policyPath, alternate]);
+  git(f.repo, [
+    "commit",
+    "--quiet",
+    "-m",
+    "alternate path is not an authority",
+  ]);
+  const head = git(f.repo, ["rev-parse", "HEAD"]).toString().trim();
+  await assert.rejects(
+    migration.inspectLinuxMigrationCandidate({
+      ...f.args,
+      policyPath: alternate,
+      policy: f.policy,
+      admitted: true,
+      currentProducer: { ...f.args.currentProducer, head },
+    }),
+    /POLICY_MISSING/,
+  );
+});
+
+test("a final current-Git change cannot be hidden by mutating the caller producer object", async (t) => {
+  const f = await fixture(t);
+  let expectedChecks = 0;
+  await migration.inspectLinuxMigrationCandidate({
+    ...f.args,
+    check: () => expectedChecks++,
+  });
+  assert(expectedChecks > 1);
+  let calls = 0,
+    changed = false;
+  const producer = { ...f.args.currentProducer };
+  await assert.rejects(
+    migration.inspectLinuxMigrationCandidate({
+      ...f.args,
+      currentProducer: producer,
+      check() {
+        if (++calls !== expectedChecks) return;
+        git(f.repo, [
+          "commit",
+          "--allow-empty",
+          "--quiet",
+          "-m",
+          "late Git head change",
+        ]);
+        producer.head = git(f.repo, ["rev-parse", "HEAD"]).toString().trim();
+        changed = true;
+      },
+    }),
+    /CURRENT_HEAD/,
+  );
+  assert.equal(changed, true);
+});
+
+test("bounded capsule inverse restores the complete frozen old5da module without ancestor Git reads", async () => {
+  let text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  function inverse(added, original) {
+    assert.equal(text.split(added).length, 2, "one exact capsule delta");
+    text = text.replace(added, original);
+  }
+  for (const name of ["head", "selector", "record binding", "final head"]) {
+    const begin = `  // BEGIN fixed same-producer capsule ${name}\n`;
+    const end = `  // END fixed same-producer capsule ${name}\n`;
+    assert.equal(text.split(begin).length, 2);
+    assert.equal(text.split(end).length, 2);
+    inverse(
+      text.slice(text.indexOf(begin), text.indexOf(end) + end.length),
+      "",
+    );
+  }
+  inverse(
+    '  head: "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c",',
+    '  runId: 41378060040,\n  head: "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c",',
+  );
+  inverse(
+    "native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-41378060040-mac-source-v1.json",
+  );
+  inverse('  "scripts/cef-runtime-ci.mjs",\n', "");
+  inverse(
+    '  if (old) need(value.head === LINUX_MIGRATION.head, "OLD_PRODUCER");',
+    '  if (old)\n    need(\n      value.runId === LINUX_MIGRATION.runId &&\n        value.head === LINUX_MIGRATION.head,\n      "OLD_PRODUCER",\n    );',
+  );
+  inverse(
+    '  need(positive(restoreRun), "FIXED_RUN");',
+    '  need(restoreRun === LINUX_MIGRATION.runId, "FIXED_RUN");',
+  );
+  inverse('    "checkpointProducer",\n', "");
+  inverse(
+    "    fromRunId: policy.from.checkpointProducer.runId,\n    fromAttempt: policy.from.checkpointProducer.attempt,\n",
+    "",
+  );
+  assert.equal(Buffer.byteLength(text), 94129);
+  assert.equal(
+    core.sha(Buffer.from(text)),
+    "5da6dd95dc4ad77d2822255880e27fc4052e00551a933e2cb1821c285043a8c3",
+  );
+  assert.match(text, /const PREPARATION_ONLY = true;/);
+  assert.equal((text.match(/retirementReadiness\.set\(/g) ?? []).length, 0);
+});
+
 test("original deadline failure survives without invoking Git or a restore callback", async () => {
   const primary = new Error("original lease expired");
   await assert.rejects(
     migration.inspectLinuxMigrationCandidate({
-      restoreRun: M.runId,
+      restoreRun: SEED_RUN,
       currentProducer: oldProducer(),
       check() {
         throw primary;
