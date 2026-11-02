@@ -3472,6 +3472,917 @@ export function qualificationPhaseClock(
   });
 }
 
+// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES
+import { fstatSync as qualificationFdStat } from "node:fs";
+// No production writer populates this map. JSON projections, model-test maps,
+// and source reports cannot construct a source-run capability. These helpers
+// are deliberately not connected to the still-denied private entry/handoff.
+const qualificationSourceRuns = new WeakMap();
+const qualificationSessions = new WeakMap();
+const qualificationObservations = new WeakMap();
+const QUALIFICATION_PATCHED_INPUTS = Object.freeze([
+  Object.freeze({
+    relative: "source-checkout/src/cef/BUILD.gn",
+    bytes: 97568,
+    sha256: "2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0",
+  }),
+  Object.freeze({
+    relative:
+      "source-checkout/src/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn",
+    bytes: 45891,
+    sha256: "e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15",
+  }),
+]);
+
+function qualificationPoison(state, error) {
+  if (!state.failed) {
+    state.failed = true;
+    state.primary = error;
+    state.failedAt = performance.now();
+    state.epoch++;
+  }
+  return state.primary;
+}
+
+function qualificationCheck(state) {
+  if (state.failed) throw state.primary;
+  try {
+    need(!state.closed && !state.source.signal?.aborted, "PRIVATE_CANCELLED");
+    need(
+      qualificationSourceRuns.get(state.sourceToken) === state.source,
+      "PRIVATE_SOURCE_RUN",
+    );
+    state.phase.observe();
+    need(performance.now() < state.end, "PRIVATE_PHASE_DEADLINE");
+  } catch (error) {
+    throw qualificationPoison(state, error);
+  }
+}
+
+function createQualificationSession(sourceToken) {
+  const source = qualificationSourceRuns.get(sourceToken);
+  need(source, "PRIVATE_SOURCE_RUN");
+  // The eventual source-run issuer must own these exact directories before
+  // minting; this first primitive slice does not implement that issuer.
+  const began = performance.now();
+  const phase = qualificationPhaseClock(source.budget);
+  const token = Object.freeze({ kind: "private-qualification-session" });
+  const state = {
+    sourceToken,
+    source,
+    phase,
+    end: began + phase.maximumWorkMs,
+    epoch: 0,
+    failed: false,
+    primary: undefined,
+    failedAt: null,
+    closed: false,
+    running: false,
+    locallyJoined: false,
+    next: 0,
+    logDirectoryIdentity: null,
+    logFiles: new Map(),
+  };
+  qualificationSessions.set(token, state);
+  qualificationCheck(state);
+  return token;
+}
+
+// Close is bounded by the same phase, not a new cleanup lease. Closing a
+// session revokes receipts synchronously; a late FD close can never mint one.
+async function qualificationWithin(
+  state,
+  operation,
+  end = state.end,
+  retiring = false,
+) {
+  // Keep a rejection observer if this continuation reaches an expired lease
+  // after its owned operation was already created.
+  const awaited = Promise.resolve(operation);
+  awaited.catch(() => {});
+  let timer, onAbort;
+  const left = end - performance.now();
+  need(Number.isFinite(left) && left > 0, "PRIVATE_PHASE_DEADLINE");
+  try {
+    const value = await Promise.race([
+      awaited,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("PRIVATE_PHASE_DEADLINE")),
+          Math.max(1, Math.ceil(left)),
+        );
+      }),
+      new Promise((_, reject) => {
+        if (retiring) return;
+        onAbort = () => reject(new Error("PRIVATE_CANCELLED"));
+        state.source.signal?.addEventListener("abort", onAbort, { once: true });
+        if (state.source.signal?.aborted) onAbort();
+      }),
+    ]);
+    need(performance.now() < end, "PRIVATE_PHASE_DEADLINE");
+    return value;
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) state.source.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function qualificationHeld(file, pin, state, inspect = null) {
+  qualificationCheck(state);
+  need(
+    Number.isSafeInteger(pin.bytes) &&
+      pin.bytes > 0 &&
+      pin.bytes <= 268435456 &&
+      /^[a-f0-9]{64}$/.test(pin.sha256),
+    "PRIVATE_READ_PIN",
+  );
+  let fd,
+    failed = false,
+    primary,
+    closed = false;
+  try {
+    await qualificationWithin(state, physical(file));
+    qualificationCheck(state);
+    const before = await qualificationWithin(
+      state,
+      fs.lstat(file, { bigint: true }),
+    );
+    need(
+      before.isFile() &&
+        before.nlink === 1n &&
+        before.size === BigInt(pin.bytes),
+      "PRIVATE_READ_FILE",
+    );
+    // Retain the open promise's eventual creation handle even on timeout, so
+    // that a late successful open is closed rather than lost to Promise.race.
+    const opening = fs
+      .open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+      .then((handle) => {
+        fd = handle;
+        if (failed)
+          handle.close().catch(() => {
+            state.unconfirmedClose = true;
+          });
+        return handle;
+      });
+    await qualificationWithin(state, opening);
+    qualificationCheck(state);
+    const initial = await qualificationWithin(state, fd.stat({ bigint: true }));
+    need(signature(initial) === signature(before), "PRIVATE_READ_IDENTITY");
+    const exact = async (offset, count) => {
+      qualificationCheck(state);
+      need(
+        Number.isSafeInteger(offset) &&
+          Number.isSafeInteger(count) &&
+          offset >= 0 &&
+          count >= 0 &&
+          offset <= pin.bytes &&
+          count <= pin.bytes - offset &&
+          count <= 65536,
+        "PRIVATE_READ_BOUND",
+      );
+      const raw = Buffer.alloc(count);
+      let at = 0;
+      while (at < count) {
+        const result = await qualificationWithin(
+          state,
+          fd.read(raw, at, count - at, offset + at),
+        );
+        qualificationCheck(state);
+        need(
+          result.bytesRead > 0 && result.bytesRead <= count - at,
+          "PRIVATE_READ_SHORT",
+        );
+        at += result.bytesRead;
+      }
+      return raw;
+    };
+    const digest = createHash("sha256");
+    for (let at = 0; at < pin.bytes; at += 65536)
+      digest.update(await exact(at, Math.min(65536, pin.bytes - at)));
+    need(digest.digest("hex") === pin.sha256, "PRIVATE_READ_HASH");
+    const projection = inspect ? await inspect(exact, pin.bytes) : null;
+    qualificationCheck(state);
+    await qualificationWithin(state, physical(file));
+    need(
+      signature(await qualificationWithin(state, fd.stat({ bigint: true }))) ===
+        signature(initial) &&
+        signature(
+          await qualificationWithin(state, fs.lstat(file, { bigint: true })),
+        ) === signature(before),
+      "PRIVATE_READ_CHANGED",
+    );
+    qualificationCheck(state);
+    return {
+      bytes: pin.bytes,
+      sha256: pin.sha256,
+      identity: signature(before),
+      projection,
+    };
+  } catch (error) {
+    failed = true;
+    if (!fd) state.unconfirmedClose = true;
+    primary = qualificationPoison(state, error);
+    throw primary;
+  } finally {
+    if (fd) {
+      try {
+        await qualificationWithin(
+          state,
+          fd.close(),
+          failed ? Math.min(state.end, state.failedAt + 30000) : state.end,
+          true,
+        );
+        closed = true;
+      } catch (error) {
+        state.unconfirmedClose = true;
+        if (!failed) throw qualificationPoison(state, error);
+      }
+    }
+    if (fd && !closed) state.unconfirmedClose = true;
+  }
+}
+
+// Static import projection only: no image loading, System32 traversal,
+// resources, version execution, export/API-set resolution or loader claim.
+// Bounds and ambiguity rules mirror extract.py::pe_metadata.
+async function qualificationStaticPe(read, length) {
+  const dos = await read(0, 64);
+  need(dos.toString("ascii", 0, 2) === "MZ", "PRIVATE_PE_DOS");
+  const pe = dos.readUInt32LE(60);
+  need(pe >= 64, "PRIVATE_PE_SIGNATURE");
+  const header = await read(pe, 24);
+  need(header.readUInt32LE(0) === 0x00004550, "PRIVATE_PE_SIGNATURE");
+  const machine = header.readUInt16LE(4),
+    count = header.readUInt16LE(6),
+    optSize = header.readUInt16LE(20);
+  need(
+    count >= 1 && count <= 96 && optSize >= 96 && optSize <= 4096,
+    "PRIVATE_PE_HEADER",
+  );
+  const opt = await read(pe + 24, optSize);
+  const magic = opt.readUInt16LE(0),
+    base = magic === 0x10b ? 96 : 112;
+  need(
+    [0x10b, 0x20b].includes(magic) && optSize >= base,
+    "PRIVATE_PE_OPTIONAL",
+  );
+  const dirs = opt.readUInt32LE(base - 4),
+    headers = opt.readUInt32LE(60);
+  need(
+    dirs <= 16 &&
+      base + dirs * 8 <= optSize &&
+      pe + 24 + optSize + count * 40 <= headers &&
+      headers <= length,
+    "PRIVATE_PE_DIRECTORIES",
+  );
+  const rawSections = await read(pe + 24 + optSize, count * 40),
+    ranges = [];
+  for (let i = 0; i < count; i++) {
+    const row = i * 40,
+      va = rawSections.readUInt32LE(row + 12),
+      size = rawSections.readUInt32LE(row + 16),
+      address = rawSections.readUInt32LE(row + 20);
+    need(address <= length && size <= length - address, "PRIVATE_PE_SECTION");
+    if (size) {
+      need(
+        address >= headers && va >= headers && va + size <= 0x100000000,
+        "PRIVATE_PE_SECTION",
+      );
+      ranges.push({ start: va, end: va + size, address });
+    }
+  }
+  for (const fields of [
+    ["start", "end"],
+    ["address", "rawEnd"],
+  ]) {
+    const ordered = ranges
+      .map((row) => ({ ...row, rawEnd: row.address + row.end - row.start }))
+      .sort((a, b) => a[fields[0]] - b[fields[0]]);
+    for (let i = 1; i < ordered.length; i++)
+      need(
+        ordered[i - 1][fields[1]] <= ordered[i][fields[0]],
+        "PRIVATE_PE_OVERLAP",
+      );
+  }
+  const rva = (value, size) => {
+    if (value < headers && size <= headers - value) return value;
+    const matches = ranges.filter(
+      (row) =>
+        row.start <= value && value <= row.end && size <= row.end - value,
+    );
+    need(matches.length === 1, "PRIVATE_PE_RVA");
+    return matches[0].address + value - matches[0].start;
+  };
+  const imports = async (index, stride) => {
+    if (index >= dirs) return [];
+    const value = opt.readUInt32LE(base + index * 8),
+      size = opt.readUInt32LE(base + index * 8 + 4);
+    need(Boolean(value) === Boolean(size), "PRIVATE_PE_DIRECTORY");
+    if (!value) return [];
+    need(size >= stride && size <= 65536, "PRIVATE_PE_IMPORT_BOUND");
+    const descriptors = await read(rva(value, size), size),
+      result = [];
+    for (let i = 0; i < Math.min(Math.floor(size / stride), 257); i++) {
+      const row = descriptors.subarray(i * stride, (i + 1) * stride);
+      if (row.every((byte) => byte === 0)) return result;
+      need(i < 256, "PRIVATE_PE_IMPORT_BOUND");
+      if (index === 13)
+        need(row.readUInt32LE(0) === 1, "PRIVATE_PE_DELAY_FORMAT");
+      const nameRva = row.readUInt32LE(index === 13 ? 4 : 12),
+        name = [];
+      let terminated = false;
+      for (let n = 0; n <= 128; n++) {
+        const byte = (await read(rva(nameRva + n, 1), 1))[0];
+        if (byte === 0) {
+          terminated = true;
+          break;
+        }
+        name.push(byte);
+      }
+      const text = Buffer.from(name).toString("ascii");
+      need(
+        terminated &&
+          name.every((byte) => byte < 128) &&
+          /^[A-Za-z0-9_.-]{1,124}\.dll$/i.test(text),
+        "PRIVATE_PE_IMPORT_NAME",
+      );
+      result.push(text);
+    }
+    throw new Error("PRIVATE_PE_IMPORT_TERMINATOR");
+  };
+  return {
+    machine,
+    imports: await imports(1, 20),
+    delayImports: await imports(13, 32),
+  };
+}
+
+async function qualificationNoAdjacentDlls(state) {
+  const directory = path.join(state.source.root, "llvm/bin");
+  await qualificationWithin(state, physical(directory));
+  const initial = await qualificationWithin(
+    state,
+    fs.lstat(directory, { bigint: true }),
+  );
+  need(initial.isDirectory(), "PRIVATE_LLVM_DIRECTORY");
+  let directoryHandle,
+    failed = false;
+  const opening = fs.opendir(directory).then((handle) => {
+    directoryHandle = handle;
+    if (failed)
+      handle.close().catch(() => {
+        state.unconfirmedClose = true;
+      });
+    return handle;
+  });
+  try {
+    await qualificationWithin(state, opening);
+    for (let count = 0; ; count++) {
+      qualificationCheck(state);
+      const row = await qualificationWithin(state, directoryHandle.read());
+      if (row === null) break;
+      need(
+        count < 4096 &&
+          row.name.length <= 255 &&
+          !/[\\/:\x00-\x1f]|[. ]$/.test(row.name),
+        "PRIVATE_LLVM_ENTRY",
+      );
+      need(
+        !row.isSymbolicLink() && !/\.dll$/i.test(row.name),
+        "PRIVATE_ADJACENT_DLL",
+      );
+    }
+    need(
+      signature(
+        await qualificationWithin(state, fs.lstat(directory, { bigint: true })),
+      ) === signature(initial),
+      "PRIVATE_LLVM_CHANGED",
+    );
+    await qualificationWithin(state, physical(directory));
+  } catch (error) {
+    failed = true;
+    if (!directoryHandle) state.unconfirmedClose = true;
+    throw qualificationPoison(state, error);
+  } finally {
+    if (directoryHandle) {
+      try {
+        await qualificationWithin(
+          state,
+          directoryHandle.close(),
+          failed ? Math.min(state.end, state.failedAt + 30000) : state.end,
+          true,
+        );
+      } catch (error) {
+        state.unconfirmedClose = true;
+        if (!failed) throw qualificationPoison(state, error);
+      }
+    }
+  }
+}
+
+async function issueActualObservation(session, role) {
+  const state = qualificationSessions.get(session);
+  need(state, "PRIVATE_SESSION");
+  try {
+    qualificationCheck(state);
+    need(
+      role === PRIVATE_ROLES[state.next] && !state.running,
+      "PRIVATE_OBSERVATION_ROLE",
+    );
+    const source = state.source,
+      policy = JSON.parse(source.privatePolicyRaw);
+    need(
+      sha(source.privatePolicyRaw) === PRIVATE_PROFILE_SHA256,
+      "PRIVATE_POLICY_PIN",
+    );
+    const paths = [
+      ...Object.entries(policy.tools).map(([name, row]) => ({
+        role: name,
+        file: row.path ?? path.join(source.root, row.relativePath),
+        pin: row,
+      })),
+      {
+        role: "llvmArchive",
+        file: path.join(source.root, "archives/clang.tar.xz"),
+        pin: policy.staticLoadingPolicy.llvmArchive,
+      },
+      ...QUALIFICATION_PATCHED_INPUTS.map((row) => ({
+        role: row.relative,
+        file: path.join(source.root, row.relative),
+        pin: row,
+      })),
+      {
+        role: "probeSource",
+        file: path.join(REPO, policy.probeSource),
+        pin: {
+          bytes: 2651,
+          sha256:
+            "0e291acd6f1fdcbd7f79d2874e760927e92bc13eeab241016bb87878867f9220",
+        },
+      },
+    ];
+    const readings = {};
+    for (const row of paths) {
+      const expected = policy.staticLoadingPolicy.llvmStaticTools[row.role];
+      const actual = await qualificationHeld(
+        row.file,
+        row.pin,
+        state,
+        expected ? qualificationStaticPe : null,
+      );
+      if (expected)
+        need(
+          staticProjectionEqual(actual.projection, {
+            machine: expected.machine,
+            imports: expected.imports,
+            delayImports: expected.delayImports,
+          }),
+          "PRIVATE_TOOL_STATIC_PIN",
+        );
+      readings[row.role] = actual;
+    }
+    await qualificationNoAdjacentDlls(state);
+    qualificationCheck(state);
+    const receipt = Object.freeze({
+      kind: "private-actual-static-observation",
+      executionAdmitted: false,
+    });
+    qualificationObservations.set(receipt, {
+      session,
+      state,
+      role,
+      epoch: state.epoch,
+      readings,
+    });
+    return receipt;
+  } catch (error) {
+    throw qualificationPoison(state, error);
+  }
+}
+
+function qualificationRetireOwned(child) {
+  for (const stream of [child.stdout, child.stderr, child.stdin]) {
+    try {
+      stream?.destroy();
+    } catch {
+      /* Only this creation's streams. */
+    }
+    try {
+      stream?.unref?.();
+    } catch {
+      /* Best effort retirement, never joined. */
+    }
+  }
+  try {
+    child.unref();
+  } catch {
+    /* Keep the first failure. */
+  }
+}
+
+const qualificationStableFile = (s) =>
+  [s.dev, s.ino, s.birthtimeNs, s.mode, s.nlink].join(":");
+
+async function qualificationLogDirectory(state) {
+  qualificationCheck(state);
+  const directory = path.join(state.source.root, "private-qualification-logs");
+  await qualificationWithin(state, physical(directory));
+  const initial = await qualificationWithin(
+    state,
+    fs.lstat(directory, { bigint: true }),
+  );
+  need(initial.isDirectory(), "PRIVATE_LOG_DIRECTORY");
+  if (state.logDirectoryIdentity === null) {
+    need(
+      signature(initial) === state.source.logsIdentity,
+      "PRIVATE_LOG_DIRECTORY",
+    );
+    state.logDirectoryIdentity = qualificationStableFile(initial);
+  }
+  need(
+    qualificationStableFile(initial) === state.logDirectoryIdentity,
+    "PRIVATE_LOG_DIRECTORY",
+  );
+  let directoryHandle,
+    failed = false;
+  const opening = fs.opendir(directory).then((handle) => {
+    directoryHandle = handle;
+    if (failed)
+      handle.close().catch(() => {
+        state.unconfirmedClose = true;
+      });
+    return handle;
+  });
+  try {
+    await qualificationWithin(state, opening);
+    const seen = new Set();
+    for (;;) {
+      const row = await qualificationWithin(state, directoryHandle.read());
+      if (row === null) break;
+      need(seen.size < 12 && !seen.has(row.name), "PRIVATE_LOG_ENTRIES");
+      seen.add(row.name);
+      const owned = state.logFiles.get(row.name);
+      need(
+        owned && !row.isSymbolicLink() && owned.finalIdentity,
+        "PRIVATE_LOG_UNKNOWN",
+      );
+      const file = path.join(directory, row.name);
+      await qualificationWithin(state, physical(file));
+      const named = await qualificationWithin(
+        state,
+        fs.lstat(file, { bigint: true }),
+      );
+      need(
+        named.isFile() &&
+          named.nlink === 1n &&
+          signature(named) === owned.finalIdentity,
+        "PRIVATE_LOG_CHANGED",
+      );
+    }
+    need(seen.size === state.logFiles.size, "PRIVATE_LOG_MISSING");
+    need(
+      signature(
+        await qualificationWithin(state, fs.lstat(directory, { bigint: true })),
+      ) === signature(initial),
+      "PRIVATE_LOG_DIRECTORY_CHANGED",
+    );
+    await qualificationWithin(state, physical(directory));
+    qualificationCheck(state);
+  } catch (error) {
+    failed = true;
+    if (!directoryHandle) state.unconfirmedClose = true;
+    throw qualificationPoison(state, error);
+  } finally {
+    if (directoryHandle) {
+      try {
+        await qualificationWithin(
+          state,
+          directoryHandle.close(),
+          failed ? Math.min(state.end, state.failedAt + 30000) : state.end,
+          true,
+        );
+      } catch (error) {
+        state.unconfirmedClose = true;
+        if (!failed) throw qualificationPoison(state, error);
+      }
+    }
+  }
+}
+
+async function qualificationCloseLogs(state, logs, verify) {
+  let failed = false,
+    primary;
+  const fail = (error) => {
+    if (!failed) {
+      failed = true;
+      primary = error;
+    }
+  };
+  for (const row of logs) {
+    if (row.closeAttempted) continue;
+    if (verify) {
+      try {
+        const held = qualificationFdStat(row.fd, { bigint: true });
+        need(
+          held.isFile() &&
+            held.nlink === 1n &&
+            qualificationStableFile(held) === row.creationIdentity &&
+            held.size === BigInt(row.bytes),
+          "PRIVATE_LOG_HELD_CHANGED",
+        );
+      } catch (error) {
+        fail(error);
+      }
+    }
+    // Never retry a numeric descriptor after an uncertain close. Root exit
+    // and the enclosing Job own final retirement if this close is unconfirmed.
+    row.closeAttempted = true;
+    try {
+      closeSync(row.fd);
+      row.closed = true;
+    } catch (error) {
+      state.unconfirmedClose = true;
+      fail(error);
+    }
+    if (verify && row.closed) {
+      try {
+        const named = await qualificationWithin(
+          state,
+          fs.lstat(row.file, { bigint: true }),
+        );
+        need(
+          named.isFile() &&
+            named.nlink === 1n &&
+            qualificationStableFile(named) === row.creationIdentity &&
+            named.size === BigInt(row.bytes),
+          "PRIVATE_LOG_NAMED_CHANGED",
+        );
+        row.finalIdentity = signature(named);
+      } catch (error) {
+        fail(error);
+      }
+    }
+  }
+  if (failed) throw primary;
+}
+
+async function runFixedJoined(session, role, observation) {
+  const state = qualificationSessions.get(session);
+  need(state, "PRIVATE_SESSION");
+  let child,
+    timer,
+    abort,
+    failed = false,
+    primary,
+    joined = false;
+  const logs = [];
+  try {
+    qualificationCheck(state);
+    const actual = qualificationObservations.get(observation);
+    need(
+      actual?.session === session &&
+        actual.state === state &&
+        actual.epoch === state.epoch &&
+        actual.role === role,
+      "PRIVATE_OBSERVATION",
+    );
+    need(
+      role === PRIVATE_ROLES[state.next] && !state.running,
+      "PRIVATE_COMMAND_ROLE",
+    );
+    // This separate barrier remains closed until the genuine graph/header/
+    // environment coordinator and source-run issuer have been reviewed.
+    need(
+      state.source.coordinatorVerified === true,
+      "PRIVATE_COORDINATOR_CLOSED",
+    );
+    state.phase.before(role);
+    state.running = true;
+    const vector = privateCommandProjections(
+      state.source.context,
+      state.source.privatePolicyRaw,
+      state.source.contextSha,
+    )[state.next];
+    need(vector.role === role, "PRIVATE_COMMAND_ROLE");
+    const environment =
+      state.next < 4
+        ? await qualificationWithin(
+            state,
+            state.source.custom.sourceGitEnvironment(
+              state.source.gitPolicy,
+              state.source.environment,
+            ),
+          )
+        : state.source.compilerEnvironment;
+    qualificationCheck(state);
+    // Future source-run creation must hold fixed sibling directories and
+    // graph authority. Pure caller observations can never satisfy this map.
+    await qualificationWithin(state, state.source.validateBefore(role));
+    qualificationCheck(state);
+    await qualificationLogDirectory(state);
+    const directory = path.join(
+      state.source.root,
+      "private-qualification-logs",
+    );
+    qualificationCheck(state);
+    for (const channel of ["stdout", "stderr"]) {
+      const name = role + "." + channel + ".log",
+        file = path.join(directory, name);
+      const fd = openSync(
+        file,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          constants.O_EXCL |
+          (constants.O_NOFOLLOW ?? 0),
+        0o600,
+      );
+      const row = {
+        fd,
+        name,
+        file,
+        bytes: 0,
+        closeAttempted: false,
+        closed: false,
+        finalIdentity: null,
+      };
+      logs.push(row); // Own the descriptor before its first metadata operation.
+      const created = qualificationFdStat(fd, { bigint: true });
+      need(
+        created.isFile() &&
+          created.nlink === 1n &&
+          created.size === 0n &&
+          !state.logFiles.has(name),
+        "PRIVATE_LOG_CREATION",
+      );
+      row.creationIdentity = qualificationStableFile(created);
+      state.logFiles.set(name, row);
+    }
+    qualificationCheck(state);
+    let rootExited = false,
+      rootClosed = false,
+      stdoutClosed = false,
+      stderrClosed = false,
+      code,
+      signal,
+      total = 0;
+    let settle, firstFailure;
+    const closed = new Promise((resolve) => {
+      settle = resolve;
+    });
+    const failedCommand = new Promise((resolve) => {
+      firstFailure = resolve;
+    });
+    const failure = (error) => {
+      if (!failed) {
+        failed = true;
+        primary = qualificationPoison(state, error);
+        firstFailure();
+      }
+      if (!rootExited) {
+        try {
+          child?.kill("SIGKILL");
+        } catch {
+          /* No PID or group authority. */
+        }
+      }
+    };
+    const maybeClosed = () => {
+      if (rootClosed && stdoutClosed && stderrClosed) settle();
+    };
+    // No generic executable/arguments/environment API is exported. The vector
+    // comes only from the existing six-role projection and private session.
+    child = spawn(vector.argv[0], vector.argv.slice(1), {
+      cwd: vector.cwd,
+      env: environment,
+      shell: false,
+      windowsHide: true,
+      detached: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.once("error", failure);
+    child.once("exit", (exitCode, exitSignal) => {
+      rootExited = true;
+      code = exitCode;
+      signal = exitSignal;
+      if (code !== 0 || signal !== null)
+        failure(new Error("PRIVATE_COMMAND_EXIT"));
+    });
+    child.once("close", () => {
+      rootExited = true;
+      rootClosed = true;
+      maybeClosed();
+    });
+    for (const [index, stream] of [child.stdout, child.stderr].entries()) {
+      need(stream, "PRIVATE_COMMAND_PIPE");
+      stream.on("error", failure);
+      stream.on("data", (raw) => {
+        if (failed) return; // Drain/discard after the first failure.
+        try {
+          qualificationCheck(state);
+          need(Buffer.isBuffer(raw), "PRIVATE_COMMAND_OUTPUT");
+          total += raw.length;
+          state.source.output.bytes += raw.length;
+          const cap = state.next < 2 ? 1048576 : 4194304;
+          need(
+            total <= cap && state.source.output.bytes <= 67108864,
+            "PRIVATE_COMMAND_OUTPUT_BOUND",
+          );
+          let offset = 0;
+          while (offset < raw.length) {
+            qualificationCheck(state);
+            const written = writeSync(
+              logs[index].fd,
+              raw,
+              offset,
+              raw.length - offset,
+            );
+            need(
+              written > 0 && written <= raw.length - offset,
+              "PRIVATE_LOG_SHORT_WRITE",
+            );
+            offset += written;
+            logs[index].bytes += written;
+          }
+        } catch (error) {
+          failure(error);
+        }
+      });
+      stream.once("close", () => {
+        if (index === 0) stdoutClosed = true;
+        else stderrClosed = true;
+        maybeClosed();
+      });
+    }
+    abort = () => failure(new Error("PRIVATE_CANCELLED"));
+    state.source.signal?.addEventListener("abort", abort, { once: true });
+    if (state.source.signal?.aborted) abort();
+    timer = setTimeout(
+      () => failure(new Error("PRIVATE_PHASE_DEADLINE")),
+      Math.max(1, Math.ceil(state.end - performance.now())),
+    );
+    try {
+      await qualificationWithin(state, Promise.race([closed, failedCommand]));
+    } catch (error) {
+      failure(error);
+    }
+    try {
+      // An abort can reject the first wait itself. It must still join this
+      // creation's root/pipes under the original, clipped close lease.
+      await qualificationWithin(
+        state,
+        closed,
+        failed ? Math.min(state.end, state.failedAt + 30000) : state.end,
+        true,
+      );
+      joined = rootClosed && stdoutClosed && stderrClosed;
+      state.locallyJoined = joined;
+    } catch (error) {
+      failure(error);
+    }
+    if (failed) throw primary;
+    need(joined && code === 0 && signal === null, "PRIVATE_COMMAND_JOIN");
+    qualificationCheck(state);
+    await qualificationCloseLogs(state, logs, true);
+    await qualificationLogDirectory(state);
+    qualificationCheck(state);
+    await qualificationWithin(state, state.source.validateAfter(role));
+    qualificationCheck(state);
+    state.phase.after(role);
+    state.next++;
+    state.epoch++;
+    return Object.freeze({
+      role,
+      rootAndPipesJoined: true,
+      outputBytes: total,
+      cohortQuietProven: false,
+      executionAdmitted: false,
+    });
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      primary = qualificationPoison(state, error);
+    }
+    throw primary;
+  } finally {
+    clearTimeout(timer);
+    if (abort) state.source.signal?.removeEventListener("abort", abort);
+    try {
+      await qualificationCloseLogs(state, logs, false);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        primary = qualificationPoison(state, error);
+      }
+    }
+    if (child && !joined) qualificationRetireOwned(child);
+    state.running = false;
+    if (failed) throw primary;
+    qualificationCheck(state);
+  }
+}
+// END INACTIVE JOINED OBSERVATION PRIMITIVES
+
 export async function main(argv = process.argv.slice(2)) {
   need(
     argv.length === 4 &&

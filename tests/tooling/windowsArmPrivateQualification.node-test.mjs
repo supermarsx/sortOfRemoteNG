@@ -7,6 +7,9 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs/promises";
 import vm from "node:vm";
+import * as syncFs from "node:fs";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { parse } from "acorn";
 import {
   PRIVATE_DRIVER_ADMITTED,
@@ -37,7 +40,7 @@ test("private Windows qualification first slice runs only portable projection an
     { encoding: "utf8", timeout: 15000, maxBuffer: 65536, windowsHide: true },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /Ran 39 tests/);
+  assert.match(result.stderr, /Ran 41 tests/);
   assert.match(result.stderr, /\bOK\b/);
 });
 
@@ -520,6 +523,14 @@ test("falsy source-budget exceptions permanently poison the phase and preserve t
 });
 
 const driverText = await readFile(base + "private-source-driver.mjs", "utf8");
+const joinedStart = driverText.indexOf(
+  "// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES\n",
+);
+const joinedEndMarker = "// END INACTIVE JOINED OBSERVATION PRIMITIVES";
+const joinedEnd =
+  driverText.indexOf(joinedEndMarker, joinedStart) + joinedEndMarker.length;
+assert(joinedStart > 0 && joinedEnd > joinedStart);
+const joinedPrimitiveBlock = driverText.slice(joinedStart, joinedEnd);
 const driverAst = parse(driverText, {
   sourceType: "module",
   ecmaVersion: "latest",
@@ -531,6 +542,827 @@ const functionText = (name) => {
   assert(node, name);
   return driverText.slice(node.start, node.end);
 };
+
+// This VM holds separate source/session/observation maps. It cannot mint a
+// production receipt, invoke a workload tool, or bypass the module's gate.
+function primitiveModel(overrides = {}) {
+  const heldImport =
+    'import { fstatSync as qualificationFdStat } from "node:fs";\n';
+  assert.equal(joinedPrimitiveBlock.split(heldImport).length, 2);
+  const joinedVmBlock = joinedPrimitiveBlock.replace(heldImport, "");
+  const signatureNode = driverAst.body.find(
+    (node) =>
+      node.type === "VariableDeclaration" &&
+      node.declarations.some((item) => item.id.name === "signature"),
+  );
+  const signatureText = driverText.slice(
+    signatureNode.start,
+    signatureNode.end,
+  );
+  return vm.runInNewContext(
+    signatureText +
+      "\n" +
+      functionText("physical") +
+      "\n" +
+      joinedVmBlock +
+      `
+      ({ createQualificationSession, issueActualObservation, qualificationHeld,
+         qualificationStaticPe, qualificationNoAdjacentDlls, runFixedJoined,
+         qualificationSourceRuns, qualificationSessions, qualificationObservations })`,
+    {
+      fs,
+      constants: syncFs.constants,
+      path,
+      Buffer,
+      createHash,
+      performance,
+      setTimeout,
+      clearTimeout,
+      REPO: process.cwd(),
+      PRIVATE_PROFILE_SHA256: hash(rawPolicy),
+      PRIVATE_ROLES: policy.qualificationRoles,
+      qualificationPhaseClock,
+      privateCommandProjections,
+      staticProjectionEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      sha: hash,
+      need: (value, code) => {
+        if (!value) throw new Error(code);
+      },
+      spawn: () => {
+        throw new Error("NO_REAL_PROCESS");
+      },
+      openSync: syncFs.openSync,
+      writeSync: syncFs.writeSync,
+      closeSync: syncFs.closeSync,
+      qualificationFdStat: syncFs.fstatSync,
+      ...overrides,
+    },
+  );
+}
+
+async function primitiveFixture(t, overrides = {}, sourceOverrides = {}) {
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "sorng-private-joined-")),
+  );
+  const logs = path.join(root, "private-qualification-logs");
+  await fs.mkdir(logs);
+  t.after(async () => {
+    assert.equal(await fs.realpath(root), root);
+    await fs.rm(root, { recursive: true });
+  });
+  let notifySpawn;
+  const spawned = new Promise((resolve) => {
+    notifySpawn = resolve;
+  });
+  const requestedSpawn = overrides.spawn;
+  const model = primitiveModel({
+    ...overrides,
+    ...(requestedSpawn
+      ? {
+          spawn: (...args) => {
+            const child = requestedSpawn(...args);
+            notifySpawn(child);
+            return child;
+          },
+        }
+      : {}),
+  });
+  const signal = new AbortController();
+  const sourceToken = Object.freeze({ modelOnly: true });
+  const stamp = (s) =>
+    [
+      s.dev,
+      s.ino,
+      s.size,
+      s.mtimeNs,
+      s.ctimeNs,
+      s.birthtimeNs,
+      s.mode,
+      s.nlink,
+    ].join(":");
+  const source = {
+    root,
+    budget: { remaining: () => 600000 },
+    signal: signal.signal,
+    context: scope(),
+    contextSha: "a".repeat(64),
+    privatePolicyRaw: Buffer.from(rawPolicy),
+    logsIdentity: stamp(await fs.lstat(logs, { bigint: true })),
+    coordinatorVerified: true,
+    output: { bytes: 0 },
+    environment: { TEST_ONLY: "closed" },
+    custom: { sourceGitEnvironment: async (_policy, env) => ({ ...env }) },
+    gitPolicy: Object.freeze({ modelOnly: true }),
+    validateBefore: async () => {},
+    validateAfter: async () => {},
+    ...sourceOverrides,
+  };
+  model.qualificationSourceRuns.set(sourceToken, source);
+  const session = model.createQualificationSession(sourceToken);
+  const state = model.qualificationSessions.get(session);
+  const receipt = Object.freeze({ modelOnly: true });
+  model.qualificationObservations.set(receipt, {
+    session,
+    state,
+    role: policy.qualificationRoles[0],
+    epoch: state.epoch,
+  });
+  return { root, model, source, state, session, receipt, signal, spawned };
+}
+
+function modelChild() {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.stdin = new PassThrough();
+  child.kills = [];
+  child.unrefs = 0;
+  child.kill = (signal) => {
+    child.kills.push(signal);
+    return true;
+  };
+  child.unref = () => {
+    child.unrefs++;
+  };
+  child.complete = (code = 0) => {
+    child.emit("exit", code, null);
+    child.stdout.destroy();
+    child.stderr.destroy();
+    child.stdin.destroy();
+    setImmediate(() => child.emit("close", code, null));
+  };
+  return child;
+}
+
+test("inactive joined block is private, non-authorizing and restores exact 7ee driver bytes", () => {
+  assert.equal(
+    hash(joinedPrimitiveBlock),
+    "1d7aae9e52636742a0c7af0d722a3c09c8ed61b63629f13e7e2018069ffc5902",
+  );
+  assert.equal(
+    hash(driverText.replace(joinedPrimitiveBlock + "\n\n", "")),
+    "e74804c90200aaf58429f629459f63c78d4de4f8bd77a704e8c51eaa2fb772f6",
+  );
+  assert.equal(
+    (driverText.match(/qualificationSourceRuns\.set\(/g) ?? []).length,
+    0,
+  );
+  assert.equal(PRIVATE_DRIVER_ADMITTED, false);
+  for (const name of [
+    "createQualificationSession",
+    "runFixedJoined",
+    "issueActualObservation",
+  ])
+    assert(
+      !driverAst.body.some(
+        (node) =>
+          node.type.startsWith("Export") && node.declaration?.id?.name === name,
+      ),
+    );
+  assert.throws(
+    () => primitiveModel().createQualificationSession({}),
+    /PRIVATE_SOURCE_RUN/,
+  );
+});
+
+test("actual held reads stream the complete byte pin, inspect same FD and reject mutation or aliases", async (t) => {
+  const f = await primitiveFixture(t);
+  const raw = Buffer.alloc(200000, 7),
+    file = path.join(f.root, "owned.bin");
+  await fs.writeFile(file, raw, { flag: "wx" });
+  const pin = { bytes: raw.length, sha256: hash(raw) };
+  const observed = await f.model.qualificationHeld(
+    file,
+    pin,
+    f.state,
+    async (read) => {
+      assert.deepEqual(await read(100, 5), raw.subarray(100, 105));
+      return { sameFdRange: true };
+    },
+  );
+  assert.equal(observed.sha256, pin.sha256);
+  assert.equal(observed.projection.sameFdRange, true);
+  await assert.rejects(
+    f.model.qualificationHeld(file, pin, f.state, async () => {
+      await fs.writeFile(file, raw); // Same bytes, changed timestamps still deny.
+    }),
+    /PRIVATE_READ_CHANGED/,
+  );
+  assert.equal(f.state.failed, true);
+  const other = await primitiveFixture(t);
+  const alias = path.join(other.root, "alias.bin");
+  await fs.link(file, alias);
+  await assert.rejects(
+    other.model.qualificationHeld(alias, pin, other.state),
+    /PRIVATE_READ_FILE/,
+  );
+});
+
+test("held read closes actual owned FD on short read and preserves falsy close failures", async (t) => {
+  let closes = 0;
+  const realOpen = fs.open.bind(fs);
+  const mockFs = {
+    ...fs,
+    open: async (...args) => {
+      const fd = await realOpen(...args);
+      return {
+        stat: fd.stat.bind(fd),
+        read: async () => ({ bytesRead: 0 }),
+        close: async () => {
+          closes++;
+          await fd.close();
+        },
+      };
+    },
+  };
+  const f = await primitiveFixture(t, { fs: mockFs });
+  const file = path.join(f.root, "short.bin"),
+    raw = Buffer.from("private fixture");
+  await fs.writeFile(file, raw);
+  await assert.rejects(
+    f.model.qualificationHeld(
+      file,
+      { bytes: raw.length, sha256: hash(raw) },
+      f.state,
+    ),
+    /PRIVATE_READ_SHORT/,
+  );
+  assert.equal(closes, 1);
+  for (const reason of [0, false, null, undefined, ""]) {
+    const g = await primitiveFixture(t, {
+      fs: {
+        ...fs,
+        open: async (...args) => {
+          const fd = await realOpen(...args);
+          return {
+            stat: fd.stat.bind(fd),
+            read: fd.read.bind(fd),
+            close: async () => {
+              await fd.close();
+              throw reason;
+            },
+          };
+        },
+      },
+    });
+    const owned = path.join(g.root, "close.bin");
+    await fs.writeFile(owned, raw);
+    let rejected = false;
+    try {
+      await g.model.qualificationHeld(
+        owned,
+        { bytes: raw.length, sha256: hash(raw) },
+        g.state,
+      );
+    } catch (error) {
+      rejected = true;
+      assert.equal(error, reason);
+    }
+    assert(rejected);
+    assert.equal(g.state.unconfirmedClose, true);
+  }
+});
+
+test("held-FD PE range reader matches native Python projection and rejects malformed descriptors", async (t) => {
+  const python = spawnSync(
+    "python",
+    [
+      "-I",
+      "-B",
+      "-c",
+      `import sys,json,base64;sys.path.insert(0,${JSON.stringify(path.resolve(base))});import test_private_qualification as t,extract;r=t.static_import_fixture();p=extract.pe_metadata(r);print(json.dumps({'raw':base64.b64encode(r).decode(),'projection':{k:p[k] for k in ('machine','imports','delayImports')}}))`,
+    ],
+    { encoding: "utf8", timeout: 15000, maxBuffer: 65536, windowsHide: true },
+  );
+  assert.equal(python.status, 0, python.stderr);
+  const fixture = JSON.parse(python.stdout),
+    raw = Buffer.from(fixture.raw, "base64");
+  const f = await primitiveFixture(t),
+    file = path.join(f.root, "static.exe");
+  await fs.writeFile(file, raw);
+  const actual = await f.model.qualificationHeld(
+    file,
+    { bytes: raw.length, sha256: hash(raw) },
+    f.state,
+    f.model.qualificationStaticPe,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(actual.projection)),
+    fixture.projection,
+  );
+  const edits = [
+    ["DOS", (r) => r.fill(0, 0, 2)],
+    [
+      "section overlap",
+      (r) => {
+        r.writeUInt16LE(2, 134);
+        r.copy(r, 432, 392, 432);
+      },
+    ],
+    ["delay format", (r) => r.writeUInt32LE(0, 576)],
+    ["import bound", (r) => r.writeUInt32LE(65537, 276)],
+    ["name RVA", (r) => r.writeUInt32LE(0xffffffff, 524)],
+    ["unterminated name", (r) => r.fill(65, 768, 898)],
+    ["descriptor terminator", (r) => r.writeUInt32LE(20, 276)],
+  ];
+  for (const [name, edit] of edits) {
+    const candidate = Buffer.from(raw);
+    edit(candidate);
+    const read = async (at, size) => {
+      assert(at >= 0 && size <= 65536 && at + size <= candidate.length);
+      return candidate.subarray(at, at + size);
+    };
+    await assert.rejects(
+      f.model.qualificationStaticPe(read, candidate.length),
+      /PRIVATE_PE_/,
+      name,
+    );
+  }
+});
+
+test("adjacent DLL observer reads only the exact bounded LLVM directory and rejects private DLLs", async (t) => {
+  const f = await primitiveFixture(t),
+    bin = path.join(f.root, "llvm/bin");
+  await fs.mkdir(bin, { recursive: true });
+  await fs.writeFile(
+    path.join(bin, "clang-cl.exe"),
+    "synthetic metadata fixture",
+  );
+  await f.model.qualificationNoAdjacentDlls(f.state);
+  await fs.writeFile(path.join(bin, "private.DLL"), "not loaded");
+  await assert.rejects(
+    f.model.qualificationNoAdjacentDlls(f.state),
+    /PRIVATE_ADJACENT_DLL/,
+  );
+  assert.equal(f.state.failed, true);
+});
+
+test("cancel during pending open retires its eventual exact FD and cannot produce an observation", async (t) => {
+  let entered,
+    release,
+    confirmClose,
+    closed = 0;
+  const eventuallyClosed = new Promise((resolve) => {
+    confirmClose = resolve;
+  });
+  const opening = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const deferred = new Promise((resolve) => {
+    release = resolve;
+  });
+  const f = await primitiveFixture(t, {
+    fs: {
+      ...fs,
+      open: async (...args) => {
+        const fd = await fs.open(...args);
+        entered();
+        await deferred;
+        return {
+          stat: fd.stat.bind(fd),
+          read: fd.read.bind(fd),
+          close: async () => {
+            closed++;
+            await fd.close();
+            confirmClose();
+          },
+        };
+      },
+    },
+  });
+  const file = path.join(f.root, "pending.bin"),
+    raw = Buffer.from("exact owned open");
+  await fs.writeFile(file, raw);
+  const action = f.model.qualificationHeld(
+    file,
+    { bytes: raw.length, sha256: hash(raw) },
+    f.state,
+  );
+  await opening;
+  f.signal.abort();
+  await assert.rejects(action, /PRIVATE_CANCELLED/);
+  assert.equal(f.state.unconfirmedClose, true);
+  release();
+  // Wait for the exact pending handle close, without any actor-name cleanup.
+  await eventuallyClosed;
+  assert.equal(closed, 1);
+  assert.equal(f.state.failed, true);
+  await assert.rejects(
+    f.model.issueActualObservation(f.session, policy.qualificationRoles[0]),
+    /PRIVATE_CANCELLED/,
+  );
+});
+
+test("actual observation issuer rejects altered policy and serialized session before reading or minting", async (t) => {
+  const f = await primitiveFixture(t);
+  await assert.rejects(
+    f.model.issueActualObservation({}, policy.qualificationRoles[0]),
+    /PRIVATE_SESSION/,
+  );
+  f.source.privatePolicyRaw = Buffer.from(
+    rawPolicy.toString().replace('"schemaVersion": 1', '"schemaVersion": 2'),
+  );
+  await assert.rejects(
+    f.model.issueActualObservation(f.session, policy.qualificationRoles[0]),
+    /PRIVATE_POLICY_PIN/,
+  );
+  assert.equal(f.state.failed, true);
+});
+
+test("joined fixed-vector model waits for root and each pipe, shares output ledger and never claims cohort quiet", async (t) => {
+  const child = modelChild();
+  let vector,
+    options,
+    done = false;
+  const f = await primitiveFixture(t, {
+    spawn: (exe, args, opts) => {
+      vector = [exe, ...args];
+      options = opts;
+      return child;
+    },
+  });
+  const action = f.model
+    .runFixedJoined(f.session, policy.qualificationRoles[0], f.receipt)
+    .then((result) => {
+      done = true;
+      return result;
+    });
+  await f.spawned;
+  child.stdout.write("actual model stdout");
+  child.stderr.write("actual model stderr");
+  child.emit("exit", 0, null);
+  child.emit("close", 0, null);
+  await new Promise(setImmediate);
+  assert.equal(done, false);
+  child.stdout.destroy();
+  await new Promise(setImmediate);
+  assert.equal(done, false);
+  child.stderr.destroy();
+  const result = await action;
+  assert.deepEqual(vector, [
+    ...privateCommandProjections(scope(), rawPolicy, "a".repeat(64))[0].argv,
+  ]);
+  assert.equal(options.shell, false);
+  assert.equal(options.detached, false);
+  assert.equal(options.windowsHide, true);
+  assert.equal(result.rootAndPipesJoined, true);
+  assert.equal(result.cohortQuietProven, false);
+  assert.equal(result.executionAdmitted, false);
+  assert.equal(f.state.next, 1);
+  assert.equal(
+    f.source.output.bytes,
+    Buffer.byteLength("actual model stdoutactual model stderr"),
+  );
+  assert.equal(child.kills.length, 0);
+  assert.equal(
+    await fs.readFile(
+      path.join(
+        f.root,
+        "private-qualification-logs/" +
+          policy.qualificationRoles[0] +
+          ".stdout.log",
+      ),
+      "utf8",
+    ),
+    "actual model stdout",
+  );
+});
+
+test("cancelled joined command waits for actual close, preserves first error and forbids subsequent creation", async (t) => {
+  const child = modelChild();
+  let spawns = 0;
+  const f = await primitiveFixture(t, {
+    spawn: () => {
+      spawns++;
+      return child;
+    },
+  });
+  let settled = false;
+  const action = f.model
+    .runFixedJoined(f.session, policy.qualificationRoles[0], f.receipt)
+    .catch((error) => {
+      settled = true;
+      throw error;
+    });
+  await f.spawned;
+  f.signal.abort();
+  await new Promise(setImmediate);
+  assert.equal(settled, false);
+  assert.equal(child.kills[0], "SIGKILL");
+  child.complete(-1);
+  await assert.rejects(action, /PRIVATE_CANCELLED/);
+  assert.equal(f.state.locallyJoined, true);
+  await assert.rejects(
+    f.model.runFixedJoined(f.session, policy.qualificationRoles[0], f.receipt),
+    /PRIVATE_CANCELLED/,
+  );
+  assert.equal(spawns, 1);
+});
+
+test("six sequential fixed roles retain one creation-owned log ledger despite legitimate directory writes", async (t) => {
+  const vectors = [],
+    children = [];
+  const f = await primitiveFixture(
+    t,
+    {
+      spawn: (exe, args) => {
+        const child = modelChild();
+        children.push(child);
+        vectors.push([exe, ...args]);
+        setImmediate(() => {
+          child.stdout.write("role " + children.length);
+          child.complete();
+        });
+        return child;
+      },
+    },
+    {
+      compilerEnvironment: {
+        SystemRoot: "C:/Windows",
+        WINDIR: "C:/Windows",
+        PATH: "C:/Windows/System32",
+        TEMP: ROOT + "/private-qualification-tmp",
+        TMP: ROOT + "/private-qualification-tmp",
+      },
+    },
+  );
+  const phaseEnd = f.state.end;
+  for (const [index, role] of policy.qualificationRoles.entries()) {
+    const receipt = Object.freeze({ modelOnly: true });
+    f.model.qualificationObservations.set(receipt, {
+      session: f.session,
+      state: f.state,
+      role,
+      epoch: f.state.epoch,
+    });
+    const result = await f.model.runFixedJoined(f.session, role, receipt);
+    assert.equal(result.rootAndPipesJoined, true);
+    assert.equal(result.cohortQuietProven, false);
+    assert.equal(f.state.logFiles.size, (index + 1) * 2);
+    assert.equal(f.state.end, phaseEnd);
+  }
+  assert.equal(f.state.phase.finish().commandsCompleted, 6);
+  assert.deepEqual(
+    vectors,
+    privateCommandProjections(scope(), rawPolicy, "a".repeat(64)).map((row) => [
+      ...row.argv,
+    ]),
+  );
+  assert(children.every((child) => child.kills.length === 0));
+  assert.equal(
+    (await fs.readdir(path.join(f.root, "private-qualification-logs"))).length,
+    12,
+  );
+});
+
+test("owned log namespace denies unknown entries, changed files, links and replaced directory before next creation", async (t) => {
+  for (const change of ["unknown", "file", "link", "directory"]) {
+    let spawns = 0;
+    const f = await primitiveFixture(t, {
+      spawn: () => {
+        spawns++;
+        const child = modelChild();
+        setImmediate(() => child.complete());
+        return child;
+      },
+    });
+    await f.model.runFixedJoined(
+      f.session,
+      policy.qualificationRoles[0],
+      f.receipt,
+    );
+    const directory = path.join(f.root, "private-qualification-logs");
+    const first = path.join(
+      directory,
+      policy.qualificationRoles[0] + ".stdout.log",
+    );
+    if (change === "unknown")
+      await fs.writeFile(path.join(directory, "unowned.log"), "unknown");
+    if (change === "file") {
+      await fs.unlink(first);
+      await fs.writeFile(first, "replacement");
+    }
+    if (change === "link") {
+      // Directory junctions need no symlink privilege on the Windows test host.
+      await fs.unlink(first);
+      await fs.symlink(f.root, first, "junction");
+    }
+    if (change === "directory") {
+      await fs.rename(directory, path.join(f.root, "retired-owned-logs"));
+      await fs.mkdir(directory);
+    }
+    const role = policy.qualificationRoles[1],
+      receipt = Object.freeze({ modelOnly: true });
+    f.model.qualificationObservations.set(receipt, {
+      session: f.session,
+      state: f.state,
+      role,
+      epoch: f.state.epoch,
+    });
+    await assert.rejects(
+      f.model.runFixedJoined(f.session, role, receipt),
+      /PRIVATE_LOG_(?:UNKNOWN|CHANGED|DIRECTORY)/,
+      change,
+    );
+    assert.equal(spawns, 1, change);
+    assert.equal(f.state.failed, true);
+  }
+});
+
+test("pre-abort and forged/serialized receipts launch no process; no coordinator is implicitly authorized", async (t) => {
+  let spawns = 0;
+  const f = await primitiveFixture(t, {
+    spawn: () => {
+      spawns++;
+      throw Error("unreachable");
+    },
+  });
+  f.signal.abort();
+  await assert.rejects(
+    f.model.runFixedJoined(f.session, policy.qualificationRoles[0], f.receipt),
+    /PRIVATE_CANCELLED/,
+  );
+  const g = await primitiveFixture(t, {
+    spawn: () => {
+      spawns++;
+    },
+  });
+  await assert.rejects(
+    g.model.runFixedJoined(
+      g.session,
+      policy.qualificationRoles[0],
+      JSON.parse(JSON.stringify(g.receipt)),
+    ),
+    /PRIVATE_OBSERVATION/,
+  );
+  const h = await primitiveFixture(
+    t,
+    {
+      spawn: () => {
+        spawns++;
+      },
+    },
+    { coordinatorVerified: false },
+  );
+  await assert.rejects(
+    h.model.runFixedJoined(h.session, policy.qualificationRoles[0], h.receipt),
+    /PRIVATE_COORDINATOR_CLOSED/,
+  );
+  assert.equal(spawns, 0);
+});
+
+test("pending pre-spawn live-token or input verification is abortable with no process creation", async (t) => {
+  for (const gate of ["environment", "inputs"]) {
+    let entered,
+      spawns = 0;
+    const reached = new Promise((resolve) => {
+      entered = resolve;
+    });
+    const pending = () => {
+      entered();
+      return new Promise(() => {});
+    };
+    const f = await primitiveFixture(
+      t,
+      {
+        spawn: () => {
+          spawns++;
+        },
+      },
+      gate === "environment"
+        ? { custom: { sourceGitEnvironment: pending } }
+        : { validateBefore: pending },
+    );
+    const action = f.model.runFixedJoined(
+      f.session,
+      policy.qualificationRoles[0],
+      f.receipt,
+    );
+    await reached;
+    f.signal.abort();
+    await assert.rejects(action, /PRIVATE_CANCELLED/);
+    assert.equal(spawns, 0);
+  }
+});
+
+test("falsy first failures and partial/failed log writes permanently poison a joined session", async (t) => {
+  for (const reason of [0, false, null, undefined, ""]) {
+    const child = modelChild();
+    const f = await primitiveFixture(t, {
+      spawn: () => child,
+      writeSync: () => {
+        throw reason;
+      },
+    });
+    const action = f.model.runFixedJoined(
+      f.session,
+      policy.qualificationRoles[0],
+      f.receipt,
+    );
+    await f.spawned;
+    child.stdout.write("private fixture");
+    child.complete(0);
+    let rejected = false;
+    try {
+      await action;
+    } catch (error) {
+      rejected = true;
+      assert.equal(error, reason);
+    }
+    assert(rejected);
+    assert.equal(f.state.failed, true);
+    assert.equal(f.state.next, 0);
+  }
+  const child = modelChild();
+  let writes = 0;
+  const f = await primitiveFixture(t, {
+    spawn: () => child,
+    writeSync: (fd, raw, at, length) => {
+      writes++;
+      return syncFs.writeSync(fd, raw, at, Math.min(2, length));
+    },
+  });
+  const action = f.model.runFixedJoined(
+    f.session,
+    policy.qualificationRoles[0],
+    f.receipt,
+  );
+  await f.spawned;
+  child.stdout.write("1234567");
+  child.complete();
+  await action;
+  assert.equal(writes, 4);
+});
+
+test("output, stream and log-close failures deny even after root exit without late root signals", async (t) => {
+  for (const failure of ["output", "pipe", "close"]) {
+    const child = modelChild();
+    let closes = 0;
+    const f = await primitiveFixture(t, {
+      spawn: () => child,
+      ...(failure === "close"
+        ? {
+            closeSync: (fd) => {
+              syncFs.closeSync(fd);
+              if (++closes === 1) throw Error("fixture log close");
+            },
+          }
+        : {}),
+    });
+    const action = f.model.runFixedJoined(
+      f.session,
+      policy.qualificationRoles[0],
+      f.receipt,
+    );
+    await f.spawned;
+    child.emit("exit", 0, null);
+    if (failure === "output") child.stdout.write(Buffer.alloc(1048577));
+    if (failure === "pipe") child.stderr.emit("error", Error("fixture pipe"));
+    child.complete();
+    await assert.rejects(
+      action,
+      failure === "output"
+        ? /PRIVATE_COMMAND_OUTPUT_BOUND/
+        : failure === "pipe"
+          ? /fixture pipe/
+          : /fixture log close/,
+    );
+    assert.equal(child.kills.length, 0);
+    assert.equal(f.state.failed, true);
+  }
+});
+
+test("deadline or late root close denies and retires only creation-owned streams without claiming joined", async (t) => {
+  for (const lateClose of [false, true]) {
+    const child = modelChild();
+    const f = await primitiveFixture(t, {
+      spawn: () => {
+        f.state.end = performance.now() + 40;
+        return child;
+      },
+    });
+    const action = f.model.runFixedJoined(
+      f.session,
+      policy.qualificationRoles[0],
+      f.receipt,
+    );
+    await f.spawned;
+    if (lateClose) {
+      const end = performance.now() + 60;
+      while (performance.now() < end) {
+        /* Reproduce event-loop-delayed timers. */
+      }
+      child.complete();
+    }
+    await assert.rejects(action, /PRIVATE_PHASE_DEADLINE/);
+    assert.equal(f.state.locallyJoined, false);
+    assert.equal(child.unrefs, 1);
+    assert(
+      child.stdout.destroyed && child.stderr.destroyed && child.stdin.destroyed,
+    );
+    assert.equal(f.state.next, 0);
+  }
+});
 
 test("named static policy delta normalizes exactly to prior driver, policy and pure/probe module bytes", async () => {
   for (const [name, expected] of Object.entries({
@@ -570,7 +1402,9 @@ test("named static policy delta normalizes exactly to prior driver, policy and p
       return { start: node.start, end: node.end + 2, value: "" };
     }),
   ];
-  let priorDriver = driverText;
+  // First remove only the newly appended, independently tested inactive block.
+  // All historical source/function/policy checks below remain unchanged.
+  let priorDriver = driverText.replace(joinedPrimitiveBlock + "\n\n", "");
   for (const edit of edits.sort((a, b) => b.start - a.start))
     priorDriver =
       priorDriver.slice(0, edit.start) +

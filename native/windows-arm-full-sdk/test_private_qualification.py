@@ -663,5 +663,52 @@ class PrivatePreparationTests(unittest.TestCase):
                          '0b11cf7cd85d1e6f6ab33aeca5fa0ab1bb1f237ba9321a6e5fb6dafb3f521fb3')
 
 
+def static_import_fixture():
+    """Bounded synthetic PE; no image is loaded, linked or executed."""
+    import struct
+    raw = bytearray(2048)
+    raw[:2] = b'MZ'
+    struct.pack_into('<I', raw, 60, 128)
+    raw[128:132] = b'PE\0\0'
+    struct.pack_into('<HH', raw, 132, 0x8664, 1)
+    struct.pack_into('<H', raw, 148, 240)
+    struct.pack_into('<H', raw, 152, 0x20b)
+    struct.pack_into('<I', raw, 212, 512)
+    struct.pack_into('<I', raw, 260, 16)
+    struct.pack_into('<II', raw, 272, 0x1000, 40)
+    struct.pack_into('<II', raw, 368, 0x1040, 64)
+    struct.pack_into('<III', raw, 404, 0x1000, 1536, 512)
+    struct.pack_into('<I', raw, 524, 0x1100)
+    struct.pack_into('<II', raw, 576, 1, 0x1140)
+    raw[768:781] = b'KERNEL32.dll\0'
+    raw[832:844] = b'SHELL32.dll\0'
+    return bytes(raw)
+
+
+class JoinedStaticReferenceTests(unittest.TestCase):
+    def test_reference_pe_imports_and_delay_format(self):
+        import extract
+        actual = extract.pe_metadata(static_import_fixture())
+        self.assertEqual(actual['machine'], 0x8664)
+        self.assertEqual(actual['imports'], ['KERNEL32.dll'])
+        self.assertEqual(actual['delayImports'], ['SHELL32.dll'])
+        changed = bytearray(static_import_fixture())
+        changed[576:580] = b'\0\0\0\0'
+        with self.assertRaisesRegex(extract.Denied, 'INV_PE_DELAY_FORMAT'):
+            extract.pe_metadata(changed)
+
+    def test_new_readers_joiners_have_no_entry_or_source_run_issuer(self):
+        text = (HERE / 'private-source-driver.mjs').read_text(encoding='utf-8')
+        self.assertEqual(text.count('qualificationSourceRuns.set('), 0)
+        self.assertIn('export const PRIVATE_DRIVER_ADMITTED = false;', text)
+        self.assertIn('throw new Error("PRIVATE_QUALIFICATION_EXECUTOR_CLOSED")', text)
+        for name in ('createQualificationSession', 'issueActualObservation', 'runFixedJoined'):
+            self.assertNotIn('export function ' + name, text)
+            self.assertNotIn('export async function ' + name, text)
+        # Expected BUILD bytes are from the separately audited patched tree.
+        self.assertIn('2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0', text)
+        self.assertIn('e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15', text)
+
+
 if __name__ == '__main__':
     unittest.main()
