@@ -349,7 +349,7 @@ fn ops_startup_state_registrar_is_exported_by_the_domain_crate() {
     );
     assert_eq!(
         sorng_app_domains::ops_startup_state::MANAGED_STATE_REGISTRATIONS,
-        73
+        72
     );
     let source = include_str!("../src/state_registry/ops.rs");
     assert_eq!(
