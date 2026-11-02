@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OriginCredentialControls from "../../src/components/protocol/webBrowser/OriginCredentialControls";
 import { PopoverSurface } from "../../src/components/ui/overlays/PopoverSurface";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { ToastUpdate } from "../../src/components/ui/dialogs/Toast";
 import type {
   OriginCredentialInputRequest,
@@ -213,6 +214,35 @@ afterEach(() => {
 });
 
 describe("native credential toolbar with the real credential resolver", () => {
+  it("keeps copy and typing guidance in optional keyboard and pointer tooltips", async () => {
+    const transport = engine();
+    function TooltipHarness() {
+      useTooltipSystem();
+      return <Harness transport={transport} />;
+    }
+    render(<TooltipHarness />);
+    await open();
+    expect(screen.queryByText(/Type hides this popup/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Credentials are resolved only/),
+    ).not.toBeInTheDocument();
+    const help = screen.getByRole("button", { name: "Copy and typing help" });
+    act(() => help.focus());
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toBeVisible();
+    expect(tooltip).toHaveTextContent("Type hides this popup");
+    expect(tooltip).toHaveTextContent("Cancel from the typing notification");
+    expect(help).toHaveAttribute(
+      "aria-description",
+      help.getAttribute("data-tooltip"),
+    );
+    act(() => help.blur());
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.mouseOver(help);
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    expect(transport).not.toHaveBeenCalled();
+    expect(webWrite).not.toHaveBeenCalled();
+  });
   it("resolves the saved value only after capture, types it and reports completion", async () => {
     const request = engine();
     render(<Harness transport={request} />);

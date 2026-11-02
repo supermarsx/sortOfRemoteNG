@@ -245,6 +245,56 @@ describe("password generator shared input integration", () => {
     expect(writeText).toHaveBeenCalledTimes(1);
   });
 
+  it.each([false, true])(
+    "uses native secure copy and preserves app-lock denial (locked=%s)",
+    async (locked) => {
+      const invoke = locked
+        ? vi.fn().mockRejectedValue("locked")
+        : vi.fn().mockResolvedValue(undefined);
+      const writeText = vi
+        .fn()
+        .mockRejectedValue(
+          new DOMException("No WebView permission", "NotAllowedError"),
+        );
+      vi.stubGlobal("__TAURI__", { core: { invoke } });
+      vi.stubGlobal(
+        "navigator",
+        Object.assign(Object.create(navigator), { clipboard: { writeText } }),
+      );
+      render(
+        <PasswordInput generateable aria-label="Password" defaultValue="old" />,
+      );
+      await openGenerator();
+      const generated = proposal().value;
+      fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+      await waitFor(() =>
+        expect(invoke).toHaveBeenCalledExactlyOnceWith("secure_clip_copy", {
+          request: {
+            value: generated,
+            kind: "password",
+            field: "password",
+            connectionId: null,
+            label: null,
+            clearAfterSecs: 12,
+            maxPastes: null,
+            oneTime: false,
+          },
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(
+          locked
+            ? "Nothing was copied because the app is locked. Unlock it and try again."
+            : "Password copied.",
+        ),
+      );
+      expect(writeText).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Password")).toHaveValue("old");
+      fireEvent.click(screen.getByRole("button", { name: "Use password" }));
+      expect(screen.getByLabelText("Password")).toHaveValue(generated);
+    },
+  );
+
   it.each<PasswordInputProps>([
     {},
     { generateable: false },

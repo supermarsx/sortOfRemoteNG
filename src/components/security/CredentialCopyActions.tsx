@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Copy, Keyboard } from "lucide-react";
+import { Copy, Info, Keyboard } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import {
   useCredentialCopy,
@@ -26,6 +26,9 @@ export default function CredentialCopyActions({
 }) {
   const { copy, type, typeCode, typingAvailable, available, busy, message } =
     useCredentialCopy(session, connection, typingTarget);
+  const help = typingAvailable
+    ? "Copy uses the secure clipboard, which other apps may read. Type inserts into the captured field or session without pressing Enter."
+    : "Copy uses the secure clipboard, which other apps may read. Focus the session field, then reopen this popup to enable typing.";
   if (codeSelection)
     return (
       <span className="inline-flex min-w-0 max-w-32 flex-col items-end">
@@ -83,11 +86,15 @@ export default function CredentialCopyActions({
           </div>
         ))}
       </div>
-      <p className="text-xs">
-        {typingAvailable
-          ? "Type inserts into the captured field or session without pressing Enter."
-          : "Focus the session field, then reopen this popup to enable typing."}
-      </p>
+      <button
+        type="button"
+        className="sor-icon-btn-sm"
+        aria-label="Copy and typing help"
+        aria-description={help}
+        data-tooltip={help}
+      >
+        <Info size={14} aria-hidden="true" />
+      </button>
       {(message || !available) && (
         <p role="status" className="text-xs">
           {message ||

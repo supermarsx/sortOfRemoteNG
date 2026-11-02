@@ -564,6 +564,54 @@ describe("database vault manager", () => {
       },
     ]);
   });
+  it("creates a credential through New, password generation, explicit Use and verified Save", async () => {
+    const { api } = facade();
+    mount(api);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "New credential" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New credential" }));
+    fireEvent.change(await screen.findByLabelText("Credential name"), {
+      target: { value: "Generated login" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Password" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate password" }));
+    const proposed = (await screen.findByLabelText(
+      "Proposed password",
+    )) as HTMLTextAreaElement;
+    const generated = proposed.value;
+    expect(generated.length).toBeGreaterThanOrEqual(16);
+    expect(
+      screen.getByLabelText("Password", { selector: "input[type=password]" }),
+    ).toHaveValue("");
+    expect(api.compareAndSwap).not.toHaveBeenCalled();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Use password" }),
+    );
+    expect(
+      screen.getByLabelText("Password", { selector: "input[type=password]" }),
+    ).toHaveValue(generated);
+    expect(api.compareAndSwap).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+    await screen.findByRole("button", { name: "Edit Generated login" });
+    expect(api.compareAndSwap).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      [
+        {
+          operation: "put",
+          entry: expect.objectContaining({
+            name: "Generated login",
+            facets: { password: generated },
+          }),
+        },
+      ],
+    );
+    expect(
+      screen.queryByLabelText("Password", { selector: "input[type=password]" }),
+    ).not.toBeInTheDocument();
+  });
   it("keeps a failed-save draft and requires explicit review before deletion", async () => {
     const { api } = facade([entry()]);
     mount(api);

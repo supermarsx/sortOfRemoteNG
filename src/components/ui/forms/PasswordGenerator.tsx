@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { WandSparkles, RefreshCw, Copy } from "lucide-react";
 import { PopoverSurface } from "../overlays/PopoverSurface";
 import { CheckboxField } from "./Checkbox";
+import { copySecretToClipboard } from "../../../utils/security/credentialClipboard";
 import {
   DEFAULT_PASSWORD_OPTIONS,
   generatePassword,
@@ -305,14 +306,11 @@ function GeneratorPanel({
           className="sor-btn sor-btn-secondary"
           disabled={!draft.password}
           onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(draft.password);
-              setCopyStatus("Password copied.");
-            } catch {
-              setCopyStatus(
-                "Could not copy. Select the proposed password to copy it manually.",
-              );
-            }
+            const result = await copySecretToClipboard(
+              draft.password,
+              "password",
+            );
+            setCopyStatus(result.ok ? "Password copied." : result.message);
           }}
         >
           <Copy size={14} aria-hidden="true" />

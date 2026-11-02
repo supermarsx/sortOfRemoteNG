@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Copy, Keyboard } from "lucide-react";
+import { Copy, Info, Keyboard } from "lucide-react";
 import type {
   Connection,
   ConnectionSession,
@@ -29,15 +29,11 @@ export default function OriginCredentialCopyPanel({
   );
   const { copy, typeOrThrow, typingAvailable, available, busy, message } =
     useCredentialCopy(session, connection, typing?.target);
+  const help = typing
+    ? "Copy uses the secure clipboard, which other apps may read. Type hides this popup: click an empty field on an allowed origin within 30 seconds. HTTP typing stays on the configured origin and port. Cancel from the typing notification. Credentials are read only when needed; typing never presses Enter."
+    : "Copy uses the secure clipboard, which other apps may read. Credentials are read only when needed. Open Credentials & 2FA on the toolbar to type into a website field.";
   return (
     <div ref={setPortalContainer} className="space-y-3">
-      <p className="text-sm text-[var(--color-textSecondary)]">
-        Copy the selected connection credential to your system clipboard. Other
-        applications may read it.{" "}
-        {typing
-          ? "Choose Type, then click an empty website field. Typing never presses Enter."
-          : "Open Credentials & 2FA on the toolbar to type into a website field."}
-      </p>
       <HttpCredentialWarning connection={connection} />
       <div className="flex flex-wrap gap-2">
         {(["username", "password"] as const).map((field) => (
@@ -74,6 +70,15 @@ export default function OriginCredentialCopyPanel({
             )}
           </React.Fragment>
         ))}
+        <button
+          type="button"
+          className="sor-icon-btn-sm ml-auto"
+          aria-label="Copy and typing help"
+          aria-description={help}
+          data-tooltip={help}
+        >
+          <Info size={16} aria-hidden="true" />
+        </button>
       </div>
       {typing && (
         <div className="space-y-2">
@@ -113,19 +118,14 @@ export default function OriginCredentialCopyPanel({
               />
             </label>
           </div>
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            Type hides this popup and waits up to 30 seconds for an empty field
-            on an allowed origin. HTTP typing is limited to the configured
-            origin, including its port. Cancel from the typing notification.
-          </p>
         </div>
       )}
-      <p role="status" className="text-xs text-[var(--color-textSecondary)]">
-        {message ||
-          (!available
-            ? "Open and unlock the owning database to copy credentials."
-            : "Credentials are resolved only for Copy or after Type captures an eligible field.")}
-      </p>
+      {(message || !available) && (
+        <p role="status" className="text-xs text-[var(--color-textSecondary)]">
+          {message ||
+            "Open and unlock the owning database to copy credentials."}
+        </p>
+      )}
     </div>
   );
 }
