@@ -1100,6 +1100,66 @@ async function selectedProjectionCases(driver, cases) {
   return JSON.parse(result.stdout);
 }
 
+const formatterPinning = `# Reuse the unchanged pinned native helper, which has no instance state.
+# This retains pin_all_deps behavior without constructing the DEPS formatter.
+for dep in all_deps.values(): gclient.Flattener._pin_dep(None,dep)
+`;
+const originPinning = `# Only recursive Git dependencies can supply the DEPS origins observed here.
+# Formatter-wide pinning would resolve all registered CIPD packages, even those
+# that are irrelevant to this hook observation. Native source sync is unchanged.
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ if dep.GetScmName()!='git': raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+ gclient.Flattener._pin_dep(None,dep)
+`;
+
+test("actual native CIPD chain is RED for exact 4a32 observer and GREEN with origin-only pins for both selected images", async () => {
+  for (const driver of [currentDriver, oldDriver]) {
+    const current = driver.hookProjectionArguments("fixture-depot")[2];
+    assert.equal(current.split(originPinning).length, 2);
+    const previous = current.replace(originPinning, formatterPinning);
+    assert.equal(
+      sha(previous),
+      "e26385be87b6cad3898ab3004dd669eaf32e185daec33676dfa95467ea64c794",
+    );
+    const red = await selectedProjectionCases(
+      { hookProjectionArguments: () => ["-B", "-c", previous] },
+      ["cipd-selected", "cipd-unselected"],
+    );
+    for (const value of red) {
+      assert.equal(value.error?.message, "FULL_FIXTURE_CIPD_GLOBAL_RESOLVE");
+      assert.equal(value.packet, null);
+      assert.equal(value.cipdRegistrations, 1);
+      assert.equal(value.cipdScmCreations, 1);
+      assert.equal(value.cipdResolves, 1);
+      assert.equal(value.ensureIncludedInactive, true);
+    }
+    const green = await selectedProjectionCases(driver, [
+      "cipd-selected",
+      "cipd-unselected",
+      "gcs-nonrecursive",
+    ]);
+    for (const value of green) {
+      assert.equal(value.error, null, JSON.stringify(value));
+      assert.equal(value.cipdRegistrations, 0);
+      assert.equal(value.cipdScmCreations, 0);
+      assert.equal(value.cipdResolves, 0);
+      assert.deepEqual(value.pins, []);
+      assert.equal(value.parsed, 1);
+      assert.equal(value.varsUnchanged, true);
+      assert.equal(value.outsideMetadataQueried, false);
+      const packet = driver.validateHookProjection(
+        "FULL_HOOK_PROJECTION:" + JSON.stringify(value.packet) + "\n",
+      );
+      assert.equal(packet.origins.length, 3);
+      assert.deepEqual(
+        packet.hooks.map((hook) => hook.name),
+        ["src", "src/third_party/angle", "src/third_party/dawn", "pre"],
+      );
+    }
+  }
+});
+
 test("selected hook projection supports actual pinned sibling DEPS scoped vars without flattening them", async () => {
   for (const driver of [currentDriver, oldDriver]) {
     const [value] = await selectedProjectionCases(driver, ["scoped"]);
@@ -1166,7 +1226,9 @@ test("selected hook projection retains native full-revision pinning, DEPS fallba
       ).deps_file,
       "DEPS.custom",
     );
-    assert.deepEqual(values[2].pins, ["src/packages:vendor/package"]);
+    // Full formatter metadata was unnecessary: this non-origin never needs
+    // PinToActualRevision. Typed CIPD/GCS side effects are covered above.
+    assert.deepEqual(values[2].pins, []);
     assert.equal(values[2].packet.origins.length, 3);
     assert.deepEqual(
       values[3].packet.hooks.map((hook) => hook.name),
@@ -1213,6 +1275,7 @@ test("selected hook projection denies graph, origin, pin and output failures bef
     "origin-bound": "FULL_HOOK_ORIGIN_COUNT",
     "output-bound": "FULL_HOOK_PROJECTION_BOUND",
     "pin-failure": "FULL_FIXTURE_PIN_FAILED",
+    "recursive-non-git": "FULL_HOOK_PROJECTION_ORIGIN",
   };
   for (const driver of [currentDriver, oldDriver]) {
     for (const value of await selectedProjectionCases(
@@ -1247,7 +1310,7 @@ test("only the two selected hook projection functions differ from exact 93d22 hi
     const next = driver.hookProjectionArguments.toString();
     assert.equal(
       sha(next),
-      "a630542cf8874e30a76b7e2eedc7621ac544322e7ac0a16cc5473809e541f747",
+      "ed7df75819d0af5e05b2e5bdca75838c0d3fb8c83da5e402c115a52a2a5d6a5d",
     );
     const text = (
       await read(
@@ -1255,6 +1318,18 @@ test("only the two selected hook projection functions differ from exact 93d22 hi
       )
     ).toString();
     assert.equal(text.split("export " + next).length, 2);
+    assert.equal(next.split(originPinning).length, 2);
+    const priorFunction = next.replace(originPinning, formatterPinning);
+    assert.equal(
+      sha(priorFunction),
+      "a630542cf8874e30a76b7e2eedc7621ac544322e7ac0a16cc5473809e541f747",
+    );
+    assert.equal(
+      sha(text.replace("export " + next, "export " + priorFunction)),
+      label === "current"
+        ? "ea8ca831574bfb25b6d52246e3174082641e00059b72b1651f4ed08b28e59b57"
+        : "0620eb9c13e03a9623b4ce71d0320d79f0366eaf166f20c551415411b493a0b0",
+    );
     const normalized = text.replace("export " + next, previous);
     assert.equal(sha(normalized), expected);
     assert.deepEqual(

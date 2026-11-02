@@ -353,42 +353,358 @@ with opener().open(urllib.request.Request(original["url"]), timeout=min(15, cloc
 PINNED_FLATTENER_SOURCE = 'class NativePinnedFlattener:\n    def _pin_dep(self, dep):\n        """Pins a dependency to specific full revision sha.\n\n        Arguments:\n            dep (Dependency): dependency to process\n        """\n        if dep.url is None:\n            return\n\n        # Make sure the revision is always fully specified (a hash),\n        # as opposed to refs or tags which might change. Similarly,\n        # shortened shas might become ambiguous; make sure to always\n        # use full one for pinning.\n        revision = gclient_utils.SplitUrlRevision(dep.url)[1]\n        if not revision or not gclient_utils.IsFullGitSha(revision):\n            dep.PinToActualRevision()\n\n    def _add_dep(self, dep):\n        """Helper to add a dependency to flattened DEPS.\n\n        Arguments:\n            dep (Dependency): dependency to add\n        """\n        assert dep.name not in self._deps or self._deps.get(dep.name) == dep, (\n            dep.name,\n            self._deps.get(dep.name),\n        )\n        if dep.url:\n            self._deps[dep.name] = dep\n\n    def _flatten_dep(self, dep):\n        """Visits a dependency in order to flatten it (see CMDflatten).\n\n        Arguments:\n            dep (Dependency): dependency to process\n        """\n        logging.debug("_flatten_dep(%s)", dep.name)\n\n        assert dep.deps_parsed, (\n            "Attempted to flatten %s but it has not been processed." % dep.name\n        )\n\n        self._allowed_hosts.update(dep.allowed_hosts)\n\n        # Only include vars explicitly listed in the DEPS files or gclient\n        # solution, not automatic, local overrides (i.e. not all of\n        # dep.get_vars()).\n        hierarchy = dep.hierarchy(include_url=False)\n        for key, value in dep._vars.items():\n            # Make sure there are no conflicting variables. It is fine however\n            # to use same variable name, as long as the value is consistent.\n            assert key not in self._vars or self._vars[key][1] == value, (\n                "dep:%s key:%s value:%s != %s"\n                % (dep.name, key, value, self._vars[key][1])\n            )\n            self._vars[key] = (hierarchy, value)\n        # Override explicit custom variables.\n        for key, value in dep.custom_vars.items():\n            # Do custom_vars that don\'t correspond to DEPS vars ever make sense?\n            # DEPS conditionals shouldn\'t be using vars that aren\'t also defined\n            # in the DEPS (presubmit actually disallows this), so any new\n            # custom_var must be unused in the DEPS, so no need to add it to the\n            # flattened output either.\n            if key not in self._vars:\n                continue\n            # Don\'t "override" existing vars if it\'s actually the same value.\n            if self._vars[key][1] == value:\n                continue\n            # Anything else is overriding a default value from the DEPS.\n            self._vars[key] = (hierarchy + " [custom_var override]", value)\n\n        self._pre_deps_hooks.extend(\n            [(dep, hook) for hook in dep.pre_deps_hooks]\n        )\n        self._hooks.extend([(dep, hook) for hook in dep.deps_hooks])\n\n        for sub_dep in dep.dependencies:\n            self._add_dep(sub_dep)\n\n        for d in dep.dependencies:\n            if d.should_recurse:\n                self._flatten_dep(d)\n\n'
 PINNED_FLATTENER_METHOD_SHA256 = 'c182a251969b0b6cfc0683ba83d97639c55f0dabd8153af6d0e61fde6f1c63b1'
 
+# Exact native dependency/registration/cache-resolution methods from the same
+# pinned depot_tools revision. Process dispatch remains a deny-on-resolve seam.
+PINNED_CIPD_SOURCE = r'''class NativeDependencyPin:
+    def PinToActualRevision(self):
+        """Updates self.url to the revision checked out on disk."""
+        if self.url is None:
+            return
+        url = None
+        scm = self.CreateSCM()
+        if scm.name == "cipd":
+            revision = scm.revinfo(None, None, None)
+            package = self.GetExpandedPackageName()
+            url = "%s/p/%s/+/%s" % (
+                scm.GetActualRemoteURL(None),
+                package,
+                revision,
+            )
+        if scm.name == "gcs":
+            url = self.url
+
+        if os.path.isdir(scm.checkout_path):
+            revision = scm.revinfo(None, None, None)
+            url = "%s@%s" % (
+                gclient_utils.SplitUrlRevision(self.url)[0],
+                revision,
+            )
+        self.set_url(url)
+
+
+class CipdDependency(Dependency):
+    def __init__(
+        self,
+        parent,
+        name,
+        dep_value,
+        cipd_root,
+        custom_vars,
+        should_process,
+        relative,
+        condition,
+    ):
+        package = dep_value["package"]
+        if dep_value.get("version_file"):
+            fp = os.path.join(
+                parent.root.root_dir, parent.name, dep_value["version_file"]
+            )
+            version = gclient_utils.FileRead(fp).strip()
+        else:
+            version = dep_value["version"]
+        url = urllib.parse.urljoin(
+            cipd_root.service_url, "%s@%s" % (package, version)
+        )
+        super(CipdDependency, self).__init__(
+            parent=parent,
+            name=name + ":" + package,
+            url=url,
+            managed=None,
+            custom_deps=None,
+            custom_vars=custom_vars,
+            custom_hooks=None,
+            deps_file=None,
+            should_process=should_process,
+            should_recurse=False,
+            relative=relative,
+            condition=condition,
+        )
+        self._cipd_package = None
+        self._cipd_root = cipd_root
+        # CIPD wants /-separated paths, even on Windows.
+        native_subdir_path = os.path.relpath(
+            os.path.join(self.root.root_dir, name), cipd_root.root_dir
+        )
+        self._cipd_subdir = posixpath.join(*native_subdir_path.split(os.sep))
+        self._package_name = package
+        self._package_version = version
+
+    def _CreatePackageIfNecessary(self):
+        # We lazily create the CIPD package to make sure that only packages
+        # that we want (as opposed to all packages defined in all DEPS files
+        # we parse) get added to the root and subsequently ensured.
+        if not self._cipd_package:
+            self._cipd_package = self._cipd_root.add_package(
+                self._cipd_subdir, self._package_name, self._package_version
+            )
+
+    def GetScmName(self):
+        """Always 'cipd'."""
+        return "cipd"
+
+    def GetExpandedPackageName(self):
+        """Return the CIPD package name with the variables evaluated."""
+        package = self._cipd_root.expand_package_name(self._package_name)
+        if package:
+            return package
+        return self._package_name
+
+    def CreateSCM(self, out_cb=None):
+        """Create a Wrapper instance suitable for handling this CIPD dependency."""
+        self._CreatePackageIfNecessary()
+        return gclient_scm.CipdWrapper(
+            self.url,
+            self.root.root_dir,
+            self.name,
+            self.outbuf,
+            out_cb,
+            root=self._cipd_root,
+            package=self._cipd_package,
+        )
+
+
+class CipdRoot:
+    def __init__(self, root_dir, service_url, log_level=None):
+        self._all_packages = set()
+        self._mutator_lock = threading.Lock()
+        self._packages_by_subdir = collections.defaultdict(list)
+        self._root_dir = root_dir
+        self._service_url = service_url
+        self._resolved_packages = None
+        self._log_level = log_level or "error"
+
+    def add_package(self, subdir, package, version):
+        """Adds a package to this CIPD root.
+
+        As far as clients are concerned, this grants both root and subdir authority
+        to packages arbitrarily. (The implementation grants root authority to the
+        first package added and subdir authority to the first package added for that
+        subdir, but clients should not depend on or expect that behavior.)
+
+        Args:
+          subdir: str; relative path to where the package should be installed from
+            the cipd root directory.
+          package: str; the cipd package name.
+          version: str; the cipd package version.
+        Returns:
+          CipdPackage; the package that was created and added to this root.
+        """
+        with self._mutator_lock:
+            cipd_package = CipdPackage(
+                package, version, not self._packages_by_subdir[subdir]
+            )
+            self._all_packages.add(cipd_package)
+            self._packages_by_subdir[subdir].append(cipd_package)
+            return cipd_package
+
+    def resolved_packages(self):
+        if not self._resolved_packages:
+            self._resolved_packages = self.ensure_file_resolve()
+        return self._resolved_packages
+
+    @contextlib.contextmanager
+    def _create_ensure_file_for_resolve(self):
+        try:
+            contents = "$ResolvedVersions %s\n" % os.devnull
+            for subdir, packages in sorted(self._packages_by_subdir.items()):
+                contents += "@Subdir %s\n" % subdir
+                for package in sorted(packages, key=lambda p: p.name):
+                    contents += "%s %s\n" % (package.name, package.version)
+                contents += "\n"
+            ensure_file = None
+            with tempfile.NamedTemporaryFile(
+                suffix=".ensure", delete=False, mode="wb"
+            ) as ensure_file:  # noqa: F811
+                ensure_file.write(contents.encode("utf-8", "replace"))
+            yield ensure_file.name
+        finally:
+            if ensure_file is not None and os.path.exists(ensure_file.name):
+                os.remove(ensure_file.name)
+
+    def _create_resolved_file(self):
+        return tempfile.NamedTemporaryFile(
+            suffix=".resolved", delete=False, mode="wb"
+        )
+
+    def ensure_file_resolve(self):
+        """Run `cipd ensure-file-resolve`."""
+        with self._mutator_lock:
+            with self._create_resolved_file() as output_file:
+                with self._create_ensure_file_for_resolve() as ensure_file:
+                    cmd = [
+                        "cipd",
+                        "ensure-file-resolve",
+                        "-log-level",
+                        self._log_level,
+                        "-ensure-file",
+                        ensure_file,
+                        "-json-output",
+                        output_file.name,
+                    ]
+                    gclient_utils.CheckCallAndFilter(
+                        cmd, print_stdout=False, show_header=False
+                    )
+                    with open(output_file.name) as f:
+                        output_json = json.load(f)
+                        return output_json.get("result", {})
+
+    def run(self, command):
+        if command == "update":
+            self.ensure()
+        elif command == "revert":
+            self.clobber()
+            self.ensure()
+
+    @property
+    def root_dir(self):
+        return self._root_dir
+
+    @property
+    def service_url(self):
+        return self._service_url
+
+
+class CipdWrapper(CipdWrapperBase):
+    def revinfo(self, options, args, file_list):
+        """Grab the instance ID."""
+        try:
+            tmpdir = tempfile.mkdtemp()
+            # Attempt to get instance_id from the root resolved cache.
+            # Resolved cache will not match on any CIPD packages with
+            # variables such as ${platform}, they will fall back to
+            # the slower method below.
+            resolved = self._root.resolved_packages()
+            if resolved:
+                # CIPD uses POSIX separators across all platforms, so
+                # replace any Windows separators.
+                path_split = self.relpath.replace(os.sep, "/").split(":")
+                if len(path_split) > 1:
+                    src_path, package = path_split
+                    if src_path in resolved:
+                        for resolved_package in resolved[src_path]:
+                            if package == resolved_package.get("pin", {}).get(
+                                "package"
+                            ):
+                                return resolved_package.get("pin", {}).get(
+                                    "instance_id"
+                                )
+
+            describe_json_path = os.path.join(tmpdir, "describe.json")
+            cmd = [
+                "cipd",
+                "describe",
+                self._package.name,
+                "-log-level",
+                "error",
+                "-version",
+                self._package.version,
+                "-json-output",
+                describe_json_path,
+            ]
+            gclient_utils.CheckCallAndFilter(cmd)
+            with open(describe_json_path) as f:
+                describe_json = json.load(f)
+            return (
+                describe_json.get("result", {})
+                .get("pin", {})
+                .get("instance_id")
+            )
+        finally:
+            gclient_utils.rmtree(tmpdir)
+
+    def GetActualRemoteURL(self, options):
+        return self._root.service_url
+
+'''
+PINNED_CIPD_METHOD_SHA256 = 'ddc43c8f94e0c4672003c0653691526fd371ebd1a184ccb0b9e8742bd8416808'
+
+
 
 def _native_projection_fixture(folder, case):
     """Synthetic parsed objects; exact native methods and actual DEPS locals.
 
-    URL utilities are a closed full-SHA fixture seam. PinToActualRevision only
-    updates fixture metadata; no SCM, process, network or hook execution occurs.
+    Native pinning/registration/resolution bodies execute against controlled
+    SCM metadata and owned temporary files. Any CIPD process dispatch is denied
+    and counted; no acquired program, network or hook execution occurs.
     """
     import logging
     import re
     import types
+    import collections
+    import contextlib
+    import os
+    import shutil
+    import threading
+    import urllib.parse
+    import posixpath
     namespace={'logging':logging,'gclient_utils':types.SimpleNamespace(
         SplitUrlRevision=lambda url:url.rsplit('@',1),
         IsFullGitSha=lambda value:bool(re.fullmatch('[a-fA-F0-9]{40}',value)))}
     assert hashlib.sha256(PINNED_FLATTENER_SOURCE.encode()).hexdigest()==PINNED_FLATTENER_METHOD_SHA256
     exec(compile(PINNED_FLATTENER_SOURCE,'<pinned-e4f650-Flattener-methods>','exec'),namespace)
     Native=namespace['NativePinnedFlattener']
-    state=types.SimpleNamespace(constructed=0,parsed=0,bound=0,pins=[],queries=[])
+    state=types.SimpleNamespace(constructed=0,parsed=0,bound=0,pins=[],queries=[],
+        cipdRegistrations=0,cipdScmCreations=0,cipdResolves=0,ensureIncludedInactive=False)
     class Dep:
-        def __init__(self,name,parent=None,value=None):
+        def __init__(self,name,parent=None,value=None,**native):
             self.name=name;self.parent=parent;self.dependencies=[]
             self._vars={}if value is None else{'chromium_revision':value}
-            self.custom_vars={};self.allowed_hosts=set();self.deps_parsed=True;self.should_recurse=True
-            self.deps_file='DEPS';self.url='https://example.invalid/'+name+'@'+'a'*40
+            self.custom_vars={};self.allowed_hosts=set();self.deps_parsed=True
+            self.should_recurse=native.get('should_recurse',True)
+            self.should_process=native.get('should_process',True);self.outbuf=None
+            self.deps_file=native.get('deps_file','DEPS')
+            self.url=native.get('url','https://example.invalid/'+name+'@'+'a'*40)
             self.deps_hooks=[types.SimpleNamespace(name=name,condition='checkout_win',pattern=None,
                 effective_cwd=name,action=['python3','known.py'],variables=self._vars)]
             self.pre_deps_hooks=[]
         def hierarchy(self,include_url=False):return self.name
+        @property
+        def root(self):return types.SimpleNamespace(root_dir=str(folder))
+        def GetScmName(self):return 'git'
+        def set_url(self,url):self.url=url
         def hierarchy_data(self):
             out=[];at=self
             while at:
                 out.insert(0,(at.name,at.url));at=at.parent
             return tuple(out)
-        def PinToActualRevision(self):
+        def CreateSCM(self):
             state.pins.append(self.name)
             if case=='pin-failure':raise RuntimeError('FULL_FIXTURE_PIN_FAILED')
-            self.url=self.url.rsplit('@',1)[0]+'@'+'b'*40
+            return types.SimpleNamespace(name='git',checkout_path=str(folder/self.name),
+                revinfo=lambda *_:'b'*40)
+    native_temp=folder/'native-cipd';native_temp.mkdir()
+    class CipdPackage:
+        def __init__(self,name,version,authority):
+            state.cipdRegistrations+=1;self.name=name;self.version=version
+    class CipdWrapperBase:
+        def __init__(self,url,root_dir,relpath,outbuf,out_cb,*,root,package):
+            state.cipdScmCreations+=1;self._root=root;self._package=package
+            self.relpath=relpath;self.name='cipd';self.checkout_path=str(folder/'cipd-checkout')
+    def deny_dispatch(command,*args,**kwargs):
+        assert command[:2]==['cipd','ensure-file-resolve']
+        state.cipdResolves+=1
+        ensure=Path(command[command.index('-ensure-file')+1]).resolve()
+        assert ensure.is_relative_to(native_temp)
+        payload=ensure.read_text();assert len(payload)<=65536
+        state.ensureIncludedInactive='chrome_internal/not-needed version:1' in payload
+        raise RuntimeError('FULL_FIXTURE_CIPD_GLOBAL_RESOLVE')
+    def remove_owned(directory):
+        path=Path(directory).resolve();assert path.is_relative_to(native_temp)
+        shutil.rmtree(path)
+    namespace['gclient_utils'].CheckCallAndFilter=deny_dispatch
+    namespace['gclient_utils'].rmtree=remove_owned
+    namespace.update(Dependency=Dep,CipdWrapperBase=CipdWrapperBase,CipdPackage=CipdPackage,
+        os=os,json=json,collections=collections,contextlib=contextlib,threading=threading,urllib=urllib,posixpath=posixpath,
+        tempfile=types.SimpleNamespace(
+            mkdtemp=lambda:tempfile.mkdtemp(dir=native_temp),
+            NamedTemporaryFile=lambda *args,**kwargs:tempfile.NamedTemporaryFile(*args,dir=native_temp,**kwargs)))
+    assert hashlib.sha256(PINNED_CIPD_SOURCE.encode()).hexdigest()==PINNED_CIPD_METHOD_SHA256
+    exec(compile(PINNED_CIPD_SOURCE,'<pinned-c101-CIPD-methods>','exec'),namespace)
+    namespace['gclient_scm']=types.SimpleNamespace(CipdWrapper=namespace['CipdWrapper'])
+    Dep.PinToActualRevision=namespace['NativeDependencyPin'].PinToActualRevision
+    cipd_root=namespace['CipdRoot'](str(folder),'https://example.invalid/')
+    cipd_root.add_package('src/inactive','chrome_internal/not-needed','version:1')
+    state.cipdRegistrations=0  # Already-parsed metadata, before observer pinning.
     top=Dep('src')
     angle=Dep('src/third_party/angle',top,'80685c1f3c2953578acb9987fd63af524e7435cb')
     dawn=Dep('src/third_party/dawn',top,'9d728f73dd5798b6cdef64b1dbe3270a04aca336')
@@ -420,6 +736,18 @@ def _native_projection_fixture(folder, case):
     elif case=='nonrecursive-pin':
         package=Dep('src/packages:vendor/package',top);package.should_recurse=False;package.deps_file=None
         package.url='https://example.invalid/pkg@version';top.dependencies.append(package)
+    elif case in('cipd-selected','cipd-unselected'):
+        package=namespace['CipdDependency'](top,'src/packages',
+            {'package':'angle/traces/fixture','version':'version:1'},cipd_root,{},
+            case=='cipd-selected',False,'checkout_win'if case=='cipd-selected'else'False')
+        assert not package.should_recurse and package.GetScmName()=='cipd'
+        top.dependencies.append(package)
+    elif case=='gcs-nonrecursive':
+        package=Dep('src/nonrecursive-gcs',top);package.should_recurse=False;package.deps_file=None
+        package.url='https://example.invalid/gcs@version';package.GetScmName=lambda:'gcs'
+        def deny_gcs():raise RuntimeError('FULL_FIXTURE_GCS_METADATA_QUERY')
+        package.CreateSCM=deny_gcs;top.dependencies.append(package)
+    elif case=='recursive-non-git':angle.GetScmName=lambda:'gcs'
     elif case=='shared-subtree':top.dependencies.append(angle)
     elif case=='origin-bound':
         top.dependencies=[Dep('src/origin'+str(i),top)for i in range(1025)]
@@ -434,6 +762,7 @@ def _native_projection_fixture(folder, case):
         def RunOnDeps(self,command,args,progress):
             assert command=='flatten'and args==[]and progress is False
             assert self.options.nohooks and self.options.noprehooks and self.options.process_all_deps
+            cipd_root.run(command)  # Native flatten is metadata-only, not ensure.
             state.parsed+=1;return 0
     class FixtureFlattener(Native):
         def __init__(self,client,pin_all_deps):
@@ -487,11 +816,43 @@ def selected_hook_projection_case(program,case):
             packet=json.loads(text.split(':',1)[1])
         return {'case':case,'error':error,'packet':packet,'flattenerConstructed':state.constructed,
             'parsed':state.parsed,'bootstrapBound':state.bound,'pins':state.pins,
+            'cipdRegistrations':state.cipdRegistrations,'cipdScmCreations':state.cipdScmCreations,
+            'cipdResolves':state.cipdResolves,'ensureIncludedInactive':state.ensureIncludedInactive,
             'varsUnchanged':(deps[0]._vars,deps[1]._vars,deps[2]._vars)==before,
             'outsideMetadataQueried':any(not Path(p).is_relative_to(folder)for p in state.queries)}
 
 
 class PinnedScopedHookTests(unittest.TestCase):
+    def test_native_cipd_registration_revinfo_and_global_resolution_chain_reproduces_failure(self):
+        for case in ('cipd-selected','cipd-unselected'):
+            with self.subTest(case=case),tempfile.TemporaryDirectory()as temp:
+                module,_,state,deps,_=_native_projection_fixture(Path(temp).resolve(),case)
+                package=deps[0].dependencies[-1]
+                self.assertFalse(package.should_recurse)
+                self.assertEqual(package.GetScmName(),'cipd')
+                with self.assertRaisesRegex(RuntimeError,'FULL_FIXTURE_CIPD_GLOBAL_RESOLVE'):
+                    module.Flattener._pin_dep(None,package)
+                self.assertEqual((state.cipdRegistrations,state.cipdScmCreations,state.cipdResolves),(1,1,1))
+                self.assertTrue(state.ensureIncludedInactive)
+
+    def test_native_flatten_root_command_does_not_itself_resolve_cipd_packages(self):
+        for case in ('cipd-selected','cipd-unselected'):
+            with self.subTest(case=case),tempfile.TemporaryDirectory()as temp:
+                module,_,state,_,_=_native_projection_fixture(Path(temp).resolve(),case)
+                options=module.OptionParser().parse_args(['--jobs','2'])[0]
+                options.nohooks=options.noprehooks=options.process_all_deps=True
+                self.assertEqual(module.GClient.LoadCurrentConfig(options).RunOnDeps('flatten',[],False),0)
+                self.assertEqual((state.cipdRegistrations,state.cipdScmCreations,state.cipdResolves),(0,0,0))
+
+    def test_native_git_ref_pin_uses_owned_checkout_metadata_and_full_revision(self):
+        with tempfile.TemporaryDirectory()as temp:
+            module,_,state,deps,_=_native_projection_fixture(Path(temp).resolve(),'pinning')
+            angle=deps[1]
+            module.Flattener._pin_dep(None,angle)
+            self.assertEqual(state.pins,['src/third_party/angle'])
+            self.assertEqual(angle.url,'https://example.invalid/src/third_party/angle@'+'b'*40)
+            self.assertEqual((state.cipdRegistrations,state.cipdScmCreations,state.cipdResolves),(0,0,0))
+
     def test_native_global_variable_assertion_is_retained_and_reproduces_the_actual_failure(self):
         with tempfile.TemporaryDirectory()as temp:
             module,_,_,_,_=_native_projection_fixture(Path(temp).resolve(),'scoped')

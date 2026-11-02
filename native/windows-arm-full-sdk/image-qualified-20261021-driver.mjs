@@ -1074,9 +1074,13 @@ for dep in all_deps.values():
  if (not relative(dep.name) or not relative(dep.deps_file) or type(hierarchy)not in(tuple,list) or not 0<len(hierarchy)<=64 or
   any(type(pair)not in(tuple,list) or len(pair)!=2 or not relative(pair[0]) or type(pair[1])is not str or len(pair[1])>4096 for pair in hierarchy)):
   raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
-# Reuse the unchanged pinned native helper, which has no instance state.
-# This retains pin_all_deps behavior without constructing the DEPS formatter.
-for dep in all_deps.values(): gclient.Flattener._pin_dep(None,dep)
+# Only recursive Git dependencies can supply the DEPS origins observed here.
+# Formatter-wide pinning would resolve all registered CIPD packages, even those
+# that are irrelevant to this hook observation. Native source sync is unchanged.
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ if dep.GetScmName()!='git': raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+ gclient.Flattener._pin_dep(None,dep)
 origin_rows=set()
 for dep in all_deps.values():
  if not dep.should_recurse: continue
