@@ -364,6 +364,14 @@ def approved_tool_command(argv,cwd):
         role_in_mode('git-version',c)
         import preflight
         role=preflight.closed_command(argv,Path(cwd),p,c,clock)
+    elif type(argv)is list and len(argv)==8 and argv[4]=='--private-source-gn':
+        # This future role is disjoint from every admitted source/GN mode.
+        # Keep its optional module sealed behind the original mode guard;
+        # the private adapter itself remains unconditionally closed.
+        c,p,_ = verified_sources(Path(cwd))
+        role_in_mode('private-source-gn',c)
+        import private_qualification
+        role=private_qualification.approve_source_job_command(argv,cwd,c)
     elif type(argv)is list and len(argv)==8 and argv[4]=='--source-gn':
         # Resolve the mode-sealed derivative profile before selecting its fixed
         # Node driver; legacy contexts still select only the legacy driver.
