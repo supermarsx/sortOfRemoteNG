@@ -124,13 +124,22 @@ def identity(info):
     return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink)
 
 
+# BEGIN Windows held-interface identity
+def _held_cross_identity(info):
+    # CPython lstat derives executable bits from a Windows filename (.exe);
+    # fstat has no filename. Only that cross-interface mode decoration differs.
+    mode = info.st_mode & ~(0o111 if os.name == "nt" else 0)
+    return (info.st_dev, info.st_ino, mode, info.st_nlink)
+# END Windows held-interface identity
+
+
 def held(path, maximum, expected=None):
     path = physical(path)
     before = path.lstat()
     need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 <= before.st_size <= maximum, "PROOF_FILE")
     with path.open("rb") as stream:
         opened = os.fstat(stream.fileno())
-        need(identity(opened) == identity(before), "PROOF_FILE_IDENTITY")
+        need(_held_cross_identity(opened) == _held_cross_identity(before), "PROOF_FILE_IDENTITY")
         raw = stream.read(maximum + 1)
         need(len(raw) == before.st_size and identity(os.fstat(stream.fileno())) == identity(opened), "PROOF_FILE_CHANGED")
     after = path.lstat()
