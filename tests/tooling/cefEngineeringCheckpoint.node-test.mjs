@@ -1,5 +1,490 @@
 import assert from "node:assert/strict";
 import vm from "node:vm";
+async function cliMigrationFunctions(names, scope) {
+  const text = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "cli.mjs",
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const bodies = names.map((name) => {
+    const node = ast.statements.find(
+      (item) => ts.isFunctionDeclaration(item) && item.name?.text === name,
+    );
+    assert(node, name);
+    return node.getText(ast).replace(/^export /, "");
+  });
+  return vm.runInNewContext(
+    bodies.join("\n") + "\n({" + names.join(",") + "})",
+    {
+      Buffer,
+      path,
+      canonical,
+      sha,
+      LIMITS,
+      fail: (ok, message) => assert(ok, message),
+      ...scope,
+    },
+  );
+}
+
+test("migration CLI selected download requires actual producer success before and after download and exact artifact metadata", async () => {
+  const { verifyProducer } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  const producer = {
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: 1010282954,
+    runId: 123,
+    attempt: 1,
+    head: "a".repeat(40),
+    branch: "main",
+    workflow: WORKFLOW,
+  };
+  const selection = {
+    checkpointProducer: producer,
+    policySha256: "b".repeat(64),
+    sealArtifact: { id: 9, bytes: 1429, sha256: "c".repeat(64) },
+    seal: { bytes: 10, sha256: "d".repeat(64) },
+  };
+  const manifest = { test: "download wrapper model only" };
+  for (const mode of [
+    "success",
+    "failed-before",
+    "failed-after",
+    "attempt-after",
+    "head-after",
+    "artifact-after",
+    "policy-after",
+  ]) {
+    let downloaded = 0,
+      reads = 0,
+      changed = false;
+    const run = {
+      workflow_id: 7,
+      event: "workflow_dispatch",
+      head_sha: producer.head,
+      head_branch: "main",
+      head_repository: { id: producer.repositoryId },
+      run_attempt: 1,
+      status: "completed",
+      conclusion: mode === "failed-before" ? "failure" : "success",
+    };
+    const api = async (route) => {
+      if (route === "")
+        return {
+          id: producer.repositoryId,
+          full_name: producer.repository,
+          private: false,
+          default_branch: "main",
+        };
+      if (route === "actions/workflows/cef-engineering-checkpoint.yml")
+        return { id: 7, path: WORKFLOW };
+      if (route === "actions/runs/123") {
+        reads++;
+        return structuredClone(run);
+      }
+      assert.equal(route, "actions/runs/123/artifacts?per_page=100");
+      return {
+        total_count: 1,
+        artifacts: [
+          {
+            name: "cef-engineering-seal-123-1",
+            id: 9,
+            size_in_bytes: 1429,
+            digest:
+              "sha256:" +
+              (mode === "artifact-after" ? "e".repeat(64) : "c".repeat(64)),
+            expired: false,
+            workflow_run: { head_sha: producer.head },
+          },
+        ],
+      };
+    };
+    const helpers = await cliMigrationFunctions(
+      ["migrationDownloadData", "downloadSelectedLinuxMigration"],
+      {
+        verifyProducer,
+        readLinuxMigrationSelection: async () =>
+          changed ? { ...selection, policySha256: "e".repeat(64) } : selection,
+        migrationRawInputs: async () => ({
+          manifest: Buffer.from(canonical(manifest)),
+        }),
+      },
+    );
+    const operation = async () => {
+      downloaded++;
+      if (mode === "failed-after") run.conclusion = "failure";
+      if (mode === "attempt-after") run.run_attempt = 2;
+      if (mode === "head-after") run.head_sha = "e".repeat(40);
+      if (mode === "policy-after") changed = true;
+      return {
+        manifest,
+        producer,
+        sealArtifact: { ...selection.sealArtifact },
+      };
+    };
+    const pending = helpers.downloadSelectedLinuxMigration(
+      api,
+      selection,
+      operation,
+      "/model/download",
+    );
+    if (mode === "success") {
+      const result = await pending;
+      assert.equal(result.migration.authorizing, false);
+      assert.equal(result.migration.successfulProducerVerified, true);
+      assert.equal(reads, 3);
+    } else
+      await assert.rejects(
+        pending,
+        /successful old producer|Untrusted producer run|independent artifact changed|selection changed/,
+      );
+    assert.equal(downloaded, mode === "failed-before" ? 0 : 1);
+  }
+});
+
+test("migration CLI consumes completion only after all awaited cleanup and immediately before the resume flag", async () => {
+  const source = (
+    await readFile(
+      path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const begin = "// BEGIN closed Linux migration source route\n",
+    end = "// END closed Linux migration source route";
+  assert.equal(source.split(begin).length, 2);
+  assert.equal(source.split(end).length, 2);
+  const route = source.slice(
+    source.indexOf(begin) + begin.length,
+    source.indexOf(end),
+  );
+  const declaration = ts.createSourceFile(
+    "route.mjs",
+    route,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  ).statements[0];
+  assert(ts.isIfStatement(declaration));
+  const statements = declaration.thenStatement.statements;
+  assert.equal(
+    statements.at(-3).expression.expression.getText(),
+    "consumeLinuxMigrationCompletion",
+  );
+  assert.equal(statements.at(-2).expression.getText(), "resumedSource = true");
+  assert(ts.isReturnStatement(statements.at(-1)));
+  const selected = {
+    checkpointProducer: { runId: 123 },
+    policySha256: "a",
+    sealArtifact: {},
+    seal: {},
+  };
+  const completion = {},
+    toolsToken = {},
+    context = {};
+  for (const mode of [
+    "success",
+    "expired-during-close",
+    "transaction-false",
+    "ordinary",
+    "mac",
+  ]) {
+    let closed = false,
+      consumed = 0,
+      transactions = 0;
+    const event = { target: "test" };
+    const helpers = await cliMigrationFunctions(
+      ["migrationDownloadData", "migrateSelectedLinuxSource"],
+      {
+        lstat: async () => ({ size: BigInt(event.bytes.length) }),
+        migrationBytes: async () => event.bytes,
+        readLinuxMigrationSelection: async () => selected,
+        migrationRawInputs: async () => ({
+          manifest: Buffer.from("{}"),
+          seal: Buffer.from("{}"),
+          inventory: Buffer.from("{}"),
+        }),
+        inspectLinuxMigrationCandidate: async (value) => {
+          value.check();
+          return {};
+        },
+        createVerifiedLinuxMigrationTools: async () => toolsToken,
+        prepareLinuxMigrationTransaction: async (value, candidate, token) => {
+          assert.equal(value, context);
+          assert.equal(token, toolsToken);
+          transactions++;
+          if (mode === "transaction-false") throw false;
+          await Promise.resolve();
+          closed = true; // The actual successful transaction owns tool retirement.
+          return completion;
+        },
+        closeVerifiedLinuxMigrationTools: async (token) => {
+          assert.equal(token, toolsToken);
+          assert(!closed, "Tool close is not idempotent");
+          await Promise.resolve();
+          closed = true;
+        },
+        hostRemaining: () => 10000,
+      },
+    );
+    const prior = {
+      producer: selected.checkpointProducer,
+      manifest: { identity: { producer: "old" } },
+      migration: helpers.migrationDownloadData(selected),
+    };
+    event.bytes = Buffer.from(canonical(prior));
+    const scope = {
+      TARGET:
+        mode === "mac" ? "aarch64-apple-darwin" : "aarch64-unknown-linux-gnu",
+      prior,
+      identity: { producer: mode === "ordinary" ? "old" : "new" },
+      context,
+      download: "/model/download",
+      env: { CEF_RESTORE_DOWNLOAD_PROOF_SHA: sha(event.bytes) },
+      producer: {},
+      resumedSource: false,
+      migrateSelectedLinuxSource: helpers.migrateSelectedLinuxSource,
+      fail: (ok, message) => assert(ok, message),
+      consumeLinuxMigrationCompletion: (owner, value) => {
+        assert(closed);
+        assert.equal(owner, context);
+        assert.equal(value, completion);
+        if (mode === "expired-during-close")
+          throw Error("owner retired during close");
+        consumed++;
+      },
+    };
+    const pending = vm.runInNewContext(
+      "(async()=>{" + route + "return 'ordinary';})()",
+      scope,
+    );
+    if (mode === "success" || mode === "ordinary") await pending;
+    else if (mode === "transaction-false")
+      await assert.rejects(pending, (error) => error === false);
+    else await assert.rejects(pending, /owner retired|Linux-only/);
+    assert.equal(scope.resumedSource, mode === "success");
+    assert.equal(consumed, mode === "success" ? 1 : 0);
+    assert.equal(transactions, mode === "ordinary" || mode === "mac" ? 0 : 1);
+  }
+});
+
+test("migration CLI uses actual non-idempotent tool close and preserves one real FD retirement on success or early failure", async (t) => {
+  const source = await readFile(
+    path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs"),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "migration.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const declarations = [
+    "closeHeld",
+    "recordCleanup",
+    "closeVerifiedLinuxMigrationTools",
+  ]
+    .map((name) => {
+      const item = ast.statements.find(
+        (node) => ts.isFunctionDeclaration(node) && node.name?.text === name,
+      );
+      assert(item);
+      return item.getText(ast).replace(/^export /, "");
+    })
+    .join("\n");
+  const root = await realpath(
+    await mkdtemp(path.join(tmpdir(), "cef-cli-tool-retirement-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const mode of ["success", "preentry-false", "postentry-null"]) {
+    const file = path.join(root, mode);
+    await writeFile(file, "owned", { flag: "wx" });
+    const fd = await open(file, "r");
+    const tools = {},
+      completion = {},
+      ledger = new WeakMap(),
+      reports = new WeakMap();
+    let closes = 0;
+    ledger.set(tools, {
+      held: [
+        {
+          handle: {
+            close: async () => {
+              await fd.close();
+              closes++;
+            },
+          },
+        },
+      ],
+    });
+    const actualClose = vm.runInNewContext(
+      declarations + "\ncloseVerifiedLinuxMigrationTools",
+      {
+        toolContexts: ledger,
+        cleanupReports: reports,
+        need: (ok, reason) => assert(ok, "LINUX_MIGRATION_" + reason),
+      },
+    );
+    const selected = {
+      checkpointProducer: { runId: 123 },
+      policySha256: "a".repeat(64),
+      sealArtifact: {},
+      seal: {},
+    };
+    const helpers = await cliMigrationFunctions(
+      ["migrationDownloadData", "migrateSelectedLinuxSource"],
+      {
+        lstat: async () => ({ size: BigInt(bytes.length) }),
+        migrationBytes: async () => bytes,
+        readLinuxMigrationSelection: async () => selected,
+        migrationRawInputs: async () => ({
+          manifest: Buffer.from("{}"),
+          seal: Buffer.from("{}"),
+          inventory: Buffer.from("{}"),
+        }),
+        inspectLinuxMigrationCandidate: async () => ({}),
+        createVerifiedLinuxMigrationTools: async () => tools,
+        prepareLinuxMigrationTransaction: async () => {
+          if (mode === "preentry-false") throw false;
+          await actualClose(tools);
+          if (mode === "postentry-null") throw null;
+          return completion;
+        },
+        closeVerifiedLinuxMigrationTools: actualClose,
+        hostRemaining: () => 10000,
+      },
+    );
+    const prior = {
+      producer: selected.checkpointProducer,
+      migration: helpers.migrationDownloadData(selected),
+    };
+    const bytes = Buffer.from(canonical(prior));
+    try {
+      const pending = helpers.migrateSelectedLinuxSource(
+        {},
+        prior,
+        "/model/download",
+        { CEF_RESTORE_DOWNLOAD_PROOF_SHA: sha(bytes) },
+        {},
+        {},
+      );
+      if (mode === "success") assert.equal(await pending, completion);
+      else
+        await assert.rejects(
+          pending,
+          (error) => error === (mode === "preentry-false" ? false : null),
+        );
+      assert.equal(closes, 1);
+      assert.equal(ledger.has(tools), false);
+      assert.equal(reports.get(tools).descriptorsClosed, true);
+      await assert.rejects(fd.stat(), /closed|EBADF/);
+    } finally {
+      if (closes === 0) await fd.close();
+    }
+  }
+});
+
+test("migration CLI held byte reader rejects wrong pins and oversized named files before reading them", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cef-cli-migration-bytes-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, "proof.json"),
+    raw = Buffer.from('{"fixed":true}\n');
+  await writeFile(file, raw, { flag: "wx" });
+  const { constants } = await import("node:fs");
+  let opened = 0;
+  const helpers = await cliMigrationFunctions(["migrationBytes"], {
+    noLinks,
+    lstat,
+    constants,
+    open: (...args) => {
+      opened++;
+      return open(...args);
+    },
+  });
+  const expected = { bytes: raw.length, sha256: sha(raw) };
+  assert.deepEqual(await helpers.migrationBytes(file, 1024, expected), raw);
+  await assert.rejects(
+    helpers.migrationBytes(file, 1024, { ...expected, sha256: "e".repeat(64) }),
+    /changed/,
+  );
+  const before = opened;
+  await writeFile(file, Buffer.alloc(2048));
+  await assert.rejects(
+    helpers.migrationBytes(file, 1024, expected),
+    /ordinary size/,
+  );
+  assert.equal(opened, before);
+});
+
+test("migration CLI exact inverse preserves the complete old caller and keeps compile without API credentials", async () => {
+  let text = (
+    await readFile(
+      path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  for (const name of [
+    "closed Linux migration CLI imports",
+    "closed Linux migration producer verification import",
+    "closed Linux migration CLI helpers",
+    "closed Linux migration download route",
+    "closed Linux migration trusted download output",
+    "closed Linux migration source route",
+  ]) {
+    const a = `// BEGIN ${name}`,
+      b = `// END ${name}`;
+    assert.equal(text.split(a).length, 2);
+    assert.equal(text.split(b).length, 2);
+    const start = text.lastIndexOf("\n", text.indexOf(a)) + 1;
+    const end = text.indexOf("\n", text.indexOf(b)) + 1;
+    const replacement =
+      name === "closed Linux migration download route"
+        ? String.raw`    const result = await restoreDownload(
+      apiClient(producer.repository, env.GH_TOKEN, fetch, { readOnly: true }),
+      {
+        repository: producer.repository,
+        token: env.GH_TOKEN,
+        runId: options["--restore-run"],
+        target: TARGET,
+        destination: download,
+        python: verified.python,
+        helper: HELPER,
+      },
+    );
+`
+        : "";
+    text = text.slice(0, start) + replacement + text.slice(end);
+  }
+  assert.equal(Buffer.byteLength(text), 43565);
+  assert.equal(
+    sha(text),
+    "d42cab3135237fb0dcfb9285b72492188bcfd3f4b43f6bfa75ea2ada847fec34",
+  );
+  const workflow = YAML.parse(
+    await readFile(path.join(ROOT, WORKFLOW), "utf8"),
+  );
+  const steps = workflow.jobs.checkpoint.steps;
+  const restore = steps.find((step) => step.id === "restore");
+  const compile = steps.find(
+    (step) => step.env?.CEF_RESTORE_DOWNLOAD_PROOF_SHA !== undefined,
+  );
+  assert.equal(
+    compile.env.CEF_RESTORE_DOWNLOAD_PROOF_SHA,
+    "${{ steps.restore.outputs.download_proof_sha }}",
+  );
+  assert.equal(compile.env.GH_TOKEN, undefined);
+  assert.equal(compile.env.GITHUB_TOKEN, undefined);
+  assert(restore.env.GH_TOKEN);
+  assert.equal(workflow.jobs.checkpoint.timeout, undefined);
+  assert.equal(workflow.jobs.checkpoint["timeout-minutes"], 300);
+});
+
 // SOURCE I/O diagnostics are optional, never authority for a path or caller.
 test("source IO normal directory EOF performs no diagnostic work and unexpected StopIteration remains visible", () => {
   const result = python(
@@ -6646,7 +7131,7 @@ function producerSpecifiers(text) {
   visit(source);
   return result;
 }
-test("actual eleven-module producer imports without dependencies and rejects bare or computed dependency drift", async (t) => {
+test("actual thirteen-module producer imports without dependencies and rejects bare or computed dependency drift", async (t) => {
   assert.throws(
     () => producerSpecifiers('import YAML from "yaml";'),
     /Bare producer/,
@@ -6682,8 +7167,24 @@ test("actual eleven-module producer imports without dependencies and rejects bar
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, source);
   }
-  assert.equal(seen.size, 11);
-  assert(seen.has("scripts/lib/cef-mac-source-metadata.mjs"));
+  assert.deepEqual(
+    [...seen].sort(),
+    [
+      "scripts/cef-engineering-checkpoint.mjs",
+      "scripts/cef-hosted-bootstrap.mjs",
+      "scripts/cef-hosted-provision.mjs",
+      "scripts/cef-runtime-ci.mjs",
+      "scripts/browser-runtime-package.mjs",
+      "scripts/cef-custom-artifact-inventory.mjs",
+      "scripts/lib/cef-engineering-checkpoint.mjs",
+      "scripts/lib/cef-linux-producer-migration.mjs",
+      "scripts/lib/cef-mac-sdk-inventory.mjs",
+      "scripts/lib/cef-mac-source-metadata.mjs",
+      "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+      "scripts/lib/browser-custom-runtime.mjs",
+      "scripts/lib/browser-runtime-release.mjs",
+    ].sort(),
+  );
   await mkdir(path.join(scratch, "native"));
   await cp(
     path.join(ROOT, "native/cef-hosted-recipe.json"),

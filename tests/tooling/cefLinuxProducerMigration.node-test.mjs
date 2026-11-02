@@ -16,7 +16,208 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutCliModuleDelta(text) {
+  for (const name of [
+    "closed migration CLI source delta",
+    "closed migration CLI data and completion",
+  ]) {
+    const indent = name.endsWith("source delta") ? "  " : "";
+    const start = `${indent}// BEGIN ${name}\n`;
+    const end = `${indent}// END ${name}\n`;
+    assert.equal(text.split(start).length, 2);
+    assert.equal(text.split(end).length, 2);
+    const block = text.slice(
+      text.indexOf(start),
+      text.indexOf(end) + end.length,
+    );
+    text = text.replace(block + (indent ? "" : "\n"), "");
+  }
+  return text;
+}
+test("CLI additions invert to the complete closed transaction module, with both admission gates still closed", async () => {
+  const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  assert.equal(
+    core.sha(withoutCliModuleDelta(text)),
+    "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
+  );
+  assert(text.includes("const TRANSACTION_ADMITTED = false;"));
+  assert(text.includes("const PREPARATION_ONLY = true;"));
+  await assert.rejects(
+    migration.readLinuxMigrationSelection({ policy: {} }),
+    /SELECTION_ARGUMENTS/,
+  );
+});
+
+test("CLI completion consumption is synchronous, context-bound and single-use across retired continuations", async () => {
+  const completedMigrationTransactions = new WeakMap();
+  const context = {},
+    foreign = {};
+  let live = {
+    target: M.target,
+    sourceLockIdentity: M.source,
+    revalidationUsed: true,
+    initialCohortQuietProven: true,
+  };
+  let retired = false;
+  const primary = Error("original owner retired");
+  const api = await privateFunctions(
+    ["need", "transactionCompletionBinding", "consumeLinuxMigrationCompletion"],
+    {
+      canonical: core.canonical,
+      completedMigrationTransactions,
+      assertLiveLinuxSourceContext: (value) => {
+        assert.equal(value, context);
+        if (retired) throw primary;
+        return live;
+      },
+    },
+  );
+  const issue = () => {
+    const completion = Object.freeze({ authorizing: false });
+    completedMigrationTransactions.set(completion, {
+      context,
+      sourceBinding: api.transactionCompletionBinding(live),
+      result: Object.freeze({
+        newCacheHeaderBinding: true,
+        completeCacheStructureValidated: false,
+      }),
+    });
+    return completion;
+  };
+  const completion = issue();
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, {}),
+    /COMPLETION_CONTEXT/,
+  );
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(foreign, completion),
+    /COMPLETION_CONTEXT/,
+  );
+  assert(completedMigrationTransactions.has(completion));
+  live = { ...live, revalidationUsed: false };
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, completion),
+    /COMPLETION_CONTEXT/,
+  );
+  live = { ...live, revalidationUsed: true, initialCohortQuietProven: false };
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, completion),
+    /COMPLETION_CONTEXT/,
+  );
+  live = {
+    ...live,
+    initialCohortQuietProven: true,
+    canonicalRoot: "/replacement",
+  };
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, completion),
+    /COMPLETION_CONTEXT/,
+  );
+  delete live.canonicalRoot;
+  retired = true;
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, completion),
+    (error) => error === primary,
+  );
+  retired = false;
+  const result = api.consumeLinuxMigrationCompletion(context, completion);
+  assert(!(result instanceof Promise));
+  assert(Object.isFrozen(result));
+  assert.equal(result.completeCacheStructureValidated, false);
+  assert(!completedMigrationTransactions.has(completion));
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, completion),
+    /COMPLETION_CONTEXT/,
+  );
+  const late = issue();
+  await Promise.resolve();
+  retired = true;
+  assert.throws(
+    () => api.consumeLinuxMigrationCompletion(context, late),
+    (error) => error === primary,
+  );
+});
+
+test("CLI fixed selector reads actual committed capsule bytes and rejects missing, uncommitted and changed policy", async (t) => {
+  const f = await fixture(t);
+  const api = await privateFunctions(
+    [
+      "fixedLinuxMigrationSelection",
+      "producer",
+      "need",
+      "exact",
+      "tree",
+      "git",
+      "heldFile",
+      "pin",
+      "json",
+    ],
+    {
+      fs,
+      path,
+      constants,
+      createHash,
+      Buffer,
+      TextDecoder,
+      process,
+      execFileSync,
+      LINUX_MIGRATION: M,
+      WORKFLOW: core.WORKFLOW,
+      LIMITS: core.LIMITS,
+      SOURCE_METADATA_MAX_BYTES: core.SOURCE_METADATA_MAX_BYTES,
+      sha: core.sha,
+      canonical: core.canonical,
+      codeTreeDigest: core.codeTreeDigest,
+      noLinks: core.noLinks,
+      positive: (value) => Number.isSafeInteger(value) && value > 0,
+      hex: (value, length = 64) =>
+        typeof value === "string" &&
+        new RegExp("^[a-f0-9]{" + length + "}$").test(value),
+      stamp: (s) =>
+        [
+          s.dev,
+          s.ino,
+          s.uid,
+          s.mode,
+          s.nlink,
+          s.size,
+          s.mtimeNs,
+          s.ctimeNs,
+        ].join(":"),
+    },
+  );
+  const read = (producer = f.args.currentProducer) =>
+    api.fixedLinuxMigrationSelection(f.repo, producer, () => {});
+  const selected = await read();
+  assert.equal(selected.authorizing, false);
+  assert.equal(
+    selected.checkpointProducer.runId,
+    f.policy.from.checkpointProducer.runId,
+  );
+  assert(Object.isFrozen(selected.checkpointProducer));
+  const named = path.join(f.repo, M.policyPath);
+  const original = await fs.readFile(named);
+  await fs.appendFile(named, " ");
+  await assert.rejects(read(), /PIN_MISMATCH/);
+  await fs.writeFile(named, original);
+  await assert.rejects(
+    read({ ...f.args.currentProducer, head: "e".repeat(40) }),
+    /CURRENT_HEAD/,
+  );
+  git(f.repo, ["rm", "--", M.policyPath]);
+  git(f.repo, ["commit", "--quiet", "-m", "no selected capsule"]);
+  const producer = {
+    ...f.args.currentProducer,
+    head: git(f.repo, ["rev-parse", "HEAD"]).toString().trim(),
+  };
+  assert.equal(await read(producer), null);
+  await fs.mkdir(path.dirname(named), { recursive: true });
+  await fs.writeFile(named, original);
+  await assert.rejects(read(producer), /POLICY_UNCOMMITTED/);
+});
+
 function withoutTransactionDelta(text) {
+  text = withoutCliModuleDelta(text);
   for (const [start, end] of [
     [
       "// BEGIN inactive fixed transaction imports\n",

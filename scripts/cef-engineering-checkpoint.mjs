@@ -2,6 +2,19 @@
 // Closed, manual engineering checkpoint path. Never an application publisher.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+// BEGIN closed Linux migration CLI imports
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
+import { extractIndependentSealBytes } from "./lib/cef-windows-arm-sdk-origin.mjs";
+import {
+  readLinuxMigrationSelection,
+  inspectLinuxMigrationCandidate,
+  createVerifiedLinuxMigrationTools,
+  closeVerifiedLinuxMigrationTools,
+  prepareLinuxMigrationTransaction,
+  consumeLinuxMigrationCompletion,
+} from "./lib/cef-linux-producer-migration.mjs";
+// END closed Linux migration CLI imports
 import {
   appendFile,
   lstat,
@@ -84,6 +97,9 @@ import {
   createMacProcessCensusFactory,
   apiClient,
   restoreDownload,
+  // BEGIN closed Linux migration producer verification import
+  verifyProducer,
+  // END closed Linux migration producer verification import
   uploadCheckpoint,
   executionOptions,
   hostRemaining,
@@ -100,6 +116,231 @@ const fail = (ok, message) => {
   if (!ok) throw new Error(message);
 };
 const json = async (p) => JSON.parse(await readFile(p, "utf8"));
+// BEGIN closed Linux migration CLI helpers
+async function migrationBytes(file, maximum, expected) {
+  fail(
+    expected &&
+      Number.isSafeInteger(expected.bytes) &&
+      expected.bytes > 0 &&
+      expected.bytes <= maximum &&
+      /^[a-f0-9]{64}$/.test(expected.sha256),
+    "Migration input byte pin",
+  );
+  await noLinks(file);
+  const stamp = (s) =>
+    [s.dev, s.ino, s.mode, s.nlink, s.size, s.mtimeNs, s.ctimeNs]
+      .map(String)
+      .join(":");
+  const before = await lstat(file, { bigint: true });
+  fail(
+    before.isFile() &&
+      before.nlink === 1n &&
+      before.size === BigInt(expected.bytes),
+    "Migration input ordinary size",
+  );
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let failed = false;
+  try {
+    fail(
+      stamp(await handle.stat({ bigint: true })) === stamp(before),
+      "Migration input opened identity",
+    );
+    const raw = Buffer.alloc(expected.bytes);
+    for (let at = 0; at < raw.length;) {
+      const { bytesRead } = await handle.read(
+        raw,
+        at,
+        Math.min(65536, raw.length - at),
+        at,
+      );
+      fail(bytesRead > 0, "Migration input short read");
+      at += bytesRead;
+    }
+    const extra = Buffer.alloc(1);
+    fail(
+      (await handle.read(extra, 0, 1, raw.length)).bytesRead === 0 &&
+        sha(raw) === expected.sha256 &&
+        stamp(await handle.stat({ bigint: true })) === stamp(before) &&
+        stamp(await lstat(file, { bigint: true })) === stamp(before),
+      "Migration input changed",
+    );
+    return raw;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await handle.close();
+    } catch (error) {
+      if (!failed) throw error;
+    }
+  }
+}
+function migrationDownloadData(selection) {
+  return {
+    kind: "linux-exact-successful-migration-download",
+    policySha256: selection.policySha256,
+    checkpointProducer: selection.checkpointProducer,
+    sealArtifact: selection.sealArtifact,
+    rawSeal: selection.seal,
+    successfulProducerVerified: true,
+    authorizing: false,
+  };
+}
+async function migrationRawInputs(download, selection) {
+  const zip = await migrationBytes(
+    path.join(download, "seal.zip"),
+    LIMITS.seal,
+    selection.sealArtifact,
+  );
+  const seal = extractIndependentSealBytes(zip);
+  fail(
+    seal.length === selection.seal.bytes && sha(seal) === selection.seal.sha256,
+    "Migration raw seal differs from fixed capsule",
+  );
+  const manifest = await migrationBytes(
+    path.join(download, "manifest.json"),
+    LIMITS.seal,
+    selection.manifest,
+  );
+  const inventory = await migrationBytes(
+    path.join(download, "inventory.json"),
+    LIMITS.metadata,
+    selection.inventory,
+  );
+  return { seal, manifest, inventory };
+}
+async function downloadSelectedLinuxMigration(
+  api,
+  selection,
+  operation,
+  download,
+) {
+  const fingerprint = canonical(selection);
+  const checkSelection = async () =>
+    fail(
+      canonical(await readLinuxMigrationSelection()) === fingerprint,
+      "Migration selection changed during download",
+    );
+  const success = async () => {
+    const run = await verifyProducer(api, selection.checkpointProducer);
+    fail(
+      run.status === "completed" && run.conclusion === "success",
+      "Migration requires successful old producer",
+    );
+  };
+  await success();
+  await checkSelection();
+  const result = await operation(); // Fixed internal restoreDownload, not a public callback API.
+  await success();
+  const listing = await api(
+    `actions/runs/${selection.checkpointProducer.runId}/artifacts?per_page=100`,
+  );
+  fail(
+    listing.total_count <= 100 && Array.isArray(listing.artifacts),
+    "Migration artifact listing bound",
+  );
+  const artifacts = listing.artifacts.filter(
+    (row) =>
+      row.name ===
+      `cef-engineering-seal-${selection.checkpointProducer.runId}-${selection.checkpointProducer.attempt}`,
+  );
+  const artifact = artifacts[0];
+  fail(
+    artifacts.length === 1 &&
+      !artifact.expired &&
+      artifact.id === selection.sealArtifact.id &&
+      artifact.size_in_bytes === selection.sealArtifact.bytes &&
+      artifact.digest === `sha256:${selection.sealArtifact.sha256}` &&
+      artifact.workflow_run?.head_sha === selection.checkpointProducer.head &&
+      result.sealArtifact.id === artifact.id &&
+      result.sealArtifact.sha256 === selection.sealArtifact.sha256 &&
+      canonical(result.producer) === canonical(selection.checkpointProducer),
+    "Migration independent artifact changed",
+  );
+  const raw = await migrationRawInputs(download, selection);
+  fail(
+    canonical(JSON.parse(raw.manifest)) === canonical(result.manifest),
+    "Migration download result differs from raw manifest",
+  );
+  await checkSelection();
+  await success();
+  await checkSelection();
+  return { ...result, migration: migrationDownloadData(selection) };
+}
+async function migrateSelectedLinuxSource(
+  context,
+  prior,
+  download,
+  env,
+  producer,
+  identity,
+) {
+  fail(
+    /^[a-f0-9]{64}$/.test(env.CEF_RESTORE_DOWNLOAD_PROOF_SHA ?? ""),
+    "Trusted migration download proof pin required",
+  );
+  const proofName = path.join(download, "download-proof.json");
+  const proofSize = (await lstat(proofName, { bigint: true })).size;
+  fail(
+    proofSize > 0n && proofSize <= BigInt(LIMITS.seal),
+    "Migration proof size bound",
+  );
+  const proof = await migrationBytes(proofName, LIMITS.seal, {
+    bytes: Number(proofSize),
+    sha256: env.CEF_RESTORE_DOWNLOAD_PROOF_SHA,
+  });
+  fail(
+    proof.length <= LIMITS.seal &&
+      sha(proof) === env.CEF_RESTORE_DOWNLOAD_PROOF_SHA &&
+      canonical(JSON.parse(proof)) === canonical(prior),
+    "Migration download proof changed",
+  );
+  const selection = await readLinuxMigrationSelection();
+  fail(
+    selection &&
+      canonical(prior.migration) ===
+        canonical(migrationDownloadData(selection)) &&
+      canonical(prior.producer) === canonical(selection.checkpointProducer),
+    "Exact migration download selection required",
+  );
+  const raw = await migrationRawInputs(download, selection);
+  const candidate = await inspectLinuxMigrationCandidate({
+    restoreRun: selection.checkpointProducer.runId,
+    currentProducer: producer,
+    freshIdentity: identity,
+    oldManifestBytes: raw.manifest,
+    oldSealBytes: raw.seal,
+    oldSealArtifact: selection.sealArtifact,
+    oldInventoryBytes: raw.inventory,
+    check: () =>
+      fail(hostRemaining(env) > 0, "Migration original host deadline"),
+  });
+  const tools = await createVerifiedLinuxMigrationTools(candidate);
+  let failed = false,
+    completed = false;
+  try {
+    const completion = await prepareLinuxMigrationTransaction(
+      context,
+      candidate,
+      tools,
+    );
+    completed = true;
+    return completion;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    // A fulfilled transaction has already consumed and closed its tools.
+    // A pre-entry failure still leaves this creator responsible for closing.
+    try {
+      if (!completed) await closeVerifiedLinuxMigrationTools(tools);
+    } catch (error) {
+      if (!failed) throw error;
+    }
+  }
+}
+// END closed Linux migration CLI helpers
 export function macSourceOperations(target) {
   if (target === "aarch64-unknown-linux-gnu") return null;
   if (target === "aarch64-apple-darwin")
@@ -319,9 +560,18 @@ async function checkpointMain(argv, env, observer) {
     if (!options["--restore-run"])
       return { restore: false, nativeAcceptance: false };
     const verified = await tools(env, profile);
-    const result = await restoreDownload(
-      apiClient(producer.repository, env.GH_TOKEN, fetch, { readOnly: true }),
-      {
+    // BEGIN closed Linux migration download route
+    const api = apiClient(producer.repository, env.GH_TOKEN, fetch, {
+      readOnly: true,
+    });
+    const selection =
+      TARGET === "aarch64-unknown-linux-gnu"
+        ? await readLinuxMigrationSelection()
+        : null;
+    const selected =
+      selection?.checkpointProducer.runId === options["--restore-run"];
+    const operation = () =>
+      restoreDownload(api, {
         repository: producer.repository,
         token: env.GH_TOKEN,
         runId: options["--restore-run"],
@@ -329,8 +579,16 @@ async function checkpointMain(argv, env, observer) {
         destination: download,
         python: verified.python,
         helper: HELPER,
-      },
-    );
+      });
+    const result = selected
+      ? await downloadSelectedLinuxMigration(
+          api,
+          selection,
+          operation,
+          download,
+        )
+      : await operation();
+    // END closed Linux migration download route
     if (env.GITHUB_OUTPUT)
       await appendFile(
         env.GITHUB_OUTPUT,
@@ -341,6 +599,13 @@ async function checkpointMain(argv, env, observer) {
       `${canonical(result)}\n`,
       { flag: "wx" },
     );
+    // BEGIN closed Linux migration trusted download output
+    if (selected && env.GITHUB_OUTPUT)
+      await appendFile(
+        env.GITHUB_OUTPUT,
+        `download_proof_sha=${sha(await readFile(path.join(download, "download-proof.json")))}\n`,
+      );
+    // END closed Linux migration trusted download output
     return { restoreDownloaded: true, nativeAcceptance: false };
   }
   if (options.mode === "probe-sdk") {
@@ -780,6 +1045,27 @@ async function checkpointMain(argv, env, observer) {
                         "Restore proof differs from pinned manifest",
                       ),
                     );
+                    // BEGIN closed Linux migration source route
+                    if (
+                      prior.manifest.identity.producer !== identity.producer
+                    ) {
+                      fail(
+                        TARGET === "aarch64-unknown-linux-gnu",
+                        "Producer migration is Linux-only",
+                      );
+                      const completion = await migrateSelectedLinuxSource(
+                        context,
+                        prior,
+                        download,
+                        env,
+                        producer,
+                        identity,
+                      );
+                      consumeLinuxMigrationCompletion(context, completion);
+                      resumedSource = true; // No await between actual consume and this flag.
+                      return;
+                    }
+                    // END closed Linux migration source route
                     await restorePhase(
                       restoreObserver,
                       "manifest-validation",

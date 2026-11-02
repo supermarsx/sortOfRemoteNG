@@ -139,6 +139,9 @@ const IDENTITY_FIELDS = [
   "siso",
 ];
 const CHANGED_PATHS = new Set([
+  // BEGIN closed migration CLI source delta
+  "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+  // END closed migration CLI source delta
   "scripts/lib/cef-linux-producer-migration.mjs",
   "scripts/cef-engineering-checkpoint.mjs",
   "scripts/cef-runtime-ci.mjs",
@@ -2525,6 +2528,171 @@ export async function prepareLinuxMigrationTransaction(
   }
 }
 // END inactive fixed migration transaction
+
+// BEGIN closed migration CLI data and completion
+async function fixedLinuxMigrationSelection(root, currentProducer, check) {
+  producer(currentProducer);
+  check();
+  root = await noLinks(root);
+  need(
+    git(root, ["rev-parse", "HEAD"]).toString().trim() === currentProducer.head,
+    "CURRENT_HEAD",
+  );
+  const policyRows = tree(
+    git(root, ["ls-tree", "HEAD", "--", LINUX_MIGRATION.policyPath]),
+  );
+  if (!policyRows.length) {
+    check();
+    need(
+      git(root, ["rev-parse", "HEAD"]).toString().trim() ===
+        currentProducer.head,
+      "CURRENT_HEAD",
+    );
+    // An uncommitted policy is not an absent reviewed policy.
+    try {
+      await fs.lstat(path.join(root, LINUX_MIGRATION.policyPath));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      check();
+      need(
+        git(root, ["rev-parse", "HEAD"]).toString().trim() ===
+          currentProducer.head,
+        "CURRENT_HEAD",
+      );
+      return null;
+    }
+    need(false, "POLICY_UNCOMMITTED");
+  }
+  need(policyRows.length === 1, "POLICY_MISSING");
+  const raw = git(root, [
+    "cat-file",
+    "blob",
+    "HEAD:" + LINUX_MIGRATION.policyPath,
+  ]);
+  const file = await heldFile(
+    path.join(root, LINUX_MIGRATION.policyPath),
+    128 * 1024,
+    { bytes: raw.length, sha256: sha(raw) },
+    check,
+  );
+  await file.handle.close();
+  check();
+  const policy = json(raw, 128 * 1024);
+  exact(policy, [
+    "schemaVersion",
+    "kind",
+    "target",
+    "source",
+    "linuxMetadata",
+    "from",
+    "toProducer",
+    "oldSourceTree",
+    "changedSources",
+  ]);
+  const entries = tree(
+    git(root, [
+      "ls-tree",
+      "-r",
+      "HEAD",
+      "--",
+      "scripts",
+      "native/cef-hosted-recipe.json",
+      ".node-version",
+      WORKFLOW,
+    ]),
+  );
+  need(
+    policy.schemaVersion === 1 &&
+      policy.kind === "sorng-linuxarm-exact-producer-migration" &&
+      policy.target === LINUX_MIGRATION.target &&
+      policy.source === LINUX_MIGRATION.source &&
+      policy.toProducer === codeTreeDigest(entries) &&
+      policy.toProducer !== LINUX_MIGRATION.producer,
+    "POLICY_SCOPE",
+  );
+  exact(policy.linuxMetadata, [
+    "schemaVersion",
+    "kind",
+    "policy",
+    "sourceDateEpoch",
+  ]);
+  need(
+    policy.linuxMetadata.schemaVersion === 1 &&
+      policy.linuxMetadata.kind === "sorng-linuxarm-source-metadata" &&
+      policy.linuxMetadata.policy === LINUX_MIGRATION.metadataPolicy &&
+      policy.linuxMetadata.sourceDateEpoch === LINUX_MIGRATION.epoch,
+    "LINUX_METADATA",
+  );
+  exact(policy.from, [
+    "producer",
+    "checkpointProducer",
+    "identitySha256",
+    "sealArtifact",
+    "seal",
+    "manifest",
+    "inventory",
+    "sidecar",
+  ]);
+  producer(policy.from.checkpointProducer, true);
+  need(
+    policy.from.producer === LINUX_MIGRATION.producer &&
+      hex(policy.from.identitySha256) &&
+      Array.isArray(policy.oldSourceTree) &&
+      policy.oldSourceTree.length === LINUX_MIGRATION.sourceFiles &&
+      codeTreeDigest(policy.oldSourceTree) === LINUX_MIGRATION.producer,
+    "OLD_SOURCE",
+  );
+  exact(policy.from.sealArtifact, ["id", "bytes", "sha256"]);
+  need(positive(policy.from.sealArtifact.id), "SEAL_ARTIFACT");
+  pin(
+    {
+      bytes: policy.from.sealArtifact.bytes,
+      sha256: policy.from.sealArtifact.sha256,
+    },
+    LIMITS.seal,
+  );
+  pin(policy.from.seal, LIMITS.seal);
+  pin(policy.from.manifest, LIMITS.seal);
+  pin(policy.from.inventory, LIMITS.metadata);
+  pin(policy.from.sidecar, SOURCE_METADATA_MAX_BYTES);
+  check();
+  need(
+    git(root, ["rev-parse", "HEAD"]).toString().trim() === currentProducer.head,
+    "CURRENT_HEAD",
+  );
+  return Object.freeze({
+    kind: "linux-migration-download-selection-data",
+    authorizing: false,
+    policySha256: sha(raw),
+    policyBlob: policyRows[0].sha,
+    toProducer: policy.toProducer,
+    checkpointProducer: Object.freeze({ ...policy.from.checkpointProducer }),
+    sealArtifact: Object.freeze({ ...policy.from.sealArtifact }),
+    seal: Object.freeze({ ...policy.from.seal }),
+    manifest: Object.freeze({ ...policy.from.manifest }),
+    inventory: Object.freeze({ ...policy.from.inventory }),
+  });
+}
+export async function readLinuxMigrationSelection(...args) {
+  need(args.length === 0, "SELECTION_ARGUMENTS");
+  const currentProducer = authority(process.env);
+  const check = () => need(hostRemaining(process.env) > 0, "SELECTION_LEASE");
+  return await fixedLinuxMigrationSelection(ROOT, currentProducer, check);
+}
+export function consumeLinuxMigrationCompletion(context, completion) {
+  const record = completedMigrationTransactions.get(completion);
+  need(record?.context === context, "TRANSACTION_COMPLETION_CONTEXT");
+  const current = assertLiveLinuxSourceContext(context);
+  need(
+    current.revalidationUsed === true &&
+      current.initialCohortQuietProven === true &&
+      transactionCompletionBinding(current) === record.sourceBinding,
+    "TRANSACTION_COMPLETION_CONTEXT",
+  );
+  completedMigrationTransactions.delete(completion);
+  return Object.freeze({ ...record.result }); // Diagnostic only, already consumed.
+}
+// END closed migration CLI data and completion
 
 function proofAuthority() {
   need(process.platform === "linux" && process.arch === "x64", "PROOF_HOST");

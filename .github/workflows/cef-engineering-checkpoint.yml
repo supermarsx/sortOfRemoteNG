@@ -192,6 +192,7 @@ jobs:
         # No GH_TOKEN, GITHUB_TOKEN or ACTIONS credential is passed to any child.
         env:
           CEF_RESTORE_MANIFEST_SHA: ${{ steps.restore.outputs.manifest_sha }}
+          CEF_RESTORE_DOWNLOAD_PROOF_SHA: ${{ steps.restore.outputs.download_proof_sha }}
           CEF_ENGINEERING_MODE: ${{ inputs.mode }}
           CEF_SLICE_MINUTES: ${{ inputs.slice_minutes }}
         run: node scripts/cef-engineering-checkpoint.mjs compile --mode "$CEF_ENGINEERING_MODE" --slice-minutes "$CEF_SLICE_MINUTES"
