@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
+import path from "node:path";
 import {
   revalidateLinuxSourceOwner,
   assertLinuxSourceOwnerReceipt,
@@ -21,15 +22,18 @@ const begin = "// BEGIN inactive Linux genuine source owner\n";
 const end = "// END inactive Linux genuine source owner\n";
 const callBegin = "    // BEGIN inactive Linux genuine source owner callsite\n";
 const callEnd = "    // END inactive Linux genuine source owner callsite\n";
+const supervisionBegin = "// BEGIN inactive Linux fixed GN supervision\n";
+const supervisionEnd = "// END inactive Linux fixed GN supervision\n";
+const supervision = source.slice(
+  source.indexOf(supervisionBegin),
+  source.indexOf(supervisionEnd) + supervisionEnd.length,
+);
 const block = source.slice(
   source.indexOf(begin),
   source.indexOf(end) + end.length,
 );
 const callsite = source.slice(
-  source.lastIndexOf(
-    "    await call(\n      python,",
-    source.indexOf(callBegin),
-  ),
+  source.indexOf("    // BEGIN inactive Linux supervised GN dispatch\n"),
   source.indexOf(callEnd) + callEnd.length,
 );
 function deferred() {
@@ -46,7 +50,26 @@ function model({
   body = block,
 } = {}) {
   let remaining = 60000;
-  const childEnv = { PATH: "/reviewed/bin", SOURCE_DATE_EPOCH: "1790626028" };
+  const directories = new Map();
+  const signals = [];
+  const stamp = (name) => ({
+    dev: 1n,
+    ino: BigInt(directories.get(name) ?? 1),
+    mode: name.endsWith("logs") ? 0o40755n : 0o40700n,
+    uid: 0n,
+    isDirectory: () => true,
+    isSymbolicLink: () => false,
+  });
+  const childEnv = {
+    PATH: "/reviewed/bin",
+    SOURCE_DATE_EPOCH: "1790626028",
+    TZ: "foreign-zone",
+    HOME: "/owned/git/home",
+    GIT_CONFIG_GLOBAL: "/owned/git/global",
+    GIT_CONFIG_NOSYSTEM: "1",
+    PYTHONDONTWRITEBYTECODE: "1",
+    RUNNER_TRACKING_ID: "owned-tracking",
+  };
   const context = {
     env: childEnv,
     revalidateGn() {
@@ -60,6 +83,33 @@ function model({
     hostRemaining,
     run,
     call,
+    path: path.posix,
+    process: { getuid: () => 0 },
+    constants: { O_RDONLY: 0, O_NOFOLLOW: 1, O_DIRECTORY: 2 },
+    realpath: async (name) => name,
+    lstat: async (name) => stamp(name),
+    mkdir: async (name) => {
+      if (directories.has(name)) throw new Error("EEXIST");
+      directories.set(name, directories.size + 2);
+    },
+    open: async (name) => ({
+      stat: async () => stamp(name),
+      close: async () => {},
+    }),
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    compileSlice: async (exe, args, options) => {
+      if (options.stopSignal) signals.push(options.stopSignal);
+      if (options.logs.endsWith("-initial")) await call(exe, args, options);
+      else await run(exe, args, options);
+      return {
+        outcome: "compiler-complete",
+        exitCode: 0,
+        quiescent: true,
+        quiescence: "observed-lineage-and-root-group",
+      };
+    },
     cefHookArguments,
     engineeringContext: context,
     index: 0,
@@ -78,12 +128,22 @@ function model({
     engineering: { afterGn: async () => {} },
   });
   const api = vm.runInContext(
-    body.replace(/^export /gm, "") +
+    supervision +
+      body.replace(/^export /gm, "") +
       "\n({revalidateLinuxSourceOwner,assertLinuxSourceOwnerReceipt})",
     scope,
   );
   const invoke = vm.runInContext("(async()=>{\n" + callsite + "\n})", scope);
-  return { api, scope, context, invoke, expire: () => (remaining = 0) };
+  return {
+    api,
+    scope,
+    context,
+    invoke,
+    directories,
+    signals,
+    setRemaining: (value) => (remaining = value),
+    expire: () => (remaining = 0),
+  };
 }
 
 test("actual public entries reject forged contexts and receipts before getters or IO", () => {
@@ -129,7 +189,6 @@ test("actual completed GN callsite registers only its afterGn interval and captu
     assert.equal(result.sourceLockIdentity, "a".repeat(64));
     assert.equal(result.commandCompleted, true);
     for (const field of [
-      "cohortQuietProven",
       "sourceInputsRevalidated",
       "productionReadinessIssued",
       "sourceMigrationAdmitted",
@@ -137,6 +196,8 @@ test("actual completed GN callsite registers only its afterGn interval and captu
       "runtimeReady",
     ])
       assert.equal(result[field], false);
+    assert.equal(result.cohortQuietProven, true);
+    assert.equal(result.quiescence, "observed-lineage-and-root-group");
     assert(Object.isFrozen(result));
     assert.throws(
       () => m.api.revalidateLinuxSourceOwner(context),
@@ -161,14 +222,212 @@ test("actual completed GN callsite registers only its afterGn interval and captu
   );
   assert.equal(commands[0].options.env.PATH, "/reviewed/bin");
   assert(Object.isFrozen(commands[0].options.env));
-  assert.equal(
-    commands[0].options.name,
-    "checkpoint-linux-source-revalidation",
-  );
+  assert.equal(commands[0].options.logs, "/owned/logs/source-gn-revalidation");
+  assert.equal(commands[0].options.env.TZ, "UTC");
+  for (const key of [
+    "HOME",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_NOSYSTEM",
+    "PYTHONDONTWRITEBYTECODE",
+    "RUNNER_TRACKING_ID",
+    "SOURCE_DATE_EPOCH",
+  ])
+    assert.equal(commands[0].options.env[key], m.scope.childEnv[key]);
+  assert.equal(commands[0].options.milliseconds, 30000);
+  assert.equal(commands[0].options.out, undefined);
+  assert.equal(commands[0].options.censusFactory, undefined);
   assert.throws(
     () => m.api.assertLinuxSourceOwnerReceipt(m.context, token),
     /RECEIPT/,
   );
+  assert.throws(() => m.api.revalidateLinuxSourceOwner(m.context), /REQUIRED/);
+});
+
+test("both genuine GN stages require natural zero and exact observed-cohort quiet", async () => {
+  for (const role of ["initial", "revalidation"]) {
+    for (const change of [
+      { outcome: "slice-ended" },
+      { outcome: "compiler-failed", exitCode: 137 },
+      { exitCode: null },
+      { quiescent: false },
+      { quiescence: "root-close-only" },
+    ]) {
+      const m = model();
+      const supervised = m.scope.compileSlice;
+      m.scope.compileSlice = async (...args) => {
+        const result = await supervised(...args);
+        return args[2].logs.endsWith(`-${role}`)
+          ? { ...result, ...change }
+          : result;
+      };
+      let callbacks = 0;
+      m.scope.engineering.afterGn = async (context) => {
+        callbacks++;
+        await m.api.revalidateLinuxSourceOwner(context);
+      };
+      await assert.rejects(m.invoke(), /GN_COHORT_UNCONFIRMED/);
+      assert.equal(callbacks, role === "initial" ? 0 : 1);
+      assert.throws(
+        () => m.api.revalidateLinuxSourceOwner(m.context),
+        /REQUIRED/,
+      );
+    }
+  }
+});
+
+test("credential prefixes are denied before GN or log creation while fixed source variables survive", async () => {
+  for (const key of ["GH_TOKEN", "github_token", "ACTIONS_RUNTIME_TOKEN"]) {
+    const m = model({ call: () => assert.fail("credential reached command") });
+    m.scope.childEnv[key] = "fixture-only";
+    await assert.rejects(m.invoke(), /GN_CREDENTIAL/);
+    assert.equal(m.directories.size, 0);
+  }
+});
+
+test("cleanup reserve and log setup consume the same original work lease", async () => {
+  for (const milliseconds of [30000, 29999, 1]) {
+    const m = model({ call: () => assert.fail("reserve reached GN") });
+    m.setRemaining(milliseconds);
+    await assert.rejects(m.invoke(), /GN_CLEANUP_RESERVE/);
+    assert.equal(m.directories.size, 0);
+  }
+  const m = model({ call: () => assert.fail("setup exhausted GN work") });
+  const create = m.scope.mkdir;
+  m.scope.mkdir = async (...args) => {
+    await create(...args);
+    m.setRemaining(30000);
+  };
+  let closes = 0;
+  const opened = m.scope.open;
+  m.scope.open = async (...args) => {
+    const handle = await opened(...args);
+    handle.close = async () => {
+      closes++;
+    };
+    return handle;
+  };
+  await assert.rejects(m.invoke(), /GN_CLEANUP_RESERVE/);
+  assert.equal(closes, 1);
+});
+
+test("exclusive GN log namespaces reject collisions aliases and physical replacement", async () => {
+  for (const kind of [
+    "collision",
+    "alias",
+    "parent-replacement",
+    "child-replacement",
+    "opened-mismatch",
+  ]) {
+    const m = model();
+    if (kind === "collision")
+      m.directories.set("/owned/logs/source-gn-initial", 42);
+    if (kind === "alias") m.scope.realpath = async () => "/foreign";
+    if (kind.endsWith("replacement")) {
+      const supervised = m.scope.compileSlice;
+      m.scope.compileSlice = async (...args) => {
+        const result = await supervised(...args);
+        m.directories.set(
+          kind === "parent-replacement" ? "/owned/logs" : args[2].logs,
+          999,
+        );
+        return result;
+      };
+    }
+    if (kind === "opened-mismatch") {
+      const opened = m.scope.open;
+      m.scope.open = async (...args) => {
+        const handle = await opened(...args),
+          stamp = await handle.stat();
+        handle.stat = async () => ({ ...stamp, ino: 999n });
+        return handle;
+      };
+    }
+    await assert.rejects(m.invoke(), /EEXIST|GN_LOG_DIRECTORY/);
+  }
+});
+
+test("held GN log close is joined before success and preserves an identical primary failure", async () => {
+  for (const marker of [
+    undefined,
+    null,
+    false,
+    0,
+    "",
+    new Error("first supervision failure"),
+  ]) {
+    const m = model({
+      call: async () => {
+        throw marker;
+      },
+    });
+    const opened = m.scope.open;
+    let closes = 0;
+    m.scope.open = async (...args) => {
+      const handle = await opened(...args);
+      handle.close = async () => {
+        closes++;
+        throw new Error("later close failure");
+      };
+      return handle;
+    };
+    await m.invoke().then(
+      () => assert.fail("lost first failure"),
+      (error) => assert.equal(error, marker),
+    );
+    assert.equal(closes, 1);
+  }
+  const closeFailed = model();
+  const opened = closeFailed.scope.open;
+  closeFailed.scope.open = async (...args) => {
+    const handle = await opened(...args);
+    handle.close = async () => {
+      throw new Error("close denied");
+    };
+    return handle;
+  };
+  await assert.rejects(closeFailed.invoke(), /close denied/);
+  const late = model();
+  const lateOpen = late.scope.open;
+  late.scope.open = async (...args) => {
+    const handle = await lateOpen(...args);
+    handle.close = async () => late.expire();
+    return handle;
+  };
+  await assert.rejects(late.invoke(), /OWNER_DEADLINE/);
+});
+
+test("a pending creation-owned close denies at its original lease and never admits a late close", async () => {
+  const closing = deferred();
+  const m = model();
+  let attempts = 0,
+    callbacks = 0;
+  const opened = m.scope.open;
+  m.scope.open = async (...args) => {
+    const handle = await opened(...args);
+    handle.close = () => {
+      attempts++;
+      return closing.promise;
+    };
+    return handle;
+  };
+  m.scope.engineering.afterGn = () => callbacks++;
+  const scheduled = [];
+  m.scope.setTimeout = (callback, milliseconds) => {
+    scheduled.push(milliseconds);
+    queueMicrotask(() => {
+      m.expire();
+      callback();
+    });
+    return 0;
+  };
+  m.scope.clearTimeout = () => {};
+  await assert.rejects(m.invoke(), /GN_LOG_CLOSE_DEADLINE/);
+  assert.deepEqual(scheduled, [30000]);
+  assert.equal(attempts, 1);
+  assert.equal(callbacks, 0);
+  closing.resolve();
+  await Promise.resolve();
+  assert.equal(callbacks, 0);
   assert.throws(() => m.api.revalidateLinuxSourceOwner(m.context), /REQUIRED/);
 });
 
@@ -197,7 +456,7 @@ test("legacy callbacks and non-Linux callsites retain ordinary behavior without 
   for (const target of ["aarch64-unknown-linux-gnu", "aarch64-apple-darwin"]) {
     const m = model();
     m.scope.target = target;
-    m.scope.env = {}; // Legacy callbacks do not acquire a new clock requirement.
+    if (target !== "aarch64-unknown-linux-gnu") m.scope.env = {};
     let calls = 0;
     m.scope.engineering.afterGn = async () => calls++;
     await m.invoke();
@@ -292,13 +551,18 @@ test("callback cancellation revokes before joining and keeps its original reason
     },
   });
   let operation;
-  m.scope.engineering.afterGn = (context) => {
+  m.scope.engineering.afterGn = async (context) => {
     operation = m.api.revalidateLinuxSourceOwner(context);
+    await entered.promise;
     throw cancellation;
   };
   const outer = m.invoke();
   await entered.promise;
-  await Promise.resolve();
+  await new Promise((resolve) =>
+    m.signals[0].aborted
+      ? resolve()
+      : m.signals[0].addEventListener("abort", resolve, { once: true }),
+  );
   assert.throws(() => m.api.revalidateLinuxSourceOwner(m.context), /REQUIRED/);
   gate.resolve();
   for (const value of [outer, operation])
@@ -318,12 +582,17 @@ test("retirement precedes an escaped operation join and prevents late branding",
     },
   });
   let operation;
-  m.scope.engineering.afterGn = (context) => {
+  m.scope.engineering.afterGn = async (context) => {
     operation = m.api.revalidateLinuxSourceOwner(context);
+    await entered.promise;
   };
   const outer = m.invoke();
   await entered.promise;
-  await Promise.resolve();
+  await new Promise((resolve) =>
+    m.signals[0].aborted
+      ? resolve()
+      : m.signals[0].addEventListener("abort", resolve, { once: true }),
+  );
   assert.throws(() => m.api.revalidateLinuxSourceOwner(m.context), /REQUIRED/);
   let joined = false;
   void outer.catch(() => {
@@ -355,7 +624,9 @@ test("same-realm final await retirement is causal: unguarded control mints, actu
       `
       let releaseCallback;
       const callbackPromise = new Promise(resolve => { releaseCallback = resolve; });
-      run = () => ({then(resolve) { releaseCallback(); resolve(); }});
+      superviseLinuxSourceGn = (capture,role) => role === 'initial'
+        ? Promise.resolve()
+        : ({then(resolve) { releaseCallback(); resolve(); }});
       engineering.afterGn = context => {
         globalThis.racingOperation = revalidateLinuxSourceOwner(context);
         return callbackPromise;
@@ -381,13 +652,78 @@ test("bounded inverse restores the complete old runtime producer and exposes no 
   assert.equal(source.split(callBegin).length, 2);
   assert.equal(source.split("linuxSourceOwners.set(").length, 2);
   assert.equal(source.split("await withLinuxSourceOwner(").length, 2);
-  const old = source
-    .replace(block + "\n", "")
+  const dispatchBegin = "    // BEGIN inactive Linux supervised GN dispatch\n";
+  const dispatchEnd = "    // END inactive Linux supervised GN dispatch\n";
+  const oldCommand =
+    "    await call(\n      python,\n      index === 0 ? cefHookArguments(cef, depot) : step.args,\n      `build-${index}`,\n      step.cwd,\n    );\n";
+  function inverse(text, from, to) {
+    assert.equal(text.split(from).length, 2, "exact historical span");
+    return text.replace(from, to);
+  }
+  let prior = inverse(source, supervision + "\n", "");
+  prior = inverse(prior, "  compileSlice,\n", "");
+  prior = inverse(
+    prior,
+    source.slice(
+      source.indexOf(dispatchBegin),
+      source.indexOf(dispatchEnd) + dispatchEnd.length,
+    ),
+    oldCommand,
+  );
+  prior = inverse(
+    prior,
+    '          env: Object.freeze({ ...childEnv, TZ: "UTC" }),',
+    "          env: Object.freeze({ ...childEnv }),",
+  );
+  prior = inverse(
+    prior,
+    '        await superviseLinuxSourceGn(capture, "initial");\n',
+    "",
+  );
+  prior = inverse(
+    prior,
+    "    context,\n    controller: new AbortController(),\n",
+    "",
+  );
+  prior = inverse(prior, "    state.controller.abort(state.error);\n", "");
+  prior = inverse(
+    prior,
+    '      await superviseLinuxSourceGn(fixed, "revalidation", state);',
+    `      const commandBudget = Object.freeze({
+        remaining: () => retainedLinuxSourceOwner(context, state, epoch),
+        assertRemaining() {
+          retainedLinuxSourceOwner(context, state, epoch);
+        },
+      });
+      await run(fixed.python, fixed.args, {
+        cwd: fixed.cwd,
+        env: fixed.env,
+        logs: fixed.logs,
+        name: "checkpoint-linux-source-revalidation",
+        budget: commandBudget,
+      });`,
+  );
+  prior = inverse(
+    prior,
+    '          cohortQuietProven: true,\n          quiescence: "observed-lineage-and-root-group",',
+    "          cohortQuietProven: false,",
+  );
+  assert.equal(Buffer.byteLength(prior), 71845);
+  assert.equal(
+    createHash("sha256").update(prior).digest("hex"),
+    "6226fc3ba41339da03620d8b4b36be3d57c7b13a06fbdbe820651d7db6628e91",
+  );
+  const priorBlock = prior.slice(
+    prior.indexOf(begin),
+    prior.indexOf(end) + end.length,
+  );
+  const old = prior
+    .replace(priorBlock + "\n", "")
     .replace("  hostRemaining,\n", "")
     .replace(
-      source.slice(
-        source.indexOf(callBegin),
-        source.indexOf(callEnd) + callEnd.length,
+      prior.slice(
+        prior.indexOf(callBegin),
+        prior.indexOf(callEnd) + callEnd.length,
       ),
       "    if (engineering && index === 0)\n      await engineering.afterGn(engineeringContext);\n",
     );
@@ -398,6 +734,6 @@ test("bounded inverse restores the complete old runtime producer and exposes no 
   );
   assert.doesNotMatch(
     block,
-    /retirementReadiness|sourceMigrationAdmitted: true|cohortQuietProven: true/,
+    /retirementReadiness|sourceMigrationAdmitted: true|sourceInputsRevalidated: true/,
   );
 });

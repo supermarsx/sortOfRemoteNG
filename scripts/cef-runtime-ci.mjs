@@ -30,6 +30,7 @@ import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
 import {
   checkpointHost,
+  compileSlice,
   hostRemaining,
   SOURCE_METADATA_DATE_EPOCH,
 } from "./lib/cef-engineering-checkpoint.mjs";
@@ -1154,6 +1155,116 @@ export function engineeringBuildProfile(
   return profile;
 }
 
+// BEGIN inactive Linux fixed GN supervision
+function linuxGnRemaining(capture) {
+  const remaining = Math.min(
+    capture.remaining(),
+    hostRemaining(capture.hostClock),
+  );
+  if (!Number.isFinite(remaining) || remaining <= 0)
+    fail("LINUX_SOURCE_OWNER_DEADLINE");
+  return remaining;
+}
+function linuxGnDirectoryIdentity(info) {
+  if (!info.isDirectory() || info.isSymbolicLink())
+    fail("LINUX_GN_LOG_DIRECTORY");
+  return [info.dev, info.ino, info.mode, info.uid].map(String).join(":");
+}
+async function superviseLinuxSourceGn(capture, role, state) {
+  const check = () =>
+    state
+      ? retainedLinuxSourceOwner(state.context, state, state.epoch)
+      : linuxGnRemaining(capture);
+  if (role !== "initial" && role !== "revalidation") fail("LINUX_GN_ROLE");
+  for (const key of Object.keys(capture.env))
+    if (/^(GH_|GITHUB_|ACTIONS_)/i.test(key)) fail("LINUX_GN_CREDENTIAL");
+  if (check() <= 30000) fail("LINUX_GN_CLEANUP_RESERVE");
+  const parent = path.resolve(capture.logs);
+  if ((await realpath(parent)) !== parent) fail("LINUX_GN_LOG_DIRECTORY");
+  const parentInfo = await lstat(parent, { bigint: true });
+  const parentIdentity = linuxGnDirectoryIdentity(parentInfo);
+  if (parentInfo.uid !== BigInt(process.getuid())) fail("LINUX_GN_LOG_OWNER");
+  const directory = path.join(parent, `source-gn-${role}`);
+  await mkdir(directory, { mode: 0o700 }); // Exclusive: a prior attempt is denial.
+  const info = await lstat(directory, { bigint: true });
+  const identity = linuxGnDirectoryIdentity(info);
+  if (info.uid !== parentInfo.uid || (info.mode & 0o777n) !== 0o700n)
+    fail("LINUX_GN_LOG_OWNER");
+  const handle = await open(
+    directory,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY,
+  );
+  const checkLogs = async () => {
+    if (
+      (await realpath(parent)) !== parent ||
+      linuxGnDirectoryIdentity(await lstat(parent, { bigint: true })) !==
+        parentIdentity ||
+      (await realpath(directory)) !== directory ||
+      linuxGnDirectoryIdentity(await lstat(directory, { bigint: true })) !==
+        identity ||
+      linuxGnDirectoryIdentity(await handle.stat({ bigint: true })) !== identity
+    )
+      fail("LINUX_GN_LOG_DIRECTORY");
+  };
+  let failed = false,
+    primary;
+  try {
+    await checkLogs();
+    const milliseconds = Math.floor(check()) - 30000;
+    if (milliseconds <= 0) fail("LINUX_GN_CLEANUP_RESERVE");
+    const result = await compileSlice(capture.python, capture.args, {
+      cwd: capture.cwd,
+      env: capture.env,
+      logs: directory,
+      milliseconds,
+      outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 },
+      ...(state ? { stopSignal: state.controller.signal } : {}),
+    });
+    check();
+    if (
+      result.outcome !== "compiler-complete" ||
+      result.exitCode !== 0 ||
+      result.quiescent !== true ||
+      result.quiescence !== "observed-lineage-and-root-group"
+    )
+      fail("LINUX_GN_COHORT_UNCONFIRMED");
+    await checkLogs();
+    check();
+    // Do not expose compileSlice's live result capability to callbacks/readers.
+  } catch (error) {
+    failed = true;
+    primary = error;
+  } finally {
+    let closeTimer;
+    try {
+      // One creation-owned close attempt, bounded by the unchanged work lease.
+      // A late close has a rejection owner but cannot qualify a source receipt.
+      const closing = handle.close();
+      void closing.catch(() => {});
+      const remaining = Math.min(30000, linuxGnRemaining(capture));
+      await Promise.race([
+        closing,
+        new Promise((resolve, reject) => {
+          closeTimer = setTimeout(
+            () => reject(new Error("LINUX_GN_LOG_CLOSE_DEADLINE")),
+            Math.max(1, Math.floor(remaining)),
+          );
+        }),
+      ]);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        primary = error;
+      }
+    } finally {
+      clearTimeout(closeTimer);
+    }
+  }
+  if (failed) throw primary;
+  check();
+}
+// END inactive Linux fixed GN supervision
+
 // BEGIN inactive Linux genuine source owner
 // Only the actual build callsite below registers contexts. These registries
 // have no public writer and never populate migration readiness.
@@ -1195,6 +1306,8 @@ async function withLinuxSourceOwner(context, capture, callback) {
     pending: null,
     done: false,
     receipt: null,
+    context,
+    controller: new AbortController(),
   };
   linuxSourceOwners.set(context, state);
   let result;
@@ -1212,6 +1325,7 @@ async function withLinuxSourceOwner(context, capture, callback) {
       linuxSourceOwners.delete(context);
     if (state.pending && !state.done)
       sourceOwnerFailure(state, new Error("LINUX_SOURCE_OWNER_ESCAPED"));
+    state.controller.abort(state.error);
     if (state.pending) {
       try {
         await state.pending;
@@ -1235,19 +1349,7 @@ export function revalidateLinuxSourceOwner(context) {
     try {
       retainedLinuxSourceOwner(context, state, epoch);
       const fixed = state.capture;
-      const commandBudget = Object.freeze({
-        remaining: () => retainedLinuxSourceOwner(context, state, epoch),
-        assertRemaining() {
-          retainedLinuxSourceOwner(context, state, epoch);
-        },
-      });
-      await run(fixed.python, fixed.args, {
-        cwd: fixed.cwd,
-        env: fixed.env,
-        logs: fixed.logs,
-        name: "checkpoint-linux-source-revalidation",
-        budget: commandBudget,
-      });
+      await superviseLinuxSourceGn(fixed, "revalidation", state);
       // No await between the last ownership/lease check and private branding.
       retainedLinuxSourceOwner(context, state, epoch);
       const receipt = Object.freeze({
@@ -1259,7 +1361,8 @@ export function revalidateLinuxSourceOwner(context) {
         snapshot: Object.freeze({
           ...fixed.binding,
           commandCompleted: true,
-          cohortQuietProven: false,
+          cohortQuietProven: true,
+          quiescence: "observed-lineage-and-root-group",
           sourceInputsRevalidated: false,
           productionReadinessIssued: false,
           sourceMigrationAdmitted: false,
@@ -1754,12 +1857,15 @@ export async function build(
       budget = createHostedBuildBudget(engineering.packagingMilliseconds());
       continue;
     }
-    await call(
-      python,
-      index === 0 ? cefHookArguments(cef, depot) : step.args,
-      `build-${index}`,
-      step.cwd,
-    );
+    // BEGIN inactive Linux supervised GN dispatch
+    if (!(engineering && index === 0 && target === "aarch64-unknown-linux-gnu"))
+      await call(
+        python,
+        index === 0 ? cefHookArguments(cef, depot) : step.args,
+        `build-${index}`,
+        step.cwd,
+      );
+    // END inactive Linux supervised GN dispatch
     // BEGIN inactive Linux genuine source owner callsite
     if (engineering && index === 0) {
       if (target === "aarch64-unknown-linux-gnu") {
@@ -1768,7 +1874,7 @@ export async function build(
           python,
           args: Object.freeze([...cefHookArguments(cef, depot)]),
           cwd: step.cwd,
-          env: Object.freeze({ ...childEnv }),
+          env: Object.freeze({ ...childEnv, TZ: "UTC" }),
           logs,
           remaining: () => originalBudget.remaining(),
           hostClock: Object.freeze({
@@ -1785,6 +1891,7 @@ export async function build(
             cwd: step.cwd,
           }),
         });
+        await superviseLinuxSourceGn(capture, "initial");
         await withLinuxSourceOwner(engineeringContext, capture, () =>
           engineering.afterGn(engineeringContext),
         );
