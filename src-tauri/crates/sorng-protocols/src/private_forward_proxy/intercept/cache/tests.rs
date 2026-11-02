@@ -1108,6 +1108,53 @@ async fn corrupt_keys_file_wipes_the_store() {
     assert!(is_miss(&cache, &get("/c")).await);
 }
 
+#[test]
+fn finished_write_releases_its_store_before_waking_settle() {
+    use std::future::Future;
+    use std::sync::atomic::AtomicUsize;
+    use std::task::{Context, Poll, Wake, Waker};
+
+    struct ObserveStoreOnWake {
+        store: Weak<DiskStore>,
+        owners_at_wake: Arc<AtomicUsize>,
+    }
+
+    impl Wake for ObserveStoreOnWake {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.owners_at_wake
+                .store(self.store.strong_count(), Ordering::SeqCst);
+        }
+    }
+
+    let clock = TestClock::new();
+    let dir = TempDir::new("write-settle-ownership");
+    let (cache, _) = disk(&clock, &dir.0, 1, 1);
+    let store = disk_store(&cache);
+    let ticket = DiskStore::begin_write(store);
+    let owners_at_wake = Arc::new(AtomicUsize::new(usize::MAX));
+    let waker = Waker::from(Arc::new(ObserveStoreOnWake {
+        store: Arc::downgrade(store),
+        owners_at_wake: Arc::clone(&owners_at_wake),
+    }));
+    let mut context = Context::from_waker(&waker);
+    let mut settled = Box::pin(cache.settle());
+    assert!(matches!(settled.as_mut().poll(&mut context), Poll::Pending));
+    drop(ticket);
+    assert_eq!(
+        owners_at_wake.load(Ordering::SeqCst),
+        1,
+        "settle must wake after the completed writer releases its store owner"
+    );
+    assert!(matches!(
+        settled.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+}
+
 #[tokio::test]
 async fn concurrent_attempts_share_one_store() {
     let clock = TestClock::new();

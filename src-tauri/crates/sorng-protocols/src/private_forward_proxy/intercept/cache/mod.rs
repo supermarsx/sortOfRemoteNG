@@ -482,8 +482,7 @@ impl Sink {
                 // Registered before spawning so `settle` waits for it.
                 let ticket = DiskStore::begin_write(&d);
                 let job = move || {
-                    let _ticket = ticket;
-                    if matches!(d.write(&key, &entry), Ok(true)) {
+                    if matches!(ticket.write(&key, &entry), Ok(true)) {
                         stored();
                     }
                 };

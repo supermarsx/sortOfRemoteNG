@@ -70,13 +70,27 @@ impl Pending {
 }
 
 /// One registered background write; dropping it marks the write finished.
-pub(crate) struct WriteTicket(Arc<DiskStore>);
+pub(crate) struct WriteTicket {
+    store: Option<Arc<DiskStore>>,
+    pending: Arc<Pending>,
+}
+
+impl WriteTicket {
+    pub(crate) fn write(&self, key: &str, entry: &Entry) -> io::Result<bool> {
+        self.store
+            .as_ref()
+            .expect("write ticket is live until dropped")
+            .write(key, entry)
+    }
+}
 
 impl Drop for WriteTicket {
     fn drop(&mut self) {
-        let pending = &self.0.pending;
-        if pending.count.fetch_sub(1, Ordering::SeqCst) == 1 {
-            pending.idle.notify_waiters();
+        // A settled write must no longer keep the weak registry entry alive.
+        // Notify owns its separate lifetime after this store handle is released.
+        drop(self.store.take());
+        if self.pending.count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.pending.idle.notify_waiters();
         }
     }
 }
@@ -88,7 +102,7 @@ pub(crate) struct DiskStore {
     max_bytes: u64,
     keys: CacheKeys,
     index: Mutex<Index>,
-    pub(crate) pending: Pending,
+    pub(crate) pending: Arc<Pending>,
 }
 
 impl DiskStore {
@@ -120,7 +134,7 @@ impl DiskStore {
             max_bytes: config.max_bytes,
             keys,
             index: Mutex::new(Index::default()),
-            pending: Pending::default(),
+            pending: Arc::default(),
         };
         store.rebuild_index()?;
         Ok(store)
@@ -128,7 +142,10 @@ impl DiskStore {
 
     pub(crate) fn begin_write(this: &Arc<Self>) -> WriteTicket {
         this.pending.count.fetch_add(1, Ordering::SeqCst);
-        WriteTicket(Arc::clone(this))
+        WriteTicket {
+            store: Some(Arc::clone(this)),
+            pending: Arc::clone(&this.pending),
+        }
     }
 
     /// Whether another attempt's config may share this store.
