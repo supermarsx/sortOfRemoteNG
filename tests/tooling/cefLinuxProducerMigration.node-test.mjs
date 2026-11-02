@@ -35,6 +35,20 @@ function withoutCliModuleDelta(text) {
   return text;
 }
 function withoutMigrationDiagnostics(text) {
+  {
+    const current =
+        '    bytes: 209272,\n    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",',
+      previous =
+        '    bytes: 208244,\n    sha256: "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",';
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, previous);
+    assert.equal(Buffer.byteLength(text), 121802);
+    assert.equal(
+      createHash("sha256").update(text).digest("hex"),
+      "a465fd796f31a7f58cb45d48c39c4f8d646c73b6fc00cbf0892ed92cafa0ca65",
+    );
+  }
+
   const edits = [
     [
       "  installRestoredDirectory,\n  hostRemaining,\n  linuxArmRecipe,\n  linuxMigrationFailureRecord,\n  noLinks,\n  sha,\n  sourceMetadataResult,\n",
@@ -1525,23 +1539,23 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
     "blob",
     "HEAD:" + archive,
   ]);
-  assert.equal(canonical.length, 208244);
+  assert.equal(canonical.length, 209272);
   assert.equal(
     core.sha(canonical),
-    "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",
+    "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",
   );
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
     Buffer.from(physical.toString("utf8").replaceAll("\r\n", "\n")),
     canonical,
-    "The new proof uses canonical diagnostic a41; CRLF is only checkout encoding",
+    "The new proof uses canonical reviewed post-CEF state; CRLF is only checkout encoding",
   );
   const inverseFixture =
     "tests/fixtures/cef/mac_nearby_production_metadata_test.py";
   const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
   assert.equal(
     core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
-    "1cb391485ecabae260f4494bebabca81697f94b488633348571c89c12d74fbdf",
+    "aab6509bb49dd74e3459d32a65305a4240278820a07c3be7859fa8b522e478e1",
   );
   // This retained test performs diagnostic a41 -> public3be -> native5af -> old839
   // literal inverses and asserts both COMPLETE historical helper hashes.

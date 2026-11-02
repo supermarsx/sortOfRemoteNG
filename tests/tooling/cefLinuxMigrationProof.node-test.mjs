@@ -189,6 +189,20 @@ test("current composed carrier retarget preserves its complete historical pre-gu
 });
 
 function withoutMigrationDiagnostics(text) {
+  {
+    const current =
+        '    bytes: 209272,\n    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",',
+      previous =
+        '    bytes: 208244,\n    sha256: "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",';
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, previous);
+    assert.equal(Buffer.byteLength(text), 121802);
+    assert.equal(
+      createHash("sha256").update(text).digest("hex"),
+      "a465fd796f31a7f58cb45d48c39c4f8d646c73b6fc00cbf0892ed92cafa0ca65",
+    );
+  }
+
   const edits = [
     [
       "  installRestoredDirectory,\n  hostRemaining,\n  linuxArmRecipe,\n  linuxMigrationFailureRecord,\n  noLinks,\n  sha,\n  sourceMetadataResult,\n",
@@ -323,7 +337,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "0ebae8f031b3d8900efdd752abaa8520634a53e7abc4ac58bdec935d27ce0d79",
+    "bd8e67ca51e817002781f4d047e3f813fa1069f3aa686fc44f61fc14de899106",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

@@ -1092,11 +1092,11 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
   if (target !== "aarch64-unknown-linux-gnu") {
     const currentMacBlobs = {
       "scripts/lib/cef-checkpoint-archive.py":
-        "2bfcdd7cddc49e2ec4a8aa339cb7c938053422ad",
+        "66e77e0ec607aee4d80fae3ad1f185fbf0b6600f",
       "scripts/lib/cef-engineering-checkpoint.mjs":
-        "c9be305e003e1b7a3691422d3ec14d72c8419faa",
+        "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
       "scripts/lib/cef-linux-producer-migration.mjs":
-        "37985ca943b3ec0727353dd4c964f489244197a6",
+        "f6f0abb29f500c67857dbd254bd9c2ddc47755bc",
     };
     for (const [name, sha] of Object.entries(currentMacBlobs))
       rows.find((row) => row.path === name).sha = sha;
@@ -1387,10 +1387,10 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
-test("engineering publication exact target producers preserve active Macda and bind the diagnostic Linux producer without source-only admission", () => {
+test("engineering publication exact target producers select reviewed post-CEF Mac source and preserve active Linux source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "da2455fe662a46299aeec82811e285eef43a382ef88cae9fe3a747ae2ecb8576",
+    "bd8e67ca51e817002781f4d047e3f813fa1069f3aa686fc44f61fc14de899106",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],

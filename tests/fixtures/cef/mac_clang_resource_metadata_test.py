@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import sys
@@ -21,6 +22,33 @@ BRANCH='refs/heads/codex/mac-clang-resource-metadata-20261102'
 
 def put(root,name,raw):
     p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw);return p
+
+
+def patched_chromium_deps():
+    primary=Path(__file__).with_name('mac_clang_chromium.DEPS').read_bytes()
+    patch_bytes=Path(__file__).with_name('mac_clang_tarball_deps.patch').read_bytes()
+    assert (len(primary),hashlib.sha256(primary).hexdigest())==(197649,'cd59c0f5c31e1dbbc65b2db96bb11a18f7bdc91496fafb5b6a4e7f94d8ad797c')
+    assert (len(patch_bytes),hashlib.sha256(patch_bytes).hexdigest())==(1729,'667211318898ef819f80a1c7addef90661a6f557a0de044c1e0e71d441174264')
+    assert hashlib.sha1(b'blob '+str(len(primary)).encode()+b'\0'+primary).hexdigest()=='ba3dd842d296b56a8640a22e97f5384ee7fac538'
+    lines=patch_bytes.decode().splitlines(keepends=True);original=primary.decode().splitlines(keepends=True)
+    out=[];cursor=0;i=0;hunks=[]
+    while i<len(lines):
+        match=re.fullmatch(r'@@ -(\d+),(\d+) \+(\d+),(\d+) @@[^\n]*\n',lines[i])
+        if match is None:i+=1;continue
+        start,old_count,new_start,new_count=map(int,match.groups());i+=1;before=[];after=[]
+        while i<len(lines)and not lines[i].startswith('@@'):
+            row=lines[i];assert row[0]in' +-'
+            if row[0]in' -':before.append(row[1:])
+            if row[0]in' +':after.append(row[1:])
+            i+=1
+        assert len(before)==old_count and len(after)==new_count
+        assert original[start-1:start-1+old_count]==before
+        out+=original[cursor:start-1]+after;cursor=start-1+old_count;hunks.append(start)
+    assert hunks==[4554,4561,4571,4580,4589]
+    out+=original[cursor:];raw=''.join(out).encode()
+    assert (len(raw),hashlib.sha256(raw).hexdigest())==(197828,'bd17c48ed2810d17cd2f37af0875ec0eb260366aaef399c152eaf2eaecb9cc8b')
+    assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='9986819b14acbb2f838aeb6c9d82219ad3788cfa'
+    return raw
 
 
 def source_fixture(work,intel=False,linux=False):
@@ -71,6 +99,10 @@ class FixedDeclarations(unittest.TestCase):
                     matches.append({key:ast.literal_eval(values[key])for key in('sha256sum','size_bytes','generation','condition')})
             self.assertEqual(matches,[{'sha256sum':archive_sha,'size_bytes':archive_bytes,'generation':generation,
                 'condition':'host_os == "mac" and host_cpu == "x64"'}])
+    def test_reviewed_post_cef_deps_is_exact_five_hunk_derivation_of_the_pinned_primary(self):
+        raw=patched_chromium_deps()
+        self.assertEqual(m.MAC_CLANG_CHROMIUM_DEPS_STATES,((197649,'cd59c0f5c31e1dbbc65b2db96bb11a18f7bdc91496fafb5b6a4e7f94d8ad797c'),(len(raw),hashlib.sha256(raw).hexdigest())))
+        self.assertEqual(m.MAC_CLANG_CEF_DEPS_PATCH,('682c378d70d5780061e96644dca16ddd8fd157a9','patch/patches/tarball_deps.patch',1729,'667211318898ef819f80a1c7addef90661a6f557a0de044c1e0e71d441174264'))
     def test_exact_six_compiler_rows_do_not_change_old_nearby_five(self):
         rows=m._mac_clang_portable_declarations()
         self.assertEqual(len(rows),6);self.assertEqual(len({r['origin']for r in rows}),6)
@@ -303,6 +335,47 @@ class PosixCodec(unittest.TestCase):
             self.assertEqual(m._mac_clang_owned_proof_path(receipt),self.output)
         self.assertNotIn(receipt,m._MAC_CLANG_PROOF_RECEIPTS)
         with self.assertRaises(m.CheckpointError):m._mac_clang_owned_proof_path(receipt)
+    def test_portable_mac_post_cef_deps_actual_old_bound_denies_then_both_targets_full_codec_roundtrip(self):
+        source=(ROOT/'scripts/lib/cef-checkpoint-archive.py').read_text()
+        node=next(node for node in ast.parse(source).body if type(node)is ast.FunctionDef and node.name=='source_clang_literals')
+        old=ast.get_source_segment(source,node)
+        current="                allowed=((size,expected_sha),)\n                if expected is None and name=='src/DEPS':\n                    require(allowed[0]==MAC_CLANG_CHROMIUM_DEPS_STATES[0], 'source-clang-binding')\n                    allowed=MAC_CLANG_CHROMIUM_DEPS_STATES\n                maximum=size if expected is not None else max(row[0]for row in allowed)\n                raw=source_read_bytes(p,budget,maximum)\n                require((raw==expected if expected is not None else\n                         (len(raw),hashlib.sha256(raw).hexdigest())in allowed), 'source-clang-binding')";previous="                raw=source_read_bytes(p,budget,size)\n                require((raw==expected if expected is not None else len(raw)==size and\n                        hashlib.sha256(raw).hexdigest()==expected_sha), 'source-clang-binding')"
+        self.assertEqual(old.count(current),1);old=old.replace(current,previous)
+        self.assertEqual(hashlib.sha256(old.encode()).hexdigest(),'d963d395138d1db488cb7a8224ac520f3e5276ea9c190edc3504c4f2e5dc381a')
+        namespace=dict(m.__dict__);exec(compile('@contextmanager\n'+old,'<pinned-old-mac-clang-reader>','exec'),namespace)
+        with self.mac_model(),m._mac_clang_owned_proof_tree(self.output,m.Budget(40)):
+            for intel in(False,True):
+                _,root,sidecar,_,codec=self.fixture(intel);deps=root/'src/DEPS';deps.write_bytes(patched_chromium_deps())
+                with patch.object(m,'source_clang_literals',namespace['source_clang_literals']),patch.object(m.os,'utime',wraps=m.os.utime)as writes:
+                    with self.assertRaisesRegex(m.CheckpointError,'source-metadata-read-bound'):codec('source-record')
+                    self.assertEqual(writes.call_count,0);self.assertFalse(sidecar.exists())
+                self.assertTrue(codec('source-record')['complete']);raw=sidecar.read_bytes();value=json.loads(raw)
+                entry=next(row for row in value['snapshot']['entries']if row['path']=='src/DEPS')
+                self.assertEqual((entry['size'],entry['sha256']),m.MAC_CLANG_CHROMIUM_DEPS_STATES[1])
+                before=deps.stat();os.utime(deps,ns=(before.st_atime_ns,before.st_mtime_ns+2000000000))
+                self.assertTrue(codec('source-apply')['complete']and codec('source-verify')['complete'])
+                self.assertEqual(deps.stat().st_mtime_ns,before.st_mtime_ns);self.assertEqual(sidecar.read_bytes(),raw)
+    def test_portable_mac_post_cef_deps_never_admits_unknown_growth_hashes_or_relabels_recorded_primary(self):
+        with self.mac_model(),m._mac_clang_owned_proof_tree(self.output,m.Budget(40)):
+            _,root,sidecar,_,codec=self.fixture();deps=root/'src/DEPS';primary=deps.read_bytes();post=patched_chromium_deps();deps.write_bytes(post)
+            self.assertTrue(codec('source-record')['complete']);record=sidecar.read_bytes()
+            variants=[post+b' ',post[:-1],bytes([post[0]^1])+post[1:],primary+b' ',primary]
+            for raw in variants:
+                deps.write_bytes(raw);self.deny_before_utime(lambda:codec('source-apply'));self.assertEqual(sidecar.read_bytes(),record)
+            deps.write_bytes(post)
+            nested=root/m.MAC_CLANG_SOURCE_ROWS[1][3];old=nested.read_bytes();nested.write_bytes(old+b' '*179)
+            self.deny_before_utime(lambda:codec('source-apply'));nested.write_bytes(old)
+            self.assertTrue(codec('source-apply')['complete']and codec('source-verify')['complete'])
+    def test_real_linux_post_cef_deps_uses_unchanged_schema1_full_hash_and_cache(self):
+        if not sys.platform.startswith('linux'):self.skipTest('requires actual Linux')
+        work=self.parent/'linux-post';root,sidecar,identity=source_fixture(work,linux=True);deps=root/'src/DEPS';deps.write_bytes(patched_chromium_deps())
+        def codec(mode):return m.source_metadata(mode,root,sidecar,identity,seconds=30)
+        self.assertTrue(codec('source-record')['complete']);raw=sidecar.read_bytes();value=json.loads(raw)
+        self.assertEqual(value['schemaVersion'],1);entry=next(row for row in value['snapshot']['entries']if row['path']=='src/DEPS')
+        self.assertEqual((entry['size'],entry['sha256']),m.MAC_CLANG_CHROMIUM_DEPS_STATES[1])
+        cache=root/'acquisition-logs'/m.SOURCE_STAT_CACHE_NAME;self.assertTrue(cache.is_file())
+        self.assertTrue(codec('source-apply')['complete']and codec('source-verify')['complete']);self.assertEqual(sidecar.read_bytes(),raw)
+
     def test_portable_mac_model_wrong_literals_provenance_and_present_targets_deny_before_utime(self):
         with self.mac_model(),m._mac_clang_owned_proof_tree(self.output,m.Budget(30)):
             _,root,sidecar,_,codec=self.fixture();codec('source-record')

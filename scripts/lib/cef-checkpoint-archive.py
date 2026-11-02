@@ -1377,6 +1377,19 @@ MAC_CLANG_SOURCE_ROWS = (
      'Mac/clang-llvmorg-24-init-3796-g20e97c4b-2.tar.xz', 1786821111761283, 56450032,
      'ec510fb1db5e96d127eaeb55ff61daf49d58647c653a65c6ffec42c0b59e3d84'),
 )
+# BEGIN REVIEWED MAC POST CEF DEPS STATES
+# CEF's fixed tarball_deps patch adds only source_tarball hook conditions.
+# These exact byte states bind the same source/HEAD/compiler tuple; no other
+# file growth, unknown hash or package version is admitted.
+MAC_CLANG_CEF_DEPS_PATCH = (
+    '682c378d70d5780061e96644dca16ddd8fd157a9', 'patch/patches/tarball_deps.patch', 1729,
+    '667211318898ef819f80a1c7addef90661a6f557a0de044c1e0e71d441174264')
+MAC_CLANG_CHROMIUM_DEPS_STATES = (
+    (197649,'cd59c0f5c31e1dbbc65b2db96bb11a18f7bdc91496fafb5b6a4e7f94d8ad797c'),
+    (197828,'bd17c48ed2810d17cd2f37af0875ec0eb260366aaef399c152eaf2eaecb9cc8b'),
+)
+# END REVIEWED MAC POST CEF DEPS STATES
+
 MAC_CLANG_RUNTIME_ALIASES = (
     ('aarch64-cros-linux-gnu','aarch64-unknown-linux-gnu'),
     ('armv7a-cros-linux-gnueabihf','armv7-unknown-linux-gnueabihf'),
@@ -2100,9 +2113,14 @@ def source_clang_literals(root,policy,budget):
                 p=safe(root/name);before=p.lstat()
                 require(stat.S_ISREG(before.st_mode) and before.st_uid==os.geteuid() and before.st_nlink==1,
                         'source-clang-binding')
-                raw=source_read_bytes(p,budget,size)
-                require((raw==expected if expected is not None else len(raw)==size and
-                        hashlib.sha256(raw).hexdigest()==expected_sha), 'source-clang-binding')
+                allowed=((size,expected_sha),)
+                if expected is None and name=='src/DEPS':
+                    require(allowed[0]==MAC_CLANG_CHROMIUM_DEPS_STATES[0], 'source-clang-binding')
+                    allowed=MAC_CLANG_CHROMIUM_DEPS_STATES
+                maximum=size if expected is not None else max(row[0]for row in allowed)
+                raw=source_read_bytes(p,budget,maximum)
+                require((raw==expected if expected is not None else
+                         (len(raw),hashlib.sha256(raw).hexdigest())in allowed), 'source-clang-binding')
                 identity=source_local(before,policy)
                 require(source_local(p.lstat(),policy)==identity, 'source-clang-changed')
                 state['headers'].append((p,raw,identity))
