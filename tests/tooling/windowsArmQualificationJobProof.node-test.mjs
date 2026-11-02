@@ -199,6 +199,82 @@ function python(code) {
   );
 }
 
+test("held Windows cross-interface identity handles actual inert exe decoration without weakening same-interface guards", () => {
+  const value = JSON.parse(
+    python(String.raw`
+import hashlib,json,os,re,stat,sys,tempfile,types
+from pathlib import Path
+text=Path(sys.argv[1]).read_text()
+prior,count=re.subn(r'^# BEGIN Windows held-interface identity\n[\s\S]*?^# END Windows held-interface identity\n\n\n','',text,flags=re.M)
+assert count==1
+current='need(_held_cross_identity(opened) == _held_cross_identity(before), "PROOF_FILE_IDENTITY")'
+assert prior.count(current)==1
+prior=prior.replace(current,'need(identity(opened) == identity(before), "PROOF_FILE_IDENTITY")')
+ns={'__name__':'held_review_model','__file__':sys.argv[1]}
+exec(compile(text,sys.argv[1],'exec'),ns)
+old={'__name__':'prior_held_review_model','__file__':sys.argv[1]}
+exec(compile(prior,sys.argv[1],'exec'),old)
+expected={'8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c':'0f2fccfbf4ce8074fd5815cfaa5d7e8c65cd78d9dd40a2528a514e1bef20cd9c',
+          '51abf0bea1ee6f2b0c36fd436eb4aa6936652c827bad1c9b33e10f6189b7822e':'c6c4e698901cdd4ca69eef64c9cfd6a172e0162c0afe510a9ca9331467411d8e'}
+assert len(prior.encode())==39951 and hashlib.sha256(prior.encode()).hexdigest()==expected[ns['PROFILE_SHA']]
+def denied(action,code):
+ try:action()
+ except ValueError as error:assert error.args==(code,)
+ else:raise AssertionError('required denial missing')
+actual_os=ns['os']
+with tempfile.TemporaryDirectory(prefix='held-exe-data-only-') as directory:
+ path=Path(directory).resolve()/'owned.exe'
+ raw=b'inert data never executed'
+ path.write_bytes(raw)
+ before=path.lstat()
+ with path.open('rb')as stream:opened=os.fstat(stream.fileno())
+ if os.name=='nt':
+  assert before.st_mode^opened.st_mode==0o111
+  denied(lambda:old['held'](path,64),'PROOF_FILE_IDENTITY')
+ else:assert old['held'](path,64)==raw
+ assert ns['held'](path,64,{'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()})==raw
+ path.chmod(stat.S_IREAD)
+ try:assert ns['held'](path,64)==raw
+ finally:path.chmod(stat.S_IREAD|stat.S_IWRITE)
+ for changed in ('st_dev','st_ino','st_nlink','filetype','permission'):
+  def first_changed(fd):
+   info=actual_os.fstat(fd)
+   fields={key:getattr(info,key)for key in ('st_dev','st_ino','st_mode','st_nlink')}
+   if changed in ('st_dev','st_ino','st_nlink'):fields[changed]+=1
+   elif changed=='filetype':fields['st_mode']=(fields['st_mode']&0o7777)|stat.S_IFDIR
+   else:fields['st_mode']^=stat.S_IWUSR
+   return types.SimpleNamespace(**fields)
+  ns['os']=types.SimpleNamespace(name=os.name,fstat=first_changed)
+  try:denied(lambda:ns['held'](path,64),'PROOF_FILE_IDENTITY')
+  finally:ns['os']=actual_os
+ for changed in ('fd-execute-mode','path-permission'):
+  calls=[0]
+  def later_changed(fd):
+   info=actual_os.fstat(fd);calls[0]+=1
+   if calls[0]==2:
+    if changed=='path-permission':path.chmod(stat.S_IREAD)
+    else:return types.SimpleNamespace(st_dev=info.st_dev,st_ino=info.st_ino,st_mode=info.st_mode^0o111,st_nlink=info.st_nlink)
+   return info
+  ns['os']=types.SimpleNamespace(name=os.name,fstat=later_changed)
+  try:denied(lambda:ns['held'](path,64),'PROOF_FILE_CHANGED')
+  finally:ns['os']=actual_os;path.chmod(stat.S_IREAD|stat.S_IWRITE)
+ ns['os']=types.SimpleNamespace(name='nt')
+ a=types.SimpleNamespace(st_dev=1,st_ino=2,st_nlink=1,st_mode=stat.S_IFREG|0o777)
+ b=types.SimpleNamespace(st_dev=1,st_ino=2,st_nlink=1,st_mode=stat.S_IFREG|0o666)
+ assert ns['_held_cross_identity'](a)==ns['_held_cross_identity'](b)
+ ns['os']=types.SimpleNamespace(name='posix')
+ assert ns['_held_cross_identity'](a)!=ns['_held_cross_identity'](b)
+ ns['os']=actual_os
+print(json.dumps({'hostOs':os.name,'actualWindowsExeRedGreen':os.name=='nt','sameInterfaceNegatives':True,'nonWindowsUnchanged':True,'dataExecuted':False}))
+`),
+  );
+  assert.equal(value.sameInterfaceNegatives, true);
+  assert.equal(value.nonWindowsUnchanged, true);
+  assert.equal(value.dataExecuted, false);
+  if (process.platform === "win32")
+    assert.equal(value.actualWindowsExeRedGreen, true);
+});
+
 test("controller failure observation projects only fixed Python phase code and numeric native fields without getters", () => {
   const output = JSON.parse(
     python(String.raw`
@@ -512,7 +588,22 @@ function restorePriorControllerFlavor(text) {
   }
   return text;
 }
+function previousHeldInterfaceIdentity(text) {
+  const block =
+    /^# BEGIN Windows held-interface identity\n[\s\S]*?^# END Windows held-interface identity\n\n\n/m;
+  assert.equal([...text.matchAll(new RegExp(block.source, "gm"))].length, 1);
+  const current =
+    'need(_held_cross_identity(opened) == _held_cross_identity(before), "PROOF_FILE_IDENTITY")';
+  assert.equal(text.split(current).length, 2);
+  return text
+    .replace(block, "")
+    .replace(
+      current,
+      'need(identity(opened) == identity(before), "PROOF_FILE_IDENTITY")',
+    );
+}
 function previousControllerFailureObservation(text, pythonBody = false) {
+  if (pythonBody) text = previousHeldInterfaceIdentity(text);
   text = restorePriorControllerFlavor(text);
   if (pythonBody) {
     const block =
@@ -1986,7 +2077,7 @@ test("current-controller flavor restores complete3ae old controller diagnostics 
       "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c",
     ],
     [
-      adapter,
+      previousHeldInterfaceIdentity(adapter),
       39951,
       "0f2fccfbf4ce8074fd5815cfaa5d7e8c65cd78d9dd40a2528a514e1bef20cd9c",
     ],
