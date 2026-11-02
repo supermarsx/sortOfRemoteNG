@@ -3,6 +3,10 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { observePreparationPhase } from "../../scripts/cef-runtime-ci.mjs";
+import {
+  prepareMacMetalToolchain,
+  macMetalCommandDiagnostic,
+} from "../../scripts/cef-hosted-provision.mjs";
 
 function observer({
   openFails = false,
@@ -42,6 +46,82 @@ function observer({
   };
 }
 
+test("owned Metal command failure preserves primary and emits only stage timing timeout and outcome", async () => {
+  let time = 0,
+    primary;
+  const o = observer({ writeFails: false, closeFails: true });
+  const operation = async () => {
+    try {
+      await prepareMacMetalToolchain(
+        {
+          platform: "darwin",
+          selected: {
+            DEVELOPER_DIR: "/Applications/PRIVATE.app/Contents/Developer",
+            SDKROOT: "/PRIVATE/sdk",
+          },
+        },
+        {
+          now: () => time,
+          realpath: async (file) => file,
+          exec: async () => {
+            time = 60_029;
+            throw Object.assign(new Error("PRIVATE_COMMAND_PATH"), {
+              killed: true,
+              signal: "SIGKILL",
+              stderr: "PRIVATE_STDERR_TOKEN",
+            });
+          },
+        },
+      );
+    } catch (error) {
+      primary = error;
+      throw error;
+    }
+  };
+  await assert.rejects(
+    observePreparationPhase("/owned/logs", "metal", operation, o.dependencies),
+    (error) => error === primary,
+  );
+  assert.deepEqual(o.rows[1], {
+    kind: "cef-pre-acquisition",
+    phase: "metal",
+    status: "failure",
+    cause: "MAC_METAL_COMMAND_FAILED",
+    metalCommand: {
+      kind: "mac-metal-command-failure",
+      stage: "cold-find-metal",
+      elapsedMilliseconds: 60_029,
+      timeoutMilliseconds: 60_000,
+      outcome: "timeout",
+    },
+  });
+  assert.doesNotMatch(
+    JSON.stringify(o.rows) + o.emitted.join(""),
+    /PRIVATE|STDERR|TOKEN|Applications/,
+  );
+  assert.equal(
+    macMetalCommandDiagnostic(
+      Object.assign(new Error("MAC_METAL_COMMAND_FAILED"), {
+        metalCommand: { raw: "SECRET" },
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    macMetalCommandDiagnostic(
+      new Proxy(
+        {},
+        {
+          get() {
+            throw Error("SECRET");
+          },
+        },
+      ),
+    ),
+    null,
+  );
+});
+
 test("fixed phases surround actual production pre-acquisition operations", async () => {
   const source = await readFile(
     new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
@@ -63,11 +143,11 @@ test("fixed phases surround actual production pre-acquisition operations", async
     new URL("../../scripts/cef-engineering-checkpoint.mjs", import.meta.url),
     "utf8",
   );
-  const external = checkpoint.slice(
-    checkpoint.indexOf(
-      'selected.argv("mac-external-observe", contextFile).slice(3)',
-    ),
+  const externalStart = checkpoint.search(
+    /selected\s*\.argv\("mac-external-observe", contextFile\)\s*\.slice\(3\)/,
   );
+  assert.ok(externalStart >= 0);
+  const external = checkpoint.slice(externalStart);
   assert.match(
     external.slice(0, external.indexOf("const attestation")),
     /observeFailure: \(record\) =>\s*checkpointLog\(\s*console\.log,\s*`\[cef-engineering-checkpoint\] mac-external=\$\{canonical\(record\)\}`/,

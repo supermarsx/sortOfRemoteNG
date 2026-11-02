@@ -2496,9 +2496,13 @@ test("ordinary and engineering producers share Metal attestation after reviewed 
   assert.match(source, /mac-metal-toolchain\.json/);
   assert.match(source, /supplementalMetalPrePinned: false/);
   assert.match(source, /MAC_METAL_PRODUCER_DRIFT/);
+  const revalidation = source.indexOf(
+    "const currentMetal = await revalidateMacMetalToolchain",
+  );
   assert.ok(
-    source.indexOf("const currentMetal = await prepareMacMetalToolchain") <
-      source.indexOf("const decision = await engineering.compile"),
+    revalidation >= 0 &&
+      revalidation <
+        source.indexOf("const decision = await engineering.compile"),
   );
 });
 

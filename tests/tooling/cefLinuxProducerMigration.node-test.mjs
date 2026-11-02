@@ -16,7 +16,20 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutColdMetalCompanion(text) {
+  const block =
+    '  // BEGIN cold Metal discovery source delta\n  "scripts/cef-hosted-provision.mjs",\n  // END cold Metal discovery source delta\n';
+  assert.equal(text.split(block).length, 2);
+  text = text.replace(block, "");
+  assert.equal(Buffer.byteLength(text), 123447);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "61e8b7dae69b8057f4f588025815ac11c0b75eab19f8db3f1461db47286eb7ad",
+  );
+  return text;
+}
 function withoutRecordNormalization(text) {
+  text = withoutColdMetalCompanion(text);
   for (const name of ["rehold", "normalization"]) {
     const first = `  ${name === "rehold" ? "  " : ""}// BEGIN exact source-record sentinel ${name}\n`;
     const last = `  ${name === "rehold" ? "  " : ""}// END exact source-record sentinel ${name}\n`;
@@ -757,10 +770,20 @@ async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
     offset = next + 1;
   }
   assert.equal(offset, data.length);
-  await fs.writeFile(
-    path.join(repo, "scripts/lib/cef-linux-producer-migration.mjs"),
-    await fs.readFile(MODULE),
-  );
+  // Use the actual three candidate script bodies; Git still owns the fixture
+  // producer tree and no caller JSON supplies a source-policy exception.
+  for (const relative of [
+    "scripts/lib/cef-linux-producer-migration.mjs",
+    "scripts/cef-hosted-provision.mjs",
+    "scripts/cef-runtime-ci.mjs",
+  ])
+    await fs.writeFile(
+      path.join(repo, relative),
+      (await fs.readFile(path.join(ROOT, relative), "utf8")).replaceAll(
+        "\r\n",
+        "\n",
+      ),
+    );
   git(repo, ["init", "--initial-branch=main"]);
   git(repo, ["config", "core.autocrlf", "false"]);
   git(repo, ["config", "user.name", "Inactive fixture"]);
@@ -1989,6 +2012,43 @@ test("inactive current-run inspection rejects retired413501 and missing actual c
     }),
     /POLICY_MISSING/,
   );
+});
+
+test("cold Metal companion has exactly ten fixed source deltas and rejects an omitted or forged provision row", async (t) => {
+  const body = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  withoutColdMetalCompanion(body);
+  const f = await fixture(t);
+  assert.equal(f.policy.changedSources.length, 10);
+  const name = "scripts/cef-hosted-provision.mjs";
+  const row = f.policy.changedSources.find((item) => item.path === name);
+  assert(row);
+  assert.equal(row.before.sha, "6109185591d332f32cb48a0b39e418082c2e28e7");
+  assert.equal(
+    (await migration.inspectLinuxMigrationCandidate(f.args)).authorizing,
+    false,
+  );
+  for (const change of [
+    (policy) => {
+      policy.changedSources = policy.changedSources.filter(
+        (item) => item.path !== name,
+      );
+    },
+    (policy) => {
+      policy.changedSources.find((item) => item.path === name).after.sha =
+        "f".repeat(40);
+    },
+  ]) {
+    const policy = structuredClone(f.policy);
+    change(policy);
+    const head = await f.writePolicy(policy);
+    await assert.rejects(
+      migration.inspectLinuxMigrationCandidate({
+        ...f.args,
+        currentProducer: { ...f.args.currentProducer, head },
+      }),
+      /SOURCE_DELTA/,
+    );
+  }
 });
 
 test("canonical fixed-run capsule inspection is read-only and cannot activate restore", async (t) => {

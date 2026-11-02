@@ -1101,6 +1101,19 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
     for (const [name, sha] of Object.entries(currentMacBlobs))
       rows.find((row) => row.path === name).sha = sha;
   }
+  if (target === "x86_64-apple-darwin") {
+    // Only Intel receives the newly reviewed cold-discovery producer. The
+    // active Linux and ARM runs retain their exact historical source trees.
+    const coldMetalBlobs = {
+      "scripts/cef-hosted-provision.mjs":
+        "9fb323d215e1d246f537685b360d3a665f87f748",
+      "scripts/cef-runtime-ci.mjs": "12364c78030f4d8ba44a2e2a3c8cd3eef88724f6",
+      "scripts/lib/cef-linux-producer-migration.mjs":
+        "d8de10ec9a96ce6b1f39d48369a33cdb735962ea",
+    };
+    for (const [name, sha] of Object.entries(coldMetalBlobs))
+      rows.find((row) => row.path === name).sha = sha;
+  }
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1390,7 +1403,7 @@ async function engineeringFlow(t, target) {
 test("engineering publication exact target producers select repaired source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
@@ -1398,7 +1411,7 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-apple-darwin"],
-    ENGINEERING_PRODUCER,
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],

@@ -143,6 +143,9 @@ const CHANGED_PATHS = new Set([
   // BEGIN closed migration CLI source delta
   "scripts/lib/cef-windows-arm-sdk-origin.mjs",
   // END closed migration CLI source delta
+  // BEGIN cold Metal discovery source delta
+  "scripts/cef-hosted-provision.mjs",
+  // END cold Metal discovery source delta
   "scripts/lib/cef-linux-producer-migration.mjs",
   "scripts/cef-engineering-checkpoint.mjs",
   "scripts/cef-runtime-ci.mjs",

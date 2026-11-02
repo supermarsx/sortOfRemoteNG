@@ -20,7 +20,42 @@ import {
 // runner. No vendor tool, native GN, GitHub or production registry is exercised.
 const url = new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url);
 const source = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
+function withoutColdMetalRuntime(text) {
+  for (const [current, prior] of [
+    [
+      "  prepareMacMetalToolchain,\n  revalidateMacMetalToolchain,\n  macMetalCommandDiagnostic,\n",
+      "  prepareMacMetalToolchain,\n",
+    ],
+    [
+      "  const record = async (status, cause, metalCommand) => {",
+      "  const record = async (status, cause) => {",
+    ],
+    ["      ...(metalCommand ? { metalCommand } : {}),\n", ""],
+    [
+      '      await record("failure", cause, macMetalCommandDiagnostic(error));',
+      '      await record("failure", cause);',
+    ],
+    [
+      "      const currentMetal = await revalidateMacMetalToolchain({",
+      "      const currentMetal = await prepareMacMetalToolchain({",
+    ],
+  ]) {
+    assert.equal(
+      text.split(current).length,
+      2,
+      "one exact cold Metal runtime inverse",
+    );
+    text = text.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(text), 76637);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "626a0c34481f18c5044be88c47ca72bf3312dfbe1a5858b69936b683a9bf3182",
+  );
+  return text;
+}
 function withoutLinuxSourceBudget(text) {
+  text = withoutColdMetalRuntime(text);
   const begin = "  // BEGIN fixed Linux engineering source budget\n",
     end = "  // END fixed Linux engineering source budget\n";
   assert.equal(text.split(begin).length, 2);

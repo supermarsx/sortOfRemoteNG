@@ -10,6 +10,8 @@ import { RECIPE } from "../../scripts/cef-hosted-bootstrap.mjs";
 import {
   acquirePinned,
   prepareMacMetalToolchain,
+  revalidateMacMetalToolchain,
+  macMetalCommandDiagnostic,
   macMetalEnvironment,
   macMetalFingerprint,
   assertProvisionHost,
@@ -938,6 +940,196 @@ function metalFixture(patch = {}) {
     },
   };
 }
+
+function coldMetalFixture(latency, remaining = 600_000) {
+  const f = metalFixture();
+  let elapsed = 0,
+    first = true;
+  const ordinary = f.dependencies.exec;
+  f.dependencies.now = () => elapsed;
+  f.dependencies.exec = async (executable, args, options) => {
+    if (
+      first &&
+      executable === "/usr/bin/xcrun" &&
+      args[0] === "--find" &&
+      args[1] === "metal"
+    ) {
+      first = false;
+      const wait = Math.min(latency, options.timeout);
+      elapsed += wait;
+      if (latency >= options.timeout) {
+        f.calls.push({ executable, args, options });
+        throw Object.assign(new Error("PRIVATE_STDERR_PATH"), {
+          killed: true,
+          signal: "SIGKILL",
+          stderr: "PRIVATE_STDERR_PATH",
+        });
+      }
+    }
+    return ordinary(executable, args, options);
+  };
+  return { ...f, remainingMilliseconds: () => remaining };
+}
+
+test("only first cold Metal discovery permits45seconds; old30cap and producerrevalidation deny", async () => {
+  assert.equal(RECIPE.provisioning.macMetalToolchain.probeMilliseconds, 30_000);
+  const old = coldMetalFixture(45_000);
+  await assert.rejects(
+    old.dependencies.exec("/usr/bin/xcrun", ["--find", "metal"], {
+      timeout: RECIPE.provisioning.macMetalToolchain.probeMilliseconds,
+    }),
+    /PRIVATE_STDERR_PATH/,
+  );
+  const current = coldMetalFixture(45_000);
+  const result = await prepareMacMetalToolchain(
+    { ...current, platform: "darwin" },
+    current.dependencies,
+  );
+  assert.equal(result.tools.length, 2);
+  assert.equal(current.calls[0].options.timeout, 60_000);
+  assert.ok(
+    current.calls.slice(1).every((call) => call.options.timeout === 30_000),
+  );
+  const revalidation = coldMetalFixture(45_000);
+  let failed;
+  await assert.rejects(
+    revalidateMacMetalToolchain(
+      { ...revalidation, platform: "darwin" },
+      revalidation.dependencies,
+    ),
+    (error) => {
+      failed = error;
+      return error.message === "MAC_METAL_COMMAND_FAILED";
+    },
+  );
+  assert.deepEqual(macMetalCommandDiagnostic(failed), {
+    kind: "mac-metal-command-failure",
+    stage: "find-metal",
+    elapsedMilliseconds: 30_000,
+    timeoutMilliseconds: 30_000,
+    outcome: "timeout",
+  });
+  assert.equal(revalidation.calls.length, 1);
+});
+
+test("cold Metal discovery keeps callerremaining and original600second overall clipping", async () => {
+  const clipped = coldMetalFixture(45_000, 20_000);
+  let failure;
+  await assert.rejects(
+    prepareMacMetalToolchain(
+      { ...clipped, platform: "darwin", allowDownload: true },
+      clipped.dependencies,
+    ),
+    (error) => {
+      failure = error;
+      return error.message === "MAC_METAL_DEADLINE";
+    },
+  );
+  assert.equal(clipped.calls[0].options.timeout, 20_000);
+  assert.equal(macMetalCommandDiagnostic(failure).timeoutMilliseconds, 20_000);
+  assert.equal(
+    clipped.calls.length,
+    1,
+    "timeout never initiates download or retry",
+  );
+  assert.equal(macMetalCommandDiagnostic(failure).outcome, "deadline");
+  const overall = metalFixture();
+  let time = 0;
+  const execute = overall.dependencies.exec;
+  overall.dependencies.now = () => time;
+  overall.dependencies.exec = async (...args) => {
+    time += 600_001;
+    return execute(...args);
+  };
+  await assert.rejects(
+    prepareMacMetalToolchain(
+      {
+        ...overall,
+        platform: "darwin",
+        remainingMilliseconds: () => 1_000_000,
+      },
+      overall.dependencies,
+    ),
+    /MAC_METAL_DEADLINE/,
+  );
+  assert.equal(overall.calls.length, 1);
+  assert.equal(
+    RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
+    600_000,
+  );
+});
+
+test("command rejection after original expiry preserves exact deadline and falsy wrapper behavior", async () => {
+  for (const deadline of [
+    new Error("MAC_METAL_DEADLINE"),
+    undefined,
+    null,
+    false,
+    0,
+    "",
+  ]) {
+    const f = metalFixture();
+    let rejected = false,
+      time = 0;
+    f.dependencies.now = () => time;
+    f.dependencies.exec = async () => {
+      rejected = true;
+      time = 1001;
+      throw Object.assign(new Error("PRIVATE_COMMAND"), {
+        stderr: "PRIVATE_STDERR",
+      });
+    };
+    const options = {
+      ...f,
+      platform: "darwin",
+      remainingMilliseconds: () => {
+        if (rejected) throw deadline;
+        return 1000;
+      },
+    };
+    await assert.rejects(
+      prepareMacMetalToolchain(options, f.dependencies),
+      (error) => {
+        if (deadline instanceof Error) {
+          assert.equal(error, deadline);
+          assert.deepEqual(macMetalCommandDiagnostic(error), {
+            kind: "mac-metal-command-failure",
+            stage: "cold-find-metal",
+            elapsedMilliseconds: 1001,
+            timeoutMilliseconds: 1000,
+            outcome: "deadline",
+          });
+        } else {
+          assert.equal(
+            error.message,
+            "MAC_METAL_UNAVAILABLE",
+            "existing outer wrapper normalization is unchanged",
+          );
+        }
+        return true;
+      },
+    );
+  }
+});
+
+test("typed missing-component retry does not renew the firstcold60second allowance", async () => {
+  const f = metalFixture({ missing: true });
+  await prepareMacMetalToolchain(
+    { ...f, platform: "darwin", allowDownload: true },
+    f.dependencies,
+  );
+  const finds = f.calls.filter(
+    (call) =>
+      call.executable === "/usr/bin/xcrun" &&
+      call.args.join(" ") === "--find metal",
+  );
+  assert.equal(finds[0].options.timeout, 60_000);
+  assert.ok(finds.slice(1).every((call) => call.options.timeout <= 30_000));
+  assert.equal(
+    f.calls.filter((call) => call.executable === "/usr/bin/xcodebuild").length,
+    1,
+  );
+});
 
 test("selected Mac prerequisite observes external Apple Metal without selecting global Xcode", async () => {
   const f = metalFixture();

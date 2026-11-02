@@ -188,7 +188,20 @@ test("current composed carrier retarget preserves its complete historical pre-gu
   );
 });
 
+function withoutColdMetalCompanion(text) {
+  const block =
+    '  // BEGIN cold Metal discovery source delta\n  "scripts/cef-hosted-provision.mjs",\n  // END cold Metal discovery source delta\n';
+  assert.equal(text.split(block).length, 2);
+  text = text.replace(block, "");
+  assert.equal(Buffer.byteLength(text), 123447);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "61e8b7dae69b8057f4f588025815ac11c0b75eab19f8db3f1461db47286eb7ad",
+  );
+  return text;
+}
 function withoutRecordNormalization(text) {
+  text = withoutColdMetalCompanion(text);
   for (const name of ["rehold", "normalization"]) {
     const first = `  ${name === "rehold" ? "  " : ""}// BEGIN exact source-record sentinel ${name}\n`;
     const last = `  ${name === "rehold" ? "  " : ""}// END exact source-record sentinel ${name}\n`;
@@ -362,7 +375,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

@@ -277,6 +277,21 @@ export function macMetalFingerprint(observation) {
     }),
   };
 }
+const metalCommandFailures = new WeakMap();
+export function macMetalCommandDiagnostic(error) {
+  const value = metalCommandFailures.get(error);
+  return value ? { ...value } : null;
+}
+const metalErrorData = (error, name) => {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, name);
+    return descriptor && Object.hasOwn(descriptor, "value")
+      ? descriptor.value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
 async function prepareMacMetalToolchainImpl(
   {
     selected,
@@ -287,6 +302,7 @@ async function prepareMacMetalToolchainImpl(
       RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
   },
   dependencies = {},
+  coldDiscovery = true,
 ) {
   if (platform !== "darwin") return null;
   if (typeof allowDownload !== "boolean") fail("MAC_METAL_DOWNLOAD_POLICY");
@@ -309,29 +325,83 @@ async function prepareMacMetalToolchainImpl(
       fail("MAC_METAL_DEADLINE");
     return remaining;
   };
-  const invoke = async (executable, args, download = false) => {
+  let firstFind = coldDiscovery;
+  const invoke = async (executable, args, stage, download = false) => {
     let result;
+    const started = now();
+    const firstColdFind = firstFind && stage === "find-metal";
+    if (stage === "find-metal") firstFind = false;
+    const timeout = Math.min(
+      left(),
+      download
+        ? recipe.maximumMilliseconds
+        : firstColdFind
+          ? 60_000
+          : recipe.probeMilliseconds,
+    );
     try {
       result = await execute(executable, args, {
         env: childEnv,
-        timeout: Math.min(
-          left(),
-          download ? recipe.maximumMilliseconds : recipe.probeMilliseconds,
-        ),
+        timeout,
         maxBuffer: recipe.maximumOutputBytes,
         windowsHide: true,
         killSignal: "SIGKILL",
       });
     } catch (error) {
-      left();
-      throw Object.assign(new Error("MAC_METAL_COMMAND_FAILED"), {
-        metalMissing:
-          executable === "/usr/bin/xcrun" &&
-          args.includes("metal") &&
-          /missing Metal Toolchain|unable to find utility ["']metal["']/i.test(
-            String(error?.stderr ?? ""),
-          ),
-      });
+      let expired = false,
+        deadlineFailure;
+      try {
+        left();
+      } catch (error) {
+        expired = true;
+        deadlineFailure = error;
+      }
+      let elapsedMilliseconds = null;
+      try {
+        const elapsed = Math.floor(now() - started);
+        if (Number.isSafeInteger(elapsed) && elapsed >= 0)
+          elapsedMilliseconds = elapsed;
+      } catch {
+        /* A diagnostic clock read cannot replace the primary failure. */
+      }
+      const code = metalErrorData(error, "code");
+      const timedOut =
+        code === "ETIMEDOUT" ||
+        (metalErrorData(error, "killed") === true &&
+          metalErrorData(error, "signal") === "SIGKILL" &&
+          elapsedMilliseconds !== null &&
+          elapsedMilliseconds >= timeout);
+      const stderr = metalErrorData(error, "stderr");
+      const failure = expired
+        ? deadlineFailure
+        : Object.assign(new Error("MAC_METAL_COMMAND_FAILED"), {
+            metalMissing:
+              !expired &&
+              executable === "/usr/bin/xcrun" &&
+              args.includes("metal") &&
+              typeof stderr === "string" &&
+              /missing Metal Toolchain|unable to find utility ["']metal["']/i.test(
+                stderr,
+              ),
+          });
+      if (failure !== null && ["object", "function"].includes(typeof failure))
+        metalCommandFailures.set(
+          failure,
+          Object.freeze({
+            kind: "mac-metal-command-failure",
+            stage: firstColdFind ? "cold-find-metal" : stage,
+            elapsedMilliseconds,
+            timeoutMilliseconds: timeout,
+            outcome: expired
+              ? "deadline"
+              : timedOut
+                ? "timeout"
+                : code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+                  ? "output-bound"
+                  : "command-failure",
+          }),
+        );
+      throw failure;
     }
     left();
     return result;
@@ -343,7 +413,11 @@ async function prepareMacMetalToolchainImpl(
     left();
     let componentRoot;
     for (const role of ["metal", "metallib"]) {
-      const resolved = await invoke("/usr/bin/xcrun", ["--find", role]);
+      const resolved = await invoke(
+        "/usr/bin/xcrun",
+        ["--find", role],
+        `find-${role}`,
+      );
       const file = String(resolved.stdout ?? "").trim();
       if (
         !path.posix.isAbsolute(file) ||
@@ -372,23 +446,39 @@ async function prepareMacMetalToolchainImpl(
         fail("MAC_METAL_COMPONENT_DRIFT");
       componentRoot = root;
       const before = await measure(physical, left);
-      await invoke("/usr/bin/codesign", [
-        "--verify",
-        "--strict",
-        "--all-architectures",
-        "-R=anchor apple",
-        physical,
-      ]);
+      await invoke(
+        "/usr/bin/codesign",
+        [
+          "--verify",
+          "--strict",
+          "--all-architectures",
+          "-R=anchor apple",
+          physical,
+        ],
+        `verify-${role}-signature`,
+      );
       const version =
         role === "metal"
-          ? metalVersion(await invoke("/usr/bin/xcrun", ["metal", "--version"]))
+          ? metalVersion(
+              await invoke(
+                "/usr/bin/xcrun",
+                ["metal", "--version"],
+                "metal-version",
+              ),
+            )
           : null;
       const after = await measure(physical, left);
       if (
         JSON.stringify(before) !== JSON.stringify(after) ||
         (await canonical(
           String(
-            (await invoke("/usr/bin/xcrun", ["--find", role])).stdout ?? "",
+            (
+              await invoke(
+                "/usr/bin/xcrun",
+                ["--find", role],
+                `revalidate-${role}`,
+              )
+            ).stdout ?? "",
           ).trim(),
         )) !== physical
       )
@@ -413,8 +503,13 @@ async function prepareMacMetalToolchainImpl(
     tools = await attest();
   } catch (error) {
     if (error?.metalMissing !== true) throw error;
-    if (!allowDownload) fail("MAC_METAL_PROBE_FAILED");
-    await invoke(recipe.executable, recipe.arguments, true);
+    if (!allowDownload) {
+      const denied = new Error("MAC_METAL_PROBE_FAILED");
+      const command = metalCommandFailures.get(error);
+      if (command) metalCommandFailures.set(denied, command);
+      throw denied;
+    }
+    await invoke(recipe.executable, recipe.arguments, "download-metal", true);
     downloaded = true;
     tools = await attest();
   }
@@ -432,13 +527,23 @@ async function prepareMacMetalToolchainImpl(
   return observation;
 }
 
-export async function prepareMacMetalToolchain(options, dependencies) {
+async function runMacMetalToolchain(options, dependencies, coldDiscovery) {
   try {
-    return await prepareMacMetalToolchainImpl(options, dependencies);
+    return await prepareMacMetalToolchainImpl(
+      options,
+      dependencies,
+      coldDiscovery,
+    );
   } catch (error) {
     if (/^MAC_METAL_[A-Z_]+$/.test(error?.message ?? "")) throw error;
     throw new Error("MAC_METAL_UNAVAILABLE");
   }
+}
+export async function prepareMacMetalToolchain(options, dependencies) {
+  return runMacMetalToolchain(options, dependencies, true);
+}
+export async function revalidateMacMetalToolchain(options, dependencies) {
+  return runMacMetalToolchain(options, dependencies, false);
 }
 
 const SIGNATURE_SCRIPT = String.raw`param([Parameter(Mandatory=$true)][string]$Installer)

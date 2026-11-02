@@ -36,6 +36,8 @@ import {
 } from "./lib/cef-engineering-checkpoint.mjs";
 import {
   prepareMacMetalToolchain,
+  revalidateMacMetalToolchain,
+  macMetalCommandDiagnostic,
   macMetalFingerprint,
 } from "./cef-hosted-provision.mjs";
 import {
@@ -599,12 +601,13 @@ export async function observePreparationPhase(
   } catch {
     /* Observation only. */
   }
-  const record = async (status, cause) => {
+  const record = async (status, cause, metalCommand) => {
     const value = {
       kind: "cef-pre-acquisition",
       phase,
       status,
       ...(cause ? { cause } : {}),
+      ...(metalCommand ? { metalCommand } : {}),
     };
     const line = JSON.stringify(value);
     try {
@@ -632,7 +635,7 @@ export async function observePreparationPhase(
       } catch {
         /* Even an error accessor must not replace the primary. */
       }
-      await record("failure", cause);
+      await record("failure", cause, macMetalCommandDiagnostic(error));
       throw error;
     }
   } finally {
@@ -1845,7 +1848,7 @@ export async function build(
   };
   for (const [index, step] of commands.entries()) {
     if (metal) {
-      const currentMetal = await prepareMacMetalToolchain({
+      const currentMetal = await revalidateMacMetalToolchain({
         platform: expectedPlatform,
         selected: {
           DEVELOPER_DIR: childEnv.DEVELOPER_DIR,
