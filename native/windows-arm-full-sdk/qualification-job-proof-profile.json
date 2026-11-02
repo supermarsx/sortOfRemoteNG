@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-private-benign-job-proof-policy",
+  "mode": "benign-job-proof",
+  "ref": "refs/heads/codex/windows-arm-benign-job-proof-20261102",
+  "workflow": ".github/workflows/windows-arm-qualification-job-proof.yml",
+  "repository": "supermarsx/sortOfRemoteNG",
+  "repositoryId": "1010282954",
+  "runner": "windows-2025-vs2026",
+  "image": "20261030.294.1",
+  "workflowActivation": true,
+  "proofExecutionAdmitted": true,
+  "sourceMigrationAdmitted": false,
+  "compilerAdmission": false,
+  "sdkBuilt": false,
+  "nativeAcceptance": false,
+  "runtimeReady": false,
+  "suiteSeconds": 300,
+  "workSeconds": 150,
+  "finalReserveSeconds": 150,
+  "parentJoinReserveSeconds": 20,
+  "caseMaximumSeconds": 20,
+  "kernelCleanupSeconds": 30,
+  "caseOutputCapBytes": 67108864,
+  "reportMaximumBytes": 131072,
+  "maxCloseCalls": 4096,
+  "kernelPolicy": {
+    "processes": 64,
+    "memoryBytes": 8589934592,
+    "cpuRate": 2500
+  },
+  "python": {
+    "path": "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+    "bytes": 104952,
+    "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+  },
+  "node": {
+    "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+    "bytes": 92825416,
+    "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+    "nlink": 1
+  },
+  "kernel": {
+    "path": "native/windows-arm-full-sdk/job.py",
+    "bytes": 23788,
+    "sha256": "70f10cc78c6b75519d3b33cb02788b49f058bdfdf0780b27aeb7becde0b5e716",
+    "runJobAstSha256": "f27430844c58da35e566d19f2a1da15a8fc15ea62cad62b61cbe4d4a5c58977f"
+  },
+  "subject": {
+    "path": "native/windows-arm-full-sdk/private-source-driver.mjs",
+    "bytes": 202543,
+    "sha256": "b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201",
+    "joinedSha256": "599ecb053b98f26c3c242d40d4898f737130e7642196d77633a2e09fc1632459",
+    "signatureSha256": "7aa6353965bd3b971603decfcafda3afddd09b11a76005e2aa9221555edffb95",
+    "physicalSha256": "6ec5affe89659c0148e18f56a42f749883396c89197614a1b57bb8c26fd2dcb5"
+  },
+  "sourcePaths": [
+    "native/windows-arm-full-sdk/qualification-job-proof.py",
+    "native/windows-arm-full-sdk/qualification-job-proof-profile.json",
+    "tests/fixtures/cef/windows_arm_qualification_job_proof.mjs",
+    "tests/tooling/windowsArmQualificationJobProof.node-test.mjs",
+    ".github/workflows/windows-arm-qualification-job-proof.yml",
+    "native/windows-arm-full-sdk/private-source-driver.mjs",
+    "native/windows-arm-full-sdk/private-qualification-profile.json",
+    "native/windows-arm-full-sdk/job.py"
+  ],
+  "cases": [
+    "six-role-normal",
+    "second-role-nonzero",
+    "session-cancel-after-owned-output",
+    "preaborted",
+    "outer-cancel-after-assignment-before-resume",
+    "deadline-with-pipe-descendant",
+    "closed-pipe-orphan",
+    "reparented-descendant",
+    "bounded-output-failure"
+  ]
+}

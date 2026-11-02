@@ -1,0 +1,133 @@
+name: Windows ARM private benign Job qualification proof
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-arm-benign-proof-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  proof:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.event.repository.default_branch == 'main' && github.ref == 'refs/heads/codex/windows-arm-benign-job-proof-20261102'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 10
+    env:
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - name: Record original job clock and deny unreviewed allocations
+        id: original
+        shell: pwsh
+        run: |
+          $started = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          "CEF_WINDOWS_BENIGN_JOB_STARTED_MS=$started" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($env:ImageVersion -cne '20261030.294.1') { throw 'PROOF_IMAGE_DENIED' }
+          $present = Test-Path -LiteralPath 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -PathType Leaf
+          "python_required=$((-not $present).ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          architecture: x64
+          package-manager-cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: steps.original.outputs.python_required == 'true'
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          check-latest: false
+          update-environment: false
+      - name: Run only the fixed benign suite and select its closed report leaves
+        id: proof
+        shell: pwsh
+        run: |
+          @'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import {createHash} from 'node:crypto';
+          // BEGIN BENIGN ORIGINAL JOB CLOCK
+          function originalJobDeadline(started, wall, monotonic) {
+            assert(/^[0-9]{13}$/.test(started ?? ''), 'PROOF_JOB_CLOCK');
+            const origin = Number(started);
+            assert(Number.isSafeInteger(origin) && origin <= wall, 'PROOF_JOB_CLOCK');
+            const remaining = origin + 600000 - 30000 - wall;
+            assert(remaining >= 300000, 'PROOF_JOB_RESERVE');
+            return Object.freeze({wallEnd: origin + 570000, monotonicEnd: monotonic + remaining});
+          }
+          function checkOriginalJob(clock) {
+            assert(Date.now() < clock.wallEnd && performance.now() < clock.monotonicEnd, 'PROOF_JOB_DEADLINE');
+          }
+          // END BENIGN ORIGINAL JOB CLOCK
+          try {
+          const clock = originalJobDeadline(process.env.CEF_WINDOWS_BENIGN_JOB_STARTED_MS, Date.now(), performance.now());
+          const root = process.cwd(), artifacts = path.join(root, '.artifacts');
+          const canonical = p => path.resolve(p).replaceAll('\\', '/').toLowerCase();
+          const signature = s => [s.dev,s.ino,s.size,s.mode,s.nlink,s.birthtimeNs,s.mtimeNs,s.ctimeNs].map(String).join(':');
+          async function physical(file) {
+            assert(canonical(await fs.realpath(file)) === canonical(file), 'PROOF_REPORT_ALIAS');
+            for (let at=file;;at=path.dirname(at)) {
+              assert(!(await fs.lstat(at)).isSymbolicLink(), 'PROOF_REPORT_LINK');
+              if (path.dirname(at)===at) break;
+            }
+          }
+          await physical(root);
+          const before = new Set(await fs.readdir(artifacts).catch(error => {if(error.code==='ENOENT')return [];throw error;}));
+          const {main, inspectAuthority, validateControllerResult} = await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs');
+          const policy = JSON.parse(await fs.readFile('native/windows-arm-full-sdk/qualification-job-proof-profile.json','utf8'));
+          inspectAuthority(policy,process.env,process);
+          // Every checkout/setup/import consumes the original job envelope.
+          // The existing inner300s suite/150s work and kernel clocks are unchanged.
+          assert(Math.min(clock.wallEnd-Date.now(),clock.monotonicEnd-performance.now()) >= 300000, 'PROOF_JOB_RESERVE');
+          checkOriginalJob(clock);
+          await main([]); // Actual fulfillment owns success; reports alone cannot.
+          checkOriginalJob(clock);
+          const candidates = (await fs.readdir(artifacts)).filter(name => !before.has(name) && /^windows-arm-job-report-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name));
+          assert(candidates.length===1,'PROOF_REPORT_FRESHNESS');
+          const directory = path.join(artifacts,candidates[0]), nonce = candidates[0].slice('windows-arm-job-report-'.length);
+          await physical(directory);
+          const directoryIdentity = signature(await fs.lstat(directory,{bigint:true}));
+          const expected = ['proof.json',...Array.from({length:9},(_,i)=>`receipt-${i}.json`)];
+          assert.deepEqual((await fs.readdir(directory)).sort(),[...expected].sort(),'PROOF_REPORT_FILES');
+          const held = async name => {
+            checkOriginalJob(clock);await physical(directory);await physical(path.join(directory,name));
+            assert(signature(await fs.lstat(directory,{bigint:true}))===directoryIdentity,'PROOF_REPORT_ROOT');
+            const file=path.join(directory,name),before=await fs.lstat(file,{bigint:true});
+            assert(before.isFile()&&before.nlink===1n&&before.size<=131072n,'PROOF_REPORT_BOUND');
+            const fd=await fs.open(file,'r');let failed=false;
+            try {
+              assert(signature(await fd.stat({bigint:true}))===signature(before),'PROOF_REPORT_CHANGED');
+              const buffer=Buffer.alloc(131073);let offset=0;
+              for(;;){checkOriginalJob(clock);const {bytesRead}=await fd.read(buffer,offset,buffer.length-offset,offset);if(!bytesRead)break;offset+=bytesRead;assert(offset<=131072,'PROOF_REPORT_BOUND');}
+              assert(signature(await fd.stat({bigint:true}))===signature(before)&&signature(await fs.lstat(file,{bigint:true}))===signature(before),'PROOF_REPORT_CHANGED');
+              return buffer.subarray(0,offset);
+            }catch(error){failed=true;throw error;}
+            finally{try{await fd.close();}catch(error){if(!failed)throw error;}}
+          };
+          const proofRaw=await held('proof.json'),proof=JSON.parse(proofRaw);
+          const receipts=[];for(let i=0;i<9;i++)receipts.push(await held(`receipt-${i}.json`));
+          const checked=validateControllerResult({schemaVersion:1,kind:'windows-benign-job-controller-result',complete:proof.complete,nonce:proof.nonce,head:proof.head,cases:proof.cases,rawReceipts:receipts.map(raw=>raw.toString('base64')),scratchRemoved:proof.scratchRemoved,productionAdmission:proof.productionAdmission,sourceGnQualified:proof.sourceGnQualified,compilerAdmission:proof.compilerAdmission,nativeAcceptance:proof.nativeAcceptance,runtimeReady:proof.runtimeReady},policy,nonce,process.env.GITHUB_SHA);
+          assert.deepEqual(checked.proof,proof,'PROOF_REPORT_BINDING');
+          assert(signature(await fs.lstat(directory,{bigint:true}))===directoryIdentity,'PROOF_REPORT_ROOT');
+          checkOriginalJob(clock);
+          const paths=expected.map(name=>path.join(directory,name));
+          assert(paths.every(file=>!/[\r\n*?]/.test(file)),'PROOF_REPORT_PATH');
+          await fs.appendFile(process.env.GITHUB_OUTPUT,`paths<<FIXED_REPORT_PATHS\n${paths.join('\n')}\nFIXED_REPORT_PATHS\n`);
+          checkOriginalJob(clock);
+          console.log(JSON.stringify({complete:true,head:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,nonce,reports:10,rawProofSha256:createHash('sha256').update(proofRaw).digest('hex'),sourceGnQualified:false,compilerAdmission:false,nativeAcceptance:false,runtimeReady:false}));
+          } catch { console.error('PROOF_CARRIER_DENIED'); process.exitCode = 1; }
+          '@ | node --input-type=module
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload only validated reports after actual suite fulfillment
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v7.0.0
+        with:
+          name: windows-arm-qualification-job-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.proof.outputs.paths }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
