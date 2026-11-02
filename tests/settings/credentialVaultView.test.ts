@@ -34,7 +34,7 @@ describe("credential vault list preferences", () => {
         categories: 200,
         assigned: 160,
         updated: 180,
-        actions: 224,
+        actions: 288,
       },
       pageSize: 100,
       mode: "paged",
@@ -43,7 +43,7 @@ describe("credential vault list preferences", () => {
   it("includes new metadata columns by default while respecting saved visibility and bounded widths", () => {
     expect(
       normalizeCredentialVaultView({ widths: { actions: 96 } }).widths.actions,
-    ).toBe(96);
+    ).toBe(256);
     expect(normalizeCredentialVaultView(undefined).columns).toContain("types");
     expect(normalizeCredentialVaultView(undefined).columns).toContain(
       "updated",

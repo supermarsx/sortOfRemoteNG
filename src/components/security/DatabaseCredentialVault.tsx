@@ -761,7 +761,7 @@ function VaultWorkspace({
                 0,
               ),
             }}
-            className="mx-auto table-fixed rounded border border-[var(--color-border)] bg-[var(--color-background)] text-left text-xs [&_td]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2"
+            className="mx-auto min-w-full table-fixed rounded border border-[var(--color-border)] bg-[var(--color-background)] text-left text-xs [&_td]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2"
             aria-label="Database vault credentials"
             aria-busy={mgr.loading}
           >
@@ -985,7 +985,7 @@ function VaultWorkspace({
                         hidden={!view.columns.includes("actions")}
                         className="p-2 text-right"
                       >
-                        <div className="flex flex-wrap justify-end gap-1">
+                        <div className="flex flex-nowrap items-center justify-end gap-1 [&>button]:inline-flex [&>button]:size-7 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center">
                           {rowActions(actionTarget(item))}
                           {inventory.migratable.has(item.row.id) && (
                             <button
@@ -1107,7 +1107,7 @@ function VaultWorkspace({
                         hidden={!view.columns.includes("actions")}
                         className="p-2"
                       >
-                        <div className="flex flex-wrap justify-end gap-1">
+                        <div className="flex flex-nowrap items-center justify-end gap-1 [&>button]:inline-flex [&>button]:size-7 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center">
                           {rowActions(actionTarget(item))}
                           <button
                             type="button"

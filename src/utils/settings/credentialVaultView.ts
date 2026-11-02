@@ -5,7 +5,7 @@ export const VAULT_COLUMNS = [
   { id: "categories", label: "Category tags", width: 200, min: 100 },
   { id: "assigned", label: "Assigned to", width: 160, min: 100 },
   { id: "updated", label: "Last updated", width: 180, min: 120 },
-  { id: "actions", label: "Actions", width: 224, min: 80 },
+  { id: "actions", label: "Actions", width: 288, min: 256 },
 ] as const;
 export type VaultColumn = (typeof VAULT_COLUMNS)[number]["id"];
 export interface CredentialVaultView {
