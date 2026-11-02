@@ -3085,7 +3085,7 @@ test("outer restore-only migration assertions retain strict native codes before 
       { Set },
     );
   }
-  let old = core.afterGnPhase.toString();
+  let old = core.afterGnPhase.toString().replace(/\r\n/g, "\n");
   const first =
       "    // BEGIN restore-only fixed migration assertion projection\n",
     last = "    // END restore-only fixed migration assertion projection\n";
