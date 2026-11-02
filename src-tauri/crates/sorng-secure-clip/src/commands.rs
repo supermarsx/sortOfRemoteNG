@@ -3,14 +3,6 @@ use tauri::State;
 use super::service::SecureClipServiceState;
 use super::types::*;
 
-async fn native_app_is_locked(state: &State<'_, super::auto_lock::AutoLockServiceState>) -> bool {
-    let service = state.lock().await;
-    matches!(
-        service.get_lock_state().await,
-        super::auto_lock::LockState::Locked
-    )
-}
-
 // Every command in this file fails with a fixed code from `SecureClipError`
 // and nothing else: no sentence, no operating-system text, never a value.
 // The rejection the frontend sees is the bare code string.
@@ -26,10 +18,11 @@ async fn native_app_is_locked(state: &State<'_, super::auto_lock::AutoLockServic
 #[tauri::command]
 pub async fn secure_clip_copy(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     request: CopyRequest,
 ) -> Result<ClipEntryDisplay, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc.copy(&request).await?)
@@ -38,12 +31,13 @@ pub async fn secure_clip_copy(
 #[tauri::command]
 pub async fn secure_clip_copy_password(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     connection_id: String,
     connection_name: String,
     password: String,
 ) -> Result<ClipEntryDisplay, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc
@@ -54,11 +48,12 @@ pub async fn secure_clip_copy_password(
 #[tauri::command]
 pub async fn secure_clip_copy_totp(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     connection_id: Option<String>,
     code: String,
 ) -> Result<ClipEntryDisplay, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc.copy_totp(connection_id.as_deref(), code).await?)
@@ -67,11 +62,12 @@ pub async fn secure_clip_copy_totp(
 #[tauri::command]
 pub async fn secure_clip_copy_username(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     connection_id: Option<String>,
     username: String,
 ) -> Result<ClipEntryDisplay, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc
@@ -82,11 +78,12 @@ pub async fn secure_clip_copy_username(
 #[tauri::command]
 pub async fn secure_clip_copy_passphrase(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     connection_id: Option<String>,
     passphrase: String,
 ) -> Result<ClipEntryDisplay, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc
@@ -97,11 +94,12 @@ pub async fn secure_clip_copy_passphrase(
 #[tauri::command]
 pub async fn secure_clip_copy_api_key(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     label: Option<String>,
     key: String,
 ) -> Result<ClipEntryDisplay, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc.copy_api_key(label.as_deref(), key).await?)
@@ -114,9 +112,10 @@ pub async fn secure_clip_copy_api_key(
 #[tauri::command]
 pub async fn secure_clip_paste(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
 ) -> Result<String, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc.paste().await?)
@@ -125,10 +124,11 @@ pub async fn secure_clip_paste(
 #[tauri::command]
 pub async fn secure_clip_paste_by_id(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     entry_id: String,
 ) -> Result<String, String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc.paste_by_id(&entry_id).await?)
@@ -139,7 +139,7 @@ pub async fn secure_clip_paste_by_id(
 #[tauri::command]
 pub async fn secure_clip_paste_to_terminal(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     ssh_state: State<'_, super::ssh::types::SshServiceState>,
     request: PasteToTerminalRequest,
 ) -> Result<PasteToTerminalResponse, String> {
@@ -151,7 +151,8 @@ pub async fn secure_clip_paste_to_terminal(
         return Err(SecureClipError::Unavailable.into());
     }
 
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     let paste = svc
@@ -273,10 +274,11 @@ pub async fn secure_clip_get_config(
 #[tauri::command]
 pub async fn secure_clip_update_config(
     state: State<'_, SecureClipServiceState>,
-    auto_lock_state: State<'_, super::auto_lock::AutoLockServiceState>,
+    encryption_state: State<'_, super::encryption::EncryptionState>,
     config: SecureClipConfig,
 ) -> Result<(), String> {
-    let locked = native_app_is_locked(&auto_lock_state).await;
+    let lock_lease = encryption_state.app_lock_lease().await;
+    let locked = lock_lease.is_locked();
     let mut svc = state.write().await;
     svc.observe_lock_state(locked).await;
     Ok(svc.update_config(config).await?)

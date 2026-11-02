@@ -7,6 +7,7 @@ description = "Platform command handlers — split from app crate to reduce cohe
 
 [dependencies]
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["platform", "ops", "collab"] }
+sorng-encryption = { path = "../sorng-encryption" }
 tauri = { workspace = true }
 tauri-plugin-fs = "=2.5.1"
 serde = { workspace = true }

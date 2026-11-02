@@ -22,11 +22,13 @@
 //! - `lock()` zeroizes the in-memory DEK; subsequent reads need a fresh
 //!   unlock. Auto-lock policies in Phase 4 call this on idle.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, OnceLock,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::dek::{ArtifactKind, MasterDek, SubKey};
 use crate::envelope::MasterKeyStorage;
@@ -41,7 +43,27 @@ pub struct EncryptionState {
     ever_installed: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
     session_owner: Arc<OnceLock<DatabaseSessionOwner>>,
+    lock_transition: Arc<OnceLock<LockTransitionCallback>>,
     pub(crate) artifact_policy: Arc<crate::artifact_policy::PolicyRuntime>,
+}
+
+/// Called under the key's exclusive lease. Consumers must not read the key
+/// state recursively; completing the callback completes the native transition.
+pub type LockTransitionCallback =
+    Arc<dyn Fn(bool) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+
+/// Holds the authoritative app-lock state through a native credential action.
+/// It exposes no key material and prevents a lock/unlock from overtaking it.
+#[must_use]
+pub struct ApplicationLockLease<'a> {
+    _key: RwLockReadGuard<'a, Option<MasterDek>>,
+    locked: bool,
+}
+
+impl ApplicationLockLease<'_> {
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
 }
 
 /// Clones share this guard. Dropping a temporary snapshot must not revoke a
@@ -66,6 +88,44 @@ impl EncryptionState {
         self.inner.read().await.is_some()
     }
 
+    pub async fn app_lock_lease(&self) -> ApplicationLockLease<'_> {
+        let key = self.inner.read().await;
+        ApplicationLockLease {
+            locked: self.application_locked(key.is_some()),
+            _key: key,
+        }
+    }
+
+    fn application_locked(&self, key_loaded: bool) -> bool {
+        if key_loaded {
+            return false;
+        }
+        let configured_or_uncertain = self
+            .artifact_policy
+            .0
+            .read()
+            .map(|cache| {
+                cache.configured_profile || cache.recovery_required || cache.error.is_some()
+            })
+            .unwrap_or(true);
+        self.has_installed_key()
+            || configured_or_uncertain
+            || crate::master_recovery::cached_health(self)
+                .is_some_and(|health| health.critical_failure)
+    }
+
+    pub fn set_lock_transition_callback(&self, callback: LockTransitionCallback) -> bool {
+        self.lock_transition.set(callback).is_ok()
+    }
+
+    async fn notify_lock_transition(&self, locked: bool) {
+        if let Some(callback) = self.lock_transition.get() {
+            if let Err(error) = callback(locked).await {
+                log::error!("Encryption lock transition cleanup failed: {error}");
+            }
+        }
+    }
+
     /// Zeroize the in-memory DEK. Idempotent — locking an already-locked
     /// state is a no-op. Subsequent reads require a fresh unlock.
     pub async fn lock(&self) {
@@ -79,6 +139,8 @@ impl EncryptionState {
         *guard = None;
         crate::log_adapter::release_all_artifact_previews();
         self.generation.fetch_add(1, Ordering::AcqRel);
+        self.notify_lock_transition(self.application_locked(false))
+            .await;
     }
 
     /// Replace the in-memory DEK. Used by [`setup`] and by every
@@ -93,6 +155,7 @@ impl EncryptionState {
         self.ever_installed.store(true, Ordering::Release);
         *guard = Some(dek);
         self.generation.fetch_add(1, Ordering::AcqRel);
+        self.notify_lock_transition(false).await;
         drop(guard);
         crate::artifact_policy::refresh(self).await;
     }
@@ -340,6 +403,106 @@ pub fn decide_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn app_lock_lease_distinguishes_unconfigured_and_cold_locked_profiles() {
+        let fresh = EncryptionState::new();
+        assert!(!fresh.app_lock_lease().await.is_locked());
+        fresh.lock().await;
+        assert!(!fresh.app_lock_lease().await.is_locked());
+
+        let configured = EncryptionState::new();
+        configured
+            .artifact_policy
+            .0
+            .write()
+            .unwrap()
+            .configured_profile = true;
+        assert!(configured.app_lock_lease().await.is_locked());
+        configured.install(MasterDek::generate()).await;
+        assert!(!configured.app_lock_lease().await.is_locked());
+        configured.lock().await;
+        assert!(configured.app_lock_lease().await.is_locked());
+
+        let uncertain = EncryptionState::new();
+        uncertain.artifact_policy.0.write().unwrap().error = Some("unreadable receipt".into());
+        assert!(uncertain.app_lock_lease().await.is_locked());
+        let recovery = EncryptionState::new();
+        crate::master_recovery::record_load_failure(&recovery, "existing profile key unavailable");
+        assert!(recovery.app_lock_lease().await.is_locked());
+    }
+
+    #[tokio::test]
+    async fn native_app_lock_callback_follows_real_key_transitions_and_clones() {
+        let state = EncryptionState::new();
+        let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let target = observed.clone();
+        assert!(state.set_lock_transition_callback(Arc::new(move |locked| {
+            let target = target.clone();
+            Box::pin(async move {
+                target.lock().unwrap().push(locked);
+                Ok(())
+            })
+        })));
+        assert!(!state
+            .clone()
+            .set_lock_transition_callback(Arc::new(|_| Box::pin(async { Ok(()) }))));
+        state.install(MasterDek::generate()).await;
+        state.clone().lock().await;
+        state.install(MasterDek::generate()).await;
+        let snapshot = state.snapshot().await.unwrap();
+        snapshot.lock().await;
+        assert_eq!(*observed.lock().unwrap(), vec![false, true, false]);
+        assert!(!state.app_lock_lease().await.is_locked());
+    }
+
+    #[tokio::test]
+    async fn native_credential_lease_prevents_lock_from_overtaking_the_action() {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let lease = state.app_lock_lease().await;
+        assert!(!lease.is_locked());
+        let mut locking = Box::pin(state.lock());
+        let pending = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(matches!(
+                locking.as_mut().poll(cx),
+                std::task::Poll::Pending
+            ))
+        })
+        .await;
+        assert!(pending);
+        drop(lease);
+        locking.await;
+        assert!(state.app_lock_lease().await.is_locked());
+    }
+
+    #[tokio::test]
+    async fn native_lock_waits_for_clipboard_cleanup_before_admitting_later_actions() {
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (callback_started, callback_release) = (started.clone(), release.clone());
+        assert!(state.set_lock_transition_callback(Arc::new(move |locked| {
+            let (started, release) = (callback_started.clone(), callback_release.clone());
+            Box::pin(async move {
+                if locked {
+                    started.notify_one();
+                    release.notified().await;
+                }
+                Ok(())
+            })
+        })));
+        let locking = tokio::spawn({
+            let state = state.clone();
+            async move { state.lock().await }
+        });
+        started.notified().await;
+        assert!(state.inner.try_read().is_err());
+        release.notify_one();
+        locking.await.unwrap();
+        assert!(state.app_lock_lease().await.is_locked());
+    }
 
     #[test]
     fn password_receipts_do_not_require_any_vault() {

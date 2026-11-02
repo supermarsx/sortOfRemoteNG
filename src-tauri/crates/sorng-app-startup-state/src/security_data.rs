@@ -14,11 +14,9 @@ pub(super) fn register(
     app.manage(totp_service);
     app.manage(BearerAuthService::new());
 
-    let auto_lock_service = AutoLockService::new();
-    app.manage(auto_lock_service.clone());
-    tauri::async_runtime::spawn(async move {
-        AutoLockService::start_monitoring(&auto_lock_service).await;
-    });
+    // Kept as managed legacy state for compatibility. App locking is owned by
+    // the configured encryption policy and its visible unlock flow.
+    app.manage(AutoLockService::new());
 
     app.manage(GpoService::new());
     app.manage(LoginDetectionService::new());

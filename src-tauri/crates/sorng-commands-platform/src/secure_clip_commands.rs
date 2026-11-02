@@ -10,8 +10,8 @@ mod ssh {
     pub use crate::ssh::*;
 }
 
-mod auto_lock {
-    pub use crate::auto_lock::*;
+mod encryption {
+    pub use sorng_encryption::EncryptionState;
 }
 
 #[allow(dead_code)]
