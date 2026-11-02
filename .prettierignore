@@ -1,6 +1,9 @@
 # Dependencies and package-manager output
 node_modules
 
+# This fixed migration capsule is consumed as strict canonical JSON bytes.
+native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json
+
 # Build, test, and framework output
 .next
 out

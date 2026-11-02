@@ -1322,8 +1322,21 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
     M.producer,
     "a148be3d5dc98f075d1774bdfa2fcd270a362b8c9c20f2f4c542c26bc60b1507",
   );
-  const capsule = JSON.parse(
-    git(ROOT, ["cat-file", "blob", "HEAD:" + M.policyPath]).toString(),
+  const capsuleRaw = git(ROOT, ["cat-file", "blob", "HEAD:" + M.policyPath]);
+  const reader = await privateFunctions(["json", "need"], {
+    Buffer,
+    TextDecoder,
+    canonical: core.canonical,
+  });
+  reader.json(capsuleRaw, 128 * 1024);
+  const capsule = JSON.parse(capsuleRaw.toString());
+  assert.throws(
+    () =>
+      reader.json(
+        Buffer.from(JSON.stringify(capsule, null, 2) + "\n"),
+        128 * 1024,
+      ),
+    /CANONICAL_JSON/,
   );
   assert.equal(capsule.from.producer, M.producer);
   assert.deepEqual(capsule.oldSourceTree, actual);

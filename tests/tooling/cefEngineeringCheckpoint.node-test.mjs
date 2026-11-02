@@ -391,7 +391,9 @@ test("migration CLI uses actual non-idempotent tool close and preserves one real
 });
 
 test("migration CLI held byte reader rejects wrong pins and oversized named files before reading them", async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), "cef-cli-migration-bytes-"));
+  const root = await realpath(
+    await mkdtemp(path.join(tmpdir(), "cef-cli-migration-bytes-")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const file = path.join(root, "proof.json"),
     raw = Buffer.from('{"fixed":true}\n');
