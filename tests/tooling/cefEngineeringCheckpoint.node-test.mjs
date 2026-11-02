@@ -7989,7 +7989,17 @@ async function compileSupervisorModel(options = {}) {
       .getText(ast)
       .replace(/^export /, "");
   let clockOffset = 0;
-  const clock = options.modelClock ?? {
+  // Non-time contracts advance the original work clock through its actual
+  // asynchronous work event, not through host scheduling or filesystem delay.
+  // Deadline/stall cases below opt into the original wall clock explicitly.
+  const modelClock = options.realClock
+    ? undefined
+    : (options.modelClock ??
+      outputLifecycleClock({
+        workTimer: true,
+        monitorTickMs: options.monitorTickMs,
+      }));
+  const clock = modelClock ?? {
     now: () => performance.now() + clockOffset,
   };
   const within = new Function(
@@ -8001,8 +8011,8 @@ async function compileSupervisorModel(options = {}) {
   )(
     assert,
     clock,
-    options.modelClock?.setTimeout ?? setTimeout,
-    options.modelClock?.clearTimeout ?? clearTimeout,
+    modelClock?.setTimeout ?? setTimeout,
+    modelClock?.clearTimeout ?? clearTimeout,
   );
   const child = new EventEmitter();
   Object.assign(child, {
@@ -8039,7 +8049,7 @@ async function compileSupervisorModel(options = {}) {
         state.closePending = true;
         const finish = () => {
           if (options.closeFault.advanceMs)
-            options.modelClock.advance(options.closeFault.advanceMs);
+            modelClock.advance(options.closeFault.advanceMs);
           destroy(options.closeFault.error ?? error, done);
         };
         if (options.closeFault.kind === "never") state.releaseClose = finish;
@@ -8177,16 +8187,16 @@ async function compileSupervisorModel(options = {}) {
     canonical,
     liveCompileSlices: { set: () => state.proofs++ },
     setTimeout:
-      options.modelClock?.setTimeout ??
+      modelClock?.setTimeout ??
       ((callback, ms, ...args) =>
         setTimeout(
           () => {
             if (options.delayedTimer && ms !== 250) clockOffset = 200;
             callback(...args);
           },
-          ms === 250 ? 10 : ms,
+          ms === 250 ? (options.monitorTickMs ?? 10) : ms,
         )),
-    clearTimeout: options.modelClock?.clearTimeout ?? clearTimeout,
+    clearTimeout: modelClock?.clearTimeout ?? clearTimeout,
   };
   const execute = new Function(
     ...Object.keys(dependencies),
@@ -8254,6 +8264,7 @@ async function compileSupervisorModel(options = {}) {
 
 test("single supervisor returns finite original cleanup failure despite inherited open pipes", async () => {
   const state = await compileSupervisorModel({
+    realClock: true,
     stopError: true,
     holdPipes: true,
   });
@@ -8281,7 +8292,10 @@ test("monitor failure still attempts cohort cleanup and retains the original err
 });
 
 test("an unjoined creation-owned census probe still denies a settled monitor and otherwise quiet output", async () => {
-  const state = await compileSupervisorModel({ unjoinedProbe: true });
+  const state = await compileSupervisorModel({
+    realClock: true,
+    unjoinedProbe: true,
+  });
   assert.equal(state.proofs, 0);
   assert.equal(state.writes.length, 0);
   assert.match(state.error.message, /cleanup deadline/);
@@ -8327,6 +8341,7 @@ test("explicit cancellation preserves its reason, creates no compile proof and j
 });
 test("never resolving initial snapshot denies admission finitely without guessed cohort signals", async () => {
   const state = await compileSupervisorModel({
+    realClock: true,
     neverSnapshot: true,
     holdPipes: true,
   });
@@ -8337,6 +8352,7 @@ test("never resolving initial snapshot denies admission finitely without guessed
 });
 test("writer failure remains primary through cleanup and natural detached pipe writers are denied", async () => {
   const writer = await compileSupervisorModel({
+    realClock: true,
     streamError: true,
     holdPipes: true,
   });
@@ -8356,7 +8372,10 @@ test("only confirmed reaping exit pipe and writer joins create a compile proof",
   assert.equal(clean.proofs, 1);
   assert.equal(clean.stops, 1);
   assert.equal(clean.writes.length, 1);
-  const pending = await compileSupervisorModel({ neverFinished: true });
+  const pending = await compileSupervisorModel({
+    realClock: true,
+    neverFinished: true,
+  });
   assert.match(pending.error.message, /cleanup deadline/);
   assert.equal(pending.proofs, 0);
   assert.equal(pending.writes.length, 0);
@@ -8494,6 +8513,7 @@ test("fixed ps timeout kills only its creation-owned helper and cannot retain st
 
 test("a null primary rejection remains null through subsequent cleanup failures", async () => {
   const state = await compileSupervisorModel({
+    realClock: true,
     monitorError: true,
     stopError: true,
     error: null,
@@ -8546,6 +8566,7 @@ test("delayed work timer cannot mint cleanup time beyond the original admission 
   // domain model, not a claim of physical scheduling latency.
   const state = await compileSupervisorModel({
     delayedTimer: true,
+    realClock: true,
     holdPipes: true,
   });
   assert.match(state.error.message, /cleanup deadline/);
@@ -11694,16 +11715,34 @@ test("optional shared output ledger precharges both streams before forwarding an
   }
 });
 
-function outputLifecycleClock() {
+function outputLifecycleClock({ workTimer = false, monitorTickMs = 10 } = {}) {
   let now = 0;
+  let workTimerIssued = false;
   const pending = new Set();
+  const advance = (milliseconds) => {
+    now += milliseconds;
+    for (const timer of [...pending])
+      if (timer.due <= now) {
+        pending.delete(timer);
+        timer.callback();
+      }
+  };
   return {
     now: () => now,
     setTimeout(callback, milliseconds, ...args) {
       // The modeled process monitor still takes an asynchronous turn. Only
       // deadline passage is explicit; real stream IO must not advance it.
       if (milliseconds === 250)
-        return { monitor: setTimeout(callback, 10, ...args) };
+        return { monitor: setTimeout(callback, monitorTickMs, ...args) };
+      if (workTimer && !workTimerIssued && milliseconds === 20) {
+        workTimerIssued = true;
+        return {
+          monitor: setTimeout(() => {
+            advance(20);
+            callback(...args);
+          }, 20),
+        };
+      }
       const timer = {
         callback: () => callback(...args),
         due: now + milliseconds,
@@ -11715,14 +11754,7 @@ function outputLifecycleClock() {
       if (timer?.monitor) clearTimeout(timer.monitor);
       else pending.delete(timer);
     },
-    advance(milliseconds) {
-      now += milliseconds;
-      for (const timer of [...pending])
-        if (timer.due <= now) {
-          pending.delete(timer);
-          timer.callback();
-        }
-    },
+    advance,
   };
 }
 
@@ -11797,7 +11829,9 @@ test("output physical closure uses explicit model time while actual owned FD des
     const logs = path.join(root, mode);
     await mkdir(logs);
     const state = await compileSupervisorModel({
-      ...(controlled ? { modelClock: outputLifecycleClock() } : {}),
+      ...(controlled
+        ? { modelClock: outputLifecycleClock() }
+        : { realClock: true }),
       realLogsRoot: logs,
       outputLedger: { bytes: cap, cap },
       chunks: [["stdout", "rejected"]],
@@ -11831,6 +11865,7 @@ test("output physical closure with modeled processes cannot qualify late or abse
       const logs = path.join(root, `${kind}-${index}`);
       await mkdir(logs);
       const state = await compileSupervisorModel({
+        realClock: true,
         realLogsRoot: logs,
         outputLedger: { bytes: cap, cap },
         chunks: [["stdout", "rejected"]],
@@ -11928,6 +11963,7 @@ test("optional actual supervisor observer is creation-bound, tracked without blo
   assert.equal(denied.root, undefined);
   assert.equal(denied.proofs, 0);
   const hung = await compileSupervisorModel({
+    realClock: true,
     cleanExit: true,
     observeRoot: () => new Promise(() => {}),
   });
@@ -11959,6 +11995,7 @@ test("optional observer first errors including falsy values survive later writer
     assert.equal(state.proofs, 0);
   }
   const writer = await compileSupervisorModel({
+    realClock: true,
     outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 },
     chunks: [["stdout", "held writer"]],
     stalledWriter: true,
@@ -11971,6 +12008,25 @@ test("optional observer first errors including falsy values survive later writer
     writer.streams.every((stream) => stream.destroyed),
     true,
   );
+});
+
+test("supervisor model causal delayed monitor joins preserve falsy primary and allow cleanup only before explicit expiry", async () => {
+  for (const realClock of [true, false]) {
+    const state = await compileSupervisorModel({
+      realClock,
+      monitorTickMs: 120,
+      observeRoot: () => {
+        throw false;
+      },
+    });
+    assert.equal(state.error, false);
+    assert.equal(state.stops, realClock ? 0 : 1);
+    assert.equal(state.proofs, 0);
+    const diagnostic = JSON.parse(
+      state.diagnostic.split("compile-supervision=")[1],
+    );
+    assert.equal(diagnostic.monitorJoined, !realClock);
+  }
 });
 
 test(
