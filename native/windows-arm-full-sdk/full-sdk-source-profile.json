@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-arm-full-sdk-source-internal-profile",
+  "mode": "full-sdk-source-gn",
+  "workflow": ".github/workflows/windows-arm-full-sdk.yml",
+  "policy": "native/windows-arm-full-sdk/sdk-origin-review.json",
+  "ref": "refs/heads/main",
+  "repository": "supermarsx/sortOfRemoteNG",
+  "repositoryId": "1010282954",
+  "event": "workflow_dispatch",
+  "visibility": "public",
+  "defaultBranch": "main",
+  "target": "aarch64-pc-windows-msvc",
+  "runner": "windows-2025-vs2026",
+  "sourceClosureStatus": "closed-internal-source-body",
+  "executionAdmitted": false,
+  "sourceSessionIssuerImplemented": true,
+  "fullModeBodyImplemented": true,
+  "sourceProgramCarryforwardQualified": false,
+  "fullArm64DefaultsQualified": false,
+  "engineCompilationAllowed": false,
+  "sdkAllowed": false,
+  "nativeAcceptance": false,
+  "runtimeReady": false,
+  "publicationAllowed": false,
+  "missingAuthorityRule": "Fixed FULLSDK workflow and sdk-origin-review.json absent means denial before launcher.",
+  "driver": "native/windows-arm-full-sdk/full-sdk-source-driver.mjs",
+  "driverFlag": "--full-sdk-source-gn",
+  "launcher": "native/windows-arm-full-sdk/full_sdk_source.py",
+  "launcherFlag": "--full-sdk-source-launcher",
+  "role": "full-sdk-source-gn",
+  "derivation": {
+    "commit": "924bed27860e9adf363b19a7b1a34ddeae8101c0",
+    "path": "native/windows-arm-full-sdk/private-source-driver.mjs",
+    "bytes": 202543,
+    "sha256": "b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201",
+    "inverse": "Restore the single finite full-metadata shared-runner branch, then the three finite c9 source-program replacements, then remove the CLOSED FULL SDK SOURCE BODY and INACTIVE FULL SDK SOURCE INTERFACE marked blocks; whole b039 restores.",
+    "apache4D61Carried": true,
+    "sourceBodyOriginalSha256": "45055005b59ad90ff2be1695f1c30ddcd99d4da14ba8c1318ba134a11ac3d361",
+    "sourceBodyDerivedSha256": "01febb9ef9520235de8884fcabe49751ac3fab57f44d6ce1a247083b5bbaef90",
+    "sourceBodySubstitutions": 15,
+    "operationDerivative": "Explicit full-specific fixed-role acquisition loop with the same seven data bodies, original subcaps and original clock consumers; no old identity rewritten.",
+    "assemblyInverse": "Restore reviewed source-entry/footer, restore vector and pre-GN data/graph comparison blocks by exact finite inverse before prior2700/c9/b039 inverses."
+  },
+  "limits": {
+    "wholeSeconds": 21600,
+    "sourceSeconds": 7200,
+    "acquisitionSeconds": 4500,
+    "hooksSeconds": 2700,
+    "cleanupSeconds": 30,
+    "finalReserveSeconds": 120
+  },
+  "images": {
+    "20261030.294.1": {
+      "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "profileSha256": "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+      "profile": "image-qualified-current-profile.json"
+    },
+    "20261021.278.1": {
+      "sourceId": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+      "profileSha256": "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+      "profile": "image-qualified-20261021-profile.json"
+    }
+  },
+  "python": {
+    "path": "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+    "bytes": 104952,
+    "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+  },
+  "node": {
+    "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+    "bytes": 92825416,
+    "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+    "nlink": 1
+  },
+  "authorityInterface": [
+    "Only private runSourcePhase actual creation may write sourceSessions.",
+    "No JSON/report/callback/grant/test map authority.",
+    "Join original source Node issuer and entire cohort before actual fresh mirror Git issuer.",
+    "Original wall and monotonic whole ends never refresh; all source subcaps and reserves remain.",
+    "Controller outside existing source Jobs; no new nested Job.",
+    "Retire before awaited cleanup and reject late publication."
+  ],
+  "firstWorkflowClockImplemented": true,
+  "nativeSourceEntryQualified": false,
+  "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  "requiredProducerPaths": [
+    "native/windows-arm-full-sdk/full_sdk_source.py",
+    "native/windows-arm-full-sdk/full-sdk-source-driver.mjs",
+    "native/windows-arm-full-sdk/full-sdk-source-profile.json",
+    "native/windows-arm-full-sdk/full_sdk_control.mjs",
+    "native/windows-arm-full-sdk/producer.py",
+    "native/windows-arm-full-sdk/job.py",
+    "native/windows-arm-full-sdk/profile.json",
+    "native/windows-arm-full-sdk/acquire.py",
+    "native/windows-arm-full-sdk/extract.py",
+    "native/windows-arm-full-sdk/environment.py",
+    "native/windows-arm-full-sdk/checkpoint.py",
+    "native/windows-arm-full-sdk/image-qualified-current-profile.json",
+    "native/windows-arm-full-sdk/image-qualified-20261021-profile.json",
+    "tests/tooling/windowsArmFullSdk.node-test.mjs",
+    "native/windows-arm-full-sdk/test_full_sdk_source.py",
+    "native/windows-arm-full-sdk/private-qualification-profile.json",
+    "native/windows-arm-full-sdk/engine-qualification-profile.json",
+    "native/windows-arm-full-sdk/workflow-clock.mjs",
+    "native/windows-arm-full-sdk/expected-defaults.mjs",
+    "native/windows-arm-full-sdk/source-root.mjs",
+    "native/windows-arm-full-sdk/full_sdk_engine.py",
+    "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs",
+    "native/windows-arm-full-sdk/checkpoint_inputs.py",
+    "native/windows-arm-full-sdk/compiled_checkpoint.py",
+    "native/windows-arm-full-sdk/compiler_input_probe.cc",
+    ".node-version"
+  ],
+  "implementationLimit": "Reviewed source qualification attempt under the exact manual main workflow and pinned policy. Actual source/controller/default-map bodies exist; native qualification, runtime acceptance and publication remain unqualified. Engine and checkpoint execution require genuine retained source/control, original clocks, physical metadata, created native workers and independent final verification.",
+  "controllerCreationPathImplemented": true,
+  "controllerNativeQualified": false,
+  "sourceProgramCarryforward": {
+    "implemented": true,
+    "nativeQualified": false,
+    "commit": "c9f6eea1f4de939f77cded374fa3999c5b30e1e7",
+    "driverSha256": "4201bcb93eecfc333c92a76327d8312100b0b3a9b1b2e0ccaf288a8db9d5f899",
+    "programs": [
+      {
+        "name": "bootstrapProgram",
+        "oldSha256": "4e002707abab160ed1855d8a071d5a6f5386775597b6155466614a8a72287b1b",
+        "newSha256": "a715fddd021f1cba87f5510c09a51c81f82ca1fef5fe9ef0e33aefaee3d5c407",
+        "reviewedSourceSha256": "efde0d776d2b592f47328c373b317d08623638914f5314d521bbade836b3be4c"
+      },
+      {
+        "name": "dependencyHookArguments",
+        "oldSha256": "3afe475238dbd354c4b39cfe3d1a0e5a4b9de4a8bf6e4ae36b25b94e4b351d78",
+        "newSha256": "f570259bdbb7da4fd5d90385f2bc7a312e1c94ec49de91ae2aae6a72144ea201",
+        "reviewedSourceSha256": "f570259bdbb7da4fd5d90385f2bc7a312e1c94ec49de91ae2aae6a72144ea201"
+      },
+      {
+        "name": "boundGnArguments",
+        "oldSha256": "7b461e70661f494a639c7e3814c323dbdfebd5c369fa85e8f98b5e267fe6fe58",
+        "newSha256": "f28fc2a9c054fcb114f6b8623323115535db3dac28e4e46a681128c8e52c9db2",
+        "reviewedSourceSha256": "f28fc2a9c054fcb114f6b8623323115535db3dac28e4e46a681128c8e52c9db2"
+      }
+    ],
+    "unchanged": [
+      "hookProjectionArguments",
+      "shared source constant declarations"
+    ],
+    "authority": "Full bootstrap is privately bound to actual loaded full profile, root and pinned context; no old mode/ref/context rewrite."
+  },
+  "metadataAdapterImplemented": true,
+  "metadataNativeQualified": false,
+  "metadataRecipeSha256": "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",
+  "metadataRoles": [
+    "qual-gn-desc-pa",
+    "qual-gn-desc-cef",
+    "qual-gn-args",
+    "qual-generate-headers"
+  ],
+  "metadataAuthority": "Only the actual full source owner and committed fresh graph may issue the four-role metadata token; exact full context and source closure remain. The pinned private recipe supplies data only. Roles5/6 remain denied.",
+  "metadataDerivation": [
+    {
+      "name": "commitQualificationGraph",
+      "next": "commitFullMetadataGraph",
+      "originalSha256": "f3ee0b03a48f9c4f777ade5bfb066f5d947aca85177068604d984cabc92b88de",
+      "derivedSha256": "ff8735bbf7de8ba262c4b57bee18327c8e66aa4201362b4ad1d15d5beac4d3fe"
+    },
+    {
+      "name": "qualificationCandidatePolicy",
+      "next": "fullMetadataCandidatePolicy",
+      "originalSha256": "6dd6e82a83dd76bbaa6cffcaab2a83548b9f9e89ab3c649dc17fa5e184108152",
+      "derivedSha256": "3d520997b5d0f20d34722d09e6ec7b24c9e4710e210d0552d36f2ec62361b744"
+    },
+    {
+      "name": "qualificationInspectContext",
+      "next": "fullMetadataInspectContext",
+      "originalSha256": "a707ef47ae8472425c69aa88854b830ecb2e8e849c2caf37d19d701e4855b57b",
+      "derivedSha256": "1c0089b465b00a9164fe24965c1c903b64bbf700359a2739d2900f6280152f70"
+    },
+    {
+      "name": "qualificationInspectMetadata",
+      "next": "fullMetadataInspect",
+      "originalSha256": "2e13f07eba46fb7513074a5c1963df68d862976789812b17e06676a56758dbe6",
+      "derivedSha256": "b5358573e3b6217ea780ccfc238d6fc94d6b6442196a52280ab9a96dc4ab012e"
+    },
+    {
+      "name": "qualificationMetadataObservation",
+      "next": "fullMetadataObservation",
+      "originalSha256": "9765ce65b1de1cc77a7647900774595422307bf24e1f9a8e37539472e845ee7c",
+      "derivedSha256": "9463e2b9bf6ca2502b274775a10cd7944f5412567afff132638f0698c1482e9a"
+    }
+  ],
+  "expectedDefaultsModulePin": {
+    "path": "native/windows-arm-full-sdk/expected-defaults.mjs",
+    "bytes": 36630,
+    "sha256": "5337a2b2559dd01dc6a07358e518fa22a94f1e14be540243508e274f3d37e058"
+  },
+  "expectedDefaultsPolicySha256": "64f113c323b022feeb141f0a08b8cd3434cbdcd031524c50f2ccd2300260a6ae",
+  "parentExpectedDefaultsImplemented": true,
+  "sourceMetadataCompletionImplemented": true,
+  "sourceQualificationAllowed": true,
+  "sourceRootModulePin": {
+    "path": "native/windows-arm-full-sdk/source-root.mjs",
+    "bytes": 1895,
+    "sha256": "07c9301da8df45fbed8e19e66fdd2155a78748e63b84fe313a5a359c6bf7a799"
+  },
+  "sourceRestoreAdapterImplemented": true,
+  "sourceRestoreNativeQualified": false,
+  "parentCompilerAdmissionImplemented": true,
+  "parentSdkVerificationImplemented": true,
+  "parentCheckpointVerificationImplemented": true,
+  "compiledCheckpointNativeQualified": false,
+  "sourceSentinelNormalizerImplemented": true,
+  "sourceSentinelNativeQualified": false
+}

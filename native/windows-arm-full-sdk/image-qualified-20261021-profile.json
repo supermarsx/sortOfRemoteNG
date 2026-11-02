@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-arm-image-qualified-source-gn-profile",
+  "mode": "image-qualified-source-gn",
+  "ref": "refs/heads/codex/windows-arm-image-qualified-source-gn-20261101",
+  "workflow": ".github/workflows/windows-arm-source-preflight.yml",
+  "image": "20261021.278.1",
+  "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  "helperSourceCommit": "0fd6ebc70f110ff80909fe996fb4abf5499c9468",
+  "helperMirror": "native/windows-arm-full-sdk/current-source-helpers/",
+  "sourcePaths": [
+    ".github/workflows/windows-x64-arm-toolchain.yml",
+    "native/windows-arm-full-sdk/profile.json",
+    "native/windows-arm-full-sdk/acquire.py",
+    "native/windows-arm-full-sdk/extract.py",
+    "native/windows-arm-full-sdk/environment.py",
+    "native/windows-arm-full-sdk/producer.py",
+    "native/windows-arm-full-sdk/checkpoint.py",
+    "native/windows-arm-full-sdk/job.py",
+    "native/windows-arm-full-sdk/test_producer.py",
+    "native/windows-arm-full-sdk/source-driver.mjs",
+    "tests/tooling/windowsArmFullSdk.node-test.mjs",
+    ".github/workflows/windows-arm-source-preflight.yml",
+    "native/windows-arm-full-sdk/image-qualified-current-profile.json",
+    "native/windows-arm-full-sdk/image-qualified-20261021-profile.json",
+    "native/windows-arm-full-sdk/image-qualified-current-driver.mjs",
+    "native/windows-arm-full-sdk/image-qualified-20261021-driver.mjs",
+    "native/windows-arm-full-sdk/source_metrics.py",
+    "native/windows-arm-full-sdk/metrics_fixture.py",
+    "native/windows-arm-full-sdk/test_image_dispatch.py",
+    "native/windows-arm-full-sdk/test_source_metrics.py",
+    "tests/tooling/windowsArmImageQualifiedSourceGn.node-test.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/native/cef-hosted-recipe.json",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-custom-artifact-inventory.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-bootstrap.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-provision.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-patched-runtime.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-checkpoint-archive.py",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-source-metadata.mjs",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/include/cef_sorng_tls_bridge.h",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0001-chromium-socket-admission.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0002-cef-native-bridge.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0004-chromium-soda-provisioning.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0006-cef-explicit-download-destination.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0008-chromium-same-authority-http2.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0011-cef-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0012-cef-registration-retirement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/review-receipt.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/source-lock.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/tools/aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/upstream-sha256.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/include/cef_sorng_tls_bridge.h",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0001-chromium-socket-admission.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0002-cef-native-bridge.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0004-chromium-soda-provisioning.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0006-cef-explicit-download-destination.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0008-chromium-same-authority-http2.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0011-cef-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0012-cef-registration-retirement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/review-receipt.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/source-lock.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/tools/aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/upstream-sha256.json"
+  ],
+  "sourceGn": {
+    "schemaVersion": 1,
+    "mode": "image-qualified-source-gn",
+    "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/",
+    "sourceId": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+    "limits": {
+      "wholeSeconds": 7200,
+      "cleanupSeconds": 30,
+      "finalReserveSeconds": 120,
+      "acquisitionSeconds": 4500,
+      "hooksSeconds": 1800,
+      "memoryBytes": 8589934592,
+      "processes": 64,
+      "cpuRate": 2500,
+      "availableRamBytes": 10737418240,
+      "freeBytes": 107374182400,
+      "outputBytes": 67108864
+    },
+    "hostTools": {
+      "node": {
+        "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+        "bytes": 92825416,
+        "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+        "nlink": 1
+      },
+      "git": {
+        "path": "C:/Program Files/Git/cmd/git.exe",
+        "bytes": 45400,
+        "sha256": "54bda91c773c6bba2b970424423cfcb80552d92dc6967d766f98931fe1251a54",
+        "nlink": 2
+      }
+    },
+    "hostToolAdmission": "REVIEWED_EXACT_20261021_278_1_STATIC_BYTE_SET_FRESH_CHECK_REQUIRED",
+    "helpers": [
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/native/cef-hosted-recipe.json",
+        "bytes": 3389,
+        "sha256": "d8005109b2ccc7aa5de15971ee65b08dda642926ab19315d524b2ba13567ea93"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs",
+        "bytes": 45031,
+        "sha256": "6597617158786afe2c10bccea866f495a744c64b41cf0ab6c97c6e1cd73477ff"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-custom-artifact-inventory.mjs",
+        "bytes": 19378,
+        "sha256": "cc80cc108ca2ac6b498a339f659ccaecd9e9510966aef63f484e8d28e7e4d6c8"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-bootstrap.mjs",
+        "bytes": 28568,
+        "sha256": "f42de81eead9e5507e5484097bffad5f6a22c7472dddf2c5b4837a88d0e8d625"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-provision.mjs",
+        "bytes": 29141,
+        "sha256": "b3ca1818eb84cd7f24ebcd86d7fc8c4298aeec62982888bb41ca496698403513"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-patched-runtime.mjs",
+        "bytes": 20059,
+        "sha256": "e0e43e52d72ff6d8fff11b28f05ba47bfc18f2b588aaa10b7206dee14aced896"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs",
+        "bytes": 63190,
+        "sha256": "e794df4dbbcce2239dfc491cdd538818473bcee688de44246e218b128ca75550"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+        "bytes": 70755,
+        "sha256": "f6772b8785ccf96a721013fa93a79c3ae252d19b986e338f59265f3c62f8827f"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
+        "bytes": 6093,
+        "sha256": "3c2bb26011d020de68c3eb162116843cde3acf9e8b603e86d31c961da528d810"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+        "bytes": 195961,
+        "sha256": "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
+        "bytes": 9975,
+        "sha256": "817d5d72db4c24cd1a3a49ff3413553df828a85b3bb22aa8db4de6839d671923"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-checkpoint-archive.py",
+        "bytes": 154847,
+        "sha256": "043659e63e1cfc50b5af8209a1e30fd924ed379e7355069fa654b657bc789113"
+      },
+      {
+        "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-source-metadata.mjs",
+        "bytes": 43946,
+        "sha256": "90c4cafa5e8c784fcdaad79959a18a5c700b832c2772d23006359349cc027fdb"
+      }
+    ],
+    "sourceData": [
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+        "bytes": 833,
+        "sha256": "086bc0b92b42e3f9dcacd6c93597c573abca2320cd51b5d1a7796bc70aa20cce"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/gn/aarch64-pc-windows-msvc.gn",
+        "bytes": 605,
+        "sha256": "4b6b5ad54a4e9e788d87bc704236a6282575669b426666f033b4f8a31d50efc5"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/include/cef_sorng_tls_bridge.h",
+        "bytes": 8886,
+        "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0001-chromium-socket-admission.patch",
+        "bytes": 37160,
+        "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0002-cef-native-bridge.patch",
+        "bytes": 31384,
+        "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+        "bytes": 791,
+        "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0004-chromium-soda-provisioning.patch",
+        "bytes": 4538,
+        "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+        "bytes": 3539,
+        "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0006-cef-explicit-download-destination.patch",
+        "bytes": 1010,
+        "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+        "bytes": 997,
+        "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0008-chromium-same-authority-http2.patch",
+        "bytes": 4125,
+        "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+        "bytes": 1972,
+        "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+        "bytes": 14590,
+        "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0011-cef-proxy-application-ack.patch",
+        "bytes": 10759,
+        "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0012-cef-registration-retirement.patch",
+        "bytes": 20195,
+        "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+        "bytes": 75101,
+        "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+        "bytes": 9374,
+        "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+        "bytes": 8020,
+        "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+        "bytes": 8213,
+        "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+        "bytes": 22799,
+        "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+        "bytes": 21463,
+        "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+        "bytes": 605,
+        "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+        "bytes": 354,
+        "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+        "bytes": 379,
+        "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+        "bytes": 845,
+        "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+        "bytes": 680,
+        "sha256": "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/review-receipt.json",
+        "bytes": 838,
+        "sha256": "a2954b8f13df446dcc9ba2ca4a31f5e1b366f71b1a712168ab16f8dc16abc05a"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/source-lock.json",
+        "bytes": 6153,
+        "sha256": "85f7d1c3c4658f4f515e4c427499fabaef14d8c9b2b3e39a1da5222acaefda45"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/tools/aarch64-pc-windows-msvc.json",
+        "bytes": 10425,
+        "sha256": "3fcbd983ae525c55b575f06b64f4c7663351535deabdce74a8df3b2a73c77113"
+      },
+      {
+        "path": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/upstream-sha256.json",
+        "bytes": 7552,
+        "sha256": "721c3579473efcfb5b05babc4896b522b2e1da6b0646ac2c4ba6f259caea8a33"
+      }
+    ],
+    "upstreamExecution": "Pinned source-acquisition repositories and DEPS/hook command closure require final source review; no compiler command admitted",
+    "compilerAllowed": false,
+    "checkpointAllowed": false,
+    "restoreAllowed": false,
+    "sdkAllowed": false,
+    "executionPolicy": {
+      "hostLoaderClosureApproved": true,
+      "gitConfigurationApproved": true,
+      "sourceHookCommandClosureApproved": true
+    },
+    "helpersSourceCommit": "0fd6ebc70f110ff80909fe996fb4abf5499c9468",
+    "systemCommands": [
+      "C:/Windows/System32/cmd.exe",
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+      "C:/Windows/System32/findstr.exe",
+      "C:/Windows/System32/fc.exe"
+    ],
+    "cacheRoots": [
+      "source-caches/local",
+      "source-caches/roaming",
+      "source-caches/xdg",
+      "source-caches/cipd",
+      "source-caches/vpython"
+    ],
+    "hostClosure": {
+      "image": "20261021.278.1",
+      "rows": [
+        {
+          "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+          "bytes": 92825416,
+          "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+          "nlink": 1,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/cmd/git.exe",
+          "bytes": 45400,
+          "sha256": "54bda91c773c6bba2b970424423cfcb80552d92dc6967d766f98931fe1251a54",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/git.exe",
+          "bytes": 4413272,
+          "sha256": "b824434dfe3b5f9cf648af6c9cc8cb1f6a982cc6e13b6c6ebbe6533c7e51cc2e",
+          "nlink": 4,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/libexec/git-core/git-remote-https.exe",
+          "bytes": 2614632,
+          "sha256": "cff545e0d31b555cc1c5235785626dbb804eeae212f8f0f829b32fb30b7dec90",
+          "nlink": 1,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libcurl-4.dll",
+          "bytes": 1011884,
+          "sha256": "372306ee48ffe79b2edc6d8b07d9d60dee0f016c73faaca0dffe4e926f6f1220",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libcrypto-3-x64.dll",
+          "bytes": 5399196,
+          "sha256": "f8839fd7d5b5e7b1763c88705538c5762a2f97df17f37092e37de3c663f30b1e",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libssl-3-x64.dll",
+          "bytes": 966300,
+          "sha256": "6af55a4d522e2cc29ff0833cad4f6f7560f8ba2d107b97990d9415c590a4224a",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libintl-8.dll",
+          "bytes": 298164,
+          "sha256": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libiconv-2.dll",
+          "bytes": 1141951,
+          "sha256": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libpcre2-8-0.dll",
+          "bytes": 706022,
+          "sha256": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/zlib1.dll",
+          "bytes": 127291,
+          "sha256": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libbrotlidec.dll",
+          "bytes": 62619,
+          "sha256": "e270b6e576594ee8ee6e33ccc54e34a54304616dd6225652e11e49d6f17ef896",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libidn2-0.dll",
+          "bytes": 246525,
+          "sha256": "a054a6bb69aaf4666157f968740412e9697085cbc1e48a78f8dd9622169c5aaf",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libpsl-5.dll",
+          "bytes": 105846,
+          "sha256": "a531e72de3c64d43fb83cbfb6fa63e5ee982a970292ec51314e29d0acabf1dd5",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libssh2-1.dll",
+          "bytes": 270863,
+          "sha256": "a0e7eea75814708ce5c9b2a83998b14ac1268b70cccc2c22686f4ab585a3aac1",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libzstd.dll",
+          "bytes": 1217412,
+          "sha256": "48368ab0ca622d0ec12f41ce85d91f22866bf5da92c77a69a06483564c93816c",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libbrotlicommon.dll",
+          "bytes": 144565,
+          "sha256": "c62c08223e450dfc2fff33c752cc228505ffd9d755201958ba800d5d30481a2c",
+          "nlink": 2,
+          "machine": 34404
+        },
+        {
+          "path": "C:/Program Files/Git/ucrt64/bin/libunistring-5.dll",
+          "bytes": 2256134,
+          "sha256": "ee39258fa1086269674a8179d3cfaf7c4e380ada14441b5dd9ed53d82d15c4e3",
+          "nlink": 2,
+          "machine": 34404
+        }
+      ],
+      "peBytes": 113853492,
+      "edgeCount": 242,
+      "edgeSha256": "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a"
+    }
+  },
+  "admission": {
+    "sourceAcquisitionAllowed": true,
+    "gnAllowed": true,
+    "engineCompilationAllowed": false,
+    "sdkAllowed": false,
+    "restoreAllowed": false,
+    "publicationAllowed": false
+  },
+  "helperOrigins": [
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/native/cef-hosted-recipe.json",
+      "bytes": 3389,
+      "sha256": "d8005109b2ccc7aa5de15971ee65b08dda642926ab19315d524b2ba13567ea93",
+      "originalPath": "native/cef-hosted-recipe.json"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs",
+      "bytes": 45031,
+      "sha256": "6597617158786afe2c10bccea866f495a744c64b41cf0ab6c97c6e1cd73477ff",
+      "originalPath": "scripts/browser-runtime-package.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-custom-artifact-inventory.mjs",
+      "bytes": 19378,
+      "sha256": "cc80cc108ca2ac6b498a339f659ccaecd9e9510966aef63f484e8d28e7e4d6c8",
+      "originalPath": "scripts/cef-custom-artifact-inventory.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-bootstrap.mjs",
+      "bytes": 28568,
+      "sha256": "f42de81eead9e5507e5484097bffad5f6a22c7472dddf2c5b4837a88d0e8d625",
+      "originalPath": "scripts/cef-hosted-bootstrap.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-provision.mjs",
+      "bytes": 29141,
+      "sha256": "b3ca1818eb84cd7f24ebcd86d7fc8c4298aeec62982888bb41ca496698403513",
+      "originalPath": "scripts/cef-hosted-provision.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-patched-runtime.mjs",
+      "bytes": 20059,
+      "sha256": "e0e43e52d72ff6d8fff11b28f05ba47bfc18f2b588aaa10b7206dee14aced896",
+      "originalPath": "scripts/cef-patched-runtime.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs",
+      "bytes": 63190,
+      "sha256": "e794df4dbbcce2239dfc491cdd538818473bcee688de44246e218b128ca75550",
+      "originalPath": "scripts/cef-runtime-ci.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+      "bytes": 70755,
+      "sha256": "f6772b8785ccf96a721013fa93a79c3ae252d19b986e338f59265f3c62f8827f",
+      "originalPath": "scripts/lib/browser-custom-runtime.mjs",
+      "reviewedDelta": {
+        "commit": "8f0b0dd0fbfc9aefe00bb00871752e195eea447a",
+        "operation": "windows-longpaths-option-only",
+        "baseBytes": 69294,
+        "baseSha256": "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b"
+      },
+      "runtimeProfilePolicy": {
+        "kind": "owned-windows-runtime-profile-v1",
+        "scope": "explicit-windows-option-only",
+        "baseBytes": 69741,
+        "baseSha256": "7a2fb8f3ca0ba4404050e37b7382fe53789cdb3b70682d1930205508c72a3217",
+        "callerPathAccepted": false
+      }
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
+      "bytes": 6093,
+      "sha256": "3c2bb26011d020de68c3eb162116843cde3acf9e8b603e86d31c961da528d810",
+      "originalPath": "scripts/lib/browser-runtime-release.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+      "bytes": 195961,
+      "sha256": "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",
+      "originalPath": "scripts/lib/cef-engineering-checkpoint.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
+      "bytes": 9975,
+      "sha256": "817d5d72db4c24cd1a3a49ff3413553df828a85b3bb22aa8db4de6839d671923",
+      "originalPath": "scripts/lib/cef-mac-sdk-inventory.mjs"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-checkpoint-archive.py",
+      "bytes": 154847,
+      "sha256": "043659e63e1cfc50b5af8209a1e30fd924ed379e7355069fa654b657bc789113",
+      "originalPath": "scripts/lib/cef-checkpoint-archive.py"
+    },
+    {
+      "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-source-metadata.mjs",
+      "bytes": 43946,
+      "sha256": "90c4cafa5e8c784fcdaad79959a18a5c700b832c2772d23006359349cc027fdb",
+      "originalPath": "scripts/lib/cef-mac-source-metadata.mjs"
+    }
+  ],
+  "telemetry": {
+    "cadenceSeconds": 15,
+    "maximumSamples": 512,
+    "maximumBytes": 1048576
+  },
+  "currentImageRecipePreserved": {
+    "branch": "codex/windows-arm-current-source-gn-20261101",
+    "head": "e15e557c3ac0ad55908fe583cb7ae997dbb87e93",
+    "image": "20261030.294.1",
+    "profileSha256": "7ee5d89d1199d7b22939be89428aa467b69dda9ade7aa90fc81cc26ce92c935d",
+    "noFenceWeakening": true
+  },
+  "oldHostSourceEvidence": {
+    "runId": 40497501254,
+    "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+    "freshByteMatchRequired": true
+  },
+  "availableImageEvidenceRuns": [41335608542, 41335973337, 41336317414],
+  "currentImageComparisonEvidence": {
+    "scope": "Comparison only; does not admit old-image host bytes or execution",
+    "preflight": {
+      "runId": 41329075631,
+      "head": "c0d7652c2d4a6fc05e1eab471a94738a0943d754",
+      "artifactId": 13092494453,
+      "artifactSha256": "7adbc29e29b8e290d76324a94bf06b22bc27e50fe3ec5fcab9bb92173f52474f",
+      "sourceDigest": "8c03a2268ac1ad4f511dac6e475ce9d9a0e47642ae72cdd107cd11f0115d5e8a"
+    },
+    "passiveInventory": {
+      "runId": 41325335383,
+      "head": "bcf300cb68f5857420e210535f99a1117b985816",
+      "artifactId": 13091241054,
+      "artifactSha256": "2212a2c650834f35e3092b5aa4ce731545b2eddb01ee6e69d24285836e48d088",
+      "sourceDigest": "df160f109b9ba3b7a64458e6d5ec7521fb0b4eb9c8df861fe0ee5befd99f6d9f"
+    }
+  },
+  "originalRecipe": {
+    "head": "cffa7d4ffbb79f2aa900301490049affb1b3ce9b",
+    "mode": "reviewed-20261021-source-gn",
+    "ref": "refs/heads/codex/windows-arm-reviewed-20261021-source-gn-20261101",
+    "image": "20261021.278.1",
+    "sourceId": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+    "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/"
+  }
+}

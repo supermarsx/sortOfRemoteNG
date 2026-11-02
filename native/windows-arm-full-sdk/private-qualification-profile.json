@@ -1,0 +1,379 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-arm-private-compiler-input-policy",
+  "mode": "private-compiler-input-qualification",
+  "ref": "refs/heads/codex/windows-arm-engine-qualification-20261101",
+  "workflow": ".github/workflows/windows-arm-compiler-input-qualification.yml",
+  "repository": "supermarsx/sortOfRemoteNG",
+  "repositoryId": "1010282954",
+  "runner": "windows-2025-vs2026",
+  "privateAuthorityAdmitted": false,
+  "workflowActivation": false,
+  "sourceClosureStatus": "planned-files-incomplete",
+  "publicExecuteAdmitted": false,
+  "engineCompilationAllowed": false,
+  "sdkAllowed": false,
+  "nativeAcceptance": false,
+  "runtimeReady": false,
+  "baseCandidatePolicySha256": "a49d50f77ab89e9e15e18de99946e757b1478ea306dfc58c1bc6a8379a46d18f",
+  "images": {
+    "20261030.294.1": {
+      "profile": "image-qualified-current-profile.json",
+      "profileSha256": "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+      "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/"
+    },
+    "20261021.278.1": {
+      "profile": "image-qualified-20261021-profile.json",
+      "profileSha256": "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+      "sourceId": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+      "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/"
+    }
+  },
+  "sourcePaths": [
+    ".github/workflows/windows-x64-arm-toolchain.yml",
+    "native/windows-arm-full-sdk/profile.json",
+    "native/windows-arm-full-sdk/acquire.py",
+    "native/windows-arm-full-sdk/extract.py",
+    "native/windows-arm-full-sdk/environment.py",
+    "native/windows-arm-full-sdk/producer.py",
+    "native/windows-arm-full-sdk/checkpoint.py",
+    "native/windows-arm-full-sdk/job.py",
+    "native/windows-arm-full-sdk/test_producer.py",
+    "native/windows-arm-full-sdk/source-driver.mjs",
+    "tests/tooling/windowsArmFullSdk.node-test.mjs",
+    ".github/workflows/windows-arm-source-preflight.yml",
+    "native/windows-arm-full-sdk/image-qualified-current-profile.json",
+    "native/windows-arm-full-sdk/image-qualified-20261021-profile.json",
+    "native/windows-arm-full-sdk/image-qualified-current-driver.mjs",
+    "native/windows-arm-full-sdk/image-qualified-20261021-driver.mjs",
+    "native/windows-arm-full-sdk/source_metrics.py",
+    "native/windows-arm-full-sdk/metrics_fixture.py",
+    "native/windows-arm-full-sdk/test_image_dispatch.py",
+    "native/windows-arm-full-sdk/test_source_metrics.py",
+    "tests/tooling/windowsArmImageQualifiedSourceGn.node-test.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/native/cef-hosted-recipe.json",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-custom-artifact-inventory.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-bootstrap.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-provision.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-patched-runtime.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-checkpoint-archive.py",
+    "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-source-metadata.mjs",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/include/cef_sorng_tls_bridge.h",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0001-chromium-socket-admission.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0002-cef-native-bridge.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0004-chromium-soda-provisioning.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0006-cef-explicit-download-destination.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0008-chromium-same-authority-http2.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0011-cef-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0012-cef-registration-retirement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/review-receipt.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/source-lock.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/tools/aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/upstream-sha256.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/include/cef_sorng_tls_bridge.h",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0001-chromium-socket-admission.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0002-cef-native-bridge.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0004-chromium-soda-provisioning.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0006-cef-explicit-download-destination.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0008-chromium-same-authority-http2.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0011-cef-proxy-application-ack.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0012-cef-registration-retirement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/review-receipt.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/source-lock.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/tools/aarch64-pc-windows-msvc.json",
+    "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/upstream-sha256.json",
+    "native/windows-arm-full-sdk/engine-qualification-profile.json",
+    "native/windows-arm-full-sdk/engine_qualification.py",
+    "native/windows-arm-full-sdk/test_engine_qualification.py",
+    "tests/tooling/windowsArmEngineQualification.node-test.mjs",
+    "native/windows-arm-full-sdk/private-qualification-profile.json",
+    "native/windows-arm-full-sdk/private_qualification.py",
+    "native/windows-arm-full-sdk/test_private_qualification.py",
+    "native/windows-arm-full-sdk/private-source-driver.mjs",
+    "native/windows-arm-full-sdk/compiler_input_probe.cc",
+    "tests/tooling/windowsArmPrivateQualification.node-test.mjs",
+    ".github/workflows/windows-arm-compiler-input-qualification.yml"
+  ],
+  "crlfPositions": [0, 10, 11, 20, 104],
+  "qualificationRoles": [
+    "qual-gn-desc-pa",
+    "qual-gn-desc-cef",
+    "qual-gn-args",
+    "qual-generate-headers",
+    "qual-clang-probe",
+    "qual-link-probe"
+  ],
+  "sourceRole": "private-source-gn",
+  "jobContract": {
+    "implementation": "native/windows-arm-full-sdk/job.py::run_job",
+    "foundationSha256": "92a16bb6c4308552bccf0cacf107261a910d218e0bf595a5d3afac31d5d14d80",
+    "processes": 64,
+    "memoryBytes": 8589934592,
+    "cpuRate": 2500,
+    "limitFlags": 8712,
+    "inheritedHandles": 3,
+    "compileSeconds": 900,
+    "cleanupSeconds": 30,
+    "finalReserveSeconds": 120,
+    "wholeSeconds": 7200
+  },
+  "commandPrimarySources": [
+    {
+      "file": "gn-command-args.cc",
+      "url": "https://gn.googlesource.com/gn/+/150a9d6ba0aa7f407aa4feeabc5f03ce9aa7e04b/src/gn/command_args.cc?format=TEXT",
+      "bytes": 17186,
+      "sha256": "018476436539fce7b5e0ccaddf142b706acfcf4a5122e85a9d94d578c53bc5f7"
+    },
+    {
+      "file": "gn-command-desc.cc",
+      "url": "https://gn.googlesource.com/gn/+/150a9d6ba0aa7f407aa4feeabc5f03ce9aa7e04b/src/gn/command_desc.cc?format=TEXT",
+      "bytes": 26192,
+      "sha256": "3f5c1efabece03738b7fff556857371cd0a615cae81e0552dfbdae3e38b43bae"
+    },
+    {
+      "file": "gn-desc-builder.cc",
+      "url": "https://gn.googlesource.com/gn/+/150a9d6ba0aa7f407aa4feeabc5f03ce9aa7e04b/src/gn/desc_builder.cc?format=TEXT",
+      "bytes": 37650,
+      "sha256": "54aff2b12f650c92581713a615076e05c9a90da2c3334aeac3f473bf6f25ee5c"
+    },
+    {
+      "file": "siso-ninja.go",
+      "url": "https://chromium.googlesource.com/build/+/efbbe7f1892211b5e9512576843a3c247b6a6d7c/siso/subcmd/ninja/ninja.go?format=TEXT",
+      "bytes": 31911,
+      "sha256": "af0e62595066f6271d284b7f651d158d400d8d58920ba75dc5fa7ea8ab61d09a"
+    },
+    {
+      "file": "chromium-buildconfig.gn",
+      "url": "https://chromium.googlesource.com/chromium/src/+/a654841425914cbb703a2931e07b70a83aedbafd/build/config/BUILDCONFIG.gn?format=TEXT",
+      "bytes": 33848,
+      "sha256": "5df70bd3d47e744fb3737e28dacf7cec42df9785f097d7343bb701e267e6ae39"
+    },
+    {
+      "file": "clang-options.td",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/20e97c4b113b79586c29ac57738548939a34d22e/clang/include/clang/Options/Options.td",
+      "bytes": 579380,
+      "sha256": "2ff4792d79e0524b4409b1ef251f0363b6a401946d707cc1b627267efea0b79a"
+    },
+    {
+      "file": "lld-options.td",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/20e97c4b113b79586c29ac57738548939a34d22e/lld/COFF/Options.td",
+      "bytes": 20563,
+      "sha256": "63bd1f8fae6e9a3052ba0c2aa169b5e0e370d627c56bfd55a3dd0f42585ae27d"
+    },
+    {
+      "file": "siso-config.go",
+      "url": "https://chromium.googlesource.com/build/+/efbbe7f1892211b5e9512576843a3c247b6a6d7c/siso/subcmd/ninja/config.go?format=TEXT",
+      "bytes": 28090,
+      "sha256": "050c81f9819aec507546625c9dea311811b50eb70b1555fab5a0e25d5151445a"
+    }
+  ],
+  "generatedInputs": [
+    {
+      "role": "partitionAlloc",
+      "label": "//base/allocator/partition_allocator/src/partition_alloc:buildflags",
+      "relativeOutput": "gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h"
+    },
+    {
+      "role": "cefConfig",
+      "label": "//cef:make_config_header",
+      "relativeOutput": "gen/cef/include/cef_config.h"
+    }
+  ],
+  "expectedToolchain": "//build/toolchain/win:win_clang_arm64",
+  "probeSource": "native/windows-arm-full-sdk/compiler_input_probe.cc",
+  "probeEntry": "sorng_arm64_qualification_entry",
+  "probeImportsAllowed": false,
+  "siso": {
+    "flags": ["ninja", "--offline", "-local_jobs=1", "-C"],
+    "ninjaJFlagSupported": false,
+    "fallbackAllowed": false
+  },
+  "lldStaticCandidate": {
+    "archive": {
+      "url": "https://commondatastorage.googleapis.com/chromium-browser-clang/Win/clang-llvmorg-24-init-3796-g20e97c4b-27.tar.xz?generation=1789127470157875",
+      "bytes": 51487396,
+      "sha256": "4c4a15912845f39189784360a03ae62c65dba29b884ef60ec9c6b4d43754dca0"
+    },
+    "bytes": 74617856,
+    "sha256": "170b2dfc2bc9f0f95f828fbcc6a833e040bcb909b5ac9cb6b318e4ce05f41e3b",
+    "machine": 34404,
+    "imports": ["KERNEL32.dll", "ADVAPI32.dll", "ntdll.dll", "OLEAUT32.dll"],
+    "delayImports": ["ole32.dll", "SHELL32.dll"],
+    "adjacentBinDlls": [],
+    "staticProjectionReviewed": false,
+    "actualLoaderClosureApproved": false,
+    "system32ByteSetProven": false
+  },
+  "environmentContractApproved": false,
+  "staticLoadingPolicy": {
+    "kind": "reviewed-system-image-static-tools-v1",
+    "scope": "fixed-six-prerequisite-only",
+    "systemImageIsTrustedTcb": true,
+    "platform": "win32",
+    "architecture": "x64",
+    "runner": "windows-2025-vs2026",
+    "images": ["20261030.294.1", "20261021.278.1"],
+    "reusedSourceToolRoles": ["python", "gn", "siso", "node", "git"],
+    "sourceToolContract": "exact-selected-source-gn-profile-and-host-closure",
+    "llvmArchive": {
+      "url": "https://commondatastorage.googleapis.com/chromium-browser-clang/Win/clang-llvmorg-24-init-3796-g20e97c4b-27.tar.xz?generation=1789127470157875",
+      "bytes": 51487396,
+      "sha256": "4c4a15912845f39189784360a03ae62c65dba29b884ef60ec9c6b4d43754dca0"
+    },
+    "llvmStaticTools": {
+      "clang": {
+        "bytes": 103794176,
+        "sha256": "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7",
+        "machine": 34404,
+        "imports": ["KERNEL32.dll", "ADVAPI32.dll", "ntdll.dll", "VERSION.dll", "OLEAUT32.dll"],
+        "delayImports": ["ole32.dll", "SHELL32.dll"],
+        "adjacentBinDlls": []
+      },
+      "lld": {
+        "bytes": 74617856,
+        "sha256": "170b2dfc2bc9f0f95f828fbcc6a833e040bcb909b5ac9cb6b318e4ce05f41e3b",
+        "machine": 34404,
+        "imports": ["KERNEL32.dll", "ADVAPI32.dll", "ntdll.dll", "OLEAUT32.dll"],
+        "delayImports": ["ole32.dll", "SHELL32.dll"],
+        "adjacentBinDlls": []
+      }
+    },
+    "commandEnvironment": {
+      "sourceTools": "retained-live-git-policy-token",
+      "compilerTools": "closed-fixed-compiler-environment",
+      "executableLookup": "absolute-pinned-paths-only",
+      "compilerCwdRelative": "private-qualification",
+      "temporaryRelative": "private-qualification-tmp",
+      "requiredValues": {
+        "SystemRoot": "C:/Windows",
+        "WINDIR": "C:/Windows",
+        "PATH": "C:/Windows/System32"
+      },
+      "optionalTrackingVariable": "RUNNER_TRACKING_ID",
+      "initialCwdEntries": []
+    },
+    "actualLoaderClosureApproved": false,
+    "system32ByteSetProven": false,
+    "executionAdmitted": false
+  },
+  "missingBeforePrivateActivation": [
+    "actual-successful-source-gn-and-parent-owned-joins",
+    "actual-evaluated-gn-and-complete-arm64-macro-inventory",
+    "independent-static-tool-projection-review-and-code-pins",
+    "matching-reviewed-system-image-and-static-tool-projections",
+    "source-and-hermetic-environment-parity-review",
+    "complete-new-source-closure-and-reviewed-job-command-admission",
+    "actual-private-owned-job-positive-negative-fixtures",
+    "evaluated-gn-action-header-binary-verifiers-and-fixed-executor"
+  ],
+  "notGranted": [
+    "engine-compilation",
+    "compiled-checkpoint",
+    "restore",
+    "sdk-publication",
+    "native-acceptance",
+    "runtime-catalog-admission"
+  ],
+  "target": "aarch64-pc-windows-msvc",
+  "chromium": "a654841425914cbb703a2931e07b70a83aedbafd",
+  "cef": "682c378d70d5780061e96644dca16ddd8fd157a9",
+  "tools": {
+    "python": {
+      "path": "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+      "bytes": 104952,
+      "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+    },
+    "clang": {
+      "relativePath": "llvm/bin/clang-cl.exe",
+      "bytes": 103794176,
+      "sha256": "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7"
+    },
+    "lld": {
+      "relativePath": "llvm/bin/lld-link.exe",
+      "bytes": 74617856,
+      "sha256": "170b2dfc2bc9f0f95f828fbcc6a833e040bcb909b5ac9cb6b318e4ce05f41e3b"
+    },
+    "gn": {
+      "relativePath": "source-checkout/src/buildtools/win/gn.exe",
+      "bytes": 2601472,
+      "sha256": "e398eefd1241ad44e98aececa6a260abac0fdcb80f41c23176944ad3f0e76486"
+    },
+    "siso": {
+      "relativePath": "siso/siso.exe",
+      "bytes": 64629760,
+      "sha256": "0fbb9c305e026d417943cf3742efce3aa34755dc97fe71cd55a21d2c90bf2f90"
+    }
+  },
+  "driverNode": {
+    "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
+    "bytes": 92825416,
+    "sha256": "3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237",
+    "nlink": 1
+  },
+  "handoffContract": {
+    "kind": "one-dedicated-private-job",
+    "jobRole": "private-source-gn",
+    "marker": "--private-source-gn",
+    "sourceWorker": "native/windows-arm-full-sdk/private-source-driver.mjs",
+    "sixNestedJobs": false,
+    "qualificationPhaseAggregateSeconds": 900,
+    "cleanupSeconds": 30,
+    "finalReserveSeconds": 120,
+    "sourceEnvironmentAuthority": "retained-live-git-policy-token",
+    "serializedEnvironmentAuthority": false,
+    "allChildrenInheritCreationAssignedJob": true,
+    "jobKernelChanged": false,
+    "requiredFinalFacts": [
+      "assignedBeforeResume",
+      "naturalExitZero",
+      "activeAtEndZero",
+      "allReadersJoined",
+      "allCreationOwnedHandlesClosed"
+    ]
+  },
+  "sourceBodyStatus": "inactive-normalized-derivative",
+  "qualificationExecutorInstalled": false
+}

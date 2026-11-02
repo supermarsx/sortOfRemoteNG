@@ -1,0 +1,8799 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import vm from "node:vm";
+import { execFileSync, spawn, ChildProcess } from "node:child_process";
+import { tmpdir } from "node:os";
+import { EventEmitter } from "node:events";
+import { constants as fsConstants } from "node:fs";
+import { randomBytes, randomUUID } from "node:crypto";
+import * as controlCheckpoint from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs";
+import * as controlCustom from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs";
+import * as publicControl from "../../native/windows-arm-full-sdk/full_sdk_control.mjs";
+import {
+  identitySha256,
+  validateSourceLock,
+  prepareSourceGitIsolation,
+  sourceGitEnvironment,
+} from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs";
+import { validateRunnerMap } from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs";
+import { cefHookArguments } from "../../native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs";
+import {
+  reviewedHostTools,
+  sourceCommands,
+  sourcePaths,
+  sourceBudget,
+  sourceEnvironment,
+  validateGeneratedArguments,
+  python3Adapter,
+  preparePython3Adapter,
+  hookProjectionArguments,
+  validateHookProjection,
+  boundGnArguments,
+  dependencyHookArguments,
+  retainHookOrigins,
+  reviewedHostClosure,
+  verifyHostClosure,
+  bootstrapProgram,
+  prepareBootstrap,
+  verifyBootstrap,
+  bootstrapShim,
+  deriveBootstrapSetup,
+  bindBootstrapVector,
+  gitPolicyMetadata,
+  observeGitHome,
+  gitHomeCandidateMetadata,
+  gitPolicyDiagnostic,
+  appendGitPolicyDiagnostic,
+  gitPolicyVerifier,
+} from "../../native/windows-arm-full-sdk/source-driver.mjs";
+
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
+const read = (name) => fs.readFile(path.join(root, name), "utf8");
+const prefix = "native/windows-arm-full-sdk/";
+const workflowPath = ".github/workflows/windows-x64-arm-toolchain.yml";
+const rawWorkflow = await read(
+  "tests/fixtures/cef/windows-arm-full-sdk-historical/windows-x64-arm-toolchain.yml",
+);
+const workflow = rawWorkflow.replaceAll("\r\n", "\n");
+const profileRaw = await fs.readFile(path.join(root, prefix, "profile.json"));
+const profile = JSON.parse(profileRaw);
+const sha = (b) => createHash("sha256").update(b).digest("hex");
+
+// Exact c101 Hook.run source, not a rewritten condition model.
+const PINNED_HOOK_RUN = {
+  gitBlob: "c9bf69dac6b34a3c1e7e6ff49817832905c0bede",
+  sha256: "7260c4e825dcd1a3a457625f25b04e7e20aa0b25c2685ce42766a4a5a38493c5",
+  source:
+    'def run(self):\n        """Executes the hook\'s command (provided the condition is met)."""\n        if self._condition and not gclient_eval.EvaluateCondition(\n            self._condition, self._variables\n        ):\n            return\n\n        cmd = list(self._action)\n\n        if cmd[0] == "vpython3" and _detect_host_os() == "win":\n            cmd[0] += ".bat"\n\n        exit_code = 2\n        try:\n            start_time = time.time()\n            gclient_utils.CheckCallAndFilter(\n                cmd,\n                cwd=self.effective_cwd,\n                print_stdout=True,\n                show_header=True,\n                always_show_header=self._verbose,\n            )\n            exit_code = 0\n        except (gclient_utils.Error, subprocess2.CalledProcessError) as e:\n            # Use a discrete exit status code of 2 to indicate that a hook\n            # action failed.  Users of this script may wish to treat hook action\n            # failures differently from VC failures.\n            print("Error: %s" % str(e), file=sys.stderr)\n            sys.exit(exit_code)\n        finally:\n            elapsed_time = time.time() - start_time\n            metrics.collector.add_repeated(\n                "hooks",\n                {\n                    "action": gclient_utils.CommandToStr(cmd),\n                    "name": self._name,\n                    "cwd": os.path.relpath(\n                        os.path.normpath(self.effective_cwd), self._cwd_base\n                    ),\n                    "condition": self._condition,\n                    "execution_time": elapsed_time,\n                    "exit_code": exit_code,\n                },\n            )\n            if elapsed_time > 10:\n                print(\n                    "Hook \'%s\' took %.2f secs"\n                    % (gclient_utils.CommandToStr(cmd), elapsed_time)\n                )',
+};
+
+const PINNED_CIPD_SETUP = {
+  gitBlob: "8afa682631ea9200d178bb982e4acd59b4e3d6e0",
+  sha256: "3607a1f703b59f213f7fff874cb8d6065b5af17144c66458a0a35e18137069fa",
+  source:
+    '@echo off\n:: Copyright 2017 The Chromium Authors\n:: Use of this source code is governed by a BSD-style license that can be\n:: found in the LICENSE file.\n\nsetlocal\n\nset "ROOT=%~dp0\\.cipd_bin"\nset "ENSURE=%~dp0\\cipd_manifest.txt"\nset "CACHED_ENSURE=%ROOT%\\.cipd_manifest.txt"\nset "CACHED_VERSIONS=%ROOT%\\.cipd_manifest.versions"\nset "CACHED_CLIENT=%ROOT%\\.cipd_client_version"\n\n:: CIPD ensure is slow (hundreds of milliseconds). We cache the result by\n:: storing copies of the input files and comparing them on subsequent runs.\n:: We use `fc` (content-based) instead of `mtime` comparison to avoid\n:: false-positive cache misses on CI bots where git checkouts reset mtimes.\nif not exist "%CACHED_ENSURE%" goto :RUN_CIPD\nfc /b "%ENSURE%" "%CACHED_ENSURE%" >nul 2>&1\nif errorlevel 1 goto :RUN_CIPD\nfc /b "%~dp0\\cipd_manifest.versions" "%CACHED_VERSIONS%" >nul 2>&1\nif errorlevel 1 goto :RUN_CIPD\nfc /b "%~dp0\\cipd_client_version" "%CACHED_CLIENT%" >nul 2>&1\nif errorlevel 1 goto :RUN_CIPD\n\ngoto :SKIP_CIPD\n\n:RUN_CIPD\ndel /f /q "%CACHED_ENSURE%" >nul 2>&1\ncall "%~dp0\\cipd.bat" ensure -log-level warning -ensure-file "%ENSURE%" -root "%ROOT%"\nif errorlevel 1 exit /b %ERRORLEVEL%\n\ncopy /y "%ENSURE%" "%CACHED_ENSURE%" >nul 2>&1\ncopy /y "%~dp0\\cipd_manifest.versions" "%CACHED_VERSIONS%" >nul 2>&1\ncopy /y "%~dp0\\cipd_client_version" "%CACHED_CLIENT%" >nul 2>&1\n\n:SKIP_CIPD\nendlocal\nexit /b 0\n',
+};
+
+function syntheticSourcePins() {
+  const p = structuredClone(profile);
+  p.sourceGn.hostTools = Object.fromEntries(
+    ["node", "git"].map((role) => [
+      role,
+      {
+        path: `C:/owned/${role}.exe`,
+        bytes: 123,
+        sha256: "a".repeat(64),
+        nlink: 1,
+      },
+    ]),
+  );
+  return p;
+}
+
+async function benignPython(t) {
+  const candidates =
+    process.platform === "win32"
+      ? [
+          profile.python.path,
+          "C:/Users/Mariana/AppData/Local/Programs/Python/Python312/python.exe",
+        ]
+      : ["/usr/bin/python3"];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      /* Explicit test-only candidates. */
+    }
+  }
+  t.skip(
+    "Fixed benign fixture Python is unavailable; no interpreter discovery or installation",
+  );
+}
+
+test("exclusive actual Python3 adapter preserves Windows owned argv and rejects replacement", async (t) => {
+  if (process.platform !== "win32")
+    return t.skip("Actual Windows cmd adapter invocation");
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-python-adapter-"),
+  );
+  const budget = { remaining: () => 10000 };
+  try {
+    const adapter = await preparePython3Adapter(
+      path.join(directory, "commands"),
+      python,
+      budget,
+    );
+    assert.equal(adapter.pin.sha256, sha(python3Adapter(python)));
+    assert.deepEqual(await fs.readFile(adapter.file), python3Adapter(python));
+    // Match pinned subprocess2's real Windows list argv + shell=True boundary.
+    const invocation = [
+        "-I",
+        "-B",
+        "-c",
+        "import subprocess\nsubprocess.run(['python3','-c','import sys,json;print(json.dumps(sys.argv[1:]))','two words','a+b@c',''],shell=True,check=True)",
+      ],
+      env = {
+        SystemRoot: "C:/Windows",
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
+        PATH: path.dirname(adapter.file),
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        TEMP: directory,
+        TMP: directory,
+      };
+    const raw = execFileSync(python, invocation, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10000,
+      cwd: directory,
+      env,
+    });
+    assert.deepEqual(JSON.parse(raw), ["two words", "a+b@c", ""]);
+    assert.throws(
+      () =>
+        execFileSync(python, invocation, {
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 10000,
+          cwd: directory,
+          env: { ...env, ComSpec: "C:/Windows/System32/cmd.exe" },
+          stdio: "pipe",
+        }),
+      (error) =>
+        error.status !== 0 &&
+        error.stderr.includes("syntax of the command is incorrect"),
+    );
+    // Windows searches cwd before PATH. The actual production hook wrapper
+    // must use the absolute adapter, rather than merely prepend its directory.
+    await fs.writeFile(
+      path.join(directory, "python3.bat"),
+      "@echo CWD_SHADOW\r\n",
+    );
+    assert.match(
+      execFileSync(python, invocation, {
+        encoding: "utf8",
+        timeout: 10000,
+        cwd: directory,
+        env,
+      }),
+      /CWD_SHADOW/,
+    );
+    const depot = path.join(directory, "depot");
+    await fs.mkdir(depot);
+    await fs.writeFile(
+      path.join(path.dirname(adapter.file), "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
+    await fs.writeFile(
+      path.join(depot, "gclient.py"),
+      `import subprocess,types
+gclient_utils=types.SimpleNamespace(CheckCallAndFilter=lambda command,*args,**kwargs:subprocess.run(command,shell=True,check=True))
+class Hook:
+ def __init__(self): self._action=('python3','-c','import sys,json;print(json.dumps(sys.argv[1:]))','two words','a+b@c','')
+ def run(self): gclient_utils.CheckCallAndFilter(list(self._action))
+def main(args):
+ assert args==['runhooks','--jobs','2']
+ Hook().run()
+ return 0
+`,
+    );
+    const guarded = execFileSync(
+      python,
+      dependencyHookArguments(depot, adapter.file, adapter.pin),
+      { encoding: "utf8", timeout: 10000, cwd: directory, env },
+    );
+    assert.deepEqual(JSON.parse(guarded), ["two words", "a+b@c", ""]);
+    await assert.rejects(
+      preparePython3Adapter(path.join(directory, "commands"), python, budget),
+      /EEXIST/,
+    );
+    for (const value of [
+      "C:/bad%PATH%/python.exe",
+      "C:/bad&echo/python.exe",
+      "C:/owned/../python.exe",
+      "python.exe",
+    ])
+      assert.throws(() => python3Adapter(value), /FULL_PYTHON_ADAPTER_PATH/);
+    assert.deepEqual(await fs.readFile(adapter.file), python3Adapter(python));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual gclient hook wrapper binds absolute adapter and preserves original condition dispatch", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-hook-dispatch-"),
+  );
+  try {
+    const adapter = path.join(directory, "python3.bat"),
+      raw = Buffer.from("BENIGN ADAPTER DATA");
+    await fs.writeFile(adapter, raw);
+    await fs.writeFile(
+      path.join(directory, "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
+    const fixture = `import os,types
+def dispatched(command,*args,**kwargs):
+ assert command==[os.path.join(os.path.dirname(__file__),'python3.bat'),'src/test.py','two words']
+ print('FIXED_ADAPTER_DISPATCH')
+gclient_utils=types.SimpleNamespace(CheckCallAndFilter=dispatched)
+class Hook:
+ def __init__(self): self._action=('python3','src/test.py','two words'); self.condition='checkout_win'
+ def run(self):
+  assert self.condition=='checkout_win'
+  assert self._action==('python3','src/test.py','two words')
+  gclient_utils.CheckCallAndFilter(list(self._action))
+def main(args):
+ assert args==['runhooks','--jobs','2']
+ hook=Hook(); hook.run()
+ assert hook._action==('python3','src/test.py','two words')
+ return 0
+`;
+    await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    const args = dependencyHookArguments(directory, adapter, {
+      sha256: sha(raw),
+    });
+    const run = () =>
+      execFileSync(python, args, {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10000,
+        stdio: "pipe",
+      });
+    assert.match(run(), /FIXED_ADAPTER_DISPATCH/);
+    await fs.writeFile(adapter, "changed");
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_PYTHON_ADAPTER_PIN") &&
+        !error.stdout.includes("FIXED_ADAPTER_DISPATCH"),
+    );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("genuine pinned Hook.run controls false, true, thread, nested and first-error dispatch without condition pre-evaluation", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  assert.equal(
+    sha(Buffer.from(PINNED_HOOK_RUN.source)),
+    PINNED_HOOK_RUN.sha256,
+  );
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-real-hook-run-"),
+  );
+  try {
+    const adapter = path.join(directory, "python3.bat"),
+      raw = Buffer.from("INERT HASH-BOUND ADAPTER DATA");
+    await fs.writeFile(adapter, raw);
+    await fs.writeFile(
+      path.join(directory, "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
+    const fixture = `import sys,os,time,types,threading,textwrap,hashlib,json
+pinned=${JSON.stringify(PINNED_HOOK_RUN.source)}
+assert hashlib.sha256(pinned.encode()).hexdigest()==${JSON.stringify(PINNED_HOOK_RUN.sha256)}
+events=[];evaluations=[];reports=[];entered=threading.Event();released=threading.Event();primary=RuntimeError('OWNED_PRIMARY')
+class GclientError(Exception): pass
+class CalledProcessError(Exception): pass
+def evaluated(condition,variables):
+ evaluations.append((condition,variables))
+ if 'fail' in variables: raise variables['fail']
+ return variables['allow']
+def dispatched(command,*args,**kwargs):
+ events.append((threading.current_thread().name,command,kwargs))
+ if 'throw-primary' in command: raise primary
+ if 'nested' in command:
+  Hook(['unsupported','%PATH%'],'false-inner',False).run()
+  try: gclient_utils.CheckCallAndFilter(['unsupported-in-outer'])
+  except RuntimeError as error: assert str(error)=='FULL_HOOK_ENTRY'
+  else: raise AssertionError('outer scope lost after nested false hook')
+ if 'wait-in-thread' in command:
+  entered.set()
+  assert released.wait(2),'controlled release timeout'
+ return 'original-dispatch-result'
+gclient_utils=types.SimpleNamespace(CheckCallAndFilter=dispatched,Error=GclientError,CommandToStr=lambda command:' '.join(command))
+gclient_eval=types.SimpleNamespace(EvaluateCondition=evaluated)
+subprocess2=types.SimpleNamespace(CalledProcessError=CalledProcessError)
+metrics=types.SimpleNamespace(collector=types.SimpleNamespace(add_repeated=lambda kind,value:reports.append(value)))
+_detect_host_os=lambda:'win'
+exec('class Hook:\\n'+textwrap.indent(pinned,' '),globals())
+def initialize(self,action,condition=None,allow=True):
+ self._action=tuple(action);self._condition=condition;self._variables={'allow':allow};self._name='fixture';self._verbose=False;self._cwd_base=os.getcwd()
+Hook.__init__=initialize
+Hook.effective_cwd=property(lambda self:self._cwd_base)
+def main(args):
+ assert args==['runhooks','--jobs','2']
+ outside=['outside-plumbing']
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ assert events[-1][1] is outside
+ start=len(events);before=len(evaluations);adapter=os.path.join(os.path.dirname(__file__),'python3.bat')
+ os.rename(adapter,adapter+'.hidden')
+ try:
+  for action in (['unsupported','%PATH%'],['python3','bad&argument']):
+   assert Hook(action,'false-condition',False).run() is None
+ finally: os.rename(adapter+'.hidden',adapter)
+ assert len(events)==start and len(evaluations)==before+2
+ for action,code in ((['unsupported','safe'],'FULL_HOOK_ENTRY'),(['python3','bad&argument'],'FULL_HOOK_SHELL_ARGUMENT')):
+  before=len(evaluations)
+  try: Hook(action,'true-condition',True).run()
+  except RuntimeError as error: assert str(error)==code
+  else: raise AssertionError('executing action admitted')
+  assert len(evaluations)==before+1
+ assert len(events)==start
+ condition_primary=RuntimeError('OWNED_CONDITION_PRIMARY')
+ hook=Hook(['unsupported'],'condition-error');hook._variables['fail']=condition_primary
+ before=len(evaluations);before_reports=len(reports)
+ try: hook.run()
+ except RuntimeError as error: assert error is condition_primary
+ else: raise AssertionError('condition primary lost')
+ assert len(evaluations)==before+1 and evaluations[-1][1] is hook._variables and len(reports)==before_reports
+ assert len(events)==start
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ before=len(evaluations);hook=Hook(['python3','owned.py','two words'])
+ assert hook.run() is None and len(evaluations)==before
+ assert hook._action==('python3','owned.py','two words')
+ assert events[-1][1]==[adapter,'owned.py','two words']
+ assert events[-1][2]==dict(cwd=os.getcwd(),print_stdout=True,show_header=True,always_show_header=False)
+ hook=Hook(['vpython3','owned.py']);hook.run()
+ assert events[-1][1]==[os.path.join(os.path.dirname(__file__),'vpython3.bat'),'owned.py']
+ assert hook._action==('vpython3','owned.py')
+ try: Hook(['python3','throw-primary']).run()
+ except RuntimeError as error: assert error is primary
+ else: raise AssertionError('primary lost')
+ assert reports[-1]['exit_code']==2
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ Hook(['python3','nested']).run()
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ errors=[]
+ def worker():
+  try: Hook(['python3','wait-in-thread']).run()
+  except BaseException as error: errors.append(error)
+ thread=threading.Thread(target=worker,name='owned-hook-thread');thread.start()
+ try:
+  assert entered.wait(2),'controlled entry timeout'
+  assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ finally: released.set();thread.join(2)
+ assert not thread.is_alive() and not errors
+ assert gclient_utils.CheckCallAndFilter(outside)=='original-dispatch-result'
+ print(json.dumps(dict(pinnedBodyHash=${JSON.stringify(PINNED_HOOK_RUN.sha256)},falseHooksDispatched=0,trueUnknownDenied=True,threadLocal=True,nestedFinally=True,primaryIdentityPreserved=True,unconditionalNotEvaluated=True)))
+ return 0
+`;
+    await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    const result = JSON.parse(
+      execFileSync(
+        python,
+        dependencyHookArguments(directory, adapter, { sha256: sha(raw) }),
+        { cwd: directory, encoding: "utf8", timeout: 10000, stdio: "pipe" },
+      ),
+    );
+    assert.equal(result.falseHooksDispatched, 0);
+    assert(
+      result.trueUnknownDenied &&
+        result.threadLocal &&
+        result.nestedFinally &&
+        result.primaryIdentityPreserved &&
+        result.unconditionalNotEvaluated,
+    );
+    t.diagnostic(JSON.stringify(result));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+const PINNED_POPEN = {
+  classBody: {
+    source:
+      'class Popen(subprocess.Popen):\n    popen_lock = threading.Lock()\n    def __init__(self, args, **kwargs):\n        env = get_english_env(kwargs.get("env"))\n        if env:\n            kwargs["env"] = env\n        if kwargs.get("env") is not None:\n            # Subprocess expects environment variables to be strings in Python\n            # 3.\n            def ensure_str(value):\n                if isinstance(value, bytes):\n                    return value.decode()\n                return value\n\n            kwargs["env"] = {\n                ensure_str(k): ensure_str(v) for k, v in kwargs["env"].items()\n            }\n        if kwargs.get("shell") is None:\n            # *Sigh*:  Windows needs shell=True, or else it won\'t search %PATH%\n            # for the executable, but shell=True makes subprocess on Linux fail\n            # when it\'s called with a list because it only tries to execute the\n            # first item in the list.\n            kwargs["shell"] = bool(sys.platform == "win32")\n\n        if isinstance(args, (str, bytes)):\n            tmp_str = args\n        elif isinstance(args, (list, tuple)):\n            tmp_str = " ".join(args)\n        else:\n            raise CalledProcessError(None, args, kwargs.get("cwd"), None, None)\n        if kwargs.get("cwd", None):\n            tmp_str += ";  cwd=%s" % kwargs["cwd"]\n        logging.debug(tmp_str)\n\n        try:\n            with self.popen_lock:\n                super(Popen, self).__init__(args, **kwargs)\n        except OSError as e:\n            if e.errno == errno.EAGAIN and sys.platform == "cygwin":\n                # Convert fork() emulation failure into a CygwinRebaseError().\n                raise CygwinRebaseError(\n                    e.errno,\n                    args,\n                    kwargs.get("cwd"),\n                    None,\n                    "Visit "\n                    "http://code.google.com/p/chromium/wiki/"\n                    "CygwinDllRemappingFailure "\n                    "to learn how to fix this error; you need to rebase your "\n                    "cygwin dlls",\n                )\n            # Popen() can throw OSError when cwd or args[0] doesn\'t exist.\n            raise OSError(\n                "Execution failed with error: %s.\\n"\n                "Check that %s or %s exist and have execution permission."\n                % (str(e), kwargs.get("cwd"), args[0])\n            )\n',
+    sha256: "cbf64f84ebd0f44cf1f48de4f9b6fcabeb443de1459c7abc268fed943998b0c6",
+  },
+  init: {
+    source:
+      '    def __init__(self, args, **kwargs):\n        env = get_english_env(kwargs.get("env"))\n        if env:\n            kwargs["env"] = env\n        if kwargs.get("env") is not None:\n            # Subprocess expects environment variables to be strings in Python\n            # 3.\n            def ensure_str(value):\n                if isinstance(value, bytes):\n                    return value.decode()\n                return value\n\n            kwargs["env"] = {\n                ensure_str(k): ensure_str(v) for k, v in kwargs["env"].items()\n            }\n        if kwargs.get("shell") is None:\n            # *Sigh*:  Windows needs shell=True, or else it won\'t search %PATH%\n            # for the executable, but shell=True makes subprocess on Linux fail\n            # when it\'s called with a list because it only tries to execute the\n            # first item in the list.\n            kwargs["shell"] = bool(sys.platform == "win32")\n\n        if isinstance(args, (str, bytes)):\n            tmp_str = args\n        elif isinstance(args, (list, tuple)):\n            tmp_str = " ".join(args)\n        else:\n            raise CalledProcessError(None, args, kwargs.get("cwd"), None, None)\n        if kwargs.get("cwd", None):\n            tmp_str += ";  cwd=%s" % kwargs["cwd"]\n        logging.debug(tmp_str)\n\n        try:\n            with self.popen_lock:\n                super(Popen, self).__init__(args, **kwargs)\n        except OSError as e:\n            if e.errno == errno.EAGAIN and sys.platform == "cygwin":\n                # Convert fork() emulation failure into a CygwinRebaseError().\n                raise CygwinRebaseError(\n                    e.errno,\n                    args,\n                    kwargs.get("cwd"),\n                    None,\n                    "Visit "\n                    "http://code.google.com/p/chromium/wiki/"\n                    "CygwinDllRemappingFailure "\n                    "to learn how to fix this error; you need to rebase your "\n                    "cygwin dlls",\n                )\n            # Popen() can throw OSError when cwd or args[0] doesn\'t exist.\n            raise OSError(\n                "Execution failed with error: %s.\\n"\n                "Check that %s or %s exist and have execution permission."\n                % (str(e), kwargs.get("cwd"), args[0])\n            )\n',
+    bytes: 2311,
+    sha256: "a8710349d17841bf7de94eed115d94f12ba90f8439661842126cacaf28de4335",
+    startLine: 116,
+    endLine: 170,
+  },
+  english: {
+    source:
+      'def get_english_env(env):\n    """Forces LANG and/or LANGUAGE to be English.\n\n    Forces encoding to utf-8 for subprocesses.\n\n    Returns None if it is unnecessary.\n    """\n    if sys.platform == "win32":\n        return None\n    env = env or os.environ\n\n    # Test if it is necessary at all.\n    is_english = lambda name: env.get(name, "en").startswith("en")  # noqa: E731\n\n    if is_english("LANG") and is_english("LANGUAGE"):\n        return None\n\n    # Requires modifications.\n    env = env.copy()\n\n    def fix_lang(name):\n        if not is_english(name):\n            env[name] = "en_US.UTF-8"\n\n    fix_lang("LANG")\n    fix_lang("LANGUAGE")\n    return env\n',
+    sha256: "281ec45f2f3e1ad217d8672f4703425be07a86e530c077d0304901bf352752a0",
+  },
+  oldBind: {
+    source:
+      "def bind(expected,guard_sha):\n value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2\n if getattr(subprocess2,'_sorng_cipd_bound',False):return\n original=subprocess2.Popen;approved=dict(os.environ)\n def admitted(argv,*args,**kwargs):\n  if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):\n   values=list(argv[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False\n   return original([current['client']['path'],*values],*args,**kwargs)\n  return original(argv,*args,**kwargs)\n subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True",
+    sha256: "d7552d6f3708aed62ec50f0954698e2284efe779ada0c412a9d040f9dc549f99",
+  },
+};
+
+const PINNED_GCLIENT_ENV = {
+  envConstruction: {
+    source:
+      'if "env" not in kwargs:\n    kwargs["env"] = os.environ.copy()\nif "COLUMNS" not in kwargs["env"] or "LINES" not in kwargs["env"]:\n    size = shutil.get_terminal_size()\n    if size.columns and size.lines:\n        kwargs["env"]["COLUMNS"] = str(size.columns)\n        kwargs["env"]["LINES"] = str(size.lines)\n\nkid = subprocess2.Popen(\n    args,\n    bufsize=0,\n    stdout=pipe_writer,\n    stderr=subprocess2.STDOUT,\n    **kwargs,\n)\n',
+    bytes: 427,
+    sha256: "945140cc22facfc3805535ada072899600b163c0430a363d2f0f2fc27bdf08fb",
+  },
+  mainMetadata: {
+    source:
+      'os.environ["GIT_PAGER"] = "cat"\nos.environ["GIT_EDITOR"] = "false"\nif not sys.stdout.isatty():\n    os.environ["GIT_TERMINAL_PROMPT"] = "0"\n\n',
+    bytes: 140,
+    sha256: "f04023562d8384c46a447080c7b6f542b60956500a75cdd4cb9dea25aa96b51c",
+  },
+  syncMetadata: {
+    source:
+      'existing_sync_commits = json.loads(\n    os.environ.get(PREVIOUS_SYNC_COMMITS, "{}")\n)\nexisting_sync_commits[self.name] = latest_commit\nos.environ[PREVIOUS_SYNC_COMMITS] = json.dumps(\n    existing_sync_commits\n)\n',
+    bytes: 211,
+    sha256: "efd3d388bda3e8164b658da67d40029dd6b91eb6ac509ab517d0ca9279bb8e0c",
+  },
+  oldBind: {
+    source:
+      "def bind(expected,guard_sha):\n value,_=verify(expected,guard_sha);sys.path.insert(0,str(DEPOT));import subprocess2\n if getattr(subprocess2,'_sorng_cipd_bound',False):return\n original=subprocess2.Popen\n def admitted(argv,*args,**kwargs):\n  if isinstance(argv,(list,tuple))and argv and argv[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):\n   values=list(argv[1:]);arguments('cipd',values);data.need(kwargs.get('env')is None,'FULL_BOOTSTRAP_ENV_OVERRIDE');current,_=verify(expected,guard_sha);kwargs['shell']=False\n   return original([current['client']['path'],*values],*args,**kwargs)\n  return original(argv,*args,**kwargs)\n subprocess2.Popen=admitted;subprocess2._sorng_cipd_bound=True",
+    bytes: 684,
+    sha256: "4d0a43c696aca3d1b2ad4f270adf660f28632bf5a5da93cecc4c3766efe130c1",
+  },
+};
+
+test("bootstrap source templates keep original setup bytes except its client callee and deny an explicitly disabled source policy", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const root = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-bootstrap-disabled-"),
+  );
+  try {
+    await fs.mkdir(path.join(root, "source-commands"));
+    const source = Buffer.from(PINNED_CIPD_SETUP.source);
+    assert.equal(sha(source), PINNED_CIPD_SETUP.sha256);
+    const derived = deriveBootstrapSetup(source);
+    assert.deepEqual(
+      derived,
+      Buffer.from(
+        PINNED_CIPD_SETUP.source.replace(
+          'call "%~dp0\\cipd.bat" ensure',
+          '"%~dp0\\.cipd_client.exe" ensure',
+        ),
+      ),
+    );
+    assert.throws(
+      () => deriveBootstrapSetup(Buffer.concat([source, source])),
+      /FULL_BOOTSTRAP_SETUP_SOURCE/,
+    );
+    assert.equal(profile.phaseAdmission["source-gn"], true);
+    const disabled = structuredClone(profile);
+    disabled.phaseAdmission["source-gn"] = false;
+    const program = await prepareBootstrap(root, disabled, "b".repeat(64), {
+      remaining: () => 10000,
+    });
+    assert.equal(
+      program.pin.sha256,
+      sha(bootstrapProgram(root, disabled, "b".repeat(64))),
+    );
+    assert.throws(
+      () =>
+        execFileSync(
+          python,
+          [
+            "-I",
+            "-B",
+            program.file,
+            "--prepare-sync",
+            "--guard-sha",
+            program.pin.sha256,
+          ],
+          { encoding: "utf8", timeout: 10000, stdio: "pipe" },
+        ),
+      (error) => error.stderr.includes("FULL_BOOTSTRAP_DISABLED"),
+    );
+    await assert.rejects(
+      prepareBootstrap(root, disabled, "b".repeat(64), {
+        remaining: () => 10000,
+      }),
+      /EEXIST/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("actual bootstrap body denies stale state and drift, checks setup, binds CIPD and preserves first failure without executing vendor files", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-bootstrap-body-"),
+  );
+  try {
+    const p = structuredClone(profile);
+    p.phaseAdmission["source-gn"] = true;
+    for (const key of Object.keys(p.sourceGn.executionPolicy))
+      p.sourceGn.executionPolicy[key] = true;
+    const sample = JSON.parse(
+      execFileSync(
+        python,
+        [
+          "-I",
+          "-B",
+          "-c",
+          "import json,time;print(json.dumps(dict(wall=time.time()+600,mono=time.monotonic()+600)))",
+        ],
+        { encoding: "utf8", timeout: 10000 },
+      ),
+    );
+    const context = {
+        mode: "source-gn",
+        image: p.image,
+        repositoryId: "1010282954",
+        visibility: "public",
+        event: "workflow_dispatch",
+        ref: "refs/heads/codex/windows-arm-source-gn-20261026",
+        wallWorkEnd: sample.wall,
+        monotonicWorkEnd: sample.mono,
+      },
+      contextRaw = Buffer.from(JSON.stringify(context));
+    await fs.writeFile(path.join(directory, "context.json"), contextRaw);
+    const files = sourcePaths(directory, p);
+    await fs.mkdir(files.commands);
+    await fs.mkdir(files.depot, { recursive: true });
+    await fs.mkdir(path.join(directory, "tmp"));
+    await fs.mkdir(path.join(directory, "source-caches"));
+    for (const name of ["local", "roaming", "xdg", "cipd", "vpython"])
+      await fs.mkdir(path.join(directory, "source-caches", name));
+    await fs.writeFile(path.join(directory, "source-caches/cipd.cfg"), "");
+    const program = await prepareBootstrap(directory, p, sha(contextRaw), {
+      remaining: () => 10000,
+    });
+    const harness = `import sys,os,json,hashlib,importlib.util,contextlib,io,types,shutil
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('owned_bootstrap',${JSON.stringify(program.file)});b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
+sys.path.insert(0,b.P['native']);from test_producer import pe
+payload=pe(version=False);digest=hashlib.sha256(payload).hexdigest();b.P['clientSha']=digest
+for key,name in (('CIPD_CACHE_DIR','cipd'),('VPYTHON_VIRTUALENV_ROOT','vpython'),('LOCALAPPDATA','local'),('APPDATA','roaming'),('XDG_CACHE_HOME','xdg')):os.environ[key]=str(b.ROOT/'source-caches'/name)
+os.environ['CIPD_CONFIG_FILE']=str(b.ROOT/'source-caches/cipd.cfg')
+for key in ('CIPD_BACKEND','CIPD_SERVICE_URL','CIPD_PLATFORM','VPYTHON_BYPASS','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY'):os.environ.pop(key,None)
+for row in b.P['sources']:
+ raw=(${JSON.stringify(PINNED_CIPD_SETUP.source)}.encode() if row['path']=='cipd_bin_setup.bat'else ('OWNED SYNTHETIC '+row['path']).encode())
+ (b.DEPOT/row['path']).write_bytes(raw);row.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+guard_sha=${JSON.stringify(program.pin.sha256)}
+calls=[];scenario='valid'
+def runner(command,clock):
+ calls.append(command);assert clock.wall_end==${sample.wall} and clock.mono_end==${sample.mono}
+ if len(calls)==1:
+  assert command[0]==r'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+  if scenario=='bootstrap-nonzero':return 7
+  (b.DEPOT/'.cipd_client.exe').write_bytes(payload if scenario!='client-hash'else b'wrong')
+ else:
+  assert len(calls)==2 and command==[r'C:\\Windows\\System32\\cmd.exe','/d','/c',str(b.SETUP)]
+  assert b.SETUP.read_bytes()==b.derived_setup(${JSON.stringify(PINNED_CIPD_SETUP.source)}.encode())
+  if scenario=='setup-nonzero':return 9
+  (b.DEPOT/'.cipd_bin').mkdir()
+  (b.DEPOT/'.cipd_bin/vpython3.exe').write_bytes(pe(0xaa64,version=False)if scenario=='machine'else payload)
+  for target,source in (('.cipd_manifest.txt','cipd_manifest.txt'),('.cipd_manifest.versions','cipd_manifest.versions'),('.cipd_client_version','cipd_client_version')):
+   (b.DEPOT/'.cipd_bin'/target).write_bytes((b.DEPOT/source).read_bytes())
+  if scenario=='marker':(b.DEPOT/'.cipd_bin/.cipd_manifest.txt').write_bytes(b'forged')
+  if scenario=='hardlink':os.link(b.DEPOT/'.cipd_bin/vpython3.exe',b.DEPOT/'.cipd_bin/alias')
+  if scenario=='override-after':(b.DEPOT/'.cipd_client_platform').write_text('windows-arm64')
+  if scenario=='client-drift':(b.DEPOT/'.cipd_client.exe').write_bytes(payload+b'changed')
+ return 0
+def reset():
+ global calls
+ calls=[]
+ for path in (b.DEPOT/'.cipd_client_platform',b.DEPOT/'.cipd_client.exe',b.DEPOT/'.versions',b.DEPOT/'.cipd_bin',b.SETUP,b.WITNESS,b.COMMANDS/'cipd.bat',b.COMMANDS/'vpython3.bat',b.ROOT/'source-caches/cipd/stale'):
+  if path.is_symlink()or path.is_file():path.unlink()
+  elif path.exists():shutil.rmtree(path)
+results=[]
+for scenario in ('preexisting-client','preexisting-versions','preexisting-bin','override','cache','bootstrap-nonzero','client-hash','setup-nonzero','machine','marker','hardlink','override-after','client-drift'):
+ reset()
+ if scenario=='preexisting-client':(b.DEPOT/'.cipd_client.exe').write_bytes(payload)
+ if scenario=='preexisting-versions':(b.DEPOT/'.versions').mkdir()
+ if scenario=='preexisting-bin':(b.DEPOT/'.cipd_bin').mkdir()
+ if scenario=='override':(b.DEPOT/'.cipd_client_platform').write_text('windows-arm64')
+ if scenario=='cache':(b.ROOT/'source-caches/cipd/stale').write_bytes(b'never followed')
+ try:b.provision(guard_sha,runner)
+ except b.data.Denied as error:code=str(error)
+ else:raise AssertionError('bad bootstrap accepted '+scenario)
+ assert not b.WITNESS.exists()
+ if scenario.startswith('preexisting')or scenario in ('override','cache'):assert not calls
+ if scenario in ('bootstrap-nonzero','client-hash'):assert len(calls)==1
+ results.append(dict(case=scenario,denied=code,provisionerCalls=len(calls)))
+reset();scenario='valid';value=b.provision(guard_sha,runner);assert len(calls)==2
+original=b.WITNESS.read_bytes();witness_sha=hashlib.sha256(original).hexdigest()
+assert value['packageInstance']==b.P['instance'] and value['setupExit']==0 and value['fresh']is True
+assert b.verify(witness_sha,guard_sha)[0]==value
+executions=[]
+b.execute('vpython',['--version'],witness_sha,guard_sha,lambda command,clock:executions.append(command)or 0)
+assert executions==[[value['vpython']['path'],'--version']]
+for args in (['selfupdate'],['ensure','-service-url','https://example.invalid'],['ensure','--service-url=https://example.invalid']):
+ try:b.execute('cipd',args,witness_sha,guard_sha,lambda *args:(_ for _ in ()).throw(AssertionError('must not execute')))
+ except b.data.Denied:pass
+ else:raise AssertionError('CIPD override admitted')
+popen_calls=[];popen_error=[None]
+class BasePopen:
+ def __init__(self,args,**kwargs):
+  popen_calls.append((args,kwargs));self.original_args=args
+  if popen_error[0]is not None:raise popen_error[0]
+
+def make_backend():
+ module=types.ModuleType('subprocess2');module.__dict__.update(dict(subprocess=types.SimpleNamespace(Popen=BasePopen),threading=__import__('threading'),logging=types.SimpleNamespace(debug=lambda _message:None),sys=types.SimpleNamespace(platform='win32'),os=os,errno=__import__('errno'),CalledProcessError=RuntimeError,CygwinRebaseError=RuntimeError))
+ exec(compile(${JSON.stringify(PINNED_POPEN.english.source)},'pinned-c101-get-english-env','exec'),module.__dict__)
+ exec(compile(${JSON.stringify(PINNED_POPEN.classBody.source)},'pinned-c101-Popen-init','exec'),module.__dict__);module.STDOUT=-2
+ return module
+sys.modules['subprocess2']=make_backend()
+primary_env=${JSON.stringify(PINNED_GCLIENT_ENV.envConstruction.source)}
+primary_main=${JSON.stringify(PINNED_GCLIENT_ENV.mainMetadata.source)}
+primary_sync=${JSON.stringify(PINNED_GCLIENT_ENV.syncMetadata.source)}
+old_bind=${JSON.stringify(PINNED_GCLIENT_ENV.oldBind.source)}
+for key in ('COLUMNS','LINES'):os.environ.pop(key,None)
+# Execute the exact pinned kwargs/env construction with an inert Popen boundary.
+def primary_dispatch(command,kwargs=None,columns=80,lines=24):
+ scope=dict(os=os,shutil=types.SimpleNamespace(get_terminal_size=lambda:types.SimpleNamespace(columns=columns,lines=lines)),subprocess2=sys.modules['subprocess2'],args=command,kwargs={}if kwargs is None else kwargs,pipe_writer=123)
+ exec(compile(primary_env,'pinned-c101-env-construction','exec'),scope)
+ return scope['kid']
+new_bind=b.bind;exec(compile(old_bind,'original-20a-bind','exec'),b.__dict__)
+b.bind(witness_sha,guard_sha)
+try:primary_dispatch(['cipd','expand-package-name','infra/test'])
+except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_ENV_OVERRIDE'
+else:raise AssertionError('old rejection did not reproduce')
+assert not popen_calls
+b.bind=new_bind;sys.modules['subprocess2']=make_backend()
+# Exact former function-replacement body breaks genuine upstream super(Popen,self).
+method_bind=b.bind;exec(compile(${JSON.stringify(PINNED_POPEN.oldBind.source)},'original-6b8-function-bind','exec'),b.__dict__)
+b.bind(witness_sha,guard_sha)
+try:sys.modules['subprocess2'].Popen(['git','--version'])
+except TypeError as error:assert 'super() argument 1 must be a type, not function'in str(error)
+else:raise AssertionError('actual old class failure absent')
+assert not popen_calls
+b.bind=method_bind;sys.modules['subprocess2']=make_backend();backend=sys.modules['subprocess2'];aliases={}
+exec('from subprocess2 import Popen as captured_before_installation',aliases);alias=aliases['captured_before_installation']
+b.bind(witness_sha,guard_sha)
+assert backend.Popen is alias and isinstance(alias,type)
+assert isinstance(backend.Popen(['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],shell=True),alias)
+assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
+before_dispatches=len(popen_calls)
+mutated=dict(value);mutated['vpython']=dict(value['vpython']);changed=payload+b'coherently changed'
+(b.DEPOT/'.cipd_bin/vpython3.exe').write_bytes(changed);mutated['vpython'].update(bytes=len(changed),sha256=hashlib.sha256(changed).hexdigest())
+changed_witness=(json.dumps(mutated,sort_keys=True,separators=(',',':'))+'\\n').encode();changed_sha=hashlib.sha256(changed_witness).hexdigest();b.WITNESS.write_bytes(changed_witness)
+for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,changed_sha))
+try:backend.Popen(['cipd','expand-package-name','infra/test'])
+except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_WITNESS_PIN'
+else:raise AssertionError('dispatch re-adopted coherent witness/payload/shims')
+assert len(popen_calls)==before_dispatches
+b.WITNESS.write_bytes(original);(b.DEPOT/'.cipd_bin/vpython3.exe').write_bytes(payload)
+for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,witness_sha))
+dispatch_denials=[]
+for target in (b.WITNESS,b.SCRIPT,b.DEPOT/'.cipd_client.exe',b.DEPOT/'.cipd_bin/vpython3.exe',b.COMMANDS/'cipd.bat',b.COMMANDS/'vpython3.bat'):
+ prior=target.read_bytes();target.write_bytes(prior+b'changed after attestation');before=len(popen_calls)
+ try:backend.Popen(['cipd','expand-package-name','infra/test'])
+ except b.data.Denied as error:dispatch_denials.append(str(error))
+ else:raise AssertionError('mutated attested dispatch admitted')
+ finally:target.write_bytes(prior)
+ assert len(popen_calls)==before
+assert len(dispatch_denials)==6
+
+for role,name in (('cipd','cipd.bat'),('vpython','vpython3.bat')):(b.COMMANDS/name).write_bytes(b.shim(role,guard_sha,witness_sha))
+ordinary=['git','--version'];ordinary_result=alias(args=ordinary,shell=True);assert isinstance(ordinary_result,alias)and ordinary_result.original_args is ordinary and popen_calls[-1][0]is ordinary and popen_calls[-1][1]['shell']is True
+try:backend.Popen(['cipd','expand-package-name','infra/test'],env={})
+except b.data.Denied:pass
+else:raise AssertionError('env override admitted')
+initial_env=dict(os.environ);environment_denials=[]
+# Actual pinned gclient writes, not a model of accepted arbitrary mutations.
+exec(compile(primary_main,'pinned-c101-main-metadata','exec'),dict(os=os,sys=types.SimpleNamespace(stdout=types.SimpleNamespace(isatty=lambda:False))))
+exec(compile(primary_sync,'pinned-c101-sync-metadata','exec'),dict(os=os,json=json,PREVIOUS_SYNC_COMMITS='GCLIENT_PREVIOUS_SYNC_COMMITS',self=types.SimpleNamespace(name='src'),latest_commit='a'*40))
+ensure=b.ROOT/'tmp/owned.ensure';ensure.write_text('infra/test instance')
+resolved=b.ROOT/'tmp/owned.resolved';resolved.write_text('{}')
+commands=[['cipd','expand-package-name','infra/'+chr(36)+'{platform}'],['cipd','ensure','-log-level','info','-root',b.P['workspace'],'-ensure-file',str(ensure)],['cipd','ensure-file-resolve','-log-level','error','-ensure-file',str(ensure),'-json-output',str(resolved)]]
+for command in commands:
+ assert isinstance(primary_dispatch(command),alias)
+ assert popen_calls[-1][0][0]==value['client']['path']and popen_calls[-1][1]['shell']is False
+ assert popen_calls[-1][1]['env']==dict(os.environ,COLUMNS='80',LINES='24')
+ assert isinstance(primary_dispatch(command,dict(env=os.environ.copy())),alias)
+assert isinstance(backend.Popen(commands[0]),alias)
+approved_current=dict(os.environ)
+for key in ('PATH','PYTHONPATH','PYTHONHOME','CIPD_BACKEND','CIPD_SERVICE_URL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','CIPD_CACHE_DIR','VPYTHON_VIRTUALENV_ROOT','GIT_ASKPASS','USERPROFILE','UNKNOWN_ENV'):
+ changed=dict(approved_current);changed[key]='unapproved';before=len(popen_calls)
+ try:primary_dispatch(commands[0],dict(env=changed))
+ except b.data.Denied as error:environment_denials.append(str(error))
+ else:raise AssertionError('changed child environment admitted')
+ assert len(popen_calls)==before
+removed=dict(approved_current);del removed['CIPD_CACHE_DIR']
+try:primary_dispatch(commands[0],dict(env=removed))
+except b.data.Denied:pass
+else:raise AssertionError('removed cache admitted')
+for changed in (dict(COLUMNS='80'),dict(COLUMNS='0',LINES='24'),dict(COLUMNS='080',LINES='24'),dict(COLUMNS='10001',LINES='24'),dict(COLUMNS='80',LINES='2.4'),dict(COLUMNS='80',LINES='24',UNKNOWN_ENV='no')):
+ bad=dict(approved_current,**changed);before=len(popen_calls)
+ try:backend.Popen(commands[0],env=bad)
+ except b.data.Denied:pass
+ else:raise AssertionError('terminal environment widened')
+ assert len(popen_calls)==before
+for key,changed in (('PATH','unapproved'),('GIT_EDITOR','not-false'),('GIT_PAGER','not-cat'),('GIT_TERMINAL_PROMPT','1'),('GCLIENT_UNKNOWN_METADATA','data')):
+ before=len(popen_calls);os.environ[key]=changed
+ try:
+  for kwargs in ({},dict(env=os.environ.copy())):
+   try:backend.Popen(commands[0],**kwargs)
+   except b.data.Denied:pass
+   else:raise AssertionError('changed inherited environment admitted')
+ finally:os.environ.clear();os.environ.update(approved_current)
+ assert len(popen_calls)==before
+before=len(popen_calls);del os.environ['CIPD_CACHE_DIR']
+try:
+ try:backend.Popen(commands[0])
+ except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_INHERITED_ENV'
+ else:raise AssertionError('removed inherited critical key admitted')
+finally:os.environ.clear();os.environ.update(approved_current)
+assert len(popen_calls)==before
+# Windows rejects physical environment values above32767 before our guard;
+# inject only this numeric cap boundary into the actual inherited-env reader.
+original_os=b.os;b.os=types.SimpleNamespace(environ=dict(approved_current,GCLIENT_PREVIOUS_SYNC_COMMITS='x'*(1024**2+1)))
+before=len(popen_calls)
+try:
+ try:backend.Popen(commands[0])
+ except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_INHERITED_ENV'
+ else:raise AssertionError('metadata cap admitted')
+finally:b.os=original_os
+assert len(popen_calls)==before
+popen_primary=RuntimeError('OWNED_POPEN_PRIMARY');popen_error[0]=popen_primary
+try:primary_dispatch(commands[0])
+except RuntimeError as error:assert error is popen_primary
+else:raise AssertionError('Popen primary lost')
+finally:popen_error[0]=None
+os.environ.clear();os.environ.update(initial_env)
+for key,bad in (('fresh',False),('packageInstance','wrong'),('setupExit',False)):
+ changed=dict(value);changed[key]=bad;raw=json.dumps(changed).encode();b.WITNESS.write_bytes(raw)
+ try:b.verify(hashlib.sha256(raw).hexdigest(),guard_sha)
+ except b.data.Denied:pass
+ else:raise AssertionError('forged witness admitted')
+ b.WITNESS.write_bytes(original)
+b.WITNESS.write_bytes(original+b' ')
+try:b.verify(witness_sha,guard_sha)
+except b.data.Denied as error:assert str(error)=='FULL_BOOTSTRAP_WITNESS_PIN'
+else:raise AssertionError('witness digest drift admitted')
+b.WITNESS.write_bytes(original)
+primary=RuntimeError('OWNED_PRIMARY');secondary=io.StringIO()
+def failed(command,clock):(b.DEPOT/'.cipd_client.exe').write_bytes(b'changed');raise primary
+with contextlib.redirect_stderr(secondary):
+ try:b.execute('vpython',['--version'],witness_sha,guard_sha,failed)
+ except RuntimeError as error:assert error is primary
+ else:raise AssertionError('first error lost')
+assert 'FULL_BOOTSTRAP_POST_FAILURE'in secondary.getvalue()
+(b.DEPOT/'.cipd_client.exe').write_bytes(payload)
+observed=[];original_run=b.subprocess.run
+b.subprocess.run=lambda command,**kwargs:observed.append(kwargs['timeout'])or types.SimpleNamespace(returncode=0)
+try:
+ assert b.run_checked(['owned-benign'],types.SimpleNamespace(remaining=lambda:125))==0 and observed==[5]
+ try:b.run_checked(['owned-benign'],types.SimpleNamespace(remaining=lambda:119))
+ except b.data.Denied:pass
+ else:raise AssertionError('reserve reset')
+ assert observed==[5]
+finally:b.subprocess.run=original_run
+print(json.dumps(dict(cases=results,fixturePolicyOnly=True,vendorExecutableExecuted=False,validProvisionerCalls=2,firstErrorPreserved=True,originalReservePreserved=True,immutableDispatchDenials=dispatch_denials,environmentDenials=environment_denials,actualPinnedEnvironmentOldRedNewGreen=True,actualPinnedClassOldRedNewGreen=True,classAndAliasIdentityPreserved=True,witnessSha256=witness_sha,fixtureSourcePins=b.P['sources'],fixtureClientSha=digest)))
+`;
+    const harnessFile = path.join(directory, "harness.py");
+    await fs.writeFile(harnessFile, harness);
+    const result = JSON.parse(
+      execFileSync(python, ["-I", "-B", harnessFile], {
+        encoding: "utf8",
+        timeout: 20000,
+        stdio: "pipe",
+      }),
+    );
+    assert.equal(result.cases.length, 13);
+    assert(result.firstErrorPreserved && result.originalReservePreserved);
+    assert.equal(result.immutableDispatchDenials.length, 6);
+    assert.equal(result.environmentDenials.length, 13);
+    assert.equal(result.actualPinnedEnvironmentOldRedNewGreen, true);
+    assert(
+      result.actualPinnedClassOldRedNewGreen &&
+        result.classAndAliasIdentityPreserved,
+    );
+    assert.equal(result.vendorExecutableExecuted, false);
+    const witness = JSON.parse(await fs.readFile(program.witness, "utf8"));
+    for (const [role, name] of [
+      ["cipd", "cipd.bat"],
+      ["vpython", "vpython3.bat"],
+    ])
+      assert.deepEqual(
+        await fs.readFile(path.join(files.commands, name)),
+        bootstrapShim(
+          p.python.path,
+          program.file,
+          program.pin.sha256,
+          result.witnessSha256,
+          role,
+        ),
+      );
+    await assert.rejects(
+      verifyBootstrap(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_BOOTSTRAP_NOT_ATTESTED/,
+    );
+    program.witnessPin = {
+      bytes: (await fs.readFile(program.witness)).length,
+      sha256: result.witnessSha256,
+      nlink: 1,
+    };
+    await assert.rejects(
+      verifyBootstrap(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_BOOTSTRAP_PIN/,
+    );
+    program.witnessPin = null;
+    assert.equal(
+      witness.packageInstance,
+      "5_RRshFOtDVoKVpdtehepLtVyYsUdifAy9IHenpJmHoC",
+    );
+    const command = sourceCommands(
+      directory,
+      p,
+      cefHookArguments(files.cef, files.depot),
+      sha(contextRaw),
+    )[2];
+    const binding = {
+      pin: { sha256: program.pin.sha256 },
+      witnessPin: { sha256: result.witnessSha256 },
+    };
+    const bound = bindBootstrapVector(command, binding);
+    assert.deepEqual(bound.slice(-2), [
+      result.witnessSha256,
+      program.pin.sha256,
+    ]);
+    assert(command.args.includes("__SORNG_BOOTSTRAP_WITNESS__"));
+    assert.throws(
+      () =>
+        bindBootstrapVector(command, { pin: program.pin, witnessPin: null }),
+      /FULL_BOOTSTRAP_VECTOR_PIN/,
+    );
+    // Execute the actual Node verifier/held/observer declarations with only
+    // package authority constants replaced by explicitly synthetic fixture pins.
+    // The ordinary production verifier above rejects these fixture expectations.
+    const body = await read(prefix + "source-driver.mjs"),
+      keysBody = body.slice(
+        body.indexOf("const keys ="),
+        body.indexOf("\n\nexport function sourceBudget"),
+      ),
+      readerBody = body.slice(
+        body.indexOf("const signature ="),
+        body.indexOf("export function sourcePaths"),
+      ),
+      verifyBody = body
+        .slice(
+          body.indexOf("export async function verifyBootstrap"),
+          body.indexOf("export function bootstrapObserver"),
+        )
+        .replace("export ", ""),
+      observerBody = body
+        .slice(
+          body.indexOf("export function bootstrapObserver"),
+          body.indexOf("export function bindBootstrapVector"),
+        )
+        .replace("export ", "");
+    const scope = vm.createContext({
+      fs,
+      constants: fsConstants,
+      Buffer,
+      path,
+      TextDecoder,
+      sha,
+      sourceCloseFailure: false,
+      need: (ok, code) => {
+        if (!ok) throw new Error(code);
+      },
+      sourcePaths,
+      bootstrapShim,
+      deriveBootstrapSetup,
+      BOOTSTRAP_SOURCES: result.fixtureSourcePins,
+      CIPD_CLIENT_SHA: result.fixtureClientSha,
+      VPYTHON_INSTANCE: "5_RRshFOtDVoKVpdtehepLtVyYsUdifAy9IHenpJmHoC",
+    });
+    const actual = vm.runInContext(
+      `${keysBody}\n${readerBody}\n${verifyBody}\n${observerBody}\n({verifyBootstrap,bootstrapObserver,held})`,
+      scope,
+    );
+    const marker = Buffer.from(
+        "FULL_BOOTSTRAP_WITNESS:" + JSON.stringify(witness) + "\r\n",
+      ),
+      observer = actual.bootstrapObserver(program, sha(contextRaw));
+    observer.push(Buffer.concat([Buffer.alloc(70000, 120), Buffer.from("\n")]));
+    for (let index = 0; index < marker.length; index += 3)
+      observer.push(marker.subarray(index, index + 3));
+    observer.finish();
+    assert.equal(program.witnessPin.sha256, result.witnessSha256);
+    assert.equal(
+      (
+        await actual.verifyBootstrap(
+          directory,
+          p,
+          program,
+          { remaining: () => 10000 },
+          sha(contextRaw),
+        )
+      ).packageInstance,
+      witness.packageInstance,
+    );
+    assert.throws(
+      () => observer.push(marker),
+      /FULL_BOOTSTRAP_ATTESTATION_DUPLICATE/,
+    );
+    assert.throws(
+      () =>
+        actual
+          .bootstrapObserver(
+            { pin: program.pin, witnessPin: null },
+            sha(contextRaw),
+          )
+          .finish(),
+      /FULL_BOOTSTRAP_ATTESTATION_MISSING/,
+    );
+    const wrong = Buffer.from(
+      "FULL_BOOTSTRAP_WITNESS:" +
+        JSON.stringify({ ...witness, contextSha: "a".repeat(64) }) +
+        "\n",
+    );
+    assert.throws(
+      () =>
+        actual
+          .bootstrapObserver(
+            { pin: program.pin, witnessPin: null },
+            sha(contextRaw),
+          )
+          .push(wrong),
+      /FULL_BOOTSTRAP_ATTESTATION/,
+    );
+    assert.throws(
+      () =>
+        actual
+          .bootstrapObserver(
+            { pin: program.pin, witnessPin: null },
+            sha(contextRaw),
+          )
+          .push(
+            Buffer.from("FULL_BOOTSTRAP_WITNESS:" + "x".repeat(65537) + "\n"),
+          ),
+      /FULL_BOOTSTRAP_ATTESTATION_BOUND/,
+    );
+    const witnessRaw = await fs.readFile(program.witness);
+    await fs.appendFile(program.witness, " ");
+    await assert.rejects(
+      actual.verifyBootstrap(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_DRIVER_PIN/,
+    );
+    await fs.writeFile(program.witness, witnessRaw);
+    const cap =
+        program.pin.bytes +
+        witnessRaw.length +
+        witness.client.bytes +
+        witness.vpython.bytes -
+        1,
+      opened = [];
+    const scaled = vm.runInContext(
+      verifyBody.replace(/512\s*\*\s*1024\s*\*\*\s*2/g, String(cap)) +
+        "\nverifyBootstrap",
+      scope,
+    );
+    scope.held = async (...args) => {
+      opened.push(args[0]);
+      return actual.held(...args);
+    };
+    await assert.rejects(
+      scaled(
+        directory,
+        p,
+        program,
+        { remaining: () => 10000 },
+        sha(contextRaw),
+      ),
+      /FULL_BOOTSTRAP_BYTES/,
+    );
+    assert(opened.includes(witness.client.path));
+    assert(!opened.includes(witness.vpython.path));
+    t.diagnostic(JSON.stringify(result));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual pinned-gclient API projection retains nested conditions and origins with bounded failure", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-hook-projection-"),
+  );
+  try {
+    const fixture = `import types
+class OptionParser:
+ def parse_args(self,args):
+  assert args==['--jobs','2']
+  return types.SimpleNamespace(),[]
+class Client:
+ def __init__(self,options): self.options=options
+ def RunOnDeps(self,command,args,progress):
+  assert command=='flatten' and args==[] and progress is False
+  assert self.options.nohooks and self.options.noprehooks and self.options.process_all_deps
+  return 0
+class GClient:
+ @staticmethod
+ def LoadCurrentConfig(options): return Client(options)
+class Flattener:
+ def __init__(self,client,pin_all_deps):
+  assert pin_all_deps
+  self._hooks=[(None,types.SimpleNamespace(name='nested',condition='checkout_win',pattern='.',effective_cwd='src/nested',action=['python3','src/nested/tool.py']))]
+  self._pre_deps_hooks=[(None,types.SimpleNamespace(name='pre',condition='False',pattern=None,effective_cwd='.',action=['vpython3','src/pre.py']))]
+  self.deps_files=[('https://example.invalid/repo@'+'a'*40,'DEPS',(('src','https://example.invalid/repo@'+'a'*40),))]
+`;
+    await fs.writeFile(path.join(directory, "gclient.py"), fixture);
+    await fs.writeFile(
+      path.join(directory, "source_bootstrap.py"),
+      "def bind(*args): pass\n",
+    );
+    const args = hookProjectionArguments(directory);
+    const raw = execFileSync(python, args, {
+      cwd: directory,
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    const projection = validateHookProjection(raw);
+    assert.deepEqual(
+      projection.hooks.map((row) => [row.name, row.condition, row.kind]),
+      [
+        ["nested", "checkout_win", "hooks"],
+        ["pre", "False", "pre_deps_hooks"],
+      ],
+    );
+    assert.equal(projection.origins[0].hierarchy[0][0], "src");
+    const packet = (value) =>
+      "FULL_HOOK_PROJECTION:" + JSON.stringify(value) + "\n";
+    const inactive = structuredClone(projection);
+    inactive.hooks[0].condition = "False";
+    inactive.hooks[0].action = [
+      "unsupported-platform-tool",
+      "%PATH%",
+      "x&echo y",
+    ];
+    assert.deepEqual(
+      validateHookProjection(packet(inactive)).hooks[0].action,
+      inactive.hooks[0].action,
+    );
+    for (const mutate of [
+      (value) => (value.hooks[0].cwd = "../foreign"),
+      (value) => (value.hooks[0].action = ["python3", "bad\0argument"]),
+      (value) => (value.hooks[0].extra = true),
+      (value) => (value.origins[0].deps_file = ".git/config"),
+      (value) => (value.origins[0].hierarchy[0][0] = "/foreign"),
+      (value) => (value.origins[0].url = "https://example.invalid/repo@main"),
+      (value) => value.origins.push(value.origins[0]),
+      (value) => (value.hooks = Array(513).fill(value.hooks[0])),
+    ]) {
+      const changed = structuredClone(projection);
+      mutate(changed);
+      assert.throws(() => validateHookProjection(packet(changed)), /FULL_/);
+    }
+    assert.throws(
+      () => validateHookProjection(raw + raw),
+      /FULL_HOOK_PROJECTION_PACKET/,
+    );
+    assert.throws(
+      () => validateHookProjection(raw + "trailing"),
+      /FULL_HOOK_PROJECTION_PACKET/,
+    );
+    assert.throws(
+      () => validateHookProjection("x".repeat(4 * 1024 ** 2 + 1)),
+      /FULL_HOOK_PROJECTION_BOUND/,
+    );
+    await fs.writeFile(
+      path.join(directory, "gclient.py"),
+      fixture
+        .replace("self._hooks=[", "self._hooks=[")
+        .replace(
+          "self._pre_deps_hooks=[",
+          "self._hooks*=513\n  self._pre_deps_hooks=[",
+        ),
+    );
+    assert.throws(
+      () =>
+        execFileSync(python, args, {
+          cwd: directory,
+          encoding: "utf8",
+          timeout: 10000,
+          stdio: "pipe",
+        }),
+      (error) => error.status !== 0 && error.stderr.includes("FULL_HOOK_COUNT"),
+    );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual origin retention shares the existing cap and preserves deadline identity without an unbounded append", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-hook-retain-"),
+  );
+  try {
+    const file = path.join(directory, "hook-projection.stdout.log");
+    await fs.writeFile(file, "projection\n");
+    const original = await fs.readFile(file),
+      projection = { origins: [] },
+      limits = { bytes: original.length, cap: 4096 };
+    await retainHookOrigins(
+      file,
+      projection,
+      { remaining: () => 1000 },
+      limits,
+    );
+    assert.match(await fs.readFile(file, "utf8"), /FULL_HOOK_ORIGIN_PINS:/);
+    assert.equal(limits.bytes, (await fs.stat(file)).size);
+    const retained = await fs.readFile(file);
+    await assert.rejects(
+      retainHookOrigins(
+        file,
+        projection,
+        { remaining: () => 1000 },
+        { bytes: 0, cap: 1 },
+      ),
+      /FULL_HOOK_PROJECTION_BOUND/,
+    );
+    assert.deepEqual(await fs.readFile(file), retained);
+    const sentinel = new Error("owned deadline");
+    await assert.rejects(
+      retainHookOrigins(
+        file,
+        projection,
+        {
+          remaining: () => {
+            throw sentinel;
+          },
+        },
+        limits,
+      ),
+      (error) => error === sentinel,
+    );
+    assert.deepEqual(await fs.readFile(file), retained);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual GN wrapper uses real selector then denies alternate, alias and byte mismatch before a benign main", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-gn-selector-"),
+  );
+  try {
+    const expected = path.join(directory, "gn.exe"),
+      alternate = path.join(directory, "alternate.exe"),
+      body = Buffer.from("BENIGN DATA, NEVER EXECUTED"),
+      pin = { bytes: body.length, sha256: sha(body) };
+    await fs.writeFile(expected, body);
+    await fs.writeFile(alternate, body);
+    await fs.writeFile(
+      path.join(directory, "gclient_util.py"),
+      "import subprocess\ndef RunAction(directory,command):\n subprocess.run(command,cwd=directory,check=True)\n",
+    );
+    await fs.writeFile(
+      path.join(directory, "hook.py"),
+      "from gclient_util import RunAction\nRunAction('.', ['gn','gen','out/owned'])\n",
+    );
+    const hooks = [
+      "-B",
+      "-c",
+      "unused",
+      path.join(directory, "hook.py"),
+      path.join(directory, "gn.py"),
+    ];
+    const args = boundGnArguments(hooks, expected, pin);
+    const run = () =>
+      execFileSync(python, args, {
+        cwd: directory,
+        encoding: "utf8",
+        timeout: 10000,
+        stdio: "pipe",
+      });
+    const module = (candidate) =>
+      `import sys\ndef FindGnTool(): return ${JSON.stringify(candidate)}\ndef main(args):\n selected=FindGnTool()\n assert args[1:]==['gen','out/owned']\n print('BENIGN_SELECTOR_OK')\n return 0\nif __name__=='__main__': sys.exit(main(sys.argv))\n`;
+    await fs.writeFile(path.join(directory, "gn.py"), module(expected));
+    assert.match(run(), /BENIGN_SELECTOR_OK/);
+    await fs.writeFile(path.join(directory, "gn.py"), module(alternate));
+    // The old selector contract reaches benign main with the alternate path.
+    assert.match(
+      execFileSync(
+        python,
+        ["-B", path.join(directory, "gn.py"), "gen", "out/owned"],
+        { cwd: directory, encoding: "utf8", timeout: 10000 },
+      ),
+      /BENIGN_SELECTOR_OK/,
+    );
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_GN_SELECTOR") &&
+        !error.stdout.includes("BENIGN_SELECTOR_OK"),
+    );
+    await fs.writeFile(path.join(directory, "gn.py"), module(expected));
+    await fs.writeFile(expected, Buffer.from("WRONG DATA, NEVER EXECUTED"));
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_GN_SELECTOR_") &&
+        !error.stdout.includes("BENIGN_SELECTOR_OK"),
+    );
+    await fs.writeFile(expected, body);
+    const hardlink = path.join(directory, "gn-hardlink.exe");
+    await fs.link(expected, hardlink);
+    assert.throws(
+      run,
+      (error) =>
+        error.stderr.includes("FULL_GN_SELECTOR_FILE") &&
+        !error.stdout.includes("BENIGN_SELECTOR_OK"),
+    );
+    await fs.unlink(hardlink);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual GN runner denies shared nlink, birth and availability mismatches before reading and keeps the primary through close", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "cef-gn-crossview-"),
+  );
+  try {
+    const expected = path.join(directory, "gn.exe"),
+      raw = Buffer.from("INERT DATA NEVER EXECUTED");
+    await fs.writeFile(expected, raw);
+    await fs.writeFile(
+      path.join(directory, "gclient_util.py"),
+      "import subprocess\ndef RunAction(directory,command): subprocess.run(command,cwd=directory,check=True)\n",
+    );
+    await fs.writeFile(
+      path.join(directory, "hook.py"),
+      "from gclient_util import RunAction\nRunAction('.', ['gn','gen','out/owned'])\n",
+    );
+    const args = boundGnArguments(
+      [
+        "-B",
+        "-c",
+        "unused",
+        path.join(directory, "hook.py"),
+        path.join(directory, "gn.py"),
+      ],
+      expected,
+      { bytes: raw.length, sha256: sha(raw) },
+    );
+    for (const fault of [
+      "nlink",
+      "birth",
+      "availability",
+      "missing-windows-birth",
+    ]) {
+      const fixture = `import os,types,builtins
+fault=${JSON.stringify(fault)}
+original_stat,original_fstat,original_open=os.stat,os.fstat,builtins.open
+def view(s,fd):
+ names=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_mode','st_nlink')
+ values={name:getattr(s,name) for name in names}
+ values['st_birthtime_ns']=getattr(s,'st_birthtime_ns',123456789)
+ if fd and fault=='nlink': values['st_nlink']+=1
+ if fd and fault=='birth': values['st_birthtime_ns']+=1
+ if fault=='missing-windows-birth' or (fd and fault=='availability'): del values['st_birthtime_ns']
+ return types.SimpleNamespace(**values)
+os.stat=lambda *args,**kwargs:view(original_stat(*args,**kwargs),False)
+os.fstat=lambda fd:view(original_fstat(fd),True)
+if fault=='missing-windows-birth': os.name='nt'
+class Held:
+ def __init__(self,file): self.file=file
+ def __getattr__(self,name): return getattr(self.file,name)
+ def read(self,*args): raise RuntimeError('READ_BEFORE_SHARED_IDENTITY')
+ def close(self):
+  self.file.close()
+  raise RuntimeError('SECONDARY_CLOSE_MUST_NOT_REPLACE_PRIMARY')
+builtins.open=lambda *args,**kwargs:Held(original_open(*args,**kwargs))
+def FindGnTool(): return ${JSON.stringify(expected)}
+def main(args):
+ FindGnTool()
+ print('BENIGN_MAIN_MUST_NOT_BE_REACHED')
+ return 0
+`;
+      await fs.writeFile(path.join(directory, "gn.py"), fixture);
+      assert.throws(
+        () =>
+          execFileSync(python, args, {
+            cwd: directory,
+            encoding: "utf8",
+            timeout: 10000,
+            stdio: "pipe",
+          }),
+        (error) =>
+          error.status !== 0 &&
+          error.stderr.includes(
+            fault === "missing-windows-birth"
+              ? "FULL_GN_SELECTOR_BIRTH"
+              : "FULL_GN_SELECTOR_CHANGED",
+          ) &&
+          !error.stderr.includes("READ_BEFORE_SHARED_IDENTITY") &&
+          !error.stderr.includes("SECONDARY_CLOSE_MUST_NOT_REPLACE_PRIMARY") &&
+          !error.stdout.includes("BENIGN_MAIN_MUST_NOT_BE_REACHED"),
+        fault,
+      );
+    }
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("reviewed same-image host bytes bind closed source GN without claiming runtime loader proof", async () => {
+  assert.deepEqual(reviewedHostTools(profile), profile.sourceGn.hostTools);
+  const missing = structuredClone(profile);
+  missing.sourceGn.hostTools.node = null;
+  assert.throws(() => reviewedHostTools(missing), /FULL_HOST_TOOL_PIN_MISSING/);
+  const closure = reviewedHostClosure(profile, profile.image);
+  assert.equal(closure.rows.length, 18);
+  assert.equal(closure.peBytes, 113853492);
+  assert.equal(closure.edgeCount, 242);
+  assert.equal(
+    closure.edgeSha256,
+    "78537ac08d4dddabd50a5c83cdbd676114fdf03cf9abe670359c4ffd20ba5d9a",
+  );
+  assert.equal(profile.phaseAdmission["source-gn"], true);
+  assert.deepEqual(profile.sourceGn.executionPolicy, {
+    hostLoaderClosureApproved: true,
+    gitConfigurationApproved: true,
+    sourceHookCommandClosureApproved: true,
+  });
+  assert.equal(
+    profile.sourceGn.sourceId,
+    "b04bd747863065cb2cd5a52088ac36d24427b1e505b269c234d4ee5f444077be",
+  );
+  assert.notEqual(profile.sourceId, profile.sourceGn.sourceId);
+  assert.equal(profile.sourceData.length, 29);
+  assert.equal(profile.sourceGn.sourceData.length, 30);
+  for (const row of [
+    ...profile.sourceGn.sourceData,
+    ...profile.sourceGn.helpers,
+  ]) {
+    const bytes = await fs.readFile(path.join(root, row.path));
+    assert.equal(bytes.length, row.bytes);
+    assert.equal(sha(bytes), row.sha256);
+  }
+  const lock = JSON.parse(
+    await read(profile.sourceGn.namespace + "source-lock.json"),
+  );
+  validateSourceLock(lock);
+  assert.equal(identitySha256(lock), profile.sourceGn.sourceId);
+  const gn = await read(
+    profile.sourceGn.namespace + lock.builds[0].gnArgs.path,
+  );
+  assert(gn.includes('v8_symbol_level=0\nhost_cpu="x64"'));
+  assert(!gn.includes("0host_cpu"));
+});
+
+test("actual fixed host handoff reader stops on first hash, deadline, image or aggregate failure without opening a later file", async () => {
+  const p = structuredClone(profile),
+    body = Buffer.from("SYNTHETIC HELD FIXTURE BYTES");
+  for (const row of p.sourceGn.hostClosure.rows)
+    Object.assign(row, { bytes: body.length, sha256: sha(body), nlink: 1 });
+  p.sourceGn.hostClosure.peBytes = 18 * body.length;
+  for (const [role, path] of [
+    ["node", profile.sourceGn.hostTools.node.path],
+    ["git", profile.sourceGn.hostTools.git.path],
+  ]) {
+    const row = p.sourceGn.hostClosure.rows.find((row) => row.path === path);
+    p.sourceGn.hostTools[role] = {
+      path: row.path,
+      bytes: row.bytes,
+      sha256: row.sha256,
+      nlink: row.nlink,
+    };
+  }
+  const opened = [],
+    budget = { remaining: () => 1000 };
+  const reader = async (file, cap, current, pin) => {
+    opened.push(file);
+    assert.equal(cap, body.length);
+    assert.equal(current, budget);
+    assert.equal(pin.sha256, sha(body));
+    return body;
+  };
+  assert.equal(
+    (await verifyHostClosure(p, budget, p.image, reader)).bytes,
+    18 * body.length,
+  );
+  assert.deepEqual(
+    opened,
+    p.sourceGn.hostClosure.rows.map((row) => row.path),
+  );
+  opened.length = 0;
+  await assert.rejects(
+    verifyHostClosure(p, budget, p.image, async (file) => {
+      opened.push(file);
+      return Buffer.from("bad");
+    }),
+    /FULL_HOST_CLOSURE_PIN/,
+  );
+  assert.equal(opened.length, 1);
+  opened.length = 0;
+  await assert.rejects(
+    verifyHostClosure(p, budget, "WRONG_IMAGE", reader),
+    /FULL_HOST_IMAGE/,
+  );
+  assert.equal(opened.length, 0);
+  const sentinel = new Error("fixture deadline");
+  await assert.rejects(
+    verifyHostClosure(
+      p,
+      {
+        remaining: () => {
+          throw sentinel;
+        },
+      },
+      p.image,
+      reader,
+    ),
+    (error) => error === sentinel,
+  );
+  assert.equal(opened.length, 0);
+  for (const mutate of [
+    (value) =>
+      (value.sourceGn.hostClosure.rows[0].path = "C:/foreign/node.exe"),
+    (value) =>
+      (value.sourceGn.hostClosure.rows.at(-1).path =
+        "C:/Program Files/Git/ucrt64/bin/CON.dll"),
+    (value) =>
+      value.sourceGn.hostClosure.rows.push(value.sourceGn.hostClosure.rows[0]),
+    (value) =>
+      (value.sourceGn.hostClosure.rows[1].path =
+        value.sourceGn.hostClosure.rows[0].path),
+    (value) => (value.sourceGn.hostClosure.rows[0].machine = 0xaa64),
+    (value) => (value.sourceGn.hostClosure.rows[0].nlink = 9),
+    (value) => (value.sourceGn.hostClosure.rows[0].observedAsExpected = true),
+    (value) => (value.sourceGn.hostClosure.peBytes = 512 * 1024 ** 2 + 1),
+  ]) {
+    const changed = structuredClone(p);
+    mutate(changed);
+    await assert.rejects(
+      verifyHostClosure(changed, budget, p.image, reader),
+      /FULL_/,
+    );
+    assert.equal(opened.length, 0);
+  }
+});
+
+test("closed source driver checkpoint helper calls remain graph-only on the inherited helper basis", async () => {
+  const body = await read(prefix + "source-driver.mjs");
+  assert.deepEqual(
+    [
+      ...new Set(
+        [
+          ...body.matchAll(/(?<![A-Za-z0-9_-])checkpoint\.([A-Za-z0-9_]+)/g),
+        ].map((match) => match[1]),
+      ),
+    ].sort(),
+    ["graphInventory", "graphPinSnapshot"],
+  );
+});
+
+test("actual source driver command plan has only fixed sync, hooks, three setup verifications and GN", () => {
+  const p = syntheticSourcePins(),
+    operation = path.join(
+      root,
+      ".artifacts",
+      "windows-arm-full-sdk-" + "a".repeat(36),
+    );
+  const files = sourcePaths(operation, p),
+    hooks = cefHookArguments(files.cef, files.depot);
+  const commands = sourceCommands(operation, p, hooks, "b".repeat(64));
+  assert.deepEqual(
+    commands.map((row) => row.role),
+    [
+      "sync",
+      "hook-projection",
+      "dependency-hooks",
+      "setup-x86",
+      "setup-x64",
+      "setup-arm64",
+      "verify-setup",
+      "cef-gn",
+    ],
+  );
+  assert(Object.isFrozen(commands));
+  assert(
+    commands.every((row) => Object.isFrozen(row) && Object.isFrozen(row.args)),
+  );
+  assert(commands.every((row) => row.executable === profile.python.path));
+  assert(commands[0].args.includes("--noprehooks"));
+  assert.deepEqual(
+    commands[1].args,
+    hookProjectionArguments(files.depot, files.commands),
+  );
+  assert(
+    commands.findIndex((row) => row.role === "hook-projection") <
+      commands.findIndex((row) => row.role === "dependency-hooks"),
+  );
+  assert.deepEqual(commands.at(-1).args, hooks);
+  assert(
+    !commands.some((row) =>
+      /autoninja|make_distrib|--compile|--restore/.test(row.args.join(" ")),
+    ),
+  );
+  for (const changed of [
+    ["-c", "arbitrary"],
+    [...hooks, "--extra"],
+  ])
+    assert.throws(
+      () => sourceCommands(operation, p, changed, "b".repeat(64)),
+      /FULL_HOOK_COMMAND/,
+    );
+  assert.throws(
+    () => sourceCommands(operation, p, hooks, "not-a-context"),
+    /FULL_CONTEXT_PIN/,
+  );
+});
+
+test("actual source driver budget is bounded by the original wall interval and its own monotonic admission", () => {
+  let wall = 1000,
+    mono = 20;
+  const budget = sourceBudget(
+    { wallWorkEnd: 3 },
+    profile,
+    () => wall,
+    () => mono,
+  );
+  assert.equal(budget.remaining(), 2000);
+  wall = 0;
+  mono += 1999;
+  assert.equal(budget.remaining(), 1);
+  mono++;
+  assert.throws(() => budget.remaining(), /FULL_DRIVER_DEADLINE/);
+  assert.throws(
+    () =>
+      sourceBudget(
+        { wallWorkEnd: 0 },
+        profile,
+        () => 1,
+        () => 1,
+      ),
+    /FULL_DRIVER_CLOCK/,
+  );
+  assert.equal(profile.sourceGn.limits.wholeSeconds, 7200);
+  assert.equal(profile.sourceGn.limits.cleanupSeconds, 30);
+  assert.equal(profile.sourceGn.limits.finalReserveSeconds, 120);
+  assert.equal(profile.limits.wholeSeconds, 3600);
+  assert.equal(profile.sourceGn.limits.memoryBytes, 8 * 1024 ** 3);
+  assert.equal(profile.sourceGn.limits.processes, 64);
+});
+
+test("source child environment is constructed without inherited credentials, proxy, remote execution or PATH fallback", () => {
+  const p = syntheticSourcePins(),
+    operation = path.join(
+      root,
+      ".artifacts",
+      "windows-arm-full-sdk-" + "a".repeat(36),
+    );
+  const recipe = {
+    requiredHost: "win32",
+    target: "aarch64-pc-windows-msvc",
+    commands: [{ args: ["cef/tools/gclient_hook.py"] }, {}, {}],
+    environment: { DEPOT_TOOLS_UPDATE: "0", DEPOT_TOOLS_WIN_TOOLCHAIN: "0" },
+  };
+  const env = sourceEnvironment(operation, p, recipe);
+  assert.equal(env.PYTHONDONTWRITEBYTECODE, "1");
+  assert.equal(env.ComSpec, "C:\\Windows\\System32\\cmd.exe");
+  assert.equal(env.PATH.split(";")[0], path.join(operation, "source-commands"));
+  assert.equal(env.CEF_ENABLE_ARM64, "1");
+  assert.equal(env.CEF_VCVARS, "none");
+  for (const key of [
+    "GITHUB_TOKEN",
+    "HTTPS_PROXY",
+    "RBE_instance",
+    "SSH_AUTH_SOCK",
+    "NODE_OPTIONS",
+  ])
+    assert.equal(env[key], undefined);
+  assert(env.PATH.includes(path.dirname(p.sourceGn.hostTools.git.path)));
+  assert(!env.PATH.includes(process.env.PATH));
+  assert.equal(env.SDK_VERSION, "10.0.28000.0");
+  assert.equal(env.SDK_ROOT, path.join(operation, "Windows Kits/10"));
+});
+
+test("generated GN critical arguments bind ARM target, x64 host, local tools, sandbox and tracer without compiler admission", () => {
+  const lines = [
+    'target_cpu="arm64"',
+    'host_cpu="x64"',
+    "is_clang=true",
+    "use_lld=true",
+    "use_remoteexec=false",
+    "use_siso=true",
+    "is_component_build=false",
+    "is_debug=false",
+    "enable_backup_ref_ptr_instance_tracer=false",
+  ];
+  const raw = Buffer.from(lines.join("\n"));
+  const result = validateGeneratedArguments(raw);
+  assert.equal(result.criticalArgumentsVerified, true);
+  assert.equal(result.compilerAdmission, false);
+  assert.equal(result.generatedSecurityHeadersVerified, false);
+  for (const bad of [
+    lines.slice(1).join("\n"),
+    lines.join("\n") + '\nhost_cpu="x64"',
+    lines.join("\n") + "\nenable_sandbox=false",
+    lines.join("\n") + "\nenable_sandbox=!false",
+    lines.join("\n").replace("use_remoteexec=false", "use_remoteexec=true"),
+    lines.join("\n").replace("instance_tracer=false", "instance_tracer=true"),
+    lines.join("\n").replace('target_cpu="arm64"', 'target_cpu="x64"'),
+  ])
+    assert.throws(
+      () => validateGeneratedArguments(Buffer.from(bad)),
+      /FULL_GN_/,
+    );
+  assert.throws(
+    () => validateGeneratedArguments(Buffer.from([255])),
+    /encoded data|encoding/i,
+  );
+  assert.throws(
+    () => validateGeneratedArguments(Buffer.alloc(0)),
+    /FULL_GN_ARGS_BOUND/,
+  );
+});
+
+async function actualCommandModel(overrides = {}, options = {}) {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("async function executeCommand("),
+    end = text.indexOf("export async function main(", begin);
+  assert(begin >= 0 && end > begin);
+  const sequence = [];
+  const closed = [],
+    opened = [],
+    child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  let spawnCount = 0;
+  const scope = {
+    path,
+    Buffer,
+    sourceCloseFailure: false,
+    sourceReportingFailure: false,
+    syncCloseReportingFaults: new WeakMap(),
+    Number,
+    need: (ok, code) => assert(ok, code),
+    clearTimeout: () => {},
+    setTimeout: () => ({}),
+    openSync: (file) => {
+      opened.push(file);
+      return opened.length + 6;
+    },
+    closeSync: (fd) => closed.push(fd),
+    writeSync: (_fd, chunk) => chunk.length,
+    spawn: () => {
+      spawnCount++;
+      sequence.push("spawn");
+      queueMicrotask(() => {
+        if (Object.hasOwn(options, "primary"))
+          child.stderr.emit("error", options.primary);
+        const close = () => {
+          sequence.push("child-close");
+          return child.emit(
+            "close",
+            options.code === undefined ? 0 : options.code,
+            options.signal === undefined ? null : options.signal,
+          );
+        };
+        if (options.delayedClose) setImmediate(close);
+        else close();
+      });
+      return child;
+    },
+    ...overrides,
+  };
+  const context = vm.createContext(scope),
+    actual = vm.runInContext("(" + text.slice(begin, end) + ")", context);
+  const command = {
+    role: options.role ?? "owned",
+    executable: "never-executed",
+    args: [],
+    cwd: "owned",
+  };
+  const limits = { bytes: 0, cap: options.cap ?? 1024 };
+  let failed = false,
+    error,
+    value,
+    nextStage = false,
+    verification = 0;
+  Object.assign(scope, {
+    limits,
+    homeObservation: null,
+    observeGitHome: async () => {
+      sequence.push("watch-start");
+      if (Object.hasOwn(options, "watchStartFault"))
+        throw options.watchStartFault;
+      if (options.observation) return options.observation;
+      return {
+        snapshot: () => ({ rows: [], watcherClosed: !options.watchCloseFault }),
+        finish: async () => {
+          sequence.push("watch-close-join");
+          if (Object.hasOwn(options, "watchCloseFault"))
+            throw options.watchCloseFault;
+        },
+      };
+    },
+    withGitHomeEvents: (report) => report,
+    appendGitPolicyDiagnostic: async () => {
+      if (Object.hasOwn(options, "watchReportFault"))
+        throw options.watchReportFault;
+    },
+    verifyHostClosure: async () => {},
+    p: {},
+    budget: {},
+    c: { image: "fixture" },
+    held: async () => {},
+    bootstrap: { file: "fixture", pin: {}, witnessPin: null },
+    verifyBootstrap: async () => {},
+    root: "fixture",
+    argv: [],
+    adapter: { file: "fixture", pin: {} },
+    HOOK_PRIMARY: [],
+    files: { logs: "owned" },
+    verifyGitPolicy: async () => {
+      sequence.push(verification === 0 ? "policy-before" : "policy-after");
+      if (++verification === 2 && Object.hasOwn(options, "policyFault"))
+        throw options.policyFault;
+    },
+    console: { error() {} },
+  });
+  const checkedStart = text.indexOf("  const checked = async (action,"),
+    checkedEnd = text.indexOf("\n  try {\n    await sourceStage", checkedStart),
+    checked = vm.runInContext(
+      `(async()=>{${text.slice(checkedStart, checkedEnd)};return checked})()`,
+      context,
+    );
+  try {
+    const action = () =>
+      actual(
+        command,
+        [command],
+        {},
+        { logs: "owned" },
+        { remaining: options.remaining ?? (() => 500000) },
+        limits,
+        false,
+      );
+    value = options.checked
+      ? await (
+          await checked
+        )(action, options.observeHome ?? false)
+      : await action();
+    nextStage = true;
+  } catch (value) {
+    failed = true;
+    error = value;
+  }
+  if (options.delayedClose)
+    await new Promise((resolve) => setImmediate(resolve));
+  return {
+    scope,
+    closed,
+    opened,
+    spawnCount,
+    failed,
+    error,
+    limits,
+    value,
+    nextStage,
+    verification,
+    sequence,
+  };
+}
+
+test("actual sync close retains only observed bounded status and preserves non-sync behavior", async () => {
+  for (const [code, signal] of [
+    [0, null],
+    [128, null],
+    [null, "SIGTERM"],
+    [null, "private signal"],
+  ]) {
+    const writes = [];
+    const result = await actualCommandModel(
+      {
+        writeSync: (fd, raw) => {
+          writes.push({ fd, raw: Buffer.from(raw) });
+          return raw.length;
+        },
+      },
+      { role: "sync", code, signal },
+    );
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].fd, 7);
+    assert(writes[0].raw.length <= 512);
+    const text = writes[0].raw.toString("utf8");
+    assert(text.startsWith("FULL_SYNC_CLOSE:"));
+    assert.deepEqual(JSON.parse(text.slice("FULL_SYNC_CLOSE:".length)), {
+      code,
+      signal: signal === "private signal" ? "UNCLASSIFIED" : signal,
+    });
+    assert.equal(result.limits.bytes, writes[0].raw.length);
+    assert.equal(result.failed, !(code === 0 && signal === null));
+    if (result.failed)
+      assert.equal(result.error.message, "FULL_SOURCE_CHILD_FAILED");
+    assert.deepEqual(result.closed, [7, 8]);
+  }
+  let writes = 0;
+  const ordinary = await actualCommandModel({
+    writeSync: () => {
+      writes++;
+      throw new Error("unexpected");
+    },
+  });
+  assert.equal(ordinary.failed, false);
+  assert.equal(writes, 0);
+});
+
+test("actual sync close reporting cannot replace a primary and precharges its shared ledger", async () => {
+  const reportError = new Error("owned reporting fault");
+  for (const primary of [new Error("owned stream error"), null, false, 0]) {
+    const result = await actualCommandModel(
+      {
+        writeSync: () => {
+          throw reportError;
+        },
+      },
+      { role: "sync", primary },
+    );
+    assert.equal(result.failed, true);
+    assert.equal(result.error, primary);
+    assert.equal(result.scope.sourceReportingFailure, true);
+    assert(result.limits.bytes > 0);
+    assert.deepEqual(result.closed, [7, 8]);
+  }
+  const childFailure = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw reportError;
+      },
+    },
+    { role: "sync", code: 128 },
+  );
+  assert.equal(childFailure.error.message, "FULL_SOURCE_CHILD_FAILED");
+  const reportOnly = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw reportError;
+      },
+    },
+    { role: "sync" },
+  );
+  assert.equal(reportOnly.failed, false);
+  assert.equal(
+    reportOnly.scope.syncCloseReportingFaults.get(reportOnly.value),
+    reportError,
+  );
+  assert.equal(reportOnly.scope.sourceReportingFailure, true);
+  let writes = 0;
+  const bound = await actualCommandModel(
+    {
+      writeSync: () => {
+        writes++;
+        return 0;
+      },
+    },
+    { role: "sync", cap: 1 },
+  );
+  assert.equal(writes, 0);
+  assert.match(
+    bound.scope.syncCloseReportingFaults.get(bound.value).message,
+    /FULL_SOURCE_OUTPUT_BOUND/,
+  );
+  assert.equal(bound.limits.bytes, 0);
+  const short = await actualCommandModel(
+    { writeSync: () => 0 },
+    { role: "sync" },
+  );
+  assert.match(
+    short.scope.syncCloseReportingFaults.get(short.value).message,
+    /FULL_SOURCE_LOG_WRITE/,
+  );
+  assert(short.limits.bytes > 0);
+  let checks = 0;
+  const deadline = new Error("owned deadline");
+  const expired = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw new Error("must not write");
+      },
+    },
+    {
+      role: "sync",
+      remaining: () => {
+        if (++checks >= 3) throw deadline;
+        return 500000;
+      },
+    },
+  );
+  assert.equal(expired.error, deadline);
+  assert.equal(expired.limits.bytes, 0);
+  assert.equal(expired.scope.sourceReportingFailure, true);
+  let lateWrites = 0;
+  const early = new Error("owned early failure");
+  const late = await actualCommandModel(
+    {
+      writeSync: () => {
+        lateWrites++;
+        return 0;
+      },
+    },
+    {
+      role: "sync",
+      primary: early,
+      delayedClose: true,
+    },
+  );
+  assert.equal(late.error, early);
+  assert.equal(lateWrites, 0);
+  assert.equal(late.scope.sourceReportingFailure, true);
+  assert.deepEqual(late.closed, [7, 8]);
+});
+
+test("actual checked boundary prioritizes strict postcheck over optional sync reporting and blocks next stage", async () => {
+  const report = new Error("owned report fault"),
+    policy = new Error("owned policy fault");
+  for (const policyFault of [policy, null, 0, undefined]) {
+    const result = await actualCommandModel(
+      {
+        writeSync: () => {
+          throw report;
+        },
+      },
+      {
+        role: "sync",
+        checked: true,
+        policyFault,
+      },
+    );
+    assert.equal(result.failed, true);
+    assert.equal(result.error, policyFault);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+    assert.equal(result.scope.sourceReportingFailure, true);
+  }
+  const postPass = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    { role: "sync", checked: true },
+  );
+  assert.equal(postPass.failed, true);
+  assert.equal(postPass.error, report);
+  assert.equal(postPass.verification, 2);
+  assert.equal(postPass.nextStage, false);
+  for (const primary of [
+    new Error("owned child fault"),
+    null,
+    false,
+    0,
+    undefined,
+  ]) {
+    const result = await actualCommandModel(
+      {
+        writeSync: () => {
+          throw report;
+        },
+      },
+      {
+        role: "sync",
+        checked: true,
+        primary,
+        policyFault: policy,
+      },
+    );
+    assert.equal(result.error, primary);
+    assert.equal(result.failed, true);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+  }
+  const child = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    {
+      role: "sync",
+      checked: true,
+      code: 128,
+      policyFault: policy,
+    },
+  );
+  assert.equal(child.error.message, "FULL_SOURCE_CHILD_FAILED");
+  assert.equal(child.nextStage, false);
+  const good = await actualCommandModel({}, { role: "sync", checked: true });
+  assert.equal(good.failed, false);
+  assert.equal(good.nextStage, true);
+  assert.equal(good.verification, 2);
+});
+
+test("actual checked HOME lifecycle faults never skip strict postcheck or replace original/policy errors", async () => {
+  const observer = new Error("owned observer fault"),
+    report = new Error("owned append fault"),
+    policy = new Error("owned policy fault");
+  for (const primary of [
+    new Error("owned child fault"),
+    null,
+    false,
+    0,
+    undefined,
+  ]) {
+    const result = await actualCommandModel(
+      {},
+      {
+        role: "sync",
+        checked: true,
+        observeHome: true,
+        primary,
+        watchCloseFault: observer,
+        watchReportFault: report,
+        policyFault: policy,
+      },
+    );
+    assert.equal(result.failed, true);
+    assert.equal(result.error, primary);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+  }
+  for (const policyFault of [policy, null, 0, undefined]) {
+    const result = await actualCommandModel(
+      {},
+      {
+        role: "sync",
+        checked: true,
+        observeHome: true,
+        watchCloseFault: observer,
+        policyFault,
+      },
+    );
+    assert.equal(result.error, policyFault);
+    assert.equal(result.failed, true);
+    assert.equal(result.verification, 2);
+    assert.equal(result.nextStage, false);
+  }
+  const unknown = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchCloseFault: observer,
+      watchReportFault: report,
+    },
+  );
+  assert.equal(unknown.error, observer);
+  assert.equal(unknown.nextStage, false);
+  const reportOnly = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchReportFault: report,
+    },
+  );
+  assert.equal(reportOnly.error, report);
+  assert.equal(reportOnly.nextStage, false);
+  const start = await actualCommandModel(
+    {},
+    { role: "sync", checked: true, observeHome: true, watchStartFault: null },
+  );
+  assert.equal(start.failed, true);
+  assert.equal(start.error, null);
+  assert.equal(start.spawnCount, 0);
+  assert.equal(start.verification, 2);
+  const startAndPolicy = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchStartFault: null,
+      policyFault: policy,
+    },
+  );
+  assert.equal(startAndPolicy.error, policy);
+  assert.equal(startAndPolicy.spawnCount, 0);
+  assert.equal(startAndPolicy.verification, 2);
+  assert.equal(startAndPolicy.nextStage, false);
+  const both = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchCloseFault: observer,
+      policyFault: policy,
+    },
+  );
+  assert.equal(both.error, policy);
+  assert.equal(both.nextStage, false);
+  const reportFirst = await actualCommandModel(
+    {
+      writeSync: () => {
+        throw report;
+      },
+    },
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      watchCloseFault: observer,
+    },
+  );
+  assert.equal(reportFirst.error, report);
+  assert.equal(reportFirst.nextStage, false);
+  const good = await actualCommandModel(
+    {},
+    { role: "sync", checked: true, observeHome: true },
+  );
+  assert.equal(good.failed, false);
+  assert.equal(good.nextStage, true);
+  assert.deepEqual(good.sequence, [
+    "policy-before",
+    "watch-start",
+    "spawn",
+    "child-close",
+    "watch-close-join",
+    "policy-after",
+  ]);
+});
+
+async function actualHomeWatchModel(options = {}) {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("export async function observeGitHome("),
+    end = text.indexOf("function withGitHomeEvents(", begin);
+  assert(begin >= 0 && end > begin);
+  let callback,
+    reads = 0,
+    watches = 0,
+    closes = 0;
+  const watcher = new EventEmitter();
+  watcher.close = () => {
+    closes++;
+    if (!options.stallClose) queueMicrotask(() => watcher.emit("close"));
+    if (Object.hasOwn(options, "closeFault")) throw options.closeFault;
+  };
+  const stat = (name) => {
+    reads++;
+    const value = {
+      dev: 1n,
+      ino: name.endsWith("home") ? 2n : 1n,
+      birthtimeNs: 1n,
+      mode: 16877n,
+      nlink: 1n,
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+    };
+    if (options.stat) options.stat(value, reads);
+    return value;
+  };
+  const actual = vm.runInNewContext(
+    "(" + text.slice(begin, end).replace("export ", "") + ")",
+    {
+      path,
+      Buffer,
+      Promise,
+      setTimeout: options.setTimeout ?? setTimeout,
+      clearTimeout: options.clearTimeout ?? clearTimeout,
+      need: (ok, code) => assert(ok, code),
+      sha: (raw) => createHash("sha256").update(raw).digest("hex"),
+      gitDiagnosticIdentity: (stat) => {
+        const fields = ["dev", "ino", "birthtimeNs", "mode", "nlink"];
+        return fields.every((key) => typeof stat[key] === "bigint") &&
+          stat.nlink > 0n &&
+          stat.birthtimeNs >= 0n
+          ? fields.map((key) => stat[key].toString()).join(":")
+          : null;
+      },
+      fs: { lstat: async (name) => stat(name) },
+      physical: async () => {
+        if (Object.hasOwn(options, "physicalFault"))
+          throw options.physicalFault;
+      },
+      watch: (_home, watchOptions, receive) => {
+        watches++;
+        callback = receive;
+        assert.deepEqual(JSON.parse(JSON.stringify(watchOptions)), {
+          recursive: false,
+          persistent: false,
+          encoding: "buffer",
+        });
+        receive("rename", Buffer.from("unarmed-private-name"));
+        return watcher;
+      },
+    },
+  );
+  let observation,
+    error,
+    failed = false;
+  try {
+    observation = await actual(
+      path.join(
+        path.parse(process.cwd()).root,
+        "owned",
+        "cef-source-git-policy",
+      ),
+      {
+        remaining: options.remaining ?? (() => 500000),
+      },
+    );
+  } catch (value) {
+    failed = true;
+    error = value;
+  }
+  return {
+    observation,
+    error,
+    failed,
+    watcher,
+    event: (...args) => callback(...args),
+    reads: () => reads,
+    watches: () => watches,
+    closes: () => closes,
+  };
+}
+
+test("actual HOME watch bounds hashes and performs no per-event filesystem queries", async () => {
+  const zero = await actualHomeWatchModel();
+  const empty = await zero.observation.finish();
+  assert.equal(empty.notifications, 0);
+  assert.equal(empty.observationComplete, false);
+  assert.equal(empty.watcherClosed, true);
+  const model = await actualHomeWatchModel();
+  assert.equal(model.failed, false);
+  assert.equal(model.reads(), 4);
+  assert.equal(model.observation.snapshot().rows.length, 0);
+  const events = [
+    ["rename", Buffer.from(".config")],
+    ["change", Buffer.from("private-unknown-name")],
+    ["arbitrary-private-kind", undefined],
+    ["rename", Buffer.alloc(1025, 97)],
+  ];
+  for (const args of events) model.event(...args);
+  for (let i = 0; i < 30; i++)
+    model.event("change", Buffer.from("private-unknown-name"));
+  assert.equal(model.reads(), 4);
+  const snapshot = model.observation.snapshot();
+  assert.equal(snapshot.rows.length, 16);
+  assert.equal(snapshot.notifications, 17);
+  assert.equal(snapshot.overflow, true);
+  assert.equal(snapshot.observationComplete, false);
+  assert.equal(snapshot.rows[0].role, "config");
+  assert.equal(
+    snapshot.rows[1].nameSha256,
+    createHash("sha256").update("private-unknown-name").digest("hex"),
+  );
+  assert.equal(snapshot.rows[2].kind, "unknown");
+  assert.equal(snapshot.rows[2].nameSha256, null);
+  assert.equal(snapshot.rows[3].nameBytes, null);
+  assert.equal(snapshot.rows[3].nameOversized, true);
+  assert.equal(snapshot.rows[3].nameSha256, null);
+  assert(!JSON.stringify(snapshot).includes("private-unknown"));
+  const done = await model.observation.finish();
+  assert.equal(done.watcherClosed, true);
+  model.event("rename", Buffer.from("late-private-name"));
+  assert.equal(model.observation.snapshot().rows.length, 16);
+  await model.observation.finish();
+  assert.equal(model.closes(), 1);
+});
+
+test("actual HOME watch rejects start aliases/replacement and joins or denies original-budget close", async () => {
+  const alias = await actualHomeWatchModel({ physicalFault: null });
+  assert.equal(alias.failed, true);
+  assert.equal(alias.error, null);
+  assert.equal(alias.watches(), 0);
+  for (const field of ["ino", "birthtimeNs", "nlink", "mode"]) {
+    const model = await actualHomeWatchModel({
+      stat: (stat, count) => {
+        if (count === 4) stat[field]++;
+      },
+    });
+    assert.equal(model.failed, true);
+    assert.match(model.error.message, /FULL_HOME_WATCH_CHANGED/);
+    assert.equal(model.closes(), 1);
+  }
+  const unknown = await actualHomeWatchModel({
+    stat: (stat) => {
+      stat.birthtimeNs = undefined;
+    },
+  });
+  assert.equal(unknown.failed, true);
+  assert.equal(unknown.watches(), 0);
+  const linked = await actualHomeWatchModel({
+    stat: (stat) => {
+      stat.isSymbolicLink = () => true;
+    },
+  });
+  assert.equal(linked.failed, true);
+  assert.equal(linked.watches(), 0);
+  const delayed = await actualHomeWatchModel({ stallClose: true });
+  let settled = false;
+  const pending = delayed.observation.finish().then((value) => {
+    settled = true;
+    return value;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  assert.equal(delayed.observation.snapshot().watcherClosed, false);
+  delayed.watcher.emit("close");
+  assert.equal((await pending).watcherClosed, true);
+  const model = await actualHomeWatchModel({
+    stallClose: true,
+    remaining: () => 120005,
+  });
+  await assert.rejects(
+    model.observation.finish(),
+    /FULL_HOME_WATCH_CLOSE_UNKNOWN/,
+  );
+  assert.equal(model.observation.snapshot().watcherClosed, false);
+  assert.equal(model.closes(), 1);
+  model.watcher.emit("close");
+  const first = await actualHomeWatchModel({
+    stallClose: true,
+    remaining: () => 120005,
+  });
+  first.watcher.emit("error", new Error("private raw message"));
+  await assert.rejects(first.observation.finish(), /FULL_HOME_WATCH_ERROR/);
+  assert.equal(first.observation.snapshot().watcherClosed, false);
+  first.watcher.emit("close");
+  const closeOnly = await actualHomeWatchModel({ closeFault: null });
+  let caught = false;
+  try {
+    await closeOnly.observation.finish();
+  } catch (error) {
+    caught = true;
+    assert.equal(error, null);
+  }
+  assert.equal(caught, true);
+  assert.equal(closeOnly.observation.snapshot().watcherClosed, true);
+});
+
+test("actual HOME close join is capped at five seconds, clipped to original reserve, and clears early-close timers", async () => {
+  for (const [remaining, expected] of [
+    [9000000, 5000],
+    [120004.9, 4],
+  ]) {
+    let callback, delay, cleared;
+    const marker = {};
+    const model = await actualHomeWatchModel({
+      stallClose: true,
+      remaining: () => remaining,
+      setTimeout: (fn, ms) => {
+        callback = fn;
+        delay = ms;
+        return marker;
+      },
+      clearTimeout: (timer) => {
+        cleared = timer;
+      },
+    });
+    const pending = model.observation.finish();
+    assert.equal(delay, expected);
+    assert.equal(model.closes(), 1);
+    assert.equal(model.observation.snapshot().watcherClosed, false);
+    callback();
+    await assert.rejects(pending, /FULL_HOME_WATCH_CLOSE_UNKNOWN/);
+    assert.equal(cleared, marker);
+    assert.equal(model.observation.snapshot().watcherClosed, false);
+    await assert.rejects(
+      model.observation.finish(),
+      /FULL_HOME_WATCH_CLOSE_UNKNOWN/,
+    );
+    assert.equal(model.closes(), 1);
+    model.watcher.emit("close");
+  }
+  const unjoined = await actualHomeWatchModel({
+    stallClose: true,
+    remaining: () => 120005,
+  });
+  const denied = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      observation: unjoined.observation,
+    },
+  );
+  assert.equal(denied.failed, true);
+  assert.match(denied.error.message, /FULL_HOME_WATCH_CLOSE_UNKNOWN/);
+  assert.equal(denied.nextStage, false);
+  assert.equal(denied.verification, 2);
+  const policyWins = await actualCommandModel(
+    {},
+    {
+      role: "sync",
+      checked: true,
+      observeHome: true,
+      observation: unjoined.observation,
+      policyFault: null,
+    },
+  );
+  assert.equal(policyWins.failed, true);
+  assert.equal(policyWins.error, null);
+  assert.equal(policyWins.nextStage, false);
+  assert.equal(policyWins.verification, 2);
+  unjoined.watcher.emit("close");
+  const cleared = [],
+    marker = {};
+  let delay;
+  const early = await actualHomeWatchModel({
+    setTimeout: (_fn, ms) => {
+      delay = ms;
+      return marker;
+    },
+    clearTimeout: (timer) => cleared.push(timer),
+  });
+  assert.equal((await early.observation.finish()).watcherClosed, true);
+  assert.equal(delay, 5000);
+  assert.deepEqual(cleared, [marker]);
+  let reads = 0,
+    timers = 0;
+  const expired = await actualHomeWatchModel({
+    remaining: () => (++reads <= 4 ? 500000 : 119999),
+    setTimeout: () => {
+      timers++;
+      return {};
+    },
+    clearTimeout() {},
+  });
+  await assert.rejects(
+    expired.observation.finish(),
+    /FULL_HOME_WATCH_CLOSE_UNKNOWN/,
+  );
+  assert.equal(expired.closes(), 1);
+  assert.equal(timers, 0);
+  assert.equal(expired.observation.snapshot().watcherClosed, true);
+});
+
+function waitForOwnedHomeNotification(observation, timers = globalThis) {
+  return new Promise((resolve, reject) => {
+    let settled = false,
+      timer,
+      immediate;
+    const finish = (failed, error) => {
+      if (settled) return;
+      settled = true;
+      timers.clearTimeout(timer);
+      timers.clearImmediate(immediate);
+      if (failed) reject(error);
+      else resolve();
+    };
+    const check = () => {
+      immediate = undefined;
+      if (settled) return;
+      try {
+        if (observation.snapshot().notifications > 0) finish(false);
+        else immediate = timers.setImmediate(check);
+      } catch (error) {
+        finish(true, error);
+      }
+    };
+    timer = timers.setTimeout(
+      () => finish(true, new Error("owned watch notification unavailable")),
+      2000,
+    );
+    check();
+  });
+}
+
+test("owned HOME fixture notification wait cancels pending polling on success, timeout and exact rejection", async () => {
+  for (const mode of ["success", "timeout", "rejection"]) {
+    let timeout,
+      poll,
+      reads = 0,
+      id = 0;
+    const pending = new Map(),
+      cleared = [],
+      timers = {
+        setTimeout(fn, ms) {
+          assert.equal(ms, 2000);
+          timeout = fn;
+          return "timeout";
+        },
+        clearTimeout(timer) {
+          cleared.push(timer);
+        },
+        setImmediate(fn) {
+          poll = fn;
+          pending.set(++id, fn);
+          return id;
+        },
+        clearImmediate(handle) {
+          pending.delete(handle);
+        },
+      };
+    let notifications = 0,
+      rejectRead = false;
+    const observation = {
+      snapshot() {
+        reads++;
+        if (rejectRead) throw null;
+        return { notifications };
+      },
+    };
+    const result = waitForOwnedHomeNotification(observation, timers);
+    assert.equal(pending.size, 1);
+    const latePoll = poll;
+    if (mode === "timeout") {
+      timeout();
+      await assert.rejects(result, /notification unavailable/);
+    } else {
+      pending.clear();
+      if (mode === "success") notifications = 1;
+      else rejectRead = true;
+      poll();
+      if (mode === "success") await result;
+      else {
+        let caught = false;
+        try {
+          await result;
+        } catch (error) {
+          caught = true;
+          assert.equal(error, null);
+        }
+        assert.equal(caught, true);
+      }
+    }
+    assert.equal(pending.size, 0);
+    assert.deepEqual(cleared, ["timeout"]);
+    const count = reads;
+    latePoll();
+    timeout();
+    assert.equal(reads, count);
+    assert.equal(pending.size, 0);
+  }
+});
+
+test("actual HOME report trimming preserves all endpoint facts and the original append bound", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("function withGitHomeEvents("),
+    end = text.indexOf("export function gitPolicyVerifier(", begin);
+  const actual = vm.runInNewContext("(" + text.slice(begin, end) + ")", {
+    Buffer,
+    JSON,
+  });
+  const base = { kind: "fixture", endpointFacts: "x".repeat(7000) },
+    events = {
+      rows: Array.from({ length: 16 }, () => ({
+        nameSha256: "a".repeat(64),
+        kind: "change",
+      })),
+      omittedForReport: 0,
+      watcherClosed: true,
+      observationComplete: false,
+    };
+  const result = actual(base, events);
+  assert.equal(result.endpointFacts, base.endpointFacts);
+  assert(
+    Buffer.byteLength(
+      "SOURCE_GIT_DIAGNOSTIC:" + JSON.stringify(result) + "\n",
+    ) <= 8192,
+  );
+  assert(result.homeEvents.rows.length < 16);
+  assert(result.homeEvents.omittedForReport > 0);
+  assert.equal(events.rows.length, 16);
+  assert.equal(actual(base, null), base);
+  const oversized = actual({ endpointFacts: "x".repeat(8192) }, events);
+  assert.equal(oversized.endpointFacts.length, 8192);
+  assert.equal(oversized.homeEvents.rows.length, 0);
+  assert(
+    Buffer.byteLength(
+      "SOURCE_GIT_DIAGNOSTIC:" + JSON.stringify(oversized) + "\n",
+    ) > 8192,
+  );
+  let calls = 0;
+  const expired = await actualHomeWatchModel({
+    remaining: () => {
+      if (++calls >= 5) throw null;
+      return 500000;
+    },
+  });
+  let caught = false;
+  try {
+    await expired.observation.finish();
+  } catch (error) {
+    caught = true;
+    assert.equal(error, null);
+  }
+  assert.equal(caught, true);
+  assert.equal(expired.closes(), 1);
+});
+
+test("actual owned HOME create-delete emits hash-only notifications while strict policy still denies", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-event-proof-"),
+  );
+  let observation;
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      policy = await prepareSourceGitIsolation(root),
+      budget = { remaining: () => 500000 },
+      file = path.join(root, "home", "owned-transient-public-probe");
+    const log = path.join(directory, "sync.stderr.log"),
+      limits = { bytes: 0, cap: 64 * 1024 ** 2 };
+    await fs.writeFile(log, "");
+    const verify = gitPolicyVerifier(
+      root,
+      log,
+      budget,
+      limits,
+      () => sourceGitEnvironment(policy, {}),
+      () => observation?.snapshot(),
+    );
+    await verify();
+    observation = await observeGitHome(root, budget);
+    await assert.rejects(fs.lstat(file), { code: "ENOENT" });
+    await fs.writeFile(file, "owned benign fixture");
+    await fs.unlink(file);
+    await assert.rejects(fs.lstat(file), { code: "ENOENT" });
+    await waitForOwnedHomeNotification(observation);
+    const facts = await observation.finish();
+    assert.equal(facts.watcherClosed, true);
+    assert.equal(facts.observationComplete, false);
+    assert(
+      facts.rows.some(
+        (row) =>
+          row.nameSha256 ===
+          createHash("sha256")
+            .update("owned-transient-public-probe")
+            .digest("hex"),
+      ),
+    );
+    assert(!JSON.stringify(facts).includes("owned-transient-public-probe"));
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    const retained = await fs.readFile(log, "utf8");
+    assert(Buffer.byteLength(retained) <= 8192);
+    const report = JSON.parse(retained.slice("SOURCE_GIT_DIAGNOSTIC:".length));
+    assert.equal(report.rows.length, 6);
+    assert.equal(report.homeCandidates.length, 6);
+    assert.equal(report.homeEvents.watcherClosed, true);
+    assert.equal(report.homeEvents.observationComplete, false);
+    assert(report.homeEvents.rows.length > 0);
+    console.info(
+      "OWNED_HOME_EVENT_PROOF:" +
+        JSON.stringify({
+          platform: process.platform,
+          endpointAbsentBeforeAfter: true,
+          watcherClosed: facts.watcherClosed,
+          notifications: facts.notifications,
+          observationComplete: false,
+          strictPolicyDenied: true,
+        }),
+    );
+  } finally {
+    if (observation)
+      try {
+        await observation.finish();
+      } catch {
+        /* retained primary */
+      }
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual command body closes partial startup resources and preserves exact primary through close faults", async () => {
+  for (const sentinel of [new Error("owned open failure"), null, false]) {
+    let calls = 0;
+    const closed = [];
+    const result = await actualCommandModel({
+      openSync: () => {
+        if (++calls === 2) throw sentinel;
+        return 7;
+      },
+      closeSync: (fd) => {
+        closed.push(fd);
+        throw new Error("owned close failure");
+      },
+    });
+    assert.equal(result.failed, true);
+    assert.equal(result.error, sentinel);
+    assert.deepEqual(closed, [7]);
+    assert.equal(result.spawnCount, 0);
+    assert.equal(result.scope.sourceCloseFailure, true);
+  }
+});
+
+test("actual command body denies close-only errors after closing both logs and keeps ordinary success", async () => {
+  const closeError = new Error("owned close-only failure"),
+    closed = [];
+  const denied = await actualCommandModel({
+    closeSync: (fd) => {
+      closed.push(fd);
+      if (fd === 7) throw closeError;
+    },
+  });
+  assert.equal(denied.error, closeError);
+  assert.equal(denied.failed, true);
+  assert.deepEqual(closed, [7, 8]);
+  assert.equal(denied.scope.sourceCloseFailure, true);
+  const good = await actualCommandModel();
+  assert.equal(good.failed, false);
+  assert.deepEqual(good.closed, [7, 8]);
+  assert.equal(good.spawnCount, 1);
+});
+
+test("actual stage supervisor clamps the declared phase to original remaining work and clears its timer", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("async function sourceStage("),
+    end = text.indexOf("async function executeCommand(", begin);
+  assert(begin >= 0 && end > begin);
+  let now = 0,
+    delay,
+    callback,
+    cleared = 0;
+  const records = [];
+  const exit = new Error("owned exit sentinel");
+  const actual = vm.runInNewContext("(" + text.slice(begin, end) + ")", {
+    need: (ok, code) => {
+      if (!ok) throw new Error(code);
+    },
+    path,
+    performance: { now: () => now },
+    setTimeout: (fn, ms) => {
+      callback = fn;
+      delay = ms;
+      return 1;
+    },
+    clearTimeout: () => {
+      cleared++;
+    },
+    writeFileSync: (_file, raw) => records.push(JSON.parse(raw)),
+    process: {
+      exit: (code) => {
+        assert.equal(code, 124);
+        throw exit;
+      },
+    },
+  });
+  assert.equal(
+    await actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-acquisition",
+      4500,
+      async () => "ok",
+    ),
+    "ok",
+  );
+  assert.equal(delay, 380000);
+  assert.equal(cleared, 1);
+  await assert.rejects(
+    actual(
+      "owned",
+      { remaining: () => 120000 },
+      "source-acquisition",
+      4500,
+      async () => assert.fail("No reserve"),
+    ),
+    /FULL_SOURCE_RESERVE/,
+  );
+  await assert.rejects(
+    actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-acquisition",
+      4500,
+      async () => {
+        now += 380000;
+      },
+    ),
+    /FULL_SOURCE_STAGE_DEADLINE/,
+  );
+  let caught;
+  try {
+    await actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-hooks-gn",
+      1800,
+      async () => {
+        callback();
+      },
+    );
+  } catch (error) {
+    caught = error;
+  }
+  assert.equal(caught, exit);
+  assert.equal(records.at(-1).firstFailure, "FULL_SOURCE_STAGE_DEADLINE");
+  assert.equal(records.at(-1).cleanupNotInferred, true);
+});
+
+test("actual stage supervisor preserves thrown null and performs no compiler or unowned process signaling", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    begin = text.indexOf("async function sourceStage("),
+    end = text.indexOf("async function executeCommand(", begin);
+  let closed = 0,
+    failed = false,
+    value;
+  const actual = vm.runInNewContext("(" + text.slice(begin, end) + ")", {
+    need: (ok, code) => assert(ok, code),
+    path,
+    performance: { now: () => 0 },
+    setTimeout: () => 1,
+    clearTimeout: () => closed++,
+    writeFileSync: () => assert.fail("No deadline"),
+    process: { exit: () => assert.fail("No exit") },
+  });
+  try {
+    await actual(
+      "owned",
+      { remaining: () => 500000 },
+      "source-hooks-gn",
+      1800,
+      async () => {
+        throw null;
+      },
+    );
+  } catch (error) {
+    failed = true;
+    value = error;
+  }
+  assert.equal(failed, true);
+  assert.equal(value, null);
+  assert.equal(closed, 1);
+});
+
+const PURE_GATE = String.raw`      - name: Validate pure full SDK input contracts before any data Job
+        shell: pwsh
+        env:
+          SystemRoot: C:\Windows
+          WINDIR: C:\Windows
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPYCACHEPREFIX: ""
+        run: |
+          & 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -I -B native/windows-arm-full-sdk/test_producer.py
+          exit $LASTEXITCODE
+`;
+function pureGateContract(source) {
+  assert(Buffer.byteLength(source) <= 65536);
+  const marker = PURE_GATE.split("\n")[0] + "\n";
+  const parts = source.split(marker);
+  assert.equal(parts.length, 2);
+  const next = parts[1].indexOf("      - ");
+  assert(next >= 0);
+  assert.equal(marker + parts[1].slice(0, next), PURE_GATE);
+  const node =
+    "        run: node --test tests/tooling/windowsArmFullSdk.node-test.mjs\n";
+  assert(parts[0].endsWith(node));
+  const data =
+    "      - name: Owned bootstrap data acquisition without executing acquired tools\n";
+  assert.equal(source.split(data).length, 2);
+  assert(source.indexOf(data) > source.indexOf(marker));
+}
+
+test("hosted pure Python gate uses only fixed profile interpreter before the first data Job", () => {
+  pureGateContract(workflow);
+  assert.equal(
+    profile.python.path,
+    "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+  );
+  for (const wrong of [
+    workflow.replace(
+      "3.12.10/x64/python.exe' -I -B",
+      "3.13.0/x64/python.exe' -I -B",
+    ),
+    workflow.replace(PURE_GATE, "") + PURE_GATE,
+    workflow.replace(
+      PURE_GATE,
+      PURE_GATE.replace("        shell:", "        if: false\n        shell:"),
+    ),
+    workflow.replace(
+      PURE_GATE,
+      PURE_GATE.replace(
+        "        shell:",
+        "        continue-on-error: true\n        shell:",
+      ),
+    ),
+  ])
+    assert.throws(() => pureGateContract(wrong));
+});
+
+test("source modes own exactly eleven files with historical input scope and no selected Unix producer edits", () => {
+  assert.deepEqual(profile.sourcePaths, [
+    workflowPath,
+    ...[
+      "profile.json",
+      "acquire.py",
+      "extract.py",
+      "environment.py",
+      "producer.py",
+      "checkpoint.py",
+      "job.py",
+      "test_producer.py",
+      "source-driver.mjs",
+    ].map((n) => prefix + n),
+    "tests/tooling/windowsArmFullSdk.node-test.mjs",
+  ]);
+  assert.equal(new Set(profile.sourcePaths).size, 11);
+  assert(profile.sourcePaths.every((p) => !p.startsWith("scripts/")));
+  assert.deepEqual(profile.modes, [
+    "input-closure",
+    "command-inventory",
+    "source-gn",
+  ]);
+  assert.equal(profile.buildAdmission, false);
+  for (const value of Object.values(profile.claims)) assert.equal(value, false);
+});
+
+test("distinct cross-host namespace preserves all24 raw payloads and truthful source-only identity", async () => {
+  const namespace =
+    "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64";
+  const old =
+    "native/cef-build-inputs/20261025-r5-capsule22-windows-arm64-native";
+  const load = async (n) => JSON.parse(await read(namespace + "/" + n));
+  const lock = await load("source-lock.json"),
+    review = await load("review-receipt.json");
+  validateSourceLock(lock);
+  assert.equal(identitySha256(lock), profile.sourceId);
+  assert.equal(review.sourceLockIdentity, profile.sourceId);
+  assert.notEqual(
+    profile.sourceId,
+    "839fdbee4973c236e111445af98f5de8c3c165563f1f64b1be781d69f1074b34",
+  );
+  const payloads = [
+    ...lock.patches.map((p) => p.path),
+    lock.bridge.header.path,
+    "upstream-sha256.json",
+  ];
+  assert.equal(payloads.length, 24);
+  for (const leaf of payloads) {
+    const a = await fs.readFile(path.join(root, namespace, leaf)),
+      b = await fs.readFile(path.join(root, old, leaf));
+    assert.deepEqual(a, b);
+  }
+  assert.equal(profile.sourceData.length, 29);
+  assert.equal(new Set(profile.sourceData.map((r) => r.path)).size, 29);
+  for (const row of profile.sourceData) {
+    const raw = await fs.readFile(path.join(root, row.path));
+    assert.equal(raw.length, row.bytes);
+    assert.equal(sha(raw), row.sha256);
+  }
+  const runner = await load("cef-ci-runner-aarch64-pc-windows-msvc.json");
+  assert.equal(runner.hosted.architecture, "x64");
+  assert.equal(runner.hosted.acceptanceRunner, "windows-11-arm");
+  assert(!Object.hasOwn(runner, "git"));
+  assert.throws(() => validateRunnerMap(runner, "aarch64-pc-windows-msvc"));
+  for (const build of lock.builds)
+    for (const role of ["gnArgs", "toolchainLock"])
+      assert.equal(
+        sha(await fs.readFile(path.join(root, namespace, build[role].path))),
+        build[role].sha256,
+      );
+  assert.equal(review.hostSelection.runner, "windows-2025-vs2026");
+  assert.equal(review.buildAdmissionGranted, false);
+  assert.equal(review.publicationAllowed, false);
+});
+
+test("full phase map admits source GN while engine and compiled checkpoint authority remain unavailable", () => {
+  assert.deepEqual(profile.phaseAdmission, {
+    "input-closure": true,
+    "source-gn": true,
+    "engine-pilot": false,
+    "compiled-checkpoint": false,
+    "compiled-restore": false,
+    "sdk-package": false,
+    "command-inventory": true,
+  });
+  assert.equal(profile.programs.length, 7);
+  assert.equal(profile.runtime17.rows.length, 17);
+  assert.equal(
+    profile.runtime17.rows.reduce((sum, row) => sum + row.bytes, 0),
+    21356560,
+  );
+  assert.equal(profile.sdk.version, "10.0.28000.2270");
+  assert(
+    profile.runtime17.rows
+      .filter((r) => r.role.startsWith("debugger-"))
+      .every((r) => r.fileVersion === "10.0.26100.9457"),
+  );
+  assert(
+    profile.runtime17.rows.every((r) =>
+      r.destination.startsWith(
+        r.machine === 34404 ? "runtime/x64/" : "runtime/arm64/",
+      ),
+    ),
+  );
+  assert(
+    profile.missingClosures.some((x) => x.includes("Windows source metadata")),
+  );
+});
+
+test("workflow is manual public fixed branch with truthful default Main, read permission and cancels older diagnostic", () => {
+  assert.match(
+    workflow,
+    /on:\n  workflow_dispatch:\n    inputs:\n      mode:\n        type: choice\n/,
+  );
+  assert.match(workflow, /cancel-in-progress: true/);
+  for (const required of [
+    "github.event_name == 'workflow_dispatch'",
+    "github.event.repository.visibility == 'public'",
+    "github.repository_id == '1010282954'",
+    "github.event.repository.default_branch == 'main'",
+    "github.ref == 'refs/heads/codex/windows-arm-current-inventory-20261101'",
+  ])
+    assert(workflow.includes(required));
+  assert.match(workflow, /runs-on: windows-2025-vs2026/);
+  assert(
+    !/contents: write|pull_request_target|secrets\.|workflow_call|schedule:/.test(
+      workflow,
+    ),
+  );
+});
+
+test("Node 24 uses maintained pinned setup, exact workflow and Python source witnesses", async () => {
+  assert.match(
+    workflow,
+    /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/,
+  );
+  assert.match(workflow, /node-version-file: "\.node-version"/);
+  assert.match(workflow, /e\.GITHUB_WORKFLOW_SHA===e\.GITHUB_SHA/);
+  assert(!workflow.includes("execute('git'"));
+  assert(
+    workflow.includes("canonicalSource(process.env.GITHUB_SHA,file,remaining)"),
+  );
+  assert(
+    workflow.includes(
+      "file==='.github/workflows/windows-x64-arm-toolchain.yml'||file==='tests/tooling/windowsArmFullSdk.node-test.mjs'",
+    ),
+  );
+  assert(workflow.includes("text.replaceAll('\\n','\\r\\n')"));
+  assert.equal(
+    profile.python.sha256,
+    "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a",
+  );
+  for (const name of ["producer.py", "job.py"])
+    assert((await read(prefix + name)).includes(sha(profileRaw)));
+  assert(
+    workflow.includes(`assert.equal(hash(rawProfile),'${sha(profileRaw)}')`),
+  );
+  assert(workflow.includes("phase='python';await pinnedPython();"));
+  assert(
+    workflow.includes("await pinnedPython();\n            const monoRaw="),
+  );
+  assert(
+    workflow.includes(
+      "phase='owned-operation';await pinnedPython();child=spawn(p.python.path",
+    ),
+  );
+});
+
+test("actual Node carrier authority denies Main, foreign branches and forged default/source/input identity", () => {
+  const begin = workflow.indexOf("// BEGIN FIXED CARRIER AUTHORITY");
+  const end = workflow.indexOf("// END FIXED CARRIER AUTHORITY", begin);
+  assert(begin >= 0 && end > begin);
+  const authority = vm.runInNewContext(
+    workflow.slice(begin, end) + "\ncarrierAuthority;",
+    { assert, Object },
+  );
+  const ref = "refs/heads/codex/windows-arm-current-inventory-20261101";
+  const env = {
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
+    GITHUB_REPOSITORY_ID: "1010282954",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    CEF_DEFAULT_BRANCH: "main",
+    GITHUB_REF: ref,
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_WORKFLOW_SHA: "a".repeat(40),
+    GITHUB_WORKFLOW_REF:
+      "supermarsx/sortOfRemoteNG/.github/workflows/windows-x64-arm-toolchain.yml@" +
+      ref,
+  };
+  const event = {
+    repository: {
+      id: 1010282954,
+      full_name: "supermarsx/sortOfRemoteNG",
+      private: false,
+      visibility: "public",
+      default_branch: "main",
+    },
+    inputs: { mode: "command-inventory" },
+  };
+  assert.equal(authority(env, event), "command-inventory");
+  assert.throws(
+    () => authority(env, { ...event, inputs: { mode: "source-gn" } }),
+    /BOOT_CARRIER_AUTHORITY/,
+  );
+  for (const [key, value] of [
+    ["GITHUB_REF", "refs/heads/main"],
+    ["GITHUB_REF", ref + "-other"],
+    ["CEF_DEFAULT_BRANCH", ref.slice("refs/heads/".length)],
+    ["GITHUB_REPOSITORY", "foreign/repo"],
+    ["GITHUB_REPOSITORY_ID", "1"],
+    ["GITHUB_REPOSITORY_VISIBILITY", "private"],
+    ["GITHUB_EVENT_NAME", "push"],
+    ["GITHUB_WORKFLOW_SHA", "b".repeat(40)],
+    ["GITHUB_SHA", "x".repeat(40)],
+    [
+      "GITHUB_WORKFLOW_REF",
+      env.GITHUB_WORKFLOW_REF.replace(
+        "windows-x64-arm-toolchain.yml",
+        "cef-windows-arm-full-sdk.yml",
+      ),
+    ],
+  ])
+    assert.throws(
+      () => authority({ ...env, [key]: value }, event),
+      /BOOT_CARRIER_AUTHORITY/,
+    );
+  for (const change of [
+    { inputs: null },
+    { inputs: {} },
+    { inputs: { mode: "compile" } },
+    { inputs: [] },
+    { repository: { ...event.repository, private: true } },
+    {
+      repository: {
+        ...event.repository,
+        default_branch: ref.slice("refs/heads/".length),
+      },
+    },
+  ])
+    assert.throws(
+      () => authority(env, { ...event, ...change }),
+      /BOOT_CARRIER_AUTHORITY/,
+    );
+});
+
+test("new runner image is admitted only to passive inventory, keeping source tool pins closed", () => {
+  const begin = workflow.indexOf("// BEGIN FIXED CARRIER AUTHORITY");
+  const end = workflow.indexOf("// END FIXED CARRIER AUTHORITY", begin);
+  const image = vm.runInNewContext(
+    workflow.slice(begin, end) + "\ncarrierImage;",
+    { assert, Object },
+  );
+  assert.equal(image("command-inventory", profile), "20261030.294.1");
+  for (const mode of ["source-gn", "input-closure", "compile", "complete-sdk"])
+    assert.throws(() => image(mode, profile), /BOOT_INVENTORY_MODE/);
+  assert.throws(
+    () => image("command-inventory", { ...profile, image: "20261030.294.1" }),
+    /BOOT_INVENTORY_PROFILE/,
+  );
+  assert.equal(profile.image, "20261021.278.1");
+  assert.equal(profile.sourceGn.hostClosure.image, profile.image);
+  for (const flag of [
+    "compilerAllowed",
+    "checkpointAllowed",
+    "restoreAllowed",
+    "sdkAllowed",
+  ])
+    assert.equal(profile.sourceGn[flag], false);
+  assert.equal(profile.commandInventory.candidateExecutionAllowed, false);
+  assert.equal(profile.commandInventory.expectedPinsCreated, false);
+});
+
+function sourceWitnessFunctions(overrides = {}) {
+  const begin = workflow.indexOf("// BEGIN FIXED INVENTORY SOURCE WITNESS");
+  const end = workflow.indexOf("// END FIXED INVENTORY SOURCE WITNESS", begin);
+  assert(begin >= 0 && end > begin);
+  return vm.runInNewContext(
+    workflow.slice(begin, end) + "\n({canonicalSource,sourceEncoding});",
+    {
+      assert,
+      Buffer,
+      Uint8Array,
+      TextDecoder,
+      AbortController,
+      setTimeout,
+      clearTimeout,
+      ...overrides,
+    },
+  );
+}
+function sourceResponse(
+  url,
+  chunks = [Buffer.from("committed source\n")],
+  extra = {},
+) {
+  let index = 0;
+  const reader = {
+    read: async () =>
+      index < chunks.length
+        ? { done: false, value: chunks[index++] }
+        : { done: true },
+    cancel: async () => {},
+  };
+  return {
+    status: 200,
+    redirected: false,
+    url,
+    headers: { get: () => null },
+    body: { getReader: () => reader, cancel: async () => {} },
+    ...extra,
+  };
+}
+test("inventory source witnesses use only the exact public commit and closed paths without candidate Git", async () => {
+  const { canonicalSource } = sourceWitnessFunctions();
+  const calls = [];
+  const fetcher = async (url, options) => {
+    calls.push({ url, options });
+    return sourceResponse(url);
+  };
+  const head = "a".repeat(40),
+    file = "native/windows-arm-full-sdk/producer.py";
+  assert.equal(
+    (await canonicalSource(head, file, () => 120000, fetcher)).toString(),
+    "committed source\n",
+  );
+  assert.equal(
+    calls[0].url,
+    `https://raw.githubusercontent.com/supermarsx/sortOfRemoteNG/${head}/${file}`,
+  );
+  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.deepEqual(Object.keys(calls[0].options.headers), ["Accept"]);
+  assert(calls[0].options.signal.aborted);
+  for (const [sha, candidatePath] of [
+    ["main", file],
+    [head, "../outside"],
+    [head, "scripts/cef-hosted-bootstrap.mjs"],
+    ["b".repeat(39), file],
+  ])
+    await assert.rejects(
+      canonicalSource(sha, candidatePath, () => 120000, fetcher),
+      /SOURCE_WITNESS_SOURCE/,
+    );
+  assert.equal(calls.length, 1);
+  assert(!/execute\(['"]git['"]|spawn\(['"]git['"]/.test(workflow));
+});
+test("inventory source witnesses deny redirects, wrong repository responses and oversized streams", async () => {
+  const { canonicalSource } = sourceWitnessFunctions(),
+    head = "a".repeat(40),
+    file = "native/windows-arm-full-sdk/producer.py";
+  for (const extra of [
+    { status: 302 },
+    { redirected: true },
+    { url: "https://raw.githubusercontent.com/foreign/repo/main/file" },
+  ])
+    await assert.rejects(
+      canonicalSource(
+        head,
+        file,
+        () => 120000,
+        async (url) => sourceResponse(url, [], extra),
+      ),
+      /SOURCE_WITNESS_RESPONSE/,
+    );
+  await assert.rejects(
+    canonicalSource(
+      head,
+      file,
+      () => 120000,
+      async (url) =>
+        sourceResponse(url, [], { headers: { get: () => "2097153" } }),
+    ),
+    /SOURCE_WITNESS_BOUND/,
+  );
+  await assert.rejects(
+    canonicalSource(
+      head,
+      file,
+      () => 120000,
+      async (url) => sourceResponse(url, [new Uint8Array(2097153)]),
+    ),
+    /SOURCE_WITNESS_BOUND/,
+  );
+});
+test("inventory source witnesses enforce request and whole deadlines, canceling late bodies", async () => {
+  let deadline,
+    resolve,
+    signal,
+    cancelled = 0;
+  const { canonicalSource } = sourceWitnessFunctions({
+    setTimeout(fn) {
+      deadline = fn;
+      return 1;
+    },
+    clearTimeout() {},
+  });
+  const pending = canonicalSource(
+    "a".repeat(40),
+    "native/windows-arm-full-sdk/producer.py",
+    () => 120000,
+    (url, options) => {
+      signal = options.signal;
+      return new Promise((done) => {
+        resolve = () =>
+          done(
+            sourceResponse(url, [], {
+              body: {
+                cancel: async () => {
+                  cancelled++;
+                },
+                getReader() {
+                  throw new Error("late body must not be read");
+                },
+              },
+            }),
+          );
+      });
+    },
+  );
+  deadline();
+  await assert.rejects(pending, /SOURCE_WITNESS_DEADLINE/);
+  assert(signal.aborted);
+  resolve();
+  await new Promise((done) => setImmediate(done));
+  assert.equal(cancelled, 1);
+  const ordinary = sourceWitnessFunctions().canonicalSource;
+  let checks = 0;
+  await assert.rejects(
+    ordinary(
+      "a".repeat(40),
+      "native/windows-arm-full-sdk/producer.py",
+      () => (++checks === 1 ? 10000 : 2999),
+      async (url) => sourceResponse(url),
+    ),
+    /SOURCE_WITNESS_DEADLINE/,
+  );
+});
+test("source byte comparison rejects mutation and allows CRLF only for the two existing checkout exceptions", () => {
+  const { sourceEncoding } = sourceWitnessFunctions();
+  const canonical = Buffer.from("first\nsecond\n"),
+    crlf = Buffer.from("first\r\nsecond\r\n");
+  assert.equal(
+    sourceEncoding(
+      "native/windows-arm-full-sdk/producer.py",
+      canonical,
+      canonical,
+    ),
+    "exact",
+  );
+  assert.equal(
+    sourceEncoding(
+      ".github/workflows/windows-x64-arm-toolchain.yml",
+      canonical,
+      crlf,
+    ),
+    "git-crlf",
+  );
+  assert.throws(
+    () =>
+      sourceEncoding(
+        "native/windows-arm-full-sdk/producer.py",
+        canonical,
+        crlf,
+      ),
+    /SOURCE_WITNESS_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      sourceEncoding(
+        ".github/workflows/windows-x64-arm-toolchain.yml",
+        canonical,
+        Buffer.from("changed\n"),
+      ),
+    /SOURCE_WITNESS_MISMATCH/,
+  );
+});
+
+test("checkout-only fixed Git environment preserves raw native LF pins despite autocrlf=true", async (t) => {
+  const checkout = workflow.slice(
+    workflow.indexOf("      - uses: actions/checkout@"),
+    workflow.indexOf("      - uses: actions/setup-node@"),
+  );
+  const expected = {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.autocrlf",
+    GIT_CONFIG_VALUE_0: "false",
+  };
+  const actual = Object.fromEntries(
+    [
+      ...checkout.matchAll(
+        /^          (GIT_CONFIG_(?:COUNT|KEY_0|VALUE_0)): "?([^"\n]+)"?$/gm,
+      ),
+    ].map((m) => [m[1], m[2]]),
+  );
+  assert.deepEqual(actual, expected);
+  for (const key of Object.keys(expected))
+    assert.equal(workflow.split(key + ":").length, 2);
+  const parent = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "bootstrap-checkout-"),
+  );
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !/^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/i.test(key),
+    ),
+  );
+  const empty = path.join(parent, "empty-config"),
+    hooks = path.join(parent, "empty-hooks");
+  await fs.writeFile(empty, "");
+  await fs.mkdir(hooks);
+  Object.assign(env, {
+    GIT_CONFIG_GLOBAL: empty,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+  });
+  const git = (cwd, args, extra = {}) =>
+    execFileSync("git", ["-c", "core.hooksPath=" + hooks, ...args], {
+      cwd,
+      env: { ...env, ...extra },
+      encoding: "buffer",
+      timeout: 10000,
+      maxBuffer: 2097152,
+    });
+  try {
+    const source = path.join(parent, "source");
+    await fs.mkdir(source);
+    git(source, ["init", "--quiet"]);
+    git(source, ["config", "user.name", "Owned synthetic fixture"]);
+    git(source, ["config", "user.email", "owned-fixture@example.invalid"]);
+    git(source, ["config", "core.autocrlf", "true"]);
+    const relative = "native/windows-arm-full-sdk/profile.json",
+      file = path.join(source, relative);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, profileRaw);
+    assert(!profileRaw.includes(13));
+    git(source, ["add", "--", relative], expected);
+    git(
+      source,
+      [
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--quiet",
+        "-m",
+        "Synthetic LF fixture",
+      ],
+      expected,
+    );
+    assert.deepEqual(
+      git(source, ["cat-file", "blob", "HEAD:" + relative]),
+      profileRaw,
+    );
+    const observations = [];
+    for (const [name, override] of [
+      ["old", {}],
+      ["fixed", actual],
+    ]) {
+      const dest = path.join(parent, name);
+      git(parent, [
+        "clone",
+        "--quiet",
+        "--no-checkout",
+        "--no-hardlinks",
+        source,
+        dest,
+      ]);
+      git(dest, ["config", "core.autocrlf", "true"]);
+      git(dest, ["checkout", "--force", "HEAD"], override);
+      const observed = await fs.readFile(path.join(dest, relative));
+      observations.push({
+        checkout: name,
+        rawHashMatched: sha(observed) === sha(profileRaw),
+        bytes: observed.length,
+        sha256: sha(observed),
+      });
+      if (name === "old") {
+        assert(observed.includes(Buffer.from("\r\n")));
+        assert.notEqual(sha(observed), sha(profileRaw));
+      } else {
+        assert.deepEqual(observed, profileRaw);
+        assert.equal(sha(observed), sha(profileRaw));
+      }
+      assert.equal(
+        git(dest, ["config", "--local", "--get", "core.autocrlf"])
+          .toString()
+          .trim(),
+        "true",
+      );
+    }
+    t.diagnostic(
+      JSON.stringify({
+        kind: "actual-owned-Git-checkout-causal",
+        observations,
+        localConfigRemainsTrue: true,
+      }),
+    );
+  } finally {
+    await fs.rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("fixed Node wrapper is syntactically valid and retains original wall/monotonic budget", () => {
+  const marker = "          node --input-type=module <<'NODE'\n";
+  const start = workflow.indexOf(marker);
+  const end = workflow.indexOf("          NODE\n", start);
+  assert(start >= 0 && end > start);
+  const source = workflow
+    .slice(start + marker.length, end)
+    .split("\n")
+    .map((l) => (l.startsWith("          ") ? l.slice(10) : l))
+    .join("\n");
+  const body = source.replace(/^import .*;\n/gm, "");
+  new vm.Script("(async()=>{\n" + body + "\n})");
+  assert(
+    source.includes(
+      "Math.min(begin+workMs-Date.now(), workMs-(performance.now()-beginMono))",
+    ),
+  );
+  assert(source.includes("remaining()+30000"));
+  assert(
+    source.includes(
+      "['-I','-B',path.join(dir,'producer.py'),'--supervise',root,hash(contextRaw),'--execute']",
+    ),
+  );
+  assert(!/gn\.exe|rustc\.exe|clang-cl\.exe|lld-link\.exe/.test(source));
+});
+
+test("only metadata and bounded original Job receipts are retained; hidden flag mandatory", () => {
+  const retention = workflow.slice(
+    workflow.indexOf("      - name: Retain bootstrap"),
+  );
+  assert.match(retention, /include-hidden-files: true/);
+  assert.match(
+    retention,
+    /\.artifacts\/windows-arm-full-sdk-\*\/jobs\/\*\/\*\.json/,
+  );
+  for (const forbidden of [
+    "/archives/",
+    "/llvm/",
+    "/SDK/",
+    "**",
+    ".tar.xz",
+    ".zip",
+    ".exe",
+    ".nupkg",
+  ])
+    assert(!retention.includes(forbidden));
+  assert.match(retention, /if: always\(\)/);
+});
+
+test("fixed acquisitions preserve official SDK28000 and separate Rust/CIPD caps", async () => {
+  assert.equal(profile.sdkVersion, "10.0.28000.0");
+  assert.equal(profile.sdk.packages.length, 4);
+  assert.equal(
+    profile.sdk.packages.reduce((s, p) => s + p.bytes, 0),
+    370561596,
+  );
+  assert.equal(profile.rust.bytes, 414479372);
+  assert.equal(profile.rust.maximumBytes, 536870912);
+  assert.equal(
+    profile.llvm.sha256,
+    "4c4a15912845f39189784360a03ae62c65dba29b884ef60ec9c6b4d43754dca0",
+  );
+  assert.deepEqual(
+    profile.cipd.map((p) => p.package),
+    ["gn/gn/windows-amd64", "build/siso/windows-amd64"],
+  );
+  assert(
+    profile.cipd.every(
+      (p) =>
+        p.instance.hashAlgo === "SHA256" &&
+        p.instance.hexDigest === p.archiveSha256 &&
+        p.maximumBytes === 134217728,
+    ),
+  );
+  const producer = await read(prefix + "producer.py");
+  assert(producer.includes("sys.addaudithook(no_execution)"));
+  assert(
+    producer.includes(
+      '"subprocess.Popen", "os.system", "os.exec", "os.posix_spawn", "os.spawn"',
+    ),
+  );
+  assert(!producer.includes("subprocess.Popen("));
+});
+
+test("GitPolicy actual verifier records fixed roles after success and preserves only its first actual failure", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-diagnostic-"),
+  );
+  try {
+    const policyRoot = path.join(directory, "cef-source-git-policy"),
+      file = path.join(directory, "sync.stderr.log"),
+      budget = { remaining: () => 10000 },
+      limits = { bytes: 0, cap: 64 * 1024 ** 2 };
+    await fs.writeFile(file, "existing child stderr\n");
+    const policy = await prepareSourceGitIsolation(policyRoot);
+    const verify = gitPolicyVerifier(policyRoot, file, budget, limits, () =>
+      sourceGitEnvironment(policy, {}),
+    );
+    await verify();
+    await fs.writeFile(path.join(policyRoot, "home", "owned-causal-data"), "x");
+    let first;
+    await assert.rejects(verify(), (error) => {
+      first = error;
+      return error.message === "SOURCE_GIT_POLICY_DIRECTORY";
+    });
+    const raw = await fs.readFile(file, "utf8"),
+      lines = raw
+        .split("\n")
+        .filter((line) => line.startsWith("SOURCE_GIT_DIAGNOSTIC:"));
+    assert.equal(lines.length, 1);
+    const report = JSON.parse(lines[0].slice("SOURCE_GIT_DIAGNOSTIC:".length));
+    assert.equal(report.success, false);
+    assert.equal(report.code, first.message);
+    assert.deepEqual(
+      report.rows.map((row) => row.role),
+      ["root", "home", "xdg", "hooks", "global", "system"],
+    );
+    assert.ok(
+      report.rows
+        .find((row) => row.role === "home")
+        .changed.includes("mtimeNs"),
+    );
+    assert.equal(raw.includes(directory), false);
+    assert.equal(raw.includes("owned-causal-data"), false);
+    assert.ok(Buffer.byteLength(lines[0] + "\n") <= 8192);
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    assert.equal(await fs.readFile(file, "utf8"), raw);
+    assert.equal(limits.bytes, Buffer.byteLength(lines[0] + "\n"));
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("GitPolicy diagnostic lstat facts retain directory/file replacement, birth and link deltas without following aliases", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-facts-"),
+  );
+  const original = fs.lstat;
+  try {
+    const policyRoot = path.join(directory, "cef-source-git-policy");
+    await prepareSourceGitIsolation(policyRoot);
+    const budget = { remaining: () => 10000 },
+      before = await gitPolicyMetadata(policyRoot, budget);
+    let calls = 0;
+    fs.lstat = async (file, options) => {
+      calls++;
+      const stat = await original(file, options);
+      if (path.basename(file) === "global.gitconfig")
+        return new Proxy(stat, {
+          get(target, key) {
+            if (key === "ino" || key === "birthtimeNs" || key === "nlink")
+              return target[key] + 1n;
+            if (key === "isSymbolicLink") return () => true;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      return stat;
+    };
+    const after = await gitPolicyMetadata(policyRoot, budget);
+    assert.equal(calls, 6); // Direct fixed roles only; no realpath/open/readdir.
+    const report = gitPolicyDiagnostic(
+        new Error("private arbitrary error/path"),
+        before,
+        after,
+      ),
+      global = report.rows.find((row) => row.role === "global");
+    assert.equal(report.code, "UNCLASSIFIED");
+    let messageReads = 0;
+    const changingMessage = {
+      get message() {
+        return ++messageReads === 1
+          ? "SOURCE_GIT_POLICY_CHANGED"
+          : "private second getter";
+      },
+    };
+    assert.equal(
+      gitPolicyDiagnostic(changingMessage, before, after).code,
+      "SOURCE_GIT_POLICY_CHANGED",
+    );
+    assert.equal(messageReads, 1);
+    assert.equal(global.afterType, "link");
+    assert.equal(global.typeChanged, true);
+    assert.deepEqual(global.changed, ["ino", "birthtimeNs", "nlink"]);
+    assert.equal(JSON.stringify(report).includes("private"), false);
+    fs.lstat = async () => {
+      throw new Error("private path unavailable");
+    };
+    const absent = gitPolicyDiagnostic(
+      null,
+      before,
+      await gitPolicyMetadata(policyRoot, budget),
+    );
+    assert.ok(
+      absent.rows.every(
+        (row) =>
+          row.afterType === "unavailable" &&
+          row.after === null &&
+          row.changed === null,
+      ),
+    );
+  } finally {
+    fs.lstat = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("actual diagnostic append rejects alias, replacement, birth/nlink mismatches and charges before any I/O", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-append-"),
+  );
+  const open = fs.open,
+    lstat = fs.lstat,
+    realpath = fs.realpath;
+  try {
+    const file = path.join(directory, "sync.stderr.log"),
+      budget = { remaining: () => 10000 },
+      cap = 64 * 1024 ** 2;
+    await fs.writeFile(file, "original\n");
+    const report = gitPolicyDiagnostic(null, null, []);
+    await appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap });
+    const originalBytes = await fs.readFile(file);
+    let opens = 0;
+    fs.open = async (...args) => {
+      opens++;
+      return open(...args);
+    };
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: cap, cap }),
+      /FULL_SOURCE_OUTPUT_BOUND/,
+    );
+    await assert.rejects(
+      appendGitPolicyDiagnostic(
+        file,
+        report,
+        {
+          remaining() {
+            throw new Error("deadline");
+          },
+        },
+        { bytes: 0, cap },
+      ),
+      /deadline/,
+    );
+    assert.equal(opens, 0);
+    fs.realpath = async () => path.join(directory, "alternate");
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      /FULL_DRIVER_ALIAS/,
+    );
+    fs.realpath = realpath;
+    for (const field of ["ino", "birthtimeNs", "nlink"]) {
+      let writes = 0,
+        closes = 0;
+      fs.open = async (name, flags) => {
+        assert.equal(Boolean(flags & fsConstants.O_CREAT), false);
+        assert.ok(flags & fsConstants.O_APPEND);
+        const fd = await open(name, flags);
+        return {
+          async stat(options) {
+            const stat = await fd.stat(options);
+            return { ...stat, [field]: stat[field] + 1n, isFile: () => true };
+          },
+          async write(...args) {
+            writes++;
+            return fd.write(...args);
+          },
+          async close() {
+            closes++;
+            await fd.close();
+          },
+        };
+      };
+      await assert.rejects(
+        appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+        /FULL_GIT_DIAGNOSTIC_IDENTITY/,
+      );
+      assert.equal(writes, 0);
+      assert.equal(closes, 1);
+    }
+    fs.open = async (name, flags) => {
+      const fd = await open(name, flags);
+      return {
+        stat: (...args) => fd.stat(...args),
+        write: (...args) => fd.write(...args),
+        async close() {
+          await fd.close();
+          throw closeOnly;
+        },
+      };
+    };
+    const closeOnly = new Error("closed secondary sentinel");
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      (error) => error === closeOnly,
+    );
+    fs.open = async (name, flags) => {
+      const fd = await open(name, flags);
+      return {
+        stat: (...args) => fd.stat(...args),
+        async write() {
+          throw null;
+        },
+        async close() {
+          await fd.close();
+          throw closeOnly;
+        },
+      };
+    };
+    let appendCaught = false;
+    try {
+      await appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap });
+    } catch (error) {
+      appendCaught = true;
+      assert.equal(error, null);
+    }
+    assert.equal(appendCaught, true);
+    fs.open = open;
+    const hardlink = path.join(directory, "held-alias");
+    await fs.link(file, hardlink);
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      /FULL_GIT_DIAGNOSTIC_FILE/,
+    );
+    await fs.unlink(hardlink);
+    let reads = 0;
+    fs.lstat = async (name, options) => {
+      const stat = await lstat(name, options);
+      if (name === file && options?.bigint && ++reads === 2)
+        return new Proxy(stat, {
+          get(target, key) {
+            if (key === "ino") return target.ino + 1n;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      return stat;
+    };
+    await assert.rejects(
+      appendGitPolicyDiagnostic(file, report, budget, { bytes: 0, cap }),
+      /FULL_GIT_DIAGNOSTIC_CHANGED/,
+    );
+    fs.lstat = lstat;
+    assert.ok((await fs.readFile(file)).length > originalBytes.length); // A post-write fault is reported as failure, never refunded.
+    await assert.rejects(
+      appendGitPolicyDiagnostic(
+        path.join(directory, "missing"),
+        report,
+        budget,
+        { bytes: 0, cap },
+      ),
+    );
+    assert.equal(
+      await fs.stat(path.join(directory, "missing")).then(
+        () => true,
+        () => false,
+      ),
+      false,
+    );
+  } finally {
+    fs.open = open;
+    fs.lstat = lstat;
+    fs.realpath = realpath;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("GitPolicy first errors including falsy values survive append/close/deadline faults and postcheck-only errors remain primary", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-git-first-"),
+  );
+  const open = fs.open;
+  try {
+    const policyRoot = path.join(directory, "cef-source-git-policy"),
+      file = path.join(directory, "sync.stderr.log"),
+      cap = 64 * 1024 ** 2;
+    await prepareSourceGitIsolation(policyRoot);
+    await fs.writeFile(file, "");
+    for (const primary of [
+      null,
+      0,
+      undefined,
+      new Error("SOURCE_GIT_POLICY_CHANGED"),
+    ]) {
+      for (const mode of ["write", "close", "ledger", "deadline"]) {
+        let fail = false,
+          closes = 0,
+          writes = 0;
+        const budget = {
+          remaining() {
+            if (fail && mode === "deadline")
+              throw new Error("secondary deadline");
+            return 10000;
+          },
+        };
+        fs.open = async (name, flags) => {
+          const fd = await open(name, flags);
+          return {
+            stat: (...args) => fd.stat(...args),
+            async write(...args) {
+              writes++;
+              if (mode === "write") throw new Error("secondary append");
+              return fd.write(...args);
+            },
+            async close() {
+              closes++;
+              await fd.close();
+              if (mode === "close") throw new Error("secondary close");
+            },
+          };
+        };
+        const limits = { bytes: 0, cap },
+          verify = gitPolicyVerifier(
+            policyRoot,
+            file,
+            budget,
+            limits,
+            async () => {
+              if (fail) throw primary;
+              return 7;
+            },
+          );
+        assert.equal(await verify(), 7);
+        fail = true;
+        if (mode === "ledger") limits.bytes = cap;
+        let caught = false;
+        try {
+          await verify();
+        } catch (error) {
+          caught = true;
+          assert.equal(error, primary);
+        }
+        assert.equal(caught, true);
+        const count = writes;
+        try {
+          await verify();
+        } catch (error) {
+          assert.equal(error, primary);
+        }
+        assert.equal(writes, count);
+        assert.equal(closes, mode === "write" || mode === "close" ? 1 : 0);
+      }
+    }
+    fs.open = open;
+    const body = await read(prefix + "source-driver.mjs"),
+      start = body.indexOf("  const checked = async (action,"),
+      end = body.indexOf("\n  try {\n    await sourceStage", start);
+    const checked = vm.runInNewContext(
+      `(async()=>{${body.slice(start, end)};return checked})()`,
+      {
+        syncCloseReportingFaults: new WeakMap(),
+        homeObservation: null,
+        verifyHostClosure: async () => {},
+        p: {},
+        budget: {},
+        c: { image: "fixture" },
+        held: async () => {},
+        bootstrap: { file: "fixture", pin: {}, witnessPin: null },
+        verifyBootstrap: async () => {},
+        root: "fixture",
+        argv: [],
+        adapter: { file: "fixture", pin: {} },
+        HOOK_PRIMARY: [],
+        files: {},
+        path,
+        verifyGitPolicy: async () => {
+          if (++verification === 2) throw postFailure;
+        },
+        console: { error() {} },
+      },
+    );
+    let verification = 0,
+      postFailure = null;
+    const actual = await checked;
+    let caught = false;
+    try {
+      await actual(async () => 7);
+    } catch (error) {
+      caught = true;
+      assert.equal(error, postFailure);
+    }
+    assert.equal(caught, true);
+    verification = 0;
+    postFailure = new Error("secondary");
+    for (const primary of [null, 0, undefined]) {
+      verification = 0;
+      caught = false;
+      try {
+        await actual(async () => {
+          throw primary;
+        });
+      } catch (error) {
+        caught = true;
+        assert.equal(error, primary);
+      }
+      assert.equal(caught, true);
+    }
+  } finally {
+    fs.open = open;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HOME candidates record only fixed metadata from an actual auth-shaped mutation", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-candidate-facts-"),
+  );
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      file = path.join(directory, "sync.stderr.log"),
+      budget = { remaining: () => 10000 },
+      limits = { bytes: 0, cap: 64 * 1024 ** 2 };
+    const policy = await prepareSourceGitIsolation(root);
+    await fs.writeFile(file, "");
+    const verify = gitPolicyVerifier(root, file, budget, limits, () =>
+      sourceGitEnvironment(policy, {}),
+    );
+    await verify();
+    const auth = path.join(root, "home/.config/chrome_infra/auth");
+    await fs.mkdir(auth, { recursive: true });
+    const secret = "NEVER-READ-THIS-CONTENT-private-token";
+    await fs.writeFile(path.join(auth, "tokens.json"), secret);
+    await fs.writeFile(path.join(auth, "creds.json"), secret);
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    const raw = await fs.readFile(file, "utf8"),
+      report = JSON.parse(raw.slice("SOURCE_GIT_DIAGNOSTIC:".length));
+    assert.deepEqual(
+      report.homeCandidates.map((row) => row.role),
+      [
+        "config",
+        "auth-parent",
+        "auth",
+        "auth-tokens",
+        "auth-credentials",
+        "cache",
+      ],
+    );
+    assert.deepEqual(
+      report.homeCandidates.map((row) => row.afterType),
+      ["directory", "directory", "directory", "file", "file", "absent"],
+    );
+    assert(
+      report.homeCandidates.every(
+        (row) => row.beforeType === "absent" || row.beforeType === "blocked",
+      ),
+    );
+    assert.equal(raw.includes(secret), false);
+    assert.equal(raw.includes(directory), false);
+    assert.equal(raw.includes("tokens.json"), false);
+    assert(Buffer.byteLength(raw) <= 8192);
+    assert.equal(limits.bytes, Buffer.byteLength(raw));
+    await assert.rejects(verify(), /SOURCE_GIT_POLICY_DIRECTORY/);
+    assert.equal(await fs.readFile(file, "utf8"), raw);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HOME candidates never query descendants of linked, unknown or replaced ancestors", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-candidate-ancestors-"),
+  );
+  const lstat = fs.lstat,
+    open = fs.open,
+    readdir = fs.readdir,
+    realpath = fs.realpath;
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      home = path.join(root, "home"),
+      config = path.join(home, ".config"),
+      budget = { remaining: () => 10000 };
+    await prepareSourceGitIsolation(root);
+    await fs.mkdir(path.join(config, "chrome_infra/auth"), { recursive: true });
+    const baseline = await gitHomeCandidateMetadata(root, budget);
+    let forbiddenIO = 0;
+    fs.open =
+      fs.readdir =
+      fs.realpath =
+        async () => {
+          forbiddenIO++;
+          throw new Error("forbidden diagnostic IO");
+        };
+    for (const ancestor of [directory, root, home, config]) {
+      for (const mutation of [
+        "link",
+        "unknown",
+        "dev",
+        "ino",
+        "birthtimeNs",
+        "mode",
+        "nlink",
+        "unavailable",
+      ]) {
+        const queries = [];
+        fs.lstat = async (file, options) => {
+          queries.push(file);
+
+          if (file === ancestor && mutation === "unavailable")
+            throw Object.assign(new Error("private"), { code: "EACCES" });
+          const stat = await lstat(file, options);
+          if (file !== ancestor) return stat;
+          return new Proxy(stat, {
+            get(target, key) {
+              if (mutation === "link" && key === "isSymbolicLink")
+                return () => true;
+              if (mutation === "unknown" && key === "birthtimeNs")
+                return undefined;
+              if (key === mutation) return target[key] + 1n;
+              const value = target[key];
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+        };
+        const current = await gitHomeCandidateMetadata(root, budget, baseline);
+        assert(queries.includes(ancestor));
+        assert(
+          !queries.some((file) => file.startsWith(ancestor + path.sep)),
+          `queried a descendant after ${mutation}`,
+        );
+        for (const row of current.rows) {
+          if (ancestor === config && row.role === "cache") continue;
+          const type =
+            ancestor === config && row.role === "config" && mutation === "link"
+              ? "link"
+              : ancestor === config &&
+                  row.role === "config" &&
+                  mutation === "unavailable"
+                ? "unavailable"
+                : "blocked";
+          assert.equal(row.type, type, `${mutation}/${row.role}`);
+        }
+      }
+    }
+    fs.lstat = async () => {
+      throw new Error("no baseline must not query");
+    };
+    assert(
+      (await gitHomeCandidateMetadata(root, budget, null)).rows.every(
+        (row) => row.type === "blocked",
+      ),
+    );
+    assert(
+      (
+        await gitHomeCandidateMetadata(root, budget, {
+          anchors: new Map(),
+          trustedHome: false,
+        })
+      ).rows.every((row) => row.type === "blocked"),
+    );
+    assert.equal(forbiddenIO, 0);
+    Object.assign(fs, { lstat, open, readdir, realpath });
+    const saved = path.join(home, "saved-config");
+    await fs.rename(config, saved);
+    await fs.symlink(
+      saved,
+      config,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const queries = [];
+    fs.lstat = async (...args) => {
+      queries.push(args[0]);
+      return lstat(...args);
+    };
+    const linked = await gitHomeCandidateMetadata(root, budget, baseline);
+    assert.equal(linked.rows[0].type, "blocked"); // Replacing an existing directory changes its identity.
+    assert(!queries.some((file) => file.startsWith(config + path.sep)));
+    assert(linked.rows.slice(1, 5).every((row) => row.type === "blocked"));
+  } finally {
+    Object.assign(fs, { lstat, open, readdir, realpath });
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HOME candidates discard in-flight facts when an ancestor changes and retain original deadlines", async () => {
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "home-candidate-race-"),
+  );
+  const lstat = fs.lstat;
+  try {
+    const root = path.join(directory, "cef-source-git-policy"),
+      config = path.join(root, "home/.config"),
+      auth = path.join(config, "chrome_infra/auth"),
+      token = path.join(auth, "tokens.json"),
+      budget = { remaining: () => 10000 };
+    await prepareSourceGitIsolation(root);
+    await fs.mkdir(auth, { recursive: true });
+    await fs.writeFile(token, "inert data");
+    const baseline = await gitHomeCandidateMetadata(root, budget);
+    let replaced = false,
+      tokenQueries = 0;
+    fs.lstat = async (file, options) => {
+      const stat = await lstat(file, options);
+      if (file === token) {
+        tokenQueries++;
+        replaced = true;
+      }
+      if (file === config && replaced)
+        return new Proxy(stat, {
+          get(target, key) {
+            if (key === "ino") return target.ino + 1n;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      if (replaced) assert(file !== path.join(auth, "creds.json"));
+      return stat;
+    };
+    const current = await gitHomeCandidateMetadata(root, budget, baseline);
+    assert.equal(tokenQueries, 1);
+    assert.equal(
+      current.rows.find((row) => row.role === "auth-tokens").type,
+      "blocked",
+    );
+    assert.equal(
+      current.rows.find((row) => row.role === "auth-credentials").type,
+      "blocked",
+    );
+    fs.lstat = lstat;
+    let queries = 0;
+    fs.lstat = async (...args) => {
+      queries++;
+      return lstat(...args);
+    };
+    const deadline = new Error("exact original deadline");
+    await assert.rejects(
+      gitHomeCandidateMetadata(
+        root,
+        {
+          remaining() {
+            throw deadline;
+          },
+        },
+        baseline,
+      ),
+      (error) => error === deadline,
+    );
+    assert.equal(queries, 0);
+  } finally {
+    fs.lstat = lstat;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("source GN actual owned-policy caller fixes Windows longpaths without accepting caller policy", async () => {
+  const text = await read(prefix + "source-driver.mjs"),
+    marker = "  const gitPolicy = await custom.prepareSourceGitIsolation(",
+    start = text.indexOf(marker),
+    end = text.indexOf("  const adapter =", start);
+  assert(start > 0 && end > start);
+  assert.equal(text.split("custom.prepareSourceGitIsolation(").length - 1, 1);
+  const call = text.slice(start, end),
+    AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const directory = await fs.mkdtemp(
+    path.join(await fs.realpath(tmpdir()), "source-longpath-adoption-"),
+  );
+  try {
+    let calls = 0;
+    const custom = {
+      async prepareSourceGitIsolation(policyRoot, options) {
+        calls++;
+        assert.equal(policyRoot, path.join(directory, "cef-source-git-policy"));
+        assert.deepEqual(options, { windowsLongPaths: true });
+        assert.equal(Object.getPrototypeOf(options), Object.prototype);
+        return prepareSourceGitIsolation(policyRoot, options);
+      },
+    };
+    const invoke = new AsyncFunction(
+      "root",
+      "custom",
+      "path",
+      call + "return gitPolicy;",
+    );
+    if (process.platform === "win32") {
+      const token = await invoke(directory, custom, path);
+      const env = await sourceGitEnvironment(token, {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "core.longpaths",
+        GIT_CONFIG_VALUE_0: "false",
+      });
+      const config = await fs.readFile(env.GIT_CONFIG_GLOBAL, "utf8");
+      assert(config.includes("\tlongpaths = true\n"));
+      assert.equal(env.GIT_CONFIG_COUNT, undefined);
+    } else {
+      await assert.rejects(
+        invoke(directory, custom, path),
+        /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+      );
+      await assert.rejects(
+        fs.lstat(path.join(directory, "cef-source-git-policy")),
+        { code: "ENOENT" },
+      );
+    }
+    assert.equal(calls, 1);
+    for (const replacement of [
+      "",
+      "    { windowsLongPaths: false },\n",
+      "    { windowsLongPaths: true, extra: true },\n",
+    ]) {
+      const mutated = call.replace(
+        "    { windowsLongPaths: true },\n",
+        replacement,
+      );
+      assert.notEqual(mutated, call);
+      await assert.rejects(
+        new AsyncFunction(
+          "root",
+          "custom",
+          "path",
+          mutated + "return gitPolicy;",
+        )(directory, custom, path),
+        assert.AssertionError,
+      );
+    }
+    assert.equal(calls, 4);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("longpaths adoption changes only its reviewed helper row in the strict profile", async () => {
+  const helper = profile.sourceGn.helpers.find(
+    (row) => row.path === "scripts/lib/browser-custom-runtime.mjs",
+  );
+  assert.deepEqual(helper, {
+    path: "scripts/lib/browser-custom-runtime.mjs",
+    bytes: 68713,
+    sha256: "c55c1e013564cdc0f106decbb96dd22ae9a2e690749ecb709c2714246b79a13d",
+  });
+  const original = profileRaw
+    .toString("utf8")
+    .replace(
+      helper.sha256,
+      "dd788379941028ef9a5b2c9318605d26ea9abe2663253b5b59d57504c4aa60af",
+    )
+    .replace('"bytes": 68713', '"bytes": 68266');
+  assert.equal(
+    sha(Buffer.from(original)),
+    "e5cb5cd3285faf2f9590a5d867918f3a710423e97c2478ac2e0be8c2e8e4ab0f",
+  );
+  assert.equal(
+    sha(profileRaw),
+    "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
+  );
+});
+
+// This evaluates the exact inactive module body in a separate lexical module.
+// BEGIN FINITE ASSEMBLY HISTORY
+const ASSEMBLY_HISTORY = {
+  controller: {
+    rows: [
+      {
+        name: "finite-0",
+        oldRaw:
+          '// Closed source controller. Public admission, native qualification, engine,\n// package, transport and SDK record/publication authority remain unavailable.\nimport * as fs from "node:fs/promises";\nimport * as expectedDefaults from "./expected-defaults.mjs";\nimport { constants } from "node:fs";\nimport { randomBytes, randomUUID, createHash } from "node:crypto";\nimport { spawn, ChildProcess } from "node:child_process";\nimport { fileURLToPath } from "node:url";\nimport * as checkpoint from "./current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs";\nimport path from "node:path";\nimport * as custom from "./current-source-helpers/scripts/lib/browser-custom-runtime.mjs";\nimport {\n  WORKFLOW_CLOCK_ENV,\n  readWorkflowClock,\n  intersectWorkflowClock,\n} from "./workflow-clock.mjs";\n\n',
+        newRaw:
+          '// Owned full-SDK build qualification controller. Native acceptance, readiness\n// and publication require later independent evidence.\nimport * as fs from "node:fs/promises";\nimport * as expectedDefaults from "./expected-defaults.mjs";\nimport { fullSdkSourceRootName } from "./source-root.mjs";\nimport * as sdkRuntime from "./current-source-helpers/scripts/cef-runtime-ci.mjs";\nimport { inspectNativeSlice } from "./full-sdk-engine-worker.mjs";\nimport { constants } from "node:fs";\nimport { randomBytes, createHash } from "node:crypto";\nimport { spawn, ChildProcess } from "node:child_process";\nimport { fileURLToPath } from "node:url";\nimport * as checkpoint from "./current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs";\nimport path from "node:path";\nimport { types as utilTypes } from "node:util";\nimport * as custom from "./current-source-helpers/scripts/lib/browser-custom-runtime.mjs";\nimport {\n  WORKFLOW_CLOCK_ENV,\n  readWorkflowClock,\n  intersectWorkflowClock,\n} from "./workflow-clock.mjs";\n\n',
+        oldSha256:
+          "2e9dd3a92ecdf2b71a88c2c5f8f5ec727cc011624f0136761989eee0faa92aba",
+        newSha256:
+          "727e6f074e12a6d7a12d0d659e7227b208c1b8ef3d1a1d23974368e27c8d9cb9",
+      },
+      {
+        name: "finite-1",
+        oldRaw:
+          "  );\n  state.cleanupWallEnd = Math.min(\n    Date.now() + CLEANUP_MS,\n    lease.wallEnd - FINAL_RESERVE_MS,\n  );\n  state.retirement = (async () => {\n    try {\n      if (state.marker) {\n        const marker = state.marker;\n        state.marker = null;\n        await cleanupStep(state, () => marker.close());\n      }\n      need(\n        state.pending.size === 0 &&\n",
+        newRaw:
+          "  );\n  state.cleanupWallEnd = Math.min(\n    Date.now() + CLEANUP_MS,\n    lease.wallEnd - FINAL_RESERVE_MS,\n  );\n  state.retirement = (async () => {\n    try {\n      for (const fd of [...(state.assetFds ?? [])]) {\n        await cleanupStep(state, () => fd.close());\n        state.assetFds.delete(fd);\n      }\n      if (state.marker) {\n        const marker = state.marker;\n        state.marker = null;\n        await cleanupStep(state, () => marker.close());\n      }\n      need(\n        state.pending.size === 0 &&\n",
+        oldSha256:
+          "364ef8c54489272bfc181a56f1499df12508695da8d6478ecfacc7a0d3e99dae",
+        newSha256:
+          "cef1c5fee6951ae96679b5f8b2165c2b67f9f8624e4bb275808042d8289a85df",
+      },
+      {
+        name: "finite-2",
+        oldRaw:
+          '      executionAdmitted: false,\n    });\n  })();\n  return state.retirement;\n}\n\n// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false;\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\nconst sourceOperations = new WeakMap();\nconst SOURCE_MS = 7200000;\nconst SOURCE_LOG_CAP = 131072;\n',
+        newRaw:
+          '      executionAdmitted: false,\n    });\n  })();\n  return state.retirement;\n}\n\n// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "ffb9fce5aa8020dd46d2d32d8196172dfd56f3e28e6e12db934b276536927f1b";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\nconst sourceOperations = new WeakMap();\nconst SOURCE_MS = 7200000;\nconst SOURCE_LOG_CAP = 131072;\n',
+        oldSha256:
+          "ecf320013ed6ed086a817d424ac1299919f258ad6f4622c523578acf852d3759",
+        newSha256:
+          "b864bf890cf1ab62953da847b04d52f964673b672b09b02a168043fa787f9dfb",
+      },
+      {
+        name: "finite-3",
+        oldRaw:
+          '      state.sourceResult.graph.sha256 === expected.sha256,\n    "SOURCE_GRAPH_CHANGED",\n  );\n  await recheckSourceMetadata(token, joinedAllowed);\n  await operationFence(token, joinedAllowed);\n  state.graphSnapshot = snapshot;\n}\nasync function recheckSourceReceipt(receipt, leaseToken) {\n  const source = sourceState(receipt, leaseToken);\n  const state = operationState(source.operationToken, true);\n  need(\n    state.sourceReceipt === receipt &&\n      source.metadataSnapshot === state.metadataSnapshot &&\n      state.metadataSnapshot &&\n      state.creationJoined &&\n      state.logFds.size === 0 &&\n      state.readFds.size === 0 &&\n      state.pendingWriters === 0,\n    "SOURCE_JOIN_CHANGED",\n  );\n  await verifySourceSnapshot(source.operationToken, true);\n}\nfunction startSourceChild(token) {\n  const state = operationState(token);\n  need(!state.child, "SOURCE_LAUNCH_REUSE");\n  const child = spawn(state.plan.executable, state.plan.argv, {\n    cwd: state.root,\n    env: state.plan.environment,\n',
+        newRaw:
+          '      state.sourceResult.graph.sha256 === expected.sha256,\n    "SOURCE_GRAPH_CHANGED",\n  );\n  await recheckSourceMetadata(token, joinedAllowed);\n  await operationFence(token, joinedAllowed);\n  state.graphSnapshot = snapshot;\n}\n// BEGIN PRIVATE INSTALLED TOOL PROOF\nconst TOOL_PROOF_ROOTS = Object.freeze([\n  "include",\n  "atlmfc/include",\n  "lib/x64",\n  "lib/arm64",\n  "atlmfc/lib/x64",\n  "atlmfc/lib/arm64",\n  "bin/Hostx64/x64",\n  "bin/Hostx64/arm64",\n]);\nfunction inspectInstalledToolProof(raw, baseRaw) {\n  const proof = parentMetadata_qualificationBoundedJson(raw, 16 * 1024 ** 2),\n    base = JSON.parse(baseRaw);\n  parentMetadata_qualificationShape(\n    proof,\n    [\n      "kind",\n      "roots",\n      "files",\n      "bytes",\n      "visited",\n      "sha256",\n      "executed",\n      "previous14AreCompleteClosure",\n    ],\n    "TOOL_PROOF_FIELDS",\n  );\n  need(\n    proof.kind === "windows-arm-full-installed-source-inventory" &&\n      canonical(proof.roots) === canonical(TOOL_PROOF_ROOTS) &&\n      proof.executed === false &&\n      proof.previous14AreCompleteClosure === false &&\n      Array.isArray(proof.files) &&\n      proof.files.length > 0 &&\n      proof.files.length <= base.limits.installedFiles &&\n      Number.isSafeInteger(proof.visited) &&\n      proof.visited >= proof.files.length &&\n      proof.visited <= base.limits.installedFiles &&\n      Number.isSafeInteger(proof.bytes) &&\n      proof.bytes > 0 &&\n      proof.bytes <= base.limits.installedBytes,\n    "TOOL_PROOF_SCOPE",\n  );\n  let previous = "",\n    total = 0;\n  const folded = new Set(),\n    rows = new Map();\n  for (const row of proof.files) {\n    parentMetadata_qualificationShape(\n      row,\n      ["path", "bytes", "sha256"],\n      "TOOL_PROOF_ROW",\n    );\n    need(\n      typeof row.path === "string" &&\n        row.path.length > 0 &&\n        row.path.length <= 4096 &&\n        !/[\\x00-\\x1f\\x7f:\\\\]/.test(row.path) &&\n        row.path\n          .split("/")\n          .every((part) => part && part !== "." && part !== "..") &&\n        TOOL_PROOF_ROOTS.some((root) => row.path.startsWith(root + "/")) &&\n        row.path > previous &&\n        !folded.has(row.path.toLowerCase()) &&\n        Number.isSafeInteger(row.bytes) &&\n        row.bytes >= 0 &&\n        row.bytes <= base.limits.installedFileBytes &&\n        /^[a-f0-9]{64}$/.test(row.sha256),\n      "TOOL_PROOF_ROW_SCOPE",\n    );\n    previous = row.path;\n    folded.add(row.path.toLowerCase());\n    rows.set(row.path, row);\n    total += row.bytes;\n    need(total <= base.limits.installedBytes, "TOOL_PROOF_BYTES");\n  }\n  // Match Python\'s fixed json.dumps(...,sort_keys=True,separators=(\',\',\':\')).\n  const encoded = canonical(proof.files).replace(\n    /[\\x7f-\\uffff]/g,\n    (char) => "\\\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"),\n  );\n  need(\n    total === proof.bytes && hashBytes(Buffer.from(encoded)) === proof.sha256,\n    "TOOL_PROOF_DIGEST",\n  );\n  const installed14 = Object.freeze({\n    "host-cl.exe": "bin/Hostx64/arm64/cl.exe",\n    "host-link.exe": "bin/Hostx64/arm64/link.exe",\n    "host-lib.exe": "bin/Hostx64/arm64/lib.exe",\n    "crt-libcmt.lib": "lib/arm64/libcmt.lib",\n    "crt-libcpmt.lib": "lib/arm64/libcpmt.lib",\n    "crt-libvcruntime.lib": "lib/arm64/libvcruntime.lib",\n    "crt-oldnames.lib": "lib/arm64/oldnames.lib",\n    "atl-atls.lib": "atlmfc/lib/arm64/atls.lib",\n    "atl-uafxcw.lib": "atlmfc/lib/arm64/uafxcw.lib",\n    "header-vcruntime.h": "include/vcruntime.h",\n    "header-vector": "include/vector",\n    "header-string": "include/string",\n    "header-atlbase.h": "atlmfc/include/atlbase.h",\n    "header-afxwin.h": "atlmfc/include/afxwin.h",\n  });\n  need(\n    Array.isArray(base.installedMsvc14) &&\n      base.installedMsvc14.length === 14 &&\n      new Set(base.installedMsvc14.map((row) => row.role)).size === 14,\n    "TOOL_PROOF_BASE",\n  );\n  for (const pin of base.installedMsvc14) {\n    const actual = rows.get(installed14[pin.role]);\n    need(\n      actual && actual.bytes === pin.bytes && actual.sha256 === pin.sha256,\n      "TOOL_PROOF_INSTALLED14",\n    );\n  }\n  return Object.freeze({\n    files: proof.files.length,\n    bytes: total,\n    sha256: proof.sha256,\n  });\n}\nasync function verifySourceToolProof(token) {\n  const state = operationState(token);\n  need(state.creationJoined && !state.toolProofSnapshot, "TOOL_PROOF_JOIN");\n  const input = state.plan.producerInputs.findIndex(\n    (row) => row.path === "native/windows-arm-full-sdk/profile.json",\n  );\n  need(\n    input >= 0 &&\n      state.plan.producerInputs[input].sha256 ===\n        "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",\n    "TOOL_PROOF_BASE_PIN",\n  );\n  const baseRelative = "source-inputs/" + input,\n    base = await heldOperationFile(\n      token,\n      baseRelative,\n      65536,\n      state.plan.producerInputs[input],\n    );\n  const relative = "installed-source-inventory.json",\n    held = await heldOperationFile(token, relative, 16 * 1024 ** 2);\n  operationState(token);\n  const projection = inspectInstalledToolProof(held.raw, base.raw);\n  await operationFence(token);\n  operationState(token);\n  state.toolProofSnapshot = Object.freeze({\n    projection,\n    record: Object.freeze({\n      relative,\n      maximum: 16 * 1024 ** 2,\n      pin: Object.freeze({ ...held.pin }),\n      identity: held.identity,\n    }),\n    base: Object.freeze({\n      relative: baseRelative,\n      maximum: 65536,\n      pin: Object.freeze({ ...base.pin }),\n      identity: base.identity,\n    }),\n  });\n}\nasync function recheckSourceToolProof(token) {\n  const state = operationState(token, true),\n    snapshot = state.toolProofSnapshot;\n  need(\n    snapshot &&\n      state.sourceReceipt &&\n      sourceSessions.get(state.sourceReceipt)?.toolProofSnapshot === snapshot,\n    "TOOL_PROOF_BINDING",\n  );\n  for (const row of [snapshot.record, snapshot.base]) {\n    const actual = await heldOperationFile(\n      token,\n      row.relative,\n      row.maximum,\n      row.pin,\n      true,\n    );\n    operationState(token, true);\n    need(actual.identity === row.identity, "TOOL_PROOF_REPLACED");\n  }\n}\n// END PRIVATE INSTALLED TOOL PROOF\n\nasync function recheckSourceReceipt(receipt, leaseToken) {\n  const source = sourceState(receipt, leaseToken);\n  const state = operationState(source.operationToken, true);\n  need(\n    state.sourceReceipt === receipt &&\n      source.metadataSnapshot === state.metadataSnapshot &&\n      state.metadataSnapshot &&\n      state.creationJoined &&\n      state.logFds.size === 0 &&\n      state.readFds.size === 0 &&\n      state.pendingWriters === 0,\n    "SOURCE_JOIN_CHANGED",\n  );\n  await verifySourceSnapshot(source.operationToken, true);\n  await recheckSourceToolProof(source.operationToken);\n}\nfunction startSourceChild(token) {\n  const state = operationState(token);\n  need(!state.child, "SOURCE_LAUNCH_REUSE");\n  const child = spawn(state.plan.executable, state.plan.argv, {\n    cwd: state.root,\n    env: state.plan.environment,\n',
+        oldSha256:
+          "d5163d1a9a7571a260aab1e8661e5bd6dda73abece7b48e2666de85e8dc5721d",
+        newSha256:
+          "bbcfb38e04c2a441b4302d8395e6d56d994cd8710c1bc8e08c820241f32d4cd2",
+      },
+      {
+        name: "finite-4",
+        oldRaw:
+          '        state.pendingWriters === 0,\n      "SOURCE_FD_JOIN",\n    );\n    state.creationJoined = true;\n    await verifyNativeSourceRecords(token);\n    await verifySourceSnapshot(token);\n    await verifySourceMetadata(token);\n    operationState(token);\n    const receipt = Object.freeze({\n      kind: "closed-full-sdk-created-source-session",\n    });\n    const source = {\n      lease: state.lease,\n      stage: "joined-success",\n',
+        newRaw:
+          '        state.pendingWriters === 0,\n      "SOURCE_FD_JOIN",\n    );\n    state.creationJoined = true;\n    await verifyNativeSourceRecords(token);\n    await verifySourceSnapshot(token);\n    await verifySourceMetadata(token);\n    await verifySourceToolProof(token);\n    await recheckSourceMetadata(token, false);\n    operationState(token);\n    const receipt = Object.freeze({\n      kind: "closed-full-sdk-created-source-session",\n    });\n    const source = {\n      lease: state.lease,\n      stage: "joined-success",\n',
+        oldSha256:
+          "442488085d852e3f9c6fb1301f106d4a71bf3195a176e319704f96fb32a5178c",
+        newSha256:
+          "417a3def6b370c53896151e9d310bdcee44a5ea2d2cac266ba236c5ebf5fd701",
+      },
+      {
+        name: "finite-5",
+        oldRaw:
+          '      target: "aarch64-pc-windows-msvc",\n      sourceId: state.plan.sourceId,\n      profileSha256: state.plan.profileSha256,\n      root: state.root,\n      rootIdentity: state.rootIdentity,\n      operationToken: token,\n      metadataSnapshot: state.metadataSnapshot,\n    };\n    // Sole sourceSessions writer. Only this actual creation/join/readback path can reach it.\n    sourceSessions.set(receipt, source);\n    state.sourceReceipt = receipt;\n    state.issued = true;\n    return receipt;\n  } catch (error) {\n',
+        newRaw:
+          '      target: "aarch64-pc-windows-msvc",\n      sourceId: state.plan.sourceId,\n      profileSha256: state.plan.profileSha256,\n      root: state.root,\n      rootIdentity: state.rootIdentity,\n      operationToken: token,\n      metadataSnapshot: state.metadataSnapshot,\n      toolProofSnapshot: state.toolProofSnapshot,\n    };\n    // Sole sourceSessions writer. Only this actual creation/join/readback path can reach it.\n    sourceSessions.set(receipt, source);\n    state.sourceReceipt = receipt;\n    state.issued = true;\n    return receipt;\n  } catch (error) {\n',
+        oldSha256:
+          "3bc564f03576a4e40c3a6a3b7d74f1a83a2c9be54fe746d3b37f8da970c79074",
+        newSha256:
+          "8526313dd2ccfea34779f1a870fa2a4ddc61fdb75f6cfe1f496b9c2d09330865",
+      },
+      {
+        name: "finite-6",
+        oldRaw:
+          '      if (!probe.joined) child.unref();\n    }\n    probe.child = null;\n    stdout = [];\n    stderr = [];\n  }\n}\nasync function createSourceOperation(bootstrap) {\n  const owner = bootstrapState(bootstrap);\n  // Native/public activation is separate. No boolean/report can open this code gate.\n  need(CONTROLLER_ADMITTED, "EXECUTION_CLOSED");\n  need(!owner.operation, "BOOTSTRAP_REUSE");\n  const profileRaw = await fs.readFile(\n    path.join(CONTROLLER_HERE, "full-sdk-source-profile.json"),\n  );\n  bootstrapState(bootstrap);\n  const profile = JSON.parse(profileRaw);\n  const policyRaw = await fs.readFile(\n    path.join(CONTROLLER_REPO, profile.policy),\n  );\n  bootstrapState(bootstrap);\n  const policy = JSON.parse(policyRaw);\n  const workflow = await fs.readFile(\n    path.join(CONTROLLER_REPO, profile.workflow),\n  );\n  bootstrapState(bootstrap);\n  need(\n    workflow.length === policy.workflowPin.bytes &&\n      hashBytes(workflow) === policy.workflowPin.sha256 &&\n      policy.workflow === profile.workflow &&\n      policy.origin === "owned-windows-arm64-full-sdk" &&\n      policy.target === "aarch64-pc-windows-msvc" &&\n',
+        newRaw:
+          '      if (!probe.joined) child.unref();\n    }\n    probe.child = null;\n    stdout = [];\n    stderr = [];\n  }\n}\n// BEGIN BOUNDED BOOTSTRAP FILE READER\n// Read-only, creation-owned FDs. These bytes never issue a source capability.\nasync function bootstrapHeldFile(bootstrap, file, maximum, expected) {\n  const owner = bootstrapState(bootstrap),\n    lease = leases.get(owner.lease);\n  need(\n    typeof file === "string" &&\n      path.isAbsolute(file) &&\n      Number.isSafeInteger(maximum) &&\n      maximum > 0 &&\n      maximum <= 268435456,\n    "BOOTSTRAP_FILE_SCOPE",\n  );\n  file = path.resolve(file);\n  const wallEnd = Math.min(\n      lease.wallEnd - CLEANUP_MS - FINAL_RESERVE_MS,\n      owner.wallStart + SOURCE_MS - CLEANUP_MS - FINAL_RESERVE_MS,\n    ),\n    monoEnd = Math.min(\n      lease.monoEnd - CLEANUP_MS - FINAL_RESERVE_MS,\n      owner.monoStart + SOURCE_MS - CLEANUP_MS - FINAL_RESERVE_MS,\n    );\n  owner.bootstrapFds ??= new Set();\n  owner.bootstrapPending ??= new Set();\n  let failed = false,\n    primary,\n    fd,\n    raw,\n    identity;\n  const remember = (error) => {\n    if (!failed) {\n      failed = true;\n      primary = error;\n    }\n  };\n  const remaining = () => {\n    bootstrapState(bootstrap);\n    const left = Math.min(\n      wallEnd - Date.now(),\n      monoEnd - performance.now(),\n      checkLease(owner.lease),\n    );\n    need(left > 0, "BOOTSTRAP_READ_DEADLINE");\n    return left;\n  };\n  const wait = async (action, late) => {\n    const ms = remaining();\n    let timer,\n      abort,\n      settled = false,\n      received = false,\n      value;\n    const pending = Promise.resolve().then(() => {\n      remaining();\n      return action();\n    });\n    owner.bootstrapPending.add(pending);\n    pending.then(\n      (value) => {\n        owner.bootstrapPending.delete(pending);\n        if (settled && late)\n          Promise.resolve()\n            .then(() => late(value))\n            .catch(remember);\n      },\n      () => owner.bootstrapPending.delete(pending),\n    );\n    try {\n      value = await Promise.race([\n        pending,\n        new Promise((_, reject) => {\n          timer = setTimeout(\n            () => reject(new Error("FULL_SDK_CONTROL_BOOTSTRAP_READ_DEADLINE")),\n            ms,\n          );\n          abort = () => reject(lease.signal.reason);\n          lease.signal?.addEventListener("abort", abort, { once: true });\n          if (lease.signal?.aborted) abort();\n        }),\n      ]);\n      received = true;\n      remaining();\n      settled = true;\n      return value;\n    } catch (error) {\n      settled = true;\n      if (received && late)\n        Promise.resolve()\n          .then(() => late(value))\n          .catch(remember);\n      throw error;\n    } finally {\n      clearTimeout(timer);\n      lease.signal?.removeEventListener("abort", abort);\n    }\n  };\n  const ancestors = [];\n  const fence = async () => {\n    for (const entry of ancestors)\n      need(\n        operationDirectoryId(\n          await wait(() => fs.lstat(entry.path, { bigint: true })),\n        ) === entry.identity,\n        "BOOTSTRAP_ANCESTOR_CHANGED",\n      );\n    need(\n      (await wait(() => fs.realpath(file))) === file,\n      "BOOTSTRAP_FILE_ALIAS",\n    );\n  };\n  try {\n    for (let current = path.dirname(file); ; current = path.dirname(current)) {\n      ancestors.push({\n        path: current,\n        identity: operationDirectoryId(\n          await wait(() => fs.lstat(current, { bigint: true })),\n        ),\n      });\n      if (current === path.dirname(current)) break;\n    }\n    await fence();\n    const named = await wait(() => fs.lstat(file, { bigint: true }));\n    identity = fileId(named);\n    need(\n      named.size >= 0n && named.size <= BigInt(maximum),\n      "BOOTSTRAP_FILE_BOUND",\n    );\n    const closeLate = async (value) => {\n      await value.close();\n      owner.bootstrapFds.delete(value);\n    };\n    fd = await wait(\n      () =>\n        fs\n          .open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))\n          .then((value) => {\n            owner.bootstrapFds.add(value);\n            return value;\n          }),\n      closeLate,\n    );\n    const held = await wait(() => fd.stat({ bigint: true }));\n    need(\n      held.size >= 0n && held.size <= BigInt(maximum),\n      "BOOTSTRAP_FILE_BOUND",\n    );\n    need(\n      fileId(held) === identity &&\n        fileId(await wait(() => fs.lstat(file, { bigint: true }))) === identity,\n      "BOOTSTRAP_FILE_CHANGED",\n    );\n    // The bound is checked on the held FD BEFORE allocating. One sentinel byte\n    // detects growth; no request or allocation can exceed the original max+1.\n    const buffer = Buffer.alloc(Number(held.size) + 1);\n    let count = 0;\n    while (count < buffer.length) {\n      const value = await wait(() =>\n        fd.read(buffer, count, buffer.length - count, count),\n      );\n      if (!value.bytesRead) break;\n      count += value.bytesRead;\n    }\n    need(\n      count === Number(held.size) && count <= maximum,\n      "BOOTSTRAP_FILE_GROWTH",\n    );\n    need(\n      fileId(await wait(() => fd.stat({ bigint: true }))) === identity &&\n        fileId(await wait(() => fs.lstat(file, { bigint: true }))) === identity,\n      "BOOTSTRAP_FILE_CHANGED",\n    );\n    raw = buffer.subarray(0, count);\n    if (expected)\n      need(\n        raw.length === expected.bytes && hashBytes(raw) === expected.sha256,\n        "BOOTSTRAP_FILE_PIN",\n      );\n    await fence();\n    remaining();\n  } catch (error) {\n    remember(error);\n  } finally {\n    if (fd) {\n      const cleanup = owner.bootstrapFailureCleanup ?? {\n        cleanupEnd: Math.min(\n          performance.now() + CLEANUP_MS,\n          lease.monoEnd - FINAL_RESERVE_MS,\n        ),\n        cleanupWallEnd: Math.min(\n          Date.now() + CLEANUP_MS,\n          lease.wallEnd - FINAL_RESERVE_MS,\n        ),\n      };\n      if (failed) owner.bootstrapFailureCleanup ??= cleanup;\n      try {\n        await cleanupStep(cleanup, async () => {\n          await fd.close();\n          owner.bootstrapFds.delete(fd);\n        });\n      } catch (error) {\n        owner.bootstrapFailureCleanup ??= cleanup;\n        remember(error);\n      }\n    }\n  }\n  if (failed) throw primary;\n  await fence();\n  remaining();\n  need(owner.bootstrapFds.size === 0, "BOOTSTRAP_FD_JOIN");\n  return { raw, identity, pin: { bytes: raw.length, sha256: hashBytes(raw) } };\n}\n// END BOUNDED BOOTSTRAP FILE READER\n\n// BEGIN FIXED RESTORE HANDOFF\nfunction producerInputDigest(rows) {\n  need(\n    Array.isArray(rows) &&\n      rows.length > 0 &&\n      rows.length <= 128 &&\n      new Set(rows.map((row) => row.path.toLowerCase())).size === rows.length,\n    "PRODUCER_INPUTS",\n  );\n  return hashBytes(\n    Buffer.from(\n      canonical(\n        [...rows]\n          .map((row) => ({\n            path: row.path,\n            bytes: row.bytes,\n            sha256: row.sha256,\n          }))\n          .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),\n      ),\n    ),\n  );\n}\nasync function readRestoreHandoff(bootstrap, rows, image, sourceId) {\n  bootstrapState(bootstrap);\n  const requested = process.env.CEF_FULLSDK_RESTORE_RUN;\n  if (requested === "0") return null;\n  need(/^[1-9][0-9]{0,19}$/.test(requested ?? ""), "RESTORE_RUN");\n  const temp = path.resolve(CONTROLLER_REPO, "../../_temp");\n  need(path.resolve(process.env.RUNNER_TEMP ?? "") === temp, "RESTORE_TEMP");\n  const directory = path.join(\n    temp,\n    `sorng-windows-arm-checkpoint-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,\n  );\n  need((await fs.realpath(directory)) === directory, "RESTORE_ALIAS");\n  bootstrapState(bootstrap);\n  for (let current = directory; ; current = path.dirname(current)) {\n    directoryId(await fs.lstat(current, { bigint: true }));\n    bootstrapState(bootstrap);\n    if (current === path.dirname(current)) break;\n  }\n  const file = path.join(directory, "ready.json"),\n    before = await fs.lstat(file, { bigint: true });\n  bootstrapState(bootstrap);\n  const identity = fileId(before);\n  need(\n    before.size > 0n && before.size <= 2n * 1024n ** 2n,\n    "RESTORE_READY_BOUND",\n  );\n  const heldReady = await bootstrapHeldFile(bootstrap, file, 2 * 1024 ** 2);\n  need(heldReady.identity === identity, "RESTORE_READY_CHANGED");\n  const raw = heldReady.raw;\n  bootstrapState(bootstrap);\n  need(\n    raw.length === Number(before.size) &&\n      fileId(await fs.lstat(file, { bigint: true })) === identity,\n    "RESTORE_READY_CHANGED",\n  );\n  bootstrapState(bootstrap);\n  const ready = JSON.parse(raw);\n  parentMetadata_qualificationShape(\n    ready,\n    [\n      "kind",\n      "schemaVersion",\n      "record",\n      "priorRunId",\n      "priorAttempt",\n      "currentRunId",\n      "currentAttempt",\n      "head",\n      "identity",\n      "sealArtifact",\n    ],\n    "RESTORE_READY_FIELDS",\n  );\n  need(\n    ready.kind === "windows-arm-full-sdk-checkpoint-download" &&\n      ready.schemaVersion === 1 &&\n      ready.priorRunId === requested &&\n      /^[1-9][0-9]{0,8}$/.test(ready.priorAttempt) &&\n      ready.currentRunId === process.env.GITHUB_RUN_ID &&\n      ready.currentAttempt === process.env.GITHUB_RUN_ATTEMPT &&\n      /^[a-f0-9]{40}$/.test(ready.head),\n    "RESTORE_READY_SCOPE",\n  );\n  parentMetadata_qualificationShape(\n    ready.sealArtifact,\n    ["id", "bytes", "sha256"],\n    "RESTORE_ARTIFACT_FIELDS",\n  );\n  need(\n    Number.isSafeInteger(ready.sealArtifact.id) &&\n      ready.sealArtifact.id > 0 &&\n      Number.isSafeInteger(ready.sealArtifact.bytes) &&\n      ready.sealArtifact.bytes > 0 &&\n      ready.sealArtifact.bytes <= 3 * 1024 ** 2 &&\n      /^[a-f0-9]{64}$/.test(ready.sealArtifact.sha256),\n    "RESTORE_ARTIFACT_PIN",\n  );\n  const source = ready.identity;\n  parentMetadata_qualificationShape(\n    source,\n    [\n      "image",\n      "sourceId",\n      "producerSha256",\n      "sourceDateEpoch",\n      "canonicalRoot",\n      "toolProofPin",\n      "graphPin",\n    ],\n    "RESTORE_IDENTITY_FIELDS",\n  );\n  need(\n    source.image === image &&\n      source.sourceId === sourceId &&\n      source.producerSha256 === producerInputDigest(rows) &&\n      source.canonicalRoot === fullSdkSourceRootName(image, sourceId) &&\n      canonical(source.sourceDateEpoch) ===\n        canonical({ present: false, value: null }),\n    "RESTORE_SOURCE_IDENTITY",\n  );\n  for (const [pin, max] of [\n    [ready.record, 2 * 1024 ** 2],\n    [source.toolProofPin, 16 * 1024 ** 2],\n    [source.graphPin, 16 * 1024 ** 2],\n  ]) {\n    parentMetadata_qualificationShape(\n      pin,\n      ["bytes", "sha256"],\n      "RESTORE_PIN_FIELDS",\n    );\n    need(\n      Number.isSafeInteger(pin.bytes) &&\n        pin.bytes > 0 &&\n        pin.bytes <= max &&\n        /^[a-f0-9]{64}$/.test(pin.sha256),\n      "RESTORE_PIN",\n    );\n  }\n  bootstrapState(bootstrap);\n  return Object.freeze({\n    runId: ready.priorRunId,\n    attempt: ready.priorAttempt,\n    readyPin: Object.freeze({ bytes: raw.length, sha256: hashBytes(raw) }),\n  });\n}\n// END FIXED RESTORE HANDOFF\n\nfunction sourceContextRecord(token, profile, policy, policyRaw, sample) {\n  const state = operationState(token),\n    owner = bootstrapState(state.bootstrap),\n    selected = sources[process.env.ImageVersion];\n  need(selected, "SOURCE_IMAGE");\n  const wholeRemaining =\n    Math.min(\n      leases.get(owner.lease).wallEnd - Date.now(),\n      leases.get(owner.lease).monoEnd - performance.now(),\n    ) / 1000;\n  const sourceRemaining =\n    Math.min(\n      state.sourceWallEnd - Date.now(),\n      state.sourceMonoEnd - performance.now(),\n    ) / 1000;\n  const acquisitionRemaining =\n    Math.min(\n      4500000 - (Date.now() - owner.wallStart),\n      4500000 - (performance.now() - owner.monoStart),\n      sourceRemaining * 1000,\n    ) / 1000;\n  const c = {\n    kind: "windows-arm-full-sdk-context",\n    mode: "full-sdk-source-gn",\n    workflow: profile.workflow,\n    policy: profile.policy,\n    ref: "refs/heads/main",\n    repository: "supermarsx/sortOfRemoteNG",\n    repositoryId: "1010282954",\n    event: "workflow_dispatch",\n    visibility: "public",\n    defaultBranch: "main",\n    inputs: { restore_run: process.env.CEF_FULLSDK_RESTORE_RUN },\n    checkpointRestore: owner.checkpointRestore ?? null,\n    image: process.env.ImageVersion,\n    target: "aarch64-pc-windows-msvc",\n    sourceId: selected.id,\n    sourceProfileSha256: selected.profile,\n    head: process.env.GITHUB_SHA,\n    workflowSha: process.env.GITHUB_WORKFLOW_SHA,\n    runId: process.env.GITHUB_RUN_ID,\n    attempt: process.env.GITHUB_RUN_ATTEMPT,\n    sources: policy.producerInputs,\n    originPolicySha256: hashBytes(policyRaw),\n    wallWholeEnd: leases.get(owner.lease).wallEnd / 1000,\n    monotonicWholeEnd: sample.monotonic + wholeRemaining,\n    wallWorkEnd: state.sourceWallEnd / 1000,\n    monotonicWorkEnd: sample.monotonic + sourceRemaining,\n    wallAcquisitionEnd:\n      Math.min(state.sourceWallEnd, owner.wallStart + 4500000) / 1000,\n    monotonicAcquisitionEnd: sample.monotonic + acquisitionRemaining,\n  };\n  need(\n    sourceRemaining > 150 && acquisitionRemaining > 150,\n    "SOURCE_ORIGINAL_BUDGET",\n  );\n  operationState(token);\n  return c; // Accounting/identity DATA only; no source/session is issued.\n}\n\nasync function createSourceOperation(bootstrap) {\n  const owner = bootstrapState(bootstrap);\n  // Native/public activation is separate. No boolean/report can open this code gate.\n  need(SOURCE_QUALIFICATION_ALLOWED, "SOURCE_QUALIFICATION_CLOSED");\n  need(!owner.operation, "BOOTSTRAP_REUSE");\n  const profileRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_HERE, "full-sdk-source-profile.json"),\n      65536,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  need(\n    profileRaw.length > 0 &&\n      profileRaw.length <= 65536 &&\n      hashBytes(profileRaw) === FULL_SOURCE_PROFILE_SHA256,\n    "SOURCE_PROFILE_PIN",\n  );\n  const profile = JSON.parse(profileRaw);\n  need(\n    profile.workflow === ".github/workflows/windows-arm-full-sdk.yml" &&\n      profile.policy === "native/windows-arm-full-sdk/sdk-origin-review.json",\n    "SOURCE_FIXED_ENTRY",\n  );\n  const policyRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_REPO, profile.policy),\n      1048576,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  const policy = JSON.parse(policyRaw);\n  parentMetadata_qualificationShape(\n    policy,\n    [\n      "schemaVersion",\n      "kind",\n      "origin",\n      "target",\n      "workflow",\n      "workflowPin",\n      "sources",\n      "bridge",\n      "producerInputs",\n      "recordSchemaVersion",\n      "jobPolicy",\n    ],\n    "SOURCE_POLICY_FIELDS",\n  );\n  need(\n    policy.schemaVersion === 1 &&\n      policy.recordSchemaVersion === 1 &&\n      policy.kind === "sorng-windows-arm64-sdk-origin-policy",\n    "SOURCE_POLICY_KIND",\n  );\n  const workflow = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_REPO, profile.workflow),\n      2097152,\n      policy.workflowPin,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  need(\n    workflow.length === policy.workflowPin.bytes &&\n      hashBytes(workflow) === policy.workflowPin.sha256 &&\n      policy.workflow === profile.workflow &&\n      policy.origin === "owned-windows-arm64-full-sdk" &&\n      policy.target === "aarch64-pc-windows-msvc" &&\n',
+        oldSha256:
+          "e1dfa5aebd507c3b861c986127c12541c5040a8c11bea2a5bae8a1b9efb7f433",
+        newSha256:
+          "21e76f91b5daaab57440c8519ab31218ab5f444cc0926c805b06fe5ec989a4bd",
+      },
+      {
+        name: "finite-7",
+        oldRaw:
+          '      process.env.GITHUB_REF === "refs/heads/main" &&\n      process.env.GITHUB_EVENT_NAME === "workflow_dispatch" &&\n      process.env.GITHUB_SHA === process.env.GITHUB_WORKFLOW_SHA &&\n      /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA ?? ""),\n    "SOURCE_WORKFLOW_SCOPE",\n  );\n  need(\n    profile.nativeSourceEntryQualified === true &&\n      profile.sourceProgramCarryforwardQualified === true,\n    "SOURCE_NATIVE_UNQUALIFIED",\n  );\n  const selected = sources[process.env.ImageVersion];\n  need(selected, "SOURCE_IMAGE");\n  const environment = Object.freeze({\n    SystemRoot: "C:/Windows",\n    WINDIR: "C:/Windows",\n    PATH: "C:/Windows/System32",\n    PYTHONDONTWRITEBYTECODE: "1",\n  });\n  const pythonRaw = await fs.readFile(profile.python.path);\n  bootstrapState(bootstrap);\n  need(\n    pythonRaw.length === profile.python.bytes &&\n      hashBytes(pythonRaw) === profile.python.sha256,\n    "SOURCE_PYTHON_PIN",\n  );\n  // BEGIN FIRST WORKFLOW CLOCK INTERSECTION\n',
+        newRaw:
+          '      process.env.GITHUB_REF === "refs/heads/main" &&\n      process.env.GITHUB_EVENT_NAME === "workflow_dispatch" &&\n      process.env.GITHUB_SHA === process.env.GITHUB_WORKFLOW_SHA &&\n      /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA ?? ""),\n    "SOURCE_WORKFLOW_SCOPE",\n  );\n  need(\n    profile.sourceQualificationAllowed === true &&\n      profile.fullModeBodyImplemented === true &&\n      profile.sourceSessionIssuerImplemented === true &&\n      profile.controllerCreationPathImplemented === true &&\n      profile.parentExpectedDefaultsImplemented === true &&\n      profile.firstWorkflowClockImplemented === true &&\n      profile.nativeSourceEntryQualified === false &&\n      profile.sourceProgramCarryforwardQualified === false,\n    "SOURCE_ATTEMPT_POLICY",\n  );\n  const selected = sources[process.env.ImageVersion];\n  need(selected, "SOURCE_IMAGE");\n  need(\n    /^(?:0|[1-9][0-9]{0,19})$/.test(process.env.CEF_FULLSDK_RESTORE_RUN ?? ""),\n    "SOURCE_RESTORE_RUN",\n  );\n  // Resume authentication and fixed ready-file binding are completed before\n  // any source actor; a nonzero request cannot silently become a fresh build.\n  owner.checkpointRestore = await readRestoreHandoff(\n    bootstrap,\n    policy.producerInputs,\n    process.env.ImageVersion,\n    selected.id,\n  );\n  bootstrapState(bootstrap);\n  need(\n    process.env.CEF_FULLSDK_RESTORE_RUN === "0" || owner.checkpointRestore,\n    "SOURCE_RESTORE_AUTHENTICATION",\n  );\n  const environment = Object.freeze({\n    SystemRoot: "C:/Windows",\n    WINDIR: "C:/Windows",\n    PATH: "C:/Windows/System32",\n    PYTHONDONTWRITEBYTECODE: "1",\n  });\n  const actualNode = await fs.realpath(process.execPath);\n  bootstrapState(bootstrap);\n  need(\n    actualNode.replaceAll("\\\\", "/").toLowerCase() ===\n      profile.node.path.toLowerCase(),\n    "SOURCE_PARENT_NODE",\n  );\n  const nodeInfo = await fs.lstat(actualNode, { bigint: true });\n  bootstrapState(bootstrap);\n  need(\n    nodeInfo.isFile() &&\n      !nodeInfo.isSymbolicLink() &&\n      nodeInfo.nlink === 1n &&\n      nodeInfo.size === BigInt(profile.node.bytes),\n    "SOURCE_NODE_FILE",\n  );\n  const nodeRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      actualNode,\n      profile.node.bytes,\n      profile.node,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  need(\n    nodeRaw.length === profile.node.bytes &&\n      hashBytes(nodeRaw) === profile.node.sha256 &&\n      fileId(await fs.lstat(actualNode, { bigint: true })) === fileId(nodeInfo),\n    "SOURCE_NODE_PIN",\n  );\n  bootstrapState(bootstrap);\n  const pythonRaw = (\n    await bootstrapHeldFile(\n      bootstrap,\n      profile.python.path,\n      profile.python.bytes,\n      profile.python,\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  need(\n    pythonRaw.length === profile.python.bytes &&\n      hashBytes(pythonRaw) === profile.python.sha256,\n    "SOURCE_PYTHON_PIN",\n  );\n  // BEGIN FIRST WORKFLOW CLOCK INTERSECTION\n',
+        oldSha256:
+          "2fb19f1baf1b1e2c1d9f64dbf7b5b6cf774c3257dd69397f48c2295c6426fbd0",
+        newSha256:
+          "1fdfc7986bf7d6900727cae2815c7c4ba4a0422e38c2d713bd38e9d1c8412840",
+      },
+      {
+        name: "finite-8",
+        oldRaw:
+          '    performance.now(),\n  );\n  wholeLease.wallEnd = inheritedEnds.wallEnd;\n  wholeLease.monoEnd = inheritedEnds.monoEnd;\n  owner.workflowClock = workflowClock;\n  bootstrapState(bootstrap);\n  // END FIRST WORKFLOW CLOCK NATIVE PROJECTION\n  const root = path.join(\n    CONTROLLER_REPO,\n    ".artifacts",\n    "windows-arm-full-sdk-" + randomUUID(),\n  );\n  const token = Object.freeze({ kind: "closed-full-sdk-source-operation" });\n  const state = {\n    bootstrap,\n    lease: owner.lease,\n    root,\n    rootFence: [],\n',
+        newRaw:
+          '    performance.now(),\n  );\n  wholeLease.wallEnd = inheritedEnds.wallEnd;\n  wholeLease.monoEnd = inheritedEnds.monoEnd;\n  owner.workflowClock = workflowClock;\n  bootstrapState(bootstrap);\n  // END FIRST WORKFLOW CLOCK NATIVE PROJECTION\n  // Stable naming DATA; exclusive mkdir below still creates a fresh lifetime.\n  const rootCode = (\n    await bootstrapHeldFile(\n      bootstrap,\n      path.join(CONTROLLER_HERE, "source-root.mjs"),\n      1895,\n      {\n        bytes: 1895,\n        sha256:\n          "07c9301da8df45fbed8e19e66fdd2155a78748e63b84fe313a5a359c6bf7a799",\n      },\n    )\n  ).raw;\n  bootstrapState(bootstrap);\n  need(\n    rootCode.length === 1895 &&\n      hashBytes(rootCode) ===\n        "07c9301da8df45fbed8e19e66fdd2155a78748e63b84fe313a5a359c6bf7a799",\n    "SOURCE_ROOT_MODULE_PIN",\n  );\n  need(\n    policy.producerInputs.filter(\n      (row) =>\n        row.path === "native/windows-arm-full-sdk/source-root.mjs" &&\n        row.bytes === rootCode.length &&\n        row.sha256 === hashBytes(rootCode),\n    ).length === 1,\n    "SOURCE_ROOT_CODE_CLOSURE",\n  );\n  const root = path.join(\n    CONTROLLER_REPO,\n    ".artifacts",\n    fullSdkSourceRootName(process.env.ImageVersion, selected.id),\n  );\n  const token = Object.freeze({ kind: "closed-full-sdk-source-operation" });\n  const state = {\n    bootstrap,\n    lease: owner.lease,\n    root,\n    rootFence: [],\n',
+        oldSha256:
+          "bb9184a0abaa2380db8092e8f78773cbf7685d561d625285e4bdeb0c2ebeeca8",
+        newSha256:
+          "c8b7797daf3f641438fc05e239936a27759b3afef7f40ad20bc3af83ccca679c",
+      },
+      {
+        name: "finite-9",
+        oldRaw:
+          '    for (const [index, row] of policy.producerInputs.entries()) {\n      need(\n        typeof row.path === "string" &&\n          !path.isAbsolute(row.path) &&\n          row.path.split(/[\\\\/]/).every((x) => x && x !== "." && x !== ".."),\n        "SOURCE_INPUT_PATH",\n      );\n      const raw = await operationWork(token, () =>\n        fs.readFile(path.join(CONTROLLER_REPO, row.path)),\n      );\n      need(\n        raw.length === row.bytes &&\n          raw.length <= 2 * 1024 ** 2 &&\n          hashBytes(raw) === row.sha256,\n        "SOURCE_INPUT_PIN",\n      );\n      await operationFence(token);\n      await operationWork(token, () =>\n        fs.writeFile(path.join(root, "source-inputs", String(index)), raw, {\n          flag: "wx",\n        }),\n      );\n    }\n    const wholeRemaining =\n      Math.min(\n        leases.get(owner.lease).wallEnd - Date.now(),\n        leases.get(owner.lease).monoEnd - performance.now(),\n      ) / 1000;\n    const sourceRemaining =\n      Math.min(\n        state.sourceWallEnd - Date.now(),\n        state.sourceMonoEnd - performance.now(),\n      ) / 1000;\n    const acquisitionRemaining =\n      Math.min(\n        4500000 - (Date.now() - owner.wallStart),\n        4500000 - (performance.now() - owner.monoStart),\n        sourceRemaining * 1000,\n      ) / 1000;\n    const c = {\n      kind: "windows-arm-full-sdk-context",\n      mode: "full-sdk-source-gn",\n      workflow: profile.workflow,\n      policy: profile.policy,\n      ref: "refs/heads/main",\n      repository: "supermarsx/sortOfRemoteNG",\n      repositoryId: "1010282954",\n      event: "workflow_dispatch",\n      visibility: "public",\n      defaultBranch: "main",\n      inputs: {},\n      image: process.env.ImageVersion,\n      target: "aarch64-pc-windows-msvc",\n      sourceId: selected.id,\n      sourceProfileSha256: selected.profile,\n      head: process.env.GITHUB_SHA,\n      workflowSha: process.env.GITHUB_WORKFLOW_SHA,\n      runId: process.env.GITHUB_RUN_ID,\n      attempt: process.env.GITHUB_RUN_ATTEMPT,\n      sources: policy.producerInputs,\n      originPolicySha256: hashBytes(policyRaw),\n      wallWholeEnd: leases.get(owner.lease).wallEnd / 1000,\n      monotonicWholeEnd: sample.monotonic + wholeRemaining,\n      wallWorkEnd: state.sourceWallEnd / 1000,\n      monotonicWorkEnd: sample.monotonic + sourceRemaining,\n      wallAcquisitionEnd:\n        Math.min(state.sourceWallEnd, owner.wallStart + 4500000) / 1000,\n      monotonicAcquisitionEnd: sample.monotonic + acquisitionRemaining,\n    };\n    need(\n      sourceRemaining > 150 && acquisitionRemaining > 150,\n      "SOURCE_ORIGINAL_BUDGET",\n    );\n    const contextRaw = Buffer.from(JSON.stringify(c, null, 2) + "\\n");\n    await operationFence(token);\n    await operationWork(token, () =>\n      fs.writeFile(path.join(root, "context.json"), contextRaw, { flag: "wx" }),\n    );\n    const env = Object.freeze({\n      ...environment,\n',
+        newRaw:
+          '    for (const [index, row] of policy.producerInputs.entries()) {\n      need(\n        typeof row.path === "string" &&\n          !path.isAbsolute(row.path) &&\n          row.path.split(/[\\\\/]/).every((x) => x && x !== "." && x !== ".."),\n        "SOURCE_INPUT_PATH",\n      );\n      const raw = (\n        await operationWork(token, () =>\n          bootstrapHeldFile(\n            bootstrap,\n            path.join(CONTROLLER_REPO, row.path),\n            2097152,\n            row,\n          ),\n        )\n      ).raw;\n      need(\n        raw.length === row.bytes &&\n          raw.length <= 2 * 1024 ** 2 &&\n          hashBytes(raw) === row.sha256,\n        "SOURCE_INPUT_PIN",\n      );\n      await operationFence(token);\n      await operationWork(token, () =>\n        fs.writeFile(path.join(root, "source-inputs", String(index)), raw, {\n          flag: "wx",\n        }),\n      );\n    }\n    const c = sourceContextRecord(token, profile, policy, policyRaw, sample);\n    const contextRaw = Buffer.from(JSON.stringify(c, null, 2) + "\\n");\n    await operationFence(token);\n    await operationWork(token, () =>\n      fs.writeFile(path.join(root, "context.json"), contextRaw, { flag: "wx" }),\n    );\n    const env = Object.freeze({\n      ...environment,\n',
+        oldSha256:
+          "a526f0be71e900196232e081c8a9c411f190177a1d8f2d090907afc0fefa726a",
+        newSha256:
+          "224ebdb529ac39f10dd58d999b0a7a4bf1af317a216b109783127098f26c6885",
+      },
+      {
+        name: "finite-10",
+        oldRaw:
+          '      /^[1-9][0-9]{0,19}$/.test(launch.ownCreationFiletime) &&\n      launch.parentPid === process.pid &&\n      launch.parentCreationFiletime === packet.parentCreationFiletime &&\n      launch.contextSha256 === packetPin.sha256,\n    "ENGINE_LAUNCH_BINDING",\n  );\n  const jobRecord = await read(`jobs/${role}/receipt.json`),\n    job = inspectJob(jobRecord, true);\n  need(\n    job.rootPid !== launch.ownPid &&\n      job.rootCreationFiletime !== launch.ownCreationFiletime,\n    "ENGINE_JOB_IDENTITY",\n  );\n  const closed = parseRecord(await read(`full-sdk-engine-closed-${role}.json`));\n  need(\n',
+        newRaw:
+          '      /^[1-9][0-9]{0,19}$/.test(launch.ownCreationFiletime) &&\n      launch.parentPid === process.pid &&\n      launch.parentCreationFiletime === packet.parentCreationFiletime &&\n      launch.contextSha256 === packetPin.sha256,\n    "ENGINE_LAUNCH_BINDING",\n  );\n  const jobRecord = await read(`jobs/${role}/receipt.json`),\n    job = parseRecord(jobRecord);\n  need(\n    job.rootPid !== launch.ownPid &&\n      job.rootCreationFiletime !== launch.ownCreationFiletime,\n    "ENGINE_JOB_IDENTITY",\n  );\n  const closed = parseRecord(await read(`full-sdk-engine-closed-${role}.json`));\n  need(\n',
+        oldSha256:
+          "a53ca5fb80a2aacfca8524c284cabdb4ded4aff47ef1fdaae591ad5b7a80b040",
+        newSha256:
+          "a49d1a5162afdbfa53fd566567a52b330765bc3eb36a5e74deedfbb08f4a0f41",
+      },
+      {
+        name: "finite-11",
+        oldRaw:
+          '      closed.parentPid === process.pid &&\n      closed.parentCreationFiletime === packet.parentCreationFiletime &&\n      closed.sourceContextSha256 === packet.sourceContextSha256 &&\n      closed.sdkBuilt === false &&\n      closed.nativeAcceptance === false,\n    "ENGINE_CLOSE_BINDING",\n  );\n  const resultRecord = await read(`full-sdk-engine-${role}-result.json`),\n    result = parseRecord(resultRecord);\n  need(\n    result.kind === "windows-arm-full-sdk-engine-worker-result" &&\n      result.role === role &&\n      result.sourceContextSha256 === packet.sourceContextSha256 &&\n      result.image === packet.image &&\n',
+        newRaw:
+          '      closed.parentPid === process.pid &&\n      closed.parentCreationFiletime === packet.parentCreationFiletime &&\n      closed.sourceContextSha256 === packet.sourceContextSha256 &&\n      closed.sdkBuilt === false &&\n      closed.nativeAcceptance === false,\n    "ENGINE_CLOSE_BINDING",\n  );\n  if (role === "cef-engine" && job.success === false) {\n    inspectNativeSlice(job, closed.jobSeconds);\n    need(\n      closed.completion === "native-slice-ended" &&\n        closed.receiptPin?.bytes === jobRecord.pin.bytes &&\n        closed.receiptPin?.sha256 === jobRecord.pin.sha256 &&\n        phase.nativeWallEnd <= leases.get(state.leaseToken).wallEnd - 3600000 &&\n        phase.nativeMonoEnd <= leases.get(state.leaseToken).monoEnd - 3600000,\n      "ENGINE_SLICE_CLOSE",\n    );\n    await engineBoundary(token, phase);\n    engineState(token, phase);\n    const fact = Object.freeze({\n      role,\n      nativeSliceEnded: true,\n      result: null,\n      context: Object.freeze({ ...packetPin }),\n      receipt: Object.freeze({ ...jobRecord.pin }),\n      closure: Object.freeze({ ...records[2].pin }),\n      launch: Object.freeze({ ...records[0].pin }),\n      records: Object.freeze(records),\n      nativeAcceptance: false,\n    });\n    state.nativeSliceFact = fact; // Only this actual creator/readback path writes it.\n    return fact;\n  }\n  inspectJob(jobRecord, true);\n  if (role === "cef-engine")\n    need(closed.completion === "success", "ENGINE_CEF_COMPLETION");\n  const resultRecord = await read(`full-sdk-engine-${role}-result.json`),\n    result = parseRecord(resultRecord);\n  need(\n    result.kind === "windows-arm-full-sdk-engine-worker-result" &&\n      result.role === role &&\n      result.sourceContextSha256 === packet.sourceContextSha256 &&\n      result.image === packet.image &&\n',
+        oldSha256:
+          "0c693d2f3ff8ff9d7c248d015554dcba43804f3a405581c55bd5c9ee603bfdfc",
+        newSha256:
+          "dc2f9655950204fdd7db5aae524a18e5301911a04a3a16afc64b6ad7f03ec506",
+      },
+      {
+        name: "finite-12",
+        oldRaw:
+          '}\nasync function runEnginePhase(token, role) {\n  const state = controls.get(token);\n  need(state, "CONTROL_BRAND");\n  retained(token, state);\n  state.engineResults ??= [];\n  const index = state.engineResults.length;\n  need(\n    index < ENGINE_ROLES.length &&\n      role === ENGINE_ROLES[index] &&\n      !state.enginePhase,\n    "ENGINE_SEQUENCE",\n  );\n  const lease = leases.get(state.leaseToken),\n    nowWall = Date.now(),\n    nowMono = performance.now();\n  if (index === 0)\n    state.probeEnds = Object.freeze({\n      wallEnd: Math.min(lease.wallEnd - 150000, nowWall + 900000),\n      monoEnd: Math.min(lease.monoEnd - 150000, nowMono + 900000),\n    });\n  const phase = {\n    role,\n    wallEnd:\n      index <= 1\n        ? state.probeEnds.wallEnd\n        : Math.min(lease.wallEnd - 150000, nowWall + ENGINE_CAPS_MS[index]),\n    monoEnd:\n      index <= 1\n        ? state.probeEnds.monoEnd\n        : Math.min(lease.monoEnd - 150000, nowMono + ENGINE_CAPS_MS[index]),\n    retired: false,\n    pending: new Set(),\n    logFds: new Set(),\n    pendingWriters: 0,\n    writeQueue: Promise.resolve(),\n    outputBytes: 0,\n    child: null,\n    cleanupConfirmed: false,\n  };\n  state.enginePhase = phase;\n  try {\n    await engineBoundary(token, phase);\n    const operation = operationState(state.source.operationToken, true),\n      root = state.source.root,\n      contextPin = operation.plan.rootPins.find(\n        (row) => row.relative === "context.json",\n      ),\n      sourceContext = parseRecord(\n        await engineRead(token, phase, "context.json", 131072, contextPin),\n',
+        newRaw:
+          '}\nasync function runEnginePhase(token, role) {\n  const state = controls.get(token);\n  need(state, "CONTROL_BRAND");\n  retained(token, state);\n  state.engineResults ??= [];\n  const index = state.engineResults.length;\n  const checkpoint =\n    role === "checkpoint-seal" &&\n    index === 3 &&\n    state.nativeSliceFact === state.engineResults[2] &&\n    state.nativeSliceFact?.nativeSliceEnded === true;\n  need(\n    index < ENGINE_ROLES.length &&\n      (checkpoint || role === ENGINE_ROLES[index]) &&\n      !state.enginePhase &&\n      (index !== 3 || checkpoint || !state.nativeSliceFact),\n    "ENGINE_SEQUENCE",\n  );\n  const lease = leases.get(state.leaseToken),\n    nowWall = Date.now(),\n    nowMono = performance.now();\n  if (index === 0)\n    state.probeEnds = Object.freeze({\n      wallEnd: Math.min(lease.wallEnd - 150000, nowWall + 900000),\n      monoEnd: Math.min(lease.monoEnd - 150000, nowMono + 900000),\n    });\n  const reserve = role === "cef-engine" ? 3600000 : 150000,\n    cap = checkpoint ? 3600000 : ENGINE_CAPS_MS[index];\n  const nativeWallEnd =\n      index <= 1\n        ? state.probeEnds.wallEnd\n        : Math.min(lease.wallEnd - reserve, nowWall + cap),\n    nativeMonoEnd =\n      index <= 1\n        ? state.probeEnds.monoEnd\n        : Math.min(lease.monoEnd - reserve, nowMono + cap);\n  const phase = {\n    role,\n    nativeWallEnd,\n    nativeMonoEnd,\n    wallEnd: Math.min(\n      lease.wallEnd - 150000,\n      nativeWallEnd + (role === "cef-engine" ? 90000 : 0),\n    ),\n    monoEnd: Math.min(\n      lease.monoEnd - 150000,\n      nativeMonoEnd + (role === "cef-engine" ? 90000 : 0),\n    ),\n    retired: false,\n    pending: new Set(),\n    logFds: new Set(),\n    pendingWriters: 0,\n    writeQueue: Promise.resolve(),\n    outputBytes: 0,\n    child: null,\n    cleanupConfirmed: false,\n  };\n  state.enginePhase = phase;\n  try {\n    await engineBoundary(token, phase);\n    if (index >= 2) compilerAdmission(token, phase);\n    const operation = operationState(state.source.operationToken, true),\n      root = state.source.root,\n      contextPin = operation.plan.rootPins.find(\n        (row) => row.relative === "context.json",\n      ),\n      sourceContext = parseRecord(\n        await engineRead(token, phase, "context.json", 131072, contextPin),\n',
+        oldSha256:
+          "d43d199e4e665d231cc7ed5678e9b02b96a388c2646c82bb91807fd49a3c5143",
+        newSha256:
+          "8cd00dffe5670710c22ae046067eeabba1fa115f9d3a8bee81f5589fd2d424dc",
+      },
+      {
+        name: "finite-13",
+        oldRaw:
+          '        "ENGINE_GIT_PIN",\n      );\n      gitPolicyFiles.push({ relative, ...value.pin });\n    }\n    // Consume the original already-captured Python/Node endpoint projection.\n    // No second clock child and no now+whole lease are introduced here.\n    engineState(token, phase);\n    need(phase.monoEnd <= lease.monoEnd - 150000, "ENGINE_ORIGINAL_BUDGET");\n    const previous = state.engineResults.at(-1),\n      packet = {\n        schemaVersion: 1,\n        kind: "windows-arm-full-sdk-engine-context",\n        mode: "full-sdk-engine",\n        role,\n        sourceContextSha256: contextPin.sha256,\n        image: state.source.image,\n        sourceId: state.source.sourceId,\n        target: state.source.target,\n        wallWholeEnd: sourceContext.wallWholeEnd,\n        monotonicWholeEnd: sourceContext.monotonicWholeEnd,\n        wallPhaseEnd: phase.wallEnd / 1000,\n        monotonicPhaseEnd: Math.min(\n          sourceContext.monotonicWholeEnd - 150,\n          sourceContext.monotonicWholeEnd -\n            (lease.monoEnd - phase.monoEnd) / 1000,\n        ),\n        parentPid: process.pid,\n        parentCreationFiletime: operation.plan.parentCreationFiletime,\n        metadataFiles: state.source.metadataSnapshot.records.map((row) => ({\n          relative: row.relative,\n          ...row.pin,\n        })),\n        gitPolicyFiles,\n        prior: previous\n          ? { result: previous.result, receipt: previous.receipt }\n          : null,\n      };\n    const raw = Buffer.from(JSON.stringify(packet, null, 2) + "\\n"),\n      packetPin = { bytes: raw.length, sha256: hashBytes(raw) };\n    await engineSave(token, phase, `full-sdk-engine-${role}-context.json`, raw);\n    for (const name of ["stdout", "stderr"]) {\n      await engineWork(token, phase, () => currentRoot(token, state));\n      engineState(token, phase);\n',
+        newRaw:
+          '        "ENGINE_GIT_PIN",\n      );\n      gitPolicyFiles.push({ relative, ...value.pin });\n    }\n    // Consume the original already-captured Python/Node endpoint projection.\n    // No second clock child and no now+whole lease are introduced here.\n    engineState(token, phase);\n    need(\n      phase.nativeMonoEnd <= lease.monoEnd - 150000,\n      "ENGINE_ORIGINAL_BUDGET",\n    );\n    const previous = state.engineResults.at(-1),\n      packet = {\n        schemaVersion: 1,\n        kind: "windows-arm-full-sdk-engine-context",\n        mode: "full-sdk-engine",\n        role,\n        sourceContextSha256: contextPin.sha256,\n        image: state.source.image,\n        sourceId: state.source.sourceId,\n        target: state.source.target,\n        wallWholeEnd: sourceContext.wallWholeEnd,\n        monotonicWholeEnd: sourceContext.monotonicWholeEnd,\n        wallPhaseEnd: phase.nativeWallEnd / 1000,\n        monotonicPhaseEnd: Math.min(\n          sourceContext.monotonicWholeEnd - 150,\n          sourceContext.monotonicWholeEnd -\n            (lease.monoEnd - phase.nativeMonoEnd) / 1000,\n        ),\n        parentPid: process.pid,\n        parentCreationFiletime: operation.plan.parentCreationFiletime,\n        metadataFiles: state.source.metadataSnapshot.records.map((row) => ({\n          relative: row.relative,\n          ...row.pin,\n        })),\n        gitPolicyFiles,\n        prior: checkpoint\n          ? {\n              result: null,\n              receipt: previous.receipt,\n              closure: previous.closure,\n              launch: previous.launch,\n            }\n          : previous\n            ? { result: previous.result, receipt: previous.receipt }\n            : null,\n      };\n    const raw = Buffer.from(JSON.stringify(packet, null, 2) + "\\n"),\n      packetPin = { bytes: raw.length, sha256: hashBytes(raw) };\n    await engineSave(token, phase, `full-sdk-engine-${role}-context.json`, raw);\n    for (const name of ["stdout", "stderr"]) {\n      await engineWork(token, phase, () => currentRoot(token, state));\n      engineState(token, phase);\n',
+        oldSha256:
+          "c60894a9c8cc2f4fbc53daa128b0f3918a2ff992534e6a741709c7f27cad8a07",
+        newSha256:
+          "acd93a33a5232f0ea54875952d462d3859dba27ac85607c2a40cea167bb4f930",
+      },
+      {
+        name: "finite-14",
+        oldRaw:
+          '  } finally {\n    await retireEnginePhase(token, phase);\n    if (state.failed) throw state.primary;\n  }\n}\n// END ACTUAL PARENT ENGINE CREATION\n\nasync function runFullSdkTransaction(bootstrap) {\n  const owner = bootstrapState(bootstrap);\n  let operation, control;\n  try {\n    operation = await createSourceOperation(bootstrap);\n    const source = await runSourcePhase(operation);\n    control = await createControl(source, owner.lease);\n    await prepareFreshPolicy(control);\n    return Object.freeze({\n      kind: "closed-full-sdk-source-controller",\n      executionAdmitted: false,\n      sdkBuilt: false,\n    });\n  } finally {\n    if (control) await retireControl(control);\n    if (operation) await retireSourceOperation(operation);\n    owner.closed = true;\n    bootstrapOwners.delete(bootstrap);\n    leases.get(owner.lease).closed = true;\n  }\n}\n// END CLOSED FULL SDK SOURCE CONTROLLER\n\nexport function main() {\n  // Deliberately do not inspect arguments, environment, paths or getters.\n  throw new Error("FULL_SDK_CONTROL_EXECUTION_CLOSED");\n}\n',
+        newRaw:
+          '  } finally {\n    await retireEnginePhase(token, phase);\n    if (state.failed) throw state.primary;\n  }\n}\n// END ACTUAL PARENT ENGINE CREATION\n\n// BEGIN PRIVATE COMPILER ADMISSION\nfunction compilerAdmission(token, phase) {\n  const state = engineState(token, phase),\n    source = sourceState(state.sourceReceipt, state.leaseToken);\n  if (!state.compilerAdmission) {\n    need(\n      phase.role === "cef-engine" &&\n        state.engineResults.length === 2 &&\n        state.engineResults[0].role === "probe-clang" &&\n        state.engineResults[1].role === "probe-link",\n      "COMPILER_CREATED_PROBES",\n    );\n    const matched = source.metadataSnapshot?.matchedExpectedDefaults;\n    need(\n      matched?.comparison.expectedMacroCount === 61 &&\n        matched.comparison.partitionAllocActionValuesMatch === true &&\n        matched.comparison.partitionAllocHeaderValuesMatch === true &&\n        matched.comparison.cefV8SandboxValue === 1 &&\n        source.toolProofSnapshot,\n      "COMPILER_SOURCE_FACTS",\n    );\n    state.compilerAdmission = Object.freeze({\n      sourceReceipt: state.sourceReceipt,\n      source,\n      metadataSnapshot: source.metadataSnapshot,\n      toolProofSnapshot: source.toolProofSnapshot,\n      expectedDefaults: matched,\n      clang: state.engineResults[0],\n      link: state.engineResults[1],\n      full61Qualified: true,\n      nativeAcceptance: false,\n    });\n  }\n  const fact = state.compilerAdmission;\n  need(\n    fact.sourceReceipt === state.sourceReceipt &&\n      fact.source === source &&\n      fact.metadataSnapshot === source.metadataSnapshot &&\n      fact.toolProofSnapshot === source.toolProofSnapshot &&\n      fact.expectedDefaults ===\n        source.metadataSnapshot.matchedExpectedDefaults &&\n      fact.clang === state.engineResults[0] &&\n      fact.link === state.engineResults[1] &&\n      fact.full61Qualified === true,\n    "COMPILER_RETAINED_FACT",\n  );\n  return fact;\n}\n// END PRIVATE COMPILER ADMISSION\n\n// BEGIN PRIVATE FINAL SDK VERIFICATION\nasync function sealSdkAsset(token, name, expected, kind = "sdk") {\n  const state = controls.get(token);\n  need(state, "CONTROL_BRAND");\n  retained(token, state);\n  need(\n    typeof name === "string" &&\n      /^[A-Za-z0-9][A-Za-z0-9._-]{0,239}$/.test(name) &&\n      Number.isSafeInteger(expected?.size) &&\n      expected.size > 0 &&\n      expected.size <= 2 * 1024 ** 3 &&\n      /^[a-f0-9]{64}$/.test(expected.sha256),\n    "SDK_ASSET_SCOPE",\n  );\n  need(kind === "sdk" || kind === "checkpoint", "OUTPUT_KIND");\n  const file = path.join(\n    state.source.root,\n    kind === "sdk" ? "full-sdk-package/bundle" : "full-sdk-checkpoint-output",\n    name,\n  );\n  await currentRoot(token, state);\n  await physical(token, state, path.dirname(file));\n  state.assetFds ??= new Set();\n  const fd = await work(\n    token,\n    state,\n    () =>\n      fs\n        .open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))\n        .then((value) => {\n          state.assetFds.add(value);\n          return value;\n        }),\n    async (late) => {\n      await late.close();\n      state.assetFds.delete(late);\n    },\n  );\n  let failed = false,\n    primary,\n    value;\n  try {\n    const info = await work(token, state, () => fd.stat({ bigint: true })),\n      identity = fileId(info);\n    need(info.size === BigInt(expected.size), "SDK_ASSET_SIZE");\n    need(\n      fileId(\n        await work(token, state, () => fs.lstat(file, { bigint: true })),\n      ) === identity,\n      "SDK_ASSET_CHANGED",\n    );\n    const digest = createHash("sha256"),\n      buffer = Buffer.alloc(1048576);\n    let total = 0;\n    while (total <= expected.size) {\n      const { bytesRead } = await work(token, state, () =>\n        fd.read(\n          buffer,\n          0,\n          Math.min(buffer.length, expected.size + 1 - total),\n          total,\n        ),\n      );\n      if (!bytesRead) break;\n      total += bytesRead;\n      digest.update(buffer.subarray(0, bytesRead));\n    }\n    need(\n      total === expected.size && digest.digest("hex") === expected.sha256,\n      "SDK_ASSET_PIN",\n    );\n    need(\n      fileId(await work(token, state, () => fd.stat({ bigint: true }))) ===\n        identity &&\n        fileId(\n          await work(token, state, () => fs.lstat(file, { bigint: true })),\n        ) === identity,\n      "SDK_ASSET_CHANGED",\n    );\n    value = Object.freeze({\n      name,\n      size: total,\n      sha256: expected.sha256,\n      identity,\n    });\n  } catch (error) {\n    failed = true;\n    primary = fail(state, error);\n  } finally {\n    try {\n      await work(token, state, () => fd.close());\n      state.assetFds.delete(fd);\n    } catch (error) {\n      if (!failed) {\n        failed = true;\n        primary = fail(state, error);\n      }\n    }\n  }\n  if (failed) throw primary;\n  await currentRoot(token, state);\n  retained(token, state);\n  return value;\n}\nasync function verifyProducedSdk(token) {\n  const state = controls.get(token);\n  need(state, "CONTROL_BRAND");\n  retained(token, state);\n  need(\n    state.engineResults?.length === ENGINE_ROLES.length &&\n      !state.enginePhase &&\n      state.engineResults.every(\n        (row, index) => row.role === ENGINE_ROLES[index],\n      ),\n    "SDK_PHASES",\n  );\n  await work(token, state, () =>\n    recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n  );\n  for (const phase of state.engineResults)\n    for (const row of phase.records) {\n      const actual = await work(token, state, () =>\n        heldOperationFile(\n          state.source.operationToken,\n          row.relative,\n          row.maximum,\n          row.pin,\n          true,\n        ),\n      );\n      need(actual.identity === row.identity, "SDK_PHASE_RECORD_CHANGED");\n    }\n  const result = parseRecord(\n    await work(token, state, () =>\n      heldOperationFile(\n        state.source.operationToken,\n        "full-sdk-engine-package-result.json",\n        131072,\n        state.engineResults[3].result,\n        true,\n      ),\n    ),\n  );\n  need(\n    result.sdkBuilt === true &&\n      result.role === "package" &&\n      result.output?.bundle === "full-sdk-package/bundle" &&\n      Array.isArray(result.output.assets) &&\n      result.output.assets.length === 5 &&\n      new Set(result.output.assets.map((row) => row.name)).size === 5,\n    "SDK_PACKAGE_RESULT",\n  );\n  const operation = operationState(state.source.operationToken, true),\n    lockRecord = await work(token, state, () =>\n      heldOperationFile(\n        state.source.operationToken,\n        "full-sdk-package/bundle/source-lock.json",\n        2 * 1024 ** 2,\n        undefined,\n        true,\n      ),\n    ),\n    lock = JSON.parse(lockRecord.raw);\n  need(\n    custom.identitySha256(lock) === state.source.sourceId,\n    "SDK_SOURCE_IDENTITY",\n  );\n  const identity = sdkRuntime.releaseIdentity(lock, state.source.target),\n    names = [\n      "runtime.json",\n      "source-lock.json",\n      "manifest.json",\n      "receipt.json",\n      identity.archive,\n    ];\n  need(\n    result.output.assets.every((row) => names.includes(row.name)),\n    "SDK_ASSET_SET",\n  );\n  const assets = [];\n  for (const name of names)\n    assets.push(\n      await sealSdkAsset(\n        token,\n        name,\n        result.output.assets.find((row) => row.name === name),\n      ),\n    );\n  const verified = await work(token, state, () =>\n    sdkRuntime.verifyBundle(\n      path.join(state.source.root, "full-sdk-package/bundle"),\n      "supermarsx/sortOfRemoteNG",\n    ),\n  );\n  retained(token, state);\n  need(\n    verified.descriptor.target === state.source.target &&\n      verified.identity.sourceLockSha256 === state.source.sourceId &&\n      verified.assets.length === 5 &&\n      verified.assets.every((row) =>\n        assets.some(\n          (asset) =>\n            asset.name === row.name &&\n            asset.size === row.size &&\n            asset.sha256 === row.sha256,\n        ),\n      ),\n    "SDK_BUNDLE_BINDING",\n  );\n  for (const asset of assets) {\n    const current = await sealSdkAsset(token, asset.name, asset);\n    need(current.identity === asset.identity, "SDK_ASSET_REPLACED");\n  }\n  await work(token, state, () =>\n    recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n  );\n  await currentRoot(token, state);\n  retained(token, state);\n  need(\n    state.assetFds.size === 0 &&\n      operation.readFds.size === 0 &&\n      operation.logFds.size === 0,\n    "SDK_FD_JOIN",\n  );\n  const seal = Object.freeze({\n    kind: "windows-arm-full-sdk-produced",\n    sourceId: state.source.sourceId,\n    image: state.source.image,\n    target: state.source.target,\n    sdkBuilt: true,\n    nativeAcceptance: false,\n    runtimeReady: false,\n    publicationAllowed: false,\n    bundle: "full-sdk-package/bundle",\n    assets: Object.freeze(assets),\n  });\n  state.sdkSeal = seal; // Private final fact; the report/transport is a projection only.\n  return seal;\n}\nasync function verifyProducedCheckpoint(token) {\n  const state = controls.get(token);\n  need(state, "CONTROL_BRAND");\n  retained(token, state);\n  need(\n    state.engineResults?.length === 4 &&\n      state.engineResults[2] === state.nativeSliceFact &&\n      state.nativeSliceFact?.nativeSliceEnded === true &&\n      state.engineResults[3].role === "checkpoint-seal" &&\n      !state.enginePhase &&\n      state.compilerAdmission?.full61Qualified === true,\n    "CHECKPOINT_PRIVATE_PHASES",\n  );\n  await work(token, state, () =>\n    recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n  );\n  for (const phase of state.engineResults)\n    for (const row of phase.records) {\n      const value = await work(token, state, () =>\n        heldOperationFile(\n          state.source.operationToken,\n          row.relative,\n          row.maximum,\n          row.pin,\n          true,\n        ),\n      );\n      need(value.identity === row.identity, "CHECKPOINT_PHASE_CHANGED");\n    }\n  const actor = state.engineResults[3],\n    output = actor.output;\n  need(\n    output?.dataOnly === true &&\n      output.sealed === true &&\n      output.outcome === "quiet-deadline" &&\n      output.bundle === "full-sdk-checkpoint-output" &&\n      output.sourceContextSha256 ===\n        state.source.metadataSnapshot.matchedExpectedDefaults.contextSha256,\n    "CHECKPOINT_SEAL_RESULT",\n  );\n  const operation = operationState(state.source.operationToken, true),\n    read = (relative, maximum, pin) =>\n      work(token, state, () =>\n        heldOperationFile(\n          state.source.operationToken,\n          relative,\n          maximum,\n          pin,\n          true,\n        ),\n      );\n  const result = parseRecord(\n    await read("full-sdk-checkpoint-seal-result.json", 131072, output.result),\n  );\n  need(\n    canonical(result) ===\n      canonical(\n        Object.fromEntries(\n          Object.entries(output).filter(([key]) => key !== "result"),\n        ),\n      ),\n    "CHECKPOINT_ACTOR_RESULT",\n  );\n  const checkpoint = await read(\n      "full-sdk-checkpoint-output/checkpoint.json",\n      2 * 1024 ** 2,\n      output.checkpoint,\n    ),\n    record = parentMetadata_qualificationBoundedJson(\n      checkpoint.raw,\n      2 * 1024 ** 2,\n    );\n  parentMetadata_qualificationShape(\n    record,\n    [\n      "schemaVersion",\n      "kind",\n      "identity",\n      "workflow",\n      "producerInputs",\n      "outArchive",\n      "inputSidecar",\n      "rawChain",\n      "nativeEvidence",\n      "codec",\n      "sourceQualified",\n      "sdkBuilt",\n      "nativeAcceptance",\n      "executionAdmitted",\n    ],\n    "CHECKPOINT_RECORD_FIELDS",\n  );\n  const graph = await read(\n      "source-gn-logs/fresh-graph-pins.json",\n      16 * 1024 ** 2,\n    ),\n    sourceContext = parseRecord(\n      await read(\n        "context.json",\n        131072,\n        operation.plan.rootPins.find((row) => row.relative === "context.json"),\n      ),\n    );\n  need(\n    record.schemaVersion === 1 &&\n      record.kind === "windows-arm-full-sdk-compiled-checkpoint" &&\n      record.sourceQualified === false &&\n      record.sdkBuilt === false &&\n      record.nativeAcceptance === false &&\n      record.executionAdmitted === false &&\n      canonical(record.codec) ===\n        canonical({\n          bytes: 154847,\n          sha256:\n            "043659e63e1cfc50b5af8209a1e30fd924ed379e7355069fa654b657bc789113",\n        }) &&\n      canonical(record.producerInputs) ===\n        canonical(operation.plan.producerInputs),\n    "CHECKPOINT_RECORD_SCOPE",\n  );\n  const expectedIdentity = {\n    image: state.source.image,\n    sourceId: state.source.sourceId,\n    producerSha256: producerInputDigest(operation.plan.producerInputs),\n    sourceDateEpoch: { present: false, value: null },\n    canonicalRoot: path.basename(state.source.root),\n    toolProofPin: state.source.toolProofSnapshot.record.pin,\n    graphPin: graph.pin,\n  };\n  need(\n    canonical(record.identity) === canonical(expectedIdentity) &&\n      canonical(record.workflow) ===\n        canonical({\n          repository: "supermarsx/sortOfRemoteNG",\n          repositoryId: 1010282954,\n          path: ".github/workflows/windows-arm-full-sdk.yml",\n          ref: "refs/heads/main",\n          head: sourceContext.head,\n          runId: sourceContext.runId,\n          attempt: sourceContext.attempt,\n        }),\n    "CHECKPOINT_IDENTITY",\n  );\n  const mapping = {\n    sourceContext: "context.json",\n    engineContext: "full-sdk-engine-cef-engine-context.json",\n    launch: "full-sdk-engine-cef-engine-launch.json",\n    job: "jobs/cef-engine/receipt.json",\n    close: "full-sdk-engine-closed-cef-engine.json",\n    sourceJob: "jobs/full-source-operation/receipt.json",\n    sourceLauncher: "full-source-launcher-result.json",\n    sourceClose: "full-source-closed-launcher.json",\n  };\n  parentMetadata_qualificationShape(\n    record.rawChain,\n    ["outcome", ...Object.keys(mapping)],\n    "CHECKPOINT_CHAIN_FIELDS",\n  );\n  need(\n    record.rawChain.outcome === "quiet-deadline",\n    "CHECKPOINT_NATIVE_OUTCOME",\n  );\n  for (const [key, relative] of Object.entries(mapping))\n    await read(relative, 1048576, record.rawChain[key]);\n  need(\n    canonical(record.rawChain.engineContext) ===\n      canonical(state.nativeSliceFact.context) &&\n      canonical(record.rawChain.launch) ===\n        canonical(state.nativeSliceFact.launch) &&\n      canonical(record.rawChain.job) ===\n        canonical(state.nativeSliceFact.receipt) &&\n      canonical(record.rawChain.close) ===\n        canonical(state.nativeSliceFact.closure),\n    "CHECKPOINT_PRIVATE_CHAIN",\n  );\n  const archive = record.outArchive;\n  parentMetadata_qualificationShape(\n    archive,\n    [\n      "complete",\n      "chunks",\n      "inventory",\n      "rawBytes",\n      "compressedBytes",\n      "entries",\n      "linksIncluded",\n    ],\n    "CHECKPOINT_ARCHIVE_FIELDS",\n  );\n  need(\n    archive.complete === true &&\n      archive.linksIncluded === false &&\n      Number.isSafeInteger(archive.rawBytes) &&\n      archive.rawBytes >= 0 &&\n      archive.rawBytes <= 256 * 1024 ** 3 &&\n      Number.isSafeInteger(archive.entries) &&\n      archive.entries > 0 &&\n      archive.entries <= 300000 &&\n      Array.isArray(archive.chunks) &&\n      archive.chunks.length > 0 &&\n      archive.chunks.length <= 32 &&\n      archive.inventory?.name === "inventory.json",\n    "CHECKPOINT_ARCHIVE",\n  );\n  const rows = [\n    { name: "checkpoint.json", ...checkpoint.pin, maximum: 2 * 1024 ** 2 },\n    { name: "inputs.jsonl", ...record.inputSidecar, maximum: 1536 * 1024 ** 2 },\n    { name: "graph.json", ...graph.pin, maximum: 16 * 1024 ** 2 },\n    {\n      name: "tools.json",\n      ...state.source.toolProofSnapshot.record.pin,\n      maximum: 16 * 1024 ** 2,\n    },\n    {\n      name: "native-chain.json",\n      ...record.nativeEvidence,\n      maximum: 2 * 1024 ** 2,\n    },\n    { ...archive.inventory, maximum: 128 * 1024 ** 2 },\n  ];\n  let compressed = 0;\n  for (const [index, row] of archive.chunks.entries()) {\n    parentMetadata_qualificationShape(\n      row,\n      ["name", "bytes", "sha256"],\n      "CHECKPOINT_CHUNK_FIELDS",\n    );\n    need(\n      row.name === `checkpoint-${String(index).padStart(5, "0")}.bin`,\n      "CHECKPOINT_CHUNK_NAME",\n    );\n    compressed += row.bytes;\n    rows.push({ ...row, maximum: 1024 ** 3 });\n  }\n  need(\n    Number.isSafeInteger(compressed) &&\n      compressed === archive.compressedBytes &&\n      compressed <= 32 * 1024 ** 3,\n    "CHECKPOINT_COMPRESSED_BOUND",\n  );\n  const assets = [];\n  for (const row of rows) {\n    need(\n      Number.isSafeInteger(row.bytes) &&\n        row.bytes > 0 &&\n        row.bytes <= row.maximum &&\n        /^[a-f0-9]{64}$/.test(row.sha256),\n      "CHECKPOINT_ASSET_BOUND",\n    );\n    assets.push(\n      await sealSdkAsset(\n        token,\n        row.name,\n        { size: row.bytes, sha256: row.sha256 },\n        "checkpoint",\n      ),\n    );\n  }\n  for (const row of assets) {\n    const value = await sealSdkAsset(token, row.name, row, "checkpoint");\n    need(value.identity === row.identity, "CHECKPOINT_ASSET_CHANGED");\n  }\n  await work(token, state, () =>\n    recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n  );\n  await currentRoot(token, state);\n  retained(token, state);\n  need(state.assetFds.size === 0, "CHECKPOINT_FD_JOIN");\n  const seal = Object.freeze({\n    kind: "windows-arm-full-sdk-checkpoint-produced",\n    image: state.source.image,\n    sourceId: state.source.sourceId,\n    target: state.source.target,\n    checkpointSealed: true,\n    sdkBuilt: false,\n    nativeAcceptance: false,\n    runtimeReady: false,\n    publicationAllowed: false,\n    bundle: "full-sdk-checkpoint-output",\n    checkpoint: Object.freeze({ ...checkpoint.pin }),\n    assets: Object.freeze(assets),\n  });\n  state.checkpointSeal = seal;\n  return seal;\n}\n\nasync function publishControllerOutcome(token, seal) {\n  const state = controls.get(token);\n  need(state, "CONTROL_BRAND");\n  retained(token, state);\n  need(\n    (state.sdkSeal === seal && seal.sdkBuilt === true) ||\n      (state.checkpointSeal === seal && seal.checkpointSealed === true),\n    "RESULT_PRIVATE_FACT",\n  );\n  const operation = operationState(state.source.operationToken, true),\n    context = operation.plan.rootPins.find(\n      (row) => row.relative === "context.json",\n    );\n  await currentRoot(token, state);\n  retained(token, state);\n  const raw = Buffer.from(JSON.stringify(seal, null, 2) + "\\n");\n  need(raw.length <= 131072, "RESULT_BOUND");\n  await work(token, state, () =>\n    fs.writeFile(\n      path.join(state.source.root, "full-sdk-controller-result.json"),\n      raw,\n      { flag: "wx" },\n    ),\n  );\n  await currentRoot(token, state);\n  retained(token, state);\n  const file = process.env.GITHUB_OUTPUT;\n  need(\n    typeof file === "string" &&\n      path.isAbsolute(file) &&\n      path.dirname(file) ===\n        path.join(\n          path.resolve(CONTROLLER_REPO, "../../_temp"),\n          "_runner_file_commands",\n        ) &&\n      /^set_output_[a-f0-9-]{36}$/.test(path.basename(file)),\n    "RESULT_OUTPUT_PATH",\n  );\n  await physical(token, state, path.dirname(file));\n  const record = Buffer.from(\n    `root=${state.source.root.replaceAll("\\\\", "/")}\\ncontext_sha256=${context.sha256}\\noutcome=${seal.sdkBuilt ? "sdk" : "checkpoint"}\\n`,\n  );\n  need(record.length <= 1024, "RESULT_OUTPUT_BOUND");\n  state.assetFds ??= new Set();\n  const fd = await work(\n    token,\n    state,\n    () =>\n      fs\n        .open(\n          file,\n          constants.O_WRONLY | constants.O_APPEND | (constants.O_NOFOLLOW ?? 0),\n        )\n        .then((value) => {\n          state.assetFds.add(value);\n          return value;\n        }),\n    async (late) => {\n      await late.close();\n      state.assetFds.delete(late);\n    },\n  );\n  try {\n    const before = await work(token, state, () => fd.stat({ bigint: true }));\n    need(\n      fileId(before) ===\n        fileId(\n          await work(token, state, () => fs.lstat(file, { bigint: true })),\n        ),\n      "RESULT_OUTPUT_CHANGED",\n    );\n    retained(token, state);\n    await work(token, state, () => fd.writeFile(record));\n    const after = await work(token, state, () => fd.stat({ bigint: true }));\n    need(\n      after.dev === before.dev &&\n        after.ino === before.ino &&\n        after.size === before.size + BigInt(record.length) &&\n        fileId(after) ===\n          fileId(\n            await work(token, state, () => fs.lstat(file, { bigint: true })),\n          ),\n      "RESULT_OUTPUT_CHANGED",\n    );\n    await work(token, state, () => fd.close());\n    state.assetFds.delete(fd);\n  } catch (error) {\n    throw fail(state, error);\n  }\n  await currentRoot(token, state);\n  retained(token, state);\n}\n// END PRIVATE FINAL SDK VERIFICATION\n\nasync function runFullSdkTransaction(bootstrap) {\n  const owner = bootstrapOwners.get(bootstrap);\n  need(owner && owner.pid === process.pid, "BOOTSTRAP_BRAND");\n  let operation,\n    control,\n    result,\n    failed = false,\n    primary;\n  const remember = (error) => {\n    if (!failed) {\n      failed = true;\n      primary = error;\n    }\n  };\n  try {\n    bootstrapState(bootstrap);\n    operation = await createSourceOperation(bootstrap);\n    const source = await runSourcePhase(operation);\n    control = await createControl(source, owner.lease);\n    await prepareFreshPolicy(control);\n    await runEnginePhase(control, "probe-clang");\n    await runEnginePhase(control, "probe-link");\n    const engine = await runEnginePhase(control, "cef-engine");\n    if (engine === controls.get(control).nativeSliceFact) {\n      await runEnginePhase(control, "checkpoint-seal");\n      result = await verifyProducedCheckpoint(control);\n    } else {\n      await runEnginePhase(control, "package");\n      result = await verifyProducedSdk(control);\n    }\n    await publishControllerOutcome(control, result);\n  } catch (error) {\n    remember(error);\n  } finally {\n    if (failed && !owner.cancel.signal.aborted) owner.cancel.abort(primary);\n    const controlState = control ? controls.get(control) : undefined;\n    try {\n      if (control) await retireControl(control);\n    } catch (error) {\n      remember(error);\n    }\n    if (controlState && controlState.cleanupConfirmed !== true)\n      remember(\n        controlState.failed\n          ? controlState.primary\n          : new Error("FULL_SDK_CONTROL_CLEANUP_UNCONFIRMED"),\n      );\n    const sourceToken = operation ?? owner.operation,\n      source = sourceToken ? sourceOperations.get(sourceToken) : undefined;\n    try {\n      if (sourceToken) await retireSourceOperation(sourceToken);\n    } catch (error) {\n      remember(error);\n    }\n    if (source && source.cleanupConfirmed !== true)\n      remember(\n        source.failed\n          ? source.primary\n          : new Error("FULL_SDK_CONTROL_SOURCE_CLEANUP_UNCONFIRMED"),\n      );\n    const leaseBeforeClose = leases.get(owner.lease),\n      bootstrapCleanup = owner.bootstrapFailureCleanup ?? {\n        cleanupEnd: Math.min(\n          performance.now() + CLEANUP_MS,\n          leaseBeforeClose.monoEnd - FINAL_RESERVE_MS,\n        ),\n        cleanupWallEnd: Math.min(\n          Date.now() + CLEANUP_MS,\n          leaseBeforeClose.wallEnd - FINAL_RESERVE_MS,\n        ),\n      };\n    const closing = [...(owner.bootstrapFds ?? [])].map((fd) =>\n      Promise.resolve()\n        .then(() => fd.close())\n        .then(() => owner.bootstrapFds.delete(fd)),\n    );\n    try {\n      if (closing.length || owner.bootstrapPending?.size)\n        await cleanupStep(bootstrapCleanup, () =>\n          Promise.all([\n            ...closing,\n            ...[...(owner.bootstrapPending ?? [])].map((value) =>\n              value.catch(() => undefined),\n            ),\n          ]),\n        );\n    } catch (error) {\n      remember(error);\n    }\n    if (owner.bootstrapFds?.size || owner.bootstrapPending?.size)\n      remember(new Error("FULL_SDK_CONTROL_BOOTSTRAP_CLEANUP_UNCONFIRMED"));\n    // No awaited cleanup or falsy primary can skip these final revocations.\n    owner.closed = true;\n    bootstrapOwners.delete(bootstrap);\n    const lease = leases.get(owner.lease);\n    if (lease) lease.closed = true;\n  }\n  if (failed) throw primary;\n  return result;\n}\n// END CLOSED FULL SDK SOURCE CONTROLLER\n\nexport function main(argv = process.argv.slice(2)) {\n  const bootstrap = beginFullSdkBootstrap();\n  try {\n    need(\n      !utilTypes.isProxy(argv) &&\n        Array.isArray(argv) &&\n        Object.getPrototypeOf(argv) === Array.prototype &&\n        Object.keys(Object.getOwnPropertyDescriptors(argv)).sort().join() ===\n          "0,length" &&\n        Object.values(Object.getOwnPropertyDescriptors(argv)).every((row) =>\n          Object.hasOwn(row, "value"),\n        ) &&\n        argv.length === 1 &&\n        argv[0] === "--execute",\n      "ENTRY_ARGV",\n    );\n    return runFullSdkTransaction(bootstrap);\n  } catch (error) {\n    const owner = bootstrapOwners.get(bootstrap);\n    owner.closed = true;\n    leases.get(owner.lease).closed = true;\n    bootstrapOwners.delete(bootstrap);\n    throw error;\n  }\n}\nif (\n  process.argv[1] &&\n  path.resolve(process.argv[1]) === fileURLToPath(MODULE_URL)\n) {\n  Promise.resolve()\n    .then(() => main())\n    .catch((error) => {\n      const code = /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(error?.message ?? "")\n        ? error.message\n        : "FULL_SDK_CONTROL_FAILED";\n      console.error(\n        JSON.stringify({\n          kind: "windows-arm-full-sdk-failure",\n          error: code,\n          sdkBuilt: false,\n          nativeAcceptance: false,\n        }),\n      );\n      process.exitCode = 1;\n    });\n}\n',
+        oldSha256:
+          "2c44896d97bdbb2af2ce1ede3e18e971414546258e5ddcf2eaa4f8d9e46243cb",
+        newSha256:
+          "f078a5a61b89dc3c766aabe1bc567e3da89cccf7f42c77f65d3aedfd1b8f7a09",
+      },
+    ],
+    bytes: 113463,
+    sha256: "9ef4d2b569e57b7483390a1ec922635526fc60f38ed102346b8541d4fffbd893",
+  },
+  driver: {
+    rows: [
+      {
+        name: "finite-0",
+        oldRaw:
+          '  closeSync,\n  writeFileSync,\n  watch,\n  renameSync,\n  realpathSync,\n} from "node:fs";\nimport path from "node:path";\nimport { pathToFileURL, fileURLToPath } from "node:url";\nimport { createHash } from "node:crypto";\nimport { spawn } from "node:child_process";\n\nconst HERE = path.dirname(fileURLToPath(import.meta.url));\nconst REPO = path.resolve(HERE, "../..");\nconst HELPER_ROOT = path.join(HERE, "current-source-helpers");\n',
+        newRaw:
+          '  closeSync,\n  writeFileSync,\n  watch,\n  renameSync,\n  realpathSync,\n} from "node:fs";\nimport path from "node:path";\nimport { types as utilTypes } from "node:util";\nimport { pathToFileURL, fileURLToPath } from "node:url";\nimport { createHash } from "node:crypto";\nimport { spawn } from "node:child_process";\n\nconst HERE = path.dirname(fileURLToPath(import.meta.url));\nconst REPO = path.resolve(HERE, "../..");\nconst HELPER_ROOT = path.join(HERE, "current-source-helpers");\n',
+        oldSha256:
+          "5cc44095289854506159987e454b7ded8c92ab45536c35fb0ceb37c1876cec9e",
+        newSha256:
+          "87b766fa1c5c2775da7503b51d1c0c907a46e08cd47555c709e7b9440d2fa587",
+      },
+      {
+        name: "finite-1",
+        oldRaw:
+          '    need(performance.now() - began < allowed, "FULL_SOURCE_STAGE_DEADLINE");\n    return result;\n  } finally {\n    clearTimeout(timer);\n  }\n}\n\nconst FULL_SOURCE_BODY_ADMITTED = false;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "528dfa3b3a510f0fc9c5e5f48af8044e004ccd9f2b217b1943d2d67053be9aa2";\nconst fullSourceProfiles = new WeakMap();\n\n// Actual full source owner and graph receipts are the only metadata issuers.\n// The unchanged private profile below is a pinned data recipe, never full authority.\nconst fullMetadataOwners = new WeakMap();\nconst fullMetadataSources = new WeakMap();\nconst fullMetadataContexts = new WeakMap();\n',
+        newRaw:
+          '    need(performance.now() - began < allowed, "FULL_SOURCE_STAGE_DEADLINE");\n    return result;\n  } finally {\n    clearTimeout(timer);\n  }\n}\n\nconst FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "ffb9fce5aa8020dd46d2d32d8196172dfd56f3e28e6e12db934b276536927f1b";\nconst fullSourceProfiles = new WeakMap();\n\n// Actual full source owner and graph receipts are the only metadata issuers.\n// The unchanged private profile below is a pinned data recipe, never full authority.\nconst fullMetadataOwners = new WeakMap();\nconst fullMetadataSources = new WeakMap();\nconst fullMetadataContexts = new WeakMap();\n',
+        oldSha256:
+          "e6906ec3134f45b283a317ed788887c0f6aec76ab08abac3b1651201f81dbabc",
+        newSha256:
+          "582f700f9a3b650f36924a1ec446d212fa2cf95ab1144fec41f5a048eeeace44",
+      },
+      {
+        name: "finite-2",
+        oldRaw:
+          '      c.kind === "windows-arm-full-sdk-context" &&\n      c.head === c.workflowSha &&\n      /^[a-f0-9]{40}$/.test(c.head) &&\n      /^[1-9][0-9]*$/.test(c.runId) &&\n      /^[1-9][0-9]*$/.test(c.attempt) &&\n      c.inputs &&\n      Object.getPrototypeOf(c.inputs) === Object.prototype &&\n      Object.keys(c.inputs).length === 0,\n    "FULL_SDK_SOURCE_CONTEXT",\n  );\n}\nasync function loadFullSourceProfile(root, c, provisional, contextPin) {\n  requireFullSourceContext(c);\n  const raw = await held(\n    path.join(HERE, "full-sdk-source-profile.json"),\n',
+        newRaw:
+          '      c.kind === "windows-arm-full-sdk-context" &&\n      c.head === c.workflowSha &&\n      /^[a-f0-9]{40}$/.test(c.head) &&\n      /^[1-9][0-9]*$/.test(c.runId) &&\n      /^[1-9][0-9]*$/.test(c.attempt) &&\n      c.inputs &&\n      Object.getPrototypeOf(c.inputs) === Object.prototype &&\n      Object.keys(c.inputs).length === 1 &&\n      typeof c.inputs.restore_run === "string" &&\n      /^(?:0|[1-9][0-9]{0,19})$/.test(c.inputs.restore_run),\n    "FULL_SDK_SOURCE_CONTEXT",\n  );\n}\nasync function loadFullSourceProfile(root, c, provisional, contextPin) {\n  requireFullSourceContext(c);\n  const raw = await held(\n    path.join(HERE, "full-sdk-source-profile.json"),\n',
+        oldSha256:
+          "f010f710b669e91884f8538d269abbd21757ede2849a00073707d516ad8463dd",
+        newSha256:
+          "aadd9cef691bdcb830c3af465e47e9a1a9a3a4c7d761f9388a01ba91c1ef049a",
+      },
+      {
+        name: "finite-3",
+        oldRaw:
+          '  need(sha(raw) === FULL_SOURCE_PROFILE_SHA256, "FULL_SDK_SOURCE_PROFILE_PIN");\n  const full = JSON.parse(raw);\n  need(\n    full.fullModeBodyImplemented === true &&\n      full.sourceSessionIssuerImplemented === true &&\n      full.executionAdmitted === false &&\n      full.sourceProgramCarryforwardQualified === false &&\n      full.fullArm64DefaultsQualified === false,\n    "FULL_SDK_SOURCE_PROFILE_CLOSED",\n  );\n  const pin = full.images[c.image];\n  need(\n    pin &&\n      c.sourceId === pin.sourceId &&\n      c.sourceProfileSha256 === pin.profileSha256,\n',
+        newRaw:
+          '  need(sha(raw) === FULL_SOURCE_PROFILE_SHA256, "FULL_SDK_SOURCE_PROFILE_PIN");\n  const full = JSON.parse(raw);\n  need(\n    full.fullModeBodyImplemented === true &&\n      full.sourceSessionIssuerImplemented === true &&\n      full.executionAdmitted === false &&\n      full.sourceProgramCarryforwardQualified === false &&\n      full.fullArm64DefaultsQualified === false &&\n      full.sourceQualificationAllowed === true,\n    "FULL_SDK_SOURCE_PROFILE_CLOSED",\n  );\n  const pin = full.images[c.image];\n  need(\n    pin &&\n      c.sourceId === pin.sourceId &&\n      c.sourceProfileSha256 === pin.profileSha256,\n',
+        oldSha256:
+          "0ebb57c69b0a2597ef5464cccbf655f30089ceed3d7075e4a92f60fb7506ca78",
+        newSha256:
+          "f55d43e3c391111c0b04d8c37e1a7a63647be6eaaccb5383828e1bf8f6978b0d",
+      },
+      {
+        name: "finite-4",
+        oldRaw:
+          '  });\n  return { p, budget, tools, files, privatePolicyRaw: raw };\n}\nfunction fullSourceCommands(root, p, hooks, contextPin) {\n  const state = fullSourceProfiles.get(p);\n  need(state && state.root === root, "FULL_SDK_SOURCE_RECIPE_BRAND");\n  state.budget.remaining();\n  return Object.freeze(\n    sourceCommands(root, p, hooks, contextPin).map((row) => {\n      if (row.role !== "verify-setup") return row;\n      need(\n        row.args[2] === path.join(HERE, "producer.py") &&\n          row.args[3] === "--verify-source-setup",\n        "FULL_SDK_SOURCE_SETUP_VECTOR",\n      );\n',
+        newRaw:
+          '  });\n  return { p, budget, tools, files, privatePolicyRaw: raw };\n}\nfunction fullSourceCommands(root, p, hooks, contextPin) {\n  const state = fullSourceProfiles.get(p);\n  need(state && state.root === root, "FULL_SDK_SOURCE_RECIPE_BRAND");\n  state.budget.remaining();\n  const commands = Object.freeze(\n    sourceCommands(root, p, hooks, contextPin).map((row) => {\n      if (row.role !== "verify-setup") return row;\n      need(\n        row.args[2] === path.join(HERE, "producer.py") &&\n          row.args[3] === "--verify-source-setup",\n        "FULL_SDK_SOURCE_SETUP_VECTOR",\n      );\n',
+        oldSha256:
+          "3e8de510120ee0a1f7d757cbc7b5179aabee260f03c4944822a95a2c2ce5222d",
+        newSha256:
+          "d1223875fd0e72492cc6e038c4e027a19b0cf42fd240faf540c4e6b4cef0a49a",
+      },
+      {
+        name: "finite-5",
+        oldRaw:
+          '          root,\n          contextPin,\n          "--execute",\n        ]),\n      });\n    }),\n  );\n}\nasync function runFullSourceBody(argv) {\n  need(FULL_SOURCE_BODY_ADMITTED, "FULL_SDK_SOURCE_EXECUTION_CLOSED");\n  need(\n    process.platform === "win32" &&\n      process.arch === "x64" &&\n      argv.length === 4 &&\n      argv[0] === "--full-sdk-source-gn" &&\n',
+        newRaw:
+          '          root,\n          contextPin,\n          "--execute",\n        ]),\n      });\n    }),\n  );\n  return Object.freeze([\n    ...commands,\n    Object.freeze({\n      role: "restore-checkpoint",\n      executable: p.python.path,\n      cwd: root,\n      args: Object.freeze([\n        "-I",\n        "-B",\n        path.join(HERE, "compiled_checkpoint.py"),\n        "--restore",\n        root,\n        contextPin,\n      ]),\n    }),\n  ]);\n}\n\n// BEGIN SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION\nconst fullSourceSentinelOwners = new WeakSet();\nasync function normalizeFullSourceDepotToolsSentinel(root, p, contextPin) {\n  const binding = fullBootstrapAuthority(root, p, contextPin);\n  need(binding && !fullSourceSentinelOwners.has(p), "FULL_SENTINEL_OWNER");\n  const relative =\n      "source-checkout/src/third_party/depot_tools/.disable_auto_update",\n    file = path.join(root, relative),\n    script = path.join(path.dirname(file), "update_depot_tools_toggle.py"),\n    scriptPin = {\n      bytes: 1205,\n      sha256:\n        "6797d3ed046e32efbd48e044347dce7703559b76b4adaca1c874f69ff83c1c23",\n    };\n  const originalRemaining = binding.budget.remaining(),\n    began = performance.now(),\n    monoEnd = began + Math.min(30000, originalRemaining),\n    wallEnd = Math.min(\n      Date.now() + 30000,\n      binding.context.wallWholeEnd * 1000 - 150000,\n    );\n  let failed = false,\n    primary,\n    fd,\n    result,\n    retired = false;\n  const remember = (error) => {\n    if (!failed) {\n      failed = true;\n      primary = error;\n    }\n  };\n  const owner = () => {\n    need(\n      fullBootstrapAuthority(root, p, contextPin) === binding,\n      "FULL_SENTINEL_RETIRED",\n    );\n    binding.budget.remaining();\n    need(\n      performance.now() < monoEnd && Date.now() < wallEnd,\n      "FULL_SENTINEL_DEADLINE",\n    );\n  };\n  const wait = async (action) => {\n    owner();\n    let timer;\n    try {\n      const value = await Promise.race([\n        Promise.resolve().then(() => {\n          owner();\n          return action();\n        }),\n        new Promise((_, reject) => {\n          timer = setTimeout(\n            () => reject(new Error("FULL_SENTINEL_DEADLINE")),\n            Math.max(\n              1,\n              Math.min(\n                monoEnd - performance.now(),\n                wallEnd - Date.now(),\n                binding.budget.remaining(),\n              ),\n            ),\n          );\n        }),\n      ]);\n      owner();\n      return value;\n    } finally {\n      clearTimeout(timer);\n    }\n  };\n  const dirId = (info) => {\n    need(\n      info.isDirectory() && !info.isSymbolicLink(),\n      "FULL_SENTINEL_DIRECTORY",\n    );\n    return [\n      info.dev,\n      info.ino,\n      info.mode,\n      info.uid,\n      info.gid,\n      info.birthtimeNs,\n    ].join(":");\n  };\n  const parents = [];\n  const fence = async () => {\n    for (const entry of parents)\n      need(\n        dirId(await wait(() => fs.lstat(entry.path, { bigint: true }))) ===\n          entry.identity,\n        "FULL_SENTINEL_ANCESTOR",\n      );\n    need((await wait(() => physical(file))) === file, "FULL_SENTINEL_ALIAS");\n    owner();\n  };\n  try {\n    await wait(() => held(script, scriptPin.bytes, binding.budget, scriptPin));\n    for (let current = path.dirname(file); ; current = path.dirname(current)) {\n      parents.push({\n        path: current,\n        identity: dirId(await wait(() => fs.lstat(current, { bigint: true }))),\n      });\n      if (current === path.dirname(current)) break;\n    }\n    await fence();\n    const pendingOpen = wait(() =>\n      fs\n        .open(file, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0))\n        .then(async (value) => {\n          if (retired) {\n            await value.close();\n            throw primary;\n          }\n          fd = value;\n          return value;\n        }),\n    );\n    await pendingOpen;\n    const before = await wait(() => fd.stat({ bigint: true }));\n    need(\n      before.isFile() &&\n        !before.isSymbolicLink() &&\n        before.nlink === 1n &&\n        before.size > 0n &&\n        before.size <= 4096n,\n      "FULL_SENTINEL_FILE",\n    );\n    const identity = signature(before);\n    need(\n      signature(await wait(() => fs.lstat(file, { bigint: true }))) ===\n        identity,\n      "FULL_SENTINEL_CHANGED",\n    );\n    const buffer = Buffer.alloc(Number(before.size) + 1);\n    let count = 0;\n    while (count < buffer.length) {\n      const read = await wait(() =>\n        fd.read(buffer, count, buffer.length - count, count),\n      );\n      if (!read.bytesRead) break;\n      count += read.bytesRead;\n    }\n    need(\n      count === Number(before.size) &&\n        signature(await wait(() => fd.stat({ bigint: true }))) === identity &&\n        signature(await wait(() => fs.lstat(file, { bigint: true }))) ===\n          identity,\n      "FULL_SENTINEL_CHANGED",\n    );\n    const raw = buffer.subarray(0, count),\n      prefix = Buffer.from("Disabled by " + script + " at ", "utf8");\n    need(\n      raw.length > prefix.length + 2 &&\n        raw.subarray(0, prefix.length).equals(prefix) &&\n        raw.subarray(-2).equals(Buffer.from("\\r\\n")),\n      "FULL_SENTINEL_GRAMMAR",\n    );\n    const timestampRaw = raw.subarray(prefix.length, -2);\n    need(\n      timestampRaw.every((byte) => byte >= 32 && byte <= 126),\n      "FULL_SENTINEL_GRAMMAR",\n    );\n    const timestamp = timestampRaw.toString("ascii"),\n      match =\n        /^([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\\.[0-9]{6})?$/.exec(\n          timestamp,\n        );\n    need(\n      match && (timestamp.length === 19 || timestamp.length === 26),\n      "FULL_SENTINEL_TIMESTAMP",\n    );\n    const [year, month, day, hour, minute, second] = match.slice(1).map(Number),\n      date = new Date(0);\n    date.setUTCFullYear(year, month - 1, day);\n    date.setUTCHours(hour, minute, second, 0);\n    need(\n      year >= 1 &&\n        year <= 9999 &&\n        date.getUTCFullYear() === year &&\n        date.getUTCMonth() === month - 1 &&\n        date.getUTCDate() === day &&\n        date.getUTCHours() === hour &&\n        date.getUTCMinutes() === minute &&\n        date.getUTCSeconds() === second,\n      "FULL_SENTINEL_TIMESTAMP",\n    );\n    const canonical = Buffer.concat([\n      prefix,\n      Buffer.from("1970-01-01 00:00:00\\r\\n"),\n    ]);\n    await fence();\n    need(\n      signature(await wait(() => fd.stat({ bigint: true }))) === identity &&\n        signature(await wait(() => fs.lstat(file, { bigint: true }))) ===\n          identity,\n      "FULL_SENTINEL_CHANGED",\n    );\n    owner();\n    fullSourceSentinelOwners.add(p); // This genuine source lifetime may normalize once.\n    if (!raw.equals(canonical)) {\n      owner();\n      const written = await wait(() =>\n        fd.write(canonical, 0, canonical.length, 0),\n      );\n      need(\n        written.bytesWritten === canonical.length,\n        "FULL_SENTINEL_PARTIAL_WRITE",\n      );\n      owner();\n      await wait(() => fd.truncate(canonical.length));\n      owner();\n      await wait(() => fd.sync());\n    }\n    const after = await wait(() => fd.stat({ bigint: true }));\n    need(\n      after.isFile() &&\n        after.nlink === 1n &&\n        after.dev === before.dev &&\n        after.ino === before.ino &&\n        after.size === BigInt(canonical.length) &&\n        signature(after) ===\n          signature(await wait(() => fs.lstat(file, { bigint: true }))),\n      "FULL_SENTINEL_CHANGED",\n    );\n    const check = Buffer.alloc(canonical.length + 1);\n    let size = 0;\n    while (size < check.length) {\n      const value = await wait(() =>\n        fd.read(check, size, check.length - size, size),\n      );\n      if (!value.bytesRead) break;\n      size += value.bytesRead;\n    }\n    need(\n      size === canonical.length &&\n        check.subarray(0, size).equals(canonical) &&\n        signature(await wait(() => fd.stat({ bigint: true }))) ===\n          signature(after),\n      "FULL_SENTINEL_READBACK",\n    );\n    await fence();\n    owner();\n    result = {\n      dataOnly: true,\n      relative,\n      bytes: canonical.length,\n      sha256: sha(canonical),\n    };\n  } catch (error) {\n    remember(error);\n    retired = true;\n    fullSourceProfiles.delete(p);\n  } finally {\n    // Poison before awaited close; no rollback/retry.\n    if (fd) {\n      let timer;\n      const close = Promise.resolve().then(() => fd.close());\n      try {\n        await Promise.race([\n          close,\n          new Promise((_, reject) => {\n            timer = setTimeout(\n              () => reject(new Error("FULL_SENTINEL_CLOSE_DEADLINE")),\n              Math.max(\n                1,\n                Math.min(monoEnd - performance.now(), wallEnd - Date.now()),\n              ),\n            );\n          }),\n        ]);\n      } catch (error) {\n        remember(error);\n        fullSourceProfiles.delete(p);\n      } finally {\n        clearTimeout(timer);\n      }\n    }\n  }\n  if (failed) throw primary;\n  try {\n    await fence();\n    owner();\n    return result;\n  } catch (error) {\n    retired = true;\n    fullSourceProfiles.delete(p);\n    throw error;\n  }\n}\n// END SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION\n\nasync function runFullSourceBody(argv) {\n  need(FULL_SOURCE_BODY_ADMITTED, "FULL_SDK_SOURCE_EXECUTION_CLOSED");\n  need(\n    process.platform === "win32" &&\n      process.arch === "x64" &&\n      argv.length === 4 &&\n      argv[0] === "--full-sdk-source-gn" &&\n',
+        oldSha256:
+          "b1f528bb40e0f61b05798de6173717d48501a9cae6994b15fba4c84b4ae83195",
+        newSha256:
+          "b740a7e5b8e3532fd8ef25aebfb4c8c7cbaf86c0e691e528bca0c01715e5c473",
+      },
+      {
+        name: "finite-6",
+        oldRaw:
+          '        custom.verifySourceCheckoutVersion(\n          p.python.path,\n          files.chromium,\n          lock.upstream.cef.version,\n        ),\n      );\n      await held(gnPath, 16 * 1024 ** 2, budget, gnPin);\n      stage = "cef-gn";\n      await checked(() =>\n        executeCommand(\n          executionCommands[7],\n          executionCommands,\n          env,\n          files,\n',
+        newRaw:
+          '        custom.verifySourceCheckoutVersion(\n          p.python.path,\n          files.chromium,\n          lock.upstream.cef.version,\n        ),\n      );\n      await held(gnPath, 16 * 1024 ** 2, budget, gnPin);\n      await normalizeFullSourceDepotToolsSentinel(root, p, argv[2]);\n      // BEGIN SOURCE OWNED CHECKPOINT RESTORE\n      let restoredCheckpoint;\n      if (c.inputs.restore_run !== "0") {\n        need(\n          c.checkpointRestore &&\n            c.checkpointRestore.runId === c.inputs.restore_run,\n          "FULL_RESTORE_CONTEXT",\n        );\n        fullBootstrapAuthority(root, p, argv[2]);\n        stage = "restore-checkpoint";\n        const rawRestore = await checked(() =>\n          executeCommand(\n            executionCommands[8],\n            executionCommands,\n            env,\n            files,\n            budget,\n            limits,\n            true,\n            { value: bootstrap, contextSha: argv[2] },\n          ),\n        );\n        fullBootstrapAuthority(root, p, argv[2]);\n        restoredCheckpoint = qualificationBoundedJson(\n          Buffer.from(rawRestore),\n          131072,\n        );\n        need(\n          restoredCheckpoint.dataOnly === true &&\n            restoredCheckpoint.restored === true &&\n            restoredCheckpoint.priorGraphFile ===\n              "full-sdk-checkpoint-import/graph.json",\n          "FULL_RESTORE_DATA",\n        );\n        await held(\n          path.join(root, restoredCheckpoint.priorGraphFile),\n          16 * 1024 ** 2,\n          budget,\n          restoredCheckpoint.graphPin,\n        );\n        fullBootstrapAuthority(root, p, argv[2]);\n      } else need(c.checkpointRestore === null, "FULL_RESTORE_UNREQUESTED");\n      // END SOURCE OWNED CHECKPOINT RESTORE\n      stage = "cef-gn";\n      await checked(() =>\n        executeCommand(\n          executionCommands[7],\n          executionCommands,\n          env,\n          files,\n',
+        oldSha256:
+          "f0e56389c86ee043a2f90cedd0bf9edfc8a78eccffce05d3c75302ff9c2bad88",
+        newSha256:
+          "d1b3792ca8eb4ba05145413eacc4ef5012df3a62c7344e32f52d408bf8c1994a",
+      },
+      {
+        name: "finite-7",
+        oldRaw:
+          '        ),\n      );\n      stage = "graph-inventory";\n      currentProgress.phase("graph-inventory");\n      const capture = await collectQualificationGraph(qualificationOwner);\n      graph = capture.summary;\n      const snapshot = capture.diagnostic;\n      budget.remaining();\n      await qualificationOwnerAwait(\n        qualificationOwner,\n        fs.writeFile(\n          path.join(files.logs, "fresh-graph-pins.json"),\n          JSON.stringify(snapshot) + "\\n",\n          { flag: "wx" },\n',
+        newRaw:
+          '        ),\n      );\n      stage = "graph-inventory";\n      currentProgress.phase("graph-inventory");\n      const capture = await collectQualificationGraph(qualificationOwner);\n      graph = capture.summary;\n      const snapshot = capture.diagnostic;\n      // BEGIN FRESH RESTORED GRAPH COMPARISON\n      if (restoredCheckpoint) {\n        const priorGraph = qualificationBoundedJson(\n          await qualificationOwnerAwait(\n            qualificationOwner,\n            held(\n              path.join(root, "full-sdk-checkpoint-import/graph.json"),\n              16 * 1024 ** 2,\n              budget,\n              restoredCheckpoint.graphPin,\n            ),\n          ),\n          16 * 1024 ** 2,\n        );\n        fullMetadataOwner(qualificationOwner);\n        need(\n          staticProjectionEqual(snapshot, priorGraph),\n          "FULL_RESTORE_FRESH_GRAPH_MISMATCH",\n        );\n      }\n      // END FRESH RESTORED GRAPH COMPARISON\n      budget.remaining();\n      await qualificationOwnerAwait(\n        qualificationOwner,\n        fs.writeFile(\n          path.join(files.logs, "fresh-graph-pins.json"),\n          JSON.stringify(snapshot) + "\\n",\n          { flag: "wx" },\n',
+        oldSha256:
+          "9a0c929ca5ddc0400425b9afb2384cb8536db0ec155e60ea03c87410d36b3aca",
+        newSha256:
+          "a26c3978a0445ad052d0deb1a1b278e03719615e9e1371c5d60a7dab75f020ca",
+      },
+      {
+        name: "finite-8",
+        oldRaw:
+          '      if (!failed) throw error;\n    }\n  }\n}\n// END CLOSED FULL SDK SOURCE BODY\n\n// BEGIN INACTIVE FULL SDK SOURCE INTERFACE\nexport function fullSdkSourceMain() {\n  // No caller argument, path, environment, report or callback can enable this.\n  // Exact b039 body retained; full-mode body adaptation is not implemented.\n  throw new Error("FULL_SDK_SOURCE_EXECUTION_CLOSED");\n}\nif (\n  process.argv[1] &&\n  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)\n)\n  fullSdkSourceMain();\n// END INACTIVE FULL SDK SOURCE INTERFACE\n\nif (\n  process.argv[1] &&\n  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)\n)\n  main().catch((error) => {\n    const code = /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,56}$/.test(\n      error?.message ?? "",\n    )\n      ? error.message\n      : "PRIVATE_DRIVER_UNAVAILABLE";\n    console.error(\n      JSON.stringify({\n        success: false,\n        firstFailure: code,\n        executionAdmitted: false,\n      }),\n    );\n    process.exitCode = 1;\n  });\n',
+        newRaw:
+          '      if (!failed) throw error;\n    }\n  }\n}\n// END CLOSED FULL SDK SOURCE BODY\n\n// BEGIN INACTIVE FULL SDK SOURCE INTERFACE\n// Historical derivation marker; admission is a reviewed SOURCE attempt only.\nexport function fullSdkSourceMain(argv = process.argv.slice(2)) {\n  need(\n    !utilTypes.isProxy(argv) &&\n      Array.isArray(argv) &&\n      Object.getPrototypeOf(argv) === Array.prototype &&\n      Object.keys(Object.getOwnPropertyDescriptors(argv)).sort().join() ===\n        "0,1,2,3,length" &&\n      Object.values(Object.getOwnPropertyDescriptors(argv)).every((row) =>\n        Object.hasOwn(row, "value"),\n      ) &&\n      argv.length === 4 &&\n      argv.every((value) => typeof value === "string") &&\n      argv[0] === "--full-sdk-source-gn" &&\n      /^[a-f0-9]{64}$/.test(argv[2]) &&\n      argv[3] === "--execute",\n    "FULL_DRIVER_ARGV",\n  );\n  return runFullSourceBody(argv);\n}\nif (\n  process.argv[1] &&\n  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)\n) {\n  Promise.resolve()\n    .then(() => fullSdkSourceMain())\n    .catch((error) => {\n      const code = /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(\n        error?.message ?? "",\n      )\n        ? error.message\n        : "FULL_SDK_SOURCE_FAILED";\n      console.error(\n        JSON.stringify({\n          success: false,\n          firstFailure: code,\n          executionAdmitted: false,\n        }),\n      );\n      process.exitCode = 1;\n    });\n}\n// END INACTIVE FULL SDK SOURCE INTERFACE\n',
+        oldSha256:
+          "35780cc038c9d92b81d2afbc20db4cce92ec4343a2a16e16e6efdddbee3a8b61",
+        newSha256:
+          "602111a5158c9edc29851f9c6ed17d25603f306b9b7df785582c81aae49839bd",
+      },
+    ],
+    bytes: 256606,
+    sha256: "a1b9eb8eff5fb0e4a8e1719f1286e58147023fb77332b0a756c6c40303cf7b26",
+  },
+};
+function assemblyInverse(text, name) {
+  const spec = ASSEMBLY_HISTORY[name];
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of [...spec.rows].reverse()) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(hash(row.oldRaw), row.oldSha256);
+    assert.equal(
+      text.split(row.newRaw).length,
+      2,
+      "ASSEMBLY_INVERSE:" + row.name,
+    );
+    text = text.replace(row.newRaw, () => row.oldRaw);
+  }
+  assert.equal(Buffer.byteLength(text), spec.bytes);
+  assert.equal(hash(text), spec.sha256);
+  return text;
+}
+// END FINITE ASSEMBLY HISTORY
+
+// BEGIN EXACT HISTORICAL CHECKOUT FIXTURE
+// Only the unchanged historical row test models checkout's core.autocrlf=false.
+// Every other test and every production reader still receives actual raw bytes.
+const HISTORICAL_CHECKOUT_ROWS = [
+  {
+    path: "native/cef-hosted-recipe.json",
+    bytes: 3302,
+    sha256: "f7ce6e6821f43d3175912a64a2163c6243948c103f70ff3fe9b059041a7cce8e",
+    dataPath:
+      "tests/fixtures/cef/windows-arm-full-sdk-historical/native/cef-hosted-recipe.json",
+  },
+  {
+    path: "scripts/browser-runtime-package.mjs",
+    bytes: 45031,
+    sha256: "6597617158786afe2c10bccea866f495a744c64b41cf0ab6c97c6e1cd73477ff",
+    dataPath:
+      "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs",
+  },
+  {
+    path: "scripts/cef-custom-artifact-inventory.mjs",
+    bytes: 19378,
+    sha256: "cc80cc108ca2ac6b498a339f659ccaecd9e9510966aef63f484e8d28e7e4d6c8",
+    dataPath:
+      "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-custom-artifact-inventory.mjs",
+  },
+  {
+    path: "scripts/cef-hosted-bootstrap.mjs",
+    bytes: 25798,
+    sha256: "b63eeefdebb7accb95a6926df4f253489e368d050738de9b1d6751ba3accc9e1",
+    dataPath:
+      "tests/fixtures/cef/windows-arm-full-sdk-historical/scripts/cef-hosted-bootstrap.mjs",
+  },
+  {
+    path: "scripts/cef-hosted-provision.mjs",
+    bytes: 26950,
+    sha256: "421bd8df9d14c6395579307e649384e1edfe96911b82d518630c587d6924efc1",
+    dataPath:
+      "tests/fixtures/cef/windows-arm-full-sdk-historical/scripts/cef-hosted-provision.mjs",
+  },
+  {
+    path: "scripts/cef-patched-runtime.mjs",
+    bytes: 20059,
+    sha256: "e0e43e52d72ff6d8fff11b28f05ba47bfc18f2b588aaa10b7206dee14aced896",
+    dataPath:
+      "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-patched-runtime.mjs",
+  },
+  {
+    path: "scripts/cef-runtime-ci.mjs",
+    bytes: 61372,
+    sha256: "bd54b696f778c4cc042a432e42e1da6fc7085fb310fc4257322bda56c97e8141",
+    dataPath:
+      "tests/fixtures/cef/windows-arm-full-sdk-historical/scripts/cef-runtime-ci.mjs",
+  },
+  {
+    path: "scripts/lib/browser-custom-runtime.mjs",
+    bytes: 68713,
+    sha256: "c55c1e013564cdc0f106decbb96dd22ae9a2e690749ecb709c2714246b79a13d",
+    dataPath:
+      "tests/fixtures/cef/windows-arm-full-sdk-historical/scripts/lib/browser-custom-runtime.mjs",
+  },
+  {
+    path: "scripts/lib/browser-runtime-release.mjs",
+    bytes: 6093,
+    sha256: "3c2bb26011d020de68c3eb162116843cde3acf9e8b603e86d31c961da528d810",
+    dataPath:
+      "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
+  },
+  {
+    path: "scripts/lib/cef-engineering-checkpoint.mjs",
+    bytes: 143553,
+    sha256: "4a5ad24beba2391a93c2c64c939fcb269b39cd89ab78ad728db6dcc57aa2851a",
+    dataPath:
+      "tests/fixtures/cef/windows-arm-full-sdk-historical/scripts/lib/cef-engineering-checkpoint.mjs",
+  },
+  {
+    path: "scripts/lib/cef-mac-sdk-inventory.mjs",
+    bytes: 9975,
+    sha256: "817d5d72db4c24cd1a3a49ff3413553df828a85b3bb22aa8db4de6839d671923",
+    dataPath:
+      "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
+  },
+];
+function historicalCheckoutBytes(file, raw) {
+  const row = HISTORICAL_CHECKOUT_ROWS.find(
+    (entry) => path.join(root, entry.path) === file,
+  );
+  assert(row, "HISTORICAL_CHECKOUT_PATH");
+  const canonical = Buffer.from(raw.toString("utf8").replaceAll("\r\n", "\n"));
+  assert(
+    raw.equals(canonical) ||
+      raw.equals(
+        Buffer.from(canonical.toString("utf8").replaceAll("\n", "\r\n")),
+      ),
+    "HISTORICAL_CHECKOUT_EOL",
+  );
+  assert.equal(canonical.length, row.bytes, "HISTORICAL_CHECKOUT_BYTES");
+  assert.equal(sha(canonical), row.sha256, "HISTORICAL_CHECKOUT_PIN");
+  return canonical;
+}
+test.beforeEach((context) => {
+  if (
+    context.name !==
+    "reviewed same-image host bytes bind closed source GN without claiming runtime loader proof"
+  )
+    return;
+  const original = fs.readFile;
+  fs.readFile = async (file, ...args) => {
+    const row = HISTORICAL_CHECKOUT_ROWS.find(
+      (entry) => path.join(root, entry.path) === file,
+    );
+    if (!row) return original(file, ...args);
+    const raw = await original(path.join(root, row.dataPath));
+    assert.equal(args.length, 0, "HISTORICAL_CHECKOUT_RAW_ONLY");
+    return historicalCheckoutBytes(file, raw);
+  };
+  context.after(() => {
+    fs.readFile = original;
+  });
+});
+test("exact historical checkout fixture accepts only eleven pinned LF or uniform CRLF files", async () => {
+  assert.equal(HISTORICAL_CHECKOUT_ROWS.length, 11);
+  for (const row of HISTORICAL_CHECKOUT_ROWS) {
+    const file = path.join(root, row.path),
+      raw = await fs.readFile(path.join(root, row.dataPath)),
+      canonical = historicalCheckoutBytes(file, raw);
+    assert.deepEqual(historicalCheckoutBytes(file, canonical), canonical);
+    assert.deepEqual(
+      historicalCheckoutBytes(
+        file,
+        Buffer.from(canonical.toString().replaceAll("\n", "\r\n")),
+      ),
+      canonical,
+    );
+    assert.throws(() =>
+      historicalCheckoutBytes(file, Buffer.concat([raw, Buffer.from(" ")])),
+    );
+    assert.throws(
+      () => historicalCheckoutBytes(file + ".other", raw),
+      /HISTORICAL_CHECKOUT_PATH/,
+    );
+  }
+});
+// END EXACT HISTORICAL CHECKOUT FIXTURE
+
+// Test-only maps cannot register a session in the actual production module.
+async function inactiveControl(overrides = {}) {
+  const defaultsModule =
+    await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
+  const source = await read(prefix + "full_sdk_control.mjs");
+  assert.equal((source.match(/sourceSessions\.set\(/g) ?? []).length, 1);
+  const clockImport =
+    'import {\n  WORKFLOW_CLOCK_ENV,\n  readWorkflowClock,\n  intersectWorkflowClock,\n} from "./workflow-clock.mjs";\n';
+  assert.equal(source.split(clockImport).length, 2);
+  const clock =
+    await import("../../native/windows-arm-full-sdk/workflow-clock.mjs");
+  const body = source
+    .replace(clockImport, "")
+    .replace(/^import .*;\r?\n/gm, "")
+    .replace(
+      "const MODULE_URL = import.meta.url;",
+      "const MODULE_URL = " +
+        JSON.stringify(
+          overrides.moduleURL ??
+            new URL(
+              "../../native/windows-arm-full-sdk/full_sdk_control.mjs",
+              import.meta.url,
+            ).href,
+        ) +
+        ";",
+    )
+    .replace(/^export function main/m, "function main");
+  const context = {
+    fs,
+    constants: fsConstants,
+    randomBytes,
+    randomUUID,
+    createHash,
+    spawn,
+    ChildProcess,
+    fileURLToPath,
+    checkpoint: controlCheckpoint,
+    process,
+    path,
+    custom: controlCustom,
+    Date,
+    performance,
+    setTimeout,
+    clearTimeout,
+    WORKFLOW_CLOCK_ENV: clock.WORKFLOW_CLOCK_ENV,
+    readWorkflowClock: clock.readWorkflowClock,
+    intersectWorkflowClock: clock.intersectWorkflowClock,
+    utilTypes: (await import("node:util")).types,
+    expectedDefaults: defaultsModule,
+    fullSdkSourceRootName: (
+      await import("../../native/windows-arm-full-sdk/source-root.mjs")
+    ).fullSdkSourceRootName,
+    sdkRuntime:
+      await import("../../native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs"),
+    inspectNativeSlice: (
+      await import("../../native/windows-arm-full-sdk/full-sdk-engine-worker.mjs")
+    ).inspectNativeSlice,
+    ...overrides,
+  };
+  return new Function(
+    ...Object.keys(context),
+    body +
+      "\nreturn {originalLease,checkLease,createControl,prepareFreshPolicy,retireControl,sourceSessions,leases,controls,directoryId,fileId,work,retained,beginFullSdkBootstrap,bootstrapState,bootstrapOwners,sourceOperations,runSourcePhase,startSourceChild,retireSourceOperation,operationDirectoryId,recheckSourceReceipt,verifySourceSnapshot,runFullSdkTransaction,samplePythonClock,verifySourceMetadata,recheckSourceMetadata,readRestoreHandoff,bootstrapHeldFile,sourceContextRecord,verifySourceToolProof,recheckSourceToolProof,inspectInstalledToolProof,sealSdkAsset,verifyProducedSdk,publishControllerOutcome,engineState,engineWork,engineBoundary,engineRead,engineSave,startEngineChild,engineProbe,verifyEnginePhase,retireEnginePhase,runEnginePhase};",
+  )(...Object.values(context));
+}
+async function controlFixture(t, overrides = {}) {
+  const base = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "inactive-full-sdk-")),
+  );
+  t.after(() => fs.rm(base, { recursive: true, force: true }));
+  const api = await inactiveControl(overrides);
+  const lease = api.originalLease(
+    overrides.Date?.now() ?? Date.now(),
+    overrides.performance?.now() ?? performance.now(),
+    600000,
+  );
+  const receipt = Object.freeze({ kind: "synthetic-test-only-source-session" });
+  const source = {
+    lease,
+    stage: "joined-success",
+    pendingWriters: 0,
+    creationJoined: true,
+    image: "20261030.294.1",
+    target: "aarch64-pc-windows-msvc",
+    sourceId:
+      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+    profileSha256:
+      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+    root: base,
+    rootIdentity: api.directoryId(await fs.lstat(base, { bigint: true })),
+  };
+  api.sourceSessions.set(receipt, source);
+  return { api, lease, receipt, source, base };
+}
+test("inactive full SDK public entry denies before getters or filesystem authority", async () => {
+  let getters = 0;
+  const input = new Proxy(
+    {},
+    {
+      get() {
+        getters++;
+        throw Error("MUST_NOT_READ");
+      },
+      ownKeys() {
+        getters++;
+        throw Error("MUST_NOT_ENUMERATE");
+      },
+    },
+  );
+  assert.deepEqual(Object.keys(publicControl), ["main"]);
+  assert.throws(() => publicControl.main(input), /FULL_SDK_CONTROL_ENTRY_ARGV/);
+  assert.equal(getters, 0);
+  let io = 0;
+  const api = await inactiveControl({
+    fs: {
+      ...fs,
+      lstat: async () => {
+        io++;
+        throw Error("MUST_NOT_IO");
+      },
+    },
+  });
+  const lease = api.originalLease(Date.now(), performance.now(), 600000);
+  await assert.rejects(api.createControl({}, lease), /SOURCE_SESSION/);
+  assert.equal(io, 0);
+});
+test("inactive full SDK original lease cannot refresh ends, forge brands or lose falsy cancellation", async () => {
+  let wall = 1000,
+    mono = 0;
+  const api = await inactiveControl({
+    Date: { now: () => wall },
+    performance: { now: () => mono },
+  });
+  const lease = api.originalLease(wall, mono, 150020);
+  assert.equal(api.checkLease(lease), 20);
+  mono = 21;
+  wall -= 100;
+  let first;
+  assert.throws(
+    () => api.checkLease(lease),
+    (error) => {
+      first = error;
+      return /DEADLINE/.test(error.message);
+    },
+  );
+  mono = 0;
+  wall = 1000;
+  assert.throws(
+    () => api.checkLease(lease),
+    (error) => error === first,
+  );
+  assert.throws(() => api.checkLease({ ...lease }), /LEASE_BRAND/);
+  for (const reason of [false, 0, null]) {
+    const cancel = new AbortController();
+    const token = api.originalLease(wall, mono, 600000, cancel.signal);
+    cancel.abort(reason);
+    let thrown = false,
+      actual;
+    try {
+      api.checkLease(token);
+    } catch (error) {
+      thrown = true;
+      actual = error;
+    }
+    assert.equal(thrown, true);
+    assert.equal(actual, reason);
+    assert.equal(api.leases.get(token).failed, true);
+  }
+});
+test("inactive full SDK owned root records stable physical identity and retires before cleanup", async (t) => {
+  const f = await controlFixture(t);
+  const token = await f.api.createControl(f.receipt, f.lease);
+  const state = f.api.controls.get(token);
+  assert.equal((await fs.readFile(state.markerPath)).length, 32);
+  assert.equal(state.gitToken, undefined);
+  await assert.rejects(f.api.createControl(f.receipt, f.lease), /LEASE_REUSE/);
+  const retired = await f.api.retireControl(token);
+  assert.equal(retired.cleanupConfirmed, true);
+  assert.equal(retired.executionAdmitted, false);
+  assert.equal(f.api.controls.has(token), false);
+  await assert.rejects(fs.lstat(state.directory), { code: "ENOENT" });
+  await assert.rejects(f.api.prepareFreshPolicy(token), /CONTROL_BRAND/);
+  assert.throws(() => publicControl.main(f.receipt), /ENTRY_ARGV/);
+});
+test("inactive full SDK actual root replacement during marker open denies before helper and leaves foreign entries", async (t) => {
+  let prepared = 0,
+    actualMarker;
+  const f = await controlFixture(t, {
+    custom: {
+      ...controlCustom,
+      prepareSourceGitIsolation: async () => {
+        prepared++;
+        throw Error("MUST_NOT_PREPARE");
+      },
+    },
+    fs: {
+      ...fs,
+      open: async (...args) => {
+        const directory = path.dirname(args[0]);
+        await fs.rename(directory, directory + "-old");
+        await fs.mkdir(directory);
+        await fs.writeFile(
+          path.join(directory, "foreign.txt"),
+          "leave untouched",
+        );
+        actualMarker = await fs.open(...args);
+        return actualMarker;
+      },
+    },
+  });
+  await assert.rejects(f.api.createControl(f.receipt, f.lease), /ROOT_CHANGED/);
+  assert.equal(prepared, 0);
+  assert.equal(
+    await fs.readFile(
+      path.join(f.base, "full-sdk-control/foreign.txt"),
+      "utf8",
+    ),
+    "leave untouched",
+  );
+  await assert.rejects(actualMarker.stat(), { code: "EBADF" });
+  assert.equal(f.api.leases.get(f.lease).closed, true);
+});
+test("inactive full SDK final cleanup preserves an empty foreign root replaced after marker unlink", async (t) => {
+  let substituted = false;
+  const f = await controlFixture(t, {
+    fs: {
+      ...fs,
+      unlink: async (name) => {
+        await fs.unlink(name);
+        if (path.basename(name) === "owner.bin") {
+          const directory = path.dirname(name);
+          await fs.rename(directory, directory + "-owned-old");
+          await fs.mkdir(directory);
+          substituted = true;
+        }
+      },
+    },
+  });
+  const token = await f.api.createControl(f.receipt, f.lease),
+    state = f.api.controls.get(token);
+  await assert.rejects(f.api.retireControl(token), /ROOT_CHANGED/);
+  assert.equal(
+    substituted,
+    true,
+    "replacement is introduced by the actual final marker-unlink boundary",
+  );
+  assert.equal((await fs.readdir(state.directory)).length, 0);
+  assert.equal((await fs.lstat(state.directory)).isDirectory(), true);
+  assert.equal(state.cleanupConfirmed, false);
+  assert.equal(f.api.controls.has(token), false);
+});
+test("inactive full SDK real helper brand stays private and owns legitimate directory changes", async (t) => {
+  const f = await controlFixture(t);
+  const token = await f.api.createControl(f.receipt, f.lease),
+    state = f.api.controls.get(token);
+  if (process.platform === "win32") {
+    const candidate = await f.api.prepareFreshPolicy(token);
+    assert.equal(candidate.executionAdmitted, false);
+    assert.equal(candidate.gitToken, undefined);
+    assert.equal(state.helperValidated, true);
+    const env = await controlCustom.sourceGitEnvironment(state.gitToken, {
+      GIT_DIR: "must-drop",
+    });
+    assert.equal(env.GIT_DIR, undefined);
+    await assert.rejects(
+      controlCustom.sourceGitEnvironment({ ...state.gitToken }, {}),
+      /SOURCE_GIT_POLICY_CAPABILITY/,
+    );
+    await f.api.retireControl(token);
+    assert.equal(state.gitToken, undefined);
+    assert.equal(state.cleanupConfirmed, true);
+  } else {
+    await assert.rejects(
+      f.api.prepareFreshPolicy(token),
+      /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+    );
+    await assert.rejects(
+      f.api.retireControl(token),
+      /SOURCE_GIT_WINDOWS_LONGPATHS_OPTION/,
+    );
+    assert.equal(state.cleanupConfirmed, false);
+    // The actual unchanged helper's benign native-host mode still proves its brand.
+    const directory = path.join(f.base, "benign");
+    await fs.mkdir(directory);
+    const real = await controlCustom.prepareSourceGitIsolation(
+      path.join(directory, "cef-source-git-policy"),
+    );
+    await controlCustom.sourceGitEnvironment(real, {});
+    await assert.rejects(
+      controlCustom.sourceGitEnvironment({ ...real }, {}),
+      /SOURCE_GIT_POLICY_CAPABILITY/,
+    );
+  }
+});
+test("inactive full SDK post-await retirement cannot register even a late genuine helper token", async (t) => {
+  let entered, release;
+  const atPrepare = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const delayed = new Promise((resolve) => {
+    release = resolve;
+  });
+  const f = await controlFixture(t, {
+    custom: {
+      ...controlCustom,
+      prepareSourceGitIsolation: async (directory, options) => {
+        const result = await controlCustom.prepareSourceGitIsolation(
+          directory,
+          process.platform === "win32" ? options : undefined,
+        );
+        entered();
+        await delayed;
+        return result;
+      },
+    },
+  });
+  const token = await f.api.createControl(f.receipt, f.lease),
+    state = f.api.controls.get(token);
+  const pending = f.api.prepareFreshPolicy(token);
+  pending.catch(() => {});
+  await atPrepare;
+  await assert.rejects(f.api.retireControl(token), /CLEANUP_UNKNOWN/);
+  release();
+  await assert.rejects(pending, /CLEANUP_UNKNOWN/);
+  assert.equal(f.api.controls.has(token), false);
+  assert.equal(state.gitToken, undefined);
+  assert.equal(state.cleanupConfirmed, false);
+});
+test("inactive full SDK late marker close is not reported joined after the original cleanup end", async (t) => {
+  let finishClose, closeEntered;
+  let closeJoined;
+  const joined = new Promise((resolve) => {
+    closeJoined = resolve;
+  });
+  const closing = new Promise((resolve) => {
+    closeEntered = resolve;
+  });
+  const gate = new Promise((resolve) => {
+    finishClose = resolve;
+  });
+  let mono = 0,
+    wall = 1000;
+  const clock = { Date: { now: () => wall }, performance: { now: () => mono } };
+  const f = await controlFixture(t, {
+    ...clock,
+    fs: {
+      ...fs,
+      open: async (...args) => {
+        const actual = await fs.open(...args);
+        return {
+          stat: actual.stat.bind(actual),
+          writeFile: actual.writeFile.bind(actual),
+          close: async () => {
+            closeEntered();
+            await gate;
+            await actual.close();
+            closeJoined();
+          },
+        };
+      },
+    },
+  });
+  // This test realm uses its original injected clock for construction as well.
+  f.source.lease = f.api.originalLease(wall, mono, 180000);
+  const token = await f.api.createControl(f.receipt, f.source.lease),
+    state = f.api.controls.get(token);
+  mono = 59990;
+  wall = 60990;
+  const pending = f.api.retireControl(token);
+  pending.catch(() => {});
+  await closing;
+  assert.equal(f.api.controls.has(token), false);
+  await assert.rejects(pending, /CLEANUP_DEADLINE/);
+  assert.equal(state.cleanupConfirmed, false);
+  finishClose();
+  await joined;
+  assert.equal(state.cleanupConfirmed, false);
+});
+test("inactive full SDK falsy first helper failure survives cleanup denial without retry authority", async (t) => {
+  for (const reason of [false, 0, null, undefined]) {
+    const f = await controlFixture(t, {
+      custom: {
+        ...controlCustom,
+        prepareSourceGitIsolation: async () => {
+          throw reason;
+        },
+      },
+    });
+    const token = await f.api.createControl(f.receipt, f.lease),
+      state = f.api.controls.get(token);
+    for (const operation of [
+      () => f.api.prepareFreshPolicy(token),
+      () => f.api.retireControl(token),
+    ]) {
+      let thrown = false,
+        actual;
+      try {
+        await operation();
+      } catch (error) {
+        thrown = true;
+        actual = error;
+      }
+      assert.equal(thrown, true);
+      assert.equal(actual, reason);
+    }
+    assert.equal(state.failed, true);
+    assert.equal(state.cleanupConfirmed, false);
+    assert.equal(f.api.controls.has(token), false);
+  }
+});
+test("inactive full SDK actual awaited continuation cannot outrun its original lease", async (t) => {
+  let wall = 1000,
+    mono = 0;
+  const f = await controlFixture(t, {
+    Date: { now: () => wall },
+    performance: { now: () => mono },
+  });
+  const token = await f.api.createControl(f.receipt, f.lease),
+    state = f.api.controls.get(token);
+  await assert.rejects(
+    f.api.work(token, state, async () => {
+      mono = 450001;
+      wall += 450001;
+      return "too late";
+    }),
+    /DEADLINE/,
+  );
+  const first = state.primary;
+  assert.equal(state.failed, true);
+  await assert.rejects(f.api.retireControl(token), (error) => error === first);
+  assert.equal(
+    state.cleanupConfirmed,
+    true,
+    "owned resources can be joined while the original operation remains failed",
+  );
+  assert.equal(f.api.controls.has(token), false);
+});
+
+test("inactive full SDK source interface cannot read caller grants or enter its retained private body", async () => {
+  const driver =
+    await import("../../native/windows-arm-full-sdk/full-sdk-source-driver.mjs");
+  let reads = 0;
+  const grant = new Proxy(
+    {},
+    {
+      get() {
+        reads++;
+        throw Error("MUST_NOT_READ");
+      },
+      ownKeys() {
+        reads++;
+        throw Error("MUST_NOT_ENUMERATE");
+      },
+    },
+  );
+  assert.throws(() => driver.fullSdkSourceMain(grant), /FULL_DRIVER_ARGV/);
+  assert.equal(reads, 0);
+  assert.equal(driver.PRIVATE_DRIVER_ADMITTED, false);
+  const source = await read(prefix + "full-sdk-source-driver.mjs");
+  assert.match(
+    source,
+    /throw new Error\("PRIVATE_ARM64_DEFAULTS_UNQUALIFIED"\)/,
+  );
+  assert.equal((source.match(/sourceSessions\.set\(/g) ?? []).length, 0);
+});
+
+test("source qualification assembly pins the disjoint workflow and retains every native qualification blocker", async () => {
+  const raw = await fs.readFile(
+    path.join(root, prefix, "full-sdk-source-profile.json"),
+  );
+  const source = await read(prefix + "full_sdk_control.mjs");
+  assert(source.includes(sha(raw)));
+  const profile = JSON.parse(raw);
+  assert.equal(profile.mode, "full-sdk-source-gn");
+  assert.equal(profile.fullModeBodyImplemented, true);
+  assert.equal(profile.sourceSessionIssuerImplemented, true);
+  assert.equal(profile.controllerNativeQualified, false);
+  assert.equal(profile.firstWorkflowClockImplemented, true);
+  assert.equal(profile.nativeSourceEntryQualified, false);
+  assert.equal(profile.workflow, ".github/workflows/windows-arm-full-sdk.yml");
+  assert.equal(
+    profile.policy,
+    "native/windows-arm-full-sdk/sdk-origin-review.json",
+  );
+  assert.equal(profile.ref, "refs/heads/main");
+  for (const key of [
+    "executionAdmitted",
+    "sourceProgramCarryforwardQualified",
+    "fullArm64DefaultsQualified",
+    "engineCompilationAllowed",
+    "sdkAllowed",
+    "nativeAcceptance",
+    "runtimeReady",
+    "publicationAllowed",
+  ])
+    assert.equal(profile[key], false, key);
+  assert.deepEqual(profile.limits, {
+    wholeSeconds: 21600,
+    sourceSeconds: 7200,
+    acquisitionSeconds: 4500,
+    hooksSeconds: 2700,
+    cleanupSeconds: 30,
+    finalReserveSeconds: 120,
+  });
+  for (const name of [profile.workflow, profile.policy])
+    assert((await fs.stat(path.join(root, name))).isFile());
+  assert.equal(profile.sourceQualificationAllowed, true);
+  assert.equal(profile.sourceSentinelNativeQualified, false);
+});
+
+test("inactive full SDK source body keeps full identity and a fixed setup vector in isolated fixture maps", async () => {
+  const raw = assemblyInverse(
+    await read(prefix + "full-sdk-source-driver.mjs"),
+    "driver",
+  );
+  const begin = "// BEGIN CLOSED FULL SDK SOURCE BODY\n";
+  const end = "// END CLOSED FULL SDK SOURCE BODY\n";
+  assert.equal(raw.split(begin).length, 2);
+  assert.equal(raw.split(end).length, 2);
+  const block = raw.split(begin)[1].split(end)[0];
+  const nativeDir = path.join(root, prefix);
+  const verify = Object.freeze({
+    role: "verify-setup",
+    args: Object.freeze([
+      "-I",
+      "-B",
+      path.join(nativeDir, "producer.py"),
+      "--verify-source-setup",
+      root,
+      "a".repeat(64),
+      "--execute",
+    ]),
+  });
+  const other = Object.freeze({ role: "sync", args: Object.freeze(["fixed"]) });
+  let io = 0;
+  const api = new Function(
+    "need",
+    "path",
+    "HERE",
+    "sourceCommands",
+    "held",
+    block +
+      "\nreturn {requireFullSourceContext,fullSourceCommands,runFullSourceBody,fullSourceProfiles};",
+  )(
+    (value, code) => assert(value, code),
+    path,
+    nativeDir,
+    () => Object.freeze([other, verify]),
+    async () => {
+      io++;
+      throw Error("MUST_NOT_IO");
+    },
+  );
+  const context = {
+    kind: "windows-arm-full-sdk-context",
+    mode: "full-sdk-source-gn",
+    workflow: ".github/workflows/windows-arm-full-sdk.yml",
+    policy: "native/windows-arm-full-sdk/sdk-origin-review.json",
+    ref: "refs/heads/main",
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: "1010282954",
+    visibility: "public",
+    event: "workflow_dispatch",
+    defaultBranch: "main",
+    head: "a".repeat(40),
+    workflowSha: "a".repeat(40),
+    runId: "1",
+    attempt: "1",
+    inputs: {},
+  };
+  api.requireFullSourceContext(context);
+  assert.throws(
+    () => api.requireFullSourceContext({ ...context, ref: "refs/heads/old" }),
+    /FULL_SDK_SOURCE_CONTEXT/,
+  );
+  const recipe = {};
+  assert.throws(
+    () => api.fullSourceCommands(root, recipe, [], "a".repeat(64)),
+    /RECIPE_BRAND/,
+  );
+  // This map belongs to the separate fixture module, never the production issuer.
+  api.fullSourceProfiles.set(recipe, {
+    root,
+    budget: { remaining: () => 1000 },
+  });
+  const plan = api.fullSourceCommands(root, recipe, [], "a".repeat(64));
+  assert.equal(plan[0], other);
+  assert.equal(verify.args[2], path.join(nativeDir, "producer.py"));
+  assert.equal(plan[1].args[2], path.join(nativeDir, "full_sdk_source.py"));
+  assert.equal(plan[1].args[3], "--full-sdk-verify-source-setup");
+  let reads = 0;
+  await assert.rejects(
+    api.runFullSourceBody(
+      new Proxy(
+        {},
+        {
+          get() {
+            reads++;
+            throw Error("MUST_NOT_READ");
+          },
+        },
+      ),
+    ),
+    /EXECUTION_CLOSED/,
+  );
+  assert.equal(reads, 0);
+  assert.equal(io, 0);
+});
+
+async function realisticExpectedDefaultsFixtureScript() {
+  const { ARM64_EXPECTED_DEFAULTS_POLICY: policy } =
+    await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
+  return String.raw`expected=json.loads(${JSON.stringify(JSON.stringify(policy.values))})
+import re
+pa=observed['files']['partitionAlloc']
+pa['raw']=re.sub(rb'(#define PA_BUILDFLAG_INTERNAL_([A-Z0-9_]+)\(\) \()([0-9]+)(\))',lambda m:m[1]+str(expected[m[2].decode()]).encode()+m[4],pa['raw'])
+pa['pin'].update(bytes=len(pa['raw']),sha256=__import__('hashlib').sha256(pa['raw']).hexdigest())
+desc=json.loads(observed['gnDescPartitionAlloc']);action=next(iter(desc.values()))
+action['response_file_contents']=['--flags']+[name+'='+(str(value)if name=='USER_SPACE_ZERO_SEGMENT_SIZE_MB'else'true'if value else'false')for name,value in expected.items()]
+observed['gnDescPartitionAlloc']=json.dumps(desc,separators=(',',':')).encode()
+`;
+}
+let parentMetadataDataCache;
+async function parentMetadataFixtureData() {
+  if (!parentMetadataDataCache) {
+    const script = String.raw`import sys,json,base64
+sys.path.insert(0,${JSON.stringify(path.join(root, prefix))})
+import test_private_qualification as t,private_qualification as p
+context,observed=t.output_fixture('20261030.294.1')
+${await realisticExpectedDefaultsFixtureScript()}
+value=p.inspect_private_outputs(context,t.RAW,t.BASE_RAW,observed,wall_now=200,monotonic_now=200)
+report={key:value[key]for key in ('metadata','literalArguments','partitionAllocMacros','cefHeader','policyMinimumsMet','completeMacroInventoryMatches','fullArm64DefaultsQualified','executionAdmitted')}
+report.update(kind='windows-arm-full-source-metadata',compilerExecuted=False,cohortQuietProven=False,sourceId=t.POLICY['images']['20261030.294.1']['sourceId'],roleCount=4)
+def encode(value):
+ if type(value)is bytes:return {'__bytes':base64.b64encode(value).decode()}
+ if type(value)is dict:return {k:encode(v)for k,v in value.items()}
+ if type(value)is list or type(value)is tuple:return [encode(v)for v in value]
+ return value
+print(json.dumps(encode({'report':report,'observed':observed})))
+`;
+    parentMetadataDataCache = JSON.parse(
+      execFileSync(
+        await projectionFixturePython(),
+        ["-I", "-B", "-c", script],
+        {
+          encoding: "utf8",
+          timeout: 20000,
+          maxBuffer: 16 * 1024 ** 2,
+          windowsHide: true,
+        },
+      ),
+    );
+  }
+  const decode = (value) =>
+    value &&
+    typeof value === "object" &&
+    Object.keys(value).length === 1 &&
+    Object.hasOwn(value, "__bytes")
+      ? Buffer.from(value.__bytes, "base64")
+      : Array.isArray(value)
+        ? value.map(decode)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.entries(value).map(([key, item]) => [key, decode(item)]),
+            )
+          : value;
+  return decode(parentMetadataDataCache);
+}
+async function createdSourceFixture(t, mode = "normal", overrides = {}) {
+  const base = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "created-source-controller-")),
+  );
+  t.after(() => fs.rm(base, { recursive: true, force: true }));
+  const api = await inactiveControl(overrides);
+  const bootstrap = api.beginFullSdkBootstrap();
+  const owner = api.bootstrapState(bootstrap);
+  const token = Object.freeze({
+    kind: "isolated-created-source-operation-fixture",
+  });
+  const out = path.join(base, "source-checkout/src/out/Release_GN_arm64");
+  await fs.mkdir(out, { recursive: true });
+  await fs.mkdir(path.join(base, "source-gn-logs"));
+  const metadataData = await parentMetadataFixtureData();
+  if (mode === "wrong-defaults") {
+    const observed = metadataData.observed,
+      desc = JSON.parse(observed.gnDescPartitionAlloc),
+      action = Object.values(desc)[0];
+    action.response_file_contents = action.response_file_contents.map(
+      (value) => (value === "IS_ANDROID=false" ? "IS_ANDROID=true" : value),
+    );
+    observed.gnDescPartitionAlloc = Buffer.from(JSON.stringify(desc));
+    observed.files.partitionAlloc.raw = Buffer.from(
+      observed.files.partitionAlloc.raw
+        .toString()
+        .replace(
+          "PA_BUILDFLAG_INTERNAL_IS_ANDROID() (0)",
+          "PA_BUILDFLAG_INTERNAL_IS_ANDROID() (1)",
+        ),
+    );
+    const pa = metadataData.report.metadata.partitionAlloc;
+    pa.evaluatedMacroValues.IS_ANDROID = 1;
+    pa.bytes = observed.gnDescPartitionAlloc.length;
+    pa.sha256 = sha(observed.gnDescPartitionAlloc);
+    metadataData.report.partitionAllocMacros.IS_ANDROID = 1;
+  }
+
+  await fs.writeFile(
+    path.join(out, "args.gn"),
+    metadataData.observed.files.args.raw,
+  );
+  await fs.writeFile(
+    path.join(out, "build.ninja"),
+    "rule fixture\n  command = unused\n",
+  );
+  let graphSnapshot;
+  const graph = await controlCheckpoint.graphInventory(out, {
+    observePins(value) {
+      graphSnapshot = JSON.parse(controlCheckpoint.graphPinSnapshot(value));
+    },
+  });
+  await fs.writeFile(
+    path.join(base, "source-gn-logs/fresh-graph-pins.json"),
+    JSON.stringify(graphSnapshot),
+  );
+  const sourceId =
+    "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90";
+  const roles = [
+    "sdk-data",
+    "llvm-data",
+    "rust-archive",
+    "gn-archive",
+    "siso-archive",
+    "materialize",
+    "runtime-closure",
+    "full-sdk-source-gn",
+  ];
+  function receipt(pid, creation, large) {
+    return {
+      kind: "owned-job-proof",
+      outcome: "success",
+      success: true,
+      started: true,
+      jobCreated: true,
+      assignedBeforeResume: true,
+      resumed: true,
+      assignedAtCreationVerified: true,
+      assignmentMode: "creation-attribute",
+      handleListOnly: true,
+      jobHandleInheritable: false,
+      jobHandleInStdioAllowlist: false,
+      rootExit: 0,
+      finalRootExit: 0,
+      rootReaped: true,
+      activeAtEnd: 0,
+      cleanupVerified: true,
+      logReadersStopped: true,
+      cleanupBudgetMs: 30000,
+      rootPid: pid,
+      rootCreationFiletime: creation,
+      policyReadback: {
+        flags: 8712,
+        activeProcessLimit: large ? 64 : 8,
+        jobMemoryBytes: String(large ? 8589934592 : 536870912),
+        cpuFlags: 5,
+        cpuRate: 2500,
+        inheritedHandles: 3,
+        affinityChanged: false,
+      },
+    };
+  }
+  function closed(pid, creation, parent) {
+    return {
+      success: true,
+      sdkBuilt: false,
+      parentHandleClosed: true,
+      ownHandleClosed: true,
+      ownPid: pid,
+      ownCreationFiletime: creation,
+      parentCreationFiletime: parent,
+    };
+  }
+  const outer = receipt(1001, "100100", true);
+  const files = {
+    "jobs/full-source-operation/receipt.json": outer,
+    "full-source-launcher-result.json": {
+      success: true,
+      sdkBuilt: false,
+      ownPid: "CHILD_PID",
+      ownCreationFiletime: "888888",
+      parentCreationFiletime: "777777",
+      originalOperationJob: outer,
+    },
+    "full-source-closed-launcher.json": closed("CHILD_PID", "888888", "777777"),
+    "full-source-closed-full-source-operation.json": closed(
+      1001,
+      "100100",
+      "888888",
+    ),
+  };
+  const jobs = [];
+  for (const [index, role] of roles.entries()) {
+    const value = receipt(
+      2001 + index,
+      String(200100 + index),
+      role === "full-sdk-source-gn",
+    );
+    jobs.push({ role, originalJob: value });
+    files[`jobs/${role}/receipt.json`] = value;
+    if (role !== "full-sdk-source-gn")
+      files[`full-source-closed-${role}.json`] = closed(
+        value.rootPid,
+        value.rootCreationFiletime,
+        outer.rootCreationFiletime,
+      );
+  }
+  files["full-source-closed-verify-setup.json"] = closed(
+    9001,
+    "900100",
+    jobs.at(-1).originalJob.rootCreationFiletime,
+  );
+  files["full-source-operation-result.json"] = {
+    kind: "windows-arm-full-source-operation",
+    success: true,
+    sourceGnVerified: true,
+    sdkBuilt: false,
+    buildAdmission: false,
+    jobs,
+  };
+  files["full-source-gn-result.json"] = {
+    kind: "windows-arm-source-gn",
+    success: true,
+    target: "aarch64-pc-windows-msvc",
+    sourceId,
+    sourceCloseFailure: false,
+    sdkBuilt: false,
+    nativeAcceptance: false,
+    engineCompilationRequested: false,
+    outerJobCleanupNotInferred: true,
+    graph,
+  };
+  files["full-metadata-result.json"] = metadataData.report;
+  const producerInputs = [],
+    rawFiles = {};
+  for (const name of [
+    "private-qualification-profile.json",
+    "engine-qualification-profile.json",
+    "expected-defaults.mjs",
+    "profile.json",
+  ]) {
+    const raw = await fs.readFile(path.join(root, prefix, name)),
+      index = producerInputs.length;
+    producerInputs.push({
+      path: prefix + name,
+      bytes: raw.length,
+      sha256: sha(raw),
+    });
+    rawFiles["source-inputs/" + index] = raw.toString("base64");
+  }
+  for (const [name, raw] of [
+    [
+      "private-qualification-logs/qual-gn-desc-pa.stdout.log",
+      metadataData.observed.gnDescPartitionAlloc,
+    ],
+    [
+      "private-qualification-logs/qual-gn-desc-cef.stdout.log",
+      metadataData.observed.gnDescCef,
+    ],
+    [
+      "private-qualification-logs/qual-gn-args.stdout.log",
+      metadataData.observed.gnArgs,
+    ],
+    [
+      "source-checkout/src/out/Release_GN_arm64/gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h",
+      metadataData.observed.files.partitionAlloc.raw,
+    ],
+    [
+      "source-checkout/src/out/Release_GN_arm64/gen/cef/include/cef_config.h",
+      metadataData.observed.files.cefConfig.raw,
+    ],
+  ])
+    rawFiles[name] = raw.toString("base64");
+  if (mode === "wrong-module-saved")
+    rawFiles["source-inputs/2"] =
+      Buffer.from("wrong fixed module").toString("base64");
+  if (mode === "wrong-module-pin") producerInputs[2].sha256 = "f".repeat(64);
+  const baseProfile = JSON.parse(
+      await fs.readFile(path.join(root, prefix, "profile.json")),
+    ),
+    installedPaths = {
+      "host-cl.exe": "bin/Hostx64/arm64/cl.exe",
+      "host-link.exe": "bin/Hostx64/arm64/link.exe",
+      "host-lib.exe": "bin/Hostx64/arm64/lib.exe",
+      "crt-libcmt.lib": "lib/arm64/libcmt.lib",
+      "crt-libcpmt.lib": "lib/arm64/libcpmt.lib",
+      "crt-libvcruntime.lib": "lib/arm64/libvcruntime.lib",
+      "crt-oldnames.lib": "lib/arm64/oldnames.lib",
+      "atl-atls.lib": "atlmfc/lib/arm64/atls.lib",
+      "atl-uafxcw.lib": "atlmfc/lib/arm64/uafxcw.lib",
+      "header-vcruntime.h": "include/vcruntime.h",
+      "header-vector": "include/vector",
+      "header-string": "include/string",
+      "header-atlbase.h": "atlmfc/include/atlbase.h",
+      "header-afxwin.h": "atlmfc/include/afxwin.h",
+    };
+  const installedRows = baseProfile.installedMsvc14
+    .map((pin) => ({
+      bytes: pin.bytes,
+      path: installedPaths[pin.role],
+      sha256: pin.sha256,
+    }))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  files["installed-source-inventory.json"] = {
+    kind: "windows-arm-full-installed-source-inventory",
+    roots: [
+      "include",
+      "atlmfc/include",
+      "lib/x64",
+      "lib/arm64",
+      "atlmfc/lib/x64",
+      "atlmfc/lib/arm64",
+      "bin/Hostx64/x64",
+      "bin/Hostx64/arm64",
+    ],
+    files: installedRows,
+    bytes: installedRows.reduce((n, row) => n + row.bytes, 0),
+    visited: installedRows.length,
+    sha256: sha(JSON.stringify(installedRows)),
+    executed: false,
+    previous14AreCompleteClosure: false,
+  };
+  files.__rawFiles = rawFiles;
+  const payload = Buffer.from(JSON.stringify(files));
+  await fs.writeFile(path.join(base, "fixture-payload.json"), payload);
+  const program = `const fs=require('node:fs'),path=require('node:path');const root=process.argv[1],mode=process.argv[2];
+  if(mode==='nonzero')process.exit(7);
+  function run(){const files=JSON.parse(fs.readFileSync(path.join(root,'fixture-payload.json'),'utf8'));
+    function bind(value){if(value==='CHILD_PID')return process.pid;if(Array.isArray(value))return value.map(bind);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,bind(v)]));return value;}
+    if(mode==='bad-job')files['jobs/full-sdk-source-gn/receipt.json'].logReadersStopped=false;
+    if(mode==='missing-close')delete files['full-source-closed-verify-setup.json'];
+    const rawFiles=files.__rawFiles;delete files.__rawFiles;
+    if(mode==='wrong-source')files['full-metadata-result.json'].sourceId='f'.repeat(64);
+    if(mode==='wrong-report')files['full-metadata-result.json'].partitionAllocMacros={};
+    if(mode==='wrong-header')rawFiles['source-checkout/src/out/Release_GN_arm64/gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h']=Buffer.from('invalid header').toString('base64');
+    for(const [name,value]of Object.entries(files)){const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(bind(value)));}
+    for(const [name,value]of Object.entries(rawFiles)){const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,Buffer.from(value,'base64'));}
+    process.stdout.write('created-fixed-fixture\\n');
+    if(mode==='held-pipe'){require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},200)'],{stdio:['ignore',process.stdout,process.stderr],windowsHide:true});}
+  }
+  if(mode==='wait')setTimeout(run,2000);else run();`;
+  const context = Buffer.from('{"fixture":"non-production"}\n');
+  await fs.writeFile(path.join(base, "context.json"), context);
+  const rootFence = [];
+  for (let current = base; ; current = path.dirname(current)) {
+    rootFence.unshift({
+      path: current,
+      identity: api.operationDirectoryId(
+        await fs.lstat(current, { bigint: true }),
+      ),
+    });
+    if (current === path.dirname(current)) break;
+  }
+  const ownerPath = path.join(base, "owner.bin");
+  const ownerFd = await fs.open(ownerPath, "wx+");
+  await ownerFd.writeFile(randomBytes(32));
+  const ownerIdentity = api.fileId(await ownerFd.stat({ bigint: true }));
+  const state = {
+    bootstrap,
+    lease: owner.lease,
+    root: base,
+    rootFence,
+    owner: ownerFd,
+    ownerPath,
+    ownerIdentity,
+    rootIdentity: api.directoryId(await fs.lstat(base, { bigint: true })),
+    closed: false,
+    failed: false,
+    primary: undefined,
+    issued: false,
+    pending: new Set(),
+    lateCleanups: new Set(),
+    readFds: new Set(),
+    logFds: new Set(),
+    pendingWriters: 0,
+    writeQueue: Promise.resolve(),
+    outputBytes: 0,
+    child: null,
+    creationJoined: false,
+    cleanupConfirmed: false,
+    sourceWallEnd: Date.now() + 600000,
+    sourceMonoEnd: performance.now() + 600000,
+    plan: Object.freeze({
+      executable: process.execPath,
+      argv: Object.freeze(["-e", program, base, mode]),
+      environment: Object.freeze({
+        SystemRoot: process.env.SystemRoot ?? "C:/Windows",
+        PATH: process.env.SystemRoot
+          ? path.join(process.env.SystemRoot, "System32")
+          : "/usr/bin",
+      }),
+      image: mode === "wrong-image" ? "20261021.278.1" : "20261030.294.1",
+      sourceId,
+      profileSha256:
+        "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+      parentCreationFiletime: "777777",
+      producerInputs: Object.freeze(
+        producerInputs.map((row) => Object.freeze(row)),
+      ),
+      rootPins: Object.freeze([
+        {
+          relative: "context.json",
+          bytes: context.length,
+          sha256: sha(context),
+        },
+        {
+          relative: "fixture-payload.json",
+          bytes: payload.length,
+          sha256: sha(payload),
+        },
+      ]),
+    }),
+  };
+  // Only this lexical fixture's operation map is seeded. Its sourceSessions map
+  // can be populated only by the real creation path, never a fake receipt setter.
+  api.sourceOperations.set(token, state);
+  owner.operation = token;
+  t.after(() => api.retireSourceOperation(token));
+  return { api, bootstrap, owner, token, state, base };
+}
+async function untilCreated(predicate) {
+  const end = Date.now() + 5000;
+  while (!predicate()) {
+    assert(Date.now() < end, "bounded creation wait");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+test("inactive full SDK created source real child joins kernel models and FDs before actual fresh helper", async (t) => {
+  let f,
+    prepares = 0;
+  f = await createdSourceFixture(t, "normal", {
+    custom: {
+      ...controlCustom,
+      async prepareSourceGitIsolation(...args) {
+        assert.equal(f.state.creationJoined, true);
+        assert.equal(f.state.childEvents.close, true);
+        assert.equal(f.state.pendingWriters, 0);
+        assert.equal(f.state.logFds.size, 0);
+        assert.equal(f.state.readFds.size, 0);
+        prepares++;
+        return controlCustom.prepareSourceGitIsolation(...args);
+      },
+    },
+  });
+  const receipt = await f.api.runSourcePhase(f.token);
+  assert(f.state.child instanceof ChildProcess);
+  assert.equal(f.state.creationPid, f.state.child.pid);
+  assert.equal(f.state.issued, true);
+  assert.equal(prepares, 0);
+  await assert.rejects(
+    f.api.createControl({ ...receipt }, f.owner.lease),
+    /SOURCE_SESSION/,
+  );
+  const control = await f.api.createControl(receipt, f.owner.lease);
+  await f.api.prepareFreshPolicy(control);
+  assert.equal(prepares, 1);
+  await f.api.retireControl(control);
+});
+test("inactive full SDK created source root exit alone cannot issue before actual pipe closes", async (t) => {
+  const f = await createdSourceFixture(t, "held-pipe");
+  let settled = false;
+  const pending = f.api.runSourcePhase(f.token).finally(() => {
+    settled = true;
+  });
+  await untilCreated(() => f.state.childEvents?.exit);
+  assert.equal(f.state.childEvents.code, 0);
+  assert.equal(f.state.sourceReceipt, undefined);
+  assert.equal(settled, false);
+  await pending;
+  assert.equal(f.state.childEvents.stdout, true);
+  assert.equal(f.state.childEvents.stderr, true);
+});
+test("inactive full SDK created source denies nonzero missing native close and unjoined kernel outcome", async (t) => {
+  for (const mode of ["nonzero", "missing-close", "bad-job"]) {
+    const f = await createdSourceFixture(t, mode);
+    await assert.rejects(f.api.runSourcePhase(f.token));
+    assert.equal(f.state.sourceReceipt, undefined);
+    assert.equal(f.state.closed, true);
+    assert.equal(f.api.sourceOperations.has(f.token), false);
+    assert.equal(f.state.readFds.size, 0);
+    assert.equal(f.state.logFds.size, 0);
+  }
+});
+test("inactive full SDK created source abort keeps falsy primary and cannot publish late child records", async (t) => {
+  const f = await createdSourceFixture(t, "wait");
+  const pending = f.api.runSourcePhase(f.token);
+  await untilCreated(() => f.state.childEvents?.spawn);
+  f.owner.cancel.abort(false);
+  await assert.rejects(pending, (error) => error === false);
+  assert.equal(f.state.sourceReceipt, undefined);
+  assert.equal(f.state.closed, true);
+  assert.equal(f.state.childEvents.close, true);
+  assert.equal(f.state.pendingWriters, 0);
+});
+test("inactive full SDK created source receipt replacement denies before fresh issuer", async (t) => {
+  let prepares = 0;
+  const f = await createdSourceFixture(t, "normal", {
+    custom: {
+      ...controlCustom,
+      prepareSourceGitIsolation() {
+        prepares++;
+        throw Error("MUST_NOT_PREPARE");
+      },
+    },
+  });
+  const receipt = await f.api.runSourcePhase(f.token);
+  await fs.appendFile(
+    path.join(f.base, "jobs/full-sdk-source-gn/receipt.json"),
+    " ",
+  );
+  const control = await f.api.createControl(receipt, f.owner.lease);
+  await assert.rejects(
+    f.api.prepareFreshPolicy(control),
+    /SOURCE_RECORD_PIN|SOURCE_RECEIPT_REPLACED|SOURCE_RECORD_BOUND/,
+  );
+  assert.equal(prepares, 0);
+  await assert.rejects(f.api.retireControl(control));
+});
+test("full SDK bootstrap captures original six hour ends and denies expiry before factory IO", async () => {
+  let wall = 1000,
+    mono = 0,
+    io = 0;
+  const api = await inactiveControl({
+    Date: { now: () => wall },
+    performance: { now: () => mono },
+    fs: {
+      ...fs,
+      readFile() {
+        io++;
+        throw Error("MUST_NOT_IO");
+      },
+    },
+  });
+  const bootstrap = api.beginFullSdkBootstrap(),
+    owner = api.bootstrapState(bootstrap),
+    lease = api.leases.get(owner.lease);
+  assert.equal(lease.wallEnd, 21601000);
+  assert.equal(lease.monoEnd, 21600000);
+  wall += 21600001;
+  mono += 21600001;
+  assert.equal(lease.wallEnd, 21601000);
+  assert.equal(lease.monoEnd, 21600000);
+  await assert.rejects(api.runFullSdkTransaction(bootstrap), /DEADLINE/);
+  assert.equal(io, 0);
+});
+
+test("inactive full SDK created source log FD close failure denies session after actual child exit", async (t) => {
+  const primary = Error("MODELED_LOG_CLOSE_DENIED");
+  let physicallyClosed = false;
+  const f = await createdSourceFixture(t, "normal", {
+    fs: {
+      ...fs,
+      async open(name, ...args) {
+        const fd = await fs.open(name, ...args);
+        if (path.basename(name) === "source-launcher.stdout.log") {
+          const close = fd.close.bind(fd);
+          fd.close = async () => {
+            if (!physicallyClosed) {
+              await close();
+              physicallyClosed = true;
+            }
+            throw primary;
+          };
+        }
+        return fd;
+      },
+    },
+  });
+  await assert.rejects(
+    f.api.runSourcePhase(f.token),
+    (error) => error === primary,
+  );
+  assert.equal(physicallyClosed, true);
+  assert.equal(f.state.childEvents.close, true);
+  assert.equal(f.state.sourceReceipt, undefined);
+  assert.equal(f.state.closed, true);
+  assert.equal(f.state.cleanupConfirmed, false);
+  assert.equal(
+    f.state.owner,
+    null,
+    "other owned FDs still close after the log-close denial",
+  );
+});
+
+async function unlaunchedClockFixture(t) {
+  const { PassThrough } = await import("node:stream");
+  const child = new ChildProcess();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let wall = 1000,
+    mono = 0,
+    kills = 0,
+    unrefs = 0;
+  child.kill = () => {
+    kills++;
+    return false;
+  };
+  const unref = child.unref.bind(child);
+  child.unref = () => {
+    unrefs++;
+    return unref();
+  };
+  const timer = (callback, ms) =>
+    setTimeout(
+      () => {
+        wall += ms;
+        mono += ms;
+        callback();
+      },
+      ms > 1000 ? 8 : Math.max(0, ms),
+    );
+  const overrides = {
+    spawn: () => child,
+    Date: { now: () => wall },
+    performance: { now: () => mono },
+    setTimeout: timer,
+  };
+  const api = await inactiveControl(overrides),
+    bootstrap = api.beginFullSdkBootstrap(),
+    owner = api.bootstrapState(bootstrap);
+  const lease = api.leases.get(owner.lease);
+  // Isolated map only: shorten both original ends once, preserving the existing
+  //150000ms reserve. Production cannot import this fixture or rewrite its lease.
+  lease.wallEnd = wall + 150020;
+  lease.monoEnd = mono + 150020;
+  t.after(() => {
+    child.stdout.destroy();
+    child.stderr.destroy();
+    child._handle?.close();
+    child._handle = null;
+  });
+  return {
+    api,
+    bootstrap,
+    owner,
+    lease,
+    child,
+    overrides,
+    get kills() {
+      return kills;
+    },
+    get unrefs() {
+      return unrefs;
+    },
+    advance(ms) {
+      wall += ms;
+      mono += ms;
+    },
+  };
+}
+test("inactive full SDK fixed clock no close returns finite unknown and releases owned observation", async (t) => {
+  for (const knownExit of [false, true]) {
+    const f = await unlaunchedClockFixture(t),
+      started = Date.now();
+    const pending = f.api.samplePythonClock(f.bootstrap, "fixed-python", {});
+    if (knownExit) f.child.emit("exit", 0, null);
+    await assert.rejects(pending, /CLOCK_DEADLINE/);
+    assert(Date.now() - started < 1000);
+    assert.equal(f.kills, knownExit ? 0 : 1);
+    assert.equal(f.unrefs, 1);
+    assert.equal(f.owner.clockProbe.joined, false);
+    assert.equal(f.owner.clockProbe.cleanupConfirmed, false);
+    assert.equal(f.owner.clockProbe.dataAccepted, false);
+    assert.equal(f.owner.clockProbe.child, null);
+    assert.equal(f.child.stdout.destroyed, true);
+    assert.equal(f.child.stderr.destroyed, true);
+    f.child.emit("close", 0, null);
+    await Promise.resolve();
+    assert.equal(
+      f.owner.clockProbe.joined,
+      false,
+      "late close cannot promote a retired observation",
+    );
+  }
+});
+test("inactive full SDK fixed clock late close preserves deadline and never returns late data", async (t) => {
+  const f = await unlaunchedClockFixture(t);
+  const pending = f.api.samplePythonClock(f.bootstrap, "fixed-python", {});
+  setTimeout(() => {
+    f.child.stdout.write(
+      JSON.stringify({
+        monotonic: 1,
+        parentPid: process.pid,
+        parentCreationFiletime: "1",
+      }),
+    );
+    f.child.emit("exit", 0, null);
+    f.child.stdout.destroy();
+    f.child.stderr.destroy();
+    f.child.emit("close", 0, null);
+  }, 23);
+  await assert.rejects(pending, /CLOCK_DEADLINE/);
+  assert.equal(f.owner.clockProbe.failed, true);
+  assert.equal(f.owner.clockProbe.dataAccepted, false);
+  assert.equal(f.owner.clockProbe.joined, true);
+  assert.equal(f.owner.clockProbe.cleanupConfirmed, true);
+});
+test("inactive full SDK fixed clock cap discards bytes and preserves first bound failure", async (t) => {
+  const f = await unlaunchedClockFixture(t);
+  const pending = f.api.samplePythonClock(f.bootstrap, "fixed-python", {});
+  f.child.stdout.write(Buffer.alloc(4096));
+  f.child.stdout.write(Buffer.alloc(32768));
+  f.child.stderr.write(Buffer.alloc(32768));
+  await assert.rejects(pending, /CLOCK_BOUND/);
+  assert.equal(f.owner.clockProbe.stdoutBytes, 2048);
+  assert.equal(f.owner.clockProbe.stderrBytes, 0);
+  assert.equal(f.owner.clockProbe.joined, false);
+  assert.equal(f.owner.clockProbe.cleanupConfirmed, false);
+});
+test("inactive full SDK fixed clock spawn error preserves falsy primary without close", async (t) => {
+  for (const primary of [false, Error("MODELED_SPAWN_ERROR")]) {
+    const f = await unlaunchedClockFixture(t);
+    const pending = f.api.samplePythonClock(f.bootstrap, "fixed-python", {});
+    f.child.emit("error", primary);
+    await assert.rejects(pending, (error) => error === primary);
+    assert.equal(f.owner.clockProbe.primary, primary);
+    assert.equal(f.owner.clockProbe.joined, false);
+    assert.equal(f.owner.clockProbe.cleanupConfirmed, false);
+    assert.equal(f.owner.clockProbe.retired, true);
+  }
+});
+test("inactive full SDK unconfirmed source retirement releases only owned resources without a join", async (t) => {
+  for (const knownExit of [false, true]) {
+    const c = await unlaunchedClockFixture(t);
+    const f = await createdSourceFixture(t, "normal", c.overrides);
+    const lease = f.api.leases.get(f.owner.lease);
+    // Capture a short original model lease before the actual creator path.
+    lease.wallEnd = 1020 + 150000;
+    lease.monoEnd = 20 + 150000;
+    f.state.stdoutFd = await fs.open(
+      path.join(f.base, "retirement.stdout.log"),
+      "wx",
+    );
+    f.state.stderrFd = await fs.open(
+      path.join(f.base, "retirement.stderr.log"),
+      "wx",
+    );
+    f.state.logFds.add(f.state.stdoutFd);
+    f.state.logFds.add(f.state.stderrFd);
+    let foreignCloses = 0;
+    const foreignClose = () => foreignCloses++;
+    c.child.on("close", foreignClose);
+    assert.equal(f.api.startSourceChild(f.token), c.child);
+    if (knownExit) c.child.emit("exit", 0, null);
+    f.state.failed = true;
+    f.state.primary = false;
+    c.advance(30015);
+    await f.api.retireSourceOperation(f.token);
+    assert.equal(f.state.primary, false);
+    assert.equal(f.state.cleanupConfirmed, false);
+    assert.equal(f.state.childEvents.close, false);
+    assert.equal(f.state.creationJoined, false);
+    assert.equal(f.state.child, null);
+    assert.equal(f.state.owner, null);
+    assert.equal(f.state.ownedListeners.length, 0);
+    assert.equal(c.child.stdout.destroyed, true);
+    assert.equal(c.child.stderr.destroyed, true);
+    assert.equal(c.kills, knownExit ? 0 : 1);
+    assert.equal(c.unrefs, 1);
+    c.child.emit("close", 0, null);
+    assert.equal(foreignCloses, 1);
+    assert.equal(f.state.childEvents.close, false);
+    assert.equal(f.state.cleanupConfirmed, false);
+    assert.equal(f.state.sourceReceipt, undefined);
+  }
+});
+
+// c9 portable primary-source replay: data generator only; no GN/compiler/vendor process.
+const fullCarryDriver =
+  await import("../../native/windows-arm-full-sdk/full-sdk-source-driver.mjs");
+const { spawnSync } = await import("node:child_process");
+test("inactive full SDK bootstrap requires privately bound full profile root context pin and original budget", async () => {
+  const raw = assemblyInverse(
+    await read(prefix + "full-sdk-source-driver.mjs"),
+    "driver",
+  );
+  const body = raw
+    .split("// BEGIN CLOSED FULL SDK SOURCE BODY\n")[1]
+    .split("// END CLOSED FULL SDK SOURCE BODY\n")[0];
+  const bootstrap = raw
+    .slice(
+      raw.indexOf("export function bootstrapProgram("),
+      raw.indexOf("export async function prepareBootstrap("),
+    )
+    .trim()
+    .replace(/^export /, "");
+  let remaining = 1000,
+    checks = 0;
+  const api = new Function(
+    "need",
+    "sourcePaths",
+    "HERE",
+    "BOOTSTRAP_SOURCES",
+    "CIPD_CLIENT_SHA",
+    "VPYTHON_INSTANCE",
+    "Buffer",
+    "PRIVATE_DRIVER_ADMITTED",
+    body +
+      bootstrap +
+      "\nreturn {bootstrapProgram,fullSourceProfiles,fullBootstrapAuthority};",
+  )(
+    (value, code) => assert(value, code),
+    () => ({ depot: "depot", commands: "commands", workspace: "workspace" }),
+    "native",
+    [],
+    "a".repeat(64),
+    "instance",
+    Buffer,
+    false,
+  );
+  const context = {
+    kind: "windows-arm-full-sdk-context",
+    mode: "full-sdk-source-gn",
+    workflow: ".github/workflows/windows-arm-full-sdk.yml",
+    policy: "native/windows-arm-full-sdk/sdk-origin-review.json",
+    ref: "refs/heads/main",
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: "1010282954",
+    visibility: "public",
+    event: "workflow_dispatch",
+    defaultBranch: "main",
+    head: "a".repeat(40),
+    workflowSha: "a".repeat(40),
+    runId: "1",
+    attempt: "1",
+    inputs: {},
+    image: "20261030.294.1",
+  };
+  const recipe = {
+    image: context.image,
+    python: { path: "fixed" },
+    sourceGn: { executionPolicy: { sync: true } },
+    sourceChromium: "b".repeat(40),
+  };
+  // This separate map models binding only; the production map is inaccessible.
+  const state = {
+    root: "owned",
+    context,
+    contextPin: "c".repeat(64),
+    budget: {
+      remaining() {
+        checks++;
+        assert(remaining > 0, "ORIGINAL_EXPIRED");
+        return remaining;
+      },
+    },
+  };
+  assert.equal(
+    api.fullBootstrapAuthority("owned", recipe, state.contextPin),
+    null,
+  );
+  api.fullSourceProfiles.set(recipe, state);
+  assert.equal(
+    api.fullBootstrapAuthority("owned", recipe, state.contextPin),
+    state,
+  );
+  for (const [root, pin] of [
+    ["replacement", state.contextPin],
+    ["owned", "d".repeat(64)],
+  ])
+    assert.throws(() => api.bootstrapProgram(root, recipe, pin), /BINDING/);
+  assert.equal(
+    api.fullBootstrapAuthority("owned", { ...recipe }, state.contextPin),
+    null,
+  );
+  const emitted = api
+    .bootstrapProgram("owned", recipe, state.contextPin)
+    .toString();
+  const packet = JSON.parse(
+    JSON.parse(emitted.match(/^P=json.loads\((.+)\)$/m)[1]),
+  );
+  assert.deepEqual(packet.fullContext, context);
+  assert.equal(packet.enabled, false); // Real closed constant was never replaced in this fixture.
+  assert.equal(packet.fullContext.mode, "full-sdk-source-gn");
+  assert.equal(recipe.privatePolicy, undefined);
+  assert(emitted.includes("value==P['fullContext']"));
+  remaining = 0;
+  assert.throws(
+    () => api.bootstrapProgram("owned", recipe, state.contextPin),
+    /ORIGINAL_EXPIRED/,
+  );
+  remaining = 1000;
+  context.ref = "refs/heads/old";
+  assert.throws(
+    () => api.bootstrapProgram("owned", recipe, state.contextPin),
+    /FULL_SDK_SOURCE_CONTEXT/,
+  );
+  context.ref = "refs/heads/main";
+  api.fullSourceProfiles.delete(recipe);
+  assert.equal(
+    api.fullBootstrapAuthority("owned", recipe, state.contextPin),
+    null,
+  );
+  assert(checks >= 3);
+  // Exported production entry rejects an inexact vector before any IO.
+  assert.throws(
+    () => fullCarryDriver.fullSdkSourceMain([]),
+    /FULL_DRIVER_ARGV/,
+  );
+});
+
+async function projectionFixturePython() {
+  try {
+    const raw = await fs.readFile(profile.python.path);
+    assert.equal(raw.length, profile.python.bytes);
+    assert.equal(sha(raw), profile.python.sha256);
+    return profile.python.path;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    assert(
+      process.platform !== "win32" || process.env.GITHUB_ACTIONS !== "true",
+      "Hosted Windows projection fixture requires the pinned Python",
+    );
+    return process.platform === "win32" ? "python" : "python3";
+  }
+}
+
+// Complete, unchanged CEF tools/gn_args.py at 682c378d70d5780061e96644dca16ddd8fd157a9.
+// Deflate only transports the pinned primary source; no network or vendor process.
+const pinnedCefGnArgsDeflate =
+  "eNrFPGtz28iR3/Ur5qi4SO6S1MvW2rooVbIkO76VZcWyvZXYPiwIDCmcQIDBgHpsvP/9+jFPEKTkXCrn2rUJYKanp6df090zm+K4nN9X2fSqFrvbO/viw5UUx1dVOcsWM3E6G8s0lal4VcUzeVtW1+JoUV+VlRqJi7Kqs7JQIjEANjYRxK54XZbTXIo3RTISR3ku6KMSlVSyupHpSHxUUpQTUV9lSqhyUSUSgKRSwOO0vJFVASOO7wFcLF5engxVfQ/g8iyRBXSsr+JaJHEhxlJMykWRiqyAl1KcvTk+Pb88FZMsl6MN6P2B4CdVNq9FKmtZzbJCKmqblEUtC0CK0JBiLqshvJtk00UV47TEr3E1VaNp8SvBUwCOBo4rKRYK8KtLMV5keSqOT19tWYLdZvWVeH0+EpcSB5nNaBBAEFp1YehyPszljcwB3MuPb85OYACCDzOpxFQWsopz6A9DxFOgR6HqapEQmUcbm40pAc7Qa8YTmpR5Xt5mxVTUsbpWB9R6KE7khObMw6dyEi9ymAQQrZJ/X2QVTATmKW7ifCEJzyRW8OP2SlZIaXkv0mwykRUAE2ICk7S80UWMYISjJJFzmCMQpRqmNFwA8yaLCcHX59HJ6as356eXQhY3WVUWSBtoVWXxGBcMgX2SVTbJaI2A1qtApqUoyhrXcAJMUTPRaYaEpp4ZkZ7BvibC1tB1BtPP5jkxgFtsBdyGqzXOCqTgqnFxHBphDTW5KS/WSwnrI0Wcpgg1FoW8deCYa1sYNFxOs5CO7HZcAjPCJXaPihjU4K4FI5VJDq8j5Ohen2agJHMV8v8PwIQZc/moORajGlAUPsvkmhg2VkCputdH2c6BviQVOKKZIVPLCAfKOI/wy5WEZgBAzGPQIskC8DOdAKc54gaCAENYwuJ4QHfu/7FIofctaYKySDOeSzu0JgTRmwOuKDkDQo+luL6fy4E4vvgIBEyushros6jgjayTPq/mmwn1Rs0DDLJyQYgdrmIFLEorr6cC37KUmA1A+fREehWapa9gwb9vsPEC2L9cwATy7Foi+WUBU0ukNzaAc6O3jD0tsd/ey+bIKGNAMnVF8PFpLSoEK7kqS1TuBSp40plLvLwzMmNoVHDhWMuwQkBgMiP+mOblOM7ze8RjHKPaLZmlzRIe4BKCEkpBUAvLj7TUPh821W+ofEcOCHYKZRl7v5b1e/3yiGRI93gvFcz/QENv9LvNwPSN2VqMyKyiXrGEBTNXZSmRjdhQ90J16VQlL8nuYygWkMfxNFIOuJqH8Fn730a5Y9K0/x902/PoxrY4VaKHIpOWUhFH67H7D7MgD7aWD4U4QsNfa6XrCYf+HJBKY7TEZ/a9Vuwe5UQb8ZpwfPqhXdOIhKTU0ERAzzWkhD8vLTVRu7WqtkC5LM/ZkMQahIBN9MsVs75gZ8cfDPp94ie5ikZHhTgizob2p1UFq2eoU8NwtwBj4kOcxFkONnCDHJ0omixQUKJIZLM5OLsiHqsyX9Qy4udVzeZVVtTwtiATu6Hflsr8MjwDQifm9+BNF5F5ZZpU0vxSV7m8sw/3iv1aSeuQAqmTuqzu0cwRN8bEv+49WPcInYxIexmjjUROIvguDgGh0Tyur0YwK/y3Z57/p8wK+wBNC/D8ezBLEPco6g+4XwUf+n2Ni6qSx+FSNxEfbUDfx+Cj0Q5Hh+FPAq/JkHG0AesKxBpZUh8eii6YoL3d7sGGcCvAb9PyVnXh9ab4hR/ELAZFiX5zJYnw3aP3b/efdlH8u0dvT+DnCNrrVgglrmb4HYZtrOhINwLVijhoODIHI9mNZyk8bMi8Dds0rgC1JXQBHKP6Nk6W0dRoIJp3z/ejfx5P3W49niNVg7+l0C3udfOsWNx1+018+fUGAqJPKBu97sfiukDxK+fol6N3DHBrObNdu31ojGPJuwzM0sZG9JePb04/AMRXMYDa2NgAZSJmatqD/2lQwA0VOrfDF3aw83cfTg9EV/yI7fu660VcKfkJ9U+PtFAEOy2C0+l04G/6LFAPaiUFn8mJJ18f5J3VfzyfVyUMAypIXBBByeiOLBwLGzC3v0cIbI6zwoX8M8CEDcnfFyU60DyOGvGMen4fR+tOt0+YuK9o2uy3PjLAFyLBCgidbmclBPzWZwJugiKdgYVg5AgpYaZve37eORjufA3mMi7LXMaF3QwJrWf1UOANykozGuxvZffAB/wB3sAzcVt7nwmyQNhJc4WHQ7GYwWYy8XCoq3vuA4C7oy7aDwufP1hwk7yMa48x6KvhYa8d8lfQSt7hblgQY5HB0ZwI/lWAXVxV8T06I7ECHNVijvLbX6KUv+if1yz6165dsUuwFWYAVMIK2XaIDh4QBHab/BmdhnioJDSgfZujEmBQwG7Z51deYcu1moQobdS0QZPPxAvQBORZARh4xkd0LPEVkp26jdQ8B9nuDgzu3AV64D/BaDQevjUNNfQRyB8QoecJM77v933WoJZM/Pf8BuyuFmeahijJ0SNveRbXyRUTosnnWnG8Au0U11ZzeDrjvdMLTbVBm2WjIXjfbrvh1BRGeuIiIZADkp++5VV41SAxS80qptTyYWSoCRx4lhRE8z3xfP+gIeOroOSZajQGBgUV2x2AbJHJ/hxQincWN1rovvax6VfG0UzAwOk8UZ2ueKJH91DxNDc6fK/AI+mhW4JuQrvuxogHx9c8xQ3evECnZouXaB5nlUKewC0AuWwxOiYGWkWuJHDlP37fcGbGOCdgnlStQiygT5wBBojfeVm/whgl6YLepIPvCABFLg/EP0zP3ztkDiiUBVaxsCCBnhVKPsyDgedk8Q/FZFTJOKUnNiVIYHxEGtNr1x6a4z++4SFdcZ3NhZzN63sNFalkopYjX9AJiIYfaKVNJ70YUwVrLw30s7LkMJGJ8aESyqYFhx56uARGy/R5MJI+eFfJEf3sVd3/7n2Oh78dDf8WfdU/tocvoq8/9L+oHw7h/97ox/4fugNCLFBNBKAdNcAn0qNTq9G0Khfz3k7ffmXOCD/v9pvkY0ZzGye7M8xgfhPifmMykYc+m3G/AuTA/9ADEmDNpNzFZ/lz6EkdzoDliHrcK7KiyAz7Ib6mldQmANxu7VMYD5xcs+750dvTw09HZx9Pu7zswE21DKUAoJn4OAoJbQBjqzu1MbkXCGrA8Z8gdEB7Ph8YdsHtcUlGnsARBiacD8sE21EdR4ytG4HKqqjlVIL/n4HRUe3SGdqYBoGYE+ryWhbKmhg2QIfAPnrtr+U9fORWn7eXTF4OcskfyRHZNez1HaxgmQGGavCBHnbn67K7sSnOS2NRwFfIM5kCwXHFkCCkuwyxcC2RyNmKAbV71cZml7jXPC1uerK4IUb1uOoSaYVc1Ra8FwvyMtSVzPMhBSLVfVHHd26dJnk8VbzJ0wBGU1nbgQbgJfRZu1JLnrfpRHtgvVr0rr/heWrwrPF/K6upPAGGU70fkO8o4O3N4XV2I5FA9+gcjsHkA3NjOzWAIWIMUlIui0g4Q1jIdqUO3GNDnM8FbF1lKsEQiilGkaABco1vS1D/xjVsTBn6Om514oG9LNIHntoYLeYY4ui5pv0V67ciigLb/1SOF9NlV8UEZLSlpBARsPFsobT+5B27Cdfo5jShdwUIPplXStXMQNOMMaoFAiNv0KHEIJJEBJi5+0BEnTUD7pjLBPM8qcA8k6MPWCSJMUoThVTSy0yFWYxVGQwcYQK7eILmBZ0wrCPsAy6Blo5ummA+I4rzW/DIoxK23LybGJgGQL9Yxa3vwVbOywJEIaKIKzQxxPZb0Qv4hqLnvy8nkyzJ4tx2DuGDlQUZiZL5Aj5172ALjp+MFxIEC3iXzVxj5vi5u1DguN6rqizrrhX9lt4mBNLsDyjCp2gSqxoGuCYYvNEK291kagGzUPUizcoInRZq2u2ubQeaXsECPqZptQDzDeo8Belqb6+nEKn0eg0CfqvG8E6kTHMnVJaJkfUGKO4Du86H57D+y5KFihJdQ1SLLF1aQ+jwelOmUAYwlPbNwP2GfRakZf0cViND+w1w+QZfKXCdoJzgngxVXasqcJLmCcJDWgNac3aA3CorTqi+iRJEAEQSfwxM3EF0wGKtCPg68Uc5B28fnH0A5ZaAU+9mALt+aMH6bllWhcqXFsOPkTdUHmsvDv2H+e1A2/2b1JOzD9bun2SKLKzVNJzbUS7vm8o5JTYaGYkRibsGqSy8DKPcCm1TXiZxrqFRHpFEO+A2QJbdQrCBGLcdZ9qRY1hphv4RdIWJjtZqRa3YlmalAx9E0HGcXKOnDcYXtvUgZ7dXGdA6BRlF+4JOBdV/mGz/yEHTlADUZYFwyfNKpbquy7klCJk3aDKBCS1Adm7RbcoVTDEm98WCg0nFBRh/dbWoU4xSJlUMrg3JXKFdHSvDQGFWToxXDMiA0FhYjWVDvHSM2RKMUY7c9KNZmcpHEg2Wl+tnyH1BR1dXkdCaYJ69sDTBRIDHB3VVpouEPH4T9jYGSSPLnAWK5V4zl+3d2dpKaPYH/E+U5nlHsMEyC0eZFsyouFKZ5tKZuZtZRHYWkZvFGkrg6kyrOAWur0qYCi7NFgDD/SkPtrxOjm2u6nquDra2ptBwMR7BUvGkQPilrnvaSuRkK1MKZHxrb3/7eQNvO37kxl+D7pwU0TzLyfGBbpXhSfgvWVSYMMFcN7pWZtFcAs+Cw3UvymL4zqyWWT6jGY4mKN9megnAvaHZpc9+2t6fTJ6OdyZPf7LgqBzq7g5WqcxRPWxtEZwtfE6u4qzYArPpnkiXFeAqLwpbekH5UQMPY53AVcMJsPEil0PaaWNhAljce3H844+CiaBZ9J2ViIFPILdKTChBxWdcpgMNUAYZTddnlCRu0bf+mtDegHxaXxxRh1GyDxRziOOP1AlT3j/+uLsnUApJN8Bkzs4+vRW7e10nP6Dsi+kwIebmjViICO3JENC24DFoC1tNYpDVRZEZKfFXQecfwUGmUXmvjvEiXU0i70jsNTi2N3GgezVbemSMNPl85/L3dT4gOijBB0w4mdjykRhX0AiYS5vwxHg1EwEUgP0n6J+9XQGMUsVJjctG9jVISZN/YhkP8FzUdkFIXE/eggouKyyAe3MSBFC6cQ5AYf1klKSzSLeKsjQC14A9uRf7z8dPf9p/sf0ijZ/u/bQ33n7+Ynsv2X0unz978fTZ025z8v+x5ABv6s0NbQhR0JwSJ+VubCagjF+N9AV2RmonedM0dtrQmQCRLkgy0LmWGJBFPSN6oKioDK0Emww0AWVUVvcDDY7qkai68DvV1+7+Ty9CYgKyYyAdzMGz2OTzsd1WnsP/wJ5jk0o6Y6F3G36QYOSb55rCPp6j4Rwzil6iSxLQbWTyUIuiUeZIGQz0e4CAqIfzMuYqgxYcDJJ3z/etHc7vD+DdH4xUvf7rhal4ODQ7L/T1DrN4b7fr9Qc0YSvGYA6g/zTJM2QNWLWrsrxWAYmbOzBLTN8s/OWDp+Wt9N9K7frcxgWFzKzFdhU+GpC101g5GddcVki2DrMVvmOlpGFLyz0Y2wRnm0p2iYliy0ajsppuTe3jcA6AQN4qtZVsDXc/vZZ3fzn6ef92a7b17Odn8/nPL355eXT0X0sE+Hv9rLF1DL/uL5PGFNGMUTTEh7NL0sakbIlHhuk9qOwsGW38c6b8+fbeJv3Wwe7h7ovn2093957tbgcI0vioQ+dRVqgMDL0C1QZqNc/GFbjCwbZaV+eSysZ4CG0A2Wmk1eLSUi4F1V4bMBoWF1F2kn/S/oGKLbySCMqn6EqJAQUGbFMwx10dOTOtM4Xde0sA+21RpTCbstxnZUwaNmCvz0+LmxV7LrO/cnu99kJgrwDYRckIQkvQ2wYouw5Itx9sCf0qvZaNoN7Y2IDXEW4AdMkkOVu2EI48IeQZU/DWFsYzhhcrVmfZbzK6BfWZNUI9m+K0WHLcfwFmusGkCpi7pv2+1d8sHOdJkkYwzgH73oLL4+f5Ypo5V4D8kwgFTHvo/P1f5AjoCfmTEFclcPsNFXAnbNApFL3CkuupohnHjpHfsevFqVt7OMMfCKCH2cKcMJDi/dnfhBZX9MosD8Bir3M1zNYk/21t7Cy0grw+eu/iRXkod5rnYOS1DjWOf3xTZmDDgB/dZstYekwZKrtnEj1Q3uwjiM3dve2dvlF+J+xF4FxvQe2Q9reR+UyZyAQHj4gZtiw+lrtFVmtwSYxzAG+tTSxaaUQ0iCzMUJ2v0B0Uq2c5JeXYjNVriaUwvJNXF7/Cuv9DP+K/JiA0aCirgfCGZM1NBw/u2VutTZ1kxjWidXVPW/7SFUv6hyd0sYB+cbishnSoH7MEmdNBI3jWOoq4Sn/GiZmsjw674SudvTm03emFi7ZRxO2JOnyi/AAOBtY4hubn4gMQgYL3yImDDiwgo2KDekuOhrZkF0wrE/n0dl1mQyAFFoCJeAxOrtbCsIW+QdqqxRTkgxpjQpzinF6dlccDjcA9074RrF0O75O15JB+ew8T79cNaXYrW3JsXzcNA/or+zTi/n22/jrW397LywX0H1JDntPZDsz3SvsPJwQaaYCV0wpyBTqXvpQZaO/dkkFoA6Bj9o+BYcL7bWD8dMJjYAXpBwbYzDe0g1nKSix3XjultnyFVlgfiCGWDqyM6OPQ7jC1y6FEB/YunQH8s/+0Q4a5QyWeHdMBy0m9xitanSGbuXYUqeLGiyKXSjn/tmUj2MJozqfQus6TA1CGPc56mXLUfiAInKYEO8UIgIbVyNrKpzU8vWq45/s4nMm1rfrzED4eqR9CyxfcdqQsHgF2hIOH5ONRGhBCIWYPaBT45iuoQ0alYaY8rRIgcUiDu6MrXrtDv45teRCc4aMHoTn9c4MA3b5nGFzWNQORqBxdHp27Ru8lhsakF9OgijoyM8HSU02lySCLjm5CgB00m3qkOr+OX/TUNHZmWlgo3W1Asydimp14HlrPvAtTAg9OKbRtD0wubPzANB+0U01kVfPo2tbJ6cuPrw9eHV1+OHtz/rMtcFuBdhNx376txh+Dr/ki5Qn4Xehzx+xTjIJOQELLmbDh9cbpVWpsa7GD3etCn7Lhj2229rDzR7JN4Ll+uhTIon/q2Oacb3bHM2p9mLIGJJT4RMDEJQHjMJK8i7F0eIDafTHGEqNy4kHrHB98uajKaRXPqPJRiR7Iff/L2yypSlVO6hCm2Hk62u6MVmCvjR1MABDXD0u4u08NBDu72zvPVsL2rXlIoeP3Hx5NoJoRgC6NwRunyx9BIcMKP2e1+rKz/eW9xMTql0VS1V9Ozs7UFzIksH9XDWC645dLOjuxt0tdqPJshPk427rphnizBhCXJz9/16yhi4A+/yemaEzZW6sWlwfQZTRXckL4uckNO9uj7dHu7v7ujuO4pki1VbV5snVyevHuQ/Th3buzy+iXN+f06/jPR2/OD7dtG4wgv738dBm9+3T6/v2bk9Po4ujDnw+bIjjwy6uWZfZPy/AA3OWbd+eHniysAWJoZOEcn76KPh1/Onp/eViUhQzm/86ctG6dv+i5upOJuEngg8Jo5Tj2TlBSlLPvSPXm/Pjs48kpYZsVpAoFTkw5jM7evKTPJirT+Mxkg+/yTiaLmlOnXhMbIw5vWNCB+Aij8KP5Pe25VxQrxlPp8wFObnmjgomhpl/Qvh2hlq27GGfN2ncn66AHu5TvHyLYtITjLG1eHgN9aS+zGub30KVti7MRgm7UjHZXCiOO1eUjQttdPzbSWYfBGtkOAtSdDetM3Siz6Wvi1q4EGLFwVh6Uwzb2w91X45SB7dJ/9ORIQ1ARWitiayboNqYr56gV08rZWRCH7ey/Zham65qJ6NHbp7CCdZwu9HgFteLj2aWhTtuHp2sUQoXJa8h5/nZta7LkqawyLKHFcjS/PqDiUyxYv+yyKlrdboFOddeUMJxsWpQm0K0D0RZcj1afQoVo2bGVzjtmsHh0G5A2+i60iQaMlYoFwxo8k6pPxfy1zX+F5sGdDfDQ3SIUGGcLEG8voaKsIExv8pG6GRPWE0GXJLMiAsv76ZiUj78KXe88WcsxHg9w3x01+67hjhZ3WZ5hahAeXlJ8b10kwYUUVuL5KBzxSKOmLR1sdIx/4I2OKVT35bPt8TWAA2vzHTCw9VJ/UnrfBYN6GDj+0QcryyvmF4TAUT5a8F9u04JgI5i+TgdoTAboyRC8JV2qOl5NvrsAIwyZD0QyXzyU87A3coTXU+mToBRndyHxOOWshn9c7XEx6INGUYJNXYGWwatEYFo5uVlhjaDeoppxP3dT7h9RN+oV1ZLqoCOewFLG7pgv9tCFpit21TYYQE9hbQgl0rDqr+ITElwHqnNXXkEbj88Zr+N356/evNZZXdLXBeyh4nQgykUlOnaSVPDT0cEPzNeFgQ/OznEAhU7PaWjqfjYuczUSl/zD6mSTGvQL+2iFG2T9TyzVsCWXm3yjU2bKpLoMP6IbWbotc9TlX5X9gVV7fryDiGmP3bokh6vRCBa1mUMJ13Bd6NDUBl3gzUyI/1Gel8nwFIsBObcDpmh42qcUKSyAydoa2vC9AM4+YO8YdqZBWRFVOtvSP9tGqKtsZiopbaWlX77MNZZ0bGyG+Sd40OU88XxOxWkgbWNQ6PW9l39VYnNve3/HrjcCgzcvnvVtcal3bqvWV9aFFKCzcDVyRXwTZznnavXlPVRlzaeQ6FiNBUb1c/JungOrYKUodFBYAUBHAsACm7uggNHGkg4gUd0QE9YxrIX3DaOXllwRkoujbRTWnBuEuQl/+UZF4SVurWuZ3zeJ2bYApCCDyQ/EVXmL9aA6vGBKX111JZddMso6EY6FmUYp+bnwgPCOZ1tmEMUqmtGvZsURjvkyTq4X8/dyclFXtlTDqnxk0gFQ207Una9zY3ql3It5VMlJNK+BrAwrqIFyFu6RqciwvMG7fSdAm8VYV7gTyYJCYb9orHEBHi2EmTUs4oyLDLe2ZlgBjEGlLS5E3KriW5zWaJYa4bdnRZZqRvxiEj0XvsTAmVrU/e0zbx4jaOSanTJzYfRVRFISeAyFWGtqlHgM0Y88+aSQvfFbPWiGKA9qMD48XShgGS7k1hlt5QPL0bfO773bpsxFQTFqGVMWUtH5WmQ+MPKSCwCxsNqdU0Bovw6HzHJDs+SHIZY+c/xqTojoyskhneV2XtYDXKxHiLCouqH/SXreXzhhWVYC5lCALqkwmjX31PYvujCYtMl4iqFVtoLatkWm+kJtNeTaGTed4sEhHFPiurRyZd9nGi5g5du+BAedqLQbqEA3BuSwJxOa90kGgDDC3IlAVahXMp97AHnwNC6mVK0+L6kA3BT+BIrl8atgBowQMV1q4ztTxn17/cvFkBga1nwWJ+8uw9JlPNWKlUdggmAZsOgdyAkM+BvfUGgmEKdA3WuEEeOhY13WRccrwhrkpALgVHb5dP/Z0xc/Pd3bbvUMMN9L69F0QZbmPb2dk1wvK+yHOljmaNH0sMwF75v1fUNcTG+Xw8tc057L0pOqODmPxCK46TW11OSrFGiv4IyWcc30UEE9odFVdDCIk+ueXxivOMexk8bbz58+fxrvJnvPVqZuic4rtGtQAXKwsWw5F0ymiMkUMe7Nwi5dBelVDTF4A2rgCiS9U7BLJ2SDc67wN5UmrqlysRODtsFdFJgvbt5chNESeD80F5TqGAkd9UPbCN+0KdT7iaBUiypl/UItU6rVHDfylQlub71D9xteSRTtAvmbZ85WlMkRQ1zyMp3y7r9tw8hl9ZSk98rfzbbRhYq+QedvQbWIDkr5JxxPVmR+NFhqq39HusJoRZWyMdrmZjACf3zxcWjPjhhUXbYJz+EoFoxLzt26Y+juqGWw1dFAjA2o9PbsEBHIgVXvKfcPxLGlCzbdb+ah7wLpwmJkoECegEeBN54NjYSIJwasKeFYrlBYA6uaXU0eB+sxmGGrVdDsTTp0/8wp3UUFihDvW8N8P5DoN1Z9RHZYiwPxRCEQZCuvDtBVksPShBfx+Ws/CPD067DB+bjQgsvRD7/KcyBA18r6kDRJy9FpWPM5X83gswVq2aWQCG8cvHv/Vt/aQ2MyebSR56vi6I29Xc7V8nOBKo+HYo6ncdxVkTiSDrSsLGZFOBzVsNtrB54rhXXQQ7sKer54ioNvV46LsL5i3Q6Bp9YYz1lMqgABZ9ceDwWXhF2CMK6kjyT5tSK8+9BuMNgEYBZ9r9e/thBRa1fvpQsh0IksW1fd2LsgsYx+YrV1Fd/gFlgWtvI6NT4WNm4pL/OqzIKo6hodbP6ElDF3kpFImSZhQLN9NZ6o9qWYZUrpGxJDbdltxJW1GDfHW144mvbXpXI0oojxjQfsrLn6ZHuJ5KG5EBI3dW0JltPzo5dnpxHfk+nSLDvddowMwQgrL+69ptJnHZDn+46VApzt1ZjrcKbrOb8DZ80yD2lf29u/4HLD3ikUAqeht1fAOi8dKoEtV117CZhm7xCqXUhfRRyEVwR1SSNEr88jvMoNen3V90M0I9h0LMWxm+muY6OPAMBnUKzdAeWqw8OqLeF4Hr37+CHimC1m7ujKCe8yNq+3vociOMlp9UboD4VahPVDiMjnxNwAxXSl+Ldr4d1g+LXpO+Ih9l7gQPoeJGKtG3rwHHN/j35oUIfv0uivdEY9DPDKKI2jRW49wzUUL97cHIwuenh5Xx+QWJHzAlrpC4bdtNeeMWPOwdqhY11U1Wve6hRaBc4/2gos4yrYgjnnI/BlTfqCSlo6DqjiTGmQcOH4CjQt+HzWgs9XhKcraA91/bXf97z6zpeiw9MmIOgobQpTFwVIYQ0Mhgfo3uKIvKkoIgUURRh/iyLSQ/4t0FRkSieU7aEUc1Wb0ZvmwJ0f72F6cEJm5Cmge5hZNb3piz+JHT1dd4mv+fp5J2Cf0HCw4ddmY9ASZEEoqk4B2dFtBVoL9CIW4qALKv5oYP3pS4EcbEfc/tr3upvLgO3VvsbJNH6sAaOLV08Ws3lL7sxezuZu4i7SZqm60wLt/uw/fu/bO7xgu6OZD49YaeVA946afaPG90vxpQDO33qiDniieJG116Cd4RkiMNT/Anm5pJc=";
+const gnArgumentProjectionFixture = String.raw`import ast,base64,contextlib,hashlib,importlib,io,json,os,pathlib,sys,tempfile,zlib
+packet=json.loads(sys.stdin.read(65537))
+raw=zlib.decompress(base64.b64decode(packet['source']))
+assert len(raw)==26541 and hashlib.sha256(raw).hexdigest()=='ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e'
+results=[]
+class NativeFailure(Exception):pass
+for case in packet['cases']:
+ with tempfile.TemporaryDirectory(prefix='cef-gn-data-') as folder:
+  workspace=pathlib.Path(folder).resolve(strict=True);tools=workspace/'source-checkout/src/cef/tools';tools.mkdir(parents=True)
+  source=tools/'gn_args.py';source.write_bytes(raw)
+  if case=='source-drift':source.write_bytes(raw+b'\n')
+  vs=workspace/'custom-vs';(vs/'VC').mkdir(parents=True);(vs/'VC/vcvarsall.bat').write_text('')
+  sdk=dict(visual_studio_path=str(vs),visual_studio_version='2026',visual_studio_runtime_dirs=str(workspace/'runtime/x64'),windows_sdk_path=str(workspace/'Windows Kits/10'),windows_sdk_version='10.0.28000.0')
+  fixed={}
+  for line in packet['fixed'].splitlines():
+   key,value=line.split('=',1);fixed[key]=True if value=='true' else False if value=='false' else ast.literal_eval(value)
+  definitions=' '.join("'"+key+'='+('true' if value is True else 'false' if value is False else json.dumps(value))+"'" for key,value in fixed.items())
+  saved_env=dict(os.environ);saved_path=list(sys.path);saved_platform=sys.platform
+  sys.path.insert(0,str(tools));sys.modules.pop('gn_args',None);sys.platform='win32'
+  os.environ.update(GN_DEFINES=definitions,GN_OUT_CONFIGS='Release_GN_arm64',CEF_ENABLE_ARM64='1',DEPOT_TOOLS_WIN_TOOLCHAIN='0',GYP_MSVS_OVERRIDE_PATH=str(vs),GYP_MSVS_VERSION='2026',CEF_VCVARS='none',VS_CRT_ROOT=sdk['visual_studio_runtime_dirs'],SDK_ROOT=sdk['windows_sdk_path'],SDK_VERSION=sdk['windows_sdk_version'])
+  scope={'os':os,'sys':sys,'hook':str(tools/'gclient_hook.py')};calls=[];error=None;error_location=None;output=None;before=dict(sdk)
+  def profile(frame,event,value):
+   if frame.f_code.co_filename!=str(source):return
+   if frame.f_code.co_name=='GetConfigArgs' and event=='return':
+    selected=frame.f_locals.get('cpu')=='arm64' and frame.f_locals.get('is_debug') is False
+    if selected and case=='native-failure':raise NativeFailure('')
+    if selected and case=='native-extra':value['unexpected']=True
+    if selected and case=='native-other-drift':value['symbol_level']=2
+    if selected and case=='native-tracer-drift':value['enable_backup_ref_ptr_instance_tracer']=False
+    if selected and case=='native-type-drift':value['enable_rlz']=1
+    if selected and case=='input-mutation':sdk['unexpected']=True
+    calls.append(dict(cpu=frame.f_locals['cpu'],debug=frame.f_locals['is_debug'],result=dict(value)))
+  try:
+   with contextlib.redirect_stdout(io.StringIO()):
+    if case=='baseline':
+     native=importlib.import_module('gn_args');sys.setprofile(profile)
+     try:output=native.GetAllPlatformConfigs(sdk)
+     finally:sys.setprofile(None)
+    else:
+     if case=='function-drift':
+      native=importlib.import_module('gn_args');native.GetConfigArgs=lambda *args:None
+     exec(packet['program'],scope)
+     native=scope['gn_args']
+     if case in ('explicit-true','component','debug','cpu','numeric-false'):
+      changed=dict(fixed)
+      if case=='explicit-true':changed['enable_backup_ref_ptr_instance_tracer']=True
+      elif case=='component':changed['is_component_build']=True
+      elif case=='debug':changed['is_debug']=True
+      elif case=='cpu':changed['target_cpu']='x64'
+      else:changed['enable_backup_ref_ptr_instance_tracer']=0
+      os.environ['GN_DEFINES']=' '.join("'"+key+'='+('true' if value is True else 'false' if value is False else json.dumps(value))+"'" for key,value in changed.items())
+     if case=='other-selection':os.environ['GN_OUT_CONFIGS']='Release_GN_x64'
+     if case=='sdk':sdk['windows_sdk_version']='10.0.28000.1'
+     if case=='input-extra':sdk['unexpected']=True
+     sys.setprofile(profile)
+     try:output=native.GetAllPlatformConfigs(sdk)
+     finally:sys.setprofile(None)
+     if case=='repeat':native.GetAllPlatformConfigs(sdk)
+  except BaseException as caught:
+   error='EMPTY_NATIVE_FAILURE' if type(caught)is NativeFailure and str(caught)=='' else str(caught)
+   location=caught.__traceback__
+   while location.tb_next is not None:location=location.tb_next
+   error_location=[location.tb_frame.f_code.co_name,location.tb_lineno]
+  finally:
+   sys.setprofile(None);sys.platform=saved_platform;sys.path[:]=saved_path;os.environ.clear();os.environ.update(saved_env);sys.modules.pop('gn_args',None)
+  serialized=native.GetConfigFileContents(output['Release_GN_arm64']) if error is None and output is not None else None
+  results.append(dict(case=case,error=error,errorLocation=error_location,calls=calls,inputUnchanged=sdk==before,output=output,serialized=serialized,modeledWindowsHost=True,nativeGnExecuted=False,compilerExecuted=False))
+print(json.dumps(results))`;
+
+async function gnArgumentProjectionCases(driver, cases) {
+  const args = driver.boundGnArguments(
+    [
+      "-B",
+      "-c",
+      "unchanged-hook",
+      "fixed-cef/tools/gclient_hook.py",
+      "fixed-depot/gn.py",
+    ],
+    "fixed-gn.exe",
+    {
+      bytes: 2601472,
+      sha256:
+        "e398eefd1241ad44e98aececa6a260abac0fdcb80f41c23176944ad3f0e76486",
+    },
+  );
+  const begin = args[2].indexOf("# BEGIN fixed ARM64 GN argument projection\n");
+  const end = args[2].indexOf(
+    "# END fixed ARM64 GN argument projection\n",
+    begin,
+  );
+  assert(begin > 0 && end > begin);
+  const program = args[2].slice(begin, end);
+  const fixed = (
+    await read(
+      "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    )
+  )
+    .toString()
+    .trim();
+  const result = spawnSync(
+    await projectionFixturePython(),
+    ["-I", "-B", "-c", gnArgumentProjectionFixture],
+    {
+      cwd: root,
+      input: JSON.stringify({
+        source: pinnedCefGnArgsDeflate,
+        program,
+        fixed,
+        cases,
+      }),
+      encoding: "utf8",
+      timeout: 30000,
+      maxBuffer: 1024 ** 2,
+      windowsHide: true,
+    },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test("inactive full SDK fixed ARM64 GN projection runs actual pinned native six-config generator: old RED, only selected tracer GREEN, neighboring native configurations unchanged", async () => {
+  for (const driver of [fullCarryDriver]) {
+    const [before, after] = await gnArgumentProjectionCases(driver, [
+      "baseline",
+      "positive",
+    ]);
+    assert.equal(before.error, null);
+    assert.equal(after.error, null, JSON.stringify(after.errorLocation));
+    assert.equal(
+      before.output.Release_GN_arm64.enable_backup_ref_ptr_instance_tracer,
+      true,
+    );
+    assert.equal(
+      after.output.Release_GN_arm64.enable_backup_ref_ptr_instance_tracer,
+      false,
+    );
+    assert.throws(
+      () => driver.validateGeneratedArguments(Buffer.from(before.serialized)),
+      /FULL_GN_CRITICAL_ARGUMENT/,
+    );
+    assert.equal(
+      driver.validateGeneratedArguments(Buffer.from(after.serialized))
+        .criticalArgumentsVerified,
+      true,
+    );
+    assert.equal(before.calls.length, 6);
+    assert.equal(after.calls.length, 6);
+    const selected = after.calls.filter(
+      (x) => x.cpu === "arm64" && x.debug === false,
+    );
+    assert.equal(selected.length, 1);
+    assert.equal(
+      selected[0].result.enable_backup_ref_ptr_instance_tracer,
+      true,
+    );
+    // Dynamic SDK roots differ between independently owned fixtures.
+    const stable = (calls) =>
+      calls.map((x) => ({
+        ...x,
+        result: Object.fromEntries(
+          Object.entries(x.result).filter(
+            ([key]) =>
+              ![
+                "visual_studio_path",
+                "visual_studio_runtime_dirs",
+                "windows_sdk_path",
+              ].includes(key),
+          ),
+        ),
+      }));
+    assert.deepEqual(stable(before.calls), stable(after.calls));
+    assert.equal(after.inputUnchanged, true);
+    assert.equal(after.modeledWindowsHost, true);
+    assert.equal(after.nativeGnExecuted, false);
+    assert.equal(after.compilerExecuted, false);
+    const actual = {
+      ...after.output.Release_GN_arm64,
+      enable_backup_ref_ptr_instance_tracer: true,
+    };
+    assert.deepEqual(actual, selected[0].result);
+  }
+});
+
+test("inactive full SDK fixed ARM64 GN projection denies near arguments, source/output/input drift and repeats, preserving actual first native failure", async () => {
+  const cases = [
+    "explicit-true",
+    "component",
+    "debug",
+    "cpu",
+    "numeric-false",
+    "other-selection",
+    "sdk",
+    "input-extra",
+    "native-extra",
+    "native-other-drift",
+    "native-tracer-drift",
+    "native-type-drift",
+    "input-mutation",
+    "source-drift",
+    "function-drift",
+    "repeat",
+    "native-failure",
+  ];
+  const errors = [
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "SELECTION",
+    "INPUT",
+    "INPUT",
+    "OUTPUT",
+    "OUTPUT",
+    "OUTPUT",
+    "OUTPUT",
+    "INPUT",
+    "SOURCE",
+    "FUNCTION",
+    "SELECTION",
+    "EMPTY_NATIVE_FAILURE",
+  ];
+  for (const driver of [fullCarryDriver]) {
+    const values = await gnArgumentProjectionCases(driver, cases);
+    for (const [index, value] of values.entries()) {
+      assert.equal(
+        value.error,
+        errors[index] === "EMPTY_NATIVE_FAILURE"
+          ? errors[index]
+          : "FULL_GN_PROJECTION_" + errors[index],
+        value.case + JSON.stringify(value.errorLocation),
+      );
+      assert.equal(value.nativeGnExecuted, false);
+      assert.equal(value.compilerExecuted, false);
+    }
+  }
+});
+
+async function fullMetadataFixture(options = {}) {
+  const source = await read(prefix + "full-sdk-source-driver.mjs");
+  const { default: ts } = await import("typescript");
+  const ast = ts.createSourceFile(
+    "fixture.mjs",
+    source,
+    99,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const fn = (name) =>
+    ast.statements
+      .find((row) => ts.isFunctionDeclaration(row) && row.name?.text === name)
+      .getText(ast)
+      .replace(/^export /, "");
+  const block = (begin, end) => source.split(begin + "\n")[1].split(end)[0];
+  const joined = block(
+    "// BEGIN INACTIVE JOINED OBSERVATION PRIMITIVES",
+    "// END INACTIVE JOINED OBSERVATION PRIMITIVES",
+  ).replace(
+    'import { fstatSync as qualificationFdStat } from "node:fs";\n',
+    "",
+  );
+  const pure = block(
+    "// BEGIN INACTIVE PURE QUALIFICATION INSPECTORS",
+    "// END INACTIVE PURE QUALIFICATION INSPECTORS",
+  );
+  const coordinator = block(
+    "// BEGIN INACTIVE SOURCE OWNED COORDINATOR",
+    "// END INACTIVE SOURCE OWNED COORDINATOR",
+  );
+  const full = block(
+    "// BEGIN CLOSED FULL SDK SOURCE BODY",
+    "// END CLOSED FULL SDK SOURCE BODY",
+  );
+  const recipeRaw = await fs.readFile(
+      path.join(root, prefix, "private-qualification-profile.json"),
+    ),
+    recipe = JSON.parse(recipeRaw),
+    candidateRaw = await fs.readFile(
+      path.join(root, prefix, "engine-qualification-profile.json"),
+    );
+  const packetScript = String.raw`import sys,json,base64
+sys.path.insert(0,${JSON.stringify(path.join(root, prefix))})
+import test_private_qualification as t
+def encode(value):
+ if type(value)is bytes:return {'__bytes':base64.b64encode(value).decode()}
+ if type(value)is dict:return {k:encode(v)for k,v in value.items()}
+ if type(value)is list or type(value)is tuple:return [encode(v)for v in value]
+ return value
+context,observed=t.output_fixture('20261030.294.1')
+${await realisticExpectedDefaultsFixtureScript()}
+print(json.dumps(encode({'context':context,'observed':observed})))
+`;
+  const decode = (v) =>
+    v &&
+    typeof v === "object" &&
+    Object.keys(v).length === 1 &&
+    Object.hasOwn(v, "__bytes")
+      ? Buffer.from(v.__bytes, "base64")
+      : Array.isArray(v)
+        ? v.map(decode)
+        : v && typeof v === "object"
+          ? Object.fromEntries(
+              Object.entries(v).map(([k, w]) => [k, decode(w)]),
+            )
+          : v;
+  const packet = decode(
+    JSON.parse(
+      execFileSync(
+        await projectionFixturePython(),
+        ["-I", "-B", "-c", packetScript],
+        {
+          encoding: "utf8",
+          timeout: 20000,
+          windowsHide: true,
+          maxBuffer: 16 * 1024 ** 2,
+        },
+      ),
+    ),
+  );
+  delete packet.observed.files.coff;
+  delete packet.observed.files.pe;
+  const context = {
+    kind: "windows-arm-full-sdk-context",
+    mode: "full-sdk-source-gn",
+    workflow: ".github/workflows/windows-arm-full-sdk.yml",
+    policy: "native/windows-arm-full-sdk/sdk-origin-review.json",
+    ref: "refs/heads/main",
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: "1010282954",
+    visibility: "public",
+    event: "workflow_dispatch",
+    defaultBranch: "main",
+    head: "a".repeat(40),
+    workflowSha: "a".repeat(40),
+    runId: "1",
+    attempt: "1",
+    inputs: { restore_run: "0" },
+    image: "20261030.294.1",
+    sources: [],
+    wallWorkEnd: Date.now() / 1000 + 1000,
+    monotonicWorkEnd: 1000,
+  };
+  context.sources = [
+    {
+      path: prefix + "full-sdk-source-driver.mjs",
+      bytes: Buffer.byteLength(source),
+      sha256: sha(source),
+      canonicalBytes: Buffer.byteLength(source),
+      canonicalSha256: sha(source),
+      encoding: "exact",
+    },
+  ];
+  const modelRoot = packet.context.root;
+  let at = 0,
+    left = 600000,
+    mode = options.mode ?? "none";
+  const directory = {
+    dev: 1n,
+    ino: 1n,
+    size: 0n,
+    mtimeNs: 0n,
+    ctimeNs: 0n,
+    birthtimeNs: 1n,
+    mode: 0o40700n,
+    nlink: 1n,
+    isDirectory: () => true,
+    isSymbolicLink: () => false,
+  };
+  const calls = [],
+    writes = [],
+    events = [],
+    seenVectors = [],
+    mkdirAttempts = [],
+    reportAttempts = [];
+  const modelFs = {
+    mkdir: async () => {
+      mkdirAttempts.push({
+        retired: api.qualificationSourceOwners.get(owner).retired,
+      });
+    },
+    lstat: async () => ({
+      ...directory,
+      ino: mode === "post-root-drift" && calls.length === 4 ? 2n : 1n,
+    }),
+    writeFile: async (file, raw) => {
+      reportAttempts.push({
+        retired: api.qualificationSourceOwners.get(owner).retired,
+      });
+      events.push("report");
+      writes.push({ file, value: JSON.parse(raw) });
+    },
+  };
+  const argsRaw = packet.observed.files.args.raw;
+  const graphPins = [
+    { path: "args.gn", bytes: argsRaw.length, sha256: sha(argsRaw) },
+    { path: "build.ninja", bytes: 1, sha256: sha(Buffer.from("n")) },
+  ];
+  const snapshot = {
+    kind: "sorng-cef-fresh-graph-pins",
+    complete: true,
+    pins: graphPins,
+    files: 2,
+    bytes: argsRaw.length + 1,
+    sha256: "e".repeat(64),
+  };
+  const summary = {
+    files: 2,
+    visited: 2,
+    bytes: snapshot.bytes,
+    sha256: snapshot.sha256,
+  };
+  const input = {
+    root: modelRoot,
+    c: context,
+    p: {
+      image: context.image,
+      sourceGn: { sourceId: recipe.images[context.image].sourceId },
+    },
+    budget: { remaining: () => left },
+    contextSha: "c".repeat(64),
+    files: { chromium: modelRoot + "/source-checkout/src" },
+    tools: {},
+    output: { bytes: 0 },
+    custom: { sourceGitEnvironment: async () => ({ MODEL: "data-only" }) },
+    gitPolicy: {},
+    env: { MODEL: "data-only" },
+    privatePolicyRaw: Buffer.from("not private authority"),
+    checked: async (action) => action(),
+    checkpoint: {
+      graphPinSnapshot: JSON.stringify,
+      graphInventory: async (_out, args) => {
+        args.observePins(snapshot);
+        return structuredClone(summary);
+      },
+    },
+  };
+  if (mode === "action-invalid")
+    packet.observed.gnDescPartitionAlloc = Buffer.from("{}");
+  if (mode === "evaluated-invalid") packet.observed.gnArgs = Buffer.from("{}");
+  if (mode === "header-invalid")
+    packet.observed.files.partitionAlloc.raw = Buffer.from("invalid header");
+  const testHooks = {
+    observe: async (session, role) => ({ session, role }),
+    run: async (session, role) => {
+      const state = api.qualificationSessions.get(session);
+      state.phase.before(role);
+      const vector = api.fullMetadataCommand(state, role);
+      seenVectors.push(vector);
+      calls.push(role);
+      events.push("start:" + role);
+      await Promise.resolve();
+      if (mode === "unjoined" && state.next === 1) throw 0;
+      events.push("joined:" + role);
+      state.phase.after(role);
+      state.next++;
+      state.epoch++;
+      if (mode === "expires" && state.next === 3) left = 100000;
+    },
+    readLog: async (_owner, _session, index) => {
+      events.push("read:" + index);
+      return [
+        packet.observed.gnDescPartitionAlloc,
+        packet.observed.gnDescCef,
+        packet.observed.gnArgs,
+      ][index];
+    },
+    validate: async () => {
+      if (mode === "source-drift") throw Error("SOURCE_DRIFT");
+    },
+    afterDirectoryFence: (activeOwner) => {
+      if (
+        (mode === "retire-before-mkdir" && calls.length === 0) ||
+        (mode === "retire-before-report" && calls.length === 4)
+      )
+        queueMicrotask(() =>
+          api.retireQualificationSource(activeOwner, true, false),
+        );
+    },
+  };
+  const held = async (file) => {
+    if (file.endsWith("engine-qualification-profile.json"))
+      return Buffer.from(candidateRaw);
+    if (file.endsWith("args.gn")) return Buffer.from(argsRaw);
+    for (const row of Object.values(packet.observed.files))
+      if (file === row.pin.path) return Buffer.from(row.raw);
+    throw Error("UNEXPECTED_HELD:" + file);
+  };
+  const globals = {
+    fs: modelFs,
+    path,
+    Buffer,
+    structuredClone,
+    performance: { now: () => at },
+    setTimeout,
+    clearTimeout,
+    createHash,
+    sha,
+    need: (v, code) => {
+      if (!v) throw Error(code);
+    },
+    REPO: root,
+    HERE: path.join(root, prefix),
+    TARGET: "aarch64-pc-windows-msvc",
+    process: { platform: "win32", arch: "x64" },
+    PRIVATE_MODE: recipe.mode,
+    PRIVATE_REF: recipe.ref,
+    PRIVATE_WORKFLOW: recipe.workflow,
+    PRIVATE_ROLES: recipe.qualificationRoles,
+    PRIVATE_PROFILE_SHA256: sha(recipeRaw),
+    privateCommandProjections: () => {
+      throw Error("OLD_IDENTITY_MUST_NOT_RUN");
+    },
+    held,
+    testHooks,
+    physical: async (file) => file,
+    signature: (s) => [s.dev, s.ino, s.birthtimeNs, s.mode, s.nlink].join(":"),
+    qualificationPhaseClock: fullCarryDriver.qualificationPhaseClock,
+  };
+  const rootDecl = ast.statements
+    .find(
+      (row) =>
+        ts.isVariableStatement(row) &&
+        row.declarationList.declarations.some(
+          (d) => d.name.text === "PRIVATE_ROOT",
+        ),
+    )
+    .getText(ast);
+  let modelSource =
+    rootDecl +
+    "\n" +
+    fn("staticProjectionEqual") +
+    "\n" +
+    joined +
+    "\n" +
+    pure +
+    "\n" +
+    coordinator +
+    "\n" +
+    full +
+    String.raw`
+issueActualObservation=testHooks.observe;
+runFixedJoined=testHooks.run;
+qualificationReadLog=testHooks.readLog;
+validateQualificationSource=testHooks.validate;
+const actualDirectories=qualificationSourceDirectories;
+qualificationSourceDirectories=owner=>actualDirectories(owner).then(value=>{testHooks.afterDirectoryFence(owner);return value;});
+return {beginFullMetadataSource,collectQualificationGraph,commitFullMetadataGraph,coordinateFullMetadata,fullMetadataCommand,fullMetadataOwner,fullMetadataContext,fullMetadataInspect,fullMetadataInspectContext,fullMetadataSources,fullMetadataContexts,fullMetadataOwners,fullSourceProfiles,qualificationSessions,qualificationSourceOwners,qualificationSourceRuns,qualificationGraphReceipts,createQualificationSession,retireQualificationSource};
+`;
+  if (options.omitPostFenceGuards) {
+    modelSource = modelSource
+      .replaceAll(
+        "await qualificationSourceDirectories(owner);\n      fullMetadataOwner(owner);",
+        "await qualificationSourceDirectories(owner);",
+      )
+      .replaceAll(
+        "await qualificationSourceDirectories(owner);\n    fullMetadataOwner(owner);",
+        "await qualificationSourceDirectories(owner);",
+      );
+  }
+  const api = new Function(...Object.keys(globals), modelSource)(
+    ...Object.values(globals),
+  );
+  const profile = {
+    root: modelRoot,
+    context,
+    contextPin: input.contextSha,
+    budget: input.budget,
+    metadataRecipeRaw: recipeRaw,
+  };
+  // Separate private fixture maps are not production/source/Job authority.
+  api.fullSourceProfiles.set(input.p, profile);
+  const owner = api.beginFullMetadataSource(input);
+  return {
+    api,
+    input,
+    profile,
+    owner,
+    packet,
+    recipe,
+    recipeRaw,
+    candidateRaw,
+    calls,
+    seenVectors,
+    writes,
+    events,
+    mkdirAttempts,
+    reportAttempts,
+    setMode: (value) => {
+      mode = value;
+    },
+    expire: () => {
+      left = 100000;
+      at = 500000;
+    },
+  };
+}
+
+test("inactive full SDK metadata retirement between a real awaited fence and mutation prevents late mkdir or report and preserves false", async () => {
+  for (const mode of ["retire-before-mkdir", "retire-before-report"]) {
+    for (const omitPostFenceGuards of [true, false]) {
+      const f = await fullMetadataFixture({ omitPostFenceGuards });
+      await f.api.collectQualificationGraph(f.owner);
+      const token = f.api.commitFullMetadataGraph(f.owner);
+      f.setMode(mode);
+      await assert.rejects(
+        f.api.coordinateFullMetadata(token),
+        (error) => error === false,
+      );
+      const attempts =
+        mode === "retire-before-mkdir" ? f.mkdirAttempts : f.reportAttempts;
+      assert.equal(attempts.length, omitPostFenceGuards ? 1 : 0);
+      if (omitPostFenceGuards) assert.equal(attempts[0].retired, true);
+      assert.equal(f.calls.length, mode === "retire-before-mkdir" ? 0 : 4);
+      assert.equal(f.api.fullMetadataSources.has(token), false);
+      assert.equal(f.api.qualificationSourceRuns.has(token), false);
+      assert.equal(f.api.fullMetadataOwners.has(f.owner), false);
+    }
+  }
+});
+
+test("inactive full SDK actual four metadata coordinator keeps full authority and stops before clang despite matching61 fixture", async () => {
+  const f = await fullMetadataFixture();
+  assert.throws(() => f.api.commitFullMetadataGraph(f.owner), /GRAPH_COMMIT/);
+  await f.api.collectQualificationGraph(f.owner);
+  const token = f.api.commitFullMetadataGraph(f.owner);
+  assert.equal(f.api.fullMetadataSources.has(token), true);
+  assert.equal(await f.api.coordinateFullMetadata(token), undefined);
+  assert.deepEqual(f.calls, f.recipe.qualificationRoles.slice(0, 4));
+  assert.equal(f.writes.length, 1);
+  assert.equal(f.writes[0].value.completeMacroInventoryMatches, true);
+  assert.equal(f.writes[0].value.fullArm64DefaultsQualified, false);
+  assert.equal(f.writes[0].value.compilerExecuted, false);
+  assert.equal(f.seenVectors[3].argv[2], "--offline");
+  assert.equal(f.seenVectors[3].argv[3], "-local_jobs=1");
+  assert.equal(f.seenVectors[3].argv.length, 8);
+  assert(
+    f.events.indexOf("joined:qual-gn-desc-cef") < f.events.indexOf("read:1"),
+  );
+  assert(
+    f.events.indexOf("joined:qual-generate-headers") <
+      f.events.lastIndexOf("read:2"),
+  );
+  assert.equal(f.input.c.mode, "full-sdk-source-gn");
+  assert.equal(f.input.c.ref, "refs/heads/main");
+  assert.equal(f.input.p.privatePolicy, undefined);
+  assert.equal(f.api.fullMetadataSources.has(token), false);
+  assert.equal(f.api.qualificationSourceRuns.has(token), false);
+  assert.equal(f.api.fullMetadataOwners.has(f.owner), false);
+  await assert.rejects(
+    f.api.coordinateFullMetadata(token),
+    /FULL_METADATA_SOURCE_BINDING/,
+  );
+});
+
+test("inactive full SDK four metadata source binding denies copied contexts tokens and compiler roles", async () => {
+  const f = await fullMetadataFixture();
+  assert.throws(
+    () => f.api.beginFullMetadataSource({ ...f.input, c: { ...f.input.c } }),
+    /SOURCE_BINDING/,
+  );
+  assert.throws(
+    () =>
+      f.api.beginFullMetadataSource({ ...f.input, contextSha: "d".repeat(64) }),
+    /SOURCE_BINDING/,
+  );
+  assert.throws(
+    () =>
+      f.api.beginFullMetadataSource({
+        ...f.input,
+        root: f.input.root + "-replacement",
+      }),
+    /SOURCE_BINDING/,
+  );
+  await assert.rejects(
+    f.api.coordinateFullMetadata({ ...f.owner }),
+    /SOURCE_BINDING/,
+  );
+  await f.api.collectQualificationGraph(f.owner);
+  const token = f.api.commitFullMetadataGraph(f.owner);
+  const session = f.api.createQualificationSession(token),
+    state = f.api.qualificationSessions.get(session);
+  state.next = 4;
+  assert.throws(
+    () => f.api.fullMetadataCommand(state, "qual-clang-probe"),
+    /ROLE_CLOSED/,
+  );
+  state.next = 5;
+  assert.throws(
+    () => f.api.fullMetadataCommand(state, "qual-link-probe"),
+    /ROLE_CLOSED/,
+  );
+  assert.throws(
+    () => f.api.fullMetadataContext({ ...f.packet.context }),
+    /CONTEXT_BRAND/,
+  );
+  f.api.retireQualificationSource(f.owner, true, false);
+  assert.throws(
+    () => f.api.fullMetadataCommand(state, "qual-gn-desc-pa"),
+    (error) => error === false,
+  );
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.writes.length, 0);
+});
+
+test("inactive full SDK four metadata unjoined falsy failure or source drift retires before later roles or reports", async () => {
+  for (const mode of ["unjoined", "source-drift"]) {
+    const f = await fullMetadataFixture({ mode });
+    await f.api.collectQualificationGraph(f.owner);
+    const token = f.api.commitFullMetadataGraph(f.owner);
+    await assert.rejects(f.api.coordinateFullMetadata(token), (error) =>
+      mode === "unjoined" ? error === 0 : error.message === "SOURCE_DRIFT",
+    );
+    assert.equal(f.calls.includes("qual-generate-headers"), false);
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.api.fullMetadataSources.has(token), false);
+    assert.equal(f.api.qualificationSourceRuns.has(token), false);
+    assert.equal(f.api.qualificationSourceOwners.get(f.owner).retired, true);
+  }
+});
+
+test("inactive full SDK four metadata action args headers expiry and root fences deny causally", async () => {
+  for (const mode of [
+    "action-invalid",
+    "evaluated-invalid",
+    "header-invalid",
+    "expires",
+    "post-root-drift",
+  ]) {
+    const f = await fullMetadataFixture({ mode });
+    await f.api.collectQualificationGraph(f.owner);
+    const token = f.api.commitFullMetadataGraph(f.owner);
+    await assert.rejects(
+      f.api.coordinateFullMetadata(token),
+      (error) =>
+        error instanceof Error &&
+        error.message !== "PRIVATE_ARM64_DEFAULTS_UNQUALIFIED",
+    );
+    assert.equal(f.writes.length, 0, mode);
+    if (["action-invalid", "evaluated-invalid", "expires"].includes(mode))
+      assert.equal(f.calls.includes("qual-generate-headers"), false, mode);
+    assert.equal(f.api.fullMetadataSources.has(token), false, mode);
+    assert.equal(f.api.qualificationSourceRuns.has(token), false, mode);
+  }
+});
+
+const FULL_METADATA_DERIVATIONS = [
+  {
+    name: "commitQualificationGraph",
+    next: "commitFullMetadataGraph",
+    originalSha256:
+      "f3ee0b03a48f9c4f777ade5bfb066f5d947aca85177068604d984cabc92b88de",
+    derivedSha256:
+      "ff8735bbf7de8ba262c4b57bee18327c8e66aa4201362b4ad1d15d5beac4d3fe",
+    substitutions: [
+      [
+        "const state = qualificationOwnerCheck(owner),",
+        "const { state, binding } = fullMetadataOwner(owner),",
+      ],
+      ['kind: "private-fresh-graph"', 'kind: "full-metadata-fresh-graph"'],
+      ['kind: "private-source-run"', 'kind: "full-metadata-source-run"'],
+      [
+        "  qualificationSourceRuns.set(sourceToken, source);",
+        "  qualificationSourceRuns.set(sourceToken, source);\n  fullMetadataSources.set(sourceToken, { owner, state, binding });",
+      ],
+    ],
+  },
+  {
+    name: "qualificationCandidatePolicy",
+    next: "fullMetadataCandidatePolicy",
+    originalSha256:
+      "6dd6e82a83dd76bbaa6cffcaab2a83548b9f9e89ab3c649dc17fa5e184108152",
+    derivedSha256:
+      "3d520997b5d0f20d34722d09e6ec7b24c9e4710e210d0552d36f2ec62361b744",
+    substitutions: [
+      [
+        "const state = qualificationOwnerCheck(owner);",
+        "const { state, binding } = fullMetadataOwner(owner);",
+      ],
+      [
+        "state.p.privatePolicy.baseCandidatePolicySha256",
+        "binding.recipe.baseCandidatePolicySha256",
+      ],
+    ],
+  },
+  {
+    name: "qualificationInspectContext",
+    next: "fullMetadataInspectContext",
+    originalSha256:
+      "a707ef47ae8472425c69aa88854b830ecb2e8e849c2caf37d19d701e4855b57b",
+    derivedSha256:
+      "1c0089b465b00a9164fe24965c1c903b64bbf700359a2739d2900f6280152f70",
+    substitutions: [
+      [
+        "  requirePrivateScope(context);",
+        "  const full = fullMetadataContext(context);",
+      ],
+      [
+        'context.kind === "windows-arm-private-input-projection"',
+        'context.kind === "windows-arm-full-metadata-input-projection"',
+      ],
+      ["policy.sourcePaths.length", "full.state.c.sources.length"],
+      [
+        "row.path === policy.sourcePaths[index]",
+        "staticProjectionEqual(row, full.state.c.sources[index])",
+      ],
+      [
+        "policy.crlfPositions.includes(index)",
+        'full.state.c.sources[index].encoding === "git-crlf"',
+      ],
+    ],
+  },
+  {
+    name: "qualificationInspectMetadata",
+    next: "fullMetadataInspect",
+    originalSha256:
+      "2e13f07eba46fb7513074a5c1963df68d862976789812b17e06676a56758dbe6",
+    derivedSha256:
+      "b5358573e3b6217ea780ccfc238d6fc94d6b6442196a52280ab9a96dc4ab012e",
+    substitutions: [
+      ["qualificationInspectContext(", "fullMetadataInspectContext("],
+    ],
+  },
+  {
+    name: "qualificationMetadataObservation",
+    next: "fullMetadataObservation",
+    originalSha256:
+      "9765ce65b1de1cc77a7647900774595422307bf24e1f9a8e37539472e845ee7c",
+    derivedSha256:
+      "9463e2b9bf6ca2502b274775a10cd7944f5412567afff132638f0698c1482e9a",
+    substitutions: [
+      [
+        "const state = qualificationOwnerCheck(owner),",
+        "const { state, binding } = fullMetadataOwner(owner),",
+      ],
+      ["state.p.privatePolicy", "binding.recipe"],
+      [
+        'kind: "windows-arm-private-input-projection"',
+        'kind: "windows-arm-full-metadata-input-projection"',
+      ],
+      [
+        "qualificationCandidatePolicy(owner)",
+        "fullMetadataCandidatePolicy(owner)",
+      ],
+      [
+        "  return qualificationInspectMetadata(",
+        "  fullMetadataContexts.set(context, { owner, session, epoch: qualificationSessions.get(session).epoch });\n  try {\n    return fullMetadataInspect(",
+      ],
+      [
+        "    performance.now() / 1000,\n  );\n}",
+        "    performance.now() / 1000,\n    );\n  } finally {\n    fullMetadataContexts.delete(context);\n  }\n}",
+      ],
+    ],
+  },
+];
+test("inactive full SDK metadata helpers retain exact finite strict inspector derivations", async () => {
+  const { default: ts } = await import("typescript"),
+    prettier = await import("prettier");
+  const source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile(
+      "subject.mjs",
+      source,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    );
+  const fn = (name) =>
+    ast.statements
+      .find((x) => ts.isFunctionDeclaration(x) && x.name?.text === name)
+      .getText(ast);
+  for (const row of FULL_METADATA_DERIVATIONS) {
+    assert.equal(sha(fn(row.name)), row.originalSha256, row.name);
+    assert.equal(sha(fn(row.next)), row.derivedSha256, row.next);
+    let raw = fn(row.name).replace(
+      "function " + row.name + "(",
+      "function " + row.next + "(",
+    );
+    for (const [before, after] of row.substitutions) {
+      assert(raw.includes(before));
+      raw = raw.replaceAll(before, after);
+    }
+    assert.equal(
+      (await prettier.format(raw, { parser: "babel" })).trimEnd(),
+      fn(row.next),
+      row.next,
+    );
+  }
+});
+
+test("inactive full SDK parent metadata actual child stores held evidence before fresh Git without default admission", async (t) => {
+  const f = await createdSourceFixture(t);
+  await assert.rejects(
+    f.api.verifySourceMetadata(f.token),
+    /SOURCE_METADATA_JOIN/,
+  );
+  assert.equal(f.state.readFds.size, 0);
+  const source = await f.api.runSourcePhase(f.token),
+    issued = f.api.sourceSessions.get(source);
+  assert.equal(issued.metadataSnapshot, f.state.metadataSnapshot);
+  assert.equal(issued.metadataSnapshot.records.length, 9);
+  assert.equal(issued.metadataSnapshot.full61Qualified, false);
+  assert.equal(
+    issued.metadataSnapshot.matchedExpectedDefaults.comparison
+      .expectedMacroCount,
+    61,
+  );
+  assert.equal(
+    issued.metadataSnapshot.matchedExpectedDefaults.comparison.dataOnly,
+    true,
+  );
+  assert.equal(
+    issued.metadataSnapshot.matchedExpectedDefaults.full61Qualified,
+    false,
+  );
+  assert(
+    Object.isFrozen(issued.metadataSnapshot) &&
+      Object.isFrozen(issued.metadataSnapshot.records),
+  );
+  assert.equal(f.state.childEvents.close, true);
+  assert.equal(f.state.readFds.size, 0);
+  const control = await f.api.createControl(source, f.owner.lease);
+  await f.api.prepareFreshPolicy(control);
+  assert.equal(f.api.controls.get(control).helperValidated, true);
+  assert.equal(f.state.readFds.size, 0);
+  await f.api.retireControl(control);
+});
+
+test("inactive full SDK parent metadata actual child denies wrong source report and physical header before issuance", async (t) => {
+  for (const mode of ["wrong-source", "wrong-report", "wrong-header"]) {
+    const f = await createdSourceFixture(t, mode);
+    await assert.rejects(
+      f.api.runSourcePhase(f.token),
+      /SOURCE_METADATA_REPORT|PRIVATE_PA_HEADER|QUAL_HEADER/,
+    );
+    assert.equal(f.state.issued, false, mode);
+    assert.equal(f.state.metadataSnapshot, undefined, mode);
+    assert.equal(f.state.readFds.size, 0, mode);
+    assert.equal(f.api.sourceOperations.has(f.token), false, mode);
+  }
+});
+
+test("inactive full SDK parent metadata retained physical evidence rejects mutation before and during fresh Git", async (t) => {
+  for (const relative of [
+    "full-metadata-result.json",
+    "source-checkout/src/out/Release_GN_arm64/gen/cef/include/cef_config.h",
+    "source-inputs/2",
+  ]) {
+    const f = await createdSourceFixture(t);
+    const source = await f.api.runSourcePhase(f.token);
+    const control = await f.api.createControl(source, f.owner.lease);
+    await fs.appendFile(path.join(f.base, relative), "\n");
+    await assert.rejects(
+      f.api.prepareFreshPolicy(control),
+      /SOURCE_RECORD|SOURCE_METADATA/,
+    );
+    assert.equal(f.api.controls.get(control).helperValidated, false);
+    await assert.rejects(
+      f.api.retireControl(control),
+      /SOURCE_RECORD|SOURCE_METADATA/,
+    );
+  }
+  let f;
+  const actual = {
+    ...controlCustom,
+    prepareSourceGitIsolation: async (...args) => {
+      const token = await controlCustom.prepareSourceGitIsolation(...args);
+      await fs.appendFile(path.join(f.base, "full-metadata-result.json"), "\n");
+      return token;
+    },
+  };
+  f = await createdSourceFixture(t, "normal", { custom: actual });
+  const source = await f.api.runSourcePhase(f.token);
+  const control = await f.api.createControl(source, f.owner.lease);
+  await assert.rejects(
+    f.api.prepareFreshPolicy(control),
+    /SOURCE_RECORD|SOURCE_METADATA/,
+  );
+  assert.equal(f.api.controls.get(control).helperValidated, false);
+  await assert.rejects(
+    f.api.retireControl(control),
+    /SOURCE_RECORD|SOURCE_METADATA/,
+  );
+});
+
+test("inactive full SDK parent metadata close continuation cannot issue after original expiry or root replacement", async (t) => {
+  for (const mode of ["expiry", "root"]) {
+    let f,
+      changed = false;
+    const modelFs = {
+      ...fs,
+      lstat: async (name, ...args) => {
+        const info = await fs.lstat(name, ...args);
+        if (mode !== "root" || !changed || name !== f?.base) return info;
+        // Modeled root replacement after actual held-FD close; no foreign root is renamed.
+        return new Proxy(info, {
+          get(target, key) {
+            if (key === "ino") return target.ino + 1n;
+            const value = target[key];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+      open: async (name, ...args) => {
+        const handle = await fs.open(name, ...args);
+        if (
+          typeof name !== "string" ||
+          !name.endsWith("full-metadata-result.json")
+        )
+          return handle;
+        return {
+          stat: (...a) => handle.stat(...a),
+          read: (...a) => handle.read(...a),
+          close: async () => {
+            await handle.close();
+            if (changed) return;
+            changed = true;
+            if (mode === "expiry")
+              f.api.leases.get(f.owner.lease).monoEnd = performance.now() - 1;
+          },
+        };
+      },
+    };
+    f = await createdSourceFixture(t, "normal", { fs: modelFs });
+    await assert.rejects(
+      f.api.runSourcePhase(f.token),
+      /DEADLINE|ROOT|DIRECTORY|REPLACED/,
+    );
+    assert.equal(changed, true, mode);
+    assert.equal(f.state.issued, false, mode);
+    assert.equal(f.state.metadataSnapshot, undefined, mode);
+  }
+});
+
+const PARENT_METADATA_READER_DERIVATIONS = [
+  {
+    name: "PRIVATE_PROFILE_SHA256",
+    newName: "parentMetadata_PRIVATE_PROFILE_SHA256",
+    oldSha256:
+      "1774917c9813cb4c4c9d01cd2ab320477935540bd96273f95bfc859cfddf656c",
+    newSha256:
+      "2b3510cde060b5e439aff070a08e8d475bdcb24043c6787e3141885a87d45d48",
+  },
+  {
+    name: "PRIVATE_MODE",
+    newName: "parentMetadata_PRIVATE_MODE",
+    oldSha256:
+      "85db65267dfbac27b76b1ca2e01bfe92bceb21c771c86dfcd97679820a0a99e3",
+    newSha256:
+      "3452ea29db5b40018318e52982a57a34c026069a4a0fb2f6556693aaa069e1bd",
+  },
+  {
+    name: "PRIVATE_REF",
+    newName: "parentMetadata_PRIVATE_REF",
+    oldSha256:
+      "662b18b7c7ab14356c574878f3eac14da1d71f6bb2279e7e1d8c83e4bdc10ed9",
+    newSha256:
+      "fd6bb086557440a7d0c0503652626036ab0ed2666a0434cb41f22bd1c0203bd5",
+  },
+  {
+    name: "PRIVATE_WORKFLOW",
+    newName: "parentMetadata_PRIVATE_WORKFLOW",
+    oldSha256:
+      "83124ef4a7303105872e896fe485be075c83689ec1a327b5c5c4ebcc95b6c2ed",
+    newSha256:
+      "e8d5ca0a817139546b392cefa0c59db6fcec35b203b3b8caa912f05d4757d241",
+  },
+  {
+    name: "PRIVATE_ROLES",
+    newName: "parentMetadata_PRIVATE_ROLES",
+    oldSha256:
+      "218c675e8a3d951a3a197913ae325b7724cd2ce74d16e71f81d9fbf8191a3b7c",
+    newSha256:
+      "6f847f2974866f0d1cf4377032525c9677c93b4c1cd2a73b3b90a0f5447cb858",
+  },
+  {
+    name: "staticProjectionEqual",
+    newName: "parentMetadata_staticProjectionEqual",
+    oldSha256:
+      "494cbf0d7405b81d5e185290c4d58272c2a18388a4466bbbb769d92cbb00d049",
+    newSha256:
+      "2149f383348ef4a7cc24c6ab6d5f1a42322150270fb71d621d2dfd447d460db0",
+  },
+  {
+    name: "QUALIFICATION_PA_GUARD",
+    newName: "parentMetadata_QUALIFICATION_PA_GUARD",
+    oldSha256:
+      "bd816016602dd411b53153659c1f3ca039f253e85e1607a7b2d6670b15e9c678",
+    newSha256:
+      "a0f415bb97ce4b3c3f6c46daef30a3849ba89547a38b0dd8a06f7429abff5335",
+  },
+  {
+    name: "QUALIFICATION_ARM_TOOLCHAIN",
+    newName: "parentMetadata_QUALIFICATION_ARM_TOOLCHAIN",
+    oldSha256:
+      "701a5b2db0e3d449e699e3acc1fe70400d4ae36565e8058958c45ff03bb39ae9",
+    newSha256:
+      "18bae7dcfb9a5537010b0c12d76309d71690121e9045e5aede4d5b9ef49fd3bd",
+  },
+  {
+    name: "QUALIFICATION_DECLARED_ARGS",
+    newName: "parentMetadata_QUALIFICATION_DECLARED_ARGS",
+    oldSha256:
+      "05d72d5115b6ecbb8d8d51861d02d0fe800f17f02c45880778fb9d333f829446",
+    newSha256:
+      "710d7890e44a39f864a00c7fa6b9368f5a06692161bd0ac194b0bdfa3d6a844c",
+  },
+  {
+    name: "QUALIFICATION_CPU_ARGS",
+    newName: "parentMetadata_QUALIFICATION_CPU_ARGS",
+    oldSha256:
+      "657071e404fe08c20a793d26d9d9c4611c2c45a1d0f5dc27068c9f43f6846d83",
+    newSha256:
+      "3fe9e085abbc59556d8aaa94ee65b0bc3b3ac7b40c44bea2759dc247ddd4a430",
+  },
+  {
+    name: "QUALIFICATION_PY_SPACE",
+    newName: "parentMetadata_QUALIFICATION_PY_SPACE",
+    oldSha256:
+      "e7453e19a9f25d14221444f5d6d6baf00e7f84999862a2c2d516afee17858251",
+    newSha256:
+      "bfc1b6099740bef9e61d495cd9b64b952ca8e94e089d91d1685a642a69c5db35",
+  },
+  {
+    name: "QUALIFICATION_GN_LITERAL",
+    newName: "parentMetadata_QUALIFICATION_GN_LITERAL",
+    oldSha256:
+      "e1882f2d378c8e2da9771351df80eccd460bf6dd55fd8002c68bdcf452ce6db4",
+    newSha256:
+      "5ca0124fab8c21e23ad6de3bb55ffd6616279c06f2866e59c0e1182827385a8d",
+  },
+  {
+    name: "qualificationShape",
+    newName: "parentMetadata_qualificationShape",
+    oldSha256:
+      "90544385b7bcb8765b418fc2984fc08f1ab2f45d2beb0c0da19631cacf14e8ca",
+    newSha256:
+      "361898d27c9cc36f85e3c6b211e06d054ecdb0b6428cfec98b174866195a1802",
+  },
+  {
+    name: "qualificationStringBound",
+    newName: "parentMetadata_qualificationStringBound",
+    oldSha256:
+      "31ece79f74b50d54f08168bd87590dc843f341ce83ed50907c9a48ce7f5147c5",
+    newSha256:
+      "cf72a7b2457403a49fd19d158a36b8bb731712545d44e9820fc5acc29f877e9a",
+  },
+  {
+    name: "qualificationCanonical",
+    newName: "parentMetadata_qualificationCanonical",
+    oldSha256:
+      "4e150db1e6cabf7b37f01329a931427b7806c44bb0d30b7e853c558fa0bb2445",
+    newSha256:
+      "793e4ce9cc85d663f133e80726d2cdf9a22a96167f9ecb8a81e01dee172d1f36",
+  },
+  {
+    name: "qualificationPolicy",
+    newName: "parentMetadata_qualificationPolicy",
+    oldSha256:
+      "ba1165c774d36a9ad9423f6a727fe043c3d29e56736ad827ea7dcdbb1dbb2c03",
+    newSha256:
+      "5c627bc1e5ec73d8d23163adae361a34b645b016ce65d320d22bb293fbccf0c8",
+  },
+  {
+    name: "qualificationBoundedJson",
+    newName: "parentMetadata_qualificationBoundedJson",
+    oldSha256:
+      "3325bcc9305ffa169531f72fa4c98d0cc515eff6016a9aae53108acf7ce24680",
+    newSha256:
+      "346765b0f9228190ff163a743c140f5591f7b83142715a3b2ea0264670d40a4b",
+  },
+  {
+    name: "qualificationInspectEvaluatedArgs",
+    newName: "parentMetadata_qualificationInspectEvaluatedArgs",
+    oldSha256:
+      "2a4ea40bf62e2562befa292f941334db8c4686bc9ee227d65900e24b12c0a674",
+    newSha256:
+      "a3f409a3e1ad32c2fbcb30d510a5d26cf6f29ad29ca0177ac43e725fe1acf709",
+  },
+  {
+    name: "qualificationInspectAction",
+    newName: "parentMetadata_qualificationInspectAction",
+    oldSha256:
+      "7efce904f03f5ee8c18592d1688966e01f382b6cc1b99cf89563a6ca51d23258",
+    newSha256:
+      "190731bc523be089697269a6a65bbbbf5508756acd46bdd97b2a951d4790573d",
+  },
+  {
+    name: "qualificationLines",
+    newName: "parentMetadata_qualificationLines",
+    oldSha256:
+      "deafbbddcd3e5e77554c4e3dc212bee92a4837d9b58b9fa4891a04c0b8420838",
+    newSha256:
+      "82bc43bb0d8aa8119ec7722aa19fa92f9668670569127410ab2e7ce6edff39d7",
+  },
+  {
+    name: "qualificationTrim",
+    newName: "parentMetadata_qualificationTrim",
+    oldSha256:
+      "fc514b9a3f053b52a67b2c487b972331033493aab98c5bc408aa8f0212a2d8ae",
+    newSha256:
+      "2632602b0c986a32009bd91dc7a14cccbeaba29e6a423a5d5df11fd52a906f62",
+  },
+  {
+    name: "qualificationParseLiteralArgs",
+    newName: "parentMetadata_qualificationParseLiteralArgs",
+    oldSha256:
+      "cb113219c4e1e38fb93195250e02422f57b6f2c120c7bb014ab2291b134ecb08",
+    newSha256:
+      "3b291b387c9dd3c3794a3abc6bcbce4dd2e9f6cc0e05e7d4939d7ff93d767191",
+  },
+  {
+    name: "qualificationHeaderText",
+    newName: "parentMetadata_qualificationHeaderText",
+    oldSha256:
+      "e0ebf1fd1b15b7cf8669ed7fd03e67658adfed7f3cfc336ea452f084abf1b5a1",
+    newSha256:
+      "b7c2bf6d2e90881872654851421d7d8d72268eb0ff341954f2b1d48191f9c79b",
+  },
+  {
+    name: "qualificationInspectCefHeader",
+    newName: "parentMetadata_qualificationInspectCefHeader",
+    oldSha256:
+      "249fbf030d581531ad35f93fc1f374a456a7ec648949edfa31255f3b3adcfceb",
+    newSha256:
+      "5454bd10c851b280b2ab13f336507f0ae930a26c3b41a6d3791f09c4ef707e1d",
+  },
+  {
+    name: "qualificationInspectPaHeader",
+    newName: "parentMetadata_qualificationInspectPaHeader",
+    oldSha256:
+      "984c4f0485fe4715d107259045bd07e3d11ebaa3dd5171b4e12934672d35db44",
+    newSha256:
+      "2ee9079fac788e0574d24579990df8e704eedc6a20b539725a0ec778813677d5",
+  },
+];
+test("inactive full SDK parent metadata readers are exact finite data-only copies", async () => {
+  const { default: ts } = await import("typescript"),
+    prettier = await import("prettier");
+  const control = await read(prefix + "full_sdk_control.mjs"),
+    driver = await read(prefix + "full-sdk-source-driver.mjs");
+  const declarations = (raw) => {
+    const tree = ts.createSourceFile(
+      "copy.mjs",
+      raw,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    );
+    return new Map(
+      tree.statements.flatMap((n) =>
+        ts.isFunctionDeclaration(n) && n.name
+          ? [[n.name.text, n.getText(tree)]]
+          : ts.isVariableStatement(n)
+            ? n.declarationList.declarations
+                .filter((d) => ts.isIdentifier(d.name))
+                .map((d) => [d.name.text, n.getText(tree)])
+            : [],
+      ),
+    );
+  };
+  const original = declarations(driver),
+    actual = declarations(control),
+    mapping = new Map(
+      PARENT_METADATA_READER_DERIVATIONS.map((r) => [r.name, r.newName]),
+    );
+  mapping.set("sha", "hashBytes");
+  for (const row of PARENT_METADATA_READER_DERIVATIONS) {
+    const raw = original.get(row.name);
+    assert.equal(sha(raw), row.oldSha256, row.name);
+    assert.equal(sha(actual.get(row.newName)), row.newSha256, row.newName);
+    const tree = ts.createSourceFile(
+        "copy.mjs",
+        raw,
+        99,
+        true,
+        ts.ScriptKind.JS,
+      ),
+      edits = [];
+    const visit = (n) => {
+      if (
+        ts.isIdentifier(n) &&
+        mapping.has(n.text) &&
+        !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n) &&
+        !(ts.isPropertyAssignment(n.parent) && n.parent.name === n)
+      )
+        edits.push({
+          start: n.getStart(tree),
+          end: n.end,
+          raw: mapping.get(n.text),
+        });
+      ts.forEachChild(n, visit);
+    };
+    visit(tree);
+    let next = raw;
+    for (const e of edits.sort((a, b) => b.start - a.start))
+      next = next.slice(0, e.start) + e.raw + next.slice(e.end);
+    assert.equal(
+      (await prettier.format(next, { parser: "babel" })).trimEnd(),
+      actual.get(row.newName),
+      row.newName,
+    );
+  }
+});
+
+test("inactive full SDK parent metadata actual held report close preserves falsy primary and cannot publish", async (t) => {
+  let failed = false;
+  const modelFs = {
+    ...fs,
+    open: async (name, ...args) => {
+      const handle = await fs.open(name, ...args);
+      if (
+        typeof name !== "string" ||
+        !name.endsWith("full-metadata-result.json")
+      )
+        return handle;
+      return {
+        stat: (...a) => handle.stat(...a),
+        read: (...a) => handle.read(...a),
+        close: async () => {
+          await handle.close();
+          if (!failed) {
+            failed = true;
+            throw false;
+          }
+        },
+      };
+    },
+  };
+  const f = await createdSourceFixture(t, "normal", { fs: modelFs });
+  await assert.rejects(
+    f.api.runSourcePhase(f.token),
+    (error) => error === false,
+  );
+  assert.equal(failed, true);
+  assert.equal(f.state.primary, false);
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.metadataSnapshot, undefined);
+  assert.equal(f.state.readFds.size, 0);
+  assert.equal(f.api.sourceOperations.has(f.token), false);
+});
+
+test("inactive full SDK fixed61 rejects mutually agreeing wrong Android defaults before any source session", async (t) => {
+  const real =
+    await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
+  let compared = 0;
+  const observed = {
+    ...real,
+    inspectExpectedArm64Defaults: (input) => {
+      compared++;
+      assert.equal(
+        input.partitionAllocActionValues.find((r) => r[0] === "IS_ANDROID")[1],
+        1,
+      );
+      assert.equal(
+        input.partitionAllocHeaderValues.find((r) => r[0] === "IS_ANDROID")[1],
+        1,
+      );
+      return real.inspectExpectedArm64Defaults(input);
+    },
+  };
+  const f = await createdSourceFixture(t, "wrong-defaults", {
+    expectedDefaults: observed,
+  });
+  await assert.rejects(
+    f.api.runSourcePhase(f.token),
+    /ARM64_DEFAULTS_MISMATCH/,
+  );
+  assert.equal(compared, 1);
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.metadataSnapshot, undefined);
+  assert.equal(f.state.readFds.size, 0);
+});
+
+test("inactive full SDK fixed61 rejects wrong image saved module and code policy bindings", async (t) => {
+  for (const mode of [
+    "wrong-image",
+    "wrong-module-pin",
+    "wrong-module-saved",
+  ]) {
+    const f = await createdSourceFixture(t, mode);
+    await assert.rejects(
+      f.api.runSourcePhase(f.token),
+      /SOURCE_METADATA_IMAGE|SOURCE_DEFAULTS_INPUT_PIN|SOURCE_RECORD_PIN|SOURCE_RECORD_BOUND/,
+    );
+    assert.equal(f.state.issued, false, mode);
+    assert.equal(f.state.metadataSnapshot, undefined, mode);
+    assert.equal(f.state.readFds.size, 0, mode);
+  }
+  const real =
+      await import("../../native/windows-arm-full-sdk/expected-defaults.mjs"),
+    policy = JSON.parse(JSON.stringify(real.ARM64_EXPECTED_DEFAULTS_POLICY));
+  policy.values.IS_ANDROID = 1;
+  const f = await createdSourceFixture(t, "normal", {
+    expectedDefaults: { ...real, ARM64_EXPECTED_DEFAULTS_POLICY: policy },
+  });
+  await assert.rejects(
+    f.api.runSourcePhase(f.token),
+    /SOURCE_DEFAULTS_POLICY_PIN/,
+  );
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.metadataSnapshot, undefined);
+});
+
+test("inactive full SDK fixed61 reads real live module and denies altered bytes without mutating source", async (t) => {
+  let altered = false;
+  const modelFs = {
+    ...fs,
+    open: async (name, ...args) => {
+      const handle = await fs.open(name, ...args);
+      if (
+        typeof name !== "string" ||
+        !name.endsWith(
+          path.join("native", "windows-arm-full-sdk", "expected-defaults.mjs"),
+        )
+      )
+        return handle;
+      return {
+        stat: (...a) => handle.stat(...a),
+        close: () => handle.close(),
+        read: async (buffer, offset, ...a) => {
+          const result = await handle.read(buffer, offset, ...a);
+          if (result.bytesRead && !altered) {
+            buffer[offset] ^= 1;
+            altered = true;
+          }
+          return result;
+        },
+      };
+    },
+  };
+  const f = await createdSourceFixture(t, "normal", { fs: modelFs });
+  await assert.rejects(f.api.runSourcePhase(f.token), /SOURCE_RECORD_PIN/);
+  assert.equal(altered, true);
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.readFds.size, 0);
+});
+
+test("inactive full SDK fixed61 module close retirement preserves false and cannot publish a late fact", async (t) => {
+  let f,
+    retired = false;
+  const modelFs = {
+    ...fs,
+    open: async (name, ...args) => {
+      const handle = await fs.open(name, ...args);
+      if (
+        typeof name !== "string" ||
+        !name.endsWith(
+          path.join("native", "windows-arm-full-sdk", "expected-defaults.mjs"),
+        )
+      )
+        return handle;
+      return {
+        stat: (...a) => handle.stat(...a),
+        read: (...a) => handle.read(...a),
+        close: async () => {
+          await handle.close();
+          if (!retired) {
+            retired = true;
+            f.state.failed = true;
+            f.state.primary = false;
+            void f.api.retireSourceOperation(f.token);
+          }
+        },
+      };
+    },
+  };
+  f = await createdSourceFixture(t, "normal", { fs: modelFs });
+  await assert.rejects(
+    f.api.runSourcePhase(f.token),
+    (error) => error === false,
+  );
+  assert.equal(retired, true);
+  assert.equal(f.state.primary, false);
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.metadataSnapshot, undefined);
+});
+
+test("full SDK hooks stage carries the measured2700 cap with an exact prior-stage inverse and original reserve clipping", async () => {
+  const { default: ts } = await import("typescript");
+  const source = (await read(prefix + "full-sdk-source-driver.mjs")).replace(
+    /\r\n/g,
+    "\n",
+  );
+  const tree = ts.createSourceFile(
+    "driver.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = (name) =>
+    tree.statements
+      .find(
+        (node) => ts.isFunctionDeclaration(node) && node.name?.text === name,
+      )
+      .getText(tree);
+  const old = body("sourceStage"),
+    current = body("fullSourceStage");
+  assert.equal(
+    current
+      .replace("fullSourceStage(", "sourceStage(")
+      .replace("maximumSeconds === 2700", "maximumSeconds === 1800"),
+    old,
+  );
+  function fixture(program) {
+    let now = 0,
+      timer,
+      cleared = 0;
+    const fn = vm.runInNewContext("(" + program + ")", {
+      need(value, code) {
+        if (!value) throw new Error(code);
+      },
+      performance: { now: () => now },
+      setTimeout(callback, milliseconds) {
+        timer = { callback, milliseconds };
+        return timer;
+      },
+      clearTimeout(value) {
+        assert.equal(value, timer);
+        cleared++;
+      },
+      writeFileSync() {
+        assert.fail("no deadline report during successful action");
+      },
+      process: {
+        exit() {
+          assert.fail("no native exit during successful action");
+        },
+      },
+    });
+    return {
+      fn,
+      timer: () => timer,
+      cleared: () => cleared,
+      advance: (value) => {
+        now += value;
+      },
+    };
+  }
+  const before = fixture(old);
+  await assert.rejects(
+    before.fn(
+      "owned-root",
+      { remaining: () => 7200000 },
+      "source-hooks-gn",
+      2700,
+      async () => 1,
+    ),
+    /FULL_SOURCE_STAGE/,
+  );
+  assert.equal(before.timer(), undefined);
+  for (const [remaining, expected] of [
+    [7200000, 2700000],
+    [1000000, 880000],
+  ]) {
+    const f = fixture(current);
+    let checks = 0;
+    assert.equal(
+      await f.fn(
+        "owned-root",
+        {
+          remaining() {
+            checks++;
+            return remaining;
+          },
+        },
+        "source-hooks-gn",
+        2700,
+        async () => 7,
+      ),
+      7,
+    );
+    assert.equal(f.timer().milliseconds, expected);
+    assert.equal(f.cleared(), 1);
+    assert.equal(checks, 2);
+  }
+  const exhausted = fixture(current);
+  await assert.rejects(
+    exhausted.fn(
+      "owned-root",
+      { remaining: () => 120000 },
+      "source-hooks-gn",
+      2700,
+      async () => 1,
+    ),
+    /FULL_SOURCE_RESERVE/,
+  );
+  assert.equal(exhausted.timer(), undefined);
+  const expired = fixture(current);
+  await assert.rejects(
+    expired.fn(
+      "owned-root",
+      { remaining: () => 1000000 },
+      "source-hooks-gn",
+      2700,
+      async () => expired.advance(880000),
+    ),
+    /FULL_SOURCE_STAGE_DEADLINE/,
+  );
+  assert.equal(expired.cleared(), 1);
+  const falsy = fixture(current);
+  await assert.rejects(
+    falsy.fn(
+      "owned-root",
+      { remaining: () => 1000000 },
+      "source-hooks-gn",
+      2700,
+      async () => {
+        throw false;
+      },
+    ),
+    (error) => error === false,
+  );
+  assert.equal(falsy.cleared(), 1);
+});
+
+test("full SDK hooks carryforward restores the whole prior8323 driver without changing the older1800 stage or private source body", async () => {
+  const { default: ts } = await import("typescript");
+  let source = (await read(prefix + "full-sdk-source-driver.mjs")).replace(
+    /\r\n/g,
+    "\n",
+  );
+  source = assemblyInverse(source, "driver");
+  const tree = ts.createSourceFile(
+    "driver.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const stage = tree.statements
+    .find(
+      (node) =>
+        ts.isFunctionDeclaration(node) && node.name?.text === "fullSourceStage",
+    )
+    .getText(tree);
+  assert.equal(source.split(stage + "\n\n").length, 2);
+  source = source.replace(stage + "\n\n", "");
+  const start = source.indexOf("async function runFullSourceBody(argv) {"),
+    end = source.indexOf("// END CLOSED FULL SDK SOURCE BODY", start);
+  let body = source.slice(start, end);
+  assert.equal(body.split("await fullSourceStage(").length, 2);
+  assert.equal(body.split('"source-hooks-gn", 2700').length, 2);
+  body = body
+    .replaceAll("await fullSourceStage(", "await sourceStage(")
+    .replace('"source-hooks-gn", 2700', '"source-hooks-gn", 1800');
+  source = source.slice(0, start) + body + source.slice(end);
+  const profile = await fs.readFile(
+    path.join(root, prefix, "full-sdk-source-profile.json"),
+  );
+  assert.equal(
+    source.split(
+      "528dfa3b3a510f0fc9c5e5f48af8044e004ccd9f2b217b1943d2d67053be9aa2",
+    ).length,
+    2,
+  );
+  source = source.replace(
+    "528dfa3b3a510f0fc9c5e5f48af8044e004ccd9f2b217b1943d2d67053be9aa2",
+    "8019a93033819819d717a87f27806fd14d180ddc1e9ee2c899f0951d6af82e61",
+  );
+  assert.equal(Buffer.byteLength(source), 254968);
+  assert.equal(
+    sha(source),
+    "83230fc12fb97cf77ad53f3a511a904d462f9241f83307aeccfadb07bee344c6",
+  );
+});
+
+// These maps are isolated lexical models. The ChildProcess is real; native
+// Windows creation/Job outcomes below are modeled and never mint production authority.
+async function parentEngineFixture(t, mode = "normal", overrides = {}) {
+  let f;
+  const plans = [];
+  const actualSpawn = (executable, argv, options) => {
+    if (argv[2] === "-c") {
+      const program = `process.stdout.write(JSON.stringify({wall:Date.now()/1000,monotonic:performance.now()/1000,parentPid:process.ppid,parentCreationFiletime:'777777'}));`;
+      return spawn(process.execPath, ["-e", program], options);
+    }
+    if (argv[3] !== "--full-sdk-engine-launcher")
+      return spawn(executable, argv, options);
+    plans.push({ executable, argv: [...argv], options });
+    if (argv[4] === "cef-engine") {
+      const python = execFileSync(
+        "python",
+        ["-I", "-B", "-c", "import sys;print(sys.executable)"],
+        { encoding: "utf8", timeout: 10000, windowsHide: true },
+      ).trim();
+      const program = `import sys,pathlib,json,types,os,stat,time as real_time
++sys.path.insert(0,sys.argv[1]);import full_sdk_engine as engine;import acquire as data
++root=pathlib.Path(sys.argv[2]);sha=sys.argv[3];mode=sys.argv[4];role='cef-engine'
++packet=json.loads((root/('full-sdk-engine-'+role+'-context.json')).read_bytes());profile=json.loads((pathlib.Path(sys.argv[1])/'full-sdk-source-profile.json').read_bytes())
++class Parent:
++ def is_set(self):return False
++ def close(self):pass
++birth=object();fence=[]
++for p in(root,*root.parents):
++ i=p.lstat();fence.append((p,(i.st_dev,i.st_ino,stat.S_IFMT(i.st_mode),getattr(i,'st_birthtime_ns',None))))
++engine.time=types.SimpleNamespace(time=real_time.time,monotonic=lambda:packet['monotonicWholeEnd']-(packet['wallWholeEnd']-real_time.time()))
++held=[(root/r['relative'],{'bytes':r['bytes'],'sha256':r['sha256']})for r in packet['metadataFiles']+packet['gitPolicyFiles']]
++state=dict(root=root,context=packet,profile=profile,node=profile['node'],sha=sha,clock=engine.OriginalClock(packet),data=data,held=held,fence=fence,parent=Parent(),pid=os.getpid(),birth=birth,closed=False,failed=False,primary=None,semantic=engine.digest(engine.canonical(packet)),profileSemantic=engine.digest(engine.canonical(profile)),own=object(),creation='888889')
++engine._ACTIVE[str(root)]=state;engine._BIRTHS[birth]=state
++def run(*args,**kwargs):
++ result=json.loads((root/'jobs/full-sdk-source-gn/receipt.json').read_bytes());result.update(rootPid=9002,rootCreationFiletime='900200',outputCapBytes=kwargs['cap'],capturedBytes=0,elapsedMs=args[3]*1000)
++ if mode=='native-deadline':result.update(success=False,outcome='deadline',rootExit=None,finalRootExit=124)
++ else:result.update(success=False,outcome='compiler-failure',rootExit=1,finalRootExit=1)
++ out=args[2];out.mkdir(parents=True);(out/'receipt.json').write_text(json.dumps(result,indent=2)+'\\n');return result
++sys.modules['job']=types.SimpleNamespace(run_job=run,close=lambda _:True,checked=lambda ok,*_:None if ok else engine.need(False,'MODELED_HANDLE'))
++engine._load=lambda *_:state
++raise SystemExit(engine.main(['--full-sdk-engine-launcher',role,str(root),sha,'--execute']))
++`.replace(/^\+/gm, "");
+      return spawn(
+        python,
+        [
+          "-I",
+          "-B",
+          "-c",
+          program,
+          path.join(root, prefix),
+          argv[5],
+          argv[6],
+          mode,
+        ],
+        options,
+      );
+    }
+
+    const program = `const fs=require('node:fs'),path=require('node:path');
+      const role=process.argv[1],root=process.argv[2],sha=process.argv[3],mode=process.argv[4];
+      const packet=JSON.parse(fs.readFileSync(path.join(root,'full-sdk-engine-'+role+'-context.json')));
+      const receipt=JSON.parse(fs.readFileSync(path.join(root,'jobs/full-sdk-source-gn/receipt.json')));
+      receipt.rootPid=9000+['probe-clang','probe-link','cef-engine','package'].indexOf(role);receipt.rootCreationFiletime=String(receipt.rootPid*100);
+      if(mode==='bad-job')receipt.activeAtEnd=1;
+      const birth='888889',launch={kind:'windows-arm-full-sdk-engine-launch',role,ownPid:process.pid,ownCreationFiletime:birth,parentPid:packet.parentPid,parentCreationFiletime:packet.parentCreationFiletime,contextSha256:sha};
+      if(mode==='wrong-launch')launch.ownPid++;
+      const close={kind:'windows-arm-full-sdk-engine-launcher-close',role,success:true,parentHandleClosed:true,ownHandleClosed:true,ownPid:process.pid,ownCreationFiletime:birth,parentPid:packet.parentPid,parentCreationFiletime:packet.parentCreationFiletime,sourceContextSha256:packet.sourceContextSha256,sdkBuilt:false,nativeAcceptance:false};
+      if(mode==='missing-close')close.ownHandleClosed=false;
+      const raw=Buffer.alloc(role==='probe-clang'?60:400);
+      if(role==='probe-clang'){raw.writeUInt16LE(0xaa64,0);raw.writeUInt16LE(1,2);}else{raw.write('MZ');raw.writeUInt32LE(64,60);raw.writeUInt32LE(0x4550,64);raw.writeUInt16LE(0xaa64,68);raw.writeUInt16LE(240,84);raw.writeUInt16LE(0x20b,88);}
+      if(mode==='wrong-machine')raw[role==='probe-clang'?0:68]=0;
+      const probe='full-sdk-engine-probe/probe.'+(role==='probe-clang'?'obj':'exe');fs.mkdirSync(path.dirname(path.join(root,probe)),{recursive:true});fs.writeFileSync(path.join(root,probe),raw);
+      const output={bytes:raw.length,sha256:require('node:crypto').createHash('sha256').update(raw).digest('hex')};
+      const result={kind:'windows-arm-full-sdk-engine-worker-result',role,sourceContextSha256:packet.sourceContextSha256,image:packet.image,sourceId:packet.sourceId,success:true,output,engineComplete:false,sdkBuilt:false,nativeAcceptance:false,runtimeReady:false};
+      if(mode==='wrong-source')result.sourceId='f'.repeat(64);
+      const rows={};rows['jobs/'+role+'/receipt.json']=receipt;
+      rows['full-sdk-engine-'+role+'-launch.json']=launch;rows['full-sdk-engine-closed-'+role+'.json']=close;rows['full-sdk-engine-'+role+'-result.json']=result;
+      for(const[name,value]of Object.entries(rows)){fs.mkdirSync(path.dirname(path.join(root,name)),{recursive:true});fs.writeFileSync(path.join(root,name),JSON.stringify(value));}
+      process.stdout.write('modeled-native-engine-fixture\\n');
+    `;
+    return spawn(
+      process.execPath,
+      ["-e", program, argv[4], argv[5], argv[6], mode],
+      options,
+    );
+  };
+  f = await createdSourceFixture(t, "normal", {
+    spawn: actualSpawn,
+    process: {
+      ...process,
+      env: {
+        ...process.env,
+        CEF_FULLSDK_RESTORE_RUN: "0",
+        ImageVersion: "20261030.294.1",
+        GITHUB_SHA: "a".repeat(40),
+        GITHUB_WORKFLOW_SHA: "a".repeat(40),
+        GITHUB_RUN_ID: "30",
+        GITHUB_RUN_ATTEMPT: "1",
+      },
+    },
+    ...overrides,
+  });
+  const profile = JSON.parse(
+      await fs.readFile(
+        path.join(root, prefix, "full-sdk-source-profile.json"),
+      ),
+    ),
+    policy = {
+      kind: "sorng-windows-arm64-sdk-origin-policy",
+      origin: "owned-windows-arm64-full-sdk",
+      workflow: profile.workflow,
+      target: profile.target,
+      producerInputs: f.state.plan.producerInputs,
+    };
+  const sourceRecord = f.api.sourceContextRecord(
+    f.token,
+    profile,
+    policy,
+    Buffer.from(JSON.stringify(policy)),
+    { monotonic: performance.now() / 1000 },
+  );
+  const context = Buffer.from(JSON.stringify(sourceRecord, null, 2) + "\n");
+  await fs.writeFile(path.join(f.base, "context.json"), context);
+  f.state.plan = Object.freeze({
+    ...f.state.plan,
+    rootPins: Object.freeze(
+      f.state.plan.rootPins.map((row) =>
+        row.relative === "context.json"
+          ? {
+              relative: row.relative,
+              bytes: context.length,
+              sha256: sha(context),
+            }
+          : row,
+      ),
+    ),
+  });
+  const source = await f.api.runSourcePhase(f.token);
+  const control = await f.api.createControl(source, f.owner.lease);
+  await f.api.prepareFreshPolicy(control);
+  t.after(async () => {
+    const state = f.api.controls.get(control);
+    try {
+      await f.api.retireControl(control);
+    } catch (error) {
+      assert.equal(state.failed, true);
+      assert.equal(error, state.primary);
+    }
+  });
+  return { ...f, source, control, plans };
+}
+
+test("parent engine actual child joins modeled native chain and seals ARM object and image under one original probe budget", async (t) => {
+  const f = await parentEngineFixture(t);
+  const a = await f.api.runEnginePhase(f.control, "probe-clang"),
+    state = f.api.controls.get(f.control),
+    ends = state.probeEnds;
+  assert.equal(a.role, "probe-clang");
+  assert.equal(a.nativeAcceptance, false);
+  assert.equal(state.enginePhase, null);
+  const b = await f.api.runEnginePhase(f.control, "probe-link");
+  assert.equal(b.role, "probe-link");
+  assert.equal(state.probeEnds, ends);
+  assert.equal(state.engineResults.length, 2);
+  assert.equal(f.plans.length, 2);
+  const first = JSON.parse(
+      await fs.readFile(
+        path.join(f.base, "full-sdk-engine-probe-clang-context.json"),
+      ),
+    ),
+    second = JSON.parse(
+      await fs.readFile(
+        path.join(f.base, "full-sdk-engine-probe-link-context.json"),
+      ),
+    );
+  assert.equal(first.wallPhaseEnd, second.wallPhaseEnd);
+  assert.equal(first.wallWholeEnd, second.wallWholeEnd);
+  assert.equal(first.monotonicWholeEnd, second.monotonicWholeEnd);
+  assert.equal(first.metadataFiles.length, 9);
+  assert.equal(second.prior.result.sha256, a.result.sha256);
+  assert.equal(first.gitPolicyFiles[1].bytes, 0);
+  assert.equal(f.state.logFds.size, 0);
+  assert.equal(f.state.readFds.size, 0);
+});
+
+test("parent engine denies actual child wrong launcher source machine missing close or native cohort before private advancement", async (t) => {
+  for (const mode of [
+    "wrong-launch",
+    "wrong-source",
+    "wrong-machine",
+    "missing-close",
+    "bad-job",
+  ]) {
+    const f = await parentEngineFixture(t, mode);
+    await assert.rejects(
+      f.api.runEnginePhase(f.control, "probe-clang"),
+      /ENGINE_|SOURCE_JOB_PROOF/,
+    );
+    const state = f.api.controls.get(f.control);
+    assert.equal(state.engineResults.length, 0, mode);
+    assert.equal(state.enginePhase, null, mode);
+    assert.equal(state.failed, true, mode);
+  }
+});
+
+test("parent engine reholds fixed metadata and predecessor identity before the next actual creation", async (t) => {
+  for (const mode of ["header", "predecessor"]) {
+    const f = await parentEngineFixture(t);
+    const first = await f.api.runEnginePhase(f.control, "probe-clang");
+    const file =
+      mode === "header"
+        ? path.join(
+            f.base,
+            f.api.sourceSessions.get(f.source).metadataSnapshot.records[6]
+              .relative,
+          )
+        : path.join(f.base, first.records.at(-1).relative);
+    await fs.appendFile(file, "tamper");
+    await assert.rejects(
+      f.api.runEnginePhase(f.control, "probe-link"),
+      /SOURCE_RECORD_|ENGINE_PREDECESSOR/,
+    );
+    assert.equal(f.plans.length, 1);
+    assert.equal(f.api.controls.get(f.control).engineResults.length, 1);
+  }
+});
+
+test("parent engine strict object and image reader denies x64 and import tables independently", async () => {
+  const api = await inactiveControl();
+  const obj = Buffer.alloc(60);
+  obj.writeUInt16LE(0xaa64, 0);
+  obj.writeUInt16LE(1, 2);
+  api.engineProbe(obj, "probe-clang");
+  obj.writeUInt16LE(0x8664, 0);
+  assert.throws(() => api.engineProbe(obj, "probe-clang"), /ENGINE_COFF/);
+  const exe = Buffer.alloc(400);
+  exe.write("MZ");
+  exe.writeUInt32LE(64, 60);
+  exe.writeUInt32LE(0x4550, 64);
+  exe.writeUInt16LE(0xaa64, 68);
+  exe.writeUInt16LE(240, 84);
+  exe.writeUInt16LE(0x20b, 88);
+  api.engineProbe(exe, "probe-link");
+  exe.writeUInt32LE(1, 64 + 24 + 112 + 8);
+  assert.throws(() => api.engineProbe(exe, "probe-link"), /ENGINE_PE_IMPORT/);
+});
+
+test("actual parent packets and actual Python close writer permit only native supervisor deadline checkpoint alternative", async (t) => {
+  for (const mode of ["native-deadline", "compiler-failure"]) {
+    const f = await parentEngineFixture(t, mode);
+    await f.api.runEnginePhase(f.control, "probe-clang");
+    await f.api.runEnginePhase(f.control, "probe-link");
+    const state = f.api.controls.get(f.control);
+    if (mode === "native-deadline") {
+      const result = await f.api.runEnginePhase(f.control, "cef-engine");
+      assert.equal(result, state.nativeSliceFact);
+      assert.equal(result.nativeSliceEnded, true);
+      assert.equal(result.result, null);
+      assert.equal(state.compilerAdmission.full61Qualified, true);
+      const source = await fs.readFile(path.join(f.base, "context.json")),
+        packet = await fs.readFile(
+          path.join(f.base, "full-sdk-engine-cef-engine-context.json"),
+        );
+      const program = `import sys,json;sys.path.insert(0,sys.argv[1]);import full_sdk_engine as e;import compiled_checkpoint as c;s=json.loads(sys.argv[2]);p=json.loads(sys.argv[3]);r=json.loads(sys.argv[4]);e.validate_packet(p,'cef-engine',s);c._job(r,True);print('actual-parent-python-codec-contract')`;
+      const raw = await fs.readFile(
+        path.join(f.base, "jobs/cef-engine/receipt.json"),
+      );
+      assert.match(
+        execFileSync(
+          "python",
+          [
+            "-I",
+            "-B",
+            "-c",
+            program,
+            path.join(root, prefix),
+            source.toString(),
+            packet.toString(),
+            raw.toString(),
+          ],
+          { encoding: "utf8", timeout: 15000, windowsHide: true },
+        ),
+        /actual-parent-python-codec-contract/,
+      );
+      const value = JSON.parse(packet),
+        context = JSON.parse(source);
+      assert(value.wallPhaseEnd <= context.wallWholeEnd - 3600);
+      assert(value.monotonicPhaseEnd <= context.monotonicWholeEnd - 3600);
+      await assert.rejects(
+        f.api.runEnginePhase(f.control, "package"),
+        /ENGINE_SEQUENCE/,
+      );
+    } else {
+      await assert.rejects(
+        f.api.runEnginePhase(f.control, "cef-engine"),
+        /ENGINE_CHILD_JOIN/,
+      );
+      assert.equal(state.nativeSliceFact, undefined);
+      assert.equal(state.engineResults.length, 2);
+    }
+  }
+});
+
+test("parent engine actual unlaunched child no-close cleanup is finite and preserves falsy cap or cancellation primary", async (t) => {
+  const { PassThrough } = await import("node:stream");
+  for (const failure of ["deadline", false, "cap"]) {
+    const child = new ChildProcess();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    let wall = 1000,
+      mono = 0,
+      kills = 0,
+      unrefs = 0,
+      armed = false,
+      delayedSetup = false;
+    const timers = new Set();
+    const fireDeadline = () => {
+      assert.equal(timers.size, 1);
+      const timer = [...timers][0];
+      timers.delete(timer);
+      wall += timer.ms;
+      mono += timer.ms;
+      timer.callback();
+    };
+    child.kill = () => {
+      kills++;
+      return false;
+    };
+    child.unref = () => {
+      unrefs++;
+    };
+    const f = await controlFixture(t, {
+      fs: {
+        ...fs,
+        async lstat(...args) {
+          if (!delayedSetup && !armed) {
+            delayedSetup = true;
+            // Deliberately exceed the old8ms artificial setup timer.
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          return fs.lstat(...args);
+        },
+      },
+      spawn: () => child,
+      Date: { now: () => wall },
+      performance: { now: () => mono },
+      setTimeout: (callback, ms) => {
+        if (!armed) return setTimeout(callback, ms);
+        const timer = { callback, ms };
+        timers.add(timer);
+        return timer;
+      },
+      clearTimeout: (timer) => {
+        if (timers.has(timer)) timers.delete(timer);
+        else clearTimeout(timer);
+      },
+    });
+    const control = await f.api.createControl(f.receipt, f.lease),
+      state = f.api.controls.get(control);
+    const stdoutFd = await fs.open(
+        path.join(f.base, "engine-model.stdout"),
+        "wx",
+      ),
+      stderrFd = await fs.open(path.join(f.base, "engine-model.stderr"), "wx");
+    const phase = {
+      role: "probe-clang",
+      wallEnd: wall + 10,
+      monoEnd: mono + 10,
+      retired: false,
+      pending: new Set(),
+      logFds: new Set([stdoutFd, stderrFd]),
+      stdoutFd,
+      stderrFd,
+      pendingWriters: 0,
+      writeQueue: Promise.resolve(),
+      outputBytes: 0,
+      child: null,
+    };
+    state.enginePhase = phase;
+    assert.equal(delayedSetup, true);
+    armed = true; // Normal control/FS setup never uses accelerated timers.
+    const originalEnds = { ...f.api.leases.get(f.lease) };
+    f.api.startEngineChild(control, phase, {
+      executable: "MODELED_ONLY",
+      argv: [],
+      environment: {},
+    });
+    let expected;
+    if (failure === false) {
+      child.emit("error", false);
+      expected = false;
+    }
+    if (failure === "cap") {
+      child.stdout.write(Buffer.alloc(131073));
+      expected = state.primary;
+      child.emit("error", false);
+    }
+    const began = performance.now();
+    const pending = f.api.engineWork(control, phase, () => phase.childJoined);
+    if (failure === "deadline") fireDeadline();
+    await assert.rejects(pending, (error) =>
+      failure === "deadline"
+        ? /ENGINE_DEADLINE/.test(error.message)
+        : error === expected,
+    );
+    const primary = state.primary;
+    const retirement = f.api.retireEnginePhase(control, phase);
+    // Observe actual owned FD closes before firing the modeled cleanup deadline.
+    // The child never closes, so only the explicit original deadline ends join.
+    await untilCreated(() => phase.logFds.size === 0);
+    fireDeadline();
+    await retirement;
+    assert(performance.now() - began < 5000);
+    assert.equal(f.api.leases.get(f.lease).wallEnd, originalEnds.wallEnd);
+    assert.equal(f.api.leases.get(f.lease).monoEnd, originalEnds.monoEnd);
+    assert.equal(state.primary, primary);
+    assert.equal(phase.retired, true);
+    assert.equal(phase.cleanupConfirmed, false);
+    assert.equal(phase.childEvents.close, false);
+    assert.equal(phase.logFds.size, 0);
+    assert.equal(phase.child, null);
+    assert.equal(phase.ownedListeners.length, 0);
+    assert.equal(child.stdout.destroyed, true);
+    assert.equal(child.stderr.destroyed, true);
+    assert(kills >= 1);
+    assert.equal(unrefs, 1);
+    await assert.rejects(
+      f.api.retireControl(control),
+      (error) => error === primary,
+    );
+    child._handle?.close();
+    child._handle = null;
+  }
+});
+
+test("parent engine save rejects late retirement directly before mutation and never refreshes original phase ends", async (t) => {
+  let f,
+    phase,
+    armed = false,
+    writes = 0;
+  f = await controlFixture(t, {
+    fs: {
+      ...fs,
+      async realpath(name, ...args) {
+        const value = await fs.realpath(name, ...args);
+        if (armed && name === f.api.controls.get(control).directory) {
+          armed = false;
+          queueMicrotask(() => {
+            phase.retired = true;
+          });
+        }
+        return value;
+      },
+      async writeFile(...args) {
+        if (String(args[0]).endsWith("engine-late.json")) writes++;
+        return fs.writeFile(...args);
+      },
+    },
+  });
+  const control = await f.api.createControl(f.receipt, f.lease),
+    state = f.api.controls.get(control);
+  phase = {
+    role: "probe-clang",
+    wallEnd: Date.now() + 900000,
+    monoEnd: performance.now() + 900000,
+    retired: false,
+    pending: new Set(),
+  };
+  state.enginePhase = phase;
+  const ends = [phase.wallEnd, phase.monoEnd];
+  armed = true;
+  await assert.rejects(
+    f.api.engineSave(control, phase, "engine-late.json", Buffer.from("{}")),
+    /ENGINE_BRAND/,
+  );
+  assert.equal(writes, 0);
+  assert.deepEqual([phase.wallEnd, phase.monoEnd], ends);
+  await assert.rejects(
+    fs.stat(path.join(f.base, "engine-late.json")),
+    (error) => error.code === "ENOENT",
+  );
+  await assert.rejects(
+    f.api.retireControl(control),
+    (error) => error === state.primary,
+  );
+});
+
+test("actual full transaction retires every owner independently and preserves a falsy original failure", async () => {
+  const source = await read(prefix + "full_sdk_control.mjs");
+  const { default: ts } = await import("typescript");
+  const tree = ts.createSourceFile(
+    "control.mjs",
+    source,
+    99,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = tree.statements
+    .find(
+      (row) =>
+        ts.isFunctionDeclaration(row) &&
+        row.name?.text === "runFullSdkTransaction",
+    )
+    .getText(tree);
+  for (const original of [false, undefined]) {
+    const bootstrap = {},
+      operation = {},
+      control = {},
+      lease = {},
+      cancel = new AbortController(),
+      calls = [];
+    const owner = { pid: process.pid, lease, cancel, closed: false, operation },
+      sourceState = { cleanupConfirmed: false },
+      controlState = { cleanupConfirmed: false, failed: false };
+    const bootstrapOwners = new WeakMap([[bootstrap, owner]]),
+      sourceOperations = new WeakMap([[operation, sourceState]]),
+      controls = new WeakMap([[control, controlState]]),
+      leases = new WeakMap([
+        [
+          lease,
+          {
+            closed: false,
+            wallEnd: Date.now() + 600000,
+            monoEnd: performance.now() + 600000,
+          },
+        ],
+      ]);
+    const cleanupError = Error("ACTUAL_CONTROL_RETIRE_FAILURE");
+    const context = {
+      bootstrapOwners,
+      sourceOperations,
+      controls,
+      leases,
+      process,
+      CLEANUP_MS: 30000,
+      FINAL_RESERVE_MS: 120000,
+      Date,
+      performance,
+      cleanupStep: async (_, action) => action(),
+      need: (ok, code) => assert(ok, code),
+      bootstrapState: () => owner,
+      createSourceOperation: async () => operation,
+      runSourcePhase: async () => ({}),
+      createControl: async () => control,
+      prepareFreshPolicy: async () => {},
+      runEnginePhase: async () => {
+        if (original === false) throw false;
+        return {};
+      },
+      verifyProducedSdk: async () => ({ sdkBuilt: true }),
+      verifyProducedCheckpoint: async () => {
+        throw Error("unexpected checkpoint");
+      },
+      publishControllerOutcome: async () => calls.push("report"),
+      retireControl: async () => {
+        calls.push("control");
+        throw cleanupError;
+      },
+      retireSourceOperation: async () => {
+        calls.push("source");
+        sourceState.cleanupConfirmed = true;
+      },
+    };
+    const actual = new Function(
+      ...Object.keys(context),
+      body + ";return runFullSdkTransaction;",
+    )(...Object.values(context));
+    await assert.rejects(
+      actual(bootstrap),
+      (error) => error === (original === false ? false : cleanupError),
+    );
+    assert.deepEqual(
+      calls,
+      original === false
+        ? ["control", "source"]
+        : ["report", "control", "source"],
+    );
+    assert.equal(owner.closed, true);
+    assert.equal(bootstrapOwners.has(bootstrap), false);
+    assert.equal(leases.get(lease).closed, true);
+    assert.equal(sourceState.cleanupConfirmed, true);
+    if (original === false) {
+      assert.equal(cancel.signal.aborted, true);
+      assert.equal(cancel.signal.reason, false);
+    }
+  }
+});
+
+test("actual codec ready writer feeds the exact parent handoff reader including immutable artifact pin", async (t) => {
+  const base = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "actual-ready-protocol-")),
+  );
+  t.after(() => fs.rm(base, { recursive: true, force: true }));
+  const repo = path.join(base, "a/sortOfRemoteNG/sortOfRemoteNG"),
+    directory = path.join(base, "a/_temp/sorng-windows-arm-checkpoint-30-1");
+  await fs.mkdir(directory, { recursive: true });
+  const rows = [
+    {
+      path: "native/windows-arm-full-sdk/compiled_checkpoint.py",
+      bytes: 100008,
+      sha256:
+        "a945464bead52c2d8413fd05fdc158f250749a8d85caab87a29782a5edeae2d9",
+    },
+  ];
+  const program = `import ast,importlib.util,pathlib,sys,json
+file=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('codec_ready_protocol',file);codec=importlib.util.module_from_spec(spec);spec.loader.exec_module(codec)
+tree=ast.parse(file.read_text());function=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='transport_download')
+start=next(i for i,n in enumerate(function.body)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='ready'for t in n.targets))
+statements=function.body[start:-1]
+rows=json.loads(sys.argv[3]);image='20261030.294.1';source=codec.inputs.SOURCES[image]
+identity=dict(image=image,sourceId=source,producerSha256=codec.producer_digest(rows),sourceDateEpoch=dict(present=False,value=None),canonicalRoot=codec.inputs.root_name(image,source),toolProofPin=dict(bytes=1,sha256='4'*64),graphPin=dict(bytes=1,sha256='5'*64))
+scope=dict(codec.__dict__);scope.update(record_pin=dict(bytes=1,sha256='1'*64),prior_run='20',prior_attempt='1',current=dict(id=30,run_attempt=1),prior=dict(head_sha='c'*40),record=dict(identity=identity),artifact_pin=dict(id=901,bytes=31,sha256='2'*64),destination=pathlib.Path(sys.argv[2]))
+exec(compile(ast.Module(body=statements,type_ignores=[]),str(file),'exec'),scope)
+print('actual-ready-writer-complete')`;
+  assert.match(
+    execFileSync(
+      "python",
+      [
+        "-I",
+        "-B",
+        "-c",
+        program,
+        path.join(root, prefix, "compiled_checkpoint.py"),
+        directory,
+        JSON.stringify(rows),
+      ],
+      { encoding: "utf8", timeout: 15000, windowsHide: true },
+    ),
+    /actual-ready-writer-complete/,
+  );
+  const codecReady = JSON.parse(
+    await fs.readFile(path.join(directory, "ready.json")),
+  );
+  assert.equal(Object.keys(codecReady).length, 10);
+  assert.equal(codecReady.sealArtifact.id, 901);
+  const api = await inactiveControl({
+    moduleURL: new URL(
+      "file:///" +
+        path
+          .join(repo, "native/windows-arm-full-sdk/full_sdk_control.mjs")
+          .replaceAll("\\", "/"),
+    ).href,
+    process: {
+      ...process,
+      env: {
+        CEF_FULLSDK_RESTORE_RUN: "20",
+        RUNNER_TEMP: path.join(base, "a/_temp"),
+        GITHUB_RUN_ID: "30",
+        GITHUB_RUN_ATTEMPT: "1",
+      },
+    },
+  });
+  const bootstrap = api.beginFullSdkBootstrap();
+  const result = await api.readRestoreHandoff(
+    bootstrap,
+    rows,
+    "20261030.294.1",
+    codecReady.identity.sourceId,
+  );
+  assert.equal(result.runId, "20");
+  assert.equal(result.attempt, "1");
+  assert.equal(
+    result.readyPin.sha256,
+    sha(await fs.readFile(path.join(directory, "ready.json"))),
+  );
+  const bad = {
+    ...codecReady,
+    sealArtifact: { ...codecReady.sealArtifact, id: 0 },
+  };
+  await fs.writeFile(path.join(directory, "ready.json"), JSON.stringify(bad));
+  await assert.rejects(
+    api.readRestoreHandoff(
+      bootstrap,
+      rows,
+      "20261030.294.1",
+      codecReady.identity.sourceId,
+    ),
+    /RESTORE_ARTIFACT_PIN/,
+  );
+});
+
+test("bounded bootstrap reader denies actual growth replacement and falsy read faults before oversized allocation", async (t) => {
+  for (const mode of ["pre-open-growth", "read-growth", "replace", "false"]) {
+    const base = await fs.realpath(
+      await fs.mkdtemp(path.join(tmpdir(), "bootstrap-held-bound-")),
+    );
+    t.after(() => fs.rm(base, { recursive: true, force: true }));
+    const file = path.join(base, "ready.json");
+    await fs.writeFile(file, "{}");
+    let grown = false,
+      allocMax = 0,
+      readMax = 0,
+      closes = 0,
+      readFileCalls = 0;
+    const max = 2097152;
+    const api = await inactiveControl({
+      Buffer: new Proxy(Buffer, {
+        get(target, key) {
+          if (key === "alloc")
+            return (size) => {
+              allocMax = Math.max(allocMax, size);
+              assert(size <= max + 1);
+              return Buffer.alloc(size);
+            };
+          return Reflect.get(target, key);
+        },
+      }),
+      fs: {
+        ...fs,
+        async readFile(...args) {
+          readFileCalls++;
+          return fs.readFile(...args);
+        },
+        async open(name, ...args) {
+          if (name === file && !grown && mode === "pre-open-growth") {
+            grown = true;
+            await fs.writeFile(file, Buffer.alloc(max + 1));
+          }
+          if (name === file && !grown && mode === "replace") {
+            grown = true;
+            await fs.rename(file, path.join(base, "old.json"));
+            await fs.writeFile(file, "{}");
+          }
+          const fd = await fs.open(name, ...args);
+          return new Proxy(fd, {
+            get(target, key) {
+              if (key === "read")
+                return async (...params) => {
+                  readMax = Math.max(readMax, params[2]);
+                  if (mode === "false") throw false;
+                  if (!grown && mode === "read-growth") {
+                    grown = true;
+                    await fs.appendFile(file, Buffer.alloc(max));
+                  }
+                  return target.read(...params);
+                };
+              if (key === "close")
+                return async () => {
+                  closes++;
+                  return target.close();
+                };
+              const value = Reflect.get(target, key);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+        },
+      },
+    });
+    const bootstrap = api.beginFullSdkBootstrap(),
+      owner = api.bootstrapState(bootstrap),
+      ends = { ...api.leases.get(owner.lease) };
+    await assert.rejects(
+      api.bootstrapHeldFile(bootstrap, file, max),
+      (error) =>
+        mode === "false"
+          ? error === false
+          : /BOOTSTRAP_FILE_(?:BOUND|CHANGED|GROWTH)/.test(error.message),
+    );
+    assert.equal(readFileCalls, 0);
+    assert(allocMax <= max + 1);
+    assert(readMax <= max + 1);
+    assert.equal(closes, 1);
+    assert.equal(owner.bootstrapFds.size, 0);
+    assert.equal(api.leases.get(owner.lease).wallEnd, ends.wallEnd);
+    assert.equal(api.leases.get(owner.lease).monoEnd, ends.monoEnd);
+    if (mode === "pre-open-growth" || mode === "replace")
+      assert.equal(allocMax, 0);
+  }
+});

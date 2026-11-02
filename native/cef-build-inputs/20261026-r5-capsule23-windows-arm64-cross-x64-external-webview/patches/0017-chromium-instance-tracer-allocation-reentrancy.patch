@@ -1,0 +1,668 @@
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn b/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn
+--- a/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn
++++ b/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn
+@@ -232,6 +232,10 @@
+ }
+ 
+ component("raw_ptr") {
++  if (build_with_chromium) {
++    friend = [ ":sorng_instance_tracer_unittests" ]
++  }
++
+   # `gn check` is unhappy with most `#includes` when PA isn't
+   # actually built.
+   check_includes = use_partition_alloc
+@@ -246,6 +250,7 @@
+   ]
+   sources = [
+     "pointers/instance_tracer.cc",
++    "pointers/instance_tracer_storage.h",
+     "pointers/realloc_protected_iterator.cc",
+   ]
+   public_configs = [ ":public_includes" ]
+@@ -1046,6 +1051,24 @@
+ # TODO(crbug.com/40158212): Consider supporting building tests outside of
+ # chromium and having a dedicated 'partition_alloc_unittests' target.
+ if (build_with_chromium) {
++  import("//testing/test.gni")
++
++  # Exercise the exact private storage implementation, plus real raw_ptr
++  # integration when tracing is enabled, without the full allocator test suite.
++  test("sorng_instance_tracer_unittests") {
++    sources = [
++      "//base/test/run_all_unittests.cc",
++      "pointers/instance_tracer_storage_unittest.cc",
++    ]
++    deps = [
++      ":raw_ptr",
++      ":test_support",
++      "//base",
++      "//base/test:test_support",
++      "//testing/gtest",
++    ]
++  }
++
+   if (is_linux || is_chromeos || is_android) {
+     source_set("debug_proc_maps") {
+       testonly = true
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc
+--- a/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc
+@@ -5,8 +5,6 @@
+ #include "partition_alloc/pointers/instance_tracer.h"
+ 
+ #include <atomic>
+-#include <map>
+-#include <mutex>
+ #include <vector>
+ 
+ #include "partition_alloc/buildflags.h"
+@@ -15,6 +13,7 @@
+ #include "partition_alloc/partition_alloc_base/check.h"
+ #include "partition_alloc/partition_alloc_base/debug/stack_trace.h"
+ #include "partition_alloc/partition_alloc_base/no_destructor.h"
++#include "partition_alloc/pointers/instance_tracer_storage.h"
+ #include "partition_alloc/slot_address_and_size.h"
+ 
+ namespace base::internal {
+@@ -39,15 +38,10 @@
+ };
+ 
+ auto& GetStorage() {
+-  static partition_alloc::internal::base::NoDestructor<std::map<uint64_t, Info>>
++  static partition_alloc::internal::base::NoDestructor<
++      InstanceTracerStorage<Info>>
+       storage;
+   return *storage;
+-}
+-
+-auto& GetStorageMutex() {
+-  static partition_alloc::internal::base::NoDestructor<std::mutex>
+-      storage_mutex;
+-  return *storage_mutex;
+ }
+ 
+ }  // namespace
+@@ -63,31 +57,17 @@
+   const uintptr_t slot_count = reinterpret_cast<uintptr_t>(
+       partition_alloc::internal::InSlotMetadata::From(slot_and_size));
+ 
+-  const std::lock_guard guard(GetStorageMutex());
+-  GetStorage().try_emplace(owner_id, slot_count, may_dangle);
++  GetStorage().Trace(owner_id, slot_count, may_dangle);
+ }
+ 
+ void InstanceTracer::UntraceImpl(uint64_t owner_id) {
+   PA_CHECK(owner_id);
+-  // Allocator hooks may reenter UntraceImpl when a map node is deallocated.
+-  // Detach under the mutex, but destroy the node only after releasing it.
+-  // Keep instance tracking and all BackupRefPtr/dangling checks enabled.
+-  auto removed = [&] {
+-    const std::lock_guard guard(GetStorageMutex());
+-    return GetStorage().extract(owner_id);
+-  }();
++  GetStorage().Untrace(owner_id);
+ }
+ 
+ std::vector<std::array<const void*, 32>>
+ InstanceTracer::GetStackTracesForDanglingRefs(uintptr_t allocation) {
+-  std::vector<std::array<const void*, 32>> result;
+-  const std::lock_guard guard(GetStorageMutex());
+-  for (const auto& [id, info] : GetStorage()) {
+-    if (info.slot_count == allocation && !info.may_dangle) {
+-      result.push_back(info.stack_trace);
+-    }
+-  }
+-  return result;
++  return GetStorage().GetStackTracesForAllocation(allocation);
+ }
+ 
+ std::vector<std::array<const void*, 32>>
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer_storage.h b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer_storage.h
+new file mode 100644
+--- /dev/null
++++ b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer_storage.h
+@@ -0,0 +1,107 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef PARTITION_ALLOC_POINTERS_INSTANCE_TRACER_STORAGE_H_
++#define PARTITION_ALLOC_POINTERS_INSTANCE_TRACER_STORAGE_H_
++
++#include <algorithm>
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <map>
++#include <memory>
++#include <mutex>
++#include <utility>
++#include <vector>
++
++namespace base::internal {
++
++// Private implementation shared with allocation/lock-order regressions. The
++// production instantiation uses the standard mutex and standard allocators.
++template <typename Info,
++          typename Mutex = std::mutex,
++          typename NodeAllocator =
++              std::allocator<std::pair<const uint64_t, Info>>,
++          typename StackAllocator = std::allocator<std::array<const void*, 32>>>
++class InstanceTracerStorage {
++ public:
++  using StackTrace = std::array<const void*, 32>;
++  using Stacks = std::vector<StackTrace, StackAllocator>;
++
++  template <typename... Args>
++  void Trace(uint64_t owner_id, Args&&... args) {
++    // Both allocation and Info construction (including stack collection) can
++    // reenter tracing through allocator hooks. Prepare the node without the
++    // storage mutex, then transfer ownership without allocating under it.
++    Storage pending;
++    pending.try_emplace(owner_id, std::forward<Args>(args)...);
++    auto unused = InsertPrepared(pending.extract(owner_id));
++    // A duplicate retains the original Info. Its unused prepared node is
++    // destroyed here, after InsertPrepared has released the storage mutex.
++    (void)unused;
++  }
++
++  void Untrace(uint64_t owner_id) {
++    // Preserve the existing extract fix: node deallocation can reenter tracing,
++    // so detach under the mutex and destroy only after it has been released.
++    auto removed = [&] {
++      const std::lock_guard guard(mutex_);
++      return storage_.extract(owner_id);
++    }();
++  }
++
++  Stacks GetStackTracesForAllocation(uintptr_t allocation) {
++    Stacks result;
++    const std::size_t maximum = result.max_size();
++    for (;;) {
++      std::size_t needed = 0;
++      {
++        const std::lock_guard guard(mutex_);
++        for (const auto& [id, info] : storage_) {
++          if (info.slot_count == allocation && !info.may_dangle) {
++            ++needed;
++          }
++        }
++        if (needed <= result.capacity()) {
++          // The result remains empty until one complete copy fits. Counting
++          // and copying under this same lock give a linearized snapshot in
++          // owner-key order, without any heap work or partial/truncated data.
++          for (const auto& [id, info] : storage_) {
++            if (info.slot_count == allocation && !info.may_dangle) {
++              result.push_back(info.stack_trace);
++            }
++          }
++          break;
++        }
++      }
++      // Concurrent additions may require another pass. Grow geometrically so
++      // small additions cannot force repeated exact-sized reallocations. The
++      // only bound is the vector's existing representable maximum, not a cap
++      // on the number of returned traces; reserve retains its failure policy.
++      const std::size_t capacity = result.capacity();
++      const std::size_t grown = capacity > maximum / 2
++                                    ? maximum
++                                    : std::max<std::size_t>(1, capacity * 2);
++      result.reserve(std::max(needed, grown));
++    }
++    return result;
++  }
++
++ private:
++  using Storage = std::map<uint64_t, Info, std::less<uint64_t>, NodeAllocator>;
++  static_assert(std::allocator_traits<NodeAllocator>::is_always_equal::value,
++                "Prepared map nodes must use interchangeable allocators");
++
++  typename Storage::node_type InsertPrepared(typename Storage::node_type node) {
++    const std::lock_guard guard(mutex_);
++    return storage_.insert(std::move(node)).node;
++  }
++
++  Mutex mutex_;
++  Storage storage_;
++};
++
++}  // namespace base::internal
++
++#endif  // PARTITION_ALLOC_POINTERS_INSTANCE_TRACER_STORAGE_H_
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer_storage_unittest.cc b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer_storage_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer_storage_unittest.cc
+@@ -0,0 +1,431 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "partition_alloc/pointers/instance_tracer_storage.h"
++
++#include <atomic>
++#include <cstdlib>
++#include <new>
++#include <thread>
++
++#if defined(SORNG_INSTANCE_TRACER_STORAGE_STANDALONE)
++#include <iostream>
++#include <string_view>
++namespace {
++struct TestCase {
++  const char* name;
++  void (*run)();
++};
++auto& Cases() {
++  static std::vector<TestCase> cases;
++  return cases;
++}
++std::atomic<int> failures{0};
++struct Register {
++  Register(const char* name, void (*run)()) { Cases().push_back({name, run}); }
++};
++void Expect(bool passed, const char* expression, int line) {
++  if (!passed) {
++    ++failures;
++    std::cerr << "FAIL " << line << ": " << expression << '\n';
++  }
++}
++}  // namespace
++#define TEST(suite, name)                                 \
++  void suite##_##name();                                  \
++  static Register register_##name(#name, suite##_##name); \
++  void suite##_##name()
++#define EXPECT_TRUE(value) Expect(!!(value), #value, __LINE__)
++#define EXPECT_EQ(left, right) \
++  Expect((left) == (right), #left " == " #right, __LINE__)
++#else
++#include "partition_alloc/partition_alloc_for_testing.h"
++#include "partition_alloc/pointers/instance_tracer.h"
++#include "partition_alloc/pointers/raw_ptr.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#endif
++
++namespace base::internal {
++namespace {
++thread_local unsigned held_mutexes = 0;
++thread_local bool in_allocator_hook = false;
++std::atomic<unsigned> locked_allocations{0};
++std::atomic<unsigned> locked_deallocations{0};
++std::atomic<unsigned> allocations{0};
++struct Callback {
++  template <typename F>
++  static Callback From(F& function) {
++    return {&function, [](void* context) { (*static_cast<F*>(context))(); }};
++  }
++  explicit operator bool() const { return invoke != nullptr; }
++  void operator()() const { invoke(context); }
++  void* context = nullptr;
++  void (*invoke)(void*) = nullptr;
++};
++Callback allocation_hook;
++Callback construction_hook;
++std::atomic<unsigned> locked_constructions{0};
++std::atomic<unsigned> locked_destructions{0};
++
++// Test-only BasicLockable: observe the same critical section boundaries without
++// pretending a wrapper transfers ownership of libc++'s separately annotated
++// std::mutex member. The production instantiation remains std::mutex.
++struct ObservedMutex {
++  void lock() {
++    while (held.test_and_set(std::memory_order_acquire)) {
++      std::this_thread::yield();
++    }
++    ++held_mutexes;
++  }
++  void unlock() {
++    --held_mutexes;
++    held.clear(std::memory_order_release);
++  }
++  std::atomic_flag held = ATOMIC_FLAG_INIT;
++};
++
++template <typename T>
++struct ObservedAllocator {
++  using value_type = T;
++  using is_always_equal = std::true_type;
++  ObservedAllocator() = default;
++  template <typename U>
++  ObservedAllocator(const ObservedAllocator<U>&) {}
++  T* allocate(size_t count) {
++    ++allocations;
++    if (held_mutexes)
++      ++locked_allocations;
++    if (!held_mutexes && !in_allocator_hook && allocation_hook) {
++      in_allocator_hook = true;
++      allocation_hook();
++      in_allocator_hook = false;
++    }
++    return std::allocator<T>().allocate(count);
++  }
++  void deallocate(T* pointer, size_t count) {
++    if (held_mutexes)
++      ++locked_deallocations;
++    std::allocator<T>().deallocate(pointer, count);
++  }
++  template <typename U>
++  bool operator==(const ObservedAllocator<U>&) const {
++    return true;
++  }
++};
++
++struct TestInfo {
++  TestInfo(uintptr_t slot, bool dangling, uintptr_t marker)
++      : slot_count(slot), may_dangle(dangling) {
++    if (held_mutexes)
++      ++locked_constructions;
++    else if (construction_hook)
++      construction_hook();
++    stack_trace[0] = reinterpret_cast<const void*>(marker);
++    stack_trace[1] = reinterpret_cast<const void*>(slot);
++  }
++  ~TestInfo() {
++    if (held_mutexes)
++      ++locked_destructions;
++  }
++  uintptr_t slot_count;
++  bool may_dangle;
++  std::array<const void*, 32> stack_trace{};
++};
++using Storage = InstanceTracerStorage<
++    TestInfo,
++    ObservedMutex,
++    ObservedAllocator<std::pair<const uint64_t, TestInfo>>,
++    ObservedAllocator<std::array<const void*, 32>>>;
++void Reset() {
++  allocation_hook = {};
++  construction_hook = {};
++  locked_constructions = 0;
++  locked_destructions = 0;
++  locked_allocations = 0;
++  locked_deallocations = 0;
++  allocations = 0;
++  EXPECT_EQ(held_mutexes, 0u);
++}
++uintptr_t Marker(const Storage::StackTrace& trace) {
++  return reinterpret_cast<uintptr_t>(trace[0]);
++}
++
++TEST(InstanceTracerStorageTest,
++     TraceAllocationAndRemovalNeverHoldStorageMutex) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 11);
++  EXPECT_EQ(locked_allocations.load(), 0u);
++  storage.Untrace(1);
++  storage.Untrace(1);
++  EXPECT_EQ(locked_deallocations.load(), 0u);
++  EXPECT_EQ(locked_constructions.load(), 0u);
++  EXPECT_EQ(locked_destructions.load(), 0u);
++}
++
++TEST(InstanceTracerStorageTest, SnapshotAllocationNeverHoldsStorageMutex) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 11);
++  locked_allocations = 0;
++  auto traces = storage.GetStackTracesForAllocation(7);
++  EXPECT_EQ(traces.size(), 1u);
++  EXPECT_EQ(locked_allocations.load(), 0u);
++  storage.Untrace(1);
++}
++
++TEST(InstanceTracerStorageTest,
++     DuplicatePreservesOriginalAndDestroysUnusedNodeOutsideMutex) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 11);
++  storage.Trace(1, 8, true, 22);
++  auto traces = storage.GetStackTracesForAllocation(7);
++  EXPECT_EQ(traces.size(), 1u);
++  if (!traces.empty())
++    EXPECT_EQ(Marker(traces[0]), 11u);
++  EXPECT_TRUE(storage.GetStackTracesForAllocation(8).empty());
++  storage.Untrace(1);
++  EXPECT_EQ(locked_allocations.load(), 0u);
++  EXPECT_EQ(locked_deallocations.load(), 0u);
++}
++
++TEST(InstanceTracerStorageTest,
++     SnapshotIsCompleteSortedAndFiltersSlotAndMayDangle) {
++  Reset();
++  Storage storage;
++  storage.Trace(30, 7, false, 30);
++  storage.Trace(10, 7, false, 10);
++  storage.Trace(20, 7, true, 20);
++  storage.Trace(40, 8, false, 40);
++  const auto traces = storage.GetStackTracesForAllocation(7);
++  EXPECT_EQ(traces.size(), 2u);
++  if (traces.size() == 2) {
++    EXPECT_EQ(Marker(traces[0]), 10u);
++    EXPECT_EQ(Marker(traces[1]), 30u);
++  }
++  storage.Untrace(10);
++  EXPECT_EQ(traces.size(),
++            2u);  // The returned snapshot owns its complete copy.
++  storage.Untrace(20);
++  storage.Untrace(30);
++  storage.Untrace(40);
++  EXPECT_TRUE(storage.GetStackTracesForAllocation(7).empty());
++}
++
++TEST(InstanceTracerStorageTest, NodeAllocatorCanReenterRemovalBeforeInsertion) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 11);
++  bool called = false;
++  auto hook = [&] {
++    called = true;
++    storage.Untrace(1);
++  };
++  allocation_hook = Callback::From(hook);
++  storage.Trace(2, 7, false, 22);
++  allocation_hook = {};
++  EXPECT_TRUE(called);
++  const auto traces = storage.GetStackTracesForAllocation(7);
++  EXPECT_EQ(traces.size(), 1u);
++  if (!traces.empty())
++    EXPECT_EQ(Marker(traces[0]), 22u);
++  storage.Untrace(2);
++  EXPECT_EQ(locked_deallocations.load(), 0u);
++}
++
++TEST(InstanceTracerStorageTest,
++     SnapshotRetriesAfterCapacityAllocationAddsOwners) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 1);
++  bool injected = false;
++  auto hook = [&] {
++    if (injected)
++      return;
++    injected = true;
++    for (uint64_t id = 2; id <= 17; ++id)
++      storage.Trace(id, 7, false, id);
++  };
++  allocation_hook = Callback::From(hook);
++  const auto traces = storage.GetStackTracesForAllocation(7);
++  allocation_hook = {};
++  EXPECT_TRUE(injected);
++  EXPECT_EQ(traces.size(), 17u);
++  for (size_t i = 0; i < traces.size(); ++i)
++    EXPECT_EQ(Marker(traces[i]), i + 1);
++  for (uint64_t id = 1; id <= 17; ++id)
++    storage.Untrace(id);
++  EXPECT_EQ(locked_allocations.load(), 0u);
++  EXPECT_EQ(locked_deallocations.load(), 0u);
++}
++
++TEST(InstanceTracerStorageTest, InfoConstructionCanReenterRemoval) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 11);
++  bool called = false;
++  auto hook = [&] {
++    called = true;
++    storage.Untrace(1);
++  };
++  construction_hook = Callback::From(hook);
++  storage.Trace(2, 7, false, 22);
++  construction_hook = {};
++  EXPECT_TRUE(called);
++  const auto traces = storage.GetStackTracesForAllocation(7);
++  EXPECT_EQ(traces.size(), 1u);
++  if (!traces.empty())
++    EXPECT_EQ(Marker(traces[0]), 22u);
++  storage.Untrace(2);
++  EXPECT_EQ(locked_constructions.load(), 0u);
++  EXPECT_EQ(locked_destructions.load(), 0u);
++}
++
++TEST(InstanceTracerStorageTest,
++     GeometricCapacityProgressesDuringReserveTimeGrowth) {
++  Reset();
++  Storage storage;
++  storage.Trace(1, 7, false, 1);
++  unsigned reserves = 0;
++  auto hook = [&] {
++    if (++reserves <= 17)
++      storage.Trace(reserves + 1, 7, false, reserves + 1);
++  };
++  allocation_hook = Callback::From(hook);
++  const auto traces = storage.GetStackTracesForAllocation(7);
++  allocation_hook = {};
++  EXPECT_TRUE(reserves > 0 && reserves <= 4);
++  EXPECT_EQ(traces.size(), reserves + 1);
++  for (size_t i = 0; i < traces.size(); ++i)
++    EXPECT_EQ(Marker(traces[i]), i + 1);
++  for (uint64_t id = 1; id <= reserves + 1; ++id)
++    storage.Untrace(id);
++  EXPECT_EQ(locked_allocations.load(), 0u);
++  EXPECT_EQ(locked_deallocations.load(), 0u);
++}
++
++TEST(InstanceTracerStorageTest, FourConcurrentWritersAndSnapshotsFinishEmpty) {
++  Reset();
++  Storage storage;
++  std::atomic<bool> bad_snapshot{false};
++  std::array<std::thread, 4> threads;
++  for (size_t worker = 0; worker < threads.size(); ++worker) {
++    threads[worker] = std::thread([&, worker] {
++      for (uint64_t iteration = 1; iteration <= 256; ++iteration) {
++        const uint64_t id = 1 + worker * 256 + iteration;
++        storage.Trace(id, 7, false, id);
++        const auto traces = storage.GetStackTracesForAllocation(7);
++        uintptr_t previous = 0;
++        for (const auto& trace : traces) {
++          if (Marker(trace) <= previous ||
++              reinterpret_cast<uintptr_t>(trace[1]) != 7)
++            bad_snapshot = true;
++          previous = Marker(trace);
++        }
++        storage.Untrace(id);
++      }
++    });
++  }
++  for (auto& thread : threads)
++    thread.join();
++  EXPECT_TRUE(!bad_snapshot.load());
++  EXPECT_TRUE(storage.GetStackTracesForAllocation(7).empty());
++  EXPECT_EQ(locked_allocations.load(), 0u);
++  EXPECT_EQ(locked_deallocations.load(), 0u);
++}
++
++#if !defined(SORNG_INSTANCE_TRACER_STORAGE_STANDALONE)
++#if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_INSTANCE_TRACER) && \
++    PA_BUILDFLAG(USE_RAW_PTR_BACKUP_REF_IMPL)
++// Explicit BRP-enabled allocations make these real raw_ptr tests independent
++// of whether the test executable's global new uses the allocator shim.
++class BrpAllocation {
++ public:
++  explicit BrpAllocation(int value)
++      : allocator_([] {
++          partition_alloc::PartitionOptions options;
++          options.backup_ref_ptr = partition_alloc::PartitionOptions::kEnabled;
++          return options;
++        }()) {
++    partition_alloc::PartitionAllocGlobalInit([](size_t) { std::abort(); });
++    value_ =
++        ::new (allocator_.root()->Alloc(sizeof(int), "tracer-test")) int(value);
++  }
++  ~BrpAllocation() { allocator_.root()->Free(value_); }
++  int* get() const { return value_; }
++
++ private:
++  partition_alloc::PartitionAllocatorForTesting allocator_;
++  int* value_;
++};
++
++TEST(InstanceTracerStorageIntegrationTest,
++     RealRawPtrCopyAndCleanupKeepExactRecords) {
++  BrpAllocation owned(8);
++  EXPECT_TRUE(
++      InstanceTracer::GetStackTracesForAddressForTest(owned.get()).empty());
++  {
++    base::raw_ptr<int> first = owned.get();
++    const auto one =
++        InstanceTracer::GetStackTracesForAddressForTest(owned.get());
++    EXPECT_EQ(one.size(), 1u);
++    {
++      base::raw_ptr<int> second = first;
++      EXPECT_EQ(
++          InstanceTracer::GetStackTracesForAddressForTest(owned.get()).size(),
++          2u);
++    }
++    EXPECT_EQ(InstanceTracer::GetStackTracesForAddressForTest(owned.get()),
++              one);
++  }
++  EXPECT_TRUE(
++      InstanceTracer::GetStackTracesForAddressForTest(owned.get()).empty());
++}
++TEST(InstanceTracerStorageIntegrationTest,
++     RealRawPtrAssignmentMovesTrackingBetweenAllocations) {
++  BrpAllocation first(1);
++  BrpAllocation second(2);
++  {
++    base::raw_ptr<int> pointer = first.get();
++    pointer = second.get();
++    EXPECT_TRUE(
++        InstanceTracer::GetStackTracesForAddressForTest(first.get()).empty());
++    EXPECT_EQ(
++        InstanceTracer::GetStackTracesForAddressForTest(second.get()).size(),
++        1u);
++  }
++  EXPECT_TRUE(
++      InstanceTracer::GetStackTracesForAddressForTest(second.get()).empty());
++}
++
++TEST(InstanceTracerStorageIntegrationTest,
++     RealMayDangleIsFilteredWithoutDroppingNormalOwner) {
++  BrpAllocation owned(8);
++  {
++    base::raw_ptr<int> normal = owned.get();
++    base::raw_ptr<int, base::RawPtrTraits::kMayDangle> dangling = owned.get();
++    EXPECT_EQ(
++        InstanceTracer::GetStackTracesForAddressForTest(owned.get()).size(),
++        1u);
++  }
++  EXPECT_TRUE(
++      InstanceTracer::GetStackTracesForAddressForTest(owned.get()).empty());
++}
++#endif
++#endif
++}  // namespace
++}  // namespace base::internal
++
++#if defined(SORNG_INSTANCE_TRACER_STORAGE_STANDALONE)
++int main() {
++  for (const auto& test : Cases()) {
++    std::cout << "RUN " << test.name << '\n';
++    test.run();
++  }
++  std::cout << "tests=" << Cases().size() << " failures=" << failures.load()
++            << '\n';
++  return failures.load() ? 1 : 0;
++}
++#endif

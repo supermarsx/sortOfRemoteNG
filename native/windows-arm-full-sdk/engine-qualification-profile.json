@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "kind": "windows-arm-compiler-input-qualification-policy",
+  "mode": "compiler-input-qualification",
+  "ref": "refs/heads/codex/windows-arm-engine-qualification-20261101",
+  "repository": "supermarsx/sortOfRemoteNG",
+  "repositoryId": "1010282954",
+  "host": {
+    "platform": "win32",
+    "architecture": "x64",
+    "runner": "windows-2025-vs2026"
+  },
+  "target": "aarch64-pc-windows-msvc",
+  "chromium": "a654841425914cbb703a2931e07b70a83aedbafd",
+  "cef": "682c378d70d5780061e96644dca16ddd8fd157a9",
+  "images": {
+    "20261030.294.1": {
+      "profile": "image-qualified-current-profile.json",
+      "profileSha256": "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+      "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+      "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/"
+    },
+    "20261021.278.1": {
+      "profile": "image-qualified-20261021-profile.json",
+      "profileSha256": "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+      "sourceId": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+      "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/"
+    }
+  },
+  "executionAdmitted": false,
+  "sdkBuilt": false,
+  "nativeAcceptance": false,
+  "runtimeReady": false,
+  "intentScope": "Generated input and compiler/linker prerequisite only; not CEF engine completion",
+  "primarySources": [
+    {
+      "file": "pa-build.gn",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/a654841425914cbb703a2931e07b70a83aedbafd/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn",
+      "bytes": 45276,
+      "sha256": "0d12ddbf0e9ffb4df8eb2ad91ba72546146f4418747dd33f27195f4b99fa78fe"
+    },
+    {
+      "file": "pa-header.gni",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/a654841425914cbb703a2931e07b70a83aedbafd/base/allocator/partition_allocator/src/partition_alloc/buildflag_header.gni",
+      "bytes": 4133,
+      "sha256": "1ac0cd4025922ec85635696eb7cef13f7e6980b6fc194efb8b965a007f66a5f6"
+    },
+    {
+      "file": "pa-writer.py",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/a654841425914cbb703a2931e07b70a83aedbafd/base/allocator/partition_allocator/src/partition_alloc/write_buildflag_header.py",
+      "bytes": 3507,
+      "sha256": "7c21cf63a64a89c514cb8f32055feb9733fc3b569dce1f352c7b65814c251118"
+    },
+    {
+      "file": "pa-options.gni",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/a654841425914cbb703a2931e07b70a83aedbafd/base/allocator/partition_allocator/partition_alloc.gni",
+      "bytes": 27958,
+      "sha256": "eb4cda4f3b0fbbde6b1dbf9ea1b023167bc11c674f304750f6970f74e37335b8"
+    },
+    {
+      "file": "pa-overrides.gni",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/a654841425914cbb703a2931e07b70a83aedbafd/build_overrides/partition_alloc.gni",
+      "bytes": 6283,
+      "sha256": "07ff68955fbdc900e62c1e6d04b68cc1a1f05574c94d0ea01cab23b38baca89e"
+    },
+    {
+      "file": "cef-build.gn",
+      "url": "https://raw.githubusercontent.com/chromiumembedded/cef/682c378d70d5780061e96644dca16ddd8fd157a9/BUILD.gn",
+      "bytes": 97240,
+      "sha256": "6157524c9ce3af1c9455a498945d66b67c41a3aa1146da108fc589d8407d8f79"
+    },
+    {
+      "file": "cef-config.py",
+      "url": "https://raw.githubusercontent.com/chromiumembedded/cef/682c378d70d5780061e96644dca16ddd8fd157a9/tools/make_config_header.py",
+      "bytes": 2210,
+      "sha256": "2c10414a9b2429b6756577f55bfb08b7f71de5d895e04f89dc0ce534183af51c"
+    },
+    {
+      "file": "cef-build.h",
+      "url": "https://raw.githubusercontent.com/chromiumembedded/cef/682c378d70d5780061e96644dca16ddd8fd157a9/include/base/cef_build.h",
+      "bytes": 9973,
+      "sha256": "271899c0fc377011cea96bbeda01da560878276964df699cffe3f07c6c7f8390"
+    }
+  ],
+  "generatedInputs": [
+    {
+      "role": "partitionAlloc",
+      "label": "//base/allocator/partition_allocator/src/partition_alloc:buildflags",
+      "relativeOutput": "gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h"
+    },
+    {
+      "role": "cefConfig",
+      "label": "//cef:make_config_header",
+      "relativeOutput": "gen/cef/include/cef_config.h"
+    }
+  ],
+  "partitionAllocMacros": [
+    "ENABLE_USER_SPACE_ZERO_SEGMENT",
+    "USER_SPACE_ZERO_SEGMENT_SIZE_MB",
+    "BACKUP_REF_PTR_EXTRA_OOB_CHECKS",
+    "BACKUP_REF_PTR_POISON_OOB_PTR",
+    "CAN_UNWIND_WITH_FRAME_POINTERS",
+    "CHECKED_SPAN",
+    "CHECKED_SPAN_HAS_METADATA_SUPPORT",
+    "DCHECKS_ARE_ON",
+    "DCHECK_IS_CONFIGURABLE",
+    "ENABLE_AUTO_PARTITIONING",
+    "ENABLE_BACKUP_REF_PTR_FEATURE_FLAG",
+    "ENABLE_BACKUP_REF_PTR_INSTANCE_TRACER",
+    "ENABLE_BACKUP_REF_PTR_SLOW_CHECKS",
+    "ENABLE_BACKUP_REF_PTR_SUPPORT",
+    "ENABLE_BRP_FOR_UNPROTECTED_IN_RELEASE_RAW_PTR",
+    "ENABLE_DANGLING_RAW_PTR_CHECKS",
+    "ENABLE_DANGLING_RAW_PTR_FEATURE_FLAG",
+    "ENABLE_GWP_ASAN_SUPPORT",
+    "ENABLE_PARTITION_LOCK_REENTRANCY_CHECK",
+    "ENABLE_PARTITION_LOCK_PRIORITY_INHERITANCE",
+    "ENABLE_PKEYS",
+    "ENABLE_POINTER_ARITHMETIC_TRAIT_CHECK",
+    "ENABLE_POINTER_COMPRESSION",
+    "ENABLE_POINTER_SUBTRACTION_CHECK",
+    "ENABLE_SYSTEM_FREE_FALLBACK",
+    "MOVE_METADATA_OUT_OF_GIGACAGE_FOR_64_BITS_POINTERS",
+    "ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL",
+    "ENABLE_THREAD_ISOLATION",
+    "EXPENSIVE_DCHECKS_ARE_ON",
+    "FORCE_DISABLE_BACKUP_REF_PTR_FEATURE",
+    "FORCE_ENABLE_RAW_PTR_EXCLUSION",
+    "FORWARD_THROUGH_MALLOC",
+    "HAS_64_BIT_POINTERS",
+    "HAS_MEMORY_TAGGING",
+    "IS_ANDROID",
+    "IS_CHROMEOS",
+    "IS_COMPONENT_BUILD",
+    "IS_DEBUG",
+    "IS_HWASAN",
+    "MEMORY_TOOL_REPLACES_ALLOCATOR",
+    "OFFICIAL",
+    "RAW_PTR_ZERO_ON_CONSTRUCT",
+    "RAW_PTR_ZERO_ON_DESTRUCT",
+    "RAW_PTR_ZERO_ON_MOVE",
+    "REALLOC_GROWTH_FACTOR_MITIGATION",
+    "RECORD_ALLOC_INFO",
+    "SHIM_SUPPORTS_ALLOC_TOKEN",
+    "SHIM_SUPPORTS_SIZED_DEALLOC",
+    "SMALLER_PARTITION_COOKIE",
+    "STACK_SCAN_SUPPORTED",
+    "USE_ALLOCATOR_SHIM",
+    "USE_ASAN_BACKUP_REF_PTR",
+    "USE_ASAN_BACKUP_REF_PTR_V2",
+    "USE_FULL_MTE",
+    "USE_LARGE_EMPTY_SLOT_SPAN_RING",
+    "USE_PARTITION_ALLOC",
+    "USE_PARTITION_ALLOC_AS_MALLOC",
+    "USE_PARTITION_COOKIE",
+    "USE_RAW_PTR_ASAN_UNOWNED_IMPL",
+    "USE_RAW_PTR_BACKUP_REF_IMPL",
+    "USE_RAW_PTR_HOOKABLE_IMPL"
+  ],
+  "explicitArgumentInvariants": {
+    "ENABLE_BACKUP_REF_PTR_INSTANCE_TRACER": 0,
+    "HAS_64_BIT_POINTERS": 1,
+    "IS_COMPONENT_BUILD": 0,
+    "IS_DEBUG": 0
+  },
+  "securityPolicyMinimums": {
+    "ENABLE_BACKUP_REF_PTR_SUPPORT": 1,
+    "USE_RAW_PTR_BACKUP_REF_IMPL": 1,
+    "ENABLE_BACKUP_REF_PTR_FEATURE_FLAG": 1,
+    "FORCE_DISABLE_BACKUP_REF_PTR_FEATURE": 0
+  },
+  "securityPolicyCaveat": "Minimum policy only; not measured ARM64 defaults. Full actual target macro profile must be reviewed before execution admission. No x64 capsule macro table imported.",
+  "tools": {
+    "python": {
+      "path": "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+      "bytes": 104952,
+      "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+    },
+    "clang": {
+      "relativePath": "llvm/bin/clang-cl.exe",
+      "bytes": 103794176,
+      "sha256": "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7"
+    },
+    "lld": {
+      "relativePath": "llvm/bin/lld-link.exe",
+      "bytes": null,
+      "sha256": "170b2dfc2bc9f0f95f828fbcc6a833e040bcb909b5ac9cb6b318e4ce05f41e3b"
+    },
+    "gn": {
+      "relativePath": "source-checkout/src/buildtools/win/gn.exe",
+      "bytes": 2601472,
+      "sha256": "e398eefd1241ad44e98aececa6a260abac0fdcb80f41c23176944ad3f0e76486"
+    },
+    "siso": {
+      "relativePath": "siso/siso.exe",
+      "bytes": 64629760,
+      "sha256": "0fbb9c305e026d417943cf3742efce3aa34755dc97fe71cd55a21d2c90bf2f90"
+    }
+  },
+  "jobContract": {
+    "implementation": "native/windows-arm-full-sdk/job.py::run_job",
+    "foundationSha256": "92a16bb6c4308552bccf0cacf107261a910d218e0bf595a5d3afac31d5d14d80",
+    "processes": 64,
+    "memoryBytes": 8589934592,
+    "cpuRate": 2500,
+    "limitFlags": 8712,
+    "inheritedHandles": 3,
+    "compileSeconds": 900,
+    "cleanupSeconds": 30,
+    "finalReserveSeconds": 120,
+    "wholeSeconds": 7200
+  },
+  "missingExecutionFacts": [
+    "actual-successful-source-gn-and-owned-parent-joins",
+    "actual-gn-desc-label-toolchain-output-bindings",
+    "complete-reviewed-arm64-generated-security-profile",
+    "reviewed-lld-size-loader-import-closure",
+    "actual-compiler-linker-job-normal-timeout-cancel-joins",
+    "separate-mode-ref-source-closure-and-job-command-authority"
+  ],
+  "notGranted": [
+    "engine-compilation",
+    "compiled-checkpoint",
+    "restore",
+    "sdk-publication",
+    "native-acceptance",
+    "runtime-catalog-admission"
+  ]
+}

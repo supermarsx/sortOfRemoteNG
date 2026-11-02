@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-hosted-discovery-recipe",
+  "chromiumCommit": "a654841425914cbb703a2931e07b70a83aedbafd",
+  "requirementsSources": [
+    "docs/windows_build_instructions.md",
+    "docs/linux/build_instructions.md",
+    "build/config/mac/mac_sdk_overrides.gni"
+  ],
+  "minimumPython": [3, 12],
+  "minimumWindowsVisualStudioMajor": 18,
+  "requiredWindowsSdk": "10.0.28000.0",
+  "minimumWindowsDebugger": [10, 0, 26100, 3323],
+  "minimumMacSdkMajor": 15,
+  "minimumFreeDiskGiB": 100,
+  "linuxCheckpointReserveGiB": 4,
+  "linuxCheckpointCleanupPaths": ["/usr/share/doc"],
+  "minimumMemoryGiB": 8,
+  "provisioning": {
+    "windowsSdk": {
+      "url": "https://download.microsoft.com/download/78b533c3-6724-4e28-a984-b9fa93265781/KIT_BUNDLE_WINDOWSSDK_MEDIACREATION/winsdksetup.exe",
+      "size": 1451984,
+      "sha256": "e9f1bde566381355e594e2f90daf4f714eb5c7ef2c45c501ce236afe2abea300",
+      "productVersion": "10.1.28000.2270",
+      "signerThumbprint": "B835FC295FFB94EA2FCA23B0E9C1EDA3FBA4E07D",
+      "features": [
+        "OptionId.DesktopCPPx64",
+        "OptionId.DesktopCPParm64",
+        "OptionId.WindowsDesktopDebuggers"
+      ]
+    },
+    "linuxSupplementalPackages": ["libpipewire-0.3-dev", "libx11-xcb-dev"],
+    "linuxDependencies": {
+      "url": "https://chromium.googlesource.com/chromium/src/+/a654841425914cbb703a2931e07b70a83aedbafd/build/install-build-deps.py?format=TEXT",
+      "encoding": "base64",
+      "size": 30425,
+      "sha256": "a71e5ed8e3cbcaf87b255ff124c424cda73b48bcb3fd6a4d44bed2de42c68f19",
+      "arguments": [
+        "--no-prompt",
+        "--no-syms",
+        "--no-chromeos-fonts",
+        "--no-arm",
+        "--no-backwards-compatible"
+      ]
+    },
+    "macMetalToolchain": {
+      "component": "MetalToolchain",
+      "executable": "/usr/bin/xcodebuild",
+      "arguments": ["-downloadComponent", "MetalToolchain"],
+      "maximumMilliseconds": 600000,
+      "probeMilliseconds": 30000,
+      "maximumOutputBytes": 65536,
+      "primarySource": "https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components",
+      "pinnedChromiumSource": "build/xcode_binaries.yaml",
+      "pinnedChromiumSha256": "7e9c580489755614351afabb568a20a32d61f5e5dd7d41032aa44b021995f89b",
+      "provenance": "newly-observed-apple-component-not-prepinned"
+    }
+  },
+  "targets": [
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "runner": "windows-2025-vs2026",
+      "platform": "win32",
+      "architecture": "x64"
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "runner": "windows-11-arm",
+      "platform": "win32",
+      "architecture": "arm64"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "runner": "ubuntu-24.04",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "runner": "ubuntu-24.04-arm",
+      "platform": "linux",
+      "architecture": "arm64"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "runner": "macos-15-intel",
+      "platform": "darwin",
+      "architecture": "x64"
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "runner": "macos-15",
+      "platform": "darwin",
+      "architecture": "arm64"
+    }
+  ],
+  "linuxCleanupPaths": [
+    "/usr/local/lib/android",
+    "/usr/share/dotnet",
+    "/opt/ghc",
+    "/opt/hostedtoolcache/CodeQL"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Separate reviewed20261021 x64-host Windows ARM64 R5 source/GN candidate only; no engine/SDK/restore/publication.",
+  "sourceLockIdentity": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+  "sourceLockRawSha256": "85f7d1c3c4658f4f515e4c427499fabaef14d8c9b2b3e39a1da5222acaefda45",
+  "baseSourceLockIdentity": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+  "helperSourceCommit": "0fd6ebc70f110ff80909fe996fb4abf5499c9468",
+  "bridgeHeaderSha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+  "payloadCount": 23,
+  "baselinePayloadsUnchanged": true,
+  "unpromotedR6Included": false,
+  "image": "20261021.278.1",
+  "freshOldHostByteVerificationRequired": true,
+  "noCurrentImageFallback": true
+}

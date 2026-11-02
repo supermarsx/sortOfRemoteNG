@@ -66,3 +66,11 @@ tests/fixtures/cef/mac_clang_openscreen.DEPS -text
 # The fixed migration reader requires canonical JSON bytes on every host.
 native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json -text
 tests/fixtures/cef/mac_clang_tarball_deps.patch -text
+
+# Fixed Windows full-SDK runtime inputs preserve reviewed bytes.
+native/windows-arm-full-sdk/** -text
+native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/** -text -whitespace
+native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/** -text -whitespace
+native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/** -text -whitespace
+tests/fixtures/cef/windows-arm-full-sdk-historical/** -text
+native/cef-build-inputs/20261026-r5-capsule23-windows-arm64-cross-x64-external-webview/** -text -whitespace

@@ -1,0 +1,117 @@
+name: Windows ARM64 owned SDK qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      restore_run:
+        description: Exact successful checkpoint run id, or 0 for a fresh attempt
+        type: string
+        required: true
+        default: "0"
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: windows-arm-full-sdk-main
+  cancel-in-progress: false
+
+jobs:
+  sdk:
+    if: github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 360
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      CEF_FULLSDK_RESTORE_RUN: ${{ inputs.restore_run }}
+    steps:
+      - name: Capture original job clocks before checkout or setup
+        shell: pwsh
+        run: |
+          $fullSdkTickStart = [Environment]::TickCount64
+          $fullSdkWallStart = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+          $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSEdition -cne 'Core' -or [Environment]::Version.Major -lt 8 -or [Environment]::Version.Major -gt 10) { throw 'FULL_SDK_FIRST_CLOCK_RUNTIME' }
+          if ($env:GITHUB_REPOSITORY -cne 'supermarsx/sortOfRemoteNG' -or $env:GITHUB_REPOSITORY_ID -cne '1010282954' -or $env:GITHUB_REF -cne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch' -or $env:GITHUB_WORKFLOW_REF -cne 'supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-full-sdk.yml@refs/heads/main' -or $env:GITHUB_JOB -cne 'sdk' -or $env:GITHUB_SHA -cne $env:GITHUB_WORKFLOW_SHA) { throw 'FULL_SDK_FIRST_CLOCK_SCOPE' }
+          $fullSdkClock = [ordered]@{ schemaVersion=1; kind='windows-arm-first-workflow-clock'; clock='windows-gettickcount64'; dotnetMajor=[Environment]::Version.Major; wallStartMs=$fullSdkWallStart; tickStartMs=$fullSdkTickStart; wallEndMs=($fullSdkWallStart+21600000); tickEndMs=($fullSdkTickStart+21600000); repository=$env:GITHUB_REPOSITORY; repositoryId=$env:GITHUB_REPOSITORY_ID; ref=$env:GITHUB_REF; event=$env:GITHUB_EVENT_NAME; runId=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT; head=$env:GITHUB_SHA; workflowSha=$env:GITHUB_WORKFLOW_SHA; workflowRef=$env:GITHUB_WORKFLOW_REF; job=$env:GITHUB_JOB; image=$env:ImageVersion }
+          $fullSdkClockRaw = $fullSdkClock | ConvertTo-Json -Compress -Depth 3
+          if ($fullSdkClockRaw.Length -gt 4096 -or $fullSdkClockRaw -match '[^\x20-\x7e]') { throw 'FULL_SDK_FIRST_CLOCK_BOUND' }
+          [IO.File]::AppendAllText($env:GITHUB_ENV, 'SORNG_FULLSDK_FIRST_CLOCK='+$fullSdkClockRaw+[Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+          if ($env:CEF_FULLSDK_RESTORE_RUN -cnotmatch '^(?:0|[1-9][0-9]{0,19})$') { throw 'FULL_SDK_RESTORE_RUN' }
+      - name: Check out exact workflow source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Select pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          architecture: x64
+          cache: ""
+      - name: Authenticate and download exact prior successful checkpoint
+        if: inputs.restore_run != '0'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -I -B native/windows-arm-full-sdk/compiled_checkpoint.py --download $env:CEF_FULLSDK_RESTORE_RUN
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Produce verified SDK or seal a native deadline checkpoint
+        id: producer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --disable-proto=throw --no-addons native/windows-arm-full-sdk/full_sdk_control.mjs --execute
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload and seal exact completed output
+        id: transport
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CEF_FULLSDK_OUTPUT_ROOT: ${{ steps.producer.outputs.root }}
+          CEF_FULLSDK_CONTEXT_SHA: ${{ steps.producer.outputs.context_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $resultRaw = & 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe' -I -B native/windows-arm-full-sdk/compiled_checkpoint.py --upload $env:CEF_FULLSDK_OUTPUT_ROOT $env:CEF_FULLSDK_CONTEXT_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = $resultRaw | ConvertFrom-Json -AsHashtable
+          if ($result.kind -ceq 'checkpoint') {
+            $expectedFile = 'full-sdk-checkpoint-output/checkpoint-seal.json'
+            $expectedName = 'windows-arm-full-sdk-checkpoint-seal-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
+          } elseif ($result.kind -ceq 'sdk') {
+            $expectedFile = 'full-sdk-sdk-seal.json'
+            $expectedName = 'windows-arm-full-sdk-seal-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
+          } else { throw 'FULL_SDK_TRANSPORT_KIND' }
+          if ($result.sealFile -cne $expectedFile -or $result.artifactName -cne $expectedName) { throw 'FULL_SDK_TRANSPORT_ANCHOR' }
+          $sealPath = Join-Path $env:CEF_FULLSDK_OUTPUT_ROOT $expectedFile
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, 'seal_path=' + $sealPath + [Environment]::NewLine + 'artifact_name=' + $expectedName + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+      - name: Anchor the exact completed raw seal in immutable Actions storage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.transport.outputs.artifact_name }}
+          path: ${{ steps.transport.outputs.seal_path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain bounded qualification records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-arm-full-sdk-records-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            .artifacts/windows-arm-full-sdk-*/full-sdk-controller-result.json
+            .artifacts/windows-arm-full-sdk-*/full-source-*.json
+            .artifacts/windows-arm-full-sdk-*/full-metadata-result.json
+            .artifacts/windows-arm-full-sdk-*/full-sdk-engine-*.json
+            .artifacts/windows-arm-full-sdk-*/full-sdk-engine-*.log
+            .artifacts/windows-arm-full-sdk-*/jobs/*/receipt.json
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/source-deadline.json
