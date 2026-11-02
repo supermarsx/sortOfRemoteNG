@@ -3475,6 +3475,21 @@ const STARTUP_FILE_KINDS = Object.freeze({
   "source-context": "context",
   "source-launch": "launcher",
 });
+// BEGIN FIXED WORKFLOW CLOCK FAILURE CODES
+const STARTUP_CLOCK_ERRORS = new Set([
+  "FULL_SDK_WORKFLOW_CLOCK_RAW",
+  "FULL_SDK_WORKFLOW_CLOCK_FIELDS",
+  "FULL_SDK_WORKFLOW_CLOCK_KIND",
+  "FULL_SDK_WORKFLOW_CLOCK_INTEGER",
+  "FULL_SDK_WORKFLOW_CLOCK_WALL_DEADLINE",
+  "FULL_SDK_WORKFLOW_CLOCK_SCOPE",
+  "FULL_SDK_WORKFLOW_CLOCK_EXECUTION",
+  "FULL_SDK_WORKFLOW_CLOCK_HOST",
+  "FULL_SDK_WORKFLOW_CLOCK_TICK_DEADLINE",
+  "FULL_SDK_WORKFLOW_CLOCK_PROJECTION",
+  "FULL_SDK_WORKFLOW_CLOCK_EXPIRED",
+]);
+// END FIXED WORKFLOW CLOCK FAILURE CODES
 const STARTUP_ERROR_CODES = new Set([
   "ENOENT",
   "EACCES",
@@ -3534,7 +3549,8 @@ function startupFailureReport(error) {
   const message = own("message");
   const code =
     typeof message === "string" &&
-    /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message)
+    (/^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message) ||
+      STARTUP_CLOCK_ERRORS.has(message))
       ? message
       : "FULL_SDK_CONTROL_FAILED";
   let name = native ? "NativeError" : "ThrownValue";

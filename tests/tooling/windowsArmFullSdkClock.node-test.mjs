@@ -13,6 +13,33 @@ import {
   intersectWorkflowClock,
 } from "../../native/windows-arm-full-sdk/workflow-clock.mjs";
 
+// BEGIN EXACT CLOCK FAILURE ENUM INVERSE
+const CLOCK_FAILURE_INVERSE = {
+  block:
+    '// BEGIN FIXED WORKFLOW CLOCK FAILURE CODES\nconst STARTUP_CLOCK_ERRORS = new Set([\n  "FULL_SDK_WORKFLOW_CLOCK_RAW",\n  "FULL_SDK_WORKFLOW_CLOCK_FIELDS",\n  "FULL_SDK_WORKFLOW_CLOCK_KIND",\n  "FULL_SDK_WORKFLOW_CLOCK_INTEGER",\n  "FULL_SDK_WORKFLOW_CLOCK_WALL_DEADLINE",\n  "FULL_SDK_WORKFLOW_CLOCK_SCOPE",\n  "FULL_SDK_WORKFLOW_CLOCK_EXECUTION",\n  "FULL_SDK_WORKFLOW_CLOCK_HOST",\n  "FULL_SDK_WORKFLOW_CLOCK_TICK_DEADLINE",\n  "FULL_SDK_WORKFLOW_CLOCK_PROJECTION",\n  "FULL_SDK_WORKFLOW_CLOCK_EXPIRED",\n]);\n// END FIXED WORKFLOW CLOCK FAILURE CODES\n',
+  blockSha256:
+    "a1da21bcb09f13c39300d1781fcc6bb09945f335d0e4842e3683b80a72ba5902",
+  newPredicate:
+    "    (/^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message) ||\n      STARTUP_CLOCK_ERRORS.has(message))\n",
+  oldPredicate: "    /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message)\n",
+  bytes: 165012,
+  sha256: "5a36ad235d7bbf55a1a9680d557c2ce907709d227c5b591630f4f77c5b6dcc58",
+};
+function clockFailureControllerInverse(text) {
+  const spec = CLOCK_FAILURE_INVERSE;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(hash(spec.block), spec.blockSha256);
+  assert.equal(text.split(spec.block).length, 2);
+  assert.equal(text.split(spec.newPredicate).length, 2);
+  text = text
+    .replace(spec.block, "")
+    .replace(spec.newPredicate, spec.oldPredicate);
+  assert.equal(Buffer.byteLength(text), spec.bytes);
+  assert.equal(hash(text), spec.sha256);
+  return text;
+}
+// END EXACT CLOCK FAILURE ENUM INVERSE
+
 // BEGIN EXACT STARTUP OBSERVABILITY INVERSE
 const STARTUP_OBSERVABILITY_HISTORY = {
   rows: [
@@ -171,6 +198,7 @@ const STARTUP_OBSERVABILITY_HISTORY = {
   sha256: "43604b5ddf7c738270bb5bead62a1ae4f321176a4cbb77288ef4022818b2e9cf",
 };
 function startupControllerInverse(text) {
+  text = clockFailureControllerInverse(text);
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of [...STARTUP_OBSERVABILITY_HISTORY.rows].reverse()) {
     assert.equal(hash(row.newRaw), row.newSha256);
@@ -949,4 +977,70 @@ test("actual controller intersects the first-step lease before source creation w
     createHash("sha256").update(old).digest("hex"),
     "bbb1e7bfdd3aaa56c745940ddba1856fb02b40ddb135b6e1266f405e3ba94db1",
   );
+});
+
+test("actual failed-run carrier needs the workflow's bound public visibility without changing either original endpoint", async () => {
+  // Actual41494694866 carrier data only: no execution/issuer qualification.
+  const raw =
+    '{"schemaVersion":1,"kind":"windows-arm-first-workflow-clock","clock":"windows-gettickcount64","dotnetMajor":10,"wallStartMs":1793641809611,"tickStartMs":132703,"wallEndMs":1793663409611,"tickEndMs":21732703,"repository":"supermarsx/sortOfRemoteNG","repositoryId":"1010282954","ref":"refs/heads/main","event":"workflow_dispatch","runId":"41494694866","attempt":"1","head":"48a0ba7bbbe2f3c8a2e7e60644d824da18193856","workflowSha":"48a0ba7bbbe2f3c8a2e7e60644d824da18193856","workflowRef":"supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-full-sdk.yml@refs/heads/main","job":"sdk","image":"20261030.294.1"}';
+  const carrier = JSON.parse(raw),
+    env = {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      CEF_DEFAULT_BRANCH: "main",
+    };
+  const fields = {
+    repository: "GITHUB_REPOSITORY",
+    repositoryId: "GITHUB_REPOSITORY_ID",
+    ref: "GITHUB_REF",
+    event: "GITHUB_EVENT_NAME",
+    workflowRef: "GITHUB_WORKFLOW_REF",
+    job: "GITHUB_JOB",
+    runId: "GITHUB_RUN_ID",
+    attempt: "GITHUB_RUN_ATTEMPT",
+    head: "GITHUB_SHA",
+    workflowSha: "GITHUB_WORKFLOW_SHA",
+    image: "ImageVersion",
+  };
+  for (const [field, name] of Object.entries(fields))
+    env[name] = carrier[field];
+  const now = Date.parse("2026-11-02T17:50:39.037Z");
+  assert.throws(
+    () => readWorkflowClock(raw, env, now),
+    /FULL_SDK_WORKFLOW_CLOCK_HOST/,
+  );
+  const workflow = (
+    await readFile(".github/workflows/windows-arm-full-sdk.yml", "utf8")
+  ).replaceAll("\r\n", "\n");
+  const binding =
+    "      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}\n";
+  assert.equal(workflow.split(binding).length, 2);
+  assert(workflow.indexOf(binding) < workflow.indexOf("    steps:"));
+  assert(workflow.includes("github.event.repository.visibility == 'public'"));
+  const accepted = readWorkflowClock(
+    raw,
+    { ...env, GITHUB_REPOSITORY_VISIBILITY: "public" },
+    now,
+  );
+  assert.equal(accepted.wallEndMs, carrier.wallEndMs);
+  assert.equal(accepted.tickEndMs, carrier.tickEndMs);
+  assert.equal(accepted.wallEndMs - accepted.wallStartMs, 21600000);
+  assert.equal(accepted.tickEndMs - accepted.tickStartMs, 21600000);
+  for (const value of [
+    undefined,
+    "",
+    "private",
+    "Public",
+    "public\n",
+    "public\u0000",
+  ])
+    assert.throws(
+      () =>
+        readWorkflowClock(
+          raw,
+          { ...env, GITHUB_REPOSITORY_VISIBILITY: value },
+          now,
+        ),
+      /FULL_SDK_WORKFLOW_CLOCK_HOST/,
+    );
 });

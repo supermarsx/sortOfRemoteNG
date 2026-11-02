@@ -23,6 +23,7 @@ jobs:
     runs-on: windows-2025-vs2026
     timeout-minutes: 360
     env:
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
       CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       CEF_FULLSDK_RESTORE_RUN: ${{ inputs.restore_run }}
     steps:

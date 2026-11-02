@@ -4391,6 +4391,33 @@ test("longpaths adoption changes only its reviewed helper row in the strict prof
 });
 
 // This evaluates the exact inactive module body in a separate lexical module.
+// BEGIN EXACT CLOCK FAILURE ENUM INVERSE
+const CLOCK_FAILURE_INVERSE = {
+  block:
+    '// BEGIN FIXED WORKFLOW CLOCK FAILURE CODES\nconst STARTUP_CLOCK_ERRORS = new Set([\n  "FULL_SDK_WORKFLOW_CLOCK_RAW",\n  "FULL_SDK_WORKFLOW_CLOCK_FIELDS",\n  "FULL_SDK_WORKFLOW_CLOCK_KIND",\n  "FULL_SDK_WORKFLOW_CLOCK_INTEGER",\n  "FULL_SDK_WORKFLOW_CLOCK_WALL_DEADLINE",\n  "FULL_SDK_WORKFLOW_CLOCK_SCOPE",\n  "FULL_SDK_WORKFLOW_CLOCK_EXECUTION",\n  "FULL_SDK_WORKFLOW_CLOCK_HOST",\n  "FULL_SDK_WORKFLOW_CLOCK_TICK_DEADLINE",\n  "FULL_SDK_WORKFLOW_CLOCK_PROJECTION",\n  "FULL_SDK_WORKFLOW_CLOCK_EXPIRED",\n]);\n// END FIXED WORKFLOW CLOCK FAILURE CODES\n',
+  blockSha256:
+    "a1da21bcb09f13c39300d1781fcc6bb09945f335d0e4842e3683b80a72ba5902",
+  newPredicate:
+    "    (/^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message) ||\n      STARTUP_CLOCK_ERRORS.has(message))\n",
+  oldPredicate: "    /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message)\n",
+  bytes: 165012,
+  sha256: "5a36ad235d7bbf55a1a9680d557c2ce907709d227c5b591630f4f77c5b6dcc58",
+};
+function clockFailureControllerInverse(text) {
+  const spec = CLOCK_FAILURE_INVERSE;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(hash(spec.block), spec.blockSha256);
+  assert.equal(text.split(spec.block).length, 2);
+  assert.equal(text.split(spec.newPredicate).length, 2);
+  text = text
+    .replace(spec.block, "")
+    .replace(spec.newPredicate, spec.oldPredicate);
+  assert.equal(Buffer.byteLength(text), spec.bytes);
+  assert.equal(hash(text), spec.sha256);
+  return text;
+}
+// END EXACT CLOCK FAILURE ENUM INVERSE
+
 // BEGIN EXACT STARTUP OBSERVABILITY INVERSE
 const STARTUP_OBSERVABILITY_HISTORY = {
   rows: [
@@ -4549,6 +4576,7 @@ const STARTUP_OBSERVABILITY_HISTORY = {
   sha256: "43604b5ddf7c738270bb5bead62a1ae4f321176a4cbb77288ef4022818b2e9cf",
 };
 function startupControllerInverse(text) {
+  text = clockFailureControllerInverse(text);
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of [...STARTUP_OBSERVABILITY_HISTORY.rows].reverse()) {
     assert.equal(hash(row.newRaw), row.newSha256);
@@ -9063,6 +9091,55 @@ test("actual public bootstrap preserves native FS failures and emits only fixed 
   }
 });
 
+test("startup diagnostic preserves exactly the actual eleven public workflow clock errors", async () => {
+  const { parse } = await import("acorn");
+  const source = await read(prefix + "workflow-clock.mjs");
+  const tree = parse(source, { ecmaVersion: "latest", sourceType: "module" });
+  const codes = new Set();
+  function walk(value) {
+    if (!value || typeof value !== "object") return;
+    if (
+      value.type === "CallExpression" &&
+      value.callee?.name === "need" &&
+      value.arguments[1]?.type === "Literal" &&
+      typeof value.arguments[1].value === "string"
+    )
+      codes.add("FULL_SDK_WORKFLOW_CLOCK_" + value.arguments[1].value);
+    for (const item of Object.values(value))
+      if (Array.isArray(item)) item.forEach(walk);
+      else if (item && typeof item === "object") walk(item);
+  }
+  walk(tree);
+  assert.equal(codes.size, 11);
+  const api = await inactiveControl();
+  for (const code of codes) {
+    const result = api.startupFailureReport(new Error(code));
+    assert.equal(result.error, code);
+    assert.equal(result.sdkBuilt, false);
+    assert.equal(result.nativeAcceptance, false);
+  }
+  for (const code of [
+    "FULL_SDK_WORKFLOW_CLOCK_UNKNOWN",
+    "FULL_SDK_WORKFLOW_CLOCK_HOST_PRIVATE",
+    "FULL_SDK_WORKFLOW_CLOCK_HOST\nSECRET_TOKEN",
+    "full_sdk_workflow_clock_host",
+  ])
+    assert.equal(
+      api.startupFailureReport(new Error(code)).error,
+      "FULL_SDK_CONTROL_FAILED",
+    );
+  const raw = await read(prefix + "full_sdk_control.mjs");
+  clockFailureControllerInverse(raw);
+  assert.throws(() =>
+    clockFailureControllerInverse(raw + CLOCK_FAILURE_INVERSE.block),
+  );
+  assert.throws(() =>
+    clockFailureControllerInverse(
+      raw.replace(CLOCK_FAILURE_INVERSE.newPredicate, "/*tamper*/"),
+    ),
+  );
+});
+
 test("startup diagnostic omits hostile fields and preserves falsy public bootstrap failures", async () => {
   const profileFile = path.join(root, prefix, "full-sdk-source-profile.json");
   for (const primary of [
@@ -9140,11 +9217,19 @@ test("startup observability has an exact whole-controller inverse and rejects ta
   const raw = await read(prefix + "full_sdk_control.mjs");
   startupControllerInverse(raw);
   for (const row of STARTUP_OBSERVABILITY_HISTORY.rows) {
+    const current = row.newRaw
+      .replace(
+        "const STARTUP_ERROR_CODES = new Set([",
+        CLOCK_FAILURE_INVERSE.block + "const STARTUP_ERROR_CODES = new Set([",
+      )
+      .replace(
+        CLOCK_FAILURE_INVERSE.oldPredicate,
+        CLOCK_FAILURE_INVERSE.newPredicate,
+      );
+    assert.equal(raw.split(current).length, 2);
     assert.throws(() =>
-      startupControllerInverse(
-        raw.replace(row.newRaw, row.newRaw + "/*tamper*/"),
-      ),
+      startupControllerInverse(raw.replace(current, current + "/*tamper*/")),
     );
-    assert.throws(() => startupControllerInverse(raw + row.newRaw));
+    assert.throws(() => startupControllerInverse(raw + current));
   }
 });
