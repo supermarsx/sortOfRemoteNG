@@ -1138,11 +1138,24 @@ import gclient
 original=gclient.Hook.run
 dispatch=gclient.gclient_utils.CheckCallAndFilter
 scope=threading.local()
+apache_action=('python3','src/third_party/depot_tools/download_from_google_storage.py','--no_resume','--directory','--recursive','--num_threads=16','--bucket','chromium-apache-win32','src/third_party/apache-win32')
+def project_apache(command,kwargs):
+ hook=getattr(scope,'hook',None)
+ candidate=getattr(hook,'name',None)=='apache_win32' or any(value in command for value in ('chromium-apache-win32','src/third_party/apache-win32'))
+ if not candidate:return command
+ if type(hook)is not gclient.Hook or hook.name!='apache_win32' or hook.condition!='checkout_win' or hook.pattern!=chr(92)+'.sha1' or tuple(hook.action)!=apache_action or tuple(command)!=apache_action:raise RuntimeError('FULL_HOOK_APACHE_PROJECTION')
+ cwd=kwargs.get('cwd');workspace=source_bootstrap.P['workspace']
+ if type(cwd)is not str or cwd.replace(chr(92),'/').lower()!=workspace.lower():raise RuntimeError('FULL_HOOK_APACHE_CWD')
+ source_bootstrap.data.plain(cwd)
+ # Exact source-owned resource projection; preserve the original frozen action.
+ effective=list(command);effective[5]='--num_threads=2'
+ return effective
 def admitted_dispatch(command,*args,**kwargs):
  if not getattr(scope,'active',False): return dispatch(command,*args,**kwargs)
  if type(command) is not list or not command or len(command)>64 or command[0] not in ('python3','vpython3.bat'): raise RuntimeError('FULL_HOOK_ENTRY')
  for value in command:
   if type(value) is not str or len(value)>4096 or any(c in value for c in '\\x00\\r\\n%&|<>!^'): raise RuntimeError('FULL_HOOK_SHELL_ARGUMENT')
+ effective=project_apache(command,kwargs)
  if os.path.islink(adapter) or os.path.realpath(adapter).lower()!=os.path.abspath(adapter).lower(): raise RuntimeError('FULL_PYTHON_ADAPTER_ALIAS')
  source=open(adapter,'rb')
  failed=False
@@ -1156,13 +1169,17 @@ def admitted_dispatch(command,*args,**kwargs):
    if failed: print('FULL_PYTHON_ADAPTER_CLOSE_FAILURE',file=sys.stderr)
    else: raise
  if len(raw)>4096 or hashlib.sha256(raw).hexdigest()!=digest: raise RuntimeError('FULL_PYTHON_ADAPTER_PIN')
- mapped=[adapter if command[0]=='python3' else os.path.join(os.path.dirname(adapter),'vpython3.bat'),*command[1:]]
+ mapped=[adapter if command[0]=='python3' else os.path.join(os.path.dirname(adapter),'vpython3.bat'),*effective[1:]]
  return dispatch(mapped,*args,**kwargs)
 def admitted(self):
- previous=getattr(scope,'active',False)
- scope.active=True
+ previous=getattr(scope,'active',False);previous_hook=getattr(scope,'hook',None)
+ original_action=self.action;apache_guard=self.name=='apache_win32';failed=False
+ scope.active=True;scope.hook=self
  try: return original(self)
- finally: scope.active=previous
+ except BaseException:failed=True;raise
+ finally:
+  scope.active=previous;scope.hook=previous_hook
+  if not failed and apache_guard and (self.name!='apache_win32' or self.condition!='checkout_win' or self.pattern!=chr(92)+'.sha1' or self.action is not original_action or tuple(self.action)!=apache_action):raise RuntimeError('FULL_HOOK_APACHE_POSTCHECK')
 gclient.Hook.run=admitted
 gclient.gclient_utils.CheckCallAndFilter=admitted_dispatch
 sys.exit(gclient.main(['runhooks','--jobs','2']))

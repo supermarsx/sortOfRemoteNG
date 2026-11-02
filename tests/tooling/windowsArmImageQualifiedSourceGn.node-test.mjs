@@ -129,6 +129,57 @@ const workflow = (
 )
   .toString()
   .replaceAll("\r\n", "\n");
+// Exact resource projection inverse; all previous whole-driver pins remain.
+const apacheWorkerProjection = String.raw`apache_action=('python3','src/third_party/depot_tools/download_from_google_storage.py','--no_resume','--directory','--recursive','--num_threads=16','--bucket','chromium-apache-win32','src/third_party/apache-win32')
+def project_apache(command,kwargs):
+ hook=getattr(scope,'hook',None)
+ candidate=getattr(hook,'name',None)=='apache_win32' or any(value in command for value in ('chromium-apache-win32','src/third_party/apache-win32'))
+ if not candidate:return command
+ if type(hook)is not gclient.Hook or hook.name!='apache_win32' or hook.condition!='checkout_win' or hook.pattern!=chr(92)+'.sha1' or tuple(hook.action)!=apache_action or tuple(command)!=apache_action:raise RuntimeError('FULL_HOOK_APACHE_PROJECTION')
+ cwd=kwargs.get('cwd');workspace=source_bootstrap.P['workspace']
+ if type(cwd)is not str or cwd.replace(chr(92),'/').lower()!=workspace.lower():raise RuntimeError('FULL_HOOK_APACHE_CWD')
+ source_bootstrap.data.plain(cwd)
+ # Exact source-owned resource projection; preserve the original frozen action.
+ effective=list(command);effective[5]='--num_threads=2'
+ return effective
+`;
+const apacheAdmitted = String.raw`def admitted(self):
+ previous=getattr(scope,'active',False);previous_hook=getattr(scope,'hook',None)
+ original_action=self.action;apache_guard=self.name=='apache_win32';failed=False
+ scope.active=True;scope.hook=self
+ try: return original(self)
+ except BaseException:failed=True;raise
+ finally:
+  scope.active=previous;scope.hook=previous_hook
+  if not failed and apache_guard and (self.name!='apache_win32' or self.condition!='checkout_win' or self.pattern!=chr(92)+'.sha1' or self.action is not original_action or tuple(self.action)!=apache_action):raise RuntimeError('FULL_HOOK_APACHE_POSTCHECK')
+`;
+const historicalAdmitted = String.raw`def admitted(self):
+ previous=getattr(scope,'active',False)
+ scope.active=True
+ try: return original(self)
+ finally: scope.active=previous
+`;
+function previousApacheProjection(text) {
+  for (const [added, previous] of [
+    [apacheWorkerProjection, ""],
+    [" effective=project_apache(command,kwargs)\n", ""],
+    ["*effective[1:]]", "*command[1:]]"],
+    [apacheAdmitted, historicalAdmitted],
+  ]) {
+    assert.equal(
+      text.split(added).length,
+      2,
+      "one exact Apache projection inverse",
+    );
+    text = text.replace(added, previous);
+  }
+  return text;
+}
+function historicalDependencyArguments(driver, depot, adapter, pin) {
+  const args = driver.dependencyHookArguments(depot, adapter, pin);
+  args[2] = previousApacheProjection(args[2]);
+  return args;
+}
 const virtualenvExportCase = String.raw`  if args[0]=='export':
    data.need(len(args)==5 and args[1]=='--root' and args[3:]==['--ensure-file','-'],'FULL_BOOTSTRAP_CIPD_EXPORT_ARGV')
    out=data.plain(args[2]);name=out.parent.name;identity=name[len('virtualenv+'):]
@@ -1393,7 +1444,8 @@ test("selected hook projection retains native full-revision pinning, DEPS fallba
         "pre",
       ],
     );
-    const depArgs = driver.dependencyHookArguments(
+    const depArgs = historicalDependencyArguments(
+      driver,
       "fixed-depot",
       "fixed-adapter",
       "a".repeat(64),
@@ -1444,7 +1496,124 @@ test("selected hook projection denies graph, origin, pin and output failures bef
   }
 });
 
-test("only reviewed selected hook projections and the exact virtualenv bootstrap delta differ from historical drivers", async () => {
+async function apacheWorkerCases(driver, cases, previous = false) {
+  let program = driver.dependencyHookArguments(
+    "fixed-depot",
+    "fixed-adapter",
+    "a".repeat(64),
+  )[2];
+  if (previous) program = previousApacheProjection(program);
+  const code =
+    "import sys,json;from pathlib import Path;sys.path.insert(0,str(Path('native/windows-arm-full-sdk').resolve()));import test_image_dispatch as t;raw=sys.stdin.read(65537);assert len(raw)<=65536;p=json.loads(raw);print(json.dumps([t.selected_apache_worker_case(p['program'],case)for case in p['cases']]))";
+  const result = spawnSync("python", ["-I", "-B", "-c", code], {
+    cwd: root,
+    input: JSON.stringify({ program, cases }),
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 20000,
+    maxBuffer: 1024 ** 2,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const values = JSON.parse(result.stdout);
+  for (const value of values) {
+    assert.equal(value.nativeHookBytes, 4177);
+    assert.equal(
+      value.nativeHookSha256,
+      "e6b563524e7f5efab03547a60b0f36fa6a6772e5563f45741e5f111dc6e926e9",
+    );
+    assert.equal(value.payloadExecutablesInvoked, 0);
+    assert.equal(value.nativeJobExecuted, false);
+    assert.equal(value.quotaConditionModeled, true);
+  }
+  return values;
+}
+
+test("exact Apache resource projection uses actual pinned native Hook.run old16 RED then fixed2 GREEN for both images", async () => {
+  for (const driver of [currentDriver, oldDriver]) {
+    const [before] = await apacheWorkerCases(driver, ["apache"], true);
+    assert.equal(before.modeledQuotaDenial, true);
+    assert.equal(before.exitCode, 2);
+    assert.equal(before.commands.length, 1);
+    assert.equal(before.commands[0][5], "--num_threads=16");
+    const [after] = await apacheWorkerCases(driver, ["apache"]);
+    assert.equal(after.error, null);
+    assert.equal(after.exitCode, 0);
+    assert.equal(after.modeledQuotaDenial, false);
+    assert.equal(after.commands.length, 1);
+    assert.equal(after.commands[0][5], "--num_threads=2");
+    assert.equal(after.originalThreads, "--num_threads=16");
+    assert.equal(after.originalActionRetained, true);
+    assert.equal(after.plainChecks, 1);
+    assert.equal(after.bootstrapBound, 1);
+    assert.deepEqual(after.evaluatedConditions, ["checkout_win"]);
+    assert.deepEqual(
+      after.commands[0].slice(1, 5),
+      before.commands[0].slice(1, 5),
+    );
+    assert.deepEqual(after.commands[0].slice(6), before.commands[0].slice(6));
+  }
+});
+
+test("Apache resource projection leaves unrelated hooks and native false conditions unchanged", async () => {
+  for (const driver of [currentDriver, oldDriver]) {
+    const [unrelated, disabled] = await apacheWorkerCases(driver, [
+      "unrelated",
+      "false-condition",
+    ]);
+    assert.equal(unrelated.error, null);
+    assert.equal(unrelated.commands.length, 1);
+    assert.equal(unrelated.commands[0].at(-1), "--num_threads=16");
+    assert.equal(unrelated.plainChecks, 0);
+    assert.equal(unrelated.originalActionRetained, true);
+    assert.equal(disabled.error, null);
+    assert.deepEqual(disabled.commands, []);
+    assert.deepEqual(disabled.evaluatedConditions, ["checkout_win"]);
+    assert.equal(disabled.plainChecks, 0);
+  }
+});
+
+test("Apache resource projection rejects near-match hook/action/cwd substitutions and preserves first failure over postcheck", async () => {
+  const cases = [
+    "wrong-name",
+    "wrong-condition",
+    "wrong-pattern",
+    "wrong-script",
+    "wrong-bucket",
+    "wrong-output",
+    "wrong-flag-order",
+    "duplicate-threads",
+    "already-two",
+    "extra-flag",
+    "cwd-outside",
+    "cwd-alias",
+  ];
+  for (const driver of [currentDriver, oldDriver]) {
+    const values = await apacheWorkerCases(driver, cases);
+    for (const value of values) {
+      assert.match(
+        value.error?.message ?? "",
+        value.case.startsWith("cwd-")
+          ? /FULL_HOOK_APACHE_CWD/
+          : /FULL_HOOK_APACHE_PROJECTION/,
+      );
+      assert.deepEqual(value.commands, []);
+      assert.equal(value.plainChecks, 0);
+    }
+    const [mutated, first] = await apacheWorkerCases(driver, [
+      "post-action-replaced",
+      "first-failure",
+    ]);
+    assert.equal(mutated.error?.message, "FULL_HOOK_APACHE_POSTCHECK");
+    assert.equal(mutated.originalActionRetained, false);
+    assert.equal(mutated.commands.length, 1);
+    assert.equal(first.exitCode, 2);
+    assert.equal(first.error?.type, "SystemExit");
+    assert.match(first.stderr, /FIXED_FIRST_FAILURE/);
+    assert(!first.stderr.includes("FULL_HOOK_APACHE_POSTCHECK"));
+  }
+});
+
+test("only reviewed selected hook projections, exact Apache resource projection and virtualenv bootstrap delta differ from historical drivers", async () => {
   const legacy =
     await import("../../native/windows-arm-full-sdk/source-driver.mjs");
   const previous = "export " + legacy.hookProjectionArguments.toString();
@@ -1470,7 +1639,14 @@ test("only reviewed selected hook projections and the exact virtualenv bootstrap
         `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
       )
     ).toString();
-    const text = previousVirtualenvBootstrap(current);
+    const source230c = previousApacheProjection(current);
+    assert.equal(
+      sha(source230c),
+      label === "current"
+        ? "6557ed37285875251c7c462238372e68a4e760fe06114f701f7485f226249422"
+        : "f73355b7af6aba661a5ecb58c4556ddcb776309a7a02ba540aa4a0bc6de24181",
+    );
+    const text = previousVirtualenvBootstrap(source230c);
     assert.equal(
       sha(text),
       label === "current"
@@ -1493,7 +1669,7 @@ test("only reviewed selected hook projections and the exact virtualenv bootstrap
     const normalized = text.replace("export " + next, previous);
     assert.equal(sha(normalized), expected);
     assert.deepEqual(
-      driver.dependencyHookArguments("depot", "adapter", "a".repeat(64)),
+      historicalDependencyArguments(driver, "depot", "adapter", "a".repeat(64)),
       legacy.dependencyHookArguments("depot", "adapter", "a".repeat(64)),
     );
   }

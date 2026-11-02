@@ -1015,4 +1015,109 @@ def selected_virtualenv_export_guard(program, root, vector):
     return {'denied': False}
 
 
+
+# Exact native Hook class from depot_tools c101dcbe0489c455fce7c2247bfee19680b116c3/gclient.py.
+# Only fixed stdlib/test recorders replace external calls; no payload executes.
+PINNED_APACHE_HOOK_SOURCE = 'class Hook(object):\n    """Descriptor of command ran before/after sync or on demand."""\n\n    def __init__(\n        self,\n        action,\n        pattern=None,\n        name=None,\n        cwd=None,\n        condition=None,\n        variables=None,\n        verbose=False,\n        cwd_base=None,\n    ):\n        """Constructor.\n\n        Arguments:\n          action (list of str): argv of the command to run\n          pattern (str regex): noop with git; deprecated\n          name (str): optional name; no effect on operation\n          cwd (str): working directory to use\n          condition (str): condition when to run the hook\n          variables (dict): variables for evaluating the condition\n        """\n        self._action = gclient_utils.freeze(action)\n        self._pattern = pattern\n        self._name = name\n        self._cwd = cwd\n        self._condition = condition\n        self._variables = variables\n        self._verbose = verbose\n        self._cwd_base = cwd_base\n\n    @staticmethod\n    def from_dict(\n        d, variables=None, verbose=False, conditions=None, cwd_base=None\n    ):\n        """Creates a Hook instance from a dict like in the DEPS file."""\n        # Merge any local and inherited conditions.\n        gclient_eval.UpdateCondition(d, "and", conditions)\n        return Hook(\n            d["action"],\n            d.get("pattern"),\n            d.get("name"),\n            d.get("cwd"),\n            d.get("condition"),\n            variables=variables,\n            # Always print the header if not printing to a TTY.\n            verbose=verbose or not setup_color.IS_TTY,\n            cwd_base=cwd_base,\n        )\n\n    @property\n    def action(self):\n        return self._action\n\n    @property\n    def pattern(self):\n        return self._pattern\n\n    @property\n    def name(self):\n        return self._name\n\n    @property\n    def condition(self):\n        return self._condition\n\n    @property\n    def effective_cwd(self):\n        cwd = self._cwd_base\n        if self._cwd:\n            cwd = os.path.join(cwd, self._cwd)\n        return cwd\n\n    def matches(self, file_list):\n        """Returns true if the pattern matches any of files in the list."""\n        if not self._pattern:\n            return True\n        pattern = re.compile(self._pattern)\n        return bool([f for f in file_list if pattern.search(f)])\n\n    def run(self):\n        """Executes the hook\'s command (provided the condition is met)."""\n        if self._condition and not gclient_eval.EvaluateCondition(\n            self._condition, self._variables\n        ):\n            return\n\n        cmd = list(self._action)\n\n        if cmd[0] == "vpython3" and _detect_host_os() == "win":\n            cmd[0] += ".bat"\n\n        exit_code = 2\n        try:\n            start_time = time.time()\n            gclient_utils.CheckCallAndFilter(\n                cmd,\n                cwd=self.effective_cwd,\n                print_stdout=True,\n                show_header=True,\n                always_show_header=self._verbose,\n            )\n            exit_code = 0\n        except (gclient_utils.Error, subprocess2.CalledProcessError) as e:\n            # Use a discrete exit status code of 2 to indicate that a hook\n            # action failed.  Users of this script may wish to treat hook action\n            # failures differently from VC failures.\n            print("Error: %s" % str(e), file=sys.stderr)\n            sys.exit(exit_code)\n        finally:\n            elapsed_time = time.time() - start_time\n            metrics.collector.add_repeated(\n                "hooks",\n                {\n                    "action": gclient_utils.CommandToStr(cmd),\n                    "name": self._name,\n                    "cwd": os.path.relpath(\n                        os.path.normpath(self.effective_cwd), self._cwd_base\n                    ),\n                    "condition": self._condition,\n                    "execution_time": elapsed_time,\n                    "exit_code": exit_code,\n                },\n            )\n            if elapsed_time > 10:\n                print(\n                    "Hook \'%s\' took %.2f secs"\n                    % (gclient_utils.CommandToStr(cmd), elapsed_time)\n                )'
+PINNED_APACHE_HOOK_SHA256 = 'e6b563524e7f5efab03547a60b0f36fa6a6772e5563f45741e5f111dc6e926e9'
+APACHE_ACTION = ('python3','src/third_party/depot_tools/download_from_google_storage.py',
+    '--no_resume','--directory','--recursive','--num_threads=16','--bucket',
+    'chromium-apache-win32','src/third_party/apache-win32')
+
+
+class ApacheSourceWitnessTests(unittest.TestCase):
+    def test_native_hook_constructor_condition_dispatch_and_original_action_are_exact_primary_bytes(self):
+        import ast
+        self.assertEqual(hashlib.sha256(PINNED_APACHE_HOOK_SOURCE.encode()).hexdigest(),PINNED_APACHE_HOOK_SHA256)
+        hook=ast.parse(PINNED_APACHE_HOOK_SOURCE).body[0]
+        self.assertEqual(hook.name,'Hook')
+        run=next(n for n in hook.body if isinstance(n,ast.FunctionDef)and n.name=='run')
+        text=ast.get_source_segment(PINNED_APACHE_HOOK_SOURCE,run)
+        self.assertIn('gclient_eval.EvaluateCondition(',text)
+        self.assertIn('cmd = list(self._action)',text)
+        self.assertIn('cwd=self.effective_cwd',text)
+
+
+def selected_apache_worker_case(program,case):
+    import contextlib,io,os,types
+    state=SimpleNamespace(commands=[],bound=0,plain=0,evaluations=[],metrics=[],fanoutDenied=False,
+        original_action=None,hook=None)
+    class NativeError(Exception):pass
+    class NativeCalledProcessError(Exception):pass
+    namespace={
+        'gclient_utils':None,'gclient_eval':None,'setup_color':SimpleNamespace(IS_TTY=False),
+        'subprocess2':SimpleNamespace(CalledProcessError=NativeCalledProcessError),
+        '_detect_host_os':lambda:'win','os':os,'sys':sys,'time':time,
+        'metrics':SimpleNamespace(collector=SimpleNamespace(add_repeated=lambda name,row:state.metrics.append(row))),
+    }
+    def dispatch(command,*args,**kwargs):
+        state.commands.append(list(command))
+        if case in('post-action-replaced','first-failure'):
+            state.hook._action=tuple(list(state.hook.action));state.hook._name='other'
+        if case=='first-failure':raise NativeError('FIXED_FIRST_FAILURE')
+        if 'chromium-apache-win32'in command and '--num_threads=16'in command:
+            state.fanoutDenied=True
+            raise NativeError('FIXTURE_16_WORKER_FANOUT')
+        return 0
+    utils=SimpleNamespace(freeze=lambda action:tuple(action),CheckCallAndFilter=dispatch,
+        Error=NativeError,CommandToStr=lambda command:' '.join(command))
+    def evaluate(condition,variables):
+        state.evaluations.append(condition)
+        return variables['checkout_win']
+    namespace['gclient_utils']=utils;namespace['gclient_eval']=SimpleNamespace(EvaluateCondition=evaluate)
+    exec(compile(PINNED_APACHE_HOOK_SOURCE,'<pinned-c101-native-Hook>','exec'),namespace)
+    NativeHook=namespace['Hook']
+    module=types.ModuleType('gclient');module.Hook=NativeHook;module.gclient_utils=utils
+    bootstrap=types.ModuleType('source_bootstrap')
+    def bind(a,b):assert(a,b)==('a'*64,'b'*64);state.bound+=1
+    bootstrap.bind=bind
+    def plain(file):state.plain+=1;return data.plain(file)
+    bootstrap.data=SimpleNamespace(plain=plain)
+    output=io.StringIO();errors=io.StringIO();error=None;exit_code=None
+    with tempfile.TemporaryDirectory(prefix='cef-apache-projection-')as temp:
+        folder=Path(temp).resolve();depot=folder/'depot_tools';depot.mkdir();commands=folder/'commands';commands.mkdir()
+        adapter=commands/'python3.bat';raw=b'@echo off\r\n';adapter.write_bytes(raw)
+        bootstrap.P={'workspace':folder.as_posix()}
+        action=list(APACHE_ACTION);name='apache_win32';condition='checkout_win';pattern=r'\.sha1';cwd=str(folder);enabled=True
+        if case=='unrelated':action=['python3','src/tools/another.py','--num_threads=16'];name='other';pattern='.'
+        elif case=='false-condition':enabled=False
+        elif case=='wrong-name':name='other'
+        elif case=='wrong-condition':condition='checkout_win and another_flag'
+        elif case=='wrong-pattern':pattern='.'
+        elif case=='wrong-script':action[1]='src/third_party/depot_tools/../download_from_google_storage.py'
+        elif case=='wrong-bucket':action[7]='chromium-apache-win32-other'
+        elif case=='wrong-output':action[8]='src/third_party/another-apache'
+        elif case=='wrong-flag-order':action[4],action[5]=action[5],action[4]
+        elif case=='duplicate-threads':action.append('--num_threads=16')
+        elif case=='already-two':action[5]='--num_threads=2'
+        elif case=='extra-flag':action.append('--force')
+        elif case=='cwd-outside':cwd=str(folder.parent)
+        elif case=='cwd-alias':cwd=str(folder)+'/ignored/..'
+        elif case not in('apache','post-action-replaced','first-failure'):raise ValueError('closed case')
+        hook=NativeHook(action,pattern=pattern,name=name,condition=condition,
+            variables={'checkout_win':enabled},cwd_base=cwd)
+        state.original_action=hook.action;state.hook=hook
+        def main(args):
+            assert args==['runhooks','--jobs','2'];hook.run();return 0
+        module.main=main
+        previous_argv=sys.argv;previous_path=list(sys.path)
+        try:
+            sys.argv=['-c',str(depot),str(adapter),hashlib.sha256(raw).hexdigest(),'a'*64,'b'*64]
+            with patch.dict(sys.modules,{'gclient':module,'source_bootstrap':bootstrap}),contextlib.redirect_stdout(output),contextlib.redirect_stderr(errors):
+                exec(compile(program,'<actual-selected-dependency-hooks>','exec'),{})
+        except SystemExit as caught:
+            exit_code=caught.code
+            if caught.code!=0:error={'type':'SystemExit','message':str(caught.code)}
+        except BaseException as caught:error={'type':type(caught).__name__,'message':str(caught)[:512]}
+        finally:sys.argv=previous_argv;sys.path[:]=previous_path
+        same_action=hook.action is state.original_action and tuple(hook.action)==tuple(action)
+    return {'case':case,'error':error,'exitCode':exit_code,'commands':state.commands,
+        'originalActionRetained':same_action,'originalThreads':action[5]if name=='apache_win32'else None,
+        'evaluatedConditions':state.evaluations,'bootstrapBound':state.bound,'plainChecks':state.plain,
+        'modeledQuotaDenial':state.fanoutDenied,'stderr':errors.getvalue()[:1024],
+        'quotaConditionModeled':True,'nativeJobExecuted':False,'payloadExecutablesInvoked':0,
+        'nativeHookBytes':len(PINNED_APACHE_HOOK_SOURCE.encode()),
+        'nativeHookSha256':hashlib.sha256(PINNED_APACHE_HOOK_SOURCE.encode()).hexdigest()}
+
+
 if __name__=='__main__':unittest.main()
