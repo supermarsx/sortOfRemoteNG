@@ -149,7 +149,13 @@ test("actual carrier subject guard matches current committed bytes and rejects t
   changed[0] ^= 1;
   assert.throws(() => verifySubjectBytes(changed), /SOURCE/);
   assert.throws(() => verifySubjectBytes({ length: actual.length }), /SOURCE/);
-  let previous = (await readFile(carrierURL, "utf8")).replaceAll("\r\n", "\n");
+});
+function historicalCarrierInverse(previous) {
+  assert.equal(previous.split(CODE_DIGEST).length, 2);
+  previous = previous.replace(
+    CODE_DIGEST,
+    "d060f671e8a784046f16cd50f8661da8c9883b623c376e23eccf2f4ccc4a9472",
+  );
   const start = "// BEGIN current final-helper subject pin\n",
     end = "// END current final-helper subject pin\n";
   assert.equal(previous.split(start).length, 2);
@@ -174,7 +180,54 @@ test("actual carrier subject guard matches current committed bytes and rejects t
     createHash("sha256").update(previous).digest("hex"),
     "5cc151384358108e6e46df52ba5c0c37770b77c44b22ec883486dda024d5001f",
   );
+  return previous;
+}
+test("current composed carrier retarget preserves its complete historical pre-guard body", async () => {
+  historicalCarrierInverse(
+    (await readFile(carrierURL, "utf8")).replaceAll("\r\n", "\n"),
+  );
 });
+
+function qualifiedFinalHelperModule(text) {
+  const current =
+    "// Fixed Linux migration: only the context-bound complete transaction can execute.\n// Standalone preparation APIs stay closed; matching JSON grants no authority.\n";
+  const previous =
+    "// Inactive preparation only. No API in this module authorizes a migration,\n// retires a sidecar, weakens validateManifest, or creates a compile proof.\n";
+  assert.equal(text.split(current).length, 2);
+  assert.equal(text.split("const TRANSACTION_ADMITTED = true;").length, 2);
+  text = text
+    .replace(current, previous)
+    .replace(
+      "const TRANSACTION_ADMITTED = true;",
+      "const TRANSACTION_ADMITTED = false;",
+    );
+  assert.equal(Buffer.byteLength(text), 120106);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "6105e6215636258128a77038ee8eb3e07f336a442cef5bfabaa2ed445bef5995",
+  );
+  for (const name of [
+    "closed migration CLI source delta",
+    "closed migration CLI data and completion",
+  ]) {
+    const indent = name.endsWith("source delta") ? "  " : "";
+    const begin = indent + "// BEGIN " + name + "\n",
+      end = indent + "// END " + name + "\n";
+    assert.equal(text.split(begin).length, 2);
+    assert.equal(text.split(end).length, 2);
+    const block = text.slice(
+      text.indexOf(begin),
+      text.indexOf(end) + end.length,
+    );
+    text = text.replace(block + (indent ? "" : "\n"), "");
+  }
+  assert.equal(Buffer.byteLength(text), 114826);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "3cb94d746b48fa030c3a8f300c65f043f83296849d281c5149c87c2eea45e275",
+  );
+  return text;
+}
 
 test("final-helper retarget restores the complete2dbe core through exactly three pins without ancestor lookup", async () => {
   assert.equal(
@@ -183,12 +236,14 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "d060f671e8a784046f16cd50f8661da8c9883b623c376e23eccf2f4ccc4a9472",
+    "59853deefce088fb777d28fbfb6771602a8117bd49cba941a84ee91a1b4eca9d",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),
   );
-  let previous = physical.toString().replaceAll("\r\n", "\n");
+  let previous = qualifiedFinalHelperModule(
+    physical.toString().replaceAll("\r\n", "\n"),
+  );
   for (const [current, old] of [
     [
       '  branch: "refs/heads/codex/linux-arm-final-helper-proof-20261102",',
@@ -209,7 +264,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
     "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
   );
 });
-test("the final-helper digest is the actual131-row candidate with only its exact module substitution", async () => {
+test("the final producer digest binds all actual131 committed selected rows", async () => {
   const listed = spawnSync(
     "git",
     [
@@ -241,8 +296,7 @@ test("the final-helper digest is the actual131-row candidate with only its exact
       .update(Buffer.from(`blob ${canonical.length}\0`))
       .update(canonical)
       .digest("hex");
-    if (path !== "scripts/lib/cef-linux-producer-migration.mjs")
-      assert.equal(sha, committed, path);
+    assert.equal(sha, committed, path);
     rows.push({ type: "blob", mode, sha, path });
   }
   assert.equal(rows.length, 131);

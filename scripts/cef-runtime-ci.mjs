@@ -1427,10 +1427,18 @@ export async function build(
   env = process.env,
 ) {
   if (!execute) fail("build requires --execute");
+  // BEGIN fixed Linux engineering source budget
   let budget =
     runnerMode === "hosted"
-      ? createHostedBuildBudget(engineering ? 60 * 60_000 : undefined)
+      ? createHostedBuildBudget(
+          engineering
+            ? target === "aarch64-unknown-linux-gnu"
+              ? 120 * 60_000
+              : 60 * 60_000
+            : undefined,
+        )
       : undefined;
+  // END fixed Linux engineering source budget
   if (engineering) {
     if (runnerMode !== "hosted")
       fail("Engineering checkpoint requires its reviewed native hosted target");

@@ -1,5 +1,5 @@
-// Inactive preparation only. No API in this module authorizes a migration,
-// retires a sidecar, weakens validateManifest, or creates a compile proof.
+// Fixed Linux migration: only the context-bound complete transaction can execute.
+// Standalone preparation APIs stay closed; matching JSON grants no authority.
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
@@ -1924,7 +1924,7 @@ async function closeCreatedObservation(token, ledger) {
 }
 
 // BEGIN inactive fixed migration transaction
-const TRANSACTION_ADMITTED = false;
+const TRANSACTION_ADMITTED = true;
 const activeMigrationTransactions = new WeakMap();
 const spentMigrationContexts = new WeakSet();
 const completedMigrationTransactions = new WeakMap();

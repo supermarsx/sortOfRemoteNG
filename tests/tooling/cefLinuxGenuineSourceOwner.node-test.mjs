@@ -9,6 +9,7 @@ import {
   assertLinuxSourceOwnerReceipt,
   assertLiveLinuxSourceContext,
   cefHookArguments,
+  createHostedBuildBudget,
 } from "../../scripts/cef-runtime-ci.mjs";
 import {
   hostRemaining,
@@ -19,6 +20,69 @@ import {
 // runner. No vendor tool, native GN, GitHub or production registry is exercised.
 const url = new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url);
 const source = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
+function withoutLinuxSourceBudget(text) {
+  const begin = "  // BEGIN fixed Linux engineering source budget\n",
+    end = "  // END fixed Linux engineering source budget\n";
+  assert.equal(text.split(begin).length, 2);
+  assert.equal(text.split(end).length, 2);
+  const previous =
+    '  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(engineering ? 60 * 60_000 : undefined)\n      : undefined;\n';
+  const restored = text.replace(
+    text.slice(text.indexOf(begin), text.indexOf(end) + end.length),
+    previous,
+  );
+  assert.equal(Buffer.byteLength(restored), 76412);
+  assert.equal(
+    createHash("sha256").update(restored).digest("hex"),
+    "8eaf57312438c26ed5bc8e58070bb685daf11aeaa83e06594cfb746c4d8b20fe",
+  );
+  return restored;
+}
+test("Linux engineering source uses one fixed120-minute budget while Mac60 ordinary300 and the original host fence remain", () => {
+  const begin = source.indexOf(
+      "  // BEGIN fixed Linux engineering source budget\n",
+    ),
+    end = source.indexOf(
+      "  // END fixed Linux engineering source budget\n",
+      begin,
+    );
+  const select = new Function(
+    "runnerMode",
+    "engineering",
+    "target",
+    "createHostedBuildBudget",
+    source.slice(begin, end) + "\nreturn budget;",
+  );
+  for (const [engineering, target, minutes] of [
+    [true, "aarch64-unknown-linux-gnu", 120],
+    [true, "aarch64-apple-darwin", 60],
+    [true, "x86_64-apple-darwin", 60],
+    [false, "aarch64-unknown-linux-gnu", 300],
+  ]) {
+    let now = 10,
+      calls = 0;
+    const budget = select("hosted", engineering, target, (ms) => {
+      calls++;
+      return createHostedBuildBudget(ms, () => now);
+    });
+    assert.equal(calls, 1);
+    assert.equal(budget.remaining(), minutes * 60000);
+    now += 26 * 60000;
+    assert.equal(budget.remaining(), (minutes - 26) * 60000);
+    now += minutes * 60000;
+    assert.equal(budget.remaining(), 0);
+    assert.throws(() => budget.assertRemaining());
+  }
+  assert.equal(
+    select("dedicated", true, "aarch64-unknown-linux-gnu", () =>
+      assert.fail("hosted-only"),
+    ),
+    undefined,
+  );
+  assert(source.includes("remaining: () => originalBudget.remaining()"));
+  assert(supervision.includes("hostRemaining(capture.hostClock)"));
+  withoutLinuxSourceBudget(source);
+});
 const begin = "// BEGIN inactive Linux genuine source owner\n";
 const end = "// END inactive Linux genuine source owner\n";
 const callBegin = "    // BEGIN inactive Linux genuine source owner callsite\n";
@@ -196,7 +260,7 @@ test("live-assertion delta restores the complete committed GN2 runtime", () => {
     source.indexOf(last) + last.length,
   );
   assert.equal(source.split(section + "\n").length, 2);
-  const original = source.replace(section + "\n", "");
+  const original = withoutLinuxSourceBudget(source).replace(section + "\n", "");
   assert.equal(Buffer.byteLength(original), 75872);
   assert.equal(
     createHash("sha256").update(original).digest("hex"),
@@ -702,7 +766,7 @@ test("bounded inverse restores the complete old runtime producer and exposes no 
     assert.equal(text.split(from).length, 2, "exact historical span");
     return text.replace(from, to);
   }
-  let prior = inverse(source, supervision + "\n", "");
+  let prior = inverse(withoutLinuxSourceBudget(source), supervision + "\n", "");
   const liveBegin = "// BEGIN inactive Linux source live assertion\n";
   const liveEnd = "// END inactive Linux source live assertion\n";
   prior = inverse(

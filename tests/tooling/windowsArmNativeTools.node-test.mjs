@@ -229,7 +229,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(actual.rows.length, 131);
   assert.equal(
     actual.codeDigest,
-    "b061c0ecf1b6a7b6a67f2e64845987993686dfbd3312d5819bec715dcc620dc6",
+    "59853deefce088fb777d28fbfb6771602a8117bd49cba941a84ee91a1b4eca9d",
   );
   assert(
     !actual.rows.some((row) =>
@@ -889,4 +889,18 @@ test("exact production run reaches the outer provenance function before any nati
   assert(writes.every((row) => Buffer.isBuffer(row.raw)));
   assert(stages.includes("register-output"));
   assert(!stages.includes("provision-evidence"));
+});
+
+test("current producer attestation retarget preserves the complete historical native diagnostic workflow", () => {
+  const previous = workflow.replace(
+    "59853deefce088fb777d28fbfb6771602a8117bd49cba941a84ee91a1b4eca9d",
+    "b061c0ecf1b6a7b6a67f2e64845987993686dfbd3312d5819bec715dcc620dc6",
+  );
+  assert.equal(Buffer.byteLength(previous.replaceAll("\r\n", "\n")), 34250);
+  assert.equal(
+    createHash("sha256")
+      .update(previous.replaceAll("\r\n", "\n"))
+      .digest("hex"),
+    "64e42b50b17f8d150b20bfc6f25002189c086003ada63788865e0d4e81ec2b54",
+  );
 });

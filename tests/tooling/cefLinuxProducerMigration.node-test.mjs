@@ -34,14 +34,58 @@ function withoutCliModuleDelta(text) {
   }
   return text;
 }
-test("CLI additions invert to the complete closed transaction module, with both admission gates still closed", async () => {
+function withoutTransactionAdmission(text) {
+  const current =
+    "// Fixed Linux migration: only the context-bound complete transaction can execute.\n// Standalone preparation APIs stay closed; matching JSON grants no authority.\n";
+  const previous =
+    "// Inactive preparation only. No API in this module authorizes a migration,\n// retires a sidecar, weakens validateManifest, or creates a compile proof.\n";
+  assert.equal(text.split(current).length, 2);
+  assert.equal(text.split("const TRANSACTION_ADMITTED = true;").length, 2);
+  text = text
+    .replace(current, previous)
+    .replace(
+      "const TRANSACTION_ADMITTED = true;",
+      "const TRANSACTION_ADMITTED = false;",
+    );
+  assert.equal(Buffer.byteLength(text), 120106);
+  assert.equal(
+    core.sha(text),
+    "6105e6215636258128a77038ee8eb3e07f336a442cef5bfabaa2ed445bef5995",
+  );
+  return text;
+}
+
+test("closed transaction activation preserves the complete qualified pipeline and leaves standalone preparation closed", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   assert.equal(
-    core.sha(withoutFinalHelperProofDelta(withoutCliModuleDelta(text))),
+    core.sha(
+      withoutFinalHelperProofDelta(
+        withoutCliModuleDelta(withoutTransactionAdmission(text)),
+      ),
+    ),
     "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
   );
-  assert(text.includes("const TRANSACTION_ADMITTED = false;"));
+  assert(text.includes("const TRANSACTION_ADMITTED = true;"));
   assert(text.includes("const PREPARATION_ONLY = true;"));
+  let reads = 0;
+  const forged = new Proxy(
+    {},
+    {
+      get() {
+        reads++;
+        throw Error("untrusted token");
+      },
+    },
+  );
+  await assert.rejects(
+    migration.prepareLinuxMigrationRestore(forged, forged),
+    /OPAQUE_CANDIDATE/,
+  );
+  await assert.rejects(
+    migration.prepareLinuxMigrationRetirement(forged, forged),
+    /OPAQUE_CREATOR/,
+  );
+  assert.equal(reads, 0);
   await assert.rejects(
     migration.readLinuxMigrationSelection({ policy: {} }),
     /SELECTION_ARGUMENTS/,
@@ -246,7 +290,9 @@ function withoutFinalHelperProofDelta(text) {
   return text;
 }
 function withoutTransactionDelta(text) {
-  text = withoutFinalHelperProofDelta(withoutCliModuleDelta(text));
+  text = withoutFinalHelperProofDelta(
+    withoutCliModuleDelta(withoutTransactionAdmission(text)),
+  );
   for (const [start, end] of [
     [
       "// BEGIN inactive fixed transaction imports\n",
@@ -694,7 +740,7 @@ async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
   return { root, repo, args, policy, writePolicy };
 }
 
-test("fixed transaction is closed before opaque candidate getters and the prior module is exact", async () => {
+test("closed transaction rejects foreign source contexts before opaque candidate getters and preserves the prior module", async () => {
   let getters = 0;
   const forged = new Proxy(
     {},
@@ -711,7 +757,7 @@ test("fixed transaction is closed before opaque candidate getters and the prior 
   );
   assert.equal(getters, 0);
   const raw = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
-  assert.match(raw, /const TRANSACTION_ADMITTED = false;/);
+  assert.match(raw, /const TRANSACTION_ADMITTED = true;/);
   const previous = withoutTransactionDelta(raw);
   assert.equal(Buffer.byteLength(previous), 95128);
   assert.equal(
