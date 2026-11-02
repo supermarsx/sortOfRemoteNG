@@ -981,6 +981,7 @@ test("new workflow is no-input private-branch image-bound and uploads only valid
     "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
   );
   assert.equal(checkout.with["persist-credentials"], false);
+  assert.equal(checkout.with.ref, "${{ github.sha }}");
   assert.equal(checkout.env.GIT_CONFIG_VALUE_0, "false");
   const setup = proofJob.steps.find((step) =>
     step.uses?.startsWith("actions/setup-node@"),
@@ -1207,7 +1208,15 @@ test("fixed old-image proof reuses exact reviewed old source and executable pins
 });
 
 test("old-image workflow has only exact ref and image delta from immutable88258 current proof", () => {
-  const previous = restoreCurrentImageSelection(workflowText);
+  const detachedRef = "          ref: ${{ github.sha }}\n";
+  assert.equal(workflowText.split(detachedRef).length, 2);
+  const oldSelected = workflowText.replace(detachedRef, "");
+  assert.equal(Buffer.byteLength(oldSelected), 9103);
+  assert.equal(
+    hash(oldSelected),
+    "a0c3543b255803fb0779b1aaf830043a3a22fb6f5d9b5d7f1df72f90dfe765d0",
+  );
+  const previous = restoreCurrentImageSelection(oldSelected);
   assert.equal(Buffer.byteLength(previous), 9094);
   assert.equal(
     hash(previous),
@@ -1220,3 +1229,122 @@ test("old-image workflow has only exact ref and image delta from immutable88258 
   assert(!proofJob.if.includes("||"));
   assert(!workflowText.includes("20261030.294.1"));
 });
+
+test(
+  "actual forty-one-byte HEAD guard rejects a symbolic branch and accepts exact detached checkout",
+  { timeout: 20000 },
+  async (t) => {
+    const source = fixture.replaceAll("\r\n", "\n");
+    const span = (begin, end) => {
+      const first = "\n" + begin,
+        last = "\n" + end;
+      assert.equal(source.split(first).length, 2, begin);
+      assert.equal(source.split(last).length, 2, end);
+      const a = source.indexOf(first) + 1,
+        b = source.indexOf(last, a) + 1;
+      assert(b > a);
+      return source.slice(a, b);
+    };
+    const guard = span(
+      "  const gitHead = (\n",
+      "  const sources = await sourceWitness(p, head, end);\n",
+    );
+    assert.match(guard, /path\.join\(ROOT, "\.git\/HEAD"\), 41/);
+    assert.match(guard, /gitHead === head \+ "\\n"/);
+    const io =
+      span(
+        "const need = (condition, code) => {",
+        "function exact(value, fields) {",
+      ) +
+      span(
+        "async function physical(file) {",
+        "async function policy(end = Infinity) {",
+      ) +
+      span(
+        "function checkEnd(end) {",
+        "async function writeExclusive(file, raw, end) {",
+      );
+    const temp = await fs.realpath(os.tmpdir());
+    const owned = await fs.realpath(
+      await fs.mkdtemp(path.join(temp, "benign-proof-head-")),
+    );
+    t.after(async () => {
+      assert.equal(path.dirname(owned), temp);
+      assert.match(path.basename(owned), /^benign-proof-head-/);
+      assert.equal(await fs.realpath(owned), owned);
+      await fs.rm(owned, { recursive: true });
+    });
+    const hooks = path.join(owned, "empty-hooks"),
+      config = path.join(owned, "empty-config");
+    await fs.mkdir(hooks);
+    await fs.writeFile(config, "", { flag: "wx" });
+    const env = { ...process.env };
+    for (const key of Object.keys(env))
+      if (key.startsWith("GIT_")) delete env[key];
+    Object.assign(env, {
+      GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_TERMINAL_PROMPT: "0",
+    });
+    const git = (...args) =>
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "core.hooksPath=" + hooks,
+          "-c",
+          "commit.gpgsign=false",
+          "-c",
+          "user.name=Portable fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "-C",
+          owned,
+          ...args,
+        ],
+        {
+          env,
+          windowsHide: true,
+          timeout: 10000,
+          maxBuffer: 128 * 1024,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      )
+        .toString()
+        .trim();
+    git("init", "--initial-branch=proof");
+    git("commit", "--allow-empty", "--no-gpg-sign", "-m", "owned fixture");
+    const actualHead = git("rev-parse", "HEAD");
+    const end = performance.now() + 10000;
+    const actualCheck = vm.runInNewContext(
+      io + "\nasync function actualCheck(){" + guard + "}\nactualCheck",
+      {
+        fs,
+        syncFs,
+        path,
+        createHash,
+        Buffer,
+        performance,
+        setTimeout,
+        clearTimeout,
+        ROOT: owned,
+        head: actualHead,
+        end,
+      },
+    );
+    const symbolic = await fs.readFile(path.join(owned, ".git/HEAD"), "ascii");
+    assert.equal(symbolic, "ref: refs/heads/proof\n");
+    await assert.rejects(actualCheck(), /PROOF_HEAD/);
+    git("checkout", "--detach", actualHead);
+    const detached = await fs.readFile(path.join(owned, ".git/HEAD"));
+    assert.equal(detached.length, 41);
+    assert.equal(detached.toString("ascii"), actualHead + "\n");
+    await actualCheck();
+    assert.equal(checkoutRef(), "${{ github.sha }}");
+    function checkoutRef() {
+      return proofJob.steps.find((step) =>
+        step.uses?.startsWith("actions/checkout@"),
+      ).with.ref;
+    }
+  },
+);
