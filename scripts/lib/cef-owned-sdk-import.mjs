@@ -2,7 +2,7 @@
 // build, native acceptance, runtime readiness or publication authority.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, constants } from "node:fs";
 import {
   lstat,
   readFile,
@@ -10,7 +10,13 @@ import {
   readdir,
   mkdir,
   writeFile,
+  mkdtemp,
+  unlink,
+  rmdir,
+  open,
 } from "node:fs/promises";
+import os from "node:os";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -49,6 +55,7 @@ import {
   WINDOWS_CAPSULE_IDENTITY,
   WINDOWS_CAPSULE_PROVENANCE,
   ownedEvidenceLimit,
+  WINDOWS_ARM_FULLSDK_IDENTITIES,
 } from "./cef-owned-sdk-handoff.mjs";
 import {
   RELEASE_LIMITS,
@@ -59,6 +66,16 @@ import {
   archiveCommand,
   canonical,
 } from "./cef-engineering-checkpoint.mjs";
+import {
+  WINDOWS_ARM_SDK_ORIGIN,
+  WINDOWS_ARM_SDK_TARGET,
+  loadWindowsArmSdkOrigin,
+  closeWindowsArmSdkOrigin,
+  inspectWindowsArmSdkOriginReview,
+  inspectWindowsArmSdkRecords,
+  verifyWindowsArmSdkProducer,
+  assertWindowsArmSdkProducerBinding,
+} from "./cef-windows-arm-sdk-origin.mjs";
 
 export const OWNED_WORKFLOW = ".github/workflows/cef-owned-sdk-import.yml";
 export const OWNED_REPOSITORY = "supermarsx/sortOfRemoteNG";
@@ -71,7 +88,34 @@ export const OWNED_LIMITS = Object.freeze({
 });
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const execute = promisify(execFile);
+const windowsArmImports = new AsyncLocalStorage();
+function retainedWindowsArmImport(review, expected) {
+  if (review.origin !== WINDOWS_ARM_SDK_ORIGIN) return;
+  const scope = windowsArmImports.getStore();
+  assert(
+    scope?.active === true &&
+      scope.review === canonical(review) &&
+      (expected === undefined || expected === scope),
+    "Windows ARM import requires the current private verified producer transaction",
+  );
+  return scope;
+}
+async function requireWindowsArmImport(review) {
+  const scope = retainedWindowsArmImport(review);
+  if (!scope) return;
+  await assertWindowsArmSdkProducerBinding(
+    scope.binding,
+    scope.receipt,
+    scope.sealSha256,
+  );
+  assert(
+    retainedWindowsArmImport(review) === scope,
+    "Windows ARM import transaction retired during verification",
+  );
+  return scope;
+}
 const origins = {
+  [WINDOWS_ARM_SDK_ORIGIN]: WINDOWS_ARM_SDK_TARGET,
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
@@ -141,6 +185,9 @@ export function validateOwnedReview(review) {
     "assets",
     "engineSha256",
     "filesVerified",
+    ...(review?.origin === WINDOWS_ARM_SDK_ORIGIN
+      ? ["originPolicySha256"]
+      : []),
   ]);
   assert(
     review.schemaVersion === 1 &&
@@ -158,6 +205,8 @@ export function validateOwnedReview(review) {
     "engineSha256",
   ])
     digest(review[key]);
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN)
+    digest(review.originPolicySha256);
   assert(
     positive(review.filesVerified) &&
       review.filesVerified <= RELEASE_LIMITS.members,
@@ -169,27 +218,38 @@ export function validateOwnedReview(review) {
     "verificationPython",
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
-  const names = isLinuxIsolatedOrigin(review.origin)
-    ? LINUX_ISOLATED_EVIDENCE
-    : review.origin === LINUX_INCREMENTAL_ORIGIN
-      ? LINUX_INCREMENTAL_EVIDENCE
-      : isWindowsCapsuleOrigin(review.origin)
-        ? ownedCapsuleEvidence(review.origin)
-        : review.origin === "owned-windows-incremental-engine"
-          ? WINDOWS_INCREMENTAL_EVIDENCE
-          : review.origin === "existing-windows-package"
-            ? ["build"]
-            : [
-                "prepared",
-                "started",
-                "container",
-                "finished",
-                "producer",
-                "freshCheck",
-              ];
+  const names =
+    review.origin === WINDOWS_ARM_SDK_ORIGIN
+      ? ["source", "compile", "package", "producerSeal"]
+      : isLinuxIsolatedOrigin(review.origin)
+        ? LINUX_ISOLATED_EVIDENCE
+        : review.origin === LINUX_INCREMENTAL_ORIGIN
+          ? LINUX_INCREMENTAL_EVIDENCE
+          : isWindowsCapsuleOrigin(review.origin)
+            ? ownedCapsuleEvidence(review.origin)
+            : review.origin === "owned-windows-incremental-engine"
+              ? WINDOWS_INCREMENTAL_EVIDENCE
+              : review.origin === "existing-windows-package"
+                ? ["build"]
+                : [
+                    "prepared",
+                    "started",
+                    "container",
+                    "finished",
+                    "producer",
+                    "freshCheck",
+                  ];
   exact(review.reviewBinding.evidencePins, names);
   for (const [role, pin] of Object.entries(review.reviewBinding.evidencePins))
     rawPin(pin, ownedEvidenceLimit(review.origin, role));
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN)
+    assert(
+      WINDOWS_ARM_FULLSDK_IDENTITIES.includes(review.sourceLockIdentity) &&
+        Object.entries(review.reviewBinding.evidencePins).every(
+          ([role, pin]) => pin.path === `${role}.json`,
+        ),
+      "Exact Windows ARM FULLSDK source and evidence roles required",
+    );
   if (isLinuxIncrementalOrigin(review.origin))
     assert(
       review.sourceLockIdentity ===
@@ -298,7 +358,28 @@ export async function readOwnedImportReview(root, relative, expectedSha) {
     ownedSha(bytes) === expectedSha,
     "Independently reviewed raw review bytes differ",
   );
-  return validateOwnedReview(parseOwnedJson(bytes));
+  const review = validateOwnedReview(parseOwnedJson(bytes));
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) {
+    const receipt = await loadWindowsArmSdkOrigin();
+    let failed = false,
+      first;
+    try {
+      await inspectWindowsArmSdkOriginReview(receipt, review);
+    } catch (error) {
+      failed = true;
+      first = error;
+    }
+    try {
+      await closeWindowsArmSdkOrigin(receipt);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        first = error;
+      }
+    }
+    if (failed) throw first;
+  }
+  return review;
 }
 export function validateLocalHandoff(review, bytes) {
   validateOwnedReview(review);
@@ -343,7 +424,27 @@ export function validateLocalHandoff(review, bytes) {
       value.provenance?.origin === review.origin,
     "Local handoff is not build/publication authority",
   );
-  if (isLinuxIsolatedOrigin(review.origin)) {
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) {
+    exact(value.provenance, [
+      "origin",
+      "originPolicySha256",
+      "producerSealSha256",
+      "engineSha256",
+      "originalBuildRecordsPinned",
+      "producerVerified",
+      "originalBuildReplayed",
+    ]);
+    assert(
+      value.provenance.originPolicySha256 === review.originPolicySha256 &&
+        value.provenance.producerSealSha256 ===
+          review.reviewBinding.evidencePins.producerSeal.sha256 &&
+        value.provenance.engineSha256 === review.engineSha256 &&
+        value.provenance.originalBuildRecordsPinned === true &&
+        value.provenance.producerVerified === false &&
+        value.provenance.originalBuildReplayed === false,
+      "Local Windows ARM handoff is a typed byte candidate only",
+    );
+  } else if (isLinuxIsolatedOrigin(review.origin)) {
     validateLinuxIsolatedProvenance(value.provenance, review);
   } else if (review.origin === LINUX_INCREMENTAL_ORIGIN) {
     validateLinuxIncrementalProvenance(value.provenance, review);
@@ -936,7 +1037,8 @@ export async function freshLocalHandoff(
   { bundle, localReview, inputs, evidence, verifyOutput },
   review,
 ) {
-  await tokenFreeNode(path.join(ROOT, "scripts/cef-owned-sdk-handoff.mjs"), [
+  const script = path.join(ROOT, "scripts/cef-owned-sdk-handoff.mjs");
+  const args = [
     "check",
     "--reviewed",
     localReview,
@@ -949,16 +1051,364 @@ export async function freshLocalHandoff(
     "--output",
     verifyOutput,
     "--execute",
-  ]);
+  ];
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) {
+    // Git is required to check the fixed committed policy. No credentials,
+    // ambient Git configuration or loader overrides enter this local verifier.
+    await execute(process.execPath, [script, ...args], {
+      env: {
+        PATH: process.env.PATH,
+        ...(process.env.SystemRoot
+          ? { SystemRoot: process.env.SystemRoot }
+          : {}),
+      },
+      windowsHide: true,
+      timeout: 10 * 60_000,
+      maxBuffer: 2 * 1024 ** 2,
+    });
+  } else await tokenFreeNode(script, args);
   const fresh = await readFile(path.join(verifyOutput, "handoff.json"));
   validateLocalHandoff(review, fresh);
   return fresh;
+}
+
+async function readWindowsArmOwnedRecords(receipt, review, reviewedImport) {
+  const git = async (args, maximum = OWNED_LIMITS.review) =>
+    (
+      await execute(
+        "git",
+        [
+          "-c",
+          "core.hooksPath=NUL",
+          "-c",
+          "core.fsmonitor=false",
+          "-c",
+          "core.longpaths=true",
+          ...args,
+        ],
+        {
+          cwd: ROOT,
+          encoding: "buffer",
+          timeout: 15000,
+          maxBuffer: maximum,
+          windowsHide: true,
+          env: {
+            PATH: process.env.PATH,
+            GIT_CONFIG_NOSYSTEM: "1",
+            GIT_CONFIG_GLOBAL:
+              process.platform === "win32" ? "NUL" : "/dev/null",
+            ...(process.env.SystemRoot
+              ? { SystemRoot: process.env.SystemRoot }
+              : {}),
+          },
+        },
+      )
+    ).stdout;
+  const head = (await git(["rev-parse", "HEAD"])).toString().trim();
+  assert(/^[a-f0-9]{40}$/.test(head), "Exact current review head required");
+  const committedReview = await git(["show", `HEAD:${reviewedImport}`]);
+  assert(
+    canonical(parseOwnedJson(committedReview)) === canonical(review),
+    "Current committed review differs from verified transaction",
+  );
+  const records = {};
+  for (const role of ["source", "compile", "package", "producerSeal"]) {
+    const pin = review.reviewBinding.evidencePins[role];
+    assert(
+      pin.path === `${role}.json`,
+      "Fixed same-directory Windows ARM evidence role required",
+    );
+    const relative = `${path.posix.dirname(reviewedImport)}/${pin.path}`;
+    const tree = (await git(["ls-tree", "HEAD", "--", relative])).toString();
+    assert(
+      new RegExp(
+        `^100644 blob [a-f0-9]{40}\\t${relative.replaceAll(".", "\\.")}\\r?\\n$`,
+      ).test(tree),
+      "Committed regular Windows ARM evidence required",
+    );
+    const committed = await git(["show", `HEAD:${relative}`]);
+    assert(
+      committed.length === pin.size && ownedSha(committed) === pin.sha256,
+      "Committed original evidence pin differs",
+    );
+    const file = path.join(ROOT, relative);
+    await noLinks(file);
+    const before = await lstat(file, { bigint: true });
+    const handle = await open(
+      file,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    );
+    try {
+      const stamp = (s) =>
+        [s.dev, s.ino, s.mode, s.size, s.mtimeNs, s.ctimeNs].join(":");
+      const held = await handle.stat({ bigint: true });
+      assert(
+        before.isFile() &&
+          held.isFile() &&
+          held.size === BigInt(pin.size) &&
+          stamp(before) === stamp(held),
+        "Original evidence identity differs before read",
+      );
+      const raw = Buffer.alloc(pin.size + 1);
+      let count = 0;
+      while (count < raw.length) {
+        const got = await handle.read(raw, count, raw.length - count, count);
+        if (!got.bytesRead) break;
+        count += got.bytesRead;
+      }
+      assert(
+        count === pin.size &&
+          raw.subarray(0, count).equals(committed) &&
+          stamp(held) === stamp(await handle.stat({ bigint: true })) &&
+          stamp(held) === stamp(await lstat(file, { bigint: true })),
+        "Original evidence changed during held read",
+      );
+      records[role] = Buffer.from(committed);
+    } finally {
+      await handle.close();
+    }
+  }
+  const candidate = await inspectWindowsArmSdkRecords(receipt, records);
+  const source = parseOwnedJson(records.source),
+    packaged = parseOwnedJson(records.package);
+  assert(
+    candidate.sourceLockIdentity === review.sourceLockIdentity &&
+      source.sourceLockRaw.sha256 ===
+        review.originalInputsSourceLockRawSha256 &&
+      packaged.engine.sha256 === review.engineSha256 &&
+      packaged.inventory.files === review.filesVerified &&
+      canonical(
+        [...packaged.assets].sort((a, b) => a.name.localeCompare(b.name)),
+      ) ===
+        canonical(
+          [...review.assets].sort((a, b) => a.name.localeCompare(b.name)),
+        ),
+    "Original full SDK records differ from reviewed bundle",
+  );
+  return { records, candidate, git, head };
+}
+
+// Local native execution consumes the prior authenticated download. This path
+// checks current committed evidence, but never creates a live producer binding
+// or an import scope, and never accepts or reads an API token.
+export async function withInspectedWindowsArmOwnedImport(
+  review,
+  reviewedImport,
+  operation,
+) {
+  if (review.origin !== WINDOWS_ARM_SDK_ORIGIN) return operation();
+  review = structuredClone(validateOwnedReview(review));
+  reviewedImportPath(reviewedImport);
+  const receipt = await loadWindowsArmSdkOrigin();
+  let failed = false,
+    first,
+    result;
+  try {
+    await inspectWindowsArmSdkOriginReview(receipt, review);
+    const { records } = await readWindowsArmOwnedRecords(
+      receipt,
+      review,
+      reviewedImport,
+    );
+    result = await operation();
+    await inspectWindowsArmSdkOriginReview(receipt, review);
+    await inspectWindowsArmSdkRecords(receipt, records);
+  } catch (error) {
+    failed = true;
+    first = error;
+  }
+  try {
+    await closeWindowsArmSdkOrigin(receipt);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  }
+  if (failed) throw first;
+  return result;
+}
+
+// Only fixed internal consumers call this transaction. Neither the receipt nor
+// the authenticated transport/binding is accepted from serialized review data.
+export async function withVerifiedWindowsArmOwnedImport(
+  review,
+  reviewedImport,
+  token,
+  operation,
+) {
+  if (review.origin !== WINDOWS_ARM_SDK_ORIGIN) return operation();
+  review = structuredClone(validateOwnedReview(review));
+  reviewedImportPath(reviewedImport);
+  const receipt = await loadWindowsArmSdkOrigin();
+  let failed = false,
+    first,
+    result,
+    temporary;
+  try {
+    await inspectWindowsArmSdkOriginReview(receipt, review);
+    const { records, candidate, git, head } = await readWindowsArmOwnedRecords(
+      receipt,
+      review,
+      reviewedImport,
+    );
+    const api = ownedImportApi(OWNED_REPOSITORY, token);
+    const listing = await api(
+      `actions/runs/${candidate.producer.runId}/artifacts?per_page=100`,
+    );
+    assert(
+      Number.isSafeInteger(listing.total_count) &&
+        listing.total_count <= 100 &&
+        Array.isArray(listing.artifacts) &&
+        listing.artifacts.length === listing.total_count,
+      "Complete bounded producer artifact inventory required",
+    );
+    const matches = listing.artifacts.filter(
+      (row) =>
+        row.name ===
+        `windows-arm-full-sdk-seal-${candidate.producer.runId}-${candidate.producer.attempt}`,
+    );
+    assert(
+      matches.length === 1,
+      "Unique original FULLSDK seal artifact required",
+    );
+    const artifact = matches[0];
+    assert(
+      positive(artifact.id) &&
+        artifact.expired === false &&
+        positive(artifact.size_in_bytes) &&
+        artifact.size_in_bytes <= OWNED_LIMITS.seal &&
+        /^sha256:[a-f0-9]{64}$/.test(artifact.digest ?? "") &&
+        artifact.workflow_run?.id === candidate.producer.runId &&
+        artifact.workflow_run?.head_sha === candidate.producer.head,
+      "Original seal artifact metadata differs",
+    );
+    temporary = await mkdtemp(
+      path.join(os.tmpdir(), "cef-windows-arm-producer-"),
+    );
+    const archive = path.join(temporary, "seal.zip");
+    const pin = {
+      id: artifact.id,
+      bytes: artifact.size_in_bytes,
+      sha256: artifact.digest.slice(7),
+    };
+    await downloadAsset(
+      OWNED_REPOSITORY,
+      token,
+      `/actions/artifacts/${pin.id}/zip`,
+      archive,
+      pin,
+      { maximum: OWNED_LIMITS.seal, deadline: Date.now() + 60000 },
+    );
+    await regular(archive, OWNED_LIMITS.seal);
+    const archiveHandle = await open(
+      archive,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    );
+    let raw;
+    try {
+      const held = await archiveHandle.stat({ bigint: true });
+      assert(
+        held.isFile() && held.size === BigInt(pin.bytes),
+        "Bounded held seal archive required",
+      );
+      const bounded = Buffer.alloc(pin.bytes + 1);
+      let count = 0;
+      while (count < bounded.length) {
+        const got = await archiveHandle.read(
+          bounded,
+          count,
+          bounded.length - count,
+          count,
+        );
+        if (!got.bytesRead) break;
+        count += got.bytesRead;
+      }
+      const after = await archiveHandle.stat({ bigint: true }),
+        named = await lstat(archive, { bigint: true });
+      const stamp = (s) =>
+        [s.dev, s.ino, s.mode, s.size, s.mtimeNs, s.ctimeNs].join(":");
+      assert(
+        count === pin.bytes &&
+          stamp(held) === stamp(after) &&
+          stamp(held) === stamp(named),
+        "Independent archive changed during held read",
+      );
+      raw = Buffer.from(bounded.subarray(0, count));
+    } finally {
+      await archiveHandle.close();
+    }
+    const binding = await verifyWindowsArmSdkProducer(
+      receipt,
+      records,
+      { pin, raw },
+      api,
+    );
+    assert(
+      (await git(["rev-parse", "HEAD"])).toString().trim() === head,
+      "Review head changed during original producer verification",
+    );
+    await assertWindowsArmSdkProducerBinding(
+      binding,
+      receipt,
+      candidate.sealSha256,
+    );
+    const scope = {
+      active: true,
+      review: canonical(review),
+      binding,
+      receipt,
+      sealSha256: candidate.sealSha256,
+    };
+    try {
+      result = await windowsArmImports.run(scope, operation);
+    } finally {
+      scope.active = false;
+    }
+    await assertWindowsArmSdkProducerBinding(
+      binding,
+      receipt,
+      candidate.sealSha256,
+    );
+  } catch (error) {
+    failed = true;
+    first = error;
+  }
+  if (temporary) {
+    try {
+      await unlink(path.join(temporary, "seal.zip"));
+    } catch (error) {
+      if (error.code !== "ENOENT" && !failed) {
+        failed = true;
+        first = error;
+      }
+    }
+    try {
+      await rmdir(temporary);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        first = error;
+      }
+    }
+  }
+  try {
+    await closeWindowsArmSdkOrigin(receipt);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  }
+  if (failed) throw first;
+  return result;
 }
 export async function quarantineOwnedBundle(
   api,
   { bundle, review, reviewSha, handoff, commit, execute: confirmed = false },
   { verify = verifyOwnedBundle } = {},
 ) {
+  await requireWindowsArmImport(review);
   assert(
     confirmed === true && /^[a-f0-9]{40}$/.test(commit ?? ""),
     "Explicit quarantine upload and commit required",
@@ -966,7 +1416,9 @@ export async function quarantineOwnedBundle(
   digest(reviewSha);
   validateLocalHandoff(review, handoff);
   await verify(bundle, review);
+  const importScope = await requireWindowsArmImport(review);
   const tag = quarantineTag(review, reviewSha);
+  retainedWindowsArmImport(review, importScope);
   const release = await api("releases", {
     method: "POST",
     body: {
@@ -985,6 +1437,8 @@ export async function quarantineOwnedBundle(
   );
   const uploadedIds = new Set();
   for (const pin of review.assets) {
+    const appendScope = await requireWindowsArmImport(review);
+    retainedWindowsArmImport(review, appendScope);
     const body = createReadStream(path.join(bundle, pin.name));
     try {
       const row = await api(
@@ -1030,18 +1484,24 @@ export async function sealOwnedImport(
   },
   { verify = verifyOwnedArchive, download = downloadAsset } = {},
 ) {
+  await requireWindowsArmImport(review);
   validateOwnedReview(review);
   digest(reviewSha);
   reviewedImportPath(reviewedImport);
   validateImportProducer(producer);
   await verifyImportProducer(api, producer);
   const before = await ownedDraft(api, review, reviewSha, releaseId);
+  const createScope = await requireWindowsArmImport(review);
+  retainedWindowsArmImport(review, createScope);
   await mkdir(bundle);
   await noLinks(bundle);
+  retainedWindowsArmImport(review, createScope);
   await mkdir(output);
   await noLinks(output);
   const deadline = Date.now() + 20 * 60_000;
-  for (const pin of before.assets)
+  for (const pin of before.assets) {
+    const downloadScope = await requireWindowsArmImport(review);
+    retainedWindowsArmImport(review, downloadScope);
     await download(
       repository,
       token,
@@ -1056,6 +1516,9 @@ export async function sealOwnedImport(
         deadline,
       },
     );
+  }
+  const verifyScope = await requireWindowsArmImport(review);
+  retainedWindowsArmImport(review, verifyScope);
   await verify(bundle, review, path.join(output, "verified"), python);
   const after = await ownedDraft(api, review, reviewSha, releaseId);
   assert(
@@ -1063,6 +1526,7 @@ export async function sealOwnedImport(
     "Draft changed during verification",
   );
   await verifyImportProducer(api, producer);
+  const completionScope = await requireWindowsArmImport(review);
   const completion = validateImportCompletion({
     schemaVersion: 1,
     kind: "sorng-cef-owned-import-completion",
@@ -1088,6 +1552,7 @@ export async function sealOwnedImport(
   const bytes = Buffer.from(canonical(seal) + "\n");
   assert(bytes.length < OWNED_LIMITS.seal, "Owned seal bound");
   // LAST: no failure path above creates success authority.
+  retainedWindowsArmImport(review, completionScope);
   await writeFile(path.join(output, "seal.json"), bytes, { flag: "wx" });
   return seal;
 }
@@ -1114,7 +1579,7 @@ export function ownedImportApi(
   ) => {
     assert(Date.now() < deadline, "Owned import transport deadline");
     const read =
-      /^(?:|actions\/workflows\/cef-owned-sdk-import\.yml|actions\/runs\/[1-9][0-9]*(?:\/artifacts\?per_page=100)?|actions\/artifacts\/[1-9][0-9]*|releases\/[1-9][0-9]*(?:\/assets\?per_page=100)?|git\/commits\/[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}\?recursive=1)$/;
+      /^(?:|actions\/workflows\/(?:cef-owned-sdk-import|windows-arm-full-sdk)\.yml|actions\/runs\/[1-9][0-9]*(?:\/artifacts\?per_page=100)?|actions\/artifacts\/[1-9][0-9]*|releases\/[1-9][0-9]*(?:\/assets\?per_page=100)?|git\/commits\/[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}\?recursive=1)$/;
     const append = /^releases\/[1-9][0-9]*\/assets\?name=[A-Za-z0-9_.%-]+$/;
     assert(
       (method === "GET" && !upload && !body && read.test(route)) ||
@@ -1209,6 +1674,7 @@ export async function downloadOwnedImport(
   },
   { download = downloadAsset, extract = archiveCommand } = {},
 ) {
+  await requireWindowsArmImport(review);
   validateOwnedReview(review);
   assert(
     selection.producer === "owned-import",
@@ -1267,9 +1733,13 @@ export async function downloadOwnedImport(
       artifact.size_in_bytes < OWNED_LIMITS.seal,
     "Independent owned seal identity differs",
   );
+  const createScope = await requireWindowsArmImport(review);
+  retainedWindowsArmImport(review, createScope);
   await mkdir(destination);
   await noLinks(destination);
   const deadline = Date.now() + 20 * 60_000;
+  const artifactScope = await requireWindowsArmImport(review);
+  retainedWindowsArmImport(review, artifactScope);
   await download(
     repository,
     token,
@@ -1278,6 +1748,8 @@ export async function downloadOwnedImport(
     { bytes: artifact.size_in_bytes, sha256: selection.artifactSha256 },
     { request, maximum: OWNED_LIMITS.seal, deadline },
   );
+  const extractScope = await requireWindowsArmImport(review);
+  retainedWindowsArmImport(review, extractScope);
   const seal = validateImportSeal(
     await extract(
       python,
@@ -1314,7 +1786,9 @@ export async function downloadOwnedImport(
       canonical(draft.assets) === canonical(seal.completion.assets),
     "Sealed draft changed",
   );
-  for (const pin of draft.assets)
+  for (const pin of draft.assets) {
+    const downloadScope = await requireWindowsArmImport(review);
+    retainedWindowsArmImport(review, downloadScope);
     await download(
       repository,
       token,
@@ -1329,6 +1803,7 @@ export async function downloadOwnedImport(
         deadline,
       },
     );
+  }
   const after = await ownedDraft(
     api,
     review,
@@ -1339,6 +1814,8 @@ export async function downloadOwnedImport(
     canonical(after) === canonical(draft),
     "Draft changed during acceptance download",
   );
+  const completionScope = await requireWindowsArmImport(review);
+  retainedWindowsArmImport(review, completionScope);
   await writeFile(
     path.join(destination, "owned-import-completion.json"),
     canonical(seal.completion) + "\n",

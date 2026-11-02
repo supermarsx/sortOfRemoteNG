@@ -7,6 +7,7 @@ import json
 import math
 import os
 import platform
+import posixpath
 import re
 from pathlib import Path
 import stat
@@ -1140,26 +1141,237 @@ def _mac_intel_proof_writer_allowed(root,value):
     return True
 
 
+_MAC_NEARBY_PROOF_WRITER = ContextVar('mac_nearby_proof_writer', default=None)
+_MAC_NEARBY_PROOF_RECEIPTS = {}
+_MAC_NEARBY_PROOF_TEMP = '/Users/runner/work/_temp'
+_MAC_NEARBY_PUBLIC_SCOPE = ContextVar('mac_nearby_public_scope', default=None)
+_MAC_NEARBY_PUBLIC_RECEIPTS = {}
+
+
+def _mac_nearby_public_shape(mode,root,sidecar,identity,platform_policy):
+    # All admission checks are pure and precede safe(), manifests or source IO.
+    require(MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is True and mode in SOURCE_IO_MODES and
+            platform_policy in ('mac-arm','mac-intel'), 'source-mac-nearby-public-scope')
+    (source_mac_intel_write_admission if platform_policy=='mac-intel' else source_mac_write_admission)(identity)
+    require(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public', 'source-mac-host-scope')
+    require(type(identity)is dict and set(identity)=={'target','source','producer','canonicalRoot','image','tools','graph','siso'} and
+            all(type(identity[key])is str and re.fullmatch('[a-f0-9]{64}',identity[key]) for key in ('source','producer','tools','graph','siso')),
+            'source-mac-nearby-public-scope')
+    work=Path(identity['canonicalRoot'])
+    require(isinstance(root,(str,Path)) and isinstance(sidecar,(str,Path)) and Path(root)==work/'source' and
+            Path(sidecar)==work/'source/src/out'/('Release_GN_x64' if platform_policy=='mac-intel' else 'Release_GN_arm64')/SOURCE_METADATA_NAME,
+            'source-mac-nearby-public-scope')
+    return work
+
+
+@contextmanager
+def _mac_nearby_public_scope(mode,root,sidecar,identity,platform_policy):
+    work=_mac_nearby_public_shape(mode,root,sidecar,identity,platform_policy)
+    receipt=object()
+    record=(mode,Path(root),Path(sidecar),tuple(sorted(identity.items())),work,platform_policy)
+    _MAC_NEARBY_PUBLIC_RECEIPTS[receipt]=record
+    token=_MAC_NEARBY_PUBLIC_SCOPE.set(receipt)
+    try:yield
+    finally:
+        _MAC_NEARBY_PUBLIC_SCOPE.reset(token)
+        _MAC_NEARBY_PUBLIC_RECEIPTS.pop(receipt,None)
+
+
+def _mac_nearby_public_current(receipt):
+    require(type(receipt)is object and receipt is _MAC_NEARBY_PUBLIC_SCOPE.get() and
+            receipt in _MAC_NEARBY_PUBLIC_RECEIPTS, 'source-mac-nearby-public-scope')
+    record=_MAC_NEARBY_PUBLIC_RECEIPTS[receipt]
+    mode,root,sidecar,identity,work,platform_policy=record
+    require(_mac_nearby_public_shape(mode,root,sidecar,dict(identity),platform_policy)==work,
+            'source-mac-nearby-public-scope')
+    return record
+
+
+def _mac_nearby_scope_selection(root,identity,work,platform_policy,mode=None):
+    public=_MAC_NEARBY_PUBLIC_SCOPE.get()
+    if public is not None:
+        selected,source,_,bound,canonical,policy=_mac_nearby_public_current(public)
+        require(Path(root)==source and Path(work)==canonical and type(identity)is dict and
+                tuple(sorted(identity.items()))==bound and platform_policy==policy and
+                (mode is None or mode==selected), 'source-mac-nearby-public-scope')
+        return public
+    if _mac_nearby_proof_selection(root,identity,work,platform_policy):
+        return _MAC_NEARBY_PROOF_WRITER.get()
+    return None
+
+
+def _mac_nearby_proof_current(record):
+    root,fd,identity = record
+    require(safe(root)==root, 'source-mac-nearby-proof-scope')
+    current=root.lstat();held=os.fstat(fd)
+    require(stat.S_ISDIR(current.st_mode) and stat.S_ISDIR(held.st_mode) and
+            stat.S_IMODE(current.st_mode)==0o700 and current.st_uid==os.geteuid() and
+            root.parent.lstat().st_uid==os.geteuid() and
+            _mac_intel_proof_stamp(current)==identity==_mac_intel_proof_stamp(held),
+            'source-mac-nearby-proof-scope')
+    return root
+
+
+@contextmanager
+def _mac_nearby_owned_proof_tree(output,budget):
+    """A creation receipt for a closed scratch proof, never public admission."""
+    import sys
+    branch='refs/heads/codex/mac-nearby-source-qualification-20261101'
+    require(sys.platform=='darwin' and
+            platform.machine()=='x86_64' and os.environ.get('ImageOS')=='macos15' and
+            os.environ.get('ImageVersion')==MAC_SOURCE_IMAGE and
+            os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public' and
+            os.environ.get('GITHUB_REPOSITORY')=='supermarsx/sortOfRemoteNG' and
+            os.environ.get('GITHUB_REPOSITORY_ID')=='1010282954' and
+            os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and os.environ.get('GITHUB_REF')==branch and
+            re.fullmatch('[a-f0-9]{40}',os.environ.get('GITHUB_SHA','')) and
+            os.environ.get('GITHUB_WORKFLOW_SHA')==os.environ['GITHUB_SHA'] and
+            os.environ.get('GITHUB_WORKFLOW_REF')=='supermarsx/sortOfRemoteNG/.github/workflows/cef-mac-nearby-source-proof.yml@'+branch,
+            'source-mac-nearby-proof-scope')
+    budget.check()
+    temp=safe(Path(os.environ['RUNNER_TEMP']));root=Path(output)
+    require(str(temp)==_MAC_NEARBY_PROOF_TEMP and root.parent==temp and
+            root.is_absolute() and str(root)==os.path.abspath(root) and
+            re.fullmatch(r'cef-mac-nearby-owned-proof-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}',root.name) and
+            stat.S_ISDIR(temp.stat().st_mode) and temp.stat().st_uid==os.geteuid() and not os.path.lexists(root),
+            'source-mac-nearby-proof-scope')
+    root.mkdir(mode=0o700)
+    fd=None;context=None;receipt=object();primary=None
+    try:
+        before=root.lstat()
+        require(stat.S_ISDIR(before.st_mode) and stat.S_IMODE(before.st_mode)==0o700 and
+                before.st_uid==os.geteuid(), 'source-mac-nearby-proof-scope')
+        fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        record=(root,fd,_mac_intel_proof_stamp(before))
+        _mac_nearby_proof_current(record)
+        _MAC_NEARBY_PROOF_RECEIPTS[receipt]=record
+        context=_MAC_NEARBY_PROOF_WRITER.set(receipt)
+        budget.check()
+        yield receipt
+        budget.check()
+        _mac_nearby_proof_current(record)
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        if context is not None:_MAC_NEARBY_PROOF_WRITER.reset(context)
+        _MAC_NEARBY_PROOF_RECEIPTS.pop(receipt,None)
+        if fd is not None:source_close(lambda:os.close(fd),primary)
+
+
+def _mac_nearby_owned_proof_path(receipt):
+    require(type(receipt)is object and receipt is _MAC_NEARBY_PROOF_WRITER.get() and
+            receipt in _MAC_NEARBY_PROOF_RECEIPTS, 'source-mac-nearby-proof-scope')
+    return _mac_nearby_proof_current(_MAC_NEARBY_PROOF_RECEIPTS[receipt])
+
+
+def _mac_nearby_proof_selection(root,identity,work,platform_policy):
+    receipt=_MAC_NEARBY_PROOF_WRITER.get()
+    if receipt is None:return False
+    proof_root=_mac_nearby_owned_proof_path(receipt)
+    require(platform_policy in ('mac-arm','mac-intel') and
+            type(identity)is dict, 'source-mac-nearby-proof-scope')
+    intel=platform_policy=='mac-intel'
+    expected_work=proof_root/('intel' if intel else 'arm')/'work'
+    require(Path(work)==expected_work and Path(root)==expected_work/'source' and
+            set(identity)=={'target','source','producer','canonicalRoot','image','tools','graph','siso'} and
+            identity['target']==('x86_64-apple-darwin' if intel else 'aarch64-apple-darwin') and
+            identity['source']==(MAC_INTEL_SOURCE if intel else MAC_SOURCE) and
+            identity['canonicalRoot']==str(expected_work) and identity['image']==MAC_SOURCE_IMAGE and
+            all(type(identity[key])is str and re.fullmatch('[a-f0-9]{64}',identity[key]) for key in ('producer','tools','graph','siso')),
+            'source-mac-nearby-proof-scope')
+    return True
+
+
+def _mac_nearby_policy_owned(policy,root=None):
+    if policy is None or policy.get('mac') is not True or policy.get('_macNearbyReceipt') is None:return False
+    receipt=policy['_macNearbyReceipt']
+    require(source_owned_mac(policy) and policy.get('external') is not True and
+            policy.get('nearbyLiteralPolicy')==MAC_NEARBY_LITERAL_POLICY, 'source-mac-nearby-proof-scope')
+    identity=policy.get('_macNearbyIdentity');source_root=policy.get('_macNearbyRoot')
+    require(type(identity)is dict and isinstance(source_root,Path) and (root is None or root==source_root),
+            'source-mac-nearby-proof-scope')
+    require(_mac_nearby_scope_selection(source_root,identity,Path(identity['canonicalRoot']),policy.get('_macNearbyPlatform'),
+            policy.get('_macNearbyMode')) is receipt, 'source-mac-nearby-public-scope')
+    return True
+
+
+def _mac_nearby_scoped_writer_allowed(root,value):
+    if _MAC_NEARBY_PROOF_WRITER.get() is None and _MAC_NEARBY_PUBLIC_SCOPE.get() is None:return False
+    identity=value['identity'];intel=identity.get('target')=='x86_64-apple-darwin'
+    work=Path(identity.get('canonicalRoot','/'))
+    receipt=_mac_nearby_scope_selection(work/'source',identity,work,'mac-intel' if intel else 'mac-arm','source-record')
+    require(receipt is not None, 'source-sidecar-role')
+    require(value['schemaVersion']==2 and value['policy']==(MAC_INTEL_NEARBY_METADATA_POLICY if intel else MAC_ARM_NEARBY_METADATA_POLICY) and
+            value['kind']==('sorng-macintel-source-metadata' if intel else 'sorng-macarm-source-metadata') and
+            set(value['snapshot'])=={'entries','rootMtimeNs','gitHeads','bytes','literalLinks'} and
+            value['snapshot']['literalLinks']==_mac_nearby_portable_declarations() and
+            Path(root)==work/'source/src/out'/('Release_GN_x64' if intel else 'Release_GN_arm64') and
+            SOURCE_IO_CONTEXT.get()==('source-record',work/'source'), 'source-sidecar-role')
+    safe(Path(root))
+    current=Path(root)
+    proof_root=work if receipt is _MAC_NEARBY_PUBLIC_SCOPE.get() else _mac_nearby_owned_proof_path(receipt)
+    while current!=proof_root:
+        info=current.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid(), 'source-sidecar-role')
+        current=current.parent
+    return True
+
+
+def _mac_nearby_protected_namespace(identity):
+    # Classify the effective POSIX namespace independently of the claimed role.
+    # No filesystem lookup is allowed before this legacy-format boundary.
+    if type(identity)is not dict or type(identity.get('canonicalRoot'))is not str:return False
+    value=identity['canonicalRoot']
+    if not value.startswith('/') or '\x00'in value:return False
+    normalized=posixpath.normpath('/'+value.lstrip('/')).casefold()
+    namespace='/Users/runner/work/_temp/sorng-cef-engineering'.casefold()
+    return normalized==namespace or normalized.startswith(namespace+'/')
+
+
+def _mac_nearby_legacy_private_namespace(identity):
+    # Legacy scratch codecs stay usable. Canonical production paths cannot
+    # opt back into v1 by supplying old JSON or bypassing the public wrapper.
+    if type(identity)is not dict or type(identity.get('canonicalRoot'))is not str:return False
+    value=identity['canonicalRoot']
+    if not value or '\x00'in value or value.startswith('//'):return False
+    try:
+        path=Path(value)
+        if not path.is_absolute() or str(path)!=value or any(part in ('.','..')for part in path.parts):return False
+        # Conservatively protect case aliases on Darwin's common APFS layout;
+        # lexical classification must not rely on realpath canonicalizing case.
+        normalized=path.as_posix().casefold()
+    except (TypeError,ValueError):return False
+    namespace='/Users/runner/work/_temp/sorng-cef-engineering'.casefold()
+    return normalized!=namespace and not normalized.startswith(namespace+'/')
+
+
 def metadata(root, name, value, source=False, owned_sidecar=False):
     maximum = source_metadata_limit(owned_sidecar)
     if owned_sidecar:
         require(source is True and name == SOURCE_METADATA_NAME and type(value) is dict and
                 set(value) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
-                type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and
+                type(value['schemaVersion']) is int and value['schemaVersion'] in (1,2) and
                 value['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and type(value['identity']) is dict and
                 isinstance(value['identity'].get('canonicalRoot'), str) and type(value['snapshot']) is dict and
-                ((value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
+                not (value['schemaVersion']==1 and _mac_nearby_protected_namespace(value['identity'])) and
+                ((value['schemaVersion']==2 and _mac_nearby_scoped_writer_allowed(root,value)) or
+                 (value['schemaVersion']==1 and ((value['kind'] == 'sorng-linuxarm-source-metadata' and value['policy'] == SOURCE_METADATA_POLICY and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macarm-source-metadata' and value['policy'] == MAC_SOURCE_METADATA_POLICY and
+                  _mac_nearby_legacy_private_namespace(value['identity']) and
                   value['identity'].get('target') == 'aarch64-apple-darwin' and
                   isinstance(value['identity'].get('source'), str) and re.fullmatch('[a-f0-9]{64}', value['identity']['source']) and
                   Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_arm64') or
                  (value['kind'] == 'sorng-macintel-source-metadata' and value['policy'] == MAC_INTEL_SOURCE_METADATA_POLICY and
+                  _mac_nearby_legacy_private_namespace(value['identity']) and
                   value['identity'].get('target') == 'x86_64-apple-darwin' and value['identity'].get('source') == MAC_INTEL_SOURCE and
                   value['identity'].get('image') == MAC_INTEL_SOURCE_IMAGE and
                   (value['identity']['canonicalRoot'] == '/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/' + MAC_INTEL_SOURCE or
                    _mac_intel_proof_writer_allowed(root,value)) and
-                  Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_x64')), 'source-sidecar-role')
+                  Path(root) == Path(value['identity']['canonicalRoot']) / 'source/src/out/Release_GN_x64')))), 'source-sidecar-role')
     data = source_io_call('sidecar-encode', root / name, lambda: (json.dumps(value, sort_keys=True, separators=(',', ':'))+'\n').encode())
     require(len(data) <= maximum, 'metadata-bound')
     if source:
@@ -1415,6 +1627,15 @@ MAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8
     '2e56488f480ed75dc479569d5214914b4b2ed0e73732e2a1723156d85a0ca249',
     'c34dde53d28645ddb78c0ac7b97b40df48d6acce10ff260462bb7178c6f9aab5')
 MAC_INTEL_SOURCE_WRITE_ADMITTED = True
+MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED = True
+# run, artifact, reviewed source, RAW proof bytes/SHA, ZIP bytes/SHA. These are
+# code-owned qualification facts; no report is loaded as admission authority.
+MAC_NEARBY_LITERAL_PROOF = (41359670492,13104029618,'0b12590921384faa4eef4a64a6c9c0cd5a699ead',2052,
+    '6edf2afc493e35c5089ffa64c6686701e234323fe6e502a29a24644bb808ce33',827,
+    '357439ca1b6cf013ed6e0f3aca0f773faa06bf5ffb6c90b33ee97c8fbc1e7c8d')
+MAC_NEARBY_LITERAL_POLICY = 'sorng-mac-owned-nearby-empty-gitlinks-v1'
+MAC_ARM_NEARBY_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v2-nearby-literals'
+MAC_INTEL_NEARBY_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v2-nearby-literals'
 MAC_EXTERNAL_ROLE = None
 MAC_EXTERNAL_PHASE = None
 MAC_REPORT_FAILURE = False
@@ -1436,6 +1657,14 @@ NEARBY_LITERAL_LINKS = (
     ('third_party/ukey2/include/securegcm', '../ukey2/src/main/cpp/include/securegcm',
      'third_party/ukey2/ukey2', '03290b58d9f93cdd5c9f9f7a7f9e8efc640d0c40', 'src/main/cpp/include/securegcm'),
 )
+
+
+def _mac_nearby_portable_declarations():
+    return [{'kind':'pinned-unpopulated-gitlink-literal','origin':NEARBY_ROOT+'/'+origin,'rawTarget':target,
+             'rawTargetSha256':hashlib.sha256(target.encode()).hexdigest(),'nearbyHead':NEARBY_HEAD,
+             'gitmodulesSha256':NEARBY_MODULES_SHA256,'gitlink':NEARBY_ROOT+'/'+gitlink,'gitlinkCommit':commit,
+             'absentFirstComponent':remainder.split('/')[0],'remainder':remainder,'state':'empty'}
+            for origin,target,gitlink,commit,remainder in NEARBY_LITERAL_LINKS]
 
 
 def source_nearby_route(root, origin, target, gitlink, remainder, budget):
@@ -1462,19 +1691,25 @@ def source_nearby_route(root, origin, target, gitlink, remainder, budget):
 def source_nearby_check(state, budget):
     if state is None:
         return
+    if state.get('macPolicy') is not None:
+        _mac_nearby_policy_owned(state['macPolicy'],state['macRoot'][0])
+        _mac_nearby_local_check(state,state['macRoot'][0],os.fstat(state['macRoot'][1]))
     for p,expected,identity in state['headers']:
         budget.check();safe(p)
         require((stamp(p.lstat()),p.lstat().st_ctime_ns) == identity and
                 source_read_bytes(p,budget,len(expected)) == expected, 'source-nearby-changed')
+        _mac_nearby_local_check(state,p)
     for p,target,identity in state['links'].values():
         budget.check();safe(p.parent);info=p.lstat()
         require((stamp(info),info.st_ctime_ns) == identity and os.readlink(p) == target,
                 'source-nearby-changed')
+        _mac_nearby_local_check(state,p)
     for p,fd,before in state['directories'].values():
         budget.check();safe(p);current=p.lstat();held=os.fstat(fd)
         require(stamp(current)==stamp(before)==stamp(held) and
                 current.st_ctime_ns==before.st_ctime_ns==held.st_ctime_ns and
                 current.st_uid==before.st_uid==held.st_uid, 'source-nearby-changed')
+        _mac_nearby_local_check(state,p,held)
         entries=os.scandir(fd);primary=None
         try:
             require(next(entries,None) is None, 'source-nearby-absence')
@@ -1487,25 +1722,42 @@ def source_nearby_check(state, budget):
                 p.lstat().st_ctime_ns==before.st_ctime_ns==os.fstat(fd).st_ctime_ns, 'source-nearby-changed')
 
 
+def _mac_nearby_local_check(state,path,held=None):
+    policy=state.get('macPolicy')
+    if policy is None:return
+    expected=state['macGuards'][path]
+    require(source_local(path.lstat(),policy)==expected and
+            (held is None or source_local(held,policy)==expected), 'source-nearby-changed')
+
+
 def source_nearby_literal(policy, name, target, info):
-    if policy.get('mac') or name not in {NEARBY_ROOT+'/'+item[0] for item in NEARBY_LITERAL_LINKS}:
+    if (policy.get('mac') and not _mac_nearby_policy_owned(policy)) or name not in {NEARBY_ROOT+'/'+item[0] for item in NEARBY_LITERAL_LINKS}:
         return False
     state=policy.get('_nearby_literals')
     require(state is not None and name in state['links'], 'source-nearby-binding')
     _,expected,identity=state['links'][name]
     require(target==expected and (stamp(info),info.st_ctime_ns)==identity, 'source-nearby-changed')
+    _mac_nearby_local_check(state,state['links'][name][0])
     return True
 
 
 @contextmanager
 def source_nearby_literals(root, policy, budget):
-    if policy.get('external') or policy.get('mac') or NEARBY_ROOT not in policy.get('repositories',set()):
+    mac = not policy.get('external') and _mac_nearby_policy_owned(policy,root)
+    if mac:require(NEARBY_ROOT in policy.get('repositories',set()), 'source-nearby-binding')
+    if policy.get('external') or (policy.get('mac') and not mac) or NEARBY_ROOT not in policy.get('repositories',set()):
         yield None
         return
     import sys
-    require(sys.platform=='linux', 'source-linux-only')
+    require(sys.platform==('darwin' if mac else 'linux'), 'source-mac-only' if mac else 'source-linux-only')
     state={'headers':[],'links':{},'directories':{},'portable':[]};primary=None
     try:
+        if mac:
+            before=root.lstat()
+            state.update(macPolicy=policy,macGuards={root:source_local(before,policy)},macRoot=None)
+            fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            state['macRoot']=(root,fd)
+            _mac_nearby_local_check(state,root,os.fstat(fd))
         for name,expected in ((NEARBY_ROOT+'/.git/HEAD',(NEARBY_HEAD+'\n').encode()),
                               (NEARBY_ROOT+'/.gitmodules',None)):
             p=safe(root/name);before=p.lstat()
@@ -1515,12 +1767,14 @@ def source_nearby_literals(root, policy, budget):
                     hashlib.sha256(raw).hexdigest()==NEARBY_MODULES_SHA256, 'source-nearby-binding')
             require((stamp(p.lstat()),p.lstat().st_ctime_ns)==(stamp(before),before.st_ctime_ns), 'source-nearby-changed')
             state['headers'].append((p,raw,(stamp(before),before.st_ctime_ns)))
+            if mac:state['macGuards'][p]=source_local(before,policy)
         for origin,target,gitlink,commit,remainder in NEARBY_LITERAL_LINKS:
             budget.check();origin=NEARBY_ROOT+'/'+origin;gitlink=NEARBY_ROOT+'/'+gitlink
             p=root/origin;safe(p.parent);info=p.lstat()
             require(stat.S_ISLNK(info.st_mode) and info.st_uid==os.geteuid() and info.st_nlink==1 and
                     not getattr(info,'st_file_attributes',0)&0x400 and os.readlink(p)==target, 'source-nearby-link')
             state['links'][origin]=(p,target,(stamp(info),info.st_ctime_ns))
+            if mac:state['macGuards'][p]=source_local(info,policy)
             source_nearby_route(root,origin,target,gitlink,remainder,budget)
             if gitlink not in state['directories']:
                 directory=safe(root/gitlink);before=directory.lstat()
@@ -1529,6 +1783,7 @@ def source_nearby_literals(root, policy, budget):
                 fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
                 # Register creation-owned handle before any fallible validation.
                 state['directories'][gitlink]=(directory,fd,before)
+                if mac:state['macGuards'][directory]=source_local(before,policy)
             state['portable'].append({'kind':'pinned-unpopulated-gitlink-literal','origin':origin,'rawTarget':target,
                 'rawTargetSha256':hashlib.sha256(target.encode()).hexdigest(),'nearbyHead':NEARBY_HEAD,
                 'gitmodulesSha256':NEARBY_MODULES_SHA256,'gitlink':gitlink,'gitlinkCommit':commit,
@@ -1540,7 +1795,9 @@ def source_nearby_literals(root, policy, budget):
         primary=error
         raise
     finally:
-        source_cleanup_all([lambda fd=fd:os.close(fd) for _,fd,_ in state['directories'].values()],primary)
+        closes=[lambda fd=fd:os.close(fd) for _,fd,_ in state['directories'].values()]
+        if state.get('macRoot') is not None:closes.append(lambda:os.close(state['macRoot'][1]))
+        source_cleanup_all(closes,primary)
 
 
 def source_birth(info, policy=None):
@@ -2163,7 +2420,7 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     value = {'entries': entries,
              'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
              'bytes': total}
-    if not external and not policy.get('mac'):
+    if not external and (not policy.get('mac') or _mac_nearby_policy_owned(policy)):
         value['literalLinks'] = policy['_nearby_literals']['portable'] if policy['_nearby_literals'] is not None else []
     if external:
         value['root'] = {'mode':root_before[4], 'mtimeNs':str(root_before[1]), 'uid':root.stat().st_uid,
@@ -2176,11 +2433,17 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
     return value
 
 
-def source_mac_write_admission(identity):
+def source_mac_write_host_admission():
     import sys
     require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and
             platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and
-            os.environ.get('ImageVersion') == MAC_SOURCE_IMAGE, 'source-mac-host-scope')
+            os.environ.get('ImageVersion') == MAC_SOURCE_IMAGE and
+            os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and
+            os.environ.get('GITHUB_REPOSITORY_VISIBILITY')=='public', 'source-mac-host-scope')
+
+
+def source_mac_write_admission(identity):
+    source_mac_write_host_admission()
     require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and
             identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and
             identity.get('canonicalRoot') ==
@@ -2312,6 +2575,10 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
     budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
     source_progress_start(getattr(budget, 'seconds', seconds))
+    if platform_policy in ('mac-arm','mac-intel'):
+        with _mac_nearby_public_scope(mode,root,sidecar,identity,platform_policy):
+            work = source_metadata_identity(identity, platform_policy)
+            return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
     work = source_metadata_identity(identity, platform_policy)
     return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
 
@@ -2336,6 +2603,16 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     sidecar_kind = 'sorng-macintel-source-metadata' if intel else 'sorng-macarm-source-metadata' if arm else 'sorng-linuxarm-source-metadata'
     sidecar_policy = MAC_INTEL_SOURCE_METADATA_POLICY if intel else MAC_SOURCE_METADATA_POLICY if arm else SOURCE_METADATA_POLICY
     snapshot_context = {'mac':True, 'ownedMacIntel' if intel else 'ownedMacArm':True} if mac else None
+    nearby_scope = _mac_nearby_scope_selection(root,identity,work,platform_policy,mode) if mac else None
+    nearby_mac = nearby_scope is not None
+    if mac and not nearby_mac:
+        require(_mac_nearby_legacy_private_namespace(identity), 'source-mac-nearby-public-scope')
+    schema_version = 2 if nearby_mac else 1
+    if nearby_mac:
+        sidecar_policy = MAC_INTEL_NEARBY_METADATA_POLICY if intel else MAC_ARM_NEARBY_METADATA_POLICY
+        snapshot_context.update(nearbyLiteralPolicy=MAC_NEARBY_LITERAL_POLICY,
+            _macNearbyReceipt=nearby_scope,_macNearbyIdentity=dict(identity),
+            _macNearbyRoot=Path(root),_macNearbyPlatform=platform_policy,_macNearbyMode=mode)
     budget.check()
     root = safe(root);sidecar = Path(sidecar)
     require(root == work / 'source' and sidecar == root / ('src/out/Release_GN_x64' if intel else 'src/out/Release_GN_arm64') / SOURCE_METADATA_NAME,
@@ -2355,7 +2632,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
         with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as record_literals:
             layout = {}
             current = source_snapshot(root, budget, guards, context=snapshot_context) if mac else source_snapshot(root, budget, guards, layout=layout)
-            value = {'schemaVersion': 1, 'kind': sidecar_kind,
+            value = {'schemaVersion': schema_version, 'kind': sidecar_kind,
                      'policy': sidecar_policy, 'sourceDateEpoch':SOURCE_METADATA_DATE_EPOCH, 'identity': identity, 'snapshot': current}
             source_phase('sidecar-write')
             written = metadata(sidecar.parent, sidecar.name, value, source=True, owned_sidecar=True)
@@ -2363,7 +2640,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             require(source_io_call('sidecar-readback', sidecar, lambda: source_read_sidecar(sidecar, budget, owned_sidecar=True)) == value, 'source-sidecar-readback')
             source_phase('record-literals')
             with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as literals:
-                require(mac or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
+                require((mac and not nearby_mac) or (literals['portable'] if literals is not None else [])==current['literalLinks'], 'source-nearby-binding')
             if linux:
                 source_phase('stat-cache-write')
                 source_stat_cache_write(root, written['sha256'], identity, layout, guards)
@@ -2372,11 +2649,11 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     source_phase('sidecar-read')
     stored = source_read_sidecar(sidecar, budget, owned_sidecar=True)
     require(isinstance(stored, dict) and set(stored) == {'schemaVersion','kind','policy','sourceDateEpoch','identity','snapshot'} and
-            type(stored['schemaVersion']) is int and stored['schemaVersion'] == 1 and stored['kind'] == sidecar_kind and
+            type(stored['schemaVersion']) is int and stored['schemaVersion'] == schema_version and stored['kind'] == sidecar_kind and
             stored['policy'] == sidecar_policy and stored['sourceDateEpoch'] == SOURCE_METADATA_DATE_EPOCH and stored['identity'] == identity,
             'source-sidecar-binding')
     expected = stored['snapshot']
-    require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if mac else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
+    require(isinstance(expected, dict) and set(expected) == ({'entries','rootMtimeNs','gitHeads','bytes'} if mac and not nearby_mac else {'entries','rootMtimeNs','gitHeads','bytes','literalLinks'}) and
             isinstance(expected['entries'], list) and len(expected['entries']) <= SOURCE_MAX_ENTRIES,
             'source-sidecar-shape')
     reuse = None
@@ -2392,7 +2669,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     source_phase('compare')
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
-    require(mac or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
+    require((mac and not nearby_mac) or expected['literalLinks'] == current['literalLinks'], 'source-nearby-binding')
     # Compare the entire freshly hashed namespace before the first metadata write.
     without_time = lambda rows: [{k:v for k,v in row.items() if k != 'mtimeNs'} for row in rows]
     if (json.dumps(without_time(expected['entries']),sort_keys=True,separators=(',',':')) !=
@@ -2413,7 +2690,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
         source_phase('apply-literals')
         # Revalidate the fixed absence witnesses immediately before any utime.
         with source_nearby_literals(root,{**source_repositories(root,budget), **(snapshot_context or {})},budget) as literals:
-            require(mac or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
+            require((mac and not nearby_mac) or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
         source_phase('apply-utime')
         for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
             name = real(row['path'])
@@ -2812,6 +3089,8 @@ def main():
     require(args.platform_policy is None or args.mode.startswith('source-'),'source-platform-policy')
     if args.platform_policy == 'mac-intel':
         source_mac_intel_write_host_admission()
+    if args.platform_policy == 'mac-arm':
+        source_mac_write_host_admission()
     links = {}
     if args.generated_links:
         data = Path(args.generated_links).read_bytes()

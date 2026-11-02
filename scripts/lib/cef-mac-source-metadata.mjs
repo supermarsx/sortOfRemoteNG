@@ -249,6 +249,17 @@ export async function authoritativeGn(context, operations) {
 // The fixed-five implementation above is copied byte-for-byte from the genuine
 // GN diagnostic. Complete-source Darwin writes require a separate Python proof.
 import { macMetalFingerprint } from "../cef-hosted-provision.mjs";
+export const MAC_NEARBY_LITERAL_EVIDENCE = Object.freeze({
+  runId: 41359670492,
+  artifactId: 13104029618,
+  source: "0b12590921384faa4eef4a64a6c9c0cd5a699ead",
+  rawProofBytes: 2052,
+  rawProofSha256:
+    "6edf2afc493e35c5089ffa64c6686701e234323fe6e502a29a24644bb808ce33",
+  artifactZipBytes: 827,
+  artifactZipSha256:
+    "357439ca1b6cf013ed6e0f3aca0f773faa06bf5ffb6c90b33ee97c8fbc1e7c8d",
+});
 export const MAC_SOURCE_POLICY = Object.freeze({
   target: "aarch64-apple-darwin",
   source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
@@ -257,7 +268,10 @@ export const MAC_SOURCE_POLICY = Object.freeze({
   imageOS: "macos15",
   image: "20260824.0482.1",
   kind: "sorng-macarm-source-metadata",
-  name: "sorng-macarm-owned-source-metadata-intel-20260824-v1",
+  name: "sorng-macarm-owned-source-metadata-intel-20260824-v2-nearby-literals",
+  schemaVersion: 2,
+  legacyPrivatePolicy: "sorng-macarm-owned-source-metadata-intel-20260824-v1",
+  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
   darwinWriteAdmitted: true,
   evidence: Object.freeze({
     runId: 41328841230,
@@ -273,7 +287,10 @@ export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   imageOS: "macos15",
   image: "20260824.0482.1",
   kind: "sorng-macintel-source-metadata",
-  name: "sorng-macintel-owned-source-metadata-intel-20260824-v1",
+  name: "sorng-macintel-owned-source-metadata-intel-20260824-v2-nearby-literals",
+  schemaVersion: 2,
+  legacyPrivatePolicy: "sorng-macintel-owned-source-metadata-intel-20260824-v1",
+  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
   darwinWriteAdmitted: true,
   evidence: Object.freeze({
     runId: 41348226366,
@@ -361,7 +378,10 @@ export function validateMacSourceWriteScope(identity, host) {
       host?.platform === MAC_SOURCE_POLICY.platform &&
       host.architecture === MAC_SOURCE_POLICY.architecture &&
       host.imageOS === MAC_SOURCE_POLICY.imageOS &&
-      host.image === MAC_SOURCE_POLICY.image,
+      host.image === MAC_SOURCE_POLICY.image &&
+      host.githubActions === "true" &&
+      host.runnerEnvironment === "github-hosted" &&
+      host.repositoryVisibility === "public",
     "MAC_SOURCE_HOST_SCOPE",
   );
   if (identity !== undefined)
@@ -385,6 +405,9 @@ export function assertMacSourceWriteAdmission(
     architecture: process.arch,
     imageOS: process.env.ImageOS,
     image: process.env.ImageVersion,
+    githubActions: process.env.GITHUB_ACTIONS,
+    runnerEnvironment: process.env.RUNNER_ENVIRONMENT,
+    repositoryVisibility: process.env.GITHUB_REPOSITORY_VISIBILITY,
   });
   assert(
     environment?.ImageOS === process.env.ImageOS &&

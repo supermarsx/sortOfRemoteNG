@@ -68,6 +68,17 @@ function python(environment) {
   ).trim();
 }
 
+export function verifiedPublicationKey(key) {
+  if (
+    typeof key !== "string" ||
+    !/^[a-f0-9]{64}-(?:x86_64-pc-windows-msvc|x86_64-unknown-linux-gnu|aarch64-pc-windows-msvc)$/.test(
+      key,
+    )
+  )
+    throw new Error("Invalid immutable publication key");
+  return key;
+}
+
 export async function main(argv = process.argv.slice(2), env = process.env) {
   const options = publicationArguments(argv);
   const api = publicationApi(env.GH_TOKEN);
@@ -113,12 +124,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       : await verifyOwnedPublication(parameters);
   if (options.mode === "verify") {
     // Only closed, validated output identifiers; no JSON/paths/tokens in GHA outputs.
-    if (
-      !/^[a-f0-9]{64}-(?:x86_64-pc-windows-msvc|x86_64-unknown-linux-gnu)$/.test(
-        result.key,
-      )
-    )
-      throw new Error("Invalid immutable publication key");
+    verifiedPublicationKey(result.key);
     if (env.GITHUB_OUTPUT)
       await appendFile(
         env.GITHUB_OUTPUT,

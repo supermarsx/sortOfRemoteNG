@@ -31,7 +31,10 @@ import {
   privatePublicationOutput,
   PUBLICATION_WORKFLOW,
 } from "../../scripts/lib/cef-owned-sdk-publish.mjs";
-import { publicationArguments } from "../../scripts/cef-owned-sdk-publish.mjs";
+import {
+  publicationArguments,
+  verifiedPublicationKey,
+} from "../../scripts/cef-owned-sdk-publish.mjs";
 import {
   createAcceptanceSeal,
   HTTP2_CHECKS,
@@ -45,6 +48,38 @@ const repository = "supermarsx/sortOfRemoteNG";
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const copy = (value) => structuredClone(value);
 const workflow = ".github/workflows/cef-runtime-acceptance.yml";
+
+test("publication output key accepts both truthful Windows ARM sources and retains the closed existing targets", () => {
+  const sources = [
+    "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+    "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+  ];
+  for (const source of sources) {
+    const key = source + "-aarch64-pc-windows-msvc";
+    assert.equal(verifiedPublicationKey(key), key);
+  }
+  for (const target of ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]) {
+    const key = "a".repeat(64) + "-" + target;
+    assert.equal(verifiedPublicationKey(key), key);
+  }
+  for (const key of [
+    null,
+    undefined,
+    123,
+    {},
+    "a".repeat(63) + "-aarch64-pc-windows-msvc",
+    "A".repeat(64) + "-aarch64-pc-windows-msvc",
+    "a".repeat(64) + "-aarch64-unknown-linux-gnu",
+    "a".repeat(64) + "-x86_64-apple-darwin",
+    "a".repeat(64) + "-aarch64-pc-windows-msvc-extra",
+    "a".repeat(64) + "-aarch64-pc-windows-msvc\nkey=forged",
+    "prefix-" + sources[0] + "-aarch64-pc-windows-msvc",
+  ])
+    assert.throws(
+      () => verifiedPublicationKey(key),
+      /Invalid immutable publication key/,
+    );
+});
 
 const legacyLockRaw = readFileSync(
   new URL(

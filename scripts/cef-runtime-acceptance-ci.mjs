@@ -43,6 +43,8 @@ import {
   ownedImportApi,
   parseOwnedJson,
   downloadOwnedImport,
+  withVerifiedWindowsArmOwnedImport,
+  withInspectedWindowsArmOwnedImport,
 } from "./lib/cef-owned-sdk-import.mjs";
 const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const NATIVE_TARGETS = Object.freeze({
@@ -516,9 +518,11 @@ export function producerSelection(value) {
           "aarch64-unknown-linux-gnu",
         ].includes(row.target)) ||
       (owned &&
-        !["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"].includes(
-          row.target,
-        ))
+        ![
+          "x86_64-pc-windows-msvc",
+          "x86_64-unknown-linux-gnu",
+          "aarch64-pc-windows-msvc",
+        ].includes(row.target))
     )
       fail("Unknown or duplicate native target");
     seen.add(row.target);
@@ -1412,21 +1416,48 @@ export async function downloadOwnedSdk({
     },
   ).trim();
   try {
-    return await downloadOwnedImport(ownedImportApi(repository, token), {
-      selection: entry,
+    return await withVerifiedWindowsArmOwnedImport(
       review,
-      repository,
+      entry.reviewedImport,
       token,
-      destination,
-      python,
-    });
+      () =>
+        downloadOwnedImport(ownedImportApi(repository, token), {
+          selection: entry,
+          review,
+          repository,
+          token,
+          destination,
+          python,
+        }),
+    );
   } catch {
     fail(
       "Owned import transport verification failed; no native authority granted",
     );
   }
 }
-export async function executeAcceptance(
+export async function executeAcceptance(options, dependencies = {}) {
+  if (
+    options.entry?.producer !== "owned-import" ||
+    options.entry.target !== "aarch64-pc-windows-msvc"
+  )
+    return executeAcceptanceChecked(options, dependencies);
+  producerSelection([selectedProducer(options.entry)]);
+  assertNativeTarget(options.entry.target);
+  if (options.repository !== OWNED_REPOSITORY)
+    fail("Fixed owned repository required");
+  const review = await readOwnedImportReview(
+    ROOT,
+    options.entry.reviewedImport,
+    options.entry.reviewSha256,
+  );
+  return withInspectedWindowsArmOwnedImport(
+    review,
+    options.entry.reviewedImport,
+    () => executeAcceptanceChecked(options, dependencies),
+  );
+}
+async function executeAcceptanceChecked(
   { entry, bundle, output, repository, env = process.env },
   dependencies = {},
 ) {

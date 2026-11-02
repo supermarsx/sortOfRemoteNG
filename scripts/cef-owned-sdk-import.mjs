@@ -15,6 +15,7 @@ import {
   sealOwnedImport,
   importCodeDigest,
   freshLocalHandoff,
+  withVerifiedWindowsArmOwnedImport,
 } from "./lib/cef-owned-sdk-import.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export function importArguments(argv) {
@@ -177,13 +178,19 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       "Explicit checkout commit required",
     );
     await freshLocalHandoff(options, review);
-    return quarantineOwnedBundle(
-      ownedImportApi(OWNED_REPOSITORY, env.GH_TOKEN, fetch, {
-        write: true,
-        review,
-        reviewSha: options.reviewSha,
-      }),
-      { ...options, review, handoff, execute: options.execute },
+    return withVerifiedWindowsArmOwnedImport(
+      review,
+      options.reviewed,
+      env.GH_TOKEN,
+      () =>
+        quarantineOwnedBundle(
+          ownedImportApi(OWNED_REPOSITORY, env.GH_TOKEN, fetch, {
+            write: true,
+            review,
+            reviewSha: options.reviewSha,
+          }),
+          { ...options, review, handoff, execute: options.execute },
+        ),
     );
   }
   assert(
@@ -232,17 +239,23 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       env.CEF_OWNED_OUTPUT,
       "cef-owned-import-proof",
     );
-  return sealOwnedImport(api, {
+  return withVerifiedWindowsArmOwnedImport(
     review,
-    reviewSha: env.CEF_OWNED_REVIEW_SHA256,
-    reviewedImport: env.CEF_OWNED_REVIEW,
-    releaseId: Number(env.CEF_OWNED_RELEASE_ID),
-    bundle,
-    output,
-    producer,
-    token: env.GH_TOKEN,
-    python: python(),
-  });
+    env.CEF_OWNED_REVIEW,
+    env.GH_TOKEN,
+    () =>
+      sealOwnedImport(api, {
+        review,
+        reviewSha: env.CEF_OWNED_REVIEW_SHA256,
+        reviewedImport: env.CEF_OWNED_REVIEW,
+        releaseId: Number(env.CEF_OWNED_RELEASE_ID),
+        bundle,
+        output,
+        producer,
+        token: env.GH_TOKEN,
+        python: python(),
+      }),
+  );
 }
 if (
   process.argv[1] &&

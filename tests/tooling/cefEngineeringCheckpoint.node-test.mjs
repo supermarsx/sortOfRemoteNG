@@ -9913,13 +9913,19 @@ test("Mac source admission binds the proved Intel host image and exact ARM sourc
     architecture: "x64",
     imageOS: "macos15",
     image: "20260824.0482.1",
+    githubActions: "true",
+    runnerEnvironment: "github-hosted",
+    repositoryVisibility: "public",
   };
   mac.validateMacSourceWriteScope(selected, host);
   const actualHostAdmitted =
     process.platform === host.platform &&
     process.arch === host.architecture &&
     process.env.ImageOS === host.imageOS &&
-    process.env.ImageVersion === host.image;
+    process.env.ImageVersion === host.image &&
+    process.env.GITHUB_ACTIONS === host.githubActions &&
+    process.env.RUNNER_ENVIRONMENT === host.runnerEnvironment &&
+    process.env.GITHUB_REPOSITORY_VISIBILITY === host.repositoryVisibility;
   for (const mode of ["source-record", "source-apply", "source-verify"]) {
     const call = () =>
       sourceMetadataPlan(
@@ -9935,6 +9941,9 @@ test("Mac source admission binds the proved Intel host image and exact ARM sourc
     { architecture: "arm64" },
     { imageOS: "macos14" },
     { image: "20261030.294.1" },
+    { githubActions: "false" },
+    { runnerEnvironment: "self-hosted" },
+    { repositoryVisibility: "private" },
   ])
     assert.throws(
       () => mac.validateMacSourceWriteScope(selected, { ...host, ...changed }),
@@ -9959,7 +9968,13 @@ test("Mac source admission binds the proved Intel host image and exact ARM sourc
         process: {
           platform,
           arch,
-          env: { ImageOS: host.imageOS, ImageVersion: host.image },
+          env: {
+            ImageOS: host.imageOS,
+            ImageVersion: host.image,
+            GITHUB_ACTIONS: host.githubActions,
+            RUNNER_ENVIRONMENT: host.runnerEnvironment,
+            GITHUB_REPOSITORY_VISIBILITY: host.repositoryVisibility,
+          },
         },
         validateMacSourceWriteScope: mac.validateMacSourceWriteScope,
         MAC_SOURCE_POLICY: mac.MAC_SOURCE_POLICY,
@@ -10028,6 +10043,8 @@ test("Mac source admission binds the proved Intel host image and exact ARM sourc
     /MAC_EXTERNAL_ATTESTATION/,
   );
   assert.equal(mac.MAC_SOURCE_POLICY.darwinWriteAdmitted, true);
+  assert.equal(mac.MAC_SOURCE_POLICY.schemaVersion, 2);
+  assert.match(mac.MAC_SOURCE_POLICY.name, /v2-nearby-literals$/);
   const worker = await readFile(
     path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
     "utf8",
@@ -12981,6 +12998,8 @@ async function intelExternalFixture() {
 test("Intel metadata exact source684 policy accepts its qualified native host and denies invalid scope before data", async () => {
   const { mac, options } = await intelExternalFixture();
   const policy = mac.MAC_INTEL_SOURCE_POLICY;
+  assert.equal(policy.schemaVersion, 2);
+  assert.match(policy.name, /v2-nearby-literals$/);
   assert.equal(
     policy.source,
     "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
