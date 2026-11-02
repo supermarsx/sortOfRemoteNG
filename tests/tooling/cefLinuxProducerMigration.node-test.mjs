@@ -34,7 +34,67 @@ function withoutCliModuleDelta(text) {
   }
   return text;
 }
+function withoutMigrationDiagnostics(text) {
+  const edits = [
+    [
+      "  installRestoredDirectory,\n  hostRemaining,\n  linuxArmRecipe,\n  linuxMigrationFailureRecord,\n  noLinks,\n  sha,\n  sourceMetadataResult,\n",
+      "  installRestoredDirectory,\n  hostRemaining,\n  linuxArmRecipe,\n  noLinks,\n  sha,\n  sourceMetadataResult,\n",
+    ],
+    [
+      '  need(live.revalidationUsed === state.gnUsed, "TRANSACTION_GN_ORDER");\n  return Math.min(live.remainingMilliseconds, state.originalTools.remaining());\n}\n// BEGIN closed Linux migration event output\nfunction migrationDiagnostic(record) {\n  try {\n    console.log(\n      "[cef-engineering-checkpoint] linux-migration " + canonical(record),\n    );\n  } catch {\n    /* Observer failures never replace the operation outcome. */\n  }\n}\nfunction migrationFailureDiagnostic(error, phase) {\n  try {\n    migrationDiagnostic(linuxMigrationFailureRecord(error, phase));\n  } catch {\n    /* Projection failure also cannot replace the first cause. */\n  }\n}\n// END closed Linux migration event output\n\nasync function transactionPhase(state, phase, action) {\n  state.diagnosticPhase = phase;\n  migrationDiagnostic({\n    kind: "sorng-linux-migration-phase",\n    phase,\n    event: "begin",\n  });\n  transactionCheck(state);\n  const result = await action();\n  transactionCheck(state); // Before any subsequent mutation/branding.\n  migrationDiagnostic({\n    kind: "sorng-linux-migration-phase",\n    phase,\n    event: "complete",\n  });\n  return result;\n}\nasync function transactionRecheck(state) {\n',
+      '  need(live.revalidationUsed === state.gnUsed, "TRANSACTION_GN_ORDER");\n  return Math.min(live.remainingMilliseconds, state.originalTools.remaining());\n}\nasync function transactionPhase(state, action) {\n  transactionCheck(state);\n  const result = await action();\n  transactionCheck(state); // Before any subsequent mutation/branding.\n  return result;\n}\nasync function transactionRecheck(state) {\n',
+    ],
+    [
+      '        "--seconds",\n        String(seconds),\n      ],\n      {\n        timeout,\n        observeFailure: (record) =>\n          migrationDiagnostic({\n            kind: "sorng-linux-migration-archive-failure",\n            phase: state.diagnosticPhase,\n            mode,\n            source: which,\n            record,\n          }),\n      },\n    ),\n    mode,\n  );\n',
+      '        "--seconds",\n        String(seconds),\n      ],\n      { timeout },\n    ),\n    mode,\n  );\n',
+    ],
+    [
+      '    }\n  };\n  try {\n    await transactionPhase(state, "controls", () => transactionControls(state));\n    await transactionPhase(state, "recheck-before-restore", () =>\n      transactionRecheck(state),\n    );\n    await transactionPhase(state, "restore-install", async () => {\n      state.creator = await restoreOwnedCommon(\n        selected,\n        tools,\n',
+      "    }\n  };\n  try {\n    await transactionPhase(state, () => transactionControls(state));\n    await transactionPhase(state, () => transactionRecheck(state));\n    await transactionPhase(state, async () => {\n      state.creator = await restoreOwnedCommon(\n        selected,\n        tools,\n",
+    ],
+    [
+      '        creators,\n      );\n    });\n    await transactionPhase(state, "recheck-before-apply-1", () =>\n      transactionRecheck(state),\n    );\n    await transactionPhase(state, "source-apply-1", () =>\n      transactionSourceMode(state, "source-apply", "old"),\n    );\n    await transactionPhase(state, "recheck-before-gn", () =>\n      transactionRecheck(state),\n    );\n    const receipt = await transactionPhase(\n      state,\n      "gn-revalidation",\n      async () => {\n        const pending = revalidateLinuxSourceOwner(context);\n        state.gnUsed = true;\n        return await pending;\n      },\n    );\n    const gn = assertLinuxSourceOwnerReceipt(context, receipt);\n    need(\n      gn.cohortQuietProven === true && gn.commandCompleted === true,\n      "TRANSACTION_GN_UNCONFIRMED",\n    );\n    await transactionPhase(state, "graph-verify", () =>\n      verifyGraph(originalTools.out, selected.freshIdentity.graph),\n    );\n    const recipe = await transactionPhase(state, "recipe-check", () =>\n      linuxArmRecipe(originalTools.chromium, originalTools.out),\n    );\n    need(\n      canonical(recipe) === originalTools.linuxRecipeJson,\n      "TRANSACTION_RECIPE_CHANGED",\n    );\n    await transactionPhase(state, "source-apply-2", () =>\n      transactionSourceMode(state, "source-apply", "old"),\n    );\n    await transactionPhase(state, "recheck-before-retirement", () =>\n      transactionRecheck(state),\n    );\n    transactionCheck(state);\n    assertLinuxSourceOwnerReceipt(context, receipt);\n    const created = creators.get(state.creator);\n',
+      '        creators,\n      );\n    });\n    await transactionPhase(state, () => transactionRecheck(state));\n    await transactionPhase(state, () =>\n      transactionSourceMode(state, "source-apply", "old"),\n    );\n    await transactionPhase(state, () => transactionRecheck(state));\n    const receipt = await transactionPhase(state, async () => {\n      const pending = revalidateLinuxSourceOwner(context);\n      state.gnUsed = true;\n      return await pending;\n    });\n    const gn = assertLinuxSourceOwnerReceipt(context, receipt);\n    need(\n      gn.cohortQuietProven === true && gn.commandCompleted === true,\n      "TRANSACTION_GN_UNCONFIRMED",\n    );\n    await transactionPhase(state, () =>\n      verifyGraph(originalTools.out, selected.freshIdentity.graph),\n    );\n    const recipe = await transactionPhase(state, () =>\n      linuxArmRecipe(originalTools.chromium, originalTools.out),\n    );\n    need(\n      canonical(recipe) === originalTools.linuxRecipeJson,\n      "TRANSACTION_RECIPE_CHANGED",\n    );\n    await transactionPhase(state, () =>\n      transactionSourceMode(state, "source-apply", "old"),\n    );\n    await transactionPhase(state, () => transactionRecheck(state));\n    transactionCheck(state);\n    assertLinuxSourceOwnerReceipt(context, receipt);\n    const created = creators.get(state.creator);\n',
+    ],
+    [
+      '      "TRANSACTION_READINESS",\n    );\n    retirementReadiness.delete(state.creator); // Consume BEFORE any retirement await.\n    await transactionPhase(state, "retirement", () =>\n      retireOwnedCommon(\n        state.creator,\n        tools,\n',
+      '      "TRANSACTION_READINESS",\n    );\n    retirementReadiness.delete(state.creator); // Consume BEFORE any retirement await.\n    await transactionPhase(state, () =>\n      retireOwnedCommon(\n        state.creator,\n        tools,\n',
+    ],
+    [
+      '        retired.sourceInodeCas === false,\n      "TRANSACTION_RETIREMENT_UNCONFIRMED",\n    );\n    await transactionPhase(state, "recheck-before-record", () =>\n      transactionRecheck(state),\n    );\n    const recorded = await transactionPhase(state, "source-record", () =>\n      transactionSourceMode(state, "source-record", "new"),\n    );\n    await transactionPhase(state, "record-check", () =>\n      transactionNewRecord(state, recorded),\n    );\n    await transactionPhase(state, "recheck-final", () =>\n      transactionRecheck(state),\n    );\n    result = {\n      sourceInputsRevalidated: true,\n      oldApplies: 2,\n',
+      '        retired.sourceInodeCas === false,\n      "TRANSACTION_RETIREMENT_UNCONFIRMED",\n    );\n    await transactionPhase(state, () => transactionRecheck(state));\n    const recorded = await transactionPhase(state, () =>\n      transactionSourceMode(state, "source-record", "new"),\n    );\n    await transactionPhase(state, () => transactionNewRecord(state, recorded));\n    await transactionPhase(state, () => transactionRecheck(state));\n    result = {\n      sourceInputsRevalidated: true,\n      oldApplies: 2,\n',
+    ],
+    [
+      "      completeCacheStructureValidated: false,\n    };\n  } catch (error) {\n    migrationFailureDiagnostic(error, state.diagnosticPhase);\n    remember(error);\n  }\n  // Revoke every authority synchronously before any awaited close/join. Retain\n",
+      "      completeCacheStructureValidated: false,\n    };\n  } catch (error) {\n    remember(error);\n  }\n  // Revoke every authority synchronously before any awaited close/join. Retain\n",
+    ],
+    [
+      '    try {\n      await closing;\n    } catch (error) {\n      migrationFailureDiagnostic(error, "cleanup");\n      remember(error);\n    }\n  if (!failed) {\n',
+      "    try {\n      await closing;\n    } catch (error) {\n      remember(error);\n    }\n  if (!failed) {\n",
+    ],
+    [
+      '    );\n    return completion; // No await after the final live/private-context check.\n  } catch (error) {\n    migrationFailureDiagnostic(error, "completion");\n    if (completion !== undefined)\n      completedMigrationTransactions.delete(completion);\n    throw error;\n',
+      "    );\n    return completion; // No await after the final live/private-context check.\n  } catch (error) {\n    if (completion !== undefined)\n      completedMigrationTransactions.delete(completion);\n    throw error;\n",
+    ],
+  ];
+  for (const [current, previous] of edits) {
+    assert.equal(
+      text.split(current).length,
+      2,
+      "one exact migration diagnostic inverse",
+    );
+    text = text.replace(current, previous);
+  }
+  assert.equal(Buffer.byteLength(text), 120138);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "e0f41bed510701a6461214cbf66971af25c131dde98fcff842957f20ba4abce3",
+  );
+  return text;
+}
+
 function withoutTransactionAdmission(text) {
+  text = withoutMigrationDiagnostics(text);
   {
     const current =
       '    bytes: 208244,\n    sha256: "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",';
@@ -381,6 +441,23 @@ async function privateFunctions(names, scope) {
     true,
     ts.ScriptKind.JS,
   );
+  if (
+    names.some((name) =>
+      [
+        "transactionPhase",
+        "transactionSourceMode",
+        "runClosedLinuxMigrationTransaction",
+        "prepareLinuxMigrationTransaction",
+      ].includes(name),
+    )
+  )
+    names = [
+      ...new Set([
+        ...names,
+        "migrationDiagnostic",
+        "migrationFailureDiagnostic",
+      ]),
+    ];
   const declarations = names
     .map((name) => {
       const node = ast.statements.find(
@@ -392,6 +469,9 @@ async function privateFunctions(names, scope) {
     .join("\n");
   return vm.runInNewContext(declarations + "\n({" + names.join(",") + "})", {
     assert,
+    canonical: core.canonical,
+    linuxMigrationFailureRecord: core.linuxMigrationFailureRecord,
+    console: { log: () => {} },
     ...scope,
   });
 }
@@ -801,6 +881,8 @@ async function transactionModel({
   closeFault = false,
   ownerRemaining = 60000,
   checkRestoreBudget = false,
+  diagnosticLog = () => {},
+  diagnosticRecord = core.linuxMigrationFailureRecord,
 } = {}) {
   // Execute the actual closed orchestration and guards in disjoint VM maps.
   // These staged command/FS outcomes are NOT genuine GN or production tokens.
@@ -882,6 +964,8 @@ async function transactionModel({
     ],
     {
       LINUX_MIGRATION: M,
+      console: { log: diagnosticLog },
+      linuxMigrationFailureRecord: diagnosticRecord,
       TRANSACTION_ADMITTED: false,
       ROOT: "/repo",
       path: path.posix,
@@ -1110,6 +1194,9 @@ test("exported final-await boundary is causal: same-realm retirement, expiry and
         const context={},foreign={},primary=mode==='retire'?false:new Error('ORIGINAL_LEASE_EXPIRED');
         let live=true,used=false,root='/owned',token;
         function need(value,message){if(!value)throw new Error(message);}
+        function migrationDiagnostic(){}
+        function migrationFailureDiagnostic(){}
+        function linuxMigrationFailureRecord(){return {};}
         function assertLiveLinuxSourceContext(){if(!live)throw primary;return {
           target:'linux',sourceLockIdentity:'source',canonicalRoot:root,toolsRoot:'/tools',
           python:'/tools/python',cef:'/owned/cef',depot:'/owned/depot',cwd:'/owned/source',logs:'/owned/logs',
@@ -2704,3 +2791,393 @@ test(
     );
   },
 );
+
+test("migration diagnostics preserve the complete old a41 core and e0f transaction through exact inverses", async () => {
+  const source = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  withoutMigrationDiagnostics(source);
+  let old = (
+    await fs.readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const first = "// BEGIN closed Linux migration diagnostics\n",
+    last = "// END closed Linux migration diagnostics\n\n";
+  assert.equal(old.split(first).length, 2);
+  assert.equal(old.split(last).length, 2);
+  old = old.replace(
+    old.slice(old.indexOf(first), old.indexOf(last) + last.length),
+    "",
+  );
+  const restoreFirst =
+      "    // BEGIN restore-only fixed migration assertion projection\n",
+    restoreLast =
+      "    // END restore-only fixed migration assertion projection\n";
+  assert.equal(old.split(restoreFirst).length, 2);
+  assert.equal(old.split(restoreLast).length, 2);
+  old = old.replace(
+    old.slice(
+      old.indexOf(restoreFirst),
+      old.indexOf(restoreLast) + restoreLast.length,
+    ),
+    "",
+  );
+  const current = 'import { promisify, types as utilTypes } from "node:util";';
+  assert.equal(old.split(current).length, 2);
+  old = old.replace(current, 'import { promisify } from "node:util";');
+  assert.equal(Buffer.byteLength(old), 236101);
+  assert.equal(
+    core.sha(old),
+    "7d9ad013b3fa508162cba564de8a74cbbb01d833412a117fbc0578204a0b5a45",
+  );
+});
+test("migration diagnostic native error classifier closes fixed codes without reading accessors, proxies or unknown text", () => {
+  const phase = "recipe-check",
+    label = "LINUX_MIGRATION_TRANSACTION_RECIPE_CHANGED";
+  assert.equal(
+    core.linuxMigrationFailureRecord(new Error(label), phase).code,
+    label,
+  );
+  const io = new Error("PRIVATE_PATH_AND_VALUE");
+  io.code = "ENOSPC";
+  assert.equal(
+    core.linuxMigrationFailureRecord(io, "source-record").code,
+    "ENOSPC",
+  );
+  let reads = 0;
+  const getter = new Error();
+  Object.defineProperty(getter, "message", {
+    get() {
+      reads++;
+      throw false;
+    },
+  });
+  Object.defineProperty(getter, "code", {
+    get() {
+      reads++;
+      throw 0;
+    },
+  });
+  const proxy = new Proxy(new Error(label), {
+    get() {
+      reads++;
+      throw false;
+    },
+    getOwnPropertyDescriptor() {
+      reads++;
+      throw false;
+    },
+  });
+  for (const value of [
+    undefined,
+    null,
+    false,
+    0,
+    "PRIVATE",
+    { message: label },
+    getter,
+    proxy,
+    new Error(label + " PRIVATE"),
+  ]) {
+    const record = core.linuxMigrationFailureRecord(value, phase);
+    assert.equal(record.code, "UNKNOWN");
+    assert(!JSON.stringify(record).includes("PRIVATE"));
+  }
+  assert.equal(reads, 0);
+  assert.equal(
+    core.linuxMigrationFailureRecord(new Error(label), "PRIVATE_PATH").phase,
+    "entry",
+  );
+});
+test(
+  "migration actual source-mode adapter adds strict helper diagnostics for both old applies and new record without changing the first failure",
+  { timeout: 15000 },
+  async (t) => {
+    const folder = await scratch(t),
+      helper = path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py");
+    const python = execFileSync(
+      process.platform === "win32" ? "python" : "python3",
+      ["-I", "-B", "-c", "import sys;print(sys.executable)"],
+      { encoding: "utf8", windowsHide: true },
+    ).trim();
+    for (const name of ["old", "new"])
+      await fs.writeFile(path.join(folder, name + ".json"), Buffer.alloc(0));
+    const source = await fs.readFile(MODULE, "utf8"),
+      old = withoutMigrationDiagnostics(source.replaceAll("\r\n", "\n"));
+    const declaration = (text) => {
+      const ast = ts.createSourceFile(
+        "adapter.mjs",
+        text,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.JS,
+      );
+      return ast.statements
+        .find(
+          (node) =>
+            ts.isFunctionDeclaration(node) &&
+            node.name.text === "transactionSourceMode",
+        )
+        .getText(ast);
+    };
+    for (const [mode, which, phase] of [
+      ["source-apply", "old", "source-apply-1"],
+      ["source-apply", "old", "source-apply-2"],
+      ["source-record", "new", "source-record"],
+    ]) {
+      for (const guarded of [false, true]) {
+        const logs = [];
+        let primary;
+        const state = {
+          source: folder,
+          diagnosticPhase: phase,
+          identities: [{ path: path.join(folder, which + ".json") }],
+          originalTools: { python, out: path.join(folder, "out") },
+        };
+        const api = vm.runInNewContext(
+          declaration(guarded ? source : old) + ";transactionSourceMode",
+          {
+            need: (condition, reason) => assert(condition, reason),
+            transactionCheck: () => 6000,
+            LIMITS: core.LIMITS,
+            LINUX_MIGRATION: M,
+            HELPER: helper,
+            path,
+            sourceMetadataResult: core.sourceMetadataResult,
+            migrationDiagnostic: (record) => logs.push(record),
+            archiveCommand: async (...args) => {
+              try {
+                return await core.archiveCommand(...args);
+              } catch (error) {
+                primary = error;
+                throw error;
+              }
+            },
+          },
+        );
+        await assert.rejects(
+          api(state, mode, which),
+          (error) =>
+            error === primary &&
+            error.message === "Checkpoint archive rejected",
+        );
+        assert.equal(logs.length, guarded ? 1 : 0);
+        if (guarded) {
+          const row = logs[0];
+          assert.equal(row.phase, phase);
+          assert.equal(row.source, which);
+          assert.equal(row.mode, mode);
+          assert.deepEqual(row.record, {
+            error: "source-metadata-read-bound",
+            sourceMetadataReadFailure: {
+              mode,
+              stage: "stat",
+              phase: "start",
+              predicate: "empty",
+              size: 0,
+              nlink: 1,
+              kind: "regular",
+              maximum: 16384,
+              readBytes: null,
+            },
+            exitCode: 1,
+          });
+          assert(!JSON.stringify(row).includes(folder));
+        }
+      }
+    }
+  },
+);
+test("migration phase breadcrumbs keep actual orchestration order and preserve falsy primary when the diagnostic observer fails", async () => {
+  for (const [stage, phase] of [
+    ["recipe", "recipe-check"],
+    ["old-apply2", "source-apply-2"],
+    ["new-record", "source-record"],
+  ]) {
+    const rows = [],
+      primary = new Error("LINUX_MIGRATION_TRANSACTION_RECIPE_CHANGED");
+    const model = await transactionModel({
+      failAt: stage,
+      marker: primary,
+      diagnosticLog: (line) =>
+        rows.push(JSON.parse(line.slice(line.indexOf("{")))),
+    });
+    await assert.rejects(
+      model.api.runClosedLinuxMigrationTransaction(
+        model.context,
+        model.candidate,
+        model.toolsToken,
+      ),
+      (error) => error === primary,
+    );
+    const failure = rows.find(
+      (row) => row.kind === "sorng-linux-migration-failure",
+    );
+    assert.equal(failure.phase, phase);
+    assert.equal(failure.code, primary.message);
+    assert.equal(model.activeMigrationTransactions.has(model.context), false);
+  }
+  const model = await transactionModel({
+    failAt: "old-apply2",
+    marker: false,
+    diagnosticLog: () => {
+      throw new Error("OBSERVER_FAILURE");
+    },
+  });
+  await assert.rejects(
+    model.api.runClosedLinuxMigrationTransaction(
+      model.context,
+      model.candidate,
+      model.toolsToken,
+    ),
+    (error) => error === false,
+  );
+});
+
+test("migration failure projector exceptions cannot replace an original false operation error", async () => {
+  const model = await transactionModel({
+    failAt: "old-apply2",
+    marker: false,
+    diagnosticRecord: () => {
+      throw undefined;
+    },
+  });
+  await assert.rejects(
+    model.api.runClosedLinuxMigrationTransaction(
+      model.context,
+      model.candidate,
+      model.toolsToken,
+    ),
+    (error) => error === false,
+  );
+});
+
+test("outer restore-only migration assertions retain strict native codes before transaction entry without replacing first errors", async () => {
+  const code = "LINUX_MIGRATION_FROM_DIGEST",
+    primary = new Error(code);
+  const source = await fs.readFile(
+    path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+      "core.mjs",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    bindings = {};
+  for (const name of [
+    "AFTER_GN_PHASES",
+    "AFTER_GN_CODES",
+    "LINUX_DEPENDENCY_ROLES",
+  ]) {
+    const node = ast.statements
+      .flatMap((item) =>
+        ts.isVariableStatement(item)
+          ? [...item.declarationList.declarations]
+          : [],
+      )
+      .find((item) => item.name.getText(ast) === name);
+    assert(node);
+    bindings[name] = vm.runInNewContext(
+      "(" + node.initializer.getText(ast) + ")",
+      { Set },
+    );
+  }
+  let old = core.afterGnPhase.toString();
+  const first =
+      "    // BEGIN restore-only fixed migration assertion projection\n",
+    last = "    // END restore-only fixed migration assertion projection\n";
+  assert.equal(old.split(first).length, 2);
+  assert.equal(old.split(last).length, 2);
+  old = old.replace(
+    old.slice(old.indexOf(first), old.indexOf(last) + last.length),
+    "",
+  );
+  const previous = vm.runInNewContext("(" + old + ")", {
+    assert,
+    ...bindings,
+    GRAPH_LIMITS: core.GRAPH_LIMITS,
+  });
+  const oldLines = [];
+  await assert.rejects(
+    previous(
+      "restore",
+      async () => {
+        throw primary;
+      },
+      (line) => oldLines.push(line),
+    ),
+    (error) => error === primary,
+  );
+  assert.equal(oldLines.length, 2);
+  assert(!oldLines.some((line) => line.includes(code)));
+  for (const phase of ["restore", "identity"]) {
+    const lines = [];
+    await assert.rejects(
+      core.afterGnPhase(
+        phase,
+        async () => {
+          throw primary;
+        },
+        (line) => lines.push(line),
+      ),
+      (error) => error === primary,
+    );
+    const records = lines
+      .filter((line) => line.includes("linux-migration "))
+      .map((line) => JSON.parse(line.slice(line.indexOf("{"))));
+    assert.equal(records.length, phase === "restore" ? 1 : 0);
+    if (records.length)
+      assert.deepEqual(records[0], {
+        kind: "sorng-linux-migration-failure",
+        schemaVersion: 1,
+        phase: "entry",
+        code,
+      });
+  }
+  let reads = 0;
+  const accessor = new Error();
+  Object.defineProperty(accessor, "message", {
+    get() {
+      reads++;
+      throw new Error("PRIVATE");
+    },
+  });
+  for (const error of [
+    false,
+    0,
+    undefined,
+    new Error("PRIVATE"),
+    { message: code },
+    accessor,
+  ]) {
+    const lines = [];
+    await assert.rejects(
+      core.afterGnPhase(
+        "restore",
+        async () => {
+          throw error;
+        },
+        (line) => lines.push(line),
+      ),
+      (value) => value === error,
+    );
+    assert.equal(lines.length, 2);
+    assert(!JSON.stringify(lines).includes("PRIVATE"));
+  }
+  assert.equal(reads, 0);
+  await assert.rejects(
+    core.afterGnPhase(
+      "restore",
+      async () => {
+        throw primary;
+      },
+      (line) => {
+        if (line.includes("linux-migration ")) throw false;
+      },
+    ),
+    (error) => error === primary,
+  );
+});

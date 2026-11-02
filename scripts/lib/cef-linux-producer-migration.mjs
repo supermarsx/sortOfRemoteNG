@@ -29,6 +29,7 @@ import {
   installRestoredDirectory,
   hostRemaining,
   linuxArmRecipe,
+  linuxMigrationFailureRecord,
   noLinks,
   sha,
   sourceMetadataResult,
@@ -1974,10 +1975,40 @@ function transactionCheck(state) {
   need(live.revalidationUsed === state.gnUsed, "TRANSACTION_GN_ORDER");
   return Math.min(live.remainingMilliseconds, state.originalTools.remaining());
 }
-async function transactionPhase(state, action) {
+// BEGIN closed Linux migration event output
+function migrationDiagnostic(record) {
+  try {
+    console.log(
+      "[cef-engineering-checkpoint] linux-migration " + canonical(record),
+    );
+  } catch {
+    /* Observer failures never replace the operation outcome. */
+  }
+}
+function migrationFailureDiagnostic(error, phase) {
+  try {
+    migrationDiagnostic(linuxMigrationFailureRecord(error, phase));
+  } catch {
+    /* Projection failure also cannot replace the first cause. */
+  }
+}
+// END closed Linux migration event output
+
+async function transactionPhase(state, phase, action) {
+  state.diagnosticPhase = phase;
+  migrationDiagnostic({
+    kind: "sorng-linux-migration-phase",
+    phase,
+    event: "begin",
+  });
   transactionCheck(state);
   const result = await action();
   transactionCheck(state); // Before any subsequent mutation/branding.
+  migrationDiagnostic({
+    kind: "sorng-linux-migration-phase",
+    phase,
+    event: "complete",
+  });
   return result;
 }
 async function transactionRecheck(state) {
@@ -2225,7 +2256,17 @@ async function transactionSourceMode(state, mode, which) {
         "--seconds",
         String(seconds),
       ],
-      { timeout },
+      {
+        timeout,
+        observeFailure: (record) =>
+          migrationDiagnostic({
+            kind: "sorng-linux-migration-archive-failure",
+            phase: state.diagnosticPhase,
+            mode,
+            source: which,
+            record,
+          }),
+      },
     ),
     mode,
   );
@@ -2334,9 +2375,11 @@ async function runClosedLinuxMigrationTransaction(
     }
   };
   try {
-    await transactionPhase(state, () => transactionControls(state));
-    await transactionPhase(state, () => transactionRecheck(state));
-    await transactionPhase(state, async () => {
+    await transactionPhase(state, "controls", () => transactionControls(state));
+    await transactionPhase(state, "recheck-before-restore", () =>
+      transactionRecheck(state),
+    );
+    await transactionPhase(state, "restore-install", async () => {
       state.creator = await restoreOwnedCommon(
         selected,
         tools,
@@ -2344,35 +2387,45 @@ async function runClosedLinuxMigrationTransaction(
         creators,
       );
     });
-    await transactionPhase(state, () => transactionRecheck(state));
-    await transactionPhase(state, () =>
+    await transactionPhase(state, "recheck-before-apply-1", () =>
+      transactionRecheck(state),
+    );
+    await transactionPhase(state, "source-apply-1", () =>
       transactionSourceMode(state, "source-apply", "old"),
     );
-    await transactionPhase(state, () => transactionRecheck(state));
-    const receipt = await transactionPhase(state, async () => {
-      const pending = revalidateLinuxSourceOwner(context);
-      state.gnUsed = true;
-      return await pending;
-    });
+    await transactionPhase(state, "recheck-before-gn", () =>
+      transactionRecheck(state),
+    );
+    const receipt = await transactionPhase(
+      state,
+      "gn-revalidation",
+      async () => {
+        const pending = revalidateLinuxSourceOwner(context);
+        state.gnUsed = true;
+        return await pending;
+      },
+    );
     const gn = assertLinuxSourceOwnerReceipt(context, receipt);
     need(
       gn.cohortQuietProven === true && gn.commandCompleted === true,
       "TRANSACTION_GN_UNCONFIRMED",
     );
-    await transactionPhase(state, () =>
+    await transactionPhase(state, "graph-verify", () =>
       verifyGraph(originalTools.out, selected.freshIdentity.graph),
     );
-    const recipe = await transactionPhase(state, () =>
+    const recipe = await transactionPhase(state, "recipe-check", () =>
       linuxArmRecipe(originalTools.chromium, originalTools.out),
     );
     need(
       canonical(recipe) === originalTools.linuxRecipeJson,
       "TRANSACTION_RECIPE_CHANGED",
     );
-    await transactionPhase(state, () =>
+    await transactionPhase(state, "source-apply-2", () =>
       transactionSourceMode(state, "source-apply", "old"),
     );
-    await transactionPhase(state, () => transactionRecheck(state));
+    await transactionPhase(state, "recheck-before-retirement", () =>
+      transactionRecheck(state),
+    );
     transactionCheck(state);
     assertLinuxSourceOwnerReceipt(context, receipt);
     const created = creators.get(state.creator);
@@ -2387,7 +2440,7 @@ async function runClosedLinuxMigrationTransaction(
       "TRANSACTION_READINESS",
     );
     retirementReadiness.delete(state.creator); // Consume BEFORE any retirement await.
-    await transactionPhase(state, () =>
+    await transactionPhase(state, "retirement", () =>
       retireOwnedCommon(
         state.creator,
         tools,
@@ -2404,12 +2457,18 @@ async function runClosedLinuxMigrationTransaction(
         retired.sourceInodeCas === false,
       "TRANSACTION_RETIREMENT_UNCONFIRMED",
     );
-    await transactionPhase(state, () => transactionRecheck(state));
-    const recorded = await transactionPhase(state, () =>
+    await transactionPhase(state, "recheck-before-record", () =>
+      transactionRecheck(state),
+    );
+    const recorded = await transactionPhase(state, "source-record", () =>
       transactionSourceMode(state, "source-record", "new"),
     );
-    await transactionPhase(state, () => transactionNewRecord(state, recorded));
-    await transactionPhase(state, () => transactionRecheck(state));
+    await transactionPhase(state, "record-check", () =>
+      transactionNewRecord(state, recorded),
+    );
+    await transactionPhase(state, "recheck-final", () =>
+      transactionRecheck(state),
+    );
     result = {
       sourceInputsRevalidated: true,
       oldApplies: 2,
@@ -2420,6 +2479,7 @@ async function runClosedLinuxMigrationTransaction(
       completeCacheStructureValidated: false,
     };
   } catch (error) {
+    migrationFailureDiagnostic(error, state.diagnosticPhase);
     remember(error);
   }
   // Revoke every authority synchronously before any awaited close/join. Retain
@@ -2465,6 +2525,7 @@ async function runClosedLinuxMigrationTransaction(
     try {
       await closing;
     } catch (error) {
+      migrationFailureDiagnostic(error, "cleanup");
       remember(error);
     }
   if (!failed) {
@@ -2525,6 +2586,7 @@ export async function prepareLinuxMigrationTransaction(
     );
     return completion; // No await after the final live/private-context check.
   } catch (error) {
+    migrationFailureDiagnostic(error, "completion");
     if (completion !== undefined)
       completedMigrationTransactions.delete(completion);
     throw error;

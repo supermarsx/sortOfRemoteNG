@@ -1,7 +1,7 @@
 // Engineering checkpoints never confer runtime or SDK admission.
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { promisify, types as utilTypes } from "node:util";
 import {
   constants as fsConstants,
   createReadStream,
@@ -5238,6 +5238,187 @@ const AFTER_GN_CODES = new Set([
   "ETIMEDOUT",
   "GRAPH_BOUND",
 ]);
+// BEGIN closed Linux migration diagnostics
+const LINUX_MIGRATION_DIAGNOSTIC_PHASES = new Set([
+  "entry",
+  "controls",
+  "recheck-before-restore",
+  "restore-install",
+  "recheck-before-apply-1",
+  "source-apply-1",
+  "recheck-before-gn",
+  "gn-revalidation",
+  "graph-verify",
+  "recipe-check",
+  "source-apply-2",
+  "recheck-before-retirement",
+  "retirement",
+  "recheck-before-record",
+  "source-record",
+  "record-check",
+  "recheck-final",
+  "cleanup",
+  "completion",
+]);
+const LINUX_MIGRATION_DIAGNOSTIC_MESSAGES = new Set([
+  "LINUX_GN_CLEANUP_RESERVE",
+  "LINUX_GN_COHORT_UNCONFIRMED",
+  "LINUX_GN_CREDENTIAL",
+  "LINUX_GN_LOG_CLOSE_DEADLINE",
+  "LINUX_GN_LOG_DIRECTORY",
+  "LINUX_GN_LOG_OWNER",
+  "LINUX_GN_ROLE",
+  "LINUX_MIGRATION_BOUND",
+  "LINUX_MIGRATION_BUNDLE_CHANGED",
+  "LINUX_MIGRATION_CANONICAL_JSON",
+  "LINUX_MIGRATION_CAPSULE_PRODUCER",
+  "LINUX_MIGRATION_CURRENT_CODE",
+  "LINUX_MIGRATION_CURRENT_HEAD",
+  "LINUX_MIGRATION_CURRENT_SOURCE",
+  "LINUX_MIGRATION_EXISTING_SIDECAR",
+  "LINUX_MIGRATION_FILE_CHANGED",
+  "LINUX_MIGRATION_FILE_SWAP",
+  "LINUX_MIGRATION_FIXED_CHECKOUT",
+  "LINUX_MIGRATION_FIXED_RUN",
+  "LINUX_MIGRATION_FRESH_SWAP",
+  "LINUX_MIGRATION_FROM_DIGEST",
+  "LINUX_MIGRATION_GENUINE_GN_AND_APPLIES_REQUIRED",
+  "LINUX_MIGRATION_GIT_BLOB",
+  "LINUX_MIGRATION_GIT_TREE",
+  "LINUX_MIGRATION_IDENTITY_FIELDS",
+  "LINUX_MIGRATION_INSTALL_SWAP",
+  "LINUX_MIGRATION_INSUFFICIENT_ORIGINAL_LEASE",
+  "LINUX_MIGRATION_INVENTORY",
+  "LINUX_MIGRATION_LINUX_METADATA",
+  "LINUX_MIGRATION_NOT_ACTIVATED",
+  "LINUX_MIGRATION_NO_CLEANUP_OBSERVATION",
+  "LINUX_MIGRATION_NO_RETIREMENT_OBSERVATION",
+  "LINUX_MIGRATION_OLD_CODE",
+  "LINUX_MIGRATION_OLD_PRODUCER",
+  "LINUX_MIGRATION_OLD_SOURCE",
+  "LINUX_MIGRATION_OPAQUE_CANDIDATE",
+  "LINUX_MIGRATION_OPAQUE_CREATOR",
+  "LINUX_MIGRATION_OPAQUE_TOOLS",
+  "LINUX_MIGRATION_ORIGINAL_CLOCK",
+  "LINUX_MIGRATION_ORIGINAL_LEASE",
+  "LINUX_MIGRATION_OWNERSHIP_LEDGER",
+  "LINUX_MIGRATION_PIN",
+  "LINUX_MIGRATION_PIN_MISMATCH",
+  "LINUX_MIGRATION_POLICY_MISSING",
+  "LINUX_MIGRATION_POLICY_SCOPE",
+  "LINUX_MIGRATION_POLICY_UNCOMMITTED",
+  "LINUX_MIGRATION_PRODUCER",
+  "LINUX_MIGRATION_REGULAR_FILE",
+  "LINUX_MIGRATION_REQUESTED_SLICE",
+  "LINUX_MIGRATION_RESTORE",
+  "LINUX_MIGRATION_RESTORE_OWNER",
+  "LINUX_MIGRATION_RESTORE_SWAP",
+  "LINUX_MIGRATION_RETIREMENT_DEADLINE",
+  "LINUX_MIGRATION_RETIREMENT_DESTINATION",
+  "LINUX_MIGRATION_RETIREMENT_HELPER_PIN",
+  "LINUX_MIGRATION_RETIREMENT_INPUT",
+  "LINUX_MIGRATION_RETIREMENT_READBACK",
+  "LINUX_MIGRATION_RETIREMENT_REPORT",
+  "LINUX_MIGRATION_SEALED_ASSET",
+  "LINUX_MIGRATION_SEAL_ARTIFACT",
+  "LINUX_MIGRATION_SEAL_BINDING",
+  "LINUX_MIGRATION_SELECTION_ARGUMENTS",
+  "LINUX_MIGRATION_SELECTION_LEASE",
+  "LINUX_MIGRATION_SHAPE",
+  "LINUX_MIGRATION_SIDECAR_OWNER",
+  "LINUX_MIGRATION_SOURCE_DELTA",
+  "LINUX_MIGRATION_TOOLS_AUTHORITY",
+  "LINUX_MIGRATION_TOOLS_BINDING",
+  "LINUX_MIGRATION_TOOLS_HOST",
+  "LINUX_MIGRATION_TOOLS_INSTALLED_PIN",
+  "LINUX_MIGRATION_TOOLS_LOCK",
+  "LINUX_MIGRATION_TOOLS_LOCK_PIN",
+  "LINUX_MIGRATION_TOOLS_MAP",
+  "LINUX_MIGRATION_TOOLS_MAP_PIN",
+  "LINUX_MIGRATION_TOOLS_PYTHON",
+  "LINUX_MIGRATION_TOOLS_PYTHON_MODE",
+  "LINUX_MIGRATION_TOOLS_SISO",
+  "LINUX_MIGRATION_TOOLS_SOURCE",
+  "LINUX_MIGRATION_TOOLS_WORKSPACE",
+  "LINUX_MIGRATION_TRANSACTION_ALREADY_USED",
+  "LINUX_MIGRATION_TRANSACTION_CACHE_BINDING",
+  "LINUX_MIGRATION_TRANSACTION_CACHE_HEADER",
+  "LINUX_MIGRATION_TRANSACTION_CACHE_OWNER",
+  "LINUX_MIGRATION_TRANSACTION_COMPLETION_CONTEXT",
+  "LINUX_MIGRATION_TRANSACTION_CONTROL_ROOT",
+  "LINUX_MIGRATION_TRANSACTION_FULL_RECORD",
+  "LINUX_MIGRATION_TRANSACTION_GN_ALREADY_USED",
+  "LINUX_MIGRATION_TRANSACTION_GN_ORDER",
+  "LINUX_MIGRATION_TRANSACTION_GN_UNCONFIRMED",
+  "LINUX_MIGRATION_TRANSACTION_IDENTITY",
+  "LINUX_MIGRATION_TRANSACTION_IDENTITY_FILE",
+  "LINUX_MIGRATION_TRANSACTION_LOG_ROOT",
+  "LINUX_MIGRATION_TRANSACTION_METADATA_MODE",
+  "LINUX_MIGRATION_TRANSACTION_NOT_ACTIVATED",
+  "LINUX_MIGRATION_TRANSACTION_READINESS",
+  "LINUX_MIGRATION_TRANSACTION_RECIPE_CHANGED",
+  "LINUX_MIGRATION_TRANSACTION_RETIRED",
+  "LINUX_MIGRATION_TRANSACTION_RETIREMENT_UNCONFIRMED",
+  "LINUX_MIGRATION_TRANSACTION_SOURCE_OWNER",
+  "LINUX_MIGRATION_TRANSACTION_SOURCE_ROOT",
+  "LINUX_MIGRATION_TRANSACTION_TOKENS",
+  "LINUX_MIGRATION_UNREVIEWED_SOURCE_DELTA",
+  "LINUX_SOURCE_OWNER_ALREADY_USED",
+  "LINUX_SOURCE_OWNER_DEADLINE",
+  "LINUX_SOURCE_OWNER_DUPLICATE",
+  "LINUX_SOURCE_OWNER_ESCAPED",
+  "LINUX_SOURCE_OWNER_RECEIPT",
+  "LINUX_SOURCE_OWNER_REQUIRED",
+  "LINUX_SOURCE_OWNER_RETIRED",
+]);
+const LINUX_MIGRATION_DIAGNOSTIC_FS = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "ELOOP",
+  "ENOTDIR",
+  "EEXIST",
+  "ETIMEDOUT",
+  "ENOSPC",
+  "EIO",
+]);
+export function linuxMigrationFailureRecord(error, phase) {
+  let code = "UNKNOWN";
+  try {
+    // Native-error branding rejects proxies before descriptor inspection.
+    // Accessors are never evaluated and unknown message text never leaves here.
+    if (utilTypes.isNativeError(error)) {
+      const message = Object.getOwnPropertyDescriptor(error, "message");
+      const ownCode = Object.getOwnPropertyDescriptor(error, "code");
+      if (
+        typeof message?.value === "string" &&
+        LINUX_MIGRATION_DIAGNOSTIC_MESSAGES.has(message.value)
+      )
+        code = message.value;
+      else if (
+        typeof ownCode?.value === "string" &&
+        LINUX_MIGRATION_DIAGNOSTIC_FS.has(ownCode.value)
+      )
+        code = ownCode.value;
+      else if (message?.value === "Checkpoint archive rejected")
+        code = "ARCHIVE_REJECTED";
+      else if (message?.value === "Archive deadline; partial is not admitted")
+        code = "ARCHIVE_DEADLINE";
+      else if (message?.value === "Malformed archive result")
+        code = "ARCHIVE_RESULT";
+    }
+  } catch {
+    /* A diagnostic never replaces even a falsy primary failure. */
+  }
+  return Object.freeze({
+    kind: "sorng-linux-migration-failure",
+    schemaVersion: 1,
+    phase: LINUX_MIGRATION_DIAGNOSTIC_PHASES.has(phase) ? phase : "entry",
+    code,
+  });
+}
+// END closed Linux migration diagnostics
+
 export async function afterGnPhase(phase, operation, log = console.log) {
   assert(AFTER_GN_PHASES.has(phase), "Closed after-GN phase required");
   log(`[cef-engineering-checkpoint] after-gn phase=${phase}`);
@@ -5248,6 +5429,19 @@ export async function afterGnPhase(phase, operation, log = console.log) {
     log(
       `[cef-engineering-checkpoint] after-gn failed phase=${phase} code=${code}`,
     );
+    // BEGIN restore-only fixed migration assertion projection
+    if (phase === "restore") {
+      try {
+        const record = linuxMigrationFailureRecord(error, "entry");
+        if (LINUX_MIGRATION_DIAGNOSTIC_MESSAGES.has(record.code))
+          log(
+            "[cef-engineering-checkpoint] linux-migration " + canonical(record),
+          );
+      } catch {
+        /* This additional observer never replaces the operation error. */
+      }
+    }
+    // END restore-only fixed migration assertion projection
     if (
       phase === "sdk-roots" &&
       LINUX_DEPENDENCY_ROLES.has(error?.linuxDependencyRole)

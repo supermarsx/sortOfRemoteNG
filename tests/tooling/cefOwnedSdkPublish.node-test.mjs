@@ -1067,7 +1067,6 @@ test("engineering publisher routing whole workflow inverse preserves the origina
 // module blob delta for1edd. Transport/native execution below is explicitly modeled.
 const engineeringGitRowsDeflate =
   "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";
-const linuxMigrationBlob = "5a195510ed0d488a94117105fb259d3e85420436";
 function engineeringFixture(target = "x86_64-apple-darwin") {
   const old = fixture(modernLock),
     profile = checkpointProfile(target);
@@ -1078,10 +1077,18 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
   const rows = JSON.parse(
     inflateSync(Buffer.from(engineeringGitRowsDeflate, "base64")),
   );
-  if (target === "aarch64-unknown-linux-gnu")
-    rows.find(
-      (x) => x.path === "scripts/lib/cef-linux-producer-migration.mjs",
-    ).sha = linuxMigrationBlob;
+  if (target === "aarch64-unknown-linux-gnu") {
+    const currentLinuxBlobs = {
+      "scripts/lib/cef-checkpoint-archive.py":
+        "2bfcdd7cddc49e2ec4a8aa339cb7c938053422ad",
+      "scripts/lib/cef-engineering-checkpoint.mjs":
+        "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
+      "scripts/lib/cef-linux-producer-migration.mjs":
+        "719ec73bce3cb7a46c701220aca021824510072b",
+    };
+    for (const [name, sha] of Object.entries(currentLinuxBlobs))
+      rows.find((row) => row.path === name).sha = sha;
+  }
   if (target !== "aarch64-unknown-linux-gnu") {
     const currentMacBlobs = {
       "scripts/lib/cef-checkpoint-archive.py":
@@ -1380,7 +1387,11 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
-test("engineering publication exact target producers bind current Mac diagnostics and require the reviewed Linux1edd without source-only admission", () => {
+test("engineering publication exact target producers preserve active Macda and bind the diagnostic Linux producer without source-only admission", () => {
+  assert.equal(
+    ENGINEERING_PRODUCER,
+    "da2455fe662a46299aeec82811e285eef43a382ef88cae9fe3a747ae2ecb8576",
+  );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
     ENGINEERING_PRODUCER,
@@ -1391,7 +1402,7 @@ test("engineering publication exact target producers bind current Mac diagnostic
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
-    "1eddf4f9c05172f03fb155346b1055f4d12b24505e608c3b7074245f530ff01c",
+    "0ebae8f031b3d8900efdd752abaa8520634a53e7abc4ac58bdec935d27ce0d79",
   );
   for (const target of Object.keys(ENGINEERING_PRODUCERS)) {
     const f = engineeringFixture(target);
