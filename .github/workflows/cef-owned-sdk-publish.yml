@@ -45,7 +45,7 @@ jobs:
           CEF_PUBLICATION_REVIEW: ${{ inputs.reviewed_publication }}
           CEF_PUBLICATION_REVIEW_SHA256: ${{ inputs.review_sha256 }}
           CEF_PUBLICATION_OUTPUT: ${{ runner.temp }}/cef-owned-publication
-        run: node scripts/cef-owned-sdk-publish.mjs verify --reviewed "$CEF_PUBLICATION_REVIEW" --review-sha256 "$CEF_PUBLICATION_REVIEW_SHA256"
+        run: node native/cef-engineering-sdk-publication/publish.mjs verify --reviewed "$CEF_PUBLICATION_REVIEW" --review-sha256 "$CEF_PUBLICATION_REVIEW_SHA256"
       - name: Retain bounded verification receipt
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -84,7 +84,7 @@ jobs:
           CEF_PUBLICATION_REVIEW: ${{ inputs.reviewed_publication }}
           CEF_PUBLICATION_REVIEW_SHA256: ${{ inputs.review_sha256 }}
           CEF_PUBLICATION_OUTPUT: ${{ runner.temp }}/cef-owned-publication
-        run: node scripts/cef-owned-sdk-publish.mjs publish --reviewed "$CEF_PUBLICATION_REVIEW" --review-sha256 "$CEF_PUBLICATION_REVIEW_SHA256" --execute
+        run: node native/cef-engineering-sdk-publication/publish.mjs publish --reviewed "$CEF_PUBLICATION_REVIEW" --review-sha256 "$CEF_PUBLICATION_REVIEW_SHA256" --execute
       - name: Retain publication provenance receipt without SDK payloads
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
