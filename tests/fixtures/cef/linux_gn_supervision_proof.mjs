@@ -116,6 +116,9 @@ const full = (s) =>
   physical(s) + ":" + [s.size, s.nlink, s.mtimeNs, s.ctimeNs].join(":");
 let running = false,
   last = null;
+// BEGIN fixed failure diagnostic state
+let lastCaseDiagnostic = null;
+// END fixed failure diagnostic state
 
 export function authority(facts, platform, arch) {
   assert(platform === "linux" && arch === "x64", "PROOF_HOST");
@@ -967,6 +970,9 @@ async function caseRun(id, owned, witness, core, end, known) {
       try {
         assert(summary === null, "PROOF_SUMMARY_ONCE");
         summary = diagnostic(message);
+        // BEGIN fixed failure diagnostic capture
+        lastCaseDiagnostic = supervisorObservation(summary);
+        // END fixed failure diagnostic capture
       } catch (error) {
         diagnosticFailure ??= error;
       }
@@ -1589,10 +1595,100 @@ export function failureCode(error) {
   return "PROOF_FAILED";
 }
 
+// BEGIN fixed failure diagnostic projection
+function diagnosticOwn(value, key) {
+  if (!value || typeof value !== "object") return undefined;
+  return Object.getOwnPropertyDescriptor(value, key)?.value;
+}
+export function assertionFailureCode(error) {
+  try {
+    const message = diagnosticOwn(error, "message");
+    for (const [expected, label] of [
+      ["PROOF_DENIAL", "ASSERT_DENIAL"],
+      ["PROOF_JOIN", "ASSERT_JOIN"],
+      ["PROOF_ROOT_ADMISSION", "ASSERT_ROOT_ADMISSION"],
+      ["PROOF_OUTPUT_STAGE", "ASSERT_OUTPUT_STAGE"],
+      ["PROOF_SUMMARY_ONCE", "ASSERT_SUMMARY_ONCE"],
+      ["PROOF_SUPERVISOR_DIAGNOSTIC", "ASSERT_SUPERVISOR_DIAGNOSTIC"],
+      ["PROOF_CASE_ROOT_CHANGED", "ASSERT_CASE_ROOT_CHANGED"],
+      ["PROOF_FIXED_COMMAND", "ASSERT_FIXED_COMMAND"],
+      ["Shared compile output bound", "COMPILE_OUTPUT_BOUND"],
+    ])
+      if (message === expected) return label;
+  } catch {
+    /* Diagnostics never invoke a thrown object's getters. */
+  }
+  return failureCode(error);
+}
+export function supervisorObservation(value) {
+  try {
+    const result = {};
+    for (const key of [
+      "rootExited",
+      "pipeClosed",
+      "monitorJoined",
+      "probesJoined",
+      "outputsJoined",
+      "cohortQuiet",
+    ]) {
+      const observed = diagnosticOwn(value, key);
+      if (typeof observed !== "boolean") return null;
+      result[key] = observed;
+    }
+    const count = diagnosticOwn(value, "observedProcesses");
+    if (!Number.isSafeInteger(count) || count < 0 || count > 4096) return null;
+    result.observedProcesses = count;
+    const phase = diagnosticOwn(value, "phase");
+    result.phase = ["complete", "denied"].includes(phase) ? phase : "UNKNOWN";
+    const stage = diagnosticOwn(value, "failureStage");
+    result.failureStage = [
+      "none",
+      "output-bound",
+      "writer",
+      "writer-join",
+      "observer",
+      "observer-join",
+      "initial-snapshot",
+      "stdio-close",
+    ].includes(stage)
+      ? stage
+      : "OTHER";
+    return Object.freeze(result);
+  } catch {
+    return null;
+  }
+}
+function boundedFailureObservation(base, summary, cleanupFacts) {
+  try {
+    const observation = {
+      ...base,
+      supervisorObservation: supervisorObservation(summary),
+      cleanupAttempted: cleanupFacts.attempted === true,
+      cleanupCompleted: cleanupFacts.completed === true,
+      knownOwnedActorsRemaining:
+        Number.isSafeInteger(cleanupFacts.knownOwnedActorsRemaining) &&
+        cleanupFacts.knownOwnedActorsRemaining >= 0 &&
+        cleanupFacts.knownOwnedActorsRemaining <= 4096
+          ? cleanupFacts.knownOwnedActorsRemaining
+          : null,
+      extraContainmentUsed: cleanupFacts.extraContainmentUsed === true,
+    };
+    if (Buffer.byteLength(JSON.stringify(observation)) <= 4096)
+      return freeze(observation);
+  } catch {
+    /* Preserve the original fixed envelope and primary failure. */
+  }
+  return freeze(base);
+}
+// END fixed failure diagnostic projection
+
 export async function runProof(...args) {
   last = null;
   assert(!running && args.length === 0, "PROOF_ENTRY");
   running = true;
+  // BEGIN fixed failure diagnostic reset
+  lastCaseDiagnostic = null;
+  // END fixed failure diagnostic reset
   const attemptId = randomUUID();
   let owned,
     end,
@@ -1606,6 +1702,14 @@ export async function runProof(...args) {
     activeCase = null,
     completedCases = 0;
   const known = new Map();
+  // BEGIN fixed failure diagnostic cleanup state
+  const cleanupFacts = {
+    attempted: false,
+    completed: false,
+    knownOwnedActorsRemaining: null,
+    extraContainmentUsed: false,
+  };
+  // END fixed failure diagnostic cleanup state
   try {
     const observedHost = authority(process.env, process.platform, process.arch);
     phase = "clock";
@@ -1634,6 +1738,9 @@ export async function runProof(...args) {
     for (const id of CASES) {
       phase = "case";
       activeCase = id;
+      // BEGIN fixed failure diagnostic case reset
+      lastCaseDiagnostic = null;
+      // END fixed failure diagnostic case reset
       cases.push(await caseRun(id, owned, witness, core, end, known));
       completedCases++;
       await foreign.current();
@@ -1670,7 +1777,13 @@ export async function runProof(...args) {
             alive = rows.filter(
               (row) => known.get(row.pid)?.start === row.start,
             );
+          // BEGIN fixed failure diagnostic existing sample
+          cleanupFacts.knownOwnedActorsRemaining = alive.length;
+          // END fixed failure diagnostic existing sample
           if (alive.length) {
+            // BEGIN fixed failure diagnostic containment
+            cleanupFacts.extraContainmentUsed = true;
+            // END fixed failure diagnostic containment
             // Extra fixture containment can never make this case successful.
             if (!failed) {
               failed = true;
@@ -1688,9 +1801,18 @@ export async function runProof(...args) {
                 ),
               Math.min(end, performance.now() + 2000),
             );
+            // BEGIN fixed failure diagnostic containment result
+            cleanupFacts.knownOwnedActorsRemaining = 0;
+            // END fixed failure diagnostic containment result
           }
         }
+        // BEGIN fixed failure diagnostic cleanup attempt
+        cleanupFacts.attempted = true;
+        // END fixed failure diagnostic cleanup attempt
         await cleanup(owned, end);
+        // BEGIN fixed failure diagnostic cleanup completion
+        cleanupFacts.completed = true;
+        // END fixed failure diagnostic cleanup completion
       } catch (error) {
         if (!failed) {
           failed = true;
@@ -1704,20 +1826,26 @@ export async function runProof(...args) {
   if (failed) {
     // Exact fixed message only, through a data descriptor (never invoke a
     // thrown object's getters or serialize a raw exception/string/path).
-    const code = failureCode(first),
+    // BEGIN fixed failure diagnostic envelope
+    const code = assertionFailureCode(first),
       unsupported = code === "REPARENT_WITNESS_UNOBSERVED";
-    last = freeze({
-      kind: "linux-gn-benign-native-proof-failure",
-      attemptId,
-      complete: false,
-      code,
-      phase: firstPhase,
-      activeCase,
-      completedCases,
-      incomplete: true,
-      unsupported,
-      ...FALSE_FLAGS,
-    });
+    last = boundedFailureObservation(
+      {
+        kind: "linux-gn-benign-native-proof-failure",
+        attemptId,
+        complete: false,
+        code,
+        phase: firstPhase,
+        activeCase,
+        completedCases,
+        incomplete: true,
+        unsupported,
+        ...FALSE_FLAGS,
+      },
+      lastCaseDiagnostic,
+      cleanupFacts,
+    );
+    // END fixed failure diagnostic envelope
     throw first;
   }
   report.complete = true;

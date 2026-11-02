@@ -13,6 +13,8 @@ import {
   runProof,
   lastObservation,
   failureCode,
+  assertionFailureCode,
+  supervisorObservation,
 } from "../fixtures/cef/linux_gn_supervision_proof.mjs";
 
 // Portable tests only. No native child, Git, ps or proof main is executed here.
@@ -33,6 +35,7 @@ const facts = () => ({
   GITHUB_RUN_ID: "123",
   GITHUB_RUN_ATTEMPT: "1",
 });
+
 const runtime = (
   await fs.readFile(
     new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
@@ -775,3 +778,281 @@ test(
       }
   },
 );
+
+test("fixed own-descriptor assertions and supervisor diagnostic copies disclose no raw errors", () => {
+  for (const [message, code] of [
+    ["PROOF_JOIN", "ASSERT_JOIN"],
+    ["PROOF_DENIAL", "ASSERT_DENIAL"],
+    ["PROOF_OUTPUT_STAGE", "ASSERT_OUTPUT_STAGE"],
+    ["PROOF_ROOT_ADMISSION", "ASSERT_ROOT_ADMISSION"],
+    ["PROOF_SUMMARY_ONCE", "ASSERT_SUMMARY_ONCE"],
+    ["PROOF_SUPERVISOR_DIAGNOSTIC", "ASSERT_SUPERVISOR_DIAGNOSTIC"],
+    ["PROOF_CASE_ROOT_CHANGED", "ASSERT_CASE_ROOT_CHANGED"],
+    ["PROOF_FIXED_COMMAND", "ASSERT_FIXED_COMMAND"],
+    ["Shared compile output bound", "COMPILE_OUTPUT_BOUND"],
+    ["PROOF_REPARENT_UNOBSERVED", "REPARENT_WITNESS_UNOBSERVED"],
+  ])
+    assert.equal(assertionFailureCode(Error(message)), code);
+  let getters = 0;
+  const hostile = Object.defineProperty({}, "message", {
+    get() {
+      getters++;
+      throw Error("PRIVATE");
+    },
+  });
+  for (const value of [
+    hostile,
+    false,
+    0,
+    null,
+    undefined,
+    "PROOF_JOIN",
+    Error("PROOF_JOIN PRIVATE"),
+    new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw Error("PRIVATE");
+        },
+      },
+    ),
+  ])
+    assert.equal(assertionFailureCode(value), "PROOF_FAILED");
+  const summary = {
+    rootExited: true,
+    pipeClosed: true,
+    monitorJoined: true,
+    probesJoined: true,
+    outputsJoined: false,
+    cohortQuiet: true,
+    observedProcesses: 1,
+    phase: "denied",
+    failureStage: "output-bound",
+    rawError: "PRIVATE",
+  };
+  const copied = supervisorObservation(summary);
+  assert.equal(copied.outputsJoined, false);
+  assert.equal(copied.failureStage, "output-bound");
+  summary.outputsJoined = true;
+  assert.equal(copied.outputsJoined, false);
+  assert(Object.isFrozen(copied));
+  assert(!JSON.stringify(copied).includes("PRIVATE"));
+  assert.equal(
+    supervisorObservation({
+      ...summary,
+      phase: "PRIVATE",
+      failureStage: "PRIVATE",
+    }).failureStage,
+    "OTHER",
+  );
+  assert.equal(
+    supervisorObservation({ ...summary, phase: "PRIVATE" }).phase,
+    "UNKNOWN",
+  );
+  for (const value of [
+    null,
+    {},
+    new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw Error("PRIVATE");
+        },
+      },
+    ),
+    Object.defineProperty({ ...summary }, "outputsJoined", {
+      get() {
+        getters++;
+        throw Error("PRIVATE");
+      },
+    }),
+    { ...summary, observedProcesses: 4097 },
+    { ...summary, rootExited: 1 },
+  ])
+    assert.equal(supervisorObservation(value), null);
+  assert.equal(getters, 0);
+});
+
+function withoutFailureDiagnostics(source) {
+  for (const name of [
+    "state",
+    "capture",
+    "projection",
+    "reset",
+    "cleanup state",
+    "case reset",
+    "existing sample",
+    "containment",
+    "containment result",
+    "cleanup attempt",
+    "cleanup completion",
+  ]) {
+    const start = "fixed failure diagnostic " + name;
+    const expression = new RegExp(
+      "^[ \\t]*// BEGIN " +
+        start +
+        "\\n[\\s\\S]*?^[ \\t]*// END " +
+        start +
+        "\\n",
+      "gm",
+    );
+    assert.equal([...source.matchAll(expression)].length, 1, start);
+    source = source.replace(expression, "");
+    if (name === "projection")
+      source = source.replace(
+        "\n\nexport async function runProof",
+        "\nexport async function runProof",
+      );
+  }
+  const old = `    const code = failureCode(first),
+      unsupported = code === "REPARENT_WITNESS_UNOBSERVED";
+    last = freeze({
+      kind: "linux-gn-benign-native-proof-failure",
+      attemptId,
+      complete: false,
+      code,
+      phase: firstPhase,
+      activeCase,
+      completedCases,
+      incomplete: true,
+      unsupported,
+      ...FALSE_FLAGS,
+    });
+`;
+  const expression =
+    /^    \/\/ BEGIN fixed failure diagnostic envelope\n[\s\S]*?^    \/\/ END fixed failure diagnostic envelope\n/gm;
+  assert.equal([...source.matchAll(expression)].length, 1);
+  return source.replace(expression, old);
+}
+
+test("fixed diagnostics exact inverse preserves complete8b4 actors limits expected outcomes and source", () => {
+  const original = withoutFailureDiagnostics(fixture);
+  assert.equal(Buffer.byteLength(original), 52966);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "b3b4c1e842523a58139a2aaa21b5d0f13d737de21e20099574d449a7bdf3e93c",
+  );
+});
+
+test("actual proof control preserves falsy primary and reports only observed cleanup completion", async () => {
+  // Actual runProof body with ONLY the dynamic module load replaced by a
+  // fixed nonminting model. No native process, Git, ps or actor runs here.
+  const original = runProof.toString();
+  const load = "core = await import(pathToFileURL(path.join(ROOT, CORE)));";
+  assert.equal(original.split(load).length, 2);
+  const body = original.replace(load, "core = modelCore;");
+  const a = fixture.indexOf("function boundedFailureObservation("),
+    b = fixture.indexOf("// END fixed failure diagnostic projection", a);
+  assert(a > 0 && b > a);
+  const bounded = fixture.slice(a, b);
+  const project = vm.runInNewContext("(" + bounded + ")", {
+    Buffer,
+    supervisorObservation,
+    freeze: (value) => Object.freeze(value),
+  });
+  const fallback = {
+    kind: "fixed-failure",
+    complete: false,
+    code: "PROOF_FAILED",
+  };
+  const malformedFacts = Object.defineProperty({}, "attempted", {
+    get() {
+      throw Error("PRIVATE diagnostic failure");
+    },
+  });
+  const safe = project(fallback, null, malformedFacts);
+  assert.equal(
+    safe,
+    fallback,
+    "projection failure retains original fixed envelope",
+  );
+  assert(Object.isFrozen(safe));
+  assert(Buffer.byteLength(JSON.stringify(safe)) <= 4096);
+  assert(!JSON.stringify(safe).includes("PRIVATE"));
+  for (const primary of [false, 0, null, undefined, Error("PROOF_JOIN")])
+    for (const cleanupFails of [false, true]) {
+      const observed = [];
+      const bindings = {
+        assert,
+        randomUUID: () => "00000000-0000-4000-8000-000000000001",
+        Map,
+        Set,
+        Promise,
+        Buffer,
+        performance,
+        authority: () => ({}),
+        process: {
+          env: {},
+          platform: "model",
+          arch: "model",
+          versions: { node: "model" },
+        },
+        originalEnd: () => performance.now() + 1000,
+        sourceWitness: async () => ({
+          contents: new Map([
+            [".node-version", "model"],
+            ["runtime", "model"],
+          ]),
+        }),
+        kernelBlocks: () => {},
+        RUNTIME: "runtime",
+        modelCore: {},
+        check: () => {},
+        ownedRoot: async () => ({
+          observers: new Set(),
+          retire() {
+            observed.push("retire");
+          },
+        }),
+        foreignActor: async () => ({
+          ready: async () => {},
+          current: async () => {},
+          stop: async () => {
+            observed.push("foreign-stop");
+          },
+        }),
+        CASES: ["output-bound"],
+        caseRun: async () => {
+          throw primary;
+        },
+        within: async (work) => await work(),
+        cleanup: async () => {
+          observed.push("cleanup");
+          if (cleanupFails) throw Error("PRIVATE cleanup");
+        },
+        assertionFailureCode,
+        supervisorObservation,
+        freeze: (value) => Object.freeze(value),
+        FALSE_FLAGS: { productionReadinessIssued: false, runtimeReady: false },
+        JSON,
+      };
+      const model = vm.runInNewContext(
+        `let last=null,running=false,lastCaseDiagnostic=null;${bounded}\nconst run=${body};({run,observation:()=>last});`,
+        bindings,
+      );
+      let rejected = false,
+        caught;
+      try {
+        await model.run();
+      } catch (error) {
+        rejected = true;
+        caught = error;
+      }
+      assert.equal(rejected, true);
+      assert.equal(caught, primary, "including falsy original throw");
+      const observation = model.observation();
+      assert.equal(
+        observation.code,
+        primary instanceof Error ? "ASSERT_JOIN" : "PROOF_FAILED",
+      );
+      assert.equal(observation.cleanupAttempted, true);
+      assert.equal(observation.cleanupCompleted, !cleanupFails);
+      assert.equal(observation.knownOwnedActorsRemaining, null);
+      assert.equal(observation.supervisorObservation, null);
+      assert.equal(observation.extraContainmentUsed, false);
+      assert.equal(observation.runtimeReady, false);
+      assert(Buffer.byteLength(JSON.stringify(observation)) <= 4096);
+      assert(!JSON.stringify(observation).includes("PRIVATE"));
+      assert.deepEqual(observed, ["retire", "foreign-stop", "cleanup"]);
+    }
+});
