@@ -60,3 +60,5 @@ packaging/linux/cef-sandbox-deb.postinst.sh text eol=lf
 packaging/linux/cef-sandbox-rpm.postinst.sh text eol=lf
 tests/fixtures/cef/mac_nearby.gitmodules -text
 scripts/lib/cef-linux-sidecar-retirement.py -text
+tests/fixtures/cef/mac_clang_chromium.DEPS -text
+tests/fixtures/cef/mac_clang_openscreen.DEPS -text
