@@ -754,13 +754,24 @@ async function directActorHandshake(role, attempt, owned, end, pids) {
         check(end);
         await owned.current();
         await owned.directoryCurrent(attempt);
-        for (const row of witnesses)
+        for (const row of witnesses) {
+          // Timestamp samples can coalesce even when a held file's bytes change.
+          const buffer = Buffer.alloc(4097);
+          const { bytesRead } = await row.fd.read(buffer, 0, buffer.length, 0);
+          assert(
+            bytesRead === row.raw.length &&
+              buffer.subarray(0, bytesRead).equals(row.raw),
+            "PROOF_DIRECT_CHANGED",
+          );
           assert(
             full(await row.fd.stat({ bigint: true })) === row.stamp &&
               full(await fs.lstat(row.file, { bigint: true })) === row.stamp &&
               (await fs.realpath(row.file)) === row.file,
             "PROOF_DIRECT_CHANGED",
           );
+        }
+        await owned.current();
+        await owned.directoryCurrent(attempt);
         check(end);
       };
       await current();

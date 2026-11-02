@@ -625,8 +625,8 @@ async function handshakeFixture(t, role, options = {}) {
       value.uid,
       value.size,
       value.nlink,
-      value.mtimeNs,
-      value.ctimeNs,
+      options.coarseTimestamps ? 0n : value.mtimeNs,
+      options.coarseTimestamps ? 0n : value.ctimeNs,
     ].join(":");
   const identity = stamp(await fs.lstat(attempt, { bigint: true }))
     .split(":")
@@ -723,6 +723,26 @@ test("direct handshake uses actual held leaf descriptors and fixed releases with
         "release",
       );
   }
+});
+
+test("direct handshake rejects byte changes when filesystem timestamp samples coalesce", async (t) => {
+  const state = await handshakeFixture(t, "nonzero", {
+    coarseTimestamps: true,
+    onDelay: (s) =>
+      fs.writeFile(
+        s.leaf("nonzero.json"),
+        JSON.stringify({ pid: 12349, parent: 4321 }),
+      ),
+  });
+  await assert.rejects(state.run(), /PROOF_DIRECT_CHANGED/);
+  assert(state.handles.every((fd) => fd.fd === -1));
+  assert.equal(
+    await fs.stat(state.leaf("release-root")).then(
+      () => true,
+      () => false,
+    ),
+    false,
+  );
 });
 
 test("direct handshake denies missing partial mismatched changed retired and late inputs and joins every owned close", async (t) => {
@@ -1573,7 +1593,12 @@ test(
               );
             } else {
               assert.equal(completed, false, variant);
-              assert.match(failure.message, /PROOF_CLEANUP_CHANGED/);
+              assert.match(
+                failure.message,
+                variant === "content"
+                  ? /^PROOF_CLEANUP_(?:CHANGED|CONTENT)$/
+                  : /PROOF_CLEANUP_CHANGED/,
+              );
               assert.equal(
                 await fs.lstat(target).then(
                   () => true,
@@ -2102,7 +2127,54 @@ const directCaseInverse = [
     ],
   },
 ];
+function withoutHeldByteRecheck(source) {
+  const current = `        for (const row of witnesses) {
+          // Timestamp samples can coalesce even when a held file's bytes change.
+          const buffer = Buffer.alloc(4097);
+          const { bytesRead } = await row.fd.read(buffer, 0, buffer.length, 0);
+          assert(
+            bytesRead === row.raw.length &&
+              buffer.subarray(0, bytesRead).equals(row.raw),
+            "PROOF_DIRECT_CHANGED",
+          );
+          assert(
+            full(await row.fd.stat({ bigint: true })) === row.stamp &&
+              full(await fs.lstat(row.file, { bigint: true })) === row.stamp &&
+              (await fs.realpath(row.file)) === row.file,
+            "PROOF_DIRECT_CHANGED",
+          );
+        }
+        await owned.current();
+        await owned.directoryCurrent(attempt);`;
+  const prior = `        for (const row of witnesses)
+          assert(
+            full(await row.fd.stat({ bigint: true })) === row.stamp &&
+              full(await fs.lstat(row.file, { bigint: true })) === row.stamp &&
+              (await fs.realpath(row.file)) === row.file,
+            "PROOF_DIRECT_CHANGED",
+          );`;
+  assert.equal(source.split(current).length, 2);
+  const restored = source.replace(current, prior);
+  assert.equal(Buffer.byteLength(restored), 67657);
+  assert.equal(
+    createHash("sha256").update(restored).digest("hex"),
+    "3c2bb79a4075ef77f7e84b8f87b356f9417a801d6dc667f20a7bda4631d232ea",
+  );
+  return restored;
+}
+
+test("held-byte recheck inverse preserves the complete prior fixture", () => {
+  withoutHeldByteRecheck(fixture);
+  assert.throws(() => withoutHeldByteRecheck(fixture + "\n"));
+  assert.throws(() =>
+    withoutHeldByteRecheck(
+      fixture.replace("Buffer.alloc(4097)", "Buffer.alloc(4098)"),
+    ),
+  );
+});
+
 function withoutColdMetalFixtureRetarget(source) {
+  source = withoutHeldByteRecheck(source);
   for (const [current, prior] of [
     [
       '    RUNTIME,\n    77002,\n    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",',
