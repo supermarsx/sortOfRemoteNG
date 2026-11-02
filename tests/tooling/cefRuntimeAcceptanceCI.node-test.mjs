@@ -29,6 +29,8 @@ import {
   nativeAcceptanceRequirements,
   verifiedAcceptanceSourceLock,
   producerSelection,
+  downloadOwnedSdk,
+  executeAcceptance,
   runAcceptanceCommand,
   verifyAcceptanceBundle,
   verifyProducerMetadata,
@@ -52,6 +54,48 @@ import {
 import { releaseIdentity } from "../../scripts/cef-runtime-ci.mjs";
 
 const repository = "supermarsx/sortOfRemoteNG";
+test("Windows ARM owned acceptance selects its native runner but actual entries deny unreviewed bytes", async () => {
+  const entry = {
+    target: "aarch64-pc-windows-msvc",
+    producer: "owned-import",
+    runId: 1,
+    runAttempt: 1,
+    headSha: "a".repeat(40),
+    artifactId: 2,
+    artifactSha256: "b".repeat(64),
+    descriptorSha256: "c".repeat(64),
+    completionSha256: "d".repeat(64),
+    reviewedImport: "native/cef-owned-sdk-imports/missing-full-sdk/review.json",
+    reviewSha256: "e".repeat(64),
+    sourceLockIdentity:
+      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+  };
+  const selected = { ...entry };
+  delete selected.sourceLockIdentity;
+  assert.deepEqual(producerSelection([selected]), [selected]);
+  assert.equal(NATIVE_TARGETS[entry.target].runner, "windows-11-arm");
+  await assert.rejects(
+    downloadOwnedSdk({
+      entry,
+      bundle: "absent",
+      repository,
+      token: "synthetic",
+    }),
+  );
+  await assert.rejects(
+    executeAcceptance({
+      entry,
+      bundle: "absent",
+      output: "absent",
+      repository,
+      env: {},
+    }),
+  );
+  const wrong = { ...selected, producer: "engineering-sdk" };
+  delete wrong.reviewedImport;
+  delete wrong.reviewSha256;
+  assert.throws(() => producerSelection([wrong]), /native target/);
+});
 
 test("revision-five native seal requires all seventeen actual case rows and three builds", async () => {
   const lock = JSON.parse(
@@ -384,7 +428,7 @@ test("actual production suite loop keeps prior H2 outputs and creates seventeen 
     const fn = ast.statements.find(
       (node) =>
         ts.isFunctionDeclaration(node) &&
-        node.name?.text === "executeAcceptance",
+        node.name?.text === "executeAcceptanceChecked",
     );
     const loop = fn.body.statements.find(
       (node) =>
@@ -398,6 +442,11 @@ test("actual production suite loop keeps prior H2 outputs and creates seventeen 
     new URL("../../scripts/cef-runtime-acceptance-ci.mjs", import.meta.url),
     "utf8",
   );
+  assert.match(
+    executeAcceptance.toString(),
+    /withInspectedWindowsArmOwnedImport\(\s*review/,
+  );
+  assert.match(executeAcceptance.toString(), /readOwnedImportReview\(/);
   const root = await mkdtemp(path.join(os.tmpdir(), "native-actual-loop-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const execute = async (body, destination) => {

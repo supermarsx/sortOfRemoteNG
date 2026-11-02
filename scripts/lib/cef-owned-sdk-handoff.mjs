@@ -28,12 +28,20 @@ import {
   releaseRelativePath,
 } from "./browser-runtime-release.mjs";
 import { inspectNativeBinary } from "../browser-runtime-package.mjs";
+import {
+  WINDOWS_ARM_SDK_ORIGIN,
+  WINDOWS_ARM_SDK_TARGET,
+  loadWindowsArmSdkOrigin,
+  closeWindowsArmSdkOrigin,
+  inspectWindowsArmSdkRecords,
+} from "./cef-windows-arm-sdk-origin.mjs";
 
 const exec = promisify(execFile),
   ROOT = fileURLToPath(new URL("../../", import.meta.url)),
   hex = /^[a-f\d]{64}$/,
   commit = /^[a-f\d]{40}$/;
 const origins = {
+  [WINDOWS_ARM_SDK_ORIGIN]: WINDOWS_ARM_SDK_TARGET,
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-incremental-engine": "x86_64-unknown-linux-gnu",
   "owned-linux-isolated-incremental-engine": "x86_64-unknown-linux-gnu",
@@ -43,6 +51,14 @@ const origins = {
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
 };
+export const WINDOWS_ARM_FULLSDK_IDENTITIES = Object.freeze([
+  "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+  "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+]);
+async function requireWindowsArmPolicy() {
+  const receipt = await loadWindowsArmSdkOrigin();
+  await closeWindowsArmSdkOrigin(receipt);
+}
 export const LINUX_INCREMENTAL_ORIGIN = "owned-linux-incremental-engine";
 export const LINUX_ISOLATED_ORIGIN = "owned-linux-isolated-incremental-engine";
 export const LINUX_EXTERNAL_WEBVIEW_ORIGIN =
@@ -1450,6 +1466,7 @@ const capsuleTextRoles = new Set([
   "nativeSandboxList",
 ]);
 export function ownedEvidenceLimit(origin, role) {
+  if (origin === WINDOWS_ARM_SDK_ORIGIN) return 1024 ** 2;
   if (isLinuxIsolatedOrigin(origin))
     return role === "copyManifest"
       ? LINUX_ISOLATED_LIMITS.copyManifestBytes
@@ -1502,24 +1519,26 @@ export const WINDOWS_INCREMENTAL_PROVENANCE = Object.freeze([
   "pristineSourceBuild",
 ]);
 const evidenceNames = (origin) =>
-  isLinuxIsolatedOrigin(origin)
-    ? LINUX_ISOLATED_EVIDENCE
-    : origin === LINUX_INCREMENTAL_ORIGIN
-      ? LINUX_INCREMENTAL_EVIDENCE
-      : isWindowsCapsuleOrigin(origin)
-        ? ownedCapsuleEvidence(origin)
-        : origin === "owned-windows-incremental-engine"
-          ? WINDOWS_INCREMENTAL_EVIDENCE
-          : origin === "owned-linux-engine"
-            ? [
-                "prepared",
-                "started",
-                "container",
-                "finished",
-                "producer",
-                "freshCheck",
-              ]
-            : ["build"];
+  origin === WINDOWS_ARM_SDK_ORIGIN
+    ? ["source", "compile", "package", "producerSeal"]
+    : isLinuxIsolatedOrigin(origin)
+      ? LINUX_ISOLATED_EVIDENCE
+      : origin === LINUX_INCREMENTAL_ORIGIN
+        ? LINUX_INCREMENTAL_EVIDENCE
+        : isWindowsCapsuleOrigin(origin)
+          ? ownedCapsuleEvidence(origin)
+          : origin === "owned-windows-incremental-engine"
+            ? WINDOWS_INCREMENTAL_EVIDENCE
+            : origin === "owned-linux-engine"
+              ? [
+                  "prepared",
+                  "started",
+                  "container",
+                  "finished",
+                  "producer",
+                  "freshCheck",
+                ]
+              : ["build"];
 const fail = (message) => {
   throw Error(message);
 };
@@ -1556,6 +1575,9 @@ export function ownedSdkHandoffPlan(review) {
     "descriptorSha256",
     "python",
     "evidence",
+    ...(review?.origin === WINDOWS_ARM_SDK_ORIGIN
+      ? ["originPolicySha256"]
+      : []),
   ]);
   if (
     review.schemaVersion !== 1 ||
@@ -1566,6 +1588,11 @@ export function ownedSdkHandoffPlan(review) {
     !hex.test(review.descriptorSha256)
   )
     fail("Closed local SDK identity required");
+  if (
+    review.origin === WINDOWS_ARM_SDK_ORIGIN &&
+    !hex.test(review.originPolicySha256)
+  )
+    fail("Pinned Windows ARM origin policy required");
   shape(review.python, ["path", "sha256", "size"]);
   if (
     !path.isAbsolute(review.python.path) ||
@@ -1590,6 +1617,14 @@ export function ownedSdkHandoffPlan(review) {
     fail("Closed Linux incremental identity and evidence bound required");
   for (const [role, value] of Object.entries(review.evidence))
     pin(value, ownedEvidenceLimit(review.origin, role));
+  if (
+    review.origin === WINDOWS_ARM_SDK_ORIGIN &&
+    (!WINDOWS_ARM_FULLSDK_IDENTITIES.includes(review.sourceLockIdentity) ||
+      Object.entries(review.evidence).some(
+        ([role, value]) => value.path !== `${role}.json`,
+      ))
+  )
+    fail("Exact Windows ARM FULLSDK source and evidence roles required");
   if (
     isWindowsCapsuleOrigin(review.origin) &&
     (review.sourceLockIdentity !== WINDOWS_CAPSULE_IDENTITY ||
@@ -1633,6 +1668,10 @@ export function ownedHandoffReviewBinding(review) {
 // review genuine records and pin their exact bytes in the closed review input.
 export function verifyOwnedHandoffEvidence(review, records, sourceLock) {
   ownedSdkHandoffPlan(review);
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN)
+    fail(
+      "Windows ARM evidence requires the fixed asynchronous policy inspector",
+    );
   shape(records, evidenceNames(review.origin));
   if (isLinuxIncrementalOrigin(review.origin))
     return verifyLinuxIncrementalEvidence(
@@ -5508,8 +5547,12 @@ async function sourceInputs(inputs, identity, target, origin) {
         ? target !== "x86_64-pc-windows-msvc" ||
           lock.bridge.patchId !== HTTP3_BRIDGE_PATCH_ID ||
           lock.bridge.capabilities.length !== 9
-        : lock.bridge.patchId !== BRIDGE_PATCH_ID ||
-          lock.bridge.capabilities.length !== 8)
+        : origin === WINDOWS_ARM_SDK_ORIGIN
+          ? target !== WINDOWS_ARM_SDK_TARGET ||
+            lock.bridge.patchId !== HTTP3_BRIDGE_PATCH_ID ||
+            lock.bridge.capabilities.length !== 9
+          : lock.bridge.patchId !== BRIDGE_PATCH_ID ||
+            lock.bridge.capabilities.length !== 8)
   )
     fail("Original origin-specific input identity required without relabeling");
   const build = lock.builds.find((row) => row.target === target);
@@ -5542,11 +5585,13 @@ export async function checkOwnedSdkHandoff({
 }) {
   if (execute !== true)
     fail("Explicit review-only local verification required");
-  const plan = ownedSdkHandoffPlan(review),
-    bundleRoot = await realpath(bundle),
+  const plan = ownedSdkHandoffPlan(review);
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) await requireWindowsArmPolicy();
+  const bundleRoot = await realpath(bundle),
     inputsRoot = await realpath(inputs),
     evidenceRoot = await realpath(evidence);
   const records = {};
+  const rawRecords = {};
   for (const [name, value] of Object.entries(review.evidence)) {
     const bytes = await pinned(
       evidenceRoot,
@@ -5555,6 +5600,7 @@ export async function checkOwnedSdkHandoff({
       review.origin === WINDOWS_OPERATION2_ORIGIN ||
         isLinuxIncrementalOrigin(review.origin),
     );
+    rawRecords[name] = bytes;
     if (
       [
         WINDOWS_OPERATION2_ORIGIN,
@@ -5607,11 +5653,47 @@ export async function checkOwnedSdkHandoff({
     review.target,
     review.origin,
   );
-  const provenance = verifyOwnedHandoffEvidence(
-    review,
-    records,
-    verifiedInputs.lock,
-  );
+  let provenance;
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) {
+    const receipt = await loadWindowsArmSdkOrigin();
+    let failed = false,
+      first;
+    try {
+      const candidate = await inspectWindowsArmSdkRecords(receipt, rawRecords);
+      if (
+        candidate.originPolicySha256 !== review.originPolicySha256 ||
+        candidate.sourceLockIdentity !== review.sourceLockIdentity ||
+        records.source.sourceLockRaw.sha256 !== verifiedInputs.rawSha256
+      )
+        fail("Windows ARM original policy/source record differs");
+      provenance = {
+        origin: review.origin,
+        originPolicySha256: candidate.originPolicySha256,
+        producerSealSha256: candidate.sealSha256,
+        engineSha256: records.package.engine.sha256,
+        originalBuildRecordsPinned: true,
+        producerVerified: false,
+        originalBuildReplayed: false,
+      };
+    } catch (error) {
+      failed = true;
+      first = error;
+    }
+    try {
+      await closeWindowsArmSdkOrigin(receipt);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        first = error;
+      }
+    }
+    if (failed) throw first;
+  } else
+    provenance = verifyOwnedHandoffEvidence(
+      review,
+      records,
+      verifiedInputs.lock,
+    );
   if (
     review.origin === "owned-linux-engine" &&
     records.freshCheck.result.plan.sourceLockSha256 !== verifiedInputs.rawSha256
@@ -5646,6 +5728,19 @@ export async function checkOwnedSdkHandoff({
     );
   }
   if (expected.size !== 5) fail("Exact five-asset transport bundle required");
+  if (
+    review.origin === WINDOWS_ARM_SDK_ORIGIN &&
+    checked.assets.some(
+      (row) =>
+        !records.package.assets.some(
+          (pin) =>
+            pin.name === row.name &&
+            pin.bytes === row.size &&
+            pin.sha256 === row.sha256,
+        ),
+    )
+  )
+    fail("Windows ARM original package assets differ");
   if (
     [
       "owned-windows-incremental-engine",
@@ -5764,6 +5859,11 @@ export async function checkOwnedSdkHandoff({
     sourceLock.bridge.patchId,
   );
   const engineSha256 = hash(await readFile(library));
+  if (
+    review.origin === WINDOWS_ARM_SDK_ORIGIN &&
+    records.package.inventory.files !== preflight.filesVerified
+  )
+    fail("Windows ARM original SDK inventory differs");
   if (isLinuxIncrementalOrigin(review.origin)) {
     const packaged = records.package.facts;
     if (packaged.sdkFiles !== preflight.filesVerified)
@@ -5848,5 +5948,6 @@ export async function readOwnedSdkReview(file) {
   await regular(resolved, 1024 * 1024);
   const review = JSON.parse(await readFile(resolved, "utf8"));
   ownedSdkHandoffPlan(review);
+  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) await requireWindowsArmPolicy();
   return review;
 }

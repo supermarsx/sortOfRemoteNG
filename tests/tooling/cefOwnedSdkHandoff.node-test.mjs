@@ -61,6 +61,10 @@ import {
 } from "../../scripts/lib/browser-custom-runtime.mjs";
 import { CEF_PIN } from "../../scripts/browser-runtime-package.mjs";
 import {
+  WINDOWS_ARM_SDK_ORIGIN,
+  WINDOWS_ARM_SDK_TARGET,
+} from "../../scripts/lib/cef-windows-arm-sdk-origin.mjs";
+import {
   flattenSdk,
   descriptorFor,
   stableJson,
@@ -82,6 +86,51 @@ const operation = "ec3c685e-8319-493d-b685-ef04843a0ebd",
   controller = "b".repeat(40),
   digest = "c".repeat(64),
   image = "sha256:" + "d".repeat(64);
+test("Windows ARM local handoff admits only typed candidates and requires fixed async policy before IO", async () => {
+  const local = {
+    schemaVersion: 1,
+    kind: "sorng-cef-owned-sdk-review",
+    origin: WINDOWS_ARM_SDK_ORIGIN,
+    target: WINDOWS_ARM_SDK_TARGET,
+    originPolicySha256: "a".repeat(64),
+    sourceLockIdentity:
+      "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+    descriptorSha256: "b".repeat(64),
+    python: {
+      path: path.resolve("synthetic-python"),
+      size: 10,
+      sha256: "c".repeat(64),
+    },
+    evidence: Object.fromEntries(
+      ["source", "compile", "package", "producerSeal"].map((role) => [
+        role,
+        { path: `${role}.json`, size: 10, sha256: "d".repeat(64) },
+      ]),
+    ),
+  };
+  const candidate = ownedSdkHandoffPlan(local);
+  assert.equal(candidate.hostedBuild, false);
+  assert.equal(candidate.publicationAllowed, false);
+  assert.throws(
+    () => verifyOwnedHandoffEvidence(local, {}, {}),
+    /fixed asynchronous policy inspector/,
+  );
+  await assert.rejects(
+    checkOwnedSdkHandoff({ review: local, bundle: "absent", execute: true }),
+    /WINDOWS_ARM_SDK_/,
+  );
+  for (const mutate of [
+    (r) => delete r.originPolicySha256,
+    (r) => (r.sourceLockIdentity = "f".repeat(64)),
+    (r) => (r.evidence.source.path = "nested/source.json"),
+    (r) => (r.evidence.source.size = 1024 ** 2 + 1),
+    (r) => (r.evidence.prerequisites = r.evidence.compile),
+  ]) {
+    const wrong = structuredClone(local);
+    mutate(wrong);
+    assert.throws(() => ownedSdkHandoffPlan(wrong));
+  }
+});
 const linuxLockBytes = await readFile(
     path.join(
       root,
