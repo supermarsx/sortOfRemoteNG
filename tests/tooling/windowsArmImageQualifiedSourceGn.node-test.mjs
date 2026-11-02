@@ -2306,8 +2306,8 @@ assert len(raw)==26541 and hashlib.sha256(raw).hexdigest()=='ab94e3b3c214198b396
 results=[]
 class NativeFailure(Exception):pass
 for case in packet['cases']:
- with tempfile.TemporaryDirectory(prefix='cef-gn-data-') as folder:
-  workspace=pathlib.Path(folder);tools=workspace/'source-checkout/src/cef/tools';tools.mkdir(parents=True)
+ with tempfile.TemporaryDirectory(prefix='cef-gn-data-',dir=packet.get('temporaryRoot')) as folder:
+  workspace=pathlib.Path(folder).resolve(strict=True);tools=workspace/'source-checkout/src/cef/tools';tools.mkdir(parents=True)
   source=tools/'gn_args.py';source.write_bytes(raw)
   if case=='source-drift':source.write_bytes(raw+b'\n')
   vs=workspace/'custom-vs';(vs/'VC').mkdir(parents=True);(vs/'VC/vcvarsall.bat').write_text('')
@@ -2368,7 +2368,7 @@ for case in packet['cases']:
   results.append(dict(case=case,error=error,errorLocation=error_location,calls=calls,inputUnchanged=sdk==before,output=output,serialized=serialized,modeledWindowsHost=True,nativeGnExecuted=False,compilerExecuted=False))
 print(json.dumps(results))`;
 
-async function gnArgumentProjectionCases(driver, cases) {
+async function gnArgumentProjectionCases(driver, cases, options = {}) {
   const args = driver.boundGnArguments(
     [
       "-B",
@@ -2400,7 +2400,17 @@ async function gnArgumentProjectionCases(driver, cases) {
     .trim();
   const result = spawnSync(
     await projectionFixturePython(),
-    ["-I", "-B", "-c", gnArgumentProjectionFixture],
+    [
+      "-I",
+      "-B",
+      "-c",
+      options.unresolvedWorkspace
+        ? gnArgumentProjectionFixture.replace(
+            "workspace=pathlib.Path(folder).resolve(strict=True)",
+            "workspace=pathlib.Path(folder)",
+          )
+        : gnArgumentProjectionFixture,
+    ],
     {
       cwd: root,
       input: JSON.stringify({
@@ -2408,6 +2418,9 @@ async function gnArgumentProjectionCases(driver, cases) {
         program,
         fixed,
         cases,
+        ...(options.temporaryRoot
+          ? { temporaryRoot: options.temporaryRoot }
+          : {}),
       }),
       encoding: "utf8",
       timeout: 30000,
@@ -2418,6 +2431,43 @@ async function gnArgumentProjectionCases(driver, cases) {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return JSON.parse(result.stdout);
 }
+
+test("fixed ARM64 GN projection fixture canonicalizes an actual aliased temporary root while the production alias guard remains strict", async (t) => {
+  const directory = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "cef-gn-fixture-alias-")),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const physical = path.join(directory, "physical"),
+    alias = path.join(directory, "alias");
+  await fs.mkdir(physical);
+  await fs.symlink(
+    physical,
+    alias,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const [old] = await gnArgumentProjectionCases(currentDriver, ["positive"], {
+    temporaryRoot: alias,
+    unresolvedWorkspace: true,
+  });
+  assert.equal(old.error, "FULL_GN_PROJECTION_SOURCE");
+  assert.equal(old.calls.length, 0);
+  const [fixed] = await gnArgumentProjectionCases(currentDriver, ["positive"], {
+    temporaryRoot: alias,
+  });
+  assert.equal(fixed.error, null, JSON.stringify(fixed.errorLocation));
+  assert.equal(fixed.calls.length, 6);
+  assert.equal(
+    fixed.output.Release_GN_arm64.enable_backup_ref_ptr_instance_tracer,
+    false,
+  );
+  assert.equal(
+    currentDriver.validateGeneratedArguments(Buffer.from(fixed.serialized))
+      .criticalArgumentsVerified,
+    true,
+  );
+  assert.equal(fixed.nativeGnExecuted, false);
+  assert.equal(fixed.compilerExecuted, false);
+});
 
 test("fixed ARM64 GN projection runs actual pinned native six-config generator: old RED, only selected tracer GREEN, neighboring native configurations unchanged", async () => {
   for (const driver of [currentDriver, oldDriver]) {
