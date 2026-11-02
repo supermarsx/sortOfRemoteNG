@@ -2121,16 +2121,76 @@ sys.exit(gn.main([script,*sys.argv[5:]]))
     `import os,runpy,sys
 hook,gn,expected,size,digest=sys.argv[1:]
 sys.path.insert(0,os.path.dirname(hook))
+# BEGIN fixed ARM64 GN argument projection
+import hashlib,inspect,stat,types
+gn_projection_path=os.path.abspath(os.path.join(os.path.dirname(hook),'gn_args.py'))
+def gn_projection_pin():
+ if os.path.normcase(os.path.realpath(gn_projection_path))!=os.path.normcase(gn_projection_path):raise RuntimeError('FULL_GN_PROJECTION_SOURCE')
+ before=os.stat(gn_projection_path,follow_symlinks=False)
+ if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or before.st_size!=26541:raise RuntimeError('FULL_GN_PROJECTION_SOURCE')
+ with open(gn_projection_path,'rb') as source:
+  held=os.fstat(source.fileno());raw=source.read(26542);after=os.fstat(source.fileno())
+ current=os.stat(gn_projection_path,follow_symlinks=False)
+ def shared(s):
+  birth=getattr(s,'st_birthtime_ns',None)
+  if os.name=='nt' and (type(birth)is not int or birth<0):raise RuntimeError('FULL_GN_PROJECTION_SOURCE')
+  return (s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,hasattr(s,'st_birthtime_ns'),birth,s.st_nlink)
+ signature=lambda s:(*shared(s),s.st_ctime_ns,s.st_mode)
+ if shared(before)!=shared(held) or signature(held)!=signature(after) or signature(before)!=signature(current) or shared(after)!=shared(current) or hashlib.sha256(raw).hexdigest()!='ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e':raise RuntimeError('FULL_GN_PROJECTION_SOURCE')
+gn_projection_pin()
+import gn_args
+if os.path.abspath(gn_args.__file__)!=gn_projection_path or gn_args.platform!='windows' or gn_args.machine!='amd64':raise RuntimeError('FULL_GN_PROJECTION_SOURCE')
+for name,digest in [('MergeDicts','50de766f8b38c15b93ca8c80e500f5974ce7c7c4af3ddb568f63ba6f4a4691fc'),('GetConfigArgs','f2ade37bcfc944b5385dfc23e848344bc6f9d9606063708ea58b00eb678c5ddd'),('GetAllPlatformConfigs','608d1c5ffb0e793e97c67db19af0fe0a14c9248d548ac5edde79c09c0ec34cb3')]:
+ function=getattr(gn_args,name)
+ if type(function)is not types.FunctionType or function.__globals__ is not gn_args.__dict__ or os.path.abspath(function.__code__.co_filename)!=gn_projection_path or hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')
+gn_projection_pin()
+gn_projection_fixed=dict(alternate_cdm_storage_id_key='968b476909da4373b08903c28e859454',blink_symbol_level=0,chrome_pgo_phase=0,clang_use_chrome_plugins=False,enable_background_mode=False,enable_backup_ref_ptr_instance_tracer=False,enable_cdm_host_verification=True,enable_cdm_storage_id=True,enable_downgrade_processing=False,enable_precompiled_headers=False,enable_resource_allowlist_generation=False,enable_rlz=True,enable_widevine=True,is_component_build=False,is_debug=False,optimize_webui=True,symbol_level=1,target_cpu='arm64',use_remoteexec=False,use_siso=True,v8_symbol_level=0,host_cpu='x64',is_clang=True,use_lld=True)
+def gn_projection_rows(value):
+ if type(value)is not dict or any(type(k)is not str or type(v)not in (str,bool,int) for k,v in value.items()):raise RuntimeError('FULL_GN_PROJECTION_SHAPE')
+ return sorted((k,type(v).__name__,v) for k,v in value.items())
+gn_projection_native=gn_args.GetAllPlatformConfigs
+gn_projection_calls=0
+def gn_projection_configs(build_args,quiet=False):
+ global gn_projection_calls
+ if gn_projection_calls!=0 or quiet is not False or os.environ.get('GN_OUT_CONFIGS')!='Release_GN_arm64' or os.environ.get('CEF_ENABLE_ARM64')!='1':raise RuntimeError('FULL_GN_PROJECTION_SELECTION')
+ if gn_projection_rows(gn_args.GetGNEnvArgs())!=gn_projection_rows(gn_projection_fixed):raise RuntimeError('FULL_GN_PROJECTION_ARGUMENTS')
+ root=os.path.abspath(os.path.join(os.path.dirname(hook),'../../../..'))
+ sdk=dict(visual_studio_path=os.environ.get('GYP_MSVS_OVERRIDE_PATH'),visual_studio_version=os.environ.get('GYP_MSVS_VERSION'),visual_studio_runtime_dirs=os.environ.get('VS_CRT_ROOT'),windows_sdk_path=os.environ.get('SDK_ROOT'),windows_sdk_version=os.environ.get('SDK_VERSION'))
+ if any(type(v)is not str for v in sdk.values()) or sdk['visual_studio_version']!='2026' or sdk['windows_sdk_version']!='10.0.28000.0':raise RuntimeError('FULL_GN_PROJECTION_SDK')
+ for key,relative in [('visual_studio_path','custom-vs'),('visual_studio_runtime_dirs','runtime/x64'),('windows_sdk_path','Windows Kits/10')]:
+  if os.path.normcase(os.path.abspath(sdk[key]))!=os.path.normcase(os.path.join(root,*relative.split('/'))):raise RuntimeError('FULL_GN_PROJECTION_SDK')
+ if gn_projection_rows(build_args)!=gn_projection_rows(sdk):raise RuntimeError('FULL_GN_PROJECTION_INPUT')
+ before=gn_projection_rows(build_args)
+ gn_projection_calls+=1
+ # The unchanged native generator computes its six configurations and filters.
+ native=gn_projection_native(build_args,quiet)
+ if gn_projection_rows(build_args)!=before or gn_projection_rows(gn_args.GetGNEnvArgs())!=gn_projection_rows(gn_projection_fixed):raise RuntimeError('FULL_GN_PROJECTION_INPUT')
+ if type(native)is not dict or list(native)!=['Release_GN_arm64']:raise RuntimeError('FULL_GN_PROJECTION_OUTPUT')
+ expected=dict(gn_projection_fixed,**sdk);expected['enable_backup_ref_ptr_instance_tracer']=True
+ if gn_projection_rows(native['Release_GN_arm64'])!=gn_projection_rows(expected):raise RuntimeError('FULL_GN_PROJECTION_OUTPUT')
+ gn_projection_pin()
+ # Return a fresh projection; neither native input nor native output is mutated.
+ projected=dict(native['Release_GN_arm64']);projected['enable_backup_ref_ptr_instance_tracer']=False
+ if gn_projection_rows(projected)!=gn_projection_rows(dict(gn_projection_fixed,**sdk)):raise RuntimeError('FULL_GN_PROJECTION_OUTPUT')
+ return {'Release_GN_arm64':projected}
+gn_args.GetAllPlatformConfigs=gn_projection_configs
+# END fixed ARM64 GN argument projection
 import gclient_util
 original=gclient_util.RunAction
 def reviewed_action(directory,command):
  if command and command[0]=='gn':
+  if gn_projection_calls!=1:raise RuntimeError('FULL_GN_PROJECTION_COMPLETION')
   if len(command)<3 or command[1]!='gen': raise RuntimeError('FULL_GN_COMMAND')
   command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]
  return original(directory,command)
 gclient_util.RunAction=reviewed_action
 sys.argv=[hook]
 runpy.run_path(hook,run_name='__main__')
+# BEGIN fixed ARM64 GN projection completion
+if gn_projection_calls!=1:raise RuntimeError('FULL_GN_PROJECTION_COMPLETION')
+gn_projection_pin()
+print('{"schemaVersion":1,"kind":"windows-arm-fixed-gn-argument-projection","nativeGeneratorCalled":true,"selectedConfiguration":"Release_GN_arm64","projectedArgument":"enable_backup_ref_ptr_instance_tracer","nativeValue":true,"projectedValue":false,"vendorSourceModified":false}')
+# END fixed ARM64 GN projection completion
 `,
     hooks[3],
     hooks[4],

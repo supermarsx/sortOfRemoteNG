@@ -170,6 +170,7 @@ function previousTwoWorkerProjection(text) {
   return text.replace(current, previous);
 }
 function previousSourceApplyObservation(text) {
+  text = previousGnArgumentProjection(text);
   const patterns = [
     /\n\/\/ BEGIN bounded source-apply observation\n[\s\S]*?\/\/ END bounded source-apply observation\n\n/,
     /^  \/\/ BEGIN held source-apply observation snapshot\n[\s\S]*?^  \/\/ END held source-apply observation snapshot\n/m,
@@ -186,6 +187,22 @@ function previousSourceApplyObservation(text) {
     text = text.replace(pattern, "");
   }
   return text;
+}
+function previousGnArgumentProjection(text) {
+  for (const pattern of [
+    /^# BEGIN fixed ARM64 GN argument projection\n[\s\S]*?^# END fixed ARM64 GN argument projection\n/m,
+    /^# BEGIN fixed ARM64 GN projection completion\n[\s\S]*?^# END fixed ARM64 GN projection completion\n/m,
+  ]) {
+    assert.equal(
+      [...text.matchAll(new RegExp(pattern.source, "gm"))].length,
+      1,
+    );
+    text = text.replace(pattern, "");
+  }
+  const guard =
+    "  if gn_projection_calls!=1:raise RuntimeError('FULL_GN_PROJECTION_COMPLETION')\n";
+  assert.equal(text.split(guard).length, 2);
+  return text.replace(guard, "");
 }
 function previousApacheProjection(text) {
   text = previousTwoWorkerProjection(text);
@@ -2123,5 +2140,274 @@ test("only reviewed selected hook projections, exact Apache resource projection 
       historicalDependencyArguments(driver, "depot", "adapter", "a".repeat(64)),
       legacy.dependencyHookArguments("depot", "adapter", "a".repeat(64)),
     );
+  }
+});
+
+// Complete, unchanged CEF tools/gn_args.py at 682c378d70d5780061e96644dca16ddd8fd157a9.
+// Deflate only transports the pinned primary source; no network or vendor process.
+const pinnedCefGnArgsDeflate =
+  "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";
+const gnArgumentProjectionFixture = String.raw`import ast,base64,contextlib,hashlib,importlib,io,json,os,pathlib,sys,tempfile,zlib
+packet=json.loads(sys.stdin.read(65537))
+raw=zlib.decompress(base64.b64decode(packet['source']))
+assert len(raw)==26541 and hashlib.sha256(raw).hexdigest()=='ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e'
+results=[]
+class NativeFailure(Exception):pass
+for case in packet['cases']:
+ with tempfile.TemporaryDirectory(prefix='cef-gn-data-') as folder:
+  workspace=pathlib.Path(folder);tools=workspace/'source-checkout/src/cef/tools';tools.mkdir(parents=True)
+  source=tools/'gn_args.py';source.write_bytes(raw)
+  if case=='source-drift':source.write_bytes(raw+b'\n')
+  vs=workspace/'custom-vs';(vs/'VC').mkdir(parents=True);(vs/'VC/vcvarsall.bat').write_text('')
+  sdk=dict(visual_studio_path=str(vs),visual_studio_version='2026',visual_studio_runtime_dirs=str(workspace/'runtime/x64'),windows_sdk_path=str(workspace/'Windows Kits/10'),windows_sdk_version='10.0.28000.0')
+  fixed={}
+  for line in packet['fixed'].splitlines():
+   key,value=line.split('=',1);fixed[key]=True if value=='true' else False if value=='false' else ast.literal_eval(value)
+  definitions=' '.join("'"+key+'='+('true' if value is True else 'false' if value is False else json.dumps(value))+"'" for key,value in fixed.items())
+  saved_env=dict(os.environ);saved_path=list(sys.path);saved_platform=sys.platform
+  sys.path.insert(0,str(tools));sys.modules.pop('gn_args',None);sys.platform='win32'
+  os.environ.update(GN_DEFINES=definitions,GN_OUT_CONFIGS='Release_GN_arm64',CEF_ENABLE_ARM64='1',DEPOT_TOOLS_WIN_TOOLCHAIN='0',GYP_MSVS_OVERRIDE_PATH=str(vs),GYP_MSVS_VERSION='2026',CEF_VCVARS='none',VS_CRT_ROOT=sdk['visual_studio_runtime_dirs'],SDK_ROOT=sdk['windows_sdk_path'],SDK_VERSION=sdk['windows_sdk_version'])
+  scope={'os':os,'sys':sys,'hook':str(tools/'gclient_hook.py')};calls=[];error=None;error_location=None;output=None;before=dict(sdk)
+  def profile(frame,event,value):
+   if frame.f_code.co_filename!=str(source):return
+   if frame.f_code.co_name=='GetConfigArgs' and event=='return':
+    selected=frame.f_locals.get('cpu')=='arm64' and frame.f_locals.get('is_debug') is False
+    if selected and case=='native-failure':raise NativeFailure('')
+    if selected and case=='native-extra':value['unexpected']=True
+    if selected and case=='native-other-drift':value['symbol_level']=2
+    if selected and case=='native-tracer-drift':value['enable_backup_ref_ptr_instance_tracer']=False
+    if selected and case=='native-type-drift':value['enable_rlz']=1
+    if selected and case=='input-mutation':sdk['unexpected']=True
+    calls.append(dict(cpu=frame.f_locals['cpu'],debug=frame.f_locals['is_debug'],result=dict(value)))
+  try:
+   with contextlib.redirect_stdout(io.StringIO()):
+    if case=='baseline':
+     native=importlib.import_module('gn_args');sys.setprofile(profile)
+     try:output=native.GetAllPlatformConfigs(sdk)
+     finally:sys.setprofile(None)
+    else:
+     if case=='function-drift':
+      native=importlib.import_module('gn_args');native.GetConfigArgs=lambda *args:None
+     exec(packet['program'],scope)
+     native=scope['gn_args']
+     if case in ('explicit-true','component','debug','cpu','numeric-false'):
+      changed=dict(fixed)
+      if case=='explicit-true':changed['enable_backup_ref_ptr_instance_tracer']=True
+      elif case=='component':changed['is_component_build']=True
+      elif case=='debug':changed['is_debug']=True
+      elif case=='cpu':changed['target_cpu']='x64'
+      else:changed['enable_backup_ref_ptr_instance_tracer']=0
+      os.environ['GN_DEFINES']=' '.join("'"+key+'='+('true' if value is True else 'false' if value is False else json.dumps(value))+"'" for key,value in changed.items())
+     if case=='other-selection':os.environ['GN_OUT_CONFIGS']='Release_GN_x64'
+     if case=='sdk':sdk['windows_sdk_version']='10.0.28000.1'
+     if case=='input-extra':sdk['unexpected']=True
+     sys.setprofile(profile)
+     try:output=native.GetAllPlatformConfigs(sdk)
+     finally:sys.setprofile(None)
+     if case=='repeat':native.GetAllPlatformConfigs(sdk)
+  except BaseException as caught:
+   error='EMPTY_NATIVE_FAILURE' if type(caught)is NativeFailure and str(caught)=='' else str(caught)
+   location=caught.__traceback__
+   while location.tb_next is not None:location=location.tb_next
+   error_location=[location.tb_frame.f_code.co_name,location.tb_lineno]
+  finally:
+   sys.setprofile(None);sys.platform=saved_platform;sys.path[:]=saved_path;os.environ.clear();os.environ.update(saved_env);sys.modules.pop('gn_args',None)
+  serialized=native.GetConfigFileContents(output['Release_GN_arm64']) if error is None and output is not None else None
+  results.append(dict(case=case,error=error,errorLocation=error_location,calls=calls,inputUnchanged=sdk==before,output=output,serialized=serialized,modeledWindowsHost=True,nativeGnExecuted=False,compilerExecuted=False))
+print(json.dumps(results))`;
+
+async function gnArgumentProjectionCases(driver, cases) {
+  const args = driver.boundGnArguments(
+    [
+      "-B",
+      "-c",
+      "unchanged-hook",
+      "fixed-cef/tools/gclient_hook.py",
+      "fixed-depot/gn.py",
+    ],
+    "fixed-gn.exe",
+    {
+      bytes: 2601472,
+      sha256:
+        "e398eefd1241ad44e98aececa6a260abac0fdcb80f41c23176944ad3f0e76486",
+    },
+  );
+  const begin = args[2].indexOf("# BEGIN fixed ARM64 GN argument projection\n");
+  const end = args[2].indexOf(
+    "# END fixed ARM64 GN argument projection\n",
+    begin,
+  );
+  assert(begin > 0 && end > begin);
+  const program = args[2].slice(begin, end);
+  const fixed = (
+    await read(
+      "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    )
+  )
+    .toString()
+    .trim();
+  const result = spawnSync(
+    await projectionFixturePython(),
+    ["-I", "-B", "-c", gnArgumentProjectionFixture],
+    {
+      cwd: root,
+      input: JSON.stringify({
+        source: pinnedCefGnArgsDeflate,
+        program,
+        fixed,
+        cases,
+      }),
+      encoding: "utf8",
+      timeout: 30000,
+      maxBuffer: 1024 ** 2,
+      windowsHide: true,
+    },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test("fixed ARM64 GN projection runs actual pinned native six-config generator: old RED, only selected tracer GREEN, neighboring native configurations unchanged", async () => {
+  for (const driver of [currentDriver, oldDriver]) {
+    const [before, after] = await gnArgumentProjectionCases(driver, [
+      "baseline",
+      "positive",
+    ]);
+    assert.equal(before.error, null);
+    assert.equal(after.error, null, JSON.stringify(after.errorLocation));
+    assert.equal(
+      before.output.Release_GN_arm64.enable_backup_ref_ptr_instance_tracer,
+      true,
+    );
+    assert.equal(
+      after.output.Release_GN_arm64.enable_backup_ref_ptr_instance_tracer,
+      false,
+    );
+    assert.throws(
+      () => driver.validateGeneratedArguments(Buffer.from(before.serialized)),
+      /FULL_GN_CRITICAL_ARGUMENT/,
+    );
+    assert.equal(
+      driver.validateGeneratedArguments(Buffer.from(after.serialized))
+        .criticalArgumentsVerified,
+      true,
+    );
+    assert.equal(before.calls.length, 6);
+    assert.equal(after.calls.length, 6);
+    const selected = after.calls.filter(
+      (x) => x.cpu === "arm64" && x.debug === false,
+    );
+    assert.equal(selected.length, 1);
+    assert.equal(
+      selected[0].result.enable_backup_ref_ptr_instance_tracer,
+      true,
+    );
+    // Dynamic SDK roots differ between independently owned fixtures.
+    const stable = (calls) =>
+      calls.map((x) => ({
+        ...x,
+        result: Object.fromEntries(
+          Object.entries(x.result).filter(
+            ([key]) =>
+              ![
+                "visual_studio_path",
+                "visual_studio_runtime_dirs",
+                "windows_sdk_path",
+              ].includes(key),
+          ),
+        ),
+      }));
+    assert.deepEqual(stable(before.calls), stable(after.calls));
+    assert.equal(after.inputUnchanged, true);
+    assert.equal(after.modeledWindowsHost, true);
+    assert.equal(after.nativeGnExecuted, false);
+    assert.equal(after.compilerExecuted, false);
+    const actual = {
+      ...after.output.Release_GN_arm64,
+      enable_backup_ref_ptr_instance_tracer: true,
+    };
+    assert.deepEqual(actual, selected[0].result);
+  }
+});
+
+test("fixed ARM64 GN projection denies near arguments, source/output/input drift and repeats, preserving actual first native failure", async () => {
+  const cases = [
+    "explicit-true",
+    "component",
+    "debug",
+    "cpu",
+    "numeric-false",
+    "other-selection",
+    "sdk",
+    "input-extra",
+    "native-extra",
+    "native-other-drift",
+    "native-tracer-drift",
+    "native-type-drift",
+    "input-mutation",
+    "source-drift",
+    "function-drift",
+    "repeat",
+    "native-failure",
+  ];
+  const errors = [
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "ARGUMENTS",
+    "SELECTION",
+    "INPUT",
+    "INPUT",
+    "OUTPUT",
+    "OUTPUT",
+    "OUTPUT",
+    "OUTPUT",
+    "INPUT",
+    "SOURCE",
+    "FUNCTION",
+    "SELECTION",
+    "EMPTY_NATIVE_FAILURE",
+  ];
+  for (const driver of [currentDriver, oldDriver]) {
+    const values = await gnArgumentProjectionCases(driver, cases);
+    for (const [index, value] of values.entries()) {
+      assert.equal(
+        value.error,
+        errors[index] === "EMPTY_NATIVE_FAILURE"
+          ? errors[index]
+          : "FULL_GN_PROJECTION_" + errors[index],
+        value.case + JSON.stringify(value.errorLocation),
+      );
+      assert.equal(value.nativeGnExecuted, false);
+      assert.equal(value.compilerExecuted, false);
+    }
+  }
+});
+
+test("fixed ARM64 GN projection whole inverse restores both complete ffd drivers before all historical inverses", async () => {
+  for (const [label, bytes, digest] of [
+    [
+      "current",
+      111030,
+      "8dfbf7ee4cf6aea7345f4b38062e9d1e1b0c696561d5c0323b7c8f4c26084909",
+    ],
+    [
+      "20261021",
+      111042,
+      "c21ebeaa8595fb271b8fcc1ae85eaa1d6d66f29974d7a789a45a63cd83adce6e",
+    ],
+  ]) {
+    const text = (
+      await read(
+        `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+      )
+    ).toString();
+    const previous = previousGnArgumentProjection(text);
+    assert.equal(Buffer.byteLength(previous), bytes);
+    assert.equal(sha(previous), digest);
+    assert(text.includes('"kind":"windows-arm-fixed-gn-argument-projection"'));
+    assert(text.includes('"vendorSourceModified":false'));
+    assert(text.includes('enable_backup_ref_ptr_instance_tracer: "false"'));
   }
 });
