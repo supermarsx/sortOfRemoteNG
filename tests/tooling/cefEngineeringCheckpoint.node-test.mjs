@@ -10043,8 +10043,8 @@ test("Mac source admission binds the proved Intel host image and exact ARM sourc
     /MAC_EXTERNAL_ATTESTATION/,
   );
   assert.equal(mac.MAC_SOURCE_POLICY.darwinWriteAdmitted, true);
-  assert.equal(mac.MAC_SOURCE_POLICY.schemaVersion, 2);
-  assert.match(mac.MAC_SOURCE_POLICY.name, /v2-nearby-literals$/);
+  assert.equal(mac.MAC_SOURCE_POLICY.schemaVersion, 3);
+  assert.match(mac.MAC_SOURCE_POLICY.name, /v3-nearby-clang-literals$/);
   const worker = await readFile(
     path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
     "utf8",
@@ -12998,8 +12998,8 @@ async function intelExternalFixture() {
 test("Intel metadata exact source684 policy accepts its qualified native host and denies invalid scope before data", async () => {
   const { mac, options } = await intelExternalFixture();
   const policy = mac.MAC_INTEL_SOURCE_POLICY;
-  assert.equal(policy.schemaVersion, 2);
-  assert.match(policy.name, /v2-nearby-literals$/);
+  assert.equal(policy.schemaVersion, 3);
+  assert.match(policy.name, /v3-nearby-clang-literals$/);
   assert.equal(
     policy.source,
     "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",

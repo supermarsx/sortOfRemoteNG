@@ -7,6 +7,7 @@ import {
   MAC_SOURCE_POLICY,
   MAC_INTEL_SOURCE_POLICY,
   MAC_NEARBY_LITERAL_EVIDENCE,
+  MAC_CLANG_LITERAL_EVIDENCE,
   validateMacSourceWriteScope,
   validateMacIntelSourceWriteScope,
   assertMacSourceWriteAdmission,
@@ -61,7 +62,7 @@ const identity = (policy) => ({
     ["producer", "tools", "graph", "siso"].map((key) => [key, "c".repeat(64)]),
   ),
 });
-test("both canonical policies select v2 and pin the actual raw proof separately from its ZIP", () => {
+test("both canonical policies select v3 and pin the actual raw proof separately from its ZIP", () => {
   assert.deepEqual(MAC_NEARBY_LITERAL_EVIDENCE, {
     runId: 41359670492,
     artifactId: 13104029618,
@@ -74,12 +75,73 @@ test("both canonical policies select v2 and pin the actual raw proof separately 
       "357439ca1b6cf013ed6e0f3aca0f773faa06bf5ffb6c90b33ee97c8fbc1e7c8d",
   });
   assert(Object.isFrozen(MAC_NEARBY_LITERAL_EVIDENCE));
+  assert.deepEqual(MAC_CLANG_LITERAL_EVIDENCE, {
+    runId: 41391838299,
+    runAttempt: 1,
+    artifactId: 13117472436,
+    source: "1c34a3aea224f32060975f74e268dd09c00251f8",
+    rawProofBytes: 3099,
+    rawProofSha256:
+      "334da737759e35e9f2319ea8ebf7bfd8f81617cd799182f2168d5cf5504974df",
+    rawCarrierBytes: 708,
+    rawCarrierSha256:
+      "862d3aa8e1e108a4602834ef3486e705e9603b4df6eac8261451e1cb13d7b7e6",
+    artifactZipBytes: 1725,
+    artifactZipSha256:
+      "1f03279fcf452893b397648e3e27180f09da2c6a21591800bb6e14b3665d0cc9",
+    sourceWitnessSha256:
+      "5df938947c4fd9d78dad0934338a213eadbf4f7d3175cb2d17aeac9a8f649506",
+    qualifiedHelperBytes: 198811,
+    qualifiedHelperSha256:
+      "5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79",
+  });
+  assert(Object.isFrozen(MAC_CLANG_LITERAL_EVIDENCE));
   for (const [policy] of rows) {
-    assert.equal(policy.schemaVersion, 2);
-    assert(policy.name.endsWith("-v2-nearby-literals"));
+    assert.equal(policy.schemaVersion, 3);
+    assert(policy.name.endsWith("-v3-nearby-clang-literals"));
     assert(policy.legacyPrivatePolicy.endsWith("-v1"));
     assert.equal(policy.nearbyEvidence, MAC_NEARBY_LITERAL_EVIDENCE);
+    assert.equal(policy.compilerEvidence, MAC_CLANG_LITERAL_EVIDENCE);
   }
+});
+
+test("Python and JavaScript select the same v3 policy and native evidence without replacing Nearby evidence", () => {
+  const child = spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    [
+      "-I",
+      "-B",
+      "-S",
+      "-c",
+      `import importlib.util,json
+s=importlib.util.spec_from_file_location('codec','scripts/lib/cef-checkpoint-archive.py')
+m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+print(json.dumps([m.MAC_CLANG_LITERAL_PRODUCTION_ADMITTED,m.MAC_ARM_CLANG_METADATA_POLICY,m.MAC_INTEL_CLANG_METADATA_POLICY,m.MAC_CLANG_LITERAL_PROOF]))`,
+    ],
+    { encoding: "utf8", timeout: 15000, maxBuffer: 65536, windowsHide: true },
+  );
+  assert.equal(child.status, 0, child.stdout + child.stderr);
+  const e = MAC_CLANG_LITERAL_EVIDENCE;
+  assert.deepEqual(JSON.parse(child.stdout), [
+    true,
+    MAC_SOURCE_POLICY.name,
+    MAC_INTEL_SOURCE_POLICY.name,
+    [
+      e.runId,
+      e.runAttempt,
+      e.artifactId,
+      e.source,
+      e.rawProofBytes,
+      e.rawProofSha256,
+      e.rawCarrierBytes,
+      e.rawCarrierSha256,
+      e.artifactZipBytes,
+      e.artifactZipSha256,
+      e.sourceWitnessSha256,
+      e.qualifiedHelperBytes,
+      e.qualifiedHelperSha256,
+    ],
+  ]);
 });
 test("both pure scopes require all actual qualified host facts and exact source/image/root", () => {
   for (const [policy, validate] of rows) {

@@ -553,7 +553,7 @@ test("portable core tests keep real Linux semantics distinct from modeled Darwin
     { encoding: "utf8", timeout: 60000, maxBuffer: 65536, windowsHide: true },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /Ran 14 tests/);
+  assert.match(result.stderr, /Ran 21 tests/);
   assert.match(result.stderr, /\bOK\b/);
 });
 test(
@@ -575,6 +575,8 @@ try:
   # all codec operations, real FDs/cleanup and final report execute unchanged.
   p.preflight=lambda args:(t.output,m,b,observed)
   os.environ.update(GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',CEF_MAC_CLANG_ATTEMPT_ID='12345678-1234-4123-8123-123456789abc',CEF_MAC_CLANG_SOURCE_WITNESS_SHA256='b'*64)
+  # Replay the immutable historical inactive proof in its explicit legacy model.
+  m.MAC_CLANG_LITERAL_PRODUCTION_ADMITTED=False
   report=json.loads(p.main(['--output',str(t.output)]));rows=report['cases']
   assert report['complete']and report['cleanupConfirmed']and report['proofWriterRetired']and not t.output.exists()
   assert all(r['complete']and len(r['negativeCases'])==26 for r in rows)

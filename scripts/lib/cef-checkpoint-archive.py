@@ -1153,6 +1153,7 @@ _MAC_NEARBY_PUBLIC_RECEIPTS = {}
 
 def _mac_nearby_public_shape(mode,root,sidecar,identity,platform_policy):
     # All admission checks are pure and precede safe(), manifests or source IO.
+    require(MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is not True, 'source-mac-clang-public-scope')
     require(MAC_NEARBY_LITERAL_PRODUCTION_ADMITTED is True and mode in SOURCE_IO_MODES and
             platform_policy in ('mac-arm','mac-intel'), 'source-mac-nearby-public-scope')
     (source_mac_intel_write_admission if platform_policy=='mac-intel' else source_mac_write_admission)(identity)
@@ -1192,7 +1193,7 @@ def _mac_nearby_public_current(receipt):
 
 
 def _mac_nearby_scope_selection(root,identity,work,platform_policy,mode=None):
-    if _MAC_CLANG_PROOF_SCOPE.get() is not None:
+    if _MAC_CLANG_PROOF_SCOPE.get() is not None or _MAC_CLANG_PUBLIC_SCOPE.get() is not None:
         return _mac_clang_scope_selection(root,identity,work,platform_policy,mode)
     public=_MAC_NEARBY_PUBLIC_SCOPE.get()
     if public is not None:
@@ -1356,7 +1357,7 @@ def _mac_nearby_legacy_private_namespace(identity):
 # BEGIN INACTIVE MAC CLANG PROOF SCOPE
 # A separate, creation-owned proof class. The existing Nearby v2 evidence and
 # public selection are unchanged; neither JSON nor the new policy grants v3.
-MAC_CLANG_LITERAL_PRODUCTION_ADMITTED = False
+MAC_CLANG_LITERAL_PRODUCTION_ADMITTED = True
 MAC_CLANG_LITERAL_POLICY = 'sorng-mac-pinned-clang-runtime-literals-v1'
 MAC_ARM_CLANG_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v3-nearby-clang-literals'
 MAC_INTEL_CLANG_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v3-nearby-clang-literals'
@@ -1462,6 +1463,13 @@ def _mac_clang_owned_proof_path(receipt):
 
 
 def _mac_clang_scope_selection(root,identity,work,platform_policy,mode=None):
+    public=_MAC_CLANG_PUBLIC_SCOPE.get()
+    if public is not None:
+        selected,source,_,bound,canonical,policy=_mac_clang_public_current(public)
+        require(Path(root)==source and Path(work)==canonical and type(identity)is dict and
+                tuple(sorted(identity.items()))==bound and platform_policy==policy and
+                (mode is None or mode==selected), 'source-mac-clang-public-scope')
+        return public
     receipt=_MAC_CLANG_PROOF_SCOPE.get()
     if receipt is None:return None
     proof_root=_mac_clang_owned_proof_path(receipt)
@@ -1490,7 +1498,7 @@ def _mac_clang_policy_owned(policy,root=None):
 
 
 def _mac_clang_scoped_writer_allowed(root,value):
-    if _MAC_CLANG_PROOF_SCOPE.get()is None:return False
+    if _MAC_CLANG_PROOF_SCOPE.get()is None and _MAC_CLANG_PUBLIC_SCOPE.get()is None:return False
     identity=value['identity'];intel=identity.get('target')=='x86_64-apple-darwin'
     work=Path(identity.get('canonicalRoot','/'));platform_policy='mac-intel'if intel else'mac-arm'
     receipt=_mac_clang_scope_selection(work/'source',identity,work,platform_policy,'source-record')
@@ -1502,7 +1510,8 @@ def _mac_clang_scoped_writer_allowed(root,value):
             value['snapshot']['compilerLiteralLinks']==_mac_clang_portable_declarations() and
             Path(root)==work/'source/src/out'/('Release_GN_x64'if intel else'Release_GN_arm64') and
             SOURCE_IO_CONTEXT.get()==('source-record',work/'source'), 'source-sidecar-role')
-    safe(Path(root));current=Path(root);proof_root=_mac_clang_owned_proof_path(receipt)
+    safe(Path(root));current=Path(root)
+    proof_root=work if receipt is _MAC_CLANG_PUBLIC_SCOPE.get()else _mac_clang_owned_proof_path(receipt)
     while current!=proof_root:
         info=current.lstat();require(stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid(), 'source-sidecar-role')
         current=current.parent
@@ -1510,6 +1519,9 @@ def _mac_clang_scoped_writer_allowed(root,value):
 
 
 def _mac_clang_writer_namespace(root,identity):
+    if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True and (
+            _mac_nearby_protected_namespace(identity) or
+            _mac_nearby_protected_namespace({'canonicalRoot':str(root)})):return True
     receipt=_MAC_CLANG_PROOF_SCOPE.get()
     if receipt is None:return False
     require(type(receipt)is object and receipt in _MAC_CLANG_PROOF_RECEIPTS, 'source-sidecar-role')
@@ -1522,6 +1534,59 @@ def _mac_clang_writer_namespace(root,identity):
             if normalized==namespace or normalized.startswith(namespace+'/'):return True
     return False
 # END INACTIVE MAC CLANG PROOF SCOPE
+
+
+# BEGIN MAC CLANG PUBLIC OPERATION
+# Terminal native scratch proof, independently corroborated against setup image.
+# Raw proof and carrier digests are distinct from the uploaded artifact ZIP.
+MAC_CLANG_LITERAL_PROOF = (
+    41391838299,1,13117472436,'1c34a3aea224f32060975f74e268dd09c00251f8',
+    3099,'334da737759e35e9f2319ea8ebf7bfd8f81617cd799182f2168d5cf5504974df',
+    708,'862d3aa8e1e108a4602834ef3486e705e9603b4df6eac8261451e1cb13d7b7e6',
+    1725,'1f03279fcf452893b397648e3e27180f09da2c6a21591800bb6e14b3665d0cc9',
+    '5df938947c4fd9d78dad0934338a213eadbf4f7d3175cb2d17aeac9a8f649506',
+    198811,'5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79')
+_MAC_CLANG_PUBLIC_SCOPE = ContextVar('mac_clang_public_scope', default=None)
+_MAC_CLANG_PUBLIC_RECEIPTS = {}
+
+
+def _mac_clang_public_shape(mode,root,sidecar,identity,platform_policy):
+    # Operation identity/host checks precede filesystem or timestamp operations.
+    require(MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True and mode in SOURCE_IO_MODES and
+            platform_policy in ('mac-arm','mac-intel'), 'source-mac-clang-public-scope')
+    (source_mac_intel_write_host_admission if platform_policy=='mac-intel'else source_mac_write_host_admission)()
+    require(type(identity)is dict and set(identity)=={'target','source','producer','canonicalRoot','image','tools','graph','siso'} and
+            all(type(identity[key])is str and re.fullmatch('[a-f0-9]{64}',identity[key])
+                for key in('source','producer','tools','graph','siso')), 'source-mac-clang-public-scope')
+    (source_mac_intel_write_admission if platform_policy=='mac-intel'else source_mac_write_admission)(identity)
+    work=Path(identity['canonicalRoot']);source=work/'source'
+    expected=source/'src/out'/('Release_GN_x64'if platform_policy=='mac-intel'else'Release_GN_arm64')/SOURCE_METADATA_NAME
+    require(isinstance(root,(str,Path)) and isinstance(sidecar,(str,Path)) and
+            str(root)==str(source) and str(sidecar)==str(expected), 'source-mac-clang-public-scope')
+    return work
+
+
+@contextmanager
+def _mac_clang_public_scope(mode,root,sidecar,identity,platform_policy):
+    work=_mac_clang_public_shape(mode,root,sidecar,identity,platform_policy)
+    receipt=object();record=(mode,Path(root),Path(sidecar),tuple(sorted(identity.items())),work,platform_policy)
+    _MAC_CLANG_PUBLIC_RECEIPTS[receipt]=record
+    token=_MAC_CLANG_PUBLIC_SCOPE.set(receipt)
+    try:yield
+    finally:
+        _MAC_CLANG_PUBLIC_SCOPE.reset(token)
+        _MAC_CLANG_PUBLIC_RECEIPTS.pop(receipt,None)
+
+
+def _mac_clang_public_current(receipt):
+    require(type(receipt)is object and receipt is _MAC_CLANG_PUBLIC_SCOPE.get() and
+            receipt in _MAC_CLANG_PUBLIC_RECEIPTS, 'source-mac-clang-public-scope')
+    record=_MAC_CLANG_PUBLIC_RECEIPTS[receipt]
+    mode,root,sidecar,identity,work,platform_policy=record
+    require(_mac_clang_public_shape(mode,root,sidecar,dict(identity),platform_policy)==work,
+            'source-mac-clang-public-scope')
+    return record
+# END MAC CLANG PUBLIC OPERATION
 
 
 def metadata(root, name, value, source=False, owned_sidecar=False):
@@ -2850,7 +2915,8 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
     budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
     source_progress_start(getattr(budget, 'seconds', seconds))
     if platform_policy in ('mac-arm','mac-intel'):
-        with _mac_nearby_public_scope(mode,root,sidecar,identity,platform_policy):
+        operation=_mac_clang_public_scope if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True else _mac_nearby_public_scope
+        with operation(mode,root,sidecar,identity,platform_policy):
             work = source_metadata_identity(identity, platform_policy)
             return _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, platform_policy)
     work = source_metadata_identity(identity, platform_policy)
@@ -2879,6 +2945,11 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     snapshot_context = {'mac':True, 'ownedMacIntel' if intel else 'ownedMacArm':True} if mac else None
     nearby_scope = _mac_nearby_scope_selection(root,identity,work,platform_policy,mode) if mac else None
     compiler_scope = _mac_clang_scope_selection(root,identity,work,platform_policy,mode) if mac else None
+    if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True and (
+            _mac_nearby_protected_namespace(identity) or
+            _mac_nearby_protected_namespace({'canonicalRoot':str(root)})):
+        require(compiler_scope is not None and compiler_scope is _MAC_CLANG_PUBLIC_SCOPE.get(),
+                'source-mac-clang-public-scope')
     nearby_mac = nearby_scope is not None
     if mac and not nearby_mac:
         require(_mac_nearby_legacy_private_namespace(identity), 'source-mac-nearby-public-scope')

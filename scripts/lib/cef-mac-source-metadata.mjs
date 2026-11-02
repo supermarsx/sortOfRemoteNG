@@ -260,6 +260,28 @@ export const MAC_NEARBY_LITERAL_EVIDENCE = Object.freeze({
   artifactZipSha256:
     "357439ca1b6cf013ed6e0f3aca0f773faa06bf5ffb6c90b33ee97c8fbc1e7c8d",
 });
+// Qualified kernel bytes are a historical witness, never the active helper pin.
+// The active producer separately binds its complete current helper bytes.
+export const MAC_CLANG_LITERAL_EVIDENCE = Object.freeze({
+  runId: 41391838299,
+  runAttempt: 1,
+  artifactId: 13117472436,
+  source: "1c34a3aea224f32060975f74e268dd09c00251f8",
+  rawProofBytes: 3099,
+  rawProofSha256:
+    "334da737759e35e9f2319ea8ebf7bfd8f81617cd799182f2168d5cf5504974df",
+  rawCarrierBytes: 708,
+  rawCarrierSha256:
+    "862d3aa8e1e108a4602834ef3486e705e9603b4df6eac8261451e1cb13d7b7e6",
+  artifactZipBytes: 1725,
+  artifactZipSha256:
+    "1f03279fcf452893b397648e3e27180f09da2c6a21591800bb6e14b3665d0cc9",
+  sourceWitnessSha256:
+    "5df938947c4fd9d78dad0934338a213eadbf4f7d3175cb2d17aeac9a8f649506",
+  qualifiedHelperBytes: 198811,
+  qualifiedHelperSha256:
+    "5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79",
+});
 export const MAC_SOURCE_POLICY = Object.freeze({
   target: "aarch64-apple-darwin",
   source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
@@ -268,10 +290,11 @@ export const MAC_SOURCE_POLICY = Object.freeze({
   imageOS: "macos15",
   image: "20260824.0482.1",
   kind: "sorng-macarm-source-metadata",
-  name: "sorng-macarm-owned-source-metadata-intel-20260824-v2-nearby-literals",
-  schemaVersion: 2,
+  name: "sorng-macarm-owned-source-metadata-intel-20260824-v3-nearby-clang-literals",
+  schemaVersion: 3,
   legacyPrivatePolicy: "sorng-macarm-owned-source-metadata-intel-20260824-v1",
   nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
+  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,
   darwinWriteAdmitted: true,
   evidence: Object.freeze({
     runId: 41328841230,
@@ -287,10 +310,11 @@ export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   imageOS: "macos15",
   image: "20260824.0482.1",
   kind: "sorng-macintel-source-metadata",
-  name: "sorng-macintel-owned-source-metadata-intel-20260824-v2-nearby-literals",
-  schemaVersion: 2,
+  name: "sorng-macintel-owned-source-metadata-intel-20260824-v3-nearby-clang-literals",
+  schemaVersion: 3,
   legacyPrivatePolicy: "sorng-macintel-owned-source-metadata-intel-20260824-v1",
   nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
+  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,
   darwinWriteAdmitted: true,
   evidence: Object.freeze({
     runId: 41348226366,
