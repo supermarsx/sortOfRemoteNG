@@ -1090,6 +1090,7 @@ def selected_apache_worker_case(program,case):
         elif case=='wrong-flag-order':action[4],action[5]=action[5],action[4]
         elif case=='duplicate-threads':action.append('--num_threads=16')
         elif case=='already-two':action[5]='--num_threads=2'
+        elif case=='already-four':action[5]='--num_threads=4'
         elif case=='extra-flag':action.append('--force')
         elif case=='cwd-outside':cwd=str(folder.parent)
         elif case=='cwd-alias':cwd=str(folder)+'/ignored/..'

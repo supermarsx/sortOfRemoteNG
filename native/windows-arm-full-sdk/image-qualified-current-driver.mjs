@@ -1148,7 +1148,7 @@ def project_apache(command,kwargs):
  if type(cwd)is not str or cwd.replace(chr(92),'/').lower()!=workspace.lower():raise RuntimeError('FULL_HOOK_APACHE_CWD')
  source_bootstrap.data.plain(cwd)
  # Exact source-owned resource projection; preserve the original frozen action.
- effective=list(command);effective[5]='--num_threads=2'
+ effective=list(command);effective[5]='--num_threads=4'
  return effective
 def admitted_dispatch(command,*args,**kwargs):
  if not getattr(scope,'active',False): return dispatch(command,*args,**kwargs)

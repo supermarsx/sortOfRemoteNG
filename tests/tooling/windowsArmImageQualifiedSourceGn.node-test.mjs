@@ -159,7 +159,14 @@ const historicalAdmitted = String.raw`def admitted(self):
  try: return original(self)
  finally: scope.active=previous
 `;
+function previousTwoWorkerProjection(text) {
+  const current = " effective=list(command);effective[5]='--num_threads=4'\n";
+  const previous = " effective=list(command);effective[5]='--num_threads=2'\n";
+  assert.equal(text.split(current).length, 2, "one exact four-worker inverse");
+  return text.replace(current, previous);
+}
 function previousApacheProjection(text) {
+  text = previousTwoWorkerProjection(text);
   for (const [added, previous] of [
     [apacheWorkerProjection, ""],
     [" effective=project_apache(command,kwargs)\n", ""],
@@ -1502,7 +1509,16 @@ async function apacheWorkerCases(driver, cases, previous = false) {
     "fixed-adapter",
     "a".repeat(64),
   )[2];
-  if (previous) program = previousApacheProjection(program);
+  if (previous === true) program = previousApacheProjection(program);
+  if (previous === "two") {
+    program = previousTwoWorkerProjection(
+      driver.dependencyHookArguments(
+        "fixed-depot",
+        "fixed-adapter",
+        "a".repeat(64),
+      )[2],
+    );
+  }
   const code =
     "import sys,json;from pathlib import Path;sys.path.insert(0,str(Path('native/windows-arm-full-sdk').resolve()));import test_image_dispatch as t;raw=sys.stdin.read(65537);assert len(raw)<=65536;p=json.loads(raw);print(json.dumps([t.selected_apache_worker_case(p['program'],case)for case in p['cases']]))";
   const result = spawnSync("python", ["-I", "-B", "-c", code], {
@@ -1528,19 +1544,24 @@ async function apacheWorkerCases(driver, cases, previous = false) {
   return values;
 }
 
-test("exact Apache resource projection uses actual pinned native Hook.run old16 RED then fixed2 GREEN for both images", async () => {
+test("exact Apache resource projection uses actual pinned native Hook.run old16 RED, prior2 and fixed4 for both images", async () => {
   for (const driver of [currentDriver, oldDriver]) {
     const [before] = await apacheWorkerCases(driver, ["apache"], true);
     assert.equal(before.modeledQuotaDenial, true);
     assert.equal(before.exitCode, 2);
     assert.equal(before.commands.length, 1);
     assert.equal(before.commands[0][5], "--num_threads=16");
+    const [priorTwo] = await apacheWorkerCases(driver, ["apache"], "two");
+    assert.equal(priorTwo.error, null);
+    assert.equal(priorTwo.exitCode, 0);
+    assert.equal(priorTwo.commands[0][5], "--num_threads=2");
+    assert.equal(priorTwo.originalActionRetained, true);
     const [after] = await apacheWorkerCases(driver, ["apache"]);
     assert.equal(after.error, null);
     assert.equal(after.exitCode, 0);
     assert.equal(after.modeledQuotaDenial, false);
     assert.equal(after.commands.length, 1);
-    assert.equal(after.commands[0][5], "--num_threads=2");
+    assert.equal(after.commands[0][5], "--num_threads=4");
     assert.equal(after.originalThreads, "--num_threads=16");
     assert.equal(after.originalActionRetained, true);
     assert.equal(after.plainChecks, 1);
@@ -1583,6 +1604,7 @@ test("Apache resource projection rejects near-match hook/action/cwd substitution
     "wrong-flag-order",
     "duplicate-threads",
     "already-two",
+    "already-four",
     "extra-flag",
     "cwd-outside",
     "cwd-alias",
@@ -1611,6 +1633,36 @@ test("Apache resource projection rejects near-match hook/action/cwd substitution
     assert.match(first.stderr, /FIXED_FIRST_FAILURE/);
     assert(!first.stderr.includes("FULL_HOOK_APACHE_POSTCHECK"));
   }
+});
+
+test("exact four-worker inverse restores complete1192 drivers and fixture before older historical inverses", async () => {
+  for (const [label, expected] of [
+    [
+      "current",
+      "2c495d997f7e68710a0a3482a55681d8f2a92dbe88587ba282e7cd4d73d183f6",
+    ],
+    [
+      "20261021",
+      "a0b1849b7860db6f4b0b4592aefedce52250b44ae505f4a8ec4e6913f5251d14",
+    ],
+  ]) {
+    const text = (
+      await read(
+        `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+      )
+    ).toString();
+    assert.equal(sha(previousTwoWorkerProjection(text)), expected);
+  }
+  const fixture = (
+    await read("native/windows-arm-full-sdk/test_image_dispatch.py")
+  ).toString();
+  const added =
+    "        elif case=='already-four':action[5]='--num_threads=4'\n";
+  assert.equal(fixture.split(added).length, 2);
+  assert.equal(
+    sha(fixture.replace(added, "")),
+    "76bc1c651f5fa382c0155a6e03c6c04a6156d2c23521e10b24850b240add9286",
+  );
 });
 
 test("only reviewed selected hook projections, exact Apache resource projection and virtualenv bootstrap delta differ from historical drivers", async () => {
