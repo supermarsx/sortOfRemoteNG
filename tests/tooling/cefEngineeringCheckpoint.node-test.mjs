@@ -12011,21 +12011,64 @@ test("optional observer first errors including falsy values survive later writer
 });
 
 test("supervisor model causal delayed monitor joins preserve falsy primary and allow cleanup only before explicit expiry", async () => {
-  for (const realClock of [true, false]) {
+  for (const expired of [true, false]) {
+    const originalClock = outputLifecycleClock();
+    let monitorEntered = false,
+      cleanupEntered = false,
+      observerEntered = false,
+      releaseMonitor,
+      rejectObserver;
+    const monitorTimer = {};
+    const observer = new Promise((_, reject) => {
+      rejectObserver = reject;
+    });
+    // The production observer owns the eventual rejection; this also owns it
+    // if an admission failure prevents the modeled callback from being reached.
+    void observer.catch(() => {});
+    const clock = {
+      ...originalClock,
+      setTimeout(callback, milliseconds, ...args) {
+        if (milliseconds === 250) {
+          monitorEntered = true;
+          releaseMonitor = () => callback(...args);
+          queueMicrotask(() => rejectObserver(false));
+          return monitorTimer;
+        }
+        const timer = originalClock.setTimeout(callback, milliseconds, ...args);
+        if (milliseconds === 80 && !cleanupEntered) {
+          cleanupEntered = true;
+          queueMicrotask(() => {
+            assert.equal(observerEntered, true);
+            assert.equal(monitorEntered, true);
+            // The actual monitor is pending and its original cleanup timer is
+            // registered before either outcome is supplied. No wall-time race.
+            if (expired) originalClock.advance(81);
+            releaseMonitor();
+          });
+        }
+        return timer;
+      },
+      clearTimeout(timer) {
+        if (timer !== monitorTimer) originalClock.clearTimeout(timer);
+      },
+    };
     const state = await compileSupervisorModel({
-      realClock,
-      monitorTickMs: 120,
+      modelClock: clock,
       observeRoot: () => {
-        throw false;
+        observerEntered = true;
+        return observer;
       },
     });
+    assert.equal(observerEntered, true);
+    assert.equal(monitorEntered, true);
+    assert.equal(cleanupEntered, true);
     assert.equal(state.error, false);
-    assert.equal(state.stops, realClock ? 0 : 1);
+    assert.equal(state.stops, expired ? 0 : 1);
     assert.equal(state.proofs, 0);
     const diagnostic = JSON.parse(
       state.diagnostic.split("compile-supervision=")[1],
     );
-    assert.equal(diagnostic.monitorJoined, !realClock);
+    assert.equal(diagnostic.monitorJoined, !expired);
   }
 });
 
