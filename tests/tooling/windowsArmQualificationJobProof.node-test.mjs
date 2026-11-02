@@ -428,7 +428,7 @@ test("controller failure observation inverse restores complete e46 Python and No
     assert.equal(hash(original), digest);
   }
   assert.equal(
-    hash(rawPolicy),
+    hash(restorePriorControllerFlavor(rawPolicy.toString())),
     "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c",
   );
   assert.equal(
@@ -457,7 +457,7 @@ test("only the benign proof profile is active across exactly seven paths, withou
   assert.equal(policy.suiteSeconds, 300);
   assert.equal(policy.finalReserveSeconds, 150);
   assert.equal(policy.kernelCleanupSeconds, 30);
-  assert.equal(policy.image, "20261021.278.1");
+  assert.equal(policy.image, "20261030.294.1");
   assert.equal(
     policy.kernel.sha256,
     "70f10cc78c6b75519d3b33cb02788b49f058bdfdf0780b27aeb7becde0b5e716",
@@ -478,6 +478,7 @@ test("only the benign proof profile is active across exactly seven paths, withou
 });
 
 function restoreCurrentImageSelection(text) {
+  text = restorePriorControllerFlavor(text);
   for (const [selected, previous] of [
     [
       "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
@@ -490,7 +491,29 @@ function restoreCurrentImageSelection(text) {
   }
   return text;
 }
+function restorePriorControllerFlavor(text) {
+  const nextRef =
+    "refs/heads/codex/windows-arm-benign-current-controller-20261102";
+  const previousRef =
+    "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102";
+  const nextPin =
+    "51abf0bea1ee6f2b0c36fd436eb4aa6936652c827bad1c9b33e10f6189b7822e";
+  const previousPin =
+    "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c";
+  if (text.includes(nextRef)) {
+    assert.equal(text.split(nextRef).length, 2);
+    assert.equal(text.split("20261030.294.1").length, 2);
+    text = text
+      .replace(nextRef, previousRef)
+      .replace("20261030.294.1", "20261021.278.1");
+  } else if (text.includes(nextPin)) {
+    assert.equal(text.split(nextPin).length, 2);
+    text = text.replace(nextPin, previousPin);
+  }
+  return text;
+}
 function previousControllerFailureObservation(text, pythonBody = false) {
+  text = restorePriorControllerFlavor(text);
   if (pythonBody) {
     const block =
       /\n# BEGIN bounded controller failure observation\n[\s\S]*?# END bounded controller failure observation\n\n\n/;
@@ -529,7 +552,7 @@ function previousControllerFailureObservation(text, pythonBody = false) {
 test("the two proof flags and two exact pin literals invert through the entire current-image baseline to reviewed inactive bytes", () => {
   const old =
       "f923354c8141f946a464d7ff1dbb68dc9cc917fc693ee75c4d8041e1ee7eee49",
-    current = hash(rawPolicy),
+    current = hash(restorePriorControllerFlavor(rawPolicy.toString())),
     reviewedCurrent =
       "0e5bf412b6575a4e1f576d257bc4e047f02082d75566dee982f6cf68fcbfc24b";
   let inverse = restoreCurrentImageSelection(rawPolicy.toString());
@@ -582,7 +605,7 @@ test("actual admitted Node entry still denies a foreign scope before any worker 
 test("fixed actual authority has no alternate image branch workflow repository or mixed head", () => {
   assert.doesNotThrow(() => inspectAuthority(admitted, environment(), host));
   for (const [key, bad] of Object.entries({
-    ImageVersion: "20261030.294.1",
+    ImageVersion: "20261021.278.1",
     GITHUB_EVENT_NAME: "push",
     GITHUB_REF: "refs/heads/main",
     GITHUB_REPOSITORY_VISIBILITY: "private",
@@ -1236,6 +1259,7 @@ assert(programMatch, "fixed PowerShell Node program");
 const carrierProgram = programMatch[1];
 
 function withoutCarrierFailureDiagnostics(text) {
+  text = restorePriorControllerFlavor(text);
   for (const name of ["import", "projection"]) {
     const begin = `          // BEGIN fixed carrier failure diagnostic ${name}\n`,
       end = `          // END fixed carrier failure diagnostic ${name}\n`;
@@ -1717,7 +1741,7 @@ test("new workflow is no-input private-branch image-bound and uploads only valid
     first.run.indexOf("CEF_WINDOWS_BENIGN_JOB_STARTED_MS") <
       first.run.indexOf("ImageVersion"),
   );
-  assert(first.run.includes("20261021.278.1"));
+  assert(first.run.includes("20261030.294.1"));
   const checkout = proofJob.steps.find((step) =>
     step.uses?.startsWith("actions/checkout@"),
   );
@@ -1856,6 +1880,8 @@ test("existing CI explicit proof contract and exact Node inventory entries are r
 });
 
 test("fixed old-image proof reuses exact reviewed old source and executable pins without admitting another image", async () => {
+  // Retained historical old-image proof; actual current flavor is checked below.
+  const policy = JSON.parse(restorePriorControllerFlavor(rawPolicy.toString()));
   assert.equal(
     policy.ref,
     "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
@@ -1952,6 +1978,159 @@ test("fixed old-image proof reuses exact reviewed old source and executable pins
   );
 });
 
+test("current-controller flavor restores complete3ae old controller diagnostics before all prior history inverses", () => {
+  for (const [text, bytes, digest] of [
+    [
+      rawPolicy.toString(),
+      2906,
+      "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c",
+    ],
+    [
+      adapter,
+      39951,
+      "0f2fccfbf4ce8074fd5815cfaa5d7e8c65cd78d9dd40a2528a514e1bef20cd9c",
+    ],
+    [
+      fixture,
+      43128,
+      "2c4fc66bfcc383ebf7e94883f28e8cea855e4983dbeb511330938dfc611d7c20",
+    ],
+    [
+      workflowText,
+      12491,
+      "0fa77c91624fb8beefc8e9023921d79cbb194dcee0c0f58441c86d78a587f98c",
+    ],
+  ]) {
+    const original = restorePriorControllerFlavor(text);
+    assert.notEqual(original, text);
+    assert.equal(Buffer.byteLength(original), bytes);
+    assert.equal(hash(original), digest);
+  }
+});
+
+test("current-controller flavor requires exact reviewed294 source tools TCB and rejects old image or branches", async () => {
+  assert.equal(
+    policy.ref,
+    "refs/heads/codex/windows-arm-benign-current-controller-20261102",
+  );
+  assert.equal(policy.image, "20261030.294.1");
+  assert.equal(
+    hash(rawPolicy),
+    "51abf0bea1ee6f2b0c36fd436eb4aa6936652c827bad1c9b33e10f6189b7822e",
+  );
+  const selectedRaw = await fs.readFile(
+    path.join(DIR, "image-qualified-current-profile.json"),
+  );
+  assert.equal(selectedRaw.length, 34813);
+  assert.equal(
+    hash(selectedRaw),
+    "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+  );
+  const selected = JSON.parse(selectedRaw);
+  assert.equal(selected.image, policy.image);
+  assert.equal(
+    selected.sourceGn.sourceId,
+    "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
+  );
+  const tableRaw = await fs.readFile(
+    path.join(
+      ROOT,
+      selected.sourceGn.namespace,
+      "tools/aarch64-pc-windows-msvc.json",
+    ),
+  );
+  assert.equal(
+    hash(tableRaw),
+    "93dd8f76c361132134c1499320596bfbe06201cf8f3634c0f3bff7f48d3fc16f",
+  );
+  const lock = JSON.parse(
+    await fs.readFile(
+      path.join(ROOT, selected.sourceGn.namespace, "source-lock.json"),
+    ),
+  );
+  assert.equal(lock.builds[0].toolchainLock.sha256, hash(tableRaw));
+  const { releaseIdentity } = await import("../../scripts/cef-runtime-ci.mjs");
+  assert.equal(
+    releaseIdentity(lock, "aarch64-pc-windows-msvc").sourceLockSha256,
+    selected.sourceGn.sourceId,
+  );
+  const privateRaw = await fs.readFile(
+    path.join(DIR, "private-qualification-profile.json"),
+  );
+  assert.equal(
+    hash(privateRaw),
+    "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",
+  );
+  const privatePolicy = JSON.parse(privateRaw);
+  assert.equal(
+    privatePolicy.images[policy.image].profileSha256,
+    hash(selectedRaw),
+  );
+  assert(privatePolicy.staticLoadingPolicy.images.includes(policy.image));
+  assert.equal(privatePolicy.staticLoadingPolicy.systemImageIsTrustedTcb, true);
+  assert.equal(
+    privatePolicy.staticLoadingPolicy.actualLoaderClosureApproved,
+    false,
+  );
+  assert.equal(privatePolicy.staticLoadingPolicy.system32ByteSetProven, false);
+  assert.deepEqual(privatePolicy.tools.python, policy.python);
+  assert.deepEqual(privatePolicy.driverNode, policy.node);
+  assert.deepEqual(selected.sourceGn.hostTools.node, policy.node);
+  for (const role of ["python", "node"]) {
+    const row = JSON.parse(tableRaw).files.find(
+      (value) => value.path === policy[role].path.slice(3),
+    );
+    assert(row);
+    assert.equal(row.size, policy[role].bytes);
+    assert.equal(row.sha256, policy[role].sha256);
+  }
+  assert.equal(policy.sourcePaths.length, 8);
+  assert.doesNotThrow(() => inspectAuthority(policy, environment(), host));
+  for (const image of [
+    "20261021.278.1",
+    "20261030.294.2",
+    "20261030.294.1 ",
+    "unknown",
+  ])
+    assert.throws(
+      () =>
+        inspectAuthority(
+          policy,
+          { ...environment(), ImageVersion: image },
+          host,
+        ),
+      /PROOF_AUTHORITY/,
+    );
+  for (const ref of [
+    "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
+    "refs/heads/codex/windows-arm-benign-job-proof-20261102",
+    "refs/heads/main",
+  ])
+    assert.throws(
+      () =>
+        inspectAuthority(
+          policy,
+          {
+            ...environment(),
+            GITHUB_REF: ref,
+            GITHUB_WORKFLOW_REF: `${policy.repository}/${policy.workflow}@${ref}`,
+          },
+          host,
+        ),
+      /PROOF_AUTHORITY/,
+    );
+  for (const key of [
+    "sourceMigrationAdmitted",
+    "compilerAdmission",
+    "sdkBuilt",
+    "nativeAcceptance",
+    "runtimeReady",
+  ])
+    assert.equal(policy[key], false);
+  assert(!proofJob.if.includes("||"));
+  assert(!workflowText.includes("20261021.278.1"));
+});
+
 test("old-image workflow has only exact ref and image delta from immutable88258 current proof", () => {
   const detachedRef = "          ref: ${{ github.sha }}\n";
   assert.equal(workflowText.split(detachedRef).length, 2);
@@ -1975,7 +2154,7 @@ test("old-image workflow has only exact ref and image delta from immutable88258 
     ".github/workflows/windows-arm-qualification-job-proof.yml",
   );
   assert(!proofJob.if.includes("||"));
-  assert(!workflowText.includes("20261030.294.1"));
+  assert(!workflowText.includes("20261021.278.1"));
 });
 
 test(
