@@ -4559,7 +4559,75 @@ const PRODUCER_METRIC_INVERSE = {
     },
   ],
 };
+// BEGIN EXACT SOURCE PARENT INVERSE
+const SOURCE_PARENT_INVERSE = {
+  bytes: 170568,
+  sha256: "4dd1213e005bd2c873e48854fc4a158efbf123837b977f214fcc818797717da4",
+  rows: [
+    {
+      newRaw:
+        '// BEGIN CHECKED SOURCE ARTIFACTS PARENT\nasync function recheckSourceCreationParents(token, parents) {\n  const state = operationState(token);\n  need(\n    path.dirname(state.root) === path.join(CONTROLLER_REPO, ".artifacts"),\n    "SOURCE_PARENT_SCOPE",\n  );\n  for (const row of parents) {\n    const info = await operationWork(token, () =>\n      fs.lstat(row.path, { bigint: true }),\n    );\n    need(operationDirectoryId(info) === row.identity, "SOURCE_PARENT_CHANGED");\n    need(\n      (await operationWork(token, () => fs.realpath(row.path))) === row.path,\n      "SOURCE_PARENT_ALIAS",\n    );\n  }\n  operationState(token);\n}\nasync function prepareSourceArtifactsParent(token) {\n  const state = operationState(token),\n    parent = path.dirname(state.root);\n  need(\n    parent === path.join(CONTROLLER_REPO, ".artifacts"),\n    "SOURCE_PARENT_SCOPE",\n  );\n  const parents = [];\n  for (let current = CONTROLLER_REPO; ; current = path.dirname(current)) {\n    const info = await operationWork(token, () =>\n      fs.lstat(current, { bigint: true }),\n    );\n    parents.push(\n      Object.freeze({ path: current, identity: operationDirectoryId(info) }),\n    );\n    if (current === path.dirname(current)) break;\n  }\n  await recheckSourceCreationParents(token, parents);\n  const before = await operationWork(token, async () => {\n    try {\n      return await fs.lstat(parent, { bigint: true });\n    } catch (error) {\n      if (error?.code === "ENOENT") return null;\n      throw error;\n    }\n  });\n  if (before)\n    parents.push(\n      Object.freeze({ path: parent, identity: operationDirectoryId(before) }),\n    );\n  await recheckSourceCreationParents(token, parents);\n  operationState(token);\n  await operationWork(token, async () => {\n    try {\n      await fs.mkdir(parent, { mode: 0o700 });\n    } catch (error) {\n      if (error?.code !== "EEXIST" || !before) throw error;\n    }\n  });\n  if (!before) {\n    const info = await operationWork(token, () =>\n      fs.lstat(parent, { bigint: true }),\n    );\n    parents.push(\n      Object.freeze({ path: parent, identity: operationDirectoryId(info) }),\n    );\n  }\n  await recheckSourceCreationParents(token, parents);\n  return Object.freeze(parents);\n}\n// END CHECKED SOURCE ARTIFACTS PARENT\n\n',
+      oldRaw: "",
+      newSha256:
+        "21214d320a7d895f031cb22b15103944e8c208a3206cecd227f379bbff567768",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw:
+        "    // BEGIN SOURCE ROOT PARENT CREATION\n    const creationParents = await prepareSourceArtifactsParent(token);\n    await recheckSourceCreationParents(token, creationParents);\n    operationState(token);\n    await operationWork(token, () => fs.mkdir(root, { mode: 0o700 }));\n    await recheckSourceCreationParents(token, creationParents);\n    // END SOURCE ROOT PARENT CREATION\n",
+      oldRaw:
+        "    await operationWork(token, () => fs.mkdir(root, { mode: 0o700 }));\n",
+      newSha256:
+        "fa0c503739efca2e087c4c8254dfb8672c8885c035d96b5e57e66d80dacdab93",
+      oldSha256:
+        "f6bf507f714bbf2779ed1930bf55ba7739b75a4044a061376c5ca98feb75daae",
+    },
+    {
+      newRaw:
+        '      // BEGIN SOURCE CREATION PARENT LEDGER CHECK\n      const expectedParent = creationParents.find(\n        (row) => row.path === current,\n      );\n      if (expectedParent)\n        need(\n          operationDirectoryId(info) === expectedParent.identity,\n          "SOURCE_PARENT_CHANGED",\n        );\n      // END SOURCE CREATION PARENT LEDGER CHECK\n',
+      oldRaw: "",
+      newSha256:
+        "7da9f392a576026aea8f8b3a521e7bb556b538a6c360d77bb4f0ca88de9b958d",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw:
+        "    // BEGIN SOURCE OWNER OPEN FENCE\n    await operationFence(token);\n    operationState(token);\n    // END SOURCE OWNER OPEN FENCE\n",
+      oldRaw: "",
+      newSha256:
+        "b0b1a3ab1fd698c1afcd3deaa48cd63cf4a59c2e7353a1c890ec902f5ff24bc4",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw: '  "spawn",\n  "mkdir",\n]);\n',
+      oldRaw: '  "spawn",\n]);\n',
+      newSha256:
+        "5a609af6fb2139b7872a242ac6e4ce06baed14a17e1c59b12f3d008d0ff828ea",
+      oldSha256:
+        "23153886e10735d0405d87d4b8b5e1773cb342e47cb3ec91d4f6afacca6d1a10",
+    },
+  ],
+};
+function sourceParentControllerInverse(text) {
+  const spec = SOURCE_PARENT_INVERSE;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(hash(row.oldRaw), row.oldSha256);
+    assert.equal(text.split(row.newRaw).length, 2);
+    text = text.replace(row.newRaw, row.oldRaw);
+  }
+  assert.equal(Buffer.byteLength(text), spec.bytes);
+  assert.equal(hash(text), spec.sha256);
+  return text;
+}
+// END EXACT SOURCE PARENT INVERSE
+
 function producerMetricControllerInverse(text) {
+  text = sourceParentControllerInverse(text);
   const spec = PRODUCER_METRIC_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of [...spec.rows].reverse()) {
@@ -5205,10 +5273,27 @@ test("exact historical checkout fixture accepts only eleven pinned LF or uniform
 // END EXACT HISTORICAL CHECKOUT FIXTURE
 
 // Test-only maps cannot register a session in the actual production module.
-async function inactiveControl(overrides = {}) {
+async function inactiveControl(
+  overrides = {},
+  fixtureProfileSha,
+  previousSourceParent = false,
+) {
   const defaultsModule =
     await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
-  const source = await read(prefix + "full_sdk_control.mjs");
+  let source = await read(prefix + "full_sdk_control.mjs");
+  if (previousSourceParent) source = sourceParentControllerInverse(source);
+  // Only this isolated lexical model may substitute local native-tool bytes.
+  // Production pins/gates and its sole source-session writer stay untouched.
+  if (fixtureProfileSha) {
+    const declaration = source.match(
+      /const FULL_SOURCE_PROFILE_SHA256 =\n  "[a-f0-9]{64}";/g,
+    );
+    assert.equal(declaration?.length, 1);
+    source = source.replace(
+      declaration[0],
+      `const FULL_SOURCE_PROFILE_SHA256 =\n  "${fixtureProfileSha}";`,
+    );
+  }
   assert.equal((source.match(/sourceSessions\.set\(/g) ?? []).length, 1);
   const clockImport =
     'import {\n  WORKFLOW_CLOCK_ENV,\n  readWorkflowClock,\n  intersectWorkflowClock,\n} from "./workflow-clock.mjs";\n';
@@ -9396,6 +9481,13 @@ test("startup observability has an exact whole-controller inverse and rejects ta
       .replace(
         CLOCK_FAILURE_INVERSE.oldPredicate,
         CLOCK_FAILURE_INVERSE.newPredicate,
+      )
+      .replace('  "spawn",\n]);\n', '  "spawn",\n  "mkdir",\n]);\n')
+      .replace(
+        "// END BOUNDED STARTUP OBSERVABILITY\n\nasync function createSourceOperation",
+        "// END BOUNDED STARTUP OBSERVABILITY\n\n" +
+          SOURCE_PARENT_INVERSE.rows[0].newRaw +
+          "async function createSourceOperation",
       );
     assert.equal(raw.split(current).length, 2);
     assert.throws(() =>
@@ -9503,4 +9595,316 @@ test("producer metric checked-input receipt cannot cross controls or survive fin
       ),
     (error) => error === false,
   );
+});
+
+// Real filesystem/public main; only native tool selection and the fixed clock
+// ChildProcess leaf are modeled in isolated maps. No source session is minted.
+async function sourceParentBootstrapFixture(t, mode) {
+  const { PassThrough } = await import("node:stream");
+  const base = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "fullsdk-clean-checkout-")),
+  );
+  t.after(() => fs.rm(base, { recursive: true, force: true }));
+  const repo = path.join(base, "repo"),
+    here = path.join(repo, prefix),
+    parent = path.join(repo, ".artifacts");
+  await fs.mkdir(here, { recursive: true });
+  await fs.mkdir(path.join(repo, ".github/workflows"), { recursive: true });
+  for (const name of ["sdk-origin-review.json", "source-root.mjs"])
+    await fs.copyFile(path.join(root, prefix, name), path.join(here, name));
+  // The fixed workflow checks out with core.autocrlf=false.
+  await fs.writeFile(
+    path.join(repo, ".github/workflows/windows-arm-full-sdk.yml"),
+    (await read(".github/workflows/windows-arm-full-sdk.yml")).replaceAll(
+      "\r\n",
+      "\n",
+    ),
+  );
+  const p = JSON.parse(await read(prefix + "full-sdk-source-profile.json"));
+  const python = await benignPython(t);
+  if (!python) return;
+  for (const [key, file] of [
+    ["node", process.execPath],
+    ["python", python],
+  ]) {
+    const canonical = await fs.realpath(file),
+      raw = await fs.readFile(canonical);
+    // Owned copies avoid local package-manager hardlink counts. They are DATA
+    // stand-ins in this lexical model and are never executed.
+    const copy = path.join(here, `${key}-fixture.exe`);
+    await fs.writeFile(copy, raw, { flag: "wx" });
+    p[key] = {
+      ...p[key],
+      path: copy.replaceAll("\\", "/"),
+      bytes: raw.length,
+      sha256: sha(raw),
+    };
+  }
+  const profileBytes = Buffer.from(JSON.stringify(p));
+  await fs.writeFile(
+    path.join(here, "full-sdk-source-profile.json"),
+    profileBytes,
+  );
+  const { fullSdkSourceRootName } =
+    await import("../../native/windows-arm-full-sdk/source-root.mjs");
+  const sourceId = JSON.parse(await read(prefix + "sdk-origin-review.json"))
+    .sources["20261030.294.1"].sourceLockIdentity;
+  // Source identity is fixed by the actual pure naming implementation.
+  const sourceRoot = path.join(
+    parent,
+    fullSdkSourceRootName("20261030.294.1", sourceId),
+  );
+  const leaf = new Error("MODELED_NO_SOURCE_ACTOR");
+  let owner,
+    bootstrap,
+    operation,
+    operationToken,
+    api,
+    clockActors = 0,
+    ownerOpens = 0,
+    rootCreates = 0,
+    parentCreates = 0,
+    replaced = false,
+    expired = false;
+  if (["existing", "replace", "root-race"].includes(mode))
+    await fs.mkdir(parent);
+  if (mode === "file") await fs.writeFile(parent, "not a directory");
+  if (mode === "junction") {
+    await fs.mkdir(path.join(base, "other"));
+    await fs.symlink(
+      path.join(base, "other"),
+      parent,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  }
+  const existingIdentity =
+    mode === "existing" ? await fs.lstat(parent, { bigint: true }) : null;
+  const wall = Date.now() - 1000,
+    head = "a".repeat(40);
+  const env = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    CEF_DEFAULT_BRANCH: "main",
+    CEF_FULLSDK_RESTORE_RUN: "0",
+    GITHUB_REPOSITORY: "supermarsx/sortOfRemoteNG",
+    GITHUB_REPOSITORY_ID: "1010282954",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_SHA: head,
+    GITHUB_WORKFLOW_SHA: head,
+    GITHUB_RUN_ID: "1",
+    GITHUB_RUN_ATTEMPT: "1",
+    GITHUB_JOB: "sdk",
+    GITHUB_WORKFLOW_REF:
+      "supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-full-sdk.yml@refs/heads/main",
+    ImageVersion: "20261030.294.1",
+  };
+  env.SORNG_FULLSDK_FIRST_CLOCK = JSON.stringify({
+    schemaVersion: 1,
+    kind: "windows-arm-first-workflow-clock",
+    clock: "windows-gettickcount64",
+    dotnetMajor: 10,
+    wallStartMs: wall,
+    tickStartMs: 100000,
+    wallEndMs: wall + 21600000,
+    tickEndMs: 21700000,
+    repository: env.GITHUB_REPOSITORY,
+    repositoryId: env.GITHUB_REPOSITORY_ID,
+    ref: env.GITHUB_REF,
+    event: env.GITHUB_EVENT_NAME,
+    runId: "1",
+    attempt: "1",
+    head,
+    workflowSha: head,
+    workflowRef: env.GITHUB_WORKFLOW_REF,
+    job: "sdk",
+    image: env.ImageVersion,
+  });
+  api = await inactiveControl(
+    {
+      moduleURL: new URL(
+        "file:///" +
+          path.join(here, "full_sdk_control.mjs").replaceAll("\\", "/"),
+      ).href,
+      process: { ...process, env, execPath: p.node.path },
+      Date: { now: () => Date.now() + (expired ? 21600000 : 0) },
+      spawn() {
+        clockActors++;
+        assert.equal(clockActors, 1, "source/Job/compiler launches forbidden");
+        const child = new ChildProcess();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        queueMicrotask(() => {
+          child.stdout.write(
+            JSON.stringify({
+              monotonic: 101,
+              parentPid: process.pid,
+              parentCreationFiletime: "12345",
+            }),
+          );
+          child.emit("exit", 0, null);
+          child.stdout.destroy();
+          child.stderr.destroy();
+          child.emit("close", 0, null);
+        });
+        return child;
+      },
+      fs: {
+        ...fs,
+        async mkdir(name, ...args) {
+          if (name === parent) {
+            parentCreates++;
+            assert.equal(args[0]?.recursive, undefined);
+            if (mode === "parent-race") await fs.mkdir(parent);
+          }
+          if (name === sourceRoot) {
+            rootCreates++;
+            if (mode === "root-race") await fs.mkdir(sourceRoot);
+          }
+          const result = await fs.mkdir(name, ...args);
+          if (name === sourceRoot && mode === "replace") {
+            await fs.rename(parent, path.join(repo, "old-artifacts"));
+            await fs.mkdir(parent);
+            replaced = true;
+          }
+          return result;
+        },
+        async lstat(name, ...args) {
+          try {
+            return await fs.lstat(name, ...args);
+          } finally {
+            if (
+              name === parent &&
+              owner?.operation &&
+              ["false", "expired"].includes(mode)
+            ) {
+              if (mode === "false") owner.cancel.abort(false);
+              else expired = true;
+            }
+          }
+        },
+        async open(name, ...args) {
+          if (path.basename(name) === "full-sdk-source-owner.bin") {
+            ownerOpens++;
+            throw leaf;
+          }
+          return fs.open(name, ...args);
+        },
+      },
+    },
+    sha(profileBytes),
+    mode === "old-parent",
+  );
+  const setOwner = api.bootstrapOwners.set.bind(api.bootstrapOwners);
+  api.bootstrapOwners.set = (token, state) => {
+    bootstrap = token;
+    owner = state;
+    return setOwner(token, state);
+  };
+  const setOperation = api.sourceOperations.set.bind(api.sourceOperations);
+  api.sourceOperations.set = (token, state) => {
+    operationToken = token;
+    operation = state;
+    return setOperation(token, state);
+  };
+  let primary;
+  try {
+    await api.main(["--execute"]);
+    assert.fail("NO_SOURCE_ACTOR");
+  } catch (error) {
+    primary = error;
+  }
+  assert.equal(clockActors, 1, primary?.stack);
+  assert.equal(owner.closed, true);
+  assert.equal(api.bootstrapOwners.has(bootstrap), false);
+  assert.equal(api.leases.get(owner.lease).closed, true);
+  assert.equal(operation.closed, true);
+  assert.equal(api.sourceOperations.has(operationToken), false);
+  assert.equal(operation.issued, false);
+  assert.equal(operation.pending.size, 0);
+  assert.equal(operation.readFds.size, 0);
+  assert.equal(operation.owner, null);
+  return {
+    api,
+    base,
+    repo,
+    parent,
+    sourceRoot,
+    leaf,
+    primary,
+    ownerOpens,
+    rootCreates,
+    parentCreates,
+    replaced,
+    existingIdentity,
+  };
+}
+
+test("actual public bootstrap creates only its missing artifacts parent before exclusive fresh source root", async (t) => {
+  const previous = await sourceParentBootstrapFixture(t, "old-parent");
+  if (!previous) return;
+  assert.equal(previous.primary.code, "ENOENT");
+  assert.equal(previous.primary.syscall, "mkdir");
+  assert.equal(previous.ownerOpens, 0);
+  assert.equal(previous.rootCreates, 1);
+  assert.equal(previous.parentCreates, 0);
+  await assert.rejects(fs.lstat(previous.parent), { code: "ENOENT" });
+  for (const mode of ["absent", "existing"]) {
+    const f = await sourceParentBootstrapFixture(t, mode);
+    if (!f) return;
+    assert.equal(f.primary, f.leaf);
+    assert.equal(f.ownerOpens, 1);
+    assert.equal(f.rootCreates, 1);
+    assert.equal(f.parentCreates, 1);
+    assert.equal((await fs.lstat(f.sourceRoot)).isDirectory(), true);
+    if (f.existingIdentity)
+      assert.equal(
+        (await fs.lstat(f.parent, { bigint: true })).ino,
+        f.existingIdentity.ino,
+      );
+    // Exact previous mutation on the same kind of clean checkout is causally RED.
+    const oldRepo = path.join(f.base, "old-repo");
+    await fs.mkdir(oldRepo);
+    await assert.rejects(
+      fs.mkdir(path.join(oldRepo, ".artifacts", "source"), { mode: 0o700 }),
+      { code: "ENOENT" },
+    );
+  }
+});
+test("actual public bootstrap rejects artifacts parent files junctions replacement and raced source roots", async (t) => {
+  for (const mode of [
+    "file",
+    "junction",
+    "replace",
+    "parent-race",
+    "root-race",
+  ]) {
+    const f = await sourceParentBootstrapFixture(t, mode);
+    if (!f) return;
+    assert.notEqual(f.primary, f.leaf);
+    assert.equal(f.ownerOpens, 0);
+    if (mode === "replace") {
+      assert.equal(f.replaced, true);
+      assert.match(f.primary.message, /SOURCE_PARENT_CHANGED/);
+    } else if (mode === "root-race" || mode === "parent-race")
+      assert.equal(f.primary.code, "EEXIST");
+    else {
+      assert.match(f.primary.message, /DIRECTORY/);
+      assert.equal(f.rootCreates, 0);
+      assert.equal(f.parentCreates, 0);
+    }
+  }
+});
+test("actual public bootstrap consumes original clock and preserves falsy cancellation before parent mutation", async (t) => {
+  for (const mode of ["false", "expired"]) {
+    const f = await sourceParentBootstrapFixture(t, mode);
+    if (!f) return;
+    if (mode === "false") assert.equal(f.primary, false);
+    else assert.match(f.primary.message, /DEADLINE/);
+    assert.equal(f.parentCreates, 0);
+    assert.equal(f.rootCreates, 0);
+    assert.equal(f.ownerOpens, 0);
+    await assert.rejects(fs.lstat(f.parent), { code: "ENOENT" });
+  }
 });

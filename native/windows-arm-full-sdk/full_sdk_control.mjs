@@ -3642,6 +3642,7 @@ const STARTUP_SYSCALLS = new Set([
   "write",
   "close",
   "spawn",
+  "mkdir",
 ]);
 function observeStartupPhase(bootstrap, phase) {
   const owner = bootstrapOwners.get(bootstrap);
@@ -3712,6 +3713,77 @@ function startupFailureReport(error) {
   };
 }
 // END BOUNDED STARTUP OBSERVABILITY
+
+// BEGIN CHECKED SOURCE ARTIFACTS PARENT
+async function recheckSourceCreationParents(token, parents) {
+  const state = operationState(token);
+  need(
+    path.dirname(state.root) === path.join(CONTROLLER_REPO, ".artifacts"),
+    "SOURCE_PARENT_SCOPE",
+  );
+  for (const row of parents) {
+    const info = await operationWork(token, () =>
+      fs.lstat(row.path, { bigint: true }),
+    );
+    need(operationDirectoryId(info) === row.identity, "SOURCE_PARENT_CHANGED");
+    need(
+      (await operationWork(token, () => fs.realpath(row.path))) === row.path,
+      "SOURCE_PARENT_ALIAS",
+    );
+  }
+  operationState(token);
+}
+async function prepareSourceArtifactsParent(token) {
+  const state = operationState(token),
+    parent = path.dirname(state.root);
+  need(
+    parent === path.join(CONTROLLER_REPO, ".artifacts"),
+    "SOURCE_PARENT_SCOPE",
+  );
+  const parents = [];
+  for (let current = CONTROLLER_REPO; ; current = path.dirname(current)) {
+    const info = await operationWork(token, () =>
+      fs.lstat(current, { bigint: true }),
+    );
+    parents.push(
+      Object.freeze({ path: current, identity: operationDirectoryId(info) }),
+    );
+    if (current === path.dirname(current)) break;
+  }
+  await recheckSourceCreationParents(token, parents);
+  const before = await operationWork(token, async () => {
+    try {
+      return await fs.lstat(parent, { bigint: true });
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+  });
+  if (before)
+    parents.push(
+      Object.freeze({ path: parent, identity: operationDirectoryId(before) }),
+    );
+  await recheckSourceCreationParents(token, parents);
+  operationState(token);
+  await operationWork(token, async () => {
+    try {
+      await fs.mkdir(parent, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST" || !before) throw error;
+    }
+  });
+  if (!before) {
+    const info = await operationWork(token, () =>
+      fs.lstat(parent, { bigint: true }),
+    );
+    parents.push(
+      Object.freeze({ path: parent, identity: operationDirectoryId(info) }),
+    );
+  }
+  await recheckSourceCreationParents(token, parents);
+  return Object.freeze(parents);
+}
+// END CHECKED SOURCE ARTIFACTS PARENT
 
 async function createSourceOperation(bootstrap) {
   const owner = bootstrapState(bootstrap);
@@ -3988,11 +4060,27 @@ async function createSourceOperation(bootstrap) {
   sourceOperations.set(token, state);
   owner.operation = token;
   try {
+    // BEGIN SOURCE ROOT PARENT CREATION
+    const creationParents = await prepareSourceArtifactsParent(token);
+    await recheckSourceCreationParents(token, creationParents);
+    operationState(token);
     await operationWork(token, () => fs.mkdir(root, { mode: 0o700 }));
+    await recheckSourceCreationParents(token, creationParents);
+    // END SOURCE ROOT PARENT CREATION
     for (let current = root; ; current = path.dirname(current)) {
       const info = await operationWork(token, () =>
         fs.lstat(current, { bigint: true }),
       );
+      // BEGIN SOURCE CREATION PARENT LEDGER CHECK
+      const expectedParent = creationParents.find(
+        (row) => row.path === current,
+      );
+      if (expectedParent)
+        need(
+          operationDirectoryId(info) === expectedParent.identity,
+          "SOURCE_PARENT_CHANGED",
+        );
+      // END SOURCE CREATION PARENT LEDGER CHECK
       state.rootFence.unshift({
         path: current,
         identity: operationDirectoryId(info),
@@ -4002,6 +4090,10 @@ async function createSourceOperation(bootstrap) {
     state.rootIdentity = directoryId(
       await operationWork(token, () => fs.lstat(root, { bigint: true })),
     );
+    // BEGIN SOURCE OWNER OPEN FENCE
+    await operationFence(token);
+    operationState(token);
+    // END SOURCE OWNER OPEN FENCE
     state.owner = await operationWork(
       token,
       () =>
