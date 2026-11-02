@@ -422,7 +422,7 @@ test("migration CLI held byte reader rejects wrong pins and oversized named file
   assert.equal(opened, before);
 });
 
-test("migration CLI exact inverse preserves the complete old caller and keeps compile without API credentials", async () => {
+async function legacyCliWithoutMigration() {
   let text = (
     await readFile(
       path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
@@ -466,6 +466,11 @@ test("migration CLI exact inverse preserves the complete old caller and keeps co
     sha(text),
     "d42cab3135237fb0dcfb9285b72492188bcfd3f4b43f6bfa75ea2ada847fec34",
   );
+  return text;
+}
+
+test("migration CLI exact inverse preserves the complete old caller and keeps compile without API credentials", async () => {
+  await legacyCliWithoutMigration();
   const workflow = YAML.parse(
     await readFile(path.join(ROOT, WORKFLOW), "utf8"),
   );
@@ -7926,10 +7931,9 @@ test("observability preserves every existing API uploader and CLI policy asserti
     ),
     "utf8",
   );
-  const cli = await readFile(
-    new URL("../../scripts/cef-engineering-checkpoint.mjs", import.meta.url),
-    "utf8",
-  );
+  // The separately tested migration adds an admission assertion to this CLI.
+  // Require its whole-file inverse before checking every historical guard.
+  const cli = await legacyCliWithoutMigration();
   for (const name of ["apiClient", "uploadCheckpoint", "uploadSdkBundle"])
     assert.equal(signature(helper, name), expected[name]);
   assert.equal(signature(cli, "checkpointMain"), expected.main);

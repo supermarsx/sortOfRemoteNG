@@ -1296,7 +1296,7 @@ test("a source owner retired during an awaited apply cannot reach GN, readiness 
   assert(!m.events.includes("new-record"));
 });
 
-test("inactive retarget binds the actual main3aa129-row producer and canonical LF helper without inventing a seal", async () => {
+test("fixed retarget binds the actual main3aa129-row producer and committed non-authorizing capsule", async () => {
   assert.equal(Object.hasOwn(M, "runId"), false);
   assert.equal(
     M.policyPath,
@@ -1322,9 +1322,17 @@ test("inactive retarget binds the actual main3aa129-row producer and canonical L
     M.producer,
     "a148be3d5dc98f075d1774bdfa2fcd270a362b8c9c20f2f4c542c26bc60b1507",
   );
-  await assert.rejects(fs.lstat(path.join(ROOT, M.policyPath)), {
-    code: "ENOENT",
-  });
+  const capsule = JSON.parse(
+    git(ROOT, ["cat-file", "blob", "HEAD:" + M.policyPath]).toString(),
+  );
+  assert.equal(capsule.from.producer, M.producer);
+  assert.deepEqual(capsule.oldSourceTree, actual);
+  assert.equal(capsule.toProducer, core.codeTreeDigest(rows(ROOT, "HEAD")));
+  assert.equal(capsule.from.checkpointProducer.runId, 41388464567);
+  await assert.rejects(
+    migration.readLinuxMigrationSelection(capsule),
+    /LINUX_MIGRATION_SELECTION_ARGUMENTS/,
+  );
   const archive = "scripts/lib/cef-checkpoint-archive.py";
   const canonical = git(ROOT, [
     "-c",
