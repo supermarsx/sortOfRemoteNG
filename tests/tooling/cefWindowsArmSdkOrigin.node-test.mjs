@@ -22,6 +22,57 @@ const sort = (value) =>
       : value;
 const raw = (value) => Buffer.from(JSON.stringify(sort(value)) + "\n");
 const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
+test("pure independent seal reader preserves exact bytes without granting provenance", () => {
+  const bytes = Buffer.from(' {\n  "b": 2, "a": 1\n}\n');
+  for (const make of [
+    () => artifact(bytes),
+    () => artifact(bytes, true),
+    () => zip64Artifact(bytes),
+  ]) {
+    const zip = make().raw;
+    const decoded = original.extractIndependentSealBytes(zip);
+    assert(Buffer.isBuffer(decoded));
+    assert.deepEqual(decoded, bytes);
+    zip.fill(0);
+    assert.deepEqual(decoded, bytes);
+  }
+  const corrupt = artifact(bytes).raw;
+  corrupt[39] ^= 1;
+  assert.throws(() => original.extractIndependentSealBytes(corrupt), /ZIP_CRC/);
+  for (const value of [
+    {},
+    null,
+    Buffer.alloc(97),
+    Buffer.alloc(1024 * 1024 + 1),
+  ])
+    assert.throws(
+      () => original.extractIndependentSealBytes(value),
+      /ZIP_BOUND/,
+    );
+});
+
+test("seal reader addition preserves the complete existing SDK origin verifier", async () => {
+  const source = (
+    await fs.readFile("scripts/lib/cef-windows-arm-sdk-origin.mjs", "utf8")
+  ).replaceAll("\r\n", "\n");
+  const addition = String.raw`// BEGIN pure independent seal byte reader
+// Decoding returns data only. Authentication and producer ownership are separate.
+// Snapshot both boundaries so returned bytes never alias a caller-owned ZIP.
+export function extractIndependentSealBytes(rawZip) {
+  need(
+    Buffer.isBuffer(rawZip) && rawZip.length >= 98 && rawZip.length <= MAX,
+    "ZIP_BOUND",
+  );
+  return Buffer.from(independentSeal(Buffer.from(rawZip)));
+}
+// END pure independent seal byte reader`;
+  assert.equal(source.split(addition).length, 2);
+  const prior = source.replace("\n" + addition + "\n\n", "");
+  assert.equal(
+    digest(Buffer.from(prior)),
+    "fdeb022f45923224d5e14de1696563b0cc5211b1b76e1f03ce6ead7a98fac22c",
+  );
+});
 const H = "a".repeat(64);
 const sourceTuples = {
   "20261030.294.1": {

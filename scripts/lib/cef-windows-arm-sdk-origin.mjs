@@ -281,6 +281,19 @@ function independentSeal(raw) {
   need(result.length === expanded && crc32(result) === crc, "ZIP_CRC");
   return result;
 }
+
+// BEGIN pure independent seal byte reader
+// Decoding returns data only. Authentication and producer ownership are separate.
+// Snapshot both boundaries so returned bytes never alias a caller-owned ZIP.
+export function extractIndependentSealBytes(rawZip) {
+  need(
+    Buffer.isBuffer(rawZip) && rawZip.length >= 98 && rawZip.length <= MAX,
+    "ZIP_BOUND",
+  );
+  return Buffer.from(independentSeal(Buffer.from(rawZip)));
+}
+// END pure independent seal byte reader
+
 const stamp = (info) =>
   [
     info.dev,
