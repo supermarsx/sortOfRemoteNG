@@ -249,6 +249,17 @@ export function selectSuccess(
   return row;
 }
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
+// BEGIN current final-helper subject pin
+export function verifySubjectBytes(raw) {
+  need(
+    Buffer.isBuffer(raw) &&
+      raw.length === 114826 &&
+      sha(raw) ===
+        "3cb94d746b48fa030c3a8f300c65f043f83296849d281c5149c87c2eea45e275",
+    "SOURCE",
+  );
+}
+// END current final-helper subject pin
 const generation = (s) => [s.dev, s.ino, s.mode, s.uid, s.gid].join(":");
 const fileGeneration = (s) =>
   [generation(s), s.size, s.mtimeNs, s.ctimeNs, s.nlink].join(":");
@@ -486,13 +497,7 @@ export async function main(...args) {
     for (const name of [SELF, CORE]) {
       const held = await heldFile(path.join(ROOT, name), 256 * 1024, handles);
       need(held.raw.equals(git(["show", "HEAD:" + name], remaining)), "SOURCE");
-      if (name === CORE)
-        need(
-          held.raw.length === 94129 &&
-            sha(held.raw) ===
-              "5da6dd95dc4ad77d2822255880e27fc4052e00551a933e2cb1821c285043a8c3",
-          "SOURCE",
-        );
+      if (name === CORE) verifySubjectBytes(held.raw);
       witnesses.push(held.check);
     }
     need(
