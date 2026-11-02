@@ -124,6 +124,28 @@ async function row(id: string) {
     .closest('[role="treeitem"]') as HTMLElement;
 }
 describe("folder Alt+arrow moves", () => {
+  it("uses a folder's sibling order without changing the tree-wide sort", async () => {
+    mount([
+      folder("Parent", {
+        expanded: true,
+        childSort: { by: "name", direction: "asc" },
+      }),
+      folder("Alpha", { parentId: "Parent" }),
+      folder("Bravo", { parentId: "Parent" }),
+      folder("Charlie", { parentId: "Parent" }),
+    ]);
+    fireEvent.keyDown(await row("Alpha"), { key: "ArrowDown", altKey: true });
+    await waitFor(() =>
+      expect(order()).toEqual(["Parent", "Bravo", "Alpha", "Charlie"]),
+    );
+    expect(
+      state().connections.find((item) => item.id === "Parent")?.childSort,
+    ).toEqual({ by: "custom", direction: "asc" });
+    expect(state().filter).toMatchObject({
+      sortBy: "name",
+      sortDirection: "asc",
+    });
+  });
   it("reorders in displayed order, switches to custom and preserves focus/selection", async () => {
     mount();
     const target = await row("Bravo");

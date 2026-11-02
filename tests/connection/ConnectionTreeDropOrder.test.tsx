@@ -117,6 +117,9 @@ function Harness({ filter }: { filter?: Partial<ConnectionFilter> }) {
       <output data-testid="connections-state">
         {JSON.stringify(state.connections)}
       </output>
+      <output data-testid="tree-filter-state">
+        {JSON.stringify(state.filter)}
+      </output>
       <ConnectionTree
         onConnect={() => {}}
         onDisconnect={() => {}}
@@ -205,6 +208,48 @@ afterEach(() => {
 });
 
 describe("connection tree drop insertion order", () => {
+  it("measures a drop using the destination folder's order and changes only that folder to custom", async () => {
+    const data = [
+      ...folderTree(),
+      connectionAt("child-foxtrot", "Foxtrot", { parentId: "folder-one" }),
+    ].map((row) =>
+      row.id === "folder-one"
+        ? { ...row, childSort: { by: "name", direction: "desc" } as const }
+        : row,
+    );
+    mountTree(data, { sortBy: "name", sortDirection: "asc" });
+    await waitForRows(6);
+    expect(treeOrder()).toEqual([
+      "folder-one",
+      "child-foxtrot",
+      "child-echo",
+      "child-delta",
+      "root-alpha",
+      "root-bravo",
+    ]);
+    dragTo("child-delta", "child-echo", "before");
+    expect(treeOrder()).toEqual([
+      "folder-one",
+      "child-foxtrot",
+      "child-delta",
+      "child-echo",
+      "root-alpha",
+      "root-bravo",
+    ]);
+    const current = JSON.parse(
+      screen.getByTestId("connections-state").textContent!,
+    ) as Connection[];
+    expect(current.find((row) => row.id === "folder-one")?.childSort).toEqual({
+      by: "custom",
+      direction: "asc",
+    });
+    expect(
+      JSON.parse(screen.getByTestId("tree-filter-state").textContent!),
+    ).toMatchObject({ sortBy: "name", sortDirection: "asc" });
+    expect(current.filter((row) => row.id.startsWith("root-"))).toEqual(
+      data.filter((row) => row.id.startsWith("root-")),
+    );
+  });
   describe("siblings that have never been dragged", () => {
     it("moves a row to the front of the group", async () => {
       // The reported bug: Charlie stayed put and the two rows nobody touched

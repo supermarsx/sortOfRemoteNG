@@ -1,23 +1,36 @@
 import React from "react";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MenuSurface } from "../../src/components/ui/overlays/MenuSurface";
 
-const rect = (x: number, y: number, width: number, height: number): DOMRect => ({
-  x,
-  y,
-  width,
-  height,
-  top: y,
-  left: x,
-  right: x + width,
-  bottom: y + height,
-  toJSON: () => ({}),
-} as DOMRect);
+const rect = (x: number, y: number, width: number, height: number): DOMRect =>
+  ({
+    x,
+    y,
+    width,
+    height,
+    top: y,
+    left: x,
+    right: x + width,
+    bottom: y + height,
+    toJSON: () => ({}),
+  }) as DOMRect;
 
 const setViewport = (width: number, height: number) => {
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
-  Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    value: height,
+  });
 };
 
 const renderMenu = (useIgnoreRef = false) => {
@@ -47,6 +60,34 @@ const renderMenu = (useIgnoreRef = false) => {
 };
 
 describe("MenuSurface", () => {
+  it("preserves a user's menu choice when initial autofocus runs later", () => {
+    let frame: FrameRequestCallback | undefined;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
+      (callback) => {
+        frame = callback;
+        return 1;
+      },
+    );
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    render(
+      <MenuSurface isOpen onClose={() => {}} position={{ x: 20, y: 20 }}>
+        <button role="menuitem">First</button>
+        <button role="menuitem">User choice</button>
+      </MenuSurface>,
+    );
+    const choice = screen.getByRole("menuitem", { name: "User choice" });
+    expect(frame).toBeTypeOf("function");
+    act(() => {
+      choice.focus();
+      frame!(0);
+    });
+    expect(choice).toHaveFocus();
+    expect(choice).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("menuitem", { name: "First" })).toHaveAttribute(
+      "tabindex",
+      "-1",
+    );
+  });
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -121,7 +162,11 @@ describe("MenuSurface", () => {
         dataTestId="menu-surface"
       >
         <button>Top Item</button>
-        <div className="sor-menu-submenu" data-testid="submenu-wrapper" data-submenu-open="false">
+        <div
+          className="sor-menu-submenu"
+          data-testid="submenu-wrapper"
+          data-submenu-open="false"
+        >
           <button
             id="submenu-trigger"
             role="menuitem"
@@ -131,7 +176,12 @@ describe("MenuSurface", () => {
           >
             More Actions
           </button>
-          <div id="submenu-panel" className="sor-menu-submenu-panel" role="menu" aria-labelledby="submenu-trigger">
+          <div
+            id="submenu-panel"
+            className="sor-menu-submenu-panel"
+            role="menu"
+            aria-labelledby="submenu-trigger"
+          >
             <button role="menuitem">Sub Item</button>
           </div>
         </div>
@@ -164,14 +214,16 @@ describe("MenuSurface", () => {
 
   it("clamps to the viewport and opens flyouts inward near the right edge", async () => {
     setViewport(700, 400);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
-      const x = Number.parseFloat(this.style.left || "0") || 0;
-      const y = Number.parseFloat(this.style.top || "0") || 0;
-      if (this.getAttribute("data-testid") === "menu-surface") {
-        return rect(x, y, 160, 80);
-      }
-      return rect(x, y, 0, 0);
-    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function getRect(this: HTMLElement) {
+        const x = Number.parseFloat(this.style.left || "0") || 0;
+        const y = Number.parseFloat(this.style.top || "0") || 0;
+        if (this.getAttribute("data-testid") === "menu-surface") {
+          return rect(x, y, 160, 80);
+        }
+        return rect(x, y, 0, 0);
+      },
+    );
 
     render(
       <MenuSurface
@@ -181,8 +233,14 @@ describe("MenuSurface", () => {
         dataTestId="menu-surface"
       >
         <button>Top Item</button>
-        <div className="sor-menu-submenu" data-testid="submenu-wrapper" data-submenu-open="false">
-          <button role="menuitem" aria-haspopup="menu">More Actions</button>
+        <div
+          className="sor-menu-submenu"
+          data-testid="submenu-wrapper"
+          data-submenu-open="false"
+        >
+          <button role="menuitem" aria-haspopup="menu">
+            More Actions
+          </button>
           <div className="sor-menu-submenu-panel" role="menu">
             <button role="menuitem">Sub Item</button>
           </div>
@@ -197,7 +255,10 @@ describe("MenuSurface", () => {
       });
     });
 
-    expect(screen.getByTestId("submenu-wrapper")).toHaveAttribute("data-submenu-side", "left");
+    expect(screen.getByTestId("submenu-wrapper")).toHaveAttribute(
+      "data-submenu-side",
+      "left",
+    );
   });
 
   it("closes when clicking outside", () => {

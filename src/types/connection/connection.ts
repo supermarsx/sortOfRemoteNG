@@ -253,6 +253,11 @@ export interface Connection
   tabColor?: string;
   favorite?: boolean;
   order?: number;
+  /** Ordering for this folder's direct children; absent uses the tree default. */
+  childSort?: {
+    by: NonNullable<ConnectionFilter["sortBy"]>;
+    direction: NonNullable<ConnectionFilter["sortDirection"]>;
+  };
   createdAt: string;
   updatedAt: string;
 

@@ -89,6 +89,10 @@ function TreeFixture({
   const { state, dispatch } = useConnections();
   React.useEffect(() => {
     dispatch({ type: "SET_CONNECTIONS", payload: initialConnections });
+    dispatch({
+      type: "SET_FILTER",
+      payload: { sortBy: "name", sortDirection: "asc" },
+    });
     dispatch({ type: "SELECT_CONNECTION", payload: seeds[1] });
   }, [dispatch, initialConnections]);
   return (
@@ -102,6 +106,9 @@ function TreeFixture({
       />
       <output data-testid="connections-state">
         {JSON.stringify(state.connections)}
+      </output>
+      <output data-testid="tree-sort-state">
+        {JSON.stringify(state.filter)}
       </output>
     </>
   );
@@ -127,6 +134,126 @@ const current = () =>
   JSON.parse(
     screen.getByTestId("connections-state").textContent!,
   ) as Connection[];
+
+const orderSeeds = (): Connection[] => [
+  { ...seeds[0], expanded: true },
+  seeds[1],
+  {
+    ...seeds[2],
+    id: "alpha",
+    name: "Alpha",
+    protocol: "ssh",
+    parentId: "target",
+    order: 1,
+  },
+  {
+    ...seeds[2],
+    id: "zulu",
+    name: "Zulu",
+    protocol: "rdp",
+    parentId: "target",
+    order: 0,
+  },
+  { ...seeds[2], id: "other-alpha", name: "Other Alpha", parentId: "other" },
+  { ...seeds[2], id: "other-zulu", name: "Other Zulu", parentId: "other" },
+];
+const visibleOrder = () =>
+  [...screen.getByRole("tree").querySelectorAll("[data-connection-id]")].map(
+    (row) => row.getAttribute("data-connection-id"),
+  );
+async function openOrdering() {
+  fireEvent.contextMenu(screen.getByText("Target folder"));
+  const trigger = await screen.findByRole("menuitem", { name: "Order by" });
+  fireEvent.click(trigger);
+  return screen.findByRole("menu", { name: "Order by" });
+}
+
+describe("folder Order by submenu", () => {
+  it("sorts only the clicked folder's children by type and alphabetic direction", async () => {
+    const initial = orderSeeds();
+    await mounted(undefined, initial);
+    let menu = await openOrdering();
+    fireEvent.click(
+      within(menu).getByRole("menuitemradio", { name: "Connection type" }),
+    );
+    await waitFor(() =>
+      expect(
+        visibleOrder().filter((id) => id === "alpha" || id === "zulu"),
+      ).toEqual(["zulu", "alpha"]),
+    );
+    menu = await openOrdering();
+    expect(
+      within(menu).getByRole("menuitemradio", { name: "Connection type" }),
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Name" }));
+    menu = await openOrdering();
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Z–A" }));
+    expect(current().find((row) => row.id === "target")?.childSort).toEqual({
+      by: "name",
+      direction: "desc",
+    });
+    expect(
+      visibleOrder().filter((id) => id === "alpha" || id === "zulu"),
+    ).toEqual(["zulu", "alpha"]);
+    expect(current().filter((row) => row.id !== "target")).toEqual(
+      initial.filter((row) => row.id !== "target"),
+    );
+    expect(
+      JSON.parse(screen.getByTestId("tree-sort-state").textContent!),
+    ).toMatchObject({ sortBy: "name", sortDirection: "asc" });
+  });
+
+  it("uses saved custom positions and can restore the tree default without rewriting children", async () => {
+    const initial = orderSeeds();
+    await mounted(undefined, initial);
+    let menu = await openOrdering();
+    fireEvent.click(
+      within(menu).getByRole("menuitemradio", { name: "Custom order" }),
+    );
+    expect(
+      visibleOrder().filter((id) => id === "alpha" || id === "zulu"),
+    ).toEqual(["zulu", "alpha"]);
+    menu = await openOrdering();
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Use tree default" }),
+    );
+    expect(
+      current().find((row) => row.id === "target")?.childSort,
+    ).toBeUndefined();
+    expect(
+      visibleOrder().filter((id) => id === "alpha" || id === "zulu"),
+    ).toEqual(["alpha", "zulu"]);
+    expect(current().filter((row) => row.id !== "target")).toEqual(
+      initial.filter((row) => row.id !== "target"),
+    );
+  });
+
+  it("opens, navigates, closes and reopens the second-level menu with the keyboard", async () => {
+    await mounted(undefined, orderSeeds());
+    fireEvent.contextMenu(screen.getByText("Target folder"));
+    const trigger = await screen.findByRole("menuitem", { name: "Order by" });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: "ArrowRight" });
+    const first = await screen.findByRole("menuitemradio", { name: "Name" });
+    await waitFor(() => expect(first).toHaveFocus());
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(
+      screen.getByRole("menuitemradio", { name: "Connection type" }),
+    ).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(trigger, { key: "ArrowRight" });
+    await waitFor(() =>
+      expect(screen.getByRole("menuitemradio", { name: "Name" })).toHaveFocus(),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    fireEvent.contextMenu(screen.getByText("Alpha"));
+    expect(screen.queryByRole("menuitem", { name: "Order by" })).toBeNull();
+  });
+});
 async function createChild() {
   fireEvent.contextMenu(screen.getByText("Target folder"));
   fireEvent.click(await screen.findByRole("button", { name: "New subfolder" }));

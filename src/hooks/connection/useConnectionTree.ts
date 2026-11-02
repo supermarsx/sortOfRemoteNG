@@ -24,6 +24,31 @@ export interface ConnectOptionsData {
 type SortBy = NonNullable<ConnectionFilter["sortBy"]>;
 type SortDirection = NonNullable<ConnectionFilter["sortDirection"]>;
 
+export function resolveSiblingSort(
+  folder: Connection | undefined,
+  filter: Pick<ConnectionFilter, "sortBy" | "sortDirection"> = {},
+): { by: SortBy; direction: SortDirection; overridden: boolean } {
+  const stored = folder?.isGroup ? folder.childSort : undefined;
+  const overridden = Boolean(
+    stored &&
+    [
+      "name",
+      "protocol",
+      "hostname",
+      "createdAt",
+      "updatedAt",
+      "recentlyUsed",
+      "custom",
+    ].includes(stored.by) &&
+    ["asc", "desc"].includes(stored.direction),
+  );
+  return {
+    by: overridden ? stored!.by : filter.sortBy || "name",
+    direction: overridden ? stored!.direction : filter.sortDirection || "asc",
+    overridden,
+  };
+}
+
 /* ── Sibling ordering ──────────────────────────────────────────── */
 
 /**
@@ -323,15 +348,16 @@ export function useConnectionTree(
     () => new WeakMap<Connection[], Map<string | undefined, Connection[]>>(),
     // The cached sibling arrays are sorted, so changing the sort invalidates them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.filter.sortBy, state.filter.sortDirection],
+    [state.connections, state.filter.sortBy, state.filter.sortDirection],
   );
   const buildTree = useCallback(
     (connections: Connection[], parentId?: string): Connection[] => {
       const cached = treeIndexes.get(connections);
       if (cached) return cached.get(parentId) ?? [];
-      const compareSiblings = createSiblingComparator(
-        state.filter.sortBy || "name",
-        state.filter.sortDirection || "asc",
+      const folders = new Map(
+        state.connections
+          .filter((item) => item.isGroup)
+          .map((item) => [item.id, item]),
       );
 
       const index = new Map<string | undefined, Connection[]>();
@@ -340,13 +366,25 @@ export function useConnectionTree(
         if (siblings) siblings.push(connection);
         else index.set(connection.parentId, [connection]);
       }
-      for (const siblings of index.values()) {
-        siblings.sort(compareSiblings);
+      for (const [parent, siblings] of index) {
+        const order = resolveSiblingSort(
+          parent ? folders.get(parent) : undefined,
+          {
+            sortBy: state.filter.sortBy,
+            sortDirection: state.filter.sortDirection,
+          },
+        );
+        siblings.sort(createSiblingComparator(order.by, order.direction));
       }
       treeIndexes.set(connections, index);
       return index.get(parentId) ?? [];
     },
-    [treeIndexes, state.filter.sortBy, state.filter.sortDirection],
+    [
+      treeIndexes,
+      state.connections,
+      state.filter.sortBy,
+      state.filter.sortDirection,
+    ],
   );
 
   const hasActiveConnectionFilter = useMemo(() => {
@@ -606,8 +644,15 @@ export function useConnectionTree(
         return false;
       }
 
-      const sortBy = state.filter.sortBy || "name";
-      const sortDirection = state.filter.sortDirection || "asc";
+      const parent = state.connections.find(
+        (item) => item.id === newParentId && item.isGroup,
+      );
+      const sort = resolveSiblingSort(parent, {
+        sortBy: state.filter.sortBy,
+        sortDirection: state.filter.sortDirection,
+      });
+      const sortBy = sort.by;
+      const sortDirection = sort.direction;
 
       // The list the drop is measured against is the one on screen: the target
       // group as `buildTree` renders it, minus the dragged row, which is about
@@ -663,14 +708,18 @@ export function useConnectionTree(
         },
       });
 
-      if (
-        position === "inside" &&
-        targetConnection.isGroup &&
-        !targetConnection.expanded
-      ) {
+      const expandParent = position === "inside" && parent && !parent.expanded;
+      const useCustomOrder = sort.overridden && sort.by !== "custom";
+      if (parent && (expandParent || useCustomOrder)) {
         dispatch({
           type: "UPDATE_CONNECTION",
-          payload: { ...targetConnection, expanded: true },
+          payload: {
+            ...parent,
+            ...(expandParent ? { expanded: true } : {}),
+            ...(useCustomOrder
+              ? { childSort: { by: "custom", direction: "asc" } as const }
+              : {}),
+          },
         });
       }
 
@@ -722,7 +771,18 @@ export function useConnectionTree(
           return false;
       }
       if (!target || !handleItemDrop(target.id, position, id)) return false;
-      if (state.filter.sortBy !== "custom") {
+      const destinationParentId =
+        position === "inside" ? target.id : target.parentId;
+      const destinationParent = state.connections.find(
+        (item) => item.id === destinationParentId && item.isGroup,
+      );
+      if (
+        !resolveSiblingSort(destinationParent, {
+          sortBy: state.filter.sortBy,
+          sortDirection: state.filter.sortDirection,
+        }).overridden &&
+        state.filter.sortBy !== "custom"
+      ) {
         dispatch({
           type: "SET_FILTER",
           payload: { sortBy: "custom", sortDirection: "asc" },
@@ -734,6 +794,7 @@ export function useConnectionTree(
       hasActiveConnectionFilter,
       state.connections,
       state.filter.sortBy,
+      state.filter.sortDirection,
       buildTree,
       handleItemDrop,
       dispatch,

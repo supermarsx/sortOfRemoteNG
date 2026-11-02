@@ -9,8 +9,11 @@ import {
 } from "../../../types/connection/connection";
 import { generateId } from "../../../utils/core/id";
 import { folderSubtree } from "./helpers";
+import { resolveSiblingSort } from "../../../hooks/connection/useConnectionTree";
 import {
   Activity,
+  ArrowDownAZ,
+  Check,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -42,6 +45,7 @@ import {
 
 const SUBMENU_ITEM_SELECTOR = [
   '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
+  '[role="menuitemradio"]:not([disabled]):not([aria-disabled="true"])',
   "button:not([disabled]):not([role])",
   "[href]:not([role])",
   '[tabindex]:not([tabindex="-1"]):not([role])',
@@ -164,6 +168,37 @@ function TreeItemMenu({
     connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
   const [connectInWindowOpen, setConnectInWindowOpen] = useState(false);
   const [windowsToolsOpen, setWindowsToolsOpen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const orderTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const orderPanelRef = useRef<HTMLDivElement | null>(null);
+  const orderTriggerId = useId();
+  const orderPanelId = useId();
+  const folderOrder = resolveSiblingSort(
+    state.connections.find((item) => item.id === connection.id),
+    state.filter,
+  );
+  const changeFolderOrder = (
+    update: Partial<NonNullable<Connection["childSort"]>> | null,
+  ) => {
+    const folder = state.connections.find(
+      (item) => item.id === connection.id && item.isGroup,
+    );
+    if (!folder) return;
+    const current = resolveSiblingSort(folder, state.filter);
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: {
+        ...folder,
+        childSort: update
+          ? {
+              by: update.by ?? current.by,
+              direction: update.direction ?? current.direction,
+            }
+          : undefined,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  };
   const [detachedWindows, setDetachedWindows] = useState<
     Array<{ label: string; title: string }>
   >([]);
@@ -195,7 +230,7 @@ function TreeItemMenu({
     setOpen: React.Dispatch<React.SetStateAction<boolean>>,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => {
-    if (event.key !== "ArrowLeft") return;
+    if (event.key !== "ArrowLeft" && event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
     setOpen(false);
@@ -227,6 +262,7 @@ function TreeItemMenu({
     if (!showMenu) {
       setConnectInWindowOpen(false);
       setWindowsToolsOpen(false);
+      setOrderOpen(false);
     }
   }, [showMenu]);
 
@@ -301,6 +337,145 @@ function TreeItemMenu({
       {connection.isGroup && (
         <>
           <div role="separator" className="sor-menu-divider" />
+          <div
+            className="sor-menu-submenu"
+            data-submenu-open={orderOpen ? "true" : "false"}
+            onMouseEnter={() => setOrderOpen(true)}
+            onMouseLeave={() => setOrderOpen(false)}
+            onBlurCapture={(event) => {
+              if (
+                !event.currentTarget.contains(
+                  event.relatedTarget as Node | null,
+                )
+              )
+                setOrderOpen(false);
+            }}
+          >
+            <button
+              id={orderTriggerId}
+              ref={orderTriggerRef}
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={orderOpen}
+              aria-controls={orderPanelId}
+              className="sor-menu-item"
+              data-tooltip="Order this folder's direct children"
+              onClick={() => setOrderOpen((open) => !open)}
+              onKeyDown={(event) =>
+                handleSubmenuTriggerKeyDown(event, setOrderOpen, orderPanelRef)
+              }
+            >
+              <ArrowDownAZ size={14} className="mr-2" aria-hidden="true" />
+              {t("connections.orderBy", "Order by")}
+              <ChevronRight
+                size={12}
+                className="ml-auto opacity-50"
+                aria-hidden="true"
+              />
+            </button>
+            <div
+              id={orderPanelId}
+              ref={orderPanelRef}
+              className="sor-menu-submenu-panel"
+              role="menu"
+              hidden={!orderOpen}
+              aria-labelledby={orderTriggerId}
+              tabIndex={-1}
+              onKeyDown={(event) =>
+                handleSubmenuPanelKeyDown(event, setOrderOpen, orderTriggerRef)
+              }
+            >
+              <div role="group" aria-label="Sort field">
+                {(
+                  [
+                    ["name", t("connections.name", "Name")],
+                    [
+                      "protocol",
+                      t("connections.connectionType", "Connection type"),
+                    ],
+                    ["hostname", t("connections.hostname", "Hostname")],
+                    ["createdAt", t("connections.dateAdded", "Date added")],
+                    ["updatedAt", t("connections.lastUpdated", "Last updated")],
+                    [
+                      "recentlyUsed",
+                      t("connections.recentlyUsed", "Recently used"),
+                    ],
+                    ["custom", t("connections.customOrder", "Custom order")],
+                  ] as const
+                ).map(([by, label]) => (
+                  <button
+                    key={by}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={folderOrder.by === by}
+                    className="sor-menu-item"
+                    onClick={act(() => changeFolderOrder({ by }))}
+                  >
+                    <Check
+                      size={14}
+                      className={`mr-2 ${folderOrder.by === by ? "" : "invisible"}`}
+                      aria-hidden="true"
+                    />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div role="separator" className="sor-menu-divider" />
+              <div role="group" aria-label="Sort direction">
+                {(
+                  [
+                    [
+                      "asc",
+                      folderOrder.by === "custom"
+                        ? "Forward order"
+                        : ["name", "protocol", "hostname"].includes(
+                              folderOrder.by,
+                            )
+                          ? "A–Z"
+                          : "Ascending",
+                    ],
+                    [
+                      "desc",
+                      folderOrder.by === "custom"
+                        ? "Reverse order"
+                        : ["name", "protocol", "hostname"].includes(
+                              folderOrder.by,
+                            )
+                          ? "Z–A"
+                          : "Descending",
+                    ],
+                  ] as const
+                ).map(([direction, label]) => (
+                  <button
+                    key={direction}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={folderOrder.direction === direction}
+                    className="sor-menu-item"
+                    onClick={act(() => changeFolderOrder({ direction }))}
+                  >
+                    <Check
+                      size={14}
+                      className={`mr-2 ${folderOrder.direction === direction ? "" : "invisible"}`}
+                      aria-hidden="true"
+                    />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div role="separator" className="sor-menu-divider" />
+              <button
+                type="button"
+                role="menuitem"
+                className="sor-menu-item"
+                disabled={!folderOrder.overridden}
+                onClick={act(() => changeFolderOrder(null))}
+              >
+                {t("connections.useTreeDefault", "Use tree default")}
+              </button>
+            </div>
+          </div>
           <button
             type="button"
             role="menuitem"

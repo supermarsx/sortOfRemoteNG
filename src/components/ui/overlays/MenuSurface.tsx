@@ -1,4 +1,10 @@
-import React, { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
 
@@ -8,6 +14,8 @@ const SUBMENU_FLYOUT_WIDTH = 224;
 const MENU_SELECTOR = '[role="menu"]';
 const MENU_ITEM_SELECTOR = [
   '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
+  '[role="menuitemradio"]:not([disabled]):not([aria-disabled="true"])',
+  '[role="menuitemcheckbox"]:not([disabled]):not([aria-disabled="true"])',
   "button:not([disabled]):not([role])",
   "[href]:not([role])",
   '[tabindex]:not([tabindex="-1"]):not([role])',
@@ -29,8 +37,12 @@ const getOwningMenu = (
 const getMenuItems = (menu: HTMLElement | null): HTMLElement[] => {
   if (!menu) return [];
 
-  return Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)).filter(
-    (element) => element.closest<HTMLElement>(MENU_SELECTOR) === menu && isVisible(element),
+  return Array.from(
+    menu.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR),
+  ).filter(
+    (element) =>
+      element.closest<HTMLElement>(MENU_SELECTOR) === menu &&
+      isVisible(element),
   );
 };
 
@@ -41,7 +53,8 @@ const syncRovingState = (
   if (items.length === 0) return null;
 
   const fallback = items[0] ?? null;
-  const active = activeElement && items.includes(activeElement) ? activeElement : fallback;
+  const active =
+    activeElement && items.includes(activeElement) ? activeElement : fallback;
 
   for (const item of items) {
     if (!item.hasAttribute("role")) {
@@ -60,16 +73,20 @@ const getSubmenuForTrigger = (trigger: HTMLElement): HTMLElement | null => {
     if (controlledMenu) return controlledMenu;
   }
 
-  return trigger
-    .closest<HTMLElement>(".sor-menu-submenu")
-    ?.querySelector<HTMLElement>(".sor-menu-submenu-panel") ?? null;
+  return (
+    trigger
+      .closest<HTMLElement>(".sor-menu-submenu")
+      ?.querySelector<HTMLElement>(".sor-menu-submenu-panel") ?? null
+  );
 };
 
 const openSubmenu = (trigger: HTMLElement): HTMLElement | null => {
   const submenu = getSubmenuForTrigger(trigger);
   if (!submenu) return null;
 
-  trigger.closest<HTMLElement>(".sor-menu-submenu")?.setAttribute("data-submenu-open", "true");
+  trigger
+    .closest<HTMLElement>(".sor-menu-submenu")
+    ?.setAttribute("data-submenu-open", "true");
   trigger.setAttribute("aria-expanded", "true");
   return submenu;
 };
@@ -81,7 +98,9 @@ const closeSubmenu = (submenu: HTMLElement): HTMLElement | null => {
   const trigger = document.getElementById(triggerId);
   if (!(trigger instanceof HTMLElement)) return null;
 
-  trigger.closest<HTMLElement>(".sor-menu-submenu")?.setAttribute("data-submenu-open", "false");
+  trigger
+    .closest<HTMLElement>(".sor-menu-submenu")
+    ?.setAttribute("data-submenu-open", "false");
   trigger.setAttribute("aria-expanded", "false");
   trigger.focus();
   return trigger;
@@ -121,7 +140,8 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [resolvedPosition, setResolvedPosition] = useState<MenuSurfacePosition | null>(null);
+  const [resolvedPosition, setResolvedPosition] =
+    useState<MenuSurfacePosition | null>(null);
   const positionX = position?.x;
   const positionY = position?.y;
 
@@ -179,7 +199,7 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
     if (!isOpen || !onClose || !closeOnEscape) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !event.defaultPrevented) onClose();
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -189,14 +209,23 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    previousFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
 
     const frame = requestAnimationFrame(() => {
-      const items = getMenuItems(menuRef.current);
-      const first = syncRovingState(items, items[0] ?? null);
-      (first ?? menuRef.current)?.focus();
+      const root = menuRef.current;
+      if (!root) return;
+      const active =
+        document.activeElement instanceof HTMLElement &&
+        root.contains(document.activeElement)
+          ? document.activeElement
+          : null;
+      const items = getMenuItems(getOwningMenu(active, root));
+      const first = syncRovingState(items, active ?? items[0] ?? null);
+      // A user may already have opened a submenu before this first frame.
+      if (!active || active === root) (first ?? root).focus();
     });
 
     return () => {
@@ -213,9 +242,10 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
     const rootMenu = menuRef.current;
     if (!rootMenu) return;
 
-    const active = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    const active =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const currentMenu = getOwningMenu(active, rootMenu);
     const items = getMenuItems(currentMenu);
     if (items.length === 0) return;
