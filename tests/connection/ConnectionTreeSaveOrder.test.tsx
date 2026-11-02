@@ -481,12 +481,17 @@ describe("save timeout diagnostic contract", () => {
   it("reports pending durable work without changing the original wait or acknowledging it", async () => {
     const output = vi.spyOn(console, "error").mockImplementation(() => {});
     let acknowledge!: () => void;
-    fixture.save.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          acknowledge = resolve;
-        }),
-    );
+    let observeStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      observeStarted = resolve;
+    });
+    fixture.save.mockImplementation(() => {
+      const durable = new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      });
+      observeStarted();
+      return durable;
+    });
     try {
       mountTree(unorderedTree(), {
         editId: "root-alpha",
@@ -496,7 +501,18 @@ describe("save timeout diagnostic contract", () => {
       fireEvent.change(await screen.findByTestId("editor-name"), {
         target: { value: "Zulu" },
       });
-      const pending = save();
+      const before = beforeSaveClick();
+      fireEvent.click(screen.getByTestId("editor-save"));
+      // The timeout below diagnoses an already pending durable write. Queuing
+      // an editor submission alone does not establish that precondition.
+      await act(async () => {
+        await started;
+      });
+      expect(saveObservation().saveStarted).toBe(1);
+      expect(saveObservation().savePending).toBe(1);
+      expect(saveObservation().saveAcknowledged).toBe(0);
+      expect(fixture.toast.success).not.toHaveBeenCalled();
+      const pending = waitForSaveSuccess(before);
       await expect(pending).rejects.toThrow(/called at least once/);
       expect(saveObservation().saveStarted).toBe(1);
       expect(saveObservation().saveAcknowledged).toBe(0);
@@ -508,6 +524,7 @@ describe("save timeout diagnostic contract", () => {
       const diagnostic = JSON.parse(output.mock.calls[0][1]);
       expect(diagnostic.before).toEqual({ disabled: false, name: "Zulu" });
       expect(diagnostic.saveStarted).toBe(1);
+      expect(diagnostic.savePending).toBe(1);
       expect(diagnostic.saveAcknowledged).toBe(0);
       expect(diagnostic.provider.ready).toBe(true);
       expect(diagnostic.providerRevisionObserved).toBe(false);
