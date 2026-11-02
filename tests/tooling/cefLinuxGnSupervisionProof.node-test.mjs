@@ -102,7 +102,23 @@ function syntheticReport() {
           "late-postcheck",
           "delayed-close",
         ].includes(id),
-        supervisorJoined: idle ? null : true,
+        supervisorJoined: idle ? null : id === "output-bound" ? false : true,
+        supervisorObservation: idle
+          ? null
+          : {
+              rootExited: true,
+              pipeClosed: true,
+              monitorJoined: true,
+              probesJoined: true,
+              outputsJoined: id !== "output-bound",
+              outputsSettled: true,
+              outputHandlesClosed: true,
+              cohortQuiet: true,
+              observedProcesses: 1,
+              phase: id === "output-bound" ? "denied" : "complete",
+              failureStage: id === "output-bound" ? "output-bound" : "none",
+            },
+        expectedOutputRejection: id === "output-bound",
         spawned: idle ? 0 : positive ? 2 : 1,
         closeAttempts: id === "reserve" ? 0 : positive ? 2 : 1,
         reparentWitness: id === "detached-writer",
@@ -227,6 +243,7 @@ test("all case facts enforce real joins, both roots, exact64MiB path and labeled
       "noLateWriter",
       "productionReceiptRejected",
       "heldFdJoined",
+      "expectedOutputRejection",
     ]) {
       const changed = structuredClone(value);
       changed.cases[index][key] = !changed.cases[index][key];
@@ -240,6 +257,132 @@ test("all case facts enforce real joins, both roots, exact64MiB path and labeled
     const changed = structuredClone(value);
     changed.cases[index].supervisorJoined = "root-only";
     assert.throws(() => validateReport(changed));
+  }
+});
+
+test("strict case observations reject missing or false joins and confine the cap exception to its exact denied case", () => {
+  for (const [index, id] of names.entries()) {
+    const value = syntheticReport();
+    if (["reserve", "setup-clock"].includes(id)) {
+      for (const observation of [{}, value.cases[0].supervisorObservation]) {
+        const changed = structuredClone(value);
+        changed.cases[index].supervisorObservation = observation;
+        assert.throws(() => validateReport(changed), id);
+      }
+      continue;
+    }
+    for (const key of Object.keys(value.cases[index].supervisorObservation)) {
+      const missing = structuredClone(value);
+      delete missing.cases[index].supervisorObservation[key];
+      assert.throws(() => validateReport(missing), id + key);
+    }
+    for (const key of [
+      "rootExited",
+      "pipeClosed",
+      "monitorJoined",
+      "probesJoined",
+      "outputsJoined",
+      "outputsSettled",
+      "outputHandlesClosed",
+      "cohortQuiet",
+    ])
+      for (const observed of [null, undefined, 0, "true", false]) {
+        if (
+          id === "output-bound" &&
+          key === "outputsJoined" &&
+          observed === false
+        )
+          continue;
+        const changed = structuredClone(value);
+        changed.cases[index].supervisorObservation[key] = observed;
+        assert.throws(() => validateReport(changed), id + key + observed);
+      }
+    const extra = structuredClone(value);
+    extra.cases[index].supervisorObservation.rawError = "PRIVATE";
+    assert.throws(() => validateReport(extra));
+    for (const [key, observed] of [
+      ["phase", "UNKNOWN"],
+      ["failureStage", "PRIVATE"],
+      ["observedProcesses", 4097],
+    ]) {
+      const changed = structuredClone(value);
+      changed.cases[index].supervisorObservation[key] = observed;
+      assert.throws(() => validateReport(changed), id + key);
+    }
+    if (id === "output-bound") {
+      for (const [key, observed] of [
+        ["phase", "complete"],
+        ["failureStage", "writer"],
+        ["outputsJoined", true],
+      ]) {
+        const changed = structuredClone(value);
+        changed.cases[index].supervisorObservation[key] = observed;
+        assert.throws(() => validateReport(changed), key);
+      }
+    } else {
+      const mislabeled = structuredClone(value);
+      mislabeled.cases[index].supervisorObservation.failureStage =
+        "output-bound";
+      assert.throws(() => validateReport(mislabeled), id + "stage mislabel");
+      const changed = structuredClone(value);
+      changed.cases[index].expectedOutputRejection = true;
+      changed.cases[index].supervisorJoined = false;
+      changed.cases[index].supervisorObservation =
+        value.cases[names.indexOf("output-bound")].supervisorObservation;
+      assert.throws(() => validateReport(changed), id + "exception mislabel");
+    }
+  }
+});
+
+test("actual diagnostic and cap assertions require exact first error and physical closure in a portable model", () => {
+  const start = fixture.indexOf("function diagnostic(message) {"),
+    end = fixture.indexOf("\nasync function caseRun(", start);
+  assert(start > 0 && end > start);
+  const scope = vm.createContext({ assert, JSON });
+  const api = vm.runInContext(
+    fixture.slice(start, end) + "\n({diagnostic,joined,outputBoundClosed})",
+    scope,
+  );
+  const summary =
+    syntheticReport().cases[names.indexOf("output-bound")]
+      .supervisorObservation;
+  const message = (value) =>
+    "[cef-engineering-checkpoint] compile-supervision=" + JSON.stringify(value);
+  assert.equal(api.joined(summary), false);
+  assert.equal(api.outputBoundClosed(summary), true);
+  assert.equal(api.diagnostic(message(summary)).outputsJoined, false);
+  for (const key of ["outputsSettled", "outputHandlesClosed"])
+    for (const value of [undefined, null, 0, "true"]) {
+      const changed = { ...summary, [key]: value };
+      assert.throws(() => api.diagnostic(message(changed)));
+      assert.equal(api.outputBoundClosed(changed), false);
+    }
+  const a = fixture.lastIndexOf('  if (id === "output-bound")'),
+    b = fixture.indexOf('  if (["reserve", "setup-clock"].includes(id))', a);
+  assert(a > end && b > a);
+  const assertion = fixture.slice(a, b);
+  for (const rejection of [
+    false,
+    0,
+    null,
+    undefined,
+    Error("writer failure"),
+    Error("Shared compile output bound PRIVATE"),
+    Error("Shared compile output bound"),
+  ]) {
+    const evaluate = () =>
+      vm.runInNewContext(assertion, {
+        assert,
+        id: "output-bound",
+        rejected: true,
+        fulfilled: false,
+        rejection,
+        summary,
+        outputBoundClosed: api.outputBoundClosed,
+        assertionFailureCode,
+      });
+    if (assertionFailureCode(rejection) === "COMPILE_OUTPUT_BOUND") evaluate();
+    else assert.throws(evaluate, /PROOF_OUTPUT_STAGE/);
   }
 });
 
@@ -824,6 +967,8 @@ test("fixed own-descriptor assertions and supervisor diagnostic copies disclose 
     monitorJoined: true,
     probesJoined: true,
     outputsJoined: false,
+    outputsSettled: true,
+    outputHandlesClosed: false,
     cohortQuiet: true,
     observedProcesses: 1,
     phase: "denied",
@@ -832,9 +977,30 @@ test("fixed own-descriptor assertions and supervisor diagnostic copies disclose 
   };
   const copied = supervisorObservation(summary);
   assert.equal(copied.outputsJoined, false);
+  assert.equal(copied.outputsSettled, true);
+  assert.equal(copied.outputHandlesClosed, false);
   assert.equal(copied.failureStage, "output-bound");
   summary.outputsJoined = true;
+  summary.outputsSettled = false;
+  summary.outputHandlesClosed = true;
   assert.equal(copied.outputsJoined, false);
+  assert.equal(copied.outputsSettled, true);
+  assert.equal(copied.outputHandlesClosed, false);
+  for (const key of ["outputsSettled", "outputHandlesClosed"])
+    for (const value of [undefined, null, 0, "true"])
+      assert.equal(
+        supervisorObservation({ ...summary, [key]: value })[key],
+        null,
+      );
+  for (const key of ["outputsSettled", "outputHandlesClosed"]) {
+    const withGetter = Object.defineProperty({ ...summary }, key, {
+      get() {
+        getters++;
+        throw Error("PRIVATE");
+      },
+    });
+    assert.equal(supervisorObservation(withGetter)[key], null);
+  }
   assert(Object.isFrozen(copied));
   assert(!JSON.stringify(copied).includes("PRIVATE"));
   assert.equal(
@@ -871,6 +1037,177 @@ test("fixed own-descriptor assertions and supervisor diagnostic copies disclose 
   ])
     assert.equal(supervisorObservation(value), null);
   assert.equal(getters, 0);
+});
+
+// Exact inverse of this output-close integration, before the earlier diagnostic inverse.
+const outputCloseInverse = [
+  {
+    start: 31,
+    remove: [
+      "    232441,",
+      '    "fa669f8e3bae755bcac623cbb9c567665405d58fbb5ca3d2130331101005947f",',
+    ],
+    replace: [
+      "    230823,",
+      '    "8c40dbd4461582659f5f92f8f9b07c0aa68d1df5525aad68a6119fd4c4d3c0ec",',
+    ],
+  },
+  {
+    start: 641,
+    remove: ['    "outputsSettled",', '    "outputHandlesClosed",'],
+    replace: [],
+  },
+  {
+    start: 663,
+    remove: [
+      '      "outputsSettled",',
+      '      "outputHandlesClosed",',
+      '      "cohortQuiet",',
+      "    ].every((key) => value[key] === true)",
+      "  );",
+      "}",
+      "",
+      "function outputBoundClosed(value) {",
+      "  return (",
+      "    value !== null &&",
+      '    value?.phase === "denied" &&',
+      '    value.failureStage === "output-bound" &&',
+      "    value.outputsJoined === false &&",
+      "    [",
+      '      "rootExited",',
+      '      "pipeClosed",',
+      '      "monitorJoined",',
+      '      "probesJoined",',
+      '      "outputsSettled",',
+      '      "outputHandlesClosed",',
+    ],
+    replace: [],
+  },
+  {
+    start: 1062,
+    remove: [
+      "    assert(",
+      '      id === "output-bound" ? outputBoundClosed(summary) : joined(summary),',
+      '      "PROOF_JOIN",',
+      "    );",
+    ],
+    replace: ['    assert(joined(summary), "PROOF_JOIN");'],
+  },
+  {
+    start: 1103,
+    remove: [
+      "    assert(",
+      "      rejected &&",
+      "        !fulfilled &&",
+      '        assertionFailureCode(rejection) === "COMPILE_OUTPUT_BOUND" &&',
+      "        outputBoundClosed(summary),",
+      '      "PROOF_OUTPUT_STAGE",',
+      "    );",
+    ],
+    replace: [
+      '    assert(summary.failureStage === "output-bound", "PROOF_OUTPUT_STAGE");',
+    ],
+  },
+  {
+    start: 1141,
+    remove: [
+      "    supervisorObservation: supervisorObservation(summary),",
+      '    expectedOutputRejection: id === "output-bound",',
+    ],
+    replace: [],
+  },
+  {
+    start: 1565,
+    remove: [
+      '          "supervisorObservation",',
+      '          "expectedOutputRejection",',
+    ],
+    replace: [],
+  },
+  {
+    start: 1581,
+    remove: [
+      "    const observation = row.supervisorObservation;",
+      "    const copiedObservation = supervisorObservation(observation);",
+      "    assert(",
+      "      idle",
+      "        ? observation === null",
+      "        : observation !== null &&",
+      '            Object.keys(observation).sort().join(":") ===',
+      "              [",
+      '                "rootExited",',
+      '                "pipeClosed",',
+      '                "monitorJoined",',
+      '                "probesJoined",',
+      '                "outputsJoined",',
+      '                "outputsSettled",',
+      '                "outputHandlesClosed",',
+      '                "cohortQuiet",',
+      '                "observedProcesses",',
+      '                "phase",',
+      '                "failureStage",',
+      "              ]",
+      "                .sort()",
+      '                .join(":") &&',
+      "            copiedObservation !== null &&",
+      '            ["complete", "denied"].includes(observation.phase) &&',
+      "            copiedObservation.failureStage === observation.failureStage &&",
+      "            (!positive ||",
+      '              (observation.phase === "complete" &&',
+      '                observation.failureStage === "none")) &&',
+      '            (id === "output-bound"',
+      "              ? outputBoundClosed(observation)",
+      '              : observation.failureStage !== "output-bound" &&',
+      "                joined(observation)),",
+      '      "PROOF_CASE_JOINS",',
+      "    );",
+    ],
+    replace: [],
+  },
+  {
+    start: 1623,
+    remove: [
+      "        row.supervisorJoined ===",
+      '          (idle ? null : id === "output-bound" ? false : true) &&',
+      '        row.expectedOutputRejection === (id === "output-bound") &&',
+    ],
+    replace: ["        row.supervisorJoined === (idle ? null : true) &&"],
+  },
+  {
+    start: 1708,
+    remove: [
+      '    for (const key of ["outputsSettled", "outputHandlesClosed"]) {',
+      "      const observed = diagnosticOwn(value, key);",
+      '      result[key] = typeof observed === "boolean" ? observed : null;',
+      "    }",
+    ],
+    replace: [],
+  },
+  {
+    start: 1723,
+    remove: ['      "output-close",'],
+    replace: [],
+  },
+];
+function withoutOutputCloseIntegration(source) {
+  const lines = source.split("\n");
+  for (const hunk of [...outputCloseInverse].reverse()) {
+    assert.deepEqual(
+      lines.slice(hunk.start, hunk.start + hunk.remove.length),
+      hunk.remove,
+    );
+    lines.splice(hunk.start, hunk.remove.length, ...hunk.replace);
+  }
+  return lines.join("\n");
+}
+
+test("output-close integration inverse restores the complete4662 fixture before diagnostic history", () => {
+  const original = withoutOutputCloseIntegration(fixture);
+  assert.equal(Buffer.byteLength(original), 57732);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "4662e1add9fd3390c1ddf2e215200974c2eb27c95ac1445df89c529c9025bb92",
+  );
 });
 
 function withoutFailureDiagnostics(source) {
@@ -926,7 +1263,9 @@ function withoutFailureDiagnostics(source) {
 }
 
 test("fixed diagnostics exact inverse preserves complete8b4 actors limits expected outcomes and source", () => {
-  const original = withoutFailureDiagnostics(fixture);
+  const original = withoutFailureDiagnostics(
+    withoutOutputCloseIntegration(fixture),
+  );
   assert.equal(Buffer.byteLength(original), 52966);
   assert.equal(
     createHash("sha256").update(original).digest("hex"),
@@ -972,6 +1311,10 @@ test("actual proof control preserves falsy primary and reports only observed cle
   for (const primary of [false, 0, null, undefined, Error("PROOF_JOIN")])
     for (const cleanupFails of [false, true]) {
       const observed = [];
+      let scope;
+      const diagnostic =
+        syntheticReport().cases[names.indexOf("output-bound")]
+          .supervisorObservation;
       const bindings = {
         assert,
         randomUUID: () => "00000000-0000-4000-8000-000000000001",
@@ -1012,7 +1355,9 @@ test("actual proof control preserves falsy primary and reports only observed cle
           },
         }),
         CASES: ["output-bound"],
+        modeledDiagnostic: diagnostic,
         caseRun: async () => {
+          vm.runInContext("lastCaseDiagnostic=modeledDiagnostic", scope);
           throw primary;
         },
         within: async (work) => await work(),
@@ -1026,9 +1371,10 @@ test("actual proof control preserves falsy primary and reports only observed cle
         FALSE_FLAGS: { productionReadinessIssued: false, runtimeReady: false },
         JSON,
       };
+      scope = vm.createContext(bindings);
       const model = vm.runInNewContext(
         `let last=null,running=false,lastCaseDiagnostic=null;${bounded}\nconst run=${body};({run,observation:()=>last});`,
-        bindings,
+        scope,
       );
       let rejected = false,
         caught;
@@ -1048,7 +1394,10 @@ test("actual proof control preserves falsy primary and reports only observed cle
       assert.equal(observation.cleanupAttempted, true);
       assert.equal(observation.cleanupCompleted, !cleanupFails);
       assert.equal(observation.knownOwnedActorsRemaining, null);
-      assert.equal(observation.supervisorObservation, null);
+      assert.equal(observation.supervisorObservation.outputsJoined, false);
+      assert.equal(observation.supervisorObservation.outputsSettled, true);
+      assert.equal(observation.supervisorObservation.outputHandlesClosed, true);
+      assert(Object.isFrozen(observation.supervisorObservation));
       assert.equal(observation.extraContainmentUsed, false);
       assert.equal(observation.runtimeReady, false);
       assert(Buffer.byteLength(JSON.stringify(observation)) <= 4096);

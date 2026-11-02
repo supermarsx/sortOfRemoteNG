@@ -29,8 +29,8 @@ const PINS = [
   ],
   [
     CORE,
-    230823,
-    "8c40dbd4461582659f5f92f8f9b07c0aa68d1df5525aad68a6119fd4c4d3c0ec",
+    232441,
+    "fa669f8e3bae755bcac623cbb9c567665405d58fbb5ca3d2130331101005947f",
   ],
   [
     "scripts/lib/cef-mac-sdk-inventory.mjs",
@@ -639,6 +639,8 @@ function diagnostic(message) {
     "monitorJoined",
     "probesJoined",
     "outputsJoined",
+    "outputsSettled",
+    "outputHandlesClosed",
     "cohortQuiet",
   ])
     assert(typeof value[key] === "boolean", "PROOF_SUPERVISOR_DIAGNOSTIC");
@@ -659,6 +661,26 @@ function joined(value) {
       "monitorJoined",
       "probesJoined",
       "outputsJoined",
+      "outputsSettled",
+      "outputHandlesClosed",
+      "cohortQuiet",
+    ].every((key) => value[key] === true)
+  );
+}
+
+function outputBoundClosed(value) {
+  return (
+    value !== null &&
+    value?.phase === "denied" &&
+    value.failureStage === "output-bound" &&
+    value.outputsJoined === false &&
+    [
+      "rootExited",
+      "pipeClosed",
+      "monitorJoined",
+      "probesJoined",
+      "outputsSettled",
+      "outputHandlesClosed",
       "cohortQuiet",
     ].every((key) => value[key] === true)
   );
@@ -1038,7 +1060,10 @@ async function caseRun(id, owned, witness, core, end, known) {
     );
   else assert(rejected && !fulfilled, "PROOF_DENIAL");
   if (!["reserve", "setup-clock"].includes(id))
-    assert(joined(summary), "PROOF_JOIN");
+    assert(
+      id === "output-bound" ? outputBoundClosed(summary) : joined(summary),
+      "PROOF_JOIN",
+    );
   if (assisted) assert(observerEntered, "PROOF_ROOT_ADMISSION");
   if (id === "cancel") {
     assert.equal(rejection, cancellation, "PROOF_CANCEL_REASON");
@@ -1076,7 +1101,13 @@ async function caseRun(id, owned, witness, core, end, known) {
     );
   }
   if (id === "output-bound")
-    assert(summary.failureStage === "output-bound", "PROOF_OUTPUT_STAGE");
+    assert(
+      rejected &&
+        !fulfilled &&
+        assertionFailureCode(rejection) === "COMPILE_OUTPUT_BOUND" &&
+        outputBoundClosed(summary),
+      "PROOF_OUTPUT_STAGE",
+    );
   if (["reserve", "setup-clock"].includes(id))
     assert(
       spawned === 0 && /RESERVE/.test(rejection?.message ?? ""),
@@ -1108,6 +1139,8 @@ async function caseRun(id, owned, witness, core, end, known) {
       "delayed-close",
     ].includes(id),
     supervisorJoined: summary ? joined(summary) : null,
+    supervisorObservation: supervisorObservation(summary),
+    expectedOutputRejection: id === "output-bound",
     spawned,
     closeAttempts,
     reparentWitness: id === "detached-writer",
@@ -1530,6 +1563,8 @@ export function validateReport(value) {
           "observerAssisted",
           "faultScheduling",
           "supervisorJoined",
+          "supervisorObservation",
+          "expectedOutputRejection",
           "spawned",
           "closeAttempts",
           "reparentWitness",
@@ -1544,6 +1579,40 @@ export function validateReport(value) {
     const id = CASES[index],
       idle = ["reserve", "setup-clock"].includes(id),
       positive = id === "natural-zero";
+    const observation = row.supervisorObservation;
+    const copiedObservation = supervisorObservation(observation);
+    assert(
+      idle
+        ? observation === null
+        : observation !== null &&
+            Object.keys(observation).sort().join(":") ===
+              [
+                "rootExited",
+                "pipeClosed",
+                "monitorJoined",
+                "probesJoined",
+                "outputsJoined",
+                "outputsSettled",
+                "outputHandlesClosed",
+                "cohortQuiet",
+                "observedProcesses",
+                "phase",
+                "failureStage",
+              ]
+                .sort()
+                .join(":") &&
+            copiedObservation !== null &&
+            ["complete", "denied"].includes(observation.phase) &&
+            copiedObservation.failureStage === observation.failureStage &&
+            (!positive ||
+              (observation.phase === "complete" &&
+                observation.failureStage === "none")) &&
+            (id === "output-bound"
+              ? outputBoundClosed(observation)
+              : observation.failureStage !== "output-bound" &&
+                joined(observation)),
+      "PROOF_CASE_JOINS",
+    );
     assert(
       row.id === id &&
         row.complete === true &&
@@ -1552,7 +1621,9 @@ export function validateReport(value) {
         row.observerAssisted === !idle &&
         row.faultScheduling ===
           ["setup-clock", "late-postcheck", "delayed-close"].includes(id) &&
-        row.supervisorJoined === (idle ? null : true) &&
+        row.supervisorJoined ===
+          (idle ? null : id === "output-bound" ? false : true) &&
+        row.expectedOutputRejection === (id === "output-bound") &&
         row.spawned === (idle ? 0 : positive ? 2 : 1) &&
         row.closeAttempts === (id === "reserve" ? 0 : positive ? 2 : 1) &&
         row.reparentWitness === (id === "detached-writer") &&
@@ -1635,6 +1706,10 @@ export function supervisorObservation(value) {
       if (typeof observed !== "boolean") return null;
       result[key] = observed;
     }
+    for (const key of ["outputsSettled", "outputHandlesClosed"]) {
+      const observed = diagnosticOwn(value, key);
+      result[key] = typeof observed === "boolean" ? observed : null;
+    }
     const count = diagnosticOwn(value, "observedProcesses");
     if (!Number.isSafeInteger(count) || count < 0 || count > 4096) return null;
     result.observedProcesses = count;
@@ -1646,6 +1721,7 @@ export function supervisorObservation(value) {
       "output-bound",
       "writer",
       "writer-join",
+      "output-close",
       "observer",
       "observer-join",
       "initial-snapshot",
