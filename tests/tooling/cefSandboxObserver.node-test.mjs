@@ -271,6 +271,7 @@ $start.ArgumentList.Add("[Threading.EventWaitHandle]::OpenExisting('$eventName')
 Phase 'child-create'
 $child=[Diagnostics.Process]::Start($start)
 $disposed=$false
+$heldExitHandle=$null; $heldExitAdded=$false
 try {
   $childId=$child.Id
   $identity=@{pid=$childId;parentId=$PID;childCreation=$child.StartTime.ToUniversalTime().ToFileTimeUtc().ToString();parentCreation=[Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToFileTimeUtc().ToString()}
@@ -286,11 +287,30 @@ try {
   Require (($live.CreationFileTime - ($live.CreationFileTime % 10)) -eq $expected) 'CIM/native creation mismatch'
   $mismatch=[CefAcceptanceToken]::Inspect($childId,($expected+10000000L))
   Require ($mismatch.Status -eq 'identity-mismatch') 'Stale creation was accepted'
+  # Retain only this owned handle to exercise the genuine exited-object case.
+  $heldExitHandle=$child.SafeHandle
+  $heldExitHandle.DangerousAddRef([ref]$heldExitAdded)
   $gate.Set() | Out-Null
   Phase 'child-exit'
   Require ($child.WaitForExit(10000)) 'Owned child did not exit'
   $child.Dispose(); $disposed=$true
   $gone=[CefAcceptanceToken]::Inspect($childId,$expected)
+  $firstGone=$gone
+  Require ($gone.Status -eq 'exited-before-inspection' -and $gone.ErrorCode -eq 0 -and $gone.Exited -and $gone.CreationFileTime -eq $live.CreationFileTime) 'Owned handle did not retain the exited process object'
+  $heldExitAdded=$false; $heldExitHandle.DangerousRelease()
+  # Dispose does not imply that every transient reference is already retired.
+  # Keep the original script deadline; require physical87, never denied5.
+  $goneAttempts=1
+  $exitObjectEnd=[Math]::Min(20000L, $clock.ElapsedMilliseconds+5000L)
+  while (-not ($gone.Status -eq 'exited-before-inspection' -and $gone.ErrorCode -eq 87 -and $gone.Exited)) {
+    Require ($gone.Status -eq 'exited-before-inspection' -and $gone.ErrorCode -eq 0 -and $gone.Exited -and $gone.CreationFileTime -eq $live.CreationFileTime) 'Exited process object changed or inspection failed'
+    Require ($clock.ElapsedMilliseconds -lt $exitObjectEnd) 'Owned exited process object did not retire'
+    Start-Sleep -Milliseconds 20
+    Require ($clock.ElapsedMilliseconds -lt $exitObjectEnd) 'Owned exited process object did not retire'
+    $gone=[CefAcceptanceToken]::Inspect($childId,$expected)
+    $goneAttempts++
+    Require ($clock.ElapsedMilliseconds -le $exitObjectEnd) 'Owned exited process object observation exceeded its bound'
+  }
   Phase 'assertions'
   Require ($gone.Status -eq 'exited-before-inspection' -and $gone.ErrorCode -eq 87 -and $gone.Exited) 'Dead PID did not produce exit87'
   $candidate=[pscustomobject]@{ProcessId=$childId;ParentProcessId=123;CreationDate=$candidate.CreationDate;CommandLine='owned --type=renderer'}
@@ -321,11 +341,15 @@ try {
   Update-CefAcceptanceObservation $rows $exits $candidate $newFailure
   Require ($rows.Count -eq 2 -and -not (Get-CefAcceptanceVerdict $rows)) 'Reused PID inherited old good evidence'
   Phase 'complete'
-  @{ok=$true;actualLiveInspection=$true;actualExitError=$gone.ErrorCode;nativeCreationFileTime=$live.CreationFileTime;cimCreationFileTime=$expected;denied5Sticky=$true;badTokenSticky=$true;identityMismatchRejected=$true;pidReuseSeparated=$true;allUninspectableRejected=$true;noCef=$true} | ConvertTo-Json -Compress
+  @{ok=$true;actualLiveInspection=$true;initialExitedObjectError=$firstGone.ErrorCode;exitObjectSamples=$goneAttempts;actualExitError=$gone.ErrorCode;nativeCreationFileTime=$live.CreationFileTime;cimCreationFileTime=$expected;denied5Sticky=$true;badTokenSticky=$true;identityMismatchRejected=$true;pidReuseSeparated=$true;allUninspectableRejected=$true;noCef=$true} | ConvertTo-Json -Compress
 } finally {
-  $gate.Set() | Out-Null
-  if (-not $disposed -and -not $child.HasExited) { $child.Kill(); $child.WaitForExit(1000) | Out-Null }
-  $child.Dispose(); $gate.Dispose()
+  try {
+    if ($heldExitAdded) { $heldExitAdded=$false; $heldExitHandle.DangerousRelease() }
+  } finally {
+    $gate.Set() | Out-Null
+    if (-not $disposed -and -not $child.HasExited) { $child.Kill(); $child.WaitForExit(1000) | Out-Null }
+    $child.Dispose(); $gate.Dispose()
+  }
 }
 `;
       const filename = path.join(directory, "proof.ps1");
@@ -345,6 +369,11 @@ try {
       );
       const proof = JSON.parse(output.trim());
       assert.equal(proof.ok, true);
+      assert.equal(proof.initialExitedObjectError, 0);
+      assert.ok(
+        Number.isSafeInteger(proof.exitObjectSamples) &&
+          proof.exitObjectSamples >= 2,
+      );
       assert.equal(proof.actualExitError, 87);
       assert.equal(proof.denied5Sticky, true);
       assert.equal(proof.pidReuseSeparated, true);
