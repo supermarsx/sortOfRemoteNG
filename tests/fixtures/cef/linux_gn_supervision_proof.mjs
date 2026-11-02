@@ -24,8 +24,8 @@ const PINS = [
   ],
   [
     "scripts/cef-hosted-provision.mjs",
-    29141,
-    "b3ca1818eb84cd7f24ebcd86d7fc8c4298aeec62982888bb41ca496698403513",
+    32293,
+    "6237f11a57452bd40f957c3df06a8f22b784df547069498598a5d5264f94c8f1",
   ],
   [
     CORE,
@@ -44,8 +44,8 @@ const PINS = [
   ],
   [
     RUNTIME,
-    76637,
-    "626a0c34481f18c5044be88c47ca72bf3312dfbe1a5858b69936b683a9bf3182",
+    76797,
+    "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",
   ],
   [
     "scripts/browser-runtime-package.mjs",

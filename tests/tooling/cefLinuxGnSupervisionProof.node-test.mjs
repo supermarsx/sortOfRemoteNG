@@ -2102,7 +2102,41 @@ const directCaseInverse = [
     ],
   },
 ];
+function withoutColdMetalFixtureRetarget(source) {
+  for (const [current, prior] of [
+    [
+      '    RUNTIME,\n    76797,\n    "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",',
+      '    RUNTIME,\n    76637,\n    "626a0c34481f18c5044be88c47ca72bf3312dfbe1a5858b69936b683a9bf3182",',
+    ],
+    [
+      '    "scripts/cef-hosted-provision.mjs",\n    32293,\n    "6237f11a57452bd40f957c3df06a8f22b784df547069498598a5d5264f94c8f1",',
+      '    "scripts/cef-hosted-provision.mjs",\n    29141,\n    "b3ca1818eb84cd7f24ebcd86d7fc8c4298aeec62982888bb41ca496698403513",',
+    ],
+  ]) {
+    assert.equal(
+      source.split(current).length,
+      2,
+      "one exact cold Metal fixture pin",
+    );
+    source = source.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(source), 67657);
+  assert.equal(
+    createHash("sha256").update(source).digest("hex"),
+    "231e2b758c0ab63151bf199c9ed2b05b70d4d29b05d0e8f6960f5e5c7da7ef5b",
+  );
+  return source;
+}
+
+test("cold Metal retarget restores the whole9c fixture before all existing proof inverses", () => {
+  withoutColdMetalFixtureRetarget(fixture);
+  for (const changed of [fixture + "\n", fixture.replace("76797", "76798")]) {
+    assert.throws(() => withoutColdMetalFixtureRetarget(changed));
+  }
+});
+
 function withoutRuntimeBudgetRetarget(source) {
+  source = withoutColdMetalFixtureRetarget(source);
   const current =
     '    RUNTIME,\n    76637,\n    "626a0c34481f18c5044be88c47ca72bf3312dfbe1a5858b69936b683a9bf3182",';
   const qualified =

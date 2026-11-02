@@ -20,6 +20,11 @@ import {
 // runner. No vendor tool, native GN, GitHub or production registry is exercised.
 const url = new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url);
 const source = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
+assert.equal(Buffer.byteLength(source), 76797);
+assert.equal(
+  createHash("sha256").update(source).digest("hex"),
+  "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",
+);
 function withoutColdMetalRuntime(text) {
   for (const [current, prior] of [
     [
