@@ -52,6 +52,9 @@ jobs:
           import fs from 'node:fs/promises';
           import path from 'node:path';
           import {createHash} from 'node:crypto';
+          // BEGIN fixed carrier failure diagnostic import
+          import {types as diagnosticTypes} from 'node:util';
+          // END fixed carrier failure diagnostic import
           // BEGIN BENIGN ORIGINAL JOB CLOCK
           function originalJobDeadline(started, wall, monotonic) {
             assert(/^[0-9]{13}$/.test(started ?? ''), 'PROOF_JOB_CLOCK');
@@ -65,6 +68,40 @@ jobs:
             assert(Date.now() < clock.wallEnd && performance.now() < clock.monotonicEnd, 'PROOF_JOB_DEADLINE');
           }
           // END BENIGN ORIGINAL JOB CLOCK
+          // BEGIN fixed carrier failure diagnostic projection
+          const FAILURE_PHASES = Object.freeze(['before','import','policy','authority','main','reportscan','reportread','validate','output']);
+          const FAILURE_CODES = Object.freeze([
+            'PROOF_ARGV','PROOF_AUTHORITY','PROOF_CASES','PROOF_CASE_RESULT',
+            'PROOF_CONTROLLER_DEADLINE','PROOF_CONTROLLER_EXIT','PROOF_CONTROLLER_JOIN','PROOF_CONTROLLER_OUTPUT','PROOF_DEADLINE',
+            'PROOF_FILE','PROOF_FILE_CHANGED','PROOF_FILE_IDENTITY','PROOF_GRANT','PROOF_HEAD','PROOF_HOST','PROOF_INACTIVE',
+            'PROOF_JOB_CLOCK','PROOF_JOB_DEADLINE','PROOF_JOB_RESERVE','PROOF_LINK',
+            'PROOF_NODE_FACTS','PROOF_NODE_NORMAL','PROOF_NODE_RESULT','PROOF_NODE_ROLES','PROOF_NODE_UNCREATED',
+            'PROOF_ORPHAN','PROOF_PATH','PROOF_PIN','PROOF_POLICY','PROOF_PREABORT','PROOF_PROFILE',
+            'PROOF_RECEIPT','PROOF_RECEIPT_FACTS','PROOF_RECEIPT_POLICY','PROOF_REPARENT',
+            'PROOF_REPORT_ALIAS','PROOF_REPORT_BINDING','PROOF_REPORT_BOUND','PROOF_REPORT_CHANGED','PROOF_REPORT_FILES',
+            'PROOF_REPORT_FRESHNESS','PROOF_REPORT_LINK','PROOF_REPORT_PATH','PROOF_REPORT_ROOT',
+            'PROOF_RESERVE','PROOF_RESULT','PROOF_RESUME','PROOF_ROOT_CHANGED','PROOF_ROOT_EXIT','PROOF_SCHEMA','PROOF_SCRATCH_LEFT',
+            'PROOF_SHORT_READ','PROOF_SOURCE_BOUND','PROOF_SOURCE_CHANGED','PROOF_SOURCE_PATH','PROOF_SOURCE_WITNESS',
+            'PROOF_WRITE','PROOF_WRITE_BOUND','PROOF_WRITE_DIRECTORY','PROOF_WRITE_FILE',
+          ]);
+          function carrierFailureCode(error) {
+            try {
+              if (!error || (typeof error !== 'object' && typeof error !== 'function') || diagnosticTypes.isProxy(error)) return 'UNKNOWN';
+              const entry = Object.getOwnPropertyDescriptor(error,'message');
+              if (!entry || !Object.hasOwn(entry,'value')) return 'UNKNOWN';
+              for (const code of FAILURE_CODES) if (entry.value === code) return code;
+            } catch { /* Diagnostic inspection never replaces failure. */ }
+            return 'UNKNOWN';
+          }
+          function carrierFailure(phase,error) {
+            try {
+              if (!FAILURE_PHASES.includes(phase)) return null;
+              const raw = JSON.stringify({kind:'windows-benign-job-carrier-failure',complete:false,phase,code:carrierFailureCode(error),runtimeReady:false});
+              return Buffer.byteLength(raw,'utf8') <= 256 ? raw : null;
+            } catch { return null; }
+          }
+          let phase = 'before';
+          // END fixed carrier failure diagnostic projection
           try {
           const clock = originalJobDeadline(process.env.CEF_WINDOWS_BENIGN_JOB_STARTED_MS, Date.now(), performance.now());
           const root = process.cwd(), artifacts = path.join(root, '.artifacts');
@@ -79,15 +116,20 @@ jobs:
           }
           await physical(root);
           const before = new Set(await fs.readdir(artifacts).catch(error => {if(error.code==='ENOENT')return [];throw error;}));
+          phase = 'import';
           const {main, inspectAuthority, validateControllerResult} = await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs');
+          phase = 'policy';
           const policy = JSON.parse(await fs.readFile('native/windows-arm-full-sdk/qualification-job-proof-profile.json','utf8'));
+          phase = 'authority';
           inspectAuthority(policy,process.env,process);
           // Every checkout/setup/import consumes the original job envelope.
           // The existing inner300s suite/150s work and kernel clocks are unchanged.
           assert(Math.min(clock.wallEnd-Date.now(),clock.monotonicEnd-performance.now()) >= 300000, 'PROOF_JOB_RESERVE');
           checkOriginalJob(clock);
+          phase = 'main';
           await main([]); // Actual fulfillment owns success; reports alone cannot.
           checkOriginalJob(clock);
+          phase = 'reportscan';
           const candidates = (await fs.readdir(artifacts)).filter(name => !before.has(name) && /^windows-arm-job-report-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name));
           assert(candidates.length===1,'PROOF_REPORT_FRESHNESS');
           const directory = path.join(artifacts,candidates[0]), nonce = candidates[0].slice('windows-arm-job-report-'.length);
@@ -110,18 +152,27 @@ jobs:
             }catch(error){failed=true;throw error;}
             finally{try{await fd.close();}catch(error){if(!failed)throw error;}}
           };
+          phase = 'reportread';
           const proofRaw=await held('proof.json'),proof=JSON.parse(proofRaw);
           const receipts=[];for(let i=0;i<9;i++)receipts.push(await held(`receipt-${i}.json`));
+          phase = 'validate';
           const checked=validateControllerResult({schemaVersion:1,kind:'windows-benign-job-controller-result',complete:proof.complete,nonce:proof.nonce,head:proof.head,cases:proof.cases,rawReceipts:receipts.map(raw=>raw.toString('base64')),scratchRemoved:proof.scratchRemoved,productionAdmission:proof.productionAdmission,sourceGnQualified:proof.sourceGnQualified,compilerAdmission:proof.compilerAdmission,nativeAcceptance:proof.nativeAcceptance,runtimeReady:proof.runtimeReady},policy,nonce,process.env.GITHUB_SHA);
           assert.deepEqual(checked.proof,proof,'PROOF_REPORT_BINDING');
           assert(signature(await fs.lstat(directory,{bigint:true}))===directoryIdentity,'PROOF_REPORT_ROOT');
           checkOriginalJob(clock);
+          phase = 'output';
           const paths=expected.map(name=>path.join(directory,name));
           assert(paths.every(file=>!/[\r\n*?]/.test(file)),'PROOF_REPORT_PATH');
           await fs.appendFile(process.env.GITHUB_OUTPUT,`paths<<FIXED_REPORT_PATHS\n${paths.join('\n')}\nFIXED_REPORT_PATHS\n`);
           checkOriginalJob(clock);
           console.log(JSON.stringify({complete:true,head:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,nonce,reports:10,rawProofSha256:createHash('sha256').update(proofRaw).digest('hex'),sourceGnQualified:false,compilerAdmission:false,nativeAcceptance:false,runtimeReady:false}));
-          } catch { console.error('PROOF_CARRIER_DENIED'); process.exitCode = 1; }
+          // BEGIN fixed carrier failure diagnostic catch
+          } catch (error) {
+            process.exitCode = 1;
+            try { console.error('PROOF_CARRIER_DENIED'); } catch { /* Keep failure. */ }
+            try { const raw=carrierFailure(phase,error);if(raw!==null)console.error(raw); } catch { /* Keep failure. */ }
+          }
+          // END fixed carrier failure diagnostic catch
           '@ | node --input-type=module
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload only validated reports after actual suite fulfillment

@@ -11,6 +11,8 @@ import os from "node:os";
 import * as syncFs from "node:fs";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { types as diagnosticTypes } from "node:util";
+import ts from "typescript";
 import {
   CASES,
   inspectAuthority,
@@ -951,6 +953,467 @@ const programMatch = /@'\n([\s\S]+)\n'@ \| node --input-type=module/.exec(
 assert(programMatch, "fixed PowerShell Node program");
 const carrierProgram = programMatch[1];
 
+function withoutCarrierFailureDiagnostics(text) {
+  for (const name of ["import", "projection"]) {
+    const begin = `          // BEGIN fixed carrier failure diagnostic ${name}\n`,
+      end = `          // END fixed carrier failure diagnostic ${name}\n`;
+    assert.equal(text.split(begin).length, 2);
+    assert.equal(text.split(end).length, 2);
+    text = text.replace(
+      text.slice(text.indexOf(begin), text.indexOf(end) + end.length),
+      "",
+    );
+  }
+  for (const phase of [
+    "import",
+    "policy",
+    "authority",
+    "main",
+    "reportscan",
+    "reportread",
+    "validate",
+    "output",
+  ]) {
+    const line = `          phase = '${phase}';\n`;
+    assert.equal(text.split(line).length, 2);
+    text = text.replace(line, "");
+  }
+  const begin = "          // BEGIN fixed carrier failure diagnostic catch\n",
+    end = "          // END fixed carrier failure diagnostic catch\n";
+  assert.equal(text.split(begin).length, 2);
+  assert.equal(text.split(end).length, 2);
+  return text.replace(
+    text.slice(text.indexOf(begin), text.indexOf(end) + end.length),
+    "          } catch { console.error('PROOF_CARRIER_DENIED'); process.exitCode = 1; }\n",
+  );
+}
+function failureProjection(overrides = {}) {
+  const begin = carrierProgram.indexOf(
+      "// BEGIN fixed carrier failure diagnostic projection",
+    ),
+    end = carrierProgram.indexOf(
+      "// END fixed carrier failure diagnostic projection",
+    );
+  assert(begin > 0 && end > begin);
+  return vm.runInNewContext(
+    carrierProgram.slice(begin, end) +
+      "\n({FAILURE_PHASES,FAILURE_CODES,carrierFailureCode,carrierFailure})",
+    { diagnosticTypes, Buffer, ...overrides },
+  );
+}
+
+test("carrier failure whitelist is exactly the actual main reachable and outer assertion labels", () => {
+  const ast = ts.createSourceFile(
+    "proof.mjs",
+    fixture,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const functions = new Map(
+    ast.statements
+      .filter(ts.isFunctionDeclaration)
+      .filter((node) => node.name)
+      .map((node) => [node.name.text, node]),
+  );
+  const visited = new Set(),
+    expected = new Set();
+  const inspect = (name) => {
+    if (
+      visited.has(name) ||
+      ["worker", "actor"].includes(name) ||
+      !functions.has(name)
+    )
+      return;
+    visited.add(name);
+    const walk = (node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        if (
+          node.expression.text === "need" &&
+          node.arguments[1] &&
+          ts.isStringLiteral(node.arguments[1])
+        )
+          expected.add(node.arguments[1].text);
+        inspect(node.expression.text);
+      }
+      if (
+        ts.isNewExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "Error" &&
+        node.arguments?.[0] &&
+        ts.isStringLiteral(node.arguments[0])
+      )
+        expected.add(node.arguments[0].text);
+      ts.forEachChild(node, walk);
+    };
+    walk(functions.get(name));
+  };
+  inspect("main");
+  const previous = YAML.parse(withoutCarrierFailureDiagnostics(workflowText));
+  const program = /@'\n([\s\S]+)\n'@ \| node --input-type=module/.exec(
+    previous.jobs.proof.steps.find((step) => step.id === "proof").run,
+  )[1];
+  const outer = ts.createSourceFile(
+    "carrier.mjs",
+    program,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const walk = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      (ts.isIdentifier(node.expression)
+        ? node.expression.text === "assert"
+        : ts.isPropertyAccessExpression(node.expression) &&
+          ts.isIdentifier(node.expression.expression) &&
+          node.expression.expression.text === "assert")
+    ) {
+      const value = node.arguments.at(-1);
+      if (value && ts.isStringLiteral(value)) expected.add(value.text);
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(outer);
+  const api = failureProjection();
+  assert.equal(expected.size, 60);
+  assert.deepEqual([...api.FAILURE_CODES].sort(), [...expected].sort());
+  assert.equal(new Set(api.FAILURE_CODES).size, 60);
+  assert.deepEqual(
+    [...api.FAILURE_PHASES],
+    [
+      "before",
+      "import",
+      "policy",
+      "authority",
+      "main",
+      "reportscan",
+      "reportread",
+      "validate",
+      "output",
+    ],
+  );
+  for (const code of api.FAILURE_CODES)
+    for (const phase of api.FAILURE_PHASES) {
+      const raw = api.carrierFailure(phase, Error(code)),
+        row = JSON.parse(raw);
+      assert.equal(api.carrierFailureCode(Error(code)), code);
+      assert.deepEqual(row, {
+        kind: "windows-benign-job-carrier-failure",
+        complete: false,
+        phase,
+        code,
+        runtimeReady: false,
+      });
+      assert(Buffer.byteLength(raw, "utf8") <= 256);
+    }
+});
+
+test("carrier failure inspection rejects getters proxies inherited messages and unknown or falsy throws without disclosure", () => {
+  const api = failureProjection();
+  let invoked = 0;
+  const getter = Object.defineProperty({}, "message", {
+    get() {
+      invoked++;
+      throw Error("PRIVATE getter");
+    },
+  });
+  const forged = new Proxy(Error("PROOF_PIN"), {
+    getOwnPropertyDescriptor() {
+      invoked++;
+      return { value: "PROOF_PIN", configurable: true };
+    },
+  });
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  for (const error of [
+    false,
+    0,
+    1n,
+    Symbol("PRIVATE"),
+    null,
+    undefined,
+    "PROOF_PIN",
+    Error("PROOF_PIN PRIVATE"),
+    Error("PRIVATE".repeat(10000)),
+    { code: "ENOENT" },
+    Object.create({ message: "PROOF_PIN" }),
+    getter,
+    forged,
+    revoked.proxy,
+    new Proxy(
+      {},
+      {
+        get() {
+          invoked++;
+          throw Error("PRIVATE proxy");
+        },
+      },
+    ),
+  ]) {
+    assert.equal(api.carrierFailureCode(error), "UNKNOWN");
+    const raw = api.carrierFailure("main", error);
+    assert.equal(JSON.parse(raw).code, "UNKNOWN");
+    assert(!raw.includes("PRIVATE"));
+    assert(Buffer.byteLength(raw, "utf8") <= 256);
+  }
+  assert.equal(invoked, 0);
+  assert.equal(api.carrierFailure("PRIVATE", Error("PROOF_PIN")), null);
+  assert.equal(
+    failureProjection({
+      JSON: {
+        stringify() {
+          throw Error("PRIVATE projection");
+        },
+      },
+    }).carrierFailure("main", Error("PROOF_PIN")),
+    null,
+  );
+  assert.equal(
+    failureProjection({ Buffer: { byteLength: () => 257 } }).carrierFailure(
+      "main",
+      Error("PROOF_PIN"),
+    ),
+    null,
+  );
+});
+
+async function modelCarrier(options = {}) {
+  const {
+    failPhase,
+    actualMain = false,
+    loggingFails = false,
+    projectionFails = false,
+  } = options;
+  const error = Object.hasOwn(options, "error")
+    ? options.error
+    : Error("PROOF_PIN");
+  // Actual fixed workflow program; only module loading, FS/host, and native
+  // suite fulfillment are modeled. No Job, actor, Python, or source fetch runs.
+  const loading =
+    "await import('./tests/fixtures/cef/windows_arm_qualification_job_proof.mjs')";
+  assert.equal(carrierProgram.split(loading).length, 2);
+  const body = carrierProgram
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("import "))
+    .join("\n")
+    .replace(loading, "await modelImport()");
+  const checked = validateControllerResult(synthetic(), admitted, nonce, head),
+    root = "C:\\owned",
+    artifacts = path.win32.join(root, ".artifacts"),
+    reportDirectory = path.win32.join(
+      artifacts,
+      "windows-arm-job-report-" + nonce,
+    ),
+    names = [
+      "proof.json",
+      ...Array.from({ length: 9 }, (_, i) => `receipt-${i}.json`),
+    ];
+  const content = new Map([
+    [
+      path.win32.join(reportDirectory, "proof.json"),
+      Buffer.from(JSON.stringify(checked.proof)),
+    ],
+    ...checked.receipts.map((raw, index) => [
+      path.win32.join(reportDirectory, `receipt-${index}.json`),
+      raw,
+    ]),
+  ]);
+  const state = {
+    errors: [],
+    logs: [],
+    appended: [],
+    reportScans: 0,
+    reportReads: 0,
+    mainCalls: 0,
+    process: {
+      cwd: () => root,
+      env: {
+        CEF_WINDOWS_BENIGN_JOB_STARTED_MS: "1793606908000",
+        GITHUB_SHA: head,
+        GITHUB_RUN_ID: "100",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_OUTPUT: "C:\\PRIVATE-output",
+      },
+    },
+  };
+  let realmArray;
+  const info = (name, bigint) => {
+    const number = (value) => (bigint ? BigInt(value) : value);
+    return {
+      dev: number(1),
+      ino: number(2),
+      size: number(content.get(name)?.length ?? 0),
+      mode: number(0o100600),
+      nlink: number(1),
+      birthtimeNs: number(1),
+      mtimeNs: number(1),
+      ctimeNs: number(1),
+      isFile: () => content.has(name),
+      isSymbolicLink: () => false,
+    };
+  };
+  const api = {
+    realpath: async (name) => {
+      if (failPhase === "before") throw error;
+      return name;
+    },
+    lstat: async (name, options) => info(name, options?.bigint),
+    readdir: async (name) => {
+      if (name === artifacts) {
+        if (!state.mainCalls) return [];
+        state.reportScans++;
+        if (failPhase === "reportscan") throw error;
+        return [path.win32.basename(reportDirectory)];
+      }
+      return realmArray.from(names);
+    },
+    readFile: async () => {
+      if (failPhase === "policy") throw error;
+      return JSON.stringify(admitted);
+    },
+    open: async (name) => {
+      state.reportReads++;
+      if (failPhase === "reportread") throw error;
+      const raw = content.get(name);
+      assert(raw);
+      return {
+        stat: async () => info(name, true),
+        read: async (buffer, offset, length, position) => {
+          const bytesRead = Math.min(
+            length,
+            Math.max(0, raw.length - position),
+          );
+          raw.copy(buffer, offset, position, position + bytesRead);
+          return { bytesRead };
+        },
+        close: async () => {},
+      };
+    },
+    appendFile: async (...args) => {
+      if (failPhase === "output") throw error;
+      state.appended.push(args);
+    },
+  };
+  const modelModule = {
+    inspectAuthority: () => {
+      if (failPhase === "authority") throw error;
+    },
+    main: async (args) => {
+      assert.deepEqual([...args], []);
+      state.mainCalls++;
+      if (actualMain) await main([]);
+      if (failPhase === "main") throw error;
+    },
+    validateControllerResult: (...args) => {
+      if (failPhase === "validate") throw error;
+      return validateControllerResult(...args);
+    },
+  };
+  const scope = vm.createContext({
+    assert,
+    fs: api,
+    path: path.win32,
+    createHash,
+    diagnosticTypes,
+    Buffer,
+    JSON,
+    process: state.process,
+    Date: { now: () => 1793606908000 },
+    performance: { now: () => 0 },
+    modelImport: async () => {
+      if (failPhase === "import") throw error;
+      return modelModule;
+    },
+    console: {
+      error: (value) => {
+        assert.equal(state.process.exitCode, 1);
+        if (loggingFails) throw Error("PRIVATE logging");
+        state.errors.push(value);
+      },
+      log: (value) => state.logs.push(value),
+    },
+    ...(projectionFails
+      ? {
+          JSON: {
+            parse: JSON.parse,
+            stringify() {
+              throw Error("PRIVATE projection");
+            },
+          },
+        }
+      : {}),
+  });
+  realmArray = vm.runInContext("Array", scope);
+  await vm.runInContext("(async()=>{\n" + body + "\n})()", scope);
+  return state;
+}
+
+test("actual fixed carrier reports each phase while preserving nonzero failure and the fulfillment-only report gate", async () => {
+  for (const phase of failureProjection().FAILURE_PHASES) {
+    const state = await modelCarrier({ failPhase: phase });
+    assert.equal(state.process.exitCode, 1);
+    assert.equal(state.errors[0], "PROOF_CARRIER_DENIED");
+    const diagnostic = JSON.parse(state.errors[1]);
+    assert.equal(diagnostic.phase, phase);
+    assert.equal(diagnostic.code, "PROOF_PIN");
+    assert.equal(diagnostic.complete, false);
+    assert.equal(diagnostic.runtimeReady, false);
+    assert.equal(state.appended.length, 0);
+    assert.equal(state.logs.length, 0);
+    if (["before", "import", "policy", "authority", "main"].includes(phase)) {
+      assert.equal(state.reportScans, 0);
+      assert.equal(state.reportReads, 0);
+    }
+  }
+  const success = await modelCarrier();
+  assert.equal(success.process.exitCode, undefined);
+  assert.equal(success.errors.length, 0);
+  assert.equal(success.appended.length, 1);
+  assert.equal(success.reportReads, 10);
+  assert.equal(JSON.parse(success.logs[0]).complete, true);
+  for (const error of [false, 0, null, undefined]) {
+    const state = await modelCarrier({ failPhase: "main", error });
+    assert.equal(state.process.exitCode, 1);
+    assert.equal(JSON.parse(state.errors[1]).code, "UNKNOWN");
+    assert.equal(state.appended.length, 0);
+  }
+  for (const options of [{ loggingFails: true }, { projectionFails: true }]) {
+    const state = await modelCarrier({ failPhase: "import", ...options });
+    assert.equal(state.process.exitCode, 1);
+    assert.equal(state.appended.length, 0);
+    assert(!JSON.stringify(state.errors).includes("PRIVATE"));
+  }
+});
+
+test("genuine existing main authority rejection cannot select or publish valid-looking modeled reports", async () => {
+  const original = process.env.GITHUB_REF;
+  try {
+    process.env.GITHUB_REF = "refs/heads/closed-negative";
+    const state = await modelCarrier({ actualMain: true });
+    assert.equal(state.process.exitCode, 1);
+    assert.equal(state.mainCalls, 1);
+    assert.equal(state.reportScans, 0);
+    assert.equal(state.reportReads, 0);
+    assert.equal(state.appended.length, 0);
+    const diagnostic = JSON.parse(state.errors[1]);
+    assert.equal(diagnostic.phase, "main");
+    assert(["PROOF_HOST", "PROOF_AUTHORITY"].includes(diagnostic.code));
+  } finally {
+    if (original === undefined) delete process.env.GITHUB_REF;
+    else process.env.GITHUB_REF = original;
+  }
+});
+
+test("carrier diagnostics exact inverse restores the complete detached old-image workflow", () => {
+  const previous = withoutCarrierFailureDiagnostics(workflowText);
+  assert.equal(Buffer.byteLength(previous), 9136);
+  assert.equal(
+    hash(previous),
+    "22a349c7bafd67feff54a6f164ae8df1e32635ffd88b0cfd16eb5a5e83417a73",
+  );
+});
+
 test("new workflow is no-input private-branch image-bound and uploads only validated ten report leaves", () => {
   assert.deepEqual(workflow.on, { workflow_dispatch: null });
   assert.deepEqual(workflow.permissions, { contents: "read" });
@@ -1210,7 +1673,10 @@ test("fixed old-image proof reuses exact reviewed old source and executable pins
 test("old-image workflow has only exact ref and image delta from immutable88258 current proof", () => {
   const detachedRef = "          ref: ${{ github.sha }}\n";
   assert.equal(workflowText.split(detachedRef).length, 2);
-  const oldSelected = workflowText.replace(detachedRef, "");
+  const oldSelected = withoutCarrierFailureDiagnostics(workflowText).replace(
+    detachedRef,
+    "",
+  );
   assert.equal(Buffer.byteLength(oldSelected), 9103);
   assert.equal(
     hash(oldSelected),
