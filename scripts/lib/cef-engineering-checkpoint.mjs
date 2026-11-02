@@ -46,11 +46,14 @@ export const LIMITS = Object.freeze({
   archiveMs: 600_000,
   // Linux owned-source metadata only (record/apply/verify without a Mac
   // platform policy): it hashes the whole fetched tree. Pack, restore and
-  // every Mac mode keep archiveMs.
+  // external observation keep archiveMs.
   linuxSourceMetadataMs: 2_400_000,
+  // Mac owned-source record/apply/verify hash the complete fetched tree too.
+  macSourceMetadataMs: 2_400_000,
   // Of that bound, the helper's own deadline ends this much earlier so its
   // progress diagnostic is printed before the hard kill.
   linuxSourceMetadataGraceMs: 60_000,
+  macSourceMetadataGraceMs: 60_000,
   compileMs: 15 * 60_000,
   maxCompileMs: 180 * 60_000,
   hostMs: 300 * 60_000,
@@ -2436,8 +2439,8 @@ export async function archiveCommand(
             !value.startsWith("--"),
         ) &&
         typeof args[8] === "string" &&
-        /^[1-9][0-9]{0,2}$/.test(args[8]) &&
-        Number(args[8]) <= 600 &&
+        /^[1-9][0-9]{0,3}$/.test(args[8]) &&
+        Number(args[8]) <= LIMITS.macSourceMetadataMs / 1000 &&
         ["mac-arm", "mac-intel"].includes(args[10]),
       "Fixed Mac source archive flags required",
     );
@@ -2450,8 +2453,10 @@ export async function archiveCommand(
       timeout <=
         (Array.isArray(args) &&
         ["source-record", "source-apply", "source-verify"].includes(args[0]) &&
-        !args.includes("--platform-policy")
-          ? LIMITS.linuxSourceMetadataMs
+        (!args.includes("--platform-policy") || macSourceHostFacts)
+          ? macSourceHostFacts
+            ? LIMITS.macSourceMetadataMs
+            : LIMITS.linuxSourceMetadataMs
           : LIMITS.archiveMs),
     "Verified archive tool required",
   );

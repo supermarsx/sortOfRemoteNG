@@ -434,6 +434,7 @@ async function legacyCliWithoutMigration() {
       "utf8",
     )
   ).replaceAll("\r\n", "\n");
+  text = withoutMacSourceBudget(text, "scripts/cef-engineering-checkpoint.mjs");
   for (const name of [
     "closed Linux migration CLI imports",
     "closed Linux migration producer verification import",
@@ -14651,7 +14652,7 @@ test("pinned Linux sysroot hard links become single-link copies with the same by
   });
 });
 
-test("Linux owned-source metadata alone gets 2400 s; pack, restore and Mac modes keep 600 s", async () => {
+test("Owned-source metadata gets2400s for Linux and both Macs; pack restore and observation retain600s", async () => {
   assert.equal(LIMITS.archiveMs, 600_000);
   assert.equal(LIMITS.linuxSourceMetadataMs, 2_400_000);
   assert.equal(LIMITS.linuxSourceMetadataGraceMs, 60_000);
@@ -14688,7 +14689,7 @@ test("Linux owned-source metadata alone gets 2400 s; pack, restore and Mac modes
             "--platform-policy",
             policy,
           ],
-          600_001,
+          2_400_001,
         ),
         false,
       );
@@ -15729,3 +15730,441 @@ test(
     await assert.rejects(lstat(output), { code: "ENOENT" });
   },
 );
+
+// Finite whole b296 inverses precede every historical source-budget contract.
+const MAC_SOURCE_BUDGET_BASELINES = {
+  "scripts/cef-runtime-ci.mjs": {
+    bytes: 76797,
+    sha256: "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",
+    edits: [
+      [
+        '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)\n      : undefined;\n  // END fixed Linux engineering source budget\n  if (engineering) {\n',
+        '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(\n          engineering\n            ? target === "aarch64-unknown-linux-gnu"\n              ? 120 * 60_000\n              : 60 * 60_000\n            : undefined,\n        )\n      : undefined;\n  // END fixed Linux engineering source budget\n  if (engineering) {\n',
+      ],
+      [
+        '    { flag: "wx" },\n  );\n  Object.assign(childEnv, recipe.environment);\n  // BEGIN retained original preparation budget diagnostic\n  const sourceBudget = budget;\n  // END retained original preparation budget diagnostic\n  const engineeringContext = {\n    // BEGIN retained original preparation budget diagnostic\n    sourceRemainingMilliseconds: () => sourceBudget?.remaining(),\n    // END retained original preparation budget diagnostic\n    sourceLockIdentity: identity.sourceLockSha256,\n    metal,\n    ...(macExternalInputs === undefined ? {} : { macExternalInputs }),\n',
+        '    { flag: "wx" },\n  );\n  Object.assign(childEnv, recipe.environment);\n  const engineeringContext = {\n    sourceLockIdentity: identity.sourceLockSha256,\n    metal,\n    ...(macExternalInputs === undefined ? {} : { macExternalInputs }),\n',
+      ],
+    ],
+  },
+  "scripts/cef-engineering-checkpoint.mjs": {
+    bytes: 53196,
+    sha256: "7cbafaab2979b3d1db728dfbae8339bd86c4316c36948c07b4296b5388cca7be",
+    edits: [
+      [
+        '                  });\n                  sourceMetadata = async (mode) => {\n                    const selected = sourceMetadataPlan(identity, out, mode);\n                    // BEGIN bounded source metadata progress\n                    const began = performance.now();\n                    const progress = (event, timing = {}) => {\n                      try {\n                        const sourceRemaining =\n                          context.sourceRemainingMilliseconds?.();\n                        checkpointLog(\n                          console.log,\n                          `[cef-engineering-checkpoint] source-metadata-progress=${canonical(\n                            {\n                              kind: "source-metadata-progress",\n                              mode,\n                              event,\n                              elapsedMs: Math.floor(performance.now() - began),\n                              hostRemainingMs: Math.floor(hostRemaining(env)),\n                              sourceRemainingMs:\n                                Number.isFinite(sourceRemaining) &&\n                                sourceRemaining >= 0\n                                  ? Math.floor(sourceRemaining)\n                                  : null,\n                              ...timing,\n                            },\n                          )}`,\n                        );\n                      } catch {\n                        // Diagnostic reads never replace the original failure.\n                      }\n                    };\n                    progress("begin");\n                    // END bounded source metadata progress\n                    if (macSource) {\n                      const fresh = await context.reobserveMacExternalInputs();\n                      fail(\n',
+        "                  });\n                  sourceMetadata = async (mode) => {\n                    const selected = sourceMetadataPlan(identity, out, mode);\n                    if (macSource) {\n                      const fresh = await context.reobserveMacExternalInputs();\n                      fail(\n",
+      ],
+      [
+        '                          ),\n                        "Mac external fingerprint unchanged before source metadata",\n                      );\n                      progress("reobserve-complete");\n                    }\n                    const linuxSource = !selected.platformPolicy;\n                    const timeout = Math.floor(\n                      Math.min(\n                        linuxSource\n                          ? LIMITS.linuxSourceMetadataMs\n                          : LIMITS.macSourceMetadataMs,\n                        hostRemaining(env),\n                      ),\n                    );\n                    fail(timeout > 0, "Source metadata original host deadline");\n                    const grace = linuxSource\n                      ? LIMITS.linuxSourceMetadataGraceMs\n                      : LIMITS.macSourceMetadataGraceMs;\n                    // The helper\'s deadline ends first so it can print\n                    // its progress diagnostic before the hard kill.\n                    const helperSeconds = Math.max(\n                      1,\n                      Math.floor(\n                        (timeout > 2 * grace ? timeout - grace : timeout) /\n                          1000,\n                      ),\n                    );\n                    progress("helper-launch", {\n                      timeoutMs: timeout,\n                      helperSeconds,\n                    });\n                    const result = sourceMetadataResult(\n                      await archiveCommand(\n                        verified.python,\n',
+        '                          ),\n                        "Mac external fingerprint unchanged before source metadata",\n                      );\n                    }\n                    const linuxSource = !selected.platformPolicy;\n                    const timeout = Math.floor(\n                      Math.min(\n                        linuxSource\n                          ? LIMITS.linuxSourceMetadataMs\n                          : LIMITS.archiveMs,\n                        hostRemaining(env),\n                      ),\n                    );\n                    fail(timeout > 0, "Source metadata original host deadline");\n                    // Linux: the helper\'s deadline ends first so it can print\n                    // its progress diagnostic before the hard kill.\n                    const helperSeconds = Math.max(\n                      1,\n                      Math.floor(\n                        (linuxSource &&\n                        timeout > 2 * LIMITS.linuxSourceMetadataGraceMs\n                          ? timeout - LIMITS.linuxSourceMetadataGraceMs\n                          : timeout) / 1000,\n                      ),\n                    );\n                    const result = sourceMetadataResult(\n                      await archiveCommand(\n                        verified.python,\n',
+      ],
+    ],
+  },
+  "scripts/lib/cef-engineering-checkpoint.mjs": {
+    bytes: 242749,
+    sha256: "b7b518b4ab3328c0db9794a0162ee69cb1641ee4ddd566af442d0ce363d2f150",
+    edits: [
+      [
+        "  archiveMs: 600_000,\n  // Linux owned-source metadata only (record/apply/verify without a Mac\n  // platform policy): it hashes the whole fetched tree. Pack, restore and\n  // external observation keep archiveMs.\n  linuxSourceMetadataMs: 2_400_000,\n  // Mac owned-source record/apply/verify hash the complete fetched tree too.\n  macSourceMetadataMs: 2_400_000,\n  // Of that bound, the helper's own deadline ends this much earlier so its\n  // progress diagnostic is printed before the hard kill.\n  linuxSourceMetadataGraceMs: 60_000,\n  macSourceMetadataGraceMs: 60_000,\n  compileMs: 15 * 60_000,\n  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n",
+        "  archiveMs: 600_000,\n  // Linux owned-source metadata only (record/apply/verify without a Mac\n  // platform policy): it hashes the whole fetched tree. Pack, restore and\n  // every Mac mode keep archiveMs.\n  linuxSourceMetadataMs: 2_400_000,\n  // Of that bound, the helper's own deadline ends this much earlier so its\n  // progress diagnostic is printed before the hard kill.\n  linuxSourceMetadataGraceMs: 60_000,\n  compileMs: 15 * 60_000,\n  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n",
+      ],
+      [
+        '            !value.startsWith("--"),\n        ) &&\n        typeof args[8] === "string" &&\n        /^[1-9][0-9]{0,3}$/.test(args[8]) &&\n        Number(args[8]) <= LIMITS.macSourceMetadataMs / 1000 &&\n        ["mac-arm", "mac-intel"].includes(args[10]),\n      "Fixed Mac source archive flags required",\n    );\n',
+        '            !value.startsWith("--"),\n        ) &&\n        typeof args[8] === "string" &&\n        /^[1-9][0-9]{0,2}$/.test(args[8]) &&\n        Number(args[8]) <= 600 &&\n        ["mac-arm", "mac-intel"].includes(args[10]),\n      "Fixed Mac source archive flags required",\n    );\n',
+      ],
+      [
+        '      timeout <=\n        (Array.isArray(args) &&\n        ["source-record", "source-apply", "source-verify"].includes(args[0]) &&\n        (!args.includes("--platform-policy") || macSourceHostFacts)\n          ? macSourceHostFacts\n            ? LIMITS.macSourceMetadataMs\n            : LIMITS.linuxSourceMetadataMs\n          : LIMITS.archiveMs),\n    "Verified archive tool required",\n  );\n',
+        '      timeout <=\n        (Array.isArray(args) &&\n        ["source-record", "source-apply", "source-verify"].includes(args[0]) &&\n        !args.includes("--platform-policy")\n          ? LIMITS.linuxSourceMetadataMs\n          : LIMITS.archiveMs),\n    "Verified archive tool required",\n  );\n',
+      ],
+    ],
+  },
+  "scripts/lib/cef-checkpoint-archive.py": {
+    bytes: 209272,
+    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",
+    edits: [
+      [
+        "    return expected == actual\n\n\n# Owned-source metadata walks and hashes the whole fetched tree (Chromium,\n# sysroots, toolchains); only source modes use the longer bound. Pack, restore,\n# seal and external observation keep 600 seconds.\nSOURCE_LINUX_SECONDS = 2400\nSOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))\n# Linux owned-source hashing is I/O-bound (1.2M mostly small files), so it\n",
+        "    return expected == actual\n\n\n# Linux owned-source metadata walks and hashes the whole fetched tree (Chromium,\n# three sysroots, toolchains); it alone may use the longer bound. Pack, restore,\n# seal and every Mac mode keep 600 seconds.\nSOURCE_LINUX_SECONDS = 2400\nSOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))\n# Linux owned-source hashing is I/O-bound (1.2M mostly small files), so it\n",
+      ],
+      [
+        "        source_mac_write_admission(identity)\n    require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),\n            'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')\n    budget = Budget(seconds, SOURCE_LINUX_SECONDS) if budget is None else budget\n    source_progress_start(getattr(budget, 'seconds', seconds))\n    if platform_policy in ('mac-arm','mac-intel'):\n        operation=_mac_clang_public_scope if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True else _mac_nearby_public_scope\n",
+        "        source_mac_write_admission(identity)\n    require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),\n            'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')\n    budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget\n    source_progress_start(getattr(budget, 'seconds', seconds))\n    if platform_policy in ('mac-arm','mac-intel'):\n        operation=_mac_clang_public_scope if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True else _mac_nearby_public_scope\n",
+      ],
+      [
+        "        with source_io_scope(args.mode):\n            context_file = source_io_call('context-read', None, lambda: safe(Path(args.manifest)))\n            require(source_io_call('context-read', None, context_file.stat).st_size <= 16384, 'source-context-bound')\n            source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS)\n            identity = source_io_call('context-read', None, lambda: source_json(source_read_bytes(context_file, source_budget, 16384)))\n        result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)\n    elif args.mode == 'seal':\n",
+        "        with source_io_scope(args.mode):\n            context_file = source_io_call('context-read', None, lambda: safe(Path(args.manifest)))\n            require(source_io_call('context-read', None, context_file.stat).st_size <= 16384, 'source-context-bound')\n            source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS if args.platform_policy is None else 600)\n            identity = source_io_call('context-read', None, lambda: source_json(source_read_bytes(context_file, source_budget, 16384)))\n        result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)\n    elif args.mode == 'seal':\n",
+      ],
+    ],
+  },
+};
+function withoutMacSourceBudget(text, name) {
+  const baseline = MAC_SOURCE_BUDGET_BASELINES[name];
+  assert(baseline);
+  for (const [current, prior] of baseline.edits) {
+    assert.equal(
+      text.split(current).length,
+      2,
+      "one exact Mac source-budget inverse",
+    );
+    text = text.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(text), baseline.bytes);
+  assert.equal(sha(text), baseline.sha256);
+  return text;
+}
+
+test("bounded Mac source-budget delta restores all four complete b296 producers", async () => {
+  for (const name of Object.keys(MAC_SOURCE_BUDGET_BASELINES)) {
+    const text = (await readFile(path.join(ROOT, name), "utf8")).replaceAll(
+      "\r\n",
+      "\n",
+    );
+    withoutMacSourceBudget(text, name);
+    assert.throws(() => withoutMacSourceBudget(text + "\n", name));
+  }
+});
+
+test("actual Mac metadata closure clips its original clocks and reports reobserve before helper launch", async () => {
+  const text = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "cli.mjs",
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  let arrow;
+  const visit = (node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.left.getText(ast) === "sourceMetadata" &&
+      ts.isArrowFunction(node.right)
+    )
+      arrow = node.right.getText(ast);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert(arrow);
+  const declaration = archiveDeclaration(
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    ),
+  );
+  let created = 0;
+  const spawnLeafModel = () => {
+    created++;
+    const child = new EventEmitter();
+    child.pid = 123;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => assert.fail("fulfilled modeled leaf must not be killed");
+    setImmediate(() => {
+      child.stdout.end(JSON.stringify({ complete: true }));
+      child.stderr.end();
+      child.emit("exit", 0);
+      child.emit("close", 0);
+    });
+    return child;
+  };
+  const actualArchive = archiveFactory(declaration, spawnLeafModel);
+  const oldDeclaration = declaration
+    .replace("/^[1-9][0-9]{0,3}$/", "/^[1-9][0-9]{0,2}$/")
+    .replace(
+      "Number(args[8]) <= LIMITS.macSourceMetadataMs / 1000",
+      "Number(args[8]) <= 600",
+    );
+  assert.notEqual(oldDeclaration, declaration);
+  const oldArchive = archiveFactory(oldDeclaration, spawnLeafModel);
+  for (const policy of ["mac-arm", "mac-intel"]) {
+    for (const [remaining, timeout, seconds] of [
+      [10_000_000, 2_400_000, 2340],
+      [600000, 600000, 540],
+      [100000, 100000, 100],
+    ]) {
+      for (const mode of ["source-record", "source-apply", "source-verify"]) {
+        const logs = [],
+          calls = [];
+        let host = remaining,
+          source = 65 * 60000,
+          now = 0;
+        const scope = {
+          // Host/selection model only; actual metadata closure and clock arithmetic.
+          sourceMetadataPlan: (_identity, _out, mode) => ({
+            mode,
+            source: "/owned/source",
+            sidecar: "/owned/out/sidecar",
+            platformPolicy: policy,
+          }),
+          identity: {},
+          out: "/owned/out",
+          LIMITS,
+          hostRemaining: () => host,
+          env: {},
+          fail: assert,
+          sourceMetadataResult: (result) => result,
+          archiveCommand: async (_python, _helper, args, options) => {
+            calls.push({ args, options });
+            return actualArchive(_python, _helper, args, options);
+          },
+          verified: { python: path.resolve("fixed-python") },
+          HELPER: path.resolve("fixed-helper"),
+          identityFile: "/fixed/identity.json",
+          checkpointLog: (log, line) => log(line),
+          canonical: JSON.stringify,
+          console: {
+            log: (line) =>
+              line.includes("source-metadata-progress=") &&
+              logs.push(JSON.parse(line.split("source-metadata-progress=")[1])),
+          },
+          macSource: { binding: () => ({ stable: true }) },
+          context: {
+            macExternalInputs: {},
+            sourceRemainingMilliseconds: () => source,
+            async reobserveMacExternalInputs() {
+              now += 1000;
+              host -= 1000;
+              source -= 1000;
+              return {};
+            },
+          },
+          performance: { now: () => now },
+          Number,
+          Math,
+        };
+        const fn = vm.runInNewContext(`(${arrow})`, scope);
+        await fn(mode);
+        const actualTimeout = Math.min(timeout, remaining - 1000);
+        const actualSeconds = Math.floor(
+          (actualTimeout > 120000 ? actualTimeout - 60000 : actualTimeout) /
+            1000,
+        );
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].options.timeout, actualTimeout);
+        assert.equal(
+          calls[0].args[calls[0].args.indexOf("--seconds") + 1],
+          String(actualSeconds),
+        );
+        if (remaining === 10_000_000) assert.equal(actualSeconds, seconds);
+        assert.deepEqual(
+          logs.map((row) => row.event),
+          ["begin", "reobserve-complete", "helper-launch"],
+        );
+        assert.equal(logs[0].hostRemainingMs, remaining);
+        assert.equal(logs[2].hostRemainingMs, remaining - 1000);
+        assert.equal(logs[2].sourceRemainingMs, 65 * 60000 - 1000);
+        assert.equal(logs[2].elapsedMs, 1000);
+        assert.equal(logs[2].helperSeconds, actualSeconds);
+        if (remaining === 10_000_000) {
+          const before = created;
+          await assert.rejects(
+            oldArchive(
+              scope.verified.python,
+              scope.HELPER,
+              calls[0].args,
+              calls[0].options,
+            ),
+            /Fixed Mac source archive flags required/,
+          );
+          assert.equal(
+            created,
+            before,
+            "old actual archive flag guard denies CLI2340 before spawn",
+          );
+        }
+        // Logging failures cannot swallow the actual first/falsy reobserve rejection.
+        scope.context.reobserveMacExternalInputs = async () => {
+          throw false;
+        };
+        scope.context.sourceRemainingMilliseconds = () => {
+          throw new Error("diagnostic only");
+        };
+        await assert.rejects(fn(mode), (error) => error === false);
+        assert.equal(calls.length, 1);
+      }
+    }
+  }
+  for (const policy of ["mac-arm", "mac-intel"]) {
+    const args = [
+      "source-record",
+      "--input",
+      "/owned/source",
+      "--output",
+      "/owned/out",
+      "--manifest",
+      "/owned/context",
+      "--seconds",
+      "2400",
+      "--platform-policy",
+      policy,
+    ];
+    for (const seconds of ["1", "600", "601", "2340", "2400"]) {
+      args[8] = seconds;
+      await actualArchive(
+        path.resolve("python"),
+        path.resolve("helper"),
+        args,
+        { timeout: 2400000 },
+      );
+    }
+    for (const seconds of [
+      "0",
+      "01",
+      "2401",
+      "10000",
+      "2340.0",
+      " 2340",
+      2340,
+    ]) {
+      args[8] = seconds;
+      const before = created;
+      await assert.rejects(
+        actualArchive(path.resolve("python"), path.resolve("helper"), args, {
+          timeout: 2400000,
+        }),
+        /Fixed Mac source archive flags required/,
+      );
+      assert.equal(created, before);
+    }
+  }
+  await assert.rejects(
+    actualArchive(
+      path.resolve("python"),
+      path.resolve("helper"),
+      ["mac-external-observe"],
+      { timeout: 600001 },
+    ),
+    /Verified archive tool required/,
+  );
+});
+
+test("actual Mac source helper accepts40min only inside the source gate and reports deadline before the parent hard stop", async () => {
+  const result = python(
+    String.raw`import ast,importlib.util,json,pathlib,sys,types
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('bounded_mac_source',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class Reached(BaseException):pass
+for policy in ['mac-arm','mac-intel']:
+ for mode in ['source-record','source-apply','source-verify']:
+  def reached(*args):
+   assert args[-2].seconds==2340
+   raise Reached()
+  with patch.object(sys,'platform','darwin'),patch.object(m,'source_mac_write_admission'),patch.object(m,'source_mac_intel_write_admission'),patch.object(m,'_mac_clang_public_scope'),patch.object(m,'source_metadata_identity',return_value=pathlib.Path('/owned')),patch.object(m,'_source_metadata_owned_codec',side_effect=reached):
+   try:m.source_metadata_owned(mode,pathlib.Path('/owned/source'),pathlib.Path('/owned/out/sidecar'),{},2340,platform_policy=policy)
+   except Reached:pass
+   else:raise AssertionError('actual source gate did not reach codec')
+for seconds in [601,2340,2400]:
+ try:m.Budget(seconds)
+ except m.CheckpointError as e:assert str(e)=='deadline-bound'
+ else:raise AssertionError('generic archive cap enlarged')
+# Actual Budget/check/progress projection. Only time is modeled; no native actor.
+now=[0.0]
+with patch.object(m.time,'monotonic',side_effect=lambda:now[0]):
+ budget=m.Budget(2340,2400);m.source_progress_start(2340);m.source_phase('inventory');m.SOURCE_PROGRESS['walked']=17
+ now[0]=2340.001
+ try:budget.check()
+ except m.CheckpointError as e:facts=m.source_deadline_failure_fields(e,'source-record')['sourceDeadlineFailure']
+ else:raise AssertionError('deadline not enforced')
+assert facts['phase']=='inventory' and facts['walked']==17 and facts['files'] is None and facts['hashedBytes']==0
+assert facts['elapsedMs']<2395000
+print(json.dumps({'complete':False,'error':'archive-deadline','sourceDeadlineFailure':facts}))`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const output = JSON.parse(result.stdout);
+  const source = await readFile(
+    path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const child = new EventEmitter();
+  child.pid = 123;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let stopped = 0,
+    now = 0;
+  const timers = [],
+    diagnostics = [];
+  child.kill = () => {
+    stopped++;
+    return true;
+  };
+  const run = archiveFactory(archiveDeclaration(source), () => child, {
+    performance: { now: () => now },
+    setTimeout: (callback, milliseconds) => {
+      const timer = { callback, milliseconds };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeout() {},
+  });
+  const pending = run(
+    path.resolve("python"),
+    path.resolve("helper"),
+    ["source-record"],
+    { timeout: 2400000, observeFailure: (row) => diagnostics.push(row) },
+  );
+  assert.equal(timers[0].milliseconds, 2395000);
+  now = output.sourceDeadlineFailure.elapsedMs;
+  child.stdout.write(JSON.stringify(output));
+  child.stdout.end();
+  child.stderr.end();
+  await new Promise((resolve) => setImmediate(resolve));
+  child.emit("exit", 1);
+  child.emit("close", 1);
+  await assert.rejects(pending);
+  assert.equal(stopped, 0);
+  assert.equal(diagnostics[0].error, "archive-deadline");
+  assert.equal(diagnostics[0].sourceDeadlineFailure.walked, 17);
+  assert.equal(diagnostics[0].exitCode, 1);
+});
+
+test("actual Python main routing admits Mac2340 past its original CLI Budget guard; old main and generic601 deny", () => {
+  const result = python(
+    String.raw`import ast,importlib.util,pathlib,sys,tempfile
+from unittest.mock import patch
+file=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('cli_mac_budget',file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+actual_main=m.main
+text=file.read_text();tree=ast.parse(text);node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+current=ast.get_source_segment(text,node)
+line='source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS)'
+assert current.count(line)==1
+old=current.replace(line,'source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS if args.platform_policy is None else 600)')
+exec(compile(old,'exact-old-main-budget','exec'),m.__dict__);old_main=m.main;m.main=actual_main
+class Reached(BaseException):pass
+calls=[]
+def reached(mode,root,sidecar,identity,seconds=600,budget=None,platform_policy=None):
+ assert seconds==2340 and budget.seconds==2340 and identity=={}
+ calls.append((mode,platform_policy));raise Reached()
+with tempfile.TemporaryDirectory(prefix='mac-cli-budget-') as folder:
+ context=pathlib.Path(folder).resolve()/'identity.json';context.write_bytes(b'{}')
+ for policy in ['mac-arm','mac-intel']:
+  for mode in ['source-record','source-apply','source-verify']:
+   argv=['helper',mode,'--input',str(context.parent/'absent-source'),'--output',str(context.parent/'absent-out'),'--manifest',str(context),'--seconds','2340','--platform-policy',policy]
+   # This test models the admitted context bytes, not Darwin path/FD ctime on Windows.
+   # The actual main parser/Budget/public-wrapper route is unchanged and exercised.
+   with patch.object(sys,'argv',argv),patch.object(m,'source_mac_write_host_admission'),patch.object(m,'source_mac_intel_write_host_admission'),patch.object(m,'source_read_bytes',return_value=b'{}'),patch.object(m,'source_metadata_owned',side_effect=reached):
+    before=len(calls)
+    try:old_main()
+    except m.CheckpointError as e:assert str(e)=='deadline-bound'
+    else:raise AssertionError('old CLI wrongly reached source')
+    assert len(calls)==before
+    try:actual_main()
+    except Reached:pass
+    else:raise AssertionError('new CLI failed to route to owned source')
+ assert len(calls)==6
+ for mode in ['pack','mac-external-observe']:
+  with patch.object(sys,'argv',['helper',mode,'--input',str(context.parent/'absent-source'),'--output',str(context.parent/'absent-out'),'--seconds','601']):
+   try:actual_main()
+   except m.CheckpointError as e:assert str(e)=='deadline-bound'
+   else:raise AssertionError('generic mode601 admitted')
+ assert list(context.parent.iterdir())==[context]
+print('actual main routing oldRED newGREEN; no source IO or actor')`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /actual main routing oldRED newGREEN/);
+});

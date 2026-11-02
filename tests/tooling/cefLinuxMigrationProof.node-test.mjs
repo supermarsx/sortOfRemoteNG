@@ -189,6 +189,19 @@ test("current composed carrier retarget preserves its complete historical pre-gu
 });
 
 function withoutColdMetalCompanion(text) {
+  {
+    const current =
+        '    bytes: 209194,\n    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",',
+      prior =
+        '    bytes: 209272,\n    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",';
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, prior);
+    assert.equal(Buffer.byteLength(text), 123573);
+    assert.equal(
+      createHash("sha256").update(text).digest("hex"),
+      "d8b49ea4fc615ad9b2b34699f5ffcc53cca0f5d903a4d6d212859c6a62d31edf",
+    );
+  }
   const block =
     '  // BEGIN cold Metal discovery source delta\n  "scripts/cef-hosted-provision.mjs",\n  // END cold Metal discovery source delta\n';
   assert.equal(text.split(block).length, 2);
@@ -375,7 +388,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f",
+    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

@@ -49,7 +49,7 @@ export const ENGINEERING_PRODUCERS = Object.freeze({
     "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   "x86_64-apple-darwin": ENGINEERING_PRODUCER,
   "aarch64-apple-darwin":
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
 });
 export const ENGINEERING_REVIEW_KIND =
   "sorng-cef-engineering-sdk-publication-review";

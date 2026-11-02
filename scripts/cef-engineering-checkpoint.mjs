@@ -941,6 +941,36 @@ async function checkpointMain(argv, env, observer) {
                   });
                   sourceMetadata = async (mode) => {
                     const selected = sourceMetadataPlan(identity, out, mode);
+                    // BEGIN bounded source metadata progress
+                    const began = performance.now();
+                    const progress = (event, timing = {}) => {
+                      try {
+                        const sourceRemaining =
+                          context.sourceRemainingMilliseconds?.();
+                        checkpointLog(
+                          console.log,
+                          `[cef-engineering-checkpoint] source-metadata-progress=${canonical(
+                            {
+                              kind: "source-metadata-progress",
+                              mode,
+                              event,
+                              elapsedMs: Math.floor(performance.now() - began),
+                              hostRemainingMs: Math.floor(hostRemaining(env)),
+                              sourceRemainingMs:
+                                Number.isFinite(sourceRemaining) &&
+                                sourceRemaining >= 0
+                                  ? Math.floor(sourceRemaining)
+                                  : null,
+                              ...timing,
+                            },
+                          )}`,
+                        );
+                      } catch {
+                        // Diagnostic reads never replace the original failure.
+                      }
+                    };
+                    progress("begin");
+                    // END bounded source metadata progress
                     if (macSource) {
                       const fresh = await context.reobserveMacExternalInputs();
                       fail(
@@ -950,28 +980,34 @@ async function checkpointMain(argv, env, observer) {
                           ),
                         "Mac external fingerprint unchanged before source metadata",
                       );
+                      progress("reobserve-complete");
                     }
                     const linuxSource = !selected.platformPolicy;
                     const timeout = Math.floor(
                       Math.min(
                         linuxSource
                           ? LIMITS.linuxSourceMetadataMs
-                          : LIMITS.archiveMs,
+                          : LIMITS.macSourceMetadataMs,
                         hostRemaining(env),
                       ),
                     );
                     fail(timeout > 0, "Source metadata original host deadline");
-                    // Linux: the helper's deadline ends first so it can print
+                    const grace = linuxSource
+                      ? LIMITS.linuxSourceMetadataGraceMs
+                      : LIMITS.macSourceMetadataGraceMs;
+                    // The helper's deadline ends first so it can print
                     // its progress diagnostic before the hard kill.
                     const helperSeconds = Math.max(
                       1,
                       Math.floor(
-                        (linuxSource &&
-                        timeout > 2 * LIMITS.linuxSourceMetadataGraceMs
-                          ? timeout - LIMITS.linuxSourceMetadataGraceMs
-                          : timeout) / 1000,
+                        (timeout > 2 * grace ? timeout - grace : timeout) /
+                          1000,
                       ),
                     );
+                    progress("helper-launch", {
+                      timeoutMs: timeout,
+                      helperSeconds,
+                    });
                     const result = sourceMetadataResult(
                       await archiveCommand(
                         verified.python,

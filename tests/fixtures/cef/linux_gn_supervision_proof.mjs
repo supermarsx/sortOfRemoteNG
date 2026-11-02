@@ -29,8 +29,8 @@ const PINS = [
   ],
   [
     CORE,
-    232441,
-    "fa669f8e3bae755bcac623cbb9c567665405d58fbb5ca3d2130331101005947f",
+    243031,
+    "7e250197e9cb9108610dad5757210bdd9939924ab2569d0274182fd8f9cff463",
   ],
   [
     "scripts/lib/cef-mac-sdk-inventory.mjs",
@@ -44,8 +44,8 @@ const PINS = [
   ],
   [
     RUNTIME,
-    76797,
-    "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",
+    77002,
+    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",
   ],
   [
     "scripts/browser-runtime-package.mjs",

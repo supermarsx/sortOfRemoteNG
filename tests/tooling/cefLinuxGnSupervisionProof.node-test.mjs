@@ -2105,6 +2105,24 @@ const directCaseInverse = [
 function withoutColdMetalFixtureRetarget(source) {
   for (const [current, prior] of [
     [
+      '    RUNTIME,\n    77002,\n    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",',
+      '    RUNTIME,\n    76797,\n    "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",',
+    ],
+    [
+      '    CORE,\n    243031,\n    "7e250197e9cb9108610dad5757210bdd9939924ab2569d0274182fd8f9cff463",',
+      '    CORE,\n    232441,\n    "fa669f8e3bae755bcac623cbb9c567665405d58fbb5ca3d2130331101005947f",',
+    ],
+  ]) {
+    assert.equal(source.split(current).length, 2);
+    source = source.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(source), 67657);
+  assert.equal(
+    createHash("sha256").update(source).digest("hex"),
+    "ba191b4170a5238c7a93ccdd036b3886b74d300cb3115a5144b914e883d39817",
+  );
+  for (const [current, prior] of [
+    [
       '    RUNTIME,\n    76797,\n    "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",',
       '    RUNTIME,\n    76637,\n    "626a0c34481f18c5044be88c47ca72bf3312dfbe1a5858b69936b683a9bf3182",',
     ],
@@ -2130,7 +2148,7 @@ function withoutColdMetalFixtureRetarget(source) {
 
 test("cold Metal retarget restores the whole9c fixture before all existing proof inverses", () => {
   withoutColdMetalFixtureRetarget(fixture);
-  for (const changed of [fixture + "\n", fixture.replace("76797", "76798")]) {
+  for (const changed of [fixture + "\n", fixture.replace("77002", "77003")]) {
     assert.throws(() => withoutColdMetalFixtureRetarget(changed));
   }
 });

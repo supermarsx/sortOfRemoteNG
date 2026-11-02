@@ -1101,7 +1101,8 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
     for (const [name, sha] of Object.entries(currentMacBlobs))
       rows.find((row) => row.path === name).sha = sha;
   }
-  if (target === "x86_64-apple-darwin") {
+  if (["x86_64-apple-darwin", "aarch64-apple-darwin"].includes(target)) {
+    // Both Mac witnesses include the reviewed cold-discovery source; Intel retains Y.
     // Only Intel receives the newly reviewed cold-discovery producer. The
     // active Linux and ARM runs retain their exact historical source trees.
     const coldMetalBlobs = {
@@ -1112,6 +1113,22 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
         "d8de10ec9a96ce6b1f39d48369a33cdb735962ea",
     };
     for (const [name, sha] of Object.entries(coldMetalBlobs))
+      rows.find((row) => row.path === name).sha = sha;
+  }
+  if (target === "aarch64-apple-darwin") {
+    // Exact new source-budget composition; modeled SDK transport only.
+    const sourceBudgetBlobs = {
+      "scripts/cef-engineering-checkpoint.mjs":
+        "5cf3cba75a6afc624ec1c658d287da96c1b0a67c",
+      "scripts/cef-runtime-ci.mjs": "0a5aff87d6755bf2ab0705269e891bc9d663f746",
+      "scripts/lib/cef-checkpoint-archive.py":
+        "b36a1c357bc4eeb9edf36a5f436e195597db7a1e",
+      "scripts/lib/cef-engineering-checkpoint.mjs":
+        "61f8105eb1419c45b15ab6b5ec8e03c4e3f5923f",
+      "scripts/lib/cef-linux-producer-migration.mjs":
+        "42a68eaacefdd64c75949f0e133de52e5cd5e37f",
+    };
+    for (const [name, sha] of Object.entries(sourceBudgetBlobs))
       rows.find((row) => row.path === name).sha = sha;
   }
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
@@ -1411,7 +1428,7 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-apple-darwin"],
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],

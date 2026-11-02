@@ -17,6 +17,19 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
 function withoutColdMetalCompanion(text) {
+  {
+    const current =
+        '    bytes: 209194,\n    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",',
+      prior =
+        '    bytes: 209272,\n    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",';
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, prior);
+    assert.equal(Buffer.byteLength(text), 123573);
+    assert.equal(
+      createHash("sha256").update(text).digest("hex"),
+      "d8b49ea4fc615ad9b2b34699f5ffcc53cca0f5d903a4d6d212859c6a62d31edf",
+    );
+  }
   const block =
     '  // BEGIN cold Metal discovery source delta\n  "scripts/cef-hosted-provision.mjs",\n  // END cold Metal discovery source delta\n';
   assert.equal(text.split(block).length, 2);
@@ -1909,10 +1922,10 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
     "blob",
     "HEAD:" + archive,
   ]);
-  assert.equal(canonical.length, 209272);
+  assert.equal(canonical.length, 209194);
   assert.equal(
     core.sha(canonical),
-    "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",
+    "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",
   );
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
@@ -1925,7 +1938,7 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
   const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
   assert.equal(
     core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
-    "aab6509bb49dd74e3459d32a65305a4240278820a07c3be7859fa8b522e478e1",
+    "b5736f40fa1f78b8634cc9b8c9f39d239a167963f42eccedc91bfef3b3de2825",
   );
   // This retained test performs diagnostic a41 -> public3be -> native5af -> old839
   // literal inverses and asserts both COMPLETE historical helper hashes.
@@ -3222,6 +3235,28 @@ test("migration diagnostics preserve the complete old a41 core and e0f transacti
       "utf8",
     )
   ).replaceAll("\r\n", "\n");
+  for (const [current, prior] of [
+    [
+      "  archiveMs: 600_000,\n  // Linux owned-source metadata only (record/apply/verify without a Mac\n  // platform policy): it hashes the whole fetched tree. Pack, restore and\n  // external observation keep archiveMs.\n  linuxSourceMetadataMs: 2_400_000,\n  // Mac owned-source record/apply/verify hash the complete fetched tree too.\n  macSourceMetadataMs: 2_400_000,\n  // Of that bound, the helper's own deadline ends this much earlier so its\n  // progress diagnostic is printed before the hard kill.\n  linuxSourceMetadataGraceMs: 60_000,\n  macSourceMetadataGraceMs: 60_000,\n  compileMs: 15 * 60_000,\n  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n",
+      "  archiveMs: 600_000,\n  // Linux owned-source metadata only (record/apply/verify without a Mac\n  // platform policy): it hashes the whole fetched tree. Pack, restore and\n  // every Mac mode keep archiveMs.\n  linuxSourceMetadataMs: 2_400_000,\n  // Of that bound, the helper's own deadline ends this much earlier so its\n  // progress diagnostic is printed before the hard kill.\n  linuxSourceMetadataGraceMs: 60_000,\n  compileMs: 15 * 60_000,\n  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n",
+    ],
+    [
+      '            !value.startsWith("--"),\n        ) &&\n        typeof args[8] === "string" &&\n        /^[1-9][0-9]{0,3}$/.test(args[8]) &&\n        Number(args[8]) <= LIMITS.macSourceMetadataMs / 1000 &&\n        ["mac-arm", "mac-intel"].includes(args[10]),\n      "Fixed Mac source archive flags required",\n    );\n',
+      '            !value.startsWith("--"),\n        ) &&\n        typeof args[8] === "string" &&\n        /^[1-9][0-9]{0,2}$/.test(args[8]) &&\n        Number(args[8]) <= 600 &&\n        ["mac-arm", "mac-intel"].includes(args[10]),\n      "Fixed Mac source archive flags required",\n    );\n',
+    ],
+    [
+      '      timeout <=\n        (Array.isArray(args) &&\n        ["source-record", "source-apply", "source-verify"].includes(args[0]) &&\n        (!args.includes("--platform-policy") || macSourceHostFacts)\n          ? macSourceHostFacts\n            ? LIMITS.macSourceMetadataMs\n            : LIMITS.linuxSourceMetadataMs\n          : LIMITS.archiveMs),\n    "Verified archive tool required",\n  );\n',
+      '      timeout <=\n        (Array.isArray(args) &&\n        ["source-record", "source-apply", "source-verify"].includes(args[0]) &&\n        !args.includes("--platform-policy")\n          ? LIMITS.linuxSourceMetadataMs\n          : LIMITS.archiveMs),\n    "Verified archive tool required",\n  );\n',
+    ],
+  ]) {
+    assert.equal(old.split(current).length, 2);
+    old = old.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(old), 242749);
+  assert.equal(
+    core.sha(old),
+    "b7b518b4ab3328c0db9794a0162ee69cb1641ee4ddd566af442d0ce363d2f150",
+  );
   const first = "// BEGIN closed Linux migration diagnostics\n",
     last = "// END closed Linux migration diagnostics\n\n";
   assert.equal(old.split(first).length, 2);

@@ -1433,13 +1433,7 @@ export async function build(
   // BEGIN fixed Linux engineering source budget
   let budget =
     runnerMode === "hosted"
-      ? createHostedBuildBudget(
-          engineering
-            ? target === "aarch64-unknown-linux-gnu"
-              ? 120 * 60_000
-              : 60 * 60_000
-            : undefined,
-        )
+      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)
       : undefined;
   // END fixed Linux engineering source budget
   if (engineering) {
@@ -1812,7 +1806,13 @@ export async function build(
     { flag: "wx" },
   );
   Object.assign(childEnv, recipe.environment);
+  // BEGIN retained original preparation budget diagnostic
+  const sourceBudget = budget;
+  // END retained original preparation budget diagnostic
   const engineeringContext = {
+    // BEGIN retained original preparation budget diagnostic
+    sourceRemainingMilliseconds: () => sourceBudget?.remaining(),
+    // END retained original preparation budget diagnostic
     sourceLockIdentity: identity.sourceLockSha256,
     metal,
     ...(macExternalInputs === undefined ? {} : { macExternalInputs }),

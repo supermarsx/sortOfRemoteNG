@@ -20,12 +20,34 @@ import {
 // runner. No vendor tool, native GN, GitHub or production registry is exercised.
 const url = new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url);
 const source = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
-assert.equal(Buffer.byteLength(source), 76797);
+assert.equal(Buffer.byteLength(source), 77002);
 assert.equal(
   createHash("sha256").update(source).digest("hex"),
-  "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",
+  "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",
 );
+function withoutMacPreparationBudget(text) {
+  for (const [current, prior] of [
+    [
+      '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)\n      : undefined;\n  // END fixed Linux engineering source budget\n  if (engineering) {\n',
+      '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(\n          engineering\n            ? target === "aarch64-unknown-linux-gnu"\n              ? 120 * 60_000\n              : 60 * 60_000\n            : undefined,\n        )\n      : undefined;\n  // END fixed Linux engineering source budget\n  if (engineering) {\n',
+    ],
+    [
+      '    { flag: "wx" },\n  );\n  Object.assign(childEnv, recipe.environment);\n  // BEGIN retained original preparation budget diagnostic\n  const sourceBudget = budget;\n  // END retained original preparation budget diagnostic\n  const engineeringContext = {\n    // BEGIN retained original preparation budget diagnostic\n    sourceRemainingMilliseconds: () => sourceBudget?.remaining(),\n    // END retained original preparation budget diagnostic\n    sourceLockIdentity: identity.sourceLockSha256,\n    metal,\n    ...(macExternalInputs === undefined ? {} : { macExternalInputs }),\n',
+      '    { flag: "wx" },\n  );\n  Object.assign(childEnv, recipe.environment);\n  const engineeringContext = {\n    sourceLockIdentity: identity.sourceLockSha256,\n    metal,\n    ...(macExternalInputs === undefined ? {} : { macExternalInputs }),\n',
+    ],
+  ]) {
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(text), 76797);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "12fa593fb734ddbfad46e2a89c1d615c3542bf0f27bb64dce368de4a260e0831",
+  );
+  return text;
+}
 function withoutColdMetalRuntime(text) {
+  text = withoutMacPreparationBudget(text);
   for (const [current, prior] of [
     [
       "  prepareMacMetalToolchain,\n  revalidateMacMetalToolchain,\n  macMetalCommandDiagnostic,\n",
@@ -78,7 +100,7 @@ function withoutLinuxSourceBudget(text) {
   );
   return restored;
 }
-test("Linux engineering source uses one fixed120-minute budget while Mac60 ordinary300 and the original host fence remain", () => {
+test("Linux and Mac engineering use one original120-minute preparation budget; ordinary300 and host fence remain", () => {
   const begin = source.indexOf(
       "  // BEGIN fixed Linux engineering source budget\n",
     ),
@@ -95,8 +117,8 @@ test("Linux engineering source uses one fixed120-minute budget while Mac60 ordin
   );
   for (const [engineering, target, minutes] of [
     [true, "aarch64-unknown-linux-gnu", 120],
-    [true, "aarch64-apple-darwin", 60],
-    [true, "x86_64-apple-darwin", 60],
+    [true, "aarch64-apple-darwin", 120],
+    [true, "x86_64-apple-darwin", 120],
     [false, "aarch64-unknown-linux-gnu", 300],
   ]) {
     let now = 10,
@@ -107,8 +129,22 @@ test("Linux engineering source uses one fixed120-minute budget while Mac60 ordin
     });
     assert.equal(calls, 1);
     assert.equal(budget.remaining(), minutes * 60000);
-    now += 26 * 60000;
-    assert.equal(budget.remaining(), (minutes - 26) * 60000);
+    now += 65 * 60000;
+    assert.equal(budget.remaining(), (minutes - 65) * 60000);
+    if (engineering && target.includes("apple")) {
+      let oldNow = 10;
+      const old = createHostedBuildBudget(60 * 60000, () => oldNow);
+      oldNow += 65 * 60000;
+      assert.equal(
+        old.remaining(),
+        0,
+        "old60min lease is exhausted on measured65min path",
+      );
+      assert(
+        budget.remaining() > 0,
+        "actual65min source path remains inside original120min",
+      );
+    }
     now += minutes * 60000;
     assert.equal(budget.remaining(), 0);
     assert.throws(() => budget.assertRemaining());

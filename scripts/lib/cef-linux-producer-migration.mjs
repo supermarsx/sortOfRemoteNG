@@ -88,8 +88,8 @@ const PROOF = Object.freeze({
     sha256: "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
   }),
   archivePin: Object.freeze({
-    bytes: 209272,
-    sha256: "1a8388c61458686cd1afccba934bfb2a2d5ccedde5de33d2b0fd0f70b9db85c8",
+    bytes: 209194,
+    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",
   }),
   modules: "tests/fixtures/cef/mac_nearby.gitmodules",
   modulesPin: Object.freeze({

@@ -895,9 +895,9 @@ def opened_identity_matches(expected, opened):
     return expected == actual
 
 
-# Linux owned-source metadata walks and hashes the whole fetched tree (Chromium,
-# three sysroots, toolchains); it alone may use the longer bound. Pack, restore,
-# seal and every Mac mode keep 600 seconds.
+# Owned-source metadata walks and hashes the whole fetched tree (Chromium,
+# sysroots, toolchains); only source modes use the longer bound. Pack, restore,
+# seal and external observation keep 600 seconds.
 SOURCE_LINUX_SECONDS = 2400
 SOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))
 # Linux owned-source hashing is I/O-bound (1.2M mostly small files), so it
@@ -3013,7 +3013,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         source_mac_write_admission(identity)
     require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
-    budget = Budget(seconds, SOURCE_LINUX_SECONDS if platform_policy is None else 600) if budget is None else budget
+    budget = Budget(seconds, SOURCE_LINUX_SECONDS) if budget is None else budget
     source_progress_start(getattr(budget, 'seconds', seconds))
     if platform_policy in ('mac-arm','mac-intel'):
         operation=_mac_clang_public_scope if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True else _mac_nearby_public_scope
@@ -3568,7 +3568,7 @@ def main():
         with source_io_scope(args.mode):
             context_file = source_io_call('context-read', None, lambda: safe(Path(args.manifest)))
             require(source_io_call('context-read', None, context_file.stat).st_size <= 16384, 'source-context-bound')
-            source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS if args.platform_policy is None else 600)
+            source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS)
             identity = source_io_call('context-read', None, lambda: source_json(source_read_bytes(context_file, source_budget, 16384)))
         result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)
     elif args.mode == 'seal':
