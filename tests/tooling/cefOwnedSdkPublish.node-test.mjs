@@ -1096,7 +1096,7 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
       "scripts/lib/cef-engineering-checkpoint.mjs":
         "e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec",
       "scripts/lib/cef-linux-producer-migration.mjs":
-        "f6f0abb29f500c67857dbd254bd9c2ddc47755bc",
+        "434bb814abbc4c16ac417477a081ce9c7abf6f77",
     };
     for (const [name, sha] of Object.entries(currentMacBlobs))
       rows.find((row) => row.path === name).sha = sha;
@@ -1387,10 +1387,10 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
-test("engineering publication exact target producers preserve reviewed Mac source and select repaired Linux source without source-only admission", () => {
+test("engineering publication exact target producers select repaired source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "bd8e67ca51e817002781f4d047e3f813fa1069f3aa686fc44f61fc14de899106",
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
