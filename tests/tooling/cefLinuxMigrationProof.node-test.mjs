@@ -189,6 +189,19 @@ test("current composed carrier retarget preserves its complete historical pre-gu
 });
 
 function qualifiedFinalHelperModule(text) {
+  {
+    const current =
+      '    bytes: 208244,\n    sha256: "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",';
+    const previous =
+      '    bytes: 203191,\n    sha256: "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",';
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, previous);
+    assert.equal(Buffer.byteLength(text), 120138);
+    assert.equal(
+      createHash("sha256").update(text).digest("hex"),
+      "a7ddc2e84df50128cefa69d4a4a57613f45b8f06fea3b2fbf78b491b65dd8d4f",
+    );
+  }
   const clock = `  const tools = {
     ...originalTools,
     remaining: () => Math.floor(transactionCheck(state)),
@@ -250,7 +263,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "1eddf4f9c05172f03fb155346b1055f4d12b24505e608c3b7074245f530ff01c",
+    "da2455fe662a46299aeec82811e285eef43a382ef88cae9fe3a747ae2ecb8576",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

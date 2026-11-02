@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+// Code-owned whole old reader; no Git/history/sibling access in portable checks.
+const METADATA_READER_BEFORE =
+  "def source_read_bytes(path, budget, maximum):\n    path = source_io_call('file-path-stat', path, lambda: safe(path));before = source_io_call('file-path-stat', path, path.stat)\n    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= maximum,\n            'source-metadata-read-bound')\n    stream = source_io_call('file-open', path, lambda: path.open('rb'));primary = None;parts = [];count = 0\n    try:\n        fd_before = source_io_call('file-fd-stat', path, lambda: os.fstat(stream.fileno()))\n        require(stamp(fd_before)==stamp(before) and fd_before.st_ctime_ns==before.st_ctime_ns,\n                'source-metadata-read-changed')\n        while True:\n            budget.check();chunk=source_io_call('file-read', path, lambda: stream.read(65536))\n            if not chunk:\n                break\n            count+=len(chunk);require(count<=before.st_size, 'source-metadata-read-bound');parts.append(chunk)\n        after=source_io_call('file-path-stat', path, path.stat);held=source_io_call('file-fd-stat', path, lambda: os.fstat(stream.fileno()))\n        require(count==before.st_size and stamp(after)==stamp(before)==stamp(held) and\n                after.st_ctime_ns==before.st_ctime_ns==held.st_ctime_ns, 'source-metadata-read-changed')\n    except BaseException as error:\n        primary=error\n        raise\n    finally:\n        source_close(lambda: source_io_call('file-close', path, stream.close), primary)\n    return b''.join(parts)";
 import vm from "node:vm";
 async function cliMigrationFunctions(names, scope) {
   const text = await readFile(
@@ -15261,3 +15264,286 @@ test("refused GitHub API calls are reported by public message and headers, and o
   assert.equal(outcome.calls(), 1);
   assert.deepEqual(GITHUB_RETRY, { attempts: 3, maxWaitMs: 120_000 });
 });
+
+const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
+m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]
+exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
+old=sys.argv[2]
+assert hashlib.sha256(old.encode()).hexdigest()=='81897b8fe723d52847f7f2b7ecc6e48680e67eb1c27b2a1091e9b57003dff536'
+old_scope=dict(m.__dict__);exec(compile(old,'reviewed-old-reader','exec'),old_scope)
+class Budget:
+ def __init__(self,error=None):self.checks=0;self.error=error
+ def check(self):
+  self.checks+=1
+  if self.error is not None:raise self.error
+class Stream(io.BytesIO):
+ def fileno(self):return 7
+ def close(self):
+  io.BytesIO.close(self)
+  if closing[0] is not None:raise closing[0]
+class Candidate:
+ def __init__(self,name,facts,data):self.name=name;self.facts=facts;self.data=data;self.opens=0
+ def __fspath__(self):return self.name
+ def stat(self):return self.facts
+ def open(self,mode):assert mode=='rb';self.opens+=1;return Stream(self.data)
+closing=[None]
+def case(name,size=3,nlink=1,kind=stat.S_IFREG,data=b'abc',relative='src/DEPS',budget=None):
+ facts=types.SimpleNamespace(st_mode=kind|0o644,st_nlink=nlink,st_size=size,st_dev=1,st_ino=2,st_mtime_ns=3,st_ctime_ns=4)
+ root=pathlib.Path('/owned/source');p=Candidate(str(root/relative),facts,data)
+ m.safe=lambda p:p;m.os=types.SimpleNamespace(fstat=lambda fd:facts)
+ old_scope['safe']=m.safe;old_scope['os']=m.os
+ m.SOURCE_IO_CONTEXT.set(('source-record',root));m.source_progress_start(5);m.source_phase('repositories');m.SOURCE_CLOSE_FAILURE=False
+ return p,budget or Budget()
+results=[]
+for name,change,predicate,stage in [('empty',{'size':0,'data':b''},'empty','stat'),('oversize',{'size':4,'data':b'abcd'},'size','stat'),('hardlinked',{'nlink':2},'nlink','stat'),('directory',{'kind':stat.S_IFDIR},'kind','stat'),('growth',{'data':b'abcd'},'growth','stream')]:
+ p,budget=case(name,**change)
+ try:old_scope['source_read_bytes'](p,budget,3)
+ except m.CheckpointError as error:
+  assert str(error)=='source-metadata-read-bound'and m.source_metadata_read_failure_fields(error,'source-record')=={}
+ else:raise AssertionError('old reader accepted')
+ p,budget=case(name,**change);original=[];need=m.require
+ def record_need(ok,reason):
+  if not ok and reason=='source-metadata-read-bound':
+   error=m.CheckpointError(reason);original.append(error);raise error
+  return need(ok,reason)
+ m.require=record_need
+ try:
+  try:m.source_read_bytes(p,budget,3)
+  except m.CheckpointError as error:
+   assert error is original[0]and str(error)=='source-metadata-read-bound'
+   facts=m.source_metadata_read_failure_fields(error,'source-record')['sourceMetadataReadFailure']
+   assert facts['predicate']==predicate and facts['stage']==stage and facts['phase']=='repositories'
+   assert facts['candidate']=={'bytes':8,'sha256':hashlib.sha256(b'src/DEPS').hexdigest(),'name':'src/DEPS'}
+   assert facts['size']==change.get('size',3)and facts['nlink']==change.get('nlink',1)and facts['maximum']==3
+   assert facts['readBytes']==(4 if stage=='stream'else None)
+   assert p.opens==(1 if stage=='stream'else 0)and budget.checks==(1 if stage=='stream'else 0)
+   results.append(facts)
+  else:raise AssertionError('new reader accepted')
+ finally:m.require=need
+p,budget=case('valid');assert m.source_read_bytes(p,budget,3)==b'abc'and budget.checks==2
+p,budget=case('short',data=b'ab')
+try:m.source_read_bytes(p,budget,3)
+except m.CheckpointError as error:assert str(error)=='source-metadata-read-changed'and m.source_metadata_read_failure_fields(error,'source-record')=={}
+else:raise AssertionError('short read accepted')
+class Falsy(RuntimeError):
+ def __bool__(self):return False
+primary=Falsy('private primary');secondary=RuntimeError('private close');closing[0]=secondary
+p,budget=case('falsy',budget=Budget(primary))
+try:m.source_read_bytes(p,budget,3)
+except BaseException as error:assert error is primary and m.SOURCE_CLOSE_FAILURE and m.source_metadata_read_failure_fields(error,'source-record')=={}
+else:raise AssertionError('first failure lost')
+p,budget=case('close-growth',data=b'abcd')
+try:m.source_read_bytes(p,budget,3)
+except m.CheckpointError as error:
+ assert str(error)=='source-metadata-read-bound'and m.SOURCE_CLOSE_FAILURE
+ assert m.source_metadata_read_failure_fields(error,'source-record')['sourceMetadataReadFailure']['predicate']=='growth'
+ original=copy.deepcopy(error.sourceMetadataReadFailure);m.source_metadata_read_record(error,p,p.facts,2,'stat')
+ assert error.sourceMetadataReadFailure==original
+else:raise AssertionError('growth close failure lost')
+closing[0]=None
+for relative in ['src/private-\u00e9', 'src/'+('x'*2048)]:
+ p,budget=case('hash-only',size=0,data=b'',relative=relative)
+ try:m.source_read_bytes(p,budget,3)
+ except m.CheckpointError as error:
+  detail=m.source_metadata_read_failure_fields(error,'source-record')['sourceMetadataReadFailure'];assert 'name'not in detail['candidate']and len(json.dumps(detail).encode())<=2048
+ else:raise AssertionError('empty accepted')
+p,budget=case('outside',size=0,data=b'');p.name='/private/other/file'
+try:m.source_read_bytes(p,budget,3)
+except m.CheckpointError as error:assert 'candidate'not in m.source_metadata_read_failure_fields(error,'source-record')['sourceMetadataReadFailure']
+else:raise AssertionError('empty accepted')
+p,budget=case('traversal',size=0,data=b'',relative='src/../private')
+try:m.source_read_bytes(p,budget,3)
+except m.CheckpointError as error:assert m.source_metadata_read_failure_fields(error,'source-record')=={'sourceMetadataReadFailureInvalid':True}
+else:raise AssertionError('empty accepted')
+value=copy.deepcopy(results[0])
+for change in [{'extra':True},{'mode':'source-verify'},{'predicate':'growth'},{'readBytes':1},{'phase':'private raw text'},{'maximum':0},{'nlink':True},{'size':-1}]:
+ error=m.CheckpointError('source-metadata-read-bound');error.sourceMetadataReadFailure={**value,**change}
+ assert m.source_metadata_read_failure_fields(error,'source-record')=={'sourceMetadataReadFailureInvalid':True}
+print(json.dumps({'cases':results,'nativeOrSourceExecuted':False,'actualReader':True,'oldRedNewGreen':True}))
+`;
+
+test("source metadata read diagnostics distinguish exact frozen reader predicates without changing denial or clocks", () => {
+  const result = python(METADATA_READ_DIAGNOSTIC_PROOF, [
+    path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+    METADATA_READER_BEFORE,
+  ]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const proof = JSON.parse(result.stdout);
+  assert.equal(proof.cases.length, 5);
+  assert.equal(proof.oldRedNewGreen, true);
+  for (const detail of proof.cases)
+    assert.deepEqual(
+      archiveFailureRecord(
+        JSON.stringify({
+          complete: false,
+          error: "source-metadata-read-bound",
+          sourceMetadataReadFailure: detail,
+        }),
+        1,
+        { sourceMode: "source-record" },
+      ),
+      {
+        error: "source-metadata-read-bound",
+        sourceMetadataReadFailure: detail,
+        exitCode: 1,
+      },
+    );
+});
+
+const metadataReadFacts = () => ({
+  mode: "source-record",
+  stage: "stat",
+  phase: "repositories",
+  predicate: "size",
+  size: 4,
+  nlink: 1,
+  kind: "regular",
+  maximum: 3,
+  readBytes: null,
+  candidate: {
+    name: "src/DEPS",
+    bytes: 8,
+    sha256: sha(Buffer.from("src/DEPS")),
+  },
+});
+test("source metadata read strict JS envelope preserves first failure and rejects malformed path or predicate facts", () => {
+  const primary = {
+    error: "source-metadata-read-bound",
+    sourceCloseFailure: true,
+    sourceJoinFailure: true,
+    exitCode: 1,
+  };
+  const record = (detail, sourceMode = "source-record", extra = {}) =>
+    archiveFailureRecord(
+      JSON.stringify({
+        complete: false,
+        error: primary.error,
+        sourceCloseFailure: true,
+        sourceJoinFailure: true,
+        sourceMetadataReadFailure: detail,
+        ...extra,
+      }),
+      1,
+      { sourceMode },
+    );
+  const facts = metadataReadFacts();
+  assert.deepEqual(record(facts), {
+    ...primary,
+    sourceMetadataReadFailure: facts,
+  });
+  const hashed = {
+    ...facts,
+    candidate: { bytes: 2048, sha256: "a".repeat(64) },
+  };
+  assert.deepEqual(record(hashed), {
+    ...primary,
+    sourceMetadataReadFailure: hashed,
+  });
+  for (const change of [
+    { extra: true },
+    { mode: "source-verify" },
+    { stage: "raw phase" },
+    { phase: "private" },
+    { predicate: "empty" },
+    { size: 3 },
+    { size: -1 },
+    { nlink: 2 },
+    { kind: "symlink" },
+    { maximum: 0 },
+    { maximum: 1536 * 1024 ** 2 + 1 },
+    { readBytes: 4 },
+    { candidate: { ...facts.candidate, name: "/private/raw" } },
+    { candidate: { ...facts.candidate, name: "src/../raw" } },
+    { candidate: { ...facts.candidate, name: "src\\raw" } },
+    { candidate: { ...facts.candidate, bytes: 9 } },
+    { candidate: { ...facts.candidate, sha256: "b".repeat(64) } },
+    { candidate: { ...facts.candidate, extra: true } },
+  ])
+    assert.deepEqual(record({ ...facts, ...change }), {
+      ...primary,
+      sourceMetadataReadFailureInvalid: true,
+    });
+  assert.deepEqual(
+    record(facts, "source-record", { sourceMetadataReadFailureInvalid: false }),
+    { ...primary, sourceMetadataReadFailureInvalid: true },
+  );
+  assert.deepEqual(record(facts, "source-record", { untrusted: true }), {
+    error: "unknown",
+    exitCode: 1,
+  });
+  assert.deepEqual(record(facts, "pack"), { error: "unknown", exitCode: 1 });
+  assert.deepEqual(record(facts, "source-verify"), {
+    ...primary,
+    sourceMetadataReadFailureInvalid: true,
+  });
+  assert.deepEqual(
+    record(facts, "source-record", { error: "source-file-identity" }),
+    { error: "unknown", exitCode: 1 },
+  );
+  const growth = {
+    ...facts,
+    stage: "stream",
+    predicate: "growth",
+    size: 3,
+    readBytes: 4,
+  };
+  assert.deepEqual(record(growth), {
+    ...primary,
+    sourceMetadataReadFailure: growth,
+  });
+  for (const readBytes of [null, 3, 3 + 65537, Number.MAX_SAFE_INTEGER + 1])
+    assert.deepEqual(record({ ...growth, readBytes }), {
+      ...primary,
+      sourceMetadataReadFailureInvalid: true,
+    });
+});
+
+test(
+  "source metadata read actual Python CLI and archiveCommand retain exact error and typed context failure",
+  { timeout: 15000 },
+  async (t) => {
+    const folder = await scratch(t),
+      context = path.join(folder, "context.json"),
+      output = path.join(folder, "sidecar.json");
+    await writeFile(context, Buffer.alloc(0), { flag: "wx" });
+    const executable = python("import sys;print(sys.executable)").stdout.trim(),
+      rows = [];
+    await assert.rejects(
+      archiveCommand(
+        executable,
+        path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+        [
+          "source-record",
+          "--input",
+          folder,
+          "--output",
+          output,
+          "--manifest",
+          context,
+          "--seconds",
+          "2",
+        ],
+        { timeout: 4000, observeFailure: (row) => rows.push(row) },
+      ),
+      /Checkpoint archive rejected/,
+    );
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0], {
+      error: "source-metadata-read-bound",
+      sourceMetadataReadFailure: {
+        mode: "source-record",
+        stage: "stat",
+        phase: "start",
+        predicate: "empty",
+        size: 0,
+        nlink: 1,
+        kind: "regular",
+        maximum: 16384,
+        readBytes: null,
+      },
+      exitCode: 1,
+    });
+    assert(!JSON.stringify(rows).includes(folder));
+    await assert.rejects(lstat(output), { code: "ENOENT" });
+  },
+);

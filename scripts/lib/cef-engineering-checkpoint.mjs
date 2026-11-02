@@ -1927,6 +1927,88 @@ function sourceFileFailure(value, mode) {
   };
 }
 
+function sourceMetadataReadFailure(value, mode) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    ![
+      "kind,maximum,mode,nlink,phase,predicate,readBytes,size,stage",
+      "candidate,kind,maximum,mode,nlink,phase,predicate,readBytes,size,stage",
+    ].includes(Object.keys(value).sort().join()) ||
+    value.mode !== mode ||
+    !["stat", "stream"].includes(value.stage) ||
+    !SOURCE_METADATA_PHASES.includes(value.phase) ||
+    !["kind", "nlink", "empty", "size", "growth"].includes(value.predicate) ||
+    !["regular", "directory", "symlink", "other"].includes(value.kind) ||
+    ![value.size, value.nlink].every(
+      (n) => Number.isSafeInteger(n) && n >= 0,
+    ) ||
+    !Number.isSafeInteger(value.maximum) ||
+    value.maximum <= 0 ||
+    value.maximum > SOURCE_METADATA_MAX_BYTES ||
+    Buffer.byteLength(JSON.stringify(value)) > 2048
+  )
+    return null;
+  if (value.stage === "stat") {
+    const expected =
+      value.kind !== "regular"
+        ? "kind"
+        : value.nlink !== 1
+          ? "nlink"
+          : value.size === 0
+            ? "empty"
+            : value.size > value.maximum
+              ? "size"
+              : null;
+    if (value.readBytes !== null || value.predicate !== expected) return null;
+  } else if (
+    value.predicate !== "growth" ||
+    value.kind !== "regular" ||
+    value.nlink !== 1 ||
+    value.size <= 0 ||
+    value.size > value.maximum ||
+    !Number.isSafeInteger(value.readBytes) ||
+    value.readBytes <= value.size ||
+    value.readBytes > value.size + 65536
+  )
+    return null;
+  if (Object.hasOwn(value, "candidate")) {
+    const candidate = value.candidate;
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate) ||
+      !["bytes,sha256", "bytes,name,sha256"].includes(
+        Object.keys(candidate).sort().join(),
+      ) ||
+      !Number.isSafeInteger(candidate.bytes) ||
+      candidate.bytes <= 0 ||
+      !sourcePathFailure({
+        mode,
+        phase: "filesystem-member",
+        predicate: "unclassified",
+        ...candidate,
+      })
+    )
+      return null;
+  }
+  return {
+    mode: value.mode,
+    stage: value.stage,
+    phase: value.phase,
+    predicate: value.predicate,
+    size: value.size,
+    nlink: value.nlink,
+    kind: value.kind,
+    maximum: value.maximum,
+    readBytes: value.readBytes,
+    ...(Object.hasOwn(value, "candidate")
+      ? { candidate: { ...value.candidate } }
+      : {}),
+  };
+}
+
 export function archiveFailureRecord(
   stdout,
   exitCode,
@@ -1944,6 +2026,7 @@ export function archiveFailureRecord(
     sourceIoFacts,
     sourceBoundFacts,
     sourceFileFacts,
+    sourceMetadataReadFacts,
     sourceDeadlineFacts,
     sourceContentFacts;
   let error = deadline
@@ -2014,6 +2097,38 @@ export function archiveFailureRecord(
           }
           externalLinksWithoutRole = !Object.hasOwn(value, "externalRole");
         }
+      }
+      if (
+        ["source-record", "source-apply", "source-verify"].includes(
+          sourceMode,
+        ) &&
+        decoded?.error === "source-metadata-read-bound" &&
+        typeof decoded === "object" &&
+        !Array.isArray(decoded)
+      ) {
+        value = { ...decoded };
+        let read,
+          invalid = false;
+        if (Object.hasOwn(value, "sourceMetadataReadFailure")) {
+          try {
+            read = sourceMetadataReadFailure(
+              value.sourceMetadataReadFailure,
+              sourceMode,
+            );
+            invalid = read === null;
+          } catch {
+            invalid = true;
+          }
+          delete value.sourceMetadataReadFailure;
+        }
+        if (Object.hasOwn(value, "sourceMetadataReadFailureInvalid")) {
+          invalid = true;
+          delete value.sourceMetadataReadFailureInvalid;
+        }
+        sourceMetadataReadFacts = {
+          ...(read && !invalid ? { sourceMetadataReadFailure: read } : {}),
+          ...(invalid ? { sourceMetadataReadFailureInvalid: true } : {}),
+        };
       }
       if (
         ["source-record", "source-apply", "source-verify"].includes(
@@ -2258,6 +2373,7 @@ export function archiveFailureRecord(
         sourceIoFacts = undefined;
         sourceBoundFacts = undefined;
         sourceFileFacts = undefined;
+        sourceMetadataReadFacts = undefined;
         sourceDeadlineFacts = undefined;
         sourceContentFacts = undefined;
       }
@@ -2275,6 +2391,7 @@ export function archiveFailureRecord(
     ...sourceIoFacts,
     ...sourceBoundFacts,
     ...sourceFileFacts,
+    ...sourceMetadataReadFacts,
     ...sourceDeadlineFacts,
     ...sourceContentFacts,
     exitCode:

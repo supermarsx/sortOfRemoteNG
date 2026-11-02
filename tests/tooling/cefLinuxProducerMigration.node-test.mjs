@@ -35,6 +35,19 @@ function withoutCliModuleDelta(text) {
   return text;
 }
 function withoutTransactionAdmission(text) {
+  {
+    const current =
+      '    bytes: 208244,\n    sha256: "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",';
+    const previous =
+      '    bytes: 203191,\n    sha256: "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",';
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, previous);
+    assert.equal(Buffer.byteLength(text), 120138);
+    assert.equal(
+      core.sha(text),
+      "a7ddc2e84df50128cefa69d4a4a57613f45b8f06fea3b2fbf78b491b65dd8d4f",
+    );
+  }
   const clock = `  const tools = {
     ...originalTools,
     remaining: () => Math.floor(transactionCheck(state)),
@@ -1425,25 +1438,25 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
     "blob",
     "HEAD:" + archive,
   ]);
-  assert.equal(canonical.length, 203191);
+  assert.equal(canonical.length, 208244);
   assert.equal(
     core.sha(canonical),
-    "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",
+    "a41a4d3f42a46801d5114a450eb28b3331a95548783502333eab39e10c730e64",
   );
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
     Buffer.from(physical.toString("utf8").replaceAll("\r\n", "\n")),
     canonical,
-    "The new proof uses canonical final3be; CRLF is only checkout encoding",
+    "The new proof uses canonical diagnostic a41; CRLF is only checkout encoding",
   );
   const inverseFixture =
     "tests/fixtures/cef/mac_nearby_production_metadata_test.py";
   const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
   assert.equal(
     core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
-    "da9d2bfa3feede962bcc998d32b2fbdf190d793330be5b610df696c9640a0415",
+    "1cb391485ecabae260f4494bebabca81697f94b488633348571c89c12d74fbdf",
   );
-  // This retained test performs the exact public3be -> native5af -> old839
+  // This retained test performs diagnostic a41 -> public3be -> native5af -> old839
   // literal inverses and asserts both COMPLETE historical helper hashes.
   execFileSync(
     process.platform === "win32" ? "python" : "python3",

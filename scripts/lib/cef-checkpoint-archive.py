@@ -2281,10 +2281,87 @@ def source_close(close, primary):
             raise
 
 
+# Diagnostics from this exact failed read, never path/clock or filesystem authority.
+def source_metadata_read_value(value, mode):
+    fields = {'mode','stage','phase','predicate','size','nlink','kind','maximum','readBytes'}
+    require(type(value) is dict and set(value) in (fields, fields | {'candidate'}) and
+            value['mode'] == mode and mode in SOURCE_IO_MODES and value['stage'] in ('stat','stream') and
+            value['phase'] in SOURCE_PHASES and value['predicate'] in ('kind','nlink','empty','size','growth') and
+            value['kind'] in ('regular','directory','symlink','other') and
+            all(type(value[key]) is int and 0 <= value[key] <= 2**53-1 for key in ('size','nlink')) and
+            type(value['maximum']) is int and 0 < value['maximum'] <= SOURCE_METADATA_MAX_BYTES, 'diagnostic')
+    if value['stage'] == 'stat':
+        expected = ('kind' if value['kind'] != 'regular' else 'nlink' if value['nlink'] != 1 else
+                    'empty' if value['size'] == 0 else 'size' if value['size'] > value['maximum'] else None)
+        require(value['readBytes'] is None and value['predicate'] == expected, 'diagnostic')
+    else:
+        require(value['predicate'] == 'growth' and value['kind'] == 'regular' and value['nlink'] == 1 and
+                0 < value['size'] <= value['maximum'] and type(value['readBytes']) is int and
+                value['size'] < value['readBytes'] <= value['size'] + 65536, 'diagnostic')
+    if 'candidate' in value:
+        item = value['candidate']
+        require(type(item) is dict and set(item) in ({'bytes','sha256'},{'bytes','sha256','name'}) and
+                type(item['bytes']) is int and 0 < item['bytes'] <= 4*1024**2 and
+                isinstance(item['sha256'],str) and re.fullmatch(r'[a-f0-9]{64}',item['sha256']) is not None and
+                ('name' not in item or source_path_name(item['name']) and len(item['name'].encode()) == item['bytes'] and
+                 hashlib.sha256(item['name'].encode()).hexdigest() == item['sha256']), 'diagnostic')
+    require(len(json.dumps(value).encode()) <= 2048, 'diagnostic')
+    return dict(value)
+
+
+def source_metadata_read_record(error, path, before, maximum, stage, count=None):
+    try:
+        context = SOURCE_IO_CONTEXT.get()
+        if (type(error) is not CheckpointError or str(error) != 'source-metadata-read-bound' or
+                type(context) is not tuple or len(context) != 2 or context[0] not in SOURCE_IO_MODES):
+            return
+        if 'sourceMetadataReadFailure' in error.__dict__ or error.__dict__.get('sourceMetadataReadFailureInvalid') is True:
+            return
+        kind = ('regular' if stat.S_ISREG(before.st_mode) else 'directory' if stat.S_ISDIR(before.st_mode) else
+                'symlink' if stat.S_ISLNK(before.st_mode) else 'other')
+        predicate = ('growth' if stage == 'stream' else 'kind' if kind != 'regular' else
+                     'nlink' if before.st_nlink != 1 else 'empty' if before.st_size == 0 else 'size')
+        value = {'mode':context[0], 'stage':stage, 'phase':SOURCE_PROGRESS['phase'] if SOURCE_PROGRESS is not None else 'start',
+                 'predicate':predicate, 'size':before.st_size, 'nlink':before.st_nlink, 'kind':kind,
+                 'maximum':maximum, 'readBytes':count}
+        if context[1] is not None:
+            try:
+                name = Path(path).relative_to(context[1]).as_posix()
+            except ValueError:
+                name = '.'
+            if name != '.':
+                require(all(part not in ('','.','..') for part in name.split('/')), 'diagnostic')
+                raw = name.encode()
+                value['candidate'] = {'bytes':len(raw), 'sha256':hashlib.sha256(raw).hexdigest(),
+                                      **({'name':name} if source_path_name(name) else {})}
+        error.sourceMetadataReadFailure = source_metadata_read_value(value, context[0])
+    except BaseException:
+        try:
+            error.sourceMetadataReadFailureInvalid = True
+        except BaseException:
+            pass
+
+
+def source_metadata_read_failure_fields(error, mode):
+    if mode not in SOURCE_IO_MODES or type(error) is not CheckpointError or str(error) != 'source-metadata-read-bound':
+        return {}
+    try:
+        if error.__dict__.get('sourceMetadataReadFailureInvalid') is True:
+            return {'sourceMetadataReadFailureInvalid':True}
+        value = error.__dict__.get('sourceMetadataReadFailure')
+        return {} if value is None else {'sourceMetadataReadFailure':source_metadata_read_value(value, mode)}
+    except BaseException:
+        return {'sourceMetadataReadFailureInvalid':True}
+
+
 def source_read_bytes(path, budget, maximum):
     path = source_io_call('file-path-stat', path, lambda: safe(path));before = source_io_call('file-path-stat', path, path.stat)
-    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= maximum,
-            'source-metadata-read-bound')
+    try:
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= maximum,
+                'source-metadata-read-bound')
+    except CheckpointError as error:
+        source_metadata_read_record(error, path, before, maximum, 'stat')
+        raise
     stream = source_io_call('file-open', path, lambda: path.open('rb'));primary = None;parts = [];count = 0
     try:
         fd_before = source_io_call('file-fd-stat', path, lambda: os.fstat(stream.fileno()))
@@ -2294,7 +2371,13 @@ def source_read_bytes(path, budget, maximum):
             budget.check();chunk=source_io_call('file-read', path, lambda: stream.read(65536))
             if not chunk:
                 break
-            count+=len(chunk);require(count<=before.st_size, 'source-metadata-read-bound');parts.append(chunk)
+            count+=len(chunk)
+            try:
+                require(count<=before.st_size, 'source-metadata-read-bound')
+            except CheckpointError as error:
+                source_metadata_read_record(error, path, before, maximum, 'stream', count)
+                raise
+            parts.append(chunk)
         after=source_io_call('file-path-stat', path, path.stat);held=source_io_call('file-fd-stat', path, lambda: os.fstat(stream.fileno()))
         require(count==before.st_size and stamp(after)==stamp(before)==stamp(held) and
                 after.st_ctime_ns==before.st_ctime_ns==held.st_ctime_ns, 'source-metadata-read-changed')
@@ -3493,6 +3576,6 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # Fixed error labels only; never print raw OS paths or untrusted tar text.
-        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **source_deadline_failure_fields(error, CLI_SOURCE_MODE), **source_content_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
+        print(json.dumps({'complete': False, 'error': str(error) if type(error) is CheckpointError else 'archive-io-error', **({'sourceCloseFailure':True} if SOURCE_CLOSE_FAILURE else {}), **({'sourceJoinFailure':True} if SOURCE_JOIN_FAILURE else {}), **({'externalPhase':MAC_EXTERNAL_PHASE, **({'externalRole':MAC_EXTERNAL_ROLE} if MAC_EXTERNAL_PHASE!='links' else {})} if MAC_EXTERNAL_ROLE is not None else {}), **({'macReportingFailure':True} if MAC_REPORT_FAILURE else {}), **source_failure_fields(error), **source_io_failure_fields(error, CLI_SOURCE_MODE), **source_bound_failure_fields(error, CLI_SOURCE_MODE), **source_file_failure_fields(error, CLI_SOURCE_MODE), **source_metadata_read_failure_fields(error, CLI_SOURCE_MODE), **source_deadline_failure_fields(error, CLI_SOURCE_MODE), **source_content_failure_fields(error, CLI_SOURCE_MODE), **external_member_fields(error), **external_link_fields(error)}))
 
         raise SystemExit(1)

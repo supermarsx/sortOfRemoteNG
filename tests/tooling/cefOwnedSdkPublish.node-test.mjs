@@ -1082,6 +1082,18 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
     rows.find(
       (x) => x.path === "scripts/lib/cef-linux-producer-migration.mjs",
     ).sha = linuxMigrationBlob;
+  if (target !== "aarch64-unknown-linux-gnu") {
+    const currentMacBlobs = {
+      "scripts/lib/cef-checkpoint-archive.py":
+        "2bfcdd7cddc49e2ec4a8aa339cb7c938053422ad",
+      "scripts/lib/cef-engineering-checkpoint.mjs":
+        "c9be305e003e1b7a3691422d3ec14d72c8419faa",
+      "scripts/lib/cef-linux-producer-migration.mjs":
+        "37985ca943b3ec0727353dd4c964f489244197a6",
+    };
+    for (const [name, sha] of Object.entries(currentMacBlobs))
+      rows.find((row) => row.path === name).sha = sha;
+  }
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1368,7 +1380,7 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
-test("engineering publication exact target producers preserve Mac59853 and require the reviewed Linux1edd without source-only admission", () => {
+test("engineering publication exact target producers bind current Mac diagnostics and require the reviewed Linux1edd without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
     ENGINEERING_PRODUCER,
