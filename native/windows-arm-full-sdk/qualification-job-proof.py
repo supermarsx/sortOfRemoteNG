@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-PROFILE_SHA = "0e5bf412b6575a4e1f576d257bc4e047f02082d75566dee982f6cf68fcbfc24b"
+PROFILE_SHA = "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c"
 REPO = Path(__file__).resolve().parents[2]
 PROFILE = Path(__file__).with_name("qualification-job-proof-profile.json")
 CASES = (

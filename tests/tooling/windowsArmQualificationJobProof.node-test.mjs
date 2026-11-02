@@ -212,7 +212,7 @@ test("only the benign proof profile is active across exactly seven paths, withou
   assert.equal(policy.suiteSeconds, 300);
   assert.equal(policy.finalReserveSeconds, 150);
   assert.equal(policy.kernelCleanupSeconds, 30);
-  assert.equal(policy.image, "20261030.294.1");
+  assert.equal(policy.image, "20261021.278.1");
   assert.equal(
     policy.kernel.sha256,
     "70f10cc78c6b75519d3b33cb02788b49f058bdfdf0780b27aeb7becde0b5e716",
@@ -232,11 +232,29 @@ test("only the benign proof profile is active across exactly seven paths, withou
   assert((await fs.stat(path.join(ROOT, policy.workflow))).isFile());
 });
 
-test("the two proof flags and two exact pin literals invert to the entire reviewed inactive profile Python and Node bytes", () => {
+function restoreCurrentImageSelection(text) {
+  for (const [selected, previous] of [
+    [
+      "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
+      "refs/heads/codex/windows-arm-benign-job-proof-20261102",
+    ],
+    ["20261021.278.1", "20261030.294.1"],
+  ]) {
+    assert.equal(text.split(selected).length, 2);
+    text = text.replace(selected, previous);
+  }
+  return text;
+}
+
+test("the two proof flags and two exact pin literals invert through the entire current-image baseline to reviewed inactive bytes", () => {
   const old =
       "f923354c8141f946a464d7ff1dbb68dc9cc917fc693ee75c4d8041e1ee7eee49",
-    current = hash(rawPolicy);
-  let inverse = rawPolicy.toString();
+    current = hash(rawPolicy),
+    reviewedCurrent =
+      "0e5bf412b6575a4e1f576d257bc4e047f02082d75566dee982f6cf68fcbfc24b";
+  let inverse = restoreCurrentImageSelection(rawPolicy.toString());
+  assert.equal(hash(inverse), reviewedCurrent);
+  assert.equal(Buffer.byteLength(inverse), 2897);
   for (const key of ["workflowActivation", "proofExecutionAdmitted"]) {
     const token = `"${key}": true`;
     assert.equal(inverse.split(token).length, 2);
@@ -244,20 +262,24 @@ test("the two proof flags and two exact pin literals invert to the entire review
   }
   assert.equal(hash(inverse), old);
   assert.equal(Buffer.byteLength(inverse), 2899);
-  for (const [body, bytes, digest] of [
+  for (const [body, bytes, currentDigest, digest] of [
     [
       adapter,
       32305,
+      "e066b97a9205d63598c8bbc198e94b8560c0336f196ce5ee5cd4d530830a5601",
       "c5f3bbe050f3ab3c85121ff9022fe9994db9fbc9b35d135a969d7e880947a662",
     ],
     [
       fixture,
       38078,
+      "2778c7e1c4e7d51a1d241a8f2efcdde22b5c5bc3c4fd20c04cb810b4e47fab62",
       "ecaedcbe0ef4adee1a89b2262136c3437c3430611f76373a5c55dc0f21f3ea38",
     ],
   ]) {
     assert.equal(body.split(current).length, 2);
-    const previous = body.replace(current, old);
+    const currentBody = body.replace(current, reviewedCurrent);
+    assert.equal(hash(currentBody), currentDigest);
+    const previous = currentBody.replace(reviewedCurrent, old);
     assert.equal(Buffer.byteLength(previous), bytes);
     assert.equal(hash(previous), digest);
   }
@@ -276,7 +298,7 @@ test("actual admitted Node entry still denies a foreign scope before any worker 
 test("fixed actual authority has no alternate image branch workflow repository or mixed head", () => {
   assert.doesNotThrow(() => inspectAuthority(admitted, environment(), host));
   for (const [key, bad] of Object.entries({
-    ImageVersion: "20261021.278.1",
+    ImageVersion: "20261030.294.1",
     GITHUB_EVENT_NAME: "push",
     GITHUB_REF: "refs/heads/main",
     GITHUB_REPOSITORY_VISIBILITY: "private",
@@ -950,7 +972,7 @@ test("new workflow is no-input private-branch image-bound and uploads only valid
     first.run.indexOf("CEF_WINDOWS_BENIGN_JOB_STARTED_MS") <
       first.run.indexOf("ImageVersion"),
   );
-  assert(first.run.includes("20261030.294.1"));
+  assert(first.run.includes("20261021.278.1"));
   const checkout = proofJob.steps.find((step) =>
     step.uses?.startsWith("actions/checkout@"),
   );
@@ -1085,4 +1107,116 @@ test("existing CI explicit proof contract and exact Node inventory entries are r
     inventory.split('"windows-arm-source-preflight.yml": 1,').length,
     2,
   );
+});
+
+test("fixed old-image proof reuses exact reviewed old source and executable pins without admitting another image", async () => {
+  assert.equal(
+    policy.ref,
+    "refs/heads/codex/windows-arm-benign-job-proof-20261021-20261102",
+  );
+  assert.equal(policy.image, "20261021.278.1");
+  const oldRaw = await fs.readFile(
+    path.join(DIR, "image-qualified-20261021-profile.json"),
+  );
+  assert.equal(oldRaw.length, 35867);
+  assert.equal(
+    hash(oldRaw),
+    "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+  );
+  const old = JSON.parse(oldRaw);
+  const privateRaw = await fs.readFile(
+    path.join(DIR, "private-qualification-profile.json"),
+  );
+  assert.equal(
+    hash(privateRaw),
+    "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",
+  );
+  const privatePolicy = JSON.parse(privateRaw);
+  assert.equal(privatePolicy.images[policy.image].profileSha256, hash(oldRaw));
+  assert.equal(old.image, policy.image);
+  assert.equal(
+    old.sourceGn.sourceId,
+    "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
+  );
+  const namespace = old.sourceGn.namespace;
+  const lock = JSON.parse(
+    await fs.readFile(path.join(ROOT, namespace, "source-lock.json")),
+  );
+  const tableRaw = await fs.readFile(
+    path.join(ROOT, namespace, "tools/aarch64-pc-windows-msvc.json"),
+  );
+  assert.equal(
+    hash(tableRaw),
+    "3fcbd983ae525c55b575f06b64f4c7663351535deabdce74a8df3b2a73c77113",
+  );
+  assert.equal(lock.builds[0].toolchainLock.sha256, hash(tableRaw));
+  const { releaseIdentity } = await import("../../scripts/cef-runtime-ci.mjs");
+  assert.equal(
+    releaseIdentity(lock, "aarch64-pc-windows-msvc").sourceLockSha256,
+    old.sourceGn.sourceId,
+  );
+  const rows = JSON.parse(tableRaw).files;
+  for (const role of ["python", "node"]) {
+    const observed = rows.find(
+      (row) => row.path === policy[role].path.slice(3),
+    );
+    assert(observed);
+    assert.equal(observed.size, policy[role].bytes);
+    assert.equal(observed.sha256, policy[role].sha256);
+  }
+  assert.deepEqual(privatePolicy.tools.python, policy.python);
+  assert.deepEqual(privatePolicy.driverNode, policy.node);
+  assert.deepEqual(old.sourceGn.hostTools.node, policy.node);
+  assert(privatePolicy.staticLoadingPolicy.images.includes(policy.image));
+  assert.equal(privatePolicy.staticLoadingPolicy.systemImageIsTrustedTcb, true);
+  assert.equal(
+    privatePolicy.staticLoadingPolicy.actualLoaderClosureApproved,
+    false,
+  );
+  assert.equal(privatePolicy.staticLoadingPolicy.system32ByteSetProven, false);
+  assert.equal(policy.sourcePaths.length, 8);
+  for (const image of [
+    "20261030.294.1",
+    "20261021.278.2",
+    "20261021.278.1 ",
+    "unknown",
+  ])
+    assert.throws(
+      () =>
+        inspectAuthority(
+          policy,
+          { ...environment(), ImageVersion: image },
+          host,
+        ),
+      /PROOF_AUTHORITY/,
+    );
+  const originalRef = "refs/heads/codex/windows-arm-benign-job-proof-20261102";
+  assert.throws(
+    () =>
+      inspectAuthority(
+        policy,
+        {
+          ...environment(),
+          GITHUB_REF: originalRef,
+          GITHUB_WORKFLOW_REF: `${policy.repository}/${policy.workflow}@${originalRef}`,
+        },
+        host,
+      ),
+    /PROOF_AUTHORITY/,
+  );
+});
+
+test("old-image workflow has only exact ref and image delta from immutable88258 current proof", () => {
+  const previous = restoreCurrentImageSelection(workflowText);
+  assert.equal(Buffer.byteLength(previous), 9094);
+  assert.equal(
+    hash(previous),
+    "a299e9bc4fba7248584091d34334eb9ca912452246ca5e20a8f912d769339350",
+  );
+  assert.equal(
+    policy.workflow,
+    ".github/workflows/windows-arm-qualification-job-proof.yml",
+  );
+  assert(!proofJob.if.includes("||"));
+  assert(!workflowText.includes("20261030.294.1"));
 });

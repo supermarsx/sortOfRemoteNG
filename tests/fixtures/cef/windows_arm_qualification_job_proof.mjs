@@ -14,7 +14,7 @@ const PROFILE = path.join(
   "native/windows-arm-full-sdk/qualification-job-proof-profile.json",
 );
 const PROFILE_SHA =
-  "0e5bf412b6575a4e1f576d257bc4e047f02082d75566dee982f6cf68fcbfc24b";
+  "8d1f62df467376c9ccd45dd08e271d1a857a0db730efeaac28de6f01c17e627c";
 const ROLES = Object.freeze([
   "qual-gn-desc-pa",
   "qual-gn-desc-cef",
