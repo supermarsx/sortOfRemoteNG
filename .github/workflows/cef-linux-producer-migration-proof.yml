@@ -13,7 +13,7 @@ defaults:
     shell: bash
 jobs:
   proof:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/linux-arm-3aa-producer-migration-20261102' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/linux-arm-final-helper-proof-20261102' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:

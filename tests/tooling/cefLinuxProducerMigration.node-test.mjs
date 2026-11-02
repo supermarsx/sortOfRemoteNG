@@ -37,7 +37,7 @@ function withoutCliModuleDelta(text) {
 test("CLI additions invert to the complete closed transaction module, with both admission gates still closed", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   assert.equal(
-    core.sha(withoutCliModuleDelta(text)),
+    core.sha(withoutFinalHelperProofDelta(withoutCliModuleDelta(text))),
     "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
   );
   assert(text.includes("const TRANSACTION_ADMITTED = false;"));
@@ -216,8 +216,37 @@ test("CLI fixed selector reads actual committed capsule bytes and rejects missin
   await assert.rejects(read(producer), /POLICY_UNCOMMITTED/);
 });
 
+function withoutFinalHelperProofDelta(text) {
+  assert.equal(
+    core.sha(text),
+    "3cb94d746b48fa030c3a8f300c65f043f83296849d281c5149c87c2eea45e275",
+  );
+  for (const [current, previous] of [
+    [
+      '  branch: "refs/heads/codex/linux-arm-final-helper-proof-20261102",',
+      '  branch: "refs/heads/codex/linux-arm-3aa-producer-migration-20261102",',
+    ],
+    [
+      '    bytes: 203191,\n    sha256: "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",',
+      '    bytes: 181586,\n    sha256: "839ed8a3be5f81dd7778bf7fb4d76209d7e64342ec9387dc323d5c280098165d",',
+    ],
+  ]) {
+    assert.equal(
+      text.split(current).length,
+      2,
+      "one exact final-helper proof inverse",
+    );
+    text = text.replace(current, previous);
+  }
+  assert.equal(Buffer.byteLength(text), 114830);
+  assert.equal(
+    core.sha(Buffer.from(text)),
+    "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
+  );
+  return text;
+}
 function withoutTransactionDelta(text) {
-  text = withoutCliModuleDelta(text);
+  text = withoutFinalHelperProofDelta(withoutCliModuleDelta(text));
   for (const [start, end] of [
     [
       "// BEGIN inactive fixed transaction imports\n",
@@ -1258,16 +1287,35 @@ test("inactive retarget binds the actual main3aa129-row producer and canonical L
     "blob",
     "HEAD:" + archive,
   ]);
-  assert.equal(canonical.length, 181586);
+  assert.equal(canonical.length, 203191);
   assert.equal(
     core.sha(canonical),
-    "839ed8a3be5f81dd7778bf7fb4d76209d7e64342ec9387dc323d5c280098165d",
+    "3be8d4b159293e677d0d49ce7b6f09f661363481db655f936e436f694a9ef8b8",
   );
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
     Buffer.from(physical.toString("utf8").replaceAll("\r\n", "\n")),
     canonical,
-    "Windows physical18c bytes differ only by CRLF; proof remains canonical839, not a new source pin",
+    "The new proof uses canonical final3be; CRLF is only checkout encoding",
+  );
+  const inverseFixture =
+    "tests/fixtures/cef/mac_nearby_production_metadata_test.py";
+  const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
+  assert.equal(
+    core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
+    "da9d2bfa3feede962bcc998d32b2fbdf190d793330be5b610df696c9640a0415",
+  );
+  // This retained test performs the exact public3be -> native5af -> old839
+  // literal inverses and asserts both COMPLETE historical helper hashes.
+  execFileSync(
+    process.platform === "win32" ? "python" : "python3",
+    [
+      "-I",
+      "-B",
+      inverseFixture,
+      "PublicScope.test_twelve_native_qualified_filesystem_hash_and_timestamp_functions_are_byte_equivalent",
+    ],
+    { cwd: ROOT, timeout: 20000, windowsHide: true, maxBuffer: 128 * 1024 },
   );
   const source = await fs.readFile(MODULE, "utf8");
   const ast = ts.createSourceFile(
@@ -1291,7 +1339,7 @@ test("inactive retarget binds the actual main3aa129-row producer and canonical L
   assert.equal(closed.archivePin.sha256, core.sha(canonical));
   assert.equal(
     closed.branch,
-    "refs/heads/codex/linux-arm-3aa-producer-migration-20261102",
+    "refs/heads/codex/linux-arm-final-helper-proof-20261102",
   );
   assert.notEqual(
     closed.oldProducer,

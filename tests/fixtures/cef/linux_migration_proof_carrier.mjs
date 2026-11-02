@@ -7,13 +7,12 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const BRANCH =
-  "refs/heads/codex/linux-arm-3aa-producer-migration-20261102";
+export const BRANCH = "refs/heads/codex/linux-arm-final-helper-proof-20261102";
 export const WORKFLOW =
   "supermarsx/sortOfRemoteNG/.github/workflows/cef-linux-producer-migration-proof.yml@" +
   BRANCH;
 export const CODE_DIGEST =
-  "b061c0ecf1b6a7b6a67f2e64845987993686dfbd3312d5819bec715dcc620dc6";
+  "d060f671e8a784046f16cd50f8661da8c9883b623c376e23eccf2f4ccc4a9472";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const SELF = "tests/fixtures/cef/linux_migration_proof_carrier.mjs";
 const CORE = "scripts/lib/cef-linux-producer-migration.mjs";
