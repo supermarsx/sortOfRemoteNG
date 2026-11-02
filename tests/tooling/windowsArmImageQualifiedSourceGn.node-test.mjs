@@ -188,7 +188,24 @@ function previousSourceApplyObservation(text) {
   }
   return text;
 }
+function previousHooksGnStageDeadline(text) {
+  for (const [current, previous] of [
+    [
+      '(stage === "source-hooks-gn" && maximumSeconds === 2700)',
+      '(stage === "source-hooks-gn" && maximumSeconds === 1800)',
+    ],
+    [
+      'sourceStage(root, budget, "source-hooks-gn", 2700, async () => {',
+      'sourceStage(root, budget, "source-hooks-gn", 1800, async () => {',
+    ],
+  ]) {
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, previous);
+  }
+  return text;
+}
 function previousGnArgumentProjection(text) {
+  text = previousHooksGnStageDeadline(text);
   for (const pattern of [
     /^# BEGIN fixed ARM64 GN argument projection\n[\s\S]*?^# END fixed ARM64 GN argument projection\n/m,
     /^# BEGIN fixed ARM64 GN projection completion\n[\s\S]*?^# END fixed ARM64 GN projection completion\n/m,
@@ -972,7 +989,7 @@ for (const [label, driver, originalName] of [
           "owned",
           { remaining: () => 500000 },
           "source-hooks-gn",
-          1800,
+          2700,
           async () => callback(),
         );
       } catch (error) {
@@ -982,6 +999,141 @@ for (const [label, driver, originalName] of [
       assert.equal(scheduled[1], 380000);
       assert.equal(closed, 2);
       assert.equal(records[0].firstFailure, "FULL_SOURCE_STAGE_DEADLINE");
+    },
+  );
+
+  test(
+    label +
+      ": actual hooks/GN stage old1800 RED new2700 GREEN stays inside original whole end and reserve (modeled clocks only)",
+    async () => {
+      const text = (
+        await read(
+          `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+        )
+      ).toString();
+      const extract = (source) => {
+        const start = source.indexOf("async function sourceStage(");
+        const end = source.indexOf("async function executeCommand(", start);
+        assert(start > 0 && end > start);
+        return source.slice(start, end);
+      };
+      const run = async ({
+        legacy = false,
+        remaining = 7200000,
+        elapsed = 2000000,
+        stage = "source-hooks-gn",
+        maximum = legacy ? 1800 : 2700,
+        reject = false,
+        failure,
+      } = {}) => {
+        let mono = 0,
+          wall = 7200000 - remaining,
+          scheduled,
+          cleared = 0,
+          entered = false,
+          rejected = false,
+          caught;
+        const context = { wallWorkEnd: 7200 };
+        const budget = driver.sourceBudget(
+          context,
+          p,
+          () => wall,
+          () => mono,
+        );
+        const actual = vm.runInNewContext(
+          "(" +
+            extract(legacy ? previousHooksGnStageDeadline(text) : text) +
+            ")",
+          {
+            need: (ok, code) => {
+              if (!ok) throw new Error(code);
+            },
+            performance: { now: () => mono },
+            setTimeout: (_fn, ms) => {
+              scheduled = ms;
+              return 1;
+            },
+            clearTimeout: () => cleared++,
+          },
+        );
+        try {
+          await actual("inert", budget, stage, maximum, async () => {
+            entered = true;
+            const advance = elapsed === "boundary" ? scheduled : elapsed;
+            mono += advance;
+            wall += advance;
+            if (reject) throw failure;
+            return "fulfilled";
+          });
+        } catch (error) {
+          rejected = true;
+          caught = error;
+        }
+        assert.equal(context.wallWorkEnd, 7200);
+        return { rejected, caught, scheduled, cleared, entered, budget };
+      };
+      const old = await run({ legacy: true });
+      assert.equal(old.rejected, true);
+      assert.equal(old.caught.message, "FULL_SOURCE_STAGE_DEADLINE");
+      assert.equal(old.scheduled, 1800000);
+      const current = await run();
+      assert.equal(current.rejected, false);
+      assert.equal(current.scheduled, 2700000);
+      assert.equal(current.budget.remaining(), 5200000);
+      assert.equal(current.cleared, 1);
+
+      // Actual failed-run remaining987272ms plus its consumed1800s stage.
+      // This is a modeled schedule, never a source/GN fulfillment claim.
+      const remaining = 2787272.3024;
+      const clipped = await run({ remaining });
+      assert.equal(clipped.rejected, false);
+      assert(Math.abs(clipped.scheduled - (remaining - 120000)) < 0.000001);
+      assert(
+        Math.abs(clipped.budget.remaining() - (remaining - 2000000)) < 0.000001,
+      );
+      const boundary = await run({ remaining, elapsed: "boundary" });
+      assert.equal(boundary.rejected, true);
+      assert.equal(boundary.caught.message, "FULL_SOURCE_STAGE_DEADLINE");
+      assert(boundary.budget.remaining() >= 119999.999999);
+      const expired = await run({ remaining, elapsed: 2800000 });
+      assert.equal(expired.caught.message, "FULL_DRIVER_DEADLINE");
+      const reserve = await run({ remaining: 120000 });
+      assert.equal(reserve.caught.message, "FULL_SOURCE_RESERVE");
+      assert.equal(reserve.entered, false);
+      assert.equal(reserve.scheduled, undefined);
+
+      const cancellation = Object.assign(new Error("owned cancellation"), {
+        name: "AbortError",
+      });
+      for (const failure of [cancellation, undefined, null, false, 0, ""]) {
+        const result = await run({
+          remaining,
+          elapsed: 2800000,
+          reject: true,
+          failure,
+        });
+        assert.equal(result.rejected, true);
+        assert.equal(result.caught, failure);
+        assert.equal(result.cleared, 1);
+      }
+      for (const [stage, maximum] of [
+        ["source-hooks-gn", 1800],
+        ["source-hooks-gn", 2701],
+        ["source-hooks-gn", 4500],
+        ["source-acquisition", 2700],
+        ["caller-stage", 2700],
+      ]) {
+        const denied = await run({ stage, maximum });
+        assert.equal(denied.caught.message, "FULL_SOURCE_STAGE");
+        assert.equal(denied.entered, false);
+        assert.equal(denied.scheduled, undefined);
+      }
+      const acquisition = await run({
+        stage: "source-acquisition",
+        maximum: 4500,
+      });
+      assert.equal(acquisition.rejected, false);
+      assert.equal(acquisition.scheduled, 4500000);
     },
   );
 
@@ -1582,7 +1734,7 @@ for (const [label, driver, originalName] of [
       );
       assert(!text.includes('path.join(REPO, "scripts/'));
       assert(text.includes('"source-acquisition", 4500'));
-      assert(text.includes('"source-hooks-gn", 1800'));
+      assert(text.includes('"source-hooks-gn", 2700'));
       assert(text.includes("engineCompilationRequested: false"));
       assert(text.includes("compilerExecuted: null"));
       assert(!text.includes("--create-distrib"));
@@ -2382,6 +2534,32 @@ test("fixed ARM64 GN projection denies near arguments, source/output/input drift
       assert.equal(value.nativeGnExecuted, false);
       assert.equal(value.compilerExecuted, false);
     }
+  }
+});
+
+test("hooks/GN stage deadline whole inverse restores both complete c9 drivers before GN projection and older history", async () => {
+  for (const [label, bytes, digest] of [
+    [
+      "current",
+      117221,
+      "4201bcb93eecfc333c92a76327d8312100b0b3a9b1b2e0ccaf288a8db9d5f899",
+    ],
+    [
+      "20261021",
+      117233,
+      "ff170a7e760f3dd3168604b9a78c761862e41d1407236442e5038d1abed12351",
+    ],
+  ]) {
+    const text = (
+      await read(
+        `native/windows-arm-full-sdk/image-qualified-${label}-driver.mjs`,
+      )
+    )
+      .toString()
+      .replaceAll("\r\n", "\n");
+    const previous = previousHooksGnStageDeadline(text);
+    assert.equal(Buffer.byteLength(previous), bytes);
+    assert.equal(sha(previous), digest);
   }
 });
 

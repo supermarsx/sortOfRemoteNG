@@ -2403,7 +2403,7 @@ export function validateGeneratedArguments(raw) {
 async function sourceStage(root, budget, stage, maximumSeconds, action) {
   need(
     (stage === "source-acquisition" && maximumSeconds === 4500) ||
-      (stage === "source-hooks-gn" && maximumSeconds === 1800),
+      (stage === "source-hooks-gn" && maximumSeconds === 2700),
     "FULL_SOURCE_STAGE",
   );
   const allowed = Math.min(maximumSeconds * 1000, budget.remaining() - 120000);
@@ -3048,7 +3048,7 @@ export async function main(argv = process.argv.slice(2)) {
         true,
       );
     });
-    await sourceStage(root, budget, "source-hooks-gn", 1800, async () => {
+    await sourceStage(root, budget, "source-hooks-gn", 2700, async () => {
       stage = executionCommands[1].role;
       const projection = validateHookProjection(
         await checked(() =>
