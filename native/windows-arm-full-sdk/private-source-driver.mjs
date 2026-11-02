@@ -656,8 +656,9 @@ def empty_directory(path,clock):
 def override_absent():absent(DEPOT/'.cipd_client_platform')
 def shim(role,guard_sha,witness_sha):
  return ('@echo off\r\n"'+P['python']+'" -I -B "'+str(SCRIPT)+'" --execute '+role+' '+guard_sha+' '+witness_sha+' %*\r\nexit /b %errorlevel%\r\n').encode('ascii')
-def run_checked(command,clock):
+def run_checked(command,clock,stdin=None):
  seconds=clock.remaining()-120;data.need(seconds>0,'FULL_SOURCE_RESERVE')
+ if stdin is not None:return subprocess.run(command,check=False,shell=False,timeout=seconds,input=stdin).returncode
  return subprocess.run(command,check=False,shell=False,timeout=seconds).returncode
 def derived_setup(raw):
  old=b'call "%~dp0\\cipd.bat" ensure';new=b'"%~dp0\\.cipd_client.exe" ensure'
@@ -711,6 +712,10 @@ def verify(expected,guard_sha):
 def arguments(role,args):
  data.need(type(args)is list and 0<len(args)<=64 and all(type(value)is str and len(value)<=4096 and not any(c in value for c in '\x00\r\n%&|<>!^')for value in args),'FULL_BOOTSTRAP_ARGV')
  if role=='cipd':
+  if args[0]=='export':
+   data.need(len(args)==5 and args[1]=='--root' and args[3:]==['--ensure-file','-'],'FULL_BOOTSTRAP_CIPD_EXPORT_ARGV')
+   out=data.plain(args[2]);name=out.parent.name;identity=name[len('virtualenv+'):]
+   data.need(args[2].replace('\\','/')==out.as_posix() and out.name=='contents' and out.parent.parent==ROOT/'source-caches/vpython/store' and name.startswith('virtualenv+') and len(identity)==26 and all(c in '0123456789abcdefghijklmnopqrstuv'for c in identity) and identity[-1]in '048cgkos' and stat.S_ISDIR(out.lstat().st_mode),'FULL_BOOTSTRAP_CIPD_EXPORT_ROOT');return
   if args[0]=='expand-package-name':
    data.need(len(args)==2 and args[1] and not args[1].startswith(('-','/')) and '..'not in args[1] and all(c in 'abcdefghijklmnopqrstuvwxyz0123456789_/{}.-'+chr(36)for c in args[1]),'FULL_BOOTSTRAP_CIPD_ARGV');return
   data.need(len(args)==7 and args[0]in ('ensure','ensure-file-resolve') and args[1]=='-log-level' and args[2]in ('info','error'),'FULL_BOOTSTRAP_CIPD_ARGV')
@@ -721,11 +726,21 @@ def arguments(role,args):
    data.need(args[3]=='-ensure-file' and args[5]=='-json-output','FULL_BOOTSTRAP_CIPD_ARGV');paths=[args[4],args[6]]
   for value in paths:
    path=data.plain(value);info=path.lstat();data.need(path.parent==ROOT/'tmp' and stat.S_ISREG(info.st_mode) and info.st_nlink==1,'FULL_BOOTSTRAP_TEMP_PATH')
+def export_input(clock):
+ # Exact pinned Chromium 3.11 install -> infra c77 / LUCI 7ba3 CIPDExport.
+ # ensure.File.Serialize writes two spaces between this package and version.
+ expected=b'infra/3pp/tools/virtualenv  version:2@20.25.1.chromium.8\n'
+ clock.remaining();raw=sys.stdin.buffer.read(len(expected)+1);clock.remaining()
+ data.need(type(raw)is bytes and raw==expected,'FULL_BOOTSTRAP_CIPD_EXPORT_INPUT')
+ return raw
+
 def execute(role,args,expected,guard_sha,runner=run_checked):
  data.need(role in ('cipd','vpython'),'FULL_BOOTSTRAP_ROLE');arguments(role,args)
+ stdin=export_input(context())if role=='cipd'and args[0]=='export'else None
  value,clock=verify(expected,guard_sha);failed=False
  try:
-  code=runner([value['client'if role=='cipd'else 'vpython']['path'],*args],clock)
+  command=[value['client'if role=='cipd'else 'vpython']['path'],*args]
+  code=runner(command,clock)if stdin is None else runner(command,clock,stdin)
   data.need(type(code)is int and code==0,'FULL_BOOTSTRAP_CHILD_EXIT')
  except BaseException:failed=True;raise
  finally:
@@ -763,7 +778,7 @@ def bind(expected,guard_sha):
  original_init=popen.__init__;approved=dict(os.environ)
  def admitted(self,args,**kwargs):
   if isinstance(args,(list,tuple))and args and args[0]in ('cipd','cipd.bat',str(DEPOT/'cipd.bat')):
-   values=list(args[1:]);arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
+   values=list(args[1:]);data.need(not(values and values[0]=='export'),'FULL_BOOTSTRAP_CIPD_EXPORT_ROLE');arguments('cipd',values);inherited_environment(approved,kwargs.get('env'));current,_=verify(expected,guard_sha);kwargs['shell']=False
    return original_init(self,[current['client']['path'],*values],**kwargs)
   return original_init(self,args,**kwargs)
  popen.__init__=admitted;subprocess2._sorng_cipd_bound=True
@@ -1030,7 +1045,7 @@ export function hookProjectionArguments(depot, commands = depot) {
   return [
     "-B",
     "-c",
-    `import sys,os,json
+    `import sys,os,json,re
 sys.path.insert(0,sys.argv[2])
 import source_bootstrap
 source_bootstrap.bind(sys.argv[3],sys.argv[4])
@@ -1043,13 +1058,64 @@ options.process_all_deps=True
 client=gclient.GClient.LoadCurrentConfig(options)
 if client is None: raise RuntimeError('FULL_HOOK_CONFIG')
 if client.RunOnDeps('flatten',args,progress=False)!=0: raise RuntimeError('FULL_HOOK_FLATTEN')
-flat=gclient.Flattener(client,pin_all_deps=True)
+# Hook observation needs scoped native objects, not a global DEPS vars map.
+# Flattener's global-var consistency assertion remains unchanged upstream.
+all_deps={};groups={'hooks':[],'pre_deps_hooks':[]};active=set();counts=[0,0]
+def add_dep(dep):
+ if dep.name in all_deps and all_deps[dep.name]!=dep: raise RuntimeError('FULL_HOOK_DEP_IDENTITY')
+ if dep.url: all_deps[dep.name]=dep
+ if len(all_deps)>4096: raise RuntimeError('FULL_HOOK_DEP_BOUND')
+def collect(dep,depth):
+ if depth>=64 or id(dep) in active: raise RuntimeError('FULL_HOOK_DEP_CYCLE_OR_DEPTH')
+ counts[0]+=1
+ if counts[0]>4096: raise RuntimeError('FULL_HOOK_DEP_BOUND')
+ if not dep.deps_parsed: raise RuntimeError('FULL_HOOK_DEPS_UNPARSED')
+ active.add(id(dep))
+ try:
+  for kind,rows in [('hooks',dep.deps_hooks),('pre_deps_hooks',dep.pre_deps_hooks)]:
+   for hook in rows:
+    if counts[1]>=512: raise RuntimeError('FULL_HOOK_COUNT')
+    counts[1]+=1;groups[kind].append((dep,hook))
+  for child in dep.dependencies: add_dep(child)
+  for child in dep.dependencies:
+   if child.should_recurse: collect(child,depth+1)
+ finally: active.remove(id(dep))
+for solution in client.dependencies:
+ add_dep(solution);collect(solution,0)
+def relative(value):
+ return (type(value)is str and 0<len(value)<=512 and re.fullmatch(r'[A-Za-z0-9_./+-]+',value) is not None and not value.startswith('/') and
+  all(part and part not in ('.','..') and part.lower()!='.git' for part in value.split('/')))
+# Validate recursive origin paths before native pinning or metadata queries.
+# Nonrecursive CIPD names legitimately contain ':', and are never DEPS paths.
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ hierarchy=dep.hierarchy_data()
+ if (not relative(dep.name) or not relative(dep.deps_file) or type(hierarchy)not in(tuple,list) or not 0<len(hierarchy)<=64 or
+  any(type(pair)not in(tuple,list) or len(pair)!=2 or not relative(pair[0]) or type(pair[1])is not str or len(pair[1])>4096 for pair in hierarchy)):
+  raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+# Only recursive Git dependencies can supply the DEPS origins observed here.
+# Formatter-wide pinning would resolve all registered CIPD packages, even those
+# that are irrelevant to this hook observation. Native source sync is unchanged.
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ if dep.GetScmName()!='git': raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+ gclient.Flattener._pin_dep(None,dep)
+origin_rows=set()
+for dep in all_deps.values():
+ if not dep.should_recurse: continue
+ if type(dep.url)is not str or re.fullmatch(r'https://[^\\s@]+@[a-f0-9]{40}',dep.url)is None: raise RuntimeError('FULL_HOOK_PROJECTION_ORIGIN')
+ filename=dep.deps_file
+ if not os.path.exists(os.path.join(client.root_dir,dep.name,filename)):
+  filename='DEPS'
+  if not os.path.exists(os.path.join(client.root_dir,dep.name,filename)): continue
+ origin_rows.add((dep.url,filename,dep.hierarchy_data()))
+ if len(origin_rows)>1024: raise RuntimeError('FULL_HOOK_ORIGIN_COUNT')
 hooks=[]
-for kind,rows in [('hooks',flat._hooks),('pre_deps_hooks',flat._pre_deps_hooks)]:
+for kind,rows in [('hooks',groups['hooks']),('pre_deps_hooks',groups['pre_deps_hooks'])]:
  for dep,hook in rows:
   if len(hooks)>=512: raise RuntimeError('FULL_HOOK_COUNT')
   hooks.append(dict(kind=kind,name=hook.name,condition=hook.condition,pattern=hook.pattern,cwd=os.path.relpath(hook.effective_cwd).replace('\\\\','/'),action=hook.action))
-origins=[dict(url=url,deps_file=filename,hierarchy=hierarchy) for url,filename,hierarchy in sorted(flat.deps_files)]
+origins=[dict(url=url,deps_file=filename,hierarchy=hierarchy) for url,filename,hierarchy in sorted(origin_rows)]
 if len(origins)>1024: raise RuntimeError('FULL_HOOK_ORIGIN_COUNT')
 raw=json.dumps(dict(kind='windows-arm-hook-projection',hooks=hooks,origins=origins),ensure_ascii=True,separators=(',',':')).encode('ascii')
 if len(raw)>4*1024**2: raise RuntimeError('FULL_HOOK_PROJECTION_BOUND')
@@ -1076,11 +1142,24 @@ import gclient
 original=gclient.Hook.run
 dispatch=gclient.gclient_utils.CheckCallAndFilter
 scope=threading.local()
+apache_action=('python3','src/third_party/depot_tools/download_from_google_storage.py','--no_resume','--directory','--recursive','--num_threads=16','--bucket','chromium-apache-win32','src/third_party/apache-win32')
+def project_apache(command,kwargs):
+ hook=getattr(scope,'hook',None)
+ candidate=getattr(hook,'name',None)=='apache_win32' or any(value in command for value in ('chromium-apache-win32','src/third_party/apache-win32'))
+ if not candidate:return command
+ if type(hook)is not gclient.Hook or hook.name!='apache_win32' or hook.condition!='checkout_win' or hook.pattern!=chr(92)+'.sha1' or tuple(hook.action)!=apache_action or tuple(command)!=apache_action:raise RuntimeError('FULL_HOOK_APACHE_PROJECTION')
+ cwd=kwargs.get('cwd');workspace=source_bootstrap.P['workspace']
+ if type(cwd)is not str or cwd.replace(chr(92),'/').lower()!=workspace.lower():raise RuntimeError('FULL_HOOK_APACHE_CWD')
+ source_bootstrap.data.plain(cwd)
+ # Exact source-owned resource projection; preserve the original frozen action.
+ effective=list(command);effective[5]='--num_threads=2'
+ return effective
 def admitted_dispatch(command,*args,**kwargs):
  if not getattr(scope,'active',False): return dispatch(command,*args,**kwargs)
  if type(command) is not list or not command or len(command)>64 or command[0] not in ('python3','vpython3.bat'): raise RuntimeError('FULL_HOOK_ENTRY')
  for value in command:
   if type(value) is not str or len(value)>4096 or any(c in value for c in '\\x00\\r\\n%&|<>!^'): raise RuntimeError('FULL_HOOK_SHELL_ARGUMENT')
+ effective=project_apache(command,kwargs)
  if os.path.islink(adapter) or os.path.realpath(adapter).lower()!=os.path.abspath(adapter).lower(): raise RuntimeError('FULL_PYTHON_ADAPTER_ALIAS')
  source=open(adapter,'rb')
  failed=False
@@ -1094,13 +1173,17 @@ def admitted_dispatch(command,*args,**kwargs):
    if failed: print('FULL_PYTHON_ADAPTER_CLOSE_FAILURE',file=sys.stderr)
    else: raise
  if len(raw)>4096 or hashlib.sha256(raw).hexdigest()!=digest: raise RuntimeError('FULL_PYTHON_ADAPTER_PIN')
- mapped=[adapter if command[0]=='python3' else os.path.join(os.path.dirname(adapter),'vpython3.bat'),*command[1:]]
+ mapped=[adapter if command[0]=='python3' else os.path.join(os.path.dirname(adapter),'vpython3.bat'),*effective[1:]]
  return dispatch(mapped,*args,**kwargs)
 def admitted(self):
- previous=getattr(scope,'active',False)
- scope.active=True
+ previous=getattr(scope,'active',False);previous_hook=getattr(scope,'hook',None)
+ original_action=self.action;apache_guard=self.name=='apache_win32';failed=False
+ scope.active=True;scope.hook=self
  try: return original(self)
- finally: scope.active=previous
+ except BaseException:failed=True;raise
+ finally:
+  scope.active=previous;scope.hook=previous_hook
+  if not failed and apache_guard and (self.name!='apache_win32' or self.condition!='checkout_win' or self.pattern!=chr(92)+'.sha1' or self.action is not original_action or tuple(self.action)!=apache_action):raise RuntimeError('FULL_HOOK_APACHE_POSTCHECK')
 gclient.Hook.run=admitted
 gclient.gclient_utils.CheckCallAndFilter=admitted_dispatch
 sys.exit(gclient.main(['runhooks','--jobs','2']))
