@@ -30,6 +30,7 @@ import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
 import {
   checkpointHost,
+  hostRemaining,
   SOURCE_METADATA_DATE_EPOCH,
 } from "./lib/cef-engineering-checkpoint.mjs";
 import {
@@ -1153,6 +1154,144 @@ export function engineeringBuildProfile(
   return profile;
 }
 
+// BEGIN inactive Linux genuine source owner
+// Only the actual build callsite below registers contexts. These registries
+// have no public writer and never populate migration readiness.
+const linuxSourceOwners = new WeakMap();
+const linuxSourceReceipts = new WeakMap();
+function sourceOwnerFailure(state, error) {
+  if (!state.failed) {
+    state.failed = true;
+    state.error = error;
+  }
+  return state.error;
+}
+function retainedLinuxSourceOwner(context, state, epoch) {
+  if (
+    !state ||
+    !state.active ||
+    linuxSourceOwners.get(context) !== state ||
+    state.epoch !== epoch
+  )
+    fail("LINUX_SOURCE_OWNER_RETIRED");
+  if (state.failed) throw state.error;
+  const remaining = Math.min(
+    state.capture.remaining(),
+    hostRemaining(state.capture.hostClock),
+  );
+  if (!Number.isFinite(remaining) || remaining <= 0)
+    fail("LINUX_SOURCE_OWNER_DEADLINE");
+  return remaining;
+}
+async function withLinuxSourceOwner(context, capture, callback) {
+  if (linuxSourceOwners.has(context)) fail("LINUX_SOURCE_OWNER_DUPLICATE");
+  const state = {
+    capture,
+    active: true,
+    epoch: 0,
+    used: false,
+    failed: false,
+    error: undefined,
+    pending: null,
+    done: false,
+    receipt: null,
+  };
+  linuxSourceOwners.set(context, state);
+  let result;
+  try {
+    result = await callback(context);
+    if (state.used) retainedLinuxSourceOwner(context, state, 0);
+  } catch (error) {
+    sourceOwnerFailure(state, error);
+  } finally {
+    // Revoke before any awaited join. An escaped operation cannot mint a late
+    // receipt, nor may a new compiler stage start before its existing run joins.
+    state.active = false;
+    state.epoch++;
+    if (linuxSourceOwners.get(context) === state)
+      linuxSourceOwners.delete(context);
+    if (state.pending && !state.done)
+      sourceOwnerFailure(state, new Error("LINUX_SOURCE_OWNER_ESCAPED"));
+    if (state.pending) {
+      try {
+        await state.pending;
+      } catch (error) {
+        sourceOwnerFailure(state, error);
+      }
+    }
+  }
+  if (state.failed) throw state.error;
+  return result;
+}
+
+export function revalidateLinuxSourceOwner(context) {
+  const state = linuxSourceOwners.get(context);
+  if (!state || !state.active) fail("LINUX_SOURCE_OWNER_REQUIRED");
+  if (state.failed) throw state.error;
+  if (state.used) fail("LINUX_SOURCE_OWNER_ALREADY_USED");
+  state.used = true;
+  const epoch = state.epoch;
+  const pending = (async () => {
+    try {
+      retainedLinuxSourceOwner(context, state, epoch);
+      const fixed = state.capture;
+      const commandBudget = Object.freeze({
+        remaining: () => retainedLinuxSourceOwner(context, state, epoch),
+        assertRemaining() {
+          retainedLinuxSourceOwner(context, state, epoch);
+        },
+      });
+      await run(fixed.python, fixed.args, {
+        cwd: fixed.cwd,
+        env: fixed.env,
+        logs: fixed.logs,
+        name: "checkpoint-linux-source-revalidation",
+        budget: commandBudget,
+      });
+      // No await between the last ownership/lease check and private branding.
+      retainedLinuxSourceOwner(context, state, epoch);
+      const receipt = Object.freeze({
+        kind: "provisional-linux-source-owner-revalidation",
+      });
+      linuxSourceReceipts.set(receipt, {
+        state,
+        epoch,
+        snapshot: Object.freeze({
+          ...fixed.binding,
+          commandCompleted: true,
+          cohortQuietProven: false,
+          sourceInputsRevalidated: false,
+          productionReadinessIssued: false,
+          sourceMigrationAdmitted: false,
+          nativeAcceptance: false,
+          runtimeReady: false,
+        }),
+      });
+      state.receipt = receipt;
+      return receipt;
+    } catch (error) {
+      throw sourceOwnerFailure(state, error);
+    } finally {
+      state.done = true;
+    }
+  })();
+  state.pending = pending;
+  // The owner also joins escaped calls; observing their rejection here avoids
+  // an ignored caller promise becoming an unhandled rejection during cleanup.
+  void pending.catch(() => {});
+  return pending;
+}
+
+export function assertLinuxSourceOwnerReceipt(context, receipt) {
+  const record = linuxSourceReceipts.get(receipt);
+  const state = linuxSourceOwners.get(context);
+  if (!record || record.state !== state || state?.receipt !== receipt)
+    fail("LINUX_SOURCE_OWNER_RECEIPT");
+  retainedLinuxSourceOwner(context, state, record.epoch);
+  return Object.freeze({ ...record.snapshot });
+}
+// END inactive Linux genuine source owner
+
 export async function build(
   {
     inputs,
@@ -1621,8 +1760,37 @@ export async function build(
       `build-${index}`,
       step.cwd,
     );
-    if (engineering && index === 0)
-      await engineering.afterGn(engineeringContext);
+    // BEGIN inactive Linux genuine source owner callsite
+    if (engineering && index === 0) {
+      if (target === "aarch64-unknown-linux-gnu") {
+        const originalBudget = budget;
+        const capture = Object.freeze({
+          python,
+          args: Object.freeze([...cefHookArguments(cef, depot)]),
+          cwd: step.cwd,
+          env: Object.freeze({ ...childEnv }),
+          logs,
+          remaining: () => originalBudget.remaining(),
+          hostClock: Object.freeze({
+            CEF_ENGINEERING_JOB_STARTED_MS: env.CEF_ENGINEERING_JOB_STARTED_MS,
+          }),
+          binding: Object.freeze({
+            target,
+            sourceLockIdentity: identity.sourceLockSha256,
+            canonicalRoot: work,
+            toolsRoot,
+            python,
+            cef,
+            depot,
+            cwd: step.cwd,
+          }),
+        });
+        await withLinuxSourceOwner(engineeringContext, capture, () =>
+          engineering.afterGn(engineeringContext),
+        );
+      } else await engineering.afterGn(engineeringContext);
+    }
+    // END inactive Linux genuine source owner callsite
   }
   const distributions = (
     await readdir(path.join(cef, "binary_distrib"), { withFileTypes: true })
