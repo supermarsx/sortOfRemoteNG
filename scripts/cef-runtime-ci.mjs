@@ -1385,6 +1385,25 @@ export function revalidateLinuxSourceOwner(context) {
   return pending;
 }
 
+// BEGIN inactive Linux source live assertion
+export function assertLiveLinuxSourceContext(context) {
+  const state = linuxSourceOwners.get(context);
+  if (!state) fail("LINUX_SOURCE_OWNER_REQUIRED");
+  const remainingMilliseconds = retainedLinuxSourceOwner(
+    context,
+    state,
+    state.epoch,
+  );
+  return Object.freeze({
+    ...state.capture.binding,
+    logs: state.capture.logs,
+    initialCohortQuietProven: true,
+    revalidationUsed: state.used,
+    remainingMilliseconds,
+  });
+}
+// END inactive Linux source live assertion
+
 export function assertLinuxSourceOwnerReceipt(context, receipt) {
   const record = linuxSourceReceipts.get(receipt);
   const state = linuxSourceOwners.get(context);

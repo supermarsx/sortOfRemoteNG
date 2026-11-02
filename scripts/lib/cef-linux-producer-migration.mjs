@@ -7,6 +7,13 @@ import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// BEGIN inactive fixed transaction imports
+import {
+  assertLiveLinuxSourceContext,
+  revalidateLinuxSourceOwner,
+  assertLinuxSourceOwnerReceipt,
+} from "../cef-runtime-ci.mjs";
+// END inactive fixed transaction imports
 import {
   AUTO_SLICE,
   LIMITS,
@@ -206,7 +213,14 @@ const stamp = (info) =>
   ].join(":");
 const directoryIdentity = (info) =>
   [info.dev, info.ino, info.uid, info.mode].join(":");
-async function heldFile(file, maximum, expected, check, observeFailureClose) {
+async function heldFile(
+  file,
+  maximum,
+  expected,
+  check,
+  observeFailureClose,
+  retainRaw = true,
+) {
   check();
   await noLinks(file);
   const before = await fs.lstat(file, { bigint: true });
@@ -235,7 +249,7 @@ async function heldFile(file, maximum, expected, check, observeFailureClose) {
       count += bytesRead;
       need(count <= maximum, "BOUND");
       digest.update(buffer.subarray(0, bytesRead));
-      if (!expected) blocks.push(buffer.subarray(0, bytesRead));
+      if (!expected && retainRaw) blocks.push(buffer.subarray(0, bytesRead));
     }
     need(
       BigInt(count) === before.size &&
@@ -255,7 +269,7 @@ async function heldFile(file, maximum, expected, check, observeFailureClose) {
       identity: stamp(before),
       owner: before.uid,
       pin: actual,
-      raw: expected ? null : Buffer.concat(blocks),
+      raw: expected || !retainRaw ? null : Buffer.concat(blocks),
     };
   } catch (error) {
     failed = true;
@@ -658,6 +672,9 @@ export async function inspectLinuxMigrationCandidate({
     inventoryPin: structuredClone(policy.from.inventory),
     freshIdentity: structuredClone(freshIdentity),
     sidecar: structuredClone(policy.from.sidecar),
+    // BEGIN inactive fixed transaction policy pin
+    policyPin: { bytes: policyRaw.length, sha256: sha(policyRaw) },
+    // END inactive fixed transaction policy pin
   });
   return candidate;
 }
@@ -931,6 +948,13 @@ export async function createVerifiedLinuxMigrationTools(candidate) {
       recipePin,
       bundle: path.join(temp, "cef-engineering-download"),
       originalEndMs: Number(env.CEF_ENGINEERING_JOB_STARTED_MS) + LIMITS.hostMs,
+      // BEGIN inactive fixed transaction tool binding
+      toolsRoot,
+      work,
+      chromium,
+      out,
+      linuxRecipeJson: canonical(linuxRecipe),
+      // END inactive fixed transaction tool binding
     });
     // Executable inputs stay held until explicit context retirement.
     result = token;
@@ -1895,6 +1919,612 @@ async function closeCreatedObservation(token, ledger) {
   recordCleanup(token, "creator-close", 2, failures);
   if (failed) throw primary;
 }
+
+// BEGIN inactive fixed migration transaction
+const TRANSACTION_ADMITTED = false;
+const activeMigrationTransactions = new WeakMap();
+const spentMigrationContexts = new WeakSet();
+const completedMigrationTransactions = new WeakMap();
+function transactionCompletionBinding(live) {
+  return canonical(
+    [
+      "target",
+      "sourceLockIdentity",
+      "canonicalRoot",
+      "toolsRoot",
+      "python",
+      "cef",
+      "depot",
+      "cwd",
+      "logs",
+    ].map((key) => live[key]),
+  );
+}
+function transactionSourceBinding(live, selected, tools) {
+  need(
+    live.target === LINUX_MIGRATION.target &&
+      live.sourceLockIdentity === LINUX_MIGRATION.source &&
+      live.canonicalRoot === selected.freshIdentity.canonicalRoot &&
+      live.canonicalRoot === tools.work &&
+      live.python === tools.python &&
+      live.toolsRoot === tools.toolsRoot &&
+      live.cef === path.join(tools.chromium, "cef") &&
+      live.depot === path.join(tools.work, "source/depot_tools") &&
+      live.cwd === tools.chromium &&
+      live.logs === path.join(tools.work, "logs") &&
+      live.initialCohortQuietProven === true,
+    "TRANSACTION_SOURCE_OWNER",
+  );
+}
+function transactionCheck(state) {
+  need(
+    state.active && activeMigrationTransactions.get(state.context) === state,
+    "TRANSACTION_RETIRED",
+  );
+  need(
+    candidates.get(state.candidate) === state.selected &&
+      toolContexts.get(state.toolsToken) === state.originalTools,
+    "TRANSACTION_TOKENS",
+  );
+  const live = assertLiveLinuxSourceContext(state.context);
+  transactionSourceBinding(live, state.selected, state.originalTools);
+  need(live.revalidationUsed === state.gnUsed, "TRANSACTION_GN_ORDER");
+  return Math.min(live.remainingMilliseconds, state.originalTools.remaining());
+}
+async function transactionPhase(state, action) {
+  transactionCheck(state);
+  const result = await action();
+  transactionCheck(state); // Before any subsequent mutation/branding.
+  return result;
+}
+async function transactionRecheck(state) {
+  const check = () => transactionCheck(state),
+    tools = state.originalTools;
+  check();
+  need(
+    git(ROOT, ["rev-parse", "HEAD"]).toString().trim() ===
+      state.selected.currentProducer.head,
+    "CURRENT_HEAD",
+  );
+  const capsule = await heldFile(
+    path.join(ROOT, LINUX_MIGRATION.policyPath),
+    128 * 1024,
+    state.selected.policyPin,
+    check,
+  );
+  let failed = false,
+    primary;
+  try {
+    await revalidateHeldFile(
+      capsule,
+      path.join(ROOT, LINUX_MIGRATION.policyPath),
+      check,
+    );
+  } catch (error) {
+    failed = true;
+    primary = error;
+  }
+  const capsuleClose = await closeHeld([capsule]);
+  if (failed) throw primary;
+  if (capsuleClose.length) throw capsuleClose[0];
+  check();
+  for (const [file, name] of [
+    [tools.pythonFile, tools.python],
+    [tools.archiveFile, HELPER],
+    [tools.retirementFile, RETIREMENT_HELPER],
+    ...state.identities.map((row) => [row, row.path]),
+  ])
+    await revalidateHeldFile(file, name, check);
+  need(
+    directoryIdentity(await fs.lstat(state.source, { bigint: true })) ===
+      state.sourceIdentity &&
+      directoryIdentity(await state.sourceHandle.stat({ bigint: true })) ===
+        state.sourceIdentity,
+    "TRANSACTION_SOURCE_ROOT",
+  );
+  need(
+    directoryIdentity(await fs.lstat(state.logs, { bigint: true })) ===
+      state.logsIdentity &&
+      directoryIdentity(await state.logsHandle.stat({ bigint: true })) ===
+        state.logsIdentity,
+    "TRANSACTION_LOG_ROOT",
+  );
+  if (state.controlHandle)
+    need(
+      directoryIdentity(await fs.lstat(state.control, { bigint: true })) ===
+        state.controlIdentity &&
+        directoryIdentity(await state.controlHandle.stat({ bigint: true })) ===
+          state.controlIdentity,
+      "TRANSACTION_CONTROL_ROOT",
+    );
+  if (state.creator && creators.has(state.creator)) {
+    const created = creators.get(state.creator);
+    need(
+      directoryIdentity(await fs.lstat(created.root, { bigint: true })) ===
+        directoryIdentity(created.rootIdentity) &&
+        directoryIdentity(await created.rootHandle.stat({ bigint: true })) ===
+          directoryIdentity(created.rootIdentity),
+      "INSTALL_SWAP",
+    );
+    await revalidateHeldFile(
+      created,
+      path.join(created.root, LINUX_MIGRATION.sidecar),
+      check,
+    );
+  }
+  check();
+}
+async function transactionControlDirectory(state, file, handle) {
+  const check = () => transactionCheck(state);
+  await noLinks(state.logs);
+  check();
+  need(
+    directoryIdentity(await fs.lstat(state.logs, { bigint: true })) ===
+      state.logsIdentity &&
+      directoryIdentity(await state.logsHandle.stat({ bigint: true })) ===
+        state.logsIdentity,
+    "TRANSACTION_LOG_ROOT",
+  );
+  check();
+  if (state.controlHandle) {
+    await noLinks(state.control);
+    check();
+    need(
+      directoryIdentity(await fs.lstat(state.control, { bigint: true })) ===
+        state.controlIdentity &&
+        directoryIdentity(await state.controlHandle.stat({ bigint: true })) ===
+          state.controlIdentity,
+      "TRANSACTION_CONTROL_ROOT",
+    );
+    check();
+  }
+  if (handle) {
+    const named = await fs.lstat(file, { bigint: true });
+    check();
+    const held = await handle.stat({ bigint: true });
+    check();
+    need(
+      named.isFile() &&
+        named.nlink === 1n &&
+        named.uid === BigInt(process.getuid()) &&
+        stamp(named) === stamp(held),
+      "TRANSACTION_IDENTITY_FILE",
+    );
+  }
+  check();
+}
+async function transactionControls(state) {
+  const check = () => transactionCheck(state),
+    tools = state.originalTools;
+  state.source = path.join(tools.work, "source");
+  await noLinks(state.source);
+  check();
+  state.sourceHandle = await fs.open(
+    state.source,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  state.handles.push({ handle: state.sourceHandle });
+  check();
+  const sourceInfo = await state.sourceHandle.stat({ bigint: true });
+  check();
+  need(sourceInfo.uid === BigInt(process.getuid()), "TRANSACTION_SOURCE_ROOT");
+  state.sourceIdentity = directoryIdentity(sourceInfo);
+  state.logs = path.join(tools.work, "logs");
+  await noLinks(state.logs);
+  check();
+  state.logsHandle = await fs.open(
+    state.logs,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  state.handles.push({ handle: state.logsHandle });
+  check();
+  const logsInfo = await state.logsHandle.stat({ bigint: true });
+  check();
+  need(logsInfo.uid === BigInt(process.getuid()), "TRANSACTION_LOG_ROOT");
+  state.logsIdentity = directoryIdentity(logsInfo);
+  state.control = path.join(
+    tools.work,
+    "logs",
+    "linux-migration-transaction-" + randomUUID(),
+  );
+  await transactionControlDirectory(state);
+  check();
+  check();
+  await fs.mkdir(state.control, { mode: 0o700 });
+  check();
+  state.controlHandle = await fs.open(
+    state.control,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  state.handles.push({ handle: state.controlHandle });
+  check();
+  const controlInfo = await state.controlHandle.stat({ bigint: true });
+  check();
+  need(
+    controlInfo.uid === BigInt(process.getuid()) &&
+      (controlInfo.mode & 0o777n) === 0o700n,
+    "TRANSACTION_CONTROL_ROOT",
+  );
+  state.controlIdentity = directoryIdentity(controlInfo);
+  for (const [name, identity] of [
+    ["old", state.selected.manifest.identity],
+    ["new", state.selected.freshIdentity],
+  ]) {
+    const file = path.join(state.control, name + ".json"),
+      raw = Buffer.from(canonical(identity));
+    need(raw.length <= 16 * 1024, "TRANSACTION_IDENTITY");
+    await transactionControlDirectory(state);
+    check();
+    check();
+    const handle = await fs.open(
+      file,
+      constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW |
+        constants.O_RDWR,
+      0o600,
+    );
+    state.handles.push({ handle });
+    check();
+    await transactionControlDirectory(state, file, handle);
+    check();
+    await handle.writeFile(raw);
+    check();
+    await transactionControlDirectory(state, file, handle);
+    check();
+    await handle.sync();
+    check();
+    const info = await handle.stat({ bigint: true });
+    check();
+    state.identities.push({
+      handle,
+      path: file,
+      identity: stamp(info),
+      pin: { bytes: raw.length, sha256: sha(raw) },
+    });
+  }
+}
+async function transactionSourceMode(state, mode, which) {
+  need(
+    (mode === "source-apply" && which === "old") ||
+      (mode === "source-record" && which === "new"),
+    "TRANSACTION_METADATA_MODE",
+  );
+  const timeout = Math.floor(
+    Math.min(LIMITS.linuxSourceMetadataMs, transactionCheck(state)),
+  );
+  need(timeout > 0, "ORIGINAL_LEASE");
+  const seconds = Math.max(
+    1,
+    Math.floor(
+      (timeout > 2 * LIMITS.linuxSourceMetadataGraceMs
+        ? timeout - LIMITS.linuxSourceMetadataGraceMs
+        : timeout) / 1000,
+    ),
+  );
+  const identity = state.identities.find(
+    (row) => path.basename(row.path) === which + ".json",
+  );
+  need(identity, "TRANSACTION_IDENTITY");
+  transactionCheck(state);
+  return sourceMetadataResult(
+    await archiveCommand(
+      state.originalTools.python,
+      HELPER,
+      [
+        mode,
+        "--input",
+        state.source,
+        "--output",
+        path.join(state.originalTools.out, LINUX_MIGRATION.sidecar),
+        "--manifest",
+        identity.path,
+        "--seconds",
+        String(seconds),
+      ],
+      { timeout },
+    ),
+    mode,
+  );
+}
+async function transactionNewRecord(state, recorded) {
+  need(
+    recorded.timing?.reusedFiles === 0 &&
+      recorded.timing.hashedFiles > 0 &&
+      recorded.timing.hashedFiles <= recorded.entries &&
+      recorded.timing.hashedBytes === recorded.bytes,
+    "TRANSACTION_FULL_RECORD",
+  );
+  const check = () => transactionCheck(state);
+  const sidecar = await heldFile(
+    path.join(state.originalTools.out, LINUX_MIGRATION.sidecar),
+    SOURCE_METADATA_MAX_BYTES,
+    { bytes: recorded.sidecar.bytes, sha256: recorded.sidecar.sha256 },
+    check,
+  );
+  state.handles.push(sidecar);
+  check();
+  const cachePath = path.join(
+    state.source,
+    "acquisition-logs/.sorng-source-stat-cache.json",
+  );
+  const cache = await heldFile(
+    cachePath,
+    1024 ** 3,
+    null,
+    check,
+    undefined,
+    false,
+  );
+  state.handles.push(cache);
+  check();
+  need(
+    sidecar.owner === BigInt(process.getuid()) &&
+      cache.owner === sidecar.owner &&
+      recorded.sidecar.name === LINUX_MIGRATION.sidecar,
+    "TRANSACTION_CACHE_OWNER",
+  );
+  // The fixed helper writes these four header fields before its large entries
+  // array. Authenticate the whole held stream, inspect only this bounded prefix.
+  const prefix = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "sorng-linuxarm-source-stat-cache",
+      sidecarSha256: sidecar.pin.sha256,
+      identity: JSON.parse(canonical(state.selected.freshIdentity)),
+    }).slice(0, -1) + ',"entries":[',
+  );
+  need(prefix.length <= 16 * 1024, "TRANSACTION_CACHE_HEADER");
+  const bytes = Buffer.alloc(prefix.length);
+  const read = await cache.handle.read(bytes, 0, bytes.length, 0);
+  check();
+  need(
+    read.bytesRead === prefix.length && bytes.equals(prefix),
+    "TRANSACTION_CACHE_BINDING",
+  );
+  await revalidateHeldFile(cache, cachePath, check);
+  await revalidateHeldFile(
+    sidecar,
+    path.join(state.originalTools.out, LINUX_MIGRATION.sidecar),
+    check,
+  );
+}
+async function runClosedLinuxMigrationTransaction(
+  context,
+  candidate,
+  toolsToken,
+) {
+  const initial = assertLiveLinuxSourceContext(context);
+  need(initial.revalidationUsed === false, "TRANSACTION_GN_ALREADY_USED");
+  const selected = candidates.get(candidate),
+    originalTools = toolContexts.get(toolsToken);
+  need(selected && originalTools?.candidate === candidate, "OPAQUE_TOOLS");
+  transactionSourceBinding(initial, selected, originalTools);
+  need(!spentMigrationContexts.has(context), "TRANSACTION_ALREADY_USED");
+  spentMigrationContexts.add(context);
+  const state = {
+    context,
+    candidate,
+    toolsToken,
+    selected,
+    originalTools,
+    active: true,
+    gnUsed: false,
+    handles: [],
+    identities: [],
+    creator: null,
+    sourceHandle: null,
+    controlHandle: null,
+  };
+  activeMigrationTransactions.set(context, state);
+  const tools = { ...originalTools, remaining: () => transactionCheck(state) };
+  let failed = false,
+    primary,
+    result;
+  const remember = (error) => {
+    if (!failed) {
+      failed = true;
+      primary = error;
+    }
+  };
+  try {
+    await transactionPhase(state, () => transactionControls(state));
+    await transactionPhase(state, () => transactionRecheck(state));
+    await transactionPhase(state, async () => {
+      state.creator = await restoreOwnedCommon(
+        selected,
+        tools,
+        candidate,
+        creators,
+      );
+    });
+    await transactionPhase(state, () => transactionRecheck(state));
+    await transactionPhase(state, () =>
+      transactionSourceMode(state, "source-apply", "old"),
+    );
+    await transactionPhase(state, () => transactionRecheck(state));
+    const receipt = await transactionPhase(state, async () => {
+      const pending = revalidateLinuxSourceOwner(context);
+      state.gnUsed = true;
+      return await pending;
+    });
+    const gn = assertLinuxSourceOwnerReceipt(context, receipt);
+    need(
+      gn.cohortQuietProven === true && gn.commandCompleted === true,
+      "TRANSACTION_GN_UNCONFIRMED",
+    );
+    await transactionPhase(state, () =>
+      verifyGraph(originalTools.out, selected.freshIdentity.graph),
+    );
+    const recipe = await transactionPhase(state, () =>
+      linuxArmRecipe(originalTools.chromium, originalTools.out),
+    );
+    need(
+      canonical(recipe) === originalTools.linuxRecipeJson,
+      "TRANSACTION_RECIPE_CHANGED",
+    );
+    await transactionPhase(state, () =>
+      transactionSourceMode(state, "source-apply", "old"),
+    );
+    await transactionPhase(state, () => transactionRecheck(state));
+    transactionCheck(state);
+    assertLinuxSourceOwnerReceipt(context, receipt);
+    const created = creators.get(state.creator);
+    need(created, "OPAQUE_CREATOR");
+    retirementReadiness.set(state.creator, {
+      toolsToken,
+      transaction: state,
+    });
+    const ready = retirementReadiness.get(state.creator);
+    need(
+      ready?.transaction === state && ready.toolsToken === toolsToken,
+      "TRANSACTION_READINESS",
+    );
+    retirementReadiness.delete(state.creator); // Consume BEFORE any retirement await.
+    await transactionPhase(state, () =>
+      retireOwnedCommon(
+        state.creator,
+        tools,
+        created,
+        creators,
+        originalTools.work,
+      ),
+    );
+    const retired = retirementReports.get(state.creator);
+    need(
+      retired?.accepted === true &&
+        retired.childJoined === true &&
+        retired.parentDescriptorsClosed === true &&
+        retired.sourceInodeCas === false,
+      "TRANSACTION_RETIREMENT_UNCONFIRMED",
+    );
+    await transactionPhase(state, () => transactionRecheck(state));
+    const recorded = await transactionPhase(state, () =>
+      transactionSourceMode(state, "source-record", "new"),
+    );
+    await transactionPhase(state, () => transactionNewRecord(state, recorded));
+    await transactionPhase(state, () => transactionRecheck(state));
+    result = {
+      sourceInputsRevalidated: true,
+      oldApplies: 2,
+      cohortQuietProven: true,
+      newRecord: true,
+      newRecordReusedFiles: 0,
+      newCacheHeaderBinding: true,
+      completeCacheStructureValidated: false,
+    };
+  } catch (error) {
+    remember(error);
+  }
+  // Revoke every authority synchronously before any awaited close/join. Retain
+  // forensic files/partial states; never unlink/rollback an unknown object.
+  state.active = false;
+  activeMigrationTransactions.delete(context);
+  if (state.creator) retirementReadiness.delete(state.creator);
+  candidates.delete(candidate);
+  const createdToClose = state.creator ? creators.get(state.creator) : null;
+  if (state.creator) creators.delete(state.creator);
+  const toolsToClose = toolContexts.get(toolsToken);
+  toolContexts.delete(toolsToken);
+  const closes = [];
+  if (createdToClose)
+    closes.push(
+      closeHeld([
+        { handle: createdToClose.handle },
+        { handle: createdToClose.rootHandle },
+      ]).then((failures) => {
+        recordCleanup(state.creator, "creator-close", 2, failures.length);
+        if (failures.length) throw failures[0];
+      }),
+    );
+  if (toolsToClose)
+    closes.push(
+      closeHeld(toolsToClose.held).then((failures) => {
+        recordCleanup(
+          toolsToken,
+          "tools-close",
+          toolsToClose.held.length,
+          failures.length,
+        );
+        if (failures.length) throw failures[0];
+      }),
+    );
+  closes.push(
+    closeHeld(state.handles).then((failures) => {
+      if (failures.length) throw failures[0];
+    }),
+  );
+  for (const closing of closes) void closing.catch(() => {});
+  for (const closing of closes)
+    try {
+      await closing;
+    } catch (error) {
+      remember(error);
+    }
+  if (!failed) {
+    try {
+      transactionSourceBinding(
+        assertLiveLinuxSourceContext(context),
+        selected,
+        originalTools,
+      );
+      originalTools.remaining();
+      need(
+        git(ROOT, ["rev-parse", "HEAD"]).toString().trim() ===
+          selected.currentProducer.head,
+        "CURRENT_HEAD",
+      );
+    } catch (error) {
+      remember(error);
+    }
+  }
+  if (failed) throw primary;
+  const completion = Object.freeze({
+    kind: "closed-linux-migration-completion",
+    authorizing: false,
+  });
+  completedMigrationTransactions.set(
+    completion,
+    Object.freeze({
+      context,
+      sourceBinding: transactionCompletionBinding(initial),
+      result: Object.freeze(result),
+    }),
+  );
+  return completion; // Plain JSON never becomes a compile capability.
+}
+export async function prepareLinuxMigrationTransaction(
+  context,
+  candidate,
+  toolsToken,
+) {
+  const live = assertLiveLinuxSourceContext(context);
+  need(live.revalidationUsed === false, "TRANSACTION_GN_ALREADY_USED");
+  need(TRANSACTION_ADMITTED, "TRANSACTION_NOT_ACTIVATED");
+  let completion;
+  try {
+    completion = await runClosedLinuxMigrationTransaction(
+      context,
+      candidate,
+      toolsToken,
+    );
+    const record = completedMigrationTransactions.get(completion);
+    need(record?.context === context, "TRANSACTION_COMPLETION_CONTEXT");
+    const current = assertLiveLinuxSourceContext(context);
+    need(
+      current.revalidationUsed === true &&
+        current.initialCohortQuietProven === true &&
+        transactionCompletionBinding(current) === record.sourceBinding,
+      "TRANSACTION_COMPLETION_CONTEXT",
+    );
+    return completion; // No await after the final live/private-context check.
+  } catch (error) {
+    if (completion !== undefined)
+      completedMigrationTransactions.delete(completion);
+    throw error;
+  }
+}
+// END inactive fixed migration transaction
 
 function proofAuthority() {
   need(process.platform === "linux" && process.arch === "x64", "PROOF_HOST");

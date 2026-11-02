@@ -16,6 +16,49 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutTransactionDelta(text) {
+  for (const [start, end] of [
+    [
+      "// BEGIN inactive fixed transaction imports\n",
+      "// END inactive fixed transaction imports\n",
+    ],
+    [
+      "    // BEGIN inactive fixed transaction policy pin\n",
+      "    // END inactive fixed transaction policy pin\n",
+    ],
+    [
+      "      // BEGIN inactive fixed transaction tool binding\n",
+      "      // END inactive fixed transaction tool binding\n",
+    ],
+    [
+      "// BEGIN inactive fixed migration transaction\n",
+      "// END inactive fixed migration transaction\n",
+    ],
+  ]) {
+    assert.equal(text.split(start).length, 2);
+    assert.equal(text.split(end).length, 2);
+    let block = text.slice(text.indexOf(start), text.indexOf(end) + end.length);
+    if (start.startsWith("// BEGIN inactive fixed migration transaction"))
+      block += "\n";
+    assert.equal(text.split(block).length, 2);
+    text = text.replace(block, "");
+  }
+  for (const [current, old] of [
+    [
+      "async function heldFile(\n  file,\n  maximum,\n  expected,\n  check,\n  observeFailureClose,\n  retainRaw = true,\n) {",
+      "async function heldFile(file, maximum, expected, check, observeFailureClose) {",
+    ],
+    ["if (!expected && retainRaw) blocks.push", "if (!expected) blocks.push"],
+    [
+      "raw: expected || !retainRaw ? null : Buffer.concat(blocks)",
+      "raw: expected ? null : Buffer.concat(blocks)",
+    ],
+  ]) {
+    assert.equal(text.split(current).length, 2);
+    text = text.replace(current, old);
+  }
+  return text;
+}
 // Historical seed for synthetic envelopes, never production run authority.
 const SEED_RUN = 41378060040;
 const selected = [
@@ -421,6 +464,562 @@ async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
   return { root, repo, args, policy, writePolicy };
 }
 
+test("fixed transaction is closed before opaque candidate getters and the prior module is exact", async () => {
+  let getters = 0;
+  const forged = new Proxy(
+    {},
+    {
+      get() {
+        getters++;
+        return true;
+      },
+    },
+  );
+  await assert.rejects(
+    migration.prepareLinuxMigrationTransaction(forged, forged, forged),
+    /SOURCE_OWNER_REQUIRED/,
+  );
+  assert.equal(getters, 0);
+  const raw = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  assert.match(raw, /const TRANSACTION_ADMITTED = false;/);
+  const previous = withoutTransactionDelta(raw);
+  assert.equal(Buffer.byteLength(previous), 95128);
+  assert.equal(
+    core.sha(Buffer.from(previous)),
+    "ea6610f85e36c57fd87736f682c8b58f2c536ed58beb103b88a0594bc73619f7",
+  );
+});
+
+async function transactionModel({
+  failAt,
+  marker,
+  retireAt,
+  usedInitially = false,
+  closeFault = false,
+} = {}) {
+  // Execute the actual closed orchestration and guards in disjoint VM maps.
+  // These staged command/FS outcomes are NOT genuine GN or production tokens.
+  const events = [],
+    context = {},
+    candidate = {},
+    toolsToken = {},
+    gnReceipt = {};
+  const candidates = new WeakMap(),
+    toolContexts = new WeakMap(),
+    creators = new WeakMap();
+  const retirementReadiness = new WeakMap(),
+    retirementReports = new WeakMap();
+  const completedMigrationTransactions = new WeakMap(),
+    activeMigrationTransactions = new WeakMap();
+  const spentMigrationContexts = new WeakSet();
+  let used = usedInitially,
+    live = true,
+    applies = 0;
+  const selected = {
+    freshIdentity: { canonicalRoot: "/owned", graph: "g" },
+    currentProducer: { head: "h" },
+  };
+  const tools = {
+    candidate,
+    work: "/owned",
+    python: "/reviewed/python",
+    toolsRoot: "/reviewed",
+    chromium: "/owned/source/src",
+    out: "/owned/source/src/out/Release_GN_arm64",
+    linuxRecipeJson: core.canonical({ pinned: true }),
+    held: [{ tool: true }],
+    remaining: () => 60000,
+  };
+  candidates.set(candidate, selected);
+  toolContexts.set(toolsToken, tools);
+  const view = () => {
+    if (!live) throw new Error("MODEL_CONTEXT_RETIRED");
+    return {
+      target: M.target,
+      sourceLockIdentity: M.source,
+      canonicalRoot: tools.work,
+      python: tools.python,
+      toolsRoot: tools.toolsRoot,
+      cef: tools.chromium + "/cef",
+      depot: tools.work + "/source/depot_tools",
+      cwd: tools.chromium,
+      logs: "/owned/logs",
+      initialCohortQuietProven: true,
+      revalidationUsed: used,
+      remainingMilliseconds: 60000,
+    };
+  };
+  const stage = (name) => {
+    events.push(name);
+    if (failAt === name) throw marker;
+    if (retireAt === name) live = false;
+  };
+  const api = await privateFunctions(
+    [
+      "need",
+      "transactionSourceBinding",
+      "transactionCompletionBinding",
+      "transactionCheck",
+      "transactionPhase",
+      "runClosedLinuxMigrationTransaction",
+      "prepareLinuxMigrationTransaction",
+    ],
+    {
+      LINUX_MIGRATION: M,
+      TRANSACTION_ADMITTED: false,
+      ROOT: "/repo",
+      path: path.posix,
+      canonical: core.canonical,
+      candidates,
+      toolContexts,
+      creators,
+      retirementReadiness,
+      retirementReports,
+      completedMigrationTransactions,
+      activeMigrationTransactions,
+      spentMigrationContexts,
+      assertLiveLinuxSourceContext: view,
+      transactionControls: async (state) => {
+        stage("controls");
+        state.handles.push({ control: true });
+      },
+      transactionRecheck: async () => stage("recheck"),
+      restoreOwnedCommon: async (s, t, o, ledger) => {
+        stage("restore");
+        assert.equal(ledger, creators);
+        const token = {};
+        creators.set(token, { handle: {}, rootHandle: {} });
+        return token;
+      },
+      transactionSourceMode: async (s, mode, which) => {
+        stage(mode === "source-apply" ? "old-apply" + ++applies : "new-record");
+        assert.equal(which, mode === "source-apply" ? "old" : "new");
+        return {};
+      },
+      revalidateLinuxSourceOwner: () => {
+        assert.equal(used, false);
+        used = true;
+        stage("gn");
+        return Promise.resolve(gnReceipt);
+      },
+      assertLinuxSourceOwnerReceipt: (c, r) => {
+        assert.equal(c, context);
+        assert.equal(r, gnReceipt);
+        view();
+        return { cohortQuietProven: true, commandCompleted: true };
+      },
+      verifyGraph: async () => stage("graph"),
+      linuxArmRecipe: async () => {
+        stage("recipe");
+        return { pinned: true };
+      },
+      retireOwnedCommon: async (token, t, created, ledger) => {
+        assert.equal(retirementReadiness.has(token), false);
+        stage("retirement");
+        ledger.delete(token);
+        retirementReports.set(token, {
+          accepted: true,
+          childJoined: true,
+          parentDescriptorsClosed: true,
+          sourceInodeCas: false,
+        });
+      },
+      transactionNewRecord: async () => stage("cache-binding"),
+      closeHeld: async () => {
+        assert.equal(activeMigrationTransactions.has(context), false);
+        assert.equal(candidates.has(candidate), false);
+        assert.equal(toolContexts.has(toolsToken), false);
+        events.push("close");
+        return closeFault ? [new Error("later close failure")] : [];
+      },
+      recordCleanup: () => {},
+      git: () => Buffer.from("h"),
+    },
+  );
+  return {
+    api,
+    context,
+    candidate,
+    toolsToken,
+    events,
+    completedMigrationTransactions,
+    creators,
+    retirementReadiness,
+    activeMigrationTransactions,
+    candidates,
+    toolContexts,
+    view,
+  };
+}
+
+test("private transaction fixes both old applies around genuine GN and consumes readiness before retirement", async () => {
+  const m = await transactionModel();
+  await assert.rejects(
+    m.api.prepareLinuxMigrationTransaction(
+      m.context,
+      m.candidate,
+      m.toolsToken,
+    ),
+    /NOT_ACTIVATED/,
+  );
+  assert.deepEqual(m.events, []);
+  const token = await m.api.runClosedLinuxMigrationTransaction(
+    m.context,
+    m.candidate,
+    m.toolsToken,
+  );
+  assert.equal(token.authorizing, false);
+  assert.equal(m.completedMigrationTransactions.get(token).context, m.context);
+  assert.deepEqual(
+    m.events.filter((event) => event !== "recheck" && event !== "close"),
+    [
+      "controls",
+      "restore",
+      "old-apply1",
+      "gn",
+      "graph",
+      "recipe",
+      "old-apply2",
+      "retirement",
+      "new-record",
+      "cache-binding",
+    ],
+  );
+  assert.equal(
+    m.completedMigrationTransactions.get(token).result.sourceInputsRevalidated,
+    true,
+  );
+  assert.equal(
+    m.completedMigrationTransactions.get(token).result.newRecordReusedFiles,
+    0,
+  );
+  assert.equal(
+    m.completedMigrationTransactions.get(token).result.newCacheHeaderBinding,
+    true,
+  );
+  assert.equal(
+    m.completedMigrationTransactions.get(token).result
+      .completeCacheStructureValidated,
+    false,
+  );
+  assert.equal(m.activeMigrationTransactions.has(m.context), false);
+  assert.equal(m.candidates.has(m.candidate), false);
+  assert.equal(m.toolContexts.has(m.toolsToken), false);
+});
+
+test("used source revalidation rejects before any controls or restored-source mutation", async () => {
+  const m = await transactionModel({ usedInitially: true });
+  await assert.rejects(
+    m.api.runClosedLinuxMigrationTransaction(
+      m.context,
+      m.candidate,
+      m.toolsToken,
+    ),
+    /GN_ALREADY_USED/,
+  );
+  assert.deepEqual(m.events, []);
+});
+
+test("exported final-await boundary is causal: same-realm retirement, expiry and foreign completion deny and retire", async () => {
+  const text = await fs.readFile(MODULE, "utf8"),
+    ast = ts.createSourceFile(
+      MODULE,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+  const declaration = (name) => {
+    const node = ast.statements.find(
+      (item) => ts.isFunctionDeclaration(item) && item.name?.text === name,
+    );
+    assert(node);
+    return node.getText(ast).replace(/^export /, "");
+  };
+  const actual = declaration("prepareLinuxMigrationTransaction"),
+    before = actual.indexOf("  let completion;");
+  assert(before > 0);
+  const unchecked =
+    actual.slice(0, before) +
+    "  return runClosedLinuxMigrationTransaction(context, candidate, toolsToken);\n}";
+  for (const mode of ["retire", "expiry", "foreign", "binding", "success"]) {
+    for (const guarded of [false, true]) {
+      const model = vm.runInNewContext(
+        `(()=>{
+        const TRANSACTION_ADMITTED=true,completedMigrationTransactions=new WeakMap();
+        const context={},foreign={},primary=mode==='retire'?false:new Error('ORIGINAL_LEASE_EXPIRED');
+        let live=true,used=false,root='/owned',token;
+        function need(value,message){if(!value)throw new Error(message);}
+        function assertLiveLinuxSourceContext(){if(!live)throw primary;return {
+          target:'linux',sourceLockIdentity:'source',canonicalRoot:root,toolsRoot:'/tools',
+          python:'/tools/python',cef:'/owned/cef',depot:'/owned/depot',cwd:'/owned/source',logs:'/owned/logs',
+          initialCohortQuietProven:true,revalidationUsed:used};}
+        ${declaration("transactionCompletionBinding")}
+        function runClosedLinuxMigrationTransaction(){
+          used=true;token=Object.freeze({kind:'closed-linux-migration-completion',authorizing:false});
+          completedMigrationTransactions.set(token,{context:mode==='foreign'?foreign:context,
+            sourceBinding:transactionCompletionBinding(assertLiveLinuxSourceContext()),result:Object.freeze({})});
+          if(mode==='retire'||mode==='expiry')queueMicrotask(()=>{live=false;});
+          if(mode==='binding')queueMicrotask(()=>{root='/rebound';});
+          return Promise.resolve(token);
+        }
+        ${guarded ? actual : unchecked}
+        return {context,primary,invoke:()=>prepareLinuxMigrationTransaction(context,{},{}),
+          retained:()=>completedMigrationTransactions.has(token)};
+      })()`,
+        { mode, queueMicrotask, canonical: core.canonical },
+      );
+      const outcome = await model.invoke().then(
+        (value) => ({ success: true, value }),
+        (error) => ({ success: false, error }),
+      );
+      if (!guarded || mode === "success") {
+        assert.equal(outcome.success, true);
+        assert.equal(model.retained(), true);
+      } else {
+        assert.equal(outcome.success, false);
+        assert.equal(model.retained(), false);
+        if (mode === "retire" || mode === "expiry")
+          assert.equal(outcome.error, model.primary);
+        else
+          assert.match(outcome.error.message, /TRANSACTION_COMPLETION_CONTEXT/);
+      }
+    }
+  }
+});
+
+test("cache header binding also requires actual full-record counters and a held new sidecar pin", async () => {
+  const next = { producer: "new", source: "fixed" },
+    sha = "b".repeat(64);
+  for (const mode of [
+    "valid",
+    "old-cache",
+    "reused",
+    "wrong-bytes",
+    "wrong-owner",
+  ]) {
+    let holds = 0,
+      cacheNoRaw = false,
+      rechecks = 0;
+    const encoded = Buffer.from(
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: "sorng-linuxarm-source-stat-cache",
+        sidecarSha256: sha,
+        identity: mode === "old-cache" ? { producer: "old" } : next,
+        entries: [],
+      }),
+    );
+    const recorded = {
+      entries: 3,
+      bytes: 8,
+      timing: {
+        reusedFiles: mode === "reused" ? 1 : 0,
+        hashedFiles: 2,
+        hashedBytes: mode === "wrong-bytes" ? 7 : 8,
+      },
+      sidecar: { name: M.sidecar, bytes: 10, sha256: sha },
+    };
+    const state = {
+      selected: { freshIdentity: next },
+      source: "/owned/source",
+      originalTools: { out: "/out" },
+      handles: [],
+    };
+    const api = await privateFunctions(["need", "transactionNewRecord"], {
+      transactionCheck: () => 60000,
+      LINUX_MIGRATION: M,
+      SOURCE_METADATA_MAX_BYTES: core.SOURCE_METADATA_MAX_BYTES,
+      path: path.posix,
+      Buffer,
+      canonical: core.canonical,
+      process: { getuid: () => 123 },
+      heldFile: async (file, max, expected, check, observe, noRaw) => {
+        holds++;
+        if (expected) {
+          assert.equal(expected.sha256, sha);
+          return { owner: 123n, pin: expected };
+        }
+        cacheNoRaw = noRaw === false;
+        assert.equal(max, 1024 ** 3);
+        return {
+          owner: mode === "wrong-owner" ? 124n : 123n,
+          handle: {
+            read: async (buffer) => {
+              encoded.copy(buffer, 0, 0, buffer.length);
+              return { bytesRead: Math.min(buffer.length, encoded.length) };
+            },
+          },
+        };
+      },
+      revalidateHeldFile: async () => {
+        rechecks++;
+      },
+    });
+    if (mode === "valid") {
+      await api.transactionNewRecord(state, recorded);
+      assert(cacheNoRaw);
+      assert.equal(holds, 2);
+      assert.equal(rechecks, 2);
+    } else {
+      await assert.rejects(
+        api.transactionNewRecord(state, recorded),
+        /FULL_RECORD|CACHE_BINDING|CACHE_OWNER/,
+      );
+      if (mode === "reused" || mode === "wrong-bytes") assert.equal(holds, 0);
+    }
+  }
+});
+
+test("control-root replacement is causal: unguarded model writes foreign root, actual guard denies before second identity", async () => {
+  for (const guarded of [false, true]) {
+    const state = {
+      originalTools: { work: "/owned" },
+      selected: {
+        manifest: { identity: { producer: "old" } },
+        freshIdentity: { producer: "new" },
+      },
+      handles: [],
+      identities: [],
+      controlHandle: null,
+    };
+    const directories = new Map([
+        ["/owned/source", 1n],
+        ["/owned/logs", 2n],
+      ]),
+      files = new Map();
+    let foreignNewOpens = 0,
+      replaced = false;
+    const info = (ino, directory = true, size = 0) => ({
+      dev: 1n,
+      ino,
+      uid: 123n,
+      mode: directory ? 0o40700n : 0o100600n,
+      nlink: 1n,
+      size: BigInt(size),
+      mtimeNs: 1n,
+      ctimeNs: 1n,
+      isDirectory: () => directory,
+      isFile: () => !directory,
+    });
+    const fsModel = {
+      mkdir: async (name) => directories.set(name, 3n),
+      lstat: async (name) =>
+        directories.has(name)
+          ? info(directories.get(name))
+          : files.get(name).info(),
+      open: async (name) => {
+        if (directories.has(name)) {
+          const ino = directories.get(name);
+          return { stat: async () => info(ino), close: async () => {} };
+        }
+        if (name.endsWith("new.json") && replaced) foreignNewOpens++;
+        let raw = Buffer.alloc(0);
+        const row = {
+          info: () =>
+            info(name.endsWith("old.json") ? 4n : 5n, false, raw.length),
+        };
+        files.set(name, row);
+        return {
+          writeFile: async (bytes) => {
+            raw = Buffer.from(bytes);
+          },
+          stat: async () => row.info(),
+          close: async () => {},
+          sync: async () => {
+            if (name.endsWith("old.json")) {
+              directories.set(state.control, 99n);
+              replaced = true;
+            }
+          },
+        };
+      },
+    };
+    const api = await privateFunctions(
+      [
+        "need",
+        "transactionControls",
+        ...(guarded ? ["transactionControlDirectory"] : []),
+      ],
+      {
+        transactionCheck: () => 60000,
+        transactionControlDirectory: async () => {},
+        fs: fsModel,
+        path: path.posix,
+        constants,
+        Buffer,
+        process: { getuid: () => 123 },
+        randomUUID: () => "fixed",
+        noLinks: async (value) => value,
+        canonical: core.canonical,
+        sha: core.sha,
+        stamp: (row) =>
+          [row.dev, row.ino, row.mode, row.uid, row.size].join(":"),
+        directoryIdentity: (row) =>
+          [row.dev, row.ino, row.mode, row.uid].join(":"),
+      },
+    );
+    if (guarded) {
+      await assert.rejects(api.transactionControls(state), /CONTROL_ROOT/);
+      assert.equal(foreignNewOpens, 0);
+    } else {
+      await api.transactionControls(state);
+      assert.equal(foreignNewOpens, 1);
+    }
+    assert.equal(replaced, true);
+  }
+});
+
+test("every modeled phase failure preserves falsy first causes, retires maps and never rolls back unknown leaves", async () => {
+  for (const phase of [
+    "controls",
+    "restore",
+    "old-apply1",
+    "gn",
+    "graph",
+    "recipe",
+    "old-apply2",
+    "retirement",
+    "new-record",
+    "cache-binding",
+  ]) {
+    const marker =
+      phase === "old-apply1" ? undefined : phase === "retirement" ? 0 : false;
+    const m = await transactionModel({
+      failAt: phase,
+      marker,
+      closeFault: true,
+    });
+    await m.api
+      .runClosedLinuxMigrationTransaction(m.context, m.candidate, m.toolsToken)
+      .then(
+        () => assert.fail("phase failed but transaction succeeded"),
+        (error) => assert.equal(error, marker),
+      );
+    assert.equal(m.activeMigrationTransactions.has(m.context), false);
+    assert.equal(m.candidates.has(m.candidate), false);
+    assert.equal(m.toolContexts.has(m.toolsToken), false);
+    assert(!m.events.includes("rollback") && !m.events.includes("unlink"));
+    if (phase === "old-apply1" || phase === "gn")
+      assert(!m.events.includes("retirement"));
+  }
+});
+
+test("a source owner retired during an awaited apply cannot reach GN, readiness or new record", async () => {
+  const m = await transactionModel({ retireAt: "old-apply1" });
+  await assert.rejects(
+    m.api.runClosedLinuxMigrationTransaction(
+      m.context,
+      m.candidate,
+      m.toolsToken,
+    ),
+    /CONTEXT_RETIRED/,
+  );
+  assert(!m.events.includes("gn"));
+  assert(!m.events.includes("retirement"));
+  assert(!m.events.includes("new-record"));
+});
+
 test("inactive retarget binds the actual main3aa129-row producer and canonical LF helper without inventing a seal", async () => {
   assert.equal(Object.hasOwn(M, "runId"), false);
   assert.equal(
@@ -716,7 +1315,9 @@ test("a final current-Git change cannot be hidden by mutating the caller produce
 });
 
 test("bounded capsule inverse restores the complete frozen old5da module without ancestor Git reads", async () => {
-  let text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  let text = withoutTransactionDelta(
+    (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n"),
+  );
   function inverse(added, original) {
     assert.equal(text.split(added).length, 2, "one exact capsule delta");
     text = text.replace(added, original);
@@ -990,6 +1591,35 @@ test("held regular inputs reject same-length changes, replacement, hardlinks and
     },
   );
   const original = Buffer.from("canonical pinned input\n");
+  const largeName = path.join(root, "streamed-cache.json"),
+    largeRaw = Buffer.alloc(2 * 1024 ** 2, 120);
+  await fs.writeFile(largeName, largeRaw);
+  const streamed = await api.heldFile(
+    largeName,
+    largeRaw.length,
+    null,
+    () => 60000,
+    undefined,
+    false,
+  );
+  try {
+    assert.equal(streamed.raw, null);
+    assert.equal(streamed.pin.sha256, core.sha(largeRaw));
+    await api.revalidateHeldFile(streamed, largeName, () => 60000);
+  } finally {
+    await streamed.handle.close();
+  }
+  const defaultRead = await api.heldFile(
+    largeName,
+    largeRaw.length,
+    null,
+    () => 60000,
+  );
+  try {
+    assert.deepEqual(defaultRead.raw, largeRaw);
+  } finally {
+    await defaultRead.handle.close();
+  }
   await fs.writeFile(name, original);
   const file = await api.heldFile(name, 4096, pin(original), () => 60000);
   t.after(() => file.handle.close());

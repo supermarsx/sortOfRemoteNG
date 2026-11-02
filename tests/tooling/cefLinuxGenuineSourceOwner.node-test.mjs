@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   revalidateLinuxSourceOwner,
   assertLinuxSourceOwnerReceipt,
+  assertLiveLinuxSourceContext,
   cefHookArguments,
 } from "../../scripts/cef-runtime-ci.mjs";
 import {
@@ -130,7 +131,7 @@ function model({
   const api = vm.runInContext(
     supervision +
       body.replace(/^export /gm, "") +
-      "\n({revalidateLinuxSourceOwner,assertLinuxSourceOwnerReceipt})",
+      "\n({revalidateLinuxSourceOwner,assertLinuxSourceOwnerReceipt,assertLiveLinuxSourceContext})",
     scope,
   );
   const invoke = vm.runInContext("(async()=>{\n" + callsite + "\n})", scope);
@@ -151,6 +152,10 @@ test("actual public entries reject forged contexts and receipts before getters o
   const foreign = new Proxy({}, { get: () => (reads++, undefined) });
   for (const candidate of [undefined, null, {}, foreign]) {
     assert.throws(
+      () => assertLiveLinuxSourceContext(candidate),
+      /OWNER_REQUIRED/,
+    );
+    assert.throws(
       () => revalidateLinuxSourceOwner(candidate),
       /OWNER_REQUIRED/,
     );
@@ -160,6 +165,43 @@ test("actual public entries reject forged contexts and receipts before getters o
     );
   }
   assert.equal(reads, 0);
+});
+
+test("live assertion is synchronous copied diagnostics of the actual interval and used revalidation", async () => {
+  const m = model();
+  m.scope.engineering.afterGn = async (context) => {
+    const before = m.api.assertLiveLinuxSourceContext(context);
+    assert.equal(before.revalidationUsed, false);
+    assert.equal(before.initialCohortQuietProven, true);
+    assert(Object.isFrozen(before));
+    await m.api.revalidateLinuxSourceOwner(context);
+    assert.equal(
+      m.api.assertLiveLinuxSourceContext(context).revalidationUsed,
+      true,
+    );
+    assert.equal(before.revalidationUsed, false);
+  };
+  await m.invoke();
+  assert.throws(
+    () => m.api.assertLiveLinuxSourceContext(m.context),
+    /REQUIRED/,
+  );
+});
+
+test("live-assertion delta restores the complete committed GN2 runtime", () => {
+  const first = "// BEGIN inactive Linux source live assertion\n";
+  const last = "// END inactive Linux source live assertion\n";
+  const section = source.slice(
+    source.indexOf(first),
+    source.indexOf(last) + last.length,
+  );
+  assert.equal(source.split(section + "\n").length, 2);
+  const original = source.replace(section + "\n", "");
+  assert.equal(Buffer.byteLength(original), 75872);
+  assert.equal(
+    createHash("sha256").update(original).digest("hex"),
+    "6e5245ff09fc15a2cbffd350f7b798ed3d7464b26e6fb0ec17f6c5d33ea5b65c",
+  );
 });
 
 test("actual completed GN callsite registers only its afterGn interval and captures immutable authority", async () => {
@@ -661,6 +703,16 @@ test("bounded inverse restores the complete old runtime producer and exposes no 
     return text.replace(from, to);
   }
   let prior = inverse(source, supervision + "\n", "");
+  const liveBegin = "// BEGIN inactive Linux source live assertion\n";
+  const liveEnd = "// END inactive Linux source live assertion\n";
+  prior = inverse(
+    prior,
+    source.slice(
+      source.indexOf(liveBegin),
+      source.indexOf(liveEnd) + liveEnd.length,
+    ) + "\n",
+    "",
+  );
   prior = inverse(prior, "  compileSlice,\n", "");
   prior = inverse(
     prior,
