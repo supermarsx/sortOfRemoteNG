@@ -426,9 +426,9 @@ def main(argv=None):
                           ownPid=state['pid'], ownCreationFiletime=state['creation'],
                           parentPid=state['context']['parentPid'], parentCreationFiletime=state['context']['parentCreationFiletime'],
                           sourceContextSha256=state['context']['sourceContextSha256'],
-                          sdkBuilt=False, nativeAcceptance=False)
+                          sdkBuilt=False, nativeAcceptance=False, jobSeconds=state['assignedSeconds'])
             if argv[1] == 'cef-engine':
-                report.update(completion=completion, jobSeconds=state['assignedSeconds'])
+                report.update(completion=completion)
                 if completion == 'native-slice-ended':
                     report['receiptPin'] = state['nativeReceiptPin']
             with (state['root'] / ('full-sdk-engine-closed-' + argv[1] + '.json')).open('xb') as stream:

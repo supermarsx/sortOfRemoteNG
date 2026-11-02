@@ -33,7 +33,116 @@ SOURCE_PROGRAM_HISTORY = json.loads("[{\"name\":\"bootstrapProgram\",\"oldSha256
 
 # BEGIN EXACT CLOCK FAILURE ENUM INVERSE
 CLOCK_FAILURE_INVERSE = json.loads('{"block":"// BEGIN FIXED WORKFLOW CLOCK FAILURE CODES\\nconst STARTUP_CLOCK_ERRORS = new Set([\\n  \\"FULL_SDK_WORKFLOW_CLOCK_RAW\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_FIELDS\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_KIND\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_INTEGER\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_WALL_DEADLINE\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_SCOPE\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_EXECUTION\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_HOST\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_TICK_DEADLINE\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_PROJECTION\\",\\n  \\"FULL_SDK_WORKFLOW_CLOCK_EXPIRED\\",\\n]);\\n// END FIXED WORKFLOW CLOCK FAILURE CODES\\n","blockSha256":"a1da21bcb09f13c39300d1781fcc6bb09945f335d0e4842e3683b80a72ba5902","newPredicate":"    (/^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message) ||\\n      STARTUP_CLOCK_ERRORS.has(message))\\n","oldPredicate":"    /^FULL_SDK_CONTROL_[A-Z_]{1,80}$/.test(message)\\n","bytes":165012,"sha256":"5a36ad235d7bbf55a1a9680d557c2ce907709d227c5b591630f4f77c5b6dcc58"}')
+PRODUCER_METRIC_CONTROLLER_INVERSE = json.loads(r'''{
+  "bytes": 165597,
+  "sha256": "2cc73bfe26fa61b66d4820e2f1522501954b6bb198bfcfa69d15c07bfe32292f",
+  "rows": [
+    {
+      "oldRaw": "    throw fail(state, error);\n  }\n}\nasync function createControl(sourceReceipt, leaseToken) {\n  const source = sourceState(sourceReceipt, leaseToken);\n  checkLease(leaseToken);\n",
+      "newRaw": "    throw fail(state, error);\n  }\n}\n// BEGIN CHECKED INPUT CLOSURE DATA\n// Only actual completed held-input rechecks issue these private observations.\n// Their copied records describe this finite checked closure, never all Chromium.\nconst checkedInputObservations = new WeakMap();\nfunction checkedInputRow(records, relative, actual) {\n  need(\n    actual &&\n      actual.pin &&\n      Number.isSafeInteger(actual.pin.bytes) &&\n      actual.pin.bytes >= 0 &&\n      /^[a-f0-9]{64}$/.test(actual.pin.sha256),\n    \"INPUT_CLOSURE_PIN\",\n  );\n  records.push(\n    Object.freeze({\n      relative,\n      bytes: actual.pin.bytes,\n      sha256: actual.pin.sha256,\n    }),\n  );\n}\nfunction issueCheckedInputObservation(\n  sourceReceipt,\n  leaseToken,\n  state,\n  records,\n) {\n  sourceState(sourceReceipt, leaseToken);\n  operationState(state.operationToken, true);\n  const unique = new Map();\n  for (const row of records) {\n    need(\n      !unique.has(row.relative) ||\n        canonical(unique.get(row.relative)) === canonical(row),\n      \"INPUT_CLOSURE_DUPLICATE\",\n    );\n    unique.set(row.relative, row);\n  }\n  const context = unique.get(\"context.json\");\n  need(\n    context &&\n      state.metadataSnapshot &&\n      /^[a-f0-9]{64}$/.test(state.metadataSnapshot.projectionSha256) &&\n      unique.size <= 256,\n    \"INPUT_CLOSURE_SCOPE\",\n  );\n  const inputs = state.plan.producerInputs\n    .map((row) => ({ ...row }))\n    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));\n  const content = Object.freeze({\n    schemaVersion: 1,\n    kind: \"windows-arm-checked-input-closure\",\n    sourceContextSha256: context.sha256,\n    image: state.plan.image,\n    sourceId: state.plan.sourceId,\n    producerSha256: hashBytes(Buffer.from(canonical(inputs))),\n    metadataProjectionSha256: state.metadataSnapshot.projectionSha256,\n    records: Object.freeze(\n      [...unique.values()].sort((a, b) =>\n        a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0,\n      ),\n    ),\n  });\n  const observation = Object.freeze({\n    kind: \"private-checked-input-observation\",\n  });\n  checkedInputObservations.set(observation, {\n    sourceReceipt,\n    leaseToken,\n    operation: state,\n    content,\n  });\n  return observation;\n}\nfunction consumeCheckedInputObservation(token, state, observation, boundary) {\n  retained(token, state);\n  const actual = checkedInputObservations.get(observation);\n  checkedInputObservations.delete(observation);\n  need(\n    actual &&\n      actual.sourceReceipt === state.sourceReceipt &&\n      actual.leaseToken === state.leaseToken &&\n      operationState(state.source.operationToken, true) === actual.operation &&\n      sourceState(state.sourceReceipt, state.leaseToken) === state.source &&\n      [\"before-probe-clang\", \"after-package-before-sdk-seal\"].includes(\n        boundary,\n      ),\n    \"INPUT_CLOSURE_BRAND\",\n  );\n  return Object.freeze({\n    boundary,\n    sha256: hashBytes(Buffer.from(canonical(actual.content))),\n    content: actual.content,\n  });\n}\n// END CHECKED INPUT CLOSURE DATA\n\nasync function createControl(sourceReceipt, leaseToken) {\n  const source = sourceState(sourceReceipt, leaseToken);\n  checkLease(leaseToken);\n",
+      "oldSha256": "dfed1167795b491ba7ddba9ebf2e9312021c46d267123cb2f96016cd054a9c21",
+      "newSha256": "6cfd98911baae0e7dabeab6732e02f97daae95bccf4dd3a6f5121c146880b395"
+    },
+    {
+      "oldRaw": "    }\n    await work(token, state, () => custom.sourceGitEnvironment(gitToken, {}));\n    await currentRoot(token, state);\n    if (state.source.operationToken)\n      await work(token, state, () =>\n        recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n      );\n    retained(token, state);\n    state.helperValidated = true;\n    state.gitToken = gitToken; // Private; never returned/exported or serialized.\n    return Object.freeze({\n",
+      "newRaw": "    }\n    await work(token, state, () => custom.sourceGitEnvironment(gitToken, {}));\n    await currentRoot(token, state);\n    let beforeObservation;\n    if (state.source.operationToken)\n      beforeObservation = await work(token, state, () =>\n        recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n      );\n    retained(token, state);\n    if (state.source.operationToken) {\n      need(!state.checkedInputsBefore, \"INPUT_CLOSURE_REUSE\");\n      state.checkedInputsBefore = consumeCheckedInputObservation(\n        token,\n        state,\n        beforeObservation,\n        \"before-probe-clang\",\n      );\n    }\n    state.helperValidated = true;\n    state.gitToken = gitToken; // Private; never returned/exported or serialized.\n    return Object.freeze({\n",
+      "oldSha256": "3c80d9c33a6bdfe08c6cddc51889fcde48182d878930f1b3018c2265dd7d22ee",
+      "newSha256": "3e608ecd2b337ec26998984beb073ce7fdcff552a11664a3c677a3661b429f0a"
+    },
+    {
+      "oldRaw": "      binding.policySha256 === fact.binding.policySha256,\n    \"SOURCE_DEFAULTS_BINDING_CHANGED\",\n  );\n  for (const row of snapshot.records) {\n    const actual = await heldOperationFile(\n      token,\n",
+      "newRaw": "      binding.policySha256 === fact.binding.policySha256,\n    \"SOURCE_DEFAULTS_BINDING_CHANGED\",\n  );\n  const checked = [];\n  for (const row of snapshot.records) {\n    const actual = await heldOperationFile(\n      token,\n",
+      "oldSha256": "be1c6baa59be3618000c323bafbbd307a323a3db9570091072471a2455da8a9f",
+      "newSha256": "053c8e39c51892e645f404e498c571a80e78e69f848f2b679697e23626285378"
+    },
+    {
+      "oldRaw": "    );\n    operationState(token, joinedAllowed);\n    need(actual.identity === row.identity, \"SOURCE_METADATA_REPLACED\");\n  }\n  await operationFence(token, joinedAllowed);\n}\n// END PRIVATE PARENT METADATA VERIFICATION\n\n",
+      "newRaw": "    );\n    operationState(token, joinedAllowed);\n    need(actual.identity === row.identity, \"SOURCE_METADATA_REPLACED\");\n    checkedInputRow(checked, row.relative, actual);\n  }\n  await operationFence(token, joinedAllowed);\n  operationState(token, joinedAllowed);\n  return checked;\n}\n// END PRIVATE PARENT METADATA VERIFICATION\n\n",
+      "oldSha256": "e17e5e5a53bfd4c68b49268f2ccabd2b1a47198400254bd6ef2feace5fb3ff91",
+      "newSha256": "28dbfdd260e5528219005b71978f42da0fd1a8b8bc0bccab9a39f96f1bd6caa9"
+    },
+    {
+      "oldRaw": "}\nasync function verifySourceSnapshot(token, joinedAllowed = false) {\n  const state = operationState(token, joinedAllowed);\n  for (const row of state.plan.rootPins)\n    await heldOperationFile(\n      token,\n      row.relative,\n      row.maximum ?? 2 * 1024 ** 2,\n      row,\n      joinedAllowed,\n    );\n  for (const row of state.originalRecords ?? []) {\n    const actual = await heldOperationFile(\n      token,\n",
+      "newRaw": "}\nasync function verifySourceSnapshot(token, joinedAllowed = false) {\n  const state = operationState(token, joinedAllowed);\n  const checked = [];\n  for (const row of state.plan.rootPins) {\n    const actual = await heldOperationFile(\n      token,\n      row.relative,\n      row.maximum ?? 2 * 1024 ** 2,\n      row,\n      joinedAllowed,\n    );\n    checkedInputRow(checked, row.relative, actual);\n  }\n  for (const row of state.originalRecords ?? []) {\n    const actual = await heldOperationFile(\n      token,\n",
+      "oldSha256": "6d047b7fffa2824d3ab9b256964fef8c50a157b6d764bb4734724e2ad598ebf5",
+      "newSha256": "5d84587a924d09240fdb4756278a03d98b58f2795128dfebb270cf45e6c2acba"
+    },
+    {
+      "oldRaw": "      joinedAllowed,\n    );\n    need(actual.identity === row.identity, \"SOURCE_RECEIPT_REPLACED\");\n  }\n  const graphRecord = await heldOperationFile(\n    token,\n",
+      "newRaw": "      joinedAllowed,\n    );\n    need(actual.identity === row.identity, \"SOURCE_RECEIPT_REPLACED\");\n    checkedInputRow(checked, row.relative, actual);\n  }\n  const graphRecord = await heldOperationFile(\n    token,\n",
+      "oldSha256": "cdc5a1dd2d7705bf5162899423497b32259bfb7f9213c8bc9f3d5741e63e34c8",
+      "newSha256": "0acd86dd98b16f21d20ce082acd0252f43f2059f358dadfa47f147c7071b9adb"
+    },
+    {
+      "oldRaw": "    undefined,\n    joinedAllowed,\n  );\n  const expected = parseRecord(graphRecord);\n  let snapshot,\n    callbackFailed = false,\n",
+      "newRaw": "    undefined,\n    joinedAllowed,\n  );\n  checkedInputRow(checked, \"source-gn-logs/fresh-graph-pins.json\", graphRecord);\n  const expected = parseRecord(graphRecord);\n  let snapshot,\n    callbackFailed = false,\n",
+      "oldSha256": "8aac06ace07b454359fb4740d5d4733b4e1b9e62c2b4622dd125a76e2806bdcd",
+      "newSha256": "6a780c59a670ae18de14fbfac7fc7755b8087da6cc59a8c14a58bd8f146a9f93"
+    },
+    {
+      "oldRaw": "      state.sourceResult.graph.sha256 === expected.sha256,\n    \"SOURCE_GRAPH_CHANGED\",\n  );\n  await recheckSourceMetadata(token, joinedAllowed);\n  await operationFence(token, joinedAllowed);\n  state.graphSnapshot = snapshot;\n}\n// BEGIN PRIVATE INSTALLED TOOL PROOF\nconst TOOL_PROOF_ROOTS = Object.freeze([\n",
+      "newRaw": "      state.sourceResult.graph.sha256 === expected.sha256,\n    \"SOURCE_GRAPH_CHANGED\",\n  );\n  const metadata = await recheckSourceMetadata(token, joinedAllowed);\n  if (metadata) checked.push(...metadata);\n  await operationFence(token, joinedAllowed);\n  state.graphSnapshot = snapshot;\n  return checked;\n}\n// BEGIN PRIVATE INSTALLED TOOL PROOF\nconst TOOL_PROOF_ROOTS = Object.freeze([\n",
+      "oldSha256": "ce3ff08b2090ed3fd53bf4e7bbb9565ec18daf6b87a24276ca572b21ee36253f",
+      "newSha256": "21b91253b1213d99b78ba496e1063fe3eff3bd388af9c3c36478bc43ac03b502"
+    },
+    {
+      "oldRaw": "      sourceSessions.get(state.sourceReceipt)?.toolProofSnapshot === snapshot,\n    \"TOOL_PROOF_BINDING\",\n  );\n  for (const row of [snapshot.record, snapshot.base]) {\n    const actual = await heldOperationFile(\n      token,\n",
+      "newRaw": "      sourceSessions.get(state.sourceReceipt)?.toolProofSnapshot === snapshot,\n    \"TOOL_PROOF_BINDING\",\n  );\n  const checked = [];\n  for (const row of [snapshot.record, snapshot.base]) {\n    const actual = await heldOperationFile(\n      token,\n",
+      "oldSha256": "d0ed157f1f5e9d3adf1da28766fe45b9e8bef1db7ef61431ba02e628c94b461a",
+      "newSha256": "fc152f6cf85009ba868e0fc58e187b6166c3712b7690afb4a6da52454c631b12"
+    },
+    {
+      "oldRaw": "    );\n    operationState(token, true);\n    need(actual.identity === row.identity, \"TOOL_PROOF_REPLACED\");\n  }\n}\n// END PRIVATE INSTALLED TOOL PROOF\n\n",
+      "newRaw": "    );\n    operationState(token, true);\n    need(actual.identity === row.identity, \"TOOL_PROOF_REPLACED\");\n    checkedInputRow(checked, row.relative, actual);\n  }\n  return checked;\n}\n// END PRIVATE INSTALLED TOOL PROOF\n\n",
+      "oldSha256": "d2a7cfc1103c1298140f323eb34ee48de043e5dcf4c55fe9bbc65a618b700055",
+      "newSha256": "87085e883bf0638aa02ae39677b8e66efe5685dc6f8a1b4b2bdcee1f9f4162e4"
+    },
+    {
+      "oldRaw": "      state.pendingWriters === 0,\n    \"SOURCE_JOIN_CHANGED\",\n  );\n  await verifySourceSnapshot(source.operationToken, true);\n  await recheckSourceToolProof(source.operationToken);\n}\nfunction startSourceChild(token) {\n  const state = operationState(token);\n",
+      "newRaw": "      state.pendingWriters === 0,\n    \"SOURCE_JOIN_CHANGED\",\n  );\n  const checked = await verifySourceSnapshot(source.operationToken, true);\n  const tools = await recheckSourceToolProof(source.operationToken);\n  operationState(source.operationToken, true);\n  return issueCheckedInputObservation(receipt, leaseToken, state, [\n    ...checked,\n    ...tools,\n  ]);\n}\nfunction startSourceChild(token) {\n  const state = operationState(token);\n",
+      "oldSha256": "9a93bd6e025308046985a8ee47e73d774631e4d5be196f99c1c32dfe67546b1a",
+      "newSha256": "b8af41b68194b741c3f6f21b73ed89f3c20d8e07060df96335340c3b45ba4c56"
+    },
+    {
+      "oldRaw": "      closed.nativeAcceptance === false,\n    \"ENGINE_CLOSE_BINDING\",\n  );\n  if (role === \"cef-engine\" && job.success === false) {\n    inspectNativeSlice(job, closed.jobSeconds);\n    need(\n",
+      "newRaw": "      closed.nativeAcceptance === false,\n    \"ENGINE_CLOSE_BINDING\",\n  );\n  need(\n    Number.isSafeInteger(closed.jobSeconds) &&\n      closed.jobSeconds > 0 &&\n      closed.jobSeconds <=\n        (role === \"checkpoint-seal\"\n          ? 3600\n          : ENGINE_CAPS_MS[ENGINE_ROLES.indexOf(role)] / 1000) &&\n      Number.isSafeInteger(job.elapsedMs) &&\n      job.elapsedMs >= 0 &&\n      job.elapsedMs <= closed.jobSeconds * 1000 + CLEANUP_MS,\n    \"ENGINE_ASSIGNED_SECONDS\",\n  );\n  if (role === \"cef-engine\" && job.success === false) {\n    inspectNativeSlice(job, closed.jobSeconds);\n    need(\n",
+      "oldSha256": "160d03c046fab040d67ed9b79e42eba07f994be6e2b47f02599ca7e9b53bbc89",
+      "newSha256": "a18125fc0ead8656ee4b0d28e48feaeaea659d3346147c93791fc249471f5574"
+    },
+    {
+      "oldRaw": "    const current = await sealSdkAsset(token, asset.name, asset);\n    need(current.identity === asset.identity, \"SDK_ASSET_REPLACED\");\n  }\n  await work(token, state, () =>\n    recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n  );\n  await currentRoot(token, state);\n",
+      "newRaw": "    const current = await sealSdkAsset(token, asset.name, asset);\n    need(current.identity === asset.identity, \"SDK_ASSET_REPLACED\");\n  }\n  const afterObservation = await work(token, state, () =>\n    recheckSourceReceipt(state.sourceReceipt, state.leaseToken),\n  );\n  await currentRoot(token, state);\n",
+      "oldSha256": "c39b274ad1ccb4097bf39fd67a632653688cb0dd2f461e89ecf4771c8f524d0d",
+      "newSha256": "2b98e85bd66ea893d7bb78ce4ef9879966a34a4e1837842616bc92154df42e09"
+    },
+    {
+      "oldRaw": "      operation.logFds.size === 0,\n    \"SDK_FD_JOIN\",\n  );\n  const seal = Object.freeze({\n    kind: \"windows-arm-full-sdk-produced\",\n    sourceId: state.source.sourceId,\n",
+      "newRaw": "      operation.logFds.size === 0,\n    \"SDK_FD_JOIN\",\n  );\n  const after = consumeCheckedInputObservation(\n    token,\n    state,\n    afterObservation,\n    \"after-package-before-sdk-seal\",\n  );\n  need(\n    state.checkedInputsBefore &&\n      state.checkedInputsBefore.sha256 === after.sha256 &&\n      canonical(state.checkedInputsBefore.content) === canonical(after.content),\n    \"INPUT_CLOSURE_CHANGED\",\n  );\n  const checkedInputs = Object.freeze({\n    schemaVersion: 1,\n    kind: \"windows-arm-checked-input-closure-pair\",\n    before: state.checkedInputsBefore,\n    after,\n  });\n  const seal = Object.freeze({\n    kind: \"windows-arm-full-sdk-produced\",\n    sourceId: state.source.sourceId,\n",
+      "oldSha256": "27eca937f5b5ba683ec03565a4423b9c982ed959c1169972be4e323d4ca9574b",
+      "newSha256": "ab9859b770b8f138b088b5182453bebae08bb20b5f82378652cfc766a13faf84"
+    },
+    {
+      "oldRaw": "    runtimeReady: false,\n    publicationAllowed: false,\n    bundle: \"full-sdk-package/bundle\",\n    assets: Object.freeze(assets),\n  });\n  state.sdkSeal = seal; // Private final fact; the report/transport is a projection only.\n",
+      "newRaw": "    runtimeReady: false,\n    publicationAllowed: false,\n    bundle: \"full-sdk-package/bundle\",\n    checkedInputs,\n    assets: Object.freeze(assets),\n  });\n  state.sdkSeal = seal; // Private final fact; the report/transport is a projection only.\n",
+      "oldSha256": "42b8b35d57c9d5b9c23f25aa03af45066b5173ea17cb8caa8296394a8178a5c2",
+      "newSha256": "d882638238de7e34860e2deee7894d5e41b635918e73c0b79cf8bebeaffb784d"
+    }
+  ]
+}''')
+def producer_metric_controller_inverse(raw):
+    spec = PRODUCER_METRIC_CONTROLLER_INVERSE
+    binary = isinstance(raw, bytes)
+    text = raw.decode() if binary else raw
+    for row in reversed(spec['rows']):
+        assert hashlib.sha256(row['newRaw'].encode()).hexdigest() == row['newSha256']
+        assert hashlib.sha256(row['oldRaw'].encode()).hexdigest() == row['oldSha256']
+        assert text.count(row['newRaw']) == 1
+        text = text.replace(row['newRaw'],row['oldRaw'],1)
+    assert len(text.encode()) == spec['bytes'] and hashlib.sha256(text.encode()).hexdigest() == spec['sha256']
+    return text.encode() if binary else text
+
 def clock_failure_controller_inverse(raw):
+    raw = producer_metric_controller_inverse(raw)
     spec = CLOCK_FAILURE_INVERSE
     block, new, old = spec['block'].encode(), spec['newPredicate'].encode(), spec['oldPredicate'].encode()
     assert hashlib.sha256(block).hexdigest() == spec['blockSha256']

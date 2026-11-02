@@ -264,6 +264,103 @@ async function currentRoot(token, state) {
     throw fail(state, error);
   }
 }
+// BEGIN CHECKED INPUT CLOSURE DATA
+// Only actual completed held-input rechecks issue these private observations.
+// Their copied records describe this finite checked closure, never all Chromium.
+const checkedInputObservations = new WeakMap();
+function checkedInputRow(records, relative, actual) {
+  need(
+    actual &&
+      actual.pin &&
+      Number.isSafeInteger(actual.pin.bytes) &&
+      actual.pin.bytes >= 0 &&
+      /^[a-f0-9]{64}$/.test(actual.pin.sha256),
+    "INPUT_CLOSURE_PIN",
+  );
+  records.push(
+    Object.freeze({
+      relative,
+      bytes: actual.pin.bytes,
+      sha256: actual.pin.sha256,
+    }),
+  );
+}
+function issueCheckedInputObservation(
+  sourceReceipt,
+  leaseToken,
+  state,
+  records,
+) {
+  sourceState(sourceReceipt, leaseToken);
+  operationState(state.operationToken, true);
+  const unique = new Map();
+  for (const row of records) {
+    need(
+      !unique.has(row.relative) ||
+        canonical(unique.get(row.relative)) === canonical(row),
+      "INPUT_CLOSURE_DUPLICATE",
+    );
+    unique.set(row.relative, row);
+  }
+  const context = unique.get("context.json");
+  need(
+    context &&
+      state.metadataSnapshot &&
+      /^[a-f0-9]{64}$/.test(state.metadataSnapshot.projectionSha256) &&
+      unique.size <= 256,
+    "INPUT_CLOSURE_SCOPE",
+  );
+  const inputs = state.plan.producerInputs
+    .map((row) => ({ ...row }))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const content = Object.freeze({
+    schemaVersion: 1,
+    kind: "windows-arm-checked-input-closure",
+    sourceContextSha256: context.sha256,
+    image: state.plan.image,
+    sourceId: state.plan.sourceId,
+    producerSha256: hashBytes(Buffer.from(canonical(inputs))),
+    metadataProjectionSha256: state.metadataSnapshot.projectionSha256,
+    records: Object.freeze(
+      [...unique.values()].sort((a, b) =>
+        a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0,
+      ),
+    ),
+  });
+  const observation = Object.freeze({
+    kind: "private-checked-input-observation",
+  });
+  checkedInputObservations.set(observation, {
+    sourceReceipt,
+    leaseToken,
+    operation: state,
+    content,
+  });
+  return observation;
+}
+function consumeCheckedInputObservation(token, state, observation, boundary) {
+  retained(token, state);
+  const actual = checkedInputObservations.get(observation);
+  checkedInputObservations.delete(observation);
+  need(
+    actual &&
+      actual.sourceReceipt === state.sourceReceipt &&
+      actual.leaseToken === state.leaseToken &&
+      operationState(state.source.operationToken, true) === actual.operation &&
+      sourceState(state.sourceReceipt, state.leaseToken) === state.source &&
+      ["before-probe-clang", "after-package-before-sdk-seal"].includes(
+        boundary,
+      ),
+    "INPUT_CLOSURE_BRAND",
+  );
+  return Object.freeze({
+    boundary,
+    sha256: hashBytes(Buffer.from(canonical(actual.content))),
+    content: actual.content,
+  });
+}
+// END CHECKED INPUT CLOSURE DATA
+
 async function createControl(sourceReceipt, leaseToken) {
   const source = sourceState(sourceReceipt, leaseToken);
   checkLease(leaseToken);
@@ -380,11 +477,21 @@ async function prepareFreshPolicy(token) {
     }
     await work(token, state, () => custom.sourceGitEnvironment(gitToken, {}));
     await currentRoot(token, state);
+    let beforeObservation;
     if (state.source.operationToken)
-      await work(token, state, () =>
+      beforeObservation = await work(token, state, () =>
         recheckSourceReceipt(state.sourceReceipt, state.leaseToken),
       );
     retained(token, state);
+    if (state.source.operationToken) {
+      need(!state.checkedInputsBefore, "INPUT_CLOSURE_REUSE");
+      state.checkedInputsBefore = consumeCheckedInputObservation(
+        token,
+        state,
+        beforeObservation,
+        "before-probe-clang",
+      );
+    }
     state.helperValidated = true;
     state.gitToken = gitToken; // Private; never returned/exported or serialized.
     return Object.freeze({
@@ -2036,6 +2143,7 @@ async function recheckSourceMetadata(token, joinedAllowed) {
       binding.policySha256 === fact.binding.policySha256,
     "SOURCE_DEFAULTS_BINDING_CHANGED",
   );
+  const checked = [];
   for (const row of snapshot.records) {
     const actual = await heldOperationFile(
       token,
@@ -2046,8 +2154,11 @@ async function recheckSourceMetadata(token, joinedAllowed) {
     );
     operationState(token, joinedAllowed);
     need(actual.identity === row.identity, "SOURCE_METADATA_REPLACED");
+    checkedInputRow(checked, row.relative, actual);
   }
   await operationFence(token, joinedAllowed);
+  operationState(token, joinedAllowed);
+  return checked;
 }
 // END PRIVATE PARENT METADATA VERIFICATION
 
@@ -2161,14 +2272,17 @@ async function verifyNativeSourceRecords(token) {
 }
 async function verifySourceSnapshot(token, joinedAllowed = false) {
   const state = operationState(token, joinedAllowed);
-  for (const row of state.plan.rootPins)
-    await heldOperationFile(
+  const checked = [];
+  for (const row of state.plan.rootPins) {
+    const actual = await heldOperationFile(
       token,
       row.relative,
       row.maximum ?? 2 * 1024 ** 2,
       row,
       joinedAllowed,
     );
+    checkedInputRow(checked, row.relative, actual);
+  }
   for (const row of state.originalRecords ?? []) {
     const actual = await heldOperationFile(
       token,
@@ -2178,6 +2292,7 @@ async function verifySourceSnapshot(token, joinedAllowed = false) {
       joinedAllowed,
     );
     need(actual.identity === row.identity, "SOURCE_RECEIPT_REPLACED");
+    checkedInputRow(checked, row.relative, actual);
   }
   const graphRecord = await heldOperationFile(
     token,
@@ -2186,6 +2301,7 @@ async function verifySourceSnapshot(token, joinedAllowed = false) {
     undefined,
     joinedAllowed,
   );
+  checkedInputRow(checked, "source-gn-logs/fresh-graph-pins.json", graphRecord);
   const expected = parseRecord(graphRecord);
   let snapshot,
     callbackFailed = false,
@@ -2226,9 +2342,11 @@ async function verifySourceSnapshot(token, joinedAllowed = false) {
       state.sourceResult.graph.sha256 === expected.sha256,
     "SOURCE_GRAPH_CHANGED",
   );
-  await recheckSourceMetadata(token, joinedAllowed);
+  const metadata = await recheckSourceMetadata(token, joinedAllowed);
+  if (metadata) checked.push(...metadata);
   await operationFence(token, joinedAllowed);
   state.graphSnapshot = snapshot;
+  return checked;
 }
 // BEGIN PRIVATE INSTALLED TOOL PROOF
 const TOOL_PROOF_ROOTS = Object.freeze([
@@ -2401,6 +2519,7 @@ async function recheckSourceToolProof(token) {
       sourceSessions.get(state.sourceReceipt)?.toolProofSnapshot === snapshot,
     "TOOL_PROOF_BINDING",
   );
+  const checked = [];
   for (const row of [snapshot.record, snapshot.base]) {
     const actual = await heldOperationFile(
       token,
@@ -2411,7 +2530,9 @@ async function recheckSourceToolProof(token) {
     );
     operationState(token, true);
     need(actual.identity === row.identity, "TOOL_PROOF_REPLACED");
+    checkedInputRow(checked, row.relative, actual);
   }
+  return checked;
 }
 // END PRIVATE INSTALLED TOOL PROOF
 
@@ -2428,8 +2549,13 @@ async function recheckSourceReceipt(receipt, leaseToken) {
       state.pendingWriters === 0,
     "SOURCE_JOIN_CHANGED",
   );
-  await verifySourceSnapshot(source.operationToken, true);
-  await recheckSourceToolProof(source.operationToken);
+  const checked = await verifySourceSnapshot(source.operationToken, true);
+  const tools = await recheckSourceToolProof(source.operationToken);
+  operationState(source.operationToken, true);
+  return issueCheckedInputObservation(receipt, leaseToken, state, [
+    ...checked,
+    ...tools,
+  ]);
 }
 function startSourceChild(token) {
   const state = operationState(token);
@@ -4307,6 +4433,18 @@ async function verifyEnginePhase(token, phase, packetPin, packet) {
       closed.nativeAcceptance === false,
     "ENGINE_CLOSE_BINDING",
   );
+  need(
+    Number.isSafeInteger(closed.jobSeconds) &&
+      closed.jobSeconds > 0 &&
+      closed.jobSeconds <=
+        (role === "checkpoint-seal"
+          ? 3600
+          : ENGINE_CAPS_MS[ENGINE_ROLES.indexOf(role)] / 1000) &&
+      Number.isSafeInteger(job.elapsedMs) &&
+      job.elapsedMs >= 0 &&
+      job.elapsedMs <= closed.jobSeconds * 1000 + CLEANUP_MS,
+    "ENGINE_ASSIGNED_SECONDS",
+  );
   if (role === "cef-engine" && job.success === false) {
     inspectNativeSlice(job, closed.jobSeconds);
     need(
@@ -4905,7 +5043,7 @@ async function verifyProducedSdk(token) {
     const current = await sealSdkAsset(token, asset.name, asset);
     need(current.identity === asset.identity, "SDK_ASSET_REPLACED");
   }
-  await work(token, state, () =>
+  const afterObservation = await work(token, state, () =>
     recheckSourceReceipt(state.sourceReceipt, state.leaseToken),
   );
   await currentRoot(token, state);
@@ -4916,6 +5054,24 @@ async function verifyProducedSdk(token) {
       operation.logFds.size === 0,
     "SDK_FD_JOIN",
   );
+  const after = consumeCheckedInputObservation(
+    token,
+    state,
+    afterObservation,
+    "after-package-before-sdk-seal",
+  );
+  need(
+    state.checkedInputsBefore &&
+      state.checkedInputsBefore.sha256 === after.sha256 &&
+      canonical(state.checkedInputsBefore.content) === canonical(after.content),
+    "INPUT_CLOSURE_CHANGED",
+  );
+  const checkedInputs = Object.freeze({
+    schemaVersion: 1,
+    kind: "windows-arm-checked-input-closure-pair",
+    before: state.checkedInputsBefore,
+    after,
+  });
   const seal = Object.freeze({
     kind: "windows-arm-full-sdk-produced",
     sourceId: state.source.sourceId,
@@ -4926,6 +5082,7 @@ async function verifyProducedSdk(token) {
     runtimeReady: false,
     publicationAllowed: false,
     bundle: "full-sdk-package/bundle",
+    checkedInputs,
     assets: Object.freeze(assets),
   });
   state.sdkSeal = seal; // Private final fact; the report/transport is a projection only.

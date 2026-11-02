@@ -54,6 +54,72 @@ def job(deadline=False):
     return value
 
 
+PRODUCER_METRIC_CODEC_INVERSE = json.loads(r'''{
+  "bytes": 103305,
+  "sha256": "5010577c03717dc2981038667b44c12b916705c83d242b57b29a4a3072b6abeb",
+  "rows": [
+    {
+      "oldRaw": "\n\nSAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',\n                                    'CARRIER_CHANGED', 'CARRIER_RELEASE'})\n\n\nclass CheckpointFailure(ValueError):\n",
+      "newRaw": "\n\nSAFE_CODES = SAFE_CODES | frozenset({'CARRIER_REPOSITORY', 'CARRIER_REF', 'CARRIER_COMMIT',\n                                    'CARRIER_CHANGED', 'CARRIER_RELEASE', 'SDK_ASSIGNED_SECONDS', 'SDK_CHECKED_INPUTS', 'SDK_PRODUCER_TIMING'})\n\n\nclass CheckpointFailure(ValueError):\n",
+      "oldSha256": "eef3620a303e36bb69edfe04bc2de611dff3af59273bb9c32b4581e009e23487",
+      "newSha256": "81015b65d73aca4454b2105ce2754cf47f4c32ffddf21435e2409fd7044fe580"
+    },
+    {
+      "oldRaw": "\ndef _sdk_phases(guard, source, source_pin):\n    from full_sdk_engine import validate_packet\n    evidence, previous = {}, None\n    for role in ('probe-clang', 'probe-link', 'cef-engine', 'package'):\n        names = {'packet': f'full-sdk-engine-{role}-context.json', 'launch': f'full-sdk-engine-{role}-launch.json',\n                 'job': f'jobs/{role}/receipt.json', 'close': f'full-sdk-engine-closed-{role}.json',\n",
+      "newRaw": "\ndef _sdk_phases(guard, source, source_pin):\n    from full_sdk_engine import validate_packet\n    evidence, previous, observed = {}, None, {}\n    for role in ('probe-clang', 'probe-link', 'cef-engine', 'package'):\n        names = {'packet': f'full-sdk-engine-{role}-context.json', 'launch': f'full-sdk-engine-{role}-launch.json',\n                 'job': f'jobs/{role}/receipt.json', 'close': f'full-sdk-engine-closed-{role}.json',\n",
+      "oldSha256": "368962b1ac315e80136b7df12eb2b5826e2ff7a1df470ddbec027f20177bc35a",
+      "newSha256": "55b6dcfbf672c8e274da3cd1a1882981b89cdaba16e2d3538b9732132a041f3f"
+    },
+    {
+      "oldRaw": "        packet, launch, raw_job, closed, result = (values[k] for k in ('packet', 'launch', 'job', 'close', 'result'))\n        validate_packet(packet, role, source)\n        _job(raw_job)\n        need(packet['sourceContextSha256'] == source_pin['sha256'] and\n             packet['prior'] == (None if previous is None else dict(result=previous['result'], receipt=previous['job'])) and\n             launch.get('kind') == 'windows-arm-full-sdk-engine-launch' and launch.get('role') == role and\n",
+      "newRaw": "        packet, launch, raw_job, closed, result = (values[k] for k in ('packet', 'launch', 'job', 'close', 'result'))\n        validate_packet(packet, role, source)\n        _job(raw_job)\n        need(type(closed.get('jobSeconds')) is int and 0 < closed['jobSeconds'] <=\n             {'probe-clang':900, 'probe-link':900, 'cef-engine':10800, 'package':2400}[role] and\n             type(raw_job.get('elapsedMs')) is int and raw_job['elapsedMs'] >= 0 and\n             raw_job['elapsedMs'] <= closed['jobSeconds'] * 1000 + 30000, 'SDK_ASSIGNED_SECONDS')\n        need(packet['sourceContextSha256'] == source_pin['sha256'] and\n             packet['prior'] == (None if previous is None else dict(result=previous['result'], receipt=previous['job'])) and\n             launch.get('kind') == 'windows-arm-full-sdk-engine-launch' and launch.get('role') == role and\n",
+      "oldSha256": "d36e6df70a6264f03dd2c9ed905fcc039d6770d43c6642cefdb059a3ede6f958",
+      "newSha256": "98135be1ba7add2b613f811dfef1112a33639d6f13208c950dde6b8642fc0f58"
+    },
+    {
+      "oldRaw": "             result.get('engineComplete') is (role == 'cef-engine') and result.get('sdkBuilt') is (role == 'package') and\n             result.get('nativeAcceptance') is False and result.get('runtimeReady') is False, 'SDK_PHASE_RESULT')\n        for row in packet['metadataFiles']:\n            held(guard, row['relative'], 8 * 1024**2, {k: row[k] for k in ('bytes', 'sha256')}, retain=False)\n        if role in ('probe-clang', 'probe-link'):\n            held(guard, 'full-sdk-engine-probe/probe.' + ('obj' if role == 'probe-clang' else 'exe'), 8 * 1024**2, result['output'], retain=False)\n        previous = pins\n    return evidence, values['result']\n\n\ndef sdk_quarantine(client, root, report, clock, fence, current, policy):\n",
+      "newRaw": "             result.get('engineComplete') is (role == 'cef-engine') and result.get('sdkBuilt') is (role == 'package') and\n             result.get('nativeAcceptance') is False and result.get('runtimeReady') is False, 'SDK_PHASE_RESULT')\n        for row in packet['metadataFiles']:\n            actual, raw = held(guard, row['relative'], 8 * 1024**2, {k: row[k] for k in ('bytes', 'sha256')})\n            need(row['relative'] not in observed or observed[row['relative']] == actual, 'SDK_CHECKED_INPUTS')\n            observed[row['relative']] = actual\n            if row['relative'] == 'full-metadata-result.json':\n                observed['projectionSha256'] = sha(canonical(strict_json(raw)))\n        if role in ('probe-clang', 'probe-link'):\n            held(guard, 'full-sdk-engine-probe/probe.' + ('obj' if role == 'probe-clang' else 'exe'), 8 * 1024**2, result['output'], retain=False)\n        previous = pins\n    return evidence, values['result'], observed\n\n\n# BEGIN SDK CREATOR METRIC DATA\n# These records describe the finite owner-checked input closure. They never\n# assert a whole Chromium inventory or independently reparse raw nine bodies.\ndef checked_input_pair(value, source, source_pin, identity, metadata, native):\n    need(type(value) is dict and set(value) == {'schemaVersion','kind','before','after'} and\n         type(value['schemaVersion']) is int and value['schemaVersion'] == 1 and\n         value['kind'] == 'windows-arm-checked-input-closure-pair', 'SDK_CHECKED_INPUTS')\n    expected = {'context.json':source_pin, GRAPH_FILE:identity['graphPin'], TOOL_FILE:identity['toolProofPin']}\n    for index, row in enumerate(source['sources']):\n        expected['source-inputs/' + str(index)] = {k:row[k] for k in ('bytes','sha256')}\n    expected.update({name:{k:row[k] for k in ('bytes','sha256')} for name,row in native.items()})\n    expected.update({name:row for name,row in metadata.items() if name != 'projectionSha256'})\n    expected.update({\n        'source-checkout/src/cef/BUILD.gn':dict(bytes=97568,sha256='2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0'),\n        'source-checkout/src/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn':dict(bytes=45891,sha256='e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15')})\n    # The source owner's original checked source records, whose exact immutable\n    # hashes are captured before/after; native fields present in this seal are\n    # cross-bound above. Remaining record meaning is the audited original B\n    # creator, not caller JSON or a synthesized legacy SOURCE claim.\n    roles = ('sdk-data','llvm-data','rust-archive','gn-archive','siso-archive','materialize','runtime-closure','full-sdk-source-gn')\n    original = {'full-source-launcher-result.json','full-source-closed-launcher.json',\n                'jobs/full-source-operation/receipt.json','full-source-closed-full-source-operation.json',\n                'full-source-operation-result.json','full-source-closed-verify-setup.json','full-source-gn-result.json'}\n    original.update('jobs/' + role + '/receipt.json' for role in roles)\n    original.update('full-source-closed-' + role + '.json' for role in roles[:-1])\n    # CEF engine context/launch/job/close belong to native evidence, not the\n    # checked source closure; only the three source records overlap.\n    names = (set(expected) - {'full-sdk-engine-cef-engine-context.json','full-sdk-engine-cef-engine-launch.json',\n                            'jobs/cef-engine/receipt.json','full-sdk-engine-closed-cef-engine.json'}) | original\n    content_fields = {'schemaVersion','kind','sourceContextSha256','image','sourceId','producerSha256','metadataProjectionSha256','records'}\n    contents = []\n    for name,boundary in (('before','before-probe-clang'),('after','after-package-before-sdk-seal')):\n        row = value[name]\n        need(type(row) is dict and set(row) == {'boundary','sha256','content'} and row['boundary'] == boundary,\n             'SDK_CHECKED_INPUTS')\n        content = row['content']\n        need(type(content) is dict and set(content) == content_fields and type(content['schemaVersion']) is int and\n             content['schemaVersion'] == 1 and content['kind'] == 'windows-arm-checked-input-closure' and\n             content['sourceContextSha256'] == source_pin['sha256'] and content['image'] == source['image'] and\n             content['sourceId'] == source['sourceId'] and content['producerSha256'] == identity['producerSha256'] and\n             content['metadataProjectionSha256'] == metadata['projectionSha256'] and\n             sha(canonical(content)) == row['sha256'], 'SDK_CHECKED_INPUTS')\n        records = content['records']\n        need(type(records) is list and len(records) == len(names) and len(records) <= 256 and\n             all(type(r) is dict and set(r) == {'relative','bytes','sha256'} for r in records) and\n             [r['relative'] for r in records] == sorted(names), 'SDK_CHECKED_INPUTS')\n        for record in records:\n            measured = {k:record[k] for k in ('bytes','sha256')}\n            pin(measured, 16 * 1024**2, empty=True)\n            if record['relative'] in expected:\n                need(measured == expected[record['relative']], 'SDK_CHECKED_INPUTS')\n        contents.append(content)\n    need(contents[0] == contents[1] and value['before']['sha256'] == value['after']['sha256'], 'SDK_CHECKED_INPUTS')\n    return value\n\n\ndef producer_timing(clock, source):\n    need(type(clock) is _TransportClock, 'SDK_PRODUCER_TIMING')\n    need(all(type(source.get(key)) in (int, float) and math.isfinite(source[key]) for key in\n             ('wallWholeEnd','monotonicWholeEnd')), 'SDK_PRODUCER_TIMING')\n    clock.remaining()  # Updates the existing original native/wall samples.\n    v = clock.value\n    source_wall = math.floor(source['wallWholeEnd'] * 1000)\n    source_tick = math.floor(source['monotonicWholeEnd'] * 1000)\n    wall, tick = math.ceil(clock.last_wall), clock.last_tick\n    remaining = min(v['wallEndMs'] - wall, v['tickEndMs'] - tick, source_wall - wall, source_tick - tick)\n    result = dict(kind='windows-arm-original-whole-clock-sample', wholeMs=21600000, reserveMs=150000,\n                  wallStartMs=v['wallStartMs'],tickStartMs=v['tickStartMs'],wallEndMs=v['wallEndMs'],tickEndMs=v['tickEndMs'],\n                  wallSampleMs=wall,tickSampleMs=tick,sourceWallEndMs=source_wall,sourceTickEndMs=source_tick,\n                  remainingMs=remaining,producerElapsedMs=21600000-remaining)\n    validate_producer_timing(result, source)\n    return result\n\n\ndef validate_producer_timing(value, source):\n    fields = {'kind','wholeMs','reserveMs','wallStartMs','tickStartMs','wallEndMs','tickEndMs',\n              'wallSampleMs','tickSampleMs','sourceWallEndMs','sourceTickEndMs','remainingMs','producerElapsedMs'}\n    need(type(value) is dict and set(value) == fields and\n         value['kind'] == 'windows-arm-original-whole-clock-sample' and\n         all(type(value[k]) is int and value[k] >= 0 for k in fields - {'kind'}) and\n         value['wholeMs'] == 21600000 and value['reserveMs'] == 150000 and\n         value['wallEndMs'] - value['wallStartMs'] == value['wholeMs'] and\n         value['tickEndMs'] - value['tickStartMs'] == value['wholeMs'] and\n         value['wallSampleMs'] >= value['wallStartMs'] and value['tickSampleMs'] >= value['tickStartMs'] and\n         value['sourceWallEndMs'] == math.floor(source['wallWholeEnd'] * 1000) <= value['wallEndMs'] and\n         value['sourceTickEndMs'] == math.floor(source['monotonicWholeEnd'] * 1000) <= value['tickEndMs'] and\n         value['remainingMs'] == min(value['wallEndMs'] - value['wallSampleMs'], value['tickEndMs'] - value['tickSampleMs'],\n             value['sourceWallEndMs'] - value['wallSampleMs'], value['sourceTickEndMs'] - value['tickSampleMs']) and\n         value['remainingMs'] > value['reserveMs'] and\n         value['producerElapsedMs'] == value['wholeMs'] - value['remainingMs'] and\n         0 < value['producerElapsedMs'] < value['wholeMs'] - value['reserveMs'], 'SDK_PRODUCER_TIMING')\n    return value\n# END SDK CREATOR METRIC DATA\n\n\ndef sdk_quarantine(client, root, report, clock, fence, current, policy):\n",
+      "oldSha256": "414425bf16264de8db5d1efc7e361a8b2de5cdceaa5018b7d157963ebd034eba",
+      "newSha256": "f3c843d5f63b712d0752956b208199fc0914bab9a9d1ac7f49476183340b880c"
+    },
+    {
+      "oldRaw": "    source, source_pin = _source(guard, identity)\n    need(source['head'] == current['head_sha'] and source['runId'] == str(current['id']) and source['attempt'] == str(current['run_attempt']) and\n         identity['producerSha256'] == producer_digest(policy['producerInputs']), 'SDK_CURRENT_BINDING')\n    fields = {'kind', 'sourceId', 'image', 'target', 'sdkBuilt', 'nativeAcceptance', 'runtimeReady', 'publicationAllowed', 'bundle', 'assets'}\n    need(type(report) is dict and set(report) == fields and report['kind'] == 'windows-arm-full-sdk-produced' and\n         report['sourceId'] == source['sourceId'] and report['image'] == source['image'] and report['target'] == SDK_TARGET and\n         report['sdkBuilt'] is True and report['nativeAcceptance'] is False and report['runtimeReady'] is False and\n",
+      "newRaw": "    source, source_pin = _source(guard, identity)\n    need(source['head'] == current['head_sha'] and source['runId'] == str(current['id']) and source['attempt'] == str(current['run_attempt']) and\n         identity['producerSha256'] == producer_digest(policy['producerInputs']), 'SDK_CURRENT_BINDING')\n    fields = {'kind', 'sourceId', 'image', 'target', 'sdkBuilt', 'nativeAcceptance', 'runtimeReady', 'publicationAllowed', 'bundle', 'assets', 'checkedInputs'}\n    need(type(report) is dict and set(report) == fields and report['kind'] == 'windows-arm-full-sdk-produced' and\n         report['sourceId'] == source['sourceId'] and report['image'] == source['image'] and report['target'] == SDK_TARGET and\n         report['sdkBuilt'] is True and report['nativeAcceptance'] is False and report['runtimeReady'] is False and\n",
+      "oldSha256": "e90fb2dd9a723d5d1d2bef6c437ba1a44f1cddc84c6ca1f3c2791a29d6380e1b",
+      "newSha256": "b9053dddf4c96b35200d502f67d525ac2b0a83832b4eb79eb1e3cc6e553cdcc7"
+    },
+    {
+      "oldRaw": "    # The CEF/source chain independently rejects a deadline on the SDK path.\n    _, cef_chain = validate_chain(guard, identity)\n    need(cef_chain['outcome'] == 'engine-complete', 'SDK_CEF_FULFILLED')\n    phase_evidence, package = _sdk_phases(guard, source, source_pin)\n    archive = 'sorng-cef-custom-' + source['sourceId'] + '-' + SDK_TARGET + '.tar.bz2'\n    names = {'runtime.json', 'source-lock.json', 'manifest.json', 'receipt.json', archive}\n    need(type(report['assets']) is list and len(report['assets']) == 5 and {row['name'] for row in report['assets']} == names and\n",
+      "newRaw": "    # The CEF/source chain independently rejects a deadline on the SDK path.\n    _, cef_chain = validate_chain(guard, identity)\n    need(cef_chain['outcome'] == 'engine-complete', 'SDK_CEF_FULFILLED')\n    phase_evidence, package, metadata = _sdk_phases(guard, source, source_pin)\n    archive = 'sorng-cef-custom-' + source['sourceId'] + '-' + SDK_TARGET + '.tar.bz2'\n    names = {'runtime.json', 'source-lock.json', 'manifest.json', 'receipt.json', archive}\n    need(type(report['assets']) is list and len(report['assets']) == 5 and {row['name'] for row in report['assets']} == names and\n",
+      "oldSha256": "15f7d1c25b4fc60c010faed370ac24bc03e9f8a3775f538cd10c3cdfd29722fa",
+      "newSha256": "e28299463db8061a80fa9ca89ff3d1ebdcd5b0d36f6b902b374fbb8f50f9bf8b"
+    },
+    {
+      "oldRaw": "    # Actions handoff. It is a new truthful SDK DATA origin, never old import.\n    _source(guard, identity)\n    _bindings(guard, identity)\n    final_phases, _ = _sdk_phases(guard, source, source_pin)\n    need(final_phases == phase_evidence, 'SDK_PHASE_CHANGED')\n    for row in assets:\n        held(guard, SDK_BUNDLE + '/' + row['name'], SDK_MAX_ASSET, {key: row[key] for key in ('bytes', 'sha256')}, retain=False)\n    source_native = {}\n",
+      "newRaw": "    # Actions handoff. It is a new truthful SDK DATA origin, never old import.\n    _source(guard, identity)\n    _bindings(guard, identity)\n    final_phases, _, final_metadata = _sdk_phases(guard, source, source_pin)\n    need(final_phases == phase_evidence and final_metadata == metadata, 'SDK_PHASE_CHANGED')\n    for row in assets:\n        held(guard, SDK_BUNDLE + '/' + row['name'], SDK_MAX_ASSET, {key: row[key] for key in ('bytes', 'sha256')}, retain=False)\n    source_native = {}\n",
+      "oldSha256": "c61f829658834575a1c82dc9bd059c0831f3bcc606c3c5f9b4e72e7c7ed75f73",
+      "newSha256": "a06836529cf971edd4145dcfc2748a2407b3795d52eecd070f7e5252fe7aa935"
+    },
+    {
+      "oldRaw": "                     'jobs/full-source-operation/receipt.json', 'full-source-launcher-result.json', 'full-source-closed-launcher.json'):\n        seal, raw = held(guard, relative)\n        source_native[relative] = dict(**seal, base64=base64.b64encode(raw).decode())\n    raw_seal = dict(schemaVersion=1, kind='windows-arm-full-sdk-quarantine-seal', origin='owned-windows-arm64-full-sdk',\n                    target=SDK_TARGET, identity=identity, workflow=dict(repository=REPOSITORY, repositoryId=REPOSITORY_ID,\n                    path=WORKFLOW, ref='refs/heads/main', head=source['head'], runId=source['runId'], attempt=source['attempt']),\n                    release=dict(id=release['id'], tag=release_tag, head=source['head'], carrierHead=release['target_commitish']),\n                    assets=[dict(id=uploaded[row['name']]['id'], **row) for row in assets],\n                    controller=dict(**report_pin, base64=base64.b64encode(report_raw).decode()), nativePhases=phase_evidence,\n                    sourceChain=cef_chain, sourceNative=source_native, sdkBuilt=True, nativeAcceptance=False, runtimeReady=False, publicationAllowed=False)\n    seal_pin = write(guard, 'full-sdk-sdk-seal.json', raw_seal)\n    return dict(dataOnly=True, uploaded=True, kind='sdk', quarantine=True, tag=release_tag, sealFile='full-sdk-sdk-seal.json',\n",
+      "newRaw": "                     'jobs/full-source-operation/receipt.json', 'full-source-launcher-result.json', 'full-source-closed-launcher.json'):\n        seal, raw = held(guard, relative)\n        source_native[relative] = dict(**seal, base64=base64.b64encode(raw).decode())\n    checked = checked_input_pair(report['checkedInputs'], source, source_pin, identity, metadata, source_native)\n    need(clock is client.clock, 'SDK_PRODUCER_TIMING')\n    timing = producer_timing(clock, source)\n    elapsed = sum(strict_json(base64.b64decode(phase_evidence['jobs/' + role + '/receipt.json']['base64']))['elapsedMs'] for role in ('cef-engine','package'))\n    need(elapsed <= timing['producerElapsedMs'], 'SDK_PRODUCER_TIMING')\n    raw_seal = dict(schemaVersion=2, kind='windows-arm-full-sdk-quarantine-seal', origin='owned-windows-arm64-full-sdk',\n                    target=SDK_TARGET, identity=identity, workflow=dict(repository=REPOSITORY, repositoryId=REPOSITORY_ID,\n                    path=WORKFLOW, ref='refs/heads/main', head=source['head'], runId=source['runId'], attempt=source['attempt']),\n                    release=dict(id=release['id'], tag=release_tag, head=source['head'], carrierHead=release['target_commitish']),\n                    assets=[dict(id=uploaded[row['name']]['id'], **row) for row in assets],\n                    controller=dict(**report_pin, base64=base64.b64encode(report_raw).decode()), nativePhases=phase_evidence,\n                    checkedInputs=checked, producerTiming=timing,\n                    sourceChain=cef_chain, sourceNative=source_native, sdkBuilt=True, nativeAcceptance=False, runtimeReady=False, publicationAllowed=False)\n    seal_pin = write(guard, 'full-sdk-sdk-seal.json', raw_seal)\n    return dict(dataOnly=True, uploaded=True, kind='sdk', quarantine=True, tag=release_tag, sealFile='full-sdk-sdk-seal.json',\n",
+      "oldSha256": "369bea516fb474bcec02ac5d70d79483e3c4f5dff6868d2076f1680d1e08a12f",
+      "newSha256": "8a08f17f7850a213d1bf6d82a08149caf10f85f27b46b07bc26bb961ad6e8a50"
+    }
+  ]
+}''')
+def producer_metric_codec_inverse(raw):
+    spec = PRODUCER_METRIC_CODEC_INVERSE
+    binary = isinstance(raw, bytes)
+    text = raw.decode() if binary else raw
+    for row in reversed(spec['rows']):
+        assert hashlib.sha256(row['newRaw'].encode()).hexdigest() == row['newSha256']
+        assert hashlib.sha256(row['oldRaw'].encode()).hexdigest() == row['oldSha256']
+        assert text.count(row['newRaw']) == 1
+        text = text.replace(row['newRaw'],row['oldRaw'],1)
+    assert len(text.encode()) == spec['bytes'] and hashlib.sha256(text.encode()).hexdigest() == spec['sha256']
+    return text.encode() if binary else text
+
 class CodecTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -404,6 +470,7 @@ class CodecTests(unittest.TestCase):
 
     def test_fresh_carrier_finite_inverse_restores_complete_reviewed_codec(self):
         raw = Path(subject.__file__).read_text()
+        raw = producer_metric_codec_inverse(raw)
         start = raw.index('# BEGIN FRESH DEFAULT-MAIN TRANSPORT CARRIER\n')
         end = raw.index('# END FRESH DEFAULT-MAIN TRANSPORT CARRIER\n', start) + len('# END FRESH DEFAULT-MAIN TRANSPORT CARRIER\n\n\n')
         raw = raw[:start] + raw[end:]
@@ -768,6 +835,70 @@ class CodecTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             subject.authenticated_seal(Client(), dict(head_sha='a' * 40), '1234', '1', self.root)
 
+    def test_original_final_clock_sample_intersects_source_ends_and_never_renews(self):
+        clock=object.__new__(subject._TransportClock)
+        clock.value=dict(wallStartMs=0,tickStartMs=0,wallEndMs=21600000,tickEndMs=21600000)
+        clock.last_wall=clock.last_tick=0;clock.failed=False;clock.primary=None
+        tick=[1000000];clock.tick=lambda:tick[0]
+        source=dict(wallWholeEnd=20000,monotonicWholeEnd=19000)
+        with patch.object(subject.time,'time',return_value=1000):
+            value=subject.producer_timing(clock,source)
+            self.assertEqual(value['remainingMs'],18000000)
+            self.assertEqual(value['producerElapsedMs'],3600000)
+            for key,wrong in [('remainingMs',18000001),('producerElapsedMs',3600001),('reserveMs',0),
+                              ('sourceTickEndMs',19000001),('wallStartMs',1)]:
+                changed=dict(value);changed[key]=wrong
+                with self.subTest(key=key),self.assertRaisesRegex(ValueError,'SDK_PRODUCER_TIMING'):
+                    subject.validate_producer_timing(changed,source)
+            with self.assertRaisesRegex(ValueError,'SDK_PRODUCER_TIMING'):
+                subject.producer_timing(clock,dict(wallWholeEnd=1100,monotonicWholeEnd=1100))
+            tick[0]=999999
+            with self.assertRaisesRegex(ValueError,'TRANSPORT_CLOCK_ROLLBACK') as first:
+                subject.producer_timing(clock,source)
+            tick[0]=1000001
+            with self.assertRaises(ValueError) as second:subject.producer_timing(clock,source)
+            self.assertIs(first.exception,second.exception)
+        with self.assertRaisesRegex(ValueError,'SDK_PRODUCER_TIMING'):
+            subject.producer_timing(types.SimpleNamespace(remaining=lambda:10000),source)
+
+    def modeled_transport_clock(self):
+        clock = object.__new__(subject._TransportClock)
+        wall = int(subject.time.time() * 1000)
+        tick = int(subject.time.monotonic() * 1000)
+        clock.value = dict(wallStartMs=wall-1000, tickStartMs=max(0,tick-1000),
+                           wallEndMs=wall-1000+21600000, tickEndMs=max(0,tick-1000)+21600000)
+        clock.last_wall, clock.last_tick = clock.value['wallStartMs'], clock.value['tickStartMs']
+        clock.tick = lambda: int(subject.time.monotonic() * 1000)
+        clock.failed, clock.primary = False, None
+        return clock
+
+    def modeled_checked_inputs(self):
+        # DATA only: checked closure values below model the native parent's
+        # observations; no real parent registry/source context is minted.
+        roles=('sdk-data','llvm-data','rust-archive','gn-archive','siso-archive','materialize','runtime-closure','full-sdk-source-gn')
+        names={'full-source-launcher-result.json','full-source-closed-launcher.json','jobs/full-source-operation/receipt.json',
+               'full-source-closed-full-source-operation.json','full-source-operation-result.json',
+               'full-source-closed-verify-setup.json','full-source-gn-result.json'}
+        names.update('jobs/'+role+'/receipt.json' for role in roles)
+        names.update('full-source-closed-'+role+'.json' for role in roles[:-1])
+        for name in names:
+            if not (self.root/name).exists(): self.put(name, dict(modeledNativeRecord=name))
+        names.update(row['relative'] for row in self.packet['metadataFiles'])
+        names.update('source-inputs/'+str(i) for i in range(len(self.rows)))
+        names.update(('context.json',subject.GRAPH_FILE,subject.TOOL_FILE))
+        rows={name:dict(relative=name,**self.measure(name)) for name in names}
+        for name,size,digest in (
+            ('source-checkout/src/cef/BUILD.gn',97568,'2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0'),
+            ('source-checkout/src/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn',45891,'e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15')):
+            rows[name]=dict(relative=name,bytes=size,sha256=digest)
+        content=dict(schemaVersion=1,kind='windows-arm-checked-input-closure',sourceContextSha256=self.source_pin['sha256'],
+                     image=self.source['image'],sourceId=self.source['sourceId'],producerSha256=subject.producer_digest(self.rows),
+                     metadataProjectionSha256=subject.sha(subject.canonical(json.loads((self.root/'full-metadata-result.json').read_bytes()))),
+                     records=[rows[name] for name in sorted(rows)])
+        return dict(schemaVersion=1,kind='windows-arm-checked-input-closure-pair',
+                    before=dict(boundary='before-probe-clang',sha256=subject.sha(subject.canonical(content)),content=copy.deepcopy(content)),
+                    after=dict(boundary='after-package-before-sdk-seal',sha256=subject.sha(subject.canonical(content)),content=copy.deepcopy(content)))
+
     def test_sdk_quarantine_is_distinct_five_assets_all_four_modeled_native_chains_no_old_origin(self):
         archive_name = 'sorng-cef-custom-' + self.source['sourceId'] + '-' + subject.SDK_TARGET + '.tar.bz2'
         archive_pin = self.put(subject.SDK_BUNDLE + '/' + archive_name, b'fixture archive DATA, not an actual native SDK')
@@ -784,6 +915,10 @@ class CodecTests(unittest.TestCase):
         runtime_pin = self.put(subject.SDK_BUNDLE + '/runtime.json', descriptor)
         assets = [dict(name=name, size=seal['bytes'], sha256=seal['sha256']) for name, seal in
                   (('runtime.json', runtime_pin), ('source-lock.json', lock_pin), ('manifest.json', manifest_pin), ('receipt.json', receipt_pin), (archive_name, archive_pin))]
+        # Explicit modeled metadata/native outputs; real codec/held filesystem
+        # and transport writer execute below, with no native qualification claim.
+        projection = self.put('full-metadata-result.json', dict(kind='modeled-source-metadata', sourceId=self.source['sourceId']))
+        self.packet['metadataFiles'][-1].update(projection)
         previous = None
         for index, role in enumerate(('probe-clang', 'probe-link', 'cef-engine', 'package')):
             packet = dict(self.packet, role=role, prior=None if previous is None else dict(result=previous['result'], receipt=previous['job']))
@@ -803,13 +938,17 @@ class CodecTests(unittest.TestCase):
                           engineComplete=role == 'cef-engine', sdkBuilt=role == 'package', nativeAcceptance=False, runtimeReady=False)
             rp = self.put(f'full-sdk-engine-{role}-result.json', result)
             previous = dict(result=rp, job=jp)
+        checked = self.modeled_checked_inputs()
         report = dict(kind='windows-arm-full-sdk-produced', sourceId=self.source['sourceId'], image=self.source['image'], target=subject.SDK_TARGET,
                       sdkBuilt=True, nativeAcceptance=False, runtimeReady=False, publicationAllowed=False, bundle=subject.SDK_BUNDLE,
-                      assets=[dict(row, identity='held-fixture-physical-id') for row in assets])
+                      assets=[dict(row, identity='held-fixture-physical-id') for row in assets], checkedInputs=checked)
         self.put('full-sdk-controller-result.json', report)
         uploaded, posts = [], []
+        clock = self.modeled_transport_clock()
         class Client:
-            clock = self.clock
+            pass
+        Client.clock = clock
+        class Client(Client):
             def post(self, route, value):
                 posts.append(value)
                 return dict(id=42, **value)
@@ -825,12 +964,17 @@ class CodecTests(unittest.TestCase):
                 return uploaded if '/assets?' in route else dict(id=42, **posts[-1])
         current = dict(id=1234, run_attempt=1, head_sha=self.source['head'])
         with patch.object(subject, '_transport_scope', return_value=(current, dict(producerInputs=self.rows))):
-            result = subject.transport_upload(Client(), self.source['image'], self.clock, self.fence)
+            result = subject.transport_upload(Client(), self.source['image'], clock, self.fence)
         self.assertEqual(result['kind'], 'sdk')
         self.assertEqual(len(uploaded), 5)
         self.assertFalse(result['nativeAcceptance'])
         self.assertFalse(result['publicationAllowed'])
         raw_seal = json.loads((self.root / result['sealFile']).read_bytes())
+        self.assertEqual(raw_seal['schemaVersion'], 2)
+        self.assertEqual(raw_seal['checkedInputs'], checked)
+        subject.validate_producer_timing(raw_seal['producerTiming'], self.source)
+        self.assertGreater(raw_seal['producerTiming']['producerElapsedMs'], 2000)
+        self.assertLess(len((self.root / result['sealFile']).read_bytes()), 1024**2)
         self.assertEqual(raw_seal['origin'], 'owned-windows-arm64-full-sdk')
         self.assertEqual(posts[0]['target_commitish'], CARRIER_HEAD)
         self.assertEqual(raw_seal['release']['head'], self.source['head'])
@@ -838,6 +982,39 @@ class CodecTests(unittest.TestCase):
         self.assertEqual(raw_seal['workflow']['head'], self.source['head'])
         self.assertNotIn('checkpoint', raw_seal['kind'])
         self.assertEqual(len(raw_seal['nativePhases']), 20)
+        zip_buffer=io.BytesIO()
+        with subject.zipfile.ZipFile(zip_buffer,'w',compression=subject.zipfile.ZIP_DEFLATED) as zipped:
+            zipped.writestr('full-sdk-sdk-seal.json',(self.root/result['sealFile']).read_bytes())
+        self.assertLess(len(zip_buffer.getvalue()),1024**2)
+        # Equal-but-incomplete or relabeled closure DATA cannot bypass the fixed
+        # record set and actual existing native/context/metadata pins.
+        metadata={row['relative']:{k:row[k] for k in ('bytes','sha256')} for row in self.packet['metadataFiles']}
+        metadata['projectionSha256']=checked['before']['content']['metadataProjectionSha256']
+        source_native={name:raw_seal['sourceNative'][name] for name in raw_seal['sourceNative']}
+        for defect in ('missing','swap','partial','context','known-pin','projection','producer'):
+            changed=copy.deepcopy(checked)
+            if defect=='missing':del changed['before']
+            elif defect=='swap':changed['before'],changed['after']=changed['after'],changed['before']
+            else:
+                for side in ('before','after'):
+                    content=changed[side]['content']
+                    if defect=='partial':content['records'].pop()
+                    elif defect=='context':content['sourceContextSha256']='e'*64
+                    elif defect=='known-pin':next(r for r in content['records'] if r['relative']=='context.json')['sha256']='e'*64
+                    elif defect=='projection':content['metadataProjectionSha256']='e'*64
+                    elif defect=='producer':content['producerSha256']='e'*64
+                    changed[side]['sha256']=subject.sha(subject.canonical(content))
+            with self.subTest(defect=defect),self.assertRaisesRegex(ValueError,'SDK_CHECKED_INPUTS'):
+                subject.checked_input_pair(changed,self.source,self.source_pin,self.identity,metadata,source_native)
+        # Missing actual assigned-seconds data fails before any transport POST.
+        posts.clear()
+        close_name='full-sdk-engine-closed-package.json'
+        saved=json.loads((self.root/close_name).read_bytes())
+        altered=dict(saved);del altered['jobSeconds'];self.put(close_name,altered)
+        with patch.object(subject,'_transport_scope',return_value=(current,dict(producerInputs=self.rows))),self.assertRaisesRegex(ValueError,'SDK_ASSIGNED_SECONDS'):
+            subject.transport_upload(Client(),self.source['image'],clock,self.fence)
+        self.assertFalse(posts)
+        self.put(close_name,saved)
         self.put('jobs/probe-link/receipt.json', dict(job(), rootReaped=False))
         with self.assertRaises(ValueError):
             subject.sdk_quarantine(Client(), self.root, report, self.clock, self.fence, current, dict(producerInputs=self.rows))
