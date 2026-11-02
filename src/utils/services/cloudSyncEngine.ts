@@ -60,10 +60,50 @@ export class CloudSyncConflict extends Error {
 }
 
 class LocalSyncEdit extends CloudSyncConflict {
-  constructor() {
-    super(
-      "Local data changed while syncing. Newer local edits were preserved. Open Cloud Sync → Conflict Resolution to review the current copies, or retry when editing has paused.",
+  constructor(readonly observedHash: string) {
+    super("The reviewed local data changed. Refresh the conflict review.");
+  }
+}
+
+/** A quiet interval before replanning; active editing never exhausts a retry
+ * count or repeatedly reads the provider. Every recapture retains its owner. */
+async function waitForLocalSyncQuiet(
+  config: CloudSyncConfig,
+  observedHash: string,
+  assertCurrent: () => void,
+  signal?: AbortSignal,
+) {
+  let delay = 1000;
+  for (;;) {
+    assertCurrent();
+    signal?.throwIfAborted();
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (aborted: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        if (aborted) reject(signal?.reason);
+        else resolve();
+      };
+      const onAbort = () => finish(true);
+      const timer = setTimeout(() => finish(false), delay);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+    });
+    signal?.throwIfAborted();
+    assertCurrent();
+    const currentHash = await syncHash(
+      await captureCloudSyncPayload(config, {
+        allowAutoUnlock: false,
+        assertCurrent,
+      }),
     );
+    assertCurrent();
+    if (currentHash === observedHash) return;
+    observedHash = currentHash;
+    delay = Math.min(delay * 2, 5000);
   }
 }
 
@@ -125,8 +165,10 @@ async function readSyncState(
   identity = cloudSyncTargetIdentity(target.id),
   allowAutoUnlock = !readOnly,
   allowDependencyRepair = false,
+  signal?: AbortSignal,
 ) {
   const ensureIdentity = () => {
+    signal?.throwIfAborted();
     if (identity !== cloudSyncTargetIdentity(target.id))
       throw new CloudSyncConflict(
         "Sync target changed during the operation. Retry with its current settings.",
@@ -174,12 +216,16 @@ async function readSyncState(
       "No selected items remain after applying exclusions. Nothing was transferred.",
     );
   const originalHash = await syncHash(original);
+  signal?.throwIfAborted();
   const { key, legacyKey } = await checkpointKeys(target, config);
+  signal?.throwIfAborted();
   const saved = await IndexedDbService.getItemStrict<Checkpoint>(key);
+  signal?.throwIfAborted();
   // Old keys hash the complete selection, so only this exact legacy scope can
   // be identified safely. Import its missing items, never overwrite a newer
   // destination checkpoint or guess a different selection/destination by date.
   const legacy = await IndexedDbService.getItemStrict<Checkpoint>(legacyKey);
+  signal?.throwIfAborted();
   const checkpoint: Checkpoint =
     saved?.version === 1
       ? saved
@@ -216,8 +262,10 @@ async function readSyncState(
   const snapshot = remote.data
     ? await decodeCloudSnapshot(remote.data, config)
     : null;
+  signal?.throwIfAborted();
   if (snapshot)
     snapshot.payload = await upgradeCloudSyncPayload(snapshot.payload);
+  signal?.throwIfAborted();
   if (remote.data && !remote.revision)
     throw new Error(
       "The provider did not return a safe revision for the remote snapshot.",
@@ -231,7 +279,7 @@ async function readSyncState(
       }),
     );
     ensureIdentity();
-    if (currentHash !== originalHash) throw new LocalSyncEdit();
+    if (currentHash !== originalHash) throw new LocalSyncEdit(currentHash);
   };
   await ensureUnchanged();
   // Bind review choices to both copies, the baseline, and the selected scope.
@@ -248,6 +296,7 @@ async function readSyncState(
     encrypted: config.encryptBeforeSync,
     autoUnlockOsVaultDatabases: config.autoUnlockOsVaultDatabases === true,
   });
+  signal?.throwIfAborted();
   return {
     invoke,
     identity,
@@ -449,14 +498,25 @@ async function planSync(
 }
 
 /** Fresh, read-only review. Decrypted records are discarded on return. */
-export async function reviewCloudSync(
+async function reviewCloudSyncAttempt(
   target: CloudSyncTarget,
   config: CloudSyncConfig,
   requestIdentity = cloudSyncTargetIdentity(target.id),
+  signal?: AbortSignal,
 ): Promise<CloudSyncConflictReview> {
-  const state = await readSyncState(target, config, true, requestIdentity);
+  const state = await readSyncState(
+    target,
+    config,
+    true,
+    requestIdentity,
+    false,
+    false,
+    signal,
+  );
   const { items } = await planSync(state, config, undefined, true);
+  state.ensureIdentity();
   const inventory = await discoverCloudSyncItems({ includeSizes: false });
+  state.ensureIdentity();
   for (const item of items)
     item.label =
       inventory.find((entry) => entry.id === item.id)?.label ?? item.label;
@@ -467,6 +527,46 @@ export async function reviewCloudSync(
     reviewKey: state.reviewKey,
     items,
   };
+}
+
+export async function reviewCloudSync(
+  target: CloudSyncTarget,
+  config: CloudSyncConfig,
+  requestIdentity = cloudSyncTargetIdentity(target.id),
+  signal?: AbortSignal,
+): Promise<CloudSyncConflictReview> {
+  const settings = canonicalSyncJson(config);
+  const assertCurrent = () => {
+    signal?.throwIfAborted();
+    if (
+      requestIdentity !== cloudSyncTargetIdentity(target.id) ||
+      settings !== canonicalSyncJson(config)
+    )
+      throw new CloudSyncConflict(
+        "Sync settings changed. Refresh the conflict review.",
+      );
+  };
+  for (;;) {
+    try {
+      assertCurrent();
+      const review = await reviewCloudSyncAttempt(
+        target,
+        config,
+        requestIdentity,
+        signal,
+      );
+      assertCurrent();
+      return review;
+    } catch (error) {
+      if (!(error instanceof LocalSyncEdit)) throw error;
+      await waitForLocalSyncQuiet(
+        config,
+        error.observedHash,
+        assertCurrent,
+        signal,
+      );
+    }
+  }
 }
 
 async function syncAttempt(
@@ -659,7 +759,6 @@ export async function runCloudSync(
 ): Promise<string> {
   const repairedDatabases = new Set<string>();
   let repaired = 0;
-  let localEditRetries = 0;
   let firstAttempt = true;
   const configSnapshot = canonicalSyncJson(config);
   const assertCurrent = () => {
@@ -674,7 +773,7 @@ export async function runCloudSync(
   const repairSummary = () =>
     `Automatically copied and rebound ${repaired} script or macro ${repaired === 1 ? "reference" : "references"} in the owning database. `;
   // Each selected database gets at most one local transaction. A normal edit
-  // may separately re-plan once; explicit review decisions are never replayed.
+  // waits for a quiet interval before re-planning; reviewed choices are never replayed.
   for (;;) {
     try {
       const result = await syncAttempt(
@@ -715,12 +814,14 @@ export async function runCloudSync(
               if (count > 0) continue;
             }
           }
-        } else if (
-          error instanceof LocalSyncEdit &&
-          !resolution &&
-          localEditRetries++ < 1
-        )
+        } else if (error instanceof LocalSyncEdit && !resolution) {
+          await waitForLocalSyncQuiet(
+            config,
+            error.observedHash,
+            assertCurrent,
+          );
           continue;
+        }
       } catch (repairError) {
         failure =
           error instanceof LocalArchiveDependency

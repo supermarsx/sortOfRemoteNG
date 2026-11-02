@@ -605,6 +605,7 @@ describe("cloud sync settings target status", () => {
       expect(mocks.review).toHaveBeenCalledWith(
         cloudSync.syncTargets![0],
         cloudSync,
+        expect.any(AbortSignal),
       );
       expect(mocks.sync).not.toHaveBeenCalled();
       expect(mocks.resolve).not.toHaveBeenCalled();

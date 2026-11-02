@@ -81,6 +81,7 @@ interface ReviewContext {
   target: CloudSyncTarget;
   config: CloudSyncConfig;
   identity: symbol;
+  abort: AbortController;
 }
 
 interface ConflictReviewState {
@@ -260,6 +261,7 @@ export function useCloudSyncSettings(
     if (mounted.current) setConflictReview(next);
   };
   const cancelConflictReview = () => {
+    reviewContext.current?.abort.abort();
     reviewContext.current = null;
     publishReview(null);
   };
@@ -287,6 +289,7 @@ export function useCloudSyncSettings(
     mounted.current = true;
     return () => {
       mounted.current = false;
+      reviewContext.current?.abort.abort();
       reviewContext.current = null;
       reviewStateRef.current = null;
     };
@@ -303,6 +306,7 @@ export function useCloudSyncSettings(
       ) {
         invalidateCloudSyncTarget(reviewContext.current.target.id);
       }
+      reviewContext.current.abort.abort();
       reviewContext.current = null;
       reviewStateRef.current = null;
       setConflictReview(null);
@@ -686,6 +690,7 @@ export function useCloudSyncSettings(
       target: structuredClone(target),
       config: structuredClone(config),
       identity: cloudSyncTargetIdentity(targetId),
+      abort: new AbortController(),
     };
     reviewContext.current = context;
     setReviewRequestSequence((sequence) => sequence + 1);
@@ -703,7 +708,11 @@ export function useCloudSyncSettings(
         });
         return;
       }
-      const review = await reviewCloudSyncTarget(target, config);
+      const review = await reviewCloudSyncTarget(
+        target,
+        config,
+        context.abort.signal,
+      );
       if (
         !mounted.current ||
         reviewContext.current !== context ||

@@ -402,20 +402,43 @@ export async function syncCloudTarget(
 export async function reviewCloudSyncTarget(
   target: CloudSyncTarget,
   config: CloudSyncConfig,
+  signal?: AbortSignal,
 ): Promise<CloudSyncConflictReview> {
+  signal?.throwIfAborted();
   const requestIdentity = cloudSyncTargetIdentity(target.id);
   const frozenTarget = structuredClone(target);
   const frozenConfig = structuredClone(config);
   const finish = beginCloudSyncActivity({ ...target, requestIdentity });
+  let abortReview: (() => void) | undefined;
   try {
-    return await serializeCloudSync(() => {
+    const pending = serializeCloudSync(async () => {
+      signal?.throwIfAborted();
       if (requestIdentity !== cloudSyncTargetIdentity(target.id))
         throw new CloudSyncConflict(
           "Sync settings changed. Refresh the conflict review.",
         );
-      return reviewCloudSync(frozenTarget, frozenConfig, requestIdentity);
+      const review = await reviewCloudSync(
+        frozenTarget,
+        frozenConfig,
+        requestIdentity,
+        signal,
+      );
+      signal?.throwIfAborted();
+      return review;
     });
+    if (!signal) return await pending;
+    // A canceled review may still be behind another window's sync lock. Stop
+    // its caller/activity now; its queued callback checks the signal before IO.
+    return await Promise.race([
+      pending,
+      new Promise<CloudSyncConflictReview>((_resolve, reject) => {
+        abortReview = () => reject(signal.reason);
+        signal.addEventListener("abort", abortReview, { once: true });
+        if (signal.aborted) abortReview();
+      }),
+    ]);
   } finally {
+    if (abortReview) signal?.removeEventListener("abort", abortReview);
     finish();
   }
 }

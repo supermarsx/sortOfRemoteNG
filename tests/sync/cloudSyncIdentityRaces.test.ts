@@ -252,7 +252,7 @@ describe("cloud sync immutable request identity", () => {
       expect(spy).toHaveBeenCalledWith(
         ...(operation === "sync"
           ? [target, settings, undefined, original]
-          : [target, settings, original]),
+          : [target, settings, original, undefined]),
       );
       invalidateCloudSyncTarget(target.id);
       gate.release();

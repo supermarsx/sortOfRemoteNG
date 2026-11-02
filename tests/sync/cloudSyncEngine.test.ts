@@ -44,7 +44,15 @@ import {
   encodeCloudSnapshot,
   type CloudSyncSnapshot,
 } from "../../src/utils/services/cloudSyncCodec";
-import { invalidateCloudSyncTarget } from "../../src/utils/services/cloudSyncActivity";
+import {
+  cloudSyncTargetIdentity,
+  getCloudSyncActivity,
+  invalidateCloudSyncTarget,
+} from "../../src/utils/services/cloudSyncActivity";
+import {
+  reviewCloudSyncTarget,
+  syncCloudTarget,
+} from "../../src/utils/services/cloudSyncService";
 import * as passwordCrypto from "../../src/utils/crypto/webCryptoAes";
 
 const config = (): CloudSyncConfig => ({
@@ -66,6 +74,45 @@ const snapshot = (theme: string): CloudSyncSnapshot => ({
   modifiedAt: Date.now(),
   payload: payload(theme),
 });
+
+function fastQuietIntervals(onWait?: () => void) {
+  const original = globalThis.setTimeout;
+  const delays: number[] = [];
+  const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+    handler: (...args: unknown[]) => void,
+    delay: number,
+    ...args: unknown[]
+  ) => {
+    delays.push(delay);
+    return original(() => {
+      onWait?.();
+      handler(...args);
+    }, 0);
+  }) as typeof setTimeout);
+  return { delays, restore: () => timer.mockRestore() };
+}
+
+function pendingQuietInterval() {
+  const original = globalThis.setTimeout;
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const handles: ReturnType<typeof setTimeout>[] = [];
+  const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+    handler: (...args: unknown[]) => void,
+    delay: number,
+    ...args: unknown[]
+  ) => {
+    const handle = original(() => handler(...args), delay);
+    if (delay === 1000) {
+      handles.push(handle);
+      started();
+    }
+    return handle;
+  }) as typeof setTimeout);
+  return { ready, handles, restore: () => timer.mockRestore() };
+}
 
 beforeEach(() => {
   vi.stubGlobal("crypto", webcrypto);
@@ -373,17 +420,188 @@ describe("application cloud sync engine", () => {
     expect(mocks.apply).not.toHaveBeenCalled();
   });
 
-  it("bounds recapture when local edits continue and directs the user to review", async () => {
+  it("waits through ongoing edits without provider churn, then uploads the settled copy", async () => {
     let capture = 0;
-    mocks.capture.mockImplementation(async () => payload(`edit-${++capture}`));
-    await expect(runCloudSync(target(), config())).rejects.toThrow(
-      /Local data changed.*Conflict Resolution/,
+    mocks.capture.mockImplementation(async () => {
+      ++capture;
+      if (capture > 2 && capture <= 8)
+        expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+          "cloud_sync_read",
+        ]);
+      return payload(capture <= 6 ? `edit-${capture}` : "settled");
+    });
+    const clock = fastQuietIntervals();
+    try {
+      await expect(runCloudSync(target(), config())).resolves.toMatch(
+        /uploaded/,
+      );
+      expect(clock.delays.length).toBeGreaterThan(2);
+      expect(clock.delays.every((ms) => ms >= 1000 && ms <= 5000)).toBe(true);
+      expect(clock.delays[clock.delays.length - 1]).toBe(5000);
+      expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+        "cloud_sync_read",
+        "cloud_sync_read",
+        "cloud_sync_write",
+      ]);
+      const write = mocks.invoke.mock.calls.find(
+        ([command]) => command === "cloud_sync_write",
+      )!;
+      expect(
+        (await decodeCloudSnapshot(write[1].data, config())).payload,
+      ).toEqual(payload("settled"));
+      expect(mocks.apply).not.toHaveBeenCalled();
+    } finally {
+      clock.restore();
+    }
+  });
+
+  it("revokes a stabilization wait when its original target changes", async () => {
+    mocks.capture
+      .mockResolvedValueOnce(payload("dark"))
+      .mockResolvedValue(payload("new-edit"));
+    const clock = fastQuietIntervals(() => invalidateCloudSyncTarget("work"));
+    try {
+      await expect(runCloudSync(target(), config())).rejects.toMatchObject({
+        kind: "conflict",
+      });
+      expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+        "cloud_sync_read",
+      ]);
+      expect(mocks.apply).not.toHaveBeenCalled();
+    } finally {
+      clock.restore();
+    }
+  });
+
+  it("waits for a quiet local copy when building a read-only conflict review", async () => {
+    mocks.capture
+      .mockResolvedValueOnce(payload("dark"))
+      .mockResolvedValue(payload("settled"));
+    const clock = fastQuietIntervals();
+    try {
+      await expect(reviewCloudSync(target(), config())).resolves.toMatchObject({
+        targetId: "work",
+        items: [expect.objectContaining({ state: "local" })],
+      });
+      expect(clock.delays).toEqual([1000]);
+      expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+        "cloud_sync_read",
+        "cloud_sync_read",
+      ]);
+      expect(mocks.store.size).toBe(0);
+      expect(mocks.apply).not.toHaveBeenCalled();
+    } finally {
+      clock.restore();
+    }
+  });
+
+  it("aborts only the pending review timer and releases a queued Sync Now with the same target identity", async () => {
+    mocks.capture
+      .mockResolvedValueOnce(payload("before"))
+      .mockResolvedValue(payload("settled"));
+    const identity = cloudSyncTargetIdentity("work");
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const clear = vi.spyOn(globalThis, "clearTimeout");
+    const clock = pendingQuietInterval();
+    try {
+      const reviewing = reviewCloudSyncTarget(
+        target(),
+        config(),
+        controller.signal,
+      );
+      const aborted = expect(reviewing).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      await clock.ready;
+      expect(getCloudSyncActivity()).toHaveLength(1);
+      expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+        "cloud_sync_read",
+      ]);
+      const next = syncCloudTarget(target(), config());
+      controller.abort();
+      await aborted;
+      expect(await next).toMatchObject({ status: "success" });
+      expect(cloudSyncTargetIdentity("work")).toBe(identity);
+      expect(getCloudSyncActivity()).toHaveLength(0);
+      expect(clear).toHaveBeenCalledWith(clock.handles[0]);
+      for (const [, listener] of add.mock.calls)
+        expect(remove).toHaveBeenCalledWith("abort", listener);
+      expect(mocks.capture.mock.calls[2][1]).toMatchObject({
+        allowAutoUnlock: true,
+      });
+      expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+        "cloud_sync_read",
+        "cloud_sync_read",
+        "cloud_sync_write",
+      ]);
+      expect(mocks.apply).not.toHaveBeenCalled();
+    } finally {
+      controller.abort();
+      clock.restore();
+      clear.mockRestore();
+      add.mockRestore();
+      remove.mockRestore();
+    }
+  });
+
+  it("checks review cancellation after the in-flight provider read before any recapture", async () => {
+    let resolveRead!: (value: { data: null; revision: null }) => void;
+    let reading!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    mocks.invoke.mockImplementation(() => {
+      reading();
+      return new Promise((resolve) => {
+        resolveRead = resolve;
+      });
+    });
+    const controller = new AbortController();
+    const reviewing = reviewCloudSync(
+      target(),
+      config(),
+      undefined,
+      controller.signal,
     );
-    expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
-      "cloud_sync_read",
-      "cloud_sync_read",
-    ]);
+    const aborted = expect(reviewing).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await entered;
+    controller.abort();
+    resolveRead({ data: null, revision: null });
+    await aborted;
+    expect(mocks.capture).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
     expect(mocks.apply).not.toHaveBeenCalled();
+  });
+
+  it("removes a successful review's quiet timer listener and rejects an already canceled review before capture", async () => {
+    mocks.capture
+      .mockResolvedValueOnce(payload("before"))
+      .mockResolvedValue(payload("settled"));
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const clock = fastQuietIntervals();
+    try {
+      await reviewCloudSync(target(), config(), undefined, controller.signal);
+      expect(add).toHaveBeenCalledOnce();
+      expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0][1]);
+      controller.abort();
+      mocks.capture.mockClear();
+      mocks.invoke.mockClear();
+      await expect(
+        reviewCloudSync(target(), config(), undefined, controller.signal),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(mocks.capture).not.toHaveBeenCalled();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+    } finally {
+      clock.restore();
+      add.mockRestore();
+      remove.mockRestore();
+    }
   });
 
   it("does not mark a failed upload as synchronized", async () => {

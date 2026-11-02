@@ -1185,6 +1185,7 @@ describe("cloud sync conflict review hook guards", () => {
     });
     expect(hook.result.current.isBusy).toBe(true);
     expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.review.mock.calls[0][2].aborted).toBe(true);
     expect(mocks.sync).not.toHaveBeenCalled();
     expect(mocks.test).not.toHaveBeenCalled();
     await act(async () => {
@@ -1194,6 +1195,45 @@ describe("cloud sync conflict review hook guards", () => {
     expect(hook.result.current.conflictReview).toBeNull();
     expect(hook.result.current.isBusy).toBe(false);
   });
+
+  it.each(["cancel", "unmount"])(
+    "aborts only the active review on %s and ignores its late rejection",
+    async (reason) => {
+      const identity = cloudSyncTargetIdentity("work");
+      let signal!: AbortSignal;
+      mocks.review.mockImplementation(
+        (_target, _config, current: AbortSignal) => {
+          signal = current;
+          return new Promise((_resolve, reject) =>
+            current.addEventListener("abort", () => reject(current.reason), {
+              once: true,
+            }),
+          );
+        },
+      );
+      const hook = hookWithConfig();
+      let running!: Promise<void>;
+      act(() => {
+        running = hook.result.current.handleReviewConflicts("work");
+      });
+      expect(signal.aborted).toBe(false);
+      if (reason === "cancel")
+        act(() => hook.result.current.cancelConflictReview());
+      else hook.unmount();
+      await act(async () => {
+        await running;
+      });
+      expect(signal.aborted).toBe(true);
+      expect(cloudSyncTargetIdentity("work")).toBe(identity);
+      expect(mocks.sync).not.toHaveBeenCalled();
+      expect(mocks.resolve).not.toHaveBeenCalled();
+      expect(mocks.update).not.toHaveBeenCalled();
+      if (reason === "cancel") {
+        expect(hook.result.current.conflictReview).toBeNull();
+        expect(hook.result.current.isBusy).toBe(false);
+      }
+    },
+  );
 
   it("drops the previous target's receipt and choices when another target is reviewed", async () => {
     const hook = hookWithConfig();

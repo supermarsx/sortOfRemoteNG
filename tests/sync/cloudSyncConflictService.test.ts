@@ -67,6 +67,7 @@ describe("reviewed cloud sync operations", () => {
       target,
       config,
       review.requestIdentity,
+      undefined,
     );
     expect(engine.run).not.toHaveBeenCalled();
     expect(getCloudSyncActivity()).toHaveLength(0);
@@ -89,6 +90,64 @@ describe("reviewed cloud sync operations", () => {
     );
     expect(engine.review).not.toHaveBeenCalled();
     expect(getCloudSyncActivity()).toHaveLength(0);
+  });
+
+  it("discards only a review aborted while queued without revoking another same-target request", async () => {
+    const identity = cloudSyncTargetIdentity(target.id);
+    const controller = new AbortController();
+    engine.beforeRun.mockImplementationOnce(() => controller.abort());
+    await expect(
+      reviewCloudSyncTarget(target, config, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(engine.review).not.toHaveBeenCalled();
+    expect(cloudSyncTargetIdentity(target.id)).toBe(identity);
+    expect(getCloudSyncActivity()).toHaveLength(0);
+  });
+
+  it("passes the review's signal through and discards a fulfillment after cancellation", async () => {
+    const controller = new AbortController();
+    engine.review.mockImplementation(
+      async (_target, _config, _identity, signal) => {
+        expect(signal).toBe(controller.signal);
+        controller.abort();
+        return receipt();
+      },
+    );
+    await expect(
+      reviewCloudSyncTarget(target, config, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(getCloudSyncActivity()).toHaveLength(0);
+  });
+
+  it("releases canceled review activity before a prior queue owner finishes and never starts its read later", async () => {
+    let release!: () => void;
+    engine.beforeRun.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const controller = new AbortController();
+    const identity = cloudSyncTargetIdentity(target.id);
+    const reviewing = reviewCloudSyncTarget(target, config, controller.signal);
+    const canceled = reviewing.then(
+      () => false,
+      (error) => error.name === "AbortError",
+    );
+    const nextTurn = new Promise<boolean>((resolve) =>
+      setTimeout(() => resolve(false), 0),
+    );
+    try {
+      controller.abort();
+      expect(await Promise.race([canceled, nextTurn])).toBe(true);
+      expect(getCloudSyncActivity()).toHaveLength(0);
+      expect(cloudSyncTargetIdentity(target.id)).toBe(identity);
+      expect(engine.review).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await canceled;
+    }
+    await Promise.resolve();
+    expect(engine.review).not.toHaveBeenCalled();
   });
 
   it("keeps choices one-shot and passes their original review identity", async () => {
