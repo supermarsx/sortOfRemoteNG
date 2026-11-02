@@ -23,6 +23,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "cargo-update.yml": 2,
   "cef-hosted-capacity.yml": 1,
   "cef-linux-capacity-inventory.yml": 1,
+  "cef-linux-producer-migration-proof.yml": 1,
   "cef-mac-owned-source-proof.yml": 1,
   "cef-mac-nearby-source-proof.yml": 1,
   "cef-mac-process-census-proof.yml": 2,

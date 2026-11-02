@@ -1,0 +1,45 @@
+name: CEF private Linux migration ownership proof
+# Main registration is inert. Only this exact private branch may run the tiny
+# Linux x64 fixture, using ARM metadata format. No GN, migration or SDK grant.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cef-linux-migration-proof-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  proof:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/linux-arm-3aa-producer-migration-20261102' && github.repository_id == '1010282954' && github.repository == 'supermarsx/sortOfRemoteNG' && github.event.repository.visibility == 'public'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+    steps:
+      - name: Start the original whole-job proof clock
+        run: echo "CEF_LINUX_MIGRATION_PROOF_STARTED_MS=$(($(date +%s) * 1000))" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Prove only the tiny restore and sidecar ownership lifecycle
+        id: proof
+        timeout-minutes: 4
+        run: node tests/fixtures/cef/linux_migration_proof_carrier.mjs
+      - name: Retain only the two closed diagnostic reports
+        if: always() && steps.proof.outputs.root != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-linux-owned-migration-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.proof.outputs.root }}/proof.json
+            ${{ steps.proof.outputs.root }}/carrier.json
+          if-no-files-found: warn
+          retention-days: 14
