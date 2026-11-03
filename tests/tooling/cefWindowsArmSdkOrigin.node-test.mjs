@@ -1131,7 +1131,9 @@ function git(root, ...args) {
   return execFileSync("git", ["-C", root, ...args], {
     encoding: "buffer",
     maxBuffer: 4 * 1024 ** 2,
-    timeout: 10000,
+    // Staging the full fixture can exceed 10 seconds under shared Windows CI load.
+    timeout:
+      args.length === 2 && args[0] === "add" && args[1] === "." ? 30000 : 10000,
     windowsHide: true,
     env: {
       ...process.env,
