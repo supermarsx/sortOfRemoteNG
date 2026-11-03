@@ -14774,7 +14774,7 @@ print(json.dumps([facts,early]))
     { ...facts, phase: "upload" },
     { ...facts, phases: [["upload", 1]] },
     { ...facts, phases: [["hash", -1]] },
-    { ...facts, seconds: 2401 },
+    { ...facts, seconds: 3601 },
     { ...facts, hashedFiles: facts.files + 1 },
     { ...facts, hashedBytes: facts.bytes + 1 },
     { ...facts, files: null },
