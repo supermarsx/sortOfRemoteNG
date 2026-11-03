@@ -10118,6 +10118,19 @@ test("full SDK retention includes hidden owned bounded source logs and immutable
       "full-sdk-controller-result.json",
       "full-source-*.json",
       "full-metadata-result.json",
+      "sdk-data-result.json",
+      "llvm-data-result.json",
+      "rust-archive-result.json",
+      "gn-archive-result.json",
+      "siso-archive-result.json",
+      "materialize-result.json",
+      "runtime-closure-result.json",
+      "runtime-progress-[0-9][0-9][0-9]-result.json",
+      "source-setup-verification-result.json",
+      "source-phase-result.json",
+      "source-progress-metadata-result.json",
+      "source-deadline-result.json",
+      "source-gn-result.json",
       "source-launcher.stdout.log",
       "source-launcher.stderr.log",
       "full-sdk-engine-*.json",
@@ -10148,4 +10161,118 @@ test("full SDK retention includes hidden owned bounded source logs and immutable
     );
     assert.throws(() => sourceFailureControllerInverse(source + row.newRaw));
   }
+});
+
+test("full SDK artifact paths cover actual bounded data-worker and source diagnostic writers including a silent LLVM failure", async (t) => {
+  const python = await benignPython(t);
+  if (!python) return;
+  // Execute the actual data-worker function in a disjoint data-only model. No
+  // audit hook, acquisition, source issuer or native Job executes in this test.
+  const program = String.raw`import ast,json,pathlib,re,sys,types
+from urllib.error import HTTPError
+here=pathlib.Path(sys.argv[1]);producer=ast.parse((here/'producer.py').read_text());full=ast.parse((here/'full_sdk_source.py').read_text())
+roles=ast.literal_eval(next(n.value for n in full.body if isinstance(n,ast.Assign)and any(isinstance(x,ast.Name)and x.id=='_DATA_ROLES'for x in n.targets)))
+worker=next(n for n in producer.body if isinstance(n,ast.FunctionDef)and n.name=='data_worker')
+writer=next(n for n in ast.walk(worker)if isinstance(n,ast.Call)and isinstance(n.func,ast.Name)and n.func.id=='retain')
+assert ast.unparse(writer.args[1])=="role + '-result.json'"
+setup=next(n for n in producer.body if isinstance(n,ast.FunctionDef)and n.name=='verify_source_setup')
+setupwriter=next(n for n in ast.walk(setup)if isinstance(n,ast.Call)and ast.unparse(n.func)=='data.save')
+assert isinstance(setupwriter.args[0],ast.BinOp)and isinstance(setupwriter.args[0].op,ast.Div)
+setupname=ast.literal_eval(setupwriter.args[0].right)
+progress=next(n for n in producer.body if isinstance(n,ast.ClassDef)and n.name=='RuntimeProgress')
+assert "self.count >= 128" in ast.unparse(progress)and "len(raw) <= 1024" in ast.unparse(progress)
+assert 'runtime-progress-%03d-result.json' in ast.unparse(progress)
+saved=[]
+def fail(*args):
+ e=HTTPError('https://invalid.example/PRIVATE',502,'SECRET_TOKEN',{},None);e._sorng_llvm_failure_stage=('upstream-witness',1);raise e
+scope=dict(re=re,sys=types.SimpleNamespace(addaudithook=lambda _:None,modules={}),data=types.SimpleNamespace(acquire_llvm=fail,save=lambda path,value:saved.append((path.name,value))),verified_sources=lambda _:None,no_execution=lambda *args:None,COMMAND_INVENTORY_REPORTING_FAILURE=False)
+names={'failure','llvm_failure_diagnostic','retain','data_worker'}
+exec(compile(ast.Module(body=[n for n in producer.body if isinstance(n,ast.FunctionDef)and n.name in names],type_ignores=[]),'actual-producer-data-worker','exec'),scope)
+status=scope['data_worker']('llvm-data',pathlib.Path('owned-model'),{}, {},types.SimpleNamespace(remaining=lambda:600))
+assert type(status)is int and status==1 and len(saved)==1
+name,result=saved[0];assert name=='llvm-data-result.json'and result['success']is False and result['sourcePostVerified']is True
+assert result['firstFailure']=='BOOT_UNAVAILABLE'and result['failureDiagnostic']==dict(stage='upstream-witness',ordinal=1,category='http',httpStatus=502)
+assert 'SECRET_TOKEN'not in json.dumps(result)and 'PRIVATE'not in json.dumps(result)
+print(json.dumps(dict(roles=list(roles),setup=setupname,failureFile=name,failure=result,status=status,progressFiles=['runtime-progress-%03d-result.json'%i for i in range(128)])))`;
+  const writers = JSON.parse(
+    execFileSync(python, ["-I", "-B", "-c", program, path.join(root, prefix)], {
+      encoding: "utf8",
+      timeout: 15000,
+      windowsHide: true,
+    }),
+  );
+  assert.deepEqual(writers.roles, [
+    "sdk-data",
+    "llvm-data",
+    "rust-archive",
+    "gn-archive",
+    "siso-archive",
+    "materialize",
+    "runtime-closure",
+  ]);
+  const workflow = (
+    await read(".github/workflows/windows-arm-full-sdk.yml")
+  ).replaceAll("\r\n", "\n");
+  const records = workflow.split(
+    "      - name: Retain bounded qualification records\n",
+  )[1];
+  const patterns = records
+    .split("          path: |\n")[1]
+    .trim()
+    .split("\n")
+    .map((s) => s.trim());
+  const prefixPattern = ".artifacts/windows-arm-full-sdk-*/";
+  const covered = (leaf) =>
+    patterns.some((pattern) =>
+      path.posix.matchesGlob(
+        ".artifacts/windows-arm-full-sdk-owned/" + leaf,
+        pattern,
+      ),
+    );
+  const newLeaves = [
+    ...writers.roles.map((role) => role + "-result.json"),
+    "runtime-progress-[0-9][0-9][0-9]-result.json",
+    writers.setup,
+    "source-phase-result.json",
+    "source-progress-metadata-result.json",
+    "source-deadline-result.json",
+    "source-gn-result.json",
+  ];
+  for (const leaf of newLeaves)
+    assert(patterns.includes(prefixPattern + leaf), leaf);
+  for (const leaf of [
+    ...writers.progressFiles,
+    writers.failureFile,
+    writers.setup,
+  ])
+    assert(covered(leaf), leaf);
+  const driver = await read(prefix + "full-sdk-source-driver.mjs");
+  const actualJsWriters = new Set(
+    [
+      ...driver.matchAll(
+        /path\.join\((?:this\.)?root,\s*"(source-(?:phase|progress-metadata|deadline|gn)-result\.json)"\)/g,
+      ),
+    ].map((match) => match[1]),
+  );
+  assert.deepEqual([...actualJsWriters].sort(), [
+    "source-deadline-result.json",
+    "source-gn-result.json",
+    "source-phase-result.json",
+    "source-progress-metadata-result.json",
+  ]);
+  for (const leaf of actualJsWriters) assert(covered(leaf), leaf);
+  let previous = workflow;
+  for (const leaf of newLeaves) {
+    const line = "            " + prefixPattern + leaf + "\n";
+    assert.equal(previous.split(line).length, 2);
+    previous = previous.replace(line, "");
+  }
+  assert.equal(Buffer.byteLength(previous), 7450);
+  assert.equal(
+    sha(previous),
+    "d2649a5120e313e2684df035f1dc32b64a3fffc4da88d8375358e04d8a34a836",
+  );
+  assert(!previous.includes(prefixPattern + writers.failureFile)); // Actual silent failure was previously lost.
+  assert.equal(writers.status, 1);
+  assert.equal(writers.failure.executed, false);
 });

@@ -114,6 +114,19 @@ jobs:
             .artifacts/windows-arm-full-sdk-*/full-sdk-controller-result.json
             .artifacts/windows-arm-full-sdk-*/full-source-*.json
             .artifacts/windows-arm-full-sdk-*/full-metadata-result.json
+            .artifacts/windows-arm-full-sdk-*/sdk-data-result.json
+            .artifacts/windows-arm-full-sdk-*/llvm-data-result.json
+            .artifacts/windows-arm-full-sdk-*/rust-archive-result.json
+            .artifacts/windows-arm-full-sdk-*/gn-archive-result.json
+            .artifacts/windows-arm-full-sdk-*/siso-archive-result.json
+            .artifacts/windows-arm-full-sdk-*/materialize-result.json
+            .artifacts/windows-arm-full-sdk-*/runtime-closure-result.json
+            .artifacts/windows-arm-full-sdk-*/runtime-progress-[0-9][0-9][0-9]-result.json
+            .artifacts/windows-arm-full-sdk-*/source-setup-verification-result.json
+            .artifacts/windows-arm-full-sdk-*/source-phase-result.json
+            .artifacts/windows-arm-full-sdk-*/source-progress-metadata-result.json
+            .artifacts/windows-arm-full-sdk-*/source-deadline-result.json
+            .artifacts/windows-arm-full-sdk-*/source-gn-result.json
             .artifacts/windows-arm-full-sdk-*/source-launcher.stdout.log
             .artifacts/windows-arm-full-sdk-*/source-launcher.stderr.log
             .artifacts/windows-arm-full-sdk-*/full-sdk-engine-*.json
