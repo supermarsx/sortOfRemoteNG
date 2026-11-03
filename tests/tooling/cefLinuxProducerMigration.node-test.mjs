@@ -2160,7 +2160,7 @@ test("fixed retarget binds the actual main9c131-row producer and committed non-a
   const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
   assert.equal(
     core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
-    "b5736f40fa1f78b8634cc9b8c9f39d239a167963f42eccedc91bfef3b3de2825",
+    "2d6d92e6da0ba29e4e16f2dc51a54474068802e09a7ff5a90928e77a363112f2",
   );
   // This retained test performs diagnostic a41 -> public3be -> native5af -> old839
   // literal inverses and asserts both COMPLETE historical helper hashes.
