@@ -6300,66 +6300,225 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 // BEGIN CLOSED FULL SDK SOURCE BODY
+// FULL-only diagnostic timing. The legacy2h/512 SourceProgress body above is unchanged.
+class FullSourceProgress {
+  constructor(root, contextSha, now = performance.now.bind(performance)) {
+    this.root = root;
+    this.contextSha = contextSha;
+    this.now = now;
+    this.begin = 0;
+    this.phaseStartedElapsedMs = 0;
+    this.lastOutput = 0;
+    this.label = "source-admission";
+    this.sequence = 0;
+    this.stdout = 0;
+    this.stderr = 0;
+    this.completed = 0;
+    this.total = 0;
+    this.tail = "";
+    this.writes = 0;
+    this.failed = false;
+    try {
+      this.begin = now();
+      this.lastOutput = this.begin;
+      this.flush();
+      this.timer = setInterval(() => this.flush(), 15000);
+      this.timer.unref();
+    } catch {
+      this.failed = true;
+    }
+  }
+  phase(label) {
+    if (!SOURCE_PHASES.has(label)) {
+      this.failed = true;
+      return;
+    }
+    if (label === this.label) return;
+    if (this.sequence >= 32) {
+      this.failed = true;
+      return;
+    }
+    let elapsed;
+    try {
+      elapsed = Math.floor(this.now() - this.begin);
+      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 10800000)
+        throw new Error("FULL_PROGRESS_CLOCK");
+    } catch {
+      this.failed = true;
+      return;
+    }
+    this.phaseStartedElapsedMs = elapsed;
+    this.label = label;
+    this.sequence++;
+    this.flush();
+  }
+  observe(role, stdout, chunk) {
+    try {
+      if (stdout) this.stdout += chunk.length;
+      else this.stderr += chunk.length;
+      this.lastOutput = this.now();
+      if (role === "sync" && stdout) {
+        this.tail = (this.tail + chunk.toString("utf8")).slice(-512);
+        const match = /Syncing projects:\s*\d+%\s*\((\d+)\/(\d+)\)/.exec(
+          this.tail,
+        );
+        if (
+          match &&
+          Number(match[1]) <= Number(match[2]) &&
+          Number(match[2]) <= 10000
+        ) {
+          this.completed = Number(match[1]);
+          this.total = Number(match[2]);
+        }
+      }
+    } catch {
+      this.failed = true;
+    }
+  }
+  flush() {
+    if (this.failed || this.writes >= 768) return;
+    try {
+      const now = this.now(),
+        elapsed = Math.floor(now - this.begin),
+        age = Math.floor(now - this.lastOutput);
+      need(
+        elapsed >= 0 &&
+          elapsed <= 10800000 &&
+          elapsed >= this.phaseStartedElapsedMs &&
+          age >= 0 &&
+          this.stdout + this.stderr <= 67108864,
+        "FULL_PROGRESS_BOUND",
+      );
+      const real = realpathSync(this.root);
+      need(
+        real.replaceAll("\\", "/").toLowerCase() ===
+          this.root.replaceAll("\\", "/").toLowerCase(),
+        "FULL_PROGRESS_ROOT",
+      );
+      const value = {
+        kind: "windows-arm-source-phase",
+        contextSha256: this.contextSha,
+        phase: this.label,
+        sequence: this.sequence,
+        elapsedMs: elapsed,
+        phaseStartedElapsedMs: this.phaseStartedElapsedMs,
+        phaseElapsedMs: elapsed - this.phaseStartedElapsedMs,
+        stdoutBytes: this.stdout,
+        stderrBytes: this.stderr,
+        lastOutputAgeMs: age,
+        syncCompleted: this.completed,
+        syncTotal: this.total,
+      };
+      const raw = Buffer.from(JSON.stringify(value) + "\n");
+      need(raw.length <= 2048, "FULL_PROGRESS_BOUND");
+      const temporary = path.join(this.root, "source-phase-pending.json");
+      writeFileSync(temporary, raw, { flag: "wx" });
+      renameSync(temporary, path.join(this.root, "source-phase-result.json"));
+      this.writes++;
+    } catch {
+      this.failed = true;
+    }
+  }
+  close() {
+    clearInterval(this.timer);
+    this.flush();
+    try {
+      writeFileSync(
+        path.join(this.root, "source-progress-metadata-result.json"),
+        JSON.stringify({
+          kind: "windows-arm-source-progress-metadata",
+          metadataFailure: this.failed,
+          samplesWritten: this.writes,
+          sourceOutcomeNotInferred: true,
+        }) + "\n",
+        { flag: "wx" },
+      );
+    } catch {}
+  }
+}
 async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
   need(
-    (stage === "source-acquisition" && maximumSeconds === 4500) ||
+    (stage === "source-acquisition" && maximumSeconds === 7200) ||
       (stage === "source-hooks-gn" && maximumSeconds === 2700),
     "FULL_SOURCE_STAGE",
   );
-  const allowed = Math.min(maximumSeconds * 1000, budget.remaining() - 120000);
+  const allowed = Math.min(
+    maximumSeconds * 1000,
+    budget.remaining() - 120000,
+    stage === "source-acquisition" ? budget.acquisitionRemaining() : Infinity,
+  );
   need(allowed > 0, "FULL_SOURCE_RESERVE");
   const began = performance.now();
-  const timer = setTimeout(
-    () => {
-      const report = {
-        kind: "windows-arm-source-stage-deadline",
-        success: false,
-        stage,
-        firstFailure: "FULL_SOURCE_STAGE_DEADLINE",
-        compilerExecuted: null,
-        engineCompilationRequested: false,
-        sdkBuilt: false,
-        cleanupNotInferred: true,
-      };
+  let active = true;
+  const expire = () => {
+    if (!active) return;
+    active = false;
+    const report = {
+      kind: "windows-arm-source-stage-deadline",
+      success: false,
+      stage,
+      firstFailure: "FULL_SOURCE_STAGE_DEADLINE",
+      compilerExecuted: null,
+      engineCompilationRequested: false,
+      sdkBuilt: false,
+      cleanupNotInferred: true,
+    };
+    try {
+      writeFileSync(
+        path.join(root, "source-deadline-result.json"),
+        JSON.stringify(report) + "\n",
+        { flag: "wx" },
+      );
+    } catch {
+      sourceReportingFailure = true;
       try {
-        writeFileSync(
-          path.join(root, "source-deadline-result.json"),
-          JSON.stringify(report) + "\n",
-          { flag: "wx" },
+        writeSync(
+          2,
+          Buffer.from(
+            JSON.stringify({
+              ...report,
+              reportingFailure: "FULL_SOURCE_REPORT",
+            }) + "\n",
+          ),
         );
       } catch {
-        sourceReportingFailure = true;
-        try {
-          writeSync(
-            2,
-            Buffer.from(
-              JSON.stringify({
-                ...report,
-                reportingFailure: "FULL_SOURCE_REPORT",
-              }) + "\n",
-            ),
-          );
-        } catch {
-          /* Preserve the deadline. */
-        }
+        /* Preserve the deadline. */
       }
-      process.exit(124); // Actual enclosing Job terminates/reaps only this owned cohort.
+    }
+    process.exit(124); // Actual enclosing Job terminates/reaps only this owned cohort.
+  };
+  const timer = setTimeout(expire, Math.max(1, allowed));
+  // A cached monotonic timer cannot observe a forward wall jump. This fixed
+  // watchdog consumes the same original live endpoints during vendor awaits.
+  const watchdog = setInterval(
+    () => {
+      if (!active) return;
+      try {
+        budget.remaining();
+        if (stage === "source-acquisition") budget.acquisitionRemaining();
+        need(performance.now() - began < allowed, "FULL_SOURCE_STAGE_DEADLINE");
+      } catch {
+        expire();
+      }
     },
-    Math.max(1, allowed),
+    Math.max(1, Math.min(1000, allowed)),
   );
   try {
     const result = await action();
     budget.remaining();
+    if (stage === "source-acquisition") budget.acquisitionRemaining();
     need(performance.now() - began < allowed, "FULL_SOURCE_STAGE_DEADLINE");
     return result;
   } finally {
+    active = false;
     clearTimeout(timer);
+    clearInterval(watchdog);
   }
 }
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "ffb9fce5aa8020dd46d2d32d8196172dfd56f3e28e6e12db934b276536927f1b";
+  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";
 const fullSourceProfiles = new WeakMap();
 
 // Actual full source owner and graph receipts are the only metadata issuers.
@@ -6405,8 +6564,26 @@ function beginFullMetadataSource(input) {
     "FULL_METADATA_RECIPE_PIN",
   );
   const recipe = JSON.parse(profile.metadataRecipeRaw);
+  // Project once for the unchanged private15m phase helper. Every read still
+  // consumes the genuine original FULL source/context/whole budget.
+  const metadataBegan = performance.now(),
+    metadataOriginal = Math.min(profile.budget.remaining(), 7200000);
+  const metadataBudget = Object.freeze({
+    remaining() {
+      fullBootstrapAuthority(profile.root, input.p, profile.contextPin);
+      const elapsed = performance.now() - metadataBegan;
+      need(elapsed >= 0, "FULL_METADATA_CLOCK");
+      const left = Math.min(
+        profile.budget.remaining(),
+        metadataOriginal - elapsed,
+      );
+      need(left > 0, "FULL_METADATA_DEADLINE");
+      return left;
+    },
+  });
   const owner = beginQualificationSource({
     ...input,
+    budget: metadataBudget,
     privatePolicyRaw: profile.metadataRecipeRaw,
   });
   fullMetadataOwners.set(owner, { profile, context: input.c, recipe });
@@ -6881,7 +7058,7 @@ function fullMetadataInspectContext(
     context.wallWorkEnd - wallNow,
     context.monotonicWorkEnd - monotonicNow,
   );
-  need(remaining > 150 && remaining <= 7200, "PRIVATE_DEADLINE");
+  need(remaining > 150 && remaining <= 10800, "PRIVATE_DEADLINE");
   return { policy, candidate };
 }
 
@@ -7123,6 +7300,326 @@ function requireFullSourceContext(c) {
     "FULL_SDK_SOURCE_CONTEXT",
   );
 }
+// Fixed DATA-only clock child inherits the actual source Node Job. It cannot
+// issue a source/session and never changes any original context endpoint.
+const FULL_SOURCE_CLOCK_PROGRAM =
+  'import json,time;print(json.dumps({"kind":"windows-arm-full-source-clock-data","wall":time.time(),"monotonic":time.monotonic()},separators=(",",":")))';
+async function sampleFullSourceClock(context, python) {
+  const nodeMonoBefore = performance.now(),
+    nodeWallBefore = Date.now();
+  const original = Math.min(
+    10800000,
+    context.wallWorkEnd * 1000 - nodeWallBefore,
+    context.wallWholeEnd * 1000 - nodeWallBefore,
+  );
+  need(
+    Number.isFinite(original) && original > 150000,
+    "FULL_SOURCE_CLOCK_DEADLINE",
+  );
+  const workEnd = nodeMonoBefore + Math.min(5000, original - 150000),
+    closeEnd = Math.min(workEnd + 30000, nodeMonoBefore + original - 120000);
+  const remaining = () => {
+    const left = Math.min(
+      workEnd - performance.now(),
+      context.wallWorkEnd * 1000 - Date.now() - 150000,
+      context.wallWholeEnd * 1000 - Date.now() - 150000,
+    );
+    need(left > 0, "FULL_SOURCE_CLOCK_DEADLINE");
+    return left;
+  };
+  const cleanupRemaining = () =>
+    Math.min(
+      closeEnd - performance.now(),
+      context.wallWorkEnd * 1000 - Date.now() - 120000,
+      context.wallWholeEnd * 1000 - Date.now() - 120000,
+    );
+  let child,
+    failed = false,
+    primary,
+    spawned = false,
+    exited = false,
+    closed = false,
+    stdoutClosed = false,
+    stderrClosed = false,
+    exitCode,
+    exitSignal,
+    closeCode,
+    closeSignal,
+    stdoutBytes = 0,
+    stderrBytes = 0,
+    workTimer,
+    cleanupTimer,
+    pinRead,
+    pinJoined = false,
+    result;
+  const chunks = [],
+    listeners = [];
+  let rejectFailure, resolveJoined;
+  const failure = new Promise((_, reject) => {
+    rejectFailure = reject;
+  });
+  // The rejection is consumed by the work race even after a synchronous spawn
+  // failure, so a late owned event cannot create an unhandled rejection.
+  failure.catch(() => {});
+  const joined = new Promise((resolve) => {
+    resolveJoined = resolve;
+  });
+  const remember = (error) => {
+    if (!failed) {
+      failed = true;
+      primary = error;
+      rejectFailure(error);
+    }
+  };
+  const observe = (emitter, event, callback) => {
+    emitter.on(event, callback);
+    listeners.push([emitter, event, callback]);
+  };
+  const checkJoined = () => {
+    if (closed && stdoutClosed && stderrClosed) resolveJoined();
+  };
+  try {
+    remaining();
+    workTimer = setTimeout(
+      () => remember(new Error("FULL_SOURCE_CLOCK_DEADLINE")),
+      Math.max(1, remaining()),
+    );
+    pinRead = held(python.path, python.bytes, { remaining }, python).finally(
+      () => {
+        pinJoined = true;
+      },
+    );
+    pinRead.catch(() => {});
+    await Promise.race([pinRead, failure]);
+    remaining();
+    child = spawn(python.path, ["-I", "-B", "-c", FULL_SOURCE_CLOCK_PROGRAM], {
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { SystemRoot: "C:/Windows", WINDIR: "C:/Windows" },
+    });
+    need(child && child.stdout && child.stderr, "FULL_SOURCE_CLOCK_CHILD");
+    observe(child, "spawn", () => {
+      spawned = true;
+    });
+    observe(child, "error", remember);
+    observe(child, "exit", (code, signal) => {
+      exited = true;
+      exitCode = code;
+      exitSignal = signal;
+    });
+    observe(child, "close", (code, signal) => {
+      closed = true;
+      closeCode = code;
+      closeSignal = signal;
+      checkJoined();
+    });
+    observe(child.stdout, "error", remember);
+    observe(child.stderr, "error", remember);
+    observe(child.stdout, "close", () => {
+      stdoutClosed = true;
+      checkJoined();
+    });
+    observe(child.stderr, "close", () => {
+      stderrClosed = true;
+      checkJoined();
+    });
+    observe(child.stdout, "data", (chunk) => {
+      if (failed) return;
+      try {
+        remaining();
+        stdoutBytes += chunk.length;
+        need(stdoutBytes <= 512, "FULL_SOURCE_CLOCK_BOUND");
+        chunks.push(Buffer.from(chunk));
+      } catch (error) {
+        remember(error);
+      }
+    });
+    observe(child.stderr, "data", (chunk) => {
+      stderrBytes += chunk.length;
+      remember(new Error("FULL_SOURCE_CLOCK_STDERR"));
+    });
+    await Promise.race([joined, failure]);
+    remaining();
+    need(
+      spawned &&
+        exited &&
+        closed &&
+        stdoutClosed &&
+        stderrClosed &&
+        exitCode === 0 &&
+        closeCode === 0 &&
+        exitSignal === null &&
+        closeSignal === null &&
+        stdoutBytes > 0 &&
+        stdoutBytes <= 512 &&
+        stderrBytes === 0,
+      "FULL_SOURCE_CLOCK_JOIN",
+    );
+    const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    need(
+      value &&
+        Object.getPrototypeOf(value) === Object.prototype &&
+        Object.keys(value).sort().join(",") === "kind,monotonic,wall" &&
+        value.kind === "windows-arm-full-source-clock-data" &&
+        Number.isFinite(value.wall) &&
+        Number.isFinite(value.monotonic) &&
+        value.monotonic >= 0,
+      "FULL_SOURCE_CLOCK_DATA",
+    );
+    remaining();
+    result = Object.freeze({ ...value, nodeMonoBefore, nodeWallBefore });
+  } catch (error) {
+    remember(error);
+    if (child && !exited && !closed) {
+      try {
+        child.kill();
+      } catch {
+        /* Retain the first actual failure. */
+      }
+    }
+    if (!pinJoined || (child && !(closed && stdoutClosed && stderrClosed))) {
+      const left = cleanupRemaining();
+      if (left > 0) {
+        try {
+          await Promise.race([
+            Promise.all([pinRead, child ? joined : Promise.resolve()]),
+            new Promise((_, reject) => {
+              cleanupTimer = setTimeout(
+                () => reject(new Error("FULL_SOURCE_CLOCK_CLOSE_DEADLINE")),
+                Math.max(1, left),
+              );
+            }),
+          ]);
+        } catch {
+          /* No join is inferred from cleanup expiration. */
+        }
+      }
+    }
+  } finally {
+    clearTimeout(workTimer);
+    clearTimeout(cleanupTimer);
+    for (const [emitter, event, callback] of listeners) {
+      try {
+        emitter.removeListener(event, callback);
+      } catch (error) {
+        remember(error);
+      }
+    }
+    if (child) {
+      for (const action of [
+        () => {
+          if (!stdoutClosed) child.stdout?.destroy();
+        },
+        () => {
+          if (!stderrClosed) child.stderr?.destroy();
+        },
+        () => {
+          if (!closed) child.unref();
+        },
+      ]) {
+        try {
+          action();
+        } catch (error) {
+          remember(error);
+        }
+      }
+    }
+    chunks.length = 0;
+  }
+  if (failed) throw primary;
+  return result;
+}
+
+// FULL-only accounting consumes the original source/acquisition ends. It does
+// not change the selected legacy recipe or issue any source/native authority.
+function fullSourceBudget(
+  context,
+  limits,
+  sample,
+  now = Date.now,
+  mono = performance.now.bind(performance),
+) {
+  need(
+    limits.wholeSeconds === 21600 &&
+      limits.sourceSeconds === 10800 &&
+      limits.acquisitionSeconds === 7200 &&
+      limits.hooksSeconds === 2700 &&
+      limits.cleanupSeconds === 30 &&
+      limits.finalReserveSeconds === 120,
+    "FULL_SDK_SOURCE_LIMITS",
+  );
+  const keys = [
+    "wallWholeEnd",
+    "monotonicWholeEnd",
+    "wallWorkEnd",
+    "monotonicWorkEnd",
+    "wallAcquisitionEnd",
+    "monotonicAcquisitionEnd",
+  ];
+  need(
+    keys.every((key) => Number.isFinite(context[key])) &&
+      context.wallWorkEnd <= context.wallWholeEnd &&
+      context.monotonicWorkEnd <= context.monotonicWholeEnd &&
+      context.wallAcquisitionEnd <= context.wallWorkEnd &&
+      context.monotonicAcquisitionEnd <= context.monotonicWorkEnd,
+    "FULL_SDK_SOURCE_ORIGINAL_ENDS",
+  );
+  need(
+    sample &&
+      Number.isFinite(sample.nodeMonoBefore) &&
+      Number.isFinite(sample.nodeWallBefore) &&
+      Number.isFinite(sample.monotonic) &&
+      sample.monotonic >= 0 &&
+      sample.nodeMonoBefore <= mono(),
+    "FULL_SDK_SOURCE_CLOCK_SAMPLE",
+  );
+  const began = sample.nodeMonoBefore,
+    wall = sample.nodeWallBefore,
+    original = Math.min(
+      10800000,
+      context.wallWorkEnd * 1000 - wall,
+      context.wallWholeEnd * 1000 - wall,
+      (context.monotonicWorkEnd - sample.monotonic) * 1000,
+      (context.monotonicWholeEnd - sample.monotonic) * 1000,
+    ),
+    acquisition = Math.min(
+      7200000,
+      context.wallAcquisitionEnd * 1000 - wall,
+      (context.monotonicAcquisitionEnd - sample.monotonic) * 1000,
+      original,
+    );
+  need(
+    Number.isFinite(began) && original > 0 && acquisition > 0,
+    "FULL_SDK_SOURCE_ORIGINAL_BUDGET",
+  );
+  const remaining = () => {
+    const elapsed = mono() - began;
+    need(Number.isFinite(elapsed) && elapsed >= 0, "FULL_SDK_SOURCE_CLOCK");
+    const left = Math.min(
+      original - elapsed,
+      context.wallWorkEnd * 1000 - now(),
+      context.wallWholeEnd * 1000 - now(),
+    );
+    need(Number.isFinite(left) && left > 0, "FULL_SDK_SOURCE_DEADLINE");
+    return left;
+  };
+  return Object.freeze({
+    remaining,
+    acquisitionRemaining() {
+      const source = remaining(),
+        elapsed = mono() - began;
+      need(Number.isFinite(elapsed) && elapsed >= 0, "FULL_SDK_SOURCE_CLOCK");
+      const left = Math.min(
+        source,
+        acquisition - elapsed,
+        context.wallAcquisitionEnd * 1000 - now(),
+      );
+      need(Number.isFinite(left) && left > 0, "FULL_SDK_ACQUISITION_DEADLINE");
+      return left;
+    },
+  });
+}
 async function loadFullSourceProfile(root, c, provisional, contextPin) {
   requireFullSourceContext(c);
   const raw = await held(
@@ -7216,7 +7713,8 @@ async function loadFullSourceProfile(root, c, provisional, contextPin) {
     sourceGn: selected.sourceGn,
     sourcePaths: c.sources.map((row) => row.path),
   };
-  const initial = sourceBudget(c, p);
+  const clockSample = await sampleFullSourceClock(c, p.python);
+  const initial = fullSourceBudget(c, full.limits, clockSample);
   const started = performance.now();
   const original = initial.remaining();
   need(
@@ -7229,6 +7727,7 @@ async function loadFullSourceProfile(root, c, provisional, contextPin) {
     "FULL_SDK_SOURCE_ORIGINAL_ENDS",
   );
   const budget = {
+    acquisitionRemaining: () => initial.acquisitionRemaining(),
     remaining() {
       const remaining = Math.min(
         initial.remaining(),
@@ -7901,41 +8400,54 @@ async function runFullSourceBody(argv) {
     if (reportFailed) throw reportError;
     return value;
   };
+  const acquisitionBudget = Object.freeze({
+    remaining() {
+      return Math.min(budget.remaining(), budget.acquisitionRemaining());
+    },
+  });
   let qualificationOwner;
-  currentProgress = new SourceProgress(root, argv[2]);
+  currentProgress = new FullSourceProgress(root, argv[2]);
   try {
-    await sourceStage(root, budget, "source-acquisition", 4500, async () => {
-      currentProgress.phase("repository-fetch");
-      budget.remaining();
-      await patched.acquireSources(
-        files.workspace,
-        TARGET,
-        tools.git.path,
-        gitPolicy,
-      );
-      await verifyHostClosure(p, budget, c.image);
-      budget.remaining();
-      await runtime.prepareWindowsGitLauncher({
-        depot: files.depot,
-        gitExecutable: tools.git.path,
-        logs: files.logs,
-      });
-      stage = commands[0].role;
-      await checked(
-        () =>
-          executeCommand(
-            commands[0],
-            commands,
-            env,
-            files,
-            budget,
-            limits,
-            false,
-            { value: bootstrap, contextSha: argv[2] },
-          ),
-        true,
-      );
-    });
+    await fullSourceStage(
+      root,
+      budget,
+      "source-acquisition",
+      7200,
+      async () => {
+        currentProgress.phase("repository-fetch");
+        acquisitionBudget.remaining();
+        await patched.acquireSources(
+          files.workspace,
+          TARGET,
+          tools.git.path,
+          gitPolicy,
+        );
+        acquisitionBudget.remaining();
+        await verifyHostClosure(p, acquisitionBudget, c.image);
+        acquisitionBudget.remaining();
+        await runtime.prepareWindowsGitLauncher({
+          depot: files.depot,
+          gitExecutable: tools.git.path,
+          logs: files.logs,
+        });
+        acquisitionBudget.remaining();
+        stage = commands[0].role;
+        await checked(
+          () =>
+            executeCommand(
+              commands[0],
+              commands,
+              env,
+              files,
+              acquisitionBudget,
+              limits,
+              false,
+              { value: bootstrap, contextSha: argv[2] },
+            ),
+          true,
+        );
+      },
+    );
     await fullSourceStage(root, budget, "source-hooks-gn", 2700, async () => {
       stage = executionCommands[1].role;
       const projection = validateHookProjection(

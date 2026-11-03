@@ -668,13 +668,14 @@ async function retireControl(token) {
 const CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.
 const SOURCE_QUALIFICATION_ALLOWED = true;
 const FULL_SOURCE_PROFILE_SHA256 =
-  "ffb9fce5aa8020dd46d2d32d8196172dfd56f3e28e6e12db934b276536927f1b";
+  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";
 const MODULE_URL = import.meta.url;
 const CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));
 const CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");
 const bootstrapOwners = new WeakMap();
 const sourceOperations = new WeakMap();
-const SOURCE_MS = 7200000;
+const SOURCE_MS = 10800000;
+const ACQUISITION_MS = 7200000;
 const SOURCE_LOG_CAP = 131072;
 const DATA_ROLES = Object.freeze([
   "sdk-data",
@@ -3542,8 +3543,8 @@ function sourceContextRecord(token, profile, policy, policyRaw, sample) {
     ) / 1000;
   const acquisitionRemaining =
     Math.min(
-      4500000 - (Date.now() - owner.wallStart),
-      4500000 - (performance.now() - owner.monoStart),
+      ACQUISITION_MS - (Date.now() - owner.wallStart),
+      ACQUISITION_MS - (performance.now() - owner.monoStart),
       sourceRemaining * 1000,
     ) / 1000;
   const c = {
@@ -3574,7 +3575,7 @@ function sourceContextRecord(token, profile, policy, policyRaw, sample) {
     wallWorkEnd: state.sourceWallEnd / 1000,
     monotonicWorkEnd: sample.monotonic + sourceRemaining,
     wallAcquisitionEnd:
-      Math.min(state.sourceWallEnd, owner.wallStart + 4500000) / 1000,
+      Math.min(state.sourceWallEnd, owner.wallStart + ACQUISITION_MS) / 1000,
     monotonicAcquisitionEnd: sample.monotonic + acquisitionRemaining,
   };
   need(

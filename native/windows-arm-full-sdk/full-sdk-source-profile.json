@@ -37,15 +37,15 @@
     "inverse": "Restore the single finite full-metadata shared-runner branch, then the three finite c9 source-program replacements, then remove the CLOSED FULL SDK SOURCE BODY and INACTIVE FULL SDK SOURCE INTERFACE marked blocks; whole b039 restores.",
     "apache4D61Carried": true,
     "sourceBodyOriginalSha256": "45055005b59ad90ff2be1695f1c30ddcd99d4da14ba8c1318ba134a11ac3d361",
-    "sourceBodyDerivedSha256": "01febb9ef9520235de8884fcabe49751ac3fab57f44d6ce1a247083b5bbaef90",
-    "sourceBodySubstitutions": 15,
-    "operationDerivative": "Explicit full-specific fixed-role acquisition loop with the same seven data bodies, original subcaps and original clock consumers; no old identity rewritten.",
+    "sourceBodyDerivedSha256": "7423e9a95b0b77b6293b264296466a3f16ff6e8e182e1e6e17094d77dc6db96a",
+    "sourceBodySubstitutions": 23,
+    "operationDerivative": "Explicit full-specific fixed-role acquisition loop with the same seven data bodies; original once-captured source10800/acquisition7200/hooks2700 consumers under the original21600 whole, without rewriting old source recipe identity.",
     "assemblyInverse": "Restore reviewed source-entry/footer, restore vector and pre-GN data/graph comparison blocks by exact finite inverse before prior2700/c9/b039 inverses."
   },
   "limits": {
     "wholeSeconds": 21600,
-    "sourceSeconds": 7200,
-    "acquisitionSeconds": 4500,
+    "sourceSeconds": 10800,
+    "acquisitionSeconds": 7200,
     "hooksSeconds": 2700,
     "cleanupSeconds": 30,
     "finalReserveSeconds": 120

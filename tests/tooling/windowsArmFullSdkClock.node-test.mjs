@@ -267,7 +267,79 @@ const SOURCE_FAILURE_INVERSE = {
   bytes: 173595,
   sha256: "45df5ab874c3d1a7d9191ea3be9f8cbf1c9d43110092f592abb0d7eb9cbc3cc5",
 };
+
+// BEGIN EXACT FULL SOURCE ACQUISITION INVERSE
+const SOURCE_ACQUISITION_HISTORY = {
+  controller: {
+    path: "native/windows-arm-full-sdk/full_sdk_control.mjs",
+    bytes: 175516,
+    sha256: "097a828c6d26648690c5fff05c7e59dfaa8de553262b2fca0a6fcb119c2d0659",
+    newBytes: 175570,
+    newSha256:
+      "c15c97aa6e9e14b4b52f633e44419045273ca9645ba4cbcd3641396c95946012",
+    rows: [
+      {
+        oldRaw:
+          '// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "ffb9fce5aa8020dd46d2d32d8196172dfd56f3e28e6e12db934b276536927f1b";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\nconst sourceOperations = new WeakMap();\nconst SOURCE_MS = 7200000;\nconst SOURCE_LOG_CAP = 131072;\nconst DATA_ROLES = Object.freeze([\n  "sdk-data",\n  "llvm-data",\n',
+        newRaw:
+          '// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\nconst sourceOperations = new WeakMap();\nconst SOURCE_MS = 10800000;\nconst ACQUISITION_MS = 7200000;\nconst SOURCE_LOG_CAP = 131072;\nconst DATA_ROLES = Object.freeze([\n  "sdk-data",\n  "llvm-data",\n',
+        oldSha256:
+          "59bc4818dbd747a4969cf6fec8acea23d38fe475f345989fa0143a1740844670",
+        newSha256:
+          "d57bb706ff323933b2c22605f6468e22b7c464729e89079ba3a94175e387a955",
+      },
+      {
+        oldRaw:
+          '      state.sourceMonoEnd - performance.now(),\n    ) / 1000;\n  const acquisitionRemaining =\n    Math.min(\n      4500000 - (Date.now() - owner.wallStart),\n      4500000 - (performance.now() - owner.monoStart),\n      sourceRemaining * 1000,\n    ) / 1000;\n  const c = {\n    kind: "windows-arm-full-sdk-context",\n',
+        newRaw:
+          '      state.sourceMonoEnd - performance.now(),\n    ) / 1000;\n  const acquisitionRemaining =\n    Math.min(\n      ACQUISITION_MS - (Date.now() - owner.wallStart),\n      ACQUISITION_MS - (performance.now() - owner.monoStart),\n      sourceRemaining * 1000,\n    ) / 1000;\n  const c = {\n    kind: "windows-arm-full-sdk-context",\n',
+        oldSha256:
+          "d086e4a470813746ffc40f61e50d90cee2c94aab3cf89ccf8b258b29924270fc",
+        newSha256:
+          "cc47d02b196dbe63bf6a4e1b525485103c92a7f824cc3a0090454f41cd125127",
+      },
+      {
+        oldRaw:
+          "    monotonicWholeEnd: sample.monotonic + wholeRemaining,\n    wallWorkEnd: state.sourceWallEnd / 1000,\n    monotonicWorkEnd: sample.monotonic + sourceRemaining,\n    wallAcquisitionEnd:\n      Math.min(state.sourceWallEnd, owner.wallStart + 4500000) / 1000,\n    monotonicAcquisitionEnd: sample.monotonic + acquisitionRemaining,\n  };\n  need(\n    sourceRemaining > 150 && acquisitionRemaining > 150,\n",
+        newRaw:
+          "    monotonicWholeEnd: sample.monotonic + wholeRemaining,\n    wallWorkEnd: state.sourceWallEnd / 1000,\n    monotonicWorkEnd: sample.monotonic + sourceRemaining,\n    wallAcquisitionEnd:\n      Math.min(state.sourceWallEnd, owner.wallStart + ACQUISITION_MS) / 1000,\n    monotonicAcquisitionEnd: sample.monotonic + acquisitionRemaining,\n  };\n  need(\n    sourceRemaining > 150 && acquisitionRemaining > 150,\n",
+        oldSha256:
+          "15eb5c4144c038ca4155db70e8d4079c504ae9259a8951e0a5575735ee32351f",
+        newSha256:
+          "c249b742fd964d7164995c252bfbe4b3cbc9eacd105333fb6e654cc1e9e94e51",
+      },
+    ],
+  },
+};
+function sourceAcquisitionInverse(text, name) {
+  const spec = SOURCE_ACQUISITION_HISTORY[name];
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(hash(row.oldRaw), row.oldSha256);
+    assert.equal(
+      text.split(row.newRaw).length,
+      2,
+      "ASSEMBLY_INVERSE_SOURCE_ACQUISITION_COUNT",
+    );
+    text = text.replace(row.newRaw, () => row.oldRaw);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_SOURCE_ACQUISITION_BYTES",
+  );
+  assert.equal(
+    hash(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_SOURCE_ACQUISITION_WHOLE",
+  );
+  return text;
+}
+// END EXACT FULL SOURCE ACQUISITION INVERSE
+
 function sourceFailureControllerInverse(text) {
+  text = sourceAcquisitionInverse(text, "controller");
   const spec = SOURCE_FAILURE_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of spec.rows) {
@@ -1246,7 +1318,9 @@ test("actual controller intersects the first-step lease before source creation w
   );
   assert(text.includes("owner.wallStart + SOURCE_MS"));
   assert(text.includes("owner.monoStart + SOURCE_MS"));
-  assert(text.includes("4500000 - (performance.now() - owner.monoStart)"));
+  assert(
+    text.includes("ACQUISITION_MS - (performance.now() - owner.monoStart)"),
+  );
   const old = parentMetadataClockInverse(text)
     .replace(
       /import \{\n  WORKFLOW_CLOCK_ENV,[\s\S]*?\} from "\.\/workflow-clock.mjs";\n/,

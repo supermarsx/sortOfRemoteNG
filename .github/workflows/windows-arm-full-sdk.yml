@@ -134,4 +134,22 @@ jobs:
             .artifacts/windows-arm-full-sdk-*/jobs/*/receipt.json
             .artifacts/windows-arm-full-sdk-*/jobs/*/stdout.log
             .artifacts/windows-arm-full-sdk-*/jobs/*/stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/sync.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/sync.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/hook-projection.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/hook-projection.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/dependency-hooks.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/dependency-hooks.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-x86.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-x86.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-x64.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-x64.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-arm64.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/setup-arm64.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/verify-setup.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/verify-setup.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/cef-gn.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/cef-gn.stderr.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/restore-checkpoint.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-gn-logs/restore-checkpoint.stderr.log
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/source-deadline.json

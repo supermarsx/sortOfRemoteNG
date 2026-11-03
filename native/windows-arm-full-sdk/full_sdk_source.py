@@ -19,7 +19,7 @@ from pathlib import Path
 MODE = 'full-sdk-source-gn'
 WORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'
 POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'
-PROFILE_SHA256 = 'ffb9fce5aa8020dd46d2d32d8196172dfd56f3e28e6e12db934b276536927f1b'
+PROFILE_SHA256 = '71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb'
 FULL_SOURCE_ADMITTED = False
 SOURCE_QUALIFICATION_ALLOWED = True
 HEX = re.compile(r'[a-f0-9]{64}')
@@ -102,7 +102,7 @@ def phase_budget(wall_whole_end, mono_whole_end, wall_source_end,
     need(all(type(value) in (int, float) and math.isfinite(value) for value in values), 'CLOCK')
     whole = min(wall_whole_end - wall_now, mono_whole_end - mono_now)
     source = min(wall_source_end - wall_now, mono_source_end - mono_now)
-    need(150 < whole <= 21600 and 150 < source <= 7200 and
+    need(150 < whole <= 21600 and 150 < source <= 10800 and
          wall_source_end <= wall_whole_end and mono_source_end <= mono_whole_end, 'DEADLINE')
     return {'workSeconds': min(whole, source) - 150, 'cleanupSeconds': 30,
             'finalReserveSeconds': 120, 'wallWholeEnd': wall_whole_end,
@@ -499,12 +499,12 @@ def _run_operation(state):
         _host_closure(p, clock, c)
         for role in (*_DATA_ROLES, _NODE):
             _verified_active_sources(root)
-            # All acquisition roles share one original4500s end. The Node body
-            # receives the original source ends and uses its fixed2700s hook cap.
+            # All acquisition roles consume the same original7200s endpoint. The
+            # Node body debits data time and retains the fixed2700s hook cap.
             remaining = min(clock.remaining(), phase_end - time.monotonic(), wall_phase_end - time.time()) if role != _NODE else clock.remaining()
             allotted = {'sdk-data': 1170, 'llvm-data': 300, 'rust-archive': 1200,
                          'gn-archive': 180, 'siso-archive': 180, 'materialize': 600,
-                         'runtime-closure': 720}.get(role, 7200)
+                         'runtime-closure': 720}.get(role, 10800)
             seconds = min(allotted, remaining - 150)
             need(seconds > 0, 'PHASE_DEADLINE')
             receipt = job.run_job(_worker_argv(role, root, p), str(root), root / 'jobs' / role,
