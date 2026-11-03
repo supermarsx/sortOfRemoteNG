@@ -4849,7 +4849,205 @@ const SOURCE_ACQUISITION_HISTORY = {
     ],
   },
 };
+// BEGIN EXACT FULL BOOTSTRAP CACHE INVERSE
+const FULL_BOOTSTRAP_CACHE_HISTORY = {
+  driver: {
+    path: "native/windows-arm-full-sdk/full-sdk-source-driver.mjs",
+    bytes: 286208,
+    sha256: "3227c6e0863271864024d456125e28ca40dc5257306a35f866fbbbcb0a5097a8",
+    newBytes: 289624,
+    newSha256:
+      "e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea",
+    rows: [
+      {
+        oldRaw:
+          "      \"--revision\",\n      `src@${p.sourceChromium}`,\n    ],\n  };\n  return Buffer.from(\n    String.raw`import sys,os,json,time,stat,hashlib,subprocess\nfrom pathlib import Path\nP=json.loads(${JSON.stringify(JSON.stringify(policy))})\nsys.path.insert(0,P['native'])\n",
+        newRaw:
+          "      \"--revision\",\n      `src@${p.sourceChromium}`,\n    ],\n  };\n  const program = Buffer.from(\n    String.raw`import sys,os,json,time,stat,hashlib,subprocess\nfrom pathlib import Path\nP=json.loads(${JSON.stringify(JSON.stringify(policy))})\nsys.path.insert(0,P['native'])\n",
+        oldSha256:
+          "bdfabeb2a65e01fea4e7bbbf8fd59ffd4a28ac5b6bf2e9f84f6da425217105c1",
+        newSha256:
+          "5015c9c48c4ece772112d7bc9048287c3735d8dfd85e98dc9a7b81e779c316f2",
+      },
+      {
+        oldRaw:
+          "if __name__=='__main__':sys.exit(main(sys.argv[1:]))\n`,\n    \"utf8\",\n  );\n}\n\nexport async function prepareBootstrap(root, p, contextSha, budget) {\n  const files = sourcePaths(root, p),\n",
+        newRaw:
+          'if __name__==\'__main__\':sys.exit(main(sys.argv[1:]))\n`,\n    "utf8",\n  );\n  if (!fullAuthority) return program; // Preserve every legacy emitted byte.\n  const old = "SETUP=DEPOT/\'sorng-cipd-setup.bat\'";\n  const text = program.toString("utf8");\n  need(text.split(old).length === 2, "FULL_BOOTSTRAP_SETUP_SOURCE");\n  return Buffer.from(\n    text.replace(old, `SETUP=DEPOT/\'${FULL_BOOTSTRAP_SETUP_BASENAME}\'`),\n  );\n}\n\nexport async function prepareBootstrap(root, p, contextSha, budget) {\n  const files = sourcePaths(root, p),\n',
+        oldSha256:
+          "0e69cd8a6cbfe0b6a6ef4faf4c244029fcb0d9c775b4e635184b8d6d75fe50f0",
+        newSha256:
+          "e856082ef717115cc9f54c6811c442d823747d268b88faa5f957f505c870a588",
+      },
+      {
+        oldRaw:
+          '  };\n}\n\nexport async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {\n  const files = sourcePaths(root, p);\n  need(bootstrap.witnessPin !== null, "FULL_BOOTSTRAP_NOT_ATTESTED");\n  await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);\n  const raw = await held(\n    bootstrap.witness,\n',
+        newRaw:
+          '  };\n}\n\nexport async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {\n  const files = sourcePaths(root, p),\n    fullAuthority = fullBootstrapAuthority(root, p, contextSha);\n  need(bootstrap.witnessPin !== null, "FULL_BOOTSTRAP_NOT_ATTESTED");\n  await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);\n  const raw = await held(\n    bootstrap.witness,\n',
+        oldSha256:
+          "f6749cf529eb98937cf356d034d79e50bb02bc2f38df5f2f19d930aabf3648f5",
+        newSha256:
+          "77542ebaf6984075f126fa5aa4967fec5efc344b0d352eea96c446b797da6641",
+      },
+      {
+        oldRaw:
+          '  }\n  const setup = deriveBootstrapSetup(setupSource);\n  need(setup.length <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");\n  await held(\n    path.join(files.depot, "sorng-cipd-setup.bat"),\n    setup.length,\n    budget,\n    { bytes: setup.length, sha256: sha(setup), nlink: 1 },\n    true,\n',
+        newRaw:
+          '  }\n  const setup = deriveBootstrapSetup(setupSource);\n  need(setup.length <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");\n  await held(\n    path.join(\n      files.depot,\n      fullAuthority ? FULL_BOOTSTRAP_SETUP_BASENAME : "sorng-cipd-setup.bat",\n    ),\n    setup.length,\n    budget,\n    { bytes: setup.length, sha256: sha(setup), nlink: 1 },\n    true,\n',
+        oldSha256:
+          "ae3b909cad210e86a39d4f93b503431b59d70984ada65242f5c505a5ea530de1",
+        newSha256:
+          "5a530d24b4bcd067c27385a78c48519238dc8cbeee98cb70fa59cdc8a1423577",
+      },
+      {
+        oldRaw:
+          '}\n\nconst FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";\nconst fullSourceProfiles = new WeakMap();\n\n// Actual full source owner and graph receipts are the only metadata issuers.\n// The unchanged private profile below is a pinned data recipe, never full authority.\nconst fullMetadataOwners = new WeakMap();\n',
+        newRaw:
+          '}\n\nconst FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e";\nconst fullSourceProfiles = new WeakMap();\n// The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.\n// No ignore file or clean-check exception is created or changed.\nconst FULL_BOOTSTRAP_SETUP_BASENAME = ".cipd_client_sorng_setup.bat";\n\n// Actual full source owner and graph receipts are the only metadata issuers.\n// The unchanged private profile below is a pinned data recipe, never full authority.\nconst fullMetadataOwners = new WeakMap();\n',
+        oldSha256:
+          "45b0a7a2bd7c6529f4f6ea944f8872fa22ee21cc5d4d4edf469040371929099d",
+        newSha256:
+          "c190d11eaf0177f2f62f6d8d31163d39a9f3cf24909ba75e82d73848a1728b43",
+      },
+      {
+        oldRaw:
+          '  }\n}\n// END SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION\n\nasync function runFullSourceBody(argv) {\n  need(FULL_SOURCE_BODY_ADMITTED, "FULL_SDK_SOURCE_EXECUTION_CLOSED");\n  need(\n    process.platform === "win32" &&\n',
+        newRaw:
+          '  }\n}\n// END SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION\n\n// Error details are bounded DATA only. Never read a getter or print raw text.\nfunction fullSourceErrorMessage(error) {\n  if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\n    return null;\n  const descriptor = Object.getOwnPropertyDescriptor(error, "message");\n  return descriptor &&\n    Object.hasOwn(descriptor, "value") &&\n    typeof descriptor.value === "string" &&\n    descriptor.value.length <= 4096\n    ? descriptor.value\n    : null;\n}\nfunction fullSourceApplyDiagnostic(error) {\n  const diagnostic = {\n    kind: "windows-arm-source-apply-failure",\n    phase: "source-apply",\n    category: "unclassified",\n  };\n  const message = fullSourceErrorMessage(error);\n  if (message !== null) {\n    const repository =\n      /^(cef|chromium|depotTools): (clean checkout required; existing changes are never reset|checkout root required|source revision mismatch)$/.exec(\n        message,\n      );\n    if (repository) {\n      diagnostic.repository = repository[1];\n      diagnostic.category = repository[2].startsWith("clean checkout")\n        ? "dirty-checkout"\n        : repository[2] === "checkout root required"\n          ? "checkout-root"\n          : "source-revision";\n    } else if (message.startsWith("Digest/size mismatch: "))\n      diagnostic.category = "input-pin";\n    else if (message === "CEF checkout must be chromium/cef for upstream hooks")\n      diagnostic.category = "cef-placement";\n    else {\n      const patch =\n        /^Patch application failed; applied repositories: (none|cef|chromium|cef,chromium); current repository: (cef|chromium); completed patches: ([0-9]{1,2})\\. No rollback\\/reset performed\\./.exec(\n          message,\n        );\n      if (patch && Number(patch[3]) <= 64) {\n        diagnostic.category = "patch-application";\n        diagnostic.repository = patch[2];\n        diagnostic.completedPatches = Number(patch[3]);\n        diagnostic.appliedRepositories =\n          patch[1] === "none" ? [] : patch[1].split(",");\n      }\n    }\n    const code = Object.getOwnPropertyDescriptor(error, "code");\n    if (code && Object.hasOwn(code, "value")) {\n      if (Number.isInteger(code.value) && code.value >= 0 && code.value <= 255)\n        diagnostic.exitCode = code.value;\n      else if (\n        [\n          "ENOENT",\n          "EACCES",\n          "EPERM",\n          "ETIMEDOUT",\n          "ABORT_ERR",\n          "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",\n        ].includes(code.value)\n      )\n        diagnostic.code = code.value;\n    }\n  }\n  return diagnostic;\n}\n\nasync function runFullSourceBody(argv) {\n  need(FULL_SOURCE_BODY_ADMITTED, "FULL_SDK_SOURCE_EXECUTION_CLOSED");\n  need(\n    process.platform === "win32" &&\n',
+        oldSha256:
+          "b4b35e5f2356bf27cc7ce85b5004e40278b44294d2e93d83ab7c4678c78af79d",
+        newSha256:
+          "6d49e911ed9bf2cf99a780ab470157e051ce482ed3a7b22efb7285c3415b9b65",
+      },
+      {
+        oldRaw:
+          '  } finally {\n    fullSourceProfiles.delete(p);\n    retireQualificationSource(qualificationOwner);\n    currentProgress?.close();\n    const code =\n      typeof primary?.message === "string" &&\n      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(primary.message)\n        ? primary.message\n        : failed\n          ? "FULL_SOURCE_FAILED"\n          : null;\n    const report = {\n      kind: "windows-arm-source-gn",\n      success,\n      stage: success ? "complete" : stage,\n      firstFailure: success ? null : code,\n      target: TARGET,\n      sourceId: p.sourceGn.sourceId,\n      graph,\n      generatedArguments,\n',
+        newRaw:
+          '  } finally {\n    fullSourceProfiles.delete(p);\n    retireQualificationSource(qualificationOwner);\n    currentProgress?.close();\n    const message = fullSourceErrorMessage(primary);\n    const code =\n      message !== null &&\n      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)\n        ? message\n        : failed\n          ? "FULL_SOURCE_FAILED"\n          : null;\n    const report = {\n      kind: "windows-arm-source-gn",\n      success,\n      stage: success ? "complete" : stage,\n      firstFailure: success ? null : code,\n      ...(failed && stage === "source-apply"\n        ? { failureDiagnostic: fullSourceApplyDiagnostic(primary) }\n        : {}),\n      target: TARGET,\n      sourceId: p.sourceGn.sourceId,\n      graph,\n      generatedArguments,\n',
+        oldSha256:
+          "e8ef87cfcf244a9401b350e2e1f450f9dccdda644eb7bc0f81dabc25d53fcbef",
+        newSha256:
+          "384bc76ae4488d420ae749f560dd76bc7fbda8a25121f514c77f9e862713a24e",
+      },
+      {
+        oldRaw:
+          ') {\n  Promise.resolve()\n    .then(() => fullSdkSourceMain())\n    .catch((error) => {\n      const code = /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(\n        error?.message ?? "",\n      )\n        ? error.message\n        : "FULL_SDK_SOURCE_FAILED";\n      console.error(\n        JSON.stringify({\n          success: false,\n          firstFailure: code,\n',
+        newRaw:
+          ') {\n  Promise.resolve()\n    .then(() => fullSdkSourceMain())\n    .catch((error) => {\n      const message = fullSourceErrorMessage(error);\n      const code =\n        message !== null &&\n        /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(message)\n          ? message\n          : "FULL_SDK_SOURCE_FAILED";\n      console.error(\n        JSON.stringify({\n          success: false,\n          firstFailure: code,\n',
+        oldSha256:
+          "791288ce45fb4921ed046f0dfcce36033e55704305ae4a0f02e06c6f87e7ee3e",
+        newSha256:
+          "9811f85cd655b5f4a65094f0b5d108248d48d06dbb8c91c00ebf47d387810e0a",
+      },
+    ],
+  },
+  controller: {
+    path: "native/windows-arm-full-sdk/full_sdk_control.mjs",
+    bytes: 175570,
+    sha256: "c15c97aa6e9e14b4b52f633e44419045273ca9645ba4cbcd3641396c95946012",
+    newBytes: 175570,
+    newSha256:
+      "97cb6430200bee3880651d6b597d2ee4f4886dfe6377b484c900a4e727edc294",
+    rows: [
+      {
+        oldRaw:
+          '// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\n',
+        newRaw:
+          '// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\n',
+        oldSha256:
+          "804b0eacf23d470d16906c8f7b81c08fa5610a991998b9b08680af341950e23d",
+        newSha256:
+          "b25479d0281e8d164381caab15ece3c0dd0b4dac079a8af9989d8f8061182153",
+      },
+    ],
+  },
+  python: {
+    path: "native/windows-arm-full-sdk/full_sdk_source.py",
+    bytes: 28553,
+    sha256: "a5ae8b06d54d4260461a437f4983b71234316dcd86d9d699e3b29629ca0c2ae1",
+    newBytes: 28553,
+    newSha256:
+      "6da8be5749d21ee22e4fb4a0ae464b7ff161d354c0177b86a98f96157759601a",
+    rows: [
+      {
+        oldRaw:
+          "\nMODE = 'full-sdk-source-gn'\nWORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'\nPOLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'\nPROFILE_SHA256 = '71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb'\nFULL_SOURCE_ADMITTED = False\nSOURCE_QUALIFICATION_ALLOWED = True\nHEX = re.compile(r'[a-f0-9]{64}')\nROOT = re.compile(r'[A-Z]:/a/sortOfRemoteNG/sortOfRemoteNG/\\.artifacts/windows-arm-full-sdk-'\n",
+        newRaw:
+          "\nMODE = 'full-sdk-source-gn'\nWORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'\nPOLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'\nPROFILE_SHA256 = 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e'\nFULL_SOURCE_ADMITTED = False\nSOURCE_QUALIFICATION_ALLOWED = True\nHEX = re.compile(r'[a-f0-9]{64}')\nROOT = re.compile(r'[A-Z]:/a/sortOfRemoteNG/sortOfRemoteNG/\\.artifacts/windows-arm-full-sdk-'\n",
+        oldSha256:
+          "a020134c40a773d3aa2c37ed360cf9e95a0d67b456d8d223c58c5f905dabd586",
+        newSha256:
+          "5f3454cece07e85601e98a55815ddad597bf5fddb2410ec96f8aa8269c02d0be",
+      },
+    ],
+  },
+  profile: {
+    path: "native/windows-arm-full-sdk/full-sdk-source-profile.json",
+    bytes: 10710,
+    sha256: "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb",
+    newBytes: 11144,
+    newSha256:
+      "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e",
+    rows: [
+      {
+        oldRaw:
+          '    "sha256": "b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201",\n    "inverse": "Restore the single finite full-metadata shared-runner branch, then the three finite c9 source-program replacements, then remove the CLOSED FULL SDK SOURCE BODY and INACTIVE FULL SDK SOURCE INTERFACE marked blocks; whole b039 restores.",\n    "apache4D61Carried": true,\n    "sourceBodyOriginalSha256": "45055005b59ad90ff2be1695f1c30ddcd99d4da14ba8c1318ba134a11ac3d361",\n    "sourceBodyDerivedSha256": "7423e9a95b0b77b6293b264296466a3f16ff6e8e182e1e6e17094d77dc6db96a",\n    "sourceBodySubstitutions": 23,\n    "operationDerivative": "Explicit full-specific fixed-role acquisition loop with the same seven data bodies; original once-captured source10800/acquisition7200/hooks2700 consumers under the original21600 whole, without rewriting old source recipe identity.",\n    "assemblyInverse": "Restore reviewed source-entry/footer, restore vector and pre-GN data/graph comparison blocks by exact finite inverse before prior2700/c9/b039 inverses."\n  },\n  "limits": {\n',
+        newRaw:
+          '    "sha256": "b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201",\n    "inverse": "Restore the single finite full-metadata shared-runner branch, then the three finite c9 source-program replacements, then remove the CLOSED FULL SDK SOURCE BODY and INACTIVE FULL SDK SOURCE INTERFACE marked blocks; whole b039 restores.",\n    "apache4D61Carried": true,\n    "sourceBodyOriginalSha256": "45055005b59ad90ff2be1695f1c30ddcd99d4da14ba8c1318ba134a11ac3d361",\n    "sourceBodyDerivedSha256": "f84609083f1f23c57ae206a96fe81fee7171a8b14870dbafc1bc6a05145c47b2",\n    "sourceBodySubstitutions": 25,\n    "operationDerivative": "Explicit full-specific fixed-role acquisition loop with the same seven data bodies; original once-captured source10800/acquisition7200/hooks2700 consumers under the original21600 whole, without rewriting old source recipe identity.",\n    "assemblyInverse": "Restore reviewed source-entry/footer, restore vector and pre-GN data/graph comparison blocks by exact finite inverse before prior2700/c9/b039 inverses."\n  },\n  "limits": {\n',
+        oldSha256:
+          "d2fa88d2b0449bdb854bccbaf1f46c7a261b1a3c6bc360158c6c1b2a9889e7ee",
+        newSha256:
+          "423b6f4ff044dd1f8ef1ee7cf51b83cdde35414b413bbf9c54bcc5c8bafa4dcb",
+      },
+      {
+        oldRaw:
+          '  "parentSdkVerificationImplemented": true,\n  "parentCheckpointVerificationImplemented": true,\n  "compiledCheckpointNativeQualified": false,\n  "sourceSentinelNormalizerImplemented": true,\n  "sourceSentinelNativeQualified": false\n}\n',
+        newRaw:
+          '  "parentSdkVerificationImplemented": true,\n  "parentCheckpointVerificationImplemented": true,\n  "compiledCheckpointNativeQualified": false,\n  "sourceSentinelNormalizerImplemented": true,\n  "sourceSentinelNativeQualified": false,\n  "sourceBootstrapCachePlacement": {\n    "implemented": true,\n    "fullOnly": true,\n    "basename": ".cipd_client_sorng_setup.bat",\n    "upstreamCommit": "c101dcbe0489c455fce7c2247bfee19680b116c3",\n    "gitignoreSha256": "4dba4a2ed70f50373d8260cc393d78c251a17ab52d47b629f3a94af268f6621d",\n    "setupBytes": 1390,\n    "setupSha256": "635209f2b2e2cfd928c73baa08e5f2e17c2f48124a7327b74ffd6b6b9c5e5ce5",\n    "nativeQualified": false\n  }\n}\n',
+        oldSha256:
+          "a46d37af460e418262ef8401ef6a5687a82d0d5a76ea48daccb3316acf8b3767",
+        newSha256:
+          "e022df5d5cecab9cfe6e489bbfd34dcdfcb536fa1efb8a0421ff931c23290804",
+      },
+    ],
+  },
+};
+function fullBootstrapCacheInverse(text, name) {
+  if (name === "workflow") return text; // This repair never changes workflow bytes.
+  const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
+  assert(spec, "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_SCOPE");
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(hash(row.oldRaw), row.oldSha256);
+    assert.equal(
+      text.split(row.newRaw).length,
+      2,
+      "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_COUNT",
+    );
+    text = text.replace(row.newRaw, () => row.oldRaw);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_BYTES",
+  );
+  assert.equal(
+    hash(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_WHOLE",
+  );
+  return text;
+}
+// END EXACT FULL BOOTSTRAP CACHE INVERSE
+
 function sourceAcquisitionInverse(text, name) {
+  return sourceAcquisitionBaselineInverse(
+    fullBootstrapCacheInverse(text, name),
+    name,
+  );
+}
+function sourceAcquisitionBaselineInverse(text, name) {
   const spec = SOURCE_ACQUISITION_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of spec.rows) {
@@ -10736,6 +10934,32 @@ async function fullSourceImageFixture(
     true,
     ts.ScriptKind.JS,
   );
+  const previousCache = previous
+    ? null
+    : fullBootstrapCacheInverse(text, "driver");
+  const previousTree =
+    previousCache &&
+    ts.createSourceFile(
+      "previous-cache.mjs",
+      previousCache,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+  const previousBootstrap = previousTree
+    ? previousTree.statements
+        .find(
+          (node) =>
+            ts.isFunctionDeclaration(node) &&
+            node.name?.text === "bootstrapProgram",
+        )
+        .getText(previousTree)
+        .replace(/^export /, "")
+        .replace(
+          "function bootstrapProgram(",
+          "function previousBootstrapProgram(",
+        )
+    : "";
   let footers = 0;
   const statements = ast.statements.filter((n) => {
     if (ts.isImportDeclaration(n)) return false;
@@ -10750,16 +10974,19 @@ async function fullSourceImageFixture(
     nativeFs = await import("node:fs");
   const { PassThrough } = await import("node:stream");
   let fixedClockProgram;
-  const body = statements
-    .map((n) => n.getText(ast).replace(/^export /, ""))
-    .join("\n")
-    .replace("pinRead = held(", "pinRead = testNativeClockPin(")
-    .replaceAll(
-      "import.meta.url",
-      JSON.stringify(
-        pathToFileURL(path.join(here, "full-sdk-source-driver.mjs")).href,
-      ),
-    );
+  const body =
+    statements
+      .map((n) => n.getText(ast).replace(/^export /, ""))
+      .join("\n")
+      .replace("pinRead = held(", "pinRead = testNativeClockPin(")
+      .replaceAll(
+        "import.meta.url",
+        JSON.stringify(
+          pathToFileURL(path.join(here, "full-sdk-source-driver.mjs")).href,
+        ),
+      ) +
+    "\n" +
+    previousBootstrap;
   const io = {
     ...fs,
     async open(name, ...args) {
@@ -10844,7 +11071,7 @@ async function fullSourceImageFixture(
   const api = new Function(
     ...Object.keys(scope),
     body +
-      "\nreturn {loadFullSourceProfile,sourcePaths,reviewedHostClosure,fullSourceCommands,sourceEnvironment,bootstrapProgram,boundGnArguments,fullSourceProfiles,fullBootstrapAuthority,privateImage,beginFullMetadataSource,qualificationSourceOwners,qualificationOwnerCheck,retireQualificationSource,clockProgram:typeof FULL_SOURCE_CLOCK_PROGRAM==='undefined'?null:FULL_SOURCE_CLOCK_PROGRAM};",
+      "\nreturn {loadFullSourceProfile,sourcePaths,reviewedHostClosure,fullSourceCommands,sourceEnvironment,bootstrapProgram,previousBootstrapProgram:typeof previousBootstrapProgram==='undefined'?null:previousBootstrapProgram,boundGnArguments,fullSourceProfiles,fullBootstrapAuthority,privateImage,beginFullMetadataSource,qualificationSourceOwners,qualificationOwnerCheck,retireQualificationSource,clockProgram:typeof FULL_SOURCE_CLOCK_PROGRAM==='undefined'?null:FULL_SOURCE_CLOCK_PROGRAM};",
   )(...Object.values(scope));
   fixedClockProgram = api.clockProgram;
   const state = {
@@ -11646,15 +11873,25 @@ test("FULL accounting inverse restores every prior whole file and rejects tamper
     const old = sourceAcquisitionInverse(current, name);
     assert.equal(Buffer.byteLength(old), spec.bytes);
     assert.equal(sha(old), spec.sha256);
+    const previousCache = fullBootstrapCacheInverse(current, name);
     for (const row of spec.rows) {
+      assert.equal(previousCache.split(row.newRaw).length, 2);
       assert.throws(() =>
-        sourceAcquisitionInverse(
-          current.replace(row.newRaw, "/*tampered*/" + row.newRaw.slice(1)),
+        sourceAcquisitionBaselineInverse(
+          previousCache.replace(
+            row.newRaw,
+            "/*tampered*/" + row.newRaw.slice(1),
+          ),
           name,
         ),
       );
-      assert.throws(() => sourceAcquisitionInverse(current + row.newRaw, name));
+      assert.throws(() =>
+        sourceAcquisitionBaselineInverse(previousCache + row.newRaw, name),
+      );
     }
+    assert.throws(() =>
+      sourceAcquisitionBaselineInverse(previousCache + "\n", name),
+    );
     assert.throws(() => sourceAcquisitionInverse(current + "\n", name));
   }
 });
@@ -11873,4 +12110,404 @@ test("FULL pending vendor acquisition watchdog consumes live original endpoints 
   falsy.advance(1000, 6350001);
   falsy.watchdog().fn();
   assert.deepEqual(falsy.records, []);
+});
+
+const PINNED_DEPOT_GITIGNORE = {
+  source:
+    '# Ignore any python bytecode.\n*.pyc\n\n# ignore cipd client files\n/.cipd_bin/\n/.cipd_bin_cros_python2\n/.cipd_client*\n/.cipd_client_cache/\n/.versions/\n\n# Ignore "disable auto update" sentinel file.\n.disable_auto_update\n\n# Ignore the batch files produced by the Windows bootstrapping.\n/git-bash\n/git.bat\n/gitk.bat\n/.pylint.d/\n/python\n/python.bat\n/python3.bat\n/ssh.bat\n/ssh-keygen.bat\n/svn\n/svn.bat\n/svnversion.bat\n/.bleeding_edge\n/.codereview_upload_cookies\n/.gitconfig\n/.git_bleeding_edge\n/.git_cl_description_backup\n/.last_codereview_email_address\n/.ssh\n/.subversion\n\n# Ignore locations where third-party tools are placed during bootstrapping.\n/bootstrap*_bin\n/python*_bin\n/python_bin_reldir.txt\n/python3_bin_reldir.txt\n/win_tools*_bin\n/git_bin\n/git-*_bin\n/svn_bin\n/external_bin/\n/win_toolchain/vs2013_files\n/win_toolchain/vs_files\n/win_toolchain/*.timestamps\n/win_toolchain/.vspro\n/win_toolchain/data.json\n/win_toolchain/vs_files.ciopfs\n\n# Ignore ctags/cscope index files\n/TAGS\n/cscope.files\n/cscope.in.out\n/cscope.out\n/cscope.po.out\n/tags\n\n# Ignore unittest related files.\n/testing_support/_infra\n/testing_support/_rietveld\n/tests/git-svn-submodule/\n/tests/subversion_config/README.txt\n/tests/subversion_config/auth\n/tests/subversion_config/servers\n/tests/svn/\n/tests/svnrepo/\n\n# Ignore intermediate isolate files\n*.isolated\n*.isolated.state\n\n# Ignore recipe working directory.\n/.recipe_deps\n/infra/.recipe_deps\n/recipes/.recipe_deps\n\n# Ignore google AE downloaded for running testing only.\ntesting_support/google_appengine\n\n# Ignore emacs / vim backup files.\n*~\n*.swp\n\n# Ignore win/mac monitoring config. It is unique for each depot_tools checkout.\n/metrics.cfg\n/build_telemetry.cfg\n\n# Ignore git traces produced by git push on git-cl upload.\n/traces\n\n# Ignore VsChromium configuration file.\n/vs-chromium-project.txt\n\n# Ignore the file that logs Python 2 scripts run during presubmits.\n/python2_usage.txt\n\n# Ignore gemini-cli configs\n/.gemini/\n\n# Ignore coverage results file and htlp folder.\n.coverage\nhtmlcov/',
+  sha256: "4dba4a2ed70f50373d8260cc393d78c251a17ab52d47b629f3a94af268f6621d",
+};
+
+test("FULL bootstrap cache uses only the genuine held profile and preserves every legacy emitted setup byte", async (t) => {
+  for (const image of ["20261030.294.1", "20261021.278.1"]) {
+    const f = await fullSourceImageFixture(t, { image }),
+      loaded = await f.load();
+    const current = f.api.bootstrapProgram(f.root, loaded.p, f.contextPin),
+      previous = f.api.previousBootstrapProgram(f.root, loaded.p, f.contextPin);
+    const old = "SETUP=DEPOT/'sorng-cipd-setup.bat'",
+      next = "SETUP=DEPOT/'.cipd_client_sorng_setup.bat'";
+    assert.equal(previous.toString().split(old).length, 2);
+    assert.deepEqual(
+      current,
+      Buffer.from(previous.toString().replace(old, next)),
+    );
+    assert.equal(current.toString().split(next).length, 2);
+    const base = JSON.parse(
+        await fs.readFile(path.join(f.here, "profile.json")),
+      ),
+      selected = JSON.parse(
+        await fs.readFile(path.join(f.here, f.full.images[image].profile)),
+      ),
+      policy = JSON.parse(
+        await fs.readFile(
+          path.join(f.here, "private-qualification-profile.json"),
+        ),
+      );
+    const legacy = {
+      ...base,
+      image,
+      sourceGn: selected.sourceGn,
+      privatePolicy: policy,
+      privateSelectedSha256: f.full.images[image].profileSha256,
+    };
+    assert.deepEqual(
+      f.api.bootstrapProgram(f.root, legacy, f.contextPin),
+      f.api.previousBootstrapProgram(f.root, legacy, f.contextPin),
+    );
+    assert(
+      f.api
+        .bootstrapProgram(f.root, legacy, f.contextPin)
+        .toString()
+        .includes(old),
+    );
+    assert.throws(
+      () => f.api.bootstrapProgram(f.root, { ...loaded.p }, f.contextPin),
+      /PRIVATE_IMAGE/,
+    );
+    assert.throws(
+      () => f.api.bootstrapProgram(f.root, loaded.p, "0".repeat(64)),
+      /BOOTSTRAP_BINDING/,
+    );
+    f.api.fullSourceProfiles.delete(loaded.p);
+    assert.throws(
+      () => f.api.bootstrapProgram(f.root, loaded.p, f.contextPin),
+      /PRIVATE_IMAGE/,
+    );
+    assert.equal(f.actors(), 0);
+  }
+});
+
+test("FULL actual generated cache placement is actual Git clean and the same strict preflight body rejects old placement and foreign dirt", async (t) => {
+  const ts = (await import("typescript")).default;
+  const source = await read(
+      prefix + "current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+    ),
+    tree = ts.createSourceFile(
+      "actual-preflight.mjs",
+      source,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    names = new Set([
+      "shape",
+      "relative",
+      "within",
+      "checkedPath",
+      "verifyFile",
+      "preflightSourceCheckout",
+    ]),
+    body = tree.statements
+      .filter(
+        (node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text),
+      )
+      .map((node) => node.getText(tree).replace(/^export /, ""))
+      .join("\n");
+  assert.equal(
+    sha(Buffer.from(PINNED_DEPOT_GITIGNORE.source)),
+    PINNED_DEPOT_GITIGNORE.sha256,
+  );
+  assert.equal(
+    sha(Buffer.from(PINNED_CIPD_SETUP.source)),
+    "3607a1f703b59f213f7fff874cb8d6065b5af17144c66458a0a35e18137069fa",
+  );
+  const setup = deriveBootstrapSetup(Buffer.from(PINNED_CIPD_SETUP.source));
+  assert.equal(setup.length, 1390);
+  assert.equal(
+    sha(setup),
+    "635209f2b2e2cfd928c73baa08e5f2e17c2f48124a7327b74ffd6b6b9c5e5ce5",
+  );
+  const rootFixture = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "bootstrap-cache-git-")),
+  );
+  t.after(() => fs.rm(rootFixture, { recursive: true, force: true }));
+  const checkouts = {
+    cef: path.join(rootFixture, "src", "cef"),
+    chromium: path.join(rootFixture, "src"),
+    depotTools: path.join(rootFixture, "depot_tools"),
+  };
+  const empty = path.join(rootFixture, "empty-config"),
+    hooks = path.join(rootFixture, "empty-hooks");
+  await fs.writeFile(empty, "");
+  await fs.mkdir(hooks);
+  const env = {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: empty,
+    GIT_CONFIG_SYSTEM: empty,
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+  const git = (cwd, args) =>
+    execFileSync("git", ["-C", cwd, ...args], {
+      env,
+      windowsHide: true,
+      timeout: 30000,
+      maxBuffer: 1024 ** 2,
+      encoding: "utf8",
+    }).trim();
+  for (const [name, directory] of Object.entries(checkouts)) {
+    await fs.mkdir(directory, { recursive: true });
+    git(directory, ["init", "--quiet"]);
+    git(directory, ["config", "user.name", "Fixture"]);
+    git(directory, ["config", "user.email", "fixture@example.invalid"]);
+    git(directory, ["config", "core.autocrlf", "false"]);
+    git(directory, ["config", "core.hooksPath", hooks]);
+    git(directory, ["config", "advice.addEmbeddedRepo", "false"]);
+    await fs.writeFile(path.join(directory, "tracked.txt"), "owned fixture\n");
+    if (name === "depotTools")
+      await fs.writeFile(
+        path.join(directory, ".gitignore"),
+        PINNED_DEPOT_GITIGNORE.source,
+      );
+    git(directory, ["add", "."]);
+    git(directory, ["commit", "--quiet", "-m", "Owned benign fixture"]);
+  }
+  const selected = JSON.parse(
+      await read(prefix + "image-qualified-current-profile.json"),
+    ),
+    inputsRoot = path.join(root, selected.sourceGn.namespace),
+    sourceLock = JSON.parse(
+      await fs.readFile(path.join(inputsRoot, "source-lock.json")),
+    );
+  const simulations = [],
+    scope = {
+      path,
+      realpath: fs.realpath,
+      lstat: fs.lstat,
+      createReadStream: (await import("node:fs")).createReadStream,
+      createHash,
+      repositories: { cef: "fixed", chromium: "fixed", depotTools: "fixed" },
+      validateSourceLock: validateSourceLock,
+      identitySha256,
+      fail(message) {
+        throw new Error(message);
+      },
+      async git(directory, args) {
+        // Upstream revision observations only are modeled. Actual Git performs
+        // every clean check; all source input pin reads use the actual readers.
+        if (
+          args.length === 2 &&
+          args[0] === "rev-parse" &&
+          args[1] === "HEAD"
+        ) {
+          const name = Object.keys(checkouts).find(
+            (name) => checkouts[name] === directory,
+          );
+          return sourceLock.upstream[name].commit;
+        }
+        return git(directory, args);
+      },
+      async verifySourcePatchSeries(group) {
+        simulations.push(group.repository);
+      },
+    };
+  const preflight = new Function(
+    ...Object.keys(scope),
+    body + "\nreturn preflightSourceCheckout;",
+  )(...Object.values(scope));
+  const oldFile = path.join(checkouts.depotTools, "sorng-cipd-setup.bat"),
+    newFile = path.join(checkouts.depotTools, ".cipd_client_sorng_setup.bat");
+  await fs.writeFile(oldFile, setup, { flag: "wx" });
+  assert.equal(
+    git(checkouts.depotTools, [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--",
+      ".",
+    ]),
+    "?? sorng-cipd-setup.bat",
+  );
+  await assert.rejects(
+    preflight({ sourceLock, inputsRoot, checkouts }),
+    /^Error: depotTools: clean checkout required; existing changes are never reset$/,
+  );
+  assert.deepEqual(simulations, []);
+  await fs.rename(oldFile, newFile);
+  assert.equal(
+    git(checkouts.depotTools, [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--",
+      ".",
+    ]),
+    "",
+  );
+  const data = await preflight({ sourceLock, inputsRoot, checkouts });
+  assert.equal(data.patchesApplied, false);
+  assert.deepEqual(simulations, ["cef", "chromium"]);
+  assert.deepEqual(await fs.readFile(newFile), setup);
+  await fs.writeFile(
+    path.join(checkouts.depotTools, "foreign.bat"),
+    "foreign\n",
+    { flag: "wx" },
+  );
+  await assert.rejects(
+    preflight({ sourceLock, inputsRoot, checkouts }),
+    /depotTools: clean checkout required/,
+  );
+  // No real upstream source, patch simulation, vendor script or compiler ran.
+});
+
+test("FULL source apply diagnostics retain only closed facts and actual finally preserves falsy or hostile primary errors", async () => {
+  const ts = (await import("typescript")).default,
+    utilTypes = (await import("node:util")).types;
+  const text = await read(prefix + "full-sdk-source-driver.mjs"),
+    tree = ts.createSourceFile(
+      "actual-error-boundary.mjs",
+      text,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    helpers = tree.statements
+      .filter(
+        (node) =>
+          ts.isFunctionDeclaration(node) &&
+          ["fullSourceErrorMessage", "fullSourceApplyDiagnostic"].includes(
+            node.name?.text,
+          ),
+      )
+      .map((node) => node.getText(tree))
+      .join("\n");
+  const api = new Function(
+    "utilTypes",
+    helpers + "\nreturn {fullSourceErrorMessage, fullSourceApplyDiagnostic};",
+  )(utilTypes);
+  const error = new Error(
+    "depotTools: clean checkout required; existing changes are never reset",
+  );
+  assert.deepEqual(api.fullSourceApplyDiagnostic(error), {
+    kind: "windows-arm-source-apply-failure",
+    phase: "source-apply",
+    category: "dirty-checkout",
+    repository: "depotTools",
+  });
+  const patch = new Error(
+    "Patch application failed; applied repositories: cef; current repository: chromium; completed patches: 3. No rollback/reset performed. PRIVATE_PATH SECRET_TOKEN",
+  );
+  patch.code = 1;
+  assert.deepEqual(api.fullSourceApplyDiagnostic(patch), {
+    kind: "windows-arm-source-apply-failure",
+    phase: "source-apply",
+    category: "patch-application",
+    repository: "chromium",
+    completedPatches: 3,
+    appliedRepositories: ["cef"],
+    exitCode: 1,
+  });
+  let getters = 0;
+  const hostile = new Error();
+  Object.defineProperty(hostile, "message", {
+    get() {
+      getters++;
+      throw new Error("PRIVATE_PATH");
+    },
+  });
+  const proxy = new Proxy(new Error("SECRET_TOKEN"), {
+    get() {
+      getters++;
+      throw false;
+    },
+    getOwnPropertyDescriptor() {
+      getters++;
+      throw false;
+    },
+  });
+  for (const value of [
+    false,
+    null,
+    hostile,
+    proxy,
+    {
+      get message() {
+        getters++;
+        throw false;
+      },
+    },
+  ])
+    assert.equal(api.fullSourceApplyDiagnostic(value).category, "unclassified");
+  assert.equal(getters, 0);
+  const fn = tree.statements.find(
+      (node) =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === "runFullSourceBody",
+    ),
+    finallyBody = fn.body.statements
+      .find((node) => ts.isTryStatement(node))
+      .finallyBlock.getText(tree);
+  for (const primary of [false, null, error, hostile, proxy]) {
+    const reports = [],
+      scope = {
+        primary,
+        failed: true,
+        stage: "source-apply",
+        success: false,
+        root: "owned",
+        path,
+        p: { sourceGn: { sourceId: "a".repeat(64) } },
+        qualificationOwner: undefined,
+        fullSourceProfiles: { delete() {} },
+        retireQualificationSource() {},
+        currentProgress: { close() {} },
+        ...api,
+        TARGET: "aarch64-pc-windows-msvc",
+        graph: null,
+        generatedArguments: null,
+        sourceCloseFailure: false,
+        sourceReportingFailure: false,
+        gitPolicy: {},
+        custom: { sourceGitIsolationEvidence: () => ({ fixtureOnly: true }) },
+        fs: {
+          async writeFile(_file, raw) {
+            reports.push(JSON.parse(raw));
+            throw new Error("owned report failure");
+          },
+        },
+      };
+    const run = new Function(
+      ...Object.keys(scope),
+      "return (async()=>{try { throw primary; } finally " +
+        finallyBody +
+        "})()",
+    );
+    let rejected = false,
+      caught;
+    try {
+      await run(...Object.values(scope));
+    } catch (error) {
+      rejected = true;
+      caught = error;
+    }
+    assert.equal(rejected, true);
+    assert.equal(caught, primary);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].success, false);
+    assert.equal(reports[0].stage, "source-apply");
+    assert.equal(reports[0].sdkBuilt, false);
+    assert.equal(JSON.stringify(reports[0]).includes("PRIVATE_PATH"), false);
+    assert.equal(JSON.stringify(reports[0]).includes("SECRET_TOKEN"), false);
+  }
+  assert.equal(getters, 0);
+});
+
+test("FULL bootstrap cache inverse preserves complete previous module profiles and rejects tamper duplicates or extra bytes", async () => {
+  for (const [name, spec] of Object.entries(FULL_BOOTSTRAP_CACHE_HISTORY)) {
+    const raw = (await read(spec.path)).replaceAll("\r\n", "\n"),
+      old = fullBootstrapCacheInverse(raw, name);
+    assert.equal(sha(old), spec.sha256);
+    assert.equal(Buffer.byteLength(old), spec.bytes);
+    for (const row of spec.rows) {
+      assert.throws(() =>
+        fullBootstrapCacheInverse(
+          raw.replace(row.newRaw, "/*tamper*/" + row.newRaw.slice(1)),
+          name,
+        ),
+      );
+      assert.throws(() => fullBootstrapCacheInverse(raw + row.newRaw, name));
+    }
+    assert.throws(() => fullBootstrapCacheInverse(raw + "\n", name));
+  }
 });

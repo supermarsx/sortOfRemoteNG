@@ -668,7 +668,7 @@ async function retireControl(token) {
 const CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.
 const SOURCE_QUALIFICATION_ALLOWED = true;
 const FULL_SOURCE_PROFILE_SHA256 =
-  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";
+  "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e";
 const MODULE_URL = import.meta.url;
 const CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));
 const CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");

@@ -596,7 +596,7 @@ export function bootstrapProgram(root, p, contextSha) {
       `src@${p.sourceChromium}`,
     ],
   };
-  return Buffer.from(
+  const program = Buffer.from(
     String.raw`import sys,os,json,time,stat,hashlib,subprocess
 from pathlib import Path
 P=json.loads(${JSON.stringify(JSON.stringify(policy))})
@@ -808,6 +808,13 @@ if __name__=='__main__':sys.exit(main(sys.argv[1:]))
 `,
     "utf8",
   );
+  if (!fullAuthority) return program; // Preserve every legacy emitted byte.
+  const old = "SETUP=DEPOT/'sorng-cipd-setup.bat'";
+  const text = program.toString("utf8");
+  need(text.split(old).length === 2, "FULL_BOOTSTRAP_SETUP_SOURCE");
+  return Buffer.from(
+    text.replace(old, `SETUP=DEPOT/'${FULL_BOOTSTRAP_SETUP_BASENAME}'`),
+  );
 }
 
 export async function prepareBootstrap(root, p, contextSha, budget) {
@@ -826,7 +833,8 @@ export async function prepareBootstrap(root, p, contextSha, budget) {
 }
 
 export async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {
-  const files = sourcePaths(root, p);
+  const files = sourcePaths(root, p),
+    fullAuthority = fullBootstrapAuthority(root, p, contextSha);
   need(bootstrap.witnessPin !== null, "FULL_BOOTSTRAP_NOT_ATTESTED");
   await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);
   const raw = await held(
@@ -911,7 +919,10 @@ export async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {
   const setup = deriveBootstrapSetup(setupSource);
   need(setup.length <= 512 * 1024 ** 2 - bytes, "FULL_BOOTSTRAP_BYTES");
   await held(
-    path.join(files.depot, "sorng-cipd-setup.bat"),
+    path.join(
+      files.depot,
+      fullAuthority ? FULL_BOOTSTRAP_SETUP_BASENAME : "sorng-cipd-setup.bat",
+    ),
     setup.length,
     budget,
     { bytes: setup.length, sha256: sha(setup), nlink: 1 },
@@ -6518,8 +6529,11 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";
+  "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e";
 const fullSourceProfiles = new WeakMap();
+// The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
+// No ignore file or clean-check exception is created or changed.
+const FULL_BOOTSTRAP_SETUP_BASENAME = ".cipd_client_sorng_setup.bat";
 
 // Actual full source owner and graph receipts are the only metadata issuers.
 // The unchanged private profile below is a pinned data recipe, never full authority.
@@ -8158,6 +8172,74 @@ async function normalizeFullSourceDepotToolsSentinel(root, p, contextPin) {
 }
 // END SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION
 
+// Error details are bounded DATA only. Never read a getter or print raw text.
+function fullSourceErrorMessage(error) {
+  if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
+    return null;
+  const descriptor = Object.getOwnPropertyDescriptor(error, "message");
+  return descriptor &&
+    Object.hasOwn(descriptor, "value") &&
+    typeof descriptor.value === "string" &&
+    descriptor.value.length <= 4096
+    ? descriptor.value
+    : null;
+}
+function fullSourceApplyDiagnostic(error) {
+  const diagnostic = {
+    kind: "windows-arm-source-apply-failure",
+    phase: "source-apply",
+    category: "unclassified",
+  };
+  const message = fullSourceErrorMessage(error);
+  if (message !== null) {
+    const repository =
+      /^(cef|chromium|depotTools): (clean checkout required; existing changes are never reset|checkout root required|source revision mismatch)$/.exec(
+        message,
+      );
+    if (repository) {
+      diagnostic.repository = repository[1];
+      diagnostic.category = repository[2].startsWith("clean checkout")
+        ? "dirty-checkout"
+        : repository[2] === "checkout root required"
+          ? "checkout-root"
+          : "source-revision";
+    } else if (message.startsWith("Digest/size mismatch: "))
+      diagnostic.category = "input-pin";
+    else if (message === "CEF checkout must be chromium/cef for upstream hooks")
+      diagnostic.category = "cef-placement";
+    else {
+      const patch =
+        /^Patch application failed; applied repositories: (none|cef|chromium|cef,chromium); current repository: (cef|chromium); completed patches: ([0-9]{1,2})\. No rollback\/reset performed\./.exec(
+          message,
+        );
+      if (patch && Number(patch[3]) <= 64) {
+        diagnostic.category = "patch-application";
+        diagnostic.repository = patch[2];
+        diagnostic.completedPatches = Number(patch[3]);
+        diagnostic.appliedRepositories =
+          patch[1] === "none" ? [] : patch[1].split(",");
+      }
+    }
+    const code = Object.getOwnPropertyDescriptor(error, "code");
+    if (code && Object.hasOwn(code, "value")) {
+      if (Number.isInteger(code.value) && code.value >= 0 && code.value <= 255)
+        diagnostic.exitCode = code.value;
+      else if (
+        [
+          "ENOENT",
+          "EACCES",
+          "EPERM",
+          "ETIMEDOUT",
+          "ABORT_ERR",
+          "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+        ].includes(code.value)
+      )
+        diagnostic.code = code.value;
+    }
+  }
+  return diagnostic;
+}
+
 async function runFullSourceBody(argv) {
   need(FULL_SOURCE_BODY_ADMITTED, "FULL_SDK_SOURCE_EXECUTION_CLOSED");
   need(
@@ -8695,10 +8777,11 @@ async function runFullSourceBody(argv) {
     fullSourceProfiles.delete(p);
     retireQualificationSource(qualificationOwner);
     currentProgress?.close();
+    const message = fullSourceErrorMessage(primary);
     const code =
-      typeof primary?.message === "string" &&
-      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(primary.message)
-        ? primary.message
+      message !== null &&
+      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)
+        ? message
         : failed
           ? "FULL_SOURCE_FAILED"
           : null;
@@ -8707,6 +8790,9 @@ async function runFullSourceBody(argv) {
       success,
       stage: success ? "complete" : stage,
       firstFailure: success ? null : code,
+      ...(failed && stage === "source-apply"
+        ? { failureDiagnostic: fullSourceApplyDiagnostic(primary) }
+        : {}),
       target: TARGET,
       sourceId: p.sourceGn.sourceId,
       graph,
@@ -8762,11 +8848,12 @@ if (
   Promise.resolve()
     .then(() => fullSdkSourceMain())
     .catch((error) => {
-      const code = /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(
-        error?.message ?? "",
-      )
-        ? error.message
-        : "FULL_SDK_SOURCE_FAILED";
+      const message = fullSourceErrorMessage(error);
+      const code =
+        message !== null &&
+        /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(message)
+          ? message
+          : "FULL_SDK_SOURCE_FAILED";
       console.error(
         JSON.stringify({
           success: false,

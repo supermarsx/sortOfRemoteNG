@@ -311,7 +311,60 @@ const SOURCE_ACQUISITION_HISTORY = {
     ],
   },
 };
+// BEGIN EXACT FULL BOOTSTRAP CACHE INVERSE
+const FULL_BOOTSTRAP_CACHE_HISTORY = {
+  controller: {
+    path: "native/windows-arm-full-sdk/full_sdk_control.mjs",
+    bytes: 175570,
+    sha256: "c15c97aa6e9e14b4b52f633e44419045273ca9645ba4cbcd3641396c95946012",
+    newBytes: 175570,
+    newSha256:
+      "97cb6430200bee3880651d6b597d2ee4f4886dfe6377b484c900a4e727edc294",
+    rows: [
+      {
+        oldRaw:
+          '// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\n',
+        newRaw:
+          '// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\nconst SOURCE_QUALIFICATION_ALLOWED = true;\nconst FULL_SOURCE_PROFILE_SHA256 =\n  "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e";\nconst MODULE_URL = import.meta.url;\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");\nconst bootstrapOwners = new WeakMap();\n',
+        oldSha256:
+          "804b0eacf23d470d16906c8f7b81c08fa5610a991998b9b08680af341950e23d",
+        newSha256:
+          "b25479d0281e8d164381caab15ece3c0dd0b4dac079a8af9989d8f8061182153",
+      },
+    ],
+  },
+};
+function fullBootstrapCacheInverse(text, name) {
+  if (name === "workflow") return text; // This repair never changes workflow bytes.
+  const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
+  assert(spec, "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_SCOPE");
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(hash(row.oldRaw), row.oldSha256);
+    assert.equal(
+      text.split(row.newRaw).length,
+      2,
+      "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_COUNT",
+    );
+    text = text.replace(row.newRaw, () => row.oldRaw);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_BYTES",
+  );
+  assert.equal(
+    hash(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_WHOLE",
+  );
+  return text;
+}
+// END EXACT FULL BOOTSTRAP CACHE INVERSE
+
 function sourceAcquisitionInverse(text, name) {
+  text = fullBootstrapCacheInverse(text, name);
   const spec = SOURCE_ACQUISITION_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of spec.rows) {
