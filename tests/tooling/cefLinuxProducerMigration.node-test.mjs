@@ -952,10 +952,30 @@ const CURRENT_CHECKPOINT_SOURCE_ROWS = LATEST_SOURCE_ROWS.map((row) => ({
   sha: CURRENT_CHECKPOINT_BLOBS[row.path] ?? row.sha,
 }));
 
-test("current checkpoint modeled rows match actual original d70131 Git without altering historical witnesses", () => {
+function currentCheckpointWitness(repositoryRoot) {
+  const raw = git(repositoryRoot, ["show", "HEAD:" + M.policyPath]);
+  assert.equal(raw.length, 18285);
+  assert.equal(
+    core.sha(raw),
+    "42cccf13db7ea726562f68c0bef60797932bf795d96e8a82c469d7809c389c10",
+  );
+  const capsule = JSON.parse(raw);
+  assert.equal(capsule.from.producer, M.producer);
+  assert.equal(capsule.from.checkpointProducer.head, M.head);
+  assert.equal(capsule.from.checkpointProducer.runId, SEED_RUN);
+  assert.equal(capsule.from.checkpointProducer.attempt, 1);
+  assert.equal(capsule.oldSourceTree.length, 131);
+  assert.equal(core.codeTreeDigest(capsule.oldSourceTree), M.producer);
+  return capsule.oldSourceTree;
+}
+
+test("current checkpoint modeled rows match the exact current committed capsule without ancestor Git", () => {
   assert.equal(CURRENT_CHECKPOINT_SOURCE_ROWS.length, 131);
   assert.equal(core.codeTreeDigest(CURRENT_CHECKPOINT_SOURCE_ROWS), M.producer);
-  assert.deepEqual(CURRENT_CHECKPOINT_SOURCE_ROWS, rows(ROOT, M.head));
+  assert.deepEqual(
+    CURRENT_CHECKPOINT_SOURCE_ROWS,
+    currentCheckpointWitness(ROOT),
+  );
   assert.equal(
     core.codeTreeDigest(LATEST_SOURCE_ROWS),
     "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
@@ -964,6 +984,36 @@ test("current checkpoint modeled rows match actual original d70131 Git without a
     core.codeTreeDigest(OLD_SOURCE_ROWS),
     "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",
   );
+});
+
+test("exact current capsule witness works in a one-commit Git fixture with the original producer commit absent", async (t) => {
+  const repo = await scratch(t);
+  git(repo, ["init", "--initial-branch=main"]);
+  git(repo, ["config", "core.autocrlf", "false"]);
+  git(repo, ["config", "user.name", "Shallow witness fixture"]);
+  git(repo, ["config", "user.email", "fixture@example.invalid"]);
+  await fs.mkdir(path.dirname(path.join(repo, M.policyPath)), {
+    recursive: true,
+  });
+  const raw = git(ROOT, ["show", "HEAD:" + M.policyPath]);
+  await fs.writeFile(path.join(repo, M.policyPath), raw);
+  git(repo, ["add", "--", M.policyPath]);
+  git(repo, ["commit", "-m", "One current capsule only"]);
+  assert.equal(
+    git(repo, ["rev-list", "--count", "HEAD"]).toString().trim(),
+    "1",
+  );
+  assert.throws(() => git(repo, ["cat-file", "-e", M.head]));
+  assert.deepEqual(
+    currentCheckpointWitness(repo),
+    CURRENT_CHECKPOINT_SOURCE_ROWS,
+  );
+  const changed = Buffer.from(raw);
+  changed[changed.indexOf(Buffer.from(M.head))] ^= 1;
+  await fs.writeFile(path.join(repo, M.policyPath), changed);
+  git(repo, ["add", "--", M.policyPath]);
+  git(repo, ["commit", "-m", "Reject altered capsule bytes"]);
+  assert.throws(() => currentCheckpointWitness(repo));
 });
 
 async function scratch(t) {
