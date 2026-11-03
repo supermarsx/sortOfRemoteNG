@@ -291,7 +291,7 @@ def source_deadline_value(value, mode):
     require(type(value) is dict and set(value) == keys and value['mode'] == mode and mode in SOURCE_IO_MODES and
             value['phase'] in SOURCE_PHASES and all(count(value[key]) for key in
             ('elapsedMs','phaseMs','walked','hashedFiles','hashedBytes','reusedFiles')) and
-            type(value['seconds']) is int and 0 < value['seconds'] <= SOURCE_LINUX_SECONDS and
+            type(value['seconds']) is int and 0 < value['seconds'] <= max(SOURCE_LINUX_SECONDS, SOURCE_MAC_SECONDS) and
             type(value['phases']) is list and len(value['phases']) <= 64 and
             all(type(item) is list and len(item) == 2 and item[0] in SOURCE_PHASES and count(item[1]) for item in value['phases']) and
             (value['files'] is None) == (value['bytes'] is None) and
@@ -899,6 +899,7 @@ def opened_identity_matches(expected, opened):
 # sysroots, toolchains); only source modes use the longer bound. Pack, restore,
 # seal and external observation keep 600 seconds.
 SOURCE_LINUX_SECONDS = 2400
+SOURCE_MAC_SECONDS = 3600
 SOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))
 # Linux owned-source hashing is I/O-bound (1.2M mostly small files), so it
 # overlaps reads with twice the CPU count, still capped at eight readers.
@@ -907,7 +908,7 @@ SOURCE_LINUX_HASH_WORKERS = max(1, min(2 * (os.cpu_count() or 4), 8))
 
 class Budget:
     def __init__(self, seconds, maximum=600):
-        require(maximum in (600, SOURCE_LINUX_SECONDS) and isinstance(seconds, int) and 0 < seconds <= maximum,
+        require(maximum in (600, SOURCE_LINUX_SECONDS, SOURCE_MAC_SECONDS) and isinstance(seconds, int) and 0 < seconds <= maximum,
                 'deadline-bound')
         self.seconds = seconds
         self.end = time.monotonic() + seconds
@@ -3013,7 +3014,7 @@ def source_metadata_owned(mode, root, sidecar, identity, seconds=600, budget=Non
         source_mac_write_admission(identity)
     require(sys.platform == ('darwin' if platform_policy in ('mac-arm','mac-intel') else 'linux'),
             'source-mac-only' if platform_policy == 'mac-arm' else 'source-linux-only')
-    budget = Budget(seconds, SOURCE_LINUX_SECONDS) if budget is None else budget
+    budget = Budget(seconds, SOURCE_MAC_SECONDS if platform_policy in ('mac-arm','mac-intel') else SOURCE_LINUX_SECONDS) if budget is None else budget
     source_progress_start(getattr(budget, 'seconds', seconds))
     if platform_policy in ('mac-arm','mac-intel'):
         operation=_mac_clang_public_scope if MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is True else _mac_nearby_public_scope
@@ -3568,7 +3569,7 @@ def main():
         with source_io_scope(args.mode):
             context_file = source_io_call('context-read', None, lambda: safe(Path(args.manifest)))
             require(source_io_call('context-read', None, context_file.stat).st_size <= 16384, 'source-context-bound')
-            source_budget = Budget(args.seconds, SOURCE_LINUX_SECONDS)
+            source_budget = Budget(args.seconds, SOURCE_MAC_SECONDS if args.platform_policy in ('mac-arm','mac-intel') else SOURCE_LINUX_SECONDS)
             identity = source_io_call('context-read', None, lambda: source_json(source_read_bytes(context_file, source_budget, 16384)))
         result = source_metadata(args.mode, Path(args.input), Path(args.output), identity, args.seconds, budget=source_budget, platform_policy=args.platform_policy)
     elif args.mode == 'seal':

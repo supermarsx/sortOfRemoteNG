@@ -29,8 +29,8 @@ const PINS = [
   ],
   [
     CORE,
-    243031,
-    "7e250197e9cb9108610dad5757210bdd9939924ab2569d0274182fd8f9cff463",
+    243135,
+    "3ef499315c7cb01d0e091f78b1e1769642b08fe78c1eb6bef9d3d6c6d99b3266",
   ],
   [
     "scripts/lib/cef-mac-sdk-inventory.mjs",

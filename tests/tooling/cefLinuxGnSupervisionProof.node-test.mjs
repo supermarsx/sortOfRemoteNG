@@ -2127,7 +2127,23 @@ const directCaseInverse = [
     ],
   },
 ];
+function withoutMacCompletionFixturePin(source) {
+  const current =
+    '    CORE,\n    243135,\n    "3ef499315c7cb01d0e091f78b1e1769642b08fe78c1eb6bef9d3d6c6d99b3266",';
+  const prior =
+    '    CORE,\n    243031,\n    "7e250197e9cb9108610dad5757210bdd9939924ab2569d0274182fd8f9cff463",';
+  assert.equal(source.split(current).length, 2);
+  const restored = source.replace(current, prior);
+  assert.equal(Buffer.byteLength(restored), 68126);
+  assert.equal(
+    createHash("sha256").update(restored).digest("hex"),
+    "f103615f05757832de476a99bf0ba49d47e1f951bbb488b06b4256cb27e442bd",
+  );
+  return restored;
+}
+
 function withoutHeldByteRecheck(source) {
+  source = withoutMacCompletionFixturePin(source);
   const current = `        for (const row of witnesses) {
           // Timestamp samples can coalesce even when a held file's bytes change.
           const buffer = Buffer.alloc(4097);

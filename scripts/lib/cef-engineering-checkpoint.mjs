@@ -49,7 +49,8 @@ export const LIMITS = Object.freeze({
   // external observation keep archiveMs.
   linuxSourceMetadataMs: 2_400_000,
   // Mac owned-source record/apply/verify hash the complete fetched tree too.
-  macSourceMetadataMs: 2_400_000,
+  macSourceMetadataMs: 3_900_000,
+  macSourceMetadataHelperMs: 3_600_000,
   // Of that bound, the helper's own deadline ends this much earlier so its
   // progress diagnostic is printed before the hard kill.
   linuxSourceMetadataGraceMs: 60_000,
@@ -1862,7 +1863,9 @@ function sourceDeadlineFailure(value, mode) {
     ].every(sourceCount) ||
     !Number.isSafeInteger(value.seconds) ||
     value.seconds <= 0 ||
-    value.seconds > LIMITS.linuxSourceMetadataMs / 1000 ||
+    value.seconds >
+      Math.max(LIMITS.linuxSourceMetadataMs, LIMITS.macSourceMetadataHelperMs) /
+        1000 ||
     (value.files === null) !== (value.bytes === null) ||
     (value.files !== null &&
       (!sourceCount(value.files) ||
@@ -2440,7 +2443,7 @@ export async function archiveCommand(
         ) &&
         typeof args[8] === "string" &&
         /^[1-9][0-9]{0,3}$/.test(args[8]) &&
-        Number(args[8]) <= LIMITS.macSourceMetadataMs / 1000 &&
+        Number(args[8]) <= LIMITS.macSourceMetadataHelperMs / 1000 &&
         ["mac-arm", "mac-intel"].includes(args[10]),
       "Fixed Mac source archive flags required",
     );

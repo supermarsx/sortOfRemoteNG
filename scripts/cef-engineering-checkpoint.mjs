@@ -989,6 +989,9 @@ async function checkpointMain(argv, env, observer) {
                           ? LIMITS.linuxSourceMetadataMs
                           : LIMITS.macSourceMetadataMs,
                         hostRemaining(env),
+                        ...(linuxSource || mode === "source-verify"
+                          ? []
+                          : [context.sourceRemainingMilliseconds()]),
                       ),
                     );
                     fail(timeout > 0, "Source metadata original host deadline");
@@ -1000,8 +1003,12 @@ async function checkpointMain(argv, env, observer) {
                     const helperSeconds = Math.max(
                       1,
                       Math.floor(
-                        (timeout > 2 * grace ? timeout - grace : timeout) /
-                          1000,
+                        Math.min(
+                          timeout > 2 * grace ? timeout - grace : timeout,
+                          linuxSource
+                            ? LIMITS.linuxSourceMetadataMs
+                            : LIMITS.macSourceMetadataHelperMs,
+                        ) / 1000,
                       ),
                     );
                     progress("helper-launch", {
