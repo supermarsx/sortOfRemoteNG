@@ -629,6 +629,16 @@ def acquire_llvm(root, profile, clock):
                 try:
                     response = open_url(request, timeout=min(15, remaining))
                 except Exception as error:
+                    # BEGIN FIXED UPSTREAM HTTP503 RETRY
+                    if (isinstance(error, urllib.error.HTTPError) and
+                            type(error.code) is int and error.code == 503):
+                        try:
+                            error.close()
+                        except BaseException:
+                            raise error  # Preserve this exact acquisition failure.
+                        if attempt < 2:
+                            continue  # Same request, attempts and original clock.
+                    # END FIXED UPSTREAM HTTP503 RETRY
                     if attempt < 2 and upstream_socket_timeout(error):
                         continue
                     raise

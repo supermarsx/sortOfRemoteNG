@@ -1646,5 +1646,170 @@ class ReviewedHostClosureTests(unittest.TestCase):
         self.assertEqual(report['firstFailure'],'ACQ_HASH');self.assertFalse(report['parentHandleClosed'])
 
 
+class LlvmWitness503Tests(unittest.TestCase):
+    """Actual acquisition body with owned benign files and a modeled opener."""
+    RETRY_BLOCK = '''                    # BEGIN FIXED UPSTREAM HTTP503 RETRY
+                    if (isinstance(error, urllib.error.HTTPError) and
+                            type(error.code) is int and error.code == 503):
+                        try:
+                            error.close()
+                        except BaseException:
+                            raise error  # Preserve this exact acquisition failure.
+                        if attempt < 2:
+                            continue  # Same request, attempts and original clock.
+                    # END FIXED UPSTREAM HTTP503 RETRY
+'''
+
+    def previous(self):
+        raw = (HERE / 'acquire.py').read_bytes()
+        self.assertEqual(raw.count(self.RETRY_BLOCK.encode()), 1)
+        old = raw.replace(self.RETRY_BLOCK.encode(), b'', 1)
+        self.assertEqual(len(old), 40214)
+        self.assertEqual(hashlib.sha256(old).hexdigest(), '2cf1c6c262c15c3dc99ab681698e52cb4754e508718b35166cfe395f79e863e0')
+        node = next(n for n in ast.parse(old).body if isinstance(n, ast.FunctionDef) and n.name == 'acquire_llvm')
+        namespace = dict(acquire.__dict__)
+        exec(compile(ast.Module(body=[node], type_ignores=[]), 'exact-previous-acquire-llvm', 'exec'), namespace)
+        return namespace['acquire_llvm']
+
+    def failure(self, code=503, close_error=False):
+        from urllib.error import HTTPError
+        class ObservedHttpError(HTTPError):
+            closes = 0
+            def close(inner):
+                inner.closes += 1
+                if close_error:
+                    raise OSError('secondary close failure')
+                return super().close()
+        return ObservedHttpError('https://invalid.example/PRIVATE', code, 'SECRET_TOKEN', {}, io.BytesIO(b'private body'))
+
+    def fixture(self, first, *, old=False, response='good', expire=None):
+        import base64
+        from types import SimpleNamespace
+        temporary = tempfile.TemporaryDirectory(prefix='llvm-witness-503-')
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        (root / 'archives').mkdir()
+        (root / 'llvm/bin').mkdir(parents=True)
+        acquire.save(root / 'sdk-acquisition.json', dict(archives=[], sdkFiles=[]))
+        p = copy.deepcopy(PROFILE)
+        for name, key in [('clang-cl.exe', 'clangSha256'), ('lld-link.exe', 'lldSha256')]:
+            raw = b'benign tool DATA never executed'
+            (root / 'llvm/bin' / name).write_bytes(raw)
+            p['llvm'][key] = hashlib.sha256(raw).hexdigest()
+        payloads = []
+        for index, row in enumerate(p['upstreamSources']):
+            raw = ('fixed witness %d\n' % index).encode()
+            row['bytes'], row['sha256'] = len(raw), hashlib.sha256(raw).hexdigest()
+            payloads.append(base64.b64encode(raw))
+        now = [0.0, 0.0]
+        clock = acquire.Clock(100, 100, wall=lambda: now[0], mono=lambda: now[1])
+        calls, replies = [], []
+        events = iter(first)
+        def open_url(request, *, timeout):
+            ordinal = next(i for i, row in enumerate(p['upstreamSources']) if row['url'] == request.full_url)
+            calls.append((ordinal, id(request), timeout, request.full_url))
+            if ordinal == 0:
+                event = next(events, None)
+                if event is not None:
+                    if expire == 'wall': now[0] = 100
+                    if expire == 'mono': now[1] = 100
+                    raise event
+            raw, url, status = payloads[ordinal], request.full_url, 200
+            if ordinal == 0:
+                if response == 'redirect': url += '&OTHER=1'
+                if response == 'pin': raw = base64.b64encode(b'wrong witness')
+                if response == 'oversize': raw = b'A' * (4 * 1024**2 + 1)
+                if response == 'status': status = 201
+            reply = Reply(raw, url, status)
+            replies.append(reply)
+            return reply
+        def download(spec, target, current, maximum, url):
+            self.assertIs(current, clock)
+            self.assertEqual(maximum, 192 * 1024**2)
+            self.assertEqual(spec['url'], url)
+            return {'path': str(target), 'bytes': 1, 'sha256': 'a' * 64}
+        with patch.object(acquire, 'opener', return_value=SimpleNamespace(open=open_url)), \
+             patch.object(acquire, 'fixed_download', side_effect=download), \
+             patch.object(acquire, 'extract_tar', return_value=[]):
+            # Build the previous actual function only while its namespace sees
+            # the same modeled network/extraction leaves as the current body.
+            function = self.previous() if old else acquire.acquire_llvm
+            caught = None
+            try:
+                result = function(root, p, clock)
+            except BaseException as error:
+                caught, result = error, None
+        self.assertTrue(all(reply.closed for reply in replies))
+        self.assertEqual((clock.wall_end, clock.mono_end), (100, 100))
+        self.assertTrue(all(call[2] <= 15 for call in calls))
+        return SimpleNamespace(root=root, calls=calls, error=caught, result=result, profile=p)
+
+    def test_actual_503_then_success_old_red_new_green_same_fixed_request(self):
+        first = self.failure()
+        previous = self.fixture([first], old=True)
+        self.assertIs(previous.error, first)
+        self.assertEqual(len(previous.calls), 1)
+        first.close()
+        current_error = self.failure()
+        current = self.fixture([current_error])
+        self.assertIsNone(current.error)
+        self.assertIsNotNone(current.result)
+        self.assertEqual(current_error.closes, 1)
+        self.assertEqual([row[0] for row in current.calls], [0, 0, 1, 2])
+        self.assertEqual(current.calls[0][1:], current.calls[1][1:])
+        self.assertTrue((current.root / 'acquisition.json').is_file())
+
+    def test_503_exhaustion_is_exact_three_and_retains_final_error_and_phase(self):
+        errors = [self.failure() for _ in range(3)]
+        current = self.fixture(errors)
+        self.assertIs(current.error, errors[-1])
+        self.assertEqual(len(current.calls), 3)
+        self.assertTrue(all(error.closes == 1 for error in errors))
+        self.assertEqual(producer.llvm_failure_diagnostic(current.error),
+                         dict(stage='upstream-witness', ordinal=0, category='http', httpStatus=503))
+        self.assertFalse((current.root / 'acquisition.json').exists())
+
+    def test_non503_auth_and_untyped_codes_remain_immediate_no_retry(self):
+        for code in (401, 403, 404, 429, 502, 504, '503', True):
+            with self.subTest(code=code):
+                error = self.failure(code)
+                current = self.fixture([error])
+                self.assertIs(current.error, error)
+                self.assertEqual(len(current.calls), 1)
+                error.close()
+
+    def test_redirect_pin_size_and_status_still_deny_without_another_attempt(self):
+        for response, expected in [('redirect', 'ACQ_RESPONSE'), ('pin', 'ACQ_SOURCE_PIN'),
+                                   ('oversize', 'ACQ_SOURCE_SIZE'), ('status', 'ACQ_RESPONSE')]:
+            with self.subTest(response=response):
+                error = self.failure()
+                current = self.fixture([error], response=response)
+                self.assertEqual(str(current.error), expected)
+                self.assertEqual(len(current.calls), 2)
+                self.assertEqual(error.closes, 1)
+                target = current.root / 'chromium' / current.profile['upstreamSources'][0]['path']
+                self.assertFalse(target.exists())
+
+    def test_shared_original_wall_or_monotonic_expiry_prevents_second_open(self):
+        for domain in ('wall', 'mono'):
+            error = self.failure()
+            current = self.fixture([error], expire=domain)
+            self.assertEqual(str(current.error), 'ACQ_DEADLINE')
+            self.assertEqual(len(current.calls), 1)
+            self.assertEqual(error.closes, 1)
+
+    def test_http503_close_fault_preserves_primary_and_typed_socket_retry_is_unchanged(self):
+        error = self.failure(close_error=True)
+        current = self.fixture([error])
+        self.assertIs(current.error, error)
+        self.assertEqual(len(current.calls), 1)
+        self.assertEqual(error.closes, 1)
+        error.fp.close()
+        from urllib.error import URLError
+        current = self.fixture([URLError(TimeoutError()), TimeoutError()])
+        self.assertIsNone(current.error)
+        self.assertEqual([row[0] for row in current.calls], [0, 0, 0, 1, 2])
+
+
 if __name__ == "__main__":
     unittest.main()
