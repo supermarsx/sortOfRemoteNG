@@ -12,7 +12,7 @@ export const WORKFLOW =
   "supermarsx/sortOfRemoteNG/.github/workflows/cef-linux-producer-migration-proof.yml@" +
   BRANCH;
 export const CODE_DIGEST =
-  "28c0ab055d426c69391a78a13d1de4a4c1e75aad6d6c42e7dc34523e42334a40";
+  "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const SELF = "tests/fixtures/cef/linux_migration_proof_carrier.mjs";
 const CORE = "scripts/lib/cef-linux-producer-migration.mjs";
@@ -255,7 +255,7 @@ export function verifySubjectBytes(raw) {
     Buffer.isBuffer(raw) &&
       raw.length === 123579 &&
       sha(raw) ===
-        "b2723d5d76ed66221502c2a21e30e9ef1452b1741cadd53c40a3bb62e2a040e8",
+        "5ff0697c65cbce88ca405f04d6f313a60204e3ad69a17e812d628337dc9f910c",
     "SOURCE",
   );
 }
