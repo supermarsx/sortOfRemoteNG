@@ -3482,6 +3482,28 @@ test("migration diagnostics preserve the complete old a41 core and e0f transacti
   ).replaceAll("\r\n", "\n");
   for (const [current, prior] of [
     [
+      "  macSourceMetadataMs: 3_900_000,\n  macSourceMetadataHelperMs: 3_600_000,",
+      "  macSourceMetadataMs: 2_400_000,",
+    ],
+    [
+      "Number(args[8]) <= LIMITS.macSourceMetadataHelperMs / 1000",
+      "Number(args[8]) <= LIMITS.macSourceMetadataMs / 1000",
+    ],
+    [
+      "value.seconds >\n      Math.max(LIMITS.linuxSourceMetadataMs, LIMITS.macSourceMetadataHelperMs) /\n        1000",
+      "value.seconds > LIMITS.linuxSourceMetadataMs / 1000",
+    ],
+  ]) {
+    assert.equal(old.split(current).length, 2);
+    old = old.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(old), 243031);
+  assert.equal(
+    core.sha(old),
+    "7e250197e9cb9108610dad5757210bdd9939924ab2569d0274182fd8f9cff463",
+  );
+  for (const [current, prior] of [
+    [
       "  archiveMs: 600_000,\n  // Linux owned-source metadata only (record/apply/verify without a Mac\n  // platform policy): it hashes the whole fetched tree. Pack, restore and\n  // external observation keep archiveMs.\n  linuxSourceMetadataMs: 2_400_000,\n  // Mac owned-source record/apply/verify hash the complete fetched tree too.\n  macSourceMetadataMs: 2_400_000,\n  // Of that bound, the helper's own deadline ends this much earlier so its\n  // progress diagnostic is printed before the hard kill.\n  linuxSourceMetadataGraceMs: 60_000,\n  macSourceMetadataGraceMs: 60_000,\n  compileMs: 15 * 60_000,\n  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n",
       "  archiveMs: 600_000,\n  // Linux owned-source metadata only (record/apply/verify without a Mac\n  // platform policy): it hashes the whole fetched tree. Pack, restore and\n  // every Mac mode keep archiveMs.\n  linuxSourceMetadataMs: 2_400_000,\n  // Of that bound, the helper's own deadline ends this much earlier so its\n  // progress diagnostic is printed before the hard kill.\n  linuxSourceMetadataGraceMs: 60_000,\n  compileMs: 15 * 60_000,\n  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n",
     ],
