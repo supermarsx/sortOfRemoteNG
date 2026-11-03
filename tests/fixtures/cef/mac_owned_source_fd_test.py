@@ -257,8 +257,9 @@ class OwnedFilesystem(unittest.TestCase):
         self.assertEqual(scope.unknown,1);self.assertEqual(scope.active,0);self.assertEqual(scope.opened,scope.close_attempts)
     @unittest.skipUnless(sys.platform=='darwin','Actual Darwin birth/uid/gid/nlink')
     def test_actual_darwin_owned_leaf_nearmisses_deny(self):
-        policy={'mac':True,'ownedMacArm':True,'_directories':{},'_nearby_literals':None,'_clang_literals':None}
-        budget=self.m.Budget(10);before=self.m.stamp(self.root.stat());local=self.m.source_local(self.root.stat(),policy)
+        budget=self.m.Budget(10)
+        policy={**self.m.source_repositories(self.root,budget),'mac':True,'ownedMacArm':True,'_directories':{},'_nearby_literals':None,'_clang_literals':None}
+        before=self.m.stamp(self.root.stat());local=self.m.source_local(self.root.stat(),policy)
         rows,_=self.m.inventory(self.root,budget,source_policy=policy);rows=[r for r in rows if r['kind']=='file']
         def dispatch(values):return self.m._source_mac_fd_hashes(self.root,values,budget,policy,before,local,{'hashedFiles':0,'hashedBytes':0})
         expected={r['path']:self.m.source_hash(self.root,r,budget,policy)for r in rows}
