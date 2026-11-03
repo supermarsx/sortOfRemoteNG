@@ -8,6 +8,7 @@ HERE=Path(__file__).resolve().parent
 def load(name,path):
     spec=importlib.util.spec_from_file_location(name,path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 P=None;RAW=None;PROTOTYPE_RAW=None
+NATURAL_ABA_OBSERVATIONS=[]
 def configure(prototype,raw,prototype_raw):
     global P,RAW,PROTOTYPE_RAW
     assert len(raw)==209410 and hashlib.sha256(raw).hexdigest()=='3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6'
@@ -84,6 +85,42 @@ class Controls(unittest.TestCase):
         with patch.object(P.Leaf,'open',aba):
             with self.assertRaises(BaseException):self.snapshot()
         self.closed()
+    def test_natural_ancestor_rename_aba_has_only_boundary_observation(self):
+        expected=self.snapshot(self.m);original=P.Leaf.open;changed=[];ancestor=self.root/'outer/ancestor';saved=self.root/'outer/saved';observed=[]
+        def aba(leaf,mode):
+            if not changed:
+                changed.append(True);scope=leaf.scope
+                ancestor.rename(saved);saved.rename(ancestor)  # No sleep/utime or forced timestamp mutation.
+                observed.append(any(scope.m.source_local((scope.root/name).lstat(),scope.policy)!=scope.policy['_directories'][name]
+                                    for name in ('outer','outer/ancestor','outer/ancestor/deep','outer/ancestor/deep/parent')))
+            return original(leaf,mode)
+        denied=False;value=None
+        with patch.object(P.Leaf,'open',aba):
+            try:value=self.snapshot()
+            except BaseException:denied=True
+        self.assertTrue(observed)
+        if observed[0]:self.assertTrue(denied)
+        if not denied:self.assertEqual(value,expected)
+        NATURAL_ABA_OBSERVATIONS.append({'originalTupleChanged':observed[0],'denied':denied,'acceptedSnapshotEqualsBaseline':None if denied else value==expected})
+        self.closed()
+    def test_persistent_intermediate_symlink_during_batch_denies(self):
+        original=P.Leaf.open;calls=[];lock=threading.Lock();ancestor=self.root/'outer/ancestor';saved=self.base/'saved-ancestor'
+        def replace(leaf,mode):
+            with lock:calls.append(True);selected=len(calls)==2
+            if selected:ancestor.rename(saved);ancestor.symlink_to(saved,target_is_directory=True)
+            return original(leaf,mode)
+        with patch.object(P.Leaf,'open',replace):
+            with self.assertRaises(BaseException):self.snapshot()
+        self.assertTrue(ancestor.is_symlink());self.assertTrue(saved.is_dir());self.closed()
+    def test_parent_replacement_during_batch_preserves_foreign_tree(self):
+        original=P.Leaf.open;calls=[];lock=threading.Lock();saved=self.base/'saved-parent'
+        def replace(leaf,mode):
+            with lock:calls.append(True);selected=len(calls)==2
+            if selected:self.parent.rename(saved);self.parent.mkdir();(self.parent/'foreign').write_bytes(b'preserve')
+            return original(leaf,mode)
+        with patch.object(P.Leaf,'open',replace):
+            with self.assertRaises(BaseException):self.snapshot()
+        self.assertEqual((self.parent/'foreign').read_bytes(),b'preserve');self.closed()
     def test_read_primary_survives_close_secondary(self):
         class FalseError(ValueError):
             def __bool__(self):return False
@@ -103,10 +140,10 @@ class Controls(unittest.TestCase):
             with self.assertRaises(BaseException):self.snapshot(budget=budget)
         self.closed()
     def test_root_replacement_preserves_foreign_tree(self):
-        original=P.Leaf.open;changed=[];saved=self.base/'saved-root'
+        original=P.Leaf.open;calls=[];lock=threading.Lock();saved=self.base/'saved-root'
         def replace(leaf,mode):
-            if not changed:
-                changed.append(True);self.root.rename(saved);self.root.mkdir();(self.root/'foreign').write_bytes(b'preserve')
+            with lock:calls.append(True);selected=len(calls)==2
+            if selected:self.root.rename(saved);self.root.mkdir();(self.root/'foreign').write_bytes(b'preserve')
             return original(leaf,mode)
         with patch.object(P.Leaf,'open',replace):
             with self.assertRaises(BaseException):self.snapshot()

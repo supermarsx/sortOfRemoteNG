@@ -13,7 +13,31 @@ TEMP=Path('/Users/runner/work/_temp')
 PHASE='authority'
 CONTROL_RESULT=None
 PROTOTYPE_SHA='2d3c5710df44e04b38abcdd98909fc72db7c0fc7f70db094d0695d8705f005cd'
-CONTROL_SHA='f9f442eb7339a7d074201538e4abc660d85f1f4f06459cd1d51a2fa93f617322'
+CONTROL_SHA='c167fc60cb7d2c6a0ec947b64d582f7b68f2fc8009ee58f75176b8a9348c9a46'
+def coalesced_prototype_source(raw):
+    require(type(raw)is bytes and len(raw)==14227 and hashlib.sha256(raw).hexdigest()==PROTOTYPE_SHA)
+    substitutions=[
+      (b'            fd,owned=self.parent(parent)\n            for row in rows:\n',b'            fd,owned=self.parent(parent)\n            self.directory_check(parent,fd)\n            for row in rows:\n'),
+      (b'                self.directory_check(parent,fd)\n                leaf=Leaf',b'                leaf=Leaf'),
+      (b'                self.directory_check(parent,fd);self.budget.check()\n',b'                self.budget.check()\n')]
+    value=raw
+    for old,new in substitutions:require(value.count(old)==1);value=value.replace(old,new,1)
+    restored=value
+    for old,new in reversed(substitutions):require(restored.count(new)==1);restored=restored.replace(new,old,1)
+    require(restored==raw and value.count(b'self.ancestry_check(parent);self.directory_check(parent,fd)')==1)
+    return value,{'wholeInverseExact':True,'baseSha256':PROTOTYPE_SHA,'derivedSha256':hashlib.sha256(value).hexdigest(),'batchCap':32,'boundary':'Before-and-after accepted batch; not continuous namespace monitoring or atomic CAS'}
+def run_controls(controls_raw,path,prototype,helper_raw,prototype_raw,budget):
+    global CONTROL_RESULT
+    controls=types.ModuleType('fixed_hash_controls');controls.__file__=str(path)
+    exec(compile(controls_raw,str(path),'exec'),controls.__dict__);controls.configure(prototype,helper_raw,prototype_raw)
+    class Result(unittest.TextTestResult):
+        def startTest(self,test):budget.check();super().startTest(test)
+    result=unittest.TextTestRunner(stream=io.StringIO(),verbosity=0,resultclass=Result).run(unittest.defaultTestLoader.loadTestsFromModule(controls))
+    failed=[test._testMethodName for test,_ in result.failures+result.errors]
+    require(all(re.fullmatch('test_[a-z_]{1,120}',name)for name in failed))
+    CONTROL_RESULT={'tests':result.testsRun,'skipped':len(result.skipped),'failures':len(result.failures),'errors':len(result.errors),'failedTests':failed,'naturalABAObservations':list(controls.NATURAL_ABA_OBSERVATIONS)}
+    require(result.wasSuccessful()and result.testsRun==18 and not result.skipped)
+    return CONTROL_RESULT
 def require(ok):
     if not ok:raise RuntimeError('BENCHMARK_CONTRACT')
 def identity(s):return (s.st_dev,s.st_ino,s.st_size,s.st_mode,s.st_nlink,s.st_mtime_ns,s.st_ctime_ns)
@@ -121,15 +145,7 @@ def main():
     PHASE='prototype-controls'
     prototype=types.ModuleType('fixed_hash_prototype');prototype.__file__=str(prototype_path)
     exec(compile(prototype_raw,str(prototype_path),'exec'),prototype.__dict__)
-    controls=types.ModuleType('fixed_hash_controls');controls.__file__=str(controls_path)
-    exec(compile(controls_raw,str(controls_path),'exec'),controls.__dict__);controls.configure(prototype,raw,prototype_raw)
-    class Result(unittest.TextTestResult):
-        def startTest(self,test):budget.check();super().startTest(test)
-    result=unittest.TextTestRunner(stream=io.StringIO(),verbosity=0,resultclass=Result).run(unittest.defaultTestLoader.loadTestsFromModule(controls))
-    failed=[test._testMethodName for test,_ in result.failures+result.errors]
-    require(all(re.fullmatch('test_[a-z_]{1,120}',name)for name in failed))
-    CONTROL_RESULT={'tests':result.testsRun,'skipped':len(result.skipped),'failures':len(result.failures),'errors':len(result.errors),'failedTests':failed}
-    require(result.wasSuccessful()and result.testsRun==15 and not result.skipped)
+    base_control_result=run_controls(controls_raw,controls_path,prototype,raw,prototype_raw,budget)
     PHASE='prototype-snapshot';candidate,observations,inverse=prototype.snapshot_module(raw);candidate_snapshots=[]
     for _ in range(2):
         budget.check();begin=time.monotonic();candidate.source_progress_start(budget.seconds)
@@ -159,14 +175,39 @@ def main():
                     observation['submittedBatches']==observation['retiredBatches'])
         variants.append({'workers':workers,'fixedConstantInverseExact':True,'prototypeVariantSha256':hashlib.sha256(variant_raw).hexdigest(),
                          'inverse':variant_inverse,'snapshots':variant_snapshots,'observations':variant_observations})
+    PHASE='coalesced-controls';coalesced_raw,coalesced_derivation=coalesced_prototype_source(prototype_raw)
+    coalesced=types.ModuleType('fixed_coalesced_prototype');coalesced.__file__=str(prototype_path)
+    exec(compile(coalesced_raw,str(prototype_path),'exec'),coalesced.__dict__)
+    coalesced_control_result=run_controls(controls_raw,controls_path,coalesced,raw,prototype_raw,budget)
+    PHASE='coalesced-snapshots';coalesced_variants=[]
+    for workers in (1,2):
+        old=b'WORKERS=4\n';new=('WORKERS='+str(workers)+'\n').encode()
+        require(coalesced_raw.count(old)==1);variant_raw=coalesced_raw.replace(old,new,1)
+        require(variant_raw.count(new)==1 and variant_raw.replace(new,old,1)==coalesced_raw)
+        variant=types.ModuleType('fixed_coalesced_'+str(workers));variant.__file__=str(prototype_path)
+        exec(compile(variant_raw,str(prototype_path),'exec'),variant.__dict__)
+        alternative,observed,variant_inverse=variant.snapshot_module(raw);timings=[]
+        for _ in range(2):
+            budget.check();begin=time.monotonic();alternative.source_progress_start(budget.seconds)
+            value=alternative.source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+            alternative.source_phase('done');require(value==previous)
+            timings.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in alternative.SOURCE_PROGRESS['phases']]})
+        require(len(observed)==2)
+        for item in observed:
+            require(item['workers']==item['pendingCap']==workers and item['peakFDs']<=1+2*workers and
+                    item['unknownCloses']==0 and item['opened']==item['closed']==item['closeAttempts'] and
+                    item['submittedBatches']==item['retiredBatches'])
+        coalesced_variants.append({'workers':workers,'fixedConstantInverseExact':True,'prototypeVariantSha256':hashlib.sha256(variant_raw).hexdigest(),
+                                  'inverse':variant_inverse,'snapshots':timings,'observations':observed})
     pin(repo/HELPER,209410,HELPER_SHA);pin(Path(__file__),65536,self_pin['sha256']);pin(workflow,65536,workflow_pin['sha256']);budget.check()
     pin(prototype_path,65536,PROTOTYPE_SHA);pin(controls_path,65536,CONTROL_SHA)
     pin(repo/'.git/HEAD',41,head_sha)
     report={'schemaVersion':1,'kind':'mac-source-hash-benign-benchmark','head':env['GITHUB_SHA'],'runId':env['GITHUB_RUN_ID'],'attempt':env['GITHUB_RUN_ATTEMPT'],
       'image':env['ImageVersion'],'platform':platform.platform(),'pythonVersion':platform.python_version(),'cpuCount':os.cpu_count(),'currentWorkers':configured,
       'helper':helper_pin,'python':python_pin,'fixture':self_pin,'workflow':workflow_pin,'files':4000,'bytes':sum(r['stamp'][0]for r in rows),'results':results,'snapshots':snapshots,
-      'prototype':prototype_pin,'controls':controls_pin,'controlResult':CONTROL_RESULT,'prototypeInverse':inverse,'prototypeSnapshots':candidate_snapshots,'prototypeObservations':observations,
+      'prototype':prototype_pin,'controls':controls_pin,'controlResult':base_control_result,'controlWorkerCount':4,'prototypeInverse':inverse,'prototypeSnapshots':candidate_snapshots,'prototypeObservations':observations,
       'fixedWorkerVariants':variants,
+      'coalescedDerivation':coalesced_derivation,'coalescedControls':coalesced_control_result,'coalescedControlWorkerCount':4,'coalescedVariants':coalesced_variants,
       'snapshotScope':'Creation-owned internal read-only Mac DATA fixture only','fixturePreservedForHostTeardown':True,'runtimeReady':False,'nativeQualified':False}
     PHASE='report';raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode();require(len(raw)<=32768)
     target=TEMP/'cef-mac-hash-benchmark-report.json'
