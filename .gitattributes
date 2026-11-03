@@ -76,3 +76,4 @@ native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/**
 native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/** -text -whitespace
 tests/fixtures/cef/windows-arm-full-sdk-historical/** -text
 native/cef-build-inputs/20261026-r5-capsule23-windows-arm64-cross-x64-external-webview/** -text -whitespace
+native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json -text

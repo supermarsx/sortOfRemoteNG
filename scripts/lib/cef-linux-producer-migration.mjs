@@ -42,11 +42,11 @@ import {
 export const LINUX_MIGRATION = Object.freeze({
   target: "aarch64-unknown-linux-gnu",
   source: "8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb",
-  head: "d70a98f07342cc823d37441e0a42daa2d7b90100",
-  producer: "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+  head: "d9e52c2acebb2acaa9624f00a7d226f6d3528954",
+  producer: "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
   sourceFiles: 131,
   policyPath:
-    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json",
   sidecar: ".siso_sorng_source_metadata.json",
   metadataPolicy: "sorng-linuxarm-complete-owned-inputs-v2-nearby-literals",
   epoch: "1790626028",

@@ -88,3 +88,4 @@ native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char
 # Canonical JSON bytes are verified by the fixed Windows SDK producer.
 native/windows-arm-full-sdk/private-qualification-profile.json
 native/windows-arm-full-sdk/sdk-origin-review.json
+native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json

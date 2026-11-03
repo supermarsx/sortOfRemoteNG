@@ -41,15 +41,15 @@ const ROOT = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
 const REPOSITORY = "supermarsx/sortOfRemoteNG";
 const NATIVE_WORKFLOW = ".github/workflows/cef-runtime-acceptance.yml";
 export const ENGINEERING_PRODUCER =
-  "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864";
+  "28c0ab055d426c69391a78a13d1de4a4c1e75aad6d6c42e7dc34523e42334a40";
 export const ENGINEERING_PRODUCERS = Object.freeze({
   // Source binding only. A future actual successful run and both independent
   // completion/native seals are still mandatory; no failed run is selected.
   "aarch64-unknown-linux-gnu":
-    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
+    "28c0ab055d426c69391a78a13d1de4a4c1e75aad6d6c42e7dc34523e42334a40",
   "x86_64-apple-darwin": ENGINEERING_PRODUCER,
   "aarch64-apple-darwin":
-    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",
+    "28c0ab055d426c69391a78a13d1de4a4c1e75aad6d6c42e7dc34523e42334a40",
 });
 export const ENGINEERING_REVIEW_KIND =
   "sorng-cef-engineering-sdk-publication-review";
