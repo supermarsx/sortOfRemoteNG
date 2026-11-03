@@ -8,7 +8,881 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import { deflateRawSync } from "node:zlib";
 import * as original from "../../scripts/lib/cef-windows-arm-sdk-origin.mjs";
+// Explicit MODELED native/process/API outcomes. Actual helper, exact128 path
+// inventory, held Git loader, raw JSON/ZIP validators and binding registry run.
+function rawModeledPacket(f, image = "20261030.294.1", manifestPadding = 0) {
+  const id = sourceTuples[image].sourceLockIdentity,
+    sources = f.policy.producerInputs;
+  const evidence = (v, pretty = false) => {
+    const b = pretty ? Buffer.from(JSON.stringify(v, null, 2) + "\n") : raw(v);
+    return { ...pin(b), base64: b.toString("base64") };
+  };
+  const pinOf = ({ bytes, sha256 }) => ({ bytes, sha256 });
+  const source = {
+    kind: "windows-arm-full-sdk-context",
+    mode: "full-sdk-source-gn",
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: "1010282954",
+    workflow: original.WINDOWS_ARM_SDK_WORKFLOW,
+    policy: original.WINDOWS_ARM_SDK_POLICY,
+    defaultBranch: "main",
+    inputs: { restore_run: "0" },
+    checkpointRestore: null,
+    sourceProfileSha256: sourceTuples[image].sourceProfileSha256,
+    ref: "refs/heads/main",
+    event: "workflow_dispatch",
+    visibility: "public",
+    head: f.head,
+    workflowSha: f.head,
+    runId: "123",
+    attempt: "1",
+    image,
+    sourceId: id,
+    target: original.WINDOWS_ARM_SDK_TARGET,
+    sources,
+    originPolicySha256: f.policySha,
+    wallWholeEnd: 21600,
+    monotonicWholeEnd: 21600,
+    wallWorkEnd: 7200,
+    monotonicWorkEnd: 7200,
+    wallAcquisitionEnd: 4500,
+    monotonicAcquisitionEnd: 4500,
+  };
+  const sourceRow = evidence(source),
+    sourcePin = pinOf(sourceRow);
+  const fixedInput = (name) => {
+    const i = sources.findIndex((r) => r.path === name);
+    assert(i >= 0);
+    return { relative: "source-inputs/" + i, ...pinOf(sources[i]) };
+  };
+  const out = "source-checkout/src/out/Release_GN_arm64/";
+  const metadataFiles = [
+    "private-qualification-profile.json",
+    "engine-qualification-profile.json",
+  ]
+    .map((n) => fixedInput("native/windows-arm-full-sdk/" + n))
+    .concat(
+      [
+        "private-qualification-logs/qual-gn-desc-pa.stdout.log",
+        "private-qualification-logs/qual-gn-desc-cef.stdout.log",
+        "private-qualification-logs/qual-gn-args.stdout.log",
+        out + "args.gn",
+        out +
+          "gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h",
+        out + "gen/cef/include/cef_config.h",
+        "full-metadata-result.json",
+      ].map((relative) => ({ relative, bytes: 17, sha256: H })),
+    );
+  const sdkFiles = [
+    {
+      path: "Release/libcef.dll",
+      type: "file",
+      size: 17,
+      sha256: "8".repeat(64),
+    },
+    { path: "Release/bootstrap.exe", type: "file", size: 17, sha256: H },
+  ];
+  const archive = {
+    name: "sorng-cef-custom-" + id + "-" + source.target + ".tar.bz2",
+    bytes: 17,
+    sha256: H,
+  };
+  const receipt = {
+    schemaVersion: 1,
+    kind: "sorng-cef-custom-build-receipt",
+    target: source.target,
+    sourceLockSha256: id,
+    archiveSha256: archive.sha256,
+    sdkInventorySha256: digest(Buffer.from(JSON.stringify(sort(sdkFiles)))),
+  };
+  const manifest = {
+    schemaVersion: 1,
+    kind: "sorng-cef-custom-runtime",
+    sourceLockSha256: id,
+    artifacts: [
+      {
+        target: source.target,
+        archive: {
+          path: archive.name,
+          size: archive.bytes,
+          sha256: archive.sha256,
+        },
+        sdkFiles,
+        runtime: {
+          library: "Release/libcef.dll",
+          sandbox: "Release/bootstrap.exe",
+        },
+      },
+    ],
+  };
+  if (manifestPadding)
+    manifest.boundedDataPadding = "x".repeat(manifestPadding);
+  const bundleMetadata = {
+    manifest: evidence(manifest, true),
+    receipt: evidence(receipt, true),
+  };
+  const assets = [
+    { name: "runtime.json", bytes: 17, sha256: H },
+    { name: "source-lock.json", bytes: 6153, sha256: "9".repeat(64) },
+    { name: "manifest.json", ...pinOf(bundleMetadata.manifest) },
+    { name: "receipt.json", ...pinOf(bundleMetadata.receipt) },
+    archive,
+  ];
+  const phases = {},
+    kernel = JSON.parse(
+      Buffer.from(packet(f).compile.jobReceipt.base64, "base64"),
+    );
+  let prior = null;
+  const sourceNative = { "context.json": sourceRow };
+  for (const [i, role] of [
+    "probe-clang",
+    "probe-link",
+    "cef-engine",
+    "package",
+  ].entries()) {
+    const p = {
+      schemaVersion: 1,
+      kind: "windows-arm-full-sdk-engine-context",
+      mode: "full-sdk-engine",
+      role,
+      sourceContextSha256: sourcePin.sha256,
+      image,
+      sourceId: id,
+      target: source.target,
+      wallWholeEnd: 21600,
+      monotonicWholeEnd: 21600,
+      wallPhaseEnd: 18000,
+      monotonicPhaseEnd: 18000,
+      parentPid: 100,
+      parentCreationFiletime: "1000",
+      metadataFiles,
+      gitPolicyFiles: [
+        {
+          relative: "full-sdk-control/cef-source-git-policy/global.gitconfig",
+          bytes: 17,
+          sha256: H,
+        },
+        {
+          relative: "full-sdk-control/cef-source-git-policy/system.gitconfig",
+          bytes: 0,
+          sha256: digest(Buffer.alloc(0)),
+        },
+      ],
+      prior,
+    };
+    const pp = evidence(p),
+      launch = {
+        kind: "windows-arm-full-sdk-engine-launch",
+        role,
+        contextSha256: pp.sha256,
+        ownPid: 110 + i,
+        ownCreationFiletime: String(1100 + i),
+        parentPid: 100,
+        parentCreationFiletime: "1000",
+      };
+    const jp = evidence(
+      { ...kernel, rootPid: 210 + i, rootCreationFiletime: String(2100 + i) },
+      true,
+    );
+    const close = {
+      kind: "windows-arm-full-sdk-engine-launcher-close",
+      role,
+      ownPid: launch.ownPid,
+      ownCreationFiletime: launch.ownCreationFiletime,
+      parentPid: 100,
+      parentCreationFiletime: "1000",
+      sourceContextSha256: sourcePin.sha256,
+      parentHandleClosed: true,
+      ownHandleClosed: true,
+      success: true,
+      sdkBuilt: false,
+      nativeAcceptance: false,
+      jobSeconds: 1,
+      ...(role === "cef-engine" ? { completion: "success" } : {}),
+    };
+    const result = {
+      kind: "windows-arm-full-sdk-engine-worker-result",
+      role,
+      sourceContextSha256: sourcePin.sha256,
+      image,
+      sourceId: id,
+      success: true,
+      engineComplete: role === "cef-engine",
+      sdkBuilt: role === "package",
+      nativeAcceptance: false,
+      runtimeReady: false,
+      output:
+        role === "package"
+          ? {
+              bundle: "full-sdk-package/bundle",
+              assets: assets.map(({ name, bytes, sha256 }) => ({
+                name,
+                size: bytes,
+                sha256,
+              })),
+            }
+          : role.startsWith("probe-")
+            ? { bytes: 17, sha256: H }
+            : null,
+    };
+    const values = {
+      [`full-sdk-engine-${role}-context.json`]: pp,
+      [`full-sdk-engine-${role}-launch.json`]: evidence(launch),
+      [`jobs/${role}/receipt.json`]: jp,
+      [`full-sdk-engine-closed-${role}.json`]: evidence(close),
+      [`full-sdk-engine-${role}-result.json`]: evidence(result),
+    };
+    Object.assign(phases, values);
+    if (role === "cef-engine")
+      for (const [n, r] of Object.entries(values))
+        if (!n.endsWith("-result.json")) sourceNative[n] = r;
+    prior = {
+      result: pinOf(values[`full-sdk-engine-${role}-result.json`]),
+      receipt: pinOf(jp),
+    };
+  }
+  const sj = {
+    ...kernel,
+    rootPid: 82,
+    rootCreationFiletime: "802",
+    outputCapBytes: 131072,
+  };
+  sourceNative["jobs/full-source-operation/receipt.json"] = evidence(sj, true);
+  sourceNative["full-source-launcher-result.json"] = evidence({
+    success: true,
+    sdkBuilt: false,
+    originalOperationJob: sj,
+    ownPid: 90,
+    ownCreationFiletime: "900",
+  });
+  sourceNative["full-source-closed-launcher.json"] = evidence({
+    success: true,
+    parentHandleClosed: true,
+    ownHandleClosed: true,
+    ownPid: 90,
+    ownCreationFiletime: "900",
+    parentCreationFiletime: "1000",
+  });
+  const nativeRoot = createHash("sha256")
+    .update(
+      "sortOfRemoteNG/windows-arm-full-sdk/root/v1\0repositoryId=1010282954" +
+        "\0target=aarch64-pc-windows-msvc\0image=" +
+        image +
+        "\0sourceId=" +
+        id,
+    )
+    .digest();
+  nativeRoot[6] = (nativeRoot[6] & 15) | 64;
+  nativeRoot[8] = (nativeRoot[8] & 63) | 128;
+  const rootHex = nativeRoot.subarray(0, 16).toString("hex");
+  const identity = {
+    image,
+    sourceId: id,
+    producerSha256: digest(Buffer.from(JSON.stringify(sort(sources)))),
+    canonicalRoot:
+      "windows-arm-full-sdk-" +
+      [
+        rootHex.slice(0, 8),
+        rootHex.slice(8, 12),
+        rootHex.slice(12, 16),
+        rootHex.slice(16, 20),
+        rootHex.slice(20),
+      ].join("-"),
+    sourceDateEpoch: { present: false, value: null },
+    toolProofPin: { bytes: 17, sha256: H },
+    graphPin: { bytes: 17, sha256: H },
+  };
+  const checkedRows = new Map(),
+    add = (relative, p) => checkedRows.set(relative, { relative, ...pinOf(p) });
+  add("context.json", sourceRow);
+  sources.forEach((r, i) => add("source-inputs/" + i, r));
+  add("source-gn-logs/fresh-graph-pins.json", identity.graphPin);
+  add("installed-source-inventory.json", identity.toolProofPin);
+  metadataFiles.forEach((r) => add(r.relative, r));
+  add("source-checkout/src/cef/BUILD.gn", {
+    bytes: 97568,
+    sha256: "2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0",
+  });
+  add(
+    "source-checkout/src/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn",
+    {
+      bytes: 45891,
+      sha256:
+        "e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15",
+    },
+  );
+  const nativeNames = [
+    "full-source-launcher-result.json",
+    "full-source-closed-launcher.json",
+    "jobs/full-source-operation/receipt.json",
+    "full-source-closed-full-source-operation.json",
+    "full-source-operation-result.json",
+    "full-source-closed-verify-setup.json",
+    "full-source-gn-result.json",
+  ];
+  const dataRoles = [
+    "sdk-data",
+    "llvm-data",
+    "rust-archive",
+    "gn-archive",
+    "siso-archive",
+    "materialize",
+    "runtime-closure",
+    "full-sdk-source-gn",
+  ];
+  nativeNames.push(
+    ...dataRoles.map((r) => "jobs/" + r + "/receipt.json"),
+    ...dataRoles.slice(0, -1).map((r) => "full-source-closed-" + r + ".json"),
+  );
+  nativeNames.forEach((n) =>
+    add(n, sourceNative[n] ?? { bytes: 17, sha256: H }),
+  );
+  const content = {
+    schemaVersion: 1,
+    kind: "windows-arm-checked-input-closure",
+    sourceContextSha256: sourcePin.sha256,
+    image,
+    sourceId: id,
+    producerSha256: identity.producerSha256,
+    metadataProjectionSha256: H,
+    records: [...checkedRows.values()].sort((a, b) =>
+      a.relative.localeCompare(b.relative, "en"),
+    ),
+  };
+  // Exact ASCII byte ordering, independent of host locale punctuation collation.
+  content.records.sort((a, b) =>
+    a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0,
+  );
+  assert.equal(content.records.length, 162);
+  const checkedInputs = {
+    schemaVersion: 1,
+    kind: "windows-arm-checked-input-closure-pair",
+    before: {
+      boundary: "before-probe-clang",
+      sha256: digest(Buffer.from(JSON.stringify(sort(content)))),
+      content,
+    },
+    after: {
+      boundary: "after-package-before-sdk-seal",
+      sha256: digest(Buffer.from(JSON.stringify(sort(content)))),
+      content: structuredClone(content),
+    },
+  };
+  const report = {
+    kind: "windows-arm-full-sdk-produced",
+    sourceId: id,
+    image,
+    target: source.target,
+    sdkBuilt: true,
+    nativeAcceptance: false,
+    runtimeReady: false,
+    publicationAllowed: false,
+    bundle: "full-sdk-package/bundle",
+    assets: assets.map(({ name, bytes, sha256 }) => ({
+      name,
+      size: bytes,
+      sha256,
+      identity: "MODELED-held-file",
+    })),
+    checkedInputs,
+  };
+  const controller = evidence(report);
+  const sourceChain = {
+    outcome: "engine-complete",
+    sourceContext: sourcePin,
+    engineContext: pinOf(
+      sourceNative["full-sdk-engine-cef-engine-context.json"],
+    ),
+    launch: pinOf(sourceNative["full-sdk-engine-cef-engine-launch.json"]),
+    job: pinOf(sourceNative["jobs/cef-engine/receipt.json"]),
+    close: pinOf(sourceNative["full-sdk-engine-closed-cef-engine.json"]),
+    sourceJob: pinOf(sourceNative["jobs/full-source-operation/receipt.json"]),
+    sourceLauncher: pinOf(sourceNative["full-source-launcher-result.json"]),
+    sourceClose: pinOf(sourceNative["full-source-closed-launcher.json"]),
+  };
+  const seal = {
+    schemaVersion: 2,
+    kind: "windows-arm-full-sdk-quarantine-seal",
+    origin: original.WINDOWS_ARM_SDK_ORIGIN,
+    target: source.target,
+    identity,
+    workflow: {
+      repository: source.repository,
+      repositoryId: 1010282954,
+      path: source.workflow,
+      ref: source.ref,
+      head: f.head,
+      runId: "123",
+      attempt: "1",
+    },
+    release: {
+      id: 789,
+      head: f.head,
+      carrierHead: "d".repeat(40),
+      tag:
+        "windows-arm-full-sdk-quarantine-123-1-" +
+        id.slice(0, 12) +
+        "-" +
+        controller.sha256.slice(0, 16),
+    },
+    assets: assets.map((r, i) => ({ id: i + 1, ...r })),
+    controller,
+    nativePhases: phases,
+    checkedInputs,
+    producerTiming: {
+      kind: "windows-arm-original-whole-clock-sample",
+      wholeMs: 21600000,
+      reserveMs: 150000,
+      wallStartMs: 0,
+      tickStartMs: 0,
+      wallEndMs: 21600000,
+      tickEndMs: 21600000,
+      wallSampleMs: 2000,
+      tickSampleMs: 2000,
+      sourceWallEndMs: 21600000,
+      sourceTickEndMs: 21600000,
+      remainingMs: 21598000,
+      producerElapsedMs: 2000,
+    },
+    sourceChain,
+    sourceNative,
+    sdkBuilt: true,
+    nativeAcceptance: false,
+    runtimeReady: false,
+    publicationAllowed: false,
+  };
+  return { seal, bundleMetadata };
+}
+function rawApiFixture(f, seal, zip) {
+  const a = apiFixture(f, seal, zip);
+  a.routes[""].visibility = "public";
+  a.routes["releases/789"].name = seal.release.tag;
+  a.routes["git/commits/" + f.head].sha = f.head;
+  a.routes["git/commits/" + seal.release.carrierHead] = {
+    sha: seal.release.carrierHead,
+    tree: { sha: "e".repeat(40) },
+  };
+  a.routes["releases/789"].target_commitish = seal.release.carrierHead;
+  a.routes["releases/789/assets?per_page=100"].forEach(
+    (r) => (r.state = "uploaded"),
+  );
+  return a;
+}
+function alterRawEvidence(seal, name, change, source = false) {
+  const map = source ? seal.sourceNative : seal.nativePhases;
+  const value = JSON.parse(Buffer.from(map[name].base64, "base64"));
+  change(value);
+  const encoded = name.startsWith("jobs/")
+    ? Buffer.from(JSON.stringify(value, null, 2) + "\n")
+    : raw(value);
+  map[name] = { ...pin(encoded), base64: encoded.toString("base64") };
+}
+test("schema2 raw quarantine exact128/162 DATA views bind actual helper ZIP/API route without native qualification", async (t) => {
+  const f = await fixture(t, () => {}, true);
+  for (const image of Object.keys(sourceTuples)) {
+    const { seal, bundleMetadata } = rawModeledPacket(f, image),
+      sealRaw = raw(seal);
+    const records = await f.mod.projectWindowsArmSdkQuarantineRecords(
+      f.receipt,
+      sealRaw,
+      bundleMetadata,
+    );
+    assert.deepEqual(records.producerSeal, sealRaw);
+    assert.notEqual(
+      JSON.parse(records.source).sourceLockRaw.sha256,
+      JSON.parse(records.source).bundleSourceLockRaw.sha256,
+    );
+    const candidate = await f.mod.inspectWindowsArmSdkRecords(
+      f.receipt,
+      records,
+    );
+    assert.equal(candidate.producerVerified, false);
+    assert.equal(candidate.nativeAcceptance, false);
+    const zip = artifact(sealRaw, true, "full-sdk-sdk-seal.json"),
+      { api } = rawApiFixture(f, seal, zip);
+    const bound = await f.mod.verifyWindowsArmSdkProducer(
+      f.receipt,
+      records,
+      zip,
+      api,
+    );
+    assert.equal(bound.producerVerified, true);
+    assert.equal(bound.bundleVerified, false);
+    assert.equal(bound.publicationAllowed, false);
+    assert.equal(
+      await f.mod.assertWindowsArmSdkProducerBinding(
+        bound,
+        f.receipt,
+        digest(sealRaw),
+      ),
+      bound,
+    );
+    await assert.rejects(
+      f.mod.assertWindowsArmSdkProducerBinding(
+        { ...bound },
+        f.receipt,
+        digest(sealRaw),
+      ),
+      /OPAQUE_BINDING/,
+    );
+  }
+});
+test("schema2 raw source/phase/metadata/checked-input/timing and bundle tampering cannot become imported evidence", async (t) => {
+  const f = await fixture(t, () => {}, true),
+    base = rawModeledPacket(f);
+  const variants = [
+    (s) => (s.schemaVersion = 1),
+    (s) => (s.nativeAcceptance = true),
+    (s) => (s.identity.canonicalRoot += "x"),
+    (s) => (s.identity.sourceDateEpoch = { present: true, value: "0" }),
+    (s) => (s.sourceChain.outcome = "quiet-deadline"),
+    (s) => delete s.nativePhases["full-sdk-engine-probe-link-result.json"],
+    (s) => s.checkedInputs.after.content.records.pop(),
+    (s) => (s.checkedInputs.before.boundary = "after-package-before-sdk-seal"),
+    (s) => s.producerTiming.remainingMs++,
+    (s) => (s.producerTiming.producerElapsedMs = 21600000),
+    (s) => (s.assets[1].name = "SOURCE-lock.json"),
+    (s) => (s.workflow.ref = "refs/heads/proof"),
+    (s) => (s.identity.producerSha256 = "e".repeat(64)),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "jobs/probe-clang/receipt.json",
+        (v) => (v.policyReadback.cpuRate = 10000),
+      ),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "jobs/probe-clang/receipt.json",
+        (v) => (v.rootReaped = false),
+      ),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "jobs/probe-clang/receipt.json",
+        (v) => (v.outcome = "deadline"),
+      ),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "full-sdk-engine-closed-probe-clang.json",
+        (v) => delete v.jobSeconds,
+      ),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "full-sdk-engine-probe-link-context.json",
+        (v) => v.wallPhaseEnd++,
+      ),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "full-sdk-engine-probe-link-context.json",
+        (v) => (v.metadataFiles[0].sha256 = "e".repeat(64)),
+      ),
+    (s) =>
+      alterRawEvidence(
+        s,
+        "full-sdk-engine-package-context.json",
+        (v) => (v.prior.result.sha256 = "e".repeat(64)),
+      ),
+    (s) => alterRawEvidence(s, "context.json", (v) => v.sources.pop(), true),
+  ];
+  for (const mutate of variants) {
+    const seal = structuredClone(base.seal);
+    mutate(seal);
+    await assert.rejects(
+      f.mod.projectWindowsArmSdkQuarantineRecords(
+        f.receipt,
+        raw(seal),
+        base.bundleMetadata,
+      ),
+      /WINDOWS_ARM_SDK_/,
+    );
+  }
+  const records = await f.mod.projectWindowsArmSdkQuarantineRecords(
+    f.receipt,
+    raw(base.seal),
+    base.bundleMetadata,
+  );
+  for (const role of ["source", "compile", "package"]) {
+    const changed = { ...records },
+      v = JSON.parse(records[role]);
+    v.sealSha256 = "e".repeat(64);
+    changed[role] = raw(v);
+    await assert.rejects(
+      f.mod.inspectWindowsArmSdkRecords(f.receipt, changed),
+      /RAW_VIEW/,
+    );
+  }
+  const changed = structuredClone(base.bundleMetadata);
+  changed.manifest.base64 = changed.manifest.base64.slice(0, -4) + "AAAA";
+  await assert.rejects(
+    f.mod.projectWindowsArmSdkQuarantineRecords(
+      f.receipt,
+      raw(base.seal),
+      changed,
+    ),
+    /BYTES|RAW_JSON|RAW_EVIDENCE/,
+  );
+});
+test("schema2 actual API route requires immutable SDK member, terminal B, carrier H and exact128 committed tree", async (t) => {
+  const f = await fixture(t, () => {}, true),
+    { seal, bundleMetadata } = rawModeledPacket(f),
+    records = await f.mod.projectWindowsArmSdkQuarantineRecords(
+      f.receipt,
+      raw(seal),
+      bundleMetadata,
+    ),
+    zip = artifact(records.producerSeal, true, "full-sdk-sdk-seal.json");
+  const changes = [
+    (a) => (a[""].visibility = "internal"),
+    (a) => (a["releases/789"].name = "different"),
+    (a) => (a["actions/runs/123"].conclusion = "failure"),
+    (a) => (a["actions/runs/123"].run_attempt = 2),
+    (a) => (a["actions/runs/123"].head_sha = seal.release.carrierHead),
+    (a) => (a["actions/artifacts/99"].expired = true),
+    (a) => (a["actions/artifacts/99"].digest = "sha256:" + H),
+    (a) => (a["actions/artifacts/99"].name = "windows-arm-full-sdk-seal-123-2"),
+    (a) => (a["releases/789"].target_commitish = f.head),
+    (a) => (a["git/commits/" + seal.release.carrierHead].sha = f.head),
+    (a) =>
+      (a["git/trees/" + "b".repeat(40) + "?recursive=1"].tree.find(
+        (r) => r.path === "native/windows-arm-full-sdk/full_sdk_control.mjs",
+      ).sha = "e".repeat(40)),
+    (a) => (a["releases/789/assets?per_page=100"][0].state = "new"),
+    (a) =>
+      (a["releases/789/assets?per_page=100"][0].digest =
+        "sha256:" + "e".repeat(64)),
+  ];
+  for (const mutate of changes) {
+    const a = rawApiFixture(f, seal, zip);
+    mutate(a.routes);
+    await assert.rejects(
+      f.mod.verifyWindowsArmSdkProducer(f.receipt, records, zip, a.api),
+      /WINDOWS_ARM_SDK_/,
+    );
+  }
+  const legacy = artifact(records.producerSeal, true),
+    a = rawApiFixture(f, seal, legacy);
+  await assert.rejects(
+    f.mod.verifyWindowsArmSdkProducer(f.receipt, records, legacy, a.api),
+    /ZIP_ENTRY/,
+  );
+  const corrupted = { ...zip, pin: { ...zip.pin, sha256: H } };
+  await assert.rejects(
+    f.mod.verifyWindowsArmSdkProducer(f.receipt, records, corrupted, a.api),
+    /BYTES/,
+  );
+});
+test("schema2 raw snapshot and final retirement cannot mint or preserve a forged binding", async (t) => {
+  const f = await fixture(t, () => {}, true),
+    { seal, bundleMetadata } = rawModeledPacket(f),
+    records = await f.mod.projectWindowsArmSdkQuarantineRecords(
+      f.receipt,
+      raw(seal),
+      bundleMetadata,
+    ),
+    zip = artifact(records.producerSeal, true, "full-sdk-sdk-seal.json"),
+    a = rawApiFixture(f, seal, zip);
+  const original = Buffer.from(records.producerSeal);
+  let first = true;
+  const bound = await f.mod.verifyWindowsArmSdkProducer(
+    f.receipt,
+    records,
+    zip,
+    async (route) => {
+      if (first) {
+        first = false;
+        records.producerSeal.fill(0);
+        zip.raw.fill(0);
+      }
+      return a.api(route);
+    },
+  );
+  assert.equal(bound.sealSha256, digest(original));
+  await f.mod.closeWindowsArmSdkOrigin(f.receipt);
+  await assert.rejects(
+    f.mod.assertWindowsArmSdkProducerBinding(
+      bound,
+      f.receipt,
+      digest(original),
+    ),
+    /OPAQUE_POLICY/,
+  );
+});
 
+test("schema2 constructor denies oversized input before copy and generated DATA views before output allocation", async (t) => {
+  const oversized = Buffer.alloc(1024 * 1024 + 1),
+    from = Buffer.from;
+  let copied = false;
+  Buffer.from = function (value, ...args) {
+    if (value === oversized) {
+      copied = true;
+      throw Error("OVERSIZED_COPY");
+    }
+    return from.call(this, value, ...args);
+  };
+  try {
+    await assert.rejects(
+      original.projectWindowsArmSdkQuarantineRecords({}, oversized, {}),
+      /RAW_BOUND/,
+    );
+    assert.equal(copied, false);
+  } finally {
+    Buffer.from = from;
+  }
+  for (const value of [Buffer.alloc(0), null, {}, new Uint8Array(4)])
+    await assert.rejects(
+      original.projectWindowsArmSdkQuarantineRecords({}, value, {}),
+      /RAW_BOUND/,
+    );
+  const f = await fixture(t, () => {}, true),
+    { seal, bundleMetadata } = rawModeledPacket(f, "20261030.294.1", 790000);
+  assert(bundleMetadata.manifest.bytes < 1024 * 1024);
+  let outputCopied = false;
+  Buffer.from = function (value, ...args) {
+    if (
+      typeof value === "string" &&
+      args[0] !== "base64" &&
+      Buffer.byteLength(value) > 1024 * 1024
+    ) {
+      outputCopied = true;
+      throw Error("OVERSIZED_OUTPUT_COPY");
+    }
+    return from.call(this, value, ...args);
+  };
+  try {
+    await assert.rejects(
+      f.mod.projectWindowsArmSdkQuarantineRecords(
+        f.receipt,
+        raw(seal),
+        bundleMetadata,
+      ),
+      /RAW_BOUND/,
+    );
+    assert.equal(outputCopied, false);
+  } finally {
+    Buffer.from = from;
+  }
+});
+test("schema2 fixed native tuple denies stricter actual Git policy while legacy typed policy remains supported", async (t) => {
+  const f = await fixture(
+      t,
+      (p) => {
+        p.jobPolicy = {
+          maxWorkMs: 600000,
+          cleanupMs: 30000,
+          wholeMs: 900000,
+          finalReserveMs: 120000,
+        };
+      },
+      true,
+    ),
+    { seal, bundleMetadata } = rawModeledPacket(f);
+  Object.assign(seal.producerTiming, {
+    wallSampleMs: 1000000,
+    tickSampleMs: 1000000,
+    remainingMs: 20600000,
+    producerElapsedMs: 1000000,
+  });
+  await assert.rejects(
+    f.mod.projectWindowsArmSdkQuarantineRecords(
+      f.receipt,
+      raw(seal),
+      bundleMetadata,
+    ),
+    /RAW_JOB_POLICY/,
+  );
+  const records = {
+      source: raw({}),
+      compile: raw({}),
+      package: raw({}),
+      producerSeal: raw(seal),
+    },
+    zip = artifact(records.producerSeal, true, "full-sdk-sdk-seal.json");
+  let called = false;
+  await assert.rejects(
+    f.mod.inspectWindowsArmSdkRecords(f.receipt, records),
+    /RAW_JOB_POLICY/,
+  );
+  await assert.rejects(
+    f.mod.verifyWindowsArmSdkProducer(f.receipt, records, zip, async () => {
+      called = true;
+      return {};
+    }),
+    /RAW_JOB_POLICY/,
+  );
+  assert.equal(called, false);
+  const old = encoded(packet(f));
+  const candidate = await f.mod.inspectWindowsArmSdkRecords(f.receipt, old);
+  assert.equal(candidate.producerVerified, false);
+});
+test("schema2 public inspect and verify recheck lifetime after private promise adoption", async (t) => {
+  const f = await fixture(t, () => {}, true),
+    { seal, bundleMetadata } = rawModeledPacket(f),
+    records = await f.mod.projectWindowsArmSdkQuarantineRecords(
+      f.receipt,
+      raw(seal),
+      bundleMetadata,
+    ),
+    zip = artifact(records.producerSeal, true, "full-sdk-sdk-seal.json"),
+    a = rawApiFixture(f, seal, zip);
+  for (const operation of ["inspect", "verify"]) {
+    const receipt =
+      operation === "inspect"
+        ? f.receipt
+        : await f.mod.loadWindowsArmSdkOrigin();
+    const freeze = Object.freeze,
+      set = WeakMap.prototype.set;
+    let retired = false,
+      scheduled = false,
+      closing;
+    const retire = () => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        retired = true;
+        closing = f.mod.closeWindowsArmSdkOrigin(receipt);
+        closing.catch(() => {});
+      });
+    };
+    if (operation === "inspect")
+      Object.freeze = function (value) {
+        const result = freeze(value);
+        if (
+          Object.getOwnPropertyDescriptor(value ?? {}, "kind")?.value ===
+          "windows-arm-full-sdk-record-candidate"
+        )
+          retire();
+        return result;
+      };
+    else
+      WeakMap.prototype.set = function (key, value) {
+        const result = set.call(this, key, value);
+        if (
+          Object.getOwnPropertyDescriptor(key, "kind")?.value ===
+            "windows-arm-full-sdk-producer-binding" &&
+          value.receipt === receipt
+        )
+          retire();
+        return result;
+      };
+    try {
+      await assert.rejects(
+        operation === "inspect"
+          ? f.mod.inspectWindowsArmSdkRecords(receipt, records)
+          : f.mod.verifyWindowsArmSdkProducer(receipt, records, zip, a.api),
+        /OPAQUE_POLICY/,
+      );
+    } finally {
+      Object.freeze = freeze;
+      WeakMap.prototype.set = set;
+      await closing;
+    }
+    assert.equal(retired, true);
+  }
+});
 const digest = (raw) => createHash("sha256").update(raw).digest("hex");
 const sort = (value) =>
   Array.isArray(value)
@@ -22,6 +896,52 @@ const sort = (value) =>
       : value;
 const raw = (value) => Buffer.from(JSON.stringify(sort(value)) + "\n");
 const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
+function rawOriginInverse(source) {
+  const begin = "// BEGIN schema2 raw quarantine origin\n",
+    end = "// END schema2 raw quarantine origin\n";
+  assert.equal(source.split(begin).length, 2);
+  assert.equal(source.split(end).length, 2);
+  source =
+    source.slice(0, source.indexOf(begin)) +
+    source.slice(source.indexOf(end) + end.length);
+  const changes = [
+    [
+      'function independentSeal(raw, member = "seal.json") {',
+      "function independentSeal(raw) {",
+    ],
+    [
+      "      nameSize === Buffer.byteLength(member) &&\n      raw\n        .subarray(offset + 46, offset + 46 + nameSize)\n        .equals(Buffer.from(member)) &&",
+      '      nameSize === 9 &&\n      raw.subarray(offset + 46, offset + 55).equals(Buffer.from("seal.json")) &&',
+    ],
+    [
+      "      raw.readUInt16LE(local + 26) === nameSize &&\n      raw\n        .subarray(local + 30, local + 30 + nameSize)\n        .equals(Buffer.from(member)),",
+      '      raw.readUInt16LE(local + 26) === 9 &&\n      raw.subarray(local + 30, local + 39).equals(Buffer.from("seal.json")),',
+    ],
+    [
+      "  const start = local + 30 + nameSize + raw.readUInt16LE(local + 28),",
+      "  const start = local + 39 + raw.readUInt16LE(local + 28),",
+    ],
+    ["  if (RAW_PRODUCER_PATHS.includes(name)) return true;\n", ""],
+    [
+      "  if (json(records.producerSeal).kind === RAW_KIND) {\n    const result = await inspectRawRecords(receipt, records, state);\n    retained(receipt, await current(receipt), state);\n    return result;\n  }\n",
+      "",
+    ],
+    [
+      "  if (seal.kind === RAW_KIND) {\n    const result = await verifyRawProducer(\n      receipt,\n      records,\n      artifact,\n      api,\n      inspected,\n      state,\n    );\n    retained(receipt, await current(receipt), state);\n    return result;\n  }\n",
+      "",
+    ],
+  ];
+  for (const [after, before] of changes) {
+    assert.equal(source.split(after).length, 2);
+    source = source.replace(after, before);
+  }
+  assert.equal(Buffer.byteLength(source), 41451);
+  assert.equal(
+    digest(Buffer.from(source)),
+    "48df935dad9aceed117ab6e8ab391c5d84dfa651cad097ab2fdac22c64054e3f",
+  );
+  return source;
+}
 test("pure independent seal reader preserves exact bytes without granting provenance", () => {
   const bytes = Buffer.from(' {\n  "b": 2, "a": 1\n}\n');
   for (const make of [
@@ -52,9 +972,11 @@ test("pure independent seal reader preserves exact bytes without granting proven
 });
 
 test("seal reader addition preserves the complete existing SDK origin verifier", async () => {
-  const source = (
-    await fs.readFile("scripts/lib/cef-windows-arm-sdk-origin.mjs", "utf8")
-  ).replaceAll("\r\n", "\n");
+  const source = rawOriginInverse(
+    (
+      await fs.readFile("scripts/lib/cef-windows-arm-sdk-origin.mjs", "utf8")
+    ).replaceAll("\r\n", "\n"),
+  );
   const addition = String.raw`// BEGIN pure independent seal byte reader
 // Decoding returns data only. Authentication and producer ownership are separate.
 // Snapshot both boundaries so returned bytes never alias a caller-owned ZIP.
@@ -218,7 +1140,7 @@ function git(root, ...args) {
     },
   });
 }
-async function fixture(t, mutate = () => {}) {
+async function fixture(t, mutate = () => {}, rawMode = false) {
   const root = await fs.mkdtemp(
     path.join(os.tmpdir(), "owned-windows-arm-origin-"),
   );
@@ -258,6 +1180,30 @@ async function fixture(t, mutate = () => {}) {
       { path: "native/windows-arm-full-sdk/fixture.py", ...pin(input) },
     ],
   };
+  if (rawMode) {
+    const selected = JSON.parse(
+      await fs.readFile(
+        new URL(
+          "../../native/windows-arm-full-sdk/sdk-origin-review.json",
+          import.meta.url,
+        ),
+      ),
+    );
+    policy.producerInputs = [];
+    for (const row of selected.producerInputs) {
+      const data = await fs.readFile(
+        new URL("../../" + row.path, import.meta.url),
+      );
+      await write(row.path, data);
+      policy.producerInputs.push({ path: row.path, ...pin(data) });
+    }
+    policy.jobPolicy = {
+      maxWorkMs: 21450000,
+      cleanupMs: 30000,
+      wholeMs: 21600000,
+      finalReserveMs: 120000,
+    };
+  }
   mutate(policy);
   await write(original.WINDOWS_ARM_SDK_POLICY, raw(policy));
   await write("empty-config", "");
@@ -445,8 +1391,8 @@ function crc32(data) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-function artifact(seal, deflate = false) {
-  const name = Buffer.from("seal.json"),
+function artifact(seal, deflate = false, member = "seal.json") {
+  const name = Buffer.from(member),
     content = deflate ? deflateRawSync(seal) : seal,
     crc = crc32(seal);
   const local = Buffer.alloc(30);

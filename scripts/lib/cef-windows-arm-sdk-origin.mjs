@@ -121,7 +121,7 @@ function crc32(raw) {
   }
   return (value ^ 0xffffffff) >>> 0;
 }
-function independentSeal(raw) {
+function independentSeal(raw, member = "seal.json") {
   need(
     Buffer.isBuffer(raw) && raw.length >= 98 && raw.length <= MAX,
     "ZIP_BOUND",
@@ -189,8 +189,10 @@ function independentSeal(raw) {
     (flags & ~0x808) === 0 &&
       [0, 8].includes(method) &&
       raw.readUInt16LE(offset + 34) === 0 &&
-      nameSize === 9 &&
-      raw.subarray(offset + 46, offset + 55).equals(Buffer.from("seal.json")) &&
+      nameSize === Buffer.byteLength(member) &&
+      raw
+        .subarray(offset + 46, offset + 46 + nameSize)
+        .equals(Buffer.from(member)) &&
       46 + nameSize + extraSize + commentSize === size &&
       commentSize === 0,
     "ZIP_ENTRY",
@@ -232,11 +234,13 @@ function independentSeal(raw) {
       raw.readUInt32LE(local) === 0x04034b50 &&
       raw.readUInt16LE(local + 6) === flags &&
       raw.readUInt16LE(local + 8) === method &&
-      raw.readUInt16LE(local + 26) === 9 &&
-      raw.subarray(local + 30, local + 39).equals(Buffer.from("seal.json")),
+      raw.readUInt16LE(local + 26) === nameSize &&
+      raw
+        .subarray(local + 30, local + 30 + nameSize)
+        .equals(Buffer.from(member)),
     "ZIP_LOCAL",
   );
-  const start = local + 39 + raw.readUInt16LE(local + 28),
+  const start = local + 30 + nameSize + raw.readUInt16LE(local + 28),
     finish = start + compressed;
   need(
     finish <= offset &&
@@ -507,6 +511,7 @@ const INPUT_EXCEPTIONS = new Set([
   "tests/tooling/windowsArmPrivateQualification.node-test.mjs",
 ]);
 function supportedProducerInput(name) {
+  if (RAW_PRODUCER_PATHS.includes(name)) return true;
   if (
     typeof name !== "string" ||
     name.length > 512 ||
@@ -810,6 +815,1315 @@ function base(value, kind, extra, state) {
 function digest(value) {
   need(hex(value), "DIGEST");
 }
+// BEGIN schema2 raw quarantine origin
+// These checks authenticate the approved original producer's finite readers.
+// Nine metadata pins and 162 checked files are not a whole Chromium inventory.
+const RAW_PRODUCER_PATHS = Object.freeze([
+  ".node-version",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/cef-ci-runner-aarch64-pc-windows-msvc.json",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/gn/aarch64-pc-windows-msvc.gn",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/include/cef_sorng_tls_bridge.h",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0001-chromium-socket-admission.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0002-cef-native-bridge.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0003-cef-native-widget-lifetime.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0004-chromium-soda-provisioning.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0005-chromium-proxy-route-probe.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0006-cef-explicit-download-destination.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0007-chromium-instance-tracer-reentrancy.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0008-chromium-same-authority-http2.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0009-cef-http2-bridge-capability.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0010-chromium-proxy-application-ack.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0011-cef-proxy-application-ack.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0012-cef-registration-retirement.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0013-chromium-owned-quic-datagrams.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0014-cef-owned-quic-datagrams.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0015-chromium-owned-quic-job-selection.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/review-receipt.json",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/source-lock.json",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/tools/aarch64-pc-windows-msvc.json",
+  "native/cef-build-inputs/20261026-r5-capsule22-windows-arm64-cross-x64/upstream-sha256.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/gn/aarch64-pc-windows-msvc.gn",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/include/cef_sorng_tls_bridge.h",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0001-chromium-socket-admission.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0002-cef-native-bridge.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0004-chromium-soda-provisioning.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0006-cef-explicit-download-destination.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0008-chromium-same-authority-http2.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0011-cef-proxy-application-ack.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0012-cef-registration-retirement.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/review-receipt.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/source-lock.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/tools/aarch64-pc-windows-msvc.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/upstream-sha256.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/cef-ci-runner-aarch64-pc-windows-msvc.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/gn/aarch64-pc-windows-msvc.gn",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/include/cef_sorng_tls_bridge.h",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0001-chromium-socket-admission.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0002-cef-native-bridge.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0003-cef-native-widget-lifetime.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0004-chromium-soda-provisioning.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0005-chromium-proxy-route-probe.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0006-cef-explicit-download-destination.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0007-chromium-instance-tracer-reentrancy.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0008-chromium-same-authority-http2.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0009-cef-http2-bridge-capability.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0010-chromium-proxy-application-ack.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0011-cef-proxy-application-ack.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0012-cef-registration-retirement.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0013-chromium-owned-quic-datagrams.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0014-cef-owned-quic-datagrams.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0015-chromium-owned-quic-job-selection.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/patches/0024-cef-external-webview-lifetime.patch",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/review-receipt.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/source-lock.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/tools/aarch64-pc-windows-msvc.json",
+  "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/upstream-sha256.json",
+  "native/windows-arm-full-sdk/acquire.py",
+  "native/windows-arm-full-sdk/checkpoint.py",
+  "native/windows-arm-full-sdk/checkpoint_inputs.py",
+  "native/windows-arm-full-sdk/compiled_checkpoint.py",
+  "native/windows-arm-full-sdk/compiler_input_probe.cc",
+  "native/windows-arm-full-sdk/current-source-helpers/native/cef-hosted-recipe.json",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/browser-runtime-package.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-custom-artifact-inventory.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-bootstrap.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-hosted-provision.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-patched-runtime.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/cef-runtime-ci.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/browser-runtime-release.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-checkpoint-archive.py",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
+  "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-source-metadata.mjs",
+  "native/windows-arm-full-sdk/engine-qualification-profile.json",
+  "native/windows-arm-full-sdk/environment.py",
+  "native/windows-arm-full-sdk/expected-defaults.mjs",
+  "native/windows-arm-full-sdk/extract.py",
+  "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs",
+  "native/windows-arm-full-sdk/full-sdk-source-driver.mjs",
+  "native/windows-arm-full-sdk/full-sdk-source-profile.json",
+  "native/windows-arm-full-sdk/full_sdk_control.mjs",
+  "native/windows-arm-full-sdk/full_sdk_engine.py",
+  "native/windows-arm-full-sdk/full_sdk_source.py",
+  "native/windows-arm-full-sdk/image-qualified-20261021-profile.json",
+  "native/windows-arm-full-sdk/image-qualified-current-profile.json",
+  "native/windows-arm-full-sdk/job.py",
+  "native/windows-arm-full-sdk/private-qualification-profile.json",
+  "native/windows-arm-full-sdk/producer.py",
+  "native/windows-arm-full-sdk/profile.json",
+  "native/windows-arm-full-sdk/source-root.mjs",
+  "native/windows-arm-full-sdk/test_full_sdk_source.py",
+  "native/windows-arm-full-sdk/workflow-clock.mjs",
+  "tests/tooling/windowsArmFullSdk.node-test.mjs",
+]);
+const RAW_KIND = "windows-arm-full-sdk-quarantine-seal";
+const RAW_MEMBER = "full-sdk-sdk-seal.json";
+const rawPin = (value) => ({ bytes: value.length, sha256: hash(value) });
+const equalRaw = (a, b) => canonical(a) === canonical(b);
+function rawJson(raw, maximum = MAX) {
+  need(
+    Buffer.isBuffer(raw) && raw.length > 0 && raw.length <= maximum,
+    "RAW_BOUND",
+  );
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  let at = 0;
+  const white = () => {
+    while (/[\x20\t\r\n]/.test(text[at] ?? "x")) at++;
+  };
+  const string = () => {
+    const start = at++;
+    while (at < text.length) {
+      const c = text[at++];
+      if (c === '"') return JSON.parse(text.slice(start, at));
+      if (c === "\\") at++;
+    }
+    need(false, "RAW_JSON");
+  };
+  const scan = (depth) => {
+    need(depth <= 64, "RAW_JSON");
+    white();
+    if (text[at] === '"') {
+      string();
+      return;
+    }
+    if (text[at] === "{" || text[at] === "[") {
+      const object = text[at++] === "{",
+        end = object ? "}" : "]",
+        keys = new Set();
+      white();
+      if (text[at] === end) {
+        at++;
+        return;
+      }
+      for (;;) {
+        if (object) {
+          need(text[at] === '"', "RAW_JSON");
+          const k = string();
+          need(!keys.has(k), "RAW_JSON_DUPLICATE");
+          keys.add(k);
+          white();
+          need(text[at++] === ":", "RAW_JSON");
+        }
+        scan(depth + 1);
+        white();
+        if (text[at] === end) {
+          at++;
+          return;
+        }
+        need(text[at++] === ",", "RAW_JSON");
+        white();
+      }
+    }
+    const token =
+      /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(
+        text.slice(at),
+      );
+    need(token, "RAW_JSON");
+    at += token[0].length;
+    if (!["true", "false", "null"].includes(token[0]))
+      need(Number.isFinite(Number(token[0])), "RAW_JSON");
+  };
+  scan(0);
+  white();
+  need(at === text.length, "RAW_JSON");
+  return JSON.parse(text);
+}
+function rawEvidence(row) {
+  shape(row, ["bytes", "sha256", "base64"]);
+  pin({ bytes: row.bytes, sha256: row.sha256 });
+  const padding = (3 - (row.bytes % 3)) % 3;
+  need(
+    typeof row.base64 === "string" &&
+      row.base64.length === Math.ceil(row.bytes / 3) * 4 &&
+      /^[A-Za-z0-9+/]+$/.test(
+        row.base64.slice(0, row.base64.length - padding),
+      ) &&
+      row.base64.slice(row.base64.length - padding) === "=".repeat(padding),
+    "RAW_EVIDENCE",
+  );
+  const raw = Buffer.from(row.base64, "base64");
+  need(raw.toString("base64") === row.base64, "RAW_EVIDENCE");
+  bytes(raw, { bytes: row.bytes, sha256: row.sha256 });
+  return { raw, value: rawJson(raw), pin: rawPin(raw) };
+}
+function rawRoot(image, sourceId) {
+  const value = createHash("sha256")
+    .update(
+      "sortOfRemoteNG/windows-arm-full-sdk/root/v1\0repositoryId=1010282954" +
+        "\0target=aarch64-pc-windows-msvc\0image=" +
+        image +
+        "\0sourceId=" +
+        sourceId,
+    )
+    .digest()
+    .subarray(0, 16);
+  value[6] = (value[6] & 15) | 64;
+  value[8] = (value[8] & 63) | 128;
+  const s = value.toString("hex");
+  return (
+    "windows-arm-full-sdk-" +
+    [
+      s.slice(0, 8),
+      s.slice(8, 12),
+      s.slice(12, 16),
+      s.slice(16, 20),
+      s.slice(20),
+    ].join("-")
+  );
+}
+function rawJob(value, cap) {
+  const observed = job(
+    {
+      exitCode: 0,
+      outcome: "success",
+      quiescent: true,
+      rootReaped: true,
+      logReadersStopped: true,
+      activeAtEnd: 0,
+      processLimit: 64,
+      memoryBytes: 8 * 1024 ** 3,
+      cpuRate: 2500,
+      workMs: 21600000 - 150000,
+      cleanupMs: 30000,
+      elapsedMs: value.value.elapsedMs,
+    },
+    { ...value.pin, base64: value.raw.toString("base64") },
+    {
+      policy: { jobPolicy: { maxWorkMs: 21600000 - 150000, cleanupMs: 30000 } },
+    },
+  );
+  need(value.value.outputCapBytes === cap, "RAW_JOB_CAP");
+  return observed;
+}
+function rawTiming(v, source) {
+  shape(v, [
+    "kind",
+    "wholeMs",
+    "reserveMs",
+    "wallStartMs",
+    "tickStartMs",
+    "wallEndMs",
+    "tickEndMs",
+    "wallSampleMs",
+    "tickSampleMs",
+    "sourceWallEndMs",
+    "sourceTickEndMs",
+    "remainingMs",
+    "producerElapsedMs",
+  ]);
+  need(
+    Object.entries(v).every(
+      ([k, n]) => k === "kind" || (Number.isSafeInteger(n) && n >= 0),
+    ) &&
+      v.kind === "windows-arm-original-whole-clock-sample" &&
+      v.wholeMs === 21600000 &&
+      v.reserveMs === 150000 &&
+      v.wallEndMs - v.wallStartMs === v.wholeMs &&
+      v.tickEndMs - v.tickStartMs === v.wholeMs &&
+      v.wallSampleMs >= v.wallStartMs &&
+      v.tickSampleMs >= v.tickStartMs &&
+      v.sourceWallEndMs === Math.floor(source.wallWholeEnd * 1000) &&
+      v.sourceWallEndMs <= v.wallEndMs &&
+      v.sourceTickEndMs === Math.floor(source.monotonicWholeEnd * 1000) &&
+      v.sourceTickEndMs <= v.tickEndMs &&
+      v.remainingMs ===
+        Math.min(
+          v.wallEndMs - v.wallSampleMs,
+          v.tickEndMs - v.tickSampleMs,
+          v.sourceWallEndMs - v.wallSampleMs,
+          v.sourceTickEndMs - v.tickSampleMs,
+        ) &&
+      v.remainingMs > v.reserveMs &&
+      v.producerElapsedMs === v.wholeMs - v.remainingMs &&
+      v.producerElapsedMs > 0 &&
+      v.producerElapsedMs < v.wholeMs - v.reserveMs,
+    "RAW_TIMING",
+  );
+}
+function rawDetails(seal, state) {
+  need(
+    equalRaw(state.policy.jobPolicy, {
+      maxWorkMs: 21450000,
+      cleanupMs: 30000,
+      wholeMs: 21600000,
+      finalReserveMs: 120000,
+    }),
+    "RAW_JOB_POLICY",
+  );
+  shape(seal, [
+    "schemaVersion",
+    "kind",
+    "origin",
+    "target",
+    "identity",
+    "workflow",
+    "release",
+    "assets",
+    "controller",
+    "nativePhases",
+    "checkedInputs",
+    "producerTiming",
+    "sourceChain",
+    "sourceNative",
+    "sdkBuilt",
+    "nativeAcceptance",
+    "runtimeReady",
+    "publicationAllowed",
+  ]);
+  need(
+    seal.schemaVersion === 2 &&
+      seal.kind === RAW_KIND &&
+      seal.origin === WINDOWS_ARM_SDK_ORIGIN &&
+      seal.target === WINDOWS_ARM_SDK_TARGET &&
+      seal.sdkBuilt === true &&
+      ["nativeAcceptance", "runtimeReady", "publicationAllowed"].every(
+        (k) => seal[k] === false,
+      ),
+    "RAW_SCOPE",
+  );
+  const identity = seal.identity,
+    wf = seal.workflow;
+  shape(identity, [
+    "image",
+    "sourceId",
+    "producerSha256",
+    "sourceDateEpoch",
+    "canonicalRoot",
+    "toolProofPin",
+    "graphPin",
+  ]);
+  need(
+    Object.hasOwn(SOURCES, identity.image) &&
+      identity.sourceId === SOURCES[identity.image].sourceLockIdentity &&
+      identity.canonicalRoot === rawRoot(identity.image, identity.sourceId) &&
+      equalRaw(identity.sourceDateEpoch, { present: false, value: null }),
+    "RAW_IDENTITY",
+  );
+  pin(identity.toolProofPin, 16 * MAX);
+  pin(identity.graphPin, 16 * MAX);
+  shape(wf, [
+    "repository",
+    "repositoryId",
+    "path",
+    "ref",
+    "head",
+    "runId",
+    "attempt",
+  ]);
+  need(
+    wf.repository === REPOSITORY &&
+      wf.repositoryId === REPOSITORY_ID &&
+      wf.path === WINDOWS_ARM_SDK_WORKFLOW &&
+      wf.ref === "refs/heads/main" &&
+      hex(wf.head, 40) &&
+      typeof wf.runId === "string" &&
+      /^[1-9][0-9]{0,15}$/.test(wf.runId) &&
+      typeof wf.attempt === "string" &&
+      /^[1-9][0-9]{0,8}$/.test(wf.attempt) &&
+      positive(Number(wf.runId)),
+    "RAW_WORKFLOW",
+  );
+  need(
+    state.policy.producerInputs.length === 128 &&
+      equalRaw(
+        state.policy.producerInputs.map((r) => r.path),
+        RAW_PRODUCER_PATHS,
+      ),
+    "RAW_INPUT_PATHS",
+  );
+  const rows = state.policy.producerInputs;
+  need(
+    identity.producerSha256 === hash(Buffer.from(canonical(rows))),
+    "RAW_PRODUCER",
+  );
+  const sourceNames = [
+    "context.json",
+    "full-sdk-engine-cef-engine-context.json",
+    "full-sdk-engine-cef-engine-launch.json",
+    "jobs/cef-engine/receipt.json",
+    "full-sdk-engine-closed-cef-engine.json",
+    "jobs/full-source-operation/receipt.json",
+    "full-source-launcher-result.json",
+    "full-source-closed-launcher.json",
+  ];
+  shape(seal.sourceNative, sourceNames);
+  const native = Object.fromEntries(
+    sourceNames.map((n) => [n, rawEvidence(seal.sourceNative[n])]),
+  );
+  const source = native["context.json"].value,
+    sourcePin = native["context.json"].pin;
+  shape(source, [
+    "kind",
+    "mode",
+    "workflow",
+    "policy",
+    "ref",
+    "repository",
+    "repositoryId",
+    "event",
+    "visibility",
+    "defaultBranch",
+    "inputs",
+    "checkpointRestore",
+    "image",
+    "target",
+    "sourceId",
+    "sourceProfileSha256",
+    "head",
+    "workflowSha",
+    "runId",
+    "attempt",
+    "sources",
+    "originPolicySha256",
+    "wallWholeEnd",
+    "monotonicWholeEnd",
+    "wallWorkEnd",
+    "monotonicWorkEnd",
+    "wallAcquisitionEnd",
+    "monotonicAcquisitionEnd",
+  ]);
+  shape(source.inputs, ["restore_run"]);
+  need(
+    typeof source.inputs.restore_run === "string" &&
+      /^(?:0|[1-9][0-9]{0,15})$/.test(source.inputs.restore_run),
+    "RAW_RESTORE_SCOPE",
+  );
+  if (source.checkpointRestore !== null) {
+    shape(source.checkpointRestore, ["runId", "attempt", "readyPin"]);
+    need(
+      source.checkpointRestore.runId === source.inputs.restore_run &&
+        /^[1-9][0-9]{0,8}$/.test(source.checkpointRestore.attempt),
+      "RAW_RESTORE_SCOPE",
+    );
+    pin(source.checkpointRestore.readyPin);
+  } else need(source.inputs.restore_run === "0", "RAW_RESTORE_SCOPE");
+  need(
+    source.kind === "windows-arm-full-sdk-context" &&
+      source.mode === "full-sdk-source-gn" &&
+      source.repository === REPOSITORY &&
+      source.repositoryId === String(REPOSITORY_ID) &&
+      source.workflow === wf.path &&
+      source.ref === wf.ref &&
+      source.event === "workflow_dispatch" &&
+      source.visibility === "public" &&
+      source.defaultBranch === "main" &&
+      source.policy === WINDOWS_ARM_SDK_POLICY &&
+      source.sourceProfileSha256 ===
+        SOURCES[identity.image].sourceProfileSha256 &&
+      source.head === wf.head &&
+      source.workflowSha === wf.head &&
+      source.runId === wf.runId &&
+      source.attempt === wf.attempt &&
+      source.image === identity.image &&
+      source.sourceId === identity.sourceId &&
+      source.target === WINDOWS_ARM_SDK_TARGET &&
+      source.originPolicySha256 === state.policySha256 &&
+      equalRaw(source.sources, rows) &&
+      [
+        source.wallWholeEnd,
+        source.monotonicWholeEnd,
+        source.wallWorkEnd,
+        source.monotonicWorkEnd,
+        source.wallAcquisitionEnd,
+        source.monotonicAcquisitionEnd,
+      ].every(Number.isFinite) &&
+      source.wallAcquisitionEnd <= source.wallWorkEnd &&
+      source.wallWorkEnd <= source.wallWholeEnd &&
+      source.monotonicAcquisitionEnd <= source.monotonicWorkEnd &&
+      source.monotonicWorkEnd <= source.monotonicWholeEnd,
+    "RAW_SOURCE",
+  );
+  const index = (name) => {
+    const i = rows.findIndex((r) => r.path === name);
+    need(i >= 0, "RAW_INPUT");
+    return i;
+  };
+  const metadataPaths = [
+    "native/windows-arm-full-sdk/private-qualification-profile.json",
+    "native/windows-arm-full-sdk/engine-qualification-profile.json",
+  ]
+    .map((n) => "source-inputs/" + index(n))
+    .concat([
+      "private-qualification-logs/qual-gn-desc-pa.stdout.log",
+      "private-qualification-logs/qual-gn-desc-cef.stdout.log",
+      "private-qualification-logs/qual-gn-args.stdout.log",
+      "source-checkout/src/out/Release_GN_arm64/args.gn",
+      "source-checkout/src/out/Release_GN_arm64/gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h",
+      "source-checkout/src/out/Release_GN_arm64/gen/cef/include/cef_config.h",
+      "full-metadata-result.json",
+    ]);
+  const roles = ["probe-clang", "probe-link", "cef-engine", "package"],
+    phaseNames = roles.flatMap((r) => [
+      "full-sdk-engine-" + r + "-context.json",
+      "full-sdk-engine-" + r + "-launch.json",
+      "jobs/" + r + "/receipt.json",
+      "full-sdk-engine-closed-" + r + ".json",
+      "full-sdk-engine-" + r + "-result.json",
+    ]);
+  shape(seal.nativePhases, phaseNames);
+  const phases = Object.fromEntries(
+    phaseNames.map((n) => [n, rawEvidence(seal.nativePhases[n])]),
+  );
+  const expected = new Map([
+    ["context.json", sourcePin],
+    ["source-gn-logs/fresh-graph-pins.json", identity.graphPin],
+    ["installed-source-inventory.json", identity.toolProofPin],
+  ]);
+  const add = (name, p) => {
+    const old = expected.get(name);
+    need(!old || equalRaw(old, p), "RAW_CHECKED_PIN");
+    expected.set(name, p);
+  };
+  rows.forEach((r, i) =>
+    add("source-inputs/" + i, { bytes: r.bytes, sha256: r.sha256 }),
+  );
+  add("source-checkout/src/cef/BUILD.gn", {
+    bytes: 97568,
+    sha256: "2999ed43e4bddb47d841c6b0587cfdacf9a9b331a06384f27ef896a0ef24fae0",
+  });
+  add(
+    "source-checkout/src/base/allocator/partition_allocator/src/partition_alloc/BUILD.gn",
+    {
+      bytes: 45891,
+      sha256:
+        "e69e4d0dbd0484dda0f8cd2a69bda78be262e8050bfc6c486e831a6bf1b4eb15",
+    },
+  );
+  const identities = new Set();
+  let previous = null,
+    metadata = null,
+    gitPolicies = null,
+    parent = null,
+    probe = null,
+    elapsed = 0;
+  for (const role of roles) {
+    const at = (suffix) => phases[suffix],
+      packet = at("full-sdk-engine-" + role + "-context.json"),
+      launch = at("full-sdk-engine-" + role + "-launch.json"),
+      raw = at("jobs/" + role + "/receipt.json"),
+      closed = at("full-sdk-engine-closed-" + role + ".json"),
+      result = at("full-sdk-engine-" + role + "-result.json"),
+      p = packet.value,
+      l = launch.value,
+      c = closed.value,
+      r = result.value;
+    shape(p, [
+      "schemaVersion",
+      "kind",
+      "mode",
+      "role",
+      "sourceContextSha256",
+      "image",
+      "sourceId",
+      "target",
+      "wallWholeEnd",
+      "monotonicWholeEnd",
+      "wallPhaseEnd",
+      "monotonicPhaseEnd",
+      "parentPid",
+      "parentCreationFiletime",
+      "metadataFiles",
+      "gitPolicyFiles",
+      "prior",
+    ]);
+    need(
+      p.schemaVersion === 1 &&
+        p.kind === "windows-arm-full-sdk-engine-context" &&
+        p.mode === "full-sdk-engine" &&
+        p.role === role &&
+        p.sourceContextSha256 === sourcePin.sha256 &&
+        p.image === source.image &&
+        p.sourceId === source.sourceId &&
+        p.target === seal.target &&
+        p.wallWholeEnd === source.wallWholeEnd &&
+        p.monotonicWholeEnd === source.monotonicWholeEnd &&
+        [p.wallPhaseEnd, p.monotonicPhaseEnd].every(Number.isFinite) &&
+        p.wallPhaseEnd <= p.wallWholeEnd - 150 &&
+        p.monotonicPhaseEnd <= p.monotonicWholeEnd - 150 &&
+        positive(p.parentPid) &&
+        p.parentPid <= 0xffffffff &&
+        typeof p.parentCreationFiletime === "string" &&
+        /^[1-9][0-9]{0,19}$/.test(p.parentCreationFiletime) &&
+        equalRaw(p.prior, previous),
+      "RAW_PHASE",
+    );
+    if (role === "cef-engine")
+      need(
+        p.wallPhaseEnd <= p.wallWholeEnd - 3600 &&
+          p.monotonicPhaseEnd <= p.monotonicWholeEnd - 3600,
+        "RAW_RESERVE",
+      );
+    const parentKey = p.parentPid + ":" + p.parentCreationFiletime;
+    need(!parent || parent === parentKey, "RAW_PARENT");
+    parent = parentKey;
+    if (role === "probe-clang") probe = [p.wallPhaseEnd, p.monotonicPhaseEnd];
+    if (role === "probe-link")
+      need(
+        equalRaw(probe, [p.wallPhaseEnd, p.monotonicPhaseEnd]),
+        "RAW_PROBE_END",
+      );
+    need(
+      Array.isArray(p.metadataFiles) &&
+        equalRaw(
+          p.metadataFiles.map((r) => r.relative),
+          metadataPaths,
+        ),
+      "RAW_METADATA",
+    );
+    p.metadataFiles.forEach((row) => {
+      shape(row, ["relative", "bytes", "sha256"]);
+      pin({ bytes: row.bytes, sha256: row.sha256 }, 8 * MAX);
+      add(row.relative, { bytes: row.bytes, sha256: row.sha256 });
+    });
+    need(!metadata || equalRaw(metadata, p.metadataFiles), "RAW_METADATA");
+    metadata = p.metadataFiles;
+    need(
+      Array.isArray(p.gitPolicyFiles) && p.gitPolicyFiles.length === 2,
+      "RAW_GIT_POLICY",
+    );
+    p.gitPolicyFiles.forEach((row, i) => {
+      shape(row, ["relative", "bytes", "sha256"]);
+      need(
+        row.relative ===
+          "full-sdk-control/cef-source-git-policy/" +
+            (i ? "system" : "global") +
+            ".gitconfig",
+        "RAW_GIT_POLICY",
+      );
+      if (i)
+        need(
+          row.bytes === 0 && row.sha256 === hash(Buffer.alloc(0)),
+          "RAW_GIT_POLICY",
+        );
+      else pin({ bytes: row.bytes, sha256: row.sha256 }, 65536);
+    });
+    need(
+      !gitPolicies || equalRaw(gitPolicies, p.gitPolicyFiles),
+      "RAW_GIT_POLICY",
+    );
+    gitPolicies = p.gitPolicyFiles;
+    shape(l, [
+      "kind",
+      "role",
+      "contextSha256",
+      "ownPid",
+      "ownCreationFiletime",
+      "parentPid",
+      "parentCreationFiletime",
+    ]);
+    shape(c, [
+      "kind",
+      "role",
+      "success",
+      "parentHandleClosed",
+      "ownHandleClosed",
+      "ownPid",
+      "ownCreationFiletime",
+      "parentPid",
+      "parentCreationFiletime",
+      "sourceContextSha256",
+      "sdkBuilt",
+      "nativeAcceptance",
+      "jobSeconds",
+      ...(role === "cef-engine" ? ["completion"] : []),
+    ]);
+    if (role === "cef-engine") need(c.completion === "success", "RAW_CLOSE");
+    shape(r, [
+      "kind",
+      "role",
+      "sourceContextSha256",
+      "image",
+      "sourceId",
+      "success",
+      "output",
+      "engineComplete",
+      "sdkBuilt",
+      "nativeAcceptance",
+      "runtimeReady",
+    ]);
+    const identityKey = rawJob(raw, 64 * MAX);
+    need(!identities.has(identityKey), "RAW_JOB_REUSE");
+    identities.add(identityKey);
+    const caps = {
+      "probe-clang": 900,
+      "probe-link": 900,
+      "cef-engine": 10800,
+      package: 2400,
+    };
+    need(
+      positive(c.jobSeconds) &&
+        c.jobSeconds <= caps[role] &&
+        raw.value.elapsedMs <= c.jobSeconds * 1000 + 30000,
+      "RAW_ASSIGNED_SECONDS",
+    );
+    need(
+      l.kind === "windows-arm-full-sdk-engine-launch" &&
+        l.role === role &&
+        l.contextSha256 === packet.pin.sha256 &&
+        positive(l.ownPid) &&
+        l.ownPid <= 0xffffffff &&
+        l.ownPid !== raw.value.rootPid &&
+        typeof l.ownCreationFiletime === "string" &&
+        /^[1-9][0-9]{0,19}$/.test(l.ownCreationFiletime) &&
+        c.kind === "windows-arm-full-sdk-engine-launcher-close" &&
+        c.role === role &&
+        c.success === true &&
+        c.parentHandleClosed === true &&
+        c.ownHandleClosed === true &&
+        c.sdkBuilt === false &&
+        c.nativeAcceptance === false &&
+        c.ownPid === l.ownPid &&
+        c.ownCreationFiletime === l.ownCreationFiletime &&
+        c.parentPid === l.parentPid &&
+        l.parentPid === p.parentPid &&
+        c.parentCreationFiletime === l.parentCreationFiletime &&
+        l.parentCreationFiletime === p.parentCreationFiletime &&
+        c.sourceContextSha256 === sourcePin.sha256,
+      "RAW_CLOSE",
+    );
+    need(
+      r.kind === "windows-arm-full-sdk-engine-worker-result" &&
+        r.role === role &&
+        r.success === true &&
+        r.sourceContextSha256 === sourcePin.sha256 &&
+        r.image === source.image &&
+        r.sourceId === source.sourceId &&
+        r.engineComplete === (role === "cef-engine") &&
+        r.sdkBuilt === (role === "package") &&
+        r.nativeAcceptance === false &&
+        r.runtimeReady === false,
+      "RAW_RESULT",
+    );
+    if (role.startsWith("probe-")) pin(r.output, 8 * MAX);
+    if (role === "cef-engine" || role === "package")
+      elapsed += raw.value.elapsedMs;
+    previous = { result: result.pin, receipt: raw.pin };
+  }
+  for (const n of sourceNames.slice(1, 5))
+    need(equalRaw(native[n].pin, phases[n].pin), "RAW_NATIVE_CROSS");
+  const sj = native["jobs/full-source-operation/receipt.json"],
+    sl = native["full-source-launcher-result.json"].value,
+    sc = native["full-source-closed-launcher.json"].value;
+  need(
+    !identities.has(rawJob(sj, 131072)) &&
+      sj.value.elapsedMs <= 7230000 &&
+      sl.success === true &&
+      sl.sdkBuilt === false &&
+      equalRaw(sl.originalOperationJob, sj.value) &&
+      sc.success === true &&
+      sc.parentHandleClosed === true &&
+      sc.ownHandleClosed === true &&
+      sc.ownPid === sl.ownPid &&
+      sc.ownCreationFiletime === sl.ownCreationFiletime &&
+      sc.parentCreationFiletime ===
+        phases["full-sdk-engine-cef-engine-context.json"].value
+          .parentCreationFiletime,
+    "RAW_SOURCE_CHAIN",
+  );
+  const chain = {
+    outcome: "engine-complete",
+    sourceContext: sourcePin,
+    engineContext: phases["full-sdk-engine-cef-engine-context.json"].pin,
+    launch: phases["full-sdk-engine-cef-engine-launch.json"].pin,
+    job: phases["jobs/cef-engine/receipt.json"].pin,
+    close: phases["full-sdk-engine-closed-cef-engine.json"].pin,
+    sourceJob: sj.pin,
+    sourceLauncher: native["full-source-launcher-result.json"].pin,
+    sourceClose: native["full-source-closed-launcher.json"].pin,
+  };
+  need(equalRaw(seal.sourceChain, chain), "RAW_SOURCE_CHAIN");
+  for (const n of [
+    "jobs/full-source-operation/receipt.json",
+    "full-source-launcher-result.json",
+    "full-source-closed-launcher.json",
+  ])
+    add(n, native[n].pin);
+  const original = [
+    "full-source-launcher-result.json",
+    "full-source-closed-launcher.json",
+    "jobs/full-source-operation/receipt.json",
+    "full-source-closed-full-source-operation.json",
+    "full-source-operation-result.json",
+    "full-source-closed-verify-setup.json",
+    "full-source-gn-result.json",
+  ];
+  const dataRoles = [
+    "sdk-data",
+    "llvm-data",
+    "rust-archive",
+    "gn-archive",
+    "siso-archive",
+    "materialize",
+    "runtime-closure",
+    "full-sdk-source-gn",
+  ];
+  original.push(
+    ...dataRoles.map((r) => "jobs/" + r + "/receipt.json"),
+    ...dataRoles.slice(0, -1).map((r) => "full-source-closed-" + r + ".json"),
+  );
+  const checked = seal.checkedInputs;
+  shape(checked, ["schemaVersion", "kind", "before", "after"]);
+  need(
+    checked.schemaVersion === 1 &&
+      checked.kind === "windows-arm-checked-input-closure-pair",
+    "RAW_CHECKED",
+  );
+  const names = [...new Set([...expected.keys(), ...original])].sort();
+  need(names.length === 162, "RAW_CHECKED_COUNT");
+  for (const [side, boundary] of [
+    ["before", "before-probe-clang"],
+    ["after", "after-package-before-sdk-seal"],
+  ]) {
+    const row = checked[side];
+    shape(row, ["boundary", "sha256", "content"]);
+    const v = row.content;
+    shape(v, [
+      "schemaVersion",
+      "kind",
+      "sourceContextSha256",
+      "image",
+      "sourceId",
+      "producerSha256",
+      "metadataProjectionSha256",
+      "records",
+    ]);
+    need(
+      row.boundary === boundary &&
+        v.schemaVersion === 1 &&
+        v.kind === "windows-arm-checked-input-closure" &&
+        v.sourceContextSha256 === sourcePin.sha256 &&
+        v.image === source.image &&
+        v.sourceId === source.sourceId &&
+        v.producerSha256 === identity.producerSha256 &&
+        hex(v.metadataProjectionSha256) &&
+        row.sha256 === hash(Buffer.from(canonical(v))) &&
+        Array.isArray(v.records) &&
+        equalRaw(
+          v.records.map((r) => r.relative),
+          names,
+        ),
+      "RAW_CHECKED",
+    );
+    for (const r of v.records) {
+      shape(r, ["relative", "bytes", "sha256"]);
+      need(
+        Number.isSafeInteger(r.bytes) &&
+          r.bytes >= 0 &&
+          r.bytes <= 16 * MAX &&
+          hex(r.sha256),
+        "RAW_CHECKED_PIN",
+      );
+      need(
+        !expected.has(r.relative) ||
+          equalRaw(expected.get(r.relative), {
+            bytes: r.bytes,
+            sha256: r.sha256,
+          }),
+        "RAW_CHECKED_PIN",
+      );
+    }
+  }
+  need(
+    equalRaw(checked.before.content, checked.after.content) &&
+      checked.before.sha256 === checked.after.sha256,
+    "RAW_CHECKED_CHANGE",
+  );
+  rawTiming(seal.producerTiming, source);
+  need(elapsed <= seal.producerTiming.producerElapsedMs, "RAW_ELAPSED");
+  shape(seal.release, ["id", "tag", "head", "carrierHead"]);
+  need(
+    positive(seal.release.id) &&
+      seal.release.head === wf.head &&
+      hex(seal.release.carrierHead, 40),
+    "RAW_RELEASE",
+  );
+  const controller = rawEvidence(seal.controller),
+    report = controller.value;
+  shape(report, [
+    "kind",
+    "sourceId",
+    "image",
+    "target",
+    "sdkBuilt",
+    "nativeAcceptance",
+    "runtimeReady",
+    "publicationAllowed",
+    "bundle",
+    "assets",
+    "checkedInputs",
+  ]);
+  need(
+    report.kind === "windows-arm-full-sdk-produced" &&
+      report.sourceId === source.sourceId &&
+      report.image === source.image &&
+      report.target === seal.target &&
+      report.sdkBuilt === true &&
+      report.nativeAcceptance === false &&
+      report.runtimeReady === false &&
+      report.publicationAllowed === false &&
+      report.bundle === "full-sdk-package/bundle" &&
+      equalRaw(report.checkedInputs, checked),
+    "RAW_CONTROLLER",
+  );
+  const tag =
+    "windows-arm-full-sdk-quarantine-" +
+    wf.runId +
+    "-" +
+    wf.attempt +
+    "-" +
+    source.sourceId.slice(0, 12) +
+    "-" +
+    controller.pin.sha256.slice(0, 16);
+  need(seal.release.tag === tag, "RAW_RELEASE");
+  sealRecordAssets(seal.assets, identity.sourceId);
+  const stripped = seal.assets.map(({ id: _id, ...r }) => r);
+  const packageOutput =
+    phases["full-sdk-engine-package-result.json"].value.output;
+  shape(packageOutput, ["bundle", "assets"]);
+  need(
+    packageOutput.bundle === report.bundle &&
+      equalRaw(
+        packageOutput.assets.map(({ name, size, sha256 }) => ({
+          name,
+          bytes: size,
+          sha256,
+        })),
+        stripped,
+      ) &&
+      Array.isArray(report.assets) &&
+      report.assets.length === 5 &&
+      equalRaw(
+        report.assets.map(({ name, size, sha256 }) => ({
+          name,
+          bytes: size,
+          sha256,
+        })),
+        stripped,
+      ) &&
+      report.assets.every((r) => {
+        shape(r, ["name", "size", "sha256", "identity"]);
+        return typeof r.identity === "string";
+      }),
+    "RAW_ASSETS",
+  );
+  const prefix =
+    "native/cef-build-inputs/" +
+    (source.image === "20261030.294.1"
+      ? "20261101-r5-windows-arm64-cross-x64-current-source-gn"
+      : "20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn") +
+    "/source-lock.json";
+  const selected = rows[index(prefix)];
+  return {
+    source,
+    phases,
+    sourcePin,
+    sourceLockRaw: { bytes: selected.bytes, sha256: selected.sha256 },
+    bundleSourceLockRaw: (({ bytes, sha256 }) => ({ bytes, sha256 }))(
+      stripped.find((r) => r.name === "source-lock.json"),
+    ),
+    assets: stripped,
+    producer: {
+      repository: REPOSITORY,
+      repositoryId: REPOSITORY_ID,
+      runId: Number(wf.runId),
+      attempt: Number(wf.attempt),
+      head: wf.head,
+      branch: "main",
+      workflow: wf.path,
+    },
+  };
+}
+function sealRecordAssets(rows, sourceId) {
+  need(Array.isArray(rows) && rows.length === 5, "RAW_ASSETS");
+  const ids = new Set();
+  for (const r of rows) {
+    shape(r, ["id", "name", "bytes", "sha256"]);
+    need(positive(r.id) && !ids.has(r.id), "RAW_ASSETS");
+    ids.add(r.id);
+  }
+  assets(rows.map(({ id: _id, ...r }) => r));
+  need(
+    rows.some(
+      (r) =>
+        r.name ===
+        "sorng-cef-custom-" +
+          sourceId +
+          "-" +
+          WINDOWS_ARM_SDK_TARGET +
+          ".tar.bz2",
+    ),
+    "RAW_ASSETS",
+  );
+}
+function rawViews(sealRaw, details, metadata) {
+  shape(metadata, ["manifest", "receipt"]);
+  const value = {};
+  for (const name of ["manifest", "receipt"]) {
+    const entry = rawEvidence(metadata[name]),
+      asset = details.assets.find((r) => r.name === name + ".json");
+    bytes(entry.raw, { bytes: asset.bytes, sha256: asset.sha256 });
+    value[name] = entry.value;
+  }
+  const manifest = value.manifest,
+    receipt = value.receipt,
+    id = details.source.sourceId;
+  need(
+    manifest.kind === "sorng-cef-custom-runtime" &&
+      manifest.schemaVersion === 1 &&
+      manifest.sourceLockSha256 === id &&
+      Array.isArray(manifest.artifacts) &&
+      manifest.artifacts.length === 1 &&
+      receipt.kind === "sorng-cef-custom-build-receipt" &&
+      receipt.schemaVersion === 1 &&
+      receipt.target === WINDOWS_ARM_SDK_TARGET &&
+      receipt.sourceLockSha256 === id,
+    "RAW_BUNDLE",
+  );
+  const artifact = manifest.artifacts[0],
+    archive = details.assets.find((r) => r.name.endsWith(".tar.bz2"));
+  need(
+    artifact.target === WINDOWS_ARM_SDK_TARGET &&
+      artifact.archive?.sha256 === archive.sha256 &&
+      artifact.archive?.size === archive.bytes &&
+      receipt.archiveSha256 === archive.sha256 &&
+      Array.isArray(artifact.sdkFiles) &&
+      positive(artifact.sdkFiles.length) &&
+      artifact.sdkFiles.length <= 300000 &&
+      receipt.sdkInventorySha256 ===
+        hash(Buffer.from(canonical(artifact.sdkFiles))),
+    "RAW_BUNDLE",
+  );
+  const library = artifact.sdkFiles.filter(
+    (r) => r.path === artifact.runtime?.library,
+  );
+  need(
+    library.length === 1 &&
+      library[0].type === "file" &&
+      hex(library[0].sha256) &&
+      typeof artifact.runtime.library === "string" &&
+      path.posix.basename(artifact.runtime.library) === "libcef.dll",
+    "RAW_ENGINE",
+  );
+  const sealSha256 = hash(sealRaw);
+  const source = {
+    kind: "windows-arm-quarantine-source-view",
+    sealSha256,
+    sourceLockRaw: details.sourceLockRaw,
+    bundleSourceLockRaw: details.bundleSourceLockRaw,
+    checkedInputsSha256: JSON.parse(sealRaw).checkedInputs.before.sha256,
+  };
+  const compile = {
+    kind: "windows-arm-quarantine-compile-view",
+    sealSha256,
+    sourceRecordSha256: hash(Buffer.from(canonical(source) + "\n")),
+    nativePhase: "cef-engine",
+    result: details.phases["full-sdk-engine-cef-engine-result.json"].pin,
+  };
+  const packaged = {
+    kind: "windows-arm-quarantine-package-view",
+    sealSha256,
+    compileRecordSha256: hash(Buffer.from(canonical(compile) + "\n")),
+    engine: { sha256: library[0].sha256 },
+    inventory: { files: artifact.sdkFiles.length },
+    assets: details.assets,
+    metadata,
+  };
+  return { source, compile, package: packaged };
+}
+// Generates review DATA only; it cannot register a producer binding or import.
+export async function projectWindowsArmSdkQuarantineRecords(
+  receipt,
+  rawSeal,
+  bundleMetadata,
+) {
+  need(
+    Buffer.isBuffer(rawSeal) && rawSeal.length > 0 && rawSeal.length <= MAX,
+    "RAW_BOUND",
+  );
+  rawSeal = Buffer.from(rawSeal);
+  shape(bundleMetadata, ["manifest", "receipt"]);
+  const metadata = Object.fromEntries(
+    ["manifest", "receipt"].map((name) => {
+      shape(bundleMetadata[name], ["bytes", "sha256", "base64"]);
+      const { bytes, sha256, base64 } = bundleMetadata[name];
+      const row = { bytes, sha256, base64 };
+      rawEvidence(row);
+      return [name, row];
+    }),
+  );
+  const state = await current(receipt);
+  const seal = json(rawSeal),
+    details = rawDetails(seal, state),
+    views = rawViews(rawSeal, details, metadata);
+  retained(receipt, await current(receipt), state);
+  const encoded = Object.entries(views).map(([k, v]) => [
+    k,
+    canonical(v) + "\n",
+  ]);
+  need(
+    encoded.every(
+      ([, v]) => Buffer.byteLength(v) > 0 && Buffer.byteLength(v) <= MAX,
+    ),
+    "RAW_BOUND",
+  );
+  return Object.fromEntries([
+    ...encoded.map(([k, v]) => [k, Buffer.from(v)]),
+    ["producerSeal", rawSeal],
+  ]);
+}
+async function inspectRawRecords(receipt, records, state) {
+  const seal = json(records.producerSeal),
+    details = rawDetails(seal, state),
+    packaged = json(records.package),
+    views = rawViews(records.producerSeal, details, packaged.metadata);
+  for (const role of ["source", "compile", "package"])
+    need(equalRaw(json(records[role]), views[role]), "RAW_VIEW");
+  retained(receipt, await current(receipt), state);
+  return frozen({
+    kind: "windows-arm-full-sdk-record-candidate",
+    origin: WINDOWS_ARM_SDK_ORIGIN,
+    originPolicySha256: state.policySha256,
+    target: seal.target,
+    sourceLockIdentity: seal.identity.sourceId,
+    image: seal.identity.image,
+    producer: details.producer,
+    sealSha256: hash(records.producerSeal),
+    recordPins: Object.fromEntries(
+      Object.entries(records).map(([k, v]) => [k, rawPin(v)]),
+    ),
+    bundleVerified: false,
+    producerVerified: false,
+    nativeAcceptance: false,
+    runtimeReady: false,
+    publicationAllowed: false,
+  });
+}
+async function verifyRawProducer(
+  receipt,
+  records,
+  artifact,
+  api,
+  inspected,
+  state,
+) {
+  const seal = json(records.producerSeal),
+    p = inspected.producer;
+  bytes(artifact.raw, {
+    bytes: artifact.pin.bytes,
+    sha256: artifact.pin.sha256,
+  });
+  need(
+    independentSeal(artifact.raw, RAW_MEMBER).equals(records.producerSeal),
+    "INDEPENDENT_SEAL",
+  );
+  need(typeof api === "function", "API");
+  const routes = [
+    "",
+    "actions/workflows/windows-arm-full-sdk.yml",
+    "actions/runs/" + p.runId,
+    "actions/artifacts/" + artifact.pin.id,
+    "git/commits/" + p.head,
+    "git/commits/" + seal.release.carrierHead,
+    "releases/" + seal.release.id,
+    "releases/" + seal.release.id + "/assets?per_page=100",
+  ];
+  const [
+    repo,
+    workflow,
+    run,
+    remoteArtifact,
+    commit,
+    carrier,
+    release,
+    releaseAssets,
+  ] = await Promise.all(
+    routes.map(async (route) => structuredClone(await api(route))),
+  );
+  need(
+    repo.id === REPOSITORY_ID &&
+      repo.full_name === REPOSITORY &&
+      repo.private === false &&
+      repo.visibility === "public" &&
+      repo.default_branch === "main",
+    "REPOSITORY",
+  );
+  need(
+    positive(workflow.id) &&
+      workflow.path === WINDOWS_ARM_SDK_WORKFLOW &&
+      run.id === p.runId &&
+      run.run_attempt === p.attempt &&
+      run.head_sha === p.head &&
+      run.head_branch === "main" &&
+      run.path === WINDOWS_ARM_SDK_WORKFLOW &&
+      run.workflow_id === workflow.id &&
+      run.event === "workflow_dispatch" &&
+      run.status === "completed" &&
+      run.conclusion === "success" &&
+      [run.repository, run.head_repository].every(
+        (r) => r?.id === REPOSITORY_ID && r?.full_name === REPOSITORY,
+      ),
+    "RUN",
+  );
+  need(
+    remoteArtifact.id === artifact.pin.id &&
+      remoteArtifact.expired === false &&
+      remoteArtifact.size_in_bytes === artifact.pin.bytes &&
+      remoteArtifact.digest === "sha256:" + artifact.pin.sha256 &&
+      remoteArtifact.name ===
+        "windows-arm-full-sdk-seal-" + p.runId + "-" + p.attempt &&
+      remoteArtifact.workflow_run?.id === p.runId &&
+      remoteArtifact.workflow_run?.head_sha === p.head,
+    "ARTIFACT",
+  );
+  need(
+    commit.sha === p.head &&
+      hex(commit.tree?.sha, 40) &&
+      carrier.sha === seal.release.carrierHead,
+    "GIT_TREE",
+  );
+  const tree = structuredClone(
+    await api("git/trees/" + commit.tree.sha + "?recursive=1"),
+  );
+  need(
+    tree.truncated === false &&
+      Array.isArray(tree.tree) &&
+      tree.tree.length <= 100000,
+    "GIT_TREE",
+  );
+  for (const row of state.held) {
+    const found = tree.tree.filter((r) => r.path === row.relative);
+    need(
+      found.length === 1 &&
+        found[0].type === "blob" &&
+        found[0].mode === row.mode &&
+        found[0].sha === row.blob,
+      "PRODUCER_CODE",
+    );
+  }
+  need(
+    release.id === seal.release.id &&
+      release.draft === true &&
+      release.prerelease === true &&
+      release.tag_name === seal.release.tag &&
+      release.name === seal.release.tag &&
+      release.target_commitish === seal.release.carrierHead &&
+      Array.isArray(releaseAssets) &&
+      releaseAssets.length === 5,
+    "RELEASE",
+  );
+  for (const row of seal.assets) {
+    const found = releaseAssets.filter((r) => r.id === row.id);
+    need(
+      found.length === 1 &&
+        found[0].name === row.name &&
+        found[0].size === row.bytes &&
+        found[0].digest === "sha256:" + row.sha256 &&
+        found[0].state === "uploaded",
+      "RELEASE_ASSET",
+    );
+  }
+  retained(receipt, await current(receipt), state);
+  const result = Object.freeze({
+    ...inspected,
+    kind: "windows-arm-full-sdk-producer-binding",
+    producerVerified: true,
+  });
+  bindings.set(result, { receipt, state, sealSha256: inspected.sealSha256 });
+  return result;
+}
+// END schema2 raw quarantine origin
 function sourceRecord(value, state) {
   base(
     value,
@@ -1127,6 +2441,11 @@ function sealRecord(value, state) {
 export async function inspectWindowsArmSdkRecords(receipt, records) {
   records = snapshotRecords(records);
   const state = await current(receipt);
+  if (json(records.producerSeal).kind === RAW_KIND) {
+    const result = await inspectRawRecords(receipt, records, state);
+    retained(receipt, await current(receipt), state);
+    return result;
+  }
   shape(records, ["source", "compile", "package", "producerSeal"]);
   const values = Object.fromEntries(
     Object.entries(records).map(([key, raw]) => [key, json(raw)]),
@@ -1215,6 +2534,18 @@ export async function verifyWindowsArmSdkProducer(
   const state = await current(receipt),
     seal = json(records.producerSeal),
     p = seal.producer;
+  if (seal.kind === RAW_KIND) {
+    const result = await verifyRawProducer(
+      receipt,
+      records,
+      artifact,
+      api,
+      inspected,
+      state,
+    );
+    retained(receipt, await current(receipt), state);
+    return result;
+  }
   shape(artifact, ["pin", "raw"]);
   const artifactPin = artifact.pin;
   shape(artifactPin, ["id", "bytes", "sha256"]);
