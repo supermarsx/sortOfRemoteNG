@@ -136,6 +136,29 @@ def main():
         value=candidate.source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
         candidate.source_phase('done');require(value==previous)
         candidate_snapshots.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in candidate.SOURCE_PROGRESS['phases']]})
+    variants=[];PHASE='prototype-worker-variants'
+    for workers in (1,2):
+        # Fixed experimental derivations only. No caller/environment selector.
+        old=b'WORKERS=4\n';new=('WORKERS='+str(workers)+'\n').encode()
+        require(prototype_raw.count(old)==1)
+        variant_raw=prototype_raw.replace(old,new,1)
+        require(variant_raw.count(new)==1 and variant_raw.replace(new,old,1)==prototype_raw)
+        variant=types.ModuleType('fixed_hash_prototype_'+str(workers));variant.__file__=str(prototype_path)
+        exec(compile(variant_raw,str(prototype_path),'exec'),variant.__dict__)
+        alternative,variant_observations,variant_inverse=variant.snapshot_module(raw);variant_snapshots=[]
+        for _ in range(2):
+            budget.check();begin=time.monotonic();alternative.source_progress_start(budget.seconds)
+            value=alternative.source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
+            alternative.source_phase('done');require(value==previous)
+            variant_snapshots.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in alternative.SOURCE_PROGRESS['phases']]})
+        require(len(variant_observations)==2)
+        for observation in variant_observations:
+            require(observation['workers']==workers and observation['pendingCap']==workers and
+                    observation['peakFDs']<=1+2*workers and observation['unknownCloses']==0 and
+                    observation['opened']==observation['closed']==observation['closeAttempts'] and
+                    observation['submittedBatches']==observation['retiredBatches'])
+        variants.append({'workers':workers,'fixedConstantInverseExact':True,'prototypeVariantSha256':hashlib.sha256(variant_raw).hexdigest(),
+                         'inverse':variant_inverse,'snapshots':variant_snapshots,'observations':variant_observations})
     pin(repo/HELPER,209410,HELPER_SHA);pin(Path(__file__),65536,self_pin['sha256']);pin(workflow,65536,workflow_pin['sha256']);budget.check()
     pin(prototype_path,65536,PROTOTYPE_SHA);pin(controls_path,65536,CONTROL_SHA)
     pin(repo/'.git/HEAD',41,head_sha)
@@ -143,6 +166,7 @@ def main():
       'image':env['ImageVersion'],'platform':platform.platform(),'pythonVersion':platform.python_version(),'cpuCount':os.cpu_count(),'currentWorkers':configured,
       'helper':helper_pin,'python':python_pin,'fixture':self_pin,'workflow':workflow_pin,'files':4000,'bytes':sum(r['stamp'][0]for r in rows),'results':results,'snapshots':snapshots,
       'prototype':prototype_pin,'controls':controls_pin,'controlResult':CONTROL_RESULT,'prototypeInverse':inverse,'prototypeSnapshots':candidate_snapshots,'prototypeObservations':observations,
+      'fixedWorkerVariants':variants,
       'snapshotScope':'Creation-owned internal read-only Mac DATA fixture only','fixturePreservedForHostTeardown':True,'runtimeReady':False,'nativeQualified':False}
     PHASE='report';raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode();require(len(raw)<=32768)
     target=TEMP/'cef-mac-hash-benchmark-report.json'
