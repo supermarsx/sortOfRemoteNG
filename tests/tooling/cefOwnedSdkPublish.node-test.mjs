@@ -1150,6 +1150,13 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
   if (target === "x86_64-apple-darwin" || target === "aarch64-apple-darwin")
     rows.find((row) => row.path === "scripts/cef-runtime-ci.mjs").sha =
       "9831c2cb0f4a7aebbabcd87e090eeb89c1563507";
+  if (target === "aarch64-unknown-linux-gnu") {
+    rows.find((row) => row.path === "scripts/cef-runtime-ci.mjs").sha =
+      "9831c2cb0f4a7aebbabcd87e090eeb89c1563507";
+    rows.find(
+      (row) => row.path === "scripts/lib/cef-linux-producer-migration.mjs",
+    ).sha = "6cc34440ca80437ba881dcc33e62eea8f5cc55cc";
+  }
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1437,6 +1444,18 @@ async function engineeringFlow(t, target) {
 }
 
 function withoutSuccessorProducerBindings(raw) {
+  const latestLinux =
+    '  "aarch64-unknown-linux-gnu":\n    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",';
+  assert.equal(raw.split(latestLinux).length, 2);
+  raw = raw.replace(
+    latestLinux,
+    '  "aarch64-unknown-linux-gnu":\n    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+  );
+  assert.equal(Buffer.byteLength(raw), 23685);
+  assert.equal(
+    hash(raw),
+    "4b3467ae2a1012f03d69e57a9c3d9797ac1c5eba69aa204f0b0fb5a5d2b4baf1",
+  );
   for (const [current, prior] of [
     [
       'export const ENGINEERING_PRODUCER =\n  "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864";',
@@ -1536,7 +1555,7 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
-    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
   );
   for (const target of Object.keys(ENGINEERING_PRODUCERS)) {
     const f = engineeringFixture(target);

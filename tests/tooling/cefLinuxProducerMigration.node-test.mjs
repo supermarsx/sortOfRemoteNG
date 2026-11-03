@@ -78,7 +78,7 @@ function withoutLatestCheckpoint(text) {
   );
   return text;
 }
-test("draft740 retarget restores the complete63f module without inventing a sealed checkpoint", async () => {
+test("current740 retarget restores the complete63f module and denies caller grants", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutPending740Checkpoint(text);
   assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
@@ -91,9 +91,6 @@ test("draft740 retarget restores the complete63f module without inventing a seal
     M.policyPath,
     "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
   );
-  await assert.rejects(fs.stat(path.join(ROOT, M.policyPath)), {
-    code: "ENOENT",
-  });
   await assert.rejects(
     migration.readLinuxMigrationSelection({
       runId: 41640765677,
@@ -587,7 +584,7 @@ function withoutTransactionDelta(text) {
   return text;
 }
 // Historical seed for synthetic envelopes, never production run authority.
-const SEED_RUN = 41474498335;
+const SEED_RUN = 41640765677;
 const selected = [
   "scripts",
   "native/cef-hosted-recipe.json",
@@ -933,6 +930,42 @@ const LATEST_SOURCE_ROWS =
 100644 blob 303feb0be3a88e30c575be88157640621322e6e5	scripts/versioning.mjs
 100644 blob 5d203492eb36a8b3354182b3e66fd7e0402d7e12	scripts/viewport-scroll-check.mjs
 100644 blob 3f51e0714aae592fdcecf2b72af6fe8be9ac7211	scripts/web-automation-capture.mjs`);
+// Actual successful41640765677 original d70 producer; native/API fixture
+// behavior below remains modeled. Historical9c131/A4129 rows stay immutable.
+const CURRENT_CHECKPOINT_BLOBS = {
+  "scripts/cef-engineering-checkpoint.mjs":
+    "ced7571cfc1efda7260acaa39e03b81511e7dfb7",
+  "scripts/cef-hosted-provision.mjs":
+    "9fb323d215e1d246f537685b360d3a665f87f748",
+  "scripts/cef-runtime-ci.mjs": "0a5aff87d6755bf2ab0705269e891bc9d663f746",
+  "scripts/lib/cef-checkpoint-archive.py":
+    "58e4600b0f2ad71fc454e1a504e88d19135e3858",
+  "scripts/lib/cef-engineering-checkpoint.mjs":
+    "113822b8e5172c9b77cd4743e5f9ca72531280a4",
+  "scripts/lib/cef-linux-producer-migration.mjs":
+    "d2e58083ac39a4404d2298d658b1bfea89f77824",
+  "scripts/lib/cef-windows-arm-sdk-origin.mjs":
+    "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6",
+};
+const CURRENT_CHECKPOINT_SOURCE_ROWS = LATEST_SOURCE_ROWS.map((row) => ({
+  ...row,
+  sha: CURRENT_CHECKPOINT_BLOBS[row.path] ?? row.sha,
+}));
+
+test("current checkpoint modeled rows match actual original d70131 Git without altering historical witnesses", () => {
+  assert.equal(CURRENT_CHECKPOINT_SOURCE_ROWS.length, 131);
+  assert.equal(core.codeTreeDigest(CURRENT_CHECKPOINT_SOURCE_ROWS), M.producer);
+  assert.deepEqual(CURRENT_CHECKPOINT_SOURCE_ROWS, rows(ROOT, M.head));
+  assert.equal(
+    core.codeTreeDigest(LATEST_SOURCE_ROWS),
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+  );
+  assert.equal(
+    core.codeTreeDigest(OLD_SOURCE_ROWS),
+    "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",
+  );
+});
+
 async function scratch(t) {
   const root = await fs.realpath(
     await fs.mkdtemp(path.join(os.tmpdir(), "cef-linux-migration-")),
@@ -989,7 +1022,7 @@ async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
   const root = await scratch(t),
     repo = path.join(root, "repo");
   await fs.mkdir(repo);
-  const oldRows = structuredClone(LATEST_SOURCE_ROWS);
+  const oldRows = structuredClone(CURRENT_CHECKPOINT_SOURCE_ROWS);
   const reachableRows = rows(ROOT, "HEAD");
   assert.equal(oldRows.length, 131);
   assert.equal(core.codeTreeDigest(oldRows), M.producer);
@@ -2097,7 +2130,7 @@ test("a source owner retired during an awaited apply cannot reach GN, readiness 
   assert(!m.events.includes("new-record"));
 });
 
-test("latest sealed checkpoint history survives the inactive740 draft retarget", async () => {
+test("latest sealed checkpoint retarget keeps both immutable9da131 and A4129 histories", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutLatestCheckpoint(text);
   assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
@@ -2152,19 +2185,19 @@ test("latest sealed checkpoint history survives the inactive740 draft retarget",
     /3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6/,
   );
 });
-test("fixed retarget binds the actual main9c131-row producer and committed non-authorizing capsule", async () => {
+test("fixed retarget binds the actual d70131-row producer and committed non-authorizing capsule", async () => {
   assert.equal(Object.hasOwn(M, "runId"), false);
   assert.equal(
     M.policyPath,
-    "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
   );
-  assert.equal(M.head, "9c73456b804a17aa59d62e41d5e33f55d0e38271");
+  assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
   assert.equal(
     M.producer,
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   assert.equal(M.sourceFiles, 131);
-  const actual = structuredClone(LATEST_SOURCE_ROWS);
+  const actual = structuredClone(CURRENT_CHECKPOINT_SOURCE_ROWS);
   assert.equal(actual.length, 131);
   assert.equal(core.codeTreeDigest(actual), M.producer);
   assert.equal(
@@ -2197,7 +2230,48 @@ test("fixed retarget binds the actual main9c131-row producer and committed non-a
   assert.equal(capsule.from.producer, M.producer);
   assert.deepEqual(capsule.oldSourceTree, actual);
   assert.equal(capsule.toProducer, core.codeTreeDigest(rows(ROOT, "HEAD")));
-  assert.equal(capsule.from.checkpointProducer.runId, 41474498335);
+  assert.equal(capsule.from.checkpointProducer.runId, 41640765677);
+  assert.deepEqual(capsule.from, {
+    checkpointProducer: {
+      attempt: 1,
+      branch: "main",
+      head: "d70a98f07342cc823d37441e0a42daa2d7b90100",
+      repository: "supermarsx/sortOfRemoteNG",
+      repositoryId: 1010282954,
+      runId: 41640765677,
+      workflow: ".github/workflows/cef-engineering-checkpoint.yml",
+    },
+    identitySha256:
+      "3de7a4c067f3f7d5059631159c02384d6412d3c10132e8335ca0276f9d657c6e",
+    inventory: {
+      bytes: 61083524,
+      sha256:
+        "5311ce591e7e5b8846772cf7a3be44f043c6e3ec649de99e566134d558b4dd7b",
+    },
+    manifest: {
+      bytes: 2162,
+      sha256:
+        "175c0b4d4db29c07437ce3ae43f6ca98a744054396f18610744e41994130b827",
+    },
+    producer:
+      "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    seal: {
+      bytes: 1439,
+      sha256:
+        "ad362c51be0a88e01efcbf05f5a522f5e6b1463825bde1f5d879490e62a65add",
+    },
+    sealArtifact: {
+      bytes: 1571,
+      id: 13251109032,
+      sha256:
+        "aeaed1d3c304f650b7dbeda373ee796b64ff44e0a365700337190328db9146e6",
+    },
+    sidecar: {
+      bytes: 288253557,
+      sha256:
+        "13de50a850f95a6eb0821a20eab073999846a1269f54507793d9588e5d7f6a42",
+    },
+  });
   await assert.rejects(
     migration.readLinuxMigrationSelection(capsule),
     /LINUX_MIGRATION_SELECTION_ARGUMENTS/,
