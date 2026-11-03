@@ -95,7 +95,7 @@ jobs:
           $sealPath = Join-Path $env:CEF_FULLSDK_OUTPUT_ROOT $expectedFile
           [IO.File]::AppendAllText($env:GITHUB_OUTPUT, 'seal_path=' + $sealPath + [Environment]::NewLine + 'artifact_name=' + $expectedName + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
       - name: Anchor the exact completed raw seal in immutable Actions storage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ steps.transport.outputs.artifact_name }}
           path: ${{ steps.transport.outputs.seal_path }}
@@ -104,7 +104,7 @@ jobs:
           retention-days: 7
       - name: Retain bounded qualification records
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-arm-full-sdk-records-${{ github.run_id }}-${{ github.run_attempt }}
           include-hidden-files: true
