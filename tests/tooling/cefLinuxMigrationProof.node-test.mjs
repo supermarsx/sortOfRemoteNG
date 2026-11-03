@@ -188,7 +188,48 @@ test("current composed carrier retarget preserves its complete historical pre-gu
   );
 });
 
+function withoutOwnedMacCheckpoint(text) {
+  assert.equal(Buffer.byteLength(text), 123579);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "5ff0697c65cbce88ca405f04d6f313a60204e3ad69a17e812d628337dc9f910c",
+  );
+  const edits = [
+    [
+      '  head: "d9e52c2acebb2acaa9624f00a7d226f6d3528954",',
+      '  head: "d70a98f07342cc823d37441e0a42daa2d7b90100",',
+    ],
+    [
+      '  producer: "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",',
+      '  producer: "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+    ],
+    [
+      "native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json",
+      "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+    ],
+    ["    bytes: 229058,", "    bytes: 209410,"],
+    [
+      '    sha256: "c728e702508d1a22417197c056d064c496528af82a29b5c993e6f4f521a74dcb",',
+      '    sha256: "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",',
+    ],
+  ];
+  for (const [after, before] of edits) {
+    assert.equal(
+      text.split(after).length,
+      2,
+      "one exact owned-Mac checkpoint retarget",
+    );
+    text = text.replace(after, before);
+  }
+  assert.equal(Buffer.byteLength(text), 123573);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "26f50856e4e57997f8095b7050f03c17c7cf6c1f3fb07170c103bcf06aa45572",
+  );
+  return text;
+}
 function withoutPending740Checkpoint(text) {
+  text = withoutOwnedMacCheckpoint(text);
   const edits = [
     [
       '  head: "d70a98f07342cc823d37441e0a42daa2d7b90100",',
@@ -451,7 +492,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
+    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),

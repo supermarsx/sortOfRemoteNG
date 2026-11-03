@@ -30,6 +30,8 @@ const raw = Buffer.from(
 );
 const profile = mod.profileFromBytes(raw);
 const digest = (value) => createHash("sha256").update(value).digest("hex");
+const currentProducerDigest =
+  "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";
 const env = () => ({
   GITHUB_ACTIONS: "true",
   RUNNER_ENVIRONMENT: "github-hosted",
@@ -227,10 +229,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   }).trim();
   const actual = await mod.producerPins(head);
   assert.equal(actual.rows.length, 131);
-  assert.equal(
-    actual.codeDigest,
-    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
-  );
+  assert.equal(actual.codeDigest, currentProducerDigest);
   assert(
     !actual.rows.some((row) =>
       row.path.startsWith("native/windows-arm-native-tools/"),
@@ -891,8 +890,43 @@ test("exact production run reaches the outer provenance function before any nati
   assert(!stages.includes("provision-evidence"));
 });
 
+function previousOwnedMacProducerWorkflow(value) {
+  assert.equal(value.split(currentProducerDigest).length, 2);
+  const previous = value
+    .replace(
+      currentProducerDigest,
+      "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
+    )
+    .replaceAll("\r\n", "\n");
+  assert.equal(Buffer.byteLength(previous), 34250);
+  assert.equal(
+    digest(previous),
+    "db37fecc3ec45a166a9ca5b366065c18441fd93b2e5afb3120f0a12027cacefd",
+  );
+  return previous;
+}
+
+test("owned Mac producer retarget has one exact hash inverse before all historical native workflow checks", () => {
+  const previous = previousOwnedMacProducerWorkflow(workflow);
+  assert.equal(previous.split(currentProducerDigest).length, 1);
+  assert.equal(
+    previous.split(
+      "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
+    ).length,
+    2,
+  );
+  for (const altered of [
+    workflow.replace(currentProducerDigest, "0".repeat(64)),
+    workflow + currentProducerDigest,
+    workflow + "\n",
+    workflow.replace("contents: read", "contents: write"),
+  ])
+    assert.throws(() => previousOwnedMacProducerWorkflow(altered));
+});
+
 test("current producer attestation retarget preserves the complete historical native diagnostic workflow", () => {
-  const previousMacLease = workflow
+  const beforeOwnedMac = previousOwnedMacProducerWorkflow(workflow);
+  const previousMacLease = beforeOwnedMac
     .replace(
       "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
       "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",
@@ -903,7 +937,7 @@ test("current producer attestation retarget preserves the complete historical na
     createHash("sha256").update(previousMacLease).digest("hex"),
     "d122f608a8324c4d9f1d7c1299855b3ac3a21c13b511b6c1c0afc21e79d0a9b0",
   );
-  const restored = workflow
+  const restored = beforeOwnedMac
     .replace(
       "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
       "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
@@ -914,7 +948,7 @@ test("current producer attestation retarget preserves the complete historical na
     createHash("sha256").update(restored).digest("hex"),
     "b00727c8b7e690621d4a6f64a2daf048d24301a30ddccda0aa4d88d3132e82ed",
   );
-  const previousCurrent = workflow
+  const previousCurrent = beforeOwnedMac
     .replace(
       "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
       "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
@@ -925,7 +959,7 @@ test("current producer attestation retarget preserves the complete historical na
     createHash("sha256").update(previousCurrent).digest("hex"),
     "01b45142486e35b93fdd066a0c5ed9ea57c42c343f60bb5e2ab4be3d82708d6c",
   );
-  const priorY = workflow.replace(
+  const priorY = beforeOwnedMac.replace(
     "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
     "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f",
   );

@@ -16502,7 +16502,45 @@ const MAC_SOURCE_COMPLETION_INVERSE = {
     },
   },
 };
+const COMPILE_OBSERVATION_INVERSE = [
+  'function compileFailureObservation(error) {\n  let errorCode = "UNKNOWN";\n  try {\n    if (!utilTypes.isProxy(error) && utilTypes.isNativeError(error)) {\n      const message = Object.getOwnPropertyDescriptor(error, "message");\n      const code = Object.getOwnPropertyDescriptor(error, "code");\n      const messages = new Map([\n        [\n          "Observed descendants not reaped; checkpoint denied",\n          "OWN_NOT_REAPED",\n        ],\n        ["Owned reap deadline", "OWN_REAP_DEADLINE"],\n        ["Owned freeze deadline", "OWN_FREEZE_DEADLINE"],\n        ["Observed lineage did not stabilize", "OWN_LINEAGE_UNSTABLE"],\n        ["Ambiguous owned process", "OWN_IDENTITY_AMBIGUOUS"],\n        ["Owned PID replaced before reap", "OWN_PID_REPLACED"],\n        ["Owned root PID identity changed", "OWN_ROOT_REPLACED"],\n        [\n          "Observed descendants survived compiler exit; checkpoint denied",\n          "OWN_SURVIVED_EXIT",\n        ],\n        [\n          "Unconfirmed compiler ownership; checkpoint denied",\n          "OWN_UNCONFIRMED",\n        ],\n        [\n          "Compile cleanup unconfirmed; checkpoint denied",\n          "CLEANUP_UNCONFIRMED",\n        ],\n        ["Output settlement deadline", "OUTPUT_SETTLEMENT_DEADLINE"],\n        ["Output close deadline", "OUTPUT_CLOSE_DEADLINE"],\n        ["Shared compile output bound", "OUTPUT_BOUND"],\n        ["CENSUS_DEADLINE", "CENSUS_DEADLINE"],\n        ["CENSUS_EOF", "CENSUS_EOF"],\n        ["CENSUS_REQUEST", "CENSUS_REQUEST"],\n        ["CENSUS_REQUEST_BOUND", "CENSUS_REQUEST_BOUND"],\n        ["CENSUS_OUTPUT_BOUND", "CENSUS_OUTPUT_BOUND"],\n        ["CENSUS_STDERR_BOUND", "CENSUS_STDERR_BOUND"],\n        ["CENSUS_READY_DEADLINE", "CENSUS_READY_DEADLINE"],\n        ["CENSUS_JOIN", "CENSUS_JOIN"],\n        ["CENSUS_FAILED", "CENSUS_FAILED"],\n        ["CENSUS_ROOT", "CENSUS_ROOT"],\n      ]);\n      if (typeof message?.value === "string" && messages.has(message.value))\n        errorCode = messages.get(message.value);\n      else if (\n        typeof code?.value === "string" &&\n        [\n          "EPIPE",\n          "ENOENT",\n          "EACCES",\n          "EPERM",\n          "ENOSPC",\n          "EIO",\n          "EMFILE",\n        ].includes(code.value)\n      )\n        errorCode = code.value;\n    }\n  } catch {\n    // Observation cannot replace even a falsy or hostile primary failure.\n  }\n  return { ...compileMonitorDetails(error), errorCode };\n}\n',
+  "      diagnostics: () => Object.freeze(client.diagnostics()),\n",
+  "      joined,\n      exitCode:\n        Number.isInteger(closedValue?.code) &&\n        closedValue.code >= -255 &&\n        closedValue.code <= 255\n          ? closedValue.code\n          : null,\n",
+  "    firstFailure = null,\n",
+  "      firstFailure = {\n        ...compileFailureObservation(error),\n        snapshotOrdinal: snapshotOrdinal + (snapshotPending ? 1 : 0),\n        lastSnapshot,\n      };\n",
+  "        firstFailure,\n        census: censusSession?.diagnostics() ?? null,\n",
+];
+function withoutCompileObservation(text) {
+  for (const added of COMPILE_OBSERVATION_INVERSE) {
+    assert.equal(text.split(added).length - 1, 1);
+    text = text.replace(added, "");
+  }
+  assert.equal(Buffer.byteLength(text), 243135);
+  assert.equal(
+    sha(text),
+    "3ef499315c7cb01d0e091f78b1e1769642b08fe78c1eb6bef9d3d6c6d99b3266",
+  );
+  return text;
+}
+
+test("compile observation restores the complete previous helper before historical source checks", async () => {
+  const text = (
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  withoutCompileObservation(text);
+  assert.throws(() => withoutCompileObservation(text + "\n"));
+  for (const added of COMPILE_OBSERVATION_INVERSE) {
+    assert.throws(() => withoutCompileObservation(text.replace(added, "")));
+    assert.throws(() => withoutCompileObservation(text + added));
+  }
+});
+
 function withoutMacSourceCompletion(text, name) {
+  if (name === "scripts/lib/cef-engineering-checkpoint.mjs")
+    text = withoutCompileObservation(text);
   if (name === "scripts/lib/cef-checkpoint-archive.py")
     text = withoutStaticOwnedMacSource(text);
   const changes = MAC_SOURCE_COMPLETION_INVERSE.transforms[name];

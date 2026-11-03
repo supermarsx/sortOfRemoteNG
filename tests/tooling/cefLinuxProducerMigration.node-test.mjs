@@ -16,7 +16,48 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutOwnedMacCheckpoint(text) {
+  assert.equal(Buffer.byteLength(text), 123579);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "5ff0697c65cbce88ca405f04d6f313a60204e3ad69a17e812d628337dc9f910c",
+  );
+  const edits = [
+    [
+      '  head: "d9e52c2acebb2acaa9624f00a7d226f6d3528954",',
+      '  head: "d70a98f07342cc823d37441e0a42daa2d7b90100",',
+    ],
+    [
+      '  producer: "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",',
+      '  producer: "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+    ],
+    [
+      "native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json",
+      "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+    ],
+    ["    bytes: 229058,", "    bytes: 209410,"],
+    [
+      '    sha256: "c728e702508d1a22417197c056d064c496528af82a29b5c993e6f4f521a74dcb",',
+      '    sha256: "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",',
+    ],
+  ];
+  for (const [after, before] of edits) {
+    assert.equal(
+      text.split(after).length,
+      2,
+      "one exact owned-Mac checkpoint retarget",
+    );
+    text = text.replace(after, before);
+  }
+  assert.equal(Buffer.byteLength(text), 123573);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "26f50856e4e57997f8095b7050f03c17c7cf6c1f3fb07170c103bcf06aa45572",
+  );
+  return text;
+}
 function withoutPending740Checkpoint(text) {
+  text = withoutOwnedMacCheckpoint(text);
   const edits = [
     [
       '  head: "d70a98f07342cc823d37441e0a42daa2d7b90100",',
@@ -78,22 +119,51 @@ function withoutLatestCheckpoint(text) {
   );
   return text;
 }
-test("current740 retarget restores the complete63f module and denies caller grants", async () => {
+test("current81 retarget restores complete26f then63f modules and denies caller grants", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  withoutOwnedMacCheckpoint(text);
+  for (const changed of [
+    text + "\n",
+    text.replace(
+      "d9e52c2acebb2acaa9624f00a7d226f6d3528954",
+      "d70a98f07342cc823d37441e0a42daa2d7b90100",
+    ),
+    text.replace("bytes: 229058", "bytes: 209410"),
+  ])
+    assert.throws(() => withoutOwnedMacCheckpoint(changed));
+  const old740 = git(ROOT, [
+    "show",
+    "HEAD:native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+  ]);
+  assert.equal(old740.length, 18285);
+  assert.equal(
+    core.sha(old740),
+    "42cccf13db7ea726562f68c0bef60797932bf795d96e8a82c469d7809c389c10",
+  );
+  const historical740 = JSON.parse(old740);
+  assert.equal(historical740.from.checkpointProducer.runId, 41640765677);
+  assert.equal(
+    historical740.from.producer,
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+  );
+  assert.deepEqual(
+    historical740.oldSourceTree,
+    PREVIOUS_CHECKPOINT_SOURCE_ROWS,
+  );
   withoutPending740Checkpoint(text);
-  assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
+  assert.equal(M.head, "d9e52c2acebb2acaa9624f00a7d226f6d3528954");
   assert.equal(
     M.producer,
-    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
   );
   assert.equal(M.sourceFiles, 131);
   assert.equal(
     M.policyPath,
-    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json",
   );
   await assert.rejects(
     migration.readLinuxMigrationSelection({
-      runId: 41640765677,
+      runId: 41682771351,
       admitted: true,
     }),
     /SELECTION_ARGUMENTS/,
@@ -584,7 +654,7 @@ function withoutTransactionDelta(text) {
   return text;
 }
 // Historical seed for synthetic envelopes, never production run authority.
-const SEED_RUN = 41640765677;
+const SEED_RUN = 41682771351;
 const selected = [
   "scripts",
   "native/cef-hosted-recipe.json",
@@ -932,7 +1002,7 @@ const LATEST_SOURCE_ROWS =
 100644 blob 3f51e0714aae592fdcecf2b72af6fe8be9ac7211	scripts/web-automation-capture.mjs`);
 // Actual successful41640765677 original d70 producer; native/API fixture
 // behavior below remains modeled. Historical9c131/A4129 rows stay immutable.
-const CURRENT_CHECKPOINT_BLOBS = {
+const PREVIOUS_CHECKPOINT_BLOBS = {
   "scripts/cef-engineering-checkpoint.mjs":
     "ced7571cfc1efda7260acaa39e03b81511e7dfb7",
   "scripts/cef-hosted-provision.mjs":
@@ -947,17 +1017,31 @@ const CURRENT_CHECKPOINT_BLOBS = {
   "scripts/lib/cef-windows-arm-sdk-origin.mjs":
     "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6",
 };
-const CURRENT_CHECKPOINT_SOURCE_ROWS = LATEST_SOURCE_ROWS.map((row) => ({
+const PREVIOUS_CHECKPOINT_SOURCE_ROWS = LATEST_SOURCE_ROWS.map((row) => ({
   ...row,
-  sha: CURRENT_CHECKPOINT_BLOBS[row.path] ?? row.sha,
+  sha: PREVIOUS_CHECKPOINT_BLOBS[row.path] ?? row.sha,
 }));
+// Actual successful41682771351 original d9e producer; native/API behavior
+// below remains modeled. The complete old740 rows are retained above.
+const CURRENT_CHECKPOINT_SOURCE_ROWS = PREVIOUS_CHECKPOINT_SOURCE_ROWS.map(
+  (row) => ({
+    ...row,
+    sha:
+      {
+        "scripts/cef-runtime-ci.mjs":
+          "9831c2cb0f4a7aebbabcd87e090eeb89c1563507",
+        "scripts/lib/cef-linux-producer-migration.mjs":
+          "6cc34440ca80437ba881dcc33e62eea8f5cc55cc",
+      }[row.path] ?? row.sha,
+  }),
+);
 
 function currentCheckpointWitness(repositoryRoot) {
   const raw = git(repositoryRoot, ["show", "HEAD:" + M.policyPath]);
-  assert.equal(raw.length, 18285);
+  assert.equal(raw.length, 18501);
   assert.equal(
     core.sha(raw),
-    "42cccf13db7ea726562f68c0bef60797932bf795d96e8a82c469d7809c389c10",
+    "fe74ab4331170c200a2dc58da8b7a84f6a4c115f5c1eec13b6807f8793c669e4",
   );
   const capsule = JSON.parse(raw);
   assert.equal(capsule.from.producer, M.producer);
@@ -970,6 +1054,11 @@ function currentCheckpointWitness(repositoryRoot) {
 }
 
 test("current checkpoint modeled rows match the exact current committed capsule without ancestor Git", () => {
+  assert.equal(PREVIOUS_CHECKPOINT_SOURCE_ROWS.length, 131);
+  assert.equal(
+    core.codeTreeDigest(PREVIOUS_CHECKPOINT_SOURCE_ROWS),
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+  );
   assert.equal(CURRENT_CHECKPOINT_SOURCE_ROWS.length, 131);
   assert.equal(core.codeTreeDigest(CURRENT_CHECKPOINT_SOURCE_ROWS), M.producer);
   assert.deepEqual(
@@ -2191,15 +2280,15 @@ test("a source owner retired during an awaited apply cannot reach GN, readiness 
 test("latest sealed checkpoint retarget keeps both immutable9da131 and A4129 histories", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutLatestCheckpoint(text);
-  assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
+  assert.equal(M.head, "d9e52c2acebb2acaa9624f00a7d226f6d3528954");
   assert.equal(
     M.producer,
-    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
   );
   assert.equal(M.sourceFiles, 131);
   assert.equal(
     M.policyPath,
-    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json",
   );
   assert.equal(LATEST_SOURCE_ROWS.length, 131);
   assert.equal(
@@ -2237,22 +2326,22 @@ test("latest sealed checkpoint retarget keeps both immutable9da131 and A4129 his
     )
     .find((n) => n.name.getText(proofSource) === "PROOF");
   assert(proof);
-  assert.match(proof.getText(proofSource), /bytes: 209410/);
+  assert.match(proof.getText(proofSource), /bytes: 229058/);
   assert.match(
     proof.getText(proofSource),
-    /3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6/,
+    /c728e702508d1a22417197c056d064c496528af82a29b5c993e6f4f521a74dcb/,
   );
 });
-test("fixed retarget binds the actual d70131-row producer and committed non-authorizing capsule", async () => {
+test("fixed retarget binds the actual d9e131-row producer and committed non-authorizing capsule", async () => {
   assert.equal(Object.hasOwn(M, "runId"), false);
   assert.equal(
     M.policyPath,
-    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json",
   );
-  assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
+  assert.equal(M.head, "d9e52c2acebb2acaa9624f00a7d226f6d3528954");
   assert.equal(
     M.producer,
-    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
   );
   assert.equal(M.sourceFiles, 131);
   const actual = structuredClone(CURRENT_CHECKPOINT_SOURCE_ROWS);
@@ -2288,46 +2377,46 @@ test("fixed retarget binds the actual d70131-row producer and committed non-auth
   assert.equal(capsule.from.producer, M.producer);
   assert.deepEqual(capsule.oldSourceTree, actual);
   assert.equal(capsule.toProducer, core.codeTreeDigest(rows(ROOT, "HEAD")));
-  assert.equal(capsule.from.checkpointProducer.runId, 41640765677);
+  assert.equal(capsule.from.checkpointProducer.runId, 41682771351);
   assert.deepEqual(capsule.from, {
     checkpointProducer: {
       attempt: 1,
       branch: "main",
-      head: "d70a98f07342cc823d37441e0a42daa2d7b90100",
+      head: "d9e52c2acebb2acaa9624f00a7d226f6d3528954",
       repository: "supermarsx/sortOfRemoteNG",
       repositoryId: 1010282954,
-      runId: 41640765677,
+      runId: 41682771351,
       workflow: ".github/workflows/cef-engineering-checkpoint.yml",
     },
     identitySha256:
-      "3de7a4c067f3f7d5059631159c02384d6412d3c10132e8335ca0276f9d657c6e",
+      "73814930a597232a5dd463a1a458382b56dc0e3606a2ed8384804d71f8681f61",
     inventory: {
-      bytes: 61083524,
+      bytes: 63668433,
       sha256:
-        "5311ce591e7e5b8846772cf7a3be44f043c6e3ec649de99e566134d558b4dd7b",
+        "0888f0b0c87172e7620184ee43bb3cf5e122960e54d421411ecf37034e032738",
     },
     manifest: {
       bytes: 2162,
       sha256:
-        "175c0b4d4db29c07437ce3ae43f6ca98a744054396f18610744e41994130b827",
+        "315c897c02c6cc0e7f0fa876121e8721c82424ba3bab08af9248e82ab48f9d22",
     },
     producer:
-      "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+      "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
     seal: {
       bytes: 1439,
       sha256:
-        "ad362c51be0a88e01efcbf05f5a522f5e6b1463825bde1f5d879490e62a65add",
+        "c2028bad992024b7f62a775e6e736dbe6d190d7bf50edf47e48ef6417132ed2e",
     },
     sealArtifact: {
       bytes: 1571,
-      id: 13251109032,
+      id: 13272256557,
       sha256:
-        "aeaed1d3c304f650b7dbeda373ee796b64ff44e0a365700337190328db9146e6",
+        "75da0391b3e3a628837c43c789f3a02c010956df27bfa8c393a85093ed62d8b1",
     },
     sidecar: {
       bytes: 288253557,
       sha256:
-        "13de50a850f95a6eb0821a20eab073999846a1269f54507793d9588e5d7f6a42",
+        "cf1e122daa1aae77cc61ae4cbce2a002ec1f1e133ac8874edff83b056f2faeaa",
     },
   });
   await assert.rejects(
@@ -2342,10 +2431,10 @@ test("fixed retarget binds the actual d70131-row producer and committed non-auth
     "blob",
     "HEAD:" + archive,
   ]);
-  assert.equal(canonical.length, 209410);
+  assert.equal(canonical.length, 229058);
   assert.equal(
     core.sha(canonical),
-    "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",
+    "c728e702508d1a22417197c056d064c496528af82a29b5c993e6f4f521a74dcb",
   );
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
@@ -2358,7 +2447,7 @@ test("fixed retarget binds the actual d70131-row producer and committed non-auth
   const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
   assert.equal(
     core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
-    "2d6d92e6da0ba29e4e16f2dc51a54474068802e09a7ff5a90928e77a363112f2",
+    "1ea36395eeed62a06388d38108b8b9a9a0d2e8ee6e5de08f0c3def5fe0e73c8f",
   );
   // This retained test performs diagnostic a41 -> public3be -> native5af -> old839
   // literal inverses and asserts both COMPLETE historical helper hashes.
@@ -3669,6 +3758,27 @@ test(
   },
 );
 
+const COMPILE_OBSERVATION_INVERSE = [
+  'function compileFailureObservation(error) {\n  let errorCode = "UNKNOWN";\n  try {\n    if (!utilTypes.isProxy(error) && utilTypes.isNativeError(error)) {\n      const message = Object.getOwnPropertyDescriptor(error, "message");\n      const code = Object.getOwnPropertyDescriptor(error, "code");\n      const messages = new Map([\n        [\n          "Observed descendants not reaped; checkpoint denied",\n          "OWN_NOT_REAPED",\n        ],\n        ["Owned reap deadline", "OWN_REAP_DEADLINE"],\n        ["Owned freeze deadline", "OWN_FREEZE_DEADLINE"],\n        ["Observed lineage did not stabilize", "OWN_LINEAGE_UNSTABLE"],\n        ["Ambiguous owned process", "OWN_IDENTITY_AMBIGUOUS"],\n        ["Owned PID replaced before reap", "OWN_PID_REPLACED"],\n        ["Owned root PID identity changed", "OWN_ROOT_REPLACED"],\n        [\n          "Observed descendants survived compiler exit; checkpoint denied",\n          "OWN_SURVIVED_EXIT",\n        ],\n        [\n          "Unconfirmed compiler ownership; checkpoint denied",\n          "OWN_UNCONFIRMED",\n        ],\n        [\n          "Compile cleanup unconfirmed; checkpoint denied",\n          "CLEANUP_UNCONFIRMED",\n        ],\n        ["Output settlement deadline", "OUTPUT_SETTLEMENT_DEADLINE"],\n        ["Output close deadline", "OUTPUT_CLOSE_DEADLINE"],\n        ["Shared compile output bound", "OUTPUT_BOUND"],\n        ["CENSUS_DEADLINE", "CENSUS_DEADLINE"],\n        ["CENSUS_EOF", "CENSUS_EOF"],\n        ["CENSUS_REQUEST", "CENSUS_REQUEST"],\n        ["CENSUS_REQUEST_BOUND", "CENSUS_REQUEST_BOUND"],\n        ["CENSUS_OUTPUT_BOUND", "CENSUS_OUTPUT_BOUND"],\n        ["CENSUS_STDERR_BOUND", "CENSUS_STDERR_BOUND"],\n        ["CENSUS_READY_DEADLINE", "CENSUS_READY_DEADLINE"],\n        ["CENSUS_JOIN", "CENSUS_JOIN"],\n        ["CENSUS_FAILED", "CENSUS_FAILED"],\n        ["CENSUS_ROOT", "CENSUS_ROOT"],\n      ]);\n      if (typeof message?.value === "string" && messages.has(message.value))\n        errorCode = messages.get(message.value);\n      else if (\n        typeof code?.value === "string" &&\n        [\n          "EPIPE",\n          "ENOENT",\n          "EACCES",\n          "EPERM",\n          "ENOSPC",\n          "EIO",\n          "EMFILE",\n        ].includes(code.value)\n      )\n        errorCode = code.value;\n    }\n  } catch {\n    // Observation cannot replace even a falsy or hostile primary failure.\n  }\n  return { ...compileMonitorDetails(error), errorCode };\n}\n',
+  "      diagnostics: () => Object.freeze(client.diagnostics()),\n",
+  "      joined,\n      exitCode:\n        Number.isInteger(closedValue?.code) &&\n        closedValue.code >= -255 &&\n        closedValue.code <= 255\n          ? closedValue.code\n          : null,\n",
+  "    firstFailure = null,\n",
+  "      firstFailure = {\n        ...compileFailureObservation(error),\n        snapshotOrdinal: snapshotOrdinal + (snapshotPending ? 1 : 0),\n        lastSnapshot,\n      };\n",
+  "        firstFailure,\n        census: censusSession?.diagnostics() ?? null,\n",
+];
+function withoutCompileObservation(text) {
+  for (const added of COMPILE_OBSERVATION_INVERSE) {
+    assert.equal(text.split(added).length - 1, 1);
+    text = text.replace(added, "");
+  }
+  assert.equal(Buffer.byteLength(text), 243135);
+  assert.equal(
+    core.sha(text),
+    "3ef499315c7cb01d0e091f78b1e1769642b08fe78c1eb6bef9d3d6c6d99b3266",
+  );
+  return text;
+}
+
 test("migration diagnostics preserve the complete old a41 core and e0f transaction through exact inverses", async () => {
   const source = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutMigrationDiagnostics(source);
@@ -3678,6 +3788,13 @@ test("migration diagnostics preserve the complete old a41 core and e0f transacti
       "utf8",
     )
   ).replaceAll("\r\n", "\n");
+  const observed = old;
+  old = withoutCompileObservation(observed);
+  assert.throws(() => withoutCompileObservation(observed + "\n"));
+  for (const added of COMPILE_OBSERVATION_INVERSE) {
+    assert.throws(() => withoutCompileObservation(observed.replace(added, "")));
+    assert.throws(() => withoutCompileObservation(observed + added));
+  }
   for (const [current, prior] of [
     [
       "  macSourceMetadataMs: 3_900_000,\n  macSourceMetadataHelperMs: 3_600_000,",

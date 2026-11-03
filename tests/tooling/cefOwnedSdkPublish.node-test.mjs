@@ -1157,6 +1157,20 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
       (row) => row.path === "scripts/lib/cef-linux-producer-migration.mjs",
     ).sha = "6cc34440ca80437ba881dcc33e62eea8f5cc55cc";
   }
+  const ownedMacHashingBlobs = {
+    "scripts/lib/cef-checkpoint-archive.py":
+      "9b649cfbdd2b90f3b981f2e1c8e71b7e803f1c9a",
+    "scripts/lib/cef-engineering-checkpoint.mjs":
+      "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2",
+    "scripts/lib/cef-linux-producer-migration.mjs":
+      "4d216379902e002fe80cf99e07858b622def5bf8",
+  };
+  for (const [name, sha] of Object.entries(ownedMacHashingBlobs)) {
+    const row = rows.find((item) => item.path === name);
+    assert(row);
+    assert.equal(row.mode, "100644");
+    row.sha = sha;
+  }
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1443,7 +1457,35 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
+function withoutOwnedMacHashingProducerBindings(raw) {
+  const changes = [
+    [
+      'export const ENGINEERING_PRODUCER =\n  "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";',
+      'export const ENGINEERING_PRODUCER =\n  "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864";',
+    ],
+    [
+      '  "aarch64-unknown-linux-gnu":\n    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",',
+      '  "aarch64-unknown-linux-gnu":\n    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",',
+    ],
+    [
+      '  "aarch64-apple-darwin":\n    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",',
+      '  "aarch64-apple-darwin":\n    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",',
+    ],
+  ];
+  for (const [current, prior] of changes) {
+    assert.equal(raw.split(current).length, 2);
+    raw = raw.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(raw), 23685);
+  assert.equal(
+    hash(raw),
+    "bdf5d911e0aef9fb57eece30bafe52efc80fb972a78c9005f320f566bd1d447c",
+  );
+  return raw;
+}
+
 function withoutSuccessorProducerBindings(raw) {
+  raw = withoutOwnedMacHashingProducerBindings(raw);
   const latestLinux =
     '  "aarch64-unknown-linux-gnu":\n    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",';
   assert.equal(raw.split(latestLinux).length, 2);
@@ -1500,6 +1542,38 @@ function withoutSuccessorProducerBindings(raw) {
   return raw;
 }
 
+test("owned Mac hashing publisher bindings restore the whole prior adapter and reject mixed target tuples", () => {
+  const raw = readFileSync(
+    new URL(
+      "../../native/cef-engineering-sdk-publication/publish.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  withoutOwnedMacHashingProducerBindings(raw);
+  assert.throws(() => withoutOwnedMacHashingProducerBindings(raw + "\n"));
+  for (const [current, old] of [
+    [
+      'export const ENGINEERING_PRODUCER =\n  "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";',
+      'export const ENGINEERING_PRODUCER =\n  "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864";',
+    ],
+    [
+      '  "aarch64-unknown-linux-gnu":\n    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",',
+      '  "aarch64-unknown-linux-gnu":\n    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",',
+    ],
+    [
+      '  "aarch64-apple-darwin":\n    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",',
+      '  "aarch64-apple-darwin":\n    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",',
+    ],
+  ]) {
+    assert.equal(raw.split(current).length, 2);
+    assert.throws(() =>
+      withoutOwnedMacHashingProducerBindings(raw.replace(current, old)),
+    );
+    assert.throws(() => withoutOwnedMacHashingProducerBindings(raw + current));
+  }
+});
+
 test("successor producer bindings preserve the entire prior publication adapter", () => {
   const raw = readFileSync(
     new URL(
@@ -1543,7 +1617,7 @@ test("failed Intel producer retarget restores the entire prior adapter and keeps
 test("engineering publication exact target producers select repaired source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",
+    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
@@ -1551,11 +1625,11 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-apple-darwin"],
-    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",
+    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
-    "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
+    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
   );
   for (const target of Object.keys(ENGINEERING_PRODUCERS)) {
     const f = engineeringFixture(target);
