@@ -289,6 +289,137 @@ def _verified_active_sources(root, expected=None, bind=False):
         raise
 
 
+# BEGIN OWNED FULL SOURCE ENVIRONMENT
+def _source_environment_retention_guard(root, context, profile, clock):
+    state = _state(root=root, context=context, profile=profile)
+    need(state['role'] == 'runtime-closure' and clock is state['clock'] and
+         profile['sourceGn']['sourceId'] == context['sourceId'], 'ENVIRONMENT_OWNER')
+    _live_mutation_fence(state)
+    saved_fence = state['rootFence']
+    saved = tuple((path, dict(pin)) for path, pin in state['held'])
+    data = state['data']
+    def guard():
+        # This saved owner may restrict failure DATA retention after retirement;
+        # it never reactivates a source map or issues an execution capability.
+        try:
+            need(state['context'] is context and state['profile'] is profile and
+                 state['clock'] is clock and state['rootFence'] is saved_fence and
+                 _semantic(context) == state['contextSemantic'] and
+                 _semantic(profile) == state['profileSemantic'] and
+                 not state['native']['parent'].is_set(), 'ENVIRONMENT_RETENTION_OWNER')
+            clock.remaining()
+            _owned_root_fence(state)
+            _, raw = data.held(state['root'] / 'context.json', clock, sha256=state['contextSha'],
+                               maximum=131072, retain=True)
+            need(raw == state['contextRaw'], 'CONTEXT_CHANGED')
+            for path, pin in saved:
+                data.held(path, clock, pin['bytes'], pin['sha256'], maximum=2 * 1024**2)
+            _owned_root_fence(state)
+            clock.remaining()
+        except BaseException as error:
+            _retire(state, error, True)
+            raise
+    return guard
+
+
+def _prepare_source_environment(root, context, profile, clock):
+    state = _state(root=root, context=context, profile=profile)
+    try:
+        need(state['role'] == 'runtime-closure' and clock is state['clock'] and
+             profile['sourceGn']['sourceId'] == context['sourceId'], 'ENVIRONMENT_OWNER')
+        _live_mutation_fence(state)
+        import environment
+        need(Path(environment.__file__).resolve(strict=True) == state['here'] / 'environment.py', 'ENVIRONMENT_MODULE')
+        data = state['data']
+        environments = {cpu: environment.rows(root, profile, cpu) for cpu in environment.CPUS}
+        for values in environments.values():
+            for name in ('INCLUDE', 'LIB', 'LIBPATH', 'Path'):
+                for directory in values[name].split(';'):
+                    _state(root=root, context=context, profile=profile)
+                    environment.safe_value(directory)
+                    need(data.plain(directory).is_dir(), 'ENVIRONMENT_DIRECTORY')
+        raw = environment.script(environments, profile['sdkVersion'])
+        need(0 < len(raw) <= 256 * 1024, 'ENVIRONMENT_BOUND')
+        directories = []
+
+        def fence():
+            _live_mutation_fence(state)
+            need(clock is state['clock'], 'ENVIRONMENT_CLOCK')
+            for directory, identity in directories:
+                need(_directory_identity(directory) == identity, 'ENVIRONMENT_DIRECTORY_CHANGED')
+
+        def create_directory(directory):
+            data.plain(directory, exists=False)
+            fence()
+            directory.mkdir()
+            directories.append((directory, _directory_identity(directory)))
+            fence()
+
+        def write_owned(destination, body):
+            need(type(body) is bytes and 0 < len(body) <= 256 * 1024, 'ENVIRONMENT_BOUND')
+            data.plain(destination, exists=False)
+            fence()
+            stream = destination.open('xb', buffering=0)
+            failed = False
+            def identity(value):
+                # Windows named .bat stat adds execute bits that handle stat
+                # does not. Preserve type plus every actual identity/time field.
+                signature = data.signature(value)
+                return signature[:5] + (stat.S_IFMT(value.st_mode),) + signature[6:]
+            def creation_identity(value):
+                need(stat.S_ISREG(value.st_mode) and value.st_nlink == 1 and
+                     not (getattr(value, 'st_file_attributes', 0) & 0x400), 'ENVIRONMENT_FILE')
+                return (value.st_dev, value.st_ino, stat.S_IFMT(value.st_mode), value.st_nlink,
+                        getattr(value, 'st_birthtime_ns', None))
+            try:
+                before = os.fstat(stream.fileno())
+                created = creation_identity(before)
+                need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and
+                     identity(before) == identity(destination.lstat()), 'ENVIRONMENT_FILE')
+                fence()
+                need(identity(before) == identity(destination.lstat()), 'ENVIRONMENT_FILE_CHANGED')
+                need(stream.write(body) == len(body), 'ENVIRONMENT_WRITE')
+                fence()
+            except BaseException:
+                failed = True
+                raise
+            finally:
+                try:
+                    stream.close()
+                except BaseException:
+                    if not failed:
+                        raise
+            fence()
+            need(creation_identity(destination.lstat()) == created, 'ENVIRONMENT_FILE_REPLACED')
+            pin, actual = data.held(destination, clock, len(body), hashlib.sha256(body).hexdigest(),
+                                    retain=True, maximum=256 * 1024)
+            need(actual == body, 'ENVIRONMENT_READBACK')
+            need(creation_identity(destination.lstat()) == created and
+                 (pin['identity'][0], pin['identity'][1], stat.S_IFREG, pin['identity'][4], pin['identity'][5]) == created,
+                 'ENVIRONMENT_FILE_REPLACED')
+            fence()
+            return pin
+
+        custom = state['root'] / 'custom-vs'
+        create_directory(custom)
+        create_directory(custom / 'VC')
+        pin = write_owned(custom / 'VC/vcvarsall.bat', raw)
+        result = {'environmentOrigin': 'owned-closed-custom-vcvars-adapter', 'registeredSdkClaim': False,
+                  'adapter': pin, 'cpus': list(environment.CPUS), 'cefEnvironment': {
+                      'WIN_CUSTOM_TOOLCHAIN': '1', 'DEPOT_TOOLS_WIN_TOOLCHAIN': '0', 'CEF_VCVARS': 'none',
+                      'GYP_MSVS_OVERRIDE_PATH': str(custom), 'GYP_MSVS_VERSION': '2026',
+                      'VS_CRT_ROOT': str(state['root'] / 'runtime/x64'),
+                      'SDK_ROOT': str(state['root'] / 'Windows Kits/10'), 'SDK_VERSION': profile['sdkVersion']}}
+        private = (json.dumps({'cpus': environments, **result}, indent=2) + '\n').encode('utf-8')
+        write_owned(state['root'] / 'environment-private.json', private)
+        fence()
+        return result
+    except BaseException as error:
+        _retire(state, error, True)
+        raise
+# END OWNED FULL SOURCE ENVIRONMENT
+
+
 def _role_in_mode(role, context):
     state = _state(context=context)
     try:

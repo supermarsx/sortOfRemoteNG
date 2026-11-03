@@ -792,6 +792,12 @@ def data_worker(role, root, c, p, clock):
     sys.addaudithook(no_execution)
     result = {"role": role, "success": False, "firstFailure": None, "executed": False}
     progress=None
+    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER
+    full_environment = None
+    if role == 'runtime-closure' and c.get('mode') == 'full-sdk-source-gn':
+        full_source = _full_source_bridge(root=root, context=c, profile=p)
+        full_environment = full_source._source_environment_retention_guard(root, c, p, clock)
+    # END OWNED FULL SOURCE ENVIRONMENT OWNER
     try:
         if role == 'command-inventory':
             command_inventory(root, c, p, clock)
@@ -832,6 +838,11 @@ def data_worker(role, root, c, p, clock):
             observed=extract.runtime_projection(root,p,clock)
             data.save(root/'runtime-projection.json',observed)
             progress('projection-retained',force=True)
+            # BEGIN OWNED FULL SOURCE ENVIRONMENT BRIDGE
+            full_source = _full_source_bridge(root=root, context=c, profile=p)
+            if full_source is not None:
+                full_source._prepare_source_environment(root, c, p, clock)
+            # END OWNED FULL SOURCE ENVIRONMENT BRIDGE
         else:
             raise data.Denied('FULL_PHASE_UNAVAILABLE')
         result["success"] = True
@@ -856,13 +867,31 @@ def data_worker(role, root, c, p, clock):
             result["sourcePostVerified"] = False
             result["firstFailure"] = result["firstFailure"] or "BOOT_POSTCHECK"
             result["success"] = False
-        if progress is not None:
+        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE PROGRESS
+        environment_retention_allowed = True
+        if full_environment is not None:
+            try:full_environment()
+            except BaseException:
+                environment_retention_allowed = False
+                result['success'] = False
+                result['sourcePostVerified'] = False
+        # END OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE PROGRESS
+        if progress is not None and environment_retention_allowed:
             try:progress('worker-finish',force=True)
             except BaseException as error:
                 result['progressReportingFailure']=True;result['success']=False
                 result['firstFailure']=result['firstFailure'] or failure(error)
             if progress.closeFailure:result['progressCloseFailure']=True
-        retain(root, role + "-result.json", result)
+        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE REPORT
+        if full_environment is not None and environment_retention_allowed:
+            try:full_environment()
+            except BaseException:
+                environment_retention_allowed = False
+                result['success'] = False
+                result['sourcePostVerified'] = False
+        # END OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE REPORT
+        if environment_retention_allowed:
+            retain(root, role + "-result.json", result)
     return 0 if result["success"] else 1
 
 

@@ -4,12 +4,17 @@ import copy
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sys
 import unittest
 import types
 import tempfile
+import time
+import subprocess
+import shutil
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -432,6 +437,80 @@ def owned_filesystem_model(context, profile, root):
     return model, state, memory
 
 
+def environment_filesystem_model(context, profile, root):
+    """Real owned files/rows/script; private registry and absent VS host are modeled."""
+    import acquire as data
+    import environment
+    model, state, memory = owned_filesystem_model(context, profile, root)
+    state['role'] = 'runtime-closure'
+    base = json.loads((HERE / 'profile.json').read_bytes())
+    state['profile'].update(sdkVersion=base['sdkVersion'], toolset=base['toolset'],
+                            vsRoot=str(root / 'installed-vs'), limits=base['limits'])
+    state['profile']['python']['path'] = str(root / 'python/python.exe')
+    state['profileSemantic'] = model._semantic(state['profile'])
+    state['clock'].wall_end = time.time() + 600
+    state['clock'].mono_end = time.monotonic() + 600
+    (root / 'context.json').write_bytes(state['contextRaw'])
+    host = {'C:/Windows', 'C:/Windows/System32'}
+    def plain(value, exists=True):
+        if __import__('os').name != 'nt' and str(value) in host:
+            return types.SimpleNamespace(is_dir=lambda: True)
+        return data.plain(value, exists)
+    for cpu in environment.CPUS:
+        rows = environment.rows(root, state['profile'], cpu)
+        for key in ('INCLUDE', 'LIB', 'LIBPATH', 'Path'):
+            for value in rows[key].split(';'):
+                if value not in host:
+                    Path(value).mkdir(parents=True, exist_ok=True)
+    state['data'] = types.SimpleNamespace(plain=plain, signature=data.signature,
+                                          held=data.held, save=data.save)
+    return model, state, memory
+
+
+def run_environment_worker(model, state, before=False, before_retention=False):
+    """Actual worker/bridge. Only acquisition inventory/projection and native scope are modeled."""
+    import acquire as data
+    import environment
+    raw = normalized((HERE / 'producer.py').read_bytes())
+    if before:
+        raw = full_environment_inverse(raw, 'producer')
+    if before_retention:
+        for label in ('BEFORE PROGRESS', 'BEFORE REPORT'):
+            pattern = rb'(?m)^        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION ' + label.encode() + rb'\n.*?^        # END OWNED FULL SOURCE ENVIRONMENT RETENTION ' + label.encode() + rb'\n'
+            raw, count = re.subn(pattern, b'', raw, count=1, flags=re.S)
+            assert count == 1
+        raw = raw.replace(b'        if progress is not None and environment_retention_allowed:\n', b'        if progress is not None:\n', 1)
+        raw = raw.replace(b'        if environment_retention_allowed:\n            retain(root, role + "-result.json", result)\n', b'        retain(root, role + "-result.json", result)\n', 1)
+    tree = ast.parse(raw)
+    names = {'data_worker', 'failure', 'retain', '_full_source_bridge'}
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    class Progress:
+        closeFailure = False
+        def __call__(self, *args, **kwargs):
+            state.setdefault('fixtureProgress', []).append(args[0])
+            if state.get('fixtureProgressHook') is not None:
+                state['fixtureProgressHook'](args[0])
+    shim = types.ModuleType('environment')
+    shim.__dict__.update(environment.__dict__)
+    shim.installed_inventory = lambda *args: {'modeledNativeInventory': True}
+    extract = types.SimpleNamespace(FILE_CLOSE_FAILURE=False,
+                                    runtime_projection=lambda *args: {'modeledNativeProjection': True})
+    namespace = dict(sys=types.SimpleNamespace(addaudithook=lambda _: None,
+                                              modules={**model.sys.modules, 'extract': extract}),
+                     data=data, time=time, re=re, _FULL_SOURCE_MODULE=model,
+                     no_execution=lambda *args: None, COMMAND_INVENTORY_REPORTING_FAILURE=False,
+                     RuntimeProgress=lambda *args: Progress(),
+                     verified_sources=lambda root: model._verified_active_sources(root))
+    exec(compile(ast.Module(body=functions, type_ignores=[]), '<actual-runtime-closure-model-native>', 'exec'), namespace)
+    classify = namespace['failure']
+    def observe(error):
+        state['fixtureException'] = error
+        return classify(error)
+    namespace['failure'] = observe
+    with patch.dict(sys.modules, {'environment': shim, 'extract': extract}):
+        return namespace['data_worker']('runtime-closure', state['root'], state['context'], state['profile'], state['clock'])
+
+
 
 
 # BEGIN EXACT FULL SOURCE ACQUISITION INVERSE
@@ -451,7 +530,33 @@ def source_acquisition_inverse(raw, name):
 
 # BEGIN EXACT FULL BOOTSTRAP CACHE INVERSE
 FULL_BOOTSTRAP_CACHE_HISTORY = json.loads('{"driver":{"path":"native/windows-arm-full-sdk/full-sdk-source-driver.mjs","bytes":286208,"sha256":"3227c6e0863271864024d456125e28ca40dc5257306a35f866fbbbcb0a5097a8","newBytes":289624,"newSha256":"e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea","rows":[{"oldRaw":"      \\"--revision\\",\\n      `src@${p.sourceChromium}`,\\n    ],\\n  };\\n  return Buffer.from(\\n    String.raw`import sys,os,json,time,stat,hashlib,subprocess\\nfrom pathlib import Path\\nP=json.loads(${JSON.stringify(JSON.stringify(policy))})\\nsys.path.insert(0,P[\'native\'])\\n","newRaw":"      \\"--revision\\",\\n      `src@${p.sourceChromium}`,\\n    ],\\n  };\\n  const program = Buffer.from(\\n    String.raw`import sys,os,json,time,stat,hashlib,subprocess\\nfrom pathlib import Path\\nP=json.loads(${JSON.stringify(JSON.stringify(policy))})\\nsys.path.insert(0,P[\'native\'])\\n","oldSha256":"bdfabeb2a65e01fea4e7bbbf8fd59ffd4a28ac5b6bf2e9f84f6da425217105c1","newSha256":"5015c9c48c4ece772112d7bc9048287c3735d8dfd85e98dc9a7b81e779c316f2"},{"oldRaw":"if __name__==\'__main__\':sys.exit(main(sys.argv[1:]))\\n`,\\n    \\"utf8\\",\\n  );\\n}\\n\\nexport async function prepareBootstrap(root, p, contextSha, budget) {\\n  const files = sourcePaths(root, p),\\n","newRaw":"if __name__==\'__main__\':sys.exit(main(sys.argv[1:]))\\n`,\\n    \\"utf8\\",\\n  );\\n  if (!fullAuthority) return program; // Preserve every legacy emitted byte.\\n  const old = \\"SETUP=DEPOT/\'sorng-cipd-setup.bat\'\\";\\n  const text = program.toString(\\"utf8\\");\\n  need(text.split(old).length === 2, \\"FULL_BOOTSTRAP_SETUP_SOURCE\\");\\n  return Buffer.from(\\n    text.replace(old, `SETUP=DEPOT/\'${FULL_BOOTSTRAP_SETUP_BASENAME}\'`),\\n  );\\n}\\n\\nexport async function prepareBootstrap(root, p, contextSha, budget) {\\n  const files = sourcePaths(root, p),\\n","oldSha256":"0e69cd8a6cbfe0b6a6ef4faf4c244029fcb0d9c775b4e635184b8d6d75fe50f0","newSha256":"e856082ef717115cc9f54c6811c442d823747d268b88faa5f957f505c870a588"},{"oldRaw":"  };\\n}\\n\\nexport async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {\\n  const files = sourcePaths(root, p);\\n  need(bootstrap.witnessPin !== null, \\"FULL_BOOTSTRAP_NOT_ATTESTED\\");\\n  await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);\\n  const raw = await held(\\n    bootstrap.witness,\\n","newRaw":"  };\\n}\\n\\nexport async function verifyBootstrap(root, p, bootstrap, budget, contextSha) {\\n  const files = sourcePaths(root, p),\\n    fullAuthority = fullBootstrapAuthority(root, p, contextSha);\\n  need(bootstrap.witnessPin !== null, \\"FULL_BOOTSTRAP_NOT_ATTESTED\\");\\n  await held(bootstrap.file, 2 * 1024 ** 2, budget, bootstrap.pin);\\n  const raw = await held(\\n    bootstrap.witness,\\n","oldSha256":"f6749cf529eb98937cf356d034d79e50bb02bc2f38df5f2f19d930aabf3648f5","newSha256":"77542ebaf6984075f126fa5aa4967fec5efc344b0d352eea96c446b797da6641"},{"oldRaw":"  }\\n  const setup = deriveBootstrapSetup(setupSource);\\n  need(setup.length <= 512 * 1024 ** 2 - bytes, \\"FULL_BOOTSTRAP_BYTES\\");\\n  await held(\\n    path.join(files.depot, \\"sorng-cipd-setup.bat\\"),\\n    setup.length,\\n    budget,\\n    { bytes: setup.length, sha256: sha(setup), nlink: 1 },\\n    true,\\n","newRaw":"  }\\n  const setup = deriveBootstrapSetup(setupSource);\\n  need(setup.length <= 512 * 1024 ** 2 - bytes, \\"FULL_BOOTSTRAP_BYTES\\");\\n  await held(\\n    path.join(\\n      files.depot,\\n      fullAuthority ? FULL_BOOTSTRAP_SETUP_BASENAME : \\"sorng-cipd-setup.bat\\",\\n    ),\\n    setup.length,\\n    budget,\\n    { bytes: setup.length, sha256: sha(setup), nlink: 1 },\\n    true,\\n","oldSha256":"ae3b909cad210e86a39d4f93b503431b59d70984ada65242f5c505a5ea530de1","newSha256":"5a530d24b4bcd067c27385a78c48519238dc8cbeee98cb70fa59cdc8a1423577"},{"oldRaw":"}\\n\\nconst FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.\\nconst FULL_SOURCE_PROFILE_SHA256 =\\n  \\"71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb\\";\\nconst fullSourceProfiles = new WeakMap();\\n\\n// Actual full source owner and graph receipts are the only metadata issuers.\\n// The unchanged private profile below is a pinned data recipe, never full authority.\\nconst fullMetadataOwners = new WeakMap();\\n","newRaw":"}\\n\\nconst FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.\\nconst FULL_SOURCE_PROFILE_SHA256 =\\n  \\"e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e\\";\\nconst fullSourceProfiles = new WeakMap();\\n// The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.\\n// No ignore file or clean-check exception is created or changed.\\nconst FULL_BOOTSTRAP_SETUP_BASENAME = \\".cipd_client_sorng_setup.bat\\";\\n\\n// Actual full source owner and graph receipts are the only metadata issuers.\\n// The unchanged private profile below is a pinned data recipe, never full authority.\\nconst fullMetadataOwners = new WeakMap();\\n","oldSha256":"45b0a7a2bd7c6529f4f6ea944f8872fa22ee21cc5d4d4edf469040371929099d","newSha256":"c190d11eaf0177f2f62f6d8d31163d39a9f3cf24909ba75e82d73848a1728b43"},{"oldRaw":"  }\\n}\\n// END SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION\\n\\nasync function runFullSourceBody(argv) {\\n  need(FULL_SOURCE_BODY_ADMITTED, \\"FULL_SDK_SOURCE_EXECUTION_CLOSED\\");\\n  need(\\n    process.platform === \\"win32\\" &&\\n","newRaw":"  }\\n}\\n// END SOURCE OWNED DEPOT TOOLS SENTINEL NORMALIZATION\\n\\n// Error details are bounded DATA only. Never read a getter or print raw text.\\nfunction fullSourceErrorMessage(error) {\\n  if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\\n    return null;\\n  const descriptor = Object.getOwnPropertyDescriptor(error, \\"message\\");\\n  return descriptor &&\\n    Object.hasOwn(descriptor, \\"value\\") &&\\n    typeof descriptor.value === \\"string\\" &&\\n    descriptor.value.length <= 4096\\n    ? descriptor.value\\n    : null;\\n}\\nfunction fullSourceApplyDiagnostic(error) {\\n  const diagnostic = {\\n    kind: \\"windows-arm-source-apply-failure\\",\\n    phase: \\"source-apply\\",\\n    category: \\"unclassified\\",\\n  };\\n  const message = fullSourceErrorMessage(error);\\n  if (message !== null) {\\n    const repository =\\n      /^(cef|chromium|depotTools): (clean checkout required; existing changes are never reset|checkout root required|source revision mismatch)$/.exec(\\n        message,\\n      );\\n    if (repository) {\\n      diagnostic.repository = repository[1];\\n      diagnostic.category = repository[2].startsWith(\\"clean checkout\\")\\n        ? \\"dirty-checkout\\"\\n        : repository[2] === \\"checkout root required\\"\\n          ? \\"checkout-root\\"\\n          : \\"source-revision\\";\\n    } else if (message.startsWith(\\"Digest/size mismatch: \\"))\\n      diagnostic.category = \\"input-pin\\";\\n    else if (message === \\"CEF checkout must be chromium/cef for upstream hooks\\")\\n      diagnostic.category = \\"cef-placement\\";\\n    else {\\n      const patch =\\n        /^Patch application failed; applied repositories: (none|cef|chromium|cef,chromium); current repository: (cef|chromium); completed patches: ([0-9]{1,2})\\\\. No rollback\\\\/reset performed\\\\./.exec(\\n          message,\\n        );\\n      if (patch && Number(patch[3]) <= 64) {\\n        diagnostic.category = \\"patch-application\\";\\n        diagnostic.repository = patch[2];\\n        diagnostic.completedPatches = Number(patch[3]);\\n        diagnostic.appliedRepositories =\\n          patch[1] === \\"none\\" ? [] : patch[1].split(\\",\\");\\n      }\\n    }\\n    const code = Object.getOwnPropertyDescriptor(error, \\"code\\");\\n    if (code && Object.hasOwn(code, \\"value\\")) {\\n      if (Number.isInteger(code.value) && code.value >= 0 && code.value <= 255)\\n        diagnostic.exitCode = code.value;\\n      else if (\\n        [\\n          \\"ENOENT\\",\\n          \\"EACCES\\",\\n          \\"EPERM\\",\\n          \\"ETIMEDOUT\\",\\n          \\"ABORT_ERR\\",\\n          \\"ERR_CHILD_PROCESS_STDIO_MAXBUFFER\\",\\n        ].includes(code.value)\\n      )\\n        diagnostic.code = code.value;\\n    }\\n  }\\n  return diagnostic;\\n}\\n\\nasync function runFullSourceBody(argv) {\\n  need(FULL_SOURCE_BODY_ADMITTED, \\"FULL_SDK_SOURCE_EXECUTION_CLOSED\\");\\n  need(\\n    process.platform === \\"win32\\" &&\\n","oldSha256":"b4b35e5f2356bf27cc7ce85b5004e40278b44294d2e93d83ab7c4678c78af79d","newSha256":"6d49e911ed9bf2cf99a780ab470157e051ce482ed3a7b22efb7285c3415b9b65"},{"oldRaw":"  } finally {\\n    fullSourceProfiles.delete(p);\\n    retireQualificationSource(qualificationOwner);\\n    currentProgress?.close();\\n    const code =\\n      typeof primary?.message === \\"string\\" &&\\n      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(primary.message)\\n        ? primary.message\\n        : failed\\n          ? \\"FULL_SOURCE_FAILED\\"\\n          : null;\\n    const report = {\\n      kind: \\"windows-arm-source-gn\\",\\n      success,\\n      stage: success ? \\"complete\\" : stage,\\n      firstFailure: success ? null : code,\\n      target: TARGET,\\n      sourceId: p.sourceGn.sourceId,\\n      graph,\\n      generatedArguments,\\n","newRaw":"  } finally {\\n    fullSourceProfiles.delete(p);\\n    retireQualificationSource(qualificationOwner);\\n    currentProgress?.close();\\n    const message = fullSourceErrorMessage(primary);\\n    const code =\\n      message !== null &&\\n      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)\\n        ? message\\n        : failed\\n          ? \\"FULL_SOURCE_FAILED\\"\\n          : null;\\n    const report = {\\n      kind: \\"windows-arm-source-gn\\",\\n      success,\\n      stage: success ? \\"complete\\" : stage,\\n      firstFailure: success ? null : code,\\n      ...(failed && stage === \\"source-apply\\"\\n        ? { failureDiagnostic: fullSourceApplyDiagnostic(primary) }\\n        : {}),\\n      target: TARGET,\\n      sourceId: p.sourceGn.sourceId,\\n      graph,\\n      generatedArguments,\\n","oldSha256":"e8ef87cfcf244a9401b350e2e1f450f9dccdda644eb7bc0f81dabc25d53fcbef","newSha256":"384bc76ae4488d420ae749f560dd76bc7fbda8a25121f514c77f9e862713a24e"},{"oldRaw":") {\\n  Promise.resolve()\\n    .then(() => fullSdkSourceMain())\\n    .catch((error) => {\\n      const code = /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(\\n        error?.message ?? \\"\\",\\n      )\\n        ? error.message\\n        : \\"FULL_SDK_SOURCE_FAILED\\";\\n      console.error(\\n        JSON.stringify({\\n          success: false,\\n          firstFailure: code,\\n","newRaw":") {\\n  Promise.resolve()\\n    .then(() => fullSdkSourceMain())\\n    .catch((error) => {\\n      const message = fullSourceErrorMessage(error);\\n      const code =\\n        message !== null &&\\n        /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(message)\\n          ? message\\n          : \\"FULL_SDK_SOURCE_FAILED\\";\\n      console.error(\\n        JSON.stringify({\\n          success: false,\\n          firstFailure: code,\\n","oldSha256":"791288ce45fb4921ed046f0dfcce36033e55704305ae4a0f02e06c6f87e7ee3e","newSha256":"9811f85cd655b5f4a65094f0b5d108248d48d06dbb8c91c00ebf47d387810e0a"}]},"controller":{"path":"native/windows-arm-full-sdk/full_sdk_control.mjs","bytes":175570,"sha256":"c15c97aa6e9e14b4b52f633e44419045273ca9645ba4cbcd3641396c95946012","newBytes":175570,"newSha256":"97cb6430200bee3880651d6b597d2ee4f4886dfe6377b484c900a4e727edc294","rows":[{"oldRaw":"// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\\nconst SOURCE_QUALIFICATION_ALLOWED = true;\\nconst FULL_SOURCE_PROFILE_SHA256 =\\n  \\"71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb\\";\\nconst MODULE_URL = import.meta.url;\\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, \\"../..\\");\\nconst bootstrapOwners = new WeakMap();\\n","newRaw":"// BEGIN CLOSED FULL SDK SOURCE CONTROLLER\\nconst CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.\\nconst SOURCE_QUALIFICATION_ALLOWED = true;\\nconst FULL_SOURCE_PROFILE_SHA256 =\\n  \\"e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e\\";\\nconst MODULE_URL = import.meta.url;\\nconst CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));\\nconst CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, \\"../..\\");\\nconst bootstrapOwners = new WeakMap();\\n","oldSha256":"804b0eacf23d470d16906c8f7b81c08fa5610a991998b9b08680af341950e23d","newSha256":"b25479d0281e8d164381caab15ece3c0dd0b4dac079a8af9989d8f8061182153"}]},"python":{"path":"native/windows-arm-full-sdk/full_sdk_source.py","bytes":28553,"sha256":"a5ae8b06d54d4260461a437f4983b71234316dcd86d9d699e3b29629ca0c2ae1","newBytes":28553,"newSha256":"6da8be5749d21ee22e4fb4a0ae464b7ff161d354c0177b86a98f96157759601a","rows":[{"oldRaw":"\\nMODE = \'full-sdk-source-gn\'\\nWORKFLOW = \'.github/workflows/windows-arm-full-sdk.yml\'\\nPOLICY = \'native/windows-arm-full-sdk/sdk-origin-review.json\'\\nPROFILE_SHA256 = \'71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb\'\\nFULL_SOURCE_ADMITTED = False\\nSOURCE_QUALIFICATION_ALLOWED = True\\nHEX = re.compile(r\'[a-f0-9]{64}\')\\nROOT = re.compile(r\'[A-Z]:/a/sortOfRemoteNG/sortOfRemoteNG/\\\\.artifacts/windows-arm-full-sdk-\'\\n","newRaw":"\\nMODE = \'full-sdk-source-gn\'\\nWORKFLOW = \'.github/workflows/windows-arm-full-sdk.yml\'\\nPOLICY = \'native/windows-arm-full-sdk/sdk-origin-review.json\'\\nPROFILE_SHA256 = \'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e\'\\nFULL_SOURCE_ADMITTED = False\\nSOURCE_QUALIFICATION_ALLOWED = True\\nHEX = re.compile(r\'[a-f0-9]{64}\')\\nROOT = re.compile(r\'[A-Z]:/a/sortOfRemoteNG/sortOfRemoteNG/\\\\.artifacts/windows-arm-full-sdk-\'\\n","oldSha256":"a020134c40a773d3aa2c37ed360cf9e95a0d67b456d8d223c58c5f905dabd586","newSha256":"5f3454cece07e85601e98a55815ddad597bf5fddb2410ec96f8aa8269c02d0be"}]},"profile":{"path":"native/windows-arm-full-sdk/full-sdk-source-profile.json","bytes":10710,"sha256":"71edb9a3e285226d6015d833586ba2dafedaa5fbff8ad5b9a4b53d3a6d1844eb","newBytes":11144,"newSha256":"e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e","rows":[{"oldRaw":"    \\"sha256\\": \\"b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201\\",\\n    \\"inverse\\": \\"Restore the single finite full-metadata shared-runner branch, then the three finite c9 source-program replacements, then remove the CLOSED FULL SDK SOURCE BODY and INACTIVE FULL SDK SOURCE INTERFACE marked blocks; whole b039 restores.\\",\\n    \\"apache4D61Carried\\": true,\\n    \\"sourceBodyOriginalSha256\\": \\"45055005b59ad90ff2be1695f1c30ddcd99d4da14ba8c1318ba134a11ac3d361\\",\\n    \\"sourceBodyDerivedSha256\\": \\"7423e9a95b0b77b6293b264296466a3f16ff6e8e182e1e6e17094d77dc6db96a\\",\\n    \\"sourceBodySubstitutions\\": 23,\\n    \\"operationDerivative\\": \\"Explicit full-specific fixed-role acquisition loop with the same seven data bodies; original once-captured source10800/acquisition7200/hooks2700 consumers under the original21600 whole, without rewriting old source recipe identity.\\",\\n    \\"assemblyInverse\\": \\"Restore reviewed source-entry/footer, restore vector and pre-GN data/graph comparison blocks by exact finite inverse before prior2700/c9/b039 inverses.\\"\\n  },\\n  \\"limits\\": {\\n","newRaw":"    \\"sha256\\": \\"b039eac66b8da7f3bdf140f2fb812518c48665f4e7a1719bbb91268459f4b201\\",\\n    \\"inverse\\": \\"Restore the single finite full-metadata shared-runner branch, then the three finite c9 source-program replacements, then remove the CLOSED FULL SDK SOURCE BODY and INACTIVE FULL SDK SOURCE INTERFACE marked blocks; whole b039 restores.\\",\\n    \\"apache4D61Carried\\": true,\\n    \\"sourceBodyOriginalSha256\\": \\"45055005b59ad90ff2be1695f1c30ddcd99d4da14ba8c1318ba134a11ac3d361\\",\\n    \\"sourceBodyDerivedSha256\\": \\"f84609083f1f23c57ae206a96fe81fee7171a8b14870dbafc1bc6a05145c47b2\\",\\n    \\"sourceBodySubstitutions\\": 25,\\n    \\"operationDerivative\\": \\"Explicit full-specific fixed-role acquisition loop with the same seven data bodies; original once-captured source10800/acquisition7200/hooks2700 consumers under the original21600 whole, without rewriting old source recipe identity.\\",\\n    \\"assemblyInverse\\": \\"Restore reviewed source-entry/footer, restore vector and pre-GN data/graph comparison blocks by exact finite inverse before prior2700/c9/b039 inverses.\\"\\n  },\\n  \\"limits\\": {\\n","oldSha256":"d2fa88d2b0449bdb854bccbaf1f46c7a261b1a3c6bc360158c6c1b2a9889e7ee","newSha256":"423b6f4ff044dd1f8ef1ee7cf51b83cdde35414b413bbf9c54bcc5c8bafa4dcb"},{"oldRaw":"  \\"parentSdkVerificationImplemented\\": true,\\n  \\"parentCheckpointVerificationImplemented\\": true,\\n  \\"compiledCheckpointNativeQualified\\": false,\\n  \\"sourceSentinelNormalizerImplemented\\": true,\\n  \\"sourceSentinelNativeQualified\\": false\\n}\\n","newRaw":"  \\"parentSdkVerificationImplemented\\": true,\\n  \\"parentCheckpointVerificationImplemented\\": true,\\n  \\"compiledCheckpointNativeQualified\\": false,\\n  \\"sourceSentinelNormalizerImplemented\\": true,\\n  \\"sourceSentinelNativeQualified\\": false,\\n  \\"sourceBootstrapCachePlacement\\": {\\n    \\"implemented\\": true,\\n    \\"fullOnly\\": true,\\n    \\"basename\\": \\".cipd_client_sorng_setup.bat\\",\\n    \\"upstreamCommit\\": \\"c101dcbe0489c455fce7c2247bfee19680b116c3\\",\\n    \\"gitignoreSha256\\": \\"4dba4a2ed70f50373d8260cc393d78c251a17ab52d47b629f3a94af268f6621d\\",\\n    \\"setupBytes\\": 1390,\\n    \\"setupSha256\\": \\"635209f2b2e2cfd928c73baa08e5f2e17c2f48124a7327b74ffd6b6b9c5e5ce5\\",\\n    \\"nativeQualified\\": false\\n  }\\n}\\n","oldSha256":"a46d37af460e418262ef8401ef6a5687a82d0d5a76ea48daccb3316acf8b3767","newSha256":"e022df5d5cecab9cfe6e489bbfd34dcdfcb536fa1efb8a0421ff931c23290804"}]}}')
+
+# Exact new full-only writer/bridge inverse before all historical layers.
+FULL_ENVIRONMENT_HISTORY = {'sourcepy': {'begin': '# BEGIN OWNED FULL SOURCE ENVIRONMENT\n', 'end': '# END OWNED FULL SOURCE ENVIRONMENT\n\n\n', 'blockBytes': 6814, 'blockSha256': '5a49d5b5e6adac97655b9587fd31c639a54baf9a9ddd5977652ced3d7df7db3b', 'bytes': 28553, 'sha256': '6da8be5749d21ee22e4fb4a0ae464b7ff161d354c0177b86a98f96157759601a', 'blocks': [{'begin': '# BEGIN OWNED FULL SOURCE ENVIRONMENT\n', 'end': '# END OWNED FULL SOURCE ENVIRONMENT\n\n\n', 'blockBytes': 6814, 'blockSha256': '5a49d5b5e6adac97655b9587fd31c639a54baf9a9ddd5977652ced3d7df7db3b'}]}, 'producer': {'begin': '    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER\n', 'end': '    # END OWNED FULL SOURCE ENVIRONMENT OWNER\n', 'blockBytes': 367, 'blockSha256': 'c3e7cdb7cae76d50749d5b2a56a6369844275f0bc45a655f44deec38f97d314b', 'bytes': 59773, 'sha256': '1d98a4ba7e6db89a49b45c1c1deb73075a381d9a4f5b263507547c8d5c2d5c52', 'blocks': [{'begin': '    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER\n', 'end': '    # END OWNED FULL SOURCE ENVIRONMENT OWNER\n', 'blockBytes': 367, 'blockSha256': 'c3e7cdb7cae76d50749d5b2a56a6369844275f0bc45a655f44deec38f97d314b'}, {'begin': '            # BEGIN OWNED FULL SOURCE ENVIRONMENT BRIDGE\n', 'end': '            # END OWNED FULL SOURCE ENVIRONMENT BRIDGE\n', 'blockBytes': 306, 'blockSha256': '56be570b27f967fa9d3bd7431d2b48f515e868a9fc7901dc7b4763a7dc770fb6'}, {'begin': '        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE PROGRESS\n', 'end': '        # END OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE PROGRESS\n', 'blockBytes': 446, 'blockSha256': '605aed3196c31bf255b4a5d8fbf81bacf91a4238024da630222301d39409c65d'}, {'begin': '        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE REPORT\n', 'end': '        # END OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE REPORT\n', 'blockBytes': 431, 'blockSha256': '07eeeb00a9fa3ab545677f3ba827e5bd2b6b20c184ed51466a569cecfb705262'}]}}
+
+def full_environment_inverse(raw, name):
+    if name == 'python':
+        name = 'sourcepy'
+    if name not in FULL_ENVIRONMENT_HISTORY:
+        return raw
+    spec = FULL_ENVIRONMENT_HISTORY[name]
+    for row in spec['blocks']:
+        begin, end = row['begin'].encode(), row['end'].encode()
+        assert raw.count(begin) == raw.count(end) == 1, 'ENVIRONMENT_INVERSE_COUNT'
+        start = raw.index(begin);finish = raw.index(end, start) + len(end)
+        block = raw[start:finish]
+        assert len(block) == row['blockBytes'] and hashlib.sha256(block).hexdigest() == row['blockSha256'], 'ENVIRONMENT_INVERSE_BLOCK'
+        raw = raw[:start] + raw[finish:]
+    if name == 'producer':
+        for new, old in [(b'        if progress is not None and environment_retention_allowed:\n', b'        if progress is not None:\n'),
+                         (b'        if environment_retention_allowed:\n            retain(root, role + "-result.json", result)\n', b'        retain(root, role + "-result.json", result)\n')]:
+            assert raw.count(new) == 1, 'ENVIRONMENT_INVERSE_COUNT'
+            raw = raw.replace(new, old, 1)
+    assert len(raw) == spec['bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'ENVIRONMENT_INVERSE_WHOLE'
+    return raw
+
 def full_bootstrap_cache_inverse(raw, name):
+    raw = full_environment_inverse(raw, name)
     if name == 'workflow':
         return raw
     spec = FULL_BOOTSTRAP_CACHE_HISTORY[name]
@@ -563,6 +668,8 @@ class Interfaces(unittest.TestCase):
                                              'ROLE', 'VECTOR', 'CLOSEDVECTOR', 'RECIPE', 'HOST')),
                              ('job.py', ('COMMAND',))]:
             raw = normalized((HERE / name).read_bytes())
+            if name == 'producer.py':
+                raw = full_environment_inverse(raw, 'producer')
             # Remove only the finite sibling engine bridges before applying the
             # unchanged historical source/kernel inverse and its original pins.
             engine = rb'(?m)^[ ]*# BEGIN CLOSED FULL SDK ENGINE [^\n]+\n[\s\S]*?^[ ]*# END CLOSED FULL SDK ENGINE [^\n]+\n'
@@ -1062,6 +1169,270 @@ class Interfaces(unittest.TestCase):
         self.assertFalse(result['sdkBuilt'])
         self.assertTrue(result['jobs'][-1]['originalJob']['cleanupVerified'])
         self.assertEqual(result['jobs'][-1]['originalJob']['activeAtEnd'], 0)
+
+    def test_full_environment_actual_runtime_worker_old_missing_red_new_exact_owned_bytes_green(self):
+        import environment
+        for before in (True, False):
+            with tempfile.TemporaryDirectory(prefix='full-env-data-') as folder:
+                root = Path(folder).resolve(strict=True)
+                model, state, memory = environment_filesystem_model(self.context, self.p, root)
+                adapter = root / 'custom-vs/VC/vcvarsall.bat'
+                self.assertFalse(adapter.exists())
+                self.assertEqual(run_environment_worker(model, state, before), 0)
+                result = json.loads((root / 'runtime-closure-result.json').read_bytes())
+                self.assertTrue(result['success'])
+                if before:
+                    with self.assertRaises(FileNotFoundError):
+                        adapter.read_bytes()
+                    self.assertFalse((root / 'environment-private.json').exists())
+                    continue
+                environments = {cpu: environment.rows(root, state['profile'], cpu) for cpu in environment.CPUS}
+                expected = environment.script(environments, state['profile']['sdkVersion'])
+                self.assertEqual(adapter.read_bytes(), expected)
+                private = json.loads((root / 'environment-private.json').read_bytes())
+                self.assertEqual(private['cpus'], list(environment.CPUS))
+                self.assertFalse(private['registeredSdkClaim'])
+                self.assertEqual(private['adapter']['bytes'], len(expected))
+                self.assertEqual(private['adapter']['sha256'], hashlib.sha256(expected).hexdigest())
+                self.assertFalse(subject._ACTIVE)
+                self.assertFalse(subject._BIRTHS)
+                before_raw = adapter.read_bytes()
+                with self.assertRaises(FileExistsError):
+                    model._prepare_source_environment(root, state['context'], state['profile'], state['clock'])
+                self.assertEqual(adapter.read_bytes(), before_raw)
+                self.assertTrue(state['closed'])
+
+    def test_full_environment_private_owner_denies_forged_root_profile_clock_source_or_role_before_creation(self):
+        for kind in ('root', 'alias', 'profile', 'clock', 'source', 'role', 'retired'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(prefix='full-env-denied-') as folder:
+                root = Path(folder).resolve(strict=True)
+                model, state, memory = environment_filesystem_model(self.context, self.p, root)
+                args = [root, state['context'], state['profile'], state['clock']]
+                if kind == 'root':
+                    args[0] = root / 'foreign'
+                elif kind == 'alias':
+                    args[0] = root / '..' / root.name
+                elif kind == 'profile':
+                    args[2] = copy.deepcopy(state['profile'])
+                elif kind == 'clock':
+                    args[3] = types.SimpleNamespace(remaining=lambda: 600)
+                elif kind == 'source':
+                    state['profile']['sourceGn']['sourceId'] = 'f' * 64
+                    state['profileSemantic'] = model._semantic(state['profile'])
+                elif kind == 'role':
+                    state['role'] = model._OPERATION
+                else:
+                    model._retire(state)
+                with self.assertRaises(model.Denied):
+                    model._prepare_source_environment(*args)
+                self.assertFalse((root / 'custom-vs').exists())
+                self.assertFalse((root / 'environment-private.json').exists())
+
+    def test_full_environment_original_expiry_or_root_replacement_before_first_mutation_denies_and_retires(self):
+        for kind in ('expired', 'replacement'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(prefix='full-env-fence-') as folder:
+                parent = Path(folder).resolve(strict=True)
+                root = parent / 'owned'
+                root.mkdir()
+                model, state, memory = environment_filesystem_model(self.context, self.p, root)
+                primary = ValueError(False)
+                if kind == 'expired':
+                    def expired():
+                        raise primary
+                    state['clock'].remaining = expired
+                else:
+                    root.rename(parent / 'retained')
+                    root.mkdir()
+                    (root / 'foreign').write_text('preserve')
+                with self.assertRaises(Exception) as caught:
+                    model._prepare_source_environment(root, state['context'], state['profile'], state['clock'])
+                if kind == 'expired':
+                    self.assertIs(caught.exception, primary)
+                    self.assertIs(state['primary'], primary)
+                else:
+                    self.assertEqual((root / 'foreign').read_text(), 'preserve')
+                    self.assertEqual(sorted(p.name for p in root.iterdir()), ['foreign'])
+                self.assertFalse((root / 'custom-vs').exists())
+                self.assertTrue(state['closed'])
+                self.assertFalse(model._ACTIVE)
+                self.assertFalse(model._BIRTHS)
+
+    def test_full_environment_original_creation_handle_identity_survives_fresh_named_readback(self):
+        for before in (True, False):
+            with self.subTest(before=before), tempfile.TemporaryDirectory(prefix='full-env-leaf-') as folder:
+                root = Path(folder).resolve(strict=True)
+                model, state, memory = environment_filesystem_model(self.context, self.p, root)
+                if before:
+                    tree = ast.parse((HERE / 'full_sdk_source.py').read_bytes())
+                    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == '_prepare_source_environment')
+                    writer = next(node for node in ast.walk(function) if isinstance(node, ast.FunctionDef) and node.name == 'write_owned')
+                    guards = [node for node in writer.body if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and
+                              isinstance(node.value.func, ast.Name) and node.value.func.id == 'need' and
+                              isinstance(node.value.args[-1], ast.Constant) and node.value.args[-1].value == 'ENVIRONMENT_FILE_REPLACED']
+                    self.assertEqual(len(guards), 2)
+                    writer.body = [node for node in writer.body if node not in guards]
+                    exec(compile(ast.Module(body=[function], type_ignores=[]), '<old-creation-continuity-control>', 'exec'), model.__dict__)
+                real_held = state['data'].held
+                replaced = []
+                def replace_at_readback(path, *args, **kwargs):
+                    if path.name == 'vcvarsall.bat':
+                        original = path.lstat()
+                        raw = path.read_bytes()
+                        path.rename(path.with_name('original-created-leaf.bat'))
+                        with path.open('xb') as stream:
+                            stream.write(raw)
+                        self.assertNotEqual((path.lstat().st_dev, path.lstat().st_ino), (original.st_dev, original.st_ino))
+                        replaced.append(hashlib.sha256(raw).hexdigest())
+                    return real_held(path, *args, **kwargs)
+                state['data'].held = replace_at_readback
+                if before:
+                    result = model._prepare_source_environment(root, state['context'], state['profile'], state['clock'])
+                    self.assertEqual(result['adapter']['sha256'], replaced[0])
+                    self.assertFalse(state['closed'])
+                else:
+                    with self.assertRaisesRegex(model.Denied, 'ENVIRONMENT_FILE_REPLACED') as caught:
+                        model._prepare_source_environment(root, state['context'], state['profile'], state['clock'])
+                    self.assertIs(state['primary'], caught.exception)
+                    self.assertTrue(state['closed'])
+                    self.assertFalse((root / 'environment-private.json').exists())
+                    self.assertFalse(model._ACTIVE)
+                self.assertEqual(len(replaced), 1)
+
+    def test_full_environment_worker_retention_never_writes_replacement_or_expired_root_after_retirement(self):
+        for kind in ('old-replacement', 'replacement', 'expired', 'owned-failure', 'late-progress-replacement'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(prefix='full-env-retention-') as folder:
+                parent = Path(folder).resolve(strict=True)
+                root = parent / 'owned'
+                root.mkdir()
+                model, state, memory = environment_filesystem_model(self.context, self.p, root)
+                primary = ValueError(False)
+                real_held = state['data'].held
+                triggered = []
+                def replace():
+                    root.rename(parent / 'retained-original')
+                    root.mkdir()
+                    (root / 'foreign').write_text('preserve')
+                def adverse(path, *args, **kwargs):
+                    if path.name == 'vcvarsall.bat' and not triggered and kind != 'late-progress-replacement':
+                        triggered.append(True)
+                        if kind.endswith('replacement'):
+                            replace()
+                        elif kind == 'expired':
+                            def expired():
+                                raise primary
+                            state['clock'].remaining = expired
+                        raise primary
+                    return real_held(path, *args, **kwargs)
+                state['data'].held = adverse
+                if kind == 'late-progress-replacement':
+                    def progress(phase):
+                        if phase == 'worker-finish':
+                            replace()
+                    state['fixtureProgressHook'] = progress
+                status = run_environment_worker(model, state, before_retention=kind == 'old-replacement')
+                self.assertEqual(status, 1)
+                result_file = root / 'runtime-closure-result.json'
+                if kind == 'old-replacement':
+                    # Actual old finally writes denied DATA into a foreign root.
+                    self.assertTrue(result_file.exists())
+                elif kind == 'owned-failure':
+                    result = json.loads(result_file.read_bytes())
+                    self.assertFalse(result['success'])
+                    self.assertFalse(result['sourcePostVerified'])
+                    self.assertIn('worker-finish', state['fixtureProgress'])
+                else:
+                    self.assertFalse(result_file.exists())
+                    if kind != 'late-progress-replacement':
+                        self.assertNotIn('worker-finish', state['fixtureProgress'])
+                if kind.endswith('replacement') and kind != 'old-replacement':
+                    self.assertEqual(sorted(p.name for p in root.iterdir()), ['foreign'])
+                    self.assertEqual((root / 'foreign').read_text(), 'preserve')
+                if kind != 'late-progress-replacement':
+                    self.assertIs(state['primary'], primary)
+                self.assertTrue(state['closed'])
+                self.assertFalse(model._ACTIVE)
+                self.assertFalse(model._BIRTHS)
+
+    def test_full_environment_new_layer_inverse_is_whole_and_tamper_duplicate_or_extra_denies(self):
+        for name, leaf in (('sourcepy', 'full_sdk_source.py'), ('producer', 'producer.py')):
+            raw = normalized((HERE / leaf).read_bytes())
+            old = full_environment_inverse(raw, name)
+            spec = FULL_ENVIRONMENT_HISTORY[name]
+            self.assertEqual(hashlib.sha256(old).hexdigest(), spec['sha256'])
+            start = raw.index(spec['begin'].encode())
+            with self.assertRaises(AssertionError):
+                full_environment_inverse(raw[:start] + raw[start:].replace(b'ENVIRONMENT', b'ENVIRONMENX', 1), name)
+            with self.assertRaises(AssertionError):
+                full_environment_inverse(raw + spec['begin'].encode(), name)
+            with self.assertRaises(AssertionError):
+                full_environment_inverse(raw + b'\n', name)
+
+    @unittest.skipUnless(os.name == 'nt', 'Actual benign System32 batch fixture requires Windows')
+    def test_full_environment_actual_benign_batch_selects_all_three_cpus_and_denies_bad_arguments(self):
+        import environment
+        end = time.monotonic() + 40
+        root = Path(tempfile.mkdtemp(prefix='full-env-batch-')).resolve(strict=True)
+        root_identity = (root.stat().st_dev, root.stat().st_ino)
+        joined = True
+        child = None
+        try:
+            model, state, memory = environment_filesystem_model(self.context, self.p, root)
+            prior_remaining = state['clock'].remaining
+            def remaining():
+                seconds = min(prior_remaining(), end - time.monotonic())
+                model.need(seconds > 0, 'FIXTURE_DEADLINE')
+                return seconds
+            state['clock'].remaining = remaining
+            model._prepare_source_environment(root, state['context'], state['profile'], state['clock'])
+            adapter = root / 'custom-vs/VC/vcvarsall.bat'
+            adapter_pin = hashlib.sha256(adapter.read_bytes()).hexdigest()
+            cases = [(cpu, argument, '10.0.28000.0', '', 0) for cpu, argument in environment.CPUS.items()]
+            cases += [(None, 'amd64', '10.0.28000.0', 'extra', 91),
+                      (None, 'amd64', 'bad-sdk', '', 92), (None, 'bad-cpu', '10.0.28000.0', '', 93)]
+            for cpu, argument, sdk, extra, code in cases:
+                remaining()
+                self.assertEqual(hashlib.sha256(adapter.read_bytes()).hexdigest(), adapter_pin)
+                command = 'call "' + str(adapter) + '" ' + argument + ' ' + sdk + (' ' + extra if extra else '') + ' && set'
+                joined = False
+                # cmd has its own quoting grammar; CRT list2cmdline would
+                # backslash-escape the owned batch quotes incorrectly.
+                cmd = str(Path('C:/Windows/System32/cmd.exe'))
+                child = subprocess.Popen('"' + cmd + '" /d /s /c "' + command + '"',
+                    executable=cmd,
+                    cwd=root, env={'SystemRoot': 'C:/Windows', 'WINDIR': 'C:/Windows', 'Path': 'C:/Windows/System32'},
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+                try:
+                    stdout, stderr = child.communicate(timeout=min(5, remaining()))
+                    joined = child.returncode is not None
+                finally:
+                    if child.poll() is None:
+                        child.kill()  # This exact creation-owned benign cmd only.
+                        child.communicate(timeout=max(.001, end - time.monotonic()))
+                    joined = child.returncode is not None
+                remaining()
+                self.assertTrue(joined)
+                self.assertEqual(child.returncode, code)
+                self.assertEqual(len(stderr), 0)
+                self.assertLessEqual(len(stdout), 256 * 1024)
+                if cpu is not None:
+                    observed = dict(line.split('=', 1) for line in stdout.decode('utf-8').splitlines() if '=' in line and not line.startswith('='))
+                    observed = {key.casefold(): value for key, value in observed.items()}
+                    for key, value in environment.rows(root, state['profile'], cpu).items():
+                        self.assertEqual(hashlib.sha256(observed.get(key.casefold(), '').encode()).hexdigest(),
+                                         hashlib.sha256(value.encode()).hexdigest(), key)
+            self.assertEqual(hashlib.sha256(adapter.read_bytes()).hexdigest(), adapter_pin)
+        finally:
+            if child is not None:
+                for stream in (child.stdout, child.stderr):
+                    stream.close()
+            # Unconfirmed closure leaves owned scratch for process/VM teardown.
+            if joined:
+                self.assertEqual(root.parent, Path(tempfile.gettempdir()).resolve(strict=True))
+                self.assertEqual((root.lstat().st_dev, root.lstat().st_ino), root_identity)
+                self.assertFalse(root.is_symlink())
+                self.assertEqual(root.resolve(strict=True), root)
+                shutil.rmtree(root)
 
 
 if __name__ == '__main__':

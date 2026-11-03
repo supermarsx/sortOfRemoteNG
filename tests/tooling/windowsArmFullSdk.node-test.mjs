@@ -5012,7 +5012,118 @@ const FULL_BOOTSTRAP_CACHE_HISTORY = {
     ],
   },
 };
+function fullSourceEnvironmentProducerInverse(text) {
+  const spec = {
+    begin: "    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER\n",
+    end: "    # END OWNED FULL SOURCE ENVIRONMENT OWNER\n",
+    blockBytes: 367,
+    blockSha256:
+      "c3e7cdb7cae76d50749d5b2a56a6369844275f0bc45a655f44deec38f97d314b",
+    bytes: 59773,
+    sha256: "1d98a4ba7e6db89a49b45c1c1deb73075a381d9a4f5b263507547c8d5c2d5c52",
+    blocks: [
+      {
+        begin: "    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER\n",
+        end: "    # END OWNED FULL SOURCE ENVIRONMENT OWNER\n",
+        blockBytes: 367,
+        blockSha256:
+          "c3e7cdb7cae76d50749d5b2a56a6369844275f0bc45a655f44deec38f97d314b",
+      },
+      {
+        begin: "            # BEGIN OWNED FULL SOURCE ENVIRONMENT BRIDGE\n",
+        end: "            # END OWNED FULL SOURCE ENVIRONMENT BRIDGE\n",
+        blockBytes: 306,
+        blockSha256:
+          "56be570b27f967fa9d3bd7431d2b48f515e868a9fc7901dc7b4763a7dc770fb6",
+      },
+      {
+        begin:
+          "        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE PROGRESS\n",
+        end: "        # END OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE PROGRESS\n",
+        blockBytes: 446,
+        blockSha256:
+          "605aed3196c31bf255b4a5d8fbf81bacf91a4238024da630222301d39409c65d",
+      },
+      {
+        begin:
+          "        # BEGIN OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE REPORT\n",
+        end: "        # END OWNED FULL SOURCE ENVIRONMENT RETENTION BEFORE REPORT\n",
+        blockBytes: 431,
+        blockSha256:
+          "07eeeb00a9fa3ab545677f3ba827e5bd2b6b20c184ed51466a569cecfb705262",
+      },
+    ],
+  };
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.blocks) {
+    assert.equal(text.split(row.begin).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+    assert.equal(text.split(row.end).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+    const start = text.indexOf(row.begin);
+    const finish = text.indexOf(row.end, start) + row.end.length;
+    const block = text.slice(start, finish);
+    assert.equal(
+      Buffer.byteLength(block),
+      row.blockBytes,
+      "ENVIRONMENT_INVERSE_BLOCK",
+    );
+    assert.equal(hash(block), row.blockSha256, "ENVIRONMENT_INVERSE_BLOCK");
+    text = text.slice(0, start) + text.slice(finish);
+  }
+  for (const [current, previous] of [
+    [
+      "        if progress is not None and environment_retention_allowed:\n",
+      "        if progress is not None:\n",
+    ],
+    [
+      '        if environment_retention_allowed:\n            retain(root, role + "-result.json", result)\n',
+      '        retain(root, role + "-result.json", result)\n',
+    ],
+  ]) {
+    assert.equal(text.split(current).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+    text = text.replace(current, previous);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ENVIRONMENT_INVERSE_WHOLE",
+  );
+  assert.equal(hash(text), spec.sha256, "ENVIRONMENT_INVERSE_WHOLE");
+  return text;
+}
+function fullSourceEnvironmentInverse(text, name) {
+  if (name !== "sourcepy" && name !== "python") return text;
+  const spec = {
+    begin: "# BEGIN OWNED FULL SOURCE ENVIRONMENT\n",
+    end: "# END OWNED FULL SOURCE ENVIRONMENT\n\n\n",
+    blockBytes: 6814,
+    blockSha256:
+      "5a49d5b5e6adac97655b9587fd31c639a54baf9a9ddd5977652ced3d7df7db3b",
+    bytes: 28553,
+    sha256: "6da8be5749d21ee22e4fb4a0ae464b7ff161d354c0177b86a98f96157759601a",
+  };
+  assert.equal(text.split(spec.begin).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+  assert.equal(text.split(spec.end).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+  const start = text.indexOf(spec.begin);
+  const finish = text.indexOf(spec.end, start) + spec.end.length;
+  const block = text.slice(start, finish);
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(
+    Buffer.byteLength(block),
+    spec.blockBytes,
+    "ENVIRONMENT_INVERSE_BLOCK",
+  );
+  assert.equal(hash(block), spec.blockSha256, "ENVIRONMENT_INVERSE_BLOCK");
+  text = text.slice(0, start) + text.slice(finish);
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ENVIRONMENT_INVERSE_WHOLE",
+  );
+  assert.equal(hash(text), spec.sha256, "ENVIRONMENT_INVERSE_WHOLE");
+  return text;
+}
 function fullBootstrapCacheInverse(text, name) {
+  text = fullSourceEnvironmentInverse(text, name);
   if (name === "workflow") return text; // This repair never changes workflow bytes.
   const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
   assert(spec, "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_SCOPE");
@@ -10811,6 +10922,35 @@ print(json.dumps(dict(roles=list(roles),setup=setupname,failureFile=name,failure
   assert.equal(writers.status, 1);
   assert.equal(writers.failure.executed, false);
 });
+test("FULL environment fixture producer inverse restores the complete old source and rejects every tampered block", async () => {
+  const current = (
+    await fs.readFile(path.join(root, prefix, "producer.py"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const previous = fullSourceEnvironmentProducerInverse(current);
+  assert.equal(Buffer.byteLength(previous), 59773);
+  assert.equal(
+    sha(previous),
+    "1d98a4ba7e6db89a49b45c1c1deb73075a381d9a4f5b263507547c8d5c2d5c52",
+  );
+  for (const suffix of [
+    "OWNER",
+    "BRIDGE",
+    "RETENTION BEFORE PROGRESS",
+    "RETENTION BEFORE REPORT",
+  ]) {
+    const marker = "# BEGIN OWNED FULL SOURCE ENVIRONMENT " + suffix;
+    assert.equal(current.split(marker).length, 2);
+    assert.throws(() =>
+      fullSourceEnvironmentProducerInverse(
+        current.replace(marker, marker + " altered"),
+      ),
+    );
+    assert.throws(() =>
+      fullSourceEnvironmentProducerInverse(current + marker + "\n"),
+    );
+  }
+  assert.throws(() => fullSourceEnvironmentProducerInverse(current + "\n"));
+});
 async function fullSourceImageFixture(
   t,
   { image = "20261030.294.1", previous = false, late = false } = {},
@@ -10833,7 +10973,13 @@ async function fullSourceImageFixture(
     pRaw = Buffer.from(sourceAcquisitionInverse(pRaw.toString(), "profile"));
   const full = JSON.parse(pRaw);
   const policy = JSON.parse(await read(prefix + "sdk-origin-review.json"));
+  fullSourceEnvironmentProducerInverse(
+    (
+      await fs.readFile(path.join(root, prefix, "producer.py"), "utf8")
+    ).replaceAll("\r\n", "\n"),
+  );
   const mutableFixtureRows = new Set([
+    prefix + "producer.py",
     prefix + "full-sdk-source-driver.mjs",
     prefix + "full_sdk_control.mjs",
     prefix + "full_sdk_source.py",
@@ -10843,8 +10989,8 @@ async function fullSourceImageFixture(
     "tests/tooling/windowsArmFullSdkClock.node-test.mjs",
   ]);
   // Match the fixed workflow's core.autocrlf=false checkout. A canonical LF
-  // substitution must match its existing pin, except these three current WIP
-  // files whose modeled policy rows are refreshed to their actual new bytes.
+  // substitution must match its existing pin, except the fixed current files
+  // listed above whose modeled policy rows are refreshed to their actual bytes.
   for (const row of policy.producerInputs) {
     let raw =
       row.path === prefix + "full-sdk-source-profile.json"

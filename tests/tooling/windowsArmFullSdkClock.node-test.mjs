@@ -334,7 +334,40 @@ const FULL_BOOTSTRAP_CACHE_HISTORY = {
     ],
   },
 };
+function fullSourceEnvironmentInverse(text, name) {
+  if (name !== "sourcepy" && name !== "python") return text;
+  const spec = {
+    begin: "# BEGIN OWNED FULL SOURCE ENVIRONMENT\n",
+    end: "# END OWNED FULL SOURCE ENVIRONMENT\n\n\n",
+    blockBytes: 6814,
+    blockSha256:
+      "5a49d5b5e6adac97655b9587fd31c639a54baf9a9ddd5977652ced3d7df7db3b",
+    bytes: 28553,
+    sha256: "6da8be5749d21ee22e4fb4a0ae464b7ff161d354c0177b86a98f96157759601a",
+  };
+  assert.equal(text.split(spec.begin).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+  assert.equal(text.split(spec.end).length, 2, "ENVIRONMENT_INVERSE_COUNT");
+  const start = text.indexOf(spec.begin);
+  const finish = text.indexOf(spec.end, start) + spec.end.length;
+  const block = text.slice(start, finish);
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  assert.equal(
+    Buffer.byteLength(block),
+    spec.blockBytes,
+    "ENVIRONMENT_INVERSE_BLOCK",
+  );
+  assert.equal(hash(block), spec.blockSha256, "ENVIRONMENT_INVERSE_BLOCK");
+  text = text.slice(0, start) + text.slice(finish);
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ENVIRONMENT_INVERSE_WHOLE",
+  );
+  assert.equal(hash(text), spec.sha256, "ENVIRONMENT_INVERSE_WHOLE");
+  return text;
+}
 function fullBootstrapCacheInverse(text, name) {
+  text = fullSourceEnvironmentInverse(text, name);
   if (name === "workflow") return text; // This repair never changes workflow bytes.
   const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
   assert(spec, "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_SCOPE");
