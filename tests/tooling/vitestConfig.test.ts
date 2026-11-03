@@ -159,6 +159,11 @@ describe("ordinary Vitest discovery", () => {
     expect(runtimeContracts).toBe(rustSetup + 1);
     const expectedHelpers = [
       {
+        name: "Source sentinel sidecar interoperability (Windows)",
+        condition: "runner.os == 'Windows'",
+        run: "node --test tests/tooling/windowsArmSourceSentinelInterop.node-test.mjs",
+      },
+      {
         name: "Native ARM tool observer contracts (Windows)",
         condition: "runner.os == 'Windows'",
         run: "python -I -B native/windows-arm-native-tools/test_observe.py",
@@ -216,12 +221,14 @@ describe("ordinary Vitest discovery", () => {
     [reordered[0], reordered[1]] = [reordered[1]!, reordered[0]!];
     expect(() => assertHelperBlock(reordered)).toThrow();
     expect(() => assertHelperBlock(helperSteps.slice(1))).toThrow();
-    const wrongGuard = [...helperSteps];
-    wrongGuard[0] = wrongGuard[0]!.replace(
-      "if: runner.os == 'Windows'",
-      "if: runner.os != 'Windows'",
-    );
-    expect(() => assertHelperBlock(wrongGuard)).toThrow();
+    for (const index of [0, 1]) {
+      const wrongGuard = [...helperSteps];
+      wrongGuard[index] = wrongGuard[index]!.replace(
+        "if: runner.os == 'Windows'",
+        "if: runner.os != 'Windows'",
+      );
+      expect(() => assertHelperBlock(wrongGuard)).toThrow();
+    }
     expect(() =>
       assertHelperBlock([
         ...helperSteps,

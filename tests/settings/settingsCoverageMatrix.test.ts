@@ -110,7 +110,7 @@ function sampleValueFor(
         source: 100,
         categories: 180,
         assigned: 120,
-        actions: 90,
+        actions: 320,
       },
       pageSize: 50,
       mode: "infinite",
