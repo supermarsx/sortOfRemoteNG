@@ -11,10 +11,11 @@ import {
   realpath,
   rm,
   lstat,
+  cp,
 } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import {
@@ -86,7 +87,7 @@ const operation = "ec3c685e-8319-493d-b685-ef04843a0ebd",
   controller = "b".repeat(40),
   digest = "c".repeat(64),
   image = "sha256:" + "d".repeat(64);
-test("Windows ARM local handoff admits only typed candidates and requires fixed async policy before IO", async () => {
+test("Windows ARM local handoff admits only typed candidates and requires fixed async policy before IO", async (t) => {
   const local = {
     schemaVersion: 1,
     kind: "sorng-cef-owned-sdk-review",
@@ -115,9 +116,72 @@ test("Windows ARM local handoff admits only typed candidates and requires fixed 
     () => verifyOwnedHandoffEvidence(local, {}, {}),
     /fixed asynchronous policy inspector/,
   );
+  const isolated = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "missing-windows-arm-policy-")),
+  );
+  t.after(async () => {
+    assert.match(path.basename(isolated), /^missing-windows-arm-policy-/);
+    assert.equal(await realpath(isolated), isolated);
+    await rm(isolated, { recursive: true, force: true });
+  });
+  await cp(path.join(root, "scripts"), path.join(isolated, "scripts"), {
+    recursive: true,
+  });
+  await mkdir(path.join(isolated, "native"));
+  await cp(
+    path.join(root, "native/cef-hosted-recipe.json"),
+    path.join(isolated, "native/cef-hosted-recipe.json"),
+  );
+  for (const args of [
+    ["init", "--quiet"],
+    ["config", "core.autocrlf", "false"],
+    ["config", "user.name", "Missing policy fixture"],
+    ["config", "user.email", "fixture@example.invalid"],
+    ["add", "scripts"],
+    ["commit", "--quiet", "-m", "Canonical ROOT without Windows policy"],
+  ]) {
+    const result = spawnSync("git", ["-C", isolated, ...args], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+  }
   await assert.rejects(
-    checkOwnedSdkHandoff({ review: local, bundle: "absent", execute: true }),
-    /WINDOWS_ARM_SDK_/,
+    lstat(
+      path.join(isolated, "native/windows-arm-full-sdk/sdk-origin-review.json"),
+    ),
+    { code: "ENOENT" },
+  );
+  const subject = path.join(isolated, "scripts/lib/cef-owned-sdk-handoff.mjs"),
+    isolatedModule = await import(pathToFileURL(subject).href),
+    options = {
+      review: local,
+      bundle: path.join(isolated, "absent-bundle"),
+      inputs: path.join(isolated, "absent-inputs"),
+      evidence: path.join(isolated, "absent-evidence"),
+      execute: true,
+    };
+  await assert.rejects(
+    isolatedModule.checkOwnedSdkHandoff(options),
+    /WINDOWS_ARM_SDK_GIT_MODE/,
+  );
+  const guard =
+    "  const plan = ownedSdkHandoffPlan(review);\n  if (review.origin === WINDOWS_ARM_SDK_ORIGIN) await requireWindowsArmPolicy();\n";
+  const source = (await readFile(subject, "utf8")).replaceAll("\r\n", "\n");
+  assert.equal(source.split(guard).length, 2);
+  const control = path.join(
+    isolated,
+    "scripts/lib/handoff-before-io-control.mjs",
+  );
+  await writeFile(
+    control,
+    source.replace(guard, "  const plan = ownedSdkHandoffPlan(review);\n"),
+  );
+  const withoutGuard = await import(pathToFileURL(control).href);
+  await assert.rejects(
+    withoutGuard.checkOwnedSdkHandoff(options),
+    (error) => error.code === "ENOENT" && error.path === options.bundle,
   );
   for (const mutate of [
     (r) => delete r.originPolicySha256,

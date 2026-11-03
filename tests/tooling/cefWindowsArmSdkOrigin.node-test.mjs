@@ -1536,10 +1536,26 @@ function apiFixture(f, seal, archive) {
   };
 }
 
-test("real checkout missing fixed policy denies; callers cannot supply a policy path or admitted flag", async () => {
-  await assert.rejects(original.loadWindowsArmSdkOrigin());
+test("isolated checkout missing fixed policy denies; callers cannot supply a policy path or admitted flag", async (t) => {
+  const f = await fixture(t);
+  await f.mod.closeWindowsArmSdkOrigin(f.receipt);
+  git(f.root, "rm", "--", original.WINDOWS_ARM_SDK_POLICY);
+  git(f.root, "commit", "--quiet", "-m", "Explicit missing policy fixture");
+  assert.equal(
+    git(f.root, "ls-tree", "HEAD", "--", original.WINDOWS_ARM_SDK_POLICY)
+      .length,
+    0,
+  );
   await assert.rejects(
-    original.loadWindowsArmSdkOrigin({ policy: "elsewhere", admitted: true }),
+    fs.stat(path.join(f.root, original.WINDOWS_ARM_SDK_POLICY)),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(
+    f.mod.loadWindowsArmSdkOrigin(),
+    /WINDOWS_ARM_SDK_GIT_MODE/,
+  );
+  await assert.rejects(
+    f.mod.loadWindowsArmSdkOrigin({ policy: "elsewhere", admitted: true }),
     /ARGUMENTS/,
   );
 });
