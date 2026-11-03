@@ -188,7 +188,43 @@ test("current composed carrier retarget preserves its complete historical pre-gu
   );
 });
 
+function withoutLatestCheckpoint(text) {
+  const edits = [
+    [
+      '  head: "9c73456b804a17aa59d62e41d5e33f55d0e38271",',
+      '  head: "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c",',
+    ],
+    [
+      '  producer: "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",',
+      '  producer: "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",',
+    ],
+    ["  sourceFiles: 131,", "  sourceFiles: 129,"],
+    [
+      "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+      "native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
+    ],
+    [
+      '    bytes: 209410,\n    sha256: "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",',
+      '    bytes: 209194,\n    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",',
+    ],
+  ];
+  for (const [after, before] of edits) {
+    assert.equal(
+      text.split(after).length,
+      2,
+      "one exact latest-checkpoint retarget",
+    );
+    text = text.replace(after, before);
+  }
+  assert.equal(Buffer.byteLength(text), 123573);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "8c828829b4bc0b4c01db485ee8f1688737b60ccf125269c8241a377a434e49cb",
+  );
+  return text;
+}
 function withoutColdMetalCompanion(text) {
+  text = withoutLatestCheckpoint(text);
   {
     const current =
         '    bytes: 209194,\n    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",',

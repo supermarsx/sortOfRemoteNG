@@ -16,7 +16,43 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutLatestCheckpoint(text) {
+  const edits = [
+    [
+      '  head: "9c73456b804a17aa59d62e41d5e33f55d0e38271",',
+      '  head: "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c",',
+    ],
+    [
+      '  producer: "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",',
+      '  producer: "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",',
+    ],
+    ["  sourceFiles: 131,", "  sourceFiles: 129,"],
+    [
+      "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+      "native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
+    ],
+    [
+      '    bytes: 209410,\n    sha256: "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",',
+      '    bytes: 209194,\n    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",',
+    ],
+  ];
+  for (const [after, before] of edits) {
+    assert.equal(
+      text.split(after).length,
+      2,
+      "one exact latest-checkpoint retarget",
+    );
+    text = text.replace(after, before);
+  }
+  assert.equal(Buffer.byteLength(text), 123573);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "8c828829b4bc0b4c01db485ee8f1688737b60ccf125269c8241a377a434e49cb",
+  );
+  return text;
+}
 function withoutColdMetalCompanion(text) {
+  text = withoutLatestCheckpoint(text);
   {
     const current =
         '    bytes: 209194,\n    sha256: "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",',
@@ -488,7 +524,7 @@ function withoutTransactionDelta(text) {
   return text;
 }
 // Historical seed for synthetic envelopes, never production run authority.
-const SEED_RUN = 41378060040;
+const SEED_RUN = 41474498335;
 const selected = [
   "scripts",
   "native/cef-hosted-recipe.json",
@@ -700,6 +736,140 @@ const OLD_SOURCE_ROWS =
 100644 blob 303feb0be3a88e30c575be88157640621322e6e5	scripts/versioning.mjs
 100644 blob 5d203492eb36a8b3354182b3e66fd7e0402d7e12	scripts/viewport-scroll-check.mjs
 100644 blob 3f51e0714aae592fdcecf2b72af6fe8be9ac7211	scripts/web-automation-capture.mjs`);
+// Actual immutable131-row9c producer witness for successful41474498335.
+// The preceding129-rowA4 witness remains unchanged as historical evidence.
+const LATEST_SOURCE_ROWS =
+  parseRows(String.raw`100644 blob 75fc85e39d3cf0b82726dcc603126bdaff0455c2	.github/workflows/cef-engineering-checkpoint.yml
+100644 blob 60ade1ae01e833a5c291c47883bf26fb031f7727	.node-version
+100644 blob 77ba6488a6f092856b705c477e7cf4084ff5390f	native/cef-hosted-recipe.json
+100644 blob 22e31d24ab9b4731b1e5ca5b22878d3084d6f248	scripts/automation-repository.mjs
+100644 blob 1522b41ad8788f2f9188ef488e49eac26c429659	scripts/browser-app-build.mjs
+100644 blob a5c0a5a32171b833094a6a133c8fbd4b3bc8478e	scripts/browser-client-network-probe.mjs
+100644 blob 23c88fcf52529959b0a4f0ca32cf2a1e0cf53f9d	scripts/browser-live.mjs
+100644 blob aa7b6a2e159312a3f500bd558647769e1d717b45	scripts/browser-readiness.mjs
+100644 blob 5e0a21bd339d1101e0f323bccc1dc475b696fdc0	scripts/browser-runtime-native-ci.mjs
+100644 blob 988ac8db981ffc8f9e05c1fc3cd9b193e4af0c8b	scripts/browser-runtime-package.mjs
+100644 blob 30e1507084269bab38f6115107b45a225ef4b313	scripts/capture-login-page.mjs
+100644 blob cc161259f4ff6293493e21fff4eacf2608613cf9	scripts/catalog-icon-contact-sheet.mjs
+100644 blob f2785f6e944c6952d371106b80f7d6887152ecc0	scripts/cef-browser-acceptance.mjs
+100644 blob 5720498c509aa86d2b4d22b0e96eac6fb17d3ed9	scripts/cef-custom-artifact-inventory.mjs
+100644 blob 32b78858b781acb464a39c260b66adcae81ce364	scripts/cef-engineering-checkpoint.mjs
+100644 blob 59ba20636a8c82e10016b660fbe5e2be748210cf	scripts/cef-hosted-bootstrap.mjs
+100644 blob 2fb3903eb9bf9f582ccf1fd63cf7fbb5c558890b	scripts/cef-hosted-capacity.mjs
+100644 blob 6109185591d332f32cb48a0b39e418082c2e28e7	scripts/cef-hosted-provision.mjs
+100644 blob 9d5d5222b00a86d7e60c82da7a1d8eafd29e4376	scripts/cef-linux-package-fixture.mjs
+100644 blob fae71b6b76c4a1ba4631809d1e5b10a3a40c5c81	scripts/cef-owned-sdk-handoff.mjs
+100644 blob aa52f99b48d931a5735c4c03976b3f2cf1e4a4f7	scripts/cef-owned-sdk-import.mjs
+100644 blob 8549327fb78fc51fe9c0ef32217ac6c232b5b9f6	scripts/cef-owned-sdk-publish.mjs
+100644 blob 616e5cf87ec9a0325d905738749f185bc36515db	scripts/cef-patched-runtime.mjs
+100644 blob 70e03a09eabacb4f39a87883fff3910f947b0de9	scripts/cef-runtime-acceptance-ci.mjs
+100644 blob 1e2186f00290d68d361515d1a28c45feb5466d7b	scripts/cef-runtime-ci.mjs
+100644 blob 0046ae7e7674b0beefc2f25a48904d0d9098c251	scripts/cef-runtime-fetch.mjs
+100644 blob 20b12544401b69495103a6864f5ce1cecfdf5133	scripts/ci/analyze-native-dependency-graph.mjs
+100644 blob 579893859c71eba218b8d057c79050f32e608ca2	scripts/ci/audit_filter.py
+100644 blob 07c99ba1ce84ea3d980b877c5ba27705e0b09823	scripts/ci/check-backend-coverage.mjs
+100644 blob 1814e3307a87de501dff1c66b25996b87dd477be	scripts/ci/check-cargo-update-candidate.mjs
+100644 blob c9d2022462126973263c328c1cd1fa2c9f3554a5	scripts/ci/check-docs-links.mjs
+100644 blob 1226702dbaf18afeed1a8f3936c4880de017bcd2	scripts/ci/check-frontend-cold-bundle.mjs
+100644 blob 8f002d7e4478a09a09c7fe523d490d715e144266	scripts/ci/check-gif-worker-export.mjs
+100644 blob a7f2b69d8b804f8eb6672bcbdfa095b73b607695	scripts/ci/check-js-lock-parity.mjs
+100644 blob e6a8a9ad733c94b8e29f0b0c13d4a5e60e7ad966	scripts/ci/check-npm-audit.mjs
+100644 blob c54b69df1bd39591c6ddfdd135aa49864bb90da2	scripts/ci/check-release-runtime-catalog.mjs
+100644 blob d830e025f60687fa5b1d3a6b6736eebfcac2c540	scripts/ci/check-release-version-floor.mjs
+100644 blob 6c478768f06ac8ed663ce800a01c3cfaf2d4a042	scripts/ci/diagnose-macos-cef-tests.mjs
+100644 blob 71f74176d81fb9e1f077bc29d55f305e58b47420	scripts/ci/e2e-http-fixtures.mjs
+100644 blob 3638c1a6f3dcc889b58d015e9fad16f60e758f78	scripts/ci/e2e-npm-fixture.mjs
+100644 blob e2fbf0b02f37f4d3f05969b16390e59a3667c6e8	scripts/ci/e2e-portainer-fixture.mjs
+100644 blob c6898f29664586368c9c6cc9277b8d7f4b437dab	scripts/ci/lib/docs-search-validation.mjs
+100644 blob 48b32403c8527f8d422991c420e06defc1d6e696	scripts/ci/resolve-release-version.mjs
+100644 blob d6c02b3490303d27961d1a940883705f99a1d592	scripts/ci/run-release-native-build.mjs
+100644 blob a42ba21a31d4d82efd6f1f9a2bfa065a09654f63	scripts/ci/semver.mjs
+100644 blob 658b9b5e4bbaa28ea318c7e2229d91cfdf9e0dae	scripts/ci/summarize-native-build-timings.mjs
+100644 blob 9ff38882ad2c68ba94f0fb398aeb3e1ea733810c	scripts/ci/update-npm-compatible.mjs
+100644 blob abcc7f30998e186f362c779998301941e5af10f7	scripts/ci/validate-release-artifacts.mjs
+100644 blob 264b762f10a6a54748e2a05bcc9974dc4cbb91e4	scripts/ci/validate-updater-feed.mjs
+100644 blob 9667feb690df30492faea80da379d5a6a80f182b	scripts/ci/verify-published-release-assets.mjs
+100644 blob d702ef59b0b71e18437f186e98c3e24b5191a676	scripts/ci/verify-release-snapshot.mjs
+100644 blob c0e465f7e1f4e2047d36b9bce9a53ce730ea7623	scripts/ci/wait-for-release-readiness.mjs
+100644 blob bea75fda8491a0df11a1fa76aa062a5eea7b8dbe	scripts/crypto/generate-database-eax-vectors.ps1
+100644 blob 6db3eb880621234ff1d78fa41285b726f0e75ba4	scripts/database-ui-capture.mjs
+100644 blob 755df5ea02747e526b3ecc92e8f574c29dfeb04e	scripts/dev-port.mjs
+100644 blob ced531d4c9db02fbbf47c0280080da28356ee80b	scripts/dev-server.mjs
+100644 blob b23555fe7903dfcb973e5d9cf31140f323012d8d	scripts/docs-app-capture.mjs
+100644 blob 38b182cc3bafbaf5804e47c56ca7e1b1734e258c	scripts/docs-visual-capture.mjs
+100644 blob 553db2a542fb5e57fb20a4a0d0e7003524cabbf0	scripts/e2e-build.mjs
+100644 blob 348838a05d8fe3d4fd733c2a450a3fbb4de9fea0	scripts/e2e-isolation-selftest.mjs
+100644 blob dc474484165bba46ec7f275c6209fc0f18610a69	scripts/folder-icon-contact-sheet.mjs
+100644 blob cd1780bd4f2e5885d490ddd3c9e79acc05d85012	scripts/format-changed.mjs
+100644 blob 3ef1b0f7d2185004f943d1b7892f1017bdecb253	scripts/generate-command-inventory.mjs
+100644 blob 68d09236558e77dc1798bd644abe46dfa9bc928b	scripts/generate-native-login-catalog.mjs
+100644 blob 00d1e401e7a7fc5d27268b7236e08690f1e6c31d	scripts/i18n-residual.mjs
+100644 blob 9b421f1da96f4c8223f3f7b088204ad494fbf578	scripts/icon-ui-capture.mjs
+100644 blob 3fb21b9fcd4d5e36deb6c206c3c2cf0d2be8c82a	scripts/lib/browser-build-route.mjs
+100644 blob 12e5fe39389938587468849ac095b6c6493f8da0	scripts/lib/browser-client-imports.mjs
+100644 blob 7207a4b2f420cd72505c504bc8da135386a87a6b	scripts/lib/browser-custom-runtime.mjs
+100644 blob 806f4feb6a61e84c0a4426d7f1df51396bbe9f4b	scripts/lib/browser-dev-sdk-cache.mjs
+100644 blob 57279a8dabf84605a9783f388210eed4554827e9	scripts/lib/browser-installer-bundles.mjs
+100644 blob fe6fba4493b9265823a71a0a6445ad41cdccd708	scripts/lib/browser-local-runtime.mjs
+100644 blob 0db85b14d4266af86c04eb27dab97359a416c879	scripts/lib/browser-runtime-bootstrap.mjs
+100644 blob 4f5591f6400a1b84cdd2b4c07108ed9ccb59e4a9	scripts/lib/browser-runtime-release.mjs
+100644 blob eb3a022a7a3c0ad0084f595a654929a4101983bc	scripts/lib/browser-sandbox-access.mjs
+100644 blob 66e77e0ec607aee4d80fae3ad1f185fbf0b6600f	scripts/lib/cef-checkpoint-archive.py
+100644 blob e8c21320d5858c25b4b7ae6ad909e8cc7791d6ec	scripts/lib/cef-engineering-checkpoint.mjs
+100644 blob 434bb814abbc4c16ac417477a081ce9c7abf6f77	scripts/lib/cef-linux-producer-migration.mjs
+100644 blob 8041a411ff3ae9ce3c8b55ddb1cfe0eb3a4b4471	scripts/lib/cef-linux-sidecar-retirement.py
+100644 blob ab15eccc67c328920c0a101b893755edfc7fc170	scripts/lib/cef-mac-process-census.py
+100644 blob 8e3e081cfe40fee9ff865b5699b47bfc9a6184ef	scripts/lib/cef-mac-sdk-inventory.mjs
+100644 blob 5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf	scripts/lib/cef-mac-source-metadata.mjs
+100644 blob 4ded0956ee5732222a22c96df40bc40dbee62a30	scripts/lib/cef-native-crash-summary.mjs
+100644 blob 3fb062fc081d9a974f841f22a28068059a2a8550	scripts/lib/cef-owned-sdk-handoff.mjs
+100644 blob 369c93b265d65416934865d8a5f0b9c1f62e22d7	scripts/lib/cef-owned-sdk-import.mjs
+100644 blob a53f9d122bf11263745de9f741a13dbbe51aba3c	scripts/lib/cef-owned-sdk-publish.mjs
+100644 blob 9580b3fb662eb0b26e9bb2bf897d7c037c4c743c	scripts/lib/cef-storage-acceptance.mjs
+100644 blob bb216f2dec96fb96484bb70a85176fae59e521ff	scripts/lib/cef-windows-arm-sdk-origin.mjs
+100644 blob a262d43203010c6feb1e28950040ecf1564b9248	scripts/lib/command-inventory.mjs
+100644 blob d37431b0b46f82c1183f9cc52245cb2223de89c2	scripts/lib/core-command-groups.mjs
+100644 blob fdc4c6673227cca6d9036d9842fac9891ce193e6	scripts/lib/dev-build-budget.mjs
+100644 blob 9e6c3fa95f776b5e542bba35134d493ba98de3d7	scripts/lib/e2e-profile-isolation.d.mts
+100644 blob 1ddca465468f9b6eb7550d5c6fa10ec1e8ea3844	scripts/lib/e2e-profile-isolation.mjs
+100644 blob 95f02a1b2467bf726b083a309177c58aa8897c0f	scripts/lib/extract-custom-runtime.py
+100644 blob 7c42e96ed0c50eb4b5dcbfc58d3cbf097f1ddee7	scripts/lib/linux-package-sandbox.mjs
+100644 blob 8c70b2dda58d7841b1fb5444f88fa25be0d08d0a	scripts/lib/native-child-env.mjs
+100644 blob 7a61eaf64f89ce5f6d824551fc541b9c8716a73b	scripts/lib/windows-native-crash-capture.mjs
+100644 blob 0be899cc5030ef456be2e52f0d29a91c1aeb21c8	scripts/lib/windows-openssl-env.mjs
+100644 blob 9c7500a5f973afc85aa1240be166426628587226	scripts/native-build-env.mjs
+100644 blob adb8fdfcdaddac32a58a17ca637b67d213d2cf7a	scripts/native-target.mjs
+100644 blob 37b729490bbc2d337217b17e529145756abda94b	scripts/native/browser-app-plist.py
+100644 blob d1b82bdb1d8c88da48257e12dc22231983fac3be	scripts/native/browser-cargo-runner.rs
+100644 blob 624444b6dbbd5b7b678429741f3040cd97c2e78c	scripts/native/repair-browser-sandbox-access.ps1
+100644 blob 1af8438246326956c285ca721093cf4fcc8b73e8	scripts/provider-icons-capture.mjs
+100644 blob 6ad9a56649aff470f4431a501421da2b914ce79d	scripts/readme-screenshot-validation.mjs
+100644 blob fd113092504ee5c3440fe2fa39cbcd71ca15d810	scripts/readme-screenshot.mjs
+100644 blob 2e129e26927037109abad8996f5e71ca0da7dbe5	scripts/softether-e2e-down.ps1
+100644 blob 090f7e0ee6e2a4335dd1a5b77bb0e828b09ccee7	scripts/softether-e2e-down.sh
+100644 blob 16114fc39008314fa34280bf8b6c67855cef559d	scripts/sort-core-command-groups.mjs
+100644 blob b7b5717eded1d9f05bc9e02f9b9a01ffa7b0e24c	scripts/spreadsheet-ui-check.mjs
+100644 blob e28b78e4d2bda5e5d8e24a8bc7a336bfdee1bf81	scripts/stage-file-viewer-host.mjs
+100644 blob c529782fbb8b5915053f4ec0ff0b9954bfc216e1	scripts/stage-openh264-runtime.mjs
+100644 blob ad986a3a438a6ab21d59957f7701cd029f8d8f58	scripts/stage-windows-native-runtime.mjs
+100644 blob a2529556eae07dc2ae6192296fcbe56cceccfd92	scripts/styled-english-locales.mjs
+100644 blob b169695faff2b8e34340b20362e886a4b3c08b6e	scripts/sync-brand-icons.mjs
+100644 blob 0e0fbf1f73aa63bf8093cff34ba60ab5e9d92bd6	scripts/sync-js-deps.mjs
+100644 blob af51e4437a6bb1d1e4e481a4a2be0ee11d3ae832	scripts/sync-version.mjs
+100644 blob f81ddd2150198a8362ab5510e124dba7390dce7a	scripts/tauri-dev.mjs
+100644 blob d4d7819293430603f3c46f2b3e7c14af54777cfe	scripts/tauri.mjs
+100644 blob 3cabbaa847327de9ac8caa4c7cecb7cf0e9832aa	scripts/test-legacy-web-compat-browser.mjs
+100644 blob 0169c0728bb49f4961a34732ae72e1051a386145	scripts/test-synology-login-browser.mjs
+100644 blob 127af7cf77c86525bc6ad561145ca78e18348dad	scripts/test-vault-ssh-inline.mjs
+100644 blob 580c5832a695bfc7f068d203d8b1ddb8eeff57cc	scripts/test-web-network-browser.mjs
+100644 blob d1b6b5138e89f2215476f57cf432b018bdd942a0	scripts/test-website-dark-mode-browser.mjs
+100644 blob 9c26ad336cc66c956eb4ea2e3815dffdbab264e4	scripts/test-yealink-login-browser.mjs
+100644 blob e30f7ec547a03efbdcd448dc78a9c395721b1519	scripts/trace-provider-icons.mjs
+100644 blob 062a26cdb05d692f347d28772c1613398df408b2	scripts/trust-ui-capture.mjs
+100644 blob 19541ed4fff8d24537d059748ea0655173e67b7e	scripts/vendor-web-darkreader.mjs
+100644 blob 303feb0be3a88e30c575be88157640621322e6e5	scripts/versioning.mjs
+100644 blob 5d203492eb36a8b3354182b3e66fd7e0402d7e12	scripts/viewport-scroll-check.mjs
+100644 blob 3f51e0714aae592fdcecf2b72af6fe8be9ac7211	scripts/web-automation-capture.mjs`);
 async function scratch(t) {
   const root = await fs.realpath(
     await fs.mkdtemp(path.join(os.tmpdir(), "cef-linux-migration-")),
@@ -756,9 +926,9 @@ async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
   const root = await scratch(t),
     repo = path.join(root, "repo");
   await fs.mkdir(repo);
-  const oldRows = structuredClone(OLD_SOURCE_ROWS);
+  const oldRows = structuredClone(LATEST_SOURCE_ROWS);
   const reachableRows = rows(ROOT, "HEAD");
-  assert.equal(oldRows.length, 129);
+  assert.equal(oldRows.length, 131);
   assert.equal(core.codeTreeDigest(oldRows), M.producer);
   // Read the candidate from the reachable current Git tree. The old row table
   // is only the exact from-identity witness; no old helper is executed.
@@ -1864,20 +2034,72 @@ test("a source owner retired during an awaited apply cannot reach GN, readiness 
   assert(!m.events.includes("new-record"));
 });
 
-test("fixed retarget binds the actual main3aa129-row producer and committed non-authorizing capsule", async () => {
+test("latest sealed checkpoint retarget preserves complete prior module and immutable A4 history", async () => {
+  const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  withoutLatestCheckpoint(text);
+  assert.equal(M.head, "9c73456b804a17aa59d62e41d5e33f55d0e38271");
+  assert.equal(
+    M.producer,
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+  );
+  assert.equal(M.sourceFiles, 131);
+  assert.equal(
+    M.policyPath,
+    "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+  );
+  assert.equal(LATEST_SOURCE_ROWS.length, 131);
+  assert.equal(core.codeTreeDigest(LATEST_SOURCE_ROWS), M.producer);
+  assert.equal(OLD_SOURCE_ROWS.length, 129);
+  assert.equal(
+    core.codeTreeDigest(OLD_SOURCE_ROWS),
+    "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",
+  );
+  const old = git(ROOT, [
+    "cat-file",
+    "blob",
+    "HEAD:native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
+  ]);
+  assert.equal(old.length, 19517);
+  assert.equal(
+    core.sha(old),
+    "269855c8fd5966f104a87908c0245e00134d0e4cbf64dce4ff278ceaef258283",
+  );
+  const oldCapsule = JSON.parse(old);
+  assert.equal(oldCapsule.from.checkpointProducer.runId, 41388464567);
+  assert.deepEqual(oldCapsule.oldSourceTree, OLD_SOURCE_ROWS);
+  const proofSource = ts.createSourceFile(
+    MODULE,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const proof = proofSource.statements
+    .flatMap((n) =>
+      ts.isVariableStatement(n) ? [...n.declarationList.declarations] : [],
+    )
+    .find((n) => n.name.getText(proofSource) === "PROOF");
+  assert(proof);
+  assert.match(proof.getText(proofSource), /bytes: 209410/);
+  assert.match(
+    proof.getText(proofSource),
+    /3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6/,
+  );
+});
+test("fixed retarget binds the actual main9c131-row producer and committed non-authorizing capsule", async () => {
   assert.equal(Object.hasOwn(M, "runId"), false);
   assert.equal(
     M.policyPath,
-    "native/cef-checkpoint-migrations/linux-arm-a4f715ed-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
   );
-  assert.equal(M.head, "3aa7d04278d75d64c53ff0a6d5bf8d56c94e5d3c");
+  assert.equal(M.head, "9c73456b804a17aa59d62e41d5e33f55d0e38271");
   assert.equal(
     M.producer,
-    "a4f715ed5755b718210cafb2aacb9d4179c7e3f49e0961ce800cca8fa4098837",
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
   );
-  assert.equal(M.sourceFiles, 129);
-  const actual = structuredClone(OLD_SOURCE_ROWS);
-  assert.equal(actual.length, 129);
+  assert.equal(M.sourceFiles, 131);
+  const actual = structuredClone(LATEST_SOURCE_ROWS);
+  assert.equal(actual.length, 131);
   assert.equal(core.codeTreeDigest(actual), M.producer);
   assert.equal(
     actual.some(
@@ -1909,7 +2131,7 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
   assert.equal(capsule.from.producer, M.producer);
   assert.deepEqual(capsule.oldSourceTree, actual);
   assert.equal(capsule.toProducer, core.codeTreeDigest(rows(ROOT, "HEAD")));
-  assert.equal(capsule.from.checkpointProducer.runId, 41388464567);
+  assert.equal(capsule.from.checkpointProducer.runId, 41474498335);
   await assert.rejects(
     migration.readLinuxMigrationSelection(capsule),
     /LINUX_MIGRATION_SELECTION_ARGUMENTS/,
@@ -1922,10 +2144,10 @@ test("fixed retarget binds the actual main3aa129-row producer and committed non-
     "blob",
     "HEAD:" + archive,
   ]);
-  assert.equal(canonical.length, 209194);
+  assert.equal(canonical.length, 209410);
   assert.equal(
     core.sha(canonical),
-    "c3409a153b642b8d1ac55afb28af71027a8c5c4e3de256a19040cb542d1fc6a8",
+    "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",
   );
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
@@ -2027,11 +2249,34 @@ test("inactive current-run inspection rejects retired413501 and missing actual c
   );
 });
 
-test("cold Metal companion has exactly ten fixed source deltas and rejects an omitted or forged provision row", async (t) => {
+test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted or forged provision row in a bounded subset", async (t) => {
   const body = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutColdMetalCompanion(body);
   const f = await fixture(t);
-  assert.equal(f.policy.changedSources.length, 10);
+  const allowed = body
+    .split("const CHANGED_PATHS = new Set([")[1]
+    .split("]);")[0];
+  const names = [...allowed.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  names.push(core.WORKFLOW);
+  assert.deepEqual(
+    names.sort(),
+    [
+      "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+      "scripts/cef-hosted-provision.mjs",
+      "scripts/lib/cef-linux-producer-migration.mjs",
+      "scripts/cef-engineering-checkpoint.mjs",
+      "scripts/cef-runtime-ci.mjs",
+      "scripts/lib/cef-engineering-checkpoint.mjs",
+      "scripts/lib/cef-checkpoint-archive.py",
+      "scripts/lib/cef-mac-source-metadata.mjs",
+      "scripts/lib/cef-linux-sidecar-retirement.py",
+      core.WORKFLOW,
+    ].sort(),
+  );
+  assert(
+    f.policy.changedSources.length > 0 &&
+      f.policy.changedSources.length <= names.length,
+  );
   const name = "scripts/cef-hosted-provision.mjs";
   const row = f.policy.changedSources.find((item) => item.path === name);
   assert(row);
