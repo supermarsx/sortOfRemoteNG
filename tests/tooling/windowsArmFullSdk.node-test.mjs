@@ -5157,7 +5157,87 @@ const ASSEMBLY_HISTORY = {
     sha256: "a1b9eb8eff5fb0e4a8e1719f1286e58147023fb77332b0a756c6c40303cf7b26",
   },
 };
+// BEGIN EXACT FULL SOURCE IMAGE INVERSE
+const FULL_SOURCE_IMAGE_INVERSE = {
+  bytes: 268520,
+  sha256: "57b53672e18bd19503ae3dfde05b91b7bea577a863f7715089daf0a1419c6b36",
+  rows: [
+    {
+      oldRaw:
+        "  const value = p.sourceGn.hostClosure,\n    tools = reviewedHostTools(p);\n",
+      newRaw:
+        "  const value = p.sourceGn.hostClosure,\n    tools = reviewedHostTools(p),\n    imageData = sourceImageData(p);\n",
+      oldSha256:
+        "961ea3fa312334372f88297bf7d6d1146a0d6425de8bce973b8c5c86f92c636e",
+      newSha256:
+        "cfb1c1e3f05b521d4a582aff584c490cf84eb8ee08d42d3af38490c369439c65",
+    },
+    {
+      oldRaw:
+        "      privateImage(p).profileSha256 === p.privateSelectedSha256,\n",
+      newRaw:
+        "      imageData.profileSha256 === imageData.selectedProfileSha256,\n",
+      oldSha256:
+        "d4555a9a69a82fdf58d676995d8434f468a37b68bbfcdc3d5d505ac78761590a",
+      newSha256:
+        "f00b8467df5388f6f2bc9cbf30023238f5a69019477f2b4e155b3e38a12f5db2",
+    },
+    {
+      oldRaw:
+        'export function sourcePaths(root, p) {\n  need(\n    p.sourceGn.mode === "image-qualified-source-gn" &&\n      p.sourceGn.sourceId === privateImage(p).sourceId &&\n      p.sourceGn.namespace === privateImage(p).namespace &&\n      p.sourceGn.compilerAllowed === false &&\n      p.sourceGn.checkpointAllowed === false &&\n      p.sourceGn.restoreAllowed === false &&\n      p.sourceGn.sdkAllowed === false,\n    "FULL_SOURCE_POLICY",\n  );\n  need(path.isAbsolute(root) && !/\\s/.test(root), "FULL_SOURCE_WORKSPACE");\n  const workspace = path.join(root, "source-checkout");\n  return {\n    workspace,\n    chromium: path.join(workspace, "src"),\n    cef: path.join(workspace, "src/cef"),\n    depot: path.join(workspace, "depot_tools"),\n    logs: path.join(root, "source-gn-logs"),\n    commands: path.join(root, "source-commands"),\n    inputs: path.join(REPO, p.sourceGn.namespace),\n  };\n}\n\n',
+      newRaw:
+        'export function sourcePaths(root, p) {\n  const imageData = sourceImageData(p);\n  need(\n    p.sourceGn.mode === "image-qualified-source-gn" &&\n      p.sourceGn.sourceId === imageData.sourceId &&\n      p.sourceGn.namespace === imageData.namespace &&\n      p.sourceGn.compilerAllowed === false &&\n      p.sourceGn.checkpointAllowed === false &&\n      p.sourceGn.restoreAllowed === false &&\n      p.sourceGn.sdkAllowed === false,\n    "FULL_SOURCE_POLICY",\n  );\n  need(path.isAbsolute(root) && !/\\s/.test(root), "FULL_SOURCE_WORKSPACE");\n  const workspace = path.join(root, "source-checkout");\n  return {\n    workspace,\n    chromium: path.join(workspace, "src"),\n    cef: path.join(workspace, "src/cef"),\n    depot: path.join(workspace, "depot_tools"),\n    logs: path.join(root, "source-gn-logs"),\n    commands: path.join(root, "source-commands"),\n    inputs: path.join(REPO, p.sourceGn.namespace),\n  };\n}\n\n',
+      oldSha256:
+        "05853c7d28bd81fa932baa2fe2b045d255d49e02b11482b2d7b6e4f5cfe865a2",
+      newSha256:
+        "aa2cd83a2a561687f0ce7acd130282f1c20c4635af87f38edd712c4e373e8169",
+    },
+    {
+      oldRaw: "",
+      newRaw:
+        '// BEGIN PRIVATE FULL SOURCE IMAGE DATA\nfunction sourceImageData(p) {\n  const binding = fullSourceProfiles.get(p);\n  if (!binding)\n    return {\n      ...privateImage(p),\n      selectedProfileSha256: p.privateSelectedSha256,\n    };\n  try {\n    need(\n      binding.profile === p && binding.sourceGn === p.sourceGn,\n      "FULL_IMAGE_PROFILE_BINDING",\n    );\n    need(\n      fullBootstrapAuthority(binding.root, p, binding.contextPin) === binding,\n      "FULL_IMAGE_OWNER",\n    );\n    const image = binding.imageData;\n    need(\n      image &&\n        image.image === p.image &&\n        binding.context.sourceId === image.sourceId &&\n        binding.context.sourceProfileSha256 === image.profileSha256 &&\n        p.sourceGn.sourceId === image.sourceId &&\n        p.sourceGn.namespace === image.namespace &&\n        binding.selectedProfileSha256 === image.profileSha256,\n      "FULL_IMAGE_CHANGED",\n    );\n    return Object.freeze({\n      ...image,\n      selectedProfileSha256: binding.selectedProfileSha256,\n    });\n  } catch (error) {\n    fullSourceProfiles.delete(p);\n    throw error;\n  }\n}\n// END PRIVATE FULL SOURCE IMAGE DATA\n\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "d5874bc6d35374b03d6385efb9de3376f1a49baa52ec0bc82940c8c700455963",
+    },
+    {
+      oldRaw:
+        '  const tools = reviewedHostTools(p),\n    files = sourcePaths(root, p);\n  need(/^[a-f0-9]{64}$/.test(contextPin), "FULL_CONTEXT_PIN");\n  const metadataRecipeRaw = await held(\n',
+      newRaw:
+        '  need(/^[a-f0-9]{64}$/.test(contextPin), "FULL_CONTEXT_PIN");\n  const metadataRecipeRaw = await held(\n',
+      oldSha256:
+        "a7461dcb0ac8950ebab19397e10790bc6d19f7eb881ddd7a06a3fe5ae998cd9c",
+      newSha256:
+        "62b208f3c73d6ff8fb651366a72ab9117b668e7cf507aeed465791861d98afdf",
+    },
+    {
+      oldRaw:
+        "  fullSourceProfiles.set(p, {\n    root,\n    context: c,\n    contextPin,\n    budget,\n    metadataRecipeRaw,\n  });\n  return { p, budget, tools, files, privatePolicyRaw: raw };\n",
+      newRaw:
+        '  // BEGIN HELD FULL SOURCE IMAGE REGISTRATION\n  const imageData = JSON.parse(metadataRecipeRaw).images[c.image];\n  requireFullSourceContext(c);\n  budget.remaining();\n  need(\n    imageData &&\n      c.image === p.image &&\n      c.sourceId === pin.sourceId &&\n      c.sourceProfileSha256 === pin.profileSha256 &&\n      imageData.profile === pin.profile &&\n      imageData.profileSha256 === pin.profileSha256 &&\n      imageData.sourceId === pin.sourceId &&\n      imageData.namespace === p.sourceGn.namespace,\n    "FULL_IMAGE_RECIPE_BINDING",\n  );\n  fullSourceProfiles.set(p, {\n    profile: p,\n    sourceGn: p.sourceGn,\n    root,\n    context: c,\n    contextPin,\n    budget,\n    metadataRecipeRaw,\n    imageData: Object.freeze({ image: c.image, ...imageData }),\n    selectedProfileSha256: sha(selectedRaw),\n  });\n  try {\n    const tools = reviewedHostTools(p),\n      files = sourcePaths(root, p);\n    reviewedHostClosure(p, c.image);\n    fullBootstrapAuthority(root, p, contextPin);\n    return { p, budget, tools, files, privatePolicyRaw: raw };\n  } catch (error) {\n    fullSourceProfiles.delete(p);\n    throw error;\n  }\n  // END HELD FULL SOURCE IMAGE REGISTRATION\n',
+      oldSha256:
+        "2a57f25defc0ed75e967d8330621c5f8be1d68649fb0849585a0c06b173198a8",
+      newSha256:
+        "8c98aa6381f9abbc4b808d1c5a69b6c230904f18ec1cfd088553d780d5f30785",
+    },
+  ],
+};
+function fullSourceImageInverse(text) {
+  for (const row of FULL_SOURCE_IMAGE_INVERSE.rows) {
+    assert.equal(sha(row.newRaw), row.newSha256);
+    assert.equal(sha(row.oldRaw), row.oldSha256);
+    assert.equal(text.split(row.newRaw).length, 2);
+    text = text.replace(row.newRaw, row.oldRaw);
+  }
+  assert.equal(Buffer.byteLength(text), FULL_SOURCE_IMAGE_INVERSE.bytes);
+  assert.equal(sha(text), FULL_SOURCE_IMAGE_INVERSE.sha256);
+  return text;
+}
+// END EXACT FULL SOURCE IMAGE INVERSE
+
 function assemblyInverse(text, name) {
+  if (name === "driver") text = fullSourceImageInverse(text);
   if (name === "controller") text = startupControllerInverse(text);
   const spec = ASSEMBLY_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -10275,4 +10355,388 @@ print(json.dumps(dict(roles=list(roles),setup=setupname,failureFile=name,failure
   assert(!previous.includes(prefixPattern + writers.failureFile)); // Actual silent failure was previously lost.
   assert.equal(writers.status, 1);
   assert.equal(writers.failure.executed, false);
+});
+async function fullSourceImageFixture(
+  t,
+  { image = "20261030.294.1", previous = false, late = false } = {},
+) {
+  const firstWall = Date.now(),
+    firstMono = performance.now();
+  let clockAdvance = 0,
+    actors = 0,
+    metadataOpens = 0;
+  const base = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "full-source-image-")),
+  );
+  t.after(() => fs.rm(base, { recursive: true, force: true }));
+  const repo = path.join(base, "repo"),
+    here = path.join(repo, prefix);
+  const pRaw = await fs.readFile(
+    path.join(root, prefix, "full-sdk-source-profile.json"),
+  );
+  const full = JSON.parse(pRaw);
+  const policy = JSON.parse(await read(prefix + "sdk-origin-review.json"));
+  const mutableFixtureRows = new Set([
+    prefix + "full-sdk-source-driver.mjs",
+    prefix + "test_full_sdk_source.py",
+    "tests/tooling/windowsArmFullSdk.node-test.mjs",
+  ]);
+  // Match the fixed workflow's core.autocrlf=false checkout. A canonical LF
+  // substitution must match its existing pin, except these three current WIP
+  // files whose modeled policy rows are refreshed to their actual new bytes.
+  for (const row of policy.producerInputs) {
+    let raw = await fs.readFile(path.join(root, row.path));
+    if (raw.length !== row.bytes || sha(raw) !== row.sha256) {
+      const lf = Buffer.from(raw.toString("utf8").replaceAll("\r\n", "\n"));
+      if (mutableFixtureRows.has(row.path)) raw = lf;
+      else {
+        assert.equal(lf.length, row.bytes, row.path);
+        assert.equal(sha(lf), row.sha256, row.path);
+        raw = lf;
+      }
+    }
+    if (mutableFixtureRows.has(row.path)) {
+      row.bytes = raw.length;
+      row.sha256 = sha(raw);
+    }
+    const name = path.join(repo, row.path);
+    await fs.mkdir(path.dirname(name), { recursive: true });
+    await fs.writeFile(name, raw, { flag: "wx" });
+  }
+  const workflow = (await read(full.workflow)).replaceAll("\r\n", "\n");
+  policy.workflowPin = {
+    bytes: Buffer.byteLength(workflow),
+    sha256: sha(workflow),
+  };
+  await fs.mkdir(path.dirname(path.join(repo, full.workflow)), {
+    recursive: true,
+  });
+  await fs.writeFile(path.join(repo, full.workflow), workflow);
+  const policyRaw = Buffer.from(JSON.stringify(policy, null, 2) + "\n");
+  await fs.writeFile(path.join(repo, full.policy), policyRaw);
+  const tuple = full.images[image];
+  const { fullSdkSourceRootName } =
+    await import("../../native/windows-arm-full-sdk/source-root.mjs");
+  const sourceRoot = path.join(
+    repo,
+    ".artifacts",
+    fullSdkSourceRootName(image, tuple.sourceId),
+  );
+  await fs.mkdir(path.join(sourceRoot, "source-inputs"), { recursive: true });
+  for (const [i, row] of policy.producerInputs.entries())
+    await fs.copyFile(
+      path.join(repo, row.path),
+      path.join(sourceRoot, "source-inputs", String(i)),
+    );
+  const head = "a".repeat(40);
+  const context = {
+    kind: "windows-arm-full-sdk-context",
+    mode: "full-sdk-source-gn",
+    workflow: full.workflow,
+    policy: full.policy,
+    ref: "refs/heads/main",
+    repository: "supermarsx/sortOfRemoteNG",
+    repositoryId: "1010282954",
+    visibility: "public",
+    event: "workflow_dispatch",
+    defaultBranch: "main",
+    head,
+    workflowSha: head,
+    runId: "1",
+    attempt: "1",
+    inputs: { restore_run: "0" },
+    image,
+    sourceId: tuple.sourceId,
+    sourceProfileSha256: tuple.profileSha256,
+    originPolicySha256: sha(policyRaw),
+    sources: policy.producerInputs,
+    wallWholeEnd: firstWall / 1000 + 21600,
+    monotonicWholeEnd: firstMono / 1000 + 21600,
+    wallWorkEnd: firstWall / 1000 + 7200,
+    monotonicWorkEnd: firstMono / 1000 + 7200,
+  };
+  const contextRaw = Buffer.from(JSON.stringify(context) + "\n"),
+    contextPin = sha(contextRaw);
+  await fs.writeFile(path.join(sourceRoot, "context.json"), contextRaw);
+  let text = await read(prefix + "full-sdk-source-driver.mjs");
+  if (previous) text = fullSourceImageInverse(text);
+  const ts = (await import("typescript")).default;
+  const ast = ts.createSourceFile(
+    "actual-full-source.mjs",
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  let footers = 0;
+  const statements = ast.statements.filter((n) => {
+    if (ts.isImportDeclaration(n)) return false;
+    if (ts.isIfStatement(n) && n.getText(ast).includes("process.argv[1]")) {
+      footers++;
+      return false;
+    }
+    return true;
+  });
+  assert.equal(footers, 1);
+  const { pathToFileURL } = await import("node:url"),
+    nativeFs = await import("node:fs");
+  const body = statements
+    .map((n) => n.getText(ast).replace(/^export /, ""))
+    .join("\n")
+    .replaceAll(
+      "import.meta.url",
+      JSON.stringify(
+        pathToFileURL(path.join(here, "full-sdk-source-driver.mjs")).href,
+      ),
+    );
+  const io = {
+    ...fs,
+    async open(name, ...args) {
+      const fd = await fs.open(name, ...args);
+      if (name !== path.join(here, "private-qualification-profile.json"))
+        return fd;
+      metadataOpens++;
+      if (!late || metadataOpens !== 2) return fd;
+      return new Proxy(fd, {
+        get(target, key) {
+          if (key === "close")
+            return async () => {
+              await target.close();
+              context.ref = "refs/heads/foreign";
+              throw false;
+            };
+          const value = Reflect.get(target, key);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
+  };
+  const scope = {
+    fs: io,
+    path,
+    constants: fsConstants,
+    utilTypes: (await import("node:util")).types,
+    fileURLToPath,
+    pathToFileURL,
+    createHash,
+    spawn() {
+      actors++;
+      assert.fail("NO_NATIVE_ACTOR");
+    },
+    process,
+    Date: { now: () => Date.now() + clockAdvance },
+    performance: { now: () => performance.now() + clockAdvance },
+    openSync: nativeFs.openSync,
+    writeSync: nativeFs.writeSync,
+    closeSync: nativeFs.closeSync,
+    writeFileSync: nativeFs.writeFileSync,
+    watch: nativeFs.watch,
+    renameSync: nativeFs.renameSync,
+    realpathSync: nativeFs.realpathSync,
+  };
+  const api = new Function(
+    ...Object.keys(scope),
+    body +
+      "\nreturn {loadFullSourceProfile,sourcePaths,reviewedHostClosure,fullSourceCommands,sourceEnvironment,bootstrapProgram,boundGnArguments,fullSourceProfiles,fullBootstrapAuthority,privateImage};",
+  )(...Object.values(scope));
+  const state = {
+    api,
+    repo,
+    here,
+    root: sourceRoot,
+    context,
+    contextPin,
+    full,
+    actors: () => actors,
+    expire: () => {
+      clockAdvance = 21600001;
+    },
+  };
+  state.load = () =>
+    api.loadFullSourceProfile(
+      sourceRoot,
+      context,
+      { remaining: () => 1 },
+      contextPin,
+    );
+  return state;
+}
+
+test("actual full profile loader old PRIVATE_IMAGE denies and registered image data drives actual paths host and command vectors", async (t) => {
+  const old = await fullSourceImageFixture(t, { previous: true });
+  await assert.rejects(old.load(), /^Error: PRIVATE_IMAGE$/);
+  assert.equal(old.actors(), 0);
+  for (const image of ["20261030.294.1", "20261021.278.1"]) {
+    const f = await fullSourceImageFixture(t, { image }),
+      loaded = await f.load(),
+      { p } = loaded;
+    assert.equal(Object.hasOwn(p, "privatePolicy"), false);
+    assert.equal(Object.hasOwn(p, "privateSelectedSha256"), false);
+    assert.equal(f.api.fullSourceProfiles.has(p), true);
+    const files = f.api.sourcePaths(f.root, p),
+      closure = f.api.reviewedHostClosure(p, image);
+    assert.equal(files.workspace, path.join(f.root, "source-checkout"));
+    assert.equal(files.inputs, path.join(f.repo, p.sourceGn.namespace));
+    assert.equal(closure.image, image);
+    assert.equal(closure.rows.length, 18);
+    const hooks = cefHookArguments(files.cef, files.depot),
+      commands = f.api.fullSourceCommands(f.root, p, hooks, f.contextPin);
+    assert.deepEqual(
+      commands.map((x) => x.role),
+      [
+        "sync",
+        "hook-projection",
+        "dependency-hooks",
+        "setup-x86",
+        "setup-x64",
+        "setup-arm64",
+        "verify-setup",
+        "cef-gn",
+        "restore-checkpoint",
+      ],
+    );
+    const setup = commands.find((x) => x.role === "verify-setup");
+    assert.equal(setup.args[2], path.join(f.here, "full_sdk_source.py"));
+    assert.equal(setup.args[3], "--full-sdk-verify-source-setup");
+    assert.equal(setup.args[5], f.contextPin);
+    const pin = p.cipd[0].members.find((x) => x.name === "gn.exe");
+    assert(
+      f.api
+        .boundGnArguments(
+          hooks,
+          path.join(files.chromium, "buildtools/win/gn.exe"),
+          pin,
+        )[2]
+        .includes("GetAllPlatformConfigs"),
+    );
+    const env = f.api.sourceEnvironment(f.root, p, {
+      requiredHost: "win32",
+      target: "aarch64-pc-windows-msvc",
+      commands: [{ args: ["cef/tools/gclient_hook.py"] }, {}, {}],
+      environment: {},
+    });
+    assert.equal(env.CEF_ENABLE_ARM64, "1");
+    assert.equal(env.SDK_VERSION, p.sdkVersion);
+    const bootstrap = f.api
+      .bootstrapProgram(f.root, p, f.contextPin)
+      .toString();
+    assert(bootstrap.includes("full-sdk-source-gn"));
+    assert(bootstrap.includes(f.contextPin));
+    assert.equal(f.actors(), 0);
+    f.api.fullSourceProfiles.delete(p);
+  }
+});
+
+test("actual full image binding rejects clones foreign owners expired and revoked states without legacy authority", async (t) => {
+  for (const mode of [
+    "clone",
+    "foreign-binding",
+    "expired",
+    "revoked",
+    "namespace",
+    "image",
+    "context",
+  ]) {
+    const f = await fullSourceImageFixture(t),
+      { p } = await f.load(),
+      binding = f.api.fullSourceProfiles.get(p);
+    let candidate = p;
+    if (mode === "clone" || mode === "foreign-binding") {
+      candidate = structuredClone(p);
+      if (mode === "foreign-binding")
+        f.api.fullSourceProfiles.set(candidate, binding);
+    }
+    if (mode === "expired") f.expire();
+    if (mode === "revoked") f.api.fullSourceProfiles.delete(p);
+    if (mode === "namespace") p.sourceGn.namespace += "foreign/";
+    if (mode === "image") p.image = "unreviewed";
+    if (mode === "context") f.context.ref = "refs/heads/foreign";
+    assert.throws(
+      () => f.api.sourcePaths(f.root, candidate),
+      /PRIVATE_IMAGE|FULL_(?:IMAGE|SDK_BOOTSTRAP|SDK_SOURCE|DRIVER)_/,
+    );
+    assert.throws(
+      () => f.api.fullSourceCommands(f.root, candidate, [], f.contextPin),
+      /RECIPE_BRAND/,
+    );
+    assert.equal(f.api.fullSourceProfiles.has(candidate), false, mode);
+    assert.equal(f.actors(), 0);
+  }
+});
+
+test("actual full loader rejects wrong image profile namespace and late falsy close before image registration and preserves legacy data", async (t) => {
+  for (const mode of ["image", "profile", "namespace", "late"]) {
+    const f = await fullSourceImageFixture(t, { late: mode === "late" });
+    if (mode === "image") f.context.image = "unreviewed";
+    if (mode === "profile") f.context.sourceProfileSha256 = "0".repeat(64);
+    if (mode === "namespace") {
+      const file = path.join(f.here, f.full.images[f.context.image].profile);
+      const value = JSON.parse(await fs.readFile(file));
+      value.sourceGn.namespace += "foreign/";
+      await fs.writeFile(file, JSON.stringify(value));
+    }
+    await assert.rejects(f.load(), (error) =>
+      mode === "late"
+        ? error === false
+        : /FULL_SDK_SOURCE_(?:IMAGE|RECIPE_PIN)/.test(error.message),
+    );
+    assert.equal(f.actors(), 0);
+  }
+  const f = await fullSourceImageFixture(t),
+    base = JSON.parse(await fs.readFile(path.join(f.here, "profile.json"))),
+    selected = JSON.parse(
+      await fs.readFile(
+        path.join(f.here, f.full.images[f.context.image].profile),
+      ),
+    ),
+    policy = JSON.parse(
+      await fs.readFile(
+        path.join(f.here, "private-qualification-profile.json"),
+      ),
+    );
+  const legacy = {
+    ...base,
+    image: selected.image,
+    sourceGn: selected.sourceGn,
+    privatePolicy: policy,
+    privateSelectedSha256: f.full.images[f.context.image].profileSha256,
+  };
+  assert.equal(f.api.reviewedHostClosure(legacy, legacy.image).rows.length, 18);
+  assert.equal(
+    f.api.sourcePaths(f.root, legacy).inputs,
+    path.join(f.repo, selected.sourceGn.namespace),
+  );
+  assert.throws(
+    () => f.api.fullSourceCommands(f.root, legacy, [], f.contextPin),
+    /RECIPE_BRAND/,
+  );
+  assert.equal(f.actors(), 0);
+});
+
+test("actual full image registration revokes on synchronous selector failure and preserves false", async (t) => {
+  for (const mode of ["image", "false"]) {
+    const f = await fullSourceImageFixture(t);
+    const set = f.api.fullSourceProfiles.set.bind(f.api.fullSourceProfiles);
+    let actualProfile;
+    // This observer belongs only to the isolated lexical module. The actual
+    // loader remains its sole registration writer and no production map changes.
+    f.api.fullSourceProfiles.set = (p, binding) => {
+      actualProfile = p;
+      set(p, binding);
+      if (mode === "false")
+        binding.budget.remaining = () => {
+          throw false;
+        };
+      else p.sourceGn.namespace += "foreign/";
+      return f.api.fullSourceProfiles;
+    };
+    await assert.rejects(f.load(), (error) =>
+      mode === "false"
+        ? error === false
+        : /FULL_IMAGE_CHANGED/.test(error.message),
+    );
+    assert(actualProfile);
+    assert.equal(f.api.fullSourceProfiles.has(actualProfile), false);
+    assert.equal(f.actors(), 0);
+  }
 });

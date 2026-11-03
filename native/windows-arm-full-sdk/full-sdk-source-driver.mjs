@@ -289,12 +289,13 @@ export function reviewedHostTools(p) {
 
 export function reviewedHostClosure(p, image) {
   const value = p.sourceGn.hostClosure,
-    tools = reviewedHostTools(p);
+    tools = reviewedHostTools(p),
+    imageData = sourceImageData(p);
   keys(value, ["image", "rows", "peBytes", "edgeCount", "edgeSha256"]);
   need(
     image === value.image &&
       image === p.image &&
-      privateImage(p).profileSha256 === p.privateSelectedSha256,
+      imageData.profileSha256 === imageData.selectedProfileSha256,
     "FULL_HOST_IMAGE",
   );
   need(
@@ -482,10 +483,11 @@ async function held(file, cap, budget, pin, boundedReads = false) {
 }
 
 export function sourcePaths(root, p) {
+  const imageData = sourceImageData(p);
   need(
     p.sourceGn.mode === "image-qualified-source-gn" &&
-      p.sourceGn.sourceId === privateImage(p).sourceId &&
-      p.sourceGn.namespace === privateImage(p).namespace &&
+      p.sourceGn.sourceId === imageData.sourceId &&
+      p.sourceGn.namespace === imageData.namespace &&
       p.sourceGn.compilerAllowed === false &&
       p.sourceGn.checkpointAllowed === false &&
       p.sourceGn.restoreAllowed === false &&
@@ -3096,6 +3098,45 @@ function privateImage(p) {
   );
   return value;
 }
+
+// BEGIN PRIVATE FULL SOURCE IMAGE DATA
+function sourceImageData(p) {
+  const binding = fullSourceProfiles.get(p);
+  if (!binding)
+    return {
+      ...privateImage(p),
+      selectedProfileSha256: p.privateSelectedSha256,
+    };
+  try {
+    need(
+      binding.profile === p && binding.sourceGn === p.sourceGn,
+      "FULL_IMAGE_PROFILE_BINDING",
+    );
+    need(
+      fullBootstrapAuthority(binding.root, p, binding.contextPin) === binding,
+      "FULL_IMAGE_OWNER",
+    );
+    const image = binding.imageData;
+    need(
+      image &&
+        image.image === p.image &&
+        binding.context.sourceId === image.sourceId &&
+        binding.context.sourceProfileSha256 === image.profileSha256 &&
+        p.sourceGn.sourceId === image.sourceId &&
+        p.sourceGn.namespace === image.namespace &&
+        binding.selectedProfileSha256 === image.profileSha256,
+      "FULL_IMAGE_CHANGED",
+    );
+    return Object.freeze({
+      ...image,
+      selectedProfileSha256: binding.selectedProfileSha256,
+    });
+  } catch (error) {
+    fullSourceProfiles.delete(p);
+    throw error;
+  }
+}
+// END PRIVATE FULL SOURCE IMAGE DATA
 
 async function privateQualificationHandoff({
   qualificationSource,
@@ -7232,8 +7273,6 @@ async function loadFullSourceProfile(root, c, provisional, contextPin) {
     Object.values(p.sourceGn.executionPolicy).every((value) => value === true),
     "FULL_SDK_SOURCE_RECIPE_POLICY",
   );
-  const tools = reviewedHostTools(p),
-    files = sourcePaths(root, p);
   need(/^[a-f0-9]{64}$/.test(contextPin), "FULL_CONTEXT_PIN");
   const metadataRecipeRaw = await held(
     path.join(HERE, "private-qualification-profile.json"),
@@ -7245,14 +7284,43 @@ async function loadFullSourceProfile(root, c, provisional, contextPin) {
       full.metadataRecipeSha256 === PRIVATE_PROFILE_SHA256,
     "FULL_METADATA_RECIPE_PIN",
   );
+  // BEGIN HELD FULL SOURCE IMAGE REGISTRATION
+  const imageData = JSON.parse(metadataRecipeRaw).images[c.image];
+  requireFullSourceContext(c);
+  budget.remaining();
+  need(
+    imageData &&
+      c.image === p.image &&
+      c.sourceId === pin.sourceId &&
+      c.sourceProfileSha256 === pin.profileSha256 &&
+      imageData.profile === pin.profile &&
+      imageData.profileSha256 === pin.profileSha256 &&
+      imageData.sourceId === pin.sourceId &&
+      imageData.namespace === p.sourceGn.namespace,
+    "FULL_IMAGE_RECIPE_BINDING",
+  );
   fullSourceProfiles.set(p, {
+    profile: p,
+    sourceGn: p.sourceGn,
     root,
     context: c,
     contextPin,
     budget,
     metadataRecipeRaw,
+    imageData: Object.freeze({ image: c.image, ...imageData }),
+    selectedProfileSha256: sha(selectedRaw),
   });
-  return { p, budget, tools, files, privatePolicyRaw: raw };
+  try {
+    const tools = reviewedHostTools(p),
+      files = sourcePaths(root, p);
+    reviewedHostClosure(p, c.image);
+    fullBootstrapAuthority(root, p, contextPin);
+    return { p, budget, tools, files, privatePolicyRaw: raw };
+  } catch (error) {
+    fullSourceProfiles.delete(p);
+    throw error;
+  }
+  // END HELD FULL SOURCE IMAGE REGISTRATION
 }
 function fullSourceCommands(root, p, hooks, contextPin) {
   const state = fullSourceProfiles.get(p);
