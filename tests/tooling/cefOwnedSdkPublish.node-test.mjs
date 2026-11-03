@@ -1129,6 +1129,24 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
     for (const [name, sha] of Object.entries(sourceBudgetBlobs))
       rows.find((row) => row.path === name).sha = sha;
   }
+  // Exact reviewed successor source; transport remains modeled DATA only.
+  const successorBlobs = {
+    "scripts/cef-engineering-checkpoint.mjs":
+      "ced7571cfc1efda7260acaa39e03b81511e7dfb7",
+    "scripts/cef-hosted-provision.mjs":
+      "9fb323d215e1d246f537685b360d3a665f87f748",
+    "scripts/cef-runtime-ci.mjs": "0a5aff87d6755bf2ab0705269e891bc9d663f746",
+    "scripts/lib/cef-checkpoint-archive.py":
+      "58e4600b0f2ad71fc454e1a504e88d19135e3858",
+    "scripts/lib/cef-engineering-checkpoint.mjs":
+      "113822b8e5172c9b77cd4743e5f9ca72531280a4",
+    "scripts/lib/cef-linux-producer-migration.mjs":
+      "d2e58083ac39a4404d2298d658b1bfea89f77824",
+    "scripts/lib/cef-windows-arm-sdk-origin.mjs":
+      "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6",
+  };
+  for (const [name, sha] of Object.entries(successorBlobs))
+    rows.find((row) => row.path === name).sha = sha;
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1415,7 +1433,34 @@ async function engineeringFlow(t, target) {
   return { ...f, options, dependencies, events };
 }
 
-test("failed Intel producer retarget restores the entire prior adapter and keeps both other target bindings", () => {
+function withoutSuccessorProducerBindings(raw) {
+  const changes = [
+    [
+      'export const ENGINEERING_PRODUCER =\n  "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859";',
+      'export const ENGINEERING_PRODUCER =\n  "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3";',
+    ],
+    [
+      '  "aarch64-unknown-linux-gnu":\n    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+      '  "aarch64-unknown-linux-gnu":\n    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",',
+    ],
+    [
+      '  "aarch64-apple-darwin":\n    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+      '  "aarch64-apple-darwin":\n    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",',
+    ],
+  ];
+  for (const [current, prior] of changes) {
+    assert.equal(raw.split(current).length, 2);
+    raw = raw.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(raw), 23685);
+  assert.equal(
+    hash(raw),
+    "d1aa3339c3cd339a3c39eae0b13751df52dfc448a3b8bbd47709766e0d4df3fd",
+  );
+  return raw;
+}
+
+test("successor producer bindings preserve the entire prior publication adapter", () => {
   const raw = readFileSync(
     new URL(
       "../../native/cef-engineering-sdk-publication/publish.mjs",
@@ -1423,6 +1468,20 @@ test("failed Intel producer retarget restores the entire prior adapter and keeps
     ),
     "utf8",
   ).replaceAll("\r\n", "\n");
+  withoutSuccessorProducerBindings(raw);
+  assert.throws(() => withoutSuccessorProducerBindings(raw + "\n"));
+});
+
+test("failed Intel producer retarget restores the entire prior adapter and keeps both other target bindings", () => {
+  const raw = withoutSuccessorProducerBindings(
+    readFileSync(
+      new URL(
+        "../../native/cef-engineering-sdk-publication/publish.mjs",
+        import.meta.url,
+      ),
+      "utf8",
+    ).replaceAll("\r\n", "\n"),
+  );
   const current =
     'export const ENGINEERING_PRODUCER =\n  "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3";';
   const previous =
@@ -1444,7 +1503,7 @@ test("failed Intel producer retarget restores the entire prior adapter and keeps
 test("engineering publication exact target producers select repaired source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
@@ -1452,11 +1511,11 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-apple-darwin"],
-    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   for (const target of Object.keys(ENGINEERING_PRODUCERS)) {
     const f = engineeringFixture(target);

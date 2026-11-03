@@ -229,7 +229,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(actual.rows.length, 131);
   assert.equal(
     actual.codeDigest,
-    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   assert(
     !actual.rows.some((row) =>
@@ -892,8 +892,19 @@ test("exact production run reaches the outer provenance function before any nati
 });
 
 test("current producer attestation retarget preserves the complete historical native diagnostic workflow", () => {
+  const previousCurrent = workflow
+    .replace(
+      "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+      "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
+    )
+    .replaceAll("\r\n", "\n");
+  assert.equal(Buffer.byteLength(previousCurrent), 34250);
+  assert.equal(
+    createHash("sha256").update(previousCurrent).digest("hex"),
+    "01b45142486e35b93fdd066a0c5ed9ea57c42c343f60bb5e2ab4be3d82708d6c",
+  );
   const priorY = workflow.replace(
-    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
     "1794fd238e9f8e70763b169de1bd8ba4c10f4269311fc8cb5fb2f628f70ba53f",
   );
   assert.equal(Buffer.byteLength(priorY.replaceAll("\r\n", "\n")), 34250);

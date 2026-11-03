@@ -424,7 +424,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
   );
   assert.equal(
     CODE_DIGEST,
-    "3af6f291d47db6c29fca25da65064a5c7568836948a84b09869144c36d919ae3",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   const physical = await readFile(
     new URL("scripts/lib/cef-linux-producer-migration.mjs", root),
