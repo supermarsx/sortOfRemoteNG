@@ -16503,6 +16503,8 @@ const MAC_SOURCE_COMPLETION_INVERSE = {
   },
 };
 function withoutMacSourceCompletion(text, name) {
+  if (name === "scripts/lib/cef-checkpoint-archive.py")
+    text = withoutStaticOwnedMacSource(text);
   const changes = MAC_SOURCE_COMPLETION_INVERSE.transforms[name];
   if (!changes || !text.includes(changes[0][1])) return text;
   for (const [before, after, count] of [...changes].reverse()) {
@@ -17033,3 +17035,96 @@ test("actual Mac metadata closure uses the retained original source180 rather th
       }
     }
 });
+
+function withoutStaticOwnedMacSource(text) {
+  if (!text.includes("# BEGIN STATIC MAC OWNED FD HASHING")) return text;
+  assert.equal(Buffer.byteLength(text), 229058);
+  assert.equal(
+    sha(text),
+    "c728e702508d1a22417197c056d064c496528af82a29b5c993e6f4f521a74dcb",
+  );
+  for (const role of ["SYMLINK", "FILE"]) {
+    const block = `                # BEGIN MAC OWNED NOOP ${role} UTIME\n                if mac and before.st_mtime_ns == int(row['mtimeNs']):\n                    continue\n                # END MAC OWNED NOOP ${role} UTIME\n`;
+    assert.equal(text.split(block).length - 1, 1);
+    text = text.replace(block, "");
+  }
+  const start =
+    "        # BEGIN MAC OWNED NOOP ROOT UTIME\n        if not (mac and info.st_mtime_ns == int(expected['rootMtimeNs'])):\n";
+  const end = "        # END MAC OWNED NOOP ROOT UTIME\n";
+  assert.equal(text.split(start).length - 1, 1);
+  assert.equal(text.split(end).length - 1, 1);
+  const rootBegin = text.indexOf(start),
+    rootEnd = text.indexOf(end, rootBegin);
+  const root = text
+    .slice(rootBegin + start.length, rootEnd)
+    .split("\n")
+    .map((line) => (line.trim() ? line.slice(4) : line))
+    .join("\n");
+  text = text.slice(0, rootBegin) + root + text.slice(rootEnd + end.length);
+  assert.equal(Buffer.byteLength(text), 228445);
+  assert.equal(
+    sha(text),
+    "75b9d75d5f33ccb433effabb560d168ade627352377afdff4939cd2920ba2b23",
+  );
+  const marker = "\n\n# BEGIN STATIC MAC OWNED FD HASHING\n",
+    finish = "# END STATIC MAC OWNED FD HASHING\n";
+  assert.equal(text.split(marker).length - 1, 1);
+  assert.equal(text.split(finish).length - 1, 1);
+  const begin = text.indexOf(marker),
+    last = text.indexOf(finish, begin);
+  text = text.slice(0, begin) + text.slice(last + finish.length);
+  const selection =
+    "        # BEGIN STATIC MAC OWNED FD SELECTION\n        if source_owned_mac(policy):\n            return _source_mac_owned_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse,layout=layout)\n        # END STATIC MAC OWNED FD SELECTION\n";
+  assert.equal(text.split(selection).length - 1, 1);
+  text = text.replace(selection, "");
+  assert.equal(Buffer.byteLength(text), 209410);
+  assert.equal(
+    sha(text),
+    "3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6",
+  );
+  return text;
+}
+
+test("static Mac owned FD and noop layers restore complete original helper before all history", async () => {
+  const raw = (
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const old = withoutStaticOwnedMacSource(raw);
+  assert.notEqual(old, raw);
+  withoutMacSourceCompletion(raw, "scripts/lib/cef-checkpoint-archive.py");
+  for (const tampered of [
+    raw + "\n",
+    raw.replace("_MAC_SOURCE_FD_WORKERS = 1", "_MAC_SOURCE_FD_WORKERS = 2"),
+    raw.replace("if mac and before.st_mtime_ns", "if before.st_mtime_ns"),
+  ])
+    assert.throws(() => withoutStaticOwnedMacSource(tampered));
+});
+
+for (const [fixture, tests] of [
+  ["mac_owned_source_fd_test.py", 19],
+  ["mac_owned_source_noop_test.py", 25],
+]) {
+  test(
+    `static Mac owned FD actual filesystem and codec ${fixture}`,
+    { skip: process.platform === "win32" },
+    () => {
+      const result = spawnSync(
+        "python3",
+        ["-I", "-B", "-S", path.join(ROOT, "tests/fixtures/cef", fixture)],
+        { encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024 },
+      );
+      assert.equal(
+        result.status,
+        0,
+        result.stdout + result.stderr + String(result.error?.code ?? ""),
+      );
+      assert.match(result.stderr, new RegExp(`Ran ${tests} tests`));
+      if (process.platform === "darwin")
+        assert.match(result.stderr, /\nOK\s*$/);
+      else assert.match(result.stderr, /OK \(skipped=1\)/);
+    },
+  );
+}

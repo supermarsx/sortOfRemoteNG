@@ -19,6 +19,30 @@ FACTS={'ImageOS':'macos15','ImageVersion':'20260824.0482.1','GITHUB_ACTIONS':'tr
        'RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public'}
 
 
+def static_owned_noop_inverse(raw):
+    text=raw.decode()
+    if '# BEGIN MAC OWNED NOOP 'not in text:return raw
+    for role in ('SYMLINK','FILE'):
+        block=f"                # BEGIN MAC OWNED NOOP {role} UTIME\n                if mac and before.st_mtime_ns == int(row['mtimeNs']):\n                    continue\n                # END MAC OWNED NOOP {role} UTIME\n"
+        assert text.count(block)==1;text=text.replace(block,'',1)
+    header="        # BEGIN MAC OWNED NOOP ROOT UTIME\n        if not (mac and info.st_mtime_ns == int(expected['rootMtimeNs'])):\n";end='        # END MAC OWNED NOOP ROOT UTIME\n'
+    assert text.count(header)==text.count(end)==1
+    start=text.index(header);finish=text.index(end,start);body=text[start+len(header):finish]
+    restored=''.join(line[4:]if line.strip()else line for line in body.splitlines(keepends=True))
+    text=text[:start]+restored+text[finish+len(end):]
+    value=text.encode();assert len(value)==228445 and hashlib.sha256(value).hexdigest()=='75b9d75d5f33ccb433effabb560d168ade627352377afdff4939cd2920ba2b23'
+    return value
+
+def static_owned_fd_inverse(raw):
+    text=raw.decode();start=text.index('\n\n# BEGIN STATIC MAC OWNED FD HASHING\n');marker='# END STATIC MAC OWNED FD HASHING\n'
+    end=text.index(marker,start)+len(marker);block=text[start:end]
+    selection="        # BEGIN STATIC MAC OWNED FD SELECTION\n        if source_owned_mac(policy):\n            return _source_mac_owned_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse,layout=layout)\n        # END STATIC MAC OWNED FD SELECTION\n"
+    assert text.count(selection)==1 and text.count(marker)==1
+    old=text.replace(block,'',1).replace(selection,'',1).encode()
+    assert len(old)==209410 and hashlib.sha256(old).hexdigest()=='3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6'
+    return old,block
+
+
 class PublicScope(unittest.TestCase):
     @contextmanager
     def host(self):
@@ -192,6 +216,8 @@ class PublicScope(unittest.TestCase):
             'source_portable':'2c96d204f5b6e2e67bbf8a87547bfcdcde1ab0572c3dfef388f192c86077d8a7',
             'source_snapshot_inventory':'71924dd37f3c5c05e64d48f60ff02788b9e6d366abd3d2d23ba467cf0c2e0fff'}
         raw=FILE.read_text()
+        if '# BEGIN STATIC MAC OWNED FD HASHING'in raw:
+            raw=static_owned_fd_inverse(static_owned_noop_inverse(raw.encode()))[0].decode()
         self.assertEqual(len(raw.encode()),209410)
         self.assertEqual(hashlib.sha256(raw.encode()).hexdigest(),'3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6')
         # Mac-only full-hash completion budget; restore complete prior c340 helper

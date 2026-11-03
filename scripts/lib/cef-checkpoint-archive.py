@@ -2612,6 +2612,10 @@ def source_snapshot(root, budget, guards=None, context=None, *, member_policy=No
     with source_metadata_literals(root,policy,budget) as (literals,compiler):
         policy['_nearby_literals']=literals
         policy['_clang_literals']=compiler
+        # BEGIN STATIC MAC OWNED FD SELECTION
+        if source_owned_mac(policy):
+            return _source_mac_owned_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse,layout=layout)
+        # END STATIC MAC OWNED FD SELECTION
         return source_snapshot_inventory(root,budget,guards,policy,external,member_policy=member_policy,reuse=reuse,layout=layout)
 
 
@@ -2872,6 +2876,328 @@ def source_snapshot_inventory(root, budget, guards, policy, external, *, member_
         # The caller's shared object was consumed only by the initial inventory.
         require(aggregate['entries'] >= len(rows), 'source-external-aggregate')
     return value
+
+
+# BEGIN STATIC MAC OWNED FD HASHING
+import concurrent.futures as _mac_source_fd_futures
+import threading as _mac_source_fd_threading
+_MAC_SOURCE_FD_WORKERS = 1
+_MAC_SOURCE_FD_BATCH = 32
+
+def _mac_source_fd_require(value):
+    require(value, 'source-mac-fd-contract')
+
+def _source_mac_fd_hash(root, row, budget, policy, leaf):
+    p = leaf;before = source_io_call('file-path-stat', p, p.stat)
+    for predicate, ok in (('kind', lambda: stat.S_ISREG(before.st_mode)),
+                          ('nlink', lambda: before.st_nlink > 0 if policy is not None and policy.get('external') else before.st_nlink == 1),
+                          ('size', lambda: before.st_size <= SOURCE_MAX_FILE), ('stamp', lambda: stamp(before) == row['stamp']),
+                          ('ctime', lambda: before.st_ctime_ns == row['ctimeNs'])):
+        if not ok():
+            raise source_file_error(row['path'], predicate)
+    if policy is not None and policy.get('mac'):
+        same_birth = source_birth_identity(before) == row['birthIdentity'] if source_owned_mac(policy) else source_birth(before, policy) == row['birthNs']
+        require(same_birth and before.st_uid == row['uid'] and before.st_gid == row['gid'], 'source-mac-file-identity')
+    stream = source_io_call('file-open', p, lambda: p.open('rb'));primary = None;reader = HashedReader(stream, budget);count = 0
+    try:
+        if not (opened_identity_matches(row['stamp'], source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) and
+                source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno())).st_ctime_ns == before.st_ctime_ns):
+            raise source_file_error(row['path'], 'descriptor')
+        if policy is not None and policy.get('mac'):
+            require(source_local(os.fstat(stream.fileno()), policy) == source_local(before, policy), 'source-mac-file-identity')
+        while True:
+            chunk = source_io_call('file-read', p, lambda: reader.read(65536))
+            if not chunk:
+                break
+            count += len(chunk)
+            require(count <= before.st_size, 'source-file-changed')
+        require(count == before.st_size and stamp(source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno()))) == row['stamp'] and
+                stamp(source_io_call('file-path-stat', p, p.stat)) == row['stamp'] and source_io_call('file-path-stat', p, p.stat).st_ctime_ns == before.st_ctime_ns and
+                source_io_call('file-fd-stat', p, lambda: os.fstat(stream.fileno())).st_ctime_ns == before.st_ctime_ns, 'source-file-changed')
+        if policy is not None and policy.get('mac'):
+            require(source_local(p.stat(), policy) == source_local(before, policy) == source_local(os.fstat(stream.fileno()), policy),
+                    'source-mac-file-changed')
+    except BaseException as error:
+        primary = error
+        leaf.scope.record(error)
+        raise
+    finally:
+        source_close(lambda: source_io_call('file-close', p, stream.close), primary)
+    return reader.digest.hexdigest()
+
+class _MacSourceFdStream:
+    def __init__(self,scope,fd,stream):self.scope,self.fd,self.stream=scope,fd,stream
+    def read(self,count):return self.stream.read(count)
+    def fileno(self):return self.stream.fileno()
+    def close(self):self.scope.close(self.fd,self.stream.close)
+
+class _MacSourceFdLeaf:
+    def __init__(self,scope,parent,name,path):self.scope,self.parent,self.name,self.path=scope,parent,name,path
+    def __fspath__(self):return str(self.path)
+    def stat(self):return os.stat(self.name,dir_fd=self.parent,follow_symlinks=False)
+    def open(self,mode):
+        _mac_source_fd_require(mode=='rb');self.scope.check()
+        fd=self.scope.open(self.name,os.O_RDONLY|os.O_NOFOLLOW,dir_fd=self.parent)
+        try:stream=os.fdopen(fd,'rb')
+        except BaseException as primary:
+            self.scope.record(primary)
+            try:self.scope.close(fd,lambda:os.close(fd))
+            except BaseException:pass
+            raise primary
+        return _MacSourceFdStream(self.scope,fd,stream)
+
+class _MacSourceFdScope:
+    def __init__(self,root,budget,policy,root_before,local_before):
+        self.root,self.budget,self.policy=root,budget,policy
+        self.before,self.local=root_before,local_before
+        self.lock=_mac_source_fd_threading.RLock();self.stop=_mac_source_fd_threading.Event();self.ledger={};self.first=None;self.failed=False
+        self.active=0;self.peak=0;self.opened=0;self.closed=0;self.close_attempts=0;self.unknown=0
+        safe(root);_mac_source_fd_require(stamp(root.stat())==root_before and source_local(root.stat(),policy)==local_before)
+        self.rootfd=self.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:self.root_check()
+        except BaseException as primary:
+            self.record(primary);self.finish();raise primary
+    def record(self,error):
+        with self.lock:
+            if not self.failed:self.failed=True;self.first=error
+            self.stop.set()
+    def check(self):
+        self.budget.check()
+        if self.stop.is_set():raise CheckpointError('source-mac-fd-revoked')
+    def open(self,name,flags,**kwargs):
+        with self.lock:
+            self.check();fd=os.open(name,flags,**kwargs)
+            _mac_source_fd_require(fd not in self.ledger);self.ledger[fd]=False;self.opened+=1
+            self.peak=max(self.peak,sum(not attempted for attempted in self.ledger.values()))
+            if self.peak>1+2*_MAC_SOURCE_FD_WORKERS:
+                self.close(fd,lambda:os.close(fd));raise CheckpointError('source-mac-fd-fd-bound')
+        return fd
+    def close(self,fd,operation):
+        global SOURCE_CLOSE_FAILURE
+        with self.lock:
+            _mac_source_fd_require(fd in self.ledger and self.ledger[fd] is False)
+            self.ledger[fd]=True;self.close_attempts+=1
+            try:operation()
+            except BaseException as error:
+                self.unknown+=1;SOURCE_CLOSE_FAILURE=True;self.record(error);raise
+            else:
+                self.closed+=1;del self.ledger[fd]
+    def root_check(self):
+        self.check();named=self.root.lstat();held=os.fstat(self.rootfd)
+        _mac_source_fd_require(source_local(named,self.policy)==self.local==source_local(held,self.policy))
+    def directory_check(self,name,fd):
+        self.root_check();expected=self.local if name=='' else self.policy['_directories'][name]
+        path=self.root/name if name else self.root
+        _mac_source_fd_require(source_local(path.lstat(),self.policy)==expected==source_local(os.fstat(fd),self.policy))
+    def parent(self,name):
+        safe(self.root/(name or '.'));self.root_check()
+        if not name:return self.rootfd,False
+        current=self.rootfd;owned=False;prefix=[]
+        try:
+            for component in Path(name).parts:
+                self.check();prefix.append(component);relative='/'.join(prefix)
+                expected=self.policy['_directories'][relative]
+                nxt=self.open(component,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=current)
+                try:
+                    _mac_source_fd_require(source_local(os.fstat(nxt),self.policy)==expected)
+                    self.directory_check(relative,nxt)
+                except BaseException as primary:
+                    self.record(primary)
+                    try:self.close(nxt,lambda:os.close(nxt))
+                    except BaseException:pass
+                    raise primary
+                previous,previous_owned=current,owned;current=nxt;owned=True
+                if previous_owned:self.close(previous,lambda:os.close(previous))
+            return current,owned
+        except BaseException as primary:
+            self.record(primary)
+            if owned and self.ledger.get(current) is False:
+                try:self.close(current,lambda:os.close(current))
+                except BaseException:pass
+            raise
+    def ancestry_check(self,name):
+        safe(self.root/(name or '.'));self.root_check();prefix=[]
+        for component in Path(name).parts:
+            prefix.append(component);relative='/'.join(prefix)
+            _mac_source_fd_require(source_local((self.root/relative).lstat(),self.policy)==self.policy['_directories'][relative])
+    def batch(self,rows):
+        parent=Path(rows[0]['path']).parent.as_posix();parent=''if parent=='.'else parent
+        fd=None;owned=False;primary=None;cleanup=None;result=[]
+        with self.lock:self.active+=1
+        try:
+            fd,owned=self.parent(parent)
+            self.directory_check(parent,fd)
+            for row in rows:
+                self.check();_mac_source_fd_require(Path(row['path']).parent.as_posix()in(parent,'.'if parent==''else parent))
+                leaf=_MacSourceFdLeaf(self,fd,Path(row['path']).name,self.root/row['path'])
+                digest=_source_mac_fd_hash(self.root,row,self,self.policy,leaf)
+                self.budget.check()
+                result.append((row['path'],digest))
+            # The batch remains private until fresh absolute ancestry passes.
+            self.ancestry_check(parent);self.directory_check(parent,fd)
+        except BaseException as error:primary=error;self.record(error);raise
+        finally:
+            if owned:
+                try:self.close(fd,lambda:os.close(fd))
+                except BaseException as error:cleanup=error
+            with self.lock:self.active-=1
+            if primary is None and cleanup is not None:raise cleanup
+        self.check();return result
+    def finish(self,joined=True):
+        global SOURCE_JOIN_FAILURE
+        # Never close a root descriptor while any worker might still use it.
+        if self.active or not joined:
+            SOURCE_JOIN_FAILURE=True;self.record(CheckpointError('source-mac-fd-unjoined'));return False
+        primary=self.first if self.failed else None
+        try:
+            safe(self.root);self.directory_check('',self.rootfd)
+        except BaseException as error:
+            if primary is None:self.record(error)
+        try:
+            if self.ledger.get(self.rootfd)is False:self.close(self.rootfd,lambda:os.close(self.rootfd))
+        except BaseException:pass
+        if any(not attempted for attempted in self.ledger.values()):
+            self.record(CheckpointError('source-mac-fd-unclosed'))
+        if self.opened!=self.closed:self.record(CheckpointError('source-mac-fd-unconfirmed-close'))
+        return not self.failed
+
+def _source_mac_fd_hashes(root,rows,budget,policy,root_before,local_before,progress):
+    global SOURCE_JOIN_FAILURE
+    _mac_source_fd_require(source_owned_mac(policy) and isinstance(rows,list))
+    def batches():
+        group=[];previous=None
+        for row in rows:
+            name=row['path'];_mac_source_fd_require(source_relative(name,'filesystem-member')==name and row['kind']=='file')
+            parent=Path(name).parent
+            if group and(len(group)==_MAC_SOURCE_FD_BATCH or parent!=previous):
+                yield group;group=[]
+            group.append(row);previous=parent
+        if group:yield group
+    scope=_MacSourceFdScope(root,budget,policy,root_before,local_before)
+    try:pool=_mac_source_fd_futures.ThreadPoolExecutor(max_workers=_MAC_SOURCE_FD_WORKERS)
+    except BaseException as primary:
+        scope.record(primary);scope.finish();raise primary
+    pending={};inflight=set();iterator=iter(batches());hashes={};submitted=0;retired=0
+    try:
+        def submit():
+            nonlocal submitted
+            scope.check();group=next(iterator,None)
+            if group is not None:
+                future=pool.submit(copy_context().run,scope.batch,group);inflight.add(future);pending[future]=group;submitted+=1
+        for _ in range(_MAC_SOURCE_FD_WORKERS):submit()
+        while pending and not scope.failed:
+            scope.check();done,_=_mac_source_fd_futures.wait(pending,timeout=0.25,return_when=_mac_source_fd_futures.FIRST_COMPLETED)
+            for future in done:
+                group=pending.pop(future)
+                try:
+                    result=future.result();hashes.update(result)
+                    progress['hashedFiles']+=len(result);progress['hashedBytes']+=sum(r['stamp'][0]for r in group)
+                    if 'totals'in progress:
+                        progress['totals'][0]+=len(result);progress['totals'][1]+=sum(r['stamp'][0]for r in group)
+                except BaseException as error:scope.record(error)
+                finally:
+                    if future.done():inflight.discard(future);retired+=1
+            if not scope.failed:
+                for _ in done:submit()
+    except BaseException as error:scope.record(error)
+    finally:
+        if scope.failed:
+            for future in pending:future.cancel()
+        try:pool.shutdown(wait=True,cancel_futures=scope.failed)
+        except BaseException as error:SOURCE_JOIN_FAILURE=True;scope.record(error)
+        scope.finish(joined=all(future.done()for future in inflight))
+    if scope.failed:raise scope.first
+    budget.check();_mac_source_fd_require(len(hashes)==len(rows)and not SOURCE_CLOSE_FAILURE and not SOURCE_JOIN_FAILURE)
+    return hashes
+
+
+def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external, *, member_policy=None, reuse=None, layout=None):
+    require(source_owned_mac(policy), 'source-mac-fd-policy')
+    global SOURCE_JOIN_FAILURE
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+
+    if policy.get('mac'):
+        policy['_directories'] = {}
+        local_before = source_local(root.stat(), policy)
+    root_before = stamp(root.stat())
+    linux = not external and not policy.get('mac')
+    require(reuse is None or (linux and type(reuse) is dict), 'source-stat-reuse')
+    source_phase('inventory')
+    rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
+    source_phase('hash')
+    import sys
+    workers = SOURCE_LINUX_HASH_WORKERS if linux and sys.platform.startswith('linux') else SOURCE_HASH_WORKERS
+    file_rows = [row for row in rows if row['kind'] == 'file']
+    progress = SOURCE_PROGRESS if SOURCE_PROGRESS is not None else {}
+    progress.update(files=len(file_rows), bytes=sum(row['stamp'][0]for row in file_rows), hashedFiles=0, hashedBytes=0, reusedFiles=0)
+    hashes = _source_mac_fd_hashes(root,file_rows,budget,policy,root_before,local_before,progress)
+    budget.check()
+    if not external:
+        require(hashes.get('.gclient_entries') == policy['registrySha256'], 'source-repositories-changed')
+        require({'src','src/cef','depot_tools'} <= set(policy['gitHeads']), 'source-required-repositories')
+        if policy.get('_nearby_literals') is not None:
+            require(policy['gitHeads'].get(NEARBY_ROOT)==NEARBY_HEAD, 'source-nearby-binding')
+    aggregate = dict(policy['aggregate']) if external else None
+    if external:
+        # A second namespace read verifies stability, not a second authority budget.
+        policy['aggregate'] = {'entries':0,'bytes':0,'metadata':0}
+    source_phase('post-inventory')
+    after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy, member_policy=member_policy))
+
+    require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
+    if policy.get('mac'):
+        require(source_local(root.stat(), policy) == local_before, 'source-mac-root-changed')
+    if guards is not None:
+        if source_owned_mac(policy):
+            guards.update({row['path']: (row['stamp'],row['ctimeNs'],row['birthIdentity'],row['uid'],row['gid']) for row in rows})
+            guards[''] = source_local(root.stat(), policy)
+        else:
+            guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
+            guards[''] = (root_before,root.stat().st_ctime_ns)
+    entries = [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows]
+    if not external and not policy.get('mac'):
+        # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout
+        # out-parameter maps every canonical path back to this checkout.
+        mapping = source_cipd_layout(root, rows)
+        canonical, targets = {}, {}
+        for entry, row in zip(entries, rows):
+            name = source_cipd_path(mapping, row['path'])
+            canonical[name] = row['path']
+            entry['path'] = name
+            if row['path'] == SOURCE_TOGGLE_SENTINEL:
+                require(row['kind'] == 'file', 'source-toggle-sentinel')
+                entry['size'], entry['sha256'] = source_toggle_sentinel(root, hashes[row['path']])
+                total += entry['size'] - row['stamp'][0]
+            if row['kind'] == 'symlink':
+                targets[name] = row['target']
+                target = source_cipd_target(mapping, root, row['path'], row['target'])
+                if target != row['target']:
+                    entry['target'] = target
+                    entry['sha256'] = hashlib.sha256(target.encode()).hexdigest()
+        require(len(canonical) == len(rows), 'source-cipd-layout')
+        if layout is not None:
+            layout.update(canonical=canonical, targets=targets, digests=dict(hashes))
+        # Linux directory iteration order is not stable across fresh checkouts
+        # (ext4 creation order, parallel git checkout), so the Linux snapshot
+        # is canonical in path order; Mac Intel snapshots keep their reviewed order.
+        entries.sort(key=lambda entry: entry['path'])
+    value = {'entries': entries,
+             'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
+             'bytes': total}
+    if not external and (not policy.get('mac') or _mac_nearby_policy_owned(policy)):
+        value['literalLinks'] = policy['_nearby_literals']['portable'] if policy['_nearby_literals'] is not None else []
+    if not external and _mac_clang_policy_owned(policy):
+        value['compilerLiteralLinks']=policy['_clang_literals']['portable']
+    if external:
+        value['root'] = {'mode':root_before[4], 'mtimeNs':str(root_before[1]), 'uid':root.stat().st_uid,
+                         'gid':root.stat().st_gid, 'nlink':root_before[5]}
+        value['localRoot'] = {'dev':str(root_before[2]), 'ino':str(root_before[3]),
+                              'ctimeNs':str(local_before[1]), 'birthtimeNsAvailable':local_before[2] is not None,
+                              'birthtimeNs':str(local_before[2]) if local_before[2] is not None else None}
+        # The caller's shared object was consumed only by the initial inventory.
+        require(aggregate['entries'] >= len(rows), 'source-external-aggregate')
+    return value
+# END STATIC MAC OWNED FD HASHING
 
 
 def source_mac_write_host_admission():
@@ -3158,6 +3484,10 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             if row['kind'] == 'symlink':
                 require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if mac else layout['targets'][row['path']]),
                         'source-link-changed')
+                # BEGIN MAC OWNED NOOP SYMLINK UTIME
+                if mac and before.st_mtime_ns == int(row['mtimeNs']):
+                    continue
+                # END MAC OWNED NOOP SYMLINK UTIME
                 source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))
                 after = path.lstat()
                 require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
@@ -3166,6 +3496,10 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                     source_owned_mac_transition(before, after)
             else:
                 safe(path)
+                # BEGIN MAC OWNED NOOP FILE UTIME
+                if mac and before.st_mtime_ns == int(row['mtimeNs']):
+                    continue
+                # END MAC OWNED NOOP FILE UTIME
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
                 primary = None
                 try:
@@ -3189,20 +3523,23 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                     source_close(lambda: os.close(fd), primary)
         budget.check();safe(root);info = root.stat()
         require((source_local(info, snapshot_context) if mac else (stamp(info),info.st_ctime_ns))==guards[''], 'source-root-changed')
-        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        primary = None
-        try:
-            require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')
-            source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))
-            require(root.stat().st_mtime_ns==int(expected['rootMtimeNs']) and
-                    stamp(root.stat())==stamp(os.fstat(fd)), 'source-root-readback')
-            if mac:
-                source_owned_mac_transition(info, root.stat(), os.fstat(fd))
-        except BaseException as error:
-            primary=error
-            raise
-        finally:
-            source_close(lambda: os.close(fd), primary)
+        # BEGIN MAC OWNED NOOP ROOT UTIME
+        if not (mac and info.st_mtime_ns == int(expected['rootMtimeNs'])):
+            fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            primary = None
+            try:
+                require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')
+                source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))
+                require(root.stat().st_mtime_ns==int(expected['rootMtimeNs']) and
+                        stamp(root.stat())==stamp(os.fstat(fd)), 'source-root-readback')
+                if mac:
+                    source_owned_mac_transition(info, root.stat(), os.fstat(fd))
+            except BaseException as error:
+                primary=error
+                raise
+            finally:
+                source_close(lambda: os.close(fd), primary)
+        # END MAC OWNED NOOP ROOT UTIME
     source_phase('postcheck')
     if mac:
         require(source_snapshot(root, budget, context=snapshot_context) == expected, 'source-metadata-postcheck')
