@@ -2761,6 +2761,70 @@ export function compileMonitorDetails(value) {
       : null) ?? { code: "UNKNOWN" }),
   };
 }
+function compileFailureObservation(error) {
+  let errorCode = "UNKNOWN";
+  try {
+    if (!utilTypes.isProxy(error) && utilTypes.isNativeError(error)) {
+      const message = Object.getOwnPropertyDescriptor(error, "message");
+      const code = Object.getOwnPropertyDescriptor(error, "code");
+      const messages = new Map([
+        [
+          "Observed descendants not reaped; checkpoint denied",
+          "OWN_NOT_REAPED",
+        ],
+        ["Owned reap deadline", "OWN_REAP_DEADLINE"],
+        ["Owned freeze deadline", "OWN_FREEZE_DEADLINE"],
+        ["Observed lineage did not stabilize", "OWN_LINEAGE_UNSTABLE"],
+        ["Ambiguous owned process", "OWN_IDENTITY_AMBIGUOUS"],
+        ["Owned PID replaced before reap", "OWN_PID_REPLACED"],
+        ["Owned root PID identity changed", "OWN_ROOT_REPLACED"],
+        [
+          "Observed descendants survived compiler exit; checkpoint denied",
+          "OWN_SURVIVED_EXIT",
+        ],
+        [
+          "Unconfirmed compiler ownership; checkpoint denied",
+          "OWN_UNCONFIRMED",
+        ],
+        [
+          "Compile cleanup unconfirmed; checkpoint denied",
+          "CLEANUP_UNCONFIRMED",
+        ],
+        ["Output settlement deadline", "OUTPUT_SETTLEMENT_DEADLINE"],
+        ["Output close deadline", "OUTPUT_CLOSE_DEADLINE"],
+        ["Shared compile output bound", "OUTPUT_BOUND"],
+        ["CENSUS_DEADLINE", "CENSUS_DEADLINE"],
+        ["CENSUS_EOF", "CENSUS_EOF"],
+        ["CENSUS_REQUEST", "CENSUS_REQUEST"],
+        ["CENSUS_REQUEST_BOUND", "CENSUS_REQUEST_BOUND"],
+        ["CENSUS_OUTPUT_BOUND", "CENSUS_OUTPUT_BOUND"],
+        ["CENSUS_STDERR_BOUND", "CENSUS_STDERR_BOUND"],
+        ["CENSUS_READY_DEADLINE", "CENSUS_READY_DEADLINE"],
+        ["CENSUS_JOIN", "CENSUS_JOIN"],
+        ["CENSUS_FAILED", "CENSUS_FAILED"],
+        ["CENSUS_ROOT", "CENSUS_ROOT"],
+      ]);
+      if (typeof message?.value === "string" && messages.has(message.value))
+        errorCode = messages.get(message.value);
+      else if (
+        typeof code?.value === "string" &&
+        [
+          "EPIPE",
+          "ENOENT",
+          "EACCES",
+          "EPERM",
+          "ENOSPC",
+          "EIO",
+          "EMFILE",
+        ].includes(code.value)
+      )
+        errorCode = code.value;
+    }
+  } catch {
+    // Observation cannot replace even a falsy or hostile primary failure.
+  }
+  return { ...compileMonitorDetails(error), errorCode };
+}
 function compileMonitorGuard(ok, message, code, facts) {
   try {
     assert(ok, message);
@@ -3118,6 +3182,7 @@ async function openCensusSession(
       return binding.failed;
     };
     const session = {
+      diagnostics: () => Object.freeze(client.diagnostics()),
       async snapshot(options = {}) {
         try {
           assert(
@@ -3485,6 +3550,13 @@ function macCensusClient(
     diagnostics: () => ({
       code: censusFailureCode(Buffer.concat(stderrChunks).toString("utf8")),
       stderrBytes,
+      joined,
+      exitCode:
+        Number.isInteger(closedValue?.code) &&
+        closedValue.code >= -255 &&
+        closedValue.code <= 255
+          ? closedValue.code
+          : null,
     }),
     abort: (error = new Error("CENSUS_ABORT")) => deny(error),
     async snapshot() {
@@ -3982,6 +4054,7 @@ export async function compileSlice(
   let firstError,
     hasFailure = false,
     failureStage = "none",
+    firstFailure = null,
     monitorFailure = null,
     lastSnapshot = null,
     snapshotOrdinal = 0,
@@ -4002,6 +4075,11 @@ export async function compileSlice(
       hasFailure = true;
       firstError = error;
       failureStage = stage;
+      firstFailure = {
+        ...compileFailureObservation(error),
+        snapshotOrdinal: snapshotOrdinal + (snapshotPending ? 1 : 0),
+        lastSnapshot,
+      };
       if (stage === "monitor" || stage === "initial-snapshot")
         monitorFailure = {
           ...compileMonitorDetails(error),
@@ -4499,6 +4577,8 @@ export async function compileSlice(
         probesJoined,
         monitorSettled,
         monitorResult,
+        firstFailure,
+        census: censusSession?.diagnostics() ?? null,
         monitorFailure,
         outputsJoined,
         outputsSettled,

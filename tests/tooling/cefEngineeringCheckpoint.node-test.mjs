@@ -814,6 +814,7 @@ test(
 import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
 import { EventEmitter } from "node:events";
+import { types as utilTypes } from "node:util";
 // Exact pre-fix archiveCommand declaration from reviewed6c853; data-only baseline.
 const ARCHIVE_COMMAND_BEFORE =
   'export async function archiveCommand(\n  python,\n  helper,\n  args,\n  { timeout = LIMITS.archiveMs, observeFailure } = {},\n) {\n  assert(\n    path.isAbsolute(python) &&\n      path.isAbsolute(helper) &&\n      positive(timeout) &&\n      timeout <= LIMITS.archiveMs,\n    "Verified archive tool required",\n  );\n  return new Promise((resolve, reject) => {\n    const child = spawn(python, ["-I", "-B", helper, ...args], {\n      shell: false,\n      windowsHide: true,\n      detached: process.platform !== "win32",\n      env: { PATH: path.dirname(python) },\n      stdio: ["ignore", "pipe", "pipe"],\n    });\n    let stdout = "",\n      overflow = false,\n      diagnosticEmitted = false;\n    const diagnostic = (code, options = {}) => {\n      if (diagnosticEmitted || !observeFailure) return;\n      diagnosticEmitted = true;\n      try {\n        observeFailure(archiveFailureRecord(stdout, code, options));\n      } catch {\n        /* Diagnostics cannot hide an existing failure or escape an event callback. */\n      }\n    };\n    child.stdout.on("data", (data) => {\n      stdout += data;\n      if (stdout.length > LIMITS.seal) {\n        overflow = true;\n        diagnostic(null, { overflow: true });\n        void stopGroup(child);\n      }\n    });\n    child.stderr.resume();\n    const timer = setTimeout(() => {\n      diagnostic(null, { deadline: true });\n      void stopGroup(child).then(\n        () => reject(new Error("Archive deadline; partial is not admitted")),\n        reject,\n      );\n    }, timeout);\n    child.once("error", (error) => {\n      clearTimeout(timer);\n      diagnostic(null);\n      reject(error);\n    });\n    child.once("close", (code) => {\n      clearTimeout(timer);\n      if (code !== 0 || overflow) {\n        diagnostic(code, { overflow });\n        return reject(new Error("Checkpoint archive rejected"));\n      }\n      try {\n        resolve(JSON.parse(stdout));\n      } catch {\n        diagnostic(code);\n        reject(new Error("Malformed archive result"));\n      }\n    });\n  });\n}';
@@ -889,6 +890,7 @@ import {
   processRows,
   compileMonitorRecord,
   compileMonitorDetails,
+  createMacCensusProofClient,
   observedLineage,
   sameObservedCohort,
   compileSlice,
@@ -8081,6 +8083,7 @@ async function compileSupervisorModel(options = {}) {
   };
   child.unref = () => state.unrefs++;
   const root = { pid: 100, parent: 200, start: "Sat Oct 24 00:00:00 2026" };
+  const censusFactory = options.censusSession ? {} : undefined;
   const dependencies = {
     assert,
     process: {
@@ -8096,6 +8099,11 @@ async function compileSupervisorModel(options = {}) {
     hostname: () => "model.host",
     sisoLoggerIdentity,
     compileMonitorDetails,
+    compileFailureObservation: new Function(
+      "utilTypes",
+      "compileMonitorDetails",
+      "return (" + body("compileFailureObservation") + ")",
+    )(utilTypes, compileMonitorDetails),
     compileMonitorGuard: (ok, message, code) => {
       try {
         assert(ok, message);
@@ -8104,6 +8112,10 @@ async function compileSupervisorModel(options = {}) {
       }
     },
     compileWithin: within,
+    macCensusFactories: new Map([
+      [censusFactory, { proofOnly: true, deadline: clock.now() + 200 }],
+    ]),
+    openCensusSession: async () => options.censusSession,
     checkpointLog: (sink, line) => (state.diagnostic = line),
     console: { error: () => {} },
     noLinks: async (value) => value,
@@ -8202,7 +8214,16 @@ async function compileSupervisorModel(options = {}) {
   };
   const execute = new Function(
     ...Object.keys(dependencies),
-    "return (" + body("compileSlice") + ")",
+    "return (" +
+      (options.previousDiagnostic
+        ? body("compileSlice")
+            .replace(/\r\n/g, "\n")
+            .replace(
+              "        firstFailure,\n        census: censusSession?.diagnostics() ?? null,\n",
+              "",
+            )
+        : body("compileSlice")) +
+      ")",
   )(...Object.values(dependencies));
   const began = performance.now();
   let result, error, modelAlarm;
@@ -8211,6 +8232,7 @@ async function compileSupervisorModel(options = {}) {
     env: {},
     logs: "/fake",
     milliseconds: 20,
+    ...(censusFactory ? { censusFactory } : {}),
     ...(options.stopSignal === undefined
       ? {}
       : { stopSignal: options.stopSignal }),
@@ -8283,6 +8305,219 @@ test("single supervisor returns finite original cleanup failure despite inherite
   assert.equal(diagnostic.phase, "denied");
   assert.equal(diagnostic.cohortQuiet, false);
   assert.doesNotMatch(state.diagnostic, /fixed injected|fake|synthetic/);
+});
+test("compile first-failure diagnostics expose the original reap cause where the previous monitor-only record was empty", async () => {
+  const primary = new Error("Owned PID replaced before reap");
+  const prior = await compileSupervisorModel({
+    stopError: true,
+    error: primary,
+    previousDiagnostic: true,
+  });
+  const previous = JSON.parse(
+    prior.diagnostic.split("compile-supervision=")[1],
+  );
+  assert.equal(previous.monitorFailure, null);
+  assert.equal(previous.firstFailure, undefined);
+  const state = await compileSupervisorModel({
+    stopError: true,
+    error: primary,
+  });
+  const current = JSON.parse(state.diagnostic.split("compile-supervision=")[1]);
+  assert.equal(state.error, primary);
+  assert.equal(state.proofs, 0);
+  assert.equal(current.failureStage, "reap");
+  assert.equal(current.firstFailure.errorCode, "OWN_PID_REPLACED");
+  assert.equal(current.firstFailure.code, "UNKNOWN");
+  assert.equal(current.monitorFailure, null);
+  assert.equal(current.census, null);
+  assert.equal(current.cohortQuiet, false);
+  assert.doesNotMatch(state.diagnostic, /Owned PID|fake|synthetic|stack/);
+});
+test("compile first-failure diagnostics preserve falsy and hostile primary identity without invoking getters or proxy traps", async () => {
+  let reads = 0;
+  const accessor = new Error("secret path/token");
+  Object.defineProperty(accessor, "message", {
+    get() {
+      reads++;
+      throw false;
+    },
+  });
+  Object.defineProperty(accessor, "code", {
+    get() {
+      reads++;
+      throw false;
+    },
+  });
+  const proxy = new Proxy(new Error("secret proxy"), {
+    get() {
+      reads++;
+      throw false;
+    },
+    getOwnPropertyDescriptor() {
+      reads++;
+      throw false;
+    },
+  });
+  for (const primary of [
+    false,
+    null,
+    undefined,
+    accessor,
+    proxy,
+    { message: "Owned reap deadline", code: "EPIPE" },
+    new Error("secret /private/path token"),
+  ]) {
+    const state = await compileSupervisorModel({
+      stopError: true,
+      error: primary,
+    });
+    assert.equal(state.failed, true);
+    assert.equal(state.error, primary);
+    assert.equal(state.proofs, 0);
+    const diagnostic = JSON.parse(
+      state.diagnostic.split("compile-supervision=")[1],
+    );
+    assert.equal(diagnostic.failureStage, "reap");
+    assert.equal(diagnostic.firstFailure.errorCode, "UNKNOWN");
+    assert.doesNotMatch(state.diagnostic, /secret|private|token|proxy|stack/);
+    assert(Buffer.byteLength(state.diagnostic) < 4096);
+  }
+  assert.equal(reads, 0);
+  const filesystemError = Object.assign(new Error("secret /private/path"), {
+    code: "EPIPE",
+  });
+  const state = await compileSupervisorModel({
+    stopError: true,
+    error: filesystemError,
+  });
+  assert.equal(state.error, filesystemError);
+  const diagnostic = JSON.parse(
+    state.diagnostic.split("compile-supervision=")[1],
+  );
+  assert.equal(diagnostic.firstFailure.errorCode, "EPIPE");
+  assert.doesNotMatch(state.diagnostic, /secret|private|path/);
+});
+test("compile first-failure diagnostics retain tagged monitor facts and never replace them with later cleanup failures", async () => {
+  const primary = compileMonitorRecord(
+    new Error("secret monitor"),
+    "PS_STDOUT_BOUND",
+    { snapshotChars: 4194305 },
+  );
+  const state = await compileSupervisorModel({
+    monitorError: true,
+    stopError: true,
+    error: primary,
+  });
+  assert.equal(state.error, primary);
+  const diagnostic = JSON.parse(
+    state.diagnostic.split("compile-supervision=")[1],
+  );
+  assert.equal(diagnostic.failureStage, "monitor");
+  assert.equal(diagnostic.firstFailure.code, "PS_STDOUT_BOUND");
+  assert.equal(diagnostic.firstFailure.snapshotChars, 4194305);
+  assert.equal(diagnostic.firstFailure.errorCode, "UNKNOWN");
+  assert.deepEqual(
+    diagnostic.firstFailure.lastSnapshot,
+    diagnostic.monitorFailure.lastSnapshot,
+  );
+  assert.doesNotMatch(state.diagnostic, /secret monitor/);
+});
+test("compile first-failure diagnostics expose only the actual closed census code and exit through the private session observer", async () => {
+  const child = new EventEmitter();
+  child.pid = 501;
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let kills = 0;
+  child.kill = () => {
+    kills++;
+    return false;
+  };
+  child.unref = () => {};
+  const client = createMacCensusProofClient(child, {
+    deadline: performance.now() + 2000,
+  });
+  child.stdout.write(
+    JSON.stringify({
+      kind: "mac-census-proof-ready",
+      abi: {},
+      oracleSha256: "a".repeat(64),
+      productionAdmitted: false,
+    }) + "\n",
+  );
+  await client.ready;
+  assert.deepEqual(client.diagnostics(), {
+    code: "CENSUS_UNAVAILABLE",
+    stderrBytes: 0,
+    joined: false,
+    exitCode: null,
+  });
+  const failure =
+    JSON.stringify({
+      kind: "mac-census-native-failure",
+      mode: "integration-proof",
+      code: "CENSUS_REQUEST",
+      productionAdmitted: false,
+    }) + "\n";
+  child.stderr.write(failure);
+  child.emit("close", 1, null);
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const open = ast.statements.find(
+    (node) =>
+      ts.isFunctionDeclaration(node) && node.name?.text === "openCensusSession",
+  );
+  let method;
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "session")
+      method = node.initializer.properties.find(
+        (property) => property.name?.getText(ast) === "diagnostics",
+      ).initializer;
+    ts.forEachChild(node, visit);
+  };
+  visit(open);
+  assert(method);
+  // Actual private observer body and client; native process events are modeled.
+  const diagnostics = new Function(
+    "client",
+    "return (" + method.getText(ast) + ")",
+  )(client);
+  const primary = new Error("CENSUS_REQUEST");
+  const state = await compileSupervisorModel({
+    stopError: true,
+    error: primary,
+    censusSession: { diagnostics, close: () => client.close() },
+  });
+  assert.equal(state.error, primary);
+  assert.equal(state.proofs, 0);
+  const actual = JSON.parse(state.diagnostic.split("compile-supervision=")[1]);
+  assert.equal(actual.firstFailure.errorCode, "CENSUS_REQUEST");
+  assert.deepEqual(actual.census, {
+    code: "CENSUS_REQUEST",
+    stderrBytes: Buffer.byteLength(failure),
+    joined: true,
+    exitCode: 1,
+  });
+  assert(Object.isFrozen(diagnostics()));
+  assert.equal(kills, 0);
+  assert.doesNotMatch(
+    state.diagnostic,
+    /oracleSha|productionAdmitted|darwin-v1/,
+  );
+  for (const stream of [child.stdin, child.stdout, child.stderr])
+    stream.destroy();
 });
 test("monitor failure still attempts cohort cleanup and retains the original error", async () => {
   const state = await compileSupervisorModel({ monitorError: true });
