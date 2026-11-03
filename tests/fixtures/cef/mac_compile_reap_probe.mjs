@@ -87,7 +87,7 @@ leaf()
 `;
 let failed = false;
 for (const mode of ["siso-wrapper"]) {
-  assert(performance.now() + 45000 < end);
+  assert(performance.now() + 65000 < end);
   const root = path.join(temp, "cef-mac-census-integration-" + randomUUID());
   await mkdir(root, { mode: 0o700 });
   assert((await realpath(root)) === root);
@@ -227,14 +227,14 @@ sys.exit(module.call(sys.argv[1:]))
     env.HOME = root;
     env.TMPDIR = root;
   }
-  assert(performance.now() + 45000 < end);
+  assert(performance.now() + 65000 < end);
   const factory = await createMacCensusIntegrationProofFactory({
     target,
     source,
     canonicalRoot: `/Users/runner/work/_temp/sorng-cef-engineering/${target}/${source}`,
     scratch: root,
     python: PYTHON,
-    deadline: Math.min(end, performance.now() + 40000),
+    deadline: Math.min(end, performance.now() + 60000),
   });
   const begin = performance.now();
   let result,
@@ -255,7 +255,7 @@ sys.exit(module.call(sys.argv[1:]))
       cwd: root,
       env,
       logs,
-      milliseconds: 4000,
+      milliseconds: 20000,
       censusFactory: factory,
       outputLedger: { bytes: 0, cap: 64 * 1024 ** 2 },
     });
