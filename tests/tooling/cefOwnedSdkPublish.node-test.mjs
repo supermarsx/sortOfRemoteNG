@@ -1147,6 +1147,9 @@ function engineeringFixture(target = "x86_64-apple-darwin") {
   };
   for (const [name, sha] of Object.entries(successorBlobs))
     rows.find((row) => row.path === name).sha = sha;
+  if (target === "x86_64-apple-darwin" || target === "aarch64-apple-darwin")
+    rows.find((row) => row.path === "scripts/cef-runtime-ci.mjs").sha =
+      "9831c2cb0f4a7aebbabcd87e090eeb89c1563507";
   assert.equal(codeTreeDigest(rows), ENGINEERING_PRODUCERS[target]);
   const sdkProducer = {
     repository,
@@ -1434,6 +1437,24 @@ async function engineeringFlow(t, target) {
 }
 
 function withoutSuccessorProducerBindings(raw) {
+  for (const [current, prior] of [
+    [
+      'export const ENGINEERING_PRODUCER =\n  "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864";',
+      'export const ENGINEERING_PRODUCER =\n  "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859";',
+    ],
+    [
+      '  "aarch64-apple-darwin":\n    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",',
+      '  "aarch64-apple-darwin":\n    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+    ],
+  ]) {
+    assert.equal(raw.split(current).length, 2);
+    raw = raw.replace(current, prior);
+  }
+  assert.equal(Buffer.byteLength(raw), 23685);
+  assert.equal(
+    hash(raw),
+    "703dc2d6dee1dcd36474611a314fd7eee26f6d5e2386a887e9527a912c5fb832",
+  );
   const changes = [
     [
       'export const ENGINEERING_PRODUCER =\n  "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859";',
@@ -1503,7 +1524,7 @@ test("failed Intel producer retarget restores the entire prior adapter and keeps
 test("engineering publication exact target producers select repaired source without source-only admission", () => {
   assert.equal(
     ENGINEERING_PRODUCER,
-    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["x86_64-apple-darwin"],
@@ -1511,7 +1532,7 @@ test("engineering publication exact target producers select repaired source with
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-apple-darwin"],
-    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+    "7eee3c93740058c504d9365101de17dfb845f22bfc37a9db9ecaca15e1523864",
   );
   assert.equal(
     ENGINEERING_PRODUCERS["aarch64-unknown-linux-gnu"],
