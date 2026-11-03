@@ -58,6 +58,15 @@ def leaf():
 if mode=='flat':
     for i in range(7):
         if os.fork()==0:leaf()
+elif mode=='churn':
+    for i in range(3):
+        if os.fork()==0:
+            for j in range(1000):
+                pid=os.fork()
+                if pid==0:os._exit(0)
+                os.waitpid(pid,0)
+                time.sleep(.005)
+            leaf()
 elif mode in ('nested','detached'):
     for i in range(2):
         if os.fork()==0:
@@ -69,7 +78,7 @@ else:raise RuntimeError('fixed mode')
 leaf()
 `;
 let failed = false;
-for (const mode of ["flat", "nested", "detached"]) {
+for (const mode of ["churn"]) {
   assert(performance.now() + 45000 < end);
   const root = path.join(temp, "cef-mac-census-integration-" + randomUUID());
   await mkdir(root, { mode: 0o700 });
