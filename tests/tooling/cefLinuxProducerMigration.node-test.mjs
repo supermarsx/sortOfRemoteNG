@@ -1018,7 +1018,10 @@ function manifest(identity, inventory, selectedProducer = oldProducer()) {
     runtimeReady: false,
   };
 }
-async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
+async function fixture(
+  t,
+  { oldRunId = SEED_RUN, oldAttempt = 1, modeledProvisionDelta = false } = {},
+) {
   const root = await scratch(t),
     repo = path.join(root, "repo");
   await fs.mkdir(repo);
@@ -1062,6 +1065,11 @@ async function fixture(t, { oldRunId = SEED_RUN, oldAttempt = 1 } = {}) {
         "\r\n",
         "\n",
       ),
+    );
+  if (modeledProvisionDelta)
+    await fs.appendFile(
+      path.join(repo, "scripts/cef-hosted-provision.mjs"),
+      "\n// MODELED allowed-path source delta; never executed by this fixture.\n",
     );
   git(repo, ["init", "--initial-branch=main"]);
   git(repo, ["config", "core.autocrlf", "false"]);
@@ -2392,7 +2400,7 @@ test("inactive current-run inspection rejects retired413501 and missing actual c
 test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted or forged provision row in a bounded subset", async (t) => {
   const body = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutColdMetalCompanion(body);
-  const f = await fixture(t);
+  const f = await fixture(t, { modeledProvisionDelta: true });
   const allowed = body
     .split("const CHANGED_PATHS = new Set([")[1]
     .split("]);")[0];
@@ -2420,7 +2428,7 @@ test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted 
   const name = "scripts/cef-hosted-provision.mjs";
   const row = f.policy.changedSources.find((item) => item.path === name);
   assert(row);
-  assert.equal(row.before.sha, "6109185591d332f32cb48a0b39e418082c2e28e7");
+  assert.equal(row.before.sha, "9fb323d215e1d246f537685b360d3a665f87f748");
   assert.equal(
     (await migration.inspectLinuxMigrationCandidate(f.args)).authorizing,
     false,
