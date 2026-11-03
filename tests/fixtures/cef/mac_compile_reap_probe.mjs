@@ -20,6 +20,9 @@ const CLANG =
   "/Applications/Xcode_26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang";
 const SISO_SHA =
   "470367b491702bb805e33cec867febafce8feb2018e34c14631372682952015b";
+// Entire unchanged c101 depot_tools/caffeinate.py from its pinned Git revision.
+const CAFFEINATE_SOURCE_BASE64 =
+  "IyBDb3B5cmlnaHQgMjAyNSBUaGUgQ2hyb21pdW0gQXV0aG9ycwojIFVzZSBvZiB0aGlzIHNvdXJjZSBjb2RlIGlzIGdvdmVybmVkIGJ5IGEgQlNELXN0eWxlIGxpY2Vuc2UgdGhhdCBjYW4gYmUKIyBmb3VuZCBpbiB0aGUgTElDRU5TRSBmaWxlLgoKaW1wb3J0IGNvbnRleHRsaWIKaW1wb3J0IG9zCmltcG9ydCBzdWJwcm9jZXNzCmltcG9ydCBzeXMKCl9OT19DQUZGRUlOQVRFX0ZMQUcgPSAiLS1uby1jYWZmZWluYXRlIgoKX0hFTFBfTUVTU0FHRSA9IGYiIiJcCmNhZmZlaW5hdGU6CiAge19OT19DQUZGRUlOQVRFX0ZMQUd9ICBkbyBub3QgcHJlcGVuZCBgY2FmZmVpbmF0ZWAgdG8gbmluamEgY29tbWFuZAoiIiIKCgpkZWYgY2FsbChhcmdzLCAqKmNhbGxfa3dhcmdzKToKICAgICIiIlJ1bnMgYSBjb21tYW5kICh2aWEgc3VicHJvY2Vzcy5jYWxsKSB3aXRoIGBjYWZmZWluYXRlYCBpZiBpdCdzIG9uIG1hY09TLiIiIgogICAgaWYgc3lzLnBsYXRmb3JtID09ICJkYXJ3aW4iOgogICAgICAgIGlmIGlzaW5zdGFuY2UoYXJncywgKHN0ciwgYnl0ZXMsIG9zLlBhdGhMaWtlKSk6CiAgICAgICAgICAgIGFyZ3MgPSBbYXJnc10KICAgICAgICBpZiAiLWgiIGluIGFyZ3Mgb3IgIi0taGVscCIgaW4gYXJnczoKICAgICAgICAgICAgcHJpbnQoX0hFTFBfTUVTU0FHRSwgZmlsZT1zeXMuc3RkZXJyKQogICAgICAgIGlmIF9OT19DQUZGRUlOQVRFX0ZMQUcgaW4gYXJnczoKICAgICAgICAgICAgYXJncy5yZW1vdmUoX05PX0NBRkZFSU5BVEVfRkxBRykKICAgICAgICBlbHNlOgogICAgICAgICAgICBhcmdzID0gWyJjYWZmZWluYXRlIl0gKyBhcmdzCiAgICByZXR1cm4gc3VicHJvY2Vzcy5jYWxsKGFyZ3MsICoqY2FsbF9rd2FyZ3MpCgoKQGNvbnRleHRsaWIuY29udGV4dG1hbmFnZXIKZGVmIHNjb3BlKGFjdHVhbGx5X2NhZmZlaW5hdGU9VHJ1ZSk6CiAgICAiIiJBY3RzIGFzIGEgY29udGV4dCBtYW5hZ2VyIGtlZXBpbmcgYSBNYWMgYXdha2UsIHVubGVzcyBmbGFnZ2VkIG9mZi4KCiAgICBJZiB0aGUgcHJvY2VzcyBpcyBub3QgcnVubmluZyBvbiBhIE1hYywgb3IgYGFjdHVhbGx5X2NhZmZlaW5hdGVgIGlzIGZhbHNleSwKICAgIHRoaXMgYWN0cyBhcyBhIGNvbnRleHQgbWFuYWdlciB0aGF0IGRvZXMgbm90aGluZy4gVGhlIGBhY3R1YWxseV9jYWZmZWluYXRlYAogICAgZmxhZyBpcyBwcm92aWRlZCBzbyBjb21tYW5kIGxpbmUgZmxhZ3MgY2FuIGNvbnRyb2wgdGhlIGNhZmZlaW5hdGUgYmVoYXZpb3IKICAgIHdpdGhvdXQgcmVxdWlyaW5nIHdlaXJkIHBsdW1iaW5nIHRvIHVzZSBvciBub3QgdXNlIHRoZSBjb250ZXh0IG1hbmFnZXIuCgogICAgSWYgcnVubmluZyBvbiBhIE1hYyB3aGlsZSBhY3R1YWxseV9jYWZmZWluYXRlIGlzIFRydWUgKHRoZSBkZWZhdWx0KSwgdGhpcwogICAgcnVucyBgY2FmZmVpbmF0ZWAgaW4gYSBzZXBhcmF0ZSBwcm9jZXNzLCB3aGljaCBpcyB0ZXJtaW5hdGVkIHdoZW4gdGhlCiAgICBjb250ZXh0IG1hbmFnZXIgZXhpdHMuCiAgICAiIiIKICAgIGlmIHN5cy5wbGF0Zm9ybSAhPSAiZGFyd2luIiBvciBub3QgYWN0dWFsbHlfY2FmZmVpbmF0ZToKICAgICAgICAjIEJlaGF2ZSBsaWtlIGEgbm8tb3AgY29udGV4dCBtYW5hZ2VyLgogICAgICAgIHlpZWxkIEZhbHNlCiAgICAgICAgcmV0dXJuCgogICAgY21kID0gWyJjYWZmZWluYXRlIiwgIi1pIiwgIi13Iiwgc3RyKG9zLmdldHBpZCgpKV0KCiAgICBwcm9jID0gc3VicHJvY2Vzcy5Qb3BlbigKICAgICAgICBjbWQsCiAgICAgICAgc3RkaW49c3VicHJvY2Vzcy5ERVZOVUxMLAogICAgICAgIHN0ZG91dD1zdWJwcm9jZXNzLkRFVk5VTEwsCiAgICAgICAgc3RkZXJyPXN1YnByb2Nlc3MuREVWTlVMTCwKICAgICkKICAgIHRyeToKICAgICAgICB5aWVsZCBUcnVlCiAgICBmaW5hbGx5OgogICAgICAgIHByb2MudGVybWluYXRlKCkK";
 assert(process.platform === "darwin" && process.arch === "x64");
 assert(
   process.env.ImageOS === "macos15" &&
@@ -83,7 +86,7 @@ else:raise RuntimeError('fixed mode')
 leaf()
 `;
 let failed = false;
-for (const mode of ["siso"]) {
+for (const mode of ["siso-wrapper"]) {
   assert(performance.now() + 45000 < end);
   const root = path.join(temp, "cef-mac-census-integration-" + randomUUID());
   await mkdir(root, { mode: 0o700 });
@@ -109,9 +112,10 @@ for (const mode of ["siso"]) {
   };
   if (process.env.RUNNER_TRACKING_ID)
     env.RUNNER_TRACKING_ID = process.env.RUNNER_TRACKING_ID;
-  let executable = PYTHON,
+  let binaryPinPath,
+    executable = PYTHON,
     args = ["-I", "-B", "-S", actorPath, mode];
-  if (mode === "siso") {
+  if (mode.startsWith("siso")) {
     const response = await fetch(
       "https://chrome-infra-packages.appspot.com/dl/build/siso/mac-amd64/+/git_revision:efbbe7f1892211b5e9512576843a3c247b6a6d7c",
       {
@@ -195,6 +199,31 @@ with zipfile.ZipFile(archive) as z:
     });
     executable = binary;
     args = ["ninja", "--offline", "-load=", "-local_jobs=3", "-C", outDir];
+    binaryPinPath = binary;
+    if (mode === "siso-wrapper") {
+      const caffeine = Buffer.from(CAFFEINATE_SOURCE_BASE64, "base64");
+      assert(
+        caffeine.length === 1923 &&
+          createHash("sha256").update(caffeine).digest("hex") ===
+            "00a386356bf8985331cd10b873719fe0ca81bf8751339c62f26237fdf5c47469",
+      );
+      await writeFile(path.join(root, "caffeinate.py"), caffeine, {
+        flag: "wx",
+        mode: 0o600,
+      });
+      const wrapper = path.join(root, "wrapper.py");
+      await writeFile(
+        wrapper,
+        `import importlib.util,pathlib,sys
+spec=importlib.util.spec_from_file_location('fixed_caffeinate',pathlib.Path(__file__).with_name('caffeinate.py'))
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+sys.exit(module.call(sys.argv[1:]))
+`,
+        { flag: "wx", mode: 0o600 },
+      );
+      args = ["-I", "-B", "-S", wrapper, binary, ...args];
+      executable = PYTHON;
+    }
     env.HOME = root;
     env.TMPDIR = root;
   }
@@ -272,10 +301,10 @@ with zipfile.ZipFile(archive) as z:
       await readFile(path.join(logs, "checkpoint-compile.stderr.log"), "utf8")
     ).slice(-2048),
   });
-  if (mode === "siso")
+  if (binaryPinPath)
     assert(
       createHash("sha256")
-        .update(await readFile(executable))
+        .update(await readFile(binaryPinPath))
         .digest("hex") === SISO_SHA,
     );
   // Keep owned scratch for ephemeral VM teardown; uncertain cleanup never authorizes deletion or another run.
