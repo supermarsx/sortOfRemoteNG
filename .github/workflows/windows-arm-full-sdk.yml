@@ -99,6 +99,7 @@ jobs:
         with:
           name: ${{ steps.transport.outputs.artifact_name }}
           path: ${{ steps.transport.outputs.seal_path }}
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
       - name: Retain bounded qualification records
@@ -106,13 +107,18 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-arm-full-sdk-records-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
           path: |
             .artifacts/windows-arm-full-sdk-*/full-sdk-controller-result.json
             .artifacts/windows-arm-full-sdk-*/full-source-*.json
             .artifacts/windows-arm-full-sdk-*/full-metadata-result.json
+            .artifacts/windows-arm-full-sdk-*/source-launcher.stdout.log
+            .artifacts/windows-arm-full-sdk-*/source-launcher.stderr.log
             .artifacts/windows-arm-full-sdk-*/full-sdk-engine-*.json
             .artifacts/windows-arm-full-sdk-*/full-sdk-engine-*.log
             .artifacts/windows-arm-full-sdk-*/jobs/*/receipt.json
+            .artifacts/windows-arm-full-sdk-*/jobs/*/stdout.log
+            .artifacts/windows-arm-full-sdk-*/jobs/*/stderr.log
             .artifacts/windows-arm-full-sdk-*/source-gn-logs/source-deadline.json

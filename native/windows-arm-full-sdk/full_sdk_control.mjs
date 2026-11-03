@@ -2807,6 +2807,9 @@ async function runSourcePhase(token) {
     state.issued = true;
     return receipt;
   } catch (error) {
+    // BEGIN SAFE SOURCE CHILD FAILURE CAPTURE
+    captureSourceChildFailure(error, state);
+    // END SAFE SOURCE CHILD FAILURE CAPTURE
     fail(state, error);
     await retireSourceOperation(token);
     throw state.primary;
@@ -3585,6 +3588,51 @@ function sourceContextRecord(token, profile, policy, policyRaw, sample) {
 // BEGIN BOUNDED STARTUP OBSERVABILITY
 // Diagnostic DATA only. No path/message/env/stack or capability is serialized.
 const startupErrorContexts = new WeakMap();
+// BEGIN SAFE SOURCE CHILD FAILURE DATA
+const sourceChildFailures = new WeakMap();
+function captureSourceChildFailure(error, state) {
+  // Copied observations only. Never read caller error fields, logs or paths,
+  // and never let diagnostic preparation change the original failure.
+  try {
+    if (
+      utilTypes.isProxy(error) ||
+      !utilTypes.isNativeError(error) ||
+      sourceChildFailures.has(error) ||
+      !(state.child instanceof ChildProcess) ||
+      !state.childEvents
+    )
+      return;
+    const e = state.childEvents;
+    const exitCode = (value) =>
+      Number.isSafeInteger(value) && value >= -2147483648 && value <= 4294967295
+        ? value
+        : null;
+    const signal = (value) =>
+      ["SIGTERM", "SIGKILL", "SIGABRT", "SIGINT"].includes(value)
+        ? value
+        : null;
+    const observed = {
+      phase: "source-launch",
+      spawned: e.spawn === true,
+      exited: e.exit === true,
+      closed: e.close === true,
+      stdoutClosed: e.stdout === true,
+      stderrClosed: e.stderr === true,
+      exitCode: exitCode(e.code),
+      closeCode: exitCode(e.closeCode),
+      exitSignal: signal(e.signal),
+      closeSignal: signal(e.closeSignal),
+      capturedBytes:
+        Number.isSafeInteger(state.outputBytes) && state.outputBytes >= 0
+          ? Math.min(state.outputBytes, SOURCE_LOG_CAP)
+          : null,
+    };
+    sourceChildFailures.set(error, Object.freeze(observed));
+  } catch {
+    /* Diagnostic failure cannot replace a primary, including false. */
+  }
+}
+// END SAFE SOURCE CHILD FAILURE DATA
 const STARTUP_FILE_KINDS = Object.freeze({
   initial: "none",
   profile: "profile",
@@ -3704,6 +3752,10 @@ function startupFailureReport(error) {
   };
   if (STARTUP_ERROR_CODES.has(own("code"))) diagnostic.code = own("code");
   if (STARTUP_SYSCALLS.has(own("syscall"))) diagnostic.syscall = own("syscall");
+  // BEGIN SAFE SOURCE CHILD FAILURE PROJECTION
+  const sourceChild = native ? sourceChildFailures.get(error) : undefined;
+  if (sourceChild) diagnostic.sourceChild = sourceChild;
+  // END SAFE SOURCE CHILD FAILURE PROJECTION
   return {
     kind: "windows-arm-full-sdk-failure",
     error: code,

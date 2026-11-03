@@ -233,7 +233,56 @@ const SOURCE_PARENT_INVERSE = {
     },
   ],
 };
+// BEGIN EXACT SOURCE FAILURE DATA INVERSE
+const SOURCE_FAILURE_INVERSE = {
+  rows: [
+    {
+      newRaw:
+        "    // BEGIN SAFE SOURCE CHILD FAILURE CAPTURE\n    captureSourceChildFailure(error, state);\n    // END SAFE SOURCE CHILD FAILURE CAPTURE\n",
+      oldRaw: "",
+      newSha256:
+        "6dc18d387df80488ff800f5f4c083dbc6668eaa057365a3bc2329550f6375103",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw:
+        '// BEGIN SAFE SOURCE CHILD FAILURE DATA\nconst sourceChildFailures = new WeakMap();\nfunction captureSourceChildFailure(error, state) {\n  // Copied observations only. Never read caller error fields, logs or paths,\n  // and never let diagnostic preparation change the original failure.\n  try {\n    if (\n      utilTypes.isProxy(error) ||\n      !utilTypes.isNativeError(error) ||\n      sourceChildFailures.has(error) ||\n      !(state.child instanceof ChildProcess) ||\n      !state.childEvents\n    )\n      return;\n    const e = state.childEvents;\n    const exitCode = (value) =>\n      Number.isSafeInteger(value) && value >= -2147483648 && value <= 4294967295\n        ? value\n        : null;\n    const signal = (value) =>\n      ["SIGTERM", "SIGKILL", "SIGABRT", "SIGINT"].includes(value)\n        ? value\n        : null;\n    const observed = {\n      phase: "source-launch",\n      spawned: e.spawn === true,\n      exited: e.exit === true,\n      closed: e.close === true,\n      stdoutClosed: e.stdout === true,\n      stderrClosed: e.stderr === true,\n      exitCode: exitCode(e.code),\n      closeCode: exitCode(e.closeCode),\n      exitSignal: signal(e.signal),\n      closeSignal: signal(e.closeSignal),\n      capturedBytes:\n        Number.isSafeInteger(state.outputBytes) && state.outputBytes >= 0\n          ? Math.min(state.outputBytes, SOURCE_LOG_CAP)\n          : null,\n    };\n    sourceChildFailures.set(error, Object.freeze(observed));\n  } catch {\n    /* Diagnostic failure cannot replace a primary, including false. */\n  }\n}\n// END SAFE SOURCE CHILD FAILURE DATA\n',
+      oldRaw: "",
+      newSha256:
+        "4282bbee73e81be418d4f4712892869856bb9cd125e8078d4365886fb0044273",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw:
+        "  // BEGIN SAFE SOURCE CHILD FAILURE PROJECTION\n  const sourceChild = native ? sourceChildFailures.get(error) : undefined;\n  if (sourceChild) diagnostic.sourceChild = sourceChild;\n  // END SAFE SOURCE CHILD FAILURE PROJECTION\n",
+      oldRaw: "",
+      newSha256:
+        "dd8b135bc6b6cae12bbf2458b94e13f3017fedd7946bce0dfcf4c0403e87476d",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+  ],
+  bytes: 173595,
+  sha256: "45df5ab874c3d1a7d9191ea3be9f8cbf1c9d43110092f592abb0d7eb9cbc3cc5",
+};
+function sourceFailureControllerInverse(text) {
+  const spec = SOURCE_FAILURE_INVERSE;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(text.split(row.newRaw).length, 2);
+    text = text.replace(row.newRaw, row.oldRaw);
+  }
+  assert.equal(Buffer.byteLength(text), spec.bytes);
+  assert.equal(hash(text), spec.sha256);
+  return text;
+}
+// END EXACT SOURCE FAILURE DATA INVERSE
+
 function sourceParentControllerInverse(text) {
+  text = sourceFailureControllerInverse(text);
   const spec = SOURCE_PARENT_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of spec.rows) {

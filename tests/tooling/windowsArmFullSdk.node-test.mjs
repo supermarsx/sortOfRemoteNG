@@ -4611,7 +4611,56 @@ const SOURCE_PARENT_INVERSE = {
     },
   ],
 };
+// BEGIN EXACT SOURCE FAILURE DATA INVERSE
+const SOURCE_FAILURE_INVERSE = {
+  rows: [
+    {
+      newRaw:
+        "    // BEGIN SAFE SOURCE CHILD FAILURE CAPTURE\n    captureSourceChildFailure(error, state);\n    // END SAFE SOURCE CHILD FAILURE CAPTURE\n",
+      oldRaw: "",
+      newSha256:
+        "6dc18d387df80488ff800f5f4c083dbc6668eaa057365a3bc2329550f6375103",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw:
+        '// BEGIN SAFE SOURCE CHILD FAILURE DATA\nconst sourceChildFailures = new WeakMap();\nfunction captureSourceChildFailure(error, state) {\n  // Copied observations only. Never read caller error fields, logs or paths,\n  // and never let diagnostic preparation change the original failure.\n  try {\n    if (\n      utilTypes.isProxy(error) ||\n      !utilTypes.isNativeError(error) ||\n      sourceChildFailures.has(error) ||\n      !(state.child instanceof ChildProcess) ||\n      !state.childEvents\n    )\n      return;\n    const e = state.childEvents;\n    const exitCode = (value) =>\n      Number.isSafeInteger(value) && value >= -2147483648 && value <= 4294967295\n        ? value\n        : null;\n    const signal = (value) =>\n      ["SIGTERM", "SIGKILL", "SIGABRT", "SIGINT"].includes(value)\n        ? value\n        : null;\n    const observed = {\n      phase: "source-launch",\n      spawned: e.spawn === true,\n      exited: e.exit === true,\n      closed: e.close === true,\n      stdoutClosed: e.stdout === true,\n      stderrClosed: e.stderr === true,\n      exitCode: exitCode(e.code),\n      closeCode: exitCode(e.closeCode),\n      exitSignal: signal(e.signal),\n      closeSignal: signal(e.closeSignal),\n      capturedBytes:\n        Number.isSafeInteger(state.outputBytes) && state.outputBytes >= 0\n          ? Math.min(state.outputBytes, SOURCE_LOG_CAP)\n          : null,\n    };\n    sourceChildFailures.set(error, Object.freeze(observed));\n  } catch {\n    /* Diagnostic failure cannot replace a primary, including false. */\n  }\n}\n// END SAFE SOURCE CHILD FAILURE DATA\n',
+      oldRaw: "",
+      newSha256:
+        "4282bbee73e81be418d4f4712892869856bb9cd125e8078d4365886fb0044273",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+    {
+      newRaw:
+        "  // BEGIN SAFE SOURCE CHILD FAILURE PROJECTION\n  const sourceChild = native ? sourceChildFailures.get(error) : undefined;\n  if (sourceChild) diagnostic.sourceChild = sourceChild;\n  // END SAFE SOURCE CHILD FAILURE PROJECTION\n",
+      oldRaw: "",
+      newSha256:
+        "dd8b135bc6b6cae12bbf2458b94e13f3017fedd7946bce0dfcf4c0403e87476d",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    },
+  ],
+  bytes: 173595,
+  sha256: "45df5ab874c3d1a7d9191ea3be9f8cbf1c9d43110092f592abb0d7eb9cbc3cc5",
+};
+function sourceFailureControllerInverse(text) {
+  const spec = SOURCE_FAILURE_INVERSE;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(hash(row.newRaw), row.newSha256);
+    assert.equal(text.split(row.newRaw).length, 2);
+    text = text.replace(row.newRaw, row.oldRaw);
+  }
+  assert.equal(Buffer.byteLength(text), spec.bytes);
+  assert.equal(hash(text), spec.sha256);
+  return text;
+}
+// END EXACT SOURCE FAILURE DATA INVERSE
+
 function sourceParentControllerInverse(text) {
+  text = sourceFailureControllerInverse(text);
   const spec = SOURCE_PARENT_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of spec.rows) {
@@ -6224,6 +6273,7 @@ async function createdSourceFixture(t, mode = "normal", overrides = {}) {
   await fs.writeFile(path.join(base, "fixture-payload.json"), payload);
   const program = `const fs=require('node:fs'),path=require('node:path');const root=process.argv[1],mode=process.argv[2];
   if(mode==='nonzero')process.exit(7);
+  if(mode==='nonzero-hostile'){process.stderr.write('SECRET_TOKEN private/source/path\\n');process.exit(7);}
   function run(){const files=JSON.parse(fs.readFileSync(path.join(root,'fixture-payload.json'),'utf8'));
     function bind(value){if(value==='CHILD_PID')return process.pid;if(Array.isArray(value))return value.map(bind);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,bind(v)]));return value;}
     if(mode==='bad-job')files['jobs/full-sdk-source-gn/receipt.json'].logReadersStopped=false;
@@ -9475,6 +9525,16 @@ test("startup observability has an exact whole-controller inverse and rejects ta
   for (const row of STARTUP_OBSERVABILITY_HISTORY.rows) {
     const current = row.newRaw
       .replace(
+        "const startupErrorContexts = new WeakMap();\n",
+        "const startupErrorContexts = new WeakMap();\n" +
+          SOURCE_FAILURE_INVERSE.rows[1].newRaw,
+      )
+      .replace(
+        '  if (STARTUP_SYSCALLS.has(own("syscall"))) diagnostic.syscall = own("syscall");\n',
+        '  if (STARTUP_SYSCALLS.has(own("syscall"))) diagnostic.syscall = own("syscall");\n' +
+          SOURCE_FAILURE_INVERSE.rows[2].newRaw,
+      )
+      .replace(
         "const STARTUP_ERROR_CODES = new Set([",
         CLOCK_FAILURE_INVERSE.block + "const STARTUP_ERROR_CODES = new Set([",
       )
@@ -9620,6 +9680,18 @@ async function sourceParentBootstrapFixture(t, mode) {
       "\n",
     ),
   );
+  // This isolated checkout models the exact current workflow/policy pairing.
+  // No production policy or source-session authority is changed by the fixture.
+  const fixturePolicyPath = path.join(here, "sdk-origin-review.json");
+  const fixturePolicy = JSON.parse(await fs.readFile(fixturePolicyPath));
+  const fixtureWorkflow = await fs.readFile(
+    path.join(repo, ".github/workflows/windows-arm-full-sdk.yml"),
+  );
+  fixturePolicy.workflowPin = {
+    bytes: fixtureWorkflow.length,
+    sha256: sha(fixtureWorkflow),
+  };
+  await fs.writeFile(fixturePolicyPath, JSON.stringify(fixturePolicy));
   const p = JSON.parse(await read(prefix + "full-sdk-source-profile.json"));
   const python = await benignPython(t);
   if (!python) return;
@@ -9906,5 +9978,174 @@ test("actual public bootstrap consumes original clock and preserves falsy cancel
     assert.equal(f.rootCreates, 0);
     assert.equal(f.ownerOpens, 0);
     await assert.rejects(fs.lstat(f.parent), { code: "ENOENT" });
+  }
+});
+test("source child failure diagnostic observes actual child exit without printing held private output or changing primary", async (t) => {
+  const f = await createdSourceFixture(t, "nonzero-hostile");
+  let primary;
+  try {
+    await f.api.runSourcePhase(f.token);
+    assert.fail("must reject");
+  } catch (error) {
+    primary = error;
+  }
+  assert.equal(primary, f.state.primary);
+  assert.match(primary.message, /^FULL_SDK_CONTROL_SOURCE_CHILD_JOIN$/);
+  const report = f.api.startupFailureReport(primary),
+    copied = report.diagnostic.sourceChild;
+  assert.deepEqual(copied, {
+    phase: "source-launch",
+    spawned: true,
+    exited: true,
+    closed: true,
+    stdoutClosed: true,
+    stderrClosed: true,
+    exitCode: 7,
+    closeCode: 7,
+    exitSignal: null,
+    closeSignal: null,
+    capturedBytes: Buffer.byteLength("SECRET_TOKEN private/source/path\n"),
+  });
+  assert(Object.isFrozen(copied));
+  assert(!JSON.stringify(report).includes("SECRET_TOKEN"));
+  assert(!JSON.stringify(report).includes("private/source/path"));
+  assert.equal(report.sdkBuilt, false);
+  assert.equal(report.nativeAcceptance, false);
+  assert.equal(f.state.cleanupConfirmed, true);
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.logFds.size, 0);
+  assert.equal(f.state.readFds.size, 0);
+  f.state.childEvents.code = 99;
+  assert.equal(
+    f.api.startupFailureReport(primary).diagnostic.sourceChild.exitCode,
+    7,
+  );
+  const log = await fs.readFile(
+    path.join(f.base, "source-launcher.stderr.log"),
+    "utf8",
+  );
+  assert.equal(log, "SECRET_TOKEN private/source/path\n");
+});
+
+test("source child diagnostic closed code signal and byte bounds remain DATA and falsy cancellation retires unchanged", async (t) => {
+  const { PassThrough } = await import("node:stream");
+  const child = new ChildProcess();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.pid = 12345;
+  let getters = 0;
+  const hostile = Object.defineProperty({}, "toString", {
+    get() {
+      getters++;
+      throw Error("PRIVATE");
+    },
+  });
+  const f = await createdSourceFixture(t, "non-production-native-events", {
+    spawn() {
+      queueMicrotask(() => {
+        child.emit("spawn");
+        child.emit("exit", hostile, "SECRET_SIGNAL");
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.emit("close", 4294967296, hostile);
+      });
+      return child;
+    },
+  });
+  let primary;
+  try {
+    await f.api.runSourcePhase(f.token);
+    assert.fail("must reject");
+  } catch (error) {
+    primary = error;
+  }
+  assert.equal(primary, f.state.primary);
+  const copied = f.api.startupFailureReport(primary).diagnostic.sourceChild;
+  assert.equal(copied.exitCode, null);
+  assert.equal(copied.closeCode, null);
+  assert.equal(copied.exitSignal, null);
+  assert.equal(copied.closeSignal, null);
+  assert.equal(getters, 0);
+  assert.equal(copied.capturedBytes, 0);
+  assert.equal(f.state.issued, false);
+  assert.equal(f.state.cleanupConfirmed, true);
+  const canceled = await createdSourceFixture(t, "wait");
+  const pending = canceled.api.runSourcePhase(canceled.token);
+  await untilCreated(() => canceled.state.childEvents?.spawn);
+  canceled.owner.cancel.abort(false);
+  await assert.rejects(pending, (error) => error === false);
+  assert.equal(canceled.state.primary, false);
+  assert.equal(canceled.state.closed, true);
+  assert.equal(canceled.state.logFds.size, 0);
+  assert.equal(canceled.state.pendingWriters, 0);
+  assert.equal(
+    Object.hasOwn(
+      canceled.api.startupFailureReport(false).diagnostic,
+      "sourceChild",
+    ),
+    false,
+  );
+});
+
+test("full SDK retention includes hidden owned bounded source logs and immutable seal without broad source or environment capture", async () => {
+  const workflow = (
+    await read(".github/workflows/windows-arm-full-sdk.yml")
+  ).replaceAll("\r\n", "\n");
+  const anchor = workflow
+    .split(
+      "      - name: Anchor the exact completed raw seal in immutable Actions storage\n",
+    )[1]
+    .split("      - name: Retain bounded qualification records\n")[0];
+  assert(
+    anchor.includes(
+      "          path: ${{ steps.transport.outputs.seal_path }}\n",
+    ),
+  );
+  assert(anchor.includes("          include-hidden-files: true\n"));
+  const records = workflow.split(
+    "      - name: Retain bounded qualification records\n",
+  )[1];
+  assert(records.includes("        if: always()\n"));
+  assert(records.includes("          include-hidden-files: true\n"));
+  const paths = records
+    .split("          path: |\n")[1]
+    .trim()
+    .split("\n")
+    .map((s) => s.trim());
+  assert.deepEqual(
+    paths,
+    [
+      "full-sdk-controller-result.json",
+      "full-source-*.json",
+      "full-metadata-result.json",
+      "source-launcher.stdout.log",
+      "source-launcher.stderr.log",
+      "full-sdk-engine-*.json",
+      "full-sdk-engine-*.log",
+      "jobs/*/receipt.json",
+      "jobs/*/stdout.log",
+      "jobs/*/stderr.log",
+      "source-gn-logs/source-deadline.json",
+    ].map((s) => ".artifacts/windows-arm-full-sdk-*/" + s),
+  );
+  assert(
+    paths.every(
+      (s) =>
+        !s.includes("**") &&
+        !s.includes("source-inputs") &&
+        !s.includes("environment") &&
+        !s.includes("context.json"),
+    ),
+  );
+  const source = await read(prefix + "full_sdk_control.mjs");
+  assert(source.includes("const SOURCE_LOG_CAP = 131072;"));
+  sourceFailureControllerInverse(source);
+  for (const row of SOURCE_FAILURE_INVERSE.rows) {
+    assert.throws(() =>
+      sourceFailureControllerInverse(
+        source.replace(row.newRaw, row.newRaw + "/*tamper*/"),
+      ),
+    );
+    assert.throws(() => sourceFailureControllerInverse(source + row.newRaw));
   }
 });
