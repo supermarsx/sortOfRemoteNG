@@ -16,7 +16,34 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
 const M = migration.LINUX_MIGRATION;
+function withoutPending740Checkpoint(text) {
+  const edits = [
+    [
+      '  head: "d70a98f07342cc823d37441e0a42daa2d7b90100",',
+      '  head: "9c73456b804a17aa59d62e41d5e33f55d0e38271",',
+    ],
+    [
+      '  producer: "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",',
+      '  producer: "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",',
+    ],
+    [
+      "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+      "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+    ],
+  ];
+  for (const [after, before] of edits) {
+    assert.equal(text.split(after).length, 2, "one exact pending740 retarget");
+    text = text.replace(after, before);
+  }
+  assert.equal(Buffer.byteLength(text), 123573);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "63f9b2f0e9ccddd48509f56ef629988640f09192aeb7d5264e1a7f34f6ec7a13",
+  );
+  return text;
+}
 function withoutLatestCheckpoint(text) {
+  text = withoutPending740Checkpoint(text);
   const edits = [
     [
       '  head: "9c73456b804a17aa59d62e41d5e33f55d0e38271",',
@@ -51,6 +78,42 @@ function withoutLatestCheckpoint(text) {
   );
   return text;
 }
+test("draft740 retarget restores the complete63f module without inventing a sealed checkpoint", async () => {
+  const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
+  withoutPending740Checkpoint(text);
+  assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
+  assert.equal(
+    M.producer,
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
+  );
+  assert.equal(M.sourceFiles, 131);
+  assert.equal(
+    M.policyPath,
+    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
+  );
+  await assert.rejects(fs.stat(path.join(ROOT, M.policyPath)), {
+    code: "ENOENT",
+  });
+  await assert.rejects(
+    migration.readLinuxMigrationSelection({
+      runId: 41640765677,
+      admitted: true,
+    }),
+    /SELECTION_ARGUMENTS/,
+  );
+  const historical = await fs.readFile(
+    path.join(
+      ROOT,
+      "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+    ),
+  );
+  assert.equal(historical.length, 19291);
+  assert.equal(
+    core.sha(historical),
+    "aa40d0d9917cc8e5a378099034aa6e29b90b92526c889930a9e3a6570df87daa",
+  );
+});
+
 function withoutColdMetalCompanion(text) {
   text = withoutLatestCheckpoint(text);
   {
@@ -2034,21 +2097,24 @@ test("a source owner retired during an awaited apply cannot reach GN, readiness 
   assert(!m.events.includes("new-record"));
 });
 
-test("latest sealed checkpoint retarget preserves complete prior module and immutable A4 history", async () => {
+test("latest sealed checkpoint history survives the inactive740 draft retarget", async () => {
   const text = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutLatestCheckpoint(text);
-  assert.equal(M.head, "9c73456b804a17aa59d62e41d5e33f55d0e38271");
+  assert.equal(M.head, "d70a98f07342cc823d37441e0a42daa2d7b90100");
   assert.equal(
     M.producer,
-    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+    "740ab30207a1b2cb3d1d656c269cafd3a57f9bf15d5356314f74738c2626e859",
   );
   assert.equal(M.sourceFiles, 131);
   assert.equal(
     M.policyPath,
-    "native/cef-checkpoint-migrations/linux-arm-9da5a2b3-mac-source-v1.json",
+    "native/cef-checkpoint-migrations/linux-arm-740ab302-mac-source-v1.json",
   );
   assert.equal(LATEST_SOURCE_ROWS.length, 131);
-  assert.equal(core.codeTreeDigest(LATEST_SOURCE_ROWS), M.producer);
+  assert.equal(
+    core.codeTreeDigest(LATEST_SOURCE_ROWS),
+    "9da5a2b3fefbd4f03d53bfb24cac0941d7852adf8bc3529721efcfab5ec3780c",
+  );
   assert.equal(OLD_SOURCE_ROWS.length, 129);
   assert.equal(
     core.codeTreeDigest(OLD_SOURCE_ROWS),
