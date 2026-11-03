@@ -20,12 +20,28 @@ import {
 // runner. No vendor tool, native GN, GitHub or production registry is exercised.
 const url = new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url);
 const source = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
-assert.equal(Buffer.byteLength(source), 77002);
+assert.equal(Buffer.byteLength(source), 77173);
 assert.equal(
   createHash("sha256").update(source).digest("hex"),
-  "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",
+  "0b1e92b48812a697895f43a3310ac450fbecdc19c3dd1b2cc5619589bda31523",
 );
+function withoutMacOriginalSourceLease(text) {
+  const current =
+    '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(\n          engineering\n            ? (target === "x86_64-apple-darwin" ||\n              target === "aarch64-apple-darwin"\n                ? 180\n                : 120) * 60_000\n            : undefined,\n        )\n      : undefined;\n  // END fixed Linux engineering source budget';
+  const prior =
+    '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)\n      : undefined;\n  // END fixed Linux engineering source budget';
+  assert.equal(text.split(current).length, 2);
+  const restored = text.replace(current, prior);
+  assert.equal(Buffer.byteLength(restored), 77002);
+  assert.equal(
+    createHash("sha256").update(restored).digest("hex"),
+    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",
+  );
+  return restored;
+}
+
 function withoutMacPreparationBudget(text) {
+  text = withoutMacOriginalSourceLease(text);
   for (const [current, prior] of [
     [
       '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)\n      : undefined;\n  // END fixed Linux engineering source budget\n  if (engineering) {\n',
@@ -100,7 +116,7 @@ function withoutLinuxSourceBudget(text) {
   );
   return restored;
 }
-test("Linux and Mac engineering use one original120-minute preparation budget; ordinary300 and host fence remain", () => {
+test("Linux120 and Mac180 engineering use one original preparation budget; ordinary300 and host fence remain", () => {
   const begin = source.indexOf(
       "  // BEGIN fixed Linux engineering source budget\n",
     ),
@@ -117,8 +133,8 @@ test("Linux and Mac engineering use one original120-minute preparation budget; o
   );
   for (const [engineering, target, minutes] of [
     [true, "aarch64-unknown-linux-gnu", 120],
-    [true, "aarch64-apple-darwin", 120],
-    [true, "x86_64-apple-darwin", 120],
+    [true, "aarch64-apple-darwin", 180],
+    [true, "x86_64-apple-darwin", 180],
     [false, "aarch64-unknown-linux-gnu", 300],
   ]) {
     let now = 10,
@@ -142,7 +158,7 @@ test("Linux and Mac engineering use one original120-minute preparation budget; o
       );
       assert(
         budget.remaining() > 0,
-        "actual65min source path remains inside original120min",
+        "actual65min source path remains inside original180min",
       );
     }
     now += minutes * 60000;

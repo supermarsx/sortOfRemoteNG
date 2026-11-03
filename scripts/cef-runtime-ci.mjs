@@ -1433,7 +1433,14 @@ export async function build(
   // BEGIN fixed Linux engineering source budget
   let budget =
     runnerMode === "hosted"
-      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)
+      ? createHostedBuildBudget(
+          engineering
+            ? (target === "x86_64-apple-darwin" ||
+              target === "aarch64-apple-darwin"
+                ? 180
+                : 120) * 60_000
+            : undefined,
+        )
       : undefined;
   // END fixed Linux engineering source budget
   if (engineering) {

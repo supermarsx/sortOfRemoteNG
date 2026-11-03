@@ -942,6 +942,7 @@ import {
   assertHostedBuildIdentity,
   assertHostedCapacity,
   buildEnvironment,
+  createHostedBuildBudget,
 } from "../../scripts/cef-runtime-ci.mjs";
 import {
   argumentsFor,
@@ -15798,7 +15799,24 @@ const MAC_SOURCE_BUDGET_BASELINES = {
     ],
   },
 };
+function withoutMacOriginalSourceLease(text) {
+  const current =
+    '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(\n          engineering\n            ? (target === "x86_64-apple-darwin" ||\n              target === "aarch64-apple-darwin"\n                ? 180\n                : 120) * 60_000\n            : undefined,\n        )\n      : undefined;\n  // END fixed Linux engineering source budget';
+  const prior =
+    '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(engineering ? 120 * 60_000 : undefined)\n      : undefined;\n  // END fixed Linux engineering source budget';
+  assert.equal(text.split(current).length, 2);
+  const restored = text.replace(current, prior);
+  assert.equal(Buffer.byteLength(restored), 77002);
+  assert.equal(
+    sha(restored),
+    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",
+  );
+  return restored;
+}
+
 function withoutMacSourceBudget(text, name) {
+  if (name === "scripts/cef-runtime-ci.mjs")
+    text = withoutMacOriginalSourceLease(text);
   text = withoutMacSourceCompletion(text, name);
   const baseline = MAC_SOURCE_BUDGET_BASELINES[name];
   assert(baseline);
@@ -16560,4 +16578,223 @@ test("Mac3600 diagnostic survives actual archive observer before65min parent; ex
       assert.equal(diagnostics[0].sourceDeadlineFailure.seconds, 3600);
     else assert.equal(diagnostics[0].sourceDeadlineFailureInvalid, true);
   }
+});
+
+test("measured Mac original source180 starts once before acquisition and preserves Linux120 ordinary300 and original deadlines", async () => {
+  const text = (
+    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const previous = withoutMacOriginalSourceLease(text);
+  const extract = (source) => {
+    const ast = ts.createSourceFile(
+      "runtime.mjs",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+    const build = ast.statements.find(
+      (n) => ts.isFunctionDeclaration(n) && n.name?.text === "build",
+    );
+    assert(build);
+    const initial = build.body.statements.find(
+      (n) =>
+        ts.isVariableStatement(n) &&
+        n.declarationList.declarations.some(
+          (d) => d.name.getText(ast) === "budget",
+        ),
+    );
+    assert(initial);
+    const plan = build.body.statements.find((n) =>
+      n.getText(ast).includes("await plan("),
+    );
+    assert(
+      initial.pos < plan.pos,
+      "one original clock precedes source acquisition",
+    );
+    return initial.getText(ast);
+  };
+  const current = extract(text),
+    old = extract(previous);
+  for (const [target, engineering, runnerMode, milliseconds] of [
+    ["x86_64-apple-darwin", {}, "hosted", 180 * 60000],
+    ["aarch64-apple-darwin", {}, "hosted", 180 * 60000],
+    ["aarch64-unknown-linux-gnu", {}, "hosted", 120 * 60000],
+    ["x86_64-apple-darwin", undefined, "hosted", 300 * 60000],
+    ["x86_64-apple-darwin", undefined, "dedicated", undefined],
+  ]) {
+    let now = 0,
+      calls = 0;
+    const factory = new Function(
+      "runnerMode",
+      "engineering",
+      "target",
+      "createHostedBuildBudget",
+      current + "\nreturn budget;",
+    );
+    const budget = factory(runnerMode, engineering, target, (value) => {
+      calls++;
+      return createHostedBuildBudget(value, () => now);
+    });
+    assert.equal(calls, milliseconds === undefined ? 0 : 1);
+    if (!budget) continue;
+    assert.equal(budget.remaining(), milliseconds);
+    now = milliseconds - 1;
+    assert.equal(budget.remaining(), 1);
+    now = milliseconds;
+    assert.equal(budget.remaining(), 0);
+    assert.throws(() => budget.assertRemaining(), /budget exhausted/);
+    assert.equal(calls, 1, "no phase renewal");
+  }
+  for (const [target, sourceAtLaunch, oldHelper] of [
+    ["x86_64-apple-darwin", 1909913, 1849],
+    ["aarch64-apple-darwin", 1205825, 1145],
+  ]) {
+    for (const body of [old, current]) {
+      let now = 0;
+      const budget = new Function(
+        "runnerMode",
+        "engineering",
+        "target",
+        "createHostedBuildBudget",
+        body + "\nreturn budget;",
+      )("hosted", {}, target, (value) =>
+        createHostedBuildBudget(value, () => now),
+      );
+      // These are the actual original source-clock samples at helper launch,
+      // not a renewed record budget or a claim that a native full hash finished.
+      now = 120 * 60000 - sourceAtLaunch;
+      const parent = Math.min(
+        LIMITS.macSourceMetadataMs,
+        hostRemaining({ CEF_ENGINEERING_JOB_STARTED_MS: "1000" }, 1000 + now),
+        budget.remaining(),
+      );
+      const seconds = Math.min(
+        3600,
+        Math.floor((parent > 120000 ? parent - 60000 : parent) / 1000),
+      );
+      assert.equal(seconds, body === old ? oldHelper : 3600);
+      const initialRemaining = budget.remaining();
+      now += 60000;
+      assert.equal(budget.remaining(), initialRemaining - 60000);
+    }
+  }
+  assert.throws(() => createHostedBuildBudget(301 * 60000), /bounded/);
+  assert.equal(LIMITS.hostMs, 300 * 60000);
+  assert.equal(AUTO_SLICE.reserveMs, 70 * 60000);
+  assert.equal(LIMITS.macSourceMetadataMs, 65 * 60000);
+  assert.equal(LIMITS.macSourceMetadataHelperMs, 60 * 60000);
+  assert.equal(LIMITS.linuxSourceMetadataMs, 40 * 60000);
+  assert.equal(LIMITS.archiveMs, 600000);
+});
+
+test("actual Mac metadata closure uses the retained original source180 rather than renewing after measured acquisition", async () => {
+  const runtime = (
+    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const oldRuntime = withoutMacOriginalSourceLease(runtime);
+  const begin = "  // BEGIN fixed Linux engineering source budget",
+    end = "  // END fixed Linux engineering source budget";
+  const getInitial = (text) =>
+    text.slice(text.indexOf(begin), text.indexOf(end) + end.length);
+  const cli = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "cli.mjs",
+    cli,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  let arrow;
+  const visit = (node) => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.left.getText(ast) === "sourceMetadata" &&
+      ts.isArrowFunction(node.right)
+    )
+      arrow = node.right.getText(ast);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  assert(arrow);
+  for (const [policy, target, beforeRemaining, reobserveMs, expectedOld] of [
+    ["mac-intel", "x86_64-apple-darwin", 2312463, 402550, 1849],
+    ["mac-arm", "aarch64-apple-darwin", 1559740, 353915, 1145],
+  ])
+    for (const mode of ["source-record", "source-apply"]) {
+      for (const source of [oldRuntime, runtime]) {
+        let now = 0,
+          allocations = 0;
+        const args = [];
+        const budget = new Function(
+          "runnerMode",
+          "engineering",
+          "target",
+          "createHostedBuildBudget",
+          getInitial(source) + "\nreturn budget;",
+        )("hosted", {}, target, (value) => {
+          allocations++;
+          return createHostedBuildBudget(value, () => now);
+        });
+        const context = {
+          sourceRemainingMilliseconds: () => budget.remaining(),
+          macExternalInputs: {},
+          reobserveMacExternalInputs: async () => {
+            now += reobserveMs;
+            return {};
+          },
+        };
+        now = 120 * 60000 - beforeRemaining;
+        const scope = {
+          sourceMetadataPlan: () => ({
+            mode,
+            source: "/owned/source",
+            sidecar: "/owned/out",
+            platformPolicy: policy,
+          }),
+          identity: {},
+          out: "/owned/out",
+          LIMITS,
+          hostRemaining: () => LIMITS.hostMs - now,
+          env: {},
+          fail: assert,
+          sourceMetadataResult: (x) => x,
+          archiveCommand: async (...call) => {
+            args.push(call);
+            return { complete: true };
+          },
+          verified: { python: "fixed" },
+          HELPER: "fixed",
+          identityFile: "/owned/identity",
+          checkpointLog: () => {},
+          canonical: JSON.stringify,
+          console: { log: () => {} },
+          macSource: { binding: () => ({}) },
+          context,
+          performance: { now: () => now },
+          Number,
+          Math,
+        };
+        await vm.runInNewContext(`(${arrow})`, scope)(mode);
+        assert.equal(
+          args[0][2][8],
+          String(source === oldRuntime ? expectedOld : 3600),
+        );
+        assert.equal(allocations, 1);
+        assert.equal(
+          args[0][3].timeout,
+          source === oldRuntime ? beforeRemaining - reobserveMs : 65 * 60000,
+        );
+        now = source === oldRuntime ? 120 * 60000 : 180 * 60000;
+        await assert.rejects(
+          vm.runInNewContext(`(${arrow})`, scope)(mode),
+          /Source metadata original host deadline/,
+        );
+        assert.equal(args.length, 1);
+        assert.equal(allocations, 1);
+      }
+    }
 });

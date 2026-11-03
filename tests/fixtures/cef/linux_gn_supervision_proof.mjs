@@ -44,8 +44,8 @@ const PINS = [
   ],
   [
     RUNTIME,
-    77002,
-    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",
+    77173,
+    "0b1e92b48812a697895f43a3310ac450fbecdc19c3dd1b2cc5619589bda31523",
   ],
   [
     "scripts/browser-runtime-package.mjs",

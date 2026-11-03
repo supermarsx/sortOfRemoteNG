@@ -2127,7 +2127,23 @@ const directCaseInverse = [
     ],
   },
 ];
+function withoutMacOriginalSourceLeaseFixturePin(source) {
+  const current =
+    '    RUNTIME,\n    77173,\n    "0b1e92b48812a697895f43a3310ac450fbecdc19c3dd1b2cc5619589bda31523",';
+  const prior =
+    '    RUNTIME,\n    77002,\n    "cfd1b9a5ccc6c697e17ed9eba22478ae38e10eda2a584c3d2776554ce7a534f3",';
+  assert.equal(source.split(current).length, 2);
+  const restored = source.replace(current, prior);
+  assert.equal(Buffer.byteLength(restored), 68126);
+  assert.equal(
+    createHash("sha256").update(restored).digest("hex"),
+    "631110829cf4112fbda2c6ad67c1d2291750f9f91d9e65fce4ab25cbfe23803d",
+  );
+  return restored;
+}
+
 function withoutMacCompletionFixturePin(source) {
+  source = withoutMacOriginalSourceLeaseFixturePin(source);
   const current =
     '    CORE,\n    243135,\n    "3ef499315c7cb01d0e091f78b1e1769642b08fe78c1eb6bef9d3d6c6d99b3266",';
   const prior =
@@ -2236,7 +2252,7 @@ function withoutColdMetalFixtureRetarget(source) {
 
 test("cold Metal retarget restores the whole9c fixture before all existing proof inverses", () => {
   withoutColdMetalFixtureRetarget(fixture);
-  for (const changed of [fixture + "\n", fixture.replace("77002", "77003")]) {
+  for (const changed of [fixture + "\n", fixture.replace("77173", "77174")]) {
     assert.throws(() => withoutColdMetalFixtureRetarget(changed));
   }
 });
