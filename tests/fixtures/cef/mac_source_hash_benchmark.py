@@ -1,222 +1,115 @@
-"""Fixed benign timing evidence; never a source, SDK or runtime grant."""
-import concurrent.futures as futures
-from contextvars import copy_context
-import hashlib, io, json, os, platform, re, stat, sys, tempfile, threading, time, types, unittest
+"""Fixed benign Darwin owning-codec evidence. Never a CEF source grant."""
+import hashlib,io,json,os,platform,re,stat,sys,time,types,unittest
 from pathlib import Path
 
 BRANCH='refs/heads/codex/mac-source-hash-benchmark-20261103'
-HELPER='scripts/lib/cef-checkpoint-archive.py'
-HELPER_SHA='3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6'
 PYTHON='/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14'
 PYTHON_SHA='b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d'
+HELPER_SHA='c728e702508d1a22417197c056d064c496528af82a29b5c993e6f4f521a74dcb'
+FD_SHA='fc1ce9ffb52fddf0a368c664b3ec15f99ca596259eb90db6be2f5675d36b1721'
+NOOP_SHA='8500196f4ec52dffeab214b90dd9ac2746ba801fb29ce4f9f535b5deb7c5f8e2'
 TEMP=Path('/Users/runner/work/_temp')
 PHASE='authority'
-CONTROL_RESULT=None
-PROTOTYPE_SHA='2d3c5710df44e04b38abcdd98909fc72db7c0fc7f70db094d0695d8705f005cd'
-CONTROL_SHA='c167fc60cb7d2c6a0ec947b64d582f7b68f2fc8009ee58f75176b8a9348c9a46'
-def coalesced_prototype_source(raw):
-    require(type(raw)is bytes and len(raw)==14227 and hashlib.sha256(raw).hexdigest()==PROTOTYPE_SHA)
-    substitutions=[
-      (b'            fd,owned=self.parent(parent)\n            for row in rows:\n',b'            fd,owned=self.parent(parent)\n            self.directory_check(parent,fd)\n            for row in rows:\n'),
-      (b'                self.directory_check(parent,fd)\n                leaf=Leaf',b'                leaf=Leaf'),
-      (b'                self.directory_check(parent,fd);self.budget.check()\n',b'                self.budget.check()\n')]
-    value=raw
-    for old,new in substitutions:require(value.count(old)==1);value=value.replace(old,new,1)
-    restored=value
-    for old,new in reversed(substitutions):require(restored.count(new)==1);restored=restored.replace(new,old,1)
-    require(restored==raw and value.count(b'self.ancestry_check(parent);self.directory_check(parent,fd)')==1)
-    return value,{'wholeInverseExact':True,'baseSha256':PROTOTYPE_SHA,'derivedSha256':hashlib.sha256(value).hexdigest(),'batchCap':32,'boundary':'Before-and-after accepted batch; not continuous namespace monitoring or atomic CAS'}
-def run_controls(controls_raw,path,prototype,helper_raw,prototype_raw,budget):
-    global CONTROL_RESULT
-    controls=types.ModuleType('fixed_hash_controls');controls.__file__=str(path)
-    exec(compile(controls_raw,str(path),'exec'),controls.__dict__);controls.configure(prototype,helper_raw,prototype_raw)
-    class Result(unittest.TextTestResult):
-        def startTest(self,test):budget.check();super().startTest(test)
-    result=unittest.TextTestRunner(stream=io.StringIO(),verbosity=0,resultclass=Result).run(unittest.defaultTestLoader.loadTestsFromModule(controls))
-    failed=[test._testMethodName for test,_ in result.failures+result.errors]
-    require(all(re.fullmatch('test_[a-z_]{1,120}',name)for name in failed))
-    CONTROL_RESULT={'tests':result.testsRun,'skipped':len(result.skipped),'failures':len(result.failures),'errors':len(result.errors),'failedTests':failed,'naturalABAObservations':list(controls.NATURAL_ABA_OBSERVATIONS)}
-    require(result.wasSuccessful()and result.testsRun==18 and not result.skipped)
-    return CONTROL_RESULT
+RESULTS=[]
+
 def require(ok):
-    if not ok:raise RuntimeError('BENCHMARK_CONTRACT')
-def identity(s):return (s.st_dev,s.st_ino,s.st_size,s.st_mode,s.st_nlink,s.st_mtime_ns,s.st_ctime_ns)
+    if not ok:raise RuntimeError('OWNED_FIXTURE_CONTRACT')
+
+def identity(s):return (s.st_dev,s.st_ino,s.st_mode,s.st_nlink,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+
 def pin(path,maximum,expected=None):
-    before=path.lstat();require(stat.S_ISREG(before.st_mode) and before.st_nlink==1 and 0<before.st_size<=maximum)
+    before=path.lstat();require(stat.S_ISREG(before.st_mode)and before.st_nlink==1 and 0<before.st_size<=maximum)
     with path.open('rb')as stream:
         require(identity(before)==identity(os.fstat(stream.fileno())))
         raw=stream.read(maximum+1)
-        require(len(raw)==before.st_size and identity(os.fstat(stream.fileno()))==identity(before)==identity(path.lstat()))
+        require(len(raw)==before.st_size and identity(before)==identity(os.fstat(stream.fileno()))==identity(path.lstat()))
     digest=hashlib.sha256(raw).hexdigest();require(expected is None or digest==expected)
     return raw,{'bytes':len(raw),'sha256':digest}
+
 class OriginalBudget:
     def __init__(self,started):
         now=time.time();require(0<=now-started<780)
         self.wall_end=started+840;self.end=time.monotonic()+min(720,self.wall_end-now)
         self.seconds=min(720,int(self.wall_end-now))
     def check(self):
-        if time.monotonic()>=self.end or time.time()>=self.wall_end:raise TimeoutError('BENCHMARK_DEADLINE')
-def hashes(module,root,rows,budget,workers,expected):
-    iterator=iter(rows);pending={};actual={};active=0;peak=0;lock=threading.Lock()
-    def one(row):
-        nonlocal active,peak
-        with lock:active+=1;peak=max(peak,active)
-        try:return module.source_hash(root,row,budget,{'mac':True,'ownedMacIntel':True})
-        finally:
-            with lock:active-=1
-    pool=futures.ThreadPoolExecutor(max_workers=workers);failed=False;primary=None
-    try:
-        def submit():
-            budget.check();row=next(iterator,None)
-            if row is not None:pending[pool.submit(copy_context().run,one,row)]=row['path']
-        for _ in range(workers):submit()
-        while pending:
-            budget.check();done,_=futures.wait(pending,timeout=0.25,return_when=futures.FIRST_COMPLETED)
-            for task in done:actual[pending.pop(task)]=task.result()
-            for _ in done:submit()
-        require(actual==expected)
-    except BaseException as error:
-        failed=True;primary=error
-        for task in pending:task.cancel()
-        raise
-    finally:
-        try:
-            pool.shutdown(wait=True,cancel_futures=failed);require(active==0)
-        except BaseException:
-            if primary is None:raise
-    budget.check();require(not module.SOURCE_CLOSE_FAILURE and not module.SOURCE_JOIN_FAILURE)
-    return peak
+        if time.monotonic()>=self.end or time.time()>=self.wall_end:raise TimeoutError('OWNED_FIXTURE_DEADLINE')
+
+def module(raw,path,initial):
+    value=types.ModuleType('held_'+path.stem);value.__file__=str(path);value.__dict__.update(initial)
+    exec(compile(raw,str(path),'exec'),value.__dict__);return value
+
+def controls(value,budget,expected):
+    class Result(unittest.TextTestResult):
+        def startTest(self,test):budget.check();super().startTest(test)
+    result=unittest.TextTestRunner(stream=io.StringIO(),verbosity=0,resultclass=Result).run(unittest.defaultTestLoader.loadTestsFromModule(value))
+    failed=[test._testMethodName for test,_ in result.failures+result.errors]
+    require(all(re.fullmatch('test_[a-z_]{1,120}',name)for name in failed))
+    summary={'tests':result.testsRun,'skipped':len(result.skipped),'failures':len(result.failures),'errors':len(result.errors),'failedTests':failed}
+    RESULTS.append(summary);require(result.wasSuccessful()and result.testsRun==expected and not result.skipped)
+    return summary
+
 def main():
-    global PHASE,CONTROL_RESULT
+    global PHASE
     env=os.environ
-    # Authority fences precede fixture creation and helper import.
-    require(len(sys.argv)==1 and sys.platform=='darwin' and platform.machine()=='x86_64')
-    require(env.get('GITHUB_REPOSITORY')=='supermarsx/sortOfRemoteNG' and env.get('GITHUB_REPOSITORY_ID')=='1010282954')
-    require(env.get('GITHUB_REF')==BRANCH and env.get('GITHUB_EVENT_NAME')=='workflow_dispatch')
-    require(env.get('GITHUB_REPOSITORY_VISIBILITY')=='public' and env.get('GITHUB_ACTIONS')=='true' and env.get('RUNNER_ENVIRONMENT')=='github-hosted')
-    require(env.get('ImageOS')=='macos15' and env.get('ImageVersion')=='20260824.0482.1')
-    require(env.get('RUNNER_TEMP')==str(TEMP) and re.fullmatch('[a-f0-9]{40}',env.get('GITHUB_SHA','')))
-    started=env.get('CEF_MAC_HASH_BENCHMARK_STARTED_MS','');require(re.fullmatch('[0-9]{13}',started) is not None)
+    require(len(sys.argv)==1 and sys.platform=='darwin'and platform.machine()=='x86_64')
+    require(env.get('GITHUB_REPOSITORY')=='supermarsx/sortOfRemoteNG'and env.get('GITHUB_REPOSITORY_ID')=='1010282954')
+    require(env.get('GITHUB_REF')==BRANCH and env.get('GITHUB_EVENT_NAME')=='workflow_dispatch'and env.get('GITHUB_REPOSITORY_VISIBILITY')=='public')
+    require(env.get('GITHUB_ACTIONS')=='true'and env.get('RUNNER_ENVIRONMENT')=='github-hosted')
+    require(env.get('ImageOS')=='macos15'and env.get('ImageVersion')=='20260824.0482.1'and env.get('RUNNER_TEMP')==str(TEMP))
+    require(re.fullmatch('[a-f0-9]{40}',env.get('GITHUB_SHA',''))is not None)
+    started=env.get('CEF_MAC_HASH_BENCHMARK_STARTED_MS','');require(re.fullmatch('[0-9]{13}',started)is not None)
     budget=OriginalBudget(int(started)/1000)
-    temp_info=TEMP.lstat();require(stat.S_ISDIR(temp_info.st_mode) and temp_info.st_uid==os.geteuid() and TEMP.resolve()==TEMP)
-    repo=Path(__file__).resolve().parents[3];require(repo==Path(env['GITHUB_WORKSPACE']).resolve())
-    head_sha=hashlib.sha256((env['GITHUB_SHA']+'\n').encode()).hexdigest()
-    pin(repo/'.git/HEAD',41,head_sha)
-    raw,helper_pin=pin(repo/HELPER,209410,HELPER_SHA);require(len(raw)==209410)
-    _,python_pin=pin(Path(PYTHON),1024**2,PYTHON_SHA);require(Path(sys.executable).resolve()==Path(PYTHON).resolve())
-    _,self_pin=pin(Path(__file__),65536)
+    repo=Path(__file__).resolve().parents[3];head,head_pin=pin(repo/'.git/HEAD',41)
+    require(head==(env['GITHUB_SHA']+'\n').encode())
+    python_raw,python_pin=pin(Path(PYTHON),16384,PYTHON_SHA);require(Path(sys.executable).resolve()==Path(PYTHON).resolve())
     workflow=repo/'.github/workflows/cef-engineering-checkpoint.yml';_,workflow_pin=pin(workflow,65536)
-    prototype_path=Path(__file__).with_name('mac_source_hash_amortization_prototype.py')
-    controls_path=Path(__file__).with_name('mac_source_hash_amortization_test.py')
-    prototype_raw,prototype_pin=pin(prototype_path,65536,PROTOTYPE_SHA)
-    controls_raw,controls_pin=pin(controls_path,65536,CONTROL_SHA)
-    # Execute the entire actual held module bytes; never reopen an unchecked
-    # named source file between its pin check and code loading.
-    module=types.ModuleType('unchanged_archive');module.__file__=str(repo/HELPER)
-    exec(compile(raw,str(repo/HELPER),'exec'),module.__dict__)
-    pin(repo/HELPER,209410,HELPER_SHA)
-    # Preserve this bounded scratch tree for ephemeral host teardown. Never
-    # recursively delete a name that another process could have replaced.
-    PHASE='fixture-create';root=Path(tempfile.mkdtemp(prefix='cef-mac-hash-benchmark-',dir=TEMP));root.chmod(0o700)
-    rows=[];expected={};sizes=(0,97,4096,65536)
-    for n in range(4000):
-        budget.check();p=root/'source/src/third_party/owned/fixture/deep'/str(n//100)/('input'+str(n))
-        p.parent.mkdir(mode=0o700,parents=True,exist_ok=True);data=bytes((n%251,))*sizes[n%4]
-        with p.open('xb')as stream:require(stream.write(data)==len(data))
-        p.chmod(0o600);s=p.stat();name=p.relative_to(root).as_posix()
-        rows.append({'path':name,'kind':'file','stamp':module.stamp(s),'ctimeNs':s.st_ctime_ns,'birthIdentity':module.source_birth_identity(s),'uid':s.st_uid,'gid':s.st_gid})
-        expected[name]=hashlib.sha256(data).hexdigest()
-    PHASE='baseline-hash';results=[];configured=module.SOURCE_HASH_WORKERS;require(1<=configured<=8)
-    for label,workers in [('sequential',1),('current',configured),('four',4),('eight',8),('current-repeat',configured),('sequential-repeat',1)]:
-        begin=time.monotonic();peak=hashes(module,root,rows,budget,workers,expected)
-        results.append({'label':label,'workers':workers,'pendingCap':workers,'observedPeakReaders':peak,'elapsedMs':round((time.monotonic()-begin)*1000),'digestsExact':True,'readersJoined':True})
-    PHASE='baseline-snapshot';snapshots=[];previous=None
-    for _ in range(2):
-        budget.check();begin=time.monotonic()
-        # Actual internal Mac read-only DATA codec. No real source repositories,
-        # external tool profile, source lease or production identity is forged.
-        context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}}
-        module.source_progress_start(budget.seconds)
-        value=module.source_snapshot(root,budget,context=context);module.source_phase('done')
-        for row in value['entries']:
-            if row['kind']=='file':require(row['sha256']==expected[row['path']])
-        require(previous is None or previous==value);previous=value
-        snapshots.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in module.SOURCE_PROGRESS['phases']]})
-    PHASE='prototype-controls'
-    prototype=types.ModuleType('fixed_hash_prototype');prototype.__file__=str(prototype_path)
-    exec(compile(prototype_raw,str(prototype_path),'exec'),prototype.__dict__)
-    base_control_result=run_controls(controls_raw,controls_path,prototype,raw,prototype_raw,budget)
-    PHASE='prototype-snapshot';candidate,observations,inverse=prototype.snapshot_module(raw);candidate_snapshots=[]
-    for _ in range(2):
-        budget.check();begin=time.monotonic();candidate.source_progress_start(budget.seconds)
-        value=candidate.source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
-        candidate.source_phase('done');require(value==previous)
-        candidate_snapshots.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in candidate.SOURCE_PROGRESS['phases']]})
-    variants=[];PHASE='prototype-worker-variants'
-    for workers in (1,2):
-        # Fixed experimental derivations only. No caller/environment selector.
-        old=b'WORKERS=4\n';new=('WORKERS='+str(workers)+'\n').encode()
-        require(prototype_raw.count(old)==1)
-        variant_raw=prototype_raw.replace(old,new,1)
-        require(variant_raw.count(new)==1 and variant_raw.replace(new,old,1)==prototype_raw)
-        variant=types.ModuleType('fixed_hash_prototype_'+str(workers));variant.__file__=str(prototype_path)
-        exec(compile(variant_raw,str(prototype_path),'exec'),variant.__dict__)
-        alternative,variant_observations,variant_inverse=variant.snapshot_module(raw);variant_snapshots=[]
-        for _ in range(2):
-            budget.check();begin=time.monotonic();alternative.source_progress_start(budget.seconds)
-            value=alternative.source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
-            alternative.source_phase('done');require(value==previous)
-            variant_snapshots.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in alternative.SOURCE_PROGRESS['phases']]})
-        require(len(variant_observations)==2)
-        for observation in variant_observations:
-            require(observation['workers']==workers and observation['pendingCap']==workers and
-                    observation['peakFDs']<=1+2*workers and observation['unknownCloses']==0 and
-                    observation['opened']==observation['closed']==observation['closeAttempts'] and
-                    observation['submittedBatches']==observation['retiredBatches'])
-        variants.append({'workers':workers,'fixedConstantInverseExact':True,'prototypeVariantSha256':hashlib.sha256(variant_raw).hexdigest(),
-                         'inverse':variant_inverse,'snapshots':variant_snapshots,'observations':variant_observations})
-    PHASE='coalesced-controls';coalesced_raw,coalesced_derivation=coalesced_prototype_source(prototype_raw)
-    coalesced=types.ModuleType('fixed_coalesced_prototype');coalesced.__file__=str(prototype_path)
-    exec(compile(coalesced_raw,str(prototype_path),'exec'),coalesced.__dict__)
-    coalesced_control_result=run_controls(controls_raw,controls_path,coalesced,raw,prototype_raw,budget)
-    PHASE='coalesced-snapshots';coalesced_variants=[]
-    for workers in (1,2):
-        old=b'WORKERS=4\n';new=('WORKERS='+str(workers)+'\n').encode()
-        require(coalesced_raw.count(old)==1);variant_raw=coalesced_raw.replace(old,new,1)
-        require(variant_raw.count(new)==1 and variant_raw.replace(new,old,1)==coalesced_raw)
-        variant=types.ModuleType('fixed_coalesced_'+str(workers));variant.__file__=str(prototype_path)
-        exec(compile(variant_raw,str(prototype_path),'exec'),variant.__dict__)
-        alternative,observed,variant_inverse=variant.snapshot_module(raw);timings=[]
-        for _ in range(2):
-            budget.check();begin=time.monotonic();alternative.source_progress_start(budget.seconds)
-            value=alternative.source_snapshot(root,budget,context={'mac':True,'external':True,'aggregate':{'entries':0,'bytes':0,'metadata':0}})
-            alternative.source_phase('done');require(value==previous)
-            timings.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'files':len(expected),'bytes':value['bytes'],'phases':[list(item)for item in alternative.SOURCE_PROGRESS['phases']]})
-        require(len(observed)==2)
-        for item in observed:
-            require(item['workers']==item['pendingCap']==workers and item['peakFDs']<=1+2*workers and
-                    item['unknownCloses']==0 and item['opened']==item['closed']==item['closeAttempts'] and
-                    item['submittedBatches']==item['retiredBatches'])
-        coalesced_variants.append({'workers':workers,'fixedConstantInverseExact':True,'prototypeVariantSha256':hashlib.sha256(variant_raw).hexdigest(),
-                                  'inverse':variant_inverse,'snapshots':timings,'observations':observed})
-    pin(repo/HELPER,209410,HELPER_SHA);pin(Path(__file__),65536,self_pin['sha256']);pin(workflow,65536,workflow_pin['sha256']);budget.check()
-    pin(prototype_path,65536,PROTOTYPE_SHA);pin(controls_path,65536,CONTROL_SHA)
-    pin(repo/'.git/HEAD',41,head_sha)
-    report={'schemaVersion':1,'kind':'mac-source-hash-benign-benchmark','head':env['GITHUB_SHA'],'runId':env['GITHUB_RUN_ID'],'attempt':env['GITHUB_RUN_ATTEMPT'],
-      'image':env['ImageVersion'],'platform':platform.platform(),'pythonVersion':platform.python_version(),'cpuCount':os.cpu_count(),'currentWorkers':configured,
-      'helper':helper_pin,'python':python_pin,'fixture':self_pin,'workflow':workflow_pin,'files':4000,'bytes':sum(r['stamp'][0]for r in rows),'results':results,'snapshots':snapshots,
-      'prototype':prototype_pin,'controls':controls_pin,'controlResult':base_control_result,'controlWorkerCount':4,'prototypeInverse':inverse,'prototypeSnapshots':candidate_snapshots,'prototypeObservations':observations,
-      'fixedWorkerVariants':variants,
-      'coalescedDerivation':coalesced_derivation,'coalescedControls':coalesced_control_result,'coalescedControlWorkerCount':4,'coalescedVariants':coalesced_variants,
-      'snapshotScope':'Creation-owned internal read-only Mac DATA fixture only','fixturePreservedForHostTeardown':True,'runtimeReady':False,'nativeQualified':False}
-    PHASE='report';raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode();require(len(raw)<=32768)
+    self_raw,self_pin=pin(Path(__file__),65536)
+    helper=repo/'tests/fixtures/cef/mac_owned_source_candidate.py';raw,helper_pin=pin(helper,262144,HELPER_SHA)
+    fd_path=repo/'tests/fixtures/cef/mac_owned_source_fd_test.py';fd_raw,fd_pin=pin(fd_path,65536,FD_SHA)
+    noop_path=repo/'tests/fixtures/cef/mac_owned_source_noop_test.py';noop_raw,noop_pin=pin(noop_path,65536,NOOP_SHA)
+    PHASE='held-import';fd=module(fd_raw,fd_path,{'HELD_HELPER_RAW':raw});noop=module(noop_raw,noop_path,{'HELD_FD_CONTROLS':fd})
+    require(fd.noop_inverse(raw)!=raw and len(fd.OLD)==209410)
+    PHASE='owned-fd-controls';fd_result=controls(fd,budget,19)
+    PHASE='owned-codec-controls';noop_result=controls(noop,budget,25)
+    PHASE='owned-snapshots';fixture=fd.OwnedFilesystem(methodName='test_owned_snapshot_pair_matches_entire_old_helper');fixture.setUp()
+    # Creation-owned real detached scratch repositories, never real CEF source.
+    try:
+        for i in range(70,4000):(fixture.parent/('input%04d'%i)).write_bytes(bytes([i%251])*18000)
+        baseline=[];candidate=[];previous=None
+        for name,helper_module,rows in [('baseline',fixture.old,baseline),('candidate',fixture.m,candidate)]:
+            for _ in range(2):
+                budget.check();begin=time.monotonic();helper_module.source_progress_start(budget.seconds)
+                value=fixture.snapshot(module=helper_module,budget=budget);helper_module.source_phase('done')
+                if previous is not None:require(value==previous)
+                previous=value
+                rows.append({'elapsedMs':round((time.monotonic()-begin)*1000),'entries':len(value['entries']),'bytes':value['bytes'],
+                             'phases':[list(item)for item in helper_module.SOURCE_PROGRESS['phases']]})
+        fixture.closed();observations=[]
+        for scope in fixture.scopes:
+            require(scope.active==0 and scope.peak<=3 and scope.opened==scope.closed==scope.close_attempts and not scope.ledger and scope.unknown==0)
+            observations.append({'peakFDs':scope.peak,'opened':scope.opened,'closed':scope.closed,'closeAttempts':scope.close_attempts,'unknown':scope.unknown,'active':scope.active})
+        require(len(observations)==2 and set(previous['gitHeads'])=={'src','src/cef','depot_tools'})
+        full_digest=hashlib.sha256(json.dumps(previous,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    finally:fixture.tearDown()
+    PHASE='final-pins'
+    for path,maximum,expected in [(helper,262144,HELPER_SHA),(fd_path,65536,FD_SHA),(noop_path,65536,NOOP_SHA),
+                                 (Path(__file__),65536,self_pin['sha256']),(workflow,65536,workflow_pin['sha256']),(repo/'.git/HEAD',41,head_pin['sha256'])]:pin(path,maximum,expected)
+    budget.check()
+    report={'schemaVersion':1,'kind':'mac-owned-source-static-benign-fixture','head':env['GITHUB_SHA'],'runId':env['GITHUB_RUN_ID'],'attempt':env['GITHUB_RUN_ATTEMPT'],
+            'image':env['ImageVersion'],'pythonVersion':platform.python_version(),'cpuCount':os.cpu_count(),'python':python_pin,'workflow':workflow_pin,'fixture':self_pin,
+            'helper':helper_pin,'fdControls':fd_pin,'noopControls':noop_pin,'fdResult':fd_result,'noopResult':noop_result,'baseline':baseline,'candidate':candidate,
+            'completeSnapshotEquality':True,'snapshotSha256':full_digest,'observations':observations,'workers':1,'batchCap':32,'fdCap':3,
+            'sourceKind':'Three actual detached scratch Git repositories; synthetic NON-CEF identity; no public source grant',
+            'rawNativeBirthFacts':True,'sourceQualified':False,'runtimeReady':False,'nativeQualified':False}
+    PHASE='report';report_raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode();require(len(report_raw)<=32768)
     target=TEMP/'cef-mac-hash-benchmark-report.json'
-    with target.open('xb')as stream:require(stream.write(raw)==len(raw))
-    _,written=pin(target,32768,hashlib.sha256(raw).hexdigest())
+    with target.open('xb')as stream:require(stream.write(report_raw)==len(report_raw))
+    _,written=pin(target,32768,hashlib.sha256(report_raw).hexdigest())
     print(json.dumps({'kind':report['kind'],'report':written,'runtimeReady':False,'nativeQualified':False},separators=(',',':')))
+
 if __name__=='__main__':
     try:main()
     except BaseException as error:
-        label='DEADLINE' if type(error)is TimeoutError else 'CONTRACT' if type(error)is RuntimeError else 'HELPER' if type(error).__name__=='CheckpointError' else 'UNCLASSIFIED'
-        print(json.dumps({'kind':'mac-source-hash-benign-benchmark','success':False,'failure':label,'phase':PHASE,'controlResult':CONTROL_RESULT,'runtimeReady':False,'nativeQualified':False},separators=(',',':')))
+        label='DEADLINE'if type(error)is TimeoutError else'CONTRACT'if type(error)is RuntimeError else'UNCLASSIFIED'
+        print(json.dumps({'kind':'mac-owned-source-static-benign-fixture','success':False,'failure':label,'phase':PHASE,'results':RESULTS,'runtimeReady':False,'nativeQualified':False},separators=(',',':')))
         sys.exit(1)
