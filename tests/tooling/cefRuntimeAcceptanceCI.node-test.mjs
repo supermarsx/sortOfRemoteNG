@@ -9,7 +9,10 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
+import { constants } from "node:fs";
+import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import YAML from "yaml";
@@ -2306,7 +2309,7 @@ test("native acceptance concurrency keeps distinct reviewed source profiles inde
   const text = (
     await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8")
   ).replaceAll("\r\n", "\n");
-  const previous = text.replace(
+  const previous = withoutExactNativeAcceptanceCheckout(text).replace(
     "group: cef-native-acceptance-${{ github.ref }}-${{ inputs.reviewed_inputs }}",
     "group: cef-native-acceptance-${{ github.ref }}",
   );
@@ -2315,4 +2318,210 @@ test("native acceptance concurrency keeps distinct reviewed source profiles inde
     createHash("sha256").update(previous).digest("hex"),
     "8c3caed4a2b6f6f46263f40fd4ed8492472f77557824cf3605da1c205d08540f",
   );
+});
+
+const EXACT_NATIVE_CHECKOUT_ENV = Object.freeze({
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "core.autocrlf",
+  GIT_CONFIG_VALUE_0: "false",
+});
+function withoutExactNativeAcceptanceCheckout(text) {
+  const current =
+    '      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0\n        env:\n          GIT_CONFIG_COUNT: "1"\n          GIT_CONFIG_KEY_0: core.autocrlf\n          GIT_CONFIG_VALUE_0: "false"\n';
+  const prior =
+    "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0\n";
+  assert.equal(text.split(current).length - 1, 3);
+  const restored = text.replaceAll(current, prior);
+  assert.equal(Buffer.byteLength(restored), 15844);
+  assert.equal(
+    createHash("sha256").update(restored).digest("hex"),
+    "8711924a1306dae9706f3c04f9681786edb393229d82420054989de6bab8aadf",
+  );
+  return restored;
+}
+
+test("all three native acceptance checkouts preserve exact Git bytes with the reviewed fixed config", async () => {
+  const text = (
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8")
+  ).replaceAll("\r\n", "\n");
+  const workflow = YAML.parse(text),
+    full = YAML.parse(
+      await readFile(".github/workflows/windows-arm-full-sdk.yml", "utf8"),
+    );
+  const reference = full.jobs.sdk.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.deepEqual(reference.env, EXACT_NATIVE_CHECKOUT_ENV);
+  assert.equal(Object.keys(workflow.jobs).length, 3);
+  for (const name of ["plan", "native", "native-draft"]) {
+    const selected = workflow.jobs[name].steps.filter((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    assert.equal(selected.length, 1);
+    assert.deepEqual(selected[0].env, reference.env);
+    assert.equal(selected[0].with["persist-credentials"], false);
+  }
+  withoutExactNativeAcceptanceCheckout(text);
+  assert.throws(() => withoutExactNativeAcceptanceCheckout(text + "\n"));
+});
+
+test("actual Git autocrlf checkout fails the actual held policy reader; fixed workflow env admits identical committed bytes", async (t) => {
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "native-acceptance-exact-checkout-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) => !/^(?:GIT_|GCM_|SSH_ASKPASS$)/i.test(name),
+    ),
+  );
+  const git = (args, env = {}) =>
+    execFileSync(
+      "git",
+      [
+        "-C",
+        root,
+        "-c",
+        "core.hooksPath=" + devNull,
+        "-c",
+        "core.longpaths=true",
+        ...args,
+      ],
+      {
+        encoding: "buffer",
+        timeout: 10000,
+        maxBuffer: 2 ** 20,
+        windowsHide: true,
+        env: {
+          ...clean,
+          GIT_CONFIG_GLOBAL: devNull,
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_TERMINAL_PROMPT: "0",
+          ...env,
+        },
+      },
+    );
+  git(["init", "--quiet"]);
+  git(["config", "core.autocrlf", "false"]);
+  const relative = ".github/workflows/windows-arm-full-sdk.yml";
+  const committed = execFileSync(
+    "git",
+    ["cat-file", "blob", "HEAD:" + relative],
+    { timeout: 10000, maxBuffer: 2 ** 20, windowsHide: true },
+  );
+  assert(!committed.includes(Buffer.from("\r\n")));
+  await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+  await writeFile(path.join(root, relative), committed);
+  git(["add", "--", relative]);
+  git([
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "--quiet",
+    "-m",
+    "exact public workflow bytes",
+  ]);
+  const head = git(["rev-parse", "HEAD"]).toString().trim();
+  const source = await readFile(
+    "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "origin.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const names = new Set([
+      "MAX",
+      "need",
+      "hex",
+      "stamp",
+      "hash",
+      "positive",
+      "WINDOWS_ARM_SDK_POLICY",
+      "WINDOWS_ARM_SDK_WORKFLOW",
+      "shape",
+      "pin",
+      "bytes",
+      "git",
+      "noLinks",
+      "hold",
+    ]),
+    pieces = [];
+  for (const node of ast.statements) {
+    if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) {
+      pieces.push(node.getText(ast));
+      names.delete(node.name.text);
+    }
+    if (ts.isVariableStatement(node))
+      for (const row of node.declarationList.declarations) {
+        if (names.has(row.name.getText(ast))) {
+          pieces.push("const " + row.getText(ast) + ";");
+          names.delete(row.name.getText(ast));
+        }
+      }
+  }
+  assert.equal(names.size, 0);
+  // Execute the unchanged held-byte reader and read-only Git implementation in
+  // this test realm/root. This is not a policy receipt or SDK admission test.
+  const hold = new Function(
+    "assert",
+    "execute",
+    "fs",
+    "constants",
+    "path",
+    "ROOT",
+    "process",
+    "createHash",
+    "Buffer",
+    pieces.join("\n") + "\nreturn hold;",
+  )(
+    assert,
+    promisify(execFile),
+    fs,
+    constants,
+    path,
+    root,
+    process,
+    createHash,
+    Buffer,
+  );
+  const expected = {
+    bytes: committed.length,
+    sha256: createHash("sha256").update(committed).digest("hex"),
+  };
+  git(["config", "core.autocrlf", "true"]);
+  await rm(path.join(root, relative));
+  git(["checkout", "--force", head, "--", relative]);
+  const smudged = await readFile(path.join(root, relative));
+  assert(smudged.includes(Buffer.from("\r\n")));
+  assert(!smudged.equals(committed));
+  await assert.rejects(
+    hold(relative, head, expected),
+    /WINDOWS_ARM_SDK_UNCOMMITTED/,
+  );
+  const workflow = YAML.parse(
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
+  );
+  for (const name of ["plan", "native", "native-draft"]) {
+    const env = workflow.jobs[name].steps.find((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    ).env;
+    await rm(path.join(root, relative));
+    git(["checkout", "--force", head, "--", relative], env);
+    assert.equal(
+      git(["config", "--local", "core.autocrlf"]).toString().trim(),
+      "true",
+      "reviewed env overrides checkout without rewriting host Git defaults",
+    );
+    assert((await readFile(path.join(root, relative))).equals(committed));
+    const held = await hold(relative, head, expected);
+    assert(held.raw.equals(committed));
+    await held.handle.close();
+  }
 });
