@@ -897,6 +897,21 @@ const sort = (value) =>
 const raw = (value) => Buffer.from(JSON.stringify(sort(value)) + "\n");
 const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
 function rawOriginInverse(source) {
+  // Reviewed image-profile re-pin (graph inventory deadline): restore the two
+  // previous image-profile digests before the older schema2 inverse below.
+  for (const [current, previous] of [
+    [
+      "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+    ],
+    [
+      "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
+      "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+    ],
+  ]) {
+    assert.equal(source.split(current).length, 2);
+    source = source.replace(current, () => previous);
+  }
   const begin = "// BEGIN schema2 raw quarantine origin\n",
     end = "// END schema2 raw quarantine origin\n";
   assert.equal(source.split(begin).length, 2);
@@ -1001,13 +1016,13 @@ const sourceTuples = {
     sourceLockIdentity:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     sourceProfileSha256:
-      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+      "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
   },
   "20261021.278.1": {
     sourceLockIdentity:
       "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
     sourceProfileSha256:
-      "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+      "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
   },
 };
 const bridge = {

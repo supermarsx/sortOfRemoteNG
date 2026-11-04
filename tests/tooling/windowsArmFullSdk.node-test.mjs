@@ -5013,6 +5013,7 @@ const FULL_BOOTSTRAP_CACHE_HISTORY = {
   },
 };
 function fullSourceEnvironmentProducerInverse(text) {
+  text = fullGraphDeadlineInverse(text, "producer");
   const spec = {
     begin: "    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER\n",
     end: "    # END OWNED FULL SOURCE ENVIRONMENT OWNER\n",
@@ -5264,6 +5265,305 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_DEADLINE_HISTORY = {
+  profile: {
+    bytes: 11144,
+    sha256: "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332",
+    rows: [
+      {
+        old: '      "profileSha256": "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",\n',
+        new: '      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        oldSha256:
+          "2a11c8ee7650978ddd556e3c88858d50c6d123db55b0cded99f77f526be0441e",
+        newSha256:
+          "30b052de938e855f215ee71ffaf2770f5f56964360eb9c4bcb0e0c011cc30435",
+      },
+      {
+        old: '      "profileSha256": "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",\n',
+        new: '      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        oldSha256:
+          "2b595173341d7825d14fe15e0e957adaca1063bb7a568b8eb31e3d550b76d9b8",
+        newSha256:
+          "1044b5a06f596af44313fd2eca48d75091776ac56cb6ebdd45507204fc115114",
+      },
+      {
+        old: '  "metadataRecipeSha256": "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",\n',
+        new: '  "metadataRecipeSha256": "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37",\n',
+        oldSha256:
+          "92ec62219f370c19a862ed1a69f28bea159078be990b9f421a1b59b36dc410a0",
+        newSha256:
+          "b0ef88f353d8e9fcfa993124a46dd862930f567836fee4fa2c9fc0e2e59890b8",
+      },
+    ],
+  },
+  driver: {
+    bytes: 297164,
+    sha256: "c8fb2c5d78dd9a38b015ba8e2c6e0d05e3f43c54da7f4848ce1bc4303af2d883",
+    rows: [
+      {
+        old: '  "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052";\n',
+        new: '  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";\n',
+        oldSha256:
+          "2db5d8287d4c0f1b597da122f5d45f2d43dc637024b423f797dcf004bcc6e6c4",
+        newSha256:
+          "3999975214c33a61d516a9fa845e5b2d68fe984d5af049fb6adf9452f2384911",
+      },
+      {
+        old: "                Math.floor(Math.min(180000, state.end - performance.now())),\n",
+        new: "                Math.floor(Math.min(900000, state.end - performance.now())),\n",
+        oldSha256:
+          "27ce0306ae1b6c93a31e647289e1245b785bde95e37eeac5d049bc2eb73e6476",
+        newSha256:
+          "c97fbb60c3981e3a359ad412fb45e14b027b179ef89408f428237709bc665159",
+      },
+      {
+        old: "              1,\n              Math.floor(Math.min(180000, state.end - performance.now())),\n",
+        new: "              1,\n              Math.floor(Math.min(900000, state.end - performance.now())),\n",
+        oldSha256:
+          "6ca640f847991ecf3d38b7255b2748db86c972a80b226101a4de751d37ac7770",
+        newSha256:
+          "eb65d76f99d5fc62ad2d87053255332fd56497024d472468cce4ca8287736501",
+      },
+      {
+        old: '  "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332";\n',
+        new: '  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";\n',
+        oldSha256:
+          "c25dd24b51eff5245ab7dccd1eee3e195e2f1f5b301106d8e1c3dd1091501412",
+        newSha256:
+          "6cb4b70c9b45d0eb30c87ce0f078663389fe463e0cad44b602e5159adfca75ab",
+      },
+      {
+        old: "    elapsedMs > 180000\n",
+        new: "    elapsedMs > 900000\n",
+        oldSha256:
+          "5e488a917f8f1d5ba65966bb601deab1db175d59890081c1b54347a5c878fd88",
+        newSha256:
+          "45192cdaab2e7fd6d291e578549a9125482f58931a7b9b35dbba2eca22e04d52",
+      },
+    ],
+  },
+  python: {
+    bytes: 35367,
+    sha256: "277fda994b94cec4de45331305104ae90a212e1ded739d7611116b3dbbfa16df",
+    rows: [
+      {
+        old: "PROFILE_SHA256 = '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332'\n",
+        new: "PROFILE_SHA256 = '01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2'\n",
+        oldSha256:
+          "6f768c881308c6ee74744bfd648606a698d75efc300693d41458bb6032564ddc",
+        newSha256:
+          "913451cc4e80d3aee1af4d27556b94f912ca4fbdf02e904b0094856d19be6a26",
+      },
+    ],
+  },
+  controller: {
+    bytes: 175570,
+    sha256: "74d50ee77552237fbc390d7e96fbbc695bdea883af2b0fcf02e393edafebfeb3",
+    rows: [
+      {
+        old: '    profile: "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",\n',
+        new: '    profile: "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        oldSha256:
+          "6aad45f7a13f68438c22258fdb4aa2c91a402dfdceeac15916ea728044a7883c",
+        newSha256:
+          "fb04d2d06d9b05e1856829ed5d047392836a657cf78bcecb3d323edec24e07be",
+      },
+      {
+        old: '    profile: "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",\n',
+        new: '    profile: "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        oldSha256:
+          "de5a32ece35acccfce8723e3e296d44fab1c4bcf5d65f4e572b0527f5f982e6a",
+        newSha256:
+          "85d1837fbce3019237bafe4ee930da1f784fff920d79299ac43fed76fc0284ea",
+      },
+      {
+        old: '  "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332";\n',
+        new: '  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";\n',
+        oldSha256:
+          "c25dd24b51eff5245ab7dccd1eee3e195e2f1f5b301106d8e1c3dd1091501412",
+        newSha256:
+          "6cb4b70c9b45d0eb30c87ce0f078663389fe463e0cad44b602e5159adfca75ab",
+      },
+      {
+        old: '  "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052";\n',
+        new: '  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";\n',
+        oldSha256:
+          "2db5d8287d4c0f1b597da122f5d45f2d43dc637024b423f797dcf004bcc6e6c4",
+        newSha256:
+          "3999975214c33a61d516a9fa845e5b2d68fe984d5af049fb6adf9452f2384911",
+      },
+      {
+        old: "            Math.floor(Math.min(180000, checkLease(state.lease))),\n",
+        new: "            Math.floor(Math.min(900000, checkLease(state.lease))),\n",
+        oldSha256:
+          "3fd7036e35ce5ede092abe0a7e8013fa6a1aa22c7557eacd480a5ebdd6d1053c",
+        newSha256:
+          "7c1e4cadb7e5f0b8ab018cd6538a26b5892003062687cc10cabcea2467758ac8",
+      },
+    ],
+  },
+  producer: {
+    bytes: 61403,
+    sha256: "870857c0f46283ff23238a239249a9a9b672a6995cc2de134fc79507560ec01f",
+    rows: [
+      {
+        old: "                    'sha256': '55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041',\n",
+        new: "                    'sha256': '953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50',\n",
+        oldSha256:
+          "7ca3858a9945354478fbadc4aeb7e88bf876935ebcf59ad74689f8c18e3cd75b",
+        newSha256:
+          "8c82155f4ad72ec92aa25de8691a8f0cc5484d0409ade5128519c185c726f1ba",
+      },
+      {
+        old: "                    'sha256': '3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637',\n",
+        new: "                    'sha256': 'ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719',\n",
+        oldSha256:
+          "62c637cb53b0cb3b51504f316ed6a8bc54d5e9052499ccf67eb6bae4c91d8f85",
+        newSha256:
+          "04a9c43d20ab002f500e2cfe55777269d36300b6e4f55e420ee409f1954c1d01",
+      },
+    ],
+  },
+  imageCurrent: {
+    bytes: 34813,
+    sha256: "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+    rows: [
+      {
+        old: '        "sha256": "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f"\n',
+        new: '        "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e"\n',
+        oldSha256:
+          "c4897e44d8b465913974cfed470766b84e463a1980556b4d74bd3ce75be5cffa",
+        newSha256:
+          "ad01cda05689e1ad02b6d286925ae775efa398ad842438f811439861455736e4",
+      },
+      {
+        old: '      "sha256": "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",\n',
+        new: '      "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",\n',
+        oldSha256:
+          "219dfdc18c0997fac6912891bf0079adf363316b0352e0655686f2b7eab473f5",
+        newSha256:
+          "6279953bea63295575c7ded6c6517cade3d88a23fa72990b6f6f699bb5095002",
+      },
+    ],
+  },
+  image20261021: {
+    bytes: 35867,
+    sha256: "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",
+    rows: [
+      {
+        old: '        "sha256": "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f"\n',
+        new: '        "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e"\n',
+        oldSha256:
+          "c4897e44d8b465913974cfed470766b84e463a1980556b4d74bd3ce75be5cffa",
+        newSha256:
+          "ad01cda05689e1ad02b6d286925ae775efa398ad842438f811439861455736e4",
+      },
+      {
+        old: '      "sha256": "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",\n',
+        new: '      "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",\n',
+        oldSha256:
+          "219dfdc18c0997fac6912891bf0079adf363316b0352e0655686f2b7eab473f5",
+        newSha256:
+          "6279953bea63295575c7ded6c6517cade3d88a23fa72990b6f6f699bb5095002",
+      },
+    ],
+  },
+  engineProfile: {
+    bytes: 8903,
+    sha256: "a49d50f77ab89e9e15e18de99946e757b1478ea306dfc58c1bc6a8379a46d18f",
+    rows: [
+      {
+        old: '      "profileSha256": "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",\n',
+        new: '      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        oldSha256:
+          "2a11c8ee7650978ddd556e3c88858d50c6d123db55b0cded99f77f526be0441e",
+        newSha256:
+          "30b052de938e855f215ee71ffaf2770f5f56964360eb9c4bcb0e0c011cc30435",
+      },
+      {
+        old: '      "profileSha256": "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",\n',
+        new: '      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        oldSha256:
+          "2b595173341d7825d14fe15e0e957adaca1063bb7a568b8eb31e3d550b76d9b8",
+        newSha256:
+          "1044b5a06f596af44313fd2eca48d75091776ac56cb6ebdd45507204fc115114",
+      },
+    ],
+  },
+  privateProfile: {
+    bytes: 22347,
+    sha256: "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052",
+    rows: [
+      {
+        old: '  "baseCandidatePolicySha256": "a49d50f77ab89e9e15e18de99946e757b1478ea306dfc58c1bc6a8379a46d18f",\n',
+        new: '  "baseCandidatePolicySha256": "59e3c3527215b1bf29a7255236b9adabbc825e3dc185b6d1f4268470e2b654f2",\n',
+        oldSha256:
+          "f6e84d9777c9203aa37b3306b23d0190a042490bc2af1a58e7663ff8ff66825f",
+        newSha256:
+          "de8999c3bad8e832f9f292e8361c65f6b0a1550f1d9da242c24eec3b160ace5c",
+      },
+      {
+        old: '      "profileSha256": "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",\n',
+        new: '      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        oldSha256:
+          "2a11c8ee7650978ddd556e3c88858d50c6d123db55b0cded99f77f526be0441e",
+        newSha256:
+          "30b052de938e855f215ee71ffaf2770f5f56964360eb9c4bcb0e0c011cc30435",
+      },
+      {
+        old: '      "profileSha256": "3cbc0c31bb5e180724f6e890b8472e65a302c8bf11fbc18acb99234c51ad4637",\n',
+        new: '      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        oldSha256:
+          "2b595173341d7825d14fe15e0e957adaca1063bb7a568b8eb31e3d550b76d9b8",
+        newSha256:
+          "1044b5a06f596af44313fd2eca48d75091776ac56cb6ebdd45507204fc115114",
+      },
+    ],
+  },
+  mirror: {
+    bytes: 195961,
+    sha256: "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",
+    rows: [
+      {
+        old: "  milliseconds: 180000,\n",
+        new: "  milliseconds: 900000,\n",
+        oldSha256:
+          "e581dd0c4c13980fb976d093bf2ff7f1617ae8e9e09378f269fc74d2e373e952",
+        newSha256:
+          "24cdda4fecbe121c497c35ce7cf388c841b95b5eb7e6ebd458082237913e3024",
+      },
+    ],
+  },
+};
+function fullGraphDeadlineInverse(text, name) {
+  const spec = FULL_GRAPH_DEADLINE_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_DEADLINE_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_DEADLINE_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_DEADLINE_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_DEADLINE_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_DEADLINE_WHOLE");
+  return text;
+}
 const FULL_GRAPH_DIAGNOSTICS_HISTORY = {
   bytes: 290034,
   sha256: "8f6ccea24cf9104e61ab26999dbec23a9fc90c346c018e8501252d68446b75c0",
@@ -5319,6 +5619,12 @@ const FULL_GRAPH_DIAGNOSTICS_HISTORY = {
   ],
 };
 function fullGraphDiagnosticsInverse(text, name) {
+  return fullGraphDiagnosticsInverseFrom(
+    fullGraphDeadlineInverse(text, name),
+    name,
+  );
+}
+function fullGraphDiagnosticsInverseFrom(text, name) {
   if (name !== "driver") return text;
   const spec = FULL_GRAPH_DIAGNOSTICS_HISTORY;
   for (const row of spec.rows) {
@@ -5353,7 +5659,12 @@ function fullGraphDiagnosticsInverse(text, name) {
 }
 
 function fullHooks3600Inverse(text, name) {
-  text = fullGraphDiagnosticsInverse(text, name);
+  return fullHooks3600InverseFrom(
+    fullGraphDiagnosticsInverse(text, name),
+    name,
+  );
+}
+function fullHooks3600InverseFrom(text, name) {
   const spec = FULL_HOOKS_3600_HISTORY[name];
   if (!spec) return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -6372,7 +6683,7 @@ async function controlFixture(t, overrides = {}) {
     sourceId:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     profileSha256:
-      "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+      "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
     root: base,
     rootIdentity: api.directoryId(await fs.lstat(base, { bigint: true })),
   };
@@ -7288,7 +7599,7 @@ async function createdSourceFixture(t, mode = "normal", overrides = {}) {
       image: mode === "wrong-image" ? "20261021.278.1" : "20261030.294.1",
       sourceId,
       profileSha256:
-        "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
+        "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
       parentCreationFiletime: "777777",
       producerInputs: Object.freeze(
         producerInputs.map((row) => Object.freeze(row)),
@@ -8859,9 +9170,9 @@ const PARENT_METADATA_READER_DERIVATIONS = [
     name: "PRIVATE_PROFILE_SHA256",
     newName: "parentMetadata_PRIVATE_PROFILE_SHA256",
     oldSha256:
-      "1774917c9813cb4c4c9d01cd2ab320477935540bd96273f95bfc859cfddf656c",
+      "72a9c62ee922f16c7b931ea344c82f441b56cb0b5b4cff55e2f2a19bd3e58f30",
     newSha256:
-      "2b3510cde060b5e439aff070a08e8d475bdcb24043c6787e3141885a87d45d48",
+      "c9c53b881f4c3aefec97f5fdc6a21629dbff987a38ead552db6c3c37bfd3129d",
   },
   {
     name: "PRIVATE_MODE",
@@ -11322,16 +11633,36 @@ async function fullSourceImageFixture(
       row.path === prefix + "full-sdk-source-profile.json"
         ? pRaw
         : await fs.readFile(path.join(root, row.path));
+    // The old profile pins the previous image-profile bytes, so serve those.
+    const imageName = previous
+      ? {
+          [prefix + "image-qualified-current-profile.json"]: "imageCurrent",
+          [prefix + "image-qualified-20261021-profile.json"]: "image20261021",
+          [prefix + "engine-qualification-profile.json"]: "engineProfile",
+          [prefix + "private-qualification-profile.json"]: "privateProfile",
+          [prefix +
+          "current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs"]:
+            "mirror",
+        }[row.path]
+      : undefined;
+    if (imageName)
+      raw = Buffer.from(
+        fullGraphDeadlineInverse(
+          raw.toString("utf8").replaceAll("\r\n", "\n"),
+          imageName,
+        ),
+      );
+    const mutable = mutableFixtureRows.has(row.path) || Boolean(imageName);
     if (raw.length !== row.bytes || sha(raw) !== row.sha256) {
       const lf = Buffer.from(raw.toString("utf8").replaceAll("\r\n", "\n"));
-      if (mutableFixtureRows.has(row.path)) raw = lf;
+      if (mutable) raw = lf;
       else {
         assert.equal(lf.length, row.bytes, row.path);
         assert.equal(sha(lf), row.sha256, row.path);
         raw = lf;
       }
     }
-    if (mutableFixtureRows.has(row.path)) {
+    if (mutable) {
       row.bytes = raw.length;
       row.sha256 = sha(raw);
     }
@@ -13701,15 +14032,21 @@ test("FULL hooks3600 finite inverses restore every whole907 source and reject mi
     const raw = (
       await fs.readFile(path.join(root, prefix, leaf), "utf8")
     ).replaceAll("\r\n", "\n");
-    const old = fullHooks3600Inverse(raw, name),
+    const mid = fullGraphDiagnosticsInverse(raw, name),
+      old = fullHooks3600InverseFrom(mid, name),
       spec = FULL_HOOKS_3600_HISTORY[name];
     assert.equal(Buffer.byteLength(old), spec.bytes);
     assert.equal(sha(old), spec.sha256);
     for (const row of spec.rows) {
-      assert.throws(() => fullHooks3600Inverse(raw.replace(row.new, ""), name));
-      assert.throws(() => fullHooks3600Inverse(raw + row.new, name));
       assert.throws(() =>
-        fullHooks3600Inverse(raw.replace(row.new, row.new + "#changed"), name),
+        fullHooks3600InverseFrom(mid.replace(row.new, ""), name),
+      );
+      assert.throws(() => fullHooks3600InverseFrom(mid + row.new, name));
+      assert.throws(() =>
+        fullHooks3600InverseFrom(
+          mid.replace(row.new, row.new + "#changed"),
+          name,
+        ),
       );
     }
     assert.throws(() => fullHooks3600Inverse(raw + "\n", name));
@@ -13743,13 +14080,13 @@ async function frozenGraphDiagnosticModel(mode) {
       .join("\n");
   assert.equal(
     sha(source),
-    "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",
+    "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",
   );
   assert.deepEqual(controlCheckpoint.GRAPH_LIMITS, {
     files: 50000,
     bytes: 8 * 1024 ** 3,
     visited: 300000,
-    milliseconds: 180000,
+    milliseconds: 900000,
     fileBytes: 256 * 1024 ** 2,
     readers: 4,
   });
@@ -13793,7 +14130,7 @@ async function frozenGraphDiagnosticModel(mode) {
     lstat: async () => ({ isSymbolicLink: () => mode === "links" }),
     realpath: async (file) => (mode === "alias" ? file + "-alias" : file),
     readdir: async () => {
-      if (mode === "deadline") now = 180001;
+      if (mode === "deadline") now = 900001;
       if (mode === "io") {
         const error = new Error("PRIVATE_PATH SECRET_TOKEN");
         error.code = "EIO";
@@ -13824,7 +14161,7 @@ async function frozenGraphDiagnosticModel(mode) {
       };
     },
     setTimeout: (_fn, ms) => {
-      assert.equal(ms, 180000);
+      assert.equal(ms, 450000);
       timers++;
       return 1;
     },
@@ -13971,7 +14308,7 @@ test("FULL graph diagnostics preserve actual frozen deadline and file byte visit
     assert.equal(report.graphDiagnostic.phase, "graph-inventory");
     assert.ok(report.graphDiagnostic.progress.length <= 36);
     if (mode === "deadline")
-      assert.equal(report.graphDiagnostic.progress.at(-1).elapsedMs, 180000);
+      assert.equal(report.graphDiagnostic.progress.at(-1).elapsedMs, 900000);
     if (mode === "files") {
       assert.equal(report.graphDiagnostic.graphCounts.visited, 50001);
       assert.ok(report.graphDiagnostic.graphCounts.files >= 49996);
@@ -14144,7 +14481,7 @@ test("FULL graph diagnostics copy only closed own data without getters proxies u
   for (const bad of [
     { ...sample, phase: "PRIVATE_PATH SECRET_TOKEN" },
     { ...sample, active: 5 },
-    { ...sample, elapsedMs: 180001 },
+    { ...sample, elapsedMs: 900001 },
     { ...sample, completedHashedFiles: 2 },
     {
       ...sample,
@@ -14215,21 +14552,24 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
       "\r\n",
       "\n",
     ),
-    decoded = fullGraphDiagnosticsInverse(raw, "driver");
+    mid = fullGraphDeadlineInverse(raw, "driver"),
+    decoded = fullGraphDiagnosticsInverseFrom(mid, "driver");
   assert.equal(Buffer.byteLength(decoded), 290034);
   assert.equal(
     sha(decoded),
     "8f6ccea24cf9104e61ab26999dbec23a9fc90c346c018e8501252d68446b75c0",
   );
   for (const row of FULL_GRAPH_DIAGNOSTICS_HISTORY.rows) {
-    assert.equal(raw.split(row.new).length, 2);
+    assert.equal(mid.split(row.new).length, 2);
     assert.throws(() =>
-      fullGraphDiagnosticsInverse(raw.replace(row.new, ""), "driver"),
+      fullGraphDiagnosticsInverseFrom(mid.replace(row.new, ""), "driver"),
     );
-    assert.throws(() => fullGraphDiagnosticsInverse(raw + row.new, "driver"));
     assert.throws(() =>
-      fullGraphDiagnosticsInverse(
-        raw.replace(row.new, "#changed" + row.new),
+      fullGraphDiagnosticsInverseFrom(mid + row.new, "driver"),
+    );
+    assert.throws(() =>
+      fullGraphDiagnosticsInverseFrom(
+        mid.replace(row.new, "#changed" + row.new),
         "driver",
       ),
     );
@@ -14241,7 +14581,7 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
         path.join(root, prefix, "full-sdk-source-profile.json"),
       ),
     ),
-    "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332",
+    "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2",
   );
   assert.equal(
     sha(
@@ -14253,7 +14593,7 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
         ),
       ),
     ),
-    "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",
+    "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",
   );
 });
 

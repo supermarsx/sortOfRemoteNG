@@ -3260,7 +3260,7 @@ async function privateQualificationHandoff({
 
 export const PRIVATE_DRIVER_ADMITTED = false;
 const PRIVATE_PROFILE_SHA256 =
-  "e767bc771cbf5d1d197c757bf7761f8a9695f12dd683fcb175668e158890d052";
+  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";
 const PRIVATE_MODE = "private-compiler-input-qualification";
 const PRIVATE_REF =
   "refs/heads/codex/windows-arm-engine-qualification-20261101";
@@ -5734,7 +5734,7 @@ async function collectQualificationGraph(owner) {
             {
               timeoutMs: Math.max(
                 1,
-                Math.floor(Math.min(180000, state.end - performance.now())),
+                Math.floor(Math.min(900000, state.end - performance.now())),
               ),
               observePins,
               ...fullGraphInventoryObserver(owner),
@@ -5937,7 +5937,7 @@ async function validateQualificationSource(owner) {
           {
             timeoutMs: Math.max(
               1,
-              Math.floor(Math.min(180000, state.end - performance.now())),
+              Math.floor(Math.min(900000, state.end - performance.now())),
             ),
             observePins(value) {
               try {
@@ -6535,7 +6535,7 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332";
+  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";
 const fullSourceProfiles = new WeakMap();
 // The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
 // No ignore file or clean-check exception is created or changed.
@@ -6656,7 +6656,7 @@ function fullGraphProgress(value) {
     completedHashedBytes > counts.bytes ||
     !Number.isSafeInteger(elapsedMs) ||
     elapsedMs < 0 ||
-    elapsedMs > 180000
+    elapsedMs > 900000
   )
     return null;
   const supplied = fullGraphOwnValue(value, "categories"),

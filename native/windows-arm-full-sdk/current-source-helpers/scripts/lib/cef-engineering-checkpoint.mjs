@@ -4837,7 +4837,7 @@ export const GRAPH_LIMITS = Object.freeze({
   files: 50000,
   bytes: 8 * 1024 ** 3,
   visited: 300000,
-  milliseconds: 180000,
+  milliseconds: 900000,
   fileBytes: 256 * 1024 ** 2,
   readers: 4,
 });
