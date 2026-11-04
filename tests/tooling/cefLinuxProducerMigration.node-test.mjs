@@ -2376,7 +2376,34 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   );
   assert.equal(capsule.from.producer, M.producer);
   assert.deepEqual(capsule.oldSourceTree, actual);
-  assert.equal(capsule.toProducer, core.codeTreeDigest(rows(ROOT, "HEAD")));
+  // This retained Linux capsule binds its original1d producer. The newer Mac
+  // reaper has one reviewed source delta; it does not retarget this capsule.
+  const currentRows = rows(ROOT, "HEAD");
+  assert.equal(currentRows.length, 131);
+  assert.equal(
+    core.codeTreeDigest(currentRows),
+    "73df343a716b1c99583c641d1f7cd5db93f13271011432c0eab22bf735dbb913",
+  );
+  const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
+  const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
+  const restoredReaper = Buffer.from(
+    withoutOriginalReapLease(reaper.toString()),
+  );
+  const restoredBlob = createHash("sha1")
+    .update(Buffer.from(`blob ${restoredReaper.length}\0`))
+    .update(restoredReaper)
+    .digest("hex");
+  assert.equal(restoredBlob, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
+  const restoredRows = structuredClone(currentRows);
+  const reaperRow = restoredRows.find((row) => row.path === reaperPath);
+  assert.equal(reaperRow.sha, "8337b2bf0c0628c91e863d6a7fcd1ec065bf1485");
+  reaperRow.sha = restoredBlob;
+  assert.equal(capsule.toProducer, core.codeTreeDigest(restoredRows));
+  assert.equal(
+    capsule.toProducer,
+    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
+  );
+  assert.notEqual(capsule.toProducer, core.codeTreeDigest(currentRows));
   assert.equal(capsule.from.checkpointProducer.runId, 41682771351);
   assert.deepEqual(capsule.from, {
     checkpointProducer: {
