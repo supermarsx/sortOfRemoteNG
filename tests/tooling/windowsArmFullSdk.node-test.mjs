@@ -5174,7 +5174,128 @@ const FULL_GN_PROJECTION_DIGEST_INVERSE = {
     },
   ],
 };
+const FULL_HOOKS_3600_HISTORY = {
+  profile: {
+    bytes: 11144,
+    sha256: "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e",
+    rows: [
+      {
+        old: '"hooksSeconds": 2700',
+        new: '"hooksSeconds": 3600',
+        oldSha256:
+          "e1295960e6724068f957bf7d2cc298f18a4e39d20890cb938f6c20d0281e8313",
+        newSha256:
+          "f9a082d2224b79d4b6491cc86260da7efddf5761901ab66889df6c2089aa06b7",
+      },
+    ],
+  },
+  driver: {
+    bytes: 290034,
+    sha256: "c204154a9a1ee9ad9fde6cb44d9a14c54d1491c60badcb8ebbb07497a07d104d",
+    rows: [
+      {
+        old: 'stage === "source-hooks-gn" && maximumSeconds === 2700',
+        new: 'stage === "source-hooks-gn" && maximumSeconds === 3600',
+        oldSha256:
+          "f1e3c9e04b5c87ef7e02a6e2f18edb8a19bf76f81df0a2d9be34cae004b0f6f7",
+        newSha256:
+          "ab823a3efa59ea09fcca8d67eb2f7891e3b4f87f4ef620eceeddfc8403e7942c",
+      },
+      {
+        old: "limits.hooksSeconds === 2700",
+        new: "limits.hooksSeconds === 3600",
+        oldSha256:
+          "ef03e51dc1df6a0932172ab6d4982193e7399b10ac1bef48a2454accfe78e8bc",
+        newSha256:
+          "2873474eb3737c287592c5194d69bfd530131c8730b801fc08a0b4ae499a4c82",
+      },
+      {
+        old: 'await fullSourceStage(root, budget, "source-hooks-gn", 2700, async () => {',
+        new: 'await fullSourceStage(root, budget, "source-hooks-gn", 3600, async () => {',
+        oldSha256:
+          "221b341a72b2425ff16bb9f2cd176d68be51a250860a3ca9d729c9d09242daca",
+        newSha256:
+          "a31f1d431befeb2772bcc32cbc2c4ce3fe591fdbee55f8de5f6f72f97b45a614",
+      },
+      {
+        old: "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e",
+        new: "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332",
+        oldSha256:
+          "caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0",
+        newSha256:
+          "b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3",
+      },
+    ],
+  },
+  python: {
+    bytes: 35367,
+    sha256: "6188878262519d72bcfbcb121ca100a341eee0121093f0caab3216ecf4020038",
+    rows: [
+      {
+        old: "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e",
+        new: "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332",
+        oldSha256:
+          "caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0",
+        newSha256:
+          "b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3",
+      },
+      {
+        old: "# Node body debits data time and retains the fixed2700s hook cap.",
+        new: "# Node body debits data time and retains the fixed3600s hook cap.",
+        oldSha256:
+          "ca05583192bd821c615365b66f9bc67bbf8e36a2adbf097993e1ff9ca8d739b0",
+        newSha256:
+          "d6b0d4f52a5048a17c2ac0f9989999b15c218583523903bfb94fb6e6636a965a",
+      },
+    ],
+  },
+  controller: {
+    bytes: 175570,
+    sha256: "97cb6430200bee3880651d6b597d2ee4f4886dfe6377b484c900a4e727edc294",
+    rows: [
+      {
+        old: "e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e",
+        new: "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332",
+        oldSha256:
+          "caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0",
+        newSha256:
+          "b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3",
+      },
+    ],
+  },
+};
+function fullHooks3600Inverse(text, name) {
+  const spec = FULL_HOOKS_3600_HISTORY[name];
+  if (!spec) return text;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of spec.rows) {
+    assert.equal(
+      hash(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_HOOKS_3600_PIN",
+    );
+    assert.equal(
+      hash(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_HOOKS_3600_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_HOOKS_3600_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_HOOKS_3600_WHOLE",
+  );
+  assert.equal(hash(text), spec.sha256, "ASSEMBLY_INVERSE_HOOKS_3600_WHOLE");
+  return text;
+}
 function fullGnProjectionDigestInverse(text, name) {
+  text = fullHooks3600Inverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of FULL_GN_PROJECTION_DIGEST_INVERSE.rows) {
@@ -5236,6 +5357,9 @@ function fullGnShellTransportInverse(text, name) {
 function fullBootstrapCacheInverse(text, name) {
   text = fullGnShellTransportInverse(text, name);
   text = fullSourceEnvironmentInverse(text, name);
+  return fullBootstrapCacheBaselineInverse(text, name);
+}
+function fullBootstrapCacheBaselineInverse(text, name) {
   if (name === "workflow") return text; // This repair never changes workflow bytes.
   const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
   assert(spec, "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_SCOPE");
@@ -6572,7 +6696,7 @@ test("source qualification assembly pins the disjoint workflow and retains every
     wholeSeconds: 21600,
     sourceSeconds: 10800,
     acquisitionSeconds: 7200,
-    hooksSeconds: 2700,
+    hooksSeconds: 3600,
     cleanupSeconds: 30,
     finalReserveSeconds: 120,
   });
@@ -12757,16 +12881,30 @@ test("FULL bootstrap cache inverse preserves complete previous module profiles a
       old = fullBootstrapCacheInverse(raw, name);
     assert.equal(sha(old), spec.sha256);
     assert.equal(Buffer.byteLength(old), spec.bytes);
+    const baseline = fullSourceEnvironmentInverse(
+      fullGnShellTransportInverse(raw, name),
+      name,
+    );
+    assert.equal(fullBootstrapCacheBaselineInverse(baseline, name), old);
     for (const row of spec.rows) {
+      assert.equal(
+        baseline.split(row.newRaw).length,
+        2,
+        "historical mutation must change the decoded layer exactly once",
+      );
       assert.throws(() =>
-        fullBootstrapCacheInverse(
-          raw.replace(row.newRaw, "/*tamper*/" + row.newRaw.slice(1)),
+        fullBootstrapCacheBaselineInverse(
+          baseline.replace(row.newRaw, "/*tamper*/" + row.newRaw.slice(1)),
           name,
         ),
       );
-      assert.throws(() => fullBootstrapCacheInverse(raw + row.newRaw, name));
+      assert.throws(() =>
+        fullBootstrapCacheBaselineInverse(baseline + row.newRaw, name),
+      );
     }
-    assert.throws(() => fullBootstrapCacheInverse(raw + "\n", name));
+    assert.throws(() =>
+      fullBootstrapCacheBaselineInverse(baseline + "\n", name),
+    );
   }
 });
 
@@ -13274,4 +13412,216 @@ test("FULL GN projection digest inverse restores the complete prior driver and r
     );
   }
   assert.throws(() => fullGnProjectionDigestInverse(current + "\n", "driver"));
+});
+
+async function fullHooks3600Program(previous = false) {
+  const { default: ts } = await import("typescript");
+  let source = (await read(prefix + "full-sdk-source-driver.mjs")).replaceAll(
+    "\r\n",
+    "\n",
+  );
+  if (previous) source = fullHooks3600Inverse(source, "driver");
+  const tree = ts.createSourceFile(
+    "driver.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  return tree.statements
+    .find(
+      (node) =>
+        ts.isFunctionDeclaration(node) && node.name?.text === "fullSourceStage",
+    )
+    .getText(tree);
+}
+function fullHooks3600Model(program, began = 5400000) {
+  let now = began;
+  const timers = [],
+    intervals = [],
+    cleared = [];
+  const sourceEnd = 10800000,
+    wholeEnd = 21600000;
+  const budget = {
+    remaining() {
+      if (now >= wholeEnd) throw new Error("ORIGINAL_WHOLE_DEADLINE");
+      if (now >= sourceEnd) throw new Error("ORIGINAL_SOURCE_DEADLINE");
+      return Math.min(sourceEnd - now, wholeEnd - now);
+    },
+  };
+  const stage = vm.runInNewContext("(" + program + ")", {
+    need(value, code) {
+      if (!value) throw new Error(code);
+    },
+    performance: { now: () => now },
+    setTimeout(callback, milliseconds) {
+      const value = { callback, milliseconds };
+      timers.push(value);
+      return value;
+    },
+    setInterval(callback, milliseconds) {
+      const value = { callback, milliseconds };
+      intervals.push(value);
+      return value;
+    },
+    clearTimeout(value) {
+      cleared.push(value);
+    },
+    clearInterval(value) {
+      cleared.push(value);
+    },
+    writeFileSync() {
+      assert.fail("no deadline report without firing the owned timer");
+    },
+    process: {
+      exit() {
+        assert.fail("no real actor in this private clock fixture");
+      },
+    },
+    path,
+    Buffer,
+    writeSync() {
+      assert.fail("no diagnostic fallback expected");
+    },
+    sourceReportingFailure: false,
+  });
+  return {
+    stage,
+    budget,
+    timers,
+    intervals,
+    cleared,
+    sourceEnd,
+    wholeEnd,
+    advance(ms) {
+      now += ms;
+    },
+  };
+}
+test("FULL hooks3600 admits measured work beyond the old2700 endpoint without renewing either original lease", async () => {
+  for (const previous of [true, false]) {
+    const f = fullHooks3600Model(await fullHooks3600Program(previous));
+    const action = async () => {
+      f.advance(2800000);
+      return "owned-source-work";
+    };
+    const promise = f.stage(
+      "owned",
+      f.budget,
+      "source-hooks-gn",
+      previous ? 2700 : 3600,
+      action,
+    );
+    if (previous) await assert.rejects(promise, /FULL_SOURCE_STAGE_DEADLINE/);
+    else assert.equal(await promise, "owned-source-work");
+    assert.equal(f.timers.length, 1);
+    assert.equal(f.timers[0].milliseconds, previous ? 2700000 : 3600000);
+    assert.equal(f.intervals.length, 1);
+    assert.equal(f.intervals[0].milliseconds, 1000);
+    assert.equal(f.cleared.length, 2);
+    assert.equal(f.budget.remaining(), 2600000);
+    assert.equal(f.sourceEnd, 10800000);
+    assert.equal(f.wholeEnd, 21600000);
+  }
+  const f = fullHooks3600Model(await fullHooks3600Program());
+  await assert.rejects(
+    f.stage("owned", f.budget, "source-hooks-gn", 3600, async () => {
+      f.advance(1800000);
+      await Promise.resolve();
+      f.advance(1800001);
+      return "late";
+    }),
+    /FULL_SOURCE_STAGE_DEADLINE/,
+  );
+  assert.equal(f.timers.length, 1);
+  assert.equal(f.timers[0].milliseconds, 3600000);
+  assert.equal(f.cleared.length, 2);
+});
+test("FULL hooks3600 clips spent source time and the unchanged reserve and rejects exhausted original source or whole clocks", async () => {
+  const program = await fullHooks3600Program();
+  const spent = fullHooks3600Model(program, 7200000);
+  assert.equal(
+    await spent.stage(
+      "owned",
+      spent.budget,
+      "source-hooks-gn",
+      3600,
+      async () => "bounded",
+    ),
+    "bounded",
+  );
+  assert.equal(spent.timers[0].milliseconds, 3480000);
+  const tail = fullHooks3600Model(program, 7200000);
+  await assert.rejects(
+    tail.stage("owned", tail.budget, "source-hooks-gn", 3600, async () => {
+      tail.advance(3480001);
+      return "late";
+    }),
+    /FULL_SOURCE_STAGE_DEADLINE/,
+  );
+  for (const [start, code] of [
+    [10680000, "FULL_SOURCE_RESERVE"],
+    [10800000, "ORIGINAL_SOURCE_DEADLINE"],
+    [21600000, "ORIGINAL_WHOLE_DEADLINE"],
+  ]) {
+    const f = fullHooks3600Model(program, start);
+    let actions = 0;
+    await assert.rejects(
+      f.stage("owned", f.budget, "source-hooks-gn", 3600, async () => {
+        actions++;
+      }),
+      new RegExp(code),
+    );
+    assert.equal(actions, 0);
+    assert.equal(f.timers.length, 0);
+    assert.equal(f.intervals.length, 0);
+  }
+  const f = fullHooks3600Model(program);
+  await assert.rejects(
+    f.stage("owned", f.budget, "source-hooks-gn", 3600, async () => {
+      f.advance(5400001);
+      return "source-expired";
+    }),
+    /ORIGINAL_SOURCE_DEADLINE/,
+  );
+  assert.equal(f.cleared.length, 2);
+  const cancelled = fullHooks3600Model(program);
+  await assert.rejects(
+    cancelled.stage(
+      "owned",
+      cancelled.budget,
+      "source-hooks-gn",
+      3600,
+      async () => {
+        throw false;
+      },
+    ),
+    (value) => value === false,
+  );
+  assert.equal(cancelled.cleared.length, 2);
+});
+test("FULL hooks3600 finite inverses restore every whole907 source and reject missing duplicated or altered cap and profile pins", async () => {
+  const names = {
+    driver: "full-sdk-source-driver.mjs",
+    controller: "full_sdk_control.mjs",
+    python: "full_sdk_source.py",
+    profile: "full-sdk-source-profile.json",
+  };
+  for (const [name, leaf] of Object.entries(names)) {
+    const raw = (
+      await fs.readFile(path.join(root, prefix, leaf), "utf8")
+    ).replaceAll("\r\n", "\n");
+    const old = fullHooks3600Inverse(raw, name),
+      spec = FULL_HOOKS_3600_HISTORY[name];
+    assert.equal(Buffer.byteLength(old), spec.bytes);
+    assert.equal(sha(old), spec.sha256);
+    for (const row of spec.rows) {
+      assert.throws(() => fullHooks3600Inverse(raw.replace(row.new, ""), name));
+      assert.throws(() => fullHooks3600Inverse(raw + row.new, name));
+      assert.throws(() =>
+        fullHooks3600Inverse(raw.replace(row.new, row.new + "#changed"), name),
+      );
+    }
+    assert.throws(() => fullHooks3600Inverse(raw + "\n", name));
+  }
 });

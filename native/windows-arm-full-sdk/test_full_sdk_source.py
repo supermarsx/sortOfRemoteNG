@@ -561,7 +561,25 @@ FULL_GN_SHELL_TRANSPORT_HISTORY = {'bytes': 289624, 'sha256': 'e9ed9951089d9b44b
 FULL_GN_PROJECTION_DIGEST_HISTORY = {'bytes': 290006, 'sha256': '27e6c073dab2b956c65aee7cd063e7114005077fe611fd99eb7a82326677e6e5', 'rows': [{'old': "for name,digest in [('MergeDicts'", 'new': "for name,gn_projection_digest in [('MergeDicts'", 'oldSha256': 'cb87b02fbb4713fb9afa918266b3267df97613761dbe9a572459fc33fee33421', 'newSha256': '67521573c8a1674cb8eec2f43ddf5794aa49f13d18a90640dc6234c1333411cf'}, {'old': "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')", 'new': "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=gn_projection_digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')", 'oldSha256': 'e19606c2c9ef51543d1b45fad14aedb8c19c16b137d784f1e5d4693530374774', 'newSha256': 'e6b2f8527570716018b2f83f9e7fa8ef4f411190216b2d9195ca5949d253d04b'}]}
 
 
+FULL_HOOKS_3600_HISTORY = {'profile': {'bytes': 11144, 'sha256': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'rows': [{'old': '"hooksSeconds": 2700', 'new': '"hooksSeconds": 3600', 'oldSha256': 'e1295960e6724068f957bf7d2cc298f18a4e39d20890cb938f6c20d0281e8313', 'newSha256': 'f9a082d2224b79d4b6491cc86260da7efddf5761901ab66889df6c2089aa06b7'}]}, 'driver': {'bytes': 290034, 'sha256': 'c204154a9a1ee9ad9fde6cb44d9a14c54d1491c60badcb8ebbb07497a07d104d', 'rows': [{'old': 'stage === "source-hooks-gn" && maximumSeconds === 2700', 'new': 'stage === "source-hooks-gn" && maximumSeconds === 3600', 'oldSha256': 'f1e3c9e04b5c87ef7e02a6e2f18edb8a19bf76f81df0a2d9be34cae004b0f6f7', 'newSha256': 'ab823a3efa59ea09fcca8d67eb2f7891e3b4f87f4ef620eceeddfc8403e7942c'}, {'old': 'limits.hooksSeconds === 2700', 'new': 'limits.hooksSeconds === 3600', 'oldSha256': 'ef03e51dc1df6a0932172ab6d4982193e7399b10ac1bef48a2454accfe78e8bc', 'newSha256': '2873474eb3737c287592c5194d69bfd530131c8730b801fc08a0b4ae499a4c82'}, {'old': 'await fullSourceStage(root, budget, "source-hooks-gn", 2700, async () => {', 'new': 'await fullSourceStage(root, budget, "source-hooks-gn", 3600, async () => {', 'oldSha256': '221b341a72b2425ff16bb9f2cd176d68be51a250860a3ca9d729c9d09242daca', 'newSha256': 'a31f1d431befeb2772bcc32cbc2c4ce3fe591fdbee55f8de5f6f72f97b45a614'}, {'old': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'new': '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332', 'oldSha256': 'caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0', 'newSha256': 'b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3'}]}, 'python': {'bytes': 35367, 'sha256': '6188878262519d72bcfbcb121ca100a341eee0121093f0caab3216ecf4020038', 'rows': [{'old': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'new': '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332', 'oldSha256': 'caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0', 'newSha256': 'b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3'}, {'old': '# Node body debits data time and retains the fixed2700s hook cap.', 'new': '# Node body debits data time and retains the fixed3600s hook cap.', 'oldSha256': 'ca05583192bd821c615365b66f9bc67bbf8e36a2adbf097993e1ff9ca8d739b0', 'newSha256': 'd6b0d4f52a5048a17c2ac0f9989999b15c218583523903bfb94fb6e6636a965a'}]}, 'controller': {'bytes': 175570, 'sha256': '97cb6430200bee3880651d6b597d2ee4f4886dfe6377b484c900a4e727edc294', 'rows': [{'old': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'new': '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332', 'oldSha256': 'caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0', 'newSha256': 'b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3'}]}}
+
+
+def full_hooks_3600_inverse(raw, name):
+    spec = FULL_HOOKS_3600_HISTORY.get(name)
+    if spec is None:
+        return raw
+    for row in spec['rows']:
+        new, old = row['new'].encode(), row['old'].encode()
+        assert hashlib.sha256(new).hexdigest() == row['newSha256'], 'ASSEMBLY_INVERSE_HOOKS_3600_PIN'
+        assert hashlib.sha256(old).hexdigest() == row['oldSha256'], 'ASSEMBLY_INVERSE_HOOKS_3600_PIN'
+        assert raw.count(new) == 1, 'ASSEMBLY_INVERSE_HOOKS_3600_COUNT'
+        raw = raw.replace(new, old, 1)
+    assert len(raw) == spec['bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'ASSEMBLY_INVERSE_HOOKS_3600_WHOLE'
+    return raw
+
+
 def full_gn_projection_digest_inverse(raw, name):
+    raw = full_hooks_3600_inverse(raw, name)
     if name != 'driver':
         return raw
     spec = FULL_GN_PROJECTION_DIGEST_HISTORY
@@ -624,7 +642,7 @@ class Interfaces(unittest.TestCase):
         self.assertIs(self.p['fullModeBodyImplemented'], True)
         self.assertIs(self.p['sourceSessionIssuerImplemented'], True)
         self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=10800,
-                         acquisitionSeconds=7200, hooksSeconds=2700,
+                         acquisitionSeconds=7200, hooksSeconds=3600,
                          cleanupSeconds=30, finalReserveSeconds=120))
         with self.assertRaisesRegex(subject.Denied, 'PROFILE_PIN'):
             subject.parse_profile(self.raw + b' ')
@@ -1009,6 +1027,9 @@ class Interfaces(unittest.TestCase):
 
     def test_full_source_body_is_pinned_derivative_without_private_handoff(self):
         raw = (HERE / 'full-sdk-source-driver.mjs').read_bytes()
+        # The profile's derivation pins describe the reviewed historical body;
+        # the new cap has its own strict whole-source inverse above.
+        raw = full_hooks_3600_inverse(raw, 'driver')
         start = raw.index(b'async function privateSourceBody(argv) {')
         end = raw.index(b'// END REVIEWED SOURCE DERIVATIVE', start)
         old = raw[start:end].rstrip() + b'\n'
@@ -1391,6 +1412,7 @@ class Interfaces(unittest.TestCase):
     def test_full_environment_new_layer_inverse_is_whole_and_tamper_duplicate_or_extra_denies(self):
         for name, leaf in (('sourcepy', 'full_sdk_source.py'), ('producer', 'producer.py')):
             raw = normalized((HERE / leaf).read_bytes())
+            raw = full_hooks_3600_inverse(raw, 'python' if name == 'sourcepy' else name)
             old = full_environment_inverse(raw, name)
             spec = FULL_ENVIRONMENT_HISTORY[name]
             self.assertEqual(hashlib.sha256(old).hexdigest(), spec['sha256'])

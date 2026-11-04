@@ -19,7 +19,7 @@ from pathlib import Path
 MODE = 'full-sdk-source-gn'
 WORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'
 POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'
-PROFILE_SHA256 = 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e'
+PROFILE_SHA256 = '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332'
 FULL_SOURCE_ADMITTED = False
 SOURCE_QUALIFICATION_ALLOWED = True
 HEX = re.compile(r'[a-f0-9]{64}')
@@ -631,7 +631,7 @@ def _run_operation(state):
         for role in (*_DATA_ROLES, _NODE):
             _verified_active_sources(root)
             # All acquisition roles consume the same original7200s endpoint. The
-            # Node body debits data time and retains the fixed2700s hook cap.
+            # Node body debits data time and retains the fixed3600s hook cap.
             remaining = min(clock.remaining(), phase_end - time.monotonic(), wall_phase_end - time.time()) if role != _NODE else clock.remaining()
             allotted = {'sdk-data': 1170, 'llvm-data': 300, 'rust-archive': 1200,
                          'gn-archive': 180, 'siso-archive': 180, 'materialize': 600,

@@ -46,7 +46,7 @@
     "wholeSeconds": 21600,
     "sourceSeconds": 10800,
     "acquisitionSeconds": 7200,
-    "hooksSeconds": 2700,
+    "hooksSeconds": 3600,
     "cleanupSeconds": 30,
     "finalReserveSeconds": 120
   },
