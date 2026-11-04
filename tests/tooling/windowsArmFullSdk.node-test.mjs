@@ -12893,7 +12893,20 @@ async function fullGnShellFixture(t, mode) {
     "D:/a/sortOfRemoteNG/sortOfRemoteNG/.artifacts/windows-arm-full-sdk-bb3bd4a8-e93c-44e5-81f2-3ddc15a01d19";
   const cef = sourceRoot + "/source-checkout/src/cef",
     depot = sourceRoot + "/source-checkout/depot_tools";
-  const hooks = cefHookArguments(cef, depot);
+  // Model Windows path spelling for this data-only vector on every test host.
+  const hookArgumentsFor = (pathApi) =>
+    new Function(
+      "path",
+      "fail",
+      "return (" + cefHookArguments.toString() + ")",
+    )(pathApi, (message) => assert.fail(message));
+  assert.throws(
+    () => hookArgumentsFor(path.posix)(cef, depot),
+    /CEF hook requires absolute pinned checkout paths/,
+  );
+  const hooks = hookArgumentsFor(path.win32)(cef, depot);
+  if (process.platform === "win32")
+    assert.deepEqual(hooks, cefHookArguments(cef, depot));
   const argv = fullCarryDriver.boundGnArguments(
     hooks,
     sourceRoot + "/source-checkout/src/buildtools/win/gn.exe",
