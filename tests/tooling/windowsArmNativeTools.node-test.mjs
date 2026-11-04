@@ -6,7 +6,10 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import YAML from "yaml";
-import { withoutUploadRecovery } from "./cefUploadRecoveryInverse.mjs";
+import {
+  withoutUploadRecovery,
+  withoutRepinRows,
+} from "./cefUploadRecoveryInverse.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (name) => fs.readFile(path.join(root, name), "utf8");
@@ -258,7 +261,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(currentRows.length, 131);
   assert.equal(
     digest(Buffer.from(JSON.stringify(currentRows))),
-    "ac34f2c03b7943f2b2a23bdb4f1d3be060ffe775893325a6c8a91136dac899e7",
+    "1d3e5ef72339c96931a66282cc11d2befae268df4a69c312135296e880a3b93d",
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const recoveredCore = execFileSync(
@@ -269,7 +272,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(Buffer.byteLength(recoveredCore), 247532);
   assert.equal(
     digest(recoveredCore),
-    "b387faba01d34ef812cdd2ce2b4e588ea2eb2815ade957f2a513ce363b699fae",
+    "f6acc03e39b44ff8982c4d9c751429e9b993f5d7755a9f965f6236666f5516ee",
   );
   const currentCore = withoutUploadRecovery(recoveredCore);
   assert.equal(Buffer.byteLength(currentCore), 246078);
@@ -298,10 +301,13 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(previousSha, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   assert.equal(
     currentRows.find((row) => row.path === corePath).sha,
-    "fe0ba49119debe297674599c855070ae37d67d85",
+    "2b246f74d54c81a3bb73f6cee40bac1bc19ef21b",
   );
-  const retainedRows = currentRows.map((row) =>
-    row.path === corePath ? { ...row, sha: previousSha } : row,
+  const retainedRows = withoutRepinRows(
+    currentRows.map((row) =>
+      row.path === corePath ? { ...row, sha: previousSha } : row,
+    ),
+    root,
   );
   const retainedGit = async (_file, args) => {
     assert.deepEqual(args, [

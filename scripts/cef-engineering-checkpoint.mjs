@@ -1510,9 +1510,32 @@ if (
 )
   main()
     .then((result) => console.log(canonical(result)))
-    .catch(() => {
+    .catch((error) => {
       console.error(
         "[cef-engineering-checkpoint] operation failed; retained logs and partial bytes are not acceptance",
       );
+      // The cause is one bounded, control-free, credential-redacted line.
+      try {
+        let cause = String(error?.message ?? error)
+          .slice(0, 300)
+          .replace(/[\x00-\x1f\x7f]+/g, " ");
+        for (const key of ["GH_TOKEN", "GITHUB_TOKEN"]) {
+          const secret = process.env[key];
+          if (typeof secret === "string" && secret.length >= 8)
+            cause = cause.split(secret).join("***");
+        }
+        cause = cause.replace(
+          /(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g,
+          "***",
+        );
+        const code =
+          typeof error?.code === "string" &&
+          /^[A-Za-z0-9_]{1,40}$/.test(error.code)
+            ? ` code=${error.code}`
+            : "";
+        console.error(`[cef-engineering-checkpoint] cause:${code} ${cause}`);
+      } catch {
+        /* Diagnostics never replace the original refusal. */
+      }
       process.exitCode = 1;
     });

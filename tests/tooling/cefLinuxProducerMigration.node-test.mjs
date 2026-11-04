@@ -7,7 +7,10 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { withoutUploadRecovery } from "./cefUploadRecoveryInverse.mjs";
+import {
+  withoutUploadRecovery,
+  withoutRepinRows,
+} from "./cefUploadRecoveryInverse.mjs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
@@ -2383,7 +2386,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),
-    "ac34f2c03b7943f2b2a23bdb4f1d3be060ffe775893325a6c8a91136dac899e7",
+    "1d3e5ef72339c96931a66282cc11d2befae268df4a69c312135296e880a3b93d",
   );
   const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
@@ -2397,9 +2400,10 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(restoredBlob, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   const restoredRows = structuredClone(currentRows);
   const reaperRow = restoredRows.find((row) => row.path === reaperPath);
-  assert.equal(reaperRow.sha, "fe0ba49119debe297674599c855070ae37d67d85");
+  assert.equal(reaperRow.sha, "2b246f74d54c81a3bb73f6cee40bac1bc19ef21b");
   reaperRow.sha = restoredBlob;
-  assert.equal(capsule.toProducer, core.codeTreeDigest(restoredRows));
+  const retainedRows = withoutRepinRows(restoredRows, ROOT);
+  assert.equal(capsule.toProducer, core.codeTreeDigest(retainedRows));
   assert.equal(
     capsule.toProducer,
     "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",

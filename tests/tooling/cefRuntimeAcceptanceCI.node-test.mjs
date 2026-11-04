@@ -2295,7 +2295,7 @@ test("native acceptance concurrency keeps distinct reviewed source profiles inde
   );
   assert.equal(value.concurrency["cancel-in-progress"], true);
   const inputs = [
-    "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1",
+    "native/cef-build-inputs/20261104-r5-linuxarm-cross-sysroot-external-webview-char-20261101-360-1",
     "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat",
     "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
   ];

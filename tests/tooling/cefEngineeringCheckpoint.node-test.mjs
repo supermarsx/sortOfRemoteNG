@@ -813,7 +813,10 @@ test(
 );
 import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
-import { withoutUploadRecovery } from "./cefUploadRecoveryInverse.mjs";
+import {
+  withoutUploadRecovery,
+  withoutCliCause,
+} from "./cefUploadRecoveryInverse.mjs";
 import { EventEmitter } from "node:events";
 import { types as utilTypes } from "node:util";
 // Exact pre-fix archiveCommand declaration from reviewed6c853; data-only baseline.
@@ -4770,10 +4773,15 @@ test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinc
 });
 
 const refreshedLinuxArmInputs =
-  "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1";
+  "native/cef-build-inputs/20261104-r5-linuxarm-cross-sysroot-external-webview-char-20261101-360-1";
 const refreshedLinuxArmSource =
+  "0829ec1953e25d71709a9324d6f4b05c929ce0dbbe6f5961918dc7e89a1740e5";
+const refreshedLinuxArmImage = "20261101.360.1";
+const image354LinuxArmInputs =
+  "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1";
+const image354LinuxArmSource =
   "8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb";
-const refreshedLinuxArmImage = "20261026.354.1";
+const image354LinuxArmImage = "20261026.354.1";
 const source25LinuxArmInputs =
   "native/cef-build-inputs/20261026-r5-linuxarm-cross-sysroot-external-webview-char";
 const source25LinuxArmSource =
@@ -5070,11 +5078,15 @@ test("source25 Linux ARM R5 preserves reviewed configuration while requiring its
       refreshedLinuxArmSource,
     ),
   );
-  for (const retired of [historicalLinuxArmSource, source25LinuxArmSource])
+  for (const retired of [
+    historicalLinuxArmSource,
+    source25LinuxArmSource,
+    image354LinuxArmSource,
+  ])
     assert(!workflow.jobs.checkpoint.concurrency.group.includes(retired));
 });
 
-test("Linux ARM image 20261026.354.1 rejects the source25 exact guard and requires the new reviewed profile", async () => {
+test("historical Linux ARM image 20261026.354.1 rejects the source25 exact guard and requires the new reviewed profile", async () => {
   const target = "aarch64-unknown-linux-gnu";
   const previous = JSON.parse(
     await readFile(
@@ -5088,7 +5100,7 @@ test("Linux ARM image 20261026.354.1 rejects the source25 exact guard and requir
     RUNNER_ENVIRONMENT: "github-hosted",
     GITHUB_REPOSITORY_VISIBILITY: "public",
     ImageOS: "ubuntu24",
-    ImageVersion: refreshedLinuxArmImage,
+    ImageVersion: image354LinuxArmImage,
   };
   assert.throws(
     () => assertHostedBuildIdentity(previous, target, observed, "linux", "x64"),
@@ -5096,7 +5108,7 @@ test("Linux ARM image 20261026.354.1 rejects the source25 exact guard and requir
   );
   const reviewed = JSON.parse(
     await readFile(
-      path.join(ROOT, refreshedLinuxArmInputs, `cef-ci-runner-${target}.json`),
+      path.join(ROOT, image354LinuxArmInputs, `cef-ci-runner-${target}.json`),
       "utf8",
     ),
   );
@@ -5137,14 +5149,215 @@ test("Linux ARM image 20261026.354.1 rejects the source25 exact guard and requir
       ),
     /insufficient/,
   );
+});
+
+test("historical 354 Linux ARM image namespace preserves twenty-eight source25 raw payloads and all four actual native tool pins", async () => {
+  const target = "aarch64-unknown-linux-gnu",
+    p = { ...checkpointProfile(target), inputs: image354LinuxArmInputs };
+  const old = path.join(ROOT, source25LinuxArmInputs),
+    fresh = path.join(ROOT, p.inputs);
+  const previous = JSON.parse(
+    await readFile(path.join(old, "source-lock.json"), "utf8"),
+  );
+  const lockRaw = await readFile(path.join(fresh, "source-lock.json"));
+  const lock = JSON.parse(lockRaw.toString("utf8"));
+  const review = JSON.parse(
+    await readFile(path.join(fresh, "review-receipt.json"), "utf8"),
+  );
+  const preserved = [
+    ...previous.patches.map((f) => f.path),
+    previous.bridge.header.path,
+    previous.builds[0].gnArgs.path,
+    "normalization-receipt.json",
+  ];
+  assert.equal(preserved.length, 28);
+  for (const file of preserved)
+    assert.deepEqual(
+      await readFile(path.join(fresh, file)),
+      await readFile(path.join(old, file)),
+    );
+  assert.deepEqual(
+    review.preservedFiles.map((f) => f.path).sort(),
+    [...preserved].sort(),
+  );
+  for (const row of review.preservedFiles) {
+    const raw = await readFile(path.join(fresh, row.path));
+    assert.equal(raw.length, row.size);
+    assert.equal(sha(raw), row.sha256);
+  }
+  assert.equal(
+    (await readdir(fresh, { recursive: true, withFileTypes: true })).filter(
+      (entry) => entry.isFile(),
+    ).length,
+    32,
+  );
+  const runnerFile = `cef-ci-runner-${target}.json`,
+    toolFile = `tools/${target}.json`;
+  const oldRunner = JSON.parse(
+    await readFile(path.join(old, runnerFile), "utf8"),
+  );
+  const runnerRaw = await readFile(path.join(fresh, runnerFile));
+  const expected = structuredClone(oldRunner);
+  expected.hosted.imageVersion = image354LinuxArmImage;
+  assert.deepEqual(JSON.parse(runnerRaw.toString("utf8")), expected);
+  assert.deepEqual(review.buildHost, expected.hosted);
+  const priorTools = JSON.parse(
+    await readFile(path.join(old, toolFile), "utf8"),
+  );
+  const toolRaw = await readFile(path.join(fresh, toolFile));
+  const tools = JSON.parse(toolRaw.toString("utf8"));
+  const nativePins = tools.files.filter((f) => f.path !== runnerFile);
+  assert.equal(nativePins.length, 4);
+  assert.deepEqual(
+    nativePins,
+    priorTools.files.filter((f) => f.path !== runnerFile),
+  );
+  assert.deepEqual(
+    nativePins,
+    review.actualObservedPrerequisites.exactNativeToolPins,
+  );
+  assert.deepEqual(
+    tools.files.find((f) => f.path === runnerFile),
+    { path: runnerFile, sha256: sha(runnerRaw), size: runnerRaw.length },
+  );
+  assert.equal(review.changes.runnerRawSha256, sha(runnerRaw));
+  assert.equal(review.changes.toolchainRawSha256, sha(toolRaw));
+  assert.deepEqual(review.changes.runnerImageOnly, {
+    from: "20261023.334.3",
+    to: image354LinuxArmImage,
+  });
+  // Only the toolchain lock pin differs from the source25 source lock.
+  const expectedLock = structuredClone(previous);
+  expectedLock.builds[0].toolchainLock.sha256 = sha(toolRaw);
+  assert.deepEqual(lock, expectedLock);
+  assert.equal(review.sourceLockRawSha256, sha(lockRaw));
+  assert.equal(review.sourceLockIdentity, image354LinuxArmSource);
+  assert.equal(review.baseNamespace, source25LinuxArmInputs);
+  assert.equal(review.baseSourceLockIdentity, source25LinuxArmSource);
+  assert.equal(review.actualObservedPrerequisites.runId, 40715898661);
+  assert.equal(review.actualObservedPrerequisites.artifact.id, 12827528441);
+  assert.equal(
+    review.actualObservedPrerequisites.image.version,
+    image354LinuxArmImage,
+  );
+  assert.equal(
+    review.actualObservedPrerequisites.observationTarget,
+    "x86_64-unknown-linux-gnu",
+  );
+  assert.equal(review.historicalNormalizationReceipt.byteIdentical, true);
+  assert.notEqual(
+    review.historicalNormalizationReceipt.sourceLockIdentity,
+    image354LinuxArmSource,
+  );
+  assert.equal(review.nativeAcceptancePerformed, false);
+  assert.equal(review.engineCompiled, false);
+  assert.equal(review.sourceAcquired, false);
+  assert.equal(review.publicationAllowed, false);
+  assert.equal(p.acceptanceRunner, "ubuntu-24.04-arm");
+  assert.equal(p.acceptanceArchitecture, "arm64");
+  const reviewed = await plan({
+    inputs: p.inputs,
+    target,
+    checkout: ROOT,
+    runnerMode: "hosted",
+  });
+  assert.equal(
+    releaseIdentity(reviewed.sourceLock, target).sourceLockSha256,
+    image354LinuxArmSource,
+  );
+  const oldSource = releaseIdentity(previous, target).sourceLockSha256;
+  assert.equal(oldSource, source25LinuxArmSource);
+  assert.notEqual(oldSource, image354LinuxArmSource);
+  const expectedIdentity = {
+    ...identity,
+    target,
+    source: image354LinuxArmSource,
+    image: image354LinuxArmImage,
+  };
+  assert.throws(() => validateIdentity(expectedIdentity), /source/);
+  assert(
+    (await readFile(path.join(ROOT, ".gitattributes"), "utf8")).includes(
+      image354LinuxArmInputs + "/** -text -whitespace",
+    ),
+  );
+  assert(
+    (await readFile(path.join(ROOT, ".prettierignore"), "utf8")).includes(
+      image354LinuxArmInputs + "/",
+    ),
+  );
+});
+
+test("Linux ARM image 20261101.360.1 rejects the 354 exact guard and requires the new reviewed profile", async () => {
+  const target = "aarch64-unknown-linux-gnu";
+  const previous = JSON.parse(
+    await readFile(
+      path.join(ROOT, image354LinuxArmInputs, `cef-ci-runner-${target}.json`),
+      "utf8",
+    ),
+  );
+  assert.equal(previous.hosted.imageVersion, image354LinuxArmImage);
+  const observed = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    ImageOS: "ubuntu24",
+    ImageVersion: refreshedLinuxArmImage,
+  };
+  assert.throws(
+    () => assertHostedBuildIdentity(previous, target, observed, "linux", "x64"),
+    /reviewed image identity changed/,
+  );
+  const reviewed = JSON.parse(
+    await readFile(
+      path.join(ROOT, refreshedLinuxArmInputs, `cef-ci-runner-${target}.json`),
+      "utf8",
+    ),
+  );
+  const proposed = structuredClone(previous);
+  proposed.hosted.imageVersion = observed.ImageVersion;
+  assert.deepEqual(reviewed, proposed);
+  assert.equal(
+    assertHostedBuildIdentity(reviewed, target, observed, "linux", "x64")
+      .crossCompiled,
+    true,
+  );
+  for (const [environment, platform, arch] of [
+    [{ ...observed, ImageVersion: image354LinuxArmImage }, "linux", "x64"],
+    [{ ...observed, ImageVersion: "unreviewed" }, "linux", "x64"],
+    [observed, "linux", "arm64"],
+    [observed, "darwin", "x64"],
+  ])
+    assert.throws(
+      () =>
+        assertHostedBuildIdentity(
+          reviewed,
+          target,
+          environment,
+          platform,
+          arch,
+        ),
+      /reviewed image identity changed/,
+    );
+  assertHostedCapacity(
+    { availableGiB: 102.44, memoryGiB: 15.61, cpus: 4 },
+    reviewed,
+  );
+  assert.throws(
+    () =>
+      assertHostedCapacity(
+        { availableGiB: 99, memoryGiB: 15.61, cpus: 4 },
+        reviewed,
+      ),
+    /insufficient/,
+  );
   assert.equal(checkpointProfile(target).inputs, refreshedLinuxArmInputs);
   assert.equal(checkpointProfile(target).source, refreshedLinuxArmSource);
 });
 
-test("refreshed Linux ARM image namespace preserves twenty-eight source25 raw payloads and all four actual native tool pins", async () => {
+test("refreshed 360 Linux ARM image namespace preserves twenty-eight 354 raw payloads and all four actual native tool pins", async () => {
   const target = "aarch64-unknown-linux-gnu",
     p = checkpointProfile(target);
-  const old = path.join(ROOT, source25LinuxArmInputs),
+  const old = path.join(ROOT, image354LinuxArmInputs),
     fresh = path.join(ROOT, p.inputs);
   const previous = JSON.parse(
     await readFile(path.join(old, "source-lock.json"), "utf8"),
@@ -5213,7 +5426,7 @@ test("refreshed Linux ARM image namespace preserves twenty-eight source25 raw pa
   assert.equal(review.changes.runnerRawSha256, sha(runnerRaw));
   assert.equal(review.changes.toolchainRawSha256, sha(toolRaw));
   assert.deepEqual(review.changes.runnerImageOnly, {
-    from: "20261023.334.3",
+    from: image354LinuxArmImage,
     to: refreshedLinuxArmImage,
   });
   // Only the toolchain lock pin differs from the source25 source lock.
@@ -5222,10 +5435,10 @@ test("refreshed Linux ARM image namespace preserves twenty-eight source25 raw pa
   assert.deepEqual(lock, expectedLock);
   assert.equal(review.sourceLockRawSha256, sha(lockRaw));
   assert.equal(review.sourceLockIdentity, refreshedLinuxArmSource);
-  assert.equal(review.baseNamespace, source25LinuxArmInputs);
-  assert.equal(review.baseSourceLockIdentity, source25LinuxArmSource);
-  assert.equal(review.actualObservedPrerequisites.runId, 40715898661);
-  assert.equal(review.actualObservedPrerequisites.artifact.id, 12827528441);
+  assert.equal(review.baseNamespace, image354LinuxArmInputs);
+  assert.equal(review.baseSourceLockIdentity, image354LinuxArmSource);
+  assert.equal(review.actualObservedPrerequisites.runId, 41871826160);
+  assert.equal(review.actualObservedPrerequisites.artifact.id, 13344544767);
   assert.equal(
     review.actualObservedPrerequisites.image.version,
     refreshedLinuxArmImage,
@@ -5256,7 +5469,7 @@ test("refreshed Linux ARM image namespace preserves twenty-eight source25 raw pa
     refreshedLinuxArmSource,
   );
   const oldSource = releaseIdentity(previous, target).sourceLockSha256;
-  assert.equal(oldSource, source25LinuxArmSource);
+  assert.equal(oldSource, image354LinuxArmSource);
   assert.notEqual(oldSource, refreshedLinuxArmSource);
   const expectedIdentity = {
     ...identity,
@@ -15757,6 +15970,31 @@ test("asset upload recovers from a transient refusal by fresh lookup, never re-s
   assert.equal(posts, UPLOAD_RECOVERY.attempts);
 });
 
+test("CLI refusal prints one bounded redacted cause line", () => {
+  const secret = "ghs_SECRETSECRETSECRET123";
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/cef-engineering-checkpoint.mjs", "download"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        GH_TOKEN: secret,
+        CEF_ENGINEERING_TARGET: `unreviewed-${secret}`,
+      },
+    },
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /operation failed; retained logs/);
+  const causes = result.stderr
+    .split(/\r?\n/)
+    .filter((line) => line.includes("[cef-engineering-checkpoint] cause:"));
+  assert.equal(causes.length, 1);
+  assert(causes[0].length < 400);
+  assert.doesNotMatch(result.stderr, /SECRETSECRET/);
+});
+
 const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
 m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]
 exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
@@ -16822,6 +17060,8 @@ test("original reap lease actual predicates deny live groups expired leases and 
 });
 
 function withoutMacSourceCompletion(text, name) {
+  if (name === "scripts/cef-engineering-checkpoint.mjs")
+    text = withoutCliCause(text);
   if (name === "scripts/lib/cef-engineering-checkpoint.mjs")
     text = withoutCompileObservation(text);
   if (name === "scripts/lib/cef-checkpoint-archive.py")

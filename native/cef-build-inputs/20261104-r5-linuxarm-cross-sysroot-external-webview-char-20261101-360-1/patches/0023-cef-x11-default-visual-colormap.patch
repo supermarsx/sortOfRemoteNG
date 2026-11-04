@@ -1,0 +1,29 @@
+diff --git a/libcef/browser/native/window_x11.cc b/libcef/browser/native/window_x11.cc
+--- a/libcef/browser/native/window_x11.cc
++++ b/libcef/browser/native/window_x11.cc
+@@ -127,18 +127,25 @@
+     parent_xwindow_ = ui::GetX11RootWindow();
+   }
+ 
+   x11::VisualId visual;
+   uint8_t depth;
+   x11::ColorMap colormap;
+   connection_->GetOrCreateVisualManager().ChooseVisualForWindow(
+       /*want_argb_visual=*/false, &visual, &depth, &colormap,
+       /*visual_has_alpha=*/nullptr);
++
++  // A default visual needs its own screen colormap when the borrowed parent
++  // uses another visual. A zero colormap would inherit the parent's map.
++  if (visual == connection_->default_root_visual().visual_id &&
++      colormap == x11::ColorMap{}) {
++    colormap = connection_->default_screen().default_colormap;
++  }
+ 
+   xwindow_ = connection_->GenerateId<x11::Window>();
+ 
+   connection_->CreateWindow({
+       .depth = depth,
+       .wid = xwindow_,
+       .parent = parent_xwindow_,
+       .x = static_cast<int16_t>(bounds.x()),
+       .y = static_cast<int16_t>(bounds.y()),
