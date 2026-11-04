@@ -54,7 +54,7 @@ assert(begin > 0 && end > begin);
 const strictReaders = driver.slice(begin, end);
 assert.equal(
   hash(strictReaders),
-  "ccfffb973a7c008feda1933c6e620d57778eb1bc8b440d3e92ac2d29596f43e8",
+  "9a8d6841213b7bb88882d4fbccd8ee8548b983b0a6a27b857cd826dec4d1fb77",
 );
 const readers = new Function(
   "Buffer",
@@ -119,6 +119,12 @@ function strictParsed() {
     ],
     outputs: ["//out/Release_GN_arm64/" + generated.relativeOutput],
     deps: [prefix + ":buildflag_macro"],
+    // Real GN150a9d6 output (captured from the local x64 Chromium tree) also
+    // reports what the public dep propagates.
+    public_configs: [prefix + ":public_includes"],
+    libs: [
+      "//third_party/llvm-build/Release+Asserts/lib/clang/24/lib/windows/clang_rt.builtins-aarch64.lib",
+    ],
     response_file_contents: [
       "--flags",
       ...candidate.partitionAllocMacros.map(
@@ -562,4 +568,137 @@ test("new module remains pure data-only with immutable false gate and original d
   assert(
     full.includes('throw new Error("PRIVATE_ARM64_DEFAULTS_UNQUALIFIED")'),
   );
+});
+
+// GN150a9d6 src/gn/desc_builder.cc: an action always emits type, toolchain,
+// metadata, visibility, testonly, check_includes_strict, public, script, args,
+// outputs and deps; data, sources, inputs, response_file_contents, depfile,
+// output_name/dir/extension, gen_deps and validations only when non-empty.
+test("real GN desc action key set: conditional keys are explicit, required keys stay required and unknown keys deny with a name/type-only diagnostic", () => {
+  const parsed = strictParsed();
+  const run = (mutate, role = "partitionAlloc") => {
+    const top = JSON.parse(parsed.desc);
+    const key = Object.keys(top)[0];
+    mutate(top[key], top, key);
+    return readers.qualificationInspectAction(
+      Buffer.from(JSON.stringify(top)),
+      role,
+      policyRaw,
+      candidateRaw,
+    );
+  };
+  // Optional keys emitted by GN only when non-empty are admitted.
+  for (const [key, value] of [
+    ["data", ["//x/data.txt"]],
+    ["sources", ["//x/a.txt"]],
+    ["inputs", ["//x/in.txt"]],
+    ["depfile", "//out/x.d"],
+    ["gen_deps", ["//x:gen"]],
+    ["validations", ["//x:validate"]],
+    ["public_configs", ["//x:cfg"]],
+    ["libs", ["//x/y.lib"]],
+  ])
+    assert.deepEqual(
+      run((action) => {
+        action[key] = value;
+      }).evaluatedMacroValues,
+      parsed.parsedAction.evaluatedMacroValues,
+      key,
+    );
+  // A required key can never be absent.
+  for (const key of [
+    "type",
+    "toolchain",
+    "metadata",
+    "visibility",
+    "testonly",
+    "check_includes_strict",
+    "public",
+    "script",
+    "args",
+    "outputs",
+    "deps",
+    "response_file_contents",
+  ])
+    assert.throws(
+      () =>
+        run((action) => {
+          delete action[key];
+        }),
+      /PRIVATE_GN_DESC_FIELDS/,
+      key,
+    );
+  // Unknown keys (including binary-only ones) still deny, with a bounded
+  // name/type-only diagnostic carried on the error.
+  for (const key of ["check_includes", "configs", "cflags", "extra"]) {
+    let caught;
+    try {
+      run((action) => {
+        action[key] = ["SECRET-VALUE"];
+      });
+    } catch (error) {
+      caught = error;
+    }
+    assert.match(String(caught?.message), /^PRIVATE_GN_DESC_FIELDS$/, key);
+    assert.ok(caught.gnDescShape.length <= 64);
+    assert.ok(caught.gnDescShape.some(([name]) => name === key));
+    assert.equal(JSON.stringify(caught.gnDescShape).includes("SECRET"), false);
+    assert.ok(
+      caught.gnDescShape.every(
+        ([name, type]) =>
+          /^[a-z0-9_]{1,48}$/.test(name) &&
+          ["array", "string", "number", "boolean", "object", "null"].includes(
+            type,
+          ),
+      ),
+    );
+  }
+  // Optional values are bounded strings or string arrays.
+  for (const value of [[1], { a: 1 }, 7, ["a".repeat(4097)]])
+    assert.throws(
+      () =>
+        run((action) => {
+          action.data = value;
+        }),
+      /PRIVATE_GN_DESC_FIELDS/,
+    );
+});
+
+// Verbatim key/value shape of `gn desc --format=json //cef:make_config_header`
+// from GN150a9d6 (buildtools/win/gn.exe) on the local Chromium tree, with the
+// target-specific toolchain/output spelled for the arm64 build directory.
+test("real GN desc of //cef:make_config_header is admitted unchanged and a missing or extra key denies", () => {
+  const label = "//cef:make_config_header";
+  const real = {
+    [label]: {
+      args: ["gen/cef/include/cef_config.h", "args.gn"],
+      check_includes_strict: false,
+      deps: ["//cef:args_gn_source"],
+      inputs: ["//out/Release_GN_arm64/args.gn"],
+      metadata: {},
+      outputs: ["//out/Release_GN_arm64/gen/cef/include/cef_config.h"],
+      public: "*",
+      script: "//cef/tools/make_config_header.py",
+      testonly: false,
+      toolchain: "//build/toolchain/win:win_clang_arm64",
+      type: "action",
+      visibility: ["*"],
+    },
+  };
+  const run = (value) =>
+    readers.qualificationInspectAction(
+      Buffer.from(JSON.stringify(value)),
+      "cefConfig",
+      policyRaw,
+      candidateRaw,
+    );
+  assert.ok(run(real));
+  for (const key of Object.keys(real[label])) {
+    const missing = structuredClone(real);
+    delete missing[label][key];
+    assert.throws(() => run(missing), /PRIVATE_GN_DESC_FIELDS/, key);
+  }
+  const extra = structuredClone(real);
+  extra[label].cflags = ["-x"];
+  assert.throws(() => run(extra), /PRIVATE_GN_DESC_FIELDS/);
 });

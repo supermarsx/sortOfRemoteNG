@@ -508,6 +508,122 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_SHAPE_HISTORY = {
+  driver: {
+    bytes: 297164,
+    sha256: "19a14ac8024f8aa1f30c6df5906fea28a70a8163e6b1003beb0353454809fcc6",
+    rows: [
+      {
+        old: "  qualificationShape(\n    action,\n    [\n",
+        new: "  // Closed key set of the pinned GN150a9d6 src/gn/desc_builder.cc for an\n  // action: the core keys are always emitted, the role key is required by the\n  // reviewed policy, and the rest are emitted only when non-empty (the\n  // inherited public_configs/libs/... also appear, e.g. buildflags inherits a\n  // public config and the clang builtins lib through its public dep).\n  const gnCore = [\n",
+        oldSha256:
+          "60db788b61f9d2a1e270b9527c3dbba01d619065b92742807be54fd9a59db852",
+        newSha256:
+          "04784b6b4fc73fca6d5ca7acfb4e390c40c24aa546de3203f150acfb84e25dd8",
+      },
+      {
+        old: '      "deps",\n      ...(role === "partitionAlloc" ? ["response_file_contents"] : ["inputs"]),\n',
+        new: '      "deps",\n',
+        oldSha256:
+          "15b3792b20ebeb1c8228a787a00296172b8420d8fea81201260dde65486e30e2",
+        newSha256:
+          "4c62f6037299260d2f14ca4a461f49c012e4d21c855a8486e965e0bfb4558759",
+      },
+      {
+        old: '    "PRIVATE_GN_DESC_FIELDS",\n  );\n',
+        new: '    gnRequired = [\n      ...gnCore,\n      role === "partitionAlloc" ? "response_file_contents" : "inputs",\n    ],\n    gnOptional = [\n      "data",\n      "sources",\n      "inputs",\n      "response_file_contents",\n      "depfile",\n      "output_name",\n      "output_dir",\n      "output_extension",\n      "gen_deps",\n      "validations",\n      "public_configs",\n      "all_dependent_configs",\n      "libs",\n      "lib_dirs",\n      "frameworks",\n      "weak_frameworks",\n      "weak_libraries",\n      "framework_dirs",\n    ];\n  const gnPlain =\n    action !== null &&\n    typeof action === "object" &&\n    !Array.isArray(action) &&\n    Object.getPrototypeOf(action) === Object.prototype;\n  if (\n    !gnPlain ||\n    !gnRequired.every((key) => Object.hasOwn(action, key)) ||\n    !Object.keys(action).every(\n      (key) => gnRequired.includes(key) || gnOptional.includes(key),\n    )\n  ) {\n    // Names and value types only, bounded; never values.\n    const failure = new Error("PRIVATE_GN_DESC_FIELDS");\n    failure.gnDescShape = gnPlain\n      ? Object.keys(action)\n          .slice(0, 64)\n          .map((key) => [\n            key.replace(/[^a-z0-9_]/g, "_").slice(0, 48),\n            action[key] === null\n              ? "null"\n              : Array.isArray(action[key])\n                ? "array"\n                : typeof action[key],\n          ])\n      : [];\n    throw failure;\n  }\n  for (const key of gnOptional)\n    if (Object.hasOwn(action, key))\n      need(\n        Array.isArray(action[key])\n          ? action[key].length <= 4096 &&\n              action[key].every(\n                (item) =>\n                  typeof item === "string" &&\n                  qualificationStringBound(item, 4096),\n              )\n          : typeof action[key] === "string" &&\n              qualificationStringBound(action[key], 4096),\n        "PRIVATE_GN_DESC_FIELDS",\n      );\n',
+        oldSha256:
+          "2b3ffec696ac3f114ed639094be49a81561a043d55f82f325e8c4c75651a2973",
+        newSha256:
+          "eb8260b105358b1ff3ece2975ec9f31cf8935e6505e83ef1441ace1920b0eeb7",
+      },
+      {
+        old: "",
+        new: '}\n// Observed GN desc action key names and value types only (bounded, no values).\nfunction fullGnDescDiagnostic(error) {\n  try {\n    if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\n      return null;\n    const rows = fullGraphOwnValue(error, "gnDescShape");\n    if (!Array.isArray(rows) || rows.length > 64) return null;\n    const keys = [];\n    for (const row of rows) {\n      if (\n        !Array.isArray(row) ||\n        row.length !== 2 ||\n        typeof row[0] !== "string" ||\n        !/^[a-z0-9_]{1,48}$/.test(row[0]) ||\n        !["array", "string", "number", "boolean", "object", "null"].includes(\n          row[1],\n        )\n      )\n        return null;\n      keys.push([row[0], row[1]]);\n    }\n    return { kind: "windows-arm-source-gn-desc-shape", keys };\n  } catch {\n    return null;\n  }\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "13e226c3ded6e7978a4770842d14eb0d19b7b881e3c3b331b588b869cdf88ace",
+      },
+      {
+        old: "",
+        new: '    const gnDescDiagnostic =\n      failed && stage === "metadata-qualification"\n        ? fullGnDescDiagnostic(primary)\n        : null;\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "630a37f882334dba120c79073da8e79f8aa8bafef30380a99674d6a37f8c67cf",
+      },
+      {
+        old: "",
+        new: "      ...(gnDescDiagnostic ? { gnDescDiagnostic } : {}),\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "bfb08c042adca7e7b6e20c7b921b71ffb3b51f92547a2d76e4e3e13e1c22521e",
+      },
+    ],
+  },
+  controller: {
+    bytes: 175570,
+    sha256: "62760e79a1076d07f3b8c00ebb26f631f9f0336bbb99b162a9dedc9f014e2c73",
+    rows: [
+      {
+        old: "  parentMetadata_qualificationShape(\n    action,\n    [\n",
+        new: "  // Closed key set of the pinned GN150a9d6 src/gn/desc_builder.cc for an\n  // action: the core keys are always emitted, the role key is required by the\n  // reviewed policy, and the rest are emitted only when non-empty (the\n  // inherited public_configs/libs/... also appear, e.g. buildflags inherits a\n  // public config and the clang builtins lib through its public dep).\n  const gnCore = [\n",
+        oldSha256:
+          "74ec9f82ff2b642045394e9b12bdaeeebadeceb72b54e6b8533d7f7463763738",
+        newSha256:
+          "04784b6b4fc73fca6d5ca7acfb4e390c40c24aa546de3203f150acfb84e25dd8",
+      },
+      {
+        old: '      "deps",\n      ...(role === "partitionAlloc" ? ["response_file_contents"] : ["inputs"]),\n',
+        new: '      "deps",\n',
+        oldSha256:
+          "15b3792b20ebeb1c8228a787a00296172b8420d8fea81201260dde65486e30e2",
+        newSha256:
+          "4c62f6037299260d2f14ca4a461f49c012e4d21c855a8486e965e0bfb4558759",
+      },
+      {
+        old: '    "PRIVATE_GN_DESC_FIELDS",\n  );\n',
+        new: '    gnRequired = [\n      ...gnCore,\n      role === "partitionAlloc" ? "response_file_contents" : "inputs",\n    ],\n    gnOptional = [\n      "data",\n      "sources",\n      "inputs",\n      "response_file_contents",\n      "depfile",\n      "output_name",\n      "output_dir",\n      "output_extension",\n      "gen_deps",\n      "validations",\n      "public_configs",\n      "all_dependent_configs",\n      "libs",\n      "lib_dirs",\n      "frameworks",\n      "weak_frameworks",\n      "weak_libraries",\n      "framework_dirs",\n    ];\n  const gnPlain =\n    action !== null &&\n    typeof action === "object" &&\n    !Array.isArray(action) &&\n    Object.getPrototypeOf(action) === Object.prototype;\n  if (\n    !gnPlain ||\n    !gnRequired.every((key) => Object.hasOwn(action, key)) ||\n    !Object.keys(action).every(\n      (key) => gnRequired.includes(key) || gnOptional.includes(key),\n    )\n  ) {\n    // Names and value types only, bounded; never values.\n    const failure = new Error("PRIVATE_GN_DESC_FIELDS");\n    failure.gnDescShape = gnPlain\n      ? Object.keys(action)\n          .slice(0, 64)\n          .map((key) => [\n            key.replace(/[^a-z0-9_]/g, "_").slice(0, 48),\n            action[key] === null\n              ? "null"\n              : Array.isArray(action[key])\n                ? "array"\n                : typeof action[key],\n          ])\n      : [];\n    throw failure;\n  }\n  for (const key of gnOptional)\n    if (Object.hasOwn(action, key))\n      need(\n        Array.isArray(action[key])\n          ? action[key].length <= 4096 &&\n              action[key].every(\n                (item) =>\n                  typeof item === "string" &&\n                  parentMetadata_qualificationStringBound(item, 4096),\n              )\n          : typeof action[key] === "string" &&\n              parentMetadata_qualificationStringBound(action[key], 4096),\n        "PRIVATE_GN_DESC_FIELDS",\n      );\n',
+        oldSha256:
+          "2b3ffec696ac3f114ed639094be49a81561a043d55f82f325e8c4c75651a2973",
+        newSha256:
+          "41ae60b3f85c27d8a98d1bdcc5cc0ddaa01286be4bffdc65471ebde0b690f9d0",
+      },
+    ],
+  },
+};
+function fullGraphShapeInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_SHAPE_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_SHAPE_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_SHAPE_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_SHAPE_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_SHAPE_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_SHAPE_WHOLE");
+  return text;
+}
 const FULL_GRAPH_PATH_HISTORY = {
   profile: {
     bytes: 11144,
@@ -747,6 +863,7 @@ const FULL_GRAPH_PATH_HISTORY = {
   },
 };
 function fullGraphPathInverse(text, name) {
+  text = fullGraphShapeInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_PATH_HISTORY[name];
   if (!spec) return text;

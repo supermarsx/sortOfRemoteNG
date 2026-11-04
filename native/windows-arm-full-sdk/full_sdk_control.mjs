@@ -1668,9 +1668,12 @@ function parentMetadata_qualificationInspectAction(
   const top = parentMetadata_qualificationBoundedJson(raw, 1024 ** 2);
   parentMetadata_qualificationShape(top, [label], "PRIVATE_GN_DESC_LABEL");
   const action = top[label];
-  parentMetadata_qualificationShape(
-    action,
-    [
+  // Closed key set of the pinned GN150a9d6 src/gn/desc_builder.cc for an
+  // action: the core keys are always emitted, the role key is required by the
+  // reviewed policy, and the rest are emitted only when non-empty (the
+  // inherited public_configs/libs/... also appear, e.g. buildflags inherits a
+  // public config and the clang builtins lib through its public dep).
+  const gnCore = [
       "type",
       "toolchain",
       "metadata",
@@ -1682,10 +1685,73 @@ function parentMetadata_qualificationInspectAction(
       "args",
       "outputs",
       "deps",
-      ...(role === "partitionAlloc" ? ["response_file_contents"] : ["inputs"]),
     ],
-    "PRIVATE_GN_DESC_FIELDS",
-  );
+    gnRequired = [
+      ...gnCore,
+      role === "partitionAlloc" ? "response_file_contents" : "inputs",
+    ],
+    gnOptional = [
+      "data",
+      "sources",
+      "inputs",
+      "response_file_contents",
+      "depfile",
+      "output_name",
+      "output_dir",
+      "output_extension",
+      "gen_deps",
+      "validations",
+      "public_configs",
+      "all_dependent_configs",
+      "libs",
+      "lib_dirs",
+      "frameworks",
+      "weak_frameworks",
+      "weak_libraries",
+      "framework_dirs",
+    ];
+  const gnPlain =
+    action !== null &&
+    typeof action === "object" &&
+    !Array.isArray(action) &&
+    Object.getPrototypeOf(action) === Object.prototype;
+  if (
+    !gnPlain ||
+    !gnRequired.every((key) => Object.hasOwn(action, key)) ||
+    !Object.keys(action).every(
+      (key) => gnRequired.includes(key) || gnOptional.includes(key),
+    )
+  ) {
+    // Names and value types only, bounded; never values.
+    const failure = new Error("PRIVATE_GN_DESC_FIELDS");
+    failure.gnDescShape = gnPlain
+      ? Object.keys(action)
+          .slice(0, 64)
+          .map((key) => [
+            key.replace(/[^a-z0-9_]/g, "_").slice(0, 48),
+            action[key] === null
+              ? "null"
+              : Array.isArray(action[key])
+                ? "array"
+                : typeof action[key],
+          ])
+      : [];
+    throw failure;
+  }
+  for (const key of gnOptional)
+    if (Object.hasOwn(action, key))
+      need(
+        Array.isArray(action[key])
+          ? action[key].length <= 4096 &&
+              action[key].every(
+                (item) =>
+                  typeof item === "string" &&
+                  parentMetadata_qualificationStringBound(item, 4096),
+              )
+          : typeof action[key] === "string" &&
+              parentMetadata_qualificationStringBound(action[key], 4096),
+        "PRIVATE_GN_DESC_FIELDS",
+      );
   need(
     action.type === "action" &&
       action.toolchain === parentMetadata_QUALIFICATION_ARM_TOOLCHAIN &&

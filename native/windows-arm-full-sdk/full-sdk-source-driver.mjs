@@ -4890,9 +4890,12 @@ function qualificationInspectAction(raw, role, rawPolicy, rawCandidatePolicy) {
   const top = qualificationBoundedJson(raw, 1024 ** 2);
   qualificationShape(top, [label], "PRIVATE_GN_DESC_LABEL");
   const action = top[label];
-  qualificationShape(
-    action,
-    [
+  // Closed key set of the pinned GN150a9d6 src/gn/desc_builder.cc for an
+  // action: the core keys are always emitted, the role key is required by the
+  // reviewed policy, and the rest are emitted only when non-empty (the
+  // inherited public_configs/libs/... also appear, e.g. buildflags inherits a
+  // public config and the clang builtins lib through its public dep).
+  const gnCore = [
       "type",
       "toolchain",
       "metadata",
@@ -4904,10 +4907,73 @@ function qualificationInspectAction(raw, role, rawPolicy, rawCandidatePolicy) {
       "args",
       "outputs",
       "deps",
-      ...(role === "partitionAlloc" ? ["response_file_contents"] : ["inputs"]),
     ],
-    "PRIVATE_GN_DESC_FIELDS",
-  );
+    gnRequired = [
+      ...gnCore,
+      role === "partitionAlloc" ? "response_file_contents" : "inputs",
+    ],
+    gnOptional = [
+      "data",
+      "sources",
+      "inputs",
+      "response_file_contents",
+      "depfile",
+      "output_name",
+      "output_dir",
+      "output_extension",
+      "gen_deps",
+      "validations",
+      "public_configs",
+      "all_dependent_configs",
+      "libs",
+      "lib_dirs",
+      "frameworks",
+      "weak_frameworks",
+      "weak_libraries",
+      "framework_dirs",
+    ];
+  const gnPlain =
+    action !== null &&
+    typeof action === "object" &&
+    !Array.isArray(action) &&
+    Object.getPrototypeOf(action) === Object.prototype;
+  if (
+    !gnPlain ||
+    !gnRequired.every((key) => Object.hasOwn(action, key)) ||
+    !Object.keys(action).every(
+      (key) => gnRequired.includes(key) || gnOptional.includes(key),
+    )
+  ) {
+    // Names and value types only, bounded; never values.
+    const failure = new Error("PRIVATE_GN_DESC_FIELDS");
+    failure.gnDescShape = gnPlain
+      ? Object.keys(action)
+          .slice(0, 64)
+          .map((key) => [
+            key.replace(/[^a-z0-9_]/g, "_").slice(0, 48),
+            action[key] === null
+              ? "null"
+              : Array.isArray(action[key])
+                ? "array"
+                : typeof action[key],
+          ])
+      : [];
+    throw failure;
+  }
+  for (const key of gnOptional)
+    if (Object.hasOwn(action, key))
+      need(
+        Array.isArray(action[key])
+          ? action[key].length <= 4096 &&
+              action[key].every(
+                (item) =>
+                  typeof item === "string" &&
+                  qualificationStringBound(item, 4096),
+              )
+          : typeof action[key] === "string" &&
+              qualificationStringBound(action[key], 4096),
+        "PRIVATE_GN_DESC_FIELDS",
+      );
   need(
     action.type === "action" &&
       action.toolchain === QUALIFICATION_ARM_TOOLCHAIN &&
@@ -6745,6 +6811,32 @@ function collectFullQualificationGraph(owner) {
     },
   );
   return pending;
+}
+// Observed GN desc action key names and value types only (bounded, no values).
+function fullGnDescDiagnostic(error) {
+  try {
+    if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
+      return null;
+    const rows = fullGraphOwnValue(error, "gnDescShape");
+    if (!Array.isArray(rows) || rows.length > 64) return null;
+    const keys = [];
+    for (const row of rows) {
+      if (
+        !Array.isArray(row) ||
+        row.length !== 2 ||
+        typeof row[0] !== "string" ||
+        !/^[a-z0-9_]{1,48}$/.test(row[0]) ||
+        !["array", "string", "number", "boolean", "object", "null"].includes(
+          row[1],
+        )
+      )
+        return null;
+      keys.push([row[0], row[1]]);
+    }
+    return { kind: "windows-arm-source-gn-desc-shape", keys };
+  } catch {
+    return null;
+  }
 }
 function fullGraphFailureClassification(error) {
   if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
@@ -8999,6 +9091,10 @@ async function runFullSourceBody(argv) {
       failed && stage === "graph-inventory"
         ? fullSourceGraphDiagnostic(qualificationOwner, primary)
         : null;
+    const gnDescDiagnostic =
+      failed && stage === "metadata-qualification"
+        ? fullGnDescDiagnostic(primary)
+        : null;
     const code =
       graphDiagnostic?.code === "GRAPH_BOUND"
         ? "GRAPH_BOUND"
@@ -9017,6 +9113,7 @@ async function runFullSourceBody(argv) {
         ? { failureDiagnostic: fullSourceApplyDiagnostic(primary) }
         : {}),
       ...(graphDiagnostic ? { graphDiagnostic } : {}),
+      ...(gnDescDiagnostic ? { gnDescDiagnostic } : {}),
       target: TARGET,
       sourceId: p.sourceGn.sourceId,
       graph,
