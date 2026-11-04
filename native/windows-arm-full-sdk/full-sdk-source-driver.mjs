@@ -1885,6 +1885,9 @@ def admitted():
 gn.FindGnTool=admitted
 sys.exit(gn.main([script,*sys.argv[5:]]))
 `;
+  // c101 subprocess2 uses cmd on Windows; transport the unchanged body on one
+  // physical line, with safe whitespace forcing list2cmdline argument quoting.
+  const runnerTransport = `exec( bytes.fromhex('${Buffer.from(runner, "utf8").toString("hex")}') )`;
   return [
     "-B",
     "-c",
@@ -1947,11 +1950,13 @@ gn_args.GetAllPlatformConfigs=gn_projection_configs
 # END fixed ARM64 GN argument projection
 import gclient_util
 original=gclient_util.RunAction
+import subprocess
 def reviewed_action(directory,command):
  if command and command[0]=='gn':
   if gn_projection_calls!=1:raise RuntimeError('FULL_GN_PROJECTION_COMPLETION')
   if len(command)<3 or command[1]!='gen': raise RuntimeError('FULL_GN_COMMAND')
-  command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]
+  command=[sys.executable,'-B','-c',${JSON.stringify(runnerTransport)},gn,expected,size,digest,*command[1:]]
+  if len(subprocess.list2cmdline(command))+64>8191:raise RuntimeError('FULL_GN_COMMAND_BOUND')
  return original(directory,command)
 gclient_util.RunAction=reviewed_action
 sys.argv=[hook]

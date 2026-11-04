@@ -5122,7 +5122,63 @@ function fullSourceEnvironmentInverse(text, name) {
   assert.equal(hash(text), spec.sha256, "ENVIRONMENT_INVERSE_WHOLE");
   return text;
 }
+const FULL_GN_SHELL_TRANSPORT_INVERSE = {
+  bytes: 289624,
+  sha256: "e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea",
+  rows: [
+    {
+      old: "",
+      new: '  // c101 subprocess2 uses cmd on Windows; transport the unchanged body on one\n  // physical line, with safe whitespace forcing list2cmdline argument quoting.\n  const runnerTransport = `exec( bytes.fromhex(\'${Buffer.from(runner, "utf8").toString("hex")}\') )`;\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "f066cfd37df3fa678ea0c6ba91ea01fe2094788b4d7034ad6f583f54c8837e6a",
+    },
+    {
+      old: "original=gclient_util.RunAction\n",
+      new: "original=gclient_util.RunAction\nimport subprocess\n",
+      oldSha256:
+        "80746afb059fdab6f8dc4e2492328068d7df00960d31c2ca9f6102d227c15978",
+      newSha256:
+        "c74d004da81dec98663d5172d8e9fa8d00d9175f0acab1aea0f86fd0b2e70b80",
+    },
+    {
+      old: "  command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]\n",
+      new: "  command=[sys.executable,'-B','-c',${JSON.stringify(runnerTransport)},gn,expected,size,digest,*command[1:]]\n  if len(subprocess.list2cmdline(command))+64>8191:raise RuntimeError('FULL_GN_COMMAND_BOUND')\n",
+      oldSha256:
+        "807f7b4be8ed706024f6acdc96c83200653816fd6d4daefef6cf98d797fb1563",
+      newSha256:
+        "2b3565a2f7423a7586e9acc485d14a869754094a3b18b2358484c108817e9cfb",
+    },
+  ],
+};
+function fullGnShellTransportInverse(text, name) {
+  if (name !== "driver") return text;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of FULL_GN_SHELL_TRANSPORT_INVERSE.rows) {
+    assert.equal(hash(row.new), row.newSha256);
+    assert.equal(hash(row.old), row.oldSha256);
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GN_TRANSPORT_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    FULL_GN_SHELL_TRANSPORT_INVERSE.bytes,
+    "ASSEMBLY_INVERSE_GN_TRANSPORT_WHOLE",
+  );
+  assert.equal(
+    hash(text),
+    FULL_GN_SHELL_TRANSPORT_INVERSE.sha256,
+    "ASSEMBLY_INVERSE_GN_TRANSPORT_WHOLE",
+  );
+  return text;
+}
 function fullBootstrapCacheInverse(text, name) {
+  text = fullGnShellTransportInverse(text, name);
   text = fullSourceEnvironmentInverse(text, name);
   if (name === "workflow") return text; // This repair never changes workflow bytes.
   const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
@@ -12656,4 +12712,297 @@ test("FULL bootstrap cache inverse preserves complete previous module profiles a
     }
     assert.throws(() => fullBootstrapCacheInverse(raw + "\n", name));
   }
+});
+
+// Pinned primary utility source is data-only test transport, never a vendor binary.
+const GN_SHELL_PRIMARY_DEFLATE = {
+  "c101-subprocess2.py":
+    "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",
+  "c101-gclient_utils.py":
+    "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",
+  "cef682-gclient_util.py":
+    "eNqNVE1v2zAMvftXEC2K2EBmrD0WyCHLUqzAUBRrt6uhWHSsRZYMim7qfz9KcbakWLHdLH48ko+PvoSV70cy25Yhrwu4+Xh9Dc8twqol35mhg3W3Qa1Rwx2pDveedrAcuPUUyuwSHj2x8S5A/Q+YYw4srYUUGIAwIL2gjkDfA4JvgFsTIPiBahRIjSDPrX9BctLBZgQFn54+fwg8WgRranSSxq1iqJWDDQpQ4wenwTgxI3y9X60fntbQGItlljXSDFRVM/BAWFVgul76B7UJ3g6M1eH9XlhPxrFYXR1HziarD3MIY8gypvE2A7gEjb3nir23ATolPVtCpUdp79jWEVBxW0rK9NzW1qBUGNjYkOFrjT3DffKtiTyBCoCHEk+oqG4T1uPy+QugezHkXSfp8KLIqI3ww17mFi5i1GlPjbcaKRY+tS7gwTsUY+wqPn0oJ9hyi5zPYqFZUYbeGs7FmeKwLySlkebiM86XzLFLmauBKa7EVxM4HNPKn964PH7NYXY2dtmPs6I4pL/tL8ZPjo0wusuyVOI0SNQSpzjkp33ls8TdrahpsBqc5wMpZ1kusVjO5kkoC1lnGVg4oiIBxbcMwPlNkSX6l/ocQJh+s9KYkr5V36PT+Ul08d7GM1GvXKMRpScFTl6hBPpRrseliygzjQ18G9wyyTDXhubi6DrldCLu4uJCvCGtXaWYUkzimAQK52XLVYv1bqWsXTp9Zywj5RPLcMSVAnu9SJWU3asxVKH1+6oVWSMtnmnA+XQdQpsfOJninJOIzwueiznyGY9fgTahJmSEyDUEVjyEw09Afgw3iWSnTa14OnkFrfe7acYJqVGyQF1ChKTw549Sk5E+4jXuTWgjFouE+BQh5crBhwlKm6ZBkrbteNjHj9XvkPIvArsKM7iStinH4j+E9AuUq9eU",
+};
+const gnShellTransportFixture = String.raw`import base64, zlib, ast, contextlib, errno, hashlib, importlib.util, io, json, os, pathlib, shutil, subprocess, sys, tempfile, threading, time, types
+
+packet = json.load(sys.stdin)
+end = time.monotonic() + 20
+def pinned(name, size, digest):
+    raw = zlib.decompress(base64.b64decode(packet['primary'][name], validate=True))
+    assert len(raw) == size and hashlib.sha256(raw).hexdigest() == digest
+    return raw
+subprocess_raw = pinned('c101-subprocess2.py', 8205, 'b41c8adc9d67bbb04c7afdfe9fef3ad17f6a55f74361508c908ea8ba1722e518')
+utils_raw = pinned('c101-gclient_utils.py', 54620, '88f335ab20d376688fb58480831167c66523f6b501fe21ad164c1302ae867278')
+util_raw = pinned('cef682-gclient_util.py', 1402, 'da794cfb7b69bd56f3206efb2d7cb9f3b87032aca9c222a0b61df4b3f052a5db')
+outer = ast.parse(packet['outer'])
+action = next(n for n in outer.body if isinstance(n, ast.FunctionDef) and n.name == 'reviewed_action')
+assignment = next(n for n in ast.walk(action) if isinstance(n, ast.Assign) and isinstance(n.value, ast.List))
+transport = ast.literal_eval(assignment.value.elts[3])
+encoded = ast.parse(transport).body[0].value
+assert isinstance(encoded, ast.Call) and isinstance(encoded.func, ast.Name) and encoded.func.id == 'exec' and len(encoded.args) == 1
+hex_call = encoded.args[0]
+assert isinstance(hex_call, ast.Call) and isinstance(hex_call.func, ast.Attribute) and isinstance(hex_call.func.value, ast.Name) and hex_call.func.value.id == 'bytes' and hex_call.func.attr == 'fromhex' and len(hex_call.args) == 1
+payload = ast.literal_eval(hex_call.args[0])
+assert type(payload) is str and payload and all(c in '0123456789abcdef' for c in payload)
+body = bytes.fromhex(payload).decode('utf-8')
+assert len(body.encode()) == 1761 and hashlib.sha256(body.encode()).hexdigest() == '505236ae9dc839b45bd36b3e96889e93124778493244785f65959ff8bac957d4'
+assert body.startswith('import sys,os,hashlib,stat\n')
+assert '\n' not in transport and '\r' not in transport and ' ' in transport and not any(c in transport for c in '&|<>^%!"')
+# Execute only the actual command constructor with modeled outcome leaves.
+constructed = []
+class ModelSys: executable = packet['python']
+namespace = dict(sys=ModelSys, subprocess=subprocess, gn_projection_calls=1,
+                 gn=packet['argv'][4], expected=packet['argv'][5], size=packet['argv'][6], digest=packet['argv'][7],
+                 original=lambda directory, command: constructed.append(command))
+exec(compile(ast.Module(body=[action], type_ignores=[]), '<actual-fixed-vector-data-model>', 'exec'), namespace)
+namespace['reviewed_action']('owned', ['gn', 'gen', 'out/Release_GN_arm64'])
+assert len(constructed) == 1 and constructed[0][3] == transport and constructed[0][-2:] == ['gen', 'out/Release_GN_arm64']
+line = subprocess.list2cmdline(constructed[0])
+assert '"' + transport + '"' in line and len(line) + 64 <= 8191
+outer_line = subprocess.list2cmdline([packet['python'], *packet['argv']])
+assert len(outer_line) < 32767
+namespace['gn'] += 'x' * 8192
+try:
+    namespace['reviewed_action']('owned', ['gn', 'gen', 'out/Release_GN_arm64'])
+    raise AssertionError('overlong command reached dispatch')
+except RuntimeError as error:
+    assert str(error) == 'FULL_GN_COMMAND_BOUND'
+assert len(constructed) == 1
+facts = dict(kind='actual-Windows-cmd-GN-transport-causal', bodyBytes=len(body.encode()), bodySha256=hashlib.sha256(body.encode()).hexdigest(), byteIdenticalTransport=True, nestedCommandChars=len(line) + 64, nestedLimit=8191, outerCommandChars=len(outer_line), outerLimit=32767, tooLongDeniedBeforeDispatch=True, nativeGnExecuted=False, compilerExecuted=False)
+if packet['mode'] == 'inspect':
+    print(json.dumps(facts));sys.exit(0)
+assert packet['mode'] == 'native' and os.name == 'nt'
+sp = types.ModuleType('pinned_subprocess2')
+exec(compile(subprocess_raw, '<pinned-c101-subprocess2>', 'exec'), sp.__dict__)
+original_popen = sp.Popen
+root = pathlib.Path(tempfile.mkdtemp(prefix='gn-shell-owned-')).resolve(strict=True)
+owned = []
+timers = []
+timed_out = []
+def launch(args, **kwargs):
+    assert args[0] == sys.executable and args[1:3] == ['-B', '-c']
+    assert time.monotonic() + 5 < end
+    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    child = original_popen(args, **kwargs)
+    owned.append(child)
+    def stop():
+        if child.poll() is None:
+            timed_out.append(True)
+            child.kill()
+    timer = threading.Timer(5, stop)
+    timer.daemon = True
+    timer.start()
+    timers.append(timer)
+    return child
+subprocess_api = types.SimpleNamespace(Popen=launch, STDOUT=sp.STDOUT, CalledProcessError=sp.CalledProcessError)
+utils_tree = ast.parse(utils_raw)
+function = next(n for n in utils_tree.body if isinstance(n, ast.FunctionDef) and n.name == 'CheckCallAndFilter')
+children = set()
+scope = dict(sys=sys, os=os, io=io, errno=errno, shutil=shutil, time=time, subprocess2=subprocess_api,
+             RETRY_MAX=1, RETRY_INITIAL_SLEEP=2, GetOperatingSystem=lambda: 'win',
+             GClientChildren=types.SimpleNamespace(add=children.add, remove=children.remove))
+exec(compile(ast.Module(body=[function], type_ignores=[]), '<actual-c101-CheckCallAndFilter>', 'exec'), scope)
+util_tree = ast.parse(util_raw)
+run_action = next(n for n in util_tree.body if isinstance(n, ast.FunctionDef) and n.name == 'RunAction')
+util_scope = dict(sys=sys, gclient_utils=types.SimpleNamespace(CheckCallAndFilter=scope['CheckCallAndFilter'], Error=type('Error', (Exception,), {})))
+exec(compile(ast.Module(body=[run_action], type_ignores=[]), '<actual-CEF682-RunAction>', 'exec'), util_scope)
+records = []
+try:
+    expected = root / 'gn.exe'
+    raw = b'BENIGN DATA; NEVER EXECUTED'
+    expected.write_bytes(raw)
+    marker = root / 'marker'
+    alternate = root / 'alternate.exe'
+    alternate.write_bytes(raw)
+    for name, script, result in [('old-multiline', body, 0), ('single-line', transport, 0), ('single-line-nonzero', transport, 42), ('single-line-alternate', transport, 1), ('single-line-pin', transport, 1), ('single-line-hardlink', transport, 1)]:
+        expected.write_bytes(raw)
+        if name == 'single-line-pin':
+            expected.write_bytes(b'X' * len(raw))
+        if name == 'single-line-hardlink':
+            os.link(expected, root / 'owned-hardlink.exe')
+        candidate = alternate if name == 'single-line-alternate' else expected
+        (root / 'gn.py').write_text('import pathlib\ndef FindGnTool(): return ' + repr(str(candidate)) + '\ndef main(args):\n assert FindGnTool() == ' + repr(str(expected)) + '\n assert args[1:] == ["gen", "out/owned"]\n pathlib.Path(' + repr(str(marker)) + ').write_text("owned",encoding="ascii")\n return ' + str(result) + '\n', encoding='utf-8', newline='\n')
+        if marker.exists():
+            marker.unlink()
+        command = [sys.executable, '-B', '-c', script, str(root / 'gn.py'), str(expected), str(len(raw)), hashlib.sha256(raw).hexdigest(), 'gen', 'out/owned']
+        assert len(subprocess.list2cmdline(command)) < 8191
+        clean = {'SystemRoot': 'C:\\Windows', 'WINDIR': 'C:\\Windows', 'COMSPEC': 'C:\\Windows\\System32\\cmd.exe', 'PATH': 'C:\\Windows\\System32'}
+        saved_env = dict(os.environ)
+        class Output(io.StringIO):
+            def __init__(self):
+                super().__init__();self.buffer = io.BytesIO()
+        output = Output()
+        status = 0
+        try:
+            os.environ.clear();os.environ.update(clean)
+            with contextlib.redirect_stdout(output):
+                try:
+                    util_scope['RunAction'](str(root), command)
+                except sp.CalledProcessError as error:
+                    status = error.returncode
+        finally:
+            os.environ.clear();os.environ.update(saved_env)
+            for timer in timers:
+                timer.cancel()
+        present = marker.exists()
+        captured = output.buffer.getvalue() + output.getvalue().encode()
+        assert len(captured) <= 8192
+        codes = [code for code in ('FULL_GN_SELECTOR_PIN', 'FULL_GN_SELECTOR_FILE', 'FULL_GN_SELECTOR') if code.encode() in captured]
+        records.append(dict(case=name, status=status, marker=present, capturedBytes=len(captured), diagnostic=codes[0] if codes else None, ownedClosed=all(c.poll() is not None for c in owned)))
+        assert time.monotonic() < end and not timed_out and not children
+        assert status == result
+        assert present == (name in ('single-line', 'single-line-nonzero'))
+    print(json.dumps(dict(facts, records=records)))
+finally:
+    for timer in timers:
+        timer.cancel()
+    if not timed_out and all(c.poll() is not None for c in owned):
+        assert root.parent == pathlib.Path(tempfile.gettempdir()).resolve(strict=True)
+        shutil.rmtree(root)
+`;
+async function fullGnShellFixture(t, mode) {
+  let python;
+  for (const candidate of [
+    profile.python.path,
+    process.env.LOCALAPPDATA &&
+      path.join(
+        process.env.LOCALAPPDATA,
+        "Programs/Python/Python312/python.exe",
+      ),
+  ].filter(Boolean)) {
+    try {
+      const raw = await fs.readFile(candidate);
+      assert.equal(raw.length, profile.python.bytes);
+      assert.equal(sha(raw), profile.python.sha256);
+      python = candidate;
+      break;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  if (!python) {
+    assert.notEqual(
+      process.platform,
+      "win32",
+      "Windows fixture requires the exact pinned Python",
+    );
+    python = await benignPython(t);
+    if (!python) return;
+  }
+  const sourceRoot =
+    "D:/a/sortOfRemoteNG/sortOfRemoteNG/.artifacts/windows-arm-full-sdk-bb3bd4a8-e93c-44e5-81f2-3ddc15a01d19";
+  const cef = sourceRoot + "/source-checkout/src/cef",
+    depot = sourceRoot + "/source-checkout/depot_tools";
+  const hooks = cefHookArguments(cef, depot);
+  const argv = fullCarryDriver.boundGnArguments(
+    hooks,
+    sourceRoot + "/source-checkout/src/buildtools/win/gn.exe",
+    { bytes: 1, sha256: "a".repeat(64) },
+  );
+  return JSON.parse(
+    execFileSync(python, ["-I", "-B", "-c", gnShellTransportFixture], {
+      input: JSON.stringify({
+        mode,
+        outer: argv[2],
+        argv,
+        python: profile.python.path,
+        primary: GN_SHELL_PRIMARY_DEFLATE,
+      }),
+      encoding: "utf8",
+      timeout: 25000,
+      maxBuffer: 8192,
+      windowsHide: true,
+    }),
+  );
+}
+test("FULL GN shell transport preserves identical selector bytes and fixed argv within both Windows command limits", async (t) => {
+  const result = await fullGnShellFixture(t, "inspect");
+  if (!result) return;
+  assert.equal(
+    result.bodySha256,
+    "505236ae9dc839b45bd36b3e96889e93124778493244785f65959ff8bac957d4",
+  );
+  assert.equal(result.bodyBytes, 1761);
+  assert.equal(result.byteIdenticalTransport, true);
+  assert.equal(result.tooLongDeniedBeforeDispatch, true);
+  assert(
+    result.nestedCommandChars <= result.nestedLimit &&
+      result.nestedLimit === 8191,
+  );
+  assert(
+    result.outerCommandChars < result.outerLimit && result.outerLimit === 32767,
+  );
+});
+test("FULL GN actual pinned Windows shell chain old multiline falsely succeeds while fixed transport executes and propagates nonzero", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Actual hidden Windows cmd proof");
+    return;
+  }
+  const result = await fullGnShellFixture(t, "native");
+  assert.deepEqual(
+    result.records.map(({ case: name, status, marker, ownedClosed }) => ({
+      name,
+      status,
+      marker,
+      ownedClosed,
+    })),
+    [
+      { name: "old-multiline", status: 0, marker: false, ownedClosed: true },
+      { name: "single-line", status: 0, marker: true, ownedClosed: true },
+      {
+        name: "single-line-nonzero",
+        status: 42,
+        marker: true,
+        ownedClosed: true,
+      },
+      {
+        name: "single-line-alternate",
+        status: 1,
+        marker: false,
+        ownedClosed: true,
+      },
+      { name: "single-line-pin", status: 1, marker: false, ownedClosed: true },
+      {
+        name: "single-line-hardlink",
+        status: 1,
+        marker: false,
+        ownedClosed: true,
+      },
+    ],
+  );
+  assert.deepEqual(
+    result.records.slice(-3).map((row) => row.diagnostic),
+    ["FULL_GN_SELECTOR", "FULL_GN_SELECTOR_PIN", "FULL_GN_SELECTOR_FILE"],
+  );
+  assert.equal(result.nativeGnExecuted, false);
+  assert.equal(result.compilerExecuted, false);
+});
+test("FULL GN shell transport exact inverse restores the whole previous source and denies missing duplicated or altered bytes", async () => {
+  const current = (
+    await fs.readFile(
+      path.join(root, prefix, "full-sdk-source-driver.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const old = fullGnShellTransportInverse(current, "driver");
+  assert.equal(Buffer.byteLength(old), 289624);
+  assert.equal(
+    sha(old),
+    "e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea",
+  );
+  for (const row of FULL_GN_SHELL_TRANSPORT_INVERSE.rows) {
+    assert.throws(() =>
+      fullGnShellTransportInverse(current.replace(row.new, ""), "driver"),
+    );
+    assert.throws(() =>
+      fullGnShellTransportInverse(current + row.new, "driver"),
+    );
+    assert.throws(() =>
+      fullGnShellTransportInverse(
+        current.replace(row.new, row.new + "#changed"),
+        "driver",
+      ),
+    );
+  }
+  assert.throws(() => fullGnShellTransportInverse(current + "\n", "driver"));
 });

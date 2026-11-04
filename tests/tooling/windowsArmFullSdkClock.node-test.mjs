@@ -366,7 +366,63 @@ function fullSourceEnvironmentInverse(text, name) {
   assert.equal(hash(text), spec.sha256, "ENVIRONMENT_INVERSE_WHOLE");
   return text;
 }
+const FULL_GN_SHELL_TRANSPORT_INVERSE = {
+  bytes: 289624,
+  sha256: "e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea",
+  rows: [
+    {
+      old: "",
+      new: '  // c101 subprocess2 uses cmd on Windows; transport the unchanged body on one\n  // physical line, with safe whitespace forcing list2cmdline argument quoting.\n  const runnerTransport = `exec( bytes.fromhex(\'${Buffer.from(runner, "utf8").toString("hex")}\') )`;\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "f066cfd37df3fa678ea0c6ba91ea01fe2094788b4d7034ad6f583f54c8837e6a",
+    },
+    {
+      old: "original=gclient_util.RunAction\n",
+      new: "original=gclient_util.RunAction\nimport subprocess\n",
+      oldSha256:
+        "80746afb059fdab6f8dc4e2492328068d7df00960d31c2ca9f6102d227c15978",
+      newSha256:
+        "c74d004da81dec98663d5172d8e9fa8d00d9175f0acab1aea0f86fd0b2e70b80",
+    },
+    {
+      old: "  command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]\n",
+      new: "  command=[sys.executable,'-B','-c',${JSON.stringify(runnerTransport)},gn,expected,size,digest,*command[1:]]\n  if len(subprocess.list2cmdline(command))+64>8191:raise RuntimeError('FULL_GN_COMMAND_BOUND')\n",
+      oldSha256:
+        "807f7b4be8ed706024f6acdc96c83200653816fd6d4daefef6cf98d797fb1563",
+      newSha256:
+        "2b3565a2f7423a7586e9acc485d14a869754094a3b18b2358484c108817e9cfb",
+    },
+  ],
+};
+function fullGnShellTransportInverse(text, name) {
+  if (name !== "driver") return text;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of FULL_GN_SHELL_TRANSPORT_INVERSE.rows) {
+    assert.equal(hash(row.new), row.newSha256);
+    assert.equal(hash(row.old), row.oldSha256);
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GN_TRANSPORT_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    FULL_GN_SHELL_TRANSPORT_INVERSE.bytes,
+    "ASSEMBLY_INVERSE_GN_TRANSPORT_WHOLE",
+  );
+  assert.equal(
+    hash(text),
+    FULL_GN_SHELL_TRANSPORT_INVERSE.sha256,
+    "ASSEMBLY_INVERSE_GN_TRANSPORT_WHOLE",
+  );
+  return text;
+}
 function fullBootstrapCacheInverse(text, name) {
+  text = fullGnShellTransportInverse(text, name);
   text = fullSourceEnvironmentInverse(text, name);
   if (name === "workflow") return text; // This repair never changes workflow bytes.
   const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];

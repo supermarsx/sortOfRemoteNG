@@ -555,7 +555,24 @@ def full_environment_inverse(raw, name):
     assert len(raw) == spec['bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'ENVIRONMENT_INVERSE_WHOLE'
     return raw
 
+
+FULL_GN_SHELL_TRANSPORT_HISTORY = {'bytes': 289624, 'sha256': 'e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea', 'rows': [{'old': '', 'new': '  // c101 subprocess2 uses cmd on Windows; transport the unchanged body on one\n  // physical line, with safe whitespace forcing list2cmdline argument quoting.\n  const runnerTransport = `exec( bytes.fromhex(\'${Buffer.from(runner, "utf8").toString("hex")}\') )`;\n', 'oldSha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'newSha256': 'f066cfd37df3fa678ea0c6ba91ea01fe2094788b4d7034ad6f583f54c8837e6a'}, {'old': 'original=gclient_util.RunAction\n', 'new': 'original=gclient_util.RunAction\nimport subprocess\n', 'oldSha256': '80746afb059fdab6f8dc4e2492328068d7df00960d31c2ca9f6102d227c15978', 'newSha256': 'c74d004da81dec98663d5172d8e9fa8d00d9175f0acab1aea0f86fd0b2e70b80'}, {'old': "  command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]\n", 'new': "  command=[sys.executable,'-B','-c',${JSON.stringify(runnerTransport)},gn,expected,size,digest,*command[1:]]\n  if len(subprocess.list2cmdline(command))+64>8191:raise RuntimeError('FULL_GN_COMMAND_BOUND')\n", 'oldSha256': '807f7b4be8ed706024f6acdc96c83200653816fd6d4daefef6cf98d797fb1563', 'newSha256': '2b3565a2f7423a7586e9acc485d14a869754094a3b18b2358484c108817e9cfb'}]}
+
+def full_gn_shell_transport_inverse(raw, name):
+    if name != 'driver':
+        return raw
+    spec = FULL_GN_SHELL_TRANSPORT_HISTORY
+    for row in spec['rows']:
+        new, old = row['new'].encode(), row['old'].encode()
+        assert hashlib.sha256(new).hexdigest() == row['newSha256'], 'ASSEMBLY_INVERSE_GN_TRANSPORT_PIN'
+        assert hashlib.sha256(old).hexdigest() == row['oldSha256'], 'ASSEMBLY_INVERSE_GN_TRANSPORT_PIN'
+        assert raw.count(new) == 1, 'ASSEMBLY_INVERSE_GN_TRANSPORT_COUNT'
+        raw = raw.replace(new, old, 1)
+    assert len(raw) == spec['bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'ASSEMBLY_INVERSE_GN_TRANSPORT_WHOLE'
+    return raw
+
 def full_bootstrap_cache_inverse(raw, name):
+    raw = full_gn_shell_transport_inverse(raw, name)
     raw = full_environment_inverse(raw, name)
     if name == 'workflow':
         return raw
@@ -712,7 +729,7 @@ class Interfaces(unittest.TestCase):
                 self.assertEqual(actual[field], expected[field])
             current = actual['newRaw'].encode()
             self.assertEqual(previous_cache.count(current), 1)
-            needle = current.splitlines(keepends=True)[0] if actual['name'] == 'bootstrapProgram' else current
+            needle = current.splitlines(keepends=True)[0] if actual['name'] in ('bootstrapProgram', 'boundGnArguments') else current
             self.assertEqual(raw.count(needle), 1)
             with self.assertRaisesRegex(AssertionError, 'SOURCE_PROGRAM_INVERSE|ASSEMBLY_INVERSE'):
                 source_program_inverse(raw.replace(needle, b'/* tampered */' + needle[1:], 1))
