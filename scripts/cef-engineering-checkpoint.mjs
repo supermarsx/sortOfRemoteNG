@@ -176,6 +176,18 @@ async function migrationBytes(file, maximum, expected) {
     }
   }
 }
+// A restore normally needs no migration. An absent or refused selection (for
+// example a stale reviewed capsule after the producer code changed) therefore
+// means "no migration selected" on the ordinary same-producer route; a restore
+// that does need a migration still reaches migrateSelectedLinuxSource, which
+// re-reads the selection and requires its trusted proof pin.
+async function optionalLinuxMigrationSelection() {
+  try {
+    return (await readLinuxMigrationSelection()) ?? null;
+  } catch {
+    return null;
+  }
+}
 function migrationDownloadData(selection) {
   return {
     kind: "linux-exact-successful-migration-download",
@@ -566,7 +578,7 @@ async function checkpointMain(argv, env, observer) {
     });
     const selection =
       TARGET === "aarch64-unknown-linux-gnu"
-        ? await readLinuxMigrationSelection()
+        ? await optionalLinuxMigrationSelection()
         : null;
     const selected =
       selection?.checkpointProducer.runId === options["--restore-run"];

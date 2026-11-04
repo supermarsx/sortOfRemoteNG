@@ -15785,6 +15785,70 @@ test("CLI refusal prints one bounded redacted cause line", () => {
   assert.doesNotMatch(result.stderr, /SECRETSECRET/);
 });
 
+test("a stale or refused migration capsule means no migration on the ordinary restore route", async () => {
+  const selection = { checkpointProducer: { runId: 123 }, policySha256: "a" };
+  const optional = async (reader) =>
+    (
+      await cliMigrationFunctions(["optionalLinuxMigrationSelection"], {
+        readLinuxMigrationSelection: reader,
+      })
+    ).optionalLinuxMigrationSelection();
+  // A stale reviewed capsule (producer digest moved on) is refused by the reader.
+  assert.equal(
+    await optional(async () => {
+      throw Object.assign(new Error("LINUX_MIGRATION_POLICY_SCOPE"), {
+        code: "ERR_ASSERTION",
+      });
+    }),
+    null,
+  );
+  assert.equal(await optional(async () => undefined), null);
+  // A valid capsule is still returned unchanged for the migration route.
+  assert.equal(await optional(async () => selection), selection);
+});
+
+test("a restore that needs a migration is still refused without a valid reviewed capsule", async () => {
+  const prior = { producer: { runId: 123 }, migration: {} };
+  const bytes = Buffer.from(canonical(prior));
+  const run = async (env, reader) => {
+    const helpers = await cliMigrationFunctions(
+      ["migrationDownloadData", "migrateSelectedLinuxSource"],
+      {
+        lstat: async () => ({ size: BigInt(bytes.length) }),
+        migrationBytes: async () => bytes,
+        readLinuxMigrationSelection: reader,
+        inspectLinuxMigrationCandidate: async () => {
+          throw new Error("candidate must not be inspected");
+        },
+      },
+    );
+    return helpers.migrateSelectedLinuxSource(
+      {},
+      prior,
+      "/model/download",
+      env,
+      {},
+      {},
+    );
+  };
+  // The ordinary route leaves no trusted download-proof pin.
+  await assert.rejects(
+    run({}, async () => null),
+    /Trusted migration download proof pin required/,
+  );
+  // With the pin but no valid capsule the selection is required again.
+  await assert.rejects(
+    run({ CEF_RESTORE_DOWNLOAD_PROOF_SHA: sha(bytes) }, async () => {
+      throw new Error("LINUX_MIGRATION_POLICY_SCOPE");
+    }),
+    /LINUX_MIGRATION_POLICY_SCOPE/,
+  );
+  await assert.rejects(
+    run({ CEF_RESTORE_DOWNLOAD_PROOF_SHA: sha(bytes) }, async () => null),
+    /Exact migration download selection required/,
+  );
+});
+
 const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
 m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]
 exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)

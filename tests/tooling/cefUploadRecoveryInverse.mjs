@@ -48,23 +48,34 @@ export function withoutUploadRecovery(text) {
   return restored;
 }
 
-// Exact inverse of the bounded failure-cause line in the CLI's final catch.
+// Exact inverse of the CLI changes: the bounded failure-cause line in the
+// final catch, and the optional Linux migration selection on the download route.
 export function withoutCliCause(text) {
-  const start = text.indexOf("    .catch((error) => {\n");
+  const catchOpen = "    .catch((error) => {\n";
+  const start = text.indexOf(catchOpen);
   const marker = "      process.exitCode = 1;\n    });";
   const end = text.indexOf(marker, start);
-  if (
-    start < 0 ||
-    end < 0 ||
-    text.indexOf("    .catch((error) => {\n", start + 1) >= 0
-  )
+  if (start < 0 || end < 0 || text.indexOf(catchOpen, start + 1) >= 0)
     throw new Error("CLI failure catch not found exactly once");
   const old =
     "    .catch(() => {\n" +
     "      console.error(\n" +
     '        "[cef-engineering-checkpoint] operation failed; retained logs and partial bytes are not acceptance",\n' +
     "      );\n";
-  return text.slice(0, start) + old + text.slice(end);
+  let restored = text.slice(0, start) + old + text.slice(end);
+  const open = "// A restore normally needs no migration.";
+  const from = restored.indexOf(open);
+  const to = restored.indexOf("function migrationDownloadData(selection) {");
+  if (from < 0 || to <= from || restored.indexOf(open, from + 1) >= 0)
+    throw new Error("Optional selection helper not found exactly once");
+  restored = restored.slice(0, from) + restored.slice(to);
+  const call = "        ? await optionalLinuxMigrationSelection()\n";
+  if (restored.split(call).length !== 2)
+    throw new Error("Optional selection call not found exactly once");
+  return restored.replace(
+    call,
+    () => "        ? await readLinuxMigrationSelection()\n",
+  );
 }
 
 // Retained-producer rows: the pinned producer digest binds the pre-change
