@@ -5152,7 +5152,63 @@ const FULL_GN_SHELL_TRANSPORT_INVERSE = {
     },
   ],
 };
+const FULL_GN_PROJECTION_DIGEST_INVERSE = {
+  bytes: 290006,
+  sha256: "27e6c073dab2b956c65aee7cd063e7114005077fe611fd99eb7a82326677e6e5",
+  rows: [
+    {
+      old: "for name,digest in [('MergeDicts'",
+      new: "for name,gn_projection_digest in [('MergeDicts'",
+      oldSha256:
+        "cb87b02fbb4713fb9afa918266b3267df97613761dbe9a572459fc33fee33421",
+      newSha256:
+        "67521573c8a1674cb8eec2f43ddf5794aa49f13d18a90640dc6234c1333411cf",
+    },
+    {
+      old: "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')",
+      new: "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=gn_projection_digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')",
+      oldSha256:
+        "e19606c2c9ef51543d1b45fad14aedb8c19c16b137d784f1e5d4693530374774",
+      newSha256:
+        "e6b2f8527570716018b2f83f9e7fa8ef4f411190216b2d9195ca5949d253d04b",
+    },
+  ],
+};
+function fullGnProjectionDigestInverse(text, name) {
+  if (name !== "driver") return text;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of FULL_GN_PROJECTION_DIGEST_INVERSE.rows) {
+    assert.equal(
+      hash(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GN_DIGEST_PIN",
+    );
+    assert.equal(
+      hash(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GN_DIGEST_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GN_DIGEST_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    FULL_GN_PROJECTION_DIGEST_INVERSE.bytes,
+    "ASSEMBLY_INVERSE_GN_DIGEST_WHOLE",
+  );
+  assert.equal(
+    hash(text),
+    FULL_GN_PROJECTION_DIGEST_INVERSE.sha256,
+    "ASSEMBLY_INVERSE_GN_DIGEST_WHOLE",
+  );
+  return text;
+}
 function fullGnShellTransportInverse(text, name) {
+  text = fullGnProjectionDigestInverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of FULL_GN_SHELL_TRANSPORT_INVERSE.rows) {
@@ -13018,4 +13074,204 @@ test("FULL GN shell transport exact inverse restores the whole previous source a
     );
   }
   assert.throws(() => fullGnShellTransportInverse(current + "\n", "driver"));
+});
+
+const gnProjectionDigestFixture = String.raw`import ast,base64,contextlib,hashlib,io,json,os,pathlib,shutil,subprocess,sys,tempfile,threading,time,types,zlib
+packet=json.load(sys.stdin)
+end=time.monotonic()+20
+root=pathlib.Path(tempfile.mkdtemp(prefix='gn-digest-owned-')).resolve(strict=True)
+owned=[];timers=[];timed_out=[];children=set();records=[]
+saved_env=dict(os.environ);saved_path=list(sys.path);saved_argv=sys.argv[:];saved_platform=sys.platform
+def pinned(name,size,digest):
+ raw=zlib.decompress(base64.b64decode(packet['primary'][name],validate=True))
+ assert len(raw)==size and hashlib.sha256(raw).hexdigest()==digest
+ return raw
+sp=types.ModuleType('pinned_subprocess2')
+exec(compile(pinned('c101-subprocess2.py',8205,'b41c8adc9d67bbb04c7afdfe9fef3ad17f6a55f74361508c908ea8ba1722e518'),'<pinned-c101-subprocess2>','exec'),sp.__dict__)
+def launch(args,**kwargs):
+ assert args[0]==sys.executable and args[1:3]==['-B','-c'] and time.monotonic()+5<end
+ kwargs['creationflags']=subprocess.CREATE_NO_WINDOW
+ child=sp.Popen(args,**kwargs);owned.append(child)
+ def stop():
+  if child.poll() is None:timed_out.append(True);child.kill()
+ timer=threading.Timer(5,stop);timer.daemon=True;timer.start();timers.append(timer)
+ return child
+utils_tree=ast.parse(pinned('c101-gclient_utils.py',54620,'88f335ab20d376688fb58480831167c66523f6b501fe21ad164c1302ae867278'))
+check=next(n for n in utils_tree.body if isinstance(n,ast.FunctionDef) and n.name=='CheckCallAndFilter')
+check_scope=dict(sys=sys,os=os,io=io,errno=__import__('errno'),shutil=shutil,time=time,subprocess2=types.SimpleNamespace(Popen=launch,STDOUT=sp.STDOUT,CalledProcessError=sp.CalledProcessError),RETRY_MAX=1,RETRY_INITIAL_SLEEP=2,GetOperatingSystem=lambda:'win',GClientChildren=types.SimpleNamespace(add=children.add,remove=children.remove))
+exec(compile(ast.Module(body=[check],type_ignores=[]),'<actual-c101-CheckCallAndFilter>','exec'),check_scope)
+util_tree=ast.parse(pinned('cef682-gclient_util.py',1402,'da794cfb7b69bd56f3206efb2d7cb9f3b87032aca9c222a0b61df4b3f052a5db'))
+action=next(n for n in util_tree.body if isinstance(n,ast.FunctionDef) and n.name=='RunAction')
+gn_raw=zlib.decompress(base64.b64decode(packet['gnArgs'],validate=True))
+assert len(gn_raw)==26541 and hashlib.sha256(gn_raw).hexdigest()=='ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e'
+fixed={}
+for line in packet['fixed'].splitlines():
+ key,value=line.split('=',1);fixed[key]=True if value=='true' else False if value=='false' else ast.literal_eval(value)
+definitions=' '.join("'"+key+'='+('true' if value is True else 'false' if value is False else json.dumps(value))+"'" for key,value in fixed.items())
+class Output(io.StringIO):
+ def __init__(self):super().__init__();self.buffer=io.BytesIO()
+try:
+ for case in ['old-shadow','fixed','fixed-nonzero','fixed-wrong-pin','fixed-source-drift']:
+  workspace=root/case;tools=workspace/'source-checkout/src/cef/tools';tools.mkdir(parents=True)
+  source=tools/'gn_args.py';source.write_bytes(gn_raw+(b'\n' if case=='fixed-source-drift' else b''))
+  vs=workspace/'custom-vs';(vs/'VC').mkdir(parents=True);(vs/'VC/vcvarsall.bat').write_bytes(b'')
+  depot=workspace/'source-checkout/depot_tools';depot.mkdir()
+  expected=workspace/'source-checkout/src/buildtools/win/gn.exe';expected.parent.mkdir(parents=True)
+  data=b'BENIGN GN SELECTOR DATA; NEVER EXECUTED';expected.write_bytes(data)
+  digest=hashlib.sha256(data).hexdigest();passed_digest='0'*64 if case=='fixed-wrong-pin' else digest
+  marker=workspace/'marker';gn=depot/'gn.py';status=42 if case=='fixed-nonzero' else 0
+  gn.write_text('import pathlib\ndef FindGnTool(): return '+repr(str(expected))+'\ndef main(args):\n assert FindGnTool()=='+repr(str(expected))+'\n assert args[1:]==["gen","out/owned"]\n pathlib.Path('+repr(str(marker))+').write_text("owned",encoding="ascii")\n return '+str(status)+'\n',encoding='utf-8',newline='\n')
+  sdk=dict(visual_studio_path=str(vs),visual_studio_version='2026',visual_studio_runtime_dirs=str(workspace/'runtime/x64'),windows_sdk_path=str(workspace/'Windows Kits/10'),windows_sdk_version='10.0.28000.0')
+  hook=tools/'gclient_hook.py'
+  hook.write_text('import gn_args,gclient_util\nconfigs=gn_args.GetAllPlatformConfigs('+repr(sdk)+')\nassert list(configs)==["Release_GN_arm64"]\nassert configs["Release_GN_arm64"]["enable_backup_ref_ptr_instance_tracer"] is False\ngclient_util.RunAction('+repr(str(workspace/'source-checkout/src'))+',["gn","gen","out/owned"])\n',encoding='utf-8',newline='\n')
+  vector=[];module=types.ModuleType('gclient_util')
+  def dispatch(directory,command):
+   vector.append(command[:]);assert command[0]==sys.executable and command[1:3]==['-B','-c']
+   if os.name=='nt' and not packet['portable']:return actual_action(directory,command)
+   # Portable outcome model executes the real selector body with a benign gn.main.
+   old_argv=sys.argv[:]
+   try:
+    sys.argv=['-c',*command[4:]]
+    try:exec(command[3],{})
+    except SystemExit as error:
+     if error.code not in (None,0):raise sp.CalledProcessError(error.code,command,directory,'','')
+    except RuntimeError as error:
+     assert str(error) in ('FULL_GN_SELECTOR_PIN','FULL_GN_SELECTOR_FILE','FULL_GN_SELECTOR')
+     print(str(error));raise sp.CalledProcessError(1,command,directory,'','')
+   finally:sys.argv=old_argv
+  util_scope=dict(sys=sys,gclient_utils=types.SimpleNamespace(CheckCallAndFilter=check_scope['CheckCallAndFilter'],Error=type('Error',(Exception,),{})))
+  exec(compile(ast.Module(body=[action],type_ignores=[]),'<actual-CEF682-RunAction>','exec'),util_scope)
+  actual_action=util_scope['RunAction'];module.RunAction=dispatch;sys.modules['gclient_util']=module
+  sys.modules.pop('gn_args',None);sys.modules.pop('gn',None)
+  clean={'SystemRoot':'C:\\Windows','WINDIR':'C:\\Windows','COMSPEC':'C:\\Windows\\System32\\cmd.exe','PATH':'C:\\Windows\\System32'} if os.name=='nt' else {}
+  os.environ.clear();os.environ.update(clean,GN_DEFINES=definitions,GN_OUT_CONFIGS='Release_GN_arm64',CEF_ENABLE_ARM64='1',DEPOT_TOOLS_WIN_TOOLCHAIN='0',GYP_MSVS_OVERRIDE_PATH=str(vs),GYP_MSVS_VERSION='2026',CEF_VCVARS='none',VS_CRT_ROOT=sdk['visual_studio_runtime_dirs'],SDK_ROOT=sdk['windows_sdk_path'],SDK_VERSION=sdk['windows_sdk_version'])
+  sys.platform='win32';sys.argv=['actual-outer',str(hook),str(gn),str(expected),str(len(data)),passed_digest]
+  output=Output();caught=None;scope={};outer=packet['old'] if case=='old-shadow' else packet['current']
+  try:
+   with contextlib.redirect_stdout(output):exec(compile(outer,'<actual-boundGnArguments>','exec'),scope)
+  except sp.CalledProcessError as error:caught=error.returncode
+  except RuntimeError as error:caught=str(error)
+  except SystemExit as error:caught=error.code
+  finally:sys.platform=saved_platform
+  capture=output.buffer.getvalue()+output.getvalue().encode();assert len(capture)<=8192
+  child_pin=vector[0][7] if vector else None
+  diagnostic=next((c for c in ['FULL_GN_SELECTOR_PIN','FULL_GN_PROJECTION_SOURCE'] if c.encode() in capture),None)
+  if type(caught)is str:diagnostic=caught
+  records.append(dict(case=case,nestedPin=child_pin,expectedPin=passed_digest,marker=marker.exists(),status=caught or 0,diagnostic=diagnostic,projectionCalls=scope.get('gn_projection_calls'),ownedClosed=all(c.poll()is not None for c in owned),nativeWindowsChain=os.name=='nt' and not packet['portable']))
+  assert not children and not timed_out and time.monotonic()<end
+  sys.path[:]=saved_path;sys.modules.pop('gn_args',None);sys.modules.pop('gn',None);sys.modules.pop('gclient_util',None)
+ print(json.dumps(dict(records=records,sourceGeneratorPinned=True,outerBodyExecuted=True,nativeGnExecuted=False,compilerExecuted=False)))
+finally:
+ sys.platform=saved_platform;sys.path[:]=saved_path;sys.argv=saved_argv;os.environ.clear();os.environ.update(saved_env)
+ for timer in timers:timer.cancel()
+ if not timed_out and all(c.poll()is not None for c in owned):
+  assert root.parent==pathlib.Path(tempfile.gettempdir()).resolve(strict=True);shutil.rmtree(root)
+`;
+
+test("FULL GN whole outer projection preserves the binary pin through the real generator and controlled selector child", async () => {
+  const current = fullCarryDriver.boundGnArguments(
+    ["-B", "-c", "fixed-hook", "fixed/gclient_hook.py", "fixed/gn.py"],
+    "fixed/gn.exe",
+    {
+      bytes: 2601472,
+      sha256:
+        "e398eefd1241ad44e98aececa6a260abac0fdcb80f41c23176944ad3f0e76486",
+    },
+  )[2];
+  const old = FULL_GN_PROJECTION_DIGEST_INVERSE.rows.reduce((text, row) => {
+    assert.equal(text.split(row.new).length, 2);
+    return text.replace(row.new, () => row.old);
+  }, current);
+  const fixed = (
+    await read(
+      "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/gn/aarch64-pc-windows-msvc.gn",
+    )
+  )
+    .toString()
+    .trim();
+  // Exercise the portable outcome model on Windows too; it cannot substitute
+  // for the separately required actual native shell chain on this host.
+  for (const portable of process.platform === "win32"
+    ? [false, true]
+    : [true]) {
+    const result = JSON.parse(
+      execFileSync(
+        await projectionFixturePython(),
+        ["-I", "-B", "-c", gnProjectionDigestFixture],
+        {
+          input: JSON.stringify({
+            current,
+            old,
+            fixed,
+            portable,
+            primary: GN_SHELL_PRIMARY_DEFLATE,
+            gnArgs: pinnedCefGnArgsDeflate,
+          }),
+          encoding: "utf8",
+          timeout: 25000,
+          maxBuffer: 16384,
+          windowsHide: true,
+        },
+      ),
+    );
+    assert.equal(result.sourceGeneratorPinned, true);
+    assert.equal(result.outerBodyExecuted, true);
+    assert.equal(result.nativeGnExecuted, false);
+    assert.equal(result.compilerExecuted, false);
+    const [before, after, nonzero, wrong, drift] = result.records;
+    assert.equal(
+      before.nestedPin,
+      "608d1c5ffb0e793e97c67db19af0fe0a14c9248d548ac5edde79c09c0ec34cb3",
+    );
+    assert.notEqual(before.nestedPin, before.expectedPin);
+    assert.equal(before.marker, false);
+    assert.equal(before.status, 1);
+    assert.equal(before.diagnostic, "FULL_GN_SELECTOR_PIN");
+    for (const row of [after, nonzero, wrong]) {
+      assert.equal(row.nestedPin, row.expectedPin);
+      assert.equal(row.projectionCalls, 1);
+    }
+    assert.equal(after.marker, true);
+    assert.equal(after.status, 0);
+    assert.equal(nonzero.marker, true);
+    assert.equal(nonzero.status, 42);
+    assert.equal(wrong.marker, false);
+    assert.equal(wrong.status, 1);
+    assert.equal(wrong.diagnostic, "FULL_GN_SELECTOR_PIN");
+    assert.equal(drift.nestedPin, null);
+    assert.equal(drift.marker, false);
+    assert.equal(drift.diagnostic, "FULL_GN_PROJECTION_SOURCE");
+    assert(result.records.every((row) => row.ownedClosed));
+    assert(result.records.every((row) => row.nativeWindowsChain === !portable));
+  }
+});
+
+test("FULL GN projection digest inverse restores the complete prior driver and rejects partial duplicate or altered layers", async () => {
+  const current = (
+    await fs.readFile(
+      path.join(root, prefix, "full-sdk-source-driver.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const old = fullGnProjectionDigestInverse(current, "driver");
+  assert.equal(Buffer.byteLength(old), 290006);
+  assert.equal(
+    sha(old),
+    "27e6c073dab2b956c65aee7cd063e7114005077fe611fd99eb7a82326677e6e5",
+  );
+  for (const row of FULL_GN_PROJECTION_DIGEST_INVERSE.rows) {
+    assert.throws(() =>
+      fullGnProjectionDigestInverse(current.replace(row.new, ""), "driver"),
+    );
+    assert.throws(() =>
+      fullGnProjectionDigestInverse(current + row.new, "driver"),
+    );
+    assert.throws(() =>
+      fullGnProjectionDigestInverse(
+        current.replace(row.new, row.new + "#changed"),
+        "driver",
+      ),
+    );
+  }
+  assert.throws(() => fullGnProjectionDigestInverse(current + "\n", "driver"));
 });

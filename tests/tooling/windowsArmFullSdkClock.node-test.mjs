@@ -396,7 +396,63 @@ const FULL_GN_SHELL_TRANSPORT_INVERSE = {
     },
   ],
 };
+const FULL_GN_PROJECTION_DIGEST_INVERSE = {
+  bytes: 290006,
+  sha256: "27e6c073dab2b956c65aee7cd063e7114005077fe611fd99eb7a82326677e6e5",
+  rows: [
+    {
+      old: "for name,digest in [('MergeDicts'",
+      new: "for name,gn_projection_digest in [('MergeDicts'",
+      oldSha256:
+        "cb87b02fbb4713fb9afa918266b3267df97613761dbe9a572459fc33fee33421",
+      newSha256:
+        "67521573c8a1674cb8eec2f43ddf5794aa49f13d18a90640dc6234c1333411cf",
+    },
+    {
+      old: "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')",
+      new: "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=gn_projection_digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')",
+      oldSha256:
+        "e19606c2c9ef51543d1b45fad14aedb8c19c16b137d784f1e5d4693530374774",
+      newSha256:
+        "e6b2f8527570716018b2f83f9e7fa8ef4f411190216b2d9195ca5949d253d04b",
+    },
+  ],
+};
+function fullGnProjectionDigestInverse(text, name) {
+  if (name !== "driver") return text;
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  for (const row of FULL_GN_PROJECTION_DIGEST_INVERSE.rows) {
+    assert.equal(
+      hash(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GN_DIGEST_PIN",
+    );
+    assert.equal(
+      hash(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GN_DIGEST_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GN_DIGEST_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    FULL_GN_PROJECTION_DIGEST_INVERSE.bytes,
+    "ASSEMBLY_INVERSE_GN_DIGEST_WHOLE",
+  );
+  assert.equal(
+    hash(text),
+    FULL_GN_PROJECTION_DIGEST_INVERSE.sha256,
+    "ASSEMBLY_INVERSE_GN_DIGEST_WHOLE",
+  );
+  return text;
+}
 function fullGnShellTransportInverse(text, name) {
+  text = fullGnProjectionDigestInverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of FULL_GN_SHELL_TRANSPORT_INVERSE.rows) {

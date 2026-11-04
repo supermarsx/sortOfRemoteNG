@@ -520,7 +520,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
     "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
   );
 });
-test("the final producer digest binds all actual131 committed selected rows", async () => {
+test("the retained proof producer binds all actual131 rows through the exact current core inverse", async () => {
   const listed = spawnSync(
     "git",
     [
@@ -556,7 +556,56 @@ test("the final producer digest binds all actual131 committed selected rows", as
     rows.push({ type: "blob", mode, sha, path });
   }
   assert.equal(rows.length, 131);
-  assert.equal(codeTreeDigest(rows), CODE_DIGEST);
+  assert.equal(
+    codeTreeDigest(rows),
+    "73df343a716b1c99583c641d1f7cd5db93f13271011432c0eab22bf735dbb913",
+  );
+  assert.equal(
+    CODE_DIGEST,
+    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
+  );
+  const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
+  const coreRow = rows.find((row) => row.path === corePath);
+  assert.equal(coreRow.sha, "8337b2bf0c0628c91e863d6a7fcd1ec065bf1485");
+  const current = (await readFile(new URL(corePath, root)))
+    .toString()
+    .replaceAll("\r\n", "\n");
+  const restore = (source) => {
+    assert.equal(Buffer.byteLength(source), 246078);
+    assert.equal(
+      createHash("sha256").update(source).digest("hex"),
+      "41a4895a078d44ef0485ac0fcf94040008a31404478166195e23b052e9c705ba",
+    );
+    const after =
+      "Math.max(1, Math.ceil((deadline - performance.now()) / (50 - i)))";
+    assert.equal(source.split(after).length, 2);
+    const previous = source.replace(
+      after,
+      "Math.min(100, Math.max(1, deadline - performance.now()))",
+    );
+    assert.equal(Buffer.byteLength(previous), 246069);
+    assert.equal(
+      createHash("sha256").update(previous).digest("hex"),
+      "9db705733c7bceb64cd1bf3ff7f109024cb1dec7395bafdcbbe86b729f6d39cc",
+    );
+    return Buffer.from(previous);
+  };
+  const previous = restore(current);
+  for (const changed of [
+    current + "\n",
+    current.replace("(50 - i)", "(51 - i)"),
+  ])
+    assert.throws(() => restore(changed));
+  const previousSha = createHash("sha1")
+    .update(Buffer.from(`blob ${previous.length}\0`))
+    .update(previous)
+    .digest("hex");
+  assert.equal(previousSha, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
+  const retainedRows = rows.map((row) =>
+    row.path === corePath ? { ...row, sha: previousSha } : row,
+  );
+  assert.equal(codeTreeDigest(retainedRows), CODE_DIGEST);
+  assert.notEqual(codeTreeDigest(rows), CODE_DIGEST);
 });
 test("the unchanged original five-minute start reserves cleanup and never resets the core lease", () => {
   assert.deepEqual(budget(100000, 100000), {

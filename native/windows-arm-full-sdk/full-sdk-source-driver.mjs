@@ -1913,9 +1913,9 @@ def gn_projection_pin():
 gn_projection_pin()
 import gn_args
 if os.path.abspath(gn_args.__file__)!=gn_projection_path or gn_args.platform!='windows' or gn_args.machine!='amd64':raise RuntimeError('FULL_GN_PROJECTION_SOURCE')
-for name,digest in [('MergeDicts','50de766f8b38c15b93ca8c80e500f5974ce7c7c4af3ddb568f63ba6f4a4691fc'),('GetConfigArgs','f2ade37bcfc944b5385dfc23e848344bc6f9d9606063708ea58b00eb678c5ddd'),('GetAllPlatformConfigs','608d1c5ffb0e793e97c67db19af0fe0a14c9248d548ac5edde79c09c0ec34cb3')]:
+for name,gn_projection_digest in [('MergeDicts','50de766f8b38c15b93ca8c80e500f5974ce7c7c4af3ddb568f63ba6f4a4691fc'),('GetConfigArgs','f2ade37bcfc944b5385dfc23e848344bc6f9d9606063708ea58b00eb678c5ddd'),('GetAllPlatformConfigs','608d1c5ffb0e793e97c67db19af0fe0a14c9248d548ac5edde79c09c0ec34cb3')]:
  function=getattr(gn_args,name)
- if type(function)is not types.FunctionType or function.__globals__ is not gn_args.__dict__ or os.path.abspath(function.__code__.co_filename)!=gn_projection_path or hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')
+ if type(function)is not types.FunctionType or function.__globals__ is not gn_args.__dict__ or os.path.abspath(function.__code__.co_filename)!=gn_projection_path or hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=gn_projection_digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')
 gn_projection_pin()
 gn_projection_fixed=dict(alternate_cdm_storage_id_key='968b476909da4373b08903c28e859454',blink_symbol_level=0,chrome_pgo_phase=0,clang_use_chrome_plugins=False,enable_background_mode=False,enable_backup_ref_ptr_instance_tracer=False,enable_cdm_host_verification=True,enable_cdm_storage_id=True,enable_downgrade_processing=False,enable_precompiled_headers=False,enable_resource_allowlist_generation=False,enable_rlz=True,enable_widevine=True,is_component_build=False,is_debug=False,optimize_webui=True,symbol_level=1,target_cpu='arm64',use_remoteexec=False,use_siso=True,v8_symbol_level=0,host_cpu='x64',is_clang=True,use_lld=True)
 def gn_projection_rows(value):

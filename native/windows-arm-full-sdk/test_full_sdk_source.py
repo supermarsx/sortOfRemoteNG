@@ -558,7 +558,25 @@ def full_environment_inverse(raw, name):
 
 FULL_GN_SHELL_TRANSPORT_HISTORY = {'bytes': 289624, 'sha256': 'e9ed9951089d9b44b1b614bb3b1d56be8c78fc8e026f714927fed3645fac04ea', 'rows': [{'old': '', 'new': '  // c101 subprocess2 uses cmd on Windows; transport the unchanged body on one\n  // physical line, with safe whitespace forcing list2cmdline argument quoting.\n  const runnerTransport = `exec( bytes.fromhex(\'${Buffer.from(runner, "utf8").toString("hex")}\') )`;\n', 'oldSha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'newSha256': 'f066cfd37df3fa678ea0c6ba91ea01fe2094788b4d7034ad6f583f54c8837e6a'}, {'old': 'original=gclient_util.RunAction\n', 'new': 'original=gclient_util.RunAction\nimport subprocess\n', 'oldSha256': '80746afb059fdab6f8dc4e2492328068d7df00960d31c2ca9f6102d227c15978', 'newSha256': 'c74d004da81dec98663d5172d8e9fa8d00d9175f0acab1aea0f86fd0b2e70b80'}, {'old': "  command=[sys.executable,'-B','-c',${JSON.stringify(runner)},gn,expected,size,digest,*command[1:]]\n", 'new': "  command=[sys.executable,'-B','-c',${JSON.stringify(runnerTransport)},gn,expected,size,digest,*command[1:]]\n  if len(subprocess.list2cmdline(command))+64>8191:raise RuntimeError('FULL_GN_COMMAND_BOUND')\n", 'oldSha256': '807f7b4be8ed706024f6acdc96c83200653816fd6d4daefef6cf98d797fb1563', 'newSha256': '2b3565a2f7423a7586e9acc485d14a869754094a3b18b2358484c108817e9cfb'}]}
 
+FULL_GN_PROJECTION_DIGEST_HISTORY = {'bytes': 290006, 'sha256': '27e6c073dab2b956c65aee7cd063e7114005077fe611fd99eb7a82326677e6e5', 'rows': [{'old': "for name,digest in [('MergeDicts'", 'new': "for name,gn_projection_digest in [('MergeDicts'", 'oldSha256': 'cb87b02fbb4713fb9afa918266b3267df97613761dbe9a572459fc33fee33421', 'newSha256': '67521573c8a1674cb8eec2f43ddf5794aa49f13d18a90640dc6234c1333411cf'}, {'old': "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')", 'new': "hashlib.sha256(inspect.getsource(function).encode('utf8')).hexdigest()!=gn_projection_digest:raise RuntimeError('FULL_GN_PROJECTION_FUNCTION')", 'oldSha256': 'e19606c2c9ef51543d1b45fad14aedb8c19c16b137d784f1e5d4693530374774', 'newSha256': 'e6b2f8527570716018b2f83f9e7fa8ef4f411190216b2d9195ca5949d253d04b'}]}
+
+
+def full_gn_projection_digest_inverse(raw, name):
+    if name != 'driver':
+        return raw
+    spec = FULL_GN_PROJECTION_DIGEST_HISTORY
+    for row in spec['rows']:
+        new, old = row['new'].encode(), row['old'].encode()
+        assert hashlib.sha256(new).hexdigest() == row['newSha256'], 'ASSEMBLY_INVERSE_GN_DIGEST_PIN'
+        assert hashlib.sha256(old).hexdigest() == row['oldSha256'], 'ASSEMBLY_INVERSE_GN_DIGEST_PIN'
+        assert raw.count(new) == 1, 'ASSEMBLY_INVERSE_GN_DIGEST_COUNT'
+        raw = raw.replace(new, old, 1)
+    assert len(raw) == spec['bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'ASSEMBLY_INVERSE_GN_DIGEST_WHOLE'
+    return raw
+
+
 def full_gn_shell_transport_inverse(raw, name):
+    raw = full_gn_projection_digest_inverse(raw, name)
     if name != 'driver':
         return raw
     spec = FULL_GN_SHELL_TRANSPORT_HISTORY
