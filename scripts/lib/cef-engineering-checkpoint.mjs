@@ -3921,7 +3921,7 @@ async function stopObserved(
     await new Promise((resolve) =>
       setTimeout(
         resolve,
-        Math.max(1, Math.ceil((deadline - performance.now()) / (50 - i))),
+        Math.min(100, Math.max(1, deadline - performance.now())),
       ),
     );
   }

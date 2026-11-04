@@ -2376,34 +2376,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   );
   assert.equal(capsule.from.producer, M.producer);
   assert.deepEqual(capsule.oldSourceTree, actual);
-  // This retained Linux capsule binds its original1d producer. The newer Mac
-  // reaper has one reviewed source delta; it does not retarget this capsule.
-  const currentRows = rows(ROOT, "HEAD");
-  assert.equal(currentRows.length, 131);
-  assert.equal(
-    core.codeTreeDigest(currentRows),
-    "73df343a716b1c99583c641d1f7cd5db93f13271011432c0eab22bf735dbb913",
-  );
-  const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
-  const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
-  const restoredReaper = Buffer.from(
-    withoutOriginalReapLease(reaper.toString()),
-  );
-  const restoredBlob = createHash("sha1")
-    .update(Buffer.from(`blob ${restoredReaper.length}\0`))
-    .update(restoredReaper)
-    .digest("hex");
-  assert.equal(restoredBlob, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
-  const restoredRows = structuredClone(currentRows);
-  const reaperRow = restoredRows.find((row) => row.path === reaperPath);
-  assert.equal(reaperRow.sha, "8337b2bf0c0628c91e863d6a7fcd1ec065bf1485");
-  reaperRow.sha = restoredBlob;
-  assert.equal(capsule.toProducer, core.codeTreeDigest(restoredRows));
-  assert.equal(
-    capsule.toProducer,
-    "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98",
-  );
-  assert.notEqual(capsule.toProducer, core.codeTreeDigest(currentRows));
+  assert.equal(capsule.toProducer, core.codeTreeDigest(rows(ROOT, "HEAD")));
   assert.equal(capsule.from.checkpointProducer.runId, 41682771351);
   assert.deepEqual(capsule.from, {
     checkpointProducer: {
@@ -3793,24 +3766,7 @@ const COMPILE_OBSERVATION_INVERSE = [
   "      firstFailure = {\n        ...compileFailureObservation(error),\n        snapshotOrdinal: snapshotOrdinal + (snapshotPending ? 1 : 0),\n        lastSnapshot,\n      };\n",
   "        firstFailure,\n        census: censusSession?.diagnostics() ?? null,\n",
 ];
-const REAP_CADENCE_BEFORE =
-  "Math.min(100, Math.max(1, deadline - performance.now()))";
-const REAP_CADENCE_AFTER =
-  "Math.max(1, Math.ceil((deadline - performance.now()) / (50 - i)))";
-function withoutOriginalReapLease(text) {
-  assert.equal(text.split(REAP_CADENCE_AFTER).length, 2);
-  const restored = text.replace(REAP_CADENCE_AFTER, REAP_CADENCE_BEFORE);
-  assert.equal(Buffer.byteLength(restored), 246069);
-  assert.equal(
-    core.sha(restored),
-    "9db705733c7bceb64cd1bf3ff7f109024cb1dec7395bafdcbbe86b729f6d39cc",
-  );
-  return restored;
-}
 function withoutCompileObservation(text) {
-  return withoutCompileObservationBaseline(withoutOriginalReapLease(text));
-}
-function withoutCompileObservationBaseline(text) {
   for (const added of COMPILE_OBSERVATION_INVERSE) {
     assert.equal(text.split(added).length - 1, 1);
     text = text.replace(added, "");
@@ -3835,22 +3791,9 @@ test("migration diagnostics preserve the complete old a41 core and e0f transacti
   const observed = old;
   old = withoutCompileObservation(observed);
   assert.throws(() => withoutCompileObservation(observed + "\n"));
-  for (const changed of [
-    observed.replace(REAP_CADENCE_AFTER, REAP_CADENCE_BEFORE),
-    observed + REAP_CADENCE_AFTER,
-    observed.replace(
-      "for (let i = 0; i < 50; i++)",
-      "for (let i = 0; i < 51; i++)",
-    ),
-  ])
-    assert.throws(() => withoutOriginalReapLease(changed));
-  const baseline = withoutOriginalReapLease(observed);
   for (const added of COMPILE_OBSERVATION_INVERSE) {
-    assert.equal(baseline.split(added).length, 2);
-    assert.throws(() =>
-      withoutCompileObservationBaseline(baseline.replace(added, "")),
-    );
-    assert.throws(() => withoutCompileObservationBaseline(baseline + added));
+    assert.throws(() => withoutCompileObservation(observed.replace(added, "")));
+    assert.throws(() => withoutCompileObservation(observed + added));
   }
   for (const [current, prior] of [
     [

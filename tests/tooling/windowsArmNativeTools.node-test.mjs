@@ -30,7 +30,7 @@ const raw = Buffer.from(
 );
 const profile = mod.profileFromBytes(raw);
 const digest = (value) => createHash("sha256").update(value).digest("hex");
-const retainedProducerDigest =
+const currentProducerDigest =
   "1d887cc2c671e195fe25ffc96f835502e4bec208329f9b3fa3996b8ef3ba5b98";
 const env = () => ({
   GITHUB_ACTIONS: "true",
@@ -227,98 +227,9 @@ test("Producer code remains a separately attested subset and cannot substitute f
     encoding: "utf8",
     windowsHide: true,
   }).trim();
-  await assert.rejects(mod.producerPins(head), /ARM_PROFILE/);
-  const listed = execFileSync(
-    "git",
-    [
-      "ls-tree",
-      "-r",
-      "--full-tree",
-      "HEAD",
-      "--",
-      "scripts",
-      ".github/workflows/cef-engineering-checkpoint.yml",
-      "native/cef-hosted-recipe.json",
-      ".node-version",
-    ],
-    { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true },
-  );
-  const currentRows = listed
-    .trim()
-    .split("\n")
-    .map((line) => {
-      const match = /^(100644|100755) blob ([a-f0-9]{40})\t([^\r\n]+)$/.exec(
-        line,
-      );
-      assert(match);
-      return { mode: match[1], path: match[3], sha: match[2] };
-    })
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  assert.equal(currentRows.length, 131);
-  assert.equal(
-    digest(Buffer.from(JSON.stringify(currentRows))),
-    "73df343a716b1c99583c641d1f7cd5db93f13271011432c0eab22bf735dbb913",
-  );
-  const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
-  const currentCore = execFileSync(
-    "git",
-    ["cat-file", "blob", "HEAD:" + corePath],
-    { cwd: root, timeout: 10000, windowsHide: true },
-  ).toString();
-  assert.equal(Buffer.byteLength(currentCore), 246078);
-  assert.equal(
-    digest(currentCore),
-    "41a4895a078d44ef0485ac0fcf94040008a31404478166195e23b052e9c705ba",
-  );
-  const after =
-    "Math.max(1, Math.ceil((deadline - performance.now()) / (50 - i)))";
-  assert.equal(currentCore.split(after).length, 2);
-  const previous = Buffer.from(
-    currentCore.replace(
-      after,
-      "Math.min(100, Math.max(1, deadline - performance.now()))",
-    ),
-  );
-  assert.equal(previous.length, 246069);
-  assert.equal(
-    digest(previous),
-    "9db705733c7bceb64cd1bf3ff7f109024cb1dec7395bafdcbbe86b729f6d39cc",
-  );
-  const previousSha = createHash("sha1")
-    .update(Buffer.from(`blob ${previous.length}\0`))
-    .update(previous)
-    .digest("hex");
-  assert.equal(previousSha, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
-  assert.equal(
-    currentRows.find((row) => row.path === corePath).sha,
-    "8337b2bf0c0628c91e863d6a7fcd1ec065bf1485",
-  );
-  const retainedRows = currentRows.map((row) =>
-    row.path === corePath ? { ...row, sha: previousSha } : row,
-  );
-  const retainedGit = async (_file, args) => {
-    assert.deepEqual(args, [
-      "ls-tree",
-      "-r",
-      "--full-tree",
-      head,
-      "--",
-      "scripts",
-      ".github/workflows/cef-engineering-checkpoint.yml",
-      "native/cef-hosted-recipe.json",
-      ".node-version",
-    ]);
-    return {
-      stdout: Buffer.from(
-        retainedRows
-          .map((row) => `${row.mode} blob ${row.sha}\t${row.path}`)
-          .join("\n"),
-      ),
-    };
-  };
-  const actual = await mod.producerPins(head, retainedGit);
+  const actual = await mod.producerPins(head);
   assert.equal(actual.rows.length, 131);
-  assert.equal(actual.codeDigest, retainedProducerDigest);
+  assert.equal(actual.codeDigest, currentProducerDigest);
   assert(
     !actual.rows.some((row) =>
       row.path.startsWith("native/windows-arm-native-tools/"),
@@ -980,10 +891,10 @@ test("exact production run reaches the outer provenance function before any nati
 });
 
 function previousOwnedMacProducerWorkflow(value) {
-  assert.equal(value.split(retainedProducerDigest).length, 2);
+  assert.equal(value.split(currentProducerDigest).length, 2);
   const previous = value
     .replace(
-      retainedProducerDigest,
+      currentProducerDigest,
       "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
     )
     .replaceAll("\r\n", "\n");
@@ -997,7 +908,7 @@ function previousOwnedMacProducerWorkflow(value) {
 
 test("owned Mac producer retarget has one exact hash inverse before all historical native workflow checks", () => {
   const previous = previousOwnedMacProducerWorkflow(workflow);
-  assert.equal(previous.split(retainedProducerDigest).length, 1);
+  assert.equal(previous.split(currentProducerDigest).length, 1);
   assert.equal(
     previous.split(
       "81bed0b6df0aa05fa2c82d8a933ce5321c968e8c71b569b9c0d6ab8bcf8e9ef6",
@@ -1005,8 +916,8 @@ test("owned Mac producer retarget has one exact hash inverse before all historic
     2,
   );
   for (const altered of [
-    workflow.replace(retainedProducerDigest, "0".repeat(64)),
-    workflow + retainedProducerDigest,
+    workflow.replace(currentProducerDigest, "0".repeat(64)),
+    workflow + currentProducerDigest,
     workflow + "\n",
     workflow.replace("contents: read", "contents: write"),
   ])
