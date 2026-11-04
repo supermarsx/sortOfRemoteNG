@@ -110,6 +110,10 @@ export function withoutRepinRows(rows, root) {
     ".github/workflows/cef-engineering-checkpoint.yml": withoutWorkflowRepin,
   };
   return rows.map((row) => {
+    // 43fc8360b (Windows ARM graph deadline) edited this producer file after
+    // the retained digest was pinned; its prior blob is retained here.
+    if (row.path === "scripts/lib/cef-windows-arm-sdk-origin.mjs")
+      return { ...row, sha: "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6" };
     const undo = inverse[row.path];
     if (!undo) return row;
     const text = execFileSync("git", ["cat-file", "blob", `HEAD:${row.path}`], {
