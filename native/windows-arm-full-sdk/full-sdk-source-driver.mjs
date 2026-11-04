@@ -5737,6 +5737,7 @@ async function collectQualificationGraph(owner) {
                 Math.floor(Math.min(180000, state.end - performance.now())),
               ),
               observePins,
+              ...fullGraphInventoryObserver(owner),
             },
           ),
         );
@@ -6609,6 +6610,217 @@ function beginFullMetadataSource(input) {
   fullMetadataOwner(owner);
   return owner;
 }
+// BEGIN FULL GRAPH FAILURE OBSERVATIONS
+// Closed DATA only. The original graph helper, owner and every limit are unchanged.
+const fullGraphObservations = new WeakMap();
+function fullGraphOwnValue(value, key) {
+  if (!value || typeof value !== "object" || utilTypes.isProxy(value))
+    return undefined;
+  const field = Object.getOwnPropertyDescriptor(value, key);
+  return field && Object.hasOwn(field, "value") ? field.value : undefined;
+}
+function fullGraphCounts(value) {
+  const files = fullGraphOwnValue(value, "files"),
+    bytes = fullGraphOwnValue(value, "bytes"),
+    visited = fullGraphOwnValue(value, "visited");
+  return Number.isSafeInteger(files) &&
+    files >= 0 &&
+    files <= 50001 &&
+    Number.isSafeInteger(bytes) &&
+    bytes >= 0 &&
+    bytes <= 50001 * 256 * 1024 ** 2 &&
+    Number.isSafeInteger(visited) &&
+    visited >= 0 &&
+    visited <= 300001
+    ? { files, bytes, visited }
+    : null;
+}
+function fullGraphProgress(value) {
+  const counts = fullGraphCounts(value),
+    phase = fullGraphOwnValue(value, "phase"),
+    active = fullGraphOwnValue(value, "active"),
+    completedHashedFiles = fullGraphOwnValue(value, "completedHashedFiles"),
+    completedHashedBytes = fullGraphOwnValue(value, "completedHashedBytes"),
+    elapsedMs = fullGraphOwnValue(value, "elapsedMs");
+  if (
+    !counts ||
+    !["metadata", "hashing", "complete", "stopped"].includes(phase) ||
+    !Number.isSafeInteger(active) ||
+    active < 0 ||
+    active > 4 ||
+    !Number.isSafeInteger(completedHashedFiles) ||
+    completedHashedFiles < 0 ||
+    completedHashedFiles > counts.files ||
+    !Number.isSafeInteger(completedHashedBytes) ||
+    completedHashedBytes < 0 ||
+    completedHashedBytes > counts.bytes ||
+    !Number.isSafeInteger(elapsedMs) ||
+    elapsedMs < 0 ||
+    elapsedMs > 180000
+  )
+    return null;
+  const supplied = fullGraphOwnValue(value, "categories"),
+    categories = {};
+  let files = 0,
+    bytes = 0;
+  for (const name of ["args", "build", "toolchain", "target"]) {
+    const row = fullGraphOwnValue(supplied, name),
+      count = fullGraphOwnValue(row, "files"),
+      size = fullGraphOwnValue(row, "bytes");
+    if (
+      !Number.isSafeInteger(count) ||
+      count < 0 ||
+      count > counts.files ||
+      !Number.isSafeInteger(size) ||
+      size < 0 ||
+      size > counts.bytes
+    )
+      return null;
+    categories[name] = Object.freeze({ files: count, bytes: size });
+    files += count;
+    bytes += size;
+  }
+  if (files !== counts.files || bytes !== counts.bytes) return null;
+  return Object.freeze({
+    phase,
+    ...counts,
+    active,
+    completedHashedFiles,
+    completedHashedBytes,
+    elapsedMs,
+    categories: Object.freeze(categories),
+  });
+}
+function fullGraphInventoryObserver(owner) {
+  const observation = fullGraphObservations.get(owner);
+  if (!observation) return {};
+  return {
+    observe(value) {
+      try {
+        if (
+          observation.closed ||
+          observation.state.retired ||
+          observation.state.epoch !== observation.epoch
+        )
+          return;
+        if (observation.progress.length >= 36) {
+          observation.discardedSamples = Math.min(
+            36,
+            observation.discardedSamples + 1,
+          );
+          return;
+        }
+        const sample = fullGraphProgress(value);
+        if (sample) observation.progress.push(sample);
+        else
+          observation.discardedSamples = Math.min(
+            36,
+            observation.discardedSamples + 1,
+          );
+      } catch {
+        // No diagnostic failure may retire an owner or replace the original cause.
+      }
+    },
+  };
+}
+function collectFullQualificationGraph(owner) {
+  const { state } = fullMetadataOwner(owner);
+  need(!fullGraphObservations.has(owner), "FULL_GRAPH_OBSERVATION_REPEAT");
+  const observation = {
+    state,
+    epoch: state.epoch,
+    progress: [],
+    discardedSamples: 0,
+    closed: false,
+  };
+  fullGraphObservations.set(owner, observation);
+  const pending = collectQualificationGraph(owner);
+  // Observe settlement without adding a new promise/adoption boundary.
+  void pending.then(
+    () => {
+      observation.closed = true;
+    },
+    () => {
+      observation.closed = true;
+    },
+  );
+  return pending;
+}
+function fullGraphFailureClassification(error) {
+  if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
+    return { code: "UNKNOWN" };
+  const code = fullGraphOwnValue(error, "code");
+  if (code === "GRAPH_BOUND") {
+    const counts = fullGraphCounts(fullGraphOwnValue(error, "graphCounts"));
+    return { code: "GRAPH_BOUND", ...(counts ? { graphCounts: counts } : {}) };
+  }
+  if (
+    [
+      "ENOENT",
+      "EACCES",
+      "EPERM",
+      "EIO",
+      "EMFILE",
+      "ENFILE",
+      "ENOMEM",
+      "ENOSPC",
+      "ENOTDIR",
+      "EISDIR",
+      "ELOOP",
+      "EINVAL",
+      "EBADF",
+      "EBUSY",
+      "ETIMEDOUT",
+      "ENAMETOOLONG",
+      "EROFS",
+      "ENODEV",
+      "ECANCELED",
+      "ABORT_ERR",
+    ].includes(code)
+  )
+    return { code: "GRAPH_FS_ERROR", errno: code };
+  const known = new Map([
+    ["Invalid graph deadline", "GRAPH_INVALID_DEADLINE"],
+    ["Invalid graph inventory counters", "GRAPH_INVALID_COUNTERS"],
+    ["Checkpoint asset size", "GRAPH_ASSET_SIZE"],
+    ["Checkpoint asset changed", "GRAPH_ASSET_CHANGED"],
+    ["Fresh complete GN graph required", "GRAPH_INCOMPLETE"],
+    ["Complete graph pins required", "GRAPH_INCOMPLETE_PINS"],
+    ["Checkpoint links are not admitted", "GRAPH_LINK_REJECTED"],
+    ["Checkpoint path alias", "GRAPH_PATH_ALIAS"],
+    ["Invalid checkpoint object shape", "GRAPH_INVALID_PIN_SHAPE"],
+    ["Bounded graph pin count", "GRAPH_INVALID_PIN_COUNT"],
+    ["Bounded graph pin bytes", "GRAPH_INVALID_PIN_BYTES"],
+    ["Canonical relative graph pin", "GRAPH_INVALID_PIN_PATH"],
+    ["Declared graph pin kind", "GRAPH_INVALID_PIN_KIND"],
+    ["Bounded graph pin size", "GRAPH_INVALID_PIN_SIZE"],
+    ["Graph pin snapshot byte bound", "GRAPH_PIN_SNAPSHOT_BOUND"],
+    ["Complete graph snapshot digest", "GRAPH_PIN_SNAPSHOT_DIGEST"],
+  ]);
+  return { code: known.get(fullSourceErrorMessage(error)) ?? "UNKNOWN" };
+}
+function fullSourceGraphDiagnostic(owner, error) {
+  try {
+    const observation = fullGraphObservations.get(owner);
+    if (
+      !observation ||
+      !observation.closed ||
+      observation.state !== qualificationSourceOwners.get(owner)
+    )
+      return null;
+    const diagnostic = {
+      kind: "windows-arm-source-graph-failure",
+      phase: "graph-inventory",
+      progress: observation.progress.slice(),
+      discardedSamples: observation.discardedSamples,
+    };
+    return { ...diagnostic, ...fullGraphFailureClassification(error) };
+  } catch {
+    return null;
+  }
+}
+// END FULL GRAPH FAILURE OBSERVATIONS
+
 function fullMetadataCommand(state, role) {
   qualificationCheck(state);
   const full = fullMetadataSources.get(state.sourceToken);
@@ -8731,7 +8943,7 @@ async function runFullSourceBody(argv) {
       );
       stage = "graph-inventory";
       currentProgress.phase("graph-inventory");
-      const capture = await collectQualificationGraph(qualificationOwner);
+      const capture = await collectFullQualificationGraph(qualificationOwner);
       graph = capture.summary;
       const snapshot = capture.diagnostic;
       // BEGIN FRESH RESTORED GRAPH COMPARISON
@@ -8783,13 +8995,19 @@ async function runFullSourceBody(argv) {
     retireQualificationSource(qualificationOwner);
     currentProgress?.close();
     const message = fullSourceErrorMessage(primary);
+    const graphDiagnostic =
+      failed && stage === "graph-inventory"
+        ? fullSourceGraphDiagnostic(qualificationOwner, primary)
+        : null;
     const code =
-      message !== null &&
-      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)
-        ? message
-        : failed
-          ? "FULL_SOURCE_FAILED"
-          : null;
+      graphDiagnostic?.code === "GRAPH_BOUND"
+        ? "GRAPH_BOUND"
+        : message !== null &&
+            /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)
+          ? message
+          : failed
+            ? "FULL_SOURCE_FAILED"
+            : null;
     const report = {
       kind: "windows-arm-source-gn",
       success,
@@ -8798,6 +9016,7 @@ async function runFullSourceBody(argv) {
       ...(failed && stage === "source-apply"
         ? { failureDiagnostic: fullSourceApplyDiagnostic(primary) }
         : {}),
+      ...(graphDiagnostic ? { graphDiagnostic } : {}),
       target: TARGET,
       sourceId: p.sourceGn.sourceId,
       graph,

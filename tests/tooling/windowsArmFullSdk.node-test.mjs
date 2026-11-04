@@ -5264,7 +5264,96 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_DIAGNOSTICS_HISTORY = {
+  bytes: 290034,
+  sha256: "8f6ccea24cf9104e61ab26999dbec23a9fc90c346c018e8501252d68446b75c0",
+  rows: [
+    {
+      old: "",
+      new: "              ...fullGraphInventoryObserver(owner),\n",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "530c81351ac020444f04500e5c98f80612f84f58bfb00b1b06816ce05b24f482",
+    },
+    {
+      old: "",
+      new: '// BEGIN FULL GRAPH FAILURE OBSERVATIONS\n// Closed DATA only. The original graph helper, owner and every limit are unchanged.\nconst fullGraphObservations = new WeakMap();\nfunction fullGraphOwnValue(value, key) {\n  if (!value || typeof value !== "object" || utilTypes.isProxy(value))\n    return undefined;\n  const field = Object.getOwnPropertyDescriptor(value, key);\n  return field && Object.hasOwn(field, "value") ? field.value : undefined;\n}\nfunction fullGraphCounts(value) {\n  const files = fullGraphOwnValue(value, "files"),\n    bytes = fullGraphOwnValue(value, "bytes"),\n    visited = fullGraphOwnValue(value, "visited");\n  return Number.isSafeInteger(files) &&\n    files >= 0 &&\n    files <= 50001 &&\n    Number.isSafeInteger(bytes) &&\n    bytes >= 0 &&\n    bytes <= 50001 * 256 * 1024 ** 2 &&\n    Number.isSafeInteger(visited) &&\n    visited >= 0 &&\n    visited <= 300001\n    ? { files, bytes, visited }\n    : null;\n}\nfunction fullGraphProgress(value) {\n  const counts = fullGraphCounts(value),\n    phase = fullGraphOwnValue(value, "phase"),\n    active = fullGraphOwnValue(value, "active"),\n    completedHashedFiles = fullGraphOwnValue(value, "completedHashedFiles"),\n    completedHashedBytes = fullGraphOwnValue(value, "completedHashedBytes"),\n    elapsedMs = fullGraphOwnValue(value, "elapsedMs");\n  if (\n    !counts ||\n    !["metadata", "hashing", "complete", "stopped"].includes(phase) ||\n    !Number.isSafeInteger(active) ||\n    active < 0 ||\n    active > 4 ||\n    !Number.isSafeInteger(completedHashedFiles) ||\n    completedHashedFiles < 0 ||\n    completedHashedFiles > counts.files ||\n    !Number.isSafeInteger(completedHashedBytes) ||\n    completedHashedBytes < 0 ||\n    completedHashedBytes > counts.bytes ||\n    !Number.isSafeInteger(elapsedMs) ||\n    elapsedMs < 0 ||\n    elapsedMs > 180000\n  )\n    return null;\n  const supplied = fullGraphOwnValue(value, "categories"),\n    categories = {};\n  let files = 0,\n    bytes = 0;\n  for (const name of ["args", "build", "toolchain", "target"]) {\n    const row = fullGraphOwnValue(supplied, name),\n      count = fullGraphOwnValue(row, "files"),\n      size = fullGraphOwnValue(row, "bytes");\n    if (\n      !Number.isSafeInteger(count) ||\n      count < 0 ||\n      count > counts.files ||\n      !Number.isSafeInteger(size) ||\n      size < 0 ||\n      size > counts.bytes\n    )\n      return null;\n    categories[name] = Object.freeze({ files: count, bytes: size });\n    files += count;\n    bytes += size;\n  }\n  if (files !== counts.files || bytes !== counts.bytes) return null;\n  return Object.freeze({\n    phase,\n    ...counts,\n    active,\n    completedHashedFiles,\n    completedHashedBytes,\n    elapsedMs,\n    categories: Object.freeze(categories),\n  });\n}\nfunction fullGraphInventoryObserver(owner) {\n  const observation = fullGraphObservations.get(owner);\n  if (!observation) return {};\n  return {\n    observe(value) {\n      try {\n        if (\n          observation.closed ||\n          observation.state.retired ||\n          observation.state.epoch !== observation.epoch\n        )\n          return;\n        if (observation.progress.length >= 36) {\n          observation.discardedSamples = Math.min(\n            36,\n            observation.discardedSamples + 1,\n          );\n          return;\n        }\n        const sample = fullGraphProgress(value);\n        if (sample) observation.progress.push(sample);\n        else\n          observation.discardedSamples = Math.min(\n            36,\n            observation.discardedSamples + 1,\n          );\n      } catch {\n        // No diagnostic failure may retire an owner or replace the original cause.\n      }\n    },\n  };\n}\nfunction collectFullQualificationGraph(owner) {\n  const { state } = fullMetadataOwner(owner);\n  need(!fullGraphObservations.has(owner), "FULL_GRAPH_OBSERVATION_REPEAT");\n  const observation = {\n    state,\n    epoch: state.epoch,\n    progress: [],\n    discardedSamples: 0,\n    closed: false,\n  };\n  fullGraphObservations.set(owner, observation);\n  const pending = collectQualificationGraph(owner);\n  // Observe settlement without adding a new promise/adoption boundary.\n  void pending.then(\n    () => {\n      observation.closed = true;\n    },\n    () => {\n      observation.closed = true;\n    },\n  );\n  return pending;\n}\nfunction fullGraphFailureClassification(error) {\n  if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\n    return { code: "UNKNOWN" };\n  const code = fullGraphOwnValue(error, "code");\n  if (code === "GRAPH_BOUND") {\n    const counts = fullGraphCounts(fullGraphOwnValue(error, "graphCounts"));\n    return { code: "GRAPH_BOUND", ...(counts ? { graphCounts: counts } : {}) };\n  }\n  if (\n    [\n      "ENOENT",\n      "EACCES",\n      "EPERM",\n      "EIO",\n      "EMFILE",\n      "ENFILE",\n      "ENOMEM",\n      "ENOSPC",\n      "ENOTDIR",\n      "EISDIR",\n      "ELOOP",\n      "EINVAL",\n      "EBADF",\n      "EBUSY",\n      "ETIMEDOUT",\n      "ENAMETOOLONG",\n      "EROFS",\n      "ENODEV",\n      "ECANCELED",\n      "ABORT_ERR",\n    ].includes(code)\n  )\n    return { code: "GRAPH_FS_ERROR", errno: code };\n  const known = new Map([\n    ["Invalid graph deadline", "GRAPH_INVALID_DEADLINE"],\n    ["Invalid graph inventory counters", "GRAPH_INVALID_COUNTERS"],\n    ["Checkpoint asset size", "GRAPH_ASSET_SIZE"],\n    ["Checkpoint asset changed", "GRAPH_ASSET_CHANGED"],\n    ["Fresh complete GN graph required", "GRAPH_INCOMPLETE"],\n    ["Complete graph pins required", "GRAPH_INCOMPLETE_PINS"],\n    ["Checkpoint links are not admitted", "GRAPH_LINK_REJECTED"],\n    ["Checkpoint path alias", "GRAPH_PATH_ALIAS"],\n    ["Invalid checkpoint object shape", "GRAPH_INVALID_PIN_SHAPE"],\n    ["Bounded graph pin count", "GRAPH_INVALID_PIN_COUNT"],\n    ["Bounded graph pin bytes", "GRAPH_INVALID_PIN_BYTES"],\n    ["Canonical relative graph pin", "GRAPH_INVALID_PIN_PATH"],\n    ["Declared graph pin kind", "GRAPH_INVALID_PIN_KIND"],\n    ["Bounded graph pin size", "GRAPH_INVALID_PIN_SIZE"],\n    ["Graph pin snapshot byte bound", "GRAPH_PIN_SNAPSHOT_BOUND"],\n    ["Complete graph snapshot digest", "GRAPH_PIN_SNAPSHOT_DIGEST"],\n  ]);\n  return { code: known.get(fullSourceErrorMessage(error)) ?? "UNKNOWN" };\n}\nfunction fullSourceGraphDiagnostic(owner, error) {\n  try {\n    const observation = fullGraphObservations.get(owner);\n    if (\n      !observation ||\n      !observation.closed ||\n      observation.state !== qualificationSourceOwners.get(owner)\n    )\n      return null;\n    const diagnostic = {\n      kind: "windows-arm-source-graph-failure",\n      phase: "graph-inventory",\n      progress: observation.progress.slice(),\n      discardedSamples: observation.discardedSamples,\n    };\n    return { ...diagnostic, ...fullGraphFailureClassification(error) };\n  } catch {\n    return null;\n  }\n}\n// END FULL GRAPH FAILURE OBSERVATIONS\n\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "70d60ee5d3dc3daa87e22ae0f466473bc944d29270dfb6bf993359564aa881d5",
+    },
+    {
+      old: "      const capture = await collectQualificationGraph(qualificationOwner);\n",
+      new: "      const capture = await collectFullQualificationGraph(qualificationOwner);\n",
+      oldSha256:
+        "8202e9fc8dd602f87c591d928af0e22e7a217086397b60ac42a4ad72846faa8c",
+      newSha256:
+        "1a8da4463c12c6b382a0d15794e33a8684191bfc292fc598a47854735d47259e",
+    },
+    {
+      old: "",
+      new: '    const graphDiagnostic =\n      failed && stage === "graph-inventory"\n        ? fullSourceGraphDiagnostic(qualificationOwner, primary)\n        : null;\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "4b9c8848aba05bd15c932be88c07b43af27e323bdf6dd9ff72d6f56b851d678c",
+    },
+    {
+      old: '      message !== null &&\n      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)\n        ? message\n        : failed\n          ? "FULL_SOURCE_FAILED"\n          : null;\n',
+      new: '      graphDiagnostic?.code === "GRAPH_BOUND"\n        ? "GRAPH_BOUND"\n        : message !== null &&\n            /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)\n          ? message\n          : failed\n            ? "FULL_SOURCE_FAILED"\n            : null;\n',
+      oldSha256:
+        "5637d3e3263ca30a0b01b2dd972548930c0bbca034f36851ad458f8694734373",
+      newSha256:
+        "126a41b375c181fcd2fef86e2ddd52941ea8fa82e545a9e90e702388633eb5ec",
+    },
+    {
+      old: "",
+      new: "      ...(graphDiagnostic ? { graphDiagnostic } : {}),\n",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "9ec1d7264fe3d84caa1bc963407aefaa80ff503490d6dc047505c40be670df0d",
+    },
+  ],
+};
+function fullGraphDiagnosticsInverse(text, name) {
+  if (name !== "driver") return text;
+  const spec = FULL_GRAPH_DIAGNOSTICS_HISTORY;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_WHOLE",
+  );
+  assert.equal(
+    sha(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_WHOLE",
+  );
+  return text;
+}
+
 function fullHooks3600Inverse(text, name) {
+  text = fullGraphDiagnosticsInverse(text, name);
   const spec = FULL_HOOKS_3600_HISTORY[name];
   if (!spec) return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -8215,6 +8304,7 @@ print(json.dumps(encode({'context':context,'observed':observed})))
   };
   const globals = {
     fs: modelFs,
+    utilTypes: (await import("node:util")).types,
     path,
     Buffer,
     structuredClone,
@@ -8272,7 +8362,7 @@ qualificationReadLog=testHooks.readLog;
 validateQualificationSource=testHooks.validate;
 const actualDirectories=qualificationSourceDirectories;
 qualificationSourceDirectories=owner=>actualDirectories(owner).then(value=>{testHooks.afterDirectoryFence(owner);return value;});
-return {beginFullMetadataSource,collectQualificationGraph,commitFullMetadataGraph,coordinateFullMetadata,fullMetadataCommand,fullMetadataOwner,fullMetadataContext,fullMetadataInspect,fullMetadataInspectContext,fullMetadataSources,fullMetadataContexts,fullMetadataOwners,fullSourceProfiles,qualificationSessions,qualificationSourceOwners,qualificationSourceRuns,qualificationGraphReceipts,createQualificationSession,retireQualificationSource};
+return {beginFullMetadataSource,collectQualificationGraph,collectFullQualificationGraph,fullSourceGraphDiagnostic,fullGraphCounts,fullGraphProgress,commitFullMetadataGraph,coordinateFullMetadata,fullMetadataCommand,fullMetadataOwner,fullMetadataContext,fullMetadataInspect,fullMetadataInspectContext,fullMetadataSources,fullMetadataContexts,fullMetadataOwners,fullSourceProfiles,qualificationSessions,qualificationSourceOwners,qualificationSourceRuns,qualificationGraphReceipts,createQualificationSession,retireQualificationSource};
 `;
   if (options.omitPostFenceGuards) {
     modelSource = modelSource
@@ -13623,5 +13713,768 @@ test("FULL hooks3600 finite inverses restore every whole907 source and reject mi
       );
     }
     assert.throws(() => fullHooks3600Inverse(raw + "\n", name));
+  }
+});
+
+async function frozenGraphDiagnosticModel(mode) {
+  const ts = (await import("typescript")).default,
+    { Readable } = await import("node:stream"),
+    { finished } = await import("node:stream/promises");
+  const source = await read(
+      prefix +
+        "current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+    ),
+    ast = ts.createSourceFile(
+      "actual-frozen-graph.mjs",
+      source,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    functions = ["assertGraphBudget", "noLinks", "graphInventory"]
+      .map((name) =>
+        ast.statements
+          .find(
+            (row) => ts.isFunctionDeclaration(row) && row.name?.text === name,
+          )
+          .getText(ast)
+          .replace(/^export /, ""),
+      )
+      .join("\n");
+  assert.equal(
+    sha(source),
+    "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",
+  );
+  assert.deepEqual(controlCheckpoint.GRAPH_LIMITS, {
+    files: 50000,
+    bytes: 8 * 1024 ** 3,
+    visited: 300000,
+    milliseconds: 180000,
+    fileBytes: 256 * 1024 ** 2,
+    readers: 4,
+  });
+  let now = 0,
+    timers = 0,
+    cleared = 0,
+    opened = 0,
+    closed = 0,
+    observed;
+  const names =
+    mode === "files"
+      ? Array.from({ length: 50001 }, (_, i) => i + ".ninja")
+      : mode === "visited"
+        ? Array.from({ length: 300001 }, (_, i) => i + ".ignored")
+        : mode === "bytes"
+          ? Array.from({ length: 33 }, (_, i) => i + ".ninja")
+          : mode === "missing"
+            ? ["only.ninja"]
+            : ["args.gn", "build.ninja"];
+  const inodeByName = new Map(names.map((name, index) => [name, index + 1]));
+  const metadata = (file) => ({
+    isFile: () => true,
+    size: mode === "bytes" ? 256 * 1024 ** 2 : mode === "size" ? 0 : 1,
+    mtimeMs: 1,
+    ino: inodeByName.get(path.basename(file)),
+    dev: 1,
+  });
+  const statCalls = new Map();
+  const globals = {
+    GRAPH_LIMITS: controlCheckpoint.GRAPH_LIMITS,
+    performance: { now: () => now },
+    AbortController,
+    path,
+    createHash,
+    finished,
+    canonical: controlCheckpoint.canonical,
+    sha,
+    assert: (ok, message) => {
+      if (!ok) throw Error(message);
+    },
+    lstat: async () => ({ isSymbolicLink: () => mode === "links" }),
+    realpath: async (file) => (mode === "alias" ? file + "-alias" : file),
+    readdir: async () => {
+      if (mode === "deadline") now = 180001;
+      if (mode === "io") {
+        const error = new Error("PRIVATE_PATH SECRET_TOKEN");
+        error.code = "EIO";
+        throw error;
+      }
+      return names.map((name) => ({
+        name,
+        isSymbolicLink: () => false,
+        isDirectory: () => false,
+      }));
+    },
+    stat: async (file) => {
+      const count = (statCalls.get(file) ?? 0) + 1;
+      statCalls.set(file, count);
+      return {
+        ...metadata(file),
+        mtimeMs: mode === "changed" && count > 1 ? 2 : 1,
+      };
+    },
+    open: async (file) => {
+      opened++;
+      return {
+        stat: async () => metadata(file),
+        createReadStream: () => Readable.from([Buffer.from("x")]),
+        close: async () => {
+          closed++;
+        },
+      };
+    },
+    setTimeout: (_fn, ms) => {
+      assert.equal(ms, 180000);
+      timers++;
+      return 1;
+    },
+    clearTimeout: () => {
+      cleared++;
+    },
+  };
+  const graphInventory = vm.runInNewContext(
+    functions + "\ngraphInventory",
+    globals,
+  );
+  return {
+    async run(out, options) {
+      observed = options.observe;
+      return graphInventory(out, options);
+    },
+    late: (value) => observed(value),
+    counts: () => ({ timers, cleared, opened, closed }),
+  };
+}
+
+async function actualFullGraphFailureReport(f, primary, failWriter = false) {
+  const ts = (await import("typescript")).default,
+    source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile(
+      "actual-full-finally.mjs",
+      source,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    body = ast.statements
+      .find(
+        (row) =>
+          ts.isFunctionDeclaration(row) &&
+          row.name?.text === "runFullSourceBody",
+      )
+      .body.statements.find((row) => ts.isTryStatement(row))
+      .finallyBlock.getText(ast),
+    helpers = ast.statements
+      .filter(
+        (row) =>
+          ts.isFunctionDeclaration(row) &&
+          ["fullSourceErrorMessage", "fullSourceApplyDiagnostic"].includes(
+            row.name?.text,
+          ),
+      )
+      .map((row) => row.getText(ast))
+      .join("\n"),
+    utilTypes = (await import("node:util")).types,
+    safeHelpers = new Function(
+      "utilTypes",
+      helpers + "\nreturn {fullSourceErrorMessage,fullSourceApplyDiagnostic};",
+    )(utilTypes),
+    reports = [],
+    scope = {
+      primary,
+      failed: true,
+      stage: "graph-inventory",
+      success: false,
+      root: "owned",
+      p: f.input.p,
+      qualificationOwner: f.owner,
+      fullSourceProfiles: f.api.fullSourceProfiles,
+      retireQualificationSource: f.api.retireQualificationSource,
+      currentProgress: { close() {} },
+      ...safeHelpers,
+      fullSourceGraphDiagnostic: f.api.fullSourceGraphDiagnostic,
+      TARGET: "aarch64-pc-windows-msvc",
+      graph: null,
+      generatedArguments: null,
+      sourceCloseFailure: false,
+      sourceReportingFailure: false,
+      gitPolicy: {},
+      custom: { sourceGitIsolationEvidence: () => ({ fixtureOnly: true }) },
+      fs: {
+        async writeFile(file, raw, options) {
+          assert.equal(path.basename(file), "full-source-gn-result.json");
+          assert.equal(options.flag, "wx");
+          reports.push(JSON.parse(raw));
+          if (failWriter)
+            throw Error("PRIVATE_PATH SECRET_TOKEN write failure");
+        },
+      },
+      path,
+    };
+  const run = new Function(
+    ...Object.keys(scope),
+    "return (async()=>{try { throw primary; } finally " + body + "})()",
+  );
+  let failed = false,
+    caught;
+  try {
+    await run(...Object.values(scope));
+  } catch (error) {
+    failed = true;
+    caught = error;
+  }
+  assert.equal(failed, true);
+  assert.equal(caught, primary);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].success, false);
+  assert.equal(reports[0].graph, null);
+  assert.equal(reports[0].sdkBuilt, false);
+  assert.equal(reports[0].nativeAcceptance, false);
+  assert.equal(reports[0].engineCompilationRequested, false);
+  assert.equal(JSON.stringify(reports[0]).includes("PRIVATE_PATH"), false);
+  assert.equal(JSON.stringify(reports[0]).includes("SECRET_TOKEN"), false);
+  return reports[0];
+}
+
+test("FULL graph diagnostics preserve actual frozen deadline and file byte visited bound failures in the real source finally without graph authority", async () => {
+  for (const mode of ["deadline", "files", "bytes", "visited"]) {
+    const f = await fullMetadataFixture(),
+      model = await frozenGraphDiagnosticModel(mode);
+    f.input.checkpoint.graphInventory = (out, options) =>
+      model.run(out, options);
+    f.input.checkpoint.graphPinSnapshot = (value) =>
+      controlCheckpoint.graphPinSnapshot(JSON.parse(JSON.stringify(value)));
+    let failed = false,
+      primary;
+    try {
+      await f.api.collectFullQualificationGraph(f.owner);
+    } catch (error) {
+      failed = true;
+      primary = error;
+    }
+    assert.equal(failed, true, mode);
+    assert.equal(primary.code, "GRAPH_BOUND", mode);
+    const state = f.api.qualificationSourceOwners.get(f.owner);
+    assert.equal(state.failed, true);
+    assert.equal(state.primary, primary);
+    assert.equal(state.retired, true);
+    assert.equal(state.graphPending, null);
+    assert.equal(state.graphReceipt, null);
+    assert.equal(state.sourceToken, null);
+    const before = f.api.fullSourceGraphDiagnostic(f.owner, primary),
+      report = await actualFullGraphFailureReport(f, primary, true);
+    assert.equal(report.firstFailure, "GRAPH_BOUND");
+    assert.deepEqual(report.graphDiagnostic.graphCounts, {
+      ...primary.graphCounts,
+    });
+    assert.deepEqual(report.graphDiagnostic, before);
+    assert.equal(report.graphDiagnostic.phase, "graph-inventory");
+    assert.ok(report.graphDiagnostic.progress.length <= 36);
+    if (mode === "deadline")
+      assert.equal(report.graphDiagnostic.progress.at(-1).elapsedMs, 180000);
+    if (mode === "files") {
+      assert.equal(report.graphDiagnostic.graphCounts.visited, 50001);
+      assert.ok(report.graphDiagnostic.graphCounts.files >= 49996);
+      assert.ok(report.graphDiagnostic.graphCounts.files <= 50000);
+    }
+    if (mode === "bytes")
+      assert.ok(report.graphDiagnostic.graphCounts.bytes > 8 * 1024 ** 3);
+    if (mode === "visited")
+      assert.equal(report.graphDiagnostic.graphCounts.visited, 300001);
+    const frozen = JSON.stringify(report.graphDiagnostic);
+    model.late({
+      phase: "complete",
+      files: 0,
+      bytes: 0,
+      visited: 0,
+      active: 0,
+      completedHashedFiles: 0,
+      completedHashedBytes: 0,
+      elapsedMs: 1,
+      categories: Object.fromEntries(
+        ["args", "build", "toolchain", "target"].map((n) => [
+          n,
+          { files: 0, bytes: 0 },
+        ]),
+      ),
+    });
+    assert.equal(
+      JSON.stringify(f.api.fullSourceGraphDiagnostic(f.owner, primary)),
+      frozen,
+    );
+    assert.deepEqual(model.counts(), {
+      timers: 1,
+      cleared: 1,
+      opened: 0,
+      closed: 0,
+    });
+  }
+});
+
+test("FULL graph diagnostics keep actual frozen success parity and preserve every falsy first error without a late callback grant", async () => {
+  const f = await fullMetadataFixture(),
+    model = await frozenGraphDiagnosticModel("success");
+  f.input.checkpoint.graphInventory = (out, options) => model.run(out, options);
+  f.input.checkpoint.graphPinSnapshot = (value) =>
+    controlCheckpoint.graphPinSnapshot(JSON.parse(JSON.stringify(value)));
+  const result = await f.api.collectFullQualificationGraph(f.owner);
+  assert.equal(result.summary.files, 2);
+  assert.equal(result.summary.bytes, 2);
+  assert.equal(f.api.qualificationSourceOwners.get(f.owner).retired, false);
+  assert.equal(f.api.qualificationSourceOwners.get(f.owner).sourceToken, null);
+  const observed = f.api.fullSourceGraphDiagnostic(f.owner, false);
+  assert.ok(observed.progress.some((row) => row.phase === "complete"));
+  assert.equal(observed.code, "UNKNOWN");
+  assert.deepEqual(model.counts(), {
+    timers: 1,
+    cleared: 1,
+    opened: 2,
+    closed: 2,
+  });
+  for (const primary of [false, null, 0]) {
+    const denied = await fullMetadataFixture();
+    let late;
+    denied.input.checkpoint.graphInventory = async (_out, options) => {
+      late = options.observe;
+      throw primary;
+    };
+    let failed = false,
+      caught;
+    try {
+      await denied.api.collectFullQualificationGraph(denied.owner);
+    } catch (error) {
+      failed = true;
+      caught = error;
+    }
+    assert.equal(failed, true);
+    assert.equal(caught, primary);
+    const report = await actualFullGraphFailureReport(denied, primary, true);
+    assert.equal(report.firstFailure, "FULL_SOURCE_FAILED");
+    assert.equal(report.graphDiagnostic.code, "UNKNOWN");
+    const before = JSON.stringify(report.graphDiagnostic);
+    late(
+      new Proxy(
+        {},
+        {
+          get() {
+            throw Error("SECRET_TOKEN");
+          },
+          getOwnPropertyDescriptor() {
+            throw false;
+          },
+        },
+      ),
+    );
+    assert.equal(
+      JSON.stringify(
+        denied.api.fullSourceGraphDiagnostic(denied.owner, primary),
+      ),
+      before,
+    );
+    assert.equal(
+      denied.api.qualificationSourceOwners.get(denied.owner).primary,
+      primary,
+    );
+    assert.equal(
+      denied.api.qualificationSourceOwners.get(denied.owner).sourceToken,
+      null,
+    );
+  }
+});
+
+test("FULL graph diagnostics copy only closed own data without getters proxies unsafe counts or more than36 bounded samples", async () => {
+  const f = await fullMetadataFixture(),
+    utilTypes = (await import("node:util")).types;
+  let getters = 0,
+    late;
+  const primary = new Error("PRIVATE_PATH SECRET_TOKEN raw text");
+  primary.code = "GRAPH_BOUND";
+  primary.graphCounts = { files: 1, bytes: 1, visited: 1 };
+  const sample = {
+    phase: "hashing",
+    files: 1,
+    bytes: 1,
+    visited: 1,
+    active: 1,
+    completedHashedFiles: 0,
+    completedHashedBytes: 0,
+    elapsedMs: 1,
+    categories: {
+      args: { files: 1, bytes: 1 },
+      build: { files: 0, bytes: 0 },
+      toolchain: { files: 0, bytes: 0 },
+      target: { files: 0, bytes: 0 },
+    },
+  };
+  Object.defineProperty(sample, "privatePath", {
+    get() {
+      getters++;
+      throw false;
+    },
+  });
+  f.input.checkpoint.graphInventory = async (_out, options) => {
+    late = options.observe;
+    for (let i = 0; i < 37; i++) options.observe(sample);
+    throw primary;
+  };
+  await assert.rejects(
+    f.api.collectFullQualificationGraph(f.owner),
+    (error) => error === primary,
+  );
+  const diagnostic = f.api.fullSourceGraphDiagnostic(f.owner, primary);
+  assert.equal(diagnostic.progress.length, 36);
+  assert.equal(diagnostic.discardedSamples, 1);
+  assert.equal(JSON.stringify(diagnostic).includes("privatePath"), false);
+  for (const key of ["files", "bytes", "visited"]) {
+    const bad = { files: 1, bytes: 1, visited: 1 };
+    Object.defineProperty(bad, key, {
+      get() {
+        getters++;
+        throw false;
+      },
+    });
+    assert.equal(f.api.fullGraphCounts(bad), null);
+    for (const value of [-1, NaN, Infinity, "1", Number.MAX_SAFE_INTEGER]) {
+      assert.equal(
+        f.api.fullGraphCounts({ files: 1, bytes: 1, visited: 1, [key]: value }),
+        null,
+      );
+    }
+  }
+  for (const bad of [
+    { ...sample, phase: "PRIVATE_PATH SECRET_TOKEN" },
+    { ...sample, active: 5 },
+    { ...sample, elapsedMs: 180001 },
+    { ...sample, completedHashedFiles: 2 },
+    {
+      ...sample,
+      categories: { ...sample.categories, args: { files: 0, bytes: 0 } },
+    },
+  ])
+    assert.equal(f.api.fullGraphProgress(bad), null);
+  const hostile = new Proxy(new Error("secret"), {
+    get() {
+      getters++;
+      throw false;
+    },
+    getOwnPropertyDescriptor() {
+      getters++;
+      throw false;
+    },
+  });
+  const accessor = new Error();
+  Object.defineProperty(accessor, "code", {
+    get() {
+      getters++;
+      throw false;
+    },
+  });
+  const inherited = new Error();
+  Object.setPrototypeOf(inherited, { code: "GRAPH_BOUND" });
+  for (const error of [
+    false,
+    {},
+    { code: "GRAPH_BOUND", graphCounts: primary.graphCounts },
+    hostile,
+    accessor,
+    inherited,
+  ]) {
+    assert.equal(
+      f.api.fullSourceGraphDiagnostic(f.owner, error).code,
+      "UNKNOWN",
+    );
+  }
+  const unsafe = new Error();
+  unsafe.code = "GRAPH_BOUND";
+  Object.defineProperty(unsafe, "graphCounts", {
+    get() {
+      getters++;
+      throw false;
+    },
+  });
+  assert.equal(
+    f.api.fullSourceGraphDiagnostic(f.owner, unsafe).code,
+    "GRAPH_BOUND",
+  );
+  assert.equal(
+    f.api.fullSourceGraphDiagnostic(f.owner, unsafe).graphCounts,
+    undefined,
+  );
+  assert.equal(utilTypes.isNativeError(primary), true);
+  const before = JSON.stringify(diagnostic);
+  late(sample);
+  assert.equal(
+    JSON.stringify(f.api.fullSourceGraphDiagnostic(f.owner, primary)),
+    before,
+  );
+  assert.equal(getters, 0);
+});
+
+test("FULL graph diagnostic finite inverse restores the whole previous driver before cap history and denies missing altered duplicated or extra bytes", async () => {
+  const raw = (await read(prefix + "full-sdk-source-driver.mjs")).replaceAll(
+      "\r\n",
+      "\n",
+    ),
+    decoded = fullGraphDiagnosticsInverse(raw, "driver");
+  assert.equal(Buffer.byteLength(decoded), 290034);
+  assert.equal(
+    sha(decoded),
+    "8f6ccea24cf9104e61ab26999dbec23a9fc90c346c018e8501252d68446b75c0",
+  );
+  for (const row of FULL_GRAPH_DIAGNOSTICS_HISTORY.rows) {
+    assert.equal(raw.split(row.new).length, 2);
+    assert.throws(() =>
+      fullGraphDiagnosticsInverse(raw.replace(row.new, ""), "driver"),
+    );
+    assert.throws(() => fullGraphDiagnosticsInverse(raw + row.new, "driver"));
+    assert.throws(() =>
+      fullGraphDiagnosticsInverse(
+        raw.replace(row.new, "#changed" + row.new),
+        "driver",
+      ),
+    );
+  }
+  assert.throws(() => fullGraphDiagnosticsInverse(raw + "\n", "driver"));
+  assert.equal(
+    sha(
+      await fs.readFile(
+        path.join(root, prefix, "full-sdk-source-profile.json"),
+      ),
+    ),
+    "2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332",
+  );
+  assert.equal(
+    sha(
+      await fs.readFile(
+        path.join(
+          root,
+          prefix,
+          "current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
+        ),
+      ),
+    ),
+    "fc5c43ea4e3111aa130db664d03f01935c6e2fc7c51349d34b00ee31ba9c597f",
+  );
+});
+
+test("FULL graph diagnostics classify actual frozen size changed missing graph link alias and IO failures without changing their original primary or progress", async () => {
+  const cases = [
+    ["size", "GRAPH_ASSET_SIZE"],
+    ["changed", "GRAPH_ASSET_CHANGED"],
+    ["missing", "GRAPH_INCOMPLETE"],
+    ["links", "GRAPH_LINK_REJECTED"],
+    ["alias", "GRAPH_PATH_ALIAS"],
+    ["io", "GRAPH_FS_ERROR"],
+  ];
+  for (const [mode, code] of cases) {
+    const f = await fullMetadataFixture(),
+      model = await frozenGraphDiagnosticModel(mode);
+    f.input.checkpoint.graphInventory = (out, options) =>
+      model.run(out, options);
+    let failed = false,
+      primary;
+    try {
+      await f.api.collectFullQualificationGraph(f.owner);
+    } catch (error) {
+      failed = true;
+      primary = error;
+    }
+    assert.equal(failed, true, mode);
+    const state = f.api.qualificationSourceOwners.get(f.owner);
+    assert.equal(state.failed, true);
+    assert.equal(state.primary, primary);
+    assert.equal(state.retired, true);
+    assert.equal(state.graphPending, null);
+    assert.equal(state.graphReceipt, null);
+    assert.equal(state.sourceToken, null);
+    const report = await actualFullGraphFailureReport(f, primary, true);
+    assert.equal(report.graphDiagnostic.code, code, mode);
+    assert.equal(report.graphDiagnostic.progress.at(-1).phase, "stopped", mode);
+    assert.equal(report.graphDiagnostic.graphCounts, undefined);
+    assert.equal(
+      report.graphDiagnostic.errno,
+      mode === "io" ? "EIO" : undefined,
+    );
+    assert.equal(report.firstFailure, "FULL_SOURCE_FAILED");
+    assert.deepEqual(model.counts(), {
+      timers: 1,
+      cleared: 1,
+      opened: 0,
+      closed: 0,
+    });
+  }
+});
+
+test("FULL graph diagnostic known failure classes never copy hostile messages unknown errno inherited properties getters or proxy fields", async () => {
+  const f = await fullMetadataFixture(),
+    primary = new Error("unclassified original");
+  f.input.checkpoint.graphInventory = async () => {
+    throw primary;
+  };
+  await assert.rejects(
+    f.api.collectFullQualificationGraph(f.owner),
+    (error) => error === primary,
+  );
+  for (const [message, code] of [
+    ["Invalid graph deadline", "GRAPH_INVALID_DEADLINE"],
+    ["Complete graph pins required", "GRAPH_INCOMPLETE_PINS"],
+  ]) {
+    const error = new Error(message);
+    assert.equal(f.api.fullSourceGraphDiagnostic(f.owner, error).code, code);
+  }
+  let actualIo;
+  try {
+    await fs.stat(
+      path.join(tmpdir(), "sorng-PRIVATE_PATH-SECRET_TOKEN-" + randomUUID()),
+    );
+  } catch (error) {
+    actualIo = error;
+  }
+  assert.equal(actualIo.code, "ENOENT");
+  const io = f.api.fullSourceGraphDiagnostic(f.owner, actualIo);
+  assert.equal(io.code, "GRAPH_FS_ERROR");
+  assert.equal(io.errno, "ENOENT");
+  let actualPin;
+  try {
+    controlCheckpoint.graphPinSnapshot({});
+  } catch (error) {
+    actualPin = error;
+  }
+  assert.equal(
+    f.api.fullSourceGraphDiagnostic(f.owner, actualPin).code,
+    "GRAPH_INVALID_PIN_SHAPE",
+  );
+  let getters = 0;
+  const accessor = new Error();
+  Object.defineProperty(accessor, "message", {
+    get() {
+      getters++;
+      throw false;
+    },
+  });
+  Object.defineProperty(accessor, "code", {
+    get() {
+      getters++;
+      throw false;
+    },
+  });
+  const inherited = new Error("unknown");
+  Object.setPrototypeOf(inherited, { code: "ENOENT" });
+  const nearMessage = new Error(
+    "Checkpoint asset size PRIVATE_PATH SECRET_TOKEN",
+  );
+  const nearErrno = new Error("PRIVATE_PATH SECRET_TOKEN");
+  nearErrno.code = "EIO PRIVATE_PATH";
+  const unknown = new Error("PRIVATE_PATH SECRET_TOKEN");
+  unknown.code = "UV_PRIVATE_TOKEN";
+  const proxy = new Proxy(new Error(), {
+    get() {
+      getters++;
+      throw false;
+    },
+    getOwnPropertyDescriptor() {
+      getters++;
+      throw false;
+    },
+  });
+  for (const error of [
+    accessor,
+    inherited,
+    nearMessage,
+    nearErrno,
+    unknown,
+    proxy,
+    { message: "Checkpoint asset size", code: "EIO" },
+    new Error("Graph inventory bound"),
+    new Error("checkpoint asset size"),
+    false,
+    null,
+    0,
+  ]) {
+    const diagnostic = f.api.fullSourceGraphDiagnostic(f.owner, error);
+    assert.equal(diagnostic.code, "UNKNOWN");
+    assert.equal(diagnostic.errno, undefined);
+    assert.equal(diagnostic.graphCounts, undefined);
+    assert.equal(JSON.stringify(diagnostic).includes("PRIVATE_PATH"), false);
+    assert.equal(JSON.stringify(diagnostic).includes("SECRET_TOKEN"), false);
+  }
+  assert.equal(getters, 0);
+  assert.equal(f.api.qualificationSourceOwners.get(f.owner).primary, primary);
+  assert.equal(f.api.qualificationSourceOwners.get(f.owner).sourceToken, null);
+});
+
+test("FULL graph diagnostic wrapper returns the original collector promise without a new await or adoption and preserves closure and false", async () => {
+  const ts = (await import("typescript")).default,
+    source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile(
+      "actual-graph-wrapper.mjs",
+      source,
+      99,
+      true,
+      ts.ScriptKind.JS,
+    ),
+    current = ast.statements
+      .find(
+        (row) =>
+          ts.isFunctionDeclaration(row) &&
+          row.name?.text === "collectFullQualificationGraph",
+      )
+      .getText(ast),
+    previous =
+      'async function collectFullQualificationGraph(owner) {\n  const { state } = fullMetadataOwner(owner);\n  need(!fullGraphObservations.has(owner), "FULL_GRAPH_OBSERVATION_REPEAT");\n  const observation = {\n    state,\n    epoch: state.epoch,\n    progress: [],\n    discardedSamples: 0,\n    closed: false,\n  };\n  fullGraphObservations.set(owner, observation);\n  try {\n    return await collectQualificationGraph(owner);\n  } finally {\n    observation.closed = true;\n  }\n}';
+  assert.equal(
+    sha(previous),
+    "f4728dec86a09bf45f27124c671b7fa0351a4351590eb59fa065509f246a469a",
+  );
+  for (const [text, old] of [
+    [previous, true],
+    [current, false],
+  ]) {
+    for (const fail of [false, true]) {
+      const f = await fullMetadataFixture(),
+        observations = new WeakMap();
+      let fulfill, reject;
+      const original = new Promise((resolve, deny) => {
+        fulfill = resolve;
+        reject = deny;
+      });
+      const wrapper = new Function(
+        "fullMetadataOwner",
+        "fullGraphObservations",
+        "collectQualificationGraph",
+        "need",
+        text + "\nreturn collectFullQualificationGraph;",
+      )(
+        f.api.fullMetadataOwner,
+        observations,
+        () => original,
+        (ok, code) => {
+          if (!ok) throw Error(code);
+        },
+      );
+      const returned = wrapper(f.owner);
+      if (old) assert.throws(() => assert.equal(returned, original));
+      else assert.equal(returned, original);
+      assert.equal(observations.get(f.owner).closed, false);
+      if (fail) reject(false);
+      else fulfill("bounded graph DATA");
+      if (fail) {
+        let failed = false,
+          caught;
+        try {
+          await returned;
+        } catch (error) {
+          failed = true;
+          caught = error;
+        }
+        assert.equal(failed, true);
+        assert.equal(caught, false);
+      } else assert.equal(await returned, "bounded graph DATA");
+      assert.equal(observations.get(f.owner).closed, true);
+      assert.equal(
+        f.api.qualificationSourceOwners.get(f.owner).sourceToken,
+        null,
+      );
+    }
   }
 });

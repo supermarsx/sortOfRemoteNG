@@ -508,7 +508,97 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_DIAGNOSTICS_HISTORY = {
+  bytes: 290034,
+  sha256: "8f6ccea24cf9104e61ab26999dbec23a9fc90c346c018e8501252d68446b75c0",
+  rows: [
+    {
+      old: "",
+      new: "              ...fullGraphInventoryObserver(owner),\n",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "530c81351ac020444f04500e5c98f80612f84f58bfb00b1b06816ce05b24f482",
+    },
+    {
+      old: "",
+      new: '// BEGIN FULL GRAPH FAILURE OBSERVATIONS\n// Closed DATA only. The original graph helper, owner and every limit are unchanged.\nconst fullGraphObservations = new WeakMap();\nfunction fullGraphOwnValue(value, key) {\n  if (!value || typeof value !== "object" || utilTypes.isProxy(value))\n    return undefined;\n  const field = Object.getOwnPropertyDescriptor(value, key);\n  return field && Object.hasOwn(field, "value") ? field.value : undefined;\n}\nfunction fullGraphCounts(value) {\n  const files = fullGraphOwnValue(value, "files"),\n    bytes = fullGraphOwnValue(value, "bytes"),\n    visited = fullGraphOwnValue(value, "visited");\n  return Number.isSafeInteger(files) &&\n    files >= 0 &&\n    files <= 50001 &&\n    Number.isSafeInteger(bytes) &&\n    bytes >= 0 &&\n    bytes <= 50001 * 256 * 1024 ** 2 &&\n    Number.isSafeInteger(visited) &&\n    visited >= 0 &&\n    visited <= 300001\n    ? { files, bytes, visited }\n    : null;\n}\nfunction fullGraphProgress(value) {\n  const counts = fullGraphCounts(value),\n    phase = fullGraphOwnValue(value, "phase"),\n    active = fullGraphOwnValue(value, "active"),\n    completedHashedFiles = fullGraphOwnValue(value, "completedHashedFiles"),\n    completedHashedBytes = fullGraphOwnValue(value, "completedHashedBytes"),\n    elapsedMs = fullGraphOwnValue(value, "elapsedMs");\n  if (\n    !counts ||\n    !["metadata", "hashing", "complete", "stopped"].includes(phase) ||\n    !Number.isSafeInteger(active) ||\n    active < 0 ||\n    active > 4 ||\n    !Number.isSafeInteger(completedHashedFiles) ||\n    completedHashedFiles < 0 ||\n    completedHashedFiles > counts.files ||\n    !Number.isSafeInteger(completedHashedBytes) ||\n    completedHashedBytes < 0 ||\n    completedHashedBytes > counts.bytes ||\n    !Number.isSafeInteger(elapsedMs) ||\n    elapsedMs < 0 ||\n    elapsedMs > 180000\n  )\n    return null;\n  const supplied = fullGraphOwnValue(value, "categories"),\n    categories = {};\n  let files = 0,\n    bytes = 0;\n  for (const name of ["args", "build", "toolchain", "target"]) {\n    const row = fullGraphOwnValue(supplied, name),\n      count = fullGraphOwnValue(row, "files"),\n      size = fullGraphOwnValue(row, "bytes");\n    if (\n      !Number.isSafeInteger(count) ||\n      count < 0 ||\n      count > counts.files ||\n      !Number.isSafeInteger(size) ||\n      size < 0 ||\n      size > counts.bytes\n    )\n      return null;\n    categories[name] = Object.freeze({ files: count, bytes: size });\n    files += count;\n    bytes += size;\n  }\n  if (files !== counts.files || bytes !== counts.bytes) return null;\n  return Object.freeze({\n    phase,\n    ...counts,\n    active,\n    completedHashedFiles,\n    completedHashedBytes,\n    elapsedMs,\n    categories: Object.freeze(categories),\n  });\n}\nfunction fullGraphInventoryObserver(owner) {\n  const observation = fullGraphObservations.get(owner);\n  if (!observation) return {};\n  return {\n    observe(value) {\n      try {\n        if (\n          observation.closed ||\n          observation.state.retired ||\n          observation.state.epoch !== observation.epoch\n        )\n          return;\n        if (observation.progress.length >= 36) {\n          observation.discardedSamples = Math.min(\n            36,\n            observation.discardedSamples + 1,\n          );\n          return;\n        }\n        const sample = fullGraphProgress(value);\n        if (sample) observation.progress.push(sample);\n        else\n          observation.discardedSamples = Math.min(\n            36,\n            observation.discardedSamples + 1,\n          );\n      } catch {\n        // No diagnostic failure may retire an owner or replace the original cause.\n      }\n    },\n  };\n}\nfunction collectFullQualificationGraph(owner) {\n  const { state } = fullMetadataOwner(owner);\n  need(!fullGraphObservations.has(owner), "FULL_GRAPH_OBSERVATION_REPEAT");\n  const observation = {\n    state,\n    epoch: state.epoch,\n    progress: [],\n    discardedSamples: 0,\n    closed: false,\n  };\n  fullGraphObservations.set(owner, observation);\n  const pending = collectQualificationGraph(owner);\n  // Observe settlement without adding a new promise/adoption boundary.\n  void pending.then(\n    () => {\n      observation.closed = true;\n    },\n    () => {\n      observation.closed = true;\n    },\n  );\n  return pending;\n}\nfunction fullGraphFailureClassification(error) {\n  if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\n    return { code: "UNKNOWN" };\n  const code = fullGraphOwnValue(error, "code");\n  if (code === "GRAPH_BOUND") {\n    const counts = fullGraphCounts(fullGraphOwnValue(error, "graphCounts"));\n    return { code: "GRAPH_BOUND", ...(counts ? { graphCounts: counts } : {}) };\n  }\n  if (\n    [\n      "ENOENT",\n      "EACCES",\n      "EPERM",\n      "EIO",\n      "EMFILE",\n      "ENFILE",\n      "ENOMEM",\n      "ENOSPC",\n      "ENOTDIR",\n      "EISDIR",\n      "ELOOP",\n      "EINVAL",\n      "EBADF",\n      "EBUSY",\n      "ETIMEDOUT",\n      "ENAMETOOLONG",\n      "EROFS",\n      "ENODEV",\n      "ECANCELED",\n      "ABORT_ERR",\n    ].includes(code)\n  )\n    return { code: "GRAPH_FS_ERROR", errno: code };\n  const known = new Map([\n    ["Invalid graph deadline", "GRAPH_INVALID_DEADLINE"],\n    ["Invalid graph inventory counters", "GRAPH_INVALID_COUNTERS"],\n    ["Checkpoint asset size", "GRAPH_ASSET_SIZE"],\n    ["Checkpoint asset changed", "GRAPH_ASSET_CHANGED"],\n    ["Fresh complete GN graph required", "GRAPH_INCOMPLETE"],\n    ["Complete graph pins required", "GRAPH_INCOMPLETE_PINS"],\n    ["Checkpoint links are not admitted", "GRAPH_LINK_REJECTED"],\n    ["Checkpoint path alias", "GRAPH_PATH_ALIAS"],\n    ["Invalid checkpoint object shape", "GRAPH_INVALID_PIN_SHAPE"],\n    ["Bounded graph pin count", "GRAPH_INVALID_PIN_COUNT"],\n    ["Bounded graph pin bytes", "GRAPH_INVALID_PIN_BYTES"],\n    ["Canonical relative graph pin", "GRAPH_INVALID_PIN_PATH"],\n    ["Declared graph pin kind", "GRAPH_INVALID_PIN_KIND"],\n    ["Bounded graph pin size", "GRAPH_INVALID_PIN_SIZE"],\n    ["Graph pin snapshot byte bound", "GRAPH_PIN_SNAPSHOT_BOUND"],\n    ["Complete graph snapshot digest", "GRAPH_PIN_SNAPSHOT_DIGEST"],\n  ]);\n  return { code: known.get(fullSourceErrorMessage(error)) ?? "UNKNOWN" };\n}\nfunction fullSourceGraphDiagnostic(owner, error) {\n  try {\n    const observation = fullGraphObservations.get(owner);\n    if (\n      !observation ||\n      !observation.closed ||\n      observation.state !== qualificationSourceOwners.get(owner)\n    )\n      return null;\n    const diagnostic = {\n      kind: "windows-arm-source-graph-failure",\n      phase: "graph-inventory",\n      progress: observation.progress.slice(),\n      discardedSamples: observation.discardedSamples,\n    };\n    return { ...diagnostic, ...fullGraphFailureClassification(error) };\n  } catch {\n    return null;\n  }\n}\n// END FULL GRAPH FAILURE OBSERVATIONS\n\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "70d60ee5d3dc3daa87e22ae0f466473bc944d29270dfb6bf993359564aa881d5",
+    },
+    {
+      old: "      const capture = await collectQualificationGraph(qualificationOwner);\n",
+      new: "      const capture = await collectFullQualificationGraph(qualificationOwner);\n",
+      oldSha256:
+        "8202e9fc8dd602f87c591d928af0e22e7a217086397b60ac42a4ad72846faa8c",
+      newSha256:
+        "1a8da4463c12c6b382a0d15794e33a8684191bfc292fc598a47854735d47259e",
+    },
+    {
+      old: "",
+      new: '    const graphDiagnostic =\n      failed && stage === "graph-inventory"\n        ? fullSourceGraphDiagnostic(qualificationOwner, primary)\n        : null;\n',
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "4b9c8848aba05bd15c932be88c07b43af27e323bdf6dd9ff72d6f56b851d678c",
+    },
+    {
+      old: '      message !== null &&\n      /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)\n        ? message\n        : failed\n          ? "FULL_SOURCE_FAILED"\n          : null;\n',
+      new: '      graphDiagnostic?.code === "GRAPH_BOUND"\n        ? "GRAPH_BOUND"\n        : message !== null &&\n            /^(?:FULL|PRIVATE|SOURCE_GIT)_[A-Z_]{1,56}$/.test(message)\n          ? message\n          : failed\n            ? "FULL_SOURCE_FAILED"\n            : null;\n',
+      oldSha256:
+        "5637d3e3263ca30a0b01b2dd972548930c0bbca034f36851ad458f8694734373",
+      newSha256:
+        "126a41b375c181fcd2fef86e2ddd52941ea8fa82e545a9e90e702388633eb5ec",
+    },
+    {
+      old: "",
+      new: "      ...(graphDiagnostic ? { graphDiagnostic } : {}),\n",
+      oldSha256:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      newSha256:
+        "9ec1d7264fe3d84caa1bc963407aefaa80ff503490d6dc047505c40be670df0d",
+    },
+  ],
+};
+function fullGraphDiagnosticsInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  if (name !== "driver") return text;
+  const spec = FULL_GRAPH_DIAGNOSTICS_HISTORY;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_WHOLE",
+  );
+  assert.equal(
+    sha(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_GRAPH_DIAGNOSTIC_WHOLE",
+  );
+  return text;
+}
+
 function fullHooks3600Inverse(text, name) {
+  text = fullGraphDiagnosticsInverse(text, name);
   const spec = FULL_HOOKS_3600_HISTORY[name];
   if (!spec) return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
