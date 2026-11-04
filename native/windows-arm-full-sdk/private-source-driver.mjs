@@ -3133,7 +3133,7 @@ async function privateQualificationHandoff({
 
 export const PRIVATE_DRIVER_ADMITTED = false;
 const PRIVATE_PROFILE_SHA256 =
-  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";
+  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";
 const PRIVATE_MODE = "private-compiler-input-qualification";
 const PRIVATE_REF =
   "refs/heads/codex/windows-arm-engine-qualification-20261101";

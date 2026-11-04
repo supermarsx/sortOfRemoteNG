@@ -899,7 +899,16 @@ const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
 function rawOriginInverse(source) {
   // Reviewed image-profile re-pin (graph inventory deadline): restore the two
   // previous image-profile digests before the older schema2 inverse below.
+  // The second re-pin (POSIX graph pin paths) is undone first.
   for (const [current, previous] of [
+    [
+      "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+    ],
+    [
+      "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",
+      "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
+    ],
     [
       "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
       "55367b9d7a76fb69fd584fa57a74efe29f10d361a5345303c378020c985fc041",
@@ -1016,13 +1025,13 @@ const sourceTuples = {
     sourceLockIdentity:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     sourceProfileSha256:
-      "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+      "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
   },
   "20261021.278.1": {
     sourceLockIdentity:
       "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
     sourceProfileSha256:
-      "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
+      "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",
   },
 };
 const bridge = {

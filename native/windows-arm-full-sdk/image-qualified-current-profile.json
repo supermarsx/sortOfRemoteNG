@@ -185,8 +185,8 @@
       },
       {
         "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
-        "bytes": 195961,
-        "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e"
+        "bytes": 196018,
+        "sha256": "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2"
       },
       {
         "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-mac-sdk-inventory.mjs",
@@ -600,8 +600,8 @@
     },
     {
       "path": "native/windows-arm-full-sdk/current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs",
-      "bytes": 195961,
-      "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",
+      "bytes": 196018,
+      "sha256": "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2",
       "originalPath": "scripts/lib/cef-engineering-checkpoint.mjs"
     },
     {

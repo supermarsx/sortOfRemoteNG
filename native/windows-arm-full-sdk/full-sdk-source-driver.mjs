@@ -3260,7 +3260,7 @@ async function privateQualificationHandoff({
 
 export const PRIVATE_DRIVER_ADMITTED = false;
 const PRIVATE_PROFILE_SHA256 =
-  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";
+  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";
 const PRIVATE_MODE = "private-compiler-input-qualification";
 const PRIVATE_REF =
   "refs/heads/codex/windows-arm-engine-qualification-20261101";
@@ -6535,7 +6535,7 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";
+  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";
 const fullSourceProfiles = new WeakMap();
 // The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
 // No ignore file or clean-check exception is created or changed.

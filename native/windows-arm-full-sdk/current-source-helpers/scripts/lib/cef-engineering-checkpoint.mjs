@@ -5044,7 +5044,11 @@ export async function graphInventory(
           metadata.size <= GRAPH_LIMITS.fileBytes,
         "Checkpoint asset size",
       );
-      candidates.push({ file, path: path.relative(root, file), metadata });
+      candidates.push({
+        file,
+        path: path.relative(root, file).split(path.sep).join("/"),
+        metadata,
+      });
       totalBytes += metadata.size;
       const category =
         name === "args.gn"

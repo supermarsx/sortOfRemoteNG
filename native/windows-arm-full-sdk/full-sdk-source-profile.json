@@ -53,12 +53,12 @@
   "images": {
     "20261030.294.1": {
       "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
       "profile": "image-qualified-current-profile.json"
     },
     "20261021.278.1": {
       "sourceId": "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
-      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
+      "profileSha256": "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",
       "profile": "image-qualified-20261021-profile.json"
     }
   },
@@ -148,7 +148,7 @@
   },
   "metadataAdapterImplemented": true,
   "metadataNativeQualified": false,
-  "metadataRecipeSha256": "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37",
+  "metadataRecipeSha256": "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9",
   "metadataRoles": [
     "qual-gn-desc-pa",
     "qual-gn-desc-cef",

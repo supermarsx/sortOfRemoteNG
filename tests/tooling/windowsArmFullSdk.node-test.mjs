@@ -5265,6 +5265,273 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_PATH_HISTORY = {
+  profile: {
+    bytes: 11144,
+    sha256: "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2",
+    rows: [
+      {
+        old: '      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        new: '      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",\n',
+        oldSha256:
+          "30b052de938e855f215ee71ffaf2770f5f56964360eb9c4bcb0e0c011cc30435",
+        newSha256:
+          "edd7aec6133b0861f98c348367d54be9ab3cc0c06001c73a6c3beab2705185d1",
+      },
+      {
+        old: '      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        new: '      "profileSha256": "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",\n',
+        oldSha256:
+          "1044b5a06f596af44313fd2eca48d75091776ac56cb6ebdd45507204fc115114",
+        newSha256:
+          "fc25495a35149d615f743038c0e88f15f9533bd777e82633590926f40eb96006",
+      },
+      {
+        old: '  "metadataRecipeSha256": "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37",\n',
+        new: '  "metadataRecipeSha256": "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9",\n',
+        oldSha256:
+          "b0ef88f353d8e9fcfa993124a46dd862930f567836fee4fa2c9fc0e2e59890b8",
+        newSha256:
+          "fbd3be57898bb51552bab0d94d39d52f18c83d5561c6491fbed9c017aed6e223",
+      },
+    ],
+  },
+  driver: {
+    bytes: 297164,
+    sha256: "8ccbcf6ca6252e53bbd5e399521578c9665309c59120fdbf7380a3ffa6846850",
+    rows: [
+      {
+        old: '  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";\n',
+        new: '  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";\n',
+        oldSha256:
+          "3999975214c33a61d516a9fa845e5b2d68fe984d5af049fb6adf9452f2384911",
+        newSha256:
+          "91e9df48edca27254a67d45afe3654ea741d5d5f25381671373a76011f0ccc53",
+      },
+      {
+        old: '  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";\n',
+        new: '  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";\n',
+        oldSha256:
+          "6cb4b70c9b45d0eb30c87ce0f078663389fe463e0cad44b602e5159adfca75ab",
+        newSha256:
+          "fb9963aa8148587faa48ae66c8b3b8547f4fab8e849eff2d49aab18815841446",
+      },
+    ],
+  },
+  python: {
+    bytes: 35367,
+    sha256: "9f33c9695ab44d82fa38154f723a23e4ec61da2e9d5ef62e671e5a8d5563e8e9",
+    rows: [
+      {
+        old: "PROFILE_SHA256 = '01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2'\n",
+        new: "PROFILE_SHA256 = 'be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989'\n",
+        oldSha256:
+          "913451cc4e80d3aee1af4d27556b94f912ca4fbdf02e904b0094856d19be6a26",
+        newSha256:
+          "dc0050ef4c91357e662d8bf36a0c6508d03c5c8f547d66ad315e34ab17576b2e",
+      },
+    ],
+  },
+  controller: {
+    bytes: 175570,
+    sha256: "6b26b4a0ac49b3ac16b5eda04098c39d2add168d99d106ca5f4e5fa72f98a0b4",
+    rows: [
+      {
+        old: '    profile: "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        new: '    profile: "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",\n',
+        oldSha256:
+          "fb04d2d06d9b05e1856829ed5d047392836a657cf78bcecb3d323edec24e07be",
+        newSha256:
+          "7a4b48c068df36966d080ccd54963ef811afea526a5ffd2ee4ce54b5cdb2c9b2",
+      },
+      {
+        old: '    profile: "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        new: '    profile: "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",\n',
+        oldSha256:
+          "85d1837fbce3019237bafe4ee930da1f784fff920d79299ac43fed76fc0284ea",
+        newSha256:
+          "cb1277140b776e89b1c8d1509f7ec286c62c32eaa6940f64e2e511431e212744",
+      },
+      {
+        old: '  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";\n',
+        new: '  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";\n',
+        oldSha256:
+          "6cb4b70c9b45d0eb30c87ce0f078663389fe463e0cad44b602e5159adfca75ab",
+        newSha256:
+          "fb9963aa8148587faa48ae66c8b3b8547f4fab8e849eff2d49aab18815841446",
+      },
+      {
+        old: '  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";\n',
+        new: '  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";\n',
+        oldSha256:
+          "3999975214c33a61d516a9fa845e5b2d68fe984d5af049fb6adf9452f2384911",
+        newSha256:
+          "91e9df48edca27254a67d45afe3654ea741d5d5f25381671373a76011f0ccc53",
+      },
+    ],
+  },
+  producer: {
+    bytes: 61403,
+    sha256: "4643fd24aa78b607e698fd61663f18654c9b82abf755bc95da4bb68484b727b1",
+    rows: [
+      {
+        old: "                    'sha256': '953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50',\n",
+        new: "                    'sha256': 'e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05',\n",
+        oldSha256:
+          "8c82155f4ad72ec92aa25de8691a8f0cc5484d0409ade5128519c185c726f1ba",
+        newSha256:
+          "7e97d3d5ed4938715771575a4004f1cf3a5d77b41cc7e6d3ce9e10a7f250dd77",
+      },
+      {
+        old: "                    'sha256': 'ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719',\n",
+        new: "                    'sha256': '442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6',\n",
+        oldSha256:
+          "04a9c43d20ab002f500e2cfe55777269d36300b6e4f55e420ee409f1954c1d01",
+        newSha256:
+          "1250a67f483b0435f3e56b45d657c8f7535ef662cfbfac629bb26bc2aeca0f39",
+      },
+    ],
+  },
+  imageCurrent: {
+    bytes: 34813,
+    sha256: "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+    rows: [
+      {
+        old: '        "bytes": 195961,\n        "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e"\n',
+        new: '        "bytes": 196018,\n        "sha256": "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2"\n',
+        oldSha256:
+          "44db50fc5f77ef0e9234680ede59f285fbd9344c9fd1d7eeb8eeb0859f6f3fb7",
+        newSha256:
+          "9331dc69c8aa53ab318120567a0f4d90040b4ed6760dbaf65e3429ce6f98ff15",
+      },
+      {
+        old: '      "bytes": 195961,\n      "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",\n',
+        new: '      "bytes": 196018,\n      "sha256": "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2",\n',
+        oldSha256:
+          "463fc86252bf42ff7786e6c99871c09cb4f1ea4274fc414a971badeced8d1932",
+        newSha256:
+          "78bc4392b6be991316efd8a7833e9043d11a132bf34b678c59726ba20b17ebd6",
+      },
+    ],
+  },
+  image20261021: {
+    bytes: 35867,
+    sha256: "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
+    rows: [
+      {
+        old: '        "bytes": 195961,\n        "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e"\n',
+        new: '        "bytes": 196018,\n        "sha256": "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2"\n',
+        oldSha256:
+          "44db50fc5f77ef0e9234680ede59f285fbd9344c9fd1d7eeb8eeb0859f6f3fb7",
+        newSha256:
+          "9331dc69c8aa53ab318120567a0f4d90040b4ed6760dbaf65e3429ce6f98ff15",
+      },
+      {
+        old: '      "bytes": 195961,\n      "sha256": "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",\n',
+        new: '      "bytes": 196018,\n      "sha256": "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2",\n',
+        oldSha256:
+          "463fc86252bf42ff7786e6c99871c09cb4f1ea4274fc414a971badeced8d1932",
+        newSha256:
+          "78bc4392b6be991316efd8a7833e9043d11a132bf34b678c59726ba20b17ebd6",
+      },
+    ],
+  },
+  engineProfile: {
+    bytes: 8903,
+    sha256: "59e3c3527215b1bf29a7255236b9adabbc825e3dc185b6d1f4268470e2b654f2",
+    rows: [
+      {
+        old: '      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        new: '      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",\n',
+        oldSha256:
+          "30b052de938e855f215ee71ffaf2770f5f56964360eb9c4bcb0e0c011cc30435",
+        newSha256:
+          "edd7aec6133b0861f98c348367d54be9ab3cc0c06001c73a6c3beab2705185d1",
+      },
+      {
+        old: '      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        new: '      "profileSha256": "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",\n',
+        oldSha256:
+          "1044b5a06f596af44313fd2eca48d75091776ac56cb6ebdd45507204fc115114",
+        newSha256:
+          "fc25495a35149d615f743038c0e88f15f9533bd777e82633590926f40eb96006",
+      },
+    ],
+  },
+  privateProfile: {
+    bytes: 22347,
+    sha256: "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37",
+    rows: [
+      {
+        old: '  "baseCandidatePolicySha256": "59e3c3527215b1bf29a7255236b9adabbc825e3dc185b6d1f4268470e2b654f2",\n',
+        new: '  "baseCandidatePolicySha256": "9df48c9f1bfded6b7e9953aca9cc58ba5ada24ac0d70d25481b998bdfd80e7f5",\n',
+        oldSha256:
+          "de8999c3bad8e832f9f292e8361c65f6b0a1550f1d9da242c24eec3b160ace5c",
+        newSha256:
+          "8331b308187a0234b12e0200115b21e5132db20363889471c7ab09716f11e990",
+      },
+      {
+        old: '      "profileSha256": "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",\n',
+        new: '      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",\n',
+        oldSha256:
+          "30b052de938e855f215ee71ffaf2770f5f56964360eb9c4bcb0e0c011cc30435",
+        newSha256:
+          "edd7aec6133b0861f98c348367d54be9ab3cc0c06001c73a6c3beab2705185d1",
+      },
+      {
+        old: '      "profileSha256": "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",\n',
+        new: '      "profileSha256": "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",\n',
+        oldSha256:
+          "1044b5a06f596af44313fd2eca48d75091776ac56cb6ebdd45507204fc115114",
+        newSha256:
+          "fc25495a35149d615f743038c0e88f15f9533bd777e82633590926f40eb96006",
+      },
+    ],
+  },
+  mirror: {
+    bytes: 195961,
+    sha256: "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",
+    rows: [
+      {
+        old: "      candidates.push({ file, path: path.relative(root, file), metadata });\n",
+        new: '      candidates.push({\n        file,\n        path: path.relative(root, file).split(path.sep).join("/"),\n        metadata,\n      });\n',
+        oldSha256:
+          "001ced507d2d3863d5e44a0a0bf10ddf4d23e0345255cb2a0377018df5f8ea2b",
+        newSha256:
+          "e9d92ab9f06e100c6bbc336393e43075e17407b9b254cf009f84b39b343e3648",
+      },
+    ],
+  },
+};
+function fullGraphPathInverse(text, name) {
+  const spec = FULL_GRAPH_PATH_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_PATH_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_PATH_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_PATH_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_PATH_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_PATH_WHOLE");
+  return text;
+}
 const FULL_GRAPH_DEADLINE_HISTORY = {
   profile: {
     bytes: 11144,
@@ -5536,6 +5803,7 @@ const FULL_GRAPH_DEADLINE_HISTORY = {
   },
 };
 function fullGraphDeadlineInverse(text, name) {
+  text = fullGraphPathInverse(text, name);
   const spec = FULL_GRAPH_DEADLINE_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -6683,7 +6951,7 @@ async function controlFixture(t, overrides = {}) {
     sourceId:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     profileSha256:
-      "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+      "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
     root: base,
     rootIdentity: api.directoryId(await fs.lstat(base, { bigint: true })),
   };
@@ -7599,7 +7867,7 @@ async function createdSourceFixture(t, mode = "normal", overrides = {}) {
       image: mode === "wrong-image" ? "20261021.278.1" : "20261030.294.1",
       sourceId,
       profileSha256:
-        "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+        "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
       parentCreationFiletime: "777777",
       producerInputs: Object.freeze(
         producerInputs.map((row) => Object.freeze(row)),
@@ -9170,9 +9438,9 @@ const PARENT_METADATA_READER_DERIVATIONS = [
     name: "PRIVATE_PROFILE_SHA256",
     newName: "parentMetadata_PRIVATE_PROFILE_SHA256",
     oldSha256:
-      "72a9c62ee922f16c7b931ea344c82f441b56cb0b5b4cff55e2f2a19bd3e58f30",
+      "8fc607859ca61103c1c482323a7a0310665fec63add3ef020acd016c5924606f",
     newSha256:
-      "c9c53b881f4c3aefec97f5fdc6a21629dbff987a38ead552db6c3c37bfd3129d",
+      "bf3ba31260e38682dd61d5534da9a06714171f1ef852cec101440148ffaca2cf",
   },
   {
     name: "PRIVATE_MODE",
@@ -14080,7 +14348,7 @@ async function frozenGraphDiagnosticModel(mode) {
       .join("\n");
   assert.equal(
     sha(source),
-    "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",
+    "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2",
   );
   assert.deepEqual(controlCheckpoint.GRAPH_LIMITS, {
     files: 50000,
@@ -14581,7 +14849,7 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
         path.join(root, prefix, "full-sdk-source-profile.json"),
       ),
     ),
-    "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2",
+    "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989",
   );
   assert.equal(
     sha(
@@ -14593,7 +14861,7 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
         ),
       ),
     ),
-    "39e60e243bb93a85376f389cafe37be3566111274adc7bae6329a288784f9c6e",
+    "525eba90977c7c040509029141b153d4d1f14c405960a338469aa167a23bbce2",
   );
 });
 

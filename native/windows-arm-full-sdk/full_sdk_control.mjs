@@ -28,11 +28,11 @@ const controls = new WeakMap();
 const sources = Object.freeze({
   "20261030.294.1": Object.freeze({
     id: "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-    profile: "953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50",
+    profile: "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
   }),
   "20261021.278.1": Object.freeze({
     id: "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
-    profile: "ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719",
+    profile: "442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6",
   }),
 });
 function need(value, code) {
@@ -668,7 +668,7 @@ async function retireControl(token) {
 const CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.
 const SOURCE_QUALIFICATION_ALLOWED = true;
 const FULL_SOURCE_PROFILE_SHA256 =
-  "01d436e6aa1d58b444fec05350b487c6528cab183cb02913dccd4416fd00afe2";
+  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";
 const MODULE_URL = import.meta.url;
 const CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));
 const CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");
@@ -1315,7 +1315,7 @@ function expectedDefaultsFact(state, projected, binding) {
 
 // Strict DATA readers only. These cannot register a source, create a child or open admission.
 const parentMetadata_PRIVATE_PROFILE_SHA256 =
-  "8d572c6c9fc37843418d4c460efba5949ff21d7fd93ea24a713ce9c50690de37";
+  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";
 
 const parentMetadata_PRIVATE_MODE = "private-compiler-input-qualification";
 

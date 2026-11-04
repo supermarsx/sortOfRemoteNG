@@ -40,13 +40,13 @@ IMAGE_MODE = 'image-qualified-source-gn'
 IMAGE_REF = 'refs/heads/codex/windows-arm-image-qualified-source-gn-20261101'
 IMAGE_TUPLES = {'20261030.294.1': {'image': '20261030.294.1',
                     'profile': 'image-qualified-current-profile.json',
-                    'sha256': '953f7aa7d6ec6117e1588b533dd90efc121249d3fa82fd37e40678a65254dd50',
+                    'sha256': 'e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05',
                     'driver': 'image-qualified-current-driver.mjs',
                     'sourceId': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
                     'namespace': 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/'},
  '20261021.278.1': {'image': '20261021.278.1',
                     'profile': 'image-qualified-20261021-profile.json',
-                    'sha256': 'ccac67ead5ed17f84143ac95961b51b7dc7b5629744512a6b5e70b960800a719',
+                    'sha256': '442dde898498335536d158a1c39ca61abec5564bd72437ea43cd5745df0de3a6',
                     'driver': 'image-qualified-20261021-driver.mjs',
                     'sourceId': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa',
                     'namespace': 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn/'}}
