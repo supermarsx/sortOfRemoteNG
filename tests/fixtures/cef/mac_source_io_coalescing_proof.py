@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -36,10 +37,34 @@ def require(value):
         raise RuntimeError('MAC_SOURCE_IO_PROOF_CONTRACT')
 
 
+def birth_identity(info):
+    # Same supplementary identity contract as the held source helper; no inferred ns.
+    value = getattr(info, 'st_birthtime_ns', None)
+    if value is not None:
+        require(type(value) is int and 0 <= value < 2**63)
+        return ('birthtime-ns', str(value))
+    value = getattr(info, 'st_birthtime', None)
+    require(type(value) is float and math.isfinite(value) and 0 <= value < 2**63)
+    token = value.hex()
+    require(len(token) <= 64 and float.fromhex(token).hex() == token)
+    return ('darwin-birthtime-float-hex', token)
+
+
 def identity(info):
     return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
             info.st_size, info.st_mtime_ns, info.st_ctime_ns,
-            info.st_uid, info.st_gid, info.st_birthtime_ns)
+            info.st_uid, info.st_gid, birth_identity(info))
+
+
+def failure_class(error):
+    # Exact builtin classes only; no message, path, stack, arbitrary attribute or getter.
+    for kind, label in ((TimeoutError, 'TIMEOUT'), (RuntimeError, 'CONTRACT'), (AttributeError, 'ATTRIBUTE'),
+                        (FileNotFoundError, 'MISSING_FILE'), (PermissionError, 'PERMISSION'),
+                        (OSError, 'OS_ERROR'), (ValueError, 'VALUE'), (TypeError, 'TYPE'),
+                        (KeyError, 'KEY'), (AssertionError, 'ASSERTION'), (KeyboardInterrupt, 'INTERRUPTED')):
+        if type(error) is kind:
+            return label
+    return 'UNKNOWN'
 
 
 def held(file, maximum, expected=None):
@@ -165,18 +190,31 @@ def fixture_snapshots(fd, budget):
 def main():
     global PHASE
     env = os.environ
+    PHASE = 'authority-platform'
     require(len(sys.argv) == 1 and sys.platform == 'darwin' and platform.machine() == 'x86_64')
+    PHASE = 'authority-repository'
     require(env.get('GITHUB_REPOSITORY') == 'supermarsx/sortOfRemoteNG' and env.get('GITHUB_REPOSITORY_ID') == '1010282954')
+    PHASE = 'authority-provider'
     require(env.get('GITHUB_ACTIONS') == 'true' and env.get('RUNNER_ENVIRONMENT') == 'github-hosted')
+    PHASE = 'authority-ref'
     require(env.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and env.get('GITHUB_REF') == BRANCH)
+    PHASE = 'authority-image'
     require(env.get('GITHUB_REPOSITORY_VISIBILITY') == 'public' and env.get('ImageOS') == 'macos15')
+    PHASE = 'authority-temp'
     require(env.get('ImageVersion') == '20260824.0482.1' and env.get('RUNNER_TEMP') == str(TEMP))
+    PHASE = 'authority-credentials'
     require(not any(name in env for name in ('GH_TOKEN', 'GITHUB_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'PYTHONPATH')))
+    PHASE = 'authority-head'
     require(re.fullmatch('[a-f0-9]{40}', env.get('GITHUB_SHA', '')) is not None)
+    PHASE = 'authority-run'
     require(re.fullmatch('[1-9][0-9]{0,14}', env.get('GITHUB_RUN_ID', '')) is not None)
+    PHASE = 'authority-attempt'
     require(re.fullmatch('[1-9][0-9]{0,3}', env.get('GITHUB_RUN_ATTEMPT', '')) is not None)
+    PHASE = 'authority-workflow-head'
     require(env.get('GITHUB_WORKFLOW_SHA') == env['GITHUB_SHA'])
+    PHASE = 'authority-workflow-ref'
     require(env.get('GITHUB_WORKFLOW_REF') == 'supermarsx/sortOfRemoteNG/' + WORKFLOW + '@' + BRANCH)
+    PHASE = 'authority-original-clock'
     started = env.get('CEF_MAC_IO_PROOF_STARTED_MS', '')
     require(re.fullmatch('[0-9]{13}', started) is not None)
     budget = OriginalBudget(int(started) / 1000)
@@ -186,16 +224,22 @@ def main():
     signal.setitimer(signal.ITIMER_REAL, max(0.001, budget.end - time.monotonic()))
     repo = Path(__file__).resolve().parents[3]
     fixture_dir = repo / 'tests/fixtures/cef'
+    PHASE = 'held-checkout-head'
     head, head_pin = held(repo / '.git/HEAD', 41)
     require(head == (env['GITHUB_SHA'] + '\n').encode())
+    PHASE = 'held-python'
     _, python_pin = held(PYTHON, 16384, PYTHON_SHA)
     require(Path(sys.executable).resolve() == Path(PYTHON).resolve())
+    PHASE = 'held-workflow'
     _, workflow_pin = held(repo / WORKFLOW, 65536)
+    PHASE = 'held-carrier'
     _, self_pin = held(Path(__file__), 65536)
     raws, pins = {}, {}
     for name, (size, digest) in PINS.items():
+        PHASE = 'held-subject-' + name.removeprefix('mac_').removesuffix('.py').removesuffix('.json').replace('_', '-')
         raws[name], pins[name] = held(fixture_dir / name, size, digest)
         require(len(raws[name]) == size)
+    PHASE = 'whole-candidate-inverse'
     baseline, candidate = raws['mac_source_io_baseline.py'], raws['mac_source_io_candidate.py']
     inverse = json.loads(raws['mac_source_io_inverse.json'])
     require(inverse['baseline'] == pins['mac_source_io_baseline.py'] and inverse['candidate'] == pins['mac_source_io_candidate.py'])
@@ -263,8 +307,11 @@ def main():
         fixture.tearDown()
     PHASE = 'final-pins'
     for name, (size, digest) in PINS.items():
+        PHASE = 'final-subject-' + name.removeprefix('mac_').removesuffix('.py').removesuffix('.json').replace('_', '-')
         held(fixture_dir / name, size, digest)
+    PHASE = 'final-checkout-head'
     held(repo / '.git/HEAD', 41, head_pin['sha256'])
+    PHASE = 'final-workflow'
     held(repo / WORKFLOW, 65536, workflow_pin['sha256'])
     held(Path(__file__), 65536, self_pin['sha256'])
     budget.check()
@@ -309,7 +356,8 @@ if __name__ == '__main__':
         label = 'DEADLINE' if type(error) is TimeoutError else 'CONTRACT' if type(error) is RuntimeError else 'UNCLASSIFIED'
         try:
             print(json.dumps({'kind': 'private-mac-fullhash-boundary-capture-proof', 'success': False,
-                'phase': PHASE, 'failure': label, 'results': RESULTS, 'runtimeReady': False}, separators=(',', ':')))
+                'phase': PHASE, 'failure': label, 'failureClass': failure_class(error),
+                'results': RESULTS, 'runtimeReady': False}, separators=(',', ':')))
         except BaseException:
             pass
         sys.exit(1)
