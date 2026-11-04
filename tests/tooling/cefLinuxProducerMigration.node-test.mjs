@@ -7,6 +7,7 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { withoutUploadRecovery } from "./cefUploadRecoveryInverse.mjs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
@@ -2382,7 +2383,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),
-    "73df343a716b1c99583c641d1f7cd5db93f13271011432c0eab22bf735dbb913",
+    "ac34f2c03b7943f2b2a23bdb4f1d3be060ffe775893325a6c8a91136dac899e7",
   );
   const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
@@ -2396,7 +2397,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(restoredBlob, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   const restoredRows = structuredClone(currentRows);
   const reaperRow = restoredRows.find((row) => row.path === reaperPath);
-  assert.equal(reaperRow.sha, "8337b2bf0c0628c91e863d6a7fcd1ec065bf1485");
+  assert.equal(reaperRow.sha, "fe0ba49119debe297674599c855070ae37d67d85");
   reaperRow.sha = restoredBlob;
   assert.equal(capsule.toProducer, core.codeTreeDigest(restoredRows));
   assert.equal(
@@ -3797,7 +3798,8 @@ const REAP_CADENCE_BEFORE =
   "Math.min(100, Math.max(1, deadline - performance.now()))";
 const REAP_CADENCE_AFTER =
   "Math.max(1, Math.ceil((deadline - performance.now()) / (50 - i)))";
-function withoutOriginalReapLease(text) {
+function withoutOriginalReapLease(current) {
+  const text = withoutUploadRecovery(current);
   assert.equal(text.split(REAP_CADENCE_AFTER).length, 2);
   const restored = text.replace(REAP_CADENCE_AFTER, REAP_CADENCE_BEFORE);
   assert.equal(Buffer.byteLength(restored), 246069);

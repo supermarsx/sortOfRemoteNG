@@ -4992,6 +4992,54 @@ export function apiClient(
     );
   };
 }
+export const UPLOAD_RECOVERY = Object.freeze({ attempts: 4, baseMs: 15_000 });
+// A multi-hour compile must not be lost to one transient asset-upload refusal
+// (observed: a bare 404 from uploads.github.com on the fourth asset of an
+// otherwise healthy draft). A failed upload is retried with bounded backoff on
+// a fresh stream; before every retry the release's asset list is re-read, and
+// an asset that already landed intact (same name, size, digest) is adopted
+// instead of re-sent. A same-name asset left in any other state cannot be
+// replaced through the closed GET/POST endpoint set, so that refuses.
+export async function uploadAssetWithRecovery(
+  api,
+  releaseId,
+  pin,
+  bundle,
+  { wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {},
+) {
+  const route = `releases/${releaseId}/assets?name=${encodeURIComponent(pin.name)}`;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await api(route, {
+        method: "POST",
+        upload: true,
+        bodyBytes: pin.bytes,
+        body: createReadStream(path.join(bundle, pin.name)),
+      });
+    } catch (error) {
+      if (attempt >= UPLOAD_RECOVERY.attempts) throw error;
+      await wait(UPLOAD_RECOVERY.baseMs * attempt);
+      let existing;
+      try {
+        const listing = await api(`releases/${releaseId}/assets?per_page=100`);
+        existing = Array.isArray(listing)
+          ? listing.find((asset) => asset?.name === pin.name)
+          : undefined;
+      } catch {
+        throw error;
+      }
+      if (existing !== undefined) {
+        if (
+          existing.size === pin.bytes &&
+          existing.state === "uploaded" &&
+          existing.digest === `sha256:${pin.sha256}`
+        )
+          return existing;
+        throw error;
+      }
+    }
+  }
+}
 export async function verifyProducer(api, producer) {
   const [repo, workflow, run] = await Promise.all([
     api(""),
@@ -5208,14 +5256,11 @@ export async function uploadCheckpoint(
     );
     const assets = [];
     for (const p of [...pins, manifestPin]) {
-      const uploaded = await api(
-        `releases/${release.id}/assets?name=${encodeURIComponent(p.name)}`,
-        {
-          method: "POST",
-          upload: true,
-          bodyBytes: p.bytes,
-          body: createReadStream(path.join(bundle, p.name)),
-        },
+      const uploaded = await uploadAssetWithRecovery(
+        api,
+        release.id,
+        p,
+        bundle,
       );
       await uploadPhase(observe, "response-validation", async () =>
         assert(
@@ -7731,14 +7776,11 @@ export async function uploadSdkBundle(
     );
     const assets = [];
     for (const pin of completion.bundleAssets) {
-      const uploaded = await api(
-        `releases/${release.id}/assets?name=${encodeURIComponent(pin.name)}`,
-        {
-          method: "POST",
-          upload: true,
-          bodyBytes: pin.bytes,
-          body: createReadStream(path.join(bundle, pin.name)),
-        },
+      const uploaded = await uploadAssetWithRecovery(
+        api,
+        release.id,
+        pin,
+        bundle,
       );
       await uploadPhase(observe, "response-validation", async () =>
         assert(

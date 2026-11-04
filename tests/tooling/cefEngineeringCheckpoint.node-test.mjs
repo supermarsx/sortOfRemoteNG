@@ -813,6 +813,7 @@ test(
 );
 import { createHash as hashObject } from "node:crypto";
 import test from "node:test";
+import { withoutUploadRecovery } from "./cefUploadRecoveryInverse.mjs";
 import { EventEmitter } from "node:events";
 import { types as utilTypes } from "node:util";
 // Exact pre-fix archiveCommand declaration from reviewed6c853; data-only baseline.
@@ -881,6 +882,8 @@ import {
   validateSeal,
   apiClient,
   GITHUB_RETRY,
+  UPLOAD_RECOVERY,
+  uploadAssetWithRecovery,
   createUploadObserver,
   uploadPhase,
   uploadCheckpoint,
@@ -15684,6 +15687,76 @@ test("refused GitHub API calls are reported by public message and headers, and o
   assert.deepEqual(GITHUB_RETRY, { attempts: 3, maxWaitMs: 120_000 });
 });
 
+test("asset upload recovers from a transient refusal by fresh lookup, never re-sending an intact asset", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "cef-upload-recovery-"));
+  await writeFile(path.join(dir, "a.bin"), "hello");
+  const pin = { name: "checkpoint-00003.bin", bytes: 5, sha256: "ab" };
+  const landed = {
+    name: pin.name,
+    size: 5,
+    state: "uploaded",
+    digest: "sha256:ab",
+    id: 7,
+  };
+  await writeFile(path.join(dir, pin.name), "hello");
+  const waits = [];
+  const wait = async (ms) => waits.push(ms);
+  const refuse = () =>
+    Promise.reject(new Error("Checkpoint GitHub operation failed"));
+  // 404 then success: retried on a fresh stream after an empty listing.
+  let posts = 0;
+  let api = async (route, options) => {
+    if (options?.upload) {
+      posts++;
+      if (posts === 1) return refuse();
+      return landed;
+    }
+    assert.equal(route, "releases/5/assets?per_page=100");
+    return [];
+  };
+  assert.equal(
+    await uploadAssetWithRecovery(api, 5, pin, dir, { wait }),
+    landed,
+  );
+  assert.equal(posts, 2);
+  assert.deepEqual(waits, [UPLOAD_RECOVERY.baseMs]);
+  // The refused request had in fact landed intact: adopted, not re-sent.
+  posts = 0;
+  api = async (route, options) => {
+    if (options?.upload) {
+      posts++;
+      return refuse();
+    }
+    return [landed];
+  };
+  assert.equal(
+    await uploadAssetWithRecovery(api, 5, pin, dir, { wait }),
+    landed,
+  );
+  assert.equal(posts, 1);
+  // A same-name asset that is not intact refuses with the original error.
+  api = async (route, options) =>
+    options?.upload ? refuse() : [{ ...landed, state: "starter" }];
+  await assert.rejects(
+    uploadAssetWithRecovery(api, 5, pin, dir, { wait }),
+    /operation failed/,
+  );
+  // Persistent refusal is bounded.
+  posts = 0;
+  api = async (route, options) => {
+    if (options?.upload) {
+      posts++;
+      return refuse();
+    }
+    return [];
+  };
+  await assert.rejects(
+    uploadAssetWithRecovery(api, 5, pin, dir, { wait }),
+    /operation failed/,
+  );
+  assert.equal(posts, UPLOAD_RECOVERY.attempts);
+});
+
 const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
 m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]
 exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
@@ -16514,7 +16587,8 @@ const REAP_CADENCE_BEFORE =
   "Math.min(100, Math.max(1, deadline - performance.now()))";
 const REAP_CADENCE_AFTER =
   "Math.max(1, Math.ceil((deadline - performance.now()) / (50 - i)))";
-function withoutOriginalReapLease(text) {
+function withoutOriginalReapLease(current) {
+  const text = withoutUploadRecovery(current);
   assert.equal(text.split(REAP_CADENCE_AFTER).length, 2);
   const restored = text.replace(REAP_CADENCE_AFTER, REAP_CADENCE_BEFORE);
   assert.equal(Buffer.byteLength(restored), 246069);
@@ -16671,7 +16745,10 @@ test("original reap lease exact inverse preserves the complete core and all olde
     )
   ).replaceAll("\r\n", "\n");
   const old = withoutOriginalReapLease(text);
-  assert.equal(text, old.replace(REAP_CADENCE_BEFORE, REAP_CADENCE_AFTER));
+  assert.equal(
+    withoutUploadRecovery(text),
+    old.replace(REAP_CADENCE_BEFORE, REAP_CADENCE_AFTER),
+  );
   for (const changed of [
     text + "\n",
     text.replace(REAP_CADENCE_AFTER, REAP_CADENCE_BEFORE),

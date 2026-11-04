@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import YAML from "yaml";
+import { withoutUploadRecovery } from "./cefUploadRecoveryInverse.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (name) => fs.readFile(path.join(root, name), "utf8");
@@ -257,14 +258,20 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(currentRows.length, 131);
   assert.equal(
     digest(Buffer.from(JSON.stringify(currentRows))),
-    "73df343a716b1c99583c641d1f7cd5db93f13271011432c0eab22bf735dbb913",
+    "ac34f2c03b7943f2b2a23bdb4f1d3be060ffe775893325a6c8a91136dac899e7",
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
-  const currentCore = execFileSync(
+  const recoveredCore = execFileSync(
     "git",
     ["cat-file", "blob", "HEAD:" + corePath],
     { cwd: root, timeout: 10000, windowsHide: true },
   ).toString();
+  assert.equal(Buffer.byteLength(recoveredCore), 247532);
+  assert.equal(
+    digest(recoveredCore),
+    "b387faba01d34ef812cdd2ce2b4e588ea2eb2815ade957f2a513ce363b699fae",
+  );
+  const currentCore = withoutUploadRecovery(recoveredCore);
   assert.equal(Buffer.byteLength(currentCore), 246078);
   assert.equal(
     digest(currentCore),
@@ -291,7 +298,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(previousSha, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   assert.equal(
     currentRows.find((row) => row.path === corePath).sha,
-    "8337b2bf0c0628c91e863d6a7fcd1ec065bf1485",
+    "fe0ba49119debe297674599c855070ae37d67d85",
   );
   const retainedRows = currentRows.map((row) =>
     row.path === corePath ? { ...row, sha: previousSha } : row,
