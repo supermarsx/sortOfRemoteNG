@@ -3337,7 +3337,7 @@ export function sourceJobProjection(context, rawPolicy, contextSha) {
     ]),
     cwd: context.root,
     qualificationRoles: PRIVATE_ROLES,
-    aggregateWorkMs: 900000,
+    aggregateWorkMs: 5400000,
     cleanupMs: 30000,
     finalReserveMs: 120000,
     sourceEnvironmentAuthority: "retained-live-git-policy-token-required",
@@ -3602,7 +3602,10 @@ export function qualificationPhaseClock(
       remaining <= 7200000,
     "PRIVATE_PHASE_BUDGET",
   );
-  const allowance = Math.min(900000, remaining - 150000);
+  // Six roles each revalidate the 4.5-minute graph inventory before and after,
+  // so the original 15-minute phase cannot hold them; 90 minutes still leaves
+  // the 150-second reserve inside the original source budget.
+  const allowance = Math.min(5400000, remaining - 150000);
   let next = 0,
     pending = false,
     finished = false,

@@ -508,6 +508,60 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_BUDGET_HISTORY = {
+  driver: {
+    bytes: 300280,
+    sha256: "8f66ef72e567712c80a0fe63005306599698672b30b47ef924cf153e90027ac5",
+    rows: [
+      {
+        old: "    aggregateWorkMs: 900000,\n",
+        new: "    aggregateWorkMs: 5400000,\n",
+        oldSha256:
+          "1e4c4e17b7bcae739e4db0b4756ef4e4622f51c0f6d163179c5e539991b7af5f",
+        newSha256:
+          "93ef46e94920b53aff1b5b4f0da3d4732c553d4910ed725596d9bff2a357bcd3",
+      },
+      {
+        old: "  const allowance = Math.min(900000, remaining - 150000);\n",
+        new: "  // Six roles each revalidate the 4.5-minute graph inventory before and after,\n  // so the original 15-minute phase cannot hold them; 90 minutes still leaves\n  // the 150-second reserve inside the original source budget.\n  const allowance = Math.min(5400000, remaining - 150000);\n",
+        oldSha256:
+          "3e9fa98c2eaec0ede8b8135b6f0c08e7338df6963e556b401563a989024dfd8e",
+        newSha256:
+          "89da3ec78da391ee69f231a41ee43aaa4a0340620d910b30e9262499e87fd1e4",
+      },
+    ],
+  },
+};
+function fullGraphBudgetInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_BUDGET_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_BUDGET_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_BUDGET_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_BUDGET_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_BUDGET_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_BUDGET_WHOLE");
+  return text;
+}
 const FULL_GRAPH_SHAPE_HISTORY = {
   driver: {
     bytes: 297164,
@@ -595,6 +649,7 @@ const FULL_GRAPH_SHAPE_HISTORY = {
   },
 };
 function fullGraphShapeInverse(text, name) {
+  text = fullGraphBudgetInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_SHAPE_HISTORY[name];
   if (!spec) return text;
