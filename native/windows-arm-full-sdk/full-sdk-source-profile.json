@@ -44,7 +44,7 @@
   },
   "limits": {
     "wholeSeconds": 21600,
-    "sourceSeconds": 10800,
+    "sourceSeconds": 14400,
     "acquisitionSeconds": 7200,
     "hooksSeconds": 3600,
     "cleanupSeconds": 30,

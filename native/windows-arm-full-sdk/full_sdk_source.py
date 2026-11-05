@@ -19,7 +19,7 @@ from pathlib import Path
 MODE = 'full-sdk-source-gn'
 WORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'
 POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'
-PROFILE_SHA256 = 'be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989'
+PROFILE_SHA256 = 'c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633'
 FULL_SOURCE_ADMITTED = False
 SOURCE_QUALIFICATION_ALLOWED = True
 HEX = re.compile(r'[a-f0-9]{64}')
@@ -102,7 +102,7 @@ def phase_budget(wall_whole_end, mono_whole_end, wall_source_end,
     need(all(type(value) in (int, float) and math.isfinite(value) for value in values), 'CLOCK')
     whole = min(wall_whole_end - wall_now, mono_whole_end - mono_now)
     source = min(wall_source_end - wall_now, mono_source_end - mono_now)
-    need(150 < whole <= 21600 and 150 < source <= 10800 and
+    need(150 < whole <= 21600 and 150 < source <= 14400 and
          wall_source_end <= wall_whole_end and mono_source_end <= mono_whole_end, 'DEADLINE')
     return {'workSeconds': min(whole, source) - 150, 'cleanupSeconds': 30,
             'finalReserveSeconds': 120, 'wallWholeEnd': wall_whole_end,
@@ -635,7 +635,7 @@ def _run_operation(state):
             remaining = min(clock.remaining(), phase_end - time.monotonic(), wall_phase_end - time.time()) if role != _NODE else clock.remaining()
             allotted = {'sdk-data': 1170, 'llvm-data': 300, 'rust-archive': 1200,
                          'gn-archive': 180, 'siso-archive': 180, 'materialize': 600,
-                         'runtime-closure': 720}.get(role, 10800)
+                         'runtime-closure': 720}.get(role, 14400)
             seconds = min(allotted, remaining - 150)
             need(seconds > 0, 'PHASE_DEADLINE')
             receipt = job.run_job(_worker_argv(role, root, p), str(root), root / 'jobs' / role,

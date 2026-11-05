@@ -3337,7 +3337,7 @@ export function sourceJobProjection(context, rawPolicy, contextSha) {
     ]),
     cwd: context.root,
     qualificationRoles: PRIVATE_ROLES,
-    aggregateWorkMs: 5400000,
+    aggregateWorkMs: 6300000,
     cleanupMs: 30000,
     finalReserveMs: 120000,
     sourceEnvironmentAuthority: "retained-live-git-policy-token-required",
@@ -3602,10 +3602,11 @@ export function qualificationPhaseClock(
       remaining <= 7200000,
     "PRIVATE_PHASE_BUDGET",
   );
-  // Six roles each revalidate the 4.5-minute graph inventory before and after,
-  // so the original 15-minute phase cannot hold them; 90 minutes still leaves
-  // the 150-second reserve inside the original source budget.
-  const allowance = Math.min(5400000, remaining - 150000);
+  // Four roles each revalidate the 4.4-minute graph inventory before and after
+  // (about 45 minutes) plus the GN and siso runs, so the original 15-minute
+  // phase cannot hold them; 105 minutes is the measured need with margin, still
+  // clipped to the remaining source budget less the 150-second reserve.
+  const allowance = Math.min(6300000, remaining - 150000);
   let next = 0,
     pending = false,
     finished = false,
@@ -6427,7 +6428,7 @@ class FullSourceProgress {
     let elapsed;
     try {
       elapsed = Math.floor(this.now() - this.begin);
-      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 10800000)
+      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 14400000)
         throw new Error("FULL_PROGRESS_CLOCK");
     } catch {
       this.failed = true;
@@ -6469,7 +6470,7 @@ class FullSourceProgress {
         age = Math.floor(now - this.lastOutput);
       need(
         elapsed >= 0 &&
-          elapsed <= 10800000 &&
+          elapsed <= 14400000 &&
           elapsed >= this.phaseStartedElapsedMs &&
           age >= 0 &&
           this.stdout + this.stderr <= 67108864,
@@ -6604,7 +6605,7 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";
+  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";
 const fullSourceProfiles = new WeakMap();
 // The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
 // No ignore file or clean-check exception is created or changed.
@@ -7384,7 +7385,7 @@ function fullMetadataInspectContext(
     context.wallWorkEnd - wallNow,
     context.monotonicWorkEnd - monotonicNow,
   );
-  need(remaining > 150 && remaining <= 10800, "PRIVATE_DEADLINE");
+  need(remaining > 150 && remaining <= 14400, "PRIVATE_DEADLINE");
   return { policy, candidate };
 }
 
@@ -7634,7 +7635,7 @@ async function sampleFullSourceClock(context, python) {
   const nodeMonoBefore = performance.now(),
     nodeWallBefore = Date.now();
   const original = Math.min(
-    10800000,
+    14400000,
     context.wallWorkEnd * 1000 - nodeWallBefore,
     context.wallWholeEnd * 1000 - nodeWallBefore,
   );
@@ -7868,7 +7869,7 @@ function fullSourceBudget(
 ) {
   need(
     limits.wholeSeconds === 21600 &&
-      limits.sourceSeconds === 10800 &&
+      limits.sourceSeconds === 14400 &&
       limits.acquisitionSeconds === 7200 &&
       limits.hooksSeconds === 3600 &&
       limits.cleanupSeconds === 30 &&
@@ -7903,7 +7904,7 @@ function fullSourceBudget(
   const began = sample.nodeMonoBefore,
     wall = sample.nodeWallBefore,
     original = Math.min(
-      10800000,
+      14400000,
       context.wallWorkEnd * 1000 - wall,
       context.wallWholeEnd * 1000 - wall,
       (context.monotonicWorkEnd - sample.monotonic) * 1000,

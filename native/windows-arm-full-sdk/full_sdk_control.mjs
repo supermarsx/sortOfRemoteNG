@@ -668,13 +668,13 @@ async function retireControl(token) {
 const CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.
 const SOURCE_QUALIFICATION_ALLOWED = true;
 const FULL_SOURCE_PROFILE_SHA256 =
-  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";
+  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";
 const MODULE_URL = import.meta.url;
 const CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));
 const CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");
 const bootstrapOwners = new WeakMap();
 const sourceOperations = new WeakMap();
-const SOURCE_MS = 10800000;
+const SOURCE_MS = 14400000;
 const ACQUISITION_MS = 7200000;
 const SOURCE_LOG_CAP = 131072;
 const DATA_ROLES = Object.freeze([

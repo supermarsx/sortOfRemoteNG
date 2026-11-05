@@ -566,10 +566,28 @@ FULL_GN_PROJECTION_DIGEST_HISTORY = {'bytes': 290006, 'sha256': '27e6c073dab2b95
 FULL_HOOKS_3600_HISTORY = {'profile': {'bytes': 11144, 'sha256': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'rows': [{'old': '"hooksSeconds": 2700', 'new': '"hooksSeconds": 3600', 'oldSha256': 'e1295960e6724068f957bf7d2cc298f18a4e39d20890cb938f6c20d0281e8313', 'newSha256': 'f9a082d2224b79d4b6491cc86260da7efddf5761901ab66889df6c2089aa06b7'}]}, 'driver': {'bytes': 290034, 'sha256': 'c204154a9a1ee9ad9fde6cb44d9a14c54d1491c60badcb8ebbb07497a07d104d', 'rows': [{'old': 'stage === "source-hooks-gn" && maximumSeconds === 2700', 'new': 'stage === "source-hooks-gn" && maximumSeconds === 3600', 'oldSha256': 'f1e3c9e04b5c87ef7e02a6e2f18edb8a19bf76f81df0a2d9be34cae004b0f6f7', 'newSha256': 'ab823a3efa59ea09fcca8d67eb2f7891e3b4f87f4ef620eceeddfc8403e7942c'}, {'old': 'limits.hooksSeconds === 2700', 'new': 'limits.hooksSeconds === 3600', 'oldSha256': 'ef03e51dc1df6a0932172ab6d4982193e7399b10ac1bef48a2454accfe78e8bc', 'newSha256': '2873474eb3737c287592c5194d69bfd530131c8730b801fc08a0b4ae499a4c82'}, {'old': 'await fullSourceStage(root, budget, "source-hooks-gn", 2700, async () => {', 'new': 'await fullSourceStage(root, budget, "source-hooks-gn", 3600, async () => {', 'oldSha256': '221b341a72b2425ff16bb9f2cd176d68be51a250860a3ca9d729c9d09242daca', 'newSha256': 'a31f1d431befeb2772bcc32cbc2c4ce3fe591fdbee55f8de5f6f72f97b45a614'}, {'old': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'new': '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332', 'oldSha256': 'caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0', 'newSha256': 'b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3'}]}, 'python': {'bytes': 35367, 'sha256': '6188878262519d72bcfbcb121ca100a341eee0121093f0caab3216ecf4020038', 'rows': [{'old': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'new': '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332', 'oldSha256': 'caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0', 'newSha256': 'b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3'}, {'old': '# Node body debits data time and retains the fixed2700s hook cap.', 'new': '# Node body debits data time and retains the fixed3600s hook cap.', 'oldSha256': 'ca05583192bd821c615365b66f9bc67bbf8e36a2adbf097993e1ff9ca8d739b0', 'newSha256': 'd6b0d4f52a5048a17c2ac0f9989999b15c218583523903bfb94fb6e6636a965a'}]}, 'controller': {'bytes': 175570, 'sha256': '97cb6430200bee3880651d6b597d2ee4f4886dfe6377b484c900a4e727edc294', 'rows': [{'old': 'e742067edf74e0f71d78f02ec381a757da4761c5a0ee31f2d458e492f22fb32e', 'new': '2e41f52d0e4e45167d2ec35d5da13c3c2152c930ba727dd3a5e2e84fe7d15332', 'oldSha256': 'caa4db5200edd8946f3023d997e5529ce53552c43453f0d717d9543c6e34ddb0', 'newSha256': 'b948d8065300b2551c703862b8d1f24a0eb653c41dd573d8d77aeacbd255f6b3'}]}}
 
 
+FULL_GRAPH_LIMITS_HISTORY = {'profile': {'bytes': 11144, 'sha256': 'be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989', 'rows': [{'old': '    "sourceSeconds": 10800,\n', 'new': '    "sourceSeconds": 14400,\n', 'oldSha256': 'f4487aafda717bc4fa6a3b54f2aefd75e751fa098f382a8d7e28a85987cc5128', 'newSha256': '9e099f3c08b5466917ba0843ec60386ea23f551719bf1409d67a03387ad43005'}]}, 'driver': {'bytes': 300504, 'sha256': '1d8842482adf844a9f4622e1ab563177d691f292c64fc58c03b692b36d6f8ce3', 'rows': [{'old': '    aggregateWorkMs: 5400000,\n', 'new': '    aggregateWorkMs: 6300000,\n', 'oldSha256': '93ef46e94920b53aff1b5b4f0da3d4732c553d4910ed725596d9bff2a357bcd3', 'newSha256': 'f652aaa3b94c9be360f49d53ccdd47e57ae29db19a31187e59dc620210890bcb'}, {'old': '  // Six roles each revalidate the 4.5-minute graph inventory before and after,\n  // so the original 15-minute phase cannot hold them; 90 minutes still leaves\n  // the 150-second reserve inside the original source budget.\n  const allowance = Math.min(5400000, remaining - 150000);\n', 'new': '  // Four roles each revalidate the 4.4-minute graph inventory before and after\n  // (about 45 minutes) plus the GN and siso runs, so the original 15-minute\n  // phase cannot hold them; 105 minutes is the measured need with margin, still\n  // clipped to the remaining source budget less the 150-second reserve.\n  const allowance = Math.min(6300000, remaining - 150000);\n', 'oldSha256': '89da3ec78da391ee69f231a41ee43aaa4a0340620d910b30e9262499e87fd1e4', 'newSha256': '41e3c2c780d175eea2fe3ed670dd07de4f72aa608978a619867b69689df2efcf'}, {'old': '      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 10800000)\n', 'new': '      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 14400000)\n', 'oldSha256': 'cc85b485b0746df352c00c0f9b8d1d911fb2edff8121755e8c92f1c5dc4e3d24', 'newSha256': 'c8eb08df421208dab965bb8c408d1620e2488232619634dae73259838e600495'}, {'old': '          elapsed <= 10800000 &&\n', 'new': '          elapsed <= 14400000 &&\n', 'oldSha256': '32c70b45c14a63d9588c742a5be4ac9f4322b293cd80cb620d10a9bcac0237fe', 'newSha256': '6b6fc0ad6b83f36ac1f3c7e77d6fc34592f005c5760f313d470136f7d342b046'}, {'old': '  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";\n', 'new': '  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";\n', 'oldSha256': 'fb9963aa8148587faa48ae66c8b3b8547f4fab8e849eff2d49aab18815841446', 'newSha256': '99c7471341f60d05d95ccbbca3630271c294f050a9d0ad697984b90319eee09a'}, {'old': '  need(remaining > 150 && remaining <= 10800, "PRIVATE_DEADLINE");\n', 'new': '  need(remaining > 150 && remaining <= 14400, "PRIVATE_DEADLINE");\n', 'oldSha256': 'c1ce91776c3112acec575bd472ac82d360bf6e4266d46efe8af5fc4f25035abe', 'newSha256': '0acb675f238a49dfd0206b04a84cba0d3e2fe8cb18f9e6893e7f35ec1646af41'}, {'old': '  const original = Math.min(\n    10800000,\n', 'new': '  const original = Math.min(\n    14400000,\n', 'oldSha256': '1265a06245ba4adba77c0069d796779a8d849eaccc073871d6188bf312982072', 'newSha256': '7087b74e126b8730b172bebdc96a820af6e5101bc3c4fefab9168dcff3f67c4a'}, {'old': '      limits.sourceSeconds === 10800 &&\n', 'new': '      limits.sourceSeconds === 14400 &&\n', 'oldSha256': 'b2be24b418cadf239aaa0d27dfb76c6bebde8bdb459e59c6edc1f07790c64ab9', 'newSha256': 'c693d6e5124689bfe07658adc46db2297ac25a64e910cc4763a1308d5e5be9ab'}, {'old': '      10800000,\n', 'new': '      14400000,\n', 'oldSha256': '0ff1ffe51ff6e078334fb633a440ee0563beef4452d293dc81464d8fc18b6d52', 'newSha256': '1e04c71bda0d550c7a46aaa1f76de129c2b3685109a4ae628716dc9c03e74e47'}]}, 'python': {'bytes': 35367, 'sha256': '99a159f07f14eae0a18b72bc696d0ce81097b87bd44e9843ff4b3d3789ccb8af', 'rows': [{'old': "PROFILE_SHA256 = 'be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989'\n", 'new': "PROFILE_SHA256 = 'c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633'\n", 'oldSha256': 'dc0050ef4c91357e662d8bf36a0c6508d03c5c8f547d66ad315e34ab17576b2e', 'newSha256': 'e84bea563ca0315fe310d2b34aa621fae065e238896fdd7107291ee966f21586'}, {'old': '    need(150 < whole <= 21600 and 150 < source <= 10800 and\n', 'new': '    need(150 < whole <= 21600 and 150 < source <= 14400 and\n', 'oldSha256': 'b13870ea593f2ee58f1581791b930a3d14bd72e49d2141fac80defff3cc27da0', 'newSha256': 'b4e7aa839dd4f6f0f798921808e073c301b3b043e5c0fc63313ca72171f6cea4'}, {'old': "                         'runtime-closure': 720}.get(role, 10800)\n", 'new': "                         'runtime-closure': 720}.get(role, 14400)\n", 'oldSha256': '105e5d0a664aa3aa5ae246d377ee1c63b506383975f4fb41c8450ac1c77641e4', 'newSha256': '16f2d807285812074e1936aaefe1eba58c5daeee58f47a54d4e96a467f475090'}]}, 'controller': {'bytes': 177684, 'sha256': 'ec3ce6cd45d74fcaf75e0426a50ac697a36b86de890b46023143fda83ac79fe3', 'rows': [{'old': '  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";\n', 'new': '  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";\n', 'oldSha256': 'fb9963aa8148587faa48ae66c8b3b8547f4fab8e849eff2d49aab18815841446', 'newSha256': '99c7471341f60d05d95ccbbca3630271c294f050a9d0ad697984b90319eee09a'}, {'old': 'const SOURCE_MS = 10800000;\n', 'new': 'const SOURCE_MS = 14400000;\n', 'oldSha256': '29f47cf5678eb0da3864e31baee7b92e23bc98cf227d43b28cb9ca67ce736a26', 'newSha256': '7bb00737e2f3b5788ee80a33a05290cc90b6bce066f443c66f9702e5d83b3f68'}]}}
+
+
+def full_graph_limits_inverse(raw, name):
+    spec = FULL_GRAPH_LIMITS_HISTORY.get(name)
+    if spec is None:
+        return raw
+    for row in spec['rows']:
+        new, old = row['new'].encode(), row['old'].encode()
+        assert hashlib.sha256(new).hexdigest() == row['newSha256'], 'ASSEMBLY_INVERSE_GRAPH_LIMITS_PIN'
+        assert hashlib.sha256(old).hexdigest() == row['oldSha256'], 'ASSEMBLY_INVERSE_GRAPH_LIMITS_PIN'
+        assert raw.count(new) == 1, 'ASSEMBLY_INVERSE_GRAPH_LIMITS_COUNT'
+        raw = raw.replace(new, old, 1)
+    assert len(raw) == spec['bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'ASSEMBLY_INVERSE_GRAPH_LIMITS_WHOLE'
+    return raw
+
+
 FULL_GRAPH_BUDGET_HISTORY = {'driver': {'bytes': 300280, 'sha256': '8f66ef72e567712c80a0fe63005306599698672b30b47ef924cf153e90027ac5', 'rows': [{'old': '    aggregateWorkMs: 900000,\n', 'new': '    aggregateWorkMs: 5400000,\n', 'oldSha256': '1e4c4e17b7bcae739e4db0b4756ef4e4622f51c0f6d163179c5e539991b7af5f', 'newSha256': '93ef46e94920b53aff1b5b4f0da3d4732c553d4910ed725596d9bff2a357bcd3'}, {'old': '  const allowance = Math.min(900000, remaining - 150000);\n', 'new': '  // Six roles each revalidate the 4.5-minute graph inventory before and after,\n  // so the original 15-minute phase cannot hold them; 90 minutes still leaves\n  // the 150-second reserve inside the original source budget.\n  const allowance = Math.min(5400000, remaining - 150000);\n', 'oldSha256': '3e9fa98c2eaec0ede8b8135b6f0c08e7338df6963e556b401563a989024dfd8e', 'newSha256': '89da3ec78da391ee69f231a41ee43aaa4a0340620d910b30e9262499e87fd1e4'}]}}
 
 
 def full_graph_budget_inverse(raw, name):
+    raw = full_graph_limits_inverse(raw, name)
     spec = FULL_GRAPH_BUDGET_HISTORY.get(name)
     if spec is None:
         return raw
@@ -732,7 +750,7 @@ class Interfaces(unittest.TestCase):
         self.assertTrue(all(self.p[key] is False for key in subject.FALSE_FIELDS))
         self.assertIs(self.p['fullModeBodyImplemented'], True)
         self.assertIs(self.p['sourceSessionIssuerImplemented'], True)
-        self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=10800,
+        self.assertEqual(self.p['limits'], dict(wholeSeconds=21600, sourceSeconds=14400,
                          acquisitionSeconds=7200, hooksSeconds=3600,
                          cleanupSeconds=30, finalReserveSeconds=120))
         with self.assertRaisesRegex(subject.Denied, 'PROFILE_PIN'):
@@ -781,7 +799,7 @@ class Interfaces(unittest.TestCase):
         self.assertEqual(later['workSeconds'], 6850)
         for values in [(21600, 21600, 7200, 7200, 100, 7050),
                        (21601, 21601, 7200, 7200, 0, 0),
-                       (21600, 21600, 10801, 10801, 0, 0),
+                       (21600, 21600, 14401, 14401, 0, 0),
                        (21600, 21600, 7200, 7200, False, 0),
                        (21600, 21600, 7200, 7200, float('nan'), 0)]:
             with self.subTest(values=values), self.assertRaises(subject.Denied):
@@ -1261,17 +1279,17 @@ class Interfaces(unittest.TestCase):
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'phase_budget')
         scope = dict(math=math, need=subject.need)
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<old-actual-budget-no-actors>', 'exec'), scope)
-        ends = (21600, 21600, 10800, 10800, 0, 0)
+        ends = (21600, 21600, 14400, 14400, 0, 0)
         with self.assertRaisesRegex(subject.Denied, 'DEADLINE'):
             scope['phase_budget'](*ends)
         current = subject.phase_budget(*ends)
-        self.assertEqual(current['workSeconds'], 10650)
+        self.assertEqual(current['workSeconds'], 14250)
         self.assertEqual(current['cleanupSeconds'], 30)
         self.assertEqual(current['finalReserveSeconds'], 120)
-        self.assertEqual(subject.phase_budget(21600, 21600, 10800, 10800, -100, 850)['workSeconds'], 9800)
-        for values in ((21600, 21600, 10800, 10800, 0, 10650),
-                       (21600, 21600, 10801, 10801, 0, 0),
-                       (5000, 5000, 10800, 10800, 0, 0)):
+        self.assertEqual(subject.phase_budget(21600, 21600, 14400, 14400, -100, 850)['workSeconds'], 13400)
+        for values in ((21600, 21600, 14400, 14400, 0, 14250),
+                       (21600, 21600, 14401, 14401, 0, 0),
+                       (5000, 5000, 14400, 14400, 0, 0)):
             with self.assertRaisesRegex(subject.Denied, 'DEADLINE'):
                 subject.phase_budget(*values)
 

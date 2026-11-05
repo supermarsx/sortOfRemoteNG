@@ -5265,6 +5265,181 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_LIMITS_HISTORY = {
+  profile: {
+    bytes: 11144,
+    sha256: "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989",
+    rows: [
+      {
+        old: '    "sourceSeconds": 10800,\n',
+        new: '    "sourceSeconds": 14400,\n',
+        oldSha256:
+          "f4487aafda717bc4fa6a3b54f2aefd75e751fa098f382a8d7e28a85987cc5128",
+        newSha256:
+          "9e099f3c08b5466917ba0843ec60386ea23f551719bf1409d67a03387ad43005",
+      },
+    ],
+  },
+  driver: {
+    bytes: 300504,
+    sha256: "1d8842482adf844a9f4622e1ab563177d691f292c64fc58c03b692b36d6f8ce3",
+    rows: [
+      {
+        old: "    aggregateWorkMs: 5400000,\n",
+        new: "    aggregateWorkMs: 6300000,\n",
+        oldSha256:
+          "93ef46e94920b53aff1b5b4f0da3d4732c553d4910ed725596d9bff2a357bcd3",
+        newSha256:
+          "f652aaa3b94c9be360f49d53ccdd47e57ae29db19a31187e59dc620210890bcb",
+      },
+      {
+        old: "  // Six roles each revalidate the 4.5-minute graph inventory before and after,\n  // so the original 15-minute phase cannot hold them; 90 minutes still leaves\n  // the 150-second reserve inside the original source budget.\n  const allowance = Math.min(5400000, remaining - 150000);\n",
+        new: "  // Four roles each revalidate the 4.4-minute graph inventory before and after\n  // (about 45 minutes) plus the GN and siso runs, so the original 15-minute\n  // phase cannot hold them; 105 minutes is the measured need with margin, still\n  // clipped to the remaining source budget less the 150-second reserve.\n  const allowance = Math.min(6300000, remaining - 150000);\n",
+        oldSha256:
+          "89da3ec78da391ee69f231a41ee43aaa4a0340620d910b30e9262499e87fd1e4",
+        newSha256:
+          "41e3c2c780d175eea2fe3ed670dd07de4f72aa608978a619867b69689df2efcf",
+      },
+      {
+        old: "      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 10800000)\n",
+        new: "      if (!Number.isSafeInteger(elapsed) || elapsed < 0 || elapsed > 14400000)\n",
+        oldSha256:
+          "cc85b485b0746df352c00c0f9b8d1d911fb2edff8121755e8c92f1c5dc4e3d24",
+        newSha256:
+          "c8eb08df421208dab965bb8c408d1620e2488232619634dae73259838e600495",
+      },
+      {
+        old: "          elapsed <= 10800000 &&\n",
+        new: "          elapsed <= 14400000 &&\n",
+        oldSha256:
+          "32c70b45c14a63d9588c742a5be4ac9f4322b293cd80cb620d10a9bcac0237fe",
+        newSha256:
+          "6b6fc0ad6b83f36ac1f3c7e77d6fc34592f005c5760f313d470136f7d342b046",
+      },
+      {
+        old: '  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";\n',
+        new: '  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";\n',
+        oldSha256:
+          "fb9963aa8148587faa48ae66c8b3b8547f4fab8e849eff2d49aab18815841446",
+        newSha256:
+          "99c7471341f60d05d95ccbbca3630271c294f050a9d0ad697984b90319eee09a",
+      },
+      {
+        old: '  need(remaining > 150 && remaining <= 10800, "PRIVATE_DEADLINE");\n',
+        new: '  need(remaining > 150 && remaining <= 14400, "PRIVATE_DEADLINE");\n',
+        oldSha256:
+          "c1ce91776c3112acec575bd472ac82d360bf6e4266d46efe8af5fc4f25035abe",
+        newSha256:
+          "0acb675f238a49dfd0206b04a84cba0d3e2fe8cb18f9e6893e7f35ec1646af41",
+      },
+      {
+        old: "  const original = Math.min(\n    10800000,\n",
+        new: "  const original = Math.min(\n    14400000,\n",
+        oldSha256:
+          "1265a06245ba4adba77c0069d796779a8d849eaccc073871d6188bf312982072",
+        newSha256:
+          "7087b74e126b8730b172bebdc96a820af6e5101bc3c4fefab9168dcff3f67c4a",
+      },
+      {
+        old: "      limits.sourceSeconds === 10800 &&\n",
+        new: "      limits.sourceSeconds === 14400 &&\n",
+        oldSha256:
+          "b2be24b418cadf239aaa0d27dfb76c6bebde8bdb459e59c6edc1f07790c64ab9",
+        newSha256:
+          "c693d6e5124689bfe07658adc46db2297ac25a64e910cc4763a1308d5e5be9ab",
+      },
+      {
+        old: "      10800000,\n",
+        new: "      14400000,\n",
+        oldSha256:
+          "0ff1ffe51ff6e078334fb633a440ee0563beef4452d293dc81464d8fc18b6d52",
+        newSha256:
+          "1e04c71bda0d550c7a46aaa1f76de129c2b3685109a4ae628716dc9c03e74e47",
+      },
+    ],
+  },
+  python: {
+    bytes: 35367,
+    sha256: "99a159f07f14eae0a18b72bc696d0ce81097b87bd44e9843ff4b3d3789ccb8af",
+    rows: [
+      {
+        old: "PROFILE_SHA256 = 'be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989'\n",
+        new: "PROFILE_SHA256 = 'c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633'\n",
+        oldSha256:
+          "dc0050ef4c91357e662d8bf36a0c6508d03c5c8f547d66ad315e34ab17576b2e",
+        newSha256:
+          "e84bea563ca0315fe310d2b34aa621fae065e238896fdd7107291ee966f21586",
+      },
+      {
+        old: "    need(150 < whole <= 21600 and 150 < source <= 10800 and\n",
+        new: "    need(150 < whole <= 21600 and 150 < source <= 14400 and\n",
+        oldSha256:
+          "b13870ea593f2ee58f1581791b930a3d14bd72e49d2141fac80defff3cc27da0",
+        newSha256:
+          "b4e7aa839dd4f6f0f798921808e073c301b3b043e5c0fc63313ca72171f6cea4",
+      },
+      {
+        old: "                         'runtime-closure': 720}.get(role, 10800)\n",
+        new: "                         'runtime-closure': 720}.get(role, 14400)\n",
+        oldSha256:
+          "105e5d0a664aa3aa5ae246d377ee1c63b506383975f4fb41c8450ac1c77641e4",
+        newSha256:
+          "16f2d807285812074e1936aaefe1eba58c5daeee58f47a54d4e96a467f475090",
+      },
+    ],
+  },
+  controller: {
+    bytes: 177684,
+    sha256: "ec3ce6cd45d74fcaf75e0426a50ac697a36b86de890b46023143fda83ac79fe3",
+    rows: [
+      {
+        old: '  "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989";\n',
+        new: '  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";\n',
+        oldSha256:
+          "fb9963aa8148587faa48ae66c8b3b8547f4fab8e849eff2d49aab18815841446",
+        newSha256:
+          "99c7471341f60d05d95ccbbca3630271c294f050a9d0ad697984b90319eee09a",
+      },
+      {
+        old: "const SOURCE_MS = 10800000;\n",
+        new: "const SOURCE_MS = 14400000;\n",
+        oldSha256:
+          "29f47cf5678eb0da3864e31baee7b92e23bc98cf227d43b28cb9ca67ce736a26",
+        newSha256:
+          "7bb00737e2f3b5788ee80a33a05290cc90b6bce066f443c66f9702e5d83b3f68",
+      },
+    ],
+  },
+};
+function fullGraphLimitsInverse(text, name) {
+  const spec = FULL_GRAPH_LIMITS_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_LIMITS_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_LIMITS_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_LIMITS_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_LIMITS_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_LIMITS_WHOLE");
+  return text;
+}
 const FULL_GRAPH_BUDGET_HISTORY = {
   driver: {
     bytes: 300280,
@@ -5290,6 +5465,7 @@ const FULL_GRAPH_BUDGET_HISTORY = {
   },
 };
 function fullGraphBudgetInverse(text, name) {
+  text = fullGraphLimitsInverse(text, name);
   const spec = FULL_GRAPH_BUDGET_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -7532,7 +7708,7 @@ test("source qualification assembly pins the disjoint workflow and retains every
     assert.equal(profile[key], false, key);
   assert.deepEqual(profile.limits, {
     wholeSeconds: 21600,
-    sourceSeconds: 10800,
+    sourceSeconds: 14400,
     acquisitionSeconds: 7200,
     hooksSeconds: 3600,
     cleanupSeconds: 30,
@@ -12773,7 +12949,7 @@ test("FULL metadata projection starts once from genuine loaded source accounting
   const state = f.api.qualificationSourceOwners.get(owner),
     before = state.budget.remaining();
   assert(before > 7190000 && before <= 7200000);
-  assert.equal(state.phase.maximumWorkMs, 5400000);
+  assert.equal(state.phase.maximumWorkMs, 6300000);
   f.advance(1000);
   const later = state.budget.remaining();
   assert(later <= before - 1000);
@@ -12844,7 +13020,7 @@ test("FULL diagnostic phase timing preserves actual phase start and covers180m w
   old.close();
   now = 0;
   const horizon = new f.api.FullSourceProgress(directory, "a".repeat(64));
-  now = 10800001;
+  now = 14400001;
   horizon.flush();
   assert.equal(horizon.failed, true);
   horizon.close();
@@ -15019,7 +15195,7 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
         path.join(root, prefix, "full-sdk-source-profile.json"),
       ),
     ),
-    "be314d35dfce51f97f6fb4ab47df04710c4deb4ec5e9544bbaf062996c808989",
+    "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633",
   );
   assert.equal(
     sha(
