@@ -508,6 +508,76 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_SOURCES_HISTORY = {
+  driver: {
+    bytes: 307180,
+    sha256: "b86d90091f656e54f7cc60bb340671493bf7ab6071f5a33252a6338f03a5b3f9",
+    rows: [
+      {
+        old: "",
+        new: "  // The full flow binds the producer inputs exactly as the control issued them\n  // (policy.producerInputs rows: path, bytes, sha256; no canonical or encoding\n  // fields), so each row must equal its source row.\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "1f34e01fca094dbeddfcf77d22b6c6dc3d43832a9409ff4b4732750d89107d50",
+      },
+      {
+        old: '      row,\n      [\n        "path",\n        "bytes",\n        "sha256",\n        "canonicalBytes",\n        "canonicalSha256",\n        "encoding",\n      ],\n',
+        new: '      row,\n      ["path", "bytes", "sha256"],\n',
+        oldSha256:
+          "9edc6c2b4bdc07c6aa93a2f0803529757f2e1d2208a3fd130d6f6fdbcfbf20c7",
+        newSha256:
+          "a64ea1eceeb22ce7a46d74d70d2df3a2dd1f95e4f33480c04729fba146f8f408",
+      },
+      {
+        old: '    for (const key of ["bytes", "canonicalBytes"])\n      qualificationInteger(row[key], 1, 2 * 1024 ** 2, "PRIVATE_SOURCE_BOUND");\n    for (const key of ["sha256", "canonicalSha256"])\n      need(\n        typeof row[key] === "string" && /^[a-f0-9]{64}$/.test(row[key]),\n        "PRIVATE_SOURCE_HASH",\n      );\n',
+        new: '    qualificationInteger(row.bytes, 1, 2 * 1024 ** 2, "PRIVATE_SOURCE_BOUND");\n',
+        oldSha256:
+          "43e0f5143a321d0535ab7c9248d3e0763d96f3c550de02abd698ddd9901507eb",
+        newSha256:
+          "c79626fca4535c9c06a673c2056cb1d0b6de59e3b6b93cd0a278bd084ad21588",
+      },
+      {
+        old: '      row.encoding === "exact" ||\n        (row.encoding === "git-crlf" &&\n          full.state.c.sources[index].encoding === "git-crlf"),\n      "PRIVATE_SOURCE_ENCODING",\n    );\n    need(\n      row.encoding === "exact"\n        ? row.bytes === row.canonicalBytes && row.sha256 === row.canonicalSha256\n        : row.bytes >= row.canonicalBytes &&\n            row.bytes - row.canonicalBytes <= row.canonicalBytes,\n      "PRIVATE_SOURCE_ENCODING",\n',
+        new: '      typeof row.sha256 === "string" && /^[a-f0-9]{64}$/.test(row.sha256),\n      "PRIVATE_SOURCE_HASH",\n',
+        oldSha256:
+          "1f6c756cfd29cfeea0dcff2a9c072c37af8d6c2b9657d10fc62335d2e04e731f",
+        newSha256:
+          "842c4a4cf8a3aa7188edfeedd45e227395aa9166367ca1c1973f68af6e99d449",
+      },
+    ],
+  },
+};
+function fullGraphSourcesInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_SOURCES_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_SOURCES_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_SOURCES_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_SOURCES_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_SOURCES_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_SOURCES_WHOLE");
+  return text;
+}
 const FULL_GRAPH_VISITED_HISTORY = {
   driver: {
     bytes: 306666,
@@ -533,6 +603,7 @@ const FULL_GRAPH_VISITED_HISTORY = {
   },
 };
 function fullGraphVisitedInverse(text, name) {
+  text = fullGraphSourcesInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_VISITED_HISTORY[name];
   if (!spec) return text;

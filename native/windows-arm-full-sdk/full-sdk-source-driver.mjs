@@ -7440,42 +7440,23 @@ function fullMetadataInspectContext(
       context.sources.length === full.state.c.sources.length,
     "PRIVATE_SOURCE_TUPLE",
   );
+  // The full flow binds the producer inputs exactly as the control issued them
+  // (policy.producerInputs rows: path, bytes, sha256; no canonical or encoding
+  // fields), so each row must equal its source row.
   for (const [index, row] of context.sources.entries()) {
     qualificationShape(
       row,
-      [
-        "path",
-        "bytes",
-        "sha256",
-        "canonicalBytes",
-        "canonicalSha256",
-        "encoding",
-      ],
+      ["path", "bytes", "sha256"],
       "PRIVATE_SOURCE_FIELDS",
     );
     need(
       staticProjectionEqual(row, full.state.c.sources[index]),
       "PRIVATE_SOURCE_TUPLE",
     );
-    for (const key of ["bytes", "canonicalBytes"])
-      qualificationInteger(row[key], 1, 2 * 1024 ** 2, "PRIVATE_SOURCE_BOUND");
-    for (const key of ["sha256", "canonicalSha256"])
-      need(
-        typeof row[key] === "string" && /^[a-f0-9]{64}$/.test(row[key]),
-        "PRIVATE_SOURCE_HASH",
-      );
+    qualificationInteger(row.bytes, 1, 2 * 1024 ** 2, "PRIVATE_SOURCE_BOUND");
     need(
-      row.encoding === "exact" ||
-        (row.encoding === "git-crlf" &&
-          full.state.c.sources[index].encoding === "git-crlf"),
-      "PRIVATE_SOURCE_ENCODING",
-    );
-    need(
-      row.encoding === "exact"
-        ? row.bytes === row.canonicalBytes && row.sha256 === row.canonicalSha256
-        : row.bytes >= row.canonicalBytes &&
-            row.bytes - row.canonicalBytes <= row.canonicalBytes,
-      "PRIVATE_SOURCE_ENCODING",
+      typeof row.sha256 === "string" && /^[a-f0-9]{64}$/.test(row.sha256),
+      "PRIVATE_SOURCE_HASH",
     );
   }
   need(
