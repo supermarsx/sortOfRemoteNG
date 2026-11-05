@@ -7,6 +7,9 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[3]
 RAW=globals().get('HELD_HELPER_RAW')
 if RAW is None:RAW=(ROOT/'scripts/lib/cef-checkpoint-archive.py').read_bytes().replace(b'\r\n',b'\n')
+# The digest-reuse change is restored first: these history proofs bind the earlier reviewed helper.
+_REUSE_SPEC=importlib.util.spec_from_file_location('mac_source_reuse_inverse',str(ROOT/'tests/fixtures/cef/mac_source_reuse_inverse.py'))
+_REUSE=importlib.util.module_from_spec(_REUSE_SPEC);_REUSE_SPEC.loader.exec_module(_REUSE);RAW=_REUSE.inverse(RAW)
 def noop_inverse(raw):
     text=raw.decode()
     if '# BEGIN MAC OWNED NOOP 'not in text:return raw

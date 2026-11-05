@@ -816,6 +816,7 @@ import test from "node:test";
 import {
   withoutUploadRecovery,
   withoutCliCause,
+  withoutMacReuseArchive,
 } from "./cefUploadRecoveryInverse.mjs";
 import { EventEmitter } from "node:events";
 import { types as utilTypes } from "node:util";
@@ -859,6 +860,7 @@ import { fileURLToPath } from "node:url";
 import {
   LIMITS,
   AUTO_SLICE,
+  MAC_AUTO_RESERVE_MS,
   executionOptions,
   hostRemaining,
   sliceBudget,
@@ -14931,7 +14933,7 @@ test("Owned-source metadata bounds remain distinct for Linux and Mac; pack resto
             "--platform-policy",
             policy,
           ],
-          3_900_001,
+          5_700_001,
         ),
         false,
       );
@@ -15016,7 +15018,7 @@ print(json.dumps([facts,early]))
     { ...facts, phase: "upload" },
     { ...facts, phases: [["upload", 1]] },
     { ...facts, phases: [["hash", -1]] },
-    { ...facts, seconds: 3601 },
+    { ...facts, seconds: 5401 },
     { ...facts, hashedFiles: facts.files + 1 },
     { ...facts, hashedBytes: facts.bytes + 1 },
     { ...facts, files: null },
@@ -15849,6 +15851,74 @@ test("a restore that needs a migration is still refused without a valid reviewed
   );
 });
 
+test("macOS reserves verify, pack and upload time that Linux does not need", () => {
+  assert.equal(MAC_AUTO_RESERVE_MS, 100 * 60_000);
+  const auto = executionOptions("checkpoint", "auto");
+  // Linux keeps the 70-minute reserve; macOS leaves 100 minutes after the slice.
+  assert.equal(sliceBudget(auto, 200 * 60_000), 130 * 60_000);
+  assert.equal(
+    sliceBudget(auto, 200 * 60_000, MAC_AUTO_RESERVE_MS),
+    100 * 60_000,
+  );
+  assert.throws(
+    () => sliceBudget(auto, 110 * 60_000, MAC_AUTO_RESERVE_MS),
+    /insufficient packaging/,
+  );
+  assert.equal(sliceBudget(auto, 110 * 60_000), 40 * 60_000);
+  // A fixed slice must also leave the platform reserve.
+  const fixed = executionOptions("checkpoint", "180");
+  assert.equal(sliceBudget(fixed, 250 * 60_000), 180 * 60_000);
+  assert.throws(
+    () => sliceBudget(fixed, 250 * 60_000, MAC_AUTO_RESERVE_MS),
+    /insufficient packaging/,
+  );
+  assert.throws(() => sliceBudget(auto, 200 * 60_000, -1), /Platform reserve/);
+  assert.throws(() => sliceBudget(auto, 200 * 60_000, 1.5), /Platform reserve/);
+});
+
+test("Mac owned-source bounds cover a measured restore apply and leave the helper its own earlier deadline", () => {
+  // Measured phases (runs 41906246401 x64, 41906270473 ARM64), seconds.
+  const arm = { walk: 539, postWalk: 612, hash: 2247, compare: 30 };
+  // Restore apply = one full snapshot (walk, hash, re-walk, compare) plus a postcheck
+  // snapshot that re-walks twice and reuses every digest: 4579 s on ARM64.
+  const snapshot = arm.walk + arm.hash + arm.postWalk + arm.compare;
+  const applyArm = snapshot + arm.walk + arm.postWalk;
+  assert.equal(applyArm, 4579);
+  assert.ok(LIMITS.macSourceMetadataHelperMs / 1000 > applyArm);
+  assert.ok(LIMITS.macSourceMetadataHelperMs / 1000 < 3600 * 2);
+  assert.equal(
+    LIMITS.macSourceMetadataMs - LIMITS.macSourceMetadataHelperMs,
+    300_000,
+  );
+  assert.ok(LIMITS.macSourceMetadataMs < LIMITS.hostMs);
+  assert.equal(LIMITS.linuxSourceMetadataMs, 2_400_000);
+  // verify + pack + upload + margin must fit inside the reserve at the measured walks.
+  const verifyWalks = 2 * (arm.walk + arm.postWalk) + arm.compare;
+  assert.ok(
+    (verifyWalks + 15 * 60 + 30 * 60) * 1000 <= MAC_AUTO_RESERVE_MS + 60_000,
+  );
+});
+
+test(
+  "Mac digest-reuse fixture proves exact-identity hits, cache binding and wiring",
+  { skip: process.platform === "win32" },
+  () => {
+    const result = spawnSync(
+      "python3",
+      [
+        "-I",
+        "-B",
+        "-S",
+        path.join(ROOT, "tests/fixtures/cef/mac_owned_source_reuse_test.py"),
+      ],
+      { encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024 },
+    );
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /Ran 19 tests/);
+    assert.match(result.stderr, /\nOK\s*$/);
+  },
+);
+
 const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
 m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]
 exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
@@ -16301,7 +16371,7 @@ test("actual Mac metadata closure clips its original clocks and reports reobserv
   const oldArchive = archiveFactory(oldDeclaration, spawnLeafModel);
   for (const policy of ["mac-arm", "mac-intel"]) {
     for (const [remaining, timeout, seconds] of [
-      [10_000_000, 3_900_000, 3600],
+      [10_000_000, 5_700_000, 5400],
       [600000, 600000, 540],
       [100000, 100000, 100],
     ]) {
@@ -16357,11 +16427,15 @@ test("actual Mac metadata closure clips its original clocks and reports reobserv
         };
         const fn = vm.runInNewContext(`(${arrow})`, scope);
         await fn(mode);
-        const actualTimeout = Math.min(timeout, remaining - 1000);
+        const actualTimeout = Math.min(
+          timeout,
+          remaining - 1000,
+          mode === "source-verify" ? Infinity : 75 * 60000 - 1000,
+        );
         const actualSeconds = Math.floor(
           Math.min(
             actualTimeout > 120000 ? actualTimeout - 60000 : actualTimeout,
-            3_600_000,
+            5_400_000,
           ) / 1000,
         );
         assert.equal(calls.length, 1);
@@ -16370,7 +16444,8 @@ test("actual Mac metadata closure clips its original clocks and reports reobserv
           calls[0].args[calls[0].args.indexOf("--seconds") + 1],
           String(actualSeconds),
         );
-        if (remaining === 10_000_000) assert.equal(actualSeconds, seconds);
+        if (remaining === 10_000_000 && mode === "source-verify")
+          assert.equal(actualSeconds, seconds);
         assert.deepEqual(
           logs.map((row) => row.event),
           ["begin", "reobserve-complete", "helper-launch"],
@@ -16423,7 +16498,7 @@ test("actual Mac metadata closure clips its original clocks and reports reobserv
       "--platform-policy",
       policy,
     ];
-    for (const seconds of ["1", "600", "601", "2340", "2400", "3600"]) {
+    for (const seconds of ["1", "600", "601", "2340", "2400", "5400"]) {
       args[8] = seconds;
       await actualArchive(
         path.resolve("python"),
@@ -16435,7 +16510,7 @@ test("actual Mac metadata closure clips its original clocks and reports reobserv
     for (const seconds of [
       "0",
       "01",
-      "3601",
+      "5401",
       "10000",
       "2340.0",
       " 2340",
@@ -16990,7 +17065,7 @@ test("Mac full-hash completion uses actual60/65 guards and original source/host 
   for (const policy of ["mac-arm", "mac-intel"]) {
     for (const mode of ["source-record", "source-apply", "source-verify"]) {
       for (const [host, source, expectedParent, expectedHelper] of [
-        [20_000_000, 8_000_000, 3_900_000, 3600],
+        [20_000_000, 8_000_000, 5_700_000, 5400],
         [3_000_000, 8_000_000, 3_000_000, 2940],
         [20_000_000, 2_000_000, 2_000_000, 1940],
         [20_000_000, 100_000, 100_000, 100],
@@ -17034,15 +17109,15 @@ test("Mac full-hash completion uses actual60/65 guards and original source/host 
         await current(mode);
         assert.equal(
           calls[0][3].timeout,
-          mode === "source-verify" ? Math.min(host, 3_900_000) : expectedParent,
+          mode === "source-verify" ? Math.min(host, 5_700_000) : expectedParent,
         );
         assert.equal(
           calls[0][2][8],
           String(
             mode === "source-verify"
               ? Math.min(
-                  3600,
-                  Math.floor((Math.min(host, 3_900_000) - 60_000) / 1000),
+                  5400,
+                  Math.floor((Math.min(host, 5_700_000) - 60_000) / 1000),
                 )
               : expectedHelper,
           ),
@@ -17103,34 +17178,34 @@ test("Mac full-hash completion uses actual60/65 guards and original source/host 
   }
 });
 
-test("actual Python Mac owned and CLI3600 retain Linux2400 generic600 and fixed diagnostic caps", () => {
+test("actual Python Mac owned and CLI5400 retain Linux2400 generic600 and fixed diagnostic caps", () => {
   const result = python(
     String.raw`import ast,importlib.util,pathlib,sys,tempfile
 from unittest.mock import patch
 file=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('mac_completion',file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-assert (m.SOURCE_MAC_SECONDS,m.SOURCE_LINUX_SECONDS)==(3600,2400)
+assert (m.SOURCE_MAC_SECONDS,m.SOURCE_LINUX_SECONDS)==(5400,2400)
 now=[0.0]
 with patch.object(m.time,'monotonic',side_effect=lambda:now[0]):
- old=m.Budget(2340,2400);current=m.Budget(3600,3600);now[0]=52.4*60
+ old=m.Budget(2340,2400);current=m.Budget(5400,5400);now[0]=52.4*60
  try:old.check()
  except m.CheckpointError as e:assert str(e)=='archive-deadline'
  else:raise AssertionError('old helper admitted measured estimate')
- current.check();now[0]=3600
+ current.check();now[0]=5400
  try:current.check()
  except m.CheckpointError as e:assert str(e)=='archive-deadline'
  else:raise AssertionError('new helper renewed')
-for seconds,maximum in [(2401,2400),(3601,3600),(601,600),(3600,600),(3900,3600)]:
+for seconds,maximum in [(2401,2400),(5401,5400),(601,600),(5400,600),(5700,5400)]:
  try:m.Budget(seconds,maximum)
  except m.CheckpointError as e:assert str(e)=='deadline-bound'
  else:raise AssertionError('invalid bound admitted')
 class Reached(BaseException):pass
 calls=[]
 def reached(*args):
- assert args[-2].seconds==3600;calls.append(args[0]);raise Reached()
+ assert args[-2].seconds==5400;calls.append(args[0]);raise Reached()
 for policy in ['mac-arm','mac-intel']:
  for mode in ['source-record','source-apply','source-verify']:
   with patch.object(sys,'platform','darwin'),patch.object(m,'source_mac_write_admission'),patch.object(m,'source_mac_intel_write_admission'),patch.object(m,'_mac_clang_public_scope'),patch.object(m,'source_metadata_identity'),patch.object(m,'_source_metadata_owned_codec',side_effect=reached):
-   try:m.source_metadata_owned(mode,pathlib.Path('/absent/source'),pathlib.Path('/absent/sidecar'),{},3600,platform_policy=policy)
+   try:m.source_metadata_owned(mode,pathlib.Path('/absent/source'),pathlib.Path('/absent/sidecar'),{},5400,platform_policy=policy)
    except Reached:pass
    else:raise AssertionError('owned maximum not forwarded')
 assert len(calls)==6
@@ -17141,22 +17216,22 @@ exec(compile(body.replace(line,'source_budget = Budget(args.seconds, SOURCE_LINU
 with tempfile.TemporaryDirectory(prefix='mac-completion-')as folder:
  context=pathlib.Path(folder).resolve()/'context.json';context.write_bytes(b'{}')
  def routed(mode,root,sidecar,identity,seconds=600,budget=None,platform_policy=None):
-  assert budget.seconds==seconds==3600;raise Reached()
+  assert budget.seconds==seconds==5400;raise Reached()
  for policy in ['mac-arm','mac-intel']:
   for mode in ['source-record','source-apply','source-verify']:
-   argv=['helper',mode,'--input',str(context.parent/'absent-source'),'--output',str(context.parent/'absent-out'),'--manifest',str(context),'--seconds','3600','--platform-policy',policy]
+   argv=['helper',mode,'--input',str(context.parent/'absent-source'),'--output',str(context.parent/'absent-out'),'--manifest',str(context),'--seconds','5400','--platform-policy',policy]
    with patch.object(sys,'argv',argv),patch.object(m,'source_mac_write_host_admission'),patch.object(m,'source_mac_intel_write_host_admission'),patch.object(m,'source_read_bytes',return_value=b'{}'),patch.object(m,'source_metadata_owned',side_effect=routed):
     try:old_main()
     except m.CheckpointError as e:assert str(e)=='deadline-bound'
-    else:raise AssertionError('old main admitted3600')
+    else:raise AssertionError('old main admitted5400')
     try:main()
     except Reached:pass
     else:raise AssertionError('new main not routed')
  assert list(context.parent.iterdir())==[context]
 with patch.object(m.time,'monotonic',return_value=0):
- m.source_progress_start(3600)
- value=m.source_progress_value('source-record');assert m.source_deadline_value(value,'source-record')['seconds']==3600
- value['seconds']=3601
+ m.source_progress_start(5400)
+ value=m.source_progress_value('source-record');assert m.source_deadline_value(value,'source-record')['seconds']==5400
+ value['seconds']=5401
  try:m.source_deadline_value(value,'source-record')
  except m.CheckpointError:pass
  else:raise AssertionError('diagnostic above fixed maximum admitted')
@@ -17167,14 +17242,14 @@ print('actual owned/CLI oldRED newGREEN; no source workload')`,
   assert.match(result.stdout, /oldRED newGREEN/);
 });
 
-test("Mac3600 diagnostic survives actual archive observer before65min parent; excess diagnostic seconds deny", async () => {
+test("Mac5400 diagnostic survives actual archive observer before65min parent; excess diagnostic seconds deny", async () => {
   const declaration = archiveDeclaration(
     await readFile(
       path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
       "utf8",
     ),
   );
-  for (const seconds of [3600, 3601]) {
+  for (const seconds of [5400, 5401]) {
     const diagnostics = [];
     const child = new EventEmitter();
     child.pid = 123;
@@ -17194,11 +17269,11 @@ test("Mac3600 diagnostic survives actual archive observer before65min parent; ex
         "--manifest",
         "/owned/identity",
         "--seconds",
-        "3600",
+        "5400",
         "--platform-policy",
         "mac-intel",
       ],
-      { timeout: 3_900_000, observeFailure: (row) => diagnostics.push(row) },
+      { timeout: 5_700_000, observeFailure: (row) => diagnostics.push(row) },
     );
     child.stdout.end(
       JSON.stringify({
@@ -17207,7 +17282,7 @@ test("Mac3600 diagnostic survives actual archive observer before65min parent; ex
         sourceDeadlineFailure: {
           mode: "source-record",
           phase: "hash",
-          elapsedMs: 3_600_001,
+          elapsedMs: 5_400_001,
           phaseMs: 3_100_000,
           phases: [["inventory", 470_000]],
           walked: 100,
@@ -17226,8 +17301,8 @@ test("Mac3600 diagnostic survives actual archive observer before65min parent; ex
     child.emit("close", 1);
     await assert.rejects(pending);
     assert.equal(diagnostics.length, 1);
-    if (seconds === 3600)
-      assert.equal(diagnostics[0].sourceDeadlineFailure.seconds, 3600);
+    if (seconds === 5400)
+      assert.equal(diagnostics[0].sourceDeadlineFailure.seconds, 5400);
     else assert.equal(diagnostics[0].sourceDeadlineFailureInvalid, true);
   }
 });
@@ -17298,9 +17373,9 @@ test("measured Mac original source180 starts once before acquisition and preserv
     assert.throws(() => budget.assertRemaining(), /budget exhausted/);
     assert.equal(calls, 1, "no phase renewal");
   }
-  for (const [target, sourceAtLaunch, oldHelper] of [
-    ["x86_64-apple-darwin", 1909913, 1849],
-    ["aarch64-apple-darwin", 1205825, 1145],
+  for (const [target, sourceAtLaunch, oldHelper, currentHelper] of [
+    ["x86_64-apple-darwin", 1909913, 1849, 5400],
+    ["aarch64-apple-darwin", 1205825, 1145, 4745],
   ]) {
     for (const body of [old, current]) {
       let now = 0;
@@ -17322,10 +17397,10 @@ test("measured Mac original source180 starts once before acquisition and preserv
         budget.remaining(),
       );
       const seconds = Math.min(
-        3600,
+        5400,
         Math.floor((parent > 120000 ? parent - 60000 : parent) / 1000),
       );
-      assert.equal(seconds, body === old ? oldHelper : 3600);
+      assert.equal(seconds, body === old ? oldHelper : currentHelper);
       const initialRemaining = budget.remaining();
       now += 60000;
       assert.equal(budget.remaining(), initialRemaining - 60000);
@@ -17334,8 +17409,8 @@ test("measured Mac original source180 starts once before acquisition and preserv
   assert.throws(() => createHostedBuildBudget(301 * 60000), /bounded/);
   assert.equal(LIMITS.hostMs, 300 * 60000);
   assert.equal(AUTO_SLICE.reserveMs, 70 * 60000);
-  assert.equal(LIMITS.macSourceMetadataMs, 65 * 60000);
-  assert.equal(LIMITS.macSourceMetadataHelperMs, 60 * 60000);
+  assert.equal(LIMITS.macSourceMetadataMs, 95 * 60000);
+  assert.equal(LIMITS.macSourceMetadataHelperMs, 90 * 60000);
   assert.equal(LIMITS.linuxSourceMetadataMs, 40 * 60000);
   assert.equal(LIMITS.archiveMs, 600000);
 });
@@ -17377,6 +17452,11 @@ test("actual Mac metadata closure uses the retained original source180 rather th
     ["mac-arm", "aarch64-apple-darwin", 1559740, 353915, 1145],
   ])
     for (const mode of ["source-record", "source-apply"]) {
+      // The retained original source clock (180 min) clips what the longer Mac bound would allow.
+      const currentTimeout = Math.min(
+        LIMITS.macSourceMetadataMs,
+        180 * 60000 - (120 * 60000 - beforeRemaining + reobserveMs),
+      );
       for (const source of [oldRuntime, runtime]) {
         let now = 0,
           allocations = 0;
@@ -17433,12 +17513,21 @@ test("actual Mac metadata closure uses the retained original source180 rather th
         await vm.runInNewContext(`(${arrow})`, scope)(mode);
         assert.equal(
           args[0][2][8],
-          String(source === oldRuntime ? expectedOld : 3600),
+          String(
+            source === oldRuntime
+              ? expectedOld
+              : Math.min(
+                  LIMITS.macSourceMetadataHelperMs / 1000,
+                  Math.floor((currentTimeout - 60000) / 1000),
+                ),
+          ),
         );
         assert.equal(allocations, 1);
         assert.equal(
           args[0][3].timeout,
-          source === oldRuntime ? beforeRemaining - reobserveMs : 65 * 60000,
+          source === oldRuntime
+            ? beforeRemaining - reobserveMs
+            : currentTimeout,
         );
         now = source === oldRuntime ? 120 * 60000 : 180 * 60000;
         await assert.rejects(
@@ -17451,8 +17540,9 @@ test("actual Mac metadata closure uses the retained original source180 rather th
     }
 });
 
-function withoutStaticOwnedMacSource(text) {
-  if (!text.includes("# BEGIN STATIC MAC OWNED FD HASHING")) return text;
+function withoutStaticOwnedMacSource(current) {
+  if (!current.includes("# BEGIN STATIC MAC OWNED FD HASHING")) return current;
+  let text = withoutMacReuseArchive(current);
   assert.equal(Buffer.byteLength(text), 229058);
   assert.equal(
     sha(text),

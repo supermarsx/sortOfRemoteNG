@@ -1,0 +1,70 @@
+{
+  "archive": {
+    "helperStart": "SOURCE_MAC_STAT_CACHE_NAME = ",
+    "helperEnd": "def _source_mac_owned_snapshot_inventory(",
+    "pairs": [
+      ["SOURCE_MAC_SECONDS = 5400\n", "SOURCE_MAC_SECONDS = 3600\n"],
+      [
+        "    require(reuse is None or type(reuse) is dict, 'source-stat-reuse')\n",
+        "    require(reuse is None or (linux and type(reuse) is dict), 'source-stat-reuse')\n"
+      ],
+      [
+        "    kept, fresh = source_mac_split_reuse(file_rows, reuse)\n    progress['reusedFiles'] = len(kept)\n    if 'totals' in progress:\n        progress['totals'][2] += len(kept)\n    hashes = _source_mac_fd_hashes(root,fresh,budget,policy,root_before,local_before,progress)\n    hashes.update(kept)\n    if layout is not None:\n        layout['digests'] = dict(hashes)\n",
+        "    hashes = _source_mac_fd_hashes(root,file_rows,budget,policy,root_before,local_before,progress)\n"
+      ],
+      [
+        "            current = source_snapshot(root, budget, guards, context=snapshot_context, layout=layout) if mac else source_snapshot(root, budget, guards, layout=layout)\n",
+        "            current = source_snapshot(root, budget, guards, context=snapshot_context) if mac else source_snapshot(root, budget, guards, layout=layout)\n"
+      ],
+      [
+        "            if mac and 'digests' in layout:\n                source_phase('stat-cache-write')\n                source_mac_stat_cache_write(root, written['sha256'], identity, layout['digests'], guards)\n",
+        ""
+      ],
+      [
+        "    if mac and mode in ('source-verify', 'source-apply'):\n        # Same trust rule as Linux: a digest is reused only for a file whose\n        # complete local identity is unchanged since it was hashed.\n        source_phase('stat-cache-read')\n        reuse = source_mac_stat_cache_reuse(root, sidecar, identity, budget)\n",
+        ""
+      ],
+      [
+        "    current = source_snapshot(root, budget, guards, context=snapshot_context, reuse=reuse, layout=layout) if mac else source_snapshot(root, budget, guards, reuse=reuse, layout=layout)\n",
+        "    current = source_snapshot(root, budget, guards, context=snapshot_context) if mac else source_snapshot(root, budget, guards, reuse=reuse, layout=layout)\n"
+      ],
+      [
+        "    if mac:\n        post = {name: source_mac_guard_key(value) for name, value in guards.items() if name in digests}\n",
+        ""
+      ],
+      [
+        "                        post[name] = ((tuple(stamp(after)), after.st_ctime_ns, tuple(source_birth_identity(after)), after.st_uid, after.st_gid)\n                                      if mac else tuple(stamp(after)) + (after.st_ctime_ns,))\n",
+        "                        post[name] = tuple(stamp(after)) + (after.st_ctime_ns,)\n"
+      ],
+      [
+        "        # Nothing is hashed twice: the postcheck re-walks and keeps a digest only for a\n        # file whose complete local identity still equals the one it was hashed under.\n        final_guards, final_layout = {}, {}\n        final = source_snapshot(root, budget, final_guards, context=snapshot_context, layout=final_layout,\n                                reuse={name: (key, digests[name]) for name, key in post.items()} or None)\n        require(final == expected, 'source-metadata-postcheck')\n        if mode == 'source-apply' and 'digests' in final_layout:\n            source_phase('stat-cache-write')\n            source_mac_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, final_layout['digests'], final_guards)\n",
+        "        require(source_snapshot(root, budget, context=snapshot_context) == expected, 'source-metadata-postcheck')\n"
+      ]
+    ]
+  },
+  "lib": {
+    "pairs": [
+      [
+        "  // Mac owned-source record/apply/verify walk the complete fetched tree (and hash\n  // what the stat cache cannot vouch for). Measured on hosted runners (runs\n  // 41906246401 / 41906270473): each snapshot walks twice at 0.8-1.2 ks and a full\n  // hash is 1.8-2.2 ks, so a restore apply needs 3.3-4.6 ks.\n  macSourceMetadataMs: 5_700_000,\n  macSourceMetadataHelperMs: 5_400_000,\n",
+        "  // Mac owned-source record/apply/verify hash the complete fetched tree too.\n  macSourceMetadataMs: 3_900_000,\n  macSourceMetadataHelperMs: 3_600_000,\n"
+      ],
+      [
+        "// macOS post-compile reserve: source-verify re-walks the tree (24 min on x64, 40 min\n// on ARM64 with the stat cache), then pack and upload, plus a 30-minute margin.\nexport const MAC_AUTO_RESERVE_MS = 100 * 60_000;\n",
+        ""
+      ],
+      [
+        "export function sliceBudget(options, remaining, platformReserveMs = 0) {\n  assert(\n    Number.isSafeInteger(platformReserveMs) && platformReserveMs >= 0,\n    \"Platform reserve must be a bounded duration\",\n  );\n  const reserve = Math.max(\n    options.mode === \"complete-sdk\" ? 60 * 60_000 : 40 * 60_000,\n    platformReserveMs,\n  );\n",
+        "export function sliceBudget(options, remaining) {\n  const reserve = options.mode === \"complete-sdk\" ? 60 * 60_000 : 40 * 60_000;\n"
+      ]
+    ]
+  },
+  "cli": {
+    "pairs": [
+      ["  MAC_AUTO_RESERVE_MS,\n", ""],
+      [
+        "                      profile.platform === \"darwin\" ? MAC_AUTO_RESERVE_MS : 0,\n",
+        ""
+      ]
+    ]
+  }
+}

@@ -48,9 +48,12 @@ export const LIMITS = Object.freeze({
   // platform policy): it hashes the whole fetched tree. Pack, restore and
   // external observation keep archiveMs.
   linuxSourceMetadataMs: 2_400_000,
-  // Mac owned-source record/apply/verify hash the complete fetched tree too.
-  macSourceMetadataMs: 3_900_000,
-  macSourceMetadataHelperMs: 3_600_000,
+  // Mac owned-source record/apply/verify walk the complete fetched tree (and hash
+  // what the stat cache cannot vouch for). Measured on hosted runners (runs
+  // 41906246401 / 41906270473): each snapshot walks twice at 0.8-1.2 ks and a full
+  // hash is 1.8-2.2 ks, so a restore apply needs 3.3-4.6 ks.
+  macSourceMetadataMs: 5_700_000,
+  macSourceMetadataHelperMs: 5_400_000,
   // Of that bound, the helper's own deadline ends this much earlier so its
   // progress diagnostic is printed before the hard kill.
   linuxSourceMetadataGraceMs: 60_000,
@@ -297,6 +300,9 @@ export const AUTO_SLICE = Object.freeze({
   floorMs: 15 * 60_000,
   ceilingMs: 180 * 60_000,
 });
+// macOS post-compile reserve: source-verify re-walks the tree (24 min on x64, 40 min
+// on ARM64 with the stat cache), then pack and upload, plus a 30-minute margin.
+export const MAC_AUTO_RESERVE_MS = 100 * 60_000;
 export function executionOptions(mode = "checkpoint", minutes = "15") {
   assert(
     ["checkpoint", "complete-sdk"].includes(mode) &&
@@ -324,8 +330,15 @@ export function hostRemaining(env, now = Date.now()) {
   );
   return LIMITS.hostMs - (now - start);
 }
-export function sliceBudget(options, remaining) {
-  const reserve = options.mode === "complete-sdk" ? 60 * 60_000 : 40 * 60_000;
+export function sliceBudget(options, remaining, platformReserveMs = 0) {
+  assert(
+    Number.isSafeInteger(platformReserveMs) && platformReserveMs >= 0,
+    "Platform reserve must be a bounded duration",
+  );
+  const reserve = Math.max(
+    options.mode === "complete-sdk" ? 60 * 60_000 : 40 * 60_000,
+    platformReserveMs,
+  );
   if (options.minutes === "auto") {
     assert(
       options.milliseconds === null &&

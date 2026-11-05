@@ -104,6 +104,7 @@ import {
   executionOptions,
   hostRemaining,
   sliceBudget,
+  MAC_AUTO_RESERVE_MS,
   createSdkCompletion,
   validateSdkCompletion,
   uploadSdkBundle,
@@ -1240,6 +1241,7 @@ async function checkpointMain(argv, env, observer) {
                     milliseconds: sliceBudget(
                       execution,
                       Math.floor(hostRemaining(env)),
+                      profile.platform === "darwin" ? MAC_AUTO_RESERVE_MS : 0,
                     ),
                     censusFactory,
                   }),

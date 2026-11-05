@@ -122,17 +122,18 @@ class OwnedCodecRouting(unittest.TestCase):
             self.assertTrue(self.core('source-record')['complete'])
         self.assertEqual(captured['kind'],'sorng-macarm-source-metadata')
         self.assertEqual(captured['policy'],m.MAC_SOURCE_METADATA_POLICY)
-        self.assertEqual(snapshot.call_args.kwargs, {'context':{'mac':True,'ownedMacArm':True}})
+        self.assertEqual(snapshot.call_args.kwargs, {'context':{'mac':True,'ownedMacArm':True}, 'layout':{}})
         self.assertNotIn('literalLinks',captured['snapshot'])
 
-    def test_arm_verify_rehashes_final_mac_snapshot_without_linux_post_items_or_reuse(self):
+    def test_arm_verify_takes_two_mac_snapshots_with_mac_reuse_and_no_linux_cache(self):
         with patch.object(sys,'platform','darwin'), patch.object(m,'source_read_sidecar',return_value=self.stored), \
              patch.object(m,'source_snapshot',return_value=self.snapshot) as snapshot, \
              patch.object(m,'source_stat_cache_reuse',side_effect=AssertionError('no Linux reuse')), \
              patch.object(m.os,'utime',side_effect=AssertionError('verify writes nothing')):
             self.assertTrue(self.core('source-verify')['complete'])
         self.assertEqual(snapshot.call_count,2)
-        self.assertTrue(all(call.kwargs == {'context':{'mac':True,'ownedMacArm':True}} for call in snapshot.call_args_list))
+        # No cache and no digests: nothing may be reused, so every file is read.
+        self.assertTrue(all(call.kwargs == {'context':{'mac':True,'ownedMacArm':True}, 'layout':{}, 'reuse':None} for call in snapshot.call_args_list))
 
     def test_wrong_sidecar_kind_or_cross_platform_schema_denied_before_mutation(self):
         for kind in ['sorng-linuxarm-source-metadata','sorng-macintel-source-metadata']:

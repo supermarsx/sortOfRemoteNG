@@ -15,6 +15,8 @@ ROOT=Path(__file__).resolve().parents[3]
 FILE=ROOT/'scripts/lib/cef-checkpoint-archive.py'
 spec=importlib.util.spec_from_file_location('nearby_public_codec',FILE)
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+_REUSE_SPEC=importlib.util.spec_from_file_location('mac_source_reuse_inverse',ROOT/'tests/fixtures/cef/mac_source_reuse_inverse.py')
+_REUSE=importlib.util.module_from_spec(_REUSE_SPEC);_REUSE_SPEC.loader.exec_module(_REUSE)
 FACTS={'ImageOS':'macos15','ImageVersion':'20260824.0482.1','GITHUB_ACTIONS':'true',
        'RUNNER_ENVIRONMENT':'github-hosted','GITHUB_REPOSITORY_VISIBILITY':'public'}
 
@@ -217,7 +219,7 @@ class PublicScope(unittest.TestCase):
             'source_snapshot_inventory':'71924dd37f3c5c05e64d48f60ff02788b9e6d366abd3d2d23ba467cf0c2e0fff'}
         raw=FILE.read_text()
         if '# BEGIN STATIC MAC OWNED FD HASHING'in raw:
-            raw=static_owned_fd_inverse(static_owned_noop_inverse(raw.encode()))[0].decode()
+            raw=static_owned_fd_inverse(static_owned_noop_inverse(_REUSE.inverse(raw.encode())))[0].decode()
         self.assertEqual(len(raw.encode()),209410)
         self.assertEqual(hashlib.sha256(raw.encode()).hexdigest(),'3975ef80cf4daf3b4c49f7922ddd3a6b5e18517b6fe3e28c92ab03a440be57c6')
         # Mac-only full-hash completion budget; restore complete prior c340 helper

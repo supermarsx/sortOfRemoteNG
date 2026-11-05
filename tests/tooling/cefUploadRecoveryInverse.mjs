@@ -1,3 +1,35 @@
+import { readFileSync } from "node:fs";
+// Exact inverse of the Mac owned-source digest reuse / 5400 s budget / Mac reserve
+// change, as (current text, previous text) pairs per file (see the JSON).
+const MAC_INVERSE = JSON.parse(
+  readFileSync(
+    new URL("../fixtures/cef/mac_source_reuse_inverse.json", import.meta.url),
+    "utf8",
+  ),
+);
+function macInverse(text, section) {
+  const { pairs, helperStart, helperEnd } = MAC_INVERSE[section];
+  let restored = text;
+  if (helperStart !== undefined) {
+    const start = restored.indexOf(helperStart);
+    if (start < 0) return text;
+    const end = restored.indexOf(helperEnd, start);
+    if (
+      end <= start ||
+      restored.indexOf(helperStart, start + 1) >= 0 ||
+      restored.indexOf(helperEnd, end + 1) >= 0
+    )
+      throw new Error("Mac reuse helper not found exactly once");
+    restored = restored.slice(0, start) + restored.slice(end);
+  }
+  for (const [current, previous] of pairs) {
+    if (restored.split(current).length !== 2)
+      throw new Error(`Mac change ${section} not found exactly once`);
+    restored = restored.replace(current, () => previous);
+  }
+  return restored;
+}
+export const withoutMacReuseArchive = (text) => macInverse(text, "archive");
 // Exact inverse of the asset-upload recovery change in
 // scripts/lib/cef-engineering-checkpoint.mjs. The historical-producer pin
 // chains restore older bytes from the current file; this removes the recovery
@@ -30,6 +62,7 @@ const recovered = (name) =>
   "        bundle,\n" +
   "      );";
 export function withoutUploadRecovery(text) {
+  text = macInverse(text, "lib");
   const start = text.indexOf(START);
   const end = text.indexOf(END);
   if (
@@ -51,6 +84,7 @@ export function withoutUploadRecovery(text) {
 // Exact inverse of the CLI changes: the bounded failure-cause line in the
 // final catch, and the optional Linux migration selection on the download route.
 export function withoutCliCause(text) {
+  text = macInverse(text, "cli");
   const catchOpen = "    .catch((error) => {\n";
   const start = text.indexOf(catchOpen);
   const marker = "      process.exitCode = 1;\n    });";
@@ -92,6 +126,7 @@ export const blobSha = (text) =>
 export function withoutRepinRows(rows, root) {
   const inverse = {
     "scripts/cef-engineering-checkpoint.mjs": withoutCliCause,
+    "scripts/lib/cef-checkpoint-archive.py": withoutMacReuseArchive,
   };
   return rows.map((row) => {
     // 43fc8360b (Windows ARM graph deadline) edited this producer file after

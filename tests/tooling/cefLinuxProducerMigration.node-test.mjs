@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   withoutUploadRecovery,
   withoutRepinRows,
+  withoutMacReuseArchive,
 } from "./cefUploadRecoveryInverse.mjs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
@@ -2386,7 +2387,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),
-    "8f73d687930d0a7fb24a30da8e86ab02b6fcedf1da6896f041fd883086b4c606",
+    "c8a93652f703c2e05e3d4bc678fadfed5e90fa6d981ba51499d56c0dcaf61f09",
   );
   const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
@@ -2400,7 +2401,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(restoredBlob, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   const restoredRows = structuredClone(currentRows);
   const reaperRow = restoredRows.find((row) => row.path === reaperPath);
-  assert.equal(reaperRow.sha, "fe0ba49119debe297674599c855070ae37d67d85");
+  assert.equal(reaperRow.sha, "51c36650ca53da7087b276c393e28a50f091a880");
   reaperRow.sha = restoredBlob;
   const retainedRows = withoutRepinRows(restoredRows, ROOT);
   assert.equal(capsule.toProducer, core.codeTreeDigest(retainedRows));
@@ -2456,13 +2457,15 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
     /LINUX_MIGRATION_SELECTION_ARGUMENTS/,
   );
   const archive = "scripts/lib/cef-checkpoint-archive.py";
-  const canonical = git(ROOT, [
+  const committed = git(ROOT, [
     "-c",
     "core.longpaths=true",
     "cat-file",
     "blob",
     "HEAD:" + archive,
   ]);
+  // The Mac digest-reuse change is restored first; this proof binds the reviewed helper.
+  const canonical = Buffer.from(withoutMacReuseArchive(committed.toString()));
   assert.equal(canonical.length, 229058);
   assert.equal(
     core.sha(canonical),
@@ -2471,7 +2474,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   const physical = await fs.readFile(path.join(ROOT, archive));
   assert.deepEqual(
     Buffer.from(physical.toString("utf8").replaceAll("\r\n", "\n")),
-    canonical,
+    committed,
     "The new proof uses canonical reviewed post-CEF state; CRLF is only checkout encoding",
   );
   const inverseFixture =
@@ -2479,7 +2482,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   const inverseBytes = await fs.readFile(path.join(ROOT, inverseFixture));
   assert.equal(
     core.sha(Buffer.from(inverseBytes.toString().replaceAll("\r\n", "\n"))),
-    "1ea36395eeed62a06388d38108b8b9a9a0d2e8ee6e5de08f0c3def5fe0e73c8f",
+    "7bbf8a6409a498ffb7a57410e43019d63aee729b0fbf86bb833250082e36966c",
   );
   // This retained test performs diagnostic a41 -> public3be -> native5af -> old839
   // literal inverses and asserts both COMPLETE historical helper hashes.
