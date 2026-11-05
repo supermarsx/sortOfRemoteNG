@@ -5265,6 +5265,83 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_CAUSE_HISTORY = {
+  driver: {
+    bytes: 302254,
+    sha256: "9618495d956425d4ce6505ffed2cc34eec6387cd805f2795acebaee71b799d82",
+    rows: [
+      {
+        old: "",
+        new: '// One printable line with the owned root, other absolute paths, URLs and\n// token-like strings replaced, bounded to `limit` characters.\nfunction fullRedactLine(value, root, limit) {\n  let line = typeof value === "string" ? value : "";\n  if (typeof root === "string" && root.length > 0)\n    for (const variant of [\n      root,\n      root.replaceAll("/", "\\\\"),\n      root.replaceAll("\\\\", "/"),\n    ])\n      line = line.split(variant).join("<root>");\n  return line\n    .replace(/https?:\\/\\/\\S+/gi, "<url>")\n    .replace(/[A-Za-z]:[\\\\/][^\\s"\']*/g, "<path>")\n    .replace(/\\\\\\\\[^\\s"\']+/g, "<path>")\n    .replace(/[A-Za-z0-9+/_=-]{32,}/g, "<token>")\n    .replace(/[^\\x20-\\x7e]/g, "?")\n    .slice(0, limit);\n}\n// Last lines of the metadata role logs (bounded, redacted) so the failing real\n// tool names itself even when the thrown code is generic.\nasync function fullFailureLogTails(root) {\n  const rows = [];\n  try {\n    for (const [role, channels] of [\n      ["qual-gn-desc-pa", ["stderr"]],\n      ["qual-gn-desc-cef", ["stderr"]],\n      ["qual-gn-args", ["stderr"]],\n      ["qual-generate-headers", ["stderr", "stdout"]],\n    ])\n      for (const channel of channels) {\n        let handle;\n        try {\n          handle = await fs.open(\n            path.join(\n              root,\n              "private-qualification-logs",\n              role + "." + channel + ".log",\n            ),\n            "r",\n          );\n          const { size } = await handle.stat();\n          const length = Math.min(size, 600),\n            buffer = Buffer.alloc(length);\n          if (length > 0) await handle.read(buffer, 0, length, size - length);\n          const text = buffer\n            .toString("latin1")\n            .replaceAll("\\r", "")\n            .trim()\n            .split("\\n")\n            .slice(-4)\n            .join(" | ");\n          rows.push({\n            role,\n            channel,\n            bytes: size,\n            tail: fullRedactLine(text, root, 240),\n          });\n        } catch {\n          rows.push({ role, channel, bytes: null, tail: "" });\n        } finally {\n          await handle?.close().catch(() => {});\n        }\n      }\n  } catch {\n    /* Diagnostics never replace the first failure. */\n  }\n  return rows;\n}\n// Bounded, redacted cause of a failure at or after metadata-qualification: the\n// active step label, the safe error code, the errno-style code, up to three\n// function names from the stack and one short message line. Never raw paths\n// outside the owned tree, URLs or token-like strings.\nfunction fullFailureCause(error, step, root) {\n  try {\n    if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\n      return null;\n    const text = (key) => {\n      const value = fullGraphOwnValue(error, key);\n      return typeof value === "string" ? value : null;\n    };\n    const message = text("message"),\n      errno = text("code"),\n      stack = text("stack");\n    const frames = [];\n    if (stack)\n      for (const match of stack\n        .slice(0, 16384)\n        .matchAll(\n          /^\\s+at (?:async )?([A-Za-z_$][\\w$]{0,63})(?:\\.([A-Za-z_$][\\w$]{0,63}))? \\(/gm,\n        )) {\n        frames.push(match[2] ?? match[1]);\n        if (frames.length === 3) break;\n      }\n    const line = fullRedactLine(\n      message === null ? "" : message.slice(0, 2048).split(/\\r?\\n/)[0],\n      root,\n      300,\n    );\n    const safe = (value, pattern) =>\n      typeof value === "string" && pattern.test(value) ? value : null;\n    return {\n      kind: "windows-arm-source-failure-cause",\n      step: safe(step, /^[a-z0-9-]{1,48}$/),\n      code: safe(message, /^[A-Z][A-Z0-9_]{2,63}$/),\n      errno: safe(errno, /^[A-Z][A-Z0-9_]{2,31}$/),\n      frames,\n      message: line,\n    };\n  } catch {\n    return null;\n  }\n}\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "722d6eb28964ee626f679a0dc8e408952d650fa6dc82208dcbe6262830dc8d9b",
+      },
+      {
+        old: "",
+        new: '    const failureCause =\n      failed && stage === "metadata-qualification"\n        ? fullFailureCause(primary, currentProgress?.label, root)\n        : null;\n    const failureLogs =\n      failed && stage === "metadata-qualification"\n        ? await fullFailureLogTails(root)\n        : null;\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "2f2af5e62eaa3602de93d0843f526173e9d3cffb50397bee314765e1c0a80bee",
+      },
+      {
+        old: "",
+        new: "      ...(failureCause ? { failureCause } : {}),\n      ...(failureLogs?.length ? { failureLogs } : {}),\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "09cc6675e811865a03b5be3fd2ade3db8e9b60099dea14cbefce4f6884b8677b",
+      },
+      {
+        old: "",
+        new: "      const cause = fullFailureCause(error, null, null);\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "7356106c1b7cec813a60a44706c6116524e18e32d34acb5fc013d1861fb6310e",
+      },
+      {
+        old: "",
+        new: "          ...(cause ? { cause } : {}),\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "381bb2b9cd771d75ce428ea9e8303a855658bcd611fda5ffb2d844092cf4ee4f",
+      },
+    ],
+  },
+};
+function fullGraphCauseInverse(text, name) {
+  const spec = FULL_GRAPH_CAUSE_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_CAUSE_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_CAUSE_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_CAUSE_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_CAUSE_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_CAUSE_WHOLE");
+  return text;
+}
 const FULL_GRAPH_ARGS_HISTORY = {
   driver: {
     bytes: 300593,
@@ -5328,6 +5405,7 @@ const FULL_GRAPH_ARGS_HISTORY = {
   },
 };
 function fullGraphArgsInverse(text, name) {
+  text = fullGraphCauseInverse(text, name);
   const spec = FULL_GRAPH_ARGS_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -15715,4 +15793,129 @@ test("FULL evaluated GN args accept the unset v8 sandbox default, deny an explic
       diagnostic(Object.assign(new Error("x"), { gnArgShape: bad })),
       null,
     );
+});
+
+test("FULL failure cause names the step, safe code, errno code and frames and redacts paths urls and tokens", async () => {
+  const ts = (await import("typescript")).default,
+    { types } = await import("node:util"),
+    source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile("cause.mjs", source, 99, true, ts.ScriptKind.JS),
+    pick = (name) =>
+      ast.statements
+        .find((n) => ts.isFunctionDeclaration(n) && n.name?.text === name)
+        .getText(ast),
+    cause = new Function(
+      "utilTypes",
+      pick("fullGraphOwnValue") +
+        "\n" +
+        pick("fullRedactLine") +
+        "\n" +
+        pick("fullFailureCause") +
+        "\nreturn fullFailureCause;",
+    )(types);
+  const root =
+    "D:/a/sortOfRemoteNG/sortOfRemoteNG/.artifacts/windows-arm-full-sdk-x";
+  const plain = new Error("QUAL_ARGS_SYNTAX");
+  let row = cause(plain, "metadata-qualification", root);
+  assert.equal(row.kind, "windows-arm-source-failure-cause");
+  assert.equal(row.step, "metadata-qualification");
+  assert.equal(row.code, "QUAL_ARGS_SYNTAX");
+  assert.equal(row.errno, null);
+  assert.equal(row.message, "QUAL_ARGS_SYNTAX");
+  assert.ok(row.frames.length <= 3);
+  assert.ok(row.frames.every((name) => /^[A-Za-z_$][\w$]{0,63}$/.test(name)));
+  const io = Object.assign(
+    new Error(
+      "EBUSY: resource busy, open '" +
+        root +
+        "/source-checkout/src/x.txt' and 'C:\\Windows\\System32\\drivers\\etc\\hosts' " +
+        "see https://example.com/a?token=abc " +
+        "ghp_" +
+        "A".repeat(40) +
+        "\nsecond line\u0001",
+    ),
+    { code: "EBUSY" },
+  );
+  row = cause(io, "Bad Step!", root);
+  assert.equal(row.step, null);
+  assert.equal(row.code, null);
+  assert.equal(row.errno, "EBUSY");
+  assert.match(
+    row.message,
+    /^EBUSY: resource busy, open '<root>\/source-checkout\/src\/x\.txt'/,
+  );
+  for (const secret of ["System32", "example.com", "AAAAAAAA", "second line"])
+    assert.equal(row.message.includes(secret), false, secret);
+  assert.ok(row.message.length <= 300);
+  assert.match(row.message, /<path>/);
+  assert.match(row.message, /<url>/);
+  assert.match(row.message, /<token>/);
+  assert.equal(
+    cause(new Error("word ".repeat(1000)), null, null).message.length,
+    300,
+  );
+  assert.equal(cause("string", null, null), null);
+  assert.equal(cause(false, null, null), null);
+  assert.equal(cause(undefined, null, null), null);
+  assert.equal(cause(new Proxy(new Error("QUAL_X_Y"), {}), null, null), null);
+  const getter = new Error("hidden");
+  Object.defineProperty(getter, "message", {
+    get() {
+      throw new Error("must not run");
+    },
+  });
+  assert.equal(cause(getter, null, null).message, "");
+});
+
+test("FULL failure log tails read only the bounded redacted end of the four role logs", async (t) => {
+  const ts = (await import("typescript")).default,
+    source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile("tails.mjs", source, 99, true, ts.ScriptKind.JS),
+    pick = (name) =>
+      ast.statements
+        .find((n) => ts.isFunctionDeclaration(n) && n.name?.text === name)
+        .getText(ast),
+    tails = new Function(
+      "fs",
+      "path",
+      "Buffer",
+      pick("fullRedactLine") +
+        "\n" +
+        pick("fullFailureLogTails") +
+        "\nreturn fullFailureLogTails;",
+    )(fs, path, Buffer);
+  const directory = await fs.realpath(
+    await fs.mkdtemp(path.join(tmpdir(), "full-failure-logs-")),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const logs = path.join(directory, "private-qualification-logs");
+  await fs.mkdir(logs);
+  await fs.writeFile(
+    path.join(logs, "qual-generate-headers.stderr.log"),
+    "x".repeat(5000) +
+      "\nfirst\nsiso: error at " +
+      directory.replaceAll("\\", "/") +
+      "/out/x.ninja\nbad C:\\Users\\runner\\a.txt https://example.com/p\r\nlast line\u0001\n",
+  );
+  await fs.writeFile(path.join(logs, "qual-gn-args.stderr.log"), "");
+  const rows = await tails(directory.replaceAll("\\", "/"));
+  assert.equal(rows.length, 5);
+  const siso = rows.find(
+    (row) => row.role === "qual-generate-headers" && row.channel === "stderr",
+  );
+  assert.ok(siso.bytes > 5000);
+  assert.ok(siso.tail.length <= 240);
+  assert.match(siso.tail, /siso: error at <root>\/out\/x\.ninja/);
+  assert.match(siso.tail, /<path>/);
+  assert.match(siso.tail, /<url>/);
+  assert.match(siso.tail, /last line\?/);
+  assert.equal(siso.tail.includes("example.com"), false);
+  assert.equal(siso.tail.includes("Users"), false);
+  assert.equal(rows.find((row) => row.role === "qual-gn-args").tail, "");
+  assert.equal(rows.find((row) => row.role === "qual-gn-desc-pa").bytes, null);
+  const missing = await tails(path.join(directory, "missing"));
+  assert.equal(
+    missing.every((row) => row.bytes === null),
+    true,
+  );
 });

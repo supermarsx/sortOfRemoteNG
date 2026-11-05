@@ -6833,6 +6833,119 @@ function collectFullQualificationGraph(owner) {
   );
   return pending;
 }
+// One printable line with the owned root, other absolute paths, URLs and
+// token-like strings replaced, bounded to `limit` characters.
+function fullRedactLine(value, root, limit) {
+  let line = typeof value === "string" ? value : "";
+  if (typeof root === "string" && root.length > 0)
+    for (const variant of [
+      root,
+      root.replaceAll("/", "\\"),
+      root.replaceAll("\\", "/"),
+    ])
+      line = line.split(variant).join("<root>");
+  return line
+    .replace(/https?:\/\/\S+/gi, "<url>")
+    .replace(/[A-Za-z]:[\\/][^\s"']*/g, "<path>")
+    .replace(/\\\\[^\s"']+/g, "<path>")
+    .replace(/[A-Za-z0-9+/_=-]{32,}/g, "<token>")
+    .replace(/[^\x20-\x7e]/g, "?")
+    .slice(0, limit);
+}
+// Last lines of the metadata role logs (bounded, redacted) so the failing real
+// tool names itself even when the thrown code is generic.
+async function fullFailureLogTails(root) {
+  const rows = [];
+  try {
+    for (const [role, channels] of [
+      ["qual-gn-desc-pa", ["stderr"]],
+      ["qual-gn-desc-cef", ["stderr"]],
+      ["qual-gn-args", ["stderr"]],
+      ["qual-generate-headers", ["stderr", "stdout"]],
+    ])
+      for (const channel of channels) {
+        let handle;
+        try {
+          handle = await fs.open(
+            path.join(
+              root,
+              "private-qualification-logs",
+              role + "." + channel + ".log",
+            ),
+            "r",
+          );
+          const { size } = await handle.stat();
+          const length = Math.min(size, 600),
+            buffer = Buffer.alloc(length);
+          if (length > 0) await handle.read(buffer, 0, length, size - length);
+          const text = buffer
+            .toString("latin1")
+            .replaceAll("\r", "")
+            .trim()
+            .split("\n")
+            .slice(-4)
+            .join(" | ");
+          rows.push({
+            role,
+            channel,
+            bytes: size,
+            tail: fullRedactLine(text, root, 240),
+          });
+        } catch {
+          rows.push({ role, channel, bytes: null, tail: "" });
+        } finally {
+          await handle?.close().catch(() => {});
+        }
+      }
+  } catch {
+    /* Diagnostics never replace the first failure. */
+  }
+  return rows;
+}
+// Bounded, redacted cause of a failure at or after metadata-qualification: the
+// active step label, the safe error code, the errno-style code, up to three
+// function names from the stack and one short message line. Never raw paths
+// outside the owned tree, URLs or token-like strings.
+function fullFailureCause(error, step, root) {
+  try {
+    if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
+      return null;
+    const text = (key) => {
+      const value = fullGraphOwnValue(error, key);
+      return typeof value === "string" ? value : null;
+    };
+    const message = text("message"),
+      errno = text("code"),
+      stack = text("stack");
+    const frames = [];
+    if (stack)
+      for (const match of stack
+        .slice(0, 16384)
+        .matchAll(
+          /^\s+at (?:async )?([A-Za-z_$][\w$]{0,63})(?:\.([A-Za-z_$][\w$]{0,63}))? \(/gm,
+        )) {
+        frames.push(match[2] ?? match[1]);
+        if (frames.length === 3) break;
+      }
+    const line = fullRedactLine(
+      message === null ? "" : message.slice(0, 2048).split(/\r?\n/)[0],
+      root,
+      300,
+    );
+    const safe = (value, pattern) =>
+      typeof value === "string" && pattern.test(value) ? value : null;
+    return {
+      kind: "windows-arm-source-failure-cause",
+      step: safe(step, /^[a-z0-9-]{1,48}$/),
+      code: safe(message, /^[A-Z][A-Z0-9_]{2,63}$/),
+      errno: safe(errno, /^[A-Z][A-Z0-9_]{2,31}$/),
+      frames,
+      message: line,
+    };
+  } catch {
+    return null;
+  }
+}
 // Observed GN desc action key names and value types only (bounded, no values).
 function fullGnDescDiagnostic(error) {
   try {
@@ -9145,6 +9258,14 @@ async function runFullSourceBody(argv) {
       failed && stage === "metadata-qualification"
         ? fullGnArgDiagnostic(primary)
         : null;
+    const failureCause =
+      failed && stage === "metadata-qualification"
+        ? fullFailureCause(primary, currentProgress?.label, root)
+        : null;
+    const failureLogs =
+      failed && stage === "metadata-qualification"
+        ? await fullFailureLogTails(root)
+        : null;
     const code =
       graphDiagnostic?.code === "GRAPH_BOUND"
         ? "GRAPH_BOUND"
@@ -9165,6 +9286,8 @@ async function runFullSourceBody(argv) {
       ...(graphDiagnostic ? { graphDiagnostic } : {}),
       ...(gnDescDiagnostic ? { gnDescDiagnostic } : {}),
       ...(gnArgDiagnostic ? { gnArgDiagnostic } : {}),
+      ...(failureCause ? { failureCause } : {}),
+      ...(failureLogs?.length ? { failureLogs } : {}),
       target: TARGET,
       sourceId: p.sourceGn.sourceId,
       graph,
@@ -9226,10 +9349,12 @@ if (
         /^(?:PRIVATE|FULL|SOURCE_GIT)_[A-Z_]{1,80}$/.test(message)
           ? message
           : "FULL_SDK_SOURCE_FAILED";
+      const cause = fullFailureCause(error, null, null);
       console.error(
         JSON.stringify({
           success: false,
           firstFailure: code,
+          ...(cause ? { cause } : {}),
           executionAdmitted: false,
         }),
       );
