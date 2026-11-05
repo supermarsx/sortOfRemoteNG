@@ -958,6 +958,7 @@ import {
   argumentsFor,
   macSourceOperations,
   main,
+  retireGnRevalidationLogs,
 } from "../../scripts/cef-engineering-checkpoint.mjs";
 import {
   identitySha256,
@@ -16013,16 +16014,16 @@ test("a restore that needs a migration is still refused without a valid reviewed
 });
 
 test("macOS reserves verify, pack and upload time that Linux does not need", () => {
-  assert.equal(MAC_AUTO_RESERVE_MS, 100 * 60_000);
+  assert.equal(MAC_AUTO_RESERVE_MS, 75 * 60_000);
   const auto = executionOptions("checkpoint", "auto");
-  // Linux keeps the 70-minute reserve; macOS leaves 100 minutes after the slice.
+  // Linux keeps the 70-minute reserve; macOS leaves 75 minutes after the slice.
   assert.equal(sliceBudget(auto, 200 * 60_000), 130 * 60_000);
   assert.equal(
     sliceBudget(auto, 200 * 60_000, MAC_AUTO_RESERVE_MS),
-    100 * 60_000,
+    125 * 60_000,
   );
   assert.throws(
-    () => sliceBudget(auto, 110 * 60_000, MAC_AUTO_RESERVE_MS),
+    () => sliceBudget(auto, 85 * 60_000, MAC_AUTO_RESERVE_MS),
     /insufficient packaging/,
   );
   assert.equal(sliceBudget(auto, 110 * 60_000), 40 * 60_000);
@@ -16053,11 +16054,10 @@ test("Mac owned-source bounds cover a measured restore apply and leave the helpe
   );
   assert.ok(LIMITS.macSourceMetadataMs < LIMITS.hostMs);
   assert.equal(LIMITS.linuxSourceMetadataMs, 2_400_000);
-  // verify + pack + upload + margin must fit inside the reserve at the measured walks.
-  const verifyWalks = 2 * (arm.walk + arm.postWalk) + arm.compare;
-  assert.ok(
-    (verifyWalks + 15 * 60 + 30 * 60) * 1000 <= MAC_AUTO_RESERVE_MS + 60_000,
-  );
+  // The final verify keeps every digest: one external re-observation (measured about 456 s on x64)
+  // and one walk, then pack/upload/seal (about 300 s) and a 30-minute margin fit the reserve.
+  const verifyOneWalk = 456 + arm.walk + 300;
+  assert.ok((verifyOneWalk + 30 * 60) * 1000 <= MAC_AUTO_RESERVE_MS);
 });
 
 test(
@@ -16075,10 +16075,58 @@ test(
       { encoding: "utf8", timeout: 300000, maxBuffer: 1024 * 1024 },
     );
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stderr, /Ran 29 tests/);
+    assert.match(result.stderr, /Ran 30 tests/);
     assert.match(result.stderr, /\nOK\s*$/);
   },
 );
+
+test("a second GN revalidation renames the first one's logs aside instead of colliding on them", async (t) => {
+  const logs = await scratch(t);
+  const name = "checkpoint-gn-revalidation";
+  // No earlier logs: nothing to do.
+  await retireGnRevalidationLogs(logs);
+  assert.deepEqual(await readdir(logs), []);
+  for (const round of [1, 2, 3]) {
+    // The runner opens both logs exclusively under the fixed name.
+    await writeFile(path.join(logs, `${name}.stdout.log`), `out-${round}`, {
+      flag: "wx",
+    });
+    await writeFile(path.join(logs, `${name}.stderr.log`), `err-${round}`, {
+      flag: "wx",
+    });
+    await assert.rejects(
+      writeFile(path.join(logs, `${name}.stderr.log`), "again", { flag: "wx" }),
+      /EEXIST/,
+    );
+    await retireGnRevalidationLogs(logs);
+    assert.equal(
+      await readFile(
+        path.join(logs, `${name}.retired-${round}.stdout.log`),
+        "utf8",
+      ),
+      `out-${round}`,
+    );
+    assert.equal(
+      await readFile(
+        path.join(logs, `${name}.retired-${round}.stderr.log`),
+        "utf8",
+      ),
+      `err-${round}`,
+    );
+  }
+  // Every earlier log is still there and the fixed names are free again.
+  assert.equal((await readdir(logs)).length, 6);
+  const cli = (
+    await readFile(
+      path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  assert.match(
+    cli,
+    /revalidateGn: async \(\) => \{\s*await retireGnRevalidationLogs\(context\.logs\);\s*return context\.revalidateGn\(\);\s*\},/,
+  );
+});
 
 const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
 m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]

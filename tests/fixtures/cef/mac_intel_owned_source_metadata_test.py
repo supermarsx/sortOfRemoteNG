@@ -55,10 +55,10 @@ class IntelCodec(unittest.TestCase):
         self.assertEqual(take.call_args.kwargs,{'context':{'mac':True,'ownedMacIntel':True},'layout':{}})
         self.assertEqual(captured['kind'],'sorng-macintel-source-metadata');self.assertEqual(captured['policy'],m.MAC_INTEL_SOURCE_METADATA_POLICY)
         self.assertNotIn('literalLinks',captured['snapshot'])
-    def test_intel_verify_takes_two_mac_snapshots_with_mac_reuse_and_no_linux_cache(self):
+    def test_intel_verify_takes_one_mac_snapshot_when_nothing_is_written(self):
         with patch.object(sys,'platform','darwin'),patch.object(m,'source_read_sidecar',return_value=self.stored),patch.object(m,'source_snapshot',return_value=self.snapshot)as take,patch.object(m,'source_stat_cache_reuse',side_effect=AssertionError('no Linux cache')),patch.object(m.os,'utime',side_effect=AssertionError('verify cannot write')):
             self.assertTrue(self.core('source-verify')['complete'])
-        self.assertEqual(take.call_count,2);self.assertTrue(all(c.kwargs=={'context':{'mac':True,'ownedMacIntel':True},'layout':{},'reuse':None}for c in take.call_args_list))
+        self.assertEqual(take.call_count,1);self.assertTrue(all(c.kwargs=={'context':{'mac':True,'ownedMacIntel':True},'layout':{},'reuse':None}for c in take.call_args_list))
     def test_same_length_hash_change_denies_before_utime(self):
         row={'path':'src/file','kind':'file','mode':0o100600,'size':1,'sha256':'a'*64,'mtimeNs':'1','nlink':1}
         expected={**self.snapshot,'entries':[row],'bytes':1};changed={**expected,'entries':[{**row,'sha256':'b'*64}]}

@@ -300,9 +300,10 @@ export const AUTO_SLICE = Object.freeze({
   floorMs: 15 * 60_000,
   ceilingMs: 180 * 60_000,
 });
-// macOS post-compile reserve: source-verify re-walks the tree (24 min on x64, 40 min
-// on ARM64 with the stat cache), then pack and upload, plus a 30-minute margin.
-export const MAC_AUTO_RESERVE_MS = 100 * 60_000;
+// macOS post-compile reserve: the final source-verify re-walks the tree once (about 8 min on x64,
+// 10 min on ARM64 with every digest kept) after its external re-observation (about 8 min), then
+// pack (3 min), upload and seal (2 min), plus a 45-minute margin.
+export const MAC_AUTO_RESERVE_MS = 75 * 60_000;
 export function executionOptions(mode = "checkpoint", minutes = "15") {
   assert(
     ["checkpoint", "complete-sdk"].includes(mode) &&

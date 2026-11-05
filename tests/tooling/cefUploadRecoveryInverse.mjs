@@ -5,8 +5,9 @@ const readInverse = (name) =>
   JSON.parse(
     readFileSync(new URL(`../fixtures/cef/${name}`, import.meta.url), "utf8"),
   );
-// Applied newest first: the Mac CIPD canonical names, the lean cache, the framework time-cut change, then the digest-reuse change.
+// Applied newest first: the Mac resume cost cuts, the Mac CIPD canonical names, the lean cache, the framework time-cut change, then the digest-reuse change.
 const MAC_INVERSES = [
+  readInverse("mac_resume_cost_inverse.json"),
   readInverse("mac_cipd_canonical_inverse.json"),
   readInverse("mac_lean_cache_inverse.json"),
   readInverse("mac_framework_partial_inverse.json"),

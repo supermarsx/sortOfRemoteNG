@@ -3299,8 +3299,13 @@ def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external,
     if external:
         # A second namespace read verifies stability, not a second authority budget.
         policy['aggregate'] = {'entries':0,'bytes':0,'metadata':0}
-    source_phase('post-inventory')
-    after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy, member_policy=member_policy))
+    if fresh:
+        source_phase('post-inventory')
+        after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy, member_policy=member_policy))
+    else:
+        # Every digest was kept and no file was read, so there is no hashing window for a
+        # second walk to prove stable; the root identity below is still re-checked.
+        after, after_total = rows, total
 
     require(rows == after and total == after_total and stamp(root.stat()) == root_before, 'source-tree-changed')
     if policy.get('mac'):
@@ -3638,6 +3643,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             if name in digests} if linux else None
     if mac:
         post = SourceMacPostReuse(guards, digests)
+    wrote = False
     if mode == 'source-apply':
         source_phase('apply-literals')
         # Revalidate the fixed absence witnesses immediately before any utime.
@@ -3657,6 +3663,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                 if mac and before.st_mtime_ns == int(row['mtimeNs']):
                     continue
                 # END MAC OWNED NOOP SYMLINK UTIME
+                wrote = True
                 source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))
                 after = path.lstat()
                 require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
@@ -3676,6 +3683,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                     require(stamp(info) == stamp(before), 'source-write-identity')
                     if mac:
                         require(source_local(info, snapshot_context) == source_local(before, snapshot_context), 'source-mac-write-identity')
+                    wrote = True
                     source_io_call('apply-utime', path, lambda: os.utime(fd, ns=(info.st_atime_ns,int(row['mtimeNs']))))
                     after = path.lstat();held = os.fstat(fd)
                     require((before.st_dev,before.st_ino,before.st_mode,before.st_size)==
@@ -3699,6 +3707,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             primary = None
             try:
                 require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')
+                wrote = True
                 source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))
                 require(root.stat().st_mtime_ns==int(expected['rootMtimeNs']) and
                         stamp(root.stat())==stamp(os.fstat(fd)), 'source-root-readback')
@@ -3710,6 +3719,14 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             finally:
                 source_close(lambda: os.close(fd), primary)
         # END MAC OWNED NOOP ROOT UTIME
+    if mac and not wrote:
+        # Nothing was written (verify, or an apply whose timestamps already match): the first
+        # snapshot's own re-walk already proved the tree stable, and no read or write happens
+        # between it and this return, so a second full snapshot would only repeat it.
+        if mode == 'source-apply' and 'digests' in layout:
+            source_phase('stat-cache-write')
+            source_mac_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, layout['digests'], guards)
+        return finish({'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']})
     source_phase('postcheck')
     if mac:
         # Nothing is hashed twice: the postcheck re-walks and keeps a digest only for a

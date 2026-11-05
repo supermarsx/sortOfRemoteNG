@@ -4,6 +4,7 @@ import importlib.util
 import json
 from contextlib import ExitStack
 from pathlib import Path
+import os
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -125,15 +126,39 @@ class OwnedCodecRouting(unittest.TestCase):
         self.assertEqual(snapshot.call_args.kwargs, {'context':{'mac':True,'ownedMacArm':True}, 'layout':{}})
         self.assertNotIn('literalLinks',captured['snapshot'])
 
-    def test_arm_verify_takes_two_mac_snapshots_with_mac_reuse_and_no_linux_cache(self):
+    def test_arm_verify_takes_one_mac_snapshot_when_nothing_is_written(self):
         with patch.object(sys,'platform','darwin'), patch.object(m,'source_read_sidecar',return_value=self.stored), \
              patch.object(m,'source_snapshot',return_value=self.snapshot) as snapshot, \
              patch.object(m,'source_stat_cache_reuse',side_effect=AssertionError('no Linux reuse')), \
              patch.object(m.os,'utime',side_effect=AssertionError('verify writes nothing')):
             self.assertTrue(self.core('source-verify')['complete'])
-        self.assertEqual(snapshot.call_count,2)
+        self.assertEqual(snapshot.call_count,1)
         # No cache and no digests: nothing may be reused, so every file is read.
         self.assertTrue(all(call.kwargs == {'context':{'mac':True,'ownedMacArm':True}, 'layout':{}, 'reuse':None} for call in snapshot.call_args_list))
+
+    def apply_snapshots(self, root_mtime_matches):
+        policy = {'mac':True,'ownedMacArm':True}
+        info = self.root.stat()
+        self.snapshot['rootMtimeNs'] = str(info.st_mtime_ns if root_mtime_matches else info.st_mtime_ns + 1000)
+        def take(root, budget, guards=None, **kwargs):
+            if guards is not None:guards[''] = m.source_local(root.stat(), policy)
+            return self.snapshot
+        with patch.object(sys,'platform','darwin'), patch.object(m,'source_repositories',return_value={}), \
+             patch.object(m,'source_read_sidecar',return_value=self.stored), \
+             patch.object(m,'source_snapshot',side_effect=take) as snapshot, \
+             patch.object(m,'source_birth_identity',return_value=('darwin-birthtime-float-hex','0x1.0p+30')), \
+             patch.object(m.os,'utime',wraps=m.os.utime) as write, \
+             patch.object(m,'source_owned_mac_transition'):
+            self.assertTrue(self.core('source-apply')['complete'])
+        return snapshot.call_count, write.call_count
+
+    def test_arm_apply_without_any_timestamp_write_takes_one_snapshot(self):
+        self.assertEqual(self.apply_snapshots(True), (1, 0))
+
+    @unittest.skipUnless(os.name == 'posix', 'real directory descriptors')
+    def test_arm_apply_with_a_timestamp_write_keeps_its_postcheck(self):
+        calls, writes = self.apply_snapshots(False)
+        self.assertEqual((calls, writes), (2, 1))
 
     def test_wrong_sidecar_kind_or_cross_platform_schema_denied_before_mutation(self):
         for kind in ['sorng-linuxarm-source-metadata','sorng-macintel-source-metadata']:

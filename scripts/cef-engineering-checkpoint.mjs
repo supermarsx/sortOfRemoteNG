@@ -22,6 +22,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rmdir,
   statfs,
   writeFile,
@@ -354,6 +355,24 @@ async function migrateSelectedLinuxSource(
   }
 }
 // END closed Linux migration CLI helpers
+// Every GN revalidation opens its logs exclusively under one fixed name. A Mac resume revalidates GN
+// twice (the fresh-source authoritative GN, then the restored graph's fresh GN), so the earlier
+// logs are renamed aside, never deleted or overwritten, before the next one starts.
+export async function retireGnRevalidationLogs(logs) {
+  for (const suffix of ["stdout.log", "stderr.log", "deadline.json"]) {
+    const from = path.join(logs, `checkpoint-gn-revalidation.${suffix}`);
+    if ((await lstat(from).catch(() => null)) === null) continue;
+    for (let n = 1; ; n++) {
+      const to = path.join(
+        logs,
+        `checkpoint-gn-revalidation.retired-${n}.${suffix}`,
+      );
+      if ((await lstat(to).catch(() => null)) !== null) continue;
+      await rename(from, to);
+      break;
+    }
+  }
+}
 export function macSourceOperations(target) {
   if (target === "aarch64-unknown-linux-gnu") return null;
   if (target === "aarch64-apple-darwin")
@@ -1192,7 +1211,10 @@ async function checkpointMain(argv, env, observer) {
                               sourceMetadata("source-apply"),
                           }
                         : {}),
-                      revalidateGn: context.revalidateGn,
+                      revalidateGn: async () => {
+                        await retireGnRevalidationLogs(context.logs);
+                        return context.revalidateGn();
+                      },
                       verifyGenerated: async () => {
                         if (profile.platform === "linux") {
                           const regenerated = await linuxArmRecipe(

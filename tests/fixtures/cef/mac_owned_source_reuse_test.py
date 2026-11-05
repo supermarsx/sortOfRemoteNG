@@ -150,11 +150,13 @@ class SnapshotWiring(unittest.TestCase):
         temp=tempfile.TemporaryDirectory(prefix='mac-wire-');self.addCleanup(temp.cleanup);root=Path(temp.name).resolve()
         keep={'path':'src/keep','kind':'file','stamp':[5,1,2,3,0o100644,1],'ctimeNs':9,'birthIdentity':BIRTH,'uid':501,'gid':20}
         change=dict(keep,path='src/change',stamp=[6,1,2,4,0o100644,1])
-        rows=[keep,change];asked=[]
+        rows=[keep,change];asked=[];self.walks=0
+        def walk(*a,**k):
+            self.walks+=1;return rows,11
         def fake_hashes(root_,file_rows,budget,policy,root_before,local_before,progress):
             asked.extend(row['path'] for row in file_rows);return {row['path']:'d'*64 for row in file_rows}
         policy={'mac':True,'ownedMacArm':True,'gitHeads':{'src':'x','src/cef':'x','depot_tools':'x'},'registrySha256':None,'_nearby_literals':None,'aggregate':{}}
-        patches={'inventory':lambda *a,**k:(rows,11),'_source_mac_fd_hashes':fake_hashes,'source_local':lambda info,policy=None:('local',),
+        patches={'inventory':walk,'_source_mac_fd_hashes':fake_hashes,'source_local':lambda info,policy=None:('local',),
                  'source_portable':lambda row,digest,policy=None:{'path':row['path'],'sha256':digest}}
         saved={name:getattr(M,name) for name in patches}
         try:
@@ -172,6 +174,18 @@ class SnapshotWiring(unittest.TestCase):
         self.assertEqual(layout['digests'],{'src/keep':'k'*64,'src/change':'d'*64})
         # Entries are in canonical path order: src/change before src/keep.
         self.assertEqual([e['sha256'] for e in value['entries']],['d'*64,'k'*64])
+    def test_a_snapshot_that_keeps_every_digest_walks_once_and_one_that_reads_walks_twice(self):
+        keep={'path':'src/keep','stamp':[5,1,2,3,0o100644,1],'ctimeNs':9,'birthIdentity':BIRTH,'uid':501,'gid':20}
+        change=dict(keep,path='src/change',stamp=[6,1,2,4,0o100644,1])
+        everything={'src/keep':(M.source_mac_reuse_key(keep),'k'*64),'src/change':(M.source_mac_reuse_key(change),'c'*64)}
+        asked,_,_=self.run_snapshot(everything)
+        self.assertEqual(asked,[]);self.assertEqual(self.walks,1)
+        # One file changed: it is read, and the second walk proves the tree stable around that read.
+        partial={'src/keep':everything['src/keep']}
+        asked,_,_=self.run_snapshot(partial)
+        self.assertEqual(asked,['src/change']);self.assertEqual(self.walks,2)
+        asked,_,_=self.run_snapshot(None)
+        self.assertEqual(self.walks,2)
     def test_no_reuse_reads_every_file(self):
         asked,layout,_=self.run_snapshot(None)
         self.assertEqual(asked,['src/keep','src/change']);self.assertEqual(set(layout['digests']),{'src/keep','src/change'})

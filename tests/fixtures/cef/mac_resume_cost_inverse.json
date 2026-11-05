@@ -1,0 +1,45 @@
+{
+  "archive": {
+    "pairs": [
+      [
+        "    if fresh:\n        source_phase('post-inventory')\n        after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy, member_policy=member_policy))\n    else:\n        # Every digest was kept and no file was read, so there is no hashing window for a\n        # second walk to prove stable; the root identity below is still re-checked.\n        after, after_total = rows, total\n",
+        "    source_phase('post-inventory')\n    after, after_total = source_io_call('post-inventory', root, lambda: inventory(root, budget, source_policy=policy, member_policy=member_policy))\n"
+      ],
+      ["    wrote = False\n", ""],
+      [
+        "                # END MAC OWNED NOOP SYMLINK UTIME\n                wrote = True\n                source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))\n",
+        "                # END MAC OWNED NOOP SYMLINK UTIME\n                source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))\n"
+      ],
+      ["                    wrote = True\n", ""],
+      [
+        "                require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')\n                wrote = True\n                source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))\n",
+        "                require(stamp(os.fstat(fd))==stamp(info), 'source-root-changed')\n                source_io_call('apply-utime', root, lambda: os.utime(fd, ns=(info.st_atime_ns,int(expected['rootMtimeNs']))))\n"
+      ],
+      [
+        "    if mac and not wrote:\n        # Nothing was written (verify, or an apply whose timestamps already match): the first\n        # snapshot's own re-walk already proved the tree stable, and no read or write happens\n        # between it and this return, so a second full snapshot would only repeat it.\n        if mode == 'source-apply' and 'digests' in layout:\n            source_phase('stat-cache-write')\n            source_mac_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, layout['digests'], guards)\n        return finish({'complete': True, 'mode': mode, 'entries': len(expected['entries']), 'bytes': expected['bytes']})\n",
+        ""
+      ]
+    ]
+  },
+  "lib": {
+    "pairs": [
+      [
+        "// macOS post-compile reserve: the final source-verify re-walks the tree once (about 8 min on x64,\n// 10 min on ARM64 with every digest kept) after its external re-observation (about 8 min), then\n// pack (3 min), upload and seal (2 min), plus a 45-minute margin.\nexport const MAC_AUTO_RESERVE_MS = 75 * 60_000;\n",
+        "// macOS post-compile reserve: source-verify re-walks the tree (24 min on x64, 40 min\n// on ARM64 with the stat cache), then pack and upload, plus a 30-minute margin.\nexport const MAC_AUTO_RESERVE_MS = 100 * 60_000;\n"
+      ]
+    ]
+  },
+  "cli": {
+    "pairs": [
+      ["  rename,\n", ""],
+      [
+        "// Every GN revalidation opens its logs exclusively under one fixed name. A Mac resume revalidates GN\n// twice (the fresh-source authoritative GN, then the restored graph's fresh GN), so the earlier\n// logs are renamed aside, never deleted or overwritten, before the next one starts.\nexport async function retireGnRevalidationLogs(logs) {\n  for (const suffix of [\"stdout.log\", \"stderr.log\", \"deadline.json\"]) {\n    const from = path.join(logs, `checkpoint-gn-revalidation.${suffix}`);\n    if ((await lstat(from).catch(() => null)) === null) continue;\n    for (let n = 1; ; n++) {\n      const to = path.join(\n        logs,\n        `checkpoint-gn-revalidation.retired-${n}.${suffix}`,\n      );\n      if ((await lstat(to).catch(() => null)) !== null) continue;\n      await rename(from, to);\n      break;\n    }\n  }\n}\n",
+        ""
+      ],
+      [
+        "                      revalidateGn: async () => {\n                        await retireGnRevalidationLogs(context.logs);\n                        return context.revalidateGn();\n                      },\n",
+        "                      revalidateGn: context.revalidateGn,\n"
+      ]
+    ]
+  }
+}
