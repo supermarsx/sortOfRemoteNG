@@ -17769,19 +17769,46 @@ test("static Mac owned FD and noop layers restore complete original helper befor
     assert.throws(() => withoutStaticOwnedMacSource(tampered));
 });
 
-for (const [fixture, tests] of [
+const MAC_FIXTURES = [
   ["mac_owned_source_fd_test.py", 19],
   ["mac_owned_source_noop_test.py", 25],
-]) {
+];
+// The two fixtures are independent; on a loaded hosted macOS runner each can take over a
+// minute, and the contract step has a 5-minute limit, so they run concurrently.
+let macFixtureRuns = null;
+const startMacFixtures = () =>
+  (macFixtureRuns ??= new Map(
+    MAC_FIXTURES.map(([fixture]) => [
+      fixture,
+      new Promise((resolve) => {
+        const child = spawn(
+          "python3",
+          ["-I", "-B", "-S", path.join(ROOT, "tests/fixtures/cef", fixture)],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        );
+        let stdout = "",
+          stderr = "";
+        const timer = setTimeout(() => child.kill(), 180000);
+        child.stdout.on("data", (chunk) => (stdout += chunk));
+        child.stderr.on("data", (chunk) => (stderr += chunk));
+        child.on("error", (error) => {
+          clearTimeout(timer);
+          resolve({ status: null, stdout, stderr, error });
+        });
+        child.on("close", (status) => {
+          clearTimeout(timer);
+          resolve({ status, stdout, stderr });
+        });
+      }),
+    ]),
+  ));
+if (process.platform !== "win32") startMacFixtures();
+for (const [fixture, tests] of MAC_FIXTURES) {
   test(
     `static Mac owned FD actual filesystem and codec ${fixture}`,
     { skip: process.platform === "win32" },
-    () => {
-      const result = spawnSync(
-        "python3",
-        ["-I", "-B", "-S", path.join(ROOT, "tests/fixtures/cef", fixture)],
-        { encoding: "utf8", timeout: 300000, maxBuffer: 1024 * 1024 },
-      );
+    async () => {
+      const result = await startMacFixtures().get(fixture);
       assert.equal(
         result.status,
         0,
