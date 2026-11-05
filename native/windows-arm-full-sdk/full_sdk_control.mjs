@@ -1632,10 +1632,27 @@ function parentMetadata_qualificationInspectEvaluatedArgs(raw) {
     values[row.name] =
       row[Object.hasOwn(row, "current") ? "current" : "default"].value;
   }
-  for (const [name, expected] of Object.entries(
+  const argMismatch = Object.entries(
     parentMetadata_QUALIFICATION_DECLARED_ARGS,
-  ))
-    need(values[name] === expected, "PRIVATE_GN_ARG_CRITICAL");
+  ).filter(
+    ([name, expected]) =>
+      values[name] !== expected &&
+      // GN lists the declared default "" for the v8 sandbox switch and only
+      // resolves it from pointer compression inside v8/BUILD.gn, so "" (unset)
+      // is the enabled state on arm64; an explicit false still denies.
+      !(name === "v8_enable_sandbox" && values[name] === '""'),
+  );
+  if (argMismatch.length) {
+    // Names and short literal values of the mismatching critical switches only.
+    const failure = new Error("PRIVATE_GN_ARG_CRITICAL");
+    failure.gnArgShape = argMismatch
+      .slice(0, 16)
+      .map(([name]) => [
+        name,
+        typeof values[name] === "string" ? values[name].slice(0, 32) : "absent",
+      ]);
+    throw failure;
+  }
   for (const [name, expected] of Object.entries(
     parentMetadata_QUALIFICATION_CPU_ARGS,
   ))

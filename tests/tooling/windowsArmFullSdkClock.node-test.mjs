@@ -508,6 +508,98 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_ARGS_HISTORY = {
+  driver: {
+    bytes: 300593,
+    sha256: "99b5acb12fdb6cb3d04d3b52229d8c78a8c8dde34993fe9557d37de6ea7aad66",
+    rows: [
+      {
+        old: '  for (const [name, expected] of Object.entries(QUALIFICATION_DECLARED_ARGS))\n    need(values[name] === expected, "PRIVATE_GN_ARG_CRITICAL");\n',
+        new: '  const argMismatch = Object.entries(QUALIFICATION_DECLARED_ARGS).filter(\n    ([name, expected]) =>\n      values[name] !== expected &&\n      // GN lists the declared default "" for the v8 sandbox switch and only\n      // resolves it from pointer compression inside v8/BUILD.gn, so "" (unset)\n      // is the enabled state on arm64; an explicit false still denies.\n      !(name === "v8_enable_sandbox" && values[name] === \'""\'),\n  );\n  if (argMismatch.length) {\n    // Names and short literal values of the mismatching critical switches only.\n    const failure = new Error("PRIVATE_GN_ARG_CRITICAL");\n    failure.gnArgShape = argMismatch\n      .slice(0, 16)\n      .map(([name]) => [\n        name,\n        typeof values[name] === "string" ? values[name].slice(0, 32) : "absent",\n      ]);\n    throw failure;\n  }\n',
+        oldSha256:
+          "365701c28899099681f87d4fbb84e79de172b50445188cdfb53e45a6944ef43b",
+        newSha256:
+          "05c942b7765c911ed0a26bec7c870daae5b997cdd6e8570e3dfa5e7ac8b2c36c",
+      },
+      {
+        old: "",
+        new: '  } catch {\n    return null;\n  }\n}\n// Mismatching critical GN switch names and short values (bounded, no paths).\nfunction fullGnArgDiagnostic(error) {\n  try {\n    if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))\n      return null;\n    const rows = fullGraphOwnValue(error, "gnArgShape");\n    if (!Array.isArray(rows) || rows.length > 16) return null;\n    const keys = [];\n    for (const row of rows) {\n      if (\n        !Array.isArray(row) ||\n        row.length !== 2 ||\n        typeof row[0] !== "string" ||\n        !/^[a-z][a-z0-9_]{0,127}$/.test(row[0]) ||\n        typeof row[1] !== "string" ||\n        !/^[\\x20-\\x7e]{0,32}$/.test(row[1])\n      )\n        return null;\n      keys.push([row[0], row[1]]);\n    }\n    return { kind: "windows-arm-source-gn-arg-critical", keys };\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "a6e782866f37f69c30e2066fca52280b731913b4a34496b7d3e0a3bfc4f2c794",
+      },
+      {
+        old: "",
+        new: '    const gnArgDiagnostic =\n      failed && stage === "metadata-qualification"\n        ? fullGnArgDiagnostic(primary)\n        : null;\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "3aa21cf8c4a387be310aac5b345991e2849b1bc9c6891fa58b4d95b8dadfa810",
+      },
+      {
+        old: "",
+        new: "      ...(gnArgDiagnostic ? { gnArgDiagnostic } : {}),\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "769270e1a8d0b4b43275f8ddd7324523b520ec30e209e1b49777938eb667bb69",
+      },
+    ],
+  },
+  controller: {
+    bytes: 177684,
+    sha256: "95b9c3b3d32ea97d70b6c5a61577d323193b3d0ce55078bc9a305aadd64c6dce",
+    rows: [
+      {
+        old: "  for (const [name, expected] of Object.entries(\n",
+        new: "  const argMismatch = Object.entries(\n",
+        oldSha256:
+          "359b0f83a8c4774bf508fff36d67b73a6634d582bb0044ca13b7769f0a3a7c0c",
+        newSha256:
+          "523cd4a414e823375213ee21cadcff6ea65562d97a7ba14b1b1796b1b9246643",
+      },
+      {
+        old: '  ))\n    need(values[name] === expected, "PRIVATE_GN_ARG_CRITICAL");\n',
+        new: '  ).filter(\n    ([name, expected]) =>\n      values[name] !== expected &&\n      // GN lists the declared default "" for the v8 sandbox switch and only\n      // resolves it from pointer compression inside v8/BUILD.gn, so "" (unset)\n      // is the enabled state on arm64; an explicit false still denies.\n      !(name === "v8_enable_sandbox" && values[name] === \'""\'),\n  );\n  if (argMismatch.length) {\n    // Names and short literal values of the mismatching critical switches only.\n    const failure = new Error("PRIVATE_GN_ARG_CRITICAL");\n    failure.gnArgShape = argMismatch\n      .slice(0, 16)\n      .map(([name]) => [\n        name,\n        typeof values[name] === "string" ? values[name].slice(0, 32) : "absent",\n      ]);\n    throw failure;\n  }\n',
+        oldSha256:
+          "9a77626914c0ebe5d122aebcc512d04b5c4eada776132750383cb658e22c2837",
+        newSha256:
+          "1c70991bc6d2c9c308b2b234210e6e12ce9bb1536560ef526de57a7740417763",
+      },
+    ],
+  },
+};
+function fullGraphArgsInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_ARGS_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_ARGS_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_ARGS_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_ARGS_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_ARGS_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_ARGS_WHOLE");
+  return text;
+}
 const FULL_GRAPH_LIMITS_HISTORY = {
   profile: {
     bytes: 11144,
@@ -655,6 +747,7 @@ const FULL_GRAPH_LIMITS_HISTORY = {
   },
 };
 function fullGraphLimitsInverse(text, name) {
+  text = fullGraphArgsInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_LIMITS_HISTORY[name];
   if (!spec) return text;

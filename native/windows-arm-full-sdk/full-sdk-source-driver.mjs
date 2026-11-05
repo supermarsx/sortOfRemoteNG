@@ -4870,8 +4870,25 @@ function qualificationInspectEvaluatedArgs(raw) {
     values[row.name] =
       row[Object.hasOwn(row, "current") ? "current" : "default"].value;
   }
-  for (const [name, expected] of Object.entries(QUALIFICATION_DECLARED_ARGS))
-    need(values[name] === expected, "PRIVATE_GN_ARG_CRITICAL");
+  const argMismatch = Object.entries(QUALIFICATION_DECLARED_ARGS).filter(
+    ([name, expected]) =>
+      values[name] !== expected &&
+      // GN lists the declared default "" for the v8 sandbox switch and only
+      // resolves it from pointer compression inside v8/BUILD.gn, so "" (unset)
+      // is the enabled state on arm64; an explicit false still denies.
+      !(name === "v8_enable_sandbox" && values[name] === '""'),
+  );
+  if (argMismatch.length) {
+    // Names and short literal values of the mismatching critical switches only.
+    const failure = new Error("PRIVATE_GN_ARG_CRITICAL");
+    failure.gnArgShape = argMismatch
+      .slice(0, 16)
+      .map(([name]) => [
+        name,
+        typeof values[name] === "string" ? values[name].slice(0, 32) : "absent",
+      ]);
+    throw failure;
+  }
   for (const [name, expected] of Object.entries(QUALIFICATION_CPU_ARGS))
     need(values[name] === expected, "PRIVATE_GN_ARG_CPU");
   return {
@@ -6838,6 +6855,31 @@ function fullGnDescDiagnostic(error) {
       keys.push([row[0], row[1]]);
     }
     return { kind: "windows-arm-source-gn-desc-shape", keys };
+  } catch {
+    return null;
+  }
+}
+// Mismatching critical GN switch names and short values (bounded, no paths).
+function fullGnArgDiagnostic(error) {
+  try {
+    if (!error || utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
+      return null;
+    const rows = fullGraphOwnValue(error, "gnArgShape");
+    if (!Array.isArray(rows) || rows.length > 16) return null;
+    const keys = [];
+    for (const row of rows) {
+      if (
+        !Array.isArray(row) ||
+        row.length !== 2 ||
+        typeof row[0] !== "string" ||
+        !/^[a-z][a-z0-9_]{0,127}$/.test(row[0]) ||
+        typeof row[1] !== "string" ||
+        !/^[\x20-\x7e]{0,32}$/.test(row[1])
+      )
+        return null;
+      keys.push([row[0], row[1]]);
+    }
+    return { kind: "windows-arm-source-gn-arg-critical", keys };
   } catch {
     return null;
   }
@@ -9099,6 +9141,10 @@ async function runFullSourceBody(argv) {
       failed && stage === "metadata-qualification"
         ? fullGnDescDiagnostic(primary)
         : null;
+    const gnArgDiagnostic =
+      failed && stage === "metadata-qualification"
+        ? fullGnArgDiagnostic(primary)
+        : null;
     const code =
       graphDiagnostic?.code === "GRAPH_BOUND"
         ? "GRAPH_BOUND"
@@ -9118,6 +9164,7 @@ async function runFullSourceBody(argv) {
         : {}),
       ...(graphDiagnostic ? { graphDiagnostic } : {}),
       ...(gnDescDiagnostic ? { gnDescDiagnostic } : {}),
+      ...(gnArgDiagnostic ? { gnArgDiagnostic } : {}),
       target: TARGET,
       sourceId: p.sourceGn.sourceId,
       graph,
