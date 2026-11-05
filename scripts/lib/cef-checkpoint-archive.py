@@ -407,13 +407,32 @@ def generated_state(root, recipe, rows, budget):
     by_name = {row['path']: row for row in rows}
     state, identities = {'framework': 'absent', 'targets': {}}, []
     factory = FRAMEWORK in by_name
+    partial = False
     if typed and factory:
         require(by_name[FRAMEWORK]['kind'] == 'directory', 'generated-link-kind')
         state['framework'] = 'factory'
+        present = [n for n in FRAMEWORK_ROLES if os.path.lexists(root / n)]
+        if not present:
+            # Interrupted package action: the framework tree exists, no alias does yet.
+            partial = True
+            state['framework'] = 'partial'
+        else:
+            require(len(present) == len(FRAMEWORK_ROLES), 'generated-link-partial')
     for name, spec in recipe.items():
         budget.check()
         internal = name in FRAMEWORK_ROLES
         if internal and not factory:
+            continue
+        if internal and partial:
+            target = root / spec['target']
+            row = by_name.get(spec['target'])
+            if row is None:
+                require(spec['role'] != 'version' and not target.exists() and not target.is_symlink(), 'generated-link-target')
+                state['targets'][spec['role']] = 'pending'
+            else:
+                safe(target)
+                require(row['kind'] == spec['kind'] and target.lstat().st_uid == owner, 'generated-link-kind')
+                state['targets'][spec['role']] = 'present'
             continue
         p = root / name
         safe(p.parent)
@@ -992,7 +1011,10 @@ def inventory(root, budget, generated_links=None, source_policy=None, *, member_
                     source_bound_record(error, len(rows), raw, source_policy)
                     raise
     expected_links = set(generated_links)
-    if len(generated_links) == 7 and not any(r['path'] == FRAMEWORK for r in rows):
+    if len(generated_links) == 7 and (not any(r['path'] == FRAMEWORK for r in rows) or
+                                      not (seen_links & set(FRAMEWORK_ROLES))):
+        # No framework, or a framework whose package action has not created any alias yet
+        # (a time-cut build). A subset of the aliases is never accepted.
         expected_links -= set(FRAMEWORK_ROLES)
     require(seen_links == expected_links, 'missing-generated-link')
     if source_policy is not None:
@@ -1784,7 +1806,8 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
             while parent != Path('.'):
                 require(parent.as_posix() in expected and expected[parent.as_posix()]['kind'] == 'directory', 'generated-link-target')
                 parent = parent.parent
-        logical = {'framework': 'factory' if FRAMEWORK in expected else 'absent', 'targets': {}}
+        claimed = index['generatedState'].get('framework') if isinstance(index.get('generatedState'), dict) else None
+        logical = {'framework': ('partial' if claimed == 'partial' else 'factory') if FRAMEWORK in expected else 'absent', 'targets': {}}
         if FRAMEWORK in expected:
             require(expected[FRAMEWORK]['kind'] == 'directory', 'generated-link-kind')
             for spec in FRAMEWORK_ROLES.values():
@@ -1832,7 +1855,7 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
     for name, target in generated_links.items():
         relative(name)
         internal = name in FRAMEWORK_ROLES
-        if internal and FRAMEWORK not in expected:
+        if internal and (FRAMEWORK not in expected or (len(generated_links) == 7 and index['generatedState']['framework'] == 'partial')):
             continue
         require(name not in seen, 'generated-link-recipe')
         parent = destination / name

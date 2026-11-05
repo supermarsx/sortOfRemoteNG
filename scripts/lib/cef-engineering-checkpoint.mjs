@@ -5984,7 +5984,10 @@ async function ownedRealPath(file, owner, kind) {
   );
   return s;
 }
-export async function attestFrameworkLinks(out) {
+// allowPending is only for checkpoint (non-final) sealing and restore: a time-cut build can have
+// the framework tree before its package action created ANY alias. Final and acceptance paths
+// keep the default and still require every alias.
+export async function attestFrameworkLinks(out, { allowPending = false } = {}) {
   await noLinks(out);
   const root = await lstat(out, { bigint: true });
   const framework = path.join(out, FRAMEWORK);
@@ -6042,6 +6045,35 @@ export async function attestFrameworkLinks(out) {
     return canonical(result.sort((a, b) => (a[0] < b[0] ? -1 : 1)));
   };
   const before = await inventory();
+  if (allowPending) {
+    const missing = [];
+    for (const member of Object.keys(FRAMEWORK_LINKS))
+      if ((await optionalLinkStat(path.join(out, member))) === null)
+        missing.push(member);
+    assert(
+      missing.length === 0 ||
+        missing.length === Object.keys(FRAMEWORK_LINKS).length,
+      "Framework alias set incomplete",
+    );
+    if (missing.length !== 0) {
+      const pending = {};
+      for (const spec of Object.values(FRAMEWORK_LINKS)) {
+        const t = await optionalLinkStat(path.join(out, spec.target));
+        if (t) {
+          await ownedRealPath(path.join(out, spec.target), root.uid, spec.kind);
+          pending[spec.role] = "present";
+        } else {
+          assert(spec.role !== "version", "Framework version must exist");
+          pending[spec.role] = "pending";
+        }
+      }
+      assert(
+        (await inventory()) === before,
+        "Framework regular inventory changed",
+      );
+      return { framework: "partial", targets: pending };
+    }
+  }
   const rows = [],
     targets = {};
   for (const [member, spec] of Object.entries(FRAMEWORK_LINKS)) {

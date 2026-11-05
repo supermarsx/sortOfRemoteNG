@@ -1297,6 +1297,167 @@ test(
     });
   },
 );
+const FRAMEWORK_PARTIAL_PROOF = String.raw`
+import importlib.util,pathlib,os,sys,json
+p=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('checkpoint',sys.argv[2]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+sdk={}
+for name in ['MacOSX26.2.sdk','MacOSX.platform','XcodeDefault.xctoolchain']:
+ t=p/name;t.mkdir();sdk['sdk/xcode_links/'+name]=str(t)
+recipe={**sdk,**m.FRAMEWORK_ROLES}
+def fixture(name,full):
+ s=p/name;s.mkdir();(s/'sdk'/'xcode_links').mkdir(parents=True)
+ for member,target in sdk.items():os.symlink(target,s/member)
+ base=s/m.FRAMEWORK/'Versions'/'A';base.mkdir(parents=True)
+ if full:
+  (base/'Resources').mkdir();(base/'Resources'/'owned').write_bytes(b'resource')
+  (base/'Libraries').mkdir();(base/'Chromium Embedded Framework').write_bytes(b'binary')
+ return s
+# 1. A time-cut build: framework tree, no alias at all. Both target states round-trip.
+for full in (False,True):
+ name='partial-full' if full else 'partial-bare'
+ s=fixture(name,full)
+ archive=m.pack(s,p/(name+'-bundle'),generated_links=recipe)
+ index=json.loads((p/(name+'-bundle')/'inventory.json').read_bytes())
+ assert index['generatedState']['framework']=='partial',index['generatedState']
+ assert index['generatedState']['targets']['version']=='present'
+ assert index['generatedState']['targets']['binary']==('present' if full else 'pending')
+ s.rename(p/(name+'-original'))
+ r=p/(name+'-restored');m.restore(p/(name+'-bundle'),r,archive,generated_links=recipe)
+ for member in m.FRAMEWORK_ROLES:
+  assert not os.path.lexists(r/member),member
+ if full:assert (r/m.FRAMEWORK/'Versions'/'A'/'Chromium Embedded Framework').read_bytes()==b'binary'
+ # The restored tree is itself a valid time-cut tree and seals to the same logical state.
+ again=m.pack(r,p/(name+'-again'),generated_links=recipe)
+ assert json.loads((p/(name+'-again')/'inventory.json').read_bytes())['generatedState']==index['generatedState']
+# 2. Aliases are all-or-none: any subset stays a hard refusal in the archive.
+for keep in m.FRAMEWORK_ROLES:
+ s=fixture('subset-'+str(abs(hash(keep))),False)
+ os.symlink(m.FRAMEWORK_ROLES[keep]['raw'],s/keep)
+ try:m.pack(s,p/('subset-bundle-'+str(abs(hash(keep)))),generated_links=recipe);raise AssertionError('subset '+keep)
+ except m.CheckpointError:pass
+# 3. A complete framework is unchanged: factory state, aliases restored.
+s=fixture('complete',True)
+for member,row in m.FRAMEWORK_ROLES.items():os.symlink(row['raw'],s/member)
+archive=m.pack(s,p/'complete-bundle',generated_links=recipe)
+assert json.loads((p/'complete-bundle'/'inventory.json').read_bytes())['generatedState']['framework']=='factory'
+s.rename(p/'complete-original');r=p/'complete-restored';m.restore(p/'complete-bundle',r,archive,generated_links=recipe)
+for member,row in m.FRAMEWORK_ROLES.items():assert os.readlink(r/member)==row['raw']
+# 4. A missing Versions/A is never accepted, aliased or not.
+s=fixture('no-version',False);(s/m.FRAMEWORK/'Versions'/'A').rmdir()
+try:m.pack(s,p/'no-version-bundle',generated_links=recipe);raise AssertionError('missing version')
+except m.CheckpointError:pass
+print(json.dumps({'partial':True,'subsetsDenied':len(m.FRAMEWORK_ROLES),'nativeAcceptance':False}))
+`;
+test(
+  "typed framework archive seals and restores a time-cut framework with no alias and keeps aliases all-or-none",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const root = await scratch(t),
+      result = python(FRAMEWORK_PARTIAL_PROOF, [
+        root,
+        path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      ]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      partial: true,
+      subsetsDenied: 4,
+      nativeAcceptance: false,
+    });
+  },
+);
+async function timeCutFramework(t) {
+  const root = await scratch(t),
+    out = path.join(root, "out"),
+    base = path.join(out, "Chromium Embedded Framework.framework");
+  await mkdir(path.join(base, "Versions", "A", "Resources"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(base, "Versions", "A", "Resources", "owned-resource"),
+    "retained-resource",
+  );
+  return { root, out, base };
+}
+test("checkpoint attestation accepts a framework tree with no alias yet; the final default still refuses it", async (t) => {
+  const f = await timeCutFramework(t);
+  // Non-final sealing and restore: the package action had not created any alias.
+  const pending = await attestFrameworkLinks(f.out, { allowPending: true });
+  assert.equal(pending.framework, "partial");
+  assert.equal(pending.targets.version, "present");
+  assert.equal(pending.targets.resources, "present");
+  assert.equal(pending.targets.binary, "pending");
+  assert.deepEqual(
+    await attestFrameworkLinks(f.out, { allowPending: true }),
+    pending,
+  );
+  // Final / complete-sdk / acceptance callers keep the default: every alias is required.
+  await assert.rejects(attestFrameworkLinks(f.out), /ENOENT|alias/i);
+  await assert.rejects(
+    attestFrameworkLinks(f.out, { allowPending: false }),
+    /ENOENT|alias/i,
+  );
+  // A missing version tree is never pending.
+  await rm(path.join(f.base, "Versions", "A"), { recursive: true });
+  await assert.rejects(attestFrameworkLinks(f.out, { allowPending: true }));
+  // No framework at all is unchanged.
+  await rm(f.base, { recursive: true });
+  assert.equal((await attestFrameworkLinks(f.out)).framework, "absent");
+  assert.equal(
+    (await attestFrameworkLinks(f.out, { allowPending: true })).framework,
+    "absent",
+  );
+});
+for (const allowPending of [false, true])
+  test(
+    `framework alias set stays all-or-none and closed (allowPending=${allowPending})`,
+    { skip: process.platform === "win32" },
+    async (t) => {
+      const f = await frameworkFixture(t),
+        resources = path.join(f.base, "Resources");
+      // A complete reviewed alias set is accepted in both modes.
+      assert.equal(
+        (await attestFrameworkLinks(f.out, { allowPending })).framework,
+        "factory",
+      );
+      // An alias that points outside the framework is refused in both modes.
+      await unlink(resources);
+      await symlink("/foreign", resources);
+      await assert.rejects(
+        attestFrameworkLinks(f.out, { allowPending }),
+        /Unreviewed framework alias/,
+      );
+      // One alias missing while others exist is refused in both modes.
+      await unlink(resources);
+      await assert.rejects(attestFrameworkLinks(f.out, { allowPending }));
+    },
+  );
+test("only non-final checkpoint sealing and restore may allow pending framework aliases", async () => {
+  const cli = (
+    await readFile(
+      path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const calls = [
+    ...cli.matchAll(/attestFrameworkLinks\(out(?:,\s*\{[^}]*\})?\)/g),
+  ];
+  assert.equal(calls.length, 2);
+  // Restore of a non-final checkpoint comes first in the file.
+  assert.match(calls[0][0], /allowPending:\s*true/);
+  // Sealing: pending only while the compiler did not finish.
+  assert.match(
+    calls[1][0],
+    /allowPending:\s*compile\.outcome !== "compiler-complete"/,
+  );
+  // The final complete-sdk continuation never reaches either call.
+  const finalPath = cli.slice(
+    cli.indexOf('execution.mode === "complete-sdk" &&'),
+    cli.indexOf('return { kind: "continue-sdk", compile };'),
+  );
+  assert.ok(finalPath.length > 0);
+  assert.ok(!finalPath.includes("allowPending"));
+});
+
 test("Python independently rejects malformed framework roles and unknown SDK aliases", () => {
   const result = python(
     String.raw`import importlib.util,sys
@@ -6181,7 +6342,7 @@ test("production CLI wires each post-slice boundary and pack failure observer wi
   const positions = [
     /async \(\) => \{/,
     /await observeThenRemoveSisoLog\(\s*out,\s*context\.logs,\s*compile,/,
-    /await attestFrameworkLinks\(out\)/,
+    /await attestFrameworkLinks\(out, \{\s*allowPending: compile\.outcome !== "compiler-complete",?\s*\}\)/,
     /checkpointPhase\("pack"/,
   ].map((pattern) => {
     const found = pattern.exec(guarded);

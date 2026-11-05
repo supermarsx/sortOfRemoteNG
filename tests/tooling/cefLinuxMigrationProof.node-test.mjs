@@ -562,7 +562,7 @@ test("the retained proof producer binds all actual131 rows through the exact cur
   assert.equal(rows.length, 131);
   assert.equal(
     codeTreeDigest(rows),
-    "c8a93652f703c2e05e3d4bc678fadfed5e90fa6d981ba51499d56c0dcaf61f09",
+    "cf311c901a3cc3b996a8938b4564a72ef50b68edc7000dc6051173df2412d259",
   );
   assert.equal(
     CODE_DIGEST,
@@ -570,15 +570,15 @@ test("the retained proof producer binds all actual131 rows through the exact cur
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const coreRow = rows.find((row) => row.path === corePath);
-  assert.equal(coreRow.sha, "51c36650ca53da7087b276c393e28a50f091a880");
+  assert.equal(coreRow.sha, "3b74d6d8a2ac7441a6314e8d9c4d8cfeb2c91cdd");
   const current = (await readFile(new URL(corePath, root)))
     .toString()
     .replaceAll("\r\n", "\n");
   const restore = (recovered) => {
-    assert.equal(Buffer.byteLength(recovered), 248178);
+    assert.equal(Buffer.byteLength(recovered), 249462);
     assert.equal(
       createHash("sha256").update(recovered).digest("hex"),
-      "45ea65e29adad0670723fb590c17d880dac2026f296b214a054464ec29f8414e",
+      "56c4c9fab40929dc3a4d67b4bff70651c28234e45473beb4b348623ca84a92be",
     );
     const source = withoutUploadRecovery(recovered);
     assert.equal(Buffer.byteLength(source), 246078);

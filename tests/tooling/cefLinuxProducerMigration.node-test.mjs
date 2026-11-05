@@ -2387,7 +2387,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),
-    "c8a93652f703c2e05e3d4bc678fadfed5e90fa6d981ba51499d56c0dcaf61f09",
+    "cf311c901a3cc3b996a8938b4564a72ef50b68edc7000dc6051173df2412d259",
   );
   const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
@@ -2401,7 +2401,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(restoredBlob, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   const restoredRows = structuredClone(currentRows);
   const reaperRow = restoredRows.find((row) => row.path === reaperPath);
-  assert.equal(reaperRow.sha, "51c36650ca53da7087b276c393e28a50f091a880");
+  assert.equal(reaperRow.sha, "3b74d6d8a2ac7441a6314e8d9c4d8cfeb2c91cdd");
   reaperRow.sha = restoredBlob;
   const retainedRows = withoutRepinRows(restoredRows, ROOT);
   assert.equal(capsule.toProducer, core.codeTreeDigest(retainedRows));

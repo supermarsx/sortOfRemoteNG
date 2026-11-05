@@ -1,31 +1,36 @@
 import { readFileSync } from "node:fs";
 // Exact inverse of the Mac owned-source digest reuse / 5400 s budget / Mac reserve
 // change, as (current text, previous text) pairs per file (see the JSON).
-const MAC_INVERSE = JSON.parse(
-  readFileSync(
-    new URL("../fixtures/cef/mac_source_reuse_inverse.json", import.meta.url),
-    "utf8",
-  ),
-);
+const readInverse = (name) =>
+  JSON.parse(
+    readFileSync(new URL(`../fixtures/cef/${name}`, import.meta.url), "utf8"),
+  );
+// Applied newest first: the framework time-cut change, then the digest-reuse change.
+const MAC_INVERSES = [
+  readInverse("mac_framework_partial_inverse.json"),
+  readInverse("mac_source_reuse_inverse.json"),
+];
 function macInverse(text, section) {
-  const { pairs, helperStart, helperEnd } = MAC_INVERSE[section];
   let restored = text;
-  if (helperStart !== undefined) {
-    const start = restored.indexOf(helperStart);
-    if (start < 0) return text;
-    const end = restored.indexOf(helperEnd, start);
-    if (
-      end <= start ||
-      restored.indexOf(helperStart, start + 1) >= 0 ||
-      restored.indexOf(helperEnd, end + 1) >= 0
-    )
-      throw new Error("Mac reuse helper not found exactly once");
-    restored = restored.slice(0, start) + restored.slice(end);
-  }
-  for (const [current, previous] of pairs) {
-    if (restored.split(current).length !== 2)
-      throw new Error(`Mac change ${section} not found exactly once`);
-    restored = restored.replace(current, () => previous);
+  for (const inverse of MAC_INVERSES) {
+    const { pairs, helperStart, helperEnd } = inverse[section];
+    if (helperStart !== undefined) {
+      const start = restored.indexOf(helperStart);
+      if (start < 0) continue;
+      const end = restored.indexOf(helperEnd, start);
+      if (
+        end <= start ||
+        restored.indexOf(helperStart, start + 1) >= 0 ||
+        restored.indexOf(helperEnd, end + 1) >= 0
+      )
+        throw new Error("Mac reuse helper not found exactly once");
+      restored = restored.slice(0, start) + restored.slice(end);
+    }
+    for (const [current, previous] of pairs) {
+      if (restored.split(current).length !== 2)
+        throw new Error(`Mac change ${section} not found exactly once`);
+      restored = restored.replace(current, () => previous);
+    }
   }
   return restored;
 }

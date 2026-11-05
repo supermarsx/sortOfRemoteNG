@@ -1221,7 +1221,8 @@ async function checkpointMain(argv, env, observer) {
                             canonical(linkRecipe),
                           "Post-GN SDK recipe differs from verified physical targets",
                         );
-                        await attestFrameworkLinks(out);
+                        // A restored checkpoint is never final; its package action may not have run.
+                        await attestFrameworkLinks(out, { allowPending: true });
                       },
                     });
                     resumedSource = true;
@@ -1292,7 +1293,9 @@ async function checkpointMain(argv, env, observer) {
                       { flag: "wx" },
                     );
                     if (profile.platform === "darwin")
-                      await attestFrameworkLinks(out);
+                      await attestFrameworkLinks(out, {
+                        allowPending: compile.outcome !== "compiler-complete",
+                      });
                     return checkpointPhase("pack", () =>
                       archiveCommand(
                         verified.python,

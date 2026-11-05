@@ -1,0 +1,51 @@
+{
+  "archive": {
+    "pairs": [
+      ["    partial = False\n", ""],
+      [
+        "        present = [n for n in FRAMEWORK_ROLES if os.path.lexists(root / n)]\n        if not present:\n            # Interrupted package action: the framework tree exists, no alias does yet.\n            partial = True\n            state['framework'] = 'partial'\n        else:\n            require(len(present) == len(FRAMEWORK_ROLES), 'generated-link-partial')\n",
+        ""
+      ],
+      [
+        "            continue\n        if internal and partial:\n            target = root / spec['target']\n            row = by_name.get(spec['target'])\n            if row is None:\n                require(spec['role'] != 'version' and not target.exists() and not target.is_symlink(), 'generated-link-target')\n                state['targets'][spec['role']] = 'pending'\n            else:\n                safe(target)\n                require(row['kind'] == spec['kind'] and target.lstat().st_uid == owner, 'generated-link-kind')\n                state['targets'][spec['role']] = 'present'\n",
+        ""
+      ],
+      [
+        "    if len(generated_links) == 7 and (not any(r['path'] == FRAMEWORK for r in rows) or\n                                      not (seen_links & set(FRAMEWORK_ROLES))):\n        # No framework, or a framework whose package action has not created any alias yet\n        # (a time-cut build). A subset of the aliases is never accepted.\n",
+        "    if len(generated_links) == 7 and not any(r['path'] == FRAMEWORK for r in rows):\n"
+      ],
+      [
+        "        claimed = index['generatedState'].get('framework') if isinstance(index.get('generatedState'), dict) else None\n        logical = {'framework': ('partial' if claimed == 'partial' else 'factory') if FRAMEWORK in expected else 'absent', 'targets': {}}\n",
+        "        logical = {'framework': 'factory' if FRAMEWORK in expected else 'absent', 'targets': {}}\n"
+      ],
+      [
+        "        if internal and (FRAMEWORK not in expected or (len(generated_links) == 7 and index['generatedState']['framework'] == 'partial')):\n",
+        "        if internal and FRAMEWORK not in expected:\n"
+      ]
+    ]
+  },
+  "lib": {
+    "pairs": [
+      [
+        "// allowPending is only for checkpoint (non-final) sealing and restore: a time-cut build can have\n// the framework tree before its package action created ANY alias. Final and acceptance paths\n// keep the default and still require every alias.\nexport async function attestFrameworkLinks(out, { allowPending = false } = {}) {\n",
+        "export async function attestFrameworkLinks(out) {\n"
+      ],
+      [
+        "  if (allowPending) {\n    const missing = [];\n    for (const member of Object.keys(FRAMEWORK_LINKS))\n      if ((await optionalLinkStat(path.join(out, member))) === null)\n        missing.push(member);\n    assert(\n      missing.length === 0 ||\n        missing.length === Object.keys(FRAMEWORK_LINKS).length,\n      \"Framework alias set incomplete\",\n    );\n    if (missing.length !== 0) {\n      const pending = {};\n      for (const spec of Object.values(FRAMEWORK_LINKS)) {\n        const t = await optionalLinkStat(path.join(out, spec.target));\n        if (t) {\n          await ownedRealPath(path.join(out, spec.target), root.uid, spec.kind);\n          pending[spec.role] = \"present\";\n        } else {\n          assert(spec.role !== \"version\", \"Framework version must exist\");\n          pending[spec.role] = \"pending\";\n        }\n      }\n      assert(\n        (await inventory()) === before,\n        \"Framework regular inventory changed\",\n      );\n      return { framework: \"partial\", targets: pending };\n    }\n  }\n",
+        ""
+      ]
+    ]
+  },
+  "cli": {
+    "pairs": [
+      [
+        "                        // A restored checkpoint is never final; its package action may not have run.\n                        await attestFrameworkLinks(out, { allowPending: true });\n",
+        "                        await attestFrameworkLinks(out);\n"
+      ],
+      [
+        "                      await attestFrameworkLinks(out, {\n                        allowPending: compile.outcome !== \"compiler-complete\",\n                      });\n",
+        "                      await attestFrameworkLinks(out);\n"
+      ]
+    ]
+  }
+}
