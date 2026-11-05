@@ -5987,6 +5987,19 @@ async function qualificationSourceDirectories(owner) {
   qualificationOwnerCheck(owner);
 }
 
+// `visited` counts every directory entry under the output directory, so the
+// generated headers and siso's own state files legitimately raise it after the
+// generate-headers role; the pinned graph is bound by the file count, byte
+// count and digest (and, separately, by every pin).
+function fullGraphSummaryEqual(result, summary) {
+  return (
+    Boolean(result) &&
+    Boolean(summary) &&
+    result.files === summary.files &&
+    result.bytes === summary.bytes &&
+    result.sha256 === summary.sha256
+  );
+}
 async function validateQualificationSource(owner) {
   const state = qualificationOwnerCheck(owner);
   const receipt = qualificationGraphReceipts.get(state.graphReceipt);
@@ -6051,7 +6064,7 @@ async function validateQualificationSource(owner) {
         "PRIVATE_GRAPH_CHANGED",
       );
       need(
-        staticProjectionEqual(result, receipt.summary),
+        fullGraphSummaryEqual(result, receipt.summary),
         "PRIVATE_GRAPH_CHANGED",
       );
       await qualificationSourceDirectories(owner);

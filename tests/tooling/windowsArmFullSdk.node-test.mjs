@@ -5265,6 +5265,59 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_VISITED_HISTORY = {
+  driver: {
+    bytes: 306666,
+    sha256: "799d762e9b4e30aa7f076580dd1f5b45a7baf585e16218ee11517ea1ab826b23",
+    rows: [
+      {
+        old: "",
+        new: "// `visited` counts every directory entry under the output directory, so the\n// generated headers and siso's own state files legitimately raise it after the\n// generate-headers role; the pinned graph is bound by the file count, byte\n// count and digest (and, separately, by every pin).\nfunction fullGraphSummaryEqual(result, summary) {\n  return (\n    Boolean(result) &&\n    Boolean(summary) &&\n    result.files === summary.files &&\n    result.bytes === summary.bytes &&\n    result.sha256 === summary.sha256\n  );\n}\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "8afb6c11a08390396609cf90147089b873eb4f22eb8ec65338608d69c58a404c",
+      },
+      {
+        old: "        staticProjectionEqual(result, receipt.summary),\n",
+        new: "        fullGraphSummaryEqual(result, receipt.summary),\n",
+        oldSha256:
+          "5d9918f5ebc8d1f78f7e1cd12885b39be5209c64af5f67fc4776242fe39df8d9",
+        newSha256:
+          "237ec37be498ddec76d416ce25f3a3ac2b8d985834074a2a1a6716effb77f311",
+      },
+    ],
+  },
+};
+function fullGraphVisitedInverse(text, name) {
+  const spec = FULL_GRAPH_VISITED_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_VISITED_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_VISITED_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_VISITED_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_VISITED_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_VISITED_WHOLE");
+  return text;
+}
 const FULL_GRAPH_LITERAL_HISTORY = {
   driver: {
     bytes: 306488,
@@ -5312,6 +5365,7 @@ const FULL_GRAPH_LITERAL_HISTORY = {
   },
 };
 function fullGraphLiteralInverse(text, name) {
+  text = fullGraphVisitedInverse(text, name);
   const spec = FULL_GRAPH_LITERAL_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -16091,4 +16145,41 @@ test("FULL strict literal args parser accepts the real CEF-written arm64 args.gn
   deny('x_path="a"b"');
   deny("x_path=[1, 2]");
   deny("x_path=other_value");
+});
+
+// Run 42052823904: after the real siso generate-headers role the output
+// directory holds new entries (headers, siso state), so `visited` rose and the
+// post-role revalidation denied PRIVATE_GRAPH_CHANGED although every graph pin
+// was identical.
+test("FULL graph revalidation ignores the visited entry count but still binds files bytes and digest", async () => {
+  const ts = (await import("typescript")).default,
+    source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile("sum.mjs", source, 99, true, ts.ScriptKind.JS),
+    equal = new Function(
+      ast.statements
+        .find(
+          (n) =>
+            ts.isFunctionDeclaration(n) &&
+            n.name?.text === "fullGraphSummaryEqual",
+        )
+        .getText(ast) + "\nreturn fullGraphSummaryEqual;",
+    )();
+  const base = {
+    files: 18103,
+    bytes: 2993176576,
+    visited: 33665,
+    sha256: "3d".repeat(32),
+  };
+  assert.equal(equal({ ...base }, base), true);
+  assert.equal(equal({ ...base, visited: 33665 + 6 }, base), true);
+  for (const change of [
+    { files: 18104 },
+    { files: 18102 },
+    { bytes: 2993176577 },
+    { sha256: "3e".repeat(32) },
+    { sha256: undefined },
+  ])
+    assert.equal(equal({ ...base, ...change }, base), false, String(change));
+  assert.equal(equal(null, base), false);
+  assert.equal(equal(base, undefined), false);
 });
