@@ -1,0 +1,54 @@
+{
+  "archive": {
+    "pairs": []
+  },
+  "lib": {
+    "pairs": [
+      [
+        "    // Exact hosted images whose build-relevant contents were reviewed as equivalent (evidence:\n    // native/cef-runner-images/linux-arm-accepted-images.json); the first is the runner map's pin.\n    acceptedImages: Object.freeze([\"20261026.354.1\", \"20261101.360.1\"]),\n",
+        ""
+      ]
+    ]
+  },
+  "cli": {
+    "pairs": [
+      [
+        "  assertHostedBuildIdentity(\n    map,\n    TARGET,\n    env,\n    process.platform,\n    process.arch,\n    profile.acceptedImages ?? [],\n  );\n",
+        "  assertHostedBuildIdentity(map, TARGET, env);\n"
+      ],
+      [
+        "              acceptedImageVersions: profile.acceptedImages ?? [],\n",
+        ""
+      ],
+      [
+        "                checkpointLog(\n                  console.log,\n                  `[cef-engineering-checkpoint] hosted-image observed=${env.ImageVersion} reviewed=${verified.map.hosted.imageVersion}`,\n                );\n",
+        ""
+      ],
+      [
+        "                  // The reviewed pin names the image class: a checkpoint sealed on any accepted\n                  // image restores on any other accepted image. The exact observed image is logged.\n                  image: verified.map.hosted.imageVersion,\n",
+        "                  image: env.ImageVersion,\n"
+      ]
+    ]
+  },
+  "runtime": {
+    "pairs": [
+      [
+        "// acceptedImageVersions is the reviewed, exact set of hosted images whose build-relevant contents\n// are equivalent to the map's own pin. It can only widen the pin to named versions: it must contain\n// the pin, hold at most four unique exact strings, and never means \"any image\".\n",
+        ""
+      ],
+      ["  acceptedImageVersions = [],\n", ""],
+      [
+        "  if (\n    !Array.isArray(acceptedImageVersions) ||\n    acceptedImageVersions.length > 4 ||\n    new Set(acceptedImageVersions).size !== acceptedImageVersions.length ||\n    !acceptedImageVersions.every(\n      (version) =>\n        typeof version === \"string\" && /^[A-Za-z0-9_.-]{1,64}$/.test(version),\n    ) ||\n    (acceptedImageVersions.length > 0 &&\n      !acceptedImageVersions.includes(map.hosted.imageVersion))\n  )\n    fail(\n      \"Accepted hosted images must be an exact reviewed set containing the reviewed pin\",\n    );\n",
+        ""
+      ],
+      [
+        "    (env.ImageVersion !== map.hosted.imageVersion &&\n      !acceptedImageVersions.includes(env.ImageVersion))\n",
+        "    env.ImageVersion !== map.hosted.imageVersion\n"
+      ],
+      [
+        "        assertHostedBuildIdentity(\n          map,\n          target,\n          env,\n          process.platform,\n          process.arch,\n          engineering?.acceptedImageVersions ?? [],\n        ),\n",
+        "        assertHostedBuildIdentity(map, target, env),\n"
+      ]
+    ]
+  }
+}

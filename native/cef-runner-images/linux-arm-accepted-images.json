@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-accepted-runner-images",
+  "target": "aarch64-unknown-linux-gnu",
+  "runner": "ubuntu-24.04",
+  "imageOS": "ubuntu24",
+  "reviewedPin": "20261026.354.1",
+  "accepted": ["20261026.354.1", "20261101.360.1"],
+  "scope": "Hosted ubuntu-24.04 images that the x86_64 Linux builder of the ARM64 cross build may run on. The list is exact: any other ImageVersion is refused before acquisition.",
+  "evidence": {
+    "observedOn": "Post-provision observation.json artifacts of checkpoint runs (cef-engineering-diagnostics-*), field image.version being the ImageVersion the producer checks.",
+    "operatingSystem": "24.04.5 LTS on both images",
+    "kernel": "7.0.0-1017-azure on both images (actions/runner-images ubuntu24/20261026.354 and ubuntu24/20261101.360 release notes)",
+    "systemd": "255.4-1ubuntu8.18 on both images",
+    "observedPackages": {
+      "libc6-dev": "2.39-0ubuntu8.9",
+      "libglib2.0-dev": "2.80.0-6ubuntu3.10",
+      "libnss3-dev": "2:3.98-1ubuntu0.3",
+      "libx11-dev": "2:1.8.7-1ubuntu0.1",
+      "libxkbcommon-dev": "1.6.0-1build1",
+      "pkg-config": "1.8.1-2build1"
+    },
+    "observedToolchain": {
+      "linker": "GNU ld (GNU Binutils for Ubuntu) 2.42",
+      "pkgconf": "1.8.1",
+      "python": "3.12.3"
+    },
+    "pinnedFileSha256": {
+      "usr/bin/python3.12": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+      "usr/bin/x86_64-linux-gnu-ld.bfd": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+      "usr/bin/pkgconf": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b",
+      "usr/include/stdio.h": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62"
+    },
+    "pinnedFileNote": "Byte-identical on every observed run of both images and equal to the namespace tools lock, which verifyToolchainFiles still checks on whichever image runs.",
+    "observedRuns": [
+      {
+        "image": "20261026.354.1",
+        "runs": [41878455545, 41913014103],
+        "availableGiB": [102.43, 102.42]
+      },
+      {
+        "image": "20261101.360.1",
+        "runs": [41871826160, 42098564149, 42095349339],
+        "availableGiB": [102.65, 101.84, 99.69]
+      }
+    ],
+    "freeDisk": "The free-disk gate (100 GiB for the engine workspace, 104 GiB after cleanup for restore runs) is a separate fail-closed check and is unchanged. One 20261101.360.1 runner (99.69 GiB) was refused by it, so disk varies by runner, not by accepted image.",
+    "releaseNoteDifferences": "Between 20261026.354.1 and 20261101.360.1 the release notes change only Julia, Swift, Homebrew, Vcpkg, Fastlane, Kubectl, Pulumi, AWS CLI, AWS SAM CLI, GitHub CLI, Google Cloud CLI, Composer, Chrome, ChromeDriver, Edge, Edge WebDriver, Selenium, Firefox, Node.js and the hosted Python tool cache. None is an input of this build: the build uses the OS python3.12 and linker pinned above, the repository's pinned Node (actions/setup-node with .node-version), and the provisioned apt packages whose versions are equal."
+  },
+  "rejected": [
+    {
+      "image": "20261101.114.1",
+      "reason": "Seen only as a runner header (run 41999165751). The run stopped in the prerequisites step with 'Less than 104 GiB is available after bounded allowlisted cleanup', so no package, toolchain or file observation exists, and no ubuntu24/20261101.114 release is listed in actions/runner-images. Not accepted without evidence."
+    }
+  ],
+  "headerCaveat": "The 'Version:' line printed in the job header is the provisioner image and can differ from the ImageVersion environment variable (for example 20261025.353.1 on runs that observed 20261026.354.1). Only the observed ImageVersion is checked and recorded.",
+  "restorePolicy": "The checkpoint identity records the reviewed pin as its image class, not the exact observed image. A checkpoint sealed on any accepted image therefore restores on any other accepted image; an image outside the list is refused by the hosted identity check before any restore or compile, so a checkpoint is never resumed on an unreviewed image. The exact observed image is logged on every run (hosted-image observed=... reviewed=...) and is in that run's observation.json."
+}

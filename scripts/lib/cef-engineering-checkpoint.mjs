@@ -99,6 +99,9 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-unknown-linux-gnu": Object.freeze({
     target: "aarch64-unknown-linux-gnu",
+    // Exact hosted images whose build-relevant contents were reviewed as equivalent (evidence:
+    // native/cef-runner-images/linux-arm-accepted-images.json); the first is the runner map's pin.
+    acceptedImages: Object.freeze(["20261026.354.1", "20261101.360.1"]),
     source: "8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb",
     inputs:
       "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1",

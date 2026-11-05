@@ -478,14 +478,32 @@ export function hostedBuildHost(target, map) {
     : source;
 }
 
+// acceptedImageVersions is the reviewed, exact set of hosted images whose build-relevant contents
+// are equivalent to the map's own pin. It can only widen the pin to named versions: it must contain
+// the pin, hold at most four unique exact strings, and never means "any image".
 export function assertHostedBuildIdentity(
   map,
   target,
   env,
   platform = process.platform,
   architecture = process.arch,
+  acceptedImageVersions = [],
 ) {
   validateRunnerMap(map, target);
+  if (
+    !Array.isArray(acceptedImageVersions) ||
+    acceptedImageVersions.length > 4 ||
+    new Set(acceptedImageVersions).size !== acceptedImageVersions.length ||
+    !acceptedImageVersions.every(
+      (version) =>
+        typeof version === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(version),
+    ) ||
+    (acceptedImageVersions.length > 0 &&
+      !acceptedImageVersions.includes(map.hosted.imageVersion))
+  )
+    fail(
+      "Accepted hosted images must be an exact reviewed set containing the reviewed pin",
+    );
   const expected = hostedBuildHost(target, map);
   if (
     map.schemaVersion !== 2 ||
@@ -495,7 +513,8 @@ export function assertHostedBuildIdentity(
     env.RUNNER_ENVIRONMENT !== "github-hosted" ||
     env.GITHUB_REPOSITORY_VISIBILITY !== "public" ||
     env.ImageOS !== map.hosted.imageOS ||
-    env.ImageVersion !== map.hosted.imageVersion
+    (env.ImageVersion !== map.hosted.imageVersion &&
+      !acceptedImageVersions.includes(env.ImageVersion))
   )
     fail("Hosted build OS, architecture or reviewed image identity changed");
   return {
@@ -1522,7 +1541,14 @@ export async function build(
       );
       admission = await hostedAdmissionRecorder(preparationLogs);
       buildHost = await early("identity", () =>
-        assertHostedBuildIdentity(map, target, env),
+        assertHostedBuildIdentity(
+          map,
+          target,
+          env,
+          process.platform,
+          process.arch,
+          engineering?.acceptedImageVersions ?? [],
+        ),
       );
       await early("capacity", async () => {
         const disk = await statfs(env.RUNNER_TEMP);

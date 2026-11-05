@@ -491,7 +491,14 @@ async function tools(env, profile) {
     await json(path.join(reviewed.inputsRoot, `cef-ci-runner-${TARGET}.json`)),
     TARGET,
   );
-  assertHostedBuildIdentity(map, TARGET, env);
+  assertHostedBuildIdentity(
+    map,
+    TARGET,
+    env,
+    process.platform,
+    process.arch,
+    profile.acceptedImages ?? [],
+  );
   const toolsRoot = await realpath(env.SORNG_CEF_TOOLS_ROOT ?? "/");
   const python = path.join(toolsRoot, map.python);
   await verifyToolchainFiles({
@@ -692,6 +699,7 @@ async function checkpointMain(argv, env, observer) {
             checkout: ROOT,
             runnerMode: "hosted",
             engineering: {
+              acceptedImageVersions: profile.acceptedImages ?? [],
               sourceMetadata: macSource?.mode ?? true,
               completeSdk: execution.mode === "complete-sdk",
               packagingMilliseconds: () =>
@@ -904,12 +912,18 @@ async function checkpointMain(argv, env, observer) {
                 console.log(
                   `[cef-engineering-checkpoint] graph files=${graph.files} bytes=${graph.bytes} visited=${graph.visited}`,
                 );
+                checkpointLog(
+                  console.log,
+                  `[cef-engineering-checkpoint] hosted-image observed=${env.ImageVersion} reviewed=${verified.map.hosted.imageVersion}`,
+                );
                 const identity = await afterGnPhase("identity", async () => ({
                   target: TARGET,
                   source: SOURCE_ID,
                   producer: code,
                   canonicalRoot: work,
-                  image: env.ImageVersion,
+                  // The reviewed pin names the image class: a checkpoint sealed on any accepted
+                  // image restores on any other accepted image. The exact observed image is logged.
+                  image: verified.map.hosted.imageVersion,
                   tools: sha(
                     canonical(
                       macSource

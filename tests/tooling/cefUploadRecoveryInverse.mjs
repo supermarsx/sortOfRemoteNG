@@ -7,6 +7,7 @@ const readInverse = (name) =>
   );
 // Applied newest first: the Mac resume cost cuts, the Mac CIPD canonical names, the lean cache, the framework time-cut change, then the digest-reuse change.
 const MAC_INVERSES = [
+  readInverse("accepted_images_inverse.json"),
   readInverse("mac_resume_cost_inverse.json"),
   readInverse("mac_cipd_canonical_inverse.json"),
   readInverse("mac_lean_cache_inverse.json"),
@@ -16,6 +17,7 @@ const MAC_INVERSES = [
 function macInverse(text, section) {
   let restored = text;
   for (const inverse of MAC_INVERSES) {
+    if (inverse[section] === undefined) continue;
     const { pairs, helperStart, helperEnd } = inverse[section];
     if (helperStart !== undefined) {
       const start = restored.indexOf(helperStart);
@@ -38,6 +40,8 @@ function macInverse(text, section) {
   return restored;
 }
 export const withoutMacReuseArchive = (text) => macInverse(text, "archive");
+export const withoutAcceptedImagesRuntime = (text) =>
+  macInverse(text, "runtime");
 // Exact inverse of the asset-upload recovery change in
 // scripts/lib/cef-engineering-checkpoint.mjs. The historical-producer pin
 // chains restore older bytes from the current file; this removes the recovery
@@ -135,6 +139,7 @@ export function withoutRepinRows(rows, root) {
   const inverse = {
     "scripts/cef-engineering-checkpoint.mjs": withoutCliCause,
     "scripts/lib/cef-checkpoint-archive.py": withoutMacReuseArchive,
+    "scripts/cef-runtime-ci.mjs": withoutAcceptedImagesRuntime,
   };
   return rows.map((row) => {
     // 43fc8360b (Windows ARM graph deadline) edited this producer file after

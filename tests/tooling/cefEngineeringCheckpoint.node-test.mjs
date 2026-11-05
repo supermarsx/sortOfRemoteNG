@@ -817,6 +817,7 @@ import {
   withoutUploadRecovery,
   withoutCliCause,
   withoutMacReuseArchive,
+  withoutAcceptedImagesRuntime,
 } from "./cefUploadRecoveryInverse.mjs";
 import { EventEmitter } from "node:events";
 import { types as utilTypes } from "node:util";
@@ -16128,6 +16129,176 @@ test("a second GN revalidation renames the first one's logs aside instead of col
   );
 });
 
+test("accepted Linux ARM runner images are an exact reviewed set bound to the reviewed pin and its evidence", async () => {
+  const target = "aarch64-unknown-linux-gnu";
+  const profile = checkpointProfile(target);
+  const evidence = JSON.parse(
+    await readFile(
+      path.join(
+        ROOT,
+        "native/cef-runner-images/linux-arm-accepted-images.json",
+      ),
+      "utf8",
+    ),
+  );
+  const map = JSON.parse(
+    await readFile(
+      path.join(ROOT, profile.inputs, `cef-ci-runner-${target}.json`),
+      "utf8",
+    ),
+  );
+  const tools = JSON.parse(
+    await readFile(
+      path.join(ROOT, profile.inputs, `tools/${target}.json`),
+      "utf8",
+    ),
+  );
+  assert.deepEqual([...profile.acceptedImages], evidence.accepted);
+  assert.equal(evidence.reviewedPin, map.hosted.imageVersion);
+  assert.equal(evidence.accepted[0], map.hosted.imageVersion);
+  assert.equal(evidence.target, target);
+  assert.equal(evidence.imageOS, map.hosted.imageOS);
+  assert.equal(new Set(evidence.accepted).size, evidence.accepted.length);
+  assert(evidence.accepted.length <= 4);
+  // The pinned toolchain files the evidence compared are the ones the namespace locks.
+  for (const [file, digest] of Object.entries(
+    evidence.evidence.pinnedFileSha256,
+  ))
+    assert.equal(tools.files.find((row) => row.path === file)?.sha256, digest);
+  // Every accepted image has at least one observed run; a rejected image is not accepted.
+  for (const image of evidence.accepted)
+    assert(evidence.evidence.observedRuns.some((row) => row.image === image));
+  for (const row of evidence.rejected)
+    assert(!evidence.accepted.includes(row.image));
+  // The restore policy is explicit.
+  assert.match(evidence.restorePolicy, /restores on any other accepted image/);
+  // The Mac targets keep their single reviewed pin.
+  for (const mac of ["x86_64-apple-darwin", "aarch64-apple-darwin"])
+    assert.equal(checkpointProfile(mac).acceptedImages, undefined);
+});
+
+test("hosted identity accepts only the exact reviewed images and fails closed for any other", async () => {
+  const target = "aarch64-unknown-linux-gnu";
+  const profile = checkpointProfile(target);
+  const map = JSON.parse(
+    await readFile(
+      path.join(ROOT, profile.inputs, `cef-ci-runner-${target}.json`),
+      "utf8",
+    ),
+  );
+  const env = (ImageVersion, ImageOS = "ubuntu24") => ({
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    ImageOS,
+    ImageVersion,
+  });
+  const check = (version, accepted, os) =>
+    assertHostedBuildIdentity(
+      map,
+      target,
+      env(version, os),
+      "linux",
+      "x64",
+      accepted,
+    );
+  // Each accepted image passes and is reported as observed.
+  for (const image of profile.acceptedImages)
+    assert.equal(check(image, profile.acceptedImages).imageVersion, image);
+  // Anything else is refused: another version, a near miss, an empty value, another OS label.
+  for (const image of [
+    "20261101.114.1",
+    "20261101.360.2",
+    "20261026.354.2",
+    "20261023.334.3",
+    "",
+    undefined,
+  ])
+    assert.throws(
+      () => check(image, profile.acceptedImages),
+      /reviewed image identity changed/,
+    );
+  assert.throws(
+    () => check("20261101.360.1", profile.acceptedImages, "ubuntu22"),
+    /reviewed image identity changed/,
+  );
+  // Without the reviewed set only the map's own pin is accepted (unchanged behaviour).
+  assert.equal(
+    check(map.hosted.imageVersion, undefined).imageVersion,
+    map.hosted.imageVersion,
+  );
+  assert.throws(
+    () => check("20261101.360.1", undefined),
+    /reviewed image identity changed/,
+  );
+  assert.throws(
+    () => check("20261101.360.1", []),
+    /reviewed image identity changed/,
+  );
+  // The set can only widen the pin: it must contain it, be unique, small and made of exact strings.
+  for (const bad of [
+    ["20261101.360.1"],
+    ["20261026.354.1", "20261026.354.1"],
+    ["20261026.354.1", "a", "b", "c", "d"],
+    ["20261026.354.1", 7],
+    ["20261026.354.1", "*"],
+    ["20261026.354.1", ""],
+    "20261026.354.1",
+  ])
+    assert.throws(
+      () => check("20261026.354.1", bad),
+      /exact reviewed set|reviewed image identity changed/,
+    );
+  // Architecture and platform stay fixed.
+  assert.throws(
+    () =>
+      assertHostedBuildIdentity(
+        map,
+        target,
+        env("20261101.360.1"),
+        "linux",
+        "arm64",
+        profile.acceptedImages,
+      ),
+    /reviewed image identity changed/,
+  );
+});
+
+test("a checkpoint identity names the reviewed image class so restores work across accepted images only", async () => {
+  const cli = (
+    await readFile(
+      path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  // The identity records the reviewed pin, never the raw observed image.
+  assert.match(cli, /image: verified\.map\.hosted\.imageVersion,/);
+  assert.doesNotMatch(cli, /image: env\.ImageVersion/);
+  // The accepted set reaches both the tools check and the build admission.
+  assert.match(
+    cli,
+    /assertHostedBuildIdentity\(\s*map,\s*TARGET,\s*env,\s*process\.platform,\s*process\.arch,\s*profile\.acceptedImages \?\? \[\],\s*\)/,
+  );
+  assert.match(
+    cli,
+    /acceptedImageVersions: profile\.acceptedImages \?\? \[\],/,
+  );
+  // The observed image is logged for provenance.
+  assert.match(cli, /hosted-image observed=\$\{env\.ImageVersion\} reviewed=/);
+  const runtime = (
+    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  assert.match(runtime, /engineering\?\.acceptedImageVersions \?\? \[\]/);
+  // Same class label for both accepted images, so the identity digests match.
+  const profile = checkpointProfile("aarch64-unknown-linux-gnu");
+  const label = (observed) => {
+    assert(profile.acceptedImages.includes(observed));
+    return profile.acceptedImages[0];
+  };
+  assert.equal(label("20261026.354.1"), label("20261101.360.1"));
+  assert.throws(() => label("20261101.114.1"));
+});
+
 const METADATA_READ_DIAGNOSTIC_PROOF = String.raw`import ast,copy,hashlib,io,json,pathlib,stat,sys,types
 m=types.ModuleType('read_diagnostic');m.__file__=sys.argv[1]
 exec(compile(pathlib.Path(sys.argv[1]).read_bytes(),sys.argv[1],'exec'),m.__dict__)
@@ -16478,7 +16649,8 @@ const MAC_SOURCE_BUDGET_BASELINES = {
     ],
   },
 };
-function withoutMacOriginalSourceLease(text) {
+function withoutMacOriginalSourceLease(widened) {
+  const text = withoutAcceptedImagesRuntime(widened);
   const current =
     '  // BEGIN fixed Linux engineering source budget\n  let budget =\n    runnerMode === "hosted"\n      ? createHostedBuildBudget(\n          engineering\n            ? (target === "x86_64-apple-darwin" ||\n              target === "aarch64-apple-darwin"\n                ? 180\n                : 120) * 60_000\n            : undefined,\n        )\n      : undefined;\n  // END fixed Linux engineering source budget';
   const prior =
