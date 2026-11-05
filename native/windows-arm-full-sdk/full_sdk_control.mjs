@@ -1383,8 +1383,10 @@ const parentMetadata_QUALIFICATION_CPU_ARGS = Object.freeze({
 const parentMetadata_QUALIFICATION_PY_SPACE =
   "[\\x09-\\x0d\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]";
 
+// CEF writes string values unescaped ("%s"), so Windows paths keep single
+// backslashes; GN reads a backslash that does not start \" \\ or \$ literally.
 const parentMetadata_QUALIFICATION_GN_LITERAL = new RegExp(
-  /^\s*([a-z][a-z0-9_]*)\s*=\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\$\x00-\x1f]|\\["\\])*")\s*(?:#.*)?$/.source.replaceAll(
+  /^\s*([a-z][a-z0-9_]*)\s*=\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\$\x00-\x1f]|\\["\\]|\\(?=[^"\\$\x00-\x1f]))*")\s*(?:#.*)?$/.source.replaceAll(
     "\\s",
     parentMetadata_QUALIFICATION_PY_SPACE,
   ),

@@ -5265,6 +5265,81 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_LITERAL_HISTORY = {
+  driver: {
+    bytes: 306488,
+    sha256: "6d822f19fa8fbbb7a748cbecea20244c48d9d02cd60c1a4f313190bff02590c8",
+    rows: [
+      {
+        old: "",
+        new: '// CEF writes string values unescaped ("%s"), so Windows paths keep single\n// backslashes; GN reads a backslash that does not start \\" \\\\ or \\$ literally.\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "bc9cc1ce178b25003dedb449266507061997bf95afd94b191b6e1e99da991d78",
+      },
+      {
+        old: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\])*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        new: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\]|\\\\(?=[^"\\\\$\\x00-\\x1f]))*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        oldSha256:
+          "2a72456ec355e524736b6907c586c050fed5ad676f8f5cfe532707f40784c155",
+        newSha256:
+          "cafd48e6bebcc0da54ce0acdb051d53f3adce65d22f08e9c5f4c924fcf87e4a5",
+      },
+    ],
+  },
+  controller: {
+    bytes: 178352,
+    sha256: "578a0af7abe48508f61ae7d7163f8d2c5b4e4d9e21147c05db8aa2a5391fd775",
+    rows: [
+      {
+        old: "",
+        new: '// CEF writes string values unescaped ("%s"), so Windows paths keep single\n// backslashes; GN reads a backslash that does not start \\" \\\\ or \\$ literally.\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "bc9cc1ce178b25003dedb449266507061997bf95afd94b191b6e1e99da991d78",
+      },
+      {
+        old: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\])*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        new: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\]|\\\\(?=[^"\\\\$\\x00-\\x1f]))*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        oldSha256:
+          "2a72456ec355e524736b6907c586c050fed5ad676f8f5cfe532707f40784c155",
+        newSha256:
+          "cafd48e6bebcc0da54ce0acdb051d53f3adce65d22f08e9c5f4c924fcf87e4a5",
+      },
+    ],
+  },
+};
+function fullGraphLiteralInverse(text, name) {
+  const spec = FULL_GRAPH_LITERAL_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_LITERAL_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_LITERAL_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_LITERAL_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_LITERAL_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_LITERAL_WHOLE");
+  return text;
+}
 const FULL_GRAPH_CAUSE_HISTORY = {
   driver: {
     bytes: 302254,
@@ -5314,6 +5389,7 @@ const FULL_GRAPH_CAUSE_HISTORY = {
   },
 };
 function fullGraphCauseInverse(text, name) {
+  text = fullGraphLiteralInverse(text, name);
   const spec = FULL_GRAPH_CAUSE_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -10042,9 +10118,9 @@ const PARENT_METADATA_READER_DERIVATIONS = [
     name: "QUALIFICATION_GN_LITERAL",
     newName: "parentMetadata_QUALIFICATION_GN_LITERAL",
     oldSha256:
-      "e1882f2d378c8e2da9771351df80eccd460bf6dd55fd8002c68bdcf452ce6db4",
+      "cfe184500b11f71162980bb3e5755c2319675733e635a45f9b5a39feeacbdc61",
     newSha256:
-      "5ca0124fab8c21e23ad6de3bb55ffd6616279c06f2866e59c0e1182827385a8d",
+      "0d9ffde5fafe9802d66029eb52987ace455f7025f0e90817c5f9e4217d145707",
   },
   {
     name: "qualificationShape",
@@ -15918,4 +15994,101 @@ test("FULL failure log tails read only the bounded redacted end of the four role
     missing.every((row) => row.bytes === null),
     true,
   );
+});
+
+// CEF's gn_args.py writes `key="%s"` without escaping (GetConfigFileContents),
+// so the Windows toolchain paths of the real arm64 args.gn keep single
+// backslashes. GN reads such a backslash literally.
+test("FULL strict literal args parser accepts the real CEF-written arm64 args.gn with unescaped Windows paths and still denies GN escapes and controls", async () => {
+  const ts = (await import("typescript")).default,
+    source = await read(prefix + "full-sdk-source-driver.mjs"),
+    ast = ts.createSourceFile("lit.mjs", source, 99, true, ts.ScriptKind.JS),
+    fn = (name) =>
+      ast.statements
+        .find((n) => ts.isFunctionDeclaration(n) && n.name?.text === name)
+        .getText(ast),
+    variable = (name) =>
+      ast.statements
+        .find(
+          (n) =>
+            ts.isVariableStatement(n) &&
+            n.declarationList.declarations.some((d) => d.name.text === name),
+        )
+        .getText(ast),
+    parse = new Function(
+      "Buffer",
+      "sha",
+      "need",
+      [
+        variable("QUALIFICATION_PY_SPACE"),
+        variable("QUALIFICATION_GN_LITERAL"),
+        variable("QUALIFICATION_DECLARED_ARGS"),
+        variable("QUALIFICATION_CPU_ARGS"),
+        fn("qualificationLines"),
+        fn("qualificationTrim"),
+        fn("qualificationParseLiteralArgs"),
+        "return qualificationParseLiteralArgs;",
+      ].join("\n"),
+    )(
+      Buffer,
+      (raw) => createHash("sha256").update(raw).digest("hex"),
+      (ok, code) => {
+        if (!ok) throw new Error(code);
+      },
+    );
+  const BS = "\\";
+  const base =
+    "D:" + BS + "a" + BS + "sortOfRemoteNG" + BS + ".artifacts" + BS + "w-x";
+  const rows = [
+    'alternate_cdm_storage_id_key="968b476909da4373b08903c28e859454"',
+    "blink_symbol_level=0",
+    "chrome_pgo_phase=0",
+    "clang_use_chrome_plugins=false",
+    "enable_background_mode=false",
+    "enable_backup_ref_ptr_instance_tracer=false",
+    "enable_cdm_host_verification=true",
+    "enable_cdm_storage_id=true",
+    "enable_downgrade_processing=false",
+    "enable_precompiled_headers=false",
+    "enable_resource_allowlist_generation=false",
+    "enable_rlz=true",
+    "enable_widevine=true",
+    'host_cpu="x64"',
+    "is_clang=true",
+    "is_component_build=false",
+    "is_debug=false",
+    "optimize_webui=true",
+    "symbol_level=1",
+    'target_cpu="arm64"',
+    "use_lld=true",
+    "use_remoteexec=false",
+    "use_siso=true",
+    "v8_symbol_level=0",
+    'visual_studio_path="' + base + BS + 'custom-vs"',
+    'visual_studio_runtime_dirs="' + base + BS + "runtime" + BS + 'x64"',
+    'visual_studio_version="2026"',
+    'windows_sdk_path="' + base + BS + "Windows Kits" + BS + '10"',
+    'windows_sdk_version="10.0.28000.0"',
+  ];
+  for (const eol of ["\n", "\r\n"]) {
+    const result = parse(Buffer.from(rows.join(eol)));
+    assert.equal(Object.keys(result.values).length, rows.length);
+    assert.equal(
+      result.values.windows_sdk_path,
+      '"' + base + BS + "Windows Kits" + BS + '10"',
+    );
+  }
+  const deny = (line) =>
+    assert.throws(
+      () => parse(Buffer.from(rows.concat([line]).join("\n"))),
+      /QUAL_ARGS_SYNTAX/,
+      line,
+    );
+  deny('x_path="a' + BS + '$b"'); // GN escape for a dollar sign
+  deny('x_path="a' + BS + '"'); // escaped quote leaves the string open
+  deny('x_path="a$b"');
+  deny('x_path="a' + String.fromCharCode(1) + 'b"');
+  deny('x_path="a"b"');
+  deny("x_path=[1, 2]");
+  deny("x_path=other_value");
 });

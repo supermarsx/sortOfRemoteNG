@@ -508,6 +508,82 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_LITERAL_HISTORY = {
+  driver: {
+    bytes: 306488,
+    sha256: "6d822f19fa8fbbb7a748cbecea20244c48d9d02cd60c1a4f313190bff02590c8",
+    rows: [
+      {
+        old: "",
+        new: '// CEF writes string values unescaped ("%s"), so Windows paths keep single\n// backslashes; GN reads a backslash that does not start \\" \\\\ or \\$ literally.\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "bc9cc1ce178b25003dedb449266507061997bf95afd94b191b6e1e99da991d78",
+      },
+      {
+        old: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\])*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        new: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\]|\\\\(?=[^"\\\\$\\x00-\\x1f]))*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        oldSha256:
+          "2a72456ec355e524736b6907c586c050fed5ad676f8f5cfe532707f40784c155",
+        newSha256:
+          "cafd48e6bebcc0da54ce0acdb051d53f3adce65d22f08e9c5f4c924fcf87e4a5",
+      },
+    ],
+  },
+  controller: {
+    bytes: 178352,
+    sha256: "578a0af7abe48508f61ae7d7163f8d2c5b4e4d9e21147c05db8aa2a5391fd775",
+    rows: [
+      {
+        old: "",
+        new: '// CEF writes string values unescaped ("%s"), so Windows paths keep single\n// backslashes; GN reads a backslash that does not start \\" \\\\ or \\$ literally.\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "bc9cc1ce178b25003dedb449266507061997bf95afd94b191b6e1e99da991d78",
+      },
+      {
+        old: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\])*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        new: '  /^\\s*([a-z][a-z0-9_]*)\\s*=\\s*(true|false|-?(?:0|[1-9][0-9]{0,9})|"(?:[^"\\\\$\\x00-\\x1f]|\\\\["\\\\]|\\\\(?=[^"\\\\$\\x00-\\x1f]))*")\\s*(?:#.*)?$/.source.replaceAll(\n',
+        oldSha256:
+          "2a72456ec355e524736b6907c586c050fed5ad676f8f5cfe532707f40784c155",
+        newSha256:
+          "cafd48e6bebcc0da54ce0acdb051d53f3adce65d22f08e9c5f4c924fcf87e4a5",
+      },
+    ],
+  },
+};
+function fullGraphLiteralInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_LITERAL_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_LITERAL_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_LITERAL_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_LITERAL_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_LITERAL_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_LITERAL_WHOLE");
+  return text;
+}
 const FULL_GRAPH_CAUSE_HISTORY = {
   driver: {
     bytes: 302254,
@@ -557,6 +633,7 @@ const FULL_GRAPH_CAUSE_HISTORY = {
   },
 };
 function fullGraphCauseInverse(text, name) {
+  text = fullGraphLiteralInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_CAUSE_HISTORY[name];
   if (!spec) return text;
