@@ -1,0 +1,72 @@
+{
+  "archive": {
+    "pairs": [
+      [
+        "def source_mac_key_text(stamp_, ctime_ns, birth, uid, gid):\n    # Full local identity as one compact text: size, mtime_ns, st_dev, st_ino, mode, nlink,\n    # then ctime_ns, the opaque birth identity and the owner. ctime cannot be set from user\n    # space, so any write or replacement changes the key. A text key keeps a million-entry\n    # reuse map small enough for a 7 GB hosted runner.\n    return repr((tuple(stamp_), ctime_ns, tuple(birth), uid, gid))\n\n\n",
+        ""
+      ],
+      [
+        "    return source_mac_key_text(row['stamp'], row['ctimeNs'], row['birthIdentity'], row['uid'], row['gid'])\n",
+        "    # Full local identity: size, mtime_ns, st_dev, st_ino, mode, nlink, then\n    # ctime_ns, the opaque birth identity and the owner. ctime cannot be set\n    # from user space, so any write or replacement changes the key.\n    return (tuple(row['stamp']), row['ctimeNs'], tuple(row['birthIdentity']), row['uid'], row['gid'])\n"
+      ],
+      [
+        "    return source_mac_key_text(value[0], value[1], value[2], value[3], value[4])\n\n\nclass SourceMacPostReuse:\n    \"\"\"Digests of the pass that just ran, viewed in place (no copy) for its postcheck.\n\n    A file keeps its digest only when its complete local identity still equals the one it\n    was hashed under, or the one recorded right after its own timestamp write.\n    \"\"\"\n    def __init__(self, guards, digests):\n        self.guards, self.digests, self.updated = guards, digests, {}\n    def __setitem__(self, name, key):\n        self.updated[name] = key\n    def get(self, name, default=None):\n        digest = self.digests.get(name)\n        if digest is None or name not in self.guards:\n            return default\n        key = self.updated.get(name)\n        if key is None:\n            key = source_mac_guard_key(self.guards[name])\n        return key, digest\n    def __bool__(self):\n        return bool(self.digests)\n",
+        "    return (tuple(value[0]), value[1], tuple(value[2]), value[3], value[4])\n"
+      ],
+      [
+        "    A digest is kept only when the row's complete local identity equals the one recorded when\n    that digest was computed; every other file is read again.\n",
+        "    A digest is kept only when the row's complete local identity equals the one\n    recorded when that digest was computed; every other file is read again.\n"
+      ],
+      [
+        "    # The cache lives in acquisition-logs, an administrative member that is never part of the\n    # owned inventory, so it cannot change the snapshot. One header line, then one row per line,\n    # streamed so the whole table is never held as text.\n",
+        "    # The cache lives in acquisition-logs, an administrative member that is\n    # never part of the owned inventory, so it cannot change the snapshot.\n"
+      ],
+      [
+        "    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), 'source-diagnostic-root')\n    target, temp = logs / SOURCE_MAC_STAT_CACHE_NAME, logs / (SOURCE_MAC_STAT_CACHE_NAME + '.partial')\n",
+        "    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), 'source-diagnostic-root')\n    rows = []\n    for name, digest in sorted(digests.items()):\n        if name not in guards:\n            continue\n        key = source_mac_guard_key(guards[name])\n        rows.append([name, list(key[0]), key[1], list(key[2]), key[3], key[4], digest])\n    data = json.dumps({'schemaVersion':1, 'kind':SOURCE_MAC_STAT_CACHE_KIND, 'sidecarSha256':sidecar_sha,\n                       'identity':identity, 'entries':rows}, separators=(',',':')).encode()\n    target, temp = logs / SOURCE_MAC_STAT_CACHE_NAME, logs / (SOURCE_MAC_STAT_CACHE_NAME + '.partial')\n"
+      ],
+      [
+        "    names = [name for name in sorted(digests) if name in guards]\n    header = json.dumps({'schemaVersion':2, 'kind':SOURCE_MAC_STAT_CACHE_KIND, 'sidecarSha256':sidecar_sha,\n                         'identity':identity, 'count':len(names)}, separators=(',',':')).encode() + b'\\n'\n",
+        ""
+      ],
+      [
+        "    with os.fdopen(fd, 'wb', buffering=1 << 20) as stream:\n        stream.write(header)\n        for name in names:\n            value = guards[name]\n            stream.write(json.dumps([name, list(value[0]), value[1], list(value[2]), value[3], value[4], digests[name]],\n                                    separators=(',',':')).encode() + b'\\n')\n        stream.flush();os.fsync(stream.fileno())\n",
+        "    with os.fdopen(fd, 'wb') as stream:\n        stream.write(data);stream.flush();os.fsync(stream.fileno())\n"
+      ],
+      [
+        "        with open(path, 'rb') as stream:\n            value = json.loads(stream.readline(1 << 20))\n            if (type(value) is not dict or set(value) != {'schemaVersion','kind','sidecarSha256','identity','count'} or\n                    value['schemaVersion'] != 2 or value['kind'] != SOURCE_MAC_STAT_CACHE_KIND or value['identity'] != identity or\n                    value['sidecarSha256'] != source_file_sha256(sidecar, budget) or type(value['count']) is not int or\n                    not 0 <= value['count'] <= SOURCE_MAX_ENTRIES):\n",
+        "        value = json.loads(path.read_bytes())\n        if (type(value) is not dict or set(value) != {'schemaVersion','kind','sidecarSha256','identity','entries'} or\n                value['schemaVersion'] != 1 or value['kind'] != SOURCE_MAC_STAT_CACHE_KIND or value['identity'] != identity or\n                value['sidecarSha256'] != source_file_sha256(sidecar, budget) or type(value['entries']) is not list):\n            return None\n        reuse = {}\n        for row in value['entries']:\n            if (type(row) is not list or len(row) != 7 or not isinstance(row[0], str) or\n                    type(row[1]) is not list or len(row[1]) != 6 or not all(type(x) is int for x in row[1]) or\n                    type(row[2]) is not int or type(row[3]) is not list or len(row[3]) != 2 or\n                    not all(isinstance(x, str) for x in row[3]) or type(row[4]) is not int or type(row[5]) is not int or\n                    not isinstance(row[6], str) or re.fullmatch(r'[a-f0-9]{64}', row[6]) is None):\n"
+      ],
+      [
+        "            reuse = {}\n            for line in stream:\n                budget.check()\n                row = json.loads(line)\n                if (type(row) is not list or len(row) != 7 or not isinstance(row[0], str) or\n                        type(row[1]) is not list or len(row[1]) != 6 or not all(type(x) is int for x in row[1]) or\n                        type(row[2]) is not int or type(row[3]) is not list or len(row[3]) != 2 or\n                        not all(isinstance(x, str) for x in row[3]) or type(row[4]) is not int or type(row[5]) is not int or\n                        not isinstance(row[6], str) or re.fullmatch(r'[a-f0-9]{64}', row[6]) is None or row[0] in reuse):\n                    return None\n                reuse[row[0]] = (source_mac_key_text(row[1], row[2], row[3], row[4], row[5]), row[6])\n            if len(reuse) != value['count']:\n                return None\n",
+        "            reuse[row[0]] = ((tuple(row[1]), row[2], tuple(row[3]), row[4], row[5]), row[6])\n"
+      ],
+      [
+        "    require(reuse is None or type(reuse) in (dict, SourceMacPostReuse), 'source-stat-reuse')\n",
+        "    require(reuse is None or type(reuse) is dict, 'source-stat-reuse')\n"
+      ],
+      [
+        "        layout['digests'] = hashes\n",
+        "        layout['digests'] = dict(hashes)\n"
+      ],
+      [
+        "        post = SourceMacPostReuse(guards, digests)\n",
+        "        post = {name: source_mac_guard_key(value) for name, value in guards.items() if name in digests}\n"
+      ],
+      [
+        "                        post[name] = (source_mac_key_text(stamp(after), after.st_ctime_ns, source_birth_identity(after), after.st_uid, after.st_gid)\n",
+        "                        post[name] = ((tuple(stamp(after)), after.st_ctime_ns, tuple(source_birth_identity(after)), after.st_uid, after.st_gid)\n"
+      ],
+      [
+        "                                reuse=post if post else None)\n",
+        "                                reuse={name: (key, digests[name]) for name, key in post.items()} or None)\n"
+      ]
+    ]
+  },
+  "lib": {
+    "pairs": []
+  },
+  "cli": {
+    "pairs": []
+  }
+}

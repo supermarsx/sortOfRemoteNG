@@ -2387,7 +2387,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),
-    "cf311c901a3cc3b996a8938b4564a72ef50b68edc7000dc6051173df2412d259",
+    "902a181f617c8a3af9ae1493d4133820c3683695a703185388e9e3ac0fdb21d3",
   );
   const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);

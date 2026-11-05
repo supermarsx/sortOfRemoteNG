@@ -2654,7 +2654,7 @@ def source_snapshot(root, budget, guards=None, context=None, *, member_policy=No
 SOURCE_CIPD_ROOTS = ('.cipd', 'depot_tools/.cipd_bin/.cipd', 'src/third_party/depot_tools/.cipd_bin/.cipd')
 
 
-def source_cipd_layout(root, rows):
+def source_cipd_layout(root, rows, digests=None):
     by_path = {row['path']: row for row in rows}
     mapping = {}
     for base in SOURCE_CIPD_ROOTS:
@@ -2670,9 +2670,13 @@ def source_cipd_layout(root, rows):
             described = by_path.get(child + '/description.json')
             require(described is not None and described['kind'] == 'file' and 0 < described['stamp'][0] <= 65536,
                     'source-cipd-description')
+            raw = source_io_call('file-read', root / child / 'description.json',
+                                 lambda: (root / child / 'description.json').read_bytes())
+            # The Mac codec binds what it parses to the digest it hashed through its held descriptors.
+            require(digests is None or hashlib.sha256(raw).hexdigest() == digests.get(child + '/description.json'),
+                    'source-cipd-description')
             try:
-                value = json.loads(source_io_call('file-read', root / child / 'description.json',
-                                                  lambda: (root / child / 'description.json').read_bytes()))
+                value = json.loads(raw)
             except (ValueError, UnicodeDecodeError):
                 raise CheckpointError('source-cipd-description')
             require(type(value) is dict and set(value) <= {'subdir', 'package_name'} and
@@ -3138,23 +3142,50 @@ SOURCE_MAC_STAT_CACHE_NAME = '.sorng-mac-source-stat-cache.json'
 SOURCE_MAC_STAT_CACHE_KIND = 'sorng-macos-source-stat-cache'
 
 
+def source_mac_key_text(stamp_, ctime_ns, birth, uid, gid):
+    # Full local identity as one compact text: size, mtime_ns, st_dev, st_ino, mode, nlink,
+    # then ctime_ns, the opaque birth identity and the owner. ctime cannot be set from user
+    # space, so any write or replacement changes the key. A text key keeps a million-entry
+    # reuse map small enough for a 7 GB hosted runner.
+    return repr((tuple(stamp_), ctime_ns, tuple(birth), uid, gid))
+
+
 def source_mac_reuse_key(row):
-    # Full local identity: size, mtime_ns, st_dev, st_ino, mode, nlink, then
-    # ctime_ns, the opaque birth identity and the owner. ctime cannot be set
-    # from user space, so any write or replacement changes the key.
-    return (tuple(row['stamp']), row['ctimeNs'], tuple(row['birthIdentity']), row['uid'], row['gid'])
+    return source_mac_key_text(row['stamp'], row['ctimeNs'], row['birthIdentity'], row['uid'], row['gid'])
 
 
 def source_mac_guard_key(value):
     # The same key from a guards[] value: (stamp, ctimeNs, birthIdentity, uid, gid).
-    return (tuple(value[0]), value[1], tuple(value[2]), value[3], value[4])
+    return source_mac_key_text(value[0], value[1], value[2], value[3], value[4])
+
+
+class SourceMacPostReuse:
+    """Digests of the pass that just ran, viewed in place (no copy) for its postcheck.
+
+    A file keeps its digest only when its complete local identity still equals the one it
+    was hashed under, or the one recorded right after its own timestamp write.
+    """
+    def __init__(self, guards, digests):
+        self.guards, self.digests, self.updated = guards, digests, {}
+    def __setitem__(self, name, key):
+        self.updated[name] = key
+    def get(self, name, default=None):
+        digest = self.digests.get(name)
+        if digest is None or name not in self.guards:
+            return default
+        key = self.updated.get(name)
+        if key is None:
+            key = source_mac_guard_key(self.guards[name])
+        return key, digest
+    def __bool__(self):
+        return bool(self.digests)
 
 
 def source_mac_split_reuse(file_rows, reuse):
     """Partition rows into digests that may be kept and rows that must be read.
 
-    A digest is kept only when the row's complete local identity equals the one
-    recorded when that digest was computed; every other file is read again.
+    A digest is kept only when the row's complete local identity equals the one recorded when
+    that digest was computed; every other file is read again.
     """
     if reuse is None:
         return {}, list(file_rows)
@@ -3169,30 +3200,31 @@ def source_mac_split_reuse(file_rows, reuse):
 
 
 def source_mac_stat_cache_write(root, sidecar_sha, identity, digests, guards):
-    # The cache lives in acquisition-logs, an administrative member that is
-    # never part of the owned inventory, so it cannot change the snapshot.
+    # The cache lives in acquisition-logs, an administrative member that is never part of the
+    # owned inventory, so it cannot change the snapshot. One header line, then one row per line,
+    # streamed so the whole table is never held as text.
     logs = root / 'acquisition-logs'
     try:
         info = logs.lstat()
     except FileNotFoundError:
         return False
     require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid(), 'source-diagnostic-root')
-    rows = []
-    for name, digest in sorted(digests.items()):
-        if name not in guards:
-            continue
-        key = source_mac_guard_key(guards[name])
-        rows.append([name, list(key[0]), key[1], list(key[2]), key[3], key[4], digest])
-    data = json.dumps({'schemaVersion':1, 'kind':SOURCE_MAC_STAT_CACHE_KIND, 'sidecarSha256':sidecar_sha,
-                       'identity':identity, 'entries':rows}, separators=(',',':')).encode()
     target, temp = logs / SOURCE_MAC_STAT_CACHE_NAME, logs / (SOURCE_MAC_STAT_CACHE_NAME + '.partial')
     try:
         require(stat.S_ISREG(temp.lstat().st_mode), 'source-diagnostic-root');temp.unlink()
     except FileNotFoundError:
         pass
+    names = [name for name in sorted(digests) if name in guards]
+    header = json.dumps({'schemaVersion':2, 'kind':SOURCE_MAC_STAT_CACHE_KIND, 'sidecarSha256':sidecar_sha,
+                         'identity':identity, 'count':len(names)}, separators=(',',':')).encode() + b'\n'
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    with os.fdopen(fd, 'wb') as stream:
-        stream.write(data);stream.flush();os.fsync(stream.fileno())
+    with os.fdopen(fd, 'wb', buffering=1 << 20) as stream:
+        stream.write(header)
+        for name in names:
+            value = guards[name]
+            stream.write(json.dumps([name, list(value[0]), value[1], list(value[2]), value[3], value[4], digests[name]],
+                                    separators=(',',':')).encode() + b'\n')
+        stream.flush();os.fsync(stream.fileno())
     os.replace(temp, target)
     return True
 
@@ -3203,20 +3235,26 @@ def source_mac_stat_cache_reuse(root, sidecar, identity, budget):
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > SOURCE_STAT_CACHE_MAX:
             return None
-        value = json.loads(path.read_bytes())
-        if (type(value) is not dict or set(value) != {'schemaVersion','kind','sidecarSha256','identity','entries'} or
-                value['schemaVersion'] != 1 or value['kind'] != SOURCE_MAC_STAT_CACHE_KIND or value['identity'] != identity or
-                value['sidecarSha256'] != source_file_sha256(sidecar, budget) or type(value['entries']) is not list):
-            return None
-        reuse = {}
-        for row in value['entries']:
-            if (type(row) is not list or len(row) != 7 or not isinstance(row[0], str) or
-                    type(row[1]) is not list or len(row[1]) != 6 or not all(type(x) is int for x in row[1]) or
-                    type(row[2]) is not int or type(row[3]) is not list or len(row[3]) != 2 or
-                    not all(isinstance(x, str) for x in row[3]) or type(row[4]) is not int or type(row[5]) is not int or
-                    not isinstance(row[6], str) or re.fullmatch(r'[a-f0-9]{64}', row[6]) is None):
+        with open(path, 'rb') as stream:
+            value = json.loads(stream.readline(1 << 20))
+            if (type(value) is not dict or set(value) != {'schemaVersion','kind','sidecarSha256','identity','count'} or
+                    value['schemaVersion'] != 2 or value['kind'] != SOURCE_MAC_STAT_CACHE_KIND or value['identity'] != identity or
+                    value['sidecarSha256'] != source_file_sha256(sidecar, budget) or type(value['count']) is not int or
+                    not 0 <= value['count'] <= SOURCE_MAX_ENTRIES):
                 return None
-            reuse[row[0]] = ((tuple(row[1]), row[2], tuple(row[3]), row[4], row[5]), row[6])
+            reuse = {}
+            for line in stream:
+                budget.check()
+                row = json.loads(line)
+                if (type(row) is not list or len(row) != 7 or not isinstance(row[0], str) or
+                        type(row[1]) is not list or len(row[1]) != 6 or not all(type(x) is int for x in row[1]) or
+                        type(row[2]) is not int or type(row[3]) is not list or len(row[3]) != 2 or
+                        not all(isinstance(x, str) for x in row[3]) or type(row[4]) is not int or type(row[5]) is not int or
+                        not isinstance(row[6], str) or re.fullmatch(r'[a-f0-9]{64}', row[6]) is None or row[0] in reuse):
+                    return None
+                reuse[row[0]] = (source_mac_key_text(row[1], row[2], row[3], row[4], row[5]), row[6])
+            if len(reuse) != value['count']:
+                return None
         return reuse
     except FileNotFoundError:
         return None
@@ -3234,7 +3272,7 @@ def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external,
         local_before = source_local(root.stat(), policy)
     root_before = stamp(root.stat())
     linux = not external and not policy.get('mac')
-    require(reuse is None or type(reuse) is dict, 'source-stat-reuse')
+    require(reuse is None or type(reuse) in (dict, SourceMacPostReuse), 'source-stat-reuse')
     source_phase('inventory')
     rows, total = inventory(root, budget, source_policy=policy, member_policy=member_policy)
     source_phase('hash')
@@ -3250,7 +3288,7 @@ def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external,
     hashes = _source_mac_fd_hashes(root,fresh,budget,policy,root_before,local_before,progress)
     hashes.update(kept)
     if layout is not None:
-        layout['digests'] = dict(hashes)
+        layout['digests'] = hashes
     budget.check()
     if not external:
         require(hashes.get('.gclient_entries') == policy['registrySha256'], 'source-repositories-changed')
@@ -3275,10 +3313,11 @@ def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external,
             guards.update({row['path']: (row['stamp'],row['ctimeNs']) for row in rows})
             guards[''] = (root_before,root.stat().st_ctime_ns)
     entries = [source_portable(row, hashes.get(row['path']), policy) if policy.get('mac') else source_portable(row, hashes.get(row['path'])) for row in rows]
-    if not external and not policy.get('mac'):
-        # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout
-        # out-parameter maps every canonical path back to this checkout.
-        mapping = source_cipd_layout(root, rows)
+    if not external:
+        # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout out-parameter maps
+        # every canonical path back to this checkout. A fresh checkout numbers pkgs/<N>
+        # differently, so a resume would otherwise see renamed directories and rewritten links.
+        mapping = source_cipd_layout(root, rows, hashes)
         canonical, targets = {}, {}
         for entry, row in zip(entries, rows):
             name = source_cipd_path(mapping, row['path'])
@@ -3296,10 +3335,9 @@ def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external,
                     entry['sha256'] = hashlib.sha256(target.encode()).hexdigest()
         require(len(canonical) == len(rows), 'source-cipd-layout')
         if layout is not None:
-            layout.update(canonical=canonical, targets=targets, digests=dict(hashes))
-        # Linux directory iteration order is not stable across fresh checkouts
-        # (ext4 creation order, parallel git checkout), so the Linux snapshot
-        # is canonical in path order; Mac Intel snapshots keep their reviewed order.
+            layout.update(canonical=canonical, targets=targets)
+        # Directory iteration order is not stable across fresh checkouts, so the snapshot is
+        # canonical in path order.
         entries.sort(key=lambda entry: entry['path'])
     value = {'entries': entries,
              'rootMtimeNs': str(root_before[1]), 'gitHeads': dict(sorted(policy.get('gitHeads', {}).items())),
@@ -3575,7 +3613,8 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     layout = {}
     current = source_snapshot(root, budget, guards, context=snapshot_context, reuse=reuse, layout=layout) if mac else source_snapshot(root, budget, guards, reuse=reuse, layout=layout)
     # Canonical (sidecar) path -> this checkout's real path; identity on Mac.
-    real = (lambda name: name) if mac else (lambda name: layout['canonical'][name])
+    # The owned Mac snapshot fills layout; a private fixture snapshot that does not keeps raw names.
+    real = (lambda name: layout.get('canonical', {}).get(name, name)) if mac else (lambda name: layout['canonical'][name])
     source_phase('compare')
     require(expected['gitHeads'] == current['gitHeads'] and type(expected['bytes']) is int and expected['bytes'] == current['bytes'],
             'source-repository-or-total-changed')
@@ -3598,7 +3637,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
     post = {name: source_stat_key({'stamp':value[0], 'ctimeNs':value[1]}) for name, value in guards.items()
             if name in digests} if linux else None
     if mac:
-        post = {name: source_mac_guard_key(value) for name, value in guards.items() if name in digests}
+        post = SourceMacPostReuse(guards, digests)
     if mode == 'source-apply':
         source_phase('apply-literals')
         # Revalidate the fixed absence witnesses immediately before any utime.
@@ -3612,7 +3651,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')
             require((source_local(before, snapshot_context) if mac else (stamp(before),before.st_ctime_ns)) == guards[name], 'source-write-identity')
             if row['kind'] == 'symlink':
-                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if mac else layout['targets'][row['path']]),
+                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if mac and 'targets' not in layout else layout['targets'][row['path']]),
                         'source-link-changed')
                 # BEGIN MAC OWNED NOOP SYMLINK UTIME
                 if mac and before.st_mtime_ns == int(row['mtimeNs']):
@@ -3621,7 +3660,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                 source_io_call('apply-utime', path, lambda: os.utime(path, ns=(before.st_atime_ns,int(row['mtimeNs'])), follow_symlinks=False))
                 after = path.lstat()
                 require((before.st_dev,before.st_ino,before.st_mode)==(after.st_dev,after.st_ino,after.st_mode) and
-                        os.readlink(path)==(row['target'] if mac else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
+                        os.readlink(path)==(row['target'] if mac and 'targets' not in layout else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')
                 if mac:
                     source_owned_mac_transition(before, after)
             else:
@@ -3645,7 +3684,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
                     if mac:
                         source_owned_mac_transition(before, after, held)
                     if post is not None and row['kind'] == 'file':
-                        post[name] = ((tuple(stamp(after)), after.st_ctime_ns, tuple(source_birth_identity(after)), after.st_uid, after.st_gid)
+                        post[name] = (source_mac_key_text(stamp(after), after.st_ctime_ns, source_birth_identity(after), after.st_uid, after.st_gid)
                                       if mac else tuple(stamp(after)) + (after.st_ctime_ns,))
                 except BaseException as error:
                     primary = error
@@ -3677,7 +3716,7 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
         # file whose complete local identity still equals the one it was hashed under.
         final_guards, final_layout = {}, {}
         final = source_snapshot(root, budget, final_guards, context=snapshot_context, layout=final_layout,
-                                reuse={name: (key, digests[name]) for name, key in post.items()} or None)
+                                reuse=post if post else None)
         require(final == expected, 'source-metadata-postcheck')
         if mode == 'source-apply' and 'digests' in final_layout:
             source_phase('stat-cache-write')

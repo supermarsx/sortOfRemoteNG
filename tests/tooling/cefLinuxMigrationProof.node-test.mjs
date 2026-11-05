@@ -562,7 +562,7 @@ test("the retained proof producer binds all actual131 rows through the exact cur
   assert.equal(rows.length, 131);
   assert.equal(
     codeTreeDigest(rows),
-    "cf311c901a3cc3b996a8938b4564a72ef50b68edc7000dc6051173df2412d259",
+    "902a181f617c8a3af9ae1493d4133820c3683695a703185388e9e3ac0fdb21d3",
   );
   assert.equal(
     CODE_DIGEST,

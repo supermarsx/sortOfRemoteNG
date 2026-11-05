@@ -1,0 +1,44 @@
+{
+  "archive": {
+    "pairs": [
+      [
+        "def source_cipd_layout(root, rows, digests=None):\n",
+        "def source_cipd_layout(root, rows):\n"
+      ],
+      [
+        "            raw = source_io_call('file-read', root / child / 'description.json',\n                                 lambda: (root / child / 'description.json').read_bytes())\n            # The Mac codec binds what it parses to the digest it hashed through its held descriptors.\n            require(digests is None or hashlib.sha256(raw).hexdigest() == digests.get(child + '/description.json'),\n                    'source-cipd-description')\n",
+        ""
+      ],
+      [
+        "                value = json.loads(raw)\n",
+        "                value = json.loads(source_io_call('file-read', root / child / 'description.json',\n                                                  lambda: (root / child / 'description.json').read_bytes()))\n"
+      ],
+      [
+        "    if not external:\n        # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout out-parameter maps\n        # every canonical path back to this checkout. A fresh checkout numbers pkgs/<N>\n        # differently, so a resume would otherwise see renamed directories and rewritten links.\n        mapping = source_cipd_layout(root, rows, hashes)\n",
+        "    if not external and not policy.get('mac'):\n        # Canonical CIPD package keys (see SOURCE_CIPD_ROOTS); the layout\n        # out-parameter maps every canonical path back to this checkout.\n        mapping = source_cipd_layout(root, rows)\n"
+      ],
+      [
+        "            layout.update(canonical=canonical, targets=targets)\n        # Directory iteration order is not stable across fresh checkouts, so the snapshot is\n        # canonical in path order.\n",
+        "            layout.update(canonical=canonical, targets=targets, digests=dict(hashes))\n        # Linux directory iteration order is not stable across fresh checkouts\n        # (ext4 creation order, parallel git checkout), so the Linux snapshot\n        # is canonical in path order; Mac Intel snapshots keep their reviewed order.\n"
+      ],
+      [
+        "    # The owned Mac snapshot fills layout; a private fixture snapshot that does not keeps raw names.\n    real = (lambda name: layout.get('canonical', {}).get(name, name)) if mac else (lambda name: layout['canonical'][name])\n",
+        "    real = (lambda name: name) if mac else (lambda name: layout['canonical'][name])\n"
+      ],
+      [
+        "                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if mac and 'targets' not in layout else layout['targets'][row['path']]),\n",
+        "                require(stat.S_ISLNK(before.st_mode) and os.readlink(path) == (row['target'] if mac else layout['targets'][row['path']]),\n"
+      ],
+      [
+        "                        os.readlink(path)==(row['target'] if mac and 'targets' not in layout else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')\n",
+        "                        os.readlink(path)==(row['target'] if mac else layout['targets'][row['path']]) and after.st_mtime_ns==int(row['mtimeNs']), 'source-mtime-readback')\n"
+      ]
+    ]
+  },
+  "lib": {
+    "pairs": []
+  },
+  "cli": {
+    "pairs": []
+  }
+}

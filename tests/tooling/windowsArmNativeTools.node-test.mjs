@@ -261,7 +261,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(currentRows.length, 131);
   assert.equal(
     digest(Buffer.from(JSON.stringify(currentRows))),
-    "cf311c901a3cc3b996a8938b4564a72ef50b68edc7000dc6051173df2412d259",
+    "902a181f617c8a3af9ae1493d4133820c3683695a703185388e9e3ac0fdb21d3",
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const recoveredCore = execFileSync(
