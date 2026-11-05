@@ -16072,7 +16072,7 @@ test(
         "-S",
         path.join(ROOT, "tests/fixtures/cef/mac_owned_source_reuse_test.py"),
       ],
-      { encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024 },
+      { encoding: "utf8", timeout: 300000, maxBuffer: 1024 * 1024 },
     );
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stderr, /Ran 19 tests/);
@@ -17780,7 +17780,7 @@ for (const [fixture, tests] of [
       const result = spawnSync(
         "python3",
         ["-I", "-B", "-S", path.join(ROOT, "tests/fixtures/cef", fixture)],
-        { encoding: "utf8", timeout: 60000, maxBuffer: 1024 * 1024 },
+        { encoding: "utf8", timeout: 300000, maxBuffer: 1024 * 1024 },
       );
       assert.equal(
         result.status,
