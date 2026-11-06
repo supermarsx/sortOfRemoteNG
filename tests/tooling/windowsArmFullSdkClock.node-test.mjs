@@ -508,6 +508,52 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_SNAPSHOT_HISTORY = {
+  driver: {
+    bytes: 306717,
+    sha256: "d017aff0b8eeebe1451af7872c0563386a141af3ab7297ab4e8c8cd71c3ecb99",
+    rows: [
+      {
+        old: "      const snapshot = capture.diagnostic;\n",
+        new: "      // `diagnostic` is the canonical JSON text of the pin snapshot; the sealed\n      // fresh-graph-pins.json must hold that object, not a JSON string of it.\n      const snapshot = JSON.parse(capture.diagnostic);\n",
+        oldSha256:
+          "9765905a0166cff17d36a4205539a39156c3800d2d8c42dbfde67358adc54eb2",
+        newSha256:
+          "eaca1e95e93ad0fdc5c702cf724ae89649fd7b558b86b4c0e98bda595ba385fa",
+      },
+    ],
+  },
+};
+function fullGraphSnapshotInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_SNAPSHOT_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_SNAPSHOT_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_SNAPSHOT_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_SNAPSHOT_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_SNAPSHOT_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_SNAPSHOT_WHOLE");
+  return text;
+}
 const FULL_GRAPH_GRAPHDIAG_HISTORY = {
   controller: {
     bytes: 178530,
@@ -541,6 +587,7 @@ const FULL_GRAPH_GRAPHDIAG_HISTORY = {
   },
 };
 function fullGraphGraphdiagInverse(text, name) {
+  text = fullGraphSnapshotInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_GRAPHDIAG_HISTORY[name];
   if (!spec) return text;

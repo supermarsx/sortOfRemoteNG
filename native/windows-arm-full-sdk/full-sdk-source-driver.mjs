@@ -9192,7 +9192,9 @@ async function runFullSourceBody(argv) {
       currentProgress.phase("graph-inventory");
       const capture = await collectFullQualificationGraph(qualificationOwner);
       graph = capture.summary;
-      const snapshot = capture.diagnostic;
+      // `diagnostic` is the canonical JSON text of the pin snapshot; the sealed
+      // fresh-graph-pins.json must hold that object, not a JSON string of it.
+      const snapshot = JSON.parse(capture.diagnostic);
       // BEGIN FRESH RESTORED GRAPH COMPARISON
       if (restoredCheckpoint) {
         const priorGraph = qualificationBoundedJson(
