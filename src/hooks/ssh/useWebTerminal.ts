@@ -286,6 +286,9 @@ const PROMPT_NOT_CONFIRMED: PromptDecision = Object.freeze({
   confirmed: false,
   remember: false,
 });
+// send_ssh_input failures that mean the backend shell no longer exists.
+const SSH_SHELL_GONE_PATTERN =
+  /SSH shell mailbox is closed|Shell not started|Session not found/i;
 const MODAL_DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"]';
 interface NativeSshTerminalBufferSnapshot {
   session_id: string;
@@ -514,6 +517,9 @@ export function useWebTerminal(
     sessionId: string;
     message: string;
   } | null>(null);
+  const reportSshShellClosedRef = useRef<
+    ((payload: SshClosedEventPayload) => void) | null
+  >(null);
   const terminalActiveRef = useRef(isTerminalActive);
   terminalActiveRef.current = isTerminalActive;
   const previousTerminalActiveRef = useRef(isTerminalActive);
@@ -2630,6 +2636,21 @@ export function useWebTerminal(
           });
           return true;
         } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          const actorId = sshSessionId.current;
+          if (actorId && SSH_SHELL_GONE_PATTERN.test(reason)) {
+            // The shell ended and its close event did not reach this view, so
+            // every further keystroke would fail the same way. Run the close
+            // path (disconnected state, reconnect) instead of logging per key.
+            isSshReady.current = false;
+            reportSshShellClosedRef.current?.({
+              session_id: actorId,
+              reason: "transport_error",
+              recoverable: true,
+              message: reason,
+            });
+            return false;
+          }
           console.error("Failed to send SSH input:", err);
           return false;
         }
@@ -3832,6 +3853,8 @@ export function useWebTerminal(
       });
     };
 
+    reportSshShellClosedRef.current = handleClosed;
+
     const unbindActor = (requestedActorId?: string) => {
       if (requestedActorId && boundActorId !== requestedActorId) return;
       actorBindingRevision++;
@@ -4043,6 +4066,7 @@ export function useWebTerminal(
       renderFitDisposable?.dispose();
       renderFitDisposable = null;
       unbindActor();
+      reportSshShellClosedRef.current = null;
       bindSshEventActorRef.current = async () => undefined;
       unbindSshEventActorRef.current = () => undefined;
       requestAnimationFrame(() => {

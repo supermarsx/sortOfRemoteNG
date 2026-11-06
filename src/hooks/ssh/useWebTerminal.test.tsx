@@ -1896,6 +1896,54 @@ describe("useWebTerminal input lifecycle", () => {
     expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
   });
 
+  it("leaves the connected state once input reports the shell mailbox is closed", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "send_ssh_input") {
+        return Promise.reject(
+          "Failed to send input to shell: SSH shell mailbox is closed",
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true),
+    );
+
+    await act(async () => {
+      await mocks.MockTerminal.instances[0].emitInput("\x1b[A");
+    });
+    await waitFor(() => expect(model?.status).not.toBe("connected"));
+    expect(model!.sshFailure).toMatchObject({
+      kind: "transport",
+      recoverable: true,
+    });
+    expect(model!.sshFailure?.technicalDetails).toMatch(/mailbox is closed/);
+
+    // Later keystrokes are dropped locally rather than failing per key.
+    await act(async () => {
+      await mocks.MockTerminal.instances[0].emitInput("\x1b[A");
+    });
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "send_ssh_input",
+      ),
+    ).toHaveLength(1);
+    expect(error).not.toHaveBeenCalledWith(
+      "Failed to send SSH input:",
+      expect.anything(),
+    );
+  });
+
   it.each(["success", "empty", "unavailable", "rejected", "throws"])(
     "reports terminal selection copy outcome: %s",
     async (outcome) => {

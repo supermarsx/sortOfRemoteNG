@@ -2166,9 +2166,89 @@ fn emit_shell_output(payload: SshShellOutput, emitter: &DynEventEmitter) {
     );
 }
 
-fn write_shell_input(channel: &mut ssh2::Channel, data: &[u8]) -> Result<(), String> {
-    channel.write_all(data).map_err(|error| error.to_string())?;
-    channel.flush().map_err(|error| error.to_string())
+/// Longest a shell write may make no progress. A closed remote window (a
+/// paused terminal, a slow consumer) is back-pressure, not a dead transport.
+const SHELL_WRITE_STALL_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// `write_all` for the non-blocking shell channel. libssh2 reports a full
+/// socket as EAGAIN and a closed remote window as a zero-byte write; both are
+/// retryable, so neither may end the shell the way `Write::write_all` would.
+fn write_all_with_backpressure<W: Write>(
+    writer: &mut W,
+    mut data: &[u8],
+    stall_timeout: Duration,
+) -> std::io::Result<()> {
+    let mut stalled_since = Instant::now();
+    while !data.is_empty() {
+        match writer.write(data) {
+            Ok(0) => {}
+            Ok(written) => {
+                data = &data[written..];
+                stalled_since = Instant::now();
+                continue;
+            }
+            Err(error) if is_transient_shell_io_error(&error) => {}
+            Err(error) => return Err(error),
+        }
+        if stalled_since.elapsed() >= stall_timeout {
+            return Err(std::io::Error::other(format!(
+                "the remote end accepted no input for {}s",
+                stall_timeout.as_secs()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    Ok(())
+}
+
+/// ssh2 turns a libssh2 failure into an `io::Error` carrying only the message,
+/// so the numeric code (the actual cause) is recovered from the session.
+fn libssh2_code_label(error: &ssh2::Error) -> String {
+    let SshErrorCode::Session(code) = error.code() else {
+        return error.to_string();
+    };
+    let name = match code {
+        -1 => "SOCKET_NONE",
+        -4 => "INVALID_MAC",
+        -7 => "SOCKET_SEND",
+        -9 => "TIMEOUT",
+        -12 => "DECRYPT",
+        -13 => "SOCKET_DISCONNECT",
+        -14 => "PROTO",
+        -26 => "CHANNEL_CLOSED",
+        -27 => "CHANNEL_EOF_SENT",
+        -30 => "SOCKET_TIMEOUT",
+        -37 => "EAGAIN",
+        -43 => "SOCKET_RECV",
+        -44 => "ENCRYPT",
+        -45 => "BAD_SOCKET",
+        -47 => "CHANNEL_WINDOW_FULL",
+        -52 => "MAC_FAILURE",
+        _ => "unmapped",
+    };
+    format!("libssh2 code {code} LIBSSH2_ERROR_{name}")
+}
+
+fn describe_shell_io_error(session: &Session, error: &std::io::Error) -> String {
+    match ssh2::Error::last_session_error(session) {
+        Some(last) => format!("{error} ({})", libssh2_code_label(&last)),
+        None => error.to_string(),
+    }
+}
+
+fn write_shell_input(
+    channel: &mut ssh2::Channel,
+    session: &Session,
+    data: &[u8],
+) -> Result<(), String> {
+    write_all_with_backpressure(channel, data, SHELL_WRITE_STALL_TIMEOUT)
+        .map_err(|error| describe_shell_io_error(session, &error))?;
+    match channel.flush() {
+        Err(error) if !is_transient_shell_io_error(&error) => {
+            Err(describe_shell_io_error(session, &error))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn emit_shell_error(session_id: &str, message: &str, emitter: &DynEventEmitter) {
@@ -7174,6 +7254,7 @@ impl SshService {
         let shell_suspend_count = std::sync::Arc::clone(&suspend_count);
         let native_io = Arc::new(StdMutex::new(()));
         let shell_native_io = Arc::clone(&native_io);
+        let error_session = _session.session.clone();
         let shell_admission = Arc::clone(&self.shell_admission);
         let completion_for_thread = Arc::clone(&completion);
 
@@ -7253,7 +7334,7 @@ impl SshService {
                             SshShellCommand::Input(data) => {
                                 record_input(&session_id_owned, &data);
                                 if let Err(message) =
-                                    write_shell_input(&mut channel, data.as_bytes())
+                                    write_shell_input(&mut channel, &error_session, data.as_bytes())
                                 {
                                     emit_shell_error(&session_id_owned, &message, &emitter);
                                     close_reason = SshShellCloseReason::TransportError;
@@ -7265,7 +7346,7 @@ impl SshService {
                             }
                             SshShellCommand::SecretInput(data) => {
                                 if let Err(message) =
-                                    write_shell_input(&mut channel, data.as_bytes())
+                                    write_shell_input(&mut channel, &error_session, data.as_bytes())
                                 {
                                     emit_shell_error(&session_id_owned, &message, &emitter);
                                     close_reason = SshShellCloseReason::TransportError;
@@ -7305,7 +7386,7 @@ impl SshService {
                             idle_count = idle_count.saturating_add(1);
                         }
                         Err(error) => {
-                            let message = error.to_string();
+                            let message = describe_shell_io_error(&error_session, &error);
                             emit_shell_error(&session_id_owned, &message, &emitter);
                             close_reason = SshShellCloseReason::TransportError;
                             close_message = Some(message);
@@ -13284,6 +13365,88 @@ mod tests {
     fn shell_socket_timeout_message_is_treated_as_transient() {
         let error = std::io::Error::other("Timed out waiting on socket");
         assert!(super::is_transient_shell_io_error(&error));
+    }
+
+    struct ScriptedWriter {
+        script: VecDeque<std::io::Result<usize>>,
+        written: Vec<u8>,
+    }
+
+    impl ScriptedWriter {
+        fn new(script: Vec<std::io::Result<usize>>) -> Self {
+            Self {
+                script: script.into(),
+                written: Vec::new(),
+            }
+        }
+    }
+
+    impl Write for ScriptedWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            match self.script.pop_front() {
+                Some(Ok(accepted)) => {
+                    let accepted = accepted.min(buf.len());
+                    self.written.extend_from_slice(&buf[..accepted]);
+                    Ok(accepted)
+                }
+                Some(Err(error)) => Err(error),
+                None => {
+                    self.written.extend_from_slice(buf);
+                    Ok(buf.len())
+                }
+            }
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn shell_write_retries_backpressure_and_partial_writes() {
+        let mut writer = ScriptedWriter::new(vec![
+            Err(std::io::Error::from(std::io::ErrorKind::WouldBlock)),
+            Ok(0),
+            Ok(2),
+            Err(std::io::Error::from(std::io::ErrorKind::TimedOut)),
+        ]);
+        super::write_all_with_backpressure(&mut writer, b"abcdef", Duration::from_secs(1))
+            .expect("back-pressure must not end the shell");
+        assert_eq!(writer.written, b"abcdef");
+    }
+
+    #[test]
+    fn shell_write_fails_fast_on_fatal_errors() {
+        let mut writer = ScriptedWriter::new(vec![Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "reset",
+        ))]);
+        let error = super::write_all_with_backpressure(&mut writer, b"a", Duration::from_secs(1))
+            .expect_err("a reset is fatal");
+        assert_eq!(error.kind(), std::io::ErrorKind::ConnectionReset);
+    }
+
+    #[test]
+    fn shell_write_gives_up_when_the_remote_never_accepts_input() {
+        let mut writer = ScriptedWriter::new((0..100_000).map(|_| Ok(0)).collect());
+        let error =
+            super::write_all_with_backpressure(&mut writer, b"a", Duration::from_millis(20))
+                .expect_err("a permanently closed window must not hang the shell");
+        assert!(error.to_string().contains("accepted no input"));
+    }
+
+    #[test]
+    fn libssh2_codes_are_named_in_shell_errors() {
+        let recv = ssh2::Error::new(SshErrorCode::Session(-43), "recv");
+        assert_eq!(
+            super::libssh2_code_label(&recv),
+            "libssh2 code -43 LIBSSH2_ERROR_SOCKET_RECV"
+        );
+        let unknown = ssh2::Error::new(SshErrorCode::Session(-999), "odd");
+        assert_eq!(
+            super::libssh2_code_label(&unknown),
+            "libssh2 code -999 LIBSSH2_ERROR_unmapped"
+        );
     }
 
     #[test]
