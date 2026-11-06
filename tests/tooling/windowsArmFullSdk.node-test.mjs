@@ -5265,6 +5265,55 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_PRIVATEPOLICY_HISTORY = {
+  worker: {
+    bytes: 42004,
+    sha256: "5c85b48b18a4a208d91ee2319f47d447540197897399c0de104faca547256b31",
+    rows: [
+      {
+        old: "",
+        new: "    // The reused source environment/path helpers read the reviewed private\n    // policy and the selected image-profile pin from the profile object.\n    p.privatePolicy = privatePolicy;\n    p.privateSelectedSha256 = selected.profileSha256;\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "3b6045eccad8f88e0b24a3bb41b9330c360b8f72b20de87598462752586ea5e4",
+      },
+    ],
+  },
+};
+function fullGraphPrivatepolicyInverse(text, name) {
+  const spec = FULL_GRAPH_PRIVATEPOLICY_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_PRIVATEPOLICY_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_PRIVATEPOLICY_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_PRIVATEPOLICY_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_PRIVATEPOLICY_WHOLE",
+  );
+  assert.equal(
+    sha(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_GRAPH_PRIVATEPOLICY_WHOLE",
+  );
+  return text;
+}
 const FULL_GRAPH_WORKER_HISTORY = {
   worker: {
     bytes: 40315,
@@ -5298,6 +5347,7 @@ const FULL_GRAPH_WORKER_HISTORY = {
   },
 };
 function fullGraphWorkerInverse(text, name) {
+  text = fullGraphPrivatepolicyInverse(text, name);
   const spec = FULL_GRAPH_WORKER_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -16620,4 +16670,71 @@ test("FULL engine worker denial prints a bounded redacted cause and nothing else
   });
   assert.equal(cause(getter).message, "");
   assert.ok(source.includes('console.error("FULL_SDK_ENGINE_DENIED");'));
+});
+
+// Run 42212288824: the engine probe-clang worker denied PRIVATE_IMAGE because it
+// passed a profile object without privatePolicy/privateSelectedSha256 to the
+// reused source-environment helper.
+test("FULL engine worker profile object satisfies the reused source environment helper with the real reviewed files", async () => {
+  const { pathToFileURL } = await import("node:url");
+  const driver = await import(
+    pathToFileURL(path.join(root, prefix, "full-sdk-source-driver.mjs")).href
+  );
+  const custom = await import(
+    pathToFileURL(
+      path.join(
+        root,
+        prefix,
+        "current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+      ),
+    ).href
+  );
+  const json = async (name) => JSON.parse(await read(prefix + name));
+  const profile = await json("full-sdk-source-profile.json"),
+    base = await json("profile.json"),
+    privatePolicy = await json("private-qualification-profile.json");
+  for (const image of ["20261030.294.1", "20261021.278.1"]) {
+    const selected = profile.images[image],
+      imageJson = await json(selected.profile);
+    const p = {
+      ...base,
+      image,
+      sourceGn: imageJson.sourceGn,
+      sourcePaths: [],
+    };
+    const lock = custom.validateSourceLock(
+      JSON.parse(await read(p.sourceGn.namespace + "source-lock.json")),
+    );
+    const workspace = "D:/a/w/w/.artifacts/windows-arm-full-sdk-x";
+    const recipe = await custom.customRuntimeBuildRecipe({
+      sourceLock: lock,
+      target: "aarch64-pc-windows-msvc",
+      inputsRoot: path.join(root, p.sourceGn.namespace),
+      checkouts: {
+        chromium: workspace + "/source-checkout/src",
+        cef: workspace + "/source-checkout/src/cef",
+        depotTools: workspace + "/source-checkout/depot_tools",
+      },
+    });
+    assert.throws(
+      () => driver.sourceEnvironment(workspace, p, recipe),
+      /PRIVATE_IMAGE/,
+      image,
+    );
+    const env = driver.sourceEnvironment(
+      workspace,
+      {
+        ...p,
+        privatePolicy,
+        privateSelectedSha256: selected.profileSha256,
+      },
+      recipe,
+    );
+    assert.equal(env.GYP_MSVS_VERSION, "2026");
+  }
+  const worker = await read(prefix + "full-sdk-engine-worker.mjs");
+  assert.match(
+    worker,
+    /p\.privatePolicy = privatePolicy;\s*p\.privateSelectedSha256 = selected\.profileSha256;/,
+  );
 });

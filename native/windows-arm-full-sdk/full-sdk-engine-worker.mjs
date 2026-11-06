@@ -706,6 +706,10 @@ async function load(role, root, sha, began) {
           "native/windows-arm-full-sdk/private-qualification-profile.json",
         ),
       );
+    // The reused source environment/path helpers read the reviewed private
+    // policy and the selected image-profile pin from the profile object.
+    p.privatePolicy = privatePolicy;
+    p.privateSelectedSha256 = selected.profileSha256;
     need(
       candidate.target === packet.target &&
         privatePolicy.probeEntry === "sorng_arm64_qualification_entry" &&
