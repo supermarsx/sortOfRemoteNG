@@ -18,7 +18,7 @@ jobs:
   probe:
     if: github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: windows-2025-vs2026
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Check out exact workflow source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

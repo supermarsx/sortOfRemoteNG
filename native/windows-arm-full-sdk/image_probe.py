@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -119,6 +120,100 @@ def compare(observed, profile_name):
     }
 
 
+VSWHERE = "C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+TREES = [
+    "C:/Program Files/Microsoft Visual Studio",
+    "C:/Program Files (x86)/Microsoft Visual Studio",
+    "C:/Program Files (x86)/Windows Kits",
+    "C:/Program Files (x86)/Microsoft SDKs",
+]
+KEY_TOOLS = ("cl.exe", "link.exe", "lib.exe", "rc.exe", "clang-cl.exe", "lld-link.exe", "ml64.exe", "midl.exe", "mt.exe")
+MANIFESTS = ["C:/imagedata.json", "C:/software-report.md", "C:/Windows/System32/config/systemprofile/imagedata.json"]
+
+
+def tree_facts(root, seconds=240):
+    """Path+size digest of a whole tree (no content reads) plus sha256 of key tool binaries."""
+    deadline = time.monotonic() + seconds
+    top = {}
+    digest = hashlib.sha256()
+    key = []
+    files = total = 0
+    truncated = False
+    if not os.path.isdir(root):
+        return {"root": root, "present": False}
+    for base, dirs, names in os.walk(root):
+        dirs.sort()
+        if time.monotonic() > deadline:
+            truncated = True
+            break
+        for name in sorted(names):
+            full = os.path.join(base, name).replace("\\", "/")
+            try:
+                size = os.stat(full).st_size
+            except OSError:
+                continue
+            rel = full[len(root) + 1:]
+            digest.update((rel + "\0" + str(size) + "\n").encode("utf-8", "replace"))
+            files += 1
+            total += size
+            part = "/".join(rel.split("/")[:3])
+            entry = top.setdefault(part, [0, 0])
+            entry[0] += 1
+            entry[1] += size
+            if name.lower() in KEY_TOOLS and size < 200 * 1024 * 1024:
+                try:
+                    key.append({"path": full, "bytes": size, "sha256": sha(Path(full).read_bytes())})
+                except OSError:
+                    pass
+    return {
+        "root": root,
+        "present": True,
+        "files": files,
+        "bytes": total,
+        "pathSizeSha256": digest.hexdigest(),
+        "truncated": truncated,
+        "topLevel": {k: {"files": v[0], "bytes": v[1]} for k, v in sorted(top.items())},
+        "keyTools": key,
+    }
+
+
+def image_toolchain():
+    out = {"vswhere": None, "trees": [], "manifests": [], "toolcache": {}}
+    if os.path.exists(VSWHERE):
+        try:
+            done = subprocess.run(
+                [VSWHERE, "-all", "-prerelease", "-products", "*", "-format", "json", "-utf8"],
+                capture_output=True, timeout=120, check=False,
+            )
+            out["vswhere"] = {"exit": done.returncode, "stdoutSha256": sha(done.stdout)}
+            try:
+                out["vswhere"]["instances"] = json.loads(done.stdout.decode("utf-8", "replace"))
+            except ValueError:
+                out["vswhere"]["raw"] = done.stdout.decode("utf-8", "replace")[:4000]
+        except Exception as error:
+            out["vswhere"] = {"error": type(error).__name__ + ": " + str(error)[:200]}
+    for tree in TREES:
+        out["trees"].append(tree_facts(tree))
+    for name in MANIFESTS:
+        if os.path.exists(name):
+            raw = Path(name).read_bytes()
+            row = {"path": name, "bytes": len(raw), "sha256": sha(raw)}
+            if name.endswith(".json"):
+                try:
+                    row["content"] = json.loads(raw.decode("utf-8-sig"))
+                except ValueError:
+                    row["head"] = raw[:2000].decode("utf-8", "replace")
+            else:
+                row["head"] = raw[:200000].decode("utf-8", "replace")
+            out["manifests"].append(row)
+    cache = Path("C:/hostedtoolcache/windows")
+    if cache.is_dir():
+        for tool in sorted(cache.iterdir()):
+            if tool.is_dir():
+                out["toolcache"][tool.name] = sorted(v.name for v in tool.iterdir() if v.is_dir())
+    return out
+
+
 def main():
     base = json.loads((HERE / "profile.json").read_bytes())
     python_pin = base.get("python", {})
@@ -154,7 +249,11 @@ def main():
         ]
     except Exception as error:  # evidence run: report, never hide
         result["hostClosureError"] = type(error).__name__ + ": " + str(error)[:300]
-    print(json.dumps(result, indent=2, sort_keys=True))
+    try:
+        result["imageToolchain"] = image_toolchain()
+    except Exception as error:
+        result["imageToolchainError"] = type(error).__name__ + ": " + str(error)[:300]
+    print(json.dumps(result, indent=2, sort_keys=True)[:200000])
     out = os.environ.get("PROBE_OUTPUT")
     if out:
         Path(out).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
