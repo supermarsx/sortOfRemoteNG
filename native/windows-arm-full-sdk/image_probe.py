@@ -214,6 +214,89 @@ def image_toolchain():
     return out
 
 
+MSVC = "C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231"
+MSVC_ROOTS = ("include", "atlmfc/include", "lib/x64", "lib/arm64", "atlmfc/lib/x64", "atlmfc/lib/arm64",
+              "bin/Hostx64/x64", "bin/Hostx64/arm64")
+HASH_TREES = {
+    "git": "C:/Program Files/Git",
+    "python": "C:/hostedtoolcache/windows/Python/3.12.10/x64",
+    "node": "C:/hostedtoolcache/windows/node/24.19.0/x64",
+}
+FILE_CAP = 256 * 1024 * 1024
+
+
+def hash_tree(root, relative_roots=None, seconds=420):
+    """Per-file sha256 rows for a tree (or selected sub-roots), sorted, with the pipeline's digest."""
+    deadline = time.monotonic() + seconds
+    rows = []
+    unhashed = []
+    bases = [root] if relative_roots is None else [root + "/" + r for r in relative_roots]
+    truncated = False
+    for base in bases:
+        if not os.path.isdir(base):
+            unhashed.append({"root": base, "error": "missing"})
+            continue
+        for here, dirs, names in os.walk(base):
+            dirs.sort()
+            if time.monotonic() > deadline:
+                truncated = True
+                break
+            for name in sorted(names):
+                full = os.path.join(here, name).replace("\\", "/")
+                rel = full[len(root) + 1:]
+                try:
+                    size = os.stat(full).st_size
+                    if size > FILE_CAP:
+                        rows.append({"path": rel, "bytes": size, "sha256": None})
+                        continue
+                    rows.append({"path": rel, "bytes": size, "sha256": sha(Path(full).read_bytes())})
+                except OSError as error:
+                    unhashed.append({"path": rel, "error": type(error).__name__})
+    rows.sort(key=lambda r: r["path"])
+    raw = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "root": root,
+        "subRoots": relative_roots,
+        "files": len(rows),
+        "bytes": sum(r["bytes"] for r in rows),
+        "rowsSha256": sha(raw),
+        "truncated": truncated,
+        "unhashed": unhashed[:50],
+        "rows": rows,
+    }
+
+
+def consumed_inputs():
+    out = {}
+    msvc = hash_tree(MSVC, MSVC_ROOTS)
+    pins = json.loads((HERE / "profile.json").read_bytes())["installedMsvc14"]
+    import environment  # the pipeline's own role -> path table
+
+    by_path = {r["path"]: r for r in msvc["rows"]}
+    checks = []
+    for pin in pins:
+        row = by_path.get(environment.INSTALLED14[pin["role"]])
+        checks.append(
+            {
+                "role": pin["role"],
+                "path": environment.INSTALLED14[pin["role"]],
+                "equal": bool(row) and (row["bytes"], row["sha256"]) == (pin["bytes"], pin["sha256"]),
+            }
+        )
+    msvc["installedMsvc14Pins"] = checks
+    msvc["installedMsvc14AllEqual"] = all(c["equal"] for c in checks)
+    out["msvcToolset"] = msvc
+    names = json.loads((HERE / "profile.json").read_bytes())["commandInventory"]["importGraph"]["systemNames"]
+    system = []
+    for name in names:
+        row = observe("C:/Windows/System32/" + name)
+        system.append(public(row))
+    out["system32Named"] = system
+    for key, root in HASH_TREES.items():
+        out[key] = hash_tree(root)
+    return out
+
+
 def main():
     base = json.loads((HERE / "profile.json").read_bytes())
     python_pin = base.get("python", {})
@@ -253,7 +336,16 @@ def main():
         result["imageToolchain"] = image_toolchain()
     except Exception as error:
         result["imageToolchainError"] = type(error).__name__ + ": " + str(error)[:300]
-    print(json.dumps(result, indent=2, sort_keys=True)[:200000])
+    try:
+        result["consumedInputs"] = consumed_inputs()
+    except Exception as error:
+        result["consumedInputsError"] = type(error).__name__ + ": " + str(error)[:300]
+    summary = json.loads(json.dumps(result))
+    for value in summary.get("consumedInputs", {}).values():
+        if isinstance(value, dict):
+            value.pop("rows", None)
+    summary.get("imageToolchain", {}).pop("manifests", None)
+    print(json.dumps(summary, indent=2, sort_keys=True)[:100000])
     out = os.environ.get("PROBE_OUTPUT")
     if out:
         Path(out).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
