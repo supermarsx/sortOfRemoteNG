@@ -2420,14 +2420,27 @@ async function verifySourceSnapshot(token, joinedAllowed = false) {
     joinedAllowed,
   );
   if (callbackFailed) throw callbackError;
-  need(
+  if (!(
     calls === 1 &&
-      snapshot &&
-      canonical(snapshot) === canonical(expected) &&
-      summary.sha256 === expected.sha256 &&
-      state.sourceResult.graph.sha256 === expected.sha256,
-    "SOURCE_GRAPH_CHANGED",
-  );
+    snapshot &&
+    canonical(snapshot) === canonical(expected) &&
+    summary.sha256 === expected.sha256 &&
+    state.sourceResult.graph.sha256 === expected.sha256
+  )) {
+    console.error(
+      JSON.stringify({
+        kind: "windows-arm-full-sdk-graph-mismatch",
+        graphMismatch: graphMismatchSummary(
+          snapshot,
+          expected,
+          summary,
+          state.sourceResult?.graph?.sha256,
+          calls,
+        ),
+      }),
+    );
+    throw new Error("FULL_SDK_CONTROL_SOURCE_GRAPH_CHANGED");
+  }
   const metadata = await recheckSourceMetadata(token, joinedAllowed);
   if (metadata) checked.push(...metadata);
   await operationFence(token, joinedAllowed);
@@ -5838,4 +5851,60 @@ if (
       console.error(JSON.stringify(startupFailureReport(error)));
       process.exitCode = 1;
     });
+}
+
+// Bounded description of how a recomputed graph differs from the sealed one:
+// counts, hex digests and at most one differing in-tree relative path; printed to
+// stderr (the step log) when the controller denies SOURCE_GRAPH_CHANGED.
+function graphMismatchSummary(snapshot, expected, summary, resultSha, calls) {
+  const rows = (value) =>
+    Array.isArray(value?.pins) && value.pins.length <= 50001 ? value.pins : [];
+  const hex = (value) =>
+    typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;
+  const now = new Map(),
+    before = new Map();
+  for (const row of rows(snapshot)) now.set(row?.path, row);
+  for (const row of rows(expected)) before.set(row?.path, row);
+  let missing = 0,
+    extra = 0,
+    changed = 0,
+    first = null;
+  const note = (kind, name, detail) => {
+    first ??= {
+      kind,
+      path:
+        typeof name === "string"
+          ? name.replace(/[^\x20-\x7e]/g, "?").slice(0, 160)
+          : null,
+      detail,
+    };
+  };
+  for (const [name, row] of before) {
+    const other = now.get(name);
+    if (!other) {
+      missing++;
+      note("missing", name, null);
+    } else if (other.sha256 !== row.sha256 || other.bytes !== row.bytes) {
+      changed++;
+      note("changed", name, [row.bytes, other.bytes]);
+    }
+  }
+  for (const name of now.keys())
+    if (!before.has(name)) {
+      extra++;
+      note("extra", name, null);
+    }
+  return {
+    calls,
+    snapshotFiles: rows(snapshot).length,
+    expectedFiles: rows(expected).length,
+    missing,
+    extra,
+    changed,
+    first,
+    snapshotSha: hex(snapshot?.sha256),
+    expectedSha: hex(expected?.sha256),
+    summarySha: hex(summary?.sha256),
+    resultSha: hex(resultSha),
+  };
 }

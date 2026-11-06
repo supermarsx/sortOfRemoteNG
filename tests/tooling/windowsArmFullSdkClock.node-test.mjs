@@ -508,6 +508,72 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_GRAPHDIAG_HISTORY = {
+  controller: {
+    bytes: 178530,
+    sha256: "55404f6fb1860cc49ceef1f23220e2efb04afee71d07517e816e3a0d2d4a6d48",
+    rows: [
+      {
+        old: "  need(\n",
+        new: "  if (!(\n",
+        oldSha256:
+          "0e0bd2c8c9c672e76e815ab70e68342b1d2c307c658589c09e7ce93980fe4235",
+        newSha256:
+          "dad2412ae8a16a0fb56348c01bac7e11211e045969b0e0f816cb585128881e04",
+      },
+      {
+        old: '      snapshot &&\n      canonical(snapshot) === canonical(expected) &&\n      summary.sha256 === expected.sha256 &&\n      state.sourceResult.graph.sha256 === expected.sha256,\n    "SOURCE_GRAPH_CHANGED",\n  );\n',
+        new: '    snapshot &&\n    canonical(snapshot) === canonical(expected) &&\n    summary.sha256 === expected.sha256 &&\n    state.sourceResult.graph.sha256 === expected.sha256\n  )) {\n    console.error(\n      JSON.stringify({\n        kind: "windows-arm-full-sdk-graph-mismatch",\n        graphMismatch: graphMismatchSummary(\n          snapshot,\n          expected,\n          summary,\n          state.sourceResult?.graph?.sha256,\n          calls,\n        ),\n      }),\n    );\n    throw new Error("FULL_SDK_CONTROL_SOURCE_GRAPH_CHANGED");\n  }\n',
+        oldSha256:
+          "d955cef492542b3fb918e8560f343e97664e7c4e4ae46a7bfb710245dafb6136",
+        newSha256:
+          "48308b4a4c8572599daa0c45ebc06fc711f91c162e13c416b7d65619bbc983f7",
+      },
+      {
+        old: "",
+        new: '\n// Bounded description of how a recomputed graph differs from the sealed one:\n// counts, hex digests and at most one differing in-tree relative path; printed to\n// stderr (the step log) when the controller denies SOURCE_GRAPH_CHANGED.\nfunction graphMismatchSummary(snapshot, expected, summary, resultSha, calls) {\n  const rows = (value) =>\n    Array.isArray(value?.pins) && value.pins.length <= 50001 ? value.pins : [];\n  const hex = (value) =>\n    typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;\n  const now = new Map(),\n    before = new Map();\n  for (const row of rows(snapshot)) now.set(row?.path, row);\n  for (const row of rows(expected)) before.set(row?.path, row);\n  let missing = 0,\n    extra = 0,\n    changed = 0,\n    first = null;\n  const note = (kind, name, detail) => {\n    first ??= {\n      kind,\n      path:\n        typeof name === "string"\n          ? name.replace(/[^\\x20-\\x7e]/g, "?").slice(0, 160)\n          : null,\n      detail,\n    };\n  };\n  for (const [name, row] of before) {\n    const other = now.get(name);\n    if (!other) {\n      missing++;\n      note("missing", name, null);\n    } else if (other.sha256 !== row.sha256 || other.bytes !== row.bytes) {\n      changed++;\n      note("changed", name, [row.bytes, other.bytes]);\n    }\n  }\n  for (const name of now.keys())\n    if (!before.has(name)) {\n      extra++;\n      note("extra", name, null);\n    }\n  return {\n    calls,\n    snapshotFiles: rows(snapshot).length,\n    expectedFiles: rows(expected).length,\n    missing,\n    extra,\n    changed,\n    first,\n    snapshotSha: hex(snapshot?.sha256),\n    expectedSha: hex(expected?.sha256),\n    summarySha: hex(summary?.sha256),\n    resultSha: hex(resultSha),\n  };\n}\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "36003186c8a29c2eb3d52d9b9cf3277d1a008655e3c125a26c1d629fff43d118",
+      },
+    ],
+  },
+};
+function fullGraphGraphdiagInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_GRAPHDIAG_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_GRAPHDIAG_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_GRAPHDIAG_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_GRAPHDIAG_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_GRAPHDIAG_WHOLE",
+  );
+  assert.equal(
+    sha(text),
+    spec.sha256,
+    "ASSEMBLY_INVERSE_GRAPH_GRAPHDIAG_WHOLE",
+  );
+  return text;
+}
 const FULL_GRAPH_STAGE_HISTORY = {
   producer: {
     bytes: 61403,
@@ -525,6 +591,7 @@ const FULL_GRAPH_STAGE_HISTORY = {
   },
 };
 function fullGraphStageInverse(text, name) {
+  text = fullGraphGraphdiagInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_STAGE_HISTORY[name];
   if (!spec) return text;
