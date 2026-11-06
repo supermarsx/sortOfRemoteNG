@@ -5265,6 +5265,67 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_WORKER_HISTORY = {
+  worker: {
+    bytes: 40315,
+    sha256: "bbaeb0c31fc8bcbfc2634f546a5a01a29c7337700f9d6bfc23f87d248ba75a2c",
+    rows: [
+      {
+        old: "",
+        new: 'function engineFailureCause(error) {\n  try {\n    if (\n      !error ||\n      typeof error !== "object" ||\n      !Object.prototype.toString.call(error).includes("Error")\n    )\n      return null;\n    const own = (key) => {\n      const row = Object.getOwnPropertyDescriptor(error, key);\n      return row && Object.hasOwn(row, "value") && typeof row.value === "string"\n        ? row.value\n        : null;\n    };\n    const message = own("message"),\n      errno = own("code"),\n      stack = own("stack");\n    const frames = [];\n    if (stack)\n      for (const match of stack\n        .slice(0, 16384)\n        .matchAll(\n          /^\\s+at (?:async )?([A-Za-z_$][\\w$]{0,63})(?:\\.([A-Za-z_$][\\w$]{0,63}))? \\(/gm,\n        )) {\n        frames.push(match[2] ?? match[1]);\n        if (frames.length === 3) break;\n      }\n    const line = (message ?? "")\n      .slice(0, 2048)\n      .split(/\\r?\\n/)[0]\n      .replace(/https?:\\/\\/\\S+/gi, "<url>")\n      .replace(/[A-Za-z]:[\\\\/][^\\s"\']*/g, "<path>")\n      .replace(/\\\\\\\\[^\\s"\']+/g, "<path>")\n      .replace(/[A-Za-z0-9+/_=-]{32,}/g, "<token>")\n      .replace(/[^\\x20-\\x7e]/g, "?")\n      .slice(0, 300);\n    const safe = (value, pattern) =>\n      typeof value === "string" && pattern.test(value) ? value : null;\n    return {\n      code: safe(message, /^[A-Z][A-Z0-9_]{2,63}$/),\n      errno: safe(errno, /^[A-Z][A-Z0-9_]{2,31}$/),\n      frames,\n      message: line,\n    };\n  } catch {\n    return null;\n  }\n}\n',
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "11ab8d3cf8f5bd89c4394887577d3b63af3cf65f2b3e51ee0da223555f348fee",
+      },
+      {
+        old: "  engineWorkerMain().catch(() => {\n",
+        new: "  engineWorkerMain().catch((error) => {\n",
+        oldSha256:
+          "2f8c68bc7f669588731300212d6e18b0af6872b42ef4e7fe1b96102f89eaabd7",
+        newSha256:
+          "41f8fc5214fdedab40a13d5ad4d9849448c6c434c2ebfdec11fe961313be60c3",
+      },
+      {
+        old: "",
+        new: "    // Bounded, redacted cause (safe code, errno code, stack function names and\n    // one short message line) so a denial names its own check.\n    const cause = engineFailureCause(error);\n    if (cause) console.error(JSON.stringify({ cause }));\n",
+        oldSha256:
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        newSha256:
+          "ace2c1ea3542210c1a3e8eafcb725484f9e0f7bceba905dbf5fd944484824a9a",
+      },
+    ],
+  },
+};
+function fullGraphWorkerInverse(text, name) {
+  const spec = FULL_GRAPH_WORKER_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_WORKER_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_WORKER_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_WORKER_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_WORKER_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_WORKER_WHOLE");
+  return text;
+}
 const FULL_GRAPH_SNAPSHOT_HISTORY = {
   driver: {
     bytes: 306717,
@@ -5282,6 +5343,7 @@ const FULL_GRAPH_SNAPSHOT_HISTORY = {
   },
 };
 function fullGraphSnapshotInverse(text, name) {
+  text = fullGraphWorkerInverse(text, name);
   const spec = FULL_GRAPH_SNAPSHOT_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -16510,4 +16572,52 @@ test("FULL driver seals fresh-graph-pins.json as the pin object, not as a JSON s
   const text = JSON.stringify({ kind: "sorng-cef-fresh-graph-pins", pins: [] });
   assert.equal(typeof JSON.parse(JSON.stringify(JSON.parse(text))), "object");
   assert.equal(typeof JSON.parse(JSON.stringify(text)), "string");
+});
+
+// Run 42190862327: the engine probe-clang worker denied in 766 ms with only the
+// generic FULL_SDK_ENGINE_DENIED line. A denial now also prints its own bounded
+// cause on stderr.
+test("FULL engine worker denial prints a bounded redacted cause and nothing else", async () => {
+  const ts = (await import("typescript")).default,
+    source = await read(prefix + "full-sdk-engine-worker.mjs"),
+    ast = ts.createSourceFile("worker.mjs", source, 99, true, ts.ScriptKind.JS),
+    cause = new Function(
+      ast.statements
+        .find(
+          (n) =>
+            ts.isFunctionDeclaration(n) &&
+            n.name?.text === "engineFailureCause",
+        )
+        .getText(ast) + "\nreturn engineFailureCause;",
+    )();
+  const plain = cause(new Error("FULL_SDK_ENGINE_CONTEXT_SCOPE"));
+  assert.equal(plain.code, "FULL_SDK_ENGINE_CONTEXT_SCOPE");
+  assert.equal(plain.errno, null);
+  assert.ok(plain.frames.length <= 3);
+  const io = Object.assign(
+    new Error(
+      "EACCES: open 'D:/a/x/y.json' https://example.com/p ghp_" +
+        "A".repeat(40) +
+        "\nsecond",
+    ),
+    { code: "EACCES" },
+  );
+  const row = cause(io);
+  assert.equal(row.code, null);
+  assert.equal(row.errno, "EACCES");
+  assert.match(row.message, /<path>/);
+  assert.match(row.message, /<url>/);
+  assert.match(row.message, /<token>/);
+  assert.equal(row.message.includes("second"), false);
+  assert.ok(row.message.length <= 300);
+  for (const bad of [undefined, null, "x", 7, { message: "NOT_AN_ERROR_X" }])
+    assert.equal(cause(bad), null);
+  const getter = new Error("hidden");
+  Object.defineProperty(getter, "message", {
+    get() {
+      throw new Error("must not run");
+    },
+  });
+  assert.equal(cause(getter).message, "");
+  assert.ok(source.includes('console.error("FULL_SDK_ENGINE_DENIED");'));
 });

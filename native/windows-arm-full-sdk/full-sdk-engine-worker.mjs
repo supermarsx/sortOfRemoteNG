@@ -1240,11 +1240,63 @@ export async function engineWorkerMain(argv = process.argv.slice(2)) {
     states.delete(job.token);
   }
 }
+function engineFailureCause(error) {
+  try {
+    if (
+      !error ||
+      typeof error !== "object" ||
+      !Object.prototype.toString.call(error).includes("Error")
+    )
+      return null;
+    const own = (key) => {
+      const row = Object.getOwnPropertyDescriptor(error, key);
+      return row && Object.hasOwn(row, "value") && typeof row.value === "string"
+        ? row.value
+        : null;
+    };
+    const message = own("message"),
+      errno = own("code"),
+      stack = own("stack");
+    const frames = [];
+    if (stack)
+      for (const match of stack
+        .slice(0, 16384)
+        .matchAll(
+          /^\s+at (?:async )?([A-Za-z_$][\w$]{0,63})(?:\.([A-Za-z_$][\w$]{0,63}))? \(/gm,
+        )) {
+        frames.push(match[2] ?? match[1]);
+        if (frames.length === 3) break;
+      }
+    const line = (message ?? "")
+      .slice(0, 2048)
+      .split(/\r?\n/)[0]
+      .replace(/https?:\/\/\S+/gi, "<url>")
+      .replace(/[A-Za-z]:[\\/][^\s"']*/g, "<path>")
+      .replace(/\\\\[^\s"']+/g, "<path>")
+      .replace(/[A-Za-z0-9+/_=-]{32,}/g, "<token>")
+      .replace(/[^\x20-\x7e]/g, "?")
+      .slice(0, 300);
+    const safe = (value, pattern) =>
+      typeof value === "string" && pattern.test(value) ? value : null;
+    return {
+      code: safe(message, /^[A-Z][A-Z0-9_]{2,63}$/),
+      errno: safe(errno, /^[A-Z][A-Z0-9_]{2,31}$/),
+      frames,
+      message: line,
+    };
+  } catch {
+    return null;
+  }
+}
 if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 )
-  engineWorkerMain().catch(() => {
+  engineWorkerMain().catch((error) => {
     console.error("FULL_SDK_ENGINE_DENIED");
+    // Bounded, redacted cause (safe code, errno code, stack function names and
+    // one short message line) so a denial names its own check.
+    const cause = engineFailureCause(error);
+    if (cause) console.error(JSON.stringify({ cause }));
     process.exitCode = 1;
   });
