@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 _HERE = Path(__file__).parent
+_BUDGET = json.loads((_HERE / 'resume_budget_inverse.json').read_text(encoding='utf8'))['archive']
 _RESUME = json.loads((_HERE / 'mac_resume_cost_inverse.json').read_text(encoding='utf8'))['archive']
 _CIPD = json.loads((_HERE / 'mac_cipd_canonical_inverse.json').read_text(encoding='utf8'))['archive']
 _LEAN = json.loads((_HERE / 'mac_lean_cache_inverse.json').read_text(encoding='utf8'))['archive']
@@ -24,7 +25,7 @@ def inverse(raw):
     marker = _REUSE['helperStart']
     if marker not in text:
         return raw
-    for current, previous in _RESUME['pairs'] + _CIPD['pairs'] + _LEAN['pairs'] + _FRAMEWORK['pairs']:
+    for current, previous in _BUDGET['pairs'] + _RESUME['pairs'] + _CIPD['pairs'] + _LEAN['pairs'] + _FRAMEWORK['pairs']:
         assert text.count(current) == 1, current[:60]
         text = text.replace(current, previous, 1)
     assert text.count(marker) == 1 and text.count(_REUSE['helperEnd']) == 1

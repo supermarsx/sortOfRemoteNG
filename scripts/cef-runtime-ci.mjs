@@ -1456,7 +1456,7 @@ export async function build(
           engineering
             ? (target === "x86_64-apple-darwin" ||
               target === "aarch64-apple-darwin"
-                ? 180
+                ? 210
                 : 120) * 60_000
             : undefined,
         )

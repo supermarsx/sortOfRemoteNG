@@ -7,6 +7,7 @@ const readInverse = (name) =>
   );
 // Applied newest first: the Mac resume cost cuts, the Mac CIPD canonical names, the lean cache, the framework time-cut change, then the digest-reuse change.
 const MAC_INVERSES = [
+  readInverse("resume_budget_inverse.json"),
   readInverse("accepted_images_inverse.json"),
   readInverse("mac_resume_cost_inverse.json"),
   readInverse("mac_cipd_canonical_inverse.json"),

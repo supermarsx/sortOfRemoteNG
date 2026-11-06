@@ -918,7 +918,7 @@ def opened_identity_matches(expected, opened):
 # sysroots, toolchains); only source modes use the longer bound. Pack, restore,
 # seal and external observation keep 600 seconds.
 SOURCE_LINUX_SECONDS = 2400
-SOURCE_MAC_SECONDS = 5400
+SOURCE_MAC_SECONDS = 7200
 SOURCE_HASH_WORKERS = max(1, min(os.cpu_count() or 4, 8))
 # Linux owned-source hashing is I/O-bound (1.2M mostly small files), so it
 # overlaps reads with twice the CPU count, still capped at eight readers.
@@ -3651,7 +3651,13 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
             require((mac and not nearby_mac) or (literals['portable'] if literals is not None else []) == expected['literalLinks'], 'source-nearby-binding')
             require(compiler_scope is None or compiler['portable']==expected['compilerLiteralLinks'], 'source-clang-binding')
         source_phase('apply-utime')
-        for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):
+        # The first snapshot already proved the tree stable and equal to the sidecar except for
+        # time stamps. On Mac an entry that already has its recorded mtime needs no write, so it
+        # is not stat-ed again just to be skipped (the second apply after GN touches nothing).
+        observed_times = {entry['path']: entry['mtimeNs'] for entry in current['entries']} if mac else None
+        todo = expected['entries'] if observed_times is None else [
+            entry for entry in expected['entries'] if observed_times.get(entry['path']) != entry['mtimeNs']]
+        for row in sorted(todo, key=lambda r:r['path'].count('/'), reverse=True):
             name = real(row['path'])
             budget.check();path = root / (name if source_literal_member(name) else relative(name));before = source_io_call('apply-stat', path, path.lstat)
             require(stamp(root.stat())[2:4] == guards[''][0][2:4], 'source-root-changed')

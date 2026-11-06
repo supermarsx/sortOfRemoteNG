@@ -341,9 +341,9 @@ class LeanReuse(unittest.TestCase):
         key,digest=reuse['src/a/00007'];self.assertIsInstance(key,str);self.assertEqual(digest,'d'*64)
 
 class Budgets(unittest.TestCase):
-    def test_mac_budget_is_5400_seconds_and_linux_is_unchanged(self):
-        self.assertEqual(M.SOURCE_MAC_SECONDS,5400);self.assertEqual(M.SOURCE_LINUX_SECONDS,2400)
-        M.Budget(5400,M.SOURCE_MAC_SECONDS)
-        with self.assertRaises(BaseException):M.Budget(5401,M.SOURCE_MAC_SECONDS)
+    def test_mac_budget_is_7200_seconds_and_linux_is_unchanged(self):
+        self.assertEqual(M.SOURCE_MAC_SECONDS,7200);self.assertEqual(M.SOURCE_LINUX_SECONDS,2400)
+        M.Budget(7200,M.SOURCE_MAC_SECONDS)
+        with self.assertRaises(BaseException):M.Budget(7201,M.SOURCE_MAC_SECONDS)
 
 if __name__=='__main__':unittest.main(verbosity=2)

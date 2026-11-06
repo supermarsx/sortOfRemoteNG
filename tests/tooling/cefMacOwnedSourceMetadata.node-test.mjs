@@ -16,7 +16,7 @@ test("Mac ARM codec routing, identity, cancellation and bounds regressions use t
     },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /Ran 24 tests/);
+  assert.match(result.stderr, /Ran 25 tests/);
   assert.match(result.stderr, /\bOK\b/);
 });
 

@@ -155,6 +155,20 @@ class OwnedCodecRouting(unittest.TestCase):
     def test_arm_apply_without_any_timestamp_write_takes_one_snapshot(self):
         self.assertEqual(self.apply_snapshots(True), (1, 0))
 
+    def test_arm_apply_does_not_stat_entries_that_already_have_their_recorded_mtime(self):
+        row = {'path':'src/file','kind':'file','mode':0o100600,'size':1,'sha256':'a'*64,'mtimeNs':'5','nlink':1}
+        self.snapshot['entries'] = [row]
+        original = m.source_io_call
+        operations = []
+        def counting(operation, *args, **kwargs):
+            operations.append(operation)
+            return original(operation, *args, **kwargs)
+        with patch.object(m,'source_io_call',side_effect=counting):
+            calls, writes = self.apply_snapshots(True)
+        # The second apply after GN finds every mtime in place: one snapshot, no stat, no write.
+        self.assertEqual((calls, writes), (1, 0))
+        self.assertNotIn('apply-stat', operations)
+
     @unittest.skipUnless(os.name == 'posix', 'real directory descriptors')
     def test_arm_apply_with_a_timestamp_write_keeps_its_postcheck(self):
         calls, writes = self.apply_snapshots(False)

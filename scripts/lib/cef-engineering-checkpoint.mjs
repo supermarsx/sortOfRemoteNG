@@ -49,11 +49,12 @@ export const LIMITS = Object.freeze({
   // external observation keep archiveMs.
   linuxSourceMetadataMs: 2_400_000,
   // Mac owned-source record/apply/verify walk the complete fetched tree (and hash
-  // what the stat cache cannot vouch for). Measured on hosted runners (runs
-  // 41906246401 / 41906270473): each snapshot walks twice at 0.8-1.2 ks and a full
-  // hash is 1.8-2.2 ks, so a restore apply needs 3.3-4.6 ks.
-  macSourceMetadataMs: 5_700_000,
-  macSourceMetadataHelperMs: 5_400_000,
+  // what the stat cache cannot vouch for). Measured on hosted runners: one walk is
+  // 0.5-0.6 ks, a full hash 1.8-2.5 ks and the timestamp writes of a restore 1.5 ks, so
+  // the first restore apply needs about 5.8 ks on the ARM64 target (run 42139669990
+  // spent 5.25 ks before its postcheck walk and hit the previous 5.4 ks bound).
+  macSourceMetadataMs: 7_500_000,
+  macSourceMetadataHelperMs: 7_200_000,
   // Of that bound, the helper's own deadline ends this much earlier so its
   // progress diagnostic is printed before the hard kill.
   linuxSourceMetadataGraceMs: 60_000,
@@ -303,10 +304,10 @@ export const AUTO_SLICE = Object.freeze({
   floorMs: 15 * 60_000,
   ceilingMs: 180 * 60_000,
 });
-// macOS post-compile reserve: the final source-verify re-walks the tree once (about 8 min on x64,
-// 10 min on ARM64 with every digest kept) after its external re-observation (about 8 min), then
-// pack (3 min), upload and seal (2 min), plus a 45-minute margin.
-export const MAC_AUTO_RESERVE_MS = 75 * 60_000;
+// macOS post-compile reserve, which replaces the 70-minute default: measured final verify is the
+// external re-observation (7-7.6 min) plus one walk (11-12 min), then pack (2-3 min), upload (1 min)
+// and seal, 22-25 min in all, leaving about 35 minutes of margin.
+export const MAC_AUTO_RESERVE_MS = 60 * 60_000;
 export function executionOptions(mode = "checkpoint", minutes = "15") {
   assert(
     ["checkpoint", "complete-sdk"].includes(mode) &&
@@ -353,7 +354,10 @@ export function sliceBudget(options, remaining, platformReserveMs = 0) {
     const budget = Math.min(
       AUTO_SLICE.ceilingMs,
       LIMITS.maxCompileMs,
-      remaining - Math.max(reserve, AUTO_SLICE.reserveMs),
+      remaining -
+        (platformReserveMs > 0
+          ? reserve
+          : Math.max(reserve, AUTO_SLICE.reserveMs)),
     );
     assert(
       budget >= AUTO_SLICE.floorMs,

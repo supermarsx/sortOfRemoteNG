@@ -1,0 +1,33 @@
+{
+  "archive": {
+    "pairs": [
+      ["SOURCE_MAC_SECONDS = 7200\n", "SOURCE_MAC_SECONDS = 5400\n"],
+      [
+        "        # The first snapshot already proved the tree stable and equal to the sidecar except for\n        # time stamps. On Mac an entry that already has its recorded mtime needs no write, so it\n        # is not stat-ed again just to be skipped (the second apply after GN touches nothing).\n        observed_times = {entry['path']: entry['mtimeNs'] for entry in current['entries']} if mac else None\n        todo = expected['entries'] if observed_times is None else [\n            entry for entry in expected['entries'] if observed_times.get(entry['path']) != entry['mtimeNs']]\n        for row in sorted(todo, key=lambda r:r['path'].count('/'), reverse=True):\n",
+        "        for row in sorted(expected['entries'], key=lambda r:r['path'].count('/'), reverse=True):\n"
+      ]
+    ]
+  },
+  "lib": {
+    "pairs": [
+      [
+        "  // what the stat cache cannot vouch for). Measured on hosted runners: one walk is\n  // 0.5-0.6 ks, a full hash 1.8-2.5 ks and the timestamp writes of a restore 1.5 ks, so\n  // the first restore apply needs about 5.8 ks on the ARM64 target (run 42139669990\n  // spent 5.25 ks before its postcheck walk and hit the previous 5.4 ks bound).\n  macSourceMetadataMs: 7_500_000,\n  macSourceMetadataHelperMs: 7_200_000,\n",
+        "  // what the stat cache cannot vouch for). Measured on hosted runners (runs\n  // 41906246401 / 41906270473): each snapshot walks twice at 0.8-1.2 ks and a full\n  // hash is 1.8-2.2 ks, so a restore apply needs 3.3-4.6 ks.\n  macSourceMetadataMs: 5_700_000,\n  macSourceMetadataHelperMs: 5_400_000,\n"
+      ],
+      [
+        "// macOS post-compile reserve, which replaces the 70-minute default: measured final verify is the\n// external re-observation (7-7.6 min) plus one walk (11-12 min), then pack (2-3 min), upload (1 min)\n// and seal, 22-25 min in all, leaving about 35 minutes of margin.\nexport const MAC_AUTO_RESERVE_MS = 60 * 60_000;\n",
+        "// macOS post-compile reserve: the final source-verify re-walks the tree once (about 8 min on x64,\n// 10 min on ARM64 with every digest kept) after its external re-observation (about 8 min), then\n// pack (3 min), upload and seal (2 min), plus a 45-minute margin.\nexport const MAC_AUTO_RESERVE_MS = 75 * 60_000;\n"
+      ],
+      [
+        "      remaining -\n        (platformReserveMs > 0\n          ? reserve\n          : Math.max(reserve, AUTO_SLICE.reserveMs)),\n",
+        "      remaining - Math.max(reserve, AUTO_SLICE.reserveMs),\n"
+      ]
+    ]
+  },
+  "cli": {
+    "pairs": []
+  },
+  "runtime": {
+    "pairs": [["                ? 210\n", "                ? 180\n"]]
+  }
+}

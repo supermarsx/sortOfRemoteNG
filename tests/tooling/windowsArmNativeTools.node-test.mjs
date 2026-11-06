@@ -261,7 +261,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(currentRows.length, 131);
   assert.equal(
     digest(Buffer.from(JSON.stringify(currentRows))),
-    "674bc2641cd54b2eb4dea7c65d3aed50a71e8a576e050c408336ca3ea95f4a60",
+    "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const recoveredCore = execFileSync(
@@ -269,10 +269,10 @@ test("Producer code remains a separately attested subset and cannot substitute f
     ["cat-file", "blob", "HEAD:" + corePath],
     { cwd: root, timeout: 10000, windowsHide: true },
   ).toString();
-  assert.equal(Buffer.byteLength(recoveredCore), 249826);
+  assert.equal(Buffer.byteLength(recoveredCore), 250010);
   assert.equal(
     digest(recoveredCore),
-    "f7687614ef4ce7b32e24ec3066c304f2a66e75114608b467f53f340f89754bd9",
+    "892d4b7384a6aa6eee7a3f1464c7d1fa1c02fed7c606e8103ca49a39f1f90fa2",
   );
   const currentCore = withoutUploadRecovery(recoveredCore);
   assert.equal(Buffer.byteLength(currentCore), 246078);
@@ -301,7 +301,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(previousSha, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   assert.equal(
     currentRows.find((row) => row.path === corePath).sha,
-    "dc5062f5d2dfb77bc0cd41b579201e9b013b7134",
+    "1d01388d845d29485ea3e514fab6330f1c07f02b",
   );
   const retainedRows = withoutRepinRows(
     currentRows.map((row) =>
