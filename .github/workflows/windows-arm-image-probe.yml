@@ -1,0 +1,60 @@
+name: Windows ARM hosted image fact probe
+
+# Evidence only: records the hosted-tool facts a reviewed Windows ARM image
+# profile pins (node/git host tools, Git loader closure and edges, Python, system
+# commands) for whichever runner image it lands on. No source build, no SDK, no
+# execution of the candidates, and nothing here admits an image.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-arm-image-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact workflow source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Select pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          architecture: x64
+          cache: ""
+      - name: Record the image host facts
+        shell: pwsh
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPYCACHEPREFIX: ""
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/image-probe" | Out-Null
+          $env:PROBE_OUTPUT = "$env:RUNNER_TEMP/image-probe/image-probe.json"
+          $python = 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe'
+          if (-not (Test-Path $python)) { $python = (Get-Command python).Source }
+          Write-Output "ImageVersion=$env:ImageVersion ImageOS=$env:ImageOS python=$python"
+          Get-ChildItem 'C:/hostedtoolcache/windows' -Directory | ForEach-Object { Write-Output ("toolcache " + $_.Name + ": " + ((Get-ChildItem $_.FullName -Directory | ForEach-Object Name) -join ',')) }
+          & $python -I -B native/windows-arm-full-sdk/image_probe.py
+          exit $LASTEXITCODE
+      - name: Retain the probe record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-arm-image-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/image-probe/image-probe.json
+          if-no-files-found: warn
+          retention-days: 30
