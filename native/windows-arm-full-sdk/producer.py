@@ -503,7 +503,7 @@ def validate_source_gn_result(value,p):
         'engineCheckpointImplemented','sdkBuilt','nativeAcceptance','sourceCloseFailure','gitPolicy',
         'outerJobCleanupNotInferred'},'FULL_SOURCE_RESULT')
     data.need(value['kind']=='windows-arm-source-gn' and value['success'] is True and
-              value['stage']=='graph-inventory' and value['firstFailure'] is None and
+              value['stage'] in ('graph-inventory','complete') and value['firstFailure'] is None and
               value['target']==p['target'] and value['sourceId']==p['sourceGn']['sourceId'] and
               value['compilerExecuted'] is None and value['engineCompilationRequested'] is False and
               all(value[key] is False for key in ('engineCheckpointImplemented','sdkBuilt','nativeAcceptance','sourceCloseFailure'))and

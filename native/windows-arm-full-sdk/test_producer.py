@@ -1132,8 +1132,10 @@ class SourceGnTests(unittest.TestCase):
 
     def test_source_result_rejects_fake_counts_legacy_identity_compile_claims_and_numeric_booleans(self):
         good=self.source_result(PROFILE);self.assertIs(producer.validate_source_gn_result(good,PROFILE),good)
+        # The full flow ends with stage 'complete' after metadata-qualification (run 42116911114).
+        done=copy.deepcopy(good);done['stage']='complete';self.assertIs(producer.validate_source_gn_result(done,PROFILE),done)
         for key,value in [('sourceId',PROFILE['sourceId']),('success',1),('sdkBuilt',True),
-                          ('compilerExecuted',False),('engineCompilationRequested',True),('stage','cef-gn')]:
+                          ('compilerExecuted',False),('engineCompilationRequested',True),('stage','cef-gn'),('stage','metadata-qualification')]:
             bad=copy.deepcopy(good);bad[key]=value
             with self.assertRaises(acquire.Denied):producer.validate_source_gn_result(bad,PROFILE)
         for key,value in [('files',0),('files',True),('bytes',8*1024**3+1),('visited',1),('sha256','x'*64)]:

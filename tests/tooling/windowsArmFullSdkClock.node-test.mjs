@@ -508,6 +508,52 @@ const FULL_HOOKS_3600_HISTORY = {
     ],
   },
 };
+const FULL_GRAPH_STAGE_HISTORY = {
+  producer: {
+    bytes: 61403,
+    sha256: "6c8f2ae7057b18850368dbd23c47f524c08f58d9a85f52b880c26487abd42625",
+    rows: [
+      {
+        old: "              value['stage']=='graph-inventory' and value['firstFailure'] is None and\n",
+        new: "              value['stage'] in ('graph-inventory','complete') and value['firstFailure'] is None and\n",
+        oldSha256:
+          "6032e858d9ff81793b46e7f7baa7d805b6201eb4e6a4788bf8b9dcd6ad964568",
+        newSha256:
+          "398731cb4f01b834cdda851603e64bf72638c6ae322702ef515ff61037bace5a",
+      },
+    ],
+  },
+};
+function fullGraphStageInverse(text, name) {
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const spec = FULL_GRAPH_STAGE_HISTORY[name];
+  if (!spec) return text;
+  for (const row of spec.rows) {
+    assert.equal(
+      sha(row.new),
+      row.newSha256,
+      "ASSEMBLY_INVERSE_GRAPH_STAGE_PIN",
+    );
+    assert.equal(
+      sha(row.old),
+      row.oldSha256,
+      "ASSEMBLY_INVERSE_GRAPH_STAGE_PIN",
+    );
+    assert.equal(
+      text.split(row.new).length,
+      2,
+      "ASSEMBLY_INVERSE_GRAPH_STAGE_COUNT",
+    );
+    text = text.replace(row.new, () => row.old);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "ASSEMBLY_INVERSE_GRAPH_STAGE_WHOLE",
+  );
+  assert.equal(sha(text), spec.sha256, "ASSEMBLY_INVERSE_GRAPH_STAGE_WHOLE");
+  return text;
+}
 const FULL_GRAPH_SOURCES_HISTORY = {
   driver: {
     bytes: 307180,
@@ -549,6 +595,7 @@ const FULL_GRAPH_SOURCES_HISTORY = {
   },
 };
 function fullGraphSourcesInverse(text, name) {
+  text = fullGraphStageInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_SOURCES_HISTORY[name];
   if (!spec) return text;
