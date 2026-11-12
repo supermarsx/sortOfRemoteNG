@@ -81,7 +81,7 @@ primary=base64.b64decode(P['primary'])
 assert len(primary)==1205 and hashlib.sha256(primary).hexdigest()=='6797d3ed046e32efbd48e044347dce7703559b76b4adaca1c874f69ff83c1c23'
 if P['action']=='init':
  repo=pathlib.Path(tempfile.mkdtemp(prefix='windows-sdk-sentinel-')).resolve()
- identity=dict(image='20261030.294.1',sourceId=inputs.SOURCES['20261030.294.1'],producerSha256='a'*64,sourceDateEpoch=dict(present=False,value=None))
+ identity=dict(image='20261103.298.1',sourceId=inputs.SOURCES['20261103.298.1'],producerSha256='a'*64,sourceDateEpoch=dict(present=False,value=None))
  root=repo/'.artifacts'/inputs.root_name(identity['image'],identity['sourceId']);root.mkdir(parents=True)
  for name in inputs.NAMESPACES:(root/name).mkdir()
  script=root/'source-checkout/src/third_party/depot_tools/update_depot_tools_toggle.py';script.parent.mkdir(parents=True);script.write_bytes(primary)
