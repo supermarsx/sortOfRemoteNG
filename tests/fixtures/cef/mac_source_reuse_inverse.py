@@ -9,6 +9,7 @@ Pairs are (current text, previous text); every current text must occur exactly o
 this file by path because they run isolated (-I) and cannot import siblings.
 """
 import json
+import hashlib
 from pathlib import Path
 
 _HERE = Path(__file__).parent
@@ -22,6 +23,14 @@ _REUSE = json.loads((_HERE / 'mac_source_reuse_inverse.json').read_text(encoding
 
 def inverse(raw):
     text = raw.decode() if isinstance(raw, bytes) else raw
+    # Exact whole-file prefix; retained history never executes in production.
+    value = text.encode()
+    assert len(value) == 240123 and hashlib.sha256(value).hexdigest() == 'd5e9ac6002b5a36584d5f2a7fa6240a5627983ba16a32657ceaeb7a327d1f2d6'
+    current = "        require(current == expected, 'source-metadata-postcheck')\n"
+    assert text.count(current) == 1
+    text = text.replace(current, "", 1)
+    value = text.encode()
+    assert len(value) == 240057 and hashlib.sha256(value).hexdigest() == 'ab584206c6d6bd4ad4acedf7ac0de90281a22e85967d28e19e98b6a03957fee4'
     marker = _REUSE['helperStart']
     if marker not in text:
         return raw

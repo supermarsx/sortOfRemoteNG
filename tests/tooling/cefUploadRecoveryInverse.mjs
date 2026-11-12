@@ -1,3 +1,43 @@
+import assert from "node:assert/strict";
+
+// Test-only prefix: restore the COMPLETE reviewed pre-fix helper before the
+// unchanged performance/native-history inverses. Production execution uses raw bytes.
+export function withoutSourceVerifyGuard(text) {
+  assert.equal(Buffer.byteLength(text), 240123);
+  assert.equal(
+    createHash("sha256").update(text).digest("hex"),
+    "d5e9ac6002b5a36584d5f2a7fa6240a5627983ba16a32657ceaeb7a327d1f2d6",
+  );
+  const current =
+    "        require(current == expected, 'source-metadata-postcheck')\n";
+  assert.equal(text.split(current).length, 2);
+  const previous = text.replace(current, "");
+  assert.equal(Buffer.byteLength(previous), 240057);
+  assert.equal(
+    createHash("sha256").update(previous).digest("hex"),
+    "ab584206c6d6bd4ad4acedf7ac0de90281a22e85967d28e19e98b6a03957fee4",
+  );
+  return previous;
+}
+
+// Change only the one proven archive blob; every other committed producer row
+// remains the actual row, so this cannot retarget a capsule or admit a runtime.
+export function withoutSourceVerifyGuardRows(rows, root) {
+  const file = "scripts/lib/cef-checkpoint-archive.py";
+  assert.equal(rows.filter((row) => row.path === file).length, 1);
+  const text = execFileSync("git", ["cat-file", "blob", `HEAD:${file}`], {
+    cwd: root,
+    timeout: 10000,
+    windowsHide: true,
+    maxBuffer: 1 << 20,
+  }).toString();
+  assert.equal(rows.find((row) => row.path === file).sha, blobSha(text));
+  const previous = withoutSourceVerifyGuard(text);
+  return rows.map((row) =>
+    row.path === file ? { ...row, sha: blobSha(previous) } : row,
+  );
+}
+
 import { readFileSync } from "node:fs";
 // Exact inverse of the Mac owned-source digest reuse / 5400 s budget / Mac reserve
 // change, as (current text, previous text) pairs per file (see the JSON).
@@ -40,7 +80,8 @@ function macInverse(text, section) {
   }
   return restored;
 }
-export const withoutMacReuseArchive = (text) => macInverse(text, "archive");
+export const withoutMacReuseArchive = (text) =>
+  macInverse(withoutSourceVerifyGuard(text), "archive");
 export const withoutAcceptedImagesRuntime = (text) =>
   macInverse(text, "runtime");
 // Exact inverse of the asset-upload recovery change in

@@ -8,6 +8,7 @@ import test from "node:test";
 import YAML from "yaml";
 import {
   withoutUploadRecovery,
+  withoutSourceVerifyGuardRows,
   withoutRepinRows,
 } from "./cefUploadRecoveryInverse.mjs";
 
@@ -261,6 +262,14 @@ test("Producer code remains a separately attested subset and cannot substitute f
   assert.equal(currentRows.length, 131);
   assert.equal(
     digest(Buffer.from(JSON.stringify(currentRows))),
+    "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
+  );
+  assert.equal(
+    digest(
+      Buffer.from(
+        JSON.stringify(withoutSourceVerifyGuardRows(currentRows, root)),
+      ),
+    ),
     "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";

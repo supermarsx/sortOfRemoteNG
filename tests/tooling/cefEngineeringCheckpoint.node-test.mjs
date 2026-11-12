@@ -17997,6 +17997,14 @@ test("static Mac owned FD and noop layers restore complete original helper befor
   withoutMacSourceCompletion(raw, "scripts/lib/cef-checkpoint-archive.py");
   for (const tampered of [
     raw + "\n",
+    raw.replace(
+      "        require(current == expected, 'source-metadata-postcheck')\n",
+      "",
+    ),
+    raw.replace(
+      "        require(current == expected, 'source-metadata-postcheck')\n",
+      "        require(current != expected, 'source-metadata-postcheck')\n",
+    ),
     raw.replace("_MAC_SOURCE_FD_WORKERS = 1", "_MAC_SOURCE_FD_WORKERS = 2"),
     raw.replace("if mac and before.st_mtime_ns", "if before.st_mtime_ns"),
   ])

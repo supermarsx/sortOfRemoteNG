@@ -1,6 +1,7 @@
 import test from "node:test";
 import {
   withoutUploadRecovery,
+  withoutSourceVerifyGuardRows,
   withoutRepinRows,
 } from "./cefUploadRecoveryInverse.mjs";
 import assert from "node:assert/strict";
@@ -562,6 +563,10 @@ test("the retained proof producer binds all actual131 rows through the exact cur
   assert.equal(rows.length, 131);
   assert.equal(
     codeTreeDigest(rows),
+    "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
+  );
+  assert.equal(
+    codeTreeDigest(withoutSourceVerifyGuardRows(rows, fileURLToPath(root))),
     "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
   );
   assert.equal(

@@ -9,6 +9,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   withoutUploadRecovery,
+  withoutSourceVerifyGuardRows,
   withoutRepinRows,
   withoutMacReuseArchive,
 } from "./cefUploadRecoveryInverse.mjs";
@@ -2383,7 +2384,12 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.deepEqual(capsule.oldSourceTree, actual);
   // This retained Linux capsule binds its original1d producer. The newer Mac
   // reaper has one reviewed source delta; it does not retarget this capsule.
-  const currentRows = rows(ROOT, "HEAD");
+  const actualCurrentRows = rows(ROOT, "HEAD");
+  assert.equal(
+    core.codeTreeDigest(actualCurrentRows),
+    "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
+  );
+  const currentRows = withoutSourceVerifyGuardRows(actualCurrentRows, ROOT);
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),
