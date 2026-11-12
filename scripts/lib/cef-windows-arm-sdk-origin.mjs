@@ -440,11 +440,11 @@ async function hold(relative, head, expected) {
   }
 }
 const SOURCES = Object.freeze({
-  "20261030.294.1": Object.freeze({
+  "20261103.298.1": Object.freeze({
     sourceLockIdentity:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     sourceProfileSha256:
-      "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
   }),
   "20261021.278.1": Object.freeze({
     sourceLockIdentity:
@@ -1800,7 +1800,7 @@ function rawDetails(seal, state) {
   );
   const prefix =
     "native/cef-build-inputs/" +
-    (source.image === "20261030.294.1"
+    (source.image === "20261103.298.1"
       ? "20261101-r5-windows-arm64-cross-x64-current-source-gn"
       : "20261101-r5-windows-arm64-cross-x64-reviewed-20261021-source-gn") +
     "/source-lock.json";
