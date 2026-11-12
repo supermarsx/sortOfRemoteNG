@@ -1,3 +1,4 @@
+import { withoutEngineHostArchitecture } from "./helpers/cefWindowsEngineHostHistory.mjs";
 import { withoutReviewedWindowsImage } from "./helpers/cefWindowsImageReviewedHistory.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -2378,12 +2379,61 @@ test("reviewed current image refresh preserves whole historical inputs and admit
   current.sourceGn.hostClosure.image = previous.sourceGn.hostClosure.image;
   delete current.imageRefreshEvidence;
   assert.deepEqual(current, previous);
-  const policyFile = "native/windows-arm-full-sdk/sdk-origin-review.json";
-  const policyText = (
-    await fs.readFile(new URL("../../" + policyFile, import.meta.url), "utf8")
-  ).replaceAll("\r\n", "\n");
-  const policy = JSON.parse(policyText),
-    oldPolicy = JSON.parse(withoutReviewedWindowsImage(policyText, policyFile));
+  const policyFile = "native/windows-arm-full-sdk/sdk-origin-review.json",
+    workerFile = "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs";
+  // Authenticate the complete current native bytes first. This test's image
+  // comparison then uses the exact prior worker/Q view; no old pins change.
+  const policyText = await fs.readFile(
+      new URL("../../" + policyFile, import.meta.url),
+      "utf8",
+    ),
+    workerText = await fs.readFile(
+      new URL("../../" + workerFile, import.meta.url),
+      "utf8",
+    ),
+    priorWorker = withoutEngineHostArchitecture(workerText, workerFile),
+    priorPolicy = withoutEngineHostArchitecture(policyText, policyFile),
+    currentPolicy = JSON.parse(policyText),
+    policy = JSON.parse(priorPolicy),
+    oldPolicy = JSON.parse(
+      withoutReviewedWindowsImage(priorPolicy, policyFile),
+    );
+  assert.deepEqual(
+    currentPolicy.producerInputs.find((row) => row.path === workerFile),
+    {
+      bytes: Buffer.byteLength(workerText),
+      path: workerFile,
+      sha256: digest(Buffer.from(workerText)),
+    },
+  );
+  assert.deepEqual(
+    policy.producerInputs.find((row) => row.path === workerFile),
+    {
+      bytes: Buffer.byteLength(priorWorker),
+      path: workerFile,
+      sha256: digest(Buffer.from(priorWorker)),
+    },
+  );
+  const changedWorker = workerText.replace(
+      'PROCESSOR_ARCHITECTURE: "AMD64"',
+      'PROCESSOR_ARCHITECTURE: "ARM64"',
+    ),
+    changedPolicy = policyText.replace(
+      digest(Buffer.from(workerText)),
+      "0".repeat(64),
+    );
+  assert.notEqual(changedWorker, workerText);
+  assert.notEqual(changedPolicy, policyText);
+  for (const [raw, file] of [
+    [changedWorker, workerFile],
+    [workerText + "\n", workerFile],
+    [changedPolicy, policyFile],
+    [policyText + "\n", policyFile],
+  ])
+    assert.throws(
+      () => withoutEngineHostArchitecture(raw, file),
+      /ENGINE_HOST_/,
+    );
   assert.equal(policy.producerInputs.length, 128);
   const oldRows = new Map(
     oldPolicy.producerInputs.map((row) => [row.path, row]),
