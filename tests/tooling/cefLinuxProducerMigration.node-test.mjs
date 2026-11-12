@@ -1,3 +1,4 @@
+import { reconstructLinuxMigrationFixtureSource } from "./helpers/cefLinuxMigrationFixtureSource.mjs";
 import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -1183,6 +1184,7 @@ async function fixture(
     reachableRows.map((row) => row.sha).join("\n") + "\n",
   );
   let offset = 0;
+  const rawFiles = new Map();
   for (const row of reachableRows) {
     const end = data.indexOf(10, offset),
       header = data.subarray(offset, end).toString();
@@ -1191,27 +1193,23 @@ async function fixture(
     const start = end + 1,
       next = start + Number(match[2]);
     assert.equal(data[next], 10);
-    await fs.mkdir(path.dirname(path.join(repo, row.path)), {
-      recursive: true,
-    });
-    await fs.writeFile(path.join(repo, row.path), data.subarray(start, next));
+    rawFiles.set(row.path, data.subarray(start, next));
     offset = next + 1;
   }
   assert.equal(offset, data.length);
-  // Use the actual three candidate script bodies; Git still owns the fixture
-  // producer tree and no caller JSON supplies a source-policy exception.
-  for (const relative of [
-    "scripts/lib/cef-linux-producer-migration.mjs",
-    "scripts/cef-hosted-provision.mjs",
-    "scripts/cef-runtime-ci.mjs",
-  ])
-    await fs.writeFile(
-      path.join(repo, relative),
-      (await fs.readFile(path.join(ROOT, relative), "utf8")).replaceAll(
-        "\r\n",
-        "\n",
-      ),
-    );
+  // Restore all complete reviewed bodies before building a synthetic old capsule.
+  // The actual132 producer is never admitted by changing a fixture row's hash.
+  const { sourceRows, sourceFiles } = reconstructLinuxMigrationFixtureSource(
+    reachableRows,
+    rawFiles,
+    ROOT,
+  );
+  for (const row of sourceRows) {
+    await fs.mkdir(path.dirname(path.join(repo, row.path)), {
+      recursive: true,
+    });
+    await fs.writeFile(path.join(repo, row.path), sourceFiles.get(row.path));
+  }
   if (modeledProvisionDelta)
     await fs.appendFile(
       path.join(repo, "scripts/cef-hosted-provision.mjs"),
@@ -1225,6 +1223,7 @@ async function fixture(
   git(repo, ["commit", "--quiet", "-m", "canonical selected fixture"]);
   const currentRows = rows(repo, "HEAD"),
     digest = core.codeTreeDigest(currentRows);
+  if (!modeledProvisionDelta) assert.deepEqual(currentRows, sourceRows);
   const identity = {
     target: M.target,
     source: M.source,
