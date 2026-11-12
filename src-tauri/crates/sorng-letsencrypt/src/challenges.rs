@@ -334,8 +334,8 @@ impl Dns01Solver {
                 #[cfg(feature = "dns-resolver")]
                 {
                     use hickory_resolver::config::{ResolverConfig, ResolverOpts};
-                    use hickory_resolver::name_server::TokioRuntimeProvider;
-                    use hickory_resolver::proto::rr::rdata::TXT;
+                    use hickory_resolver::net::runtime::TokioRuntimeProvider;
+                    use hickory_resolver::proto::rr::RData;
                     use hickory_resolver::Resolver;
                     let resolver = match Resolver::builder_with_config(
                         ResolverConfig::default(),
@@ -345,12 +345,21 @@ impl Dns01Solver {
                     .build()
                     {
                         Ok(resolver) => resolver,
-                        Err(_) => return false,
+                        Err(error) => {
+                            return Err(format!("Failed to initialize DNS resolver: {error}"))
+                        }
                     };
                     let response = resolver.txt_lookup(record_name.clone()).await;
                     if let Ok(txts) = response {
-                        txts.iter()
-                            .any(|r: &TXT| r.iter().any(|txt| &**txt == expected.as_bytes()))
+                        txts.answers().iter().any(|record| {
+                            let RData::TXT(txt) = &record.data else {
+                                return false;
+                            };
+                            txt.txt_data
+                                .iter()
+                                .flat_map(|chunk| chunk.iter().copied())
+                                .eq(expected.bytes())
+                        })
                     } else {
                         false
                     }

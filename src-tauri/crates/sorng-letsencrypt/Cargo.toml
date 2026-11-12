@@ -24,4 +24,4 @@ p256 = { version = "0.13", features = ["ecdsa", "pem"] }
 rcgen = "=0.12.1"
 # Optional DNS resolver for DNS-01 challenge propagation checks.
 # When disabled, the crate falls back to spawning `nslookup`.
-hickory-resolver = { version = "0.26.1", default-features = false, features = ["tokio", "system-config"], optional = true }
+hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio", "system-config"], optional = true }

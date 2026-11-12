@@ -549,8 +549,18 @@ impl russh::client::Handler for StrictClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &ssh_key::PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> std::result::Result<bool, Self::Error> {
+        let russh::keys::PublicKeyOrCertificate::PublicKey {
+            key: server_public_key,
+            ..
+        } = server_public_key
+        else {
+            // A pinned raw key/known_hosts entry is not a certificate-authority grant.
+            *lock_or_recover(&self.rejection) =
+                Some("SSH host certificates require a certificate trust policy".into());
+            return Ok(false);
+        };
         let observed = server_public_key.fingerprint(HashAlg::Sha256).to_string();
         let accepted = match &self.policy {
             SshHostKeyPolicy::PinnedSha256(expected) => {
@@ -1242,6 +1252,47 @@ mod tests {
         );
         assert_eq!(replay.events[0].kind, PsrpEventKind::PipelineState);
         assert_eq!(replay.events[1].kind, PsrpEventKind::Information);
+    }
+
+    #[tokio::test]
+    async fn host_key_pin_does_not_admit_a_certificate_for_the_same_key() {
+        use russh::client::Handler;
+        let signing_key =
+            ssh_key::PrivateKey::from(ssh_key::private::Ed25519Keypair::from_seed(&[7; 32]));
+        let public_key = signing_key.public_key();
+        let rejection = Arc::new(Mutex::new(None));
+        let mut handler = StrictClientHandler {
+            host: "localhost".into(),
+            port: 22,
+            policy: SshHostKeyPolicy::PinnedSha256(
+                public_key.fingerprint(HashAlg::Sha256).to_string(),
+            ),
+            rejection: rejection.clone(),
+        };
+        assert!(handler
+            .check_server_key(&public_key.clone().into())
+            .await
+            .unwrap());
+        let mut certificate = ssh_key::certificate::Builder::new(
+            vec![0; 16],
+            public_key.key_data().clone(),
+            0,
+            u64::MAX,
+        )
+        .unwrap();
+        certificate
+            .cert_type(ssh_key::certificate::CertType::Host)
+            .unwrap()
+            .valid_principal("localhost")
+            .unwrap();
+        assert!(!handler
+            .check_server_key(&certificate.sign(&signing_key).unwrap().into())
+            .await
+            .unwrap());
+        assert!(lock_or_recover(&rejection)
+            .as_ref()
+            .unwrap()
+            .contains("certificate trust policy"));
     }
 
     #[test]

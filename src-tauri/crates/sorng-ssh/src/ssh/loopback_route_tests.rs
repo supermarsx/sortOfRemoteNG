@@ -61,8 +61,9 @@ impl Handler for RouteServer {
         port_to_connect: u32,
         _originator_address: &str,
         _originator_port: u32,
+        reply: russh::server::ChannelOpenHandle,
         _session: &mut ServerSession,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), Self::Error> {
         self.log
             .direct
             .lock()
@@ -71,18 +72,19 @@ impl Handler for RouteServer {
         // The server's own loopback. In-process, that is this machine's, but
         // the name is resolved here, on the server side of the tunnel.
         if host_to_connect != "localhost" {
-            return Ok(false);
+            return Ok(()); // Dropping the reply rejects the channel.
         }
         let Ok(port) = u16::try_from(port_to_connect) else {
-            return Ok(false);
+            return Ok(());
         };
+        reply.accept().await;
         tokio::spawn(async move {
             if let Ok(mut upstream) = tokio::net::TcpStream::connect(("localhost", port)).await {
                 let mut stream = channel.into_stream();
                 let _ = tokio::io::copy_bidirectional(&mut stream, &mut upstream).await;
             }
         });
-        Ok(true)
+        Ok(())
     }
 }
 

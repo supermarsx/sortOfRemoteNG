@@ -68,7 +68,7 @@ features = ["std"]
 version = "0.6"
 
 [dependencies.picky]
-version = "=7.0.0-rc.24"
+version = "=7.0.0-rc.26"
 
 [dependencies.picky-asn1-der]
 version = "0.5"
@@ -82,7 +82,7 @@ features = ["std"]
 
 [dependencies.sspi]
 git = "https://github.com/Devolutions/sspi-rs.git"
-rev = "095e3f341c74d57daafb015bfb0226188e9e8e18"
+rev = "847304fe35859a8aec401a50033e39df4c7235f4"
 default-features = false
 features = ["scard"]
 

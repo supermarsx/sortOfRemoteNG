@@ -15,7 +15,7 @@ base64 = { workspace = true }
 uuid = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-russh = { version = "0.61.2", default-features = false, features = ["ring", "rsa"] }
+russh = { version = "0.63.1", default-features = false, features = ["ring", "rsa"] }
 futures-util = "0.3"
 digest_auth = "0.3"
 

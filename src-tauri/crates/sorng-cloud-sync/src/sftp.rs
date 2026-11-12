@@ -161,7 +161,15 @@ struct HostKey {
 }
 impl client::Handler for HostKey {
     type Error = russh::Error;
-    async fn check_server_key(&mut self, key: &keys::PublicKey) -> Result<bool, Self::Error> {
+    async fn check_server_key(
+        &mut self,
+        key: &keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
+        let keys::PublicKeyOrCertificate::PublicKey { key, .. } = key else {
+            // The configured fingerprint pins a raw key, not a certificate authority.
+            self.rejected.store(true, Ordering::Relaxed);
+            return Ok(false);
+        };
         let actual = fingerprint(&key.fingerprint(keys::HashAlg::Sha256).to_string());
         let accepted = actual.is_ok_and(|v| {
             v.iter()
@@ -1154,6 +1162,7 @@ mod tests {
         string(&mut blob, &[1u8; 32]);
         let key = keys::PublicKey::from_bytes(&blob).unwrap();
         let expected = fingerprint(&key.fingerprint(keys::HashAlg::Sha256).to_string()).unwrap();
+        let key = keys::PublicKeyOrCertificate::from(key);
         let rejected = Arc::new(AtomicBool::new(false));
         let mut handler = HostKey {
             expected,
@@ -1163,6 +1172,38 @@ mod tests {
         assert!(!rejected.load(Ordering::Relaxed));
         handler.expected[0] ^= 1;
         assert!(!handler.check_server_key(&key).await.unwrap());
+        assert!(rejected.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
+    async fn ssh_host_key_pin_does_not_admit_a_certificate_for_the_same_key() {
+        use russh::client::Handler;
+        let signing_key =
+            keys::PrivateKey::from(keys::ssh_key::private::Ed25519Keypair::from_seed(&[7; 32]));
+        let public_key = signing_key.public_key();
+        let expected =
+            fingerprint(&public_key.fingerprint(keys::HashAlg::Sha256).to_string()).unwrap();
+        let rejected = Arc::new(AtomicBool::new(false));
+        let mut handler = HostKey {
+            expected,
+            rejected: rejected.clone(),
+        };
+        let mut certificate = keys::ssh_key::certificate::Builder::new(
+            vec![0; 16],
+            public_key.key_data().clone(),
+            0,
+            u64::MAX,
+        )
+        .unwrap();
+        certificate
+            .cert_type(keys::ssh_key::certificate::CertType::Host)
+            .unwrap()
+            .valid_principal("localhost")
+            .unwrap();
+        assert!(!handler
+            .check_server_key(&certificate.sign(&signing_key).unwrap().into())
+            .await
+            .unwrap());
         assert!(rejected.load(Ordering::Relaxed));
     }
 
