@@ -1,3 +1,4 @@
+import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -2387,9 +2388,15 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   const actualCurrentRows = rows(ROOT, "HEAD");
   assert.equal(
     core.codeTreeDigest(actualCurrentRows),
+    "bfb8e437e987d458a839ce8699b7cc249960f19f81a9be77764fd9d17516c45b",
+  );
+  assert.equal(actualCurrentRows.length, 132);
+  const previousMacRows = withoutMacGcsPreparationRows(actualCurrentRows, ROOT);
+  assert.equal(
+    core.codeTreeDigest(previousMacRows),
     "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
   );
-  const currentRows = withoutSourceVerifyGuardRows(actualCurrentRows, ROOT);
+  const currentRows = withoutSourceVerifyGuardRows(previousMacRows, ROOT);
   assert.equal(currentRows.length, 131);
   assert.equal(
     core.codeTreeDigest(currentRows),

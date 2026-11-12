@@ -1,3 +1,4 @@
+import { withoutMacGcsPreparationRuntime } from "./cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
@@ -36,6 +37,7 @@ const changes = [
 ];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 export function withoutReviewedPreparationChanges(value) {
+  value = withoutMacGcsPreparationRuntime(value);
   assert.equal(Buffer.byteLength(value), 78215);
   assert.equal(
     sha(value),

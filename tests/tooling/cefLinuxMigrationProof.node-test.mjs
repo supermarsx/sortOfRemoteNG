@@ -1,3 +1,4 @@
+import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import test from "node:test";
 import {
   withoutUploadRecovery,
@@ -525,7 +526,7 @@ test("final-helper retarget restores the complete2dbe core through exactly three
     "7c2533d579f789701bf4dbbd5fa17c314b7b3c57158ee738e499d2276ef96c2e",
   );
 });
-test("the retained proof producer binds all actual131 rows through the exact current core inverse", async () => {
+test("the retained proof producer binds all actual132 rows through the exact current core inverse", async () => {
   const listed = spawnSync(
     "git",
     [
@@ -560,13 +561,23 @@ test("the retained proof producer binds all actual131 rows through the exact cur
     assert.equal(sha, committed, path);
     rows.push({ type: "blob", mode, sha, path });
   }
-  assert.equal(rows.length, 131);
+  assert.equal(rows.length, 132);
+  const previousMacRows = withoutMacGcsPreparationRows(
+    rows,
+    fileURLToPath(root),
+  );
   assert.equal(
-    codeTreeDigest(rows),
+    codeTreeDigest(previousMacRows),
     "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
   );
   assert.equal(
-    codeTreeDigest(withoutSourceVerifyGuardRows(rows, fileURLToPath(root))),
+    codeTreeDigest(rows),
+    "bfb8e437e987d458a839ce8699b7cc249960f19f81a9be77764fd9d17516c45b",
+  );
+  assert.equal(
+    codeTreeDigest(
+      withoutSourceVerifyGuardRows(previousMacRows, fileURLToPath(root)),
+    ),
     "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
   );
   assert.equal(
@@ -617,7 +628,7 @@ test("the retained proof producer binds all actual131 rows through the exact cur
     .digest("hex");
   assert.equal(previousSha, "f29b0dd70f174d6e4fa9a793ba5c43ddc34467e2");
   const retainedRows = withoutRepinRows(
-    rows.map((row) =>
+    previousMacRows.map((row) =>
       row.path === corePath ? { ...row, sha: previousSha } : row,
     ),
     fileURLToPath(root),

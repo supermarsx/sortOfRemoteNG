@@ -954,6 +954,7 @@ import {
   assertHostedCapacity,
   buildEnvironment,
   createHostedBuildBudget,
+  observePreparationPhase,
 } from "../../scripts/cef-runtime-ci.mjs";
 import {
   argumentsFor,
@@ -18063,3 +18064,383 @@ for (const [fixture, tests] of MAC_FIXTURES) {
     },
   );
 }
+
+// These controls run in the existing native-contract step on the actual Mac host.
+// Linux POSIX and Windows portable runs do not claim Darwin qualification.
+test("Mac GCS fresh preparation preserves JSON and held-inode safety on this host", async () => {
+  const helper = path.join(ROOT, "scripts/lib/cef-mac-gcs-normalize.py");
+  const bytes = (await readFile(helper, "utf8")).replaceAll("\r\n", "\n");
+  assert.equal(Buffer.byteLength(bytes), 11223);
+  assert.equal(
+    sha(bytes),
+    "8102419d2f16b149743d2546fe670044a03dbd5f1ab9c2dde5095f178190d236",
+  );
+  const result = spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    [
+      "-I",
+      "-B",
+      path.join(ROOT, "tests/fixtures/cef/mac_gcs_preparation_test.py"),
+      helper,
+    ],
+    {
+      cwd: ROOT,
+      timeout: 15000,
+      maxBuffer: 128 * 1024,
+      encoding: "utf8",
+      windowsHide: true,
+    },
+  );
+  assert.equal(
+    result.status,
+    0,
+    result.stderr || result.stdout || result.error?.message,
+  );
+  assert.match(result.stderr, /Ran 19 tests/);
+  assert.match(result.stderr, /OK/);
+});
+
+// Only log I/O is injected: the exported observer owns its real closed phase gate.
+function macGcsObservationFixture(events = []) {
+  const rows = [],
+    emitted = [],
+    opened = [];
+  let closed = 0;
+  return {
+    rows,
+    emitted,
+    opened,
+    closed: () => closed,
+    dependencies: {
+      async openFile(file, flags, mode) {
+        assert.equal(
+          file,
+          path.join("/fixed/logs", "preparation-mac-gcs-preparation.jsonl"),
+        );
+        assert.equal(flags, "wx");
+        assert.equal(mode, 0o600);
+        assert.equal(opened.length, 0);
+        opened.push(file);
+        events.push("preparation");
+        return {
+          async writeFile(line) {
+            assert(Buffer.byteLength(line) < 1024);
+            assert(rows.length < 2);
+            rows.push(JSON.parse(line));
+          },
+          async close() {
+            closed++;
+            assert.equal(closed, 1);
+          },
+        };
+      },
+      emit(line) {
+        assert(Buffer.byteLength(line) < 1024);
+        assert(emitted.length < 2);
+        emitted.push(line);
+      },
+    },
+  };
+}
+
+test("Mac GCS actual exported observer admits the fixed phase and preserves refusal and cancellation", async () => {
+  const expected = Object.freeze({ fixed: true });
+  const success = macGcsObservationFixture();
+  let operations = 0;
+  assert.equal(
+    await observePreparationPhase(
+      "/fixed/logs",
+      "mac-gcs-preparation",
+      () => {
+        operations++;
+        return expected;
+      },
+      success.dependencies,
+    ),
+    expected,
+  );
+  assert.equal(operations, 1);
+  assert.deepEqual(
+    success.rows.map((row) => [row.phase, row.status]),
+    [
+      ["mac-gcs-preparation", "start"],
+      ["mac-gcs-preparation", "pass"],
+    ],
+  );
+  assert.equal(success.closed(), 1);
+  for (const original of [
+    new Error("PRIVATE_REFUSAL"),
+    Object.assign(new Error("PRIVATE_CANCELLED"), { name: "AbortError" }),
+    Object.freeze({ cancelled: true }),
+  ]) {
+    const failure = macGcsObservationFixture();
+    await assert.rejects(
+      observePreparationPhase(
+        "/fixed/logs",
+        "mac-gcs-preparation",
+        () => {
+          throw original;
+        },
+        failure.dependencies,
+      ),
+      (error) => error === original,
+    );
+    assert.deepEqual(
+      failure.rows.map((row) => row.status),
+      ["start", "failure"],
+    );
+    assert.equal(failure.closed(), 1);
+    assert.doesNotMatch(
+      JSON.stringify(failure.rows) + failure.emitted.join(""),
+      /PRIVATE|CANCELLED/,
+    );
+  }
+  for (const unknown of [
+    "mac-gcs-preparations",
+    "mac-gcs-preparation/..",
+    "source-record",
+    "",
+  ]) {
+    const refused = macGcsObservationFixture();
+    await assert.rejects(
+      observePreparationPhase(
+        "/fixed/logs",
+        unknown,
+        () => {
+          throw new Error("operation must not run");
+        },
+        refused.dependencies,
+      ),
+      /Invalid preparation observation phase/,
+    );
+    assert.equal(refused.opened.length, 0);
+    assert.equal(refused.rows.length, 0);
+    assert.equal(refused.emitted.length, 0);
+    assert.equal(refused.closed(), 0);
+  }
+});
+
+test("Mac GCS fresh preparation runs before snapshots with the original bounded clock and aborts on failure", async () => {
+  const source = (
+    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const ast = ts.createSourceFile(
+    "runtime.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const build = ast.statements.find(
+    (node) => ts.isFunctionDeclaration(node) && node.name?.text === "build",
+  );
+  const gates = build.body.statements.filter(
+    (node) =>
+      ts.isIfStatement(node) &&
+      node.expression
+        .getText(ast)
+        .includes('engineering?.sourceMetadata === "mac-intel"'),
+  );
+  assert.equal(gates.length, 1);
+  const gate = gates[0].getText(ast);
+  assert(source.indexOf('"dependency-hooks",') < gates[0].pos);
+  assert(
+    gates[0].end <
+      source.indexOf("  const recipe = await customRuntimeBuildRecipe({"),
+  );
+  assert.equal(
+    source.split('"scripts/lib/cef-mac-gcs-normalize.py"').length,
+    2,
+  );
+  const now = 1794480000000;
+  async function run({
+    mode,
+    target,
+    remaining = 30000,
+    missing = false,
+    childFailure = false,
+    childError = new Error("fixed-child-failure"),
+  }) {
+    const events = [],
+      calls = [];
+    const observation = macGcsObservationFixture(events);
+    const budget = missing
+      ? undefined
+      : {
+          assertRemaining() {
+            events.push("original-clock");
+            assert(remaining > 0, "expired");
+          },
+          remaining() {
+            return remaining;
+          },
+        };
+    let error;
+    try {
+      await vm.runInNewContext(
+        `(async () => {${gate}\nevents.push("recipe");})()`,
+        {
+          engineering: { sourceMetadata: mode },
+          target,
+          budget,
+          Date: { now: () => now },
+          path,
+          checkout: "/fixed/checkout",
+          source: "/fixed/source",
+          logs: "/fixed/logs",
+          python: "/fixed/python",
+          events,
+          fail(message) {
+            throw new Error(message);
+          },
+          observePreparationPhase: (logs, stage, callback) =>
+            observePreparationPhase(
+              logs,
+              stage,
+              callback,
+              observation.dependencies,
+            ),
+          async call(...args) {
+            calls.push(args);
+            if (childFailure) throw childError;
+          },
+        },
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    return { events, calls, error, observation };
+  }
+  for (const [mode, target] of [
+    ["mac-intel", "x86_64-apple-darwin"],
+    ["mac-arm", "aarch64-apple-darwin"],
+  ]) {
+    for (const remaining of [30000, 2499.9]) {
+      const result = await run({ mode, target, remaining });
+      assert.equal(result.error, undefined);
+      assert.deepEqual(result.events, [
+        "original-clock",
+        "preparation",
+        "recipe",
+      ]);
+      assert.equal(result.calls.length, 1);
+      assert.deepEqual(
+        result.observation.rows.map((row) => row.status),
+        ["start", "pass"],
+      );
+      assert.equal(result.observation.closed(), 1);
+      const call = result.calls[0];
+      assert.equal(call[0], "/fixed/python");
+      assert.deepEqual(Array.from(call[1]), [
+        "-I",
+        "-B",
+        path.join("/fixed/checkout", "scripts/lib/cef-mac-gcs-normalize.py"),
+        target,
+        "/fixed/source",
+        String(now + Math.min(5000, Math.floor(remaining))),
+      ]);
+      assert.deepEqual(call.slice(2), ["mac-gcs-preparation", "/fixed/source"]);
+    }
+    for (const config of [
+      { remaining: 0 },
+      { missing: true },
+      { target: "aarch64-unknown-linux-gnu" },
+    ]) {
+      const result = await run({ mode, target, ...config });
+      assert(result.error);
+      assert.equal(result.calls.length, 0);
+      assert(!result.events.includes("recipe"));
+    }
+    for (const original of [
+      new Error("fixed-child-failure"),
+      Object.assign(new Error("cancelled"), { name: "AbortError" }),
+      Object.freeze({ cancelled: true }),
+    ]) {
+      const failed = await run({
+        mode,
+        target,
+        childFailure: true,
+        childError: original,
+      });
+      assert.equal(failed.error, original);
+      assert(!failed.events.includes("recipe"));
+      assert.deepEqual(
+        failed.observation.rows.map((row) => row.status),
+        ["start", "failure"],
+      );
+      assert.equal(failed.observation.closed(), 1);
+    }
+  }
+  for (const mode of [true, undefined, "other"]) {
+    const result = await run({
+      mode,
+      target: "aarch64-unknown-linux-gnu",
+      missing: true,
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.calls.length, 0);
+    assert.deepEqual(result.events, ["recipe"]);
+  }
+});
+
+test("Mac GCS whole-file history refuses unreviewed runtime edits and producer rows", async () => {
+  const { withoutMacGcsPreparationRuntime, withoutMacGcsPreparationRows } =
+    await import("./helpers/cefMacGcsReviewedHistory.mjs");
+  const source = (
+    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+  ).replaceAll("\r\n", "\n");
+  assert.equal(
+    sha(withoutMacGcsPreparationRuntime(source)),
+    "1bb87be232f4c31256a920a999abf629c698e1933e5ec241a5deaa4b998b7e1e",
+  );
+  for (const changed of [
+    source + "\n",
+    source.replace("Math.min(5000,", "Math.min(5001,"),
+    source.replace('  "mac-gcs-preparation",\n]);', "]);"),
+    source.replace(
+      '  "mac-gcs-preparation",\n]);',
+      '  "unknown-preparation",\n]);',
+    ),
+    source.replace("-B", "-X"),
+  ])
+    assert.throws(() => withoutMacGcsPreparationRuntime(changed));
+  const listed = execFileSync(
+    "git",
+    [
+      "ls-tree",
+      "-r",
+      "HEAD",
+      "--",
+      "scripts",
+      "native/cef-hosted-recipe.json",
+      ".node-version",
+      ".github/workflows/cef-engineering-checkpoint.yml",
+    ],
+    { cwd: ROOT, timeout: 10000, windowsHide: true },
+  ).toString();
+  const rows = listed
+    .trim()
+    .split("\n")
+    .map((line) => {
+      const [left, path] = line.split("\t");
+      const [mode, type, sha] = left.split(" ");
+      return { mode, type, sha, path };
+    });
+  const previous = withoutMacGcsPreparationRows(rows, ROOT);
+  assert.equal(previous.length, 131);
+  for (const changed of [
+    rows.slice(1),
+    rows.concat(rows[0]),
+    rows.map((row) =>
+      row.path === "scripts/lib/cef-mac-gcs-normalize.py"
+        ? { ...row, sha: "0".repeat(40) }
+        : row,
+    ),
+    rows.map((row) =>
+      row.path === "scripts/cef-runtime-ci.mjs"
+        ? { ...row, mode: "100755" }
+        : row,
+    ),
+  ])
+    assert.throws(() => withoutMacGcsPreparationRows(changed, ROOT));
+});

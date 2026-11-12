@@ -1,3 +1,4 @@
+import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -259,15 +260,20 @@ test("Producer code remains a separately attested subset and cannot substitute f
       return { mode: match[1], path: match[3], sha: match[2] };
     })
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  assert.equal(currentRows.length, 131);
+  assert.equal(currentRows.length, 132);
+  const previousMacRows = withoutMacGcsPreparationRows(currentRows, root);
+  assert.equal(
+    digest(Buffer.from(JSON.stringify(previousMacRows))),
+    "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
+  );
   assert.equal(
     digest(Buffer.from(JSON.stringify(currentRows))),
-    "0d3761d083244eaaa0b349d2c457d157b201fc103e97becd6252457870a9793c",
+    "bfb8e437e987d458a839ce8699b7cc249960f19f81a9be77764fd9d17516c45b",
   );
   assert.equal(
     digest(
       Buffer.from(
-        JSON.stringify(withoutSourceVerifyGuardRows(currentRows, root)),
+        JSON.stringify(withoutSourceVerifyGuardRows(previousMacRows, root)),
       ),
     ),
     "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
@@ -313,7 +319,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
     "1d01388d845d29485ea3e514fab6330f1c07f02b",
   );
   const retainedRows = withoutRepinRows(
-    currentRows.map((row) =>
+    previousMacRows.map((row) =>
       row.path === corePath ? { ...row, sha: previousSha } : row,
     ),
     root,

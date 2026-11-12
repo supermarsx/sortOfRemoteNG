@@ -1,3 +1,4 @@
+import { withoutMacGcsPreparationRuntime } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
 
 // Test-only prefix: restore the COMPLETE reviewed pre-fix helper before the
@@ -83,7 +84,7 @@ function macInverse(text, section) {
 export const withoutMacReuseArchive = (text) =>
   macInverse(withoutSourceVerifyGuard(text), "archive");
 export const withoutAcceptedImagesRuntime = (text) =>
-  macInverse(text, "runtime");
+  macInverse(withoutMacGcsPreparationRuntime(text), "runtime");
 // Exact inverse of the asset-upload recovery change in
 // scripts/lib/cef-engineering-checkpoint.mjs. The historical-producer pin
 // chains restore older bytes from the current file; this removes the recovery
