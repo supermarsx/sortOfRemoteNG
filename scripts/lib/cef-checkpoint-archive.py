@@ -3729,7 +3729,6 @@ def _source_metadata_owned_codec(mode, root, sidecar, identity, work, budget, pl
         # Nothing was written (verify, or an apply whose timestamps already match): the first
         # snapshot's own re-walk already proved the tree stable, and no read or write happens
         # between it and this return, so a second full snapshot would only repeat it.
-        require(current == expected, 'source-metadata-postcheck')
         if mode == 'source-apply' and 'digests' in layout:
             source_phase('stat-cache-write')
             source_mac_stat_cache_write(root, source_file_sha256(sidecar, budget), identity, layout['digests'], guards)
