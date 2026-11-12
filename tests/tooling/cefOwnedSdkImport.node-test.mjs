@@ -2952,3 +2952,305 @@ print(json.dumps(dict(files=len(module.RUNTIME_BUDGET_SPECS),rawNativeDenials=de
     rawNativeDenials: 6,
   });
 });
+
+async function engineHostArchitectureFixture() {
+  const repo = fileURLToPath(new URL("../../", import.meta.url)),
+    prefix = "native/windows-arm-full-sdk/",
+    source = await readFile(
+      path.join(repo, prefix, "full-sdk-engine-worker.mjs"),
+      "utf8",
+    ),
+    history = await import("./helpers/cefWindowsEngineHostHistory.mjs"),
+    previous = history.engineHostArchitecturePrefix(source);
+  assert.equal(
+    createHash("sha256").update(previous).digest("hex"),
+    "6b6c865c58eca1fb6672c2eddb137d01aaae51e26f3013b48aed8e08b756979e",
+  );
+  const functionText = (name, text = source) => {
+    const tree = ts.createSourceFile(
+        "engine.mjs",
+        text,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.JS,
+      ),
+      node = tree.statements.find(
+        (n) => ts.isFunctionDeclaration(n) && n.name?.text === name,
+      );
+    assert(node, name);
+    return node.getText(tree);
+  };
+  const evaluate = (name, text = source, extra = {}) =>
+    new Script("(" + functionText(name, text) + ")").runInContext(
+      createContext({ path, REPO: repo, ...extra }),
+    );
+  const json = async (name) =>
+      JSON.parse(await readFile(path.join(repo, prefix, name), "utf8")),
+    profile = await json("full-sdk-source-profile.json"),
+    base = await json("profile.json"),
+    privatePolicy = await json("private-qualification-profile.json"),
+    selected = profile.images["20261103.298.1"],
+    image = await json(selected.profile),
+    p = {
+      ...base,
+      image: "20261103.298.1",
+      sourceGn: image.sourceGn,
+      sourcePaths: [],
+      privatePolicy,
+      privateSelectedSha256: selected.profileSha256,
+    },
+    driver = await import(
+      pathToFileURL(path.join(repo, prefix, "full-sdk-source-driver.mjs")).href
+    ),
+    custom = await import(
+      pathToFileURL(
+        path.join(
+          repo,
+          prefix,
+          "current-source-helpers/scripts/lib/browser-custom-runtime.mjs",
+        ),
+      ).href
+    ),
+    runtime = await import(
+      pathToFileURL(
+        path.join(
+          repo,
+          prefix,
+          "current-source-helpers/scripts/cef-runtime-ci.mjs",
+        ),
+      ).href
+    ),
+    lock = custom.validateSourceLock(
+      JSON.parse(
+        await readFile(
+          path.join(repo, p.sourceGn.namespace, "source-lock.json"),
+          "utf8",
+        ),
+      ),
+    ),
+    workspace = path.join(
+      repo,
+      ".artifacts/windows-arm-full-sdk-00000000-0000-4000-8000-000000000001",
+    ),
+    recipe = await custom.customRuntimeBuildRecipe({
+      sourceLock: lock,
+      target: "aarch64-pc-windows-msvc",
+      inputsRoot: path.join(repo, p.sourceGn.namespace),
+      checkouts: {
+        chromium: path.join(workspace, "source-checkout/src"),
+        cef: path.join(workspace, "source-checkout/src/cef"),
+        depotTools: path.join(workspace, "source-checkout/depot_tools"),
+      },
+    }),
+    sourceEnv = driver.sourceEnvironment(workspace, p, recipe),
+    before = {
+      ...sourceEnv,
+      ...evaluate("freshEnvironment", previous)(workspace),
+    },
+    after = { ...sourceEnv, ...evaluate("freshEnvironment")(workspace) };
+  return {
+    repo,
+    source,
+    previous,
+    history,
+    evaluate,
+    privatePolicy,
+    p,
+    recipe,
+    runtime,
+    workspace,
+    before,
+    after,
+  };
+}
+
+test("engine host architecture is fixed by the admitted x64 owner while ARM64 target vectors remain unchanged", async () => {
+  const f = await engineHostArchitectureFixture();
+  assert.equal(Object.hasOwn(f.before, "PROCESSOR_ARCHITECTURE"), false);
+  assert.equal(f.after.PROCESSOR_ARCHITECTURE, "AMD64");
+  assert.equal(Object.hasOwn(f.after, "PROCESSOR_ARCHITEW6432"), false);
+  assert.equal(Object.hasOwn(f.after, "PROCESSOR_IDENTIFIER"), false);
+  const without = { ...f.after };
+  delete without.PROCESSOR_ARCHITECTURE;
+  assert.deepEqual(without, f.before);
+  const roles = [
+      "probe-clang",
+      "probe-link",
+      "cef-engine",
+      "package",
+      "checkpoint-seal",
+    ],
+    need = (ok, code) => {
+      if (!ok) throw Error("FULL_SDK_ENGINE_" + code);
+    };
+  for (const [platform, arch] of [
+    ["win32", "arm64"],
+    ["win32", "ia32"],
+    ["linux", "x64"],
+  ]) {
+    const load = f.evaluate("load", f.source, {
+      process: { platform, arch },
+      ROLES: roles,
+      need,
+      fs: new Proxy(
+        {},
+        {
+          get() {
+            throw Error("foreign host reached IO");
+          },
+        },
+      ),
+    });
+    await assert.rejects(
+      load("cef-engine", f.workspace, "0".repeat(64), 0),
+      /FULL_SDK_ENGINE_HOST/,
+    );
+  }
+  const marker = new Error("actual packet still required"),
+    load = f.evaluate("load", f.source, {
+      process: { platform: "win32", arch: "x64" },
+      ROLES: roles,
+      need,
+      fs: { realpath: async (file) => file },
+      initialPacket: async () => {
+        throw marker;
+      },
+    });
+  await assert.rejects(
+    load("cef-engine", f.workspace, "0".repeat(64), 0),
+    (error) => error === marker,
+  );
+  const commands = f.runtime.boundedBuildCommands(f.recipe, 4),
+    args = [
+      f.workspace,
+      f.recipe,
+      f.privatePolicy,
+      f.p.python.path,
+      commands,
+      "0".repeat(64),
+    ],
+    current = f.evaluate("vectors")(...args),
+    old = f.evaluate("vectors", f.previous)(...args);
+  assert.equal(JSON.stringify(current), JSON.stringify(old));
+  assert.equal(
+    current["probe-clang"].args[0],
+    "--target=aarch64-pc-windows-msvc",
+  );
+  assert(current["probe-link"].args.includes("/machine:arm64"));
+  assert(current.package.args.includes("--arm64-build"));
+  for (const bad of [
+    f.source + "\n",
+    f.source.replace(
+      'PROCESSOR_ARCHITECTURE: "AMD64"',
+      'PROCESSOR_ARCHITECTURE: "ARM64"',
+    ),
+    f.source + '    PROCESSOR_ARCHITECTURE: "AMD64",\n',
+  ])
+    assert.throws(
+      () => f.history.withoutEngineHostArchitecture(bad),
+      /ENGINE_HOST_/,
+    );
+});
+
+test(
+  "unchanged pinned Dawn and CPython311 sources reproduce old empty Windows architecture and fixed AMD64",
+  {
+    skip:
+      process.platform !== "win32" &&
+      "Actual Windows stdlib constructor integration",
+  },
+  async (t) => {
+    const f = await engineHostArchitectureFixture(),
+      fixture = path.join(
+        f.repo,
+        "tests/fixtures/cef/windows-engine-host-arch",
+      ),
+      provenance = JSON.parse(
+        await readFile(path.join(fixture, "provenance.json"), "utf8"),
+      );
+    assert.equal(
+      provenance.bundledCpythonDependency,
+      "version:3@3.11.9.chromium.38",
+    );
+    assert.equal(
+      provenance.files["platform311.py"].sha256,
+      "4a3cc68ba7354f8d5cc28c55315a7d77b77dcdbbaa3a092572a636b5fb5b6938",
+    );
+    assert.equal(
+      provenance.files["cipd_deps.py"].sha256,
+      "3055f1972484c0436be72fe30efc777df2b1905732f174c2ae134dd522c538bf",
+    );
+    for (const [name, pin] of Object.entries(provenance.files)) {
+      const raw = await readFile(path.join(fixture, name));
+      assert.equal(raw.length, pin.bytes);
+      assert.equal(createHash("sha256").update(raw).digest("hex"), pin.sha256);
+    }
+    let python = "python",
+      launcherPin = null;
+    for (const candidate of [
+      "C:/Users/Mariana/AppData/Local/Programs/Python/Python312/python.exe",
+      "C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe",
+    ]) {
+      let raw;
+      try {
+        raw = await readFile(candidate);
+      } catch (error) {
+        if (error.code === "ENOENT") continue;
+        throw error;
+      }
+      if (
+        createHash("sha256").update(raw).digest("hex") ===
+        "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a"
+      ) {
+        python = candidate;
+        launcherPin =
+          "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a";
+        break;
+      }
+    }
+    const program = String.raw`
+import importlib.util,json,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+def module(name,file):
+ spec=importlib.util.spec_from_file_location(name,root/file)
+ value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
+platform=module('reviewed_platform311','platform311.py')
+sys.modules['platform']=platform
+source=module('reviewed_dawn_cipd','cipd_deps.py')
+result=dict(machine=platform.machine(),processor=platform.processor(),launcherVersion=list(sys.version_info[:3]),sourceConstructorOnly=True,bundledBinaryExecuted=False)
+try:result['cipdPlatform']=source.get_cipd_platform()
+except ValueError as error:result['error']=str(error)
+print(json.dumps(result))`;
+    const run = (env) => {
+        const r = spawnSync(python, ["-I", "-B", "-c", program, fixture], {
+          env,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 30000,
+          maxBuffer: 65536,
+        });
+        assert.equal(r.status, 0, r.stderr);
+        return JSON.parse(r.stdout);
+      },
+      before = run(f.before),
+      after = run(f.after),
+      wrongHost = run({ ...f.after, PROCESSOR_ARCHITECTURE: "ARM64" });
+    t.diagnostic(
+      JSON.stringify({
+        launcherPin,
+        launcherVersion: after.launcherVersion,
+        before,
+        after,
+        scope:
+          "source constructors under test launcher; not bundled CPython binary qualification",
+      }),
+    );
+    assert.equal(before.machine, "");
+    assert.equal(before.error, "Unable to determine architecture");
+    assert.equal(after.machine, "AMD64");
+    assert.equal(after.cipdPlatform, "windows-amd64");
+    assert.equal(wrongHost.cipdPlatform, "windows-arm64");
+    assert.equal(after.bundledBinaryExecuted, false);
+  },
+);

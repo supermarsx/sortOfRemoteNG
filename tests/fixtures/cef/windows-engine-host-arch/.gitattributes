@@ -1,0 +1,2 @@
+# Preserve reviewed upstream source fixture bytes on every checkout.
+* -text

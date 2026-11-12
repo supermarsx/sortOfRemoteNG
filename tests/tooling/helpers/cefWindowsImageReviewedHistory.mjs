@@ -1,3 +1,4 @@
+import { engineHostArchitecturePrefix } from "./cefWindowsEngineHostHistory.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -41,6 +42,7 @@ const runtimeBudgetText = (text, file) =>
     : text;
 // Exact FULL-only budget prefix; runtime admission never imports this helper.
 export function withoutRuntimeBudget(text, file) {
+  text = engineHostArchitecturePrefix(text, file);
   text = runtimeBudgetText(text, file);
   const spec = runtimeBudgetSpecs[file];
   assert(spec, "RUNTIME_BUDGET_SCOPE");
@@ -61,6 +63,7 @@ export function withoutRuntimeBudget(text, file) {
 export function runtimeBudgetPrefix(text, name) {
   const file = names[name] ?? name,
     spec = runtimeBudgetSpecs[file];
+  text = engineHostArchitecturePrefix(text, file);
   const canonical = runtimeBudgetText(text, file);
   return spec && sha(canonical) === spec.sha256
     ? withoutRuntimeBudget(canonical, file)

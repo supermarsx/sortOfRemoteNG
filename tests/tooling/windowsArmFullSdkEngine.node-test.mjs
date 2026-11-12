@@ -1,3 +1,4 @@
+import { engineHostArchitecturePrefix } from "./helpers/cefWindowsEngineHostHistory.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
@@ -687,6 +688,7 @@ const ENGINE_ASSEMBLY = {
   sha256: "33b1b63c9ceac9b60dd6b5a29d92ba1709917085d2c465947c458601ac8391e3",
 };
 function engineAssemblyInverse(text) {
+  text = engineHostArchitecturePrefix(text);
   for (const row of [...ENGINE_ASSEMBLY.rows].reverse()) {
     assert.equal(hash(row.newRaw), row.newSha256);
     assert.equal(hash(row.oldRaw), row.oldSha256);

@@ -1,0 +1,24 @@
+{
+  "kind": "read-only-upstream-source-constructor-fixtures",
+  "chromium": "a654841425914cbb703a2931e07b70a83aedbafd",
+  "chromiumDepsSha256": "cd59c0f5c31e1dbbc65b2db96bb11a18f7bdc91496fafb5b6a4e7f94d8ad797c",
+  "dawn": "8597a1aaec546a7f19e8e662a49ebf03b2e91308",
+  "bundledCpythonDependency": "version:3@3.11.9.chromium.38",
+  "platformSource": "https://raw.githubusercontent.com/python/cpython/v3.11.9/Lib/platform.py",
+  "dawnSource": "https://dawn.googlesource.com/dawn/+/8597a1aaec546a7f19e8e662a49ebf03b2e91308/tools/python/cipd_deps.py",
+  "scope": "Unchanged upstream source constructor integration under the test launcher, not execution or qualification of the bundled CPython3.11 binary. No runtime admission.",
+  "files": {
+    "cipd_deps.py": {
+      "bytes": 3285,
+      "sha256": "3055f1972484c0436be72fe30efc777df2b1905732f174c2ae134dd522c538bf"
+    },
+    "platform311.py": {
+      "bytes": 42273,
+      "sha256": "4a3cc68ba7354f8d5cc28c55315a7d77b77dcdbbaa3a092572a636b5fb5b6938"
+    },
+    "PYTHON_LICENSE.txt": {
+      "bytes": 13936,
+      "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf"
+    }
+  }
+}

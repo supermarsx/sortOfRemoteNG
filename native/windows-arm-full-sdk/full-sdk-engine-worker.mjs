@@ -320,6 +320,7 @@ function inspectProbeExecutable(raw) {
 function freshEnvironment(root) {
   const p = path.join(root, "full-sdk-control/cef-source-git-policy");
   return {
+    PROCESSOR_ARCHITECTURE: "AMD64",
     HOME: path.join(p, "home"),
     USERPROFILE: path.join(p, "runtime-profile"),
     XDG_CONFIG_HOME: path.join(p, "xdg"),

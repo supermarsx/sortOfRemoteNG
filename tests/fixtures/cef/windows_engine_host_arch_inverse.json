@@ -1,0 +1,26 @@
+{
+  "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs": {
+    "bytes": 42282,
+    "sha256": "12c63141c73038fd6070214802f3e451b0223788f602a6e2032dfa3e95b248a2",
+    "beforeBytes": 42245,
+    "beforeSha256": "6b6c865c58eca1fb6672c2eddb137d01aaae51e26f3013b48aed8e08b756979e",
+    "pairs": [
+      {
+        "current": "    PROCESSOR_ARCHITECTURE: \"AMD64\",\n",
+        "previous": ""
+      }
+    ]
+  },
+  "native/windows-arm-full-sdk/sdk-origin-review.json": {
+    "bytes": 27527,
+    "sha256": "bcb4a1baa19714fea255fcd805a40f708c31cecbd973497e5559a29da1219275",
+    "beforeBytes": 27527,
+    "beforeSha256": "b689c9448347026666dc2d1bc15b16de884f093cc9956c39cac8fcec6fa8c1c8",
+    "pairs": [
+      {
+        "current": "{\"bytes\":42282,\"path\":\"native/windows-arm-full-sdk/full-sdk-engine-worker.mjs\",\"sha256\":\"12c63141c73038fd6070214802f3e451b0223788f602a6e2032dfa3e95b248a2\"}",
+        "previous": "{\"bytes\":42245,\"path\":\"native/windows-arm-full-sdk/full-sdk-engine-worker.mjs\",\"sha256\":\"6b6c865c58eca1fb6672c2eddb137d01aaae51e26f3013b48aed8e08b756979e\"}"
+      }
+    ]
+  }
+}
