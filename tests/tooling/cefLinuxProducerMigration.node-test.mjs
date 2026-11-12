@@ -2388,7 +2388,7 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   const actualCurrentRows = rows(ROOT, "HEAD");
   assert.equal(
     core.codeTreeDigest(actualCurrentRows),
-    "bfb8e437e987d458a839ce8699b7cc249960f19f81a9be77764fd9d17516c45b",
+    "9b5292077dabfe11c70fc083735c3555d1306fc3e85ff6444ee1e0976de6e681",
   );
   assert.equal(actualCurrentRows.length, 132);
   const previousMacRows = withoutMacGcsPreparationRows(actualCurrentRows, ROOT);

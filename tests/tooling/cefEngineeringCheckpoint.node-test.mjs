@@ -18441,6 +18441,39 @@ test("Mac GCS whole-file history refuses unreviewed runtime edits and producer r
         ? { ...row, mode: "100755" }
         : row,
     ),
+    rows.map((row) =>
+      row.path === "scripts/lib/cef-windows-arm-sdk-origin.mjs"
+        ? { ...row, sha: "0".repeat(40) }
+        : row,
+    ),
+    rows.map((row) =>
+      row.path === ".node-version" ? { ...row, sha: "0".repeat(40) } : row,
+    ),
   ])
     assert.throws(() => withoutMacGcsPreparationRows(changed, ROOT));
+});
+
+test("Windows image whole-file history rejects unrelated reader or producer changes", async () => {
+  const { withoutWindowsImageOrigin } =
+    await import("./helpers/cefWindowsImageProducerRows.mjs");
+  const current = execFileSync(
+    "git",
+    ["cat-file", "blob", "HEAD:scripts/lib/cef-windows-arm-sdk-origin.mjs"],
+    {
+      cwd: ROOT,
+      timeout: 10000,
+      windowsHide: true,
+    },
+  ).toString();
+  assert.equal(
+    sha(withoutWindowsImageOrigin(current)),
+    "4bca898b94165d8c3cfc313326069fe94ab8a54bb2665e278dc651c7e39d0f8a",
+  );
+  for (const altered of [
+    current + "\n",
+    current.replace("20261103.298.1", "20261103.299.1"),
+    current.replace("5aec31b972bdd30b", "5aec31b972bdd30c"),
+    current.replace("ARGUMENTS", "ARGUMENTZ"),
+  ])
+    assert.throws(() => withoutWindowsImageOrigin(altered));
 });
