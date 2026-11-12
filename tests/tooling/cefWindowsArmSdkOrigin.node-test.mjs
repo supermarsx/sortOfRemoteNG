@@ -1,3 +1,4 @@
+import { withoutReviewedWindowsImage } from "./helpers/cefWindowsImageReviewedHistory.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -10,7 +11,7 @@ import { deflateRawSync } from "node:zlib";
 import * as original from "../../scripts/lib/cef-windows-arm-sdk-origin.mjs";
 // Explicit MODELED native/process/API outcomes. Actual helper, exact128 path
 // inventory, held Git loader, raw JSON/ZIP validators and binding registry run.
-function rawModeledPacket(f, image = "20261030.294.1", manifestPadding = 0) {
+function rawModeledPacket(f, image = "20261103.298.1", manifestPadding = 0) {
   const id = sourceTuples[image].sourceLockIdentity,
     sources = f.policy.producerInputs;
   const evidence = (v, pretty = false) => {
@@ -738,7 +739,7 @@ test("schema2 constructor denies oversized input before copy and generated DATA 
       /RAW_BOUND/,
     );
   const f = await fixture(t, () => {}, true),
-    { seal, bundleMetadata } = rawModeledPacket(f, "20261030.294.1", 790000);
+    { seal, bundleMetadata } = rawModeledPacket(f, "20261103.298.1", 790000);
   assert(bundleMetadata.manifest.bytes < 1024 * 1024);
   let outputCopied = false;
   Buffer.from = function (value, ...args) {
@@ -897,6 +898,10 @@ const sort = (value) =>
 const raw = (value) => Buffer.from(JSON.stringify(sort(value)) + "\n");
 const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
 function rawOriginInverse(source) {
+  source = withoutReviewedWindowsImage(
+    source,
+    "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+  );
   // Reviewed image-profile re-pin (graph inventory deadline): restore the two
   // previous image-profile digests before the older schema2 inverse below.
   // The second re-pin (POSIX graph pin paths) is undone first.
@@ -1021,11 +1026,11 @@ export function extractIndependentSealBytes(rawZip) {
 });
 const H = "a".repeat(64);
 const sourceTuples = {
-  "20261030.294.1": {
+  "20261103.298.1": {
     sourceLockIdentity:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     sourceProfileSha256:
-      "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
   },
   "20261021.278.1": {
     sourceLockIdentity:
@@ -1259,7 +1264,7 @@ async function fixture(t, mutate = () => {}, rawMode = false) {
     head: git(root, "rev-parse", "HEAD").toString().trim(),
   };
 }
-function packet(f, image = "20261030.294.1") {
+function packet(f, image = "20261103.298.1") {
   const producer = {
     repository: "supermarsx/sortOfRemoteNG",
     repositoryId: 1010282954,
@@ -1738,7 +1743,7 @@ test("only the new owned-review variant adds the exact fixed policy digest", asy
     origin: original.WINDOWS_ARM_SDK_ORIGIN,
     target: original.WINDOWS_ARM_SDK_TARGET,
     originPolicySha256: f.policySha,
-    sourceLockIdentity: sourceTuples["20261030.294.1"].sourceLockIdentity,
+    sourceLockIdentity: sourceTuples["20261103.298.1"].sourceLockIdentity,
     bundleSourceLockRawSha256: H,
     originalInputsSourceLockRawSha256: H,
     descriptorSha256: H,
@@ -1785,7 +1790,7 @@ test("fixed policy does not accept extra admission keys, arbitrary producer path
       policy.producerInputs[0].path = "scripts/arbitrary.mjs";
     },
     (policy) => {
-      policy.sources["20261030.294.1"].sourceLockIdentity = H;
+      policy.sources["20261103.298.1"].sourceLockIdentity = H;
     },
   ])
     await assert.rejects(fixture(t, change));
@@ -2328,5 +2333,63 @@ test("actual retirement microtask between final policy await and public continua
       await close;
     }
     assert.equal(retired, true);
+  }
+});
+
+test("reviewed current image refresh preserves whole historical inputs and admits no native result", async () => {
+  const specs = JSON.parse(
+    await fs.readFile(
+      new URL(
+        "../fixtures/cef/windows_image_refresh_inverse.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(Object.keys(specs).length, 20);
+  for (const [file, spec] of Object.entries(specs)) {
+    const current = (
+      await fs.readFile(new URL("../../" + file, import.meta.url), "utf8")
+    ).replaceAll("\r\n", "\n");
+    const previous = withoutReviewedWindowsImage(current, file);
+    assert.equal(Buffer.byteLength(previous), spec.beforeBytes);
+    assert.equal(digest(Buffer.from(previous)), spec.beforeSha256);
+    assert.throws(() => withoutReviewedWindowsImage(current + "\n", file));
+    assert.throws(() => withoutReviewedWindowsImage(current, "unknown"));
+  }
+  const file =
+    "native/windows-arm-full-sdk/image-qualified-current-profile.json";
+  const text = (
+    await fs.readFile(new URL("../../" + file, import.meta.url), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const current = JSON.parse(text),
+    previous = JSON.parse(withoutReviewedWindowsImage(text, file));
+  assert.equal(current.image, "20261103.298.1");
+  assert.equal(current.sourceGn.hostClosure.image, current.image);
+  const evidence = current.imageRefreshEvidence;
+  assert.equal(evidence.probe.admits, false);
+  assert.equal(evidence.probe.executed, false);
+  assert.equal(evidence.declaredHostedFilePinsEqual, 33);
+  assert.equal(evidence.hostClosureRowsEqual, 18);
+  assert.equal(evidence.installedMsvcPinsEqual, 14);
+  assert.equal(evidence.unlistedHistoricalTreeEqualityProven, false);
+  assert.equal(evidence.runtimeReady, false);
+  current.image = previous.image;
+  current.sourceGn.hostClosure.image = previous.sourceGn.hostClosure.image;
+  delete current.imageRefreshEvidence;
+  assert.deepEqual(current, previous);
+  const policyFile = "native/windows-arm-full-sdk/sdk-origin-review.json";
+  const policyText = (
+    await fs.readFile(new URL("../../" + policyFile, import.meta.url), "utf8")
+  ).replaceAll("\r\n", "\n");
+  const policy = JSON.parse(policyText),
+    oldPolicy = JSON.parse(withoutReviewedWindowsImage(policyText, policyFile));
+  assert.equal(policy.producerInputs.length, 128);
+  const oldRows = new Map(
+    oldPolicy.producerInputs.map((row) => [row.path, row]),
+  );
+  for (const row of policy.producerInputs) {
+    if (!Object.hasOwn(specs, row.path))
+      assert.deepEqual(row, oldRows.get(row.path));
   }
 });

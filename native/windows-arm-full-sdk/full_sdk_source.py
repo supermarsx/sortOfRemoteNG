@@ -19,7 +19,7 @@ from pathlib import Path
 MODE = 'full-sdk-source-gn'
 WORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'
 POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'
-PROFILE_SHA256 = 'c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633'
+PROFILE_SHA256 = '509e00804ed0aaca315b2a8b0c61ef47f0412cf0d13925506149b141acd633ec'
 FULL_SOURCE_ADMITTED = False
 SOURCE_QUALIFICATION_ALLOWED = True
 HEX = re.compile(r'[a-f0-9]{64}')

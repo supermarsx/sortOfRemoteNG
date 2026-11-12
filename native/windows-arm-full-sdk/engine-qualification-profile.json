@@ -14,9 +14,9 @@
   "chromium": "a654841425914cbb703a2931e07b70a83aedbafd",
   "cef": "682c378d70d5780061e96644dca16ddd8fd157a9",
   "images": {
-    "20261030.294.1": {
+    "20261103.298.1": {
       "profile": "image-qualified-current-profile.json",
-      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "profileSha256": "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
       "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
       "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/"
     },

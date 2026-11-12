@@ -1,3 +1,7 @@
+import {
+  reviewedWindowsImagePrefix,
+  withoutReviewedWindowsImage,
+} from "./helpers/cefWindowsImageReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
@@ -335,6 +339,7 @@ const FULL_BOOTSTRAP_CACHE_HISTORY = {
   },
 };
 function fullSourceEnvironmentInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   if (name !== "sourcepy" && name !== "python") return text;
   const spec = {
     begin: "# BEGIN OWNED FULL SOURCE ENVIRONMENT\n",
@@ -525,6 +530,7 @@ const FULL_GRAPH_PRIVATEPOLICY_HISTORY = {
   },
 };
 function fullGraphPrivatepolicyInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_PRIVATEPOLICY_HISTORY[name];
   if (!spec) return text;
@@ -591,6 +597,7 @@ const FULL_GRAPH_WORKER_HISTORY = {
   },
 };
 function fullGraphWorkerInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphPrivatepolicyInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_WORKER_HISTORY[name];
@@ -638,6 +645,7 @@ const FULL_GRAPH_SNAPSHOT_HISTORY = {
   },
 };
 function fullGraphSnapshotInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphWorkerInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_SNAPSHOT_HISTORY[name];
@@ -701,6 +709,7 @@ const FULL_GRAPH_GRAPHDIAG_HISTORY = {
   },
 };
 function fullGraphGraphdiagInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphSnapshotInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_GRAPHDIAG_HISTORY[name];
@@ -752,6 +761,7 @@ const FULL_GRAPH_STAGE_HISTORY = {
   },
 };
 function fullGraphStageInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphGraphdiagInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_STAGE_HISTORY[name];
@@ -823,6 +833,7 @@ const FULL_GRAPH_SOURCES_HISTORY = {
   },
 };
 function fullGraphSourcesInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphStageInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_SOURCES_HISTORY[name];
@@ -878,6 +889,7 @@ const FULL_GRAPH_VISITED_HISTORY = {
   },
 };
 function fullGraphVisitedInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphSourcesInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_VISITED_HISTORY[name];
@@ -955,6 +967,7 @@ const FULL_GRAPH_LITERAL_HISTORY = {
   },
 };
 function fullGraphLiteralInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphVisitedInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_LITERAL_HISTORY[name];
@@ -1034,6 +1047,7 @@ const FULL_GRAPH_CAUSE_HISTORY = {
   },
 };
 function fullGraphCauseInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphLiteralInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_CAUSE_HISTORY[name];
@@ -1127,6 +1141,7 @@ const FULL_GRAPH_ARGS_HISTORY = {
   },
 };
 function fullGraphArgsInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphCauseInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_ARGS_HISTORY[name];
@@ -1304,6 +1319,7 @@ const FULL_GRAPH_LIMITS_HISTORY = {
   },
 };
 function fullGraphLimitsInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphArgsInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_LIMITS_HISTORY[name];
@@ -1359,6 +1375,7 @@ const FULL_GRAPH_BUDGET_HISTORY = {
   },
 };
 function fullGraphBudgetInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphLimitsInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_BUDGET_HISTORY[name];
@@ -1476,6 +1493,7 @@ const FULL_GRAPH_SHAPE_HISTORY = {
   },
 };
 function fullGraphShapeInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphBudgetInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_SHAPE_HISTORY[name];
@@ -1745,6 +1763,7 @@ const FULL_GRAPH_PATH_HISTORY = {
   },
 };
 function fullGraphPathInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphShapeInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_PATH_HISTORY[name];
@@ -2046,6 +2065,7 @@ const FULL_GRAPH_DEADLINE_HISTORY = {
   },
 };
 function fullGraphDeadlineInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphPathInverse(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   const spec = FULL_GRAPH_DEADLINE_HISTORY[name];
@@ -2131,6 +2151,7 @@ const FULL_GRAPH_DIAGNOSTICS_HISTORY = {
   ],
 };
 function fullGraphDiagnosticsInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   const sha = (value) => createHash("sha256").update(value).digest("hex");
   text = fullGraphDeadlineInverse(text, name);
   if (name !== "driver") return text;
@@ -2167,6 +2188,7 @@ function fullGraphDiagnosticsInverse(text, name) {
 }
 
 function fullHooks3600Inverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphDiagnosticsInverse(text, name);
   const spec = FULL_HOOKS_3600_HISTORY[name];
   if (!spec) return text;
@@ -2198,6 +2220,7 @@ function fullHooks3600Inverse(text, name) {
   return text;
 }
 function fullGnProjectionDigestInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullHooks3600Inverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2232,6 +2255,7 @@ function fullGnProjectionDigestInverse(text, name) {
   return text;
 }
 function fullGnShellTransportInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGnProjectionDigestInverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2258,6 +2282,7 @@ function fullGnShellTransportInverse(text, name) {
   return text;
 }
 function fullBootstrapCacheInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGnShellTransportInverse(text, name);
   text = fullSourceEnvironmentInverse(text, name);
   if (name === "workflow") return text; // This repair never changes workflow bytes.
@@ -2289,6 +2314,7 @@ function fullBootstrapCacheInverse(text, name) {
 // END EXACT FULL BOOTSTRAP CACHE INVERSE
 
 function sourceAcquisitionInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullBootstrapCacheInverse(text, name);
   const spec = SOURCE_ACQUISITION_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2317,6 +2343,7 @@ function sourceAcquisitionInverse(text, name) {
 // END EXACT FULL SOURCE ACQUISITION INVERSE
 
 function sourceFailureControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = sourceAcquisitionInverse(text, "controller");
   const spec = SOURCE_FAILURE_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2332,6 +2359,7 @@ function sourceFailureControllerInverse(text) {
 // END EXACT SOURCE FAILURE DATA INVERSE
 
 function sourceParentControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = sourceFailureControllerInverse(text);
   const spec = SOURCE_PARENT_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2348,6 +2376,7 @@ function sourceParentControllerInverse(text) {
 // END EXACT SOURCE PARENT INVERSE
 
 function producerMetricControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = sourceParentControllerInverse(text);
   const spec = PRODUCER_METRIC_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2363,6 +2392,7 @@ function producerMetricControllerInverse(text) {
 }
 
 function clockFailureControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = producerMetricControllerInverse(text);
   const spec = CLOCK_FAILURE_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2536,6 +2566,7 @@ const STARTUP_OBSERVABILITY_HISTORY = {
   sha256: "43604b5ddf7c738270bb5bead62a1ae4f321176a4cbb77288ef4022818b2e9cf",
 };
 function startupControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = clockFailureControllerInverse(text);
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of [...STARTUP_OBSERVABILITY_HISTORY.rows].reverse()) {
@@ -2830,6 +2861,7 @@ const ASSEMBLY_HISTORY = {
   },
 };
 function assemblyInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   if (name === "controller") text = startupControllerInverse(text);
   const spec = ASSEMBLY_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -2922,6 +2954,7 @@ const FIXED61_CLOCK_HISTORY = [
   },
 ];
 function fixed61ClockInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   const begin = "// BEGIN FIXED EXPECTED DEFAULTS BINDING\n",
     end = "// END FIXED EXPECTED DEFAULTS BINDING\n\n";
   assert.equal(text.split(begin).length, 2);
@@ -2949,6 +2982,7 @@ function fixed61ClockInverse(text) {
 }
 
 function parentEngineClockInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   const begin = "// BEGIN ACTUAL PARENT ENGINE CREATION\n",
     end = "// END ACTUAL PARENT ENGINE CREATION\n";
   assert.equal(text.split(begin).length, 2);
@@ -2971,6 +3005,7 @@ function parentEngineClockInverse(text) {
 }
 
 function parentMetadataClockInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = parentEngineClockInverse(assemblyInverse(text, "controller"));
   text = fixed61ClockInverse(text);
   const begin = "\n// BEGIN PRIVATE PARENT METADATA VERIFICATION\n",
@@ -3018,7 +3053,7 @@ function fixture() {
     GITHUB_RUN_ATTEMPT: "2",
     GITHUB_SHA: "1".repeat(40),
     GITHUB_WORKFLOW_SHA: "1".repeat(40),
-    ImageVersion: "20261030.294.1",
+    ImageVersion: "20261103.298.1",
   };
   const value = {
     schemaVersion: 1,
@@ -3320,6 +3355,17 @@ test("actual controller intersects the first-step lease before source creation w
 });
 
 test("actual failed-run carrier needs the workflow's bound public visibility without changing either original endpoint", async () => {
+  const historicalClock = withoutReviewedWindowsImage(
+    (
+      await readFile("native/windows-arm-full-sdk/workflow-clock.mjs", "utf8")
+    ).replaceAll("\r\n", "\n"),
+    "native/windows-arm-full-sdk/workflow-clock.mjs",
+  );
+  const { readWorkflowClock: historicalReadWorkflowClock } = await import(
+    "data:text/javascript;base64," +
+      Buffer.from(historicalClock).toString("base64")
+  );
+
   // Actual41494694866 carrier data only: no execution/issuer qualification.
   const raw =
     '{"schemaVersion":1,"kind":"windows-arm-first-workflow-clock","clock":"windows-gettickcount64","dotnetMajor":10,"wallStartMs":1793641809611,"tickStartMs":132703,"wallEndMs":1793663409611,"tickEndMs":21732703,"repository":"supermarsx/sortOfRemoteNG","repositoryId":"1010282954","ref":"refs/heads/main","event":"workflow_dispatch","runId":"41494694866","attempt":"1","head":"48a0ba7bbbe2f3c8a2e7e60644d824da18193856","workflowSha":"48a0ba7bbbe2f3c8a2e7e60644d824da18193856","workflowRef":"supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-full-sdk.yml@refs/heads/main","job":"sdk","image":"20261030.294.1"}';
@@ -3346,7 +3392,7 @@ test("actual failed-run carrier needs the workflow's bound public visibility wit
     env[name] = carrier[field];
   const now = Date.parse("2026-11-02T17:50:39.037Z");
   assert.throws(
-    () => readWorkflowClock(raw, env, now),
+    () => historicalReadWorkflowClock(raw, env, now),
     /FULL_SDK_WORKFLOW_CLOCK_HOST/,
   );
   const workflow = (
@@ -3357,7 +3403,7 @@ test("actual failed-run carrier needs the workflow's bound public visibility wit
   assert.equal(workflow.split(binding).length, 2);
   assert(workflow.indexOf(binding) < workflow.indexOf("    steps:"));
   assert(workflow.includes("github.event.repository.visibility == 'public'"));
-  const accepted = readWorkflowClock(
+  const accepted = historicalReadWorkflowClock(
     raw,
     { ...env, GITHUB_REPOSITORY_VISIBILITY: "public" },
     now,
@@ -3376,7 +3422,7 @@ test("actual failed-run carrier needs the workflow's bound public visibility wit
   ])
     assert.throws(
       () =>
-        readWorkflowClock(
+        historicalReadWorkflowClock(
           raw,
           { ...env, GITHUB_REPOSITORY_VISIBILITY: value },
           now,

@@ -82,7 +82,7 @@ const readers = new Function(
   policy.qualificationRoles,
 );
 
-function fixture(image = "20261030.294.1") {
+function fixture(image = "20261103.298.1") {
   return {
     target: "aarch64-pc-windows-msvc",
     image,
@@ -401,7 +401,7 @@ test("exact fixed target image/source pairing and CEF sandbox1 are mandatory and
   for (const change of [
     { target: "x86_64-pc-windows-msvc" },
     { target: "aarch64-pc-windows-msvc " },
-    { image: "20261030.294.1 " },
+    { image: "20261103.298.1 " },
     { image: "unknown" },
     { image: "__proto__" },
     { sourceId: "0".repeat(64) },
@@ -473,7 +473,7 @@ test("hostile accessors proxies inherited properties and boxed values deny witho
     rowAccessor,
     { ...fixture(), partitionAllocActionValues: proxy },
     { ...fixture(), partitionAllocHeaderValues: revoked.proxy },
-    { ...fixture(), image: new String("20261030.294.1") },
+    { ...fixture(), image: new String("20261103.298.1") },
   ])
     assert.throws(() => inspectExpectedArm64Defaults(value), /ARM64_DEFAULTS_/);
   assert.equal(calls, 0);

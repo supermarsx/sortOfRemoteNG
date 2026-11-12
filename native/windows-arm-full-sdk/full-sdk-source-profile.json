@@ -51,9 +51,9 @@
     "finalReserveSeconds": 120
   },
   "images": {
-    "20261030.294.1": {
+    "20261103.298.1": {
       "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "profileSha256": "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
       "profile": "image-qualified-current-profile.json"
     },
     "20261021.278.1": {
@@ -148,7 +148,7 @@
   },
   "metadataAdapterImplemented": true,
   "metadataNativeQualified": false,
-  "metadataRecipeSha256": "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9",
+  "metadataRecipeSha256": "5c263f19c1b1c7c220fc8d5e8cc8801b5adf3d9196aed8d0c6df792e961daad3",
   "metadataRoles": [
     "qual-gn-desc-pa",
     "qual-gn-desc-cef",
@@ -191,16 +191,16 @@
   "expectedDefaultsModulePin": {
     "path": "native/windows-arm-full-sdk/expected-defaults.mjs",
     "bytes": 36630,
-    "sha256": "5337a2b2559dd01dc6a07358e518fa22a94f1e14be540243508e274f3d37e058"
+    "sha256": "36075a49dc79480ed760c1741d9dbb9904ebc1f794276388821ae7fc321b31e9"
   },
-  "expectedDefaultsPolicySha256": "64f113c323b022feeb141f0a08b8cd3434cbdcd031524c50f2ccd2300260a6ae",
+  "expectedDefaultsPolicySha256": "0c2adc00d0f5a7c06a2d4fd9aad235cd3bb2474df0b07934845eccf2c749bea8",
   "parentExpectedDefaultsImplemented": true,
   "sourceMetadataCompletionImplemented": true,
   "sourceQualificationAllowed": true,
   "sourceRootModulePin": {
     "path": "native/windows-arm-full-sdk/source-root.mjs",
     "bytes": 1895,
-    "sha256": "07c9301da8df45fbed8e19e66fdd2155a78748e63b84fe313a5a359c6bf7a799"
+    "sha256": "0eb782728321e9eb793e93987c218d4a7b99d9fd5d3bbb95fbd073dd392b183e"
   },
   "sourceRestoreAdapterImplemented": true,
   "sourceRestoreNativeQualified": false,

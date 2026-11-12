@@ -98,7 +98,7 @@ export function readWorkflowClock(raw, env, wallNow) {
       env.RUNNER_ENVIRONMENT === "github-hosted" &&
       env.GITHUB_REPOSITORY_VISIBILITY === "public" &&
       env.CEF_DEFAULT_BRANCH === "main" &&
-      ["20261021.278.1", "20261030.294.1"].includes(value.image) &&
+      ["20261021.278.1", "20261103.298.1"].includes(value.image) &&
       /^[1-9][0-9]*$/.test(value.runId) &&
       /^[1-9][0-9]*$/.test(value.attempt) &&
       /^[a-f0-9]{40}$/.test(value.head) &&

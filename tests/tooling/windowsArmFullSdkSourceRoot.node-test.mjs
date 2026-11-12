@@ -13,9 +13,9 @@ import {
 const prefix = new URL("../../native/windows-arm-full-sdk/", import.meta.url);
 const vectors = [
   [
-    "20261030.294.1",
+    "20261103.298.1",
     "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-    "windows-arm-full-sdk-bb3bd4a8-e93c-44e5-81f2-3ddc15a01d19",
+    "windows-arm-full-sdk-1ce5fa02-8d6f-4ab8-937d-1c1e319c0789",
     "image-qualified-current-profile.json",
   ],
   [
@@ -175,4 +175,12 @@ test("naming module is immutable data-only and owning controller creation remain
   );
   assert(control.includes("fs.mkdir(root, { mode: 0o700 })"));
   assert(control.includes("state.owner.writeFile(randomBytes(32))"));
+});
+
+test("retired current image and unknown images cannot name a new source owner", () => {
+  for (const image of ["20261030.294.1", "20261103.298.2", "unknown"])
+    assert.throws(
+      () => fullSdkSourceRootName(image, vectors[0][1]),
+      /FULL_SDK_SOURCE_ROOT_SCOPE/,
+    );
 });

@@ -15,11 +15,11 @@
   "sdkAllowed": false,
   "nativeAcceptance": false,
   "runtimeReady": false,
-  "baseCandidatePolicySha256": "9df48c9f1bfded6b7e9953aca9cc58ba5ada24ac0d70d25481b998bdfd80e7f5",
+  "baseCandidatePolicySha256": "07a845794b95f11991706813fc3c97bc9a92d9479f8ce30724cb2dbf18b6a34c",
   "images": {
-    "20261030.294.1": {
+    "20261103.298.1": {
       "profile": "image-qualified-current-profile.json",
-      "profileSha256": "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "profileSha256": "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
       "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
       "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/"
     },
@@ -255,7 +255,7 @@
     "platform": "win32",
     "architecture": "x64",
     "runner": "windows-2025-vs2026",
-    "images": ["20261030.294.1", "20261021.278.1"],
+    "images": ["20261103.298.1", "20261021.278.1"],
     "reusedSourceToolRoles": ["python", "gn", "siso", "node", "git"],
     "sourceToolContract": "exact-selected-source-gn-profile-and-host-closure",
     "llvmArchive": {

@@ -602,7 +602,7 @@ def context():
  short=data.Clock(time.time()+5,time.monotonic()+5)
  _,raw=extract.held(ROOT/'context.json',short,sha256=P['contextSha'],retain=True,maximum=131072,bounded_reads=True)
  value=json.loads(raw)
- data.need(P['enabled'] is True and value['mode']=='private-compiler-input-qualification' and value['image']==P['image'] and value['image'] in ('20261030.294.1','20261021.278.1') and value['repositoryId']=='1010282954' and value['visibility']=='public' and value['event']=='workflow_dispatch' and value['ref']=='refs/heads/codex/windows-arm-engine-qualification-20261101','FULL_BOOTSTRAP_AUTHORITY')
+ data.need(P['enabled'] is True and value['mode']=='private-compiler-input-qualification' and value['image']==P['image'] and value['image'] in ('20261103.298.1','20261021.278.1') and value['repositoryId']=='1010282954' and value['visibility']=='public' and value['event']=='workflow_dispatch' and value['ref']=='refs/heads/codex/windows-arm-engine-qualification-20261101','FULL_BOOTSTRAP_AUTHORITY')
  clock=data.Clock(value['wallWorkEnd'],value['monotonicWorkEnd'])
  for key,relative in (('CIPD_CACHE_DIR','cipd'),('VPYTHON_VIRTUALENV_ROOT','vpython'),('LOCALAPPDATA','local'),('APPDATA','roaming'),('XDG_CACHE_HOME','xdg')):
   data.need(Path(os.environ.get(key,''))==ROOT/'source-caches'/relative,'FULL_BOOTSTRAP_ENV');data.plain(ROOT/'source-caches'/relative)
@@ -3021,7 +3021,7 @@ async function privateSourceBody(argv) {
 function privateImage(p) {
   const value = p.privatePolicy?.images?.[p.image];
   need(
-    value && ["20261030.294.1", "20261021.278.1"].includes(p.image),
+    value && ["20261103.298.1", "20261021.278.1"].includes(p.image),
     "PRIVATE_IMAGE",
   );
   return value;
@@ -3133,7 +3133,7 @@ async function privateQualificationHandoff({
 
 export const PRIVATE_DRIVER_ADMITTED = false;
 const PRIVATE_PROFILE_SHA256 =
-  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";
+  "5c263f19c1b1c7c220fc8d5e8cc8801b5adf3d9196aed8d0c6df792e961daad3";
 const PRIVATE_MODE = "private-compiler-input-qualification";
 const PRIVATE_REF =
   "refs/heads/codex/windows-arm-engine-qualification-20261101";

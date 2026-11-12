@@ -1,3 +1,7 @@
+import {
+  reviewedWindowsImagePrefix,
+  withoutReviewedWindowsImage,
+} from "./helpers/cefWindowsImageReviewedHistory.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -5013,6 +5017,7 @@ const FULL_BOOTSTRAP_CACHE_HISTORY = {
   },
 };
 function fullSourceEnvironmentProducerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "producer");
   text = fullGraphDeadlineInverse(text, "producer");
   const spec = {
     begin: "    # BEGIN OWNED FULL SOURCE ENVIRONMENT OWNER\n",
@@ -5092,6 +5097,7 @@ function fullSourceEnvironmentProducerInverse(text) {
   return text;
 }
 function fullSourceEnvironmentInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   if (name !== "sourcepy" && name !== "python") return text;
   const spec = {
     begin: "# BEGIN OWNED FULL SOURCE ENVIRONMENT\n",
@@ -5282,6 +5288,7 @@ const FULL_GRAPH_PRIVATEPOLICY_HISTORY = {
   },
 };
 function fullGraphPrivatepolicyInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   const spec = FULL_GRAPH_PRIVATEPOLICY_HISTORY[name];
   if (!spec) return text;
   for (const row of spec.rows) {
@@ -5347,6 +5354,7 @@ const FULL_GRAPH_WORKER_HISTORY = {
   },
 };
 function fullGraphWorkerInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphPrivatepolicyInverse(text, name);
   const spec = FULL_GRAPH_WORKER_HISTORY[name];
   if (!spec) return text;
@@ -5393,6 +5401,7 @@ const FULL_GRAPH_SNAPSHOT_HISTORY = {
   },
 };
 function fullGraphSnapshotInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphWorkerInverse(text, name);
   const spec = FULL_GRAPH_SNAPSHOT_HISTORY[name];
   if (!spec) return text;
@@ -5455,6 +5464,7 @@ const FULL_GRAPH_GRAPHDIAG_HISTORY = {
   },
 };
 function fullGraphGraphdiagInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphSnapshotInverse(text, name);
   const spec = FULL_GRAPH_GRAPHDIAG_HISTORY[name];
   if (!spec) return text;
@@ -5505,6 +5515,7 @@ const FULL_GRAPH_STAGE_HISTORY = {
   },
 };
 function fullGraphStageInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphGraphdiagInverse(text, name);
   const spec = FULL_GRAPH_STAGE_HISTORY[name];
   if (!spec) return text;
@@ -5575,6 +5586,7 @@ const FULL_GRAPH_SOURCES_HISTORY = {
   },
 };
 function fullGraphSourcesInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphStageInverse(text, name);
   const spec = FULL_GRAPH_SOURCES_HISTORY[name];
   if (!spec) return text;
@@ -5629,6 +5641,7 @@ const FULL_GRAPH_VISITED_HISTORY = {
   },
 };
 function fullGraphVisitedInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphSourcesInverse(text, name);
   const spec = FULL_GRAPH_VISITED_HISTORY[name];
   if (!spec) return text;
@@ -5705,6 +5718,7 @@ const FULL_GRAPH_LITERAL_HISTORY = {
   },
 };
 function fullGraphLiteralInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphVisitedInverse(text, name);
   const spec = FULL_GRAPH_LITERAL_HISTORY[name];
   if (!spec) return text;
@@ -5783,6 +5797,7 @@ const FULL_GRAPH_CAUSE_HISTORY = {
   },
 };
 function fullGraphCauseInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphLiteralInverse(text, name);
   const spec = FULL_GRAPH_CAUSE_HISTORY[name];
   if (!spec) return text;
@@ -5875,6 +5890,7 @@ const FULL_GRAPH_ARGS_HISTORY = {
   },
 };
 function fullGraphArgsInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphCauseInverse(text, name);
   const spec = FULL_GRAPH_ARGS_HISTORY[name];
   if (!spec) return text;
@@ -6051,6 +6067,7 @@ const FULL_GRAPH_LIMITS_HISTORY = {
   },
 };
 function fullGraphLimitsInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphArgsInverse(text, name);
   const spec = FULL_GRAPH_LIMITS_HISTORY[name];
   if (!spec) return text;
@@ -6105,6 +6122,7 @@ const FULL_GRAPH_BUDGET_HISTORY = {
   },
 };
 function fullGraphBudgetInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphLimitsInverse(text, name);
   const spec = FULL_GRAPH_BUDGET_HISTORY[name];
   if (!spec) return text;
@@ -6221,6 +6239,7 @@ const FULL_GRAPH_SHAPE_HISTORY = {
   },
 };
 function fullGraphShapeInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphBudgetInverse(text, name);
   const spec = FULL_GRAPH_SHAPE_HISTORY[name];
   if (!spec) return text;
@@ -6489,6 +6508,7 @@ const FULL_GRAPH_PATH_HISTORY = {
   },
 };
 function fullGraphPathInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphShapeInverse(text, name);
   const spec = FULL_GRAPH_PATH_HISTORY[name];
   if (!spec) return text;
@@ -6789,6 +6809,7 @@ const FULL_GRAPH_DEADLINE_HISTORY = {
   },
 };
 function fullGraphDeadlineInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGraphPathInverse(text, name);
   const spec = FULL_GRAPH_DEADLINE_HISTORY[name];
   if (!spec) return text;
@@ -6873,6 +6894,7 @@ const FULL_GRAPH_DIAGNOSTICS_HISTORY = {
   ],
 };
 function fullGraphDiagnosticsInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   return fullGraphDiagnosticsInverseFrom(
     fullGraphDeadlineInverse(text, name),
     name,
@@ -6913,6 +6935,7 @@ function fullGraphDiagnosticsInverseFrom(text, name) {
 }
 
 function fullHooks3600Inverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   return fullHooks3600InverseFrom(
     fullGraphDiagnosticsInverse(text, name),
     name,
@@ -6949,6 +6972,7 @@ function fullHooks3600InverseFrom(text, name) {
   return text;
 }
 function fullGnProjectionDigestInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullHooks3600Inverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -6983,6 +7007,7 @@ function fullGnProjectionDigestInverse(text, name) {
   return text;
 }
 function fullGnShellTransportInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGnProjectionDigestInverse(text, name);
   if (name !== "driver") return text;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -7009,11 +7034,13 @@ function fullGnShellTransportInverse(text, name) {
   return text;
 }
 function fullBootstrapCacheInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   text = fullGnShellTransportInverse(text, name);
   text = fullSourceEnvironmentInverse(text, name);
   return fullBootstrapCacheBaselineInverse(text, name);
 }
 function fullBootstrapCacheBaselineInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   if (name === "workflow") return text; // This repair never changes workflow bytes.
   const spec = FULL_BOOTSTRAP_CACHE_HISTORY[name];
   assert(spec, "ASSEMBLY_INVERSE_BOOTSTRAP_CACHE_SCOPE");
@@ -7043,12 +7070,14 @@ function fullBootstrapCacheBaselineInverse(text, name) {
 // END EXACT FULL BOOTSTRAP CACHE INVERSE
 
 function sourceAcquisitionInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   return sourceAcquisitionBaselineInverse(
     fullBootstrapCacheInverse(text, name),
     name,
   );
 }
 function sourceAcquisitionBaselineInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   const spec = SOURCE_ACQUISITION_HISTORY[name];
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of spec.rows) {
@@ -7076,6 +7105,7 @@ function sourceAcquisitionBaselineInverse(text, name) {
 // END EXACT FULL SOURCE ACQUISITION INVERSE
 
 function sourceFailureControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = sourceAcquisitionInverse(text, "controller");
   const spec = SOURCE_FAILURE_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -7091,6 +7121,7 @@ function sourceFailureControllerInverse(text) {
 // END EXACT SOURCE FAILURE DATA INVERSE
 
 function sourceParentControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = sourceFailureControllerInverse(text);
   const spec = SOURCE_PARENT_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -7107,6 +7138,7 @@ function sourceParentControllerInverse(text) {
 // END EXACT SOURCE PARENT INVERSE
 
 function producerMetricControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = sourceParentControllerInverse(text);
   const spec = PRODUCER_METRIC_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -7122,6 +7154,7 @@ function producerMetricControllerInverse(text) {
 }
 
 function clockFailureControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = producerMetricControllerInverse(text);
   const spec = CLOCK_FAILURE_INVERSE;
   const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -7295,6 +7328,7 @@ const STARTUP_OBSERVABILITY_HISTORY = {
   sha256: "43604b5ddf7c738270bb5bead62a1ae4f321176a4cbb77288ef4022818b2e9cf",
 };
 function startupControllerInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "controller");
   text = clockFailureControllerInverse(text);
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   for (const row of [...STARTUP_OBSERVABILITY_HISTORY.rows].reverse()) {
@@ -7655,6 +7689,7 @@ const FULL_SOURCE_IMAGE_INVERSE = {
   ],
 };
 function fullSourceImageInverse(text) {
+  text = reviewedWindowsImagePrefix(text, "driver");
   text = sourceAcquisitionInverse(text, "driver");
   for (const row of FULL_SOURCE_IMAGE_INVERSE.rows) {
     assert.equal(sha(row.newRaw), row.newSha256);
@@ -7669,6 +7704,7 @@ function fullSourceImageInverse(text) {
 // END EXACT FULL SOURCE IMAGE INVERSE
 
 function assemblyInverse(text, name) {
+  text = reviewedWindowsImagePrefix(text, name);
   if (name === "driver") text = fullSourceImageInverse(text);
   if (name === "controller") text = startupControllerInverse(text);
   const spec = ASSEMBLY_HISTORY[name];
@@ -7842,7 +7878,16 @@ async function inactiveControl(
   const defaultsModule =
     await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
   let source = await read(prefix + "full_sdk_control.mjs");
-  if (previousSourceParent) source = sourceParentControllerInverse(source);
+  if (previousSourceParent) {
+    // Isolate the actual old parent-creation behavior while retaining current
+    // image data and every other current guard in this lexical causal model.
+    for (const row of SOURCE_PARENT_INVERSE.rows) {
+      assert.equal(sha(row.newRaw), row.newSha256);
+      assert.equal(sha(row.oldRaw), row.oldSha256);
+      assert.equal(source.split(row.newRaw).length, 2);
+      source = source.replace(row.newRaw, () => row.oldRaw);
+    }
+  }
   // Only this isolated lexical model may substitute local native-tool bytes.
   // Production pins/gates and its sole source-session writer stay untouched.
   if (fixtureProfileSha) {
@@ -7932,12 +7977,12 @@ async function controlFixture(t, overrides = {}) {
     stage: "joined-success",
     pendingWriters: 0,
     creationJoined: true,
-    image: "20261030.294.1",
+    image: "20261103.298.1",
     target: "aarch64-pc-windows-msvc",
     sourceId:
       "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     profileSha256:
-      "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+      "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
     root: base,
     rootIdentity: api.directoryId(await fs.lstat(base, { bigint: true })),
   };
@@ -8478,11 +8523,11 @@ async function parentMetadataFixtureData() {
     const script = String.raw`import sys,json,base64
 sys.path.insert(0,${JSON.stringify(path.join(root, prefix))})
 import test_private_qualification as t,private_qualification as p
-context,observed=t.output_fixture('20261030.294.1')
+context,observed=t.output_fixture('20261103.298.1')
 ${await realisticExpectedDefaultsFixtureScript()}
 value=p.inspect_private_outputs(context,t.RAW,t.BASE_RAW,observed,wall_now=200,monotonic_now=200)
 report={key:value[key]for key in ('metadata','literalArguments','partitionAllocMacros','cefHeader','policyMinimumsMet','completeMacroInventoryMatches','fullArm64DefaultsQualified','executionAdmitted')}
-report.update(kind='windows-arm-full-source-metadata',compilerExecuted=False,cohortQuietProven=False,sourceId=t.POLICY['images']['20261030.294.1']['sourceId'],roleCount=4)
+report.update(kind='windows-arm-full-source-metadata',compilerExecuted=False,cohortQuietProven=False,sourceId=t.POLICY['images']['20261103.298.1']['sourceId'],roleCount=4)
 def encode(value):
  if type(value)is bytes:return {'__bytes':base64.b64encode(value).decode()}
  if type(value)is dict:return {k:encode(v)for k,v in value.items()}
@@ -8850,10 +8895,10 @@ async function createdSourceFixture(t, mode = "normal", overrides = {}) {
           ? path.join(process.env.SystemRoot, "System32")
           : "/usr/bin",
       }),
-      image: mode === "wrong-image" ? "20261021.278.1" : "20261030.294.1",
+      image: mode === "wrong-image" ? "20261021.278.1" : "20261103.298.1",
       sourceId,
       profileSha256:
-        "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+        "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
       parentCreationFiletime: "777777",
       producerInputs: Object.freeze(
         producerInputs.map((row) => Object.freeze(row)),
@@ -9285,7 +9330,7 @@ test("inactive full SDK bootstrap requires privately bound full profile root con
     runId: "1",
     attempt: "1",
     inputs: {},
-    image: "20261030.294.1",
+    image: "20261103.298.1",
   };
   const recipe = {
     image: context.image,
@@ -9668,7 +9713,7 @@ def encode(value):
  if type(value)is dict:return {k:encode(v)for k,v in value.items()}
  if type(value)is list or type(value)is tuple:return [encode(v)for v in value]
  return value
-context,observed=t.output_fixture('20261030.294.1')
+context,observed=t.output_fixture('20261103.298.1')
 ${await realisticExpectedDefaultsFixtureScript()}
 print(json.dumps(encode({'context':context,'observed':observed})))
 `;
@@ -9717,7 +9762,7 @@ print(json.dumps(encode({'context':context,'observed':observed})))
     runId: "1",
     attempt: "1",
     inputs: { restore_run: "0" },
-    image: "20261030.294.1",
+    image: "20261103.298.1",
     sources: [],
     wallWorkEnd: Date.now() / 1000 + 1000,
     monotonicWorkEnd: 1000,
@@ -10621,8 +10666,17 @@ const PARENT_METADATA_READER_DERIVATIONS = [
 test("inactive full SDK parent metadata readers are exact finite data-only copies", async () => {
   const { default: ts } = await import("typescript"),
     prettier = await import("prettier");
-  const control = await read(prefix + "full_sdk_control.mjs"),
-    driver = await read(prefix + "full-sdk-source-driver.mjs");
+  const control = withoutReviewedWindowsImage(
+      (await read(prefix + "full_sdk_control.mjs")).replaceAll("\r\n", "\n"),
+      prefix + "full_sdk_control.mjs",
+    ),
+    driver = withoutReviewedWindowsImage(
+      (await read(prefix + "full-sdk-source-driver.mjs")).replaceAll(
+        "\r\n",
+        "\n",
+      ),
+      prefix + "full-sdk-source-driver.mjs",
+    );
   const declarations = (raw) => {
     const tree = ts.createSourceFile(
       "copy.mjs",
@@ -11143,7 +11197,7 @@ async function parentEngineFixture(t, mode = "normal", overrides = {}) {
       env: {
         ...process.env,
         CEF_FULLSDK_RESTORE_RUN: "0",
-        ImageVersion: "20261030.294.1",
+        ImageVersion: "20261103.298.1",
         GITHUB_SHA: "a".repeat(40),
         GITHUB_WORKFLOW_SHA: "a".repeat(40),
         GITHUB_RUN_ID: "30",
@@ -11661,7 +11715,7 @@ file=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('code
 tree=ast.parse(file.read_text());function=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='transport_download')
 start=next(i for i,n in enumerate(function.body)if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='ready'for t in n.targets))
 statements=function.body[start:-1]
-rows=json.loads(sys.argv[3]);image='20261030.294.1';source=codec.inputs.SOURCES[image]
+rows=json.loads(sys.argv[3]);image='20261103.298.1';source=codec.inputs.SOURCES[image]
 identity=dict(image=image,sourceId=source,producerSha256=codec.producer_digest(rows),sourceDateEpoch=dict(present=False,value=None),canonicalRoot=codec.inputs.root_name(image,source),toolProofPin=dict(bytes=1,sha256='4'*64),graphPin=dict(bytes=1,sha256='5'*64))
 scope=dict(codec.__dict__);scope.update(record_pin=dict(bytes=1,sha256='1'*64),prior_run='20',prior_attempt='1',current=dict(id=30,run_attempt=1),prior=dict(head_sha='c'*40),record=dict(identity=identity),artifact_pin=dict(id=901,bytes=31,sha256='2'*64),destination=pathlib.Path(sys.argv[2]))
 exec(compile(ast.Module(body=statements,type_ignores=[]),str(file),'exec'),scope)
@@ -11708,7 +11762,7 @@ print('actual-ready-writer-complete')`;
   const result = await api.readRestoreHandoff(
     bootstrap,
     rows,
-    "20261030.294.1",
+    "20261103.298.1",
     codecReady.identity.sourceId,
   );
   assert.equal(result.runId, "20");
@@ -11726,7 +11780,7 @@ print('actual-ready-writer-complete')`;
     api.readRestoreHandoff(
       bootstrap,
       rows,
-      "20261030.294.1",
+      "20261103.298.1",
       codecReady.identity.sourceId,
     ),
     /RESTORE_ARTIFACT_PIN/,
@@ -12236,11 +12290,11 @@ async function sourceParentBootstrapFixture(t, mode) {
   const { fullSdkSourceRootName } =
     await import("../../native/windows-arm-full-sdk/source-root.mjs");
   const sourceId = JSON.parse(await read(prefix + "sdk-origin-review.json"))
-    .sources["20261030.294.1"].sourceLockIdentity;
+    .sources["20261103.298.1"].sourceLockIdentity;
   // Source identity is fixed by the actual pure naming implementation.
   const sourceRoot = path.join(
     parent,
-    fullSdkSourceRootName("20261030.294.1", sourceId),
+    fullSdkSourceRootName("20261103.298.1", sourceId),
   );
   const leaf = new Error("MODELED_NO_SOURCE_ACTOR");
   let owner,
@@ -12286,7 +12340,7 @@ async function sourceParentBootstrapFixture(t, mode) {
     GITHUB_JOB: "sdk",
     GITHUB_WORKFLOW_REF:
       "supermarsx/sortOfRemoteNG/.github/workflows/windows-arm-full-sdk.yml@refs/heads/main",
-    ImageVersion: "20261030.294.1",
+    ImageVersion: "20261103.298.1",
   };
   env.SORNG_FULLSDK_FIRST_CLOCK = JSON.stringify({
     schemaVersion: 1,
@@ -12841,8 +12895,11 @@ test("FULL environment fixture producer inverse restores the complete old source
 });
 async function fullSourceImageFixture(
   t,
-  { image = "20261030.294.1", previous = false, late = false } = {},
+  { image = "20261103.298.1", previous = false, late = false } = {},
 ) {
+  if (previous && image === "20261103.298.1") image = "20261030.294.1";
+  const imageView = (raw, file) =>
+    previous ? reviewedWindowsImagePrefix(raw.toString(), file) : raw;
   const firstWall = Date.now(),
     firstMono = performance.now();
   let clockAdvance = 0,
@@ -12858,9 +12915,19 @@ async function fullSourceImageFixture(
     path.join(root, prefix, "full-sdk-source-profile.json"),
   );
   if (previous)
-    pRaw = Buffer.from(sourceAcquisitionInverse(pRaw.toString(), "profile"));
+    pRaw = Buffer.from(
+      sourceAcquisitionInverse(
+        imageView(pRaw, prefix + "full-sdk-source-profile.json").toString(),
+        "profile",
+      ),
+    );
   const full = JSON.parse(pRaw);
-  const policy = JSON.parse(await read(prefix + "sdk-origin-review.json"));
+  const policy = JSON.parse(
+    imageView(
+      await read(prefix + "sdk-origin-review.json"),
+      prefix + "sdk-origin-review.json",
+    ),
+  );
   fullSourceEnvironmentProducerInverse(
     (
       await fs.readFile(path.join(root, prefix, "producer.py"), "utf8")
@@ -12884,6 +12951,7 @@ async function fullSourceImageFixture(
       row.path === prefix + "full-sdk-source-profile.json"
         ? pRaw
         : await fs.readFile(path.join(root, row.path));
+    if (previous) raw = Buffer.from(imageView(raw, row.path));
     // The old profile pins the previous image-profile bytes, so serve those.
     const imageName = previous
       ? {
@@ -12933,8 +13001,17 @@ async function fullSourceImageFixture(
   const policyRaw = Buffer.from(JSON.stringify(policy, null, 2) + "\n");
   await fs.writeFile(path.join(repo, full.policy), policyRaw);
   const tuple = full.images[image];
-  const { fullSdkSourceRootName } =
-    await import("../../native/windows-arm-full-sdk/source-root.mjs");
+  const { fullSdkSourceRootName } = previous
+    ? await import(
+        "data:text/javascript;base64," +
+          Buffer.from(
+            imageView(
+              await read(prefix + "source-root.mjs"),
+              prefix + "source-root.mjs",
+            ),
+          ).toString("base64")
+      )
+    : await import("../../native/windows-arm-full-sdk/source-root.mjs");
   const sourceRoot = path.join(
     repo,
     ".artifacts",
@@ -13158,7 +13235,7 @@ test("actual full profile loader old PRIVATE_IMAGE denies and registered image d
   const old = await fullSourceImageFixture(t, { previous: true });
   await assert.rejects(old.load(), /^Error: PRIVATE_IMAGE$/);
   assert.equal(old.actors(), 0);
-  for (const image of ["20261030.294.1", "20261021.278.1"]) {
+  for (const image of ["20261103.298.1", "20261021.278.1"]) {
     const f = await fullSourceImageFixture(t, { image }),
       loaded = await f.load(),
       { p } = loaded;
@@ -14172,18 +14249,25 @@ const PINNED_DEPOT_GITIGNORE = {
   sha256: "4dba4a2ed70f50373d8260cc393d78c251a17ab52d47b629f3a94af268f6621d",
 };
 
-test("FULL bootstrap cache uses only the genuine held profile and preserves every legacy emitted setup byte", async (t) => {
-  for (const image of ["20261030.294.1", "20261021.278.1"]) {
+test("FULL bootstrap cache uses only the genuine held profile and preserves legacy setup bytes with the reviewed exact image list", async (t) => {
+  for (const image of ["20261103.298.1", "20261021.278.1"]) {
     const f = await fullSourceImageFixture(t, { image }),
       loaded = await f.load();
     const current = f.api.bootstrapProgram(f.root, loaded.p, f.contextPin),
       previous = f.api.previousBootstrapProgram(f.root, loaded.p, f.contextPin);
+    const reviewedPrevious = (bytes) => {
+      const text = bytes.toString();
+      const before = "('20261030.294.1','20261021.278.1')";
+      const after = "('20261103.298.1','20261021.278.1')";
+      assert.equal(text.split(before).length, 2);
+      return text.replace(before, after);
+    };
     const old = "SETUP=DEPOT/'sorng-cipd-setup.bat'",
       next = "SETUP=DEPOT/'.cipd_client_sorng_setup.bat'";
     assert.equal(previous.toString().split(old).length, 2);
     assert.deepEqual(
       current,
-      Buffer.from(previous.toString().replace(old, next)),
+      Buffer.from(reviewedPrevious(previous).replace(old, next)),
     );
     assert.equal(current.toString().split(next).length, 2);
     const base = JSON.parse(
@@ -14206,7 +14290,11 @@ test("FULL bootstrap cache uses only the genuine held profile and preserves ever
     };
     assert.deepEqual(
       f.api.bootstrapProgram(f.root, legacy, f.contextPin),
-      f.api.previousBootstrapProgram(f.root, legacy, f.contextPin),
+      Buffer.from(
+        reviewedPrevious(
+          f.api.previousBootstrapProgram(f.root, legacy, f.contextPin),
+        ),
+      ),
     );
     assert(
       f.api
@@ -15828,8 +15916,14 @@ test("FULL graph diagnostic finite inverse restores the whole previous driver be
   assert.throws(() => fullGraphDiagnosticsInverse(raw + "\n", "driver"));
   assert.equal(
     sha(
-      await fs.readFile(
-        path.join(root, prefix, "full-sdk-source-profile.json"),
+      withoutReviewedWindowsImage(
+        (
+          await fs.readFile(
+            path.join(root, prefix, "full-sdk-source-profile.json"),
+            "utf8",
+          )
+        ).replaceAll("\r\n", "\n"),
+        prefix + "full-sdk-source-profile.json",
       ),
     ),
     "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633",
@@ -16693,7 +16787,7 @@ test("FULL engine worker profile object satisfies the reused source environment 
   const profile = await json("full-sdk-source-profile.json"),
     base = await json("profile.json"),
     privatePolicy = await json("private-qualification-profile.json");
-  for (const image of ["20261030.294.1", "20261021.278.1"]) {
+  for (const image of ["20261103.298.1", "20261021.278.1"]) {
     const selected = profile.images[image],
       imageJson = await json(selected.profile);
     const p = {

@@ -4,7 +4,7 @@
   "mode": "image-qualified-source-gn",
   "ref": "refs/heads/codex/windows-arm-image-qualified-source-gn-20261101",
   "workflow": ".github/workflows/windows-arm-source-preflight.yml",
-  "image": "20261030.294.1",
+  "image": "20261103.298.1",
   "baseProfileSha256": "ccadcf1fc6f86fe11b922d93c11dc6192ccf571f03c485c610e89938c60b546a",
   "helperSourceCommit": "0fd6ebc70f110ff80909fe996fb4abf5499c9468",
   "helperMirror": "native/windows-arm-full-sdk/current-source-helpers/",
@@ -381,7 +381,7 @@
       "source-caches/vpython"
     ],
     "hostClosure": {
-      "image": "20261030.294.1",
+      "image": "20261103.298.1",
       "rows": [
         {
           "path": "C:/hostedtoolcache/windows/node/24.19.0/x64/node.exe",
@@ -642,5 +642,30 @@
     "image": "20261030.294.1",
     "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
     "namespace": "native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/"
+  },
+  "imageRefreshEvidence": {
+    "kind": "reviewed-declared-host-pin-image-refresh",
+    "fromImage": "20261030.294.1",
+    "image": "20261103.298.1",
+    "probe": {
+      "runId": 43238921998,
+      "attempt": 1,
+      "head": "96791967742b8912462d69cf48c727608e3c45ff",
+      "artifactId": 13953008899,
+      "artifactBytes": 969855,
+      "artifactSha256": "6b7fc4242293f8eff419589ba2a81ff00232d5425ec4a8cd1506f497e9829bc8",
+      "reportBytes": 4244438,
+      "reportSha256": "87b394c4702ea263b09c689f78ebae19ff1e29381f84e8ecd4c61274486ff435",
+      "admits": false,
+      "executed": false
+    },
+    "declaredHostedFilePinsEqual": 33,
+    "hostClosureRowsEqual": 18,
+    "installedMsvcPinsEqual": 14,
+    "unlistedHistoricalTreeEqualityProven": false,
+    "historicalNativeEvidenceRetained": true,
+    "sdkBuilt": false,
+    "nativeAcceptance": false,
+    "runtimeReady": false
   }
 }

@@ -26,9 +26,9 @@ const sourceSessions = new WeakMap(); // Sole writer: actual runSourcePhase crea
 const leases = new WeakMap();
 const controls = new WeakMap();
 const sources = Object.freeze({
-  "20261030.294.1": Object.freeze({
+  "20261103.298.1": Object.freeze({
     id: "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
-    profile: "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+    profile: "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
   }),
   "20261021.278.1": Object.freeze({
     id: "fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa",
@@ -668,7 +668,7 @@ async function retireControl(token) {
 const CONTROLLER_ADMITTED = false; // Native acceptance is established by later actual evidence.
 const SOURCE_QUALIFICATION_ALLOWED = true;
 const FULL_SOURCE_PROFILE_SHA256 =
-  "c1a3a02f7267db73055a66addb14d6ac2565a3ba96685822f81b27e8080ea633";
+  "509e00804ed0aaca315b2a8b0c61ef47f0412cf0d13925506149b141acd633ec";
 const MODULE_URL = import.meta.url;
 const CONTROLLER_HERE = path.dirname(fileURLToPath(MODULE_URL));
 const CONTROLLER_REPO = path.resolve(CONTROLLER_HERE, "../..");
@@ -1075,10 +1075,10 @@ const EXPECTED_DEFAULTS_PATH =
   "native/windows-arm-full-sdk/expected-defaults.mjs";
 const EXPECTED_DEFAULTS_PIN = Object.freeze({
   bytes: 36630,
-  sha256: "5337a2b2559dd01dc6a07358e518fa22a94f1e14be540243508e274f3d37e058",
+  sha256: "36075a49dc79480ed760c1741d9dbb9904ebc1f794276388821ae7fc321b31e9",
 });
 const EXPECTED_DEFAULTS_POLICY_SHA256 =
-  "64f113c323b022feeb141f0a08b8cd3434cbdcd031524c50f2ccd2300260a6ae";
+  "0c2adc00d0f5a7c06a2d4fd9aad235cd3bb2474df0b07934845eccf2c749bea8";
 async function heldExpectedDefaultsLive(token, joinedAllowed = false) {
   const relative = EXPECTED_DEFAULTS_PATH,
     maximum = 65536,
@@ -1315,7 +1315,7 @@ function expectedDefaultsFact(state, projected, binding) {
 
 // Strict DATA readers only. These cannot register a source, create a child or open admission.
 const parentMetadata_PRIVATE_PROFILE_SHA256 =
-  "8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9";
+  "5c263f19c1b1c7c220fc8d5e8cc8801b5adf3d9196aed8d0c6df792e961daad3";
 
 const parentMetadata_PRIVATE_MODE = "private-compiler-input-qualification";
 
@@ -4149,7 +4149,7 @@ async function createSourceOperation(bootstrap) {
       {
         bytes: 1895,
         sha256:
-          "07c9301da8df45fbed8e19e66fdd2155a78748e63b84fe313a5a359c6bf7a799",
+          "0eb782728321e9eb793e93987c218d4a7b99d9fd5d3bbb95fbd073dd392b183e",
       },
     )
   ).raw;
@@ -4157,7 +4157,7 @@ async function createSourceOperation(bootstrap) {
   need(
     rootCode.length === 1895 &&
       hashBytes(rootCode) ===
-        "07c9301da8df45fbed8e19e66fdd2155a78748e63b84fe313a5a359c6bf7a799",
+        "0eb782728321e9eb793e93987c218d4a7b99d9fd5d3bbb95fbd073dd392b183e",
     "SOURCE_ROOT_MODULE_PIN",
   );
   need(

@@ -9,7 +9,7 @@ import json
 import math
 import re
 
-PROFILE_SHA256 = '8f41fafa6722fcf6e68bd67f3bdad6317e3be77c03e1c01b0e41758aab6fb3c9'
+PROFILE_SHA256 = '5c263f19c1b1c7c220fc8d5e8cc8801b5adf3d9196aed8d0c6df792e961daad3'
 PRIVATE_QUALIFICATION_ADMITTED = False
 MODE = 'private-compiler-input-qualification'
 REF = 'refs/heads/codex/windows-arm-engine-qualification-20261101'

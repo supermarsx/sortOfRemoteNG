@@ -38,9 +38,9 @@ REVIEWED_NAMESPACE = 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x6
 
 IMAGE_MODE = 'image-qualified-source-gn'
 IMAGE_REF = 'refs/heads/codex/windows-arm-image-qualified-source-gn-20261101'
-IMAGE_TUPLES = {'20261030.294.1': {'image': '20261030.294.1',
+IMAGE_TUPLES = {'20261103.298.1': {'image': '20261103.298.1',
                     'profile': 'image-qualified-current-profile.json',
-                    'sha256': 'e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05',
+                    'sha256': '5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd',
                     'driver': 'image-qualified-current-driver.mjs',
                     'sourceId': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
                     'namespace': 'native/cef-build-inputs/20261101-r5-windows-arm64-cross-x64-current-source-gn/'},
