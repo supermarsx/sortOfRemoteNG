@@ -1,4 +1,5 @@
 import { withoutMacGcsPreparationRuntime } from "./helpers/cefMacGcsReviewedHistory.mjs";
+import { beforeCensusCoreForHistory } from "./helpers/cefCensusRetirementReviewedHistory.mjs";
 import assert from "node:assert/strict";
 
 // Test-only prefix: restore the COMPLETE reviewed pre-fix helper before the
@@ -117,6 +118,7 @@ const recovered = (name) =>
   "        bundle,\n" +
   "      );";
 export function withoutUploadRecovery(text) {
+  text = beforeCensusCoreForHistory(text);
   text = macInverse(text, "lib");
   const start = text.indexOf(START);
   const end = text.indexOf(END);

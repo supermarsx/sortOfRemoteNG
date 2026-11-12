@@ -1,3 +1,7 @@
+import {
+  beforeCensusCoreForHistory,
+  beforeCensusRowsForHistory,
+} from "./helpers/cefCensusRetirementReviewedHistory.mjs";
 import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -249,7 +253,7 @@ test("Producer code remains a separately attested subset and cannot substitute f
     ],
     { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true },
   );
-  const currentRows = listed
+  let currentRows = listed
     .trim()
     .split("\n")
     .map((line) => {
@@ -261,6 +265,8 @@ test("Producer code remains a separately attested subset and cannot substitute f
     })
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   assert.equal(currentRows.length, 132);
+  // Preserve actual producerPins above; recover only the historical9b DATA.
+  currentRows = beforeCensusRowsForHistory(currentRows, root);
   const previousMacRows = withoutMacGcsPreparationRows(currentRows, root);
   assert.equal(
     digest(Buffer.from(JSON.stringify(previousMacRows))),
@@ -279,11 +285,13 @@ test("Producer code remains a separately attested subset and cannot substitute f
     "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
   );
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
-  const recoveredCore = execFileSync(
-    "git",
-    ["cat-file", "blob", "HEAD:" + corePath],
-    { cwd: root, timeout: 10000, windowsHide: true },
-  ).toString();
+  const recoveredCore = beforeCensusCoreForHistory(
+    execFileSync("git", ["cat-file", "blob", "HEAD:" + corePath], {
+      cwd: root,
+      timeout: 10000,
+      windowsHide: true,
+    }).toString(),
+  );
   assert.equal(Buffer.byteLength(recoveredCore), 250010);
   assert.equal(
     digest(recoveredCore),

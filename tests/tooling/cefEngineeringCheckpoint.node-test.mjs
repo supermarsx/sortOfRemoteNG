@@ -979,6 +979,15 @@ import {
   CURRENT_FEATURE_PRODUCER,
 } from "./helpers/cefLinuxWindowFeatureFixture.mjs";
 after(retireFeatureFixtures);
+import {
+  BEFORE_CENSUS_CORE,
+  CURRENT_CENSUS_CORE,
+  CURRENT_CENSUS_PRODUCER,
+  withCensusRetirementCore,
+  withoutCensusRetirementCore,
+  beforeCensusRowsForHistory,
+  beforeCensusDataForHistory,
+} from "./helpers/cefCensusRetirementReviewedHistory.mjs";
 const producer = {
   repository: "owner/repo",
   repositoryId: 11,
@@ -18684,4 +18693,187 @@ test("old Linux feature activation rejects physical edits including raw legacy l
     Buffer.from(raw.toString("utf8").replaceAll("\n", "\r\n")),
   );
   await assert.rejects(assertOldFeaturePhysicalBytes(root, previous));
+});
+
+async function censusRetirementFixture(mode) {
+  const fixture = path.join(
+    ROOT,
+    "tests/fixtures/cef/mac_census_retirement_repro.mjs",
+  );
+  const child = spawn(process.execPath, [fixture, mode], {
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "",
+    stderr = "",
+    doneAt,
+    closedAt,
+    heldAfter200ms = false,
+    checked;
+  const records = [];
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+    assert(stdout.length <= 65536);
+    for (;;) {
+      const end = stdout.indexOf("\n");
+      if (end < 0) break;
+      const row = JSON.parse(stdout.slice(0, end));
+      stdout = stdout.slice(end + 1);
+      records.push(row);
+      if (row.stage === "MODEL_DONE") {
+        doneAt = performance.now();
+        checked = new Promise((resolve) =>
+          setTimeout(() => {
+            heldAfter200ms =
+              child.exitCode === null && child.signalCode === null;
+            resolve();
+          }, 200),
+        );
+      }
+    }
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+    assert(stderr.length <= 65536);
+  });
+  const hard = setTimeout(() => child.kill("SIGKILL"), 12000);
+  const exit = await new Promise((resolve) =>
+    child.once("close", (code, signal) => {
+      closedAt = performance.now();
+      resolve({ code, signal });
+    }),
+  );
+  clearTimeout(hard);
+  if (checked) await checked;
+  assert.equal(exit.code, 0, stderr);
+  assert.equal(exit.signal, null);
+  assert.equal(stdout, "");
+  return {
+    records,
+    heldAfter200ms,
+    afterModelMs: doneAt === undefined ? null : closedAt - doneAt,
+  };
+}
+
+for (const mode of ["old", "new"]) {
+  test(`census retirement ${mode} controlled deadline with inherited pipes preserves denial and measures real Node liveness`, async () => {
+    const result = await censusRetirementFixture(mode);
+    const row = result.records[0];
+    assert.equal(row.stage, "MODEL_DONE");
+    assert.equal(row.mode, mode);
+    assert.equal(row.cleanupMs, 30000);
+    assert.equal(row.virtualNow, 32001);
+    assert.equal(row.diagnostic.firstFailure.errorCode, "CENSUS_DEADLINE");
+    assert.equal(row.diagnostic.ownTimerExpired, false);
+    assert.equal(row.diagnostic.probesJoined, false);
+    assert.equal(row.diagnostic.cohortQuiet, false);
+    assert.equal(row.diagnostic.outputsJoined, false);
+    assert.equal(row.diagnostic.pipeClosed, false);
+    assert.equal(row.diagnostic.census.joined, false);
+    if (mode === "old") {
+      assert.equal(row.closeCalls, 0);
+      assert.equal(row.stdioOpen, true);
+      assert(result.heldAfter200ms);
+      assert(result.afterModelMs >= 1000);
+      assert.equal(result.records.length, 2);
+      assert.equal(result.records[1].stage, "TEST_TEARDOWN");
+    } else {
+      assert.equal(row.closeCalls, 1);
+      assert.deepEqual(row.closeDeadlines, [32000]);
+      assert.equal(row.workerRetirementRequested, true);
+      assert.equal(row.stdioOpen, false);
+      assert.equal(result.heldAfter200ms, false);
+      assert(result.afterModelMs < 1000);
+      assert.equal(
+        result.records.length,
+        1,
+        "no test teardown keeps or releases Node",
+      );
+    }
+  });
+}
+
+test("actual census wrapper memoizes successful final/startup cleanup and preserves falsy startup primary", async () => {
+  const { records } = await censusRetirementFixture("controls");
+  assert.equal(records.length, 1);
+  const row = records[0];
+  assert.equal(row.stage, "WRAPPER_CONTROLS");
+  assert.equal(row.memoizedUnderlyingCloseCalls, 1);
+  assert.equal(row.memoizedOriginalDeadline, 30000);
+  assert.equal(row.cleanUnderlyingCloseCalls, 1);
+  assert.deepEqual(
+    row.startup.map((s) => s.startupPrimary),
+    ["Error", "false"],
+  );
+  assert(row.startup.every((s) => s.actualClientCloseCalls === 1 && s.noProof));
+  assert.equal(row.strictEntireFixDeletionDenied, true);
+  assert.equal(row.nativeMacQualification, false);
+});
+
+test("census retirement whole-core and one-row DATA bridge preserves actual132 labels and strict deletion negatives", () => {
+  const actual = actualFeatureSource(ROOT);
+  const baseline =
+    actual.producer === PREVIOUS_FEATURE_PRODUCER
+      ? reconstructCurrentFeatureData(actual.rows, actual.files)
+      : beforeCensusDataForHistory(actual.rows, actual.files);
+  assert.equal(codeTreeDigest(baseline.rows), CURRENT_FEATURE_PRODUCER);
+  const file = "scripts/lib/cef-engineering-checkpoint.mjs";
+  const before = baseline.files.get(file).toString("utf8");
+  assert.equal(Buffer.byteLength(before), BEFORE_CENSUS_CORE.bytes);
+  const current = withCensusRetirementCore(before);
+  assert.equal(Buffer.byteLength(current), CURRENT_CENSUS_CORE.bytes);
+  assert.equal(withoutCensusRetirementCore(current), before);
+  assert.throws(
+    () => withoutCensusRetirementCore(before),
+    "deleting the complete fix is exact9b and still denied by the strict current inverse",
+  );
+  for (const changed of [
+    current + "\n",
+    current.replace(
+      "await censusSession.close(cleanupDeadline);",
+      "await censusSession.close(performance.now()+30000);",
+    ),
+  ])
+    assert.throws(() => withoutCensusRetirementCore(changed));
+  const currentFiles = new Map(baseline.files);
+  currentFiles.set(file, Buffer.from(current));
+  const currentRows = baseline.rows.map((row) =>
+    row.path === file ? { ...row, sha: CURRENT_CENSUS_CORE.blob } : row,
+  );
+  assert.equal(codeTreeDigest(currentRows), CURRENT_CENSUS_PRODUCER);
+  const historical = beforeCensusDataForHistory(currentRows, currentFiles);
+  assert.deepEqual(historical.rows, baseline.rows);
+  for (const row of baseline.rows)
+    assert.deepEqual(
+      historical.files.get(row.path),
+      baseline.files.get(row.path),
+    );
+  if (actual.producer === CURRENT_CENSUS_PRODUCER) {
+    // This branch requires genuine current HEAD/cat-file bytes, not a mask of
+    // the worktree or synthetic SDK producer identity.
+    assert.equal(
+      actual.rows.find((row) => row.path === file).sha,
+      CURRENT_CENSUS_CORE.blob,
+    );
+    assert.equal(actual.files.get(file).toString("utf8"), current);
+    assert.equal(codeTreeDigest(actual.rows), CURRENT_CENSUS_PRODUCER);
+    assert.equal(
+      codeTreeDigest(beforeCensusRowsForHistory(actual.rows, ROOT)),
+      CURRENT_FEATURE_PRODUCER,
+    );
+  }
+  const wrong = new Map(currentFiles);
+  wrong.set(file, Buffer.from(current + "\n"));
+  assert.throws(() => beforeCensusDataForHistory(currentRows, wrong));
+  const changedBlob = hashObject("sha1")
+    .update(`blob ${wrong.get(file).length}\0`)
+    .update(wrong.get(file))
+    .digest("hex");
+  const third = currentRows.map((row) =>
+    row.path === file ? { ...row, sha: changedBlob } : row,
+  );
+  assert.throws(() => beforeCensusDataForHistory(third, wrong));
+  assert.throws(() =>
+    beforeCensusDataForHistory(currentRows.slice(1), currentFiles),
+  );
 });

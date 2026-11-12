@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { withoutWindowsImageRows } from "./cefWindowsImageProducerRows.mjs";
+import { beforeCensusRowsForHistory } from "./cefCensusRetirementReviewedHistory.mjs";
 
 // Test-only whole-file inverse. This never changes runtime admission or a capsule.
 const sha = (text) => createHash("sha256").update(text).digest("hex");
@@ -38,6 +39,7 @@ export function withoutMacGcsPreparationRuntime(text) {
 // Prove all132 actual producer rows first; remove only the two whole-pinned Mac
 // preparation deltas to recover the unchanged131-row historical producer.
 export function withoutMacGcsPreparationRows(rows, root) {
+  rows = beforeCensusRowsForHistory(rows, root);
   rows = withoutWindowsImageRows(rows, root);
   const runtimePath = "scripts/cef-runtime-ci.mjs";
   const helperPath = "scripts/lib/cef-mac-gcs-normalize.py";

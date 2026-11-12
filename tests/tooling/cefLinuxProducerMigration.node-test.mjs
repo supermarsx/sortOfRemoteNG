@@ -1,3 +1,7 @@
+import {
+  beforeCensusCoreForHistory,
+  beforeCensusRowsForHistory,
+} from "./helpers/cefCensusRetirementReviewedHistory.mjs";
 import { reconstructLinuxMigrationFixtureSource } from "./helpers/cefLinuxMigrationFixtureSource.mjs";
 import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import assert from "node:assert/strict";
@@ -2384,7 +2388,8 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   assert.deepEqual(capsule.oldSourceTree, actual);
   // This retained Linux capsule binds its original1d producer. The newer Mac
   // reaper has one reviewed source delta; it does not retarget this capsule.
-  const actualCurrentRows = rows(ROOT, "HEAD");
+  const actualHeadRows = rows(ROOT, "HEAD");
+  const actualCurrentRows = beforeCensusRowsForHistory(actualHeadRows, ROOT); // reviewed9b DATA only
   assert.equal(
     core.codeTreeDigest(actualCurrentRows),
     "9b5292077dabfe11c70fc083735c3555d1306fc3e85ff6444ee1e0976de6e681",
@@ -2402,7 +2407,11 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
     "20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
   );
   const reaperPath = "scripts/lib/cef-engineering-checkpoint.mjs";
-  const reaper = git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]);
+  const reaper = Buffer.from(
+    beforeCensusCoreForHistory(
+      git(ROOT, ["cat-file", "blob", "HEAD:" + reaperPath]).toString(),
+    ),
+  );
   const restoredReaper = Buffer.from(
     withoutOriginalReapLease(reaper.toString()),
   );

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import { beforeCensusDataForHistory } from "./cefCensusRetirementReviewedHistory.mjs";
 import { withoutWindowsImageOrigin } from "./cefWindowsImageProducerRows.mjs";
 import {
   withoutMacGcsPreparationRows,
@@ -20,6 +21,10 @@ export function reconstructLinuxMigrationFixtureSource(
   rawFiles,
   root,
 ) {
+  ({ rows: reachableRows, files: rawFiles } = beforeCensusDataForHistory(
+    reachableRows,
+    rawFiles,
+  ));
   const sourceRows = withoutSourceVerifyGuardRows(
     withoutMacGcsPreparationRows(reachableRows, root),
     root,

@@ -1,3 +1,7 @@
+import {
+  beforeCensusCoreForHistory,
+  beforeCensusRowsForHistory,
+} from "./helpers/cefCensusRetirementReviewedHistory.mjs";
 import { withoutMacGcsPreparationRows } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import test from "node:test";
 import {
@@ -547,7 +551,7 @@ test("the retained proof producer binds all actual132 rows through the exact cur
     },
   );
   assert.equal(listed.status, 0);
-  const rows = [];
+  let rows = [];
   for (const line of listed.stdout.toString().trim().split("\n")) {
     const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(line);
     assert(match);
@@ -562,6 +566,8 @@ test("the retained proof producer binds all actual132 rows through the exact cur
     rows.push({ type: "blob", mode, sha, path });
   }
   assert.equal(rows.length, 132);
+  // Physical actual HEAD blobs were attested above; the following is9b DATA.
+  rows = beforeCensusRowsForHistory(rows, fileURLToPath(root));
   const previousMacRows = withoutMacGcsPreparationRows(
     rows,
     fileURLToPath(root),
@@ -587,9 +593,11 @@ test("the retained proof producer binds all actual132 rows through the exact cur
   const corePath = "scripts/lib/cef-engineering-checkpoint.mjs";
   const coreRow = rows.find((row) => row.path === corePath);
   assert.equal(coreRow.sha, "1d01388d845d29485ea3e514fab6330f1c07f02b");
-  const current = (await readFile(new URL(corePath, root)))
-    .toString()
-    .replaceAll("\r\n", "\n");
+  const current = beforeCensusCoreForHistory(
+    (await readFile(new URL(corePath, root)))
+      .toString()
+      .replaceAll("\r\n", "\n"),
+  );
   const restore = (recovered) => {
     assert.equal(Buffer.byteLength(recovered), 250010);
     assert.equal(

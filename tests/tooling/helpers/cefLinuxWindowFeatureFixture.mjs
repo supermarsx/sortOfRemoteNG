@@ -5,6 +5,10 @@ import { readFile, mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  CURRENT_CENSUS_PRODUCER,
+  beforeCensusDataForHistory,
+} from "./cefCensusRetirementReviewedHistory.mjs";
 
 // An explicit model for feature/history tests unavailable in the temporary
 // Linux-only old source selection. Never used by a producer or SDK admission.
@@ -119,8 +123,12 @@ function transform(rows, files, forward) {
 
 export const reconstructCurrentFeatureData = (rows, files) =>
   transform(rows, files, true);
-export const reconstructPreviousFeatureData = (rows, files) =>
-  transform(rows, files, false);
+export const reconstructPreviousFeatureData = (rows, files) => {
+  // Explicit historical DATA before the core-only cleanup change. Actual
+  // worker producer/ROOT remain untouched and are returned separately below.
+  const previous = beforeCensusDataForHistory(rows, files);
+  return transform(previous.rows, previous.files, false);
+};
 
 export function actualFeatureSource(root) {
   const rows = git(root, ["ls-tree", "-r", "HEAD", "--", ...SELECTED])
@@ -134,7 +142,11 @@ export function actualFeatureSource(root) {
     });
   const producer = codeTreeDigest(rows);
   assert(
-    [PREVIOUS_FEATURE_PRODUCER, CURRENT_FEATURE_PRODUCER].includes(producer),
+    [
+      PREVIOUS_FEATURE_PRODUCER,
+      CURRENT_FEATURE_PRODUCER,
+      CURRENT_CENSUS_PRODUCER,
+    ].includes(producer),
     "Unreviewed source selection",
   );
   // One bounded native Git process reads every raw blob. Frame and verify each
@@ -162,7 +174,11 @@ export function actualFeatureSource(root) {
   validateData(
     rows,
     files,
-    producer === PREVIOUS_FEATURE_PRODUCER ? DATA.previous : DATA.current,
+    producer === PREVIOUS_FEATURE_PRODUCER
+      ? DATA.previous
+      : producer === CURRENT_CENSUS_PRODUCER
+        ? { rows: 132, producer: CURRENT_CENSUS_PRODUCER }
+        : DATA.current,
   );
   // Tests execute worktree modules: bind those raw bytes to the actual HEAD too.
   return {
@@ -199,7 +215,7 @@ export function reviewedFeatureFixture(root) {
 
 async function createFixture(root) {
   const actual = actualFeatureSource(root);
-  if (actual.producer === CURRENT_FEATURE_PRODUCER) {
+  if (actual.producer !== PREVIOUS_FEATURE_PRODUCER) {
     return {
       actual,
       root,
