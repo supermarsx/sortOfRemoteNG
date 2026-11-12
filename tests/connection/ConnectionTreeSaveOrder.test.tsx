@@ -391,7 +391,9 @@ describe("connection tree order across a save", () => {
     // Existing editors populate their draft after mounting. Rename the loaded
     // connection, rather than the empty draft rendered during initialization.
     const name = await screen.findByDisplayValue("Alpha");
-    expect(screen.getByTestId("editor-hostname")).toHaveValue("root-alpha.example");
+    expect(screen.getByTestId("editor-hostname")).toHaveValue(
+      "root-alpha.example",
+    );
     fireEvent.change(name, {
       target: { value: "Zulu" },
     });
