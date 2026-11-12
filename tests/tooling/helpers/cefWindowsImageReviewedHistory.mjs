@@ -33,8 +33,15 @@ const names = {
   privateProfile:
     "native/windows-arm-full-sdk/private-qualification-profile.json",
 };
+// Git may expand only this ordinary text witness on Windows. Native -text
+// source/policy inputs must retain their exact raw bytes, including any CRLF.
+const runtimeBudgetText = (text, file) =>
+  file === "tests/tooling/windowsArmFullSdk.node-test.mjs"
+    ? text.replaceAll("\r\n", "\n")
+    : text;
 // Exact FULL-only budget prefix; runtime admission never imports this helper.
 export function withoutRuntimeBudget(text, file) {
+  text = runtimeBudgetText(text, file);
   const spec = runtimeBudgetSpecs[file];
   assert(spec, "RUNTIME_BUDGET_SCOPE");
   assert.equal(Buffer.byteLength(text), spec.bytes, "RUNTIME_BUDGET_BYTES");
@@ -54,8 +61,9 @@ export function withoutRuntimeBudget(text, file) {
 export function runtimeBudgetPrefix(text, name) {
   const file = names[name] ?? name,
     spec = runtimeBudgetSpecs[file];
-  return spec && sha(text) === spec.sha256
-    ? withoutRuntimeBudget(text, file)
+  const canonical = runtimeBudgetText(text, file);
+  return spec && sha(canonical) === spec.sha256
+    ? withoutRuntimeBudget(canonical, file)
     : text;
 }
 // Strict test-only whole current -> whole previous view. Never used by runtime admission.

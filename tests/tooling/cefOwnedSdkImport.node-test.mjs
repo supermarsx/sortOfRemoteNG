@@ -2853,3 +2853,102 @@ test("Windows ARM local consumer rejects retired image and stale current-profile
     );
   }
 });
+
+test("runtime budget history accepts only its ordinary Node witness CRLF and preserves native raw pins", async () => {
+  const { withoutRuntimeBudget, runtimeBudgetPrefix } =
+    await import("./helpers/cefWindowsImageReviewedHistory.mjs");
+  const repo = fileURLToPath(new URL("../../", import.meta.url)),
+    ordinary = "tests/tooling/windowsArmFullSdk.node-test.mjs",
+    specs = JSON.parse(
+      await readFile(
+        path.join(
+          repo,
+          "tests/fixtures/cef/windows_runtime_budget_inverse.json",
+        ),
+        "utf8",
+      ),
+    );
+  let rawNativeDenials = 0;
+  for (const file of Object.keys(specs)) {
+    const physical = await readFile(path.join(repo, file), "utf8"),
+      lf = file === ordinary ? physical.replaceAll("\r\n", "\n") : physical,
+      previous = withoutRuntimeBudget(lf, file),
+      crlf = lf.replaceAll("\n", "\r\n");
+    assert.equal(withoutRuntimeBudget(physical, file), previous);
+    assert.equal(runtimeBudgetPrefix(lf, file), previous);
+    if (file === ordinary) {
+      assert.equal(withoutRuntimeBudget(crlf, file), previous);
+      assert.equal(runtimeBudgetPrefix(crlf, file), previous);
+      for (const original of [lf, crlf]) {
+        const mutated = original.replace(specs[file].pairs[0].current, "");
+        assert.notEqual(
+          mutated,
+          original,
+          "first-pair mutation must change LF and CRLF input",
+        );
+        assert.throws(
+          () => withoutRuntimeBudget(mutated, file),
+          /RUNTIME_BUDGET_/,
+        );
+      }
+      assert.throws(
+        () => withoutRuntimeBudget(crlf.replace("\r\n", "\r"), file),
+        /RUNTIME_BUDGET_/,
+      );
+    } else {
+      assert.throws(() => withoutRuntimeBudget(crlf, file), /RUNTIME_BUDGET_/);
+      assert.equal(runtimeBudgetPrefix(crlf, file), crlf);
+      rawNativeDenials++;
+    }
+    assert.throws(
+      () => withoutRuntimeBudget(lf + "\n", file),
+      /RUNTIME_BUDGET_/,
+    );
+  }
+  assert.equal(rawNativeDenials, 6);
+  const python = String.raw`
+import importlib.util,json,sys
+from pathlib import Path
+root=Path(sys.argv[1]);file=root/'tests/fixtures/cef/windows_image_refresh_inverse.py'
+spec=importlib.util.spec_from_file_location('budget_history_eol_test',file)
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ordinary='tests/tooling/windowsArmFullSdk.node-test.mjs';denials=0
+for file in module.RUNTIME_BUDGET_SPECS:
+ raw=(root/file).read_bytes();lf=raw.replace(b'\r\n',b'\n') if file==ordinary else raw
+ previous=module.runtime_budget_inverse(lf,file);crlf=lf.replace(b'\n',b'\r\n')
+ assert module.runtime_budget_inverse(raw,file)==previous
+ assert module.runtime_budget_prefix(lf,file)==previous
+ if file==ordinary:
+  assert module.runtime_budget_inverse(crlf,file)==previous
+  assert module.runtime_budget_prefix(crlf,file)==previous
+  for original in (lf,crlf):
+   mutated=original.replace(module.RUNTIME_BUDGET_SPECS[file]['pairs'][0]['current'].encode(),b'',1)
+   assert mutated!=original, 'first-pair mutation did not change input'
+   try:module.runtime_budget_inverse(mutated,file)
+   except AssertionError:pass
+   else:raise AssertionError('changed first-pair input admitted')
+ else:
+  try:module.runtime_budget_inverse(crlf,file)
+  except AssertionError:denials+=1
+  else:raise AssertionError('native or policy CRLF admitted')
+  assert module.runtime_budget_prefix(crlf,file)==crlf
+ try:module.runtime_budget_inverse(lf+b'\n',file)
+ except AssertionError:pass
+ else:raise AssertionError('extra data admitted')
+print(json.dumps(dict(files=len(module.RUNTIME_BUDGET_SPECS),rawNativeDenials=denials)))`;
+  const result = spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    ["-I", "-B", "-c", python, repo],
+    {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 30000,
+      maxBuffer: 65536,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    files: 7,
+    rawNativeDenials: 6,
+  });
+});
