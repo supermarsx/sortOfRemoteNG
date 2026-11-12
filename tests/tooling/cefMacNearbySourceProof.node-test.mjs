@@ -182,7 +182,7 @@ test("portable private creator, real writer, actual snapshot projection and deni
     { encoding: "utf8", timeout: 60000, maxBuffer: 65536, windowsHide: true },
   );
   assert.equal(value.status, 0, value.stdout + value.stderr);
-  assert.match(value.stderr, /Ran 12 tests/);
+  assert.match(value.stderr, /Ran 13 tests/);
   assert.match(value.stderr, /\bOK\b/);
 });
 test("actual carrier passes one joined stdlib leaf the original deadline and exact pin/argv", async () => {

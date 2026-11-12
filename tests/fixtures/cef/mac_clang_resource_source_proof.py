@@ -149,9 +149,24 @@ def roundtrip(tree,module,budget,intel):
     selected='mac-intel'if intel else'mac-arm'
     def codec(mode):
         budget.check()
-        with module.source_io_scope(mode):
-            value=module._source_metadata_owned_codec(mode,root,sidecar,identity,work,budget,selected)
+        cache_writer=module.source_mac_stat_cache_write;cache_written=False
+        def observed_cache_write(cache_root,sidecar_sha,cache_identity,digests,guards):
+            nonlocal cache_written
+            result=cache_writer(cache_root,sidecar_sha,cache_identity,digests,guards)
+            if result:
+                need(mode in ('source-record','source-apply')and cache_root==root and cache_identity==identity)
+                cache_written=True
+            return result
+        module.source_mac_stat_cache_write=observed_cache_write
+        try:
+            with module.source_io_scope(mode):
+                value=module._source_metadata_owned_codec(mode,root,sidecar,identity,work,budget,selected)
+        finally:module.source_mac_stat_cache_write=cache_writer
         need(value['complete']and not module.SOURCE_CLOSE_FAILURE and not module.SOURCE_JOIN_FAILURE)
+        if cache_written:
+            # Receipt comes from the actual completed writer, never an existing
+            # filename. Failed/verify calls cannot adopt an unrelated member.
+            tree.adopt_file(root/'acquisition-logs'/module.SOURCE_MAC_STAT_CACHE_NAME,128*1024)
         return value
     def context():
         receipt=module._MAC_CLANG_PROOF_SCOPE.get()
@@ -176,7 +191,7 @@ def roundtrip(tree,module,budget,intel):
         tree.relocate(root,root.with_name('source-retired'))
         work,root,sidecar,identity=fixture(tree,module,budget,intel)
         for relative,info in old.items():
-            if relative==sidecar.relative_to(root):continue
+            if relative in (sidecar.relative_to(root),Path('acquisition-logs')/module.SOURCE_MAC_STAT_CACHE_NAME):continue
             current=tree.check(root/relative);need((info.st_dev,info.st_ino)!=(current.st_dev,current.st_ino))
         need(base.owner(os.fstat(old_fd))==base.owner(old[Path('.')]))
         tree.file(str(sidecar.relative_to(tree.root)),raw,maximum=128*1024)

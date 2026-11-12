@@ -227,6 +227,34 @@ class PrivateNearby(unittest.TestCase):
                         self.assertEqual(set(result['negativeCases']),set(proof.NEGATIVES))
                 finally:self.assertTrue(tree.cleanup())
             self.assertNotIn(receipt,m._MAC_NEARBY_PROOF_RECEIPTS)
+    @unittest.skipUnless(os.name=='posix','genuine codec timestamp checks require POSIX')
+    def test_verify_no_write_fastpath_rejects_timestamp_drift_without_mutating_tree(self):
+        for intel in (False, True):
+            self.output=self.parent/('cef-mac-nearby-owned-proof-'+('22345678'if intel else'12345678')+'-1234-4123-8123-123456789abc')
+            with self.subTest(intel=intel),self.host(),ExitStack()as stack:
+                if not hasattr(self.parent.stat(),'st_birthtime'):
+                    stack.enter_context(patch.object(m,'source_birth_identity',return_value=('darwin-birthtime-float-hex','0x1.0p+30')))
+                budget=m.Budget(15)
+                with m._mac_nearby_owned_proof_tree(self.output,budget)as receipt:
+                    tree=proof.NearbyTree(m,receipt)
+                    try:
+                        work,root,sidecar,identity=proof.fixture(tree,m,budget,intel)
+                        def codec(mode):
+                            with m.source_io_scope(mode):
+                                return m._source_metadata_owned_codec(mode,root,sidecar,identity,work,budget,'mac-intel'if intel else'mac-arm')
+                        codec('source-record');tree.adopt_file(sidecar,128*1024)
+                        self.assertTrue(codec('source-verify')['complete'])
+                        file=root/'src/input.cc';before=tree.check(file)
+                        os.utime(file,ns=(before.st_atime_ns,before.st_mtime_ns+2_000_000_000))
+                        changed=file.stat().st_mtime_ns
+                        with patch.object(m.os,'utime',side_effect=AssertionError('verify must never write')):
+                            with self.assertRaisesRegex(m.CheckpointError,'source-metadata-postcheck'):
+                                codec('source-verify')
+                        self.assertEqual(file.stat().st_mtime_ns,changed)
+                        self.assertTrue(codec('source-apply')['complete'])
+                        self.assertEqual(file.stat().st_mtime_ns,before.st_mtime_ns)
+                        self.assertTrue(codec('source-verify')['complete'])
+                    finally:self.assertTrue(tree.cleanup())
     def test_proof_preflight_denies_other_host_or_branch_before_interpreter_or_output(self):
         with self.host(),patch.object(proof.base,'verify_python',side_effect=AssertionError('no interpreter read')):
             for key in('GITHUB_REF','ImageVersion','GITHUB_WORKFLOW_SHA','GITHUB_REPOSITORY'):

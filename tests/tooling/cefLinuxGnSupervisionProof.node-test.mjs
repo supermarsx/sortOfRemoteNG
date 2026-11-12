@@ -7,6 +7,7 @@ import { writeFileSync } from "node:fs";
 import vm from "node:vm";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withoutReviewedPreparationChanges } from "./helpers/cefRuntimeReviewedHistory.mjs";
 import {
   authority,
   originalEnd,
@@ -38,12 +39,14 @@ const facts = () => ({
   GITHUB_RUN_ATTEMPT: "1",
 });
 
-const runtime = (
-  await fs.readFile(
-    new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
-    "utf8",
-  )
-).replaceAll("\r\n", "\n");
+const runtime = withoutReviewedPreparationChanges(
+  (
+    await fs.readFile(
+      new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n"),
+);
 const fixture = (
   await fs.readFile(
     new URL("../fixtures/cef/linux_gn_supervision_proof.mjs", import.meta.url),

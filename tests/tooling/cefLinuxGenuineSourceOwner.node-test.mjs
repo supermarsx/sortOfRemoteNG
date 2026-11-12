@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 import path from "node:path";
+import { withoutReviewedPreparationChanges } from "./helpers/cefRuntimeReviewedHistory.mjs";
 import {
   revalidateLinuxSourceOwner,
   assertLinuxSourceOwnerReceipt,
@@ -19,7 +20,20 @@ import {
 // Actual source bodies/callsite in an isolated realm with a modeled command
 // runner. No vendor tool, native GN, GitHub or production registry is exercised.
 const url = new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url);
-const source = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
+const currentSource = (await readFile(url, "utf8")).replaceAll("\r\n", "\n");
+const source = withoutReviewedPreparationChanges(currentSource);
+test("reviewed preparation history restores the complete runtime and rejects altered source", () => {
+  for (const changed of [
+    currentSource + "\n",
+    currentSource.replace("? 210", "? 211"),
+    currentSource.replace(
+      "acceptedImageVersions.length > 4",
+      "acceptedImageVersions.length > 5",
+    ),
+    currentSource.replace("state.active = false;", "state.active = true;"),
+  ])
+    assert.throws(() => withoutReviewedPreparationChanges(changed));
+});
 assert.equal(Buffer.byteLength(source), 77173);
 assert.equal(
   createHash("sha256").update(source).digest("hex"),
