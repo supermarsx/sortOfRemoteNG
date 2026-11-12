@@ -11,6 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import type { OriginBrowserIdentity } from "../../types/protocols/originBrowser";
 import type { OriginCredentialInputTransport } from "../../types/protocols/originCredentialTyping";
+import { OriginBrowserPresentationPending } from "../../utils/protocol/originBrowserPresentation";
 import {
   CredentialFailure,
   settleWithin,
@@ -343,19 +344,37 @@ export function useOriginCredentialTyping(
         wake.current = null;
       }
       interactive();
-      // React may be interactive before the native presentation ACK arrives.
-      await until(
-        latest.current.runInteractive(
-          identity!,
-          viewId,
-          interactive,
-          async () => {
-            interactive();
-          },
-        ),
-        signal,
-        deadline - Date.now(),
-      );
+      // React can become interactive before overlay removal publishes the new
+      // native presentation. Wait only for that pre-action state, retaining the
+      // original selection (including A-B-A) and the original focus deadline.
+      let assertSelection: (() => void) | undefined;
+      while (true) {
+        interactive();
+        assertSelection?.();
+        if (Date.now() >= deadline)
+          throw new CredentialFailure("typing-timed-out");
+        setRemaining(Math.ceil((deadline - Date.now()) / 1000));
+        try {
+          await until(
+            latest.current.runInteractive(
+              identity!,
+              viewId,
+              interactive,
+              async () => {
+                interactive();
+              },
+            ),
+            signal,
+            deadline - Date.now(),
+          );
+          break;
+        } catch (error) {
+          if (!(error instanceof OriginBrowserPresentationPending)) throw error;
+          assertSelection ??= error.assertCurrent;
+          assertSelection();
+          await pause(Math.min(pollMs, Math.max(0, deadline - Date.now())));
+        }
+      }
       while (true) {
         interactive();
         if (Date.now() >= deadline)

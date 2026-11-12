@@ -2,6 +2,8 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useOriginSelectedDownloads } from "../../src/hooks/protocol/useOriginSelectedDownloads";
 import { useNativeOriginPopupBridge } from "../../src/hooks/protocol/useNativeOriginPopupBridge";
+import { useOriginCredentialTyping } from "../../src/hooks/security/useOriginCredentialTyping";
+import type { OriginCredentialInputTransport } from "../../src/types/protocols/originCredentialTyping";
 import { readPopupInventory } from "../../src/types/protocols/originBrowserPopups";
 
 const mocked = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
@@ -22,6 +24,225 @@ beforeEach(() => {
   mocked.listen.mockResolvedValue(() => {});
 });
 afterEach(() => vi.useRealTimers());
+
+function typingBridge(transport: OriginCredentialInputTransport) {
+  return renderHook(() => {
+    const bridge = useNativeOriginPopupBridge();
+    const typing = useOriginCredentialTyping({
+      identity: source,
+      sessionId: "tab",
+      viewId: null,
+      documentKey: "page",
+      enabled: true,
+      interactive: true,
+      open: true,
+      assertOwner: () => {},
+      runInteractive: bridge.runInteractive,
+      transport,
+    });
+    return { bridge, typing };
+  });
+}
+
+describe("credential typing presentation handoff", () => {
+  it.each(["blocked", "superseded-ready", "superseded-rejected"])(
+    "waits for popup removal and its native ACK on repeated Type attempts (%s)",
+    async (handoff) => {
+      vi.useFakeTimers();
+      let acknowledge!: () => void;
+      let refuse!: () => void;
+      mocked.invoke.mockImplementation((_name, { request }) =>
+        request.action?.kind === "presentation" && !request.action.inputBlocked
+          ? new Promise<void>((resolve, reject) => {
+              acknowledge = resolve;
+              refuse = () => reject(new Error("obsolete revision"));
+            })
+          : Promise.resolve({}),
+      );
+      const transport = vi.fn<OriginCredentialInputTransport>(
+        async (request) => ({
+          status:
+            request.action.kind === "capture"
+              ? "captured"
+              : request.action.kind === "type"
+                ? "complete"
+                : "cancelled",
+          captureId: "current-capture",
+        }),
+      );
+      const { result, unmount } = typingBridge(transport);
+      act(() => result.current.bridge.bind(source));
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const previous = result.current.bridge.browserTransport.control({
+          identity: source,
+          action: {
+            kind: "presentation",
+            revision: attempt * 2 + 1,
+            visible: true,
+            inputBlocked: handoff === "blocked",
+            bounds: { x: 0, y: 0, width: 500, height: 400 },
+            occlusions: [{ x: 0, y: 0, width: 50, height: 50 }],
+          },
+        });
+        void previous.catch(() => {});
+        const previousAck =
+          handoff === "superseded-rejected" ? refuse : acknowledge;
+        const target = result.current.typing.target!;
+        const disclose = vi.fn(() => target.type("synthetic-value", () => {}));
+        let pending!: Promise<void>;
+        await act(async () => {
+          pending = result.current.typing.run(disclose);
+        });
+        expect(result.current.typing.phase).toBe("waiting");
+        expect(disclose).not.toHaveBeenCalled();
+        expect(
+          transport.mock.calls.filter(([r]) => r.action.kind === "capture"),
+        ).toHaveLength(attempt);
+        const presented = result.current.bridge.browserTransport.control({
+          identity: source,
+          action: {
+            kind: "presentation",
+            revision: attempt * 2 + 2,
+            visible: true,
+            inputBlocked: false,
+            bounds: { x: 0, y: 0, width: 500, height: 400 },
+            occlusions: [],
+          },
+        });
+        if (handoff !== "blocked") previousAck();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(300);
+        });
+        expect(disclose).not.toHaveBeenCalled();
+        expect(
+          mocked.invoke.mock.calls.filter(
+            ([, { request }]) => request.action?.action?.kind === "focus",
+          ),
+        ).toHaveLength(2 * attempt);
+        await act(async () => {
+          acknowledge();
+          await presented;
+          await pending;
+        });
+        expect(disclose).toHaveBeenCalledOnce();
+        expect(result.current.typing.finished).toBe(attempt + 1);
+        expect(result.current.typing.notice).toBe("");
+      }
+      expect(
+        transport.mock.calls.filter(([r]) => r.action.kind === "type"),
+      ).toHaveLength(2);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(["timeout", "cancel", "selection-roundtrip"])(
+    "ends a pending handoff on %s without capturing a field",
+    async (reason) => {
+      vi.useFakeTimers();
+      const transport = vi.fn<OriginCredentialInputTransport>();
+      const { result, unmount } = typingBridge(transport);
+      act(() => result.current.bridge.bind(source));
+      await result.current.bridge.browserTransport.control({
+        identity: source,
+        action: {
+          kind: "presentation",
+          revision: 1,
+          visible: true,
+          inputBlocked: true,
+          bounds: { x: 0, y: 0, width: 500, height: 400 },
+        },
+      });
+      const disclose = vi.fn(async () => {});
+      let pending!: Promise<void>;
+      await act(async () => {
+        pending = result.current.typing.run(disclose);
+      });
+      if (reason === "cancel") act(() => result.current.typing.cancel());
+      if (reason === "selection-roundtrip")
+        await act(async () => {
+          await result.current.bridge.activate(source, {
+            sourceIdentity: source,
+            viewId: "other",
+          });
+          await result.current.bridge.activate(source, null);
+        });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(reason === "timeout" ? 30000 : 300);
+        await pending;
+      });
+      expect(result.current.typing.phase).toBe("idle");
+      if (reason === "timeout")
+        expect(result.current.typing.notice).toContain("Typing timed out");
+      expect(disclose).not.toHaveBeenCalled();
+      expect(transport).not.toHaveBeenCalled();
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(["unchanged-ack-refusal", "replacement-after-focus"])(
+    "does not retry %s",
+    async (failure) => {
+      vi.useFakeTimers();
+      const transport = vi.fn<OriginCredentialInputTransport>();
+      const { result, unmount } = typingBridge(transport);
+      act(() => result.current.bridge.bind(source));
+      let releaseFocus!: () => void;
+      mocked.invoke.mockImplementation((_name, { request }) => {
+        if (
+          failure === "unchanged-ack-refusal" &&
+          request.action?.kind === "presentation"
+        )
+          return Promise.reject(new Error("synthetic native refusal"));
+        if (request.action?.action?.kind === "focus")
+          return new Promise<void>((resolve) => {
+            releaseFocus = resolve;
+          });
+        return Promise.resolve({});
+      });
+      const presentation = {
+        kind: "presentation" as const,
+        revision: 1,
+        visible: true,
+        inputBlocked: false,
+        bounds: { x: 0, y: 0, width: 500, height: 400 },
+      };
+      await result.current.bridge.browserTransport
+        .control({ identity: source, action: presentation })
+        .catch(() => {});
+      const disclose = vi.fn(async () => {});
+      let pending!: Promise<void>;
+      await act(async () => {
+        pending = result.current.typing.run(disclose);
+      });
+      if (failure === "replacement-after-focus") {
+        expect(releaseFocus).toBeTypeOf("function");
+        await result.current.bridge.browserTransport.control({
+          identity: source,
+          action: { ...presentation, revision: 2 },
+        });
+        await act(async () => {
+          releaseFocus();
+        });
+      }
+      await act(async () => {
+        await pending;
+        await vi.advanceTimersByTimeAsync(900);
+      });
+      expect(result.current.typing.phase).toBe("idle");
+      expect(disclose).not.toHaveBeenCalled();
+      expect(transport).not.toHaveBeenCalled();
+      expect(
+        mocked.invoke.mock.calls.filter(
+          ([, { request }]) => request.action?.action?.kind === "focus",
+        ),
+      ).toHaveLength(failure === "replacement-after-focus" ? 1 : 0);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+});
 
 describe("selected download reconciliation", () => {
   it("shows blocked download notices only for the current exact owner and unsubscribes stale attempts", async () => {

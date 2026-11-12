@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { tauriOriginBrowserTransport } from "./useOriginBrowser";
+import { OriginBrowserPresentationPending } from "../../utils/protocol/originBrowserPresentation";
 import type {
   OriginBrowserIdentity,
   OriginBrowserAction,
@@ -169,14 +170,29 @@ export function useNativeOriginPopupBridge() {
     ) => {
       const selected = current.current;
       const shown = presentation;
-      const check = () => {
+      const checkSelection = () => {
         assertCurrent();
         if (
           document.hidden ||
           current.current !== selected ||
           selected.pending ||
           !samePopupSource(selected.source, source) ||
-          selected.viewId !== viewId ||
+          selected.viewId !== viewId
+        )
+          throw new Error("The selected website presentation changed.");
+      };
+      checkSelection();
+      if (
+        !shown ||
+        !samePopupSource(shown.source, source) ||
+        !shown.action.visible ||
+        shown.action.inputBlocked ||
+        !shown.action.bounds
+      )
+        throw new OriginBrowserPresentationPending(checkSelection);
+      const check = () => {
+        checkSelection();
+        if (
           !shown ||
           presentation !== shown ||
           !samePopupSource(shown.source, source) ||
@@ -187,7 +203,19 @@ export function useNativeOriginPopupBridge() {
           throw new Error("The selected website presentation changed.");
       };
       check();
-      await shown!.acknowledged;
+      try {
+        await shown.acknowledged;
+      } catch (error) {
+        checkSelection();
+        if (presentation !== shown)
+          throw new OriginBrowserPresentationPending(checkSelection);
+        throw error;
+      }
+      checkSelection();
+      // Popup/toast clipping can publish a newer ready revision while the old
+      // ACK is in flight. No focus/input has started: wait for the newer ACK.
+      if (presentation !== shown)
+        throw new OriginBrowserPresentationPending(checkSelection);
       check();
       const revision = shown!.action.revision;
       await popupRequest(source, {
