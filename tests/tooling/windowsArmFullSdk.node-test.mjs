@@ -16832,3 +16832,53 @@ test("FULL engine worker profile object satisfies the reused source environment 
     /p\.privatePolicy = privatePolicy;\s*p\.privateSelectedSha256 = selected\.profileSha256;/,
   );
 });
+
+test("FULL-only runtime inventory budget retains exact whole history and unchanged source identity", async () => {
+  const { withoutRuntimeBudget } =
+    await import("./helpers/cefWindowsImageReviewedHistory.mjs");
+  const specs = JSON.parse(
+    await read("tests/fixtures/cef/windows_runtime_budget_inverse.json"),
+  );
+  for (const [file, spec] of Object.entries(specs)) {
+    const current = await read(file),
+      previous = withoutRuntimeBudget(current, file);
+    assert.equal(Buffer.byteLength(previous), spec.beforeBytes);
+    assert.equal(sha(previous), spec.beforeSha256);
+    for (const changed of [
+      current + "\n",
+      current.replace(spec.pairs[0].current, ""),
+      current + spec.pairs[0].current,
+    ])
+      assert.throws(
+        () => withoutRuntimeBudget(changed, file),
+        /RUNTIME_BUDGET_/,
+      );
+  }
+  const full = JSON.parse(await read(prefix + "full-sdk-source-profile.json")),
+    previous = JSON.parse(
+      withoutRuntimeBudget(
+        await read(prefix + "full-sdk-source-profile.json"),
+        prefix + "full-sdk-source-profile.json",
+      ),
+    ),
+    base = JSON.parse(await read(prefix + "profile.json"));
+  assert.deepEqual(full.runtimeClosure, {
+    installedSeconds: 1800,
+    jobSeconds: 1920,
+  });
+  assert.deepEqual(full.limits, previous.limits);
+  assert.equal(base.limits.installedSeconds, 600);
+  assert.equal(
+    full.images["20261103.298.1"].profileSha256,
+    "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
+  );
+  assert.equal(
+    sha(
+      (await read("scripts/lib/cef-windows-arm-sdk-origin.mjs")).replaceAll(
+        "\r\n",
+        "\n",
+      ),
+    ),
+    "6dc79f277efc50c6105aa737bc348aec04a1c9aa45854630462606664e83dda5",
+  );
+});

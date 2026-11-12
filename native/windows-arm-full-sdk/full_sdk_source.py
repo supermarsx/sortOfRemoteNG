@@ -19,7 +19,7 @@ from pathlib import Path
 MODE = 'full-sdk-source-gn'
 WORKFLOW = '.github/workflows/windows-arm-full-sdk.yml'
 POLICY = 'native/windows-arm-full-sdk/sdk-origin-review.json'
-PROFILE_SHA256 = '509e00804ed0aaca315b2a8b0c61ef47f0412cf0d13925506149b141acd633ec'
+PROFILE_SHA256 = '7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0'
 FULL_SOURCE_ADMITTED = False
 SOURCE_QUALIFICATION_ALLOWED = True
 HEX = re.compile(r'[a-f0-9]{64}')
@@ -50,6 +50,10 @@ def parse_profile(raw):
          p['fullModeBodyImplemented'] is True and p['sourceSessionIssuerImplemented'] is True and
          p['sourceQualificationAllowed'] is True and
          all(p[key] is False for key in FALSE_FIELDS), 'PROFILE_CLOSED')
+    runtime = p.get('runtimeClosure')
+    need(type(runtime) is dict and set(runtime) == {'installedSeconds', 'jobSeconds'} and
+         type(runtime['installedSeconds']) is int and runtime['installedSeconds'] == 1800 and
+         type(runtime['jobSeconds']) is int and runtime['jobSeconds'] == 1920, 'RUNTIME_LIMITS')
     return p
 
 
@@ -542,6 +546,10 @@ def _load_source_entry(root, context_sha, entry_role):
          recipe['sourceGn']['limits']['hooksSeconds'] == 1800, 'SOURCE_RECIPE')
     p = copy.deepcopy(base)
     p.update(image=c['image'], sourceGn=copy.deepcopy(recipe['sourceGn']), sourcePaths=[row['path'] for row in rows])
+    # Full-only data budgets come from the exact held/code-pinned profile, before
+    # the private profile identity and semantic snapshot are registered.
+    p['runtimeClosure'] = copy.deepcopy(full['runtimeClosure'])
+    p['limits']['installedSeconds'] = full['runtimeClosure']['installedSeconds']
     for pin in [*p['sourceData'], *p['sourceGn']['sourceData'], *p['sourceGn']['helpers']]:
         data.held(here.parents[1] / pin['path'], clock, pin['bytes'], pin['sha256'], maximum=2 * 1024**2)
         held.append((here.parents[1] / pin['path'], pin))
@@ -635,7 +643,7 @@ def _run_operation(state):
             remaining = min(clock.remaining(), phase_end - time.monotonic(), wall_phase_end - time.time()) if role != _NODE else clock.remaining()
             allotted = {'sdk-data': 1170, 'llvm-data': 300, 'rust-archive': 1200,
                          'gn-archive': 180, 'siso-archive': 180, 'materialize': 600,
-                         'runtime-closure': 720}.get(role, 14400)
+                         'runtime-closure': p['runtimeClosure']['jobSeconds']}.get(role, 14400)
             seconds = min(allotted, remaining - 150)
             need(seconds > 0, 'PHASE_DEADLINE')
             receipt = job.run_job(_worker_argv(role, root, p), str(root), root / 'jobs' / role,

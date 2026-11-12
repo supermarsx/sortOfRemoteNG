@@ -6637,7 +6637,7 @@ async function fullSourceStage(root, budget, stage, maximumSeconds, action) {
 
 const FULL_SOURCE_BODY_ADMITTED = true; // Reviewed source qualification attempt; no engine grant.
 const FULL_SOURCE_PROFILE_SHA256 =
-  "509e00804ed0aaca315b2a8b0c61ef47f0412cf0d13925506149b141acd633ec";
+  "7d54f695876d59ce0fd8922a8463a6426b0209a1aad2b32c4dae480b2b043bc0";
 const fullSourceProfiles = new WeakMap();
 // The reviewed generated setup is bootstrap cache, covered by c101 .cipd_client*.
 // No ignore file or clean-check exception is created or changed.

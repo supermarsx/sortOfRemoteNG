@@ -383,6 +383,7 @@ def isolated_source_model(context, profile):
     c.update(wallWholeEnd=21700, monotonicWholeEnd=21700, wallWorkEnd=7300,
              monotonicWorkEnd=7300, wallAcquisitionEnd=4600, monotonicAcquisitionEnd=4600)
     p = {'python': copy.deepcopy(profile['python']), 'target': profile['target'],
+         'runtimeClosure': copy.deepcopy(profile['runtimeClosure']),
          'sourceGn': {'sourceId': c['sourceId'], 'hostTools': {'node': profile['node']},
                       'executionPolicy': dict(hostLoaderClosureApproved=True,
                                               gitConfigurationApproved=True,
@@ -1819,6 +1820,144 @@ class Interfaces(unittest.TestCase):
                 self.assertFalse(root.is_symlink())
                 self.assertEqual(root.resolve(strict=True), root)
                 shutil.rmtree(root)
+
+
+
+class FullRuntimeBudget(unittest.TestCase):
+    """Actual reader/clock bodies on bounded files; no native Job or SDK claim."""
+    def setUp(self):
+        self.raw = (HERE / 'full-sdk-source-profile.json').read_bytes()
+        self.full = subject.parse_profile(self.raw)
+        self.base = json.loads((HERE / 'profile.json').read_bytes())
+
+    def bound_profile(self, before=False):
+        raw=(HERE / 'full_sdk_source.py').read_bytes()
+        full=self.full
+        if before:
+            raw=_IMAGE_HISTORY.runtime_budget_inverse(raw,'native/windows-arm-full-sdk/full_sdk_source.py')
+            full=json.loads(_IMAGE_HISTORY.runtime_budget_inverse(self.raw,'native/windows-arm-full-sdk/full-sdk-source-profile.json'))
+        loader=next(n for n in ast.parse(raw).body if isinstance(n,ast.FunctionDef) and n.name=='_load_source_entry')
+        begin=next(i for i,n in enumerate(loader.body) if isinstance(n,ast.Assign) and ast.unparse(n)=='p = copy.deepcopy(base)')
+        end=next(i for i in range(begin+1,len(loader.body)) if isinstance(loader.body[i],ast.For))
+        # Execute the actual contiguous entry assembly, before native state capture.
+        selected=full['images']['20261103.298.1']
+        recipe=json.loads((HERE / selected['profile']).read_bytes())
+        ns=dict(copy=copy,base=self.base,full=full,c={'image':'20261103.298.1'},recipe=recipe,rows=[])
+        exec(compile(ast.Module(body=loader.body[begin:end],type_ignores=[]),'<actual-full-entry-profile-assembly>','exec'),ns)
+        return ns['p']
+
+    def test_actual_entry_binds_only_exact_full_runtime_limits_before_semantic_capture(self):
+        original=copy.deepcopy(self.base)
+        current=self.bound_profile();old=self.bound_profile(True)
+        self.assertEqual(old['limits']['installedSeconds'],600)
+        self.assertEqual(current['limits']['installedSeconds'],1800)
+        self.assertEqual(current['runtimeClosure'],dict(installedSeconds=1800,jobSeconds=1920))
+        self.assertEqual(self.base,original)
+        wanted=copy.deepcopy(old);wanted['limits']['installedSeconds']=1800
+        wanted['runtimeClosure']=dict(installedSeconds=1800,jobSeconds=1920)
+        self.assertEqual(current,wanted)
+        tree=ast.parse((HERE / 'full_sdk_source.py').read_bytes())
+        loader=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_load_source_entry')
+        text=ast.unparse(loader)
+        self.assertLess(text.index("p['limits']['installedSeconds'] = full['runtimeClosure']['installedSeconds']"),text.index('profileSemantic=_semantic(p)'))
+        # A structurally forged profile cannot change these exact typed limits,
+        # even if the byte-pin gate is isolated for this negative semantic check.
+        for field,value in [('installedSeconds',True),('installedSeconds',1801),('jobSeconds',1921),('jobSeconds',1920.0)]:
+            bad=copy.deepcopy(self.full);bad['runtimeClosure'][field]=value;raw=json.dumps(bad).encode()
+            with patch.object(subject,'PROFILE_SHA256',hashlib.sha256(raw).hexdigest()):
+                with self.assertRaisesRegex(subject.Denied,'RUNTIME_LIMITS'):subject.parse_profile(raw)
+        raw=json.dumps({**self.full,'runtimeClosure':{**self.full['runtimeClosure'],'extra':1}}).encode()
+        with patch.object(subject,'PROFILE_SHA256',hashlib.sha256(raw).hexdigest()):
+            with self.assertRaisesRegex(subject.Denied,'RUNTIME_LIMITS'):subject.parse_profile(raw)
+
+    def test_actual_complete_eight_root_reader_old600_red_new1800_green_and_original_clips(self):
+        import acquire as data
+        import environment
+        import extract
+        roots=('include','atlmfc/include','lib/x64','lib/arm64','atlmfc/lib/x64','atlmfc/lib/arm64','bin/Hostx64/x64','bin/Hostx64/arm64')
+        with tempfile.TemporaryDirectory(prefix='sorng-runtime-budget-') as tmp:
+            root=Path(tmp).resolve()
+            names=set(environment.INSTALLED14.values()) | {name+'/extra.bin' for name in roots}
+            for name in names:
+                file=root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(name.encode())
+            pins=[dict(role=role,bytes=len(name.encode()),sha256=hashlib.sha256(name.encode()).hexdigest())for role,name in environment.INSTALLED14.items()]
+            # Model elapsed hashing only. The real path/FD, complete root walk,
+            # dual digests, identity, bounds and postchecks execute unchanged.
+            for before,parent_wall,parent_mono,expected in [(True,5000,5000,False),(False,5000,5000,True),(False,600,5000,False),(False,5000,600,False)]:
+                profile=self.bound_profile(before);now=[0.0];events=[]
+                limit=profile['limits']['installedSeconds']
+                worker=next(n for n in ast.parse((HERE/'producer.py').read_bytes()).body if isinstance(n,ast.FunctionDef)and n.name=='data_worker')
+                assignment=next(n for n in ast.walk(worker) if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='inventory_clock' for t in n.targets))
+                def original_clock(wall_end,mono_end):
+                    return data.Clock(wall_end,mono_end,wall=lambda:now[0],mono=lambda:now[0])
+                scope=dict(data=types.SimpleNamespace(Clock=original_clock),clock=types.SimpleNamespace(wall_end=parent_wall,mono_end=parent_mono),
+                           time=types.SimpleNamespace(time=lambda:now[0],monotonic=lambda:now[0]),p=profile)
+                exec(compile(ast.Module(body=[assignment],type_ignores=[]),'<actual-producer-inventory-clock>','exec'),scope)
+                clock=scope['inventory_clock']
+                self.assertEqual((clock.wall_end,clock.mono_end),(min(parent_wall,limit),min(parent_mono,limit)))
+                def progress(phase,**values):
+                    events.append((phase,values.get('root')))
+                    if phase=='hash':now[0]+=60
+                with patch.object(time,'monotonic',lambda:now[0]):
+                    if not expected:
+                        with self.assertRaisesRegex(data.Denied,'ACQ_DEADLINE'):
+                            environment.inventory_installed_roots(root,roots,profile['limits'],clock,progress)
+                    else:
+                        result=environment.inventory_installed_roots(root,roots,profile['limits'],clock,progress)
+                        self.assertEqual(len(result['files']),len(names))
+                        self.assertEqual(result['roots'],list(roots))
+                        self.assertEqual(result['bytes'],sum(len(name.encode())for name in names))
+                        self.assertEqual([ordinal for phase,ordinal in events if phase=='root-complete'],list(range(8)))
+                        self.assertTrue(environment.validate_installed_inventory({'installedMsvc14':pins},result))
+                        altered=copy.deepcopy(result);altered['files'][0]['sha256']='0'*64
+                        # Every required tool pin stays mandatory after full inventory.
+                        required=next(r for r in altered['files']if r['path']==next(iter(environment.INSTALLED14.values())))
+                        required['sha256']='0'*64
+                        with self.assertRaisesRegex(data.Denied,'FULL_INSTALLED_PIN'):
+                            environment.validate_installed_inventory({'installedMsvc14':pins},altered)
+                        self.assertGreater(now[0],600);self.assertLess(now[0],1800)
+
+    def test_actual_fixed_runtime_job_allotment_stays_inside_original_parent_ends(self):
+        setup=Interfaces();setup.setUp()
+        for acquisition,source,expected in [(7200,14400,1920),(1000,14400,850),(7200,700,550)]:
+            model,state,memory=isolated_source_model(setup.context,self.full)
+            c=state['context'];c.update(wallWholeEnd=21700,monotonicWholeEnd=21700,
+                wallWorkEnd=100+source,monotonicWorkEnd=100+source,
+                wallAcquisitionEnd=100+acquisition,monotonicAcquisitionEnd=100+acquisition)
+            raw=json.dumps(c).encode();state.update(contextRaw=raw,contextSha=hashlib.sha256(raw).hexdigest(),contextSemantic=model._semantic(c));memory['context']=raw
+            state['clock']=model._OriginalClock(c);calls=[]
+            def kernel(vector,cwd,output,seconds,**kwargs):
+                role=vector[4]if len(vector)==8 else vector[5];calls.append((role,seconds))
+                return dict(success=role!='--full-sdk-source-gn',cleanupVerified=True,rootExit=0 if role!='--full-sdk-source-gn' else 1,activeAtEnd=0)
+            operation=next(n for n in ast.parse((HERE/'full_sdk_source.py').read_bytes()).body if isinstance(n,ast.FunctionDef)and n.name=='_run_operation')
+            operation.body=[n for n in operation.body if not isinstance(n,ast.Import)]
+            model.job=types.SimpleNamespace(run_job=kernel)
+            exec(compile(ast.Module(body=[operation],type_ignores=[]),'<actual-full-operation-modeled-kernel>','exec'),model.__dict__)
+            with self.assertRaisesRegex(model.Denied,'JOB_FAILED'):model._run_operation(state)
+            self.assertEqual(dict(calls)['runtime-closure'],expected)
+            self.assertTrue(state['closed']);self.assertFalse(memory['reports'][-1][1]['sdkBuilt'])
+        # The separate legacy producer operation still has its original720s role.
+        self.assertIn("'runtime-closure':720",ast.unparse(ast.parse((HERE/'producer.py').read_bytes())).replace(' ',''))
+
+    def test_runtime_overlay_copy_or_late_mutation_never_rebinds_private_owner(self):
+        setup=Interfaces();setup.setUp()
+        for copy_profile in (True,False):
+            model,state,_=isolated_source_model(setup.context,self.full)
+            if copy_profile:
+                with self.assertRaisesRegex(model.Denied,'PROFILE_IDENTITY'):model._state(profile=copy.deepcopy(state['profile']))
+            else:
+                state['profile']['runtimeClosure']['installedSeconds']=1801
+                with self.assertRaisesRegex(model.Denied,'STATE_MUTATED'):model._state(profile=state['profile'])
+            self.assertTrue(state['closed']);self.assertFalse(model._ACTIVE)
+
+    def test_runtime_budget_inverse_is_whole_and_tamper_or_duplicate_denies(self):
+        for file in _IMAGE_HISTORY.RUNTIME_BUDGET_SPECS:
+            current=(ROOT/file).read_bytes().replace(b'\r\n',b'\n')
+            previous=_IMAGE_HISTORY.runtime_budget_inverse(current,file)
+            spec=_IMAGE_HISTORY.RUNTIME_BUDGET_SPECS[file]
+            self.assertEqual(hashlib.sha256(previous).hexdigest(),spec['beforeSha256'])
+            for bad in (current+b'\n',current.replace(spec['pairs'][0]['current'].encode(),b'',1),current+spec['pairs'][0]['current'].encode()):
+                with self.assertRaises(AssertionError):_IMAGE_HISTORY.runtime_budget_inverse(bad,file)
 
 
 if __name__ == '__main__':

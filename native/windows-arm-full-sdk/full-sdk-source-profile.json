@@ -50,6 +50,10 @@
     "cleanupSeconds": 30,
     "finalReserveSeconds": 120
   },
+  "runtimeClosure": {
+    "installedSeconds": 1800,
+    "jobSeconds": 1920
+  },
   "images": {
     "20261103.298.1": {
       "sourceId": "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
