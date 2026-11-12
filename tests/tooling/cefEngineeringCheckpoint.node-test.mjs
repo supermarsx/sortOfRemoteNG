@@ -812,7 +812,7 @@ test(
   },
 );
 import { createHash as hashObject } from "node:crypto";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   withoutUploadRecovery,
   withoutCliCause,
@@ -967,6 +967,18 @@ import {
   validateSourceLock,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+import {
+  actualFeatureSource,
+  reviewedFeatureFixture,
+  reconstructCurrentFeatureData,
+  reconstructPreviousFeatureData,
+  retireFeatureFixtures,
+  assertOldFeatureContext,
+  assertOldFeaturePhysicalBytes,
+  PREVIOUS_FEATURE_PRODUCER,
+  CURRENT_FEATURE_PRODUCER,
+} from "./helpers/cefLinuxWindowFeatureFixture.mjs";
+after(retireFeatureFixtures);
 const producer = {
   repository: "owner/repo",
   repositoryId: 11,
@@ -16700,11 +16712,11 @@ function withoutMacSourceBudget(text, name) {
 }
 
 test("bounded Mac source-budget delta restores all four complete b296 producers", async () => {
+  const feature = await reviewedFeatureFixture(ROOT);
   for (const name of Object.keys(MAC_SOURCE_BUDGET_BASELINES)) {
-    const text = (await readFile(path.join(ROOT, name), "utf8")).replaceAll(
-      "\r\n",
-      "\n",
-    );
+    const text = (
+      await readFile(path.join(feature.root, name), "utf8")
+    ).replaceAll("\r\n", "\n");
     withoutMacSourceBudget(text, name);
     assert.throws(() => withoutMacSourceBudget(text + "\n", name));
   }
@@ -17564,11 +17576,12 @@ test("Mac full-hash completion uses actual60/65 guards and original source/host 
       }
     }
   }
+  // Only this historical baseline uses the explicitly reviewed feature DATA.
+  const feature = await reviewedFeatureFixture(ROOT);
   for (const name of Object.keys(MAC_SOURCE_COMPLETION_INVERSE.transforms)) {
-    const text = (await readFile(path.join(ROOT, name), "utf8")).replaceAll(
-      "\r\n",
-      "\n",
-    );
+    const text = (
+      await readFile(path.join(feature.root, name), "utf8")
+    ).replaceAll("\r\n", "\n");
     withoutMacSourceCompletion(text, name);
     assert.throws(() => withoutMacSourceCompletion(text + "\n", name));
   }
@@ -17707,7 +17720,17 @@ test("measured Mac original source180 starts once before acquisition and preserv
   const text = (
     await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
   ).replaceAll("\r\n", "\n");
-  const previous = withoutMacOriginalSourceLease(text);
+  const previous = withoutMacOriginalSourceLease(
+    (
+      await readFile(
+        path.join(
+          (await reviewedFeatureFixture(ROOT)).root,
+          "scripts/cef-runtime-ci.mjs",
+        ),
+        "utf8",
+      )
+    ).replaceAll("\r\n", "\n"),
+  );
   const extract = (source) => {
     const ast = ts.createSourceFile(
       "runtime.mjs",
@@ -17815,7 +17838,17 @@ test("actual Mac metadata closure uses the retained original source180 rather th
   const runtime = (
     await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
   ).replaceAll("\r\n", "\n");
-  const oldRuntime = withoutMacOriginalSourceLease(runtime);
+  const oldRuntime = withoutMacOriginalSourceLease(
+    (
+      await readFile(
+        path.join(
+          (await reviewedFeatureFixture(ROOT)).root,
+          "scripts/cef-runtime-ci.mjs",
+        ),
+        "utf8",
+      )
+    ).replaceAll("\r\n", "\n"),
+  );
   const begin = "  // BEGIN fixed Linux engineering source budget",
     end = "  // END fixed Linux engineering source budget";
   const getInitial = (text) =>
@@ -17987,9 +18020,10 @@ function withoutStaticOwnedMacSource(current) {
 }
 
 test("static Mac owned FD and noop layers restore complete original helper before all history", async () => {
+  const feature = await reviewedFeatureFixture(ROOT);
   const raw = (
     await readFile(
-      path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      path.join(feature.root, "scripts/lib/cef-checkpoint-archive.py"),
       "utf8",
     )
   ).replaceAll("\r\n", "\n");
@@ -18018,40 +18052,58 @@ const MAC_FIXTURES = [
 ];
 // The two fixtures are independent; on a loaded hosted macOS runner each can take over a
 // minute, and the contract step has a 5-minute limit, so they run concurrently.
-let macFixtureRuns = null;
-const startMacFixtures = () =>
-  (macFixtureRuns ??= new Map(
-    MAC_FIXTURES.map(([fixture]) => [
-      fixture,
-      new Promise((resolve) => {
-        const child = spawn(
-          "python3",
-          ["-I", "-B", "-S", path.join(ROOT, "tests/fixtures/cef", fixture)],
-          { stdio: ["ignore", "pipe", "pipe"] },
-        );
-        let stdout = "",
-          stderr = "";
-        const timer = setTimeout(() => child.kill(), 180000);
-        child.stdout.on("data", (chunk) => (stdout += chunk));
-        child.stderr.on("data", (chunk) => (stderr += chunk));
-        child.on("error", (error) => {
-          clearTimeout(timer);
-          resolve({ status: null, stdout, stderr, error });
-        });
-        child.on("close", (status) => {
-          clearTimeout(timer);
-          resolve({ status, stdout, stderr });
-        });
-      }),
-    ]),
-  ));
-if (process.platform !== "win32") startMacFixtures();
+const macFixtureRuns = new Map();
+const startMacFixtures = (featureRoot) => {
+  if (!macFixtureRuns.has(featureRoot))
+    macFixtureRuns.set(
+      featureRoot,
+      new Map(
+        MAC_FIXTURES.map(([fixture]) => [
+          fixture,
+          new Promise((resolve) => {
+            const child = spawn(
+              "python3",
+              [
+                "-I",
+                "-B",
+                "-S",
+                path.join(featureRoot, "tests/fixtures/cef", fixture),
+              ],
+              { stdio: ["ignore", "pipe", "pipe"] },
+            );
+            let stdout = "",
+              stderr = "";
+            const timer = setTimeout(() => child.kill(), 180000);
+            child.stdout.on("data", (chunk) => (stdout += chunk));
+            child.stderr.on("data", (chunk) => (stderr += chunk));
+            child.on("error", (error) => {
+              clearTimeout(timer);
+              resolve({ status: null, stdout, stderr, error });
+            });
+            child.on("close", (status) => {
+              clearTimeout(timer);
+              resolve({ status, stdout, stderr });
+            });
+          }),
+        ]),
+      ),
+    );
+  return macFixtureRuns.get(featureRoot);
+};
+// Explicit Mac-history consumer only; preserve their original concurrent start.
+const macFilesystemModels =
+  process.platform === "win32"
+    ? null
+    : reviewedFeatureFixture(ROOT).then((feature) =>
+        startMacFixtures(feature.root),
+      );
+void macFilesystemModels?.catch(() => {});
 for (const [fixture, tests] of MAC_FIXTURES) {
   test(
     `static Mac owned FD actual filesystem and codec ${fixture}`,
     { skip: process.platform === "win32" },
     async () => {
-      const result = await startMacFixtures().get(fixture);
+      const result = await (await macFilesystemModels).get(fixture);
       assert.equal(
         result.status,
         0,
@@ -18068,7 +18120,11 @@ for (const [fixture, tests] of MAC_FIXTURES) {
 // These controls run in the existing native-contract step on the actual Mac host.
 // Linux POSIX and Windows portable runs do not claim Darwin qualification.
 test("Mac GCS fresh preparation preserves JSON and held-inode safety on this host", async () => {
-  const helper = path.join(ROOT, "scripts/lib/cef-mac-gcs-normalize.py");
+  const feature = await reviewedFeatureFixture(ROOT);
+  const helper = path.join(
+    feature.root,
+    "scripts/lib/cef-mac-gcs-normalize.py",
+  );
   const bytes = (await readFile(helper, "utf8")).replaceAll("\r\n", "\n");
   assert.equal(Buffer.byteLength(bytes), 11223);
   assert.equal(
@@ -18143,12 +18199,14 @@ function macGcsObservationFixture(events = []) {
   };
 }
 
-test("Mac GCS actual exported observer admits the fixed phase and preserves refusal and cancellation", async () => {
+test("Mac GCS reviewed exported observer admits the fixed phase and preserves refusal and cancellation", async () => {
+  const feature = await reviewedFeatureFixture(ROOT);
+  const observeFeaturePhase = feature.runtime.observePreparationPhase;
   const expected = Object.freeze({ fixed: true });
   const success = macGcsObservationFixture();
   let operations = 0;
   assert.equal(
-    await observePreparationPhase(
+    await observeFeaturePhase(
       "/fixed/logs",
       "mac-gcs-preparation",
       () => {
@@ -18175,7 +18233,7 @@ test("Mac GCS actual exported observer admits the fixed phase and preserves refu
   ]) {
     const failure = macGcsObservationFixture();
     await assert.rejects(
-      observePreparationPhase(
+      observeFeaturePhase(
         "/fixed/logs",
         "mac-gcs-preparation",
         () => {
@@ -18203,7 +18261,7 @@ test("Mac GCS actual exported observer admits the fixed phase and preserves refu
   ]) {
     const refused = macGcsObservationFixture();
     await assert.rejects(
-      observePreparationPhase(
+      observeFeaturePhase(
         "/fixed/logs",
         unknown,
         () => {
@@ -18221,8 +18279,12 @@ test("Mac GCS actual exported observer admits the fixed phase and preserves refu
 });
 
 test("Mac GCS fresh preparation runs before snapshots with the original bounded clock and aborts on failure", async () => {
+  const feature = await reviewedFeatureFixture(ROOT);
   const source = (
-    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+    await readFile(
+      path.join(feature.root, "scripts/cef-runtime-ci.mjs"),
+      "utf8",
+    )
   ).replaceAll("\r\n", "\n");
   const ast = ts.createSourceFile(
     "runtime.mjs",
@@ -18294,7 +18356,7 @@ test("Mac GCS fresh preparation runs before snapshots with the original bounded 
             throw new Error(message);
           },
           observePreparationPhase: (logs, stage, callback) =>
-            observePreparationPhase(
+            feature.runtime.observePreparationPhase(
               logs,
               stage,
               callback,
@@ -18384,10 +18446,11 @@ test("Mac GCS fresh preparation runs before snapshots with the original bounded 
 });
 
 test("Mac GCS whole-file history refuses unreviewed runtime edits and producer rows", async () => {
+  const featureRoot = (await reviewedFeatureFixture(ROOT)).root;
   const { withoutMacGcsPreparationRuntime, withoutMacGcsPreparationRows } =
     await import("./helpers/cefMacGcsReviewedHistory.mjs");
   const source = (
-    await readFile(path.join(ROOT, "scripts/cef-runtime-ci.mjs"), "utf8")
+    await readFile(path.join(featureRoot, "scripts/cef-runtime-ci.mjs"), "utf8")
   ).replaceAll("\r\n", "\n");
   assert.equal(
     sha(withoutMacGcsPreparationRuntime(source)),
@@ -18416,7 +18479,7 @@ test("Mac GCS whole-file history refuses unreviewed runtime edits and producer r
       ".node-version",
       ".github/workflows/cef-engineering-checkpoint.yml",
     ],
-    { cwd: ROOT, timeout: 10000, windowsHide: true },
+    { cwd: featureRoot, timeout: 10000, windowsHide: true },
   ).toString();
   const rows = listed
     .trim()
@@ -18426,7 +18489,7 @@ test("Mac GCS whole-file history refuses unreviewed runtime edits and producer r
       const [mode, type, sha] = left.split(" ");
       return { mode, type, sha, path };
     });
-  const previous = withoutMacGcsPreparationRows(rows, ROOT);
+  const previous = withoutMacGcsPreparationRows(rows, featureRoot);
   assert.equal(previous.length, 131);
   for (const changed of [
     rows.slice(1),
@@ -18450,17 +18513,18 @@ test("Mac GCS whole-file history refuses unreviewed runtime edits and producer r
       row.path === ".node-version" ? { ...row, sha: "0".repeat(40) } : row,
     ),
   ])
-    assert.throws(() => withoutMacGcsPreparationRows(changed, ROOT));
+    assert.throws(() => withoutMacGcsPreparationRows(changed, featureRoot));
 });
 
 test("Windows image whole-file history rejects unrelated reader or producer changes", async () => {
+  const featureRoot = (await reviewedFeatureFixture(ROOT)).root;
   const { withoutWindowsImageOrigin } =
     await import("./helpers/cefWindowsImageProducerRows.mjs");
   const current = execFileSync(
     "git",
     ["cat-file", "blob", "HEAD:scripts/lib/cef-windows-arm-sdk-origin.mjs"],
     {
-      cwd: ROOT,
+      cwd: featureRoot,
       timeout: 10000,
       windowsHide: true,
     },
@@ -18476,4 +18540,148 @@ test("Windows image whole-file history rejects unrelated reader or producer chan
     current.replace("ARGUMENTS", "ARGUMENTZ"),
   ])
     assert.throws(() => withoutWindowsImageOrigin(altered));
+});
+
+test("reviewed feature DATA proves separate complete131 old and132 current inventories and exact round trips", () => {
+  const actual = actualFeatureSource(ROOT);
+  const previous =
+    actual.producer === PREVIOUS_FEATURE_PRODUCER
+      ? actual
+      : reconstructPreviousFeatureData(actual.rows, actual.files);
+  const current = reconstructCurrentFeatureData(previous.rows, previous.files);
+  assert.equal(previous.rows.length, 131);
+  assert.equal(codeTreeDigest(previous.rows), PREVIOUS_FEATURE_PRODUCER);
+  assert.equal(current.rows.length, 132);
+  assert.equal(codeTreeDigest(current.rows), CURRENT_FEATURE_PRODUCER);
+  const roundTrip = reconstructPreviousFeatureData(current.rows, current.files);
+  assert.deepEqual(
+    roundTrip.rows,
+    [...previous.rows].sort((a, b) => a.path.localeCompare(b.path)),
+  );
+  for (const row of previous.rows)
+    assert.deepEqual(
+      roundTrip.files.get(row.path),
+      previous.files.get(row.path),
+    );
+  for (const [input, transform] of [
+    [previous, reconstructCurrentFeatureData],
+    [current, reconstructPreviousFeatureData],
+  ]) {
+    for (const rows of [
+      input.rows.slice(1),
+      input.rows.concat(input.rows[0]),
+      input.rows.map((row, index) =>
+        index === 0 ? { ...row, mode: "120000" } : row,
+      ),
+      input.rows.map((row, index) =>
+        index === 0 ? { ...row, sha: "0".repeat(40) } : row,
+      ),
+    ]) {
+      assert.throws(() => transform(rows, input.files));
+    }
+    const changed = new Map(input.files);
+    const file = "scripts/cef-runtime-ci.mjs";
+    changed.set(file, Buffer.concat([changed.get(file), Buffer.from("\n")]));
+    assert.throws(() => transform(input.rows, changed), "raw mismatch denied");
+    const thirdProducer = input.rows.map((row) =>
+      row.path === file
+        ? {
+            ...row,
+            sha: hashObject("sha1")
+              .update(`blob ${changed.get(file).length}\0`)
+              .update(changed.get(file))
+              .digest("hex"),
+          }
+        : row,
+    );
+    assert.throws(
+      () => transform(thirdProducer, changed),
+      "consistent but third producer denied",
+    );
+    const extra = new Map(input.files);
+    extra.set("scripts/unreviewed-helper.py", Buffer.from("unreviewed"));
+    assert.throws(() => transform(input.rows, extra));
+  }
+});
+
+test("old feature context is closed and actual old exported observer refuses the absent Mac phase without I/O", async () => {
+  assertOldFeatureContext("linux", "aarch64-unknown-linux-gnu");
+  for (const [platform, target] of [
+    ["darwin", "aarch64-unknown-linux-gnu"],
+    ["win32", "aarch64-unknown-linux-gnu"],
+    ["linux", "aarch64-apple-darwin"],
+    ["linux", undefined],
+  ]) {
+    assert.throws(() => assertOldFeatureContext(platform, target));
+  }
+  const actual = actualFeatureSource(ROOT);
+  const feature = await reviewedFeatureFixture(ROOT);
+  assert.strictEqual(feature, await reviewedFeatureFixture(ROOT));
+  assert.equal(feature.actual.head, actual.head);
+  assert.equal(feature.authority, false);
+  assert.equal(actualFeatureSource(ROOT).producer, actual.producer);
+  if (actual.producer === PREVIOUS_FEATURE_PRODUCER) {
+    assert(feature.modeled);
+    assert.notEqual(feature.root, ROOT);
+    assert.equal(feature.data.producer, CURRENT_FEATURE_PRODUCER);
+    let operations = 0,
+      io = 0;
+    await assert.rejects(
+      observePreparationPhase(
+        "/unused",
+        "mac-gcs-preparation",
+        () => {
+          operations++;
+        },
+        {
+          openFile: () => {
+            io++;
+          },
+          emit: () => {
+            io++;
+          },
+        },
+      ),
+      /Invalid preparation observation phase/,
+    );
+    assert.equal(operations, 0);
+    assert.equal(io, 0);
+  } else {
+    assert.equal(feature.modeled, false);
+    assert.equal(feature.root, ROOT);
+    assert.strictEqual(
+      feature.runtime.observePreparationPhase,
+      observePreparationPhase,
+    );
+  }
+});
+
+test("old Linux feature activation rejects physical edits including raw legacy line endings", async (t) => {
+  const actual = actualFeatureSource(ROOT);
+  const previous =
+    actual.producer === PREVIOUS_FEATURE_PRODUCER
+      ? actual
+      : reconstructPreviousFeatureData(actual.rows, actual.files);
+  const root = await scratch(t);
+  for (const row of previous.rows) {
+    const file = path.join(root, row.path);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, previous.files.get(row.path), { flag: "wx" });
+  }
+  await assertOldFeaturePhysicalBytes(root, previous);
+  const runtime = "scripts/cef-runtime-ci.mjs";
+  await writeFile(
+    path.join(root, runtime),
+    Buffer.concat([previous.files.get(runtime), Buffer.from("\n")]),
+  );
+  await assert.rejects(assertOldFeaturePhysicalBytes(root, previous));
+  await writeFile(path.join(root, runtime), previous.files.get(runtime));
+  const legacy = "scripts/lib/cef-linux-sidecar-retirement.py";
+  const raw = previous.files.get(legacy);
+  assert(!raw.includes(Buffer.from("\r\n")), "pinned LF -text legacy capsule");
+  await writeFile(
+    path.join(root, legacy),
+    Buffer.from(raw.toString("utf8").replaceAll("\n", "\r\n")),
+  );
+  await assert.rejects(assertOldFeaturePhysicalBytes(root, previous));
 });
