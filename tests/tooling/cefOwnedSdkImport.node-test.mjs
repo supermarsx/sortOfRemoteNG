@@ -2371,17 +2371,17 @@ test(
 );
 
 // Separate owned synthetic Git fixture. No product policy/SDK or live API is created.
-async function armLocalConsumerFixture(t) {
+async function armLocalConsumerFixture(t, mutatePolicy = () => {}) {
   const digest = hash,
     H = "a".repeat(64);
   const raw = (value) => Buffer.from(canonical(value) + "\n");
   const pin = (value) => ({ bytes: value.length, sha256: digest(value) });
   const sourceTuples = {
-    "20261030.294.1": {
+    "20261103.298.1": {
       sourceLockIdentity:
         "e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90",
       sourceProfileSha256:
-        "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05",
+        "5aec31b972bdd30bc05a480a9d21af700aed90ed12364c9986f8d1a4dc82e3cd",
     },
     "20261021.278.1": {
       sourceLockIdentity:
@@ -2480,7 +2480,7 @@ async function armLocalConsumerFixture(t) {
       head: git(root, "rev-parse", "HEAD").toString().trim(),
     };
   }
-  function packet(f, image = "20261030.294.1") {
+  function packet(f, image = "20261103.298.1") {
     const producer = {
       repository: "supermarsx/sortOfRemoteNG",
       repositoryId: 1010282954,
@@ -2627,7 +2627,7 @@ async function armLocalConsumerFixture(t) {
     return { source, compile, package: pkg, producerSeal: seal };
   }
 
-  const f = await fixture(t);
+  const f = await fixture(t, mutatePolicy);
   await fs.cp(
     new URL("../../scripts", import.meta.url),
     path.join(f.root, "scripts"),
@@ -2833,5 +2833,23 @@ test("Windows ARM token-free native boundary rechecks real committed typed recor
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.GH_TOKEN;
     else process.env.GH_TOKEN = previousToken;
+  }
+});
+
+test("Windows ARM local consumer rejects retired image and stale current-profile declarations before inspecting records", async (t) => {
+  for (const mutatePolicy of [
+    (policy) => {
+      policy.sources["20261030.294.1"] = policy.sources["20261103.298.1"];
+      delete policy.sources["20261103.298.1"];
+    },
+    (policy) => {
+      policy.sources["20261103.298.1"].sourceProfileSha256 =
+        "e72be803a6e4a9acf8ff33c4ef471e41c2a391ee402b4f6b1fd8520536e22f05";
+    },
+  ]) {
+    await assert.rejects(
+      armLocalConsumerFixture(t, mutatePolicy),
+      /WINDOWS_ARM_SDK_POLICY/,
+    );
   }
 });
