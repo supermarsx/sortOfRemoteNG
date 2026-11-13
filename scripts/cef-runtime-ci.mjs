@@ -553,12 +553,7 @@ const ADMISSION_STAGES = new Set([
   "workdir",
 ]);
 
-const PREPARATION_PHASES = new Set([
-  "environment",
-  "metal",
-  "external-inputs",
-  "mac-gcs-preparation",
-]);
+const PREPARATION_PHASES = new Set(["environment", "metal", "external-inputs"]);
 const PREPARATION_CAUSES = new Set([
   "MAC_SOURCE_HOST_SCOPE",
   "MAC_SOURCE_ENV_SCOPE",
@@ -1804,38 +1799,6 @@ export async function build(
     "dependency-hooks",
     source,
   );
-  // Fixed bookkeeping preparation precedes CEF/GN and every source snapshot.
-  // It never runs inside source verification or grants old checkpoint reuse.
-  if (
-    engineering?.sourceMetadata === "mac-intel" ||
-    engineering?.sourceMetadata === "mac-arm"
-  ) {
-    if (
-      !budget ||
-      (engineering.sourceMetadata === "mac-intel"
-        ? target !== "x86_64-apple-darwin"
-        : target !== "aarch64-apple-darwin")
-    )
-      fail("Mac bookkeeping preparation requires its exact hosted target");
-    budget.assertRemaining();
-    const deadline =
-      Date.now() + Math.min(5000, Math.floor(budget.remaining()));
-    await observePreparationPhase(logs, "mac-gcs-preparation", () =>
-      call(
-        python,
-        [
-          "-I",
-          "-B",
-          path.join(checkout, "scripts/lib/cef-mac-gcs-normalize.py"),
-          target,
-          source,
-          String(deadline),
-        ],
-        "mac-gcs-preparation",
-        source,
-      ),
-    );
-  }
   const recipe = await customRuntimeBuildRecipe({
     sourceLock,
     target,
