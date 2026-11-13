@@ -4587,16 +4587,6 @@ export async function compileSlice(
     }
     if (!outputsSettled || !outputHandlesClosed) await joinOutputHandles();
     if (!pipeClosed) child.unref();
-    // Retire the creation-owned census even when earlier pipe waits exhausted
-    // the original cleanup lease. Its close path still kills/detaches its own
-    // worker on an expired lease; this never proves compiler quiescence.
-    if (censusSession) {
-      try {
-        await censusSession.close(cleanupDeadline);
-      } catch (error) {
-        fail(error, "census-close");
-      }
-    }
     checkpointLog(
       console.error,
       `[cef-engineering-checkpoint] compile-supervision=${canonical({
