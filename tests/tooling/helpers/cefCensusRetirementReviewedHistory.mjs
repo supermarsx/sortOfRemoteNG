@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  CURRENT_WITNESS_PRODUCER,
+  beforeCensusWitnessCoreForHistory,
+  beforeCensusWitnessRowsForHistory,
+  beforeCensusWitnessDataForHistory,
+} from "./cefCensusWitnessReviewedHistory.mjs";
 
 // Test-only complete source history. This never grants a runtime/SDK exception.
 const sha = (text) => createHash("sha256").update(text).digest("hex");
@@ -46,6 +52,11 @@ export function withCensusRetirementCore(text) {
 // current inverse above. Apply this once before existing mutation negatives.
 export function beforeCensusCoreForHistory(text) {
   if (
+    Buffer.byteLength(text) !== BEFORE_CENSUS_CORE.bytes ||
+    sha(text) !== BEFORE_CENSUS_CORE.sha256
+  )
+    text = beforeCensusWitnessCoreForHistory(text);
+  if (
     Buffer.byteLength(text) === BEFORE_CENSUS_CORE.bytes &&
     sha(text) === BEFORE_CENSUS_CORE.sha256
   )
@@ -61,7 +72,13 @@ function sourceShape(rows) {
   assert.equal(rows.length, 132);
   assert.equal(new Set(rows.map((row) => row.path)).size, 132);
   const digest = treeDigest(rows);
-  assert([BEFORE_CENSUS_PRODUCER, CURRENT_CENSUS_PRODUCER].includes(digest));
+  assert(
+    [
+      BEFORE_CENSUS_PRODUCER,
+      CURRENT_CENSUS_PRODUCER,
+      CURRENT_WITNESS_PRODUCER,
+    ].includes(digest),
+  );
   return digest;
 }
 function oldRows(rows) {
@@ -77,14 +94,16 @@ function oldRows(rows) {
 }
 export function beforeCensusRowsForHistory(rows, root) {
   if (sourceShape(rows) === BEFORE_CENSUS_PRODUCER) return rows;
+  rows = beforeCensusWitnessRowsForHistory(rows, root);
   const raw = execFileSync("git", ["cat-file", "blob", "HEAD:" + CORE], {
     cwd: root,
     windowsHide: true,
     timeout: 10000,
     maxBuffer: 1 << 20,
   });
-  assert.equal(blob(raw), CURRENT_CENSUS_CORE.blob);
-  withoutCensusRetirementCore(raw.toString("utf8"));
+  const current = beforeCensusWitnessCoreForHistory(raw.toString("utf8"));
+  assert.equal(blob(Buffer.from(current)), CURRENT_CENSUS_CORE.blob);
+  withoutCensusRetirementCore(current);
   return oldRows(rows);
 }
 export function beforeCensusDataForHistory(rows, files) {
@@ -96,6 +115,7 @@ export function beforeCensusDataForHistory(rows, files) {
     assert.equal(blob(files.get(row.path)), row.sha, row.path);
   }
   if (digest === BEFORE_CENSUS_PRODUCER) return { rows, files };
+  ({ rows, files } = beforeCensusWitnessDataForHistory(rows, files));
   const previousFiles = new Map(files);
   previousFiles.set(
     CORE,

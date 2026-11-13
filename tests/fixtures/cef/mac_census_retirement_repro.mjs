@@ -19,6 +19,7 @@ import {
   withCensusRetirementCore,
   withoutCensusRetirementCore,
 } from "../../tooling/helpers/cefCensusRetirementReviewedHistory.mjs";
+import { beforeCensusWitnessCoreForHistory } from "../../tooling/helpers/cefCensusWitnessReviewedHistory.mjs";
 import {
   canonical,
   sisoLoggerIdentity,
@@ -29,12 +30,17 @@ import {
 } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
 
 const root = new URL("../../../", import.meta.url);
-const actualCore = (
+const rawActualCore = (
   await readFile(
     new URL("scripts/lib/cef-engineering-checkpoint.mjs", root),
     "utf8",
   )
 ).replaceAll("\r\n", "\n");
+const actualCore =
+  createHash("sha256").update(rawActualCore).digest("hex") ===
+  BEFORE_CENSUS_CORE.sha256
+    ? rawActualCore
+    : beforeCensusWitnessCoreForHistory(rawActualCore);
 const actualHash = createHash("sha256").update(actualCore).digest("hex");
 assert(
   [BEFORE_CENSUS_CORE.sha256, CURRENT_CENSUS_CORE.sha256].includes(actualHash),

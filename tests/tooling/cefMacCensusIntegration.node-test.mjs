@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
+import { types as utilTypes } from "node:util";
 import path from "node:path";
 import { readFile, mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,7 +36,29 @@ const source = await readFile(
   "scripts/lib/cef-engineering-checkpoint.mjs",
   "utf8",
 );
+// The real client has one private metadata-only dependency. Preserve its exact
+// source body in the VM; historical clients have no such declaration.
+const failureWitnessStart = source.indexOf("function macCensusFailureWitness(");
+const failureWitnessDeclaration =
+  failureWitnessStart < 0
+    ? ""
+    : source.slice(
+        failureWitnessStart,
+        source.indexOf("function macCensusClient("),
+      );
 const target = "x86_64-apple-darwin";
+const failureCodesStart = source.indexOf(
+  "const CENSUS_FAILURE_CODES = new Set([",
+);
+const failureCodesEnd = source.indexOf(
+  "export function censusFailureCode(",
+  failureCodesStart,
+);
+assert(failureCodesStart >= 0 && failureCodesEnd > failureCodesStart);
+const failureCodesDeclaration = source.slice(
+  failureCodesStart,
+  failureCodesEnd,
+);
 const digest =
   "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef";
 const scope = {
@@ -251,22 +274,32 @@ test("native client accepts the pinned ABI and more than10000 bounded requests b
     source.indexOf("function macCensusClient("),
     source.indexOf("async function processSnapshot("),
   );
-  const create = vm.runInNewContext("(" + text + ")", {
-    assert,
-    shape,
-    canonical,
-    nativeCensusRows,
-    MAC_CENSUS_ABI,
-    JSON,
-    Buffer,
-    performance,
-    setTimeout,
-    clearTimeout,
-    positive: (x) => Number.isSafeInteger(x) && x > 0,
-    COMPILE_CLEANUP_MS: 30000,
-    censusFailureCode: () => "CENSUS_UNAVAILABLE",
-    compileWithin: (operation) => operation(),
-  });
+  const create = vm.runInNewContext(
+    "(() => {" +
+      failureCodesDeclaration +
+      failureWitnessDeclaration +
+      "\nreturn (" +
+      text +
+      ");})()",
+    {
+      assert,
+      shape,
+      canonical,
+      nativeCensusRows,
+      MAC_CENSUS_ABI,
+      JSON,
+      Buffer,
+      structuredClone,
+      utilTypes,
+      performance,
+      setTimeout,
+      clearTimeout,
+      positive: (x) => Number.isSafeInteger(x) && x > 0,
+      COMPILE_CLEANUP_MS: 30000,
+      censusFailureCode: () => "CENSUS_UNAVAILABLE",
+      compileWithin: (operation) => operation(),
+    },
+  );
   const child = new EventEmitter();
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
@@ -367,22 +400,32 @@ test("ready admission is bound to the selected native session mode and proof dia
     source.indexOf("function macCensusClient("),
     source.indexOf("async function processSnapshot("),
   );
-  const create = vm.runInNewContext("(" + text + ")", {
-    assert,
-    shape,
-    canonical,
-    nativeCensusRows,
-    MAC_CENSUS_ABI,
-    JSON,
-    Buffer,
-    performance,
-    setTimeout,
-    clearTimeout,
-    positive: (x) => Number.isSafeInteger(x) && x > 0,
-    COMPILE_CLEANUP_MS: 30000,
-    censusFailureCode: () => "CENSUS_UNAVAILABLE",
-    compileWithin: (operation) => operation(),
-  });
+  const create = vm.runInNewContext(
+    "(() => {" +
+      failureCodesDeclaration +
+      failureWitnessDeclaration +
+      "\nreturn (" +
+      text +
+      ");})()",
+    {
+      assert,
+      shape,
+      canonical,
+      nativeCensusRows,
+      MAC_CENSUS_ABI,
+      JSON,
+      Buffer,
+      structuredClone,
+      utilTypes,
+      performance,
+      setTimeout,
+      clearTimeout,
+      positive: (x) => Number.isSafeInteger(x) && x > 0,
+      COMPILE_CLEANUP_MS: 30000,
+      censusFailureCode: () => "CENSUS_UNAVAILABLE",
+      compileWithin: (operation) => operation(),
+    },
+  );
   for (const admitted of [false, true])
     for (const matches of [false, true]) {
       const child = new EventEmitter();

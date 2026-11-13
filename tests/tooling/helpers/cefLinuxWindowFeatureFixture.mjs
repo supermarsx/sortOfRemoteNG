@@ -9,6 +9,7 @@ import {
   CURRENT_CENSUS_PRODUCER,
   beforeCensusDataForHistory,
 } from "./cefCensusRetirementReviewedHistory.mjs";
+import { CURRENT_WITNESS_PRODUCER } from "./cefCensusWitnessReviewedHistory.mjs";
 
 // An explicit model for feature/history tests unavailable in the temporary
 // Linux-only old source selection. Never used by a producer or SDK admission.
@@ -146,6 +147,7 @@ export function actualFeatureSource(root) {
       PREVIOUS_FEATURE_PRODUCER,
       CURRENT_FEATURE_PRODUCER,
       CURRENT_CENSUS_PRODUCER,
+      CURRENT_WITNESS_PRODUCER,
     ].includes(producer),
     "Unreviewed source selection",
   );
@@ -176,8 +178,8 @@ export function actualFeatureSource(root) {
     files,
     producer === PREVIOUS_FEATURE_PRODUCER
       ? DATA.previous
-      : producer === CURRENT_CENSUS_PRODUCER
-        ? { rows: 132, producer: CURRENT_CENSUS_PRODUCER }
+      : [CURRENT_CENSUS_PRODUCER, CURRENT_WITNESS_PRODUCER].includes(producer)
+        ? { rows: 132, producer }
         : DATA.current,
   );
   // Tests execute worktree modules: bind those raw bytes to the actual HEAD too.

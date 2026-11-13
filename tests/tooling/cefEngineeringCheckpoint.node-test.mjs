@@ -8697,12 +8697,20 @@ test("compile first-failure diagnostics expose only the actual closed census cod
   assert.equal(state.proofs, 0);
   const actual = JSON.parse(state.diagnostic.split("compile-supervision=")[1]);
   assert.equal(actual.firstFailure.errorCode, "CENSUS_REQUEST");
-  assert.deepEqual(actual.census, {
+  const { failureWitness, ...closedDiagnostics } = actual.census;
+  assert.deepEqual(closedDiagnostics, {
     code: "CENSUS_REQUEST",
     stderrBytes: Buffer.byteLength(failure),
     joined: true,
     exitCode: 1,
   });
+  if (source.includes("function macCensusFailureWitness(")) {
+    assert.equal(failureWitness.first.origin, "helper-failure");
+    assert.equal(failureWitness.first.code, "CENSUS_EOF");
+    assert.equal(failureWitness.helperCode, "CENSUS_REQUEST");
+    assert.equal(failureWitness.lateFrames, 0);
+    assert(failureWitness.events.length <= 32);
+  } else assert.equal(failureWitness, undefined);
   assert(Object.isFrozen(diagnostics()));
   assert.equal(kills, 0);
   assert.doesNotMatch(
@@ -18876,4 +18884,422 @@ test("census retirement whole-core and one-row DATA bridge preserves actual132 l
   assert.throws(() =>
     beforeCensusDataForHistory(currentRows.slice(1), currentFiles),
   );
+});
+
+import * as actualCensusProduction from "../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  CURRENT_WITNESS_CORE,
+  CURRENT_WITNESS_PRODUCER,
+  BEFORE_WITNESS_CORE,
+  BEFORE_WITNESS_PRODUCER,
+  withoutCensusFailureWitnessCore,
+  withCensusFailureWitnessCore,
+  beforeCensusWitnessCoreForHistory,
+  beforeCensusWitnessDataForHistory,
+  beforeCensusWitnessRowsForHistory,
+} from "./helpers/cefCensusWitnessReviewedHistory.mjs";
+import { beforeCensusCoreForHistory } from "./helpers/cefCensusRetirementReviewedHistory.mjs";
+const witnessHash = (raw) => hashObject("sha256").update(raw).digest("hex");
+const witnessRoot = new URL("../../", import.meta.url);
+const witnessActualCore = (
+  await readFile(
+    new URL("scripts/lib/cef-engineering-checkpoint.mjs", witnessRoot),
+    "utf8",
+  )
+).replaceAll("\r\n", "\n");
+// A historical source selection executes an explicitly reconstructed DATA model;
+// the actual production worker/HEAD/producer are never replaced or relabeled.
+const witnessModeled =
+  witnessHash(witnessActualCore) !== CURRENT_WITNESS_CORE.sha256;
+const witnessCore = witnessModeled
+  ? withCensusFailureWitnessCore(
+      withCensusRetirementCore(beforeCensusCoreForHistory(witnessActualCore)),
+    )
+  : witnessActualCore;
+assert.equal(Buffer.byteLength(witnessCore), CURRENT_WITNESS_CORE.bytes);
+assert.equal(witnessHash(witnessCore), CURRENT_WITNESS_CORE.sha256);
+function witnessDeclaration(name) {
+  const matches = [
+    ...witnessCore.matchAll(
+      new RegExp("^(?:export )?(?:async )?function " + name + "\\(", "gm"),
+    ),
+  ];
+  assert.equal(matches.length, 1);
+  const start = matches[0].index;
+  const end = witnessCore.indexOf("\n}\n", start);
+  assert(end > start);
+  return witnessCore.slice(start, end + 2).replace(/^export /, "");
+}
+function witnessClock() {
+  let now = 0,
+    ordinal = 0;
+  const timers = new Map();
+  return {
+    performance: { now: () => now },
+    setTimeout(fn, ms) {
+      const id = ++ordinal;
+      timers.set(id, { fn, at: now + ms });
+      return id;
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+    },
+    advance(to, fire = true) {
+      now = to;
+      if (fire)
+        for (const [id, timer] of [...timers].sort((a, b) => a[1].at - b[1].at))
+          if (timer.at <= to && timers.delete(id)) timer.fn();
+    },
+  };
+}
+function witnessChild() {
+  const child = new EventEmitter();
+  child.pid = 500;
+  child.kills = 0;
+  child.unrefs = 0;
+  for (const stream of ["stdout", "stdin", "stderr"]) {
+    child[stream] = new EventEmitter();
+    child[stream].destroy = () => {
+      child[stream].destroyed = true;
+    };
+  }
+  child.stdin.write = (_raw, callback) => callback?.();
+  child.stdin.end = () => child.emit("close", 0, null);
+  child.kill = () => {
+    child.kills++;
+    child.emit("close", null, "SIGKILL");
+    return true;
+  };
+  child.unref = () => {
+    child.unrefs++;
+  };
+  return child;
+}
+function witnessClient(child, clock, scope = {}) {
+  const a = witnessCore.indexOf("const assert = (ok, message) => {");
+  assert(a >= 0);
+  const assertBody = witnessCore.slice(a, witnessCore.indexOf("\n};", a) + 3);
+  const failureCodesStart = witnessCore.indexOf(
+    "const CENSUS_FAILURE_CODES = new Set([",
+  );
+  const failureCodesEnd = witnessCore.indexOf(
+    "export function censusFailureCode(",
+    failureCodesStart,
+  );
+  assert(failureCodesStart >= 0 && failureCodesEnd > failureCodesStart);
+  const failureCodes = witnessCore.slice(failureCodesStart, failureCodesEnd);
+  return vm.runInNewContext(
+    assertBody +
+      "\nconst COMPILE_CLEANUP_MS = 30000;\n" +
+      failureCodes +
+      witnessDeclaration("compileWithin") +
+      "\n" +
+      witnessDeclaration("macCensusFailureWitness") +
+      "\n(" +
+      witnessDeclaration("macCensusClient") +
+      ")",
+    {
+      Buffer,
+      JSON,
+      Object,
+      Array,
+      Number,
+      Set,
+      Map,
+      Promise,
+      Error,
+      structuredClone,
+      performance: clock.performance,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      shape: actualCensusProduction.shape,
+      canonical: actualCensusProduction.canonical,
+      nativeCensusRows: actualCensusProduction.nativeCensusRows,
+      censusFailureCode: actualCensusProduction.censusFailureCode,
+      MAC_CENSUS_ABI: actualCensusProduction.MAC_CENSUS_ABI,
+      utilTypes,
+      ...scope,
+    },
+    { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } },
+  )(child, { deadline: 60000, requestBudget: 128, readyMilliseconds: 2000 });
+}
+const witnessTick = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+const witnessEmit = (child, value) =>
+  child.stdout.emit("data", Buffer.from(JSON.stringify(value) + "\n"));
+function witnessReady(child) {
+  witnessEmit(child, {
+    kind: "mac-census-proof-ready",
+    abi: { testOnly: true },
+    oracleSha256: "a".repeat(64),
+    productionAdmitted: false,
+  });
+}
+const witnessSample = {
+  request: 1,
+  rows: [{ pid: 42, parent: 1, group: 42, start: "darwin-v1:1:0" }],
+  collectMicros: 10,
+};
+for (const mode of [
+  "positive",
+  "timer-late",
+  "frame-deadline",
+  "helper-failure",
+  "output-bound",
+  "stderr-bound",
+  "falsy-primary",
+  "unknown-primary",
+  "numeric-primary",
+  "hostile-primary",
+  "observer-fault",
+]) {
+  test(`actual production census failure witness ${mode} preserves authority and sticky error`, async () => {
+    const clock = witnessClock(),
+      child = witnessChild();
+    const client = witnessClient(
+      child,
+      clock,
+      mode === "observer-fault"
+        ? {
+            structuredClone: () => {
+              throw Error("EXPECTED_DIAGNOSTIC_FAULT");
+            },
+          }
+        : {},
+    );
+    witnessReady(child);
+    await client.ready;
+    const pending = client.snapshot();
+    pending.catch(() => {});
+    await witnessTick();
+    if (mode === "positive") witnessEmit(child, witnessSample);
+    if (mode === "timer-late" || mode === "observer-fault") {
+      clock.advance(2003);
+      await witnessTick();
+      witnessEmit(child, witnessSample);
+    }
+    if (mode === "frame-deadline") {
+      clock.advance(2001, false);
+      witnessEmit(child, witnessSample);
+    }
+    if (mode === "helper-failure") {
+      child.stderr.emit(
+        "data",
+        Buffer.from(
+          JSON.stringify({
+            kind: "mac-census-native-failure",
+            code: "CENSUS_SYSCTL",
+            mode: "integration-proof",
+            productionAdmitted: false,
+          }),
+        ),
+      );
+      child.emit("close", 1, null);
+    }
+    if (mode === "output-bound")
+      child.stdout.emit("data", Buffer.alloc(4 * 1024 ** 2 + 1));
+    if (mode === "stderr-bound") child.stderr.emit("data", Buffer.alloc(4097));
+    if (mode === "falsy-primary") client.abort(false);
+    let hostileTrapCalls = 0;
+    const undisclosedPrimary =
+      mode === "numeric-primary"
+        ? 983475612039
+        : mode === "hostile-primary"
+          ? new Proxy(new Error("CENSUS_PRIVATE_SENTINEL"), {
+              getOwnPropertyDescriptor() {
+                hostileTrapCalls++;
+                throw new Error("PRIVATE_METADATA_FAILURE");
+              },
+            })
+          : new Error("CENSUS_PRIVATE_SENTINEL");
+    if (
+      ["unknown-primary", "hostile-primary", "numeric-primary"].includes(mode)
+    )
+      client.abort(undisclosedPrimary);
+    let primary;
+    if (mode === "positive") {
+      assert.equal((await pending).rows.length, 1);
+      assert.equal(
+        Object.hasOwn(client.diagnostics(), "failureWitness"),
+        false,
+      );
+    } else {
+      try {
+        await pending;
+        assert.fail("denial required");
+      } catch (e) {
+        primary = e;
+      }
+      await assert.rejects(client.snapshot(), (e) => e === primary);
+      if (mode === "falsy-primary") assert.equal(primary, false);
+      if (
+        ["unknown-primary", "hostile-primary", "numeric-primary"].includes(mode)
+      )
+        assert.equal(primary, undisclosedPrimary);
+    }
+    const closed = await client.close({ deadline: 30000 });
+    assert.equal(closed.joined, true);
+    const diagnostics = client.diagnostics();
+    if (mode === "positive") {
+      assert.deepEqual(
+        Object.keys(diagnostics).sort(),
+        ["code", "stderrBytes", "joined", "exitCode"].sort(),
+      );
+      assert.equal(diagnostics.exitCode, 0);
+    } else if (mode === "observer-fault") {
+      assert.equal(primary.message, "CENSUS_DEADLINE");
+      assert.equal(diagnostics.failureWitness.observerUnavailable, true);
+    } else {
+      const w = diagnostics.failureWitness;
+      assert(w && w.first && w.events.length <= 32);
+      if (mode === "timer-late") {
+        assert.equal(w.first.origin, "timer");
+        assert.equal(w.first.timerDriftMs, 3);
+        assert.equal(w.lateFrames, 1);
+      }
+      if (mode === "frame-deadline")
+        assert.equal(w.first.origin, "frame-deadline");
+      if (mode === "helper-failure") {
+        assert.equal(w.first.origin, "helper-failure");
+        assert.equal(w.helperCode, "CENSUS_SYSCTL");
+      }
+      if (mode === "output-bound")
+        assert.equal(primary.message, "CENSUS_OUTPUT_BOUND");
+      if (mode === "stderr-bound")
+        assert.equal(primary.message, "CENSUS_STDERR_BOUND");
+      if (mode === "falsy-primary") assert.equal(w.first.code, "FALSY_PRIMARY");
+      if (
+        ["unknown-primary", "hostile-primary", "numeric-primary"].includes(mode)
+      ) {
+        assert.equal(
+          w.first.code,
+          mode !== "hostile-primary"
+            ? "OTHER_CLOSED_FAILURE"
+            : "HOSTILE_FAILURE",
+        );
+        assert.doesNotMatch(
+          JSON.stringify(diagnostics),
+          /PRIVATE_SENTINEL|PRIVATE_METADATA_FAILURE|983475612039/,
+        );
+        assert.equal(
+          hostileTrapCalls,
+          0,
+          "observer must not invoke a Proxy trap",
+        );
+      }
+      assert(
+        !JSON.stringify(w).includes("darwin-v1"),
+        "no native process identities retained",
+      );
+      assert(!JSON.stringify(w).includes('"pid"'), "no process rows retained");
+    }
+  });
+}
+test("actual production census witness retains successful metadata when original close lease expires without client denial", async () => {
+  const clock = witnessClock(),
+    child = witnessChild(),
+    client = witnessClient(child, clock);
+  witnessReady(child);
+  await client.ready;
+  const pending = client.snapshot();
+  await witnessTick();
+  witnessEmit(child, witnessSample);
+  await pending;
+  assert.equal(Object.hasOwn(client.diagnostics(), "failureWitness"), false);
+  child.stdin.end = () => {};
+  child.kill = () => {
+    child.kills++;
+    return true;
+  };
+  clock.advance(32001, false);
+  await assert.rejects(
+    client.close({ deadline: 32000 }),
+    /Compile supervision cleanup deadline; checkpoint denied/,
+  );
+  const d = client.diagnostics();
+  assert.equal(d.joined, false);
+  assert.equal(d.failureWitness.first, null);
+  assert.equal(d.failureWitness.request, 1);
+  assert.equal(d.failureWitness.rowsValid, true);
+  assert.equal(child.kills, 1);
+  assert.equal(child.unrefs, 1);
+  assert(
+    child.stdout.destroyed && child.stderr.destroyed && child.stdin.destroyed,
+  );
+  assert.equal(d.failureWitness.currentOrigin, "frame-validated");
+});
+test("actual production census late witness buffer and event ring remain bounded without admitting late rows", async () => {
+  const clock = witnessClock(),
+    child = witnessChild(),
+    client = witnessClient(child, clock);
+  witnessReady(child);
+  await client.ready;
+  const pending = client.snapshot();
+  pending.catch(() => {});
+  await witnessTick();
+  clock.advance(2000);
+  await assert.rejects(pending, /CENSUS_DEADLINE/);
+  for (let n = 0; n < 40; n++)
+    witnessEmit(child, { ...witnessSample, request: n + 1 });
+  child.stdout.emit("data", Buffer.alloc(65537));
+  witnessEmit(child, witnessSample);
+  const w = client.diagnostics().failureWitness;
+  assert.equal(w.lateFrames, 40);
+  assert.equal(w.lateTruncated, true);
+  assert.equal(w.events.length, 32);
+  assert.equal(w.first.origin, "timer");
+  await assert.rejects(client.snapshot(), /CENSUS_DEADLINE/);
+  await client.close({ deadline: 30000 });
+});
+test("actual production census witness whole-core inverse denies entire addition deletion and third producers", () => {
+  const before = withoutCensusFailureWitnessCore(witnessCore);
+  assert.equal(Buffer.byteLength(before), BEFORE_WITNESS_CORE.bytes);
+  assert.equal(witnessHash(before), BEFORE_WITNESS_CORE.sha256);
+  assert.equal(withCensusFailureWitnessCore(before), witnessCore);
+  assert.throws(() => withoutCensusFailureWitnessCore(before));
+  assert.throws(() => withoutCensusFailureWitnessCore(witnessCore + "\n"));
+  assert.throws(() =>
+    withoutCensusFailureWitnessCore(
+      witnessCore.replace("begin + 2000", "begin + 3000"),
+    ),
+  );
+  assert.throws(() =>
+    withoutCensusFailureWitnessCore(
+      witnessCore.replace("if (failed) {", "if (false) {"),
+    ),
+  );
+  assert.equal(
+    withCensusRetirementCore(beforeCensusCoreForHistory(witnessCore)),
+    before,
+  );
+  const actual = actualFeatureSource(witnessRoot);
+  if (actual.producer === CURRENT_WITNESS_PRODUCER) {
+    assert.equal(witnessModeled, false);
+    assert.equal(
+      actual.files.get("scripts/lib/cef-engineering-checkpoint.mjs").toString(),
+      witnessCore,
+    );
+    const rewind = beforeCensusWitnessDataForHistory(actual.rows, actual.files);
+    assert.equal(
+      actualCensusProduction.codeTreeDigest(rewind.rows),
+      BEFORE_WITNESS_PRODUCER,
+    );
+    assert.equal(
+      actualCensusProduction.codeTreeDigest(
+        beforeCensusWitnessRowsForHistory(actual.rows, witnessRoot),
+      ),
+      BEFORE_WITNESS_PRODUCER,
+    );
+    const wrong = new Map(actual.files);
+    wrong.set(
+      "scripts/lib/cef-engineering-checkpoint.mjs",
+      Buffer.from(witnessCore + "\n"),
+    );
+    assert.throws(() => beforeCensusWitnessDataForHistory(actual.rows, wrong));
+    assert.throws(() =>
+      beforeCensusWitnessDataForHistory(actual.rows.slice(1), actual.files),
+    );
+  }
 });

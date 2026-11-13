@@ -3428,6 +3428,198 @@ export function createMacCensusProofClient(child, { deadline } = {}) {
   );
   return macCensusClient(child, { deadline });
 }
+// Bounded metadata only. This observer never admits a census or changes its failure.
+function macCensusFailureWitness() {
+  const clientFailureCodes = new Set([
+    "CENSUS_READY_DEADLINE",
+    "CENSUS_READY",
+    "CENSUS_ABI",
+    "CENSUS_UNSOLICITED",
+    "CENSUS_EOF",
+    "CENSUS_ABORT",
+    "CENSUS_REQUEST_BOUND",
+    "CENSUS_STDERR_BOUND",
+    "CENSUS_JOIN",
+  ]);
+  const errorCode = (error) => {
+    try {
+      if (error === false || error === null || error === undefined)
+        return "FALSY_PRIMARY";
+      if (utilTypes.isProxy(error)) return "HOSTILE_FAILURE";
+      if (!utilTypes.isNativeError(error)) return "OTHER_CLOSED_FAILURE";
+      const code = Object.getOwnPropertyDescriptor(error, "message")?.value;
+      return typeof code === "string" &&
+        (CENSUS_FAILURE_CODES.has(code) || clientFailureCodes.has(code))
+        ? code
+        : "OTHER_CLOSED_FAILURE";
+    } catch {
+      return "HOSTILE_FAILURE";
+    }
+  };
+  const state = {
+    first: null,
+    currentOrigin: "none",
+    request: 0,
+    requestAt: 0,
+    end: 0,
+    writeCallbackAt: null,
+    lastFrame: null,
+    rowsValid: false,
+    helperCode: "CENSUS_UNAVAILABLE",
+    lateFrames: 0,
+    lateBytes: 0,
+    lateTruncated: false,
+    lateLast: null,
+    observerFaults: 0,
+    events: [],
+  };
+  let late = Buffer.alloc(0);
+  const number = (n) =>
+    Number.isFinite(n)
+      ? Math.max(-1, Math.min(1e12, Math.floor(n * 1000) / 1000))
+      : -1;
+  const event = (kind, now, ...values) => {
+    state.events.push({ kind, atMs: number(now), values: values.map(number) });
+    if (state.events.length > 32) state.events.shift();
+  };
+  const note = (kind, now, a, b, c) => {
+    try {
+      if (kind === "request") {
+        state.request = a;
+        state.requestAt = now;
+        state.end = b;
+        state.rowsValid = false;
+        state.currentOrigin = "write";
+        state.writeCallbackAt = null;
+      }
+      if (kind === "write-callback") {
+        state.writeCallbackAt = now;
+        if (b) state.currentOrigin = "write-error";
+      }
+      if (kind === "write-error") state.currentOrigin = "write-error";
+      if (kind === "frame-start") {
+        state.rowsValid = false;
+        state.currentOrigin = "frame-parse";
+        state.lastFrame = { bytes: a, atMs: number(now) };
+      }
+      if (kind === "rows-valid") {
+        state.rowsValid = true;
+        state.lastFrame = {
+          ...state.lastFrame,
+          request: a,
+          collectMicros: b,
+          endMs: number(c),
+        };
+        state.currentOrigin = "frame-validated";
+      }
+      if (kind === "frame-error")
+        state.currentOrigin =
+          state.rowsValid && errorCode(a) === "CENSUS_DEADLINE"
+            ? "frame-deadline"
+            : "frame-validation";
+      if (kind === "helper-code")
+        state.helperCode =
+          typeof a === "string" && /^CENSUS_[A-Z_]+$/.test(a)
+            ? a
+            : "CENSUS_UNAVAILABLE";
+      if (kind === "child-close")
+        state.currentOrigin =
+          state.helperCode !== "CENSUS_UNAVAILABLE"
+            ? "helper-failure"
+            : "child-close";
+      if (kind === "timer") state.currentOrigin = "timer";
+      if (kind === "deny" && !state.first)
+        state.first = {
+          origin: state.currentOrigin,
+          code: errorCode(a),
+          request: state.request,
+          atMs: number(now),
+          requestAtMs: number(state.requestAt),
+          endMs: number(state.end),
+          timerDriftMs:
+            state.currentOrigin === "timer" ? number(now - state.end) : null,
+          writeCallbackAtMs:
+            state.writeCallbackAt === null
+              ? null
+              : number(state.writeCallbackAt),
+          lastFrame: state.lastFrame,
+        };
+      event(
+        kind,
+        now,
+        [
+          "request",
+          "write-callback",
+          "frame-start",
+          "rows-valid",
+          "chunk",
+          "child-close",
+          "close-finally",
+        ].includes(kind) && typeof a === "number"
+          ? a
+          : 0,
+        ["request", "write-callback", "rows-valid", "chunk"].includes(kind) &&
+          typeof b === "number"
+          ? b
+          : 0,
+        ["rows-valid", "chunk"].includes(kind) && typeof c === "number" ? c : 0,
+      );
+    } catch {
+      state.observerFaults = Math.min(1e12, state.observerFaults + 1);
+    }
+  };
+  const observeLate = (chunk, now) => {
+    try {
+      state.lateBytes = Math.min(1e12, state.lateBytes + chunk.length);
+      if (state.lateTruncated) return;
+      if (late.length + chunk.length > 65536) {
+        state.lateTruncated = true;
+        late = Buffer.alloc(0);
+        return;
+      }
+      late = Buffer.concat([late, chunk]);
+      for (;;) {
+        const n = late.indexOf(10);
+        if (n < 0) break;
+        const line = late.subarray(0, n);
+        late = late.subarray(n + 1);
+        try {
+          const v = JSON.parse(line.toString());
+          if (
+            Number.isSafeInteger(v.request) &&
+            v.request > 0 &&
+            Number.isSafeInteger(v.collectMicros) &&
+            v.collectMicros >= 0 &&
+            v.collectMicros < 30000000 &&
+            Array.isArray(v.rows) &&
+            v.rows.length <= 32768
+          ) {
+            state.lateFrames++;
+            state.lateLast = {
+              request: v.request,
+              collectMicros: v.collectMicros,
+              rowCount: v.rows.length,
+              atMs: number(now),
+            };
+          }
+        } catch {}
+      }
+    } catch {
+      state.observerFaults = Math.min(1e12, state.observerFaults + 1);
+    }
+  };
+  return {
+    note,
+    late: observeLate,
+    result: () => {
+      try {
+        return structuredClone(state);
+      } catch {
+        return { observerUnavailable: true };
+      }
+    },
+  };
+}
 function macCensusClient(
   child,
   {
@@ -3438,6 +3630,9 @@ function macCensusClient(
     productionAdmitted = false,
   } = {},
 ) {
+  const failureWitness = macCensusFailureWitness();
+  const diagNote = failureWitness.note,
+    diagLate = failureWitness.late;
   const readyDeadline = Math.min(
     deadline,
     performance.now() + readyMilliseconds,
@@ -3462,6 +3657,7 @@ function macCensusClient(
     closedResolve = resolve;
   });
   const deny = (error) => {
+    diagNote("deny", performance.now(), error);
     if (!failed) {
       failed = true;
       firstError = error;
@@ -3475,6 +3671,7 @@ function macCensusClient(
     }
   };
   const frame = (line) => {
+    diagNote("frame-start", performance.now(), line.length);
     try {
       const value = JSON.parse(line.toString("utf8"));
       if (!readyValue) {
@@ -3512,6 +3709,13 @@ function macCensusClient(
       }
       assert(pending && !failed, "CENSUS_UNSOLICITED");
       const rows = nativeCensusRows(value, pending.id);
+      diagNote(
+        "rows-valid",
+        performance.now(),
+        pending.id,
+        value.collectMicros,
+        pending.end,
+      );
       assert(performance.now() < pending.end, "CENSUS_DEADLINE");
       const current = pending;
       pending = null;
@@ -3525,11 +3729,22 @@ function macCensusClient(
         ),
       });
     } catch (error) {
+      diagNote("frame-error", performance.now(), error);
       deny(error);
     }
   };
   child.stdout.on("data", (chunk) => {
-    if (failed) return;
+    diagNote(
+      "chunk",
+      performance.now(),
+      chunk.length,
+      buffer.length,
+      failed ? 1 : 0,
+    );
+    if (failed) {
+      diagLate(chunk, performance.now());
+      return;
+    }
     if (buffer.length + chunk.length > 4 * 1024 ** 2) {
       deny(new Error("CENSUS_OUTPUT_BOUND"));
       return;
@@ -3545,17 +3760,26 @@ function macCensusClient(
     }
   });
   child.stdout.on("error", (error) => deny(error));
-  child.stdin.on("error", (error) => deny(error));
+  child.stdin.on("error", (error) => {
+    diagNote("write-error", performance.now());
+    deny(error);
+  });
   let stderrBytes = 0;
   const stderrChunks = [];
   child.stderr.on("data", (chunk) => {
     stderrBytes += chunk.length;
     if (stderrBytes <= 4096) stderrChunks.push(chunk);
+    diagNote(
+      "helper-code",
+      performance.now(),
+      censusFailureCode(Buffer.concat(stderrChunks).toString("utf8")),
+    );
     if (stderrBytes > 4096) deny(new Error("CENSUS_STDERR_BOUND"));
   });
   child.stderr.on("error", (error) => deny(error));
   child.once("error", (error) => deny(error));
   child.once("close", (code, signal) => {
+    diagNote("child-close", performance.now(), code);
     joined = true;
     closedValue = { code, signal };
     closedResolve(closedValue);
@@ -3569,6 +3793,9 @@ function macCensusClient(
   return {
     ready,
     diagnostics: () => ({
+      ...(failed || (closing && (!joined || closedValue?.code !== 0))
+        ? { failureWitness: failureWitness.result() }
+        : {}),
       code: censusFailureCode(Buffer.concat(stderrChunks).toString("utf8")),
       stderrBytes,
       joined,
@@ -3590,6 +3817,7 @@ function macCensusClient(
       assert(end > begin, "CENSUS_DEADLINE");
       return new Promise((resolve, reject) => {
         const id = ++request;
+        diagNote("request", begin, id, end);
         pending = {
           id,
           begin,
@@ -3597,12 +3825,16 @@ function macCensusClient(
           resolve,
           reject,
           timer: setTimeout(
-            () => deny(new Error("CENSUS_DEADLINE")),
+            () => {
+              diagNote("timer", performance.now());
+              return deny(new Error("CENSUS_DEADLINE"));
+            },
             Math.max(1, Math.floor(end - begin)),
           ),
         };
         try {
           child.stdin.write(JSON.stringify({ request: id }) + "\n", (error) => {
+            diagNote("write-callback", performance.now(), id, error ? 1 : 0);
             if (error) deny(error);
           });
         } catch (error) {
@@ -3639,6 +3871,7 @@ function macCensusClient(
           stderrBytes,
         };
       } finally {
+        diagNote("close-finally", performance.now(), joined ? 1 : 0);
         clearTimeout(timer);
         if (!joined) {
           child.kill("SIGKILL");
