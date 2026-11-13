@@ -1,279 +1,56 @@
-name: Backend Coverage
+name: Backend Coverage PowerShell diagnostic (private branch only)
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
-    branches: ["**"]
+    branches: ["codex/diagnose-pwsh-coverage-20261113"]
 
-# Backend (Rust) physical-line coverage gates for the sorng workspace.
-#
-# The f629 baseline artifact (run 29742258784) reported 24.66% by summing LF/LH
-# records, but that double-counted Rust sources reached through multiple
-# `#[path]` spellings. Canonicalizing paths and unioning physical file+line DA
-# records measures 25.83%, so 25.5% is the whole-workspace non-regression floor.
-# The original 40% bar remains enforced for the combined critical runtime scope:
-# src-tauri/src, sorng-vpn/src, and sorng-rdp/src. Raise either ratchet only with
-# measured evidence; command, service, and integration code stays in scope.
+permissions:
+  contents: read
 
-# Coalesce non-default-branch push/PR validation; preserve default push evidence
-# and keep scheduled/manual runs and fork head repositories separate.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}
-  cancel-in-progress: true
+  group: pwsh-coverage-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  backend-coverage:
-    name: cargo-llvm-cov (workspace)
+  diagnostic:
+    if: github.event_name == 'push' && github.repository == 'supermarsx/sortOfRemoteNG' && github.repository_id == '1010282954' && github.ref == 'refs/heads/codex/diagnose-pwsh-coverage-20261113'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src-tauri
+    timeout-minutes: 20
     env:
-      WORKSPACE_COVERAGE_THRESHOLD: "25.5"
-      CRITICAL_RUNTIME_COVERAGE_THRESHOLD: "40"
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v5
-
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      # Retain the existing immutable Node inventory; this does not invoke pwsh.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: ".node-version"
-          cache: "npm"
-
-      # `--workspace` builds sorng-file-viewer-host, whose build script bundles
-      # the pinned pdfjs-dist assets from node_modules.
-      - name: Install pinned file-viewer build assets
-        working-directory: .
-        run: npm ci
-
-      # The toolchain must equal the rust-toolchain.toml channel
-      # (guarded by tests/tooling/nodeToolchain.node-test.mjs).
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-05
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
           toolchain: "1.98.1"
           components: llvm-tools-preview
-
-      - name: Install native build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: src-tauri
-
-      - uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Test physical-line LCOV checker
-        run: node --test ../tests/tooling/backendCoverageChecker.node-test.mjs ../tests/tooling/backendCoverageProfileDiagnostics.node-test.mjs
-
-      - name: Generate lcov coverage report
-        id: coverage
-        shell: bash
-        run: |
-          set -euo pipefail
-          diagnostic_root=$(mktemp -d "$RUNNER_TEMP/backend-profile-diagnostics.XXXXXXXX")
-          mkdir "$diagnostic_root/evidence"
-          printf 'profile_diagnostics=%s/evidence\n' "$diagnostic_root" >> "$GITHUB_OUTPUT"
-          cat > "$diagnostic_root/capture.mjs" <<'PROFILE_CAPTURE'
-          import { writeFile } from 'node:fs/promises';
-          import { pipeline } from 'node:stream/promises';
-          export async function captureCoverage(input, output, file) {
-            let tail = Buffer.alloc(0);
-            try {
-              await pipeline(input, async function* (source) {
-                for await (const chunk of source) {
-                  tail = Buffer.concat([tail, chunk]).subarray(-1024 * 1024);
-                  yield chunk; // Ordinary Actions console output is never truncated.
-                }
-              }, output, { end: false });
-            } finally {
-              await writeFile(file, tail, { flag: 'wx', mode: 0o600 });
-            }
-          }
-          if (import.meta.url.startsWith('file:')) {
-            try {
-              await captureCoverage(process.stdin, process.stdout, process.argv[2]);
-            } catch {
-              console.error('COVERAGE_PROFILE_CAPTURE_UNAVAILABLE');
-              process.exitCode = 1;
-            }
-          }
-          PROFILE_CAPTURE
-          set +e
-          cargo llvm-cov --workspace --lcov --output-path coverage.lcov 2>&1 | node "$diagnostic_root/capture.mjs" "$diagnostic_root/evidence/coverage-tail.log"
-          result=("${PIPESTATUS[@]}")
-          set -e
-          cargo_status=${result[0]}
-          capture_status=${result[1]}
-          if [ "$cargo_status" -ne 0 ]; then
-            # The collector has no subprocesses; timeout bounds only this owned
-            # diagnostic Node process, never Cargo or another runner process.
-            set +e
-            /usr/bin/timeout --signal=KILL 60s node --input-type=module - "$diagnostic_root" "$cargo_status" <<'PROFILE_COLLECTOR'
-          import { constants } from 'node:fs';
-          import { lstat, realpath, open, writeFile } from 'node:fs/promises';
-          import path from 'node:path';
-          import { createHash } from 'node:crypto';
-          const PROFILE = /^src-tauri-[1-9][0-9]{0,9}-[0-9]{1,20}_[0-9]\.profraw$/;
-          const CODES = new Set(['PATH_DENIED', 'LINK_DENIED', 'FILE_BOUND', 'FILE_CHANGED', 'DEADLINE', 'LIST_DENIED', 'DIAGNOSTIC_BOUND', 'DIAGNOSTIC_UNAVAILABLE']);
-          const deny = (code) => { throw new Error(code); };
-          const codeOf = (error) => CODES.has(error?.message) ? error.message : 'IO_UNAVAILABLE';
-          const same = (a, b) => ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs', 'nlink'].every((key) => a[key] === b[key]);
-          export async function collectCoverageProfiles(root, target, cargoExit, { now = () => performance.now(), afterOpen = async () => {} } = {}) {
-            const began = now();
-            const check = () => { if (now() - began >= 60_000) deny('DEADLINE'); };
-            const safePath = async (file) => {
-              check();
-              const absolute = path.resolve(file);
-              for (let part = absolute; ; part = path.dirname(part)) {
-                const info = await lstat(part, { bigint: true });
-                check();
-                if (info.isSymbolicLink()) deny('LINK_DENIED');
-                if (part === path.dirname(part)) break;
-              }
-              if (await realpath(absolute) !== absolute) deny('PATH_DENIED');
-              check();
-              return absolute;
-            };
-            if (!Number.isInteger(cargoExit) || cargoExit < 1 || cargoExit > 255) deny('PATH_DENIED');
-            root = await safePath(root);
-            if (!/^backend-profile-diagnostics\.[A-Za-z0-9]+$/.test(path.basename(root))) deny('PATH_DENIED');
-            const owned = await lstat(root, { bigint: true });
-            if (!owned.isDirectory() || (process.getuid && owned.uid !== BigInt(process.getuid()))) deny('PATH_DENIED');
-            const evidence = await safePath(path.join(root, 'evidence'));
-            const evidenceIdentity = await lstat(evidence, { bigint: true });
-            if (!evidenceIdentity.isDirectory() || evidenceIdentity.uid !== owned.uid) deny('PATH_DENIED');
-            const outputReady = async () => {
-              await safePath(root);
-              await safePath(evidence);
-              for (const [directory, original] of [[root, owned], [evidence, evidenceIdentity]]) {
-                const current = await lstat(directory, { bigint: true });
-                if (!current.isDirectory() || !['dev', 'ino', 'uid', 'mode'].every((key) => current[key] === original[key])) deny('PATH_DENIED');
-              }
-              check();
-            };
-            const summary = { schemaVersion: 1, kind: 'failed-backend-profile-diagnostics', cargoExit, complete: false, list: null, profiles: [], failure: null };
-            // Reserve the fixed collection record as part of the total evidence
-            // budget, including the already captured tail and original list.
-            let retained = 1024 * 1024, profileBytes = 0;
-            const read = async (file, maximum, destination) => {
-              await safePath(file);
-              const before = await lstat(file, { bigint: true });
-              if (!before.isFile() || before.nlink !== 1n) deny('LINK_DENIED');
-              if (before.size < 0n || before.size > BigInt(maximum)) deny('FILE_BOUND');
-              if (destination && retained + Number(before.size) > 64 * 1024 ** 2) deny('FILE_BOUND');
-              const input = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-              let output;
-              try {
-                if (!same(before, await input.stat({ bigint: true }))) deny('FILE_CHANGED');
-                await afterOpen(file);
-                check();
-                if (destination) { await outputReady(); output = await open(destination, 'wx', 0o600); }
-                const hash = createHash('sha256'), chunks = [];
-                const buffer = Buffer.alloc(1024 * 1024);
-                let bytes = 0, header = Buffer.alloc(0);
-                for (;;) {
-                  check();
-                  const result = await input.read(buffer, 0, buffer.length, null);
-                  check();
-                  if (!result.bytesRead) break;
-                  bytes += result.bytesRead;
-                  if (BigInt(bytes) > before.size || bytes > maximum) deny('FILE_CHANGED');
-                  const chunk = buffer.subarray(0, result.bytesRead);
-                  hash.update(chunk);
-                  if (header.length < 64) header = Buffer.concat([header, chunk.subarray(0, 64 - header.length)]);
-                  if (output) await output.writeFile(chunk);
-                  else chunks.push(Buffer.from(chunk));
-                }
-                const named = await lstat(file, { bigint: true });
-                if (BigInt(bytes) !== before.size || !same(before, await input.stat({ bigint: true })) || !same(before, named)) deny('FILE_CHANGED');
-                await safePath(file);
-                if (destination) { retained += bytes; profileBytes += bytes; }
-                return { bytes, sha256: hash.digest('hex'), headerHex: header.toString('hex'), data: destination ? null : Buffer.concat(chunks) };
-              } finally {
-                await output?.close();
-                await input.close();
-              }
-            };
-            try {
-              target = await safePath(target);
-              const tail = await read(path.join(evidence, 'coverage-tail.log'), 1024 * 1024);
-              retained += tail.bytes;
-              const list = await read(path.join(target, 'src-tauri-profraw-list'), 1024 * 1024);
-              const listRows = new TextDecoder('utf-8', { fatal: true }).decode(list.data).trim().split(/\r?\n/);
-              if (listRows.length > 10_000 || listRows.some((row) => path.dirname(row) !== target || !PROFILE.test(path.basename(row))) || new Set(listRows).size !== listRows.length) deny('LIST_DENIED');
-              summary.list = { bytes: list.bytes, sha256: list.sha256, files: listRows.map((row) => path.basename(row)) };
-              // Keep the original list byte-for-byte after closed path validation.
-              await outputReady();
-              await writeFile(path.join(evidence, 'profraw-list.txt'), list.data, { flag: 'wx', mode: 0o600 });
-              retained += list.bytes;
-              const diagnosed = new Set();
-              const text = tail.data.toString('utf8').replace(/\x1b\[[0-9;]*m/g, '');
-              let count = 0;
-              for (const match of text.matchAll(/warning: ([^\r\n]{1,4096}\.profraw): invalid instrumentation profile data \(file header is corrupt\)/g)) {
-                if (++count > 256) deny('DIAGNOSTIC_BOUND');
-                const file = match[1];
-                if (path.dirname(file) !== target || !PROFILE.test(path.basename(file)) || !listRows.includes(file)) deny('PATH_DENIED');
-                diagnosed.add(file);
-                if (diagnosed.size > 16) deny('DIAGNOSTIC_BOUND');
-              }
-              if (!diagnosed.size) deny('DIAGNOSTIC_UNAVAILABLE');
-              for (const file of diagnosed) {
-                const name = path.basename(file);
-                const record = { file: name, retained: false };
-                summary.profiles.push(record);
-                try {
-                  const result = await read(file, 32 * 1024 ** 2, path.join(evidence, name));
-                  Object.assign(record, { retained: true, bytes: result.bytes, sha256: result.sha256, headerHex: result.headerHex });
-                } catch (error) {
-                  record.failure = codeOf(error);
-                  throw error;
-                }
-              }
-              check();
-              summary.complete = true;
-            } catch (error) {
-              summary.failure = codeOf(error);
-            }
-            summary.retainedProfileBytes = profileBytes;
-            summary.elapsedMilliseconds = Math.max(0, Math.round(now() - began));
-            await outputReady();
-            await writeFile(path.join(evidence, 'collection.json'), `${JSON.stringify(summary)}\n`, { flag: 'wx', mode: 0o600 });
-            return summary;
-          }
-          if (process.argv[1] === '-') {
-            try {
-              await collectCoverageProfiles(process.argv[2], path.resolve('target/llvm-cov-target'), Number(process.argv[3]));
-            } catch {
-              console.error('COVERAGE_PROFILE_DIAGNOSTICS_UNAVAILABLE');
-              process.exitCode = 1;
-            }
-          }
-          PROFILE_COLLECTOR
-            collector_status=$?
-            set -e
-            printf 'coverage diagnostic collector exit=%s; original cargo exit=%s\n' "$collector_status" "$cargo_status"
-            exit "$cargo_status"
-          fi
-          test "$capture_status" -eq 0
-
-      - name: Retain bounded failed-profile evidence
-        if: failure() && steps.coverage.outputs.profile_diagnostics != ''
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+          save-if: false
+          cache-on-failure: false
+      - uses: taiki-e/install-action@3f7c3597aa4e6da3f315e128de702ce61e7b2877
         with:
-          name: backend-coverage-profile-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.coverage.outputs.profile_diagnostics }}
-          retention-days: 14
-          if-no-files-found: warn
-
-      - name: Upload lcov artifact
+          tool: cargo-llvm-cov@0.9.1
+          checksum: true
+          fallback: none
+      - name: Cold unchanged instrumented crate, then bounded comparisons
+        run: python3 tests/fixtures/ssh-scripts/powershell_diagnostic.py
+      - name: Retain bounded diagnostic evidence (never release coverage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: backend-coverage-lcov
-          path: src-tauri/coverage.lcov
-
-      - name: Enforce physical-line coverage ratchets
-        run: >-
-          node ../scripts/ci/check-backend-coverage.mjs coverage.lcov
-          --workspace-threshold "$WORKSPACE_COVERAGE_THRESHOLD"
-          --critical-threshold "$CRITICAL_RUNTIME_COVERAGE_THRESHOLD"
+          name: pwsh-coverage-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pwsh-coverage-diagnostic
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 6
+          include-hidden-files: false
