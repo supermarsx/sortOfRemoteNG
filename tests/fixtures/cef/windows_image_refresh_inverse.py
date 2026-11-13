@@ -2,11 +2,27 @@
 import hashlib
 import json
 from pathlib import Path
+METADATA_SPECS = json.loads(Path(__file__).with_name('windows_metadata_diagnostic_inverse.json').read_text())
 ENGINE_HOST_SPECS = json.loads(Path(__file__).with_name('windows_engine_host_arch_inverse.json').read_text())
 RUNTIME_BUDGET_SPECS = json.loads(Path(__file__).with_name('windows_runtime_budget_inverse.json').read_text())
 SPECS = json.loads(Path(__file__).with_suffix('.json').read_text())
 NAMES = {'driver':'native/windows-arm-full-sdk/full-sdk-source-driver.mjs','controller':'native/windows-arm-full-sdk/full_sdk_control.mjs','python':'native/windows-arm-full-sdk/full_sdk_source.py','producer':'native/windows-arm-full-sdk/producer.py','profile':'native/windows-arm-full-sdk/full-sdk-source-profile.json'}
+def metadata_inverse(raw, file):
+    spec=METADATA_SPECS[file]
+    assert len(raw)==spec['bytes'] and hashlib.sha256(raw).hexdigest()==spec['sha256'], 'METADATA_HISTORY_WHOLE'
+    for row in spec['pairs']:
+        current,previous=row['current'].encode(),row['previous'].encode()
+        assert raw.count(current)==1, 'METADATA_HISTORY_COUNT'
+        raw=raw.replace(current,previous,1)
+    assert len(raw)==spec['beforeBytes'] and hashlib.sha256(raw).hexdigest()==spec['beforeSha256'], 'METADATA_HISTORY_OLD_WHOLE'
+    return raw
+
+def metadata_prefix(raw, file):
+    spec=METADATA_SPECS.get(file)
+    return metadata_inverse(raw,file) if spec and hashlib.sha256(raw).hexdigest()==spec['sha256'] else raw
+
 def engine_host_prefix(raw, file):
+    raw=metadata_prefix(raw,file)
     spec=ENGINE_HOST_SPECS.get(file)
     if not spec or hashlib.sha256(raw).hexdigest()!=spec['sha256']:return raw
     assert len(raw)==spec['bytes'], 'ENGINE_HOST_BYTES'

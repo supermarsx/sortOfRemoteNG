@@ -1,0 +1,34 @@
+{
+  "native/windows-arm-full-sdk/full_sdk_control.mjs": {
+    "bytes": 183971,
+    "sha256": "090edbcd71bb7cbbee09afdc042287f6330e3e14dcc53832c7d9d62fe270dd3c",
+    "beforeBytes": 180561,
+    "beforeSha256": "1ed9d3e7f7759894f9923899cc1e8830fadaff66635cecd6c8081804cb73a042",
+    "pairs": [
+      {
+        "current": "// BEGIN BOUNDED SOURCE METADATA FAILURE DATA\n// Failure evidence only; never renew, replace or admit a metadata identity.\nconst sourceMetadataFailures = new WeakMap();\nfunction captureSourceMetadataFailure(error, state, row, actual) {\n  try {\n    if (\n      utilTypes.isProxy(error) ||\n      !utilTypes.isNativeError(error) ||\n      sourceMetadataFailures.has(error)\n    )\n      return;\n    const policyNames = [\n        \"private-qualification-profile.json\",\n        \"engine-qualification-profile.json\",\n      ],\n      inputs = policyNames.map((name) => {\n        const full = \"native/windows-arm-full-sdk/\" + name,\n          rows = state.plan.producerInputs;\n        if (rows.filter((item) => item.path === full).length !== 1)\n          throw new Error(\"diagnostic input\");\n        return \"source-inputs/\" + rows.findIndex((item) => item.path === full);\n      }),\n      out = \"source-checkout/src/out/Release_GN_arm64/\",\n      names = [\n        ...inputs,\n        \"private-qualification-logs/qual-gn-desc-pa.stdout.log\",\n        \"private-qualification-logs/qual-gn-desc-cef.stdout.log\",\n        \"private-qualification-logs/qual-gn-args.stdout.log\",\n        out + \"args.gn\",\n        out +\n          \"gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h\",\n        out + \"gen/cef/include/cef_config.h\",\n        \"full-metadata-result.json\",\n      ],\n      roles = [\n        \"private-policy\",\n        \"engine-policy\",\n        \"gn-partition-alloc\",\n        \"gn-cef-config\",\n        \"gn-arguments\",\n        \"arguments\",\n        \"partition-alloc-header\",\n        \"cef-config-header\",\n        \"metadata-report\",\n      ],\n      index = names.indexOf(row.relative),\n      fields = [\n        \"dev\",\n        \"ino\",\n        \"mode\",\n        \"uid\",\n        \"gid\",\n        \"size\",\n        \"mtimeNs\",\n        \"ctimeNs\",\n      ],\n      before = row.identity.split(\":\"),\n      current = actual.identity.split(\":\");\n    if (\n      index < 0 ||\n      names[index].length > 160 ||\n      before.length !== fields.length ||\n      current.length !== fields.length ||\n      !before.concat(current).every((value) => /^-?[0-9]{1,40}$/.test(value)) ||\n      !Number.isSafeInteger(row.pin.bytes) ||\n      row.pin.bytes < 0 ||\n      row.pin.bytes > 8388608 ||\n      !/^[a-f0-9]{64}$/.test(row.pin.sha256) ||\n      actual.pin.bytes !== row.pin.bytes ||\n      actual.pin.sha256 !== row.pin.sha256\n    )\n      return;\n    const changedFields = fields.flatMap((field, i) =>\n      before[i] === current[i]\n        ? []\n        : [Object.freeze({ field, before: before[i], current: current[i] })],\n    );\n    if (changedFields.length === 0) return;\n    sourceMetadataFailures.set(\n      error,\n      Object.freeze({\n        kind: \"windows-arm-source-metadata-replacement\",\n        role: roles[index],\n        relative: names[index],\n        rawPin: Object.freeze({ bytes: row.pin.bytes, sha256: row.pin.sha256 }),\n        rawPinVerified: true,\n        changedFields: Object.freeze(changedFields),\n      }),\n    );\n  } catch {\n    // Observability cannot replace the original rejection or its sticky primary.\n  }\n}\n// END BOUNDED SOURCE METADATA FAILURE DATA\n",
+        "previous": ""
+      },
+      {
+        "current": "    try {\n      need(actual.identity === row.identity, \"SOURCE_METADATA_REPLACED\");\n    } catch (error) {\n      captureSourceMetadataFailure(error, state, row, actual);\n      throw error;\n    }",
+        "previous": "    need(actual.identity === row.identity, \"SOURCE_METADATA_REPLACED\");"
+      },
+      {
+        "current": "  const sourceMetadata = native ? sourceMetadataFailures.get(error) : undefined;\n  if (sourceMetadata) diagnostic.sourceMetadata = sourceMetadata;\n",
+        "previous": ""
+      }
+    ]
+  },
+  "native/windows-arm-full-sdk/sdk-origin-review.json": {
+    "bytes": 27527,
+    "sha256": "f829182055aefab8311ff24450085b5e348df24650accab83fb02a06b81bca30",
+    "beforeBytes": 27527,
+    "beforeSha256": "bcb4a1baa19714fea255fcd805a40f708c31cecbd973497e5559a29da1219275",
+    "pairs": [
+      {
+        "current": "{\"bytes\":183971,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"090edbcd71bb7cbbee09afdc042287f6330e3e14dcc53832c7d9d62fe270dd3c\"}",
+        "previous": "{\"bytes\":180561,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"1ed9d3e7f7759894f9923899cc1e8830fadaff66635cecd6c8081804cb73a042\"}"
+      }
+    ]
+  }
+}

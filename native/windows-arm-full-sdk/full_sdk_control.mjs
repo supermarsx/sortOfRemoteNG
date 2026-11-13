@@ -2205,6 +2205,100 @@ async function verifySourceMetadata(token) {
     full61Qualified: false,
   });
 }
+// BEGIN BOUNDED SOURCE METADATA FAILURE DATA
+// Failure evidence only; never renew, replace or admit a metadata identity.
+const sourceMetadataFailures = new WeakMap();
+function captureSourceMetadataFailure(error, state, row, actual) {
+  try {
+    if (
+      utilTypes.isProxy(error) ||
+      !utilTypes.isNativeError(error) ||
+      sourceMetadataFailures.has(error)
+    )
+      return;
+    const policyNames = [
+        "private-qualification-profile.json",
+        "engine-qualification-profile.json",
+      ],
+      inputs = policyNames.map((name) => {
+        const full = "native/windows-arm-full-sdk/" + name,
+          rows = state.plan.producerInputs;
+        if (rows.filter((item) => item.path === full).length !== 1)
+          throw new Error("diagnostic input");
+        return "source-inputs/" + rows.findIndex((item) => item.path === full);
+      }),
+      out = "source-checkout/src/out/Release_GN_arm64/",
+      names = [
+        ...inputs,
+        "private-qualification-logs/qual-gn-desc-pa.stdout.log",
+        "private-qualification-logs/qual-gn-desc-cef.stdout.log",
+        "private-qualification-logs/qual-gn-args.stdout.log",
+        out + "args.gn",
+        out +
+          "gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h",
+        out + "gen/cef/include/cef_config.h",
+        "full-metadata-result.json",
+      ],
+      roles = [
+        "private-policy",
+        "engine-policy",
+        "gn-partition-alloc",
+        "gn-cef-config",
+        "gn-arguments",
+        "arguments",
+        "partition-alloc-header",
+        "cef-config-header",
+        "metadata-report",
+      ],
+      index = names.indexOf(row.relative),
+      fields = [
+        "dev",
+        "ino",
+        "mode",
+        "uid",
+        "gid",
+        "size",
+        "mtimeNs",
+        "ctimeNs",
+      ],
+      before = row.identity.split(":"),
+      current = actual.identity.split(":");
+    if (
+      index < 0 ||
+      names[index].length > 160 ||
+      before.length !== fields.length ||
+      current.length !== fields.length ||
+      !before.concat(current).every((value) => /^-?[0-9]{1,40}$/.test(value)) ||
+      !Number.isSafeInteger(row.pin.bytes) ||
+      row.pin.bytes < 0 ||
+      row.pin.bytes > 8388608 ||
+      !/^[a-f0-9]{64}$/.test(row.pin.sha256) ||
+      actual.pin.bytes !== row.pin.bytes ||
+      actual.pin.sha256 !== row.pin.sha256
+    )
+      return;
+    const changedFields = fields.flatMap((field, i) =>
+      before[i] === current[i]
+        ? []
+        : [Object.freeze({ field, before: before[i], current: current[i] })],
+    );
+    if (changedFields.length === 0) return;
+    sourceMetadataFailures.set(
+      error,
+      Object.freeze({
+        kind: "windows-arm-source-metadata-replacement",
+        role: roles[index],
+        relative: names[index],
+        rawPin: Object.freeze({ bytes: row.pin.bytes, sha256: row.pin.sha256 }),
+        rawPinVerified: true,
+        changedFields: Object.freeze(changedFields),
+      }),
+    );
+  } catch {
+    // Observability cannot replace the original rejection or its sticky primary.
+  }
+}
+// END BOUNDED SOURCE METADATA FAILURE DATA
 async function recheckSourceMetadata(token, joinedAllowed) {
   const state = operationState(token, joinedAllowed),
     snapshot = state.metadataSnapshot;
@@ -2239,7 +2333,12 @@ async function recheckSourceMetadata(token, joinedAllowed) {
       joinedAllowed,
     );
     operationState(token, joinedAllowed);
-    need(actual.identity === row.identity, "SOURCE_METADATA_REPLACED");
+    try {
+      need(actual.identity === row.identity, "SOURCE_METADATA_REPLACED");
+    } catch (error) {
+      captureSourceMetadataFailure(error, state, row, actual);
+      throw error;
+    }
     checkedInputRow(checked, row.relative, actual);
   }
   await operationFence(token, joinedAllowed);
@@ -3855,6 +3954,8 @@ function startupFailureReport(error) {
   const sourceChild = native ? sourceChildFailures.get(error) : undefined;
   if (sourceChild) diagnostic.sourceChild = sourceChild;
   // END SAFE SOURCE CHILD FAILURE PROJECTION
+  const sourceMetadata = native ? sourceMetadataFailures.get(error) : undefined;
+  if (sourceMetadata) diagnostic.sourceMetadata = sourceMetadata;
   return {
     kind: "windows-arm-full-sdk-failure",
     error: code,
