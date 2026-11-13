@@ -46,7 +46,7 @@ def rust_command(mode=None, compile_only=False):
     require(mode in (None, "default", "serial"), "MODE")
     command = ["cargo", "llvm-cov", "--package", "sorng-ssh-scripts", "--lib", "--no-report"]
     if compile_only:
-        command.append("--no-run")
+        command += ["--", "--list"]
     else:
         command += ["--", "--nocapture"]
         if mode == "serial":
