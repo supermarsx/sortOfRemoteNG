@@ -1,3 +1,4 @@
+import { sisoMetadataCachePrefix } from "./helpers/cefWindowsEngineHostHistory.mjs";
 import {
   reviewedWindowsImagePrefix,
   withoutReviewedWindowsImage,
@@ -7877,7 +7878,12 @@ async function inactiveControl(
 ) {
   const defaultsModule =
     await import("../../native/windows-arm-full-sdk/expected-defaults.mjs");
-  let source = await read(prefix + "full_sdk_control.mjs");
+  // This lexical model retains the exact pre-cache parent; current cache
+  // ownership/IO runs in the required metadata suite and native regression.
+  let source = sisoMetadataCachePrefix(
+    await read(prefix + "full_sdk_control.mjs"),
+    prefix + "full_sdk_control.mjs",
+  );
   if (previousSourceParent) {
     // Isolate the actual old parent-creation behavior while retaining current
     // image data and every other current guard in this lexical causal model.

@@ -22,8 +22,49 @@ const metadataSpecs = JSON.parse(
 );
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const worker = "native/windows-arm-full-sdk/full-sdk-engine-worker.mjs";
+const cacheSpecs = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../fixtures/cef/windows_siso_cache_inverse.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+export function withoutSisoMetadataCache(text, file) {
+  if (file === "tests/tooling/windowsArmFullSdk.node-test.mjs")
+    text = text.replaceAll("\r\n", "\n");
+  const spec = cacheSpecs[file];
+  assert(spec, "SISO_CACHE_HISTORY_SCOPE");
+  assert.equal(Buffer.byteLength(text), spec.bytes, "SISO_CACHE_HISTORY_BYTES");
+  assert.equal(sha(text), spec.sha256, "SISO_CACHE_HISTORY_WHOLE");
+  for (const pair of spec.pairs) {
+    assert.equal(
+      text.split(pair.current).length,
+      2,
+      "SISO_CACHE_HISTORY_COUNT",
+    );
+    text = text.replace(pair.current, () => pair.previous);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.beforeBytes,
+    "SISO_CACHE_HISTORY_OLD_BYTES",
+  );
+  assert.equal(sha(text), spec.beforeSha256, "SISO_CACHE_HISTORY_OLD_WHOLE");
+  return text;
+}
+export function sisoMetadataCachePrefix(text, file) {
+  const spec = cacheSpecs[file];
+  if (file === "tests/tooling/windowsArmFullSdk.node-test.mjs")
+    text = text.replaceAll("\r\n", "\n");
+  return spec && sha(text) === spec.sha256
+    ? withoutSisoMetadataCache(text, file)
+    : text;
+}
 // Test DATA only: never imported by native execution or SDK admission.
 export function withoutSourceMetadataDiagnostic(text, file) {
+  text = sisoMetadataCachePrefix(text, file);
   const spec = metadataSpecs[file];
   assert(spec, "METADATA_HISTORY_SCOPE");
   assert.equal(Buffer.byteLength(text), spec.bytes, "METADATA_HISTORY_BYTES");
@@ -41,6 +82,7 @@ export function withoutSourceMetadataDiagnostic(text, file) {
   return text;
 }
 export function sourceMetadataDiagnosticPrefix(text, file) {
+  text = sisoMetadataCachePrefix(text, file);
   const spec = metadataSpecs[file];
   return spec && sha(text) === spec.sha256
     ? withoutSourceMetadataDiagnostic(text, file)

@@ -12,6 +12,11 @@ import { fileURLToPath } from "node:url";
 import * as checkpoint from "./current-source-helpers/scripts/lib/cef-engineering-checkpoint.mjs";
 import path from "node:path";
 import { types as utilTypes } from "node:util";
+import {
+  zstdDecompressSync,
+  zstdCompressSync,
+  constants as zlibConstants,
+} from "node:zlib";
 import * as custom from "./current-source-helpers/scripts/lib/browser-custom-runtime.mjs";
 import {
   WORKFLOW_CLOCK_ENV,
@@ -2088,6 +2093,403 @@ function parentMetadataProjection(recipeRaw, candidateRaw, files, sourceId) {
     roleCount: 4,
   };
 }
+// BEGIN OWNED SISO METADATA CACHE PRECISION
+// Cache DATA only. The nine live metadata identities and raw pins never change.
+function metadataSisoCacheData(raw, root, records, fence) {
+  const deny = (ok, code) => need(ok, "SOURCE_SISO_CACHE_" + code);
+  deny(
+    Buffer.isBuffer(raw) && raw.length > 21 && raw.length <= 67108864,
+    "BOUND",
+  );
+  deny(
+    typeof root === "string" && path.isAbsolute(root) && records.length === 9,
+    "SCOPE",
+  );
+  const out = "source-checkout/src/out/Release_GN_arm64/";
+  const relative = [
+    out + "args.gn",
+    out +
+      "gen/base/allocator/partition_allocator/src/partition_alloc/buildflags.h",
+    out + "gen/cef/include/cef_config.h",
+  ];
+  const expected = new Map();
+  for (let i = 0; i < 3; i++) {
+    const row = records[i + 5];
+    deny(
+      row.relative === relative[i] &&
+        Number.isSafeInteger(row.pin.bytes) &&
+        row.pin.bytes > 0 &&
+        row.pin.bytes <= 8388608 &&
+        /^[a-f0-9]{64}$/.test(row.pin.sha256),
+      "METADATA_SCOPE",
+    );
+    const parts = row.identity.split(":");
+    deny(
+      parts.length === 8 && parts.every((x) => /^-?[0-9]{1,40}$/.test(x)),
+      "METADATA_IDENTITY",
+    );
+    const time = BigInt(parts[6]);
+    deny(
+      time > 0n && time < 9223372036854775808n && time % 100n === 0n,
+      "PHYSICAL_TIME",
+    );
+    expected.set(path.join(root, row.relative).replaceAll("\\", "/"), {
+      row,
+      time,
+    });
+  }
+  deny(
+    raw.subarray(0, 9).equals(Buffer.from("28b52ffd2000010000", "hex")) &&
+      raw.readUInt32LE(9) === 0x184d2a50,
+    "FORMAT",
+  );
+  const indexLength = raw.readUInt32LE(13);
+  deny(
+    indexLength >= 12 &&
+      indexLength <= 260 &&
+      (indexLength - 4) % 8 === 0 &&
+      17 + indexLength < raw.length,
+    "INDEX",
+  );
+  deny(raw.readUInt32LE(17) === 0x51500001, "VERSION");
+  const chunks = [],
+    lengths = [];
+  let offset = 17 + indexLength,
+    total = 0;
+  for (let at = 21; at < 17 + indexLength; at += 8) {
+    fence();
+    const size = raw.readUInt32LE(at),
+      expanded = raw.readUInt32LE(at + 4);
+    deny(
+      size > 0 &&
+        expanded > 0 &&
+        offset + size <= raw.length &&
+        expanded <= 268435456 - total,
+      "CHUNK_BOUND",
+    );
+    const value = zstdDecompressSync(raw.subarray(offset, offset + size), {
+      maxOutputLength: expanded,
+      info: true,
+    });
+    deny(
+      value.buffer.length === expanded && value.engine.bytesWritten === size,
+      "CHUNK_SHAPE",
+    );
+    chunks.push(value.buffer);
+    lengths.push(expanded);
+    offset += size;
+    total += expanded;
+  }
+  deny(offset === raw.length && total > 0, "TRAILING");
+  const body = Buffer.concat(chunks, total),
+    next = Buffer.from(body);
+  let fieldsRead = 0;
+  function fields(bytes, schema, repeated = []) {
+    let at = 0;
+    const result = [],
+      seen = new Set();
+    const read = () => {
+      let n = 0n;
+      for (let i = 0; i < 10; i++) {
+        deny(at < bytes.length, "PROTO_EOF");
+        const b = bytes[at++];
+        deny(i !== 9 || b <= 1, "PROTO_INTEGER");
+        n |= BigInt(b & 127) << BigInt(i * 7);
+        if (b < 128) {
+          deny(i === 0 || b !== 0, "PROTO_CANONICAL");
+          return n;
+        }
+      }
+      deny(false, "PROTO_INTEGER");
+    };
+    while (at < bytes.length) {
+      if (++fieldsRead % 4096 === 0) fence();
+      deny(fieldsRead <= 10000000, "PROTO_BOUND");
+      const tag = read();
+      deny(tag > 0n && tag < 536870912n, "PROTO_TAG");
+      const number = Number(tag >> 3n),
+        wire = Number(tag & 7n);
+      deny(
+        Object.hasOwn(schema, number) &&
+          schema[number] === wire &&
+          (!seen.has(number) || repeated.includes(number)),
+        "PROTO_SCHEMA",
+      );
+      seen.add(number);
+      let value, start;
+      if (wire === 0) {
+        start = at;
+        value = read();
+      } else {
+        const length = read();
+        deny(length <= BigInt(bytes.length - at), "PROTO_LENGTH");
+        start = at;
+        value = bytes.subarray(at, at + Number(length));
+        at += Number(length);
+      }
+      result.push({ number, value, start, end: at });
+    }
+    return result;
+  }
+  const only = (rows, number) => rows.find((row) => row.number === number);
+  const text = (value) => {
+    deny(value.length <= 32768, "STRING_BOUND");
+    const s = value.toString("utf8");
+    deny(Buffer.from(s).equals(value) && !s.includes("\0"), "STRING_ENCODING");
+    return s;
+  };
+  function digest(value) {
+    const d = fields(value, { 1: 2, 2: 0 }),
+      h = only(d, 1),
+      size = only(d, 2);
+    deny(
+      h &&
+        /^[a-f0-9]{64}$/.test(text(h.value)) &&
+        (!size || size.value <= 8589934592n),
+      "DIGEST",
+    );
+    return { sha256: text(h.value), bytes: Number(size?.value ?? 0n) };
+  }
+  function varint(n) {
+    const result = [];
+    while (n > 127n) {
+      result.push(Number(n & 127n) | 128);
+      n >>= 7n;
+    }
+    result.push(Number(n));
+    return Buffer.from(result);
+  }
+  const state = fields(
+    body,
+    { 1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 0, 7: 2, 8: 2 },
+    [1, 4, 5, 7, 8],
+  );
+  const seen = new Set(),
+    matched = new Set(),
+    changes = [];
+  let entries = 0;
+  for (const field of state) {
+    if (field.number === 1) {
+      deny(++entries <= 1000000 && field.value.length <= 131072, "ENTRY_BOUND");
+      const row = fields(field.value, {
+        1: 2,
+        2: 2,
+        3: 2,
+        4: 0,
+        5: 2,
+        6: 2,
+        7: 2,
+        8: 0,
+        9: 2,
+        10: 0,
+      });
+      const id = only(row, 1),
+        name = only(row, 2);
+      deny(id && name, "ENTRY_REQUIRED");
+      const file = text(name.value);
+      deny(!seen.has(file), "ENTRY_DUPLICATE");
+      seen.add(file);
+      const identity = fields(id.value, { 1: 0 }),
+        time = only(identity, 1);
+      deny(
+        time && time.value > 0n && time.value < 9223372036854775808n,
+        "ENTRY_TIME",
+      );
+      for (const number of [4, 10]) {
+        const v = only(row, number);
+        deny(!v || v.value <= 1n, "ENTRY_BOOLEAN");
+      }
+      for (const number of [6, 9]) {
+        const v = only(row, number);
+        deny(!v || v.value.length === 32, "ENTRY_HASH");
+      }
+      for (const number of [3, 7]) {
+        const v = only(row, number);
+        if (v) digest(v.value);
+      }
+      const symlink = only(row, 5);
+      if (symlink) text(symlink.value);
+      const target = expected.get(file);
+      if (!target) continue;
+      const d = only(row, 3),
+        cmd = only(row, 6),
+        edge = only(row, 9),
+        local = only(row, 10);
+      deny(
+        d && cmd && edge && local?.value === 1n && !symlink,
+        "GENERATED_ENTRY",
+      );
+      const actual = digest(d.value);
+      deny(
+        actual.sha256 === target.row.pin.sha256 &&
+          actual.bytes === target.row.pin.bytes,
+        "CONTENT_PIN",
+      );
+      deny(
+        time.value / 100n === target.time / 100n && time.value >= target.time,
+        "TIME_DELTA",
+      );
+      matched.add(file);
+      if (time.value !== target.time) {
+        const encoded = varint(target.time),
+          at = field.start + id.start + time.start;
+        deny(encoded.length === time.end - time.start, "TIME_ENCODING");
+        encoded.copy(next, at);
+        changes.push({
+          relative: target.row.relative,
+          before: String(time.value),
+          current: String(target.time),
+        });
+      }
+    } else if ([2, 4, 5].includes(field.number)) text(field.value);
+    else if (field.number === 3)
+      for (const x of fields(field.value, { 1: 2 }, [1])) text(x.value);
+    else if (field.number === 6)
+      deny(field.value === 0n || field.value === 1n, "DIGEST_FUNCTION");
+    else if (field.number === 7) {
+      for (const x of fields(field.value, { 1: 0, 2: 2 }))
+        if (x.number === 2)
+          for (const v of fields(x.value, { 1: 2, 2: 0 }))
+            if (v.number === 1) text(v.value);
+    } else if (field.number === 8)
+      for (const x of fields(field.value, { 1: 2, 2: 0 }))
+        if (x.number === 1) text(x.value);
+  }
+  deny(matched.size === 3, "METADATA_MISSING");
+  fence();
+  if (changes.length === 0) return { raw, changes, entries };
+  const header = Buffer.from(raw.subarray(0, 17 + indexLength)),
+    encoded = [];
+  offset = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    fence();
+    const chunk = zstdCompressSync(next.subarray(offset, offset + lengths[i]), {
+      params: {
+        [zlibConstants.ZSTD_c_compressionLevel]: 1,
+        [zlibConstants.ZSTD_c_checksumFlag]: 1,
+      },
+    });
+    header.writeUInt32LE(chunk.length, 21 + i * 8);
+    encoded.push(chunk);
+    offset += lengths[i];
+  }
+  const result = Buffer.concat([header, ...encoded]);
+  deny(result.length <= 67108864, "OUTPUT_BOUND");
+  return { raw: result, changes, entries };
+}
+async function normalizeMetadataSisoCache(token, records) {
+  const state = operationState(token);
+  need(
+    state.creationJoined &&
+      !state.issued &&
+      !state.metadataSnapshot &&
+      !state.metadataCache &&
+      state.pendingWriters === 0,
+    "SOURCE_SISO_CACHE_OWNER",
+  );
+  const relative = "source-checkout/src/out/Release_GN_arm64/.siso_fs_state";
+  const original = await heldOperationFile(token, relative, 67108864);
+  const result = metadataSisoCacheData(original.raw, state.root, records, () =>
+    operationState(token),
+  );
+  const recheck = async () => {
+    for (const row of records) {
+      const actual = await heldOperationFile(
+        token,
+        row.relative,
+        row.maximum,
+        row.pin,
+      );
+      need(actual.identity === row.identity, "SOURCE_METADATA_REPLACED");
+    }
+  };
+  await recheck();
+  if (result.changes.length) {
+    await operationFence(token);
+    const name = path.join(state.root, relative);
+    const fd = await operationWork(
+      token,
+      () => fs.open(name, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0)),
+      (late) => late.close(),
+    );
+    state.readFds.add(fd);
+    let failed = false,
+      writing = false,
+      primary;
+    try {
+      need(
+        fileId(await operationWork(token, () => fd.stat({ bigint: true }))) ===
+          original.identity &&
+          fileId(
+            await operationWork(token, () => fs.lstat(name, { bigint: true })),
+          ) === original.identity,
+        "SOURCE_SISO_CACHE_REPLACED",
+      );
+      state.pendingWriters++;
+      writing = true;
+      let offset = 0;
+      while (offset < result.raw.length) {
+        const written = await operationWork(token, () =>
+          fd.write(
+            result.raw,
+            offset,
+            Math.min(1048576, result.raw.length - offset),
+            offset,
+          ),
+        );
+        need(written.bytesWritten > 0, "SOURCE_SISO_CACHE_WRITE");
+        offset += written.bytesWritten;
+      }
+      await operationWork(token, () => fd.truncate(result.raw.length));
+      await operationWork(token, () => fd.sync());
+    } catch (error) {
+      failed = true;
+      primary = fail(state, error);
+    } finally {
+      if (writing) state.pendingWriters--;
+      try {
+        await operationWork(token, () => fd.close());
+        state.readFds.delete(fd);
+      } catch (error) {
+        state.cleanupConfirmed = false;
+        if (!failed) {
+          failed = true;
+          primary = fail(state, error);
+        }
+      }
+    }
+    if (failed) throw primary;
+  }
+  const final = await heldOperationFile(token, relative, 67108864, {
+    bytes: result.raw.length,
+    sha256: hashBytes(result.raw),
+  });
+  need(
+    final.identity.split(":").slice(0, 5).join(":") ===
+      original.identity.split(":").slice(0, 5).join(":"),
+    "SOURCE_SISO_CACHE_REPLACED",
+  );
+  if (!result.changes.length)
+    need(final.identity === original.identity, "SOURCE_SISO_CACHE_REPLACED");
+  await recheck();
+  await operationFence(token);
+  state.metadataCache = Object.freeze({
+    relative,
+    pin: Object.freeze(final.pin),
+    identity: final.identity,
+  });
+  console.log(
+    JSON.stringify({
+      kind: "windows-arm-siso-cache-precision",
+      original: original.pin,
+      final: final.pin,
+      entries: result.entries,
+      changes: result.changes,
+    }),
+  );
+}
+// END OWNED SISO METADATA CACHE PRECISION
+
 async function verifySourceMetadata(token) {
   const state = operationState(token);
   need(
@@ -2190,6 +2592,7 @@ async function verifySourceMetadata(token) {
       state.pendingWriters === 0,
     "SOURCE_METADATA_FD_JOIN",
   );
+  await normalizeMetadataSisoCache(token, records);
   const matchedExpectedDefaults = expectedDefaultsFact(
     state,
     projected,
@@ -4975,6 +5378,21 @@ async function runEnginePhase(token, role) {
   state.enginePhase = phase;
   try {
     await engineBoundary(token, phase);
+    if (role === "cef-engine") {
+      const cache = operationState(
+        state.source.operationToken,
+        true,
+      ).metadataCache;
+      need(cache, "SOURCE_SISO_CACHE_HANDOFF");
+      const actual = await engineRead(
+        token,
+        phase,
+        cache.relative,
+        67108864,
+        cache.pin,
+      );
+      need(actual.identity === cache.identity, "SOURCE_SISO_CACHE_REPLACED");
+    }
     if (index >= 2) compilerAdmission(token, phase);
     const operation = operationState(state.source.operationToken, true),
       root = state.source.root,

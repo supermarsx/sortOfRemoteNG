@@ -7,7 +7,16 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 import ts from "typescript";
-import { withoutSourceMetadataDiagnostic } from "./helpers/cefWindowsEngineHostHistory.mjs";
+import {
+  zstdDecompressSync,
+  zstdCompressSync,
+  constants as zlibConstants,
+} from "node:zlib";
+import {
+  withoutSourceMetadataDiagnostic,
+  withoutSisoMetadataCache,
+  sisoMetadataCachePrefix,
+} from "./helpers/cefWindowsEngineHostHistory.mjs";
 import { withoutReviewedWindowsImage } from "./helpers/cefWindowsImageReviewedHistory.mjs";
 
 // Actual production function bodies and real owned temporary files. The outer
@@ -36,6 +45,8 @@ const functions = [
   "captureSourceMetadataFailure",
   "recheckSourceMetadata",
   "startupFailureReport",
+  "metadataSisoCacheData",
+  "normalizeMetadataSisoCache",
 ];
 const variables = [
   "hashBytes",
@@ -86,13 +97,262 @@ const binding = {
   policySha256: "policy",
 };
 
-async function fixture(t, brokenDiagnostic = false) {
+// Independent protobuf writer for modeled cache DATA, using the exact pinned
+// Siso state.proto/index ABI. Native producer regressions are recorded separately.
+function cacheVarint(value) {
+  let n = BigInt(value);
+  const bytes = [];
+  while (n > 127n) {
+    bytes.push(Number(n & 127n) | 128);
+    n >>= 7n;
+  }
+  bytes.push(Number(n));
+  return Buffer.from(bytes);
+}
+function cacheField(number, value) {
+  return typeof value === "bigint" || typeof value === "number"
+    ? Buffer.concat([cacheVarint(number * 8), cacheVarint(value)])
+    : Buffer.concat([
+        cacheVarint(number * 8 + 2),
+        cacheVarint(Buffer.byteLength(value)),
+        Buffer.from(value),
+      ]);
+}
+function modelCache(f, change = () => {}, delta = 37n) {
+  const entries = f.records.slice(5, 8).map((row) => ({
+    name: path.join(f.root, row.relative).replaceAll("\\", "/"),
+    bytes: row.pin.bytes,
+    hash: row.pin.sha256,
+    time: BigInt(row.identity.split(":")[6]) + delta,
+    cmd: Buffer.alloc(32, 1),
+    edge: Buffer.alloc(32, 2),
+    local: 1,
+  }));
+  const settings = { version: 0x51500001, stateFields: [], entryFields: [] };
+  change(entries, settings);
+  const body = Buffer.concat([
+    ...entries.map((e) =>
+      cacheField(
+        1,
+        Buffer.concat([
+          cacheField(1, cacheField(1, e.time)),
+          cacheField(2, e.name),
+          cacheField(
+            3,
+            Buffer.concat([cacheField(1, e.hash), cacheField(2, e.bytes)]),
+          ),
+          ...(e.cmd ? [cacheField(6, e.cmd)] : []),
+          cacheField(8, e.time),
+          ...(e.edge ? [cacheField(9, e.edge)] : []),
+          cacheField(10, e.local),
+          ...settings.entryFields,
+        ]),
+      ),
+    ),
+    ...settings.stateFields,
+  ]);
+  const compressed = zstdCompressSync(body),
+    header = Buffer.alloc(29);
+  Buffer.from("28b52ffd2000010000", "hex").copy(header);
+  header.writeUInt32LE(0x184d2a50, 9);
+  header.writeUInt32LE(12, 13);
+  header.writeUInt32LE(settings.version, 17);
+  header.writeUInt32LE(compressed.length, 21);
+  header.writeUInt32LE(body.length, 25);
+  return Buffer.concat([header, compressed]);
+}
+const cacheRelative = "source-checkout/src/out/Release_GN_arm64/.siso_fs_state";
+async function cacheFixture(t, change, delta) {
+  const f = await fixture(t, false, true);
+  f.state.metadataSnapshot = undefined;
+  const raw = modelCache(f, change, delta);
+  await fs.writeFile(path.join(f.root, cacheRelative), raw);
+  return { ...f, raw };
+}
+
+test("owned Siso cache changes only same100ns metadata timestamps and is idempotent", async (t) => {
+  const f = await cacheFixture(t);
+  const result = f.api.metadataSisoCacheData(
+    f.raw,
+    f.root,
+    f.records,
+    () => {},
+  );
+  assert.equal(result.changes.length, 3);
+  assert.equal(result.entries, 3);
+  assert(
+    result.changes.every((x) => BigInt(x.before) - BigInt(x.current) === 37n),
+  );
+  assert.notDeepEqual(result.raw, f.raw);
+  const again = f.api.metadataSisoCacheData(
+    result.raw,
+    f.root,
+    f.records,
+    () => {},
+  );
+  assert.deepEqual(again.changes, []);
+  assert.equal(again.raw, result.raw);
+});
+
+for (const [name, change, code] of [
+  ["wrong digest", (e) => (e[0].hash = "a".repeat(64)), "CONTENT_PIN"],
+  ["wrong size", (e) => e[0].bytes++, "CONTENT_PIN"],
+  ["missing generated command", (e) => (e[0].cmd = null), "GENERATED_ENTRY"],
+  ["invalid command hash", (e) => (e[0].cmd = Buffer.alloc(31)), "ENTRY_HASH"],
+  ["missing edge hash", (e) => (e[0].edge = null), "GENERATED_ENTRY"],
+  ["nonlocal output", (e) => (e[0].local = 0), "GENERATED_ENTRY"],
+  [
+    "outside owned output",
+    (e) => (e[0].name = e[0].name.replace("/source-checkout/", "/outside/")),
+    "METADATA_MISSING",
+  ],
+  ["duplicate entry", (e) => e.push({ ...e[0] }), "ENTRY_DUPLICATE"],
+  ["missing metadata", (e) => e.pop(), "METADATA_MISSING"],
+  ["nonprecision timestamp drift", (e) => (e[0].time += 100n), "TIME_DELTA"],
+  [
+    "unknown entry schema",
+    (e, s) => s.entryFields.push(cacheField(11, 1)),
+    "PROTO_SCHEMA",
+  ],
+  [
+    "unknown state schema",
+    (e, s) => s.stateFields.push(cacheField(9, 1)),
+    "PROTO_SCHEMA",
+  ],
+  [
+    "unknown digest function",
+    (e, s) => s.stateFields.push(cacheField(6, 2)),
+    "DIGEST_FUNCTION",
+  ],
+  ["unknown index version", (e, s) => s.version++, "VERSION"],
+])
+  test("owned Siso cache denies " + name + " before writes", async (t) => {
+    const f = await cacheFixture(t, change),
+      file = path.join(f.root, cacheRelative);
+    await assert.rejects(
+      f.api.normalizeMetadataSisoCache(f.token, f.records),
+      (e) => e.message.endsWith("_" + code),
+    );
+    assert.deepEqual(await fs.readFile(file), f.raw);
+    assert.equal(f.state.metadataCache, undefined);
+  });
+
+test("owned Siso cache refuses truncation trailing frames and decompression bounds", async (t) => {
+  const f = await cacheFixture(t);
+  const badSize = Buffer.from(f.raw);
+  badSize.writeUInt32LE(268435457, 25);
+  for (const raw of [
+    f.raw.subarray(0, 20),
+    f.raw.subarray(0, -1),
+    Buffer.concat([f.raw, Buffer.from([0])]),
+    badSize,
+  ])
+    assert.throws(() =>
+      f.api.metadataSisoCacheData(raw, f.root, f.records, () => {}),
+    );
+  const primary = false;
+  assert.throws(
+    () =>
+      f.api.metadataSisoCacheData(f.raw, f.root, f.records, () => {
+        throw primary;
+      }),
+    (value) => value === primary,
+  );
+});
+
+test("actual owned Siso cache write keeps all nine live identity and raw guards", async (t) => {
+  const f = await cacheFixture(t);
+  await f.api.normalizeMetadataSisoCache(f.token, f.records);
+  assert(f.state.metadataCache);
+  assert.equal(f.state.readFds.size, 0);
+  assert.equal(f.state.pendingWriters, 0);
+  const cache = await f.api.heldOperationFile(
+    f.token,
+    cacheRelative,
+    67108864,
+    f.state.metadataCache.pin,
+  );
+  assert.equal(cache.identity, f.state.metadataCache.identity);
+  assert.deepEqual(
+    f.api.metadataSisoCacheData(cache.raw, f.root, f.records, () => {}).changes,
+    [],
+  );
+  for (const row of f.records) {
+    const read = await f.api.heldOperationFile(
+      f.token,
+      row.relative,
+      row.maximum,
+      row.pin,
+    );
+    assert.equal(read.identity, row.identity);
+  }
+  await assert.rejects(
+    f.api.normalizeMetadataSisoCache(f.token, f.records),
+    /SOURCE_SISO_CACHE_OWNER/,
+  );
+});
+
+test("owned Siso cache rejects actual input edits before changing cache DATA", async (t) => {
+  const f = await cacheFixture(t),
+    file = path.join(f.root, cacheRelative);
+  await fs.appendFile(path.join(f.root, f.records[5].relative), "changed");
+  await assert.rejects(
+    f.api.normalizeMetadataSisoCache(f.token, f.records),
+    /SOURCE_RECORD_PIN/,
+  );
+  assert.deepEqual(await fs.readFile(file), f.raw);
+});
+
+test("owned Siso cache refuses owner loss and replacement before an in-place write", async (t) => {
+  const f = await cacheFixture(t),
+    file = path.join(f.root, cacheRelative);
+  f.state.creationJoined = false;
+  await assert.rejects(
+    f.api.normalizeMetadataSisoCache(f.token, f.records),
+    /SOURCE_SISO_CACHE_OWNER/,
+  );
+  assert.deepEqual(await fs.readFile(file), f.raw);
+  f.state.creationJoined = true;
+  f.state.beforeOperation = async (action) => {
+    if (!String(action).includes("constants.O_RDWR")) return;
+    f.state.beforeOperation = undefined;
+    await fs.writeFile(file + ".replacement", f.raw);
+    await fs.rename(file + ".replacement", file);
+  };
+  await assert.rejects(
+    f.api.normalizeMetadataSisoCache(f.token, f.records),
+    /SOURCE_SISO_CACHE_REPLACED/,
+  );
+  assert.deepEqual(await fs.readFile(file), f.raw);
+  assert.equal(f.state.metadataCache, undefined);
+});
+
+test("owned Siso cache rejects a same-data inode replacement during its own write", async (t) => {
+  const f = await cacheFixture(t),
+    file = path.join(f.root, cacheRelative);
+  f.state.beforeOperation = async (action) => {
+    if (!String(action).includes("fd.truncate")) return;
+    f.state.beforeOperation = undefined;
+    await fs.rename(file, file + ".held-old");
+    await fs.writeFile(file, await fs.readFile(file + ".held-old"));
+  };
+  await assert.rejects(
+    f.api.normalizeMetadataSisoCache(f.token, f.records),
+    /SOURCE_SISO_CACHE_REPLACED/,
+  );
+  assert.equal(f.state.metadataCache, undefined);
+  assert.equal(f.state.pendingWriters, 0);
+});
+
+async function fixture(t, brokenDiagnostic = false, canonicalTimes = false) {
   const root = await fs.realpath(
     await fs.mkdtemp(path.join(tmpdir(), "metadata-diagnostic-")),
   );
   const token = Object.freeze({ modeledOwner: true });
   const state = {
     root,
+    creationJoined: true,
+    pendingWriters: 0,
     readFds: new Set(),
     failed: false,
     plan: {
@@ -128,8 +388,11 @@ async function fixture(t, brokenDiagnostic = false) {
     "operationWork",
     "expectedDefaultsCodeBinding",
     "checkedInputRow",
+    "zstdDecompressSync",
+    "zstdCompressSync",
+    "zlibConstants",
     actual +
-      "\nreturn {heldOperationFile,recheckSourceMetadata,captureSourceMetadataFailure,startupFailureReport,fail};",
+      "\nreturn {heldOperationFile,recheckSourceMetadata,captureSourceMetadataFailure,startupFailureReport,fail,metadataSisoCacheData,normalizeMetadataSisoCache};",
   )(
     fs,
     path,
@@ -147,16 +410,22 @@ async function fixture(t, brokenDiagnostic = false) {
     async () => operationState(token),
     async (value, action) => {
       operationState(value);
+      await state.beforeOperation?.(action);
       return action();
     },
     async () => binding,
     (rows, relative, record) => rows.push({ relative, pin: record.pin }),
+    zstdDecompressSync,
+    zstdCompressSync,
+    zlibConstants,
   );
   const records = [];
   for (const [i, relative] of paths.entries()) {
     const file = path.join(root, relative);
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "fixed non-secret metadata " + i);
+    if (canonicalTimes && i >= 5 && i <= 7)
+      await fs.utimes(file, 1700000000, 1700000000);
     const read = await api.heldOperationFile(token, relative, 8192);
     records.push(
       Object.freeze({
@@ -385,14 +654,15 @@ test("whole diagnostic controller and Q history restores exact old bodies and de
     assert.equal(Buffer.byteLength(historical), image[file].beforeBytes);
     assert.equal(digest(historical), image[file].beforeSha256);
     const pair = spec.pairs[0];
+    const diagnosticCurrent = sisoMetadataCachePrefix(text, file);
     const mutations = [
-      text + "\n",
-      text.replace(pair.current, pair.previous),
-      text.replace(pair.current, pair.current + pair.current),
-      text.replaceAll("\n", "\r\n"),
+      diagnosticCurrent + "\n",
+      diagnosticCurrent.replace(pair.current, pair.previous),
+      diagnosticCurrent.replace(pair.current, pair.current + pair.current),
+      diagnosticCurrent.replaceAll("\n", "\r\n"),
     ];
     for (const mutated of mutations) {
-      assert.notEqual(mutated, text);
+      assert.notEqual(mutated, diagnosticCurrent);
       assert.throws(() => withoutSourceMetadataDiagnostic(mutated, file));
       // The complete previous Q is already an admitted historical DATA body.
       // Only the strict new prefix must deny it; partial drift still denies.
@@ -402,4 +672,85 @@ test("whole diagnostic controller and Q history restores exact old bodies and de
     }
     assert.throws(() => withoutSourceMetadataDiagnostic(text, "unknown"));
   }
+});
+
+test("whole Siso cache DATA bridge retains old controller Q and lexical test and denies partial additions", async () => {
+  const specs = JSON.parse(
+    await fs.readFile(
+      new URL(
+        "../fixtures/cef/windows_siso_cache_inverse.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(Object.keys(specs).length, 3);
+  for (const [file, spec] of Object.entries(specs)) {
+    const current = await fs.readFile(
+      new URL("../../" + file, import.meta.url),
+      "utf8",
+    );
+    const previous = withoutSisoMetadataCache(current, file);
+    assert.equal(Buffer.byteLength(previous), spec.beforeBytes);
+    assert.equal(
+      createHash("sha256").update(previous).digest("hex"),
+      spec.beforeSha256,
+    );
+    for (const pair of spec.pairs) {
+      for (const changed of [
+        current.replace(pair.current, pair.previous),
+        current.replace(pair.current, pair.current + pair.current),
+      ]) {
+        assert.notEqual(changed, current);
+        assert.throws(() => withoutSisoMetadataCache(changed, file));
+      }
+    }
+    for (const changed of [
+      current + "\n",
+      previous,
+      ...(file === "tests/tooling/windowsArmFullSdk.node-test.mjs"
+        ? []
+        : [current.replaceAll("\n", "\r\n")]),
+    ])
+      assert.throws(() => withoutSisoMetadataCache(changed, file));
+    assert.throws(() => withoutSisoMetadataCache(current, "unknown"));
+    if (file.endsWith("sdk-origin-review.json")) {
+      const q = JSON.parse(current),
+        old = JSON.parse(previous);
+      assert.equal(q.producerInputs.length, 128);
+      const changed = q.producerInputs.filter(
+        (row, i) =>
+          JSON.stringify(row) !== JSON.stringify(old.producerInputs[i]),
+      );
+      assert.equal(changed.length, 2);
+      assert.deepEqual(
+        changed.map((x) => x.path),
+        [
+          "native/windows-arm-full-sdk/full_sdk_control.mjs",
+          "tests/tooling/windowsArmFullSdk.node-test.mjs",
+        ],
+      );
+      assert.equal(q.workflowPin.sha256, old.workflowPin.sha256);
+    }
+  }
+  const baseline = withoutSisoMetadataCache(
+    source,
+    "native/windows-arm-full-sdk/full_sdk_control.mjs",
+  );
+  const oldAst = ts.createSourceFile(
+    "old.mjs",
+    baseline,
+    99,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const oldGuard = oldAst.statements.find(
+    (x) =>
+      ts.isFunctionDeclaration(x) && x.name?.text === "recheckSourceMetadata",
+  );
+  const guard = ast.statements.find(
+    (x) =>
+      ts.isFunctionDeclaration(x) && x.name?.text === "recheckSourceMetadata",
+  );
+  assert.equal(guard.getText(ast), oldGuard.getText(oldAst));
 });
