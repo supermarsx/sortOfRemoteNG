@@ -504,7 +504,13 @@ describe("save timeout diagnostic contract", () => {
         filter: { sortBy: "name", sortDirection: "asc" },
       });
       await waitForRows(6);
-      fireEvent.change(await screen.findByTestId("editor-name"), {
+      // Tree rows can appear before the existing editor has loaded its draft.
+      // Wait for that draft so initialization cannot overwrite the test edit.
+      const name = await screen.findByDisplayValue("Alpha");
+      expect(screen.getByTestId("editor-hostname")).toHaveValue(
+        "root-alpha.example",
+      );
+      fireEvent.change(name, {
         target: { value: "Zulu" },
       });
       const before = beforeSaveClick();
