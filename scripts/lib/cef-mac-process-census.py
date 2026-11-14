@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-PRODUCTION_CENSUS_ADMITTED = True
+PRODUCTION_CENSUS_ADMITTED = False
 ACTIVE_NATIVE_MODE = None
 IMAGE = '20260824.0482.1'
 PYTHON = '/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14'
@@ -37,8 +37,8 @@ NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1
 NATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,
     'source':'ce297732e385466d4d8fe731e30441408fec6d30',
     'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}
-NATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',
-                  'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}
+NATIVE_SOURCES = {'x86_64-apple-darwin':'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',
+                  'aarch64-apple-darwin':'3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'}
 NATIVE_MAX_WORK_MS = 180*60*1000
 NATIVE_MAX_REQUESTS = 43328
 NATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'

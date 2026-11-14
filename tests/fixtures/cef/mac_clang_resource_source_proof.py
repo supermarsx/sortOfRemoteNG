@@ -16,7 +16,7 @@ spec=importlib.util.spec_from_file_location('clang_nearby_ledger',HERE/'mac_near
 nearby=importlib.util.module_from_spec(spec);spec.loader.exec_module(nearby)
 base=nearby.base
 need=base.need
-BRANCH='refs/heads/codex/mac-clang-resource-metadata-20261102'
+BRANCH='refs/heads/codex/mac-source-scope-proof-20261114'
 WORKFLOW='supermarsx/sortOfRemoteNG/.github/workflows/cef-mac-clang-resource-proof.yml@'+BRANCH
 STAGES=('arguments','authority','python-pin','source-witness','owned-root','arm','intel','cleanup','report')
 CURRENT_STAGE='arguments'
@@ -318,7 +318,7 @@ def preflight(args):
     child_end=int(os.environ['CEF_MAC_CLANG_CHILD_DEADLINE_MS'])
     seconds=min(95,(started+300000-now-30000)//1000,(child_end-now)//1000)
     need(started>0 and now>=started and child_end<=started+270000 and seconds>=10)
-    CURRENT_STAGE='source-witness';module=base.helper();need(module.MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is False)
+    CURRENT_STAGE='source-witness';module=base.helper();need(module.MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is False and module.MAC_SOURCE_WRITE_ADMITTED is False and module.MAC_INTEL_SOURCE_WRITE_ADMITTED is False)
     observed={'source':'process-and-runner-environment','platform':sys.platform,'architecture':base.platform.machine(),
               'imageOS':os.environ['ImageOS'],'imageVersion':os.environ['ImageVersion'],
               'runnerEnvironment':os.environ['RUNNER_ENVIRONMENT'],'githubActions':os.environ['GITHUB_ACTIONS']=='true'}
@@ -330,19 +330,26 @@ def main(args):
     output,module,budget,observed=preflight(args);tree=None;receipt=None;clean=False;closed=False;retired=False
     cases=[];primary=None;owned_root_fd=None
     def public_denied():
-        need(module.MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is False)
+        need(module.MAC_CLANG_LITERAL_PRODUCTION_ADMITTED is False and
+             module.MAC_SOURCE_WRITE_ADMITTED is False and module.MAC_INTEL_SOURCE_WRITE_ADMITTED is False)
+        cases=[]
         for intel in(False,True):
-            work=output/('intel'if intel else'arm')/'work'
-            identity={key:'a'*64 for key in('producer','tools','graph','siso')}
-            identity.update(target='x86_64-apple-darwin'if intel else'aarch64-apple-darwin',
-                source=module.MAC_INTEL_SOURCE if intel else module.MAC_SOURCE,
-                canonicalRoot=str(work),image=base.IMAGE)
-            for mode in module.SOURCE_IO_MODES:
-                try:module.source_metadata(mode,work/'source',work/'must-not-write',identity,
-                                           platform_policy='mac-intel'if intel else'mac-arm')
-                except module.CheckpointError:pass
-                else:need(False)
-    public_denied()
+            target='x86_64-apple-darwin'if intel else'aarch64-apple-darwin'
+            new_source=module.MAC_INTEL_SOURCE if intel else module.MAC_SOURCE
+            old_source='684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'if intel else'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'
+            for label,source in [('old',old_source),('new',new_source),('wrong','0'*64)]:
+                work=Path('/Users/runner/work/_temp/sorng-cef-engineering')/target/source
+                identity={key:'a'*64 for key in('producer','tools','graph','siso')}
+                identity.update(target=target,source=source,canonicalRoot=str(work),image=base.IMAGE)
+                denied=0
+                for mode in module.SOURCE_IO_MODES:
+                    try:module.source_metadata(mode,work/'source',work/'source/src/out'/('Release_GN_x64'if intel else'Release_GN_arm64')/module.SOURCE_METADATA_NAME,identity,
+                                               platform_policy='mac-intel'if intel else'mac-arm')
+                    except module.CheckpointError as error:need(str(error)=='source-mac-host-scope');denied+=1
+                    else:need(False)
+                cases.append({'target':target,'source':source,'case':label,'modesDenied':denied,'productionAdmitted':False})
+        return cases
+    denied_before=public_denied()
     try:
         CURRENT_STAGE='owned-root'
         with module._mac_clang_owned_proof_tree(output,budget)as receipt:
@@ -377,7 +384,7 @@ def main(args):
             try:os.close(owned_root_fd)
             except BaseException:
                 if primary is None:raise
-    public_denied();CURRENT_STAGE='report';budget.check()
+    denied_after=public_denied();need(denied_before==denied_after);CURRENT_STAGE='report';budget.check()
     report={'schemaVersion':3,'kind':'sorng-mac-clang-resource-owned-proof','complete':True,
         'head':os.environ['GITHUB_SHA'],'runId':os.environ['GITHUB_RUN_ID'],'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
         'attemptId':os.environ['CEF_MAC_CLANG_ATTEMPT_ID'],
@@ -386,6 +393,7 @@ def main(args):
         'observedHost':observed,'cases':cases,
         'cleanupConfirmed':True,'proofWriterClosed':closed,'proofWriterRetired':retired,
         'publicV3DeniedBefore':True,'publicV3DeniedAfter':True,
+        'publicSourceScopes':{'before':denied_before,'after':denied_after},
         'productionClangAdmission':False,'productionInputWrites':False,'sourceAcquisition':False,'GNExecuted':False,
         'compilerExecuted':False,'sdkBuilt':False,'nativeAcceptance':False,'runtimeReady':False}
     raw=(json.dumps(report,sort_keys=True,separators=(',',':'))+'\n').encode();need(len(raw)<=128*1024)

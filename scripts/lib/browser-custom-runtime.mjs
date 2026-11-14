@@ -1888,7 +1888,10 @@ export async function customRuntimeBuildRecipe({
           path.join(path.resolve(checkouts.depotTools), "autoninja.py"),
           "-C",
           `out/Release_GN_${arch}`,
-          "cef",
+          // ARM Linux uses the pinned cross sysroot, which intentionally lacks
+          // GTK. The minimal distribution needs the library and sandbox, not
+          // the aggregate's GTK cefclient sample or its test executables.
+          selectedTarget === "aarch64-unknown-linux-gnu" ? "libcef" : "cef",
           ...(windows
             ? ["bootstrap", "bootstrapc"]
             : host === "linux"

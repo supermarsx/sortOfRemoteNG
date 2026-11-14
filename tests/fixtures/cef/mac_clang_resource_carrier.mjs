@@ -7,8 +7,9 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { held, executeJoined } from "./mac_process_census_proof.mjs";
+import { CANDIDATE, verifyCandidateWitness, verifySelectedRows, validatePublicSourceScopes } from "./mac_source_scope_binding.mjs";
 
-export const BRANCH = "refs/heads/codex/mac-clang-resource-metadata-20261102";
+export const BRANCH = "refs/heads/codex/mac-source-scope-proof-20261114";
 export const WORKFLOW =
   "supermarsx/sortOfRemoteNG/.github/workflows/cef-mac-clang-resource-proof.yml@" +
   BRANCH;
@@ -19,7 +20,7 @@ const PYTHON_SHA =
 const UUID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
-export const WITNESSES = Object.freeze([
+export const WITNESSES = Object.freeze([...new Set([
   "scripts/lib/cef-checkpoint-archive.py",
   "tests/fixtures/cef/mac_clang_resource_source_proof.py",
   "tests/fixtures/cef/mac_clang_resource_carrier.mjs",
@@ -31,7 +32,16 @@ export const WITNESSES = Object.freeze([
   "tests/fixtures/cef/mac_nearby_source_proof.py",
   "tests/fixtures/cef/mac_process_census_proof.mjs",
   ".github/workflows/cef-mac-clang-resource-proof.yml",
-]);
+  ...CANDIDATE.sourceFiles.map(row => row.path),
+  ...CANDIDATE.nativeInputFiles.map(row => row.path),
+  "tests/fixtures/cef/mac_source_scope_candidate.mjs",
+  "tests/fixtures/cef/mac_source_scope_binding.mjs",
+  "tests/fixtures/cef/mac_source_scope_supervisor_carrier.mjs",
+  "tests/fixtures/cef/mac_source_scope_census_denials.py",
+  "tests/fixtures/cef/mac_census_supervisor_proof.mjs",
+  "tests/fixtures/cef/mac_process_census_carrier.mjs",
+  "tests/fixtures/cef/mac_python_links_proof.mjs",
+])]);
 export const NEGATIVES = Object.freeze([
   "missing-link",
   "extra-row",
@@ -63,12 +73,12 @@ export const NEGATIVES = Object.freeze([
 const SOURCES = Object.freeze([
   [
     "aarch64-apple-darwin",
-    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+    "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
     "sorng-macarm-owned-source-metadata-intel-20260824-v3-nearby-clang-literals",
   ],
   [
     "x86_64-apple-darwin",
-    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+    "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
     "sorng-macintel-owned-source-metadata-intel-20260824-v3-nearby-clang-literals",
   ],
 ]);
@@ -215,6 +225,7 @@ export function validateReport(value, expected) {
     "proofWriterRetired",
     "publicV3DeniedBefore",
     "publicV3DeniedAfter",
+    "publicSourceScopes",
     "productionClangAdmission",
     "productionInputWrites",
     "sourceAcquisition",
@@ -279,6 +290,7 @@ export function validateReport(value, expected) {
     "runtimeReady",
   ])
     assert.equal(value[name], false, name);
+  validatePublicSourceScopes(value.publicSourceScopes);
   assert(
     Array.isArray(value.cases) && value.cases.length === 2,
     "CLANG_PROOF_CASES",
@@ -433,7 +445,7 @@ export function parseGitWitness(raw) {
   assert.equal(at, raw.length, "CLANG_PROOF_GIT_EXTRA");
   return result;
 }
-async function verifyCheckout(env, end) {
+export async function verifyCheckout(env, end) {
   const workspace = env.GITHUB_WORKSPACE;
   await physical(workspace, end);
   assert.equal(
@@ -471,6 +483,13 @@ async function verifyCheckout(env, end) {
   );
   checkEnd(end);
   const rows = parseGitWitness(result.stdout);
+  verifyCandidateWitness(rows);
+  const selected = await executeJoined("/usr/bin/git", ["-C", workspace, "ls-tree", "-r", env.GITHUB_SHA, "--", "scripts", "native/cef-hosted-recipe.json", ".node-version", ".github/workflows/cef-engineering-checkpoint.yml", ...new Set(CANDIDATE.nativeInputFiles.map(row => row.path.split("/").slice(0,3).join("/")))], {
+    cwd: workspace,
+    env: { PATH: "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+    encoding: "buffer", timeout: Math.max(1, Math.min(10000, end - performance.now() - 1000)), joinDeadline: end, maxBuffer: 128 * 1024, killSignal: "SIGKILL", windowsHide: true,
+  });
+  verifySelectedRows(selected.stdout, rows);
   for (const row of rows) {
     await physical(path.dirname(path.join(workspace, row.path)), end);
     assert(

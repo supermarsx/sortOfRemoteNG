@@ -1,0 +1,191 @@
+diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
+--- a/net/http/http_stream_factory_job.cc
++++ b/net/http/http_stream_factory_job.cc
+@@ -730,9 +730,12 @@
+   DCHECK(!connection_->is_initialized());
+ 
+   if (using_quic_ && !proxy_info_.is_direct() &&
+-      !proxy_info_.proxy_chain().Last().is_quic()) {
+-    // QUIC can not be spoken to non-QUIC proxies.  This error should not be
+-    // user visible, because the non-alternative Job should be resumed.
++      !proxy_info_.proxy_chain().Last().is_quic() &&
++      !session_->quic_session_pool()->IsSorngProxyChain(
++          proxy_info_.proxy_chain())) {
++    // Only the current context's exact owned datagram proxy may carry QUIC
++    // over an HTTP proxy. Every other non-QUIC proxy remains unsupported.
++    // The non-alternative Job should be resumed without a user-visible error.
+     return ERR_NO_SUPPORTED_PROXIES;
+   }
+ 
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -4475,6 +4475,7 @@
+     sources = [
+       "test/run_all_unittests.cc",
+       "//services/network/sorng_datagram_configuration_unittest.cc",
++      "http/sorng_owned_quic_job_unittest.cc",
+       "socket/sorng_capsule_datagram_client_socket_unittest.cc",
+       "quic/crypto/proof_verifier_chromium_test.cc",
+     ]
+diff --git a/net/http/sorng_owned_quic_job_unittest.cc b/net/http/sorng_owned_quic_job_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/net/http/sorng_owned_quic_job_unittest.cc
+@@ -0,0 +1,156 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "net/http/http_stream_factory_job.h"
++
++#include "base/test/task_environment.h"
++#include "net/base/net_errors.h"
++#include "net/http/http_network_session.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "net/quic/quic_context.h"
++#include "net/socket/socket_test_util.h"
++#include "net/socket/sorng_capsule_datagram_client_socket.h"
++#include "net/spdy/spdy_test_util_common.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/websockets/websocket_handshake_stream_base.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace net::test {
++
++// Exercise the actual outer guard, not a duplicate of its predicate. The mock
++// TCP connection remains pending, so these tests never open a network socket.
++class HttpStreamFactoryJobPeer {
++ public:
++  static int InitConnection(HttpStreamFactory::Job& job) {
++    return job.DoInitConnectionImpl();
++  }
++};
++
++namespace {
++using Job = HttpStreamFactory::Job;
++
++class Admission final : public SSLClientContext::TlsAdmissionDelegate {
++ public:
++  bool IsActive() const override { return active; }
++  void Verify(const HostPortPair&,
++              scoped_refptr<X509Certificate>,
++              const CertVerifyResult&,
++              int,
++              bool,
++              CompletionOnceCallback callback) override {
++    ADD_FAILURE() << "The pending mock transport must not verify a certificate";
++    std::move(callback).Run(ERR_ABORTED);
++  }
++  void AddSocket(const void*, base::RepeatingClosure) override {}
++  void RemoveSocket(const void*) override {}
++  bool active = true;
++
++ private:
++  ~Admission() override = default;
++};
++
++class Delegate final : public Job::Delegate {
++ public:
++  void OnStreamReady(Job*) override { ADD_FAILURE(); }
++  void OnBidirectionalStreamImplReady(Job*, const ProxyInfo&) override {
++    ADD_FAILURE();
++  }
++  void OnWebSocketHandshakeStreamReady(
++      Job*, const ProxyInfo&,
++      std::unique_ptr<WebSocketHandshakeStreamBase>) override { ADD_FAILURE(); }
++  void OnQuicHostResolution(const url::SchemeHostPort&, base::TimeTicks,
++                            base::TimeTicks) override { ADD_FAILURE(); }
++  void OnStreamFailed(Job*, int) override { ADD_FAILURE(); }
++  void OnFailedOnDefaultNetwork(Job*) override { ADD_FAILURE(); }
++  void OnCertificateError(Job*, int, const SSLInfo&) override { ADD_FAILURE(); }
++  void OnNeedsClientAuth(Job*, SSLCertRequestInfo*) override { ADD_FAILURE(); }
++  void OnNeedsProxyAuth(Job*, const HttpResponseInfo&, const ProxyInfo&,
++                        HttpAuthController*) override { ADD_FAILURE(); }
++  void OnPreconnectsComplete(Job*, int) override { ADD_FAILURE(); }
++  void AddConnectionAttemptsToRequest(Job*, const ConnectionAttempts&) override {
++    ADD_FAILURE();
++  }
++  void OnConnectionInitialized(Job*, int) override { ADD_FAILURE(); }
++  bool ShouldWait(Job*) override { return false; }
++  const NetLogWithSource* GetNetLog() const override { return nullptr; }
++  WebSocketHandshakeStreamBase::CreateHelper*
++  websocket_handshake_stream_create_helper() override { return nullptr; }
++  void MaybeSetWaitTimeForMainJob(const base::TimeDelta&) override { ++waits; }
++  int waits = 0;
++};
++
++class SorngOwnedQuicJobTest : public testing::Test {
++ protected:
++  SorngOwnedQuicJobTest() {
++    dependencies_.enable_quic = true;
++    session_ = SpdySessionDependencies::SpdyCreateSession(&dependencies_);
++    data_.set_connect_data(MockConnect(SYNCHRONOUS, ERR_IO_PENDING));
++    dependencies_.socket_factory->AddTcpSocketDataProvider(&data_);
++  }
++  void ConfigureOwned() {
++    session_->ssl_client_context()->SetTlsAdmissionDelegate(admission_);
++    ASSERT_TRUE(session_->ConfigureSorngDatagrams(SorngDatagramProxy::Create(
++        32123, std::string(64, 'a'), admission_)));
++  }
++  int Init(const std::string& proxy_uri) {
++    ProxyInfo proxy;
++    proxy.UseNamedProxy(proxy_uri);
++    proxy.set_traffic_annotation(
++        MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
++    HttpStreamFactory::StreamRequestInfo request;
++    request.url = GURL("https://owned-job.fixture.test/");
++    request.method = "GET";
++    Job job(&delegate_, HttpStreamFactory::ALTERNATIVE, session_.get(), request,
++            DEFAULT_PRIORITY, proxy, {}, url::SchemeHostPort(request.url),
++            NextProto::kProtoQUIC,
++            dependencies_.quic_context->params()->supported_versions.front(),
++            false, false, std::nullopt, nullptr);
++    return HttpStreamFactoryJobPeer::InitConnection(job);
++  }
++  void ExpectNoTransport() {
++    EXPECT_FALSE(dependencies_.socket_factory->AllDataProvidersUsed());
++    EXPECT_TRUE(dependencies_.socket_factory->udp_client_socket_ports().empty());
++    EXPECT_EQ(delegate_.waits, 0);
++  }
++  base::test::TaskEnvironment environment_{
++      base::test::TaskEnvironment::MainThreadType::IO};
++  SpdySessionDependencies dependencies_;
++  StaticSocketDataProvider data_;
++  scoped_refptr<Admission> admission_ = base::MakeRefCounted<Admission>();
++  std::unique_ptr<HttpNetworkSession> session_;
++  Delegate delegate_;
++};
++
++TEST_F(SorngOwnedQuicJobTest, ExactCurrentOwnedProxyReachesCapsuleTcp) {
++  ConfigureOwned();
++  EXPECT_EQ(ERR_IO_PENDING, Init("http://127.0.0.1:32123"));
++  EXPECT_TRUE(dependencies_.socket_factory->AllDataProvidersUsed());
++  EXPECT_TRUE(dependencies_.socket_factory->udp_client_socket_ports().empty());
++  EXPECT_EQ(delegate_.waits, 1);
++}
++
++TEST_F(SorngOwnedQuicJobTest, SameEndpointWithoutContextAuthorityIsRejected) {
++  EXPECT_EQ(ERR_NO_SUPPORTED_PROXIES, Init("http://127.0.0.1:32123"));
++  ExpectNoTransport();
++}
++
++TEST_F(SorngOwnedQuicJobTest, RevokedContextIsRejectedBeforeTransport) {
++  ConfigureOwned();
++  admission_->active = false;
++  EXPECT_EQ(ERR_NO_SUPPORTED_PROXIES, Init("http://127.0.0.1:32123"));
++  ExpectNoTransport();
++}
++
++TEST_F(SorngOwnedQuicJobTest, WrongEndpointAndEveryUnownedSchemeStayRejected) {
++  ConfigureOwned();
++  for (const auto* proxy : {"http://127.0.0.1:32124", "http://localhost:32123",
++                            "https://127.0.0.1:32123", "socks4://127.0.0.1:32123",
++                            "socks5://127.0.0.1:32123"}) {
++    SCOPED_TRACE(proxy);
++    EXPECT_EQ(ERR_NO_SUPPORTED_PROXIES, Init(proxy));
++    ExpectNoTransport();
++  }
++}
++}  // namespace
++}  // namespace net::test

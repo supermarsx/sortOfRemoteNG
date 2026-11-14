@@ -1,0 +1,75 @@
+diff --git a/net/dns/host_resolver_manager.cc b/net/dns/host_resolver_manager.cc
+index ab286b869b864d0c8f4f7c6c98374f93d686a7f7..422b43bdc09654043f036ed90e679f45e186276b 100644
+--- a/net/dns/host_resolver_manager.cc
++++ b/net/dns/host_resolver_manager.cc
+@@ -146,6 +146,10 @@ namespace net {
+ 
+ namespace {
+ 
++// For embedders using an IPv4 loopback proxy whose backend owns upstream IPv6.
++// Keep this opt-in local to the resolver; it is not for general direct browsing.
++BASE_FEATURE(kSkipIPv6ReachabilityProbe, base::FEATURE_DISABLED_BY_DEFAULT);
++
+ // Limit the size of hostnames that will be resolved to combat issues in
+ // some platform's resolvers.
+ const size_t kMaxHostLength = 4096;
+@@ -1588,6 +1592,20 @@ int HostResolverManager::StartIPv6ReachabilityCheck(
+     return OK;
+   }
+ 
++  if (base::FeatureList::IsEnabled(kSkipIPv6ReachabilityProbe)) {
++    // The embedder connects only to an IPv4 loopback proxy. Its backend owns
++    // upstream IPv6 routing. False also avoids the subsequent NAT64 probe for
++    // IPv4 literals; true would cause another direct UDP route check.
++    SetLastIPv6ProbeResult(false);
++    net_log.AddEvent(
++        NetLogEventType::HOST_RESOLVER_MANAGER_IPV6_REACHABILITY_CHECK, [] {
++          auto params = NetLogIPv6AvailableParams(false, false);
++          params.Set("skipped_for_proxy", true);
++          return params;
++        });
++    return OK;
++  }
++
+   // Don't bother checking if the request will use WiFi and IPv6 is assumed to
+   // not work on WiFi.
+   if (!check_ipv6_on_wifi_ &&
+diff --git a/net/dns/host_resolver_manager_unittest.cc b/net/dns/host_resolver_manager_unittest.cc
+index 526a90a27fcd5172dba3c486489825934852d98d..76acfb860f4378b11031e40557606b47ee3a7ff0 100644
+--- a/net/dns/host_resolver_manager_unittest.cc
++++ b/net/dns/host_resolver_manager_unittest.cc
+@@ -2833,6 +2833,34 @@ TEST_F(HostResolverManagerTest, NameCollisionIcann) {
+   EXPECT_THAT(similar_response3.result_error(), IsOk());
+ }
+ 
++TEST_F(HostResolverManagerTest, SkipIPv6ReachabilityProbeForLoopbackProxy) {
++  AddScopedFeatureList().InitFromCommandLine("SkipIPv6ReachabilityProbe", "");
++  DestroyResolver();
++  resolver_ = std::make_unique<HostResolverManager>(
++      DefaultOptions(), nullptr /* system_dns_config_notifier */,
++      nullptr /* net_log */);
++  RecordingNetLogObserver net_log_observer;
++  NetLogWithSource net_log =
++      NetLogWithSource::Make(net::NetLog::Get(), NetLogSourceType::NONE);
++  // No socket data providers: trying to create a probe socket fails the test.
++  MockClientSocketFactory socket_factory;
++  for (int attempt = 0; attempt < 2; ++attempt) {
++    resolver_->ResetIPv6ProbeTimeForTesting();
++    EXPECT_EQ(OK, StartIPv6ReachabilityCheck(
++                      handles::kInvalidNetworkHandle, net_log, &socket_factory,
++                      base::BindOnce([](int) { ADD_FAILURE(); })));
++    // False prevents a second NAT64 route probe for the IPv4 loopback relay.
++    EXPECT_FALSE(GetLastIpv6ProbeResult());
++  }
++  auto events = net_log_observer.GetEntriesWithType(
++      NetLogEventType::HOST_RESOLVER_MANAGER_IPV6_REACHABILITY_CHECK);
++  ASSERT_EQ(2U, events.size());
++  for (const auto& event : events) {
++    EXPECT_TRUE(GetBooleanValueFromParams(event, "skipped_for_proxy"));
++    EXPECT_FALSE(GetBooleanValueFromParams(event, "ipv6_available"));
++  }
++}
++
+ TEST_F(HostResolverManagerTest, StartIPv6ReachabilityCheck) {
+   // The real HostResolverManager is needed since TestHostResolverManager will
+   // bypass the IPv6 reachability tests.

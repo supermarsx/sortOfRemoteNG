@@ -64,10 +64,10 @@ export const LIMITS = Object.freeze({
   hostMs: 300 * 60_000,
 });
 export const INPUTS =
-  "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat";
+  "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat";
 export const TARGET = "x86_64-apple-darwin";
 export const SOURCE_ID =
-  "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef";
+  "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f";
 // Cross compilation never changes the native acceptance host. Adding a profile
 // changes the producer code digest; checkpoints from older code cannot migrate.
 const PROFILES = Object.freeze({
@@ -86,9 +86,9 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-apple-darwin": Object.freeze({
     target: "aarch64-apple-darwin",
-    source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+    source: "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
     inputs:
-      "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
+      "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat",
     platform: "darwin",
     architecture: "x64",
     runner: "macos-15-intel",
@@ -130,7 +130,9 @@ export function checkpointHost(target, platform, architecture) {
 export function checkpointCompileArguments(target, args) {
   const p = checkpointProfile(target);
   const targets =
-    p.platform === "linux" ? ["cef", "chrome_sandbox"] : ["cef", "cef_sandbox"];
+    p.platform === "linux"
+      ? ["libcef", "chrome_sandbox"]
+      : ["cef", "cef_sandbox"];
   if (
     !Array.isArray(args) ||
     args.length !== 7 ||
@@ -2899,7 +2901,7 @@ export function processRows(text) {
 
 // Exact Intel-image/source scope is qualified by the immutable records below.
 // Integration and ABI proofs never mint live compile receipts.
-export const MAC_NATIVE_CENSUS_ADMITTED = true;
+export const MAC_NATIVE_CENSUS_ADMITTED = false;
 export const MAC_CENSUS_ABI = Object.freeze({
   recordBytes: 648,
   pidOffset: 40,
@@ -2929,9 +2931,9 @@ export const MAC_CENSUS_SUPERVISOR_QUALIFICATION = Object.freeze({
 });
 const MAC_CENSUS_SOURCES = Object.freeze({
   "x86_64-apple-darwin":
-    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+    "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
   "aarch64-apple-darwin":
-    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+    "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
 });
 const MAC_CENSUS_PYTHON =
   "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14";

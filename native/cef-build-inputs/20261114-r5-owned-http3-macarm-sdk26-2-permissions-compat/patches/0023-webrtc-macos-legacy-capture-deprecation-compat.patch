@@ -1,0 +1,34 @@
+diff --git a/patch/patch.cfg b/patch/patch.cfg
+--- a/patch/patch.cfg
++++ b/patch/patch.cfg
+@@ -907,5 +907,11 @@
+   {
+     # Guard background extensions dependency on enable_background_mode.
+     'name': 'chrome_browser_extensions_background',
++  },
++  {
++    # Keep legacy Mac capture deprecation warnings visible without changing
++    # ScreenCaptureKit selection or weakening other compiler diagnostics.
++    'name': 'sorng_webrtc_mac_capture_deprecation',
++    'path': 'third_party/webrtc'
+   }
+ ]
+diff --git a/patch/patches/sorng_webrtc_mac_capture_deprecation.patch b/patch/patches/sorng_webrtc_mac_capture_deprecation.patch
+new file mode 100644
+--- /dev/null
++++ b/patch/patches/sorng_webrtc_mac_capture_deprecation.patch
+@@ -0,0 +1,14 @@
++diff --git modules/desktop_capture/BUILD.gn modules/desktop_capture/BUILD.gn
++--- modules/desktop_capture/BUILD.gn
+++++ modules/desktop_capture/BUILD.gn
++@@ -935,6 +935,10 @@
++     # headers, they should depend on ":desktop_capture" and consider
++     # this target as private.
++     visibility = [ ":desktop_capture" ]
+++    # Retain legacy capture fallback while deployment target 14 diagnoses its
+++    # deprecated CoreGraphics APIs. Keep these warnings visible, and keep all
+++    # other warnings fatal. ScreenCaptureKit selection is unchanged.
+++    cflags_objcc = [ "-Wno-error=deprecated-declarations" ]
++     sources = [
++       "delegated_source_list_controller.h",
++       "desktop_capture_metadata.h",
