@@ -240,12 +240,52 @@ pub fn verify_code_at(
 
 /// Decode a base-32 secret (with or without spaces/dashes, case-insensitive).
 pub fn decode_secret(b32: &str) -> Result<Vec<u8>, TotpError> {
-    let cleaned = b32.replace([' ', '-'], "").to_uppercase();
+    let cleaned = clean_secret(b32);
+    if cleaned.is_empty() {
+        return Err(TotpError::new(
+            TotpErrorKind::InvalidSecret,
+            "Invalid base-32 secret",
+        ));
+    }
     // Pad to multiple of 8 if needed
     let padded = pad_base32(&cleaned);
     base32::decode(base32::Alphabet::Rfc4648 { padding: true }, &padded)
         .or_else(|| base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &cleaned))
         .ok_or_else(|| TotpError::new(TotpErrorKind::InvalidSecret, "Invalid base-32 secret"))
+}
+
+/// Reduce a pasted secret to bare upper-case base-32: accepts an
+/// `otpauth://` URI (its `secret` parameter), drops every kind of whitespace
+/// (a pasted trailing newline, NBSP, zero-width characters), group
+/// separators and trailing `=` padding.
+fn clean_secret(input: &str) -> String {
+    let trimmed = input.trim();
+    let raw = if trimmed
+        .get(..10)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("otpauth://"))
+    {
+        url::Url::parse(trimmed)
+            .ok()
+            .and_then(|uri| {
+                uri.query_pairs()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("secret"))
+                    .map(|(_, value)| value.into_owned())
+            })
+            .unwrap_or_default()
+    } else {
+        trimmed.to_string()
+    };
+    raw.chars()
+        .filter(|c| {
+            !c.is_whitespace()
+                && !c.is_control()
+                && !matches!(
+                    c,
+                    '-' | '_' | '=' | '\u{200b}'..='\u{200d}' | '\u{feff}' | '\u{2060}'
+                )
+        })
+        .flat_map(char::to_uppercase)
+        .collect()
 }
 
 /// Encode raw bytes to base-32 (no padding, uppercase).
@@ -332,6 +372,47 @@ mod tests {
             let code = generate_hotp(RFC4226_SECRET, counter as u64, 6, Algorithm::Sha1).unwrap();
             assert_eq!(&code, exp, "HOTP mismatch at counter {}", counter);
         }
+    }
+
+    // -- Pasted-secret tolerance (Tactical RMM shows the key to copy) --
+    #[test]
+    fn pasted_secret_forms_all_generate_the_same_code() {
+        let expected = generate_totp_at(RFC4226_SECRET, 6, 30, Algorithm::Sha1, 59).unwrap();
+        let spaced = "gezd gnbv gy3t qojq gezd gnbv gy3t qojq";
+        let variants = [
+            spaced.to_string(),
+            format!("  {}\r\n", RFC4226_SECRET),
+            format!("\t{}\n", spaced),
+            format!("{}=", RFC4226_SECRET),
+            "GEZD-GNBV-GY3T-QOJQ-GEZD-GNBV-GY3T-QOJQ".to_string(),
+            "GEZDGNBV\u{a0}GY3TQOJQ\u{200b}GEZDGNBVGY3TQOJQ".to_string(),
+            format!(
+                "otpauth://totp/Tactical%20RMM:admin?secret={}&issuer=Tactical%20RMM",
+                RFC4226_SECRET
+            ),
+            format!(
+                "OTPAUTH://totp/x?issuer=a&secret={}&digits=6",
+                spaced.replace(' ', "%20")
+            ),
+        ];
+        for v in variants {
+            assert_eq!(
+                generate_totp_at(&v, 6, 30, Algorithm::Sha1, 59).unwrap(),
+                expected,
+                "{v:?}"
+            );
+        }
+        assert!(generate_totp_at("not base32 !!", 6, 30, Algorithm::Sha1, 59).is_err());
+        assert!(generate_totp_at("otpauth://totp/x?issuer=a", 6, 30, Algorithm::Sha1, 59).is_err());
+    }
+
+    #[test]
+    fn code_changes_exactly_at_the_step_boundary() {
+        let before = generate_totp_at(RFC4226_SECRET, 6, 30, Algorithm::Sha1, 59).unwrap();
+        let after = generate_totp_at(RFC4226_SECRET, 6, 30, Algorithm::Sha1, 60).unwrap();
+        let start = generate_totp_at(RFC4226_SECRET, 6, 30, Algorithm::Sha1, 30).unwrap();
+        assert_eq!(before, start);
+        assert_ne!(before, after);
     }
 
     // ── RFC 6238 test vectors ────────────────────────────────────
