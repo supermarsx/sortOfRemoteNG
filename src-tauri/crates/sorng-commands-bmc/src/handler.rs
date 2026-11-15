@@ -2,6 +2,7 @@
 use crate::*;
 
 pub const COMMAND_NAMES: &[&str] = &[
+    "arista_get_fan_speeds",
     "idrac_assign_hotspare",
     "idrac_boot_from_virtual_cd",
     "idrac_change_user_password",
@@ -251,6 +252,7 @@ pub fn is_command(command: &str) -> bool {
 
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        arista_commands::arista_get_fan_speeds,
         idrac_commands::idrac_assign_hotspare,
         idrac_commands::idrac_boot_from_virtual_cd,
         idrac_commands::idrac_change_user_password,

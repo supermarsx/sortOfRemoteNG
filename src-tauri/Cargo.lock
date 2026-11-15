@@ -9852,6 +9852,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-arista"
+version = "26.51.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "sorng-auth"
 version = "26.51.0"
 dependencies = [
@@ -10233,6 +10243,7 @@ name = "sorng-commands-bmc"
 version = "26.51.0"
 dependencies = [
  "serde_json",
+ "sorng-arista",
  "sorng-bmc-common",
  "sorng-idrac",
  "sorng-ilo",

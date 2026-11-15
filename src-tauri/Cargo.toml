@@ -62,6 +62,7 @@ members = [
   "crates/sorng-openvpn",
   "crates/sorng-vmware",
   "crates/sorng-proxmox",
+  "crates/sorng-arista",
   "crates/sorng-idrac",
   "crates/sorng-totp",
   "crates/sorng-mremoteng",

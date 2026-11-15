@@ -3,6 +3,7 @@ pub use sorng_ilo as ilo;
 pub use sorng_lenovo as lenovo;
 pub use sorng_supermicro as supermicro;
 
+mod arista_commands;
 mod handler;
 mod idrac_commands;
 mod ilo_commands;

@@ -6,6 +6,7 @@ edition = "2021"
 description = "Bounded bmc native command registrar"
 
 [dependencies]
+sorng-arista = { path = "../sorng-arista" }
 sorng-idrac = { path = "../sorng-idrac" }
 sorng-ilo = { path = "../sorng-ilo" }
 sorng-lenovo = { path = "../sorng-lenovo" }

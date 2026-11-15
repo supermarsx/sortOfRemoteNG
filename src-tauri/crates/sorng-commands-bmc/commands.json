@@ -723,6 +723,9 @@
     },
     {
       "path": "supermicro_commands::smc_reset_bmc"
+    },
+    {
+      "path": "arista_commands::arista_get_fan_speeds"
     }
   ]
 }
