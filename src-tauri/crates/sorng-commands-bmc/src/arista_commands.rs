@@ -1,8 +1,4 @@
-use sorng_arista::{AristaConfig, AristaCoolingReport};
+#[allow(dead_code)]
+mod inner;
 
-/// Fetch fan speeds from an Arista EOS switch over eAPI. Stateless: the
-/// connection parameters travel with each call and nothing is persisted.
-#[tauri::command]
-pub async fn arista_get_fan_speeds(config: AristaConfig) -> Result<AristaCoolingReport, String> {
-    sorng_arista::fetch_cooling(&config).await
-}
+pub(crate) use inner::*;

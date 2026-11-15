@@ -108,6 +108,26 @@ export function describeSerialConnectError(
   return detail ? `${headline}\n${detail}` : headline;
 }
 
+/**
+ * Friendly copy for the backend's runtime write failures. Unknown messages are
+ * returned unchanged.
+ */
+export function describeSerialRuntimeError(raw: string): string {
+  if (/^Serial write timed out/i.test(raw)) {
+    return `The serial device did not accept the data in time (check flow control, cabling, or that the device is powered).
+${raw}`;
+  }
+  if (/Serial command dropped: it waited in the queue/i.test(raw)) {
+    return `Input was dropped because the serial port could not keep up. Slow down pasting or check the link.
+${raw}`;
+  }
+  if (/^Serial command completion timed out/i.test(raw)) {
+    return `The serial port stopped responding while sending. The adapter may be stalled or unplugged.
+${raw}`;
+  }
+  return raw;
+}
+
 const boundedSerialEventMessage = (
   value: unknown,
   fallback: string,
@@ -521,9 +541,11 @@ export function useSerialSession(session: ConnectionSession) {
               ) {
                 return;
               }
-              const message = boundedSerialEventMessage(
-                payload.message,
-                "The serial backend reported an error.",
+              const message = describeSerialRuntimeError(
+                boundedSerialEventMessage(
+                  payload.message,
+                  "The serial backend reported an error.",
+                ),
               );
               if (payload.sessionId === backendRef.current) {
                 if (payload.recoverable === true) {

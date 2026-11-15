@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { PasswordInput } from "../ui/forms";
 import { Clock, Play, Trash2, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -254,10 +255,77 @@ const ConnectionTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 };
 
+interface DetectedSerialPort {
+  portName: string;
+  description?: string | null;
+}
+
+/** Lists ports via `serial_scan_ports` (never opens them); empty when unavailable. */
+function useDetectedSerialPorts(): DetectedSerialPort[] {
+  const [ports, setPorts] = useState<DetectedSerialPort[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await invoke<{ ports?: DetectedSerialPort[] }>(
+          "serial_scan_ports",
+          {
+            options: {
+              probePorts: false,
+              nameFilter: null,
+              vidFilter: null,
+              pidFilter: null,
+              includeVirtual: true,
+            },
+          },
+        );
+        if (!cancelled && Array.isArray(result?.ports)) setPorts(result.ports);
+      } catch {
+        // Port listing is a convenience only; typing a port still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return ports;
+}
+
 const SerialQuickOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
+  const ports = useDetectedSerialPorts();
   return (
     <div>
+      {ports.length > 0 && (
+        <div className="mb-3">
+          <label
+            htmlFor="serial-port-suggestions"
+            className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+          >
+            {t("quickConnect.serialDetectedPorts", "Detected ports")}
+          </label>
+          <select
+            id="serial-port-suggestions"
+            className="sor-form-input"
+            data-testid="quick-connect-serial-ports"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) mgr.setHostname(e.target.value);
+            }}
+          >
+            <option value="">
+              {t("quickConnect.serialPickPort", "Select a detected port...")}
+            </option>
+            {ports.map((port) => (
+              <option key={port.portName} value={port.portName}>
+                {port.description
+                  ? `${port.portName} - ${port.description}`
+                  : port.portName}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <label
         htmlFor="serial-baud"
         className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"

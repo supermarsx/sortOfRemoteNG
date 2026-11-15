@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import {
   SERIAL_SELECTION_MODE_LABELS,
+  describeSerialRuntimeError,
   useSerialSession,
 } from "../../hooks/protocol/useSerialSession";
 import type { ConnectionSession } from "../../types/connection/connection";
@@ -41,8 +42,10 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
     setActionError(null);
     void action().catch((error) => {
       setActionError(
-        sanitizeBehaviorText(
-          error instanceof Error ? error.message : String(error),
+        describeSerialRuntimeError(
+          sanitizeBehaviorText(
+            error instanceof Error ? error.message : String(error),
+          ),
         ),
       );
     });

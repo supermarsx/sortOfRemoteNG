@@ -1,5 +1,12 @@
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { waitFor } from "@testing-library/react";
+
+const tauriMocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => tauriMocks.invoke(...args),
+}));
+
 import { QuickConnect } from "../../src/components/connection/QuickConnect";
 
 const mockProps = {
@@ -570,6 +577,33 @@ describe("QuickConnect — protocol inferred from pasted URL", () => {
       hostname: "COM3",
       protocol: "serial",
     });
+  });
+
+  it("offers detected serial ports from serial_scan_ports and fills the address", async () => {
+    tauriMocks.invoke.mockImplementation(async (command: string) =>
+      command === "serial_scan_ports"
+        ? {
+            ports: [
+              { portName: "COM7", description: "USB Serial Device" },
+              { portName: "COM9", description: null },
+            ],
+            scanTimeMs: 1,
+            totalFound: 2,
+          }
+        : undefined,
+    );
+    render(<QuickConnect {...mockProps} />);
+    fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
+      target: { value: "COM3" },
+    });
+    fireEvent.blur(screen.getByTestId("quick-connect-hostname"));
+    const select = await screen.findByTestId("quick-connect-serial-ports");
+    expect(screen.getByText("COM7 - USB Serial Device")).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "COM9" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("quick-connect-hostname")).toHaveValue("COM9"),
+    );
+    tauriMocks.invoke.mockReset();
   });
 
   it("keeps the serial:// query and applies the optional baud field", () => {

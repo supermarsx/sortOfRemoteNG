@@ -19,7 +19,7 @@ import {
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const infraGroups = {
-  bmc: 241,
+  bmc: 242,
   virtualization: 143,
   proxmox: 123,
   nas: 119,
@@ -191,14 +191,14 @@ test("invalid, duplicate and oversized command registrars are rejected", () => {
     assert.throws(() => renderCommandInventory({ version: 1, commands }));
 });
 
-test("infra preserves its exact 683-command public API in five bounded owners", () => {
+test("infra preserves its exact 684-command public API in five bounded owners", () => {
   const names = boundedOwnerNames(infraGroups);
-  assert.equal(new Set(names).size, 683);
+  assert.equal(new Set(names).size, 684);
   // Pre-sharding public-name snapshot: catches accidental API additions/removals
   // without maintaining a second hand-written registration list.
   assert.equal(
     sha256(names),
-    "2fc173505e8372ce4edf3d1e1fccbf12cf0c5f3401c0d2a606013badead59448",
+    "ccf1e64ef7346094c78ee3eb3cac4b4b4c8b632431656b8e43ff1c9ad406ad82",
   );
 });
 

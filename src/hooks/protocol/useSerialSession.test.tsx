@@ -34,6 +34,7 @@ vi.mock("../../contexts/useConnections", () => ({
 
 import {
   describeSerialConnectError,
+  describeSerialRuntimeError,
   encodeSerialTerminalInput,
   useSerialSession,
 } from "./useSerialSession";
@@ -498,5 +499,24 @@ describe("encodeSerialTerminalInput", () => {
       65, 10,
     ]);
     expect(Array.from(encodeSerialTerminalInput("A\r", "none"))).toEqual([65]);
+  });
+});
+
+describe("describeSerialRuntimeError", () => {
+  it.each([
+    ["Serial write timed out", /did not accept the data in time/],
+    [
+      "Serial command dropped: it waited in the queue past the safety cap (30000 ms)",
+      /could not keep up/,
+    ],
+    ["Serial command completion timed out", /stopped responding/],
+  ])("explains %s and keeps the raw text", (raw, copy) => {
+    const text = describeSerialRuntimeError(raw);
+    expect(text).toMatch(copy);
+    expect(text).toContain(raw);
+  });
+
+  it("returns unknown messages unchanged", () => {
+    expect(describeSerialRuntimeError("boom")).toBe("boom");
   });
 });
