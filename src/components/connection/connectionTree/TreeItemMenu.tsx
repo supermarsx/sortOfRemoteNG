@@ -8,6 +8,10 @@ import {
   type Connection,
 } from "../../../types/connection/connection";
 import { generateId } from "../../../utils/core/id";
+import {
+  openAristaFans,
+  supportsAristaFans,
+} from "../../arista/aristaLauncher";
 import { folderSubtree } from "./helpers";
 import { resolveSiblingSort } from "../../../hooks/connection/useConnectionTree";
 import {
@@ -656,6 +660,16 @@ function TreeItemMenu({
             >
               <Activity size={14} className="mr-2" />
               {t("connections.diagnostics", "Diagnostics")}
+            </button>
+          )}
+          {supportsAristaFans(connection) && (
+            <button
+              onClick={act(() => openAristaFans(connection))}
+              className="sor-menu-item"
+              data-testid="menu-arista-fans"
+            >
+              <Cpu size={14} className="mr-2" />
+              {t("arista.menuItem", "Arista fan speeds")}
             </button>
           )}
           {activeSession && onDetachSession && (
