@@ -10008,5 +10008,105 @@
     "requests": "Requests",
     "errors": "Errors",
     "started": "Started"
+  },
+  "browserLogs": {
+    "adjustFilters": "Adjust the filters to see more.",
+    "clear": "Clear",
+    "col": {
+      "detail": "Detail",
+      "level": "Level",
+      "message": "Message",
+      "source": "Source",
+      "time": "Time",
+      "type": "Type"
+    },
+    "copy": "Copy",
+    "export": "Export",
+    "filter": {
+      "allLevels": "All levels",
+      "allTypes": "All types",
+      "level": "Filter by level",
+      "type": "Filter by type"
+    },
+    "footer": "{{shown}} of {{total}} entries (last {{cap}} kept)",
+    "history": {
+      "allConnections": "All connections",
+      "caption": "Browsing history",
+      "clearAll": "Clear all",
+      "col": {
+        "actions": "Actions",
+        "connection": "Connection",
+        "page": "Page"
+      },
+      "connection": "Filter by connection",
+      "copyLabel": "Copy address of {{title}}",
+      "copyUrl": "Copy address",
+      "disabled": "History recording is turned off.",
+      "empty": "No browsing history",
+      "emptyHint": "Pages you visit in browser connections appear here.",
+      "footer": "{{shown}} of {{total}} history entries",
+      "keepDays": "Keep {{count}} days",
+      "keepForever": "Keep until cleared",
+      "noMatch": "No matching history",
+      "open": "Open in its browser tab",
+      "openClosed": "The browser tab is closed",
+      "openLabel": "Open {{title}}",
+      "privacyNote": "Only the address (without query or fragment) and title are kept on this device. Quick Connect tabs are private and never recorded.",
+      "record": "Record history",
+      "remove": "Remove from history",
+      "removeLabel": "Remove {{title}} from history",
+      "retention": "History retention",
+      "searchLabel": "Search browsing history",
+      "searchPlaceholder": "Search title or address…"
+    },
+    "level": {
+      "error": "Error",
+      "info": "Info",
+      "warn": "Warn"
+    },
+    "logs": {
+      "caption": "Browser event log",
+      "empty": "No browser events yet",
+      "emptyHint": "Navigation, load failures and certificate events appear here.",
+      "noMatch": "No matching events",
+      "searchLabel": "Search browser log",
+      "searchPlaceholder": "Search messages and pages…"
+    },
+    "proxy": {
+      "badgeCef": "CEF",
+      "badgeLegacy": "Legacy",
+      "caption": "Browser proxy log",
+      "empty": "No proxy events yet",
+      "emptyHint": "Relay connections, authentication, denials and upstream failures appear here while this view is open.",
+      "noMatch": "No matching proxy events",
+      "searchLabel": "Search proxy log",
+      "searchPlaceholder": "Search events, URLs or status…",
+      "source": "Filter by source",
+      "sourceAll": "All sources",
+      "sourceCef": "Browser relay (CEF)",
+      "sourceLegacy": "Legacy proxy"
+    },
+    "proxyKind": {
+      "auth": "Authentication",
+      "capacity": "Capacity",
+      "connection": "Connection",
+      "denied": "Denied",
+      "request": "Request",
+      "state": "Relay state",
+      "tls": "TLS / certificate",
+      "upstream": "Upstream"
+    },
+    "type": {
+      "auth": "Authentication",
+      "certificate": "Certificate",
+      "console": "Console",
+      "error": "Error",
+      "lifecycle": "Lifecycle",
+      "load": "Load",
+      "load-failure": "Load failure",
+      "navigation": "Navigation",
+      "network": "Network",
+      "proxy": "Proxy"
+    }
   }
 }

@@ -38,6 +38,11 @@ import {
   type OriginBrowserRestartReason,
 } from "../../../hooks/protocol/useOriginBrowser";
 import {
+  BROWSER_HISTORY_OPEN_EVENT,
+  type BrowserHistoryOpenDetail,
+} from "../../../utils/browser/browserEventLog";
+import { useOriginBrowserEventLog } from "../../../hooks/protocol/useOriginBrowserEventLog";
+import {
   originBrowserLoadError,
   originBrowserSessionError,
 } from "../../../hooks/protocol/originBrowserSessionError";
@@ -396,6 +401,23 @@ export default function OriginConnectionBrowser({
             : 0,
         ),
   });
+  useOriginBrowserEventLog(nativeBrowser.state, {
+    connectionId: session.connectionId,
+    sessionId: session.id,
+    connectionName: connection?.name,
+    private: isTemporary,
+  });
+  const navigateRef = useRef(nativeBrowser.navigate);
+  navigateRef.current = nativeBrowser.navigate;
+  useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<BrowserHistoryOpenDetail>).detail;
+      if (detail?.sessionId === session.id && typeof detail.url === "string")
+        void navigateRef.current(detail.url);
+    };
+    window.addEventListener(BROWSER_HISTORY_OPEN_EVENT, open);
+    return () => window.removeEventListener(BROWSER_HISTORY_OPEN_EVENT, open);
+  }, [session.id]);
   pendingCreateId.current =
     nativeBrowser.getPendingCreateRequestId ?? (() => null);
   sshStarting.current =

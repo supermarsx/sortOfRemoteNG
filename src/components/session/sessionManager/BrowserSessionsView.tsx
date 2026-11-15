@@ -3,6 +3,7 @@ import {
   ArrowUpDown,
   BarChart3,
   Globe,
+  History,
   List,
   RefreshCw,
   ScrollText,
@@ -27,8 +28,14 @@ import {
 } from "./browserSessionList";
 import { BrowserSessionStatusPill } from "./BrowserSessionStatusPill";
 import { BrowserSessionStatistics } from "./BrowserSessionStatistics";
+import {
+  BrowserEventLogView,
+  BrowserHistoryView,
+  BrowserProxyLogView,
+} from "./BrowserEventViews";
 
-export type BrowserSessionsSubView = "sessions" | "statistics" | "journal";
+export type BrowserSessionsSubView =
+  "sessions" | "statistics" | "logs" | "proxy" | "history" | "journal";
 
 export interface BrowserSessionsViewProps {
   view: BrowserSessionsSubView;
@@ -45,6 +52,8 @@ export interface BrowserSessionsViewProps {
   onCloseSession: (
     sessionId: string,
   ) => boolean | void | Promise<boolean | void>;
+  /** Switch the workspace to a live browser tab (History "Open"). */
+  onFocusSession?: (sessionId: string) => void;
   /** Clock override for relative times (tests). */
   now?: number;
 }
@@ -59,6 +68,9 @@ const SUB_VIEWS: {
 }[] = [
   { id: "sessions", label: "Live sessions", icon: List },
   { id: "statistics", label: "Statistics", icon: BarChart3 },
+  { id: "logs", label: "Logs", icon: ScrollText },
+  { id: "proxy", label: "Proxy log", icon: ScrollText },
+  { id: "history", label: "History", icon: History },
   { id: "journal", label: "Startup journal", icon: ScrollText },
 ];
 
@@ -378,6 +390,7 @@ export const BrowserSessionsView: React.FC<BrowserSessionsViewProps> = ({
   isRefreshing,
   onRefresh,
   onCloseSession,
+  onFocusSession,
   now: nowOverride,
 }) => {
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
@@ -427,7 +440,7 @@ export const BrowserSessionsView: React.FC<BrowserSessionsViewProps> = ({
             );
           })}
         </div>
-        {view !== "journal" && (
+        {(view === "sessions" || view === "statistics" || view === "proxy") && (
           <button
             type="button"
             onClick={onRefresh}
@@ -470,6 +483,16 @@ export const BrowserSessionsView: React.FC<BrowserSessionsViewProps> = ({
               now={now}
             />
           </div>
+        )}
+        {view === "logs" && <BrowserEventLogView />}
+        {view === "proxy" && (
+          <BrowserProxyLogView diagnostics={diagnostics} isActive={isActive} />
+        )}
+        {view === "history" && (
+          <BrowserHistoryView
+            liveSessionIds={frontendRows.map((row) => row.nativeId)}
+            onFocusSession={onFocusSession}
+          />
         )}
         {view === "journal" && (
           <ApplicationLogsView source="browser" isActive={isActive} />

@@ -1455,6 +1455,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               isRefreshing={mgr.proxy.isLoading}
               onRefresh={mgr.proxy.handleRefresh}
               onCloseSession={handleCloseManagedSession}
+              onFocusSession={onFocusSession}
             />
           )}
 
