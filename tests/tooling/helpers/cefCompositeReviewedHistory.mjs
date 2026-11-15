@@ -3,6 +3,12 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  beforeSlowSnapshotFileForHistory,
+  beforeSlowSnapshotDataForHistory,
+  isSlowSnapshotProducer,
+  rewindSlowSnapshotRows,
+} from "./cefSlowSnapshotReviewedHistory.mjs";
 
 // Explicit complete historical subjects only. Never imported by production.
 const RAW = readFileSync(
@@ -51,6 +57,7 @@ function inverseFile(raw, file, endpoint) {
   return before;
 }
 function prefixFile(raw, file, endpoint) {
+  raw = beforeSlowSnapshotFileForHistory(raw, file);
   const spec = DATA.endpoints[endpoint].files.find((row) => row.path === file);
   return spec &&
     raw.length === spec.after.bytes &&
@@ -59,6 +66,7 @@ function prefixFile(raw, file, endpoint) {
     : raw;
 }
 function inverseData(rows, files, endpoint) {
+  ({ rows, files } = beforeSlowSnapshotDataForHistory(rows, files));
   current(rows);
   assert(files instanceof Map && files.size === 132);
   for (const row of rows) {
@@ -84,6 +92,7 @@ function inverseData(rows, files, endpoint) {
   return { rows: before, files: result };
 }
 function prefixData(rows, files, endpoint) {
+  ({ rows, files } = beforeSlowSnapshotDataForHistory(rows, files));
   return digest(rows) === CURRENT_COMPOSITE_PRODUCER
     ? inverseData(rows, files, endpoint)
     : { rows, files };
@@ -116,8 +125,9 @@ function actualData(root) {
       assert(matched);
       return { mode: matched[1], sha: matched[2], path: matched[3] };
     });
-  if (digest(rows) !== CURRENT_COMPOSITE_PRODUCER) return null;
-  current(rows);
+  const slow = isSlowSnapshotProducer(rows);
+  if (!slow && digest(rows) !== CURRENT_COMPOSITE_PRODUCER) return null;
+  if (!slow) current(rows);
   const output = git(["cat-file", "--batch"], {
     input: rows.map((row) => `HEAD:${row.path}\n`).join(""),
   });
@@ -138,9 +148,13 @@ function actualData(root) {
     assert.equal(output[offset++], 10);
   }
   assert.equal(offset, output.length);
-  return { rows, files };
+  if (!slow) return { rows, files };
+  const previous = beforeSlowSnapshotDataForHistory(rows, files);
+  current(previous.rows);
+  return previous;
 }
 function historicalDataFromGit(rows, root, endpoint) {
+  if (isSlowSnapshotProducer(rows)) rows = rewindSlowSnapshotRows(rows);
   const value = digest(rows),
     subject = DATA.endpoints[endpoint];
   if (![CURRENT_COMPOSITE_PRODUCER, subject.producer].includes(value))
@@ -157,7 +171,8 @@ function historicalDataFromGit(rows, root, endpoint) {
   return { ...before, rows: preserved };
 }
 function prefixRows(rows, root, endpoint) {
-  return digest(rows) === CURRENT_COMPOSITE_PRODUCER
+  return digest(rows) === CURRENT_COMPOSITE_PRODUCER ||
+    isSlowSnapshotProducer(rows)
     ? historicalDataFromGit(rows, root, endpoint).rows
     : rows;
 }

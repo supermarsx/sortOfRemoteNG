@@ -1,7 +1,5 @@
-import {
-  CURRENT_COMPOSITE_PRODUCER,
-  beforeCompositeFreshDataForHistory,
-} from "./helpers/cefCompositeReviewedHistory.mjs";
+import { CURRENT_SLOW_SNAPSHOT_PRODUCER } from "./helpers/cefSlowSnapshotReviewedHistory.mjs";
+import { beforeCompositeFreshDataForHistory } from "./helpers/cefCompositeReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { beforeCensusDataForHistory } from "./helpers/cefCensusRetirementReviewedHistory.mjs";
@@ -270,7 +268,7 @@ test("historical Linux370 closed history rewinds both complete source files and 
         [mode, type, sha] = left.split(" ");
       return { mode, type, sha, path };
     });
-  assert.equal(codeTreeDigest(currentRows), CURRENT_COMPOSITE_PRODUCER);
+  assert.equal(codeTreeDigest(currentRows), CURRENT_SLOW_SNAPSHOT_PRODUCER);
   const batch = git(["cat-file", "--batch"], {
     input: currentRows.map((r) => `HEAD:${r.path}\n`).join(""),
   });

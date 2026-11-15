@@ -4431,6 +4431,31 @@ async function processSnapshot({
   });
 }
 
+// One over-deadline ownership snapshot on a loaded runner is a measurement
+// hiccup, not proof of a leaked process: retry it once. A second consecutive
+// slow snapshot, an abort, or any other failure still denies, and a snapshot
+// that never completed contributes no rows to the ownership proof.
+export const SLOW_SNAPSHOT_TOTAL_BOUND = 8;
+export function createSlowSnapshotTolerance({
+  total = SLOW_SNAPSHOT_TOTAL_BOUND,
+} = {}) {
+  let tolerated = 0;
+  return async function take(snapshot, { signal } = {}) {
+    try {
+      return await snapshot();
+    } catch (error) {
+      if (
+        signal?.aborted ||
+        compileMonitorDetails(error).code !== "PS_DEADLINE" ||
+        tolerated >= total
+      )
+        throw error;
+      tolerated++;
+    }
+    return snapshot();
+  };
+}
+
 export function observedLineage(rows, owned) {
   compileMonitorGuard(
     owned.length > 0 && owned.length <= 4096,
@@ -5060,6 +5085,7 @@ export async function compileSlice(
     }
   });
   initial.catch((error) => fail(error, "initial-snapshot"));
+  const slowTolerance = createSlowSnapshotTolerance();
   const monitor = (async () => {
     await initial;
     for (let turn = 0; monitoring && !rootExited; turn++) {
@@ -5080,12 +5106,16 @@ export async function compileSlice(
       });
       if (!monitoring) break;
       snapshotPending = true;
-      const rows = await processSnapshot({
-        deadline: workDeadline + COMPILE_CLEANUP_MS,
-        signal: observer.signal,
-        probeJoins,
-        censusSession,
-      });
+      const rows = await slowTolerance(
+        () =>
+          processSnapshot({
+            deadline: workDeadline + COMPILE_CLEANUP_MS,
+            signal: observer.signal,
+            probeJoins,
+            censusSession,
+          }),
+        { signal: observer.signal },
+      );
       snapshotSeen(rows);
       observed = observedLineage(rows, observed);
       await observeSisoWriter();

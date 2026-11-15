@@ -25,6 +25,7 @@ import {
   sisoLoggerIdentity,
   compileMonitorDetails,
   compileMonitorRecord,
+  createSlowSnapshotTolerance,
   nativeCensusRows,
   censusFailureCode,
 } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
@@ -201,6 +202,7 @@ if (mode === "controls") {
     sisoLoggerIdentity,
     compileMonitorDetails,
     compileMonitorRecord,
+    createSlowSnapshotTolerance,
     canonical,
     modelSourceURL: testUrl.href,
     proofCoreSource: core,
@@ -396,6 +398,7 @@ const scope = {
   sisoLoggerIdentity,
   compileMonitorDetails,
   compileMonitorRecord,
+  createSlowSnapshotTolerance,
   canonical,
   modelSourceURL: testUrl.href,
   proofCoreSource: core,

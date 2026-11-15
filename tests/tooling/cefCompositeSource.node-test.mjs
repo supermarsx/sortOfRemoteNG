@@ -10,6 +10,10 @@ import {
   MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import {
+  CURRENT_SLOW_SNAPSHOT_PRODUCER,
+  beforeSlowSnapshotDataForHistory,
+} from "./helpers/cefSlowSnapshotReviewedHistory.mjs";
+import {
   CURRENT_COMPOSITE_PRODUCER,
   inverseCompositeMacData,
   inverseCompositeLinuxData,
@@ -23,8 +27,16 @@ const data = JSON.parse(
 );
 
 test("combined current producer restores each complete reviewed historical subject without cross-labeling", () => {
-  const actual = actualFeatureSource(process.cwd());
-  assert.equal(actual.producer, CURRENT_COMPOSITE_PRODUCER);
+  const head = actualFeatureSource(process.cwd());
+  assert.equal(head.producer, CURRENT_SLOW_SNAPSHOT_PRODUCER);
+  // The outermost reviewed layer rewinds the supervisor core; the composite
+  // subjects below are checked from the complete composite producer.
+  const actual = {
+    ...head,
+    ...beforeSlowSnapshotDataForHistory(head.rows, head.files),
+    producer: CURRENT_COMPOSITE_PRODUCER,
+  };
+  assert.equal(codeTreeDigest(actual.rows), CURRENT_COMPOSITE_PRODUCER);
   assert.equal(data.authority, false);
   assert.equal(data.compositeMacNativeSDKQualified, false);
   assert.equal(

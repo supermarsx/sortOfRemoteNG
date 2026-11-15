@@ -946,6 +946,7 @@ import {
   linuxArmGcsDeclaration,
   linuxArmGcsArchive,
   assertNoGeneratedLinks,
+  createSlowSnapshotTolerance,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import {
   plan,
@@ -8442,6 +8443,7 @@ async function compileSupervisorModel(options = {}) {
       return [root];
     },
     observedLineage: (_, owned) => owned,
+    createSlowSnapshotTolerance,
     stopObserved: async (_, owned) => {
       state.stops++;
       state.stoppedCohorts.push(
