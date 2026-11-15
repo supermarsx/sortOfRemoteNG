@@ -371,8 +371,14 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
       const button = await screen.findByTitle(
         `Reattach ${protocol.toUpperCase()} session`,
       );
-      expect(button).toHaveTextContent(/^Reattach$/);
-      expect(button.querySelector("span")).toBeVisible();
+      expect(button).toHaveClass("sor-icon-btn-xs");
+      expect(button).not.toHaveClass("sor-option-chip");
+      expect(button).toHaveTextContent("");
+      expect(button).toHaveAccessibleName(/^Reattach /);
+      expect(button.querySelector("svg")).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
       expect(button).toBeEnabled();
       fireEvent.click(button);
       expect(onReattachSession).toHaveBeenCalledExactlyOnceWith(
@@ -383,6 +389,42 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
         protocol === "ssh" ? "connect_ssh" : "connect_rdp",
         expect.anything(),
       );
+    },
+  );
+
+  it.each([
+    ["attached", "connected", false],
+    ["disconnected detached", "disconnected", true],
+  ] as const)(
+    "shows no Reattach button for %s sessions",
+    async (_label, status, isDetached) => {
+      mockInvoke({ list_sessions: [] });
+      renderManagerWithConnectionState({
+        sessions: [
+          {
+            id: "s1",
+            backendSessionId: "rdp-1",
+            connectionId: "conn-1",
+            ownerDatabaseId: "db-a",
+            protocol: "rdp",
+            hostname: "fixture.example.test",
+            name: "Fixture",
+            status,
+            startTime: new Date(0),
+            layout: {
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+              zIndex: 1,
+              isDetached,
+            },
+          },
+        ],
+        managerProps: { onReattachSession: vi.fn() },
+      });
+      await waitFor(() => expect(invoke).toHaveBeenCalled());
+      expect(screen.queryByLabelText(/^Reattach /)).toBeNull();
     },
   );
 
@@ -413,8 +455,10 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(buttons.every((button) => button.hasAttribute("disabled"))).toBe(
       true,
     );
-    for (const button of buttons)
-      expect(button).toHaveTextContent(/^Reattach$/);
+    for (const button of buttons) {
+      expect(button).toHaveClass("sor-icon-btn-xs");
+      expect(button).toHaveTextContent("");
+    }
     expect(onReattachSession).not.toHaveBeenCalled();
   });
   it("wires SSH history reconnect to the host action and current saved connection", async () => {

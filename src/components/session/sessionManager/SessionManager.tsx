@@ -370,19 +370,16 @@ const SessionRowActions: React.FC<{
     const session = row.rdpSession;
     return (
       <div className="flex items-center justify-end gap-0.5">
-        {row.detached && onReattachSession && (
+        {row.detached && row.status !== "disconnected" && onReattachSession && (
           <button
             type="button"
             onClick={() => onReattachSession(session.id, session.connection_id)}
-            disabled={
-              Boolean(row.reattachUnavailable) || row.status === "disconnected"
-            }
-            className="sor-option-chip inline-flex shrink-0 items-center gap-1 px-2 py-1 text-xs whitespace-nowrap"
+            disabled={Boolean(row.reattachUnavailable)}
+            className="sor-icon-btn-xs"
             title={row.reattachUnavailable ?? "Reattach RDP session"}
             aria-label={`Reattach ${row.title}`}
           >
             <PlugZap size={14} aria-hidden="true" />
-            <span>Reattach</span>
           </button>
         )}
         {onDetachToWindow && (
@@ -451,19 +448,16 @@ const SessionRowActions: React.FC<{
   if (row.source === "ssh" && row.sshSession) {
     return (
       <div className="flex items-center justify-end gap-0.5">
-        {row.detached && onReattachSession && (
+        {row.detached && row.status !== "disconnected" && onReattachSession && (
           <button
             type="button"
-            className="sor-option-chip inline-flex shrink-0 items-center gap-1 px-2 py-1 text-xs whitespace-nowrap"
-            disabled={
-              Boolean(row.reattachUnavailable) || row.status === "disconnected"
-            }
+            className="sor-icon-btn-xs"
+            disabled={Boolean(row.reattachUnavailable)}
             title={row.reattachUnavailable ?? "Reattach SSH session"}
             aria-label={`Reattach ${row.title}`}
             onClick={() => onReattachSession(row.nativeId, row.connectionId)}
           >
             <PlugZap size={14} aria-hidden="true" />
-            <span>Reattach</span>
           </button>
         )}
         <button
