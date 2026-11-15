@@ -9,7 +9,7 @@ use crate::serial::runtime_check::{probe_host, DriverProbe, RealProbe};
 use crate::serial::transport::SerialTransport;
 use crate::serial::types::*;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -78,15 +78,72 @@ fn to_sp_flow_control(f: &FlowControl) -> serialport::FlowControl {
 //  NativeTransport
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+type OpenedPorts = (
+    Box<dyn serialport::SerialPort>,
+    Option<Box<dyn serialport::SerialPort>>,
+);
+
+/// Longest a single blocking read may hold the port.  `serialport` uses one
+/// timeout for reads and writes (and on Windows the timeout is device-wide),
+/// so it is kept short; writes loop until the real write budget instead.
+const MAX_BLOCKING_READ_MS: u64 = 20;
+const MIN_BLOCKING_READ_MS: u64 = 5;
+
+fn blocking_timeout(read_timeout_ms: u64) -> Duration {
+    let ms = if read_timeout_ms == 0 {
+        MAX_BLOCKING_READ_MS
+    } else {
+        read_timeout_ms.clamp(MIN_BLOCKING_READ_MS, MAX_BLOCKING_READ_MS)
+    };
+    Duration::from_millis(ms)
+}
+
+/// Write all of `data`, retrying on short timeouts until `budget` elapses.
+fn write_all_within(
+    port: &mut dyn serialport::SerialPort,
+    data: &[u8],
+    budget: Duration,
+) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let mut offset = 0;
+    while offset < data.len() {
+        match port.write(&data[offset..]) {
+            Ok(0) => return Err("Write error: port accepted no bytes".to_string()),
+            Ok(n) => offset += n,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+                ) =>
+            {
+                if started.elapsed() >= budget {
+                    return Err("Write error: timed out".to_string());
+                }
+            }
+            Err(e) => return Err(format!("Write error: {}", e)),
+        }
+    }
+    Ok(())
+}
+
 /// Real hardware serial port transport backed by the `serialport` crate.
 ///
 /// The underlying `Box<dyn SerialPort>` is **not** `Send`, so every call
 /// is dispatched through `spawn_blocking` with the port held behind an
 /// `Arc<Mutex<Option<…>>>` that is locked/unlocked on the blocking thread.
+// Reads use a separate cloned handle (try_clone) so a blocked read never
+// holds the mutex that writes and control-line calls need; if the driver
+// refuses to clone, reads fall back to the single shared handle.
 pub struct NativeTransport {
     port_name: String,
-    /// The open port handle (None when closed).
+    /// The open port handle used for writes and control (None when closed).
     port: Arc<Mutex<Option<Box<dyn serialport::SerialPort>>>>,
+    /// Dedicated read handle (None when closed or the clone failed).
+    reader: Arc<Mutex<Option<Box<dyn serialport::SerialPort>>>>,
+    /// Whether reads go through `reader` (true) or the shared `port`.
+    split_io: AtomicBool,
+    /// Budget for one write, from the session write timeout.
+    write_timeout_ms: AtomicU64,
     open: AtomicBool,
     /// Remembered config for reconfigure / diagnostics.
     config: Mutex<Option<SerialConfig>>,
@@ -98,6 +155,9 @@ impl NativeTransport {
         Arc::new(Self {
             port_name: port_name.to_string(),
             port: Arc::new(Mutex::new(None)),
+            reader: Arc::new(Mutex::new(None)),
+            split_io: AtomicBool::new(false),
+            write_timeout_ms: AtomicU64::new(1000),
             open: AtomicBool::new(false),
             config: Mutex::new(None),
         })
@@ -135,50 +195,54 @@ impl SerialTransport for NativeTransport {
         let parity = to_sp_parity(&config.parity);
         let stop_bits = to_sp_stop_bits(&config.stop_bits);
         let flow = to_sp_flow_control(&config.flow_control);
-        let read_timeout = config.read_timeout_ms;
-        let write_timeout = config.write_timeout_ms;
+        let port_timeout = blocking_timeout(config.read_timeout_ms);
         let dtr_on_open = config.dtr_on_open;
         let rts_on_open = config.rts_on_open;
 
-        let port = tokio::task::spawn_blocking(
-            move || -> Result<Box<dyn serialport::SerialPort>, String> {
-                let mut builder = serialport::new(&port_name, baud)
-                    .data_bits(data_bits)
-                    .parity(parity)
-                    .stop_bits(stop_bits)
-                    .flow_control(flow);
+        let (port, reader) = tokio::task::spawn_blocking(move || -> Result<OpenedPorts, String> {
+            let builder = serialport::new(&port_name, baud)
+                .data_bits(data_bits)
+                .parity(parity)
+                .stop_bits(stop_bits)
+                .flow_control(flow)
+                // Short blocking timeout: reads must not hold the port.
+                .timeout(port_timeout);
 
-                if read_timeout > 0 {
-                    builder = builder.timeout(Duration::from_millis(read_timeout));
-                } else {
-                    // Short timeout to avoid blocking forever on reads
-                    builder = builder.timeout(Duration::from_millis(50));
+            let mut port = builder
+                .open()
+                .map_err(|e| format!("Failed to open {}: {}", port_name, e))?;
+
+            // Set initial control line states
+            if dtr_on_open {
+                let _ = port.write_data_terminal_ready(true);
+            }
+            if rts_on_open {
+                let _ = port.write_request_to_send(true);
+            }
+
+            // Independent read handle; fall back to the shared handle if
+            // the driver cannot duplicate the port.
+            let reader = match port.try_clone() {
+                Ok(reader) => Some(reader),
+                Err(e) => {
+                    log::warn!(
+                        "Serial port {} cannot be cloned ({}); using a single shared handle",
+                        port_name,
+                        e
+                    );
+                    None
                 }
+            };
 
-                let mut port = builder
-                    .open()
-                    .map_err(|e| format!("Failed to open {}: {}", port_name, e))?;
-
-                // Apply write timeout
-                if write_timeout > 0 {
-                    port.set_timeout(Duration::from_millis(write_timeout))
-                        .map_err(|e| format!("Failed to set timeout: {}", e))?;
-                }
-
-                // Set initial control line states
-                if dtr_on_open {
-                    let _ = port.write_data_terminal_ready(true);
-                }
-                if rts_on_open {
-                    let _ = port.write_request_to_send(true);
-                }
-
-                Ok(port)
-            },
-        )
+            Ok((port, reader))
+        })
         .await
         .map_err(|e| format!("spawn_blocking join error: {}", e))??;
 
+        self.split_io.store(reader.is_some(), Ordering::SeqCst);
+        self.write_timeout_ms
+            .store(config.write_timeout_ms.max(1), Ordering::SeqCst);
+        *self.reader.lock().await = reader;
         *self.port.lock().await = Some(port);
         self.open.store(true, Ordering::SeqCst);
         *self.config.lock().await = Some(config.clone());
@@ -192,8 +256,13 @@ impl SerialTransport for NativeTransport {
         }
         // Drop the port handle (which closes it).
         let port_arc = self.port.clone();
+        let reader_arc = self.reader.clone();
         tokio::task::spawn_blocking(move || {
             // Lock on the blocking thread so Drop runs off-runtime.
+            // The reader releases within one short read timeout.
+            let mut guard = reader_arc.blocking_lock();
+            *guard = None;
+            drop(guard);
             let mut guard = port_arc.blocking_lock();
             *guard = None;
         })
@@ -216,7 +285,11 @@ impl SerialTransport for NativeTransport {
                 MAX_SERIAL_PAYLOAD_BYTES
             ));
         }
-        let port_arc = self.port.clone();
+        let port_arc = if self.split_io.load(Ordering::SeqCst) {
+            self.reader.clone()
+        } else {
+            self.port.clone()
+        };
         let len = buf.len();
         let data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
             let mut guard = port_arc.blocking_lock();
@@ -255,11 +328,11 @@ impl SerialTransport for NativeTransport {
         }
         let port_arc = self.port.clone();
         let data = buf.to_vec();
+        let budget = Duration::from_millis(self.write_timeout_ms.load(Ordering::SeqCst));
         tokio::task::spawn_blocking(move || -> Result<usize, String> {
             let mut guard = port_arc.blocking_lock();
             let port = guard.as_mut().ok_or("Port closed")?;
-            port.write_all(&data)
-                .map_err(|e| format!("Write error: {}", e))?;
+            write_all_within(port.as_mut(), &data, budget)?;
             Ok(data.len())
         })
         .await
@@ -407,7 +480,10 @@ impl SerialTransport for NativeTransport {
         let parity = to_sp_parity(&config.parity);
         let stop_bits = to_sp_stop_bits(&config.stop_bits);
         let flow = to_sp_flow_control(&config.flow_control);
-        let timeout_ms = config.read_timeout_ms;
+        let timeout = blocking_timeout(config.read_timeout_ms);
+        let reader_arc = self.reader.clone();
+        self.write_timeout_ms
+            .store(config.write_timeout_ms.max(1), Ordering::SeqCst);
 
         tokio::task::spawn_blocking(move || -> Result<(), String> {
             let mut guard = port_arc.blocking_lock();
@@ -422,8 +498,14 @@ impl SerialTransport for NativeTransport {
                 .map_err(|e| format!("set_stop_bits: {}", e))?;
             port.set_flow_control(flow)
                 .map_err(|e| format!("set_flow_control: {}", e))?;
-            if timeout_ms > 0 {
-                port.set_timeout(Duration::from_millis(timeout_ms))
+            port.set_timeout(timeout)
+                .map_err(|e| format!("set_timeout: {}", e))?;
+            drop(guard);
+            // The cloned read handle keeps its own timeout on some platforms.
+            let mut reader_guard = reader_arc.blocking_lock();
+            if let Some(reader) = reader_guard.as_mut() {
+                reader
+                    .set_timeout(timeout)
                     .map_err(|e| format!("set_timeout: {}", e))?;
             }
             Ok(())
@@ -550,6 +632,14 @@ mod tests {
             t.reconfigure(&valid_test_config("COM98")).await,
             Err("Cannot change the native transport port name".to_string())
         );
+    }
+
+    #[test]
+    fn test_blocking_timeout_is_short_and_bounded() {
+        assert_eq!(blocking_timeout(0), Duration::from_millis(20));
+        assert_eq!(blocking_timeout(1), Duration::from_millis(5));
+        assert_eq!(blocking_timeout(100), Duration::from_millis(20));
+        assert_eq!(blocking_timeout(12), Duration::from_millis(12));
     }
 
     #[test]

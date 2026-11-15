@@ -28,6 +28,12 @@ fn bounded_event_text(mut value: String, max_bytes: usize) -> String {
     value
 }
 
+/// Queue-age safety cap for a write-type command.
+///
+/// The write itself is bounded by `write_timeout_ms` from the moment the
+/// session starts executing it, so queue wait is *not* charged against that
+/// timeout.  The deadline stamped here only caps how long a command may wait
+/// (queue admission + queue + execution) before it is reported as dropped.
 async fn write_deadline(handle: &SerialSessionHandle) -> tokio::time::Instant {
     let timeout_ms = handle
         .config
@@ -35,7 +41,9 @@ async fn write_deadline(handle: &SerialSessionHandle) -> tokio::time::Instant {
         .await
         .write_timeout_ms
         .clamp(1, MAX_SERIAL_TIMEOUT_MS);
-    tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms)
+    tokio::time::Instant::now()
+        + tokio::time::Duration::from_millis(timeout_ms)
+        + session::QUEUE_AGE_CAP
 }
 
 async fn await_command_completion(
@@ -445,7 +453,9 @@ impl SerialService {
             return Err("Cannot change a serial session's port name".to_string());
         }
         let timeout_ms = config.write_timeout_ms.clamp(1, MAX_SERIAL_TIMEOUT_MS);
-        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
+        let deadline = tokio::time::Instant::now()
+            + tokio::time::Duration::from_millis(timeout_ms)
+            + session::QUEUE_AGE_CAP;
         let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
         let command = SessionCommand::Reconfigure {
             config,
@@ -790,6 +800,38 @@ mod tests {
         service.disconnect(&info.id).await.unwrap();
         let sessions = service.list_sessions().await;
         assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_service_burst_of_concurrent_sends_all_succeed() {
+        // Public-API regression: a paste / held key sends many concurrent
+        // `send_raw` calls; none may fail with an expiry error.
+        let service = SerialService::new();
+        let config = SerialConfig {
+            port_name: "COM5".to_string(),
+            write_timeout_ms: 1000,
+            ..Default::default()
+        };
+        let info = service.connect_simulated(config).await.unwrap();
+        let handle = service.get_session(&info.id).await.unwrap();
+
+        let mut tasks = Vec::new();
+        for i in 0..300u32 {
+            let service = service.clone();
+            let id = info.id.clone();
+            tasks.push(tokio::spawn(async move {
+                service.send_raw(&id, vec![b'a' + (i % 26) as u8]).await
+            }));
+        }
+        for task in tasks {
+            let result = task.await.unwrap();
+            assert!(result.is_ok(), "send failed: {result:?}");
+        }
+        assert_eq!(
+            handle.bytes_tx.load(std::sync::atomic::Ordering::Relaxed),
+            300
+        );
+        service.disconnect(&info.id).await.unwrap();
     }
 
     #[tokio::test]

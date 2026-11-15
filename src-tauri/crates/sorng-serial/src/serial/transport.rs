@@ -10,7 +10,7 @@
 
 use crate::serial::types::*;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 
@@ -81,6 +81,12 @@ pub struct SimulatedTransport {
     control_lines: Mutex<ControlLines>,
     rx_notify: Notify,
     loopback: AtomicBool,
+    /// Artificial latency applied to every `read` (test hook, 0 = none).
+    read_delay_ms: AtomicU64,
+    /// Artificial latency applied to every `write` (test hook, 0 = none).
+    write_delay_ms: AtomicU64,
+    /// Number of `write` calls accepted so far.
+    write_calls: AtomicU64,
 }
 
 impl SimulatedTransport {
@@ -95,12 +101,31 @@ impl SimulatedTransport {
             control_lines: Mutex::new(ControlLines::default()),
             rx_notify: Notify::new(),
             loopback: AtomicBool::new(false),
+            read_delay_ms: AtomicU64::new(0),
+            write_delay_ms: AtomicU64::new(0),
+            write_calls: AtomicU64::new(0),
         })
     }
 
     /// Enable loopback mode (TX data is immediately available in RX).
     pub fn set_loopback(&self, enabled: bool) {
         self.loopback.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Make every `read` take at least `ms` milliseconds (simulates a slow
+    /// driver / long blocking read).  The delay does not hold any lock.
+    pub fn set_read_delay_ms(&self, ms: u64) {
+        self.read_delay_ms.store(ms, Ordering::SeqCst);
+    }
+
+    /// Make every `write` take `ms` milliseconds (simulates a slow driver).
+    pub fn set_write_delay_ms(&self, ms: u64) {
+        self.write_delay_ms.store(ms, Ordering::SeqCst);
+    }
+
+    /// Number of `write` calls the transport has received.
+    pub fn write_calls(&self) -> u64 {
+        self.write_calls.load(Ordering::SeqCst)
     }
 
     /// Inject bytes into the receive buffer (simulate incoming data).
@@ -164,6 +189,10 @@ impl SerialTransport for SimulatedTransport {
         if !self.open.load(Ordering::SeqCst) {
             return Err("Port not open".to_string());
         }
+        let read_delay = self.read_delay_ms.load(Ordering::SeqCst);
+        if read_delay > 0 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(read_delay)).await;
+        }
         let mut rx = self.rx_buf.lock().await;
         if rx.is_empty() {
             drop(rx);
@@ -191,6 +220,11 @@ impl SerialTransport for SimulatedTransport {
                 MAX_SERIAL_PAYLOAD_BYTES
             ));
         }
+        let write_delay = self.write_delay_ms.load(Ordering::SeqCst);
+        if write_delay > 0 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(write_delay)).await;
+        }
+        self.write_calls.fetch_add(1, Ordering::SeqCst);
         let limit = self
             .config
             .lock()

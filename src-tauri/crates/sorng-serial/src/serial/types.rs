@@ -641,6 +641,10 @@ pub struct SessionStats {
     pub framing_errors: u64,
     pub break_count: u64,
     pub uptime_seconds: u64,
+    /// Commands dropped because they sat in the queue longer than the
+    /// queue-age safety cap (never because of write execution time).
+    #[serde(default)]
+    pub queue_expired: u64,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
