@@ -1895,11 +1895,11 @@ MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-
 # Source-controlled scope, supported by the reviewed native scratch proof only.
 # No report, caller flag or environment toggle can broaden this identity.
 MAC_SOURCE_WRITE_ADMITTED = True
-MAC_SOURCE = '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'
+MAC_SOURCE = '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'
 MAC_SOURCE_IMAGE = '20260824.0482.1'
 MAC_SOURCE_PROOF = (41328841230, 13092905128,
                     'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')
-MAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'
+MAC_INTEL_SOURCE = 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f'
 MAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'
 MAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'
 # run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.
@@ -3363,6 +3363,41 @@ def _source_mac_owned_snapshot_inventory(root, budget, guards, policy, external,
 # END STATIC MAC OWNED FD HASHING
 
 
+# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION
+# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.
+# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.
+_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (
+    'sorng-native-mac-source-scope-qualification-v1',  # kind
+    43652853463,  # runId
+    1,  # attempt
+    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head
+    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256
+    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath
+    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256
+    14136269303,  # metadataArtifactId
+    1926,  # metadataZipBytes
+    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256
+    5137,  # metadataRawProofBytes
+    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256
+    708,  # metadataRawCarrierBytes
+    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256
+    14136926168,  # supervisorArtifactId
+    5876,  # supervisorZipBytes
+    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256
+    25131,  # supervisorScopeBytes
+    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256
+    '20260824.0482.1',  # image
+    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources
+    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256
+    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof
+)
+MAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN
+def source_mac_scope_qualified(target, source, image):
+    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and
+            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and
+            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])
+# END CURRENT MAC SOURCE SCOPE QUALIFICATION
+
 def source_mac_write_host_admission():
     import sys
     require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and
@@ -3374,7 +3409,8 @@ def source_mac_write_host_admission():
 
 def source_mac_write_admission(identity):
     source_mac_write_host_admission()
-    require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and
+    require(source_mac_scope_qualified('aarch64-apple-darwin', MAC_SOURCE, MAC_SOURCE_IMAGE) and
+            isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and
             identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and
             identity.get('canonicalRoot') ==
             '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,
@@ -3391,7 +3427,8 @@ def source_mac_intel_write_host_admission():
 
 def source_mac_intel_write_admission(identity):
     source_mac_intel_write_host_admission()
-    require(isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and
+    require(source_mac_scope_qualified('x86_64-apple-darwin', MAC_INTEL_SOURCE, MAC_INTEL_SOURCE_IMAGE) and
+            isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and
             identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and
             identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,
             'source-mac-identity-scope')

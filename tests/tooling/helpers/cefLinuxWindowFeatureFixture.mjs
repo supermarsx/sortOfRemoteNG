@@ -10,6 +10,7 @@ import {
   beforeCensusDataForHistory,
 } from "./cefCensusRetirementReviewedHistory.mjs";
 import { CURRENT_WITNESS_PRODUCER } from "./cefCensusWitnessReviewedHistory.mjs";
+import { CURRENT_COMPILER_COMPAT_PRODUCER } from "./cefCompilerCompatibilityReviewedHistory.mjs";
 
 // An explicit model for feature/history tests unavailable in the temporary
 // Linux-only old source selection. Never used by a producer or SDK admission.
@@ -148,6 +149,7 @@ export function actualFeatureSource(root) {
       CURRENT_FEATURE_PRODUCER,
       CURRENT_CENSUS_PRODUCER,
       CURRENT_WITNESS_PRODUCER,
+      CURRENT_COMPILER_COMPAT_PRODUCER,
     ].includes(producer),
     "Unreviewed source selection",
   );
@@ -178,7 +180,11 @@ export function actualFeatureSource(root) {
     files,
     producer === PREVIOUS_FEATURE_PRODUCER
       ? DATA.previous
-      : [CURRENT_CENSUS_PRODUCER, CURRENT_WITNESS_PRODUCER].includes(producer)
+      : [
+            CURRENT_CENSUS_PRODUCER,
+            CURRENT_WITNESS_PRODUCER,
+            CURRENT_COMPILER_COMPAT_PRODUCER,
+          ].includes(producer)
         ? { rows: 132, producer }
         : DATA.current,
   );

@@ -65,8 +65,14 @@ test("Intel scope binds immutable raw proof and ZIP hashes with distinct labels"
   assert.equal(policy.darwinWriteAdmitted, true);
   assert.equal(
     policy.source,
-    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+    mac.MAC_SOURCE_SCOPE_QUALIFICATION.sources[policy.target],
   );
+  assert.equal(
+    policy.sourceScopeQualification,
+    mac.MAC_SOURCE_SCOPE_QUALIFICATION,
+  );
+  assert.equal(mac.macSourceScopeQualified(policy), true);
+  // Existing raw IO proof remains historical; fresh source scope is separate.
   assert.deepEqual(policy.evidence, {
     runId: 41348226366,
     artifactId: 13099539006,

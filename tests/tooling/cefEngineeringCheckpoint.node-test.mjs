@@ -4931,7 +4931,7 @@ test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinc
   assert.equal(checkpointProfile().source, SOURCE_ID);
   assert.equal(
     checkpointProfile().inputs,
-    "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat",
+    "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat",
   );
   for (const target of ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu"]) {
     const p = checkpointProfile(target);
@@ -5140,7 +5140,7 @@ test("historical Linux ARM image namespace retains fifteen raw payloads and four
   assert.equal(checkpointProfile().source, SOURCE_ID);
   assert.equal(
     checkpointProfile("aarch64-apple-darwin").source,
-    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+    "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
   );
 });
 
@@ -5670,7 +5670,7 @@ test("compile recipes preserve target output and platform sandbox without cross-
         "4",
         "-C",
         `out/${p.outConfig}`,
-        "cef",
+        p.platform === "linux" ? "cef" : "cefclient",
         p.platform === "linux" ? "chrome_sandbox" : "cef_sandbox",
       ];
     assert.equal(checkpointCompileArguments(target, args), args);
@@ -9430,6 +9430,7 @@ const macWindowsR5Reference =
   "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64";
 
 test("Mac R5 projection preserves old LF and target inputs while binding common fixes and a new LF ABI header", async () => {
+  const historicalProfile = await compilerBaselineProfile();
   const windows = validateSourceLock(
     JSON.parse(
       await readFile(
@@ -9448,7 +9449,7 @@ test("Mac R5 projection preserves old LF and target inputs while binding common 
         JSON.parse(await readFile(path.join(next, "source-lock.json"), "utf8")),
       );
     assert.equal(identitySha256(lock), row.identity);
-    assert.equal(checkpointProfile(row.target).source, row.identity);
+    assert.equal(historicalProfile(row.target).source, row.identity);
     assert.equal(lock.bridge.patchId, "sorng-tls-v2-682c378-5");
     assert.equal(lock.bridge.capabilities.length, 9);
     assert(lock.bridge.capabilities.includes("owned-http3"));
@@ -9502,7 +9503,7 @@ test("Mac R5 projection preserves old LF and target inputs while binding common 
       windowsHeader.toString().replaceAll("\r\n", "\n"),
     );
     const reviewed = await plan({
-      inputs: checkpointProfile(row.target).inputs,
+      inputs: historicalProfile(row.target).inputs,
       target: row.target,
       checkout: ROOT,
       runnerMode: "hosted",
@@ -14318,14 +14319,14 @@ async function intelExternalFixture() {
   };
 }
 
-test("Intel metadata exact source684 policy accepts its qualified native host and denies invalid scope before data", async () => {
+test("Intel metadata exact current source policy accepts its freshly qualified native host and denies invalid scope before data", async () => {
   const { mac, options } = await intelExternalFixture();
   const policy = mac.MAC_INTEL_SOURCE_POLICY;
   assert.equal(policy.schemaVersion, 3);
   assert.match(policy.name, /v3-nearby-clang-literals$/);
   assert.equal(
     policy.source,
-    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+    "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
   );
   assert.equal(policy.darwinWriteAdmitted, true);
   assert.notEqual(policy.kind, mac.MAC_SOURCE_POLICY.kind);
@@ -18142,7 +18143,10 @@ test("Mac GCS fresh preparation preserves JSON and held-inode safety on this hos
     feature.root,
     "scripts/lib/cef-mac-gcs-normalize.py",
   );
-  const bytes = (await readFile(helper, "utf8")).replaceAll("\r\n", "\n");
+  const bytes = beforeCompilerCompatFileForHistory(
+    Buffer.from((await readFile(helper, "utf8")).replaceAll("\r\n", "\n")),
+    "scripts/lib/cef-mac-gcs-normalize.py",
+  ).toString("utf8");
   assert.equal(Buffer.byteLength(bytes), 11223);
   assert.equal(
     sha(bytes),
@@ -19303,3 +19307,130 @@ test("actual production census witness whole-core inverse denies entire addition
     );
   }
 });
+
+// Current-source admission contracts run in every required engineering/native gate.
+import "./cefMacCurrentScopeQualification.node-test.mjs";
+
+import {
+  CURRENT_COMPILER_COMPAT_PRODUCER,
+  BEFORE_COMPILER_COMPAT_PRODUCER,
+  beforeCompilerCompatDataForHistory,
+  beforeCompilerCompatRowsForHistory,
+  inverseCompilerCompatFile,
+  beforeCompilerCompatCoreForHistory,
+  beforeCompilerCompatFileForHistory,
+} from "./helpers/cefCompilerCompatibilityReviewedHistory.mjs";
+
+test("compiler compatibility DATA restores the entire c69 producer and refuses each changed whole file", async () => {
+  const actual = actualFeatureSource(ROOT);
+  assert.equal(actual.producer, CURRENT_COMPILER_COMPAT_PRODUCER);
+  const previous = beforeCompilerCompatDataForHistory(
+    actual.rows,
+    actual.files,
+  );
+  assert.equal(codeTreeDigest(previous.rows), BEFORE_COMPILER_COMPAT_PRODUCER);
+  assert.deepEqual(
+    beforeCompilerCompatRowsForHistory(actual.rows, ROOT),
+    previous.rows,
+  );
+  const data = JSON.parse(
+    await readFile(
+      path.join(ROOT, "tests/fixtures/cef/compiler_compat_inverse.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(data.files.length, 7);
+  for (const spec of data.files) {
+    // The whole old file is recovered from exact current HEAD and pinned DATA;
+    // required shallow checkouts need no ancestor object or network fetch.
+    const expected = previous.files.get(spec.path);
+    assert.equal(expected.length, spec.before.bytes);
+    assert.equal(sha(expected), spec.before.sha256);
+    assert.equal(
+      hashObject("sha1")
+        .update(`blob ${expected.length}\0`)
+        .update(expected)
+        .digest("hex"),
+      spec.before.blob,
+    );
+    const raw = actual.files.get(spec.path);
+    assert.deepEqual(inverseCompilerCompatFile(raw, spec.path), expected);
+    for (const changed of [
+      Buffer.concat([raw, Buffer.from("\n")]),
+      expected,
+      Buffer.from(
+        raw
+          .toString("utf8")
+          .replace(spec.pairs[0].current, () => spec.pairs[0].previous),
+      ),
+    ])
+      assert.throws(() => inverseCompilerCompatFile(changed, spec.path));
+    const changedRows = actual.rows.map((row) =>
+      row.path === spec.path ? { ...row, sha: "0".repeat(40) } : row,
+    );
+    assert.throws(() => beforeCensusDataForHistory(changedRows, actual.files));
+    const wrongMode = actual.rows.map((row) =>
+      row.path === spec.path ? { ...row, mode: "100755" } : row,
+    );
+    assert.throws(() => beforeCensusDataForHistory(wrongMode, actual.files));
+    const wrongBody = new Map(actual.files);
+    wrongBody.set(spec.path, Buffer.concat([raw, Buffer.from("\n")]));
+    assert.throws(() =>
+      beforeCompilerCompatDataForHistory(actual.rows, wrongBody),
+    );
+  }
+  assert.throws(() =>
+    inverseCompilerCompatFile(Buffer.from("unreviewed"), "unknown"),
+  );
+  const oldCore = previous.files
+    .get("scripts/lib/cef-engineering-checkpoint.mjs")
+    .toString("utf8");
+  const start = oldCore.indexOf("export function checkpointCompileArguments(");
+  const end = oldCore.indexOf("\n}\n", start);
+  assert(start >= 0 && end > start);
+  const oldRecipe = vm.runInNewContext(
+    oldCore.slice(start, end + 2).replace(/^export /, "") +
+      ";checkpointCompileArguments;",
+    { path, checkpointProfile },
+  );
+  for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin"]) {
+    const args = [
+      "/pinned/autoninja.py",
+      "-j",
+      "4",
+      "-C",
+      `out/${checkpointProfile(target).outConfig}`,
+      "cefclient",
+      "cef_sandbox",
+    ];
+    assert.throws(() => oldRecipe(target, args), /compile recipe/);
+    assert.equal(checkpointCompileArguments(target, args), args);
+    const aggregate = args.map((value) =>
+      value === "cefclient" ? "cef" : value,
+    );
+    assert.equal(oldRecipe(target, aggregate), aggregate);
+    assert.throws(
+      () => checkpointCompileArguments(target, aggregate),
+      /compile recipe/,
+    );
+  }
+});
+
+// Historical source tests execute the complete exact B4 profile declaration.
+// This helper is excluded from production and cannot select a current profile.
+async function compilerBaselineProfile() {
+  const actual = (
+    await readFile(
+      path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+      "utf8",
+    )
+  ).replaceAll("\r\n", "\n");
+  const old = beforeCompilerCompatCoreForHistory(actual);
+  const from = old.indexOf("export const INPUTS =");
+  const to = old.indexOf("export function checkpointHost(", from);
+  assert(from >= 0 && to > from);
+  return vm.runInNewContext(
+    old.slice(from, to).replaceAll("export ", "") + ";checkpointProfile;",
+    {},
+  );
+}

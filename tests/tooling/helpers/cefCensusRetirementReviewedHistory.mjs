@@ -8,6 +8,7 @@ import {
   beforeCensusWitnessRowsForHistory,
   beforeCensusWitnessDataForHistory,
 } from "./cefCensusWitnessReviewedHistory.mjs";
+import { CURRENT_COMPILER_COMPAT_PRODUCER } from "./cefCompilerCompatibilityReviewedHistory.mjs";
 
 // Test-only complete source history. This never grants a runtime/SDK exception.
 const sha = (text) => createHash("sha256").update(text).digest("hex");
@@ -77,6 +78,7 @@ function sourceShape(rows) {
       BEFORE_CENSUS_PRODUCER,
       CURRENT_CENSUS_PRODUCER,
       CURRENT_WITNESS_PRODUCER,
+      CURRENT_COMPILER_COMPAT_PRODUCER,
     ].includes(digest),
   );
   return digest;

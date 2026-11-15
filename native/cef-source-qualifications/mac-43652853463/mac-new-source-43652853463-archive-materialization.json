@@ -1,0 +1,33 @@
+{
+  "members": [
+    {
+      "artifactKind": "metadata",
+      "member": "proof.json",
+      "path": "mac-new-source-43652853463-metadata-proof.json",
+      "bytes": 5137,
+      "sha256": "4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf"
+    },
+    {
+      "artifactKind": "metadata",
+      "member": "carrier.json",
+      "path": "mac-new-source-43652853463-metadata-carrier.json",
+      "bytes": 708,
+      "sha256": "d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8"
+    },
+    {
+      "artifactKind": "supervisor",
+      "member": "proof.json",
+      "path": "mac-new-source-43652853463-supervisor-proof.json",
+      "bytes": 3156,
+      "sha256": "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c"
+    },
+    {
+      "artifactKind": "supervisor",
+      "member": "scope-carrier.json",
+      "path": "mac-new-source-43652853463-supervisor-scope-carrier.json",
+      "bytes": 25131,
+      "sha256": "bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3"
+    }
+  ],
+  "allRawArchiveMemberPinsVerified": true
+}

@@ -1,0 +1,19 @@
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc
+--- a/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc
++++ b/base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc
+@@ -70,8 +70,13 @@ void InstanceTracer::TraceImpl(uint64_t owner_id,
+ 
+ void InstanceTracer::UntraceImpl(uint64_t owner_id) {
+   PA_CHECK(owner_id);
+-  const std::lock_guard guard(GetStorageMutex());
+-  GetStorage().erase(owner_id);
++  // Allocator hooks may reenter UntraceImpl when a map node is deallocated.
++  // Detach under the mutex, but destroy the node only after releasing it.
++  // Keep instance tracking and all BackupRefPtr/dangling checks enabled.
++  auto removed = [&] {
++    const std::lock_guard guard(GetStorageMutex());
++    return GetStorage().extract(owner_id);
++  }();
+ }
+ 
+ std::vector<std::array<const void*, 32>>

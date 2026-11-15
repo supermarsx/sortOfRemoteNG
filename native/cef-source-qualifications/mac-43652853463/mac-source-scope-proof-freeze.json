@@ -1,0 +1,613 @@
+{
+  "kind": "held-private-new-mac-source-scope-proof",
+  "observedAt": "2026-11-14T23:10:11.788026+00:00",
+  "base": "1780da5e3c00844ae274cfcdcaffcccef7cdd9be",
+  "head": "4dbcb84855ea9cd9ee632657bafd265a6491fc69",
+  "tree": "b941e10881fe45a20274ac4d56ea291f4b3595b2",
+  "branch": "codex/mac-source-scope-proof-20261114",
+  "worktree": "F:\\Projects\\sortOfRemoteNG\\.artifacts\\mac-source-scope-proof-20261114",
+  "candidateSourceFreeze": {
+    "path": "siso-mac-compiler-candidate-source-freeze.json",
+    "bytes": 24019,
+    "sha256": "fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33",
+    "candidateProducer": "119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10",
+    "rows": 132,
+    "selectedSourceFiles": 7,
+    "nativeInputFiles": 60
+  },
+  "paths": [
+    {
+      "path": ".gitattributes",
+      "mode": "100644",
+      "bytes": 6256,
+      "sha256": "1c39860be238e14700c2cab39e8b244a6a3cb5df6a8d131bfe4902bed3907637",
+      "blob": "173ca49c875c0455c89833fcfd3e00133a1e95c6"
+    },
+    {
+      "path": ".github/workflows/cef-engineering-checkpoint.yml",
+      "mode": "100644",
+      "bytes": 14907,
+      "sha256": "b1a6f2dc111b98ef5f32f6b93b10c9903590e70724b5c6cdf834b82f91dc046c",
+      "blob": "789e02bf35ed2ba804a3bfbe2dd7004a01b19e59"
+    },
+    {
+      "path": ".github/workflows/cef-mac-clang-resource-proof.yml",
+      "mode": "100644",
+      "bytes": 3534,
+      "sha256": "62836b147895379384c8f264f0762d1404a2fe7a87bf33309be1dbf947ac4b7e",
+      "blob": "7130ee95c9fe929dc41069cf6572c295310b339a"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/cef-ci-runner-aarch64-apple-darwin.json",
+      "mode": "100644",
+      "bytes": 722,
+      "sha256": "d7667c93c6e5449e3765169a170bb72cca6916c86b5a83f687462ad057736af4",
+      "blob": "e144135315b71d81ce311b8b132211eb257bab7a"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/gn/aarch64-apple-darwin.gn",
+      "mode": "100644",
+      "bytes": 343,
+      "sha256": "bf830e0c15789d4a873fc451661fd484865c54cdffb6b64cf8c2c2ad9fa4d94e",
+      "blob": "c56ef5119474a682bac49d17bd2e699ef045a4e7"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/include/cef_sorng_tls_bridge.h",
+      "mode": "100644",
+      "bytes": 8886,
+      "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+      "blob": "e193c8a7675453f9193e11cee06041ff29ee339b"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0001-chromium-socket-admission.patch",
+      "mode": "100644",
+      "bytes": 37160,
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876",
+      "blob": "6d8879183dc307029d68344cc317bd3b48340262"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0002-cef-native-bridge.patch",
+      "mode": "100644",
+      "bytes": 31384,
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653",
+      "blob": "854af95024076b0bc75812cb14e020d6b29fac14"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0003-cef-native-widget-lifetime.patch",
+      "mode": "100644",
+      "bytes": 791,
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540",
+      "blob": "986bf552a95975ad8fc94e09dea924787c2a6f76"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0004-chromium-soda-provisioning.patch",
+      "mode": "100644",
+      "bytes": 4538,
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482",
+      "blob": "2878004dc8c9a6cc25973e52495e10529c8ed01a"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0005-chromium-proxy-route-probe.patch",
+      "mode": "100644",
+      "bytes": 3539,
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810",
+      "blob": "6222c580821a468ac36e208877564d39ba48bd45"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0006-cef-explicit-download-destination.patch",
+      "mode": "100644",
+      "bytes": 1010,
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813",
+      "blob": "16b0aad55b318e99bb1ce25d4ac42a32da2333ec"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "mode": "100644",
+      "bytes": 997,
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78",
+      "blob": "f83f42c7dda0ece61b82cb7a1d73945eac855d27"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0008-chromium-same-authority-http2.patch",
+      "mode": "100644",
+      "bytes": 4125,
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103",
+      "blob": "93243b764403a1d11b5dd99920531c0a4fce420c"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0009-cef-http2-bridge-capability.patch",
+      "mode": "100644",
+      "bytes": 1972,
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8",
+      "blob": "ae3a956a93dde3bb6504c4bcdb88fc7416575c52"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0010-chromium-proxy-application-ack.patch",
+      "mode": "100644",
+      "bytes": 14590,
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55",
+      "blob": "1d20a650e04e0dff15ea11b01b5235c28fa010ad"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0011-cef-proxy-application-ack.patch",
+      "mode": "100644",
+      "bytes": 10759,
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0",
+      "blob": "5c3fe42dd750c8c4cc257da9f6b63fd1afbc0cda"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0012-cef-registration-retirement.patch",
+      "mode": "100644",
+      "bytes": 20195,
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699",
+      "blob": "722b153d51e323e497fe923d4992d65c0711e9eb"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0013-chromium-owned-quic-datagrams.patch",
+      "mode": "100644",
+      "bytes": 75101,
+      "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7",
+      "blob": "0e1bcd040664874d871a723b208f9b3ce8d83d42"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0014-cef-owned-quic-datagrams.patch",
+      "mode": "100644",
+      "bytes": 9374,
+      "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c",
+      "blob": "5201950b1d2c673c405ea53a7d10a748e45c3115"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0015-chromium-owned-quic-job-selection.patch",
+      "mode": "100644",
+      "bytes": 8020,
+      "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7",
+      "blob": "dc01496e9c61a4255b0e575669454fe9cdc9935e"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "mode": "100644",
+      "bytes": 8213,
+      "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7",
+      "blob": "9d10f5e6f75a5378cbcdf12528f812dd282c9062"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "mode": "100644",
+      "bytes": 22799,
+      "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858",
+      "blob": "8e84f40fa415eafc11409fe966d08a5926287051"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "mode": "100644",
+      "bytes": 21463,
+      "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383",
+      "blob": "854a35aacd3b193e12391c992b27d5b68a769d66"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "mode": "100644",
+      "bytes": 605,
+      "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c",
+      "blob": "2ca58f8189f22c71733a018636a82e07a85c7198"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "mode": "100644",
+      "bytes": 354,
+      "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708",
+      "blob": "d6adad5dbc637b08625fcdf9ecd99830ea7837cd"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "mode": "100644",
+      "bytes": 379,
+      "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6",
+      "blob": "a5fb46e2ae342aacf61619c85c54e2ceae31f4fa"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "mode": "100644",
+      "bytes": 845,
+      "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e",
+      "blob": "affa81d8579c8171f304220ccd0b8af4819a94fe"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0023-webrtc-macos-legacy-capture-deprecation-compat.patch",
+      "mode": "100644",
+      "bytes": 1461,
+      "sha256": "aefd044086fdf0ba24965eb716981a7428fa8fc8b6fd68a441934d11b9d63e91",
+      "blob": "63ee13eb29fc54121b8813269254a5fed74d98f5"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/patches/0024-chromium-macos-permissions-deployment-compat.patch",
+      "mode": "100644",
+      "bytes": 734,
+      "sha256": "d7578f12bdcc4de2d3f19d2a82f499991029c1dd2959857a33d373b6519b0327",
+      "blob": "281ce12b1166fefae04cf6df4ff7228e43ef5f29"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/review-receipt.json",
+      "mode": "100644",
+      "bytes": 6448,
+      "sha256": "088c6da818e750e4b13dd6e5812ce35ec81bbd9e4d1101f5caee618017864da0",
+      "blob": "19845a08e2f11d3a8cbd96a50f7b125a2a45d108"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/source-lock.json",
+      "mode": "100644",
+      "bytes": 6370,
+      "sha256": "9ceabf1338df7d31caffdc4e53ae60cac8f2b5c53d09927a03aff6ac045fa1fb",
+      "blob": "1762d6355ca94357cb0c1148e8e2cc1591beef66"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat/tools/aarch64-apple-darwin.json",
+      "mode": "100644",
+      "bytes": 2337,
+      "sha256": "962d466d216143c227207a410b5240cde0da234559e22b5a533ccf1d274d94ab",
+      "blob": "e92f670e24c3a2f745fea1640da9c826fa1dd83b"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/cef-ci-runner-x86_64-apple-darwin.json",
+      "mode": "100644",
+      "bytes": 727,
+      "sha256": "f82ad8fd76b63d16938ede7b14d1d09515a7dbb26be4180a6f74ce0827bb5b55",
+      "blob": "b4facf9e79979ce858ca0f9c54d2bd65c78e49f1"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/gn/x86_64-apple-darwin.gn",
+      "mode": "100644",
+      "bytes": 341,
+      "sha256": "817383bba38b84601551d7dc7d5f7ea0e3f67ed6b7ca13eb3ddbbca001e5cc61",
+      "blob": "9278f409dd02742e6171c77c188f1787424ae65e"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/include/cef_sorng_tls_bridge.h",
+      "mode": "100644",
+      "bytes": 8886,
+      "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e",
+      "blob": "e193c8a7675453f9193e11cee06041ff29ee339b"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0001-chromium-socket-admission.patch",
+      "mode": "100644",
+      "bytes": 37160,
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876",
+      "blob": "6d8879183dc307029d68344cc317bd3b48340262"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0002-cef-native-bridge.patch",
+      "mode": "100644",
+      "bytes": 31384,
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653",
+      "blob": "854af95024076b0bc75812cb14e020d6b29fac14"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0003-cef-native-widget-lifetime.patch",
+      "mode": "100644",
+      "bytes": 791,
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540",
+      "blob": "986bf552a95975ad8fc94e09dea924787c2a6f76"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0004-chromium-soda-provisioning.patch",
+      "mode": "100644",
+      "bytes": 4538,
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482",
+      "blob": "2878004dc8c9a6cc25973e52495e10529c8ed01a"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0005-chromium-proxy-route-probe.patch",
+      "mode": "100644",
+      "bytes": 3539,
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810",
+      "blob": "6222c580821a468ac36e208877564d39ba48bd45"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0006-cef-explicit-download-destination.patch",
+      "mode": "100644",
+      "bytes": 1010,
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813",
+      "blob": "16b0aad55b318e99bb1ce25d4ac42a32da2333ec"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "mode": "100644",
+      "bytes": 997,
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78",
+      "blob": "f83f42c7dda0ece61b82cb7a1d73945eac855d27"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0008-chromium-same-authority-http2.patch",
+      "mode": "100644",
+      "bytes": 4125,
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103",
+      "blob": "93243b764403a1d11b5dd99920531c0a4fce420c"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0009-cef-http2-bridge-capability.patch",
+      "mode": "100644",
+      "bytes": 1972,
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8",
+      "blob": "ae3a956a93dde3bb6504c4bcdb88fc7416575c52"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0010-chromium-proxy-application-ack.patch",
+      "mode": "100644",
+      "bytes": 14590,
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55",
+      "blob": "1d20a650e04e0dff15ea11b01b5235c28fa010ad"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0011-cef-proxy-application-ack.patch",
+      "mode": "100644",
+      "bytes": 10759,
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0",
+      "blob": "5c3fe42dd750c8c4cc257da9f6b63fd1afbc0cda"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0012-cef-registration-retirement.patch",
+      "mode": "100644",
+      "bytes": 20195,
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699",
+      "blob": "722b153d51e323e497fe923d4992d65c0711e9eb"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0013-chromium-owned-quic-datagrams.patch",
+      "mode": "100644",
+      "bytes": 75101,
+      "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7",
+      "blob": "0e1bcd040664874d871a723b208f9b3ce8d83d42"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0014-cef-owned-quic-datagrams.patch",
+      "mode": "100644",
+      "bytes": 9374,
+      "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c",
+      "blob": "5201950b1d2c673c405ea53a7d10a748e45c3115"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0015-chromium-owned-quic-job-selection.patch",
+      "mode": "100644",
+      "bytes": 8020,
+      "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7",
+      "blob": "dc01496e9c61a4255b0e575669454fe9cdc9935e"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "mode": "100644",
+      "bytes": 8213,
+      "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7",
+      "blob": "9d10f5e6f75a5378cbcdf12528f812dd282c9062"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "mode": "100644",
+      "bytes": 22799,
+      "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858",
+      "blob": "8e84f40fa415eafc11409fe966d08a5926287051"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "mode": "100644",
+      "bytes": 21463,
+      "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383",
+      "blob": "854a35aacd3b193e12391c992b27d5b68a769d66"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "mode": "100644",
+      "bytes": 605,
+      "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c",
+      "blob": "2ca58f8189f22c71733a018636a82e07a85c7198"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "mode": "100644",
+      "bytes": 354,
+      "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708",
+      "blob": "d6adad5dbc637b08625fcdf9ecd99830ea7837cd"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "mode": "100644",
+      "bytes": 379,
+      "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6",
+      "blob": "a5fb46e2ae342aacf61619c85c54e2ceae31f4fa"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "mode": "100644",
+      "bytes": 845,
+      "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e",
+      "blob": "affa81d8579c8171f304220ccd0b8af4819a94fe"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0023-webrtc-macos-legacy-capture-deprecation-compat.patch",
+      "mode": "100644",
+      "bytes": 1461,
+      "sha256": "aefd044086fdf0ba24965eb716981a7428fa8fc8b6fd68a441934d11b9d63e91",
+      "blob": "63ee13eb29fc54121b8813269254a5fed74d98f5"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/patches/0024-chromium-macos-permissions-deployment-compat.patch",
+      "mode": "100644",
+      "bytes": 734,
+      "sha256": "d7578f12bdcc4de2d3f19d2a82f499991029c1dd2959857a33d373b6519b0327",
+      "blob": "281ce12b1166fefae04cf6df4ff7228e43ef5f29"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/review-receipt.json",
+      "mode": "100644",
+      "bytes": 6446,
+      "sha256": "c5c81302b18745e747f25588ee1e7a56a256c960e5a4febdef218f4e0ea28825",
+      "blob": "b2d30721a69cd6ea97e83f4d491d77ad8e214991"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/source-lock.json",
+      "mode": "100644",
+      "bytes": 6367,
+      "sha256": "f33f8af2d15766f3901d741d41d139b405a46864308a424e50edc973c96a46f7",
+      "blob": "b03d790c3a218693db3296f966b7b099af87ef87"
+    },
+    {
+      "path": "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat/tools/x86_64-apple-darwin.json",
+      "mode": "100644",
+      "bytes": 2335,
+      "sha256": "32e553eec642b16d9be1662e71a7120a754ba02bb658e741d879fbe1cf1cd7e5",
+      "blob": "ec098fe2dd5b07008f90439a63035b97751c6329"
+    },
+    {
+      "path": "scripts/lib/browser-custom-runtime.mjs",
+      "mode": "100644",
+      "bytes": 69587,
+      "sha256": "2d9e61905cb38b34be4fc5af0eec0ad7119b3a3095e183004f17b418d145cf4e",
+      "blob": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+    },
+    {
+      "path": "scripts/lib/cef-checkpoint-archive.py",
+      "mode": "100644",
+      "bytes": 240121,
+      "sha256": "15899deea8fe688c9c577eb882a4111c7a9d3d342f8b41c690c150817791018e",
+      "blob": "ced48136f3e5069cabb99e17e59e0967de223545"
+    },
+    {
+      "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "bytes": 257532,
+      "sha256": "af6dd2e9446e3f3b96d4a985c06eefe282ddb6e3a321338cba34f15fad0cb976",
+      "blob": "13a2efbe6bcb273e0a6434acc98f5d61bb4954f8"
+    },
+    {
+      "path": "scripts/lib/cef-mac-gcs-normalize.py",
+      "mode": "100644",
+      "bytes": 11223,
+      "sha256": "b09e8fcc30410817ebc25bf0f33f3ec5d62449f6726881495d81df990b840ed5",
+      "blob": "e6a2834029ad5b819a47586d313bae9e6f0ff12d"
+    },
+    {
+      "path": "scripts/lib/cef-mac-process-census.py",
+      "mode": "100644",
+      "bytes": 24587,
+      "sha256": "ea85f30c0e61a22898727ea98a5bf0557f9826303ea6cc57c451bcce29dd4ca9",
+      "blob": "60a5532b2d86cf41f7f1c17e8475d3df4af4cc42"
+    },
+    {
+      "path": "scripts/lib/cef-mac-source-metadata.mjs",
+      "mode": "100644",
+      "bytes": 52288,
+      "sha256": "bdda0b757c3d578c55360596c53cd0011c827ddd9533269debaf157ca4e5b8db",
+      "blob": "ede1f5cdee2152c1ffd99908e5ad21a4a9727fdf"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_census_supervisor_proof.mjs",
+      "mode": "100644",
+      "bytes": 17335,
+      "sha256": "311db1edd7e7afead81a4cdac82b8996eb95318f46a211cde1b586175d928261",
+      "blob": "036da05f0de816515d709e2f0fc2d4309f29bc7f"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_clang_resource_carrier.mjs",
+      "mode": "100644",
+      "bytes": 22147,
+      "sha256": "13ef9eae17ce65a14dd45b9378f3a19a78e9cb9abdcfc8e3f211ac3ef7c0ec5a",
+      "blob": "f2bf85d1439d0831825f9f91fa8f5592ea4c2509"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_clang_resource_source_proof.py",
+      "mode": "100644",
+      "bytes": 25966,
+      "sha256": "ce40f0db36fe96d040e3f26e274d5e3f359c5c10879f60e1b0303f1504bc0fbc",
+      "blob": "faf7b5be71a5998fe3beee0aeba96b5d21f22b7d"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_source_scope_binding.mjs",
+      "mode": "100644",
+      "bytes": 5205,
+      "sha256": "221adc65cf5cbeea0269c6083fb4de7a4b80e6292a51fd20a85ac56261ab2748",
+      "blob": "f83ac5425e7667f1bbd6443bdbcf6af1bdf6c69d"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_source_scope_candidate.mjs",
+      "mode": "100644",
+      "bytes": 45619,
+      "sha256": "38659e1d258e9deb3ca249b28ed2fdf751b97fabe531347ef344efa60961a884",
+      "blob": "70a844c97ae741814142394c74dba23824e31e16"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_source_scope_census_denials.py",
+      "mode": "100644",
+      "bytes": 2103,
+      "sha256": "6bd9150bae7f1bd52a95b7d4712c64f6fe00c95f00fafa2b140e8f55035d98d8",
+      "blob": "f789df2b171b4e3318243393e1e3cc5b27727632"
+    },
+    {
+      "path": "tests/fixtures/cef/mac_source_scope_supervisor_carrier.mjs",
+      "mode": "100644",
+      "bytes": 6758,
+      "sha256": "b54acba994b3e0b82ff0af50d8bb5a67a2a0ccd998a0c708ec267f760bca6855",
+      "blob": "95780b049c987670d5c016fa46b32f69489f7cc1"
+    },
+    {
+      "path": "tests/tooling/cefMacNewSourceProof.node-test.mjs",
+      "mode": "100644",
+      "bytes": 5898,
+      "sha256": "8e12bf6fab8e4a43004c850b3555a6967d7eae7560f301d7c7fcb95768ae6b53",
+      "blob": "98d1c3c4c55d686bc2a202e4620dcd495d8508d2"
+    }
+  ],
+  "localControls": {
+    "path": "mac-source-scope-local-controls.tap",
+    "bytes": 1041,
+    "sha256": "f2800e2e459cd6bd652cf23b7060385012bc1e3e884c8890d9fa2ec873c8d435",
+    "tests": 9,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "nativeMacQualification": false
+  },
+  "sourceWitness": {
+    "files": 84,
+    "gitBatchBytes": 1733669,
+    "gitBatchMaximum": 2097152,
+    "all132SelectedRowsAnd60NativeModesVerified": true,
+    "candidateBindingByExactWholeFileFalseFlagsAndBranchInverse": true,
+    "proofProducerNeverRelabeledAsCandidateProducer": true
+  },
+  "workflow": {
+    "path": ".github/workflows/cef-mac-clang-resource-proof.yml",
+    "ref": "codex/mac-source-scope-proof-20261114",
+    "targetHost": "macos-15-intel",
+    "exactImage": "20260824.0482.1",
+    "jobs": [
+      "proof",
+      "supervisor-scope"
+    ],
+    "readOnlyPermissions": true,
+    "wholeJobMinutesEach": 5,
+    "metadataPrivateCodecTargets": 2,
+    "metadataNegativeCasesPerTarget": 26,
+    "metadataPublicScopeRefusalsPerPhase": 18,
+    "supervisorActualCases": 6,
+    "supervisorNodeProductionContextsDeniedPerPhase": 6,
+    "supervisorPythonProductionContextsDeniedPerPhase": 6
+  },
+  "explicitProductionGatesDisabled": {
+    "archiveMacARM": true,
+    "archiveMacIntel": true,
+    "archiveClangV3": true,
+    "nodeMacARMScope": true,
+    "nodeMacIntelScope": true,
+    "nodeCensus": true,
+    "pythonCensus": true
+  },
+  "historicalReceiptsChanged": false,
+  "productionWrites": false,
+  "productionAdmission": false,
+  "nativeAcceptance": false,
+  "runtimeReady": false,
+  "SDK": false,
+  "pushed": false,
+  "dispatched": false,
+  "requiresRootReviewBeforeRemoteActions": true
+}

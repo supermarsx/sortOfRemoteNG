@@ -13,6 +13,7 @@ import {
   MAC_CENSUS_ABI,
   MAC_CENSUS_EVIDENCE,
   MAC_CENSUS_SUPERVISOR_QUALIFICATION,
+  MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,
   LIMITS,
   canonical,
   shape,
@@ -27,6 +28,7 @@ import {
   uploadSdkBundle,
   archiveCommand,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
+import { macSourceScopeQualified } from "../../scripts/lib/cef-mac-source-metadata.mjs";
 import {
   integrationCaseNames,
   runSupervisorProof,
@@ -59,8 +61,7 @@ const failureCodesDeclaration = source.slice(
   failureCodesStart,
   failureCodesEnd,
 );
-const digest =
-  "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef";
+const digest = MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION.sources[target];
 const scope = {
   target,
   source: digest,
@@ -94,11 +95,13 @@ function scopeValidator(process = host) {
     performance: { now: () => 0 },
     LIMITS,
     COMPILE_CLEANUP_MS: 30000,
+    macSourceScopeQualified,
+    MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,
     MAC_CENSUS_PYTHON: scope.python,
     MAC_CENSUS_SOURCES: {
       [target]: digest,
       "aarch64-apple-darwin":
-        "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+        MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION.sources["aarch64-apple-darwin"],
     },
   });
 }
@@ -364,7 +367,7 @@ from unittest.mock import patch
 s=importlib.util.spec_from_file_location('census',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 root=pathlib.Path('/owned/cef-mac-census-integration-12345678-1234-4123-8123-123456789abc/cef-mac-census-session-12345678-1234-4123-8123-123456789abc')
 target='x86_64-apple-darwin';digest=m.NATIVE_SOURCES[target]
-c={'kind':'mac-census-session','mode':'integration-proof','target':target,'source':digest,'canonicalRoot':'/Users/runner/work/_temp/sorng-cef-engineering/'+target+'/'+digest,'image':m.IMAGE,'phase':'compile','workMilliseconds':m.NATIVE_MAX_WORK_MS,'leaseMilliseconds':m.NATIVE_MAX_WORK_MS+30000,'wallEndMilliseconds':int(time.time()*1000)+m.NATIVE_MAX_WORK_MS,'requestBudget':43328,'evidence':m.NATIVE_EVIDENCE,'supervisorEvidence':m.NATIVE_SUPERVISOR_QUALIFICATION['sha256']}
+c={'kind':'mac-census-session','mode':'integration-proof','target':target,'source':digest,'canonicalRoot':'/Users/runner/work/_temp/sorng-cef-engineering/'+target+'/'+digest,'image':m.IMAGE,'phase':'compile','workMilliseconds':m.NATIVE_MAX_WORK_MS,'leaseMilliseconds':m.NATIVE_MAX_WORK_MS+30000,'wallEndMilliseconds':int(time.time()*1000)+m.NATIVE_MAX_WORK_MS,'requestBudget':43328,'evidence':m.NATIVE_EVIDENCE,'supervisorEvidence':m.MAC_SOURCE_SCOPE_QUALIFICATION[18]}
 assert m.native_context(root,json.dumps(c))==c
 for change in ({'source':'a'*64},{'image':'20261030.294.1'},{'requestBudget':43329},{'workMilliseconds':m.NATIVE_MAX_WORK_MS+1},{'canonicalRoot':c['canonicalRoot']+'/other'},{'mode':'production'},{'evidence':'0'*64},{'supervisorEvidence':'0'*64},{'abi':m.NATIVE_ABI},{'private':'unexpected'}):
  try:m.native_context(root,json.dumps({**c,**change}));raise AssertionError('bad scope admitted')

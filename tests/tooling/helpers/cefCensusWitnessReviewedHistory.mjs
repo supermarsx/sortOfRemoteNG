@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  beforeCompilerCompatCoreForHistory,
+  beforeCompilerCompatRowsForHistory,
+  beforeCompilerCompatDataForHistory,
+} from "./cefCompilerCompatibilityReviewedHistory.mjs";
 
 // Closed test DATA history only. No SDK/source/ownership admission.
 export const BEFORE_WITNESS_PRODUCER =
@@ -130,6 +135,7 @@ export const withCensusFailureWitnessCore = (text) => transform(text, true);
 
 // An explicit whole historical endpoint, before applying strict mutation negatives.
 export function beforeCensusWitnessCoreForHistory(text) {
+  text = beforeCompilerCompatCoreForHistory(text);
   if (
     Buffer.byteLength(text) === BEFORE_WITNESS_CORE.bytes &&
     hash(text) === BEFORE_WITNESS_CORE.sha256
@@ -162,6 +168,7 @@ function rewindRows(rows) {
   return before;
 }
 export function beforeCensusWitnessRowsForHistory(rows, root) {
+  rows = beforeCompilerCompatRowsForHistory(rows, root);
   if (shape(rows) === BEFORE_WITNESS_PRODUCER) return rows;
   const raw = execFileSync("git", ["cat-file", "blob", "HEAD:" + CORE], {
     cwd: root,
@@ -169,11 +176,13 @@ export function beforeCensusWitnessRowsForHistory(rows, root) {
     timeout: 10000,
     maxBuffer: 1 << 20,
   });
-  pin(raw, CURRENT_WITNESS_CORE);
-  withoutCensusFailureWitnessCore(raw.toString("utf8"));
+  const current = beforeCompilerCompatCoreForHistory(raw.toString("utf8"));
+  pin(Buffer.from(current), CURRENT_WITNESS_CORE);
+  withoutCensusFailureWitnessCore(current);
   return rewindRows(rows);
 }
 export function beforeCensusWitnessDataForHistory(rows, files) {
+  ({ rows, files } = beforeCompilerCompatDataForHistory(rows, files));
   const value = shape(rows);
   assert(files instanceof Map && files.size === rows.length);
   for (const row of rows)

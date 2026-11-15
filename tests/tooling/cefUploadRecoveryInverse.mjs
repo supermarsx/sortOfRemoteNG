@@ -1,3 +1,4 @@
+import { beforeCompilerCompatFileForHistory } from "./helpers/cefCompilerCompatibilityReviewedHistory.mjs";
 import { withoutMacGcsPreparationRuntime } from "./helpers/cefMacGcsReviewedHistory.mjs";
 import { beforeCensusCoreForHistory } from "./helpers/cefCensusRetirementReviewedHistory.mjs";
 import assert from "node:assert/strict";
@@ -5,6 +6,10 @@ import assert from "node:assert/strict";
 // Test-only prefix: restore the COMPLETE reviewed pre-fix helper before the
 // unchanged performance/native-history inverses. Production execution uses raw bytes.
 export function withoutSourceVerifyGuard(text) {
+  text = beforeCompilerCompatFileForHistory(
+    Buffer.from(text),
+    "scripts/lib/cef-checkpoint-archive.py",
+  ).toString("utf8");
   assert.equal(Buffer.byteLength(text), 240123);
   assert.equal(
     createHash("sha256").update(text).digest("hex"),
@@ -27,12 +32,16 @@ export function withoutSourceVerifyGuard(text) {
 export function withoutSourceVerifyGuardRows(rows, root) {
   const file = "scripts/lib/cef-checkpoint-archive.py";
   assert.equal(rows.filter((row) => row.path === file).length, 1);
-  const text = execFileSync("git", ["cat-file", "blob", `HEAD:${file}`], {
+  const rawText = execFileSync("git", ["cat-file", "blob", `HEAD:${file}`], {
     cwd: root,
     timeout: 10000,
     windowsHide: true,
     maxBuffer: 1 << 20,
   }).toString();
+  const text = beforeCompilerCompatFileForHistory(
+    Buffer.from(rawText),
+    file,
+  ).toString("utf8");
   assert.equal(rows.find((row) => row.path === file).sha, blobSha(text));
   const previous = withoutSourceVerifyGuard(text);
   return rows.map((row) =>
@@ -193,12 +202,20 @@ export function withoutRepinRows(rows, root) {
       return { ...row, sha: "c0f2dfbf08fa94b0b10786847ee5a01d2df61fb6" };
     const undo = inverse[row.path];
     if (!undo) return row;
-    const text = execFileSync("git", ["cat-file", "blob", `HEAD:${row.path}`], {
-      cwd: root,
-      timeout: 10000,
-      windowsHide: true,
-      maxBuffer: 1 << 24,
-    }).toString();
+    const rawText = execFileSync(
+      "git",
+      ["cat-file", "blob", `HEAD:${row.path}`],
+      {
+        cwd: root,
+        timeout: 10000,
+        windowsHide: true,
+        maxBuffer: 1 << 24,
+      },
+    ).toString();
+    const text = beforeCompilerCompatFileForHistory(
+      Buffer.from(rawText),
+      row.path,
+    ).toString("utf8");
     return { ...row, sha: blobSha(undo(text)) };
   });
 }

@@ -1,3 +1,4 @@
+import { beforeCompilerCompatFileForHistory } from "./cefCompilerCompatibilityReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -51,9 +52,11 @@ export function withoutMacGcsPreparationRows(rows, root) {
       timeout: 10000,
       windowsHide: true,
       maxBuffer: 1 << 20,
-    }).toString();
-  const runtime = read(runtimePath),
-    helper = read(helperPath);
+    });
+  const historyRead = (file) =>
+    beforeCompilerCompatFileForHistory(read(file), file).toString("utf8");
+  const runtime = historyRead(runtimePath),
+    helper = historyRead(helperPath);
   for (const file of [runtimePath, helperPath]) {
     const matching = rows.filter((row) => row.path === file);
     assert.equal(matching.length, 1);

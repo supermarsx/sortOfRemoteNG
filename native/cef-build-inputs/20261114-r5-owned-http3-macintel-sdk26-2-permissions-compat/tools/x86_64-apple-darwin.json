@@ -1,0 +1,52 @@
+{
+  "files": [
+    {
+      "path": "usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+      "sha256": "b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d",
+      "size": 13592
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/DarwinFoundation1.modulemap",
+      "size": 6615,
+      "sha256": "497c8b58b72734d7f92e6b1527fac47483d807e9835fca96a66d19f04d9278ea"
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/DarwinFoundation2.modulemap",
+      "size": 11712,
+      "sha256": "6a1e2040de287c97c592038f6c60dd7ecc4617cc12151bf27d49c4d957c9c4c1"
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/DarwinFoundation3.modulemap",
+      "size": 4989,
+      "sha256": "c7afa648346e3d1e0c20c5b805893cebfb28a24125934547b2f1533382487d2c"
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/libunwind.modulemap",
+      "size": 246,
+      "sha256": "48f339450fa40a3fddec84d4fc75a7197fce4b36f75925d3f3a22a54aa3ffe90"
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+      "size": 7627,
+      "sha256": "95882a9cea02396e76f3e406a5728269b2a1a11bcd241430a84c9e63d09a6cd3"
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libSystem.B.tbd",
+      "size": 337542,
+      "sha256": "607d9993892c95703a0909ff06f5843058ff1ec30b08337f42ab056d9bf325ea"
+    },
+    {
+      "path": "Applications/Xcode_26.3.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+      "size": 272034048,
+      "sha256": "15339439a6be4a9d33d281ec040a7e0092190b1c8d7de5f94d824b50ffae0769"
+    },
+    {
+      "path": "cef-ci-runner-x86_64-apple-darwin.json",
+      "size": 727,
+      "sha256": "f82ad8fd76b63d16938ede7b14d1d09515a7dbb26be4180a6f74ce0827bb5b55"
+    }
+  ],
+  "kind": "sorng-cef-toolchain-lock",
+  "schemaVersion": 1,
+  "target": "x86_64-apple-darwin"
+}

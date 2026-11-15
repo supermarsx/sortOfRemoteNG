@@ -370,3 +370,142 @@ test(
     });
   },
 );
+
+const permissionsProfiles = [
+  ["intel", "x86_64-apple-darwin"],
+  ["arm", "aarch64-apple-darwin"],
+];
+const permissionsPatch =
+  "patches/0024-chromium-macos-permissions-deployment-compat.patch";
+const permissionsOriginalSha =
+  "126dbcc51a036a7fd8c1c709ffc9cddc6575b8fbb7f77895d6f439caf7b5f109";
+const permissionsOriginal = await readFile(
+  path.join(root, "tests/fixtures/cef/minimal-sdk-upstream/permissions_utils.mm"),
+);
+assert.equal(sha(permissionsOriginal), permissionsOriginalSha);
+
+for (const [arch, target] of permissionsProfiles)
+  test(`Mac ${arch} deployment compatibility preserves all inherited payloads and warning flags`, async () => {
+    const parent =
+      `native/cef-build-inputs/20261025-r5-owned-http3-mac${arch}-sdk26-2-capture-compat`;
+    const inputs =
+      `native/cef-build-inputs/20261114-r5-owned-http3-mac${arch}-sdk26-2-permissions-compat`;
+    const old = validateSourceLock(await json(`${parent}/source-lock.json`));
+    const current = validateSourceLock(await json(`${inputs}/source-lock.json`));
+    assert.deepEqual(current.upstream, old.upstream);
+    assert.deepEqual(current.bridge, old.bridge);
+    assert.deepEqual(current.builds, old.builds);
+    assert.deepEqual(current.patches.slice(0, -1), old.patches);
+    assert.equal(current.patches.length, old.patches.length + 1);
+    const added = current.patches.at(-1);
+    assert.equal(added.repository, "chromium");
+    assert.equal(added.path, permissionsPatch);
+    const patch = await readFile(path.join(root, inputs, permissionsPatch));
+    assert.equal(sha(patch), added.sha256);
+    assert.doesNotMatch(patch.toString(), /Wno|BUILD\.gn|ScreenCaptureKit\.h/);
+    const receipt = await json(`${inputs}/review-receipt.json`);
+    assert.equal(receipt.parentSourceLockIdentity, identitySha256(old));
+    assert.equal(receipt.sourceLockIdentity, identitySha256(current));
+    assert.equal(receipt.upstreamSha256, permissionsOriginalSha);
+    assert.equal(receipt.engineBuilt, false);
+    assert.equal(receipt.nativeAcceptancePassed, false);
+    assert.equal(receipt.published, false);
+    assert.equal(receipt.originalFailure.runId, 43347465459);
+    for (const pin of [
+      ...old.patches,
+      old.bridge.header,
+      ...old.builds.flatMap((build) => [build.gnArgs, build.toolchainLock]),
+      { path: `cef-ci-runner-${target}.json` },
+    ]) {
+      const inherited = await readFile(path.join(root, parent, pin.path));
+      const actual = await readFile(path.join(root, inputs, pin.path));
+      assert.deepEqual(actual, inherited, pin.path);
+      const evidence = receipt.inheritedPayloads.find((row) => row.path === pin.path);
+      assert(evidence);
+      assert.equal(evidence.bytes, inherited.length);
+      assert.equal(evidence.sha256, sha(inherited));
+    }
+    const actual = await plan({ inputs, target, checkout: root, runnerMode: "hosted" });
+    assert(JSON.stringify(actual).includes(identitySha256(current)));
+  });
+
+async function appliedPermissionsSource(owned) {
+  const destination = path.join(owned, "ui/base/cocoa/permissions_utils.mm");
+  await mkdir(path.dirname(destination), { recursive: true });
+  await writeFile(destination, permissionsOriginal);
+  await exec("git", ["init", "--quiet"], { cwd: owned, windowsHide: true });
+  const patch = path.join(root,
+    "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat",
+    permissionsPatch);
+  await exec("git", ["apply", "--check", patch], { cwd: owned, windowsHide: true });
+  await exec("git", ["apply", patch], { cwd: owned, windowsHide: true });
+  // The temporary Git checkout may use host CRLF; the pinned source/patch
+  // comparison uses its canonical upstream LF bytes.
+  return (await readFile(destination, "utf8")).replaceAll("\r\n", "\n");
+}
+
+test("actual pinned permissions source patch only guards the legacy pre14 fallback", async () => {
+  await scratch(async (owned) => {
+    const after = await appliedPermissionsSource(owned);
+    const before = permissionsOriginal.toString("utf8");
+    const guarded =
+      "#if __MAC_OS_X_VERSION_MIN_REQUIRED < 140000\n  } else {\n" +
+      "    // Only pre-Sonoma deployments need the legacy screenshot fallback.\n";
+    assert.equal(after.split(guarded).length, 2);
+    const restored = after.replace(guarded, "  } else {\n").replace(
+      "kCGNullWindowID, kCGWindowImageDefault));\n#endif\n",
+      "kCGNullWindowID, kCGWindowImageDefault));\n",
+    );
+    assert.equal(restored, before);
+    assert(after.includes("[SCScreenshotManager captureImageWithFilter:filter"));
+    assert(after.includes("CHECK(base::FeatureList::IsEnabled(kWarmScreenCaptureSonoma));"));
+    for (const [arch] of permissionsProfiles) {
+      const receipt = await json(
+        `native/cef-build-inputs/20261114-r5-owned-http3-mac${arch}-sdk26-2-permissions-compat/review-receipt.json`,
+      );
+      assert.equal(sha(Buffer.from(after)), receipt.patchedSha256);
+    }
+  });
+});
+
+test("actual Clang old permissions fallback fails at14; new exact fallback retains pre14 and all Werror", {
+  skip: !process.env.SORNG_CEF_CLANG,
+}, async () => {
+  await scratch(async (owned) => {
+    const before = permissionsOriginal.toString("utf8");
+    const after = await appliedPermissionsSource(owned);
+    // Compile the exact old/new fallback under an SDK availability declaration.
+    // The untouched SCK branch is checked byte-for-byte above; no Apple SDK or
+    // successful native runtime is inferred from this focused compiler proof.
+    const fallback = (source) => {
+      const start = source.indexOf("#if __MAC_OS_X_VERSION_MIN_REQUIRED < 140000");
+      const tail = source.slice(start >= 0 ? start : source.indexOf("  } else {"),
+        source.indexOf("\n}\n\n}  // namespace") + 2);
+      return "#define __MAC_OS_X_VERSION_MIN_REQUIRED __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__\n" +
+        "using CGImageRef=void*; constexpr int CGRectInfinite=0; constexpr int kCGWindowListOptionOnScreenOnly=0; constexpr int kCGNullWindowID=0; constexpr int kCGWindowImageDefault=0;\n" +
+        "extern CGImageRef CGWindowListCreateImage(int,int,int,int) __attribute__((availability(macos,introduced=10.6,deprecated=14.0)));\n" +
+        "namespace base::apple {template<class T>struct ScopedCFTypeRef{explicit ScopedCFTypeRef(T){}};}\n" +
+        "void CaptureScreenshot() {\n  if (@available(macOS 14.0, *)) {\n" + tail + "\n";
+    };
+    const file = path.join(owned, "permissions-fallback.mm");
+    for (const arch of ["x86_64", "aarch64"]) {
+      const args = ["--driver-mode=g++", `--target=${arch}-apple-macos14.0`, "-x",
+        "objective-c++", "-fsyntax-only", "-Werror", "-Wdeprecated-declarations", file];
+      await writeFile(file, fallback(before));
+      await assert.rejects(exec(process.env.SORNG_CEF_CLANG, args, { timeout: 20000 }),
+        (error) => /error:.*deprecated/.test(error.stderr));
+      await writeFile(file, fallback(after));
+      await exec(process.env.SORNG_CEF_CLANG, args, { timeout: 20000 });
+      const oldTarget = args.map((v) => v === `--target=${arch}-apple-macos14.0`
+        ? `--target=${arch}-apple-macos13.0` : v);
+      await exec(process.env.SORNG_CEF_CLANG, oldTarget, { timeout: 20000 });
+      const preprocessed = await exec(process.env.SORNG_CEF_CLANG,
+        oldTarget.filter((v) => v !== "-fsyntax-only").concat(["-E", "-P"]), { timeout: 20000 });
+      assert.equal(preprocessed.stdout.match(/CGWindowListCreateImage\(CGRectInfinite/g)?.length, 1);
+      await writeFile(file, fallback(after) + "void unrelated(){ int unused; }\n");
+      await assert.rejects(exec(process.env.SORNG_CEF_CLANG,
+        [...args, "-Wunused-variable"], { timeout: 20000 }),
+      (error) => /error:.*unused variable/.test(error.stderr));
+    }
+  });
+});

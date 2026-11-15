@@ -21,7 +21,32 @@ _FRAMEWORK = json.loads((_HERE / 'mac_framework_partial_inverse.json').read_text
 _REUSE = json.loads((_HERE / 'mac_source_reuse_inverse.json').read_text(encoding='utf8'))['archive']
 
 
+def before_compiler_compatibility(raw, filename):
+    """Closed whole-file test DATA rewind; never production/source authority."""
+    data_raw = (_HERE / 'compiler_compat_inverse.json').read_bytes()
+    assert len(data_raw) == 30210 and hashlib.sha256(data_raw).hexdigest() == 'b69d5e1f82821f4dbf6e7e894eb83cecf9f696a08ffa9c984e1f68149836c6da'
+    data = json.loads(data_raw)
+    spec = next(row for row in data['files'] if row['path'] == filename)
+    value = raw.encode() if isinstance(raw, str) else raw
+    def pin(value, expected):
+        assert len(value) == expected['bytes']
+        assert hashlib.sha256(value).hexdigest() == expected['sha256']
+        assert hashlib.sha1(b'blob ' + str(len(value)).encode() + b'\0' + value).hexdigest() == expected['blob']
+    if len(value) == spec['before']['bytes'] and hashlib.sha256(value).hexdigest() == spec['before']['sha256']:
+        pin(value, spec['before'])
+        return raw
+    pin(value, spec['after'])
+    text = value.decode()
+    for pair in reversed(spec['pairs']):
+        assert text.count(pair['current']) == 1
+        text = text.replace(pair['current'], pair['previous'], 1)
+    value = text.encode()
+    pin(value, spec['before'])
+    return value.decode() if isinstance(raw, str) else value
+
+
 def inverse(raw):
+    raw = before_compiler_compatibility(raw, 'scripts/lib/cef-checkpoint-archive.py')
     text = raw.decode() if isinstance(raw, bytes) else raw
     # Exact whole-file prefix; retained history never executes in production.
     value = text.encode()

@@ -117,7 +117,7 @@ test("actual Intel codec regressions preserve scoped public admission and full o
     { encoding: "utf8", timeout: 15000, maxBuffer: 65536, windowsHide: true },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stderr, /Ran 16 tests/);
+  assert.match(result.stderr, /Ran 17 tests/);
   assert.match(result.stderr, /\bOK\b/);
 });
 test("fixed Intel entry denies unknown arguments without raw path, argument or exception", () => {

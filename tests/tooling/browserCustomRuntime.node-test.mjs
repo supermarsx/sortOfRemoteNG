@@ -1145,13 +1145,25 @@ for (const target of TARGETS)
       use_sysroot: true,
     });
     const args = plan.commands[1].args;
-    assert.ok(args.includes("cef"));
+    assert.ok(args.includes(target.includes("apple") ? "cefclient" : "cef"));
+    if (target.includes("apple")) assert.ok(!args.includes("cef"));
     if (target.includes("windows")) {
       assert.ok(args.includes("bootstrap"));
       assert.ok(args.includes("bootstrapc"));
     }
     if (target.includes("linux")) assert.ok(args.includes("chrome_sandbox"));
-    if (target.includes("apple")) assert.ok(args.includes("cef_sandbox"));
+    if (target.includes("apple")) {
+      assert.ok(args.includes("cef_sandbox"));
+      assert.deepEqual(plan.commands[2].args, [
+        "tools/make_distrib.py",
+        "--output-dir",
+        "binary_distrib",
+        "--ninja-build",
+        `--${target.startsWith("aarch64") ? "arm64" : "x64"}-build`,
+        "--minimal",
+        "--allow-partial",
+      ]);
+    }
     assert.ok(!JSON.stringify(plan).includes("--no-sandbox"));
   });
 

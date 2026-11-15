@@ -1888,7 +1888,7 @@ export async function customRuntimeBuildRecipe({
           path.join(path.resolve(checkouts.depotTools), "autoninja.py"),
           "-C",
           `out/Release_GN_${arch}`,
-          "cef",
+          host === "darwin" ? "cefclient" : "cef",
           ...(windows
             ? ["bootstrap", "bootstrapc"]
             : host === "linux"

@@ -282,9 +282,62 @@ export const MAC_CLANG_LITERAL_EVIDENCE = Object.freeze({
   qualifiedHelperSha256:
     "5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79",
 });
+// BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION
+// Fresh exact-source scratch evidence; prior IO/ABI receipts below stay historical.
+// This record is code-owned. Caller JSON, environment and reports never select it.
+export const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({
+  kind: "sorng-native-mac-source-scope-qualification-v1",
+  runId: 43652853463,
+  attempt: 1,
+  head: "4dbcb84855ea9cd9ee632657bafd265a6491fc69",
+  sourceWitnessSha256:
+    "ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf",
+  evidencePath:
+    "native/cef-source-qualifications/mac-43652853463/qualification.json",
+  evidenceSha256:
+    "18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31",
+  metadataArtifactId: 14136269303,
+  metadataZipBytes: 1926,
+  metadataZipSha256:
+    "256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3",
+  metadataRawProofBytes: 5137,
+  metadataRawProofSha256:
+    "4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf",
+  metadataRawCarrierBytes: 708,
+  metadataRawCarrierSha256:
+    "d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8",
+  supervisorArtifactId: 14136926168,
+  supervisorZipBytes: 5876,
+  supervisorZipSha256:
+    "2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c",
+  supervisorScopeBytes: 25131,
+  supervisorScopeSha256:
+    "bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3",
+  image: "20260824.0482.1",
+  sources: Object.freeze({
+    "aarch64-apple-darwin":
+      "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+    "x86_64-apple-darwin":
+      "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
+  }),
+  candidateSourceFreezeSha256:
+    "fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33",
+  candidateProducerAtProof:
+    "119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10",
+});
+export function macSourceScopeQualified(policy) {
+  return (
+    policy?.sourceScopeQualification === MAC_SOURCE_SCOPE_QUALIFICATION &&
+    Object.hasOwn(MAC_SOURCE_SCOPE_QUALIFICATION.sources, policy.target) &&
+    MAC_SOURCE_SCOPE_QUALIFICATION.sources[policy.target] === policy.source &&
+    MAC_SOURCE_SCOPE_QUALIFICATION.image === policy.image
+  );
+}
+// END CURRENT MAC SOURCE SCOPE QUALIFICATION
+
 export const MAC_SOURCE_POLICY = Object.freeze({
   target: "aarch64-apple-darwin",
-  source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+  source: "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
   platform: "darwin",
   architecture: "x64",
   imageOS: "macos15",
@@ -296,6 +349,7 @@ export const MAC_SOURCE_POLICY = Object.freeze({
   nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
   compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,
   darwinWriteAdmitted: true,
+  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,
   evidence: Object.freeze({
     runId: 41328841230,
     artifactId: 13092905128,
@@ -304,7 +358,7 @@ export const MAC_SOURCE_POLICY = Object.freeze({
 });
 export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   target: "x86_64-apple-darwin",
-  source: "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+  source: "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
   platform: "darwin",
   architecture: "x64",
   imageOS: "macos15",
@@ -316,6 +370,7 @@ export const MAC_INTEL_SOURCE_POLICY = Object.freeze({
   nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,
   compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,
   darwinWriteAdmitted: true,
+  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,
   evidence: Object.freeze({
     runId: 41348226366,
     artifactId: 13099539006,
@@ -399,6 +454,7 @@ const freezeData = (value) => {
 export function validateMacSourceWriteScope(identity, host) {
   assert(
     MAC_SOURCE_POLICY.darwinWriteAdmitted &&
+      macSourceScopeQualified(MAC_SOURCE_POLICY) &&
       host?.platform === MAC_SOURCE_POLICY.platform &&
       host.architecture === MAC_SOURCE_POLICY.architecture &&
       host.imageOS === MAC_SOURCE_POLICY.imageOS &&
@@ -477,6 +533,7 @@ export function macSourceMetadataPlan(identity, out, mode) {
 export function validateMacIntelSourceWriteScope(identity, host) {
   assert(
     MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&
+      macSourceScopeQualified(MAC_INTEL_SOURCE_POLICY) &&
       host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&
       host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&
       host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&

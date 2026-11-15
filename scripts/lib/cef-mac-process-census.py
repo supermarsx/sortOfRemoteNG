@@ -37,8 +37,43 @@ NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1
 NATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,
     'source':'ce297732e385466d4d8fe731e30441408fec6d30',
     'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}
-NATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',
-                  'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}
+NATIVE_SOURCES = {'x86_64-apple-darwin':'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',
+                  'aarch64-apple-darwin':'3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'}
+# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION
+# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.
+# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.
+_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (
+    'sorng-native-mac-source-scope-qualification-v1',  # kind
+    43652853463,  # runId
+    1,  # attempt
+    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head
+    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256
+    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath
+    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256
+    14136269303,  # metadataArtifactId
+    1926,  # metadataZipBytes
+    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256
+    5137,  # metadataRawProofBytes
+    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256
+    708,  # metadataRawCarrierBytes
+    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256
+    14136926168,  # supervisorArtifactId
+    5876,  # supervisorZipBytes
+    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256
+    25131,  # supervisorScopeBytes
+    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256
+    '20260824.0482.1',  # image
+    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources
+    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256
+    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof
+)
+MAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN
+def native_scope_qualified(target, source, image):
+    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and
+            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and
+            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])
+# END CURRENT MAC SOURCE SCOPE QUALIFICATION
+
 NATIVE_MAX_WORK_MS = 180*60*1000
 NATIVE_MAX_REQUESTS = 43328
 NATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
@@ -311,7 +346,8 @@ def native_context(root,raw):
     need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and
          value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and
          value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and
-         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==NATIVE_SUPERVISOR_QUALIFICATION['sha256'],'CENSUS_ROOT')
+         native_scope_qualified(value['target'],value['source'],value['image']) and
+         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==MAC_SOURCE_SCOPE_QUALIFICATION[18],'CENSUS_ROOT')
     expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']
     need(value['canonicalRoot']==expected,'CENSUS_ROOT')
     need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and

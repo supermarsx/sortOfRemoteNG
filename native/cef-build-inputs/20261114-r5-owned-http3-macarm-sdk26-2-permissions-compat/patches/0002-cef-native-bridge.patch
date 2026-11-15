@@ -1,0 +1,721 @@
+diff --git a/BUILD.gn b/BUILD.gn
+index 92c540976cbcff3784eca9f11a35b87e98dc1428..002c0564bc4836de92556168d5187e69d9b718fb 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -674,6 +674,9 @@ source_set("libcef_static") {
+     "libcef/browser/net_service/cookie_manager_impl.h",
+     "libcef/browser/net_service/login_delegate.cc",
+     "libcef/browser/net_service/login_delegate.h",
++    "include/cef_sorng_tls_bridge.h",
++    "libcef/browser/net_service/sorng_tls_bridge.cc",
++    "libcef/browser/net_service/sorng_tls_bridge.h",
+     "libcef/browser/net_service/proxy_url_loader_factory.cc",
+     "libcef/browser/net_service/proxy_url_loader_factory.h",
+     "libcef/browser/net_service/resource_handler_wrapper.cc",
+@@ -1007,12 +1010,15 @@ source_set("libcef_static") {
+     "//pdf",
+     "//printing/buildflags",
+     "//services/network:network_service",
++    "//services/cert_verifier/public/mojom",
++    "//services/network/public/mojom",
+     "//services/network/public/cpp",
+     "//services/service_manager/public/cpp",
+     "//skia",
+     "//storage/browser",
+     "//third_party/blink/public:blink",
+     "//third_party/brotli:dec",
++    "//third_party/boringssl",
+     "//third_party/cld_3/src/src:cld_3",
+     "//third_party/crashpad/crashpad/handler",
+     "//third_party/hunspell",
+diff --git a/cef_paths2.gypi b/cef_paths2.gypi
+index 6de0bd8189c477353e9c2b42ac246348232bc52f..3ac8d3a882736f6f9496adf2f7f96f8c6ba7e056 100644
+--- a/cef_paths2.gypi
++++ b/cef_paths2.gypi
+@@ -108,6 +108,7 @@
+       'include/internal/cef_types_linux.h',
+     ],
+     'libcef_sources_common': [
++      'libcef_dll/sorng_tls_bridge_exports.cc',
+       'libcef_dll/cpptoc/cpptoc_ref_counted.h',
+       'libcef_dll/cpptoc/cpptoc_scoped.h',
+       'libcef_dll/ctocpp/base_ref_counted_ctocpp.cc',
+diff --git a/include/cef_sorng_tls_bridge.h b/include/cef_sorng_tls_bridge.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..34d9ff09b09a5bd1f81532d61813fe2032f823a5
+--- /dev/null
++++ b/include/cef_sorng_tls_bridge.h
+@@ -0,0 +1,141 @@
++// Additional ABI for the sorng patch queue, NOT part of stock CEF.
++// SPDX-License-Identifier: BSD-3-Clause
++#ifndef CEF_SORNG_TLS_BRIDGE_H_
++#define CEF_SORNG_TLS_BRIDGE_H_
++#include <stddef.h>
++#include <stdint.h>
++#if defined(_WIN32)
++#define SORNG_TLS_CALL __cdecl
++#if defined(BUILDING_CEF_SHARED) || defined(SORNG_TLS_IMPLEMENTATION)
++#define SORNG_TLS_EXPORT __declspec(dllexport)
++#else
++#define SORNG_TLS_EXPORT
++#endif
++#else
++#define SORNG_TLS_CALL
++#define SORNG_TLS_EXPORT __attribute__((visibility("default")))
++#endif
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define CEF_SORNG_TLS_ABI_V2 2u
++// TCP TLS / HTTP1 only; no early data, resumption, QUIC or TLS client auth.
++#define CEF_SORNG_TLS_CAP_SOCKET_ADMISSION (1ull << 0)
++#define CEF_SORNG_TLS_CAP_CONTEXT_REVOKE (1ull << 1)
++#define CEF_SORNG_TLS_CAP_HTTP1_ONLY (1ull << 2)
++#define CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS (1ull << 3)
++#define CEF_SORNG_TLS_CAP_CUSTOM_CA (1ull << 4)
++#define CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT (1ull << 5)
++#define CEF_SORNG_TLS_CA_SYSTEM 0u
++#define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
++#define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
++#define CEF_SORNG_TLS_EXCEPTION_NAME 1u
++#define CEF_SORNG_TLS_EXCEPTION_DATE 2u
++#define CEF_SORNG_TLS_EXCEPTION_AUTHORITY 4u
++#define CEF_SORNG_TLS_DENY 0u
++#define CEF_SORNG_TLS_ADMIT_NATIVE 1u
++#define CEF_SORNG_TLS_ADMIT_EXCEPTION 2u
++
++typedef struct cef_sorng_tls_bytes_v2 {
++  const uint8_t* data;
++  size_t length;
++} cef_sorng_tls_bytes_v2;
++
++typedef struct cef_sorng_tls_evidence_v2 {
++  uint32_t size;
++  uint32_t abi_version;
++  uint64_t context_token;
++  uint64_t generation;
++  uint64_t challenge;
++  // UTF-8 canonical native TLS destination hostname (not URL or proxy IP).
++  cef_sorng_tls_bytes_v2 hostname;
++  uint16_t port;
++  uint16_t reserved;
++  int32_t native_error;
++  uint32_t certificate_status;
++  uint32_t fatal_error;
++  uint32_t issued_by_known_root;
++  const cef_sorng_tls_bytes_v2* peer_chain;
++  size_t peer_chain_count;
++  const cef_sorng_tls_bytes_v2* verified_chain;
++  size_t verified_chain_count;
++  uint32_t ca_mode;
++  // Exact overridable name/date/authority mask; 0 means no exception permitted.
++  uint32_t allowed_exception_mask;
++} cef_sorng_tls_evidence_v2;
++
++// All callbacks run on the CEF browser UI thread, without bridge locks held.
++// Callback buffers are borrowed until callback return; copy before async work.
++// Never block this thread, unwind across C, or log certificate/host material.
++typedef void(SORNG_TLS_CALL* cef_sorng_tls_evidence_cb_v2)(
++    void* user_data,
++    const cef_sorng_tls_evidence_v2* evidence);
++// 1=network context installed; 2=revocation acknowledged; 3=bridge failure.
++typedef void(SORNG_TLS_CALL* cef_sorng_tls_state_cb_v2)(void* user_data,
++                                                        uint64_t context_token,
++                                                        uint64_t generation,
++                                                        uint32_t state);
++
++typedef struct cef_sorng_tls_context_v2 {
++  uint32_t size;
++  uint32_t abi_version;
++  uint64_t context_token;
++  uint64_t generation;
++  void* user_data;
++  cef_sorng_tls_evidence_cb_v2 on_evidence;
++  cef_sorng_tls_state_cb_v2 on_state;
++  uint32_t ca_mode;
++  uint32_t reserved;  // Must be zero.
++  // Copied before return; immutable thereafter. 1..64 DER CA certs for custom
++  // modes, zero for SYSTEM. Each <=256KiB; combined <=4MiB. No leaf trust mode.
++  const cef_sorng_tls_bytes_v2* trust_anchors;
++  size_t trust_anchor_count;
++} cef_sorng_tls_context_v2;
++
++typedef struct cef_sorng_tls_api_v2 {
++  uint32_t size;
++  uint32_t abi_version;
++  uint64_t capabilities;
++  // NUL-terminated build identifiers owned by libcef for its lifetime.
++  const char* cef_revision;
++  const char* chromium_version;
++  const char* patch_id;
++} cef_sorng_tls_api_v2;
++
++SORNG_TLS_EXPORT const cef_sorng_tls_api_v2* SORNG_TLS_CALL
++cef_sorng_tls_get_api_v2(void);
++struct _cef_request_context_t;
++struct _cef_request_context_settings_t;
++struct _cef_request_context_handler_t;
++// UI thread only after CefInitialize. Creates an ISOLATED IN-MEMORY request
++// context; nonempty cache_path or persistent-session-cookies settings rejected.
++// Token is installed on the actual native context BEFORE its initialization.
++// Returns one owned CEF reference (release via base.release); NULL on failure.
++// Handler is borrowed for the call; bridge retains its own reference as needed.
++// Await state(1) AND normal OnRequestContextInitialized; return is not readiness.
++SORNG_TLS_EXPORT struct _cef_request_context_t* SORNG_TLS_CALL
++cef_sorng_tls_create_context_v2(
++    const cef_sorng_tls_context_v2* context,
++    const struct _cef_request_context_settings_t* settings,
++    struct _cef_request_context_handler_t* handler);
++// UI thread only. Engine retains exact native result/chain until completion.
++// ADMIT_NATIVE needs native success and mask=0. ADMIT_EXCEPTION needs a fresh
++// app-authority permit for this exact chain/destination and the EXACT nonzero
++// allowed_exception_mask from evidence. Fatal/HSTS, revocation, CT, weak keys,
++// malformed certs, unknown errors and built-in pin failures cannot be overridden.
++// No browser-global exception cache or CertVerifyResult replacement is created.
++SORNG_TLS_EXPORT int SORNG_TLS_CALL
++cef_sorng_tls_complete_v2(uint64_t context_token, uint64_t generation,
++                          uint64_t challenge, uint32_t decision,
++                          uint32_t exception_mask);
++// UI thread only. Tombstones the token; cannot subsequently rearm it.
++// Keep callback user_data alive until on_state(2), or until CefShutdown returns
++// if shutdown prevents delivery. Main must also revoke proxy/credential leases.
++SORNG_TLS_EXPORT int SORNG_TLS_CALL
++cef_sorng_tls_revoke_v2(uint64_t context_token, uint64_t generation);
++
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/libcef/browser/browser_context.cc b/libcef/browser/browser_context.cc
+index 456c6c2d472ec803a32556a22a3800debdd7a973..0ed29117c6992bc4be1a2bfdffa89812cdaa2ff8 100644
+--- a/libcef/browser/browser_context.cc
++++ b/libcef/browser/browser_context.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "cef/libcef/browser/browser_context.h"
++#include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
+ 
+ #include <map>
+ #include <memory>
+@@ -193,6 +194,7 @@ CefBrowserContext::CefBrowserContext(const CefRequestContextSettings& settings)
+ }
+ 
+ CefBrowserContext::~CefBrowserContext() {
++  CefSorngDetachTls(this);
+   CEF_REQUIRE_UIT();
+ #if DCHECK_IS_ON()
+   DCHECK(is_shutdown_);
+diff --git a/libcef/browser/chrome/chrome_content_browser_client_cef.cc b/libcef/browser/chrome/chrome_content_browser_client_cef.cc
+index 3febdad9fbc90f80fd418f32da6f725707700bcb..af74ecdcfe712ae35f971f5bb809f0a3d04cd538 100644
+--- a/libcef/browser/chrome/chrome_content_browser_client_cef.cc
++++ b/libcef/browser/chrome/chrome_content_browser_client_cef.cc
+@@ -20,6 +20,7 @@
+ #include "cef/libcef/browser/net/throttle_handler.h"
+ #include "cef/libcef/browser/net_service/cookie_manager_impl.h"
+ #include "cef/libcef/browser/net_service/login_delegate.h"
++#include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
+ #include "cef/libcef/browser/net_service/proxy_url_loader_factory.h"
+ #include "cef/libcef/browser/net_service/resource_request_handler_wrapper.h"
+ #include "cef/libcef/browser/prefs/browser_prefs.h"
+@@ -640,6 +641,8 @@ bool ChromeContentBrowserClientCef::ConfigureNetworkContextParams(
+   network_context_params->cookieable_schemes =
+       cef_context ? cef_context->GetCookieableSchemes()
+                   : CefBrowserContext::GetGlobalCookieableSchemes();
++  CefSorngConfigureTls(cef_context, network_context_params,
++                      cert_verifier_creation_params);
+ 
+   return true;
+ }
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.cc b/libcef/browser/net_service/sorng_tls_bridge.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a6f038d0a86c4d53266838c4bcfd1e1b541e7cc
+--- /dev/null
++++ b/libcef/browser/net_service/sorng_tls_bridge.cc
+@@ -0,0 +1,345 @@
++// Copyright 2026 The sorng Authors. BSD-3-Clause.
++#include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
++#include "cef/libcef/browser/browser_context.h"
++#include "cef/libcef/browser/request_context_impl.h"
++#define SORNG_TLS_IMPLEMENTATION
++#include "cef/include/cef_sorng_tls_bridge.h"
++
++#include <map>
++#include <memory>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/memory/weak_ptr.h"
++#include "base/no_destructor.h"
++#include "base/strings/string_util.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/time/time.h"
++#include "content/public/browser/browser_thread.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "net/cert/cert_verify_result.h"
++#include "net/cert/x509_certificate.h"
++#include "net/socket/sorng_tls_policy.h"
++#include "net/net_buildflags.h"
++#include "services/network/public/mojom/cert_verifier_service_updater.mojom.h"
++#include "net/cert/x509_util.h"
++#include "third_party/boringssl/src/pki/parsed_certificate.h"
++#include "third_party/boringssl/src/include/openssl/pool.h"
++
++namespace {
++constexpr uint32_t kReady = 1, kRevoked = 2, kFault = 3;
++bool OnUi() {
++  return content::BrowserThread::CurrentlyOn(content::BrowserThread::UI);
++}
++bool ValidChain(const net::X509Certificate* cert) {
++  if (!cert || cert->intermediate_buffers().size() > 31)
++    return false;
++  if (CRYPTO_BUFFER_len(cert->cert_buffer()) == 0 ||
++      CRYPTO_BUFFER_len(cert->cert_buffer()) > 256 * 1024)
++    return false;
++  for (const auto& item : cert->intermediate_buffers()) {
++    if (CRYPTO_BUFFER_len(item.get()) == 0 ||
++        CRYPTO_BUFFER_len(item.get()) > 256 * 1024)
++      return false;
++  }
++  return true;
++}
++std::vector<cef_sorng_tls_bytes_v2> Chain(const net::X509Certificate* cert) {
++  std::vector<cef_sorng_tls_bytes_v2> result;
++  if (!cert)
++    return result;
++  result.push_back({CRYPTO_BUFFER_data(cert->cert_buffer()),
++                    CRYPTO_BUFFER_len(cert->cert_buffer())});
++  for (const auto& item : cert->intermediate_buffers())
++    result.push_back(
++        {CRYPTO_BUFFER_data(item.get()), CRYPTO_BUFFER_len(item.get())});
++  return result;
++}
++
++class Registration final : public network::mojom::SorngTlsClient {
++ public:
++  explicit Registration(const cef_sorng_tls_context_v2& input,
++                        std::vector<std::vector<uint8_t>> roots)
++      : input_(input), roots_(std::move(roots)) {
++    // Do not retain a borrowed caller pointer.
++    input_.trust_anchors = nullptr;
++    receivers_.set_disconnect_handler(
++        base::BindRepeating(&Registration::Fail, weak_factory_.GetWeakPtr()));
++  }
++  void Attach(CefBrowserContext* context) { CHECK(!context_); context_ = context; }
++  bool Matches(CefBrowserContext* context) const { return context && context_ == context; }
++  void Detach() { context_ = nullptr; Revoke(); }
++  void Abandon() { terminal_reported_ = true; Revoke(); }
++  void ConfigureRoots(cert_verifier::mojom::CertVerifierCreationParams* params) {
++    params->sorng_ca_mode = input_.ca_mode;
++    if (input_.ca_mode != CEF_SORNG_TLS_CA_SYSTEM) {
++      auto certificates = cert_verifier::mojom::AdditionalCertificates::New();
++      certificates->trust_anchors_with_enforced_constraints = roots_;
++      certificates->include_system_trust_store =
++          input_.ca_mode == CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM;
++      params->initial_additional_certificates = std::move(certificates);
++      // Initialization is complete in the creation message, not a later prefs
++      // update. Custom CA configuration is immutable in CertVerifierService.
++      params->wait_for_update = false;
++    }
++  }
++  uint64_t generation() const { return input_.generation; }
++  mojo::PendingRemote<network::mojom::SorngTlsClient> Bind() {
++    mojo::PendingRemote<network::mojom::SorngTlsClient> remote;
++    receivers_.Add(this, remote.InitWithNewPipeAndPassReceiver());
++    return remote;
++  }
++  void Ready(
++      mojo::PendingRemote<network::mojom::SorngTlsControl> control) override {
++    if (controls_.size() >= 64) {
++      Fail();
++      return;
++    }
++    // A context may create more than one storage partition. Every partition
++    // receives its own immutable delegate and control endpoint.
++    auto endpoint =
++        std::make_unique<mojo::Remote<network::mojom::SorngTlsControl>>(
++            std::move(control));
++    endpoint->set_disconnect_handler(
++        base::BindOnce(&Registration::Fail, weak_factory_.GetWeakPtr()));
++    controls_.push_back(std::move(endpoint));
++    if (revoked_) {
++      controls_.back()->get()->Revoke(input_.generation, base::DoNothing());
++      return;
++    }
++    Report(kReady);
++  }
++  void Evaluate(uint64_t generation,
++                const std::string& hostname,
++                uint16_t port,
++                const scoped_refptr<net::X509Certificate>& peer_chain,
++                const net::CertVerifyResult& native_result,
++                int32_t native_error,
++                bool fatal,
++                EvaluateCallback callback) override {
++    if (revoked_ || generation != input_.generation || port == 0 ||
++        hostname.empty() || hostname.size() > 253 ||
++        !base::IsStringASCII(hostname) || !ValidChain(peer_chain.get()) ||
++        (native_result.verified_cert &&
++         !ValidChain(native_result.verified_cert.get())) ||
++        pending_.size() >= 64 || next_challenge_ == UINT64_MAX) {
++      std::move(callback).Run(0, 0);
++      return;
++    }
++    const uint64_t challenge = ++next_challenge_;
++    const uint32_t mask = sorng_tls::ExceptionMask(native_error, native_result.cert_status, fatal);
++    pending_.emplace(challenge, Pending{std::move(callback), native_error,
++                                       native_result.cert_status, fatal});
++    auto peer = Chain(peer_chain.get());
++    auto verified = Chain(native_result.verified_cert.get());
++    cef_sorng_tls_evidence_v2 evidence{};
++    evidence.size = sizeof(evidence);
++    evidence.abi_version = CEF_SORNG_TLS_ABI_V2;
++    evidence.context_token = input_.context_token;
++    evidence.generation = generation;
++    evidence.challenge = challenge;
++    evidence.hostname = {reinterpret_cast<const uint8_t*>(hostname.data()),
++                         hostname.size()};
++    evidence.port = port;
++    evidence.native_error = native_error;
++    evidence.certificate_status = native_result.cert_status;
++    evidence.fatal_error = fatal;
++    evidence.issued_by_known_root = native_result.is_issued_by_known_root;
++    evidence.peer_chain = peer.data();
++    evidence.peer_chain_count = peer.size();
++    evidence.verified_chain = verified.data();
++    evidence.verified_chain_count = verified.size();
++    evidence.ca_mode = input_.ca_mode;
++    evidence.allowed_exception_mask = mask;
++    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&Registration::Expire, weak_factory_.GetWeakPtr(),
++                       challenge),
++        base::Seconds(300));
++    input_.on_evidence(input_.user_data, &evidence);
++  }
++  bool Complete(uint64_t challenge, uint32_t decision, uint32_t mask) {
++    auto it = pending_.find(challenge);
++    if (revoked_ || decision > 2 || it == pending_.end())
++      return false;
++    if (decision != 0 && !sorng_tls::Admit(true, it->second.error,
++            it->second.status, it->second.fatal, decision, mask)) return false;
++    if (decision == 0 && mask != 0) return false;
++    auto callback = std::move(it->second.callback);
++    pending_.erase(it);
++    std::move(callback).Run(decision, mask);
++    return true;
++  }
++  void Revoke() {
++    if (revoked_)
++      return;
++    revoked_ = true;
++    auto pending = std::move(pending_);
++    pending_.clear();
++    for (auto& [id, pending_item] : pending)
++      std::move(pending_item.callback).Run(0, 0);
++    remaining_revokes_ = controls_.size();
++    if (remaining_revokes_ == 0) {
++      Report(kRevoked);
++      return;
++    }
++    for (const auto& control : controls_)
++      control->get()->Revoke(
++          input_.generation,
++          base::BindOnce(&Registration::OnRevoked, weak_factory_.GetWeakPtr()));
++  }
++
++ private:
++  void Expire(uint64_t challenge) { Complete(challenge, 0, 0); }
++  void OnRevoked() {
++    if (remaining_revokes_ && --remaining_revokes_ == 0)
++      Report(kRevoked);
++  }
++  void Fail() {
++    if (!faulted_) {
++      faulted_ = true;
++      Report(kFault);
++      Revoke();
++    }
++  }
++  void Report(uint32_t state) {
++    if (terminal_reported_)
++      return;
++    if (state == kRevoked)
++      terminal_reported_ = true;
++    if (input_.on_state)
++      input_.on_state(input_.user_data, input_.context_token, input_.generation,
++                      state);
++  }
++  cef_sorng_tls_context_v2 input_;
++  CefBrowserContext* context_ = nullptr;
++  const std::vector<std::vector<uint8_t>> roots_;
++  bool revoked_ = false;
++  bool faulted_ = false;
++  bool terminal_reported_ = false;
++  uint64_t next_challenge_ = 0;
++  size_t remaining_revokes_ = 0;
++  struct Pending { EvaluateCallback callback; int error; uint32_t status; bool fatal; };
++  std::map<uint64_t, Pending> pending_;
++  mojo::ReceiverSet<network::mojom::SorngTlsClient> receivers_;
++  std::vector<std::unique_ptr<mojo::Remote<network::mojom::SorngTlsControl>>>
++      controls_;
++  base::WeakPtrFactory<Registration> weak_factory_{this};
++};
++using Registry = std::map<uint64_t, std::unique_ptr<Registration>>;
++Registry& Registrations() {
++  // Retain tombstones; never let a recycled token gain an old grant.
++  static base::NoDestructor<Registry> registrations;
++  return *registrations;
++}
++Registration* Find(uint64_t token, uint64_t generation) {
++  auto it = Registrations().find(token);
++  return it != Registrations().end() && it->second->generation() == generation
++             ? it->second.get()
++             : nullptr;
++}
++}  // namespace
++
++void CefSorngAttachTls(CefBrowserContext* context, uint64_t token) {
++  CHECK(OnUi());
++  auto it = Registrations().find(token);
++  CHECK(it != Registrations().end());
++  it->second->Attach(context);
++}
++void CefSorngDetachTls(CefBrowserContext* context) {
++  CHECK(OnUi());
++  for (const auto& [token, registration] : Registrations()) {
++    if (registration->Matches(context)) { registration->Detach(); return; }
++  }
++}
++void CefSorngConfigureTls(CefBrowserContext* context,
++                          network::mojom::NetworkContextParams* params,
++                          cert_verifier::mojom::CertVerifierCreationParams* cert_params) {
++  CHECK(OnUi());
++  for (const auto& [token, registration] : Registrations()) {
++    if (registration->Matches(context)) {
++      registration->ConfigureRoots(cert_params);
++      params->sorng_tls_generation = registration->generation();
++      params->sorng_tls_client = registration->Bind();
++      return;
++    }
++  }
++}
++
++CefRefPtr<CefRequestContext> CefSorngCreateContext(
++    const cef_sorng_tls_context_v2* input, const CefRequestContextSettings& settings,
++    CefRefPtr<CefRequestContextHandler> handler) {
++  if (!OnUi() || !input || input->size != sizeof(*input) ||
++      input->abi_version != CEF_SORNG_TLS_ABI_V2 || !input->context_token ||
++      !input->generation || !input->on_evidence || !input->on_state ||
++      input->reserved || input->ca_mode > 2 || input->trust_anchor_count > 64 ||
++      Registrations().size() >= 1024 || Registrations().contains(input->context_token) ||
++      !CefString(&settings.cache_path).empty() || settings.persist_session_cookies)
++    return nullptr;
++  if ((input->ca_mode == 0) != (input->trust_anchor_count == 0) ||
++      (input->trust_anchor_count && !input->trust_anchors)) return nullptr;
++#if !BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
++  if (input->ca_mode != 0) return nullptr;
++#endif
++  std::vector<std::vector<uint8_t>> roots;
++  size_t total = 0;
++  for (size_t i = 0; i < input->trust_anchor_count; ++i) {
++    const auto& root = input->trust_anchors[i];
++    if (!root.data || !root.length || root.length > 256 * 1024 ||
++        (total += root.length) > 4 * 1024 * 1024) return nullptr;
++    roots.emplace_back(root.data, root.data + root.length);
++    auto parsed = bssl::ParsedCertificate::Create(
++        net::x509_util::CreateCryptoBuffer(roots.back()),
++        net::x509_util::DefaultParseCertificateOptions(), nullptr);
++    if (!parsed || !parsed->has_basic_constraints() ||
++        !parsed->basic_constraints().is_ca) return nullptr;
++  }
++  auto registration = std::make_unique<Registration>(*input, std::move(roots));
++  auto* registered = registration.get();
++  Registrations().emplace(input->context_token, std::move(registration));
++  auto context = CefRequestContextImpl::CreateWithSorngTls(settings, handler, input->context_token);
++  if (!context) registered->Abandon();
++  return context;
++}
++
++extern "C" {
++const cef_sorng_tls_api_v2* SORNG_TLS_CALL cef_sorng_tls_get_api_v2(void) {
++  static constexpr cef_sorng_tls_api_v2 api{
++      sizeof(cef_sorng_tls_api_v2),
++      CEF_SORNG_TLS_ABI_V2,
++      CEF_SORNG_TLS_CAP_SOCKET_ADMISSION | CEF_SORNG_TLS_CAP_CONTEXT_REVOKE |
++          CEF_SORNG_TLS_CAP_HTTP1_ONLY | CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS |
++          CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT
++#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
++          | CEF_SORNG_TLS_CAP_CUSTOM_CA
++#endif
++          ,
++      "682c378d70d5780061e96644dca16ddd8fd157a9",
++      "154.0.8037.58",
++      "sorng-tls-v2-682c378-1"};
++  return &api;
++}
++int SORNG_TLS_CALL cef_sorng_tls_complete_v2(uint64_t token,
++                                             uint64_t generation,
++                                             uint64_t challenge,
++                                             uint32_t decision, uint32_t exception_mask) {
++  if (!OnUi())
++    return 0;
++  auto* registration = Find(token, generation);
++  return registration && registration->Complete(challenge, decision, exception_mask);
++}
++int SORNG_TLS_CALL cef_sorng_tls_revoke_v2(uint64_t token,
++                                           uint64_t generation) {
++  if (!OnUi())
++    return 0;
++  auto* registration = Find(token, generation);
++  if (!registration)
++    return 0;
++  registration->Revoke();
++  return 1;
++}
++}  // extern "C"
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.h b/libcef/browser/net_service/sorng_tls_bridge.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0819dced366077399e8598807ed01bc8d412298
+--- /dev/null
++++ b/libcef/browser/net_service/sorng_tls_bridge.h
+@@ -0,0 +1,20 @@
++// Copyright 2026 The sorng Authors. BSD-3-Clause.
++#ifndef CEF_LIBCEF_BROWSER_NET_SERVICE_SORNG_TLS_BRIDGE_H_
++#define CEF_LIBCEF_BROWSER_NET_SERVICE_SORNG_TLS_BRIDGE_H_
++#include <stdint.h>
++#include "cef/include/cef_request_context.h"
++struct cef_sorng_tls_context_v2;
++CefRefPtr<CefRequestContext> CefSorngCreateContext(
++    const cef_sorng_tls_context_v2* config,
++    const CefRequestContextSettings& settings,
++    CefRefPtr<CefRequestContextHandler> handler);
++#include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++// UI thread only. Called during creation, including storage partitions.
++class CefBrowserContext;
++void CefSorngAttachTls(CefBrowserContext* context, uint64_t token);
++void CefSorngDetachTls(CefBrowserContext* context);
++void CefSorngConfigureTls(CefBrowserContext* context,
++    network::mojom::NetworkContextParams* params,
++    cert_verifier::mojom::CertVerifierCreationParams* cert_params);
++#endif
+diff --git a/libcef/browser/request_context_impl.cc b/libcef/browser/request_context_impl.cc
+index 40dc0900a1949564f226c68708c1748d3ff8f646..5d52389f0fa9e77ff76012ea66835e25efa48a5d 100644
+--- a/libcef/browser/request_context_impl.cc
++++ b/libcef/browser/request_context_impl.cc
+@@ -3,6 +3,8 @@
+ // can be found in the LICENSE file.
+ 
+ #include "cef/libcef/browser/request_context_impl.h"
++#include "cef/libcef/browser/chrome/chrome_browser_context.h"
++#include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
+ 
+ #include "base/atomic_sequence_num.h"
+ #include "base/logging.h"
+@@ -169,6 +171,20 @@ CefRefPtr<CefRequestContext> CefRequestContext::CreateContext(
+ 
+ // CefRequestContextImpl
+ 
++CefRefPtr<CefRequestContextImpl> CefRequestContextImpl::CreateWithSorngTls(
++    const CefRequestContextSettings& settings,
++    CefRefPtr<CefRequestContextHandler> handler, uint64_t token) {
++  CEF_REQUIRE_UIT();
++  if (!CONTEXT_STATE_VALID() || !token || !CefString(&settings.cache_path).empty() ||
++      settings.persist_session_cookies) return nullptr;
++  Config config;
++  config.settings = settings;
++  config.handler = handler;
++  config.unique_id = g_next_id.GetNext();
++  config.sorng_tls_token = token;
++  return GetOrCreateRequestContext(std::move(config));
++}
++
+ CefRequestContextImpl::~CefRequestContextImpl() {
+   CEF_REQUIRE_UIT();
+ 
+@@ -804,8 +820,18 @@ void CefRequestContextImpl::Initialize() {
+     // empty then this new instance will become the globally registered
+     // CefBrowserContext for that path. Otherwise, this new instance will
+     // be a completely isolated "incognito mode" context.
+-    browser_context_ = CefAppManager::Get()->CreateNewBrowserContext(
+-        config_.settings, std::move(initialized_cb));
++    if (config_.sorng_tls_token) {
++      CHECK(CefString(&config_.settings.cache_path).empty());
++      auto* context = new ChromeBrowserContext(config_.settings);
++      browser_context_ = context;
++      CefSorngAttachTls(context, config_.sorng_tls_token);
++      // Pinned ChromeBrowserContext sets profile_ before OTR Init invokes
++      // ConfigureNetworkContextParams. No disk-path or next-context matching.
++      context->InitializeAsync(std::move(initialized_cb));
++    } else {
++      browser_context_ = CefAppManager::Get()->CreateNewBrowserContext(
++          config_.settings, std::move(initialized_cb));
++    }
+   } else {
+     // Share the same settings as the existing context.
+     config_.settings = browser_context_->settings();
+diff --git a/libcef/browser/request_context_impl.h b/libcef/browser/request_context_impl.h
+index 7a61f4a5fc6bb4631e9c76e31e97ad74d7cb0efd..073234721125fbbd4f1e11ccf5121b7a4372e8d8 100644
+--- a/libcef/browser/request_context_impl.h
++++ b/libcef/browser/request_context_impl.h
+@@ -35,6 +35,10 @@ class CefRequestContextImpl : public CefRequestContext {
+   CefRequestContextImpl& operator=(const CefRequestContextImpl&) = delete;
+ 
+   ~CefRequestContextImpl() override;
++  // Additional private C ABI factory; token is native-only, never renderer data.
++  static CefRefPtr<CefRequestContextImpl> CreateWithSorngTls(
++      const CefRequestContextSettings& settings,
++      CefRefPtr<CefRequestContextHandler> handler, uint64_t token);
+ 
+   // Creates the singleton global RequestContext. Called from
+   // AlloyBrowserMainParts::PreMainMessageLoopRun and
+@@ -164,6 +168,7 @@ class CefRequestContextImpl : public CefRequestContext {
+   friend class CefRequestContext;
+ 
+   struct Config {
++    uint64_t sorng_tls_token = 0;
+     // True if wrapping the global context.
+     bool is_global = false;
+ 
+diff --git a/libcef_dll/sorng_tls_bridge_exports.cc b/libcef_dll/sorng_tls_bridge_exports.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..13f7ecc52b130c541f7c6287c4b68323397c7209
+--- /dev/null
++++ b/libcef_dll/sorng_tls_bridge_exports.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 The sorng Authors. BSD-3-Clause.
++#define SORNG_TLS_IMPLEMENTATION
++#include "cef/include/cef_sorng_tls_bridge.h"
++#include "cef/libcef/browser/net_service/sorng_tls_bridge.h"
++#include "cef/libcef_dll/cpptoc/request_context_cpptoc.h"
++#include "cef/libcef_dll/ctocpp/request_context_handler_ctocpp.h"
++
++extern "C" struct _cef_request_context_t* SORNG_TLS_CALL
++cef_sorng_tls_create_context_v2(
++    const cef_sorng_tls_context_v2* config,
++    const cef_request_context_settings_t* settings,
++    struct _cef_request_context_handler_t* handler) {
++  // The public bridge retains CEF's opaque client ABI. DLL-side generated
++  // wrappers use versioned C structures and dispatch helpers.
++  auto* handler_v0 = reinterpret_cast<cef_request_context_handler_0_t*>(handler);
++  if (!settings || settings->size != sizeof(*settings) ||
++      (handler_v0 && (handler_v0->base.size != sizeof(*handler_v0) ||
++                      !handler_v0->base.add_ref || !handler_v0->base.release)))
++    return nullptr;
++  CefRequestContextSettings copied;
++  copied.Set(*settings, true);
++  // This additional ABI BORROWS the caller reference. CToCpp::Wrap consumes
++  // one transferred reference, so create that reference explicitly first.
++  if (handler_v0) handler_v0->base.add_ref(&handler_v0->base);
++  auto wrapped_handler = CefRequestContextHandlerCToCpp_Wrap(handler_v0);
++  auto context = CefSorngCreateContext(config, copied, wrapped_handler);
++  return context ? reinterpret_cast<struct _cef_request_context_t*>(
++                       CefRequestContextCppToC_Wrap(context))
++                 : nullptr;
++}

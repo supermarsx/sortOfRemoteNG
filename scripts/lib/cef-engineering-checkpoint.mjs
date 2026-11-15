@@ -36,6 +36,8 @@ import { hostname, tmpdir, userInfo } from "node:os";
 import {
   macSourceMetadataPlan,
   macIntelSourceMetadataPlan,
+  MAC_SOURCE_SCOPE_QUALIFICATION,
+  macSourceScopeQualified,
 } from "./cef-mac-source-metadata.mjs";
 
 export const LIMITS = Object.freeze({
@@ -64,10 +66,10 @@ export const LIMITS = Object.freeze({
   hostMs: 300 * 60_000,
 });
 export const INPUTS =
-  "native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat";
+  "native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat";
 export const TARGET = "x86_64-apple-darwin";
 export const SOURCE_ID =
-  "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef";
+  "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f";
 // Cross compilation never changes the native acceptance host. Adding a profile
 // changes the producer code digest; checkpoints from older code cannot migrate.
 const PROFILES = Object.freeze({
@@ -86,9 +88,9 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-apple-darwin": Object.freeze({
     target: "aarch64-apple-darwin",
-    source: "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+    source: "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
     inputs:
-      "native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat",
+      "native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat",
     platform: "darwin",
     architecture: "x64",
     runner: "macos-15-intel",
@@ -130,7 +132,9 @@ export function checkpointHost(target, platform, architecture) {
 export function checkpointCompileArguments(target, args) {
   const p = checkpointProfile(target);
   const targets =
-    p.platform === "linux" ? ["cef", "chrome_sandbox"] : ["cef", "cef_sandbox"];
+    p.platform === "linux"
+      ? ["cef", "chrome_sandbox"]
+      : ["cefclient", "cef_sandbox"];
   if (
     !Array.isArray(args) ||
     args.length !== 7 ||
@@ -2927,11 +2931,14 @@ export const MAC_CENSUS_SUPERVISOR_QUALIFICATION = Object.freeze({
   source: "ce297732e385466d4d8fe731e30441408fec6d30",
   sha256: "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c",
 });
+// Fresh current-source scope record; the older supervisor report remains historical.
+export const MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION =
+  MAC_SOURCE_SCOPE_QUALIFICATION;
 const MAC_CENSUS_SOURCES = Object.freeze({
   "x86_64-apple-darwin":
-    "684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef",
+    "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f",
   "aarch64-apple-darwin":
-    "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+    "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
 });
 const MAC_CENSUS_PYTHON =
   "/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14";
@@ -2975,6 +2982,12 @@ function censusScope(value, proofOnly) {
   assert(
     Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&
       value.source === MAC_CENSUS_SOURCES[value.target] &&
+      macSourceScopeQualified({
+        target: value.target,
+        source: value.source,
+        image: process.env.ImageVersion,
+        sourceScopeQualification: MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,
+      }) &&
       value.canonicalRoot ===
         `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&
       value.python === MAC_CENSUS_PYTHON,
@@ -3155,7 +3168,8 @@ async function openCensusSession(
       ),
       requestBudget,
       evidence: MAC_CENSUS_EVIDENCE.sha256,
-      supervisorEvidence: MAC_CENSUS_SUPERVISOR_QUALIFICATION.sha256,
+      supervisorEvidence:
+        MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION.supervisorScopeSha256,
     };
     const raw = Buffer.from(canonical(context) + "\n");
     await writeFile(path.join(sessionRoot, "context.json"), raw, {

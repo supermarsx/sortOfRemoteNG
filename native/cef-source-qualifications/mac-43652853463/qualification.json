@@ -1,0 +1,148 @@
+{
+  "kind": "sorng-mac-source-scope-qualification-evidence",
+  "schemaVersion": 1,
+  "runId": 43652853463,
+  "runAttempt": 1,
+  "proofHead": "4dbcb84855ea9cd9ee632657bafd265a6491fc69",
+  "workflow": ".github/workflows/cef-mac-clang-resource-proof.yml",
+  "branch": "codex/mac-source-scope-proof-20261114",
+  "candidateProducerAtProof": "119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10",
+  "candidateSourceFreezeSha256": "fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33",
+  "sourceWitnessSha256": "ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf",
+  "sources": {
+    "aarch64-apple-darwin": "3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212",
+    "x86_64-apple-darwin": "c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f"
+  },
+  "positiveSupervisorCases": {
+    "aarch64-apple-darwin": [
+      "foreign"
+    ],
+    "x86_64-apple-darwin": [
+      "normal",
+      "slice-stop",
+      "cancel",
+      "reparent",
+      "worker-timeout"
+    ]
+  },
+  "innerSupervisorProofIsDeterministicHistoricalBytes": true,
+  "currentSourceSupervisorEvidence": "mac-new-source-43652853463-supervisor-scope-carrier.json",
+  "currentSourceSupervisorSha256": "bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3",
+  "bothSourceMetadataRoundtripsAnd52NegativesPassed": true,
+  "productionRefusalsOldNewWrongBeforeAfter": true,
+  "proofExecutionProductionAdmission": false,
+  "nativeARMRuntimeAcceptance": false,
+  "compilerSDKOrRuntimeQualification": false,
+  "limits": [
+    "ARM has one positive foreign-isolation integration case; Intel has five cases. ARM cancellation/timeout variants were not independently repeated.",
+    "Proof uses only creation-owned synthetic scratch inputs, not acquisition or compilation of Chromium/CEF.",
+    "All old/new/wrong production write/census contexts were denied during proof. Static production admission is an explicit source-controlled review decision, never a report-derived token."
+  ],
+  "preservedHistoricalRecords": [
+    "MAC_SOURCE_PROOF",
+    "MAC_INTEL_SOURCE_PROOF",
+    "MAC_NEARBY_LITERAL_PROOF",
+    "MAC_CLANG_LITERAL_PROOF",
+    "NATIVE_EVIDENCE",
+    "NATIVE_SUPERVISOR_QUALIFICATION",
+    "MAC_CENSUS_EVIDENCE",
+    "MAC_CENSUS_SUPERVISOR_QUALIFICATION"
+  ],
+  "evidence": [
+    {
+      "path": "mac-new-source-43652853463-authenticated.json",
+      "bytes": 8032,
+      "sha256": "6ea6c4c560c4bbe4058e035b7d325cb0511d9a2f7a57dc3f48f4f74034b83803"
+    },
+    {
+      "path": "authenticate-mac-new-source-43652853463.mjs",
+      "bytes": 14932,
+      "sha256": "f2374476784ddcd3dda0c47cd2bd1c0d0d6c1c87d34d6cf19a4b9e0eae0a368d"
+    },
+    {
+      "path": "mac-source-scope-proof-freeze.json",
+      "bytes": 27802,
+      "sha256": "b3b5d3fec550f3568a9fa46edb5a97002a2486d73798061ef07431bac91a91bc"
+    },
+    {
+      "path": "siso-mac-compiler-candidate-source-freeze.json",
+      "bytes": 24019,
+      "sha256": "fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33"
+    },
+    {
+      "path": "mac-new-source-43652853463-run-before-auth.json",
+      "bytes": 12851,
+      "sha256": "b600f8d99d6f1916ad49691c6afe3d6423d4bfa5b65a44a477d133f32af016d9"
+    },
+    {
+      "path": "mac-new-source-43652853463-jobs-before-auth.json",
+      "bytes": 5370,
+      "sha256": "6e7e7052330c2ceb33d9b45fbd47cb3c30e894889a113c1b09788685d57214cf"
+    },
+    {
+      "path": "mac-new-source-43652853463-artifacts-before-auth.json",
+      "bytes": 1542,
+      "sha256": "c599b8c2a77fb9a30d9342226c766c047e756bdb3e5326313c516397f0c9397e"
+    },
+    {
+      "path": "mac-new-source-43652853463-run-after-auth.json",
+      "bytes": 12851,
+      "sha256": "b600f8d99d6f1916ad49691c6afe3d6423d4bfa5b65a44a477d133f32af016d9"
+    },
+    {
+      "path": "mac-new-source-43652853463-jobs-after-auth.json",
+      "bytes": 5370,
+      "sha256": "6e7e7052330c2ceb33d9b45fbd47cb3c30e894889a113c1b09788685d57214cf"
+    },
+    {
+      "path": "mac-new-source-43652853463-artifacts-after-auth.json",
+      "bytes": 1542,
+      "sha256": "c599b8c2a77fb9a30d9342226c766c047e756bdb3e5326313c516397f0c9397e"
+    },
+    {
+      "path": "mac-new-source-43652853463-metadata.zip",
+      "bytes": 1926,
+      "sha256": "256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3"
+    },
+    {
+      "path": "mac-new-source-43652853463-supervisor.zip",
+      "bytes": 5876,
+      "sha256": "2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c"
+    },
+    {
+      "path": "mac-new-source-43652853463-archive-materialization.json",
+      "bytes": 1106,
+      "sha256": "e48f5dc80a02569759ee49b722d96f70c180af0443429b70a0ac172cf938e446"
+    },
+    {
+      "path": "mac-new-source-43652853463-metadata-proof.json",
+      "bytes": 5137,
+      "sha256": "4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf"
+    },
+    {
+      "path": "mac-new-source-43652853463-metadata-carrier.json",
+      "bytes": 708,
+      "sha256": "d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8"
+    },
+    {
+      "path": "mac-new-source-43652853463-supervisor-proof.json",
+      "bytes": 3156,
+      "sha256": "43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c"
+    },
+    {
+      "path": "mac-new-source-43652853463-supervisor-scope-carrier.json",
+      "bytes": 25131,
+      "sha256": "bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3"
+    },
+    {
+      "path": "mac-new-source-43652853463-terminal.log",
+      "bytes": 86962,
+      "sha256": "dd09354e822a835e514c9ac96e9e14748db788587239c67296bcd4ff4a5921b9"
+    },
+    {
+      "path": "mac-new-source-43652853463-authentication-freeze.json",
+      "bytes": 4518,
+      "sha256": "5bca5fbb020c2d1c80f13ec7d664626b0a6c9f21dec7f5a0cbdaab4ea3434659"
+    }
+  ]
+}

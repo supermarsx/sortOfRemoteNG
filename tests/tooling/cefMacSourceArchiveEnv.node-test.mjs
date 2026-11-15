@@ -4,7 +4,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { archiveCommand } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  archiveCommand,
+  LIMITS,
+} from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 
 const modes = ["source-record", "source-apply", "source-verify"];
 const facts = {
@@ -165,7 +168,13 @@ test("policy-bearing source argv rejects malformed or unreviewed grammar before 
     [...valid.slice(0, 5), ...valid.slice(-2), ...valid.slice(5, -2)],
     valid.map((value, index) => (index === 5 ? "--input" : value)),
     valid.filter((_, index) => index !== 6),
-    ...["0", "01", "601", "1.0", "-1"].map((seconds) =>
+    ...[
+      "0",
+      "01",
+      String(LIMITS.macSourceMetadataHelperMs / 1000 + 1),
+      "1.0",
+      "-1",
+    ].map((seconds) =>
       valid.map((value, index) => (index === 8 ? seconds : value)),
     ),
     ...["", "--input", "bad\npath"].map((input) =>

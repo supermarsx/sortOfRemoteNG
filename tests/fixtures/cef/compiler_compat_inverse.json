@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-only-exact-mac-qualified-minimal-recipe-inverse",
+  "authority": false,
+  "base": "c69ecb95b406b8fe53ea6099f2f106943ae0eede",
+  "beforeProducer": "b4f9e38d5343a830da850ccd19f336553e210c8eb31443baa2c4d97eae224829",
+  "currentProducer": "e25d5185a594f2b22acc49409afdea0fe3b17eaf778d6aaf724da58cf6e0806c",
+  "rows": 132,
+  "files": [
+    {
+      "path": ".github/workflows/cef-engineering-checkpoint.yml",
+      "mode": "100644",
+      "before": {
+        "bytes": 14907,
+        "sha256": "b5ef2ff8ac1463078515afaff1f8f2a2ce6b67e11f57d811a60d1ab587d46daf",
+        "blob": "75fc85e39d3cf0b82726dcc603126bdaff0455c2"
+      },
+      "after": {
+        "bytes": 14907,
+        "sha256": "b1a6f2dc111b98ef5f32f6b93b10c9903590e70724b5c6cdf834b82f91dc046c",
+        "blob": "789e02bf35ed2ba804a3bfbe2dd7004a01b19e59"
+      },
+      "pairs": [
+        {
+          "previous": "    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' || inputs.target == 'aarch64-unknown-linux-gnu' && '8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb' || '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n",
+          "current": "    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212' || inputs.target == 'aarch64-unknown-linux-gnu' && '8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb' || 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/browser-custom-runtime.mjs",
+      "mode": "100644",
+      "before": {
+        "bytes": 69294,
+        "sha256": "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b",
+        "blob": "7207a4b2f420cd72505c504bc8da135386a87a6b"
+      },
+      "after": {
+        "bytes": 69328,
+        "sha256": "15934e1f93738c89c0144d9eabdc03e04230cb89164a85453f9265c085a00270",
+        "blob": "e2a68a71e47af8c3abb988e95fb92d6a71ca1070"
+      },
+      "pairs": [
+        {
+          "previous": "          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n",
+          "current": "          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          host === \"darwin\" ? \"cefclient\" : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/cef-checkpoint-archive.py",
+      "mode": "100644",
+      "before": {
+        "bytes": 240123,
+        "sha256": "d5e9ac6002b5a36584d5f2a7fa6240a5627983ba16a32657ceaeb7a327d1f2d6",
+        "blob": "1c9fcc083611ee7652e007cee4ca16f1ac44f6dd"
+      },
+      "after": {
+        "bytes": 242586,
+        "sha256": "d4d769d78ca60c65a19b6e4f4f1414f57d18ef0b6ff5a55beea1eb5b38497cba",
+        "blob": "8b5b02ea8734fbee6f8ae5efcd59688c7cec294f"
+      },
+      "pairs": [
+        {
+          "previous": "# Source-controlled scope, supported by the reviewed native scratch proof only.\n# No report, caller flag or environment toggle can broaden this identity.\nMAC_SOURCE_WRITE_ADMITTED = True\nMAC_SOURCE = '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'\nMAC_SOURCE_IMAGE = '20260824.0482.1'\nMAC_SOURCE_PROOF = (41328841230, 13092905128,\n                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')\nMAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'\nMAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'\nMAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'\n# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.\n",
+          "current": "# Source-controlled scope, supported by the reviewed native scratch proof only.\n# No report, caller flag or environment toggle can broaden this identity.\nMAC_SOURCE_WRITE_ADMITTED = True\nMAC_SOURCE = '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'\nMAC_SOURCE_IMAGE = '20260824.0482.1'\nMAC_SOURCE_PROOF = (41328841230, 13092905128,\n                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')\nMAC_INTEL_SOURCE = 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f'\nMAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'\nMAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'\n# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.\n"
+        },
+        {
+          "previous": "# END STATIC MAC OWNED FD HASHING\n\n\ndef source_mac_write_host_admission():\n    import sys\n    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and\n",
+          "current": "# END STATIC MAC OWNED FD HASHING\n\n\n# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.\n# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.\n_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (\n    'sorng-native-mac-source-scope-qualification-v1',  # kind\n    43652853463,  # runId\n    1,  # attempt\n    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head\n    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256\n    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath\n    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256\n    14136269303,  # metadataArtifactId\n    1926,  # metadataZipBytes\n    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256\n    5137,  # metadataRawProofBytes\n    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256\n    708,  # metadataRawCarrierBytes\n    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256\n    14136926168,  # supervisorArtifactId\n    5876,  # supervisorZipBytes\n    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256\n    25131,  # supervisorScopeBytes\n    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256\n    '20260824.0482.1',  # image\n    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources\n    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256\n    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof\n)\nMAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN\ndef source_mac_scope_qualified(target, source, image):\n    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and\n            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and\n            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])\n# END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\ndef source_mac_write_host_admission():\n    import sys\n    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and\n"
+        },
+        {
+          "previous": "\ndef source_mac_write_admission(identity):\n    source_mac_write_host_admission()\n    require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and\n            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and\n            identity.get('canonicalRoot') ==\n            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,\n",
+          "current": "\ndef source_mac_write_admission(identity):\n    source_mac_write_host_admission()\n    require(source_mac_scope_qualified('aarch64-apple-darwin', MAC_SOURCE, MAC_SOURCE_IMAGE) and\n            isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and\n            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and\n            identity.get('canonicalRoot') ==\n            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,\n"
+        },
+        {
+          "previous": "\ndef source_mac_intel_write_admission(identity):\n    source_mac_intel_write_host_admission()\n    require(isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and\n            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and\n            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,\n            'source-mac-identity-scope')\n",
+          "current": "\ndef source_mac_intel_write_admission(identity):\n    source_mac_intel_write_host_admission()\n    require(source_mac_scope_qualified('x86_64-apple-darwin', MAC_INTEL_SOURCE, MAC_INTEL_SOURCE_IMAGE) and\n            isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and\n            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and\n            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,\n            'source-mac-identity-scope')\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "before": {
+        "bytes": 257508,
+        "sha256": "59abab5a6fefe5ffdf06954fd38fa47c363679f2ec5cb38fa71e4e6ec9e813e8",
+        "blob": "501091e659e7ee23a50302c88848ea908776332b"
+      },
+      "after": {
+        "bytes": 258011,
+        "sha256": "28686c03b3559512fdfc18334b6b6f0742178031653eda0a4c88f3da6520ea46",
+        "blob": "84f2c6dca65ec4dcce1eebca99e79672c2d5c333"
+      },
+      "pairs": [
+        {
+          "previous": "import {\n  macSourceMetadataPlan,\n  macIntelSourceMetadataPlan,\n} from \"./cef-mac-source-metadata.mjs\";\n\nexport const LIMITS = Object.freeze({\n",
+          "current": "import {\n  macSourceMetadataPlan,\n  macIntelSourceMetadataPlan,\n  MAC_SOURCE_SCOPE_QUALIFICATION,\n  macSourceScopeQualified,\n} from \"./cef-mac-source-metadata.mjs\";\n\nexport const LIMITS = Object.freeze({\n"
+        },
+        {
+          "previous": "  hostMs: 300 * 60_000,\n});\nexport const INPUTS =\n  \"native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat\";\nexport const TARGET = \"x86_64-apple-darwin\";\nexport const SOURCE_ID =\n  \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\";\n// Cross compilation never changes the native acceptance host. Adding a profile\n// changes the producer code digest; checkpoints from older code cannot migrate.\nconst PROFILES = Object.freeze({\n",
+          "current": "  hostMs: 300 * 60_000,\n});\nexport const INPUTS =\n  \"native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat\";\nexport const TARGET = \"x86_64-apple-darwin\";\nexport const SOURCE_ID =\n  \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\";\n// Cross compilation never changes the native acceptance host. Adding a profile\n// changes the producer code digest; checkpoints from older code cannot migrate.\nconst PROFILES = Object.freeze({\n"
+        },
+        {
+          "previous": "  }),\n  \"aarch64-apple-darwin\": Object.freeze({\n    target: \"aarch64-apple-darwin\",\n    source: \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n    inputs:\n      \"native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat\",\n    platform: \"darwin\",\n    architecture: \"x64\",\n    runner: \"macos-15-intel\",\n",
+          "current": "  }),\n  \"aarch64-apple-darwin\": Object.freeze({\n    target: \"aarch64-apple-darwin\",\n    source: \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n    inputs:\n      \"native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat\",\n    platform: \"darwin\",\n    architecture: \"x64\",\n    runner: \"macos-15-intel\",\n"
+        },
+        {
+          "previous": "export function checkpointCompileArguments(target, args) {\n  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\" ? [\"cef\", \"chrome_sandbox\"] : [\"cef\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n",
+          "current": "export function checkpointCompileArguments(target, args) {\n  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"cef\", \"chrome_sandbox\"]\n      : [\"cefclient\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n"
+        },
+        {
+          "previous": "  source: \"ce297732e385466d4d8fe731e30441408fec6d30\",\n  sha256: \"43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c\",\n});\nconst MAC_CENSUS_SOURCES = Object.freeze({\n  \"x86_64-apple-darwin\":\n    \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\",\n  \"aarch64-apple-darwin\":\n    \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n});\nconst MAC_CENSUS_PYTHON =\n  \"/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14\";\n",
+          "current": "  source: \"ce297732e385466d4d8fe731e30441408fec6d30\",\n  sha256: \"43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c\",\n});\n// Fresh current-source scope record; the older supervisor report remains historical.\nexport const MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION =\n  MAC_SOURCE_SCOPE_QUALIFICATION;\nconst MAC_CENSUS_SOURCES = Object.freeze({\n  \"x86_64-apple-darwin\":\n    \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  \"aarch64-apple-darwin\":\n    \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n});\nconst MAC_CENSUS_PYTHON =\n  \"/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14\";\n"
+        },
+        {
+          "previous": "  assert(\n    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&\n      value.source === MAC_CENSUS_SOURCES[value.target] &&\n      value.canonicalRoot ===\n        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&\n      value.python === MAC_CENSUS_PYTHON,\n",
+          "current": "  assert(\n    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&\n      value.source === MAC_CENSUS_SOURCES[value.target] &&\n      macSourceScopeQualified({\n        target: value.target,\n        source: value.source,\n        image: process.env.ImageVersion,\n        sourceScopeQualification: MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,\n      }) &&\n      value.canonicalRoot ===\n        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&\n      value.python === MAC_CENSUS_PYTHON,\n"
+        },
+        {
+          "previous": "      ),\n      requestBudget,\n      evidence: MAC_CENSUS_EVIDENCE.sha256,\n      supervisorEvidence: MAC_CENSUS_SUPERVISOR_QUALIFICATION.sha256,\n    };\n    const raw = Buffer.from(canonical(context) + \"\\n\");\n    await writeFile(path.join(sessionRoot, \"context.json\"), raw, {\n",
+          "current": "      ),\n      requestBudget,\n      evidence: MAC_CENSUS_EVIDENCE.sha256,\n      supervisorEvidence:\n        MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION.supervisorScopeSha256,\n    };\n    const raw = Buffer.from(canonical(context) + \"\\n\");\n    await writeFile(path.join(sessionRoot, \"context.json\"), raw, {\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/cef-mac-gcs-normalize.py",
+      "mode": "100644",
+      "before": {
+        "bytes": 11223,
+        "sha256": "8102419d2f16b149743d2546fe670044a03dbd5f1ab9c2dde5095f178190d236",
+        "blob": "e20c69ca128b3c3006a3c87ddeb3294da759bd03"
+      },
+      "after": {
+        "bytes": 11223,
+        "sha256": "b09e8fcc30410817ebc25bf0f33f3ec5d62449f6726881495d81df990b840ed5",
+        "blob": "e6a2834029ad5b819a47586d313bae9e6f0ff12d"
+      },
+      "pairs": [
+        {
+          "previous": "          'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')\nDEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'\nSOURCES = {\n    'x86_64-apple-darwin': '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',\n    'aarch64-apple-darwin': '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54',\n}\n\n\n",
+          "current": "          'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')\nDEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'\nSOURCES = {\n    'x86_64-apple-darwin': 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',\n    'aarch64-apple-darwin': '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212',\n}\n\n\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/cef-mac-process-census.py",
+      "mode": "100644",
+      "before": {
+        "bytes": 24586,
+        "sha256": "ec206948e6efe38d0c854d655ef95454262e01b5d28d05f4169587d1b511ff52",
+        "blob": "ab15eccc67c328920c0a101b893755edfc7fc170"
+      },
+      "after": {
+        "bytes": 26917,
+        "sha256": "b454f93526af694fc1217106a39e433bba02df4abc7f7bcca9903f823216a74c",
+        "blob": "78ac12924376d028d4b3514ad6a408eedd11e4e6"
+      },
+      "pairs": [
+        {
+          "previous": "NATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,\n    'source':'ce297732e385466d4d8fe731e30441408fec6d30',\n    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}\nNATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',\n                  'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}\nNATIVE_MAX_WORK_MS = 180*60*1000\nNATIVE_MAX_REQUESTS = 43328\nNATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'\n",
+          "current": "NATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,\n    'source':'ce297732e385466d4d8fe731e30441408fec6d30',\n    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}\nNATIVE_SOURCES = {'x86_64-apple-darwin':'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',\n                  'aarch64-apple-darwin':'3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'}\n# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.\n# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.\n_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (\n    'sorng-native-mac-source-scope-qualification-v1',  # kind\n    43652853463,  # runId\n    1,  # attempt\n    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head\n    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256\n    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath\n    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256\n    14136269303,  # metadataArtifactId\n    1926,  # metadataZipBytes\n    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256\n    5137,  # metadataRawProofBytes\n    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256\n    708,  # metadataRawCarrierBytes\n    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256\n    14136926168,  # supervisorArtifactId\n    5876,  # supervisorZipBytes\n    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256\n    25131,  # supervisorScopeBytes\n    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256\n    '20260824.0482.1',  # image\n    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources\n    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256\n    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof\n)\nMAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN\ndef native_scope_qualified(target, source, image):\n    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and\n            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and\n            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])\n# END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\nNATIVE_MAX_WORK_MS = 180*60*1000\nNATIVE_MAX_REQUESTS = 43328\nNATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'\n"
+        },
+        {
+          "previous": "    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and\n         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and\n         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and\n         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==NATIVE_SUPERVISOR_QUALIFICATION['sha256'],'CENSUS_ROOT')\n    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']\n    need(value['canonicalRoot']==expected,'CENSUS_ROOT')\n    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and\n",
+          "current": "    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and\n         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and\n         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and\n         native_scope_qualified(value['target'],value['source'],value['image']) and\n         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==MAC_SOURCE_SCOPE_QUALIFICATION[18],'CENSUS_ROOT')\n    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']\n    need(value['canonicalRoot']==expected,'CENSUS_ROOT')\n    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/cef-mac-source-metadata.mjs",
+      "mode": "100644",
+      "before": {
+        "bytes": 52286,
+        "sha256": "8b6fb0fc8f98eb6f5f7baf9cc66ec92ac86eb4bc3531865466fe628f65a76617",
+        "blob": "5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf"
+      },
+      "after": {
+        "bytes": 54794,
+        "sha256": "c4fe7cbf74f70a78a735250771ee756b9132133b030e58cdb916e65737a2263c",
+        "blob": "0089d245de4a4624139afcb678ab55c9c04f7947"
+      },
+      "pairs": [
+        {
+          "previous": "  qualifiedHelperSha256:\n    \"5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79\",\n});\nexport const MAC_SOURCE_POLICY = Object.freeze({\n  target: \"aarch64-apple-darwin\",\n  source: \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n",
+          "current": "  qualifiedHelperSha256:\n    \"5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79\",\n});\n// BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n// Fresh exact-source scratch evidence; prior IO/ABI receipts below stay historical.\n// This record is code-owned. Caller JSON, environment and reports never select it.\nexport const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({\n  kind: \"sorng-native-mac-source-scope-qualification-v1\",\n  runId: 43652853463,\n  attempt: 1,\n  head: \"4dbcb84855ea9cd9ee632657bafd265a6491fc69\",\n  sourceWitnessSha256:\n    \"ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf\",\n  evidencePath:\n    \"native/cef-source-qualifications/mac-43652853463/qualification.json\",\n  evidenceSha256:\n    \"18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31\",\n  metadataArtifactId: 14136269303,\n  metadataZipBytes: 1926,\n  metadataZipSha256:\n    \"256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3\",\n  metadataRawProofBytes: 5137,\n  metadataRawProofSha256:\n    \"4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf\",\n  metadataRawCarrierBytes: 708,\n  metadataRawCarrierSha256:\n    \"d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8\",\n  supervisorArtifactId: 14136926168,\n  supervisorZipBytes: 5876,\n  supervisorZipSha256:\n    \"2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c\",\n  supervisorScopeBytes: 25131,\n  supervisorScopeSha256:\n    \"bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3\",\n  image: \"20260824.0482.1\",\n  sources: Object.freeze({\n    \"aarch64-apple-darwin\":\n      \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n    \"x86_64-apple-darwin\":\n      \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  }),\n  candidateSourceFreezeSha256:\n    \"fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33\",\n  candidateProducerAtProof:\n    \"119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10\",\n});\nexport function macSourceScopeQualified(policy) {\n  return (\n    policy?.sourceScopeQualification === MAC_SOURCE_SCOPE_QUALIFICATION &&\n    Object.hasOwn(MAC_SOURCE_SCOPE_QUALIFICATION.sources, policy.target) &&\n    MAC_SOURCE_SCOPE_QUALIFICATION.sources[policy.target] === policy.source &&\n    MAC_SOURCE_SCOPE_QUALIFICATION.image === policy.image\n  );\n}\n// END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\nexport const MAC_SOURCE_POLICY = Object.freeze({\n  target: \"aarch64-apple-darwin\",\n  source: \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n"
+        },
+        {
+          "previous": "  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  evidence: Object.freeze({\n    runId: 41328841230,\n    artifactId: 13092905128,\n",
+          "current": "  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,\n  evidence: Object.freeze({\n    runId: 41328841230,\n    artifactId: 13092905128,\n"
+        },
+        {
+          "previous": "});\nexport const MAC_INTEL_SOURCE_POLICY = Object.freeze({\n  target: \"x86_64-apple-darwin\",\n  source: \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n",
+          "current": "});\nexport const MAC_INTEL_SOURCE_POLICY = Object.freeze({\n  target: \"x86_64-apple-darwin\",\n  source: \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n"
+        },
+        {
+          "previous": "  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  evidence: Object.freeze({\n    runId: 41348226366,\n    artifactId: 13099539006,\n",
+          "current": "  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,\n  evidence: Object.freeze({\n    runId: 41348226366,\n    artifactId: 13099539006,\n"
+        },
+        {
+          "previous": "export function validateMacSourceWriteScope(identity, host) {\n  assert(\n    MAC_SOURCE_POLICY.darwinWriteAdmitted &&\n      host?.platform === MAC_SOURCE_POLICY.platform &&\n      host.architecture === MAC_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_SOURCE_POLICY.imageOS &&\n",
+          "current": "export function validateMacSourceWriteScope(identity, host) {\n  assert(\n    MAC_SOURCE_POLICY.darwinWriteAdmitted &&\n      macSourceScopeQualified(MAC_SOURCE_POLICY) &&\n      host?.platform === MAC_SOURCE_POLICY.platform &&\n      host.architecture === MAC_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_SOURCE_POLICY.imageOS &&\n"
+        },
+        {
+          "previous": "export function validateMacIntelSourceWriteScope(identity, host) {\n  assert(\n    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&\n      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&\n      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&\n",
+          "current": "export function validateMacIntelSourceWriteScope(identity, host) {\n  assert(\n    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&\n      macSourceScopeQualified(MAC_INTEL_SOURCE_POLICY) &&\n      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&\n      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&\n"
+        }
+      ]
+    }
+  ]
+}
