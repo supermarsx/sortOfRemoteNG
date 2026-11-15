@@ -1256,7 +1256,18 @@ async function armFixture(fault = "") {
     clearTimeout: (id) => timers.delete(id),
     randomUUID: () => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     sdkProbeAuthority,
-    checkpointProfile,
+    checkpointProfile: (target) => {
+      const selected = checkpointProfile(target);
+      if (fault === "old-source")
+        return {
+          ...selected,
+          source:
+            "65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54",
+        };
+      if (fault === "foreign-source")
+        return { ...selected, source: "f".repeat(64) };
+      return selected;
+    },
     checkpointHost,
     releaseIdentity,
     plan: async (options) => {
@@ -1480,7 +1491,7 @@ async function armFixture(fault = "") {
   };
 }
 
-test("actual ARM body verifies real checked-in source65 chain and crosses genuine opaque SDK/report binding APIs", async () => {
+test("actual ARM body verifies real checked-in source3dfd chain and crosses genuine opaque SDK/report binding APIs", async () => {
   const f = await armFixture();
   await f.run();
   assert.deepEqual(f.events, [
@@ -1513,6 +1524,15 @@ test("actual ARM body verifies real checked-in source65 chain and crosses genuin
   );
   assert.equal(outcome.complete, false);
   assert.equal(outcome.terminalCompletionRequired, true);
+});
+
+test("actual ARM current source guard refuses historical65 and foreign identities before planning", async () => {
+  for (const fault of ["old-source", "foreign-source"]) {
+    const f = await armFixture(fault);
+    await assert.rejects(f.run(), /MAC_ARM_EXTERNAL_SOURCE/);
+    assert.deepEqual(f.events, []);
+    assert.equal(f.uidCalls(), 1);
+  }
 });
 
 test("actual ARM authority, image, pin and alias denials cannot reach Metal download or census", async () => {
