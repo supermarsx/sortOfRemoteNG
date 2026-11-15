@@ -4,6 +4,10 @@ import {
   protocolFromPort,
 } from "../connection/normalizeImportedProtocol";
 import serviceMap from "./serviceMap";
+import {
+  identifyNetworkAppliance,
+  identifyYealinkSip,
+} from "./networkApplianceFingerprint";
 
 /** Optional evidence returned by check_port; an HTTP failure is not a TCP failure. */
 export interface ServiceFingerprintEvidence {
@@ -150,6 +154,18 @@ export function fingerprintService(
   }
   const rfb = text.match(/^RFB (\d{3}\.\d{3})$/);
   if (rfb) return identified("vnc", `RFB banner: ${text}`, undefined, rfb[1]);
+  const yealinkSip = identifyYealinkSip(text);
+  if (yealinkSip) {
+    return {
+      ...identified(
+        "raw",
+        `SIP User-Agent: Yealink${yealinkSip.model ? ` ${yealinkSip.model}` : ""}${yealinkSip.firmware ? ` (firmware ${yealinkSip.firmware})` : ""}`,
+        "Yealink",
+        yealinkSip.firmware,
+      ),
+      service: "sip",
+    };
+  }
 
   if (
     http.protocol_confirmed &&
@@ -265,9 +281,23 @@ export function fingerprintService(
         "TLS certificate subject FreshTomato / FreshTomato Team; self-reported branding, not identity verification",
       );
     }
+    const appliance = identifyNetworkAppliance({
+      title,
+      server,
+      basicRealm: http.http_basic_realm,
+      status: status ?? (bannerStatus ? Number(bannerStatus[1]) : undefined),
+      finalOrigin: http.http_final_origin,
+      text,
+    });
+    if (appliance) {
+      parts.push(
+        `${appliance.signal}${appliance.model ? `; model hint ${appliance.model}` : ""} (self-reported, not identity verification)`,
+      );
+    }
     const software = server?.match(WEB_SERVER);
     const product =
       applicationTitle ??
+      appliance?.product ??
       authBrand ??
       tlsBrand ??
       serverBrand ??
@@ -290,7 +320,7 @@ export function fingerprintService(
       product,
       branded === "Apache Tomcat"
         ? title?.match(/\/(\d[\w.-]*)/)?.[1]
-        : branded || authBrand || tlsBrand || serverBrand
+        : branded || appliance || authBrand || tlsBrand || serverBrand
           ? undefined
           : software?.[2],
     );
