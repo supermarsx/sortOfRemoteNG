@@ -74,6 +74,38 @@ function watchFillEscape(doc, owned, onEscape) {
   };
 }
 
+// Wake a bounded wait loop as soon as the page changes, instead of leaving
+// it to sleep out its poll timer (SPA login forms render after load). The
+// wake is coalesced and throttled so a busy page cannot spin the loop; the
+// caller keeps its own deadline, so this only ever makes the wait shorter.
+function observeDomChanges(wake) {
+  var timer = null;
+  var observer = null;
+  if (typeof MutationObserver !== "function") return function () {};
+  try {
+    observer = new MutationObserver(function () {
+      if (timer !== null) return;
+      timer = setTimeout(function () {
+        timer = null;
+        wake();
+      }, 30);
+    });
+    observer.observe(document.documentElement || document, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style", "class", "hidden", "disabled", "type"],
+    });
+  } catch (_) {
+    return function () {};
+  }
+  return function () {
+    clearTimeout(timer);
+    timer = null;
+    observer.disconnect();
+  };
+}
+
 function checkGuard(guard) {
   if (guard && !guard()) throw new Error("form-changed-or-unsafe");
 }

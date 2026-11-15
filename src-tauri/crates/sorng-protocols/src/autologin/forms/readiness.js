@@ -152,10 +152,12 @@ function waitForSelectedLoginForm(ov, readiness) {
     var challengeReloaded = false;
     var challengeKey = "sorng-cloudflare-reload.v1";
     var finished = false;
+    var stopObserving = null;
     function finish(result) {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
+      if (stopObserving) stopObserving();
       document.removeEventListener("DOMContentLoaded", tick);
       if (cancelActive === cancel) cancelActive = null;
       if (!result.ok) report(result);
@@ -253,6 +255,9 @@ function waitForSelectedLoginForm(ov, readiness) {
     }
     cancelActive = cancel;
     document.addEventListener("DOMContentLoaded", tick, { once: true });
+    // dom.js is absent from some reviewed assemblies: they keep the timer.
+    if (typeof observeDomChanges === "function")
+      stopObserving = observeDomChanges(tick);
     tick();
   });
 }

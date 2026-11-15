@@ -17,6 +17,8 @@ function bootstrapFill(
     var finished = false;
     var retryTimer = null;
     var lifetimeTimer = null;
+    var searching = false;
+    var stopObserving = null;
     var origin = window.location.origin;
     var options;
     var activeCapture;
@@ -47,6 +49,7 @@ function bootstrapFill(
       finished = true;
       clearTimeout(retryTimer);
       clearTimeout(lifetimeTimer);
+      if (stopObserving) stopObserving();
       if (stopEscape) stopEscape();
       stopEscape = null;
       if (cpanel) cpanel.dispose();
@@ -235,12 +238,14 @@ function bootstrapFill(
         fail();
       }
     }
-    function tick() {
+    function tick(woken) {
       if (finished) return;
       if (stopped || window.location.origin !== origin) {
         cancel();
         return;
       }
+      if (searching) clearTimeout(retryTimer);
+      searching = false;
       try {
         var target = findLoginForm(ov, options);
         if (!target) openFreepbxAdmin(ov);
@@ -275,10 +280,13 @@ function bootstrapFill(
           else fill(captured);
           return;
         }
-        if (++tries >= 20 && rawOptions == null) {
+        // A DOM-change wake is not a failed poll: only the timer spends tries.
+        if (woken !== true && ++tries >= 20 && rawOptions == null) {
           finish({ ok: false, reason: "form-not-found-timeout" });
           return;
         }
+        searching = true;
+        clearTimeout(retryTimer);
         retryTimer = setTimeout(tick, Math.min(100 + tries * 50, 400));
       } catch (error) {
         var reason =
@@ -322,6 +330,12 @@ function bootstrapFill(
       cancel();
       return;
     }
+    // Wake the form search the moment the page changes (only while searching:
+    // fill and submit delay timers are never cut short).
+    if (typeof observeDomChanges === "function")
+      stopObserving = observeDomChanges(function () {
+        if (searching && document.readyState !== "loading") tick(true);
+      });
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", tick, { once: true });
     } else {
