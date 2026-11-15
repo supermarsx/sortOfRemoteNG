@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useLayoutEffect, useRef } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useOriginCertificateReview } from "../../hooks/protocol/useOriginCertificateReview";
 import { beginOriginBrowserConfirmation } from "../../hooks/protocol/originBrowserConfirmations";
@@ -23,9 +23,9 @@ export function OriginBrowserCertificateReview({
   const prompt = review.prompt;
   const waitingSession = prompt?.identity.sessionId;
   const certificate = prompt?.certificate;
-  // The tab that asked stops presenting its native view and says why while
-  // this review is open; the release runs on answer, expiry and unmount alike.
-  useEffect(
+  // Hold the owning native tab before this prompt can paint or take input.
+  // Cleanup releases it before a successor, revocation or unmount is painted.
+  useLayoutEffect(
     () =>
       waitingSession
         ? beginOriginBrowserConfirmation(waitingSession, "certificate")

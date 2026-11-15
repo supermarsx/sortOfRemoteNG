@@ -639,6 +639,64 @@ describe("themed certificate review", () => {
 });
 
 describe("certificate review keeps its tab waiting", () => {
+  it("owns the prompt tab before paint and switches or releases that hold in the same commit", async () => {
+    const b = backend(snapshot(0, null));
+    const checkpoints: Array<[number, boolean, string | null, string | null]> =
+      [];
+    function BeforePaint({ phase }: { phase: number }) {
+      React.useLayoutEffect(() => {
+        checkpoints.push([
+          phase,
+          !!screen.queryByRole("dialog"),
+          getOriginBrowserConfirmation("session-a"),
+          getOriginBrowserConfirmation("session-b"),
+        ]);
+      }, [phase]);
+      return null;
+    }
+    const frame = (phase: number) => (
+      <>
+        <OriginBrowserCertificateReview transport={b.transport} />
+        <BeforePaint phase={phase} />
+      </>
+    );
+    const view = render(frame(0));
+    await waitFor(() => expect(b.request).toHaveBeenCalled());
+    act(() => {
+      b.emit(snapshot(1, prompt()));
+      view.rerender(frame(1));
+    });
+    expect(checkpoints.at(-1)).toEqual([1, true, "certificate", null]);
+    act(() => {
+      b.emit(
+        snapshot(
+          2,
+          prompt("b".repeat(32), {
+            identity: {
+              ownerDatabaseId: "database-a",
+              connectionId: "website-b",
+              sessionId: "session-b",
+              attemptId: "attempt-b",
+            },
+          }),
+        ),
+      );
+      view.rerender(frame(2));
+    });
+    expect(checkpoints.at(-1)).toEqual([2, true, null, "certificate"]);
+    act(() => {
+      b.emit(snapshot(3, null));
+      view.rerender(frame(3));
+    });
+    expect(checkpoints.at(-1)).toEqual([3, false, null, null]);
+    act(() => {
+      b.emit(snapshot(4, prompt("c".repeat(32))));
+      view.rerender(frame(4));
+    });
+    expect(checkpoints.at(-1)).toEqual([4, true, "certificate", null]);
+    view.rerender(<BeforePaint phase={5} />);
+    expect(checkpoints.at(-1)).toEqual([5, false, null, null]);
+  });
   it("marks the prompt's own tab pending while shown and releases on answer", async () => {
     const b = backend();
     render(<OriginBrowserCertificateReview transport={b.transport} />);
