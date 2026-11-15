@@ -1,4 +1,10 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ChevronRight,
   Copy,
@@ -19,6 +25,11 @@ import {
   parseLogTimeline,
   type LogCategory,
 } from "../../utils/monitoring/applicationLogTimeline";
+
+// Mounting thousands of <details> rows per poll is what made live updates slow.
+// Render a window of the newest rows; the rest is one click away.
+const ROW_WINDOW = 200;
+const ROW_WINDOW_STEP = 400;
 
 /** Merges two bounded native tails without changing their writers or roots. */
 export function ApplicationLogTimelineView({
@@ -127,12 +138,25 @@ export function ApplicationLogTimelineView({
       selection,
     ],
   );
-  const displayedRows = rows.filter(
-    (row) =>
-      (category === "all" || row.category === category) &&
-      `${row.level} ${row.message} ${row.details} ${logCategories[row.category]} ${row.file}`
-        .toLocaleLowerCase()
-        .includes(search.trim().toLocaleLowerCase()),
+  const deferredSearch = useDeferredValue(search);
+  const displayedRows = useMemo(() => {
+    const needle = deferredSearch.trim().toLocaleLowerCase();
+    return rows.filter(
+      (row) =>
+        (category === "all" || row.category === category) &&
+        (!needle ||
+          `${row.level} ${row.message} ${row.details} ${logCategories[row.category]} ${row.file}`
+            .toLocaleLowerCase()
+            .includes(needle)),
+    );
+  }, [rows, category, deferredSearch]);
+  const [windowSize, setWindowSize] = useState(ROW_WINDOW);
+  useEffect(() => {
+    setWindowSize(ROW_WINDOW);
+  }, [source, ownerKey, selection, category, deferredSearch]);
+  const windowedRows = useMemo(
+    () => displayedRows.slice(0, windowSize),
+    [displayedRows, windowSize],
   );
   const displayedText = logRowsText(displayedRows);
   const revision = JSON.stringify([
@@ -442,7 +466,7 @@ export function ApplicationLogTimelineView({
           >
             {displayedRows.length ? (
               <ol className="divide-y divide-[var(--color-border)]">
-                {displayedRows.map((row, index) => (
+                {windowedRows.map((row, index) => (
                   <li
                     key={row.id}
                     className={`flex min-w-0 items-start ${selectedIds.has(row.id) ? "bg-primary/10" : ""}`}
@@ -518,6 +542,25 @@ export function ApplicationLogTimelineView({
                     </details>
                   </li>
                 ))}
+                {displayedRows.length > windowedRows.length && (
+                  <li className="p-2 text-center text-xs">
+                    <button
+                      type="button"
+                      className="sor-option-chip text-xs"
+                      onClick={() =>
+                        setWindowSize((size) => size + ROW_WINDOW_STEP)
+                      }
+                    >
+                      Show{" "}
+                      {Math.min(
+                        ROW_WINDOW_STEP,
+                        displayedRows.length - windowedRows.length,
+                      )}{" "}
+                      more of {displayedRows.length - windowedRows.length} older
+                      records
+                    </button>
+                  </li>
+                )}
               </ol>
             ) : (
               <p className="p-3 text-sm">No log records match these filters.</p>

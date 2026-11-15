@@ -147,13 +147,19 @@ export function useApplicationLogs(
     listingSignature.current = "";
   }, []);
   const read = useCallback(
-    async (id: string, token: number, signature: string) => {
-      if (!ready.current || token !== request.current || !visible()) return;
+    async (
+      id: string,
+      token: number,
+      signature: string,
+      patch?: Partial<LogState>,
+    ): Promise<boolean> => {
+      if (!ready.current || token !== request.current || !visible())
+        return false;
       const content = await invoke<ApplicationLogContent>(
         "application_logs_read",
         { source, id },
       );
-      if (!ready.current || token !== request.current) return;
+      if (!ready.current || token !== request.current) return false;
       if (
         !content ||
         typeof content.text !== "string" ||
@@ -165,13 +171,16 @@ export function useApplicationLogs(
         );
       loaded.current = signature;
       published.current = token;
+      // One commit per poll: the listing patch rides with the content.
       setState((previous) => ({
         ...previous,
+        ...patch,
         content,
         error: null,
         loadedAt: Date.now(),
         revision: token,
       }));
+      return true;
     },
     [source],
   );
@@ -194,6 +203,7 @@ export function useApplicationLogs(
       }
       return submit(async () => {
         if (!ready.current || token !== request.current || !visible()) return;
+        let failedPatch: Partial<LogState> | undefined;
         try {
           const listing = await invoke<ApplicationLogListing>(
             "application_logs_list",
@@ -219,30 +229,52 @@ export function useApplicationLogs(
             JSON.stringify(listing) !== listingSignature.current ||
             selectedId !== selection.current;
           selection.current = selectedId;
-          if (changed || force) {
+          const publishListing = changed || force;
+          const patch: Partial<LogState> | undefined = publishListing
+            ? {
+                ...listing,
+                selectedId,
+                error: null,
+                revision: token,
+              }
+            : undefined;
+          failedPatch = patch;
+          if (publishListing)
             listingSignature.current = JSON.stringify(listing);
-            published.current = token;
-            setState((previous) => ({
-              ...previous,
-              ...listing,
-              selectedId,
-              content:
-                previous.selectedId === selectedId ? previous.content : null,
-              error: null,
-              loadedAt:
-                previous.selectedId === selectedId ? previous.loadedAt : null,
-              revision: token,
-            }));
+          if (file && (force || loaded.current !== fileSignature(file))) {
+            // Defer the listing publish into the read's single state update so
+            // a changed tick renders once instead of listing then content.
+            if (patch) published.current = token;
+            const wasRead = await read(
+              file.id,
+              token,
+              fileSignature(file),
+              patch,
+            );
+            // Not read (hidden/superseded): still publish the listing alone.
+            if (!wasRead && patch && ready.current && token === request.current)
+              setState((previous) => ({ ...previous, ...patch }));
+          } else {
+            if (!file) loaded.current = null;
+            if (patch) {
+              published.current = token;
+              setState((previous) => ({
+                ...previous,
+                ...patch,
+                content:
+                  previous.selectedId === selectedId ? previous.content : null,
+                loadedAt:
+                  previous.selectedId === selectedId ? previous.loadedAt : null,
+              }));
+            }
           }
-          if (file && (force || loaded.current !== fileSignature(file)))
-            await read(file.id, token, fileSignature(file));
-          else if (!file) loaded.current = null;
         } catch (failure) {
           if (ready.current && token === request.current) {
             loaded.current = null;
             published.current = token;
             setState((previous) => ({
               ...previous,
+              ...failedPatch,
               content: null,
               error: failureMessage(failure),
               revision: token,
