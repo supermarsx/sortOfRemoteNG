@@ -1354,9 +1354,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     renderManager();
     await screen.findByText("https://example.com");
     fireEvent.click(screen.getByTestId("session-view-proxy-stats"));
-    expect(
-      await screen.findByText("About the legacy HTTP proxy"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Proxy statistics")).toBeInTheDocument();
   });
 
   it("absorbs the proxy request-log sub-view", async () => {

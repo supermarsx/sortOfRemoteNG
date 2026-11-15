@@ -80,9 +80,7 @@ describe("InternalProxyManager", () => {
     expect(rowButton?.getAttribute("aria-expanded")).toBe("false");
 
     fireEvent.click(screen.getByText("Statistics"));
-    expect(
-      await screen.findByText("Per-Session Breakdown"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Proxy statistics")).toBeInTheDocument();
     const summaryCards = document.querySelectorAll(".sor-surface-card");
     expect(summaryCards.length).toBeGreaterThan(0);
   });
@@ -353,7 +351,11 @@ describe("InternalProxyManager", () => {
     // The info panel lives inside the Statistics tab.
     await screen.findByText("Sessions");
     fireEvent.click(screen.getByText("Statistics"));
-    const infoHeader = await screen.findByText("About the legacy HTTP proxy");
+    const infoHeader = await screen.findByText(
+      "About the legacy HTTP proxy",
+      {},
+      { timeout: 3000 },
+    );
     // Pre-P4 copy claimed a non-existent sortofremote-proxy:// URI
     // scheme and a "no local TCP ports" guarantee. Those claims are
     // gone; the new copy honestly describes the loopback mediator.

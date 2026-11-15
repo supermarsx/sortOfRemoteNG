@@ -36,6 +36,7 @@ import { Checkbox } from "../ui/forms";
 import { CopyLatestProxyLogButton } from "./CopyLatestProxyLogButton";
 import { proxyLogDestination } from "../../utils/network/proxyLogClipboard";
 import { NativeBrowserDiagnostics } from "./NativeBrowserDiagnostics";
+import { ProxyStatsView } from "./ProxyStatsView";
 import {
   classifySession,
   getProxySessionStatusMeta,
@@ -546,150 +547,17 @@ export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 };
 
-export const ProxyStatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="space-y-4">
-    <NativeBrowserDiagnostics mgr={mgr} />
-    <h3 className="text-sm font-medium">Legacy HTTP proxy statistics</h3>
-    {/* Summary cards */}
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <div className="sor-surface-card p-4 text-center">
-        <Activity size={20} className="mx-auto mb-2 text-info" />
-        <p className="text-2xl font-bold text-[var(--color-text)]">
-          {mgr.sessions.length}
-        </p>
-        <p className="text-xs text-[var(--color-textSecondary)]">
-          Active Sessions
-        </p>
-      </div>
-      <div className="sor-surface-card p-4 text-center">
-        <ArrowUpDown size={20} className="mx-auto mb-2 text-primary" />
-        <p className="text-2xl font-bold text-[var(--color-text)]">
-          {mgr.totalRequests}
-        </p>
-        <p className="text-xs text-[var(--color-textSecondary)]">
-          Total Requests
-        </p>
-      </div>
-      <div className="sor-surface-card p-4 text-center">
-        <ServerCrash size={20} className="mx-auto mb-2 text-error" />
-        <p className="text-2xl font-bold text-[var(--color-text)]">
-          {mgr.totalErrors}
-        </p>
-        <p className="text-xs text-[var(--color-textSecondary)]">
-          Total Errors
-        </p>
-      </div>
-      <div className="sor-surface-card p-4 text-center">
-        <CheckCircle2 size={20} className="mx-auto mb-2 text-success" />
-        <p className="text-2xl font-bold text-[var(--color-text)]">
-          {mgr.errorRate}%
-        </p>
-        <p className="text-xs text-[var(--color-textSecondary)]">Error Rate</p>
-      </div>
-    </div>
-
-    {/* Per-session breakdown */}
-    {mgr.sessions.length > 0 && (
-      <div>
-        <h3 className="text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-          Per-Session Breakdown
-        </h3>
-        <div className="sor-surface-card overflow-hidden">
-          <table className="sor-data-table w-full text-xs">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-[var(--color-textSecondary)]">
-                <th className="text-left px-3 py-2">Target</th>
-                <th className="text-left px-3 py-2 w-20">Requests</th>
-                <th className="text-left px-3 py-2 w-20">Errors</th>
-                <th className="text-left px-3 py-2 w-24">Error Rate</th>
-                <th className="text-left px-3 py-2 w-32">Started</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mgr.sessions.map((s) => {
-                const rate =
-                  s.request_count > 0
-                    ? ((s.error_count / s.request_count) * 100).toFixed(1)
-                    : "0.0";
-                return (
-                  <tr
-                    key={s.session_id}
-                    className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surfaceHover)]/50"
-                  >
-                    <td
-                      className="px-3 py-1.5 text-[var(--color-textSecondary)] truncate max-w-sm"
-                      title={s.target_url}
-                    >
-                      {s.target_url}
-                    </td>
-                    <td className="px-3 py-1.5 text-primary font-mono">
-                      {s.request_count}
-                    </td>
-                    <td className="px-3 py-1.5 text-error font-mono">
-                      {s.error_count}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center space-x-2">
-                        <div className="flex-1 h-1.5 bg-[var(--color-border)] rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${parseFloat(rate) > 10 ? "bg-error" : parseFloat(rate) > 0 ? "bg-warning" : "bg-success"}`}
-                            style={{
-                              width: `${Math.min(parseFloat(rate), 100)}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="text-[var(--color-textSecondary)] text-[10px] w-10 text-right">
-                          {rate}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-1.5 text-[var(--color-textMuted)] whitespace-nowrap">
-                      {formatDateTime(s.created_at)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
-
-    {/* Info panel */}
-    <div className="bg-[var(--color-surface)]/50 border border-[var(--color-border)] rounded-lg p-4">
-      <h3 className="text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        About the legacy HTTP proxy
-      </h3>
-      <div className="text-xs text-[var(--color-textSecondary)] space-y-1.5">
-        <p>
-          Legacy HTTP/HTTPS iframe tabs open a per-session mediator on a random
-          loopback port (
-          <code className="text-info">127.0.0.1:&lt;port&gt;</code>). The iframe
-          loads from that port and the proxy forwards every request to the
-          upstream target — injecting Basic Auth credentials when configured.
-        </p>
-        <p>
-          Upstream failures (connection refused, DNS lookup failure, TLS
-          handshake error, timeout, 5xx) return themed HTML pages styled to
-          match the app, not browser-native error chrome.
-        </p>
-        <p>
-          When the upstream returns{" "}
-          <code className="text-info">401 Unauthorized</code> with a Basic
-          challenge, the proxy strips the{" "}
-          <code className="text-info">WWW-Authenticate</code> header
-          (suppressing the browser-native popup) and serves a themed inline
-          login form instead. Submitted credentials update the session and can
-          be saved to the underlying connection.
-        </p>
-        <p>
-          Sessions are created when the connection tab opens — including when no
-          Basic Auth is configured — and are cleaned up when the tab closes.
-          Sessions appear here whether or not the upstream is reachable.
-        </p>
-      </div>
-    </div>
-  </div>
+export const ProxyStatsTab: React.FC<{
+  mgr: Mgr;
+  onOpenProxyLog?: () => void;
+}> = ({ mgr, onOpenProxyLog }) => (
+  <ProxyStatsView
+    mgr={mgr}
+    onOpenProxyLog={
+      onOpenProxyLog ??
+      (mgr.setActiveTab ? () => mgr.setActiveTab("logs") : undefined)
+    }
+  />
 );
 
 export const BrowserSessionLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (

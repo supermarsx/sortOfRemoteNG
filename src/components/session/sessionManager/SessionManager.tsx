@@ -1503,7 +1503,10 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           )}
           {view === "proxy-stats" && (
             <div className="flex-1 overflow-y-auto p-4">
-              <ProxyStatsTab mgr={mgr.proxy} />
+              <ProxyStatsTab
+                mgr={mgr.proxy}
+                onOpenProxyLog={() => setView("proxy-logs")}
+              />
             </div>
           )}
         </div>

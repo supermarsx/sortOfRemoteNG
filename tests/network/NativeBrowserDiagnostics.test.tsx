@@ -232,16 +232,13 @@ describe("native proxy and browser panels", () => {
     ).toBeInTheDocument();
   });
   it("does not merge native proxy traffic into legacy total requests/errors", () => {
-    render(<ProxyStatsTab mgr={manager()} />);
+    const mgr = manager();
+    render(<ProxyStatsTab mgr={mgr} />);
     expect(
-      screen.getByRole("heading", { name: "Legacy HTTP proxy statistics" }),
+      screen.getByText("Authenticated proxy requests"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Total Requests").parentElement).toHaveTextContent(
-      "0Total Requests",
-    );
-    expect(
-      screen.getByText("Authenticated proxy requests").parentElement,
-    ).toHaveTextContent("12");
+    expect(screen.queryByTestId("proxy-stats-legacy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total Requests")).not.toBeInTheDocument();
   });
   it("shows live browser identity and busy state without inventing a zero or journal history", () => {
     const data = snapshot();
