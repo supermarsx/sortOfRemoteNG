@@ -6,7 +6,6 @@ import {
   Download,
   ExternalLink,
   FileUp,
-  Info,
   Link2,
   LoaderCircle,
   RotateCcw,
@@ -342,6 +341,7 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
                   type="button"
                   className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
                   disabled={!ready || readOnly || busy || !!review || !!error}
+                  title="Exported files are not encrypted. Application links and validation rules are not included."
                   onClick={() => void exportFile("xlsx")}
                 >
                   <Download size={14} aria-hidden="true" />
@@ -351,6 +351,7 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
                   type="button"
                   className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
                   disabled={!ready || readOnly || busy || !!review || !!error}
+                  title="Exported files are not encrypted. Exports the first sheet's values only."
                   onClick={() => void exportFile("csv")}
                 >
                   <Download size={14} aria-hidden="true" />
@@ -361,17 +362,6 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
           </div>
         )}
       </div>
-      <details className={styles.editorHelp}>
-        <summary>
-          <Info size={14} aria-hidden="true" /> Offline editing · Exported files
-          are not encrypted.
-        </summary>
-        <p>
-          CSV exports the first sheet’s values with formula-injection
-          protection. XLSX does not include application links or validation
-          rules.
-        </p>
-      </details>
       {!ready && !error && (
         <p role="status" className={styles.editorStatus}>
           <LoaderCircle size={14} aria-hidden="true" /> Loading offline
