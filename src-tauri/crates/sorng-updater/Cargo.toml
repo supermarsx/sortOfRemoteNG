@@ -31,4 +31,5 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 rustls = { workspace = true, features = ["ring"] }

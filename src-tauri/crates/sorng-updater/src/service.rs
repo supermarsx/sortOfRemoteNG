@@ -1216,26 +1216,107 @@ mod tests {
         assert!(error.is_timeout(), "unexpected feed timeout error: {error}");
     }
 
+    // Header acquisition uses real time and its own finite setup watchdog. Once
+    // headers arrive, advance only the body clock: CI scheduling cannot consume
+    // the tiny body budget before the test has reached the behavior it measures.
+    async fn fixture_io<F: std::future::Future>(future: F) -> F::Output {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut future = std::pin::pin!(future);
+        std::future::poll_fn(|cx| {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "fixture IO exceeded 10 seconds"
+            );
+            match future.as_mut().poll(cx) {
+                std::task::Poll::Pending => {
+                    // A runnable poll prevents the paused runtime from jumping
+                    // past an unobserved OS socket event to the next timer.
+                    cx.waker().wake_by_ref();
+                    std::task::Poll::Pending
+                }
+                ready => ready,
+            }
+        })
+        .await
+    }
+
+    async fn assert_body_pending<F: std::future::Future>(future: std::pin::Pin<&mut F>) {
+        let mut future = future;
+        std::future::poll_fn(|cx| match future.as_mut().poll(cx) {
+            std::task::Poll::Pending => std::task::Poll::Ready(()),
+            std::task::Poll::Ready(_) => panic!("body completed before its intended deadline"),
+        })
+        .await;
+    }
+
+    struct FixtureTask(tokio::task::JoinHandle<()>);
+
+    impl Drop for FixtureTask {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+
+    impl FixtureTask {
+        async fn stop(mut self) {
+            self.0.abort();
+            match fixture_io(&mut self.0).await {
+                Err(error) if error.is_cancelled() => {}
+                other => panic!("fixture did not stop by owned cancellation: {other:?}"),
+            }
+        }
+    }
+
     #[tokio::test]
     async fn updater_http_client_bounds_stalled_signed_payload_bodies() {
         install_test_crypto_provider();
-        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\none";
-        let (url, server) = stalled_http_server(Some(response)).await;
-        let client = configure_updater_http_client(
-            updater_reqwest::Client::builder(),
-            None,
-            TEST_HTTP_TIMEOUTS,
-        )
-        .build()
-        .expect("build bounded updater client");
-
-        let response = client.get(url).send().await.expect("receive headers");
-        let error = response
-            .bytes()
+        let prefix = b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\none";
+        let (url, server) = stalled_http_server(Some(prefix)).await;
+        let server = FixtureTask(server);
+        let timeouts = UpdaterHttpTimeouts {
+            connect: Duration::from_secs(1),
+            read_idle: Duration::from_secs(30),
+            total: Duration::from_secs(300),
+        };
+        let client =
+            configure_updater_http_client(updater_reqwest::Client::builder(), None, timeouts)
+                .build()
+                .expect("build bounded updater client");
+        let mut response = fixture_io(client.get(url).send())
             .await
-            .expect_err("stalled signed payload body must time out");
-        server.abort();
-        assert!(error.is_timeout(), "unexpected body timeout error: {error}");
+            .expect("receive headers");
+        tokio::time::pause();
+        assert_eq!(
+            fixture_io(response.chunk())
+                .await
+                .expect("first body chunk")
+                .expect("body prefix"),
+            &b"one"[..]
+        );
+
+        let started = tokio::time::Instant::now();
+        let body = response.bytes();
+        let mut body = std::pin::pin!(body);
+        assert_body_pending(body.as_mut()).await;
+        tokio::time::advance(timeouts.read_idle - Duration::from_millis(1)).await;
+        assert_body_pending(body.as_mut()).await;
+        tokio::time::advance(Duration::from_millis(2)).await;
+        let error = fixture_io(body)
+            .await
+            .expect_err("stalled body must hit read-idle deadline");
+        assert!(
+            error.is_decode() && error.is_timeout(),
+            "unexpected body timeout error: {error}"
+        );
+        assert_eq!(
+            started.elapsed(),
+            timeouts.read_idle + Duration::from_millis(1)
+        );
+        assert!(
+            started.elapsed() < timeouts.total - Duration::from_secs(10),
+            "total deadline must remain in the future"
+        );
+        server.stop().await;
     }
 
     #[tokio::test]
@@ -1243,47 +1324,75 @@ mod tests {
         install_test_crypto_provider();
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .await
-            .expect("bind slow-trickle fixture");
+            .expect("bind trickle fixture");
         let address = listener.local_addr().expect("fixture address");
-        let server = tokio::spawn(async move {
+        let (write_chunk, mut chunks) = tokio::sync::mpsc::channel::<()>(1);
+        let server = FixtureTask(tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.expect("accept fixture request");
             let mut request = [0_u8; 2048];
             let _ = stream.read(&mut request).await;
             stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n")
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\nx")
                 .await
-                .expect("write fixture headers");
-            loop {
-                if stream.write_all(b"x").await.is_err() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                .expect("write headers and initial chunk");
+            while chunks.recv().await.is_some() {
+                stream
+                    .write_all(b"x")
+                    .await
+                    .expect("write commanded trickle chunk");
             }
-        });
+            std::future::pending::<()>().await;
+        }));
         let timeouts = UpdaterHttpTimeouts {
             connect: Duration::from_secs(1),
-            read_idle: Duration::from_millis(100),
-            total: Duration::from_millis(35),
+            read_idle: Duration::from_secs(30),
+            total: Duration::from_secs(90),
         };
         let client =
             configure_updater_http_client(updater_reqwest::Client::builder(), None, timeouts)
                 .build()
                 .expect("build bounded updater client");
-
-        let response = client
-            .get(format!("http://{address}/artifact"))
-            .send()
+        let mut response = fixture_io(client.get(format!("http://{address}/artifact")).send())
             .await
             .expect("receive trickle headers");
-        let error = response
-            .bytes()
+        tokio::time::pause();
+        assert_eq!(
+            fixture_io(response.chunk())
+                .await
+                .expect("initial body chunk")
+                .expect("body prefix"),
+            &b"x"[..]
+        );
+
+        let started = tokio::time::Instant::now();
+        let interval = Duration::from_secs(10);
+        for _ in 0..8 {
+            tokio::time::advance(interval).await;
+            write_chunk
+                .send(())
+                .await
+                .expect("command live trickle server");
+            assert_eq!(
+                fixture_io(response.chunk())
+                    .await
+                    .expect("trickle must remain readable below idle and total deadlines")
+                    .expect("trickle body chunk"),
+                &b"x"[..]
+            );
+        }
+        // Eight real chunks reset the read timer. Only the original total timer
+        // can now expire: the last successful read was just 11 virtual seconds ago.
+        tokio::time::advance(interval + Duration::from_secs(1)).await;
+        let error = fixture_io(response.chunk())
             .await
-            .expect_err("slow trickle must hit the total deadline");
-        server.abort();
+            .expect_err("trickle must hit original total deadline");
         assert!(
-            error.is_timeout(),
+            error.is_decode() && error.is_timeout(),
             "unexpected total-timeout error: {error}"
         );
+        assert_eq!(started.elapsed(), timeouts.total + Duration::from_secs(1));
+        assert!(interval + Duration::from_secs(1) < timeouts.read_idle);
+        server.stop().await;
     }
 
     #[test]
