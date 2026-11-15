@@ -473,6 +473,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     try {
       renderManager({ connections: [SSH_CONNECTION], onReconnect });
       fireEvent.click(screen.getByTestId("session-view-ssh-sessions"));
+      fireEvent.click(screen.getByTestId("ssh-sessions-tab-logs"));
       fireEvent.click(
         screen.getByRole("button", { name: "Reconnect to Prod SSH" }),
       );

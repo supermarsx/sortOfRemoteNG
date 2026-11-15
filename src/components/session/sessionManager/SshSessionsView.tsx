@@ -8,8 +8,11 @@ import {
   Search,
   Terminal,
   RotateCw,
+  Radio,
 } from "lucide-react";
 import { EmptyState } from "../../ui/display";
+import type { UnifiedSessionRow } from "../../../hooks/session/useUnifiedSessionManager";
+import { SshLiveSessions } from "./SshLiveSessions";
 import {
   type CommandExecution,
   type SSHCommandHistoryEntry,
@@ -38,7 +41,7 @@ import {
 
 export const SSH_COMMAND_HISTORY_STORAGE_KEY = "sshCommandHistory";
 
-type SshSessionsTab = "logs" | "history";
+type SshSessionsTab = "live" | "logs" | "history";
 type SortDirection = "asc" | "desc";
 type LogSortKey = "recorded" | "session" | "activity" | "status";
 type HistorySortKey = "recorded" | "command" | "category" | "executions";
@@ -65,7 +68,12 @@ interface SshActivityRow {
   timestampLabel: string;
 }
 
-const SSH_SESSION_TABS = [
+const SSH_LIVE_TAB = {
+  id: "live",
+  label: "Live sessions",
+  icon: Radio,
+} as const;
+const SSH_RECORD_TABS = [
   { id: "logs", label: "Logs", icon: ScrollText },
   { id: "history", label: "History", icon: History },
 ] as const;
@@ -338,6 +346,15 @@ function executionSearchTerms(execution: CommandExecution): string[] {
 }
 
 interface SshSessionsViewProps {
+  /** Native SSH rows; when provided a "Live sessions" tab is shown first. */
+  liveRows?: readonly UnifiedSessionRow[];
+  isLiveRefreshing?: boolean;
+  onRefreshLive?: () => void;
+  onFocusSession?: (frontendSessionId: string) => void;
+  onDisconnectSsh?: (
+    row: UnifiedSessionRow,
+  ) => boolean | void | Promise<unknown>;
+  onReattachSession?: (nativeId: string, connectionId?: string) => void;
   isActive?: boolean;
   connections?: readonly Connection[];
   sessions?: readonly ConnectionSession[];
@@ -347,6 +364,12 @@ const EMPTY_CONNECTIONS: readonly Connection[] = [];
 const EMPTY_SESSIONS: readonly ConnectionSession[] = [];
 
 export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
+  liveRows,
+  isLiveRefreshing,
+  onRefreshLive,
+  onFocusSession,
+  onDisconnectSsh,
+  onReattachSession,
   isActive = true,
   connections = EMPTY_CONNECTIONS,
   sessions = EMPTY_SESSIONS,
@@ -427,11 +450,19 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
     initialLifecycle.records,
   );
   const rawLifecycleRef = useRef(initialLifecycle.raw);
+  const hasLive = liveRows !== undefined;
+  const SSH_SESSION_TABS = useMemo(
+    () => (hasLive ? [SSH_LIVE_TAB, ...SSH_RECORD_TABS] : SSH_RECORD_TABS),
+    [hasLive],
+  );
   const tabRefs = useRef<Record<SshSessionsTab, HTMLButtonElement | null>>({
+    live: null,
     logs: null,
     history: null,
   });
-  const [activeTab, setActiveTab] = useState<SshSessionsTab>("logs");
+  const [activeTab, setActiveTab] = useState<SshSessionsTab>(
+    liveRows !== undefined ? "live" : "logs",
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -710,7 +741,11 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
                 <Icon size={12} aria-hidden="true" />
                 {label}
                 <span className="rounded-full bg-black/15 px-1.5 py-0.5 text-[9px] leading-none">
-                  {id === "logs" ? activityRows.length : entries.length}
+                  {id === "live"
+                    ? (liveRows?.length ?? 0)
+                    : id === "logs"
+                      ? activityRows.length
+                      : entries.length}
                 </span>
               </button>
             ))}
@@ -727,9 +762,11 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder={
-              activeTab === "logs"
-                ? "Search SSH activity, dispatches, sessions, or hosts..."
-                : "Search commands, sessions, hosts, tags, or notes..."
+              activeTab === "live"
+                ? "Search live SSH sessions by host, user, or state..."
+                : activeTab === "logs"
+                  ? "Search SSH activity, dispatches, sessions, or hosts..."
+                  : "Search commands, sessions, hosts, tags, or notes..."
             }
             className="sor-form-input sor-form-input-icon-left w-full text-xs"
             aria-label={`Search SSH ${activeTab}`}
@@ -755,7 +792,18 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
         data-testid="ssh-sessions-table-scroll-region"
       >
         <div className="min-h-full w-max min-w-full rounded-lg border border-[var(--color-border)]">
-          {activeTab === "logs" ? (
+          {activeTab === "live" ? (
+            <SshLiveSessions
+              rows={liveRows ?? []}
+              searchTerm={searchTerm}
+              isActive={isActive}
+              isRefreshing={isLiveRefreshing}
+              onRefresh={onRefreshLive}
+              onFocusSession={onFocusSession}
+              onDisconnect={onDisconnectSsh}
+              onReattach={onReattachSession}
+            />
+          ) : activeTab === "logs" ? (
             <table
               className="w-full min-w-[980px] border-collapse text-left text-xs"
               data-testid="ssh-logs-table"
@@ -1004,7 +1052,7 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
             </table>
           )}
 
-          {pageRows.length === 0 && (
+          {activeTab !== "live" && pageRows.length === 0 && (
             <div className="flex items-center justify-center py-14">
               <EmptyState
                 icon={activeTab === "logs" ? ScrollText : History}
@@ -1028,13 +1076,15 @@ export const SshSessionsView: React.FC<SshSessionsViewProps> = ({
         </div>
       </div>
 
-      <Pagination
-        count={rows.length}
-        page={currentPage}
-        pageSize={pageSize}
-        onPage={setPage}
-        onPageSize={(size) => setPageSize(size)}
-      />
+      {activeTab !== "live" && (
+        <Pagination
+          count={rows.length}
+          page={currentPage}
+          pageSize={pageSize}
+          onPage={setPage}
+          onPageSize={(size) => setPageSize(size)}
+        />
+      )}
     </section>
   );
 };

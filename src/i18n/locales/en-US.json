@@ -570,6 +570,46 @@
     "close": "Close Session",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen",
+    "sshLive": {
+      "caption": "Live SSH sessions",
+      "count": "{{count}} SSH session(s)",
+      "countFiltered": "{{shown}} of {{total}} SSH sessions",
+      "refresh": "Refresh sessions",
+      "empty": "No live SSH sessions",
+      "emptyHint": "Open an SSH connection to see it here.",
+      "noMatch": "No matching SSH sessions",
+      "noMatchHint": "Adjust the search to see more sessions.",
+      "focus": "Switch to tab",
+      "focusLabel": "Switch to {{name}}",
+      "reattach": "Reattach SSH session",
+      "reattachLabel": "Reattach {{name}}",
+      "copied": "Copied",
+      "copyLabel": "Copy details for {{name}}",
+      "disconnect": "Disconnect SSH session",
+      "disconnectLabel": "Disconnect {{name}}",
+      "state": {
+        "connected": "Connected",
+        "detached": "Detached",
+        "disconnected": "Disconnected"
+      },
+      "columns": {
+        "target": "Host / user",
+        "state": "State",
+        "duration": "Connected for",
+        "lastActivity": "Last activity",
+        "data": "Data transferred",
+        "actions": "Actions"
+      },
+      "copy": {
+        "action": "Copy details",
+        "session": "Session",
+        "target": "Target",
+        "state": "State",
+        "started": "Started",
+        "lastActivity": "Last activity",
+        "id": "Session ID"
+      }
+    },
     "tabLayout": {
       "viewMode": "View mode",
       "clickToFocus": "Click to focus",

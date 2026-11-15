@@ -588,6 +588,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           onReattachSession={onReattachSession}
           onDetachToWindow={onDetachToWindow}
           onReconnect={onReconnect}
+          onFocusSession={onActivateSession}
           onCloseSession={onCloseManagedSession}
           thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
           thumbnailPolicy={settings.rdpSessionThumbnailPolicy}

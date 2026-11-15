@@ -79,6 +79,8 @@ interface SessionManagerProps {
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
   onReconnect?: (connection: Connection) => void;
+  /** Switch the workspace to an open session tab (SSH live sessions view). */
+  onFocusSession?: (sessionId: string) => void;
   onCloseSession?: (
     sessionId: string,
   ) => boolean | void | Promise<boolean | void>;
@@ -1262,6 +1264,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   onReattachSession,
   onDetachToWindow,
   onReconnect,
+  onFocusSession,
   onCloseSession,
   sessionCloseConcurrency,
   sessionCloseTimeoutMs,
@@ -1472,6 +1475,12 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           )}
           {view === "ssh-sessions" && (
             <SshSessionsView
+              liveRows={mgr.sshRows}
+              isLiveRefreshing={mgr.ssh.isLoading}
+              onRefreshLive={mgr.ssh.handleRefresh}
+              onFocusSession={onFocusSession}
+              onDisconnectSsh={handleDisconnectSsh}
+              onReattachSession={onReattachSession}
               isActive={mgr.observationActive}
               connections={connections}
               sessions={state.sessions}
