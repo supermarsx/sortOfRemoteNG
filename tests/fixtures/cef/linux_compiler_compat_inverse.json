@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-only-exact-compiler-compatibility-inverse",
+  "authority": false,
+  "base": "c69ecb95b406b8fe53ea6099f2f106943ae0eede",
+  "beforeProducer": "b4f9e38d5343a830da850ccd19f336553e210c8eb31443baa2c4d97eae224829",
+  "currentProducer": "16bd920d7d456906a32a7871b92e3f698547c57c1f89b9999ad96246e8417236",
+  "rows": 132,
+  "files": [
+    {
+      "path": "scripts/lib/browser-custom-runtime.mjs",
+      "mode": "100644",
+      "before": {
+        "bytes": 69294,
+        "sha256": "3c9a1b58222e234447a09c87c68e80247440d85b871f177758ee1ae5f879ee8b",
+        "blob": "7207a4b2f420cd72505c504bc8da135386a87a6b"
+      },
+      "after": {
+        "bytes": 69587,
+        "sha256": "2d9e61905cb38b34be4fc5af0eec0ad7119b3a3095e183004f17b418d145cf4e",
+        "blob": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+      },
+      "pairs": [
+        {
+          "previous": "          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n",
+          "current": "          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          // ARM Linux uses the pinned cross sysroot, which intentionally lacks\n          // GTK. The minimal distribution needs the library and sandbox, not\n          // the aggregate's GTK cefclient sample or its test executables.\n          selectedTarget === \"aarch64-unknown-linux-gnu\" ? \"libcef\" : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n"
+        }
+      ]
+    },
+    {
+      "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "before": {
+        "bytes": 257508,
+        "sha256": "59abab5a6fefe5ffdf06954fd38fa47c363679f2ec5cb38fa71e4e6ec9e813e8",
+        "blob": "501091e659e7ee23a50302c88848ea908776332b"
+      },
+      "after": {
+        "bytes": 257523,
+        "sha256": "7e4a8eadf5047892a3b1d6e9e66683058a53c5cfbcfc50eb80e3e0d1c9fa2b34",
+        "blob": "40e3aa83702a10d4a46eb14fbf3fa9a3caf3615e"
+      },
+      "pairs": [
+        {
+          "previous": "export function checkpointCompileArguments(target, args) {\n  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\" ? [\"cef\", \"chrome_sandbox\"] : [\"cef\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n",
+          "current": "export function checkpointCompileArguments(target, args) {\n  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"libcef\", \"chrome_sandbox\"]\n      : [\"cef\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n"
+        }
+      ]
+    }
+  ]
+}

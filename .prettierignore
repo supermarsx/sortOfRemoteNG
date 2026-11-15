@@ -90,5 +90,7 @@ native/windows-arm-full-sdk/private-qualification-profile.json
 native/windows-arm-full-sdk/sdk-origin-review.json
 native/cef-checkpoint-migrations/linux-arm-81bed0b6-mac-owned-source-v1.json
 
+native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1/
+
 # Authenticated Mac qualification packets retain their reviewed raw bytes.
 native/cef-source-qualifications/mac-43652853463/

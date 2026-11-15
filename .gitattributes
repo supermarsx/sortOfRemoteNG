@@ -88,3 +88,13 @@ tests/fixtures/cef/minimal-sdk-upstream/** -text -whitespace
 native/cef-source-qualifications/mac-43652853463/** -text -whitespace
 
 tests/fixtures/cef/compiler_compat_inverse.json -text
+
+tests/fixtures/cef/siso_writer_inverse.json -text
+tests/fixtures/cef/linux_compiler_compat_inverse.json -text
+tests/fixtures/cef/linux_kernel_identity_inverse.json -text
+tests/fixtures/cef/linux_proc_presentation_inverse.json -text
+tests/fixtures/cef/composite_source_inverse.json -text
+
+# Fresh Linux370 namespace and its authenticated observations retain exact raw bytes.
+native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1/** -text -whitespace
+tests/fixtures/cef/linux370_fresh_inverse.json -text

@@ -1,0 +1,14 @@
+diff --git a/libcef/browser/native/native_widget_delegate.cc b/libcef/browser/native/native_widget_delegate.cc
+--- a/libcef/browser/native/native_widget_delegate.cc
++++ b/libcef/browser/native/native_widget_delegate.cc
+@@ -67,7 +67,9 @@
+   contents_view_ = new CefNativeContentsView(this);
+ 
+   DCHECK(!web_view_);
+-  web_view_ = new views::WebView(web_contents->GetBrowserContext());
++  // CEF supplies and owns the WebContents. This view never lazily creates one.
++  // Its native widget can outlive that content/profile during asynchronous close.
++  web_view_ = new views::WebView();
+   web_view_->SetWebContents(web_contents);
+   web_view_->SetPreferredSize(bounds.size());
+ 

@@ -1,0 +1,699 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-only-exact-linux-proc-presentation-inverse",
+  "authority": false,
+  "currentProducer": "60d51f32b97ff59bf028643f4f7d1f05bb81f6a872710fae55ef1d83231f5901",
+  "beforeProducer": "1cace102dea3e4a92c64958f2b60c75aaa63e5186f37de69259fe33090ad9118",
+  "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+  "mode": "100644",
+  "rows": [
+    {
+      "path": ".github/workflows/cef-engineering-checkpoint.yml",
+      "mode": "100644",
+      "sha": "75fc85e39d3cf0b82726dcc603126bdaff0455c2"
+    },
+    {
+      "path": ".node-version",
+      "mode": "100644",
+      "sha": "60ade1ae01e833a5c291c47883bf26fb031f7727"
+    },
+    {
+      "path": "native/cef-hosted-recipe.json",
+      "mode": "100644",
+      "sha": "77ba6488a6f092856b705c477e7cf4084ff5390f"
+    },
+    {
+      "path": "scripts/automation-repository.mjs",
+      "mode": "100644",
+      "sha": "22e31d24ab9b4731b1e5ca5b22878d3084d6f248"
+    },
+    {
+      "path": "scripts/browser-app-build.mjs",
+      "mode": "100644",
+      "sha": "1522b41ad8788f2f9188ef488e49eac26c429659"
+    },
+    {
+      "path": "scripts/browser-client-network-probe.mjs",
+      "mode": "100644",
+      "sha": "a5c0a5a32171b833094a6a133c8fbd4b3bc8478e"
+    },
+    {
+      "path": "scripts/browser-live.mjs",
+      "mode": "100644",
+      "sha": "23c88fcf52529959b0a4f0ca32cf2a1e0cf53f9d"
+    },
+    {
+      "path": "scripts/browser-readiness.mjs",
+      "mode": "100644",
+      "sha": "aa7b6a2e159312a3f500bd558647769e1d717b45"
+    },
+    {
+      "path": "scripts/browser-runtime-native-ci.mjs",
+      "mode": "100644",
+      "sha": "5e0a21bd339d1101e0f323bccc1dc475b696fdc0"
+    },
+    {
+      "path": "scripts/browser-runtime-package.mjs",
+      "mode": "100644",
+      "sha": "988ac8db981ffc8f9e05c1fc3cd9b193e4af0c8b"
+    },
+    {
+      "path": "scripts/capture-login-page.mjs",
+      "mode": "100644",
+      "sha": "30e1507084269bab38f6115107b45a225ef4b313"
+    },
+    {
+      "path": "scripts/catalog-icon-contact-sheet.mjs",
+      "mode": "100644",
+      "sha": "cc161259f4ff6293493e21fff4eacf2608613cf9"
+    },
+    {
+      "path": "scripts/cef-browser-acceptance.mjs",
+      "mode": "100644",
+      "sha": "f2785f6e944c6952d371106b80f7d6887152ecc0"
+    },
+    {
+      "path": "scripts/cef-custom-artifact-inventory.mjs",
+      "mode": "100644",
+      "sha": "5720498c509aa86d2b4d22b0e96eac6fb17d3ed9"
+    },
+    {
+      "path": "scripts/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "sha": "915139c7d545668bffe1003261a2379e09e067e3"
+    },
+    {
+      "path": "scripts/cef-hosted-bootstrap.mjs",
+      "mode": "100644",
+      "sha": "59ba20636a8c82e10016b660fbe5e2be748210cf"
+    },
+    {
+      "path": "scripts/cef-hosted-capacity.mjs",
+      "mode": "100644",
+      "sha": "2fb3903eb9bf9f582ccf1fd63cf7fbb5c558890b"
+    },
+    {
+      "path": "scripts/cef-hosted-provision.mjs",
+      "mode": "100644",
+      "sha": "9fb323d215e1d246f537685b360d3a665f87f748"
+    },
+    {
+      "path": "scripts/cef-linux-package-fixture.mjs",
+      "mode": "100644",
+      "sha": "9d5d5222b00a86d7e60c82da7a1d8eafd29e4376"
+    },
+    {
+      "path": "scripts/cef-owned-sdk-handoff.mjs",
+      "mode": "100644",
+      "sha": "fae71b6b76c4a1ba4631809d1e5b10a3a40c5c81"
+    },
+    {
+      "path": "scripts/cef-owned-sdk-import.mjs",
+      "mode": "100644",
+      "sha": "aa52f99b48d931a5735c4c03976b3f2cf1e4a4f7"
+    },
+    {
+      "path": "scripts/cef-owned-sdk-publish.mjs",
+      "mode": "100644",
+      "sha": "8549327fb78fc51fe9c0ef32217ac6c232b5b9f6"
+    },
+    {
+      "path": "scripts/cef-patched-runtime.mjs",
+      "mode": "100644",
+      "sha": "616e5cf87ec9a0325d905738749f185bc36515db"
+    },
+    {
+      "path": "scripts/cef-runtime-acceptance-ci.mjs",
+      "mode": "100644",
+      "sha": "70e03a09eabacb4f39a87883fff3910f947b0de9"
+    },
+    {
+      "path": "scripts/cef-runtime-ci.mjs",
+      "mode": "100644",
+      "sha": "b723ed5e56a2f5d8c4122bf7193294cc09653525"
+    },
+    {
+      "path": "scripts/cef-runtime-fetch.mjs",
+      "mode": "100644",
+      "sha": "0046ae7e7674b0beefc2f25a48904d0d9098c251"
+    },
+    {
+      "path": "scripts/ci/analyze-native-dependency-graph.mjs",
+      "mode": "100644",
+      "sha": "20b12544401b69495103a6864f5ce1cecfdf5133"
+    },
+    {
+      "path": "scripts/ci/audit_filter.py",
+      "mode": "100644",
+      "sha": "579893859c71eba218b8d057c79050f32e608ca2"
+    },
+    {
+      "path": "scripts/ci/check-backend-coverage.mjs",
+      "mode": "100644",
+      "sha": "07c99ba1ce84ea3d980b877c5ba27705e0b09823"
+    },
+    {
+      "path": "scripts/ci/check-cargo-update-candidate.mjs",
+      "mode": "100644",
+      "sha": "1814e3307a87de501dff1c66b25996b87dd477be"
+    },
+    {
+      "path": "scripts/ci/check-docs-links.mjs",
+      "mode": "100644",
+      "sha": "c9d2022462126973263c328c1cd1fa2c9f3554a5"
+    },
+    {
+      "path": "scripts/ci/check-frontend-cold-bundle.mjs",
+      "mode": "100644",
+      "sha": "1226702dbaf18afeed1a8f3936c4880de017bcd2"
+    },
+    {
+      "path": "scripts/ci/check-gif-worker-export.mjs",
+      "mode": "100644",
+      "sha": "8f002d7e4478a09a09c7fe523d490d715e144266"
+    },
+    {
+      "path": "scripts/ci/check-js-lock-parity.mjs",
+      "mode": "100644",
+      "sha": "a7f2b69d8b804f8eb6672bcbdfa095b73b607695"
+    },
+    {
+      "path": "scripts/ci/check-npm-audit.mjs",
+      "mode": "100644",
+      "sha": "e6a8a9ad733c94b8e29f0b0c13d4a5e60e7ad966"
+    },
+    {
+      "path": "scripts/ci/check-release-runtime-catalog.mjs",
+      "mode": "100644",
+      "sha": "c54b69df1bd39591c6ddfdd135aa49864bb90da2"
+    },
+    {
+      "path": "scripts/ci/check-release-version-floor.mjs",
+      "mode": "100644",
+      "sha": "d830e025f60687fa5b1d3a6b6736eebfcac2c540"
+    },
+    {
+      "path": "scripts/ci/diagnose-macos-cef-tests.mjs",
+      "mode": "100644",
+      "sha": "6c478768f06ac8ed663ce800a01c3cfaf2d4a042"
+    },
+    {
+      "path": "scripts/ci/e2e-http-fixtures.mjs",
+      "mode": "100644",
+      "sha": "71f74176d81fb9e1f077bc29d55f305e58b47420"
+    },
+    {
+      "path": "scripts/ci/e2e-npm-fixture.mjs",
+      "mode": "100644",
+      "sha": "3638c1a6f3dcc889b58d015e9fad16f60e758f78"
+    },
+    {
+      "path": "scripts/ci/e2e-portainer-fixture.mjs",
+      "mode": "100644",
+      "sha": "e2fbf0b02f37f4d3f05969b16390e59a3667c6e8"
+    },
+    {
+      "path": "scripts/ci/lib/docs-search-validation.mjs",
+      "mode": "100644",
+      "sha": "c6898f29664586368c9c6cc9277b8d7f4b437dab"
+    },
+    {
+      "path": "scripts/ci/resolve-release-version.mjs",
+      "mode": "100644",
+      "sha": "48b32403c8527f8d422991c420e06defc1d6e696"
+    },
+    {
+      "path": "scripts/ci/run-release-native-build.mjs",
+      "mode": "100644",
+      "sha": "d6c02b3490303d27961d1a940883705f99a1d592"
+    },
+    {
+      "path": "scripts/ci/semver.mjs",
+      "mode": "100644",
+      "sha": "a42ba21a31d4d82efd6f1f9a2bfa065a09654f63"
+    },
+    {
+      "path": "scripts/ci/summarize-native-build-timings.mjs",
+      "mode": "100644",
+      "sha": "658b9b5e4bbaa28ea318c7e2229d91cfdf9e0dae"
+    },
+    {
+      "path": "scripts/ci/update-npm-compatible.mjs",
+      "mode": "100644",
+      "sha": "9ff38882ad2c68ba94f0fb398aeb3e1ea733810c"
+    },
+    {
+      "path": "scripts/ci/validate-release-artifacts.mjs",
+      "mode": "100644",
+      "sha": "abcc7f30998e186f362c779998301941e5af10f7"
+    },
+    {
+      "path": "scripts/ci/validate-updater-feed.mjs",
+      "mode": "100644",
+      "sha": "264b762f10a6a54748e2a05bcc9974dc4cbb91e4"
+    },
+    {
+      "path": "scripts/ci/verify-published-release-assets.mjs",
+      "mode": "100644",
+      "sha": "9667feb690df30492faea80da379d5a6a80f182b"
+    },
+    {
+      "path": "scripts/ci/verify-release-snapshot.mjs",
+      "mode": "100644",
+      "sha": "d702ef59b0b71e18437f186e98c3e24b5191a676"
+    },
+    {
+      "path": "scripts/ci/wait-for-release-readiness.mjs",
+      "mode": "100644",
+      "sha": "c0e465f7e1f4e2047d36b9bce9a53ce730ea7623"
+    },
+    {
+      "path": "scripts/crypto/generate-database-eax-vectors.ps1",
+      "mode": "100644",
+      "sha": "bea75fda8491a0df11a1fa76aa062a5eea7b8dbe"
+    },
+    {
+      "path": "scripts/database-ui-capture.mjs",
+      "mode": "100644",
+      "sha": "6db3eb880621234ff1d78fa41285b726f0e75ba4"
+    },
+    {
+      "path": "scripts/dev-port.mjs",
+      "mode": "100644",
+      "sha": "755df5ea02747e526b3ecc92e8f574c29dfeb04e"
+    },
+    {
+      "path": "scripts/dev-server.mjs",
+      "mode": "100644",
+      "sha": "ced531d4c9db02fbbf47c0280080da28356ee80b"
+    },
+    {
+      "path": "scripts/docs-app-capture.mjs",
+      "mode": "100644",
+      "sha": "b23555fe7903dfcb973e5d9cf31140f323012d8d"
+    },
+    {
+      "path": "scripts/docs-visual-capture.mjs",
+      "mode": "100644",
+      "sha": "38b182cc3bafbaf5804e47c56ca7e1b1734e258c"
+    },
+    {
+      "path": "scripts/e2e-build.mjs",
+      "mode": "100644",
+      "sha": "553db2a542fb5e57fb20a4a0d0e7003524cabbf0"
+    },
+    {
+      "path": "scripts/e2e-isolation-selftest.mjs",
+      "mode": "100644",
+      "sha": "348838a05d8fe3d4fd733c2a450a3fbb4de9fea0"
+    },
+    {
+      "path": "scripts/folder-icon-contact-sheet.mjs",
+      "mode": "100644",
+      "sha": "dc474484165bba46ec7f275c6209fc0f18610a69"
+    },
+    {
+      "path": "scripts/format-changed.mjs",
+      "mode": "100644",
+      "sha": "cd1780bd4f2e5885d490ddd3c9e79acc05d85012"
+    },
+    {
+      "path": "scripts/generate-command-inventory.mjs",
+      "mode": "100644",
+      "sha": "3ef1b0f7d2185004f943d1b7892f1017bdecb253"
+    },
+    {
+      "path": "scripts/generate-native-login-catalog.mjs",
+      "mode": "100644",
+      "sha": "68d09236558e77dc1798bd644abe46dfa9bc928b"
+    },
+    {
+      "path": "scripts/i18n-residual.mjs",
+      "mode": "100644",
+      "sha": "00d1e401e7a7fc5d27268b7236e08690f1e6c31d"
+    },
+    {
+      "path": "scripts/icon-ui-capture.mjs",
+      "mode": "100644",
+      "sha": "9b421f1da96f4c8223f3f7b088204ad494fbf578"
+    },
+    {
+      "path": "scripts/lib/browser-build-route.mjs",
+      "mode": "100644",
+      "sha": "3fb21b9fcd4d5e36deb6c206c3c2cf0d2be8c82a"
+    },
+    {
+      "path": "scripts/lib/browser-client-imports.mjs",
+      "mode": "100644",
+      "sha": "12e5fe39389938587468849ac095b6c6493f8da0"
+    },
+    {
+      "path": "scripts/lib/browser-custom-runtime.mjs",
+      "mode": "100644",
+      "sha": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+    },
+    {
+      "path": "scripts/lib/browser-dev-sdk-cache.mjs",
+      "mode": "100644",
+      "sha": "806f4feb6a61e84c0a4426d7f1df51396bbe9f4b"
+    },
+    {
+      "path": "scripts/lib/browser-installer-bundles.mjs",
+      "mode": "100644",
+      "sha": "57279a8dabf84605a9783f388210eed4554827e9"
+    },
+    {
+      "path": "scripts/lib/browser-local-runtime.mjs",
+      "mode": "100644",
+      "sha": "fe6fba4493b9265823a71a0a6445ad41cdccd708"
+    },
+    {
+      "path": "scripts/lib/browser-runtime-bootstrap.mjs",
+      "mode": "100644",
+      "sha": "0db85b14d4266af86c04eb27dab97359a416c879"
+    },
+    {
+      "path": "scripts/lib/browser-runtime-release.mjs",
+      "mode": "100644",
+      "sha": "4f5591f6400a1b84cdd2b4c07108ed9ccb59e4a9"
+    },
+    {
+      "path": "scripts/lib/browser-sandbox-access.mjs",
+      "mode": "100644",
+      "sha": "eb3a022a7a3c0ad0084f595a654929a4101983bc"
+    },
+    {
+      "path": "scripts/lib/cef-checkpoint-archive.py",
+      "mode": "100644",
+      "sha": "1c9fcc083611ee7652e007cee4ca16f1ac44f6dd"
+    },
+    {
+      "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "sha": "4b01582a5168da65808d5ae1a4bf74f2a8bfe36a"
+    },
+    {
+      "path": "scripts/lib/cef-linux-producer-migration.mjs",
+      "mode": "100644",
+      "sha": "4d216379902e002fe80cf99e07858b622def5bf8"
+    },
+    {
+      "path": "scripts/lib/cef-linux-sidecar-retirement.py",
+      "mode": "100644",
+      "sha": "8041a411ff3ae9ce3c8b55ddb1cfe0eb3a4b4471"
+    },
+    {
+      "path": "scripts/lib/cef-mac-gcs-normalize.py",
+      "mode": "100644",
+      "sha": "e20c69ca128b3c3006a3c87ddeb3294da759bd03"
+    },
+    {
+      "path": "scripts/lib/cef-mac-process-census.py",
+      "mode": "100644",
+      "sha": "ab15eccc67c328920c0a101b893755edfc7fc170"
+    },
+    {
+      "path": "scripts/lib/cef-mac-sdk-inventory.mjs",
+      "mode": "100644",
+      "sha": "8e3e081cfe40fee9ff865b5699b47bfc9a6184ef"
+    },
+    {
+      "path": "scripts/lib/cef-mac-source-metadata.mjs",
+      "mode": "100644",
+      "sha": "5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf"
+    },
+    {
+      "path": "scripts/lib/cef-native-crash-summary.mjs",
+      "mode": "100644",
+      "sha": "4ded0956ee5732222a22c96df40bc40dbee62a30"
+    },
+    {
+      "path": "scripts/lib/cef-owned-sdk-handoff.mjs",
+      "mode": "100644",
+      "sha": "3fb062fc081d9a974f841f22a28068059a2a8550"
+    },
+    {
+      "path": "scripts/lib/cef-owned-sdk-import.mjs",
+      "mode": "100644",
+      "sha": "369c93b265d65416934865d8a5f0b9c1f62e22d7"
+    },
+    {
+      "path": "scripts/lib/cef-owned-sdk-publish.mjs",
+      "mode": "100644",
+      "sha": "a53f9d122bf11263745de9f741a13dbbe51aba3c"
+    },
+    {
+      "path": "scripts/lib/cef-storage-acceptance.mjs",
+      "mode": "100644",
+      "sha": "9580b3fb662eb0b26e9bb2bf897d7c037c4c743c"
+    },
+    {
+      "path": "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+      "mode": "100644",
+      "sha": "25527fc6303adf9638de3cee72ee989da42e1066"
+    },
+    {
+      "path": "scripts/lib/command-inventory.mjs",
+      "mode": "100644",
+      "sha": "a262d43203010c6feb1e28950040ecf1564b9248"
+    },
+    {
+      "path": "scripts/lib/core-command-groups.mjs",
+      "mode": "100644",
+      "sha": "d37431b0b46f82c1183f9cc52245cb2223de89c2"
+    },
+    {
+      "path": "scripts/lib/dev-build-budget.mjs",
+      "mode": "100644",
+      "sha": "fdc4c6673227cca6d9036d9842fac9891ce193e6"
+    },
+    {
+      "path": "scripts/lib/e2e-profile-isolation.d.mts",
+      "mode": "100644",
+      "sha": "9e6c3fa95f776b5e542bba35134d493ba98de3d7"
+    },
+    {
+      "path": "scripts/lib/e2e-profile-isolation.mjs",
+      "mode": "100644",
+      "sha": "1ddca465468f9b6eb7550d5c6fa10ec1e8ea3844"
+    },
+    {
+      "path": "scripts/lib/extract-custom-runtime.py",
+      "mode": "100644",
+      "sha": "95f02a1b2467bf726b083a309177c58aa8897c0f"
+    },
+    {
+      "path": "scripts/lib/linux-package-sandbox.mjs",
+      "mode": "100644",
+      "sha": "7c42e96ed0c50eb4b5dcbfc58d3cbf097f1ddee7"
+    },
+    {
+      "path": "scripts/lib/native-child-env.mjs",
+      "mode": "100644",
+      "sha": "8c70b2dda58d7841b1fb5444f88fa25be0d08d0a"
+    },
+    {
+      "path": "scripts/lib/windows-native-crash-capture.mjs",
+      "mode": "100644",
+      "sha": "7a61eaf64f89ce5f6d824551fc541b9c8716a73b"
+    },
+    {
+      "path": "scripts/lib/windows-openssl-env.mjs",
+      "mode": "100644",
+      "sha": "0be899cc5030ef456be2e52f0d29a91c1aeb21c8"
+    },
+    {
+      "path": "scripts/native-build-env.mjs",
+      "mode": "100644",
+      "sha": "9c7500a5f973afc85aa1240be166426628587226"
+    },
+    {
+      "path": "scripts/native-target.mjs",
+      "mode": "100644",
+      "sha": "adb8fdfcdaddac32a58a17ca637b67d213d2cf7a"
+    },
+    {
+      "path": "scripts/native/browser-app-plist.py",
+      "mode": "100644",
+      "sha": "37b729490bbc2d337217b17e529145756abda94b"
+    },
+    {
+      "path": "scripts/native/browser-cargo-runner.rs",
+      "mode": "100644",
+      "sha": "d1b82bdb1d8c88da48257e12dc22231983fac3be"
+    },
+    {
+      "path": "scripts/native/repair-browser-sandbox-access.ps1",
+      "mode": "100644",
+      "sha": "624444b6dbbd5b7b678429741f3040cd97c2e78c"
+    },
+    {
+      "path": "scripts/provider-icons-capture.mjs",
+      "mode": "100644",
+      "sha": "1af8438246326956c285ca721093cf4fcc8b73e8"
+    },
+    {
+      "path": "scripts/readme-screenshot-validation.mjs",
+      "mode": "100644",
+      "sha": "6ad9a56649aff470f4431a501421da2b914ce79d"
+    },
+    {
+      "path": "scripts/readme-screenshot.mjs",
+      "mode": "100644",
+      "sha": "fd113092504ee5c3440fe2fa39cbcd71ca15d810"
+    },
+    {
+      "path": "scripts/softether-e2e-down.ps1",
+      "mode": "100644",
+      "sha": "2e129e26927037109abad8996f5e71ca0da7dbe5"
+    },
+    {
+      "path": "scripts/softether-e2e-down.sh",
+      "mode": "100644",
+      "sha": "090f7e0ee6e2a4335dd1a5b77bb0e828b09ccee7"
+    },
+    {
+      "path": "scripts/sort-core-command-groups.mjs",
+      "mode": "100644",
+      "sha": "16114fc39008314fa34280bf8b6c67855cef559d"
+    },
+    {
+      "path": "scripts/spreadsheet-ui-check.mjs",
+      "mode": "100644",
+      "sha": "b7b5717eded1d9f05bc9e02f9b9a01ffa7b0e24c"
+    },
+    {
+      "path": "scripts/stage-file-viewer-host.mjs",
+      "mode": "100644",
+      "sha": "e28b78e4d2bda5e5d8e24a8bc7a336bfdee1bf81"
+    },
+    {
+      "path": "scripts/stage-openh264-runtime.mjs",
+      "mode": "100644",
+      "sha": "c529782fbb8b5915053f4ec0ff0b9954bfc216e1"
+    },
+    {
+      "path": "scripts/stage-windows-native-runtime.mjs",
+      "mode": "100644",
+      "sha": "ad986a3a438a6ab21d59957f7701cd029f8d8f58"
+    },
+    {
+      "path": "scripts/styled-english-locales.mjs",
+      "mode": "100644",
+      "sha": "a2529556eae07dc2ae6192296fcbe56cceccfd92"
+    },
+    {
+      "path": "scripts/sync-brand-icons.mjs",
+      "mode": "100644",
+      "sha": "b169695faff2b8e34340b20362e886a4b3c08b6e"
+    },
+    {
+      "path": "scripts/sync-js-deps.mjs",
+      "mode": "100644",
+      "sha": "0e0fbf1f73aa63bf8093cff34ba60ab5e9d92bd6"
+    },
+    {
+      "path": "scripts/sync-version.mjs",
+      "mode": "100644",
+      "sha": "af51e4437a6bb1d1e4e481a4a2be0ee11d3ae832"
+    },
+    {
+      "path": "scripts/tauri-dev.mjs",
+      "mode": "100644",
+      "sha": "f81ddd2150198a8362ab5510e124dba7390dce7a"
+    },
+    {
+      "path": "scripts/tauri.mjs",
+      "mode": "100644",
+      "sha": "d4d7819293430603f3c46f2b3e7c14af54777cfe"
+    },
+    {
+      "path": "scripts/test-legacy-web-compat-browser.mjs",
+      "mode": "100644",
+      "sha": "3cabbaa847327de9ac8caa4c7cecb7cf0e9832aa"
+    },
+    {
+      "path": "scripts/test-synology-login-browser.mjs",
+      "mode": "100644",
+      "sha": "0169c0728bb49f4961a34732ae72e1051a386145"
+    },
+    {
+      "path": "scripts/test-vault-ssh-inline.mjs",
+      "mode": "100644",
+      "sha": "127af7cf77c86525bc6ad561145ca78e18348dad"
+    },
+    {
+      "path": "scripts/test-web-network-browser.mjs",
+      "mode": "100644",
+      "sha": "580c5832a695bfc7f068d203d8b1ddb8eeff57cc"
+    },
+    {
+      "path": "scripts/test-website-dark-mode-browser.mjs",
+      "mode": "100644",
+      "sha": "d1b6b5138e89f2215476f57cf432b018bdd942a0"
+    },
+    {
+      "path": "scripts/test-yealink-login-browser.mjs",
+      "mode": "100644",
+      "sha": "9c26ad336cc66c956eb4ea2e3815dffdbab264e4"
+    },
+    {
+      "path": "scripts/trace-provider-icons.mjs",
+      "mode": "100644",
+      "sha": "e30f7ec547a03efbdcd448dc78a9c395721b1519"
+    },
+    {
+      "path": "scripts/trust-ui-capture.mjs",
+      "mode": "100644",
+      "sha": "062a26cdb05d692f347d28772c1613398df408b2"
+    },
+    {
+      "path": "scripts/vendor-web-darkreader.mjs",
+      "mode": "100644",
+      "sha": "19541ed4fff8d24537d059748ea0655173e67b7e"
+    },
+    {
+      "path": "scripts/versioning.mjs",
+      "mode": "100644",
+      "sha": "303feb0be3a88e30c575be88157640621322e6e5"
+    },
+    {
+      "path": "scripts/viewport-scroll-check.mjs",
+      "mode": "100644",
+      "sha": "5d203492eb36a8b3354182b3e66fd7e0402d7e12"
+    },
+    {
+      "path": "scripts/web-automation-capture.mjs",
+      "mode": "100644",
+      "sha": "3f51e0714aae592fdcecf2b72af6fe8be9ac7211"
+    }
+  ],
+  "before": {
+    "bytes": 275345,
+    "sha256": "a6678b370b91cc57563acbe653beba74307b0e8231b5d29d2b57b8e3a3c7dc81",
+    "blob": "573944efc513372a5eec50243689d0091699da41"
+  },
+  "after": {
+    "bytes": 275834,
+    "sha256": "49e5023be1e1a40cca08bb5278415103792ebed60d71259b68fa9f3386ba460c",
+    "blob": "4b01582a5168da65808d5ae1a4bf74f2a8bfe36a"
+  },
+  "pairs": [
+    {
+      "previous": "      return work;\n    };\n    const signature = (info) =>\n      [info.dev, info.ino, info.mode, info.uid, info.gid].join(\":\");\n    const missing = (error) => {\n      if (\n",
+      "current": "      return work;\n    };\n    const signature = (info, taskStat = false) =>\n      [\n        info.dev,\n        info.ino,\n        info.mode,\n        ...(taskStat ? [] : [info.uid, info.gid]),\n      ].join(\":\");\n    const missing = (error) => {\n      if (\n"
+    },
+    {
+      "previous": "    };\n    const read = async (file, maximum) => {\n      guard();\n      const fd = adopt(\n",
+      "current": "    };\n    const read = async (file, maximum) => {\n      // proc PID inode UID/GID change with dumpability, including normal exit.\n      // Birth/lineage ownership comes from two kernel PID/starttick records;\n      // descriptor identity still binds device, inode, mode, type and links.\n      // The boot file and proc mount retain their full UID/GID fences.\n      const taskStat = /^\\/proc\\/[1-9][0-9]{0,9}\\/stat$/.test(file);\n      guard();\n      const fd = adopt(\n"
+    },
+    {
+      "previous": "          \"PROC_FILE_IDENTITY\",\n        );\n        const identity = signature(initial),\n          data = Buffer.alloc(maximum + 1);\n        let offset = 0;\n",
+      "current": "          \"PROC_FILE_IDENTITY\",\n        );\n        const identity = signature(initial, taskStat),\n          data = Buffer.alloc(maximum + 1);\n        let offset = 0;\n"
+    },
+    {
+      "previous": "            after.nlink === 1n &&\n            named.nlink === 1n &&\n            signature(after) === identity &&\n            signature(named) === identity,\n          \"Kernel record replaced\",\n          \"PROC_FILE_IDENTITY\",\n",
+      "current": "            after.nlink === 1n &&\n            named.nlink === 1n &&\n            signature(after, taskStat) === identity &&\n            signature(named, taskStat) === identity,\n          \"Kernel record replaced\",\n          \"PROC_FILE_IDENTITY\",\n"
+    }
+  ]
+}

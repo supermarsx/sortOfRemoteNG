@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-hosted-discovery",
+  "reviewStatus": "unreviewed-observations",
+  "engineBuildAttempted": false,
+  "publicationAllowed": false,
+  "target": "x86_64-unknown-linux-gnu",
+  "runner": "ubuntu-24.04",
+  "platform": "linux",
+  "architecture": "x64",
+  "image": {
+    "os": "ubuntu24",
+    "version": "20261111.370.1"
+  },
+  "observedAt": "2026-11-12T19:23:54.024Z",
+  "cpuCount": 4,
+  "pythonVersion": [
+    3,
+    12,
+    3
+  ],
+  "availableGiB": 106.14,
+  "memoryGiB": 15.61,
+  "nativeProbeCompleted": true,
+  "freeDiskBeforeGiB": 106.14,
+  "cleaned": [],
+  "native": {
+    "linkerVersion": "GNU ld (GNU Binutils for Ubuntu) 2.42\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis program is free software; you may redistribute it under the terms of\nthe GNU General Public License version 3 or (at your option) a later version.\nThis program has absolutely no warranty.",
+    "pkgConfigVersion": "1.8.1",
+    "packages": "libc6-dev 2.39-0ubuntu8.9\nlibglib2.0-dev 2.80.0-6ubuntu3.10\nlibnss3-dev 2:3.98-1ubuntu0.3\nlibx11-dev 2:1.8.7-1ubuntu0.1\nlibxkbcommon-dev 1.6.0-1build1\npkg-config 1.8.1-2build1",
+    "files": [
+      "/usr/bin/ld",
+      "/usr/bin/pkg-config",
+      "/usr/include/stdio.h"
+    ]
+  },
+  "toolsRoot": "/",
+  "files": [
+    {
+      "path": "usr/bin/python3.12",
+      "size": 8020928,
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    {
+      "path": "usr/bin/x86_64-linux-gnu-ld.bfd",
+      "size": 1359128,
+      "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b"
+    },
+    {
+      "path": "usr/bin/pkgconf",
+      "size": 45168,
+      "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b"
+    },
+    {
+      "path": "usr/include/stdio.h",
+      "size": 34649,
+      "sha256": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62"
+    }
+  ],
+  "blockers": [],
+  "note": "Actual observations, not reviewed pins or native engine acceptance. Discovery cannot authorize a build. SDK installation and cross-compilation require separate review."
+}

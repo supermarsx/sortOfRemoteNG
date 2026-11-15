@@ -1,0 +1,326 @@
+{
+  "kind": "authenticated-linux-host-image-gate-failure",
+  "run": 43288845759,
+  "attempt": 1,
+  "sourceHead": "3746bf1f77b7670b40cfc6c07363da687523e686",
+  "sourceProducer": "131/20cbf29701533f37db20563e72c894b509ca0c368f03abe2f11322e2d0a2f35b",
+  "job": 131429386237,
+  "failureStage": "step12-download-hosted-identity-before-restoreDownload",
+  "failure": "Hosted build OS, architecture or reviewed image identity changed",
+  "prerequisites": "PASS",
+  "nativeContracts": {
+    "total": 330,
+    "passed": 329,
+    "failed": 0,
+    "skipped": 1
+  },
+  "sourceCompileStarted": false,
+  "checkpointDownloaded": false,
+  "preservedCheckpointRun": 43238678994,
+  "oldImage": {
+    "os": "ubuntu24",
+    "version": "20261101.360.1"
+  },
+  "newImage": {
+    "os": "ubuntu24",
+    "version": "20261111.370.1"
+  },
+  "matchingHostFiles": [
+    {
+      "path": "usr/bin/python3.12",
+      "size": 8020928,
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    {
+      "path": "usr/bin/x86_64-linux-gnu-ld.bfd",
+      "size": 1359128,
+      "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b"
+    },
+    {
+      "path": "usr/bin/pkgconf",
+      "size": 45168,
+      "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b"
+    },
+    {
+      "path": "usr/include/stdio.h",
+      "size": 34649,
+      "sha256": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62"
+    }
+  ],
+  "matchingSixPackagePins": [
+    "libc6-dev 2.39-0ubuntu8.9",
+    "libglib2.0-dev 2.80.0-6ubuntu3.10",
+    "libnss3-dev 2:3.98-1ubuntu0.3",
+    "libx11-dev 2:1.8.7-1ubuntu0.1",
+    "libxkbcommon-dev 1.6.0-1build1",
+    "pkg-config 1.8.1-2build1"
+  ],
+  "matchingToolVersions": {
+    "python": [
+      3,
+      12,
+      3
+    ],
+    "linker": "GNU ld (GNU Binutils for Ubuntu) 2.42",
+    "pkgconf": "1.8.1"
+  },
+  "installedPackageCounts": [
+    1625,
+    1625
+  ],
+  "blankPackageLinesIgnored": [
+    1,
+    1
+  ],
+  "changedPackageCount": 39,
+  "changedPackages": [
+    {
+      "name": "apache2",
+      "architecture": "amd64",
+      "before": "2.4.58-1ubuntu8.17",
+      "after": "2.4.58-1ubuntu8.18"
+    },
+    {
+      "name": "apache2-bin",
+      "architecture": "amd64",
+      "before": "2.4.58-1ubuntu8.17",
+      "after": "2.4.58-1ubuntu8.18"
+    },
+    {
+      "name": "apache2-data",
+      "architecture": "all",
+      "before": "2.4.58-1ubuntu8.17",
+      "after": "2.4.58-1ubuntu8.18"
+    },
+    {
+      "name": "apache2-utils",
+      "architecture": "amd64",
+      "before": "2.4.58-1ubuntu8.17",
+      "after": "2.4.58-1ubuntu8.18"
+    },
+    {
+      "name": "apt",
+      "architecture": "amd64",
+      "before": "2.8.3",
+      "after": "2.8.4ubuntu0.1"
+    },
+    {
+      "name": "apt-transport-https",
+      "architecture": "all",
+      "before": "2.8.3",
+      "after": "2.8.4ubuntu0.1"
+    },
+    {
+      "name": "apt-utils",
+      "architecture": "amd64",
+      "before": "2.8.3",
+      "after": "2.8.4ubuntu0.1"
+    },
+    {
+      "name": "azure-cli",
+      "architecture": "amd64",
+      "before": "2.91.0-1~noble",
+      "after": "2.92.0-1~noble"
+    },
+    {
+      "name": "bind9-dnsutils",
+      "architecture": "amd64",
+      "before": "1:9.18.39-0ubuntu0.24.04.8",
+      "after": "1:9.18.39-0ubuntu0.24.04.9"
+    },
+    {
+      "name": "bind9-host",
+      "architecture": "amd64",
+      "before": "1:9.18.39-0ubuntu0.24.04.8",
+      "after": "1:9.18.39-0ubuntu0.24.04.9"
+    },
+    {
+      "name": "bind9-libs:amd64",
+      "architecture": "amd64",
+      "before": "1:9.18.39-0ubuntu0.24.04.8",
+      "after": "1:9.18.39-0ubuntu0.24.04.9"
+    },
+    {
+      "name": "ca-certificates",
+      "architecture": "all",
+      "before": "20260816ubuntu0.24.04.1",
+      "after": "20260816ubuntu0.24.04.2"
+    },
+    {
+      "name": "dnsutils",
+      "architecture": "all",
+      "before": "1:9.18.39-0ubuntu0.24.04.8",
+      "after": "1:9.18.39-0ubuntu0.24.04.9"
+    },
+    {
+      "name": "firefox",
+      "architecture": "amd64",
+      "before": "159.0+build1-0ubuntu0.24.04.1~mt1",
+      "after": "160.0+build1-0ubuntu0.24.04.1~mt1"
+    },
+    {
+      "name": "git",
+      "architecture": "amd64",
+      "before": "1:2.56.0-0ppa1~ubuntu24.04.2",
+      "after": "1:2.56.1-0ppa1~ubuntu24.04.1"
+    },
+    {
+      "name": "git-man",
+      "architecture": "all",
+      "before": "1:2.56.0-0ppa1~ubuntu24.04.2",
+      "after": "1:2.56.1-0ppa1~ubuntu24.04.1"
+    },
+    {
+      "name": "google-chrome-stable",
+      "architecture": "amd64",
+      "before": "156.0.8078.79-1",
+      "after": "157.0.8103.50-1"
+    },
+    {
+      "name": "google-cloud-cli",
+      "architecture": "amd64",
+      "before": "591.0.0-0",
+      "after": "593.0.0-0"
+    },
+    {
+      "name": "kubectl",
+      "architecture": "amd64",
+      "before": "1.37.2-ubuntu24.04u1",
+      "after": "1.37.2-ubuntu24.04u7"
+    },
+    {
+      "name": "libapt-pkg6.0t64:amd64",
+      "architecture": "amd64",
+      "before": "2.8.3",
+      "after": "2.8.4ubuntu0.1"
+    },
+    {
+      "name": "libmspack0t64:amd64",
+      "architecture": "amd64",
+      "before": "0.11-1.1build1",
+      "after": "0.11-1.1ubuntu0.24.04.1"
+    },
+    {
+      "name": "libpcre2-16-0:amd64",
+      "architecture": "amd64",
+      "before": "10.42-4ubuntu2.1",
+      "after": "10.42-4ubuntu2.2"
+    },
+    {
+      "name": "libpcre2-32-0:amd64",
+      "architecture": "amd64",
+      "before": "10.42-4ubuntu2.1",
+      "after": "10.42-4ubuntu2.2"
+    },
+    {
+      "name": "libpcre2-8-0:amd64",
+      "architecture": "amd64",
+      "before": "10.42-4ubuntu2.1",
+      "after": "10.42-4ubuntu2.2"
+    },
+    {
+      "name": "libpcre2-dev:amd64",
+      "architecture": "amd64",
+      "before": "10.42-4ubuntu2.1",
+      "after": "10.42-4ubuntu2.2"
+    },
+    {
+      "name": "libpcre2-posix3:amd64",
+      "architecture": "amd64",
+      "before": "10.42-4ubuntu2.1",
+      "after": "10.42-4ubuntu2.2"
+    },
+    {
+      "name": "libsnmp-base",
+      "architecture": "all",
+      "before": "5.9.4+dfsg-1.1ubuntu3.2",
+      "after": "5.9.4+dfsg-1.1ubuntu3.3"
+    },
+    {
+      "name": "libsnmp40t64:amd64",
+      "architecture": "amd64",
+      "before": "5.9.4+dfsg-1.1ubuntu3.2",
+      "after": "5.9.4+dfsg-1.1ubuntu3.3"
+    },
+    {
+      "name": "linux-cloud-tools-common",
+      "architecture": "all",
+      "before": "6.8.0-147.147",
+      "after": "6.8.0-149.149"
+    },
+    {
+      "name": "linux-libc-dev:amd64",
+      "architecture": "amd64",
+      "before": "6.8.0-147.147",
+      "after": "6.8.0-149.149"
+    },
+    {
+      "name": "linux-tools-common",
+      "architecture": "all",
+      "before": "6.8.0-147.147",
+      "after": "6.8.0-149.149"
+    },
+    {
+      "name": "microsoft-edge-stable",
+      "architecture": "amd64",
+      "before": "156.0.4314.58-1",
+      "after": "157.0.4341.46-1"
+    },
+    {
+      "name": "powershell",
+      "architecture": "amd64",
+      "before": "7.6.9-1.deb",
+      "after": "7.6.10-1.deb"
+    },
+    {
+      "name": "python3-pyasn1",
+      "architecture": "all",
+      "before": "0.4.8-4ubuntu0.3",
+      "after": "0.4.8-4ubuntu0.4"
+    },
+    {
+      "name": "python3-twisted",
+      "architecture": "all",
+      "before": "24.3.0-1ubuntu0.2",
+      "after": "24.3.0-1ubuntu0.3"
+    },
+    {
+      "name": "snapd",
+      "architecture": "amd64",
+      "before": "2.77.1+ubuntu24.04",
+      "after": "2.78+ubuntu24.04"
+    },
+    {
+      "name": "snmp",
+      "architecture": "amd64",
+      "before": "5.9.4+dfsg-1.1ubuntu3.2",
+      "after": "5.9.4+dfsg-1.1ubuntu3.3"
+    },
+    {
+      "name": "temurin-11-jdk",
+      "architecture": "amd64",
+      "before": "11.0.32.1.0+1-0",
+      "after": "11.0.33.0.0+10-0"
+    },
+    {
+      "name": "temurin-8-jdk",
+      "architecture": "amd64",
+      "before": "8.0.504.0.0+1-0",
+      "after": "8.0.512.0.0+9-0"
+    }
+  ],
+  "wholeImageEquivalenceProven": false,
+  "livePolicy": "selected core PROFILES acceptedImages exact list; excluded native evidence JSON is not an admission reader",
+  "noSourceEditOrRetry": true,
+  "artifact": {
+    "id": 13975089108,
+    "bytes": 48720,
+    "sha256": "4ff31c9207c79e4f3e108e88446958ee9f5a5ede4a213f8f61c0189a3092cf86",
+    "initialLiveApiDigestMatched": true,
+    "currentLookup": "404-after-parent-rerun; local authenticated bytes retained"
+  },
+  "primaryLog": {
+    "bytes": 89627,
+    "sha256": "dd3b9c05e10302bdfca62b0358bf7489bcb85907804a7318293d75f2970e059e"
+  }
+}

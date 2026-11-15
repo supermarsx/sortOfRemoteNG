@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-hosted-provision",
+  "target": "x86_64-unknown-linux-gnu",
+  "completed": true,
+  "publicationAllowed": false,
+  "engineBuildAttempted": false,
+  "stages": [
+    {
+      "stage": "install-linux-dependencies",
+      "state": "completed"
+    },
+    {
+      "stage": "install-linux-supplemental-packages",
+      "state": "completed"
+    },
+    {
+      "stage": "installed-packages",
+      "state": "completed"
+    }
+  ],
+  "download": {
+    "size": 30425,
+    "sha256": "a71e5ed8e3cbcaf87b255ff124c424cda73b48bcb3fd6a4d44bed2de42c68f19"
+  },
+  "blockers": [],
+  "reviewStatus": "unreviewed-post-provision-observations"
+}

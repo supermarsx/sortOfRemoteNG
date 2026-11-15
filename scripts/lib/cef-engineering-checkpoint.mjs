@@ -102,12 +102,11 @@ const PROFILES = Object.freeze({
   }),
   "aarch64-unknown-linux-gnu": Object.freeze({
     target: "aarch64-unknown-linux-gnu",
-    // Exact hosted images whose build-relevant contents were reviewed as equivalent (evidence:
-    // native/cef-runner-images/linux-arm-accepted-images.json); the first is the runner map's pin.
-    acceptedImages: Object.freeze(["20261026.354.1", "20261101.360.1"]),
-    source: "8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb",
+    // Fresh canonical370 host only; no equivalence or old checkpoint reuse.
+    acceptedImages: Object.freeze(["20261111.370.1"]),
+    source: "5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e",
     inputs:
-      "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1",
+      "native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1",
     platform: "linux",
     architecture: "x64",
     runner: "ubuntu-24.04",
@@ -133,7 +132,7 @@ export function checkpointCompileArguments(target, args) {
   const p = checkpointProfile(target);
   const targets =
     p.platform === "linux"
-      ? ["cef", "chrome_sandbox"]
+      ? ["libcef", "chrome_sandbox"]
       : ["cefclient", "cef_sandbox"];
   if (
     !Array.isArray(args) ||
@@ -1035,6 +1034,8 @@ export function validateCompile(value) {
   const pids = new Set();
   const nativeIdentity =
     value.observed[0]?.start?.startsWith("darwin-v1:") === true;
+  const linuxIdentity =
+    value.observed[0]?.start?.startsWith("linux-v1:") === true;
   for (const row of value.observed) {
     shape(row, ["pid", "start"]);
     assert(
@@ -1042,7 +1043,9 @@ export function validateCompile(value) {
         !pids.has(row.pid) &&
         (nativeIdentity
           ? /^darwin-v1:[1-9][0-9]{0,11}:(?:0|[1-9][0-9]{0,5})$/
-          : /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/
+          : linuxIdentity
+            ? LINUX_START_ID
+            : /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/
         ).test(row.start),
       "Invalid observed process",
     );
@@ -1156,6 +1159,7 @@ const CHECKPOINT_CODES = new Set([
   "EIO",
   "ETIMEDOUT",
   "GRAPH_BOUND",
+  "COMPILER_EXIT_NONZERO",
 ]);
 export function checkpointLog(log, line) {
   try {
@@ -2744,6 +2748,17 @@ const compileMonitorCodes = new Set([
   "PS_ROWS_SYNTAX",
   "PS_ROWS_IDENTITY",
   "PS_ROWS_COUNT",
+  "PROC_READ",
+  "PROC_FD_BOUND",
+  "PROC_FILE_IDENTITY",
+  "PROC_READ_BOUND",
+  "PROC_ROWS_SYNTAX",
+  "PROC_ROWS_IDENTITY",
+  "PROC_ROOT",
+  "PROC_BOOT_ID",
+  "PROC_ROWS_COUNT",
+  "PROC_ROW_REPLACED",
+  "PROC_CLOSE",
   "OWN_SEED_BOUND",
   "OWN_ROOT_REPLACED",
   "OWN_ACTIVE_BOUND",
@@ -3898,6 +3913,414 @@ function macCensusClient(
     },
   };
 }
+// Linux birth identity comes from the kernel, never from a wall-clock label.
+const LINUX_BOOT_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const LINUX_START_ID =
+  /^linux-v1:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{16}$/;
+export function linuxProcessRow(text, pid, bootId) {
+  compileMonitorGuard(
+    typeof text === "string" &&
+      text.length <= 8192 &&
+      Buffer.byteLength(text) <= 8192 &&
+      typeof bootId === "string" &&
+      bootId.length === 36 &&
+      Number.isSafeInteger(pid) &&
+      pid > 0 &&
+      pid <= 2147483647 &&
+      LINUX_BOOT_ID.test(bootId),
+    "Malformed kernel process identity",
+    "PROC_ROWS_IDENTITY",
+  );
+  const head = /^([1-9][0-9]{0,9}) \(/.exec(text),
+    end = text.lastIndexOf(")");
+  compileMonitorGuard(
+    head &&
+      Number(head[1]) === pid &&
+      end >= head[0].length &&
+      text[end + 1] === " ",
+    "Malformed kernel process record",
+    "PROC_ROWS_SYNTAX",
+  );
+  const fields = text
+    .slice(end + 2)
+    .trim()
+    .split(/\s+/);
+  compileMonitorGuard(
+    fields.length >= 20 &&
+      fields.length <= 64 &&
+      /^[A-Za-z]$/.test(fields[0]) &&
+      fields.slice(1).every((x) => /^(?:0|-?[1-9][0-9]{0,19})$/.test(x)),
+    "Malformed kernel process fields",
+    "PROC_ROWS_SYNTAX",
+  );
+  const parent = Number(fields[1]),
+    ticks = BigInt(fields[19]);
+  compileMonitorGuard(
+    Number.isSafeInteger(parent) &&
+      parent >= 0 &&
+      parent <= 2147483647 &&
+      ticks >= 0n &&
+      ticks <= 18446744073709551615n,
+    "Ambiguous kernel process identity",
+    "PROC_ROWS_IDENTITY",
+  );
+  return {
+    pid,
+    parent,
+    start: `linux-v1:${bootId}:${ticks.toString(16).padStart(16, "0")}`,
+  };
+}
+async function linuxProcessSnapshot({ deadline, signal, probeJoins } = {}) {
+  const began = performance.now(),
+    end = Math.min(deadline, began + 2000);
+  let closeResolve, closeReject;
+  const joined = new Promise((resolve, reject) => {
+    closeResolve = resolve;
+    closeReject = reject;
+  });
+  joined.catch(() => {}); // The owner consumes the original rejected join during cleanup.
+  probeJoins?.add(joined);
+  return new Promise((resolve, reject) => {
+    let failed = false,
+      first,
+      settled = false,
+      chars = 0,
+      rowCount = 0,
+      timer;
+    const resources = new Map();
+    const facts = () => ({
+      snapshotElapsedMs: Math.max(0, Math.floor(performance.now() - began)),
+      snapshotChars: chars,
+      snapshotRows: rowCount,
+      snapshotExitCode: null,
+    });
+    const deny = (error) => {
+      if (!failed) {
+        failed = true;
+        first = compileMonitorRecord(error, "PROC_READ", facts());
+      }
+      if (!settled) {
+        settled = true;
+        reject(first);
+      }
+    };
+    const guard = () => {
+      if (failed) throw first;
+      compileMonitorGuard(
+        !signal?.aborted && performance.now() < end,
+        "Ownership snapshot deadline",
+        signal?.aborted ? "PS_ABORT" : "PS_DEADLINE",
+      );
+    };
+    const adopt = (value) => {
+      resources.set(value, null);
+      compileMonitorGuard(
+        resources.size <= 12,
+        "Kernel snapshot handle bound",
+        "PROC_FD_BOUND",
+      );
+      return value;
+    };
+    const close = (handle) => {
+      if (!resources.has(handle)) return Promise.resolve();
+      const old = resources.get(handle);
+      if (old) return old;
+      const work = Promise.resolve()
+        .then(() => handle.close())
+        .then(() => resources.delete(handle));
+      resources.set(handle, work);
+      return work;
+    };
+    const signature = (info, taskStat = false) =>
+      [
+        info.dev,
+        info.ino,
+        info.mode,
+        ...(taskStat ? [] : [info.uid, info.gid]),
+      ].join(":");
+    const missing = (error) => {
+      if (
+        error === null ||
+        typeof error !== "object" ||
+        utilTypes.isProxy(error)
+      )
+        return false;
+      const code = Object.getOwnPropertyDescriptor(error, "code");
+      return (
+        code &&
+        Object.hasOwn(code, "value") &&
+        ["ENOENT", "ESRCH"].includes(code.value)
+      );
+    };
+    const read = async (file, maximum) => {
+      // proc PID inode UID/GID change with dumpability, including normal exit.
+      // Birth/lineage ownership comes from two kernel PID/starttick records;
+      // descriptor identity still binds device, inode, mode, type and links.
+      // The boot file and proc mount retain their full UID/GID fences.
+      const taskStat = /^\/proc\/[1-9][0-9]{0,9}\/stat$/.test(file);
+      guard();
+      const fd = adopt(
+        await open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW),
+      );
+      let failedRead = false,
+        readPrimary,
+        value;
+      try {
+        guard();
+        const initial = await fd.stat({ bigint: true });
+        guard();
+        compileMonitorGuard(
+          initial.isFile() && !initial.isSymbolicLink() && initial.nlink === 1n,
+          "Invalid kernel record handle",
+          "PROC_FILE_IDENTITY",
+        );
+        const identity = signature(initial, taskStat),
+          data = Buffer.alloc(maximum + 1);
+        let offset = 0;
+        while (offset < data.length) {
+          guard();
+          const result = await fd.read(
+            data,
+            offset,
+            data.length - offset,
+            offset,
+          );
+          guard();
+          compileMonitorGuard(
+            Number.isInteger(result.bytesRead) &&
+              result.bytesRead >= 0 &&
+              result.bytesRead <= data.length - offset,
+            "Invalid kernel read",
+            "PROC_READ_BOUND",
+          );
+          if (result.bytesRead === 0) break;
+          offset += result.bytesRead;
+        }
+        compileMonitorGuard(
+          offset <= maximum,
+          "Kernel record bound",
+          "PROC_READ_BOUND",
+        );
+        const after = await fd.stat({ bigint: true });
+        guard();
+        const named = await lstat(file, { bigint: true });
+        guard();
+        compileMonitorGuard(
+          after.isFile() &&
+            named.isFile() &&
+            !named.isSymbolicLink() &&
+            after.nlink === 1n &&
+            named.nlink === 1n &&
+            signature(after, taskStat) === identity &&
+            signature(named, taskStat) === identity,
+          "Kernel record replaced",
+          "PROC_FILE_IDENTITY",
+        );
+        const raw = data.subarray(0, offset),
+          text = raw.toString("utf8");
+        compileMonitorGuard(
+          Buffer.from(text).equals(raw) && !text.includes("\0"),
+          "Malformed kernel record encoding",
+          "PROC_ROWS_SYNTAX",
+        );
+        value = text;
+      } catch (error) {
+        failedRead = true;
+        readPrimary = error;
+      } finally {
+        try {
+          await close(fd);
+        } catch (error) {
+          if (!failedRead || missing(readPrimary)) {
+            failedRead = true;
+            readPrimary = error;
+          }
+        }
+      }
+      if (failedRead) throw readPrimary;
+      return value;
+    };
+    const work = async () => {
+      let rows;
+      try {
+        guard();
+        const root = adopt(
+          await open(
+            "/proc",
+            fsConstants.O_RDONLY |
+              fsConstants.O_DIRECTORY |
+              fsConstants.O_NOFOLLOW,
+          ),
+        );
+        guard();
+        const rootInfo = await root.stat({ bigint: true });
+        guard();
+        compileMonitorGuard(
+          rootInfo.isDirectory(),
+          "Kernel process directory required",
+          "PROC_ROOT",
+        );
+        const rootIdentity = signature(rootInfo);
+        const rootFence = async () => {
+          guard();
+          const named = await lstat("/proc", { bigint: true });
+          guard();
+          compileMonitorGuard(
+            named.isDirectory() &&
+              !named.isSymbolicLink() &&
+              signature(named) === rootIdentity,
+            "Kernel process directory replaced",
+            "PROC_ROOT",
+          );
+        };
+        await rootFence();
+        const bootRaw = await read("/proc/sys/kernel/random/boot_id", 64);
+        const boot = bootRaw.slice(0, -1);
+        compileMonitorGuard(
+          bootRaw.length === 37 &&
+            bootRaw.endsWith("\n") &&
+            LINUX_BOOT_ID.test(boot),
+          "Invalid kernel boot identity",
+          "PROC_BOOT_ID",
+        );
+        const directory = adopt(await opendir("/proc", { bufferSize: 64 }));
+        guard();
+        const pids = [],
+          seen = new Set();
+        for (let count = 0; ; count++) {
+          guard();
+          compileMonitorGuard(
+            count < 65536,
+            "Kernel directory entry bound",
+            "PROC_ROWS_COUNT",
+          );
+          const entry = await directory.read();
+          guard();
+          if (entry === null) break;
+          if (!/^[0-9]+$/.test(entry.name)) continue;
+          const pid = Number(entry.name);
+          compileMonitorGuard(
+            /^[1-9][0-9]{0,9}$/.test(entry.name) &&
+              Number.isSafeInteger(pid) &&
+              pid <= 2147483647 &&
+              !seen.has(pid) &&
+              entry.isDirectory() &&
+              !entry.isSymbolicLink(),
+            "Ambiguous kernel process directory",
+            "PROC_ROWS_IDENTITY",
+          );
+          seen.add(pid);
+          pids.push(pid);
+          compileMonitorGuard(
+            pids.length <= 32768,
+            "Ownership process bound",
+            "PROC_ROWS_COUNT",
+          );
+        }
+        await close(directory);
+        await rootFence();
+        pids.sort((a, b) => a - b);
+        const found = new Array(pids.length);
+        let next = 0;
+        const workers = await Promise.allSettled(
+          Array.from({ length: Math.min(4, pids.length) }, async () => {
+            try {
+              for (;;) {
+                guard();
+                const index = next++;
+                if (index >= pids.length) return;
+                const pid = pids[index],
+                  file = `/proc/${pid}/stat`;
+                try {
+                  const before = linuxProcessRow(
+                    await read(file, 8192),
+                    pid,
+                    boot,
+                  );
+                  const after = linuxProcessRow(
+                    await read(file, 8192),
+                    pid,
+                    boot,
+                  );
+                  compileMonitorGuard(
+                    before.start === after.start,
+                    "Kernel process identity changed during read",
+                    "PROC_ROW_REPLACED",
+                  );
+                  found[index] = after;
+                } catch (error) {
+                  if (!missing(error)) throw error;
+                }
+              }
+            } catch (error) {
+              deny(error);
+              throw error;
+            }
+          }),
+        );
+        const failedWorker = workers.find((x) => x.status === "rejected");
+        if (failedWorker) throw failedWorker.reason;
+        guard();
+        rows = found.filter(Boolean);
+        rowCount = rows.length;
+        chars = JSON.stringify(rows).length;
+        compileMonitorGuard(
+          rowCount > 0 && rowCount <= 32768 && chars <= 4 * 1024 ** 2,
+          "Kernel snapshot bound",
+          "PROC_ROWS_COUNT",
+        );
+        const finalBoot = await read("/proc/sys/kernel/random/boot_id", 64);
+        compileMonitorGuard(
+          finalBoot === bootRaw,
+          "Kernel boot identity changed",
+          "PROC_BOOT_ID",
+        );
+        await rootFence();
+        guard();
+      } catch (error) {
+        deny(error);
+      } finally {
+        const closing = await Promise.allSettled(
+          [...resources.keys()].map(close),
+        );
+        const bad = closing.find((x) => x.status === "rejected");
+        if (bad) {
+          deny(compileMonitorRecord(bad.reason, "PROC_CLOSE", facts()));
+          closeReject(first);
+        } else {
+          closeResolve();
+          probeJoins?.delete(joined);
+        }
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+      }
+      if (!failed) {
+        try {
+          guard();
+        } catch (error) {
+          deny(error);
+        }
+      }
+      if (!settled) {
+        settled = true;
+        resolve(compileMonitorRecord(rows, "NONE", facts()));
+      }
+    };
+    const abort = () =>
+      deny(
+        compileMonitorRecord(
+          new Error("Ownership snapshot deadline"),
+          signal?.aborted ? "PS_ABORT" : "PS_DEADLINE",
+        ),
+      );
+    timer = setTimeout(abort, Math.max(1, Math.floor(end - performance.now())));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    work().catch(deny);
+  });
+}
+
 async function processSnapshot({
   deadline = performance.now() + 2000,
   signal,
@@ -3913,6 +4336,8 @@ async function processSnapshot({
     "Ownership snapshot deadline",
     signal?.aborted ? "PS_ABORT" : "PS_DEADLINE",
   );
+  if (process.platform === "linux")
+    return linuxProcessSnapshot({ deadline, signal, probeJoins });
   const began = performance.now();
   return new Promise((resolve, reject) => {
     const ps = spawn("/bin/ps", ["-axo", "pid=,ppid=,lstart="], {
@@ -4116,6 +4541,17 @@ export async function observedQuiet(records, group, options = {}) {
       options.censusSession === undefined &&
         options.censusFactory === undefined,
       "CENSUS_MIXED_IDENTITY",
+    );
+  if (process.platform === "linux")
+    compileMonitorGuard(
+      records.length > 0 &&
+        records.length <= 4096 &&
+        records.every(
+          (row) =>
+            typeof row.start === "string" && LINUX_START_ID.test(row.start),
+        ),
+      "Linux quiescence requires stable kernel identities",
+      "PROC_ROWS_IDENTITY",
     );
   const rows = await processSnapshot(options);
   // A reused foreign PID is never signalled and is not our old process.
@@ -4333,6 +4769,7 @@ export async function compileSlice(
     timedOut = false,
     monitoring = true,
     observed = [],
+    sisoWriter = null,
     timer;
   let wakeStop;
   const stopRequested = new Promise((resolve) => {
@@ -4498,12 +4935,99 @@ export async function compileSlice(
       snapshotRows: rows.length,
     };
   };
+  // Keep one creation-owned alias witness, separate from the active cleanup
+  // cohort. A naturally exited writer must not become an unobserved writer
+  // merely because observedLineage correctly retires absent descendants.
+  const observeSisoWriter = async () => {
+    if (!canonicalOut) return;
+    const file = path.join(canonicalOut, "siso.INFO");
+    const identity = await optionalLinkStat(file);
+    if (
+      !identity ||
+      !identity.isSymbolicLink() ||
+      identity.nlink !== 1n ||
+      identity.uid !== BigInt(owner.uid) ||
+      identity.uid !== outIdentity.uid
+    )
+      return;
+    let raw;
+    try {
+      raw = await readlink(file);
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw error;
+    }
+    if (
+      sisoWriter &&
+      sameLinkIdentity(identity, sisoWriter.identity) &&
+      raw === sisoWriter.raw
+    )
+      return;
+    if (
+      Buffer.byteLength(raw) > 2048 ||
+      !path.isAbsolute(raw) ||
+      !path.basename(raw).startsWith(loggerIdentity.prefix)
+    )
+      return;
+    const suffix = path.basename(raw).slice(loggerIdentity.prefix.length);
+    const match = /^(\d{8})-(\d{6})\.([1-9][0-9]*)$/.exec(suffix);
+    if (!match) return;
+    const pid = Number(match[3]);
+    const writer = observed.find((row) => row.pid === pid);
+    if (!writer) return;
+    const temporary = tmpdir();
+    if (![temporary, await realpath(temporary)].includes(path.dirname(raw)))
+      return;
+    // Re-observe after reading the alias: a cached PID or a writer that was
+    // already gone when this link appeared cannot mint this witness.
+    snapshotPending = true;
+    const rows = await processSnapshot({
+      deadline: workDeadline + COMPILE_CLEANUP_MS,
+      signal: observer.signal,
+      probeJoins,
+      censusSession,
+    });
+    snapshotSeen(rows);
+    observed = observedLineage(rows, observed);
+    if (
+      !rows.some(
+        (row) => row.pid === writer.pid && row.start === writer.start,
+      ) ||
+      !observed.some(
+        (row) => row.pid === writer.pid && row.start === writer.start,
+      )
+    )
+      return;
+    assert(
+      (await noLinks(canonicalOut)) === canonicalOut,
+      "Compile output path differs",
+    );
+    const root = await lstat(canonicalOut, { bigint: true });
+    assert(
+      ["dev", "ino", "uid", "mode"].every(
+        (key) => root[key] === outIdentity[key],
+      ),
+      "Compile output identity changed",
+    );
+    if (!sameLinkIdentity(identity, await optionalLinkStat(file))) return;
+    try {
+      if ((await readlink(file)) !== raw) return;
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw error;
+    }
+    sisoWriter = Object.freeze({
+      raw,
+      identity,
+      writer: Object.freeze({ pid: writer.pid, start: writer.start }),
+    });
+  };
   const initial = processSnapshot({
     deadline: workDeadline + COMPILE_CLEANUP_MS,
     signal: observer.signal,
     probeJoins,
     censusSession,
-  }).then((rows) => {
+  }).then(async (rows) => {
     snapshotSeen(rows);
     const root = rows.find((row) => row.pid === child.pid);
     assert(
@@ -4511,6 +5035,7 @@ export async function compileSlice(
       "Exact live child ownership required",
     );
     observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);
+    await observeSisoWriter();
     if (observeRoot !== undefined) {
       assert(
         !ownedObserverAbort.signal.aborted,
@@ -4563,6 +5088,7 @@ export async function compileSlice(
       });
       snapshotSeen(rows);
       observed = observedLineage(rows, observed);
+      await observeSisoWriter();
     }
   })();
   monitor.then(
@@ -4814,6 +5340,8 @@ export async function compileSlice(
         canonicalOut,
         outIdentity,
         observed: observed.map(({ pid, start }) => ({ pid, start })),
+        sisoWriter,
+        compilerExit: Object.freeze({ outcome, exitCode: code }),
         censusFactory,
       });
     return result;
@@ -6374,8 +6902,8 @@ export async function attestFrameworkLinks(out, { allowPending = false } = {}) {
   return { framework: "factory", targets };
 }
 
-// Observation has no admission authority and cannot replace the original
-// cleanup failure. It must precede every current Siso removal guard.
+// Observation has no admission authority. An already failed compiler retains
+// its original exit as primary when a later cleanup guard also denies sealing.
 export async function observeThenRemoveSisoLog(
   out,
   logs,
@@ -6400,20 +6928,51 @@ export async function observeThenRemoveSisoLog(
   );
   return checkpointPhase(
     "siso-log",
-    () =>
-      (dependencies.remove ?? removeQuiescentSisoLog)(out, compile, {
-        observeIdentity: (record) =>
-          checkpointLog(
-            log,
-            `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,
-          ),
-        beforeUnlink: (record) =>
-          writeFile(
-            path.join(logs, "siso-log-alias-before.json"),
-            canonical(record),
-            { flag: "wx" },
-          ),
-      }),
+    async () => {
+      try {
+        return await (dependencies.remove ?? removeQuiescentSisoLog)(
+          out,
+          compile,
+          {
+            observeIdentity: (record) =>
+              checkpointLog(
+                log,
+                `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,
+              ),
+            beforeUnlink: (record) =>
+              writeFile(
+                path.join(logs, "siso-log-alias-before.json"),
+                canonical(record),
+                { flag: "wx" },
+              ),
+          },
+        );
+      } catch (error) {
+        const original = liveCompileSlices.get(compile)?.compilerExit;
+        if (original?.outcome !== "compiler-failed") throw error;
+        let secondary = "UNCLASSIFIED";
+        try {
+          if (!utilTypes.isProxy(error) && utilTypes.isNativeError(error)) {
+            const message = Object.getOwnPropertyDescriptor(error, "message");
+            secondary = SISO_GUARD_CODES.get(message?.value) ?? secondary;
+          }
+        } catch {
+          // Optional classification must not replace the captured compiler exit.
+        }
+        checkpointLog(
+          log,
+          `[cef-engineering-checkpoint] compiler cleanup-secondary=${secondary}`,
+        );
+        const primary = new Error("Compiler failed before checkpoint cleanup", {
+          cause: error,
+        });
+        Object.defineProperties(primary, {
+          code: { value: "COMPILER_EXIT_NONZERO", enumerable: true },
+          exitCode: { value: original.exitCode, enumerable: true },
+        });
+        throw primary;
+      }
+    },
     log,
   );
 }
@@ -6429,6 +6988,8 @@ export async function removeQuiescentSisoLog(
     proof &&
       proof.canonicalOut &&
       proof.groupId === compile.groupId &&
+      proof.compilerExit.outcome === compile.outcome &&
+      proof.compilerExit.exitCode === compile.exitCode &&
       sameObservedCohort(proof.observed, compile.observed),
     "Genuine in-process compile result required",
   );
@@ -6488,8 +7049,19 @@ export async function removeQuiescentSisoLog(
   assert(path.basename(raw).startsWith(prefix), "Foreign Siso log identity");
   const suffix = path.basename(raw).slice(prefix.length),
     match = /^(\d{8})-(\d{6})\.([1-9][0-9]*)$/.exec(suffix);
+  const liveWitness = proof.sisoWriter;
+  const retainedWriter =
+    liveWitness &&
+    match &&
+    liveWitness.writer.pid === Number(match[3]) &&
+    liveWitness.raw === raw &&
+    sameLinkIdentity(liveWitness.identity, s)
+      ? liveWitness.writer
+      : null;
   assert(
-    match && proof.observed.some((row) => row.pid === Number(match[3])),
+    match &&
+      (proof.observed.some((row) => row.pid === Number(match[3])) ||
+        retainedWriter),
     "Siso log PID not observed",
   );
   const digits = match[1] + match[2];
@@ -6521,8 +7093,11 @@ export async function removeQuiescentSisoLog(
     },
   };
   await beforeUnlink(record); // Persist fixed private evidence before mutation.
+  const writers = retainedWriter
+    ? [...proof.observed, retainedWriter]
+    : proof.observed;
   assert(
-    await observedQuiet(proof.observed, proof.groupId, {
+    await observedQuiet(writers, proof.groupId, {
       censusFactory: proof.censusFactory,
     }),
     "Siso writers returned",

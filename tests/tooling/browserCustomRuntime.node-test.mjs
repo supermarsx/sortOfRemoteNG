@@ -20,6 +20,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
+import { fileURLToPath } from "node:url";
 import {
   BRIDGE_V2,
   BRIDGE_PATCH_ID,
@@ -1145,8 +1146,21 @@ for (const target of TARGETS)
       use_sysroot: true,
     });
     const args = plan.commands[1].args;
-    assert.ok(args.includes(target.includes("apple") ? "cefclient" : "cef"));
+    assert.ok(
+      args.includes(
+        target.includes("apple")
+          ? "cefclient"
+          : target === "aarch64-unknown-linux-gnu"
+            ? "libcef"
+            : "cef",
+      ),
+    );
     if (target.includes("apple")) assert.ok(!args.includes("cef"));
+    if (target === "aarch64-unknown-linux-gnu") {
+      assert.ok(!args.includes("cef"));
+      assert.deepEqual(args.slice(-2), ["libcef", "chrome_sandbox"]);
+      assert.ok(plan.commands[2].args.includes("--minimal"));
+    }
     if (target.includes("windows")) {
       assert.ok(args.includes("bootstrap"));
       assert.ok(args.includes("bootstrapc"));
@@ -1166,6 +1180,106 @@ for (const target of TARGETS)
     }
     assert.ok(!JSON.stringify(plan).includes("--no-sandbox"));
   });
+
+test("pinned CEF minimal Linux distribution excludes example executables while retaining every runtime product", async () => {
+  const fixture = fileURLToPath(
+    new URL(
+      "../fixtures/cef/minimal-sdk-upstream/make_distrib.py",
+      import.meta.url,
+    ),
+  );
+  const raw = await readFile(fixture);
+  assert.equal(
+    hash(raw),
+    "e23c65e23bc050a323838210943653c2c03fca6c59b487b60884355f7dce0555",
+  );
+  const python = process.platform === "win32" ? "python" : "python3";
+  const actual = JSON.parse(
+    execFileSync(
+      python,
+      [
+        "-I",
+        "-B",
+        "-c",
+        `
+import ast,json,posixpath,sys,types
+tree=ast.parse(open(sys.argv[1],encoding='utf8').read())
+matches=[n for n in ast.walk(tree) if isinstance(n,ast.If) and n.body and isinstance(n.body[0],ast.Assign) and isinstance(n.body[0].targets[0],ast.Name) and n.body[0].targets[0].id=='libcef_so']
+assert len(matches)==1
+body=compile(ast.fix_missing_locations(ast.Module(body=matches[0].body,type_ignores=[])),sys.argv[1],'exec')
+results={}
+for mode in ('minimal','client'):
+ copies=[]
+ scope=dict(mode=mode,options=types.SimpleNamespace(ozone=False,allowpartial=False,quiet=True),os=types.SimpleNamespace(path=posixpath),sys=sys,build_dir_debug='/build/Debug',build_dir_release='/build/Release',output_dir='/dist',include_dir='/dist/include',cef_dir='/src/cef',script_dir='/src/cef/tools',cef_paths2={'includes_linux':[],'includes_linux_capi':[]},path_exists=lambda p:True,copy_files_list=lambda source,dest,files:copies.append({'source':source,'dest':dest,'files':files}),transfer_gypi_files=lambda *args:None,transfer_files=lambda *args:None)
+ exec(body,scope)
+ results[mode]=copies
+print(json.dumps(results))
+`,
+        fixture,
+      ],
+      { encoding: "utf8", timeout: 20000, windowsHide: true },
+    ),
+  );
+  assert.deepEqual(actual.minimal, [
+    {
+      source: "/build/Release",
+      dest: "/dist/Release",
+      files: [
+        { path: "chrome_sandbox", out_path: "chrome-sandbox" },
+        { path: "libcef.so" },
+        { path: "libvk_swiftshader.so" },
+        { path: "libvulkan.so.1" },
+        { path: "v8_context_snapshot.bin" },
+        { path: "vk_swiftshader_icd.json" },
+      ],
+    },
+    {
+      source: "/build/Release",
+      dest: "/dist/Resources",
+      files: [
+        { path: "chrome_100_percent.pak" },
+        { path: "chrome_200_percent.pak" },
+        { path: "resources.pak" },
+        { path: "icudtl.dat" },
+        { path: "locales", delete: "*.info" },
+      ],
+    },
+  ]);
+  assert.equal(actual.client[0].files.at(-1).path, "cefsimple");
+  assert(!JSON.stringify(actual.minimal).includes("cefclient"));
+});
+
+test("pinned libcef dependency supplies generated headers, resources and snapshot without the aggregate sample group", async () => {
+  const raw = await readFile(
+    new URL("../fixtures/cef/minimal-sdk-upstream/BUILD.gn", import.meta.url),
+  );
+  assert.equal(
+    hash(raw),
+    "6157524c9ce3af1c9455a498945d66b67c41a3aa1146da108fc589d8407d8f79",
+  );
+  const source = raw.toString("utf8");
+  const staticBody = source.slice(
+    source.indexOf('source_set("libcef_static") {'),
+    source.indexOf("// libcef dll/framework target."),
+  );
+  for (const dependency of [
+    ":cef_make_headers",
+    "//chrome:dependencies",
+    "//chrome:packed_resources",
+    "//chrome:resources",
+    "//chrome:strings",
+    "//tools/v8_context_snapshot",
+    "//ui/gl",
+  ])
+    assert(staticBody.includes(dependency));
+  const dll = source.slice(
+    source.indexOf('shared_library("libcef") {'),
+    source.indexOf("// Executable/app targets."),
+  );
+  assert(dll.includes("deps = libcef_deps_common"));
+  assert(source.includes('libcef_deps_common = [\n  ":libcef_static",'));
+  assert(!dll.includes('":cefclient"'));
+});
 
 test("actual GN recipe rejects concatenated numeric, boolean and string assignments before any build", async (t) => {
   const data = await diskFixture(t);

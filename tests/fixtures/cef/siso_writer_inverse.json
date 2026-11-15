@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-only-exact-siso-writer-lifetime-inverse",
+  "authority": false,
+  "beforeProducer": "16bd920d7d456906a32a7871b92e3f698547c57c1f89b9999ad96246e8417236",
+  "currentProducer": "4981db200f2d77a581295a94e45cde4046268ee3e8d950ec00b73fdf7505f0b2",
+  "rows": 132,
+  "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+  "mode": "100644",
+  "before": {
+    "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+    "bytes": 257523,
+    "sha256": "7e4a8eadf5047892a3b1d6e9e66683058a53c5cfbcfc50eb80e3e0d1c9fa2b34",
+    "blob": "40e3aa83702a10d4a46eb14fbf3fa9a3caf3615e"
+  },
+  "after": {
+    "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+    "bytes": 262220,
+    "sha256": "0af9add4db00f5bfc88a288db98c705ec8225220c9c3ecda25838d6d5248fc09",
+    "blob": "04ee859650bc093a94be679652b7055e1623bdcd",
+    "mode": "100644"
+  },
+  "pairs": [
+    {
+      "previous": "  \"EIO\",\n  \"ETIMEDOUT\",\n  \"GRAPH_BOUND\",\n]);\nexport function checkpointLog(log, line) {\n  try {\n",
+      "current": "  \"EIO\",\n  \"ETIMEDOUT\",\n  \"GRAPH_BOUND\",\n  \"COMPILER_EXIT_NONZERO\",\n]);\nexport function checkpointLog(log, line) {\n  try {\n"
+    },
+    {
+      "previous": "    timedOut = false,\n    monitoring = true,\n    observed = [],\n    timer;\n  let wakeStop;\n  const stopRequested = new Promise((resolve) => {\n",
+      "current": "    timedOut = false,\n    monitoring = true,\n    observed = [],\n    sisoWriter = null,\n    timer;\n  let wakeStop;\n  const stopRequested = new Promise((resolve) => {\n"
+    },
+    {
+      "previous": "      snapshotRows: rows.length,\n    };\n  };\n  const initial = processSnapshot({\n    deadline: workDeadline + COMPILE_CLEANUP_MS,\n    signal: observer.signal,\n    probeJoins,\n    censusSession,\n  }).then((rows) => {\n    snapshotSeen(rows);\n    const root = rows.find((row) => row.pid === child.pid);\n    assert(\n",
+      "current": "      snapshotRows: rows.length,\n    };\n  };\n  // Keep one creation-owned alias witness, separate from the active cleanup\n  // cohort. A naturally exited writer must not become an unobserved writer\n  // merely because observedLineage correctly retires absent descendants.\n  const observeSisoWriter = async () => {\n    if (!canonicalOut) return;\n    const file = path.join(canonicalOut, \"siso.INFO\");\n    const identity = await optionalLinkStat(file);\n    if (\n      !identity ||\n      !identity.isSymbolicLink() ||\n      identity.nlink !== 1n ||\n      identity.uid !== BigInt(owner.uid) ||\n      identity.uid !== outIdentity.uid\n    )\n      return;\n    let raw;\n    try {\n      raw = await readlink(file);\n    } catch (error) {\n      if (error.code === \"ENOENT\") return;\n      throw error;\n    }\n    if (\n      sisoWriter &&\n      sameLinkIdentity(identity, sisoWriter.identity) &&\n      raw === sisoWriter.raw\n    )\n      return;\n    if (\n      Buffer.byteLength(raw) > 2048 ||\n      !path.isAbsolute(raw) ||\n      !path.basename(raw).startsWith(loggerIdentity.prefix)\n    )\n      return;\n    const suffix = path.basename(raw).slice(loggerIdentity.prefix.length);\n    const match = /^(\\d{8})-(\\d{6})\\.([1-9][0-9]*)$/.exec(suffix);\n    if (!match) return;\n    const pid = Number(match[3]);\n    const writer = observed.find((row) => row.pid === pid);\n    if (!writer) return;\n    const temporary = tmpdir();\n    if (![temporary, await realpath(temporary)].includes(path.dirname(raw)))\n      return;\n    // Re-observe after reading the alias: a cached PID or a writer that was\n    // already gone when this link appeared cannot mint this witness.\n    snapshotPending = true;\n    const rows = await processSnapshot({\n      deadline: workDeadline + COMPILE_CLEANUP_MS,\n      signal: observer.signal,\n      probeJoins,\n      censusSession,\n    });\n    snapshotSeen(rows);\n    observed = observedLineage(rows, observed);\n    if (\n      !rows.some(\n        (row) => row.pid === writer.pid && row.start === writer.start,\n      ) ||\n      !observed.some(\n        (row) => row.pid === writer.pid && row.start === writer.start,\n      )\n    )\n      return;\n    assert(\n      (await noLinks(canonicalOut)) === canonicalOut,\n      \"Compile output path differs\",\n    );\n    const root = await lstat(canonicalOut, { bigint: true });\n    assert(\n      [\"dev\", \"ino\", \"uid\", \"mode\"].every(\n        (key) => root[key] === outIdentity[key],\n      ),\n      \"Compile output identity changed\",\n    );\n    if (!sameLinkIdentity(identity, await optionalLinkStat(file))) return;\n    try {\n      if ((await readlink(file)) !== raw) return;\n    } catch (error) {\n      if (error.code === \"ENOENT\") return;\n      throw error;\n    }\n    sisoWriter = Object.freeze({\n      raw,\n      identity,\n      writer: Object.freeze({ pid: writer.pid, start: writer.start }),\n    });\n  };\n  const initial = processSnapshot({\n    deadline: workDeadline + COMPILE_CLEANUP_MS,\n    signal: observer.signal,\n    probeJoins,\n    censusSession,\n  }).then(async (rows) => {\n    snapshotSeen(rows);\n    const root = rows.find((row) => row.pid === child.pid);\n    assert(\n"
+    },
+    {
+      "previous": "      \"Exact live child ownership required\",\n    );\n    observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);\n    if (observeRoot !== undefined) {\n      assert(\n        !ownedObserverAbort.signal.aborted,\n",
+      "current": "      \"Exact live child ownership required\",\n    );\n    observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);\n    await observeSisoWriter();\n    if (observeRoot !== undefined) {\n      assert(\n        !ownedObserverAbort.signal.aborted,\n"
+    },
+    {
+      "previous": "      });\n      snapshotSeen(rows);\n      observed = observedLineage(rows, observed);\n    }\n  })();\n  monitor.then(\n",
+      "current": "      });\n      snapshotSeen(rows);\n      observed = observedLineage(rows, observed);\n      await observeSisoWriter();\n    }\n  })();\n  monitor.then(\n"
+    },
+    {
+      "previous": "        canonicalOut,\n        outIdentity,\n        observed: observed.map(({ pid, start }) => ({ pid, start })),\n        censusFactory,\n      });\n    return result;\n",
+      "current": "        canonicalOut,\n        outIdentity,\n        observed: observed.map(({ pid, start }) => ({ pid, start })),\n        sisoWriter,\n        compilerExit: Object.freeze({ outcome, exitCode: code }),\n        censusFactory,\n      });\n    return result;\n"
+    },
+    {
+      "previous": "  return { framework: \"factory\", targets };\n}\n\n// Observation has no admission authority and cannot replace the original\n// cleanup failure. It must precede every current Siso removal guard.\nexport async function observeThenRemoveSisoLog(\n  out,\n  logs,\n",
+      "current": "  return { framework: \"factory\", targets };\n}\n\n// Observation has no admission authority. An already failed compiler retains\n// its original exit as primary when a later cleanup guard also denies sealing.\nexport async function observeThenRemoveSisoLog(\n  out,\n  logs,\n"
+    },
+    {
+      "previous": "  );\n  return checkpointPhase(\n    \"siso-log\",\n    () =>\n      (dependencies.remove ?? removeQuiescentSisoLog)(out, compile, {\n        observeIdentity: (record) =>\n          checkpointLog(\n            log,\n            `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,\n          ),\n        beforeUnlink: (record) =>\n          writeFile(\n            path.join(logs, \"siso-log-alias-before.json\"),\n            canonical(record),\n            { flag: \"wx\" },\n          ),\n      }),\n    log,\n  );\n}\n",
+      "current": "  );\n  return checkpointPhase(\n    \"siso-log\",\n    async () => {\n      try {\n        return await (dependencies.remove ?? removeQuiescentSisoLog)(\n          out,\n          compile,\n          {\n            observeIdentity: (record) =>\n              checkpointLog(\n                log,\n                `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,\n              ),\n            beforeUnlink: (record) =>\n              writeFile(\n                path.join(logs, \"siso-log-alias-before.json\"),\n                canonical(record),\n                { flag: \"wx\" },\n              ),\n          },\n        );\n      } catch (error) {\n        const original = liveCompileSlices.get(compile)?.compilerExit;\n        if (original?.outcome !== \"compiler-failed\") throw error;\n        let secondary = \"UNCLASSIFIED\";\n        try {\n          if (!utilTypes.isProxy(error) && utilTypes.isNativeError(error)) {\n            const message = Object.getOwnPropertyDescriptor(error, \"message\");\n            secondary = SISO_GUARD_CODES.get(message?.value) ?? secondary;\n          }\n        } catch {\n          // Optional classification must not replace the captured compiler exit.\n        }\n        checkpointLog(\n          log,\n          `[cef-engineering-checkpoint] compiler cleanup-secondary=${secondary}`,\n        );\n        const primary = new Error(\"Compiler failed before checkpoint cleanup\", {\n          cause: error,\n        });\n        Object.defineProperties(primary, {\n          code: { value: \"COMPILER_EXIT_NONZERO\", enumerable: true },\n          exitCode: { value: original.exitCode, enumerable: true },\n        });\n        throw primary;\n      }\n    },\n    log,\n  );\n}\n"
+    },
+    {
+      "previous": "    proof &&\n      proof.canonicalOut &&\n      proof.groupId === compile.groupId &&\n      sameObservedCohort(proof.observed, compile.observed),\n    \"Genuine in-process compile result required\",\n  );\n",
+      "current": "    proof &&\n      proof.canonicalOut &&\n      proof.groupId === compile.groupId &&\n      proof.compilerExit.outcome === compile.outcome &&\n      proof.compilerExit.exitCode === compile.exitCode &&\n      sameObservedCohort(proof.observed, compile.observed),\n    \"Genuine in-process compile result required\",\n  );\n"
+    },
+    {
+      "previous": "  assert(path.basename(raw).startsWith(prefix), \"Foreign Siso log identity\");\n  const suffix = path.basename(raw).slice(prefix.length),\n    match = /^(\\d{8})-(\\d{6})\\.([1-9][0-9]*)$/.exec(suffix);\n  assert(\n    match && proof.observed.some((row) => row.pid === Number(match[3])),\n    \"Siso log PID not observed\",\n  );\n  const digits = match[1] + match[2];\n",
+      "current": "  assert(path.basename(raw).startsWith(prefix), \"Foreign Siso log identity\");\n  const suffix = path.basename(raw).slice(prefix.length),\n    match = /^(\\d{8})-(\\d{6})\\.([1-9][0-9]*)$/.exec(suffix);\n  const liveWitness = proof.sisoWriter;\n  const retainedWriter =\n    liveWitness &&\n    match &&\n    liveWitness.writer.pid === Number(match[3]) &&\n    liveWitness.raw === raw &&\n    sameLinkIdentity(liveWitness.identity, s)\n      ? liveWitness.writer\n      : null;\n  assert(\n    match &&\n      (proof.observed.some((row) => row.pid === Number(match[3])) ||\n        retainedWriter),\n    \"Siso log PID not observed\",\n  );\n  const digits = match[1] + match[2];\n"
+    },
+    {
+      "previous": "    },\n  };\n  await beforeUnlink(record); // Persist fixed private evidence before mutation.\n  assert(\n    await observedQuiet(proof.observed, proof.groupId, {\n      censusFactory: proof.censusFactory,\n    }),\n    \"Siso writers returned\",\n",
+      "current": "    },\n  };\n  await beforeUnlink(record); // Persist fixed private evidence before mutation.\n  const writers = retainedWriter\n    ? [...proof.observed, retainedWriter]\n    : proof.observed;\n  assert(\n    await observedQuiet(writers, proof.groupId, {\n      censusFactory: proof.censusFactory,\n    }),\n    \"Siso writers returned\",\n"
+    }
+  ]
+}

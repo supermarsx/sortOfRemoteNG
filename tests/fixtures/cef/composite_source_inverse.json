@@ -1,0 +1,3195 @@
+{
+  "kind": "closed-composite-historical-subjects",
+  "authority": false,
+  "compositeMacNativeSDKQualified": false,
+  "launchScope": "Linux370 only; reviewed immutable Mac jobs use their own source",
+  "currentProducer": "58aeb848f678dc90e3b9e82c3e4c8992de0d1ebff8a583c8e87eac0d01c973ea",
+  "currentRows": [
+    {
+      "path": ".github/workflows/cef-engineering-checkpoint.yml",
+      "mode": "100644",
+      "sha": "3d4b9cd3232bfc77cb30149dd3076375dd295983"
+    },
+    {
+      "path": ".node-version",
+      "mode": "100644",
+      "sha": "60ade1ae01e833a5c291c47883bf26fb031f7727"
+    },
+    {
+      "path": "native/cef-hosted-recipe.json",
+      "mode": "100644",
+      "sha": "77ba6488a6f092856b705c477e7cf4084ff5390f"
+    },
+    {
+      "path": "scripts/automation-repository.mjs",
+      "mode": "100644",
+      "sha": "22e31d24ab9b4731b1e5ca5b22878d3084d6f248"
+    },
+    {
+      "path": "scripts/browser-app-build.mjs",
+      "mode": "100644",
+      "sha": "1522b41ad8788f2f9188ef488e49eac26c429659"
+    },
+    {
+      "path": "scripts/browser-client-network-probe.mjs",
+      "mode": "100644",
+      "sha": "a5c0a5a32171b833094a6a133c8fbd4b3bc8478e"
+    },
+    {
+      "path": "scripts/browser-live.mjs",
+      "mode": "100644",
+      "sha": "23c88fcf52529959b0a4f0ca32cf2a1e0cf53f9d"
+    },
+    {
+      "path": "scripts/browser-readiness.mjs",
+      "mode": "100644",
+      "sha": "aa7b6a2e159312a3f500bd558647769e1d717b45"
+    },
+    {
+      "path": "scripts/browser-runtime-native-ci.mjs",
+      "mode": "100644",
+      "sha": "5e0a21bd339d1101e0f323bccc1dc475b696fdc0"
+    },
+    {
+      "path": "scripts/browser-runtime-package.mjs",
+      "mode": "100644",
+      "sha": "988ac8db981ffc8f9e05c1fc3cd9b193e4af0c8b"
+    },
+    {
+      "path": "scripts/capture-login-page.mjs",
+      "mode": "100644",
+      "sha": "30e1507084269bab38f6115107b45a225ef4b313"
+    },
+    {
+      "path": "scripts/catalog-icon-contact-sheet.mjs",
+      "mode": "100644",
+      "sha": "cc161259f4ff6293493e21fff4eacf2608613cf9"
+    },
+    {
+      "path": "scripts/cef-browser-acceptance.mjs",
+      "mode": "100644",
+      "sha": "f2785f6e944c6952d371106b80f7d6887152ecc0"
+    },
+    {
+      "path": "scripts/cef-custom-artifact-inventory.mjs",
+      "mode": "100644",
+      "sha": "5720498c509aa86d2b4d22b0e96eac6fb17d3ed9"
+    },
+    {
+      "path": "scripts/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "sha": "915139c7d545668bffe1003261a2379e09e067e3"
+    },
+    {
+      "path": "scripts/cef-hosted-bootstrap.mjs",
+      "mode": "100644",
+      "sha": "59ba20636a8c82e10016b660fbe5e2be748210cf"
+    },
+    {
+      "path": "scripts/cef-hosted-capacity.mjs",
+      "mode": "100644",
+      "sha": "2fb3903eb9bf9f582ccf1fd63cf7fbb5c558890b"
+    },
+    {
+      "path": "scripts/cef-hosted-provision.mjs",
+      "mode": "100644",
+      "sha": "9fb323d215e1d246f537685b360d3a665f87f748"
+    },
+    {
+      "path": "scripts/cef-linux-package-fixture.mjs",
+      "mode": "100644",
+      "sha": "9d5d5222b00a86d7e60c82da7a1d8eafd29e4376"
+    },
+    {
+      "path": "scripts/cef-owned-sdk-handoff.mjs",
+      "mode": "100644",
+      "sha": "fae71b6b76c4a1ba4631809d1e5b10a3a40c5c81"
+    },
+    {
+      "path": "scripts/cef-owned-sdk-import.mjs",
+      "mode": "100644",
+      "sha": "aa52f99b48d931a5735c4c03976b3f2cf1e4a4f7"
+    },
+    {
+      "path": "scripts/cef-owned-sdk-publish.mjs",
+      "mode": "100644",
+      "sha": "8549327fb78fc51fe9c0ef32217ac6c232b5b9f6"
+    },
+    {
+      "path": "scripts/cef-patched-runtime.mjs",
+      "mode": "100644",
+      "sha": "616e5cf87ec9a0325d905738749f185bc36515db"
+    },
+    {
+      "path": "scripts/cef-runtime-acceptance-ci.mjs",
+      "mode": "100644",
+      "sha": "70e03a09eabacb4f39a87883fff3910f947b0de9"
+    },
+    {
+      "path": "scripts/cef-runtime-ci.mjs",
+      "mode": "100644",
+      "sha": "b723ed5e56a2f5d8c4122bf7193294cc09653525"
+    },
+    {
+      "path": "scripts/cef-runtime-fetch.mjs",
+      "mode": "100644",
+      "sha": "0046ae7e7674b0beefc2f25a48904d0d9098c251"
+    },
+    {
+      "path": "scripts/ci/analyze-native-dependency-graph.mjs",
+      "mode": "100644",
+      "sha": "20b12544401b69495103a6864f5ce1cecfdf5133"
+    },
+    {
+      "path": "scripts/ci/audit_filter.py",
+      "mode": "100644",
+      "sha": "579893859c71eba218b8d057c79050f32e608ca2"
+    },
+    {
+      "path": "scripts/ci/check-backend-coverage.mjs",
+      "mode": "100644",
+      "sha": "07c99ba1ce84ea3d980b877c5ba27705e0b09823"
+    },
+    {
+      "path": "scripts/ci/check-cargo-update-candidate.mjs",
+      "mode": "100644",
+      "sha": "1814e3307a87de501dff1c66b25996b87dd477be"
+    },
+    {
+      "path": "scripts/ci/check-docs-links.mjs",
+      "mode": "100644",
+      "sha": "c9d2022462126973263c328c1cd1fa2c9f3554a5"
+    },
+    {
+      "path": "scripts/ci/check-frontend-cold-bundle.mjs",
+      "mode": "100644",
+      "sha": "1226702dbaf18afeed1a8f3936c4880de017bcd2"
+    },
+    {
+      "path": "scripts/ci/check-gif-worker-export.mjs",
+      "mode": "100644",
+      "sha": "8f002d7e4478a09a09c7fe523d490d715e144266"
+    },
+    {
+      "path": "scripts/ci/check-js-lock-parity.mjs",
+      "mode": "100644",
+      "sha": "a7f2b69d8b804f8eb6672bcbdfa095b73b607695"
+    },
+    {
+      "path": "scripts/ci/check-npm-audit.mjs",
+      "mode": "100644",
+      "sha": "e6a8a9ad733c94b8e29f0b0c13d4a5e60e7ad966"
+    },
+    {
+      "path": "scripts/ci/check-release-runtime-catalog.mjs",
+      "mode": "100644",
+      "sha": "c54b69df1bd39591c6ddfdd135aa49864bb90da2"
+    },
+    {
+      "path": "scripts/ci/check-release-version-floor.mjs",
+      "mode": "100644",
+      "sha": "d830e025f60687fa5b1d3a6b6736eebfcac2c540"
+    },
+    {
+      "path": "scripts/ci/diagnose-macos-cef-tests.mjs",
+      "mode": "100644",
+      "sha": "6c478768f06ac8ed663ce800a01c3cfaf2d4a042"
+    },
+    {
+      "path": "scripts/ci/e2e-http-fixtures.mjs",
+      "mode": "100644",
+      "sha": "71f74176d81fb9e1f077bc29d55f305e58b47420"
+    },
+    {
+      "path": "scripts/ci/e2e-npm-fixture.mjs",
+      "mode": "100644",
+      "sha": "3638c1a6f3dcc889b58d015e9fad16f60e758f78"
+    },
+    {
+      "path": "scripts/ci/e2e-portainer-fixture.mjs",
+      "mode": "100644",
+      "sha": "e2fbf0b02f37f4d3f05969b16390e59a3667c6e8"
+    },
+    {
+      "path": "scripts/ci/lib/docs-search-validation.mjs",
+      "mode": "100644",
+      "sha": "c6898f29664586368c9c6cc9277b8d7f4b437dab"
+    },
+    {
+      "path": "scripts/ci/resolve-release-version.mjs",
+      "mode": "100644",
+      "sha": "48b32403c8527f8d422991c420e06defc1d6e696"
+    },
+    {
+      "path": "scripts/ci/run-release-native-build.mjs",
+      "mode": "100644",
+      "sha": "d6c02b3490303d27961d1a940883705f99a1d592"
+    },
+    {
+      "path": "scripts/ci/semver.mjs",
+      "mode": "100644",
+      "sha": "a42ba21a31d4d82efd6f1f9a2bfa065a09654f63"
+    },
+    {
+      "path": "scripts/ci/summarize-native-build-timings.mjs",
+      "mode": "100644",
+      "sha": "658b9b5e4bbaa28ea318c7e2229d91cfdf9e0dae"
+    },
+    {
+      "path": "scripts/ci/update-npm-compatible.mjs",
+      "mode": "100644",
+      "sha": "9ff38882ad2c68ba94f0fb398aeb3e1ea733810c"
+    },
+    {
+      "path": "scripts/ci/validate-release-artifacts.mjs",
+      "mode": "100644",
+      "sha": "abcc7f30998e186f362c779998301941e5af10f7"
+    },
+    {
+      "path": "scripts/ci/validate-updater-feed.mjs",
+      "mode": "100644",
+      "sha": "264b762f10a6a54748e2a05bcc9974dc4cbb91e4"
+    },
+    {
+      "path": "scripts/ci/verify-published-release-assets.mjs",
+      "mode": "100644",
+      "sha": "9667feb690df30492faea80da379d5a6a80f182b"
+    },
+    {
+      "path": "scripts/ci/verify-release-snapshot.mjs",
+      "mode": "100644",
+      "sha": "d702ef59b0b71e18437f186e98c3e24b5191a676"
+    },
+    {
+      "path": "scripts/ci/wait-for-release-readiness.mjs",
+      "mode": "100644",
+      "sha": "c0e465f7e1f4e2047d36b9bce9a53ce730ea7623"
+    },
+    {
+      "path": "scripts/crypto/generate-database-eax-vectors.ps1",
+      "mode": "100644",
+      "sha": "bea75fda8491a0df11a1fa76aa062a5eea7b8dbe"
+    },
+    {
+      "path": "scripts/database-ui-capture.mjs",
+      "mode": "100644",
+      "sha": "6db3eb880621234ff1d78fa41285b726f0e75ba4"
+    },
+    {
+      "path": "scripts/dev-port.mjs",
+      "mode": "100644",
+      "sha": "755df5ea02747e526b3ecc92e8f574c29dfeb04e"
+    },
+    {
+      "path": "scripts/dev-server.mjs",
+      "mode": "100644",
+      "sha": "ced531d4c9db02fbbf47c0280080da28356ee80b"
+    },
+    {
+      "path": "scripts/docs-app-capture.mjs",
+      "mode": "100644",
+      "sha": "b23555fe7903dfcb973e5d9cf31140f323012d8d"
+    },
+    {
+      "path": "scripts/docs-visual-capture.mjs",
+      "mode": "100644",
+      "sha": "38b182cc3bafbaf5804e47c56ca7e1b1734e258c"
+    },
+    {
+      "path": "scripts/e2e-build.mjs",
+      "mode": "100644",
+      "sha": "553db2a542fb5e57fb20a4a0d0e7003524cabbf0"
+    },
+    {
+      "path": "scripts/e2e-isolation-selftest.mjs",
+      "mode": "100644",
+      "sha": "348838a05d8fe3d4fd733c2a450a3fbb4de9fea0"
+    },
+    {
+      "path": "scripts/folder-icon-contact-sheet.mjs",
+      "mode": "100644",
+      "sha": "dc474484165bba46ec7f275c6209fc0f18610a69"
+    },
+    {
+      "path": "scripts/format-changed.mjs",
+      "mode": "100644",
+      "sha": "cd1780bd4f2e5885d490ddd3c9e79acc05d85012"
+    },
+    {
+      "path": "scripts/generate-command-inventory.mjs",
+      "mode": "100644",
+      "sha": "3ef1b0f7d2185004f943d1b7892f1017bdecb253"
+    },
+    {
+      "path": "scripts/generate-native-login-catalog.mjs",
+      "mode": "100644",
+      "sha": "68d09236558e77dc1798bd644abe46dfa9bc928b"
+    },
+    {
+      "path": "scripts/i18n-residual.mjs",
+      "mode": "100644",
+      "sha": "00d1e401e7a7fc5d27268b7236e08690f1e6c31d"
+    },
+    {
+      "path": "scripts/icon-ui-capture.mjs",
+      "mode": "100644",
+      "sha": "9b421f1da96f4c8223f3f7b088204ad494fbf578"
+    },
+    {
+      "path": "scripts/lib/browser-build-route.mjs",
+      "mode": "100644",
+      "sha": "3fb21b9fcd4d5e36deb6c206c3c2cf0d2be8c82a"
+    },
+    {
+      "path": "scripts/lib/browser-client-imports.mjs",
+      "mode": "100644",
+      "sha": "12e5fe39389938587468849ac095b6c6493f8da0"
+    },
+    {
+      "path": "scripts/lib/browser-custom-runtime.mjs",
+      "mode": "100644",
+      "sha": "63070604a0146bdd1669a2fc04fae1d8db693e74"
+    },
+    {
+      "path": "scripts/lib/browser-dev-sdk-cache.mjs",
+      "mode": "100644",
+      "sha": "806f4feb6a61e84c0a4426d7f1df51396bbe9f4b"
+    },
+    {
+      "path": "scripts/lib/browser-installer-bundles.mjs",
+      "mode": "100644",
+      "sha": "57279a8dabf84605a9783f388210eed4554827e9"
+    },
+    {
+      "path": "scripts/lib/browser-local-runtime.mjs",
+      "mode": "100644",
+      "sha": "fe6fba4493b9265823a71a0a6445ad41cdccd708"
+    },
+    {
+      "path": "scripts/lib/browser-runtime-bootstrap.mjs",
+      "mode": "100644",
+      "sha": "0db85b14d4266af86c04eb27dab97359a416c879"
+    },
+    {
+      "path": "scripts/lib/browser-runtime-release.mjs",
+      "mode": "100644",
+      "sha": "4f5591f6400a1b84cdd2b4c07108ed9ccb59e4a9"
+    },
+    {
+      "path": "scripts/lib/browser-sandbox-access.mjs",
+      "mode": "100644",
+      "sha": "eb3a022a7a3c0ad0084f595a654929a4101983bc"
+    },
+    {
+      "path": "scripts/lib/cef-checkpoint-archive.py",
+      "mode": "100644",
+      "sha": "8b5b02ea8734fbee6f8ae5efcd59688c7cec294f"
+    },
+    {
+      "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+      "mode": "100644",
+      "sha": "c75b9ed2b4ff07994cc3d35092bc29203912792a"
+    },
+    {
+      "path": "scripts/lib/cef-linux-producer-migration.mjs",
+      "mode": "100644",
+      "sha": "4d216379902e002fe80cf99e07858b622def5bf8"
+    },
+    {
+      "path": "scripts/lib/cef-linux-sidecar-retirement.py",
+      "mode": "100644",
+      "sha": "8041a411ff3ae9ce3c8b55ddb1cfe0eb3a4b4471"
+    },
+    {
+      "path": "scripts/lib/cef-mac-gcs-normalize.py",
+      "mode": "100644",
+      "sha": "e6a2834029ad5b819a47586d313bae9e6f0ff12d"
+    },
+    {
+      "path": "scripts/lib/cef-mac-process-census.py",
+      "mode": "100644",
+      "sha": "78ac12924376d028d4b3514ad6a408eedd11e4e6"
+    },
+    {
+      "path": "scripts/lib/cef-mac-sdk-inventory.mjs",
+      "mode": "100644",
+      "sha": "8e3e081cfe40fee9ff865b5699b47bfc9a6184ef"
+    },
+    {
+      "path": "scripts/lib/cef-mac-source-metadata.mjs",
+      "mode": "100644",
+      "sha": "0089d245de4a4624139afcb678ab55c9c04f7947"
+    },
+    {
+      "path": "scripts/lib/cef-native-crash-summary.mjs",
+      "mode": "100644",
+      "sha": "4ded0956ee5732222a22c96df40bc40dbee62a30"
+    },
+    {
+      "path": "scripts/lib/cef-owned-sdk-handoff.mjs",
+      "mode": "100644",
+      "sha": "3fb062fc081d9a974f841f22a28068059a2a8550"
+    },
+    {
+      "path": "scripts/lib/cef-owned-sdk-import.mjs",
+      "mode": "100644",
+      "sha": "369c93b265d65416934865d8a5f0b9c1f62e22d7"
+    },
+    {
+      "path": "scripts/lib/cef-owned-sdk-publish.mjs",
+      "mode": "100644",
+      "sha": "a53f9d122bf11263745de9f741a13dbbe51aba3c"
+    },
+    {
+      "path": "scripts/lib/cef-storage-acceptance.mjs",
+      "mode": "100644",
+      "sha": "9580b3fb662eb0b26e9bb2bf897d7c037c4c743c"
+    },
+    {
+      "path": "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+      "mode": "100644",
+      "sha": "25527fc6303adf9638de3cee72ee989da42e1066"
+    },
+    {
+      "path": "scripts/lib/command-inventory.mjs",
+      "mode": "100644",
+      "sha": "a262d43203010c6feb1e28950040ecf1564b9248"
+    },
+    {
+      "path": "scripts/lib/core-command-groups.mjs",
+      "mode": "100644",
+      "sha": "d37431b0b46f82c1183f9cc52245cb2223de89c2"
+    },
+    {
+      "path": "scripts/lib/dev-build-budget.mjs",
+      "mode": "100644",
+      "sha": "fdc4c6673227cca6d9036d9842fac9891ce193e6"
+    },
+    {
+      "path": "scripts/lib/e2e-profile-isolation.d.mts",
+      "mode": "100644",
+      "sha": "9e6c3fa95f776b5e542bba35134d493ba98de3d7"
+    },
+    {
+      "path": "scripts/lib/e2e-profile-isolation.mjs",
+      "mode": "100644",
+      "sha": "1ddca465468f9b6eb7550d5c6fa10ec1e8ea3844"
+    },
+    {
+      "path": "scripts/lib/extract-custom-runtime.py",
+      "mode": "100644",
+      "sha": "95f02a1b2467bf726b083a309177c58aa8897c0f"
+    },
+    {
+      "path": "scripts/lib/linux-package-sandbox.mjs",
+      "mode": "100644",
+      "sha": "7c42e96ed0c50eb4b5dcbfc58d3cbf097f1ddee7"
+    },
+    {
+      "path": "scripts/lib/native-child-env.mjs",
+      "mode": "100644",
+      "sha": "8c70b2dda58d7841b1fb5444f88fa25be0d08d0a"
+    },
+    {
+      "path": "scripts/lib/windows-native-crash-capture.mjs",
+      "mode": "100644",
+      "sha": "7a61eaf64f89ce5f6d824551fc541b9c8716a73b"
+    },
+    {
+      "path": "scripts/lib/windows-openssl-env.mjs",
+      "mode": "100644",
+      "sha": "0be899cc5030ef456be2e52f0d29a91c1aeb21c8"
+    },
+    {
+      "path": "scripts/native-build-env.mjs",
+      "mode": "100644",
+      "sha": "9c7500a5f973afc85aa1240be166426628587226"
+    },
+    {
+      "path": "scripts/native-target.mjs",
+      "mode": "100644",
+      "sha": "adb8fdfcdaddac32a58a17ca637b67d213d2cf7a"
+    },
+    {
+      "path": "scripts/native/browser-app-plist.py",
+      "mode": "100644",
+      "sha": "37b729490bbc2d337217b17e529145756abda94b"
+    },
+    {
+      "path": "scripts/native/browser-cargo-runner.rs",
+      "mode": "100644",
+      "sha": "d1b82bdb1d8c88da48257e12dc22231983fac3be"
+    },
+    {
+      "path": "scripts/native/repair-browser-sandbox-access.ps1",
+      "mode": "100644",
+      "sha": "624444b6dbbd5b7b678429741f3040cd97c2e78c"
+    },
+    {
+      "path": "scripts/provider-icons-capture.mjs",
+      "mode": "100644",
+      "sha": "1af8438246326956c285ca721093cf4fcc8b73e8"
+    },
+    {
+      "path": "scripts/readme-screenshot-validation.mjs",
+      "mode": "100644",
+      "sha": "6ad9a56649aff470f4431a501421da2b914ce79d"
+    },
+    {
+      "path": "scripts/readme-screenshot.mjs",
+      "mode": "100644",
+      "sha": "fd113092504ee5c3440fe2fa39cbcd71ca15d810"
+    },
+    {
+      "path": "scripts/softether-e2e-down.ps1",
+      "mode": "100644",
+      "sha": "2e129e26927037109abad8996f5e71ca0da7dbe5"
+    },
+    {
+      "path": "scripts/softether-e2e-down.sh",
+      "mode": "100644",
+      "sha": "090f7e0ee6e2a4335dd1a5b77bb0e828b09ccee7"
+    },
+    {
+      "path": "scripts/sort-core-command-groups.mjs",
+      "mode": "100644",
+      "sha": "16114fc39008314fa34280bf8b6c67855cef559d"
+    },
+    {
+      "path": "scripts/spreadsheet-ui-check.mjs",
+      "mode": "100644",
+      "sha": "b7b5717eded1d9f05bc9e02f9b9a01ffa7b0e24c"
+    },
+    {
+      "path": "scripts/stage-file-viewer-host.mjs",
+      "mode": "100644",
+      "sha": "e28b78e4d2bda5e5d8e24a8bc7a336bfdee1bf81"
+    },
+    {
+      "path": "scripts/stage-openh264-runtime.mjs",
+      "mode": "100644",
+      "sha": "c529782fbb8b5915053f4ec0ff0b9954bfc216e1"
+    },
+    {
+      "path": "scripts/stage-windows-native-runtime.mjs",
+      "mode": "100644",
+      "sha": "ad986a3a438a6ab21d59957f7701cd029f8d8f58"
+    },
+    {
+      "path": "scripts/styled-english-locales.mjs",
+      "mode": "100644",
+      "sha": "a2529556eae07dc2ae6192296fcbe56cceccfd92"
+    },
+    {
+      "path": "scripts/sync-brand-icons.mjs",
+      "mode": "100644",
+      "sha": "b169695faff2b8e34340b20362e886a4b3c08b6e"
+    },
+    {
+      "path": "scripts/sync-js-deps.mjs",
+      "mode": "100644",
+      "sha": "0e0fbf1f73aa63bf8093cff34ba60ab5e9d92bd6"
+    },
+    {
+      "path": "scripts/sync-version.mjs",
+      "mode": "100644",
+      "sha": "af51e4437a6bb1d1e4e481a4a2be0ee11d3ae832"
+    },
+    {
+      "path": "scripts/tauri-dev.mjs",
+      "mode": "100644",
+      "sha": "f81ddd2150198a8362ab5510e124dba7390dce7a"
+    },
+    {
+      "path": "scripts/tauri.mjs",
+      "mode": "100644",
+      "sha": "d4d7819293430603f3c46f2b3e7c14af54777cfe"
+    },
+    {
+      "path": "scripts/test-legacy-web-compat-browser.mjs",
+      "mode": "100644",
+      "sha": "3cabbaa847327de9ac8caa4c7cecb7cf0e9832aa"
+    },
+    {
+      "path": "scripts/test-synology-login-browser.mjs",
+      "mode": "100644",
+      "sha": "0169c0728bb49f4961a34732ae72e1051a386145"
+    },
+    {
+      "path": "scripts/test-vault-ssh-inline.mjs",
+      "mode": "100644",
+      "sha": "127af7cf77c86525bc6ad561145ca78e18348dad"
+    },
+    {
+      "path": "scripts/test-web-network-browser.mjs",
+      "mode": "100644",
+      "sha": "580c5832a695bfc7f068d203d8b1ddb8eeff57cc"
+    },
+    {
+      "path": "scripts/test-website-dark-mode-browser.mjs",
+      "mode": "100644",
+      "sha": "d1b6b5138e89f2215476f57cf432b018bdd942a0"
+    },
+    {
+      "path": "scripts/test-yealink-login-browser.mjs",
+      "mode": "100644",
+      "sha": "9c26ad336cc66c956eb4ea2e3815dffdbab264e4"
+    },
+    {
+      "path": "scripts/trace-provider-icons.mjs",
+      "mode": "100644",
+      "sha": "e30f7ec547a03efbdcd448dc78a9c395721b1519"
+    },
+    {
+      "path": "scripts/trust-ui-capture.mjs",
+      "mode": "100644",
+      "sha": "062a26cdb05d692f347d28772c1613398df408b2"
+    },
+    {
+      "path": "scripts/vendor-web-darkreader.mjs",
+      "mode": "100644",
+      "sha": "19541ed4fff8d24537d059748ea0655173e67b7e"
+    },
+    {
+      "path": "scripts/versioning.mjs",
+      "mode": "100644",
+      "sha": "303feb0be3a88e30c575be88157640621322e6e5"
+    },
+    {
+      "path": "scripts/viewport-scroll-check.mjs",
+      "mode": "100644",
+      "sha": "5d203492eb36a8b3354182b3e66fd7e0402d7e12"
+    },
+    {
+      "path": "scripts/web-automation-capture.mjs",
+      "mode": "100644",
+      "sha": "3f51e0714aae592fdcecf2b72af6fe8be9ac7211"
+    }
+  ],
+  "endpoints": {
+    "mac": {
+      "head": "7ca330794ad7d521f3b9cf6bdfe94e4ddacc36f2",
+      "producer": "e25d5185a594f2b22acc49409afdea0fe3b17eaf778d6aaf724da58cf6e0806c",
+      "rows": [
+        {
+          "path": ".github/workflows/cef-engineering-checkpoint.yml",
+          "mode": "100644",
+          "sha": "789e02bf35ed2ba804a3bfbe2dd7004a01b19e59"
+        },
+        {
+          "path": ".node-version",
+          "mode": "100644",
+          "sha": "60ade1ae01e833a5c291c47883bf26fb031f7727"
+        },
+        {
+          "path": "native/cef-hosted-recipe.json",
+          "mode": "100644",
+          "sha": "77ba6488a6f092856b705c477e7cf4084ff5390f"
+        },
+        {
+          "path": "scripts/automation-repository.mjs",
+          "mode": "100644",
+          "sha": "22e31d24ab9b4731b1e5ca5b22878d3084d6f248"
+        },
+        {
+          "path": "scripts/browser-app-build.mjs",
+          "mode": "100644",
+          "sha": "1522b41ad8788f2f9188ef488e49eac26c429659"
+        },
+        {
+          "path": "scripts/browser-client-network-probe.mjs",
+          "mode": "100644",
+          "sha": "a5c0a5a32171b833094a6a133c8fbd4b3bc8478e"
+        },
+        {
+          "path": "scripts/browser-live.mjs",
+          "mode": "100644",
+          "sha": "23c88fcf52529959b0a4f0ca32cf2a1e0cf53f9d"
+        },
+        {
+          "path": "scripts/browser-readiness.mjs",
+          "mode": "100644",
+          "sha": "aa7b6a2e159312a3f500bd558647769e1d717b45"
+        },
+        {
+          "path": "scripts/browser-runtime-native-ci.mjs",
+          "mode": "100644",
+          "sha": "5e0a21bd339d1101e0f323bccc1dc475b696fdc0"
+        },
+        {
+          "path": "scripts/browser-runtime-package.mjs",
+          "mode": "100644",
+          "sha": "988ac8db981ffc8f9e05c1fc3cd9b193e4af0c8b"
+        },
+        {
+          "path": "scripts/capture-login-page.mjs",
+          "mode": "100644",
+          "sha": "30e1507084269bab38f6115107b45a225ef4b313"
+        },
+        {
+          "path": "scripts/catalog-icon-contact-sheet.mjs",
+          "mode": "100644",
+          "sha": "cc161259f4ff6293493e21fff4eacf2608613cf9"
+        },
+        {
+          "path": "scripts/cef-browser-acceptance.mjs",
+          "mode": "100644",
+          "sha": "f2785f6e944c6952d371106b80f7d6887152ecc0"
+        },
+        {
+          "path": "scripts/cef-custom-artifact-inventory.mjs",
+          "mode": "100644",
+          "sha": "5720498c509aa86d2b4d22b0e96eac6fb17d3ed9"
+        },
+        {
+          "path": "scripts/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "sha": "915139c7d545668bffe1003261a2379e09e067e3"
+        },
+        {
+          "path": "scripts/cef-hosted-bootstrap.mjs",
+          "mode": "100644",
+          "sha": "59ba20636a8c82e10016b660fbe5e2be748210cf"
+        },
+        {
+          "path": "scripts/cef-hosted-capacity.mjs",
+          "mode": "100644",
+          "sha": "2fb3903eb9bf9f582ccf1fd63cf7fbb5c558890b"
+        },
+        {
+          "path": "scripts/cef-hosted-provision.mjs",
+          "mode": "100644",
+          "sha": "9fb323d215e1d246f537685b360d3a665f87f748"
+        },
+        {
+          "path": "scripts/cef-linux-package-fixture.mjs",
+          "mode": "100644",
+          "sha": "9d5d5222b00a86d7e60c82da7a1d8eafd29e4376"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-handoff.mjs",
+          "mode": "100644",
+          "sha": "fae71b6b76c4a1ba4631809d1e5b10a3a40c5c81"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-import.mjs",
+          "mode": "100644",
+          "sha": "aa52f99b48d931a5735c4c03976b3f2cf1e4a4f7"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-publish.mjs",
+          "mode": "100644",
+          "sha": "8549327fb78fc51fe9c0ef32217ac6c232b5b9f6"
+        },
+        {
+          "path": "scripts/cef-patched-runtime.mjs",
+          "mode": "100644",
+          "sha": "616e5cf87ec9a0325d905738749f185bc36515db"
+        },
+        {
+          "path": "scripts/cef-runtime-acceptance-ci.mjs",
+          "mode": "100644",
+          "sha": "70e03a09eabacb4f39a87883fff3910f947b0de9"
+        },
+        {
+          "path": "scripts/cef-runtime-ci.mjs",
+          "mode": "100644",
+          "sha": "b723ed5e56a2f5d8c4122bf7193294cc09653525"
+        },
+        {
+          "path": "scripts/cef-runtime-fetch.mjs",
+          "mode": "100644",
+          "sha": "0046ae7e7674b0beefc2f25a48904d0d9098c251"
+        },
+        {
+          "path": "scripts/ci/analyze-native-dependency-graph.mjs",
+          "mode": "100644",
+          "sha": "20b12544401b69495103a6864f5ce1cecfdf5133"
+        },
+        {
+          "path": "scripts/ci/audit_filter.py",
+          "mode": "100644",
+          "sha": "579893859c71eba218b8d057c79050f32e608ca2"
+        },
+        {
+          "path": "scripts/ci/check-backend-coverage.mjs",
+          "mode": "100644",
+          "sha": "07c99ba1ce84ea3d980b877c5ba27705e0b09823"
+        },
+        {
+          "path": "scripts/ci/check-cargo-update-candidate.mjs",
+          "mode": "100644",
+          "sha": "1814e3307a87de501dff1c66b25996b87dd477be"
+        },
+        {
+          "path": "scripts/ci/check-docs-links.mjs",
+          "mode": "100644",
+          "sha": "c9d2022462126973263c328c1cd1fa2c9f3554a5"
+        },
+        {
+          "path": "scripts/ci/check-frontend-cold-bundle.mjs",
+          "mode": "100644",
+          "sha": "1226702dbaf18afeed1a8f3936c4880de017bcd2"
+        },
+        {
+          "path": "scripts/ci/check-gif-worker-export.mjs",
+          "mode": "100644",
+          "sha": "8f002d7e4478a09a09c7fe523d490d715e144266"
+        },
+        {
+          "path": "scripts/ci/check-js-lock-parity.mjs",
+          "mode": "100644",
+          "sha": "a7f2b69d8b804f8eb6672bcbdfa095b73b607695"
+        },
+        {
+          "path": "scripts/ci/check-npm-audit.mjs",
+          "mode": "100644",
+          "sha": "e6a8a9ad733c94b8e29f0b0c13d4a5e60e7ad966"
+        },
+        {
+          "path": "scripts/ci/check-release-runtime-catalog.mjs",
+          "mode": "100644",
+          "sha": "c54b69df1bd39591c6ddfdd135aa49864bb90da2"
+        },
+        {
+          "path": "scripts/ci/check-release-version-floor.mjs",
+          "mode": "100644",
+          "sha": "d830e025f60687fa5b1d3a6b6736eebfcac2c540"
+        },
+        {
+          "path": "scripts/ci/diagnose-macos-cef-tests.mjs",
+          "mode": "100644",
+          "sha": "6c478768f06ac8ed663ce800a01c3cfaf2d4a042"
+        },
+        {
+          "path": "scripts/ci/e2e-http-fixtures.mjs",
+          "mode": "100644",
+          "sha": "71f74176d81fb9e1f077bc29d55f305e58b47420"
+        },
+        {
+          "path": "scripts/ci/e2e-npm-fixture.mjs",
+          "mode": "100644",
+          "sha": "3638c1a6f3dcc889b58d015e9fad16f60e758f78"
+        },
+        {
+          "path": "scripts/ci/e2e-portainer-fixture.mjs",
+          "mode": "100644",
+          "sha": "e2fbf0b02f37f4d3f05969b16390e59a3667c6e8"
+        },
+        {
+          "path": "scripts/ci/lib/docs-search-validation.mjs",
+          "mode": "100644",
+          "sha": "c6898f29664586368c9c6cc9277b8d7f4b437dab"
+        },
+        {
+          "path": "scripts/ci/resolve-release-version.mjs",
+          "mode": "100644",
+          "sha": "48b32403c8527f8d422991c420e06defc1d6e696"
+        },
+        {
+          "path": "scripts/ci/run-release-native-build.mjs",
+          "mode": "100644",
+          "sha": "d6c02b3490303d27961d1a940883705f99a1d592"
+        },
+        {
+          "path": "scripts/ci/semver.mjs",
+          "mode": "100644",
+          "sha": "a42ba21a31d4d82efd6f1f9a2bfa065a09654f63"
+        },
+        {
+          "path": "scripts/ci/summarize-native-build-timings.mjs",
+          "mode": "100644",
+          "sha": "658b9b5e4bbaa28ea318c7e2229d91cfdf9e0dae"
+        },
+        {
+          "path": "scripts/ci/update-npm-compatible.mjs",
+          "mode": "100644",
+          "sha": "9ff38882ad2c68ba94f0fb398aeb3e1ea733810c"
+        },
+        {
+          "path": "scripts/ci/validate-release-artifacts.mjs",
+          "mode": "100644",
+          "sha": "abcc7f30998e186f362c779998301941e5af10f7"
+        },
+        {
+          "path": "scripts/ci/validate-updater-feed.mjs",
+          "mode": "100644",
+          "sha": "264b762f10a6a54748e2a05bcc9974dc4cbb91e4"
+        },
+        {
+          "path": "scripts/ci/verify-published-release-assets.mjs",
+          "mode": "100644",
+          "sha": "9667feb690df30492faea80da379d5a6a80f182b"
+        },
+        {
+          "path": "scripts/ci/verify-release-snapshot.mjs",
+          "mode": "100644",
+          "sha": "d702ef59b0b71e18437f186e98c3e24b5191a676"
+        },
+        {
+          "path": "scripts/ci/wait-for-release-readiness.mjs",
+          "mode": "100644",
+          "sha": "c0e465f7e1f4e2047d36b9bce9a53ce730ea7623"
+        },
+        {
+          "path": "scripts/crypto/generate-database-eax-vectors.ps1",
+          "mode": "100644",
+          "sha": "bea75fda8491a0df11a1fa76aa062a5eea7b8dbe"
+        },
+        {
+          "path": "scripts/database-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "6db3eb880621234ff1d78fa41285b726f0e75ba4"
+        },
+        {
+          "path": "scripts/dev-port.mjs",
+          "mode": "100644",
+          "sha": "755df5ea02747e526b3ecc92e8f574c29dfeb04e"
+        },
+        {
+          "path": "scripts/dev-server.mjs",
+          "mode": "100644",
+          "sha": "ced531d4c9db02fbbf47c0280080da28356ee80b"
+        },
+        {
+          "path": "scripts/docs-app-capture.mjs",
+          "mode": "100644",
+          "sha": "b23555fe7903dfcb973e5d9cf31140f323012d8d"
+        },
+        {
+          "path": "scripts/docs-visual-capture.mjs",
+          "mode": "100644",
+          "sha": "38b182cc3bafbaf5804e47c56ca7e1b1734e258c"
+        },
+        {
+          "path": "scripts/e2e-build.mjs",
+          "mode": "100644",
+          "sha": "553db2a542fb5e57fb20a4a0d0e7003524cabbf0"
+        },
+        {
+          "path": "scripts/e2e-isolation-selftest.mjs",
+          "mode": "100644",
+          "sha": "348838a05d8fe3d4fd733c2a450a3fbb4de9fea0"
+        },
+        {
+          "path": "scripts/folder-icon-contact-sheet.mjs",
+          "mode": "100644",
+          "sha": "dc474484165bba46ec7f275c6209fc0f18610a69"
+        },
+        {
+          "path": "scripts/format-changed.mjs",
+          "mode": "100644",
+          "sha": "cd1780bd4f2e5885d490ddd3c9e79acc05d85012"
+        },
+        {
+          "path": "scripts/generate-command-inventory.mjs",
+          "mode": "100644",
+          "sha": "3ef1b0f7d2185004f943d1b7892f1017bdecb253"
+        },
+        {
+          "path": "scripts/generate-native-login-catalog.mjs",
+          "mode": "100644",
+          "sha": "68d09236558e77dc1798bd644abe46dfa9bc928b"
+        },
+        {
+          "path": "scripts/i18n-residual.mjs",
+          "mode": "100644",
+          "sha": "00d1e401e7a7fc5d27268b7236e08690f1e6c31d"
+        },
+        {
+          "path": "scripts/icon-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "9b421f1da96f4c8223f3f7b088204ad494fbf578"
+        },
+        {
+          "path": "scripts/lib/browser-build-route.mjs",
+          "mode": "100644",
+          "sha": "3fb21b9fcd4d5e36deb6c206c3c2cf0d2be8c82a"
+        },
+        {
+          "path": "scripts/lib/browser-client-imports.mjs",
+          "mode": "100644",
+          "sha": "12e5fe39389938587468849ac095b6c6493f8da0"
+        },
+        {
+          "path": "scripts/lib/browser-custom-runtime.mjs",
+          "mode": "100644",
+          "sha": "e2a68a71e47af8c3abb988e95fb92d6a71ca1070"
+        },
+        {
+          "path": "scripts/lib/browser-dev-sdk-cache.mjs",
+          "mode": "100644",
+          "sha": "806f4feb6a61e84c0a4426d7f1df51396bbe9f4b"
+        },
+        {
+          "path": "scripts/lib/browser-installer-bundles.mjs",
+          "mode": "100644",
+          "sha": "57279a8dabf84605a9783f388210eed4554827e9"
+        },
+        {
+          "path": "scripts/lib/browser-local-runtime.mjs",
+          "mode": "100644",
+          "sha": "fe6fba4493b9265823a71a0a6445ad41cdccd708"
+        },
+        {
+          "path": "scripts/lib/browser-runtime-bootstrap.mjs",
+          "mode": "100644",
+          "sha": "0db85b14d4266af86c04eb27dab97359a416c879"
+        },
+        {
+          "path": "scripts/lib/browser-runtime-release.mjs",
+          "mode": "100644",
+          "sha": "4f5591f6400a1b84cdd2b4c07108ed9ccb59e4a9"
+        },
+        {
+          "path": "scripts/lib/browser-sandbox-access.mjs",
+          "mode": "100644",
+          "sha": "eb3a022a7a3c0ad0084f595a654929a4101983bc"
+        },
+        {
+          "path": "scripts/lib/cef-checkpoint-archive.py",
+          "mode": "100644",
+          "sha": "8b5b02ea8734fbee6f8ae5efcd59688c7cec294f"
+        },
+        {
+          "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "sha": "84f2c6dca65ec4dcce1eebca99e79672c2d5c333"
+        },
+        {
+          "path": "scripts/lib/cef-linux-producer-migration.mjs",
+          "mode": "100644",
+          "sha": "4d216379902e002fe80cf99e07858b622def5bf8"
+        },
+        {
+          "path": "scripts/lib/cef-linux-sidecar-retirement.py",
+          "mode": "100644",
+          "sha": "8041a411ff3ae9ce3c8b55ddb1cfe0eb3a4b4471"
+        },
+        {
+          "path": "scripts/lib/cef-mac-gcs-normalize.py",
+          "mode": "100644",
+          "sha": "e6a2834029ad5b819a47586d313bae9e6f0ff12d"
+        },
+        {
+          "path": "scripts/lib/cef-mac-process-census.py",
+          "mode": "100644",
+          "sha": "78ac12924376d028d4b3514ad6a408eedd11e4e6"
+        },
+        {
+          "path": "scripts/lib/cef-mac-sdk-inventory.mjs",
+          "mode": "100644",
+          "sha": "8e3e081cfe40fee9ff865b5699b47bfc9a6184ef"
+        },
+        {
+          "path": "scripts/lib/cef-mac-source-metadata.mjs",
+          "mode": "100644",
+          "sha": "0089d245de4a4624139afcb678ab55c9c04f7947"
+        },
+        {
+          "path": "scripts/lib/cef-native-crash-summary.mjs",
+          "mode": "100644",
+          "sha": "4ded0956ee5732222a22c96df40bc40dbee62a30"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-handoff.mjs",
+          "mode": "100644",
+          "sha": "3fb062fc081d9a974f841f22a28068059a2a8550"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-import.mjs",
+          "mode": "100644",
+          "sha": "369c93b265d65416934865d8a5f0b9c1f62e22d7"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-publish.mjs",
+          "mode": "100644",
+          "sha": "a53f9d122bf11263745de9f741a13dbbe51aba3c"
+        },
+        {
+          "path": "scripts/lib/cef-storage-acceptance.mjs",
+          "mode": "100644",
+          "sha": "9580b3fb662eb0b26e9bb2bf897d7c037c4c743c"
+        },
+        {
+          "path": "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+          "mode": "100644",
+          "sha": "25527fc6303adf9638de3cee72ee989da42e1066"
+        },
+        {
+          "path": "scripts/lib/command-inventory.mjs",
+          "mode": "100644",
+          "sha": "a262d43203010c6feb1e28950040ecf1564b9248"
+        },
+        {
+          "path": "scripts/lib/core-command-groups.mjs",
+          "mode": "100644",
+          "sha": "d37431b0b46f82c1183f9cc52245cb2223de89c2"
+        },
+        {
+          "path": "scripts/lib/dev-build-budget.mjs",
+          "mode": "100644",
+          "sha": "fdc4c6673227cca6d9036d9842fac9891ce193e6"
+        },
+        {
+          "path": "scripts/lib/e2e-profile-isolation.d.mts",
+          "mode": "100644",
+          "sha": "9e6c3fa95f776b5e542bba35134d493ba98de3d7"
+        },
+        {
+          "path": "scripts/lib/e2e-profile-isolation.mjs",
+          "mode": "100644",
+          "sha": "1ddca465468f9b6eb7550d5c6fa10ec1e8ea3844"
+        },
+        {
+          "path": "scripts/lib/extract-custom-runtime.py",
+          "mode": "100644",
+          "sha": "95f02a1b2467bf726b083a309177c58aa8897c0f"
+        },
+        {
+          "path": "scripts/lib/linux-package-sandbox.mjs",
+          "mode": "100644",
+          "sha": "7c42e96ed0c50eb4b5dcbfc58d3cbf097f1ddee7"
+        },
+        {
+          "path": "scripts/lib/native-child-env.mjs",
+          "mode": "100644",
+          "sha": "8c70b2dda58d7841b1fb5444f88fa25be0d08d0a"
+        },
+        {
+          "path": "scripts/lib/windows-native-crash-capture.mjs",
+          "mode": "100644",
+          "sha": "7a61eaf64f89ce5f6d824551fc541b9c8716a73b"
+        },
+        {
+          "path": "scripts/lib/windows-openssl-env.mjs",
+          "mode": "100644",
+          "sha": "0be899cc5030ef456be2e52f0d29a91c1aeb21c8"
+        },
+        {
+          "path": "scripts/native-build-env.mjs",
+          "mode": "100644",
+          "sha": "9c7500a5f973afc85aa1240be166426628587226"
+        },
+        {
+          "path": "scripts/native-target.mjs",
+          "mode": "100644",
+          "sha": "adb8fdfcdaddac32a58a17ca637b67d213d2cf7a"
+        },
+        {
+          "path": "scripts/native/browser-app-plist.py",
+          "mode": "100644",
+          "sha": "37b729490bbc2d337217b17e529145756abda94b"
+        },
+        {
+          "path": "scripts/native/browser-cargo-runner.rs",
+          "mode": "100644",
+          "sha": "d1b82bdb1d8c88da48257e12dc22231983fac3be"
+        },
+        {
+          "path": "scripts/native/repair-browser-sandbox-access.ps1",
+          "mode": "100644",
+          "sha": "624444b6dbbd5b7b678429741f3040cd97c2e78c"
+        },
+        {
+          "path": "scripts/provider-icons-capture.mjs",
+          "mode": "100644",
+          "sha": "1af8438246326956c285ca721093cf4fcc8b73e8"
+        },
+        {
+          "path": "scripts/readme-screenshot-validation.mjs",
+          "mode": "100644",
+          "sha": "6ad9a56649aff470f4431a501421da2b914ce79d"
+        },
+        {
+          "path": "scripts/readme-screenshot.mjs",
+          "mode": "100644",
+          "sha": "fd113092504ee5c3440fe2fa39cbcd71ca15d810"
+        },
+        {
+          "path": "scripts/softether-e2e-down.ps1",
+          "mode": "100644",
+          "sha": "2e129e26927037109abad8996f5e71ca0da7dbe5"
+        },
+        {
+          "path": "scripts/softether-e2e-down.sh",
+          "mode": "100644",
+          "sha": "090f7e0ee6e2a4335dd1a5b77bb0e828b09ccee7"
+        },
+        {
+          "path": "scripts/sort-core-command-groups.mjs",
+          "mode": "100644",
+          "sha": "16114fc39008314fa34280bf8b6c67855cef559d"
+        },
+        {
+          "path": "scripts/spreadsheet-ui-check.mjs",
+          "mode": "100644",
+          "sha": "b7b5717eded1d9f05bc9e02f9b9a01ffa7b0e24c"
+        },
+        {
+          "path": "scripts/stage-file-viewer-host.mjs",
+          "mode": "100644",
+          "sha": "e28b78e4d2bda5e5d8e24a8bc7a336bfdee1bf81"
+        },
+        {
+          "path": "scripts/stage-openh264-runtime.mjs",
+          "mode": "100644",
+          "sha": "c529782fbb8b5915053f4ec0ff0b9954bfc216e1"
+        },
+        {
+          "path": "scripts/stage-windows-native-runtime.mjs",
+          "mode": "100644",
+          "sha": "ad986a3a438a6ab21d59957f7701cd029f8d8f58"
+        },
+        {
+          "path": "scripts/styled-english-locales.mjs",
+          "mode": "100644",
+          "sha": "a2529556eae07dc2ae6192296fcbe56cceccfd92"
+        },
+        {
+          "path": "scripts/sync-brand-icons.mjs",
+          "mode": "100644",
+          "sha": "b169695faff2b8e34340b20362e886a4b3c08b6e"
+        },
+        {
+          "path": "scripts/sync-js-deps.mjs",
+          "mode": "100644",
+          "sha": "0e0fbf1f73aa63bf8093cff34ba60ab5e9d92bd6"
+        },
+        {
+          "path": "scripts/sync-version.mjs",
+          "mode": "100644",
+          "sha": "af51e4437a6bb1d1e4e481a4a2be0ee11d3ae832"
+        },
+        {
+          "path": "scripts/tauri-dev.mjs",
+          "mode": "100644",
+          "sha": "f81ddd2150198a8362ab5510e124dba7390dce7a"
+        },
+        {
+          "path": "scripts/tauri.mjs",
+          "mode": "100644",
+          "sha": "d4d7819293430603f3c46f2b3e7c14af54777cfe"
+        },
+        {
+          "path": "scripts/test-legacy-web-compat-browser.mjs",
+          "mode": "100644",
+          "sha": "3cabbaa847327de9ac8caa4c7cecb7cf0e9832aa"
+        },
+        {
+          "path": "scripts/test-synology-login-browser.mjs",
+          "mode": "100644",
+          "sha": "0169c0728bb49f4961a34732ae72e1051a386145"
+        },
+        {
+          "path": "scripts/test-vault-ssh-inline.mjs",
+          "mode": "100644",
+          "sha": "127af7cf77c86525bc6ad561145ca78e18348dad"
+        },
+        {
+          "path": "scripts/test-web-network-browser.mjs",
+          "mode": "100644",
+          "sha": "580c5832a695bfc7f068d203d8b1ddb8eeff57cc"
+        },
+        {
+          "path": "scripts/test-website-dark-mode-browser.mjs",
+          "mode": "100644",
+          "sha": "d1b6b5138e89f2215476f57cf432b018bdd942a0"
+        },
+        {
+          "path": "scripts/test-yealink-login-browser.mjs",
+          "mode": "100644",
+          "sha": "9c26ad336cc66c956eb4ea2e3815dffdbab264e4"
+        },
+        {
+          "path": "scripts/trace-provider-icons.mjs",
+          "mode": "100644",
+          "sha": "e30f7ec547a03efbdcd448dc78a9c395721b1519"
+        },
+        {
+          "path": "scripts/trust-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "062a26cdb05d692f347d28772c1613398df408b2"
+        },
+        {
+          "path": "scripts/vendor-web-darkreader.mjs",
+          "mode": "100644",
+          "sha": "19541ed4fff8d24537d059748ea0655173e67b7e"
+        },
+        {
+          "path": "scripts/versioning.mjs",
+          "mode": "100644",
+          "sha": "303feb0be3a88e30c575be88157640621322e6e5"
+        },
+        {
+          "path": "scripts/viewport-scroll-check.mjs",
+          "mode": "100644",
+          "sha": "5d203492eb36a8b3354182b3e66fd7e0402d7e12"
+        },
+        {
+          "path": "scripts/web-automation-capture.mjs",
+          "mode": "100644",
+          "sha": "3f51e0714aae592fdcecf2b72af6fe8be9ac7211"
+        }
+      ],
+      "files": [
+        {
+          "path": ".github/workflows/cef-engineering-checkpoint.yml",
+          "mode": "100644",
+          "before": {
+            "bytes": 14907,
+            "sha256": "b1a6f2dc111b98ef5f32f6b93b10c9903590e70724b5c6cdf834b82f91dc046c",
+            "blob": "789e02bf35ed2ba804a3bfbe2dd7004a01b19e59"
+          },
+          "after": {
+            "bytes": 14907,
+            "sha256": "6400f542bb040e52f5395e0e3898520ddb6d707630c3d97ebe1019e3a64d6047",
+            "blob": "3d4b9cd3232bfc77cb30149dd3076375dd295983"
+          },
+          "pairs": [
+            {
+              "previous": "    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'\n    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212' || inputs.target == 'aarch64-unknown-linux-gnu' && '8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb' || 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n      actions: read\n",
+              "current": "    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'\n    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212' || inputs.target == 'aarch64-unknown-linux-gnu' && '5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e' || 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n      actions: read\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/browser-custom-runtime.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 69328,
+            "sha256": "15934e1f93738c89c0144d9eabdc03e04230cb89164a85453f9265c085a00270",
+            "blob": "e2a68a71e47af8c3abb988e95fb92d6a71ca1070"
+          },
+          "after": {
+            "bytes": 69440,
+            "sha256": "3994398d15f588a624f698b2508896322583538379d4bd000fa13cc62902568c",
+            "blob": "63070604a0146bdd1669a2fc04fae1d8db693e74"
+          },
+          "pairs": [
+            {
+              "previous": "        args: [\n          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          host === \"darwin\" ? \"cefclient\" : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n              ? [\"chrome_sandbox\"]\n",
+              "current": "        args: [\n          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          host === \"darwin\"\n            ? \"cefclient\"\n            : selectedTarget === \"aarch64-unknown-linux-gnu\"\n              ? \"libcef\"\n              : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n              ? [\"chrome_sandbox\"]\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 258011,
+            "sha256": "28686c03b3559512fdfc18334b6b6f0742178031653eda0a4c88f3da6520ea46",
+            "blob": "84f2c6dca65ec4dcce1eebca99e79672c2d5c333"
+          },
+          "after": {
+            "bytes": 276188,
+            "sha256": "0fb1d64ea28c19141a602df025b77f32df7a6c198bb0f18af2e8a1b08f2f007b",
+            "blob": "c75b9ed2b4ff07994cc3d35092bc29203912792a"
+          },
+          "pairs": [
+            {
+              "previous": "    acceptanceArchitecture: \"arm64\",\n  }),\n  \"aarch64-unknown-linux-gnu\": Object.freeze({\n    target: \"aarch64-unknown-linux-gnu\",\n    // Exact hosted images whose build-relevant contents were reviewed as equivalent (evidence:\n    // native/cef-runner-images/linux-arm-accepted-images.json); the first is the runner map's pin.\n    acceptedImages: Object.freeze([\"20261026.354.1\", \"20261101.360.1\"]),\n    source: \"8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb\",\n    inputs:\n      \"native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1\",\n    platform: \"linux\",\n    architecture: \"x64\",\n    runner: \"ubuntu-24.04\",\n    provisionTarget: \"x86_64-unknown-linux-gnu\",\n",
+              "current": "    acceptanceArchitecture: \"arm64\",\n  }),\n  \"aarch64-unknown-linux-gnu\": Object.freeze({\n    target: \"aarch64-unknown-linux-gnu\",\n    // Fresh canonical370 host only; no equivalence or old checkpoint reuse.\n    acceptedImages: Object.freeze([\"20261111.370.1\"]),\n    source: \"5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e\",\n    inputs:\n      \"native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1\",\n    platform: \"linux\",\n    architecture: \"x64\",\n    runner: \"ubuntu-24.04\",\n    provisionTarget: \"x86_64-unknown-linux-gnu\",\n"
+            },
+            {
+              "previous": "export function checkpointCompileArguments(target, args) {\n  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"cef\", \"chrome_sandbox\"]\n      : [\"cefclient\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n",
+              "current": "export function checkpointCompileArguments(target, args) {\n  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"libcef\", \"chrome_sandbox\"]\n      : [\"cefclient\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n"
+            },
+            {
+              "previous": "  );\n  const pids = new Set();\n  const nativeIdentity =\n    value.observed[0]?.start?.startsWith(\"darwin-v1:\") === true;\n  for (const row of value.observed) {\n    shape(row, [\"pid\", \"start\"]);\n    assert(\n      positive(row.pid) &&\n        !pids.has(row.pid) &&\n        (nativeIdentity\n          ? /^darwin-v1:[1-9][0-9]{0,11}:(?:0|[1-9][0-9]{0,5})$/\n          : /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/\n        ).test(row.start),\n      \"Invalid observed process\",\n    );\n    pids.add(row.pid);\n",
+              "current": "  );\n  const pids = new Set();\n  const nativeIdentity =\n    value.observed[0]?.start?.startsWith(\"darwin-v1:\") === true;\n  const linuxIdentity =\n    value.observed[0]?.start?.startsWith(\"linux-v1:\") === true;\n  for (const row of value.observed) {\n    shape(row, [\"pid\", \"start\"]);\n    assert(\n      positive(row.pid) &&\n        !pids.has(row.pid) &&\n        (nativeIdentity\n          ? /^darwin-v1:[1-9][0-9]{0,11}:(?:0|[1-9][0-9]{0,5})$/\n          : linuxIdentity\n            ? LINUX_START_ID\n            : /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/\n        ).test(row.start),\n      \"Invalid observed process\",\n    );\n    pids.add(row.pid);\n"
+            },
+            {
+              "previous": "  \"EDQUOT\",\n  \"EIO\",\n  \"ETIMEDOUT\",\n  \"GRAPH_BOUND\",\n]);\nexport function checkpointLog(log, line) {\n  try {\n    const result = log(line);\n",
+              "current": "  \"EDQUOT\",\n  \"EIO\",\n  \"ETIMEDOUT\",\n  \"GRAPH_BOUND\",\n  \"COMPILER_EXIT_NONZERO\",\n]);\nexport function checkpointLog(log, line) {\n  try {\n    const result = log(line);\n"
+            },
+            {
+              "previous": "  \"PS_EXIT_NONZERO\",\n  \"PS_ROWS_SYNTAX\",\n  \"PS_ROWS_IDENTITY\",\n  \"PS_ROWS_COUNT\",\n  \"OWN_SEED_BOUND\",\n  \"OWN_ROOT_REPLACED\",\n  \"OWN_ACTIVE_BOUND\",\n  \"OWN_MONITOR_TURN_BOUND\",\n",
+              "current": "  \"PS_EXIT_NONZERO\",\n  \"PS_ROWS_SYNTAX\",\n  \"PS_ROWS_IDENTITY\",\n  \"PS_ROWS_COUNT\",\n  \"PROC_READ\",\n  \"PROC_FD_BOUND\",\n  \"PROC_FILE_IDENTITY\",\n  \"PROC_READ_BOUND\",\n  \"PROC_ROWS_SYNTAX\",\n  \"PROC_ROWS_IDENTITY\",\n  \"PROC_ROOT\",\n  \"PROC_BOOT_ID\",\n  \"PROC_ROWS_COUNT\",\n  \"PROC_ROW_REPLACED\",\n  \"PROC_CLOSE\",\n  \"OWN_SEED_BOUND\",\n  \"OWN_ROOT_REPLACED\",\n  \"OWN_ACTIVE_BOUND\",\n  \"OWN_MONITOR_TURN_BOUND\",\n"
+            },
+            {
+              "previous": "      }\n    },\n  };\n}\nasync function processSnapshot({\n  deadline = performance.now() + 2000,\n  signal,\n  probeJoins,\n",
+              "current": "      }\n    },\n  };\n}\n// Linux birth identity comes from the kernel, never from a wall-clock label.\nconst LINUX_BOOT_ID =\n  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;\nconst LINUX_START_ID =\n  /^linux-v1:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{16}$/;\nexport function linuxProcessRow(text, pid, bootId) {\n  compileMonitorGuard(\n    typeof text === \"string\" &&\n      text.length <= 8192 &&\n      Buffer.byteLength(text) <= 8192 &&\n      typeof bootId === \"string\" &&\n      bootId.length === 36 &&\n      Number.isSafeInteger(pid) &&\n      pid > 0 &&\n      pid <= 2147483647 &&\n      LINUX_BOOT_ID.test(bootId),\n    \"Malformed kernel process identity\",\n    \"PROC_ROWS_IDENTITY\",\n  );\n  const head = /^([1-9][0-9]{0,9}) \\(/.exec(text),\n    end = text.lastIndexOf(\")\");\n  compileMonitorGuard(\n    head &&\n      Number(head[1]) === pid &&\n      end >= head[0].length &&\n      text[end + 1] === \" \",\n    \"Malformed kernel process record\",\n    \"PROC_ROWS_SYNTAX\",\n  );\n  const fields = text\n    .slice(end + 2)\n    .trim()\n    .split(/\\s+/);\n  compileMonitorGuard(\n    fields.length >= 20 &&\n      fields.length <= 64 &&\n      /^[A-Za-z]$/.test(fields[0]) &&\n      fields.slice(1).every((x) => /^(?:0|-?[1-9][0-9]{0,19})$/.test(x)),\n    \"Malformed kernel process fields\",\n    \"PROC_ROWS_SYNTAX\",\n  );\n  const parent = Number(fields[1]),\n    ticks = BigInt(fields[19]);\n  compileMonitorGuard(\n    Number.isSafeInteger(parent) &&\n      parent >= 0 &&\n      parent <= 2147483647 &&\n      ticks >= 0n &&\n      ticks <= 18446744073709551615n,\n    \"Ambiguous kernel process identity\",\n    \"PROC_ROWS_IDENTITY\",\n  );\n  return {\n    pid,\n    parent,\n    start: `linux-v1:${bootId}:${ticks.toString(16).padStart(16, \"0\")}`,\n  };\n}\nasync function linuxProcessSnapshot({ deadline, signal, probeJoins } = {}) {\n  const began = performance.now(),\n    end = Math.min(deadline, began + 2000);\n  let closeResolve, closeReject;\n  const joined = new Promise((resolve, reject) => {\n    closeResolve = resolve;\n    closeReject = reject;\n  });\n  joined.catch(() => {}); // The owner consumes the original rejected join during cleanup.\n  probeJoins?.add(joined);\n  return new Promise((resolve, reject) => {\n    let failed = false,\n      first,\n      settled = false,\n      chars = 0,\n      rowCount = 0,\n      timer;\n    const resources = new Map();\n    const facts = () => ({\n      snapshotElapsedMs: Math.max(0, Math.floor(performance.now() - began)),\n      snapshotChars: chars,\n      snapshotRows: rowCount,\n      snapshotExitCode: null,\n    });\n    const deny = (error) => {\n      if (!failed) {\n        failed = true;\n        first = compileMonitorRecord(error, \"PROC_READ\", facts());\n      }\n      if (!settled) {\n        settled = true;\n        reject(first);\n      }\n    };\n    const guard = () => {\n      if (failed) throw first;\n      compileMonitorGuard(\n        !signal?.aborted && performance.now() < end,\n        \"Ownership snapshot deadline\",\n        signal?.aborted ? \"PS_ABORT\" : \"PS_DEADLINE\",\n      );\n    };\n    const adopt = (value) => {\n      resources.set(value, null);\n      compileMonitorGuard(\n        resources.size <= 12,\n        \"Kernel snapshot handle bound\",\n        \"PROC_FD_BOUND\",\n      );\n      return value;\n    };\n    const close = (handle) => {\n      if (!resources.has(handle)) return Promise.resolve();\n      const old = resources.get(handle);\n      if (old) return old;\n      const work = Promise.resolve()\n        .then(() => handle.close())\n        .then(() => resources.delete(handle));\n      resources.set(handle, work);\n      return work;\n    };\n    const signature = (info, taskStat = false) =>\n      [\n        info.dev,\n        info.ino,\n        info.mode,\n        ...(taskStat ? [] : [info.uid, info.gid]),\n      ].join(\":\");\n    const missing = (error) => {\n      if (\n        error === null ||\n        typeof error !== \"object\" ||\n        utilTypes.isProxy(error)\n      )\n        return false;\n      const code = Object.getOwnPropertyDescriptor(error, \"code\");\n      return (\n        code &&\n        Object.hasOwn(code, \"value\") &&\n        [\"ENOENT\", \"ESRCH\"].includes(code.value)\n      );\n    };\n    const read = async (file, maximum) => {\n      // proc PID inode UID/GID change with dumpability, including normal exit.\n      // Birth/lineage ownership comes from two kernel PID/starttick records;\n      // descriptor identity still binds device, inode, mode, type and links.\n      // The boot file and proc mount retain their full UID/GID fences.\n      const taskStat = /^\\/proc\\/[1-9][0-9]{0,9}\\/stat$/.test(file);\n      guard();\n      const fd = adopt(\n        await open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW),\n      );\n      let failedRead = false,\n        readPrimary,\n        value;\n      try {\n        guard();\n        const initial = await fd.stat({ bigint: true });\n        guard();\n        compileMonitorGuard(\n          initial.isFile() && !initial.isSymbolicLink() && initial.nlink === 1n,\n          \"Invalid kernel record handle\",\n          \"PROC_FILE_IDENTITY\",\n        );\n        const identity = signature(initial, taskStat),\n          data = Buffer.alloc(maximum + 1);\n        let offset = 0;\n        while (offset < data.length) {\n          guard();\n          const result = await fd.read(\n            data,\n            offset,\n            data.length - offset,\n            offset,\n          );\n          guard();\n          compileMonitorGuard(\n            Number.isInteger(result.bytesRead) &&\n              result.bytesRead >= 0 &&\n              result.bytesRead <= data.length - offset,\n            \"Invalid kernel read\",\n            \"PROC_READ_BOUND\",\n          );\n          if (result.bytesRead === 0) break;\n          offset += result.bytesRead;\n        }\n        compileMonitorGuard(\n          offset <= maximum,\n          \"Kernel record bound\",\n          \"PROC_READ_BOUND\",\n        );\n        const after = await fd.stat({ bigint: true });\n        guard();\n        const named = await lstat(file, { bigint: true });\n        guard();\n        compileMonitorGuard(\n          after.isFile() &&\n            named.isFile() &&\n            !named.isSymbolicLink() &&\n            after.nlink === 1n &&\n            named.nlink === 1n &&\n            signature(after, taskStat) === identity &&\n            signature(named, taskStat) === identity,\n          \"Kernel record replaced\",\n          \"PROC_FILE_IDENTITY\",\n        );\n        const raw = data.subarray(0, offset),\n          text = raw.toString(\"utf8\");\n        compileMonitorGuard(\n          Buffer.from(text).equals(raw) && !text.includes(\"\\0\"),\n          \"Malformed kernel record encoding\",\n          \"PROC_ROWS_SYNTAX\",\n        );\n        value = text;\n      } catch (error) {\n        failedRead = true;\n        readPrimary = error;\n      } finally {\n        try {\n          await close(fd);\n        } catch (error) {\n          if (!failedRead || missing(readPrimary)) {\n            failedRead = true;\n            readPrimary = error;\n          }\n        }\n      }\n      if (failedRead) throw readPrimary;\n      return value;\n    };\n    const work = async () => {\n      let rows;\n      try {\n        guard();\n        const root = adopt(\n          await open(\n            \"/proc\",\n            fsConstants.O_RDONLY |\n              fsConstants.O_DIRECTORY |\n              fsConstants.O_NOFOLLOW,\n          ),\n        );\n        guard();\n        const rootInfo = await root.stat({ bigint: true });\n        guard();\n        compileMonitorGuard(\n          rootInfo.isDirectory(),\n          \"Kernel process directory required\",\n          \"PROC_ROOT\",\n        );\n        const rootIdentity = signature(rootInfo);\n        const rootFence = async () => {\n          guard();\n          const named = await lstat(\"/proc\", { bigint: true });\n          guard();\n          compileMonitorGuard(\n            named.isDirectory() &&\n              !named.isSymbolicLink() &&\n              signature(named) === rootIdentity,\n            \"Kernel process directory replaced\",\n            \"PROC_ROOT\",\n          );\n        };\n        await rootFence();\n        const bootRaw = await read(\"/proc/sys/kernel/random/boot_id\", 64);\n        const boot = bootRaw.slice(0, -1);\n        compileMonitorGuard(\n          bootRaw.length === 37 &&\n            bootRaw.endsWith(\"\\n\") &&\n            LINUX_BOOT_ID.test(boot),\n          \"Invalid kernel boot identity\",\n          \"PROC_BOOT_ID\",\n        );\n        const directory = adopt(await opendir(\"/proc\", { bufferSize: 64 }));\n        guard();\n        const pids = [],\n          seen = new Set();\n        for (let count = 0; ; count++) {\n          guard();\n          compileMonitorGuard(\n            count < 65536,\n            \"Kernel directory entry bound\",\n            \"PROC_ROWS_COUNT\",\n          );\n          const entry = await directory.read();\n          guard();\n          if (entry === null) break;\n          if (!/^[0-9]+$/.test(entry.name)) continue;\n          const pid = Number(entry.name);\n          compileMonitorGuard(\n            /^[1-9][0-9]{0,9}$/.test(entry.name) &&\n              Number.isSafeInteger(pid) &&\n              pid <= 2147483647 &&\n              !seen.has(pid) &&\n              entry.isDirectory() &&\n              !entry.isSymbolicLink(),\n            \"Ambiguous kernel process directory\",\n            \"PROC_ROWS_IDENTITY\",\n          );\n          seen.add(pid);\n          pids.push(pid);\n          compileMonitorGuard(\n            pids.length <= 32768,\n            \"Ownership process bound\",\n            \"PROC_ROWS_COUNT\",\n          );\n        }\n        await close(directory);\n        await rootFence();\n        pids.sort((a, b) => a - b);\n        const found = new Array(pids.length);\n        let next = 0;\n        const workers = await Promise.allSettled(\n          Array.from({ length: Math.min(4, pids.length) }, async () => {\n            try {\n              for (;;) {\n                guard();\n                const index = next++;\n                if (index >= pids.length) return;\n                const pid = pids[index],\n                  file = `/proc/${pid}/stat`;\n                try {\n                  const before = linuxProcessRow(\n                    await read(file, 8192),\n                    pid,\n                    boot,\n                  );\n                  const after = linuxProcessRow(\n                    await read(file, 8192),\n                    pid,\n                    boot,\n                  );\n                  compileMonitorGuard(\n                    before.start === after.start,\n                    \"Kernel process identity changed during read\",\n                    \"PROC_ROW_REPLACED\",\n                  );\n                  found[index] = after;\n                } catch (error) {\n                  if (!missing(error)) throw error;\n                }\n              }\n            } catch (error) {\n              deny(error);\n              throw error;\n            }\n          }),\n        );\n        const failedWorker = workers.find((x) => x.status === \"rejected\");\n        if (failedWorker) throw failedWorker.reason;\n        guard();\n        rows = found.filter(Boolean);\n        rowCount = rows.length;\n        chars = JSON.stringify(rows).length;\n        compileMonitorGuard(\n          rowCount > 0 && rowCount <= 32768 && chars <= 4 * 1024 ** 2,\n          \"Kernel snapshot bound\",\n          \"PROC_ROWS_COUNT\",\n        );\n        const finalBoot = await read(\"/proc/sys/kernel/random/boot_id\", 64);\n        compileMonitorGuard(\n          finalBoot === bootRaw,\n          \"Kernel boot identity changed\",\n          \"PROC_BOOT_ID\",\n        );\n        await rootFence();\n        guard();\n      } catch (error) {\n        deny(error);\n      } finally {\n        const closing = await Promise.allSettled(\n          [...resources.keys()].map(close),\n        );\n        const bad = closing.find((x) => x.status === \"rejected\");\n        if (bad) {\n          deny(compileMonitorRecord(bad.reason, \"PROC_CLOSE\", facts()));\n          closeReject(first);\n        } else {\n          closeResolve();\n          probeJoins?.delete(joined);\n        }\n        clearTimeout(timer);\n        signal?.removeEventListener(\"abort\", abort);\n      }\n      if (!failed) {\n        try {\n          guard();\n        } catch (error) {\n          deny(error);\n        }\n      }\n      if (!settled) {\n        settled = true;\n        resolve(compileMonitorRecord(rows, \"NONE\", facts()));\n      }\n    };\n    const abort = () =>\n      deny(\n        compileMonitorRecord(\n          new Error(\"Ownership snapshot deadline\"),\n          signal?.aborted ? \"PS_ABORT\" : \"PS_DEADLINE\",\n        ),\n      );\n    timer = setTimeout(abort, Math.max(1, Math.floor(end - performance.now())));\n    signal?.addEventListener(\"abort\", abort, { once: true });\n    if (signal?.aborted) abort();\n    work().catch(deny);\n  });\n}\n\nasync function processSnapshot({\n  deadline = performance.now() + 2000,\n  signal,\n  probeJoins,\n"
+            },
+            {
+              "previous": "    !signal?.aborted && performance.now() < deadline,\n    \"Ownership snapshot deadline\",\n    signal?.aborted ? \"PS_ABORT\" : \"PS_DEADLINE\",\n  );\n  const began = performance.now();\n  return new Promise((resolve, reject) => {\n    const ps = spawn(\"/bin/ps\", [\"-axo\", \"pid=,ppid=,lstart=\"], {\n      shell: false,\n",
+              "current": "    !signal?.aborted && performance.now() < deadline,\n    \"Ownership snapshot deadline\",\n    signal?.aborted ? \"PS_ABORT\" : \"PS_DEADLINE\",\n  );\n  if (process.platform === \"linux\")\n    return linuxProcessSnapshot({ deadline, signal, probeJoins });\n  const began = performance.now();\n  return new Promise((resolve, reject) => {\n    const ps = spawn(\"/bin/ps\", [\"-axo\", \"pid=,ppid=,lstart=\"], {\n      shell: false,\n"
+            },
+            {
+              "previous": "    assert(\n      options.censusSession === undefined &&\n        options.censusFactory === undefined,\n      \"CENSUS_MIXED_IDENTITY\",\n    );\n  const rows = await processSnapshot(options);\n  // A reused foreign PID is never signalled and is not our old process.\n  if (\n",
+              "current": "    assert(\n      options.censusSession === undefined &&\n        options.censusFactory === undefined,\n      \"CENSUS_MIXED_IDENTITY\",\n    );\n  if (process.platform === \"linux\")\n    compileMonitorGuard(\n      records.length > 0 &&\n        records.length <= 4096 &&\n        records.every(\n          (row) =>\n            typeof row.start === \"string\" && LINUX_START_ID.test(row.start),\n        ),\n      \"Linux quiescence requires stable kernel identities\",\n      \"PROC_ROWS_IDENTITY\",\n    );\n  const rows = await processSnapshot(options);\n  // A reused foreign PID is never signalled and is not our old process.\n  if (\n"
+            },
+            {
+              "previous": "    unsafeNaturalExit = false,\n    timedOut = false,\n    monitoring = true,\n    observed = [],\n    timer;\n  let wakeStop;\n  const stopRequested = new Promise((resolve) => {\n    wakeStop = resolve;\n",
+              "current": "    unsafeNaturalExit = false,\n    timedOut = false,\n    monitoring = true,\n    observed = [],\n    sisoWriter = null,\n    timer;\n  let wakeStop;\n  const stopRequested = new Promise((resolve) => {\n    wakeStop = resolve;\n"
+            },
+            {
+              "previous": "      snapshotOrdinal: ++snapshotOrdinal,\n      snapshotRows: rows.length,\n    };\n  };\n  const initial = processSnapshot({\n    deadline: workDeadline + COMPILE_CLEANUP_MS,\n    signal: observer.signal,\n    probeJoins,\n    censusSession,\n  }).then((rows) => {\n    snapshotSeen(rows);\n    const root = rows.find((row) => row.pid === child.pid);\n    assert(\n      root && root.parent === process.pid,\n      \"Exact live child ownership required\",\n    );\n    observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);\n    if (observeRoot !== undefined) {\n      assert(\n        !ownedObserverAbort.signal.aborted,\n        \"Owned root observation expired\",\n",
+              "current": "      snapshotOrdinal: ++snapshotOrdinal,\n      snapshotRows: rows.length,\n    };\n  };\n  // Keep one creation-owned alias witness, separate from the active cleanup\n  // cohort. A naturally exited writer must not become an unobserved writer\n  // merely because observedLineage correctly retires absent descendants.\n  const observeSisoWriter = async () => {\n    if (!canonicalOut) return;\n    const file = path.join(canonicalOut, \"siso.INFO\");\n    const identity = await optionalLinkStat(file);\n    if (\n      !identity ||\n      !identity.isSymbolicLink() ||\n      identity.nlink !== 1n ||\n      identity.uid !== BigInt(owner.uid) ||\n      identity.uid !== outIdentity.uid\n    )\n      return;\n    let raw;\n    try {\n      raw = await readlink(file);\n    } catch (error) {\n      if (error.code === \"ENOENT\") return;\n      throw error;\n    }\n    if (\n      sisoWriter &&\n      sameLinkIdentity(identity, sisoWriter.identity) &&\n      raw === sisoWriter.raw\n    )\n      return;\n    if (\n      Buffer.byteLength(raw) > 2048 ||\n      !path.isAbsolute(raw) ||\n      !path.basename(raw).startsWith(loggerIdentity.prefix)\n    )\n      return;\n    const suffix = path.basename(raw).slice(loggerIdentity.prefix.length);\n    const match = /^(\\d{8})-(\\d{6})\\.([1-9][0-9]*)$/.exec(suffix);\n    if (!match) return;\n    const pid = Number(match[3]);\n    const writer = observed.find((row) => row.pid === pid);\n    if (!writer) return;\n    const temporary = tmpdir();\n    if (![temporary, await realpath(temporary)].includes(path.dirname(raw)))\n      return;\n    // Re-observe after reading the alias: a cached PID or a writer that was\n    // already gone when this link appeared cannot mint this witness.\n    snapshotPending = true;\n    const rows = await processSnapshot({\n      deadline: workDeadline + COMPILE_CLEANUP_MS,\n      signal: observer.signal,\n      probeJoins,\n      censusSession,\n    });\n    snapshotSeen(rows);\n    observed = observedLineage(rows, observed);\n    if (\n      !rows.some(\n        (row) => row.pid === writer.pid && row.start === writer.start,\n      ) ||\n      !observed.some(\n        (row) => row.pid === writer.pid && row.start === writer.start,\n      )\n    )\n      return;\n    assert(\n      (await noLinks(canonicalOut)) === canonicalOut,\n      \"Compile output path differs\",\n    );\n    const root = await lstat(canonicalOut, { bigint: true });\n    assert(\n      [\"dev\", \"ino\", \"uid\", \"mode\"].every(\n        (key) => root[key] === outIdentity[key],\n      ),\n      \"Compile output identity changed\",\n    );\n    if (!sameLinkIdentity(identity, await optionalLinkStat(file))) return;\n    try {\n      if ((await readlink(file)) !== raw) return;\n    } catch (error) {\n      if (error.code === \"ENOENT\") return;\n      throw error;\n    }\n    sisoWriter = Object.freeze({\n      raw,\n      identity,\n      writer: Object.freeze({ pid: writer.pid, start: writer.start }),\n    });\n  };\n  const initial = processSnapshot({\n    deadline: workDeadline + COMPILE_CLEANUP_MS,\n    signal: observer.signal,\n    probeJoins,\n    censusSession,\n  }).then(async (rows) => {\n    snapshotSeen(rows);\n    const root = rows.find((row) => row.pid === child.pid);\n    assert(\n      root && root.parent === process.pid,\n      \"Exact live child ownership required\",\n    );\n    observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);\n    await observeSisoWriter();\n    if (observeRoot !== undefined) {\n      assert(\n        !ownedObserverAbort.signal.aborted,\n        \"Owned root observation expired\",\n"
+            },
+            {
+              "previous": "        censusSession,\n      });\n      snapshotSeen(rows);\n      observed = observedLineage(rows, observed);\n    }\n  })();\n  monitor.then(\n    () => {\n",
+              "current": "        censusSession,\n      });\n      snapshotSeen(rows);\n      observed = observedLineage(rows, observed);\n      await observeSisoWriter();\n    }\n  })();\n  monitor.then(\n    () => {\n"
+            },
+            {
+              "previous": "        groupId: child.pid,\n        canonicalOut,\n        outIdentity,\n        observed: observed.map(({ pid, start }) => ({ pid, start })),\n        censusFactory,\n      });\n    return result;\n  } catch (error) {\n",
+              "current": "        groupId: child.pid,\n        canonicalOut,\n        outIdentity,\n        observed: observed.map(({ pid, start }) => ({ pid, start })),\n        sisoWriter,\n        compilerExit: Object.freeze({ outcome, exitCode: code }),\n        censusFactory,\n      });\n    return result;\n  } catch (error) {\n"
+            },
+            {
+              "previous": "  assert((await inventory()) === before, \"Framework regular inventory changed\");\n  return { framework: \"factory\", targets };\n}\n\n// Observation has no admission authority and cannot replace the original\n// cleanup failure. It must precede every current Siso removal guard.\nexport async function observeThenRemoveSisoLog(\n  out,\n  logs,\n  compile,\n",
+              "current": "  assert((await inventory()) === before, \"Framework regular inventory changed\");\n  return { framework: \"factory\", targets };\n}\n\n// Observation has no admission authority. An already failed compiler retains\n// its original exit as primary when a later cleanup guard also denies sealing.\nexport async function observeThenRemoveSisoLog(\n  out,\n  logs,\n  compile,\n"
+            },
+            {
+              "previous": "    `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(diagnostic)}`,\n  );\n  return checkpointPhase(\n    \"siso-log\",\n    () =>\n      (dependencies.remove ?? removeQuiescentSisoLog)(out, compile, {\n        observeIdentity: (record) =>\n          checkpointLog(\n            log,\n            `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,\n          ),\n        beforeUnlink: (record) =>\n          writeFile(\n            path.join(logs, \"siso-log-alias-before.json\"),\n            canonical(record),\n            { flag: \"wx\" },\n          ),\n      }),\n    log,\n  );\n}\n\n",
+              "current": "    `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(diagnostic)}`,\n  );\n  return checkpointPhase(\n    \"siso-log\",\n    async () => {\n      try {\n        return await (dependencies.remove ?? removeQuiescentSisoLog)(\n          out,\n          compile,\n          {\n            observeIdentity: (record) =>\n              checkpointLog(\n                log,\n                `[cef-engineering-checkpoint] checkpoint siso-identity=${canonical(record)}`,\n              ),\n            beforeUnlink: (record) =>\n              writeFile(\n                path.join(logs, \"siso-log-alias-before.json\"),\n                canonical(record),\n                { flag: \"wx\" },\n              ),\n          },\n        );\n      } catch (error) {\n        const original = liveCompileSlices.get(compile)?.compilerExit;\n        if (original?.outcome !== \"compiler-failed\") throw error;\n        let secondary = \"UNCLASSIFIED\";\n        try {\n          if (!utilTypes.isProxy(error) && utilTypes.isNativeError(error)) {\n            const message = Object.getOwnPropertyDescriptor(error, \"message\");\n            secondary = SISO_GUARD_CODES.get(message?.value) ?? secondary;\n          }\n        } catch {\n          // Optional classification must not replace the captured compiler exit.\n        }\n        checkpointLog(\n          log,\n          `[cef-engineering-checkpoint] compiler cleanup-secondary=${secondary}`,\n        );\n        const primary = new Error(\"Compiler failed before checkpoint cleanup\", {\n          cause: error,\n        });\n        Object.defineProperties(primary, {\n          code: { value: \"COMPILER_EXIT_NONZERO\", enumerable: true },\n          exitCode: { value: original.exitCode, enumerable: true },\n        });\n        throw primary;\n      }\n    },\n    log,\n  );\n}\n\n"
+            },
+            {
+              "previous": "  assert(\n    proof &&\n      proof.canonicalOut &&\n      proof.groupId === compile.groupId &&\n      sameObservedCohort(proof.observed, compile.observed),\n    \"Genuine in-process compile result required\",\n  );\n  assert(\n",
+              "current": "  assert(\n    proof &&\n      proof.canonicalOut &&\n      proof.groupId === compile.groupId &&\n      proof.compilerExit.outcome === compile.outcome &&\n      proof.compilerExit.exitCode === compile.exitCode &&\n      sameObservedCohort(proof.observed, compile.observed),\n    \"Genuine in-process compile result required\",\n  );\n  assert(\n"
+            },
+            {
+              "previous": "  );\n  assert(path.basename(raw).startsWith(prefix), \"Foreign Siso log identity\");\n  const suffix = path.basename(raw).slice(prefix.length),\n    match = /^(\\d{8})-(\\d{6})\\.([1-9][0-9]*)$/.exec(suffix);\n  assert(\n    match && proof.observed.some((row) => row.pid === Number(match[3])),\n    \"Siso log PID not observed\",\n  );\n  const digits = match[1] + match[2];\n  const timestamp = Date.parse(\n",
+              "current": "  );\n  assert(path.basename(raw).startsWith(prefix), \"Foreign Siso log identity\");\n  const suffix = path.basename(raw).slice(prefix.length),\n    match = /^(\\d{8})-(\\d{6})\\.([1-9][0-9]*)$/.exec(suffix);\n  const liveWitness = proof.sisoWriter;\n  const retainedWriter =\n    liveWitness &&\n    match &&\n    liveWitness.writer.pid === Number(match[3]) &&\n    liveWitness.raw === raw &&\n    sameLinkIdentity(liveWitness.identity, s)\n      ? liveWitness.writer\n      : null;\n  assert(\n    match &&\n      (proof.observed.some((row) => row.pid === Number(match[3])) ||\n        retainedWriter),\n    \"Siso log PID not observed\",\n  );\n  const digits = match[1] + match[2];\n  const timestamp = Date.parse(\n"
+            },
+            {
+              "previous": "      uid: String(s.uid),\n    },\n  };\n  await beforeUnlink(record); // Persist fixed private evidence before mutation.\n  assert(\n    await observedQuiet(proof.observed, proof.groupId, {\n      censusFactory: proof.censusFactory,\n    }),\n    \"Siso writers returned\",\n  );\n",
+              "current": "      uid: String(s.uid),\n    },\n  };\n  await beforeUnlink(record); // Persist fixed private evidence before mutation.\n  const writers = retainedWriter\n    ? [...proof.observed, retainedWriter]\n    : proof.observed;\n  assert(\n    await observedQuiet(writers, proof.groupId, {\n      censusFactory: proof.censusFactory,\n    }),\n    \"Siso writers returned\",\n  );\n"
+            }
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "head": "a4096b7b4a7a34aa0aa94fba13438cccc966c753",
+      "producer": "60d51f32b97ff59bf028643f4f7d1f05bb81f6a872710fae55ef1d83231f5901",
+      "rows": [
+        {
+          "path": ".github/workflows/cef-engineering-checkpoint.yml",
+          "mode": "100644",
+          "sha": "75fc85e39d3cf0b82726dcc603126bdaff0455c2"
+        },
+        {
+          "path": ".node-version",
+          "mode": "100644",
+          "sha": "60ade1ae01e833a5c291c47883bf26fb031f7727"
+        },
+        {
+          "path": "native/cef-hosted-recipe.json",
+          "mode": "100644",
+          "sha": "77ba6488a6f092856b705c477e7cf4084ff5390f"
+        },
+        {
+          "path": "scripts/automation-repository.mjs",
+          "mode": "100644",
+          "sha": "22e31d24ab9b4731b1e5ca5b22878d3084d6f248"
+        },
+        {
+          "path": "scripts/browser-app-build.mjs",
+          "mode": "100644",
+          "sha": "1522b41ad8788f2f9188ef488e49eac26c429659"
+        },
+        {
+          "path": "scripts/browser-client-network-probe.mjs",
+          "mode": "100644",
+          "sha": "a5c0a5a32171b833094a6a133c8fbd4b3bc8478e"
+        },
+        {
+          "path": "scripts/browser-live.mjs",
+          "mode": "100644",
+          "sha": "23c88fcf52529959b0a4f0ca32cf2a1e0cf53f9d"
+        },
+        {
+          "path": "scripts/browser-readiness.mjs",
+          "mode": "100644",
+          "sha": "aa7b6a2e159312a3f500bd558647769e1d717b45"
+        },
+        {
+          "path": "scripts/browser-runtime-native-ci.mjs",
+          "mode": "100644",
+          "sha": "5e0a21bd339d1101e0f323bccc1dc475b696fdc0"
+        },
+        {
+          "path": "scripts/browser-runtime-package.mjs",
+          "mode": "100644",
+          "sha": "988ac8db981ffc8f9e05c1fc3cd9b193e4af0c8b"
+        },
+        {
+          "path": "scripts/capture-login-page.mjs",
+          "mode": "100644",
+          "sha": "30e1507084269bab38f6115107b45a225ef4b313"
+        },
+        {
+          "path": "scripts/catalog-icon-contact-sheet.mjs",
+          "mode": "100644",
+          "sha": "cc161259f4ff6293493e21fff4eacf2608613cf9"
+        },
+        {
+          "path": "scripts/cef-browser-acceptance.mjs",
+          "mode": "100644",
+          "sha": "f2785f6e944c6952d371106b80f7d6887152ecc0"
+        },
+        {
+          "path": "scripts/cef-custom-artifact-inventory.mjs",
+          "mode": "100644",
+          "sha": "5720498c509aa86d2b4d22b0e96eac6fb17d3ed9"
+        },
+        {
+          "path": "scripts/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "sha": "915139c7d545668bffe1003261a2379e09e067e3"
+        },
+        {
+          "path": "scripts/cef-hosted-bootstrap.mjs",
+          "mode": "100644",
+          "sha": "59ba20636a8c82e10016b660fbe5e2be748210cf"
+        },
+        {
+          "path": "scripts/cef-hosted-capacity.mjs",
+          "mode": "100644",
+          "sha": "2fb3903eb9bf9f582ccf1fd63cf7fbb5c558890b"
+        },
+        {
+          "path": "scripts/cef-hosted-provision.mjs",
+          "mode": "100644",
+          "sha": "9fb323d215e1d246f537685b360d3a665f87f748"
+        },
+        {
+          "path": "scripts/cef-linux-package-fixture.mjs",
+          "mode": "100644",
+          "sha": "9d5d5222b00a86d7e60c82da7a1d8eafd29e4376"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-handoff.mjs",
+          "mode": "100644",
+          "sha": "fae71b6b76c4a1ba4631809d1e5b10a3a40c5c81"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-import.mjs",
+          "mode": "100644",
+          "sha": "aa52f99b48d931a5735c4c03976b3f2cf1e4a4f7"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-publish.mjs",
+          "mode": "100644",
+          "sha": "8549327fb78fc51fe9c0ef32217ac6c232b5b9f6"
+        },
+        {
+          "path": "scripts/cef-patched-runtime.mjs",
+          "mode": "100644",
+          "sha": "616e5cf87ec9a0325d905738749f185bc36515db"
+        },
+        {
+          "path": "scripts/cef-runtime-acceptance-ci.mjs",
+          "mode": "100644",
+          "sha": "70e03a09eabacb4f39a87883fff3910f947b0de9"
+        },
+        {
+          "path": "scripts/cef-runtime-ci.mjs",
+          "mode": "100644",
+          "sha": "b723ed5e56a2f5d8c4122bf7193294cc09653525"
+        },
+        {
+          "path": "scripts/cef-runtime-fetch.mjs",
+          "mode": "100644",
+          "sha": "0046ae7e7674b0beefc2f25a48904d0d9098c251"
+        },
+        {
+          "path": "scripts/ci/analyze-native-dependency-graph.mjs",
+          "mode": "100644",
+          "sha": "20b12544401b69495103a6864f5ce1cecfdf5133"
+        },
+        {
+          "path": "scripts/ci/audit_filter.py",
+          "mode": "100644",
+          "sha": "579893859c71eba218b8d057c79050f32e608ca2"
+        },
+        {
+          "path": "scripts/ci/check-backend-coverage.mjs",
+          "mode": "100644",
+          "sha": "07c99ba1ce84ea3d980b877c5ba27705e0b09823"
+        },
+        {
+          "path": "scripts/ci/check-cargo-update-candidate.mjs",
+          "mode": "100644",
+          "sha": "1814e3307a87de501dff1c66b25996b87dd477be"
+        },
+        {
+          "path": "scripts/ci/check-docs-links.mjs",
+          "mode": "100644",
+          "sha": "c9d2022462126973263c328c1cd1fa2c9f3554a5"
+        },
+        {
+          "path": "scripts/ci/check-frontend-cold-bundle.mjs",
+          "mode": "100644",
+          "sha": "1226702dbaf18afeed1a8f3936c4880de017bcd2"
+        },
+        {
+          "path": "scripts/ci/check-gif-worker-export.mjs",
+          "mode": "100644",
+          "sha": "8f002d7e4478a09a09c7fe523d490d715e144266"
+        },
+        {
+          "path": "scripts/ci/check-js-lock-parity.mjs",
+          "mode": "100644",
+          "sha": "a7f2b69d8b804f8eb6672bcbdfa095b73b607695"
+        },
+        {
+          "path": "scripts/ci/check-npm-audit.mjs",
+          "mode": "100644",
+          "sha": "e6a8a9ad733c94b8e29f0b0c13d4a5e60e7ad966"
+        },
+        {
+          "path": "scripts/ci/check-release-runtime-catalog.mjs",
+          "mode": "100644",
+          "sha": "c54b69df1bd39591c6ddfdd135aa49864bb90da2"
+        },
+        {
+          "path": "scripts/ci/check-release-version-floor.mjs",
+          "mode": "100644",
+          "sha": "d830e025f60687fa5b1d3a6b6736eebfcac2c540"
+        },
+        {
+          "path": "scripts/ci/diagnose-macos-cef-tests.mjs",
+          "mode": "100644",
+          "sha": "6c478768f06ac8ed663ce800a01c3cfaf2d4a042"
+        },
+        {
+          "path": "scripts/ci/e2e-http-fixtures.mjs",
+          "mode": "100644",
+          "sha": "71f74176d81fb9e1f077bc29d55f305e58b47420"
+        },
+        {
+          "path": "scripts/ci/e2e-npm-fixture.mjs",
+          "mode": "100644",
+          "sha": "3638c1a6f3dcc889b58d015e9fad16f60e758f78"
+        },
+        {
+          "path": "scripts/ci/e2e-portainer-fixture.mjs",
+          "mode": "100644",
+          "sha": "e2fbf0b02f37f4d3f05969b16390e59a3667c6e8"
+        },
+        {
+          "path": "scripts/ci/lib/docs-search-validation.mjs",
+          "mode": "100644",
+          "sha": "c6898f29664586368c9c6cc9277b8d7f4b437dab"
+        },
+        {
+          "path": "scripts/ci/resolve-release-version.mjs",
+          "mode": "100644",
+          "sha": "48b32403c8527f8d422991c420e06defc1d6e696"
+        },
+        {
+          "path": "scripts/ci/run-release-native-build.mjs",
+          "mode": "100644",
+          "sha": "d6c02b3490303d27961d1a940883705f99a1d592"
+        },
+        {
+          "path": "scripts/ci/semver.mjs",
+          "mode": "100644",
+          "sha": "a42ba21a31d4d82efd6f1f9a2bfa065a09654f63"
+        },
+        {
+          "path": "scripts/ci/summarize-native-build-timings.mjs",
+          "mode": "100644",
+          "sha": "658b9b5e4bbaa28ea318c7e2229d91cfdf9e0dae"
+        },
+        {
+          "path": "scripts/ci/update-npm-compatible.mjs",
+          "mode": "100644",
+          "sha": "9ff38882ad2c68ba94f0fb398aeb3e1ea733810c"
+        },
+        {
+          "path": "scripts/ci/validate-release-artifacts.mjs",
+          "mode": "100644",
+          "sha": "abcc7f30998e186f362c779998301941e5af10f7"
+        },
+        {
+          "path": "scripts/ci/validate-updater-feed.mjs",
+          "mode": "100644",
+          "sha": "264b762f10a6a54748e2a05bcc9974dc4cbb91e4"
+        },
+        {
+          "path": "scripts/ci/verify-published-release-assets.mjs",
+          "mode": "100644",
+          "sha": "9667feb690df30492faea80da379d5a6a80f182b"
+        },
+        {
+          "path": "scripts/ci/verify-release-snapshot.mjs",
+          "mode": "100644",
+          "sha": "d702ef59b0b71e18437f186e98c3e24b5191a676"
+        },
+        {
+          "path": "scripts/ci/wait-for-release-readiness.mjs",
+          "mode": "100644",
+          "sha": "c0e465f7e1f4e2047d36b9bce9a53ce730ea7623"
+        },
+        {
+          "path": "scripts/crypto/generate-database-eax-vectors.ps1",
+          "mode": "100644",
+          "sha": "bea75fda8491a0df11a1fa76aa062a5eea7b8dbe"
+        },
+        {
+          "path": "scripts/database-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "6db3eb880621234ff1d78fa41285b726f0e75ba4"
+        },
+        {
+          "path": "scripts/dev-port.mjs",
+          "mode": "100644",
+          "sha": "755df5ea02747e526b3ecc92e8f574c29dfeb04e"
+        },
+        {
+          "path": "scripts/dev-server.mjs",
+          "mode": "100644",
+          "sha": "ced531d4c9db02fbbf47c0280080da28356ee80b"
+        },
+        {
+          "path": "scripts/docs-app-capture.mjs",
+          "mode": "100644",
+          "sha": "b23555fe7903dfcb973e5d9cf31140f323012d8d"
+        },
+        {
+          "path": "scripts/docs-visual-capture.mjs",
+          "mode": "100644",
+          "sha": "38b182cc3bafbaf5804e47c56ca7e1b1734e258c"
+        },
+        {
+          "path": "scripts/e2e-build.mjs",
+          "mode": "100644",
+          "sha": "553db2a542fb5e57fb20a4a0d0e7003524cabbf0"
+        },
+        {
+          "path": "scripts/e2e-isolation-selftest.mjs",
+          "mode": "100644",
+          "sha": "348838a05d8fe3d4fd733c2a450a3fbb4de9fea0"
+        },
+        {
+          "path": "scripts/folder-icon-contact-sheet.mjs",
+          "mode": "100644",
+          "sha": "dc474484165bba46ec7f275c6209fc0f18610a69"
+        },
+        {
+          "path": "scripts/format-changed.mjs",
+          "mode": "100644",
+          "sha": "cd1780bd4f2e5885d490ddd3c9e79acc05d85012"
+        },
+        {
+          "path": "scripts/generate-command-inventory.mjs",
+          "mode": "100644",
+          "sha": "3ef1b0f7d2185004f943d1b7892f1017bdecb253"
+        },
+        {
+          "path": "scripts/generate-native-login-catalog.mjs",
+          "mode": "100644",
+          "sha": "68d09236558e77dc1798bd644abe46dfa9bc928b"
+        },
+        {
+          "path": "scripts/i18n-residual.mjs",
+          "mode": "100644",
+          "sha": "00d1e401e7a7fc5d27268b7236e08690f1e6c31d"
+        },
+        {
+          "path": "scripts/icon-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "9b421f1da96f4c8223f3f7b088204ad494fbf578"
+        },
+        {
+          "path": "scripts/lib/browser-build-route.mjs",
+          "mode": "100644",
+          "sha": "3fb21b9fcd4d5e36deb6c206c3c2cf0d2be8c82a"
+        },
+        {
+          "path": "scripts/lib/browser-client-imports.mjs",
+          "mode": "100644",
+          "sha": "12e5fe39389938587468849ac095b6c6493f8da0"
+        },
+        {
+          "path": "scripts/lib/browser-custom-runtime.mjs",
+          "mode": "100644",
+          "sha": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+        },
+        {
+          "path": "scripts/lib/browser-dev-sdk-cache.mjs",
+          "mode": "100644",
+          "sha": "806f4feb6a61e84c0a4426d7f1df51396bbe9f4b"
+        },
+        {
+          "path": "scripts/lib/browser-installer-bundles.mjs",
+          "mode": "100644",
+          "sha": "57279a8dabf84605a9783f388210eed4554827e9"
+        },
+        {
+          "path": "scripts/lib/browser-local-runtime.mjs",
+          "mode": "100644",
+          "sha": "fe6fba4493b9265823a71a0a6445ad41cdccd708"
+        },
+        {
+          "path": "scripts/lib/browser-runtime-bootstrap.mjs",
+          "mode": "100644",
+          "sha": "0db85b14d4266af86c04eb27dab97359a416c879"
+        },
+        {
+          "path": "scripts/lib/browser-runtime-release.mjs",
+          "mode": "100644",
+          "sha": "4f5591f6400a1b84cdd2b4c07108ed9ccb59e4a9"
+        },
+        {
+          "path": "scripts/lib/browser-sandbox-access.mjs",
+          "mode": "100644",
+          "sha": "eb3a022a7a3c0ad0084f595a654929a4101983bc"
+        },
+        {
+          "path": "scripts/lib/cef-checkpoint-archive.py",
+          "mode": "100644",
+          "sha": "1c9fcc083611ee7652e007cee4ca16f1ac44f6dd"
+        },
+        {
+          "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "sha": "4b01582a5168da65808d5ae1a4bf74f2a8bfe36a"
+        },
+        {
+          "path": "scripts/lib/cef-linux-producer-migration.mjs",
+          "mode": "100644",
+          "sha": "4d216379902e002fe80cf99e07858b622def5bf8"
+        },
+        {
+          "path": "scripts/lib/cef-linux-sidecar-retirement.py",
+          "mode": "100644",
+          "sha": "8041a411ff3ae9ce3c8b55ddb1cfe0eb3a4b4471"
+        },
+        {
+          "path": "scripts/lib/cef-mac-gcs-normalize.py",
+          "mode": "100644",
+          "sha": "e20c69ca128b3c3006a3c87ddeb3294da759bd03"
+        },
+        {
+          "path": "scripts/lib/cef-mac-process-census.py",
+          "mode": "100644",
+          "sha": "ab15eccc67c328920c0a101b893755edfc7fc170"
+        },
+        {
+          "path": "scripts/lib/cef-mac-sdk-inventory.mjs",
+          "mode": "100644",
+          "sha": "8e3e081cfe40fee9ff865b5699b47bfc9a6184ef"
+        },
+        {
+          "path": "scripts/lib/cef-mac-source-metadata.mjs",
+          "mode": "100644",
+          "sha": "5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf"
+        },
+        {
+          "path": "scripts/lib/cef-native-crash-summary.mjs",
+          "mode": "100644",
+          "sha": "4ded0956ee5732222a22c96df40bc40dbee62a30"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-handoff.mjs",
+          "mode": "100644",
+          "sha": "3fb062fc081d9a974f841f22a28068059a2a8550"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-import.mjs",
+          "mode": "100644",
+          "sha": "369c93b265d65416934865d8a5f0b9c1f62e22d7"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-publish.mjs",
+          "mode": "100644",
+          "sha": "a53f9d122bf11263745de9f741a13dbbe51aba3c"
+        },
+        {
+          "path": "scripts/lib/cef-storage-acceptance.mjs",
+          "mode": "100644",
+          "sha": "9580b3fb662eb0b26e9bb2bf897d7c037c4c743c"
+        },
+        {
+          "path": "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+          "mode": "100644",
+          "sha": "25527fc6303adf9638de3cee72ee989da42e1066"
+        },
+        {
+          "path": "scripts/lib/command-inventory.mjs",
+          "mode": "100644",
+          "sha": "a262d43203010c6feb1e28950040ecf1564b9248"
+        },
+        {
+          "path": "scripts/lib/core-command-groups.mjs",
+          "mode": "100644",
+          "sha": "d37431b0b46f82c1183f9cc52245cb2223de89c2"
+        },
+        {
+          "path": "scripts/lib/dev-build-budget.mjs",
+          "mode": "100644",
+          "sha": "fdc4c6673227cca6d9036d9842fac9891ce193e6"
+        },
+        {
+          "path": "scripts/lib/e2e-profile-isolation.d.mts",
+          "mode": "100644",
+          "sha": "9e6c3fa95f776b5e542bba35134d493ba98de3d7"
+        },
+        {
+          "path": "scripts/lib/e2e-profile-isolation.mjs",
+          "mode": "100644",
+          "sha": "1ddca465468f9b6eb7550d5c6fa10ec1e8ea3844"
+        },
+        {
+          "path": "scripts/lib/extract-custom-runtime.py",
+          "mode": "100644",
+          "sha": "95f02a1b2467bf726b083a309177c58aa8897c0f"
+        },
+        {
+          "path": "scripts/lib/linux-package-sandbox.mjs",
+          "mode": "100644",
+          "sha": "7c42e96ed0c50eb4b5dcbfc58d3cbf097f1ddee7"
+        },
+        {
+          "path": "scripts/lib/native-child-env.mjs",
+          "mode": "100644",
+          "sha": "8c70b2dda58d7841b1fb5444f88fa25be0d08d0a"
+        },
+        {
+          "path": "scripts/lib/windows-native-crash-capture.mjs",
+          "mode": "100644",
+          "sha": "7a61eaf64f89ce5f6d824551fc541b9c8716a73b"
+        },
+        {
+          "path": "scripts/lib/windows-openssl-env.mjs",
+          "mode": "100644",
+          "sha": "0be899cc5030ef456be2e52f0d29a91c1aeb21c8"
+        },
+        {
+          "path": "scripts/native-build-env.mjs",
+          "mode": "100644",
+          "sha": "9c7500a5f973afc85aa1240be166426628587226"
+        },
+        {
+          "path": "scripts/native-target.mjs",
+          "mode": "100644",
+          "sha": "adb8fdfcdaddac32a58a17ca637b67d213d2cf7a"
+        },
+        {
+          "path": "scripts/native/browser-app-plist.py",
+          "mode": "100644",
+          "sha": "37b729490bbc2d337217b17e529145756abda94b"
+        },
+        {
+          "path": "scripts/native/browser-cargo-runner.rs",
+          "mode": "100644",
+          "sha": "d1b82bdb1d8c88da48257e12dc22231983fac3be"
+        },
+        {
+          "path": "scripts/native/repair-browser-sandbox-access.ps1",
+          "mode": "100644",
+          "sha": "624444b6dbbd5b7b678429741f3040cd97c2e78c"
+        },
+        {
+          "path": "scripts/provider-icons-capture.mjs",
+          "mode": "100644",
+          "sha": "1af8438246326956c285ca721093cf4fcc8b73e8"
+        },
+        {
+          "path": "scripts/readme-screenshot-validation.mjs",
+          "mode": "100644",
+          "sha": "6ad9a56649aff470f4431a501421da2b914ce79d"
+        },
+        {
+          "path": "scripts/readme-screenshot.mjs",
+          "mode": "100644",
+          "sha": "fd113092504ee5c3440fe2fa39cbcd71ca15d810"
+        },
+        {
+          "path": "scripts/softether-e2e-down.ps1",
+          "mode": "100644",
+          "sha": "2e129e26927037109abad8996f5e71ca0da7dbe5"
+        },
+        {
+          "path": "scripts/softether-e2e-down.sh",
+          "mode": "100644",
+          "sha": "090f7e0ee6e2a4335dd1a5b77bb0e828b09ccee7"
+        },
+        {
+          "path": "scripts/sort-core-command-groups.mjs",
+          "mode": "100644",
+          "sha": "16114fc39008314fa34280bf8b6c67855cef559d"
+        },
+        {
+          "path": "scripts/spreadsheet-ui-check.mjs",
+          "mode": "100644",
+          "sha": "b7b5717eded1d9f05bc9e02f9b9a01ffa7b0e24c"
+        },
+        {
+          "path": "scripts/stage-file-viewer-host.mjs",
+          "mode": "100644",
+          "sha": "e28b78e4d2bda5e5d8e24a8bc7a336bfdee1bf81"
+        },
+        {
+          "path": "scripts/stage-openh264-runtime.mjs",
+          "mode": "100644",
+          "sha": "c529782fbb8b5915053f4ec0ff0b9954bfc216e1"
+        },
+        {
+          "path": "scripts/stage-windows-native-runtime.mjs",
+          "mode": "100644",
+          "sha": "ad986a3a438a6ab21d59957f7701cd029f8d8f58"
+        },
+        {
+          "path": "scripts/styled-english-locales.mjs",
+          "mode": "100644",
+          "sha": "a2529556eae07dc2ae6192296fcbe56cceccfd92"
+        },
+        {
+          "path": "scripts/sync-brand-icons.mjs",
+          "mode": "100644",
+          "sha": "b169695faff2b8e34340b20362e886a4b3c08b6e"
+        },
+        {
+          "path": "scripts/sync-js-deps.mjs",
+          "mode": "100644",
+          "sha": "0e0fbf1f73aa63bf8093cff34ba60ab5e9d92bd6"
+        },
+        {
+          "path": "scripts/sync-version.mjs",
+          "mode": "100644",
+          "sha": "af51e4437a6bb1d1e4e481a4a2be0ee11d3ae832"
+        },
+        {
+          "path": "scripts/tauri-dev.mjs",
+          "mode": "100644",
+          "sha": "f81ddd2150198a8362ab5510e124dba7390dce7a"
+        },
+        {
+          "path": "scripts/tauri.mjs",
+          "mode": "100644",
+          "sha": "d4d7819293430603f3c46f2b3e7c14af54777cfe"
+        },
+        {
+          "path": "scripts/test-legacy-web-compat-browser.mjs",
+          "mode": "100644",
+          "sha": "3cabbaa847327de9ac8caa4c7cecb7cf0e9832aa"
+        },
+        {
+          "path": "scripts/test-synology-login-browser.mjs",
+          "mode": "100644",
+          "sha": "0169c0728bb49f4961a34732ae72e1051a386145"
+        },
+        {
+          "path": "scripts/test-vault-ssh-inline.mjs",
+          "mode": "100644",
+          "sha": "127af7cf77c86525bc6ad561145ca78e18348dad"
+        },
+        {
+          "path": "scripts/test-web-network-browser.mjs",
+          "mode": "100644",
+          "sha": "580c5832a695bfc7f068d203d8b1ddb8eeff57cc"
+        },
+        {
+          "path": "scripts/test-website-dark-mode-browser.mjs",
+          "mode": "100644",
+          "sha": "d1b6b5138e89f2215476f57cf432b018bdd942a0"
+        },
+        {
+          "path": "scripts/test-yealink-login-browser.mjs",
+          "mode": "100644",
+          "sha": "9c26ad336cc66c956eb4ea2e3815dffdbab264e4"
+        },
+        {
+          "path": "scripts/trace-provider-icons.mjs",
+          "mode": "100644",
+          "sha": "e30f7ec547a03efbdcd448dc78a9c395721b1519"
+        },
+        {
+          "path": "scripts/trust-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "062a26cdb05d692f347d28772c1613398df408b2"
+        },
+        {
+          "path": "scripts/vendor-web-darkreader.mjs",
+          "mode": "100644",
+          "sha": "19541ed4fff8d24537d059748ea0655173e67b7e"
+        },
+        {
+          "path": "scripts/versioning.mjs",
+          "mode": "100644",
+          "sha": "303feb0be3a88e30c575be88157640621322e6e5"
+        },
+        {
+          "path": "scripts/viewport-scroll-check.mjs",
+          "mode": "100644",
+          "sha": "5d203492eb36a8b3354182b3e66fd7e0402d7e12"
+        },
+        {
+          "path": "scripts/web-automation-capture.mjs",
+          "mode": "100644",
+          "sha": "3f51e0714aae592fdcecf2b72af6fe8be9ac7211"
+        }
+      ],
+      "files": [
+        {
+          "path": ".github/workflows/cef-engineering-checkpoint.yml",
+          "mode": "100644",
+          "before": {
+            "bytes": 14907,
+            "sha256": "b5ef2ff8ac1463078515afaff1f8f2a2ce6b67e11f57d811a60d1ab587d46daf",
+            "blob": "75fc85e39d3cf0b82726dcc603126bdaff0455c2"
+          },
+          "after": {
+            "bytes": 14907,
+            "sha256": "6400f542bb040e52f5395e0e3898520ddb6d707630c3d97ebe1019e3a64d6047",
+            "blob": "3d4b9cd3232bfc77cb30149dd3076375dd295983"
+          },
+          "pairs": [
+            {
+              "previous": "    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'\n    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' || inputs.target == 'aarch64-unknown-linux-gnu' && '8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb' || '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n      actions: read\n",
+              "current": "    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'\n    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212' || inputs.target == 'aarch64-unknown-linux-gnu' && '5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e' || 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n      actions: read\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/browser-custom-runtime.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 69587,
+            "sha256": "2d9e61905cb38b34be4fc5af0eec0ad7119b3a3095e183004f17b418d145cf4e",
+            "blob": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+          },
+          "after": {
+            "bytes": 69440,
+            "sha256": "3994398d15f588a624f698b2508896322583538379d4bd000fa13cc62902568c",
+            "blob": "63070604a0146bdd1669a2fc04fae1d8db693e74"
+          },
+          "pairs": [
+            {
+              "previous": "        args: [\n          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          // ARM Linux uses the pinned cross sysroot, which intentionally lacks\n          // GTK. The minimal distribution needs the library and sandbox, not\n          // the aggregate's GTK cefclient sample or its test executables.\n          selectedTarget === \"aarch64-unknown-linux-gnu\" ? \"libcef\" : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n              ? [\"chrome_sandbox\"]\n",
+              "current": "        args: [\n          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          host === \"darwin\"\n            ? \"cefclient\"\n            : selectedTarget === \"aarch64-unknown-linux-gnu\"\n              ? \"libcef\"\n              : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n              ? [\"chrome_sandbox\"]\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-checkpoint-archive.py",
+          "mode": "100644",
+          "before": {
+            "bytes": 240123,
+            "sha256": "d5e9ac6002b5a36584d5f2a7fa6240a5627983ba16a32657ceaeb7a327d1f2d6",
+            "blob": "1c9fcc083611ee7652e007cee4ca16f1ac44f6dd"
+          },
+          "after": {
+            "bytes": 242586,
+            "sha256": "d4d769d78ca60c65a19b6e4f4f1414f57d18ef0b6ff5a55beea1eb5b38497cba",
+            "blob": "8b5b02ea8734fbee6f8ae5efcd59688c7cec294f"
+          },
+          "pairs": [
+            {
+              "previous": "MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v1'\n# Source-controlled scope, supported by the reviewed native scratch proof only.\n# No report, caller flag or environment toggle can broaden this identity.\nMAC_SOURCE_WRITE_ADMITTED = True\nMAC_SOURCE = '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'\nMAC_SOURCE_IMAGE = '20260824.0482.1'\nMAC_SOURCE_PROOF = (41328841230, 13092905128,\n                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')\nMAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'\nMAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'\nMAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'\n# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.\nMAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,\n",
+              "current": "MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v1'\n# Source-controlled scope, supported by the reviewed native scratch proof only.\n# No report, caller flag or environment toggle can broaden this identity.\nMAC_SOURCE_WRITE_ADMITTED = True\nMAC_SOURCE = '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'\nMAC_SOURCE_IMAGE = '20260824.0482.1'\nMAC_SOURCE_PROOF = (41328841230, 13092905128,\n                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')\nMAC_INTEL_SOURCE = 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f'\nMAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'\nMAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'\n# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.\nMAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,\n"
+            },
+            {
+              "previous": "    return value\n# END STATIC MAC OWNED FD HASHING\n\n\ndef source_mac_write_host_admission():\n    import sys\n    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and\n            platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and\n",
+              "current": "    return value\n# END STATIC MAC OWNED FD HASHING\n\n\n# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.\n# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.\n_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (\n    'sorng-native-mac-source-scope-qualification-v1',  # kind\n    43652853463,  # runId\n    1,  # attempt\n    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head\n    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256\n    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath\n    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256\n    14136269303,  # metadataArtifactId\n    1926,  # metadataZipBytes\n    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256\n    5137,  # metadataRawProofBytes\n    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256\n    708,  # metadataRawCarrierBytes\n    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256\n    14136926168,  # supervisorArtifactId\n    5876,  # supervisorZipBytes\n    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256\n    25131,  # supervisorScopeBytes\n    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256\n    '20260824.0482.1',  # image\n    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources\n    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256\n    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof\n)\nMAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN\ndef source_mac_scope_qualified(target, source, image):\n    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and\n            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and\n            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])\n# END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\ndef source_mac_write_host_admission():\n    import sys\n    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and\n            platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and\n"
+            },
+            {
+              "previous": "\n\ndef source_mac_write_admission(identity):\n    source_mac_write_host_admission()\n    require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and\n            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and\n            identity.get('canonicalRoot') ==\n            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,\n            'source-mac-identity-scope')\n",
+              "current": "\n\ndef source_mac_write_admission(identity):\n    source_mac_write_host_admission()\n    require(source_mac_scope_qualified('aarch64-apple-darwin', MAC_SOURCE, MAC_SOURCE_IMAGE) and\n            isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and\n            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and\n            identity.get('canonicalRoot') ==\n            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,\n            'source-mac-identity-scope')\n"
+            },
+            {
+              "previous": "\n\ndef source_mac_intel_write_admission(identity):\n    source_mac_intel_write_host_admission()\n    require(isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and\n            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and\n            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,\n            'source-mac-identity-scope')\n\n",
+              "current": "\n\ndef source_mac_intel_write_admission(identity):\n    source_mac_intel_write_host_admission()\n    require(source_mac_scope_qualified('x86_64-apple-darwin', MAC_INTEL_SOURCE, MAC_INTEL_SOURCE_IMAGE) and\n            isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and\n            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and\n            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,\n            'source-mac-identity-scope')\n\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 275834,
+            "sha256": "49e5023be1e1a40cca08bb5278415103792ebed60d71259b68fa9f3386ba460c",
+            "blob": "4b01582a5168da65808d5ae1a4bf74f2a8bfe36a"
+          },
+          "after": {
+            "bytes": 276188,
+            "sha256": "0fb1d64ea28c19141a602df025b77f32df7a6c198bb0f18af2e8a1b08f2f007b",
+            "blob": "c75b9ed2b4ff07994cc3d35092bc29203912792a"
+          },
+          "pairs": [
+            {
+              "previous": "import { hostname, tmpdir, userInfo } from \"node:os\";\nimport {\n  macSourceMetadataPlan,\n  macIntelSourceMetadataPlan,\n} from \"./cef-mac-source-metadata.mjs\";\n\nexport const LIMITS = Object.freeze({\n  compressed: 32 * 1024 ** 3,\n",
+              "current": "import { hostname, tmpdir, userInfo } from \"node:os\";\nimport {\n  macSourceMetadataPlan,\n  macIntelSourceMetadataPlan,\n  MAC_SOURCE_SCOPE_QUALIFICATION,\n  macSourceScopeQualified,\n} from \"./cef-mac-source-metadata.mjs\";\n\nexport const LIMITS = Object.freeze({\n  compressed: 32 * 1024 ** 3,\n"
+            },
+            {
+              "previous": "  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n});\nexport const INPUTS =\n  \"native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat\";\nexport const TARGET = \"x86_64-apple-darwin\";\nexport const SOURCE_ID =\n  \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\";\n// Cross compilation never changes the native acceptance host. Adding a profile\n// changes the producer code digest; checkpoints from older code cannot migrate.\nconst PROFILES = Object.freeze({\n  [TARGET]: Object.freeze({\n",
+              "current": "  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n});\nexport const INPUTS =\n  \"native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat\";\nexport const TARGET = \"x86_64-apple-darwin\";\nexport const SOURCE_ID =\n  \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\";\n// Cross compilation never changes the native acceptance host. Adding a profile\n// changes the producer code digest; checkpoints from older code cannot migrate.\nconst PROFILES = Object.freeze({\n  [TARGET]: Object.freeze({\n"
+            },
+            {
+              "previous": "    acceptanceArchitecture: \"x64\",\n  }),\n  \"aarch64-apple-darwin\": Object.freeze({\n    target: \"aarch64-apple-darwin\",\n    source: \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n    inputs:\n      \"native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat\",\n    platform: \"darwin\",\n    architecture: \"x64\",\n    runner: \"macos-15-intel\",\n    provisionTarget: TARGET,\n",
+              "current": "    acceptanceArchitecture: \"x64\",\n  }),\n  \"aarch64-apple-darwin\": Object.freeze({\n    target: \"aarch64-apple-darwin\",\n    source: \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n    inputs:\n      \"native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat\",\n    platform: \"darwin\",\n    architecture: \"x64\",\n    runner: \"macos-15-intel\",\n    provisionTarget: TARGET,\n"
+            },
+            {
+              "previous": "    acceptanceArchitecture: \"arm64\",\n  }),\n  \"aarch64-unknown-linux-gnu\": Object.freeze({\n    target: \"aarch64-unknown-linux-gnu\",\n    // Exact hosted images whose build-relevant contents were reviewed as equivalent (evidence:\n    // native/cef-runner-images/linux-arm-accepted-images.json); the first is the runner map's pin.\n    acceptedImages: Object.freeze([\"20261026.354.1\", \"20261101.360.1\"]),\n    source: \"8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb\",\n    inputs:\n      \"native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1\",\n    platform: \"linux\",\n    architecture: \"x64\",\n    runner: \"ubuntu-24.04\",\n    provisionTarget: \"x86_64-unknown-linux-gnu\",\n",
+              "current": "    acceptanceArchitecture: \"arm64\",\n  }),\n  \"aarch64-unknown-linux-gnu\": Object.freeze({\n    target: \"aarch64-unknown-linux-gnu\",\n    // Fresh canonical370 host only; no equivalence or old checkpoint reuse.\n    acceptedImages: Object.freeze([\"20261111.370.1\"]),\n    source: \"5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e\",\n    inputs:\n      \"native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1\",\n    platform: \"linux\",\n    architecture: \"x64\",\n    runner: \"ubuntu-24.04\",\n    provisionTarget: \"x86_64-unknown-linux-gnu\",\n"
+            },
+            {
+              "previous": "  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"libcef\", \"chrome_sandbox\"]\n      : [\"cef\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n    path.basename(args[0]) !== \"autoninja.py\" ||\n",
+              "current": "  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"libcef\", \"chrome_sandbox\"]\n      : [\"cefclient\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n    path.basename(args[0]) !== \"autoninja.py\" ||\n"
+            },
+            {
+              "previous": "  artifactId: 13097527087,\n  source: \"ce297732e385466d4d8fe731e30441408fec6d30\",\n  sha256: \"43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c\",\n});\nconst MAC_CENSUS_SOURCES = Object.freeze({\n  \"x86_64-apple-darwin\":\n    \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\",\n  \"aarch64-apple-darwin\":\n    \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n});\nconst MAC_CENSUS_PYTHON =\n  \"/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14\";\nconst macCensusFactories = new WeakMap();\n",
+              "current": "  artifactId: 13097527087,\n  source: \"ce297732e385466d4d8fe731e30441408fec6d30\",\n  sha256: \"43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c\",\n});\n// Fresh current-source scope record; the older supervisor report remains historical.\nexport const MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION =\n  MAC_SOURCE_SCOPE_QUALIFICATION;\nconst MAC_CENSUS_SOURCES = Object.freeze({\n  \"x86_64-apple-darwin\":\n    \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  \"aarch64-apple-darwin\":\n    \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n});\nconst MAC_CENSUS_PYTHON =\n  \"/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14\";\nconst macCensusFactories = new WeakMap();\n"
+            },
+            {
+              "previous": "  );\n  assert(\n    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&\n      value.source === MAC_CENSUS_SOURCES[value.target] &&\n      value.canonicalRoot ===\n        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&\n      value.python === MAC_CENSUS_PYTHON,\n    \"CENSUS_ROOT\",\n",
+              "current": "  );\n  assert(\n    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&\n      value.source === MAC_CENSUS_SOURCES[value.target] &&\n      macSourceScopeQualified({\n        target: value.target,\n        source: value.source,\n        image: process.env.ImageVersion,\n        sourceScopeQualification: MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,\n      }) &&\n      value.canonicalRoot ===\n        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&\n      value.python === MAC_CENSUS_PYTHON,\n    \"CENSUS_ROOT\",\n"
+            },
+            {
+              "previous": "        Date.now() + deadline - performance.now(),\n      ),\n      requestBudget,\n      evidence: MAC_CENSUS_EVIDENCE.sha256,\n      supervisorEvidence: MAC_CENSUS_SUPERVISOR_QUALIFICATION.sha256,\n    };\n    const raw = Buffer.from(canonical(context) + \"\\n\");\n    await writeFile(path.join(sessionRoot, \"context.json\"), raw, {\n      flag: \"wx\",\n",
+              "current": "        Date.now() + deadline - performance.now(),\n      ),\n      requestBudget,\n      evidence: MAC_CENSUS_EVIDENCE.sha256,\n      supervisorEvidence:\n        MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION.supervisorScopeSha256,\n    };\n    const raw = Buffer.from(canonical(context) + \"\\n\");\n    await writeFile(path.join(sessionRoot, \"context.json\"), raw, {\n      flag: \"wx\",\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-mac-gcs-normalize.py",
+          "mode": "100644",
+          "before": {
+            "bytes": 11223,
+            "sha256": "8102419d2f16b149743d2546fe670044a03dbd5f1ab9c2dde5095f178190d236",
+            "blob": "e20c69ca128b3c3006a3c87ddeb3294da759bd03"
+          },
+          "after": {
+            "bytes": 11223,
+            "sha256": "b09e8fcc30410817ebc25bf0f33f3ec5d62449f6726881495d81df990b840ed5",
+            "blob": "e6a2834029ad5b819a47586d313bae9e6f0ff12d"
+          },
+          "pairs": [
+            {
+              "previous": "WRITER = ('depot_tools/gclient_scm.py', 105463,\n          'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')\nDEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'\nSOURCES = {\n    'x86_64-apple-darwin': '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',\n    'aarch64-apple-darwin': '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54',\n}\n\n\nclass PrepError(Exception):\n",
+              "current": "WRITER = ('depot_tools/gclient_scm.py', 105463,\n          'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')\nDEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'\nSOURCES = {\n    'x86_64-apple-darwin': 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',\n    'aarch64-apple-darwin': '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212',\n}\n\n\nclass PrepError(Exception):\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-mac-process-census.py",
+          "mode": "100644",
+          "before": {
+            "bytes": 24586,
+            "sha256": "ec206948e6efe38d0c854d655ef95454262e01b5d28d05f4169587d1b511ff52",
+            "blob": "ab15eccc67c328920c0a101b893755edfc7fc170"
+          },
+          "after": {
+            "bytes": 26917,
+            "sha256": "b454f93526af694fc1217106a39e433bba02df4abc7f7bcca9903f823216a74c",
+            "blob": "78ac12924376d028d4b3514ad6a408eedd11e4e6"
+          },
+          "pairs": [
+            {
+              "previous": "NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855'\nNATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,\n    'source':'ce297732e385466d4d8fe731e30441408fec6d30',\n    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}\nNATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',\n                  'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}\nNATIVE_MAX_WORK_MS = 180*60*1000\nNATIVE_MAX_REQUESTS = 43328\nNATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'\n\n",
+              "current": "NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855'\nNATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,\n    'source':'ce297732e385466d4d8fe731e30441408fec6d30',\n    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}\nNATIVE_SOURCES = {'x86_64-apple-darwin':'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',\n                  'aarch64-apple-darwin':'3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'}\n# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.\n# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.\n_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (\n    'sorng-native-mac-source-scope-qualification-v1',  # kind\n    43652853463,  # runId\n    1,  # attempt\n    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head\n    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256\n    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath\n    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256\n    14136269303,  # metadataArtifactId\n    1926,  # metadataZipBytes\n    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256\n    5137,  # metadataRawProofBytes\n    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256\n    708,  # metadataRawCarrierBytes\n    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256\n    14136926168,  # supervisorArtifactId\n    5876,  # supervisorZipBytes\n    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256\n    25131,  # supervisorScopeBytes\n    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256\n    '20260824.0482.1',  # image\n    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources\n    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256\n    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof\n)\nMAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN\ndef native_scope_qualified(target, source, image):\n    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and\n            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and\n            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])\n# END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\nNATIVE_MAX_WORK_MS = 180*60*1000\nNATIVE_MAX_REQUESTS = 43328\nNATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'\n\n"
+            },
+            {
+              "previous": "            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence','supervisorEvidence'}\n    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and\n         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and\n         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and\n         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==NATIVE_SUPERVISOR_QUALIFICATION['sha256'],'CENSUS_ROOT')\n    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']\n    need(value['canonicalRoot']==expected,'CENSUS_ROOT')\n    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and\n         1<=value['workMilliseconds']<=NATIVE_MAX_WORK_MS and\n",
+              "current": "            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence','supervisorEvidence'}\n    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and\n         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and\n         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and\n         native_scope_qualified(value['target'],value['source'],value['image']) and\n         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==MAC_SOURCE_SCOPE_QUALIFICATION[18],'CENSUS_ROOT')\n    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']\n    need(value['canonicalRoot']==expected,'CENSUS_ROOT')\n    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and\n         1<=value['workMilliseconds']<=NATIVE_MAX_WORK_MS and\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-mac-source-metadata.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 52286,
+            "sha256": "8b6fb0fc8f98eb6f5f7baf9cc66ec92ac86eb4bc3531865466fe628f65a76617",
+            "blob": "5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf"
+          },
+          "after": {
+            "bytes": 54794,
+            "sha256": "c4fe7cbf74f70a78a735250771ee756b9132133b030e58cdb916e65737a2263c",
+            "blob": "0089d245de4a4624139afcb678ab55c9c04f7947"
+          },
+          "pairs": [
+            {
+              "previous": "  qualifiedHelperBytes: 198811,\n  qualifiedHelperSha256:\n    \"5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79\",\n});\nexport const MAC_SOURCE_POLICY = Object.freeze({\n  target: \"aarch64-apple-darwin\",\n  source: \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n",
+              "current": "  qualifiedHelperBytes: 198811,\n  qualifiedHelperSha256:\n    \"5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79\",\n});\n// BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n// Fresh exact-source scratch evidence; prior IO/ABI receipts below stay historical.\n// This record is code-owned. Caller JSON, environment and reports never select it.\nexport const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({\n  kind: \"sorng-native-mac-source-scope-qualification-v1\",\n  runId: 43652853463,\n  attempt: 1,\n  head: \"4dbcb84855ea9cd9ee632657bafd265a6491fc69\",\n  sourceWitnessSha256:\n    \"ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf\",\n  evidencePath:\n    \"native/cef-source-qualifications/mac-43652853463/qualification.json\",\n  evidenceSha256:\n    \"18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31\",\n  metadataArtifactId: 14136269303,\n  metadataZipBytes: 1926,\n  metadataZipSha256:\n    \"256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3\",\n  metadataRawProofBytes: 5137,\n  metadataRawProofSha256:\n    \"4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf\",\n  metadataRawCarrierBytes: 708,\n  metadataRawCarrierSha256:\n    \"d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8\",\n  supervisorArtifactId: 14136926168,\n  supervisorZipBytes: 5876,\n  supervisorZipSha256:\n    \"2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c\",\n  supervisorScopeBytes: 25131,\n  supervisorScopeSha256:\n    \"bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3\",\n  image: \"20260824.0482.1\",\n  sources: Object.freeze({\n    \"aarch64-apple-darwin\":\n      \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n    \"x86_64-apple-darwin\":\n      \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  }),\n  candidateSourceFreezeSha256:\n    \"fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33\",\n  candidateProducerAtProof:\n    \"119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10\",\n});\nexport function macSourceScopeQualified(policy) {\n  return (\n    policy?.sourceScopeQualification === MAC_SOURCE_SCOPE_QUALIFICATION &&\n    Object.hasOwn(MAC_SOURCE_SCOPE_QUALIFICATION.sources, policy.target) &&\n    MAC_SOURCE_SCOPE_QUALIFICATION.sources[policy.target] === policy.source &&\n    MAC_SOURCE_SCOPE_QUALIFICATION.image === policy.image\n  );\n}\n// END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\nexport const MAC_SOURCE_POLICY = Object.freeze({\n  target: \"aarch64-apple-darwin\",\n  source: \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n"
+            },
+            {
+              "previous": "  legacyPrivatePolicy: \"sorng-macarm-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  evidence: Object.freeze({\n    runId: 41328841230,\n    artifactId: 13092905128,\n    sha256: \"fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90\",\n  }),\n});\nexport const MAC_INTEL_SOURCE_POLICY = Object.freeze({\n  target: \"x86_64-apple-darwin\",\n  source: \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n",
+              "current": "  legacyPrivatePolicy: \"sorng-macarm-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,\n  evidence: Object.freeze({\n    runId: 41328841230,\n    artifactId: 13092905128,\n    sha256: \"fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90\",\n  }),\n});\nexport const MAC_INTEL_SOURCE_POLICY = Object.freeze({\n  target: \"x86_64-apple-darwin\",\n  source: \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n"
+            },
+            {
+              "previous": "  legacyPrivatePolicy: \"sorng-macintel-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  evidence: Object.freeze({\n    runId: 41348226366,\n    artifactId: 13099539006,\n    source: \"499ade0595d3e3d90fa15aea1ffb8499e297bf3f\",\n",
+              "current": "  legacyPrivatePolicy: \"sorng-macintel-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,\n  evidence: Object.freeze({\n    runId: 41348226366,\n    artifactId: 13099539006,\n    source: \"499ade0595d3e3d90fa15aea1ffb8499e297bf3f\",\n"
+            },
+            {
+              "previous": "};\nexport function validateMacSourceWriteScope(identity, host) {\n  assert(\n    MAC_SOURCE_POLICY.darwinWriteAdmitted &&\n      host?.platform === MAC_SOURCE_POLICY.platform &&\n      host.architecture === MAC_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_SOURCE_POLICY.imageOS &&\n      host.image === MAC_SOURCE_POLICY.image &&\n",
+              "current": "};\nexport function validateMacSourceWriteScope(identity, host) {\n  assert(\n    MAC_SOURCE_POLICY.darwinWriteAdmitted &&\n      macSourceScopeQualified(MAC_SOURCE_POLICY) &&\n      host?.platform === MAC_SOURCE_POLICY.platform &&\n      host.architecture === MAC_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_SOURCE_POLICY.imageOS &&\n      host.image === MAC_SOURCE_POLICY.image &&\n"
+            },
+            {
+              "previous": "\nexport function validateMacIntelSourceWriteScope(identity, host) {\n  assert(\n    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&\n      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&\n      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&\n      host.image === MAC_INTEL_SOURCE_POLICY.image &&\n",
+              "current": "\nexport function validateMacIntelSourceWriteScope(identity, host) {\n  assert(\n    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&\n      macSourceScopeQualified(MAC_INTEL_SOURCE_POLICY) &&\n      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&\n      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&\n      host.image === MAC_INTEL_SOURCE_POLICY.image &&\n"
+            }
+          ]
+        }
+      ]
+    },
+    "fresh": {
+      "head": "630655116257abbaef49198f3287ff75e3858d5a",
+      "producer": "f062f3f0474a965beab3367ca4f608d7a13e81b08a9890a8a1506fee41ff4412",
+      "rows": [
+        {
+          "path": ".github/workflows/cef-engineering-checkpoint.yml",
+          "mode": "100644",
+          "sha": "d7f72d809ea90a245efb1ba92887ff99946945a4"
+        },
+        {
+          "path": ".node-version",
+          "mode": "100644",
+          "sha": "60ade1ae01e833a5c291c47883bf26fb031f7727"
+        },
+        {
+          "path": "native/cef-hosted-recipe.json",
+          "mode": "100644",
+          "sha": "77ba6488a6f092856b705c477e7cf4084ff5390f"
+        },
+        {
+          "path": "scripts/automation-repository.mjs",
+          "mode": "100644",
+          "sha": "22e31d24ab9b4731b1e5ca5b22878d3084d6f248"
+        },
+        {
+          "path": "scripts/browser-app-build.mjs",
+          "mode": "100644",
+          "sha": "1522b41ad8788f2f9188ef488e49eac26c429659"
+        },
+        {
+          "path": "scripts/browser-client-network-probe.mjs",
+          "mode": "100644",
+          "sha": "a5c0a5a32171b833094a6a133c8fbd4b3bc8478e"
+        },
+        {
+          "path": "scripts/browser-live.mjs",
+          "mode": "100644",
+          "sha": "23c88fcf52529959b0a4f0ca32cf2a1e0cf53f9d"
+        },
+        {
+          "path": "scripts/browser-readiness.mjs",
+          "mode": "100644",
+          "sha": "aa7b6a2e159312a3f500bd558647769e1d717b45"
+        },
+        {
+          "path": "scripts/browser-runtime-native-ci.mjs",
+          "mode": "100644",
+          "sha": "5e0a21bd339d1101e0f323bccc1dc475b696fdc0"
+        },
+        {
+          "path": "scripts/browser-runtime-package.mjs",
+          "mode": "100644",
+          "sha": "988ac8db981ffc8f9e05c1fc3cd9b193e4af0c8b"
+        },
+        {
+          "path": "scripts/capture-login-page.mjs",
+          "mode": "100644",
+          "sha": "30e1507084269bab38f6115107b45a225ef4b313"
+        },
+        {
+          "path": "scripts/catalog-icon-contact-sheet.mjs",
+          "mode": "100644",
+          "sha": "cc161259f4ff6293493e21fff4eacf2608613cf9"
+        },
+        {
+          "path": "scripts/cef-browser-acceptance.mjs",
+          "mode": "100644",
+          "sha": "f2785f6e944c6952d371106b80f7d6887152ecc0"
+        },
+        {
+          "path": "scripts/cef-custom-artifact-inventory.mjs",
+          "mode": "100644",
+          "sha": "5720498c509aa86d2b4d22b0e96eac6fb17d3ed9"
+        },
+        {
+          "path": "scripts/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "sha": "915139c7d545668bffe1003261a2379e09e067e3"
+        },
+        {
+          "path": "scripts/cef-hosted-bootstrap.mjs",
+          "mode": "100644",
+          "sha": "59ba20636a8c82e10016b660fbe5e2be748210cf"
+        },
+        {
+          "path": "scripts/cef-hosted-capacity.mjs",
+          "mode": "100644",
+          "sha": "2fb3903eb9bf9f582ccf1fd63cf7fbb5c558890b"
+        },
+        {
+          "path": "scripts/cef-hosted-provision.mjs",
+          "mode": "100644",
+          "sha": "9fb323d215e1d246f537685b360d3a665f87f748"
+        },
+        {
+          "path": "scripts/cef-linux-package-fixture.mjs",
+          "mode": "100644",
+          "sha": "9d5d5222b00a86d7e60c82da7a1d8eafd29e4376"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-handoff.mjs",
+          "mode": "100644",
+          "sha": "fae71b6b76c4a1ba4631809d1e5b10a3a40c5c81"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-import.mjs",
+          "mode": "100644",
+          "sha": "aa52f99b48d931a5735c4c03976b3f2cf1e4a4f7"
+        },
+        {
+          "path": "scripts/cef-owned-sdk-publish.mjs",
+          "mode": "100644",
+          "sha": "8549327fb78fc51fe9c0ef32217ac6c232b5b9f6"
+        },
+        {
+          "path": "scripts/cef-patched-runtime.mjs",
+          "mode": "100644",
+          "sha": "616e5cf87ec9a0325d905738749f185bc36515db"
+        },
+        {
+          "path": "scripts/cef-runtime-acceptance-ci.mjs",
+          "mode": "100644",
+          "sha": "70e03a09eabacb4f39a87883fff3910f947b0de9"
+        },
+        {
+          "path": "scripts/cef-runtime-ci.mjs",
+          "mode": "100644",
+          "sha": "b723ed5e56a2f5d8c4122bf7193294cc09653525"
+        },
+        {
+          "path": "scripts/cef-runtime-fetch.mjs",
+          "mode": "100644",
+          "sha": "0046ae7e7674b0beefc2f25a48904d0d9098c251"
+        },
+        {
+          "path": "scripts/ci/analyze-native-dependency-graph.mjs",
+          "mode": "100644",
+          "sha": "20b12544401b69495103a6864f5ce1cecfdf5133"
+        },
+        {
+          "path": "scripts/ci/audit_filter.py",
+          "mode": "100644",
+          "sha": "579893859c71eba218b8d057c79050f32e608ca2"
+        },
+        {
+          "path": "scripts/ci/check-backend-coverage.mjs",
+          "mode": "100644",
+          "sha": "07c99ba1ce84ea3d980b877c5ba27705e0b09823"
+        },
+        {
+          "path": "scripts/ci/check-cargo-update-candidate.mjs",
+          "mode": "100644",
+          "sha": "1814e3307a87de501dff1c66b25996b87dd477be"
+        },
+        {
+          "path": "scripts/ci/check-docs-links.mjs",
+          "mode": "100644",
+          "sha": "c9d2022462126973263c328c1cd1fa2c9f3554a5"
+        },
+        {
+          "path": "scripts/ci/check-frontend-cold-bundle.mjs",
+          "mode": "100644",
+          "sha": "1226702dbaf18afeed1a8f3936c4880de017bcd2"
+        },
+        {
+          "path": "scripts/ci/check-gif-worker-export.mjs",
+          "mode": "100644",
+          "sha": "8f002d7e4478a09a09c7fe523d490d715e144266"
+        },
+        {
+          "path": "scripts/ci/check-js-lock-parity.mjs",
+          "mode": "100644",
+          "sha": "a7f2b69d8b804f8eb6672bcbdfa095b73b607695"
+        },
+        {
+          "path": "scripts/ci/check-npm-audit.mjs",
+          "mode": "100644",
+          "sha": "e6a8a9ad733c94b8e29f0b0c13d4a5e60e7ad966"
+        },
+        {
+          "path": "scripts/ci/check-release-runtime-catalog.mjs",
+          "mode": "100644",
+          "sha": "c54b69df1bd39591c6ddfdd135aa49864bb90da2"
+        },
+        {
+          "path": "scripts/ci/check-release-version-floor.mjs",
+          "mode": "100644",
+          "sha": "d830e025f60687fa5b1d3a6b6736eebfcac2c540"
+        },
+        {
+          "path": "scripts/ci/diagnose-macos-cef-tests.mjs",
+          "mode": "100644",
+          "sha": "6c478768f06ac8ed663ce800a01c3cfaf2d4a042"
+        },
+        {
+          "path": "scripts/ci/e2e-http-fixtures.mjs",
+          "mode": "100644",
+          "sha": "71f74176d81fb9e1f077bc29d55f305e58b47420"
+        },
+        {
+          "path": "scripts/ci/e2e-npm-fixture.mjs",
+          "mode": "100644",
+          "sha": "3638c1a6f3dcc889b58d015e9fad16f60e758f78"
+        },
+        {
+          "path": "scripts/ci/e2e-portainer-fixture.mjs",
+          "mode": "100644",
+          "sha": "e2fbf0b02f37f4d3f05969b16390e59a3667c6e8"
+        },
+        {
+          "path": "scripts/ci/lib/docs-search-validation.mjs",
+          "mode": "100644",
+          "sha": "c6898f29664586368c9c6cc9277b8d7f4b437dab"
+        },
+        {
+          "path": "scripts/ci/resolve-release-version.mjs",
+          "mode": "100644",
+          "sha": "48b32403c8527f8d422991c420e06defc1d6e696"
+        },
+        {
+          "path": "scripts/ci/run-release-native-build.mjs",
+          "mode": "100644",
+          "sha": "d6c02b3490303d27961d1a940883705f99a1d592"
+        },
+        {
+          "path": "scripts/ci/semver.mjs",
+          "mode": "100644",
+          "sha": "a42ba21a31d4d82efd6f1f9a2bfa065a09654f63"
+        },
+        {
+          "path": "scripts/ci/summarize-native-build-timings.mjs",
+          "mode": "100644",
+          "sha": "658b9b5e4bbaa28ea318c7e2229d91cfdf9e0dae"
+        },
+        {
+          "path": "scripts/ci/update-npm-compatible.mjs",
+          "mode": "100644",
+          "sha": "9ff38882ad2c68ba94f0fb398aeb3e1ea733810c"
+        },
+        {
+          "path": "scripts/ci/validate-release-artifacts.mjs",
+          "mode": "100644",
+          "sha": "abcc7f30998e186f362c779998301941e5af10f7"
+        },
+        {
+          "path": "scripts/ci/validate-updater-feed.mjs",
+          "mode": "100644",
+          "sha": "264b762f10a6a54748e2a05bcc9974dc4cbb91e4"
+        },
+        {
+          "path": "scripts/ci/verify-published-release-assets.mjs",
+          "mode": "100644",
+          "sha": "9667feb690df30492faea80da379d5a6a80f182b"
+        },
+        {
+          "path": "scripts/ci/verify-release-snapshot.mjs",
+          "mode": "100644",
+          "sha": "d702ef59b0b71e18437f186e98c3e24b5191a676"
+        },
+        {
+          "path": "scripts/ci/wait-for-release-readiness.mjs",
+          "mode": "100644",
+          "sha": "c0e465f7e1f4e2047d36b9bce9a53ce730ea7623"
+        },
+        {
+          "path": "scripts/crypto/generate-database-eax-vectors.ps1",
+          "mode": "100644",
+          "sha": "bea75fda8491a0df11a1fa76aa062a5eea7b8dbe"
+        },
+        {
+          "path": "scripts/database-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "6db3eb880621234ff1d78fa41285b726f0e75ba4"
+        },
+        {
+          "path": "scripts/dev-port.mjs",
+          "mode": "100644",
+          "sha": "755df5ea02747e526b3ecc92e8f574c29dfeb04e"
+        },
+        {
+          "path": "scripts/dev-server.mjs",
+          "mode": "100644",
+          "sha": "ced531d4c9db02fbbf47c0280080da28356ee80b"
+        },
+        {
+          "path": "scripts/docs-app-capture.mjs",
+          "mode": "100644",
+          "sha": "b23555fe7903dfcb973e5d9cf31140f323012d8d"
+        },
+        {
+          "path": "scripts/docs-visual-capture.mjs",
+          "mode": "100644",
+          "sha": "38b182cc3bafbaf5804e47c56ca7e1b1734e258c"
+        },
+        {
+          "path": "scripts/e2e-build.mjs",
+          "mode": "100644",
+          "sha": "553db2a542fb5e57fb20a4a0d0e7003524cabbf0"
+        },
+        {
+          "path": "scripts/e2e-isolation-selftest.mjs",
+          "mode": "100644",
+          "sha": "348838a05d8fe3d4fd733c2a450a3fbb4de9fea0"
+        },
+        {
+          "path": "scripts/folder-icon-contact-sheet.mjs",
+          "mode": "100644",
+          "sha": "dc474484165bba46ec7f275c6209fc0f18610a69"
+        },
+        {
+          "path": "scripts/format-changed.mjs",
+          "mode": "100644",
+          "sha": "cd1780bd4f2e5885d490ddd3c9e79acc05d85012"
+        },
+        {
+          "path": "scripts/generate-command-inventory.mjs",
+          "mode": "100644",
+          "sha": "3ef1b0f7d2185004f943d1b7892f1017bdecb253"
+        },
+        {
+          "path": "scripts/generate-native-login-catalog.mjs",
+          "mode": "100644",
+          "sha": "68d09236558e77dc1798bd644abe46dfa9bc928b"
+        },
+        {
+          "path": "scripts/i18n-residual.mjs",
+          "mode": "100644",
+          "sha": "00d1e401e7a7fc5d27268b7236e08690f1e6c31d"
+        },
+        {
+          "path": "scripts/icon-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "9b421f1da96f4c8223f3f7b088204ad494fbf578"
+        },
+        {
+          "path": "scripts/lib/browser-build-route.mjs",
+          "mode": "100644",
+          "sha": "3fb21b9fcd4d5e36deb6c206c3c2cf0d2be8c82a"
+        },
+        {
+          "path": "scripts/lib/browser-client-imports.mjs",
+          "mode": "100644",
+          "sha": "12e5fe39389938587468849ac095b6c6493f8da0"
+        },
+        {
+          "path": "scripts/lib/browser-custom-runtime.mjs",
+          "mode": "100644",
+          "sha": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+        },
+        {
+          "path": "scripts/lib/browser-dev-sdk-cache.mjs",
+          "mode": "100644",
+          "sha": "806f4feb6a61e84c0a4426d7f1df51396bbe9f4b"
+        },
+        {
+          "path": "scripts/lib/browser-installer-bundles.mjs",
+          "mode": "100644",
+          "sha": "57279a8dabf84605a9783f388210eed4554827e9"
+        },
+        {
+          "path": "scripts/lib/browser-local-runtime.mjs",
+          "mode": "100644",
+          "sha": "fe6fba4493b9265823a71a0a6445ad41cdccd708"
+        },
+        {
+          "path": "scripts/lib/browser-runtime-bootstrap.mjs",
+          "mode": "100644",
+          "sha": "0db85b14d4266af86c04eb27dab97359a416c879"
+        },
+        {
+          "path": "scripts/lib/browser-runtime-release.mjs",
+          "mode": "100644",
+          "sha": "4f5591f6400a1b84cdd2b4c07108ed9ccb59e4a9"
+        },
+        {
+          "path": "scripts/lib/browser-sandbox-access.mjs",
+          "mode": "100644",
+          "sha": "eb3a022a7a3c0ad0084f595a654929a4101983bc"
+        },
+        {
+          "path": "scripts/lib/cef-checkpoint-archive.py",
+          "mode": "100644",
+          "sha": "1c9fcc083611ee7652e007cee4ca16f1ac44f6dd"
+        },
+        {
+          "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "sha": "4d74de1310117af64891ef964706cf838de25878"
+        },
+        {
+          "path": "scripts/lib/cef-linux-producer-migration.mjs",
+          "mode": "100644",
+          "sha": "4d216379902e002fe80cf99e07858b622def5bf8"
+        },
+        {
+          "path": "scripts/lib/cef-linux-sidecar-retirement.py",
+          "mode": "100644",
+          "sha": "8041a411ff3ae9ce3c8b55ddb1cfe0eb3a4b4471"
+        },
+        {
+          "path": "scripts/lib/cef-mac-gcs-normalize.py",
+          "mode": "100644",
+          "sha": "e20c69ca128b3c3006a3c87ddeb3294da759bd03"
+        },
+        {
+          "path": "scripts/lib/cef-mac-process-census.py",
+          "mode": "100644",
+          "sha": "ab15eccc67c328920c0a101b893755edfc7fc170"
+        },
+        {
+          "path": "scripts/lib/cef-mac-sdk-inventory.mjs",
+          "mode": "100644",
+          "sha": "8e3e081cfe40fee9ff865b5699b47bfc9a6184ef"
+        },
+        {
+          "path": "scripts/lib/cef-mac-source-metadata.mjs",
+          "mode": "100644",
+          "sha": "5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf"
+        },
+        {
+          "path": "scripts/lib/cef-native-crash-summary.mjs",
+          "mode": "100644",
+          "sha": "4ded0956ee5732222a22c96df40bc40dbee62a30"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-handoff.mjs",
+          "mode": "100644",
+          "sha": "3fb062fc081d9a974f841f22a28068059a2a8550"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-import.mjs",
+          "mode": "100644",
+          "sha": "369c93b265d65416934865d8a5f0b9c1f62e22d7"
+        },
+        {
+          "path": "scripts/lib/cef-owned-sdk-publish.mjs",
+          "mode": "100644",
+          "sha": "a53f9d122bf11263745de9f741a13dbbe51aba3c"
+        },
+        {
+          "path": "scripts/lib/cef-storage-acceptance.mjs",
+          "mode": "100644",
+          "sha": "9580b3fb662eb0b26e9bb2bf897d7c037c4c743c"
+        },
+        {
+          "path": "scripts/lib/cef-windows-arm-sdk-origin.mjs",
+          "mode": "100644",
+          "sha": "25527fc6303adf9638de3cee72ee989da42e1066"
+        },
+        {
+          "path": "scripts/lib/command-inventory.mjs",
+          "mode": "100644",
+          "sha": "a262d43203010c6feb1e28950040ecf1564b9248"
+        },
+        {
+          "path": "scripts/lib/core-command-groups.mjs",
+          "mode": "100644",
+          "sha": "d37431b0b46f82c1183f9cc52245cb2223de89c2"
+        },
+        {
+          "path": "scripts/lib/dev-build-budget.mjs",
+          "mode": "100644",
+          "sha": "fdc4c6673227cca6d9036d9842fac9891ce193e6"
+        },
+        {
+          "path": "scripts/lib/e2e-profile-isolation.d.mts",
+          "mode": "100644",
+          "sha": "9e6c3fa95f776b5e542bba35134d493ba98de3d7"
+        },
+        {
+          "path": "scripts/lib/e2e-profile-isolation.mjs",
+          "mode": "100644",
+          "sha": "1ddca465468f9b6eb7550d5c6fa10ec1e8ea3844"
+        },
+        {
+          "path": "scripts/lib/extract-custom-runtime.py",
+          "mode": "100644",
+          "sha": "95f02a1b2467bf726b083a309177c58aa8897c0f"
+        },
+        {
+          "path": "scripts/lib/linux-package-sandbox.mjs",
+          "mode": "100644",
+          "sha": "7c42e96ed0c50eb4b5dcbfc58d3cbf097f1ddee7"
+        },
+        {
+          "path": "scripts/lib/native-child-env.mjs",
+          "mode": "100644",
+          "sha": "8c70b2dda58d7841b1fb5444f88fa25be0d08d0a"
+        },
+        {
+          "path": "scripts/lib/windows-native-crash-capture.mjs",
+          "mode": "100644",
+          "sha": "7a61eaf64f89ce5f6d824551fc541b9c8716a73b"
+        },
+        {
+          "path": "scripts/lib/windows-openssl-env.mjs",
+          "mode": "100644",
+          "sha": "0be899cc5030ef456be2e52f0d29a91c1aeb21c8"
+        },
+        {
+          "path": "scripts/native-build-env.mjs",
+          "mode": "100644",
+          "sha": "9c7500a5f973afc85aa1240be166426628587226"
+        },
+        {
+          "path": "scripts/native-target.mjs",
+          "mode": "100644",
+          "sha": "adb8fdfcdaddac32a58a17ca637b67d213d2cf7a"
+        },
+        {
+          "path": "scripts/native/browser-app-plist.py",
+          "mode": "100644",
+          "sha": "37b729490bbc2d337217b17e529145756abda94b"
+        },
+        {
+          "path": "scripts/native/browser-cargo-runner.rs",
+          "mode": "100644",
+          "sha": "d1b82bdb1d8c88da48257e12dc22231983fac3be"
+        },
+        {
+          "path": "scripts/native/repair-browser-sandbox-access.ps1",
+          "mode": "100644",
+          "sha": "624444b6dbbd5b7b678429741f3040cd97c2e78c"
+        },
+        {
+          "path": "scripts/provider-icons-capture.mjs",
+          "mode": "100644",
+          "sha": "1af8438246326956c285ca721093cf4fcc8b73e8"
+        },
+        {
+          "path": "scripts/readme-screenshot-validation.mjs",
+          "mode": "100644",
+          "sha": "6ad9a56649aff470f4431a501421da2b914ce79d"
+        },
+        {
+          "path": "scripts/readme-screenshot.mjs",
+          "mode": "100644",
+          "sha": "fd113092504ee5c3440fe2fa39cbcd71ca15d810"
+        },
+        {
+          "path": "scripts/softether-e2e-down.ps1",
+          "mode": "100644",
+          "sha": "2e129e26927037109abad8996f5e71ca0da7dbe5"
+        },
+        {
+          "path": "scripts/softether-e2e-down.sh",
+          "mode": "100644",
+          "sha": "090f7e0ee6e2a4335dd1a5b77bb0e828b09ccee7"
+        },
+        {
+          "path": "scripts/sort-core-command-groups.mjs",
+          "mode": "100644",
+          "sha": "16114fc39008314fa34280bf8b6c67855cef559d"
+        },
+        {
+          "path": "scripts/spreadsheet-ui-check.mjs",
+          "mode": "100644",
+          "sha": "b7b5717eded1d9f05bc9e02f9b9a01ffa7b0e24c"
+        },
+        {
+          "path": "scripts/stage-file-viewer-host.mjs",
+          "mode": "100644",
+          "sha": "e28b78e4d2bda5e5d8e24a8bc7a336bfdee1bf81"
+        },
+        {
+          "path": "scripts/stage-openh264-runtime.mjs",
+          "mode": "100644",
+          "sha": "c529782fbb8b5915053f4ec0ff0b9954bfc216e1"
+        },
+        {
+          "path": "scripts/stage-windows-native-runtime.mjs",
+          "mode": "100644",
+          "sha": "ad986a3a438a6ab21d59957f7701cd029f8d8f58"
+        },
+        {
+          "path": "scripts/styled-english-locales.mjs",
+          "mode": "100644",
+          "sha": "a2529556eae07dc2ae6192296fcbe56cceccfd92"
+        },
+        {
+          "path": "scripts/sync-brand-icons.mjs",
+          "mode": "100644",
+          "sha": "b169695faff2b8e34340b20362e886a4b3c08b6e"
+        },
+        {
+          "path": "scripts/sync-js-deps.mjs",
+          "mode": "100644",
+          "sha": "0e0fbf1f73aa63bf8093cff34ba60ab5e9d92bd6"
+        },
+        {
+          "path": "scripts/sync-version.mjs",
+          "mode": "100644",
+          "sha": "af51e4437a6bb1d1e4e481a4a2be0ee11d3ae832"
+        },
+        {
+          "path": "scripts/tauri-dev.mjs",
+          "mode": "100644",
+          "sha": "f81ddd2150198a8362ab5510e124dba7390dce7a"
+        },
+        {
+          "path": "scripts/tauri.mjs",
+          "mode": "100644",
+          "sha": "d4d7819293430603f3c46f2b3e7c14af54777cfe"
+        },
+        {
+          "path": "scripts/test-legacy-web-compat-browser.mjs",
+          "mode": "100644",
+          "sha": "3cabbaa847327de9ac8caa4c7cecb7cf0e9832aa"
+        },
+        {
+          "path": "scripts/test-synology-login-browser.mjs",
+          "mode": "100644",
+          "sha": "0169c0728bb49f4961a34732ae72e1051a386145"
+        },
+        {
+          "path": "scripts/test-vault-ssh-inline.mjs",
+          "mode": "100644",
+          "sha": "127af7cf77c86525bc6ad561145ca78e18348dad"
+        },
+        {
+          "path": "scripts/test-web-network-browser.mjs",
+          "mode": "100644",
+          "sha": "580c5832a695bfc7f068d203d8b1ddb8eeff57cc"
+        },
+        {
+          "path": "scripts/test-website-dark-mode-browser.mjs",
+          "mode": "100644",
+          "sha": "d1b6b5138e89f2215476f57cf432b018bdd942a0"
+        },
+        {
+          "path": "scripts/test-yealink-login-browser.mjs",
+          "mode": "100644",
+          "sha": "9c26ad336cc66c956eb4ea2e3815dffdbab264e4"
+        },
+        {
+          "path": "scripts/trace-provider-icons.mjs",
+          "mode": "100644",
+          "sha": "e30f7ec547a03efbdcd448dc78a9c395721b1519"
+        },
+        {
+          "path": "scripts/trust-ui-capture.mjs",
+          "mode": "100644",
+          "sha": "062a26cdb05d692f347d28772c1613398df408b2"
+        },
+        {
+          "path": "scripts/vendor-web-darkreader.mjs",
+          "mode": "100644",
+          "sha": "19541ed4fff8d24537d059748ea0655173e67b7e"
+        },
+        {
+          "path": "scripts/versioning.mjs",
+          "mode": "100644",
+          "sha": "303feb0be3a88e30c575be88157640621322e6e5"
+        },
+        {
+          "path": "scripts/viewport-scroll-check.mjs",
+          "mode": "100644",
+          "sha": "5d203492eb36a8b3354182b3e66fd7e0402d7e12"
+        },
+        {
+          "path": "scripts/web-automation-capture.mjs",
+          "mode": "100644",
+          "sha": "3f51e0714aae592fdcecf2b72af6fe8be9ac7211"
+        }
+      ],
+      "files": [
+        {
+          "path": ".github/workflows/cef-engineering-checkpoint.yml",
+          "mode": "100644",
+          "before": {
+            "bytes": 14907,
+            "sha256": "86cea2ffb5065654ce4759c262cdea9caf182ede1b02761f68ad4e0bb1a40d2b",
+            "blob": "d7f72d809ea90a245efb1ba92887ff99946945a4"
+          },
+          "after": {
+            "bytes": 14907,
+            "sha256": "6400f542bb040e52f5395e0e3898520ddb6d707630c3d97ebe1019e3a64d6047",
+            "blob": "3d4b9cd3232bfc77cb30149dd3076375dd295983"
+          },
+          "pairs": [
+            {
+              "previous": "    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'\n    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54' || inputs.target == 'aarch64-unknown-linux-gnu' && '5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e' || '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n      actions: read\n",
+              "current": "    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'\n    runs-on: ${{ inputs.target == 'aarch64-unknown-linux-gnu' && 'ubuntu-24.04' || 'macos-15-intel' }}\n    timeout-minutes: 300\n    concurrency:\n      group: cef-engineering-checkpoint-${{ github.ref }}-${{ inputs.target || 'x86_64-apple-darwin' }}-${{ inputs.target == 'aarch64-apple-darwin' && '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212' || inputs.target == 'aarch64-unknown-linux-gnu' && '5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e' || 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f' }}\n      cancel-in-progress: true\n    permissions:\n      contents: write\n      actions: read\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/browser-custom-runtime.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 69587,
+            "sha256": "2d9e61905cb38b34be4fc5af0eec0ad7119b3a3095e183004f17b418d145cf4e",
+            "blob": "8c5e8ac65953f0b92524655dd927f3091ec1f6a5"
+          },
+          "after": {
+            "bytes": 69440,
+            "sha256": "3994398d15f588a624f698b2508896322583538379d4bd000fa13cc62902568c",
+            "blob": "63070604a0146bdd1669a2fc04fae1d8db693e74"
+          },
+          "pairs": [
+            {
+              "previous": "        args: [\n          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          // ARM Linux uses the pinned cross sysroot, which intentionally lacks\n          // GTK. The minimal distribution needs the library and sandbox, not\n          // the aggregate's GTK cefclient sample or its test executables.\n          selectedTarget === \"aarch64-unknown-linux-gnu\" ? \"libcef\" : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n              ? [\"chrome_sandbox\"]\n",
+              "current": "        args: [\n          path.join(path.resolve(checkouts.depotTools), \"autoninja.py\"),\n          \"-C\",\n          `out/Release_GN_${arch}`,\n          host === \"darwin\"\n            ? \"cefclient\"\n            : selectedTarget === \"aarch64-unknown-linux-gnu\"\n              ? \"libcef\"\n              : \"cef\",\n          ...(windows\n            ? [\"bootstrap\", \"bootstrapc\"]\n            : host === \"linux\"\n              ? [\"chrome_sandbox\"]\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-checkpoint-archive.py",
+          "mode": "100644",
+          "before": {
+            "bytes": 240123,
+            "sha256": "d5e9ac6002b5a36584d5f2a7fa6240a5627983ba16a32657ceaeb7a327d1f2d6",
+            "blob": "1c9fcc083611ee7652e007cee4ca16f1ac44f6dd"
+          },
+          "after": {
+            "bytes": 242586,
+            "sha256": "d4d769d78ca60c65a19b6e4f4f1414f57d18ef0b6ff5a55beea1eb5b38497cba",
+            "blob": "8b5b02ea8734fbee6f8ae5efcd59688c7cec294f"
+          },
+          "pairs": [
+            {
+              "previous": "MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v1'\n# Source-controlled scope, supported by the reviewed native scratch proof only.\n# No report, caller flag or environment toggle can broaden this identity.\nMAC_SOURCE_WRITE_ADMITTED = True\nMAC_SOURCE = '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'\nMAC_SOURCE_IMAGE = '20260824.0482.1'\nMAC_SOURCE_PROOF = (41328841230, 13092905128,\n                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')\nMAC_INTEL_SOURCE = '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef'\nMAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'\nMAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'\n# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.\nMAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,\n",
+              "current": "MAC_SOURCE_METADATA_POLICY = 'sorng-macarm-owned-source-metadata-intel-20260824-v1'\n# Source-controlled scope, supported by the reviewed native scratch proof only.\n# No report, caller flag or environment toggle can broaden this identity.\nMAC_SOURCE_WRITE_ADMITTED = True\nMAC_SOURCE = '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'\nMAC_SOURCE_IMAGE = '20260824.0482.1'\nMAC_SOURCE_PROOF = (41328841230, 13092905128,\n                    'fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90')\nMAC_INTEL_SOURCE = 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f'\nMAC_INTEL_SOURCE_METADATA_POLICY = 'sorng-macintel-owned-source-metadata-intel-20260824-v1'\nMAC_INTEL_SOURCE_IMAGE = '20260824.0482.1'\n# run, artifact, reviewed source, RAW proof bytes/SHA, then artifact ZIP SHA.\nMAC_INTEL_SOURCE_PROOF = (41348226366,13099539006,'499ade0595d3e3d90fa15aea1ffb8499e297bf3f',16278,\n"
+            },
+            {
+              "previous": "    return value\n# END STATIC MAC OWNED FD HASHING\n\n\ndef source_mac_write_host_admission():\n    import sys\n    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and\n            platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and\n",
+              "current": "    return value\n# END STATIC MAC OWNED FD HASHING\n\n\n# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.\n# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.\n_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (\n    'sorng-native-mac-source-scope-qualification-v1',  # kind\n    43652853463,  # runId\n    1,  # attempt\n    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head\n    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256\n    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath\n    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256\n    14136269303,  # metadataArtifactId\n    1926,  # metadataZipBytes\n    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256\n    5137,  # metadataRawProofBytes\n    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256\n    708,  # metadataRawCarrierBytes\n    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256\n    14136926168,  # supervisorArtifactId\n    5876,  # supervisorZipBytes\n    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256\n    25131,  # supervisorScopeBytes\n    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256\n    '20260824.0482.1',  # image\n    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources\n    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256\n    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof\n)\nMAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN\ndef source_mac_scope_qualified(target, source, image):\n    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and\n            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and\n            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])\n# END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\ndef source_mac_write_host_admission():\n    import sys\n    require(MAC_SOURCE_WRITE_ADMITTED and sys.platform == 'darwin' and\n            platform.machine() == 'x86_64' and os.environ.get('ImageOS') == 'macos15' and\n"
+            },
+            {
+              "previous": "\n\ndef source_mac_write_admission(identity):\n    source_mac_write_host_admission()\n    require(isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and\n            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and\n            identity.get('canonicalRoot') ==\n            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,\n            'source-mac-identity-scope')\n",
+              "current": "\n\ndef source_mac_write_admission(identity):\n    source_mac_write_host_admission()\n    require(source_mac_scope_qualified('aarch64-apple-darwin', MAC_SOURCE, MAC_SOURCE_IMAGE) and\n            isinstance(identity, dict) and identity.get('target') == 'aarch64-apple-darwin' and\n            identity.get('source') == MAC_SOURCE and identity.get('image') == MAC_SOURCE_IMAGE and\n            identity.get('canonicalRoot') ==\n            '/Users/runner/work/_temp/sorng-cef-engineering/aarch64-apple-darwin/' + MAC_SOURCE,\n            'source-mac-identity-scope')\n"
+            },
+            {
+              "previous": "\n\ndef source_mac_intel_write_admission(identity):\n    source_mac_intel_write_host_admission()\n    require(isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and\n            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and\n            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,\n            'source-mac-identity-scope')\n\n",
+              "current": "\n\ndef source_mac_intel_write_admission(identity):\n    source_mac_intel_write_host_admission()\n    require(source_mac_scope_qualified('x86_64-apple-darwin', MAC_INTEL_SOURCE, MAC_INTEL_SOURCE_IMAGE) and\n            isinstance(identity,dict) and identity.get('target')=='x86_64-apple-darwin' and\n            identity.get('source')==MAC_INTEL_SOURCE and identity.get('image')==MAC_INTEL_SOURCE_IMAGE and\n            identity.get('canonicalRoot')=='/Users/runner/work/_temp/sorng-cef-engineering/x86_64-apple-darwin/'+MAC_INTEL_SOURCE,\n            'source-mac-identity-scope')\n\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-engineering-checkpoint.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 275697,
+            "sha256": "2c14ec7cd548707b9461b68f31e664eabaf626e723e8e2d0657eb215344ade80",
+            "blob": "4d74de1310117af64891ef964706cf838de25878"
+          },
+          "after": {
+            "bytes": 276188,
+            "sha256": "0fb1d64ea28c19141a602df025b77f32df7a6c198bb0f18af2e8a1b08f2f007b",
+            "blob": "c75b9ed2b4ff07994cc3d35092bc29203912792a"
+          },
+          "pairs": [
+            {
+              "previous": "import { hostname, tmpdir, userInfo } from \"node:os\";\nimport {\n  macSourceMetadataPlan,\n  macIntelSourceMetadataPlan,\n} from \"./cef-mac-source-metadata.mjs\";\n\nexport const LIMITS = Object.freeze({\n  compressed: 32 * 1024 ** 3,\n",
+              "current": "import { hostname, tmpdir, userInfo } from \"node:os\";\nimport {\n  macSourceMetadataPlan,\n  macIntelSourceMetadataPlan,\n  MAC_SOURCE_SCOPE_QUALIFICATION,\n  macSourceScopeQualified,\n} from \"./cef-mac-source-metadata.mjs\";\n\nexport const LIMITS = Object.freeze({\n  compressed: 32 * 1024 ** 3,\n"
+            },
+            {
+              "previous": "  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n});\nexport const INPUTS =\n  \"native/cef-build-inputs/20261025-r5-owned-http3-macintel-sdk26-2-capture-compat\";\nexport const TARGET = \"x86_64-apple-darwin\";\nexport const SOURCE_ID =\n  \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\";\n// Cross compilation never changes the native acceptance host. Adding a profile\n// changes the producer code digest; checkpoints from older code cannot migrate.\nconst PROFILES = Object.freeze({\n  [TARGET]: Object.freeze({\n",
+              "current": "  maxCompileMs: 180 * 60_000,\n  hostMs: 300 * 60_000,\n});\nexport const INPUTS =\n  \"native/cef-build-inputs/20261114-r5-owned-http3-macintel-sdk26-2-permissions-compat\";\nexport const TARGET = \"x86_64-apple-darwin\";\nexport const SOURCE_ID =\n  \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\";\n// Cross compilation never changes the native acceptance host. Adding a profile\n// changes the producer code digest; checkpoints from older code cannot migrate.\nconst PROFILES = Object.freeze({\n  [TARGET]: Object.freeze({\n"
+            },
+            {
+              "previous": "    acceptanceArchitecture: \"x64\",\n  }),\n  \"aarch64-apple-darwin\": Object.freeze({\n    target: \"aarch64-apple-darwin\",\n    source: \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n    inputs:\n      \"native/cef-build-inputs/20261025-r5-owned-http3-macarm-sdk26-2-capture-compat\",\n    platform: \"darwin\",\n    architecture: \"x64\",\n    runner: \"macos-15-intel\",\n    provisionTarget: TARGET,\n",
+              "current": "    acceptanceArchitecture: \"x64\",\n  }),\n  \"aarch64-apple-darwin\": Object.freeze({\n    target: \"aarch64-apple-darwin\",\n    source: \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n    inputs:\n      \"native/cef-build-inputs/20261114-r5-owned-http3-macarm-sdk26-2-permissions-compat\",\n    platform: \"darwin\",\n    architecture: \"x64\",\n    runner: \"macos-15-intel\",\n    provisionTarget: TARGET,\n"
+            },
+            {
+              "previous": "  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"libcef\", \"chrome_sandbox\"]\n      : [\"cef\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n    path.basename(args[0]) !== \"autoninja.py\" ||\n",
+              "current": "  const p = checkpointProfile(target);\n  const targets =\n    p.platform === \"linux\"\n      ? [\"libcef\", \"chrome_sandbox\"]\n      : [\"cefclient\", \"cef_sandbox\"];\n  if (\n    !Array.isArray(args) ||\n    args.length !== 7 ||\n    path.basename(args[0]) !== \"autoninja.py\" ||\n"
+            },
+            {
+              "previous": "  artifactId: 13097527087,\n  source: \"ce297732e385466d4d8fe731e30441408fec6d30\",\n  sha256: \"43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c\",\n});\nconst MAC_CENSUS_SOURCES = Object.freeze({\n  \"x86_64-apple-darwin\":\n    \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\",\n  \"aarch64-apple-darwin\":\n    \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n});\nconst MAC_CENSUS_PYTHON =\n  \"/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14\";\nconst macCensusFactories = new WeakMap();\n",
+              "current": "  artifactId: 13097527087,\n  source: \"ce297732e385466d4d8fe731e30441408fec6d30\",\n  sha256: \"43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c\",\n});\n// Fresh current-source scope record; the older supervisor report remains historical.\nexport const MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION =\n  MAC_SOURCE_SCOPE_QUALIFICATION;\nconst MAC_CENSUS_SOURCES = Object.freeze({\n  \"x86_64-apple-darwin\":\n    \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  \"aarch64-apple-darwin\":\n    \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n});\nconst MAC_CENSUS_PYTHON =\n  \"/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14\";\nconst macCensusFactories = new WeakMap();\n"
+            },
+            {
+              "previous": "  );\n  assert(\n    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&\n      value.source === MAC_CENSUS_SOURCES[value.target] &&\n      value.canonicalRoot ===\n        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&\n      value.python === MAC_CENSUS_PYTHON,\n    \"CENSUS_ROOT\",\n",
+              "current": "  );\n  assert(\n    Object.hasOwn(MAC_CENSUS_SOURCES, value.target) &&\n      value.source === MAC_CENSUS_SOURCES[value.target] &&\n      macSourceScopeQualified({\n        target: value.target,\n        source: value.source,\n        image: process.env.ImageVersion,\n        sourceScopeQualification: MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION,\n      }) &&\n      value.canonicalRoot ===\n        `/Users/runner/work/_temp/sorng-cef-engineering/${value.target}/${value.source}` &&\n      value.python === MAC_CENSUS_PYTHON,\n    \"CENSUS_ROOT\",\n"
+            },
+            {
+              "previous": "        Date.now() + deadline - performance.now(),\n      ),\n      requestBudget,\n      evidence: MAC_CENSUS_EVIDENCE.sha256,\n      supervisorEvidence: MAC_CENSUS_SUPERVISOR_QUALIFICATION.sha256,\n    };\n    const raw = Buffer.from(canonical(context) + \"\\n\");\n    await writeFile(path.join(sessionRoot, \"context.json\"), raw, {\n      flag: \"wx\",\n",
+              "current": "        Date.now() + deadline - performance.now(),\n      ),\n      requestBudget,\n      evidence: MAC_CENSUS_EVIDENCE.sha256,\n      supervisorEvidence:\n        MAC_CENSUS_SOURCE_SCOPE_QUALIFICATION.supervisorScopeSha256,\n    };\n    const raw = Buffer.from(canonical(context) + \"\\n\");\n    await writeFile(path.join(sessionRoot, \"context.json\"), raw, {\n      flag: \"wx\",\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-mac-gcs-normalize.py",
+          "mode": "100644",
+          "before": {
+            "bytes": 11223,
+            "sha256": "8102419d2f16b149743d2546fe670044a03dbd5f1ab9c2dde5095f178190d236",
+            "blob": "e20c69ca128b3c3006a3c87ddeb3294da759bd03"
+          },
+          "after": {
+            "bytes": 11223,
+            "sha256": "b09e8fcc30410817ebc25bf0f33f3ec5d62449f6726881495d81df990b840ed5",
+            "blob": "e6a2834029ad5b819a47586d313bae9e6f0ff12d"
+          },
+          "pairs": [
+            {
+              "previous": "WRITER = ('depot_tools/gclient_scm.py', 105463,\n          'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')\nDEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'\nSOURCES = {\n    'x86_64-apple-darwin': '684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',\n    'aarch64-apple-darwin': '65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54',\n}\n\n\nclass PrepError(Exception):\n",
+              "current": "WRITER = ('depot_tools/gclient_scm.py', 105463,\n          'b20ddbd39c6ae1f52386775a4fdc6493e7d5d5dc857b294ef50f79e06226b121')\nDEPOT_COMMIT = 'c101dcbe0489c455fce7c2247bfee19680b116c3'\nSOURCES = {\n    'x86_64-apple-darwin': 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',\n    'aarch64-apple-darwin': '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212',\n}\n\n\nclass PrepError(Exception):\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-mac-process-census.py",
+          "mode": "100644",
+          "before": {
+            "bytes": 24586,
+            "sha256": "ec206948e6efe38d0c854d655ef95454262e01b5d28d05f4169587d1b511ff52",
+            "blob": "ab15eccc67c328920c0a101b893755edfc7fc170"
+          },
+          "after": {
+            "bytes": 26917,
+            "sha256": "b454f93526af694fc1217106a39e433bba02df4abc7f7bcca9903f823216a74c",
+            "blob": "78ac12924376d028d4b3514ad6a408eedd11e4e6"
+          },
+          "pairs": [
+            {
+              "previous": "NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855'\nNATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,\n    'source':'ce297732e385466d4d8fe731e30441408fec6d30',\n    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}\nNATIVE_SOURCES = {'x86_64-apple-darwin':'684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef',\n                  'aarch64-apple-darwin':'65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54'}\nNATIVE_MAX_WORK_MS = 180*60*1000\nNATIVE_MAX_REQUESTS = 43328\nNATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'\n\n",
+              "current": "NATIVE_EVIDENCE = 'ec38df12b8469456d353614e2cb54e486ecc163b5ab15ddcb908b296d6fc1855'\nNATIVE_SUPERVISOR_QUALIFICATION = {'runId':41342489672,'artifactId':13097527087,\n    'source':'ce297732e385466d4d8fe731e30441408fec6d30',\n    'sha256':'43bc3e2bb72dce370e8b35f0e3ab0cf4584ab85f4f66c1b5b336e7df7bfefb3c'}\nNATIVE_SOURCES = {'x86_64-apple-darwin':'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f',\n                  'aarch64-apple-darwin':'3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'}\n# BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n# Fresh exact-source scratch scope only. Historical IO/ABI receipts are unchanged.\n# Tuple identity is code-owned; no JSON, environment or caller flag may replace it.\n_MAC_SOURCE_SCOPE_QUALIFICATION_PIN = (\n    'sorng-native-mac-source-scope-qualification-v1',  # kind\n    43652853463,  # runId\n    1,  # attempt\n    '4dbcb84855ea9cd9ee632657bafd265a6491fc69',  # head\n    'ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf',  # sourceWitnessSha256\n    'native/cef-source-qualifications/mac-43652853463/qualification.json',  # evidencePath\n    '18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31',  # evidenceSha256\n    14136269303,  # metadataArtifactId\n    1926,  # metadataZipBytes\n    '256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3',  # metadataZipSha256\n    5137,  # metadataRawProofBytes\n    '4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf',  # metadataRawProofSha256\n    708,  # metadataRawCarrierBytes\n    'd67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8',  # metadataRawCarrierSha256\n    14136926168,  # supervisorArtifactId\n    5876,  # supervisorZipBytes\n    '2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c',  # supervisorZipSha256\n    25131,  # supervisorScopeBytes\n    'bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3',  # supervisorScopeSha256\n    '20260824.0482.1',  # image\n    (('aarch64-apple-darwin', '3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212'), ('x86_64-apple-darwin', 'c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f')),  # sources\n    'fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33',  # candidateSourceFreezeSha256\n    '119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10',  # candidateProducerAtProof\n)\nMAC_SOURCE_SCOPE_QUALIFICATION = _MAC_SOURCE_SCOPE_QUALIFICATION_PIN\ndef native_scope_qualified(target, source, image):\n    return (MAC_SOURCE_SCOPE_QUALIFICATION is _MAC_SOURCE_SCOPE_QUALIFICATION_PIN and\n            (target, source) in _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[20] and\n            image == _MAC_SOURCE_SCOPE_QUALIFICATION_PIN[19])\n# END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\nNATIVE_MAX_WORK_MS = 180*60*1000\nNATIVE_MAX_REQUESTS = 43328\nNATIVE_UUID = r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'\n\n"
+            },
+            {
+              "previous": "            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence','supervisorEvidence'}\n    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and\n         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and\n         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and\n         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==NATIVE_SUPERVISOR_QUALIFICATION['sha256'],'CENSUS_ROOT')\n    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']\n    need(value['canonicalRoot']==expected,'CENSUS_ROOT')\n    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and\n         1<=value['workMilliseconds']<=NATIVE_MAX_WORK_MS and\n",
+              "current": "            'leaseMilliseconds','wallEndMilliseconds','requestBudget','evidence','supervisorEvidence'}\n    need(type(value)is dict and set(value)==fields and value['kind']=='mac-census-session' and\n         value['mode'] in ('integration-proof','production') and value['target'] in NATIVE_SOURCES and\n         value['source']==NATIVE_SOURCES[value['target']] and value['image']==IMAGE and\n         native_scope_qualified(value['target'],value['source'],value['image']) and\n         value['evidence']==NATIVE_EVIDENCE and value['supervisorEvidence']==MAC_SOURCE_SCOPE_QUALIFICATION[18],'CENSUS_ROOT')\n    expected='/Users/runner/work/_temp/sorng-cef-engineering/'+value['target']+'/'+value['source']\n    need(value['canonicalRoot']==expected,'CENSUS_ROOT')\n    need(value['phase'] in ('compile','readonly') and type(value['workMilliseconds'])is int and\n         1<=value['workMilliseconds']<=NATIVE_MAX_WORK_MS and\n"
+            }
+          ]
+        },
+        {
+          "path": "scripts/lib/cef-mac-source-metadata.mjs",
+          "mode": "100644",
+          "before": {
+            "bytes": 52286,
+            "sha256": "8b6fb0fc8f98eb6f5f7baf9cc66ec92ac86eb4bc3531865466fe628f65a76617",
+            "blob": "5e545709b2667f4b1ea8d0ebb8ac3804e9108cbf"
+          },
+          "after": {
+            "bytes": 54794,
+            "sha256": "c4fe7cbf74f70a78a735250771ee756b9132133b030e58cdb916e65737a2263c",
+            "blob": "0089d245de4a4624139afcb678ab55c9c04f7947"
+          },
+          "pairs": [
+            {
+              "previous": "  qualifiedHelperBytes: 198811,\n  qualifiedHelperSha256:\n    \"5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79\",\n});\nexport const MAC_SOURCE_POLICY = Object.freeze({\n  target: \"aarch64-apple-darwin\",\n  source: \"65ec154279f1ed2e697da5c1823e7cf0af7c30cebc33b027206c5219329aae54\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n",
+              "current": "  qualifiedHelperBytes: 198811,\n  qualifiedHelperSha256:\n    \"5af4cb39c9c15e6d115eeca3a6bf4d893bf45af43595a5e65a34c4d114973d79\",\n});\n// BEGIN CURRENT MAC SOURCE SCOPE QUALIFICATION\n// Fresh exact-source scratch evidence; prior IO/ABI receipts below stay historical.\n// This record is code-owned. Caller JSON, environment and reports never select it.\nexport const MAC_SOURCE_SCOPE_QUALIFICATION = Object.freeze({\n  kind: \"sorng-native-mac-source-scope-qualification-v1\",\n  runId: 43652853463,\n  attempt: 1,\n  head: \"4dbcb84855ea9cd9ee632657bafd265a6491fc69\",\n  sourceWitnessSha256:\n    \"ae10f59eb0837ef0009e6817412e1eb8428384db54207597dc0eb932a19577cf\",\n  evidencePath:\n    \"native/cef-source-qualifications/mac-43652853463/qualification.json\",\n  evidenceSha256:\n    \"18656debf9e0385026c2339578e540c0d2b7ade91287bd132a284707c0e02a31\",\n  metadataArtifactId: 14136269303,\n  metadataZipBytes: 1926,\n  metadataZipSha256:\n    \"256283e98efeeac56aa8047843cbe17a7f0db16b1a04ebee73fd7fe13ad8c4b3\",\n  metadataRawProofBytes: 5137,\n  metadataRawProofSha256:\n    \"4e6b8a0f9f32b0bd483e47732f43d0cc317db486630b3c76914427eccb1fcaaf\",\n  metadataRawCarrierBytes: 708,\n  metadataRawCarrierSha256:\n    \"d67db8f16f788a37fd08a8e2dca1a9dd616ce1df583eff12ab1f98b687373af8\",\n  supervisorArtifactId: 14136926168,\n  supervisorZipBytes: 5876,\n  supervisorZipSha256:\n    \"2a3962147f92359a5da0241345f3c4e0c732ac48c2725739fdf99a401a1b817c\",\n  supervisorScopeBytes: 25131,\n  supervisorScopeSha256:\n    \"bcced5eb54b04a47e9ee34ef6394ea142ec74073fee22c22ec44ef2285bf0ef3\",\n  image: \"20260824.0482.1\",\n  sources: Object.freeze({\n    \"aarch64-apple-darwin\":\n      \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n    \"x86_64-apple-darwin\":\n      \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  }),\n  candidateSourceFreezeSha256:\n    \"fcaa57ca06d5f28e1c6ed62ab01d292249c1fdab1a94949e39cc7d21e90ebb33\",\n  candidateProducerAtProof:\n    \"119f2ff904c4ba95fe7b9fcd88ce49a465645c555f85f16d725d48ee2f8ddd10\",\n});\nexport function macSourceScopeQualified(policy) {\n  return (\n    policy?.sourceScopeQualification === MAC_SOURCE_SCOPE_QUALIFICATION &&\n    Object.hasOwn(MAC_SOURCE_SCOPE_QUALIFICATION.sources, policy.target) &&\n    MAC_SOURCE_SCOPE_QUALIFICATION.sources[policy.target] === policy.source &&\n    MAC_SOURCE_SCOPE_QUALIFICATION.image === policy.image\n  );\n}\n// END CURRENT MAC SOURCE SCOPE QUALIFICATION\n\nexport const MAC_SOURCE_POLICY = Object.freeze({\n  target: \"aarch64-apple-darwin\",\n  source: \"3dfd71cfafb56a4168917ec681252fdce1ce57cb224d277d159255a210062212\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n"
+            },
+            {
+              "previous": "  legacyPrivatePolicy: \"sorng-macarm-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  evidence: Object.freeze({\n    runId: 41328841230,\n    artifactId: 13092905128,\n    sha256: \"fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90\",\n  }),\n});\nexport const MAC_INTEL_SOURCE_POLICY = Object.freeze({\n  target: \"x86_64-apple-darwin\",\n  source: \"684efda8d6e0001e871ffdf3ed7df84a80643db84de4e118c8e2d2cb1e3adfef\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n",
+              "current": "  legacyPrivatePolicy: \"sorng-macarm-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,\n  evidence: Object.freeze({\n    runId: 41328841230,\n    artifactId: 13092905128,\n    sha256: \"fa52dc3d113fa10929f391c196286ffb3cda52ea045b73ceb4df01649a725e90\",\n  }),\n});\nexport const MAC_INTEL_SOURCE_POLICY = Object.freeze({\n  target: \"x86_64-apple-darwin\",\n  source: \"c3ea924815d18c5e702a2231883b896f3439604b620a8b2c96983b0794a4ba0f\",\n  platform: \"darwin\",\n  architecture: \"x64\",\n  imageOS: \"macos15\",\n  image: \"20260824.0482.1\",\n"
+            },
+            {
+              "previous": "  legacyPrivatePolicy: \"sorng-macintel-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  evidence: Object.freeze({\n    runId: 41348226366,\n    artifactId: 13099539006,\n    source: \"499ade0595d3e3d90fa15aea1ffb8499e297bf3f\",\n",
+              "current": "  legacyPrivatePolicy: \"sorng-macintel-owned-source-metadata-intel-20260824-v1\",\n  nearbyEvidence: MAC_NEARBY_LITERAL_EVIDENCE,\n  compilerEvidence: MAC_CLANG_LITERAL_EVIDENCE,\n  darwinWriteAdmitted: true,\n  sourceScopeQualification: MAC_SOURCE_SCOPE_QUALIFICATION,\n  evidence: Object.freeze({\n    runId: 41348226366,\n    artifactId: 13099539006,\n    source: \"499ade0595d3e3d90fa15aea1ffb8499e297bf3f\",\n"
+            },
+            {
+              "previous": "};\nexport function validateMacSourceWriteScope(identity, host) {\n  assert(\n    MAC_SOURCE_POLICY.darwinWriteAdmitted &&\n      host?.platform === MAC_SOURCE_POLICY.platform &&\n      host.architecture === MAC_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_SOURCE_POLICY.imageOS &&\n      host.image === MAC_SOURCE_POLICY.image &&\n",
+              "current": "};\nexport function validateMacSourceWriteScope(identity, host) {\n  assert(\n    MAC_SOURCE_POLICY.darwinWriteAdmitted &&\n      macSourceScopeQualified(MAC_SOURCE_POLICY) &&\n      host?.platform === MAC_SOURCE_POLICY.platform &&\n      host.architecture === MAC_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_SOURCE_POLICY.imageOS &&\n      host.image === MAC_SOURCE_POLICY.image &&\n"
+            },
+            {
+              "previous": "\nexport function validateMacIntelSourceWriteScope(identity, host) {\n  assert(\n    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&\n      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&\n      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&\n      host.image === MAC_INTEL_SOURCE_POLICY.image &&\n",
+              "current": "\nexport function validateMacIntelSourceWriteScope(identity, host) {\n  assert(\n    MAC_INTEL_SOURCE_POLICY.darwinWriteAdmitted &&\n      macSourceScopeQualified(MAC_INTEL_SOURCE_POLICY) &&\n      host?.platform === MAC_INTEL_SOURCE_POLICY.platform &&\n      host.architecture === MAC_INTEL_SOURCE_POLICY.architecture &&\n      host.imageOS === MAC_INTEL_SOURCE_POLICY.imageOS &&\n      host.image === MAC_INTEL_SOURCE_POLICY.image &&\n"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { CURRENT_COMPOSITE_PRODUCER } from "./cefCompositeReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -79,6 +80,7 @@ function sourceShape(rows) {
       CURRENT_CENSUS_PRODUCER,
       CURRENT_WITNESS_PRODUCER,
       CURRENT_COMPILER_COMPAT_PRODUCER,
+      CURRENT_COMPOSITE_PRODUCER,
     ].includes(digest),
   );
   return digest;

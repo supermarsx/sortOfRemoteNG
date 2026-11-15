@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
+import ts from "typescript";
 import { types as utilTypes } from "node:util";
 import path from "node:path";
 import { readFile, mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
@@ -38,6 +39,20 @@ const source = await readFile(
   "scripts/lib/cef-engineering-checkpoint.mjs",
   "utf8",
 );
+// Bind the VM to this exact function, independent of neighboring backend declarations.
+const clientAst = ts.createSourceFile(
+  "core.mjs",
+  source,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.JS,
+);
+const clientDeclaration = clientAst.statements.find(
+  (node) =>
+    ts.isFunctionDeclaration(node) && node.name?.text === "macCensusClient",
+);
+assert(clientDeclaration);
+const currentMacClientBody = clientDeclaration.getText(clientAst);
 // The real client has one private metadata-only dependency. Preserve its exact
 // source body in the VM; historical clients have no such declaration.
 const failureWitnessStart = source.indexOf("function macCensusFailureWitness(");
@@ -273,10 +288,7 @@ test("native identities are uniform portable data and cannot cause a PS fallback
   }
 });
 test("native client accepts the pinned ABI and more than10000 bounded requests but never the next over-limit request", async () => {
-  const text = source.slice(
-    source.indexOf("function macCensusClient("),
-    source.indexOf("async function processSnapshot("),
-  );
+  const text = currentMacClientBody;
   const create = vm.runInNewContext(
     "(() => {" +
       failureCodesDeclaration +
@@ -399,10 +411,7 @@ print('fixed native worker scope and43328request cap passed')
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 test("ready admission is bound to the selected native session mode and proof diagnostics remain non-authorizing", async () => {
-  const text = source.slice(
-    source.indexOf("function macCensusClient("),
-    source.indexOf("async function processSnapshot("),
-  );
+  const text = currentMacClientBody;
   const create = vm.runInNewContext(
     "(() => {" +
       failureCodesDeclaration +

@@ -1,3 +1,4 @@
+import { linuxMigrationHistoricalSubject } from "./helpers/cefLinuxMigrationHistoricalSubject.mjs";
 import {
   beforeCensusCoreForHistory,
   beforeCensusRowsForHistory,
@@ -12,7 +13,7 @@ import { EventEmitter } from "node:events";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   withoutUploadRecovery,
   withoutSourceVerifyGuardRows,
@@ -27,7 +28,13 @@ import * as migration from "../../scripts/lib/cef-linux-producer-migration.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MODULE = path.join(ROOT, "scripts/lib/cef-linux-producer-migration.mjs");
+// Exact a409 subject only for historical8c capsule DATA. Current public modules
+// remain imported above and cannot admit that old source under canonical370.
+const historicalSubject = await linuxMigrationHistoricalSubject(ROOT);
+after(() => historicalSubject.cleanup());
+
 const M = migration.LINUX_MIGRATION;
+assert.deepEqual(historicalSubject.migration.LINUX_MIGRATION, M);
 function withoutOwnedMacCheckpoint(text) {
   assert.equal(Buffer.byteLength(text), 123579);
   assert.equal(
@@ -1140,11 +1147,20 @@ function oldProducer(runId = SEED_RUN, attempt = 1) {
   };
 }
 function manifest(identity, inventory, selectedProducer = oldProducer()) {
+  assert.equal(
+    identity.source,
+    M.source,
+    "Historical capsule DATA source only",
+  );
+  assert.equal(
+    historicalSubject.core.checkpointProfile(M.target).source,
+    M.source,
+  );
   return {
     schemaVersion: 1,
     kind: "sorng-cef-engineering-checkpoint",
     identity,
-    identitySha256: core.validateIdentity(identity),
+    identitySha256: historicalSubject.core.validateIdentity(identity),
     producer: selectedProducer,
     archive: {
       complete: true,
@@ -1181,7 +1197,9 @@ async function fixture(
   assert.equal(oldRows.length, 131);
   assert.equal(core.codeTreeDigest(oldRows), M.producer);
   // Read the candidate from the reachable current Git tree. The old row table
-  // is only the exact from-identity witness; no old helper is executed.
+  // is only the exact from-identity witness. Old8c DATA validators live in the
+  // separately named complete historicalSubject; current public capability and
+  // source-owner APIs remain the actual imported production modules.
   const data = git(
     ROOT,
     ["cat-file", "--batch"],
@@ -1342,7 +1360,14 @@ async function fixture(
     oldSealArtifact: sealArtifact,
     oldInventoryBytes: inventory,
   };
-  return { root, repo, args, policy, writePolicy };
+  return {
+    root,
+    repo,
+    args,
+    policy,
+    writePolicy,
+    historicalMigration: historicalSubject.migration,
+  };
 }
 
 test("closed transaction rejects foreign source contexts before opaque candidate getters and preserves the prior module", async () => {
@@ -2562,17 +2587,17 @@ test("fixed retarget binds the actual d9e131-row producer and committed non-auth
   );
 });
 
-test("inactive current-run inspection rejects retired413501 and missing actual capsule or seal pins", async (t) => {
+test("historical inactive current-run inspection rejects retired413501 and missing actual capsule or seal pins", async (t) => {
   const f = await fixture(t);
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       restoreRun: 41350119295,
     }),
     /FIXED_RUN/,
   );
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       oldManifestBytes: null,
       oldSealBytes: null,
@@ -2584,7 +2609,7 @@ test("inactive current-run inspection rejects retired413501 and missing actual c
   git(f.repo, ["commit", "--quiet", "-m", "missing capsule must deny"]);
   const head = git(f.repo, ["rev-parse", "HEAD"]).toString().trim();
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       currentProducer: { ...f.args.currentProducer, head },
     }),
@@ -2592,7 +2617,7 @@ test("inactive current-run inspection rejects retired413501 and missing actual c
   );
 });
 
-test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted or forged provision row in a bounded subset", async (t) => {
+test("historical cold Metal companion keeps ten fixed allowed paths and rejects an omitted or forged provision row in a bounded subset", async (t) => {
   const body = (await fs.readFile(MODULE, "utf8")).replaceAll("\r\n", "\n");
   withoutColdMetalCompanion(body);
   const f = await fixture(t, { modeledProvisionDelta: true });
@@ -2625,7 +2650,8 @@ test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted 
   assert(row);
   assert.equal(row.before.sha, "9fb323d215e1d246f537685b360d3a665f87f748");
   assert.equal(
-    (await migration.inspectLinuxMigrationCandidate(f.args)).authorizing,
+    (await f.historicalMigration.inspectLinuxMigrationCandidate(f.args))
+      .authorizing,
     false,
   );
   for (const change of [
@@ -2643,7 +2669,7 @@ test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted 
     change(policy);
     const head = await f.writePolicy(policy);
     await assert.rejects(
-      migration.inspectLinuxMigrationCandidate({
+      f.historicalMigration.inspectLinuxMigrationCandidate({
         ...f.args,
         currentProducer: { ...f.args.currentProducer, head },
       }),
@@ -2652,15 +2678,26 @@ test("cold Metal companion keeps ten fixed allowed paths and rejects an omitted 
   }
 });
 
-test("canonical fixed-run capsule inspection is read-only and cannot activate restore", async (t) => {
+test("historical canonical fixed-run capsule inspection is read-only and cannot activate restore", async (t) => {
   const f = await fixture(t);
   const before = git(f.repo, ["status", "--porcelain"]).toString();
-  const candidate = await migration.inspectLinuxMigrationCandidate(f.args);
+  const candidate = await f.historicalMigration.inspectLinuxMigrationCandidate(
+    f.args,
+  );
   assert.equal(candidate.authorizing, false);
   assert.equal(candidate.activation, "not-implemented");
   assert.equal(candidate.toProducer, f.args.freshIdentity.producer);
   assert.equal(git(f.repo, ["status", "--porcelain"]).toString(), before);
-  // Even genuine inspection cannot call a caller-provided restore function.
+  // Historical same-module inspection is still non-authorizing.
+  await assert.rejects(
+    f.historicalMigration.prepareLinuxMigrationRestore(candidate, {}),
+    /NOT_ACTIVATED/,
+  );
+  await assert.rejects(
+    f.historicalMigration.createVerifiedLinuxMigrationTools(candidate),
+    /FIXED_CHECKOUT/,
+  );
+  // Current capability APIs reject this old-module object as foreign.
   let calls = 0;
   await assert.rejects(
     migration.prepareLinuxMigrationRestore(candidate, {
@@ -2668,12 +2705,12 @@ test("canonical fixed-run capsule inspection is read-only and cannot activate re
         calls++;
       },
     }),
-    /NOT_ACTIVATED/,
+    /OPAQUE_CANDIDATE/,
   );
   assert.equal(calls, 0);
   await assert.rejects(
     migration.createVerifiedLinuxMigrationTools(candidate),
-    /FIXED_CHECKOUT/,
+    /OPAQUE_CANDIDATE/,
   );
   await assert.rejects(
     migration.createVerifiedLinuxMigrationTools({ ...candidate }),
@@ -2710,20 +2747,22 @@ test("canonical fixed-run capsule inspection is read-only and cannot activate re
   );
 });
 
-test("a committed synthetic newer run and attempt are data-selectable but never authenticated or activated", async (t) => {
+test("historical a committed synthetic newer run and attempt are data-selectable but never authenticated or activated", async (t) => {
   const moduleBefore = await fs.readFile(MODULE);
   const f = await fixture(t, { oldRunId: 41390000001, oldAttempt: 2 });
-  const candidate = await migration.inspectLinuxMigrationCandidate(f.args);
+  const candidate = await f.historicalMigration.inspectLinuxMigrationCandidate(
+    f.args,
+  );
   assert.equal(candidate.fromRunId, 41390000001);
   assert.equal(candidate.fromAttempt, 2);
   assert.equal(candidate.authorizing, false);
   assert.equal(candidate.activation, "not-implemented");
   await assert.rejects(
     migration.prepareLinuxMigrationRestore(candidate, {}),
-    /NOT_ACTIVATED/,
+    /OPAQUE_CANDIDATE/,
   );
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       restoreRun: SEED_RUN,
     }),
@@ -2756,7 +2795,7 @@ test("a committed synthetic newer run and attempt are data-selectable but never 
     change(policy.from.checkpointProducer);
     const head = await f.writePolicy(policy);
     await assert.rejects(
-      migration.inspectLinuxMigrationCandidate({
+      f.historicalMigration.inspectLinuxMigrationCandidate({
         ...f.args,
         restoreRun: policy.from.checkpointProducer.runId,
         currentProducer: { ...f.args.currentProducer, head },
@@ -2767,7 +2806,7 @@ test("a committed synthetic newer run and attempt are data-selectable but never 
   assert.deepEqual(await fs.readFile(MODULE), moduleBefore);
 });
 
-test("an arbitrary alternate policy path or caller JSON cannot replace the fixed committed capsule", async (t) => {
+test("historical an arbitrary alternate policy path or caller JSON cannot replace the fixed committed capsule", async (t) => {
   const f = await fixture(t);
   const alternate = "native/cef-checkpoint-migrations/arbitrary.json";
   git(f.repo, ["mv", "--", M.policyPath, alternate]);
@@ -2779,7 +2818,7 @@ test("an arbitrary alternate policy path or caller JSON cannot replace the fixed
   ]);
   const head = git(f.repo, ["rev-parse", "HEAD"]).toString().trim();
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       policyPath: alternate,
       policy: f.policy,
@@ -2790,10 +2829,10 @@ test("an arbitrary alternate policy path or caller JSON cannot replace the fixed
   );
 });
 
-test("a final current-Git change cannot be hidden by mutating the caller producer object", async (t) => {
+test("historical a final current-Git change cannot be hidden by mutating the caller producer object", async (t) => {
   const f = await fixture(t);
   let expectedChecks = 0;
-  await migration.inspectLinuxMigrationCandidate({
+  await f.historicalMigration.inspectLinuxMigrationCandidate({
     ...f.args,
     check: () => expectedChecks++,
   });
@@ -2802,7 +2841,7 @@ test("a final current-Git change cannot be hidden by mutating the caller produce
     changed = false;
   const producer = { ...f.args.currentProducer };
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       currentProducer: producer,
       check() {
@@ -3416,17 +3455,17 @@ test("owned leaf model joins fixed FD child, preserves late falsy expiry and nev
   }
 });
 
-test("wrong run/head, all seven changed identity fields and mutated seal assets deny", async (t) => {
+test("historical wrong run/head, all seven changed identity fields and mutated seal assets deny", async (t) => {
   const f = await fixture(t);
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       restoreRun: 41323982797,
     }),
     /FIXED_RUN/,
   );
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       currentProducer: { ...f.args.currentProducer, head: "f".repeat(40) },
     }),
@@ -3453,7 +3492,7 @@ test("wrong run/head, all seven changed identity fields and mutated seal assets 
               : "f".repeat(64),
     };
     await assert.rejects(
-      migration.inspectLinuxMigrationCandidate({
+      f.historicalMigration.inspectLinuxMigrationCandidate({
         ...f.args,
         freshIdentity: identity,
       }),
@@ -3461,14 +3500,14 @@ test("wrong run/head, all seven changed identity fields and mutated seal assets 
   }
   for (const field of ["oldManifestBytes", "oldSealBytes", "oldInventoryBytes"])
     await assert.rejects(
-      migration.inspectLinuxMigrationCandidate({
+      f.historicalMigration.inspectLinuxMigrationCandidate({
         ...f.args,
         [field]: Buffer.concat([f.args[field], Buffer.from(" ")]),
       }),
       /PIN_MISMATCH/,
     );
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       oldSealArtifact: { ...f.args.oldSealArtifact, id: 18 },
     }),
@@ -3476,7 +3515,7 @@ test("wrong run/head, all seven changed identity fields and mutated seal assets 
   );
 });
 
-test("committed policy cannot relabel the source delta, Linux schema or to digest", async (t) => {
+test("historical committed policy cannot relabel the source delta, Linux schema or to digest", async (t) => {
   const f = await fixture(t);
   for (const mutate of [
     (p) => {
@@ -3502,7 +3541,7 @@ test("committed policy cannot relabel the source delta, Linux schema or to diges
     mutate(policy);
     const head = await f.writePolicy(policy);
     await assert.rejects(
-      migration.inspectLinuxMigrationCandidate({
+      f.historicalMigration.inspectLinuxMigrationCandidate({
         ...f.args,
         currentProducer: { ...f.args.currentProducer, head },
       }),
@@ -3515,7 +3554,7 @@ test("committed policy cannot relabel the source delta, Linux schema or to diges
   );
   const head = await f.writePolicy(f.policy, raw);
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       currentProducer: { ...f.args.currentProducer, head },
     }),
@@ -3540,7 +3579,7 @@ test("committed policy cannot relabel the source delta, Linux schema or to diges
     "candidate cannot broaden source allowlist",
   ]);
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate({
+    f.historicalMigration.inspectLinuxMigrationCandidate({
       ...f.args,
       currentProducer: {
         ...f.args.currentProducer,
@@ -3552,7 +3591,7 @@ test("committed policy cannot relabel the source delta, Linux schema or to diges
   );
 });
 
-test("dirty producer bytes and uncommitted replacement capsule cannot be witnesses", async (t) => {
+test("historical dirty producer bytes and uncommitted replacement capsule cannot be witnesses", async (t) => {
   const f = await fixture(t);
   const script = path.join(
     f.repo,
@@ -3561,13 +3600,13 @@ test("dirty producer bytes and uncommitted replacement capsule cannot be witness
   const original = await fs.readFile(script);
   await fs.appendFile(script, "\n// changed\n");
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate(f.args),
+    f.historicalMigration.inspectLinuxMigrationCandidate(f.args),
     /PIN_MISMATCH/,
   );
   await fs.writeFile(script, original);
   await fs.appendFile(path.join(f.repo, M.policyPath), " ");
   await assert.rejects(
-    migration.inspectLinuxMigrationCandidate(f.args),
+    f.historicalMigration.inspectLinuxMigrationCandidate(f.args),
     /PIN_MISMATCH/,
   );
 });
@@ -4304,5 +4343,32 @@ test("outer restore-only migration assertions retain strict native codes before 
       },
     ),
     (error) => error === primary,
+  );
+});
+
+test("current canonical370 identity and migration inspection reject historical8c capsule without borrowing its subject", async (t) => {
+  const f = await fixture(t);
+  assert.equal(historicalSubject.historical, true);
+  assert.equal(historicalSubject.authority, false);
+  assert.equal(
+    historicalSubject.producer,
+    "60d51f32b97ff59bf028643f4f7d1f05bb81f6a872710fae55ef1d83231f5901",
+  );
+  assert.equal(
+    core.checkpointProfile(M.target).source,
+    "5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e",
+  );
+  assert.throws(
+    () => core.validateIdentity(f.args.freshIdentity),
+    /Unreviewed checkpoint source/,
+  );
+  await assert.rejects(
+    migration.inspectLinuxMigrationCandidate(f.args),
+    /Unreviewed checkpoint source/,
+  );
+  assert.equal(
+    (await f.historicalMigration.inspectLinuxMigrationCandidate(f.args))
+      .authorizing,
+    false,
   );
 });

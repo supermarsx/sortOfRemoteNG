@@ -1495,6 +1495,9 @@ print('{}')`,
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
+import { registerSisoWriterLifetimeTests } from "./helpers/cefSisoWriterLifetimeCases.mjs";
+registerSisoWriterLifetimeTests();
+
 test(
   "exact Siso log alias is removed only after actual owned compiler quiescence; target survives",
   { skip: process.platform === "win32" },
@@ -5033,13 +5036,19 @@ test("Linux ARM observed image rejects the old exact guard and requires the new 
       ),
     /insufficient/,
   );
-  assert.equal(checkpointProfile(target).inputs, refreshedLinuxArmInputs);
-  assert.equal(checkpointProfile(target).source, refreshedLinuxArmSource);
+  assert.equal(
+    beforeLinuxFreshProfileForHistory(checkpointProfile(target)).inputs,
+    refreshedLinuxArmInputs,
+  );
+  assert.equal(
+    beforeLinuxFreshProfileForHistory(checkpointProfile(target)).source,
+    refreshedLinuxArmSource,
+  );
 });
 
 test("historical Linux ARM image namespace retains fifteen raw payloads and four native pins while selected R5 stays exact", async () => {
   const target = "aarch64-unknown-linux-gnu",
-    p = checkpointProfile(target);
+    p = beforeLinuxFreshProfileForHistory(checkpointProfile(target));
   const old = path.join(ROOT, previousLinuxArmInputs),
     fresh = path.join(ROOT, historicalLinuxArmInputs);
   const previous = JSON.parse(
@@ -5111,8 +5120,8 @@ test("historical Linux ARM image namespace retains fifteen raw payloads and four
   const expectedIdentity = {
     ...identity,
     target,
-    source: refreshedLinuxArmSource,
-    image: "20261023.334.3",
+    source: checkpointProfile(target).source,
+    image: checkpointProfile(target).acceptedImages[0],
   };
   const checkpoint = manifest();
   checkpoint.identity = expectedIdentity;
@@ -5133,7 +5142,7 @@ test("historical Linux ARM image namespace retains fifteen raw payloads and four
   );
   assert(
     workflow.jobs.checkpoint.concurrency.group.includes(
-      refreshedLinuxArmSource,
+      checkpointProfile(target).source,
     ),
   );
   assert(!workflow.jobs.checkpoint.concurrency.group.includes(oldSource));
@@ -5146,7 +5155,7 @@ test("historical Linux ARM image namespace retains fifteen raw payloads and four
 
 test("source25 Linux ARM R5 preserves reviewed configuration while requiring its new header and capability identity", async () => {
   const target = "aarch64-unknown-linux-gnu",
-    profile = checkpointProfile(target),
+    profile = beforeLinuxFreshProfileForHistory(checkpointProfile(target)),
     next = path.join(ROOT, source25LinuxArmInputs),
     old = path.join(ROOT, historicalLinuxArmInputs);
   const lock = validateSourceLock(
@@ -5257,7 +5266,7 @@ test("source25 Linux ARM R5 preserves reviewed configuration while requiring its
   );
   assert(
     workflow.jobs.checkpoint.concurrency.group.includes(
-      refreshedLinuxArmSource,
+      checkpointProfile(target).source,
     ),
   );
   for (const retired of [historicalLinuxArmSource, source25LinuxArmSource])
@@ -5327,13 +5336,19 @@ test("Linux ARM image 20261026.354.1 rejects the source25 exact guard and requir
       ),
     /insufficient/,
   );
-  assert.equal(checkpointProfile(target).inputs, refreshedLinuxArmInputs);
-  assert.equal(checkpointProfile(target).source, refreshedLinuxArmSource);
+  assert.equal(
+    beforeLinuxFreshProfileForHistory(checkpointProfile(target)).inputs,
+    refreshedLinuxArmInputs,
+  );
+  assert.equal(
+    beforeLinuxFreshProfileForHistory(checkpointProfile(target)).source,
+    refreshedLinuxArmSource,
+  );
 });
 
 test("refreshed Linux ARM image namespace preserves twenty-eight source25 raw payloads and all four actual native tool pins", async () => {
   const target = "aarch64-unknown-linux-gnu",
-    p = checkpointProfile(target);
+    p = beforeLinuxFreshProfileForHistory(checkpointProfile(target));
   const old = path.join(ROOT, source25LinuxArmInputs),
     fresh = path.join(ROOT, p.inputs);
   const previous = JSON.parse(
@@ -5451,8 +5466,8 @@ test("refreshed Linux ARM image namespace preserves twenty-eight source25 raw pa
   const expectedIdentity = {
     ...identity,
     target,
-    source: refreshedLinuxArmSource,
-    image: refreshedLinuxArmImage,
+    source: checkpointProfile(target).source,
+    image: checkpointProfile(target).acceptedImages[0],
   };
   const checkpoint = manifest();
   checkpoint.identity = expectedIdentity;
@@ -5670,7 +5685,7 @@ test("compile recipes preserve target output and platform sandbox without cross-
         "4",
         "-C",
         `out/${p.outConfig}`,
-        p.platform === "linux" ? "cef" : "cefclient",
+        p.platform === "linux" ? "libcef" : "cefclient",
         p.platform === "linux" ? "chrome_sandbox" : "cef_sandbox",
       ];
     assert.equal(checkpointCompileArguments(target, args), args);
@@ -5687,6 +5702,12 @@ test("compile recipes preserve target output and platform sandbox without cross-
         /compile recipe/,
       );
     }
+    const foreignTarget = [...args];
+    foreignTarget[5] = p.platform === "linux" ? "cef" : "libcef";
+    assert.throws(
+      () => checkpointCompileArguments(target, foreignTarget),
+      /compile recipe/,
+    );
   }
 });
 
@@ -7613,6 +7634,7 @@ test("exact Siso cleanup body uses proven logger identity and preserves all alia
     canonicalOut: "/out",
     groupId: original.groupId,
     observed: original.observed,
+    compilerExit: { outcome: original.outcome, exitCode: original.exitCode },
     beginWallMs: now,
     endWallMs: now + 999,
     outIdentity: root,
@@ -8870,7 +8892,7 @@ test("identity-guarded reaper never signals a replacement root or a foreign proc
   assert.deepEqual(signals, []);
 });
 
-test("fixed ps timeout kills only its creation-owned helper and cannot retain stdout handles", async () => {
+test("fallback ps timeout kills only its creation-owned helper and cannot retain stdout handles", async () => {
   const source = await readFile(
     new URL(
       "../../scripts/lib/cef-engineering-checkpoint.mjs",
@@ -8901,6 +8923,7 @@ test("fixed ps timeout kills only its creation-owned helper and cannot retain st
   };
   ps.unref = () => unref++;
   const dependencies = {
+    process: { platform: "freebsd" }, // Explicit current PS fallback; Linux uses the kernel reader.
     assert,
     spawn: (file, args, options) => {
       assert.equal(file, "/bin/ps");
@@ -9707,7 +9730,7 @@ test("monitor process rows and lineage retain closed guard reasons without raw i
   assert.equal(compileMonitorRecord(null, "PS_SPAWN"), null);
 });
 
-test("actual processSnapshot branches preserve original errors and closed numeric failure observations", async () => {
+test("actual fallback processSnapshot branches preserve original errors and closed numeric failure observations", async () => {
   const source = await readFile(
     new URL(
       "../../scripts/lib/cef-engineering-checkpoint.mjs",
@@ -9779,6 +9802,7 @@ test("actual processSnapshot branches preserve original errors and closed numeri
       return ps;
     };
     const snapshot = new Function(
+      "process",
       "assert",
       "spawn",
       "processRows",
@@ -9791,6 +9815,7 @@ test("actual processSnapshot branches preserve original errors and closed numeri
         body("processSnapshot") +
         ")",
     )(
+      { platform: "freebsd" }, // Closed model of the actual current PS fallback.
       assert,
       fakeSpawn,
       processRows,
@@ -16176,7 +16201,7 @@ test("a second GN revalidation renames the first one's logs aside instead of col
 
 test("accepted Linux ARM runner images are an exact reviewed set bound to the reviewed pin and its evidence", async () => {
   const target = "aarch64-unknown-linux-gnu";
-  const profile = checkpointProfile(target);
+  const profile = beforeLinuxFreshProfileForHistory(checkpointProfile(target));
   const evidence = JSON.parse(
     await readFile(
       path.join(
@@ -16224,7 +16249,7 @@ test("accepted Linux ARM runner images are an exact reviewed set bound to the re
 
 test("hosted identity accepts only the exact reviewed images and fails closed for any other", async () => {
   const target = "aarch64-unknown-linux-gnu";
-  const profile = checkpointProfile(target);
+  const profile = beforeLinuxFreshProfileForHistory(checkpointProfile(target));
   const map = JSON.parse(
     await readFile(
       path.join(ROOT, profile.inputs, `cef-ci-runner-${target}.json`),
@@ -16335,7 +16360,9 @@ test("a checkpoint identity names the reviewed image class so restores work acro
   ).replaceAll("\r\n", "\n");
   assert.match(runtime, /engineering\?\.acceptedImageVersions \?\? \[\]/);
   // Same class label for both accepted images, so the identity digests match.
-  const profile = checkpointProfile("aarch64-unknown-linux-gnu");
+  const profile = beforeLinuxFreshProfileForHistory(
+    checkpointProfile("aarch64-unknown-linux-gnu"),
+  );
   const label = (observed) => {
     assert(profile.acceptedImages.includes(observed));
     return profile.acceptedImages[0];
@@ -19322,7 +19349,7 @@ import {
 } from "./helpers/cefCompilerCompatibilityReviewedHistory.mjs";
 
 test("compiler compatibility DATA restores the entire c69 producer and refuses each changed whole file", async () => {
-  const actual = actualFeatureSource(ROOT);
+  const actual = compositeMacSubject(actualFeatureSource(ROOT));
   assert.equal(actual.producer, CURRENT_COMPILER_COMPAT_PRODUCER);
   const previous = beforeCompilerCompatDataForHistory(
     actual.rows,
@@ -19434,3 +19461,479 @@ async function compilerBaselineProfile() {
     {},
   );
 }
+
+import {
+  CURRENT_COMPILER_COMPAT_PRODUCER as CURRENT_LINUX_COMPILER_COMPAT_PRODUCER,
+  BEFORE_COMPILER_COMPAT_PRODUCER as BEFORE_LINUX_COMPILER_COMPAT_PRODUCER,
+  beforeCompilerCompatDataForHistory as beforeLinuxCompilerCompatDataForHistory,
+  beforeCompilerCompatRowsForHistory as beforeLinuxCompilerCompatRowsForHistory,
+  inverseCompilerCompatFile as inverseLinuxCompilerCompatFile,
+} from "./helpers/cefLinuxCompilerReviewedHistory.mjs";
+import {
+  CURRENT_SISO_WRITER_PRODUCER,
+  BEFORE_SISO_WRITER_PRODUCER,
+  CURRENT_SISO_WRITER_CORE,
+  BEFORE_SISO_WRITER_CORE,
+  beforeSisoWriterDataForHistory,
+  beforeSisoWriterRowsForHistory,
+  inverseSisoWriterCore,
+} from "./helpers/cefSisoWriterReviewedHistory.mjs";
+
+import {
+  CURRENT_LINUX_KERNEL_PRODUCER,
+  BEFORE_LINUX_KERNEL_PRODUCER,
+  CURRENT_LINUX_KERNEL_CORE,
+  BEFORE_LINUX_KERNEL_CORE,
+  beforeLinuxKernelDataForHistory,
+  beforeLinuxKernelRowsForHistory,
+  inverseLinuxKernelCore,
+  inverseLinuxKernelData,
+  inverseLinuxKernelRows,
+} from "./helpers/cefLinuxKernelReviewedHistory.mjs";
+
+import {
+  CURRENT_LINUX_PROC_PRODUCER,
+  BEFORE_LINUX_PROC_PRODUCER,
+  CURRENT_LINUX_PROC_CORE,
+  BEFORE_LINUX_PROC_CORE,
+  beforeLinuxProcDataForHistory,
+  beforeLinuxProcRowsForHistory,
+  inverseLinuxProcCore,
+  inverseLinuxProcData,
+  inverseLinuxProcRows,
+} from "./helpers/cefLinuxProcReviewedHistory.mjs";
+
+test("historical compiler compatibility DATA restores the entire c69 producer and refuses each changed whole file", async () => {
+  const live = compositeLinuxSubject(actualFeatureSource(ROOT));
+  assert.equal(live.producer, CURRENT_LINUX_PROC_PRODUCER);
+  const previousProc = beforeLinuxProcDataForHistory(live.rows, live.files);
+  const previousLinux = beforeLinuxKernelDataForHistory(
+    previousProc.rows,
+    previousProc.files,
+  );
+  const actual = {
+    ...live,
+    ...previousLinux,
+    producer: codeTreeDigest(previousLinux.rows),
+  };
+  assert.equal(actual.producer, CURRENT_SISO_WRITER_PRODUCER);
+  const compilerActual = beforeSisoWriterDataForHistory(
+    actual.rows,
+    actual.files,
+  );
+  assert.equal(
+    codeTreeDigest(compilerActual.rows),
+    CURRENT_LINUX_COMPILER_COMPAT_PRODUCER,
+  );
+  const previous = beforeLinuxCompilerCompatDataForHistory(
+    actual.rows,
+    actual.files,
+  );
+  assert.equal(
+    codeTreeDigest(previous.rows),
+    BEFORE_LINUX_COMPILER_COMPAT_PRODUCER,
+  );
+  assert.deepEqual(
+    beforeLinuxCompilerCompatRowsForHistory(actual.rows, ROOT),
+    previous.rows,
+  );
+  const data = JSON.parse(
+    await readFile(
+      path.join(ROOT, "tests/fixtures/cef/linux_compiler_compat_inverse.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(data.files.length, 2);
+  for (const spec of data.files) {
+    // The whole old file is recovered from exact current HEAD and pinned DATA;
+    // required shallow checkouts need no ancestor object or network fetch.
+    const expected = previous.files.get(spec.path);
+    assert.equal(expected.length, spec.before.bytes);
+    assert.equal(sha(expected), spec.before.sha256);
+    assert.equal(
+      hashObject("sha1")
+        .update(`blob ${expected.length}\0`)
+        .update(expected)
+        .digest("hex"),
+      spec.before.blob,
+    );
+    const raw = compilerActual.files.get(spec.path);
+    assert.deepEqual(inverseLinuxCompilerCompatFile(raw, spec.path), expected);
+    for (const changed of [
+      Buffer.concat([raw, Buffer.from("\n")]),
+      expected,
+      Buffer.from(
+        raw
+          .toString("utf8")
+          .replace(spec.pairs[0].current, () => spec.pairs[0].previous),
+      ),
+    ])
+      assert.throws(() => inverseLinuxCompilerCompatFile(changed, spec.path));
+    const changedRows = actual.rows.map((row) =>
+      row.path === spec.path ? { ...row, sha: "0".repeat(40) } : row,
+    );
+    assert.throws(() => beforeCensusDataForHistory(changedRows, actual.files));
+  }
+  assert.throws(() =>
+    inverseLinuxCompilerCompatFile(Buffer.from("unreviewed"), "unknown"),
+  );
+  const oldCore = previous.files
+    .get("scripts/lib/cef-engineering-checkpoint.mjs")
+    .toString("utf8");
+  const start = oldCore.indexOf("export function checkpointCompileArguments(");
+  const end = oldCore.indexOf("\n}\n", start);
+  assert(start >= 0 && end > start);
+  const oldRecipe = vm.runInNewContext(
+    oldCore.slice(start, end + 2).replace(/^export /, "") +
+      ";checkpointCompileArguments;",
+    { path, checkpointProfile },
+  );
+  const args = [
+    "/pinned/autoninja.py",
+    "-j",
+    "4",
+    "-C",
+    "out/Release_GN_arm64",
+    "libcef",
+    "chrome_sandbox",
+  ];
+  assert.throws(
+    () => oldRecipe("aarch64-unknown-linux-gnu", args),
+    /compile recipe/,
+  );
+  assert.equal(
+    checkpointCompileArguments("aarch64-unknown-linux-gnu", args),
+    args,
+  );
+  const aggregate = args.map((value) => (value === "libcef" ? "cef" : value));
+  assert.equal(oldRecipe("aarch64-unknown-linux-gnu", aggregate), aggregate);
+  assert.throws(
+    () => checkpointCompileArguments("aarch64-unknown-linux-gnu", aggregate),
+    /compile recipe/,
+  );
+});
+
+test("historical Siso writer exact whole-core DATA restores all132 Linux rows and rejects every unreviewed body or producer", async () => {
+  const live = compositeLinuxSubject(actualFeatureSource(ROOT));
+  assert.equal(live.producer, CURRENT_LINUX_PROC_PRODUCER);
+  const previousProc = beforeLinuxProcDataForHistory(live.rows, live.files);
+  const previousLinux = beforeLinuxKernelDataForHistory(
+    previousProc.rows,
+    previousProc.files,
+  );
+  const actual = {
+    ...live,
+    ...previousLinux,
+    producer: codeTreeDigest(previousLinux.rows),
+  };
+  assert.equal(actual.producer, CURRENT_SISO_WRITER_PRODUCER);
+  const file = "scripts/lib/cef-engineering-checkpoint.mjs";
+  const raw = actual.files.get(file);
+  assert.equal(raw.length, CURRENT_SISO_WRITER_CORE.bytes);
+  assert.equal(sha(raw), CURRENT_SISO_WRITER_CORE.sha256);
+  assert.equal(
+    actual.rows.find((row) => row.path === file).sha,
+    CURRENT_SISO_WRITER_CORE.blob,
+  );
+  const before = inverseSisoWriterCore(raw.toString("utf8"));
+  assert.equal(Buffer.byteLength(before), BEFORE_SISO_WRITER_CORE.bytes);
+  assert.equal(sha(before), BEFORE_SISO_WRITER_CORE.sha256);
+  const previous = beforeSisoWriterDataForHistory(actual.rows, actual.files);
+  assert.equal(codeTreeDigest(previous.rows), BEFORE_SISO_WRITER_PRODUCER);
+  assert.deepEqual(
+    previous.rows,
+    beforeSisoWriterRowsForHistory(actual.rows, ROOT),
+  );
+  assert.equal(previous.files.get(file).toString("utf8"), before);
+  for (const row of actual.rows)
+    if (row.path !== file)
+      assert.deepEqual(
+        previous.files.get(row.path),
+        actual.files.get(row.path),
+      );
+  assert.equal(
+    codeTreeDigest(
+      beforeLinuxCompilerCompatDataForHistory(previous.rows, previous.files)
+        .rows,
+    ),
+    BEFORE_LINUX_COMPILER_COMPAT_PRODUCER,
+  );
+  const data = JSON.parse(
+    await readFile(
+      path.join(ROOT, "tests/fixtures/cef/siso_writer_inverse.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(data.pairs.length, 11);
+  for (const body of [
+    before,
+    raw.toString("utf8") + "\n",
+    ...data.pairs.map((pair) =>
+      raw.toString("utf8").replace(pair.current, () => pair.previous),
+    ),
+    raw.toString("utf8").replace("identity.uid !== BigInt(owner.uid)", "false"),
+    raw
+      .toString("utf8")
+      .replace("sameLinkIdentity(liveWitness.identity, s)", "true"),
+    raw
+      .toString("utf8")
+      .replace("proof.compilerExit.outcome === compile.outcome &&", ""),
+  ])
+    assert.throws(() => inverseSisoWriterCore(body));
+  for (const rows of [
+    actual.rows.slice(1),
+    actual.rows.concat(actual.rows[0]),
+    actual.rows.map((row) =>
+      row.path === file ? { ...row, sha: "0".repeat(40) } : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === file ? { ...row, mode: "100755" } : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === "scripts/lib/browser-custom-runtime.mjs"
+        ? { ...row, sha: "0".repeat(40) }
+        : row,
+    ),
+  ])
+    assert.throws(() => beforeCensusDataForHistory(rows, actual.files));
+  const changedFiles = new Map(actual.files);
+  changedFiles.set(file, Buffer.concat([raw, Buffer.from("\n")]));
+  assert.throws(() =>
+    beforeSisoWriterDataForHistory(actual.rows, changedFiles),
+  );
+});
+
+import { registerLinuxProcessIdentityTests } from "./helpers/cefLinuxProcessIdentityCases.mjs";
+registerLinuxProcessIdentityTests();
+
+test("historical Linux kernel exact whole-core DATA binds current Git HEAD and all132 rows before historical inverses", async () => {
+  const live = compositeLinuxSubject(actualFeatureSource(ROOT));
+  assert.equal(live.producer, CURRENT_LINUX_PROC_PRODUCER);
+  const previousProc = beforeLinuxProcDataForHistory(live.rows, live.files);
+  const actual = {
+    ...live,
+    ...previousProc,
+    producer: codeTreeDigest(previousProc.rows),
+  };
+  const file = "scripts/lib/cef-engineering-checkpoint.mjs",
+    raw = actual.files.get(file);
+  assert.equal(actual.producer, CURRENT_LINUX_KERNEL_PRODUCER);
+  assert.equal(raw.length, CURRENT_LINUX_KERNEL_CORE.bytes);
+  assert.equal(sha(raw), CURRENT_LINUX_KERNEL_CORE.sha256);
+  assert.equal(actual.rows.find((row) => row.path === file).mode, "100644");
+  assert.equal(
+    actual.rows.find((row) => row.path === file).sha,
+    CURRENT_LINUX_KERNEL_CORE.blob,
+  );
+  const before = inverseLinuxKernelCore(raw.toString("utf8"));
+  assert.equal(Buffer.byteLength(before), BEFORE_LINUX_KERNEL_CORE.bytes);
+  assert.equal(sha(before), BEFORE_LINUX_KERNEL_CORE.sha256);
+  const previous = inverseLinuxKernelData(actual.rows, actual.files);
+  assert.equal(codeTreeDigest(previous.rows), BEFORE_LINUX_KERNEL_PRODUCER);
+  assert.deepEqual(previous.rows, inverseLinuxKernelRows(actual.rows, ROOT));
+  assert.deepEqual(
+    previous.rows,
+    beforeLinuxKernelRowsForHistory(actual.rows, ROOT),
+  );
+  assert.equal(previous.files.get(file).toString("utf8"), before);
+  assert.equal(
+    codeTreeDigest(
+      beforeSisoWriterDataForHistory(actual.rows, actual.files).rows,
+    ),
+    BEFORE_SISO_WRITER_PRODUCER,
+  );
+  assert.equal(
+    codeTreeDigest(
+      beforeLinuxCompilerCompatDataForHistory(actual.rows, actual.files).rows,
+    ),
+    BEFORE_LINUX_COMPILER_COMPAT_PRODUCER,
+  );
+  for (const row of actual.rows)
+    if (row.path !== file)
+      assert.deepEqual(
+        previous.files.get(row.path),
+        actual.files.get(row.path),
+      );
+  const data = JSON.parse(
+    await readFile(
+      path.join(ROOT, "tests/fixtures/cef/linux_kernel_identity_inverse.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(data.authority, false);
+  assert.equal(data.pairs.length, 6);
+  assert.equal(data.rows.length, 132);
+  for (const body of [
+    before,
+    raw.toString("utf8") + "\n",
+    ...data.pairs.map((pair) =>
+      raw.toString("utf8").replace(pair.current, () => pair.previous),
+    ),
+    raw
+      .toString("utf8")
+      .replace('if (process.platform === "linux")', "if (false)"),
+    raw.toString("utf8").replace("before.start === after.start", "true"),
+  ])
+    assert.throws(() => inverseLinuxKernelCore(body));
+  const variants = [
+    actual.rows.slice(1),
+    actual.rows.concat(actual.rows[0]),
+    actual.rows.map((row) =>
+      row.path === file ? { ...row, sha: "0".repeat(40) } : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === file ? { ...row, mode: "100755" } : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === "scripts/lib/browser-custom-runtime.mjs"
+        ? { ...row, sha: "0".repeat(40) }
+        : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === "scripts/lib/browser-custom-runtime.mjs"
+        ? { ...row, mode: "100755" }
+        : row,
+    ),
+  ];
+  for (const rows of variants) {
+    assert.throws(() => inverseLinuxKernelData(rows, actual.files));
+    assert.throws(() => inverseLinuxKernelRows(rows, ROOT));
+    assert.throws(() => beforeCensusDataForHistory(rows, actual.files));
+  }
+  for (const target of [file, "scripts/lib/browser-custom-runtime.mjs"]) {
+    const files = new Map(actual.files);
+    files.set(target, Buffer.concat([files.get(target), Buffer.from("\n")]));
+    assert.throws(() => inverseLinuxKernelData(actual.rows, files));
+    assert.throws(() => beforeLinuxKernelDataForHistory(actual.rows, files));
+  }
+  for (const files of [
+    new Map([...actual.files].slice(1)),
+    new Map([...actual.files, ["extra", Buffer.from("unreviewed")]]),
+  ])
+    assert.throws(() => inverseLinuxKernelData(actual.rows, files));
+});
+
+test("Linux proc presentation exact whole-core DATA binds current Git HEAD and all132 rows before historical inverses", async () => {
+  const actual = compositeLinuxSubject(actualFeatureSource(ROOT)),
+    file = "scripts/lib/cef-engineering-checkpoint.mjs",
+    raw = actual.files.get(file);
+  assert.equal(actual.producer, CURRENT_LINUX_PROC_PRODUCER);
+  assert.equal(raw.length, CURRENT_LINUX_PROC_CORE.bytes);
+  assert.equal(sha(raw), CURRENT_LINUX_PROC_CORE.sha256);
+  assert.equal(actual.rows.find((row) => row.path === file).mode, "100644");
+  assert.equal(
+    actual.rows.find((row) => row.path === file).sha,
+    CURRENT_LINUX_PROC_CORE.blob,
+  );
+  const before = inverseLinuxProcCore(raw.toString("utf8"));
+  assert.equal(Buffer.byteLength(before), BEFORE_LINUX_PROC_CORE.bytes);
+  assert.equal(sha(before), BEFORE_LINUX_PROC_CORE.sha256);
+  const previous = inverseLinuxProcData(actual.rows, actual.files);
+  assert.equal(codeTreeDigest(previous.rows), BEFORE_LINUX_PROC_PRODUCER);
+  assert.deepEqual(previous.rows, inverseLinuxProcRows(actual.rows, ROOT));
+  assert.deepEqual(
+    previous.rows,
+    beforeLinuxProcRowsForHistory(actual.rows, ROOT),
+  );
+  assert.equal(previous.files.get(file).toString("utf8"), before);
+  assert.equal(
+    codeTreeDigest(
+      beforeSisoWriterDataForHistory(actual.rows, actual.files).rows,
+    ),
+    BEFORE_SISO_WRITER_PRODUCER,
+  );
+  assert.equal(
+    codeTreeDigest(
+      beforeLinuxCompilerCompatDataForHistory(actual.rows, actual.files).rows,
+    ),
+    BEFORE_LINUX_COMPILER_COMPAT_PRODUCER,
+  );
+  for (const row of actual.rows)
+    if (row.path !== file)
+      assert.deepEqual(
+        previous.files.get(row.path),
+        actual.files.get(row.path),
+      );
+  const data = JSON.parse(
+    await readFile(
+      path.join(
+        ROOT,
+        "tests/fixtures/cef/linux_proc_presentation_inverse.json",
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(data.authority, false);
+  assert.equal(data.pairs.length, 4);
+  assert.equal(data.rows.length, 132);
+  for (const body of [
+    before,
+    raw.toString("utf8") + "\n",
+    ...data.pairs.map((pair) =>
+      raw.toString("utf8").replace(pair.current, () => pair.previous),
+    ),
+    raw
+      .toString("utf8")
+      .replace('if (process.platform === "linux")', "if (false)"),
+    raw.toString("utf8").replace("before.start === after.start", "true"),
+  ])
+    assert.throws(() => inverseLinuxProcCore(body));
+  const variants = [
+    actual.rows.slice(1),
+    actual.rows.concat(actual.rows[0]),
+    actual.rows.map((row) =>
+      row.path === file ? { ...row, sha: "0".repeat(40) } : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === file ? { ...row, mode: "100755" } : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === "scripts/lib/browser-custom-runtime.mjs"
+        ? { ...row, sha: "0".repeat(40) }
+        : row,
+    ),
+    actual.rows.map((row) =>
+      row.path === "scripts/lib/browser-custom-runtime.mjs"
+        ? { ...row, mode: "100755" }
+        : row,
+    ),
+  ];
+  for (const rows of variants) {
+    assert.throws(() => inverseLinuxProcData(rows, actual.files));
+    assert.throws(() => inverseLinuxProcRows(rows, ROOT));
+    assert.throws(() => beforeCensusDataForHistory(rows, actual.files));
+  }
+  for (const target of [file, "scripts/lib/browser-custom-runtime.mjs"]) {
+    const files = new Map(actual.files);
+    files.set(target, Buffer.concat([files.get(target), Buffer.from("\n")]));
+    assert.throws(() => inverseLinuxProcData(actual.rows, files));
+    assert.throws(() => beforeLinuxProcDataForHistory(actual.rows, files));
+  }
+  for (const files of [
+    new Map([...actual.files].slice(1)),
+    new Map([...actual.files, ["extra", Buffer.from("unreviewed")]]),
+  ])
+    assert.throws(() => inverseLinuxProcData(actual.rows, files));
+});
+
+import {
+  CURRENT_COMPOSITE_PRODUCER,
+  beforeCompositeMacDataForHistory,
+  beforeCompositeLinuxDataForHistory,
+  inverseCompositeMacData,
+  inverseCompositeLinuxData,
+} from "./helpers/cefCompositeReviewedHistory.mjs";
+function compositeMacSubject(actual) {
+  const subject = beforeCompositeMacDataForHistory(actual.rows, actual.files);
+  return { ...actual, ...subject, producer: codeTreeDigest(subject.rows) };
+}
+function compositeLinuxSubject(actual) {
+  const subject = beforeCompositeLinuxDataForHistory(actual.rows, actual.files);
+  return { ...actual, ...subject, producer: codeTreeDigest(subject.rows) };
+}
+
+import { beforeLinuxFreshProfileForHistory } from "./helpers/cefLinuxFreshReviewedHistory.mjs";
+// Current canonical370 admissions run with the actual combined production module.
+import "./cefLinuxFreshImage.node-test.mjs";
+
+import "./cefCompositeSource.node-test.mjs";

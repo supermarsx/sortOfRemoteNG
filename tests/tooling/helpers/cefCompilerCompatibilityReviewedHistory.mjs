@@ -1,3 +1,8 @@
+import {
+  beforeCompositeMacFileForHistory,
+  beforeCompositeMacDataForHistory,
+  compositeMacDataFromGit,
+} from "./cefCompositeReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -42,6 +47,7 @@ export function inverseCompilerCompatFile(raw, file) {
   return previous;
 }
 export function beforeCompilerCompatFileForHistory(raw, file) {
+  raw = beforeCompositeMacFileForHistory(raw, file);
   const spec = DATA.files.find((row) => row.path === file);
   return spec &&
     raw.length === spec.after.bytes &&
@@ -69,6 +75,7 @@ function rewindRows(rows) {
   return result;
 }
 export function beforeCompilerCompatDataForHistory(rows, files) {
+  ({ rows, files } = beforeCompositeMacDataForHistory(rows, files));
   if (digest(rows) !== CURRENT_COMPILER_COMPAT_PRODUCER) return { rows, files };
   assert(files instanceof Map && files.size === rows.length);
   for (const row of rows)
@@ -85,6 +92,9 @@ export function beforeCompilerCompatDataForHistory(rows, files) {
   return { rows: previousRows, files: previous };
 }
 export function beforeCompilerCompatRowsForHistory(rows, root) {
+  const subject = compositeMacDataFromGit(rows, root);
+  if (subject)
+    return beforeCompilerCompatDataForHistory(subject.rows, subject.files).rows;
   if (digest(rows) !== CURRENT_COMPILER_COMPAT_PRODUCER) return rows;
   const raw = execFileSync("git", ["cat-file", "--batch"], {
     cwd: root,

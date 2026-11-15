@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-fresh-canonical-host-review",
+  "reviewStatus": "prepared-pending-independent-review",
+  "target": "aarch64-unknown-linux-gnu",
+  "sourceLockIdentity": "5690461b26b848671a80fcbf68c6974e569f9789476baf106a181b10cd5eb20e",
+  "namespace": "native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char-20261111-370-1",
+  "parentNamespace": "native/cef-build-inputs/20261028-r5-linuxarm-cross-sysroot-external-webview-char-20261026-354-1",
+  "parentSourceIdentity": "8c5af5d375371adef2e1a32d872f5c55f907d26786b698e5ab2aef0fdfb9f8eb",
+  "canonicalImage": "20261111.370.1",
+  "acceptedImageAliases": [],
+  "firstBuildRestoreRun": 0,
+  "oldCheckpointReuseAllowed": false,
+  "old354370EquivalenceClaim": false,
+  "retainedSourcePayloads": [
+    {
+      "path": "gn/aarch64-unknown-linux-gnu.gn",
+      "bytes": 333,
+      "sha256": "0fcbeab5302c8409736a340e1424642b80185be8245245298a8eea19fe8e0817"
+    },
+    {
+      "path": "include/cef_sorng_tls_bridge.h",
+      "bytes": 8886,
+      "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e"
+    },
+    {
+      "path": "normalization-receipt.json",
+      "bytes": 1846,
+      "sha256": "64d7ea0f661ad7c276683f8322de52a8e5bc5c8228b9e780883e4309755847a9"
+    },
+    {
+      "path": "patches/0001-chromium-socket-admission.patch",
+      "bytes": 37160,
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876"
+    },
+    {
+      "path": "patches/0002-cef-native-bridge.patch",
+      "bytes": 31384,
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653"
+    },
+    {
+      "path": "patches/0003-cef-native-widget-lifetime.patch",
+      "bytes": 791,
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540"
+    },
+    {
+      "path": "patches/0004-chromium-soda-provisioning.patch",
+      "bytes": 4538,
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482"
+    },
+    {
+      "path": "patches/0005-chromium-proxy-route-probe.patch",
+      "bytes": 3539,
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810"
+    },
+    {
+      "path": "patches/0006-cef-explicit-download-destination.patch",
+      "bytes": 1010,
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813"
+    },
+    {
+      "path": "patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "bytes": 997,
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78"
+    },
+    {
+      "path": "patches/0008-chromium-same-authority-http2.patch",
+      "bytes": 4125,
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103"
+    },
+    {
+      "path": "patches/0009-cef-http2-bridge-capability.patch",
+      "bytes": 1972,
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8"
+    },
+    {
+      "path": "patches/0010-chromium-proxy-application-ack.patch",
+      "bytes": 14590,
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55"
+    },
+    {
+      "path": "patches/0011-cef-proxy-application-ack.patch",
+      "bytes": 10759,
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0"
+    },
+    {
+      "path": "patches/0012-cef-registration-retirement.patch",
+      "bytes": 20195,
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699"
+    },
+    {
+      "path": "patches/0013-chromium-owned-quic-datagrams.patch",
+      "bytes": 75101,
+      "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7"
+    },
+    {
+      "path": "patches/0014-cef-owned-quic-datagrams.patch",
+      "bytes": 9374,
+      "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c"
+    },
+    {
+      "path": "patches/0015-chromium-owned-quic-job-selection.patch",
+      "bytes": 8020,
+      "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7"
+    },
+    {
+      "path": "patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "bytes": 8213,
+      "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7"
+    },
+    {
+      "path": "patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "bytes": 22799,
+      "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858"
+    },
+    {
+      "path": "patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "bytes": 21463,
+      "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383"
+    },
+    {
+      "path": "patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "bytes": 605,
+      "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c"
+    },
+    {
+      "path": "patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "bytes": 354,
+      "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708"
+    },
+    {
+      "path": "patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "bytes": 379,
+      "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6"
+    },
+    {
+      "path": "patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "bytes": 845,
+      "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e"
+    },
+    {
+      "path": "patches/0023-cef-x11-default-visual-colormap.patch",
+      "bytes": 1073,
+      "sha256": "09359b5fe26fc71ca90fdf2add850cc2cd9129d34b76da2b1dd1a95e1ab5fc39"
+    },
+    {
+      "path": "patches/0024-cef-external-webview-lifetime.patch",
+      "bytes": 680,
+      "sha256": "6513168869d2e12b208ee5e4c4e01c8ac5eaf008ce3af21bbd7dc6251b8d08ce"
+    },
+    {
+      "path": "patches/0025-cef-native-linux-char-utf16.patch",
+      "bytes": 810,
+      "sha256": "0394d4786efb8c7e305d209c11860029ebdd9b8f585b64a36706c48ac1450fce"
+    }
+  ],
+  "changedInputs": [
+    {
+      "path": "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+      "bytes": 412,
+      "sha256": "49af4899340babb3a75f940ac2b151816bbeef141ce65c1cee7e8fc8cad5b8db"
+    },
+    {
+      "path": "tools/aarch64-unknown-linux-gnu.json",
+      "bytes": 925,
+      "sha256": "da9276045941bf86c7233c80736549aa0c1caecbd026603d48a3381289f973ee"
+    },
+    {
+      "path": "source-lock.json",
+      "bytes": 6537,
+      "sha256": "1b0f684e0715805cf432e9a3ff5ffb559147d210d44638a2b4b145a0b875b408"
+    }
+  ],
+  "hostObservation": {
+    "run": 43288845759,
+    "attempt": 1,
+    "head": "3746bf1f77b7670b40cfc6c07363da687523e686",
+    "job": 131429386237,
+    "artifact": {
+      "id": 13975089108,
+      "bytes": 48720,
+      "sha256": "4ff31c9207c79e4f3e108e88446958ee9f5a5ede4a213f8f61c0189a3092cf86",
+      "initialLiveApiDigestMatched": true,
+      "currentLookup": "404-after-parent-rerun; local authenticated bytes retained"
+    },
+    "historicalAuthenticatedBytes": true,
+    "currentApiAvailabilityNotClaimed": true,
+    "exactHostPayloadPins": [
+      {
+        "path": "usr/bin/python3.12",
+        "size": 8020928,
+        "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+      },
+      {
+        "path": "usr/bin/x86_64-linux-gnu-ld.bfd",
+        "size": 1359128,
+        "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b"
+      },
+      {
+        "path": "usr/bin/pkgconf",
+        "size": 45168,
+        "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b"
+      },
+      {
+        "path": "usr/include/stdio.h",
+        "size": 34649,
+        "sha256": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62"
+      }
+    ],
+    "oldNativeContracts": {
+      "total": 330,
+      "passed": 329,
+      "failed": 0,
+      "skipped": 1
+    },
+    "sourceCompileStarted": false,
+    "rawMembers": [
+      {
+        "path": "evidence/host-observation.json",
+        "zipMember": "cef-checkpoint-prerequisites/after/observation.json",
+        "bytes": 2122,
+        "sha256": "9773a751bd40e73c3e5bccf585ec11f523ddf5fa3cdc504f9e6077faf6f2bcd5"
+      },
+      {
+        "path": "evidence/host-toolchain-candidate.json",
+        "zipMember": "cef-checkpoint-prerequisites/after/toolchain-candidate.json",
+        "bytes": 797,
+        "sha256": "39901f38b498aa001d7b6ee6f50041e5e40ce9b25112c42a9d4e895f613dac93"
+      },
+      {
+        "path": "evidence/host-provision.json",
+        "zipMember": "cef-checkpoint-prerequisites/provision.json",
+        "bytes": 663,
+        "sha256": "eb593cbea111dc74eafb6ba1b9a9ee0ebaecf8dbabf07ba81faa3d657173d37d"
+      }
+    ]
+  },
+  "newHostProvenance": {
+    "systemPackageChanges": 39,
+    "gitPackage": {
+      "name": "git",
+      "architecture": "amd64",
+      "before": "1:2.56.0-0ppa1~ubuntu24.04.2",
+      "after": "1:2.56.1-0ppa1~ubuntu24.04.1"
+    },
+    "hermeticToolchainAttestation": false,
+    "oldObjectEquivalence": false,
+    "resolvedGitPathVersionAndLoadedLibraryProvenanceStillRequiredInFreshRun": true
+  },
+  "retainedHistoricalReceipt": "normalization-receipt.json is copied unchanged as historical patch-normalization evidence; its source identities are not relabeled.",
+  "requiredFreshRunGates": [
+    "Exact370 hosted OS/platform/architecture/image and all toolchain file pins before acquisition",
+    "Current actual native tooling contracts and frozen producer bodies",
+    "Fixed source acquisition/patch validation and new owned source metadata",
+    "Actual GN revalidation/captured graph and tool/source/image identity",
+    "Stable kernel process identity/Siso PID observation/exclusive owner guards and quiescence",
+    "Genuine compiler completion and unchanged complete SDK packaging/product validation",
+    "Actual ARM-native runtime acceptance and protected publication before runtimeReady"
+  ],
+  "engineBuilt": false,
+  "sdk": false,
+  "nativeAcceptancePassed": false,
+  "published": false,
+  "runtimeReady": false
+}
