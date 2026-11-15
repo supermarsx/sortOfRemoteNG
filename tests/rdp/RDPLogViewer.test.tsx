@@ -40,34 +40,32 @@ describe("RDPLogViewer", () => {
   it("uses centralized form classes for filters", async () => {
     render(<RDPLogViewer isVisible />);
 
-    expect(
-      await screen.findByText("connected successfully"),
-    ).toBeInTheDocument();
+    await screen.findAllByText("connected successfully");
 
-    const filterInput = screen.getByPlaceholderText("Filter logs...");
-    expect(filterInput.className).toContain("sor-settings-input");
+    const filterInput = screen.getByPlaceholderText("Search logs...");
+    expect(filterInput.className).toContain("sor-form-input");
 
     const selects = screen.getAllByRole("combobox");
-    expect(selects[0].className).toContain("sor-settings-select");
+    expect(selects[0].className).toContain("sor-form-select-sm");
   });
 
   it("filters logs by text and level", async () => {
     render(<RDPLogViewer isVisible />);
 
+    await screen.findAllByText("connected successfully");
     expect(
-      await screen.findByText("connected successfully"),
+      screen.getAllByText("authentication failure")[0],
     ).toBeInTheDocument();
-    expect(screen.getByText("authentication failure")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Filter logs..."), {
+    fireEvent.change(screen.getByPlaceholderText("Search logs..."), {
       target: { value: "failure" },
     });
 
     await waitFor(() => {
+      expect(screen.queryAllByText("connected successfully")).toHaveLength(0);
       expect(
-        screen.queryByText("connected successfully"),
-      ).not.toBeInTheDocument();
-      expect(screen.getByText("authentication failure")).toBeInTheDocument();
+        screen.getAllByText("authentication failure")[0],
+      ).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getAllByRole("combobox")[0], {
@@ -75,7 +73,36 @@ describe("RDPLogViewer", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("authentication failure")).toBeInTheDocument();
+      expect(
+        screen.getAllByText("authentication failure")[0],
+      ).toBeInTheDocument();
     });
+  });
+
+  it("renders action-log style rows with level classes", async () => {
+    render(<RDPLogViewer isVisible />);
+    await screen.findAllByText("connected successfully");
+    expect(screen.getAllByTestId("rdp-log-row")).toHaveLength(2);
+    expect(screen.getByText("info", { selector: "span" }).className).toContain(
+      "text-primary",
+    );
+    expect(screen.getByText("error", { selector: "span" }).className).toContain(
+      "text-error",
+    );
+  });
+
+  it("filters by level and shows the shared empty state", async () => {
+    render(<RDPLogViewer isVisible />);
+    await screen.findAllByText("connected successfully");
+    fireEvent.change(screen.getByLabelText("Filter by level"), {
+      target: { value: "error" },
+    });
+    await waitFor(() =>
+      expect(screen.queryAllByText("connected successfully")).toHaveLength(0),
+    );
+    fireEvent.change(screen.getByLabelText("Search logs"), {
+      target: { value: "nomatch" },
+    });
+    expect(await screen.findByText("No matching log entries")).toBeVisible();
   });
 });

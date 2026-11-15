@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-interface RDPLogEntry {
+export interface RDPLogEntry {
   timestamp: number;
   session_id?: string;
+  channel?: string;
+  code?: string | number;
   level: string;
   message: string;
 }
@@ -14,9 +16,9 @@ export function useRDPLogViewer(
   sessionFilter?: string | null,
 ) {
   const [logs, setLogs] = useState<RDPLogEntry[]>([]);
-  const [filter, setFilter] = useState('');
-  const [levelFilter, setLevelFilter] = useState<string>('all');
-  const [sessionIdFilter, setSessionIdFilter] = useState<string>('all');
+  const [filter, setFilter] = useState("");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [sessionIdFilter, setSessionIdFilter] = useState<string>("all");
   const [autoScroll, setAutoScroll] = useState(true);
   const lastTimestamp = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -30,7 +32,7 @@ export function useRDPLogViewer(
 
   const fetchLogs = useCallback(async () => {
     try {
-      const newLogs = await invoke<RDPLogEntry[]>('get_rdp_logs', {
+      const newLogs = await invoke<RDPLogEntry[]>("get_rdp_logs", {
         sinceTimestamp: lastTimestamp.current || null,
       });
       if (newLogs.length > 0) {
@@ -56,10 +58,14 @@ export function useRDPLogViewer(
   useEffect(() => {
     if (!isVisible) return;
     let unlisten: UnlistenFn | undefined;
-    listen<RDPLogEntry>('rdp://log', (event) => {
+    listen<RDPLogEntry>("rdp://log", (event) => {
       appendLog(event.payload);
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
   }, [isVisible, appendLog]);
 
   useEffect(() => {
@@ -79,11 +85,17 @@ export function useRDPLogViewer(
   ) as string[];
 
   const filteredLogs = logs.filter((entry) => {
-    if (levelFilter !== 'all' && entry.level !== levelFilter) return false;
-    if (sessionIdFilter !== 'all' && entry.session_id !== sessionIdFilter)
+    if (levelFilter !== "all" && entry.level !== levelFilter) return false;
+    if (sessionIdFilter !== "all" && entry.session_id !== sessionIdFilter)
       return false;
-    if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase()))
-      return false;
+    if (filter) {
+      const needle = filter.toLowerCase();
+      const hay = [entry.message, entry.session_id, entry.channel, entry.code]
+        .filter((v) => v != null)
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
     return true;
   });
 
