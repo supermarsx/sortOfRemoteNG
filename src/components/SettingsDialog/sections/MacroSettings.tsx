@@ -116,6 +116,17 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
             }
           />
           <Toggle
+            settingKey="sessionQuickActions.serialEnabled"
+            label="Serial quick-action bar"
+            description="Show favorite scripts and macros on serial (COM) sessions. Every run is reviewed before text is sent."
+            checked={quickActions.serialEnabled}
+            onChange={(serialEnabled) =>
+              updateSettings({
+                sessionQuickActions: { ...quickActions, serialEnabled },
+              })
+            }
+          />
+          <Toggle
             settingKey="sessionQuickActions.httpEnabled"
             label="Website quick-action bar"
             description="Show website script and interaction macro controls."

@@ -22,6 +22,8 @@ export interface HttpAutomationConfig extends SshQuickActionsConfig {
 /** Global availability does not grant consent to run code on a website. */
 export interface SessionQuickActionsSettings {
   sshEnabled: boolean;
+  /** Favorite/bookmarked scripts and macros on serial sessions. */
+  serialEnabled: boolean;
   httpEnabled: boolean;
   allowWebMacros: boolean;
   allowWebScriptInjection: boolean;
@@ -32,6 +34,7 @@ export interface SessionQuickActionsSettings {
 export const DEFAULT_SESSION_QUICK_ACTIONS: Readonly<SessionQuickActionsSettings> =
   Object.freeze({
     sshEnabled: true,
+    serialEnabled: true,
     httpEnabled: true,
     allowWebMacros: true,
     allowWebScriptInjection: true,

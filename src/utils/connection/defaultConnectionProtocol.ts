@@ -23,3 +23,12 @@ export function normalizeDefaultConnectionProtocol(
     ? (value as DefaultConnectionProtocol)
     : DEFAULT_CONNECTION_PROTOCOL;
 }
+
+/**
+ * Quick Connect also opens local serial devices. Kept separate from the
+ * saved-connection defaults so "serial" is never a default-protocol choice.
+ */
+export const QUICK_CONNECT_PROTOCOL_OPTIONS = [
+  ...DEFAULT_CONNECTION_PROTOCOLS,
+  "serial",
+] as const;

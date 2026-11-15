@@ -30,6 +30,11 @@ export const MACROS_SEARCH_ENTRIES: SettingSearchEntry[] = [
       "SSH quick-action bar",
       "favorite scripts terminal macros toolbar",
     ],
+    [
+      "serialEnabled",
+      "Serial quick-action bar",
+      "COM serial console favorite scripts macros toolbar",
+    ],
     ["httpEnabled", "Website quick-action bar", "HTTP HTTPS favorites toolbar"],
     [
       "allowWebMacros",

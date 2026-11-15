@@ -17,6 +17,7 @@ import {
 } from "../../hooks/protocol/useSerialSession";
 import type { ConnectionSession } from "../../types/connection/connection";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
+import { SerialScriptBar } from "./serial/SerialScriptBar";
 
 const parityLetter = (parity: "none" | "odd" | "even") =>
   parity === "none" ? "N" : parity === "odd" ? "O" : "E";
@@ -33,7 +34,6 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
-  const lastWrittenChunkRef = useRef<Uint8Array | null>(null);
   const sendRef = useRef(model.sendInput);
   sendRef.current = model.sendInput;
 
@@ -91,33 +91,20 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
       input.dispose();
       terminal.dispose();
       terminalRef.current = null;
-      lastWrittenChunkRef.current = null;
     };
   }, []);
 
+  const outputStream = model.outputStream;
   useEffect(() => {
-    let startIndex = 0;
-    const previous = lastWrittenChunkRef.current;
-    if (previous) {
-      const previousIndex = model.outputChunks.indexOf(previous);
-      if (previousIndex >= 0) {
-        startIndex = previousIndex + 1;
-      } else {
-        terminalRef.current?.reset();
-      }
-    }
-    for (
-      let index = startIndex;
-      index < model.outputChunks.length;
-      index += 1
-    ) {
-      terminalRef.current?.write(model.outputChunks[index]);
-    }
-    lastWrittenChunkRef.current =
-      model.outputChunks.length > 0
-        ? model.outputChunks[model.outputChunks.length - 1]
-        : null;
-  }, [model.outputChunks]);
+    // Push stream straight into xterm: no React state or array scan per chunk.
+    // Subscribing replays retained history into a freshly created terminal.
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    return outputStream.subscribe({
+      onChunk: (chunk) => terminal.write(chunk),
+      onReset: () => terminal.reset(),
+    });
+  }, [outputStream]);
 
   const shorthand = `${model.settings.baudRate}-${model.settings.dataBits}${parityLetter(model.settings.parity)}${model.settings.stopBits}`;
   const connected = model.status === "connected";
@@ -159,6 +146,15 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
           {model.status}
         </span>
         <span className="text-[var(--color-textMuted)]">Local device</span>
+        {model.sendBacklogged ? (
+          <span
+            className="rounded-full border border-warning/50 px-2 py-0.5 text-[10px] text-warning"
+            data-testid="serial-client-send-backlog"
+            role="status"
+          >
+            Sending queued input...
+          </span>
+        ) : null}
 
         <div
           className="flex items-center gap-1"
@@ -228,6 +224,12 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
           </button>
         </div>
       </header>
+
+      <SerialScriptBar
+        session={session}
+        connected={connected}
+        send={model.sendInput}
+      />
 
       {shownError ? (
         <div

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QuickConnect } from "../../src/components/connection/QuickConnect";
 
@@ -253,7 +253,7 @@ describe("QuickConnect", () => {
       fireEvent.click(
         screen.getByRole("combobox", { name: "Connection type" }),
       );
-      expect(screen.getAllByRole("option")).toHaveLength(5);
+      expect(screen.getAllByRole("option")).toHaveLength(6);
       expect(screen.getAllByRole("option", { name: "Browser" })).toHaveLength(
         1,
       );
@@ -557,6 +557,45 @@ describe("QuickConnect — protocol inferred from pasted URL", () => {
       protocol: "http",
       basicAuthUsername: "operator",
       basicAuthPassword: "secret",
+    });
+  });
+
+  it("submits a bare COM port as a credential-free serial payload", () => {
+    render(<QuickConnect {...mockProps} />);
+    fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
+      target: { value: "COM3" },
+    });
+    fireEvent.submit(screen.getByRole("form"));
+    expect(mockProps.onConnect).toHaveBeenCalledWith({
+      hostname: "COM3",
+      protocol: "serial",
+    });
+  });
+
+  it("keeps the serial:// query and applies the optional baud field", () => {
+    render(<QuickConnect {...mockProps} />);
+    fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
+      target: { value: "serial://COM4?parity=even" },
+    });
+    fireEvent.submit(screen.getByRole("form"));
+    expect(mockProps.onConnect).toHaveBeenLastCalledWith({
+      hostname: "serial://COM4?parity=even",
+      protocol: "serial",
+    });
+
+    cleanup();
+    render(<QuickConnect {...mockProps} />);
+    fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
+      target: { value: "/dev/ttyUSB0" },
+    });
+    fireEvent.blur(screen.getByTestId("quick-connect-hostname"));
+    fireEvent.change(screen.getByTestId("quick-connect-serial-baud"), {
+      target: { value: "115200" },
+    });
+    fireEvent.submit(screen.getByRole("form"));
+    expect(mockProps.onConnect).toHaveBeenLastCalledWith({
+      hostname: "/dev/ttyUSB0:115200",
+      protocol: "serial",
     });
   });
 });

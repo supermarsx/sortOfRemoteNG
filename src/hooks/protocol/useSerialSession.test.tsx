@@ -471,6 +471,24 @@ describe("describeSerialConnectError", () => {
   });
 });
 
+describe("describeSerialConnectError open failures", () => {
+  it.each([
+    ["Access is denied. (os error 5)", "busy or access was denied"],
+    ["Permission denied", "busy or access was denied"],
+    ["Device or resource busy", "already in use"],
+    ["The system cannot find the file specified.", "was not found"],
+    ["No such file or directory", "was not found"],
+  ])("explains %s", (raw, expected) => {
+    const message = describeSerialConnectError(raw, "fixed");
+    expect(message).toContain(expected);
+    expect(message).toContain(raw);
+  });
+
+  it("leaves unrelated errors untouched", () => {
+    expect(describeSerialConnectError("Timed out", "fixed")).toBe("Timed out");
+  });
+});
+
 describe("encodeSerialTerminalInput", () => {
   it("maps xterm Enter sequences to the configured serial line ending", () => {
     expect(Array.from(encodeSerialTerminalInput("A\r", "crLf"))).toEqual([

@@ -2,16 +2,17 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { QuickConnectHistoryEntry } from "../../types/settings/settings";
 import { useSettings } from "../../contexts/SettingsContext";
 import {
-  DEFAULT_CONNECTION_PROTOCOLS,
   normalizeDefaultConnectionProtocol,
+  QUICK_CONNECT_PROTOCOL_OPTIONS,
 } from "../../utils/connection/defaultConnectionProtocol";
+import { looksLikeQuickConnectSerial } from "../../utils/connection/quickConnectSerial";
 import {
   sanitizeHostname,
   schemeToProtocol,
 } from "../../utils/connection/sanitizeHostname";
 
 /** Wire protocols Quick Connect supports; HTTP/HTTPS share one Browser type. */
-export const QUICK_CONNECT_PROTOCOLS = DEFAULT_CONNECTION_PROTOCOLS;
+export const QUICK_CONNECT_PROTOCOLS = QUICK_CONNECT_PROTOCOL_OPTIONS;
 
 /**
  * Derive hostname/protocol from a pasted or typed address. A scheme is
@@ -24,6 +25,13 @@ export function deriveQuickConnectTarget(
   raw: string,
   currentProtocol: string,
 ): { hostname: string; protocol?: string } | undefined {
+  // Serial addresses (COM3, COM12, /dev/ttyUSB0, serial://...) keep their
+  // full text: the query/baud suffix belongs to the serial parser.
+  if (looksLikeQuickConnectSerial(raw)) {
+    const hostname = raw.trim();
+    const protocol = currentProtocol === "serial" ? undefined : "serial";
+    return hostname === raw && !protocol ? undefined : { hostname, protocol };
+  }
   const result = sanitizeHostname(raw);
   if (!result.stripped && raw === result.hostname) return undefined;
   const schemeProtocol = schemeToProtocol(result.scheme);
@@ -104,6 +112,7 @@ export function useQuickConnect({
   const [basicAuthUsername, setBasicAuthUsername] = useState("");
   const [basicAuthPassword, setBasicAuthPassword] = useState("");
   const [httpVerifySsl, setHttpVerifySsl] = useState(true);
+  const [serialBaud, setSerialBaud] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
   const isSsh = protocol === "ssh";
@@ -112,6 +121,7 @@ export function useQuickConnect({
   const isHttp = protocol === "http" || protocol === "https";
   const isHttps = protocol === "https";
   const isTelnet = protocol === "telnet";
+  const isSerial = protocol === "serial";
   const historyItems = historyEnabled ? history : [];
 
   const resetFields = useCallback(() => {
@@ -126,6 +136,7 @@ export function useQuickConnect({
     setBasicAuthUsername("");
     setBasicAuthPassword("");
     setHttpVerifySsl(true);
+    setSerialBaud("");
   }, [defaultProtocol]);
 
   useEffect(() => {
@@ -158,6 +169,15 @@ export function useQuickConnect({
         hostname: targetHostname,
         protocol: targetProtocol,
       };
+
+      if (targetProtocol === "serial") {
+        // The optional baud field only applies when the address carries no
+        // options of its own (no ":baud" shorthand and no ?query).
+        const baud = serialBaud.trim();
+        if (baud && !/[:?]/.test(targetHostname.replace(/^serial:\/\//i, ""))) {
+          payload.hostname = `${targetHostname}:${baud}`;
+        }
+      }
 
       if (targetProtocol === "ssh") {
         payload.username = username.trim();
@@ -200,6 +220,7 @@ export function useQuickConnect({
       basicAuthUsername,
       basicAuthPassword,
       httpVerifySsl,
+      serialBaud,
       onConnect,
       onClose,
       resetFields,
@@ -259,8 +280,11 @@ export function useQuickConnect({
     setBasicAuthPassword,
     httpVerifySsl,
     setHttpVerifySsl,
+    serialBaud,
+    setSerialBaud,
     showHistory,
     setShowHistory,
+    isSerial,
     isSsh,
     isRdp,
     isVnc,

@@ -2,6 +2,7 @@ import * as ipaddr from "ipaddr.js";
 import type { Connection } from "../../types/connection/connection";
 import { generateId } from "../core/id";
 import { getDefaultPort } from "../discovery/defaultPorts";
+import { parseQuickConnectSerial } from "../connection/quickConnectSerial";
 
 export interface QuickConnectConnectionInput {
   /** The picker supplies a host or host:port, with URL schemes removed. */
@@ -92,6 +93,22 @@ export function createQuickConnectConnection(
   quickConnectLabel: string,
 ): Connection {
   const { protocol } = payload;
+  if (protocol === "serial") {
+    // Local device: no credentials, no network endpoint.
+    const target = parseQuickConnectSerial(payload.hostname);
+    const timestamp = new Date().toISOString();
+    return {
+      id: generateId(),
+      name: `${quickConnectLabel} - ${target.portName}`,
+      protocol: "serial",
+      hostname: target.hostname,
+      port: 0,
+      serialSettings: target.settings,
+      isGroup: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+  }
   if (
     protocol !== "ssh" &&
     protocol !== "rdp" &&

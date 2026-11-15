@@ -23,6 +23,10 @@ vi.mock("../../hooks/protocol/useSerialSession", async (importOriginal) => ({
   useSerialSession: (...args: unknown[]) => mocks.hook(...args),
 }));
 
+vi.mock("./serial/SerialScriptBar", () => ({
+  SerialScriptBar: () => null,
+}));
+
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
     fit() {
@@ -51,6 +55,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 
+import { SerialOutputStream } from "../../hooks/protocol/serialIo";
 import { SerialClient } from "./SerialClient";
 
 const session: ConnectionSession = {
@@ -63,7 +68,13 @@ const session: ConnectionSession = {
   hostname: "COM7",
 };
 
-const createModel = () => ({
+const createModel = () => {
+  const outputStream = new SerialOutputStream();
+  outputStream.append(Uint8Array.of(0x41, 0x00, 0xff));
+  return buildModel(outputStream);
+};
+
+const buildModel = (outputStream: SerialOutputStream) => ({
   status: "connected" as const,
   error: null as string | null,
   backendSessionId: "backend-serial-1",
@@ -86,7 +97,9 @@ const createModel = () => ({
     charDelayMs: 0,
     localEcho: false,
   },
-  outputChunks: [Uint8Array.of(0x41, 0x00, 0xff)] as readonly Uint8Array[],
+  outputStream,
+  outputChunks: outputStream.snapshot(),
+  sendBacklogged: false,
   controlLines: {
     dtr: false,
     rts: false,
@@ -247,5 +260,30 @@ describe("SerialClient", () => {
     expect(
       screen.getByRole("button", { name: "RTS requested off" }),
     ).toHaveAttribute("title", expect.stringContaining("cannot confirm"));
+  });
+
+  it("streams live chunks straight to xterm and resets on stream reset", () => {
+    const model = createModel();
+    mocks.hook.mockReturnValue(model);
+    render(<SerialClient session={session} />);
+    mocks.write.mockClear();
+
+    const live = Uint8Array.of(0x42, 0x0d, 0x0a);
+    model.outputStream.append(live);
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+    expect(mocks.write).toHaveBeenCalledWith(live);
+
+    model.outputStream.reset();
+    expect(mocks.reset).toHaveBeenCalledOnce();
+  });
+
+  it("shows a backlog indicator instead of error spam while input is queued", () => {
+    const model = { ...createModel(), sendBacklogged: true };
+    mocks.hook.mockReturnValue(model);
+    render(<SerialClient session={session} />);
+    expect(
+      screen.getByTestId("serial-client-send-backlog"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -3692,8 +3692,12 @@
       "vnc": "VNC (Virtual Network Computing)",
       "http": "HTTP",
       "https": "HTTPS",
-      "telnet": "Telnet"
+      "telnet": "Telnet",
+      "serial": "Serial (COM port)"
     },
+    "serialBaud": "Baud rate (optional)",
+    "serialBaudPlaceholder": "9600",
+    "serialHint": "Examples: COM3, COM3:115200, /dev/ttyUSB0, serial://COM3?baud=9600",
     "usernameOptional": "Username (optional)",
     "passwordOptional": "Password (optional)",
     "domainOptional": "Domain (optional)",

@@ -14,12 +14,10 @@ import {
 } from "../../types/protocols/serial";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
+import { SerialOutputStream, SerialSendQueue } from "./serialIo";
 
 export type SerialStatus =
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "error";
+  "connecting" | "connected" | "disconnected" | "error";
 
 interface SerialOutputEvent {
   sessionId: string;
@@ -43,8 +41,6 @@ interface SerialControlLinesEvent {
   lines: SerialControlLines;
 }
 
-const MAX_OUTPUT_CHUNKS = 2_048;
-const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_PENDING_OUTPUT_CHUNKS = 64;
 const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
 const MAX_PENDING_SESSION_CANDIDATES = 4;
@@ -67,6 +63,24 @@ interface PendingSerialOutputBucket {
 
 const PORT_NOT_FOUND_PREFIX = "PortNotFound:";
 
+/** Friendly copy for the common "cannot open the port" failures. */
+function describeOpenFailure(raw: string): string {
+  if (/access is denied|permission denied|EACCES/i.test(raw)) {
+    return `The serial port is busy or access was denied. Close any other program using it (another terminal, PuTTY, a flashing tool) or, on Linux, add your user to the dialout group.\n${raw}`;
+  }
+  if (/resource busy|EBUSY/i.test(raw)) {
+    return `The serial port is already in use by another program. Close it and reconnect.\n${raw}`;
+  }
+  if (
+    /cannot find the (file|path)|no such file|ENOENT|ENODEV|device not configured/i.test(
+      raw,
+    )
+  ) {
+    return `The serial port was not found. It may have been unplugged; reconnect the adapter and try again.\n${raw}`;
+  }
+  return raw;
+}
+
 /** Short human labels for the auto selection modes (badge + error copy). */
 export const SERIAL_SELECTION_MODE_LABELS: Readonly<
   Record<SerialPortSelectionMode, string>
@@ -86,7 +100,9 @@ export function describeSerialConnectError(
   mode: SerialPortSelectionMode,
 ): string {
   const trimmed = raw.trimStart();
-  if (!trimmed.startsWith(PORT_NOT_FOUND_PREFIX)) return raw;
+  if (!trimmed.startsWith(PORT_NOT_FOUND_PREFIX)) {
+    return describeOpenFailure(raw);
+  }
   const detail = trimmed.slice(PORT_NOT_FOUND_PREFIX.length).trim();
   const headline = `No serial device is attached that matches "${SERIAL_SELECTION_MODE_LABELS[mode]}". Plug in the adapter and reconnect.`;
   return detail ? `${headline}\n${detail}` : headline;
@@ -146,19 +162,6 @@ export function decodeSerialEventData(data: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-const appendBoundedOutput = (
-  current: readonly Uint8Array[],
-  chunk: Uint8Array,
-): readonly Uint8Array[] => {
-  if (chunk.byteLength === 0) return current;
-  const next = [...current, chunk];
-  let bytes = next.reduce((total, value) => total + value.byteLength, 0);
-  while (next.length > MAX_OUTPUT_CHUNKS || bytes > MAX_OUTPUT_BYTES) {
-    bytes -= next.shift()?.byteLength ?? 0;
-  }
-  return next;
-};
-
 export function useSerialSession(session: ConnectionSession) {
   const { state, dispatch } = useConnections();
   const connection = resolveRuntimeConnection(
@@ -171,7 +174,30 @@ export function useSerialSession(session: ConnectionSession) {
   const [backendSessionId, setBackendSessionId] = useState<string | null>(
     session.backendSessionId ?? null,
   );
-  const [outputChunks, setOutputChunks] = useState<readonly Uint8Array[]>([]);
+  // Output lives in a ref-style stream (no per-chunk React state). The
+  // version counter only re-renders consumers that have not subscribed.
+  const outputStreamRef = useRef<SerialOutputStream | null>(null);
+  if (outputStreamRef.current === null) {
+    outputStreamRef.current = new SerialOutputStream();
+  }
+  const outputStream = outputStreamRef.current;
+  const [, setOutputVersion] = useState(0);
+  const pushOutput = useCallback(
+    (chunk: Uint8Array) => {
+      outputStream.append(chunk);
+      if (outputStream.subscriberCount === 0) {
+        setOutputVersion((value) => value + 1);
+      }
+    },
+    [outputStream],
+  );
+  const resetOutput = useCallback(() => {
+    outputStream.reset();
+    if (outputStream.subscriberCount === 0) {
+      setOutputVersion((value) => value + 1);
+    }
+  }, [outputStream]);
+  const [sendBacklogged, setSendBacklogged] = useState(false);
   const [controlLines, setControlLines] =
     useState<SerialControlLines>(EMPTY_CONTROL_LINES);
   const [requestedDtr, setRequestedDtr] = useState(settings.dtrOnOpen);
@@ -220,13 +246,8 @@ export function useSerialSession(session: ConnectionSession) {
         backendRef.current = null;
         setBackendSessionId(null);
         setControlLines(pending.controlLines ?? backend.controlLines);
-        setOutputChunks((current) => {
-          let next: readonly Uint8Array[] = sessionChanged ? [] : current;
-          for (const chunk of pendingForSession) {
-            next = appendBoundedOutput(next, chunk);
-          }
-          return next;
-        });
+        if (sessionChanged) resetOutput();
+        for (const chunk of pendingForSession) pushOutput(chunk);
         setStatus("disconnected");
         setError(pending.closedReason);
         updateSession({
@@ -256,13 +277,8 @@ export function useSerialSession(session: ConnectionSession) {
       setResolvedDisplayName(displayName);
       setAutoSelected(wasAutoSelected);
       setControlLines(pending?.controlLines ?? backend.controlLines);
-      setOutputChunks((current) => {
-        let next: readonly Uint8Array[] = sessionChanged ? [] : current;
-        for (const chunk of pendingForSession) {
-          next = appendBoundedOutput(next, chunk);
-        }
-        return next;
-      });
+      if (sessionChanged) resetOutput();
+      for (const chunk of pendingForSession) pushOutput(chunk);
 
       const fatalError =
         pending?.error && !pending.error.recoverable
@@ -287,7 +303,7 @@ export function useSerialSession(session: ConnectionSession) {
         ...(wasAutoSelected && portName ? { hostname: portName } : {}),
       });
     },
-    [updateSession],
+    [updateSession, pushOutput, resetOutput],
   );
 
   const markError = useCallback(
@@ -439,7 +455,7 @@ export function useSerialSession(session: ConnectionSession) {
       try {
         const chunk = decodeSerialEventData(payload.data);
         if (isActiveSession) {
-          setOutputChunks((current) => appendBoundedOutput(current, chunk));
+          pushOutput(chunk);
           return;
         }
 
@@ -600,25 +616,44 @@ export function useSerialSession(session: ConnectionSession) {
         void invoke("serial_disconnect", { sessionId }).catch(() => {});
       }
     };
-  }, [initialize, markError, session.id, updateSession]);
+  }, [initialize, markError, pushOutput, session.id, updateSession]);
 
-  const sendBytes = useCallback(async (data: Uint8Array) => {
-    const sessionId = backendRef.current;
-    if (!sessionId) throw new Error("Serial is not connected.");
-    if (data.byteLength === 0) return;
-    if (data.byteLength > MAX_SERIAL_WRITE_BYTES) {
-      throw new Error("Serial write exceeds the 1 MiB limit.");
-    }
-    const payload = Array.from(data);
-    try {
-      await invoke("serial_send_raw", {
-        sessionId,
-        data: payload,
-      });
-    } finally {
-      payload.fill(0);
-    }
-  }, []);
+  const sendQueueRef = useRef<SerialSendQueue | null>(null);
+  if (sendQueueRef.current === null) {
+    sendQueueRef.current = new SerialSendQueue({
+      write: async (data) => {
+        const sessionId = backendRef.current;
+        if (!sessionId) throw new Error("Serial is not connected.");
+        // One IPC per coalesced batch; the number[] is built once here.
+        const payload = Array.from(data);
+        try {
+          await invoke("serial_send_raw", { sessionId, data: payload });
+        } finally {
+          payload.fill(0);
+        }
+      },
+      onBacklogChange: setSendBacklogged,
+    });
+  }
+  const sendQueue = sendQueueRef.current;
+  useEffect(
+    () => () => {
+      sendQueue.clear(new Error("Serial session closed."));
+    },
+    [sendQueue],
+  );
+
+  const sendBytes = useCallback(
+    async (data: Uint8Array) => {
+      if (!backendRef.current) throw new Error("Serial is not connected.");
+      if (data.byteLength === 0) return;
+      if (data.byteLength > MAX_SERIAL_WRITE_BYTES) {
+        throw new Error("Serial write exceeds the 1 MiB limit.");
+      }
+      await sendQueue.enqueue(data);
+    },
+    [sendQueue],
+  );
 
   const sendInput = useCallback(
     async (data: string) => {
@@ -696,7 +731,10 @@ export function useSerialSession(session: ConnectionSession) {
     error,
     backendSessionId,
     settings,
-    outputChunks,
+    outputStream,
+    /** Snapshot of retained output; prefer subscribing to `outputStream`. */
+    outputChunks: outputStream.snapshot(),
+    sendBacklogged,
     controlLines,
     requestedDtr,
     requestedRts,

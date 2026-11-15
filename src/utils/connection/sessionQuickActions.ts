@@ -159,7 +159,7 @@ export function normalizeSessionQuickActions(
     keyof SessionQuickActionsSettings
   >)
     defaults[key] =
-      key === "confirmBeforeScriptRun"
+      key === "confirmBeforeScriptRun" || key === "serialEnabled"
         ? config[key] !== false
         : config[key] === true;
   return defaults;

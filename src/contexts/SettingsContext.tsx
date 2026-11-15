@@ -240,6 +240,7 @@ export const defaultSettings: GlobalSettings = {
   websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
   sessionQuickActions: {
     sshEnabled: true,
+    serialEnabled: true,
     httpEnabled: true,
     allowWebMacros: true,
     allowWebScriptInjection: true,

@@ -216,6 +216,11 @@ const ConnectionTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               label: t("quickConnect.protocols.telnet", "Telnet"),
               icon: getProtocolIcon("telnet"),
             },
+            {
+              value: "serial",
+              label: t("quickConnect.protocols.serial", "Serial (COM port)"),
+              icon: getProtocolIcon("serial"),
+            },
           ]}
           variant="form"
         />
@@ -245,6 +250,36 @@ const ConnectionTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
         </div>
       )}
+    </div>
+  );
+};
+
+const SerialQuickOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <label
+        htmlFor="serial-baud"
+        className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+      >
+        {t("quickConnect.serialBaud", "Baud rate (optional)")}
+      </label>
+      <input
+        id="serial-baud"
+        type="text"
+        inputMode="numeric"
+        value={mgr.serialBaud}
+        onChange={(e) => mgr.setSerialBaud(e.target.value)}
+        data-testid="quick-connect-serial-baud"
+        className="sor-form-input"
+        placeholder={t("quickConnect.serialBaudPlaceholder", "9600")}
+      />
+      <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+        {t(
+          "quickConnect.serialHint",
+          "Examples: COM3, COM3:115200, /dev/ttyUSB0, serial://COM3?baud=9600",
+        )}
+      </p>
     </div>
   );
 };
@@ -578,6 +613,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {mgr.isVnc && <VncCredentials mgr={mgr} />}
           {mgr.isHttp && <HttpCredentials mgr={mgr} />}
           {mgr.isTelnet && <TelnetCredentials mgr={mgr} />}
+          {mgr.isSerial && <SerialQuickOptions mgr={mgr} />}
         </div>
       </form>
     </Modal>
