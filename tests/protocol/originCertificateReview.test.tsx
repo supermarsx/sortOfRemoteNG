@@ -666,7 +666,12 @@ describe("certificate review keeps its tab waiting", () => {
       b.emit(snapshot(1, prompt()));
       view.rerender(frame(1));
     });
-    expect(checkpoints.at(-1)).toEqual([1, true, "certificate", null]);
+    expect(checkpoints[checkpoints.length - 1]).toEqual([
+      1,
+      true,
+      "certificate",
+      null,
+    ]);
     act(() => {
       b.emit(
         snapshot(
@@ -683,19 +688,29 @@ describe("certificate review keeps its tab waiting", () => {
       );
       view.rerender(frame(2));
     });
-    expect(checkpoints.at(-1)).toEqual([2, true, null, "certificate"]);
+    expect(checkpoints[checkpoints.length - 1]).toEqual([
+      2,
+      true,
+      null,
+      "certificate",
+    ]);
     act(() => {
       b.emit(snapshot(3, null));
       view.rerender(frame(3));
     });
-    expect(checkpoints.at(-1)).toEqual([3, false, null, null]);
+    expect(checkpoints[checkpoints.length - 1]).toEqual([3, false, null, null]);
     act(() => {
       b.emit(snapshot(4, prompt("c".repeat(32))));
       view.rerender(frame(4));
     });
-    expect(checkpoints.at(-1)).toEqual([4, true, "certificate", null]);
+    expect(checkpoints[checkpoints.length - 1]).toEqual([
+      4,
+      true,
+      "certificate",
+      null,
+    ]);
     view.rerender(<BeforePaint phase={5} />);
-    expect(checkpoints.at(-1)).toEqual([5, false, null, null]);
+    expect(checkpoints[checkpoints.length - 1]).toEqual([5, false, null, null]);
   });
   it("marks the prompt's own tab pending while shown and releases on answer", async () => {
     const b = backend();
