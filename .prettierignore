@@ -94,3 +94,6 @@ native/cef-build-inputs/20261114-r5-linuxarm-cross-sysroot-external-webview-char
 
 # Authenticated Mac qualification packets retain their reviewed raw bytes.
 native/cef-source-qualifications/mac-43652853463/
+
+# This historical source projection is verified as exact hash-pinned JSON bytes.
+tests/fixtures/cef/linux370_fresh_inverse.json
