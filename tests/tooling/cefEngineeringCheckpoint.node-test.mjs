@@ -811,7 +811,7 @@ test(
     }
   },
 );
-import { createHash as hashObject } from "node:crypto";
+import { createHash as hashObject, randomUUID } from "node:crypto";
 import test, { after } from "node:test";
 import {
   withoutUploadRecovery,
@@ -2111,13 +2111,18 @@ test(
   async (t) => {
     const root = await scratch(t);
     const env = { PATH: path.dirname(process.execPath) };
+    // A full ownership snapshot already has a production bound of two seconds.
+    // Three seconds leaves that bound plus one second for actor startup/sampling;
+    // the actors remain alive for fifteen seconds so this path must expire its
+    // own finite lease and reap them. No production clock or guard is changed.
+    const milliseconds = 3000;
     const timed = await compileSlice(
       process.execPath,
       [
         "-e",
-        "require('node:child_process').spawn(process.execPath,['-e','const hold=setInterval(()=>{},1000);setTimeout(()=>clearInterval(hold),5000)'],{stdio:'ignore',detached:true});setInterval(()=>{},1000);setTimeout(()=>process.exit(99),10000)",
+        "require('node:child_process').spawn(process.execPath,['-e','const hold=setInterval(()=>{},1000);setTimeout(()=>clearInterval(hold),15000)'],{stdio:'ignore',detached:true});setInterval(()=>{},1000);setTimeout(()=>process.exit(99),15000)",
       ],
-      { cwd: root, env, logs: root, milliseconds: 500 },
+      { cwd: root, env, logs: root, milliseconds },
     );
     assert.equal(timed.outcome, "slice-ended");
     assert.equal(timed.quiescent, true);
@@ -2126,15 +2131,51 @@ test(
       "Detached grandchild must actually have been observed and reaped",
     );
     const next = await scratch(t);
+    const release = path.join(next, "owned-exit-137"),
+      nonce = randomUUID();
+    let admitted;
     const failed = await compileSlice(
       process.execPath,
-      ["-e", "setTimeout(()=>process.exit(137),200)"],
-      { cwd: next, env, logs: next, milliseconds: 1000 },
+      [
+        "-e",
+        String.raw`
+const fs=require('node:fs');
+const [file,nonce]=process.argv.slice(1);
+const hold=setInterval(()=>{
+  try {
+    if(fs.readFileSync(file,'utf8')===nonce){clearInterval(hold);process.exit(137);}
+  } catch(error) {if(error.code!=='ENOENT')throw error;}
+},10);
+setTimeout(()=>process.exit(99),15000);
+`,
+        release,
+        nonce,
+      ],
+      {
+        cwd: next,
+        env,
+        logs: next,
+        milliseconds,
+        observeRoot: async (owned, { signal }) => {
+          assert.equal(signal.aborted, false);
+          assert.equal(owned.parent, process.pid);
+          assert(Number.isSafeInteger(owned.pid) && owned.pid > 0);
+          admitted = { pid: owned.pid, start: owned.start };
+          await writeFile(release, nonce, { flag: "wx" });
+        },
+      },
     );
+    assert(
+      admitted,
+      "Compiler137 exit requires a genuine admitted root witness",
+    );
+    assert.equal(failed.observed[0].pid, admitted.pid);
+    assert.equal(failed.observed[0].start, admitted.start);
     assert.equal(failed.outcome, "compiler-failed");
     assert.equal(failed.exitCode, 137);
   },
 );
+
 test("workflow keeps credentials only in audited download/upload, sealed last, explicit fixed inputs", async () => {
   const workflow = await readFile(path.join(ROOT, WORKFLOW), "utf8");
   assert.equal((workflow.match(/GH_TOKEN:/g) || []).length, 2);

@@ -77,7 +77,12 @@ child.once('close',code=>{
           [launcher, root, prefix, mode],
           {
             cwd: root,
-            env: { PATH: path.dirname(process.execPath) },
+            // Child logger and parent admission must observe the same actual
+            // temporary directory; a PATH-only environment loses macOS TMPDIR.
+            env: {
+              PATH: path.dirname(process.execPath),
+              TMPDIR: await realpath(tmpdir()),
+            },
             logs: root,
             out: root,
             milliseconds: 8000,
