@@ -34,6 +34,12 @@ const WEB_SERVER = /^(nginx|Apache|Microsoft-IIS)(?:\/([\d.]+))?(?=$|[\s(])/i;
 const ILO_SERVER = /^HPE?-iLO-Server(?:\/\d+(?:\.\d+)*)?$/i;
 const FTP_SOFTWARE =
   /\b(vsftpd|ProFTPD|Pure-FTPd|FileZilla Server)(?=$|[\s/()])/i;
+// Printer embedded-server identifiers (full token only).
+const PRINTER_SERVERS: ReadonlyArray<readonly [string, RegExp]> = [
+  ["HP printer", /^HP[ -](?:HTTP[ -]Server|ChaiServer)(?:\/[\w.]+)?$/i],
+  ["Kyocera printer", /^KM-MFP-http(?:\/[\w.]+)?$/i],
+  ["Brother printer", /^debut(?:\/[\d.]+)?$/i],
+];
 const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
   [
     "Apache Tomcat",
@@ -84,6 +90,20 @@ const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
   [
     "Supermicro",
     /^Supermicro(?:\s+(?:IPMI|BMC|Intelligent Management))?(?:\s*[-–|:]\s*(?:Login|Sign In))?$/i,
+  ],
+  // Printer embedded web servers: require a product-line token so HP servers
+  // (iLO, ProLiant) and generic "Brother"/"Kyocera" prose never match.
+  [
+    "HP printer",
+    /^(?:HP|Hewlett[ -]Packard)\s+(?:(?:Color\s+)?LaserJet|Laser(?:\s+MFP)?\s+\w|OfficeJet|PageWide|DeskJet|Neverstop|Smart Tank|ENVY\s+\w|DesignJet)(?:\s+[\w./+-]+){0,6}$/i,
+  ],
+  [
+    "Kyocera printer",
+    /^(?:(?:KYOCERA|Kyocera)\s+)?(?:Command Center RX(?:\s+(?:(?:ECOSYS|TASKalfa)\s+)?[\w-]+)?|(?:ECOSYS|TASKalfa)\s+[\w-]+(?:\s+[\w-]+)?)$/i,
+  ],
+  [
+    "Brother printer",
+    /^Brother\s+(?:(?:HL|MFC|DCP|ADS|DS|QL|PT|TD|RJ)-?[A-Z0-9]+[\w-]*(?:\s+series)?|Web Based Management|Status)$/i,
   ],
   ["nginx", /^Welcome to nginx!$/i],
   ["Apache", /^Apache2? (?:Ubuntu|Debian)?\s*Default Page(?:: It works)?$/i],
@@ -261,7 +281,8 @@ export function fingerprintService(
     const serverBrand = server
       ? ILO_SERVER.test(server)
         ? "HPE iLO"
-        : WEB_PRODUCTS.find(([, pattern]) => pattern.test(server))?.[0]
+        : (WEB_PRODUCTS.find(([, pattern]) => pattern.test(server)) ??
+            PRINTER_SERVERS.find(([, pattern]) => pattern.test(server)))?.[0]
       : undefined;
     // FreshTomato uses the configurable router_name as its Basic-auth realm.
     // Only its exact default is a brand signal; httpd/401/Error and custom
