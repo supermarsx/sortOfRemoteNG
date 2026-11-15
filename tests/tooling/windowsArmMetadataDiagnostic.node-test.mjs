@@ -6,6 +6,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
+import { execFileSync } from "node:child_process";
 import ts from "typescript";
 import {
   zstdDecompressSync,
@@ -686,10 +687,18 @@ test("whole Siso cache DATA bridge retains old controller Q and lexical test and
   );
   assert.equal(Object.keys(specs).length, 3);
   for (const [file, spec] of Object.entries(specs)) {
-    const current = await fs.readFile(
-      new URL("../../" + file, import.meta.url),
-      "utf8",
-    );
+    // This lexical fixture is pinned to immutable Git bytes. Its ordinary
+    // Windows checkout may use CRLF; production/native byte guards stay exact.
+    const current =
+      file === "tests/tooling/windowsArmFullSdk.node-test.mjs"
+        ? execFileSync("git", ["show", "HEAD:" + file], {
+            cwd: new URL("../../", import.meta.url),
+            encoding: "utf8",
+            windowsHide: true,
+            timeout: 15000,
+            maxBuffer: 2 * 1024 ** 2,
+          })
+        : await fs.readFile(new URL("../../" + file, import.meta.url), "utf8");
     const previous = withoutSisoMetadataCache(current, file);
     assert.equal(Buffer.byteLength(previous), spec.beforeBytes);
     assert.equal(
