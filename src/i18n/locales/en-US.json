@@ -1298,6 +1298,19 @@
       "emptyDesc": "Audit entries will appear here as agent operations occur."
     }
   },
+  "arista": {
+    "title": "Arista fan speeds",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "systemStatus": "System status",
+    "unknown": "unknown",
+    "noFans": "No fans reported by this switch.",
+    "slot": "Slot",
+    "fan": "Fan",
+    "status": "Status",
+    "speed": "Speed",
+    "rpm": "RPM"
+  },
   "ilo": {
     "title": "HP iLO Manager",
     "tabs": {
