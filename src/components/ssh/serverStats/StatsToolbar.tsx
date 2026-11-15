@@ -9,7 +9,9 @@ import {
   Shield,
   Network,
   LayoutDashboard,
+  Server,
   Code,
+  List,
 } from "lucide-react";
 import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
@@ -21,7 +23,11 @@ interface StatsToolbarProps {
 type StatsTab = Mgr["activeTab"];
 
 const tabItems = [
-  { key: "overview" as const, icon: LayoutDashboard, label: "serverStats.overview" },
+  {
+    key: "overview" as const,
+    icon: LayoutDashboard,
+    label: "serverStats.overview",
+  },
   { key: "cpu" as const, icon: Cpu, label: "serverStats.cpu" },
   { key: "memory" as const, icon: MemoryStick, label: "serverStats.memory" },
   { key: "disk" as const, icon: HardDrive, label: "serverStats.disk" },
@@ -58,7 +64,10 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
       case "ArrowLeft":
       case "ArrowUp":
         event.preventDefault();
-        selectTab(tabItems[(currentIndex - 1 + tabItems.length) % tabItems.length].key, true);
+        selectTab(
+          tabItems[(currentIndex - 1 + tabItems.length) % tabItems.length].key,
+          true,
+        );
         break;
       case "Home":
         event.preventDefault();
@@ -76,30 +85,90 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
   return (
     <div className="border-b border-[var(--color-border)] px-4 py-3 flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
+        {/* View toggle */}
+        <div
+          className="inline-flex rounded-md bg-[var(--color-border)] p-0.5"
+          role="group"
+          aria-label={t("serverStats.viewMode", "Stats view")}
+        >
+          {(["single", "aggregate"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={mgr.viewMode === mode}
+              onClick={() => mgr.setViewMode(mode)}
+              className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${
+                mgr.viewMode === mode
+                  ? "bg-primary text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              }`}
+            >
+              {mode === "single" ? <Server size={12} /> : <List size={12} />}
+              {mode === "single"
+                ? t("serverStats.viewSingle", "Single")
+                : t("serverStats.viewAggregate", "Aggregate")}
+            </button>
+          ))}
+        </div>
+
         {/* Session selector */}
-        <Select
-          value={mgr.selectedSessionId ?? ""}
-          onChange={(v) => mgr.setSelectedSessionId(v || null)}
-          variant="form-sm"
-          className="min-w-[180px]"
-          placeholder={mgr.sshSessions.length === 0
-            ? t("serverStats.noSessions", "No SSH sessions")
-            : t("serverStats.selectSession", "Select SSH session")}
-          options={[
-            { value: '', label: mgr.sshSessions.length === 0 ? t("serverStats.noSessions", "No SSH sessions") : t("serverStats.selectSession", "Select SSH session") },
-            ...mgr.sshSessions.map((s) => ({ value: s.id, label: s.name || s.hostname || s.id })),
-          ]}
-        />
+        {mgr.viewMode === "single" && (
+          <Select
+            value={mgr.selectedSessionId ?? ""}
+            onChange={(v) => mgr.setSelectedSessionId(v || null)}
+            variant="form-sm"
+            className="min-w-[180px]"
+            placeholder={
+              mgr.sshSessions.length === 0
+                ? t("serverStats.noSessions", "No SSH sessions")
+                : t("serverStats.selectSession", "Select SSH session")
+            }
+            options={[
+              {
+                value: "",
+                label:
+                  mgr.sshSessions.length === 0
+                    ? t("serverStats.noSessions", "No SSH sessions")
+                    : t("serverStats.selectSession", "Select SSH session"),
+              },
+              ...mgr.sshSessions.map((s) => ({
+                value: s.id,
+                label: s.name || s.hostname || s.id,
+              })),
+            ]}
+          />
+        )}
 
         {/* Collect button */}
         <button
           className="sor-btn sor-btn-primary sor-btn-xs"
-          onClick={() => mgr.collectStats()}
-          disabled={mgr.isCollecting || !mgr.selectedSessionId}
+          onClick={() =>
+            mgr.viewMode === "aggregate" ? mgr.collectAll() : mgr.collectStats()
+          }
+          disabled={
+            mgr.viewMode === "aggregate"
+              ? mgr.isCollectingAll || mgr.sshSessions.length === 0
+              : mgr.isCollecting || !mgr.selectedSessionId
+          }
           title={t("serverStats.collect", "Collect stats")}
         >
-          <RefreshCw size={12} className={mgr.isCollecting ? "animate-spin" : ""} />
-          {mgr.isCollecting
+          <RefreshCw
+            size={12}
+            className={
+              (
+                mgr.viewMode === "aggregate"
+                  ? mgr.isCollectingAll
+                  : mgr.isCollecting
+              )
+                ? "animate-spin"
+                : ""
+            }
+          />
+          {(
+            mgr.viewMode === "aggregate"
+              ? mgr.isCollectingAll
+              : mgr.isCollecting
+          )
             ? t("serverStats.collecting", "Collecting…")
             : t("serverStats.collect", "Collect")}
         </button>
@@ -111,56 +180,65 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
           variant="form-sm"
           options={mgr.refreshIntervals.map((r) => ({
             value: String(r.value),
-            label: r.value === 0 ? t("serverStats.autoRefreshOff", "Auto: Off") : `Auto: ${r.label}`,
+            label:
+              r.value === 0
+                ? t("serverStats.autoRefreshOff", "Auto: Off")
+                : `Auto: ${r.label}`,
           }))}
         />
 
         <div className="flex-1" />
 
-        <button
-          className={`sor-btn sor-btn-xs ${mgr.showRawOutput ? "sor-btn-primary" : "sor-btn-secondary"}`}
-          onClick={() => mgr.setShowRawOutput(!mgr.showRawOutput)}
-          aria-pressed={mgr.showRawOutput}
-          title={t("serverStats.rawOutput", "Raw output")}
-        >
-          <Code size={12} />
-          <span className="hidden sm:inline">{t("serverStats.rawOutput", "Raw")}</span>
-        </button>
+        {mgr.viewMode === "single" && (
+          <button
+            className={`sor-btn sor-btn-xs ${mgr.showRawOutput ? "sor-btn-primary" : "sor-btn-secondary"}`}
+            onClick={() => mgr.setShowRawOutput(!mgr.showRawOutput)}
+            aria-pressed={mgr.showRawOutput}
+            title={t("serverStats.rawOutput", "Raw output")}
+          >
+            <Code size={12} />
+            <span className="hidden sm:inline">
+              {t("serverStats.rawOutput", "Raw")}
+            </span>
+          </button>
+        )}
       </div>
 
-      <div className="w-full overflow-x-auto">
-        <div
-          className="flex w-full min-w-max space-x-1 bg-[var(--color-border)] rounded-lg p-1"
-          role="tablist"
-          aria-label={t("serverStats.tabs", "Server stats tabs")}
-        >
-          {tabItems.map(({ key, icon: Icon, label }) => {
-            const isActive = mgr.activeTab === key;
-            return (
-              <button
-                id={`server-stats-tab-${key}`}
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`server-stats-panel-${key}`}
-                tabIndex={isActive ? 0 : -1}
-                className={`flex-1 min-w-[112px] py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
-                  isActive
-                    ? "bg-primary text-[var(--color-text)]"
-                    : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                }`}
-                onClick={() => selectTab(key)}
-                onKeyDown={(event) => handleTabKeyDown(event, key)}
-                title={t(label, key)}
-              >
-                <Icon size={16} />
-                {t(label, key)}
-              </button>
-            );
-          })}
+      {mgr.viewMode === "single" && (
+        <div className="w-full overflow-x-auto">
+          <div
+            className="flex w-full min-w-max space-x-1 bg-[var(--color-border)] rounded-lg p-1"
+            role="tablist"
+            aria-label={t("serverStats.tabs", "Server stats tabs")}
+          >
+            {tabItems.map(({ key, icon: Icon, label }) => {
+              const isActive = mgr.activeTab === key;
+              return (
+                <button
+                  id={`server-stats-tab-${key}`}
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`server-stats-panel-${key}`}
+                  tabIndex={isActive ? 0 : -1}
+                  className={`flex-1 min-w-[112px] py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
+                    isActive
+                      ? "bg-primary text-[var(--color-text)]"
+                      : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  }`}
+                  onClick={() => selectTab(key)}
+                  onKeyDown={(event) => handleTabKeyDown(event, key)}
+                  title={t(label, key)}
+                >
+                  <Icon size={16} />
+                  {t(label, key)}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

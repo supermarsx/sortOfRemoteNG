@@ -102,6 +102,19 @@ describe("ServerStatsPanel", () => {
     vi.clearAllMocks();
   });
 
+  describe("View toggle", () => {
+    it("switches between single and aggregate views", () => {
+      renderPanel();
+      expect(screen.getByRole("tablist")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Aggregate/ }));
+      expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+      expect(screen.getAllByTestId("aggregate-row")).toHaveLength(2);
+      fireEvent.click(screen.getByText("Ubuntu Server"));
+      expect(screen.getByRole("tablist")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Single/ })).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
   describe("Basic Rendering", () => {
     it("should not render when isOpen is false", () => {
       renderPanel(false);
