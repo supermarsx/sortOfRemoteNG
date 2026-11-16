@@ -173,7 +173,8 @@ async function fixture(t) {
 }
 
 const REPLACED = "FULL_SDK_CONTROL_SOURCE_METADATA_REPLACED";
-const PIN_OR_REPLACED = /FULL_SDK_CONTROL_SOURCE_(RECORD_PIN|METADATA_REPLACED)$/;
+const PIN_OR_REPLACED =
+  /FULL_SDK_CONTROL_SOURCE_(RECORD_PIN|METADATA_REPLACED)$/;
 const rejectsReplaced = (promise) =>
   assert.rejects(promise, (error) => error.message === REPLACED);
 
@@ -225,7 +226,10 @@ test("content change on a build-output row still rejects, even with ctime drift 
   await assert.rejects(f.recheck(), (e) => PIN_OR_REPLACED.test(e.message));
   const g = await fixture(t);
   g.drift("args", "ctimeNs");
-  await fs.writeFile(path.join(g.root, rows.args), "fixed non-secret content X");
+  await fs.writeFile(
+    path.join(g.root, rows.args),
+    "fixed non-secret content X",
+  );
   await assert.rejects(g.recheck(), (e) => PIN_OR_REPLACED.test(e.message));
   // Same size, different bytes: still not tolerated.
   const h = await fixture(t);
