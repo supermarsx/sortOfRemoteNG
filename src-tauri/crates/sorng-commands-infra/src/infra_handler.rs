@@ -54,7 +54,7 @@ mod tests {
                 assert!(is_command(command), "unrouted child command: {command}");
             }
         }
-        assert_eq!(all.len(), 683);
+        assert_eq!(all.len(), 684);
         assert!(!is_command("__unknown_infrastructure_command__"));
     }
 
