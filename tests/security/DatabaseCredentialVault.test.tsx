@@ -117,6 +117,8 @@ function facade(initial: DatabaseCredentialEntry[] = []) {
         }
       }
       revision++;
+      // The Provider bumps its change revision on every committed write.
+      api.changeRevision++;
     }),
   };
   return { api, snapshot };

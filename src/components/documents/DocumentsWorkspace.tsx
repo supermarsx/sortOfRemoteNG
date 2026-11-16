@@ -21,7 +21,8 @@ import {
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { documentMatchesSearch } from "../../utils/documents/documentSearch";
+import { useDocumentSearchMatches } from "../../hooks/documents/useDocumentSearchMatches";
+import { documentMatchesSearchMemo } from "../../utils/documents/documentSearch";
 import { useDocumentsWorkspace } from "../../hooks/documents/useDocumentsWorkspace";
 import { useDocumentEditHistory } from "../../hooks/documents/useDocumentEditHistory";
 import { createEmptyDocument } from "../../utils/documents/documentService";
@@ -195,6 +196,11 @@ export default function DocumentsWorkspace({
     isApp ? "*" : (request.parentFolderId ?? "*"),
   );
   const [query, setQuery] = useState("");
+  const workerMatches = useDocumentSearchMatches(
+    data?.documents,
+    query,
+    searchContents,
+  );
   const [ticketStatus, setTicketStatus] = useState<TicketFilters["status"]>("");
   const [ticketPriority, setTicketPriority] =
     useState<TicketFilters["priority"]>("");
@@ -250,7 +256,7 @@ export default function DocumentsWorkspace({
   const selection = useRef({ section, selectedId });
   selection.current = { section, selectedId };
   const consumed = useRef("");
-  const busy = workspace.busy || ioBusy;
+  const busy = workspace.busy || workspace.revalidating || ioBusy;
   const bulkKey = JSON.stringify([
     workspace.accessKey,
     section,
@@ -1067,7 +1073,9 @@ export default function DocumentsWorkspace({
             label: entry.name,
             tags: [] as string[],
             search: entry.name,
-            documentMatch: documentMatchesSearch(entry, query, searchContents),
+            documentMatch: workerMatches
+              ? workerMatches.has(entry.id)
+              : documentMatchesSearchMemo(entry, query, searchContents),
             detail: entry.parentFolderId
               ? (folders.find((item) => item.id === entry.parentFolderId)
                   ?.name ?? "Unavailable folder")

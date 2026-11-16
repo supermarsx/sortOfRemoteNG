@@ -3,8 +3,13 @@ import "@testing-library/jest-dom";
 import "fake-indexeddb/auto";
 import { beforeEach, vi } from "vitest";
 import { resetSessionLifecycleAllocatorForTests } from "./src/utils/session/sessionLifecycle";
+import { clearAllPreloadCaches } from "./src/utils/preload/memoryCache";
+import { clearVaultCache } from "./src/hooks/security/credentialVaultCache";
 
 beforeEach(() => {
+  // Tab preload caches are module singletons: isolate every test from the last.
+  clearAllPreloadCaches();
+  clearVaultCache();
   resetSessionLifecycleAllocatorForTests();
 });
 

@@ -33,6 +33,7 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { buildBackupPayload } from "../../utils/services/backupPayload";
 import { DOCUMENTS_TOOL_DESCRIPTOR, TOOL_DESCRIPTORS } from "./toolDescriptors";
 import type { ToolKey } from "./toolSession";
+import { tabIntentHandlers } from "../../utils/preload/tabPreload";
 
 const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({
   label,
@@ -417,6 +418,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showDocumentsIcon && openDocuments && (
               <button
                 onClick={openDocuments}
+                {...tabIntentHandlers("documents")}
                 className="app-bar-button p-2"
                 title="Documents"
                 aria-label="Documents"
@@ -470,6 +472,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                 <button
                   type="button"
                   onClick={openCredentialVault}
+                  {...tabIntentHandlers("credentialVault")}
                   className="app-bar-button p-2"
                   aria-label="Database Credential Vault"
                   data-tooltip="Database Credential Vault"

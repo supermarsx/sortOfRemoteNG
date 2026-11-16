@@ -17,6 +17,8 @@ import {
   type DocumentReview,
 } from "../../utils/documents/documentService";
 import { normalizeDatabaseDocuments } from "../../utils/documents/validation";
+import { perfMark, perfMeasure } from "../../utils/preload/perf";
+import { cachedDocuments, rememberDocuments } from "./documentsCache";
 import { useAppDocumentsStore } from "./useAppDocumentsStore";
 
 /** Private drafts live only in this mounted, scope-owned workspace. */
@@ -54,8 +56,15 @@ export function useDocumentsWorkspace(
   const pendingEditorRef = useRef(hasPendingEditorChanges);
   pendingEditorRef.current = hasPendingEditorChanges;
   const reviewRef = useRef<DocumentReview | null>(null);
-  const [draft, setDraft] = useState<DatabaseDocuments | null>(null);
-  const [draftOwner, setDraftOwner] = useState("");
+  // Stale-while-revalidate: a warm cache is on screen at first paint; the
+  // review (needed to save) is re-read in the background.
+  const initialCache = accessKey ? cachedDocuments(store?.scope) : undefined;
+  const [draft, setDraft] = useState<DatabaseDocuments | null>(() => {
+    perfMark("documents:mount");
+    return initialCache ?? null;
+  });
+  const [draftOwner, setDraftOwner] = useState(initialCache ? accessKey : "");
+  const [revalidating, setRevalidating] = useState(!!initialCache);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [stale, setStale] = useState(false);
@@ -72,38 +81,56 @@ export function useDocumentsWorkspace(
     [],
   );
 
-  const reload = useCallback(async () => {
-    const captured = scopeRef.current;
-    const key = accessRef.current;
-    if (!captured || !key || busyRef.current) return;
-    const token = ++operation.current;
-    busyRef.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      service.clear();
-      const next = await service.read(captured);
-      if (!current(key, token)) return;
-      reviewRef.current = next;
-      setDraft(structuredClone(next.data));
-      setDraftOwner(key);
-      dirtyRef.current = false;
-      setDirty(false);
-      setStale(false);
-    } catch (cause) {
-      if (current(key, token))
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "The document library could not be read. Unlock its storage and retry.",
+  const reload = useCallback(
+    async (options: { background?: boolean } = {}) => {
+      const captured = scopeRef.current;
+      const key = accessRef.current;
+      if (!captured || !key || busyRef.current) return;
+      const token = ++operation.current;
+      busyRef.current = true;
+      const background = options.background === true;
+      if (background) setRevalidating(true);
+      else setBusy(true);
+      setError("");
+      try {
+        service.clear();
+        const next = await service.read(captured);
+        if (!current(key, token)) return;
+        reviewRef.current = next;
+        rememberDocuments(captured, next.data);
+        // Reconcile in place: an unchanged revision keeps the rendered object.
+        setDraft((previous) =>
+          background && previous && previous.revision === next.data.revision
+            ? previous
+            : structuredClone(next.data),
         );
-    } finally {
-      if (current(key, token)) {
-        busyRef.current = false;
-        setBusy(false);
+        setDraftOwner(key);
+        perfMark("documents:data");
+        perfMeasure(
+          "documents:mount-to-data",
+          "documents:mount",
+          "documents:data",
+        );
+        dirtyRef.current = false;
+        setDirty(false);
+        setStale(false);
+      } catch (cause) {
+        if (current(key, token))
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "The document library could not be read. Unlock its storage and retry.",
+          );
+      } finally {
+        if (current(key, token)) {
+          busyRef.current = false;
+          setBusy(false);
+          setRevalidating(false);
+        }
       }
-    }
-  }, [current, service]);
+    },
+    [current, service],
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -123,13 +150,15 @@ export function useDocumentsWorkspace(
     reviewRef.current = null;
     busyRef.current = false;
     dirtyRef.current = false;
-    setDraft(null);
-    setDraftOwner("");
+    const warm = accessKey ? cachedDocuments(scopeRef.current) : undefined;
+    setDraft(warm ?? null);
+    setDraftOwner(warm ? accessKey : "");
     setDirty(false);
     setBusy(false);
+    setRevalidating(false);
     setStale(false);
     setError("");
-    if (accessKey) void reload();
+    if (accessKey) void reload({ background: !!warm });
   }, [accessKey, reload, service]);
 
   const lastRevision = useRef(store?.changeRevision);
@@ -185,6 +214,7 @@ export function useDocumentsWorkspace(
       const verified = await service.read(review.scope);
       if (!current(key, token)) return false;
       reviewRef.current = verified;
+      rememberDocuments(review.scope, verified.data);
       setDraft(structuredClone(verified.data));
       dirtyRef.current = false;
       setDirty(false);
@@ -237,6 +267,8 @@ export function useDocumentsWorkspace(
     accessKey,
     scope: accessKey ? scopeRef.current : null,
     busy,
+    /** Cached data is on screen while the review is re-read; editing waits. */
+    revalidating,
     dirty,
     stale,
     error,

@@ -7,6 +7,14 @@ import type {
   DatabaseCredentialVaultApi,
 } from "../../types/security/databaseCredentialVault";
 import { normalizeDatabaseCredentialEntry } from "../../utils/security/databaseCredentialVault";
+import { perfMark, perfMeasure } from "../../utils/preload/perf";
+import {
+  cachedVaultEntry,
+  cachedVaultSnapshot,
+  isVaultCacheFresh,
+  loadVaultSnapshot,
+  purgeVaultCache,
+} from "./credentialVaultCache";
 
 export const credentialVaultScopeKey = (
   api: DatabaseCredentialVaultApi | undefined,
@@ -37,16 +45,22 @@ export function useDatabaseCredentialVault(api: DatabaseCredentialVaultApi) {
   const alive = useRef(true),
     busyRef = useRef(false),
     readVersion = useRef(0);
+  // Stale-while-revalidate: a warm cache renders on the very first paint.
   const [snapshot, setSnapshot] = useState<DatabaseCredentialSnapshot | null>(
-    null,
+    () => {
+      perfMark("vault:mount");
+      return cachedVaultSnapshot(api);
+    },
   );
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   const [draft, setDraft] = useState<{
     entry: DatabaseCredentialEntry;
     snapshot: DatabaseCredentialSnapshot;
     original: string;
   } | null>(null);
   const [busy, setBusy] = useState(false),
-    [loading, setLoading] = useState(true),
+    [loading, setLoading] = useState(() => cachedVaultSnapshot(api) === null),
     [error, setError] = useState<string | null>(null);
   const current = useCallback(() => {
     if (
@@ -64,38 +78,56 @@ export function useDatabaseCredentialVault(api: DatabaseCredentialVaultApi) {
       readVersion.current += 1;
     };
   }, []);
-  const reload = useCallback(async () => {
-    const version = ++readVersion.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const selected = current();
-      const next = await selected.list({ ...selected.scope! });
-      current();
-      if (version !== readVersion.current) return false;
-      setSnapshot(next);
-      return true;
-    } catch {
-      if (
-        alive.current &&
-        latest.current.key === key &&
-        version === readVersion.current
-      ) {
-        setSnapshot(null);
-        setError(failureMessage);
+  const reload = useCallback(
+    async (options: { background?: boolean; fresh?: boolean } = {}) => {
+      const version = ++readVersion.current;
+      // Background revalidation keeps the cached rows on screen (no spinner).
+      if (!(options.background && snapshotRef.current)) setLoading(true);
+      setError(null);
+      try {
+        const selected = current();
+        const next = await loadVaultSnapshot(selected, {
+          fresh: options.fresh ?? true,
+        });
+        current();
+        if (version !== readVersion.current) return false;
+        // Swapped in place (no loading toggle), so a background refresh is flicker-free.
+        setSnapshot(next);
+        perfMark("vault:data");
+        perfMeasure("vault:mount-to-data", "vault:mount", "vault:data");
+        return true;
+      } catch {
+        if (
+          alive.current &&
+          latest.current.key === key &&
+          version === readVersion.current
+        ) {
+          setSnapshot(null);
+          setError(failureMessage);
+        }
+        return false;
+      } finally {
+        if (
+          alive.current &&
+          latest.current.key === key &&
+          version === readVersion.current
+        )
+          setLoading(false);
       }
-      return false;
-    } finally {
-      if (
-        alive.current &&
-        latest.current.key === key &&
-        version === readVersion.current
-      )
-        setLoading(false);
-    }
-  }, [current, key]);
+    },
+    [current, key],
+  );
   useEffect(() => {
-    void reload();
+    // Forget cache entries of any other owner (lock, database switch).
+    purgeVaultCache(latest.current.api);
+    const entry = cachedVaultEntry(latest.current.api);
+    // Fresh and unchanged: no native round trip at all on tab switch.
+    if (isVaultCacheFresh(latest.current.api) && snapshotRef.current) {
+      setLoading(false);
+      return;
+    }
+    // Join an in-flight preload unless the vault changed since it started.
+    void reload({ background: !!entry, fresh: !!entry });
   }, [reload, api.changeRevision]);
   const perform = async (action: () => Promise<void>): Promise<boolean> => {
     if (busyRef.current) return false;

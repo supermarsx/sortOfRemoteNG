@@ -11,6 +11,7 @@ import { useTrustCenterSession } from "./hooks/security/useTrustCenterSession";
 import { useSecurityToolSession } from "./hooks/security/useSecurityToolSession";
 import { useIconExplorerSession } from "./hooks/icons/useIconExplorerSession";
 import { useDocumentSession } from "./hooks/documents/useDocumentSession";
+import { useTabPreloaders } from "./hooks/app/useTabPreloaders";
 import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -326,6 +327,7 @@ const AppContent: React.FC = () => {
   );
   const openIconExplorer = useIconExplorerSession(setActiveSessionId);
   const openDocuments = useDocumentSession(setActiveSessionId);
+  useTabPreloaders(appReady);
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();

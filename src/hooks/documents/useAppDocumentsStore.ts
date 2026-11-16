@@ -12,6 +12,7 @@ import {
 } from "../../utils/documents/appDocumentsStore";
 import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
 import { getInvoke } from "../../utils/tauri/invoke";
+import { clearDocumentsCache } from "./documentsCache";
 
 // A remount must not resurrect a receipt from an earlier workspace instance.
 let nextAccessEpoch = 0;
@@ -36,6 +37,8 @@ export function useAppDocumentsStore(): DatabaseDocumentStore | undefined {
     let eventRevision = 0;
     const unlisteners: Array<() => void> = [];
     const revoke = () => {
+      // Lock/unlock: no cached library may outlive the access it came from.
+      clearDocumentsCache();
       lease.current?.abort();
       lease.current = null;
       setStore(undefined);

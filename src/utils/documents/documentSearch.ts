@@ -67,3 +67,47 @@ export function documentMatchesSearch(
     for (const text of searchableText(block)) if (matches(text)) return true;
   return false;
 }
+
+/**
+ * The only fields `documentMatchesSearch` can read, so a worker never receives
+ * a password, private key, identity or account address.
+ */
+export function documentSearchProjection(
+  document: DatabaseDocument,
+): DatabaseDocument {
+  const blocks = document.blocks.flatMap((block): DocumentBlock[] => {
+    switch (block.type) {
+      case "identity":
+      case "email-account":
+        return [];
+      case "secret":
+      case "credential":
+      case "email":
+      case "reference":
+        return [{ type: block.type, label: block.label } as DocumentBlock];
+      case "wifi":
+        return [{ type: "wifi", ssid: block.ssid } as DocumentBlock];
+      default:
+        return [block];
+    }
+  });
+  return { ...document, blocks };
+}
+
+const matchMemo = new WeakMap<DatabaseDocument, Map<string, boolean>>();
+/** Memoised per document identity: re-renders and revalidation never rescan. */
+export function documentMatchesSearchMemo(
+  document: DatabaseDocument,
+  query: string,
+  fullText = false,
+): boolean {
+  const key = `${fullText ? 1 : 0}:${query}`;
+  let perDocument = matchMemo.get(document);
+  if (!perDocument) matchMemo.set(document, (perDocument = new Map()));
+  const known = perDocument.get(key);
+  if (known !== undefined) return known;
+  const result = documentMatchesSearch(document, query, fullText);
+  if (perDocument.size >= 8) perDocument.clear();
+  perDocument.set(key, result);
+  return result;
+}
