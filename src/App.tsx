@@ -53,6 +53,7 @@ import {
   InvalidPasswordError,
 } from "./utils/core/errors";
 import { useSessionManager } from "./hooks/session/useSessionManager";
+import { useSessionHostHeartbeat } from "./hooks/session/useSessionHostHeartbeat";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { useAppFormPrivacy } from "./hooks/window/useAppFormPrivacy";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
@@ -287,6 +288,9 @@ const AppContent: React.FC = () => {
     confirmDialog,
     emitWindowSignal,
   } = useSessionManager();
+  // Claim live backend sessions with the host so only truly orphaned ones are
+  // reaped after the grace period; flags tabs whose session vanished.
+  useSessionHostHeartbeat();
   useRuntimeConnectionLaunch(handleConnect);
 
   const {
