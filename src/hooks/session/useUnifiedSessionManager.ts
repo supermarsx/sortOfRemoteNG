@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableRows } from "../perf/useStableRows";
 import { useSessionObservationActivity } from "./useSessionObservationActivity";
 import {
   Connection,
@@ -269,6 +270,8 @@ function projectFrontendSession(
   };
 }
 
+const rowUid = (row: { uid: string }) => row.uid;
+
 export function useUnifiedSessionManager({
   isVisible,
   connections,
@@ -375,7 +378,7 @@ export function useUnifiedSessionManager({
       ),
     [sessionPartition.connections],
   );
-  const rdpRows = useMemo<UnifiedSessionRow[]>(() => {
+  const rdpRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return rdpSessions.map((s) => {
       const frontendSession = frontendRdpByBackendId.get(s.id);
       const display = getSessionDisplayName(s);
@@ -423,9 +426,10 @@ export function useUnifiedSessionManager({
     isSessionDetached,
     frontendRdpByBackendId,
   ]);
+  const rdpRows = useStableRows(rdpRowsRaw, rowUid);
 
   // ── Project proxy sessions into unified rows ──
-  const proxyRows = useMemo<UnifiedSessionRow[]>(() => {
+  const proxyRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return proxy.sessions.map((s) => ({
       uid: `http-proxy:${s.session_id}`,
       kind: "http-proxy" as const,
@@ -445,9 +449,10 @@ export function useUnifiedSessionManager({
       proxySession: s,
     }));
   }, [proxy.sessions]);
+  const proxyRows = useStableRows(proxyRowsRaw, rowUid);
 
   // ── Project native SSH sessions, enriching them with frontend metadata ──
-  const sshRows = useMemo<UnifiedSessionRow[]>(() => {
+  const sshRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return ssh.sessions.map((backendSession) => {
       const frontendSession = frontendSshByBackendId.get(backendSession.id);
       const connection = frontendSession
@@ -493,6 +498,7 @@ export function useUnifiedSessionManager({
       };
     });
   }, [connectionsById, frontendSshByBackendId, ssh.sessions]);
+  const sshRows = useStableRows(sshRowsRaw, rowUid);
 
   const representedRdpBackendIds = useMemo(
     () => new Set(rdp.sessions.map((session) => session.id)),
@@ -511,7 +517,7 @@ export function useUnifiedSessionManager({
   );
 
   // ── Project frontend ConnectionContext sessions into unified rows ──
-  const frontendConnectionRows = useMemo<UnifiedSessionRow[]>(() => {
+  const frontendConnectionRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.connections
       .filter((session) => {
         const protocol = session.protocol.toLowerCase();
@@ -548,8 +554,12 @@ export function useUnifiedSessionManager({
     representedRdpBackendIds,
     representedRdpConnectionIds,
   ]);
+  const frontendConnectionRows = useStableRows(
+    frontendConnectionRowsRaw,
+    rowUid,
+  );
 
-  const toolRows = useMemo<UnifiedSessionRow[]>(() => {
+  const toolRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.tools.map((session) =>
       projectFrontendSession(
         session,
@@ -558,8 +568,9 @@ export function useUnifiedSessionManager({
       ),
     );
   }, [sessionPartition.tools, connectionsById]);
+  const toolRows = useStableRows(toolRowsRaw, rowUid);
 
-  const winmgmtRows = useMemo<UnifiedSessionRow[]>(() => {
+  const winmgmtRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.winmgmt.map((session) =>
       projectFrontendSession(
         session,
@@ -568,8 +579,9 @@ export function useUnifiedSessionManager({
       ),
     );
   }, [sessionPartition.winmgmt, connectionsById]);
+  const winmgmtRows = useStableRows(winmgmtRowsRaw, rowUid);
 
-  const integrationRows = useMemo<UnifiedSessionRow[]>(() => {
+  const integrationRowsRaw = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.integrations.map((session) =>
       projectFrontendSession(
         session,
@@ -578,8 +590,9 @@ export function useUnifiedSessionManager({
       ),
     );
   }, [sessionPartition.integrations, connectionsById]);
+  const integrationRows = useStableRows(integrationRowsRaw, rowUid);
 
-  const frontendRows = useMemo(
+  const frontendRowsRaw = useMemo(
     () => [
       ...frontendConnectionRows,
       ...toolRows,
@@ -588,10 +601,14 @@ export function useUnifiedSessionManager({
     ],
     [frontendConnectionRows, toolRows, winmgmtRows, integrationRows],
   );
+  const frontendRows = useStableRows(frontendRowsRaw, rowUid);
 
-  const allRows = useMemo(
-    () => [...rdpRows, ...sshRows, ...proxyRows, ...frontendRows],
-    [rdpRows, sshRows, proxyRows, frontendRows],
+  const allRows = useStableRows(
+    useMemo(
+      () => [...rdpRows, ...sshRows, ...proxyRows, ...frontendRows],
+      [rdpRows, sshRows, proxyRows, frontendRows],
+    ),
+    rowUid,
   );
 
   const isLoading = rdp.isLoading || ssh.isLoading || proxy.isLoading;

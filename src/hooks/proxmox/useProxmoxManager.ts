@@ -5,9 +5,29 @@
  * active tab, refresh polling, and all user actions.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { createVisibleInterval } from "../../utils/perf/visibility";
+import { stableStringify } from "../../utils/perf/cachedInvoke";
+import {
+  invalidateNamespace,
+  isMutatingCommand,
+  swrRead,
+  type SwrDevice,
+} from "../../utils/perf/swrLoad";
+
+/** Tauri invoke that drops the reopen cache after any state-changing command. */
+async function invoke<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  const out =
+    args === undefined
+      ? await tauriInvoke<T>(cmd)
+      : await tauriInvoke<T>(cmd, args);
+  if (isMutatingCommand(cmd)) invalidateNamespace("proxmox");
+  return out;
+}
 import type {
   ProxmoxConfigSafe,
   PveVersion,
@@ -306,12 +326,40 @@ export function useProxmoxManager(
     });
   }, []);
 
+  // Reopen cache (SWR): keyed by device identity, never the secret.
+  const cacheDevice = useMemo<SwrDevice | null>(
+    () =>
+      host ? { ns: "proxmox", device: `${host}:${port}:${username}` } : null,
+    [host, port, username],
+  );
+  const read = useCallback(
+    <T>(
+      cmd: string,
+      args: Record<string, unknown> | undefined,
+      onCached: (value: T) => void,
+    ) =>
+      swrRead<T>(
+        cacheDevice,
+        `${cmd}|${stableStringify(args)}`,
+        [cmd],
+        () => invoke<T>(cmd, args),
+        (v) => {
+          if (mountedRef.current) onCached(v);
+        },
+      ),
+    [cacheDevice],
+  );
+
   const refreshDashboard = useCallback(async () => {
     if (!mountedRef.current) return;
     setRefreshing(true);
     setDataError(null);
     try {
-      const nodeList = await invoke<NodeSummary[]>("proxmox_list_nodes");
+      const nodeList = await read<NodeSummary[]>(
+        "proxmox_list_nodes",
+        undefined,
+        setNodes,
+      );
       if (!mountedRef.current) return;
       setNodes(nodeList);
 
@@ -322,23 +370,45 @@ export function useProxmoxManager(
         const targetNode = selectedNode || firstNode;
         const [vms, cts, stor, cluster, resources] = await Promise.all([
           safe(() =>
-            invoke<QemuVmSummary[]>("proxmox_list_qemu_vms", {
-              node: targetNode,
-            }),
+            read<QemuVmSummary[]>(
+              "proxmox_list_qemu_vms",
+              {
+                node: targetNode,
+              },
+              setQemuVms,
+            ),
           ),
           safe(() =>
-            invoke<LxcSummary[]>("proxmox_list_lxc_containers", {
-              node: targetNode,
-            }),
+            read<LxcSummary[]>(
+              "proxmox_list_lxc_containers",
+              {
+                node: targetNode,
+              },
+              setLxcContainers,
+            ),
           ),
           safe(() =>
-            invoke<StorageSummary[]>("proxmox_list_storage", {
-              node: targetNode,
-            }),
+            read<StorageSummary[]>(
+              "proxmox_list_storage",
+              {
+                node: targetNode,
+              },
+              setStorage,
+            ),
           ),
-          safe(() => invoke<ClusterStatus[]>("proxmox_get_cluster_status")),
           safe(() =>
-            invoke<ClusterResource[]>("proxmox_list_cluster_resources"),
+            read<ClusterStatus[]>(
+              "proxmox_get_cluster_status",
+              undefined,
+              setClusterStatus,
+            ),
+          ),
+          safe(() =>
+            read<ClusterResource[]>(
+              "proxmox_list_cluster_resources",
+              undefined,
+              setClusterResources,
+            ),
           ),
         ]);
         if (!mountedRef.current) return;
@@ -633,10 +703,18 @@ export function useProxmoxManager(
       try {
         const [vms, cts] = await Promise.all([
           safe(() =>
-            invoke<QemuVmSummary[]>("proxmox_list_qemu_vms", { node }),
+            read<QemuVmSummary[]>(
+              "proxmox_list_qemu_vms",
+              { node },
+              setQemuVms,
+            ),
           ),
           safe(() =>
-            invoke<LxcSummary[]>("proxmox_list_lxc_containers", { node }),
+            read<LxcSummary[]>(
+              "proxmox_list_lxc_containers",
+              { node },
+              setLxcContainers,
+            ),
           ),
         ]);
         if (mountedRef.current) {
@@ -655,7 +733,11 @@ export function useProxmoxManager(
       setRefreshing(true);
       try {
         const t = await safe(() =>
-          invoke<TaskSummary[]>("proxmox_list_tasks", { node, limit: 50 }),
+          read<TaskSummary[]>(
+            "proxmox_list_tasks",
+            { node, limit: 50 },
+            setTasks,
+          ),
         );
         if (mountedRef.current && t) setTasks(t);
       } finally {
@@ -670,7 +752,7 @@ export function useProxmoxManager(
       setRefreshing(true);
       try {
         const s = await safe(() =>
-          invoke<StorageSummary[]>("proxmox_list_storage", { node }),
+          read<StorageSummary[]>("proxmox_list_storage", { node }, setStorage),
         );
         if (mountedRef.current && s) setStorage(s);
       } finally {
@@ -685,10 +767,18 @@ export function useProxmoxManager(
     try {
       const [rules, opts] = await Promise.all([
         safe(() =>
-          invoke<FirewallRule[]>("proxmox_list_cluster_firewall_rules"),
+          read<FirewallRule[]>(
+            "proxmox_list_cluster_firewall_rules",
+            undefined,
+            setFirewallRules,
+          ),
         ),
         safe(() =>
-          invoke<FirewallOptions>("proxmox_get_cluster_firewall_options"),
+          read<FirewallOptions>(
+            "proxmox_get_cluster_firewall_options",
+            undefined,
+            setFirewallOptions,
+          ),
         ),
       ]);
       if (mountedRef.current) {
@@ -704,7 +794,11 @@ export function useProxmoxManager(
     setRefreshing(true);
     try {
       const jobs = await safe(() =>
-        invoke<BackupJobConfig[]>("proxmox_list_backup_jobs"),
+        read<BackupJobConfig[]>(
+          "proxmox_list_backup_jobs",
+          undefined,
+          setBackupJobs,
+        ),
       );
       if (mountedRef.current && jobs) setBackupJobs(jobs);
     } finally {
@@ -715,7 +809,9 @@ export function useProxmoxManager(
   const refreshPools = useCallback(async () => {
     setRefreshing(true);
     try {
-      const p = await safe(() => invoke<PoolSummary[]>("proxmox_list_pools"));
+      const p = await safe(() =>
+        read<PoolSummary[]>("proxmox_list_pools", undefined, setPools),
+      );
       if (mountedRef.current && p) setPools(p);
     } finally {
       if (mountedRef.current) setRefreshing(false);
@@ -726,8 +822,16 @@ export function useProxmoxManager(
     setRefreshing(true);
     try {
       const [res, grp] = await Promise.all([
-        safe(() => invoke<HaResource[]>("proxmox_list_ha_resources")),
-        safe(() => invoke<HaGroup[]>("proxmox_list_ha_groups")),
+        safe(() =>
+          read<HaResource[]>(
+            "proxmox_list_ha_resources",
+            undefined,
+            setHaResources,
+          ),
+        ),
+        safe(() =>
+          read<HaGroup[]>("proxmox_list_ha_groups", undefined, setHaGroups),
+        ),
       ]);
       if (mountedRef.current) {
         if (res) setHaResources(res);
@@ -743,8 +847,16 @@ export function useProxmoxManager(
       setRefreshing(true);
       try {
         const [status, pools] = await Promise.all([
-          safe(() => invoke<CephStatus>("proxmox_get_ceph_status", { node })),
-          safe(() => invoke<CephPool[]>("proxmox_list_ceph_pools", { node })),
+          safe(() =>
+            read<CephStatus>(
+              "proxmox_get_ceph_status",
+              { node },
+              setCephStatus,
+            ),
+          ),
+          safe(() =>
+            read<CephPool[]>("proxmox_list_ceph_pools", { node }, setCephPools),
+          ),
         ]);
         if (mountedRef.current) {
           if (status) setCephStatus(status);
@@ -762,9 +874,13 @@ export function useProxmoxManager(
       setRefreshing(true);
       try {
         const ifaces = await safe(() =>
-          invoke<NetworkInterface[]>("proxmox_list_network_interfaces", {
-            node,
-          }),
+          read<NetworkInterface[]>(
+            "proxmox_list_network_interfaces",
+            {
+              node,
+            },
+            setNetworkInterfaces,
+          ),
         );
         if (mountedRef.current && ifaces) setNetworkInterfaces(ifaces);
       } finally {

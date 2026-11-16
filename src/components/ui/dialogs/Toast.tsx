@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components, react/only-export-components */
 import React, { useEffect, useState, useRef } from "react";
+import { useSharedNow } from "../../../hooks/perf/useSharedTick";
 import {
   CheckCircle,
   XCircle,
@@ -117,14 +118,9 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   const revision = toast.revision ?? 0;
   const isExiting = exitingRevision === revision;
   const isLoading = toast.type === "loading";
-  const [operationNow, setOperationNow] = useState(Date.now);
   const hasOperationClock = Number.isFinite(toast.startedAt);
-  useEffect(() => {
-    if (!isLoading || !hasOperationClock) return;
-    // One low-frequency timer per visible operation, never a render/expiry loop.
-    const timer = setInterval(() => setOperationNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [isLoading, hasOperationClock, toast.id]);
+  // Shared 1 s tick (paused while hidden), only while an operation is running.
+  const operationNow = useSharedNow(isLoading && hasOperationClock);
   const clockNow =
     toast.finishedAt ?? Math.max(operationNow, toast.startedAt ?? 0);
   const eta =

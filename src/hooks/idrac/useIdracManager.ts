@@ -6,9 +6,14 @@
  */
 
 import { toSafeManagementError } from "../../utils/security/managementInvoke";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { createVisibleInterval } from "../../utils/perf/visibility";
+import {
+  noteCommandDone,
+  swrLoad,
+  type SwrDevice,
+} from "../../utils/perf/swrLoad";
 import type {
   IdracConfigSafe,
   SystemInfo,
@@ -328,20 +333,39 @@ export function useIdracManager(
     if (mountedRef.current) fn();
   }, []);
 
+  // Reopen cache: keyed by device identity (never the password).
+  const cacheDevice = useMemo<SwrDevice | null>(
+    () =>
+      host ? { ns: "idrac", device: `${host}:${port}:${username}` } : null,
+    [host, port, username],
+  );
+  const swr = useCallback(
+    <T>(
+      loader: string,
+      cmds: readonly string[],
+      fetcher: () => Promise<T>,
+      apply: (value: T) => void,
+    ) =>
+      swrLoad(cacheDevice, loader, cmds, fetcher, (v) => safe(() => apply(v))),
+    [cacheDevice, safe],
+  );
+
   const tryInvoke = useCallback(
     async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
       try {
-        if (args === undefined) {
-          return await invoke<T>(cmd);
-        }
-        return await invoke<T>(cmd, args);
+        const out =
+          args === undefined
+            ? await invoke<T>(cmd)
+            : await invoke<T>(cmd, args);
+        if (cacheDevice) noteCommandDone(cacheDevice, cmd);
+        return out;
       } catch (e) {
         throw new Error(
           toSafeManagementError(e, "The iDRAC operation failed."),
         );
       }
     },
-    [],
+    [cacheDevice],
   );
 
   // ── Connection ───────────────────────────────────
@@ -395,7 +419,7 @@ export function useIdracManager(
       setConfig(null);
       setDashboard(null);
     });
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const checkSession = useCallback(async () => {
     try {
@@ -406,179 +430,246 @@ export function useIdracManager(
       safe(() => setConnectionState("disconnected"));
       return false;
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   // ── Tab-specific data loading ────────────────────
 
   const loadDashboard = useCallback(async () => {
     try {
-      const d = await tryInvoke<IdracDashboard>("idrac_get_dashboard");
-      safe(() => setDashboard(d));
+      await swr(
+        "loadDashboard",
+        ["idrac_get_dashboard"],
+        async () => tryInvoke<IdracDashboard>("idrac_get_dashboard"),
+        (d) => setDashboard(d),
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadSystem = useCallback(async () => {
     try {
-      const [sys, idr] = await Promise.all([
-        tryInvoke<SystemInfo>("idrac_get_system_info"),
-        tryInvoke<IdracInfo>("idrac_get_idrac_info"),
-      ]);
-      safe(() => {
-        setSystemInfo(sys);
-        setIdracInfo(idr);
-      });
+      await swr(
+        "loadSystem",
+        ["idrac_get_system_info", "idrac_get_idrac_info"],
+        async () =>
+          Promise.all([
+            tryInvoke<SystemInfo>("idrac_get_system_info"),
+            tryInvoke<IdracInfo>("idrac_get_idrac_info"),
+          ]),
+        ([sys, idr]) => {
+          setSystemInfo(sys);
+          setIdracInfo(idr);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadPower = useCallback(async () => {
     try {
-      const [state, metrics, psus] = await Promise.all([
-        tryInvoke<string>("idrac_get_power_state"),
-        tryInvoke<PowerMetrics>("idrac_get_power_metrics"),
-        tryInvoke<PowerSupply[]>("idrac_list_power_supplies"),
-      ]);
-      safe(() => {
-        setPowerState(state);
-        setPowerMetrics(metrics);
-        setPowerSupplies(psus);
-      });
+      await swr(
+        "loadPower",
+        [
+          "idrac_get_power_state",
+          "idrac_get_power_metrics",
+          "idrac_list_power_supplies",
+        ],
+        async () =>
+          Promise.all([
+            tryInvoke<string>("idrac_get_power_state"),
+            tryInvoke<PowerMetrics>("idrac_get_power_metrics"),
+            tryInvoke<PowerSupply[]>("idrac_list_power_supplies"),
+          ]),
+        ([state, metrics, psus]) => {
+          setPowerState(state);
+          setPowerMetrics(metrics);
+          setPowerSupplies(psus);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadThermal = useCallback(async () => {
     try {
-      const [data, summary] = await Promise.all([
-        tryInvoke<ThermalData>("idrac_get_thermal_data"),
-        tryInvoke<ThermalSummary>("idrac_get_thermal_summary"),
-      ]);
-      safe(() => {
-        setThermalData(data);
-        setThermalSummary(summary);
-      });
+      await swr(
+        "loadThermal",
+        ["idrac_get_thermal_data", "idrac_get_thermal_summary"],
+        async () =>
+          Promise.all([
+            tryInvoke<ThermalData>("idrac_get_thermal_data"),
+            tryInvoke<ThermalSummary>("idrac_get_thermal_summary"),
+          ]),
+        ([data, summary]) => {
+          setThermalData(data);
+          setThermalSummary(summary);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadHardware = useCallback(async () => {
     try {
-      const [cpus, mem, pcie] = await Promise.all([
-        tryInvoke<Processor[]>("idrac_list_processors"),
-        tryInvoke<MemoryDimm[]>("idrac_list_memory"),
-        tryInvoke<PcieDevice[]>("idrac_list_pcie_devices"),
-      ]);
-      safe(() => {
-        setProcessors(cpus);
-        setMemory(mem);
-        setPcieDevices(pcie);
-      });
+      await swr(
+        "loadHardware",
+        [
+          "idrac_list_processors",
+          "idrac_list_memory",
+          "idrac_list_pcie_devices",
+        ],
+        async () =>
+          Promise.all([
+            tryInvoke<Processor[]>("idrac_list_processors"),
+            tryInvoke<MemoryDimm[]>("idrac_list_memory"),
+            tryInvoke<PcieDevice[]>("idrac_list_pcie_devices"),
+          ]),
+        ([cpus, mem, pcie]) => {
+          setProcessors(cpus);
+          setMemory(mem);
+          setPcieDevices(pcie);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadStorage = useCallback(async () => {
     try {
-      const [ctrls, vds, pds, encs] = await Promise.all([
-        tryInvoke<StorageController[]>("idrac_list_storage_controllers"),
-        tryInvoke<VirtualDisk[]>("idrac_list_virtual_disks", {
-          controllerId: null,
-        }),
-        tryInvoke<PhysicalDisk[]>("idrac_list_physical_disks", {
-          controllerId: null,
-        }),
-        tryInvoke<StorageEnclosure[]>("idrac_list_enclosures"),
-      ]);
-      safe(() => {
-        setStorageControllers(ctrls);
-        setVirtualDisks(vds);
-        setPhysicalDisks(pds);
-        setEnclosures(encs);
-      });
+      await swr(
+        "loadStorage",
+        [
+          "idrac_list_storage_controllers",
+          "idrac_list_virtual_disks",
+          "idrac_list_physical_disks",
+          "idrac_list_enclosures",
+        ],
+        async () =>
+          Promise.all([
+            tryInvoke<StorageController[]>("idrac_list_storage_controllers"),
+            tryInvoke<VirtualDisk[]>("idrac_list_virtual_disks", {
+              controllerId: null,
+            }),
+            tryInvoke<PhysicalDisk[]>("idrac_list_physical_disks", {
+              controllerId: null,
+            }),
+            tryInvoke<StorageEnclosure[]>("idrac_list_enclosures"),
+          ]),
+        ([ctrls, vds, pds, encs]) => {
+          setStorageControllers(ctrls);
+          setVirtualDisks(vds);
+          setPhysicalDisks(pds);
+          setEnclosures(encs);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadNetwork = useCallback(async () => {
     try {
-      const [adapters, netCfg] = await Promise.all([
-        tryInvoke<NetworkAdapter[]>("idrac_list_network_adapters"),
-        tryInvoke<IdracNetworkConfig>("idrac_get_network_config"),
-      ]);
-      safe(() => {
-        setNetworkAdapters(adapters);
-        setNetworkConfig(netCfg);
-      });
+      await swr(
+        "loadNetwork",
+        ["idrac_list_network_adapters", "idrac_get_network_config"],
+        async () =>
+          Promise.all([
+            tryInvoke<NetworkAdapter[]>("idrac_list_network_adapters"),
+            tryInvoke<IdracNetworkConfig>("idrac_get_network_config"),
+          ]),
+        ([adapters, netCfg]) => {
+          setNetworkAdapters(adapters);
+          setNetworkConfig(netCfg);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadFirmware = useCallback(async () => {
     try {
-      const fw = await tryInvoke<FirmwareInventory[]>("idrac_list_firmware");
-      safe(() => setFirmware(fw));
+      await swr(
+        "loadFirmware",
+        ["idrac_list_firmware"],
+        async () => tryInvoke<FirmwareInventory[]>("idrac_list_firmware"),
+        (fw) => setFirmware(fw),
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadLifecycle = useCallback(async () => {
     try {
-      const [j, status] = await Promise.all([
-        tryInvoke<LifecycleJob[]>("idrac_list_jobs"),
-        tryInvoke<string>("idrac_get_lc_status"),
-      ]);
-      safe(() => {
-        setJobs(j);
-        setLcStatus(status);
-      });
+      await swr(
+        "loadLifecycle",
+        ["idrac_list_jobs", "idrac_get_lc_status"],
+        async () =>
+          Promise.all([
+            tryInvoke<LifecycleJob[]>("idrac_list_jobs"),
+            tryInvoke<string>("idrac_get_lc_status"),
+          ]),
+        ([j, status]) => {
+          setJobs(j);
+          setLcStatus(status);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadVirtualMedia = useCallback(async () => {
     try {
-      const media = await tryInvoke<VirtualMediaStatus[]>(
-        "idrac_list_virtual_media",
+      await swr(
+        "loadVirtualMedia",
+        ["idrac_list_virtual_media"],
+        async () => tryInvoke<VirtualMediaStatus[]>("idrac_list_virtual_media"),
+        (media) => setVirtualMedia(media),
       );
-      safe(() => setVirtualMedia(media));
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadConsole = useCallback(async () => {
     try {
-      const info = await tryInvoke<ConsoleInfo>("idrac_get_console_info");
-      safe(() => setConsoleInfo(info));
+      await swr(
+        "loadConsole",
+        ["idrac_get_console_info"],
+        async () => tryInvoke<ConsoleInfo>("idrac_get_console_info"),
+        (info) => setConsoleInfo(info),
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadEventLog = useCallback(async () => {
     try {
-      const [sel, lc] = await Promise.all([
-        tryInvoke<SelEntry[]>("idrac_get_sel_entries", { limit: 200 }),
-        tryInvoke<LcLogEntry[]>("idrac_get_lc_log_entries", { limit: 200 }),
-      ]);
-      safe(() => {
-        setSelEntries(sel);
-        setLcLogEntries(lc);
-      });
+      await swr(
+        "loadEventLog",
+        ["idrac_get_sel_entries", "idrac_get_lc_log_entries"],
+        async () =>
+          Promise.all([
+            tryInvoke<SelEntry[]>("idrac_get_sel_entries", { limit: 200 }),
+            tryInvoke<LcLogEntry[]>("idrac_get_lc_log_entries", { limit: 200 }),
+          ]),
+        ([sel, lc]) => {
+          setSelEntries(sel);
+          setLcLogEntries(lc);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -595,59 +686,79 @@ export function useIdracManager(
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadBios = useCallback(async () => {
     try {
-      const [attrs, boot] = await Promise.all([
-        tryInvoke<BiosAttribute[]>("idrac_get_bios_attributes"),
-        tryInvoke<BootConfig>("idrac_get_boot_order"),
-      ]);
-      safe(() => {
-        setBiosAttributes(attrs);
-        setBootConfig(boot);
-      });
+      await swr(
+        "loadBios",
+        ["idrac_get_bios_attributes", "idrac_get_boot_order"],
+        async () =>
+          Promise.all([
+            tryInvoke<BiosAttribute[]>("idrac_get_bios_attributes"),
+            tryInvoke<BootConfig>("idrac_get_boot_order"),
+          ]),
+        ([attrs, boot]) => {
+          setBiosAttributes(attrs);
+          setBootConfig(boot);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadCertificates = useCallback(async () => {
     try {
-      const certs = await tryInvoke<IdracCertificate[]>(
-        "idrac_list_certificates",
+      await swr(
+        "loadCertificates",
+        ["idrac_list_certificates"],
+        async () => tryInvoke<IdracCertificate[]>("idrac_list_certificates"),
+        (certs) => setCertificates(certs),
       );
-      safe(() => setCertificates(certs));
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadHealth = useCallback(async () => {
     try {
-      const h = await tryInvoke<ServerHealthRollup>("idrac_get_health_rollup");
-      safe(() => setHealthRollup(h));
+      await swr(
+        "loadHealth",
+        ["idrac_get_health_rollup"],
+        async () => tryInvoke<ServerHealthRollup>("idrac_get_health_rollup"),
+        (h) => setHealthRollup(h),
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   const loadTelemetry = useCallback(async () => {
     try {
-      const [pt, tt, reports] = await Promise.all([
-        tryInvoke<PowerTelemetry>("idrac_get_power_telemetry"),
-        tryInvoke<ThermalTelemetry>("idrac_get_thermal_telemetry"),
-        tryInvoke<TelemetryReport[]>("idrac_list_telemetry_reports"),
-      ]);
-      safe(() => {
-        setPowerTelemetry(pt);
-        setThermalTelemetry(tt);
-        setTelemetryReports(reports);
-      });
+      await swr(
+        "loadTelemetry",
+        [
+          "idrac_get_power_telemetry",
+          "idrac_get_thermal_telemetry",
+          "idrac_list_telemetry_reports",
+        ],
+        async () =>
+          Promise.all([
+            tryInvoke<PowerTelemetry>("idrac_get_power_telemetry"),
+            tryInvoke<ThermalTelemetry>("idrac_get_thermal_telemetry"),
+            tryInvoke<TelemetryReport[]>("idrac_list_telemetry_reports"),
+          ]),
+        ([pt, tt, reports]) => {
+          setPowerTelemetry(pt);
+          setThermalTelemetry(tt);
+          setTelemetryReports(reports);
+        },
+      );
     } catch (e) {
       safe(() => setDataError((e as Error).message));
     }
-  }, [tryInvoke, safe]);
+  }, [tryInvoke, safe, swr]);
 
   // ── Load data for active tab ─────────────────────
 

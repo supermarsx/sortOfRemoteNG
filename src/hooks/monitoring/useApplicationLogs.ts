@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useVisibleInterval } from "../perf/useVisibleInterval";
 import { ENCRYPTION_EVENT_LOCKED } from "../../types/encryption/encryption";
 import type {
   ApplicationLogContent,
@@ -376,29 +377,14 @@ export function useApplicationLogs(
       unlisten?.();
     };
   }, [source, isActive, ownerKey, refresh, retrySubscription, invalidate]);
-  useEffect(() => {
-    if (!isActive || !autoRefresh || paused) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const schedule = () => {
-      clearTimeout(timer);
-      if (active && visible())
-        timer = setTimeout(() => {
-          void refresh(false).finally(schedule);
-        }, LIVE_POLL_MS);
-    };
-    const visibility = () => {
-      clearTimeout(timer);
-      if (visible()) void refresh(false).finally(schedule);
-    };
-    document.addEventListener("visibilitychange", visibility);
-    schedule();
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", visibility);
-    };
-  }, [isActive, autoRefresh, paused, refresh]);
+  // Visible-aware: paused while hidden, one catch-up refresh on return.
+  // refresh(false) is a no-op while a native read is still running.
+  useVisibleInterval(
+    () => {
+      void refresh(false);
+    },
+    isActive && autoRefresh && !paused ? LIVE_POLL_MS : null,
+  );
   return {
     ...(isActive && state.source === source && state.ownerKey === ownerKey
       ? state

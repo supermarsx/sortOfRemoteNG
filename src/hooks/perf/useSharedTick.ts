@@ -13,3 +13,19 @@ export function useSharedTick(everyN = 1): number {
   );
   return useSyncExternalStore(tickStore.subscribe, getSnapshot, getSnapshot);
 }
+
+const noopSubscribe = () => () => {};
+
+/**
+ * Conditional variant of the shared tick: subscribes only while `enabled`,
+ * returns the exact ms epoch of the last tick (Date.now() at mount time before
+ * the first tick). Use for elapsed/countdown UI that is not always on screen.
+ */
+export function useSharedNow(enabled: boolean): number {
+  const now = useSyncExternalStore(
+    enabled ? tickStore.subscribe : noopSubscribe,
+    tickStore.getSnapshot,
+    tickStore.getSnapshot,
+  );
+  return enabled ? now : Date.now();
+}

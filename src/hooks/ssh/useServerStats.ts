@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useVisibleInterval } from "../perf/useVisibleInterval";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import {
@@ -49,8 +50,6 @@ export function useServerStats(isOpen: boolean) {
   const [viewMode, setViewMode] = useState<ServerStatsViewMode>("single");
   const [isCollectingAll, setIsCollectingAll] = useState(false);
   const inFlightRef = useRef<Set<string>>(new Set());
-
-  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Auto-select first session ──────────────────────────
   useEffect(() => {
@@ -166,37 +165,13 @@ export function useServerStats(isOpen: boolean) {
     }
   }, [state.sessions]);
 
-  // ── Auto-refresh ───────────────────────────────────────
-  useEffect(() => {
-    if (autoRefreshRef.current) {
-      clearInterval(autoRefreshRef.current);
-      autoRefreshRef.current = null;
-    }
-    if (autoRefreshInterval > 0 && isOpen) {
-      const tick = () => {
-        // Pause polling while the window is hidden.
-        if (typeof document !== "undefined" && document.hidden) return;
-        void (viewMode === "aggregate" ? collectAll() : collectStats());
-      };
-      autoRefreshRef.current = setInterval(tick, autoRefreshInterval * 1000);
-    }
-    return () => {
-      if (autoRefreshRef.current) {
-        clearInterval(autoRefreshRef.current);
-        autoRefreshRef.current = null;
-      }
-    };
-  }, [autoRefreshInterval, isOpen, collectStats, collectAll, viewMode]);
-
-  // ── Clean up on close ──────────────────────────────────
-  useEffect(() => {
-    if (!isOpen) {
-      if (autoRefreshRef.current) {
-        clearInterval(autoRefreshRef.current);
-        autoRefreshRef.current = null;
-      }
-    }
-  }, [isOpen]);
+  // ── Auto-refresh (paused while hidden, one catch-up on return) ──
+  useVisibleInterval(
+    () => {
+      void (viewMode === "aggregate" ? collectAll() : collectStats());
+    },
+    autoRefreshInterval > 0 && isOpen ? autoRefreshInterval * 1000 : null,
+  );
 
   // ── Toggle a collection option ─────────────────────────
   const toggleOption = useCallback((key: keyof StatsCollectionOptions) => {

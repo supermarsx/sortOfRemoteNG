@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { useSharedNow } from "../../../hooks/perf/useSharedTick";
 import {
   Copy,
   Crosshair,
@@ -83,15 +84,10 @@ export const SshLiveSessions: React.FC<SshLiveSessionsProps> = ({
     String(t(key, fallback)).replace(/\{\{(\w+)\}\}/g, (_m, name: string) =>
       String(vars[name] ?? ""),
     );
-  const [tick, setTick] = useState(() => Date.now());
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Keep connected durations ticking while the view is on screen.
-  useEffect(() => {
-    if (!isActive || nowOverride !== undefined) return;
-    const timer = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [isActive, nowOverride]);
+  // Connected durations tick off the shared 1 s timer (paused while hidden).
+  const tick = useSharedNow(isActive && nowOverride === undefined);
   const now = nowOverride ?? tick;
 
   const visible = useMemo(() => {

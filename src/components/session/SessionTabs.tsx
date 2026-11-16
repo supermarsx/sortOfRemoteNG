@@ -46,6 +46,7 @@ import {
   FileText,
 } from "lucide-react";
 import { LayoutGrid } from "lucide-react";
+import { useSharedNow } from "../../hooks/perf/useSharedTick";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useIconLibraryRevision } from "../../utils/icons/iconLibraryRuntime";
@@ -194,12 +195,7 @@ const UnresponsiveCloseActions: React.FC<UnresponsiveCloseActionsProps> = ({
   onRetry,
   onForce,
 }) => {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!closeState.autoForceCloseAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [closeState.autoForceCloseAt]);
+  const now = useSharedNow(Boolean(closeState.autoForceCloseAt));
   const remainingSeconds = closeState.autoForceCloseAt
     ? Math.max(0, Math.ceil((closeState.autoForceCloseAt - now) / 1000))
     : undefined;
