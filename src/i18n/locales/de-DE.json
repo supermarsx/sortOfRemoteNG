@@ -19,6 +19,8 @@
     "expandAll": "Alle erweitern",
     "collapseAll": "Alle einklappen",
     "reconnectOnReload": "Beim Neuladen wiederverbinden",
+    "sessionGraceSeconds": "Sitzungen nach Verschwinden der Oberfläche weiterlaufen lassen",
+    "sessionGraceSecondsDescription": "Wie lange (in Sekunden) aktive Sitzungen im Hintergrund weiterlaufen, nachdem das Fenster neu geladen wurde oder abgestürzt ist, bevor sie geschlossen werden. 0 hält sie bis zum Beenden der App am Leben.",
     "singleWindow": "Einzelfenstermodus",
     "singleConnection": "Einzelverbindungsmodus",
     "warnOnClose": "Beim Schließen warnen",
@@ -623,6 +625,13 @@
         "showInThisTile": "In dieser Kachel anzeigen…",
         "showInThisTileAria": "Sitzung in dieser Kachel anzeigen"
       }
+    },
+    "orphans": {
+      "title": "Verwaist (aktiv)",
+      "description": "Laufende Sitzungen ohne geöffneten Tab. Übernehmen Sie eine, um sie wieder zu öffnen, oder schließen Sie sie.",
+      "reapIn": "wird in {{seconds}} s geschlossen",
+      "adopt": "Übernehmen",
+      "close": "Schließen"
     },
     "sshLive": {
       "caption": "Aktive SSH-Sitzungen",

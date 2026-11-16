@@ -19,6 +19,8 @@
     "expandAll": "Tout développer",
     "collapseAll": "Tout réduire",
     "reconnectOnReload": "Reconnecter au rechargement",
+    "sessionGraceSeconds": "Garder les sessions actives quand l'interface disparaît",
+    "sessionGraceSecondsDescription": "Durée (en secondes) pendant laquelle les sessions actives continuent de s'exécuter en arrière-plan après le rechargement ou le plantage de la fenêtre, avant d'être fermées. 0 les conserve jusqu'à la fermeture de l'application.",
     "singleWindow": "Mode fenêtre unique",
     "singleConnection": "Mode connexion unique",
     "warnOnClose": "Avertir à la fermeture",
@@ -623,6 +625,13 @@
         "showInThisTile": "Afficher dans cette tuile…",
         "showInThisTileAria": "Afficher la session dans cette tuile"
       }
+    },
+    "orphans": {
+      "title": "Orphelines (actives)",
+      "description": "Sessions en cours sans onglet ouvert. Adoptez-en une pour la rouvrir, ou fermez-la.",
+      "reapIn": "fermeture dans {{seconds}} s",
+      "adopt": "Adopter",
+      "close": "Fermer"
     },
     "sshLive": {
       "caption": "Sessions SSH actives",

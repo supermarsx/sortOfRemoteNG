@@ -40,7 +40,7 @@ const session = (
   }) as ConnectionSession;
 
 describe("buildWorkspaceSnapshot", () => {
-  it("records ids, order, active tab and backend id for connected SSH/RDP", () => {
+  it("records ids, order, active tab and backend id for connected adoptable protocols", () => {
     const snap = buildWorkspaceSnapshot({
       sessions: [
         session(),
@@ -49,7 +49,7 @@ describe("buildWorkspaceSnapshot", () => {
           protocol: "rdp",
           backendSessionId: "rdp-1",
         }),
-        session({ id: "tab-3", protocol: "telnet", backendSessionId: "t-1" }),
+        session({ id: "tab-3", protocol: "web", backendSessionId: "w-1" }),
         session({ id: "tab-4", status: "disconnected" }),
       ],
       activeSessionId: "tab-2",
@@ -63,7 +63,7 @@ describe("buildWorkspaceSnapshot", () => {
     ]);
     expect(snap.tabs[0].backendSessionId).toBe("backend-1");
     expect(snap.tabs[1].backendSessionId).toBe("rdp-1");
-    // Telnet cannot be adopted yet; disconnected tabs have no live transport.
+    // Web tabs have no adoptable backend session; disconnected tabs have no live transport.
     expect(snap.tabs[2].backendSessionId).toBeUndefined();
     expect(snap.tabs[3].backendSessionId).toBeUndefined();
     expect(snap.activeTabId).toBe("tab-2");

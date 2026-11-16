@@ -19,6 +19,18 @@ export interface LiveSessionDescriptor {
   /** Tab id the frontend bound to this backend session, when the registry knows it. */
   frontendSessionId?: string;
   connectionId?: string;
+  /** Display title from the unified registry (`user@host` or a label). */
+  title?: string;
+  /** Registry state: connected | detached | disconnected. */
+  state?: string;
+  /** Replay-ring position (ssh, telnet, serial) from the unified registry. */
+  buffer?: { generation: number; sequenceEnd: number };
+  /** Backend claim bookkeeping: who last claimed it and when the reaper acts. */
+  orphan?: {
+    claimed: boolean;
+    unclaimedForSecs: number;
+    reapInSecs: number | null;
+  };
 }
 
 /** The subset of a persisted tab the reconciler needs. */

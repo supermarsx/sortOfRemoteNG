@@ -13,6 +13,10 @@ import {
   type SerialPortSelectionMode,
 } from "../../types/protocols/serial";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
+import {
+  fetchOutputReplay,
+  ReplayDedupe,
+} from "../../services/session/outputReplay";
 import { shouldDisconnectOnUnmount } from "../../utils/session/closeIntent";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { SerialOutputStream, SerialSendQueue } from "./serialIo";
@@ -24,6 +28,10 @@ interface SerialOutputEvent {
   sessionId: string;
   data: string;
   text: string;
+  /** Replay-ring position of this chunk (absent on serial:echo / old builds). */
+  generation?: number;
+  sequenceStart?: number;
+  sequenceEnd?: number;
 }
 
 interface SerialErrorEvent {
@@ -241,6 +249,13 @@ export function useSerialSession(session: ConnectionSession) {
   const pendingOutputRef = useRef<Map<string, PendingSerialOutputBucket>>(
     new Map(),
   );
+  // Adoption replay: held/deduped live events, delivered through the effect's
+  // appendEventOutput once the ring snapshot has been written.
+  const replayRef = useRef(new ReplayDedupe<SerialOutputEvent>());
+  const deliverEventRef = useRef<((payload: SerialOutputEvent) => void) | null>(
+    null,
+  );
+  const [replayGap, setReplayGap] = useState(false);
 
   const updateSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
@@ -391,6 +406,36 @@ export function useSerialSession(session: ConnectionSession) {
         ).catch(() => null);
         if (generationRef.current !== generation) return;
         if (existing?.state === "connected") {
+          // Adopting a live session (reload / remount): replay the ring, then
+          // continue with live events deduped against what was replayed.
+          const replay = replayRef.current;
+          replay.begin();
+          let snapshot: Awaited<ReturnType<typeof fetchOutputReplay>> | null =
+            null;
+          let replayChunks: Uint8Array[] = [];
+          try {
+            snapshot = await fetchOutputReplay(
+              "serial_get_output_snapshot",
+              previousId,
+            );
+            replayChunks = snapshot.pages.map((page) =>
+              snapshot?.encoding === "base64"
+                ? decodeSerialEventData(page)
+                : new TextEncoder().encode(page),
+            );
+          } catch {
+            snapshot = null; // no replay available: adopt without history
+            replayChunks = [];
+          }
+          if (generationRef.current !== generation) {
+            replay.reset();
+            return;
+          }
+          const held = replay.finish(snapshot);
+          resetOutput();
+          for (const chunk of replayChunks) pushOutput(chunk);
+          for (const event of held) deliverEventRef.current?.(event);
+          setReplayGap(snapshot?.gap === true);
           markConnected(existing);
           return;
         }
@@ -418,7 +463,7 @@ export function useSerialSession(session: ConnectionSession) {
         if (generationRef.current === generation) markError(connectError);
       }
     },
-    [markConnected, markError],
+    [markConnected, markError, pushOutput, resetOutput],
   );
 
   // Declared before the main effect so its cleanup runs first on unmount.
@@ -517,6 +562,8 @@ export function useSerialSession(session: ConnectionSession) {
       }
     };
 
+    deliverEventRef.current = appendEventOutput;
+
     const start = async () => {
       const register = async (registration: Promise<UnlistenFn>) => {
         const unlisten = await registration;
@@ -531,14 +578,20 @@ export function useSerialSession(session: ConnectionSession) {
       try {
         if (
           !(await register(
-            listen<SerialOutputEvent>("serial:output", (event) =>
-              appendEventOutput(event.payload),
-            ),
+            listen<SerialOutputEvent>("serial:output", (event) => {
+              const payload = event.payload;
+              const deliver = replayRef.current.offer(payload, {
+                generation: payload?.generation,
+                sequenceEnd: payload?.sequenceEnd,
+              });
+              if (deliver !== null) appendEventOutput(deliver);
+            }),
           )) ||
           !(await register(
-            listen<SerialOutputEvent>("serial:echo", (event) =>
-              appendEventOutput(event.payload),
-            ),
+            listen<SerialOutputEvent>("serial:echo", (event) => {
+              const deliver = replayRef.current.offer(event.payload, undefined);
+              if (deliver !== null) appendEventOutput(deliver);
+            }),
           )) ||
           !(await register(
             listen<SerialErrorEvent>("serial:error", (event) => {
@@ -767,6 +820,7 @@ export function useSerialSession(session: ConnectionSession) {
     status,
     error,
     backendSessionId,
+    replayGap,
     settings,
     outputStream,
     /** Snapshot of retained output; prefer subscribing to `outputStream`. */

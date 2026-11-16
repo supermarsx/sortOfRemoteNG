@@ -19,6 +19,8 @@
     "expandAll": "全部展开",
     "collapseAll": "全部折叠",
     "reconnectOnReload": "重新加载时重新连接",
+    "sessionGraceSeconds": "界面消失后保持会话运行",
+    "sessionGraceSecondsDescription": "窗口重新加载或崩溃后，活动会话在被关闭前继续在后台运行的时间（秒）。0 表示保持到应用退出。",
     "singleWindow": "单窗口模式",
     "singleConnection": "单连接模式",
     "warnOnClose": "关闭时警告",
@@ -623,6 +625,13 @@
         "showInThisTile": "在此磁贴中显示…",
         "showInThisTileAria": "在此磁贴中显示会话"
       }
+    },
+    "orphans": {
+      "title": "孤立会话（运行中）",
+      "description": "没有打开标签页的运行中会话。接管后可重新打开，或将其关闭。",
+      "reapIn": "{{seconds}} 秒后关闭",
+      "adopt": "接管",
+      "close": "关闭"
     },
     "sshLive": {
       "caption": "实时 SSH 会话",

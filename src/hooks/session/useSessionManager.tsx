@@ -83,6 +83,7 @@ import { disconnectSynologySession } from "../../utils/session/synologySessionLi
 import { isSynologyFileConnection } from "../../types/protocols/synology";
 import { useNewToolTabFocus } from "./useNewToolTabFocus";
 import { useWorkspaceSnapshot } from "./useWorkspaceSnapshot";
+import { useSessionHostHeartbeat } from "./useSessionHostHeartbeat";
 import {
   connectionAdmission,
   MEMORY_UNAVAILABLE,
@@ -332,6 +333,9 @@ export const useSessionManager = () => {
       return layout ? { ...layout } : undefined;
     },
   });
+  // Claim live backend sessions with the host so only truly orphaned ones are
+  // reaped after the grace period; flags tabs whose session vanished.
+  useSessionHostHeartbeat();
   // Keep a ref to the latest state so timer callbacks can read current sessions
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -2775,7 +2779,11 @@ export const useSessionManager = () => {
         cleanupQuarantined ||
         (options?.adoptLive &&
           sessionData.backendSessionId &&
-          (restoredProtocol === "ssh" || restoredProtocol === "rdp"))
+          (restoredProtocol === "ssh" ||
+            restoredProtocol === "rdp" ||
+            restoredProtocol === "vnc" ||
+            restoredProtocol === "telnet" ||
+            restoredProtocol === "serial"))
           ? sessionData.backendSessionId
           : undefined,
       integration: isIntegrationConnectionProtocol(restoredProtocol)

@@ -19,6 +19,8 @@
     "expandAll": "すべて展開",
     "collapseAll": "すべて折りたたむ",
     "reconnectOnReload": "再読み込み時に再接続",
+    "sessionGraceSeconds": "UI が消えた後もセッションを維持する",
+    "sessionGraceSecondsDescription": "ウィンドウの再読み込みやクラッシュの後、アクティブなセッションを閉じるまでバックグラウンドで実行し続ける時間（秒）。0 にするとアプリが終了するまで維持します。",
     "singleWindow": "シングルウィンドウモード",
     "singleConnection": "単一接続モード",
     "warnOnClose": "閉じる時に警告",
@@ -623,6 +625,13 @@
         "showInThisTile": "このタイルに表示…",
         "showInThisTileAria": "このタイルにセッションを表示"
       }
+    },
+    "orphans": {
+      "title": "孤立 (稼働中)",
+      "description": "開いているタブがない実行中のセッションです。引き継いで再度開くか、閉じてください。",
+      "reapIn": "{{seconds}} 秒後に閉じます",
+      "adopt": "引き継ぐ",
+      "close": "閉じる"
     },
     "sshLive": {
       "caption": "稼働中の SSH セッション",

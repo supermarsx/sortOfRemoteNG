@@ -334,6 +334,17 @@ export const BEHAVIOR_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Behavior",
   },
   {
+    key: "sessionGraceSeconds",
+    label: "Keep sessions alive after the UI disappears",
+    labelKey: "connections.sessionGraceSeconds",
+    description:
+      "How long live sessions keep running in the background after the window reloads or crashes, before they are closed. 0 keeps them until the app exits.",
+    tags: ["grace", "orphan", "sessions", "reload", "keep alive", "timeout"],
+    synonyms: ["session grace", "orphaned sessions", "background sessions"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
     key: "enableWinrmTools",
     label: "Enable Windows Remote Management tools",
     description:

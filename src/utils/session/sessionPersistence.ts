@@ -510,8 +510,15 @@ export const serializePersistedConnectionSession = (
     // still-live session (the boot reconciler strips ids that are no longer
     // live). The id is an opaque handle, not a credential.
     backendSessionId:
-      (hasVpnRecoveryEvidence || session.status === "connected") &&
-      (session.protocol === "ssh" || session.protocol === "rdp")
+      ((hasVpnRecoveryEvidence || session.status === "connected") &&
+        (session.protocol === "ssh" || session.protocol === "rdp")) ||
+      // vnc/telnet/serial rehydrate from the unified live-session registry
+      // (replay ring / full refresh); they never carry VPN recovery evidence.
+      (!hasVpnRecoveryEvidence &&
+        session.status === "connected" &&
+        (session.protocol === "vnc" ||
+          session.protocol === "telnet" ||
+          session.protocol === "serial"))
         ? session.backendSessionId
         : undefined,
     shellId:

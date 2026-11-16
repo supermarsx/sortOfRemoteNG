@@ -80,6 +80,7 @@ export const defaultSettings: GlobalSettings = {
   singleWindowMode: false,
   singleConnectionMode: false,
   reconnectOnReload: true,
+  sessionGraceSeconds: 300,
   warnOnClose: true,
   warnOnExit: true,
   warnOnDetachClose: true,

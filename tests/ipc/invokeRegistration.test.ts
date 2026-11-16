@@ -1110,8 +1110,13 @@ describe("frontend invoke registrations", () => {
     // open string APIs still require behavioral contract tests.
     const expected = [
       "src/hooks/idrac/useIdracManager.ts: cmd",
+      // Perf-layer forwarding wrappers (stale-while-revalidate / namespace
+      // invalidation). Finite callers are checked above like useProxmox.ts;
+      // cachedInvoke only forwards its caller-supplied command to invoke.
+      "src/hooks/monitoring/useDashboard.ts: cmd",
       "src/hooks/protocol/useDocker.ts: cmd",
       "src/hooks/proxmox/useProxmox.ts: cmd",
+      "src/hooks/proxmox/useProxmoxManager.ts: cmd",
       "src/hooks/session/useSessionDetach.ts: command",
       "src/hooks/ssh/useYubiKey.ts: command",
       "src/hooks/sync/useBackupStatus.ts: command",
@@ -1119,6 +1124,7 @@ describe("frontend invoke registrations", () => {
       "src/hooks/updater/useUpdater.ts: command",
       "src/hooks/windows/useWinmgmtSession.ts: command",
       "src/utils/auth/trustStore.ts: command",
+      "src/utils/perf/cachedInvoke.ts: cmd",
       "src/utils/rdp/rdpBinaryIpcPreflight.ts: command",
       "src/utils/rdp/rdpFrameDeliveryChannel.ts: command",
       "src/utils/security/managementInvoke.ts: command",

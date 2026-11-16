@@ -625,6 +625,56 @@ describe("useVNCClient render activity", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("adopts a live VNC session after a full reload with a newer activity generation and a full refresh", async () => {
+    // The previous document already advanced the backend authority; the
+    // reloaded hook starts from generation 0 and must out-bid it.
+    authorities.set("live-vnc", {
+      active: false,
+      activityGeneration: 7,
+      deliveryEpoch: 3,
+    });
+    const activityResults: unknown[] = [];
+    queueResponse("set_vnc_session_activity", async (args) => {
+      // First claim (generation 1) is stale: authoritative generation returns.
+      activityResults.push(args);
+      return {
+        sessionId: String(args.sessionId),
+        active: false,
+        activityGeneration: 7,
+        deliveryEpoch: 3,
+        accepted: false,
+        refreshQueued: false,
+      };
+    });
+    renderHarness(
+      [
+        makeSession(1, {
+          backendSessionId: "live-vnc",
+          status: "connected",
+        }),
+      ],
+      true,
+    );
+    await flushAsyncWork(80);
+
+    // Adopted, never re-dialled or torn down.
+    expect(commandCalls("connect_vnc")).toHaveLength(0);
+    expect(commandCalls("disconnect_vnc")).toHaveLength(0);
+    expect(clients.get("vnc-frontend-1")?.backendSessionId).toBe("live-vnc");
+    const claims = commandCalls("set_vnc_session_activity").map(
+      ([, args]) => args as InvokeArgs,
+    );
+    expect(claims[0]).toMatchObject({ active: true, activityGeneration: 1 });
+    const accepted = claims[claims.length - 1];
+    expect(accepted).toMatchObject({ active: true, activityGeneration: 8 });
+    // The accepted claim opened a new delivery epoch (full refresh queued).
+    expect(authorities.get("live-vnc")).toMatchObject({
+      active: true,
+      activityGeneration: 8,
+      deliveryEpoch: 4,
+    });
+  });
+
   it("retires a definitively dead restored backend before replacing it", async () => {
     queueResponse("is_vnc_connected", () => false);
     renderHarness(

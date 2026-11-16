@@ -50,6 +50,10 @@ import {
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
 import { SshSessionsView } from "./SshSessionsView";
+import { OrphanedLiveSessions } from "./OrphanedLiveSessions";
+import { useOrphanedLiveSessions } from "../../../hooks/session/useOrphanedLiveSessions";
+import { generateId } from "../../../utils/core/id";
+import type { LiveSessionDescriptor } from "../../../services/session/reconcileWorkspace";
 import {
   BrowserSessionsView,
   type BrowserSessionsSubView,
@@ -1290,6 +1294,37 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
         ? "browser-journal"
         : view,
   });
+  const orphaned = useOrphanedLiveSessions(
+    isVisible && view === "sessions",
+    state.sessions,
+  );
+  const handleAdoptOrphan = useCallback(
+    (descriptor: LiveSessionDescriptor, connection: Connection) => {
+      // Rebuild a tab bound to the live backend session; the protocol hook
+      // re-adopts it (ring replay / full refresh / viewer attach).
+      const id = generateId();
+      dispatch({
+        type: "ADD_SESSION",
+        payload: {
+          id,
+          connectionId: connection.id,
+          name: connection.name,
+          status: "disconnected",
+          startTime: new Date(),
+          protocol: connection.protocol,
+          hostname: connection.hostname ?? descriptor.host ?? "",
+          backendSessionId: descriptor.backendSessionId,
+          reconnectAttempts: 0,
+          lifecycleRevision: 1,
+          lifecycleActorGeneration: 1,
+          lifecycleWriterId: "main",
+        },
+      });
+      onFocusSession?.(id);
+      void orphaned.refresh();
+    },
+    [dispatch, onFocusSession, orphaned],
+  );
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
   const sidebarGroupIdPrefix = useId();
 
@@ -1459,6 +1494,15 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             />
           )}
 
+          {view === "sessions" && (
+            <OrphanedLiveSessions
+              orphans={orphaned.orphans}
+              connections={connections}
+              error={orphaned.error}
+              onAdopt={handleAdoptOrphan}
+              onClose={orphaned.close}
+            />
+          )}
           {view === "sessions" && (
             <SessionsView
               mgr={mgr}

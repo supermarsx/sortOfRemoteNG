@@ -19,6 +19,8 @@
     "expandAll": "3xp4nd 411",
     "collapseAll": "C0114p53 411",
     "reconnectOnReload": "R3c0nn3c7 0n r3104d",
+    "sessionGraceSeconds": "K33p 535510n5 411v3 4f73r 7h3 UI d154pp34r5",
+    "sessionGraceSecondsDescription": "H0w 10n6 (53c0nd5) 11v3 535510n5 k33p runn1n6 1n 7h3 84ck6r0und 4f73r 7h3 w1nd0w r3104d5 0r cr45h35 83f0r3 7h3y 4r3 c1053d. 0 k33p5 7h3m un711 7h3 4pp 3x175.",
     "singleWindow": "51n613 w1nd0w m0d3",
     "singleConnection": "51n613 c0nn3c710n m0d3",
     "warnOnClose": "W4rn 0n c1053",
@@ -570,6 +572,13 @@
     "close": "C1053 535510n",
     "fullscreen": "Fu115cr33n",
     "exitFullscreen": "3x17 Fu115cr33n",
+    "orphans": {
+      "title": "0rph4n3d (11v3)",
+      "description": "Runn1n6 535510n5 w17h n0 0p3n 748. 4d0p7 0n3 70 r30p3n 17, 0r c1053 17.",
+      "reapIn": "c10535 1n {{seconds}}5",
+      "adopt": "4d0p7",
+      "close": "C1053"
+    },
     "sshLive": {
       "caption": "11v3 SSH 535510n5",
       "count": "{{count}} SSH 535510n(5)",

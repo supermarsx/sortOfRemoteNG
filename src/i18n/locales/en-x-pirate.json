@@ -19,6 +19,8 @@
     "expandAll": "Expand All",
     "collapseAll": "Collapse All",
     "reconnectOnReload": "Reconnect on reload",
+    "sessionGraceSeconds": "Keep sessions alive after the UI disappears",
+    "sessionGraceSecondsDescription": "How long (seconds) live sessions keep running in the background after the window reloads or crashes before they are closed. 0 keeps them until the app exits.",
     "singleWindow": "Single window mode",
     "singleConnection": "Single voyage mode",
     "warnOnClose": "Warn on batten down",
@@ -570,6 +572,13 @@
     "close": "Batten down Session",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen",
+    "orphans": {
+      "title": "Orphaned (live)",
+      "description": "Running sessions with nay unfurl tab. Adopt one to reopen it, or batten down it.",
+      "reapIn": "closes in {{seconds}}s",
+      "adopt": "Adopt",
+      "close": "Batten down"
+    },
     "sshLive": {
       "caption": "Live SSH sessions",
       "count": "{{count}} SSH session(s)",

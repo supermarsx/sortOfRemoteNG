@@ -176,6 +176,12 @@ export interface GlobalSettings {
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
   reconnectOnReload: boolean;
+  /**
+   * Seconds the backend keeps a session alive after no window claims it any
+   * more (frontend crash/reload grace). 0 disables the orphan reaper; the
+   * backend clamps other values to 30..86400. Default 300.
+   */
+  sessionGraceSeconds: number;
   /** @deprecated Ignored legacy import field; browser form history is disabled. */
   enableAutocomplete: boolean;
   warnOnClose: boolean;

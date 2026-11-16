@@ -5,6 +5,10 @@ import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { bytesToHex } from "../../utils/protocols/rawSocket/codecs";
+import {
+  fetchOutputReplay,
+  ReplayDedupe,
+} from "../../services/session/outputReplay";
 import { shouldDisconnectOnUnmount } from "../../utils/session/closeIntent";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 
@@ -15,6 +19,10 @@ interface TelnetOutputEvent {
   session_id: string;
   client_correlation_id?: string | null;
   data: string;
+  /** Replay-ring position of this chunk (absent on old backends). */
+  generation?: number;
+  sequence_start?: number;
+  sequence_end?: number;
 }
 
 interface TelnetErrorEvent {
@@ -84,6 +92,9 @@ export function useTelnetSession(session: ConnectionSession) {
     null,
   );
   const [reconnectGeneration, setReconnectGeneration] = useState(0);
+  // Set when the replay ring lost output while the UI was away.
+  const [replayGap, setReplayGap] = useState(false);
+  const replayRef = useRef(new ReplayDedupe<TelnetOutputEvent>());
   const insecureApproved = approvedSessionId === session.id;
 
   const sessionRef = useRef(session);
@@ -149,6 +160,35 @@ export function useTelnetSession(session: ConnectionSession) {
         }).catch(() => false);
         if (generationRef.current !== generation) return;
         if (alive) {
+          // Adopting a live session (reload / remount): replay the ring, then
+          // continue with live events deduped against what was replayed.
+          // Live events that arrive meanwhile are held, never reordered.
+          const replay = replayRef.current;
+          replay.begin();
+          let snapshot: Awaited<ReturnType<typeof fetchOutputReplay>> | null =
+            null;
+          try {
+            snapshot = await fetchOutputReplay(
+              "telnet_get_output_snapshot",
+              previousId,
+            );
+          } catch {
+            snapshot = null; // no replay available: adopt without history
+          }
+          if (generationRef.current !== generation) {
+            replay.reset();
+            return;
+          }
+          const held = replay.finish(snapshot);
+          let chunks: readonly string[] = [];
+          for (const page of snapshot?.pages ?? []) {
+            chunks = appendBoundedOutput(chunks, page);
+          }
+          for (const event of held) {
+            chunks = appendBoundedOutput(chunks, event.data);
+          }
+          setOutputChunks(chunks);
+          setReplayGap(snapshot?.gap === true);
           markConnected(previousId);
           return;
         }
@@ -267,8 +307,13 @@ export function useTelnetSession(session: ConnectionSession) {
             )
           )
             return;
+          const deliver = replayRef.current.offer(event.payload, {
+            generation: event.payload.generation,
+            sequenceEnd: event.payload.sequence_end,
+          });
+          if (deliver === null) return;
           setOutputChunks((current) =>
-            appendBoundedOutput(current, event.payload.data),
+            appendBoundedOutput(current, deliver.data),
           );
         },
       );
@@ -471,6 +516,7 @@ export function useTelnetSession(session: ConnectionSession) {
     error,
     backendSessionId,
     outputChunks,
+    replayGap,
     sendInput,
     resize,
     sendBreak,

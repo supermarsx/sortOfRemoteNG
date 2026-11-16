@@ -19,6 +19,8 @@
     "expandAll": "Expandir todo",
     "collapseAll": "Contraer todo",
     "reconnectOnReload": "Reconectar al recargar",
+    "sessionGraceSeconds": "Mantener las sesiones activas cuando desaparece la interfaz",
+    "sessionGraceSecondsDescription": "Cuánto tiempo (en segundos) siguen ejecutándose las sesiones activas en segundo plano tras recargarse o bloquearse la ventana antes de cerrarse. 0 las mantiene hasta que se cierre la aplicación.",
     "singleWindow": "Modo de ventana única",
     "singleConnection": "Modo de conexión única",
     "warnOnClose": "Avisar al cerrar",
@@ -623,6 +625,13 @@
         "showInThisTile": "Mostrar en este mosaico…",
         "showInThisTileAria": "Mostrar sesión en este mosaico"
       }
+    },
+    "orphans": {
+      "title": "Huérfanas (activas)",
+      "description": "Sesiones en ejecución sin pestaña abierta. Adopta una para reabrirla o ciérrala.",
+      "reapIn": "se cierra en {{seconds}} s",
+      "adopt": "Adoptar",
+      "close": "Cerrar"
     },
     "sshLive": {
       "caption": "Sesiones SSH activas",

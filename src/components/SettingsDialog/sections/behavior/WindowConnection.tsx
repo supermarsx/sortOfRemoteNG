@@ -3,6 +3,7 @@ import React from "react";
 import { AppWindow, Link, Monitor, RefreshCw } from "lucide-react";
 import {
   Card,
+  NumberRow,
   SectionHeader,
   Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
@@ -41,6 +42,25 @@ const WindowConnection: React.FC<
         description="Re-establish active sessions when the window reloads"
         settingKey="reconnectOnReload"
         infoTooltip="Automatically reconnect to all previously active sessions when the application window is reloaded or restarted."
+      />
+      <NumberRow
+        label={t("connections.sessionGraceSeconds")}
+        description={t("connections.sessionGraceSecondsDescription")}
+        icon={<RefreshCw size={16} />}
+        value={s.sessionGraceSeconds ?? 300}
+        min={0}
+        max={86400}
+        step={30}
+        unit="s"
+        onChange={(v) =>
+          u({
+            sessionGraceSeconds: Number.isFinite(v)
+              ? Math.min(86400, Math.max(0, Math.floor(v)))
+              : 300,
+          })
+        }
+        settingKey="sessionGraceSeconds"
+        infoTooltip={t("connections.sessionGraceSecondsDescription")}
       />
       <Toggle
         checked={s.enableWinrmTools}

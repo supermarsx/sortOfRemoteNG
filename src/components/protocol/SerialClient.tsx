@@ -243,6 +243,15 @@ export function SerialClient({ session }: { session: ConnectionSession }) {
         </div>
       ) : null}
 
+      {model.replayGap ? (
+        <div
+          className="border-b border-warning/40 bg-warning/10 px-3 py-1 text-xs"
+          role="status"
+        >
+          Some output was dropped while the UI was away.
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 p-3">
         <div
           ref={containerRef}

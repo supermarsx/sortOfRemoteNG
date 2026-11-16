@@ -146,6 +146,14 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
           {model.error}
         </div>
       ) : null}
+      {model.replayGap ? (
+        <div
+          className="border-b border-warning/40 bg-warning/10 px-3 py-1 text-xs"
+          role="status"
+        >
+          Some output was dropped while the UI was away.
+        </div>
+      ) : null}
       {model.requiresInsecureApproval ? (
         <div
           className="border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm"

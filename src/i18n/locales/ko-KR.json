@@ -19,6 +19,8 @@
     "expandAll": "모두 펼치기",
     "collapseAll": "모두 접기",
     "reconnectOnReload": "다시 로드 시 재연결",
+    "sessionGraceSeconds": "UI가 사라진 후에도 세션 유지",
+    "sessionGraceSecondsDescription": "창이 다시 로드되거나 충돌한 후 활성 세션을 닫기 전까지 백그라운드에서 계속 실행하는 시간(초)입니다. 0이면 앱이 종료될 때까지 유지합니다.",
     "singleWindow": "단일 창 모드",
     "singleConnection": "단일 연결 모드",
     "warnOnClose": "닫을 때 경고",
@@ -623,6 +625,13 @@
         "showInThisTile": "이 타일에 표시…",
         "showInThisTileAria": "이 타일에 세션 표시"
       }
+    },
+    "orphans": {
+      "title": "고아 세션 (실행 중)",
+      "description": "열린 탭이 없는 실행 중인 세션입니다. 다시 열려면 가져오고, 아니면 닫으세요.",
+      "reapIn": "{{seconds}}초 후 닫힘",
+      "adopt": "가져오기",
+      "close": "닫기"
     },
     "sshLive": {
       "caption": "실시간 SSH 세션",

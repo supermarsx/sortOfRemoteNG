@@ -1,10 +1,10 @@
 /**
  * Frontend adapter that lists backend sessions that are alive right now.
  *
- * Today it composes the per-protocol list commands that already exist
- * (`list_sessions` for SSH, `list_rdp_sessions` for RDP). A unified backend
- * registry command can be plugged in later through `registerLiveSessionSource`
- * without touching callers.
+ * Prefers the unified `list_live_sessions` backend command (ssh, rdp, vnc,
+ * telnet, serial in one call) and falls back to the per-protocol list commands
+ * (`list_sessions`, `list_rdp_sessions`) when it is unavailable. Extra sources
+ * can still be plugged in through `registerLiveSessionSource`.
  *
  * Only non-secret fields are copied out: the SSH list payload carries the full
  * connection config (including credentials) over IPC, and none of that may
@@ -77,20 +77,92 @@ export const listLiveRdpSessions: LiveSessionSource = async () => {
 };
 
 /**
+ * Unified backend registry (`list_live_sessions`): one call covers
+ * ssh/rdp/vnc/telnet/serial. The payload carries no credentials and no
+ * terminal/framebuffer data, but only the fields below are copied anyway.
+ * Returns `null` when the command is unavailable (old backend / mocked
+ * invoke) so the caller can fall back to the per-protocol list commands.
+ */
+export const listLiveSessionsFromRegistry = async (): Promise<
+  LiveSessionDescriptor[] | null
+> => {
+  const raw = await invoke<unknown>("list_live_sessions");
+  if (!Array.isArray(raw)) return null;
+  const result: LiveSessionDescriptor[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    const protocol = str(entry.protocol);
+    const id = str(entry.backendSessionId);
+    if (!protocol || !id) continue;
+    const buffer =
+      entry.buffer && typeof entry.buffer === "object"
+        ? (entry.buffer as Record<string, unknown>)
+        : null;
+    result.push({
+      protocol,
+      backendSessionId: id,
+      // "detached" (RDP viewer gone) is still a live, adoptable session.
+      alive: entry.state !== "disconnected",
+      host: str(entry.target),
+      port: num(entry.port),
+      username: str(entry.username),
+      frontendSessionId: str(entry.frontendSessionId),
+      connectionId: str(entry.connectionId),
+      title: str(entry.title),
+      state: str(entry.state),
+      ...(entry.orphan && typeof entry.orphan === "object"
+        ? {
+            orphan: {
+              claimed:
+                (entry.orphan as Record<string, unknown>).claimed === true,
+              unclaimedForSecs:
+                num(
+                  (entry.orphan as Record<string, unknown>).unclaimedForSecs,
+                ) ?? 0,
+              reapInSecs:
+                num((entry.orphan as Record<string, unknown>).reapInSecs) ??
+                null,
+            },
+          }
+        : {}),
+      ...(buffer
+        ? {
+            buffer: {
+              generation: num(buffer.generation) ?? 0,
+              sequenceEnd: num(buffer.sequenceEnd) ?? 0,
+            },
+          }
+        : {}),
+    });
+  }
+  return result;
+};
+
+/**
  * Collect every live session. A failing source contributes nothing: boot must
  * never block on a backend that is not ready, and "unknown" is treated as
  * "not live" (the safe direction is a normal reconnect).
+ *
+ * The unified `list_live_sessions` is tried first and, when it answers,
+ * replaces the per-protocol commands (one IPC call instead of several).
  *
  * Sources are queried sequentially (concurrent first-time dynamic imports of
  * the Tauri core can yield undefined under Vitest).
  */
 export async function listLiveSessions(): Promise<LiveSessionDescriptor[]> {
+  const all: LiveSessionDescriptor[] = [];
+  let unified: LiveSessionDescriptor[] | null = null;
+  try {
+    unified = await listLiveSessionsFromRegistry();
+  } catch {
+    unified = null;
+  }
   const sources: LiveSessionSource[] = [
-    listLiveSshSessions,
-    listLiveRdpSessions,
+    ...(unified ? [] : [listLiveSshSessions, listLiveRdpSessions]),
     ...extraSources,
   ];
-  const all: LiveSessionDescriptor[] = [];
+  if (unified) all.push(...unified);
   for (const source of sources) {
     try {
       all.push(...(await source()));

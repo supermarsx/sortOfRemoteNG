@@ -1002,6 +1002,59 @@ describe("RDPClient", () => {
       view.unmount();
     });
 
+    it("re-adopts a live session after a full reload with a FRESH frame channel even though the backend still reports a viewer attached", async () => {
+      const implementation = mockInvoke.getMockImplementation()!;
+      const retained = { ...mockSession, backendSessionId: "live-actor" };
+      // The backend never noticed the dead webview channel: viewerAttached
+      // stays true and the session is listed as connected.
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) => {
+          if (command === "list_rdp_sessions")
+            return [
+              {
+                id: "live-actor",
+                connectionId: mockSession.connectionId,
+                connected: true,
+                viewerAttached: true,
+              },
+            ];
+          if (command === "attach_rdp_session")
+            return {
+              id: (args as { sessionId: string }).sessionId,
+              desktopWidth: 1280,
+              desktopHeight: 720,
+              host: mockConnection.hostname,
+              port: mockConnection.port,
+            };
+          return implementation(command, args);
+        },
+      );
+      const view = renderHook(() => useRDPClient(retained), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(view.result.current.connectionStatus).toBe("connected"),
+      );
+      // The reloaded document attaches with a brand-new frame channel (the
+      // backend queues the full-desktop sync for it) and never dials or
+      // disconnects.
+      const attaches = mockInvoke.mock.calls.filter(
+        ([command]) => command === "attach_rdp_session",
+      );
+      expect(attaches).toHaveLength(1);
+      expect(attaches[0][1]).toEqual({
+        sessionId: "live-actor",
+        frameChannel: expect.anything(),
+      });
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_rdp"),
+      ).toBe(false);
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "disconnect_rdp"),
+      ).toBe(false);
+      view.unmount();
+    });
+
     it("dials a new actor when its previous actor ended without adopting a same-connection peer", async () => {
       const implementation = mockInvoke.getMockImplementation()!;
       mockInvoke.mockImplementation(

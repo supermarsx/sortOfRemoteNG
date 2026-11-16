@@ -27,7 +27,13 @@ const MAX_TEXT_CHARS = 512;
 const MAX_HOST_CHARS = 2_048;
 
 /** Protocols whose backend sessions can be re-adopted after a reload today. */
-export const ADOPTABLE_PROTOCOLS: ReadonlySet<string> = new Set(["ssh", "rdp"]);
+export const ADOPTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
+  "ssh",
+  "rdp",
+  "vnc",
+  "telnet",
+  "serial",
+]);
 
 export interface WorkspaceSnapshotTab {
   tabId: string;
