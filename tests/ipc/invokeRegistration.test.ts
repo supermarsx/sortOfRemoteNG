@@ -1123,6 +1123,11 @@ describe("frontend invoke registrations", () => {
       "src/hooks/sync/useWindowsBackup.ts: cmd",
       "src/hooks/updater/useUpdater.ts: command",
       "src/hooks/windows/useWinmgmtSession.ts: command",
+      // Session replay/reaper forwarders: orphanSessions maps a fixed protocol
+      // table to close commands and outputReplay takes a typed snapshot-command
+      // union from its finite serial/telnet callers.
+      "src/services/session/orphanSessions.ts: command",
+      "src/services/session/outputReplay.ts: command",
       "src/utils/auth/trustStore.ts: command",
       "src/utils/perf/cachedInvoke.ts: cmd",
       "src/utils/rdp/rdpBinaryIpcPreflight.ts: command",
