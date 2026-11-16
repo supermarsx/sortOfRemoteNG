@@ -506,8 +506,11 @@ export const serializePersistedConnectionSession = (
     hostname: session.hostname,
     // Do not claim that a live transport survives a renderer reload.
     status: "disconnected",
+    // A connected SSH/RDP tab records its backend id so a reload can adopt the
+    // still-live session (the boot reconciler strips ids that are no longer
+    // live). The id is an opaque handle, not a credential.
     backendSessionId:
-      hasVpnRecoveryEvidence &&
+      (hasVpnRecoveryEvidence || session.status === "connected") &&
       (session.protocol === "ssh" || session.protocol === "rdp")
         ? session.backendSessionId
         : undefined,

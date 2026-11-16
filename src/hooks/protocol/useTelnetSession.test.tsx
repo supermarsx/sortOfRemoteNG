@@ -33,6 +33,10 @@ vi.mock("../../contexts/useConnections", () => ({
   useConnections: () => mocks.useConnections(),
 }));
 
+import {
+  markUserClose,
+  resetCloseIntentForTests,
+} from "../../utils/session/closeIntent";
 import { useTelnetSession } from "./useTelnetSession";
 
 const connection: Connection = {
@@ -210,5 +214,51 @@ describe("useTelnetSession", () => {
       "disconnect_telnet",
       expect.anything(),
     );
+  });
+
+  describe("unmount versus user close", () => {
+    const mountConnected = async () => {
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === "is_telnet_connected") return Promise.resolve(true);
+        return Promise.resolve(undefined);
+      });
+      const view = renderHook(() =>
+        useTelnetSession(
+          createSession({
+            status: "connected",
+            backendSessionId: "backend-telnet-live",
+          }),
+        ),
+      );
+      await waitFor(() =>
+        expect(view.result.current.status).toBe("approval-required"),
+      );
+      act(() => {
+        view.result.current.approveInsecureTransport();
+      });
+      await waitFor(() => expect(view.result.current.status).toBe("connected"));
+      return view;
+    };
+
+    it("keeps a healthy session alive when the component merely unmounts", async () => {
+      resetCloseIntentForTests();
+      const { unmount } = await mountConnected();
+      unmount();
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "disconnect_telnet",
+        expect.anything(),
+      );
+    });
+
+    it("disconnects on unmount once the user closed the session", async () => {
+      resetCloseIntentForTests();
+      const { unmount } = await mountConnected();
+      markUserClose("frontend-telnet-1");
+      unmount();
+      expect(mocks.invoke).toHaveBeenCalledWith("disconnect_telnet", {
+        sessionId: "backend-telnet-live",
+      });
+      resetCloseIntentForTests();
+    });
   });
 });

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { markUserClose } from "../utils/session/closeIntent";
 import {
   DatabaseManager,
   type DatabaseDataTarget,
@@ -1010,6 +1011,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             break;
           }
           case "REMOVE_SESSION": {
+            // Removal is the authoritative "session is over" signal that lets
+            // protocol hooks disconnect on unmount (vs. plain remounts).
+            markUserClose(action.payload);
             settingsManager.logAction(
               "info",
               "Session removed",

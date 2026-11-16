@@ -24,6 +24,10 @@ vi.mock("../../src/utils/core/debugLogger", () => ({
 }));
 
 import {
+  markUserClose,
+  resetCloseIntentForTests,
+} from "../../src/utils/session/closeIntent";
+import {
   useVNCClient,
   VNC_ACTIVITY_MAX_CONCURRENCY,
   VNC_CONNECT_MAX_CONCURRENCY,
@@ -1566,6 +1570,7 @@ describe("useVNCClient render activity", () => {
       preventDefault: vi.fn(),
     } as unknown as React.KeyboardEvent);
     await flushAsyncWork();
+    markUserClose("vnc-frontend-1"); // a real user close, not a remount
     harness.view.unmount();
     await flushAsyncWork();
 
@@ -1596,6 +1601,7 @@ describe("useVNCClient render activity", () => {
 
     clickCanvas(client);
     await flushAsyncWork();
+    markUserClose("vnc-frontend-1"); // a real user close, not a remount
     harness.view.unmount();
     await flushAsyncWork();
     await act(async () => vi.advanceTimersByTime(100));
@@ -1640,6 +1646,7 @@ describe("useVNCClient render activity", () => {
     expect(deliveryCalls()).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
 
+    markUserClose("vnc-frontend-1"); // a real user close, not a remount
     harness.view.unmount();
     await flushAsyncWork();
     expect(commandCalls("disconnect_vnc")).toEqual([
@@ -1693,6 +1700,15 @@ describe("useVNCClient render activity", () => {
     expect(vi.getTimerCount()).toBe(1);
   });
 
+  it("keeps the native session alive on a plain unmount (remount/HMR)", async () => {
+    resetCloseIntentForTests();
+    const harness = renderHarness([makeSession()], true);
+    await flushAsyncWork();
+    harness.view.unmount();
+    await flushAsyncWork();
+    expect(commandCalls("disconnect_vnc")).toEqual([]);
+  });
+
   it("disconnects exactly once on actual unmount and ignores post-unmount polls", async () => {
     const poll = deferred<PollPayload>();
     queueResponse("get_vnc_session_stats", () => poll.promise);
@@ -1700,6 +1716,7 @@ describe("useVNCClient render activity", () => {
     await flushAsyncWork();
     const dispatchCount = mocks.dispatch.mock.calls.length;
 
+    markUserClose("vnc-frontend-1"); // a real user close, not a remount
     harness.view.unmount();
     await flushAsyncWork();
     expect(commandCalls("disconnect_vnc")).toEqual([

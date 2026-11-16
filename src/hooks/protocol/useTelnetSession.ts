@@ -5,14 +5,11 @@ import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { bytesToHex } from "../../utils/protocols/rawSocket/codecs";
+import { shouldDisconnectOnUnmount } from "../../utils/session/closeIntent";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 
 type TelnetStatus =
-  | "approval-required"
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "error";
+  "approval-required" | "connecting" | "connected" | "disconnected" | "error";
 
 interface TelnetOutputEvent {
   session_id: string;
@@ -227,6 +224,15 @@ export function useTelnetSession(session: ConnectionSession) {
     [markConnected, markError, updateSession],
   );
 
+  // Declared before the main effect so its cleanup runs first on unmount.
+  const unmountingRef = useRef(false);
+  useEffect(() => {
+    unmountingRef.current = false;
+    return () => {
+      unmountingRef.current = true;
+    };
+  }, []);
+
   useEffect(() => {
     const generation = ++generationRef.current;
     const unlisteners: UnlistenFn[] = [];
@@ -363,7 +369,12 @@ export function useTelnetSession(session: ConnectionSession) {
       unlisteners.forEach((unlisten) => unlisten());
       const sessionId = backendRef.current;
       backendRef.current = null;
-      if (sessionId) {
+      // A plain unmount (Fast Refresh, tab remount) must not kill a healthy
+      // session: the next mount re-adopts session.backendSessionId. Only a
+      // user close, or a dependency change (reconnect), disconnects.
+      const keepAlive =
+        unmountingRef.current && !shouldDisconnectOnUnmount(session.id);
+      if (sessionId && !keepAlive) {
         void invoke("disconnect_telnet", { sessionId }).catch(() => {});
       }
     };

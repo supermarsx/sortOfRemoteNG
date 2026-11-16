@@ -13,6 +13,7 @@ import {
   type SerialPortSelectionMode,
 } from "../../types/protocols/serial";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
+import { shouldDisconnectOnUnmount } from "../../utils/session/closeIntent";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { SerialOutputStream, SerialSendQueue } from "./serialIo";
 
@@ -420,6 +421,15 @@ export function useSerialSession(session: ConnectionSession) {
     [markConnected, markError],
   );
 
+  // Declared before the main effect so its cleanup runs first on unmount.
+  const unmountingRef = useRef(false);
+  useEffect(() => {
+    unmountingRef.current = false;
+    return () => {
+      unmountingRef.current = true;
+    };
+  }, []);
+
   useEffect(() => {
     const generation = ++generationRef.current;
     const unlisteners: UnlistenFn[] = [];
@@ -634,7 +644,12 @@ export function useSerialSession(session: ConnectionSession) {
       pendingOutput.clear();
       const sessionId = backendRef.current;
       backendRef.current = null;
-      if (sessionId) {
+      // A plain unmount (Fast Refresh, tab remount) must not kill a healthy
+      // session: the next mount re-adopts session.backendSessionId. Only a
+      // user close, or a dependency change, disconnects.
+      const keepAlive =
+        unmountingRef.current && !shouldDisconnectOnUnmount(session.id);
+      if (sessionId && !keepAlive) {
         void invoke("serial_disconnect", { sessionId }).catch(() => {});
       }
     };

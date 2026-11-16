@@ -26,6 +26,15 @@ import {
   type PersistedConnectionSession,
 } from "../../utils/session/sessionPersistence";
 import { hasSessionVpnCleanupQuarantine } from "../../utils/session/sessionLifecycle";
+import { listLiveSessions } from "../../services/session/liveSessionRegistry";
+import {
+  planBootRestore,
+  snapshotToRows,
+} from "../../services/session/bootRestorePlan";
+import {
+  isSnapshotFresh,
+  loadWorkspaceSnapshot,
+} from "../../services/session/workspaceSnapshot";
 
 import { SAFE_MODE_KEY } from "../../components/app/CriticalErrorScreen";
 
@@ -72,6 +81,7 @@ interface Options {
   restoreSession?: (
     sessionData: PersistedConnectionSession,
     connection: Connection,
+    options?: { adoptLive?: boolean },
   ) => Promise<void>;
   setShowDatabasePanel: (value: boolean) => void;
 }
@@ -436,7 +446,26 @@ export const useAppLifecycle = ({
       isInitialized &&
       state.connections.length > 0
     ) {
-      const savedSessions = sessionStorage.getItem(ACTIVE_SESSIONS_KEY);
+      let savedSessions = sessionStorage.getItem(ACTIVE_SESSIONS_KEY);
+      // sessionStorage dies with the window. When it is empty, a fresh durable
+      // workspace snapshot may still describe backend sessions that outlived a
+      // webview recreation; those (and only those) are adopted.
+      let fromDurableSnapshot = false;
+      if (
+        !savedSessions &&
+        !hasReconnected.current &&
+        !restoreInProgressRef.current
+      ) {
+        const durable = loadWorkspaceSnapshot();
+        if (
+          durable &&
+          isSnapshotFresh(durable, Date.now()) &&
+          durable.tabs.some((tab) => tab.backendSessionId)
+        ) {
+          savedSessions = JSON.stringify(snapshotToRows(durable));
+          fromDurableSnapshot = true;
+        }
+      }
       if (
         !savedSessions ||
         hasReconnected.current ||
@@ -447,6 +476,8 @@ export const useAppLifecycle = ({
 
       let cancelled = false;
       restoreInProgressRef.current = true;
+      // Tab ids whose backend session the boot reconciler confirmed alive.
+      const adoptedTabIds = new Set<string>();
 
       const scheduleRestore = (
         sessionData: PersistedConnectionSession,
@@ -474,7 +505,9 @@ export const useAppLifecycle = ({
                 throw new Error("Session restoration was cancelled.");
               }
               if (restoreSession) {
-                await restoreSession(sessionData, connection);
+                await restoreSession(sessionData, connection, {
+                  adoptLive: adoptedTabIds.has(sessionData.id),
+                });
                 return;
               }
               if (hasSessionVpnCleanupQuarantine(sessionData)) {
@@ -514,8 +547,38 @@ export const useAppLifecycle = ({
           const retryRows: PersistedConnectionSession[] = [];
           const candidates: Array<{
             sessionData: PersistedConnectionSession;
+            /** Row exactly as persisted; retries keep its ownership metadata. */
+            original: PersistedConnectionSession;
             connection: Connection;
           }> = [];
+
+          // Reconcile persisted tabs against backend sessions that are still
+          // alive: live ones keep their backend id (adopt), dead ones lose it
+          // (redial as before). An unreadable backend means "not live".
+          const preParsed: PersistedConnectionSession[] = [];
+          for (const rawSession of rawSessions) {
+            const parsed = parsePersistedConnectionSession(rawSession);
+            if (parsed.valid) preParsed.push(parsed.session);
+          }
+          const wantedActiveTabId = loadWorkspaceSnapshot()?.activeTabId;
+          const bootPlan = planBootRestore({
+            rows: preParsed,
+            activeTabId: wantedActiveTabId,
+            live: await listLiveSessions(),
+            reconnectOnReload: true,
+            adoptLiveSessions:
+              (settings as { adoptLiveSessionsOnReload?: boolean })
+                .adoptLiveSessionsOnReload !== false,
+            isQuarantined: hasSessionVpnCleanupQuarantine,
+            adoptOnly: fromDurableSnapshot,
+          });
+          bootPlan.adoptedTabIds.forEach((id) => adoptedTabIds.add(id));
+          const plannedRows = new Map(
+            bootPlan.rows.map((row) => [row.id, row]),
+          );
+          if (cancelled || !mountedRef.current) {
+            return;
+          }
 
           rawSessions.forEach((rawSession, index) => {
             const parsed = parsePersistedConnectionSession(rawSession);
@@ -532,7 +595,12 @@ export const useAppLifecycle = ({
               return;
             }
 
-            const sessionData = parsed.session;
+            const plannedRow = plannedRows.get(parsed.session.id);
+            if (!plannedRow && fromDurableSnapshot) {
+              // Durable recovery restores only adoptable live sessions.
+              return;
+            }
+            const sessionData = plannedRow ?? parsed.session;
             const connection = state.connections.find(
               (candidate) => candidate.id === sessionData.connectionId,
             );
@@ -540,12 +608,16 @@ export const useAppLifecycle = ({
               !connection ||
               reconnectingSessions.current.has(sessionData.id)
             ) {
-              retryRows.push(sessionData);
+              retryRows.push(parsed.session);
               return;
             }
 
             reconnectingSessions.current.add(sessionData.id);
-            candidates.push({ sessionData, connection });
+            candidates.push({
+              sessionData,
+              original: parsed.session,
+              connection,
+            });
           });
 
           const outcomes: PromiseSettledResult<void>[] = [];
@@ -568,12 +640,33 @@ export const useAppLifecycle = ({
             return;
           }
 
+          // Re-activate the tab that was active before the reload. Restoring
+          // an already-restored session id only focuses it.
+          if (
+            restoreSession &&
+            wantedActiveTabId &&
+            bootPlan.activeTabId === wantedActiveTabId
+          ) {
+            const activeIndex = candidates.findIndex(
+              ({ sessionData }) => sessionData.id === bootPlan.activeTabId,
+            );
+            if (
+              activeIndex >= 0 &&
+              outcomes[activeIndex]?.status === "fulfilled"
+            ) {
+              const { sessionData, connection } = candidates[activeIndex];
+              await restoreSession(sessionData, connection).catch(
+                () => undefined,
+              );
+            }
+          }
+
           outcomes.forEach((outcome, index) => {
             if (outcome.status === "fulfilled") {
               return;
             }
             const failed = candidates[index].sessionData;
-            retryRows.push(failed);
+            retryRows.push(candidates[index].original);
             console.error(
               `Failed to restore session "${failed.name}" (${failed.id}):`,
               "reconnection failed",

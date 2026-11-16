@@ -12,6 +12,7 @@ import type { ConnectionSession } from "../../types/connection/connection";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { debugLog } from "../../utils/core/debugLogger";
 import { dispatchVncPointerClick } from "../../utils/session/canvasCoordinates";
+import { shouldDisconnectOnUnmount } from "../../utils/session/closeIntent";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useSessionFullscreen } from "../session/useSessionFullscreen";
 import { VncAdmissionController } from "./vncAdmissionController";
@@ -1290,7 +1291,12 @@ export function useVNCClient(session: ConnectionSession) {
         backendRef.current = null;
         backendOwnerRef.current = null;
         sessionInfoRef.current = null;
-        if (sessionId) {
+        // Plain unmounts (Fast Refresh, tab remount) keep the native session
+        // alive; the next mount re-adopts session.backendSessionId. Only a
+        // user close marks the session for teardown.
+        if (sessionId && !shouldDisconnectOnUnmount(sessionRef.current.id)) {
+          void releasePressedInput(sessionId).catch(() => undefined);
+        } else if (sessionId) {
           void (async () => {
             await releasePressedInput(sessionId).catch(() => undefined);
             await requestBackendDisconnect(sessionId).catch(() => undefined);

@@ -82,6 +82,7 @@ import { recordForcedSessionCleanupEvidence } from "../../utils/session/forcedSe
 import { disconnectSynologySession } from "../../utils/session/synologySessionLifecycle";
 import { isSynologyFileConnection } from "../../types/protocols/synology";
 import { useNewToolTabFocus } from "./useNewToolTabFocus";
+import { useWorkspaceSnapshot } from "./useWorkspaceSnapshot";
 import {
   connectionAdmission,
   MEMORY_UNAVAILABLE,
@@ -322,6 +323,15 @@ export const useSessionManager = () => {
   );
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
+  // Durable (non-secret) workspace snapshot for reload/crash recovery.
+  useWorkspaceSnapshot({
+    sessions: state.sessions,
+    activeSessionId,
+    getLayout: () => {
+      const layout = settingsManager.getSettings().tabLayoutState;
+      return layout ? { ...layout } : undefined;
+    },
+  });
   // Keep a ref to the latest state so timer callbacks can read current sessions
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -2719,6 +2729,7 @@ export const useSessionManager = () => {
   const restoreSession = async (
     sessionData: PersistedConnectionSession,
     connection: Connection,
+    options?: { adoptLive?: boolean },
   ) => {
     const settings = settingsManager.getSettings();
     const cleanupQuarantined = hasSessionVpnCleanupQuarantine(sessionData);
@@ -2757,9 +2768,16 @@ export const useSessionManager = () => {
         connection.retryAttempts,
         settings.retryAttempts,
       ),
-      backendSessionId: cleanupQuarantined
-        ? sessionData.backendSessionId
-        : undefined,
+      // Only the boot reconciler sets adoptLive, after confirming the backend
+      // session is still alive; the protocol hook then re-adopts it (SSH
+      // replay / RDP attach) instead of dialling a new session.
+      backendSessionId:
+        cleanupQuarantined ||
+        (options?.adoptLive &&
+          sessionData.backendSessionId &&
+          (restoredProtocol === "ssh" || restoredProtocol === "rdp"))
+          ? sessionData.backendSessionId
+          : undefined,
       integration: isIntegrationConnectionProtocol(restoredProtocol)
         ? connection.integration
         : undefined,

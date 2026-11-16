@@ -33,6 +33,10 @@ vi.mock("../../contexts/useConnections", () => ({
 }));
 
 import {
+  markUserClose,
+  resetCloseIntentForTests,
+} from "../../utils/session/closeIntent";
+import {
   describeSerialConnectError,
   describeSerialRuntimeError,
   encodeSerialTerminalInput,
@@ -518,5 +522,47 @@ describe("describeSerialRuntimeError", () => {
 
   it("returns unknown messages unchanged", () => {
     expect(describeSerialRuntimeError("boom")).toBe("boom");
+  });
+
+  describe("unmount versus user close", () => {
+    const mountConnected = async () => {
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === "serial_get_session_info") {
+          return Promise.resolve({ ...backend, id: "backend-serial-live" });
+        }
+        return Promise.resolve(undefined);
+      });
+      const view = renderHook(() =>
+        useSerialSession(
+          createSession({
+            status: "connected",
+            backendSessionId: "backend-serial-live",
+          }),
+        ),
+      );
+      await waitFor(() => expect(view.result.current.status).toBe("connected"));
+      return view;
+    };
+
+    it("keeps a healthy session alive when the component merely unmounts", async () => {
+      resetCloseIntentForTests();
+      const { unmount } = await mountConnected();
+      unmount();
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "serial_disconnect",
+        expect.anything(),
+      );
+    });
+
+    it("disconnects on unmount once the user closed the session", async () => {
+      resetCloseIntentForTests();
+      const { unmount } = await mountConnected();
+      markUserClose("frontend-serial-1");
+      unmount();
+      expect(mocks.invoke).toHaveBeenCalledWith("serial_disconnect", {
+        sessionId: "backend-serial-live",
+      });
+      resetCloseIntentForTests();
+    });
   });
 });
