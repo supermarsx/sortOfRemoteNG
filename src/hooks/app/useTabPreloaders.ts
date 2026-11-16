@@ -8,6 +8,8 @@ import {
   registerTabPreloader,
   warmTabsWhenIdle,
 } from "../../utils/preload/tabPreload";
+import { clearAllPreloadCaches } from "../../utils/preload/memoryCache";
+import { registerCache } from "../../utils/perf/safety";
 
 /**
  * Registers the Documents and Credential Vault warmers, then warms them once
@@ -27,6 +29,11 @@ export function useTabPreloaders(enabled = true): void {
   useEffect(() => {
     if (!enabled) return;
     ensurePreloadLockListener();
+    // Let the perf core's synchronous lock/database-switch flush also drop the
+    // document/vault preload caches (and show them in the metrics report).
+    const offPerfCache = registerCache("preload", {
+      clear: clearAllPreloadCaches,
+    });
     // Warm the lazily loaded chunks too: the tab then mounts without a network
     // or parse stall.
     const chunks = () => {
@@ -54,6 +61,7 @@ export function useTabPreloaders(enabled = true): void {
       offIdle();
       offDocuments();
       offVault();
+      offPerfCache();
     };
   }, [enabled]);
 

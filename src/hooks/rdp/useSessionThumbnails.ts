@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionObservationActivity } from "../session/useSessionObservationActivity";
+import { createVisibleInterval } from "../../utils/perf/visibility";
+import {
+  isWindowFocused,
+  subscribeWindowFocus,
+} from "../../utils/perf/windowFocus";
 
 interface ThumbnailSession {
   id: string;
@@ -11,15 +16,22 @@ interface ThumbnailSession {
 
 const THUMB_WIDTH = 160;
 const THUMB_HEIGHT = 90;
+/** While the window is not focused, thumbnails refresh this much less often. */
+const UNFOCUSED_FACTOR = 4;
 
 /**
  * Periodically captures downscaled thumbnails for active RDP sessions.
  * Returns a map of sessionId -> blob URL for use as <img> src.
+ *
+ * Adaptive (background lane): only tiles in `visibleIds` are captured when the
+ * set is provided (null/undefined = all), and an unfocused window refreshes at
+ * 1/UNFOCUSED_FACTOR of the normal rate, catching up once on focus.
  */
 export function useSessionThumbnails(
   sessions: ThumbnailSession[],
   intervalMs: number = 5000,
   enabled: boolean = true,
+  visibleIds?: ReadonlySet<string> | null,
 ): Record<string, string> {
   const observationActive = useSessionObservationActivity(
     enabled && sessions.length > 0,
@@ -30,6 +42,8 @@ export function useSessionThumbnails(
   const inFlightRef = useRef(false);
   const captureRef = useRef<(() => Promise<void>) | null>(null);
   sessionsRef.current = sessions;
+  const visibleIdsRef = useRef(visibleIds);
+  visibleIdsRef.current = visibleIds;
 
   useEffect(() => {
     const ids = new Set(sessions.map((session) => session.id));
@@ -60,6 +74,8 @@ export function useSessionThumbnails(
         for (const session of sessionsRef.current) {
           if (cancelled) break;
           if (!session.connected || session.desktop_width === 0) continue;
+          const tiles = visibleIdsRef.current;
+          if (tiles && !tiles.has(session.id)) continue;
 
           try {
             const rgba = await invoke<ArrayBuffer>("rdp_get_thumbnail", {
@@ -114,12 +130,29 @@ export function useSessionThumbnails(
       }
     };
     captureRef.current = capture;
-    capture();
-    const timer = setInterval(capture, Math.max(1000, intervalMs));
+    const base = Math.max(1000, intervalMs);
+    let lastCapture = Date.now();
+    const run = () => {
+      lastCapture = Date.now();
+      void capture();
+    };
+    run();
+    const stopTimer = createVisibleInterval(() => {
+      if (
+        !isWindowFocused() &&
+        Date.now() - lastCapture < base * UNFOCUSED_FACTOR
+      )
+        return;
+      run();
+    }, base);
+    const stopFocus = subscribeWindowFocus(() => {
+      if (isWindowFocused() && Date.now() - lastCapture >= base) run();
+    });
     return () => {
       cancelled = true;
       if (captureRef.current === capture) captureRef.current = null;
-      clearInterval(timer);
+      stopTimer();
+      stopFocus();
     };
   }, [observationActive, hasSessions, intervalMs]);
 

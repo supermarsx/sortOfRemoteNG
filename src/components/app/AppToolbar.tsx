@@ -34,6 +34,7 @@ import { buildBackupPayload } from "../../utils/services/backupPayload";
 import { DOCUMENTS_TOOL_DESCRIPTOR, TOOL_DESCRIPTORS } from "./toolDescriptors";
 import type { ToolKey } from "./toolSession";
 import { tabIntentHandlers } from "../../utils/preload/tabPreload";
+import { panelIntent } from "../../utils/perf/preloadPlan";
 
 const ToolbarGroup: React.FC<{ label: string; children: React.ReactNode }> = ({
   label,
@@ -257,6 +258,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showQuickConnectIcon && (
               <button
                 onClick={() => setShowQuickConnect(true)}
+                {...panelIntent("quickConnect")}
                 className="app-bar-button p-2"
                 title={t("connections.quickConnect")}
                 data-testid="toolbar-quick-connect"
@@ -277,6 +279,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showSettingsIcon && (
               <button
                 onClick={() => openSettings()}
+                {...panelIntent("settings")}
                 className="app-bar-button p-2"
                 title={t("toolbar.settings", "Settings")}
                 data-testid="toolbar-settings"
@@ -294,6 +297,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showImportExportIcon && (
               <button
                 onClick={openImportExport}
+                {...panelIntent("importExport")}
                 className="app-bar-button p-2"
                 title={t("toolbar.importExport", "Import / Export")}
                 data-testid="toolbar-import-export"
@@ -304,6 +308,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showRdpSessionsIcon && (
               <button
                 onClick={() => setRdpPanelOpen(true)}
+                {...panelIntent("sessionManager")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("toolbar.sessionManager", "Session Manager")}
@@ -314,6 +319,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showProxyMenuIcon && (
               <button
                 onClick={() => setShowProxyMenu(true)}
+                {...panelIntent("proxyMenu")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("toolbar.proxyVpn", "Proxy & VPN")}
@@ -327,6 +333,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               setShowNetworkScanner && (
                 <button
                   onClick={() => setShowNetworkScanner(true)}
+                  {...panelIntent("networkDiscovery")}
                   className="app-bar-button p-2"
                   title={TOOL_DESCRIPTORS.networkScanner.label}
                   aria-label={TOOL_DESCRIPTORS.networkScanner.label}
@@ -338,6 +345,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               setShowNetworkToolkit && (
                 <button
                   onClick={() => setShowNetworkToolkit(true)}
+                  {...panelIntent("networkToolkit")}
                   className="app-bar-button p-2"
                   title={TOOL_DESCRIPTORS.networkToolkit.label}
                   aria-label={TOOL_DESCRIPTORS.networkToolkit.label}
@@ -348,6 +356,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showWolIcon && (
               <button
                 onClick={() => setShowWol(true)}
+                {...panelIntent("wol")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("toolbar.wakeOnLan", "Wake-on-LAN")}
@@ -358,6 +367,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showBulkSSHIcon && (
               <button
                 onClick={() => setShowBulkSSH(true)}
+                {...panelIntent("bulkSsh")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("bulkSsh.title", "Bulk SSH")}
@@ -368,6 +378,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showServerStatsIcon && (
               <button
                 onClick={() => setShowServerStats(true)}
+                {...panelIntent("serverStats")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("serverStats.title", "Server Stats")}
@@ -378,6 +389,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showMcpServerIcon && (
               <button
                 onClick={() => setShowMcpServer(true)}
+                {...panelIntent("mcpServer")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("mcpServer.title", "MCP Server")}
@@ -388,6 +400,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showScriptManagerIcon && (
               <button
                 onClick={() => setShowScriptManager(true)}
+                {...panelIntent("scriptManager")}
                 className="app-bar-button p-2"
                 title={t("scriptManager.title", "Script Manager")}
               >
@@ -397,6 +410,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showMacroManagerIcon && (
               <button
                 onClick={() => setShowMacroManager(true)}
+                {...panelIntent("macroManager")}
                 className="app-bar-button p-2"
                 title={t("toolbar.macroManager", "Macro Manager")}
               >
@@ -406,6 +420,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showRecordingManagerIcon && (
               <button
                 onClick={() => setShowRecordingManager(true)}
+                {...panelIntent("recordingManager")}
                 disabled={noCollection}
                 className="app-bar-button p-2"
                 title={t("toolbar.recordingManager", "Recording Manager")}
@@ -441,6 +456,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             )}
             <button
               onClick={() => setShowTagManager(true)}
+              {...panelIntent("tagManager")}
               disabled={noCollection}
               className="app-bar-button p-2"
               title={t("toolbar.tagManager", "Tag Manager")}
@@ -449,6 +465,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             </button>
             <button
               onClick={() => setShowTabGroupManager(true)}
+              {...panelIntent("tabGroupManager")}
               disabled={noCollection}
               className="app-bar-button p-2"
               title={t("toolbar.tabGroupManager", "Tab Group Manager")}
@@ -459,6 +476,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               <button
                 type="button"
                 onClick={openTrustCenter}
+                {...panelIntent("trustCenter")}
                 className="app-bar-button p-2"
                 aria-label={t("settingsLayout.trustCenter", "Trust Center")}
                 data-tooltip={t("settingsLayout.trustCenter", "Trust Center")}
@@ -485,6 +503,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               <button
                 type="button"
                 onClick={openHardwareKeys}
+                {...panelIntent("hardwareKeys")}
                 className="app-bar-button p-2"
                 aria-label="Hardware Keys"
                 data-tooltip="Hardware Keys — YubiKey manager"
@@ -499,6 +518,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               <button
                 type="button"
                 onClick={openIconExplorer}
+                {...panelIntent("iconExplorer")}
                 className="app-bar-button p-2"
                 aria-label="Icon Explorer"
                 data-tooltip="Icon Explorer"
@@ -512,6 +532,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showPerformanceMonitorIcon && (
               <button
                 onClick={() => setShowPerformanceMonitor(true)}
+                {...panelIntent("performanceMonitor")}
                 className="app-bar-button p-2"
                 title={t("toolbar.performanceMonitor", "Performance Monitor")}
               >
@@ -550,6 +571,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             {appSettings.showSecurityIcon && (
               <button
                 onClick={() => openSettings("security")}
+                {...panelIntent("settings")}
                 className="app-bar-button p-2"
                 title={t("toolbar.security", "Security")}
               >

@@ -6,6 +6,7 @@ import {
 } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSessionThumbnails } from "./useSessionThumbnails";
+import { useTileVisibility } from "../perf/useTileVisibility";
 import {
   sameSessionSnapshot,
   useVisibleSessionRefresh,
@@ -150,13 +151,19 @@ export function useRDPSessionPanel({
   // Track previous sessions so we can detect disconnections
   const prevSessionsRef = useRef<RDPSessionInfo[]>([]);
 
+  const thumbnailsActive =
+    isVisible &&
+    activeTab === "sessions" &&
+    thumbnailsEnabled &&
+    thumbnailPolicy === "realtime";
+  // Only tiles actually in the viewport are captured (adaptive polling).
+  const { visibleIds: visibleThumbnailIds, observe: observeThumbnailTile } =
+    useTileVisibility(thumbnailsActive);
   const thumbnails = useSessionThumbnails(
     sessions,
     thumbnailInterval * 1000,
-    isVisible &&
-      activeTab === "sessions" &&
-      thumbnailsEnabled &&
-      thumbnailPolicy === "realtime",
+    thumbnailsActive,
+    visibleThumbnailIds,
   );
 
   const getSessionDisplayName = useCallback(
@@ -284,17 +291,20 @@ export function useRDPSessionPanel({
         );
         loadedRef.current = true;
         const newStats: Record<string, RDPStats> = {};
-        for (const s of statsEnabled ? list : []) {
-          if (!lease.isCurrent()) return;
-          try {
-            const st = await invoke<RDPStats>("get_rdp_stats", {
-              sessionId: s.id,
-            });
-            newStats[s.id] = st;
-          } catch {
-            // Session may have ended
-          }
-        }
+        // One parallel round trip instead of N sequential awaits.
+        const results = await Promise.all(
+          (statsEnabled ? list : []).map(async (s) => {
+            try {
+              return [
+                s.id,
+                await invoke<RDPStats>("get_rdp_stats", { sessionId: s.id }),
+              ] as const;
+            } catch {
+              return null; // Session may have ended
+            }
+          }),
+        );
+        for (const r of results) if (r) newStats[r[0]] = r[1];
         if (!lease.isCurrent()) return;
         if (statsEnabled)
           setStatsMap((previous) =>
@@ -482,6 +492,7 @@ export function useRDPSessionPanel({
     logSessionFilter,
     setLogSessionFilter,
     thumbnails,
+    observeThumbnailTile,
     handleRefresh,
     handleDisconnect,
     handleDetach,

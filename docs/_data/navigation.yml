@@ -33,6 +33,8 @@
       url: /integrations/
     - title: Synology NAS API
       url: /synology-file-station/
+    - title: Performance core
+      url: /performance-core/
     - title: Web viewer troubleshooting
       url: /http-viewer-trust/
     - title: Website application profiles

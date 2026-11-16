@@ -23,6 +23,7 @@ import {
   type LegacyLogRow,
 } from "../../../utils/browser/proxyLogRecorder";
 import { EmptyState } from "../../ui/display";
+import { createVisibleInterval } from "../../../utils/perf/visibility";
 import type { NativeBrowserDiagnostics } from "../../../types/network/nativeBrowserDiagnostics";
 import {
   BROWSER_HISTORY_OPEN_EVENT,
@@ -409,10 +410,11 @@ export const BrowserProxyLogView: React.FC<{
       }
     };
     load();
-    const timer = setInterval(load, 5000);
+    // Paused while hidden (one catch-up on return) instead of a bare timer.
+    const stop = createVisibleInterval(load, 5000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stop();
     };
   }, [isActive, source]);
 

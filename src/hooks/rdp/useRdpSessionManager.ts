@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useVisibleInterval } from "../perf/useVisibleInterval";
+import { mergeById, structuralShare } from "../../utils/perf/reconcile";
 
 interface RDPSessionInfo {
   id: string;
@@ -71,21 +73,27 @@ export function useRDPSessionManager(isOpen: boolean) {
     try {
       setIsLoading(true);
       const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
-      setSessions(list);
+      // Unchanged rows keep identity so the setState bails out (0 renders).
+      setSessions((prev) => mergeById(prev, list, (r) => r.id));
 
       const newStats: Record<string, RDPStats> = {};
-      for (const s of list) {
-        if (!visibleRef.current) break;
-        try {
-          const st = await invoke<RDPStats>("get_rdp_stats", {
-            sessionId: s.id,
-          });
-          newStats[s.id] = st;
-        } catch {
-          // Session may have ended between list and stats fetch
-        }
+      if (visibleRef.current) {
+        // One parallel round trip instead of N sequential awaits.
+        const results = await Promise.all(
+          list.map(async (s) => {
+            try {
+              return [
+                s.id,
+                await invoke<RDPStats>("get_rdp_stats", { sessionId: s.id }),
+              ] as const;
+            } catch {
+              return null; // Session may have ended between list and stats
+            }
+          }),
+        );
+        for (const r of results) if (r) newStats[r[0]] = r[1];
       }
-      setStatsMap(newStats);
+      setStatsMap((prev) => structuralShare(prev, newStats));
       setError("");
     } catch (e) {
       setError(String(e));
@@ -100,13 +108,16 @@ export function useRDPSessionManager(isOpen: boolean) {
   }, [fetchData]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    fetchData();
-    const timer = setInterval(() => {
-      if (autoRefreshRef.current) fetchData();
-    }, 3000);
-    return () => clearInterval(timer);
+    if (isOpen) fetchData();
   }, [isOpen, fetchData]);
+
+  // Paused while the window is hidden (one catch-up poll on return).
+  useVisibleInterval(
+    () => {
+      if (autoRefreshRef.current) fetchData();
+    },
+    isOpen ? 3000 : null,
+  );
 
   const handleDisconnect = useCallback(async (sessionId: string) => {
     try {

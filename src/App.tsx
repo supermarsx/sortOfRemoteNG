@@ -157,6 +157,13 @@ const DebugPanel = dynamic(
   { ssr: false },
 );
 
+// Dev-only perf counters overlay (renders only with ?perf=1 / localStorage.sorngPerf=1).
+// NODE_ENV is inlined at build time, so production bundles drop the import.
+const PerfOverlay =
+  process.env.NODE_ENV !== "production"
+    ? dynamic(() => import("./components/debug/PerfOverlay"), { ssr: false })
+    : null;
+
 const TRAY_QUIT_REQUESTED_EVENT = "tray-quit-requested";
 
 /**
@@ -2154,6 +2161,8 @@ const AppContent: React.FC = () => {
             handleOpenDevtools={handleOpenDevtools}
           />
         )}
+
+        {PerfOverlay && <PerfOverlay />}
 
         {/* t5-e4: global reachability-check modal (one mount site). */}
         <CheckConnectionsModalMount />

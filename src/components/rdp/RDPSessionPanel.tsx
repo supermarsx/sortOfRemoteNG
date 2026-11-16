@@ -110,7 +110,10 @@ const SessionCard: React.FC<{
   const StatusIcon = session.connected ? Wifi : WifiOff;
 
   return (
-    <div className="group px-4 py-3 hover:bg-[var(--color-surfaceHover)] transition-colors">
+    <div
+      ref={mgr.observeThumbnailTile?.(session.id)}
+      className="group px-4 py-3 hover:bg-[var(--color-surfaceHover)] transition-colors"
+    >
       <div className="flex gap-3">
         {/* Thumbnail */}
         {thumbnailsEnabled && (

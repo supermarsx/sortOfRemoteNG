@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { prefetchChunk } from "../../utils/perf/preloadScheduler";
+import { warmPanelsWhenIdle } from "../../utils/perf/preloadPlan";
 
 /** Let first paint, settings load and session restore settle before prefetching. */
 export const STARTUP_PREFETCH_DELAY_MS = 3000;
@@ -26,6 +27,7 @@ export function useStartupPrefetch(enabled = true): void {
           () => import("../../components/session/TabLayoutManager"),
           2,
         ),
+        warmPanelsWhenIdle(),
       ];
     }, STARTUP_PREFETCH_DELAY_MS);
     return () => {
