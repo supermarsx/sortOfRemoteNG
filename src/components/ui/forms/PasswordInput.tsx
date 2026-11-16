@@ -8,7 +8,7 @@ import React, {
   InputHTMLAttributes,
 } from "react";
 import { Eye, EyeOff, Lock } from "lucide-react";
-import { useSettings } from "../../../contexts/SettingsContext";
+import { useSettingsSelector } from "../../../contexts/useSettingsSelector";
 import { PasswordGenerator } from "./PasswordGenerator";
 
 export interface PasswordInputProps extends Omit<
@@ -57,8 +57,10 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
       !rest.readOnly &&
       rest.autoComplete !== "one-time-code" &&
       (rest.value === undefined || !!rest.onChange);
-    const { settings } = useSettings();
-    const pr = settings.passwordReveal ?? {
+    const passwordReveal = useSettingsSelector(
+      (ctx) => ctx.settings.passwordReveal,
+    );
+    const pr = passwordReveal ?? {
       enabled: true,
       mode: "toggle" as const,
       autoHideSeconds: 0,

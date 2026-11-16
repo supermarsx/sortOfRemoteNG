@@ -16,6 +16,7 @@ import {
 import { withDatabaseMutation } from "../../utils/connection/databaseActions";
 import { getInvoke } from "../../utils/tauri/invoke";
 import { useSettings } from "../../contexts/SettingsContext";
+import { setLockState } from "../../utils/perf/safety";
 
 interface GuardOptions {
   primary?: boolean;
@@ -127,6 +128,7 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
       const lockOff = await listen(ENCRYPTION_EVENT_LOCKED, () => {
         if (disposed) return;
         authoritativeEvent.current = "locked";
+        setLockState("locked"); // synchronous cache flush, before React renders
         lockedRef.current();
       });
       if (disposed) {
@@ -202,10 +204,18 @@ export function useGlobalEncryptionGuard(options: GuardOptions) {
       off.forEach((stop) => stop());
     };
   }, [options.primary]);
-  return (
+  const encryptionLocked =
     eventLocked ||
-    (authoritativeEvent.current === null &&
-      shouldShowUnlockScreen(enc.status)) ||
-    settingsReady === false
-  );
+    (authoritativeEvent.current === null && shouldShowUnlockScreen(enc.status));
+  // Feed the app-wide cache/preload core: caches clear synchronously on lock and
+  // unlock-requiring preloads only run once state is explicitly unlocked.
+  const perfLockState = encryptionLocked
+    ? "locked"
+    : enc.status || authoritativeEvent.current === "unlocked"
+      ? "unlocked"
+      : "unknown";
+  useEffect(() => {
+    setLockState(perfLockState);
+  }, [perfLockState]);
+  return encryptionLocked || settingsReady === false;
 }

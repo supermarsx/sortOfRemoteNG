@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
-import { useSettings } from "../../../contexts/SettingsContext";
+import { useSettingsSelector } from "../../../contexts/useSettingsSelector";
 import {
   isIntegrationConnectionProtocol,
   type Connection,
@@ -119,7 +119,9 @@ function TreeItemMenu({
   onConnectAllRecursive?: (folder: Connection) => void;
 }) {
   const { state, dispatch } = useConnections();
-  const { settings } = useSettings();
+  const settingsEnableWinrmTools = useSettingsSelector(
+    (ctx) => ctx.settings.enableWinrmTools,
+  );
   const { t } = useTranslation();
   const canOpenAnotherSession = !isIntegrationConnectionProtocol(
     connection.protocol,
@@ -169,7 +171,7 @@ function TreeItemMenu({
     }
   };
   const enableWinrm =
-    connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
+    connection.enableWinrmTools ?? settingsEnableWinrmTools ?? true;
   const [connectInWindowOpen, setConnectInWindowOpen] = useState(false);
   const [windowsToolsOpen, setWindowsToolsOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);

@@ -7,7 +7,9 @@ import MultiSelectMenu from "./MultiSelectMenu";
 import React, { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useConnections } from "../../../contexts/useConnections";
-import { useSettings } from "../../../contexts/SettingsContext";
+import { useConnectionsSelector } from "../../../contexts/useConnectionsSelector";
+import { shallowEqual } from "../../../contexts/valueStore";
+import { useSettingsSelector } from "../../../contexts/useSettingsSelector";
 import { resolveFolderIconColor } from "../../../utils/settings/folderIconColor";
 import { isToolProtocol } from "../../app/toolSession";
 import { getExpandedFolderIcon } from "../../../utils/icons/resolveConnectionIcon";
@@ -451,19 +453,30 @@ export const ConnectionTreeRow = React.memo(function ConnectionTreeRow({
 // Standalone consumers keep the context adapter. The tree passes indexed row
 // state directly so unrelated session/context changes do not wake every row.
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = (props) => {
-  const { state, dispatch } = useConnections();
-  const { settings } = useSettings();
+  const connectionId = props.connection.id;
+  const { dispatch, isSelected, isMultiSelected, activeSession } =
+    useConnectionsSelector(
+      (ctx) => ({
+        dispatch: ctx.dispatch,
+        isSelected: ctx.state.selectedConnectionIds.has(connectionId),
+        isMultiSelected: ctx.state.selectedConnectionIds.size > 1,
+        activeSession: ctx.state.sessions.find(
+          (s) => s.connectionId === connectionId && !isToolProtocol(s.protocol),
+        ),
+      }),
+      shallowEqual,
+    );
+  const folderIconColor = useSettingsSelector((ctx) =>
+    resolveFolderIconColor(ctx.settings),
+  );
   return (
     <ConnectionTreeRow
       {...props}
-      folderIconColor={resolveFolderIconColor(settings)}
+      folderIconColor={folderIconColor}
       dispatch={dispatch}
-      isSelected={state.selectedConnectionIds.has(props.connection.id)}
-      isMultiSelected={state.selectedConnectionIds.size > 1}
-      activeSession={state.sessions.find(
-        (s) =>
-          s.connectionId === props.connection.id && !isToolProtocol(s.protocol),
-      )}
+      isSelected={isSelected}
+      isMultiSelected={isMultiSelected}
+      activeSession={activeSession}
     />
   );
 };

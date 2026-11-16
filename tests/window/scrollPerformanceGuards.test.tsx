@@ -262,6 +262,19 @@ async function mountApp() {
   await act(async () => {
     await sleep(700);
   });
+  // Code-split chunks (dynamic()) resolve whenever vite finishes transforming
+  // them; wait until commits have been quiet for a while so a late chunk
+  // mount is never mistaken for a scroll-triggered render.
+  for (let quiet = 0, seen = -1, tries = 0; quiet < 4 && tries++ < 40;) {
+    await act(async () => {
+      await sleep(150);
+    });
+    if (commits.length === seen) quiet++;
+    else {
+      quiet = 0;
+      seen = commits.length;
+    }
+  }
   return { view, commits };
 }
 

@@ -88,6 +88,7 @@ import {
   ConnectionState,
   ConnectionAction,
   ConnectionContext,
+  type ConnectionContextType,
   type DatabaseAvailability,
   type DispatchAndFlushOptions,
 } from "./ConnectionContextTypes";
@@ -104,6 +105,8 @@ import {
 import { applyTrustedRedirectChanges } from "../utils/security/trustedRedirectManagement";
 import { clearDeletedConnectionBrowserData } from "../utils/connection/clearDeletedConnectionBrowserData";
 import { resolveDefaultTabGroup } from "../utils/session/resolveDefaultTabGroup";
+import { createValueStore, type ValueStore } from "./valueStore";
+import { ConnectionStoreContext } from "./connectionStoreContext";
 import { getQuickConnectConnection } from "../utils/session/runtimeConnectionRegistry";
 import {
   mergeLocalSessionUpdate,
@@ -3108,9 +3111,23 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     ],
   );
 
+  // Mirror the value into a selector store so slice consumers
+  // (`useConnectionsSelector`) skip renders for unrelated connection changes.
+  const connectionStoreRef = useRef<ValueStore<ConnectionContextType> | null>(
+    null,
+  );
+  if (!connectionStoreRef.current)
+    connectionStoreRef.current = createValueStore(contextValue);
+  const connectionStore = connectionStoreRef.current;
+  useLayoutEffect(() => {
+    connectionStore.set(contextValue);
+  }, [connectionStore, contextValue]);
+
   return (
-    <ConnectionContext.Provider value={contextValue}>
-      {children}
-    </ConnectionContext.Provider>
+    <ConnectionStoreContext.Provider value={connectionStore}>
+      <ConnectionContext.Provider value={contextValue}>
+        {children}
+      </ConnectionContext.Provider>
+    </ConnectionStoreContext.Provider>
   );
 };

@@ -12,6 +12,8 @@ import { useSecurityToolSession } from "./hooks/security/useSecurityToolSession"
 import { useIconExplorerSession } from "./hooks/icons/useIconExplorerSession";
 import { useDocumentSession } from "./hooks/documents/useDocumentSession";
 import { useTabPreloaders } from "./hooks/app/useTabPreloaders";
+import { useCacheScope } from "./hooks/perf/useCacheScope";
+import { useStartupPrefetch } from "./hooks/app/useStartupPrefetch";
 import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -75,18 +77,14 @@ import { useDatabaseAccessSuspension } from "./hooks/settings/useDatabaseAccessS
 import { AutoLockController } from "./components/encryption/AutoLockController";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
-import { SessionViewer } from "./components/session/SessionViewer";
 import type { SettingsTabId } from "./components/SettingsDialog/settingsConstants";
-import { TabLayoutManager } from "./components/session/TabLayoutManager";
 import { TabLayoutControls } from "./components/session/TabLayoutControls";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
-import { ScriptTrustReconciler } from "./components/recording/scriptTrust/ScriptTrustReconciler";
 import { PromptHost } from "./components/ui/dialogs/PromptHost";
 import { SplashScreen } from "./components/app/SplashScreen";
 import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
 import { MemoryWatchdogController } from "./components/app/MemoryWatchdogController";
 import { TerminalBufferController } from "./components/app/TerminalBufferController";
-import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
 import {
   ToolKey,
   createToolSession,
@@ -108,7 +106,6 @@ import { useWindowManager } from "./hooks/window/useWindowManager";
 import { useBehaviorWindowLifecycle } from "./hooks/window/useBehaviorWindowLifecycle";
 import { AppToolbar } from "./components/app/AppToolbar";
 import { AppBottomBars } from "./components/app/AppBottomBars";
-import { DebugPanel } from "./components/debug/DebugPanel";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 import { useRuntimeConnectionLaunch } from "./hooks/session/useRuntimeConnectionLaunch";
@@ -128,6 +125,35 @@ import { CheckConnectionsModalMount } from "./components/connection/CheckConnect
 const AppDialogs = dynamic(
   () =>
     import("./components/app/AppDialogs").then((module) => module.AppDialogs),
+  { ssr: false },
+);
+
+// Code-split, not needed for first paint. useStartupPrefetch warms these
+// chunks through the idle preload scheduler once the app is ready.
+const SessionViewer = dynamic(
+  () =>
+    import("./components/session/SessionViewer").then(
+      (module) => module.SessionViewer,
+    ),
+  { ssr: false },
+);
+const TabLayoutManager = dynamic(
+  () =>
+    import("./components/session/TabLayoutManager").then(
+      (module) => module.TabLayoutManager,
+    ),
+  { ssr: false },
+);
+const ScriptTrustReconciler = dynamic(
+  () =>
+    import("./components/recording/scriptTrust/ScriptTrustReconciler").then(
+      (module) => module.ScriptTrustReconciler,
+    ),
+  { ssr: false },
+);
+const DebugPanel = dynamic(
+  () =>
+    import("./components/debug/DebugPanel").then((module) => module.DebugPanel),
   { ssr: false },
 );
 
@@ -328,6 +354,8 @@ const AppContent: React.FC = () => {
   const openIconExplorer = useIconExplorerSession(setActiveSessionId);
   const openDocuments = useDocumentSession(setActiveSessionId);
   useTabPreloaders(appReady);
+  useCacheScope();
+  useStartupPrefetch(appReady);
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();
@@ -2116,14 +2144,16 @@ const AppContent: React.FC = () => {
           databaseManager={databaseManager}
         />
 
-        <DebugPanel
-          isOpen={showDebugPanel}
-          onClose={() => setShowDebugPanel(false)}
-          dispatch={dispatch}
-          setActiveSessionId={setActiveSessionId}
-          sessions={state.sessions}
-          handleOpenDevtools={handleOpenDevtools}
-        />
+        {showDebugPanel && (
+          <DebugPanel
+            isOpen={showDebugPanel}
+            onClose={() => setShowDebugPanel(false)}
+            dispatch={dispatch}
+            setActiveSessionId={setActiveSessionId}
+            sessions={state.sessions}
+            handleOpenDevtools={handleOpenDevtools}
+          />
+        )}
 
         {/* t5-e4: global reachability-check modal (one mount site). */}
         <CheckConnectionsModalMount />

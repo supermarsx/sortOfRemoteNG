@@ -11,13 +11,15 @@
  * settings binding is what makes it user-configurable.
  */
 import React from "react";
-import { useSettings } from "../../contexts/SettingsContext";
+import { useSettingsSelector } from "../../contexts/useSettingsSelector";
 import { useAutoLock } from "../../hooks/settings/useAutoLock";
 import { useLockShortcut } from "../../hooks/settings/useLockShortcut";
 
 export const AutoLockController: React.FC = () => {
-  const { settings, settingsReady } = useSettings();
-  useAutoLock(settingsReady === false ? undefined : settings.autoLock);
+  const autoLock = useSettingsSelector((ctx) =>
+    ctx.settingsReady === false ? undefined : ctx.settings.autoLock,
+  );
+  useAutoLock(autoLock);
   // Global Ctrl+L / ⌘L lock-now shortcut. Lives here (rather than in
   // `useAutoLock`) because it shouldn't be gated by the auto-lock
   // policy — the manual lock-on-demand keystroke is independent of

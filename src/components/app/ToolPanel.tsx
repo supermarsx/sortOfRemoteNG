@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { useTranslation } from "react-i18next";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
-import { useSettings } from "../../contexts/SettingsContext";
+import { useSettingsSelector } from "../../contexts/useSettingsSelector";
+import { shallowEqual } from "../../contexts/valueStore";
 import { activateNewToolTab } from "../../utils/session/activateNewToolTab";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
@@ -266,7 +267,14 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
 }) => {
   const { t } = useTranslation();
   const { state, dispatch, databaseAvailability } = useConnections();
-  const { settings } = useSettings();
+  const thumbSettings = useSettingsSelector(
+    (ctx) => ({
+      rdpSessionThumbnailsEnabled: ctx.settings.rdpSessionThumbnailsEnabled,
+      rdpSessionThumbnailPolicy: ctx.settings.rdpSessionThumbnailPolicy,
+      rdpSessionThumbnailInterval: ctx.settings.rdpSessionThumbnailInterval,
+    }),
+    shallowEqual,
+  );
   const { isActive } = useSessionRenderActivity();
   const toolKey = getToolKeyFromProtocol(session.protocol);
   useEffect(() => {
@@ -590,9 +598,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           onReconnect={onReconnect}
           onFocusSession={onActivateSession}
           onCloseSession={onCloseManagedSession}
-          thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
-          thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
-          thumbnailInterval={settings.rdpSessionThumbnailInterval}
+          thumbnailsEnabled={thumbSettings.rdpSessionThumbnailsEnabled}
+          thumbnailPolicy={thumbSettings.rdpSessionThumbnailPolicy}
+          thumbnailInterval={thumbSettings.rdpSessionThumbnailInterval}
         />
       )}
       {toolKey === "wol" && <WOLQuickTool isOpen onClose={onClose} />}

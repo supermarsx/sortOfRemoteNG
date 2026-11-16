@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useRef,
   useMemo,
+  useLayoutEffect,
 } from "react";
 import {
   GlobalSettings,
@@ -35,12 +36,14 @@ import {
   ENCRYPTION_EVENT_UNLOCKED,
 } from "../types/encryption/encryption";
 import { getInvoke } from "../utils/tauri/invoke";
+import { createValueStore, type ValueStore } from "./valueStore";
+import { SettingsStoreContext } from "./settingsStoreContext";
 import {
   useProxyRequestLogSync,
   type ProxyRequestLogSyncState,
 } from "../hooks/settings/useProxyRequestLogSync";
 
-interface SettingsContextType {
+export interface SettingsContextType {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => Promise<void>;
   reloadSettings: () => Promise<void>;
@@ -884,10 +887,21 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
     ],
   );
 
+  // Mirror the value into a selector store so slice consumers
+  // (`useSettingsSelector`) skip renders for unrelated settings changes.
+  const storeRef = useRef<ValueStore<SettingsContextType> | null>(null);
+  if (!storeRef.current) storeRef.current = createValueStore(contextValue);
+  const settingsStore = storeRef.current;
+  useLayoutEffect(() => {
+    settingsStore.set(contextValue);
+  }, [settingsStore, contextValue]);
+
   return (
-    <SettingsContext.Provider value={contextValue}>
-      {children}
-    </SettingsContext.Provider>
+    <SettingsStoreContext.Provider value={settingsStore}>
+      <SettingsContext.Provider value={contextValue}>
+        {children}
+      </SettingsContext.Provider>
+    </SettingsStoreContext.Provider>
   );
 };
 
