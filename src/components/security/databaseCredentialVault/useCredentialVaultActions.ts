@@ -12,7 +12,10 @@ import {
 } from "../../../utils/connection/databaseManager";
 import { selectSavedCredentialPair } from "../../../utils/auth/httpCredentials";
 import { credentialVaultScopeKey } from "../../../hooks/security/useDatabaseCredentialVault";
-import { prepareCredentialClipboard } from "../../../utils/security/credentialClipboard";
+import {
+  CLIPBOARD_CLEAR_SECS,
+  prepareCredentialClipboard,
+} from "../../../utils/security/credentialClipboard";
 import {
   CredentialFailure,
   settleWithin,
@@ -64,6 +67,11 @@ export function useCredentialVaultActions(
     [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false),
     [choice, setChoice] = useState<Choice | null>(null);
+  /** When the last copy landed and how long the secure clipboard keeps it. */
+  const [lastCopy, setLastCopy] = useState<{
+    seconds: number;
+    at: number;
+  } | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -317,6 +325,17 @@ export function useCredentialVaultActions(
             },
           );
           if (alive.current && latest.current.key === key)
+            setLastCopy({
+              at: Date.now(),
+              seconds: Math.max(
+                1,
+                Math.min(
+                  CLIPBOARD_CLEAR_SECS[field === "totp" ? "totpCode" : field],
+                  expires ? Math.ceil((expires - Date.now()) / 1000) : Infinity,
+                ),
+              ),
+            });
+          if (alive.current && latest.current.key === key)
             setMessage(
               field === "totp"
                 ? "2FA code copied."
@@ -431,6 +450,8 @@ export function useCredentialVaultActions(
     busy,
     message,
     failed,
+    lastCopy,
+    setLastCopy,
     choice: choice?.key === key ? choice : null,
     dismiss: () => setChoice(null),
     copy,

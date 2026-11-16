@@ -1,4 +1,12 @@
-import React, { useContext, useEffect, useId, useRef, useState } from "react";
+import React, {
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   KeyRound,
   Plus,
@@ -19,6 +27,11 @@ import {
   ShieldCheck,
   LocateFixed,
   ExternalLink,
+  WandSparkles,
+  Keyboard,
+  PanelLeft,
+  PanelRight,
+  X,
 } from "lucide-react";
 import SettingsContext from "../../contexts/SettingsContext";
 import {
@@ -60,6 +73,58 @@ import {
   useCredentialVaultActions,
   type VaultActionTarget,
 } from "./databaseCredentialVault/useCredentialVaultActions";
+import {
+  VaultActionBar,
+  type VaultAction,
+} from "./databaseCredentialVault/manager/VaultToolbar";
+import {
+  VaultSearchBox,
+  type VaultSearchState,
+} from "./databaseCredentialVault/manager/VaultSearchBox";
+import {
+  VaultSortMenu,
+  VaultViewMenu,
+  type VaultDensity,
+} from "./databaseCredentialVault/manager/VaultViewMenus";
+import {
+  VaultQuickFilterChips,
+  toggleQuickFilter,
+} from "./databaseCredentialVault/manager/VaultQuickFilterChips";
+import {
+  VaultGroupSidebar,
+  type VaultGroupId,
+} from "./databaseCredentialVault/manager/VaultGroupSidebar";
+import {
+  VaultDetailPane,
+  type VaultDetailItem,
+} from "./databaseCredentialVault/manager/VaultDetailPane";
+import { VaultContextMenu } from "./databaseCredentialVault/manager/VaultContextMenu";
+import { VaultShortcutHelp } from "./databaseCredentialVault/manager/VaultShortcutHelp";
+import { VaultPasswordGenerator } from "./databaseCredentialVault/manager/VaultPasswordGenerator";
+import { useCopyCountdown } from "./databaseCredentialVault/manager/useCopyCountdown";
+import { useVaultText } from "./databaseCredentialVault/manager/vaultText";
+import {
+  compileVaultSearch,
+  DEFAULT_VAULT_SEARCH,
+  isDefaultSearch,
+} from "../../utils/security/vaultManager/vaultSearch";
+import {
+  countVaultGroups,
+  quickFiltersMatch,
+  type VaultQuickFilter,
+} from "../../utils/security/vaultManager/vaultQuickFilters";
+import {
+  EMPTY_SELECTION,
+  moveSelection,
+  pruneSelection,
+  selectAll,
+  selectRow,
+  type VaultSelection,
+} from "../../utils/security/vaultManager/vaultSelection";
+import {
+  matchVaultShortcut,
+  type VaultShortcutAction,
+} from "../../utils/security/vaultManager/vaultShortcuts";
 const VaultArchiveDialog = React.lazy(
   () => import("./databaseCredentialVault/VaultArchiveDialog"),
 );
@@ -130,6 +195,7 @@ function VaultWorkspace({
   const [archive, setArchive] = useState<{
     mode: "import" | "export";
     snapshot: DatabaseCredentialSnapshot;
+    ids?: readonly string[];
   } | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const busy = mgr.busy || archiveBusy || inventory.opening || actions.busy;
@@ -168,8 +234,24 @@ function VaultWorkspace({
         : undefined,
     [sessionId],
   );
-  const [search, setSearch] = useState(""),
-    [page, setPage] = useState(0);
+  const tx = useVaultText();
+  const [searchState, setSearchState] = useState<VaultSearchState>({
+    ...DEFAULT_VAULT_SEARCH,
+    allGroups: false,
+  });
+  const search = searchState.query;
+  const [page, setPage] = useState(0);
+  const [quick, setQuick] = useState<ReadonlySet<VaultQuickFilter>>(new Set());
+  const [selection, setSelection] = useState<VaultSelection>(EMPTY_SELECTION);
+  const [showGroups, setShowGroups] = useState(true);
+  const [showDetails, setShowDetails] = useState(true);
+  const [density, setDensity] = useState<VaultDensity>("comfortable");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const [source, setSource] = useState<"all" | "vault" | "connections">("all");
   const [advanced, setAdvanced] = useState(false);
   const filterPanelId = useId();
@@ -180,13 +262,17 @@ function VaultWorkspace({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const advancedFilterCount = Object.values(filters).filter(Boolean).length;
   const activeFilterCount =
-    advancedFilterCount + Number(source !== "all") + Number(!!search.trim());
+    advancedFilterCount +
+    Number(source !== "all") +
+    Number(!!search.trim()) +
+    quick.size;
   const changeFilter = (key: keyof CredentialInventoryFilters, value: string) =>
     setFilters((old) => ({ ...old, [key]: value }));
   const clearFilters = () => {
     setFilters({ ...EMPTY_CREDENTIAL_FILTERS });
     setSource("all");
-    setSearch("");
+    setQuick(new Set());
+    setSearchState((old) => ({ ...old, query: "" }));
   };
   const sortBy = (key: CredentialInventorySort) => {
     setSortDirection(sort === key && sortDirection === "asc" ? "desc" : "asc");
@@ -245,75 +331,146 @@ function VaultWorkspace({
           .join(", ") || "Not assigned";
   const categoryLabels = (row: DatabaseCredentialMetadata) =>
     vaultCredentialCategories(row);
-  const allRows = [
-    ...(mgr.snapshot?.entries ?? []).map((row) => {
-      const assignments = inventory.assignments?.get(row.id) ?? [];
-      const metadata: CredentialInventoryViewMetadata = {
-        key: `vault:${row.id}`,
-        name: row.name,
-        source: "vault",
-        types: [
-          ...new Set(
-            row.availableFacets.map((key) =>
-              key === "username" || key === "domain" ? "account" : key,
+  const typeLabels: Record<string, string> = {
+    ...FACET_LABELS,
+    ...CONNECTION_CREDENTIAL_LABELS,
+  };
+  const allRows = useMemo(
+    () => [
+      ...(mgr.snapshot?.entries ?? []).map((row) => {
+        const assignments = inventory.assignments?.get(row.id) ?? [];
+        const metadata: CredentialInventoryViewMetadata = {
+          key: `vault:${row.id}`,
+          name: row.name,
+          source: "vault",
+          types: [
+            ...new Set(
+              row.availableFacets.map((key) =>
+                key === "username" || key === "domain" ? "account" : key,
+              ),
             ),
+          ],
+          tags: categoryLabels(row),
+          protocols: assignments.map((assignment) => assignment.protocol),
+          applications: assignments.flatMap((assignment) =>
+            assignment.application ? [assignment.application] : [],
           ),
-        ],
-        tags: categoryLabels(row),
-        protocols: assignments.map((assignment) => assignment.protocol),
-        applications: assignments.flatMap((assignment) =>
-          assignment.application ? [assignment.application] : [],
-        ),
-        assignment:
-          inventory.assignments === null
-            ? "unavailable"
-            : assignments.length
-              ? "assigned"
-              : "unassigned",
-        storage: ["vault"],
-        updatedAt: row.updatedAt,
-      };
-      const matchesSearch =
-        `${row.name} ${row.availableFacets.map((key) => FACET_LABELS[key]).join(" ")} ${metadata.tags.join(" ")} ${assignmentText(row.id)}`
-          .toLocaleLowerCase()
-          .includes(search.trim().toLocaleLowerCase());
-      return { source: "vault" as const, row, metadata, matchesSearch };
-    }),
-    ...inventory.rows.map((row) => {
-      const application = inventory.applications.get(row.id);
-      const metadata: CredentialInventoryViewMetadata = {
-        key: `connection:${row.id}`,
-        name: row.name,
-        source: "connection",
-        types: row.kinds,
-        tags: [],
-        protocols: [row.protocol],
-        applications: application ? [application] : [],
-        assignment: "connection",
-        storage: row.storage,
-        updatedAt: null,
-      };
-      const matchesSearch =
-        connectionCredentialMatches(row, search) ||
-        (application ?? "")
-          .toLocaleLowerCase()
-          .includes(search.trim().toLocaleLowerCase());
-      return { source: "connection" as const, row, metadata, matchesSearch };
-    }),
-  ];
-  const rows = allRows
-    .filter(
-      (item) =>
-        item.matchesSearch &&
-        (source === "all" ||
-          (source === "vault"
-            ? item.source === "vault"
-            : item.source === "connection")) &&
-        credentialInventoryMatches(item.metadata, filters),
-    )
-    .sort((a, b) =>
-      compareCredentialInventory(a.metadata, b.metadata, sort, sortDirection),
+          assignment:
+            inventory.assignments === null
+              ? "unavailable"
+              : assignments.length
+                ? "assigned"
+                : "unassigned",
+          storage: ["vault"],
+          updatedAt: row.updatedAt,
+        };
+        const assignmentLabel = assignmentText(row.id);
+        const fields = {
+          name: row.name,
+          tags: metadata.tags,
+          types: row.availableFacets.map((key) => FACET_LABELS[key]),
+          assignments: assignmentLabel,
+        };
+        const legacy = (needle: string) =>
+          `${row.name} ${fields.types.join(" ")} ${metadata.tags.join(" ")} ${assignmentLabel}`
+            .toLocaleLowerCase()
+            .includes(needle);
+        return { source: "vault" as const, row, metadata, fields, legacy };
+      }),
+      ...inventory.rows.map((row) => {
+        const application = inventory.applications.get(row.id);
+        const metadata: CredentialInventoryViewMetadata = {
+          key: `connection:${row.id}`,
+          name: row.name,
+          source: "connection",
+          types: row.kinds,
+          tags: [],
+          protocols: [row.protocol],
+          applications: application ? [application] : [],
+          assignment: "connection",
+          storage: row.storage,
+          updatedAt: null,
+        };
+        const fields = {
+          name: row.name,
+          tags: [],
+          types: row.kinds.map((key) => CONNECTION_CREDENTIAL_LABELS[key]),
+          assignments: `${row.protocol} ${application ?? ""}`.trim(),
+        };
+        const legacy = (needle: string) =>
+          connectionCredentialMatches(row, needle) ||
+          (application ?? "").toLocaleLowerCase().includes(needle);
+        return { source: "connection" as const, row, metadata, fields, legacy };
+      }),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      mgr.snapshot,
+      inventory.assignments,
+      inventory.rows,
+      inventory.applications,
+    ],
+  );
+  const deferredSearch = useDeferredValue(searchState);
+  const compiledSearch = useMemo(
+    () => compileVaultSearch(deferredSearch),
+    [deferredSearch],
+  );
+  const searching = !compiledSearch.empty;
+  const ignoreGroups = searching && deferredSearch.allGroups;
+  const rows = useMemo(() => {
+    const defaultSearch = isDefaultSearch(deferredSearch);
+    const needle = deferredSearch.query.trim().toLocaleLowerCase();
+    const now = Date.now();
+    return allRows
+      .filter(
+        (item) =>
+          (compiledSearch.empty ||
+            (defaultSearch
+              ? item.legacy(needle)
+              : compiledSearch.test(item.fields))) &&
+          (ignoreGroups ||
+            source === "all" ||
+            (source === "vault"
+              ? item.source === "vault"
+              : item.source === "connection")) &&
+          credentialInventoryMatches(
+            item.metadata,
+            ignoreGroups ? { ...filters, tag: "" } : filters,
+          ) &&
+          quickFiltersMatch(item.metadata, quick, now),
+      )
+      .sort((a, b) =>
+        compareCredentialInventory(a.metadata, b.metadata, sort, sortDirection),
+      );
+  }, [
+    allRows,
+    compiledSearch,
+    deferredSearch,
+    ignoreGroups,
+    source,
+    filters,
+    quick,
+    sort,
+    sortDirection,
+  ]);
+  const groupCounts = useMemo(
+    () => countVaultGroups(allRows.map((item) => item.metadata)),
+    [allRows],
+  );
+  const activeGroup: VaultGroupId = filters.tag
+    ? { tag: filters.tag }
+    : source === "all"
+      ? "all"
+      : source;
+  const selectGroup = (group: VaultGroupId) => {
+    setSource(
+      typeof group === "string" && group !== "all"
+        ? (group as "vault" | "connections")
+        : "all",
     );
+    changeFilter("tag", typeof group === "string" ? "" : group.tag);
+  };
   const actionTarget = (item: (typeof allRows)[number]): VaultActionTarget => {
     const credentialId =
       item.source === "vault"
@@ -438,13 +595,10 @@ function VaultWorkspace({
   const filterOptions = (
     key: "types" | "tags" | "protocols" | "applications",
   ) => [...new Set(allRows.flatMap((item) => [...item.metadata[key]]))].sort();
-  const typeLabels: Record<string, string> = {
-    ...FACET_LABELS,
-    ...CONNECTION_CREDENTIAL_LABELS,
-  };
   const scope = JSON.stringify([
     credentialVaultScopeKey(api),
-    search,
+    searchState,
+    [...quick],
     source,
     view.pageSize,
     view.mode,
@@ -471,9 +625,442 @@ function VaultWorkspace({
     });
   const pages = Math.max(1, Math.ceil(rows.length / view.pageSize)),
     currentPage = Math.min(page, pages - 1);
+  type Item = (typeof allRows)[number];
+  const latestUpdate = useMemo(() => {
+    const times = (mgr.snapshot?.entries ?? [])
+      .map((row) => Date.parse(row.updatedAt))
+      .filter(Number.isFinite);
+    return times.length ? Math.max(...times) : null;
+  }, [mgr.snapshot]);
+  const visibleRows = rows.slice(
+    view.mode === "infinite" ? 0 : currentPage * view.pageSize,
+    view.mode === "infinite" ? visibleCount : (currentPage + 1) * view.pageSize,
+  );
+  const visibleKeys = useMemo(
+    () => visibleRows.map((item) => item.metadata.key),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, view.mode, view.pageSize, currentPage, visibleCount],
+  );
+  const allKeys = useMemo(() => rows.map((item) => item.metadata.key), [rows]);
+  useEffect(() => {
+    setSelection((old) => pruneSelection(old, allKeys));
+  }, [allKeys]);
+  const selectedItems = rows.filter((item) =>
+    selection.keys.has(item.metadata.key),
+  );
+  const primary: Item | null =
+    selectedItems.length === 1 ? selectedItems[0] : null;
+  const primaryTarget = primary ? actionTarget(primary) : null;
+  const selectedVaultIds = selectedItems.flatMap((item) =>
+    item.source === "vault" ? [item.row.id] : [],
+  );
+  const keyboardNav = useRef(false);
+  const copyRemaining = useCopyCountdown(actions.lastCopy);
+  const detailItem: VaultDetailItem | null = primary
+    ? primary.source === "vault"
+      ? {
+          key: primary.metadata.key,
+          id: primary.row.id,
+          source: "vault",
+          name: primary.row.name,
+          typeLabels: primary.row.availableFacets.map(
+            (key) => FACET_LABELS[key],
+          ),
+          tags: categoryLabels(primary.row),
+          createdAt: primary.row.createdAt,
+          updatedAt: primary.row.updatedAt,
+          storageLabels: ["Database vault"],
+          protocol: null,
+          application: null,
+          assignments: (inventory.assignments?.get(primary.row.id) ?? []).map(
+            (row) => ({
+              connectionId: row.connectionId,
+              name: row.name,
+              protocol: row.protocol,
+            }),
+          ),
+        }
+      : {
+          key: primary.metadata.key,
+          id: primary.row.id,
+          source: "connection",
+          name: primary.row.name,
+          typeLabels: primary.row.kinds.map(
+            (key) => CONNECTION_CREDENTIAL_LABELS[key],
+          ),
+          tags: [],
+          createdAt: null,
+          updatedAt: null,
+          storageLabels: primary.row.storage.map(
+            (key) => CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
+          ),
+          protocol: primary.row.protocol,
+          application: inventory.applications.get(primary.row.id) ?? null,
+          assignments: [
+            {
+              connectionId: primary.row.id,
+              name: primary.row.name,
+              protocol: primary.row.protocol,
+            },
+          ],
+        }
+    : null;
+  const disabledAll = busy || mgr.loading;
+  const copyAction = (
+    id: string,
+    field: "username" | "password" | "totp",
+    label: string,
+    icon: VaultAction["icon"],
+    shortcut: string,
+    priority: number,
+  ): VaultAction => {
+    const unavailable = !primaryTarget
+      ? tx("needSingle")
+      : !primaryTarget.fields.includes(field)
+        ? `${label} (${tx("notAvailable")})`
+        : undefined;
+    return {
+      id,
+      label,
+      icon,
+      shortcut,
+      priority,
+      group: "copy",
+      disabled: disabledAll || !!unavailable,
+      tooltip: unavailable,
+      onClick: (event) => {
+        actionAnchor.current = event?.currentTarget ?? rootRef.current;
+        if (primaryTarget) void actions.copy(primaryTarget, field);
+      },
+    };
+  };
+  const navigateAction = (
+    id: string,
+    mode: "go" | "open",
+    label: string,
+    icon: VaultAction["icon"],
+    priority: number,
+    shortcut?: string,
+  ): VaultAction => {
+    const unavailable = !primaryTarget
+      ? tx("needSingle")
+      : !primaryTarget.connections.length
+        ? "No associated connection"
+        : mode === "open" && !onOpenConnection
+          ? "Connection opening unavailable"
+          : undefined;
+    return {
+      id,
+      label,
+      icon,
+      priority,
+      shortcut,
+      group: "copy",
+      disabled: disabledAll || inventory.unavailable || !!unavailable,
+      tooltip: unavailable,
+      onClick: (event) => {
+        actionAnchor.current = event?.currentTarget ?? rootRef.current;
+        if (primaryTarget) void actions.navigate(primaryTarget, mode);
+      },
+    };
+  };
+  const editSelected = () => {
+    if (!primary) return;
+    if (primary.source === "vault")
+      onOpenEditor?.({
+        mode: "edit",
+        scope: { ...api.scope! },
+        credentialId: primary.row.id,
+      });
+    else request(() => void inventory.edit(primary.row.id));
+  };
+  const deleteSelected = () => {
+    if (!selectedVaultIds.length || !mgr.snapshot) return;
+    if (selectedVaultIds.length === 1)
+      return remove(mgr.snapshot, selectedVaultIds[0]);
+    const snapshot = mgr.snapshot;
+    const next = {
+      id: crypto.randomUUID(),
+      message: `Delete these ${selectedVaultIds.length} credentials from this database? Referencing connections will need another credential. This does not revoke credentials at the remote service.`,
+      danger: true,
+      action: () => {
+        void mgr.removeMany(snapshot, selectedVaultIds);
+      },
+    };
+    reviewRef.current = next;
+    setReview(next);
+  };
+  const openArchive = (mode: "import" | "export", ids?: readonly string[]) =>
+    request(() => {
+      mgr.discard();
+      setArchive({ mode, snapshot: mgr.snapshot!, ...(ids ? { ids } : {}) });
+    });
+  const toolbarActions: VaultAction[] = [
+    {
+      id: "new",
+      label: tx("newEntry"),
+      icon: Plus,
+      shortcut: "Insert",
+      priority: 0,
+      group: "entry",
+      tone: "primary",
+      disabled: disabledAll || !mgr.snapshot || !onOpenEditor,
+      onClick: () =>
+        onOpenEditor?.({ mode: "create", scope: { ...api.scope! } }),
+    },
+    {
+      id: "edit",
+      label: tx("editEntry"),
+      icon: Pencil,
+      shortcut: "Enter",
+      priority: 1,
+      group: "entry",
+      disabled:
+        disabledAll ||
+        !primary ||
+        (primary.source === "vault" ? !onOpenEditor : !onEditConnection),
+      tooltip: primary ? undefined : tx("needSingle"),
+      onClick: editSelected,
+    },
+    {
+      id: "delete",
+      label: tx("deleteEntry"),
+      icon: Trash2,
+      shortcut: "Delete",
+      priority: 2,
+      group: "entry",
+      tone: "danger",
+      disabled: disabledAll || !selectedVaultIds.length,
+      tooltip: selectedVaultIds.length ? undefined : tx("needSelection"),
+      onClick: deleteSelected,
+    },
+    copyAction(
+      "copyUsername",
+      "username",
+      tx("copyUsername"),
+      UserRound,
+      "Ctrl+B",
+      1,
+    ),
+    copyAction(
+      "copyPassword",
+      "password",
+      tx("copyPassword"),
+      Copy,
+      "Ctrl+C",
+      1,
+    ),
+    copyAction("copyTotp", "totp", tx("copyTotp"), ShieldCheck, "Ctrl+T", 3),
+    navigateAction("go", "go", tx("goToConnection"), LocateFixed, 5),
+    navigateAction(
+      "open",
+      "open",
+      tx("openConnection"),
+      ExternalLink,
+      4,
+      "Ctrl+U",
+    ),
+    {
+      id: "generate",
+      label: tx("generatePassword"),
+      icon: WandSparkles,
+      shortcut: "Ctrl+G",
+      priority: 3,
+      group: "tools",
+      onClick: () => setGeneratorOpen((open) => !open),
+    },
+    {
+      id: "import",
+      label: tx("importArchive"),
+      icon: Upload,
+      priority: 6,
+      group: "tools",
+      disabled: disabledAll || !mgr.snapshot,
+      onClick: () => openArchive("import"),
+    },
+    {
+      id: "export",
+      label: tx("exportArchive"),
+      icon: Download,
+      priority: 6,
+      group: "tools",
+      disabled: disabledAll || !mgr.snapshot?.entries.length || archiveBusy,
+      onClick: () => openArchive("export"),
+    },
+    {
+      id: "reload",
+      label: tx("reloadVault"),
+      icon: RefreshCw,
+      shortcut: "F5",
+      priority: 2,
+      group: "tools",
+      disabled: disabledAll,
+      onClick: () =>
+        request(() => {
+          mgr.discard();
+          void mgr.reload();
+        }),
+    },
+    {
+      id: "groups",
+      label: showGroups ? tx("hideGroups") : tx("showGroups"),
+      icon: PanelLeft,
+      priority: 7,
+      group: "view",
+      onClick: () => setShowGroups((value) => !value),
+    },
+    {
+      id: "details",
+      label: showDetails ? tx("hideDetails") : tx("showDetails"),
+      icon: PanelRight,
+      priority: 7,
+      group: "view",
+      onClick: () => setShowDetails((value) => !value),
+    },
+    {
+      id: "help",
+      label: tx("shortcuts"),
+      icon: Keyboard,
+      shortcut: "F1",
+      priority: 8,
+      group: "view",
+      onClick: () => setHelpOpen(true),
+    },
+  ];
+  const actionById = (id: string) =>
+    toolbarActions.find((action) => action.id === id)!;
+  const contextActions = [
+    "edit",
+    "copyUsername",
+    "copyPassword",
+    "copyTotp",
+    "open",
+    "go",
+    "delete",
+  ].map(actionById);
+  const runShortcut = (action: VaultShortcutAction) => {
+    const run = (id: string) => {
+      const target = actionById(id);
+      if (!target.disabled)
+        target.onClick({ currentTarget: rootRef.current } as never);
+    };
+    switch (action) {
+      case "search":
+        searchInput.current?.focus();
+        searchInput.current?.select();
+        break;
+      case "copyUsername":
+      case "copyPassword":
+      case "copyTotp":
+      case "edit":
+      case "delete":
+      case "reload":
+        run(action === "copyTotp" ? "copyTotp" : action);
+        break;
+      case "openConnection":
+        run("open");
+        break;
+      case "create":
+        run("new");
+        break;
+      case "generator":
+        setGeneratorOpen((open) => !open);
+        break;
+      case "selectAll":
+        setSelection(selectAll(allKeys));
+        break;
+      case "help":
+        setHelpOpen(true);
+        break;
+      case "escape":
+        if (helpOpen) setHelpOpen(false);
+        else if (generatorOpen) setGeneratorOpen(false);
+        else if (menu) setMenu(null);
+        else setSelection(EMPTY_SELECTION);
+        break;
+    }
+  };
+  const onRootKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    // Portaled dialogs bubble through React but live outside this subtree.
+    if (!event.currentTarget.contains(target) || helpOpen) return;
+    const typing = !!target.closest(
+      "input, textarea, select, [contenteditable=true], button, a, [role=tab], [role=menuitem], [role=menuitemradio], [role=separator]",
+    );
+    const action = matchVaultShortcut({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      inEditable: typing,
+      hasTextSelection: !!window.getSelection()?.toString(),
+    });
+    if (!action) return;
+    event.preventDefault();
+    runShortcut(action);
+  };
+  const onRowsKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const target = event.target as HTMLElement;
+    if (target.closest("input, select, textarea, button, [role=separator]"))
+      return;
+    event.preventDefault();
+    keyboardNav.current = true;
+    setSelection((old) =>
+      moveSelection(
+        old,
+        visibleKeys,
+        event.key === "ArrowDown" ? 1 : -1,
+        event.shiftKey,
+      ),
+    );
+  };
+  useEffect(() => {
+    if (!keyboardNav.current || !selection.focus) return;
+    keyboardNav.current = false;
+    scrollPane.current
+      ?.querySelector<HTMLElement>(`[data-row-key="${selection.focus}"]`)
+      ?.focus();
+  }, [selection.focus]);
+  const rowProps = (item: Item) => {
+    const key = item.metadata.key;
+    const selected = selection.keys.has(key);
+    return {
+      "data-row-key": key,
+      "aria-selected": selected,
+      tabIndex: selection.focus === key ? 0 : -1,
+      onClick: (event: React.MouseEvent) => {
+        if ((event.target as HTMLElement).closest("button, a, input")) return;
+        setSelection((old) =>
+          selectRow(
+            old,
+            key,
+            { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey },
+            visibleKeys,
+          ),
+        );
+      },
+      onDoubleClick: (event: React.MouseEvent) => {
+        if ((event.target as HTMLElement).closest("button, a, input")) return;
+        editSelected();
+      },
+      onContextMenu: (event: React.MouseEvent) => {
+        event.preventDefault();
+        if (!selected)
+          setSelection((old) => selectRow(old, key, {}, visibleKeys));
+        setMenu({ x: event.clientX, y: event.clientY });
+      },
+      className: `border-b border-[var(--color-border)] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-primary ${selected ? "bg-[color-mix(in_srgb,var(--color-primary)_14%,transparent)]" : "hover:bg-[var(--color-surfaceHover)]"} ${density === "compact" ? "[&_td]:!py-0.5" : ""}`,
+    };
+  };
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
+    <div
+      ref={rootRef}
+      onKeyDown={onRootKeyDown}
+      className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+    >
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
         <KeyRound size={20} className="text-primary" />
         <h2 className="font-semibold">Database credential vault</h2>
         <span className="text-xs text-[var(--color-textSecondary)]">
@@ -481,70 +1068,6 @@ function VaultWorkspace({
           reusable credentials · {inventory.rows.length} connections with
           credentials / references
         </span>
-        <div className="ml-auto flex gap-2">
-          <button
-            type="button"
-            className="sor-btn-icon"
-            aria-label="Import archive"
-            data-tooltip="Import archive"
-            disabled={busy || mgr.loading || !mgr.snapshot}
-            onClick={() =>
-              request(() => {
-                mgr.discard();
-                setArchive({ mode: "import", snapshot: mgr.snapshot! });
-              })
-            }
-          >
-            <Upload size={14} />
-          </button>
-          <button
-            type="button"
-            className="sor-btn-icon"
-            aria-label="Export archive"
-            data-tooltip="Export archive"
-            disabled={
-              busy ||
-              mgr.loading ||
-              !mgr.snapshot?.entries.length ||
-              archiveBusy
-            }
-            onClick={() =>
-              request(() => {
-                mgr.discard();
-                setArchive({ mode: "export", snapshot: mgr.snapshot! });
-              })
-            }
-          >
-            <Download size={14} />
-          </button>
-          <button
-            type="button"
-            className="sor-btn-icon"
-            aria-label="Reload vault"
-            data-tooltip="Reload vault"
-            disabled={busy || mgr.loading}
-            onClick={() =>
-              request(() => {
-                mgr.discard();
-                void mgr.reload();
-              })
-            }
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            type="button"
-            className="sor-btn-icon text-primary"
-            aria-label="New credential"
-            data-tooltip="New credential"
-            disabled={busy || mgr.loading || !mgr.snapshot || !onOpenEditor}
-            onClick={() =>
-              onOpenEditor?.({ mode: "create", scope: { ...api.scope! } })
-            }
-          >
-            <Plus size={14} />
-          </button>
-        </div>
       </header>
       <p className="px-4 pt-3 text-xs text-[var(--color-textSecondary)]">
         Reusable entries and saved connection credentials are shown together
@@ -583,70 +1106,100 @@ function VaultWorkspace({
         </p>
       )}
       <div
-        className="flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 py-3"
+        className="flex shrink-0 flex-col gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
         role="toolbar"
         aria-label="Credential list controls"
       >
-        <label className="flex items-center gap-2">
-          <Search size={16} />
-          <input
-            type="search"
-            aria-label="Search vault credentials"
-            className="sor-form-input"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
+        <div ref={barRef} className="flex flex-wrap items-center gap-2">
+          <VaultSearchBox
+            value={searchState}
+            onChange={(next) => {
+              setSearchState(next);
               setPage(0);
             }}
-            placeholder="Search names, tags, types or assignments"
+            invalid={compiledSearch.invalid}
+            inputRef={searchInput}
+            tx={tx}
           />
-        </label>
-        <div className="flex items-center gap-2 text-sm">
-          <label htmlFor="vault-credential-source-filter">Source</label>
-          <Select
-            id="vault-credential-source-filter"
-            label="Credential source filter"
-            variant="form-sm"
-            value={source}
-            onChange={(value) => {
-              setSource(value as typeof source);
-              setPage(0);
-            }}
-            options={[
-              { value: "all", label: "All sources" },
-              { value: "vault", label: "Reusable vault" },
-              { value: "connections", label: "Connections" },
-            ]}
-          />
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <VaultActionBar
+              actions={toolbarActions}
+              tx={tx}
+              label={tx("actionsLabel")}
+            />
+            <VaultSortMenu
+              sort={sort}
+              direction={sortDirection}
+              onSort={(key) => setSort(key)}
+              onDirection={setSortDirection}
+              tx={tx}
+            />
+            <VaultViewMenu
+              view={view}
+              density={density}
+              canPersist={!!preferences}
+              onColumns={(columns) => saveView({ columns })}
+              onMode={(mode) => saveView({ mode })}
+              onDensity={setDensity}
+              tx={tx}
+            />
+          </div>
         </div>
-        <button
-          type="button"
-          className="sor-option-chip text-xs"
-          aria-expanded={advanced}
-          aria-controls={filterPanelId}
-          onClick={() => setAdvanced((open) => !open)}
-        >
-          <Filter size={14} aria-hidden="true" /> Advanced filters
-          {advancedFilterCount ? ` (${advancedFilterCount})` : ""}
-        </button>
-        {activeFilterCount > 0 && (
-          <>
-            <span
-              role="status"
-              className="text-xs text-[var(--color-textSecondary)]"
-            >
-              {activeFilterCount} active{" "}
-              {activeFilterCount === 1 ? "filter" : "filters"}
-            </span>
-            <button
-              type="button"
-              className="sor-option-chip text-xs"
-              onClick={clearFilters}
-            >
-              Clear filters
-            </button>
-          </>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 text-xs">
+            <label htmlFor="vault-credential-source-filter">Source</label>
+            <Select
+              id="vault-credential-source-filter"
+              label="Credential source filter"
+              variant="form-sm"
+              value={source}
+              onChange={(value) => {
+                setSource(value as typeof source);
+                setPage(0);
+              }}
+              options={[
+                { value: "all", label: "All sources" },
+                { value: "vault", label: "Reusable vault" },
+                { value: "connections", label: "Connections" },
+              ]}
+            />
+          </div>
+          <VaultQuickFilterChips
+            active={quick}
+            onToggle={(filter) =>
+              setQuick((old) => toggleQuickFilter(old, filter))
+            }
+            tx={tx}
+          />
+          <button
+            type="button"
+            className="sor-option-chip text-xs"
+            aria-expanded={advanced}
+            aria-controls={filterPanelId}
+            onClick={() => setAdvanced((open) => !open)}
+          >
+            <Filter size={14} aria-hidden="true" /> Advanced filters
+            {advancedFilterCount ? ` (${advancedFilterCount})` : ""}
+          </button>
+          {activeFilterCount > 0 && (
+            <>
+              <span
+                role="status"
+                className="text-xs text-[var(--color-textSecondary)]"
+              >
+                {activeFilterCount} active{" "}
+                {activeFilterCount === 1 ? "filter" : "filters"}
+              </span>
+              <button
+                type="button"
+                className="sor-option-chip text-xs"
+                onClick={clearFilters}
+              >
+                Clear filters
+              </button>
+            </>
+          )}
+        </div>
       </div>
       {advanced && (
         <div
@@ -727,438 +1280,522 @@ function VaultWorkspace({
           </p>
         </div>
       )}
-      <div
-        className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4"
-        style={{
-          scrollbarWidth: "thin",
-          scrollbarColor: "var(--color-border) var(--color-background)",
-          scrollbarGutter: "stable",
-        }}
-        ref={scrollPane}
-        onScroll={(event) => {
-          const pane = event.currentTarget;
-          if (
-            view.mode === "infinite" &&
-            pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120 &&
-            visibleCount < rows.length
-          )
-            grow();
-        }}
-        role="region"
-        aria-label="Credential inventory"
-        tabIndex={0}
-      >
-        <>
-          {layoutError && (
-            <p role="alert">Could not save the credential list layout.</p>
+      <div className="flex min-h-0 flex-1">
+        {showGroups && (
+          <div className="hidden md:flex">
+            <VaultGroupSidebar
+              counts={groupCounts}
+              active={activeGroup}
+              onSelect={selectGroup}
+              tx={tx}
+            />
+          </div>
+        )}
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+          {selection.keys.size > 1 && (
+            <div
+              role="group"
+              aria-label={tx("bulkActions")}
+              className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] px-3 py-1 text-xs"
+            >
+              <strong>
+                {tx("selectedCount", { count: selection.keys.size })}
+              </strong>
+              <button
+                type="button"
+                className="sor-option-chip text-xs"
+                disabled={disabledAll || !selectedVaultIds.length}
+                data-tooltip={
+                  selectedVaultIds.length ? undefined : tx("needSelection")
+                }
+                onClick={deleteSelected}
+              >
+                <Trash2 size={12} aria-hidden="true" />{" "}
+                {tx("deleteSelected", { count: selectedVaultIds.length })}
+              </button>
+              <button
+                type="button"
+                className="sor-option-chip text-xs"
+                disabled={
+                  disabledAll || !selectedVaultIds.length || archiveBusy
+                }
+                data-tooltip={
+                  selectedVaultIds.length ? undefined : tx("needSelection")
+                }
+                onClick={() => openArchive("export", selectedVaultIds)}
+              >
+                <Download size={12} aria-hidden="true" /> {tx("exportSelected")}
+              </button>
+              <button
+                type="button"
+                className="sor-option-chip ml-auto text-xs"
+                onClick={() => setSelection(EMPTY_SELECTION)}
+              >
+                <X size={12} aria-hidden="true" /> {tx("clearSelection")}
+              </button>
+            </div>
           )}
-          <table
+          <div
+            onKeyDown={onRowsKeyDown}
+            className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4"
             style={{
-              width: view.columns.reduce(
-                (sum, id) =>
-                  sum +
-                  (dragWidth?.id === id ? dragWidth.width : view.widths[id]),
-                0,
-              ),
+              scrollbarWidth: "thin",
+              scrollbarColor: "var(--color-border) var(--color-background)",
+              scrollbarGutter: "stable",
             }}
-            className="mx-auto min-w-full table-fixed rounded border border-[var(--color-border)] bg-[var(--color-background)] text-left text-xs [&_td]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2"
-            aria-label="Database vault credentials"
-            aria-busy={mgr.loading}
+            ref={scrollPane}
+            onScroll={(event) => {
+              const pane = event.currentTarget;
+              if (
+                view.mode === "infinite" &&
+                pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120 &&
+                visibleCount < rows.length
+              )
+                grow();
+            }}
+            role="region"
+            aria-label="Credential inventory"
+            tabIndex={0}
           >
-            <colgroup>
-              {view.columns.map((id) => (
-                <col
-                  key={id}
-                  style={{
-                    width:
-                      dragWidth?.id === id ? dragWidth.width : view.widths[id],
-                  }}
-                />
-              ))}
-            </colgroup>
-            <thead className="sticky top-0 z-10 bg-[var(--color-background)]">
-              <tr className="border-b border-[var(--color-border)]">
-                {VAULT_COLUMNS.filter((column) =>
-                  view.columns.includes(column.id),
-                ).map(({ id, label, min }) => (
-                  <th
-                    key={id}
-                    scope="col"
-                    className="relative truncate px-3 py-2"
-                    aria-sort={
-                      id === sort
-                        ? sortDirection === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : ["name", "source", "updated"].includes(id)
-                          ? "none"
-                          : undefined
-                    }
-                  >
-                    {id === "name" || id === "source" || id === "updated" ? (
-                      <button
-                        type="button"
-                        className="inline-flex max-w-full items-center gap-1 font-medium hover:text-primary"
-                        aria-label={`Sort credentials by ${id}`}
-                        onClick={() => sortBy(id)}
-                      >
-                        {label}
-                        <ArrowUpDown
-                          size={12}
-                          aria-hidden="true"
-                          className={
-                            id === sort ? "text-primary" : "opacity-40"
-                          }
-                        />
-                      </button>
-                    ) : (
-                      label
-                    )}
-                    <span
-                      role="separator"
-                      aria-label={`Resize ${label} column`}
-                      aria-orientation="vertical"
-                      aria-valuemin={min}
-                      aria-valuemax={640}
-                      aria-valuenow={
-                        dragWidth?.id === id ? dragWidth.width : view.widths[id]
-                      }
-                      tabIndex={preferences ? 0 : -1}
-                      className="absolute inset-y-0 right-0 w-2 cursor-col-resize touch-none border-r border-[var(--color-border)] focus-visible:outline focus-visible:outline-primary"
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "ArrowLeft" ||
-                          event.key === "ArrowRight"
-                        ) {
-                          event.preventDefault();
-                          saveView({
-                            widths: {
-                              ...view.widths,
-                              [id]:
-                                view.widths[id] +
-                                (event.key === "ArrowRight" ? 10 : -10),
-                            },
-                          });
-                        }
-                      }}
-                      onPointerDown={(event) => {
-                        if (!preferences) return;
-                        event.preventDefault();
-                        drag.current = {
-                          id,
-                          x: event.clientX,
-                          width: view.widths[id],
-                          latest: view.widths[id],
-                        };
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                      }}
-                      onPointerMove={(event) => {
-                        if (drag.current?.id !== id) return;
-                        const width = Math.max(
-                          min,
-                          Math.min(
-                            640,
-                            drag.current.width + event.clientX - drag.current.x,
-                          ),
-                        );
-                        drag.current.latest = width;
-                        setDragWidth({ id, width });
-                      }}
-                      onPointerUp={(event) => {
-                        if (drag.current?.id !== id) return;
-                        const width = drag.current.latest;
-                        drag.current = null;
-                        setDragWidth(null);
-                        event.currentTarget.releasePointerCapture(
-                          event.pointerId,
-                        );
-                        saveView({ widths: { ...view.widths, [id]: width } });
-                      }}
-                      onLostPointerCapture={() => {
-                        drag.current = null;
-                        setDragWidth(null);
-                      }}
-                      onPointerCancel={() => {
-                        drag.current = null;
-                        setDragWidth(null);
+            <>
+              {layoutError && (
+                <p role="alert">Could not save the credential list layout.</p>
+              )}
+              <table
+                style={{
+                  width: view.columns.reduce(
+                    (sum, id) =>
+                      sum +
+                      (dragWidth?.id === id
+                        ? dragWidth.width
+                        : view.widths[id]),
+                    0,
+                  ),
+                }}
+                className="mx-auto min-w-full table-fixed rounded border border-[var(--color-border)] bg-[var(--color-background)] text-left text-xs [&_td]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2"
+                aria-label="Database vault credentials"
+                aria-busy={mgr.loading}
+              >
+                <colgroup>
+                  {view.columns.map((id) => (
+                    <col
+                      key={id}
+                      style={{
+                        width:
+                          dragWidth?.id === id
+                            ? dragWidth.width
+                            : view.widths[id],
                       }}
                     />
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows
-                .slice(
-                  view.mode === "infinite" ? 0 : currentPage * view.pageSize,
-                  view.mode === "infinite"
-                    ? visibleCount
-                    : (currentPage + 1) * view.pageSize,
-                )
-                .map((item) =>
-                  item.source === "connection" ? (
-                    <tr
-                      key={`connection:${item.row.id}`}
-                      className="border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surfaceHover)]"
-                    >
-                      <td
-                        hidden={!view.columns.includes("name")}
-                        className="p-2 font-medium"
+                  ))}
+                </colgroup>
+                <thead className="sticky top-0 z-10 bg-[var(--color-background)]">
+                  <tr className="border-b border-[var(--color-border)]">
+                    {VAULT_COLUMNS.filter((column) =>
+                      view.columns.includes(column.id),
+                    ).map(({ id, label, min }) => (
+                      <th
+                        key={id}
+                        scope="col"
+                        className="relative truncate px-3 py-2"
+                        aria-sort={
+                          id === sort
+                            ? sortDirection === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : ["name", "source", "updated"].includes(id)
+                              ? "none"
+                              : undefined
+                        }
                       >
-                        <span className="flex min-w-0 items-center gap-2">
+                        {id === "name" ||
+                        id === "source" ||
+                        id === "updated" ? (
+                          <button
+                            type="button"
+                            className="inline-flex max-w-full items-center gap-1 font-medium hover:text-primary"
+                            aria-label={`Sort credentials by ${id}`}
+                            onClick={() => sortBy(id)}
+                          >
+                            {label}
+                            <ArrowUpDown
+                              size={12}
+                              aria-hidden="true"
+                              className={
+                                id === sort ? "text-primary" : "opacity-40"
+                              }
+                            />
+                          </button>
+                        ) : (
+                          label
+                        )}
+                        <span
+                          role="separator"
+                          aria-label={`Resize ${label} column`}
+                          aria-orientation="vertical"
+                          aria-valuemin={min}
+                          aria-valuemax={640}
+                          aria-valuenow={
+                            dragWidth?.id === id
+                              ? dragWidth.width
+                              : view.widths[id]
+                          }
+                          tabIndex={preferences ? 0 : -1}
+                          className="absolute inset-y-0 right-0 w-2 cursor-col-resize touch-none border-r border-[var(--color-border)] focus-visible:outline focus-visible:outline-primary"
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "ArrowLeft" ||
+                              event.key === "ArrowRight"
+                            ) {
+                              event.preventDefault();
+                              saveView({
+                                widths: {
+                                  ...view.widths,
+                                  [id]:
+                                    view.widths[id] +
+                                    (event.key === "ArrowRight" ? 10 : -10),
+                                },
+                              });
+                            }
+                          }}
+                          onPointerDown={(event) => {
+                            if (!preferences) return;
+                            event.preventDefault();
+                            drag.current = {
+                              id,
+                              x: event.clientX,
+                              width: view.widths[id],
+                              latest: view.widths[id],
+                            };
+                            event.currentTarget.setPointerCapture(
+                              event.pointerId,
+                            );
+                          }}
+                          onPointerMove={(event) => {
+                            if (drag.current?.id !== id) return;
+                            const width = Math.max(
+                              min,
+                              Math.min(
+                                640,
+                                drag.current.width +
+                                  event.clientX -
+                                  drag.current.x,
+                              ),
+                            );
+                            drag.current.latest = width;
+                            setDragWidth({ id, width });
+                          }}
+                          onPointerUp={(event) => {
+                            if (drag.current?.id !== id) return;
+                            const width = drag.current.latest;
+                            drag.current = null;
+                            setDragWidth(null);
+                            event.currentTarget.releasePointerCapture(
+                              event.pointerId,
+                            );
+                            saveView({
+                              widths: { ...view.widths, [id]: width },
+                            });
+                          }}
+                          onLostPointerCapture={() => {
+                            drag.current = null;
+                            setDragWidth(null);
+                          }}
+                          onPointerCancel={() => {
+                            drag.current = null;
+                            setDragWidth(null);
+                          }}
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((item) =>
+                    item.source === "connection" ? (
+                      <tr key={`connection:${item.row.id}`} {...rowProps(item)}>
+                        <td
+                          hidden={!view.columns.includes("name")}
+                          className="p-2 font-medium"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="truncate"
+                              data-tooltip={item.row.name}
+                            >
+                              {item.row.name}
+                            </span>
+                            <span className="shrink-0 text-xs font-normal text-[var(--color-textSecondary)]">
+                              {item.row.protocol}
+                            </span>
+                          </span>
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("source")}
+                          className="truncate text-xs"
+                          data-tooltip={item.row.storage
+                            .map(
+                              (key) =>
+                                CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
+                            )
+                            .join(" · ")}
+                        >
+                          {item.row.storage
+                            .map(
+                              (key) =>
+                                CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
+                            )
+                            .join(" · ")}
+                          {item.row.localValuesIgnored && (
+                            <span
+                              className="ml-1 text-[var(--color-textSecondary)]"
+                              data-tooltip="Local login values retained, not a vault fallback"
+                            >
+                              · Local retained
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("types")}
+                          className="truncate text-[var(--color-textSecondary)]"
+                          data-tooltip={item.row.kinds
+                            .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
+                            .join(" · ")}
+                        >
+                          {item.row.kinds
+                            .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
+                            .join(" · ") || "Not reported"}
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("categories")}
+                          className="truncate text-[var(--color-textSecondary)]"
+                          data-tooltip="Category tags are assigned to reusable vault entries"
+                        >
+                          <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
+                            —
+                          </span>
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("assigned")}
+                          className="p-2 text-right text-[var(--color-textSecondary)]"
+                          aria-label="Usage count not applicable to a connection-local row"
+                        >
                           <span
-                            className="truncate"
-                            data-tooltip={item.row.name}
+                            className="block truncate"
+                            data-tooltip={`${item.row.name}${inventory.applications.get(item.row.id) ? ` (${inventory.applications.get(item.row.id)})` : ""}`}
                           >
                             {item.row.name}
+                            {inventory.applications.get(item.row.id)
+                              ? ` (${inventory.applications.get(item.row.id)})`
+                              : ""}
                           </span>
-                          <span className="shrink-0 text-xs font-normal text-[var(--color-textSecondary)]">
-                            {item.row.protocol}
-                          </span>
-                        </span>
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("source")}
-                        className="truncate text-xs"
-                        data-tooltip={item.row.storage
-                          .map(
-                            (key) => CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
-                          )
-                          .join(" · ")}
-                      >
-                        {item.row.storage
-                          .map(
-                            (key) => CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
-                          )
-                          .join(" · ")}
-                        {item.row.localValuesIgnored && (
-                          <span
-                            className="ml-1 text-[var(--color-textSecondary)]"
-                            data-tooltip="Local login values retained, not a vault fallback"
-                          >
-                            · Local retained
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("types")}
-                        className="truncate text-[var(--color-textSecondary)]"
-                        data-tooltip={item.row.kinds
-                          .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
-                          .join(" · ")}
-                      >
-                        {item.row.kinds
-                          .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
-                          .join(" · ") || "Not reported"}
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("categories")}
-                        className="truncate text-[var(--color-textSecondary)]"
-                        data-tooltip="Category tags are assigned to reusable vault entries"
-                      >
-                        <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
-                          —
-                        </span>
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("assigned")}
-                        className="p-2 text-right text-[var(--color-textSecondary)]"
-                        aria-label="Usage count not applicable to a connection-local row"
-                      >
-                        <span
-                          className="block truncate"
-                          data-tooltip={`${item.row.name}${inventory.applications.get(item.row.id) ? ` (${inventory.applications.get(item.row.id)})` : ""}`}
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("updated")}
+                          className="truncate text-[var(--color-textMuted)]"
+                        >
+                          Not reported
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("actions")}
+                          className="p-2 text-right"
+                        >
+                          <div className="flex flex-nowrap items-center justify-end gap-1 [&>button]:inline-flex [&>button]:size-7 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center">
+                            {rowActions(actionTarget(item))}
+                            {inventory.migratable.has(item.row.id) && (
+                              <button
+                                type="button"
+                                className="sor-btn-icon"
+                                disabled={busy || mgr.loading || !onOpenEditor}
+                                aria-label={`Move credentials from ${item.row.name} to vault`}
+                                data-tooltip="Move to vault"
+                                onClick={() =>
+                                  onOpenEditor?.({
+                                    mode: "migrate",
+                                    scope: { ...api.scope! },
+                                    connectionId: item.row.id,
+                                  })
+                                }
+                              >
+                                <ArrowRightToLine size={15} />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="sor-btn-icon"
+                              disabled={
+                                busy || mgr.loading || !onEditConnection
+                              }
+                              aria-label={`Edit credentials in connection ${item.row.name}`}
+                              data-tooltip="Open the owning connection editor; no secrets are copied into the vault"
+                              onClick={() =>
+                                request(() => {
+                                  void inventory.edit(item.row.id);
+                                })
+                              }
+                            >
+                              <Pencil size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={`vault:${item.row.id}`} {...rowProps(item)}>
+                        <td
+                          hidden={!view.columns.includes("name")}
+                          className="truncate font-medium"
+                          data-tooltip={item.row.name}
                         >
                           {item.row.name}
-                          {inventory.applications.get(item.row.id)
-                            ? ` (${inventory.applications.get(item.row.id)})`
-                            : ""}
-                        </span>
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("updated")}
-                        className="truncate text-[var(--color-textMuted)]"
-                      >
-                        Not reported
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("actions")}
-                        className="p-2 text-right"
-                      >
-                        <div className="flex flex-nowrap items-center justify-end gap-1 [&>button]:inline-flex [&>button]:size-7 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center">
-                          {rowActions(actionTarget(item))}
-                          {inventory.migratable.has(item.row.id) && (
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("source")}
+                          className="p-2 text-xs"
+                        >
+                          Reusable vault
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("types")}
+                          className="truncate text-[var(--color-textSecondary)]"
+                          data-tooltip={item.row.availableFacets
+                            .map((key) => FACET_LABELS[key])
+                            .join(" · ")}
+                        >
+                          {item.row.availableFacets
+                            .map((key) => FACET_LABELS[key])
+                            .join(" · ") || "None reported"}
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("categories")}
+                          className="truncate text-[var(--color-textSecondary)]"
+                          data-tooltip={
+                            categoryLabels(item.row).join(", ") ||
+                            "No category tags assigned"
+                          }
+                        >
+                          <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
+                            {categoryLabels(item.row).join(" · ") || "—"}
+                          </span>
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("assigned")}
+                          className="p-2 text-right tabular-nums"
+                          aria-label={
+                            inventory.usage === null
+                              ? "Usage unavailable"
+                              : `${inventory.usage.get(item.row.id) ?? 0} saved connection references`
+                          }
+                        >
+                          <span className="flex min-w-0 items-center gap-1 text-left">
+                            <span className="shrink-0" aria-hidden="true">
+                              {inventory.usage === null
+                                ? "—"
+                                : (inventory.usage.get(item.row.id) ?? 0)}{" "}
+                              ·
+                            </span>
+                            <span
+                              className="truncate"
+                              aria-label={assignmentText(item.row.id)}
+                              data-tooltip={assignmentText(item.row.id)}
+                            >
+                              {assignmentText(item.row.id)}
+                            </span>
+                          </span>
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("updated")}
+                          className="truncate tabular-nums text-[var(--color-textSecondary)]"
+                        >
+                          {Number.isFinite(Date.parse(item.row.updatedAt)) ? (
+                            <time
+                              dateTime={item.row.updatedAt}
+                              data-tooltip={item.row.updatedAt}
+                            >
+                              {new Date(item.row.updatedAt).toLocaleString()}
+                            </time>
+                          ) : (
+                            "Not reported"
+                          )}
+                        </td>
+                        <td
+                          hidden={!view.columns.includes("actions")}
+                          className="p-2"
+                        >
+                          <div className="flex flex-nowrap items-center justify-end gap-1 [&>button]:inline-flex [&>button]:size-7 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center">
+                            {rowActions(actionTarget(item))}
                             <button
                               type="button"
                               className="sor-btn-icon"
                               disabled={busy || mgr.loading || !onOpenEditor}
-                              aria-label={`Move credentials from ${item.row.name} to vault`}
-                              data-tooltip="Move to vault"
-                              onClick={() =>
+                              aria-label={`Edit ${item.row.name}`}
+                              data-tooltip="Explicitly load this credential into the private editor"
+                              onClick={() => {
                                 onOpenEditor?.({
-                                  mode: "migrate",
+                                  mode: "edit",
                                   scope: { ...api.scope! },
-                                  connectionId: item.row.id,
-                                })
-                              }
+                                  credentialId: item.row.id,
+                                });
+                              }}
                             >
-                              <ArrowRightToLine size={15} />
+                              <Pencil size={15} />
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            className="sor-btn-icon"
-                            disabled={busy || mgr.loading || !onEditConnection}
-                            aria-label={`Edit credentials in connection ${item.row.name}`}
-                            data-tooltip="Open the owning connection editor; no secrets are copied into the vault"
-                            onClick={() =>
-                              request(() => {
-                                void inventory.edit(item.row.id);
-                              })
-                            }
-                          >
-                            <Pencil size={15} />
-                          </button>
-                        </div>
+                            <button
+                              type="button"
+                              className="sor-btn-icon text-error"
+                              disabled={busy || mgr.loading}
+                              aria-label={`Delete ${item.row.name}`}
+                              data-tooltip={`Delete ${item.row.name}`}
+                              onClick={() => remove(mgr.snapshot!, item.row.id)}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                  {!rows.length && (
+                    <tr>
+                      <td
+                        colSpan={view.columns.length}
+                        className="p-5 text-center text-[var(--color-textSecondary)]"
+                      >
+                        {mgr.loading
+                          ? "Loading credential metadata…"
+                          : mgr.error
+                            ? "The vault is unavailable. Reload after restoring access."
+                            : activeFilterCount
+                              ? "No matching credentials."
+                              : "No credentials in this source. Create a reusable credential or save credentials in a connection."}
                       </td>
                     </tr>
-                  ) : (
-                    <tr
-                      key={`vault:${item.row.id}`}
-                      className="border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surfaceHover)]"
-                    >
-                      <td
-                        hidden={!view.columns.includes("name")}
-                        className="truncate font-medium"
-                        data-tooltip={item.row.name}
-                      >
-                        {item.row.name}
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("source")}
-                        className="p-2 text-xs"
-                      >
-                        Reusable vault
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("types")}
-                        className="truncate text-[var(--color-textSecondary)]"
-                        data-tooltip={item.row.availableFacets
-                          .map((key) => FACET_LABELS[key])
-                          .join(" · ")}
-                      >
-                        {item.row.availableFacets
-                          .map((key) => FACET_LABELS[key])
-                          .join(" · ") || "None reported"}
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("categories")}
-                        className="truncate text-[var(--color-textSecondary)]"
-                        data-tooltip={
-                          categoryLabels(item.row).join(", ") ||
-                          "No category tags assigned"
-                        }
-                      >
-                        <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
-                          {categoryLabels(item.row).join(" · ") || "—"}
-                        </span>
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("assigned")}
-                        className="p-2 text-right tabular-nums"
-                        aria-label={
-                          inventory.usage === null
-                            ? "Usage unavailable"
-                            : `${inventory.usage.get(item.row.id) ?? 0} saved connection references`
-                        }
-                      >
-                        <span className="flex min-w-0 items-center gap-1 text-left">
-                          <span className="shrink-0" aria-hidden="true">
-                            {inventory.usage === null
-                              ? "—"
-                              : (inventory.usage.get(item.row.id) ?? 0)}{" "}
-                            ·
-                          </span>
-                          <span
-                            className="truncate"
-                            aria-label={assignmentText(item.row.id)}
-                            data-tooltip={assignmentText(item.row.id)}
-                          >
-                            {assignmentText(item.row.id)}
-                          </span>
-                        </span>
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("updated")}
-                        className="truncate tabular-nums text-[var(--color-textSecondary)]"
-                      >
-                        {Number.isFinite(Date.parse(item.row.updatedAt)) ? (
-                          <time
-                            dateTime={item.row.updatedAt}
-                            data-tooltip={item.row.updatedAt}
-                          >
-                            {new Date(item.row.updatedAt).toLocaleString()}
-                          </time>
-                        ) : (
-                          "Not reported"
-                        )}
-                      </td>
-                      <td
-                        hidden={!view.columns.includes("actions")}
-                        className="p-2"
-                      >
-                        <div className="flex flex-nowrap items-center justify-end gap-1 [&>button]:inline-flex [&>button]:size-7 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center">
-                          {rowActions(actionTarget(item))}
-                          <button
-                            type="button"
-                            className="sor-btn-icon"
-                            disabled={busy || mgr.loading || !onOpenEditor}
-                            aria-label={`Edit ${item.row.name}`}
-                            data-tooltip="Explicitly load this credential into the private editor"
-                            onClick={() => {
-                              onOpenEditor?.({
-                                mode: "edit",
-                                scope: { ...api.scope! },
-                                credentialId: item.row.id,
-                              });
-                            }}
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            className="sor-btn-icon text-error"
-                            disabled={busy || mgr.loading}
-                            aria-label={`Delete ${item.row.name}`}
-                            data-tooltip={`Delete ${item.row.name}`}
-                            onClick={() => remove(mgr.snapshot!, item.row.id)}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ),
-                )}
-              {!rows.length && (
-                <tr>
-                  <td
-                    colSpan={view.columns.length}
-                    className="p-5 text-center text-[var(--color-textSecondary)]"
-                  >
-                    {mgr.loading
-                      ? "Loading credential metadata…"
-                      : mgr.error
-                        ? "The vault is unavailable. Reload after restoring access."
-                        : activeFilterCount
-                          ? "No matching credentials."
-                          : "No credentials in this source. Create a reusable credential or save credentials in a connection."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </>
+                  )}
+                </tbody>
+              </table>
+            </>
+          </div>
+        </div>
+        {showDetails && (
+          <div className="hidden lg:flex">
+            <VaultDetailPane
+              item={detailItem}
+              selectedCount={selection.keys.size}
+              canNavigate={!disabledAll && !inventory.unavailable}
+              canOpen={
+                !disabledAll && !inventory.unavailable && !!onOpenConnection
+              }
+              onGo={(connectionId) =>
+                primaryTarget &&
+                void actions.navigate(primaryTarget, "go", connectionId)
+              }
+              onOpen={(connectionId) =>
+                primaryTarget &&
+                void actions.navigate(primaryTarget, "open", connectionId)
+              }
+              tx={tx}
+            />
+          </div>
+        )}
       </div>
       <PopoverSurface
         isOpen={!!actions.choice}
@@ -1231,12 +1868,34 @@ function VaultWorkspace({
         )}
       </PopoverSurface>
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-3 text-xs">
-        <span>
-          {rows.length} results ·{" "}
-          {view.mode === "infinite"
-            ? `Showing ${Math.min(visibleCount, rows.length)}`
-            : `Page ${currentPage + 1} of ${pages}`}
-        </span>
+        <div
+          role="status"
+          aria-label="Vault status"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1"
+        >
+          <span>
+            {rows.length} results ·{" "}
+            {view.mode === "infinite"
+              ? `Showing ${Math.min(visibleCount, rows.length)}`
+              : `Page ${currentPage + 1} of ${pages}`}
+          </span>
+          <span>{tx("statusEntries", { count: allRows.length })}</span>
+          {selection.keys.size > 0 && (
+            <span>{tx("selectedCount", { count: selection.keys.size })}</span>
+          )}
+          {latestUpdate && (
+            <span>
+              {tx("statusLastUpdated", {
+                when: new Date(latestUpdate).toLocaleString(),
+              })}
+            </span>
+          )}
+          {copyRemaining > 0 && (
+            <span className="font-medium text-primary">
+              {tx("clipboardCountdown", { seconds: copyRemaining })}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
             <span>Per page</span>
@@ -1305,6 +1964,7 @@ function VaultWorkspace({
             api={api}
             snapshot={archive.snapshot}
             mode={archive.mode}
+            preselect={archive.ids}
             onClose={() => setArchive(null)}
             onImported={mgr.reload}
             onBusyChange={setArchiveBusy}
@@ -1332,6 +1992,22 @@ function VaultWorkspace({
           action();
         }}
       />
+      <VaultContextMenu
+        position={menu}
+        actions={contextActions}
+        onClose={() => setMenu(null)}
+        tx={tx}
+      />
+      <VaultPasswordGenerator
+        isOpen={generatorOpen}
+        anchorRef={barRef}
+        onClose={() => setGeneratorOpen(false)}
+        onCopied={(seconds) => actions.setLastCopy({ at: Date.now(), seconds })}
+        tx={tx}
+      />
+      {helpOpen && (
+        <VaultShortcutHelp onClose={() => setHelpOpen(false)} tx={tx} />
+      )}
     </div>
   );
 }

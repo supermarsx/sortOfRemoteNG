@@ -27,10 +27,13 @@ export default function VaultArchiveDialog({
   onClose,
   onImported,
   onBusyChange,
+  preselect,
 }: {
   api: DatabaseCredentialVaultApi;
   snapshot: DatabaseCredentialSnapshot;
   mode: "import" | "export";
+  /** Export only these credentials initially; default is every entry. */
+  preselect?: readonly string[];
   onClose: () => void;
   onImported: () => Promise<unknown>;
   onBusyChange?: (busy: boolean) => void;
@@ -48,7 +51,12 @@ export default function VaultArchiveDialog({
   const [password, setPassword] = useState(""),
     [confirmation, setConfirmation] = useState("");
   const [selected, setSelected] = useState(
-    () => new Set(snapshot.entries.map((row) => row.id)),
+    () =>
+      new Set(
+        snapshot.entries
+          .map((row) => row.id)
+          .filter((id) => !preselect || preselect.includes(id)),
+      ),
   );
   const [connections, setConnections] = useState<VaultArchiveConnection[]>([]),
     [connectionIds, setConnectionIds] = useState<Set<string>>(new Set());

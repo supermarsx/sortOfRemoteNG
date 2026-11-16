@@ -196,6 +196,20 @@ export function useDatabaseCredentialVault(api: DatabaseCredentialVaultApi) {
         setDraft(null);
         await reload();
       }),
+    /** One whole-vault CAS and one durable save for the entire batch. */
+    removeMany: (review: DatabaseCredentialSnapshot, ids: readonly string[]) =>
+      perform(async () => {
+        const known = new Set(review.entries.map((row) => row.id));
+        const unique = [...new Set(ids)];
+        if (!unique.length || unique.some((id) => !known.has(id)))
+          throw new Error("Review unavailable");
+        await current().compareAndSwap(
+          review,
+          unique.map((id) => ({ operation: "delete" as const, id })),
+        );
+        current();
+        await reload();
+      }),
     remove: (review: DatabaseCredentialSnapshot, id: string) =>
       perform(async () => {
         if (!review.entries.some((row) => row.id === id))
