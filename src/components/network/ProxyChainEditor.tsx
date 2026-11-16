@@ -133,12 +133,10 @@ const LayerCard: React.FC<{
               onChange={(v: string) => mgr.handleLayerProfileChange(index, v)}
               options={[
                 { value: "", label: "Select profile..." },
-                ...mgr
-                  .getProfilesForType(layer.type)
-                  .map((profile) => ({
-                    value: profile.id,
-                    label: `${profile.name} (${profile.config.type})`,
-                  })),
+                ...mgr.getProfilesForType(layer.type).map((profile) => ({
+                  value: profile.id,
+                  label: `${profile.name} (${profile.config.type})`,
+                })),
               ]}
               className="sor-form-input-sm"
             />
