@@ -26,7 +26,28 @@ export class FileTransferService extends EventEmitter {
     );
   }
 
+  private progressTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Progress persistence is throttled: each save reads and rewrites every stored session. */
+  private scheduleProgressSave(session: FileTransferSession): void {
+    if (this.progressTimers.has(session.id)) return;
+    this.progressTimers.set(
+      session.id,
+      setTimeout(() => {
+        this.progressTimers.delete(session.id);
+        void this.saveSession(session);
+      }, 500),
+    );
+  }
+
+  private cancelProgressSave(id: string): void {
+    const timer = this.progressTimers.get(id);
+    if (timer !== undefined) clearTimeout(timer);
+    this.progressTimers.delete(id);
+  }
+
   private async saveSession(session: FileTransferSession): Promise<void> {
+    this.cancelProgressSave(session.id);
     // Chain on the mutex so concurrent saves are serialized
     this.saveMutex = this.saveMutex.then(async () => {
       const sessions = await this.loadSessions();
@@ -140,7 +161,7 @@ export class FileTransferService extends EventEmitter {
           session.progress = safeTotal
             ? (safeTransferred / safeTotal) * 100
             : 0;
-          void this.saveSession(session);
+          this.scheduleProgressSave(session);
           this.emit("progress", {
             id,
             progress: session.progress,
@@ -203,7 +224,7 @@ export class FileTransferService extends EventEmitter {
           session.transferredSize = transferred;
           session.totalSize = total;
           session.progress = total ? (transferred / total) * 100 : 0;
-          void this.saveSession(session);
+          this.scheduleProgressSave(session);
           this.emit("progress", {
             id,
             progress: session.progress,
@@ -278,7 +299,7 @@ export class FileTransferService extends EventEmitter {
       session.progress = session.totalSize
         ? (session.transferredSize / session.totalSize) * 100
         : 0;
-      void this.saveSession(session);
+      this.scheduleProgressSave(session);
       this.emit("progress", {
         id: transferId,
         progress: session.progress,

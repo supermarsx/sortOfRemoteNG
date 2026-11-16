@@ -7,13 +7,13 @@
 // The saved-session browser and File Transfer host both use this complete
 // lifecycle and transfer surface.
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { createFrameCoalescer } from '../../utils/perf/coalescer';
-import { subscribeEvent } from '../../utils/perf/eventBus';
-import { isHidden, subscribeVisibility } from '../../utils/perf/visibility';
-import { useConnections } from '../../contexts/useConnections';
-import type { ConnectionSession } from '../../types/connection/connection';
+import { useState, useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { createFrameCoalescer } from "../../utils/perf/coalescer";
+import { subscribeEvent } from "../../utils/perf/eventBus";
+import { isHidden, subscribeVisibility } from "../../utils/perf/visibility";
+import { useConnections } from "../../contexts/useConnections";
+import type { ConnectionSession } from "../../types/connection/connection";
 import type {
   BatchTransferResult,
   DiskUsageResult,
@@ -36,51 +36,47 @@ import type {
   WatchConfig,
   WatchEvent,
   WatchInfo,
-} from '../../types/sftp';
+} from "../../types/sftp";
 
 // ─── Low-level invoke wrappers ────────────────────────────────────────────────
 
 export const sftpApi = {
   // Session / connection
   connect: (config: SftpConnectionConfig) =>
-    invoke<SftpSessionInfo>('sftp_connect', { config }),
+    invoke<SftpSessionInfo>("sftp_connect", { config }),
   disconnect: (sessionId: string) =>
-    invoke<void>('sftp_disconnect', { sessionId }),
+    invoke<void>("sftp_disconnect", { sessionId }),
   getSessionInfo: (sessionId: string) =>
-    invoke<SftpSessionInfo>('sftp_get_session_info', { sessionId }),
-  listSessions: () => invoke<SftpSessionInfo[]>('sftp_list_sessions'),
-  ping: (sessionId: string) => invoke<boolean>('sftp_ping', { sessionId }),
+    invoke<SftpSessionInfo>("sftp_get_session_info", { sessionId }),
+  listSessions: () => invoke<SftpSessionInfo[]>("sftp_list_sessions"),
+  ping: (sessionId: string) => invoke<boolean>("sftp_ping", { sessionId }),
   setDirectory: (sessionId: string, path: string) =>
-    invoke<string>('sftp_set_directory', { sessionId, path }),
+    invoke<string>("sftp_set_directory", { sessionId, path }),
   realpath: (sessionId: string, path: string) =>
-    invoke<string>('sftp_realpath', { sessionId, path }),
+    invoke<string>("sftp_realpath", { sessionId, path }),
 
   // Directory ops
-  listDirectory: (
-    sessionId: string,
-    path: string,
-    options?: SftpListOptions,
-  ) =>
-    invoke<SftpDirEntry[]>('sftp_list_directory', {
+  listDirectory: (sessionId: string, path: string, options?: SftpListOptions) =>
+    invoke<SftpDirEntry[]>("sftp_list_directory", {
       sessionId,
       path,
       options: options ?? null,
     }),
   mkdir: (sessionId: string, path: string, mode?: number | null) =>
-    invoke<void>('sftp_mkdir', { sessionId, path, mode: mode ?? null }),
+    invoke<void>("sftp_mkdir", { sessionId, path, mode: mode ?? null }),
   mkdirP: (sessionId: string, path: string, mode?: number | null) =>
-    invoke<void>('sftp_mkdir_p', { sessionId, path, mode: mode ?? null }),
+    invoke<void>("sftp_mkdir_p", { sessionId, path, mode: mode ?? null }),
   rmdir: (sessionId: string, path: string) =>
-    invoke<void>('sftp_rmdir', { sessionId, path }),
+    invoke<void>("sftp_rmdir", { sessionId, path }),
   diskUsage: (sessionId: string, path: string) =>
-    invoke<DiskUsageResult>('sftp_disk_usage', { sessionId, path }),
+    invoke<DiskUsageResult>("sftp_disk_usage", { sessionId, path }),
   search: (
     sessionId: string,
     root: string,
     pattern: string,
     maxResults?: number | null,
   ) =>
-    invoke<SftpDirEntry[]>('sftp_search', {
+    invoke<SftpDirEntry[]>("sftp_search", {
       sessionId,
       root,
       pattern,
@@ -89,59 +85,55 @@ export const sftpApi = {
 
   // File ops
   stat: (sessionId: string, path: string) =>
-    invoke<SftpFileStat>('sftp_stat', { sessionId, path }),
+    invoke<SftpFileStat>("sftp_stat", { sessionId, path }),
   lstat: (sessionId: string, path: string) =>
-    invoke<SftpFileStat>('sftp_lstat', { sessionId, path }),
+    invoke<SftpFileStat>("sftp_lstat", { sessionId, path }),
   rename: (
     sessionId: string,
     oldPath: string,
     newPath: string,
     overwrite?: boolean,
   ) =>
-    invoke<void>('sftp_rename', {
+    invoke<void>("sftp_rename", {
       sessionId,
       oldPath,
       newPath,
       overwrite: overwrite ?? null,
     }),
   deleteFile: (sessionId: string, path: string) =>
-    invoke<void>('sftp_delete_file', { sessionId, path }),
+    invoke<void>("sftp_delete_file", { sessionId, path }),
   deleteRecursive: (sessionId: string, path: string) =>
-    invoke<number>('sftp_delete_recursive', { sessionId, path }),
+    invoke<number>("sftp_delete_recursive", { sessionId, path }),
   chmod: (sessionId: string, request: SftpChmodRequest) =>
-    invoke<number>('sftp_chmod', { sessionId, request }),
+    invoke<number>("sftp_chmod", { sessionId, request }),
   chown: (sessionId: string, request: SftpChownRequest) =>
-    invoke<number>('sftp_chown', { sessionId, request }),
+    invoke<number>("sftp_chown", { sessionId, request }),
   createSymlink: (sessionId: string, target: string, linkPath: string) =>
-    invoke<void>('sftp_create_symlink', { sessionId, target, linkPath }),
+    invoke<void>("sftp_create_symlink", { sessionId, target, linkPath }),
   readLink: (sessionId: string, path: string) =>
-    invoke<string>('sftp_read_link', { sessionId, path }),
+    invoke<string>("sftp_read_link", { sessionId, path }),
   touch: (sessionId: string, path: string) =>
-    invoke<void>('sftp_touch', { sessionId, path }),
+    invoke<void>("sftp_touch", { sessionId, path }),
   truncate: (sessionId: string, path: string, size: number) =>
-    invoke<void>('sftp_truncate', { sessionId, path, size }),
-  readTextFile: (
-    sessionId: string,
-    path: string,
-    maxBytes?: number | null,
-  ) =>
-    invoke<string>('sftp_read_text_file', {
+    invoke<void>("sftp_truncate", { sessionId, path, size }),
+  readTextFile: (sessionId: string, path: string, maxBytes?: number | null) =>
+    invoke<string>("sftp_read_text_file", {
       sessionId,
       path,
       maxBytes: maxBytes ?? null,
     }),
   writeTextFile: (sessionId: string, path: string, content: string) =>
-    invoke<number>('sftp_write_text_file', { sessionId, path, content }),
+    invoke<number>("sftp_write_text_file", { sessionId, path, content }),
   checksum: (sessionId: string, path: string) =>
-    invoke<string>('sftp_checksum', { sessionId, path }),
+    invoke<string>("sftp_checksum", { sessionId, path }),
   exists: (sessionId: string, path: string) =>
-    invoke<boolean>('sftp_exists', { sessionId, path }),
+    invoke<boolean>("sftp_exists", { sessionId, path }),
 
   // Transfer
   upload: (request: SftpTransferRequest) =>
-    invoke<TransferResult>('sftp_upload', { request }),
+    invoke<TransferResult>("sftp_upload", { request }),
   download: (request: SftpTransferRequest) =>
-    invoke<TransferResult>('sftp_download', { request }),
+    invoke<TransferResult>("sftp_download", { request }),
 
   // Chunked upload (drag-and-drop `File` path — see sftp-2b). `bytes` is
   // serialized as a JSON number array by default; Tauri's serde maps that onto
@@ -153,80 +145,79 @@ export const sftpApi = {
     totalBytes: number,
     overwrite?: boolean | null,
   ) =>
-    invoke<string>('sftp_upload_begin', {
+    invoke<string>("sftp_upload_begin", {
       sessionId,
       remotePath,
       totalBytes,
       overwrite: overwrite ?? null,
     }),
   uploadChunk: (uploadId: string, offset: number, bytes: Uint8Array) =>
-    invoke<number>('sftp_upload_chunk', {
+    invoke<number>("sftp_upload_chunk", {
       uploadId,
       offset,
       bytes: Array.from(bytes),
     }),
   uploadFinish: (uploadId: string) =>
-    invoke<string>('sftp_upload_finish', { uploadId }),
+    invoke<string>("sftp_upload_finish", { uploadId }),
   uploadAbort: (uploadId: string) =>
-    invoke<void>('sftp_upload_abort', { uploadId }),
+    invoke<void>("sftp_upload_abort", { uploadId }),
   batchTransfer: (batch: SftpBatchTransfer) =>
-    invoke<BatchTransferResult>('sftp_batch_transfer', { batch }),
+    invoke<BatchTransferResult>("sftp_batch_transfer", { batch }),
   getTransferProgress: (transferId: string) =>
-    invoke<TransferProgress | null>('sftp_get_transfer_progress', {
+    invoke<TransferProgress | null>("sftp_get_transfer_progress", {
       transferId,
     }),
   listActiveTransfers: () =>
-    invoke<TransferProgress[]>('sftp_list_active_transfers'),
+    invoke<TransferProgress[]>("sftp_list_active_transfers"),
   cancelTransfer: (transferId: string) =>
-    invoke<void>('sftp_cancel_transfer', { transferId }),
+    invoke<void>("sftp_cancel_transfer", { transferId }),
   pauseTransfer: (transferId: string) =>
-    invoke<void>('sftp_pause_transfer', { transferId }),
+    invoke<void>("sftp_pause_transfer", { transferId }),
   clearCompletedTransfers: () =>
-    invoke<number>('sftp_clear_completed_transfers'),
+    invoke<number>("sftp_clear_completed_transfers"),
 
   // Queue
   queueAdd: (request: SftpTransferRequest, priority?: number | null) =>
-    invoke<string>('sftp_queue_add', { request, priority: priority ?? null }),
+    invoke<string>("sftp_queue_add", { request, priority: priority ?? null }),
   queueRemove: (queueId: string) =>
-    invoke<void>('sftp_queue_remove', { queueId }),
-  queueList: () => invoke<QueueEntry[]>('sftp_queue_list'),
-  queueStatus: () => invoke<QueueStatus>('sftp_queue_status'),
-  queueStart: () => invoke<number>('sftp_queue_start'),
-  queueStop: () => invoke<void>('sftp_queue_stop'),
-  queueRetryFailed: () => invoke<number>('sftp_queue_retry_failed'),
-  queueClearDone: () => invoke<number>('sftp_queue_clear_done'),
+    invoke<void>("sftp_queue_remove", { queueId }),
+  queueList: () => invoke<QueueEntry[]>("sftp_queue_list"),
+  queueStatus: () => invoke<QueueStatus>("sftp_queue_status"),
+  queueStart: () => invoke<number>("sftp_queue_start"),
+  queueStop: () => invoke<void>("sftp_queue_stop"),
+  queueRetryFailed: () => invoke<number>("sftp_queue_retry_failed"),
+  queueClearDone: () => invoke<number>("sftp_queue_clear_done"),
   queueSetPriority: (queueId: string, priority: number) =>
-    invoke<void>('sftp_queue_set_priority', { queueId, priority }),
+    invoke<void>("sftp_queue_set_priority", { queueId, priority }),
 
   // Watch / Sync
   watchStart: (config: WatchConfig) =>
-    invoke<string>('sftp_watch_start', { config }),
-  watchStop: (watchId: string) =>
-    invoke<void>('sftp_watch_stop', { watchId }),
-  watchList: () => invoke<WatchInfo[]>('sftp_watch_list'),
+    invoke<string>("sftp_watch_start", { config }),
+  watchStop: (watchId: string) => invoke<void>("sftp_watch_stop", { watchId }),
+  watchList: () => invoke<WatchInfo[]>("sftp_watch_list"),
   syncPull: (sessionId: string, remotePath: string, localPath: string) =>
-    invoke<SyncResult>('sftp_sync_pull', { sessionId, remotePath, localPath }),
+    invoke<SyncResult>("sftp_sync_pull", { sessionId, remotePath, localPath }),
   syncPush: (sessionId: string, localPath: string, remotePath: string) =>
-    invoke<SyncResult>('sftp_sync_push', { sessionId, localPath, remotePath }),
+    invoke<SyncResult>("sftp_sync_push", { sessionId, localPath, remotePath }),
 
   // Bookmarks
   bookmarkAdd: (bookmark: SftpBookmark) =>
-    invoke<string>('sftp_bookmark_add', { bookmark }),
+    invoke<string>("sftp_bookmark_add", { bookmark }),
   bookmarkRemove: (bookmarkId: string) =>
-    invoke<void>('sftp_bookmark_remove', { bookmarkId }),
+    invoke<void>("sftp_bookmark_remove", { bookmarkId }),
   bookmarkUpdate: (bookmark: SftpBookmark) =>
-    invoke<void>('sftp_bookmark_update', { bookmark }),
+    invoke<void>("sftp_bookmark_update", { bookmark }),
   bookmarkList: (group?: string | null) =>
-    invoke<SftpBookmark[]>('sftp_bookmark_list', { group: group ?? null }),
+    invoke<SftpBookmark[]>("sftp_bookmark_list", { group: group ?? null }),
   bookmarkTouch: (bookmarkId: string) =>
-    invoke<void>('sftp_bookmark_touch', { bookmarkId }),
+    invoke<void>("sftp_bookmark_touch", { bookmarkId }),
   bookmarkImport: (json: string) =>
-    invoke<number>('sftp_bookmark_import', { json }),
-  bookmarkExport: () => invoke<string>('sftp_bookmark_export'),
+    invoke<number>("sftp_bookmark_import", { json }),
+  bookmarkExport: () => invoke<string>("sftp_bookmark_export"),
 
   // Diagnostics
   diagnose: (sessionId: string) =>
-    invoke<SftpDiagnosticReport>('sftp_diagnose', { sessionId }),
+    invoke<SftpDiagnosticReport>("sftp_diagnose", { sessionId }),
 };
 
 // ─── React hook (stateful wrapper for UI consumers) ──────────────────────────
@@ -245,7 +236,7 @@ export function useSFTPClient(
   const { autoConnect = false, existingSessionId } = options;
   const { state, dispatch } = useConnections();
   const connection = state.connections.find(
-    candidate => candidate.id === session.connectionId,
+    (candidate) => candidate.id === session.connectionId,
   );
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -260,7 +251,7 @@ export function useSFTPClient(
     initialSessionIdRef.current,
   );
   const [sessionInfo, setSessionInfo] = useState<SftpSessionInfo | null>(null);
-  const [currentPath, setCurrentPath] = useState<string>('/');
+  const [currentPath, setCurrentPath] = useState<string>("/");
   const [entries, setEntries] = useState<SftpDirEntry[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [transfers, setTransfers] = useState<TransferProgress[]>([]);
@@ -273,7 +264,7 @@ export function useSFTPClient(
   const updateSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
       dispatch({
-        type: 'UPDATE_SESSION',
+        type: "UPDATE_SESSION",
         payload: { ...sessionRef.current, ...patch },
       });
     },
@@ -296,20 +287,20 @@ export function useSFTPClient(
         const info = await sftpApi.connect(config);
         setSessionId(info.id);
         setSessionInfo(info);
-        setCurrentPath(info.currentDirectory || '/');
+        setCurrentPath(info.currentDirectory || "/");
         setConnected(true);
         ownsSessionRef.current = true;
         updateSession({
           backendSessionId: info.id,
-          status: 'connected',
+          status: "connected",
           errorMessage: undefined,
         });
         return info;
       } catch (e) {
-        const msg = typeof e === 'string' ? e : (e as Error).message;
+        const msg = typeof e === "string" ? e : (e as Error).message;
         setError(msg);
         setConnected(false);
-        updateSession({ status: 'error', errorMessage: msg });
+        updateSession({ status: "error", errorMessage: msg });
         throw e;
       } finally {
         setIsLoading(false);
@@ -331,7 +322,7 @@ export function useSFTPClient(
       setSelected(new Set());
       updateSession({
         backendSessionId: undefined,
-        status: 'disconnected',
+        status: "disconnected",
         errorMessage: undefined,
       });
     }
@@ -351,7 +342,7 @@ export function useSFTPClient(
         setCurrentPath(path);
         setSelected(new Set());
       } catch (e) {
-        setError(typeof e === 'string' ? e : (e as Error).message);
+        setError(typeof e === "string" ? e : (e as Error).message);
       } finally {
         setIsLoading(false);
       }
@@ -360,16 +351,19 @@ export function useSFTPClient(
   );
 
   const navigateUp = useCallback(() => {
-    if (currentPath === '/' || currentPath === '') return;
-    const parent =
-      currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
-    const next = parent === '' ? '/' : `/${parent}`;
+    if (currentPath === "/" || currentPath === "") return;
+    const parent = currentPath
+      .split("/")
+      .filter(Boolean)
+      .slice(0, -1)
+      .join("/");
+    const next = parent === "" ? "/" : `/${parent}`;
     loadDirectory(next);
   }, [currentPath, loadDirectory]);
 
   const navigateInto = useCallback(
     (entry: SftpDirEntry) => {
-      if (entry.entryType !== 'directory') return;
+      if (entry.entryType !== "directory") return;
       loadDirectory(entry.path);
     },
     [loadDirectory],
@@ -382,7 +376,7 @@ export function useSFTPClient(
   // ── Selection helpers ────────────────────────────────────────────────────
 
   const toggleSelect = useCallback((name: string) => {
-    setSelected(prev => {
+    setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
       else next.add(name);
@@ -391,7 +385,7 @@ export function useSFTPClient(
   }, []);
 
   const selectAll = useCallback(() => {
-    setSelected(new Set(entries.map(e => e.name)));
+    setSelected(new Set(entries.map((e) => e.name)));
   }, [entries]);
 
   const deselectAll = useCallback(() => setSelected(new Set()), []);
@@ -400,7 +394,7 @@ export function useSFTPClient(
 
   const requireSession = (): string => {
     const id = sessionIdRef.current;
-    if (!id) throw new Error('No active SFTP session');
+    if (!id) throw new Error("No active SFTP session");
     return id;
   };
 
@@ -469,7 +463,7 @@ export function useSFTPClient(
         sessionId: id,
         localPath,
         remotePath,
-        direction: 'upload',
+        direction: "upload",
       });
     },
     [],
@@ -482,7 +476,7 @@ export function useSFTPClient(
         sessionId: id,
         localPath,
         remotePath,
-        direction: 'download',
+        direction: "download",
       });
     },
     [],
@@ -493,7 +487,7 @@ export function useSFTPClient(
       const list = await sftpApi.listActiveTransfers();
       setTransfers(list);
     } catch (e) {
-      setError(typeof e === 'string' ? e : (e as Error).message);
+      setError(typeof e === "string" ? e : (e as Error).message);
     }
   }, []);
 
@@ -509,13 +503,13 @@ export function useSFTPClient(
         const name = `sftp://watch/${id}`;
         const batch = createFrameCoalescer<WatchEvent>({
           name,
-          lane: 'background',
+          lane: "background",
           paused: isHidden,
-          onFlush: events => {
+          onFlush: (events) => {
             for (const ev of events) onEvent(ev);
           },
         });
-        const off = subscribeEvent(name, payload =>
+        const off = subscribeEvent(name, (payload) =>
           batch.push(payload as WatchEvent),
         );
         const offVis = subscribeVisibility(() => {
@@ -545,19 +539,19 @@ export function useSFTPClient(
     if (initialSessionIdRef.current) return;
     const saved = connectionRef.current;
     if (!saved) {
-      const message = 'The saved SFTP connection could not be found.';
+      const message = "The saved SFTP connection could not be found.";
       setError(message);
-      updateSession({ status: 'error', errorMessage: message });
+      updateSession({ status: "error", errorMessage: message });
       return;
     }
     connect({
       host: saved.hostname || sessionRef.current.hostname,
       port: saved.port || 22,
-      username: saved.username || '',
+      username: saved.username || "",
       password: saved.password || null,
       privateKeyData: saved.privateKey || null,
       privateKeyPassphrase: saved.passphrase || null,
-      knownHostsPolicy: saved.ignoreSshSecurityErrors ? 'ignore' : 'ask',
+      knownHostsPolicy: saved.ignoreSshSecurityErrors ? "ignore" : "ask",
       timeoutSecs: saved.sshConnectTimeout ?? saved.timeout,
       keepaliveIntervalSecs: saved.sshKeepAliveInterval,
       initialDirectory: saved.remotePath || null,
@@ -574,9 +568,7 @@ export function useSFTPClient(
     return () => {
       if (ownsSessionRef.current && sessionIdRef.current) {
         // Fire-and-forget; cleanup on unmount should not block React.
-        sftpApi
-          .disconnect(sessionIdRef.current)
-          .catch(() => undefined);
+        sftpApi.disconnect(sessionIdRef.current).catch(() => undefined);
       }
     };
   }, []);
@@ -584,14 +576,14 @@ export function useSFTPClient(
   // ── Formatting helper (parity with useSMBClient) ─────────────────────────
 
   const formatFileSize = useCallback((bytes: number): string => {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) return "0 B";
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.min(
       Math.floor(Math.log(bytes) / Math.log(k)),
       sizes.length - 1,
     );
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }, []);
 
   return {

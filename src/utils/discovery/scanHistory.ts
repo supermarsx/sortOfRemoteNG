@@ -280,6 +280,17 @@ function openHistory(): Promise<IDBDatabase> {
   });
 }
 
+/** Last durable list read, shown instantly on reopen while a reload revalidates.
+ * Any write transaction through this module drops it. */
+let lastStored: SavedDiscoveryScan[] | null = null;
+export const getCachedDiscoveryScans = (): SavedDiscoveryScan[] | null =>
+  lastStored;
+export const setCachedDiscoveryScans = (
+  scans: SavedDiscoveryScan[] | null,
+): void => {
+  lastStored = scans;
+};
+
 async function transact<T>(
   mode: IDBTransactionMode,
   apply: (
@@ -288,6 +299,7 @@ async function transact<T>(
     fail: (error: unknown) => void,
   ) => void,
 ): Promise<T> {
+  if (mode !== "readonly") lastStored = null;
   const db = await openHistory();
   try {
     return await new Promise<T>((resolve, reject) => {

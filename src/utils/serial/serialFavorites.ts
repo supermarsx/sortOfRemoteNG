@@ -17,14 +17,31 @@ const MAX_BUCKETS = 256;
 
 type Buckets = Record<string, QuickActionReference[]>;
 
+// Parsed buckets are memoized against the exact raw string, so a changed store
+// always reparses and an unchanged one keeps stable array identity (no rerender).
+let parsedCache: { raw: string; buckets: Buckets } | null = null;
+const NO_FAVORITES: QuickActionReference[] = [];
+const EMPTY: Buckets = Object.freeze({}) as Buckets;
+
 function readAll(storage: Storage | undefined): Buckets {
-  if (!storage) return {};
+  if (!storage) return EMPTY;
   try {
     const raw = storage.getItem(SERIAL_FAVORITES_STORAGE_KEY);
-    if (!raw) return {};
+    if (!raw) return EMPTY;
+    if (parsedCache && parsedCache.raw === raw) return parsedCache.buckets;
+    const buckets = parseBuckets(raw);
+    parsedCache = { raw, buckets };
+    return buckets;
+  } catch {
+    return EMPTY;
+  }
+}
+
+function parseBuckets(raw: string): Buckets {
+  try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      return {};
+      return EMPTY;
     const result: Buckets = {};
     for (const [bucket, value] of Object.entries(
       parsed as Record<string, unknown>,
@@ -40,7 +57,7 @@ function readAll(storage: Storage | undefined): Buckets {
     }
     return result;
   } catch {
-    return {};
+    return EMPTY;
   }
 }
 
@@ -51,7 +68,7 @@ export function loadSerialFavorites(
   bucket: string,
   storage: Storage | undefined = defaultStorage(),
 ): QuickActionReference[] {
-  return readAll(storage)[bucket] ?? [];
+  return readAll(storage)[bucket] ?? NO_FAVORITES;
 }
 
 export function saveSerialFavorites(
@@ -65,7 +82,7 @@ export function saveSerialFavorites(
       .map(({ kind, id }) => ({ kind, id })),
   );
   if (!storage) return normalized;
-  const all = readAll(storage);
+  const all: Buckets = { ...readAll(storage) };
   if (normalized.length === 0) delete all[bucket];
   else all[bucket] = normalized;
   storage.setItem(SERIAL_FAVORITES_STORAGE_KEY, JSON.stringify(all));

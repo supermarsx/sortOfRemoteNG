@@ -10,6 +10,8 @@ import {
   renameDiscoveryScan,
   retainDiscoveryScans,
   saveDiscoveryScan,
+  getCachedDiscoveryScans,
+  setCachedDiscoveryScans,
   type SavedDiscoveryScan,
 } from "../../utils/discovery/scanHistory";
 
@@ -23,10 +25,12 @@ const sessionNotice =
  * updates remain fenced to the mounted generation.
  */
 export function useDiscoveryScanHistory() {
-  const [scans, setScans] = useState<SavedDiscoveryScan[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Reopening shows the last durable list at once; a reload revalidates it.
+  const [initial] = useState(getCachedDiscoveryScans);
+  const [scans, setScans] = useState<SavedDiscoveryScan[]>(() => initial ?? []);
+  const [loading, setLoading] = useState(() => initial === null);
   const [error, setError] = useState<string | null>(null);
-  const current = useRef<SavedDiscoveryScan[]>([]);
+  const current = useRef<SavedDiscoveryScan[]>(initial ?? []);
   const sessionOnly = useRef(false);
   const failedSaves = useRef(new Set<string>());
   const generation = useRef(0);
@@ -42,6 +46,9 @@ export function useDiscoveryScanHistory() {
         if (live()) setLoading(true);
         try {
           await action(live);
+          if (!sessionOnly.current && failedSaves.current.size === 0)
+            setCachedDiscoveryScans(current.current);
+          else setCachedDiscoveryScans(null);
           if (live()) {
             setScans(current.current);
             setError(
@@ -51,6 +58,7 @@ export function useDiscoveryScanHistory() {
             );
           }
         } catch (cause) {
+          setCachedDiscoveryScans(null);
           if (live()) {
             setScans(current.current);
             setError(
@@ -72,8 +80,10 @@ export function useDiscoveryScanHistory() {
     () =>
       run(async (live) => {
         const stored = await listDiscoveryScans();
-        if (live() && !sessionOnly.current && failedSaves.current.size === 0)
+        if (live() && !sessionOnly.current && failedSaves.current.size === 0) {
           current.current = stored;
+          setCachedDiscoveryScans(stored);
+        }
       }),
     [run],
   );
