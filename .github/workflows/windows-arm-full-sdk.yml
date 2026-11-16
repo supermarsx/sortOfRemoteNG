@@ -8,6 +8,11 @@ on:
         type: string
         required: true
         default: "0"
+      compile_cap_minutes:
+        description: "Native compile slice cap in minutes: 0 keeps the reviewed 180, or 30-180 to seal a checkpoint early"
+        type: string
+        required: false
+        default: "0"
 
 permissions:
   actions: read
@@ -26,6 +31,7 @@ jobs:
       GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
       CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       CEF_FULLSDK_RESTORE_RUN: ${{ inputs.restore_run }}
+      CEF_FULLSDK_COMPILE_CAP_MINUTES: ${{ inputs.compile_cap_minutes }}
     steps:
       - name: Capture original job clocks before checkout or setup
         shell: pwsh
@@ -56,6 +62,19 @@ jobs:
           node-version-file: ".node-version"
           architecture: x64
           cache: ""
+      - name: Start detached off-box runner telemetry sampler
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:CEF_FULLSDK_COMPILE_CAP_MINUTES -cnotmatch '^(?:0|[3-9][0-9]|1[0-7][0-9]|180)$') { throw 'FULL_SDK_COMPILE_CAP_INPUT' }
+          $ErrorActionPreference = 'Continue'
+          & gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/ci-telemetry" *> $null
+          if ($LASTEXITCODE -ne 0) { & gh api -X POST "repos/$env:GITHUB_REPOSITORY/git/refs" -f ref=refs/heads/ci-telemetry -f sha=$env:GITHUB_SHA *> $null }
+          $global:LASTEXITCODE = 0
+          Start-Process -FilePath pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'scripts/ci/winarm-telemetry.ps1'), '-LogDir', 'C:\sorng-telemetry'
+          Write-Host "::notice::telemetry sampler started (branch ci-telemetry, telemetry/winarm/$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT/)"
       - name: Authenticate and download exact prior successful checkpoint
         if: inputs.restore_run != '0'
         shell: pwsh
@@ -102,6 +121,15 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
+      - name: Retain runner telemetry samples
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-arm-full-sdk-telemetry-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: C:/sorng-telemetry/telemetry.log
       - name: Retain bounded qualification records
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

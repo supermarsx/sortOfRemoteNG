@@ -1,0 +1,54 @@
+{
+  "native/windows-arm-full-sdk/full_sdk_control.mjs": {
+    "bytes": 197408,
+    "sha256": "641e9b9b2f79ce0e99af23e5004052b4b4e122faaa0fee22d5e325572e76f319",
+    "beforeBytes": 196754,
+    "beforeSha256": "77bdfa93b61c25a6fe82371cac53cb1f070c09a95589b52134edeec4c4fd9a93",
+    "pairs": [
+      {
+        "current": "// BEGIN COMPILE CAP INPUT\n// Optional shorter native compile slice (workflow input compile_cap_minutes) so a\n// dispatch reaches the checkpoint-seal path early. \"0\"/unset keeps the reviewed\n// 180 minute cap; anything else must be a bare integer in [30, 180]. It can only\n// shorten the cap: the lease-minus-reserve bound and every other check still apply.\nfunction compileCapMs() {\n  const raw = process.env.CEF_FULLSDK_COMPILE_CAP_MINUTES;\n  if (raw === undefined || raw === \"\" || raw === \"0\") return 10800000;\n  need(/^(?:[3-9][0-9]|1[0-7][0-9]|180)$/.test(raw), \"COMPILE_CAP_MINUTES\");\n  return Number(raw) * 60000;\n}\nconst ENGINE_CAPS_MS = Object.freeze([900000, 900000, compileCapMs(), 2400000]);\n// END COMPILE CAP INPUT\n",
+        "previous": "const ENGINE_CAPS_MS = Object.freeze([900000, 900000, 10800000, 2400000]);\n"
+      }
+    ]
+  },
+  "native/windows-arm-full-sdk/sdk-origin-review.json": {
+    "bytes": 27528,
+    "sha256": "5fe494febd45062322fa8cbeb0dbbdb96fb2ac9ba8c75feaa9d6a4a0e7a89709",
+    "beforeBytes": 27527,
+    "beforeSha256": "a49c7f56261560a6e47e716760d589438906d5547f43860980d7b1c5640be132",
+    "pairs": [
+      {
+        "current": "{\"bytes\":197408,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"641e9b9b2f79ce0e99af23e5004052b4b4e122faaa0fee22d5e325572e76f319\"}",
+        "previous": "{\"bytes\":196754,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"77bdfa93b61c25a6fe82371cac53cb1f070c09a95589b52134edeec4c4fd9a93\"}"
+      },
+      {
+        "current": "\"workflowPin\":{\"bytes\":11615,\"sha256\":\"b90f5272d0e131549625efb0775a04c8acc8c77b8c67cc07fa25e0816915671d\"}",
+        "previous": "\"workflowPin\":{\"bytes\":9925,\"sha256\":\"4aa74d8ea85e2952b6ca69e7ad57b4cf24db34e68a7a302c5ce3f59de9eccb5d\"}"
+      }
+    ]
+  },
+  ".github/workflows/windows-arm-full-sdk.yml": {
+    "bytes": 11615,
+    "sha256": "b90f5272d0e131549625efb0775a04c8acc8c77b8c67cc07fa25e0816915671d",
+    "beforeBytes": 9925,
+    "beforeSha256": "4aa74d8ea85e2952b6ca69e7ad57b4cf24db34e68a7a302c5ce3f59de9eccb5d",
+    "pairs": [
+      {
+        "current": "        default: \"0\"\n      compile_cap_minutes:\n        description: \"Native compile slice cap in minutes: 0 keeps the reviewed 180, or 30-180 to seal a checkpoint early\"\n        type: string\n        required: false\n        default: \"0\"\n",
+        "previous": "        default: \"0\"\n"
+      },
+      {
+        "current": "      CEF_FULLSDK_COMPILE_CAP_MINUTES: ${{ inputs.compile_cap_minutes }}\n    steps:\n",
+        "previous": "    steps:\n"
+      },
+      {
+        "current": "      - name: Start detached off-box runner telemetry sampler\n        shell: pwsh\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          $ErrorActionPreference = 'Stop'\n          if ($env:CEF_FULLSDK_COMPILE_CAP_MINUTES -cnotmatch '^(?:0|[3-9][0-9]|1[0-7][0-9]|180)$') { throw 'FULL_SDK_COMPILE_CAP_INPUT' }\n          $ErrorActionPreference = 'Continue'\n          & gh api \"repos/$env:GITHUB_REPOSITORY/git/ref/heads/ci-telemetry\" *> $null\n          if ($LASTEXITCODE -ne 0) { & gh api -X POST \"repos/$env:GITHUB_REPOSITORY/git/refs\" -f ref=refs/heads/ci-telemetry -f sha=$env:GITHUB_SHA *> $null }\n          $global:LASTEXITCODE = 0\n          Start-Process -FilePath pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'scripts/ci/winarm-telemetry.ps1'), '-LogDir', 'C:\\sorng-telemetry'\n          Write-Host \"::notice::telemetry sampler started (branch ci-telemetry, telemetry/winarm/$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT/)\"\n      - name: Authenticate and download exact prior successful checkpoint\n",
+        "previous": "      - name: Authenticate and download exact prior successful checkpoint\n"
+      },
+      {
+        "current": "      - name: Retain runner telemetry samples\n        if: always()\n        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02\n        with:\n          name: windows-arm-full-sdk-telemetry-${{ github.run_id }}-${{ github.run_attempt }}\n          include-hidden-files: true\n          if-no-files-found: ignore\n          retention-days: 7\n          path: C:/sorng-telemetry/telemetry.log\n      - name: Retain bounded qualification records\n",
+        "previous": "      - name: Retain bounded qualification records\n"
+      }
+    ]
+  }
+}

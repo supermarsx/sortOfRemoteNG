@@ -4872,7 +4872,19 @@ const ENGINE_ROLES = Object.freeze([
   "cef-engine",
   "package",
 ]);
-const ENGINE_CAPS_MS = Object.freeze([900000, 900000, 10800000, 2400000]);
+// BEGIN COMPILE CAP INPUT
+// Optional shorter native compile slice (workflow input compile_cap_minutes) so a
+// dispatch reaches the checkpoint-seal path early. "0"/unset keeps the reviewed
+// 180 minute cap; anything else must be a bare integer in [30, 180]. It can only
+// shorten the cap: the lease-minus-reserve bound and every other check still apply.
+function compileCapMs() {
+  const raw = process.env.CEF_FULLSDK_COMPILE_CAP_MINUTES;
+  if (raw === undefined || raw === "" || raw === "0") return 10800000;
+  need(/^(?:[3-9][0-9]|1[0-7][0-9]|180)$/.test(raw), "COMPILE_CAP_MINUTES");
+  return Number(raw) * 60000;
+}
+const ENGINE_CAPS_MS = Object.freeze([900000, 900000, compileCapMs(), 2400000]);
+// END COMPILE CAP INPUT
 function engineState(token, phase) {
   const state = controls.get(token);
   need(state && state.enginePhase === phase && !phase.retired, "ENGINE_BRAND");

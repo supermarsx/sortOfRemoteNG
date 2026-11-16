@@ -31,7 +31,48 @@ const cacheSpecs = JSON.parse(
     "utf8",
   ),
 );
+const capSpecs = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../fixtures/cef/windows_compile_cap_inverse.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+// Outermost layer: the optional compile_cap_minutes input in the controller.
+export function withoutCompileCapInput(text, file) {
+  // The accounting-inverse tests address the workflow by its short name.
+  if (file === "workflow") file = ".github/workflows/windows-arm-full-sdk.yml";
+  const spec = capSpecs[file];
+  if (!spec) return text;
+  // The workflow is pinned by its LF index bytes; a Windows checkout is CRLF.
+  const normal = file.endsWith(".yml") ? text.replaceAll("\r\n", "\n") : text;
+  if (sha(normal) !== spec.sha256) return text;
+  text = normal;
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.bytes,
+    "COMPILE_CAP_HISTORY_BYTES",
+  );
+  for (const pair of spec.pairs) {
+    assert.equal(
+      text.split(pair.current).length,
+      2,
+      "COMPILE_CAP_HISTORY_COUNT",
+    );
+    text = text.replace(pair.current, () => pair.previous);
+  }
+  assert.equal(
+    Buffer.byteLength(text),
+    spec.beforeBytes,
+    "COMPILE_CAP_HISTORY_OLD_BYTES",
+  );
+  assert.equal(sha(text), spec.beforeSha256, "COMPILE_CAP_HISTORY_OLD_WHOLE");
+  return text;
+}
 export function withoutSisoMetadataCache(text, file) {
+  text = withoutCompileCapInput(text, file);
   if (file === "tests/tooling/windowsArmFullSdk.node-test.mjs")
     text = text.replaceAll("\r\n", "\n");
   const spec = cacheSpecs[file];
@@ -55,6 +96,7 @@ export function withoutSisoMetadataCache(text, file) {
   return text;
 }
 export function sisoMetadataCachePrefix(text, file) {
+  text = withoutCompileCapInput(text, file);
   const spec = cacheSpecs[file];
   if (file === "tests/tooling/windowsArmFullSdk.node-test.mjs")
     text = text.replaceAll("\r\n", "\n");

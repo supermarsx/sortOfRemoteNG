@@ -15,6 +15,7 @@ import {
 } from "node:zlib";
 import {
   withoutSourceMetadataDiagnostic,
+  withoutCompileCapInput,
   withoutSisoMetadataCache,
   sisoMetadataCachePrefix,
 } from "./helpers/cefWindowsEngineHostHistory.mjs";
@@ -689,7 +690,7 @@ test("whole Siso cache DATA bridge retains old controller Q and lexical test and
   for (const [file, spec] of Object.entries(specs)) {
     // This lexical fixture is pinned to immutable Git bytes. Its ordinary
     // Windows checkout may use CRLF; production/native byte guards stay exact.
-    const current =
+    const current = withoutCompileCapInput(
       file === "tests/tooling/windowsArmFullSdk.node-test.mjs"
         ? execFileSync("git", ["show", "HEAD:" + file], {
             cwd: new URL("../../", import.meta.url),
@@ -698,7 +699,9 @@ test("whole Siso cache DATA bridge retains old controller Q and lexical test and
             timeout: 15000,
             maxBuffer: 2 * 1024 ** 2,
           })
-        : await fs.readFile(new URL("../../" + file, import.meta.url), "utf8");
+        : await fs.readFile(new URL("../../" + file, import.meta.url), "utf8"),
+      file,
+    );
     const previous = withoutSisoMetadataCache(current, file);
     assert.equal(Buffer.byteLength(previous), spec.beforeBytes);
     assert.equal(
