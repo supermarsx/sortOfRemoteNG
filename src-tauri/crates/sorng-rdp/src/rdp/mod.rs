@@ -9,6 +9,7 @@ mod frame_delivery;
 pub mod frame_flow_control;
 pub mod frame_store;
 pub mod input;
+pub mod live_session;
 #[cfg(feature = "rdp-multimon")]
 pub mod multimon;
 mod network;

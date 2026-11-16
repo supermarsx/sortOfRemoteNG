@@ -1241,6 +1241,22 @@ pub fn terminal_buffer_snapshot_page(
     ))
 }
 
+/// Replay buffer sequence range for the live-session registry. `None` when the
+/// session has no terminal buffer yet. Reads metadata only; no payload copy.
+pub fn terminal_buffer_range(
+    session_id: &str,
+) -> Result<Option<sorng_core::session_resilience::OutputRange>, String> {
+    Ok(lock_output_states()?
+        .terminal_buffers
+        .get(session_id)
+        .map(|buffer| sorng_core::session_resilience::OutputRange {
+            generation: buffer.generation,
+            sequence_start: buffer.retained_start,
+            sequence_end: buffer.sequence_end,
+            dropped_bytes: buffer.dropped_bytes,
+        }))
+}
+
 pub fn clear_terminal_buffer_state(session_id: &str) -> Result<bool, String> {
     Ok(lock_output_states()?.clear_terminal_buffer(session_id))
 }

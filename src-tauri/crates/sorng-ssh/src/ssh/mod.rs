@@ -11,6 +11,7 @@ mod inline_key;
 #[cfg(windows)]
 mod inline_key_pem;
 pub mod integration;
+pub mod live_session;
 pub mod output_state;
 pub mod proxy_command;
 pub mod recording;

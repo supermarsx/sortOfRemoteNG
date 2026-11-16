@@ -771,6 +771,7 @@ define_command_group!(
         legacy_crypto_commands::is_legacy_algorithm_allowed,
         telnet_commands::is_telnet_connected,
         cert_auth_commands::list_certificates,
+        session_registry_commands::list_live_sessions,
         telnet_commands::list_telnet_sessions,
         // Certificate authentication commands
         cert_auth_commands::parse_certificate,
@@ -797,6 +798,8 @@ define_command_group!(
         serial_commands::serial_get_modem_info,
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
         serial_commands::serial_get_modem_profiles,
+        #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
+        serial_commands::serial_get_output_snapshot,
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
         serial_commands::serial_get_session_info,
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
@@ -846,7 +849,9 @@ define_command_group!(
         serial_commands::serial_start_logging,
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
         serial_commands::serial_stop_logging,
+        session_registry_commands::session_host_heartbeat,
         legacy_crypto_commands::set_legacy_crypto_policy,
+        telnet_commands::telnet_get_output_snapshot,
         cert_auth_commands::validate_certificate,
         vault_commands::vault_backend_name,
         vault_commands::vault_biometric_read,

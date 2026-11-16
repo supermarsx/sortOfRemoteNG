@@ -987,6 +987,14 @@ pub struct SerialOutputEvent {
     pub data: String,
     /// UTF-8 lossy decoded text (for display).
     pub text: String,
+    /// Replay-ring position of `data`, so a reattaching frontend can drop
+    /// live events already covered by `serial_get_output_snapshot`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_start: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_end: Option<u64>,
 }
 
 /// Error event.

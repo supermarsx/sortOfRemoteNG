@@ -11,6 +11,7 @@ use crate::serial::port_scanner::{self, ScanOptions, ScanResult};
 use crate::serial::session::{self, SerialSessionHandle, SessionCommand, SessionEvent};
 use crate::serial::types::*;
 use sorng_core::events::DynEventEmitter;
+use sorng_core::session_resilience::{LiveSessionDescriptor, OutputSnapshot};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -323,6 +324,9 @@ impl SerialService {
             sessions.remove(session_id);
         }
 
+        // Real close: zeroize the replay ring and ignore late output.
+        handle.output_ring.close();
+
         // Remove log writer if any
         {
             let mut writers = self.log_writers.write().await;
@@ -515,6 +519,32 @@ impl SerialService {
         list
     }
 
+    /// One bounded page of the session's replay ring, same shape as the SSH
+    /// `get_terminal_buffer_snapshot` response (`encoding: "base64"`).
+    pub async fn get_output_snapshot(
+        &self,
+        session_id: &str,
+        generation: Option<u64>,
+        after_sequence: Option<u64>,
+        max_bytes: Option<usize>,
+    ) -> Result<OutputSnapshot, String> {
+        let handle = self.get_session(session_id).await?;
+        Ok(handle
+            .output_ring
+            .snapshot(session_id, generation, after_sequence, max_bytes))
+    }
+
+    /// Registry rows for every session still held by the service.
+    pub async fn live_descriptors(&self) -> Vec<LiveSessionDescriptor> {
+        let handles: Vec<Arc<SerialSessionHandle>> =
+            self.sessions.read().await.values().cloned().collect();
+        let mut rows = Vec::with_capacity(handles.len());
+        for handle in handles {
+            rows.push(handle.to_live_descriptor().await);
+        }
+        rows
+    }
+
     // ── Modem commands ────────────────────────────────────────────
 
     /// Send an AT command to a session (modem mode).
@@ -653,6 +683,9 @@ impl SerialService {
             while let Some(event) = event_rx.recv().await {
                 match event {
                     SessionEvent::DataReceived { data, text } => {
+                        // Cheap append into the tail chunk; the ring has its
+                        // own lock and never touches the reader or writer.
+                        let meta = handle.output_ring.push(&data);
                         if let Some(writer) = log_writers.read().await.get(&session_id) {
                             let mut writer = writer.lock().await;
                             if let Err(error) =
@@ -672,6 +705,9 @@ impl SerialService {
                                     &data,
                                 ),
                                 text: bounded_event_text(text, MAX_SERIAL_PAYLOAD_BYTES),
+                                generation: Some(meta.generation),
+                                sequence_start: Some(meta.sequence_start),
+                                sequence_end: Some(meta.sequence_end),
                             };
                             let _ = emitter.emit_event(
                                 "serial:output",
@@ -692,6 +728,9 @@ impl SerialService {
                                     &data,
                                 ),
                                 text,
+                                generation: None,
+                                sequence_start: None,
+                                sequence_end: None,
                             };
                             let _ = emitter.emit_event(
                                 "serial:echo",
@@ -775,6 +814,221 @@ impl SerialService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Replay ring ───────────────────────────────────────────────
+
+    use crate::serial::transport::SimulatedTransport;
+    use base64::Engine as _;
+
+    async fn open_simulated(
+        service: &SerialServiceState,
+        emitter: Option<DynEventEmitter>,
+    ) -> (String, Arc<SimulatedTransport>, Arc<SerialSessionHandle>) {
+        let transport = SimulatedTransport::new("COM9");
+        let id = uuid::Uuid::new_v4().to_string();
+        let config = SerialConfig {
+            port_name: "COM9".to_string(),
+            ..Default::default()
+        };
+        let handle =
+            session::create_session_resolved(id.clone(), transport.clone(), config, false, None)
+                .await
+                .expect("session");
+        service
+            .sessions
+            .write()
+            .await
+            .insert(id.clone(), handle.clone());
+        service.start_event_forwarder(emitter, id.clone(), handle.clone());
+        (id, transport, handle)
+    }
+
+    async fn wait_for_end(handle: &SerialSessionHandle, end: u64) {
+        for _ in 0..500 {
+            if handle.output_ring.range().sequence_end >= end {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("ring never reached sequence {end}");
+    }
+
+    fn decode(snapshot: &OutputSnapshot) -> Vec<u8> {
+        base64::engine::general_purpose::STANDARD
+            .decode(&snapshot.data)
+            .expect("base64")
+    }
+
+    #[tokio::test]
+    async fn received_bytes_are_replayable_with_a_resume_cursor() {
+        let service = SerialService::new();
+        let (id, transport, handle) = open_simulated(&service, None).await;
+        transport.inject_rx(b"boot: ").await;
+        wait_for_end(&handle, 6).await;
+        transport.inject_rx(&[0x00, 0xFF, 0x1B, b'[']).await;
+        wait_for_end(&handle, 10).await;
+
+        let all = service
+            .get_output_snapshot(&id, None, None, None)
+            .await
+            .expect("snapshot");
+        assert_eq!(
+            all.encoding,
+            sorng_core::session_resilience::SnapshotEncoding::Base64
+        );
+        assert_eq!(
+            decode(&all),
+            [b"boot: ".as_slice(), &[0x00, 0xFF, 0x1B, b'[']].concat()
+        );
+        assert_eq!((all.sequence_start, all.sequence_end), (0, 10));
+        assert!(!all.gap && !all.has_more);
+
+        let tail = service
+            .get_output_snapshot(&id, Some(all.generation), Some(6), None)
+            .await
+            .expect("snapshot");
+        assert_eq!(decode(&tail), vec![0x00, 0xFF, 0x1B, b'[']);
+        assert_eq!(tail.sequence_start, 6);
+        let _ = service.disconnect(&id).await;
+    }
+
+    #[tokio::test]
+    async fn ring_is_capped_and_a_stale_cursor_reports_a_gap() {
+        let service = SerialService::new();
+        let (id, transport, handle) = open_simulated(&service, None).await;
+        let chunk = vec![b'z'; 2048];
+        let rounds: u64 = 640; // 1.25 MiB against the 1 MiB cap
+        for round in 1..=rounds {
+            // The simulated rx buffer is bounded; let the reader drain it.
+            transport.inject_rx(&chunk).await;
+            wait_for_end(&handle, round * chunk.len() as u64).await;
+        }
+        let range = handle.output_ring.range();
+        assert!(range.sequence_end - range.sequence_start <= 1024 * 1024);
+        assert!(range.dropped_bytes > 0);
+        let stale = service
+            .get_output_snapshot(&id, None, Some(0), Some(32))
+            .await
+            .expect("snapshot");
+        assert!(stale.gap);
+        assert_eq!(stale.sequence_start, stale.retained_start);
+        let _ = service.disconnect(&id).await;
+    }
+
+    #[tokio::test]
+    async fn disconnect_closes_and_zeroizes_the_ring() {
+        let service = SerialService::new();
+        let (id, transport, handle) = open_simulated(&service, None).await;
+        transport.inject_rx(b"top secret").await;
+        wait_for_end(&handle, 10).await;
+        service.disconnect(&id).await.expect("disconnect");
+        assert!(handle.output_ring.is_closed());
+        assert_eq!(handle.output_ring.range().sequence_end, 0);
+        assert!(handle
+            .output_ring
+            .snapshot(&id, None, None, None)
+            .data
+            .is_empty());
+        assert!(service
+            .get_output_snapshot(&id, None, None, None)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn registry_row_describes_the_session_without_output() {
+        let service = SerialService::new();
+        let (id, transport, handle) = open_simulated(&service, None).await;
+        transport.inject_rx(b"hunter2").await;
+        wait_for_end(&handle, 7).await;
+        let rows = service.live_descriptors().await;
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.protocol, "serial");
+        assert_eq!(row.backend_session_id, id);
+        assert_eq!(row.target, "COM9");
+        assert_eq!(row.state, "connected");
+        assert_eq!(row.buffer.expect("range").sequence_end, 7);
+        let json = serde_json::to_string(row).expect("json");
+        assert!(!json.contains("hunter2") && !json.contains("aHVudGVyMg"));
+        let _ = service.disconnect(&id).await;
+    }
+
+    #[tokio::test]
+    async fn live_events_carry_the_ring_position() {
+        use sorng_core::events::AppEventEmitter;
+        struct Capture(std::sync::Mutex<Vec<(String, serde_json::Value)>>);
+        impl AppEventEmitter for Capture {
+            fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+                self.0
+                    .lock()
+                    .expect("capture")
+                    .push((event.to_string(), payload));
+                Ok(())
+            }
+        }
+        let capture = Arc::new(Capture(Default::default()));
+        let service = SerialService::new();
+        let (id, transport, handle) = open_simulated(&service, Some(capture.clone())).await;
+        transport.inject_rx(b"abc").await;
+        wait_for_end(&handle, 3).await;
+        for _ in 0..200 {
+            if capture
+                .0
+                .lock()
+                .expect("capture")
+                .iter()
+                .any(|(n, _)| n == "serial:output")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let events = capture.0.lock().expect("capture").clone();
+        let output = events
+            .iter()
+            .find(|(n, _)| n == "serial:output")
+            .expect("output");
+        assert_eq!(output.1["sequenceStart"], 0);
+        assert_eq!(output.1["sequenceEnd"], 3);
+        assert!(output.1["generation"].as_u64().is_some());
+        let _ = service.disconnect(&id).await;
+    }
+
+    #[tokio::test]
+    async fn writes_and_ring_pushes_do_not_block_each_other() {
+        let service = SerialService::new();
+        let (id, transport, handle) = open_simulated(&service, None).await;
+        let feeder = {
+            let transport = transport.clone();
+            let handle = handle.clone();
+            tokio::spawn(async move {
+                for round in 1..=200u64 {
+                    transport.inject_rx(&[b'q'; 64]).await;
+                    wait_for_end(&handle, round * 64).await;
+                }
+            })
+        };
+        let reader = {
+            let service = service.clone();
+            let id = id.clone();
+            tokio::spawn(async move {
+                for _ in 0..200 {
+                    let _ = service
+                        .get_output_snapshot(&id, None, None, Some(512))
+                        .await;
+                    tokio::task::yield_now().await;
+                }
+            })
+        };
+        for _ in 0..100 {
+            service.send_raw(&id, vec![1, 2, 3]).await.expect("send");
+        }
+        feeder.await.expect("feeder");
+        reader.await.expect("reader");
+        wait_for_end(&handle, 200 * 64).await;
+        let _ = service.disconnect(&id).await;
+    }
 
     #[tokio::test]
     async fn test_service_new() {

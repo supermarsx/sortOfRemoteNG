@@ -5,6 +5,7 @@ pub mod commands;
 mod delivery;
 pub mod diagnostics;
 pub mod encoding;
+pub mod live_session;
 pub mod protocol;
 pub mod service;
 pub mod session;

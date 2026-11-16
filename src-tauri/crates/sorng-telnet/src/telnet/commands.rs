@@ -89,6 +89,23 @@ pub async fn list_telnet_sessions(
     Ok(state.list_sessions().await)
 }
 
+/// One bounded, sequenced page of a session's replay ring. Same response shape
+/// as `get_terminal_buffer_snapshot` (SSH); `data` is UTF-8 text. Pass the
+/// previous response's `generation`/`sequence_end` as `generation`/
+/// `afterSequence` to continue; start with both omitted.
+#[tauri::command]
+pub async fn telnet_get_output_snapshot(
+    state: tauri::State<'_, TelnetServiceState>,
+    session_id: String,
+    generation: Option<u64>,
+    after_sequence: Option<u64>,
+    max_bytes: Option<usize>,
+) -> Result<sorng_core::session_resilience::OutputSnapshot, String> {
+    state
+        .get_output_snapshot(&session_id, generation, after_sequence, max_bytes)
+        .await
+}
+
 /// Disconnect all active telnet sessions.
 #[tauri::command]
 pub async fn disconnect_all_telnet(state: tauri::State<'_, TelnetServiceState>) -> Result<(), String> {

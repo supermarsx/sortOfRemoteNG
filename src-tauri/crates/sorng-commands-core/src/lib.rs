@@ -126,6 +126,7 @@ mod rustdesk_commands;
 mod security_commands;
 #[path = "../../../src/serial_commands.rs"]
 mod serial_commands;
+mod session_registry_commands;
 #[path = "../../../src/sftp_commands.rs"]
 mod sftp_commands;
 #[path = "../../../src/smb_commands.rs"]

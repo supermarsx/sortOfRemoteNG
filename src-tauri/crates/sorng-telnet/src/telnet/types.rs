@@ -543,6 +543,14 @@ pub struct TelnetOutputEvent {
     pub session_id: String,
     pub client_correlation_id: Option<String>,
     pub data: String,
+    /// Replay-ring position of `data`, so a reattaching frontend can drop live
+    /// events already covered by `telnet_get_output_snapshot`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_start: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_end: Option<u64>,
 }
 
 /// Payload for `telnet-error` events.
@@ -847,6 +855,9 @@ mod tests {
             session_id: "x".into(),
             client_correlation_id: None,
             data: "hello".into(),
+            generation: Some(2),
+            sequence_start: Some(0),
+            sequence_end: Some(5),
         };
         let json = serde_json::to_string(&ev).unwrap();
         let de: TelnetOutputEvent = serde_json::from_str(&json).unwrap();

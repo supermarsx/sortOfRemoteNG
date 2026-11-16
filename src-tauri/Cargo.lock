@@ -10669,11 +10669,13 @@ dependencies = [
 name = "sorng-core"
 version = "26.51.0"
 dependencies = [
+ "base64 0.23.1",
  "log",
  "serde",
  "serde_json",
  "sysinfo",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

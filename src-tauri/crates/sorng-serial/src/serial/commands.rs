@@ -189,6 +189,24 @@ pub async fn serial_list_sessions(
     Ok(service.list_sessions().await)
 }
 
+/// One bounded, sequenced page of a session's replay ring. Same response shape
+/// as `get_terminal_buffer_snapshot` (SSH) except `data` is base64 of the raw
+/// bytes (`encoding: "base64"`), matching the live `serial:output` event.
+/// Pass the previous response's `generation`/`sequence_end` as `generation`/
+/// `afterSequence` to continue; start with both omitted.
+#[tauri::command]
+pub async fn serial_get_output_snapshot(
+    service: tauri::State<'_, SerialServiceState>,
+    session_id: String,
+    generation: Option<u64>,
+    after_sequence: Option<u64>,
+    max_bytes: Option<usize>,
+) -> Result<sorng_core::session_resilience::OutputSnapshot, String> {
+    service
+        .get_output_snapshot(&session_id, generation, after_sequence, max_bytes)
+        .await
+}
+
 #[tauri::command]
 pub async fn serial_get_stats(
     service: tauri::State<'_, SerialServiceState>,

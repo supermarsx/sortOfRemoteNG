@@ -15,6 +15,9 @@
 use crate::serial::transport::{LineDiscipline, SerialTransport, XonXoffController};
 use crate::serial::types::*;
 use chrono::Utc;
+use sorng_core::session_resilience::{
+    LiveSessionDescriptor, RingLimits, SharedRing, SnapshotEncoding,
+};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
@@ -203,9 +206,42 @@ pub struct SerialSessionHandle {
     /// Friendly name of the resolved port (e.g. `COM7 - FTDI FT232R`), when
     /// the port was auto-selected from an enumeration.
     pub port_display_name: Option<String>,
+    /// Bounded, sequenced, memory-only replay of raw received bytes so a
+    /// reloaded frontend can repaint. Closed (zeroized) on real disconnect.
+    pub output_ring: Arc<SharedRing>,
 }
 
 impl SerialSessionHandle {
+    /// Registry row for this session (no output payload, no credentials).
+    pub async fn to_live_descriptor(&self) -> LiveSessionDescriptor {
+        let info = self.info().await;
+        let title = info
+            .label
+            .clone()
+            .or_else(|| info.port_display_name.clone())
+            .unwrap_or_else(|| info.port_name.clone());
+        LiveSessionDescriptor {
+            protocol: "serial".to_string(),
+            backend_session_id: info.id,
+            frontend_session_id: None,
+            connection_id: None,
+            title,
+            target: info.port_name,
+            port: None,
+            username: None,
+            state: match info.state {
+                SessionState::Connected => "connected",
+                _ => "disconnected",
+            }
+            .to_string(),
+            viewer_attached: None,
+            created_at: Some(info.connected_at.to_rfc3339()),
+            last_activity_at: None,
+            buffer: Some(self.output_ring.range()),
+            orphan: Default::default(),
+        }
+    }
+
     /// Build a `SerialSession` info snapshot.
     pub async fn info(&self) -> SerialSession {
         let config = self.config.read().await.clone();
@@ -891,6 +927,7 @@ pub async fn create_session_resolved(
         bytes_tx: bytes_tx.clone(),
         auto_selected,
         port_display_name,
+        output_ring: SharedRing::new(SnapshotEncoding::Base64, RingLimits::default()),
     });
 
     let runner = SessionRunner::new(

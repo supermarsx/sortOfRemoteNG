@@ -9,6 +9,8 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time::timeout;
 
+use sorng_core::session_resilience::{RingLimits, SharedRing, SnapshotEncoding};
+
 use crate::telnet::codec::TelnetCodec;
 use crate::telnet::negotiation::NegotiationManager;
 use crate::telnet::protocol::{self, TelnetFrame, NOP, SN_SEND};
@@ -87,9 +89,38 @@ pub struct TelnetSessionHandle {
     pub reconnect_count: Arc<AtomicU64>,
     /// Wakes both I/O loops when the service disconnects the session.
     pub shutdown: Arc<Notify>,
+    /// Bounded, sequenced, memory-only replay of decoded output so a
+    /// reloaded frontend can repaint. Closed (zeroized) on real disconnect.
+    pub output_ring: Arc<SharedRing>,
 }
 
 impl TelnetSessionHandle {
+    /// Registry row for this session (no output payload, no credentials).
+    pub fn to_live_descriptor(&self) -> sorng_core::session_resilience::LiveSessionDescriptor {
+        let info = self.to_session_info();
+        sorng_core::session_resilience::LiveSessionDescriptor {
+            protocol: "telnet".to_string(),
+            backend_session_id: self.id.clone(),
+            frontend_session_id: None,
+            connection_id: None,
+            title: info.label.clone().unwrap_or_else(|| info.host.clone()),
+            target: info.host,
+            port: Some(info.port),
+            username: info.username,
+            state: if info.connected {
+                "connected"
+            } else {
+                "disconnected"
+            }
+            .to_string(),
+            viewer_attached: None,
+            created_at: Some(info.connected_at),
+            last_activity_at: Some(info.last_activity),
+            buffer: Some(self.output_ring.range()),
+            orphan: sorng_core::session_resilience::OrphanStatus::default(),
+        }
+    }
+
     /// Build a [`TelnetSession`] metadata snapshot from this handle.
     pub fn to_session_info(&self) -> TelnetSession {
         TelnetSession {
@@ -272,6 +303,7 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
         last_activity,
         reconnect_count,
         shutdown,
+        output_ring: SharedRing::new(SnapshotEncoding::Utf8, RingLimits::default()),
     })
 }
 

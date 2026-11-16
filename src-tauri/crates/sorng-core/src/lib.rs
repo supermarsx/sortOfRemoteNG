@@ -9,4 +9,5 @@ pub mod diagnostics;
 pub mod events;
 pub mod native_renderer;
 pub mod route_health;
+pub mod session_resilience;
 pub mod ssh_home;
