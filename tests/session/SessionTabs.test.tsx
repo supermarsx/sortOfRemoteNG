@@ -813,3 +813,77 @@ describe("SessionTabs accessibility", () => {
     expect(lane.scrollLeft).toBe(0);
   });
 });
+
+describe("SessionTabs context menu: close all and reconnect", () => {
+  const mk = (id: string, connectionId: string, protocol: string) =>
+    ({
+      id,
+      connectionId,
+      name: id,
+      status: "connected",
+      startTime: new Date("2026-01-01T00:00:00.000Z"),
+      protocol,
+      hostname: "h",
+    }) as ConnectionSession;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTabGroups = [];
+    mockSessions = [
+      mk("a", "ca", "ssh"),
+      mk("b", "cb", "ssh"),
+      mk("tool-a", "tool-a", "tool:settings"),
+    ];
+    mockConnections = [
+      {
+        id: "ca",
+        name: "A",
+        protocol: "ssh",
+        hostname: "h",
+        port: 22,
+        isGroup: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ] as Connection[];
+  });
+
+  afterEach(() => {
+    clearRuntimeConnectionsForTests();
+  });
+
+  const openMenu = (name: string) => {
+    const tab = screen.getAllByText(name)[0].closest("[draggable], [role]")!;
+    fireEvent.contextMenu(tab);
+  };
+
+  it("Close All Tabs closes every visible tab via onSessionClose", () => {
+    renderTabs();
+    openMenu("a");
+    fireEvent.click(screen.getByText("Close All Tabs"));
+    expect(onSessionClose.mock.calls.map((c) => c[0])).toEqual([
+      "a",
+      "b",
+      "tool-a",
+    ]);
+  });
+
+  it("Reconnect calls the handler with the right session", () => {
+    const onSessionReconnect = vi.fn();
+    renderTabs({ onSessionReconnect });
+    openMenu("a");
+    fireEvent.click(screen.getByText("Reconnect"));
+    expect(onSessionReconnect).toHaveBeenCalledWith("a");
+  });
+
+  it("hides Reconnect for tool tabs and unsaved connections", () => {
+    const onSessionReconnect = vi.fn();
+    const { unmount } = renderTabs({ onSessionReconnect });
+    openMenu("tool-a");
+    expect(screen.queryByText("Reconnect")).not.toBeInTheDocument();
+    unmount();
+    renderTabs({ onSessionReconnect });
+    openMenu("b");
+    expect(screen.queryByText("Reconnect")).not.toBeInTheDocument();
+  });
+});

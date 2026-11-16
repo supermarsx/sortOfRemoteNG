@@ -723,6 +723,13 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     closeContextMenu();
   };
 
+  const handleCloseAllTabs = () => {
+    sessions.forEach((session) => {
+      onSessionClose(session.id);
+    });
+    closeContextMenu();
+  };
+
   const handleCloseTabsToRight = (sessionId: string) => {
     const idx = sessions.findIndex((s) => s.id === sessionId);
     if (idx === -1) return;
@@ -1786,7 +1793,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                 <div className="sor-menu-divider" />
 
                 {/* ── Session actions (connections only) ────────── */}
-                {isRealConnection && onSessionReconnect && (
+                {isRealConnection && conn && onSessionReconnect && (
                   <button
                     onClick={() => act(() => onSessionReconnect(sessionId))}
                     className="sor-menu-item"
@@ -2095,6 +2102,12 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                 >
                   <ArrowLeftFromLine size={14} className="mr-2" /> Close Tabs to
                   Left
+                </button>
+                <button
+                  onClick={handleCloseAllTabs}
+                  className="sor-menu-item sor-menu-item-danger"
+                >
+                  <XCircle size={14} className="mr-2" /> Close All Tabs
                 </button>
               </>
             );

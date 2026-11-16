@@ -1164,6 +1164,24 @@ const AppContent: React.FC = () => {
     [handleSessionClose, state.sessions],
   );
 
+  // Tab context-menu "Reconnect": close the old tab through the shared
+  // user-close path (confirmation, running-script guards, real disconnect),
+  // then open a fresh session for the same saved connection.
+  const handleSessionReconnect = useCallback(
+    async (sessionId: string) => {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      if (!session) return;
+      const connection = state.connections.find(
+        (item) => item.id === session.connectionId,
+      );
+      if (!connection) return;
+      const closed = await handleSessionClose(sessionId);
+      if (!closed) return;
+      await handleConnect(connection);
+    },
+    [handleConnect, handleSessionClose, state.connections, state.sessions],
+  );
+
   // handleSessionDetach and handleReattachRdpSession are in useSessionDetach hook
 
   const showConfirm = (
@@ -1897,6 +1915,7 @@ const AppContent: React.FC = () => {
                 onSessionRetryClose={retrySessionClose}
                 onSessionForceClose={forceSessionClose}
                 onSessionDetach={handleSessionDetach}
+                onSessionReconnect={handleSessionReconnect}
                 enableReorder={appSettings.enableTabReorder}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
                 tabLayout={tabLayout}
