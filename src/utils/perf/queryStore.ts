@@ -182,8 +182,9 @@ export function createQueryStore(deps: QueryStoreDeps = {}) {
     }
     metrics.count("cache.fetch");
     const epoch = e.epoch;
-    let p!: Promise<T>; // referenced by the finally below before the IIFE returns
-    p = (async () => {
+    // The finally below may run before the IIFE returns, so it reads the slot.
+    const self: { p?: Promise<T> } = {};
+    const p: Promise<T> = (self.p = (async () => {
       try {
         const raw = await fetcher();
         if (e.epoch === epoch && entries.get(e.key) === (e as Entry)) {
@@ -197,10 +198,10 @@ export function createQueryStore(deps: QueryStoreDeps = {}) {
         }
         throw err;
       } finally {
-        if (e.inflight === p) e.inflight = undefined;
+        if (e.inflight === self.p) e.inflight = undefined;
         if (entries.get(e.key) === (e as Entry)) publish(e as Entry);
       }
-    })();
+    })());
     e.inflight = p;
     publish(e as Entry);
     return p;

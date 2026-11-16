@@ -13,7 +13,7 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "5fe494febd45062322fa8cbeb0dbbdb96fb2ac9ba8c75feaa9d6a4a0e7a89709",
+    "sha256": "b85ce933f6118ff167470442a07b929de0ad0a99bf32df1d8a921184ed2d7b25",
     "beforeBytes": 27527,
     "beforeSha256": "a49c7f56261560a6e47e716760d589438906d5547f43860980d7b1c5640be132",
     "pairs": [
@@ -22,14 +22,14 @@
         "previous": "{\"bytes\":196754,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"77bdfa93b61c25a6fe82371cac53cb1f070c09a95589b52134edeec4c4fd9a93\"}"
       },
       {
-        "current": "\"workflowPin\":{\"bytes\":11615,\"sha256\":\"b90f5272d0e131549625efb0775a04c8acc8c77b8c67cc07fa25e0816915671d\"}",
+        "current": "\"workflowPin\":{\"bytes\":11632,\"sha256\":\"fcd944a8baed7393e1688be8d590b426f9b8f7ae30a17c3d5c78c8cccadd6d44\"}",
         "previous": "\"workflowPin\":{\"bytes\":9925,\"sha256\":\"4aa74d8ea85e2952b6ca69e7ad57b4cf24db34e68a7a302c5ce3f59de9eccb5d\"}"
       }
     ]
   },
   ".github/workflows/windows-arm-full-sdk.yml": {
-    "bytes": 11615,
-    "sha256": "b90f5272d0e131549625efb0775a04c8acc8c77b8c67cc07fa25e0816915671d",
+    "bytes": 11632,
+    "sha256": "fcd944a8baed7393e1688be8d590b426f9b8f7ae30a17c3d5c78c8cccadd6d44",
     "beforeBytes": 9925,
     "beforeSha256": "4aa74d8ea85e2952b6ca69e7ad57b4cf24db34e68a7a302c5ce3f59de9eccb5d",
     "pairs": [
@@ -42,7 +42,7 @@
         "previous": "    steps:\n"
       },
       {
-        "current": "      - name: Start detached off-box runner telemetry sampler\n        shell: pwsh\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          $ErrorActionPreference = 'Stop'\n          if ($env:CEF_FULLSDK_COMPILE_CAP_MINUTES -cnotmatch '^(?:0|[3-9][0-9]|1[0-7][0-9]|180)$') { throw 'FULL_SDK_COMPILE_CAP_INPUT' }\n          $ErrorActionPreference = 'Continue'\n          & gh api \"repos/$env:GITHUB_REPOSITORY/git/ref/heads/ci-telemetry\" *> $null\n          if ($LASTEXITCODE -ne 0) { & gh api -X POST \"repos/$env:GITHUB_REPOSITORY/git/refs\" -f ref=refs/heads/ci-telemetry -f sha=$env:GITHUB_SHA *> $null }\n          $global:LASTEXITCODE = 0\n          Start-Process -FilePath pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'scripts/ci/winarm-telemetry.ps1'), '-LogDir', 'C:\\sorng-telemetry'\n          Write-Host \"::notice::telemetry sampler started (branch ci-telemetry, telemetry/winarm/$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT/)\"\n      - name: Authenticate and download exact prior successful checkpoint\n",
+        "current": "      - name: Start detached off-box runner telemetry sampler\n        shell: pwsh\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          $ErrorActionPreference = 'Stop'\n          if ($env:CEF_FULLSDK_COMPILE_CAP_MINUTES -cnotmatch '^(?:0|[3-9][0-9]|1[0-7][0-9]|180)$') { throw 'FULL_SDK_COMPILE_CAP_INPUT' }\n          $ErrorActionPreference = 'Continue'\n          & gh api \"repos/$env:GITHUB_REPOSITORY/git/ref/heads/ci-telemetry\" *> $null\n          if ($LASTEXITCODE -ne 0) { & gh api -X POST \"repos/$env:GITHUB_REPOSITORY/git/refs\" -f ref=refs/heads/ci-telemetry -f sha=$env:GITHUB_SHA *> $null }\n          $global:LASTEXITCODE = 0\n          Start-Process -FilePath pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'native/windows-arm-full-sdk/winarm-telemetry.ps1'), '-LogDir', 'C:\\sorng-telemetry'\n          Write-Host \"::notice::telemetry sampler started (branch ci-telemetry, telemetry/winarm/$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT/)\"\n      - name: Authenticate and download exact prior successful checkpoint\n",
         "previous": "      - name: Authenticate and download exact prior successful checkpoint\n"
       },
       {

@@ -73,7 +73,7 @@ jobs:
           & gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/ci-telemetry" *> $null
           if ($LASTEXITCODE -ne 0) { & gh api -X POST "repos/$env:GITHUB_REPOSITORY/git/refs" -f ref=refs/heads/ci-telemetry -f sha=$env:GITHUB_SHA *> $null }
           $global:LASTEXITCODE = 0
-          Start-Process -FilePath pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'scripts/ci/winarm-telemetry.ps1'), '-LogDir', 'C:\sorng-telemetry'
+          Start-Process -FilePath pwsh -WindowStyle Hidden -ArgumentList '-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'native/windows-arm-full-sdk/winarm-telemetry.ps1'), '-LogDir', 'C:\sorng-telemetry'
           Write-Host "::notice::telemetry sampler started (branch ci-telemetry, telemetry/winarm/$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT/)"
       - name: Authenticate and download exact prior successful checkpoint
         if: inputs.restore_run != '0'
