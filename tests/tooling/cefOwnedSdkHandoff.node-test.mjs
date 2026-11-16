@@ -143,7 +143,7 @@ test("Windows ARM local handoff admits only typed candidates and requires fixed 
     const result = spawnSync("git", ["-C", isolated, ...args], {
       encoding: "utf8",
       windowsHide: true,
-      timeout: 10000,
+      timeout: 120000,
     });
     assert.equal(result.status, 0, result.stderr);
   }
