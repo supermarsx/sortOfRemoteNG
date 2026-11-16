@@ -672,6 +672,36 @@ describe("SessionTabs accessibility", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the inline rename input open and commits the typed name", async () => {
+    renderTabs();
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /session one/i }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /rename tab/i }),
+    );
+
+    const input = await screen.findByLabelText(/rename tab session one/i);
+    // Let the menu's focus-restore and the input's focus effects settle.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    const live = screen.getByLabelText(/rename tab session one/i);
+    expect(live).toBe(input);
+    expect(live).toHaveFocus();
+
+    fireEvent.change(live, { target: { value: "Renamed Tab" } });
+    fireEvent.keyDown(live, { key: "Enter" });
+
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_SESSION",
+        // Partial only: a full session spread is dropped as stale by the
+        // lifecycle merge and the rename silently does nothing.
+        payload: { id: "s1", name: "Renamed Tab" },
+      }),
+    );
+  });
+
   it("closes the tab context menu when its tab is removed", async () => {
     const { rerender } = renderTabs();
 

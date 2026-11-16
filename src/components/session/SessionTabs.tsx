@@ -673,9 +673,12 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     if (renamingSessionId && renameValue.trim()) {
       const session = state.sessions.find((s) => s.id === renamingSessionId);
       if (session) {
+        // Send a presentation-only partial. Spreading the whole session would
+        // carry its lifecycle revision/generation back unchanged, and the
+        // lifecycle merge then discards the update as stale (rename no-op).
         dispatch({
           type: "UPDATE_SESSION",
-          payload: { ...session, name: renameValue.trim() },
+          payload: { id: session.id, name: renameValue.trim() },
         });
       }
     }
