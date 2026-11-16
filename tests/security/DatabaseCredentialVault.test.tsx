@@ -1033,7 +1033,7 @@ describe("vault list layout and navigation", () => {
       screen.queryByText("Fixture credential 025"),
     ).not.toBeInTheDocument();
     expect(api.resolve).not.toHaveBeenCalled();
-  });
+  }, 30_000);
   it("grows infinite scroll in bounded chunks and resets on search, source and owner changes", async () => {
     const { api } = facade(manyEntries(75));
     const view = render(

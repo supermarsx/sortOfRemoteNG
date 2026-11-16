@@ -111,7 +111,10 @@ describe("ServerStatsPanel", () => {
       expect(screen.getAllByTestId("aggregate-row")).toHaveLength(2);
       fireEvent.click(screen.getByText("Ubuntu Server"));
       expect(screen.getByRole("tablist")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Single/ })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: /Single/ })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
     });
   });
 

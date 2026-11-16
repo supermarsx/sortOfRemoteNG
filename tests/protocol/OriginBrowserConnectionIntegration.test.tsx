@@ -3933,7 +3933,12 @@ describe("real-origin connection-tab integration", () => {
     expect(calls("origin_browser_navigate")[0][1].request.url).toBe(currentUrl);
     expect(f.updateSettings).not.toHaveBeenCalled();
     expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
-    expect(storage).not.toHaveBeenCalled();
+    // Browsing history persists only the sanitised address (no query or
+    // fragment); nothing else, and never the sensitive parts, may be stored.
+    for (const [key, value] of storage.mock.calls) {
+      expect(key).toBe("sor.browserHistory.entries.v1");
+      expect(String(value)).not.toMatch(/address-only|fragment-only|next=/);
+    }
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   });
   it("does not fall back to a diagnostic address when native explicitly reports an empty current address", async () => {
