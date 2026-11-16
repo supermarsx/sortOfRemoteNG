@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   useVisibleSessionRefresh,
   sameSessionSnapshot,
   type SessionRefreshLease,
 } from "../session/useVisibleSessionRefresh";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useCoalescedEvent } from "../perf/useCoalescedEvent";
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 import {
   getVpnProviderLabel,
@@ -98,27 +98,16 @@ export function useVpnManager(isOpen: boolean) {
 
   // ── Listen for backend status-changed events ────────────────────
 
-  useEffect(() => {
-    if (!isOpen) return;
-    let unlisten: UnlistenFn | undefined;
-    let live = true;
-
-    listen("vpn::status-changed", () => {
-      if (live) void loadConnections();
-    })
-      .then((fn) => {
-        if (live) unlisten = fn;
-        else fn();
-      })
-      .catch(() => {
-        /* Browser mode or unavailable event bridge: visible polling remains. */
-      });
-
-    return () => {
-      live = false;
-      unlisten?.();
-    };
-  }, [isOpen, loadConnections]);
+  // Status is last-write-wins: a burst of events costs one catalog reload.
+  // Browser mode / missing bridge: the visible poll above remains.
+  useCoalescedEvent<unknown>(
+    "vpn::status-changed",
+    () => {
+      void loadConnections();
+    },
+    { kind: "count", ms: 250 },
+    isOpen,
+  );
 
   // ── Normalize into a single list ─────────────────────────────────
 

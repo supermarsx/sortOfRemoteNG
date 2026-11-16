@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { readBackupStatus } from "./backupStatusQuery";
+import { structuralShare } from "../../utils/perf/reconcile";
+import { useVisibleInterval } from "../perf/useVisibleInterval";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { SettingsManager } from "../../utils/settings/settingsManager";
@@ -370,20 +373,19 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch backup status from Rust backend
-  useEffect(() => {
-    if (typeof isTauri !== "function" || !isTauri()) return;
-    const fetchBackupStatus = async () => {
-      try {
-        const status = await invoke<BackupStatus>("backup_get_status");
-        setBackupStatus(status);
-      } catch (error) {
-        console.error("Failed to fetch backup status:", error);
-      }
-    };
-    fetchBackupStatus();
-    const interval = setInterval(fetchBackupStatus, 30000);
-    return () => clearInterval(interval);
+  const inTauri = typeof isTauri === "function" && isTauri();
+  const fetchBackupStatus = useCallback(async () => {
+    try {
+      const status = await readBackupStatus<BackupStatus>();
+      setBackupStatus((prev) => structuralShare(prev, status));
+    } catch (error) {
+      console.error("Failed to fetch backup status:", error);
+    }
   }, []);
+  // Shared cached read; paused while the window is hidden, one catch-up on return.
+  useVisibleInterval(fetchBackupStatus, inTauri ? 30000 : null, {
+    immediate: true,
+  });
 
   // Fetch backup list when showing list
   const fetchBackupList = useCallback(async () => {
@@ -465,7 +467,7 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
           data,
         });
       }
-      const status = await invoke<BackupStatus>("backup_get_status");
+      const status = await readBackupStatus<BackupStatus>(true);
       setBackupStatus(status);
       await fetchBackupList();
     } catch (error) {
@@ -516,7 +518,7 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
       });
     } finally {
       try {
-        const status = await invoke<BackupStatus>("backup_get_status");
+        const status = await readBackupStatus<BackupStatus>(true);
         setBackupStatus(status);
       } catch (error) {
         console.error("Failed to refresh backup status after test:", error);
@@ -660,7 +662,7 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
       try {
         await deleteBackupCopy(backupId, exactTargetId);
         await fetchBackupList();
-        const status = await invoke<BackupStatus>("backup_get_status");
+        const status = await readBackupStatus<BackupStatus>(true);
         setBackupStatus(status);
       } catch (error) {
         console.error("Delete failed:", error);

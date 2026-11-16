@@ -9,7 +9,9 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { createFrameCoalescer } from '../../utils/perf/coalescer';
+import { subscribeEvent } from '../../utils/perf/eventBus';
+import { isHidden, subscribeVisibility } from '../../utils/perf/visibility';
 import { useConnections } from '../../contexts/useConnections';
 import type { ConnectionSession } from '../../types/connection/connection';
 import type {
@@ -500,11 +502,30 @@ export function useSFTPClient(
   const watchDir = useCallback(
     async (config: WatchConfig, onEvent?: (ev: WatchEvent) => void) => {
       const id = await sftpApi.watchStart(config);
-      let unlisten: UnlistenFn | null = null;
+      let unlisten: (() => void) | null = null;
       if (onEvent) {
-        unlisten = await listen<WatchEvent>(`sftp://watch/${id}`, event => {
-          onEvent(event.payload);
+        // Background lane: file-change bursts are delivered once per frame
+        // (every event still reaches onEvent, in order, in one React batch).
+        const name = `sftp://watch/${id}`;
+        const batch = createFrameCoalescer<WatchEvent>({
+          name,
+          lane: 'background',
+          paused: isHidden,
+          onFlush: events => {
+            for (const ev of events) onEvent(ev);
+          },
         });
+        const off = subscribeEvent(name, payload =>
+          batch.push(payload as WatchEvent),
+        );
+        const offVis = subscribeVisibility(() => {
+          if (!isHidden()) batch.resume();
+        });
+        unlisten = () => {
+          off();
+          offVis();
+          batch.dispose();
+        };
       }
       return {
         watchId: id,

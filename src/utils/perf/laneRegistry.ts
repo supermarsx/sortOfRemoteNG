@@ -82,7 +82,15 @@ export const BACKGROUND_EVENTS: readonly string[] = [
   "documents-changed",
   "connections-changed",
   "sessions-changed",
+  // origin-browser-download: native browser download progress rows; sequence-ordered, 16 ms commit delay invisible.
+  "origin-browser-download",
   "perf:test-background",
+  // In-process feeds (not Tauri events) classified so their stores may
+  // frame-coalesce subscriber notifications.
+  // browser-log-entries: Session Manager Browser Logs view; append-only log, 16 ms notify delay is invisible.
+  "browser-log-entries",
+  // proxy-log-entries: Session Manager Proxy Logs view; same append-only log rationale.
+  "proxy-log-entries",
 ];
 
 /** Dynamic background event families (e.g. sftp://watch/<id>). */

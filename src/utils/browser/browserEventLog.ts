@@ -6,6 +6,9 @@
  * reduced to origin + path before it is retained, and free text is scrubbed.
  */
 
+import { createFrameCoalescer } from "../perf/coalescer";
+import { isHidden, subscribeVisibility } from "../perf/visibility";
+
 export const BROWSER_LOG_CAPACITY = 500;
 export const PROXY_LOG_CAPACITY = 500;
 export const BROWSER_HISTORY_CAPACITY = 1000;
@@ -67,26 +70,51 @@ export interface RingStore<T> {
   readonly capacity: number;
 }
 
-export function createRingStore<T>(capacity: number): RingStore<T> {
-  let entries: readonly T[] = [];
+/**
+ * `feed` (optional) names a BACKGROUND feed in the lane registry. When given,
+ * subscriber notifications are frame-coalesced (one notify per ~16 ms burst,
+ * paused while the window is hidden); entries and snapshots stay synchronous.
+ * The snapshot array is rebuilt lazily, once per read after a burst, instead
+ * of copying up to `capacity` entries on every push.
+ */
+export function createRingStore<T>(
+  capacity: number,
+  feed?: string,
+): RingStore<T> {
+  const buffer: T[] = [];
+  let snapshot: readonly T[] | null = [];
   const listeners = new Set<() => void>();
   const emit = () => listeners.forEach((listener) => listener());
+  const notifier = feed
+    ? createFrameCoalescer<true>({
+        name: feed,
+        lane: "background",
+        paused: isHidden,
+        onFlush: emit,
+      })
+    : null;
+  if (notifier)
+    subscribeVisibility(() => {
+      if (!isHidden()) notifier.resume();
+    });
   return {
     capacity,
     push(entry) {
-      const next =
-        entries.length >= capacity
-          ? [...entries.slice(entries.length - capacity + 1), entry]
-          : [...entries, entry];
-      entries = next;
-      emit();
+      if (buffer.length >= capacity)
+        buffer.splice(0, buffer.length - capacity + 1);
+      buffer.push(entry);
+      snapshot = null;
+      if (notifier) notifier.push(true);
+      else emit();
     },
     clear() {
-      if (!entries.length) return;
-      entries = [];
+      if (!buffer.length) return;
+      buffer.length = 0;
+      snapshot = [];
+      notifier?.clear();
       emit();
     },
-    getSnapshot: () => entries,
+    getSnapshot: () => (snapshot ??= buffer.slice()),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -142,8 +170,10 @@ export type BrowserLogInput = Omit<BrowserLogEntry, "id" | "at"> & {
 
 let nextEntryId = 1;
 
-export const browserLogStore =
-  createRingStore<BrowserLogEntry>(BROWSER_LOG_CAPACITY);
+export const browserLogStore = createRingStore<BrowserLogEntry>(
+  BROWSER_LOG_CAPACITY,
+  "browser-log-entries",
+);
 
 export function logBrowserEvent(input: BrowserLogInput): void {
   browserLogStore.push({
@@ -203,7 +233,10 @@ export interface ProxyLogEntry {
 
 export type ProxyLogInput = Omit<ProxyLogEntry, "id" | "at"> & { at?: number };
 
-export const proxyLogStore = createRingStore<ProxyLogEntry>(PROXY_LOG_CAPACITY);
+export const proxyLogStore = createRingStore<ProxyLogEntry>(
+  PROXY_LOG_CAPACITY,
+  "proxy-log-entries",
+);
 
 export function logProxyEvent(input: ProxyLogInput): void {
   proxyLogStore.push({

@@ -102,7 +102,8 @@ describe("native download controller", () => {
         },
       }),
     );
-    expect(result.current.rows).toEqual([row(4)]);
+    // Progress commits are frame-coalesced (16 ms).
+    await waitFor(() => expect(result.current.rows).toEqual([row(4)]));
     expect(result.current.activeCount).toBe(1);
     unmount();
     expect(off).toHaveBeenCalledTimes(1);
@@ -116,7 +117,7 @@ describe("native download controller", () => {
     const popup = { ...row(1), downloadId: 2, fileName: "popup.pdf" };
     act(() => event({ payload: root }));
     act(() => event({ payload: popup }));
-    expect(result.current.rows).toEqual([popup, root]);
+    await waitFor(() => expect(result.current.rows).toEqual([popup, root]));
     await act(async () => {
       expect(await result.current.act(2, "cancel")).toBe(true);
     });

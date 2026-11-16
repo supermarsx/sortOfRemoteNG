@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { createFrameCoalescer } from "../../utils/perf/coalescer";
+import { isHidden, subscribeVisibility } from "../../utils/perf/visibility";
 import type { OriginBrowserIdentity } from "../../types/protocols/originBrowser";
 import {
   NATIVE_DOWNLOAD_EVENT,
@@ -34,26 +36,43 @@ export function useNativeBrowserDownloads(
     let off: (() => void) | undefined;
     const rows = new Map<number, NativeDownload>();
     const current = () => live && latest.current.scope === scope;
-    const ingest = (value: unknown) => {
-      if (!current()) return;
+    // Rows are folded into the map immediately; React state is committed once
+    // per frame burst (progress events arrive many times per second).
+    const apply = (value: unknown) => {
       const row = nativeDownload(value, identity);
       if (!row) return;
       const previous = rows.get(row.downloadId);
       if (previous && previous.sequence >= row.sequence) return;
       if (!previous && rows.size >= 128) rows.delete(rows.keys().next().value!);
       rows.set(row.downloadId, row);
+    };
+    const commit = () => {
+      if (!current()) return;
       setState({
         scope,
         rows: [...rows.values()].sort((a, b) => b.downloadId - a.downloadId),
         error: "",
       });
     };
+    const frames = createFrameCoalescer<unknown>({
+      name: NATIVE_DOWNLOAD_EVENT,
+      lane: "background",
+      paused: isHidden,
+      onFlush: (batch) => {
+        if (!current()) return;
+        batch.forEach(apply);
+        commit();
+      },
+    });
+    const offVisibility = subscribeVisibility(() => {
+      if (!isHidden()) frames.resume();
+    });
     setState({ scope, rows: [], error: "" });
     setBusy(new Set());
     void (async () => {
       latest.current.assertOwner();
       off = await listen<unknown>(NATIVE_DOWNLOAD_EVENT, (event) =>
-        ingest(event.payload),
+        frames.push(event.payload),
       );
       if (!current()) {
         off();
@@ -65,7 +84,9 @@ export function useNativeBrowserDownloads(
       });
       if (!current()) return;
       if (!Array.isArray(snapshot) || snapshot.length > 128) throw new Error();
-      snapshot.forEach(ingest);
+      if (!current()) return;
+      snapshot.forEach(apply);
+      commit();
     })().catch(() => {
       if (current())
         setState((old) => ({
@@ -78,6 +99,8 @@ export function useNativeBrowserDownloads(
     return () => {
       live = false;
       off?.();
+      offVisibility();
+      frames.dispose();
     };
   }, [scope, refresh]); // scope captures the complete immutable attempt identity
   const act = useCallback(

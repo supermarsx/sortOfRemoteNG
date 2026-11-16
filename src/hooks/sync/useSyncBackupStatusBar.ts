@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { readBackupStatus } from "./backupStatusQuery";
+import { structuralShare } from "../../utils/perf/reconcile";
+import { useVisibleInterval } from "../perf/useVisibleInterval";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { CloudSyncProvider } from "../../types/settings/settings";
 import { providersFromCloudSyncConfig } from "../../utils/services/cloudSyncService";
@@ -85,20 +88,19 @@ export function useSyncBackupStatusBar(
   const [isBackingUp, setIsBackingUp] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (typeof isTauri !== "function" || !isTauri()) return;
-    const fetchBackupStatus = async () => {
-      try {
-        const status = await invoke<BackupStatus>("backup_get_status");
-        setBackupStatus(status);
-      } catch (error) {
-        console.error("Failed to fetch backup status:", error);
-      }
-    };
-    fetchBackupStatus();
-    const interval = setInterval(fetchBackupStatus, 30000);
-    return () => clearInterval(interval);
+  const inTauri = typeof isTauri === "function" && isTauri();
+  const fetchBackupStatus = useCallback(async () => {
+    try {
+      const status = await readBackupStatus<BackupStatus>();
+      setBackupStatus((prev) => structuralShare(prev, status));
+    } catch (error) {
+      console.error("Failed to fetch backup status:", error);
+    }
   }, []);
+  // Shared cached read; paused while the window is hidden, one catch-up on return.
+  useVisibleInterval(fetchBackupStatus, inTauri ? 30000 : null, {
+    immediate: true,
+  });
 
   const config = cloudSyncConfig ?? {
     enabled: false,
@@ -145,7 +147,7 @@ export function useSyncBackupStatusBar(
     setIsBackingUp(true);
     try {
       await onBackupNow();
-      const status = await invoke<BackupStatus>("backup_get_status");
+      const status = await readBackupStatus<BackupStatus>(true);
       setBackupStatus(status);
     } finally {
       setIsBackingUp(false);
