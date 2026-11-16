@@ -38,6 +38,37 @@ impl SessionOperation {
     }
 }
 
+/// libssh2 `LIBSSH2_ERROR_CHANNEL_FAILURE`: the server answered the channel
+/// open with a refusal (e.g. sshd `MaxSessions`). The open is finished and
+/// no native state is left pending on the session.
+const LIBSSH2_ERROR_CHANNEL_FAILURE: i32 = -21;
+
+pub(super) fn is_definitive_channel_refusal(error: &ssh2::Error) -> bool {
+    matches!(
+        error.code(),
+        ssh2::ErrorCode::Session(LIBSSH2_ERROR_CHANNEL_FAILURE)
+    )
+}
+
+impl SessionOperation {
+    /// Like [`native_open`], but a definitive server refusal of the channel
+    /// open does not quarantine the session. Used by best-effort background
+    /// callers (server stats) whose failure must never change session state.
+    pub(super) fn native_open_tolerating_refusal<T>(
+        &self,
+        open: impl FnOnce() -> Result<T, ssh2::Error>,
+    ) -> Result<T, String> {
+        self.gate.ensure_healthy()?;
+        open().map_err(|error| {
+            if is_definitive_channel_refusal(&error) {
+                return format!("{error}; the server refused another channel on this connection");
+            }
+            self.gate.poisoned.store(true, Ordering::Release);
+            format!("{error}; disconnect and reconnect this SSH session")
+        })
+    }
+}
+
 impl Drop for SessionOperation {
     fn drop(&mut self) {
         if self.pending {
@@ -304,6 +335,28 @@ mod tests {
     use std::collections::VecDeque;
     use std::net::{Shutdown, TcpListener, TcpStream};
     use std::time::Instant;
+
+    #[test]
+    fn channel_refusal_does_not_poison_but_other_open_errors_do() {
+        let gate = Arc::new(ChannelOpenGate::default());
+        let op = gate.try_acquire().unwrap().unwrap();
+        let refused: Result<(), String> = op.native_open_tolerating_refusal(|| {
+            Err(ssh2::Error::new(
+                ssh2::ErrorCode::Session(LIBSSH2_ERROR_CHANNEL_FAILURE),
+                "channel open refused",
+            ))
+        });
+        assert!(refused.is_err());
+        assert!(
+            gate.ensure_healthy().is_ok(),
+            "refusal quarantined the session"
+        );
+        let timed_out: Result<(), String> = op.native_open_tolerating_refusal(|| {
+            Err(ssh2::Error::new(ssh2::ErrorCode::Session(-37), "eagain"))
+        });
+        assert!(timed_out.is_err());
+        assert!(gate.ensure_healthy().is_err());
+    }
 
     enum ReadStep {
         Data(Vec<u8>),

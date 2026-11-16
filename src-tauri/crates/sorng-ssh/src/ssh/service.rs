@@ -172,7 +172,7 @@ where
     }
 }
 
-struct ZeroingCommandInput(Vec<u8>);
+pub(crate) struct ZeroingCommandInput(Vec<u8>);
 
 const HTTPS_SSH_PROXY_UNSUPPORTED: &str =
     "HTTPS proxy TLS transport is not supported for this SSH route";
@@ -1840,6 +1840,199 @@ fn shell_io_tick<'a>(
         return Ok(ShellIoTick::Paused);
     }
     Ok(ShellIoTick::Ready(guard))
+}
+
+/// A one-shot `exec` on its own SSH channel. Holds no service guard: the
+/// per-session pause keeps the shell reader off the session while it runs, and
+/// `native_io` serialises against the reader's in-flight tick.
+pub(crate) struct CommandExecutionJob {
+    session: Session,
+    operation: SessionOperation,
+    #[allow(dead_code)]
+    shell_pause: ShellIoPause,
+    native_io: Arc<StdMutex<()>>,
+    command: String,
+    timeout: Option<u64>,
+    max_output_bytes: usize,
+    stdin_data: Option<ZeroingCommandInput>,
+}
+
+impl CommandExecutionJob {
+    pub(crate) fn run(self) -> Result<super::integration::SshCommandOutput, String> {
+        let Self {
+            session,
+            operation,
+            shell_pause: _shell_pause,
+            native_io,
+            command,
+            timeout,
+            max_output_bytes,
+            mut stdin_data,
+        } = self;
+        let _native_io = native_io
+            .lock()
+            .map_err(|_| "SSH shell I/O is unavailable; reconnect this session".to_string())?;
+        // Temporarily switch to blocking mode for command execution.
+        // The shell thread uses non-blocking mode, but exec channels
+        // need blocking reads. Save and restore the previous state.
+        let was_blocking = session.is_blocking();
+        if !was_blocking {
+            session.set_blocking(true);
+        }
+
+        let result = (|| -> Result<super::integration::SshCommandOutput, String> {
+            let mut channel = operation
+                .native_open_tolerating_refusal(|| session.channel_session())
+                .map_err(|error| {
+                    SshService::cap_command_error(format!("Failed to create channel: {error}"))
+                })?;
+
+            // Keep channel setup blocking, then alternate non-blocking reads
+            // across both streams so neither stream can starve the other.
+            let timeout_ms = timeout.unwrap_or(30_000).clamp(1, 300_000);
+            session.set_timeout(timeout_ms.min(u32::MAX as u64) as u32);
+
+            channel.exec(&command).map_err(|error| {
+                SshService::cap_command_error(format!("Failed to execute command: {error}"))
+            })?;
+
+            if let Some(data) = stdin_data.as_mut() {
+                channel.write_all(&data.0).map_err(|error| {
+                    SshService::cap_command_error(format!(
+                        "Failed to write SSH command input: {error}"
+                    ))
+                })?;
+                channel.send_eof().map_err(|error| {
+                    SshService::cap_command_error(format!(
+                        "Failed to close SSH command input: {error}"
+                    ))
+                })?;
+            }
+
+            session.set_blocking(false);
+            let deadline = std::time::Instant::now()
+                .checked_add(std::time::Duration::from_millis(timeout_ms))
+                .ok_or_else(|| "SSH command timeout is outside the supported range".to_string())?;
+            let mut output = super::integration::SshCommandOutput {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                exit_status: -1,
+                stdout_truncated: false,
+                stderr_truncated: false,
+                capture_limit_bytes: max_output_bytes,
+            };
+            let mut stdout_buffer = [0_u8; 16 * 1024];
+            let mut stderr_buffer = [0_u8; 16 * 1024];
+
+            loop {
+                let mut made_progress = false;
+
+                match channel.read(&mut stdout_buffer) {
+                    Ok(0) => {}
+                    Ok(bytes_read) => {
+                        made_progress = true;
+                        let remaining = max_output_bytes.saturating_sub(
+                            output.stdout.len().saturating_add(output.stderr.len()),
+                        );
+                        SshService::append_captured_output(
+                            &mut output.stdout,
+                            &stdout_buffer[..bytes_read],
+                            remaining,
+                            &mut output.stdout_truncated,
+                        );
+                    }
+                    Err(error) if is_transient_shell_io_error(&error) => {}
+                    Err(error) => {
+                        return Err(SshService::cap_command_error(format!(
+                            "Failed to read SSH command stdout: {error}"
+                        )));
+                    }
+                }
+
+                {
+                    let mut stderr_stream = channel.stderr();
+                    match stderr_stream.read(&mut stderr_buffer) {
+                        Ok(0) => {}
+                        Ok(bytes_read) => {
+                            made_progress = true;
+                            let remaining = max_output_bytes.saturating_sub(
+                                output.stdout.len().saturating_add(output.stderr.len()),
+                            );
+                            SshService::append_captured_output(
+                                &mut output.stderr,
+                                &stderr_buffer[..bytes_read],
+                                remaining,
+                                &mut output.stderr_truncated,
+                            );
+                        }
+                        Err(error) if is_transient_shell_io_error(&error) => {}
+                        Err(error) => {
+                            return Err(SshService::cap_command_error(format!(
+                                "Failed to read SSH command stderr: {error}"
+                            )));
+                        }
+                    }
+                }
+
+                if channel.eof() {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    let _ = channel.close();
+                    return Err(format!(
+                        "SSH command timed out after {timeout_ms} ms; the retained session must be discarded"
+                    ));
+                }
+                if !made_progress {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                let _ = channel.close();
+                return Err(format!(
+                    "SSH command timed out after {timeout_ms} ms while awaiting channel close; the retained session must be discarded"
+                ));
+            }
+
+            session.set_blocking(true);
+            session.set_timeout(remaining.as_millis().clamp(1, u32::MAX as u128) as u32);
+            channel.wait_close().map_err(|error| {
+                SshService::cap_command_error(format!(
+                    "Failed to close SSH command channel: {error}"
+                ))
+            })?;
+            output.exit_status = channel.exit_status().unwrap_or(-1);
+            Ok(output)
+        })();
+
+        // Restore the exact previous session mode even though the drain loop
+        // deliberately switches between blocking setup and non-blocking I/O.
+        session.set_blocking(was_blocking);
+        // Reset timeout
+        session.set_timeout(0);
+        result
+    }
+}
+
+/// Runs a one-shot command without holding the global service guard across
+/// SSH I/O, so keystrokes (`send_ssh_input`) are never queued behind it.
+pub async fn execute_command_on_state(
+    state: &SshServiceState,
+    session_id: &str,
+    command: String,
+    timeout: Option<u64>,
+) -> Result<String, String> {
+    let limit = super::integration::DEFAULT_COMMAND_OUTPUT_LIMIT_BYTES;
+    let job = {
+        let mut service = state.lock().await;
+        service.prepare_command_execution(session_id, command, timeout, limit, None)?
+    };
+    let output = tokio::task::spawn_blocking(move || job.run())
+        .await
+        .map_err(|_| "SSH command worker ended unexpectedly".to_string())??;
+    SshService::command_output_into_string(output)
 }
 
 /// An original-actor-bound script operation. Preparation performs no SSH I/O.
@@ -6854,6 +7047,12 @@ impl SshService {
             )
             .await?;
 
+        Self::command_output_into_string(output)
+    }
+
+    pub(crate) fn command_output_into_string(
+        output: super::integration::SshCommandOutput,
+    ) -> Result<String, String> {
         if output.exit_status != 0 {
             return Err(Self::command_failure_message(&output));
         }
@@ -6913,161 +7112,53 @@ impl SshService {
             return Err("Session not found".to_string());
         }
 
-        let _session_operation = self
+        let job = self.prepare_command_execution(
+            session_id,
+            command,
+            timeout,
+            max_output_bytes,
+            stdin_data.take(),
+        )?;
+        job.run()
+    }
+
+    /// Registers the shell pause and clones the native session handle. Does
+    /// no SSH I/O, so callers may drop the service guard before `run`.
+    pub(crate) fn prepare_command_execution(
+        &mut self,
+        session_id: &str,
+        command: String,
+        timeout: Option<u64>,
+        max_output_bytes: usize,
+        stdin_data: Option<ZeroingCommandInput>,
+    ) -> Result<CommandExecutionJob, String> {
+        let operation = self
             .sessions
             .get(session_id)
             .ok_or("Session not found")?
             .channel_open
             .operation()?;
-        let shell_pause = self.pause_shell_io(session_id);
-        let session = self
+        let shell_pause = ShellIoPause(self.pause_shell_io(session_id));
+        let native_io = self
+            .shells
+            .get(session_id)
+            .map(|shell| Arc::clone(&shell.native_io))
+            .unwrap_or_default();
+        let entry = self
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-
-        session.last_activity = Utc::now();
-
-        // Temporarily switch to blocking mode for command execution.
-        // The shell thread uses non-blocking mode, but exec channels
-        // need blocking reads. Save and restore the previous state.
-        let was_blocking = session.session.is_blocking();
-        if !was_blocking {
-            session.session.set_blocking(true);
-        }
-
-        let result = (|| -> Result<super::integration::SshCommandOutput, String> {
-            let mut channel = _session_operation
-                .native_open(|| session.session.channel_session())
-                .map_err(|error| {
-                    Self::cap_command_error(format!("Failed to create channel: {error}"))
-                })?;
-
-            // Keep channel setup blocking, then alternate non-blocking reads
-            // across both streams so neither stream can starve the other.
-            let timeout_ms = timeout.unwrap_or(30_000).clamp(1, 300_000);
-            session
-                .session
-                .set_timeout(timeout_ms.min(u32::MAX as u64) as u32);
-
-            channel.exec(&command).map_err(|error| {
-                Self::cap_command_error(format!("Failed to execute command: {error}"))
-            })?;
-
-            if let Some(data) = stdin_data.as_mut() {
-                channel.write_all(&data.0).map_err(|error| {
-                    Self::cap_command_error(format!("Failed to write SSH command input: {error}"))
-                })?;
-                channel.send_eof().map_err(|error| {
-                    Self::cap_command_error(format!("Failed to close SSH command input: {error}"))
-                })?;
-            }
-
-            session.session.set_blocking(false);
-            let deadline = std::time::Instant::now()
-                .checked_add(std::time::Duration::from_millis(timeout_ms))
-                .ok_or_else(|| "SSH command timeout is outside the supported range".to_string())?;
-            let mut output = super::integration::SshCommandOutput {
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-                exit_status: -1,
-                stdout_truncated: false,
-                stderr_truncated: false,
-                capture_limit_bytes: max_output_bytes,
-            };
-            let mut stdout_buffer = [0_u8; 16 * 1024];
-            let mut stderr_buffer = [0_u8; 16 * 1024];
-
-            loop {
-                let mut made_progress = false;
-
-                match channel.read(&mut stdout_buffer) {
-                    Ok(0) => {}
-                    Ok(bytes_read) => {
-                        made_progress = true;
-                        let remaining = max_output_bytes.saturating_sub(
-                            output.stdout.len().saturating_add(output.stderr.len()),
-                        );
-                        Self::append_captured_output(
-                            &mut output.stdout,
-                            &stdout_buffer[..bytes_read],
-                            remaining,
-                            &mut output.stdout_truncated,
-                        );
-                    }
-                    Err(error) if is_transient_shell_io_error(&error) => {}
-                    Err(error) => {
-                        return Err(Self::cap_command_error(format!(
-                            "Failed to read SSH command stdout: {error}"
-                        )));
-                    }
-                }
-
-                {
-                    let mut stderr_stream = channel.stderr();
-                    match stderr_stream.read(&mut stderr_buffer) {
-                        Ok(0) => {}
-                        Ok(bytes_read) => {
-                            made_progress = true;
-                            let remaining = max_output_bytes.saturating_sub(
-                                output.stdout.len().saturating_add(output.stderr.len()),
-                            );
-                            Self::append_captured_output(
-                                &mut output.stderr,
-                                &stderr_buffer[..bytes_read],
-                                remaining,
-                                &mut output.stderr_truncated,
-                            );
-                        }
-                        Err(error) if is_transient_shell_io_error(&error) => {}
-                        Err(error) => {
-                            return Err(Self::cap_command_error(format!(
-                                "Failed to read SSH command stderr: {error}"
-                            )));
-                        }
-                    }
-                }
-
-                if channel.eof() {
-                    break;
-                }
-                if std::time::Instant::now() >= deadline {
-                    let _ = channel.close();
-                    return Err(format!(
-                        "SSH command timed out after {timeout_ms} ms; the retained session must be discarded"
-                    ));
-                }
-                if !made_progress {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
-            }
-
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() {
-                let _ = channel.close();
-                return Err(format!(
-                    "SSH command timed out after {timeout_ms} ms while awaiting channel close; the retained session must be discarded"
-                ));
-            }
-
-            session.session.set_blocking(true);
-            session
-                .session
-                .set_timeout(remaining.as_millis().clamp(1, u32::MAX as u128) as u32);
-            channel.wait_close().map_err(|error| {
-                Self::cap_command_error(format!("Failed to close SSH command channel: {error}"))
-            })?;
-            output.exit_status = channel.exit_status().unwrap_or(-1);
-            Ok(output)
-        })();
-
-        // Restore the exact previous session mode even though the drain loop
-        // deliberately switches between blocking setup and non-blocking I/O.
-        session.session.set_blocking(was_blocking);
-        // Reset timeout
-        session.session.set_timeout(0);
-        Self::resume_shell_io(shell_pause);
-
-        result
+        entry.last_activity = Utc::now();
+        Ok(CommandExecutionJob {
+            session: entry.session.clone(),
+            operation,
+            shell_pause,
+            native_io,
+            command,
+            timeout,
+            max_output_bytes,
+            stdin_data,
+        })
     }
 
     fn append_captured_output(
@@ -7118,11 +7209,11 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-        let _session_operation = session.channel_open.operation()?;
+        let operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let mut channel = _session_operation
+        let mut channel = operation
             .native_open(|| session.session.channel_session())
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
@@ -7174,13 +7265,13 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-        let _session_operation = session.channel_open.operation()?;
+        let operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
         session.session.set_blocking(true);
 
-        let mut channel = _session_operation
+        let mut channel = operation
             .native_open(|| session.session.channel_session())
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
@@ -7802,8 +7893,8 @@ impl SshService {
         config: &PortForwardConfig,
         id: String,
     ) -> Result<PortForwardHandle, String> {
-        let _session_operation = session.channel_open.operation()?;
-        let (listener, actual_port) = _session_operation
+        let operation = session.channel_open.operation()?;
+        let (listener, actual_port) = operation
             .native_open(|| {
                 session.session.channel_forward_listen(
                     config.remote_port,
@@ -8209,11 +8300,11 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-        let _session_operation = session.channel_open.operation()?;
+        let operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let sftp = _session_operation
+        let sftp = operation
             .native_open(|| session.session.sftp())
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
@@ -8242,11 +8333,11 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-        let _session_operation = session.channel_open.operation()?;
+        let operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let sftp = _session_operation
+        let sftp = operation
             .native_open(|| session.session.sftp())
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
@@ -8273,11 +8364,11 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-        let _session_operation = session.channel_open.operation()?;
+        let operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
-        let sftp = _session_operation
+        let sftp = operation
             .native_open(|| session.session.sftp())
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
@@ -8565,7 +8656,7 @@ impl SshService {
         let spawn_result = std::thread::Builder::new()
             .name(format!("ssh-script-{}", &script_id[..8]))
             .spawn(move || {
-                let _session_operation = session_operation;
+                let operation = session_operation;
                 let mut guard = ScriptWorkerGuard {
                     registry: worker_registry,
                     execution_id: worker_execution_id.clone(),
@@ -8611,7 +8702,7 @@ impl SshService {
                 let raw_exit = exec_ch.exit_status().unwrap_or(-1);
                 drop(exec_ch);
 
-                remove_remote_script(&session, &_session_operation, &remote_path);
+                remove_remote_script(&session, &operation, &remote_path);
                 if !was_blocking {
                     session.set_blocking(false);
                 }
@@ -8675,7 +8766,7 @@ impl SshService {
             .sessions
             .get_mut(session_id)
             .ok_or("Session not found")?;
-        let _session_operation = session.channel_open.operation()?;
+        let operation = session.channel_open.operation()?;
 
         session.last_activity = Utc::now();
 
@@ -8685,7 +8776,7 @@ impl SshService {
                 let file_size = std::fs::metadata(local_path)
                     .map_err(|e| format!("Failed to get file metadata: {}", e))?
                     .len() as u64;
-                let mut channel = _session_operation
+                let mut channel = operation
                     .native_open(|| {
                         session
                             .session
@@ -8717,7 +8808,7 @@ impl SshService {
                     .map_err(|e| format!("Failed to wait for close: {}", e))?;
             }
             TransferDirection::Download => {
-                let (mut channel, stat) = _session_operation
+                let (mut channel, stat) = operation
                     .native_open(|| session.session.scp_recv(Path::new(remote_path)))
                     .map_err(|e| format!("Failed to initiate SCP download: {}", e))?;
 
@@ -11356,7 +11447,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn script_job_blocked_worker_releases_global_service_but_keeps_session_operation() {
+    async fn script_job_blocked_worker_releases_global_service_but_keepsoperation() {
         let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
         let id = connect_fake_service_session(&state).await;
         let gate = Arc::clone(&state.lock().await.sessions[&id].channel_open);
@@ -11420,6 +11511,58 @@ mod tests {
         assert!(!session.is_blocking());
         assert_eq!(session.timeout(), 1234);
         assert!(gate.operation().is_ok());
+    }
+
+    #[tokio::test]
+    async fn command_job_prepare_releases_global_service_and_keeps_operation_until_dropped() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let id = connect_fake_service_session(&state).await;
+        let gate = Arc::clone(&state.lock().await.sessions[&id].channel_open);
+        let job = {
+            let mut service = state.lock().await;
+            service
+                .prepare_command_execution(&id, "uptime".into(), Some(500), 1024, None)
+                .unwrap()
+        };
+        // Stats-style exec: the service registry is free while the job is
+        // pending, but the per-session native operation stays serialized.
+        let lock = tokio::time::timeout(Duration::from_millis(250), state.lock()).await;
+        assert!(
+            lock.is_ok(),
+            "pending exec job retained the global SSH service guard"
+        );
+        assert!(gate.operation().is_err());
+        drop(lock);
+        drop(job);
+        assert!(gate.operation().is_ok());
+    }
+
+    #[tokio::test]
+    async fn command_exec_failure_is_isolated_from_session_state() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let id = connect_fake_service_session(&state).await;
+        let (session, gate) = {
+            let service = state.lock().await;
+            (
+                service.sessions[&id].session.clone(),
+                Arc::clone(&service.sessions[&id].channel_open),
+            )
+        };
+        session.set_blocking(false);
+        session.set_timeout(777);
+        // The fake session is not connected, so the exec cannot open a channel.
+        let result = execute_command_on_state(&state, &id, "uptime".into(), Some(500)).await;
+        assert!(result.is_err());
+        let service = state.lock().await;
+        assert!(
+            service.sessions.contains_key(&id),
+            "failed stats exec removed the session"
+        );
+        assert!(!session.is_blocking(), "blocking mode not restored");
+        assert_eq!(session.timeout(), 0);
+        // An unconnected fake session fails generically (quarantined, as
+        // before); the permit itself must still be released.
+        assert!(gate.operation().is_err_and(|e| e.contains("reconnect")));
     }
 
     #[test]

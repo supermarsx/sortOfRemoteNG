@@ -11,6 +11,7 @@ import {
 import { buildStatsCollectionScript } from "../../utils/ssh/serverStatsCommands";
 import { parseServerStatsOutput } from "../../utils/ssh/serverStatsParser";
 import { serverStatsHistory } from "../../utils/ssh/serverStatsHistory";
+import { tryBeginPoll, endPoll } from "../../utils/ssh/serverStatsPollGate";
 
 export type ServerStatsViewMode = "single" | "aggregate";
 
@@ -49,7 +50,6 @@ export function useServerStats(isOpen: boolean) {
   const [searchFilter, setSearchFilter] = useState("");
   const [viewMode, setViewMode] = useState<ServerStatsViewMode>("single");
   const [isCollectingAll, setIsCollectingAll] = useState(false);
-  const inFlightRef = useRef<Set<string>>(new Set());
 
   // ── Auto-select first session ──────────────────────────
   useEffect(() => {
@@ -60,9 +60,10 @@ export function useServerStats(isOpen: boolean) {
 
   // ── Collect stats ──────────────────────────────────────
   const collectForSession = useCallback(
-    async (sessionId: string, opts: { surfaceError: boolean }) => {
-      if (inFlightRef.current.has(sessionId)) return;
-
+    async (
+      sessionId: string,
+      opts: { surfaceError: boolean; auto?: boolean },
+    ) => {
       const session = sshSessions.find((s) => s.id === sessionId);
       const fail = (msg: string) => {
         serverStatsHistory.recordError(sessionId, msg);
@@ -90,7 +91,10 @@ export function useServerStats(isOpen: boolean) {
         return;
       }
 
-      inFlightRef.current.add(sessionId);
+      // One poll per host at a time, shared across views; auto polls also
+      // honour the minimum gap and error backoff.
+      if (!tryBeginPoll(sessionId, opts.auto ? "auto" : "manual")) return;
+      let ok = false;
       if (opts.surfaceError) {
         setIsCollecting(true);
         setError(null);
@@ -113,6 +117,7 @@ export function useServerStats(isOpen: boolean) {
           startTime,
         );
         serverStatsHistory.record(sessionId, snapshot);
+        ok = true;
 
         if (opts.surfaceError) {
           setRawOutput(output);
@@ -124,38 +129,44 @@ export function useServerStats(isOpen: boolean) {
           typeof err === "string" ? err : err?.message || "Unknown error";
         fail(`Stats collection failed: ${msg}`);
       } finally {
-        inFlightRef.current.delete(sessionId);
+        endPoll(sessionId, ok);
         if (opts.surfaceError) setIsCollecting(false);
       }
     },
     [sshSessions, collectionOptions],
   );
 
-  const collectStats = useCallback(async () => {
-    if (!selectedSessionId || isCollecting) return;
-    await collectForSession(selectedSessionId, { surfaceError: true });
-  }, [selectedSessionId, isCollecting, collectForSession]);
+  const collectStats = useCallback(
+    async (auto = false) => {
+      if (!selectedSessionId || isCollecting) return;
+      await collectForSession(selectedSessionId, { surfaceError: true, auto });
+    },
+    [selectedSessionId, isCollecting, collectForSession],
+  );
 
   /** Collect every connected SSH session with a small concurrency cap. */
-  const collectAll = useCallback(async () => {
-    const ids = sshSessions.map((s) => s.id);
-    if (ids.length === 0) return;
-    setIsCollectingAll(true);
-    try {
-      let next = 0;
-      const worker = async () => {
-        while (next < ids.length) {
-          const id = ids[next++];
-          await collectForSession(id, { surfaceError: false });
-        }
-      };
-      await Promise.all(
-        Array.from({ length: Math.min(3, ids.length) }, worker),
-      );
-    } finally {
-      setIsCollectingAll(false);
-    }
-  }, [sshSessions, collectForSession]);
+  const collectAll = useCallback(
+    async (auto = false) => {
+      const ids = sshSessions.map((s) => s.id);
+      if (ids.length === 0) return;
+      setIsCollectingAll(true);
+      try {
+        let next = 0;
+        const worker = async () => {
+          while (next < ids.length) {
+            const id = ids[next++];
+            await collectForSession(id, { surfaceError: false, auto });
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(3, ids.length) }, worker),
+        );
+      } finally {
+        setIsCollectingAll(false);
+      }
+    },
+    [sshSessions, collectForSession],
+  );
 
   // Drop history for sessions that no longer exist.
   useEffect(() => {
@@ -168,7 +179,7 @@ export function useServerStats(isOpen: boolean) {
   // ── Auto-refresh (paused while hidden, one catch-up on return) ──
   useVisibleInterval(
     () => {
-      void (viewMode === "aggregate" ? collectAll() : collectStats());
+      void (viewMode === "aggregate" ? collectAll(true) : collectStats(true));
     },
     autoRefreshInterval > 0 && isOpen ? autoRefreshInterval * 1000 : null,
   );

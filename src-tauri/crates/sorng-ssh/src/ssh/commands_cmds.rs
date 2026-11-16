@@ -27,8 +27,12 @@ pub async fn execute_command(
     command: String,
     timeout: Option<u64>,
 ) -> Result<String, String> {
-    let mut ssh = state.lock().await;
-    redact_result(ssh.execute_command(&session_id, command, timeout).await)
+    // The global service guard must not span the exec: it would queue
+    // keystrokes (`send_ssh_input`) behind every stats poll.
+    redact_result(
+        super::service::execute_command_on_state(state.inner(), &session_id, command, timeout)
+            .await,
+    )
 }
 
 #[tauri::command]
