@@ -107,9 +107,11 @@ if (mode === "controls") {
     true,
     ts.ScriptKind.JS,
   );
-  const open = ast.statements.find(
-    (n) => ts.isFunctionDeclaration(n) && n.name?.text === "openCensusSession",
-  );
+  const declared = (name) =>
+    ast.statements.find(
+      (n) => ts.isFunctionDeclaration(n) && n.name?.text === name,
+    );
+  const open = declared("openCensusWorker") ?? declared("openCensusSession");
   let closeBody;
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "session")
@@ -146,7 +148,7 @@ if (mode === "controls") {
     };
     const close = new Function(
       ...Object.keys(dependencies),
-      `let closed=false,closingPromise; return ({${closeBody}}).close;`,
+      `let closed=false,cleanClose=false,closingPromise; return ({${closeBody}}).close;`,
     )(...Object.values(dependencies));
     return { close, binding, removed };
   };

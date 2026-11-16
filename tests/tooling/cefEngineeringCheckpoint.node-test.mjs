@@ -8733,10 +8733,11 @@ test("compile first-failure diagnostics expose only the actual closed census cod
     true,
     ts.ScriptKind.JS,
   );
-  const open = ast.statements.find(
-    (node) =>
-      ts.isFunctionDeclaration(node) && node.name?.text === "openCensusSession",
-  );
+  const declared = (name) =>
+    ast.statements.find(
+      (node) => ts.isFunctionDeclaration(node) && node.name?.text === name,
+    );
+  const open = declared("openCensusWorker") ?? declared("openCensusSession");
   let method;
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "session")

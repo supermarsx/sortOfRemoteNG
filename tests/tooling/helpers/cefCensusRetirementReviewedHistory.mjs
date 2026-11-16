@@ -1,5 +1,6 @@
 import { CURRENT_COMPOSITE_PRODUCER } from "./cefCompositeReviewedHistory.mjs";
 import { CURRENT_SLOW_SNAPSHOT_PRODUCER } from "./cefSlowSnapshotReviewedHistory.mjs";
+import { CURRENT_CENSUS_RESTART_PRODUCER } from "./cefCensusRestartReviewedHistory.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -83,6 +84,7 @@ function sourceShape(rows) {
       CURRENT_COMPILER_COMPAT_PRODUCER,
       CURRENT_COMPOSITE_PRODUCER,
       CURRENT_SLOW_SNAPSHOT_PRODUCER,
+      CURRENT_CENSUS_RESTART_PRODUCER,
     ].includes(digest),
   );
   return digest;

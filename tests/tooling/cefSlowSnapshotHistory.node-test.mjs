@@ -12,11 +12,20 @@ import {
   rewindSlowSnapshotRows,
 } from "./helpers/cefSlowSnapshotReviewedHistory.mjs";
 import { CURRENT_COMPOSITE_PRODUCER } from "./helpers/cefCompositeReviewedHistory.mjs";
+import { beforeCensusRestartDataForHistory } from "./helpers/cefCensusRestartReviewedHistory.mjs";
+
+// HEAD is the census-restart producer; this layer starts from the producer
+// reviewed immediately before it.
+function slowSnapshotSource() {
+  const head = actualFeatureSource(process.cwd());
+  const previous = beforeCensusRestartDataForHistory(head.rows, head.files);
+  return { ...head, ...previous, producer: codeTreeDigest(previous.rows) };
+}
 
 const CORE = "scripts/lib/cef-engineering-checkpoint.mjs";
 
 test("slow snapshot layer rewinds the actual current producer to the complete composite producer", () => {
-  const actual = actualFeatureSource(process.cwd());
+  const actual = slowSnapshotSource();
   assert.equal(actual.producer, CURRENT_SLOW_SNAPSHOT_PRODUCER);
   assert.equal(BEFORE_SLOW_SNAPSHOT_PRODUCER, CURRENT_COMPOSITE_PRODUCER);
   assert(isSlowSnapshotProducer(actual.rows));
@@ -38,7 +47,7 @@ test("slow snapshot layer rewinds the actual current producer to the complete co
 });
 
 test("slow snapshot layer refuses every unreviewed byte, mode, row and file", () => {
-  const actual = actualFeatureSource(process.cwd());
+  const actual = slowSnapshotSource();
   const core = actual.files.get(CORE);
   assert.deepEqual(
     beforeSlowSnapshotFileForHistory(Buffer.from("other"), CORE),

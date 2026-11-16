@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { codeTreeDigest } from "../../../scripts/lib/cef-engineering-checkpoint.mjs";
+import {
+  beforeCensusRestartDataForHistory,
+  beforeCensusRestartFileForHistory,
+  isCensusRestartProducer,
+  rewindCensusRestartRows,
+} from "./cefCensusRestartReviewedHistory.mjs";
 
 // Closed test DATA only: no source, process, graph, SDK or native authority.
 // This outermost layer rewinds the one reviewed change to the compile
@@ -69,20 +75,26 @@ export function inverseSlowSnapshotFile(raw, file) {
   return previous;
 }
 export function beforeSlowSnapshotFileForHistory(raw, file) {
+  // The newer census-restart layer rewinds first; other bytes pass unchanged.
+  raw = beforeCensusRestartFileForHistory(raw, file);
   return file === CORE &&
     raw.length === DATA.after.bytes &&
     sha(raw) === DATA.after.sha256
     ? inverseSlowSnapshotFile(raw, file)
     : raw;
 }
-export function isSlowSnapshotProducer(rows) {
+function isOwnSlowSnapshotProducer(rows) {
   return (
     Array.isArray(rows) &&
     rows.length === 132 &&
     digest(rows) === CURRENT_SLOW_SNAPSHOT_PRODUCER
   );
 }
+export function isSlowSnapshotProducer(rows) {
+  return isOwnSlowSnapshotProducer(rows) || isCensusRestartProducer(rows);
+}
 export function rewindSlowSnapshotRows(rows) {
+  if (isCensusRestartProducer(rows)) rows = rewindCensusRestartRows(rows);
   assert.equal(rows.length, 132);
   assert.equal(new Set(rows.map((row) => row.path)).size, 132);
   assert.equal(digest(rows), CURRENT_SLOW_SNAPSHOT_PRODUCER);
@@ -97,7 +109,8 @@ export function rewindSlowSnapshotRows(rows) {
 }
 // Rows and complete file bytes together; any other producer passes unchanged.
 export function beforeSlowSnapshotDataForHistory(rows, files) {
-  if (!isSlowSnapshotProducer(rows)) return { rows, files };
+  ({ rows, files } = beforeCensusRestartDataForHistory(rows, files));
+  if (!isOwnSlowSnapshotProducer(rows)) return { rows, files };
   assert(files instanceof Map && files.size === rows.length);
   for (const row of rows)
     assert.equal(blob(files.get(row.path)), row.sha, row.path);

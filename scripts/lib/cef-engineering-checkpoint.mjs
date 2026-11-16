@@ -3113,18 +3113,29 @@ export async function createMacProcessCensusFactory(value) {
 export async function createMacCensusIntegrationProofFactory(value) {
   return censusFactory(value, true);
 }
-async function openCensusSession(
+// Production sessions run on loaded hosted runners where starting the pinned
+// Python helper can take well over 2 s; integration-proof sessions keep the
+// original 2 s window. A slow start is retried at most once (see below).
+export const MAC_CENSUS_READY_WINDOW_MS = 20000;
+export const MAC_CENSUS_READONLY_MS = 60000;
+export const MAC_CENSUS_SLOW_TOTAL_BOUND = 3;
+export const MAC_CENSUS_RESTART_MARGIN_MS = 5000;
+async function openCensusWorker(
   factory,
   { deadline, workMilliseconds, phase, startupDeadline = deadline },
 ) {
+  const binding = macCensusFactories.get(factory);
   const startupEnd = Math.min(
     deadline,
     startupDeadline,
-    performance.now() + 2000,
+    performance.now() +
+      (binding?.proofOnly ? 2000 : MAC_CENSUS_READY_WINDOW_MS),
   );
-  const binding = macCensusFactories.get(factory);
   assert(
-    binding && !binding.failed && !binding.active && binding.sessions < 16,
+    binding &&
+      !binding.failed &&
+      !binding.active &&
+      binding.sessions < 16 + (binding.restarts ?? 0),
     "CENSUS_CAPABILITY",
   );
   censusScope(
@@ -3226,12 +3237,14 @@ async function openCensusSession(
     });
     binding.worker = child;
     let closed = false,
+      cleanClose = false,
       closingPromise;
     const deny = (error) => {
       binding.failed ??= error;
       return binding.failed;
     };
     const session = {
+      cleanClose: () => cleanClose,
       diagnostics: () => Object.freeze(client.diagnostics()),
       async snapshot(options = {}) {
         try {
@@ -3293,6 +3306,7 @@ async function openCensusSession(
             await unlink(path.join(sessionRoot, "context.json"));
             await rmdir(sessionRoot); // Empty, creation-owned session directory only.
             assert(performance.now() < closeDeadline, "CENSUS_DEADLINE");
+            cleanClose = result.joined === true;
           } catch (error) {
             failure ??= error;
           } finally {
@@ -3322,6 +3336,144 @@ async function openCensusSession(
     if (!setupComplete) binding.active = false;
     throw error;
   }
+}
+// One transient slow census measurement on a loaded runner is a hiccup, not
+// proof of a leaked process. A restartable session tolerates a bounded number
+// of them: the failed worker is joined and removed, a fresh worker is started
+// and the single failed request is repeated once. A failed request never
+// contributes rows; a second consecutive failure, an abort, any other failure
+// code or an unclean worker cleanup is denied exactly as before.
+export function createCensusSlowPolicy({
+  total = MAC_CENSUS_SLOW_TOTAL_BOUND,
+} = {}) {
+  let tolerated = 0;
+  return Object.freeze({
+    take() {
+      if (tolerated >= total) return false;
+      tolerated++;
+      return true;
+    },
+    tolerated: () => tolerated,
+  });
+}
+// Closed classification of a failed census worker: only a start that missed
+// its ready window or a request that missed its 2 s bound (client timer, late
+// frame or the helper's own sysctl bound) is slowness; everything else is not.
+export function censusSlowKind(error, diagnostics, { remainingMs } = {}) {
+  try {
+    if (utilTypes.isProxy(error) || !utilTypes.isNativeError(error))
+      return null;
+    const message = Object.getOwnPropertyDescriptor(error, "message")?.value;
+    if (
+      !Number.isFinite(remainingMs) ||
+      remainingMs < MAC_CENSUS_RESTART_MARGIN_MS
+    )
+      return null;
+    if (message === "CENSUS_READY_DEADLINE") return "ready";
+    const witness = diagnostics?.failureWitness;
+    const origin = witness?.first?.origin;
+    if (
+      message === "CENSUS_DEADLINE" &&
+      (origin === "timer" || origin === "frame-deadline")
+    )
+      return "snapshot";
+    if (
+      message === "CENSUS_EOF" &&
+      origin === "helper-failure" &&
+      witness.helperCode === "CENSUS_DEADLINE"
+    )
+      return "snapshot";
+  } catch {
+    /* Hostile or malformed failure: never slowness. */
+  }
+  return null;
+}
+export async function createRestartableCensus({
+  open,
+  deadline,
+  policy = createCensusSlowPolicy(),
+  recover,
+  now = () => performance.now(),
+}) {
+  assert(
+    typeof open === "function" &&
+      typeof recover === "function" &&
+      Number.isFinite(deadline),
+    "CENSUS_CAPABILITY",
+  );
+  const startFresh = async () => {
+    try {
+      return await open();
+    } catch (error) {
+      if (
+        censusSlowKind(error, null, { remainingMs: deadline - now() }) !==
+          "ready" ||
+        !policy.take()
+      )
+        throw error;
+      recover(error); // Throws unless this exact failure is the only poison.
+    }
+    return open();
+  };
+  let current = await startFresh(),
+    restarting = null,
+    closed = false;
+  const session = {
+    diagnostics: () => current.diagnostics(),
+    async snapshot(options = {}) {
+      try {
+        return await current.snapshot(options);
+      } catch (error) {
+        if (
+          closed ||
+          options.signal?.aborted ||
+          censusSlowKind(error, current.diagnostics(), {
+            remainingMs: (options.deadline ?? deadline) - now(),
+          }) !== "snapshot" ||
+          !policy.take()
+        )
+          throw error;
+        restarting = (async () => {
+          try {
+            await current.close();
+          } catch {
+            /* The failed worker's own failure is the one being tolerated. */
+          }
+          // A worker that did not join cleanly is never tolerated.
+          if (current.cleanClose() !== true) throw error;
+          recover(error);
+          current = await open();
+        })();
+        try {
+          await restarting;
+        } finally {
+          restarting = null;
+        }
+        return current.snapshot(options);
+      }
+    },
+    async close(closeDeadline) {
+      closed = true;
+      if (restarting) await restarting.catch(() => {});
+      return current.close(closeDeadline);
+    },
+  };
+  return session;
+}
+async function openCensusSession(factory, options) {
+  const binding = macCensusFactories.get(factory);
+  if (!binding || binding.proofOnly) return openCensusWorker(factory, options);
+  const session = await createRestartableCensus({
+    open: () => openCensusWorker(factory, options),
+    deadline: options.deadline,
+    recover: (error) => {
+      assert(binding.failed === error, "CENSUS_CAPABILITY");
+      binding.failed = null;
+      binding.restarts = (binding.restarts ?? 0) + 1;
+    },
+  });
+  macCensusSessions.add(session);
+  return session;
 }
 // Fixed proof-only failure injection. The handle was created by this factory;
 // callers cannot provide a PID, signal, executable or alternative backend.
@@ -4537,7 +4689,7 @@ export async function observedQuiet(records, group, options = {}) {
       const factory = macCensusFactories.get(options.censusFactory);
       assert(factory, "CENSUS_CAPABILITY");
       const deadline = Math.min(
-        options.deadline ?? performance.now() + COMPILE_CLEANUP_MS,
+        options.deadline ?? performance.now() + MAC_CENSUS_READONLY_MS,
         factory.deadline,
       );
       const session = await openCensusSession(options.censusFactory, {
