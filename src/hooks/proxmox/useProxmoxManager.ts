@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   ProxmoxConfigSafe,
   PveVersion,
@@ -284,13 +285,13 @@ export function useProxmoxManager(
   const [dialogVmType, setDialogVmType] = useState<"qemu" | "lxc" | null>(null);
 
   const mountedRef = useRef(true);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current?.();
     };
   }, []);
 
@@ -1310,14 +1311,15 @@ export function useProxmoxManager(
 
   useEffect(() => {
     if (isOpen && connectionState === "connected") {
-      pollRef.current = setInterval(() => {
+      // Pauses while the window is hidden; one catch-up on return.
+      pollRef.current = createVisibleInterval(() => {
         if (activeTab === "dashboard") refreshDashboard();
         if (activeTab === "tasks" && selectedNode) refreshTasks(selectedNode);
       }, 30_000);
     }
     return () => {
       if (pollRef.current) {
-        clearInterval(pollRef.current);
+        pollRef.current();
         pollRef.current = null;
       }
     };

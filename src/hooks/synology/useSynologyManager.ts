@@ -3,6 +3,7 @@ import {
   invokeManagement,
   toSafeManagementError,
 } from "../../utils/security/managementInvoke";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type { useSynologyFileConnection } from "./useSynologyFileConnection";
 import { useSynologyFileStation } from "./useSynologyFileStation";
 import {
@@ -435,10 +436,10 @@ export function useSynologyManager(
     )
       return;
     void loadTabData(activeTab);
-    const timer = setInterval(() => {
-      if (document.visibilityState !== "hidden") void loadTabData(activeTab);
+    // Paused while hidden; one catch-up refresh on return (shared visibility store).
+    return createVisibleInterval(() => {
+      void loadTabData(activeTab);
     }, 30000);
-    return () => clearInterval(timer);
   }, [activeTab, connectionStatus, isOpen, isVisible, loadTabData]);
   const readRestrictions = restrictionsFor(activeTab);
   const restrictedKey = Object.keys(readRestrictions).join(",");

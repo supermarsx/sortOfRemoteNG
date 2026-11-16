@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   SynologyConfigSafe,
   DsmInfo,
@@ -60,7 +61,7 @@ export function useSynology() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<SynologyConfigSafe | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const intervalRef = useRef<(() => void) | null>(null);
 
   const wrap = useCallback(
     <T>(fn: () => Promise<T>) =>
@@ -159,10 +160,7 @@ export function useSynology() {
     [wrap],
   );
 
-  const reboot = useMemo(
-    () => wrap(() => invoke<void>("syn_reboot")),
-    [wrap],
-  );
+  const reboot = useMemo(() => wrap(() => invoke<void>("syn_reboot")), [wrap]);
 
   const shutdown = useMemo(
     () => wrap(() => invoke<void>("syn_shutdown")),
@@ -380,12 +378,7 @@ export function useSynology() {
   );
 
   const createUser = useCallback(
-    (
-      name: string,
-      password: string,
-      description?: string,
-      email?: string,
-    ) =>
+    (name: string, password: string, description?: string, email?: string) =>
       wrap(() =>
         invoke<void>("syn_create_user", {
           name,
@@ -398,8 +391,7 @@ export function useSynology() {
   );
 
   const deleteUser = useCallback(
-    (name: string) =>
-      wrap(() => invoke<void>("syn_delete_user", { name }))(),
+    (name: string) => wrap(() => invoke<void>("syn_delete_user", { name }))(),
     [wrap],
   );
 
@@ -416,14 +408,12 @@ export function useSynology() {
   );
 
   const startPackage = useCallback(
-    (id: string) =>
-      wrap(() => invoke<void>("syn_start_package", { id }))(),
+    (id: string) => wrap(() => invoke<void>("syn_start_package", { id }))(),
     [wrap],
   );
 
   const stopPackage = useCallback(
-    (id: string) =>
-      wrap(() => invoke<void>("syn_stop_package", { id }))(),
+    (id: string) => wrap(() => invoke<void>("syn_stop_package", { id }))(),
     [wrap],
   );
 
@@ -434,8 +424,7 @@ export function useSynology() {
   );
 
   const uninstallPackage = useCallback(
-    (id: string) =>
-      wrap(() => invoke<void>("syn_uninstall_package", { id }))(),
+    (id: string) => wrap(() => invoke<void>("syn_uninstall_package", { id }))(),
     [wrap],
   );
 
@@ -507,9 +496,7 @@ export function useSynology() {
 
   const pullDockerImage = useCallback(
     (repository: string, tag: string) =>
-      wrap(() =>
-        invoke<void>("syn_pull_docker_image", { repository, tag }),
-      )(),
+      wrap(() => invoke<void>("syn_pull_docker_image", { repository, tag }))(),
     [wrap],
   );
 
@@ -562,9 +549,7 @@ export function useSynology() {
 
   const listVmSnapshots = useCallback(
     (guestId: string) =>
-      wrap(() =>
-        invoke<VmSnapshot[]>("syn_list_vm_snapshots", { guestId }),
-      )(),
+      wrap(() => invoke<VmSnapshot[]>("syn_list_vm_snapshots", { guestId }))(),
     [wrap],
   );
 
@@ -579,9 +564,8 @@ export function useSynology() {
   // ─── Download Station ────────────────────────────────────────
 
   const getDownloadStationInfo = useMemo(
-    () => wrap(() =>
-      invoke<DownloadStationInfo>("syn_get_download_station_info"),
-    ),
+    () =>
+      wrap(() => invoke<DownloadStationInfo>("syn_get_download_station_info")),
     [wrap],
   );
 
@@ -615,9 +599,7 @@ export function useSynology() {
 
   const deleteDownload = useCallback(
     (taskId: string, force: boolean) =>
-      wrap(() =>
-        invoke<void>("syn_delete_download", { taskId, force }),
-      )(),
+      wrap(() => invoke<void>("syn_delete_download", { taskId, force }))(),
     [wrap],
   );
 
@@ -684,9 +666,10 @@ export function useSynology() {
   );
 
   const listActiveBackupDevices = useMemo(
-    () => wrap(() =>
-      invoke<ActiveBackupDevice[]>("syn_list_active_backup_devices"),
-    ),
+    () =>
+      wrap(() =>
+        invoke<ActiveBackupDevice[]>("syn_list_active_backup_devices"),
+      ),
     [wrap],
   );
 
@@ -703,8 +686,7 @@ export function useSynology() {
   );
 
   const unblockIp = useCallback(
-    (ip: string) =>
-      wrap(() => invoke<void>("syn_unblock_ip", { ip }))(),
+    (ip: string) => wrap(() => invoke<void>("syn_unblock_ip", { ip }))(),
     [wrap],
   );
 
@@ -784,15 +766,15 @@ export function useSynology() {
 
   const startAutoRefresh = useCallback(
     (intervalMs: number, callback: () => void) => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(callback, intervalMs);
+      intervalRef.current?.();
+      intervalRef.current = createVisibleInterval(callback, intervalMs);
     },
     [],
   );
 
   const stopAutoRefresh = useCallback(() => {
     if (intervalRef.current) {
-      clearInterval(intervalRef.current);
+      intervalRef.current();
       intervalRef.current = null;
     }
   }, []);

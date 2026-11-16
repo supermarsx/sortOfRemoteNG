@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   McpServerConfig,
   McpServerStatus,
@@ -20,9 +21,7 @@ import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
 function isTauri(): boolean {
   return (
     typeof window !== "undefined" &&
-    Boolean(
-      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-    )
+    Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__)
   );
 }
 
@@ -62,20 +61,30 @@ function normalizeMcpConfig(config: unknown): McpServerConfig {
     port: value.port ?? DEFAULT_MCP_CONFIG.port,
     host: value.host ?? DEFAULT_MCP_CONFIG.host,
     require_auth:
-      value.require_auth ?? value.requireAuth ?? DEFAULT_MCP_CONFIG.require_auth,
+      value.require_auth ??
+      value.requireAuth ??
+      DEFAULT_MCP_CONFIG.require_auth,
     api_key: value.api_key ?? value.apiKey ?? DEFAULT_MCP_CONFIG.api_key,
     allow_remote:
-      value.allow_remote ?? value.allowRemote ?? DEFAULT_MCP_CONFIG.allow_remote,
+      value.allow_remote ??
+      value.allowRemote ??
+      DEFAULT_MCP_CONFIG.allow_remote,
     max_sessions:
-      value.max_sessions ?? value.maxSessions ?? DEFAULT_MCP_CONFIG.max_sessions,
+      value.max_sessions ??
+      value.maxSessions ??
+      DEFAULT_MCP_CONFIG.max_sessions,
     session_timeout_secs:
       value.session_timeout_secs ??
       value.sessionTimeoutSecs ??
       DEFAULT_MCP_CONFIG.session_timeout_secs,
     cors_enabled:
-      value.cors_enabled ?? value.corsEnabled ?? DEFAULT_MCP_CONFIG.cors_enabled,
+      value.cors_enabled ??
+      value.corsEnabled ??
+      DEFAULT_MCP_CONFIG.cors_enabled,
     cors_origins:
-      value.cors_origins ?? value.corsOrigins ?? DEFAULT_MCP_CONFIG.cors_origins,
+      value.cors_origins ??
+      value.corsOrigins ??
+      DEFAULT_MCP_CONFIG.cors_origins,
     rate_limit_per_minute:
       value.rate_limit_per_minute ??
       value.rateLimitPerMinute ??
@@ -84,9 +93,12 @@ function normalizeMcpConfig(config: unknown): McpServerConfig {
       value.logging_enabled ??
       value.loggingEnabled ??
       DEFAULT_MCP_CONFIG.logging_enabled,
-    log_level: value.log_level ?? value.logLevel ?? DEFAULT_MCP_CONFIG.log_level,
+    log_level:
+      value.log_level ?? value.logLevel ?? DEFAULT_MCP_CONFIG.log_level,
     enabled_tools:
-      value.enabled_tools ?? value.enabledTools ?? DEFAULT_MCP_CONFIG.enabled_tools,
+      value.enabled_tools ??
+      value.enabledTools ??
+      DEFAULT_MCP_CONFIG.enabled_tools,
     enabled_resources:
       value.enabled_resources ??
       value.enabledResources ??
@@ -223,7 +235,7 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
   const [toolCallLogs, setToolCallLogs] = useState<McpToolCallLog[]>([]);
 
   // Polling ref
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRef = useRef<(() => void) | null>(null);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -308,7 +320,9 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
   const refreshToolCallLogs = useCallback(async () => {
     if (!isTauri()) return;
     try {
-      const l = await invoke<McpToolCallLog[]>("mcp_get_tool_call_logs", { limit: 100 });
+      const l = await invoke<McpToolCallLog[]>("mcp_get_tool_call_logs", {
+        limit: 100,
+      });
       setToolCallLogs(l);
     } catch (e: any) {
       console.warn("Failed to get MCP tool call logs:", e);
@@ -325,7 +339,9 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
       const s = await invoke<McpServerStatus>("mcp_start_server");
       setStatus(s);
     } catch (e: any) {
-      setError(typeof e === "string" ? e : e.message || "Failed to start MCP server");
+      setError(
+        typeof e === "string" ? e : e.message || "Failed to start MCP server",
+      );
     } finally {
       setIsStarting(false);
     }
@@ -340,7 +356,9 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
       setStatus(s);
       setSessions([]);
     } catch (e: any) {
-      setError(typeof e === "string" ? e : e.message || "Failed to stop MCP server");
+      setError(
+        typeof e === "string" ? e : e.message || "Failed to stop MCP server",
+      );
     } finally {
       setIsStopping(false);
     }
@@ -348,23 +366,30 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
 
   // ── Configuration ──────────────────────────────────────
 
-  const updateConfig = useCallback(async (newConfig: McpServerConfig) => {
-    if (!isTauri()) return;
-    setError(null);
-    setIsSavingConfig(true);
-    try {
-      const normalizedConfig = normalizeMcpConfig(newConfig);
-      await invoke("mcp_update_config", {
-        config: toTauriMcpConfig(normalizedConfig),
-      });
-      setConfig(normalizedConfig);
-      await refreshStatus();
-    } catch (e: any) {
-      setError(typeof e === "string" ? e : e.message || "Failed to update MCP config");
-    } finally {
-      setIsSavingConfig(false);
-    }
-  }, [refreshStatus]);
+  const updateConfig = useCallback(
+    async (newConfig: McpServerConfig) => {
+      if (!isTauri()) return;
+      setError(null);
+      setIsSavingConfig(true);
+      try {
+        const normalizedConfig = normalizeMcpConfig(newConfig);
+        await invoke("mcp_update_config", {
+          config: toTauriMcpConfig(normalizedConfig),
+        });
+        setConfig(normalizedConfig);
+        await refreshStatus();
+      } catch (e: any) {
+        setError(
+          typeof e === "string"
+            ? e
+            : e.message || "Failed to update MCP config",
+        );
+      } finally {
+        setIsSavingConfig(false);
+      }
+    },
+    [refreshStatus],
+  );
 
   // ── API Key ────────────────────────────────────────────
 
@@ -376,7 +401,9 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
       await refreshConfig();
       return key;
     } catch (e: any) {
-      setError(typeof e === "string" ? e : e.message || "Failed to generate API key");
+      setError(
+        typeof e === "string" ? e : e.message || "Failed to generate API key",
+      );
       return null;
     } finally {
       setIsGeneratingKey(false);
@@ -385,15 +412,22 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
 
   // ── Sessions ───────────────────────────────────────────
 
-  const disconnectSession = useCallback(async (sessionId: string) => {
-    if (!isTauri()) return;
-    try {
-      await invoke("mcp_disconnect_session", { sessionId });
-      await refreshSessions();
-    } catch (e: any) {
-      setError(typeof e === "string" ? e : e.message || "Failed to disconnect session");
-    }
-  }, [refreshSessions]);
+  const disconnectSession = useCallback(
+    async (sessionId: string) => {
+      if (!isTauri()) return;
+      try {
+        await invoke("mcp_disconnect_session", { sessionId });
+        await refreshSessions();
+      } catch (e: any) {
+        setError(
+          typeof e === "string"
+            ? e
+            : e.message || "Failed to disconnect session",
+        );
+      }
+    },
+    [refreshSessions],
+  );
 
   // ── Logs ───────────────────────────────────────────────
 
@@ -467,13 +501,14 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
   useEffect(() => {
     if (!isOpen || !status?.running) {
       if (pollingRef.current) {
-        clearInterval(pollingRef.current);
+        pollingRef.current();
         pollingRef.current = null;
       }
       return;
     }
 
-    pollingRef.current = setInterval(() => {
+    // Pauses while hidden; one catch-up on return.
+    pollingRef.current = createVisibleInterval(() => {
       refreshStatus();
       if (activeTab === "sessions") refreshSessions();
       if (activeTab === "logs") refreshLogs();
@@ -486,7 +521,7 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
 
     return () => {
       if (pollingRef.current) {
-        clearInterval(pollingRef.current);
+        pollingRef.current();
         pollingRef.current = null;
       }
     };

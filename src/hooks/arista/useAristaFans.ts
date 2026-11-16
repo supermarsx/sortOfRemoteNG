@@ -6,6 +6,7 @@ import {
   invokeManagement as invoke,
   toSafeManagementError,
 } from "../../utils/security/managementInvoke";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   AristaConfig,
   AristaCoolingReport,
@@ -56,10 +57,11 @@ export function useAristaFans(
     aliveRef.current = true;
     if (!host) return () => undefined;
     void refresh();
-    const timer = pollMs > 0 ? setInterval(() => void refresh(), pollMs) : null;
+    const stop =
+      pollMs > 0 ? createVisibleInterval(() => void refresh(), pollMs) : null;
     return () => {
       aliveRef.current = false;
-      if (timer) clearInterval(timer);
+      stop?.();
     };
   }, [host, port, username, pollMs, refresh]);
 

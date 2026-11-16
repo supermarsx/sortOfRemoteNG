@@ -8,6 +8,7 @@
 import { toSafeManagementError } from "../../utils/security/managementInvoke";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   IdracConfigSafe,
   SystemInfo,
@@ -311,13 +312,13 @@ export function useIdracManager(
   const [searchQuery, setSearchQuery] = useState("");
 
   const mountedRef = useRef(true);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current?.();
     };
   }, []);
 
@@ -763,14 +764,17 @@ export function useIdracManager(
   // ── Auto-refresh polling ─────────────────────────
 
   useEffect(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current?.();
+    pollRef.current = null;
     if (connectionState === "connected" && isOpen) {
-      pollRef.current = setInterval(() => {
+      // Pauses while the window is hidden; one catch-up on return.
+      pollRef.current = createVisibleInterval(() => {
         if (mountedRef.current) refresh();
       }, 30000);
     }
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current?.();
+      pollRef.current = null;
     };
   }, [connectionState, isOpen, refresh]);
 

@@ -1,5 +1,35 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { invokeQueryKey } from "../../utils/perf/cachedInvoke";
+import { queryStore } from "../../utils/perf/queryStore";
+import { createVisibleInterval } from "../../utils/perf/visibility";
+
+const DASH_TAG = "dash";
+
+/**
+ * Background dashboard reads: concurrent identical calls and calls within 2 s
+ * share one invoke (staleMs 0 so the 30 s poll never serves stale data).
+ * Writes call invoke directly and then invalidate the tag.
+ */
+function dashRead<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return queryStore.get<T>(
+    invokeQueryKey(cmd, args),
+    () => (args === undefined ? invoke<T>(cmd) : invoke<T>(cmd, args)),
+    { ttlMs: 2000, staleMs: 0, tags: [DASH_TAG] },
+  );
+}
+
+/** Writes go straight through (never cached), then drop cached reads. */
+async function dashWrite<T = void>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await (args === undefined ? invoke<T>(cmd) : invoke<T>(cmd, args));
+  } finally {
+    queryStore.invalidate({ tag: DASH_TAG });
+  }
+}
 import type {
   DashboardState,
   DashboardConfig,
@@ -255,11 +285,10 @@ export function useDashboard() {
   const [quickStats, setQuickStats] = useState<QuickStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchState = useCallback(async () => {
     try {
-      const s = await invoke<unknown>("dash_get_state");
+      const s = await dashRead<unknown>("dash_get_state");
       setState(normalizeDashboardState(s));
     } catch (e) {
       setError(String(e));
@@ -268,7 +297,7 @@ export function useDashboard() {
 
   const fetchHealthSummary = useCallback(async () => {
     try {
-      const summary = await invoke<unknown>("dash_get_health_summary");
+      const summary = await dashRead<unknown>("dash_get_health_summary");
       return normalizeHealthSummary(summary);
     } catch (e) {
       setError(String(e));
@@ -279,7 +308,7 @@ export function useDashboard() {
   const fetchQuickStats = useCallback(async () => {
     try {
       const s = normalizeQuickStats(
-        await invoke<unknown>("dash_get_quick_stats"),
+        await dashRead<unknown>("dash_get_quick_stats"),
       );
       setQuickStats(s);
       return s;
@@ -291,7 +320,7 @@ export function useDashboard() {
 
   const fetchAlerts = useCallback(async () => {
     try {
-      return await invoke<DashboardAlert[]>("dash_get_alerts");
+      return await dashRead<DashboardAlert[]>("dash_get_alerts");
     } catch (e) {
       setError(String(e));
       return [];
@@ -301,7 +330,7 @@ export function useDashboard() {
   const acknowledgeAlert = useCallback(
     async (alertId: string) => {
       try {
-        await invoke("dash_acknowledge_alert", { alertId });
+        await dashWrite("dash_acknowledge_alert", { alertId });
         await fetchState();
       } catch (e) {
         setError(String(e));
@@ -312,7 +341,7 @@ export function useDashboard() {
 
   const fetchConnectionHealth = useCallback(async (connectionId: string) => {
     try {
-      const entry = await invoke<unknown>("dash_get_connection_health", {
+      const entry = await dashRead<unknown>("dash_get_connection_health", {
         connectionId,
       });
       return normalizeHealthEntry(entry);
@@ -324,7 +353,7 @@ export function useDashboard() {
 
   const fetchAllHealth = useCallback(async () => {
     try {
-      const entries = (await invoke<unknown[]>("dash_get_all_health")).map(
+      const entries = (await dashRead<unknown[]>("dash_get_all_health")).map(
         normalizeHealthEntry,
       );
       setHealthEntries(entries);
@@ -337,7 +366,7 @@ export function useDashboard() {
 
   const fetchUnhealthy = useCallback(async () => {
     try {
-      return (await invoke<unknown[]>("dash_get_unhealthy")).map(
+      return (await dashRead<unknown[]>("dash_get_unhealthy")).map(
         normalizeHealthEntry,
       );
     } catch (e) {
@@ -351,7 +380,7 @@ export function useDashboard() {
       try {
         const s = normalizeSparkline(
           connectionId,
-          await invoke<unknown>("dash_get_sparkline", {
+          await dashRead<unknown>("dash_get_sparkline", {
             connectionId,
             width: config.maxSparklinePoints,
           }),
@@ -368,7 +397,7 @@ export function useDashboard() {
 
   const fetchHeatmap = useCallback(async () => {
     try {
-      const h = await invoke<HeatmapCell[]>("dash_get_heatmap");
+      const h = await dashRead<HeatmapCell[]>("dash_get_heatmap");
       setHeatmap(h);
       return h;
     } catch (e) {
@@ -379,7 +408,7 @@ export function useDashboard() {
 
   const fetchRecent = useCallback(async (limit?: number) => {
     try {
-      return await invoke<
+      return await dashRead<
         Array<{
           connectionId: string;
           connectionName: string;
@@ -396,7 +425,9 @@ export function useDashboard() {
   const fetchTopLatency = useCallback(async (limit?: number) => {
     try {
       return (
-        await invoke<unknown[]>("dash_get_top_latency", { count: limit ?? 10 })
+        await dashRead<unknown[]>("dash_get_top_latency", {
+          count: limit ?? 10,
+        })
       ).map(normalizeHealthEntry);
     } catch (e) {
       setError(String(e));
@@ -406,7 +437,7 @@ export function useDashboard() {
 
   const startMonitoring = useCallback(async () => {
     try {
-      await invoke("dash_start_monitoring");
+      await dashWrite("dash_start_monitoring");
       await fetchState();
     } catch (e) {
       setError(String(e));
@@ -415,7 +446,7 @@ export function useDashboard() {
 
   const stopMonitoring = useCallback(async () => {
     try {
-      await invoke("dash_stop_monitoring");
+      await dashWrite("dash_stop_monitoring");
       await fetchState();
     } catch (e) {
       setError(String(e));
@@ -425,7 +456,7 @@ export function useDashboard() {
   const forceRefresh = useCallback(async () => {
     setLoading(true);
     try {
-      await invoke("dash_force_refresh");
+      await dashWrite("dash_force_refresh");
       await Promise.all([
         fetchState(),
         fetchAllHealth(),
@@ -442,7 +473,7 @@ export function useDashboard() {
   const checkConnection = useCallback(
     async (connectionId: string, hostname = "", port = 0, protocol = "") => {
       try {
-        const entry = await invoke<unknown>("dash_check_connection", {
+        const entry = await dashWrite<unknown>("dash_check_connection", {
           id: connectionId,
           hostname,
           port,
@@ -459,7 +490,7 @@ export function useDashboard() {
 
   const loadConfig = useCallback(async () => {
     try {
-      const c = await invoke<unknown>("dash_get_config");
+      const c = await dashRead<unknown>("dash_get_config");
       setConfig(toFrontendConfig(c));
     } catch {
       /* use defaults */
@@ -470,7 +501,9 @@ export function useDashboard() {
     async (cfg: Partial<DashboardConfig>) => {
       try {
         const merged = { ...config, ...cfg };
-        await invoke("dash_update_config", { config: toBackendConfig(merged) });
+        await dashWrite("dash_update_config", {
+          config: toBackendConfig(merged),
+        });
         setConfig(merged);
       } catch (e) {
         setError(String(e));
@@ -481,7 +514,7 @@ export function useDashboard() {
 
   const setThresholds = useCallback(async (thresholds: DashboardThresholds) => {
     try {
-      await invoke("dash_set_thresholds", { thresholds });
+      await dashWrite("dash_set_thresholds", { thresholds });
       setConfig((prev) => ({ ...prev, thresholds }));
     } catch (e) {
       setError(String(e));
@@ -490,7 +523,7 @@ export function useDashboard() {
 
   const loadLayout = useCallback(async () => {
     try {
-      const l = await invoke<DashboardLayout>("dash_get_layout");
+      const l = await dashRead<DashboardLayout>("dash_get_layout");
       setLayout(l);
     } catch {
       /* use defaults */
@@ -499,7 +532,7 @@ export function useDashboard() {
 
   const updateLayout = useCallback(async (l: DashboardLayout) => {
     try {
-      await invoke("dash_update_layout", { layout: l });
+      await dashWrite("dash_update_layout", { layout: l });
       setLayout(l);
     } catch (e) {
       setError(String(e));
@@ -507,16 +540,14 @@ export function useDashboard() {
   }, []);
 
   // Auto-refresh
+  // Pauses while the window is hidden; one catch-up refresh on return.
   useEffect(() => {
     if (config.enabled && config.refreshIntervalMs > 0) {
-      intervalRef.current = setInterval(() => {
+      return createVisibleInterval(() => {
         fetchState();
         fetchAllHealth();
         fetchQuickStats();
       }, config.refreshIntervalMs);
-      return () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-      };
     }
   }, [
     config.enabled,

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { queryStore } from "../../src/utils/perf/queryStore";
 import {
   render,
   screen,
@@ -42,6 +43,7 @@ async function renderDashboard(props: { isOpen: boolean }) {
 
 describe("HealthDashboard", () => {
   beforeEach(() => {
+    queryStore.clearAll();
     vi.useFakeTimers();
     vi.clearAllMocks();
     mockInvoke.mockImplementation((cmd: string) => {
@@ -214,9 +216,15 @@ describe("HealthDashboard", () => {
     await act(async () => {
       fireEvent.click(screen.getByText("dashboard.thresholdConfig"));
     });
-    expect(screen.getByLabelText("Latency threshold in milliseconds")).toBeInTheDocument();
-    expect(screen.getByLabelText("CPU usage threshold percentage")).toBeInTheDocument();
-    expect(screen.getByLabelText("Memory usage threshold percentage")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Latency threshold in milliseconds"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("CPU usage threshold percentage"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Memory usage threshold percentage"),
+    ).toBeInTheDocument();
   });
 
   it("saves threshold values", async () => {
@@ -230,7 +238,9 @@ describe("HealthDashboard", () => {
       fireEvent.click(screen.getByText("dashboard.thresholdConfig"));
     });
     // Modify a value
-    const latencyInput = screen.getByLabelText("Latency threshold in milliseconds");
+    const latencyInput = screen.getByLabelText(
+      "Latency threshold in milliseconds",
+    );
     fireEvent.change(latencyInput, { target: { value: "200" } });
     // Save
     await act(async () => {

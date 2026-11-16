@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   IloConfigSafe,
   BmcSystemInfo,
@@ -174,7 +175,7 @@ export function useIlo(): UseIloReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<IloConfigSafe | null>(null);
-  const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshRef = useRef<(() => void) | null>(null);
 
   const wrap = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
     setLoading(true);
@@ -582,8 +583,8 @@ export function useIlo(): UseIloReturn {
 
   const startAutoRefresh = useCallback(
     (intervalMs = 30000) => {
-      if (refreshRef.current) clearInterval(refreshRef.current);
-      refreshRef.current = setInterval(async () => {
+      refreshRef.current?.();
+      refreshRef.current = createVisibleInterval(async () => {
         try {
           await refreshConfig();
         } catch {
@@ -596,14 +597,14 @@ export function useIlo(): UseIloReturn {
 
   const stopAutoRefresh = useCallback(() => {
     if (refreshRef.current) {
-      clearInterval(refreshRef.current);
+      refreshRef.current();
       refreshRef.current = null;
     }
   }, []);
 
   useEffect(() => {
     return () => {
-      if (refreshRef.current) clearInterval(refreshRef.current);
+      refreshRef.current?.();
     };
   }, []);
 

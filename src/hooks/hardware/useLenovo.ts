@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
+import { createVisibleInterval } from "../../utils/perf/visibility";
 import type {
   LenovoConfigSafe,
   LenovoSystemInfo,
@@ -161,7 +162,7 @@ export function useLenovo(): UseLenovoReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<LenovoConfigSafe | null>(null);
-  const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshRef = useRef<(() => void) | null>(null);
 
   const wrap = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
     setLoading(true);
@@ -512,8 +513,8 @@ export function useLenovo(): UseLenovoReturn {
   // ── Auto-refresh ────────────────────────────────────────────────
 
   const startAutoRefresh = useCallback((intervalMs = 30000) => {
-    if (refreshRef.current) clearInterval(refreshRef.current);
-    refreshRef.current = setInterval(async () => {
+    refreshRef.current?.();
+    refreshRef.current = createVisibleInterval(async () => {
       try {
         const ok = await invoke<boolean>("lenovo_check_session");
         setConnected(ok);
@@ -525,7 +526,7 @@ export function useLenovo(): UseLenovoReturn {
 
   const stopAutoRefresh = useCallback(() => {
     if (refreshRef.current) {
-      clearInterval(refreshRef.current);
+      refreshRef.current();
       refreshRef.current = null;
     }
   }, []);

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { queryStore } from "../../src/utils/perf/queryStore";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useDashboard } from "../../src/hooks/monitoring/useDashboard";
@@ -61,6 +62,7 @@ const makeQuickStats = (overrides: Record<string, unknown> = {}) => ({
 
 describe("useDashboard", () => {
   beforeEach(() => {
+    queryStore.clearAll();
     vi.clearAllMocks();
     vi.useFakeTimers();
     mockInvoke.mockResolvedValue(undefined as never);
