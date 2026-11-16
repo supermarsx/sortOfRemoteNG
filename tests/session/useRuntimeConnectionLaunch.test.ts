@@ -103,7 +103,8 @@ describe("runtime integration connection launches", () => {
     expect(firstHandler).not.toHaveBeenCalled();
     expect(
       addListener.mock.calls.filter(
-        ([eventName]) => eventName === OPEN_RUNTIME_CONNECTION_EVENT,
+        ([eventName]) =>
+          (eventName as string) === OPEN_RUNTIME_CONNECTION_EVENT,
       ),
     ).toHaveLength(1);
     addListener.mockRestore();

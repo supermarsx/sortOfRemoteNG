@@ -82,7 +82,7 @@ export function createQueryStore(deps: QueryStoreDeps = {}) {
     return i < 0 ? key : key.slice(0, i);
   };
 
-  const computeSnap = (e: Entry): QuerySnapshot => {
+  const computeSnap = <T>(e: Entry<T>): QuerySnapshot<T> => {
     const fetching = e.inflight !== undefined;
     let status: QueryStatus;
     if (!e.hasValue) status = e.error !== undefined ? "error" : "loading";
@@ -104,7 +104,7 @@ export function createQueryStore(deps: QueryStoreDeps = {}) {
     return { data: e.value, status, error: e.error, fetching };
   };
 
-  const publish = (e: Entry) => {
+  const publish = <T>(e: Entry<T>) => {
     const next = computeSnap(e);
     if (next === e.snap) return;
     e.snap = next;
@@ -161,7 +161,8 @@ export function createQueryStore(deps: QueryStoreDeps = {}) {
 
   const commit = <T>(e: Entry<T>, raw: T): T => {
     assertNoSecretFields(raw, `queryStore(${e.key})`);
-    const reconcile = e.opts.reconcile ?? structuralShare;
+    const reconcile: (prev: T | undefined, next: T) => T =
+      e.opts.reconcile ?? ((prev, next) => structuralShare(prev, next));
     const value = e.hasValue ? reconcile(e.value, raw) : raw;
     e.value = value;
     e.hasValue = true;
@@ -181,7 +182,8 @@ export function createQueryStore(deps: QueryStoreDeps = {}) {
     }
     metrics.count("cache.fetch");
     const epoch = e.epoch;
-    const p: Promise<T> = (async () => {
+    let p!: Promise<T>; // referenced by the finally below before the IIFE returns
+    p = (async () => {
       try {
         const raw = await fetcher();
         if (e.epoch === epoch && entries.get(e.key) === (e as Entry)) {

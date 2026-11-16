@@ -30,7 +30,7 @@ describe("preload scheduler", () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(order[0]).toBe("z");
     expect(order.indexOf("a2")).toBeLessThan(order.indexOf("b"));
-    expect(order.at(-1)).toBe("c");
+    expect(order[order.length - 1]).toBe("c");
     expect(order).not.toContain("a1");
   });
 
