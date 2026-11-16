@@ -18,7 +18,7 @@ class CheckpointInputTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name).resolve()
-        self.identity = dict(image='20261030.294.1', sourceId=subject.SOURCES['20261030.294.1'],
+        self.identity = dict(image='20261103.298.1', sourceId=subject.SOURCES['20261103.298.1'],
                              producerSha256='a' * 64, sourceDateEpoch=dict(present=True, value='1700000000'))
         self.root = self.repo / '.artifacts' / subject.root_name(self.identity['image'], self.identity['sourceId'])
         self.root.mkdir(parents=True)
@@ -129,7 +129,8 @@ class CheckpointInputTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'REGULAR'):
             self.record()
         link.unlink()
-        (self.root / subject.SIDECAR).unlink()
+        # The metadata pre-pass denies before any sidecar byte is written.
+        self.assertFalse((self.root / subject.SIDECAR).exists())
         self.assertEqual(subject._name('llvm/Name'), subject._name('llvm/name'))
         try:
             link.symlink_to(self.files[0])
@@ -177,7 +178,7 @@ class CheckpointInputTests(unittest.TestCase):
                                  types.SimpleNamespace(remaining=lambda: left['seconds']), late_fence)
 
     def test_original_fixed_root_epoch_and_policy_bounds(self):
-        self.assertEqual(self.root.name, 'windows-arm-full-sdk-bb3bd4a8-e93c-44e5-81f2-3ddc15a01d19')
+        self.assertEqual(self.root.name, 'windows-arm-full-sdk-1ce5fa02-8d6f-4ab8-937d-1c1e319c0789')
         self.assertEqual(subject.root_name('20261021.278.1', subject.SOURCES['20261021.278.1']),
                          'windows-arm-full-sdk-adaa4b45-ea3f-4a01-b88f-10a988c6b0ac')
         self.assertEqual((subject.MAX_ENTRIES, subject.MAX_FILE, subject.MAX_RAW, subject.MAX_SIDECAR),
@@ -257,6 +258,111 @@ class CheckpointInputTests(unittest.TestCase):
         with patch.object(Path, 'lstat', return_value=reparse):
             with self.assertRaisesRegex(ValueError, 'REGULAR'):
                 subject._git_metadata(gitfile)
+
+
+    def test_audit_reports_every_violation_with_path_check_nlink_and_namespace(self):
+        os.link(self.files[0], self.root / 'llvm/alias')
+        os.link(self.files[1], self.root / 'source-checkout/src/hard.exe')
+        clean = subject.audit_links(self.root)
+        self.assertEqual(clean['violationCount'], 4)
+        rows = {row['path']: row for row in clean['violations']}
+        self.assertEqual(sorted(rows), ['llvm/alias', 'llvm/tool.exe', 'source-checkout/src/hard.exe', 'source-checkout/src/input.cc'])
+        for row in rows.values():
+            self.assertEqual(row['checks'], ['nlink>1'])
+            self.assertEqual(row['nlink'], 2)
+            self.assertEqual(row['code'], 'REGULAR')
+        self.assertEqual(rows['llvm/alias']['namespace'], 'llvm')
+        self.assertEqual(rows['source-checkout/src/input.cc']['namespace'], 'source-checkout')
+        self.assertEqual(clean['byCheck'], {'nlink>1': 4})
+        self.assertEqual(clean['byNamespace'], {'llvm': 2, 'source-checkout': 2})
+        self.assertEqual(clean['firstCode'], 'REGULAR')
+        self.assertEqual(clean['firstPath'], 'llvm/alias')
+
+    def test_audit_is_clean_for_a_valid_tree_and_ignores_excluded_outputs(self):
+        (self.root / 'source-checkout/src/out/compiled.obj').write_bytes(b'x')
+        os.link(self.root / 'source-checkout/src/out/compiled.obj', self.root / 'source-checkout/src/out/alias.obj')
+        (self.root / 'source-checkout/.git/private').write_bytes(b'x')
+        report = subject.audit_links(self.root)
+        self.assertEqual((report['violationCount'], report['violations'], report['firstCode'], report['firstPath']), (0, [], None, None))
+        self.assertEqual(report['missingNamespaces'], [])
+        self.assertGreater(report['entries'], 8)
+
+    def test_audit_caps_the_listing_but_counts_every_violation(self):
+        for index in range(7):
+            os.link(self.files[0], self.root / ('llvm/h%d' % index))
+        report = subject.audit_links(self.root, cap=3)
+        self.assertEqual((report['violationCount'], report['listed'], report['capped'], len(report['violations'])), (8, 3, True, 3))
+
+    def test_audit_symlink_and_reparse_attribute_are_named_without_following(self):
+        link = self.root / 'rust/link'
+        try:
+            link.symlink_to(self.files[0])
+        except OSError:
+            link = None  # Windows without symlink privilege: the attribute model below still runs.
+        if link is not None:
+            report = subject.audit_links(self.root)
+            self.assertEqual(report['violations'][0]['path'], 'rust/link')
+            self.assertIn('symlink', report['violations'][0]['checks'])
+            link.unlink()
+        real = Path.lstat
+        target = self.root / 'gn'
+        def fake(path, *args, **kwargs):
+            info = real(path, *args, **kwargs)
+            if path == target:
+                return types.SimpleNamespace(st_mode=info.st_mode, st_nlink=1, st_size=0, st_file_attributes=0x410)
+            if path == self.files[2]:
+                return types.SimpleNamespace(st_mode=info.st_mode, st_nlink=1, st_size=0, st_file_attributes=0x420)
+            return info
+        with patch.object(Path, 'lstat', fake):
+            report = subject.audit_links(self.root)
+        rows = {row['path']: row for row in report['violations']}
+        self.assertEqual(rows['gn']['checks'], ['reparse-point'])
+        self.assertEqual(rows['gn']['code'], 'DIRECTORY')
+        self.assertEqual(rows['runtime/empty']['checks'], ['reparse-point'])
+        self.assertEqual(rows['runtime/empty']['attributes'], '0x420')
+
+    def test_audit_names_and_missing_namespaces_and_excluded_git_identity(self):
+        (self.root / 'llvm/caf\u00e9').write_bytes(b'one')
+        (self.root / 'llvm/cafe\u0301').write_bytes(b'two')
+        (self.root / 'llvm/aux.h').write_bytes(b'x')
+        (self.root / 'custom-vs').rmdir()
+        (self.root / 'source-checkout/nested').mkdir()
+        os.link(self.files[0], self.root / 'source-checkout/nested/.git')
+        report = subject.audit_links(self.root)
+        self.assertEqual(report['missingNamespaces'], ['custom-vs'])
+        checks = {row['path']: row['checks'] for row in report['violations']}
+        self.assertEqual(checks['llvm/aux.h'], ['name:path'])
+        self.assertEqual(checks['source-checkout/nested/.git'], ['nlink>1'])
+        self.assertIn(['name:case_alias'], checks.values())
+
+    def test_record_inputs_denial_names_the_offender_writes_the_records_file_and_no_sidecar(self):
+        os.link(self.files[0], self.root / 'llvm/alias')
+        os.link(self.files[1], self.root / 'runtime/alias2')
+        with self.assertRaises(ValueError) as caught:
+            self.record()
+        self.assertEqual(str(caught.exception), 'CHECKPOINT_INPUTS_REGULAR')
+        context = caught.exception.checkpoint_context
+        self.assertEqual((context['stage'], context['code']), ('sidecar-record', 'SIDECAR_REGULAR'))
+        self.assertEqual(context['paths'], 4)
+        self.assertEqual(context['relativeName'], 'llvm/alias')
+        self.assertEqual(context['relativeNameSha256'], hashlib.sha256(b'llvm/alias').hexdigest())
+        self.assertFalse((self.root / subject.SIDECAR).exists())
+        written = self.root / 'full-sdk-engine-checkpoint-seal-link-violations.json'
+        report = json.loads(written.read_text())
+        self.assertEqual(report['violationCount'], 4)
+        self.assertIn('llvm/alias', [row['path'] for row in report['violations']])
+        # The workflow's always() records upload must already cover this exact name.
+        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/windows-arm-full-sdk.yml').read_text()
+        self.assertIn('.artifacts/windows-arm-full-sdk-*/full-sdk-engine-*.json', workflow)
+        self.assertRegex(written.name, r'^full-sdk-engine-[a-z0-9-]+\.json$')
+        # The stage wrapper's failure_context keeps the offender in the printed result.
+        import compiled_checkpoint as sealed
+        with self.assertRaises(ValueError) as wrapped:
+            with sealed.stage('sidecar-record'):
+                raise caught.exception
+        shown = sealed.failure_context(wrapped.exception)
+        self.assertEqual((shown['stage'], shown['code'], shown['relativeName'], shown['paths']),
+                         ('sidecar-record', 'SIDECAR_REGULAR', 'llvm/alias', 4))
 
 
 if __name__ == '__main__':

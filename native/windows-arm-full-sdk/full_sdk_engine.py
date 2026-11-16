@@ -366,6 +366,27 @@ def _post_slice_sources(state):
 # END FIXED CEF SUPERVISOR DEADLINE
 
 
+# BEGIN EARLY LINK AUDIT
+def _early_link_audit(state):
+    """Metadata-only lstat walk of the checkpoint namespaces before the long compile.
+
+    The seal later requires every hashed file to be regular, nlink 1 and not a reparse
+    point. Failing here costs minutes instead of the whole compile slice. Nothing is
+    opened or hashed; the record lands beside the other full-sdk-engine-*.json records.
+    """
+    import checkpoint_inputs as audit
+    root = state['root']
+    report = audit.audit_links(root, check=lambda: _state(root=root))
+    audit.write_audit(root, report, 'cef-engine-link-audit')
+    _state(root=root)
+    if report['violationCount']:
+        for line in audit.audit_summary(report):
+            print(line, file=sys.stderr)
+        raise ValueError('FULL_SDK_ENGINE_SIDECAR_' + report['firstCode'])
+    return report
+# END EARLY LINK AUDIT
+
+
 def _run(state):
     import job
     role, root = state['context']['role'], state['root']
@@ -376,6 +397,8 @@ def _run(state):
     with (root / ('full-sdk-engine-' + role + '-launch.json')).open('xb') as stream:
         stream.write(canonical(launch) + b'\n')
     _state(root=root)
+    if role == 'cef-engine':
+        _early_link_audit(state)
     seconds = math.floor(min(CAPS[role], state['clock'].remaining()))
     need(seconds > 0, 'DEADLINE')
     state['assignedSeconds'] = seconds

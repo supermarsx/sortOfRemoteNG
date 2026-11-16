@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 import time
 import unicodedata
 
@@ -74,6 +75,152 @@ def _identity(value):
                 identity=json.loads(json.dumps(value)), canonicalRoot=name, namespaces=list(NAMESPACES),
                 exclusions=['source-checkout/**/.git', 'source-checkout/src/out'],
                 bounds=dict(entries=MAX_ENTRIES, fileBytes=MAX_FILE, rawBytes=MAX_RAW, sidecarBytes=MAX_SIDECAR))
+
+
+AUDIT_CAP = 200
+AUDIT_KIND = 'windows-arm-full-sdk-link-audit'
+# The workflow always() records upload already globs full-sdk-engine-*.json.
+AUDIT_PREFIX = 'full-sdk-engine-'
+AUDIT_SUFFIX = '.json'
+
+
+def _link_checks(info):
+    """Return the reasons one lstat result fails the _signature/_directory predicates."""
+    mode, attributes, checks = info.st_mode, getattr(info, 'st_file_attributes', 0), []
+    directory = stat.S_ISDIR(mode)
+    if stat.S_ISLNK(mode):
+        checks.append('symlink')
+    if attributes & 0x400:
+        checks.append('reparse-point')
+    if not directory and not stat.S_ISLNK(mode) and not stat.S_ISREG(mode):
+        checks.append('not-regular')
+    if not directory and stat.S_ISREG(mode) and info.st_nlink != 1:
+        checks.append('nlink>1' if info.st_nlink > 1 else 'nlink<1')
+    return checks
+
+
+def audit_links(root, check=None, cap=AUDIT_CAP, namespaces=NAMESPACES):
+    """Metadata-only lstat walk over the hashed namespaces; never hashes or opens a file.
+
+    Applies the same predicates and exclusions as _walk/_signature but collects every
+    violation (the first `cap` are listed, all are counted) instead of aborting on the first.
+    `firstCode` is the CHECKPOINT_INPUTS_* suffix _walk would have raised first.
+    """
+    root = Path(root)
+    state = dict(entries=0, total=0, first=None)
+    listed, by_check, by_namespace, missing, seen = [], {}, {}, [], set()
+
+    def violate(namespace, name, checks, code, info=None):
+        state['total'] += 1
+        state['first'] = state['first'] or (code, name)
+        by_namespace[namespace] = by_namespace.get(namespace, 0) + 1
+        for item in checks:
+            by_check[item] = by_check.get(item, 0) + 1
+        if len(listed) < cap:
+            row = dict(path=name, namespace=namespace, checks=checks, code=code)
+            if info is not None:
+                row.update(nlink=info.st_nlink, mode=oct(info.st_mode),
+                           attributes=hex(getattr(info, 'st_file_attributes', 0)))
+            listed.append(row)
+
+    def excluded(path, name, namespace, child, expect_directory):
+        # Excluded names are never descended, but their own identity must still satisfy the predicates.
+        full = name + '/' + child
+        try:
+            info = (path / child).lstat()
+        except OSError as error:
+            violate(namespace, full, ['lstat-error:%s' % error.errno], 'OPEN')
+            return
+        checks = _link_checks(info)
+        if expect_directory and not stat.S_ISDIR(info.st_mode):
+            checks.append('not-directory')
+        if checks:
+            violate(namespace, full, checks, 'DIRECTORY' if stat.S_ISDIR(info.st_mode) else 'REGULAR', info)
+
+    def visit(path, name, namespace):
+        state['entries'] += 1
+        if check is not None and state['entries'] % 2048 == 0:
+            check()
+        try:
+            folded = _name(name)
+        except ValueError as error:
+            code = str(error)[len('CHECKPOINT_INPUTS_'):]
+            violate(namespace, name, ['name:' + code.lower()], code)
+            return
+        if folded in seen:
+            violate(namespace, name, ['name:case_alias'], 'CASE_ALIAS')
+            return
+        seen.add(folded)
+        try:
+            info = path.lstat()
+        except OSError as error:
+            violate(namespace, name, ['lstat-error:%s' % error.errno], 'OPEN')
+            return
+        directory = stat.S_ISDIR(info.st_mode)
+        checks = _link_checks(info)
+        if checks:
+            violate(namespace, name, checks, 'DIRECTORY' if directory else 'REGULAR', info)
+            return
+        if not directory:
+            if info.st_size > MAX_FILE:
+                violate(namespace, name, ['file-bound'], 'FILE_BOUND', info)
+            return
+        try:
+            with os.scandir(path) as entries:
+                names = sorted(entry.name for entry in entries)
+        except OSError as error:
+            violate(namespace, name, ['scandir-error:%s' % error.errno], 'OPEN', info)
+            return
+        for child in names:
+            if child == '.git' and (name == 'source-checkout' or name.startswith('source-checkout/')):
+                excluded(path, name, namespace, child, False)
+            elif name == 'source-checkout/src' and child == 'out':
+                excluded(path, name, namespace, child, True)
+            else:
+                visit(path / child, name + '/' + child, namespace)
+
+    for namespace in sorted(namespaces):
+        try:
+            (root / namespace).lstat()
+        except OSError:
+            missing.append(namespace)
+            continue
+        visit(root / namespace, namespace, namespace)
+    code, first = state['first'] or (None, None)
+    return dict(kind=AUDIT_KIND, schemaVersion=1, namespaces=sorted(namespaces), missingNamespaces=missing,
+                entries=state['entries'], violationCount=state['total'], listed=len(listed),
+                capped=state['total'] > len(listed), cap=cap, byCheck=dict(sorted(by_check.items())),
+                byNamespace=dict(sorted(by_namespace.items())), firstCode=code, firstPath=first, violations=listed)
+
+
+def write_audit(root, report, label):
+    """Write the audit as canonical JSON beside the other full-sdk-engine-*.json records."""
+    need(type(label) is str and re.fullmatch('[a-z0-9-]{1,64}', label), 'AUDIT_LABEL')
+    raw = json.dumps(report, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode() + b'\n'
+    name = AUDIT_PREFIX + label + AUDIT_SUFFIX
+    with (Path(root) / name).open('wb') as stream:
+        stream.write(raw)
+    return name
+
+
+def audit_summary(report, limit=25):
+    lines = ['link audit: %d entries, %d violations (%s)' % (
+        report['entries'], report['violationCount'], ', '.join('%s=%d' % item for item in report['byCheck'].items()) or 'none')]
+    for row in report['violations'][:limit]:
+        lines.append('  %s [%s]%s' % (row['path'], ','.join(row['checks']), ' nlink=%s' % row['nlink'] if 'nlink' in row else ''))
+    return lines
+
+
+def audit_failure(root, report, label):
+    """Persist the audit and return the exact CHECKPOINT_INPUTS_* cause with the first offender attached."""
+    write_audit(root, report, label)
+    error = ValueError('CHECKPOINT_INPUTS_' + report['firstCode'])
+    first = report['firstPath']
+    context = dict(stage='sidecar-record', code='SIDECAR_' + report['firstCode'], paths=report['violationCount'])
+    if type(first) is str and len(first) <= 512:
+        context.update(relativeName=first, relativeNameSha256=hashlib.sha256(first.encode()).hexdigest())
+    object.__setattr__(error, 'checkpoint_context', context)
+    return error
 
 
 def _directory(info):
@@ -308,6 +455,13 @@ def _pin(pin):
 def record_inputs(root, identity, clock, fence):
     header = _identity(identity)
     guard = _Guard(root, header, clock, fence)
+    # Metadata-only pre-pass: report every link/reparse violation at once, minutes
+    # into the seal instead of one at a time after tens of minutes of hashing.
+    report = audit_links(guard.root, check=guard.check)
+    if report['violationCount']:
+        for line in audit_summary(report):
+            print(line, file=sys.stderr)
+        raise audit_failure(guard.root, report, 'checkpoint-seal-link-violations')
     digest, written, count, files, raw_bytes = hashlib.sha256(), 0, 0, 0, 0
     def emit(stream, value):
         nonlocal written
