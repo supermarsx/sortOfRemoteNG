@@ -42,6 +42,13 @@ mod proxy_chain_contract_tests;
 mod establishment_diagnostics;
 pub use establishment_diagnostics::SshEstablishmentOrigin;
 
+#[path = "transport_resilience.rs"]
+mod transport_resilience;
+use transport_resilience::{
+    classify_io_error, classify_ssh2_error, keepalive_step, FailureTracker, KeepaliveAction,
+    RetryDecision, SshErrorClass, KEEPALIVE_RETRY, SHELL_READ_RETRY,
+};
+
 #[path = "forward_relay.rs"]
 mod forward_relay;
 pub(crate) use forward_relay::ChannelOpenGate;
@@ -2448,11 +2455,66 @@ fn emit_shell_error(session_id: &str, message: &str, emitter: &DynEventEmitter) 
     let payload = SshShellError {
         session_id: session_id.to_string(),
         message: message.to_string(),
+        kind: None,
+        attempt: None,
+        max_attempts: None,
     };
     let _ = emitter.emit_event(
         "ssh-error",
         serde_json::to_value(&payload).unwrap_or_default(),
     );
+}
+
+/// Non-fatal transport state for the UI ("reconnecting" / "recovered").
+fn emit_shell_transport_notice(
+    session_id: &str,
+    kind: &str,
+    message: &str,
+    attempt: u32,
+    max_attempts: u32,
+    emitter: &DynEventEmitter,
+) {
+    let payload = SshShellError {
+        session_id: session_id.to_string(),
+        message: message.to_string(),
+        kind: Some(kind.to_string()),
+        attempt: Some(attempt),
+        max_attempts: Some(max_attempts),
+    };
+    let _ = emitter.emit_event(
+        "ssh-error",
+        serde_json::to_value(&payload).unwrap_or_default(),
+    );
+}
+
+/// Last libssh2 session error code, used because `ssh2` flattens its error
+/// into an `io::Error` that carries only the message.
+fn last_session_code(session: &Session) -> Option<i32> {
+    match ssh2::Error::last_session_error(session)?.code() {
+        SshErrorCode::Session(code) => Some(code),
+        _ => None,
+    }
+}
+
+/// Outcome of one shell read failure after classification and retry policy.
+#[derive(Debug, PartialEq, Eq)]
+enum ShellReadFailureOutcome {
+    /// Keep the shell; retry the read after `delay`.
+    Retry { attempt: u32, delay: Duration },
+    /// Declare the transport dead.
+    Fatal { attempts: u32 },
+}
+
+fn shell_read_failure_outcome(
+    tracker: &mut FailureTracker,
+    class: SshErrorClass,
+) -> ShellReadFailureOutcome {
+    match tracker.on_failure(class) {
+        RetryDecision::Retry { attempt, delay } => {
+            ShellReadFailureOutcome::Retry { attempt, delay }
+        }
+        RetryDecision::GiveUp { attempts } => ShellReadFailureOutcome::Fatal { attempts },
+    }
 }
 
 #[derive(Debug)]
@@ -6708,9 +6770,20 @@ impl SshService {
             // Tokio intervals tick immediately. The server only needs a probe
             // after the configured idle interval, so consume the initial tick.
             tick.tick().await;
+            let mut failures = FailureTracker::new(KEEPALIVE_RETRY);
             loop {
                 tick.tick().await;
-                match session.keepalive_send() {
+                // libssh2 may block for the session timeout while an exec has
+                // switched the session to blocking mode; never park a runtime
+                // worker on it.
+                let probe_session = session.clone();
+                let result =
+                    match tokio::task::spawn_blocking(move || probe_session.keepalive_send()).await
+                    {
+                        Ok(result) => result,
+                        Err(_) => break,
+                    };
+                match &result {
                     Ok(seconds_to_next) => {
                         log::debug!(
                             "Sent SSH keepalive for session {}; next due in {}s",
@@ -6718,20 +6791,33 @@ impl SshService {
                             seconds_to_next
                         );
                     }
-                    Err(error) if is_transient_keepalive_error(&error) => {
+                    Err(error) if is_transient_keepalive_error(error) => {
                         log::debug!(
                             "SSH keepalive for session {} would block; retrying on next interval",
                             session_id
                         );
                     }
                     Err(error) => {
-                        // The shell reader owns user-facing transport failure
-                        // reporting and emits exactly one close event. Stop this
-                        // auxiliary task so a dead transport cannot create an
-                        // unbounded stream of duplicate diagnostics.
-                        log::warn!("SSH keepalive failed for session {}: {}", session_id, error);
-                        break;
+                        log::warn!(
+                            "SSH keepalive failed for session {} ({} consecutive): {}",
+                            session_id,
+                            failures.consecutive() + 1,
+                            error
+                        );
                     }
+                }
+                // One bad probe (blip, exec racing in blocking mode) must not
+                // end keepalives for good. Only a persistent run of failures or
+                // a peer disconnect stops this task; the shell reader owns the
+                // user-facing close event.
+                let step = match &result {
+                    Ok(_) => Ok(()),
+                    Err(error) if is_transient_keepalive_error(error) => Ok(()),
+                    Err(error) => Err(error),
+                };
+                if keepalive_step(&mut failures, step) == KeepaliveAction::Stop {
+                    log::warn!("Stopping SSH keepalive for session {}", session_id);
+                    break;
                 }
             }
         })
@@ -7372,6 +7458,8 @@ impl SshService {
                 let mut close_reason = SshShellCloseReason::RemoteEof;
                 let mut close_message: Option<String> = None;
                 let mut idle_count: u32 = 0;
+                let mut read_failures = FailureTracker::new(SHELL_READ_RETRY);
+                let mut retry_not_before: Option<Instant> = None;
                 const MIN_SLEEP_MS: u64 = 1;
                 const MAX_SLEEP_MS: u64 = 10;
                 const IDLE_THRESHOLD: u32 = 10;
@@ -7401,6 +7489,30 @@ impl SshService {
                             break;
                         }
                     };
+
+                    // A verified receive failure is being retried: leave queued
+                    // input untouched (it is bounded in the mailbox) until the
+                    // backoff elapses, then probe and re-read.
+                    if let Some(not_before) = retry_not_before {
+                        if Instant::now() < not_before {
+                            drop(native_tick);
+                            std::thread::sleep(Duration::from_millis(MAX_SLEEP_MS));
+                            continue;
+                        }
+                        retry_not_before = None;
+                        // Keepalive doubles as a liveness probe; a definitive
+                        // error (peer disconnect) ends the wait early.
+                        if let Err(probe) = error_session.keepalive_send() {
+                            if !classify_ssh2_error(&probe).is_retryable() {
+                                let message =
+                                    format!("{probe} ({})", libssh2_code_label(&probe));
+                                emit_shell_error(&session_id_owned, &message, &emitter);
+                                close_reason = SshShellCloseReason::TransportError;
+                                close_message = Some(message);
+                                break;
+                            }
+                        }
+                    }
 
                     if let Some((cols, rows)) = rx.take_latest_resize() {
                         record_resize(&session_id_owned, cols, rows);
@@ -7460,6 +7572,16 @@ impl SshService {
                     match channel.read(&mut buffer) {
                         Ok(bytes) if bytes > 0 => {
                             idle_count = 0;
+                            if read_failures.on_success() {
+                                emit_shell_transport_notice(
+                                    &session_id_owned,
+                                    "transport_recovered",
+                                    "SSH connection recovered",
+                                    0,
+                                    read_failures.max_attempts(),
+                                    &emitter,
+                                );
+                            }
                             let raw_output = decoder.push(&buffer[..bytes]);
                             if let Some(payload) = shell_admission
                                 .publish_if_current(&session_id_owned, shell_generation, || {
@@ -7472,16 +7594,59 @@ impl SshService {
                         }
                         Ok(_) => {
                             idle_count = idle_count.saturating_add(1);
+                            // A clean zero-byte read on a live channel proves
+                            // the transport answered.
+                            if !channel.eof() && read_failures.on_success() {
+                                emit_shell_transport_notice(
+                                    &session_id_owned,
+                                    "transport_recovered",
+                                    "SSH connection recovered",
+                                    0,
+                                    read_failures.max_attempts(),
+                                    &emitter,
+                                );
+                            }
                         }
                         Err(error) if is_transient_shell_io_error(&error) => {
                             idle_count = idle_count.saturating_add(1);
                         }
                         Err(error) => {
                             let message = describe_shell_io_error(&error_session, &error);
-                            emit_shell_error(&session_id_owned, &message, &emitter);
-                            close_reason = SshShellCloseReason::TransportError;
-                            close_message = Some(message);
-                            running = false;
+                            let class =
+                                classify_io_error(&error, last_session_code(&error_session));
+                            match shell_read_failure_outcome(&mut read_failures, class) {
+                                ShellReadFailureOutcome::Retry { attempt, delay } => {
+                                    log::warn!(
+                                        "[{}] SSH receive failure, verifying transport (attempt {}/{}): {}",
+                                        session_id_owned,
+                                        attempt,
+                                        read_failures.max_attempts(),
+                                        message
+                                    );
+                                    emit_shell_transport_notice(
+                                        &session_id_owned,
+                                        "transport_retrying",
+                                        &message,
+                                        attempt,
+                                        read_failures.max_attempts(),
+                                        &emitter,
+                                    );
+                                    retry_not_before = Some(Instant::now() + delay);
+                                }
+                                ShellReadFailureOutcome::Fatal { attempts } => {
+                                    let message = if attempts > 0 {
+                                        format!(
+                                            "{message}; transport did not recover after {attempts} verification attempts"
+                                        )
+                                    } else {
+                                        message
+                                    };
+                                    emit_shell_error(&session_id_owned, &message, &emitter);
+                                    close_reason = SshShellCloseReason::TransportError;
+                                    close_message = Some(message);
+                                    running = false;
+                                }
+                            }
                         }
                     }
 
@@ -11560,9 +11725,14 @@ mod tests {
         );
         assert!(!session.is_blocking(), "blocking mode not restored");
         assert_eq!(session.timeout(), 0);
-        // An unconnected fake session fails generically (quarantined, as
-        // before); the permit itself must still be released.
-        assert!(gate.operation().is_err_and(|e| e.contains("reconnect")));
+        // The unconnected fake session fails with a socket-class error. A
+        // hard transport failure on an auxiliary exec must neither poison the
+        // channel gate nor hold its permit: the shell and later execs keep
+        // working and the shell reader alone decides if the transport died.
+        assert!(
+            gate.operation().is_ok(),
+            "aux exec transport failure poisoned the channel gate"
+        );
     }
 
     #[test]
@@ -13616,6 +13786,78 @@ mod tests {
                 "message": null
             })
         );
+    }
+
+    #[test]
+    fn shell_read_failure_retries_then_declares_the_transport_dead() {
+        let mut tracker = FailureTracker::new(SHELL_READ_RETRY);
+        let recv = std::io::Error::new(ErrorKind::Other, "transport read");
+        let class = classify_io_error(&recv, Some(-43));
+        assert_eq!(class, SshErrorClass::TransportSuspect);
+        for attempt in 1..=SHELL_READ_RETRY.max_attempts {
+            assert!(matches!(
+                shell_read_failure_outcome(&mut tracker, class),
+                ShellReadFailureOutcome::Retry { attempt: got, .. } if got == attempt
+            ));
+        }
+        assert_eq!(
+            shell_read_failure_outcome(&mut tracker, class),
+            ShellReadFailureOutcome::Fatal {
+                attempts: SHELL_READ_RETRY.max_attempts
+            }
+        );
+    }
+
+    #[test]
+    fn shell_read_failure_recovers_and_regains_the_full_budget() {
+        let mut tracker = FailureTracker::new(SHELL_READ_RETRY);
+        let class = SshErrorClass::TransportSuspect;
+        shell_read_failure_outcome(&mut tracker, class);
+        shell_read_failure_outcome(&mut tracker, class);
+        assert!(tracker.on_success(), "recovery must be reported once");
+        assert!(!tracker.on_success());
+        assert!(matches!(
+            shell_read_failure_outcome(&mut tracker, class),
+            ShellReadFailureOutcome::Retry { attempt: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn shell_read_peer_close_and_auth_failures_are_fatal_without_retry() {
+        for code in [-13, -18] {
+            let mut tracker = FailureTracker::new(SHELL_READ_RETRY);
+            let class = classify_io_error(&std::io::Error::new(ErrorKind::Other, "x"), Some(code));
+            assert_eq!(
+                shell_read_failure_outcome(&mut tracker, class),
+                ShellReadFailureOutcome::Fatal { attempts: 0 }
+            );
+        }
+    }
+
+    #[test]
+    fn transport_notice_payload_is_distinguishable_from_a_fatal_error() {
+        let fatal = serde_json::to_value(&SshShellError {
+            session_id: "s".into(),
+            message: "boom".into(),
+            kind: None,
+            attempt: None,
+            max_attempts: None,
+        })
+        .unwrap();
+        assert_eq!(
+            fatal,
+            serde_json::json!({"session_id": "s", "message": "boom"})
+        );
+        let notice = serde_json::to_value(&SshShellError {
+            session_id: "s".into(),
+            message: "transport read".into(),
+            kind: Some("transport_retrying".into()),
+            attempt: Some(2),
+            max_attempts: Some(4),
+        })
+        .unwrap();
+        assert_eq!(notice["kind"], "transport_retrying");
+        assert_eq!(notice["attempt"], 2);
     }
 
     #[test]

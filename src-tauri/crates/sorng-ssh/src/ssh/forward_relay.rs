@@ -31,10 +31,31 @@ impl SessionOperation {
         open: impl FnOnce() -> Result<T, ssh2::Error>,
     ) -> Result<T, String> {
         self.gate.ensure_healthy()?;
-        open().map_err(|error| {
-            self.gate.poisoned.store(true, Ordering::Release);
-            format!("{error}; disconnect and reconnect this SSH session")
-        })
+        open().map_err(|error| self.open_error_message(&error, false))
+    }
+
+    /// Hard transport failures (`-43` and friends) end libssh2's channel-open
+    /// state machine (`channel_error` resets `open_state`), so they leave no
+    /// half-finished native operation behind and must not condemn the gate.
+    /// Timeouts/EAGAIN and unknown errors may leave the open pending, so those
+    /// still quarantine it. The shell reader owns judging whether the
+    /// transport itself is dead.
+    fn open_error_message(&self, error: &ssh2::Error, tolerate_refusal: bool) -> String {
+        use super::transport_resilience::{classify_ssh2_error, SshErrorClass};
+        match classify_ssh2_error(error) {
+            SshErrorClass::ChannelRefused if tolerate_refusal => {
+                format!("{error}; the server refused another channel on this connection")
+            }
+            SshErrorClass::TransportSuspect | SshErrorClass::PeerClosed => {
+                format!(
+                    "{error}; SSH transport error while opening a channel (session left usable)"
+                )
+            }
+            _ => {
+                self.gate.poisoned.store(true, Ordering::Release);
+                format!("{error}; disconnect and reconnect this SSH session")
+            }
+        }
     }
 }
 
@@ -43,6 +64,7 @@ impl SessionOperation {
 /// no native state is left pending on the session.
 const LIBSSH2_ERROR_CHANNEL_FAILURE: i32 = -21;
 
+#[allow(dead_code)]
 pub(super) fn is_definitive_channel_refusal(error: &ssh2::Error) -> bool {
     matches!(
         error.code(),
@@ -59,13 +81,7 @@ impl SessionOperation {
         open: impl FnOnce() -> Result<T, ssh2::Error>,
     ) -> Result<T, String> {
         self.gate.ensure_healthy()?;
-        open().map_err(|error| {
-            if is_definitive_channel_refusal(&error) {
-                return format!("{error}; the server refused another channel on this connection");
-            }
-            self.gate.poisoned.store(true, Ordering::Release);
-            format!("{error}; disconnect and reconnect this SSH session")
-        })
+        open().map_err(|error| self.open_error_message(&error, true))
     }
 }
 
@@ -356,6 +372,45 @@ mod tests {
         });
         assert!(timed_out.is_err());
         assert!(gate.ensure_healthy().is_err());
+    }
+
+    #[test]
+    fn socket_recv_on_an_auxiliary_open_does_not_poison_the_gate() {
+        let gate = Arc::new(ChannelOpenGate::default());
+        let op = gate.try_acquire().unwrap().unwrap();
+        let failed: Result<(), String> = op.native_open_tolerating_refusal(|| {
+            Err(ssh2::Error::new(
+                ssh2::ErrorCode::Session(-43),
+                "transport read",
+            ))
+        });
+        let message = failed.unwrap_err();
+        assert!(message.contains("session left usable"), "{message}");
+        assert!(gate.ensure_healthy().is_ok(), "-43 poisoned the gate");
+        let failed: Result<(), String> = op.native_open(|| {
+            Err(ssh2::Error::new(
+                ssh2::ErrorCode::Session(-43),
+                "transport read",
+            ))
+        });
+        assert!(failed.is_err());
+        assert!(gate.ensure_healthy().is_ok(), "-43 poisoned the gate");
+        drop(op);
+        // Shell start / exec / forwards can still acquire the gate afterwards.
+        assert!(gate.operation().is_ok());
+    }
+
+    #[test]
+    fn timeout_and_unknown_open_errors_still_poison_the_gate() {
+        for code in [-9, -37, -5] {
+            let gate = Arc::new(ChannelOpenGate::default());
+            let op = gate.try_acquire().unwrap().unwrap();
+            let failed: Result<(), String> = op.native_open_tolerating_refusal(|| {
+                Err(ssh2::Error::new(ssh2::ErrorCode::Session(code), "pending"))
+            });
+            assert!(failed.is_err());
+            assert!(gate.ensure_healthy().is_err(), "code {code}");
+        }
     }
 
     enum ReadStep {

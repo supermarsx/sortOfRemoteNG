@@ -121,8 +121,13 @@ import { normalizeSessionQuickActions } from "../../utils/connection/sessionQuic
 import { appendSSHSessionActivity } from "../../utils/ssh/sshSessionActivity";
 import {
   classifySshFailure,
+  describeSshTransportNotice,
   type SshFailureKind,
 } from "../../utils/ssh/sshFailure";
+import {
+  SSH_SESSION_RECONNECT_EVENT,
+  type SshSessionReconnectDetail,
+} from "../../utils/ssh/sshReconnectEvent";
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
 import {
   cancelSessionLifecycleActorAttempts,
@@ -556,6 +561,11 @@ export function useWebTerminal(
     return "idle";
   });
   const statusRef = useRef<ConnectionStatus>(status);
+  /** Set while the backend verifies a transport receive failure. */
+  const [transportRetry, setTransportRetry] = useState<{
+    attempt: number;
+    maxAttempts: number;
+  } | null>(null);
   const [error, setError] = useState(() => initialSessionError);
   const [sshFailure, setSshFailure] = useState<SshConnectionFailure | null>(
     () => {
@@ -3727,6 +3737,21 @@ export function useWebTerminal(
       ) {
         return;
       }
+      const transportNotice = describeSshTransportNotice(payload);
+      if (transportNotice) {
+        // Non-fatal: the shell is alive and the backend is verifying (or has
+        // verified) the transport. Never record it as the failure cause.
+        setTransportRetry(
+          transportNotice.state === "retrying"
+            ? {
+                attempt: payload.attempt ?? 1,
+                maxAttempts: payload.max_attempts ?? payload.attempt ?? 1,
+              }
+            : null,
+        );
+        safeWriteln(`\r\n${transportNotice.line}`);
+        return;
+      }
       const safeMessage = sanitizeCurrentSshMessage(payload.message);
       lastSshTransportErrorRef.current = {
         sessionId: actorId,
@@ -3759,6 +3784,7 @@ export function useWebTerminal(
 
       closingSshActorsRef.current.add(actorId);
       isSshReady.current = false;
+      setTransportRetry(null);
       void (async () => {
         const lastTransportError =
           lastSshTransportErrorRef.current?.sessionId === actorId
@@ -4197,6 +4223,24 @@ export function useWebTerminal(
     safeFit,
     setStatusState,
   ]);
+
+  // Tab context-menu "Reconnect" for a live SSH tab: reconnect in place so
+  // the xterm buffer survives instead of closing and reopening the tab.
+  useEffect(() => {
+    if (!isSsh) return;
+    const onReconnectRequest = (event: Event) => {
+      const detail = (event as CustomEvent<SshSessionReconnectDetail>).detail;
+      if (!detail || detail.sessionId !== sessionRef.current.id) return;
+      detail.handled = true;
+      void handleReconnect();
+    };
+    window.addEventListener(SSH_SESSION_RECONNECT_EVENT, onReconnectRequest);
+    return () =>
+      window.removeEventListener(
+        SSH_SESSION_RECONNECT_EVENT,
+        onReconnectRequest,
+      );
+  }, [handleReconnect, isSsh]);
 
   const clearTerminal = useCallback(() => {
     if (!termRef.current || !canRender()) return;
@@ -4663,6 +4707,7 @@ export function useWebTerminal(
     sendCancel,
     disconnectSsh,
     handleReconnect,
+    transportRetry,
     clearTerminal,
     toggleFullscreen,
     /* helpers */

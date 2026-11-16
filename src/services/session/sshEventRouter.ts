@@ -25,6 +25,10 @@ export interface SshOutputEventPayload extends SshEventMetadata {
 export interface SshErrorEventPayload extends SshEventMetadata {
   session_id: string;
   message: string;
+  /** `transport_retrying` / `transport_recovered` are non-fatal notices. */
+  kind?: "transport_retrying" | "transport_recovered" | string;
+  attempt?: number;
+  max_attempts?: number;
 }
 
 export interface SshClosedEventPayload extends SshEventMetadata {

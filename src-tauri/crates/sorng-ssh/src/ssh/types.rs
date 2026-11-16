@@ -642,6 +642,15 @@ pub struct SshShellOutput {
 pub struct SshShellError {
     pub session_id: String,
     pub message: String,
+    /// Absent for ordinary fatal errors. `transport_retrying` /
+    /// `transport_recovered` are non-fatal notices about a verified
+    /// receive-failure retry; the shell stays alive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<u32>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

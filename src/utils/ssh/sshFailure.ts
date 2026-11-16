@@ -258,7 +258,9 @@ export function classifySshFailure(message: string): SshFailureClassification {
     lower.includes("broken pipe") ||
     lower.includes("unexpected eof") ||
     lower.includes("end of file") ||
-    /session\(\s*-(7|13|43)\s*\)/.test(lower)
+    /session\(\s*-(7|13|43)\s*\)/.test(lower) ||
+    /libssh2 code -(7|13|43)\b/.test(lower) ||
+    lower.includes("libssh2_error_socket_recv")
   ) {
     return {
       kind: "transport",
@@ -286,6 +288,44 @@ export function classifySshFailure(message: string): SshFailureClassification {
     friendly: "SSH connection failed - please check credentials and network",
     recoverable: false,
   };
+}
+
+/** Non-fatal transport notice carried on the `ssh-error` event. */
+export interface SshTransportNoticePayload {
+  kind?: string;
+  message?: string;
+  attempt?: number;
+  max_attempts?: number;
+}
+
+export interface SshTransportNoticeLine {
+  state: "retrying" | "recovered";
+  /** Already ANSI-coloured terminal line, without a leading newline. */
+  line: string;
+}
+
+/**
+ * Maps a backend transport notice to the visible terminal marker. Returns
+ * null for ordinary (fatal) `ssh-error` payloads.
+ */
+export function describeSshTransportNotice(
+  payload: SshTransportNoticePayload,
+): SshTransportNoticeLine | null {
+  if (payload.kind === "transport_retrying") {
+    const attempt = payload.attempt ?? 1;
+    const max = payload.max_attempts ?? attempt;
+    return {
+      state: "retrying",
+      line: `\x1b[33m[connection interrupted - verifying transport, attempt ${attempt}/${max}]\x1b[0m`,
+    };
+  }
+  if (payload.kind === "transport_recovered") {
+    return {
+      state: "recovered",
+      line: "\x1b[32m[connection recovered]\x1b[0m",
+    };
+  }
+  return null;
 }
 
 const FAILURE_STEP_NAMES: Record<SshFailureKind, string> = {

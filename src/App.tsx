@@ -1,4 +1,5 @@
 import { useSecureClipboardConfig } from "./hooks/security/useSecureClipboardConfig";
+import { requestInPlaceSshReconnect } from "./utils/ssh/sshReconnectEvent";
 import React, {
   useState,
   useCallback,
@@ -1214,6 +1215,14 @@ const AppContent: React.FC = () => {
         (item) => item.id === session.connectionId,
       );
       if (!connection) return;
+      // A mounted SSH terminal reconnects in place (keeps the tab, buffer and
+      // replay cursor), including from a dead/failed transport state.
+      if (
+        session.protocol === "ssh" &&
+        requestInPlaceSshReconnect(sessionId)
+      ) {
+        return;
+      }
       const closed = await handleSessionClose(sessionId);
       if (!closed) return;
       await handleConnect(connection);
