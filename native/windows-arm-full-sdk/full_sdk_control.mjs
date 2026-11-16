@@ -2737,7 +2737,26 @@ async function recheckSourceMetadata(token, joinedAllowed) {
     );
     operationState(token, joinedAllowed);
     try {
-      need(actual.identity === row.identity, "SOURCE_METADATA_REPLACED");
+      // BEGIN GENERATED OUTPUT CTIME TOLERANCE
+      // A long native compile on NTFS can bump only the change time (ctime) of a
+      // generated out/ file (scanner, indexer, attribute touch) with content, size,
+      // inode and mtime untouched. The held read above already re-verified the
+      // exact pinned bytes, so accept ctime-only drift for out/ files only.
+      const before = row.identity.split(":"),
+        current = actual.identity.split(":");
+      need(
+        actual.identity === row.identity ||
+          (row.relative.startsWith(
+            "source-checkout/src/out/Release_GN_arm64/",
+          ) &&
+            before.length === 8 &&
+            current.length === 8 &&
+            before.slice(0, 7).join(":") === current.slice(0, 7).join(":") &&
+            actual.pin.bytes === row.pin.bytes &&
+            actual.pin.sha256 === row.pin.sha256),
+        "SOURCE_METADATA_REPLACED",
+      );
+      // END GENERATED OUTPUT CTIME TOLERANCE
     } catch (error) {
       captureSourceMetadataFailure(error, state, row, actual);
       throw error;

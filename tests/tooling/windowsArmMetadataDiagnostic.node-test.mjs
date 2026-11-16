@@ -760,9 +760,20 @@ test("whole Siso cache DATA bridge retains old controller Q and lexical test and
     (x) =>
       ts.isFunctionDeclaration(x) && x.name?.text === "recheckSourceMetadata",
   );
-  const guard = ast.statements.find(
+  // The compile-cap layer adds a ctime-only tolerance for out/ files inside this
+  // guard (and nothing else); compare against the controller with that layer
+  // removed so the cache-era guard body stays exactly pinned.
+  const capFile = "native/windows-arm-full-sdk/full_sdk_control.mjs";
+  const capAst = ts.createSourceFile(
+    "cap.mjs",
+    withoutCompileCapInput(source, capFile),
+    99,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const guard = capAst.statements.find(
     (x) =>
       ts.isFunctionDeclaration(x) && x.name?.text === "recheckSourceMetadata",
   );
-  assert.equal(guard.getText(ast), oldGuard.getText(oldAst));
+  assert.equal(guard.getText(capAst), oldGuard.getText(oldAst));
 });

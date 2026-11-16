@@ -75,3 +75,21 @@ test("controller compile cap only shortens the reviewed 180 minute slice", () =>
     ),
   );
 });
+
+test("generated out/ files tolerate ctime-only drift but never content, mtime, size or inode drift", () => {
+  const region = controller.slice(
+    controller.indexOf("// BEGIN GENERATED OUTPUT CTIME TOLERANCE"),
+    controller.indexOf("// END GENERATED OUTPUT CTIME TOLERANCE"),
+  );
+  assert.ok(region.length > 100);
+  assert.match(
+    region,
+    /startsWith\(\s*"source-checkout\/src\/out\/Release_GN_arm64\/"/,
+  );
+  // identity = dev:ino:mode:uid:gid:size:mtimeNs:ctimeNs; only the last differs.
+  assert.match(
+    region,
+    /before\.slice\(0, 7\)\.join\(":"\) === current\.slice\(0, 7\)\.join\(":"\)/,
+  );
+  assert.match(region, /actual\.pin\.sha256 === row\.pin\.sha256/);
+});
