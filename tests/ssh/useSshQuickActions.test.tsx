@@ -1,6 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useSshQuickActions } from "../../src/hooks/ssh/useSshQuickActions";
+import {
+  __clearSshLibraryCache,
+  REORDER_SAVE_DEBOUNCE_MS,
+  useSshQuickActions,
+} from "../../src/hooks/ssh/useSshQuickActions";
+import { APP_DATA_STORE_CHANGED_EVENT } from "../../src/utils/storage/appDataJsonStore";
+import { quickActionReferenceKey } from "../../src/utils/connection/sessionQuickActions";
 import type {
   Connection,
   ConnectionSession,
@@ -118,6 +124,7 @@ const setup = (
   };
 };
 beforeEach(() => {
+  __clearSshLibraryCache();
   fixture.database = "db-a";
   fixture.accessible = true;
   fixture.settings = {};
@@ -534,6 +541,85 @@ describe("SSH connection favorites", () => {
     expect(fixture.connections[0].sshQuickActions?.items).toEqual([
       { kind: "macro", id: "macro-a" },
     ]);
+  });
+  it("auto-saves a reorder once (debounced), shows it optimistically, and prunes unknown keys", async () => {
+    fixture.connections = [
+      {
+        ...connection(),
+        sshQuickActions: {
+          version: 1,
+          items: [
+            { kind: "script", id: "script-a" },
+            { kind: "macro", id: "macro-a" },
+          ],
+        },
+      },
+    ];
+    const view = setup();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    const key = (kind: "script" | "macro", id: string) =>
+      quickActionReferenceKey({ kind, id });
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        view.result.current.reorder([
+          key("macro", "macro-a"),
+          key("script", "gone"),
+          key("script", "script-a"),
+        ]);
+        view.result.current.reorder([
+          key("macro", "macro-a"),
+          key("script", "gone"),
+          key("script", "script-a"),
+        ]);
+      });
+      // Optimistic order is visible before anything is persisted.
+      expect(view.result.current.favorites.map((item) => item.id)).toEqual([
+        "macro-a",
+        "script-a",
+      ]);
+      expect(fixture.save).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REORDER_SAVE_DEBOUNCE_MS + 20);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(() => expect(fixture.save).toHaveBeenCalledOnce());
+    expect(fixture.connections[0].sshQuickActions?.items).toEqual([
+      { kind: "macro", id: "macro-a" },
+      { kind: "script", id: "script-a" },
+    ]);
+  });
+  it("renders favorites instantly from the library cache on a new tab and reconciles", async () => {
+    const first = setup();
+    await waitFor(() =>
+      expect(first.result.current.favorites[0]?.missing).toBe(false),
+    );
+    first.unmount();
+    const hanging = new Promise<{ value: unknown[] }>(() => {});
+    fixture.scripts.mockReturnValue(hanging);
+    const second = setup();
+    // First render already has the name; no wait for the (hanging) reads.
+    expect(second.result.current.favorites[0]).toMatchObject({
+      name: "Inspect",
+      missing: false,
+    });
+  });
+  it("drops the cached listing when a script is saved or renamed", async () => {
+    const first = setup();
+    await waitFor(() =>
+      expect(first.result.current.favorites[0]?.missing).toBe(false),
+    );
+    first.unmount();
+    window.dispatchEvent(
+      new CustomEvent(APP_DATA_STORE_CHANGED_EVENT, {
+        detail: { key: "scripts" },
+      }),
+    );
+    fixture.scripts.mockReturnValue(new Promise(() => {}));
+    const second = setup();
+    expect(second.result.current.favorites[0]?.missing).toBe(true);
   });
   it("loads a fresh library entry only on explicit run", async () => {
     const view = setup();

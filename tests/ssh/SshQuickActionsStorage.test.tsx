@@ -79,7 +79,10 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
     }),
   },
 }));
-import { useSshQuickActions } from "../../src/hooks/ssh/useSshQuickActions";
+import {
+  __clearSshLibraryCache,
+  useSshQuickActions,
+} from "../../src/hooks/ssh/useSshQuickActions";
 import { useTerminalAppLibrary } from "../../src/hooks/recording/useTerminalAppLibrary";
 
 const busy =
@@ -150,6 +153,7 @@ const mutations = () =>
     command.startsWith("compare_and_swap"),
   );
 beforeEach(async () => {
+  __clearSshLibraryCache();
   h.owner = "db-a";
   h.epoch = 1;
   h.accessible = true;

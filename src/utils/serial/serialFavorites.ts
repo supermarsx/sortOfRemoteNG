@@ -1,5 +1,6 @@
 import type { QuickActionReference } from "../../types/connection/sessionQuickActions";
 import {
+  applyQuickActionOrder,
   MAX_QUICK_ACTION_ITEMS,
   normalizeQuickActionReferences,
   quickActionReferenceKey,
@@ -100,5 +101,20 @@ export function toggleSerialFavorite(
   const next = exists
     ? current.filter((item) => quickActionReferenceKey(item) !== key)
     : [...current, { kind: reference.kind, id: reference.id }];
+  return saveSerialFavorites(bucket, next, storage);
+}
+
+/**
+ * Persist a new serial favorites order. Uses the shared ordering helper, so
+ * keys that are no longer stored are pruned and unmentioned entries are kept.
+ */
+export function reorderSerialFavorites(
+  bucket: string,
+  orderedKeys: readonly string[],
+  storage: Storage | undefined = defaultStorage(),
+): QuickActionReference[] {
+  const current = loadSerialFavorites(bucket, storage);
+  const next = applyQuickActionOrder(current, orderedKeys);
+  if (next === current) return current;
   return saveSerialFavorites(bucket, next, storage);
 }

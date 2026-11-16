@@ -10275,5 +10275,10 @@
       "network": "Red",
       "proxy": "Servidor proxy"
     }
+  },
+  "scriptFavorites": {
+    "edit": "Editar",
+    "reorderHint": "Arrastra para reordenar o pulsa Alt+flechas",
+    "scriptActions": "Acciones del script"
   }
 }

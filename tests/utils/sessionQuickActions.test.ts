@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyQuickActionOrder,
+  moveQuickActionReference,
+  shiftQuickActionReference,
   normalizeHttpAutomation,
   normalizeQuickActionReferences,
   normalizeSessionQuickActions,
@@ -150,5 +153,51 @@ describe("session quick-action references and consent", () => {
     expect(() =>
       resolveHttpAutomationPermissions(undefined, malformed.httpAutomation),
     ).toThrow();
+  });
+});
+
+describe("favorites ordering helpers", () => {
+  const a = { kind: "script" as const, id: "a" };
+  const b = { kind: "script" as const, id: "b" };
+  const c = { kind: "macro" as const, id: "c" };
+  const k = quickActionReferenceKey;
+  const ids = (items: readonly { id: string }[]) => items.map((i) => i.id);
+
+  it("moves before/after a target and is identity-preserving for no-ops", () => {
+    const list = [a, b, c];
+    expect(ids(moveQuickActionReference(list, k(c), k(a), "before"))).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
+    expect(ids(moveQuickActionReference(list, k(a), k(c), "after"))).toEqual([
+      "b",
+      "c",
+      "a",
+    ]);
+    expect(moveQuickActionReference(list, k(a), k(b), "before")).toBe(list);
+    expect(moveQuickActionReference(list, k(a), k(a))).toBe(list);
+    expect(moveQuickActionReference(list, "nope", k(a))).toBe(list);
+  });
+
+  it("shifts by one and clamps at the ends", () => {
+    const list = [a, b, c];
+    expect(ids(shiftQuickActionReference(list, k(b), 1))).toEqual([
+      "a",
+      "c",
+      "b",
+    ]);
+    expect(shiftQuickActionReference(list, k(a), -1)).toBe(list);
+    expect(shiftQuickActionReference(list, k(c), 1)).toBe(list);
+    expect(shiftQuickActionReference(list, "nope", 1)).toBe(list);
+  });
+
+  it("applies an order, pruning unknown ids and keeping unmentioned entries last", () => {
+    const list = [a, b, c];
+    expect(
+      ids(applyQuickActionOrder(list, [k(c), "deleted", k(c), k(a)])),
+    ).toEqual(["c", "a", "b"]);
+    expect(applyQuickActionOrder(list, [k(a), k(b), k(c)])).toBe(list);
+    expect(ids(applyQuickActionOrder(list, []))).toEqual(["a", "b", "c"]);
   });
 });

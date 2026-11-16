@@ -5,6 +5,10 @@ import {
   type SerialQuickActionItem,
 } from "../../../hooks/serial/useSerialQuickActions";
 import type { ConnectionSession } from "../../../types/connection/connection";
+import {
+  FAVORITE_DROP_CLASS,
+  useFavoriteReorder,
+} from "../../../hooks/recording/useFavoriteReorder";
 import { quickActionReferenceKey } from "../../../utils/connection/sessionQuickActions";
 
 interface SerialScriptBarProps {
@@ -30,6 +34,10 @@ export function SerialScriptBar({
   });
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const reorderUi = useFavoriteReorder(
+    actions.favorites,
+    actions.reorderFavorites,
+  );
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -106,7 +114,8 @@ export function SerialScriptBar({
           <button
             key={quickActionReferenceKey(item)}
             type="button"
-            className={buttonClass}
+            {...reorderUi.getItemProps(quickActionReferenceKey(item))}
+            className={`${buttonClass} ${FAVORITE_DROP_CLASS}`}
             disabled={!actions.canRun || item.missing}
             title={item.description}
             onClick={() => void actions.run(item)}

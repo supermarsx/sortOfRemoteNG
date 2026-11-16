@@ -10275,5 +10275,10 @@
       "network": "Réseau",
       "proxy": "Proxy"
     }
+  },
+  "scriptFavorites": {
+    "edit": "Modifier",
+    "reorderHint": "Glissez pour réorganiser ou utilisez Alt+flèches",
+    "scriptActions": "Actions du script"
   }
 }

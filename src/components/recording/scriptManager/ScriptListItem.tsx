@@ -1,3 +1,7 @@
+import { useState } from "react";
+import { Pencil } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import MenuSurface from "../../ui/overlays/MenuSurface";
 import { ManagedScript, languageLabels, OS_TAG_LABELS } from "./shared";
 import { ScriptMetadataIcon } from "./ScriptMetadataIcon";
 import AutomationSourceBadge from "./AutomationSourceBadge";
@@ -11,9 +15,15 @@ function ScriptListItem({
   script: ManagedScript;
   mgr: ScriptManagerMgr;
 }) {
+  const { t } = useTranslation();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   return (
     <div
       onClick={() => mgr.handleSelectScript(script)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenu({ x: event.clientX, y: event.clientY });
+      }}
       className={`p-3 rounded-lg cursor-pointer transition-colors group ${
         mgr.selectedScript?.id === script.id
           ? "bg-primary/20 border border-accent/40"
@@ -69,6 +79,27 @@ function ScriptListItem({
           </div>
         </div>
       </div>
+      <MenuSurface
+        isOpen={!!menu}
+        onClose={() => setMenu(null)}
+        position={menu}
+        className="w-48 rounded-lg py-1"
+        ariaLabel={t("scriptFavorites.scriptActions", "Script actions")}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className="sor-menu-item text-xs py-1.5"
+          disabled={mgr.busy}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMenu(null);
+            mgr.handleEditScript(script);
+          }}
+        >
+          <Pencil size={12} /> {t("scriptFavorites.edit", "Edit")}
+        </button>
+      </MenuSurface>
     </div>
   );
 }

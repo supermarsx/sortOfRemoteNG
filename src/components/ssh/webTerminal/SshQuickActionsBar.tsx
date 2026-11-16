@@ -1,5 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
+  FAVORITE_DROP_CLASS,
+  useFavoriteReorder,
+} from "../../../hooks/recording/useFavoriteReorder";
+import {
+  Pencil,
   ArrowLeft,
   ArrowRight,
   FileCode,
@@ -35,6 +41,7 @@ const MacroManager = lazy(() =>
     default: module.MacroManager,
   })),
 );
+import type { ScriptManagerInitialEdit } from "../../recording/ScriptManager";
 type Actions = ReturnType<typeof useSshQuickActions>;
 type ActionKind = "script" | "macro";
 interface ContextMenu {
@@ -55,6 +62,10 @@ export default function SshQuickActionsBar({
   replaying: boolean;
   onStopReplay: () => void;
 }) {
+  const { t } = useTranslation();
+  const [editTarget, setEditTarget] = useState<ScriptManagerInitialEdit | null>(
+    null,
+  );
   const [open, setOpen] = useState(false);
   const [manager, setManager] = useState<ActionKind | null>(null);
   const [assignmentKind, setAssignmentKind] = useState<ActionKind | null>(null);
@@ -85,6 +96,11 @@ export default function SshQuickActionsBar({
             quickActionReferenceKey(favorite) === contextMenu.favoriteKey,
         )
       : undefined;
+  const reorderUi = useFavoriteReorder(
+    actions.favorites,
+    actions.reorder,
+    actions.enabled && !actions.unavailable && !replaying,
+  );
   const contextIndex = contextFavorite
     ? actions.favorites.indexOf(contextFavorite)
     : -1;
@@ -111,6 +127,7 @@ export default function SshQuickActionsBar({
   }, [open, dialogCurrent]);
   if (!actions.enabled) return null;
   const close = () => {
+    setEditTarget(null);
     setOpen(false);
     setManager(null);
     setAssignmentKind(null);
@@ -216,62 +233,81 @@ export default function SshQuickActionsBar({
                 Add scripts or macros for this connection
               </span>
             )}
-            {actions.visibleFavorites.map((favorite) => (
-              <span
-                key={quickActionReferenceKey(favorite)}
-                className="shrink-0"
-                data-tooltip={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
-                role="group"
-                aria-label={`${favorite.kind} ${favorite.name} favorite`}
-                tabIndex={
-                  !actions.canRun || favorite.missing || replaying ? 0 : -1
-                }
-                aria-haspopup="menu"
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  openContext(
-                    event.clientX || rect.left,
-                    event.clientY || rect.bottom,
-                    quickActionReferenceKey(favorite),
-                  );
-                }}
-                onKeyDown={(event) => {
-                  if (!(
-                    event.key === "ContextMenu" ||
-                    (event.shiftKey && event.key === "F10")
-                  ))
-                    return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  openContext(
-                    rect.left,
-                    rect.bottom,
-                    quickActionReferenceKey(favorite),
-                  );
-                }}
-              >
-                <button
-                  type="button"
-                  className="app-bar-button flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs"
-                  aria-label={`Run ${favorite.kind} ${favorite.name}`}
-                  disabled={!actions.canRun || favorite.missing || replaying}
-                  onClick={() => {
-                    if (actions.canRun && !favorite.missing && !replaying)
-                      void actions.run(favorite);
+            {actions.visibleFavorites.map((favorite) => {
+              const reorderProps = reorderUi.getItemProps(
+                quickActionReferenceKey(favorite),
+              );
+              return (
+                <span
+                  key={quickActionReferenceKey(favorite)}
+                  className={`shrink-0 ${FAVORITE_DROP_CLASS}`}
+                  data-testid="ssh-favorite-item"
+                  aria-description={t(
+                    "scriptFavorites.reorderHint",
+                    "Drag to reorder, or press Alt+Arrow keys",
+                  )}
+                  draggable={reorderProps.draggable && !actions.query.trim()}
+                  data-dragging={reorderProps["data-dragging"]}
+                  data-drop-position={reorderProps["data-drop-position"]}
+                  onDragStart={reorderProps.onDragStart}
+                  onDragOver={reorderProps.onDragOver}
+                  onDrop={reorderProps.onDrop}
+                  onDragEnd={reorderProps.onDragEnd}
+                  data-tooltip={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
+                  role="group"
+                  aria-label={`${favorite.kind} ${favorite.name} favorite`}
+                  tabIndex={
+                    !actions.canRun || favorite.missing || replaying ? 0 : -1
+                  }
+                  aria-haspopup="menu"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    openContext(
+                      event.clientX || rect.left,
+                      event.clientY || rect.bottom,
+                      quickActionReferenceKey(favorite),
+                    );
+                  }}
+                  onKeyDown={(event) => {
+                    if (!actions.query.trim()) reorderProps.onKeyDown(event);
+                    if (event.defaultPrevented) return;
+                    if (!(
+                      event.key === "ContextMenu" ||
+                      (event.shiftKey && event.key === "F10")
+                    ))
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    openContext(
+                      rect.left,
+                      rect.bottom,
+                      quickActionReferenceKey(favorite),
+                    );
                   }}
                 >
-                  {favorite.kind === "script" ? (
-                    <FileCode size={12} />
-                  ) : (
-                    <ListVideo size={12} />
-                  )}
-                  <span className="max-w-40 truncate">{favorite.name}</span>
-                </button>
-              </span>
-            ))}
+                  <button
+                    type="button"
+                    className="app-bar-button flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs"
+                    aria-label={`Run ${favorite.kind} ${favorite.name}`}
+                    disabled={!actions.canRun || favorite.missing || replaying}
+                    onClick={() => {
+                      if (actions.canRun && !favorite.missing && !replaying)
+                        void actions.run(favorite);
+                    }}
+                  >
+                    {favorite.kind === "script" ? (
+                      <FileCode size={12} />
+                    ) : (
+                      <ListVideo size={12} />
+                    )}
+                    <span className="max-w-40 truncate">{favorite.name}</span>
+                  </button>
+                </span>
+              );
+            })}
           </div>
           {replaying && (
             <button
@@ -341,6 +377,24 @@ export default function SshQuickActionsBar({
                 Run {contextFavorite.kind} {contextFavorite.name}
               </span>
             </button>
+            {contextFavorite.kind === "script" && !contextFavorite.missing && (
+              <button
+                type="button"
+                role="menuitem"
+                className="sor-menu-item text-xs py-1.5"
+                onClick={() =>
+                  reviewedContextAction(() => {
+                    setEditTarget({
+                      id: contextFavorite.id,
+                      scope: contextFavorite.scope,
+                    });
+                    openLibrary(null, "script");
+                  })
+                }
+              >
+                <Pencil size={12} /> {t("scriptFavorites.edit", "Edit")}
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -449,7 +503,11 @@ export default function SshQuickActionsBar({
               fallback={<p className="p-4 text-sm">Loading library…</p>}
             >
               {manager === "script" ? (
-                <ScriptManager isOpen onClose={close} />
+                <ScriptManager
+                  isOpen
+                  onClose={close}
+                  initialEdit={editTarget ?? undefined}
+                />
               ) : (
                 <MacroManager isOpen onClose={close} />
               )}
@@ -578,6 +636,7 @@ export default function SshQuickActionsBar({
               type="button"
               className="sor-btn sor-btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
               onClick={() => {
+                setEditTarget(null);
                 setManager(null);
                 void actions.refresh();
               }}

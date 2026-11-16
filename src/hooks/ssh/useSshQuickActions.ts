@@ -10,6 +10,7 @@ import {
   normalizeSessionQuickActions,
   normalizeSshQuickActions,
   MAX_QUICK_ACTION_ITEMS,
+  applyQuickActionOrder,
   quickActionReferenceKey as key,
   quickActionReferenceScope,
 } from "../../utils/connection/sessionQuickActions";
@@ -30,6 +31,28 @@ import {
   automationLibraryDiagnostic,
 } from "../../utils/recording/automationLibraryAccess";
 import type { MacroLibraryReadAccess } from "../../utils/storage/macroLibraryReadRecovery";
+
+/** Delay before a drag/keyboard reorder is persisted (coalesces rapid moves). */
+export const REORDER_SAVE_DEBOUNCE_MS = 250;
+
+// Display-only (names/descriptions, never bodies) library listing per owning
+// database, kept across SSH tab mounts so favorites render instantly and the
+// background refresh only reconciles. Dropped on any database/access change.
+const libraryCache = new Map<string, SshQuickActionItem[]>();
+/** @internal test hook */
+export const __clearSshLibraryCache = () => libraryCache.clear();
+// A saved/deleted/renamed script or macro invalidates the listing at once, even
+// while no SSH tab is mounted; the next mount renders nothing stale.
+if (typeof window !== "undefined") {
+  window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, (event) => {
+    const storeKey = (event as CustomEvent<{ key?: string }>).detail?.key;
+    if (
+      storeKey === managedScriptsStore.key ||
+      storeKey === TERMINAL_MACROS_STORE_KEY
+    )
+      libraryCache.clear();
+  });
+}
 
 type LibrarySource =
   "App-wide scripts" | "App-wide terminal macros" | "Owning database actions";
@@ -144,7 +167,9 @@ export function useSshQuickActions(options: Options) {
   const manager = useMemo(() => DatabaseManager.getInstance(), []);
   const ownerId = options.session.ownerDatabaseId;
   const [accessEpoch, setAccessEpoch] = useState(0);
-  const [library, setLibrary] = useState<SshQuickActionItem[]>([]);
+  const [library, setLibrary] = useState<SshQuickActionItem[]>(
+    () => (ownerId ? libraryCache.get(ownerId) : undefined) ?? [],
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -219,6 +244,7 @@ export function useSshQuickActions(options: Options) {
     const changed = () => {
       generation.current++;
       libraryRead.current?.abort();
+      libraryCache.clear();
       setLibrary([]);
       setAccessEpoch((value) => value + 1);
     };
@@ -444,7 +470,11 @@ export function useSshQuickActions(options: Options) {
           })),
         );
       }
-      setLibrary(items);
+      // Structural sharing: an unchanged library keeps its identity (no rerender).
+      setLibrary((previous) =>
+        JSON.stringify(previous) === JSON.stringify(items) ? previous : items,
+      );
+      if (ownerId) libraryCache.set(ownerId, items);
       setError(null);
     } catch (failure) {
       if (
@@ -453,6 +483,7 @@ export function useSshQuickActions(options: Options) {
       )
         return;
       controller.abort();
+      if (ownerId) libraryCache.delete(ownerId);
       setLibrary([]);
       setError(
         failure instanceof AutomationLibraryAccessError
@@ -598,6 +629,45 @@ export function useSshQuickActions(options: Options) {
       }),
     [mutate],
   );
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
+  const pendingOrderRef = useRef<string[] | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitOrderRef = useRef<() => Promise<void>>(async () => {});
+  commitOrderRef.current = async () => {
+    const keys = pendingOrderRef.current;
+    if (!keys) return;
+    if (busyRef.current) {
+      saveTimer.current = setTimeout(
+        () => void commitOrderRef.current(),
+        REORDER_SAVE_DEBOUNCE_MS,
+      );
+      return;
+    }
+    await mutate((references) => [...applyQuickActionOrder(references, keys)]);
+    if (pendingOrderRef.current === keys) {
+      pendingOrderRef.current = null;
+      if (mounted.current) setPendingOrder(null);
+    }
+  };
+  /** Auto-save a new favorites order (full list of reference keys), debounced. */
+  const reorder = useCallback((orderedKeys: readonly string[]) => {
+    const keys = [...orderedKeys];
+    pendingOrderRef.current = keys;
+    setPendingOrder(keys);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(
+      () => void commitOrderRef.current(),
+      REORDER_SAVE_DEBOUNCE_MS,
+    );
+  }, []);
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      // Never lose an order the user just set: flush it on unmount.
+      if (pendingOrderRef.current) void commitOrderRef.current();
+    },
+    [],
+  );
   const run = useCallback(
     async (reference: QuickActionReference) => {
       if (busyRef.current) return;
@@ -672,7 +742,10 @@ export function useSshQuickActions(options: Options) {
 
   const favorites = useMemo(() => {
     const byKey = new Map(library.map((item) => [key(item), item]));
-    return configuration.references.map(
+    const ordered = pendingOrder
+      ? applyQuickActionOrder(configuration.references, pendingOrder)
+      : configuration.references;
+    return ordered.map(
       (reference) =>
         byKey.get(key(reference)) ?? {
           ...reference,
@@ -682,7 +755,7 @@ export function useSshQuickActions(options: Options) {
           missing: true,
         },
     );
-  }, [configuration.references, library]);
+  }, [configuration.references, library, pendingOrder]);
   const normalizedQuery = query.trim().toLowerCase();
   const effectiveLoading = loading || ownerAccess.status === "loading";
   const visibleError = ownerAccess.status === "ready" ? error : null;
@@ -715,6 +788,7 @@ export function useSshQuickActions(options: Options) {
     add,
     remove,
     move,
+    reorder,
     run,
     refresh,
   };

@@ -11,7 +11,9 @@ import SshQuickActionsBar from "../../src/components/ssh/webTerminal/SshQuickAct
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { useSshQuickActions } from "../../src/hooks/ssh/useSshQuickActions";
 vi.mock("../../src/components/recording/ScriptManager", () => ({
-  ScriptManager: () => <div>Script library manager</div>,
+  ScriptManager: ({ initialEdit }: { initialEdit?: { id: string } }) => (
+    <div data-edit={initialEdit?.id}>Script library manager</div>
+  ),
 }));
 vi.mock("../../src/components/recording/MacroManager", () => ({
   MacroManager: () => <div>Macro library manager</div>,
@@ -38,6 +40,7 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   add: vi.fn(),
   remove: vi.fn(),
   move: vi.fn(),
+  reorder: vi.fn(),
   run: vi.fn(),
   refresh: vi.fn(),
 });
@@ -105,6 +108,108 @@ describe("SSH favorites bar", () => {
       expect(tooltip).toHaveTextContent(`Inspect · App-wide · ${kind}`);
     },
   );
+  it("reorders favorites by drag and drop with a drop indicator", () => {
+    const model = actions();
+    const second = { ...item, id: "second", name: "Second" };
+    const third = { ...item, id: "third", name: "Third" };
+    model.favorites = [item, second, third];
+    model.visibleFavorites = model.favorites;
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    const chips = screen.getAllByTestId("ssh-favorite-item");
+    expect(chips[0]).toHaveAttribute("draggable", "true");
+    const dataTransfer = {
+      setData: vi.fn(),
+      effectAllowed: "",
+      dropEffect: "",
+    };
+    fireEvent.dragStart(chips[2], { dataTransfer });
+    fireEvent.dragOver(chips[0], { dataTransfer, clientX: 0 });
+    expect(chips[0]).toHaveAttribute("data-drop-position", "before");
+    fireEvent.drop(chips[0], { dataTransfer, clientX: 0 });
+    expect(model.reorder).toHaveBeenCalledOnce();
+    expect(
+      vi
+        .mocked(model.reorder)
+        .mock.calls[0][0].map((key) => JSON.parse(key)[3]),
+    ).toEqual(["third", "script", "second"]);
+    expect(chips[0]).not.toHaveAttribute("data-drop-position");
+  });
+  it("reorders with Alt+Arrow and ignores plain arrows and active searches", () => {
+    const model = actions();
+    const second = { ...item, id: "second", name: "Second" };
+    model.favorites = [item, second];
+    model.visibleFavorites = model.favorites;
+    const view = render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    const first = screen.getAllByTestId("ssh-favorite-item")[0];
+    fireEvent.keyDown(first, { key: "ArrowRight" });
+    expect(model.reorder).not.toHaveBeenCalled();
+    fireEvent.keyDown(first, { key: "ArrowRight", altKey: true });
+    expect(
+      vi
+        .mocked(model.reorder)
+        .mock.calls[0][0].map((key) => JSON.parse(key)[3]),
+    ).toEqual(["second", "script"]);
+    vi.mocked(model.reorder).mockClear();
+    model.query = "ins";
+    view.rerender(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(screen.getAllByTestId("ssh-favorite-item")[0], {
+      key: "ArrowRight",
+      altKey: true,
+    });
+    expect(model.reorder).not.toHaveBeenCalled();
+  });
+  it("offers Edit for a script favorite and opens the script editor on that script", async () => {
+    const model = actions();
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    fireEvent.contextMenu(
+      screen.getByRole("group", { name: "script Inspect favorite" }),
+    );
+    const menu = screen.getByRole("menu", { name: "SSH favorite actions" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Edit" }));
+    const manager = await screen.findByText("Script library manager");
+    expect(manager).toHaveAttribute("data-edit", "script");
+  });
+  it("does not offer Edit for macro favorites", () => {
+    const model = actions();
+    model.favorites = [{ ...item, kind: "macro" }];
+    model.visibleFavorites = model.favorites;
+    render(
+      <SshQuickActionsBar
+        actions={model}
+        replaying={false}
+        onStopReplay={vi.fn()}
+      />,
+    );
+    fireEvent.contextMenu(
+      screen.getByRole("group", { name: "macro Inspect favorite" }),
+    );
+    const menu = screen.getByRole("menu", { name: "SSH favorite actions" });
+    expect(within(menu).queryByRole("menuitem", { name: "Edit" })).toBeNull();
+  });
   it.each(["script", "macro"] as const)(
     "assigns only %s choices from the empty-space context menu without running",
     (kind) => {

@@ -124,6 +124,21 @@ export function useTerminalAppLibrary(enabled: boolean) {
     };
   }, [capture, refresh]);
 
+  /** Resolve one entry from the latest stored library at call time (never a captured copy). */
+  const readEntry = useCallback(
+    async (kind: "script" | "macro", id: string) => {
+      const owner = capture();
+      const library = await owner.api.read(
+        { kind: "app" },
+        kind === "script" ? "terminal-script" : "terminal-macro",
+      );
+      owner.assertCurrent();
+      return library.entries.find((entry) => entry.payload.id === id)
+        ?.payload as ManagedScript | TerminalMacro | undefined;
+    },
+    [capture],
+  );
+
   const reviewScript = useCallback(
     (script: ManagedScript) => {
       const owner = capture();
@@ -177,6 +192,7 @@ export function useTerminalAppLibrary(enabled: boolean) {
     scripts: library?.scripts ?? [],
     macros: library?.macros ?? [],
     refresh,
+    readEntry,
     captureMacroSave,
     reviewScript,
     reviewMacro,

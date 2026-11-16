@@ -10275,5 +10275,10 @@
       "network": "Sea lane",
       "proxy": "Proxy"
     }
+  },
+  "scriptFavorites": {
+    "edit": "Refit",
+    "reorderHint": "Drag to reorder, or press Alt+Arrow keys",
+    "scriptActions": "Script actions"
   }
 }

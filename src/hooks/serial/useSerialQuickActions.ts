@@ -10,6 +10,7 @@ import {
   loadSerialFavorites,
   SERIAL_QUICK_CONNECT_BUCKET,
   toggleSerialFavorite,
+  reorderSerialFavorites,
 } from "../../utils/serial/serialFavorites";
 import {
   playSerialSteps,
@@ -151,6 +152,20 @@ export function useSerialQuickActions({
     [bucket],
   );
 
+  const reorderFavorites = useCallback(
+    (orderedKeys: readonly string[]) => {
+      try {
+        setReferences(reorderSerialFavorites(bucket, orderedKeys));
+        setError(null);
+      } catch (failure) {
+        setError(
+          failure instanceof Error ? failure.message : "Order not saved.",
+        );
+      }
+    },
+    [bucket],
+  );
+
   const execute = useCallback(
     async (
       item: SerialQuickActionItem,
@@ -205,10 +220,8 @@ export function useSerialQuickActions({
       if (runningRef.current || pending) return;
       setError(null);
       try {
-        const entry =
-          reference.kind === "script"
-            ? library.scripts.find((script) => script.id === reference.id)
-            : library.macros.find((macro) => macro.id === reference.id);
+        // Always the latest saved entry, so an edit applies immediately.
+        const entry = await library.readEntry(reference.kind, reference.id);
         if (!entry) {
           throw new Error(
             "This library entry was removed or is unavailable. No substitute was used.",
@@ -288,6 +301,7 @@ export function useSerialQuickActions({
     favorites,
     isFavorite,
     toggleFavorite,
+    reorderFavorites,
     run,
     abort,
     running,

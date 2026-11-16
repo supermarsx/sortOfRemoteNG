@@ -10275,5 +10275,10 @@
       "network": "ネットワーク",
       "proxy": "プロキシ"
     }
+  },
+  "scriptFavorites": {
+    "edit": "編集",
+    "reorderHint": "ドラッグまたは Alt+矢印キーで並べ替え",
+    "scriptActions": "スクリプトの操作"
   }
 }

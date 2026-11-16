@@ -30,6 +30,11 @@ vi.mock("../../../hooks/recording/useTerminalAppLibrary", () => ({
     scripts: mocks.scripts,
     macros: mocks.macros,
     refresh: vi.fn(),
+    // Resolves from the latest stored library at call time.
+    readEntry: async (kind: "script" | "macro", id: string) =>
+      (kind === "script" ? mocks.scripts : mocks.macros).find(
+        (entry) => (entry as { id: string }).id === id,
+      ),
     reviewScript: () => mocks.assertReviewed,
     reviewMacro: () => mocks.assertReviewed,
   }),
@@ -120,6 +125,73 @@ describe("SerialScriptBar", () => {
     ]);
   });
 
+  it("runs the latest edited script body, not a copy captured earlier", async () => {
+    const send = vi.fn(async (_text: string) => {});
+    render(<SerialScriptBar session={session} connected send={send} />);
+    fireEvent.click(screen.getByRole("button", { name: "Scripts" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add Show version to favorites" }),
+    );
+    fireEvent.change(
+      screen.getByLabelText("Delay between lines in milliseconds"),
+      { target: { value: "0" } },
+    );
+    // The script is edited in the manager after the bar rendered.
+    mocks.scripts = [{ ...script, script: "#!/bin/sh\nshow clock\n" }];
+    fireEvent.click(screen.getByTestId("serial-favorite"));
+    const review = await screen.findByTestId("serial-script-review");
+    expect(review).toHaveTextContent("show clock");
+    expect(review).not.toHaveTextContent("show version");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0][0]).toBe("show clock\n");
+  });
+
+  it("reorders serial favorites by drag and by Alt+Arrow, persisting immediately", async () => {
+    mocks.scripts = [
+      script,
+      { ...script, id: "sc2", name: "Show clock" },
+      { ...script, id: "sc3", name: "Show users" },
+    ];
+    render(<SerialScriptBar session={session} connected send={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Scripts" }));
+    for (const name of ["Show version", "Show clock", "Show users"])
+      fireEvent.click(
+        screen.getByRole("button", { name: `Add ${name} to favorites` }),
+      );
+    const names = () =>
+      screen.getAllByTestId("serial-favorite").map((el) => el.textContent);
+    expect(names()).toEqual(["Show version", "Show clock", "Show users"]);
+    // Keyboard: Alt+ArrowRight moves the first chip later.
+    fireEvent.keyDown(screen.getAllByTestId("serial-favorite")[0], {
+      key: "ArrowRight",
+      altKey: true,
+    });
+    expect(names()).toEqual(["Show clock", "Show version", "Show users"]);
+    // Drag: last chip dropped before the first.
+    const chips = screen.getAllByTestId("serial-favorite");
+    const dataTransfer = {
+      setData: vi.fn(),
+      effectAllowed: "",
+      dropEffect: "",
+    };
+    fireEvent.dragStart(chips[2], { dataTransfer });
+    fireEvent.dragOver(chips[0], { dataTransfer, clientX: 0 });
+    expect(chips[0]).toHaveAttribute("data-drop-position", "before");
+    fireEvent.drop(chips[0], { dataTransfer, clientX: 0 });
+    expect(names()).toEqual(["Show users", "Show clock", "Show version"]);
+    const stored = JSON.parse(
+      window.localStorage.getItem("sorng.serial.favorites.v1")!,
+    );
+    expect(Object.values(stored)[0]).toEqual([
+      { kind: "script", id: "sc3" },
+      { kind: "script", id: "sc2" },
+      { kind: "script", id: "sc1" },
+    ]);
+  });
+
   it("sends nothing when the review is cancelled or the library changed", async () => {
     const send = vi.fn(async (_text: string) => {});
     render(<SerialScriptBar session={session} connected send={send} />);
@@ -132,8 +204,9 @@ describe("SerialScriptBar", () => {
       new Error("The saved script changed."),
     );
     fireEvent.click(screen.getByRole("button", { name: "Run Show version" }));
+    const sendButton = await screen.findByRole("button", { name: "Send" });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("button", { name: "Send" }));
+      fireEvent.click(sendButton);
     });
     expect(await screen.findByRole("alert")).toHaveTextContent("changed");
     expect(send).not.toHaveBeenCalled();

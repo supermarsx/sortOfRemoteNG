@@ -10275,5 +10275,10 @@
       "network": "网络",
       "proxy": "代理"
     }
+  },
+  "scriptFavorites": {
+    "edit": "编辑",
+    "reorderHint": "拖动或按 Alt+方向键以重新排序",
+    "scriptActions": "脚本操作"
   }
 }

@@ -181,3 +181,81 @@ export function resolveHttpAutomationPermissions(
     confirmBeforeScriptRun: settings.confirmBeforeScriptRun,
   };
 }
+
+/**
+ * Shared favorites ordering helpers (SSH connection favorites and serial
+ * favorites). All of them are pure and identity-preserving when nothing moves.
+ */
+
+/** Move `fromKey` next to `toKey` (before or after). Unknown keys are a no-op. */
+export function moveQuickActionReference<T extends QuickActionReference>(
+  references: readonly T[],
+  fromKey: string,
+  toKey: string,
+  placement: "before" | "after" = "before",
+): readonly T[] {
+  if (fromKey === toKey) return references;
+  const from = references.findIndex(
+    (item) => quickActionReferenceKey(item) === fromKey,
+  );
+  const target = references.findIndex(
+    (item) => quickActionReferenceKey(item) === toKey,
+  );
+  if (from < 0 || target < 0) return references;
+  const next = [...references];
+  const [moved] = next.splice(from, 1);
+  const anchor = next.findIndex(
+    (item) => quickActionReferenceKey(item) === toKey,
+  );
+  next.splice(placement === "after" ? anchor + 1 : anchor, 0, moved);
+  return next.every((item, index) => item === references[index])
+    ? references
+    : next;
+}
+
+/** Shift one reference by `delta` positions (keyboard reordering). */
+export function shiftQuickActionReference<T extends QuickActionReference>(
+  references: readonly T[],
+  key: string,
+  delta: number,
+): readonly T[] {
+  const index = references.findIndex(
+    (item) => quickActionReferenceKey(item) === key,
+  );
+  const destination = Math.max(
+    0,
+    Math.min(references.length - 1, index + delta),
+  );
+  if (index < 0 || destination === index) return references;
+  const next = [...references];
+  const [moved] = next.splice(index, 1);
+  next.splice(destination, 0, moved);
+  return next;
+}
+
+/**
+ * Apply a desired key order to the stored list. Keys that are no longer stored
+ * (deleted/unknown) are pruned, duplicates are ignored, and stored entries the
+ * order does not mention keep their relative order at the end (so a favorite
+ * added concurrently is never lost).
+ */
+export function applyQuickActionOrder<T extends QuickActionReference>(
+  references: readonly T[],
+  orderedKeys: readonly string[],
+): readonly T[] {
+  const byKey = new Map(
+    references.map((item) => [quickActionReferenceKey(item), item]),
+  );
+  const next: T[] = [];
+  for (const key of orderedKeys) {
+    const item = byKey.get(key);
+    if (item) {
+      next.push(item);
+      byKey.delete(key);
+    }
+  }
+  for (const item of byKey.values()) next.push(item);
+  return next.every((item, index) => item === references[index])
+    ? references
+    : next;
+}

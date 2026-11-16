@@ -8,7 +8,10 @@ import WebsiteUserScriptsPanel from "./scriptManager/WebsiteUserScriptsPanel";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Select } from "../ui/forms";
 import type { WebsiteUserScriptsLibraryBinding } from "../../hooks/recording/useWebsiteUserScripts";
-import type { AutomationFamily } from "../../types/recording/automationLibrary";
+import type {
+  AutomationFamily,
+  AutomationScope,
+} from "../../types/recording/automationLibrary";
 const RepositoryCatalogPanel = lazy(
   () => import("./scriptManager/RepositoryCatalogPanel"),
 );
@@ -33,16 +36,40 @@ export {
   languageIcons,
 } from "./scriptManager/shared";
 
+export interface ScriptManagerInitialEdit {
+  id: string;
+  /** Library scope of the script; defaults to the app-wide library. */
+  scope?: AutomationScope;
+}
+
 interface ScriptManagerProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Open this script in the editor once the library has loaded. */
+  initialEdit?: ScriptManagerInitialEdit;
 }
 
 export const ScriptManager: React.FC<ScriptManagerProps> = ({
   isOpen,
   onClose,
+  initialEdit,
 }) => {
   const mgr = useScriptManager(onClose, isOpen);
+  const initialEditDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialEdit) return;
+    const token = JSON.stringify([initialEdit.id, initialEdit.scope ?? null]);
+    if (initialEditDone.current === token) return;
+    const wanted = initialEdit.scope ?? { kind: "app" as const };
+    if (mgr.scope.kind !== wanted.kind) {
+      mgr.changeScope(wanted);
+      return;
+    }
+    const script = mgr.scripts.find((item) => item.id === initialEdit.id);
+    if (!script || !mgr.ready || mgr.busy) return;
+    initialEditDone.current = token;
+    mgr.handleEditScript(script);
+  });
   const [view, setView] = useState<"terminal" | "website" | "browse">(
     "terminal",
   );
