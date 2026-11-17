@@ -33,17 +33,16 @@ export const SafeModeBanner: React.FC = () => {
         ? t("safeMode.bannerNextStart")
         : t("safeMode.banner", { count: status.consecutiveUnclean });
   const marker = status.previousMarker;
-  const button =
-    "px-2 py-0.5 rounded border border-amber-500/50 hover:bg-amber-500/20 disabled:opacity-50";
+  const button = "sor-btn sor-btn-secondary sor-btn-xs";
 
   return (
     <div
       role="alert"
       data-testid="safe-mode-banner"
-      className="flex-shrink-0 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-[var(--color-text)]"
+      className="flex-shrink-0 border-b border-warning bg-warning/15 px-3 py-1.5 text-xs text-[var(--color-text)]"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <ShieldAlert size={14} className="text-amber-500" aria-hidden="true" />
+        <ShieldAlert size={14} className="text-warning" aria-hidden="true" />
         <span className="flex-1 min-w-[16rem]">{message}</span>
         <button
           type="button"

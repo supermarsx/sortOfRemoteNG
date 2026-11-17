@@ -8,6 +8,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
 }));
 
+import SafeModeSection from "../../src/components/SettingsDialog/sections/behavior/SafeModeSection";
 import { SafeModeBanner } from "../../src/components/app/SafeModeBanner";
 import {
   __resetSafeModeForTests,
@@ -128,5 +129,39 @@ describe("SafeModeBanner", () => {
     expect(screen.getByTestId("safe-mode-banner").textContent).toContain(
       "safeMode.bannerForced",
     );
+  });
+});
+
+describe("safe mode theming", () => {
+  it("settings section uses the shared settings primitives", async () => {
+    invokeMock.mockResolvedValue(status());
+    const { container } = render(<SafeModeSection />);
+    await screen.findByTestId("safe-mode-settings");
+    expect(
+      container.querySelector("h4.sor-settings-section-header"),
+    ).not.toBeNull();
+    expect(container.querySelector(".sor-settings-card")).not.toBeNull();
+    expect(
+      container.querySelector("input[type=number].sor-settings-input"),
+    ).not.toBeNull();
+    expect(
+      container.querySelector("input[type=checkbox].sor-settings-checkbox"),
+    ).not.toBeNull();
+    expect(
+      container.querySelector("button.sor-btn.sor-btn-secondary"),
+    ).not.toBeNull();
+    expect(container.innerHTML).not.toMatch(/#[0-9a-f]{3,8}|amber|rgb\(/i);
+  });
+
+  it("banner uses themed warning tokens, not hard-coded colors", () => {
+    __setSafeModeForTests({ status: status() });
+    render(<SafeModeBanner />);
+    const banner = screen.getByTestId("safe-mode-banner");
+    expect(banner.className).toContain("border-warning");
+    expect(banner.className).toContain("bg-warning");
+    expect(banner.innerHTML).not.toMatch(/amber/i);
+    expect(
+      screen.getByTestId("safe-mode-restart-normally").className,
+    ).toContain("sor-btn");
   });
 });
