@@ -82,6 +82,7 @@ import {
 } from "../../utils/icons/resolveConnectionIcon";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
+import { uniqueSessionsById } from "../../utils/session/uniqueSessions";
 import { SESSION_TAB_DND_TYPE } from "./TabLayoutManager";
 import type {
   SessionCloseState,
@@ -313,8 +314,8 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const { state, dispatch } = useConnections();
   const { settings: appSettings } = useSettings();
   useIconLibraryRevision();
-  const sessions = state.sessions.filter(
-    (session) => !session.layout?.isDetached,
+  const sessions = uniqueSessionsById(
+    state.sessions.filter((session) => !session.layout?.isDetached),
   );
   const tabGroups = state.tabGroups;
   const [draggedSessionId, setDraggedSessionId] = React.useState<string | null>(

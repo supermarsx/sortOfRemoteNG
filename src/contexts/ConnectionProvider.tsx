@@ -29,6 +29,7 @@ import { notifyBrowserSessionProjectionChange } from "../utils/services/browserS
 import { StorageData } from "../utils/storage/storage";
 import { activateConnectionNotes } from "../utils/storage/connectionNotesVault";
 import { generateId } from "../utils/core/id";
+import { uniqueSessionsById } from "../utils/session/uniqueSessions";
 import {
   archiveConnections,
   emptyRecycleBin,
@@ -402,6 +403,21 @@ export const connectionReducer = (
         tabGroupId === action.payload.tabGroupId
           ? action.payload
           : { ...action.payload, tabGroupId };
+      // Idempotent upsert: racing restore/adopt/reconnect paths may dispatch
+      // ADD_SESSION for an id that is already present. Merge in place rather
+      // than creating a second entry (duplicate React keys / double render).
+      const existingIndex = state.sessions.findIndex(
+        (item) => item.id === session.id,
+      );
+      if (existingIndex >= 0) {
+        const current = state.sessions[existingIndex];
+        const sessions = state.sessions.slice();
+        sessions[existingIndex] = {
+          ...mergeLocalSessionUpdate(current, session),
+          ownerDatabaseId: current.ownerDatabaseId || session.ownerDatabaseId,
+        };
+        return { ...state, sessions };
+      }
       return { ...state, sessions: [...state.sessions, session] };
     }
     case "UPDATE_SESSION":
@@ -445,7 +461,9 @@ export const connectionReducer = (
       // revision instead of last-write-wins replacement.
       return {
         ...state,
-        sessions: reconcileSessionSnapshot(state.sessions, action.payload),
+        sessions: uniqueSessionsById(
+          reconcileSessionSnapshot(state.sessions, action.payload),
+        ),
       };
     case "REORDER_SESSIONS":
       // Reorder sessions by moving from one index to another

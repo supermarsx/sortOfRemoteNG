@@ -1,3 +1,4 @@
+import { uniqueSessionsById } from "./utils/session/uniqueSessions";
 import { useSecureClipboardConfig } from "./hooks/security/useSecureClipboardConfig";
 import { requestInPlaceSshReconnect } from "./utils/ssh/sshReconnectEvent";
 import React, {
@@ -632,7 +633,10 @@ const AppContent: React.FC = () => {
   const launchArgsHandledRef = useRef(false);
 
   const visibleSessions = useMemo(
-    () => state.sessions.filter((session) => !session.layout?.isDetached),
+    () =>
+      uniqueSessionsById(
+        state.sessions.filter((session) => !session.layout?.isDetached),
+      ),
     [state.sessions],
   );
 

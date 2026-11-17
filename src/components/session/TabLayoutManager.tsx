@@ -16,6 +16,10 @@ import MenuSurface from "../ui/overlays/MenuSurface";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
 import { SessionRenderActivityProvider } from "./SessionRenderActivity";
 import {
+  dedupeTabLayout,
+  uniqueSessionsById,
+} from "../../utils/session/uniqueSessions";
+import {
   isSuspendableSshViewer,
   useSshViewerMountBudget,
 } from "../../hooks/session/useSshViewerMountBudget";
@@ -312,9 +316,9 @@ interface TabLayoutManagerProps {
 }
 
 export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
-  sessions,
+  sessions: rawSessions,
   activeSessionId,
-  layout,
+  layout: rawLayout,
   onLayoutChange,
   onSessionSelect,
   onSessionClose,
@@ -324,6 +328,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   maxMountedSshViewers,
 }) => {
   const { t } = useTranslation();
+  // Defensive: a duplicate id must never produce duplicate React keys.
+  const sessions = React.useMemo(
+    () => uniqueSessionsById(rawSessions),
+    [rawSessions],
+  );
+  const layout = React.useMemo(() => dedupeTabLayout(rawLayout), [rawLayout]);
   const mgr = useTabLayoutManager(
     sessions,
     activeSessionId,
