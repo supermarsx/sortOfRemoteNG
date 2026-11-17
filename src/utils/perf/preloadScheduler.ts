@@ -291,6 +291,63 @@ export function prefetchChunk(
 }
 
 /**
+ * Idle code prefetch only pays off in a production bundle, where `import()`
+ * just fetches and evaluates a prebuilt chunk. Under `next dev` every
+ * `import()` of a panel makes the dev server compile that panel's whole module
+ * graph on demand, so a startup warm-up becomes a compile storm that starves
+ * the first paint and the webview (`tauri dev` start-up measured at ~16 s of
+ * module transform for the nine warmed chunks). Intent-driven preloads (hover,
+ * focus) are unaffected: the user asked for that panel.
+ */
+export function shouldWarmChunksAtIdle(): boolean {
+  return process.env.NODE_ENV !== "development";
+}
+
+export interface ChunkStep {
+  id: string;
+  importer: () => Promise<unknown>;
+  priority?: PreloadPriority;
+}
+
+/**
+ * Prefetch chunks strictly one after another with a pause between them.
+ * Evaluating a large chunk is an uninterruptible main-thread task, so
+ * queueing several at once (the scheduler allows two concurrent) lands them
+ * back to back in one burst. Each step goes through the normal scheduler
+ * (busy/hidden/idle rules apply); the next is queued `gapMs` after the
+ * previous settles. Returns a cancel function.
+ */
+export function prefetchChunksInSequence(
+  steps: readonly ChunkStep[],
+  gapMs = 400,
+): () => void {
+  let index = 0;
+  let cancelled = false;
+  let cancelStep: (() => void) | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const next = () => {
+    timer = undefined;
+    if (cancelled || index >= steps.length) return;
+    const step = steps[index++];
+    cancelStep = schedulePreload({
+      id: `chunk:${step.id}`,
+      priority: step.priority ?? 3,
+      run: () =>
+        step.importer().finally(() => {
+          if (!cancelled) timer = setTimeout(next, gapMs);
+        }),
+    });
+  };
+  next();
+  return () => {
+    cancelled = true;
+    cancelStep?.();
+    if (timer !== undefined) clearTimeout(timer);
+  };
+}
+
+/**
  * Preload because the user showed intent (hover/focus/shortcut). Debounced
  * 80 ms; leaving before it fires cancels it. Spread the handlers on an element.
  */

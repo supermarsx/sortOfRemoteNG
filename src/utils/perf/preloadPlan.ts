@@ -13,7 +13,12 @@
  * Keep the import thunks in sync with the `dynamic()` targets in
  * components/app/{ToolPanel,AppDialogs}.tsx so the later mount finds the chunk.
  */
-import { prefetchChunk, preloadOnIntent } from "./preloadScheduler";
+import {
+  prefetchChunksInSequence,
+  preloadOnIntent,
+  shouldWarmChunksAtIdle,
+  type ChunkStep,
+} from "./preloadScheduler";
 
 export const PANEL_CHUNKS = {
   settings: () => import("../../components/SettingsDialog"),
@@ -70,12 +75,24 @@ export function panelIntent(panel: PanelId) {
   return handlers;
 }
 
-/** Prefetch the most used panels at idle priority; returns a cancel function. */
+/** Steps for the idle warm-up of `panels` (see `prefetchChunksInSequence`). */
+export function panelWarmSteps(
+  panels: readonly PanelId[] = IDLE_WARMUP_PANELS,
+): ChunkStep[] {
+  return panels.map((panel) => ({
+    id: `panel:${panel}`,
+    importer: PANEL_CHUNKS[panel],
+    priority: 3 as const,
+  }));
+}
+
+/**
+ * Prefetch the most used panels at idle priority, one at a time; returns a
+ * cancel function. A no-op under `next dev` (see `shouldWarmChunksAtIdle`).
+ */
 export function warmPanelsWhenIdle(
   panels: readonly PanelId[] = IDLE_WARMUP_PANELS,
 ): () => void {
-  const cancels = panels.map((panel) =>
-    prefetchChunk(`panel:${panel}`, PANEL_CHUNKS[panel], 3),
-  );
-  return () => cancels.forEach((cancel) => cancel());
+  if (!shouldWarmChunksAtIdle()) return () => undefined;
+  return prefetchChunksInSequence(panelWarmSteps(panels));
 }

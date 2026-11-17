@@ -10,6 +10,7 @@ import {
 } from "../../utils/preload/tabPreload";
 import { clearAllPreloadCaches } from "../../utils/preload/memoryCache";
 import { registerCache } from "../../utils/perf/safety";
+import { shouldWarmChunksAtIdle } from "../../utils/perf/preloadScheduler";
 
 /**
  * Registers the Documents and Credential Vault warmers, then warms them once
@@ -36,7 +37,9 @@ export function useTabPreloaders(enabled = true): void {
     });
     // Warm the lazily loaded chunks too: the tab then mounts without a network
     // or parse stall.
+    // (Not under `next dev`: each import compiles the panel graph on demand.)
     const chunks = () => {
+      if (!shouldWarmChunksAtIdle()) return;
       void import("../../components/documents/DocumentsWorkspace").catch(
         () => undefined,
       );
