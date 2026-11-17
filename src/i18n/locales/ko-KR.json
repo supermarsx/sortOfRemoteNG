@@ -10280,5 +10280,27 @@
     "edit": "편집",
     "reorderHint": "드래그하거나 Alt+방향키로 순서를 변경하세요",
     "scriptActions": "스크립트 작업"
+  },
+  "safeMode": {
+    "banner": "안전 모드: 앱이 {{count}}회 연속으로 올바르게 종료되지 않았습니다. 작업 영역 복원과 백그라운드 작업이 비활성화되었습니다.",
+    "bannerForced": "안전 모드: --safe-mode / SORNG_SAFE_MODE로 시작되었습니다. 작업 영역 복원과 백그라운드 작업이 비활성화되었습니다.",
+    "bannerNextStart": "안전 모드: 안전 모드로 시작하도록 요청했습니다. 작업 영역 복원과 백그라운드 작업이 비활성화되었습니다.",
+    "restartNormally": "정상적으로 다시 시작",
+    "restoreWorkspace": "이전 작업 영역 복원",
+    "restoreConfirm": "작업 영역을 복원하면 해당 세션에 다시 연결합니다. 지난 시작이 이 때문에 멈췄다면 앱이 다시 멈출 수 있습니다. 그래도 복원하시겠습니까?",
+    "stay": "안전 모드 유지",
+    "details": "세부 정보",
+    "detailsCounter": "연속 비정상 종료: {{count}}회",
+    "detailsThreshold": "임계값: {{count}} (0 = 사용 안 함)",
+    "detailsLast": "최근 비정상 종료",
+    "detailsMarker": "이전 실행: pid {{pid}}, 시작 {{started}}, 버전 {{version}}",
+    "detailsNone": "기록 없음",
+    "settingsTitle": "안전 모드",
+    "thresholdLabel": "안전 모드 진입까지의 비정상 종료 횟수",
+    "thresholdHelp": "이 횟수만큼 연속으로 비정상 종료되면 안전 모드로 시작합니다. 0이면 감지를 끕니다.",
+    "startNextTime": "다음에 안전 모드로 시작",
+    "startNextTimeHelp": "일회성: 다음 시작에서 작업 영역 복원과 백그라운드 작업을 건너뜁니다.",
+    "simulate": "비정상 종료 시뮬레이션",
+    "simulateDone": "완료되었습니다. 다음 시작은 안전 모드로 진행됩니다."
   }
 }

@@ -17,6 +17,7 @@ import {
   onCachesCleared,
 } from "./safety";
 import { isHidden } from "./visibility";
+import { isSafeModeActive } from "../safeMode/safeModeState";
 
 export type PreloadPriority = 0 | 1 | 2 | 3;
 
@@ -275,6 +276,8 @@ export function getPreloadScheduler(): PreloadScheduler {
 
 /** Convenience: getPreloadScheduler().schedule(task). */
 export function schedulePreload(task: PreloadTask): () => void {
+  // Safe mode: no speculative preloads/prefetches.
+  if (isSafeModeActive()) return () => {};
   return getPreloadScheduler().schedule(task);
 }
 

@@ -6,6 +6,7 @@ import {
   WorkspaceSnapshotWriter,
   type WorkspaceSnapshotLayout,
 } from "../../services/session/workspaceSnapshot";
+import { isWorkspaceRestoreBlocked } from "../../utils/safeMode/safeModeState";
 
 interface Options {
   sessions: readonly ConnectionSession[];
@@ -59,6 +60,8 @@ export function useWorkspaceSnapshot({
   useEffect(() => {
     const writer = writerRef.current;
     if (!writer) return;
+    // Safe mode never overwrites the saved workspace snapshot.
+    if (isWorkspaceRestoreBlocked()) return;
     const snapshot = buildWorkspaceSnapshot({
       sessions,
       activeSessionId,

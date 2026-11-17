@@ -10280,5 +10280,27 @@
     "edit": "Modifica",
     "reorderHint": "Trascina per riordinare o premi Alt+frecce",
     "scriptActions": "Azioni script"
+  },
+  "safeMode": {
+    "banner": "Modalità provvisoria: l'app non è stata chiusa correttamente {{count}} volte di fila. Il ripristino dell'area di lavoro e le attività in background sono disattivati.",
+    "bannerForced": "Modalità provvisoria: avviata con --safe-mode / SORNG_SAFE_MODE. Il ripristino dell'area di lavoro e le attività in background sono disattivati.",
+    "bannerNextStart": "Modalità provvisoria: hai chiesto di avviare in modalità provvisoria. Il ripristino dell'area di lavoro e le attività in background sono disattivati.",
+    "restartNormally": "Riavvia normalmente",
+    "restoreWorkspace": "Ripristina l'area di lavoro precedente",
+    "restoreConfirm": "Il ripristino riconnette le sessioni dell'area di lavoro. Se l'ultimo avvio si è bloccato per questo motivo, l'app potrebbe bloccarsi di nuovo. Ripristinare comunque?",
+    "stay": "Resta in modalità provvisoria",
+    "details": "Dettagli",
+    "detailsCounter": "Chiusure anomale consecutive: {{count}}",
+    "detailsThreshold": "Soglia: {{count}} (0 = disattivato)",
+    "detailsLast": "Ultime chiusure anomale",
+    "detailsMarker": "Esecuzione precedente: pid {{pid}}, avviata {{started}}, versione {{version}}",
+    "detailsNone": "Nessuna registrata",
+    "settingsTitle": "Modalità provvisoria",
+    "thresholdLabel": "Chiusure anomale prima della modalità provvisoria",
+    "thresholdHelp": "L'app si avvia in modalità provvisoria dopo questo numero di chiusure anomale consecutive. 0 disattiva il rilevamento.",
+    "startNextTime": "Avvia in modalità provvisoria la prossima volta",
+    "startNextTimeHelp": "Una tantum: il prossimo avvio salta il ripristino dell'area di lavoro e le attività in background.",
+    "simulate": "Simula chiusure anomale",
+    "simulateDone": "Fatto. Il prossimo avvio sarà in modalità provvisoria."
   }
 }

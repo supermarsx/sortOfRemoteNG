@@ -10280,5 +10280,27 @@
     "edit": "编辑",
     "reorderHint": "拖动或按 Alt+方向键以重新排序",
     "scriptActions": "脚本操作"
+  },
+  "safeMode": {
+    "banner": "安全模式：应用已连续 {{count}} 次未正常关闭。工作区恢复和后台任务已禁用。",
+    "bannerForced": "安全模式：已使用 --safe-mode / SORNG_SAFE_MODE 启动。工作区恢复和后台任务已禁用。",
+    "bannerNextStart": "安全模式：您要求以安全模式启动。工作区恢复和后台任务已禁用。",
+    "restartNormally": "正常重新启动",
+    "restoreWorkspace": "恢复上一个工作区",
+    "restoreConfirm": "恢复工作区会重新连接其会话。如果上次启动因此卡住，应用可能再次卡住。仍要恢复吗？",
+    "stay": "保持安全模式",
+    "details": "详细信息",
+    "detailsCounter": "连续异常退出次数：{{count}}",
+    "detailsThreshold": "阈值：{{count}}（0 = 禁用）",
+    "detailsLast": "最近的异常退出",
+    "detailsMarker": "上次运行：pid {{pid}}，开始于 {{started}}，版本 {{version}}",
+    "detailsNone": "无记录",
+    "settingsTitle": "安全模式",
+    "thresholdLabel": "进入安全模式前的异常退出次数",
+    "thresholdHelp": "连续异常退出达到此次数后，应用将以安全模式启动。0 表示禁用检测。",
+    "startNextTime": "下次以安全模式启动",
+    "startNextTimeHelp": "一次性：下次启动将跳过工作区恢复和后台任务。",
+    "simulate": "模拟异常退出",
+    "simulateDone": "完成。下次启动将进入安全模式。"
   }
 }

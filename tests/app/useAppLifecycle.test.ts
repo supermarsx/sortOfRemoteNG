@@ -6,6 +6,10 @@ import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import i18n, { loadLanguage } from "../../src/i18n";
+import {
+  __resetSafeModeForTests,
+  __setSafeModeForTests,
+} from "../../src/utils/safeMode/safeModeState";
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => ({ label: "main" })),
@@ -694,5 +698,77 @@ describe("useAppLifecycle", () => {
     expect(
       JSON.parse(sessionStorage.getItem("mremote-active-sessions")!),
     ).toEqual(saved);
+  });
+
+  it("safe mode keeps the saved snapshot untouched and restores only after explicit consent", async () => {
+    __setSafeModeForTests({
+      status: {
+        active: true,
+        reason: "unclean-exits",
+        consecutiveUnclean: 5,
+        threshold: 5,
+        lastUncleanMs: [],
+        previousMarker: null,
+        startedAtMs: 0,
+        startNextTime: false,
+        tracking: true,
+        devExempt: false,
+      },
+    });
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      reconnectOnReload: true,
+      autoOpenLastCollection: false,
+    });
+    lifecycleMocks.state.connections = [
+      {
+        id: "connection-safe",
+        name: "Safe",
+        protocol: "ssh",
+        hostname: "safe.example",
+      },
+    ];
+    const saved = [
+      {
+        id: "session-safe",
+        connectionId: "connection-safe",
+        name: "Safe SSH",
+        protocol: "ssh",
+        hostname: "safe.example",
+        status: "connected",
+      },
+    ];
+    sessionStorage.setItem("mremote-active-sessions", JSON.stringify(saved));
+    const restoreSession = vi.fn().mockResolvedValue(undefined);
+
+    const lifecycle = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+      }),
+    );
+    await waitFor(() => {
+      expect(lifecycle.result.current.isInitialized).toBe(true);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+    });
+    expect(restoreSession).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(sessionStorage.getItem("mremote-active-sessions")!),
+    ).toEqual(saved);
+
+    act(() => {
+      __setSafeModeForTests({ restoreAllowed: true });
+    });
+    await waitFor(() => expect(restoreSession).toHaveBeenCalled(), {
+      timeout: 3000,
+    });
+    lifecycle.unmount();
+    __resetSafeModeForTests();
   });
 });

@@ -10280,5 +10280,27 @@
     "edit": "編集",
     "reorderHint": "ドラッグまたは Alt+矢印キーで並べ替え",
     "scriptActions": "スクリプトの操作"
+  },
+  "safeMode": {
+    "banner": "セーフモード: アプリが {{count}} 回連続で正常に終了しませんでした。ワークスペースの復元とバックグラウンドタスクは無効です。",
+    "bannerForced": "セーフモード: --safe-mode / SORNG_SAFE_MODE で起動しました。ワークスペースの復元とバックグラウンドタスクは無効です。",
+    "bannerNextStart": "セーフモード: セーフモードでの起動を指定しました。ワークスペースの復元とバックグラウンドタスクは無効です。",
+    "restartNormally": "通常モードで再起動",
+    "restoreWorkspace": "前回のワークスペースを復元",
+    "restoreConfirm": "ワークスペースを復元すると、そのセッションに再接続します。前回の起動がこれが原因でハングした場合、再びハングする可能性があります。それでも復元しますか?",
+    "stay": "セーフモードのままにする",
+    "details": "詳細",
+    "detailsCounter": "連続した異常終了: {{count}} 回",
+    "detailsThreshold": "しきい値: {{count}} (0 = 無効)",
+    "detailsLast": "最近の異常終了",
+    "detailsMarker": "前回の実行: pid {{pid}}、開始 {{started}}、バージョン {{version}}",
+    "detailsNone": "記録なし",
+    "settingsTitle": "セーフモード",
+    "thresholdLabel": "セーフモードに入る異常終了回数",
+    "thresholdHelp": "この回数だけ連続して異常終了すると、セーフモードで起動します。0 で検出を無効にします。",
+    "startNextTime": "次回セーフモードで起動する",
+    "startNextTimeHelp": "1 回限り: 次回の起動ではワークスペースの復元とバックグラウンドタスクをスキップします。",
+    "simulate": "異常終了をシミュレート",
+    "simulateDone": "完了しました。次回の起動はセーフモードになります。"
   }
 }

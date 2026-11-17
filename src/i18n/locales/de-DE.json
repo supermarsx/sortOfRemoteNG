@@ -10280,5 +10280,27 @@
     "edit": "Bearbeiten",
     "reorderHint": "Zum Umsortieren ziehen oder Alt+Pfeiltasten drücken",
     "scriptActions": "Skriptaktionen"
+  },
+  "safeMode": {
+    "banner": "Abgesicherter Modus: Die App wurde {{count}}-mal hintereinander nicht korrekt beendet. Arbeitsbereich-Wiederherstellung und Hintergrundaufgaben sind deaktiviert.",
+    "bannerForced": "Abgesicherter Modus: gestartet mit --safe-mode / SORNG_SAFE_MODE. Arbeitsbereich-Wiederherstellung und Hintergrundaufgaben sind deaktiviert.",
+    "bannerNextStart": "Abgesicherter Modus: Sie haben den Start im abgesicherten Modus angefordert. Arbeitsbereich-Wiederherstellung und Hintergrundaufgaben sind deaktiviert.",
+    "restartNormally": "Normal neu starten",
+    "restoreWorkspace": "Vorherigen Arbeitsbereich wiederherstellen",
+    "restoreConfirm": "Beim Wiederherstellen werden die Sitzungen des Arbeitsbereichs neu verbunden. Wenn der letzte Start deswegen hing, kann die App erneut hängen. Trotzdem wiederherstellen?",
+    "stay": "Im abgesicherten Modus bleiben",
+    "details": "Einzelheiten",
+    "detailsCounter": "Aufeinanderfolgende unsaubere Beendigungen: {{count}}",
+    "detailsThreshold": "Schwellenwert: {{count}} (0 = deaktiviert)",
+    "detailsLast": "Letzte unsaubere Beendigungen",
+    "detailsMarker": "Vorheriger Lauf: PID {{pid}}, gestartet {{started}}, Version {{version}}",
+    "detailsNone": "Keine erfasst",
+    "settingsTitle": "Abgesicherter Modus",
+    "thresholdLabel": "Unsaubere Beendigungen bis zum abgesicherten Modus",
+    "thresholdHelp": "Die App startet nach dieser Anzahl aufeinanderfolgender unsauberer Beendigungen im abgesicherten Modus. 0 deaktiviert die Erkennung.",
+    "startNextTime": "Beim nächsten Mal im abgesicherten Modus starten",
+    "startNextTimeHelp": "Einmalig: Der nächste Start überspringt die Arbeitsbereich-Wiederherstellung und Hintergrundaufgaben.",
+    "simulate": "Unsaubere Beendigungen simulieren",
+    "simulateDone": "Fertig. Der nächste Start erfolgt im abgesicherten Modus."
   }
 }

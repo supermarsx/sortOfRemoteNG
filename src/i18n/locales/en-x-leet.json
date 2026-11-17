@@ -10280,5 +10280,27 @@
     "edit": "3d17",
     "reorderHint": "Dr46 70 r30rd3r, 0r pr355 417+4rr0w k3y5",
     "scriptActions": "5cr1p7 4c710n5"
+  },
+  "safeMode": {
+    "banner": "54f3 m0d3: 7h3 4pp d1d n07 c1053 c0rr3c71y {{count}} 71m35 1n 4 r0w. W0rk5p4c3 r3570r3 4nd 84ck6r0und 745k5 4r3 d154813d.",
+    "bannerForced": "54f3 m0d3: 574r73d w17h --safe-mode / SORNG_SAFE_MODE. W0rk5p4c3 r3570r3 4nd 84ck6r0und 745k5 4r3 d154813d.",
+    "bannerNextStart": "54f3 m0d3: y0u 45k3d 70 574r7 1n 54f3 m0d3. W0rk5p4c3 r3570r3 4nd 84ck6r0und 745k5 4r3 d154813d.",
+    "restartNormally": "R3574r7 n0rm411y",
+    "restoreWorkspace": "R3570r3 pr3v10u5 w0rk5p4c3",
+    "restoreConfirm": "R3570r1n6 7h3 pr3v10u5 w0rk5p4c3 r3c0nn3c75 175 535510n5. 1f 7h3 1457 574r7 hun6 83c4u53 0f 17, 7h3 4pp m4y h4n6 4641n. R3570r3 4nyw4y?",
+    "stay": "574y 1n 54f3 m0d3",
+    "details": "D374115",
+    "detailsCounter": "C0n53cu71v3 unc134n 3x175: {{count}}",
+    "detailsThreshold": "7hr35h01d: {{count}} (0 = d154813d)",
+    "detailsLast": "1457 unc134n 3x175",
+    "detailsMarker": "Pr3v10u5 run: p1d {{pid}}, 574r73d {{started}}, v3r510n {{version}}",
+    "detailsNone": "N0n3 r3c0rd3d",
+    "settingsTitle": "54f3 m0d3",
+    "thresholdLabel": "Unc134n 3x175 83f0r3 54f3 m0d3",
+    "thresholdHelp": "7h3 4pp 574r75 1n 54f3 m0d3 4f73r 7h15 m4ny c0n53cu71v3 unc134n 3x175. 0 d1548135 d373c710n.",
+    "startNextTime": "574r7 1n 54f3 m0d3 n3x7 71m3",
+    "startNextTimeHelp": "One-shot: 7h3 n3x7 574r7 5k1p5 w0rk5p4c3 r3570r3 4nd 84ck6r0und 745k5.",
+    "simulate": "51mu1473 unc134n 3x175",
+    "simulateDone": "D0n3. 7h3 n3x7 574r7 w111 83 1n 54f3 m0d3."
   }
 }

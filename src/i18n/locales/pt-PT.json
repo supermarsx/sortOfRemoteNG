@@ -10280,5 +10280,27 @@
     "edit": "Editar",
     "reorderHint": "Arraste para reordenar ou prima Alt+setas",
     "scriptActions": "Ações do script"
+  },
+  "safeMode": {
+    "banner": "Modo de segurança: a aplicação não foi encerrada corretamente {{count}} vezes seguidas. A restauração da área de trabalho e as tarefas em segundo plano estão desativadas.",
+    "bannerForced": "Modo de segurança: iniciado com --safe-mode / SORNG_SAFE_MODE. A restauração da área de trabalho e as tarefas em segundo plano estão desativadas.",
+    "bannerNextStart": "Modo de segurança: pediu para iniciar em modo de segurança. A restauração da área de trabalho e as tarefas em segundo plano estão desativadas.",
+    "restartNormally": "Reiniciar normalmente",
+    "restoreWorkspace": "Restaurar a área de trabalho anterior",
+    "restoreConfirm": "Restaurar a área de trabalho volta a ligar as suas sessões. Se o último arranque bloqueou por causa disso, a aplicação pode voltar a bloquear. Restaurar mesmo assim?",
+    "stay": "Manter o modo de segurança",
+    "details": "Detalhes",
+    "detailsCounter": "Encerramentos incorretos consecutivos: {{count}}",
+    "detailsThreshold": "Limite: {{count}} (0 = desativado)",
+    "detailsLast": "Últimos encerramentos incorretos",
+    "detailsMarker": "Execução anterior: pid {{pid}}, iniciada {{started}}, versão {{version}}",
+    "detailsNone": "Nenhum registado",
+    "settingsTitle": "Modo de segurança",
+    "thresholdLabel": "Encerramentos incorretos antes do modo de segurança",
+    "thresholdHelp": "A aplicação inicia em modo de segurança após este número de encerramentos incorretos consecutivos. 0 desativa a deteção.",
+    "startNextTime": "Iniciar em modo de segurança da próxima vez",
+    "startNextTimeHelp": "Uma só vez: o próximo arranque ignora a restauração da área de trabalho e as tarefas em segundo plano.",
+    "simulate": "Simular encerramentos incorretos",
+    "simulateDone": "Concluído. O próximo arranque será em modo de segurança."
   }
 }

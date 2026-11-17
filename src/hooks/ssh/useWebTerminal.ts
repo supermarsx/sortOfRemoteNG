@@ -140,6 +140,7 @@ import {
   withSessionLifecycleAttempt,
   type SessionLifecycleActorAttempt,
 } from "../../utils/session/sessionLifecycle";
+import { isSafeModeActive } from "../../utils/safeMode/safeModeState";
 import {
   getSshReconnectDelayMs,
   resolveSshReconnectPolicy,
@@ -1472,6 +1473,7 @@ export function useWebTerminal(
       const policy = getReconnectPolicy();
       if (
         !policy.enabled ||
+        isSafeModeActive() ||
         !autoReconnectEligibleRef.current ||
         sessionRef.current.reattachOnly ||
         !failure.recoverable ||

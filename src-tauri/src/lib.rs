@@ -70,6 +70,7 @@ mod origin_browser_runtime;
 #[cfg(feature = "native-browser")]
 mod origin_browser_startup_diagnostics;
 mod origin_browser_startup_task;
+mod safe_mode;
 mod splash;
 mod state_registry;
 mod tray;
@@ -249,6 +250,8 @@ pub fn run() {
         })
         .setup(|app| {
             app_profile::verify_runtime(app)?;
+            // Counts consecutive unclean exits; fails open and never blocks startup.
+            safe_mode::begin_for_app(app);
             // Working-data preparation and CEF initialization belong to the
             // first authorized create, after encryption and all native states.
             web_network_guard::install(app);
@@ -313,6 +316,7 @@ pub fn run() {
             }
         }
         if matches!(event, tauri::RunEvent::Exit) {
+            safe_mode::end_session();
             web_network_guard::close();
         }
         #[cfg(not(feature = "ops"))]

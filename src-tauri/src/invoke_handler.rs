@@ -11,6 +11,16 @@ fn is_tray_command(command: &str) -> bool {
     matches!(command, "set_tray_icon_visible")
 }
 
+fn is_safe_mode_command(command: &str) -> bool {
+    matches!(
+        command,
+        "safe_mode_status"
+            | "safe_mode_update_config"
+            | "safe_mode_simulate_unclean_exits"
+            | "safe_mode_restart_normally"
+    )
+}
+
 pub(crate) fn build() -> InvokeHandler {
     // Always-on command crates
     let application_log_handler = erase_handler(tauri::generate_handler![
@@ -49,6 +59,12 @@ pub(crate) fn build() -> InvokeHandler {
         crate::origin_browser_recording::origin_browser_recording,
         crate::origin_browser_commands::origin_browser_appearance,
         crate::origin_browser_commands::origin_browser_diagnose,
+    ]);
+    let safe_mode_handler = erase_handler(tauri::generate_handler![
+        crate::safe_mode::safe_mode_status,
+        crate::safe_mode::safe_mode_update_config,
+        crate::safe_mode::safe_mode_simulate_unclean_exits,
+        crate::safe_mode::safe_mode_restart_normally,
     ]);
     let core_handler = sorng_commands_core::build();
     let sessions_handler = sorng_commands_sessions::build();
@@ -92,6 +108,9 @@ pub(crate) fn build() -> InvokeHandler {
         }
         if is_tray_command(command) {
             return tray_handler(invoke);
+        }
+        if is_safe_mode_command(command) {
+            return safe_mode_handler(invoke);
         }
 
         if sorng_commands_core::is_command(command) {

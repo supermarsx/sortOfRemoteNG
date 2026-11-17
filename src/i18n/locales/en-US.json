@@ -10280,5 +10280,27 @@
     "edit": "Edit",
     "reorderHint": "Drag to reorder, or press Alt+Arrow keys",
     "scriptActions": "Script actions"
+  },
+  "safeMode": {
+    "banner": "Safe mode: the app did not close correctly {{count}} times in a row. Workspace restore and background tasks are disabled.",
+    "bannerForced": "Safe mode: started with --safe-mode / SORNG_SAFE_MODE. Workspace restore and background tasks are disabled.",
+    "bannerNextStart": "Safe mode: you asked to start in safe mode. Workspace restore and background tasks are disabled.",
+    "restartNormally": "Restart normally",
+    "restoreWorkspace": "Restore previous workspace",
+    "restoreConfirm": "Restoring the previous workspace reconnects its sessions. If the last start hung because of it, the app may hang again. Restore anyway?",
+    "stay": "Stay in safe mode",
+    "details": "Details",
+    "detailsCounter": "Consecutive unclean exits: {{count}}",
+    "detailsThreshold": "Threshold: {{count}} (0 = disabled)",
+    "detailsLast": "Last unclean exits",
+    "detailsMarker": "Previous run: pid {{pid}}, started {{started}}, version {{version}}",
+    "detailsNone": "None recorded",
+    "settingsTitle": "Safe mode",
+    "thresholdLabel": "Unclean exits before safe mode",
+    "thresholdHelp": "The app starts in safe mode after this many consecutive unclean exits. 0 disables detection.",
+    "startNextTime": "Start in safe mode next time",
+    "startNextTimeHelp": "One-shot: the next start skips workspace restore and background tasks.",
+    "simulate": "Simulate unclean exits",
+    "simulateDone": "Done. The next start will be in safe mode."
   }
 }

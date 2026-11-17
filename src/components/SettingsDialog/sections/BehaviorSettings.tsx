@@ -15,6 +15,7 @@ import WindowConnection from "./behavior/WindowConnection";
 import ClipboardSection from "./behavior/ClipboardSection";
 import IdleTimeout from "./behavior/IdleTimeout";
 import ReconnectionSection from "./behavior/ReconnectionSection";
+import SafeModeSection from "./behavior/SafeModeSection";
 import NotificationsSection from "./behavior/NotificationsSection";
 import ConfirmationWarnings from "./behavior/ConfirmationWarnings";
 import ConfirmationDialogs from "./behavior/ConfirmationDialogs";
@@ -42,6 +43,7 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
       <ClipboardSection s={settings} u={updateSettings} />
       <IdleTimeout s={settings} u={updateSettings} />
       <ReconnectionSection s={settings} u={updateSettings} />
+      <SafeModeSection />
       <NotificationsSection s={settings} u={updateSettings} />
       <ConfirmationWarnings
         settings={settings}

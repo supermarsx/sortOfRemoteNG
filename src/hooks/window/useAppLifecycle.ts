@@ -37,6 +37,11 @@ import {
 } from "../../services/session/workspaceSnapshot";
 
 import { SAFE_MODE_KEY } from "../../components/app/CriticalErrorScreen";
+import {
+  isWorkspaceRestoreBlocked,
+  loadSafeModeStatus,
+  useSafeMode,
+} from "../../utils/safeMode/safeModeState";
 
 const CLEAN_EXIT_KEY = "mremote-clean-exit";
 const LAST_SESSION_KEY = "mremote-last-session-time";
@@ -104,6 +109,8 @@ export const useAppLifecycle = ({
 }: Options) => {
   const { t, i18n } = useTranslation();
   const { state, loadData } = useConnections();
+  // Re-runs the restore effect when the user explicitly allows a restore.
+  const { restoreAllowed: safeModeRestoreAllowed } = useSafeMode();
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -173,6 +180,9 @@ export const useAppLifecycle = ({
       setInitStatus("Loading settings...");
       console.log("Initializing app...");
       await settingsManager.initialize();
+      if (!mountedRef.current) return;
+      // Backend unclean-exit safe mode (fails open); gates restore/preloads.
+      await loadSafeModeStatus();
       if (!mountedRef.current) return;
       const settings = settingsManager.getSettings();
       setInitProgress(25);
@@ -443,6 +453,7 @@ export const useAppLifecycle = ({
     if (
       settings.reconnectOnReload &&
       !safeModeRef.current &&
+      !isWorkspaceRestoreBlocked() &&
       isInitialized &&
       state.connections.length > 0
     ) {
@@ -735,10 +746,13 @@ export const useAppLifecycle = ({
     handleConnect,
     restoreSession,
     settingsManager,
+    safeModeRestoreAllowed,
   ]);
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
+    // Safe mode keeps the saved snapshot untouched until the user restores it.
+    if (isWorkspaceRestoreBlocked()) return;
     sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
     // Remote connections and integration panels are worth restoring across a
     // reload. Tool tabs (`tool:*`) and Windows management panels
@@ -791,7 +805,7 @@ export const useAppLifecycle = ({
       // with ownership data that cannot be cleaned deterministically.
       console.error("Refusing to persist unsafe active session:", error);
     }
-  }, [state.sessions, settingsManager]);
+  }, [state.sessions, settingsManager, safeModeRestoreAllowed]);
 
   return {
     isInitialized,

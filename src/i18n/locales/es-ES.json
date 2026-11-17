@@ -10280,5 +10280,27 @@
     "edit": "Editar",
     "reorderHint": "Arrastra para reordenar o pulsa Alt+flechas",
     "scriptActions": "Acciones del script"
+  },
+  "safeMode": {
+    "banner": "Modo seguro: la aplicación no se cerró correctamente {{count}} veces seguidas. La restauración del espacio de trabajo y las tareas en segundo plano están desactivadas.",
+    "bannerForced": "Modo seguro: iniciado con --safe-mode / SORNG_SAFE_MODE. La restauración del espacio de trabajo y las tareas en segundo plano están desactivadas.",
+    "bannerNextStart": "Modo seguro: pidió iniciar en modo seguro. La restauración del espacio de trabajo y las tareas en segundo plano están desactivadas.",
+    "restartNormally": "Reiniciar normalmente",
+    "restoreWorkspace": "Restaurar el espacio de trabajo anterior",
+    "restoreConfirm": "Al restaurar el espacio de trabajo se reconectan sus sesiones. Si el último inicio se bloqueó por ello, la aplicación puede volver a bloquearse. ¿Restaurar de todos modos?",
+    "stay": "Permanecer en modo seguro",
+    "details": "Detalles",
+    "detailsCounter": "Cierres incorrectos consecutivos: {{count}}",
+    "detailsThreshold": "Umbral: {{count}} (0 = desactivado)",
+    "detailsLast": "Últimos cierres incorrectos",
+    "detailsMarker": "Ejecución anterior: pid {{pid}}, iniciada {{started}}, versión {{version}}",
+    "detailsNone": "Ninguno registrado",
+    "settingsTitle": "Modo seguro",
+    "thresholdLabel": "Cierres incorrectos antes del modo seguro",
+    "thresholdHelp": "La aplicación se inicia en modo seguro tras este número de cierres incorrectos consecutivos. 0 desactiva la detección.",
+    "startNextTime": "Iniciar en modo seguro la próxima vez",
+    "startNextTimeHelp": "Una sola vez: el próximo inicio omite la restauración del espacio de trabajo y las tareas en segundo plano.",
+    "simulate": "Simular cierres incorrectos",
+    "simulateDone": "Hecho. El próximo inicio será en modo seguro."
   }
 }

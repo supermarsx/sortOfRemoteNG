@@ -10280,5 +10280,27 @@
     "edit": "Modifier",
     "reorderHint": "Glissez pour réorganiser ou utilisez Alt+flèches",
     "scriptActions": "Actions du script"
+  },
+  "safeMode": {
+    "banner": "Mode sans échec : l'application ne s'est pas fermée correctement {{count}} fois de suite. La restauration de l'espace de travail et les tâches d'arrière-plan sont désactivées.",
+    "bannerForced": "Mode sans échec : démarré avec --safe-mode / SORNG_SAFE_MODE. La restauration de l'espace de travail et les tâches d'arrière-plan sont désactivées.",
+    "bannerNextStart": "Mode sans échec : vous avez demandé un démarrage en mode sans échec. La restauration de l'espace de travail et les tâches d'arrière-plan sont désactivées.",
+    "restartNormally": "Redémarrer normalement",
+    "restoreWorkspace": "Restaurer l'espace de travail précédent",
+    "restoreConfirm": "La restauration reconnecte les sessions de l'espace de travail. Si le dernier démarrage s'est bloqué à cause de cela, l'application peut se bloquer à nouveau. Restaurer quand même ?",
+    "stay": "Rester en mode sans échec",
+    "details": "Détails",
+    "detailsCounter": "Fermetures incorrectes consécutives : {{count}}",
+    "detailsThreshold": "Seuil : {{count}} (0 = désactivé)",
+    "detailsLast": "Dernières fermetures incorrectes",
+    "detailsMarker": "Exécution précédente : pid {{pid}}, démarrée {{started}}, version {{version}}",
+    "detailsNone": "Aucune enregistrée",
+    "settingsTitle": "Mode sans échec",
+    "thresholdLabel": "Fermetures incorrectes avant le mode sans échec",
+    "thresholdHelp": "L'application démarre en mode sans échec après ce nombre de fermetures incorrectes consécutives. 0 désactive la détection.",
+    "startNextTime": "Démarrer en mode sans échec la prochaine fois",
+    "startNextTimeHelp": "Une seule fois : le prochain démarrage ignore la restauration de l'espace de travail et les tâches d'arrière-plan.",
+    "simulate": "Simuler des fermetures incorrectes",
+    "simulateDone": "Terminé. Le prochain démarrage se fera en mode sans échec."
   }
 }

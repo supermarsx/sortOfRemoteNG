@@ -10,6 +10,7 @@ import {
   onDatabaseAccessChange,
 } from "../../utils/connection/databaseManager";
 import { normalizeWebBrowserSettings } from "../../utils/settings/webBrowserSettings";
+import { isSafeModeActive } from "../../utils/safeMode/safeModeState";
 
 interface Options {
   appReady: boolean;
@@ -41,6 +42,7 @@ export function useOriginBrowserPrewarm({
   try {
     const config = normalizeWebBrowserSettings(settings.webBrowser);
     enabled = config.engine !== "legacy" && config.idlePrewarmEnabled !== false;
+    if (isSafeModeActive()) enabled = false;
   } catch {
     // Malformed settings cannot opt into speculative native work.
   }
