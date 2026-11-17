@@ -17,7 +17,7 @@ import time
 NATIVE_ENGINE_ADMITTED = True  # Reviewed fixed execution ATTEMPT; no native qualification claim.
 EXPENSIVE_ENGINE_ADMITTED = True  # Original6h/3h slice and real checkpoint alternative required.
 ROLES = ('probe-clang', 'probe-link', 'cef-engine', 'package', 'checkpoint-seal')
-CAPS = {'probe-clang': 900, 'probe-link': 900, 'cef-engine': 10800, 'package': 2400, 'checkpoint-seal': 3600}
+CAPS = {'probe-clang': 900, 'probe-link': 900, 'cef-engine': 10800, 'package': 2400, 'checkpoint-seal': 6000}
 METADATA_MAXIMA = (65536, 65536, 1048576, 1048576, 4194304, 1048576, 8388608, 8388608, 131072)
 SOURCES = {'20261103.298.1': 'e94e940297f9e9121def11a29aa1d1f4eff837cfcaa6da4a66fd0341f71d8e90',
            '20261021.278.1': 'fae550f13a0ae396ce9bcc3eac6453fc6f8fe1393363be621ec18226541664aa'}
@@ -344,6 +344,24 @@ def inspect_native_slice(result, seconds):
     return result
 
 
+def _flush_seal_progress(root, result):
+    """Deadline/failed seal: the Job already killed the Python seal, so persist and print its last heartbeat.
+
+    Best effort DATA only (never gates anything); beside the other full-sdk-engine-*.json records.
+    """
+    try:
+        beat = Path(root) / 'full-sdk-engine-checkpoint-seal-progress.json'
+        last = beat.read_bytes()[:65536].decode('utf-8', 'replace') if beat.is_file() and not beat.is_symlink() else None
+        report = dict(kind='windows-arm-full-sdk-checkpoint-seal-deadline-flush', outcome=result.get('outcome'),
+                      elapsedMs=result.get('elapsedMs'), finalRootExit=result.get('finalRootExit'), lastHeartbeat=last)
+        raw = canonical(report)
+        with (Path(root) / 'full-sdk-engine-checkpoint-seal-progress-final.json').open('xb') as stream:
+            stream.write(raw + bytes((10,)))
+        print('seal-progress-final ' + raw.decode('ascii', 'replace'), file=sys.stderr, flush=True)
+    except Exception:
+        pass
+
+
 def _post_slice_sources(state):
     _canonical_module()
     need(_ACTIVE.get(str(state['root'])) is state and _BIRTHS.get(state['birth']) is state and
@@ -410,6 +428,8 @@ def _run(state):
         need(result.get('cleanupVerified') is True and result.get('activeAtEnd') == 0 and result.get('rootExit') == 0 and
              result.get('rootReaped') is True and result.get('logReadersStopped') is True, 'JOB_FAILED')
         return result
+    if role == 'checkpoint-seal':
+        _flush_seal_progress(root, result)
     need(role == 'cef-engine' and result.get('outcome') == 'deadline', 'JOB_FAILED')
     inspect_native_slice(result, seconds)
     state['nativeSliceResult'] = result

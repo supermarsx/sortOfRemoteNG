@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import threading
 import time
 import unicodedata
 
@@ -75,6 +76,127 @@ def _identity(value):
                 identity=json.loads(json.dumps(value)), canonicalRoot=name, namespaces=list(NAMESPACES),
                 exclusions=['source-checkout/**/.git', 'source-checkout/src/out', BIDI_BIN],
                 bounds=dict(entries=MAX_ENTRIES, fileBytes=MAX_FILE, rawBytes=MAX_RAW, sidecarBytes=MAX_SIDECAR))
+
+
+RESOLVE_INTERVAL = 5.0
+HASH_CHUNK = 4 * 1024**2
+PROGRESS_FILE = 'full-sdk-engine-checkpoint-seal-progress.json'  # matches the always() records glob full-sdk-engine-*.json
+PROGRESS_KIND = 'windows-arm-full-sdk-checkpoint-seal-progress'
+PROGRESS_INTERVAL = 30.0
+
+
+class Progress:
+    """Best-effort seal heartbeat DATA; it never gates, reorders or alters any integrity check.
+
+    Every emission (stage boundary, rate-limited tick, daemon-thread beat, final) goes to stderr and
+    atomically replaces one small JSON record, so a deadline kill leaves the last beat behind. Disabled
+    instances are inert: no clock reads, no IO.
+    """
+
+    def __init__(self):
+        self.enabled = False
+        self.path = None
+        self.interval = PROGRESS_INTERVAL
+        self._lock = threading.Lock()
+        self._stop = None
+        self._thread = None
+        self._reset()
+
+    def _reset(self):
+        self.started, self.last, self.seq = time.monotonic(), 0.0, 0
+        self.stages, self.current, self.outcome = [], None, None
+        self.entries = self.files = self.bytes = 0
+
+    def enable(self, root, interval=PROGRESS_INTERVAL, thread=True):
+        self.disable()
+        self._reset()
+        self.path, self.interval, self.enabled = Path(root) / PROGRESS_FILE, float(interval), True
+        self.last = time.monotonic()
+        if thread:
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._beat, args=(self._stop,), name='seal-progress', daemon=True)
+            self._thread.start()
+        return self
+
+    def disable(self):
+        if self._stop is not None:
+            self._stop.set()
+        self._stop = self._thread = None
+        self.enabled = False
+
+    def _beat(self, stop):
+        # Covers long operations that never tick (archive pack/restore, one huge file).
+        while not stop.wait(min(1.0, max(self.interval / 4, 0.01))):
+            if time.monotonic() - self.last >= self.interval:
+                self.emit('heartbeat')
+
+    def _close_stage(self, now):
+        current = self.current
+        if current is not None and 'seconds' not in current:
+            current.update(seconds=round(now - current['start'], 3), entries=self.entries, files=self.files, bytes=self.bytes)
+
+    def stage(self, name, total_entries=None):
+        if not self.enabled:
+            return
+        now = time.monotonic()
+        self._close_stage(now)
+        self.entries = self.files = self.bytes = 0
+        self.current = dict(name=name, start=now, totalEntries=total_entries)
+        self.stages.append(self.current)
+        self.emit('stage')
+
+    def tick(self, entries, files, nbytes):
+        if not self.enabled:
+            return
+        self.entries, self.files, self.bytes = entries, files, nbytes
+        if time.monotonic() - self.last >= self.interval:
+            self.emit('progress')
+
+    def final(self, outcome):
+        if not self.enabled:
+            return
+        self._close_stage(time.monotonic())
+        self.outcome = outcome
+        self.emit('final')
+        self.disable()
+
+    def snapshot(self, reason):
+        now, current = time.monotonic(), self.current
+        report = dict(schemaVersion=1, kind=PROGRESS_KIND, seq=self.seq, reason=reason, outcome=self.outcome,
+                      utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), elapsedSeconds=round(now - self.started, 1),
+                      stage=None, entries=self.entries, files=self.files, bytes=self.bytes,
+                      stages=[dict((k, v) for k, v in row.items() if k != 'start') for row in self.stages if 'seconds' in row])
+        if current is not None and 'seconds' not in current:
+            seconds = now - current['start']
+            report.update(stage=current['name'], stageSeconds=round(seconds, 1), totalEntries=current['totalEntries'],
+                          entriesPerSecond=round(self.entries / seconds, 1) if seconds > 0 else 0,
+                          megabytesPerSecond=round(self.bytes / 1048576 / seconds, 2) if seconds > 0 else 0)
+        return report
+
+    def emit(self, reason):
+        if not self.enabled:
+            return None
+        try:
+            with self._lock:
+                self.last = time.monotonic()
+                self.seq += 1
+                report = self.snapshot(reason)
+                raw = json.dumps(report, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+                print('seal-progress ' + raw, file=sys.stderr, flush=True)
+                temporary = self.path.with_name(self.path.name + '.tmp')
+                with temporary.open('wb') as stream:
+                    stream.write(raw.encode('ascii') + bytes((10,)))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.path)
+                return report
+        except BaseException as error:
+            if not isinstance(error, Exception):
+                raise
+            return None  # Telemetry only: never into the integrity path.
+
+
+PROGRESS = Progress()
 
 
 # npm .bin shims (16 symlinks) from the sha256-pinned chromium-bidi gclient GCS tarball; the build names
@@ -267,6 +389,7 @@ class _Guard:
         self.root, self.clock, self.fence = Path(root), clock, fence
         self.failed, self.primary = False, None
         self.directories = {}
+        self.resolved = None
         self.wall, self.mono = time.time(), time.monotonic()
         need(self.root.is_absolute() and self.root.parent == REPO / '.artifacts' and
              self.root.name == header['canonicalRoot'], 'ROOT')
@@ -285,7 +408,13 @@ class _Guard:
             self.fence()
             for path, identity in self.parents:
                 need(_directory(path.lstat()) == identity, 'ROOT_CHANGED')
-            need(self.root.resolve() == self.root, 'ROOT_ALIAS')
+            # Path.resolve() (GetFinalPathNameByHandle) was ~60% of every check. The ancestor loop above already
+            # proves each ancestor, root included, is the same non-reparse directory (dev/ino/birth) captured at
+            # construction, so the resolved path cannot change; keep the alias proof on the first check and
+            # re-run it at most every RESOLVE_INTERVAL seconds as belt and braces.
+            if self.resolved is None or mono - self.resolved >= RESOLVE_INTERVAL:
+                need(self.root.resolve() == self.root, 'ROOT_ALIAS')
+                self.resolved = mono
             # The genuine owner fence may itself perform IO. Recheck the same
             # original lease after it returns, immediately before our next IO.
             left = self.clock.remaining()
@@ -424,10 +553,13 @@ def _hash(path, guard, expected=None, timestamp=False):
     with _file(path, guard, timestamp=timestamp) as stream:
         fd_before = _signature(os.fstat(stream.fileno()))
         need(_shared(fd_before) == _shared(before), 'IDENTITY')
-        digest, size = hashlib.sha256(), 0
+        digest, size, first = hashlib.sha256(), 0, True
         while True:
-            guard.check()
-            chunk = stream.read(1024**2)
+            # _file just ran guard.check() with only the fstat above in between; later reads re-check each time.
+            if not first:
+                guard.check()
+            first = False
+            chunk = stream.read(HASH_CHUNK)
             if not chunk:
                 break
             size += len(chunk)
@@ -436,7 +568,7 @@ def _hash(path, guard, expected=None, timestamp=False):
         need(size == before[3] and _signature(os.fstat(stream.fileno())) == fd_before and
              _signature(path.lstat()) == before, 'CHANGED')
         yield stream, before, digest.hexdigest()
-        guard.check()
+        # _file runs guard.check() again right after closing the stream; nothing happens in between.
 
 
 def _set_mtime(stream, nanoseconds):
@@ -465,6 +597,7 @@ def record_inputs(root, identity, clock, fence):
     guard = _Guard(root, header, clock, fence)
     # Metadata-only pre-pass: report every link/reparse violation at once, minutes
     # into the seal instead of one at a time after tens of minutes of hashing.
+    PROGRESS.stage('link-audit')
     report = audit_links(guard.root, check=guard.check)
     if report['violationCount']:
         for line in audit_summary(report):
@@ -479,6 +612,7 @@ def record_inputs(root, identity, clock, fence):
         need(stream.write(raw) == len(raw), 'WRITE')
         written += len(raw)
         digest.update(raw)
+    PROGRESS.stage('record-walk-hash', total_entries=report['entries'])
     with _file(guard.root / SIDECAR, guard, create=True) as output:
         emit(output, header)
         for row, signature in _walk(guard):
@@ -490,15 +624,18 @@ def record_inputs(root, identity, clock, fence):
                 raw_bytes += row['bytes']
                 need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
             emit(output, row)
+            PROGRESS.tick(count, files, raw_bytes)
         emit(output, dict(kind='end', entries=count, files=files, rawBytes=raw_bytes))
     pin = dict(bytes=written, sha256=digest.hexdigest())
     # Re-open through the same strict reader and verify a complete post-inventory.
-    _verify(guard, header, pin, require_mtime=True)
+    _verify(guard, header, pin, require_mtime=True, collect=False, label='verify-after-record', total_entries=count)
     return dict(dataOnly=True, sidecar=pin, entries=count, files=files, rawBytes=raw_bytes)
 
 
-def _verify(guard, header, pin, require_mtime=False):
+def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None):
+    # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.
     _pin(pin)
+    PROGRESS.stage(label, total_entries=total_entries)
     sidecar = guard.root / SIDECAR
     signatures, count, files, raw_bytes, total = [], 0, 0, 0, 0
     digest = hashlib.sha256()
@@ -531,9 +668,11 @@ def _verify(guard, header, pin, require_mtime=False):
                 files += 1
                 raw_bytes += row['bytes']
                 need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
-                signatures.append((fresh['path'], signature, row['mtimeNs'], sha))
+                if collect:
+                    signatures.append((fresh['path'], signature, row['mtimeNs'], sha))
             else:
                 need(row == fresh, 'ROW')
+            PROGRESS.tick(count, files, raw_bytes)
         need(_line(read()) == _line(dict(kind='end', entries=count, files=files, rawBytes=raw_bytes)), 'END')
         need(stream.read(1) == b'' and total == pin['bytes'] and digest.hexdigest() == pin['sha256'] and
              _signature(os.fstat(stream.fileno())) == before and _signature(sidecar.lstat()) == path_before, 'SIDECAR_CHANGED')

@@ -5216,7 +5216,7 @@ async function verifyEnginePhase(token, phase, packetPin, packet) {
       closed.jobSeconds > 0 &&
       closed.jobSeconds <=
         (role === "checkpoint-seal"
-          ? 3600
+          ? 6000
           : ENGINE_CAPS_MS[ENGINE_ROLES.indexOf(role)] / 1000) &&
       Number.isSafeInteger(job.elapsedMs) &&
       job.elapsedMs >= 0 &&
@@ -5376,7 +5376,7 @@ async function runEnginePhase(token, role) {
       monoEnd: Math.min(lease.monoEnd - 150000, nowMono + 900000),
     });
   const reserve = role === "cef-engine" ? 3600000 : 150000,
-    cap = checkpoint ? 3600000 : ENGINE_CAPS_MS[index];
+    cap = checkpoint ? 6000000 : ENGINE_CAPS_MS[index];
   const nativeWallEnd =
       index <= 1
         ? state.probeEnds.wallEnd

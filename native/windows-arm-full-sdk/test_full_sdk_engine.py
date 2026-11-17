@@ -368,6 +368,31 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn('full_sdk_engine', ast.unparse(call))
 
 
+class SealDeadlineFlushTests(unittest.TestCase):
+    def test_flush_persists_last_heartbeat_and_survives_missing_or_hostile_files(self):
+        import io
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            beat = {'kind': 'windows-arm-full-sdk-checkpoint-seal-progress', 'stage': 'verify-after-record', 'entries': 7}
+            (root / 'full-sdk-engine-checkpoint-seal-progress.json').write_text(json.dumps(beat))
+            err = io.StringIO()
+            with redirect_stderr(err):
+                engine._flush_seal_progress(root, {'outcome': 'deadline', 'elapsedMs': 5, 'finalRootExit': 124})
+            report = json.loads((root / 'full-sdk-engine-checkpoint-seal-progress-final.json').read_text())
+            self.assertEqual(report['outcome'], 'deadline')
+            self.assertEqual(json.loads(report['lastHeartbeat']), beat)
+            self.assertIn('seal-progress-final ', err.getvalue())
+            engine._flush_seal_progress(root, {'outcome': 'deadline'})  # already exists: best effort, no raise
+        with tempfile.TemporaryDirectory() as temp:
+            engine._flush_seal_progress(Path(temp), {'outcome': 'deadline'})  # no heartbeat file
+            report = json.loads((Path(temp) / 'full-sdk-engine-checkpoint-seal-progress-final.json').read_text())
+            self.assertIsNone(report['lastHeartbeat'])
+
+    def test_seal_cap_exceeds_the_failed_run_and_stays_bounded(self):
+        self.assertEqual(engine.CAPS['checkpoint-seal'], 6000)
+
+
 class AssemblyInverse(unittest.TestCase):
     def test_exact_adapter_branch_inverse_and_tamper_denial(self):
         raw = Path(engine.__file__).read_bytes()

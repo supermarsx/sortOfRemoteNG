@@ -453,7 +453,7 @@ def _seconds(guard):
     left = guard.clock.remaining()
     need(type(left) in (int, float) and math.isfinite(left), 'LEASE')
     source, _ = read(guard, 'context.json')
-    seconds = math.floor(min(600, left - 150,
+    seconds = math.floor(min(1500, left - 150,
                             source['wallWholeEnd'] - time.time() - 150,
                             source['monotonicWholeEnd'] - time.monotonic() - 150))
     need(seconds > 0, 'ORIGINAL_RESERVE')
@@ -470,26 +470,31 @@ def _copy(guard, source, destination, expected, maximum):
 
 def seal_checkpoint(root, identity, clock, fence):
     guard, identity, basic = guard_for(root, identity, clock, fence)
+    inputs.PROGRESS.stage('engine-chain')
     with stage('engine-chain'):
         source, chain = validate_chain(guard, identity)
         _bindings(guard, identity)
     with stage('sidecar-record'):
         sidecar = inputs.record_inputs(root, basic, clock, fence)
     helper = _helper(guard)
+    inputs.PROGRESS.stage('pack')
     with archive_stage(helper, 'pack', relative=OUT):
         archive = helper.pack(guard.root / OUT, guard.root / OUTPUT, seconds=_seconds(guard))
         guard.check()
         need(archive.get('complete') is True and archive.get('linksIncluded') is False, 'PACK_COMPLETE')
+    inputs.PROGRESS.stage('independent-restore')
     with archive_stage(helper, 'independent-restore', entries=archive['entries'], rawBytes=archive['rawBytes']):
         restored = helper.restore(guard.root / OUTPUT, guard.root / 'full-sdk-checkpoint-roundtrip', archive,
                                   seconds=_seconds(guard))
         guard.check()
         need(restored.get('complete') is True and restored.get('entries') == archive['entries'] and
              restored.get('linksExtracted') is False, 'RESTORE_COMPLETE')
+    inputs.PROGRESS.stage('record-seal')
     with stage('record-seal'):
         # Exact final original creation chain and complete input namespace again.
         need(validate_chain(guard, identity)[1] == chain, 'CHAIN_CHANGED')
-        inputs._verify(guard, inputs._identity(basic), sidecar['sidecar'], require_mtime=True)
+        inputs._verify(guard, inputs._identity(basic), sidecar['sidecar'], require_mtime=True, collect=False,
+                       label='verify-record-seal', total_entries=sidecar['entries'])
         _bindings(guard, identity)
         _copy(guard, inputs.SIDECAR, OUTPUT + '/inputs.jsonl', sidecar['sidecar'], inputs.MAX_SIDECAR)
         _copy(guard, GRAPH_FILE, OUTPUT + '/graph.json', identity['graphPin'], 16 * 1024**2)
@@ -1438,7 +1443,13 @@ def main(argv=None):
             identity = dict(image=source['image'], sourceId=source['sourceId'], producerSha256=producer_digest(source['sources']),
                             sourceDateEpoch=dict(present=False, value=None), canonicalRoot=root.name,
                             toolProofPin=dict(bytes=len(tools), sha256=sha(tools)), graphPin=dict(bytes=len(graph), sha256=sha(graph)))
-            result = seal_checkpoint(root, identity, Original(), lambda: None)
+            inputs.PROGRESS.enable(root)
+            try:
+                result = seal_checkpoint(root, identity, Original(), lambda: None)
+            except BaseException as error:
+                inputs.PROGRESS.final('failed:' + type(error).__name__ + ':' + str(error)[:120])
+                raise
+            inputs.PROGRESS.final('sealed')
             report = dict(schemaVersion=1, kind='windows-arm-full-sdk-checkpoint-seal-result', sourceContextSha256=argv[2],
                           dataOnly=True, sealed=True, checkpoint=result['checkpoint'], outcome=result['record']['rawChain']['outcome'],
                           bundle=OUTPUT, sdkBuilt=False, nativeAcceptance=False, executionAdmitted=False)

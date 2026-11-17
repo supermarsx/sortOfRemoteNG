@@ -398,5 +398,87 @@ class CheckpointInputTests(unittest.TestCase):
         self.assertEqual(subject.audit_links(self.root)['violations'][0]['checks'], ['not-directory'])
 
 
+class SealProgressTests(CheckpointInputTests):
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(subject.PROGRESS.disable)
+
+    def beat(self):
+        return json.loads((self.root / subject.PROGRESS_FILE).read_bytes())
+
+    def test_disabled_progress_is_inert(self):
+        self.assertFalse(subject.PROGRESS.enabled)
+        with patch.object(subject.time, 'monotonic', side_effect=AssertionError('clock read')):
+            subject.PROGRESS.tick(1, 1, 1)
+            subject.PROGRESS.stage('x')
+        self.assertFalse((self.root / subject.PROGRESS_FILE).exists())
+
+    def test_record_inputs_heartbeats_stages_timings_and_file_record(self):
+        import io
+        from contextlib import redirect_stderr
+        subject.PROGRESS.enable(self.root, interval=0, thread=False)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.record()
+            subject.PROGRESS.final('sealed')
+        beat = self.beat()
+        self.assertEqual(beat['kind'], subject.PROGRESS_KIND)
+        self.assertEqual(beat['outcome'], 'sealed')
+        names = [row['name'] for row in beat['stages']]
+        self.assertEqual(names, ['link-audit', 'record-walk-hash', 'verify-after-record'])
+        walk = beat['stages'][1]
+        self.assertEqual((walk['files'], walk['bytes']), (3, 24))
+        self.assertGreaterEqual(walk['entries'], 8)
+        self.assertTrue(all(type(row['seconds']) is float for row in beat['stages']))
+        lines = [line for line in err.getvalue().splitlines() if line.startswith('seal-progress ')]
+        self.assertGreaterEqual(len(lines), 6)
+        self.assertTrue(all(json.loads(line[len('seal-progress '):])['kind'] == subject.PROGRESS_KIND for line in lines))
+        self.assertFalse((self.root / (subject.PROGRESS_FILE + '.tmp')).exists())
+
+    def test_tick_is_rate_limited_and_final_flushes_last_state(self):
+        subject.PROGRESS.enable(self.root, interval=3600, thread=False)
+        subject.PROGRESS.stage('record-walk-hash', total_entries=10)
+        seq = self.beat()['seq']
+        for index in range(100):
+            subject.PROGRESS.tick(index, index, index * 2)
+        self.assertEqual(self.beat()['seq'], seq)  # inside the interval: no emission
+        subject.PROGRESS.final('failed:deadline')
+        final = self.beat()
+        self.assertEqual((final['reason'], final['outcome']), ('final', 'failed:deadline'))
+        self.assertEqual(final['stages'][0]['entries'], 99)
+
+    def test_daemon_thread_beats_while_the_main_thread_is_stuck(self):
+        import time
+        subject.PROGRESS.enable(self.root, interval=0.05)
+        subject.PROGRESS.stage('pack')
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and self.beat()['seq'] < 3:
+            time.sleep(0.05)
+        beat = self.beat()
+        self.assertGreaterEqual(beat['seq'], 3)
+        self.assertEqual((beat['stage'], beat['reason']), ('pack', 'heartbeat'))
+
+    def test_verify_without_collect_returns_no_signatures_and_apply_still_does(self):
+        pin = self.record()
+        header = subject._identity(dict(image=self.identity['image'], sourceId=self.identity['sourceId'],
+                                        producerSha256='a' * 64, sourceDateEpoch=self.identity['sourceDateEpoch']))
+        guard = subject._Guard(self.root, header, self.clock, self.fence)
+        self.assertEqual(subject._verify(guard, header, pin, collect=False), [])
+        self.assertEqual(len(subject._verify(guard, header, pin)), 3)
+
+    def test_root_swap_is_still_caught_after_resolve_throttle(self):
+        header = subject._identity(dict(image=self.identity['image'], sourceId=self.identity['sourceId'],
+                                        producerSha256='a' * 64, sourceDateEpoch=self.identity['sourceDateEpoch']))
+        guard = subject._Guard(self.root, header, self.clock, self.fence)
+        guard.check()
+        moved = self.root.with_name('moved-away')
+        self.root.rename(moved)
+        self.root.mkdir()
+        with self.assertRaises(ValueError):
+            guard.check()
+        with self.assertRaises(ValueError):
+            guard.check()  # sticky failure
+
+
 if __name__ == '__main__':
     unittest.main()
