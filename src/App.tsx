@@ -57,7 +57,6 @@ import {
 import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useSessionHostHeartbeat } from "./hooks/session/useSessionHostHeartbeat";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
-import { SafeModeBanner } from "./components/app/SafeModeBanner";
 import { useAppFormPrivacy } from "./hooks/window/useAppFormPrivacy";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
@@ -1888,7 +1887,6 @@ const AppContent: React.FC = () => {
             onLoadComplete={() => setShowSplash(false)}
           />
         )}
-        <SafeModeBanner />
         {!isSessionFullscreen && (
           <AppToolbar
             appSettings={appSettings}

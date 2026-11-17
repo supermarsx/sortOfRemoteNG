@@ -1,4 +1,6 @@
 import React from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
@@ -96,8 +98,37 @@ describe("SafeModeBanner", () => {
     );
     fireEvent.click(screen.getByTestId("safe-mode-stay"));
     expect(screen.queryByTestId("safe-mode-banner")).toBeNull();
-    // Dismissing the banner does not leave safe mode.
+    // Dismissing the banner does not leave safe mode: a chip stays behind.
     expect(isSafeModeActive()).toBe(true);
+    const chip = screen.getByTestId("safe-mode-chip");
+    // Details were open when dismissed; the chip toggles them.
+    fireEvent.click(chip);
+    expect(screen.queryByTestId("safe-mode-details-panel")).toBeNull();
+    fireEvent.click(chip);
+    expect(screen.getByTestId("safe-mode-details-panel")).toBeTruthy();
+  });
+
+  it("is a single in-flow row with an upward popover, not a top banner", () => {
+    __setSafeModeForTests({ status: status() });
+    render(<SafeModeBanner />);
+    const bar = screen.getByTestId("safe-mode-banner");
+    expect(bar.className).toContain("shrink-0");
+    expect(bar.className).toContain("border-t");
+    expect(bar.className).not.toMatch(/(?:^|\s)(?:fixed|border-b)(?:\s|$)/);
+    fireEvent.click(screen.getByTestId("safe-mode-details"));
+    expect(screen.getByTestId("safe-mode-popover").className).toContain(
+      "bottom-full",
+    );
+  });
+
+  it("is mounted in the bottom bar stack, not at the top of App", () => {
+    const app = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf8");
+    expect(app).not.toContain("SafeModeBanner");
+    const bars = readFileSync(
+      resolve(process.cwd(), "src/components/app/AppBottomBars.tsx"),
+      "utf8",
+    );
+    expect(bars).toContain("<SafeModeBanner />");
   });
 
   it("restart normally calls the backend command", async () => {

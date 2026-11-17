@@ -34,9 +34,10 @@ Rules:
 - No SSH auto-reconnect on unexpected disconnect.
 - Connections list, settings and credentials stay fully usable.
 
-A compact banner offers Restart normally, Restore previous workspace (one-shot,
+A compact bar in the bottom bar stack (above the status bar) offers Restart normally, Restore previous workspace (one-shot,
 after a confirmation about possible hangs), Stay in safe mode (dismiss) and a
-Details expander (counter, threshold, last unclean timestamps, previous marker).
+Details popover (counter, threshold, last unclean timestamps, previous marker).
+Dismissing it leaves a small shield chip in the bottom bar that re-opens the details.
 
 ## Configuration
 
