@@ -73,9 +73,14 @@ def _identity(value):
     # JSON round-trip prevents caller-owned aliases from changing the header.
     return dict(kind='windows-arm-full-sdk-checkpoint-inputs', schemaVersion=1,
                 identity=json.loads(json.dumps(value)), canonicalRoot=name, namespaces=list(NAMESPACES),
-                exclusions=['source-checkout/**/.git', 'source-checkout/src/out'],
+                exclusions=['source-checkout/**/.git', 'source-checkout/src/out', BIDI_BIN],
                 bounds=dict(entries=MAX_ENTRIES, fileBytes=MAX_FILE, rawBytes=MAX_RAW, sidecarBytes=MAX_SIDECAR))
 
+
+# npm .bin shims (16 symlinks) from the sha256-pinned chromium-bidi gclient GCS tarball; the build names
+# node_modules/<package>/... files directly and never executes .bin. Never hashed, sealed or restored.
+BIDI_BIN = 'source-checkout/src/third_party/chromium-bidi/node_modules/.bin'
+BIDI_BIN_PARENT, BIDI_BIN_CHILD = BIDI_BIN.rsplit('/', 1)
 
 AUDIT_CAP = 200
 AUDIT_KIND = 'windows-arm-full-sdk-link-audit'
@@ -175,6 +180,8 @@ def audit_links(root, check=None, cap=AUDIT_CAP, namespaces=NAMESPACES):
             if child == '.git' and (name == 'source-checkout' or name.startswith('source-checkout/')):
                 excluded(path, name, namespace, child, False)
             elif name == 'source-checkout/src' and child == 'out':
+                excluded(path, name, namespace, child, True)
+            elif name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD:
                 excluded(path, name, namespace, child, True)
             else:
                 visit(path / child, name + '/' + child, namespace)
@@ -358,7 +365,8 @@ def _name(name):
              not any(ord(c) < 32 or c in '<>:"|?*' for c in part) and
              part.split('.')[0].casefold() not in {'con', 'prn', 'aux', 'nul', *(f'com{i}' for i in range(1, 10)), *(f'lpt{i}' for i in range(1, 10))}, 'PATH')
     need(parts[0] in NAMESPACES and '.git' not in parts and
-         not (len(parts) >= 3 and parts[:3] == ['source-checkout', 'src', 'out']), 'NAMESPACE')
+         not (len(parts) >= 3 and parts[:3] == ['source-checkout', 'src', 'out']) and
+         '/'.join(parts[:len(BIDI_BIN.split('/'))]) != BIDI_BIN, 'NAMESPACE')
     return unicodedata.normalize('NFC', name).casefold()
 
 
@@ -390,7 +398,7 @@ def _walk(guard):
                 if child == '.git' and (name == 'source-checkout' or name.startswith('source-checkout/')):
                     _git_metadata(path / child)
                     continue
-                if name == 'source-checkout/src' and child == 'out':
+                if (name == 'source-checkout/src' and child == 'out') or (name == BIDI_BIN_PARENT and child == BIDI_BIN_CHILD):
                     _directory((path / child).lstat())
                     continue
                 yield from visit(path / child, name + '/' + child)

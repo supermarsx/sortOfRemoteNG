@@ -364,6 +364,39 @@ class CheckpointInputTests(unittest.TestCase):
         self.assertEqual((shown['stage'], shown['code'], shown['relativeName'], shown['paths']),
                          ('sidecar-record', 'SIDECAR_REGULAR', 'llvm/alias', 4))
 
+    def test_chromium_bidi_npm_bin_shims_are_excluded_but_everything_else_stays_strict(self):
+        bin_dir = self.root / subject.BIDI_BIN
+        bin_dir.mkdir(parents=True)
+        package = bin_dir.parent / 'tsc-pkg'
+        package.mkdir()
+        (package / 'tsc.js').write_bytes(b'kept package file'+bytes([10]))
+        (bin_dir / 'tsc').write_bytes(b'shim')
+        os.link(bin_dir / 'tsc', bin_dir / 'tsserver')  # stands in for the tarball symlinks
+        self.assertEqual(subject.audit_links(self.root)['violationCount'], 0)
+        before = self.record()
+        rows = [json.loads(line) for line in (self.root / subject.SIDECAR).read_bytes().splitlines()]
+        paths = [row.get('path') for row in rows]
+        self.assertIn('source-checkout/src/third_party/chromium-bidi/node_modules/tsc-pkg/tsc.js', paths)
+        self.assertFalse([item for item in paths if item and '/.bin' in item])
+        self.assertIn(subject.BIDI_BIN, subject._identity(self.identity)['exclusions'])
+        with self.assertRaisesRegex(ValueError, 'NAMESPACE'):
+            subject._name(subject.BIDI_BIN + '/tsc')
+        self.assertIsNotNone(before)
+        # A sibling that is not the exact excluded directory is still audited.
+        other = self.root / 'source-checkout/src/third_party/chromium-bidi/node_modules/pkg/.bin'
+        other.mkdir(parents=True)
+        (other / 'a').write_bytes(b'a')
+        os.link(other / 'a', other / 'b')
+        report = subject.audit_links(self.root)
+        self.assertEqual((report['violationCount'], report['firstCode']), (2, 'REGULAR'))
+        self.assertTrue(all('/pkg/.bin/' in row['path'] for row in report['violations']))
+        # The excluded directory itself must still be a plain directory.
+        import shutil
+        shutil.rmtree(other.parent)
+        shutil.rmtree(bin_dir)
+        (self.root / subject.BIDI_BIN).write_bytes(b'not a directory')
+        self.assertEqual(subject.audit_links(self.root)['violations'][0]['checks'], ['not-directory'])
+
 
 if __name__ == '__main__':
     unittest.main()
