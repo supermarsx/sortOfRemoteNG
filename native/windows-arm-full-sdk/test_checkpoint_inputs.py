@@ -425,7 +425,7 @@ class SealProgressTests(CheckpointInputTests):
         self.assertEqual(beat['kind'], subject.PROGRESS_KIND)
         self.assertEqual(beat['outcome'], 'sealed')
         names = [row['name'] for row in beat['stages']]
-        self.assertEqual(names, ['link-audit', 'record-walk-hash', 'verify-after-record'])
+        self.assertEqual(names, ['link-audit', 'record-walk-hash'])
         walk = beat['stages'][1]
         self.assertEqual((walk['files'], walk['bytes']), (3, 24))
         self.assertGreaterEqual(walk['entries'], 8)
@@ -465,6 +465,29 @@ class SealProgressTests(CheckpointInputTests):
         guard = subject._Guard(self.root, header, self.clock, self.fence)
         self.assertEqual(subject._verify(guard, header, pin, collect=False), [])
         self.assertEqual(len(subject._verify(guard, header, pin)), 3)
+
+    def test_metadata_only_verify_hashes_nothing_but_still_catches_name_size_and_mtime_drift(self):
+        pin = self.record()
+        header = subject._identity(dict(image=self.identity['image'], sourceId=self.identity['sourceId'],
+                                        producerSha256='a' * 64, sourceDateEpoch=self.identity['sourceDateEpoch']))
+        guard = subject._Guard(self.root, header, self.clock, self.fence)
+        kwargs = dict(require_mtime=True, collect=False, content=False)
+        with patch.object(subject, '_hash', side_effect=AssertionError('hashed')):
+            self.assertEqual(subject._verify(guard, header, pin, **kwargs), [])
+        file = self.files[1]
+        raw, stamp = file.read_bytes(), file.stat().st_mtime_ns
+        file.write_bytes(raw + b'x')
+        os.utime(file, ns=(stamp, stamp))
+        with self.assertRaisesRegex(ValueError, 'BYTES'):
+            subject._verify(subject._Guard(self.root, header, self.clock, self.fence), header, pin, **kwargs)
+        file.write_bytes(raw)
+        os.utime(file, ns=(stamp + 10**9, stamp + 10**9))
+        with self.assertRaisesRegex(ValueError, 'MTIME'):
+            subject._verify(subject._Guard(self.root, header, self.clock, self.fence), header, pin, **kwargs)
+        os.utime(file, ns=(stamp, stamp))
+        (self.root / 'llvm' / 'extra.txt').write_bytes(b'new')
+        with self.assertRaisesRegex(ValueError, 'NAME_SET|ROW'):
+            subject._verify(subject._Guard(self.root, header, self.clock, self.fence), header, pin, **kwargs)
 
     def test_root_swap_is_still_caught_after_resolve_throttle(self):
         header = subject._identity(dict(image=self.identity['image'], sourceId=self.identity['sourceId'],

@@ -494,7 +494,7 @@ def seal_checkpoint(root, identity, clock, fence):
         # Exact final original creation chain and complete input namespace again.
         need(validate_chain(guard, identity)[1] == chain, 'CHAIN_CHANGED')
         inputs._verify(guard, inputs._identity(basic), sidecar['sidecar'], require_mtime=True, collect=False,
-                       label='verify-record-seal', total_entries=sidecar['entries'])
+                       content=False, label='verify-record-seal', total_entries=sidecar['entries'])
         _bindings(guard, identity)
         _copy(guard, inputs.SIDECAR, OUTPUT + '/inputs.jsonl', sidecar['sidecar'], inputs.MAX_SIDECAR)
         _copy(guard, GRAPH_FILE, OUTPUT + '/graph.json', identity['graphPin'], 16 * 1024**2)

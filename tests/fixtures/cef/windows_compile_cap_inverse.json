@@ -25,7 +25,7 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "d5d00b4a45618d51adcf500d7600ac4a93fdca33e80463ee934884eda222d326",
+    "sha256": "10b53cdd7ab19719534747cced0cd159fd4a079223493ad3101a09953f35867d",
     "beforeBytes": 27527,
     "beforeSha256": "a49c7f56261560a6e47e716760d589438906d5547f43860980d7b1c5640be132",
     "pairs": [
@@ -38,11 +38,11 @@
         "previous": "\"bytes\":198303,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"e68364655d2716bf4f765e13934a5a1820c3fed9c29248c5b5dcb615c7078d99\"}"
       },
       {
-        "current": "\"bytes\":112320,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"9ee0640ad12463d2ec48edf4168f3ed8365aa0868d4ce8b2f03093e50f123a9a\"}",
+        "current": "\"bytes\":112335,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"8de7ae8fd37b031054afaff0775ad55cefbf90fbb146e003b967225eb0f10ba5\"}",
         "previous": "\"bytes\":111785,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"59ea19eb1f7d0db652f462d008623fe35f6bac623977bf87af73a524e74d3845\"}"
       },
       {
-        "current": "\"bytes\":32151,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"2cd60c46674909f0fe37b2007b24e9db05f0d7dfb1ca3141431da33b34a07123\"}",
+        "current": "\"bytes\":32618,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"ed11869ed816eeaafc185a6f6dd5a38c9496ac6a659fdbc86952e2ff3f0936a3\"}",
         "previous": "\"bytes\":25731,\"path\":\"native/windows-arm-full-sdk/checkpoint_inputs.py\",\"sha256\":\"6b82500c5e16ec1f202697a78c368770dce7854617e2dd6eeec84bdc62ba5d2d\"}"
       },
       {
@@ -104,11 +104,23 @@
     ]
   },
   "native/windows-arm-full-sdk/checkpoint_inputs.py": {
-    "bytes": 32151,
-    "sha256": "2cd60c46674909f0fe37b2007b24e9db05f0d7dfb1ca3141431da33b34a07123",
+    "bytes": 32618,
+    "sha256": "ed11869ed816eeaafc185a6f6dd5a38c9496ac6a659fdbc86952e2ff3f0936a3",
     "beforeBytes": 18028,
     "beforeSha256": "78c2cef87edd3ad835b29a34f3c99ce5e358ba5537a5b4e1ce54387dd718503e",
     "pairs": [
+      {
+        "current": "    # No back-to-back re-hash here: nothing can change the inputs between this walk and the final\n    # verify-record-seal pass, which runs after pack/restore; apply_inputs re-hashes fully on restore.\n",
+        "previous": "    # Re-open through the same strict reader and verify a complete post-inventory.\n    _verify(guard, header, pin, require_mtime=True, collect=False, label='verify-after-record', total_entries=count)\n"
+      },
+      {
+        "current": "def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True):\n    # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.\n    # content=False (the final seal pass) re-walks and compares names, sizes and mtimes without re-reading file bytes.\n",
+        "previous": "def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None):\n    # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.\n"
+      },
+      {
+        "current": "                if content:\n                    with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):\n                        need(row['bytes'] == before_file[3] and row['sha256'] == sha, 'BYTES')\n                        if require_mtime:\n                            need(before_file[4] == row['mtimeNs'], 'MTIME')\n                else:\n                    need(not collect and row['bytes'] == signature[3] and type(row['sha256']) is str and re.fullmatch('[a-f0-9]{64}', row['sha256']), 'BYTES')\n                    if require_mtime:\n                        need(signature[4] == row['mtimeNs'], 'MTIME')\n",
+        "previous": "                with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):\n                    need(row['bytes'] == before_file[3] and row['sha256'] == sha, 'BYTES')\n                    if require_mtime:\n                        need(before_file[4] == row['mtimeNs'], 'MTIME')\n"
+      },
       {
         "current": "              need(row == fresh, 'ROW')\n            PROGRESS.tick(count, files, raw_bytes)\n        need(_line(read()) == _line(dict",
         "previous": "              need(row == fresh, 'ROW')\n        need(_line(read()) == _line(dict"
@@ -208,11 +220,15 @@
     ]
   },
   "native/windows-arm-full-sdk/compiled_checkpoint.py": {
-    "bytes": 112320,
-    "sha256": "9ee0640ad12463d2ec48edf4168f3ed8365aa0868d4ce8b2f03093e50f123a9a",
+    "bytes": 112335,
+    "sha256": "8de7ae8fd37b031054afaff0775ad55cefbf90fbb146e003b967225eb0f10ba5",
     "beforeBytes": 111785,
     "beforeSha256": "59ea19eb1f7d0db652f462d008623fe35f6bac623977bf87af73a524e74d3845",
     "pairs": [
+      {
+        "current": "collect=False,\n                       content=False, label='verify-record-seal'",
+        "previous": "collect=False,\n                       label='verify-record-seal'"
+      },
       {
         "current": "            inputs.PROGRESS.enable(root)\n            try:\n                result = seal_checkpoint(root, identity, Original(), lambda: None)\n            except BaseException as error:\n                inputs.PROGRESS.final('failed:' + type(error).__name__ + ':' + str(error)[:120])\n                raise\n            inputs.PROGRESS.final('sealed')\n",
         "previous": "            result = seal_checkpoint(root, identity, Original(), lambda: None)\n"

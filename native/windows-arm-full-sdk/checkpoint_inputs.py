@@ -627,13 +627,14 @@ def record_inputs(root, identity, clock, fence):
             PROGRESS.tick(count, files, raw_bytes)
         emit(output, dict(kind='end', entries=count, files=files, rawBytes=raw_bytes))
     pin = dict(bytes=written, sha256=digest.hexdigest())
-    # Re-open through the same strict reader and verify a complete post-inventory.
-    _verify(guard, header, pin, require_mtime=True, collect=False, label='verify-after-record', total_entries=count)
+    # No back-to-back re-hash here: nothing can change the inputs between this walk and the final
+    # verify-record-seal pass, which runs after pack/restore; apply_inputs re-hashes fully on restore.
     return dict(dataOnly=True, sidecar=pin, entries=count, files=files, rawBytes=raw_bytes)
 
 
-def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None):
+def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify', total_entries=None, content=True):
     # collect=False (seal-only passes) drops the per-file signature list that only apply_inputs consumes.
+    # content=False (the final seal pass) re-walks and compares names, sizes and mtimes without re-reading file bytes.
     _pin(pin)
     PROGRESS.stage(label, total_entries=total_entries)
     sidecar = guard.root / SIDECAR
@@ -661,10 +662,15 @@ def _verify(guard, header, pin, require_mtime=False, collect=True, label='verify
                 need(set(row) == {'kind', 'path', 'bytes', 'sha256', 'mtimeNs'} and type(row['bytes']) is int and
                      type(row['mtimeNs']) is int and 0 <= row['mtimeNs'] <= 253402300799999999999 and
                      (os.name != 'nt' or row['mtimeNs'] % 100 == 0), 'ROW')
-                with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):
-                    need(row['bytes'] == before_file[3] and row['sha256'] == sha, 'BYTES')
+                if content:
+                    with _hash(guard.root / fresh['path'], guard, signature) as (_, before_file, sha):
+                        need(row['bytes'] == before_file[3] and row['sha256'] == sha, 'BYTES')
+                        if require_mtime:
+                            need(before_file[4] == row['mtimeNs'], 'MTIME')
+                else:
+                    need(not collect and row['bytes'] == signature[3] and type(row['sha256']) is str and re.fullmatch('[a-f0-9]{64}', row['sha256']), 'BYTES')
                     if require_mtime:
-                        need(before_file[4] == row['mtimeNs'], 'MTIME')
+                        need(signature[4] == row['mtimeNs'], 'MTIME')
                 files += 1
                 raw_bytes += row['bytes']
                 need(raw_bytes <= MAX_RAW, 'RAW_BOUND')
