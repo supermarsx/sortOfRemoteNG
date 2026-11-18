@@ -412,6 +412,15 @@ def _helper(guard):
     module = importlib.util.module_from_spec(spec)
     # Execute these exact held bytes, never re-open a possibly replaced program.
     exec(compile(raw, str(REPO / HELPER), 'exec'), module.__dict__)
+    # pack/restore take Budget(seconds) whose default ceiling is 600 s, but _seconds() grants up to 1500 s
+    # (run 44226788747 died at deadline-bound with pack at 0 s). Lift only the default ceiling to the
+    # helper's own reviewed 2400 s limit; the held bytes are unchanged and 1500 s stays the actual cap.
+    base = getattr(module, 'Budget', None)
+    if base is not None:
+        class Budget(base):
+            def __init__(self, seconds, maximum=600):
+                super().__init__(seconds, module.SOURCE_LINUX_SECONDS if maximum == 600 else maximum)
+        module.Budget = Budget
     return module
 
 
