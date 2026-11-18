@@ -4881,6 +4881,7 @@ dependencies = [
 name = "sorng-browser-host"
 version = "26.51.0"
 dependencies = [
+ "base64 0.23.1",
  "cc",
  "cef",
  "cef-dll-sys",
@@ -4888,6 +4889,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "serde",
+ "serde_json",
  "sorng-protocols",
  "thiserror 2.0.20",
  "url",
@@ -4923,10 +4925,12 @@ dependencies = [
 name = "sorng-core"
 version = "26.51.0"
 dependencies = [
+ "base64 0.23.1",
  "log",
  "serde",
  "serde_json",
  "sysinfo",
+ "zeroize",
 ]
 
 [[package]]
