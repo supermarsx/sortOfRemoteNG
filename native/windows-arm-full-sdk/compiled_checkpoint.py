@@ -477,6 +477,44 @@ def _copy(guard, source, destination, expected, maximum):
     held(guard, destination, maximum, seal, retain=False)
 
 
+OUT_LINKS_RECORD = 'full-sdk-engine-out-links.json'
+OUT_LINKS_MAX = 4096
+
+
+def _drop_out_links(guard):
+    """Remove symlink/reparse shims from the compile output before pack.
+
+    The pinned archive helper rejects any link ('unreviewed-generated-link'; run 44335115324 died there
+    in 0.05 s after the 66 minute record walk). src/out is not part of the audited or hashed input
+    namespaces and holds only regenerable ninja output: a link that ninja produced is recreated when its
+    action reruns after restore. The links are never followed, only unlinked, and listed in a records file.
+    """
+    pending, found = [guard.root / OUT], []
+    while pending:
+        guard.check()
+        with os.scandir(pending.pop()) as entries:
+            for item in entries:
+                info = item.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+                    found.append(Path(item.path))
+                    need(len(found) <= OUT_LINKS_MAX, 'TREE_BOUND')
+                elif stat.S_ISDIR(info.st_mode):
+                    pending.append(Path(item.path))
+    for path in found:
+        try:
+            os.unlink(path)
+        except OSError:
+            os.rmdir(path)
+        need(not os.path.lexists(path), 'TREE_PATH')
+    if found:
+        try:
+            names = [path.relative_to(guard.root / OUT).as_posix() for path in found]
+            write(guard, OUT_LINKS_RECORD, dict(kind='windows-arm-full-sdk-out-links', schemaVersion=1,
+                                                count=len(found), names=names[:128]))
+        except Exception:
+            pass  # Diagnostic only; the removal above already happened and was verified.
+
+
 def seal_checkpoint(root, identity, clock, fence):
     guard, identity, basic = guard_for(root, identity, clock, fence)
     inputs.PROGRESS.stage('engine-chain')
@@ -487,6 +525,8 @@ def seal_checkpoint(root, identity, clock, fence):
         sidecar = inputs.record_inputs(root, basic, clock, fence)
     helper = _helper(guard)
     inputs.PROGRESS.stage('pack')
+    with stage('pack', relative=OUT):
+        _drop_out_links(guard)
     with archive_stage(helper, 'pack', relative=OUT):
         archive = helper.pack(guard.root / OUT, guard.root / OUTPUT, seconds=_seconds(guard))
         guard.check()

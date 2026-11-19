@@ -25,7 +25,7 @@
   },
   "native/windows-arm-full-sdk/sdk-origin-review.json": {
     "bytes": 27528,
-    "sha256": "cdc1a76f4c8165813b55051c2ec759240064eac8c24ed02e77e7d7bfeb8f47d1",
+    "sha256": "f10aedf7e0fd89c4d4671dba91da850c54294393bfd1a831c927c787c2141c2c",
     "beforeBytes": 27527,
     "beforeSha256": "a49c7f56261560a6e47e716760d589438906d5547f43860980d7b1c5640be132",
     "pairs": [
@@ -38,7 +38,7 @@
         "previous": "\"bytes\":198303,\"path\":\"native/windows-arm-full-sdk/full_sdk_control.mjs\",\"sha256\":\"e68364655d2716bf4f765e13934a5a1820c3fed9c29248c5b5dcb615c7078d99\"}"
       },
       {
-        "current": "\"bytes\":112931,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"a247aaae34eef149e3907bb87e2806fedadaa6106299b7808e7214a2fbe05170\"}",
+        "current": "\"bytes\":114731,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"9d31b84485ace9d6a93491eb1de56181e435eebc98683c77b15eb26ad63e8404\"}",
         "previous": "\"bytes\":111785,\"path\":\"native/windows-arm-full-sdk/compiled_checkpoint.py\",\"sha256\":\"59ea19eb1f7d0db652f462d008623fe35f6bac623977bf87af73a524e74d3845\"}"
       },
       {
@@ -220,11 +220,19 @@
     ]
   },
   "native/windows-arm-full-sdk/compiled_checkpoint.py": {
-    "bytes": 112931,
-    "sha256": "a247aaae34eef149e3907bb87e2806fedadaa6106299b7808e7214a2fbe05170",
+    "bytes": 114731,
+    "sha256": "9d31b84485ace9d6a93491eb1de56181e435eebc98683c77b15eb26ad63e8404",
     "beforeBytes": 111785,
     "beforeSha256": "59ea19eb1f7d0db652f462d008623fe35f6bac623977bf87af73a524e74d3845",
     "pairs": [
+      {
+        "current": "OUT_LINKS_RECORD = 'full-sdk-engine-out-links.json'\nOUT_LINKS_MAX = 4096\n\n\ndef _drop_out_links(guard):\n    \"\"\"Remove symlink/reparse shims from the compile output before pack.\n\n    The pinned archive helper rejects any link ('unreviewed-generated-link'; run 44335115324 died there\n    in 0.05 s after the 66 minute record walk). src/out is not part of the audited or hashed input\n    namespaces and holds only regenerable ninja output: a link that ninja produced is recreated when its\n    action reruns after restore. The links are never followed, only unlinked, and listed in a records file.\n    \"\"\"\n    pending, found = [guard.root / OUT], []\n    while pending:\n        guard.check()\n        with os.scandir(pending.pop()) as entries:\n            for item in entries:\n                info = item.stat(follow_symlinks=False)\n                if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:\n                    found.append(Path(item.path))\n                    need(len(found) <= OUT_LINKS_MAX, 'TREE_BOUND')\n                elif stat.S_ISDIR(info.st_mode):\n                    pending.append(Path(item.path))\n    for path in found:\n        try:\n            os.unlink(path)\n        except OSError:\n            os.rmdir(path)\n        need(not os.path.lexists(path), 'TREE_PATH')\n    if found:\n        try:\n            names = [path.relative_to(guard.root / OUT).as_posix() for path in found]\n            write(guard, OUT_LINKS_RECORD, dict(kind='windows-arm-full-sdk-out-links', schemaVersion=1,\n                                                count=len(found), names=names[:128]))\n        except Exception:\n            pass  # Diagnostic only; the removal above already happened and was verified.\n\n\ndef seal_checkpoint(root, identity, clock, fence):",
+        "previous": "def seal_checkpoint(root, identity, clock, fence):"
+      },
+      {
+        "current": "    with stage('pack', relative=OUT):\n        _drop_out_links(guard)\n",
+        "previous": ""
+      },
       {
         "current": "    # pack/restore take Budget(seconds) whose default ceiling is 600 s, but _seconds() grants up to 1500 s\n    # (run 44226788747 died at deadline-bound with pack at 0 s). Lift only the default ceiling to the\n    # helper's own reviewed 2400 s limit; the held bytes are unchanged and 1500 s stays the actual cap.\n    base = getattr(module, 'Budget', None)\n    if base is not None:\n        class Budget(base):\n            def __init__(self, seconds, maximum=600):\n                super().__init__(seconds, module.SOURCE_LINUX_SECONDS if maximum == 600 else maximum)\n        module.Budget = Budget\n    return module\n",
         "previous": "    return module\n"
