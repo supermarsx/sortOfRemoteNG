@@ -10119,26 +10119,6 @@
     "shortcutHelp": "显示此帮助",
     "shortcutEscape": "清除选择或关闭"
   },
-  "arista": {
-    "title": "Arista 风扇转速",
-    "refresh": "刷新",
-    "refreshing": "正在刷新...",
-    "systemStatus": "系统状态",
-    "unknown": "未知",
-    "noFans": "此交换机未报告任何风扇。",
-    "slot": "插槽",
-    "fan": "风扇",
-    "status": "状态",
-    "speed": "转速",
-    "rpm": "RPM",
-    "menuItem": "Arista 风扇转速",
-    "eapiHint": "通过交换机的 HTTPS eAPI 读取风扇转速。凭据仅用于此次请求，不会被保存。",
-    "username": "用户名",
-    "password": "密码",
-    "eapiPort": "eAPI 端口（可选，默认 443）",
-    "readFans": "读取风扇转速",
-    "changeCredentials": "更改凭据"
-  },
   "proxyStats": {
     "title": "代理统计",
     "subtitle": "此窗口中原生 CEF 浏览器会话的实时中继计数器。不代表 HTTP 页面请求或网站运行状况。",

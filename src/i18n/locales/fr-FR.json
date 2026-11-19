@@ -10119,26 +10119,6 @@
     "shortcutHelp": "Afficher cette aide",
     "shortcutEscape": "Effacer la sélection ou fermer"
   },
-  "arista": {
-    "title": "Vitesses des ventilateurs Arista",
-    "refresh": "Actualiser",
-    "refreshing": "Actualisation…",
-    "systemStatus": "État du système",
-    "unknown": "inconnu",
-    "noFans": "Aucun ventilateur signalé par ce commutateur.",
-    "slot": "Emplacement",
-    "fan": "Ventilateur",
-    "status": "État",
-    "speed": "Vitesse",
-    "rpm": "RPM",
-    "menuItem": "Vitesses des ventilateurs Arista",
-    "eapiHint": "Lit la vitesse des ventilateurs via l'eAPI HTTPS du commutateur. Les identifiants sont utilisés uniquement pour cette requête et ne sont pas enregistrés.",
-    "username": "Nom d'utilisateur",
-    "password": "Mot de passe",
-    "eapiPort": "Port eAPI (facultatif, 443 par défaut)",
-    "readFans": "Lire les vitesses des ventilateurs",
-    "changeCredentials": "Modifier les identifiants"
-  },
   "proxyStats": {
     "title": "Statistiques du proxy",
     "subtitle": "Compteurs de relais en direct pour les sessions de navigateur CEF natif de cette fenêtre. Ne reflète ni les requêtes HTTP des pages ni l'état des sites web.",

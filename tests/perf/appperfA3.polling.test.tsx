@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useDashboard } from "../../src/hooks/monitoring/useDashboard";
-import { useAristaFans } from "../../src/hooks/arista/useAristaFans";
 import { useLenovo } from "../../src/hooks/hardware/useLenovo";
 import { useSupermicro } from "../../src/hooks/hardware/useSupermicro";
 import { useIlo } from "../../src/hooks/hardware/useIlo";
@@ -32,7 +31,6 @@ describe("A3 polling adoption: pause when hidden, catch-up on return", () => {
     queryStore.clearAll();
     setHidden(false);
     mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "arista_get_fan_speeds") return { fans: [] } as never;
       if (cmd.endsWith("check_session")) return true as never;
       if (cmd === "dash_get_all_health") return [] as never;
       return undefined as never;
@@ -58,28 +56,6 @@ describe("A3 polling adoption: pause when hidden, catch-up on return", () => {
       await vi.advanceTimersByTimeAsync(10);
     });
     expect(calls("dash_get_state")).toBe(1);
-    unmount();
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it("useAristaFans polling: paused while hidden", async () => {
-    const cfg = { host: "sw1", port: 443, username: "admin" } as never;
-    const { unmount } = renderHook(() => useAristaFans(cfg, { pollMs: 5000 }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    setHidden(true);
-    mockInvoke.mockClear();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
-    });
-    expect(calls("arista_get_fan_speeds")).toBe(0);
-    expect(vi.getTimerCount()).toBe(0);
-    setHidden(false);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10);
-    });
-    expect(calls("arista_get_fan_speeds")).toBe(1);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });

@@ -10119,26 +10119,6 @@
     "shortcutHelp": "Diese Hilfe anzeigen",
     "shortcutEscape": "Auswahl aufheben oder schließen"
   },
-  "arista": {
-    "title": "Arista-Lüfterdrehzahlen",
-    "refresh": "Aktualisieren",
-    "refreshing": "Wird aktualisiert...",
-    "systemStatus": "Systemstatus",
-    "unknown": "unbekannt",
-    "noFans": "Dieser Switch meldet keine Lüfter.",
-    "slot": "Steckplatz",
-    "fan": "Lüfter",
-    "status": "Status",
-    "speed": "Drehzahl",
-    "rpm": "RPM",
-    "menuItem": "Arista-Lüfterdrehzahlen",
-    "eapiHint": "Liest die Lüfterdrehzahlen über die HTTPS-eAPI des Switches. Die Anmeldedaten werden nur für diese Anfrage verwendet und nicht gespeichert.",
-    "username": "Benutzername",
-    "password": "Passwort",
-    "eapiPort": "eAPI-Port (optional, Standard 443)",
-    "readFans": "Lüfterdrehzahlen auslesen",
-    "changeCredentials": "Anmeldedaten ändern"
-  },
   "proxyStats": {
     "title": "Proxy-Statistik",
     "subtitle": "Live-Relay-Zähler für native CEF-Browsersitzungen in diesem Fenster. Keine HTTP-Seitenanfragen und kein Website-Zustand.",

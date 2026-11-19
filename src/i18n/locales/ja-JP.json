@@ -10119,26 +10119,6 @@
     "shortcutHelp": "このヘルプを表示",
     "shortcutEscape": "選択を解除、または閉じる"
   },
-  "arista": {
-    "title": "Arista ファン速度",
-    "refresh": "更新",
-    "refreshing": "更新中...",
-    "systemStatus": "システムの状態",
-    "unknown": "不明",
-    "noFans": "このスイッチからファンが報告されていません。",
-    "slot": "スロット",
-    "fan": "ファン",
-    "status": "状態",
-    "speed": "速度",
-    "rpm": "RPM",
-    "menuItem": "Arista ファン速度",
-    "eapiHint": "スイッチの HTTPS eAPI 経由でファン速度を読み取ります。資格情報はこの要求にのみ使用され、保存されません。",
-    "username": "ユーザー名",
-    "password": "パスワード",
-    "eapiPort": "eAPI ポート (省略可、既定は 443)",
-    "readFans": "ファン速度を読み取る",
-    "changeCredentials": "資格情報を変更"
-  },
   "proxyStats": {
     "title": "プロキシ統計",
     "subtitle": "このウィンドウ内のネイティブ CEF ブラウザーセッションのリアルタイムリレーカウンターです。HTTP ページ要求やウェブサイトの正常性ではありません。",

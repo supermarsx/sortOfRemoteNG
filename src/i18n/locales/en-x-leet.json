@@ -1505,26 +1505,6 @@
       "emptyDesc": "4ud17 3n7r135 w111 4pp34r h3r3 45 463n7 0p3r4710n5 0ccur."
     }
   },
-  "arista": {
-    "title": "4r1574 f4n 5p33d5",
-    "refresh": "R3fr35h",
-    "refreshing": "R3fr35h1n6...",
-    "systemStatus": "5y573m 5747u5",
-    "unknown": "unkn0wn",
-    "noFans": "N0 f4n5 r3p0r73d 8y 7h15 5w17ch.",
-    "slot": "5107",
-    "fan": "F4n",
-    "status": "5747u5",
-    "speed": "5p33d",
-    "rpm": "RPM",
-    "menuItem": "4r1574 f4n 5p33d5",
-    "eapiHint": "R34d5 f4n 5p33d5 0v3r 7h3 5w17ch'5 HTTPS eAPI. Cr3d3n71415 4r3 u53d f0r 7h15 r3qu357 0n1y 4nd 4r3 n07 54v3d.",
-    "username": "U53rn4m3",
-    "password": "P455w0rd",
-    "eapiPort": "eAPI p0r7 (0p710n41, d3f4u17 443)",
-    "readFans": "R34d f4n 5p33d5",
-    "changeCredentials": "Ch4n63 cr3d3n71415"
-  },
   "ilo": {
     "title": "HP iLO M4n463r",
     "tabs": {

@@ -10119,26 +10119,6 @@
     "shortcutHelp": "Mostrar esta ajuda",
     "shortcutEscape": "Limpar seleção ou fechar"
   },
-  "arista": {
-    "title": "Velocidades das ventoinhas Arista",
-    "refresh": "Atualizar",
-    "refreshing": "A atualizar...",
-    "systemStatus": "Estado do sistema",
-    "unknown": "desconhecido",
-    "noFans": "Este comutador não comunicou ventoinhas.",
-    "slot": "Ranhura",
-    "fan": "Ventoinha",
-    "status": "Estado",
-    "speed": "Velocidade",
-    "rpm": "RPM",
-    "menuItem": "Velocidades das ventoinhas Arista",
-    "eapiHint": "Lê as velocidades das ventoinhas através da eAPI HTTPS do comutador. As credenciais são usadas apenas neste pedido e não são guardadas.",
-    "username": "Nome de utilizador",
-    "password": "Palavra-passe",
-    "eapiPort": "Porta eAPI (opcional, predefinição 443)",
-    "readFans": "Ler velocidades das ventoinhas",
-    "changeCredentials": "Alterar credenciais"
-  },
   "proxyStats": {
     "title": "Estatísticas do proxy",
     "subtitle": "Contadores de retransmissão em tempo real das sessões do navegador CEF nativo nesta janela. Não são pedidos HTTP de páginas nem o estado de websites.",

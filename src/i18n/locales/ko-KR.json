@@ -10119,26 +10119,6 @@
     "shortcutHelp": "이 도움말 표시",
     "shortcutEscape": "선택 해제 또는 닫기"
   },
-  "arista": {
-    "title": "Arista 팬 속도",
-    "refresh": "새로 고침",
-    "refreshing": "새로 고치는 중...",
-    "systemStatus": "시스템 상태",
-    "unknown": "알 수 없음",
-    "noFans": "이 스위치에서 보고된 팬이 없습니다.",
-    "slot": "슬롯",
-    "fan": "팬",
-    "status": "상태",
-    "speed": "속도",
-    "rpm": "RPM",
-    "menuItem": "Arista 팬 속도",
-    "eapiHint": "스위치의 HTTPS eAPI를 통해 팬 속도를 읽습니다. 자격 증명은 이 요청에만 사용되며 저장되지 않습니다.",
-    "username": "사용자 이름",
-    "password": "비밀번호",
-    "eapiPort": "eAPI 포트 (선택 사항, 기본값 443)",
-    "readFans": "팬 속도 읽기",
-    "changeCredentials": "자격 증명 변경"
-  },
   "proxyStats": {
     "title": "프록시 통계",
     "subtitle": "이 창의 네이티브 CEF 브라우저 세션에 대한 실시간 릴레이 카운터입니다. HTTP 페이지 요청이나 웹사이트 상태가 아닙니다.",

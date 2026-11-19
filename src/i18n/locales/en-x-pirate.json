@@ -1505,26 +1505,6 @@
       "emptyDesc": "Audit entries will appear here as agent operations occur."
     }
   },
-  "arista": {
-    "title": "Arista fan speeds",
-    "refresh": "Refresh",
-    "refreshing": "Refreshing...",
-    "systemStatus": "System status",
-    "unknown": "unknown",
-    "noFans": "Nay fans reported by this switch.",
-    "slot": "Slot",
-    "fan": "Fan",
-    "status": "Status",
-    "speed": "Speed",
-    "rpm": "RPM",
-    "menuItem": "Arista fan speeds",
-    "eapiHint": "Reads fan speeds over the switch's HTTPS eAPI. Credentials are used for this request only and are not saved.",
-    "username": "Crew name",
-    "password": "Secret code",
-    "eapiPort": "eAPI port (optional, default 443)",
-    "readFans": "Read fan speeds",
-    "changeCredentials": "Change credentials"
-  },
   "ilo": {
     "title": "HP iLO Manager",
     "tabs": {

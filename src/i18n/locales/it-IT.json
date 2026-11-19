@@ -10119,26 +10119,6 @@
     "shortcutHelp": "Mostra questa guida",
     "shortcutEscape": "Deseleziona o chiudi"
   },
-  "arista": {
-    "title": "Velocità ventole Arista",
-    "refresh": "Aggiorna",
-    "refreshing": "Aggiornamento...",
-    "systemStatus": "Stato del sistema",
-    "unknown": "sconosciuto",
-    "noFans": "Nessuna ventola segnalata da questo switch.",
-    "slot": "Slot",
-    "fan": "Ventola",
-    "status": "Stato",
-    "speed": "Velocità",
-    "rpm": "RPM",
-    "menuItem": "Velocità ventole Arista",
-    "eapiHint": "Legge la velocità delle ventole tramite l'eAPI HTTPS dello switch. Le credenziali vengono usate solo per questa richiesta e non vengono salvate.",
-    "username": "Nome utente",
-    "password": "Password",
-    "eapiPort": "Porta eAPI (facoltativa, predefinita 443)",
-    "readFans": "Leggi velocità ventole",
-    "changeCredentials": "Cambia credenziali"
-  },
   "proxyStats": {
     "title": "Statistiche proxy",
     "subtitle": "Contatori relay in tempo reale per le sessioni del browser nativo CEF in questa finestra. Non sono richieste di pagine HTTP né lo stato dei siti web.",
